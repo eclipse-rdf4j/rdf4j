@@ -45,6 +45,8 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -175,7 +177,7 @@ class GraphExplorerQueryTest {
 
 	@ParameterizedTest(name = "{0} restricts every scoped pattern to its nodes")
 	@ValueSource(strings = { "labels-named", "labels-all", "schema", "neighbors-named", "neighbors-all",
-			"links-all-graphs",
+			"links-all-graphs", "relation-counts-all",
 			"seed", "seed-all", "connections-all", "predicates-all", "types-all", "expand-all" })
 	void canvasQueriesInAGraphScopeNeverHashJoinAnUnrestrictedScan(String name) throws IOException {
 		// The canvas's labels, types, relations, neighbours, expansion, links and seeds in the all-graphs and
@@ -183,9 +185,36 @@ class GraphExplorerQueryTest {
 		// scopes: their nodes' VALUES must restrict the scoped pattern, or RDF4J reads every statement of the scope.
 		try (RepositoryConnection connection = repository.getConnection()) {
 			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, fixture(name + ".rq"));
-			String plan = query.explain(Explanation.Level.Executed).toString();
+			Explanation explanation = query.explain(Explanation.Level.Executed);
+			String plan = explanation.toString();
+			// The join algorithm alone proves nothing: a scoped UNION evaluated before its VALUES reads the same
+			// unrestricted scope with a plain JoinIterator. Every scan must start from a node it was given.
+			assertThat(unrestrictedScans(explanation.toGenericPlanNode(), new ArrayList<>())).as(plan).isEmpty();
 			assertThat(plan).as(plan).doesNotContain("HashJoinIteration");
 		}
+	}
+
+	/**
+	 * The statement patterns and property paths whose subject and object are both free where they run: each reads every
+	 * statement of its scope (with its predicate) instead of starting from a node.
+	 */
+	private static List<String> unrestrictedScans(GenericPlanNode node, List<String> found) {
+		String type = node.getType();
+		List<GenericPlanNode> children = node.getPlans() == null ? List.of() : node.getPlans();
+		boolean scan = type.startsWith("StatementPattern") || type.startsWith("ArbitraryLengthPath");
+		if (scan && children.size() >= 3 && !isRestricted(children.get(0)) && !isRestricted(children.get(2))) {
+			found.add(type + " " + children.get(0).getType() + " " + children.get(2).getType());
+		}
+		if (!type.startsWith("ArbitraryLengthPath")) {
+			// A path's inner patterns are templates that its evaluator binds step by step from the path's ends.
+			children.forEach(child -> unrestrictedScans(child, found));
+		}
+		return found;
+	}
+
+	private static boolean isRestricted(GenericPlanNode var) {
+		return var.getType().contains(", value=")
+				|| "bound".equals(var.getStringMetricActual(TelemetryMetricNames.BINDING_STATE));
 	}
 
 	@Test
@@ -317,6 +346,18 @@ class GraphExplorerQueryTest {
 			}
 		}
 		return rows;
+	}
+
+	@Test
+	void relationCountsCountOneRelationInOneDirectionAndStopAtTheCap() throws IOException {
+		// ex:one links to two, three, four and five through ex:relation, ex:two to one; ex:Thing has no such links.
+		assertThat(linkCounts("relation-counts.rq")).containsExactlyInAnyOrderEntriesOf(
+				Map.of("urn:ex:one", 4, "urn:ex:two", 1));
+		// Counting stops one past the cap: "more than 2".
+		assertThat(linkCounts("relation-counts-capped.rq")).containsExactlyInAnyOrderEntriesOf(
+				Map.of("urn:ex:one", 3, "urn:ex:two", 1));
+		// In all graphs ex:one is linked from ex:two (default graph) and from ex:named (urn:ex:graph).
+		assertThat(linkCounts("relation-counts-all.rq")).containsExactlyInAnyOrderEntriesOf(Map.of("urn:ex:one", 2));
 	}
 
 	private Map<String, Integer> linkCounts(String file) throws IOException {

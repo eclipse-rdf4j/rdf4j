@@ -943,6 +943,18 @@ test('the Query page model of a saved query\'s Edit has its row read, so the edi
     await workbench.app.prepareInitialRows(empty);
 });
 
+// The Graph page's one row carries the servlet's limits (max-query-length, max-result-rows) that its mount hands the
+// explorer; unread, the explorer never learns that results stop at the row cap.
+test('the Graph page model has its row read, so the mount tells the explorer the servlet\'s limits', async () => {
+    const workbench = loadWorkbench();
+    const rows = [[{ kind: 'literal', value: 'r' }, { kind: 'literal', value: 'true' }, { kind: 'literal', value: 'true' },
+        { kind: 'literal', value: '150000' }, { kind: 'literal', value: '5000' }]];
+    const model = { viewId: 'graph', rowCount: 1, rowStore: { read: async (start, count) => rows.slice(start, count) } };
+
+    await workbench.app.prepareInitialRows(model);
+    assert.deepEqual(JSON.parse(JSON.stringify(model.rows)), JSON.parse(JSON.stringify(rows)));
+});
+
 // Plan task M11.3: the kept-alive Query page.
 
 function templateText(template) {

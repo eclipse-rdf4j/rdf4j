@@ -32,6 +32,7 @@ import {
   discoveryQuery,
   typesQuery,
   neighborsQuery,
+  relationCountQuery,
   expandQuery,
   linkCountQuery,
   entitySearchQuery,
@@ -62,6 +63,15 @@ export function queryFixtures() {
     ["neighbors-portable", neighborsQuery(["urn:ex:one", "urn:ex:two"], "urn:ex:relation", "outgoing", 2, "default"), 3],
     ["neighbors-fenced", neighborsQuery(["urn:ex:one", "urn:ex:two"], "urn:ex:relation", "outgoing", 2, "default", true), 3],
     ["neighbors-named", neighborsQuery(["urn:ex:one"], "urn:ex:relation", "incoming", 2, "urn:ex:graph", true), 1],
+    // Expand by relation: every link, a limit per node, and the links after the loaded ones; ex:one has four.
+    ["neighbors-unlimited", neighborsQuery(["urn:ex:one", "urn:ex:two"], "urn:ex:relation", "outgoing", null, "default", true), 5],
+    ["neighbors-shared", neighborsQuery(["urn:ex:one", "urn:ex:two"], "urn:ex:relation", "outgoing",
+      new Map([["urn:ex:one", 3], ["urn:ex:two", 1]]), "default", true), 4],
+    ["neighbors-more", neighborsQuery(["urn:ex:one"], "urn:ex:relation", "outgoing", null, "default", true,
+      new Map([["urn:ex:one", { outgoing: [["<urn:ex:relation>", "<urn:ex:two>"], ["<urn:ex:relation>", "<urn:ex:three>"]], incoming: [] }]])), 2],
+    ["relation-counts", relationCountQuery(["urn:ex:one", "urn:ex:two", "urn:ex:Thing"], "urn:ex:relation", "outgoing", 1000, "default", true), 2],
+    ["relation-counts-capped", relationCountQuery(["urn:ex:one", "urn:ex:two"], "urn:ex:relation", "outgoing", 2, "default"), 2],
+    ["relation-counts-all", relationCountQuery(["urn:ex:one"], "urn:ex:relation", "incoming", 1000, "all", true), 1],
     ["expand-fenced", expandQuery(["urn:ex:one"], 10, "default", true), 8],
     ["expand-portable", expandQuery(["urn:ex:one", "urn:ex:two"], 3, "default"), 9],
     [
@@ -71,6 +81,16 @@ export function queryFixtures() {
         incoming: [["<urn:ex:two>", "<urn:ex:relation>"]],
       }]])),
       5,
+    ],
+    // The next page past loaded statements that came back: ex:one has 6 outgoing statements (one left out) and 1
+    // incoming one in the default graph, so a second page of 2 holds 2 outgoing ones.
+    [
+      "expand-paged",
+      expandQuery(["urn:ex:one"], 2, "default", true, new Map([["urn:ex:one", {
+        outgoing: [["<urn:ex:relation>", "<urn:ex:two>"]],
+        incoming: [],
+      }]]), 2),
+      2,
     ],
     ["links", linkCountQuery(["urn:ex:one", "urn:ex:two", "urn:ex:Thing"], 1000, "default", true), 2],
     ["links-capped", linkCountQuery(["urn:ex:one", "urn:ex:two"], 3, "default"), 2],

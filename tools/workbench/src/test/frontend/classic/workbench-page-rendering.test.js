@@ -2507,16 +2507,17 @@ function addToGraphHandlers(template, handlers = []) {
     return handlers;
 }
 
-// Types and Named Graphs queue a CONSTRUCT that names the listed IRI. Only an IRI a SPARQL IRIREF can hold as is
-// may be written into it: anything else would break the query or extend it.
+// Named Graphs queue a CONSTRUCT that names the listed IRI; Types queue the class as a node of its own. Only an IRI a
+// SPARQL IRIREF (and so an N-Triples IRI) can hold as is may be written into either: anything else would break the
+// query or extend it.
 test('Types and Named Graphs offer Add to graph only for IRIs a SPARQL query can hold', () => {
     const safe = ['urn:Type', 'http://example.org/ns#Café', 'http://example.org/path/with-dash_and.dot~'];
     const unsafe = ['http://example.org/a b', 'urn:x> } ?s ?p ?o . { <urn:y', 'urn:{x}', 'urn:a"b', 'urn:a\\b',
         'urn:a|b', 'urn:a^b', 'urn:a`b', 'urn:tab\there', 'no-scheme', ''];
     const iri = (value) => ({ kind: 'iri', value });
     for (const [viewId, vars, expected] of [
-        ['types', ['type', 'count'], (value) => `{ ?s a <${value}> }`],
-        ['contexts', ['context'], (value) => `GRAPH <${value}> { ?s ?p ?o }`]
+        ['types', ['type', 'count'], (value) => ({ kind: 'node', term: `<${value}>` })],
+        ['contexts', ['context'], (value) => ({ kind: 'query', graph: `GRAPH <${value}> { ?s ?p ?o }` })]
     ]) {
         const workbench = loadWorkbench();
         const queued = [];
@@ -2533,13 +2534,17 @@ test('Types and Named Graphs offer Add to graph only for IRIs a SPARQL query can
         handlers.forEach((handler) => handler({}));
 
         assert.equal(handlers.length, safe.length, `${viewId}: one control per safe IRI`);
-        assert.deepEqual(queued.map(({ entry }) => entry.kind), safe.map(() => 'query'));
         safe.forEach((value, index) => {
-            assert.ok(queued[index].entry.query.includes(expected(value)), `${viewId}: ${queued[index].entry.query}`);
+            const want = expected(value);
+            const { entry } = queued[index];
+            assert.equal(entry.kind, want.kind, `${viewId}: ${JSON.stringify(entry)}`);
+            if (want.kind === 'node') {
+                assert.deepEqual({ ...entry }, want, `${viewId}: the class alone, without its instances`);
+            } else {
+                assert.ok(entry.query.includes(want.graph), `${viewId}: ${entry.query}`);
+                assert.equal((entry.query.match(/</g) || []).length, 1, `${viewId}: exactly one IRI in ${entry.query}`);
+            }
         });
-        for (const { entry } of queued) {
-            assert.equal((entry.query.match(/</g) || []).length, 1, `${viewId}: exactly one IRI in ${entry.query}`);
-        }
         assert.deepEqual(queued.map(({ graph }) => graph.serverIdentity), safe.map(() => 'sha256:server'));
     }
 });

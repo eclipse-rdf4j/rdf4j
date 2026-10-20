@@ -2697,6 +2697,48 @@ html[data-theme="dark"] .graph-explorer #graph-explorer-app .map-shell iframe {
   gap: 8px;
 }
 
+/* Expand by relation with more new links than load at once: how many, in total or per node. */
+.graph-explorer #graph-explorer-app .relation-amount {
+  display: grid;
+  gap: 10px;
+}
+
+.graph-explorer #graph-explorer-app .relation-amount__modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}
+
+.graph-explorer #graph-explorer-app .relation-amount__modes label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink);
+}
+
+.graph-explorer #graph-explorer-app .relation-amount__count {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.graph-explorer #graph-explorer-app .relation-amount__count input {
+  width: 100%;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.graph-explorer #graph-explorer-app .relation-amount__summary {
+  font-size: 12px;
+}
+
+.graph-explorer #graph-explorer-app .relation-amount__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .graph-explorer #graph-explorer-app .predicate-search {
   display: grid;
   gap: 4px;

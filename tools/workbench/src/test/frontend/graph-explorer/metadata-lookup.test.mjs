@@ -17,14 +17,22 @@ import {
   lookupOrder,
   lookupTypes,
   LookupRetries,
+  needsTypes,
   nextTypeRound,
   orderNodeTypes,
   resolveInChunks,
+  resolveLabels,
+  statedTypes,
   typeRoundSize,
   typesFromBindings,
   viewBounds,
 } from "../../../main/frontend/graph-explorer/metadata-lookup.ts";
-import { NODE_TYPE_LIMIT, typesQuery } from "../../../main/frontend/graph-explorer/rdf-vocabulary.ts";
+import { mergeTriples, withLoadedTypes } from "../../../main/frontend/graph-explorer/graph-operations.ts";
+import { bindingsToTriples } from "../../../main/frontend/graph-explorer/graph-terms.ts";
+import { nodeDetails } from "../../../main/frontend/graph-explorer/node-details.ts";
+import { clearMetadataCache, RdfExplorer } from "../../../main/frontend/graph-explorer/rdf-explorer.ts";
+import { NODE_TYPE_LIMIT, RDFS_LABEL, typesQuery } from "../../../main/frontend/graph-explorer/rdf-vocabulary.ts";
+import { parseWorkspacePayload, prepareWorkspaceSave } from "../../../main/frontend/graph-explorer/workspace.ts";
 
 const OWL_THING = "http://www.w3.org/2002/07/owl#Thing";
 const OWL_NAMED_INDIVIDUAL = "http://www.w3.org/2002/07/owl#NamedIndividual";
@@ -213,4 +221,122 @@ test("applying looked-up types leaves known types and other nodes alone", () => 
   assert.deepEqual(typed.nodes[1].types, [{ id: "urn:T", label: "T" }]);
   assert.equal(typed.nodes[2], graph.nodes[2]);
   assert.equal(applyNodeTypes(typed, new Map([["urn:b", []]])), typed, "nothing new: the same graph");
+});
+
+test("label lookups that fail are asked again once their wait is over, without waiting for the graph to change", async () => {
+  clearMetadataCache();
+  let now = 1000;
+  let down = true;
+  const ids = Array.from({ length: 90 }, (_, index) => `urn:label-retry:${index}`);
+  // One batch of the portion fails; the others answer, so the portion as a whole does not throw.
+  const explorer = new RdfExplorer("urn:endpoint:label-retries", ["en"], async (query) => {
+    const requested = ids.filter((id) => query.includes(`<${id}>`));
+    if (down && requested.includes(ids[0])) throw new Error("endpoint rejected one batch");
+    return { results: { bindings: requested.map((id) => ({ resource: uri(id), labelProperty: uri(RDFS_LABEL),
+      label: { type: "literal", value: `Name ${id.split(":").at(-1)}`, "xml:lang": "en" } })) } };
+  });
+  const retries = new LookupRetries();
+  const resolve = (chunk, signal) => explorer.resolve(chunk, signal);
+  const unresolved = (chunk) => explorer.unresolved(chunk);
+  try {
+    assert.equal(await resolveLabels(ids, resolve, unresolved, retries, () => now, () => {}), false, "not every label came");
+    assert.equal(explorer.label(ids[89]), "Name 89");
+    assert.notEqual(explorer.label(ids[0]), "Name 0", "a failed lookup keeps the fallback label");
+    assert.deepEqual(explorer.unresolved([ids[0]]), [ids[0]], "and is never recorded as \"no label\"");
+    assert.equal(retries.waiting(ids[0], now), true, "it waits before it is asked again");
+    assert.equal(retries.waiting(ids[89], now), false);
+    assert.deepEqual(retries.due(now), [], "nothing is asked again at once");
+    assert.equal(retries.nextRetryAt(now), 6000);
+
+    const asked = [];
+    await resolveLabels([ids[0], ids[89]], async (chunk) => asked.push(...chunk), unresolved, retries, () => now, () => {});
+    assert.deepEqual(asked, [ids[89]], "a graph change meanwhile leaves the waiting ones to their retry");
+
+    down = false;
+    now = 6000;
+    const due = retries.due(now);
+    assert.ok(due.includes(ids[0]) && !due.includes(ids[89]), "due: the failed ones only");
+    assert.equal(await resolveLabels(due, resolve, unresolved, retries, () => now, () => {}), true);
+    assert.equal(explorer.label(ids[0]), "Name 0", "the retry brings the label");
+    assert.equal(retries.nextRetryAt(), undefined, "a success forgets the failures");
+  } finally {
+    explorer.dispose();
+  }
+});
+
+test("a label portion that fails as a whole waits for its retry; a cancelled one is no failure", async () => {
+  const retries = new LookupRetries();
+  const resolved = new Set();
+  const applied = [];
+  const ok = await resolveLabels(["a", "b", "c", "d", "e"], async (chunk) => {
+    if (chunk.includes("c")) throw new Error("timed out");
+    chunk.forEach((id) => resolved.add(id));
+  }, (chunk) => chunk.filter((id) => !resolved.has(id)), retries, () => 0, () => applied.push(true), undefined, { first: 2, rest: 3 });
+  assert.equal(ok, false);
+  assert.deepEqual(["a", "b", "c", "d", "e"].filter((id) => retries.waiting(id, 0)), ["c", "d", "e"]);
+  assert.equal(applied.length, 2, "labels are applied after each portion");
+
+  const controller = new AbortController();
+  await resolveLabels(["x"], async () => {
+    controller.abort();
+    throw new DOMException("Request cancelled", "AbortError");
+  }, (chunk) => chunk, retries, () => 0, () => {}, controller.signal);
+  assert.equal(retries.waiting("x", 0), false);
+});
+
+const RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
+const statement = (source, predicate, target) => ({ source: uri(source), predicate: uri(predicate), target: uri(target) });
+const loadedGraph = (rows) =>
+  withLoadedTypes(mergeTriples({ nodes: [], edges: [], revision: 0 }, bindingsToTriples(rows), false, "batch-0"));
+const nodeOf = (graph, id) => graph.nodes.find((node) => node.id === id);
+const typeIds = (node) => node.types.map((type) => type.id);
+
+test("a node typed only by its loaded rdf:type statements has the rest of its types looked up, once", () => {
+  const graph = loadedGraph([statement("urn:a", RDF_TYPE, "urn:Person"), statement("urn:a", "urn:knows", "urn:b")]);
+  const a = nodeOf(graph, "urn:a");
+  assert.deepEqual(typeIds(a), ["urn:Person"], "the loaded type shows at once");
+  assert.equal(needsTypes(a, statedTypes(graph.edges)), true, "but the repository may know more");
+  assert.ok(nextTypeRound(graph.nodes, {}, 40, () => false, statedTypes(graph.edges)).includes("urn:a"));
+
+  const typed = applyNodeTypes(graph, new Map([["urn:a", [{ id: OWL_THING, label: "Thing" }, { id: "urn:Agent", label: "Agent" }]]]));
+  const merged = nodeOf(typed, "urn:a");
+  assert.deepEqual(typeIds(merged), ["urn:Agent", "urn:Person", OWL_THING], "loaded and looked-up types, by orderNodeTypes");
+  assert.equal(needsTypes(merged, statedTypes(typed.edges)), false, "asked once, not again");
+  assert.ok(!nextTypeRound(typed.nodes, {}, 40, () => false, statedTypes(typed.edges)).includes("urn:a"));
+  assert.equal(withLoadedTypes(typed), typed, "the loaded type is already there");
+});
+
+test("merged types stay within NODE_TYPE_LIMIT, the most specific first, and the card says there may be more", () => {
+  const graph = loadedGraph([statement("urn:a", RDF_TYPE, OWL_THING)]);
+  const found = Array.from({ length: NODE_TYPE_LIMIT }, (_, index) => {
+    const name = `T${String(index).padStart(2, "0")}`;
+    return { id: `urn:${name}`, label: name };
+  });
+  const typed = applyNodeTypes(graph, new Map([["urn:a", found]]));
+  const merged = nodeOf(typed, "urn:a");
+  assert.deepEqual(typeIds(merged), found.map((type) => type.id), "the loaded owl:Thing gives way to specific types");
+  assert.equal(nodeDetails(merged, typed.edges, new Map(typed.nodes.map((node) => [node.id, node]))).moreTypes, true);
+  assert.equal(withLoadedTypes(typed), typed, "labelling the graph again (explorer.apply) keeps the cap");
+
+  const fewer = applyNodeTypes(graph, new Map([["urn:a", [{ id: "urn:Found", label: "Found" }]]]));
+  const later = withLoadedTypes(mergeTriples(fewer, bindingsToTriples([statement("urn:a", RDF_TYPE, "urn:Agent")])));
+  assert.deepEqual(typeIds(nodeOf(later, "urn:a")), ["urn:Agent", "urn:Found", OWL_THING],
+    "a type loaded after the lookup joins in order");
+});
+
+test("a reopened graph asks again only for nodes whose types may all be loaded statements", () => {
+  const graph = loadedGraph([statement("urn:a", RDF_TYPE, "urn:Person"), statement("urn:b", RDF_TYPE, "urn:Person")]);
+  const typed = applyNodeTypes(graph, new Map([["urn:a", []], ["urn:b", [{ id: "urn:Agent", label: "Agent" }]]]));
+  assert.equal(needsTypes(nodeOf(typed, "urn:a"), statedTypes(typed.edges)), false);
+  const prepared = prepareWorkspaceSave({
+    graph: typed, transform: { x: 0, y: 0, k: 1 }, query: "CONSTRUCT WHERE { ?s ?p ?o }", endpointId: "rdf4j:repo",
+    customUrl: "", namedGroups: [], selectedNodeIds: [], focusedNodeId: null, scope: "default", savedAt: null,
+    provenanceBatches: [{ id: "batch-0", label: "Query", endpoint: "/workbench/graph", query: "CONSTRUCT WHERE { ?s ?p ?o }",
+      tripleCount: 2, loadedAt: "2026-10-20T00:00:00.000Z", limit: null, complete: true }],
+  });
+  const restored = parseWorkspacePayload(prepared.raw, { repositoryReferences: true }).graph;
+  const stated = statedTypes(restored.edges);
+  assert.deepEqual(typeIds(nodeOf(restored, "urn:b")), ["urn:Agent", "urn:Person"]);
+  assert.equal(needsTypes(nodeOf(restored, "urn:a"), stated), true, "its types may all be loaded ones: asked again");
+  assert.equal(needsTypes(nodeOf(restored, "urn:b"), stated), false, "a type no loaded statement states came from a lookup");
 });

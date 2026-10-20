@@ -47,6 +47,20 @@ test('the same addition is queued once, statements and queries alongside resourc
     assert.deepEqual(graphAdditions.pending(context, storage).map((entry) => entry.kind), ['resource', 'statement', 'query']);
 });
 
+test('a node is queued on its own, apart from the same resource with its neighbours', () => {
+    const storage = memoryStorage();
+    graphAdditions.add(context, [
+        { kind: 'node', term: '<urn:Type>', query: 'ignored' },
+        { kind: 'resource', term: '<urn:Type>' },
+        { kind: 'node', term: '<urn:Type>' }
+    ], storage);
+    assert.deepEqual(graphAdditions.pending(context, storage), [
+        { kind: 'node', term: '<urn:Type>' },
+        { kind: 'resource', term: '<urn:Type>' }
+    ]);
+    assert.equal(graphAdditions.add(context, { kind: 'node', term: 'not a term' }, storage), 0);
+});
+
 test('malformed entries and unreadable storage are ignored', () => {
     const storage = memoryStorage();
     assert.equal(graphAdditions.add(context, { kind: 'resource', term: 'not a term' }, storage), 0);

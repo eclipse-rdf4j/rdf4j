@@ -22,6 +22,11 @@ export type GraphNode = LabelInput & {
   label: string;
   kind: "iri" | "literal" | "blank";
   types?: GraphNodeType[];
+  /**
+   * The types include a type lookup's answer. Without it, they may be only the ones the node's loaded rdf:type
+   * statements state (see needsTypes). Not saved with a workspace.
+   */
+  typesLookedUp?: boolean;
   datatype?: string;
   language?: string;
   direction?: "ltr" | "rtl";

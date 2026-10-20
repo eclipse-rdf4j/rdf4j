@@ -228,7 +228,7 @@ export function anchors(ids: string[], variable: string, fence = false) {
  * restrict it and the join would read every statement of the scope. Keep FILTERs after the result: inside, they open
  * a scope of their own with the same effect. GraphExplorerQueryTest checks the plans.
  */
-function anchoredScoped(
+export function anchoredScoped(
   ids: string[],
   variable: string,
   pattern: string,
@@ -273,10 +273,9 @@ export function vocabularyQuery(properties: string[], scope: GraphScope) {
   // Restrict schema traversal to predicates actually encountered; never scan every property in the store.
   const path =
     "(<http://www.w3.org/2000/01/rdf-schema#subPropertyOf>|<http://www.w3.org/2002/07/owl#equivalentProperty>|^<http://www.w3.org/2002/07/owl#equivalentProperty>)+";
+  const known = `VALUES ?known { ${LABEL_PROPERTIES.map(iriToken).join(" ")} }`;
   return `SELECT DISTINCT ?property WHERE {
- ${anchors(properties, "property")}
- VALUES ?known { ${LABEL_PROPERTIES.map(iriToken).join(" ")} }
- ${scoped(`?property ${path} ?known .`, scope)}
+ ${anchoredScoped(properties, "property", `${known}\n?property ${path} ?known .`, scope)}
 } LIMIT ${properties.length}`;
 }
 export function discoveryQuery(
@@ -321,26 +320,76 @@ export function typesQuery(
     : "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
   return `SELECT ?node ?type WHERE { ${ids.map((id) => `{ SELECT DISTINCT ?node ?type WHERE { ${anchoredScoped([id], "node", `?node <${property}> ?type .`, scope, fence)} FILTER(isIRI(?type)) } ORDER BY (IF(?type IN (${GENERIC_TYPES.map((type) => `<${type}>`).join(", ")}), 1, 0)) ?type LIMIT ${NODE_TYPE_LIMIT} }`).join(" UNION ")} }`;
 }
+/**
+ * The links of one relation of each node, in one direction. `limit` caps every node alike; a map gives each node its
+ * own cap (every node needs one); null loads them all. With `loaded`, the links of this relation already in the graph
+ * are left out, so a limited load brings links the graph does not hold yet.
+ */
 export function neighborsQuery(
   ids: string[],
   predicate: string,
   direction: "outgoing" | "incoming",
-  limit: number,
+  limit: number | null | ReadonlyMap<string, number>,
+  scope: GraphScope,
+  fence = false,
+  loaded?: ReadonlyMap<string, LoadedLinks>,
+) {
+  const limitOf = (id: string) => {
+    const value = limit instanceof Map ? limit.get(id) : limit;
+    if (value === null) return "";
+    if (!Number.isInteger(value) || value! < 1) throw new Error("Invalid per-node limit.");
+    return ` LIMIT ${value}`;
+  };
+  const role = direction === "outgoing" ? "source" : "target";
+  const token = iriToken(predicate);
+  const budget = Math.floor(EXCLUSION_BUDGET / Math.max(1, ids.length));
+  return `SELECT ?selected ?source ?predicate ?target WHERE { ${ids
+    .map((id) => {
+      const capped = limitOf(id);
+      const exclusions = expansionExclusions(relationLinks(loaded?.get(id), token), role, budget).text;
+      return `{
+ SELECT DISTINCT ?selected ?source ?predicate ?target WHERE {
+ ${anchoredScoped([id], "selected", `BIND(?selected AS ?${role}) ?source ${token} ?target .`, scope, fence)}
+ BIND(${token} AS ?predicate)${exclusions ? `\n ${exclusions}` : ""}
+ }${capped}
+ }`;
+    })
+    .join(" UNION ")} }`;
+}
+
+/** How many links of one relation each node has in one direction; counting stops at `cap + 1`. No links, no row. */
+export function relationCountQuery(
+  ids: string[],
+  predicate: string,
+  direction: "outgoing" | "incoming",
+  cap: number,
   scope: GraphScope,
   fence = false,
 ) {
-  if (!Number.isInteger(limit) || limit < 1 || limit > 1000)
-    throw new Error("Invalid per-node limit.");
-  return `SELECT ?selected ?source ?predicate ?target WHERE { ${ids
+  if (!Number.isInteger(cap) || cap < 1 || cap > 100000) throw new Error("Invalid link-count cap.");
+  const role = direction === "outgoing" ? "source" : "target";
+  return `SELECT ?selected ?links WHERE { ${ids
     .map(
       (id) => `{
- SELECT DISTINCT ?selected ?source ?predicate ?target WHERE {
- ${anchoredScoped([id], "selected", `BIND(?selected AS ?${direction === "outgoing" ? "source" : "target"}) ?source ${iriToken(predicate)} ?target .`, scope, fence)}
- BIND(${iriToken(predicate)} AS ?predicate)
- } LIMIT ${limit}
+ SELECT ?selected (COUNT(*) AS ?links) WHERE { {
+ SELECT DISTINCT ?selected ?source ?target WHERE {
+ ${anchoredScoped([id], "selected", `BIND(?selected AS ?${role}) ?source ${iriToken(predicate)} ?target .`, scope, fence)}
+ } LIMIT ${cap + 1}
+ } } GROUP BY ?selected
  }`,
     )
     .join(" UNION ")} }`;
+}
+
+/** The loaded links of a node that go through `predicate` (a SPARQL token). */
+function relationLinks(links: LoadedLinks | undefined, predicate: string): LoadedLinks | undefined {
+  if (!links) return undefined;
+  return {
+    outgoing: links.outgoing.filter(([linkPredicate]) => linkPredicate === predicate),
+    incoming: links.incoming.filter(([, linkPredicate]) => linkPredicate === predicate),
+    blankOutgoing: links.blankOutgoing?.filter((linkPredicate) => linkPredicate === predicate),
+    blankIncoming: links.blankIncoming?.filter((linkPredicate) => linkPredicate === predicate),
+  };
 }
 /** A node's statements that are already loaded, as SPARQL tokens: [predicate, object] out, [subject, predicate] in. */
 export type LoadedLinks = {
@@ -359,52 +408,88 @@ export type LoadedLinks = {
 export const EXCLUSION_BUDGET = 100_000;
 const MAX_EXCLUDED_TOKEN = 512;
 
-function minusLoaded(pairs: LoadedLinks["outgoing"] | undefined, variables: string, budget: number) {
-  if (!pairs?.length) return "";
+/** Part of a query that leaves loaded statements out; `complete` is false when some of them did not fit. */
+type Exclusion = { text: string; complete: boolean };
+
+function minusLoaded(pairs: LoadedLinks["outgoing"] | undefined, variables: string, budget: number): Exclusion {
+  if (!pairs?.length) return { text: "", complete: true };
   const rows: string[] = [];
   let used = 0;
+  let complete = true;
   // The store returns statements in the same order every time, so the first loaded ones are the ones to leave out.
   for (const [first, second] of pairs) {
-    if (first.length > MAX_EXCLUDED_TOKEN || second.length > MAX_EXCLUDED_TOKEN) continue;
+    if (first.length > MAX_EXCLUDED_TOKEN || second.length > MAX_EXCLUDED_TOKEN) {
+      complete = false;
+      continue;
+    }
     const row = `(${first} ${second})`;
-    if (used + row.length + 1 > budget) break;
+    if (used + row.length + 1 > budget) {
+      complete = false;
+      break;
+    }
     rows.push(row);
     used += row.length + 1;
   }
-  return rows.length ? `MINUS { VALUES (${variables}) { ${rows.join(" ")} } }` : "";
+  return { text: rows.length ? `MINUS { VALUES (${variables}) { ${rows.join(" ")} } }` : "", complete };
 }
 
 /**
  * Leaves out blank neighbours through predicates whose blank neighbours are loaded as document blank nodes: the
  * repository cannot name them, so they would come back as copies under a new identity.
  */
-function skipLoadedBlanks(predicates: ReadonlyArray<string> | undefined, neighbor: string, budget: number) {
-  if (!predicates?.length) return "";
+function skipLoadedBlanks(predicates: ReadonlyArray<string> | undefined, neighbor: string, budget: number): Exclusion {
+  if (!predicates?.length) return { text: "", complete: true };
   const kept: string[] = [];
   let used = 0;
+  let complete = true;
   for (const predicate of predicates) {
-    if (predicate.length > MAX_EXCLUDED_TOKEN) continue;
-    if (used + predicate.length + 2 > budget) break;
+    if (predicate.length > MAX_EXCLUDED_TOKEN) {
+      complete = false;
+      continue;
+    }
+    if (used + predicate.length + 2 > budget) {
+      complete = false;
+      break;
+    }
     kept.push(predicate);
     used += predicate.length + 2;
   }
-  return kept.length ? `FILTER(!isBlank(${neighbor}) || ?predicate NOT IN (${kept.join(", ")}))` : "";
+  return { text: kept.length ? `FILTER(!isBlank(${neighbor}) || ?predicate NOT IN (${kept.join(", ")}))` : "", complete };
 }
 
-function expansionExclusions(links: LoadedLinks | undefined, role: "source" | "target", budget: number) {
+function expansionExclusions(links: LoadedLinks | undefined, role: "source" | "target", budget: number): Exclusion {
   const blanks = role === "source"
     ? skipLoadedBlanks(links?.blankOutgoing, "?target", budget)
     : skipLoadedBlanks(links?.blankIncoming, "?source", budget);
-  const rest = budget - blanks.length;
+  const rest = budget - blanks.text.length;
   const minus = role === "source"
     ? minusLoaded(links?.outgoing, "?predicate ?target", rest)
     : minusLoaded(links?.incoming, "?source ?predicate", rest);
-  return [minus, blanks].filter(Boolean).join("\n ");
+  return { text: [minus.text, blanks.text].filter(Boolean).join("\n "), complete: minus.complete && blanks.complete };
+}
+
+/** How much of the exclusion budget each node and direction of an Expand query gets. */
+function expansionBudget(ids: readonly string[]) {
+  return Math.floor(EXCLUSION_BUDGET / Math.max(1, ids.length * 2));
+}
+
+/**
+ * Whether expandQuery leaves out every loaded statement of these nodes. When it does not (too many to write into the
+ * query, or values too long to write out), some loaded statements come back, and an answer made only of them does not
+ * mean there are no more links: page past them with expandQuery's `offset`.
+ */
+export function expansionSkipsAllLoaded(ids: readonly string[], loaded?: ReadonlyMap<string, LoadedLinks>) {
+  if (!loaded?.size) return true;
+  const budget = expansionBudget(ids);
+  return ids.every((id) =>
+    (["source", "target"] as const).every((role) => expansionExclusions(loaded.get(id), role, budget).complete),
+  );
 }
 
 /**
  * Every neighbour of each node: up to `limit` outgoing and `limit` incoming triples per node, any predicate. With
- * `loaded`, the statements already in the graph are left out, so expanding again loads the next ones.
+ * `loaded`, the statements already in the graph are left out, so expanding again loads the next ones; `offset` skips
+ * that many answers of each node and direction (for loaded statements that did not fit, see expansionSkipsAllLoaded).
  */
 export function expandQuery(
   ids: string[],
@@ -412,18 +497,20 @@ export function expandQuery(
   scope: GraphScope,
   fence = false,
   loaded?: ReadonlyMap<string, LoadedLinks>,
+  offset = 0,
 ) {
   if (!Number.isInteger(limit) || limit < 1 || limit > 1000)
     throw new Error("Invalid per-node limit.");
-  const budget = Math.floor(EXCLUSION_BUDGET / Math.max(1, ids.length * 2));
+  if (!Number.isInteger(offset) || offset < 0) throw new Error("Invalid offset.");
+  const budget = expansionBudget(ids);
   return `SELECT ?selected ?source ?predicate ?target WHERE { ${ids
     .flatMap((id) =>
       (["source", "target"] as const).map(
         (role) => `{
  SELECT DISTINCT ?selected ?source ?predicate ?target WHERE {
  ${anchoredScoped([id], "selected", `BIND(?selected AS ?${role}) ?source ?predicate ?target .`, scope, fence)}
- ${expansionExclusions(loaded?.get(id), role, budget)}
- } LIMIT ${limit}
+ ${expansionExclusions(loaded?.get(id), role, budget).text}
+ } LIMIT ${limit}${offset ? ` OFFSET ${offset}` : ""}
  }`,
       ),
     )
@@ -442,9 +529,8 @@ export function linkCountQuery(ids: string[], cap: number, scope: GraphScope, fe
       (id) => `{
  SELECT ?selected (COUNT(*) AS ?links) WHERE { {
  SELECT DISTINCT ?selected ?direction ?predicate ?neighbor WHERE {
- ${anchors([id], "selected", fence)}
- { ${scoped("?selected ?predicate ?neighbor .", scope)} BIND("out" AS ?direction) }
- UNION { ${scoped("?neighbor ?predicate ?selected .", scope)} BIND("in" AS ?direction) }
+ { ${anchoredScoped([id], "selected", "?selected ?predicate ?neighbor .", scope, fence)} BIND("out" AS ?direction) }
+ UNION { ${anchoredScoped([id], "selected", "?neighbor ?predicate ?selected .", scope, fence)} BIND("in" AS ?direction) }
  FILTER(?predicate != <${RDF_TYPE_IRI}> && (isIRI(?neighbor) || isBlank(?neighbor)))
  } LIMIT ${cap + 1}
  } } GROUP BY ?selected

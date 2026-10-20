@@ -13,6 +13,7 @@ import { useMemo, useState, type Ref } from "react";
 import type { ContextMenu, PredicateOption } from "./explorer-types.ts";
 import { compactTerm } from "./graph-terms.ts";
 import { Icon } from "./icons.tsx";
+import { relationLimits, type RelationAmount } from "./relation-expansion.ts";
 
 export type NodeMenuProps = {
   menu: ContextMenu;
@@ -25,6 +26,9 @@ export type NodeMenuProps = {
   onShowDetails: () => void;
   onLoadRelations: () => void;
   onExpandRelation: (option: PredicateOption) => void;
+  /** The amount chosen for a relation with more new links than load at once (phase "confirm"). */
+  onLoadRelation: (amount: RelationAmount) => void;
+  onCancelRelation: () => void;
   onSelectNeighbours: (mode: "replace" | "extend" | "invert") => void;
   onGroup: () => void;
   onHideLeaves: () => void;
@@ -43,6 +47,8 @@ export function NodeMenu({
   onShowDetails,
   onLoadRelations,
   onExpandRelation,
+  onLoadRelation,
+  onCancelRelation,
   onSelectNeighbours,
   onGroup,
   onHideLeaves,
@@ -163,8 +169,16 @@ export function NodeMenu({
             <div className="disclosure-content">
               {menu.phase === "loading" && (
                 <p className="menu-message menu-loading">
-                  Looking up relations…
+                  {menu.message ?? "Looking up relations…"}
                 </p>
+              )}
+              {menu.phase === "confirm" && menu.relation && (
+                <RelationAmountForm
+                  relation={menu.relation}
+                  selected={menu.nodeIds.length}
+                  onLoad={onLoadRelation}
+                  onCancel={onCancelRelation}
+                />
               )}
               {menu.phase === "error" && (
                 <div className="menu-error-block">
@@ -292,5 +306,95 @@ export function NodeMenu({
         </div>
       </section>
     </>
+  );
+}
+
+/**
+ * How many of a relation's new links to load, in total (shared evenly across the nodes) or per node, when there are
+ * more than load at once. It starts at all of them.
+ */
+function RelationAmountForm({
+  relation,
+  selected,
+  onLoad,
+  onCancel,
+}: {
+  relation: NonNullable<ContextMenu["relation"]>;
+  selected: number;
+  onLoad: (amount: RelationAmount) => void;
+  onCancel: () => void;
+}) {
+  const nodes = relation.available.size;
+  const [mode, setMode] = useState<RelationAmount["mode"]>("total");
+  const [amounts, setAmounts] = useState(() => ({
+    total: String(relation.total),
+    perNode: String(Math.max(...relation.available.values())),
+  }));
+  const amount = Number(amounts[mode]);
+  const limits = relationLimits(relation.available, { mode, amount }, relation.capped);
+  const loads = [...limits.values()].reduce((sum, links) => sum + links, 0);
+  const label = relation.option.label;
+  const holders =
+    selected === 1
+      ? "This node has"
+      : nodes === selected
+        ? `The ${selected.toLocaleString()} selected nodes have`
+        : `${nodes.toLocaleString()} of the ${selected.toLocaleString()} selected nodes have`;
+  return (
+    <form
+      className="relation-amount"
+      aria-label={`How many ${label} links to load`}
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (loads) onLoad({ mode, amount });
+      }}
+    >
+      <p className="menu-message">
+        {holders} {relation.atLeast ? "at least " : ""}
+        {relation.total.toLocaleString()} {label} links that are not in the graph yet. How many should be loaded?
+      </p>
+      {nodes > 1 && (
+        <div className="relation-amount__modes" role="radiogroup" aria-label="Count the links">
+          <label>
+            <input type="radio" name="relation-amount-mode" checked={mode === "total"} onChange={() => setMode("total")} />
+            In total
+          </label>
+          <label>
+            <input type="radio" name="relation-amount-mode" checked={mode === "perNode"} onChange={() => setMode("perNode")} />
+            Per node
+          </label>
+        </div>
+      )}
+      <label className="relation-amount__count">
+        <span>{mode === "total" ? "Links in total" : "Links per node"}</span>
+        <input
+          type="number"
+          inputMode="numeric"
+          min={1}
+          step={1}
+          value={amounts[mode]}
+          autoFocus
+          onChange={(event) => {
+            const value = event.target.value;
+            setAmounts((current) => ({ ...current, [mode]: value }));
+          }}
+        />
+      </label>
+      <p className="menu-message relation-amount__summary" aria-live="polite">
+        {loads
+          ? `Loads ${relation.atLeast ? "up to " : ""}${loads.toLocaleString()} ${loads === 1 ? "link" : "links"}${
+              nodes > 1 ? ` from ${limits.size.toLocaleString()} ${limits.size === 1 ? "node" : "nodes"}` : ""
+            }.`
+          : "Choose at least one link."}
+      </p>
+      <div className="relation-amount__actions">
+        <button className="workbench-action workbench-action--primary" type="submit" disabled={!loads}>
+          Load {loads ? loads.toLocaleString() : ""}
+        </button>
+        <button className="workbench-action workbench-action--secondary" type="button" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </form>
   );
 }

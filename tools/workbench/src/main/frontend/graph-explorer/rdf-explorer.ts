@@ -19,6 +19,7 @@ import type { LabelEvidence } from "./label-policy.ts";
 /** Link counts above this show as "more than"; counting a hub costs at most this many index steps. */
 export const LINK_COUNT_CAP = 999;
 import { isSafeSparqlIri, isSparqlTerm, isQueryableResource, sparqlNodeId, type SparqlTerm } from "./rdf-terms.ts";
+import { relationChunks } from "./relation-expansion.ts";
 import {
   AdaptiveBatchLoader,
   BoundedCache,
@@ -40,6 +41,7 @@ import {
   neighborsQuery,
   expandQuery,
   linkCountQuery,
+  relationCountQuery,
   type LoadedLinks,
   type LabelCandidate,
   type GraphScope,
@@ -455,11 +457,13 @@ export class RdfExplorer {
     });
     return changed ? { ...graph, nodes, edges } : graph;
   }
+  /** The resources among `ids` whose labels are not looked up yet, or whose lookup failed: the ones resolve asks for. */
+  unresolved(ids: readonly string[]) {
+    return [...new Set(ids)].filter((id) => isQueryableResource(id) && !this.cached(id)?.checked);
+  }
   async resolve(ids: string[], signal?: AbortSignal) {
     const version = this.schemaVersion;
-    const missing = [...new Set(ids)].filter(
-      (id) => isQueryableResource(id) && !this.cached(id)?.checked,
-    );
+    const missing = this.unresolved(ids);
     // Independent batches can finish successfully even if another batch fails.
     // Promise.all used to discard every successful label in that situation.
     const results = await Promise.allSettled(missing.map(async id =>
@@ -577,36 +581,64 @@ export class RdfExplorer {
       signal,
     );
   }
-  neighbors(
+  /**
+   * The links of one relation of each node that the graph does not hold yet (`loaded`): all of them (`limits` null),
+   * or up to each node's limit for the nodes `limits` names. Each query asks for at most `maxRows` of the `expected`
+   * rows (relationChunks); `saturated` says a query still came back full, cut by the server. Not cached: what is
+   * loaded changes with every call.
+   */
+  async neighbors(
     ids: string[],
     predicate: string,
     direction: "outgoing" | "incoming",
-    limit: number,
+    limits: ReadonlyMap<string, number> | null,
+    loaded?: ReadonlyMap<string, LoadedLinks>,
+    rows: { expected: ReadonlyMap<string, number>; maxRows?: number } = { expected: new Map() },
     signal?: AbortSignal,
   ) {
-    return this.operation(
-      JSON.stringify(["neighbors", predicate, direction, limit]),
+    const keys = [...new Set(ids)].filter((id) => isQueryableResource(id) && (!limits || limits.has(id)));
+    const bindings: RdfBinding[] = [];
+    let saturated = false;
+    for (const chunk of relationChunks(keys, rows.expected, rows.maxRows)) {
+      const query = neighborsQuery(chunk, predicate, direction, limits, this.scope, this.fence, loaded);
+      const found = (await this.query(query, signal)).results?.bindings ?? [];
+      if (rows.maxRows !== undefined && found.length >= rows.maxRows) saturated = true;
+      bindings.push(...found);
+    }
+    return { bindings, saturated };
+  }
+  /** How many links of one relation each node has in the repository; counts stop at `cap + 1`. */
+  async relationCounts(
+    ids: string[],
+    predicate: string,
+    direction: "outgoing" | "incoming",
+    cap = LINK_COUNT_CAP,
+    signal?: AbortSignal,
+  ) {
+    const rows = await this.operation(
+      JSON.stringify(["relation-count", predicate, direction, cap]),
       ids,
-      (keys) =>
-        neighborsQuery(
-          keys,
-          predicate,
-          direction,
-          limit,
-          this.scope,
-          this.fence,
-        ),
+      (keys) => relationCountQuery(keys, predicate, direction, cap, this.scope, this.fence),
       "selected",
       signal,
       5000,
     );
+    const counts = new Map<string, number>(ids.map((id) => [id, 0]));
+    for (const row of rows) {
+      const count = Number.parseInt(row.links?.value ?? "", 10);
+      if (row.selected && isSparqlTerm(row.selected) && Number.isFinite(count)) counts.set(sparqlNodeId(row.selected), count);
+    }
+    return counts;
   }
-  /** The neighbourhood of each node; with `loaded`, the statements after those already in the graph (not cached). */
-  async expand(ids: string[], limit: number, signal?: AbortSignal, loaded?: ReadonlyMap<string, LoadedLinks>) {
-    if (loaded?.size) {
+  /**
+   * The neighbourhood of each node; with `loaded`, the statements after those already in the graph, and with `offset`,
+   * the page after that many answers per node and direction (both not cached).
+   */
+  async expand(ids: string[], limit: number, signal?: AbortSignal, loaded?: ReadonlyMap<string, LoadedLinks>, offset = 0) {
+    if (loaded?.size || offset) {
       const keys = [...new Set(ids)].filter(isQueryableResource);
       if (!keys.length) return [];
-      return (await this.query(expandQuery(keys, limit, this.scope, this.fence, loaded), signal)).results?.bindings ?? [];
+      return (await this.query(expandQuery(keys, limit, this.scope, this.fence, loaded, offset), signal)).results?.bindings ?? [];
     }
     return this.operation(
       JSON.stringify(["expand", limit]),
@@ -617,12 +649,12 @@ export class RdfExplorer {
       5000,
     );
   }
-  /** How many links each node has in the repository (see linkCountQuery); counts stop at LINK_COUNT_CAP + 1. */
-  async linkCounts(ids: string[], signal?: AbortSignal) {
+  /** How many links each node has in the repository (see linkCountQuery); counts stop at `cap + 1`. */
+  async linkCounts(ids: string[], cap = LINK_COUNT_CAP, signal?: AbortSignal) {
     const rows = await this.operation(
-      JSON.stringify(["links", LINK_COUNT_CAP]),
+      JSON.stringify(["links", cap]),
       ids,
-      (keys) => linkCountQuery(keys, LINK_COUNT_CAP, this.scope, this.fence),
+      (keys) => linkCountQuery(keys, cap, this.scope, this.fence),
       "selected",
       signal,
       300000,

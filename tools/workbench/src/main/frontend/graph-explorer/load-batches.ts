@@ -18,13 +18,28 @@ export function queryLimit(query: string) {
   return match ? Number(match[1]) : null;
 }
 
+/** A result that stopped at a row limit: the one the page asked for, or the server's own cap (`byServer`). */
+export type ResultCut = { limit: number; byServer: boolean };
+
+/**
+ * Whether a result of `rows` rows may have been cut: by the row limit the page passed (`rowLimit`), or by the Graph
+ * servlet's cap on every result (`maxResultRows`, graph-max-result-rows), which it applies without a marker.
+ */
+export function resultCut(rows: number, rowLimit: number | undefined, maxResultRows: number | undefined): ResultCut | null {
+  if (maxResultRows !== undefined && rows >= maxResultRows && (rowLimit === undefined || maxResultRows <= rowLimit))
+    return { limit: maxResultRows, byServer: true };
+  if (rowLimit !== undefined && rows >= rowLimit) return { limit: rowLimit, byServer: false };
+  return null;
+}
+
 export function createBatch(
   label: string,
   endpoint: string,
   query: string,
   tripleCount: number,
+  cut: ResultCut | null = null,
 ) {
-  const limit = queryLimit(query);
+  const limit = cut?.limit ?? queryLimit(query);
   return {
     id: `batch-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
     label,
@@ -33,8 +48,17 @@ export function createBatch(
     tripleCount,
     loadedAt: new Date().toISOString(),
     limit,
-    complete: limit === null || tripleCount < limit,
+    complete: !cut && (limit === null || tripleCount < limit),
   } satisfies LoadBatch;
+}
+
+/** The status after a query loaded `statements`: how long it took, or that the result was cut and by whom. */
+export function loadedStatus(statements: number, cut: ResultCut | null, milliseconds: number) {
+  const count = statements.toLocaleString();
+  if (cut?.byServer)
+    return `Loaded the first ${count} statements: the server sends at most ${cut.limit.toLocaleString()} rows for a query, so the result may be cut. Page through it with LIMIT and OFFSET.`;
+  if (cut) return `Loaded the first ${count} statements; the query has more.`;
+  return `Loaded ${count} ${statements === 1 ? "statement" : "statements"} in ${milliseconds.toFixed(0)} ms.`;
 }
 
 export function createStarStressBatch(): LoadBatch {

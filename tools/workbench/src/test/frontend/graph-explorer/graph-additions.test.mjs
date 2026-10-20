@@ -53,6 +53,22 @@ test("the Graph page takes the queued additions once and drops malformed ones", 
   assert.deepEqual(takeAdditions("/wb", "repo", memoryStorage({ [key]: "{broken" }), "server"), []);
 });
 
+test("a queued node (a resource to draw without its neighbours) is taken like the rest", () => {
+  const key = additionsKey("/wb", "repo", "server");
+  const storage = memoryStorage({
+    [key]: JSON.stringify([
+      { kind: "node", term: "<urn:Type>" },
+      { kind: "node", term: "nonsense" },
+      { kind: "node", term: '"a value"' },
+      { kind: "resource", term: "<urn:a>" },
+    ]),
+  });
+  assert.deepEqual(takeAdditions("/wb", "repo", storage, "server"), [
+    { kind: "node", term: "<urn:Type>" },
+    { kind: "resource", term: "<urn:a>" },
+  ]);
+});
+
 test("N-Triples terms become SPARQL JSON terms", () => {
   assert.deepEqual(parseNTriplesTerm("<http://example.org/a\\u00E9>"), { type: "uri", value: "http://example.org/aé" });
   assert.deepEqual(parseNTriplesTerm("_:b12"), { type: "bnode", value: "b12" });

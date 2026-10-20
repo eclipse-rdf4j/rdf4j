@@ -57,9 +57,22 @@ export type ContextMenu = {
   x: number;
   y: number;
   openedAt: number;
-  phase: "idle" | "loading" | "ready" | "error";
+  phase: "idle" | "loading" | "ready" | "error" | "confirm";
   predicates: PredicateOption[];
   error?: string;
+  /** What the menu is waiting for while loading; "Looking up relations…" when absent. */
+  message?: string;
+  /** "confirm": a relation with more new links than RELATION_CONFIRM_LINKS, waiting for how many to load. */
+  relation?: {
+    option: PredicateOption;
+    /** The relation's links per node that the graph does not hold yet (nodes without any left out). */
+    available: Map<string, number>;
+    total: number;
+    /** A node has more links than were counted: `total` is a lower bound. */
+    atLeast: boolean;
+    /** The nodes counted past the cap. */
+    capped: Set<string>;
+  };
 };
 
 export type ViewMode =

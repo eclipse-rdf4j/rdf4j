@@ -14,14 +14,16 @@ import { repositoryScope } from "./repository-identity.ts";
 import { parseFixedBlankNodeReference, sparqlNodeId, sparqlFacetValueToken } from "./rdf-terms.ts";
 
 /**
- * "Add to graph" on the other Workbench pages (classic/graphAdditions.ts) queues resources, statements and
- * queries in localStorage under this prefix plus a versioned server/repository tuple; the Graph page takes them when it opens
- * and whenever another tab changes the queue. Terms are N-Triples terms.
+ * "Add to graph" on the other Workbench pages (classic/graphAdditions.ts) queues resources (with their neighbours),
+ * nodes (a resource alone, as the Types page adds a class), statements and queries in localStorage under this prefix
+ * plus a versioned server/repository tuple; the Graph page takes them when it opens and whenever another tab changes
+ * the queue. Terms are N-Triples terms.
  */
 export const ADDITIONS_PREFIX = "rdf4j-workbench-graph-additions:";
 
 export type GraphAddition =
   | { kind: "resource"; term: string }
+  | { kind: "node"; term: string }
   | { kind: "statement"; subject: string; predicate: string; object: string }
   | { kind: "query"; query: string };
 
@@ -36,6 +38,10 @@ function isAddition(entry: unknown): entry is GraphAddition {
   const value = entry as Record<string, unknown>;
   if (!value || typeof value !== "object") return false;
   if (value.kind === "resource") return typeof value.term === "string" && parseNTriplesTerm(value.term) !== null;
+  if (value.kind === "node") {
+    const term = typeof value.term === "string" ? parseNTriplesTerm(value.term) : null;
+    return term !== null && term.type !== "literal";
+  }
   if (value.kind === "statement")
     return [value.subject, value.predicate, value.object].every(
       (term) => typeof term === "string" && parseNTriplesTerm(term) !== null,

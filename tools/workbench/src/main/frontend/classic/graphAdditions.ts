@@ -12,8 +12,9 @@
 namespace workbench {
 
     /**
-     * "Add to graph": the Workbench pages queue resources, statements and queries for the Graph page of the same
-     * server and repository. The queue key contains a versioned JSON tuple of Workbench path, resolved server identity and ID;
+     * "Add to graph": the Workbench pages queue resources (with their neighbours), nodes (a resource alone),
+     * statements and queries for the Graph page of the same server and repository. The queue key contains a
+     * versioned JSON tuple of Workbench path, resolved server identity and ID;
      * the Graph page (src/main/frontend/graph-explorer/graph-additions.ts) takes it when it opens or when another tab
      * changes it. Terms are N-Triples terms (workbench.queryStream.ntriplesTerm).
      */
@@ -87,7 +88,7 @@ namespace workbench {
             if (!entry || typeof entry !== 'object') {
                 return false;
             }
-            if (entry.kind === 'resource') {
+            if (entry.kind === 'resource' || entry.kind === 'node') {
                 return termValid(entry.term);
             }
             if (entry.kind === 'statement') {
@@ -104,8 +105,8 @@ namespace workbench {
         }
 
         function only(entry: GraphAddition): GraphAddition {
-            if (entry.kind === 'resource') {
-                return { kind: 'resource', term: entry.term };
+            if (entry.kind === 'resource' || entry.kind === 'node') {
+                return { kind: entry.kind, term: entry.term };
             }
             if (entry.kind === 'statement') {
                 return { kind: 'statement', subject: entry.subject, predicate: entry.predicate, object: entry.object };

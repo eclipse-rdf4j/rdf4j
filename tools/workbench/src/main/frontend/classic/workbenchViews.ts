@@ -2315,13 +2315,12 @@ namespace workbench {
             const full = termText(term);
             const prefixed = list.column === 'type' && term.kind === 'iri' ? stream.abbreviateIri(term.value, exploreNamespaces(model)) : '';
             const label = prefixed && prefixed.charAt(0) !== '<' ? prefixed : full;
-            // Types add 50 of their instances with their statements; graphs add 200 of their statements.
+            // A type adds only its own card (no instances, no statements); a graph adds 200 of its statements.
             // Only an IRI a SPARQL IRIREF can hold as is: anything else would break (or extend) the queued query.
             const iri = term.kind === 'iri' && /^[A-Za-z][A-Za-z0-9+.-]*:[^<>"{}|^`\\\s]+$/.test(term.value)
                 ? '<' + term.value + '>' : '';
             const addition = !context || !iri ? '' : list.column === 'type'
-                ? addToGraphControl(runtime, context, { kind: 'query', query: 'CONSTRUCT { ?s ?p ?o } WHERE { { SELECT ?s WHERE { ?s a '
-                    + iri + ' } LIMIT 50 } ?s ?p ?o }' }, 'Add up to 50 instances of ' + label + ' to the graph', true)
+                ? addToGraphControl(runtime, context, { kind: 'node', term: iri }, 'Add ' + label + ' to the graph', true)
                 : list.column === 'context'
                     ? addToGraphControl(runtime, context, { kind: 'query', query: 'CONSTRUCT { ?s ?p ?o } WHERE { GRAPH ' + iri
                         + ' { ?s ?p ?o } } LIMIT 200' }, 'Add up to 200 statements from ' + label + ' to the graph', true)

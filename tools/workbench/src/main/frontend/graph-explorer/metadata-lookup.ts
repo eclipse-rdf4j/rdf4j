@@ -13,8 +13,9 @@
  * Which resources the explorer asks the repository about (labels, types), in what order and in what portions. Every
  * resource of the graph is looked up, however large the graph: the ones the canvas draws, and draws in view, first.
  */
+import { RDF_TYPE } from "./graph-canvas-scope.ts";
 import { findBindingValue } from "./graph-terms.ts";
-import type { Graph, GraphNode, GraphNodeType, GraphTransform } from "./graph-types.ts";
+import type { Graph, GraphEdge, GraphNode, GraphNodeType, GraphTransform } from "./graph-types.ts";
 import { isQueryableResource, isSafeSparqlIri, sparqlNodeId } from "./rdf-terms.ts";
 import type { SparqlTerm } from "./rdf-terms.ts";
 import { GENERIC_TYPES, NODE_TYPE_LIMIT } from "./rdf-vocabulary.ts";
@@ -112,9 +113,67 @@ export async function resolveInChunks(
   return complete;
 }
 
-/** A resource whose types are still to be looked up. */
-export function needsTypes(node: GraphNode) {
-  return node.kind !== "literal" && node.types === undefined && isQueryableResource(node.id);
+/**
+ * Resolves labels as resolveInChunks does, and remembers in `retries` the ids a failure left without an answer, a
+ * whole portion or a batch of one (`unresolved` says which ids still have none): they are asked again once their wait
+ * is over (LookupRetries.due), not only when the graph next changes, and a failure never counts as "no label". Ids
+ * still waiting are left to that retry. `onChunk` gets the ids each portion left without an answer. Returns whether
+ * every id has its answer; a cancelled lookup records nothing.
+ */
+export async function resolveLabels(
+  ids: readonly string[],
+  resolve: (chunk: string[], signal?: AbortSignal) => Promise<unknown>,
+  unresolved: (ids: readonly string[]) => string[],
+  retries: LookupRetries,
+  now: () => number,
+  onChunk: (failed: readonly string[]) => void,
+  signal?: AbortSignal,
+  sizes = LABEL_CHUNKS,
+): Promise<boolean> {
+  const started = now();
+  const asked = ids.filter((id) => !retries.waiting(id, started));
+  let complete = asked.length === ids.length;
+  let failed: string[] = [];
+  const resolved = await resolveInChunks(asked, async (chunk, chunkSignal) => {
+    failed = [];
+    try {
+      await resolve(chunk, chunkSignal);
+    } finally {
+      if (!signal?.aborted) {
+        failed = unresolved(chunk);
+        const unanswered = new Set(failed);
+        retries.succeeded(chunk.filter((id) => !unanswered.has(id)));
+        retries.failed(failed, now());
+        if (failed.length) complete = false;
+      }
+    }
+  }, () => onChunk(failed), signal, sizes);
+  return resolved && complete && !signal?.aborted;
+}
+
+/** The types each resource's loaded rdf:type statements state (withLoadedTypes gives them to the nodes at once). */
+export function statedTypes(edges: readonly GraphEdge[]): Map<string, Set<string>> {
+  const stated = new Map<string, Set<string>>();
+  for (const edge of edges) {
+    if (edge.predicate !== RDF_TYPE) continue;
+    const types = stated.get(edge.source);
+    if (types) types.add(edge.target);
+    else stated.set(edge.source, new Set([edge.target]));
+  }
+  return stated;
+}
+
+/**
+ * A resource whose types are still to be looked up: it has none yet, or it may have only those its loaded rdf:type
+ * statements state (`stated`, see statedTypes) and no lookup has answered for it (typesLookedUp). A saved graph does
+ * not keep typesLookedUp, so such a node is asked once more after a reload; a node with a type no loaded statement
+ * states got it from a lookup.
+ */
+export function needsTypes(node: GraphNode, stated?: ReadonlyMap<string, ReadonlySet<string>>) {
+  if (node.kind === "literal" || node.typesLookedUp || !isQueryableResource(node.id)) return false;
+  if (node.types === undefined) return true;
+  const loaded = stated?.get(node.id);
+  return loaded !== undefined && node.types.every((type) => loaded.has(type.id));
 }
 
 /**
@@ -127,15 +186,17 @@ export function typeRoundSize(completedRounds: number) {
 
 /**
  * The nodes of the next type lookup: the focused node alone while it still needs types (its details card waits for
- * them), otherwise up to `size` nodes in lookupOrder. Nodes `waiting` to retry a failed lookup are left for later.
+ * them), otherwise up to `size` nodes in lookupOrder. Nodes `waiting` to retry a failed lookup are left for later;
+ * `stated` holds the types loaded rdf:type statements state (needsTypes).
  */
 export function nextTypeRound(
   nodes: readonly GraphNode[],
   priority: LookupPriority,
   size: number,
   waiting: (id: string) => boolean,
+  stated?: ReadonlyMap<string, ReadonlySet<string>>,
 ): string[] {
-  const wanted = (node: GraphNode) => needsTypes(node) && !waiting(node.id);
+  const wanted = (node: GraphNode) => needsTypes(node, stated) && !waiting(node.id);
   const focused = priority.focusedId ? nodes.find((node) => node.id === priority.focusedId) : undefined;
   if (focused && wanted(focused)) return [focused.id];
   return lookupOrder(nodes, { ...priority, focusedId: null }, wanted).slice(0, size);
@@ -198,6 +259,12 @@ export class LookupRetries {
   succeeded(ids: readonly string[]) {
     for (const id of ids) this.entries.delete(id);
   }
+  /** The resources whose wait is over at `now`: the ones to ask again. */
+  due(now: number): string[] {
+    const due: string[] = [];
+    for (const [id, { retryAt }] of this.entries) if (retryAt <= now) due.push(id);
+    return due;
+  }
   waiting(id: string, now: number) {
     const entry = this.entries.get(id);
     return entry !== undefined && entry.retryAt > now;
@@ -237,14 +304,27 @@ export async function lookupTypes(
   }
 }
 
-/** The graph with looked-up types on the nodes that have none yet; the same graph when nothing changes. */
+/**
+ * A node's `known` types (the ones its loaded rdf:type statements state) and the `found` ones of a lookup, each once
+ * (a known one keeps its entry), ordered by orderNodeTypes and at most NODE_TYPE_LIMIT of them, as a lookup keeps them.
+ */
+export function mergeNodeTypes(known: readonly GraphNodeType[], found: readonly GraphNodeType[]): GraphNodeType[] {
+  const byId = new Map(known.map((type) => [type.id, type]));
+  for (const type of found) if (!byId.has(type.id)) byId.set(type.id, type);
+  return orderNodeTypes([...byId.values()]).slice(0, NODE_TYPE_LIMIT);
+}
+
+/**
+ * The graph with looked-up types on the nodes no lookup has answered for yet, merged with the types they have
+ * (mergeNodeTypes) and marked typesLookedUp; the same graph when nothing changes.
+ */
 export function applyNodeTypes(graph: Graph, types: ReadonlyMap<string, GraphNodeType[]>): Graph {
   let changed = false;
   const nodes = graph.nodes.map((node) => {
     const discovered = types.get(node.id);
-    if (!discovered || node.types !== undefined || node.kind === "literal") return node;
+    if (!discovered || node.typesLookedUp || node.kind === "literal") return node;
     changed = true;
-    return { ...node, types: discovered };
+    return { ...node, types: mergeNodeTypes(node.types ?? [], discovered), typesLookedUp: true };
   });
   return changed ? { ...graph, nodes } : graph;
 }

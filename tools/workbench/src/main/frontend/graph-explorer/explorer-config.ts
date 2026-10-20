@@ -53,6 +53,12 @@ export const EDGE_HIT_PIXELS = 7;
 /** At most this many rows of a query another Workbench page handed over with "Add to graph" (it has no LIMIT). */
 export const QUEUED_QUERY_ROW_LIMIT = 5000;
 
+/**
+ * Expand pages past loaded statements that did not fit into its query for at most this many pages before it says so
+ * (and points at Expand by relation) instead of looking further.
+ */
+export const EXPAND_PAGE_LIMIT = 25;
+
 /** Above this many drawn nodes, nodes have no drop shadow: repainting hundreds of shadows makes the canvas lag. */
 export const SHADOW_NODE_LIMIT = 150;
 

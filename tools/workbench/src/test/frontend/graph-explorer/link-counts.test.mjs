@@ -65,3 +65,22 @@ test("the badge reads as a phrase: one link, several links, at least several lin
   assert.equal(moreLinksPhrase("+12"), "12 more links");
   assert.equal(moreLinksPhrase("920+"), "at least 920 more links");
 });
+
+import { bringsNewLinks, linkCountCap, linkTotalStale } from "../../../main/frontend/graph-explorer/link-counts.ts";
+
+test("link counts go past the links the graph holds, so a hub with 1,000 loaded links still shows more", () => {
+  assert.equal(linkCountCap(0, 999), 999);
+  assert.equal(linkCountCap(1200, 999), 2199);
+  assert.equal(linkCountCap(500000, 999), 100000, "the count query's own bound");
+  assert.equal(linkTotalStale(undefined, 0), true, "never counted");
+  assert.equal(linkTotalStale({ count: 12, cap: 999 }, 12), false, "an exact count stays");
+  assert.equal(linkTotalStale({ count: 1000, cap: 999 }, 80), false, "920+ is still true");
+  assert.equal(linkTotalStale({ count: 1000, cap: 999 }, 1000), true, "counted only as far as the loaded links");
+  assert.deepEqual(moreLinks(2200, 1200, 2199), { count: 1000, atLeast: true, text: "1000+" });
+});
+
+test("an answer brings new links only when one of its statements is not in the graph yet", () => {
+  assert.equal(bringsNewLinks(graph, [row(uri("urn:a"), "urn:p", uri("urn:b")), row(uri("urn:c"), "urn:p", uri("urn:a"))]), false);
+  assert.equal(bringsNewLinks(graph, [row(uri("urn:a"), "urn:p", uri("urn:b")), row(uri("urn:a"), "urn:p", uri("urn:z"))]), true);
+  assert.equal(bringsNewLinks(graph, []), false);
+});

@@ -19,15 +19,15 @@ import type { RangeDraft, FilterFacet, PredicateOption, ContextMenu, ViewMode, L
 import { INCREMENTAL_LAYOUT_DURATION, PROGRAMMATIC_NODE_MOTION_DURATION, DOUBLE_TAP_DELAY, DOUBLE_TAP_DISTANCE, TAP_MOVE_TOLERANCE, DOUBLE_TAP_ZOOM_SENSITIVITY, HISTORY_LIMIT, INTERACTIVE_TRANSFORM_COMMIT_DELAY, DEFAULT_QUERY, SHOW_VALUES_STORAGE_KEY, SHOW_LABELS_STORAGE_KEY, DETAILS_ITEM_LIMIT, LEGEND_TYPE_LIMIT, LABEL_WAIT_MS, FACET_LIST_LIMIT, MORE_BADGE_NODE_LIMIT, EDGE_HIT_PIXELS, QUEUED_QUERY_ROW_LIMIT, SHADOW_NODE_LIMIT, LARGE_GRAPH_NODES } from "./explorer-config.ts";
 import { ARROW_MARKER, UNTYPED_IRI_TYPE, TYPE_PALETTE, LITERAL_VISUAL, BLANK_VISUAL, LOADING_IRI_VISUAL, typeVisual, facetValueVisual, primaryNodeType, nodeVisual, nodeTypeIds } from "./graph-visuals.ts";
 import { compactTerm, isSafeSparqlIri, predicateLabel, findBindingValue, bindingsToTriples, tripleEdgeId } from "./graph-terms.ts";
-import { leafClusterForNode, directNeighborIds, seedIncrementalNodes, mergeTriples, cloneGraph, preserveSharedNodePositions, removeGraphNodes, shortestPathInGraph, commonNeighborIds, newEdgesOf } from "./graph-operations.ts";
+import { leafClusterForNode, directNeighborIds, seedIncrementalNodes, mergeTriples, mergeResourceNodes, cloneGraph, preserveSharedNodePositions, removeGraphNodes, shortestPathInGraph, commonNeighborIds, newEdgesOf } from "./graph-operations.ts";
 import { addToSelection, contextMenuScope, selectionKeys, selectionModifier, selectionToEdit, toggleInSelection } from "./graph-selection.ts";
 import { escapeStep } from "./graph-dismissal.ts";
 import { ARROW_KEYS, nodeInDirection } from "./graph-keyboard.ts";
-import { createBatch, createStarStressBatch } from "./load-batches.ts";
+import { createBatch, createStarStressBatch, loadedStatus, resultCut } from "./load-batches.ts";
 import { formatRangeValue, generatedFacetQuery } from "./facet-queries.ts";
 import { facetModel, NO_MATCH_VALUE, TYPE_FACET_ID, valuesInRange, type Facet } from "./graph-facets.ts";
 import { nodeDetails } from "./node-details.ts";
-import { applyNodeTypes, LABEL_CHUNKS, labelLookupIds, lookupTypes, LookupRetries, needsTypes, nextTypeRound, resolveInChunks, typeRoundSize, typesFromBindings, viewBounds } from "./metadata-lookup.ts";
+import { applyNodeTypes, LABEL_CHUNKS, labelLookupIds, lookupTypes, LookupRetries, needsTypes, nextTypeRound, resolveLabels, statedTypes, typeRoundSize, typesFromBindings, viewBounds } from "./metadata-lookup.ts";
 import { useStoredWorkspace } from "./use-stored-workspace.ts";
 import { UnreadableWorkspaceNotice } from "./workspace-notice.tsx";
 import { useUndoHistory } from "./use-undo-history.ts";
@@ -49,7 +49,9 @@ import { createGraphVertexCache, graphClipTransform } from "./graph-webgl.ts";
 import { retainGraphLayoutWorker, startGraphLayout } from "./graph-layout-client.ts";
 import { expansionMovableIds } from "./graph-layout-expansion.ts";
 import { LINK_COUNT_CAP, RdfExplorer, clearMetadataCache } from "./rdf-explorer.ts";
-import { loadedLinkCounts, loadedLinksOf, moreLinks } from "./link-counts.ts";
+import { bringsNewLinks, linkCountCap, linkTotalStale, loadedLinkCounts, loadedLinksOf, moreLinks, type LinkTotal } from "./link-counts.ts";
+import { EXPAND_PAGE_LIMIT } from "./explorer-config.ts";
+import { RELATION_CONFIRM_LINKS, loadedRelationLinks, relationCountCap, relationLimits, relationPlan, type RelationAmount } from "./relation-expansion.ts";
 import { cssColorResolver, downloadFile, graphSvg, graphTurtle, svgToPng } from "./graph-export.ts";
 import { curveMidpoint, nearestEdge } from "./edge-hit.ts";
 import { StatementDetailsCard } from "./statement-details-card.tsx";
@@ -58,13 +60,13 @@ import { routeDrawnGraph } from "./graph-edge-routing.ts";
 import { withCollapsedClassLinks } from "./graph-class-links.ts";
 import { useStatementDetails } from "./use-statement-details.ts";
 import type { StatementCard } from "./statement-details.ts";
-import type { Binding } from "./explorer-types.ts";
+import type { Binding, SparqlValue } from "./explorer-types.ts";
 import { LabelPreferences } from "./label-preferences.tsx";
 import { LabelGuidanceNotice } from "./label-guidance.tsx";
 import { labelGuidance, type LabelEvidence } from "./label-policy.ts";
 import { useLabelPolicy, useDismissedLabelGuidance } from "./use-label-policy.ts";
 import { Icon } from "./icons.tsx";
-import { entitySearchQuery, expandQuery, neighborsQuery, seedQuery, type GraphScope } from "./rdf-vocabulary.ts";
+import { entitySearchQuery, expandQuery, expansionSkipsAllLoaded, neighborsQuery, seedQuery, type GraphScope } from "./rdf-vocabulary.ts";
 import { explorePageUrl, graphEndpoint, queryPageUrl, queryRepository as executeRepositoryQuery } from "./transport.ts";
 import {
   useCallback,
@@ -800,8 +802,14 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
       ).length,
     [metadataNodes],
   );
-  // Every resource's types are still to come while one of them has none (a failed lookup is retried, never "no type").
-  const iriTypesLoading = useMemo(() => metadataNodes.some(needsTypes), [metadataNodes]);
+  // The types loaded rdf:type statements state: their nodes show them at once and are still asked for the rest.
+  const loadedNodeTypes = useMemo(() => statedTypes(graph.edges), [graph.edges]);
+  // Every resource's types are still to come while one of them has none (a failed lookup is retried, never "no type"),
+  // or only its loaded ones.
+  const iriTypesLoading = useMemo(
+    () => metadataNodes.some((node) => needsTypes(node, loadedNodeTypes)),
+    [metadataNodes, loadedNodeTypes],
+  );
   // Filters work on what the Graph view draws, so a facet never selects hidden values.
   const filterNodes = useMemo(
     () => (showValues ? metadataNodes : canvasGraph({ nodes: metadataNodes, edges: graph.edges, revision: 0 }, false).nodes),
@@ -820,9 +828,21 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     void typeRetryTick;
     const now = Date.now();
     const round = nextTypeRound(metadataNodes, { focusedId: focusedNodeId, drawnIds: drawnNodeIds }, typeRoundSize(typeRounds),
-      (id) => typeRetries.waiting(id, now));
+      (id) => typeRetries.waiting(id, now), loadedNodeTypes);
     return round.length ? JSON.stringify(round) : "";
-  }, [metadataNodes, focusedNodeId, drawnNodeIds, typeRounds, typeRetries, typeRetryTick]);
+  }, [metadataNodes, focusedNodeId, drawnNodeIds, typeRounds, typeRetries, typeRetryTick, loadedNodeTypes]);
+  // Failed label lookups wait here before they are asked again (see resolveLabels); each explorer starts afresh.
+  const labelRetries = useMemo(() => {
+    void explorer;
+    return new LookupRetries();
+  }, [explorer]);
+  const [labelRetryTick, setLabelRetryTick] = useState(0);
+  /** The failed label lookups whose wait is over: asked again without waiting for the graph to change. */
+  const labelRetryKey = useMemo(() => {
+    void labelRetryTick;
+    const due = labelRetries.due(Date.now());
+    return due.length ? JSON.stringify(due) : "";
+  }, [labelRetries, labelRetryTick]);
   const hiddenFilterPredicates = useMemo(
     () => new Set([RDF_TYPE, ...explorer.properties]),
     // The explorer's label properties grow as vocabularies are discovered and preferences change.
@@ -905,10 +925,11 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     null;
 
   // "+N" on a node: links the repository has that are not loaded. Counts come once per node (cached by the explorer).
-  const [linkTotals, setLinkTotals] = useState<ReadonlyMap<string, number>>(() => new Map());
-  const requestedLinkTotalsRef = useRef(new Set<string>());
+  const [linkTotals, setLinkTotals] = useState<ReadonlyMap<string, LinkTotal>>(() => new Map());
+  /** The cap each node's links were (or are being) counted with. */
+  const requestedLinkTotalsRef = useRef(new Map<string, number>());
   useEffect(() => {
-    requestedLinkTotalsRef.current = new Set();
+    requestedLinkTotalsRef.current = new Map();
     setLinkTotals(new Map());
   }, [explorer]);
   const drawnIriKey = useMemo(
@@ -918,22 +939,47 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
         : drawnGraph.nodes.flatMap((node) => (isQueryableResource(node.id) ? [node.id] : [])).join("\n"),
     [drawnGraph.nodes],
   );
+  // The drawn resources whose links are to be counted, each with how far: past the links the graph holds (so loaded
+  // links never use up the count), and again once the loaded links reach an earlier count. One "cap id" per line, so
+  // the request only starts again when this text changes.
+  const linkCountRequests = useMemo(() => {
+    if (!drawnIriKey) return "";
+    const loaded = loadedLinkCounts(graph);
+    return drawnIriKey
+      .split("\n")
+      .flatMap((id) => {
+        const loadedCount = loaded.get(id) ?? 0;
+        return linkTotalStale(linkTotals.get(id), loadedCount) ? [`${linkCountCap(loadedCount, LINK_COUNT_CAP)} ${id}`] : [];
+      })
+      .join("\n");
+    // Loaded links change with the edges; node positions, which change often, do not matter here.
+  }, [drawnIriKey, graph.edges, linkTotals]);
   useEffect(() => {
-    const ids = drawnIriKey ? drawnIriKey.split("\n").filter((id) => !requestedLinkTotalsRef.current.has(id)) : [];
-    if (!ids.length) return;
+    const wanted = linkCountRequests
+      ? linkCountRequests
+          .split("\n")
+          .map((line) => [line.slice(line.indexOf(" ") + 1), Number(line.slice(0, line.indexOf(" ")))] as const)
+          .filter(([id, cap]) => (requestedLinkTotalsRef.current.get(id) ?? -1) < cap)
+      : [];
+    if (!wanted.length) return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
-      ids.forEach((id) => requestedLinkTotalsRef.current.add(id));
+      // One query for all of them: a node's count stops at its own total, so the largest cap costs little.
+      const cap = Math.max(...wanted.map(([, nodeCap]) => nodeCap));
+      const ids = wanted.map(([id]) => id);
+      ids.forEach((id) => requestedLinkTotalsRef.current.set(id, cap));
       explorer
-        .linkCounts(ids, controller.signal)
-        .then((counts) => setLinkTotals((current) => new Map([...current, ...counts])))
+        .linkCounts(ids, cap, controller.signal)
+        .then((counts) =>
+          setLinkTotals((current) => new Map([...current, ...[...counts].map(([id, count]) => [id, { count, cap }] as const)])),
+        )
         .catch(() => ids.forEach((id) => requestedLinkTotalsRef.current.delete(id)));
     }, 250);
     return () => {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [drawnIriKey, explorer]);
+  }, [linkCountRequests, explorer]);
   // Counted when a node first has a repository total to compare with: a large graph asks for none.
   const loadedLinks = useMemo(() => ({ counts: null as Map<string, number> | null }), [graph.revision, graph.edges]);
   const showEveryMoreBadge = drawnGraph.nodes.length <= MORE_BADGE_NODE_LIMIT;
@@ -941,7 +987,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     const total = linkTotals.get(nodeId);
     if (total === undefined) return null;
     loadedLinks.counts ??= loadedLinkCounts(graph);
-    return moreLinks(total, loadedLinks.counts.get(nodeId) ?? 0, LINK_COUNT_CAP);
+    return moreLinks(total.count, loadedLinks.counts.get(nodeId) ?? 0, total.cap);
   };
   const inspectorNode =
     (focusedNodeId ? nodeById.get(focusedNodeId) : undefined) ??
@@ -1142,8 +1188,11 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     const controller = new AbortController();
     const load = async (ids: string[], signal?: AbortSignal) => {
       const bindings = await explorer.types(ids, signal);
-      // The types' labels first, so the nodes are drawn with them.
-      await explorer.resolve(bindings.flatMap(row=>row.type?.type==="uri"?[row.type.value]:[]),signal).catch(()=>{});
+      // The types' labels first, so the nodes are drawn with them; failed ones are asked again later (labelRetries).
+      const typeIds = [...new Set(bindings.flatMap(row=>row.type?.type==="uri"?[row.type.value]:[]))];
+      if (!(await resolveLabels(typeIds, (chunk, chunkSignal) => explorer.resolve(chunk, chunkSignal),
+        (chunk) => explorer.unresolved(chunk), labelRetries, Date.now, () => {}, signal)) && !signal?.aborted)
+        setLabelRetryTick((tick) => tick + 1);
       return typesFromBindings(ids, bindings, (id) => explorer.label(id));
     };
     void lookupTypes(nodeIds, load, typeRetries, Date.now, controller.signal).then((types) => {
@@ -1158,7 +1207,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
       setTypeRounds((rounds) => rounds + 1);
     });
     return () => controller.abort();
-  }, [endpoint, explorer, typeRoundKey, typeRetries]);
+  }, [endpoint, explorer, typeRoundKey, typeRetries, labelRetries]);
 
   // Nothing left to look up: the next nodes to come start with small rounds again.
   useEffect(() => {
@@ -1174,6 +1223,36 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     const timer = window.setTimeout(() => setTypeRetryTick((tick) => tick + 1), at - now);
     return () => window.clearTimeout(timer);
   }, [typeRetries, typeRetryTick]);
+
+  // Asks again for the labels of failed lookups once their wait is over, whether or not the graph changes meanwhile.
+  useEffect(() => {
+    if (!labelRetryKey) return;
+    const controller = new AbortController();
+    const due = JSON.parse(labelRetryKey) as string[];
+    // What the graph no longer shows is not asked for again.
+    const shown = new Set(labelLookupIds(graphRef.current, {}));
+    labelRetries.succeeded(due.filter((id) => !shown.has(id)));
+    const ids = due.filter((id) => shown.has(id));
+    void resolveLabels(ids, (chunk, signal) => explorer.resolve(chunk, signal), (chunk) => explorer.unresolved(chunk),
+      labelRetries, Date.now, () => setGraph((value) => explorer.apply(value)), controller.signal).then(() => {
+      if (controller.signal.aborted) return;
+      const evidence = explorer.labelEvidence(ids);
+      setLabelEvidence((current) => current.explorer === explorer
+        ? { explorer, evidence: { ...evidence, complete: current.evidence.complete && evidence.complete } } : current);
+      // The ones that failed again wait longer (the timer below); nothing due is left.
+      setLabelRetryTick((tick) => tick + 1);
+    });
+    return () => controller.abort();
+  }, [explorer, labelRetries, labelRetryKey]);
+
+  useEffect(() => {
+    void labelRetryTick;
+    const now = Date.now();
+    const at = labelRetries.nextRetryAt(now);
+    if (at === undefined) return;
+    const timer = window.setTimeout(() => setLabelRetryTick((tick) => tick + 1), at - now);
+    return () => window.clearTimeout(timer);
+  }, [labelRetries, labelRetryTick]);
 
   useEffect(() => {
     // The layout places what the canvas draws; hidden values keep their last positions in the model.
@@ -1382,9 +1461,16 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     });
     setLabelEvidence({ explorer, evidence: { ...explorer.labelEvidence(ids), complete: false } });
     if (current.nodes[0]?.id.startsWith("urn:graph-field:stress:")) return () => controller.abort();
-    const applyLabels = () => setGraph(value=>explorer.apply(value));
+    // Labels are applied after each portion; a portion's failures wait for their retry (the timer above), so they are
+    // asked again without a graph change.
+    const applyLabels = (failed: readonly string[]) => {
+      setGraph(value=>explorer.apply(value));
+      if (failed.length) setLabelRetryTick(tick=>tick+1);
+    };
+    const resolveAll = () => resolveLabels(ids,(chunk,signal)=>explorer.resolve(chunk,signal),
+      (chunk)=>explorer.unresolved(chunk),labelRetries,Date.now,applyLabels,controller.signal);
     // Apply successful labels promptly; schema discovery may take longer and only gates absence guidance.
-    const resolved = resolveInChunks(ids,(chunk,signal)=>explorer.resolve(chunk,signal),applyLabels,controller.signal).then(complete=>{
+    const resolved = resolveAll().then(complete=>{
       if(!controller.signal.aborted)
         setLabelEvidence({ explorer, evidence: { ...explorer.labelEvidence(ids), complete: false } });
       return complete;
@@ -1397,7 +1483,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
       explorer.observe(graphRef.current);
       const schema = outcomes[1];
       if(schema.status === "fulfilled" && schema.value) {
-        if (!(await resolveInChunks(ids,(chunk,signal)=>explorer.resolve(chunk,signal),applyLabels,controller.signal)))
+        if (!(await resolveAll()))
           successful = false;
       }
       if(controller.signal.aborted)return;
@@ -1406,7 +1492,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
       setLabelEvidence({ explorer, evidence: { ...evidence, complete: successful && evidence.complete } });
     });
     return ()=>controller.abort();
-  }, [explorer,graph.revision]);
+  }, [explorer,graph.revision,labelRetries]);
 
   useEffect(() => {
     if (isLayoutComputing || isLayoutAnimating || draggingNodeId || isLargeGraphDragging) return;
@@ -1839,7 +1925,8 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
         const result = await queryRepository(target, queryToRun, controller.signal);
         if (queryRunRef.current !== runId) return false;
         const rows = result.results?.bindings || [];
-        const capped = Boolean(rowLimit && rows.length >= rowLimit);
+        // The servlet stops every result at its row cap without a marker: a result that long may be cut.
+        const cut = resultCut(rows.length, rowLimit, limits?.maxResultRows);
         const triples = bindingsToTriples(rows);
         const links = statementLinksOf(rows);
         if (triples.length === 0 && links.length === 0) {
@@ -1858,8 +1945,8 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
           endpointToRun,
           queryToRun,
           triples.length + links.length,
+          cut,
         );
-        if (capped) Object.assign(batch, { limit: rowLimit, complete: false });
         // Lay the graph out with its real labels: placeholder labels (local names) are shorter, and a layout made
         // for them stays spread out and zoomed out after the labels arrive.
         await withLabels(triples.flatMap((triple) => [triple.source, triple.predicate, triple.target]));
@@ -1895,11 +1982,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
         // Where drawing and laying out a query's answer starts (User Timing; the scale tests measure from here).
         performance.mark?.("graph-explorer:answer-shown", { detail: { revision: merged.revision, nodes: merged.nodes.length } });
         setGraph(merged);
-        setStatus(
-          capped
-            ? `Loaded the first ${(triples.length + links.length).toLocaleString()} statements; the query has more.`
-            : `Loaded ${(triples.length + links.length).toLocaleString()} ${triples.length + links.length === 1 ? "statement" : "statements"} in ${(performance.now() - started).toFixed(0)} ms.`,
-        );
+        setStatus(loadedStatus(triples.length + links.length, cut, performance.now() - started));
         return true;
       } catch (error) {
         if (queryRunRef.current !== runId) return false;
@@ -1909,7 +1992,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
         if (queryRunRef.current === runId) setIsQuerying(false);
       }
     },
-    [dismissContextMenu, endpoint, explorer, invalidateAsyncRequests, makeHistorySnapshot, placeOnlyNewNodes, pushHistory, query, withLabels],
+    [dismissContextMenu, endpoint, explorer, invalidateAsyncRequests, limits, makeHistorySnapshot, placeOnlyNewNodes, pushHistory, query, withLabels],
   );
 
   const searchForSeed = useCallback(async (term: string) => {
@@ -2106,33 +2189,81 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     [explorer],
   );
 
+  /**
+   * Expand by relation: loads the relation's links of the menu's nodes that the graph does not hold yet. Up to
+   * RELATION_CONFIRM_LINKS of them load at once; more wait in the menu until the user says how many (`amount`).
+   */
   const expand = useCallback(
-    async (option: PredicateOption) => {
+    async (option: PredicateOption, amount?: RelationAmount) => {
       if (!menu) return;
       const currentMenu = menu;
       invalidateAsyncRequests();
       const expansionRequestId = queryRunRef.current;
-      setMenu({ ...currentMenu, phase: "loading", predicates: currentMenu.predicates });
+      const superseded = () =>
+        queryRunRef.current !== expansionRequestId || menuStateRef.current?.openedAt !== currentMenu.openedAt;
       const targetCount = currentMenu.nodeIds.length;
-      setStatus(
-        targetCount > 1
-          ? `Expanding ${option.label} across ${targetCount} selected nodes…`
-          : `Adding ${option.direction} ${option.label} neighbours…`,
-      );
+      const across = targetCount > 1 ? ` across ${targetCount} selected nodes` : "";
       try {
+        const { counts: loadedCounts, loaded } = loadedRelationLinks(
+          graphRef.current,
+          currentMenu.nodeIds,
+          option.predicate,
+          option.direction,
+        );
+        let nodeLimits: Map<string, number> | null = null;
+        let nodeIds: string[];
+        let expected: ReadonlyMap<string, number>;
+        if (amount && currentMenu.relation) {
+          nodeLimits = relationLimits(currentMenu.relation.available, amount, currentMenu.relation.capped);
+          nodeIds = [...nodeLimits.keys()];
+          expected = nodeLimits;
+        } else {
+          setMenu({ ...currentMenu, phase: "loading", message: `Counting ${option.label} links…`, relation: undefined });
+          setStatus(`Counting ${option.label} links${across}…`);
+          const cap = relationCountCap(loadedCounts, LINK_COUNT_CAP);
+          const counts = await explorer.relationCounts(currentMenu.nodeIds, option.predicate, option.direction, cap);
+          if (superseded()) return;
+          const plan = relationPlan(counts, loadedCounts, cap);
+          if (!plan.total) {
+            setStatus(
+              [...counts.values()].some((count) => count > 0)
+                ? `Every ${option.label} link${across} is already in the graph.`
+                : `No ${option.label} links found for the selection.`,
+            );
+            dismissContextMenu();
+            return;
+          }
+          if (plan.total > RELATION_CONFIRM_LINKS) {
+            setMenu({ ...currentMenu, phase: "confirm", relation: { option, ...plan } });
+            setStatus(
+              `${plan.atLeast ? "At least " : ""}${plan.total.toLocaleString()} ${option.label} links to load${across}: choose how many.`,
+            );
+            return;
+          }
+          nodeIds = [...plan.available.keys()];
+          expected = plan.available;
+        }
+        if (!nodeIds.length) return;
+        setMenu({ ...currentMenu, phase: "loading", message: `Loading ${option.label} links…`, relation: undefined });
+        setStatus(
+          targetCount > 1
+            ? `Expanding ${option.label} across ${targetCount} selected nodes…`
+            : `Adding ${option.direction} ${option.label} neighbours…`,
+        );
         const triples: ReturnType<typeof bindingsToTriples> = [];
         const expansionQueries: string[] = [];
-        const perNodeLimit=targetCount===1?80:12;
-        expansionQueries.push(neighborsQuery(currentMenu.nodeIds,option.predicate,option.direction,perNodeLimit,graphScope,Boolean(rdf4jRepository)));
-        const bindings=await explorer.neighbors(currentMenu.nodeIds,option.predicate,option.direction,perNodeLimit);
+        expansionQueries.push(neighborsQuery(nodeIds, option.predicate, option.direction, nodeLimits, graphScope, Boolean(rdf4jRepository), loaded));
+        const { bindings, saturated } = await explorer.neighbors(nodeIds, option.predicate, option.direction, nodeLimits, loaded, {
+          expected,
+          maxRows: limits?.maxResultRows,
+        });
         triples.push(...bindingsToTriples(bindings));
         const relationLinks = statementLinksOf(bindings);
-        if (
-          queryRunRef.current !== expansionRequestId ||
-          menuStateRef.current?.openedAt !== currentMenu.openedAt
-        ) {
+        if (superseded()) {
           return;
         }
+        // Links already in the graph can come back (when not all of them fit into the query): count the new ones.
+        let added = 0;
         if (triples.length || relationLinks.length) {
           const batch = createBatch(
             `Expanded ${option.label}`,
@@ -2140,8 +2271,6 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
             expansionQueries.join("\n\n# Next batch\n\n"),
             triples.length,
           );
-          pushHistory();
-          setProvenanceBatches((current) => [...current, batch]);
           const currentGraph = graphRef.current;
           const previousNodeIds = new Set(
             currentGraph.nodes.map((node) => node.id),
@@ -2151,19 +2280,31 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
             previousNodeIds,
             currentMenu.nodeIds,
           );
-          layoutIntentRef.current = {
-            mode: "incremental",
-            revision: merged.revision,
-            anchorId: currentMenu.node.id,
-            previousNodeIds,
-            startTransform: { ...transformRef.current },
-          };
-          setGraph(merged);
+          added =
+            merged.edges.length - currentGraph.edges.length +
+            (merged.statementLinks?.length ?? 0) - (currentGraph.statementLinks?.length ?? 0);
+          if (added) {
+            pushHistory();
+            setProvenanceBatches((current) => [...current, batch]);
+            layoutIntentRef.current = {
+              mode: "incremental",
+              revision: merged.revision,
+              anchorId: currentMenu.node.id,
+              previousNodeIds,
+              startTransform: { ...transformRef.current },
+            };
+            setGraph(merged);
+          }
         }
         setStatus(
-          triples.length
-            ? `Added ${triples.length} ${option.label} ${triples.length === 1 ? "link" : "links"} from ${targetCount} ${targetCount === 1 ? "node" : "selected nodes"}.`
-            : `No ${option.label} links found for the selection.`,
+          (added
+            ? `Added ${added.toLocaleString()} ${option.label} ${added === 1 ? "link" : "links"} from ${targetCount} ${targetCount === 1 ? "node" : "selected nodes"}.`
+            : triples.length
+              ? `The ${option.label} links that came back are all in the graph already.`
+              : `No ${option.label} links found for the selection.`) +
+            (saturated
+              ? ` The server sends at most ${limits!.maxResultRows!.toLocaleString()} rows per request: expand ${option.label} again for the rest.`
+              : ""),
         );
         if (
           queryRunRef.current === expansionRequestId &&
@@ -2189,7 +2330,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
         );
       }
     },
-    [dismissContextMenu, endpoint, explorer, graphScope, rdf4jRepository, invalidateAsyncRequests, menu, pushHistory],
+    [dismissContextMenu, endpoint, explorer, graphScope, limits, rdf4jRepository, invalidateAsyncRequests, menu, pushHistory],
   );
 
   const expandNodes = useCallback(
@@ -2210,8 +2351,29 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
         const perNodeLimit = expandable.length === 1 ? 80 : 12;
         // Skip what is loaded, so expanding again brings the next links instead of the same ones.
         const loaded = loadedLinksOf(graphRef.current, expandable);
-        const bindings = await explorer.expand(expandable, perNodeLimit, undefined, loaded);
+        // Loaded statements that do not fit into the query come back: an answer made only of them is no proof that
+        // there are no more links, so page past them until something new or nothing at all comes back.
+        const skipsAllLoaded = expansionSkipsAllLoaded(expandable, loaded);
+        let offset = 0;
+        let bindings = await explorer.expand(expandable, perNodeLimit, undefined, loaded);
+        let lookedFurther = false;
+        while (!skipsAllLoaded && bindings.length && !bringsNewLinks(graphRef.current, bindings)) {
+          if (offset / perNodeLimit + 1 >= EXPAND_PAGE_LIMIT) {
+            lookedFurther = true;
+            break;
+          }
+          if (queryRunRef.current !== expansionRequestId) return false;
+          offset += perNodeLimit;
+          setStatus(`Expanding ${subject}: looking past ${offset.toLocaleString()} loaded links…`);
+          bindings = await explorer.expand(expandable, perNodeLimit, undefined, loaded, offset);
+        }
         if (queryRunRef.current !== expansionRequestId) return false;
+        if (lookedFurther) {
+          setStatus(
+            `The next ${(offset + perNodeLimit).toLocaleString()} links of ${subject} are all in the graph already, and there are too many loaded links to leave them out. Use Expand by relation to load the rest.`,
+          );
+          return true;
+        }
         const triples = bindingsToTriples(bindings);
         await withLabels(triples.flatMap((triple) => [triple.source, triple.predicate, triple.target]));
         if (queryRunRef.current !== expansionRequestId) return false;
@@ -2219,7 +2381,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
         const batch = createBatch(
           `Expanded ${subject}`,
           endpoint,
-          expandQuery(expandable, perNodeLimit, graphScope, Boolean(rdf4jRepository), loaded),
+          expandQuery(expandable, perNodeLimit, graphScope, Boolean(rdf4jRepository), loaded, offset),
           triples.length,
         );
         const merged = explorer.apply(
@@ -2348,12 +2510,71 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     [dismissContextMenu, endpoint, expandNodes, explorer, graphScope, rdf4jRepository, invalidateAsyncRequests, placeOnlyNewNodes, pushHistory, withLabels],
   );
 
+  /** Draws resources as cards of their own, without any of their statements (the Types page adds a class so). */
+  const addNodesToGraph = useCallback(
+    /** Resolves to false when something the user started meanwhile superseded the addition. */
+    async (terms: SparqlValue[]): Promise<boolean> => {
+      const ids = terms.map(sparqlNodeId);
+      invalidateAsyncRequests();
+      const runId = queryRunRef.current;
+      dismissContextMenu(true);
+      setIsQuerying(true);
+      const subject = ids.length === 1 ? compactTerm(terms[0].value, 60) : `${ids.length} resources`;
+      setStatus(`Adding ${subject}…`);
+      try {
+        // Drawn and placed at the size of their real labels, as other additions are.
+        await withLabels(ids);
+        if (queryRunRef.current !== runId) return false;
+        const currentGraph = graphRef.current;
+        const added = mergeResourceNodes(currentGraph, terms);
+        if (added === currentGraph) {
+          // A class only reached through rdf:type is drawn as its instances' colour unless Values shows types as nodes.
+          const drawnIds = new Set(canvasGraph(currentGraph, showValuesRef.current).nodes.map((node) => node.id));
+          setStatus(
+            ids.every((id) => drawnIds.has(id))
+              ? "Already in the graph."
+              : `${ids.length === 1 ? subject : "These resources"} already ${ids.length === 1 ? "is" : "are"} in the graph as a type. Turn on Values to show types as nodes.`,
+          );
+          if (ids.length === 1) setFocusedNodeId(ids[0]);
+          return true;
+        }
+        pushHistory();
+        const next = explorer.apply(added);
+        if (!currentGraph.nodes.length) {
+          layoutIntentRef.current = { mode: "replace", revision: next.revision };
+          setEdgeBends(new Map());
+          setEdgeRoutes(new Map());
+        } else {
+          placeOnlyNewNodes(currentGraph, next);
+        }
+        setGraph(next);
+        if (ids.length === 1) setFocusedNodeId(ids[0]);
+        const count = next.nodes.length - currentGraph.nodes.length;
+        setStatus(count === 1 && ids.length === 1 ? `Added ${subject}.` : `Added ${count.toLocaleString()} ${count === 1 ? "node" : "nodes"}.`);
+        return true;
+      } finally {
+        if (queryRunRef.current === runId) setIsQuerying(false);
+      }
+    },
+    [dismissContextMenu, explorer, invalidateAsyncRequests, placeOnlyNewNodes, pushHistory, withLabels],
+  );
+
   /**
    * Adds what "Add to graph" on the other Workbench pages queued: resources with their neighbourhood (as Expand
-   * would), statements as they are, and the results of queries.
+   * would), nodes alone (no statements), statements as they are, and the results of queries.
    */
   const addFromWorkbench = useCallback(
     async (additions: GraphAddition[]) => {
+      const nodeTerms = [
+        ...new Map(
+          additions.flatMap((entry) => {
+            if (entry.kind !== "node") return [];
+            const term = parseNTriplesTerm(entry.term);
+            const id = term ? sparqlNodeId(term) : undefined;
+            return term && id && isQueryableResource(id) ? [[id, term] as const] : [];
+          }),
+        ).values(),
+      ];
       const resourceIds = [
         ...new Set(
           additions.flatMap((entry) => {
@@ -2371,15 +2592,17 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
       });
       const queries = additions.flatMap((entry) => (entry.kind === "query" ? [entry.query] : []));
       // What the user starts meanwhile wins; the additions it interrupted are handed back for later.
+      if (nodeTerms.length && !(await addNodesToGraph(nodeTerms))) return additions;
+      const rest = additions.filter((entry) => entry.kind !== "node");
       if ((resourceIds.length || statements.length) && !(await addToGraph(resourceIds, statements, statementsQuery(statementEntries))))
-        return additions;
+        return rest;
       for (const [index, queryToAdd] of queries.entries()) {
         if (!(await execute(queryToAdd, false, endpoint, QUEUED_QUERY_ROW_LIMIT)))
           return queries.slice(index).map((text) => ({ kind: "query" as const, query: text }));
       }
       return [] as GraphAddition[];
     },
-    [addToGraph, endpoint, execute],
+    [addNodesToGraph, addToGraph, endpoint, execute],
   );
 
   // Takes the queue once the stored graph is back, whenever another tab adds to it and when this tab comes back into
@@ -4339,6 +4562,12 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
               }}
               onLoadRelations={() => void loadMenuPredicates(menu)}
               onExpandRelation={(option) => void expand(option)}
+              onLoadRelation={(amount) => {
+                if (menu.relation) void expand(menu.relation.option, amount);
+              }}
+              onCancelRelation={() =>
+                setMenu((current) => (current ? { ...current, phase: "ready", relation: undefined } : current))
+              }
               onSelectNeighbours={(mode) => updateSelectionFromContext(mode, menu.scopeNodeIds)}
               onGroup={() => {
                 createNamedGroup();
