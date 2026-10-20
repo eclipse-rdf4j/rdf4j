@@ -1277,6 +1277,66 @@ html[data-theme="dark"] .graph-explorer {
   text-align: center;
 }
 
+/* A filter that needs every selected value: "2 · all". */
+.graph-explorer #graph-explorer-app .facet-selected-count.is-all {
+  white-space: nowrap;
+}
+
+/* Whether a filter matches any or all of its selected values: two pill-shaped choices under its name. */
+.graph-explorer #graph-explorer-app .facet-match {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px 8px 28px;
+}
+
+.graph-explorer #graph-explorer-app .facet-match-label {
+  margin-right: 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.graph-explorer #graph-explorer-app .facet-match-option {
+  position: relative;
+  display: inline-flex;
+  min-height: 26px;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--panel);
+  font: 500 12px/1.3 var(--sans);
+  cursor: pointer;
+}
+
+.graph-explorer #graph-explorer-app .facet-match-option input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.graph-explorer #graph-explorer-app .facet-match-option:hover {
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line-soft));
+}
+
+.graph-explorer #graph-explorer-app .facet-match-option.is-selected {
+  border-color: var(--accent);
+  color: var(--ink);
+  background: var(--selected);
+  font-weight: 600;
+}
+
+.graph-explorer #graph-explorer-app .facet-match-option:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* Where the values come from, under the Filters heading: loading progress, then Refresh. */
 .graph-explorer #graph-explorer-app .filter-source {
   margin: 0;
@@ -1311,6 +1371,32 @@ html[data-theme="dark"] .graph-explorer {
   margin: 0;
   padding: 10px 16px 0;
   list-style: none;
+}
+
+/* The pills of one filter, with "or" (any of the values) or "and" (all of them) between them. */
+.graph-explorer #graph-explorer-app .filter-chip-group {
+  display: inline-flex;
+  max-width: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.graph-explorer #graph-explorer-app .filter-chip-joiner {
+  color: var(--muted);
+  font: 600 11px/1 var(--sans);
+}
+
+.graph-explorer #graph-explorer-app .filter-chip-group[data-mode="all"] .filter-chip-joiner {
+  color: var(--accent);
+}
+
+/* Filters always combine: a thin line between the groups. */
+.graph-explorer #graph-explorer-app .filter-chip-divider {
+  width: 1px;
+  height: 18px;
+  margin-right: 2px;
+  background: var(--line);
 }
 
 .graph-explorer #graph-explorer-app .filter-chips button {
@@ -3095,6 +3181,10 @@ html[data-theme="dark"] .graph-explorer #graph-explorer-app .map-shell iframe {
 
   .graph-explorer #graph-explorer-app .zoom-controls .workbench-action--icon {
     width: var(--workbench-touch-height);
+  }
+
+  .graph-explorer #graph-explorer-app .facet-match-option {
+    min-height: var(--workbench-touch-height);
   }
 }
 

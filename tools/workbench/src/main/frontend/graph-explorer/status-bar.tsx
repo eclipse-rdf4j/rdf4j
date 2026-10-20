@@ -25,6 +25,8 @@ export type StatusBarProps = {
   isTypeSelected: (typeId: string) => boolean;
   /** Whether any filter selects nodes: a chip then adds its type to the filters instead of selecting all of it. */
   filtersActive: boolean;
+  /** Whether the type filter needs every selected type (set to "all") rather than one of them. */
+  typeFilterNeedsAll?: boolean;
   onToggleType: (typeId: string) => void;
 };
 
@@ -38,6 +40,7 @@ export function StatusBar({
   statementCount,
   isTypeSelected,
   filtersActive,
+  typeFilterNeedsAll = false,
   onToggleType,
 }: StatusBarProps) {
   const nodeCount = drawnNodes.length;
@@ -80,7 +83,7 @@ export function StatusBar({
                     active
                       ? `Take ${type.label} out of the selection`
                       : filtersActive
-                        ? `Add ${type.label} to the type filter`
+                        ? `Add ${type.label} to the type filter${typeFilterNeedsAll ? " (nodes need every selected type)" : ""}`
                         : `Select the ${type.count.toLocaleString()} ${type.label} ${type.count === 1 ? "node" : "nodes"}`
                   }
                   style={{ "--legend-color": typeVisual(type.id).stroke } as CSSProperties}

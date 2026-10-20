@@ -12,12 +12,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { FACET_LIST_LIMIT } from "./explorer-config.ts";
 import type { FilterFacet, RangeDraft } from "./explorer-types.ts";
-import { formatRangeValue, generatedFacetQuery, type QueryRange } from "./facet-queries.ts";
+import { formatRangeValue, generatedFacetQuery, type ExactMatch } from "./facet-queries.ts";
+import { filterChipGroups, type FilterChip } from "./filter-chips.ts";
 import {
+  facetCombinable,
   facetCounts,
   facetIndex,
   RANGE_VALUE,
   toggleTypeInSelection,
+  type FacetMode,
   type RepositoryValues,
 } from "./graph-facets.ts";
 import type { GraphEdge, GraphNode } from "./graph-types.ts";
@@ -33,7 +36,7 @@ import {
   UNTYPED_IRI_TYPE,
 } from "./graph-visuals.ts";
 
-export type FilterChip = { facetId: string; valueId: string | null; text: string };
+export type { FilterChip };
 
 export type DisplayedFacet = FilterFacet & { searchHit: boolean };
 
@@ -45,13 +48,11 @@ export type FacetRepository = {
   labelOf: (id: string) => string | undefined;
   /** Moves whenever values or labels arrive. */
   version: number;
-  /** Which of the nodes have a selected value, or one inside the range, for the predicate, asked of the repository. */
-  confirm: (
-    predicate: string,
-    ids: readonly string[],
-    match: { values: string[] } | { range: QueryRange },
-    signal: AbortSignal,
-  ) => Promise<Set<string>>;
+  /**
+   * Which of the nodes have a selected value (all of them, for a filter set to "all"), or one inside the range, for the
+   * predicate, asked of the repository.
+   */
+  confirm: (predicate: string, ids: readonly string[], match: ExactMatch, signal: AbortSignal) => Promise<Set<string>>;
   wantLabels: (iris: readonly string[], priority: "shown" | "background") => void;
 };
 
@@ -69,6 +70,9 @@ export function useFacetFilters(input: {
   /** The selected values per filter; owned by the explorer because undo and storage include it. */
   selection: Map<string, Set<string>>;
   setSelection: Dispatch<SetStateAction<Map<string, Set<string>>>>;
+  /** The filters set to "all" (graph-facets.ts, FacetMode); owned by the explorer like the selection. */
+  modes: ReadonlyMap<string, FacetMode>;
+  setModes: Dispatch<SetStateAction<Map<string, FacetMode>>>;
   nodes: readonly GraphNode[];
   edges: readonly GraphEdge[];
   nodeById: ReadonlyMap<string, GraphNode>;
@@ -83,7 +87,7 @@ export function useFacetFilters(input: {
   scope?: string;
   repository?: FacetRepository;
 }) {
-  const { selection, setSelection, nodes, edges, nodeById, hiddenPredicates, onChange, needed, repository } = input;
+  const { selection, setSelection, modes, setModes, nodes, edges, nodeById, hiddenPredicates, onChange, needed, repository } = input;
   // Filters the user opened or closed by hand; the others follow the defaults of the panel.
   const [facetOpen, setFacetOpen] = useState<Map<string, boolean>>(() => new Map());
   const [showAll, setShowAll] = useState(false);
@@ -123,23 +127,26 @@ export function useFacetFilters(input: {
     [confirmed],
   );
   const model = useMemo(
-    () => facetCounts(index, selection, { ranges: rangeBounds, confirmed: confirmedIds }),
-    [index, selection, rangeBounds, confirmedIds],
+    () => facetCounts(index, selection, { ranges: rangeBounds, confirmed: confirmedIds, modes }),
+    [index, selection, rangeBounds, confirmedIds, modes],
   );
 
   // A filter on a predicate some nodes have more values for than were loaded: the repository says which of them match.
   useEffect(() => {
     if (!repository) return;
     const controller = new AbortController();
-    const wanted = new Map<string, { key: string; ids: string[]; match: { values: string[] } | { range: QueryRange } }>();
+    const wanted = new Map<string, { key: string; ids: string[]; match: ExactMatch }>();
     selection.forEach((values, facetId) => {
       const incomplete = index.incomplete.get(facetId);
       if (!values.size || !incomplete?.size) return;
       const bounds = rangeBounds.get(facetId);
       const range = index.ranges.get(facetId);
-      const match = values.has(RANGE_VALUE) && bounds && range
+      const match: ExactMatch = values.has(RANGE_VALUE) && bounds && range
         ? { range: { kind: range.kind, from: bounds.from, to: bounds.to } }
-        : { values: [...values].filter((value) => value !== RANGE_VALUE) };
+        : {
+            values: [...values].filter((value) => value !== RANGE_VALUE),
+            ...(modes.get(facetId) === "all" ? { mode: "all" as const } : {}),
+          };
       const ids = [...incomplete].sort();
       wanted.set(facetId, { key: JSON.stringify([ids, match]), ids, match });
     });
@@ -158,7 +165,7 @@ export function useFacetFilters(input: {
     });
     return () => controller.abort();
     // `confirmed` is read to skip settled checks, not to start new ones.
-  }, [index, selection, rangeBounds, repository?.confirm]);
+  }, [index, selection, rangeBounds, modes, repository?.confirm]);
 
   const facets = useMemo<FilterFacet[]>(
     () =>
@@ -210,6 +217,7 @@ export function useFacetFilters(input: {
       generatedFacetQuery(selection, {
         wikidata: false,
         scope: input.scope,
+        modes,
         ranges: new Map(
           facets.flatMap((facet) => {
             const draft = rangeDrafts.get(facet.id);
@@ -219,7 +227,7 @@ export function useFacetFilters(input: {
           }),
         ),
       }),
-    [facets, rangeDrafts, selection, input.scope],
+    [facets, rangeDrafts, selection, modes, input.scope],
   );
 
   const displayed = useMemo<DisplayedFacet[]>(() => {
@@ -259,6 +267,7 @@ export function useFacetFilters(input: {
           return [
             {
               facetId: facet.id,
+              facetLabel: facet.label,
               valueId: null,
               text: `${facet.label}: ${bound(draft.from, facet.range.min)} – ${bound(draft.to, facet.range.max)}`,
             },
@@ -268,14 +277,39 @@ export function useFacetFilters(input: {
           .filter((value) => selected.has(value.id))
           .map((value) => ({
             facetId: facet.id,
+            facetLabel: facet.label,
             valueId: value.id,
             text: facet.category === "type" ? value.label : `${facet.label}: ${value.label}`,
           }));
       }),
     [facets, rangeDrafts, selection],
   );
+  // The pills per filter, with "or" or "and" between the values of a filter (filter-chips.ts).
+  const chipGroups = useMemo(() => filterChipGroups(chips, modes), [chips, modes]);
 
-  const clear = useCallback(() => setSelection((current) => (current.size ? new Map() : current)), [setSelection]);
+  const clear = useCallback(() => {
+    setSelection((current) => (current.size ? new Map() : current));
+    setModes((current) => (current.size ? new Map() : current));
+  }, [setModes, setSelection]);
+
+  /** How a filter's selected values combine: "any" unless it was set to "all" (and can be, see facetCombinable). */
+  const modeOf = useCallback((facetId: string): FacetMode => (modes.get(facetId) === "all" ? "all" : "any"), [modes]);
+
+  /** Sets a filter to match any or all of its selected values. */
+  const setMode = useCallback(
+    (facet: Pick<FilterFacet, "id" | "range">, mode: FacetMode) => {
+      if (!facetCombinable(facet.id, Boolean(facet.range))) return;
+      setModes((current) => {
+        if ((current.get(facet.id) === "all") === (mode === "all")) return current;
+        const next = new Map(current);
+        if (mode === "all") next.set(facet.id, "all");
+        else next.delete(facet.id);
+        return next;
+      });
+      onChange();
+    },
+    [onChange, setModes],
+  );
 
   const toggleValue = useCallback(
     (facetId: string, valueId: string, checked: boolean) => {
@@ -381,11 +415,14 @@ export function useFacetFilters(input: {
     displayed,
     listed,
     chips,
+    chipGroups,
     activeCount,
     hasActive: activeCount > 0,
     matches,
     generatedQuery,
     clear,
+    modeOf,
+    setMode,
     toggleValue,
     removeValue,
     updateRange,

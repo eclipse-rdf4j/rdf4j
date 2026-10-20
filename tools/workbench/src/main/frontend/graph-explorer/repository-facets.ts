@@ -19,7 +19,7 @@
  * servlet's row limit, which cuts results off without saying so. Two requests run at a time, and none starts while the
  * explorer's own queries run. Entries live in memory for the session and, through `persistence`, in IndexedDB.
  */
-import { BLANK_VALUE_ID, LONG_LITERAL_VALUE_ID } from "./facet-value-ids.ts";
+import { BLANK_VALUE_ID, LONG_LITERAL_LENGTH, LONG_LITERAL_VALUE_ID } from "./facet-value-ids.ts";
 import { isQueryableResource, isSparqlTerm, sparqlNodeId, type SparqlTerm } from "./rdf-terms.ts";
 import {
   predicateCensusQuery,
@@ -36,8 +36,8 @@ export const STATEMENTS_PER_NODE = 101;
 export const VALUES_PER_CELL = 1000;
 /** Statements a census reads per large node before it stops counting. */
 export const CENSUS_CAP = 10_001;
-/** A literal longer than this only records that the node has the predicate. */
-export const LONG_LITERAL_LENGTH = 1024;
+/** A literal longer than this only records that the node has the predicate (facet-value-ids.ts). */
+export { LONG_LITERAL_LENGTH };
 export { LONG_LITERAL_VALUE_ID };
 
 const DEFAULT_MAX_ROWS = 5000;

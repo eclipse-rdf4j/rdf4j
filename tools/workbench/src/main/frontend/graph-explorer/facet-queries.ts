@@ -19,12 +19,12 @@ import {
   rangeDaySparql,
   rangeLexicalSparql,
 } from "./facet-ranges.ts";
-import { TYPE_FACET_ID } from "./graph-facets.ts";
+import { facetCombinable, NO_MATCH_VALUE, TYPE_FACET_ID, type FacetModes } from "./graph-facets.ts";
 import { intrinsicFacetSparqlFilter } from "./graph-filters.ts";
 import { UNTYPED_IRI_TYPE } from "./graph-visuals.ts";
 import { sparqlFacetValueToken } from "./rdf-terms.ts";
 import { iriToken, scoped, resourceToken, type GraphScope } from "./rdf-vocabulary.ts";
-import { BLANK_VALUE_ID } from "./facet-value-ids.ts";
+import { BLANK_VALUE_ID, LONG_LITERAL_LENGTH, LONG_LITERAL_VALUE_ID } from "./facet-value-ids.ts";
 
 export type QueryRange = { kind: "number" | "date"; from: string; to: string };
 
@@ -57,6 +57,19 @@ export function exactMatchQuery(
   return `SELECT DISTINCT ?s WHERE {
  ${scoped(`VALUES ?s { ${nodes} } ?s ${iriToken(predicate)} ?o . ${condition}`, scope)}
 }`;
+}
+
+/** The values of a filter to check on the server, and whether a node needs all of them (FacetMode). */
+export type ExactMatch = { values: string[]; mode?: "any" | "all" } | { range: QueryRange };
+
+/**
+ * The queries that check which of the nodes match a filter on the server: one (exactMatchQuery) for a range or for
+ * any of the values, and one per value when the node needs all of them; a node matches when every query returns it.
+ */
+export function exactMatchQueries(ids: string[], predicate: string, match: ExactMatch, scope: GraphScope = "default") {
+  if ("range" in match || match.mode !== "all" || match.values.length < 2)
+    return [exactMatchQuery(ids, predicate, "range" in match ? match : { values: match.values }, scope)];
+  return match.values.map((value) => exactMatchQuery(ids, predicate, { values: [value] }, scope));
 }
 
 /** A range filter as SPARQL: numbers compare numerically, dates by their ISO day (so date and dateTime both work). */
@@ -95,9 +108,12 @@ export function formatRangeValue(kind: "number" | "date", value: number) {
 
 export function generatedFacetQuery(
   selectedFacetValues: Map<string, Set<string>>,
-  options: { wikidata: boolean; ranges?: ReadonlyMap<string, QueryRange>; scope?: GraphScope },
+  options: { wikidata: boolean; ranges?: ReadonlyMap<string, QueryRange>; scope?: GraphScope; modes?: FacetModes },
 ) {
   const scope = options.scope ?? "default";
+  // A filter set to "all" with several values (not a range): the node needs each value, so each is asked on its own.
+  const needsAll = (facetId: string, values: ReadonlySet<string>) =>
+    options.modes?.get(facetId) === "all" && values.size > 1 && facetCombinable(facetId, Boolean(options.ranges?.get(facetId)));
   const activeFacets = [...selectedFacetValues.entries()].filter(
     ([, values]) => values.size > 0,
   );
@@ -124,6 +140,14 @@ export function generatedFacetQuery(
         .filter((value) => value !== UNTYPED_IRI_TYPE.id)
         .map(sparqlFacetValueToken)
         .filter((value): value is string => Boolean(value));
+      if (needsAll(facetId, values)) {
+        // Every type: "No type" next to a type, or a type that cannot be written, leaves nothing to match.
+        const each = typedTokens.map((token, position) =>
+          `EXISTS { ${scoped(`?focus ${relation} ${token} .`, scope, `__facetType${index}_${position}`)} }`);
+        lines.push(`  FILTER(${untypedSelected || typedTokens.length !== values.size ? "false" : each.join(" && ")})`);
+        index += 1;
+        return;
+      }
       const typedVariable = `?facetTypeValue${index}`;
       const typedMatch = typedTokens.length
         ? `EXISTS { ${scoped(`?focus ${relation} ${typedVariable} .`, scope, `__facetType${index}`)} VALUES ${typedVariable} { ${typedTokens.join(" ")} } }`
@@ -132,6 +156,22 @@ export function generatedFacetQuery(
         ? `isIRI(?focus) && NOT EXISTS { ${scoped(`?focus ${relation} ?anyType .`, scope, `__facetUntyped${index}`)} }`
         : "false";
       lines.push(`  FILTER(${untypedMatch} || ${typedMatch})`);
+      index += 1;
+      return;
+    }
+    if (needsAll(facetId, values)) {
+      // One statement per value, each in its own graph; merged values become what they stand for.
+      [...values].forEach((value, position) => {
+        const each = `?facetValue${index}_${position}`;
+        const statement = (object: string) => `  ${scoped(`?focus ${relation} ${object} .`, scope, `__facet${index}_${position}`)}`;
+        if (value === BLANK_VALUE_ID) lines.push(statement(each), `  FILTER(isBlank(${each}))`);
+        else if (value === LONG_LITERAL_VALUE_ID)
+          lines.push(statement(each), `  FILTER(isLiteral(${each}) && STRLEN(STR(${each})) > ${LONG_LITERAL_LENGTH})`);
+        else {
+          const token = value === NO_MATCH_VALUE ? null : sparqlFacetValueToken(value);
+          lines.push(token ? statement(token) : "  FILTER(false)");
+        }
+      });
       index += 1;
       return;
     }

@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { dataRevisionKey, readDataRevision, watchDataRevision } from "./data-revision.ts";
 import type { SparqlResponse } from "./explorer-types.ts";
-import { exactMatchQuery, type QueryRange } from "./facet-queries.ts";
+import { exactMatchQueries, type ExactMatch } from "./facet-queries.ts";
 import {
   facetNamespace,
   facetPersistence,
@@ -169,16 +169,25 @@ export function useRepositoryFacets(input: {
     labels.clear();
   }, [store, labels]);
 
-  /** Which of the nodes have a selected value, or one inside the range, for the predicate: asked of the repository. */
+  /**
+   * Which of the nodes have a selected value (every one of them, for a filter set to "all"), or one inside the range,
+   * for the predicate: asked of the repository, one query per value for "all", keeping the nodes every query returns.
+   */
   const confirm = useCallback(
-    async (predicate: string, ids: readonly string[], match: { values: string[] } | { range: QueryRange }, signal: AbortSignal) => {
+    async (predicate: string, ids: readonly string[], match: ExactMatch, signal: AbortSignal) => {
       const matched = new Set<string>();
       for (let offset = 0; offset < ids.length; offset += CONFIRM_BATCH) {
-        await foregroundRef.current.idle();
-        const query = exactMatchQuery(ids.slice(offset, offset + CONFIRM_BATCH), predicate, match, scope);
-        for (const row of (await execute(endpoint, query, signal)).results?.bindings ?? []) {
-          if (isSparqlTerm(row.s)) matched.add(sparqlNodeId(row.s));
+        let batch: string[] | undefined;
+        for (const query of exactMatchQueries(ids.slice(offset, offset + CONFIRM_BATCH), predicate, match, scope)) {
+          await foregroundRef.current.idle();
+          const found = new Set<string>();
+          for (const row of (await execute(endpoint, query, signal)).results?.bindings ?? []) {
+            if (isSparqlTerm(row.s)) found.add(sparqlNodeId(row.s));
+          }
+          batch = batch === undefined ? [...found] : batch.filter((id) => found.has(id));
+          if (!batch.length) break;
         }
+        batch?.forEach((id) => matched.add(id));
       }
       return matched;
     },

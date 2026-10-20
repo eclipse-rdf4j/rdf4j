@@ -73,6 +73,24 @@ export type Facet = {
 
 export type FacetSelection = ReadonlyMap<string, ReadonlySet<string>>;
 
+/**
+ * How the selected values of one filter combine: "any" (a node with one of them matches; the default) or "all" (a
+ * node needs every one of them). Filters always combine with each other: a node must match every filter.
+ */
+export type FacetMode = "any" | "all";
+
+/** The filters set to "all", by id; a filter that is not listed matches any of its values. */
+export type FacetModes = ReadonlyMap<string, FacetMode>;
+
+/**
+ * Whether a filter can be switched to "all": the type filter and property filters, but not a range (it matches a value
+ * inside it) and not node kind, datatype or language, of which a node has at most one.
+ */
+export function facetCombinable(facetId: string, hasRange: boolean) {
+  const category = categoryOf(facetId);
+  return category === "type" || (category === "predicate" && !hasRange);
+}
+
 /** A node's values from the repository (repository-facets.ts): predicate → values and whether they are all there. */
 export type RepositoryValues = (nodeId: string) =>
   | { predicates: ReadonlyMap<string, { values: readonly string[]; complete: boolean }> }
@@ -94,7 +112,7 @@ export type FacetIndexInput = {
   labelOf?: (id: string) => string | undefined;
 };
 
-export type FacetModelInput = FacetIndexInput & { selection: FacetSelection };
+export type FacetModelInput = FacetIndexInput & { selection: FacetSelection; modes?: FacetModes };
 
 export type FacetModel = {
   facets: Facet[];
@@ -189,8 +207,10 @@ export function facetIndex(input: FacetIndexInput): FacetIndex {
 }
 
 /**
- * Faceted filtering: values are OR within a filter and AND across filters, and the counts of a filter are taken over
- * the nodes that match all the other filters, so each count says how many nodes choosing that value would select.
+ * Faceted filtering: a node must match every filter; within a filter it needs one of the selected values, or all of
+ * them when the filter is set to "all" (`modes`, see facetCombinable). The counts of an "any" filter are taken over the
+ * nodes that match all the other filters, so each count says how many nodes choosing that value would select; the
+ * counts of an "all" filter are taken over the matches, so each says how many would remain after adding that value.
  * Values (and whole filters) that would select nothing are left out unless they are selected. A range selection
  * (RANGE_VALUE) matches the values between `ranges`' bounds; `confirmed` lists nodes the server found to match a
  * filter whose values were not all loaded for them.
@@ -201,18 +221,25 @@ export function facetCounts(
   options: {
     ranges?: ReadonlyMap<string, { from: string; to: string }>;
     confirmed?: ReadonlyMap<string, ReadonlySet<string>>;
+    modes?: FacetModes;
   } = {},
 ): FacetModel {
   const { nodes, valuesByNode, allValues } = index;
+  // The filters a node must match every selected value of: switched to "all", combinable, and not a range.
+  const needsAll = new Set<string>();
   const activeFilters = [...selection]
     .filter(([, values]) => values.size > 0)
     .map(([facetId, values]): [string, ReadonlySet<string>] => {
       const bounds = options.ranges?.get(facetId);
       const range = index.ranges.get(facetId);
-      if (!values.has(RANGE_VALUE) || !bounds || !range) return [facetId, values];
+      if (!values.has(RANGE_VALUE) || !bounds || !range) {
+        if (options.modes?.get(facetId) === "all" && facetCombinable(facetId, false) && !values.has(RANGE_VALUE))
+          needsAll.add(facetId);
+        return [facetId, values];
+      }
       return [facetId, valuesInRange({ range }, bounds.from, bounds.to)];
     });
-  // The filters each node fails; a node that fails one filter still counts for that filter's own values.
+  // The filters each node fails; a node that fails one "any" filter still counts for that filter's own values.
   const failures = new Map<string, string[]>();
   const matches = new Set<string>();
   nodes.forEach((node) => {
@@ -221,6 +248,10 @@ export function facetCounts(
       const values = facets?.get(facetId);
       if (options.confirmed?.get(facetId)?.has(node.id)) return [];
       if (!values) return [facetId];
+      if (needsAll.has(facetId)) {
+        for (const value of selected) if (!values.has(value)) return [facetId];
+        return [];
+      }
       for (const value of selected) if (values.has(value)) return [];
       return [facetId];
     });
@@ -232,7 +263,7 @@ export function facetCounts(
   const coverage = new Map<string, number>();
   nodes.forEach((node) => {
     const failed = failures.get(node.id)!;
-    if (failed.length > 1) return;
+    if (failed.length > 1 || (failed.length && needsAll.has(failed[0]))) return;
     valuesByNode.get(node.id)?.forEach((values, facetId) => {
       if (failed.length && failed[0] !== facetId) return;
       coverage.set(facetId, (coverage.get(facetId) ?? 0) + 1);
@@ -281,7 +312,7 @@ export function facetCounts(
 
 /** The filter model in one call (facetIndex, then facetCounts). */
 export function facetModel(input: FacetModelInput): FacetModel {
-  return facetCounts(facetIndex(input), input.selection);
+  return facetCounts(facetIndex(input), input.selection, { modes: input.modes });
 }
 
 function valueEntry(index: FacetIndex, facetId: string, category: FacetCategory, id: string, count: number): FacetEntry {
@@ -402,7 +433,7 @@ export function facetValuesShown<T extends { id: string; label: string }>(
 
 /**
  * A legend chip: its type joins the type filter, or leaves it when it is there (the filter goes when no type is left).
- * Other filters stay; the types of the filter select together (OR), the filters together (AND).
+ * Other filters stay; a node needs one of the filter's types, or all of them when the filter is set to "all".
  */
 export function toggleTypeInSelection(
   selection: ReadonlyMap<string, ReadonlySet<string>>,

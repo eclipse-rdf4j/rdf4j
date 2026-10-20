@@ -15,3 +15,5 @@
 export const BLANK_VALUE_ID = "__rdf_blank_value__";
 /** A literal too long to list; the node only records that it has the predicate. */
 export const LONG_LITERAL_VALUE_ID = "__rdf_long_literal__";
+/** Literals longer than this many characters are merged into LONG_LITERAL_VALUE_ID. */
+export const LONG_LITERAL_LENGTH = 1024;

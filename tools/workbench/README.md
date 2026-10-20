@@ -241,8 +241,10 @@ deployment policy (`query-execution`, `menu.item.graph.visible`) applies.
   and only their strongest links (`strongestLinks`). The Triples view pages by 500 rows and the Filters panel lists
   12 values at a time. The servlet's optional `row-limit` parameter caps the rows of one query (queued "Add to graph"
   queries use 5,000).
-- `graph-facets.ts` is the filter model: OR within a filter, AND across filters, counts taken over the nodes that match
-  the other filters (so a filter's choices say what they would select), ranges for numbers and dates.
+- `graph-facets.ts` is the filter model: AND across filters; within a filter OR, or AND for a type or property filter
+  switched to "All values" (`FacetMode`, `facetCombinable`). The counts of an OR filter are taken over the nodes that
+  match the other filters (so its choices say what they would select), those of an AND filter over the matches (so
+  they narrow as values are picked); ranges for numbers and dates.
 - `src/main/frontend/graph-explorer/STYLE-MAP.md` records how the explorer's stylesheet maps onto the Workbench design
   system; `node scripts/css-inventory.mjs --print` lists the current class inventory.
 - The Playwright specs `workbench-graph-explorer*.spec.js` in `e2e/tests` cover navigation, mount/unmount, the Query

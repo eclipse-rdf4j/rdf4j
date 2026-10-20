@@ -25,7 +25,7 @@ import { escapeStep } from "./graph-dismissal.ts";
 import { ARROW_KEYS, nodeInDirection } from "./graph-keyboard.ts";
 import { createBatch, createStarStressBatch, loadedStatus, resultCut } from "./load-batches.ts";
 import { formatRangeValue, generatedFacetQuery } from "./facet-queries.ts";
-import { facetModel, NO_MATCH_VALUE, TYPE_FACET_ID, valuesInRange, type Facet } from "./graph-facets.ts";
+import { facetModel, NO_MATCH_VALUE, TYPE_FACET_ID, valuesInRange, type Facet, type FacetMode } from "./graph-facets.ts";
 import { nodeDetails } from "./node-details.ts";
 import { applyNodeTypes, LABEL_CHUNKS, labelLookupIds, lookupTypes, LookupRetries, needsTypes, nextTypeRound, resolveLabels, statedTypes, typeRoundSize, typesFromBindings, viewBounds } from "./metadata-lookup.ts";
 import { useStoredWorkspace } from "./use-stored-workspace.ts";
@@ -189,6 +189,12 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
   const [selectedFacetValues, setSelectedFacetValues] = useState<
     Map<string, Set<string>>
   >(new Map());
+  /** The filters set to match all of their selected values (absent: any of them); kept, undone and cleared with them. */
+  const [facetModes, setFacetModes] = useState<Map<string, FacetMode>>(new Map());
+  const clearFacetFilters = useCallback(() => {
+    setSelectedFacetValues(new Map());
+    setFacetModes(new Map());
+  }, []);
   const [manualSelectedNodeIds, setManualSelectedNodeIds] = useState<
     Set<string>
   >(new Set());
@@ -215,6 +221,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
   const provenanceBatchesRef = useRef(provenanceBatches);
   const manualSelectedNodeIdsRef = useRef(manualSelectedNodeIds);
   const facetValuesRef = useRef(selectedFacetValues);
+  const facetModesRef = useRef(facetModes);
   /** The filters' range texts and how to put them back, from `useFacetFilters` (set once it is called). */
   const rangeDraftsRef = useRef<ReadonlyMap<string, RangeDraft>>(new Map());
   const restoreRangeDraftsRef = useRef<(drafts: ReadonlyMap<string, RangeDraft>) => void>(() => {});
@@ -364,6 +371,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
   provenanceBatchesRef.current = provenanceBatches;
   manualSelectedNodeIdsRef.current = manualSelectedNodeIds;
   facetValuesRef.current = selectedFacetValues;
+  facetModesRef.current = facetModes;
   focusedNodeRef.current = focusedNodeId;
   if (interactiveTransformTimerRef.current === null) {
     transformRef.current = transform;
@@ -667,6 +675,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
       })),
       facetValues: [...facetValuesRef.current].map(([facetId, values]) => [facetId, [...values]]),
       rangeDrafts: [...rangeDraftsRef.current],
+      facetModes: [...facetModesRef.current],
     }),
     [],
   );
@@ -683,6 +692,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     setManualSelectedNodeIds(new Set(snapshot.selectedNodeIds));
     // The filters come back as they were, like the selection.
     setSelectedFacetValues(new Map(snapshot.facetValues.map(([facetId, values]) => [facetId, new Set(values)])));
+    setFacetModes(new Map(snapshot.facetModes ?? []));
     restoreRangeDraftsRef.current(new Map(snapshot.rangeDrafts));
     setNamedGroups(
       snapshot.namedGroups.map((group) => ({
@@ -723,7 +733,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     setManualSelectedNodeIds(new Set(saved.selectedNodeIds));
     setFocusedNodeId(saved.focusedNodeId);
     setFocusedEdgeId(null);
-    setSelectedFacetValues(new Map());
+    clearFacetFilters();
     // A focused node dims the rest of the graph; its card says why.
     setInspectorOpen(Boolean(saved.focusedNodeId));
     setGraphScope(saved.scope ?? "default");
@@ -904,6 +914,8 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
   const filters = useFacetFilters({
     selection: selectedFacetValues,
     setSelection: setSelectedFacetValues,
+    modes: facetModes,
+    setModes: setFacetModes,
     nodes: filterNodes,
     edges: graph.edges,
     nodeById: metadataNodeById,
@@ -1972,7 +1984,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
           setFocusedNodeId(null);
           setFocusedEdgeId(null);
           setHoveredNodeId(null);
-          setSelectedFacetValues(new Map());
+          clearFacetFilters();
           setManualSelectedNodeIds(new Set());
           setNamedGroups([]);
           setPathHighlight(null);
@@ -2934,7 +2946,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
   const takeSelectionToEdit = (): Set<string> | null => {
     if (!filters.hasActive) return null;
     const base = new Set(selectionToEdit(true, filters.matches, manualSelectedNodeIds));
-    setSelectedFacetValues(new Map());
+    clearFacetFilters();
     return base;
   };
 
@@ -3322,7 +3334,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
       setStatus("The selected nodes share no neighbours in the loaded graph.");
       return;
     }
-    setSelectedFacetValues(new Map());
+    clearFacetFilters();
     setManualSelectedNodeIds(common);
     setPathHighlight({
       nodeIds: new Set([...selectedNodeIdList, ...common]),
@@ -3376,7 +3388,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
           ? new Set([...base, ...neighbors])
           : neighbors;
     }
-    setSelectedFacetValues(new Map());
+    clearFacetFilters();
     setManualSelectedNodeIds(next);
     setFocusedNodeId(null);
     setPathHighlight(null);
@@ -3480,7 +3492,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
       }),
     );
     setManualSelectedNodeIds(remainingSelection);
-    setSelectedFacetValues(new Map());
+    clearFacetFilters();
     // The card of a node that stays stays open; the card of a hidden node closes.
     const focusStays = focusedNodeRef.current !== null && !nodeIds.has(focusedNodeRef.current);
     if (!focusStays) {
@@ -3516,7 +3528,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     setManualSelectedNodeIds((current) =>
       new Set([...current].filter((nodeId) => !cluster.has(nodeId))),
     );
-    setSelectedFacetValues(new Map());
+    clearFacetFilters();
     setPathHighlight(null);
     setStatus(`Hid ${cluster.size} leaf ${cluster.size === 1 ? "neighbour" : "neighbours"}.`);
   };
@@ -3596,7 +3608,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     setEdgeRoutes(new Map());
     setGraph(stressGraph);
     setProvenanceBatches([createStarStressBatch()]);
-    setSelectedFacetValues(new Map());
+    clearFacetFilters();
     setNamedGroups([]);
     setManualSelectedNodeIds(new Set());
     setFocusedNodeId(STAR_STRESS_ROOT_ID);
@@ -3621,7 +3633,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     graphRef.current = next; setGraph(next);
     const fitted = fitBoxes(next.nodes.map(node => ({x:node.x ?? 0,y:node.y ?? 0,width:220,height:50})));
     transformRef.current = fitted; setTransform(fitted);
-    setNamedGroups([]); setProvenanceBatches([]); setSelectedFacetValues(new Map());
+    setNamedGroups([]); setProvenanceBatches([]); clearFacetFilters();
     setManualSelectedNodeIds(new Set()); setFocusedNodeId(null); setHoveredNodeId(null); setPathHighlight(null);
     setFilterSidebarOpen(false); setInspectorOpen(false); setNavigatorOpen(false); setProvenanceOpen(false); setViewMode("graph");
     setStatus("50,000 nodes and 50,000 edges loaded.");
@@ -3641,7 +3653,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     setProvenanceBatches([]);
     setFocusedNodeId(null);
     setHoveredNodeId(null);
-    setSelectedFacetValues(new Map());
+    clearFacetFilters();
     setNamedGroups([]);
     setManualSelectedNodeIds(new Set());
     setPathHighlight(null);
@@ -3920,7 +3932,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                     type="button"
                     aria-label={filters.hasActive ? `Clear the filters that select ${selectedNodeIds.size} ${selectedNodeIds.size === 1 ? "node" : "nodes"}` : `Clear the selection of ${selectedNodeIds.size} ${selectedNodeIds.size === 1 ? "node" : "nodes"}`}
                     onClick={() => {
-                      setSelectedFacetValues(new Map());
+                      clearFacetFilters();
                       setManualSelectedNodeIds(new Set());
                     }}
                   >
@@ -4511,7 +4523,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
               onSaveGroup={createNamedGroup}
               onClearPath={() => setPathHighlight(null)}
               onSelectGroup={(group) => {
-                setSelectedFacetValues(new Map());
+                clearFacetFilters();
                 setManualSelectedNodeIds(new Set(group.nodeIds));
               }}
               onDeleteGroup={(group) => {
@@ -4543,7 +4555,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
               }}
               onSelectNodes={(nodeIds) => {
                 // As the group list does: a chosen pair is the selection, whatever the filters selected before.
-                setSelectedFacetValues(new Map());
+                clearFacetFilters();
                 setManualSelectedNodeIds(new Set(nodeIds));
               }}
             />
@@ -4558,6 +4570,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
             statementCount={graph.edges.length}
             isTypeSelected={(typeId) => filters.isTypeSelected(TYPE_FACET_ID, typeId)}
             filtersActive={filters.hasActive}
+            typeFilterNeedsAll={filters.modeOf(TYPE_FACET_ID) === "all"}
             onToggleType={(typeId) => filters.toggleType(TYPE_FACET_ID, typeId)}
           />
 

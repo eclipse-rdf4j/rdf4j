@@ -21,15 +21,16 @@ const {
 } = require('./workbench-test-helpers.js');
 
 // The Graph page's filters: the filters follow what is still selectable, numbers filter by range, active filters are
-// chips that remove themselves, and a search opens the filters that contain a matching value.
+// chips that remove themselves, a filter can need all of its values, and a search opens the filters that contain a
+// matching value.
 const REPOSITORY_ID = uniqueRepositoryId('graph-filters');
 const DATA = `
 @prefix ex: <http://example.org/filters/> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
-ex:alice a ex:Person ; rdfs:label "Alice" ; ex:age 39 ; ex:worksFor ex:acme .
+ex:alice a ex:Person, ex:Manager ; rdfs:label "Alice" ; ex:age 39 ; ex:worksFor ex:acme .
 ex:bob a ex:Person ; rdfs:label "Bob" ; ex:age 34 ; ex:worksFor ex:acme .
-ex:carol a ex:Person ; rdfs:label "Carol" ; ex:age 46 ; ex:worksFor ex:globex .
+ex:carol a ex:Person, ex:Manager ; rdfs:label "Carol" ; ex:age 46 ; ex:worksFor ex:globex .
 ex:dave a ex:Person ; rdfs:label "Dave" ; ex:age 29 .
 ex:acme a ex:Organization ; rdfs:label "Acme" ; ex:founded "1999-04-01"^^xsd:date .
 ex:globex a ex:Organization ; rdfs:label "Globex" ; ex:founded "2005-10-10"^^xsd:date .
@@ -88,6 +89,28 @@ test('numbers filter by range and active filters are chips that remove themselve
     await chip.click();
     await expect(panel.locator('.filter-chips')).toHaveCount(0);
     await expect(page.locator('.graph-explorer .graph-node.is-selected')).toHaveCount(0);
+});
+
+test('a filter set to all values needs every one of them, and the active filters say "and"', async ({ page }) => {
+    const panel = await openFilters(page);
+    const matching = panel.locator('.filter-sidebar-header small');
+    await panel.locator('.facet-value', { hasText: 'Person' }).click();
+    await panel.locator('.facet-value', { hasText: 'Manager' }).click();
+    await expect(matching).toHaveText('4 of 6 nodes match');
+    await expect(panel.locator('.filter-chips .filter-chip-joiner')).toHaveText(['or']);
+
+    const type = panel.locator('.filter-facet').filter({ has: page.locator('summary strong', { hasText: /^Type$/ }) });
+    await type.locator('.facet-match-option', { hasText: 'All values' }).click();
+    await expect(type.getByRole('radio', { name: 'All values' })).toBeChecked();
+    await expect(matching).toHaveText('2 of 6 nodes match');
+    await expect(page.locator('.graph-explorer .graph-node.is-selected')).toHaveCount(2);
+    await expect(panel.locator('.filter-chips button')).toHaveText(['Manager', 'Person']);
+    await expect(panel.locator('.filter-chips .filter-chip-joiner')).toHaveText(['and']);
+    await expect(type.locator('.facet-selected-count')).toHaveText('2 · all');
+
+    await type.locator('.facet-match-option', { hasText: 'Any value' }).click();
+    await expect(matching).toHaveText('4 of 6 nodes match');
+    await expect(panel.locator('.filter-chips .filter-chip-joiner')).toHaveText(['or']);
 });
 
 test('a search opens the filters that contain a matching value', async ({ page }) => {

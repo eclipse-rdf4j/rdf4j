@@ -136,6 +136,76 @@ class GraphExplorerFacetRegressionTest {
 				.containsExactlyInAnyOrderElementsOf(expected);
 	}
 
+	static Stream<Arguments> allSelections() {
+		List<Object> colors = List.of("urn:color", List.of("urn:red", "urn:blue"));
+		return Stream.of(
+				// Any (the default): one of the values is enough.
+				Arguments.of(List.of(colors), List.of(), Set.of("urn:a", "urn:b", "urn:c", "urn:e")),
+				// All: both colours are needed; the other filters keep matching any of their values.
+				Arguments.of(List.of(colors), List.of("urn:color"), Set.of("urn:a")),
+				Arguments.of(List.of(colors, List.of(TYPE, List.of("urn:Person", "urn:Org"))), List.of("urn:color"),
+						Set.of("urn:a")),
+				Arguments.of(List.of(List.of(TYPE, List.of("urn:Person", "urn:Agent"))), List.of(TYPE),
+						Set.of("urn:a")),
+				Arguments.of(List.of(List.of(TYPE, List.of("urn:Person", "urn:Agent")),
+						List.of("urn:color", List.of("urn:red"))), List.of(TYPE), Set.of("urn:a")),
+				Arguments.of(List.of(List.of(TYPE, List.of(UNTYPED, "urn:Person"))), List.of(TYPE), Set.of()),
+				// The merged blank value stands for "a blank node", next to the named value.
+				Arguments.of(List.of(List.of("urn:color", List.of("urn:red", "__rdf_blank_value__"))),
+						List.of("urn:color"), Set.of("urn:e")));
+	}
+
+	@ParameterizedTest
+	@MethodSource("allSelections")
+	void aFilterSetToAllNeedsEveryOneOfItsValues(List<List<Object>> selection, List<String> allFacets,
+			Set<String> focus) throws Exception {
+		add("urn:a", "urn:color", iri("urn:red"));
+		add("urn:a", "urn:color", iri("urn:blue"));
+		add("urn:b", "urn:color", iri("urn:red"));
+		add("urn:c", "urn:color", iri("urn:blue"));
+		add("urn:e", "urn:color", iri("urn:red"));
+		add("urn:e", "urn:color", vf.createBNode("paint"));
+		connection.add(iri("urn:a"), RDF.TYPE, iri("urn:Person"));
+		connection.add(iri("urn:a"), RDF.TYPE, iri("urn:Agent"));
+		connection.add(iri("urn:b"), RDF.TYPE, iri("urn:Person"));
+		connection.add(iri("urn:c"), RDF.TYPE, iri("urn:Agent"));
+		Set<String> expected = new HashSet<>();
+		try (var statements = connection.getStatements(null, null, null)) {
+			while (statements.hasNext()) {
+				var statement = statements.next();
+				if (focus.contains(statement.getSubject().stringValue())
+						|| focus.contains(statement.getObject().stringValue())) {
+					expected.add(statement.getSubject().stringValue() + " " + statement.getPredicate().stringValue()
+							+ " " + statement.getObject().stringValue());
+				}
+			}
+		}
+		List<List<String>> modes = allFacets.stream().map(facetId -> List.of(facetId, "all")).toList();
+		assertThat(edges(generated(Map.of("action", "facet", "selection", selection, "modes", modes))))
+				.containsExactlyInAnyOrderElementsOf(expected);
+	}
+
+	@Test
+	void aFilterSetToAllFindsEachValueInItsOwnGraph() throws Exception {
+		connection.add(iri("urn:d"), iri("urn:color"), iri("urn:red"), iri("urn:g1"));
+		connection.add(iri("urn:d"), iri("urn:color"), iri("urn:blue"), iri("urn:g2"));
+		connection.add(iri("urn:b"), iri("urn:color"), iri("urn:red"), iri("urn:g1"));
+		SimpleDataset dataset = new SimpleDataset();
+		dataset.addDefaultGraph(RDF4J.NIL);
+		dataset.addNamedGraph(iri("urn:g1"));
+		dataset.addNamedGraph(iri("urn:g2"));
+		// The implicit union default graph must not hide a shared graph variable between the two values.
+		assertThat(rows("SELECT * WHERE { ?s ?p ?o }", dataset)).isEmpty();
+		String query = generated(Map.of("action", "facet", "scope", "all", "selection",
+				List.of(List.of("urn:color", List.of("urn:red", "urn:blue"))), "modes",
+				List.of(List.of("urn:color", "all"))));
+		Set<String> found = new HashSet<>();
+		for (BindingSet row : rows(query, dataset)) {
+			found.add(text(row, "source") + " " + text(row, "predicate") + " " + text(row, "target"));
+		}
+		assertThat(found).containsExactlyInAnyOrder("urn:d urn:color urn:red", "urn:d urn:color urn:blue");
+	}
+
 	@Test
 	void wikidataTypesAndPropertyFiltersApplyToIncomingAndOutgoingStatements() throws Exception {
 		add("urn:a", "http://www.wikidata.org/prop/direct/P31", iri("urn:Person"));
