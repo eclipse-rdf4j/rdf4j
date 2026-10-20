@@ -173,6 +173,21 @@ class GraphExplorerQueryTest {
 		}
 	}
 
+	@ParameterizedTest(name = "{0} restricts every scoped pattern to its nodes")
+	@ValueSource(strings = { "labels-named", "labels-all", "schema", "neighbors-named", "neighbors-all",
+			"links-all-graphs",
+			"seed", "seed-all", "connections-all", "predicates-all", "types-all", "expand-all" })
+	void canvasQueriesInAGraphScopeNeverHashJoinAnUnrestrictedScan(String name) throws IOException {
+		// The canvas's labels, types, relations, neighbours, expansion, links and seeds in the all-graphs and
+		// named-graph
+		// scopes: their nodes' VALUES must restrict the scoped pattern, or RDF4J reads every statement of the scope.
+		try (RepositoryConnection connection = repository.getConnection()) {
+			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, fixture(name + ".rq"));
+			String plan = query.explain(Explanation.Level.Executed).toString();
+			assertThat(plan).as(plan).doesNotContain("HashJoinIteration");
+		}
+	}
+
 	@Test
 	void allGraphStatementsComeOnceAndLeaveOutTripleTerms() throws IOException {
 		try (RepositoryConnection connection = repository.getConnection();

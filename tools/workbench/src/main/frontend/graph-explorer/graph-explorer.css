@@ -1198,8 +1198,13 @@ html[data-theme="dark"] .graph-explorer {
   flex: 1 1 auto;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 0 8px 12px;
+  /* Room that keeps what was clicked where it was while the list changes around it (scroll-hold.ts). */
+  padding: var(--hold-top, 0px) 0 var(--hold-bottom, 0px);
   scrollbar-width: thin;
+}
+
+.graph-explorer #graph-explorer-app .filter-facet-list {
+  padding: 0 8px 12px;
 }
 
 .graph-explorer #graph-explorer-app .filter-facet {

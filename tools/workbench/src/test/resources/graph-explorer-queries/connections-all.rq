@@ -1,0 +1,1 @@
+SELECT DISTINCT ?source ?predicate ?target WHERE { VALUES ?source { <urn:ex:one> <urn:ex:two> } { ?source ?predicate ?target . FILTER(isIRI(?target) || isBlank(?target)) } UNION { GRAPH ?__graph { ?source ?predicate ?target . FILTER(isIRI(?target) || isBlank(?target)) } } } LIMIT 4096

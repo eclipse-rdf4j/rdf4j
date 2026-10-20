@@ -1,29 +1,21 @@
 SELECT ?selected ?source ?predicate ?target WHERE { {
  SELECT DISTINCT ?selected ?source ?predicate ?target WHERE {
- VALUES ?selected { <urn:ex:one> }
- BIND(?selected AS ?source)
- ?source ?predicate ?target .
+ VALUES ?selected { <urn:ex:one> } BIND(?selected AS ?source) ?source ?predicate ?target .
  
  } LIMIT 3
  } UNION {
  SELECT DISTINCT ?selected ?source ?predicate ?target WHERE {
- VALUES ?selected { <urn:ex:one> }
- BIND(?selected AS ?target)
- ?source ?predicate ?target .
+ VALUES ?selected { <urn:ex:one> } BIND(?selected AS ?target) ?source ?predicate ?target .
  
  } LIMIT 3
  } UNION {
  SELECT DISTINCT ?selected ?source ?predicate ?target WHERE {
- VALUES ?selected { <urn:ex:two> }
- BIND(?selected AS ?source)
- ?source ?predicate ?target .
+ VALUES ?selected { <urn:ex:two> } BIND(?selected AS ?source) ?source ?predicate ?target .
  
  } LIMIT 3
  } UNION {
  SELECT DISTINCT ?selected ?source ?predicate ?target WHERE {
- VALUES ?selected { <urn:ex:two> }
- BIND(?selected AS ?target)
- ?source ?predicate ?target .
+ VALUES ?selected { <urn:ex:two> } BIND(?selected AS ?target) ?source ?predicate ?target .
  
  } LIMIT 3
  } }

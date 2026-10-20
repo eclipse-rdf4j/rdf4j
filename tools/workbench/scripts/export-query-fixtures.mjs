@@ -84,6 +84,13 @@ export function queryFixtures() {
     ["statement-annotations-classic", statementAnnotationsQuery(MENTIONS, "default", false), 1],
     ["predicate-info", predicateInfoQuery("urn:ex:mentions", "default"), 3],
     ["predicate-usage", predicateUsageQuery("urn:ex:mentions", 10000, "default"), 1],
+    // The canvas queries in the all-graphs scope, whose plans GraphExplorerQueryTest checks.
+    ["connections-all", connectionQuery(["urn:ex:one", "urn:ex:two"], "all"), 7],
+    ["predicates-all", discoveryQuery(["urn:ex:one"], "all", false, true), 4],
+    ["types-all", typesQuery(["urn:ex:one", "urn:ex:two"], "all", false, true), 2],
+    ["neighbors-all", neighborsQuery(["urn:ex:one", "urn:ex:two"], "urn:ex:relation", "outgoing", 2, "all", true), 3],
+    ["expand-all", expandQuery(["urn:ex:one"], 10, "all", true), 8],
+    ["seed-all", seedQuery(["urn:ex:named"], "all", true), 2],
     // Repository values of the Filters panel. ex:hub has 300 ex:tag values, one ex:rare and one ex:size; ex:dup's one
     // ex:dupOf statement is in the default graph and again in urn:ex:graph.
     ["facet-statements", statementsQuery(["urn:ex:one", "urn:ex:hub"], "default"), 107],

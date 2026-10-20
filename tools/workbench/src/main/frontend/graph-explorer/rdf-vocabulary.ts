@@ -222,6 +222,22 @@ export function anchors(ids: string[], variable: string, fence = false) {
     ? `VALUES ?__anchor { ${values} }\nBIND(?__anchor AS ?${variable})`
     : `VALUES ?${variable} { ${values} }`;
 }
+/**
+ * A pattern about the given nodes in the graph scope, with the nodes' VALUES inside the scoped pattern: RDF4J
+ * evaluates a GRAPH pattern (and each branch of the all-graphs union) on its own, so VALUES outside it would not
+ * restrict it and the join would read every statement of the scope. Keep FILTERs after the result: inside, they open
+ * a scope of their own with the same effect. GraphExplorerQueryTest checks the plans.
+ */
+function anchoredScoped(
+  ids: string[],
+  variable: string,
+  pattern: string,
+  scope: GraphScope,
+  fence = false,
+  graphVariable?: string,
+) {
+  return scoped(`${anchors(ids, variable, fence)} ${pattern}`, scope, graphVariable);
+}
 export function labelQuery(
   ids: string[],
   properties: string[],
@@ -232,9 +248,9 @@ export function labelQuery(
   const shacl = `?shape <http://www.w3.org/ns/shacl#path> ?resource . ?shape <http://www.w3.org/ns/shacl#name> ?label . BIND(<http://www.w3.org/ns/shacl#name> AS ?labelProperty)`;
   const lexical = `?resource <http://www.w3.org/ns/lemon/ontolex#canonicalForm> ?form . ?form <http://www.w3.org/ns/lemon/ontolex#writtenRep> ?label . BIND(<http://www.w3.org/ns/lemon/ontolex#canonicalForm> AS ?labelProperty)`;
   const xl = `VALUES ?labelProperty { <${SKOS_XL}prefLabel> <${SKOS_XL}altLabel> } ?resource ?labelProperty ?labelNode . ?labelNode <${SKOS_XL}literalForm> ?label .`;
+  const branch = (pattern: string) => `{ ${anchoredScoped(ids, "resource", pattern, scope, fence)} }`;
   return `SELECT DISTINCT ?resource ?labelProperty ?label WHERE {
- ${anchors(ids, "resource", fence)}
- { ${scoped(direct, scope)} } UNION { ${scoped(xl, scope)} } UNION { ${scoped(shacl, scope)} } UNION { ${scoped(lexical, scope)} }
+ ${branch(direct)} UNION ${branch(xl)} UNION ${branch(shacl)} UNION ${branch(lexical)}
  FILTER(isLiteral(?label) && STRLEN(STR(?label)) > 0 && STRLEN(STR(?label)) <= 512)
 } LIMIT 4096`;
 }
@@ -275,8 +291,7 @@ export function discoveryQuery(
   const parts = ids.flatMap((id) =>
     ["outgoing", "incoming"].map(
       (direction) => `{ SELECT DISTINCT ?selected ?predicate ?direction WHERE {
- ${anchors([id], "selected", fence)}
- ${scoped(direction === "outgoing" ? "?selected ?predicate ?neighbor ." : "?neighbor ?predicate ?selected .", scope)}
+ ${anchoredScoped([id], "selected", direction === "outgoing" ? "?selected ?predicate ?neighbor ." : "?neighbor ?predicate ?selected .", scope, fence)}
  ${filter} BIND("${direction}" AS ?direction)
  } LIMIT 512 }`,
     ),
@@ -292,7 +307,7 @@ export function typesQuery(
   const property = wikidata
     ? "http://www.wikidata.org/prop/direct/P31"
     : "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
-  return `SELECT ?node ?type WHERE { ${ids.map((id) => `{ SELECT DISTINCT ?node ?type WHERE { ${anchors([id], "node", fence)} ${scoped(`?node <${property}> ?type . FILTER(isIRI(?type))`, scope)} } LIMIT 32 }`).join(" UNION ")} }`;
+  return `SELECT ?node ?type WHERE { ${ids.map((id) => `{ SELECT DISTINCT ?node ?type WHERE { ${anchoredScoped([id], "node", `?node <${property}> ?type .`, scope, fence)} FILTER(isIRI(?type)) } LIMIT 32 }`).join(" UNION ")} }`;
 }
 export function neighborsQuery(
   ids: string[],
@@ -308,9 +323,7 @@ export function neighborsQuery(
     .map(
       (id) => `{
  SELECT DISTINCT ?selected ?source ?predicate ?target WHERE {
- ${anchors([id], "selected", fence)}
- BIND(?selected AS ?${direction === "outgoing" ? "source" : "target"})
- ${scoped(`?source ${iriToken(predicate)} ?target .`, scope)}
+ ${anchoredScoped([id], "selected", `BIND(?selected AS ?${direction === "outgoing" ? "source" : "target"}) ?source ${iriToken(predicate)} ?target .`, scope, fence)}
  BIND(${iriToken(predicate)} AS ?predicate)
  } LIMIT ${limit}
  }`,
@@ -396,9 +409,7 @@ export function expandQuery(
       (["source", "target"] as const).map(
         (role) => `{
  SELECT DISTINCT ?selected ?source ?predicate ?target WHERE {
- ${anchors([id], "selected", fence)}
- BIND(?selected AS ?${role})
- ${scoped("?source ?predicate ?target .", scope)}
+ ${anchoredScoped([id], "selected", `BIND(?selected AS ?${role}) ?source ?predicate ?target .`, scope, fence)}
  ${expansionExclusions(loaded?.get(id), role, budget)}
  } LIMIT ${limit}
  }`,
@@ -522,8 +533,8 @@ export function entitySearchQuery(
 export function seedQuery(ids: string[], scope: GraphScope, fence = false) {
   // Each branch binds its resource independently, including nodes that occur only as objects.
   return `SELECT DISTINCT ?source ?predicate ?target WHERE {
- { ${anchors(ids, "source", fence)} ${scoped("?source ?predicate ?target .", scope)} }
+ { ${anchoredScoped(ids, "source", "?source ?predicate ?target .", scope, fence)} }
  UNION
- { ${anchors(ids, "target", fence)} ${scoped("?source ?predicate ?target .", scope)} }
+ { ${anchoredScoped(ids, "target", "?source ?predicate ?target .", scope, fence)} }
 } LIMIT 100`;
 }

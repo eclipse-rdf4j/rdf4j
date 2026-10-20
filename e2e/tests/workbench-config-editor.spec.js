@@ -460,7 +460,9 @@ test('prefixed reference copy and save share current safe bindings without chang
         && new URL(response.url()).pathname.endsWith('/config'));
     await page.getByRole('button', { name: 'Save', exact: true }).click();
     expect((await rejected).status()).toBe(400); // Rebinding the repository vocabulary changes its meaning; never repair it silently.
-    await expect.poll(() => editorValue(page)).toBe(reconciled);
+    // The refusal's page replaces the editor once its body arrives; editing before that would edit the old editor.
+    await expect(page.locator('#configuration-form .workbench-callout--error')).toBeVisible();
+    expect(await editorValue(page)).toBe(reconciled);
     expect(await editorValue(page)).toContain(literal);
 
     await setEditor(page, original);

@@ -1,13 +1,11 @@
 SELECT ?selected ?predicate ?direction WHERE { { SELECT DISTINCT ?selected ?predicate ?direction WHERE {
  VALUES ?__anchor { <urn:ex:one> }
-BIND(?__anchor AS ?selected)
- ?selected ?predicate ?neighbor .
+BIND(?__anchor AS ?selected) ?selected ?predicate ?neighbor .
   BIND("outgoing" AS ?direction)
  } LIMIT 512 }
 UNION
 { SELECT DISTINCT ?selected ?predicate ?direction WHERE {
  VALUES ?__anchor { <urn:ex:one> }
-BIND(?__anchor AS ?selected)
- ?neighbor ?predicate ?selected .
+BIND(?__anchor AS ?selected) ?neighbor ?predicate ?selected .
   BIND("incoming" AS ?direction)
  } LIMIT 512 } }
