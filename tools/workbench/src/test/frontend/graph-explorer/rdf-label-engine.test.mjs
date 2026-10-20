@@ -370,3 +370,27 @@ test("label predicates of the loaded links are among the label properties others
     engine.dispose();
   }
 });
+test("label properties a cancelled vocabulary lookup already found are announced", async () => {
+  // 65 predicates take two schema batches; the first finds a label property, then the lookup is cancelled.
+  const DECLARED = "urn:ex:cancelledCaption";
+  const predicates = [DECLARED, ...Array.from({ length: 64 }, (_, i) => `urn:ex:cancelledOther${i}`)];
+  const controller = new AbortController();
+  const engine = new RdfExplorer("https://cancelled-vocabulary.example/sparql", ["en"], async (query) => {
+    if (!query.includes("SELECT DISTINCT ?property")) return { results: { bindings: [] } };
+    if (query.includes(`<${DECLARED}>`)) return { results: { bindings: [{ property: iri(DECLARED) }] } };
+    controller.abort();
+    return { results: { bindings: [] } };
+  });
+  let notified = 0;
+  const stop = engine.subscribeLabelProperties(() => notified++);
+  try {
+    const before = engine.labelProperties();
+    await engine.discoverVocabulary(predicates, controller.signal);
+    assert.ok(engine.labelProperties().includes(DECLARED), "the list others ask with has it");
+    assert.notEqual(engine.labelProperties(), before);
+    assert.ok(notified > 0, "those using the label properties hear of it");
+  } finally {
+    stop();
+    engine.dispose();
+  }
+});

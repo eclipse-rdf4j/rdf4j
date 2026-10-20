@@ -84,6 +84,7 @@ export function relationLimits(
     return limits;
   }
   const order = [...available.keys()];
+  const position = new Map(order.map((id, index) => [id, index]));
   const ascending = [...available].map(([id, links]) => [id, bound(id, links)] as const).sort((left, right) => left[1] - right[1]);
   let remaining = amount;
   let index = 0;
@@ -98,7 +99,7 @@ export function relationLimits(
     const share = Math.floor(remaining / rest.length);
     const extra = new Set(
       [...rest]
-        .sort((left, right) => right[1] - left[1] || order.indexOf(left[0]) - order.indexOf(right[0]))
+        .sort((left, right) => right[1] - left[1] || position.get(left[0])! - position.get(right[0])!)
         .slice(0, remaining - share * rest.length)
         .map(([id]) => id),
     );

@@ -57,7 +57,8 @@ import jakarta.servlet.http.HttpServletResponse;
  * The Graph page of a repository: a navigation GET serves the Workbench shell, a page-data GET the page model, and a
  * POST runs one SPARQL SELECT, CONSTRUCT or DESCRIBE query for the browser-side graph explorer and streams the result
  * as SPARQL Results JSON (statements of a graph query as {@code ?source ?predicate ?target} solutions). The query text
- * arrives either as an {@code application/sparql-query} body or as the form parameter {@code query}.
+ * arrives either as an {@code application/sparql-query} body or as the form parameter {@code query}. The document's
+ * {@code rdf4j:truncated} says whether the row limit cut the result.
  */
 public class GraphServlet extends TransformationServlet {
 
@@ -126,7 +127,7 @@ public class GraphServlet extends TransformationServlet {
 	@Override
 	protected void service(WorkbenchRequest req, HttpServletResponse resp) throws Exception {
 		TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
-		// Results stop at max-result-rows without a marker, so the explorer sizes its batches to stay below it.
+		// Results stop at max-result-rows (saying so with rdf4j:truncated); the explorer sizes its batches below it.
 		builder.start("id", "readable", "writeable", "max-query-length", "max-result-rows");
 		builder.link(List.of(INFO));
 		builder.result(info.getId(), info.isReadable(), info.isWritable(), maxQueryLength, maxResultRows);
@@ -200,7 +201,7 @@ public class GraphServlet extends TransformationServlet {
 	 * The response is started once the result has its first row (or has none), so a failure up to then is answered with
 	 * its own status and message instead of a truncated document. A later failure cannot be answered any more.
 	 */
-	private static SPARQLResultsJSONWriter startResponse(HttpServletResponse resp, ValueFactory factory)
+	private static OriginJSONWriter startResponse(HttpServletResponse resp, ValueFactory factory)
 			throws IOException {
 		resp.setStatus(HttpServletResponse.SC_OK);
 		resp.setContentType(SPARQL_RESULTS_JSON);
@@ -220,6 +221,7 @@ public class GraphServlet extends TransformationServlet {
 
 	private static final class OriginJSONWriter extends SPARQLResultsJSONWriter {
 		private final BNodeOrigins origins;
+		private boolean truncated;
 
 		private OriginJSONWriter(OutputStream output, ValueFactory factory) {
 			super(output);
@@ -240,6 +242,17 @@ public class GraphServlet extends TransformationServlet {
 				super.writeValue(value);
 			}
 		}
+
+		/** Records whether the row limit cut the result; the document ends with it ({@code rdf4j:truncated}). */
+		private void truncated(boolean cut) {
+			truncated = cut;
+		}
+
+		@Override
+		protected void endDocument() {
+			jg.writeBooleanProperty("rdf4j:truncated", truncated);
+			super.endDocument();
+		}
 	}
 
 	/**
@@ -251,7 +264,7 @@ public class GraphServlet extends TransformationServlet {
 		List<String> names = List.of("source", "predicate", "target");
 		try (GraphQueryResult statements = query.evaluate()) {
 			statements.hasNext();
-			SPARQLResultsJSONWriter writer = startResponse(resp, factory);
+			OriginJSONWriter writer = startResponse(resp, factory);
 			writer.startQueryResult(names);
 			long written = 0;
 			while (statements.hasNext() && written++ < limit) {
@@ -259,6 +272,8 @@ public class GraphServlet extends TransformationServlet {
 				writer.handleSolution(new ListBindingSet(names, statement.getSubject(), statement.getPredicate(),
 						statement.getObject()));
 			}
+			// The loop stops past the limit only when another statement was there.
+			writer.truncated(written > limit);
 			writer.endQueryResult();
 		}
 	}
@@ -269,12 +284,13 @@ public class GraphServlet extends TransformationServlet {
 		try (TupleQueryResult solutions = query.evaluate()) {
 			List<String> names = solutions.getBindingNames();
 			solutions.hasNext();
-			SPARQLResultsJSONWriter writer = startResponse(resp, factory);
+			OriginJSONWriter writer = startResponse(resp, factory);
 			writer.startQueryResult(names);
 			long written = 0;
 			while (solutions.hasNext() && written++ < limit) {
 				writer.handleSolution(solutions.next());
 			}
+			writer.truncated(written > limit);
 			writer.endQueryResult();
 		}
 	}

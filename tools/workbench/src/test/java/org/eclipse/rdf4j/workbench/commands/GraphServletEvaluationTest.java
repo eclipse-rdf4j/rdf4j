@@ -353,6 +353,28 @@ class GraphServletEvaluationTest {
 		assertThat(JSON.readTree(response.getContentAsString()).path("results").path("bindings")).hasSize(2);
 	}
 
+	@Test
+	void theResponseSaysWhetherTheRowLimitCutTheResult() throws Exception {
+		servlet();
+		for (int rows : new int[] { 2, 3 }) {
+			TupleQueryResult tuples = failingTuples(rows, null);
+			GraphQueryResult statements = failingStatements(rows, null);
+			when(tupleQuery.evaluate()).thenReturn(tuples);
+			when(graphQuery.evaluate()).thenReturn(statements);
+			for (String query : List.of(SELECT, CONSTRUCT)) {
+				MockHttpServletRequest request = post(query);
+				request.setParameter("row-limit", "2");
+
+				JsonNode json = JSON.readTree(run(request).getContentAsString());
+
+				assertThat(json.path("results").path("bindings")).hasSize(2);
+				assertThat(json.path("rdf4j:truncated").isBoolean()).as("%s of %d rows", query, rows).isTrue();
+				assertThat(json.path("rdf4j:truncated").asBoolean()).as("%s of %d rows", query, rows)
+						.isEqualTo(rows > 2);
+			}
+		}
+	}
+
 	private MockHttpServletResponse run(MockHttpServletRequest request) throws Exception {
 		MockHttpServletResponse response = new MockHttpServletResponse();
 		servlet.service(request, response);

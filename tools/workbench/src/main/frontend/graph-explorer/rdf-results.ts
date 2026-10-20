@@ -16,6 +16,8 @@ const browserSession = blankNodeDocumentScope();
 export type ResultsResponse = {
   head?: { vars?: string[] };
   results: { bindings: Record<string, SparqlTerm | undefined>[] };
+  /** The Graph servlet's word on whether its row limit cut the result (GraphServlet). */
+  "rdf4j:truncated"?: boolean;
 };
 export function parseSparqlResponse(body: string, options: {repositoryReferences?: boolean} = {}): ResultsResponse {
   try {

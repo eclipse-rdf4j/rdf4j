@@ -1952,8 +1952,10 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
         const result = await queryRepository(target, queryToRun, controller.signal);
         if (queryRunRef.current !== runId) return false;
         const rows = result.results?.bindings || [];
-        // The servlet stops every result at its row cap without a marker: a result that long may be cut.
-        const cut = resultCut(rows.length, rowLimit, limits?.maxResultRows);
+        // The servlet stops every result at its row cap and says whether it did (rdf4j:truncated).
+        const truncated = result["rdf4j:truncated"];
+        const cut = resultCut(rows.length, rowLimit, limits?.maxResultRows,
+          typeof truncated === "boolean" ? truncated : undefined);
         const triples = bindingsToTriples(rows);
         const links = statementLinksOf(rows);
         if (triples.length === 0 && links.length === 0) {

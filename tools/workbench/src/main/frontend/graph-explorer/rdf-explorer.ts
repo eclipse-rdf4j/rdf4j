@@ -540,7 +540,11 @@ export class RdfExplorer {
       const rows =
         (await this.query(vocabularyQuery(batch, this.scope), signal)).results
           ?.bindings ?? [];
-      if (this.stopped || signal?.aborted) return;
+      if (this.stopped || signal?.aborted) {
+        // Label properties earlier batches found are already in `properties`: announce them even so.
+        if (changed && !this.stopped) this.labelPropertiesAdded();
+        return;
+      }
       for (const row of rows)
         if (
           row.property?.type === "uri" &&

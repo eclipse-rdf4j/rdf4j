@@ -335,6 +335,56 @@ class AddServletTest {
 	}
 
 	@Test
+	void anImportDirectoryRemovedAfterStartupLeavesTheAddPageWorking() throws Exception {
+		Path imports = Files.createDirectory(temporaryDirectory.resolve("imports"));
+		Files.writeString(imports.resolve("one.ttl"), "<urn:s> <urn:p> <urn:o> .");
+		String previous = System.getProperty(FILE_DIRECTORY_PROPERTY);
+		try {
+			System.setProperty(FILE_DIRECTORY_PROPERTY, imports.toString());
+			AddServlet servlet = new RecordingAddServlet();
+			servlet.setRepositoryManager(mock(RepositoryManager.class));
+			servlet.init(TestServletConfig.withParams("add"));
+			Files.delete(imports.resolve("one.ttl"));
+			Files.delete(imports);
+			MockHttpServletResponse response = new MockHttpServletResponse();
+			response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+
+			servlet.service(mock(WorkbenchRequest.class), response);
+
+			assertThat(response.getContentAsString()).contains(">READ_COMMITTED<")
+					.doesNotContain("<binding name='server-file-option'>");
+		} finally {
+			restoreProperty(FILE_DIRECTORY_PROPERTY, previous);
+		}
+	}
+
+	@Test
+	void anUnusableDefaultImportDirectoryLeavesTheAddPageWorking() throws Exception {
+		String previousAppData = System.getProperty("org.eclipse.rdf4j.appdata.basedir");
+		String previousDirectory = System.getProperty(FILE_DIRECTORY_PROPERTY);
+		try {
+			System.setProperty("org.eclipse.rdf4j.appdata.basedir", temporaryDirectory.toString());
+			System.clearProperty(FILE_DIRECTORY_PROPERTY);
+			// The default directory cannot be made: a file has its name.
+			Files.createDirectories(temporaryDirectory.resolve("Workbench"));
+			Files.writeString(temporaryDirectory.resolve("Workbench/imports"), "not a directory");
+			AddServlet servlet = new RecordingAddServlet();
+			servlet.setRepositoryManager(mock(RepositoryManager.class));
+			servlet.init(TestServletConfig.withParams("add"));
+			MockHttpServletResponse response = new MockHttpServletResponse();
+			response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+
+			servlet.service(mock(WorkbenchRequest.class), response);
+
+			assertThat(response.getContentAsString()).contains(">READ_COMMITTED<")
+					.doesNotContain("<binding name='server-file-option'>");
+		} finally {
+			restoreProperty("org.eclipse.rdf4j.appdata.basedir", previousAppData);
+			restoreProperty(FILE_DIRECTORY_PROPERTY, previousDirectory);
+		}
+	}
+
+	@Test
 	void configuredImportDirectoryMustBeAnExistingAbsoluteDirectory() throws Exception {
 		String previous = System.getProperty(FILE_DIRECTORY_PROPERTY);
 		try {

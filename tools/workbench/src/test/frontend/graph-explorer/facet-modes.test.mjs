@@ -187,3 +187,25 @@ test("the generated query needs every selected type of an all type filter", () =
   const untyped = new Map([[TYPE_FACET_ID, new Set([UNTYPED_IRI_TYPE.id, "urn:Person"])]]);
   assert.match(generatedFacetQuery(untyped, { wikidata: false, modes: all(TYPE_FACET_ID) }), /FILTER\(false\)/);
 });
+
+test("the server check matches the merged long text value next to the others", () => {
+  const ids = ["urn:a"];
+  const long = exactMatchQuery(ids, SPEAKS, { values: [LONG_LITERAL_VALUE_ID] });
+  assert.doesNotMatch(long, /FILTER\(false\)/);
+  assert.match(long, /FILTER\(\(isLiteral\(\?o\) && STRLEN\(STR\(\?o\)\) > 1024\)\)/);
+  const mixed = exactMatchQuery(ids, SPEAKS, { values: ["urn:en", BLANK_VALUE_ID, LONG_LITERAL_VALUE_ID] });
+  assert.match(mixed, /FILTER\(isBlank\(\?o\) \|\| \(isLiteral\(\?o\) && STRLEN\(STR\(\?o\)\) > 1024\) \|\| sameTerm\(\?o, <urn:en>\)\)/);
+  for (const query of exactMatchQueries(ids, SPEAKS, { values: ["urn:en", LONG_LITERAL_VALUE_ID], mode: "all" }))
+    assert.doesNotMatch(query, /FILTER\(false\)/, "each value of an all filter can be found");
+});
+
+test("the generated query of an any filter keeps its merged values", () => {
+  const blank = generatedFacetQuery(new Map([[SPEAKS, new Set([BLANK_VALUE_ID])]]), { wikidata: false });
+  assert.doesNotMatch(blank, /FILTER\(false\)/);
+  assert.match(blank, /FILTER\(isBlank\(\?facetValue0\)\)/);
+  const mixed = generatedFacetQuery(new Map([[SPEAKS, new Set(["urn:en", BLANK_VALUE_ID, LONG_LITERAL_VALUE_ID])]]), { wikidata: false });
+  assert.match(mixed,
+    /FILTER\(isBlank\(\?facetValue0\) \|\| \(isLiteral\(\?facetValue0\) && STRLEN\(STR\(\?facetValue0\)\) > 1024\) \|\| sameTerm\(\?facetValue0, <urn:en>\)\)/);
+  assert.match(generatedFacetQuery(new Map([[SPEAKS, new Set(["urn:en", "urn:nb"])]]), { wikidata: false }),
+    /VALUES \?facetValue0 \{ <urn:en> <urn:nb> \}/, "plain values stay a VALUES list");
+});

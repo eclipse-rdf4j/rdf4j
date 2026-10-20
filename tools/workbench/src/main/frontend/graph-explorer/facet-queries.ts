@@ -46,17 +46,27 @@ export function exactMatchQuery(
   if ("range" in match) {
     condition = rangeSparqlFilter("?o", match.range) ?? "";
   } else {
-    const tokens = match.values
-      .map(sparqlFacetValueToken)
-      .filter((value): value is string => Boolean(value));
-    const blank = match.values.includes(BLANK_VALUE_ID);
-    if (!blank) condition = tokens.length ? `VALUES ?o { ${tokens.join(" ")} }` : "FILTER(false)";
-    // A blank value cannot be named: it stands for "any blank node", next to the listed values.
-    else condition = `FILTER(${["isBlank(?o)", ...tokens.map((token) => `sameTerm(?o, ${token})`)].join(" || ")})`;
+    condition = valuesCondition("?o", match.values);
   }
   return `SELECT DISTINCT ?s WHERE {
  ${scoped(`VALUES ?s { ${nodes} } ?s ${iriToken(predicate)} ?o . ${condition}`, scope)}
 }`;
+}
+
+/**
+ * `variable` is one of the values: VALUES for named values; a FILTER when a merged value is among them, which cannot
+ * be named: a blank value stands for "any blank node", a long text for any literal over LONG_LITERAL_LENGTH.
+ */
+function valuesCondition(variable: string, values: readonly string[]) {
+  const tokens = values.map(sparqlFacetValueToken).filter((value): value is string => Boolean(value));
+  const merged = [
+    ...(values.includes(BLANK_VALUE_ID) ? [`isBlank(${variable})`] : []),
+    ...(values.includes(LONG_LITERAL_VALUE_ID)
+      ? [`(isLiteral(${variable}) && STRLEN(STR(${variable})) > ${LONG_LITERAL_LENGTH})`]
+      : []),
+  ];
+  if (!merged.length) return tokens.length ? `VALUES ${variable} { ${tokens.join(" ")} }` : "FILTER(false)";
+  return `FILTER(${[...merged, ...tokens.map((token) => `sameTerm(${variable}, ${token})`)].join(" || ")})`;
 }
 
 /** The values of a filter to check on the server, and whether a node needs all of them (FacetMode). */
@@ -184,17 +194,7 @@ export function generatedFacetQuery(
       index += 1;
       return;
     }
-    const tokens = [...values]
-      .map(sparqlFacetValueToken)
-      .filter((value): value is string => Boolean(value));
-    if (!tokens.length) {
-      lines.push("  FILTER(false)");
-      index += 1;
-      return;
-    }
-    lines.push(
-      `  VALUES ${variable} { ${tokens.join(" ")} }`,
-    );
+    lines.push(`  ${valuesCondition(variable, [...values])}`);
     index += 1;
   });
   if (!activeFacets.length) {

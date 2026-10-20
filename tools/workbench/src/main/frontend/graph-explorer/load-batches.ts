@@ -13,21 +13,41 @@
 import type { LoadBatch } from "./explorer-types.ts";
 import { STAR_STRESS_BATCH_ID } from "./graph-fixtures.ts";
 
+/**
+ * The query's own LIMIT: the one outside every brace (a subquery's sits inside its braces), past strings, IRIs and
+ * comments, which may hold braces or the word LIMIT.
+ */
 export function queryLimit(query: string) {
-  const match = query.match(/\bLIMIT\s+(\d+)/i);
-  return match ? Number(match[1]) : null;
+  const tokens =
+    /"""[\s\S]*?"""|'''[\s\S]*?'''|"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|<[^<>"{}|^`\\\s]*>|#[^\n]*|[{}]|\bLIMIT\s+(\d+)/gi;
+  let depth = 0;
+  let limit: number | null = null;
+  for (const [token, value] of query.matchAll(tokens)) {
+    if (token === "{") depth += 1;
+    else if (token === "}") depth = Math.max(0, depth - 1);
+    else if (value !== undefined && depth === 0) limit = Number(value);
+  }
+  return limit;
 }
 
 /** A result that stopped at a row limit: the one the page asked for, or the server's own cap (`byServer`). */
 export type ResultCut = { limit: number; byServer: boolean };
 
 /**
- * Whether a result of `rows` rows may have been cut: by the row limit the page passed (`rowLimit`), or by the Graph
- * servlet's cap on every result (`maxResultRows`, graph-max-result-rows), which it applies without a marker.
+ * Whether a result of `rows` rows was cut: by the row limit the page passed (`rowLimit`), or by the Graph servlet's
+ * cap on every result (`maxResultRows`, graph-max-result-rows). The servlet says whether it cut the result
+ * (`truncated`, its rdf4j:truncated); without that word, a result as long as a limit may have been cut.
  */
-export function resultCut(rows: number, rowLimit: number | undefined, maxResultRows: number | undefined): ResultCut | null {
-  if (maxResultRows !== undefined && rows >= maxResultRows && (rowLimit === undefined || maxResultRows <= rowLimit))
-    return { limit: maxResultRows, byServer: true };
+export function resultCut(
+  rows: number,
+  rowLimit: number | undefined,
+  maxResultRows: number | undefined,
+  truncated?: boolean,
+): ResultCut | null {
+  if (truncated === false) return null;
+  const byServer = maxResultRows !== undefined && (rowLimit === undefined || maxResultRows <= rowLimit);
+  if (truncated === true) return byServer ? { limit: maxResultRows!, byServer } : { limit: rowLimit ?? rows, byServer };
+  if (byServer && rows >= maxResultRows!) return { limit: maxResultRows!, byServer: true };
   if (rowLimit !== undefined && rows >= rowLimit) return { limit: rowLimit, byServer: false };
   return null;
 }

@@ -126,10 +126,23 @@ public class AddServlet extends TransformationServlet {
 	}
 
 	private Path resolveImportDirectory(String configured) throws ServletException {
+		if (configured == null) {
+			// Server-file imports are optional: without a usable default directory, the Add page offers none.
+			try {
+				return resolveImportDirectory(null, appConfig.getDataDir().toPath());
+			} catch (ServletException e) {
+				logger.warn("Server-file imports are unavailable: {}", e.getMessage());
+				return null;
+			}
+		}
+		return resolveImportDirectory(configured, null);
+	}
+
+	private Path resolveImportDirectory(String configured, Path dataDir) throws ServletException {
 		try {
 			Path directory;
 			if (configured == null) {
-				directory = appConfig.getDataDir().toPath().toAbsolutePath().resolve("imports");
+				directory = dataDir.toAbsolutePath().resolve("imports");
 				Files.createDirectories(directory.getParent());
 				try {
 					if (Files.getFileStore(directory.getParent()).supportsFileAttributeView("posix")) {
@@ -270,7 +283,9 @@ public class AddServlet extends TransformationServlet {
 			return List.of();
 		}
 		if (!Files.isDirectory(importDirectory, LinkOption.NOFOLLOW_LINKS)) {
-			throw new IOException("Approved import directory is no longer available");
+			// Removed since startup: the Add page still serves uploads and URLs, and lists no server files.
+			logger.warn("The approved import directory is no longer available: {}", importDirectory);
+			return List.of();
 		}
 		List<String> names = new ArrayList<>();
 		try (DirectoryStream<Path> entries = Files.newDirectoryStream(importDirectory)) {
