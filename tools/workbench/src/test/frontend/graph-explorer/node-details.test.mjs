@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {RDF_TYPE} from "../../../main/frontend/graph-explorer/graph-canvas-scope.ts";
 import {nodeDetails} from "../../../main/frontend/graph-explorer/node-details.ts";
+import {NODE_TYPE_LIMIT} from "../../../main/frontend/graph-explorer/rdf-vocabulary.ts";
 
 const nodes = [
   {id: "urn:alice", label: "Alice", kind: "iri"},
@@ -61,4 +62,11 @@ test("types come from the hydrated node, or from its rdf:type links while hydrat
 test("neighbours missing from the model are shown by their identifier", () => {
   const details = nodeDetails(nodes[1], [edge("urn:bob", "urn:knows", "knows", "urn:gone")], nodeById);
   assert.deepEqual(details.links[0].items, [{id: "urn:gone", label: "urn:gone", kind: "iri"}]);
+});
+
+test("the card says when a node may have more types than the explorer loads", () => {
+  const typesOf = (count) => Array.from({length: count}, (_, index) => ({id: `urn:T${index}`, label: `T${index}`}));
+  assert.equal(nodeDetails({...nodes[0], types: typesOf(NODE_TYPE_LIMIT - 1)}, edges, nodeById).moreTypes, false);
+  assert.equal(nodeDetails({...nodes[0], types: typesOf(NODE_TYPE_LIMIT)}, edges, nodeById).moreTypes, true);
+  assert.equal(nodeDetails(nodes[0], edges, nodeById).moreTypes, false, "types still loading");
 });

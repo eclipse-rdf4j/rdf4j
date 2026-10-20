@@ -1,5 +1,5 @@
 SELECT ?node ?type WHERE { { SELECT DISTINCT ?node ?type WHERE { { VALUES ?__anchor { <urn:ex:one> }
 BIND(?__anchor AS ?node) ?node <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?type . } UNION { GRAPH ?__graph { VALUES ?__anchor { <urn:ex:one> }
-BIND(?__anchor AS ?node) ?node <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?type . } } FILTER(isIRI(?type)) } LIMIT 32 } UNION { SELECT DISTINCT ?node ?type WHERE { { VALUES ?__anchor { <urn:ex:two> }
+BIND(?__anchor AS ?node) ?node <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?type . } } FILTER(isIRI(?type)) } ORDER BY (IF(?type IN (<http://www.w3.org/2002/07/owl#Thing>, <http://www.w3.org/2000/01/rdf-schema#Resource>, <http://www.w3.org/2002/07/owl#NamedIndividual>), 1, 0)) ?type LIMIT 32 } UNION { SELECT DISTINCT ?node ?type WHERE { { VALUES ?__anchor { <urn:ex:two> }
 BIND(?__anchor AS ?node) ?node <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?type . } UNION { GRAPH ?__graph { VALUES ?__anchor { <urn:ex:two> }
-BIND(?__anchor AS ?node) ?node <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?type . } } FILTER(isIRI(?type)) } LIMIT 32 } }
+BIND(?__anchor AS ?node) ?node <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?type . } } FILTER(isIRI(?type)) } ORDER BY (IF(?type IN (<http://www.w3.org/2002/07/owl#Thing>, <http://www.w3.org/2000/01/rdf-schema#Resource>, <http://www.w3.org/2002/07/owl#NamedIndividual>), 1, 0)) ?type LIMIT 32 } }

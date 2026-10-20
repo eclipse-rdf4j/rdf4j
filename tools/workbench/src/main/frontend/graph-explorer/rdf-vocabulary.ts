@@ -298,6 +298,18 @@ export function discoveryQuery(
   );
   return `SELECT ?selected ?predicate ?direction WHERE { ${parts.join("\nUNION\n")} }`;
 }
+/** At most this many types of one node are looked up; the details card says when a node may have more. */
+export const NODE_TYPE_LIMIT = 32;
+/** Types every resource (or every individual) has: they tell nothing about it, so they come last. */
+export const GENERIC_TYPES: readonly string[] = [
+  "http://www.w3.org/2002/07/owl#Thing",
+  "http://www.w3.org/2000/01/rdf-schema#Resource",
+  "http://www.w3.org/2002/07/owl#NamedIndividual",
+];
+/**
+ * The types of each node, at most NODE_TYPE_LIMIT of them: generic types (GENERIC_TYPES) are the ones left out of a
+ * node that has more, the rest in a fixed order, so a node gets the same types every time.
+ */
 export function typesQuery(
   ids: string[],
   scope: GraphScope,
@@ -307,7 +319,7 @@ export function typesQuery(
   const property = wikidata
     ? "http://www.wikidata.org/prop/direct/P31"
     : "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
-  return `SELECT ?node ?type WHERE { ${ids.map((id) => `{ SELECT DISTINCT ?node ?type WHERE { ${anchoredScoped([id], "node", `?node <${property}> ?type .`, scope, fence)} FILTER(isIRI(?type)) } LIMIT 32 }`).join(" UNION ")} }`;
+  return `SELECT ?node ?type WHERE { ${ids.map((id) => `{ SELECT DISTINCT ?node ?type WHERE { ${anchoredScoped([id], "node", `?node <${property}> ?type .`, scope, fence)} FILTER(isIRI(?type)) } ORDER BY (IF(?type IN (${GENERIC_TYPES.map((type) => `<${type}>`).join(", ")}), 1, 0)) ?type LIMIT ${NODE_TYPE_LIMIT} }`).join(" UNION ")} }`;
 }
 export function neighborsQuery(
   ids: string[],
