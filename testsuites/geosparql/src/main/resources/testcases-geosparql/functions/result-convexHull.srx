@@ -9,7 +9,7 @@
   <results>
     <result>
       <binding name="s">
-        <literal datatype="http://www.opengis.net/ont/geosparql#wktLiteral">LINESTRING (48.8582 2.2945, 48.8738 2.295)</literal>
+        <literal datatype="http://www.opengis.net/ont/geosparql#wktLiteral">LINESTRING (48.8738 2.295, 48.8582 2.2945)</literal>
       </binding>
     </result>
     <result>

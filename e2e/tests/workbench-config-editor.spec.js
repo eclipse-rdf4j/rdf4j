@@ -432,7 +432,8 @@ test('live prefix reconciliation preserves undo, selection, scroll and reference
     expect(result.inputs).toBe(3); // The original edit, Undo and Redo; automatic additions do not dispatch another edit.
 });
 
-test('prefixed reference copy and save share current safe bindings without changing literal content', async ({ page, context }) => {
+test('prefixed reference copy and save share current safe bindings without changing literal content', async ({ page, context, browserName }) => {
+    test.skip(browserName !== 'chromium', 'Playwright grants clipboard permissions in Chromium only');
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.goto(repositoryPageUrl(REPOSITORY_ID, 'config'));
     await waitForRoute(page, 'config');
