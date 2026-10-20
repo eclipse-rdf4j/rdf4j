@@ -35,12 +35,15 @@ import org.eclipse.rdf4j.query.algebra.CompareAll;
 import org.eclipse.rdf4j.query.algebra.CompareAny;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.In;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -263,6 +266,50 @@ class LmdbNativeSpeculationSafetyTest {
 				}
 			} finally {
 				source.executionContext().close();
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void repeatableWitnessesKeepBulkEligibilityAndDefaultAdaptiveSemantics(boolean negated) throws Exception {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			connection.add(vf.createIRI("urn:s2"), vf.createIRI("urn:p"), vf.createIRI("urn:o"));
+			connection.add(vf.createIRI("urn:s2"), vf.createIRI("urn:dislikes"), vf.createIRI("urn:o"));
+		}
+		String where = " WHERE { ?a <urn:p> ?b FILTER " + (negated ? "NOT " : "")
+				+ "EXISTS { ?a <urn:dislikes> ?d } }";
+		String aggregate = "SELECT (COUNT(DISTINCT ?a) AS ?n)" + where;
+		TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, aggregate, null).getTupleExpr();
+		List<String> expected = evaluate(expression.clone(), false);
+		assertThat(expected).containsExactly("{n=" + repository.getValueFactory().createLiteral(BigInteger.ONE) + "}");
+		long islands = LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get();
+		long hosted = LmdbNativeAggregateCompiler.HOSTED_GENERIC.get();
+		for (int round = 0; round < QUERY_REPETITIONS; round++) {
+			assertThat(evaluate(expression.clone(), true)).containsExactlyElementsOf(expected);
+		}
+		assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get()).isEqualTo(islands);
+		assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get()).isEqualTo(hosted);
+
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+					new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+					new EvaluationStatistics(), false);
+			for (String query : List.of(aggregate, "SELECT ?a ?b" + where)) {
+				TupleExpr operator = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+				while (operator instanceof UnaryTupleOperator unary && !(operator instanceof Group)
+						&& !(operator instanceof Filter)) {
+					operator = unary.getArg();
+				}
+				var compiled = LmdbNativeAggregateCompiler.tryCompile(operator,
+						new QueryEvaluationContext.Minimal(null), strategy, (NativeLmdbQuerySource) dataset);
+				SlotPlan arg = compiled instanceof NativeGroupStep group ? group.arg
+						: compiled instanceof NativeRowsStep rows ? rows.arg : null;
+				assertThat(arg).isNotNull();
+				assertThat(SlotPlan.encounterOrderReplaySafe(arg))
+						.as("repeatable witnesses retain bulk rows and bounded-probe eligibility")
+						.isTrue();
 			}
 		}
 	}

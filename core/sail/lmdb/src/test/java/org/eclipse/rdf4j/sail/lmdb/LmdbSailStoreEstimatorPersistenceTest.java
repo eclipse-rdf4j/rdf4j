@@ -253,7 +253,11 @@ class LmdbSailStoreEstimatorPersistenceTest {
 
 			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
 			statistics.estimateFilterPass(sampledFilter);
-			assertEquals(1, store.getBackingStore().runBackgroundFilterSamplingCycle(50L),
+			// This fixture verifies persistence, not completion within a scheduler budget. Use the maximum
+			// representable nanosecond duration; bounded-cycle expiration has its own admission tests.
+			assertEquals(1, store.getBackingStore()
+					.runBackgroundFilterSamplingCycle(
+							TimeUnit.NANOSECONDS.toMillis(Long.MAX_VALUE)),
 					"Expected background sampling to populate the sampled filter selectivity cache");
 
 			EvaluationStatistics.FilterPassEstimate estimate = statistics.estimateFilterPass(sampledFilter);
