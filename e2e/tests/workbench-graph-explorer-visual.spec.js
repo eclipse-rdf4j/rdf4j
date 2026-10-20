@@ -72,6 +72,39 @@ async function islandColours(page) {
     });
 }
 
+// The toolbar shows its button labels while everything fits on one row with them, then only their icons, and only then
+// its narrow layout (the views on a row of their own, the actions spread below): it never wraps on its own.
+test('the toolbar turns to icons instead of breaking into two rows', async ({ page }) => {
+    const errors = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    page.on('console', (message) => message.type() === 'error' && errors.push(message.text()));
+    await openGraphPage(page, 1700, 900);
+    const toolbar = page.locator('.graph-explorer .graph-toolbar');
+    const state = () => toolbar.evaluate((bar) => {
+        const items = [...bar.children];
+        const tops = items.map((item) => Math.round(item.getBoundingClientRect().top));
+        const views = bar.querySelector('.view-strip');
+        const viewsTop = Math.round(views.getBoundingClientRect().top);
+        return {
+            fit: bar.dataset.fit,
+            rows: new Set(tops).size,
+            labels: getComputedStyle(bar.querySelector('.toolbar-label')).display !== 'none',
+            viewsAlone: items.every((item) => item === views || Math.round(item.getBoundingClientRect().top) > viewsTop),
+        };
+    });
+    const tidy = (entry) => entry.rows === 1 || (entry.fit === 'narrow' && entry.rows === 2 && entry.viewsAlone);
+    const seen = [];
+    for (const width of [1700, 1500, 1460, 1440, 1420, 1400, 1300, 1100, 1000, 950, 900, 1000, 1300, 1460, 1700]) {
+        await page.setViewportSize({ width, height: 900 });
+        await expect.poll(async () => tidy(await state()), { message: `a tidy toolbar at ${width}px` }).toBe(true);
+        seen.push({ width, ...(await state()) });
+    }
+    expect(seen[0].labels, 'labels when there is room').toBe(true);
+    expect(seen.some((entry) => entry.fit === 'icons' && entry.rows === 1), 'icons on one row before anything else').toBe(true);
+    expect(seen[seen.length - 1].labels, 'labels again once there is room').toBe(true);
+    expect(errors.filter((message) => /ResizeObserver/.test(message))).toEqual([]);
+});
+
 for (const theme of ['light', 'dark']) {
     test(`the graph explorer takes its surface, ink and font from the Workbench (${theme})`, async ({ page }) => {
         await page.addInitScript((preference) => localStorage.setItem('rdf4j-workbench-theme', preference), theme);

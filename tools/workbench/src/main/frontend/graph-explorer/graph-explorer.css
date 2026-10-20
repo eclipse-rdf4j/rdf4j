@@ -3203,14 +3203,60 @@ html[data-theme="dark"] .graph-explorer #graph-explorer-app .map-shell iframe {
   }
 }
 
-/* Toolbar buttons fall back to their icons (the labels stay in aria-label and title). */
-@container graph-panel (max-width: 1040px) {
+/*
+ * The toolbar takes the first step that fits on one row (toolbar-fit.ts sets data-fit): its labels, then only its icons
+ * (the labels stay in aria-label and title), then the narrow layout: the views on a row of their own, the actions
+ * spread below. A narrow panel always takes the narrow layout (the container rules below).
+ */
+.graph-explorer #graph-explorer-app .graph-toolbar:is([data-fit="icons"], [data-fit="narrow"]) .toolbar-label {
+  display: none;
+}
+
+.graph-explorer #graph-explorer-app .graph-toolbar[data-fit="icons"] .workbench-action--secondary {
+  padding-inline: 10px;
+}
+
+.graph-explorer #graph-explorer-app .graph-toolbar[data-fit="narrow"] {
+  gap: 6px;
+  padding: 6px 8px;
+}
+
+.graph-explorer #graph-explorer-app .graph-toolbar[data-fit="narrow"] .view-strip {
+  order: -1;
+  width: 100%;
+}
+
+.graph-explorer #graph-explorer-app .graph-toolbar[data-fit="narrow"] :is(.primary-view-tabs, .primary-view-tabs > button, .view-menu) {
+  flex: 1 1 auto;
+}
+
+.graph-explorer #graph-explorer-app .graph-toolbar[data-fit="narrow"] .view-menu > summary {
+  width: 100%;
+}
+
+.graph-explorer #graph-explorer-app .graph-toolbar[data-fit="narrow"] .toolbar-actions {
+  min-width: 0;
+  flex: 1;
+  margin-left: 0;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.graph-explorer #graph-explorer-app .graph-toolbar[data-fit="narrow"] .workbench-disclosure-chevron {
+  display: none;
+}
+
+.graph-explorer #graph-explorer-app .graph-toolbar[data-fit="narrow"] :is(.toolbar-menu > summary, .workbench-action--secondary) {
+  padding-inline: 8px;
+}
+
+.graph-explorer #graph-explorer-app .graph-toolbar[data-fit="narrow"] .history-controls .workbench-action--icon {
+  width: 36px;
+}
+
+@container graph-panel (max-width: 640px) {
   .graph-explorer #graph-explorer-app .toolbar-label {
     display: none;
-  }
-
-  .graph-explorer #graph-explorer-app .graph-toolbar .workbench-action--secondary {
-    padding-inline: 10px;
   }
 }
 
