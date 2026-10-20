@@ -106,6 +106,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreSchema;
@@ -587,7 +588,7 @@ public class ValueStoreTest {
 
 		valueStore.startTransaction(true);
 		valueStore.rollback();
-		CountDownLatch laterRevisionCollected = trackRevisionCollection(valueStore.getLazyValue(id));
+		RevisionCollection laterRevisionCollected = trackRevisionCollection(valueStore.getLazyValue(id));
 		retireValues(Set.of(id));
 
 		awaitRevisionCollection(laterRevisionCollected);
@@ -603,7 +604,7 @@ public class ValueStoreTest {
 		long[] ids = storeBNodes("first-cohort", "older-held");
 		LmdbValue held = valueStore.getLazyValue(ids[1]);
 		retireValues(Set.of(ids[0]));
-		CountDownLatch laterRevisionCollected = trackRevisionCollection(valueStore.getLazyValue(ids[1]));
+		RevisionCollection laterRevisionCollected = trackRevisionCollection(valueStore.getLazyValue(ids[1]));
 		retireValues(Set.of(ids[1]));
 
 		awaitRevisionCollection(laterRevisionCollected);
@@ -630,7 +631,7 @@ public class ValueStoreTest {
 		LmdbTripleTerm held = (LmdbTripleTerm) valueStore.getLazyValue(outerId);
 		long originalRevisionId = held.getValueStoreRevision().getRevisionId();
 		retireValues(Set.of(unrelatedId));
-		CountDownLatch laterRevisionCollected = trackRevisionCollection(valueStore.getLazyValue(outerId));
+		RevisionCollection laterRevisionCollected = trackRevisionCollection(valueStore.getLazyValue(outerId));
 		retireValues(Set.of(outerId));
 		if (primeNewerCache) {
 			valueStore.getValue(outerId);
@@ -654,14 +655,14 @@ public class ValueStoreTest {
 	public void testRetiredIdsBecomeReusableAfterAllLazyValuesAreCollected() throws Exception {
 		long id = storeBNodes("collectable-held")[0];
 		LmdbValue held = valueStore.getLazyValue(id);
-		CountDownLatch revisionCollected = trackRevisionCollection(held);
+		RevisionCollection revisionCollected = trackRevisionCollection(held);
 		retireValues(Set.of(id));
 		evictRetiredValues();
 		assertNotEquals("A reachable lazy value must retain its ID", id, storeBNodes("before-release")[0]);
 		Reference.reachabilityFence(held);
 		held = null;
 
-		awaitRevisionCollection(revisionCollected);
+		awaitReclamationEligibility(revisionCollected);
 		evictRetiredValues();
 		assertNull("The retired dictionary bytes may be removed once all lazy values are gone",
 				valueStore.getValue(id));
@@ -671,9 +672,9 @@ public class ValueStoreTest {
 	@Test
 	public void testRolledBackEvictionKeepsRetiredIdsEligibleForReclamation() throws Exception {
 		long id = storeBNodes("eviction-rollback")[0];
-		CountDownLatch revisionCollected = trackRevisionCollection(valueStore.getLazyValue(id));
+		RevisionCollection revisionCollected = trackRevisionCollection(valueStore.getLazyValue(id));
 		retireValues(Set.of(id));
-		awaitRevisionCollection(revisionCollected);
+		awaitReclamationEligibility(revisionCollected);
 
 		valueStore.forceEvictionOfValues();
 		valueStore.startTransaction(true);
@@ -704,9 +705,9 @@ public class ValueStoreTest {
 				assertEquals(id, valueStore.getId(snapshot, original));
 			}
 
-			CountDownLatch revisionCollected = trackRevisionCollection(valueStore.getLazyValue(id));
+			RevisionCollection revisionCollected = trackRevisionCollection(valueStore.getLazyValue(id));
 			retireValues(Set.of(id));
-			awaitRevisionCollection(revisionCollected);
+			awaitReclamationEligibility(revisionCollected);
 			evictRetiredValues();
 			assertNull("The current dictionary has physically removed the original bytes", valueStore.getValue(id));
 			assertEquals("The committed writer may reuse the ID outside the strict snapshot", id,
@@ -1462,9 +1463,9 @@ public class ValueStoreTest {
 			}
 		};
 		long id = storeBNodes("admission-maintenance-retired")[0];
-		CountDownLatch collected = trackRevisionCollection(valueStore.getLazyValue(id));
+		RevisionCollection collected = trackRevisionCollection(valueStore.getLazyValue(id));
 		retireValues(Set.of(id));
-		awaitRevisionCollection(collected);
+		awaitReclamationEligibility(collected);
 		valueStore.forceEvictionOfValues();
 		pauseMaintenance.set(true);
 		ExecutorService executor = Executors.newFixedThreadPool(2);
@@ -1540,9 +1541,9 @@ public class ValueStoreTest {
 			}
 		};
 		long id = storeBNodes("clear-admission-retired")[0];
-		CountDownLatch collected = trackRevisionCollection(valueStore.getLazyValue(id));
+		RevisionCollection collected = trackRevisionCollection(valueStore.getLazyValue(id));
 		retireValues(Set.of(id));
-		awaitRevisionCollection(collected);
+		awaitReclamationEligibility(collected);
 		valueStore.forceEvictionOfValues();
 		armed.set(true);
 		ExecutorService executor = Executors.newFixedThreadPool(2);
@@ -1597,9 +1598,9 @@ public class ValueStoreTest {
 			}
 		};
 		long id = storeBNodes("checkpoint-admission-retired")[0];
-		CountDownLatch collected = trackRevisionCollection(valueStore.getLazyValue(id));
+		RevisionCollection collected = trackRevisionCollection(valueStore.getLazyValue(id));
 		retireValues(Set.of(id));
-		awaitRevisionCollection(collected);
+		awaitReclamationEligibility(collected);
 		valueStore.forceEvictionOfValues();
 		restartArmed.set(true);
 		valueStore.startTransaction(true);
@@ -1646,9 +1647,9 @@ public class ValueStoreTest {
 			}
 		};
 		long id = storeBNodes("settlement-original")[0];
-		CountDownLatch collected = trackRevisionCollection(valueStore.getLazyValue(id));
+		RevisionCollection collected = trackRevisionCollection(valueStore.getLazyValue(id));
 		retireValues(Set.of(id));
-		awaitRevisionCollection(collected);
+		awaitReclamationEligibility(collected);
 		valueStore.forceEvictionOfValues();
 		AtomicReference<LmdbValue> writerShell = new AtomicReference<>();
 		AtomicReference<Thread> readerThread = new AtomicReference<>();
@@ -1919,7 +1920,7 @@ public class ValueStoreTest {
 			long anchorId = valueStore.storeValue(Values.literal("borrowed datatype anchor".repeat(16)));
 			valueStore.commit();
 			long id = storeBNodes("borrow-retired-old-value")[0];
-			CountDownLatch collected = trackRevisionCollection(valueStore.getLazyValue(id));
+			RevisionCollection collected = trackRevisionCollection(valueStore.getLazyValue(id));
 			retireValues(Set.of(id));
 			try (TxnManager.ReaderReservation oldTripleReservation = triples.getTxnManager().reserveReadTxn(false);
 					Txn oldTripleTxn = oldTripleReservation.startPinned(triples::getDataRevision);
@@ -1928,7 +1929,7 @@ public class ValueStoreTest {
 				// This paired view opens after reverse-map retirement, but its dictionary still contains the
 				// old ID-to-value association while the earlier Lazy retention cohort awaits reclamation.
 				oldSnapshot.retainStableIds(oldTripleTxn);
-				awaitRevisionCollection(collected);
+				awaitReclamationEligibility(collected);
 				evictRetiredValues();
 				long replacementId = storeBNodes("borrow-reused-new-value")[0];
 				assertEquals("Native reclamation must actually reuse the retired ID", id, replacementId);
@@ -1965,11 +1966,11 @@ public class ValueStoreTest {
 		valueStore = createValueStore(hashCacheEnabledConfig());
 		long id = storeBNodes("late-completion-original")[0];
 		LmdbValue original = valueStore.getLazyValue(id);
-		CountDownLatch collected = trackRevisionCollection(original);
+		RevisionCollection collected = trackRevisionCollection(original);
 		original.init();
 		ValueStoreRevision originalRevision = original.getValueStoreRevision();
 		retireValues(Set.of(id));
-		awaitRevisionCollection(collected);
+		awaitReclamationEligibility(collected);
 		evictRetiredValues();
 		assertEquals(id, storeBNodes("late-completion-replacement")[0]);
 		for (int i = 0; i < 3; i++) {
@@ -2032,7 +2033,7 @@ public class ValueStoreTest {
 		assertNotEquals(0, replacementHash);
 		long id = storeBNodes("hash-association-original")[0];
 		LmdbValue ready = valueStore.getLazyValue(id);
-		CountDownLatch collected = trackRevisionCollection(ready);
+		RevisionCollection collected = trackRevisionCollection(ready);
 		ready.init();
 		assertEquals(originalHash, ready.hashCode());
 		if ("storeHash".equals(hashOperation)) {
@@ -2049,7 +2050,7 @@ public class ValueStoreTest {
 			assertTrue("Hash access must capture the current, real dictionary revision before reclamation",
 					revisionCaptured.await(5, TimeUnit.SECONDS));
 			retireValues(Set.of(id));
-			awaitRevisionCollection(collected);
+			awaitReclamationEligibility(collected);
 			evictRetiredValues();
 			assertEquals("The replacement must physically reuse the original compound ID", id,
 					storeBNodes("hash-association-replacement")[0]);
@@ -2145,7 +2146,7 @@ public class ValueStoreTest {
 				Txn tripleTxn = tripleReservation.startPinned(triples::getDataRevision)) {
 			try {
 				long id = storeBNodes("borrow-capacity-retired")[0];
-				CountDownLatch collected = trackRevisionCollection(valueStore.getLazyValue(id));
+				RevisionCollection collected = trackRevisionCollection(valueStore.getLazyValue(id));
 				retireValues(Set.of(id));
 				for (int i = 0; i < TxnManager.POOL_SIZE - 1; i++) {
 					try (ValueStore.ReadSnapshotReservation reservation = valueStore.reserveReadSnapshot()) {
@@ -2154,7 +2155,7 @@ public class ValueStoreTest {
 						snapshots.add(snapshot);
 					}
 				}
-				awaitRevisionCollection(collected);
+				awaitReclamationEligibility(collected);
 				evictRetiredValues();
 				assertEquals(id, storeBNodes("borrow-capacity-replacement")[0]);
 				Value expected = Values.bnode("borrow-capacity-replacement");
@@ -2212,11 +2213,11 @@ public class ValueStoreTest {
 		};
 		long[] originalIds = storeBNodes("pending-retired", "pending-committed");
 		LmdbValue oldReady = valueStore.getLazyValue(originalIds[0]);
-		CountDownLatch collected = trackRevisionCollection(oldReady);
+		RevisionCollection collected = trackRevisionCollection(oldReady);
 		oldReady.init();
 		if (reclaim) {
 			retireValues(Set.of(originalIds[0]));
-			awaitRevisionCollection(collected);
+			awaitReclamationEligibility(collected);
 			valueStore.forceEvictionOfValues();
 		}
 		valueStore.startTransaction(true);
@@ -2578,9 +2579,11 @@ public class ValueStoreTest {
 	@ValueSource(booleans = { false, true })
 	public void testUncommittedWriterLazyDoesNotBorrowCommittedAssociation(boolean nested) throws Exception {
 		long id = storeBNodes("uncommitted-retired")[0];
-		CountDownLatch collected = trackRevisionCollection(valueStore.getLazyValue(id));
-		retireValues(Set.of(id));
-		awaitRevisionCollection(collected);
+		try (ValueResolutionScope scope = valueStore.openValueResolutionScope();
+				SailClosable ignored = scope.activate()) {
+			assertEquals(id, valueStore.getLazyValue(id).getInternalID());
+			retireValues(Set.of(id));
+		}
 		valueStore.forceEvictionOfValues();
 		valueStore.startTransaction(true);
 		assertEquals(id, valueStore.storeValue(Values.bnode("uncommitted-replacement")));
@@ -2621,21 +2624,37 @@ public class ValueStoreTest {
 		valueStore.commit();
 	}
 
-	private CountDownLatch trackRevisionCollection(LmdbValue value) {
-		return trackCollection(value.getValueStoreRevision());
+	private record RevisionCollection(long revisionId, CountDownLatch collected) {
 	}
 
-	private CountDownLatch trackCollection(Object referent) {
+	private RevisionCollection trackRevisionCollection(LmdbValue value) {
+		ValueStoreRevision.Lazy revision = ((ValueStoreRevision.Lazy) value.getValueStoreRevision()).epoch();
 		CountDownLatch collected = new CountDownLatch(1);
-		revisionCleaner.register(referent, collected::countDown);
-		return collected;
+		revisionCleaner.register(revision, collected::countDown);
+		return new RevisionCollection(revision.getRevisionId(), collected);
 	}
 
-	private void awaitRevisionCollection(CountDownLatch collected) throws InterruptedException {
-		awaitCollection(collected);
-		// Both registrations use the registering thread's shared ConcurrentCleaner. A subsequent collection
-		// barrier lets it finish the value store's cleanup actions for the previously collected revision.
-		awaitCollection(trackCollection(new Object()));
+	private void awaitRevisionCollection(RevisionCollection revision) throws InterruptedException {
+		awaitCollection(revision.collected());
+	}
+
+	private void awaitReclamationEligibility(RevisionCollection revision) throws InterruptedException {
+		awaitRevisionCollection(revision);
+		// Cleaner callbacks for the same referent have no ordering guarantee. Observe the store's real
+		// eligibility publication before asking a writer to reclaim its retired dictionary records.
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+		while (!isReclamationEligible(revision.revisionId()) && System.nanoTime() < deadline) {
+			System.gc();
+			Thread.yield();
+		}
+		assertTrue("The collected revision must be eligible before checking reclamation",
+				isReclamationEligible(revision.revisionId()));
+	}
+
+	private boolean isReclamationEligible(long revisionId) {
+		synchronized (valueStore.unusedRevisionIds) {
+			return valueStore.unusedRevisionIds.contains(revisionId);
+		}
 	}
 
 	private void awaitCollection(CountDownLatch collected) throws InterruptedException {
@@ -2803,7 +2822,7 @@ public class ValueStoreTest {
 		long retainedId = retiredIds[0];
 		LmdbValue retainedValue = valueStore.getLazyValue(retainedId);
 		long retainedRevisionId = retainedValue.getValueStoreRevision().getRevisionId();
-		CountDownLatch retainedRevisionCollected = trackRevisionCollection(retainedValue);
+		RevisionCollection retainedRevisionCollected = trackRevisionCollection(retainedValue);
 		retireValues(retiredIdSet);
 		assertEquals("the retirement transaction must remove the old dictionary mappings", LmdbValue.UNKNOWN_ID,
 				valueStore.getId(Values.bnode(labels[0])));
@@ -2894,7 +2913,7 @@ public class ValueStoreTest {
 
 		Reference.reachabilityFence(retainedValue);
 		retainedValue = null;
-		awaitRevisionCollection(retainedRevisionCollected);
+		awaitReclamationEligibility(retainedRevisionCollected);
 		assertTrue("the collected lazy epoch must produce a real reclamation candidate",
 				valueStore.unusedRevisionIds.contains(retainedRevisionId));
 		valueStore.forceEvictionOfValues();
