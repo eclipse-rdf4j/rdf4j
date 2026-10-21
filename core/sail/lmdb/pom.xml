@@ -239,16 +239,9 @@
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-queryrender</artifactId>
 			<version>${project.version}</version>
+			<type>test-jar</type>
 			<scope>test</scope>
 		</dependency>
-		<!--This is commented out because we now have duplicates with the rdf4j-queryrender above so we need to figure out which one we want to keep. -->
-<!--		<dependency>-->
-		<!--			<groupId>${project.groupId}</groupId>-->
-<!--			<artifactId>rdf4j-queryrender</artifactId>-->
-<!--			<version>${project.version}</version>-->
-<!--			<type>test-jar</type>-->
-<!--			<scope>test</scope>-->
-<!--		</dependency>-->
 	</dependencies>
 	<build>
 		<plugins>
