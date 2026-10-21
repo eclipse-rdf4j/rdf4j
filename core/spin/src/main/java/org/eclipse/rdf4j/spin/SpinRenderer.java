@@ -754,7 +754,7 @@ public class SpinRenderer {
 		public void meet(ArbitraryLengthPath node) throws RDFHandlerException {
 			// The parser's ModPath grammar has one fixed predicate. Inverse paths use the actual edge endpoints.
 			// More complex path algebra needs additional SPIN path grammar support.
-			if (!(node.getPathExpression()instanceof StatementPattern pattern)
+			if (!(node.getPathExpression() instanceof StatementPattern pattern)
 					|| !pattern.getPredicateVar().isConstant()
 					|| !(pattern.getPredicateVar().getValue() instanceof IRI)
 					|| pattern.getScope() != node.getScope()

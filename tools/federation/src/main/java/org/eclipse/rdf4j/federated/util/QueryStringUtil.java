@@ -138,13 +138,13 @@ public class QueryStringUtil {
 				@Override
 				protected void meetNode(QueryModelNode node) {
 					if (node instanceof GraphSelectionAware aware && aware.getResolvedGraphSelection() != null
-							&& aware.getResolvedGraphSelection().logicalGraph()instanceof BNode graph) {
+							&& aware.getResolvedGraphSelection().logicalGraph() instanceof BNode graph) {
 						graphIdentities.add(graph);
 					}
 					if (node instanceof StatementPattern statement
 							&& statement.getScope() == Scope.NAMED_CONTEXTS) {
 						for (BindingSet input : bindings) {
-							if (QueryAlgebraUtil.getVarValue(statement.getContextVar(), input)instanceof BNode graph) {
+							if (QueryAlgebraUtil.getVarValue(statement.getContextVar(), input) instanceof BNode graph) {
 								graphIdentities.add(graph);
 							}
 						}

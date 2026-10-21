@@ -974,7 +974,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(Order node, QueryEvaluationContext context) throws QueryEvaluationException {
 		for (OrderElem orderElem : node.getElements()) {
-			if (orderElem.getExpr()instanceof FunctionCall functionCall) {
+			if (orderElem.getExpr() instanceof FunctionCall functionCall) {
 				org.eclipse.rdf4j.query.algebra.evaluation.function.Function function = QueryEvaluationUtility
 						.resolveFunction(functionCall)
 						.orElse(null);

@@ -166,7 +166,7 @@ class FilterInValuesOptimizerTest {
 		List<FilterPlacementAnalyzer.Envelope> correlated = new FilterPlacementAnalyzer(optimized,
 				QueryAlgebraBindingAnalysis.withBindingValues(optimized, EmptyBindingSet.getInstance())).analyzeAll()
 						.stream()
-						.filter(envelope -> envelope.filter().getCondition()instanceof Not not
+						.filter(envelope -> envelope.filter().getCondition() instanceof Not not
 								&& not.getArg() instanceof Exists)
 						.toList();
 		assertThat(correlated).singleElement().satisfies(envelope -> {

@@ -1220,7 +1220,7 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 		builder.append("GRAPH ");
 		node.getGraphName().visit(this);
 		builder.append(" { \n");
-		if (!(node.getArg()instanceof SingletonSet singleton) || singleton.isVariableScopeChange()) {
+		if (!(node.getArg() instanceof SingletonSet singleton) || singleton.isVariableScopeChange()) {
 			node.getArg().visit(this);
 		}
 		builder.append("} \n");

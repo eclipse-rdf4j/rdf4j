@@ -151,13 +151,16 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		try {
 			LmdbSailStore backingStore = reopened.getBackingStore();
 			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
+			// stop() joins the refresher: unloaded-state assertions must not race its legitimate preload.
+			estimator.stop();
+			estimator.configurePersistence(estimatorStore(dataDir).toPath(), true);
 
 			Field loadedField = SketchBasedJoinEstimator.class.getDeclaredField("sketchesLoaded");
 			loadedField.setAccessible(true);
-			if (!loadedField.getBoolean(estimator)) {
-				assertFalse(estimator.isReadyNonBlocking(), "Nonblocking readiness should not load sketches");
-				assertFalse(loadedField.getBoolean(estimator), "Nonblocking readiness must leave sketches unloaded");
-			}
+			assertFalse(loadedField.getBoolean(estimator), "Lazy persistence must start with sketches unloaded");
+			assertFalse(estimator.isReadyNonBlocking(), "Nonblocking readiness should not load sketches");
+			assertFalse(loadedField.getBoolean(estimator), "Nonblocking readiness must leave sketches unloaded");
+			estimator.startBackgroundRefresh(3);
 			assertTrue(estimator.awaitReady(10, TimeUnit.SECONDS),
 					"Expected background refresh to load the persisted estimator snapshot");
 			assertTrue(loadedField.getBoolean(estimator), "Expected background refresh to load sketches");
@@ -250,7 +253,11 @@ class LmdbSailStoreEstimatorPersistenceTest {
 
 			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
 			statistics.estimateFilterPass(sampledFilter);
-			assertEquals(1, store.getBackingStore().runBackgroundFilterSamplingCycle(50L),
+			// This fixture verifies persistence, not completion within a scheduler budget. Use the maximum
+			// representable nanosecond duration; bounded-cycle expiration has its own admission tests.
+			assertEquals(1, store.getBackingStore()
+					.runBackgroundFilterSamplingCycle(
+							TimeUnit.NANOSECONDS.toMillis(Long.MAX_VALUE)),
 					"Expected background sampling to populate the sampled filter selectivity cache");
 
 			EvaluationStatistics.FilterPassEstimate estimate = statistics.estimateFilterPass(sampledFilter);

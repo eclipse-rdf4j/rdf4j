@@ -53,10 +53,10 @@ public class TripleRefBNodeVarCollector extends AbstractQueryModelVisitor<Runtim
 
 	@Override
 	public void meet(ValueExprTripleRef node) {
-		if (node.getSubjectExpr()instanceof Var var && isValidBNode(var)) {
+		if (node.getSubjectExpr() instanceof Var var && isValidBNode(var)) {
 			tripleRefs.add(var);
 		}
-		if (node.getObjectExpr()instanceof Var var && isValidBNode(var)) {
+		if (node.getObjectExpr() instanceof Var var && isValidBNode(var)) {
 			tripleRefs.add(var);
 		}
 		node.visitChildren(this);

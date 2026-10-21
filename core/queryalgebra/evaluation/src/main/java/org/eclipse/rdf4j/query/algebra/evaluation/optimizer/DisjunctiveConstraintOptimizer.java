@@ -53,7 +53,7 @@ public class DisjunctiveConstraintOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Filter filter) {
 			if (filter.getClass() == Filter.class
-					&& filter.getCondition()instanceof Or orNode
+					&& filter.getCondition() instanceof Or orNode
 					&& orNode.getClass() == Or.class) {
 				TupleExpr filterArg = filter.getArg();
 				TupleExpr node = findNotFilter(filterArg);
@@ -120,17 +120,17 @@ public class DisjunctiveConstraintOptimizer implements QueryOptimizer {
 			}
 			SameTerm sameTerm = (SameTerm) expression;
 
-			if (sameTerm.getLeftArg()instanceof Var variable
+			if (sameTerm.getLeftArg() instanceof Var variable
 					&& isPlainVariable(variable)
 					&& sameTerm.getRightArg().getClass() == ValueConstant.class
-					&& sameTerm.getRightArg()instanceof ValueConstant constant) {
+					&& sameTerm.getRightArg() instanceof ValueConstant constant) {
 				return new SameTermConstraint(variable.getName(), constant.getValue());
 			}
 
-			if (sameTerm.getRightArg()instanceof Var variable
+			if (sameTerm.getRightArg() instanceof Var variable
 					&& isPlainVariable(variable)
 					&& sameTerm.getLeftArg().getClass() == ValueConstant.class
-					&& sameTerm.getLeftArg()instanceof ValueConstant constant) {
+					&& sameTerm.getLeftArg() instanceof ValueConstant constant) {
 				return new SameTermConstraint(variable.getName(), constant.getValue());
 			}
 

@@ -4312,7 +4312,7 @@ final class LmdbNativeKernelLowering {
 			for (int at = 0; at < nested.size(); at++) {
 				Node producer = nested.get(at);
 				if (at + 1 < nested.size()
-						&& nested.get(at + 1)instanceof LmdbNativeKernelIr.EnumeratePredicates wildcard
+						&& nested.get(at + 1) instanceof LmdbNativeKernelIr.EnumeratePredicates wildcard
 						&& wildcard.wildcard && wildcard.target == null
 						&& wildcard.key.kind == LmdbNativeKernelIr.Operand.COL) {
 					if (producer instanceof LmdbNativeKernelIr.EnumerateDomain domain
@@ -4334,7 +4334,7 @@ final class LmdbNativeKernelLowering {
 						continue;
 					}
 				}
-				if (at + 1 < nested.size() && nested.get(at + 1)instanceof LmdbNativeKernelIr.Probe probe
+				if (at + 1 < nested.size() && nested.get(at + 1) instanceof LmdbNativeKernelIr.Probe probe
 						&& probe.key.kind == LmdbNativeKernelIr.Operand.COL) {
 					if (producer instanceof LmdbNativeKernelIr.EnumerateDomain domain
 							&& domain.col == probe.key.index && domain.sipDriven) {

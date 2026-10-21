@@ -300,13 +300,13 @@ public class DisjunctiveConstraintOptimizerTest extends QueryOptimizerTest {
 	}
 
 	private static Union findUnion(QueryRoot root) {
-		if (root.getArg()instanceof Union union) {
+		if (root.getArg() instanceof Union union) {
 			return union;
 		}
-		if (root.getArg()instanceof Filter filter && filter.getArg()instanceof Union union) {
+		if (root.getArg() instanceof Filter filter && filter.getArg() instanceof Union union) {
 			return union;
 		}
-		if (root.getArg()instanceof Extension extension && extension.getArg()instanceof Union union) {
+		if (root.getArg() instanceof Extension extension && extension.getArg() instanceof Union union) {
 			return union;
 		}
 		return null;

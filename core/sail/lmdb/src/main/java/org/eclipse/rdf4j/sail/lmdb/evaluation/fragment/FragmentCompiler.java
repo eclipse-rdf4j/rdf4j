@@ -78,13 +78,13 @@ public final class FragmentCompiler {
 	}
 
 	private static LongPredicateFragment primitiveFor(FragmentNode root) {
-		if (root instanceof IsBound isBound && isBound.input()instanceof Argument argument) {
+		if (root instanceof IsBound isBound && isBound.input() instanceof Argument argument) {
 			int index = argument.index();
 			return (a0, a1, a2, binding) -> argumentAt(index, a0, a1, a2) != -1L
 					? PredicateStatus.TRUE
 					: PredicateStatus.FALSE;
 		}
-		if (root instanceof TypeGuard guard && guard.input()instanceof Argument argument) {
+		if (root instanceof TypeGuard guard && guard.input() instanceof Argument argument) {
 			int index = argument.index();
 			IdCapability capability = guard.capability();
 			return (a0, a1, a2, binding) -> capability.test(argumentAt(index, a0, a1, a2))
@@ -103,8 +103,8 @@ public final class FragmentCompiler {
 				return identity;
 			}
 		}
-		if (root instanceof BooleanAnd and && and.left()instanceof Compare lower
-				&& and.right()instanceof Compare upper) {
+		if (root instanceof BooleanAnd and && and.left() instanceof Compare lower
+				&& and.right() instanceof Compare upper) {
 			LongPredicateFragment range = orderedRangePrimitive(lower, upper);
 			if (range != null) {
 				return range;
@@ -115,30 +115,30 @@ public final class FragmentCompiler {
 
 	private static LongPredicateFragment comparePrimitive(Compare compare) {
 		// ordered-integer compare against a bound constant: the Q1 fast path
-		if (compare.left()instanceof DecodeInline left && compare.right()instanceof DecodeInline right
+		if (compare.left() instanceof DecodeInline left && compare.right() instanceof DecodeInline right
 				&& left.kind() == DecodeInline.InlineKind.ORDERED_INTEGER
 				&& right.kind() == DecodeInline.InlineKind.ORDERED_INTEGER) {
-			if (left.input()instanceof Argument argument && right.input()instanceof Constant constant) {
+			if (left.input() instanceof Argument argument && right.input() instanceof Constant constant) {
 				return orderedCompareToConstant(argument.index(), constant.slot(), compare.op(), false);
 			}
-			if (left.input()instanceof Constant constant && right.input()instanceof Argument argument) {
+			if (left.input() instanceof Constant constant && right.input() instanceof Argument argument) {
 				return orderedCompareToConstant(argument.index(), constant.slot(), compare.op().flip(), true);
 			}
-			if (left.input()instanceof Argument leftArgument && right.input()instanceof Argument rightArgument) {
+			if (left.input() instanceof Argument leftArgument && right.input() instanceof Argument rightArgument) {
 				return orderedCompareArguments(leftArgument.index(), rightArgument.index(), compare.op());
 			}
 			return null;
 		}
 		// raw-id term compare: identity-aware EQ/NE plus ordered-integer numeric order
-		if (compare.left()instanceof Argument leftArgument) {
-			if (compare.right()instanceof Constant constant) {
+		if (compare.left() instanceof Argument leftArgument) {
+			if (compare.right() instanceof Constant constant) {
 				return rawIdCompare(leftArgument.index(), -1, constant.slot(), compare.op());
 			}
-			if (compare.right()instanceof Argument rightArgument) {
+			if (compare.right() instanceof Argument rightArgument) {
 				return rawIdCompare(leftArgument.index(), rightArgument.index(), -1, compare.op());
 			}
 		}
-		if (compare.left()instanceof Constant constant && compare.right()instanceof Argument rightArgument) {
+		if (compare.left() instanceof Constant constant && compare.right() instanceof Argument rightArgument) {
 			return rawIdCompare(rightArgument.index(), -1, constant.slot(), compare.op().flip());
 		}
 		return null;
@@ -146,15 +146,15 @@ public final class FragmentCompiler {
 
 	/** Term identity over raw ids: exactly {@link FragmentInterpreter}'s SameTerm semantics, monomorphic. */
 	private static LongPredicateFragment sameTermPrimitive(SameTerm sameTerm) {
-		if (sameTerm.left()instanceof Argument leftArgument) {
-			if (sameTerm.right()instanceof Argument rightArgument) {
+		if (sameTerm.left() instanceof Argument leftArgument) {
+			if (sameTerm.right() instanceof Argument rightArgument) {
 				return sameTermIdentity(leftArgument.index(), rightArgument.index(), -1);
 			}
-			if (sameTerm.right()instanceof Constant constant) {
+			if (sameTerm.right() instanceof Constant constant) {
 				return sameTermIdentity(leftArgument.index(), -1, constant.slot());
 			}
 		}
-		if (sameTerm.left()instanceof Constant constant && sameTerm.right()instanceof Argument rightArgument) {
+		if (sameTerm.left() instanceof Constant constant && sameTerm.right() instanceof Argument rightArgument) {
 			return sameTermIdentity(rightArgument.index(), -1, constant.slot());
 		}
 		return null;
@@ -250,8 +250,9 @@ public final class FragmentCompiler {
 	 * one decode; any bound combination of GE/GT and LE/LT over the same argument qualifies.
 	 */
 	private static LongPredicateFragment orderedRangePrimitive(Compare lower, Compare upper) {
-		if (!(lower.left()instanceof DecodeInline lowerLeft && lower.right()instanceof DecodeInline lowerRight
-				&& upper.left()instanceof DecodeInline upperLeft && upper.right()instanceof DecodeInline upperRight)) {
+		if (!(lower.left() instanceof DecodeInline lowerLeft && lower.right() instanceof DecodeInline lowerRight
+				&& upper.left() instanceof DecodeInline upperLeft
+				&& upper.right() instanceof DecodeInline upperRight)) {
 			return null;
 		}
 		if (lowerLeft.kind() != DecodeInline.InlineKind.ORDERED_INTEGER
@@ -260,9 +261,10 @@ public final class FragmentCompiler {
 				|| upperRight.kind() != DecodeInline.InlineKind.ORDERED_INTEGER) {
 			return null;
 		}
-		if (!(lowerLeft.input()instanceof Argument lowerArgument && lowerRight.input()instanceof Constant lowerConstant
-				&& upperLeft.input()instanceof Argument upperArgument
-				&& upperRight.input()instanceof Constant upperConstant)) {
+		if (!(lowerLeft.input() instanceof Argument lowerArgument
+				&& lowerRight.input() instanceof Constant lowerConstant
+				&& upperLeft.input() instanceof Argument upperArgument
+				&& upperRight.input() instanceof Constant upperConstant)) {
 			return null;
 		}
 		if (lowerArgument.index() != upperArgument.index()) {

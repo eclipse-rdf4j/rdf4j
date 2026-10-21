@@ -424,7 +424,7 @@ final class LmdbNativeLeapfrogJoin {
 		boolean[] alive = new boolean[n];
 		int eligible = 0;
 		for (int i = 0; i < n; i++) {
-			if (!(children[i]instanceof PatternPlan pattern)) {
+			if (!(children[i] instanceof PatternPlan pattern)) {
 				continue;
 			}
 			if (!eligibleCorePattern(pattern)) {

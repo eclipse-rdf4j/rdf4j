@@ -3514,7 +3514,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		private volatile TupleExpr tupleExpr;
 	}
 
-	private record ReplayPlan<T> (ReplayFactory<T> factory, long generation,
+	private record ReplayPlan<T>(ReplayFactory<T> factory, long generation,
 			List<LmdbSailStore.ReadViewLease> readViews, QueryExecutionDeadline deadline,
 			ReplayPlanIteration<T> iteration) {
 	}

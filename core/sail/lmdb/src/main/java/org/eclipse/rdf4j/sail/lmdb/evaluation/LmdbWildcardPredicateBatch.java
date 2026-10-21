@@ -1477,7 +1477,7 @@ final class LmdbWildcardPredicateBatch {
 			// outputs bind this stage's root, allowing openPrefix to vectorize the dependency chain recursively.
 			// Choosing the first eligible stage strands a later dependent wildcard in an unbound prefix.
 			for (int wildcardIndex = join.children.length - 1; wildcardIndex >= 0; wildcardIndex--) {
-				if (!(join.children[wildcardIndex]instanceof PatternPlan wildcard)
+				if (!(join.children[wildcardIndex] instanceof PatternPlan wildcard)
 						|| !batchEligible(wildcard)) {
 					continue;
 				}
@@ -1499,7 +1499,7 @@ final class LmdbWildcardPredicateBatch {
 				return new Shape(prefix, wildcard, nodeSlot, predicateSlot, bySubject, adaptiveDirection, false,
 						join.filters, demand);
 			}
-			if (join.children.length == 1 && join.children[0]instanceof PatternPlan wildcard
+			if (join.children.length == 1 && join.children[0] instanceof PatternPlan wildcard
 					&& batchEligible(wildcard)) {
 				long subjectBit = wildcard.s.hasSlot() ? 1L << wildcard.s.slot : 0L;
 				long objectBit = wildcard.o.hasSlot() ? 1L << wildcard.o.slot : 0L;

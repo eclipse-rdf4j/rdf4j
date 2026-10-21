@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -199,6 +200,34 @@ class RealWorkflowTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn(expected, result.stderr)
 
+    def change_active_formatter_version(self, version: str) -> None:
+        pom = self.root / "pom.xml"
+        tree = ET.parse(pom)
+        root = tree.getroot()
+        namespace = root.tag.partition("}")[0] + "}" if "}" in root.tag else ""
+        if namespace:
+            ET.register_namespace("", namespace[1:-1])
+
+        def tag(name: str) -> str:
+            return f"{namespace}{name}"
+
+        profiles = root.find(tag("profiles"))
+        self.assertIsNotNone(profiles, "POM must declare its formatting profile")
+        plugins = [
+            plugin
+            for profile in profiles.findall(tag("profile"))
+            if profile.findtext(tag("id")) == "formatting"
+            for plugin in profile.findall(f"{tag('build')}/{tag('plugins')}/{tag('plugin')}")
+            if plugin.findtext(tag("groupId")) == "com.diffplug.spotless"
+            and plugin.findtext(tag("artifactId")) == "spotless-maven-plugin"
+        ]
+        self.assertEqual(1, len(plugins), "Formatting profile must have one active Spotless plugin")
+        plugin_version = plugins[0].find(tag("version"))
+        self.assertIsNotNone(plugin_version, "Active Spotless plugin must declare its version")
+        self.assertNotEqual(version, plugin_version.text, "Failure injection must change the configured version")
+        plugin_version.text = version
+        tree.write(pom, encoding="utf-8", xml_declaration=True)
+
     def change_grammar(self, addition: str) -> None:
         grammar = self.root / AST / "sparql.jjt"
         grammar.write_bytes(grammar.read_bytes() + addition.encode())
@@ -258,6 +287,8 @@ class RealWorkflowTest(unittest.TestCase):
         patch = self.root / WORKFLOW.CONFIG / "patches/03-preserve-ast-compatibility.diff"
         data = patch.read_bytes()
         self.assertIn(b"+\tpublic ", data)
+        expected = {name: (self.root / AST / name).read_bytes() for name in self.manifest["patched_outputs"]}
+        source_before = {p.name: p.read_bytes() for p in (self.root / AST).glob("*.java")}
         # The valid patch deliberately introduces formatting-only drift.
         patch.write_bytes(data.replace(b"+\tpublic ", b"+\tpublic  ", 1))
         pom = self.root / "pom.xml"
@@ -266,7 +297,9 @@ class RealWorkflowTest(unittest.TestCase):
         work = Path(self.directory.name) / "normalization-proof"
         result = self.invoke("--work-dir", str(work))
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("Writing clean file:", (work / "formatter.log").read_text())
+        replayed = work / "build" / AST
+        self.assertEqual(expected, {path.name: path.read_bytes() for path in replayed.glob("*.java")})
+        self.assertEqual(source_before, {p.name: p.read_bytes() for p in (self.root / AST).glob("*.java")})
 
     def test_grammar_drift_is_detected_even_when_generated_behavior_would_not_change(self) -> None:
         grammar = self.root / AST / "sparql.jjt"
@@ -298,10 +331,11 @@ class RealWorkflowTest(unittest.TestCase):
         grammar.write_bytes(original)
         self.manifest["grammar_sha256"] = hashlib.sha256(original).hexdigest()
         self.manifest_path.write_text(json.dumps(self.manifest))
-        pom = self.root / "pom.xml"
-        pom.write_text(pom.read_text().replace("<version>2.34.0</version>",
-                                             "<version>0.0.0-intentional-test-failure</version>"))
-        self.require_failure("mvn failed")
+        invalid_version = "0.0.0-intentional-test-failure"
+        self.change_active_formatter_version(invalid_version)
+        result = self.invoke()
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(f"com.diffplug.spotless:spotless-maven-plugin:{invalid_version}", result.stderr)
 
     def test_explicit_record_is_deterministic_and_source_read_only(self) -> None:
         before = {p.name: p.read_bytes() for p in (self.root / AST).glob("*.java")}

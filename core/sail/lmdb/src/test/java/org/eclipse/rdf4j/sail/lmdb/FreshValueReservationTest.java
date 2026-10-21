@@ -157,7 +157,7 @@ class FreshValueReservationTest {
 			store = new ValueStore(directory, properties, config);
 			for (int i = 0; i < input.length; i++) {
 				Value expected = input[i];
-				if (input[i]instanceof Literal literal && literal.getLanguage().isPresent()) {
+				if (input[i] instanceof Literal literal && literal.getLanguage().isPresent()) {
 					String language = literal.getLanguage().get();
 					if (canonicalLanguages) {
 						language = language.toLowerCase(Locale.ROOT);

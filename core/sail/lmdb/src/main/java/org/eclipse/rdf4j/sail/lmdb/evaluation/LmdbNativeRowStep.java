@@ -304,6 +304,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 
 	final NativeLmdbQuerySource source;
 	final SlotPlan arg;
+	final boolean replaySafe;
 	final NativeSlotLayout layout;
 	final int[] sourceSlots;
 	final String[] targetNames;
@@ -364,6 +365,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			LmdbPrefixRunPlan prefixRunPlan) {
 		this.source = source;
 		this.arg = arg;
+		this.replaySafe = SlotPlan.encounterOrderReplaySafe(arg);
 		this.layout = layout;
 		this.sourceSlots = sourceSlots;
 		this.targetNames = targetNames;
@@ -703,7 +705,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			// factorized specialists — which produce rows on their own sources — must not intercept such plans
 			try (LmdbNativeStrategyArbiter<List<BindingSet>> arbiter = LmdbNativeStrategyArbiter
 					.<List<BindingSet>>forExpr(originalExpr, row.source)
-					.probeHarness(LmdbNativeProbeHarness.blocking())
+					.probeHarness(replaySafe ? LmdbNativeProbeHarness.blocking() : null)
 					.forcingWhereApplicable(forcedExecutionStrategyName(), "ORDER BY dispatch")) {
 				offerOrderedStrategies(row, base, values, comparator, emitCap, arbiter);
 				List<BindingSet> ordered = arbiter.select();
@@ -1293,9 +1295,10 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 				}
 			}
 		}
+		// Withholding rows does not undo expression effects. A discarded trial may reopen only a repeatable plan.
 		try (LmdbNativeStrategyArbiter<NativeUnorderedInput> arbiter = LmdbNativeStrategyArbiter
 				.<NativeUnorderedInput>forSlice(originalExpr, consumableRows(), row.source)
-				.probeHarness(new NativeProbeBufferHarness())
+				.probeHarness(replaySafe ? new NativeProbeBufferHarness() : null)
 				.forcing(forcedStrategy, "row/join dispatch")) {
 			offerUnorderedStrategies(row, distinctPlan, multiJoin, correlatedEntry, retainedSlots, arbiter);
 
@@ -1443,7 +1446,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		if (orderSlots.length != 0 && !distinct && !NativeGroupIteration.containsComputedValueCopy(arg)) {
 			try (LmdbNativeStrategyArbiter<List<BindingSet>> ordered = LmdbNativeStrategyArbiter
 					.<List<BindingSet>>forExpr(originalExpr, row.source)
-					.probeHarness(LmdbNativeProbeHarness.blocking())
+					.probeHarness(replaySafe ? LmdbNativeProbeHarness.blocking() : null)
 					.forcingWhereApplicable(forcedExecutionStrategyName(), "ORDER BY dispatch")) {
 				offerOrderedStrategies(row, row.base, null, null,
 						NativeSliceMath.limitPlusOffset(limit, Math.max(0L, offset)), ordered);
@@ -1466,7 +1469,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		MultiJoinPlan multiJoin = arg instanceof MultiJoinPlan join && join.children.length > 0 ? join : null;
 		try (LmdbNativeStrategyArbiter<NativeUnorderedInput> arbiter = LmdbNativeStrategyArbiter
 				.<NativeUnorderedInput>forSlice(originalExpr, consumableRows(), source)
-				.probeHarness(new NativeProbeBufferHarness())
+				.probeHarness(replaySafe ? new NativeProbeBufferHarness() : null)
 				.forcing(forcedExecutionStrategyName(), "row/join dispatch")) {
 			NativeTupleDistinctPlan distinctPlan = distinct ? LmdbNativeOrderPlanner.tuple(arg, sourceSlots, row)
 					: null;
@@ -1539,7 +1542,8 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_BATCH, "disabled");
 			return null;
 		}
-		int capacity = NativeBatch.configuredRows();
+		// Effectful expressions must follow pull demand, including early close and short-circuit consumers.
+		int capacity = replaySafe ? NativeBatch.configuredRows() : 1;
 		MultiJoinPlan batchJoin = multiJoin;
 		if (batchJoin == null && distinct && arg instanceof PatternPlan pattern) {
 			batchJoin = new MultiJoinPlan(new SlotPlan[] { pattern }, new MaskedFilter[0]);

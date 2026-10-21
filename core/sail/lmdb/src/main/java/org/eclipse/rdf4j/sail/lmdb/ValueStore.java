@@ -4033,8 +4033,20 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 			ensureAssociationReadable(requested);
 		}
 		if (isWriteTransactionOwner()) {
-			return withBorrowedReadContext(writeTxn,
-					requested == null ? currentReadRevision(LmdbValue.UNKNOWN_ID) : requested, false, transaction);
+			// The native writer can be consumed by commit, rollback, clear or close on another thread. Keep its
+			// association ownership through the complete borrowed read, and recheck after acquiring that ownership.
+			acquireAssociationGate(QueryExecutionDeadline.current());
+			try {
+				WriterPublication publication = writerPublication;
+				if (isWriteTransactionOwner() && publication != null
+						&& (publication.consumer == null || publication.consumer == Thread.currentThread())) {
+					return withBorrowedReadContext(writeTxn,
+							requested == null ? currentReadRevision(LmdbValue.UNKNOWN_ID) : requested, false,
+							transaction);
+				}
+			} finally {
+				associationGate.unlock();
+			}
 		}
 		long borrowed = readContext.get().borrowedTxn;
 		if (borrowed != 0) {
@@ -5468,7 +5480,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		}
 		ValueResolutionScope scope = requested instanceof ValueStoreRevision.Lazy lazy ? lazy.resolutionScope() : null;
 		if ((scope == null || !scope.isOpen())
-				&& value.getValueStoreRevision()instanceof ValueStoreRevision.Lazy lazy) {
+				&& value.getValueStoreRevision() instanceof ValueStoreRevision.Lazy lazy) {
 			// Naked lazy access preserves the low-level escape contract, including shells first published
 			// by an internal scope. Promotion preserves both the canonical object and immutable ID identity.
 			protectExternalValue(value);
@@ -8261,7 +8273,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 			return LmdbValue.UNKNOWN_ID;
 		}
 		ensureAssociationReadable(identity.revision());
-		if (identity.revision()instanceof ValueStoreRevision.Lazy lazy && lazy.association() != null
+		if (identity.revision() instanceof ValueStoreRevision.Lazy lazy && lazy.association() != null
 				&& lazy.association().state != NativeValueAssociation.State.COMMITTED) {
 			return LmdbValue.UNKNOWN_ID;
 		}
@@ -8879,7 +8891,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 				return false;
 			}
 			LmdbValue.InternalIdentity identity = nativeValue.getInternalIdentity();
-			return identity.id() != LmdbValue.UNKNOWN_ID && identity.revision()instanceof ValueStoreRevision.Lazy lazy
+			return identity.id() != LmdbValue.UNKNOWN_ID && identity.revision() instanceof ValueStoreRevision.Lazy lazy
 					&& current.provesStatementIds(lazy);
 		}
 
@@ -9722,7 +9734,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 
 	<T> T readTransaction(long env, Transaction<T> transaction) throws IOException {
 		if (isWriteTransactionOwner()) {
-			return LmdbUtil.readTransaction(env, writeTxn, transaction);
+			return withValueReadTransaction(null, transaction);
 		}
 		ReadContext context = readContext.get();
 		long borrowed = context.borrowedTxn;
@@ -12922,7 +12934,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		while (!pending.isEmpty()) {
 			Value next = pending.removeLast();
 			if (next instanceof LmdbValue lmdb) {
-				if (lmdb.getValueStoreRevision()instanceof ValueStoreRevision.Lazy lazy
+				if (lmdb.getValueStoreRevision() instanceof ValueStoreRevision.Lazy lazy
 						&& lazy.association() != null && lazy.association().isAborted()) {
 					// A ready parent can contain unpublished children. Each child's own capability decides
 					// whether shutdown may materialize it; aborted IDs must never read a replacement record.
@@ -13400,7 +13412,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 	}
 
 	private boolean isWriteTransactionOwner() {
-		return writeTxn != 0 && (writeTxnOwner == Thread.currentThread() || readContext.get().borrowedTxn == writeTxn);
+		long borrowed = readContext.get().borrowedTxn;
+		long transaction = writeTxn;
+		// A nonowner's empty borrowed context must not become an owner when the shared writer is cleared.
+		return transaction != 0
+				&& (writeTxnOwner == Thread.currentThread() || borrowed != 0 && borrowed == transaction);
 	}
 
 	/** Mutating APIs already admitted to the serialized writer must also resolve its uncommitted dependencies. */

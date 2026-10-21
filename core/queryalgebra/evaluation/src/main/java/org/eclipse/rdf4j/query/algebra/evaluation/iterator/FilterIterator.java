@@ -127,7 +127,7 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 		if (conditionExpr instanceof Exists existsCondition) {
 			exists = existsCondition;
 			mode = BatchCorrelatedJoinProvider.Mode.SEMI;
-		} else if (conditionExpr instanceof Not not && not.getArg()instanceof Exists negatedExists) {
+		} else if (conditionExpr instanceof Not not && not.getArg() instanceof Exists negatedExists) {
 			exists = negatedExists;
 			mode = BatchCorrelatedJoinProvider.Mode.ANTI;
 		} else {
@@ -177,9 +177,9 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 				|| strategy.isTrackResultSize()
 				|| strategy.isTrackTime()
 				|| isPartOfSubQuery(filter)
-				|| !(filter.getArg()instanceof Join join)
+				|| !(filter.getArg() instanceof Join join)
 				|| join.isRuntimeTelemetryEnabled()
-				|| !(join.getRightArg()instanceof BindingSetAssignment assignment)
+				|| !(join.getRightArg() instanceof BindingSetAssignment assignment)
 				|| !assignment.hasRepeatableBindingSets()
 				|| assignment.isRuntimeTelemetryEnabled()) {
 			return null;

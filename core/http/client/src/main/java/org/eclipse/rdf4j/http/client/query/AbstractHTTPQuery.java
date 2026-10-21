@@ -87,7 +87,7 @@ public abstract class AbstractHTTPQuery extends AbstractQuery {
 	 */
 	@Experimental
 	protected void applyForcedLmdbExecutionStrategy() {
-		if (getHttpClient()instanceof RDF4JProtocolSession session) {
+		if (getHttpClient() instanceof RDF4JProtocolSession session) {
 			session.setForcedLmdbExecutionStrategy(forcedLmdbExecutionStrategy);
 		}
 	}

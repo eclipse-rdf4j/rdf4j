@@ -308,7 +308,7 @@ public class FilterOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Filter filter) {
 			super.meet(filter);
-			if (filter.getArg()instanceof Filter childFilter && filter.getParentNode() != null
+			if (filter.getArg() instanceof Filter childFilter && filter.getParentNode() != null
 					&& !TupleExprs.isVariableScopeChange(filter)
 					&& !TupleExprs.isVariableScopeChange(childFilter)
 					&& AlgebraEvaluationSafety.isRepeatable(childFilter.getCondition())

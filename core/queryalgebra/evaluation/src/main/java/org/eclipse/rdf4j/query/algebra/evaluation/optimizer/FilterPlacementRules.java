@@ -212,7 +212,7 @@ final class FilterPlacementRules {
 
 	/** Wrapping the independently evaluated right group would change its join input frame. */
 	TupleExpr scopeBoundaryTarget(TupleExpr scopedGroup) {
-		if (TupleExprs.isVariableScopeChange(scopedGroup) && scopedGroup.getParentNode()instanceof Join join
+		if (TupleExprs.isVariableScopeChange(scopedGroup) && scopedGroup.getParentNode() instanceof Join join
 				&& join.getRightArg() == scopedGroup) {
 			return join;
 		}
@@ -242,7 +242,7 @@ final class FilterPlacementRules {
 
 	private boolean runsWithoutSiblingRow(TupleExpr candidate,
 			QueryAlgebraBindingAnalysis.ReadOnlyContext candidateInput) {
-		return candidate.getParentNode()instanceof TupleExpr parent
+		return candidate.getParentNode() instanceof TupleExpr parent
 				&& candidateInput.equals(analysis.contextAt(parent));
 	}
 
