@@ -40,6 +40,7 @@ import {
   typesQuery,
   neighborsQuery,
   expandQuery,
+  withoutBlankCopies,
   linkCountQuery,
   relationCountQuery,
   type LoadedLinks,
@@ -653,7 +654,7 @@ export class RdfExplorer {
       const query = neighborsQuery(chunk, predicate, direction, limits, this.scope, this.fence, loaded);
       const found = (await this.query(query, signal)).results?.bindings ?? [];
       if (rows.maxRows !== undefined && found.length >= rows.maxRows) saturated = true;
-      bindings.push(...found);
+      for (const binding of withoutBlankCopies(found, loaded)) bindings.push(binding);
     }
     return { bindings, saturated };
   }
@@ -692,7 +693,7 @@ export class RdfExplorer {
       // within the servlet's query length and row cap.
       const loader = this.keyedLoader((batch) => expandQuery(batch, limit, this.scope, this.fence, loaded, offset), "selected");
       try {
-        return (await loader.loadMany(keys, signal)).flatMap(([, rows]) => rows ?? []);
+        return withoutBlankCopies((await loader.loadMany(keys, signal)).flatMap(([, rows]) => rows ?? []), loaded);
       } finally {
         loader.dispose();
       }

@@ -42,3 +42,14 @@ test("blank terms find nothing and the number of matches is limited", () => {
   assert.equal(findNodes(many, "node").length, 8);
   assert.equal(findNodes(many, "node", 3).length, 3);
 });
+
+test("a blank node is found by its label, not by the internal ID that stands for it", () => {
+  const blanks = [
+    node('__rdf_scoped_bnode__:["537346d6e5:1","b0"]', "Bryggen 1", "blank"),
+    node("<_:node1address>", "Storgata 2", "blank"),
+  ];
+  assert.deepEqual(findNodes(blanks, "scoped"), []);
+  assert.deepEqual(findNodes(blanks, "<_:"), []);
+  assert.deepEqual(findNodes(blanks, "node1"), []);
+  assert.deepEqual(findNodes(blanks, "bryggen").map((match) => match.node.label), ["Bryggen 1"]);
+});

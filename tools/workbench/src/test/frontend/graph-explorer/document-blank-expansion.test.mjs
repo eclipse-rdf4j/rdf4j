@@ -15,7 +15,9 @@ import { loadedLinksOf } from "../../../main/frontend/graph-explorer/link-counts
 import { mergeTriples } from "../../../main/frontend/graph-explorer/graph-operations.ts";
 import { bindingsToTriples } from "../../../main/frontend/graph-explorer/graph-terms.ts";
 import { parseSparqlResponse } from "../../../main/frontend/graph-explorer/rdf-results.ts";
-import { EXCLUSION_BUDGET, expandQuery } from "../../../main/frontend/graph-explorer/rdf-vocabulary.ts";
+import { EXCLUSION_BUDGET, expandQuery, neighborsQuery } from "../../../main/frontend/graph-explorer/rdf-vocabulary.ts";
+import { RdfExplorer, clearMetadataCache } from "../../../main/frontend/graph-explorer/rdf-explorer.ts";
+import { loadedRelationLinks, relationPlan } from "../../../main/frontend/graph-explorer/relation-expansion.ts";
 
 /**
  * A repository that does not certify its blank nodes answers them under a new document identity every time, so the
@@ -88,14 +90,64 @@ test("Expand leaves out blank neighbours through loaded predicates, in the match
   ]);
 
   const query = expandQuery(["urn:a"], 80, "default", true, loadedLinksOf(graph, ["urn:a"]));
-  const { outgoing, incoming } = branches(query);
+  const outgoing = branches(query).outgoing.find((part) => part.includes("NOT IN"));
+  const incoming = branches(query).incoming.find((part) => part.includes("NOT IN"));
 
-  assert.equal(outgoing.length, 1);
-  assert.equal(incoming.length, 1);
-  assert.ok(outgoing[0].includes("FILTER(!isBlank(?target) || ?predicate NOT IN (<urn:p>, <urn:q>))"), outgoing[0]);
-  assert.ok(outgoing[0].includes("MINUS { VALUES (?predicate ?target) { (<urn:p> <urn:b>) } }"));
-  assert.ok(incoming[0].includes("FILTER(!isBlank(?source) || ?predicate NOT IN (<urn:r>))"), incoming[0]);
-  assert.ok(!incoming[0].includes("?target) ||"), "an outgoing exclusion never narrows incoming links");
+  assert.ok(outgoing.includes("FILTER(!isBlank(?target) || ?predicate NOT IN (<urn:p>, <urn:q>))"), outgoing);
+  assert.ok(outgoing.includes("MINUS { VALUES (?predicate ?target) { (<urn:p> <urn:b>) } }"));
+  assert.ok(incoming.includes("FILTER(!isBlank(?source) || ?predicate NOT IN (<urn:r>))"), incoming);
+  assert.ok(!incoming.includes("?target) ||"), "an outgoing exclusion never narrows incoming links");
+});
+
+// A document blank node can also come from a CONSTRUCT template, BNODE() or a SERVICE answer: then the repository's
+// own blank neighbours through the same predicate are other nodes. Those it certifies come back as the same stored
+// references every time, so they are no copies and must not be left out with the rest.
+const certified = (value) => ({ type: "bnode", value, "rdf4j:reference": true });
+
+test("Expand also asks for the blank neighbours through those predicates, leaving out the stored ones it holds", () => {
+  const graph = mergeTriples(loaded([row(uri("urn:a"), "urn:p", blank("template"))]), bindingsToTriples([
+    row(uri("urn:a"), "urn:p", certified("stored")),
+  ]));
+
+  const query = expandQuery(["urn:a"], 80, "default", true, loadedLinksOf(graph, ["urn:a"]));
+  const blanks = branches(query).outgoing.find((part) => part.includes("FILTER(isBlank(?target)"));
+
+  assert.ok(blanks, query);
+  assert.ok(blanks.includes("FILTER(isBlank(?target) && ?predicate IN (<urn:p>))"), blanks);
+  assert.ok(blanks.includes("MINUS { VALUES (?predicate ?target) { (<urn:p> <_:stored>) } }"), blanks);
+  assert.ok(blanks.includes("LIMIT 80"), blanks);
+  const relation = neighborsQuery(["urn:a"], "urn:p", "outgoing", null, "default", true, loadedLinksOf(graph, ["urn:a"]));
+  assert.ok(relation.includes("FILTER(isBlank(?target) && ?predicate IN (<urn:p>))"), relation);
+});
+
+test("Expand and Expand by relation keep certified blank neighbours and drop uncertified copies", async () => {
+  const graph = loaded([row(uri("urn:alice"), "urn:address", blank("template"))]);
+  const links = loadedLinksOf(graph, ["urn:alice"]);
+  const answer = (selected) => ({ results: { bindings: [
+    { selected: uri(selected), source: uri(selected), predicate: uri("urn:address"), target: certified("a1") },
+    { selected: uri(selected), source: uri(selected), predicate: uri("urn:address"), target: { type: "bnode", value: "copy", "rdf4j:scope": "response:2" } },
+    { selected: uri(selected), source: uri(selected), predicate: uri("urn:knows"), target: uri("urn:bob") },
+  ] } });
+  const explorer = new RdfExplorer("urn:endpoint:certified-blank-neighbours", ["en"], async () => answer("urn:alice"));
+  try {
+    const expanded = await explorer.expand(["urn:alice"], 12, undefined, links);
+    assert.deepEqual(expanded.map((binding) => binding.target.value), ["a1", "urn:bob"]);
+    const { bindings } = await explorer.neighbors(["urn:alice"], "urn:address", "outgoing", null, links);
+    assert.deepEqual(bindings.map((binding) => binding.target.value), ["a1", "urn:bob"]);
+  } finally {
+    explorer.dispose();
+    clearMetadataCache();
+  }
+});
+
+test("a document blank neighbour does not count as one of the repository's links of its relation", () => {
+  const graph = loaded([row(uri("urn:alice"), "urn:address", blank("template"))]);
+
+  const { counts } = loadedRelationLinks(graph, ["urn:alice"], "urn:address", "outgoing");
+
+  assert.equal(counts.get("urn:alice"), 0);
+  assert.deepEqual(relationPlan(new Map([["urn:alice", 1]]), counts, 999).available, new Map([["urn:alice", 1]]),
+    "the stored address in the repository is still offered");
 });
 
 test("Expand without document blank nodes is the query it always was", () => {

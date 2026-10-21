@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.impl.RepositoryBNode;
@@ -43,5 +44,16 @@ class BrowseListNamesTest {
 		values.sort(BrowseList.BY_NAME);
 
 		assertThat(values).containsExactly(NEGOTIATED, iri);
+	}
+
+	@Test
+	void blankNodeGraphsThatNTriplesWouldRenameKeepTheirOwnStatementCounts() {
+		// Not valid N-Triples labels, with equal hash codes: N-Triples renames both to the same _:genid label.
+		Resource first = SimpleValueFactory.getInstance().createBNode("Aa x");
+		Resource second = SimpleValueFactory.getInstance().createBNode("BB x");
+
+		assertThat(BrowseList.key(first)).isNotEqualTo(BrowseList.key(second));
+		assertThat(BrowseList.key(first)).isNotEqualTo(BrowseList.key(SimpleValueFactory.getInstance()
+				.createIRI("urn:x")));
 	}
 }

@@ -34,6 +34,11 @@ export function loadedLinkCounts(graph: Graph) {
   return counts;
 }
 
+/** A blank node the repository did not certify: no token names it (see loadedLinksOf). */
+export function isDocumentBlank(id: string) {
+  return sparqlFacetValueToken(id) === null && sparqlTermFromNodeId(id)?.type === "bnode";
+}
+
 /**
  * Every loaded statement with reusable endpoints as SPARQL tokens, for Expand to skip. A document blank node (one
  * the repository did not certify) has no token, and comes back under a new identity in every answer; its predicates
@@ -53,7 +58,7 @@ export function loadedLinksOf(graph: Graph, ids: readonly string[]) {
     if (!links) loaded.set(id, (links = { outgoing: [], incoming: [] }));
     return links;
   };
-  const documentBlank = (id: string) => sparqlTermFromNodeId(id)?.type === "bnode";
+  const documentBlank = (id: string) => isDocumentBlank(id);
   const addBlank = (links: Links, key: "blankOutgoing" | "blankIncoming", predicate: string) => {
     const predicates = (links[key] ??= []);
     if (!predicates.includes(predicate)) predicates.push(predicate);

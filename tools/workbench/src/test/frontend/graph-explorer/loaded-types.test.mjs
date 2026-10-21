@@ -39,3 +39,19 @@ test("types already known keep their labels and gain the newly loaded ones", () 
   const typed = withLoadedTypes(known);
   assert.deepEqual(typed.nodes.find((node) => node.id === "urn:a").types.map((type) => [type.id, type.label]), [["urn:Person", "Person"], ["urn:Agent", "Agent"]]);
 });
+
+test("a blank node a resource is typed with is not taken as its type", () => {
+  // An anonymous OWL class: the type lookup asks for IRI types only, and so does the graph.
+  const blank = (value, extra) => ({ type: "bnode", value, ...extra });
+  const graph = mergeTriples(
+    { nodes: [], edges: [], revision: 0 },
+    bindingsToTriples([
+      { source: uri("urn:a"), predicate: uri(RDF_TYPE), target: blank("restriction", { "rdf4j:reference": true }) },
+      { source: uri("urn:b"), predicate: uri(RDF_TYPE), target: blank("b0", { "rdf4j:scope": "response:1" }) },
+      row("urn:b", RDF_TYPE, "urn:Person"),
+    ]),
+  );
+  const typed = withLoadedTypes(graph);
+  assert.equal(typed.nodes.find((node) => node.id === "urn:a").types, undefined);
+  assert.deepEqual(typed.nodes.find((node) => node.id === "urn:b").types.map((type) => type.id), ["urn:Person"]);
+});

@@ -36,7 +36,8 @@ export function findNodes(nodes: readonly GraphNode[], term: string, limit = 8):
   for (const node of nodes) {
     const rank = labelRank(node.label.toLocaleLowerCase(), needle);
     if (rank !== null) ranked.push({ match: { node, in: "label" }, rank });
-    else if (node.kind !== "literal" && node.id.toLocaleLowerCase().includes(needle))
+    // A blank node's ID is an internal one, not a name: it is found by its label only.
+    else if (node.kind === "iri" && node.id.toLocaleLowerCase().includes(needle))
       ranked.push({ match: { node, in: "iri" }, rank: 4 });
   }
   return ranked

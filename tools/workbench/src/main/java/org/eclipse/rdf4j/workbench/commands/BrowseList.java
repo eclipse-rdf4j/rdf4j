@@ -437,6 +437,11 @@ final class BrowseList {
 	}
 
 	static String key(Resource context) {
+		if (context instanceof BNode blank) {
+			// By its ID, unchanged: N-Triples renames an ID that is not a valid label, and two such IDs can share a
+			// name.
+			return "_:" + blank.getID();
+		}
 		return context == null ? DEFAULT_GRAPH : NTriplesUtil.toNTriplesString(context);
 	}
 

@@ -16,7 +16,7 @@
  */
 import type { Direction } from "./explorer-types.ts";
 import type { Graph } from "./graph-types.ts";
-import { linkCountCap, loadedLinksOf } from "./link-counts.ts";
+import { isDocumentBlank, linkCountCap, loadedLinksOf } from "./link-counts.ts";
 import type { LoadedLinks } from "./rdf-vocabulary.ts";
 
 /** More new links than this, across the selection, are only loaded once the user says how many. */
@@ -36,6 +36,9 @@ export function loadedRelationLinks(graph: Graph, ids: readonly string[], predic
   for (const edge of graph.edges) {
     if (edge.predicate !== predicate) continue;
     const id = direction === "outgoing" ? edge.source : edge.target;
+    // A document blank neighbour is not one the repository can name (a CONSTRUCT template's, say): it does not stand
+    // for one of the repository's links, which may well be a stored blank node still to load.
+    if (isDocumentBlank(direction === "outgoing" ? edge.target : edge.source)) continue;
     const count = counts.get(id);
     if (count !== undefined) counts.set(id, count + 1);
   }

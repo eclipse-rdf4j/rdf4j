@@ -428,15 +428,16 @@ export function commonNeighborIds(graph: Graph, nodeIds: string[]) {
  * is returned unchanged when nothing is new.
  */
 export function withLoadedTypes(graph: Graph): Graph {
+  const byId = new Map(graph.nodes.map((node) => [node.id, node]));
   const stated = new Map<string, string[]>();
   for (const edge of graph.edges) {
-    if (edge.predicate !== RDF_TYPE_PREDICATE) continue;
+    // Types are IRIs, as the type lookup asks for: a blank-node class (an anonymous OWL class) has no name to show.
+    if (edge.predicate !== RDF_TYPE_PREDICATE || byId.get(edge.target)?.kind !== "iri") continue;
     const list = stated.get(edge.source);
     if (list) list.push(edge.target);
     else stated.set(edge.source, [edge.target]);
   }
   if (!stated.size) return graph;
-  const byId = new Map(graph.nodes.map((node) => [node.id, node]));
   let changed = false;
   const nodes = graph.nodes.map((node) => {
     const typeIds = stated.get(node.id);
