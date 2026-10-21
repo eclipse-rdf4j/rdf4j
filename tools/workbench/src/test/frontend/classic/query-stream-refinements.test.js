@@ -632,6 +632,64 @@ test('table column allocation honors every minimum and distributes wrapped width
     assert.deepEqual(noWrap, [100, 100], 'no-wrap columns should preserve minima when the viewport is narrow');
 });
 
+test('wrapped columns share viewport width left after capped sample demand', () => {
+    const queryStream = loadQueryStreamApi();
+    const skewed = Array.from(queryStream.allocateTableColumnWidths(
+        [150, 150, 270], [150, 150, 150], 900, true));
+    assert.deepEqual(skewed, [260, 260, 380],
+        'one column should not claim the whole viewport after its sampled width has been capped');
+
+    const noDemand = Array.from(queryStream.allocateTableColumnWidths(
+        [100, 200, 300], [100, 200, 300], 900, true));
+    assert.deepEqual(noDemand, [200, 300, 400],
+        'when no sampled column needs extra width, share it evenly after meeting each minimum');
+    assert.deepEqual(Array.from(queryStream.allocateTableColumnWidths(
+        [100, 200, 300], [100, 200, 300], 500, true)), [100, 200, 300],
+        'a narrow viewport with no sample demand should preserve minima without producing non-finite widths');
+});
+
+test('wrapped columns share mixed-demand remainder while preserving overflow and conservation', () => {
+    const queryStream = loadQueryStreamApi();
+    const mixed = Array.from(queryStream.allocateTableColumnWidths(
+        [160, 100, 220, 100], [100, 100, 100, 100], 600, true));
+    assert.deepEqual(mixed, [165, 105, 225, 105],
+        'meet capped sample demands first, then split remaining viewport width across every column');
+
+    const scarce = Array.from(queryStream.allocateTableColumnWidths(
+        [400, 300, 250], [100, 100, 100], 400, true));
+    assert.ok(Math.abs((scarce[0] - 100) / 300 - (scarce[1] - 100) / 200) < 0.000001
+        && Math.abs((scarce[1] - 100) / 200 - (scarce[2] - 100) / 150) < 0.000001,
+        'when viewport width is scarce, scale the sampled demands proportionally');
+    assert.ok(Math.abs(scarce.reduce((sum, width) => sum + width, 0) - 400) < 0.000001,
+        'scarce allocations should conserve the full viewport');
+
+    const exactDemand = Array.from(queryStream.allocateTableColumnWidths(
+        [110, 160, 130], [100, 100, 100], 400, true));
+    assert.deepEqual(exactDemand, [110, 160, 130],
+        'when sampled demand exactly fills the expansion, do not add or lose width');
+
+    const fractional = Array.from(queryStream.allocateTableColumnWidths(
+        [110, 100, 100], [100, 100, 100], 500, true));
+    assert.equal(fractional[2], 500 - (fractional[0] + fractional[1]),
+        'assign the fractional-pixel residual deterministically to the final column');
+    assert.equal(fractional.reduce((sum, width) => sum + width, 0), 500,
+        'fractional allocations should conserve the exact table width');
+
+    const belowMinimums = Array.from(queryStream.allocateTableColumnWidths(
+        [500, 500, 500], [100, 200, 300], 500, true));
+    assert.deepEqual(belowMinimums, [100, 200, 300],
+        'a viewport narrower than the readable minima should preserve them and overflow');
+
+    const minimums = Array.from({ length: 24 }, (_, index) => 40);
+    const samples = minimums.map((minimum, index) => index % 3 === 0 ? minimum + 80 + index : minimum);
+    const many = Array.from(queryStream.allocateTableColumnWidths(samples, minimums, 2300, true));
+    assert.equal(many.length, 24);
+    assert.equal(many.every((width, index) => Number.isFinite(width) && width >= minimums[index]), true,
+        'large column sets should remain finite and honor each readable minimum');
+    assert.ok(Math.abs(many.reduce((sum, width) => sum + width, 0) - 2300) < 0.000001,
+        'wrapped widths should conserve the available viewport across many columns');
+});
+
 test('typed terms retain explore links, namespace abbreviations, nested triples, and datatype toggle', () => {
     const queryStream = loadQueryStreamApi();
     assert.equal(typeof queryStream.formatRdfTerm, 'function',

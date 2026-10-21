@@ -2925,13 +2925,29 @@ namespace workbench {
                 var remaining = Math.max(0, tableWidth - minimumTotal);
                 var demand = desired.map((width, index) => Math.max(0, width - minima[index]));
                 var demandTotal = demand.reduce((total, width) => total + width, 0);
-                var weightTotal = demandTotal > 0 ? demandTotal : count;
+                if (remaining === 0) {
+                    return minima.slice();
+                }
                 var assigned = 0;
+                if (demandTotal >= remaining) {
+                    return minima.map((minimum, index) => {
+                        var width = index === count - 1
+                            ? tableWidth - assigned
+                            : minimum + remaining * demand[index] / demandTotal;
+                        assigned += width;
+                        return width;
+                    });
+                }
+
+                // Sampled widths are preferences, not claims on all the viewport space: once every capped sample
+                // demand is met, share the still-unused space across the columns instead of stretching just the
+                // columns whose sample happened to report a width above their minimum.
+                var unclaimed = remaining - demandTotal;
+                var shared = unclaimed / count;
                 return minima.map((minimum, index) => {
-                    var weight = demandTotal > 0 ? demand[index] : 1;
                     var width = index === count - 1
                         ? tableWidth - assigned
-                        : minimum + remaining * weight / weightTotal;
+                        : minimum + demand[index] + shared;
                     assigned += width;
                     return width;
                 });

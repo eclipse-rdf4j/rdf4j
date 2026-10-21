@@ -74,6 +74,81 @@ async function islandColours(page) {
 
 // The toolbar shows its button labels while everything fits on one row with them, then only their icons, and only then
 // its narrow layout (the views on a row of their own, the actions spread below): it never wraps on its own.
+test('the graph explorer waits for its stylesheet across route disposal and remount', async ({ page }) => {
+    let releaseStylesheet;
+    let stylesheetRequested;
+    const stylesheetGate = new Promise((resolve) => { releaseStylesheet = resolve; });
+    const requestStarted = new Promise((resolve) => { stylesheetRequested = resolve; });
+    let stylesheetRequests = 0;
+    await page.route((url) => new URL(url).pathname.endsWith('/styles/graph-explorer.css'), async (route) => {
+        const response = await route.fetch();
+        if (++stylesheetRequests === 1) {
+            stylesheetRequested();
+        }
+        await stylesheetGate;
+        await route.fulfill({ response });
+    });
+
+    const graphUrl = repositoryPageUrl(REPOSITORY_ID, 'graph');
+    const summaryUrl = repositoryPageUrl(REPOSITORY_ID, 'summary');
+    try {
+        await page.setViewportSize({ width: 1700, height: 900 });
+        await page.goto(summaryUrl, { waitUntil: 'domcontentloaded' });
+        await waitForRoute(page, 'summary');
+        expect(stylesheetRequests, 'unrelated routes do not load graph styles').toBe(0);
+
+        await page.evaluate((url) => window.workbench.router.navigate(url, { history: 'push' }), graphUrl);
+        await waitForRoute(page, 'graph');
+        await requestStarted;
+        await expect(page.locator('.graph-explorer .graph-toolbar')).toHaveCount(0);
+
+        await page.evaluate((url) => window.workbench.router.navigate(url, { history: 'push' }), summaryUrl);
+        await waitForRoute(page, 'summary');
+        await expect(page.locator('.graph-explorer .graph-toolbar')).toHaveCount(0);
+
+        await page.evaluate((url) => window.workbench.router.navigate(url, { history: 'push' }), graphUrl);
+        await waitForRoute(page, 'graph');
+        await expect(page.locator('.graph-explorer .graph-toolbar')).toHaveCount(0);
+    } finally {
+        releaseStylesheet();
+    }
+
+    const toolbar = page.locator('.graph-explorer .graph-toolbar');
+    await expect(toolbar).toBeVisible();
+    await expect(toolbar).toHaveAttribute('data-fit', 'labels');
+    await expect.poll(() => toolbar.evaluate((bar) => {
+        const tops = [...bar.children].map((item) => Math.round(item.getBoundingClientRect().top));
+        return new Set(tops).size;
+    })).toBe(1);
+    await expect(page.locator('.graph-explorer .toolbar-label').first()).toBeVisible();
+    await expect(page.locator('.graph-explorer')).toHaveCount(1);
+    expect(stylesheetRequests, 'the pending document stylesheet is reused on remount').toBe(1);
+});
+
+test('a failed graph stylesheet load reports an accessible retry and recovers', async ({ page }) => {
+    let stylesheetRequests = 0;
+    await page.route((url) => new URL(url).pathname.endsWith('/styles/graph-explorer.css'), async (route) => {
+        if (++stylesheetRequests === 1) {
+            await route.fulfill({ status: 503, contentType: 'text/plain', body: 'stylesheet unavailable' });
+        } else {
+            await route.continue();
+        }
+    });
+
+    await page.setViewportSize({ width: 1700, height: 900 });
+    await page.goto(repositoryPageUrl(REPOSITORY_ID, 'graph'), { waitUntil: 'domcontentloaded' });
+    await waitForRoute(page, 'graph');
+    const alert = page.getByRole('alert');
+    await expect(alert).toContainText('The graph explorer could not be loaded.');
+    await alert.getByRole('button', { name: /retry/i }).click();
+    const toolbar = page.locator('.graph-explorer .graph-toolbar');
+    await expect(toolbar).toBeVisible();
+    await expect(toolbar).toHaveAttribute('data-fit', 'labels');
+    await expect(page.locator('.graph-explorer .toolbar-label').first()).toBeVisible();
+    await expect(page.locator('.graph-explorer')).toHaveCount(1);
+    expect(stylesheetRequests).toBe(2);
+});
+
 test('the toolbar turns to icons instead of breaking into two rows', async ({ page }) => {
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));

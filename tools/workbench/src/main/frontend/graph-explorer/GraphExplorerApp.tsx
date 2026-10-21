@@ -14,6 +14,7 @@ import type { GraphNode, GraphEdge, Graph, PointerPosition, EdgeCurve, EdgeRoute
 import { GRAPH_WIDTH, GRAPH_HEIGHT, NODE_TEXT_LEFT, WEBGL_NODE_THRESHOLD } from "./graph-config.ts";
 import { graphNodePresentation, graphNodeSize, edgeLabelSize, nodeCornerRadius, edgeGeometry, edgePortKey, edgeBendForLane, fitBoxes, computeEdgeLanes, computeEdgePorts, nodeBoundaryPoint, placeEdgeLabels } from "./graph-geometry.ts";
 import { createNodeMetadataSelector, applyGraphPositions, layoutDimensionsChanged } from "./graph-model.ts";
+import { labelHoverBridge } from "./graph-hover.ts";
 import { canvasGraph, RDF_TYPE } from "./graph-canvas-scope.ts";
 import type { RangeDraft, FilterFacet, PredicateOption, ContextMenu, ViewMode, LoadBatch, NamedGroup, GraphHistorySnapshot, LayoutIntent } from "./explorer-types.ts";
 import { INCREMENTAL_LAYOUT_DURATION, PROGRAMMATIC_NODE_MOTION_DURATION, DOUBLE_TAP_DELAY, DOUBLE_TAP_DISTANCE, TAP_MOVE_TOLERANCE, DOUBLE_TAP_ZOOM_SENSITIVITY, HISTORY_LIMIT, INTERACTIVE_TRANSFORM_COMMIT_DELAY, DEFAULT_QUERY, SHOW_VALUES_STORAGE_KEY, SHOW_LABELS_STORAGE_KEY, DETAILS_ITEM_LIMIT, LEGEND_TYPE_LIMIT, LABEL_WAIT_MS, FACET_LIST_LIMIT, MORE_BADGE_NODE_LIMIT, EDGE_HIT_PIXELS, QUEUED_QUERY_ROW_LIMIT, SHADOW_NODE_LIMIT, LARGE_GRAPH_NODES } from "./explorer-config.ts";
@@ -436,15 +437,23 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
       cancelProgrammaticNodeAnimation();
       const animation = programmaticNodeAnimationRef.current;
       const runId = animation.runId;
+      const canProject = (current: Graph) => programmaticNodeAnimationRef.current.runId === runId
+        && current.revision === targetGraph.revision;
       const sourceGraph = graphRef.current;
       const animationStartedAt = performance.now();
       const viewIsOurs = () => viewportTouchedAtRef.current < animationStartedAt;
       // The canvas renderer (500+ drawn nodes) jumps; SVG graphs animate, however many values they hide.
       if (canvasGraph(targetGraph, showValuesRef.current).nodes.length >= LARGE_GRAPH_NODES) {
         if (options.skipLayout && targetGraph.revision !== sourceGraph.revision) skipLayoutRevisionRef.current = targetGraph.revision;
-        graphRef.current = targetGraph;
+        if (options.skipLayout) {
+          graphRef.current = targetGraph;
+          setGraph(targetGraph);
+        } else {
+          const positions = new Map(targetGraph.nodes.flatMap(node => node.x === undefined || node.y === undefined
+            ? [] : [[node.id, { x: node.x, y: node.y }] as const]));
+          setGraph(queued => canProject(queued) ? applyGraphPositions(queued, positions) : queued);
+        }
         transformRef.current = { ...targetTransform };
-        setGraph(targetGraph);
         setTransform({ ...targetTransform });
         setIsLayoutAnimating(false);
         options.onComplete?.();
@@ -483,22 +492,23 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
       ) {
         skipLayoutRevisionRef.current = targetGraph.revision;
       }
-      graphRef.current = stagedGraph;
-      setGraph(stagedGraph);
+      if (options.skipLayout) {
+        // Undo and a stored workspace deliberately replace the topology. Layout projections only move the current
+        // topology; a query or addition may already have queued its replacement before this callback runs.
+        graphRef.current = stagedGraph;
+        setGraph(stagedGraph);
+      } else {
+        setGraph(queued => canProject(queued) ? applyGraphPositions(queued, sourcePositions) : queued);
+      }
 
       const finish = () => {
         if (programmaticNodeAnimationRef.current.runId !== runId) return;
         const current = graphRef.current;
         if (current.revision !== targetGraph.revision) return;
-        const finalGraph: Graph = {
-          ...current,
-          nodes: current.nodes.map((node) => ({
-            ...node,
-            ...targetPositions.get(node.id),
-          })),
-        };
-        graphRef.current = finalGraph;
-        setGraph(finalGraph);
+        // React may already have a newer topology queued while graphRef still describes the last render. Check the
+        // actual queued state, and project only coordinates so metadata that arrived meanwhile is retained too.
+        setGraph((queued) => canProject(queued)
+          ? applyGraphPositions(queued, targetPositions) : queued);
         if (viewIsOurs()) {
           transformRef.current = { ...targetTransform };
           setTransform({ ...targetTransform });
@@ -528,9 +538,9 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
         }
         const progress = Math.min(1, (time - startedAt) / duration);
         const eased = 1 - Math.pow(1 - progress, 3);
-        const nextGraph: Graph = {
-          ...current,
-          nodes: current.nodes.map((node) => {
+        setGraph((queued) => !canProject(queued) ? queued : {
+          ...queued,
+          nodes: queued.nodes.map((node) => {
             const start = sourcePositions.get(node.id);
             const target = targetPositions.get(node.id);
             if (!target) return node;
@@ -541,9 +551,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
               y: start.y + (target.y - start.y) * eased,
             };
           }),
-        };
-        graphRef.current = nextGraph;
-        setGraph(nextGraph);
+        });
         if (viewIsOurs()) {
           const nextTransform = {
             x: startTransform.x + (targetTransform.x - startTransform.x) * eased,
@@ -1663,7 +1671,9 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
         event.preventDefault();
         // Find is on the graph canvas: from another view, go there first.
         setViewMode("graph");
-        window.requestAnimationFrame(() => findInputRef.current?.focus());
+        const input = findInputRef.current;
+        if (input?.isConnected && !input.disabled && input.getClientRects().length) input.focus();
+        else window.requestAnimationFrame(() => findInputRef.current?.focus());
         return;
       }
       if ((event.key === "Delete" || event.key === "Backspace") && !typing && !event.metaKey && !event.ctrlKey && !event.altKey) {
@@ -1734,6 +1744,10 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     canvas.addEventListener("selectstart", suppressNativeCanvasInteraction);
     canvas.addEventListener("dragstart", suppressNativeCanvasInteraction);
     return () => {
+      if (edgeHoverFrameRef.current !== null) {
+        window.cancelAnimationFrame(edgeHoverFrameRef.current);
+        edgeHoverFrameRef.current = null;
+      }
       canvas.removeEventListener("touchstart", containTouchGesture);
       canvas.removeEventListener("touchmove", containTouchGesture);
       canvas.removeEventListener("wheel", wheel);
@@ -3134,7 +3148,8 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     more(nodeId) {
       void expandNodes([nodeId], nodeId);
     },
-    hover(nodeId, entering) {
+    hover(nodeId, entering, nextOwner) {
+      if (!entering && nextOwner === nodeId) return;
       setHoveredNodeId((current) => (entering ? nodeId : current === nodeId ? null : current));
     },
     contextMenu(nodeId, event) {
@@ -4131,7 +4146,9 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
               role="img"
               aria-label={`Interactive RDF graph. Select a node to show its details and double-click it to load its neighbours. Drag the background to pan and a node to move it; double-click a node and keep dragging to move its leaf neighbours with it. ${selectionKeys(applePlatform)}click or drag to select nodes; dragging a selected node moves the whole selection. ${zoomOnScroll ? "Scroll" : "Pinch"}, double-click the background, or double-tap and drag vertically to zoom. Right-click or long-press a node for more actions. Tab reaches one node; arrow keys move to the next node in that direction; Enter shows its details; Delete hides the selection or the shown node. Escape closes the details, then clears the selection; / finds a node.`}
               onDoubleClick={(event) => {
-                if (event.target !== event.currentTarget) return;
+                const onHoverBridge = event.target instanceof Element
+                  && Boolean(event.target.closest("[data-graph-hover-bridge]"));
+                if (event.target !== event.currentTarget && !onHoverBridge) return;
                 const rect = event.currentTarget.getBoundingClientRect();
                 zoomAt(1.6, clientPointToViewport(event.clientX, event.clientY, rect, { width: GRAPH_WIDTH, height: GRAPH_HEIGHT }));
               }}
@@ -4166,7 +4183,9 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                   event.currentTarget.setPointerCapture(event.pointerId);
                   return;
                 }
-                const isBackground = event.target === event.currentTarget;
+                // Hover corridors keep labels reachable, but are otherwise ordinary empty canvas.
+                const isBackground = event.target === event.currentTarget || event.target instanceof Element
+                  && Boolean(event.target.closest("[data-graph-hover-bridge]"));
                 // The shown node stays through a drag that pans; only a click on the background lets it go (below).
                 if (isBackground) setHoveredNodeId(null);
                 const pressedEdge = event.target instanceof Element ? event.target.closest("[data-edge-id]") : null;
@@ -4236,16 +4255,21 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                   moveMarquee(event.clientX, event.clientY);
                   return;
                 }
-                if (event.pointerType === "mouse" && !panRef.current && edgeHoverFrameRef.current === null) {
-                  const { clientX, clientY } = event;
+                if (event.pointerType === "mouse" && !panRef.current) {
                   const onNode = event.target instanceof Element && Boolean(event.target.closest(".graph-node"));
-                  const overEdge =
-                    event.target instanceof Element ? event.target.closest("[data-edge-id]")?.getAttribute("data-edge-id") : null;
-                  edgeHoverFrameRef.current = window.requestAnimationFrame(() => {
-                    edgeHoverFrameRef.current = null;
-                    const edgeId = onNode ? null : (overEdge ?? edgeAt(clientX, clientY));
-                    setHoveredEdgeId((current) => (current === edgeId ? current : edgeId));
-                  });
+                  const hoverOwner = event.target instanceof Element
+                    ? event.target.closest('[data-hover-node-id]')?.getAttribute('data-hover-node-id') : null;
+                  if (!onNode) setHoveredNodeId(current => current === hoverOwner ? current : null);
+                  if (edgeHoverFrameRef.current === null) {
+                    const { clientX, clientY } = event;
+                    const overEdge =
+                      event.target instanceof Element ? event.target.closest("[data-edge-id]")?.getAttribute("data-edge-id") : null;
+                    edgeHoverFrameRef.current = window.requestAnimationFrame(() => {
+                      edgeHoverFrameRef.current = null;
+                      const edgeId = onNode ? null : (overEdge ?? edgeAt(clientX, clientY));
+                      setHoveredEdgeId((current) => (current === edgeId ? current : edgeId));
+                    });
+                  }
                 }
                 const rect = event.currentTarget.getBoundingClientRect();
                 if (event.pointerType === "touch") {
@@ -4367,7 +4391,14 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                 }
                 commitInteractiveTransform();
               }}
-              onPointerLeave={() => setHoveredEdgeId(null)}
+              onPointerLeave={() => {
+                if (edgeHoverFrameRef.current !== null) {
+                  window.cancelAnimationFrame(edgeHoverFrameRef.current);
+                  edgeHoverFrameRef.current = null;
+                }
+                setHoveredEdgeId(null);
+                setHoveredNodeId(null);
+              }}
               onPointerCancel={(event) => {
                 if (marqueeRef.current?.pointerId === event.pointerId) finishMarquee(event.clientX, event.clientY, true);
                 backgroundPressRef.current = null;
@@ -4428,6 +4459,22 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                       </text>
                     </g>
                   ))}
+                {!focusedNodeId && hoveredNodeId && shownGraph.edges.flatMap(edge => {
+                  if (edge.source !== hoveredNodeId && edge.target !== hoveredNodeId) return [];
+                  const node = drawnNodeById.get(hoveredNodeId);
+                  const placement = edgeLabelPlacements.get(edge.id);
+                  if (!node || node.x === undefined || node.y === undefined || !placement) return [];
+                  const points = labelHoverBridge({x: node.x, y: node.y, ...graphNodeSize(node)},
+                    {...placement.point, ...edgeLabelSize(edge)});
+                  const size = edgeLabelSize(edge);
+                  return [<g key={`hover:${edge.id}`} aria-hidden="true" data-graph-hover-bridge=""
+                    data-hover-node-id={hoveredNodeId}>
+                    {points.length > 0 && <polygon fill="transparent" pointerEvents="all"
+                      points={points.map(point => `${point.x},${point.y}`).join(' ')} />}
+                    <line x1={placement.anchor.x} y1={placement.anchor.y} x2={placement.point.x} y2={placement.point.y}
+                      stroke="transparent" strokeWidth={Math.min(size.width, size.height)} pointerEvents="stroke" />
+                  </g>];
+                })}
                 {shownGraph.edges.map((edge) => {
                   const curve = edgeCurves.get(edge.id);
                   if (!curve) return null;
@@ -4452,6 +4499,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                       touchesSelection={touchesSelection}
                       onPath={onPath}
                       selected={edgeSelected}
+                      hoverNodeId={touchesActive ? activeNodeId ?? undefined : undefined}
                     />
                   );
                 })}

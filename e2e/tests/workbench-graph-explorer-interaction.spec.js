@@ -122,11 +122,13 @@ async function openWithBobUnderTheCard(page) {
     await explorer.getByRole('button', { name: 'Close details' }).click();
     await page.waitForTimeout(600);
     const bob = await centre(node(explorer, 'Bob'));
-    const empty = await emptyCanvasPoint(explorer);
+    const translation = { x: explore.x - bob.x, y: explore.y - bob.y };
+    const empty = await emptyCanvasPoint(explorer, translation);
     expect(empty).not.toBeNull();
+    const target = { x: empty.x + translation.x, y: empty.y + translation.y };
     await page.mouse.move(empty.x, empty.y);
     await page.mouse.down();
-    await page.mouse.move(empty.x + explore.x - bob.x, empty.y + explore.y - bob.y, { steps: 8 });
+    await page.mouse.move(target.x, target.y, { steps: 8 });
     await page.mouse.up();
     const under = await centre(node(explorer, 'Bob'));
     expect(Math.hypot(under.x - explore.x, under.y - explore.y)).toBeLessThan(4);
@@ -186,17 +188,20 @@ async function boxSelect(page, from, to, modifier = 'Shift') {
 }
 
 /** A point on the canvas with nothing under it (no node, no edge, no overlay) for a few pixels around. */
-async function emptyCanvasPoint(explorer) {
-    return explorer.locator('svg.graph-canvas').evaluate((svg) => {
+async function emptyCanvasPoint(explorer, endpointOffset = { x: 0, y: 0 }) {
+    return explorer.locator('svg.graph-canvas').evaluate((svg, offset) => {
         const rect = svg.getBoundingClientRect();
         for (let y = rect.top + 60; y < rect.bottom - 60; y += 23) {
             for (let x = rect.left + 60; x < rect.right - 60; x += 23) {
+                const endpoint = { x: x + offset.x, y: y + offset.y };
+                if (endpoint.x < rect.left || endpoint.x >= rect.right
+                        || endpoint.y < rect.top || endpoint.y >= rect.bottom) continue;
                 const around = [[0, 0], [-14, 0], [14, 0], [0, -14], [0, 14]];
                 if (around.every(([dx, dy]) => document.elementFromPoint(x + dx, y + dy) === svg)) return { x, y };
             }
         }
         return null;
-    });
+    }, endpointOffset);
 }
 
 test('Shift-drag selects with a box; dragging a selected node moves the whole selection', async ({ page }) => {
