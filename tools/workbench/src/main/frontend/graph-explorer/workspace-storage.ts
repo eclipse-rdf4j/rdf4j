@@ -88,6 +88,59 @@ async function remove(scope?: string) {
     localStorage.removeItem(legacyKey(scope));
   } catch {}
 }
+/** The Workbench, server and repository of a stored graph's scope (see repositoryScope), and its whole identity. */
+function scopeParts(scope: string): { place: string; identity: string } | null {
+  try {
+    const parts = JSON.parse(scope.replace(/:unreadable$/, ""));
+    if (!Array.isArray(parts) || parts.length !== 4 || parts[0] !== "repository-v2" || typeof parts[2] !== "string")
+      return null;
+    // The server identity is the server's digest ("sha256:…"), then the browser session's or connection's scope.
+    return { place: JSON.stringify([parts[1], parts[2].split(":").slice(0, 2).join(":"), parts[3]]), identity: parts[2] };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Deletes the graphs stored for the same Workbench, server and repository under another scope: an earlier browser
+ * session's or connection's, which no page can open again.
+ */
+export function removeEarlierScopes(scope: string): Promise<void> {
+  const own = scopeParts(scope);
+  const earlier = (other: string) => {
+    const parts = scopeParts(other);
+    return Boolean(own && parts && parts.place === own.place && parts.identity !== own.identity);
+  };
+  return queued(async () => {
+    try {
+      const db = await database();
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const transaction = db.transaction("workspaces", "readwrite"),
+            store = transaction.objectStore("workspaces"),
+            keys = store.getAllKeys();
+          keys.onsuccess = () => {
+            for (const key of keys.result)
+              if (typeof key === "string" && key.startsWith("workspace:") && earlier(key.slice("workspace:".length)))
+                store.delete(key);
+          };
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+          transaction.onabort = () => reject(transaction.error);
+        });
+      } finally {
+        db.close();
+      }
+    } catch {}
+    try {
+      const prefix = `${LEGACY_KEY}:`;
+      for (let index = localStorage.length - 1; index >= 0; index--) {
+        const key = localStorage.key(index);
+        if (key?.startsWith(prefix) && earlier(key.slice(prefix.length))) localStorage.removeItem(key);
+      }
+    } catch {}
+  });
+}
 export function saveWorkspaceText(raw: string, scope?: string): Promise<void> {
   return queued(() => write(raw, scope));
 }

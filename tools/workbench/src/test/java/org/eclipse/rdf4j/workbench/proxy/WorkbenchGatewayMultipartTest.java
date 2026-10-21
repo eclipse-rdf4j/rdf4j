@@ -17,17 +17,19 @@ import org.junit.jupiter.api.Test;
 
 import jakarta.servlet.annotation.MultipartConfig;
 
-/** Browser uploads stream through the Add page: up to 10 GiB a file, spooled to disk once a part passes 64 MiB. */
+/**
+ * Browser uploads stream through the Add page: up to 10 GiB a file. Every part spools to disk, because the container
+ * parses a multipart body before any route or access check, so parts must never pile up in the heap.
+ */
 class WorkbenchGatewayMultipartTest {
 
 	@Test
-	void uploadsAllowTenGibibytesAndSpoolToDiskAboveSixtyFourMebibytes() {
+	void uploadsAllowTenGibibytesAndAlwaysSpoolToDisk() {
 		MultipartConfig config = WorkbenchGateway.class.getAnnotation(MultipartConfig.class);
 		assertThat(config).isNotNull();
 		assertThat(config.maxFileSize()).as("one uploaded file, such as a large .nq.gz").isEqualTo(10L << 30);
 		assertThat(config.maxRequestSize()).as("the whole request: the file and its form fields")
 				.isGreaterThanOrEqualTo(config.maxFileSize());
-		assertThat(config.fileSizeThreshold()).as("a part this large leaves the heap for the disk")
-				.isEqualTo(64 << 20);
+		assertThat(config.fileSizeThreshold()).as("no part stays in the heap").isZero();
 	}
 }

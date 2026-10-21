@@ -263,11 +263,11 @@ class Rdf4jServerWorkbenchApplicationTest {
 		assertThat(rdf4jWorkbenchServlet.getMultipartConfig())
 				.as("Workbench servlet must be configured for multipart requests")
 				.isNotNull();
-		// The same limits as the Workbench WAR's own gateway: 10 GiB a file, spooled to disk above 64 MiB.
+		// The same limits as the Workbench WAR's own gateway: 10 GiB a file, every part spooled to disk.
 		assertThat(rdf4jWorkbenchServlet.getMultipartConfig().getMaxFileSize()).isEqualTo(10L << 30);
 		assertThat(rdf4jWorkbenchServlet.getMultipartConfig().getMaxRequestSize())
 				.isGreaterThanOrEqualTo(10L << 30);
-		assertThat(rdf4jWorkbenchServlet.getMultipartConfig().getFileSizeThreshold()).isEqualTo(64 << 20);
+		assertThat(rdf4jWorkbenchServlet.getMultipartConfig().getFileSizeThreshold()).isZero();
 	}
 
 	@Test

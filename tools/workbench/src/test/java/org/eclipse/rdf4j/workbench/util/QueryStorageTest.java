@@ -281,6 +281,32 @@ class QueryStorageTest {
 		}
 	}
 
+	@Test
+	void savingUnderTheNameOfAQuerySavedByAnEarlierVersionFindsThatQuery() throws Exception {
+		SailRepository storageRepository = new SailRepository(new MemoryStore());
+		storageRepository.init();
+		QueryStorage storage = new QueryStorage(storageRepository);
+		try {
+			String repositoryReference = "urn:test:repository";
+			storage.saveQuery(repositoryReference, "report", "alice", false, QueryLanguage.SPARQL,
+					"select * where { ?s ?p ?o }", false, 10, 0);
+			IRI legacy = storage.selectSavedQuery(repositoryReference, "alice", "report");
+			String alice = signedIn("alice", "secret");
+
+			// Saving "report" again asks whether to overwrite it and then updates it, instead of adding a second one.
+			assertThat(storage.askExists(repositoryReference, "report", alice)).isTrue();
+			assertThat(storage.selectSavedQuery(repositoryReference, alice, "report")).isEqualTo(legacy);
+			assertThat(storage.askExists(repositoryReference, "report", signedIn("bob", "secret"))).isFalse();
+
+			// A query the user saved under their current identity comes first.
+			storage.saveQuery(repositoryReference, "report", alice, false, QueryLanguage.SPARQL, "ask {}", false,
+					10, 0);
+			assertThat(storage.selectSavedQuery(repositoryReference, alice, "report")).isNotEqualTo(legacy);
+		} finally {
+			storage.shutdown();
+		}
+	}
+
 	private static String signedIn(String user, String password) {
 		MockHttpServletRequest request = new MockHttpServletRequest();
 		ServerCredentials.bindRequest(request, ServerCredentials.fromConnectionForm(Base64.getEncoder()

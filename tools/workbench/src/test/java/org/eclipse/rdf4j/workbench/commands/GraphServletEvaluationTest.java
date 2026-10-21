@@ -22,6 +22,8 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.io.PrintWriter;
+import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -57,6 +59,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.mock.web.MockServletContext;
 
+import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.http.Cookie;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -340,6 +343,38 @@ class GraphServletEvaluationTest {
 		assertThat(response.isCommitted()).isTrue();
 		assertThat(response.getStatus()).isEqualTo(200);
 		assertThat(response.getContentAsString()).startsWith("{");
+	}
+
+	@Test
+	void aTimeoutAfterTheFirstRowsButBeforeTheResponseIsCommittedStillAnswersRequestTimeout() throws Exception {
+		servlet();
+		TupleQueryResult result = failingTuples(3, new QueryInterruptedException("timed out after three rows"));
+		when(tupleQuery.evaluate()).thenReturn(result);
+		// Like Tomcat and Jetty: once the output stream is in use, getWriter() is refused, even after resetBuffer().
+		MockHttpServletResponse response = new MockHttpServletResponse() {
+			private boolean streamed;
+
+			@Override
+			public ServletOutputStream getOutputStream() {
+				streamed = true;
+				return super.getOutputStream();
+			}
+
+			@Override
+			public PrintWriter getWriter() throws UnsupportedEncodingException {
+				if (streamed) {
+					throw new IllegalStateException("getOutputStream() has already been called for this response");
+				}
+				return super.getWriter();
+			}
+		};
+
+		servlet.service(post(SELECT), response);
+
+		assertThat(response.getStatus()).isEqualTo(408);
+		assertThat(response.getContentType()).startsWith("text/plain");
+		assertThat(response.getContentAsString()).isEqualTo("timed out after three rows");
+		verify(result).close();
 	}
 
 	@Test

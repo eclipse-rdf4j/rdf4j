@@ -503,15 +503,18 @@ export class RepositoryFacetStore {
       chunk = [];
       rows = 0;
       length = 64;
-      for (const row of await this.request(predicateValuesQuery(id, asked, this.scope, VALUES_PER_CELL + 1))) {
+      const found = await this.request(predicateValuesQuery(id, asked, this.scope, VALUES_PER_CELL + 1));
+      for (const row of found) {
         addValue(predicates, row.p, row.o);
       }
+      // A capped census undercounts, so a reply can reach the servlet's row cap and lose values: none is complete.
+      const cut = found.length >= this.maxRows;
       for (const predicate of asked) {
         const cell = predicates.get(predicate);
         if (!cell) continue;
         const expected = census.get(predicate) ?? 0;
         if (cell.values.length > VALUES_PER_CELL) cell.values.length = VALUES_PER_CELL;
-        cell.complete = cell.values.length < VALUES_PER_CELL && (capped || cell.values.length >= Math.min(expected, VALUES_PER_CELL));
+        cell.complete = !cut && cell.values.length < VALUES_PER_CELL && (capped || cell.values.length >= Math.min(expected, VALUES_PER_CELL));
         if (cell.values.length >= VALUES_PER_CELL && expected > VALUES_PER_CELL) cell.complete = false;
       }
     };

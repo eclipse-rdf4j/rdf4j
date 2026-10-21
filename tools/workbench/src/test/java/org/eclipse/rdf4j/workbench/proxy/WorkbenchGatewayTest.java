@@ -98,6 +98,39 @@ class WorkbenchGatewayTest {
 				.isNotEqualTo(second.getAttribute("org.eclipse.rdf4j.workbench.clientScope"));
 	}
 
+	@Test
+	void aBrowserKeepsItsWorkspaceScopeWhenItsServerSessionExpires() throws Exception {
+		TestWorkbenchGateway gateway = new TestWorkbenchGateway(new TestCookieHandler("10"),
+				mock(ServerValidator.class));
+		gateway.init(TestServletConfig.withParams("gateway", "default-server", "/rdf4j-server"));
+		MockHttpServletRequest first = request("GET", "/workbench/repositories", "/repositories");
+		CapturedResponse firstResponse = new CapturedResponse();
+		gateway.service(first, firstResponse);
+		Cookie scopeCookie = firstResponse.getCookiesAdded()
+				.stream()
+				.filter(cookie -> "workbench-browser-scope".equals(cookie.getName()))
+				.findFirst()
+				.orElseThrow();
+		// Kept while the browser runs, whatever the server session's timeout; another browser session gets its own.
+		assertThat(scopeCookie.getMaxAge()).isNegative();
+		assertThat(scopeCookie.isHttpOnly()).isTrue();
+		assertThat(scopeCookie.getPath()).isEqualTo("/workbench");
+
+		// The server session expired (idle, or the server restarted): the next request starts a new one.
+		MockHttpServletRequest later = request("GET", "/workbench/repositories", "/repositories");
+		later.setCookies(new Cookie(scopeCookie.getName(), scopeCookie.getValue()));
+		gateway.service(later, new CapturedResponse());
+
+		assertThat(later.getAttribute("org.eclipse.rdf4j.workbench.clientScope"))
+				.isEqualTo(first.getAttribute("org.eclipse.rdf4j.workbench.clientScope"));
+		MockHttpServletRequest forged = request("GET", "/workbench/repositories", "/repositories");
+		forged.setCookies(new Cookie(scopeCookie.getName(), "x\r\nSet-Cookie: y"));
+		gateway.service(forged, new CapturedResponse());
+		assertThat((String) forged.getAttribute("org.eclipse.rdf4j.workbench.clientScope"))
+				.as("only a scope this gateway could have issued is taken from the browser")
+				.matches("[0-9a-f-]{36}");
+	}
+
 	private static final String LEGACY_TRANSFORMATIONS = "transformations";
 
 	@Test

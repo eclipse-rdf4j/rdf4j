@@ -29,7 +29,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -248,7 +247,8 @@ public class LocalRepositoryManagerTest extends RepositoryManagerTest {
 
 	@Test
 	@Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
-	void savingAndRestartingARepositoryDoesNotDeadlockWithARemoval(@TempDir File directory) throws Exception {
+	void otherRepositoriesStayAvailableWhileARestartedRepositoryShutsDown(@TempDir File directory)
+			throws Exception {
 		CountDownLatch shuttingDown = new CountDownLatch(1);
 		CountDownLatch resume = new CountDownLatch(1);
 		LocalRepositoryManager manager = managerWithFirstShutdown(directory, () -> {
@@ -260,37 +260,73 @@ public class LocalRepositoryManagerTest extends RepositoryManagerTest {
 			}
 		});
 		manager.init();
-		ExecutorService threads = Executors.newFixedThreadPool(2);
+		ExecutorService threads = Executors.newFixedThreadPool(3);
 		Future<?> update = null;
 		Future<Boolean> removal = null;
 		try {
 			manager.addRepositoryConfig(sparqlConfig("edited"));
+			manager.addRepositoryConfig(sparqlConfig("other"));
 			manager.addRepositoryConfig(sparqlConfig("removed"));
 			manager.getRepository("edited");
-			// The update holds the cached repositories while it shuts the edited one down...
+			manager.getRepository("other");
+			// A shutdown waits for the edited repository's open connections; meanwhile every other request (such as
+			// the commit that would release one of those connections) must still reach the manager.
 			update = threads.submit(() -> manager.updateRepositoryConfig(sparqlConfig("edited")));
 			assertThat(shuttingDown.await(10, TimeUnit.SECONDS)).isTrue();
-			// ...when another request removes a repository; the update then reads the saved configuration again.
-			AtomicReference<Thread> remover = new AtomicReference<>();
-			removal = threads.submit(() -> {
-				remover.set(Thread.currentThread());
-				return manager.removeRepository("removed");
-			});
-			long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-			while (remover.get() == null || remover.get().getState() != Thread.State.BLOCKED) {
-				assertThat(System.nanoTime()).as("the removal waits for the update").isLessThan(deadline);
-				Thread.onSpinWait();
-			}
+			assertThat(threads.submit(() -> manager.getRepository("other")).get(10, TimeUnit.SECONDS)).isNotNull();
+			removal = threads.submit(() -> manager.removeRepository("removed"));
+			assertThat(removal.get(10, TimeUnit.SECONDS)).isTrue();
 			resume.countDown();
 
+			// The update then reads the saved configuration again and serves a new instance.
 			update.get(10, TimeUnit.SECONDS);
-			assertThat(removal.get(10, TimeUnit.SECONDS)).isTrue();
+			assertThat(manager.getRepository("edited")).isNotNull();
 		} finally {
 			resume.countDown();
 			threads.shutdownNow();
 			if (update != null && update.isDone() && removal != null && removal.isDone()) {
 				manager.shutDown();
 			}
+		}
+	}
+
+	@Test
+	@Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+	void otherRepositoriesStayAvailableWhileARemovedRepositorysFilesAreDeleted(@TempDir File directory)
+			throws Exception {
+		CountDownLatch deleting = new CountDownLatch(1);
+		CountDownLatch resume = new CountDownLatch(1);
+		LocalRepositoryManager manager = new LocalRepositoryManager(directory) {
+			@Override
+			void deleteRepositoryDirectory(Path repositoryDirectory) throws IOException {
+				deleting.countDown();
+				try {
+					resume.await();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+				}
+				super.deleteRepositoryDirectory(repositoryDirectory);
+			}
+		};
+		manager.init();
+		ExecutorService threads = Executors.newFixedThreadPool(2);
+		try {
+			manager.addRepositoryConfig(sparqlConfig("other"));
+			manager.addRepositoryConfig(sparqlConfig("removed"));
+			manager.getRepository("other");
+			Future<Boolean> removal = threads.submit(() -> manager.removeRepository("removed"));
+			assertThat(deleting.await(10, TimeUnit.SECONDS)).isTrue();
+			// Deleting a large store's files takes a while; requests to every other repository keep being served.
+			assertThat(threads.submit(() -> manager.getRepository("other")).get(10, TimeUnit.SECONDS)).isNotNull();
+			assertThat(manager.hasRepositoryConfig("removed")).isFalse();
+			resume.countDown();
+
+			assertThat(removal.get(10, TimeUnit.SECONDS)).isTrue();
+			assertThat(manager.getRepositoryDir("removed")).doesNotExist();
+		} finally {
+			resume.countDown();
+			threads.shutdownNow();
+			manager.shutDown();
 		}
 	}
 

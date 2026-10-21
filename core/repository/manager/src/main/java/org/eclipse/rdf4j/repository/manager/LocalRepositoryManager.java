@@ -33,6 +33,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.SessionManagerDependent;
@@ -427,6 +428,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 	@Override
 	public boolean removeRepository(String repositoryID)
 			throws RepositoryException, RepositoryConfigException {
+		Path retired;
 		// The same lock order as getRepository and updateRepositoryConfig, which read this manager's configuration
 		// while they hold the initialized repositories: the reverse order deadlocks with them.
 		synchronized (initializedRepositories) {
@@ -437,21 +439,36 @@ public class LocalRepositoryManager extends RepositoryManager {
 					return false;
 				}
 				dataDir = requireSafeRepositoryDirectory(repositoryID);
-				if (Files.isDirectory(dataDir, LinkOption.NOFOLLOW_LINKS)) {
-					logger.debug("Cleaning up data dir {} for repository {}", dataDir.toAbsolutePath(),
-							repositoryID);
-					try {
-						deleteRepositoryDirectory(dataDir);
-					} catch (IOException e) {
-						throw new RepositoryConfigException(e);
-					}
+				if (!Files.isDirectory(dataDir, LinkOption.NOFOLLOW_LINKS)) {
+					return true;
 				}
-				return true;
+				// Without its configuration the repository is gone for every reader; out of the way, its ID is free.
+				retired = dataDir.resolveSibling("." + dataDir.getFileName() + ".removed-" + UUID.randomUUID());
+				try {
+					Files.deleteIfExists(dataDir.resolve(CFG_FILE));
+					Files.move(dataDir, retired, StandardCopyOption.ATOMIC_MOVE);
+				} catch (IOException e) {
+					// A directory that cannot be moved (an open file on Windows, say) is deleted in place.
+					deleteRemovedRepositoryDirectory(dataDir, repositoryID);
+					return true;
+				}
 			}
+		}
+		// Deleting a large store's files takes a while: other repositories keep being served meanwhile.
+		deleteRemovedRepositoryDirectory(retired, repositoryID);
+		return true;
+	}
+
+	private void deleteRemovedRepositoryDirectory(Path dataDir, String repositoryID) {
+		logger.debug("Cleaning up data dir {} for repository {}", dataDir.toAbsolutePath(), repositoryID);
+		try {
+			deleteRepositoryDirectory(dataDir);
+		} catch (IOException e) {
+			throw new RepositoryConfigException(e);
 		}
 	}
 
-	private void deleteRepositoryDirectory(Path repositoryDirectory) throws IOException {
+	void deleteRepositoryDirectory(Path repositoryDirectory) throws IOException {
 		Files.walkFileTree(repositoryDirectory, new SimpleFileVisitor<>() {
 			@Override
 			public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) throws IOException {

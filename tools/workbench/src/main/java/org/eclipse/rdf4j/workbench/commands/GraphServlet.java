@@ -354,7 +354,9 @@ public class GraphServlet extends TransformationServlet {
 		resp.setStatus(status);
 		resp.setContentType(TEXT_PLAIN);
 		resp.setCharacterEncoding(StandardCharsets.UTF_8.name());
-		resp.getWriter().write(message);
+		// Through the output stream: a failure after the first rows reaches here once the result has used it, and a
+		// container refuses getWriter() then, even after resetBuffer().
+		resp.getOutputStream().write(message.getBytes(StandardCharsets.UTF_8));
 	}
 
 	/**

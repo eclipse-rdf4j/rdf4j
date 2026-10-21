@@ -25,6 +25,7 @@ import {
   loadWorkspaceText,
   openStoredWorkspace,
   recoverUnreadableWorkspace,
+  removeEarlierScopes,
   saveWorkspaceText,
 } from "../../../main/frontend/graph-explorer/workspace-storage.ts";
 import { mergeTriples } from "../../../main/frontend/graph-explorer/graph-operations.ts";
@@ -193,6 +194,10 @@ function memoryStorage() {
     getItem: (key) => (items.has(key) ? items.get(key) : null),
     setItem: (key, value) => void items.set(key, String(value)),
     removeItem: (key) => void items.delete(key),
+    get length() {
+      return items.size;
+    },
+    key: (index) => [...items.keys()][index] ?? null,
   };
 }
 
@@ -231,6 +236,31 @@ test("an unreadable stored graph is set aside and reported until it is recovered
     assert.equal(await loadWorkspaceText(`${scope}:unreadable`), null);
     assert.equal(await loadWorkspaceText(scope), null, "not set aside again the next time the page opens");
     assert.deepEqual(await openStoredWorkspace(scope), { saved: null, unreadable: false });
+  } finally {
+    delete globalThis.localStorage;
+  }
+});
+
+test("the graphs stored under an earlier scope of the same Workbench, server and repository are deleted", async () => {
+  // A stored graph is kept per browser session (or connection): one from an earlier one can never be opened again.
+  globalThis.localStorage = memoryStorage();
+  try {
+    const scope = (identity, repository = "repo") => JSON.stringify(["repository-v2", "/rdf4j-workbench", identity, repository]);
+    const server = `sha256:${"a".repeat(64)}`;
+    const current = scope(`${server}:11111111-1111-4111-8111-111111111111`);
+    const earlier = scope(`${server}:22222222-2222-4222-8222-222222222222`);
+    const otherRepository = scope(`${server}:22222222-2222-4222-8222-222222222222`, "other");
+    const otherServer = scope(`sha256:${"b".repeat(64)}:22222222-2222-4222-8222-222222222222`);
+    const raw = prepareWorkspaceSave(workspace([friends[0]])).raw;
+    for (const key of [current, earlier, `${earlier}:unreadable`, otherRepository, otherServer]) await saveWorkspaceText(raw, key);
+
+    await removeEarlierScopes(current);
+
+    assert.equal(await loadWorkspaceText(current), raw);
+    assert.equal(await loadWorkspaceText(earlier), null);
+    assert.equal(await loadWorkspaceText(`${earlier}:unreadable`), null);
+    assert.equal(await loadWorkspaceText(otherRepository), raw, "another repository's graph is kept");
+    assert.equal(await loadWorkspaceText(otherServer), raw, "another server's graph is kept");
   } finally {
     delete globalThis.localStorage;
   }

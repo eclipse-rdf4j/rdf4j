@@ -123,9 +123,8 @@ explicitly empty origins property disables URL imports. Set `-Dorg.eclipse.rdf4j
 to adjust the 32 MiB URL source limit (1 byte to 256 MiB). Each Java system property overrides the corresponding
 `add-url-allowed-origins`, `add-url-max-bytes`, `add-file-directory`, or `add-file-max-bytes` servlet init parameter.
 A blank or malformed entry in the origins list is ignored and logged; the other entries still apply.
-Browser uploads may be up to 10 GiB a file: the servlet container spools a part larger than 64 MiB to its temporary
-directory and the parser reads it as a stream, so a multi-gigabyte `.nq` or `.nq.gz` upload needs disk space there,
-not heap. An upload over the limit is answered with HTTP 413 and the limit. Form fields other than the upload are
+Browser uploads may be up to 10 GiB a file: the servlet container spools every part to its temporary directory and the
+parser reads it as a stream, so a multi-gigabyte `.nq` or `.nq.gz` upload needs disk space there, not heap. An upload over the limit is answered with HTTP 413 and the limit. Form fields other than the upload are
 limited to 1 MiB each.
 
 Graph requests are capped at 5,000 result rows and 60 seconds by default, including when callers omit or disable
@@ -134,9 +133,10 @@ parameters configure these ceilings; the query length defaults to 150,000 charac
 JSONP is disabled by the default `org.eclipse.rdf4j.workbench.jsonp.enabled=false` application property.
 Keep it disabled on public deployments: enabling JSONP lets another origin load Workbench responses as scripts.
 
-Private saved queries created before session-backed ownership used a browser-claimed username. They are intentionally
-not assigned to a new credential identity automatically, because Workbench cannot verify which password owned them.
-An operator should review and re-save any legacy private queries under the intended account before public release.
+Private saved queries created before session-backed ownership used a browser-claimed username. Workbench cannot verify
+which password owned them, so they stay with that plain user name: anyone who connects with that user name, whatever
+the password, can read, change and delete them. An operator should review and re-save any legacy private queries under
+the intended account before public release.
 
 ## Build everything from a clean checkout
 

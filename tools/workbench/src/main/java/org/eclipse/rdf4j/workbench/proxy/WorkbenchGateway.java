@@ -25,6 +25,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
@@ -68,6 +69,10 @@ public class WorkbenchGateway extends AbstractServlet {
 
 	private static final String CONNECTION_STATE = WorkbenchGateway.class.getName() + ".connection";
 	private static final String ANONYMOUS_SCOPE = WorkbenchGateway.class.getName() + ".anonymousScope";
+	/** Keeps an anonymous browser session's scope (see bindBrowserScope) while its server sessions come and go. */
+	private static final String BROWSER_SCOPE_COOKIE = "workbench-browser-scope";
+	private static final Pattern BROWSER_SCOPE = Pattern
+			.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
 	private static final Set<String> LEGACY_SENSITIVE_COOKIES = Set.of("query", "ref", SERVER_USER_PASSWORD);
 
 	static final String SESSION_STATE_ATTRIBUTE = WorkbenchGateway.class.getName() + ".sessionState";
@@ -169,7 +174,7 @@ public class WorkbenchGateway extends AbstractServlet {
 				return;
 			}
 		}
-		bindBrowserScope(req);
+		bindBrowserScope(req, resp);
 		if (change != null && change.equals(req.getPathInfo())) {
 			if (!isChangeServerPageAllowed(change)) {
 				resp.sendError(HttpServletResponse.SC_NOT_FOUND);
@@ -471,7 +476,7 @@ public class WorkbenchGateway extends AbstractServlet {
 		return value instanceof ConnectionState ? (ConnectionState) value : null;
 	}
 
-	private static void bindBrowserScope(HttpServletRequest request) {
+	private static void bindBrowserScope(HttpServletRequest request, HttpServletResponse response) {
 		HttpSession session = request.getSession();
 		if (session == null) {
 			return;
@@ -481,14 +486,39 @@ public class WorkbenchGateway extends AbstractServlet {
 			request.setAttribute(WorkbenchPageProtocol.CLIENT_SCOPE_ATTRIBUTE, ((ConnectionState) connection).identity);
 			return;
 		}
+		String remembered = browserScope(request);
 		synchronized (session) {
 			Object scope = session.getAttribute(ANONYMOUS_SCOPE);
 			if (!(scope instanceof String)) {
-				scope = UUID.randomUUID().toString();
+				// The browser session's scope outlives an expired server session, so the stored graphs stay its own.
+				scope = remembered != null ? remembered : UUID.randomUUID().toString();
 				session.setAttribute(ANONYMOUS_SCOPE, scope);
+			}
+			if (!scope.equals(remembered)) {
+				Cookie cookie = new Cookie(BROWSER_SCOPE_COOKIE, (String) scope);
+				// No Max-Age: the browser drops it when it closes; a later browser session gets a scope of its own.
+				cookie.setPath(request.getContextPath().isEmpty() ? "/" : request.getContextPath());
+				cookie.setHttpOnly(true);
+				cookie.setSecure(request.isSecure());
+				cookie.setAttribute("SameSite", "Lax");
+				response.addCookie(cookie);
 			}
 			request.setAttribute(WorkbenchPageProtocol.CLIENT_SCOPE_ATTRIBUTE, scope);
 		}
+	}
+
+	/** The scope this gateway gave the browser earlier in its session: a random UUID, nothing else. */
+	private static String browserScope(HttpServletRequest request) {
+		Cookie[] cookies = request.getCookies();
+		if (cookies != null) {
+			for (Cookie cookie : cookies) {
+				if (BROWSER_SCOPE_COOKIE.equals(cookie.getName()) && cookie.getValue() != null
+						&& BROWSER_SCOPE.matcher(cookie.getValue()).matches()) {
+					return cookie.getValue();
+				}
+			}
+		}
+		return null;
 	}
 
 	/** Immutable connection identity; WorkbenchSessionState owns and retires its leased servlet trees. */

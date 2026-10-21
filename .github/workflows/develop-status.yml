@@ -54,9 +54,15 @@ jobs:
     - name: Build the Workbench front end
       working-directory: ./tools/workbench
       run: npm ci && npm run build
+    - name: Type-check the Workbench front end
+      working-directory: ./tools/workbench
+      run: npm run typecheck
     - name: Run Workbench front-end unit tests
       working-directory: ./tools/workbench
-      run: npm run test:classic
+      env:
+        # The classic pages' and the graph explorer's tests; runners are slower than the layout budgets assume.
+        GRAPH_PERFORMANCE_SLOWDOWN: 3
+      run: npm test
     - name: Install e2e dependencies
       working-directory: ./e2e
       run: npm ci

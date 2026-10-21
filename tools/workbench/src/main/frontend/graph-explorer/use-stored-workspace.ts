@@ -16,6 +16,7 @@ import {
   loadWorkspaceText,
   openStoredWorkspace,
   recoverUnreadableWorkspace,
+  removeEarlierScopes,
   saveWorkspaceText,
 } from "./workspace-storage.ts";
 
@@ -33,8 +34,11 @@ type Options = {
   changes: readonly unknown[];
   /** True while the graph moves (layout animation, dragging): it is saved once it rests. */
   busy: boolean;
-  /** Puts a stored graph back; called once, when the page opens and a non-empty graph is stored. */
-  restore: (saved: WorkspacePayload) => void;
+  /**
+   * Puts a stored graph back, with its graph scope and query, an empty graph's too; called once, when the page opens
+   * and a graph is stored. Returns whether it showed it.
+   */
+  restore: (saved: WorkspacePayload) => boolean;
   /**
    * Replaces the graph with a stored one: newer, saved by another tab (see `checkForNewer`), or recovered (see
    * `recoverUnreadable`). `status` says which.
@@ -71,6 +75,11 @@ export function useStoredWorkspace({ scope, snapshot, changes, busy, restore, re
   busyRef.current = busy;
   const timer = useRef<number | null>(null);
   const interval = useRef(AUTOSAVE_MS);
+  /**
+   * True while a stored graph is being shown, its animation included: what that changes is the stored graph itself,
+   * not an edit. Saved back, it would be newer than the one stored, and another tab would take it in turn.
+   */
+  const adopting = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -78,9 +87,10 @@ export function useStoredWorkspace({ scope, snapshot, changes, busy, restore, re
       const { saved, unreadable } = await openStoredWorkspace(scope);
       if (cancelled) return;
       knownSavedAt.current = saved?.savedAt ?? null;
-      if (saved?.graph.nodes.length) latest.current.restore(saved);
+      if (saved) adopting.current = latest.current.restore(saved);
       setUnreadable(unreadable ? "recoverable" : null);
       setRestored(true);
+      void removeEarlierScopes(scope);
     })();
     return () => {
       cancelled = true;
@@ -143,6 +153,12 @@ export function useStoredWorkspace({ scope, snapshot, changes, busy, restore, re
   const armed = useRef(false);
   useEffect(() => {
     if (!restored) return;
+    if (adopting.current) {
+      // The stored graph is shown once it rests: this change is still part of showing it.
+      if (!busyRef.current) adopting.current = false;
+      armed.current = true;
+      return;
+    }
     if (!armed.current) {
       armed.current = true;
       return;
@@ -174,7 +190,10 @@ export function useStoredWorkspace({ scope, snapshot, changes, busy, restore, re
       return false;
     }
     if (!saved?.savedAt || (knownSavedAt.current !== null && saved.savedAt <= knownSavedAt.current)) return false;
+    // An edit made while the stored graph was read is kept, and saved as the newer graph.
+    if (dirty.current) return false;
     knownSavedAt.current = saved.savedAt;
+    adopting.current = true;
     latest.current.replace(saved, "Updated to the graph saved in another tab.");
     return true;
   }, [restored, scope]);

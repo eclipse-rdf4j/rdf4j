@@ -50,7 +50,7 @@ export type RdfBinding = Record<string, SparqlTerm | undefined>;
 export type RdfQuery = (
   query: string,
   signal?: AbortSignal,
-) => Promise<{ results?: { bindings?: RdfBinding[] } }>;
+) => Promise<{ results?: { bindings?: RdfBinding[] }; "rdf4j:truncated"?: boolean }>;
 type CachedLabels = { candidates: LabelCandidate[]; checked: boolean; observed?: { properties: string[]; languages: string[] } };
 const metadata = new BoundedCache<CachedLabels>();
 const STORAGE = "graph-field-metadata-v4";
@@ -179,14 +179,15 @@ export class RdfExplorer {
         const values = new Map(ids.map((id) => [id, [] as LabelCandidate[]]));
         const generic = ids;
         let rows: RdfBinding[] = [];
+        let truncated = false;
         if (generic.length) {
-          rows =
-            (
-              await this.query(
-                labelQuery(generic, [...this.properties], scope, this.fence),
-                signal,
-              )
-            ).results?.bindings ?? [];
+          const reply = await this.query(
+            labelQuery(generic, [...this.properties], scope, this.fence),
+            signal,
+          );
+          rows = reply.results?.bindings ?? [];
+          // The servlet's row cap may be below the query's own LIMIT; it says when it cut the reply.
+          truncated = reply["rdf4j:truncated"] === true;
           for (const row of rows) {
             if (
               !isSparqlTerm(row.resource) ||
@@ -203,7 +204,7 @@ export class RdfExplorer {
             });
           }
         }
-        return { values, rows: rows.length, saturated: rows.length >= 4096 };
+        return { values, rows: rows.length, saturated: truncated || rows.length >= 4096 };
       },
       { maximumSize: 64 },
     );
@@ -560,6 +561,23 @@ export class RdfExplorer {
     if (changed) this.labelPropertiesAdded();
     return changed;
   }
+  /** Batches queries for many nodes; each node's rows are those whose `resultKey` names it. */
+  private keyedLoader(builder: (ids: string[]) => string, resultKey: string) {
+    return new AdaptiveBatchLoader<RdfBinding[]>(
+      async (keys, abort) => {
+        const reply = await this.query(builder(keys), abort);
+        const bindings = reply.results?.bindings ?? [];
+        const values = new Map(keys.map((k) => [k, [] as RdfBinding[]]));
+        for (const row of bindings) {
+          const key = row[resultKey];
+          if (key && isSparqlTerm(key)) values.get(sparqlNodeId(key))?.push(row);
+        }
+        // A reply the servlet cut at its row cap misses the last keys' rows: it is asked for again in halves.
+        return { values, rows: bindings.length, saturated: reply["rdf4j:truncated"] === true };
+      },
+      { initialSize: 16, maximumSize: 64 },
+    );
+  }
   async operation(
     template: string,
     ids: string[],
@@ -570,19 +588,7 @@ export class RdfExplorer {
   ) {
     let loader = this.operations.get(template);
     if (!loader) {
-      loader = new AdaptiveBatchLoader(
-        async (keys, abort) => {
-          const bindings =
-            (await this.query(builder(keys), abort)).results?.bindings ?? [];
-          const values = new Map(keys.map((k) => [k, [] as RdfBinding[]]));
-          for (const row of bindings) {
-            const key = row[resultKey];
-            if (key && isSparqlTerm(key)) values.get(sparqlNodeId(key))?.push(row);
-          }
-          return { values, rows: bindings.length };
-        },
-        { initialSize: 16, maximumSize: 64 },
-      );
+      loader = this.keyedLoader(builder, resultKey);
       for (const [key, old] of this.operations)
         if (this.operations.size >= 64 && old.idle) {
           old.dispose();
@@ -682,7 +688,14 @@ export class RdfExplorer {
     if (loaded?.size || offset) {
       const keys = [...new Set(ids)].filter(isQueryableResource);
       if (!keys.length) return [];
-      return (await this.query(expandQuery(keys, limit, this.scope, this.fence, loaded, offset), signal)).results?.bindings ?? [];
+      // Not cached, since what is loaded changes with every call; batched like the rest, so a large selection stays
+      // within the servlet's query length and row cap.
+      const loader = this.keyedLoader((batch) => expandQuery(batch, limit, this.scope, this.fence, loaded, offset), "selected");
+      try {
+        return (await loader.loadMany(keys, signal)).flatMap(([, rows]) => rows ?? []);
+      } finally {
+        loader.dispose();
+      }
     }
     return this.operation(
       JSON.stringify(["expand", limit]),

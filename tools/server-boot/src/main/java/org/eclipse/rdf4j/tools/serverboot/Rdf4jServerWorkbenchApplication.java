@@ -212,7 +212,7 @@ public class Rdf4jServerWorkbenchApplication {
 		registration.setLoadOnStartup(2);
 		registration.setAsyncSupported(true);
 		registration.setInitParameters(workbenchInitParameters(contextPath));
-		// The same upload limits as the Workbench WAR's gateway: 10 GiB a file, spooled to disk above 64 MiB.
+		// The same upload limits as the Workbench WAR's gateway: 10 GiB a file, every part spooled to disk.
 		registration.setMultipartConfig(new MultipartConfigElement("", WorkbenchRequest.MAX_UPLOAD_BYTES,
 				WorkbenchRequest.MAX_UPLOAD_REQUEST_BYTES, WorkbenchRequest.UPLOAD_SPOOL_THRESHOLD_BYTES));
 		return registration;

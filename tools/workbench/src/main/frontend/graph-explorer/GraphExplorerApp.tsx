@@ -758,7 +758,9 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     changes: [graph, transform, query, provenanceBatches, namedGroups, manualSelectedNodeIds, focusedNodeId, graphScope],
     busy: isLayoutAnimating || isLayoutComputing || draggingNodeId !== null || isLargeGraphDragging,
     restore: (saved) => {
-      if (!graphRef.current.nodes.length) showStored(saved);
+      if (graphRef.current.nodes.length) return false;
+      showStored(saved);
+      return true;
     },
     replace: (saved, message) => {
       invalidateAsyncRequests();
@@ -1559,7 +1561,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
       observer.disconnect();
       window.cancelAnimationFrame(frame);
     };
-  }, [cardNodeId]);
+  }, [cardNodeId, viewMode]);
 
   useEffect(() => {
     const syncFullscreen = () => setIsFullscreen(Boolean(document.fullscreenElement));
@@ -1748,7 +1750,8 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
       );
       canvas.removeEventListener("dragstart", suppressNativeCanvasInteraction);
     };
-  }, []);
+    // A data view replaces the canvas; coming back mounts a new one, which needs its listeners too.
+  }, [viewMode]);
 
   useEffect(() => {
     const canvas = webglCanvasRef.current;

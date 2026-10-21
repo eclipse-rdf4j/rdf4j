@@ -242,6 +242,21 @@ export function sparqlTermFromNodeId(nodeId: string): SparqlTerm | undefined {
 }
 
 /**
+ * A language tag in the case Rio's default normalisation stores it (Literals.normalizeLanguageTag): node IDs keep tags
+ * in lower case, but a store such as NativeStore finds a literal constant by its exact bytes. Two-letter subtags are
+ * upper case and four-letter ones title case, unless a singleton precedes them.
+ */
+function storedLanguageTag(tag: string) {
+  const subtags = tag.toLowerCase().split("-");
+  for (let index = 1; index < subtags.length; index++) {
+    if (subtags[index - 1].length <= 1) continue;
+    if (/^\w\w$/.test(subtags[index])) subtags[index] = subtags[index].toUpperCase();
+    else if (/^\w{4}$/.test(subtags[index])) subtags[index] = subtags[index][0].toUpperCase() + subtags[index].slice(1);
+  }
+  return subtags.join("-");
+}
+
+/**
  * Convert a canonical graph node ID back into a safe SPARQL VALUES token.
  * Ordinary `_:` labels and uncertified document IDs cannot name an existing node. Certified fixed references can.
  */
@@ -252,7 +267,7 @@ export function sparqlFacetValueToken(nodeId: string): string | null {
   if (term.type === "bnode") return term["rdf4j:reference"] === true ? fixedBlankNodeReference(term.value) : null;
   const value = `"${escapedSparqlString(term.value)}"`;
   if (term["xml:lang"] && SAFE_LANGUAGE.test(term["xml:lang"])) {
-    return `${value}@${term["xml:lang"]}${term["its:dir"] ? `--${term["its:dir"]}` : ""}`;
+    return `${value}@${storedLanguageTag(term["xml:lang"])}${term["its:dir"] ? `--${term["its:dir"]}` : ""}`;
   }
   if (term.datatype && isSafeSparqlIri(term.datatype)) {
     return `${value}^^<${term.datatype}>`;

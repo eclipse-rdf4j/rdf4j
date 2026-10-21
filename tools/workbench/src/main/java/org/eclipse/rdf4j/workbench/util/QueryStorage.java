@@ -133,8 +133,11 @@ public class QueryStorage {
 			+ ":repository ?repository ; :shared ?shared ; :queryLanguage ?queryLanguage ; :query ?queryText ; "
 			+ ":infer ?infer ; :rowsPerPage ?rowsPerPage ; :queryTimeout ?queryTimeout . } WHERE {}";
 
-	private static final String ASK_EXISTS = PRE
-			+ "ASK { [] :userName ?userName ; :queryName ?queryName ; :repository ?repository . }";
+	// The user's own query of that name, also one saved under the plain user name by earlier versions (?legacyUser).
+	private static final String OWN_QUERY = "?query :repository ?repository ; :userName ?user ; :queryName ?queryName . "
+			+ "FILTER (?user = ?currentUser || ?user = ?legacyUser) ";
+
+	private static final String ASK_EXISTS = PRE + "ASK { " + OWN_QUERY + "}";
 
 	// ?legacyUser: the owner earlier versions stored for the current user's queries (SavedQueryIdentity.legacyOwner).
 	private static final String UPDATE_FILTER = "FILTER (?user = ?currentUser || ?user = ?legacyUser "
@@ -163,8 +166,9 @@ public class QueryStorage {
 			+ ":infer ?infer ; :rowsPerPage ?rowsPerPage ; :queryTimeout ?queryTimeout . }\n"
 			+ "WHERE { ?query :userName ?user ; " + MATCH + OPTIONAL_UPDATE_FIELDS + UPDATE_FILTER;
 
-	private static final String SELECT_URI = PRE
-			+ "SELECT ?query { ?query :repository ?repository ; :userName ?userName ; :queryName ?queryName . } ";
+	// One saved under the current owner comes first.
+	private static final String SELECT_URI = PRE + "SELECT ?query { " + OWN_QUERY
+			+ "} ORDER BY DESC(?user = ?currentUser)";
 
 	private static final String SELECT_TEXT = PRE
 			+ "SELECT ?queryText { [] :repository ?repository ; :userName ?userName ; :queryName ?queryName ; :query ?queryText . } ";
@@ -325,7 +329,7 @@ public class QueryStorage {
 			BooleanQuery ask = connection.prepareBooleanQuery(QueryLanguage.SPARQL, ASK_EXISTS);
 			ask.setBinding(REPOSITORY, VF.createIRI(repositoryReference));
 			ask.setBinding(QUERY_NAME, VF.createLiteral(queryName));
-			ask.setBinding(USER_NAME, VF.createLiteral(userName));
+			bindCurrentUser(ask, userName);
 			return ask.evaluate();
 		}
 	}
@@ -420,7 +424,7 @@ public class QueryStorage {
 			throws RDF4JException, BadRequestException {
 		try (RepositoryConnection connection = this.queries.getConnection()) {
 			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, SELECT_URI);
-			query.setBinding(USER_NAME, VF.createLiteral(owner));
+			bindCurrentUser(query, owner);
 			query.setBinding(REPOSITORY, VF.createIRI(repositoryReference));
 			query.setBinding(QUERY_NAME, VF.createLiteral(queryName));
 			try (TupleQueryResult result = query.evaluate()) {

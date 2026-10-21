@@ -272,29 +272,36 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	public void updateRepositoryConfig(RepositoryConfig config) {
 		Objects.requireNonNull(config).validate();
 		String id = config.getID();
+		Repository previous;
 		synchronized (initializedRepositories) {
 			if (!hasRepositoryConfig(id)) {
 				throw new RepositoryConfigException("Unknown repository: " + id);
 			}
 			addRepositoryConfig(config);
-			// Out of the cache first: an instance that fails to shut down must not keep serving the old configuration.
-			Repository previous = initializedRepositories.remove(id);
-			if (previous != null && previous.isInitialized()) {
-				try {
-					previous.shutDown();
-				} catch (RuntimeException e) {
-					throw new RepositoryException("The configuration was saved, but repository '" + id
-							+ "' could not shut down: " + e.getMessage(), e);
-				}
-			}
+			previous = initializedRepositories.get(id);
+		}
+		// The shutdown waits for the repository's open connections, so it runs without the cached repositories' lock:
+		// the requests that would close those connections, and every other repository's requests, must still get
+		// through. The previous instance stays cached until it has shut down, so no second instance opens its store.
+		if (previous != null && previous.isInitialized()) {
 			try {
-				if (getRepository(id) == null) {
-					throw new RepositoryException("The repository no longer exists.");
-				}
+				previous.shutDown();
 			} catch (RuntimeException e) {
+				// An instance that fails to shut down must not keep serving the old configuration.
+				synchronized (initializedRepositories) {
+					initializedRepositories.remove(id, previous);
+				}
 				throw new RepositoryException("The configuration was saved, but repository '" + id
-						+ "' could not initialize: " + e.getMessage(), e);
+						+ "' could not shut down: " + e.getMessage(), e);
 			}
+		}
+		try {
+			if (getRepository(id) == null) {
+				throw new RepositoryException("The repository no longer exists.");
+			}
+		} catch (RuntimeException e) {
+			throw new RepositoryException("The configuration was saved, but repository '" + id
+					+ "' could not initialize: " + e.getMessage(), e);
 		}
 	}
 

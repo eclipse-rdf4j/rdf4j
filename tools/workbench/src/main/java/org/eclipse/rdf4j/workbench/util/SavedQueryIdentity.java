@@ -38,8 +38,10 @@ import jakarta.servlet.http.HttpServletRequest;
 
 /**
  * Stable, server-keyed owner identifiers for private saved queries. A claimed user name alone is not an identity: a
- * public RDF4J Server may accept any credentials. Knowledge of the complete credential pair is required to claim an
- * existing private query, and the password is neither stored with queries nor sent to the browser.
+ * public RDF4J Server may accept any credentials. Knowledge of the complete credential pair is required to claim a
+ * private query saved under such an identifier, and the password is neither stored with queries nor sent to the
+ * browser. Queries that earlier versions saved under the plain user name have no such proof: whoever connects with that
+ * user name can claim them ({@link #legacyOwner}).
  */
 public final class SavedQueryIdentity {
 

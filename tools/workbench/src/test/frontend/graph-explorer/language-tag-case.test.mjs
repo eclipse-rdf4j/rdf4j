@@ -58,8 +58,22 @@ test("a literal's identity lowercases its language tag in ASCII in every locale"
       const term = sparqlTermFromNodeId(id);
       assert.ok(term && isSparqlTerm(term), `${tag} reads back as a valid term`);
       assert.equal(term["xml:lang"], "en-ie");
-      assert.equal(sparqlFacetValueToken(id), '"Dublin"@en-ie');
+      // A query names the literal in the case Rio stores it (BCP 47 normalisation, on by default), since some
+      // stores (NativeStore) look constants up by their exact bytes.
+      assert.equal(sparqlFacetValueToken(id), '"Dublin"@en-IE');
     }
+  });
+});
+
+test("a query writes a literal's language tag in the case Rio's default normalisation stores", () => {
+  inTurkishLocale(() => {
+    const token = (tag) => sparqlFacetValueToken(sparqlNodeId(literal(tag)));
+    assert.equal(token("EN-GB"), '"Dublin"@en-GB');
+    assert.equal(token("zh-hant-tw"), '"Dublin"@zh-Hant-TW');
+    assert.equal(token("SR-LATN-RS"), '"Dublin"@sr-Latn-RS');
+    assert.equal(token("DE"), '"Dublin"@de');
+    assert.equal(token("es-419"), '"Dublin"@es-419');
+    assert.equal(token("en-x-ab"), '"Dublin"@en-x-ab', "a subtag after a singleton keeps its lower case");
   });
 });
 
