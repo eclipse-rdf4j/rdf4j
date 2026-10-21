@@ -57,7 +57,7 @@ public class RepositoryConfigUtil {
 		Set<Statement> ids = new LinkedHashSet<>(model.filter(null, CONFIG.Rep.id, null));
 		ids.addAll(model.filter(null, RepositoryConfigSchema.REPOSITORYID, null));
 		for (Statement statement : ids) {
-			if (!root.equals(statement.getSubject()) || !(statement.getObject()instanceof Literal id)
+			if (!root.equals(statement.getSubject()) || !(statement.getObject() instanceof Literal id)
 					|| !repositoryID.equals(id.getLabel())) {
 				throw new RepositoryConfigException("The repository ID must remain '" + repositoryID + "'.");
 			}

@@ -151,7 +151,7 @@ public class WorkbenchServlet extends AbstractServlet {
 		ServerCredentials.bindRequest(req, credentials);
 		// This servlet is selected after the gateway resolves the cookie, relative default, or local manager.
 		String responseIdentity = serverIdentity;
-		if (req.getAttribute(WorkbenchPageProtocol.CLIENT_SCOPE_ATTRIBUTE)instanceof String scope) {
+		if (req.getAttribute(WorkbenchPageProtocol.CLIENT_SCOPE_ATTRIBUTE) instanceof String scope) {
 			responseIdentity += ":" + scope;
 		}
 		req.setAttribute(WorkbenchPageProtocol.SERVER_IDENTITY_ATTRIBUTE, responseIdentity);

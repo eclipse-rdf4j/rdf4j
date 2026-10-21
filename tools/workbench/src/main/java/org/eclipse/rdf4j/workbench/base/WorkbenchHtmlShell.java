@@ -126,12 +126,12 @@ public final class WorkbenchHtmlShell {
 			writer.write(escape(repositoryId));
 			writer.write('"');
 		}
-		if (request.getAttribute(WorkbenchPageProtocol.SERVER_IDENTITY_ATTRIBUTE)instanceof String serverIdentity) {
+		if (request.getAttribute(WorkbenchPageProtocol.SERVER_IDENTITY_ATTRIBUTE) instanceof String serverIdentity) {
 			writer.write(" data-workbench-server-identity=\"");
 			writer.write(escape(serverIdentity));
 			writer.write('"');
 		}
-		if (request.getAttribute(WorkbenchPageProtocol.SERVER_USER_ATTRIBUTE)instanceof String serverUser) {
+		if (request.getAttribute(WorkbenchPageProtocol.SERVER_USER_ATTRIBUTE) instanceof String serverUser) {
 			writer.write(" data-workbench-server-user=\"");
 			writer.write(escape(serverUser));
 			writer.write('"');
