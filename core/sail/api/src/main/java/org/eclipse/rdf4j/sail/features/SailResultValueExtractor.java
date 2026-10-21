@@ -102,7 +102,7 @@ public interface SailResultValueExtractor<T> {
 	};
 
 	SailResultValueExtractor<Explanation> EXPLANATIONS = (explanation, roots) -> {
-		if (explanation.tupleExpr()instanceof QueryModelNode expression) {
+		if (explanation.tupleExpr() instanceof QueryModelNode expression) {
 			QUERY_MODELS.extract(expression, roots);
 		}
 	};

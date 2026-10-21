@@ -132,7 +132,7 @@ public final class IndependentSparqlOracle implements AutoCloseable {
 	}
 
 	/** A recursively canonical RDF term. */
-	public sealed interface CanonicalTerm permits CanonicalIri,CanonicalBNode,CanonicalLiteral,CanonicalTripleTerm {
+	public sealed interface CanonicalTerm permits CanonicalIri, CanonicalBNode, CanonicalLiteral, CanonicalTripleTerm {
 	}
 
 	public record CanonicalIri(String iri) implements CanonicalTerm {

@@ -78,18 +78,22 @@ final class ValueStoreBulkRecords {
 			BulkCompression compression, BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler,
 			Runnable spillOutputObserver, Runnable beforeReaderClose, LmdbStoreFormat format) throws IOException {
 		long largestSpillOutputBytes = List.of(BulkArtifact.VALUE_RECORDS, BulkArtifact.VALUE_HASHES,
-				BulkArtifact.VALUE_REFERENCE_COUNTS, BulkArtifact.TRIPLE_TERMS).stream()
+				BulkArtifact.VALUE_REFERENCE_COUNTS, BulkArtifact.TRIPLE_TERMS)
+				.stream()
 				.mapToLong(artifact -> BulkLz4.mergeOutputMemoryBytes(compression.codecFor(artifact)))
-				.max().orElseThrow();
+				.max()
+				.orElseThrow();
 		// Resolved readers and one synchronous output remain live in the scan envelope. Reserve another output stream
 		// for one asynchronous spill, then size the five local producers from the remaining aggregate allowance. The
 		// actual producer and radix-scratch layouts are included again when the envelope is admitted below.
 		long resolvedReaderBytes = values.readerMemoryEstimateBytes();
 		long valueConversionBytes = values.records() == 0L ? 0L : values.conversionMemoryEstimateBytes();
 		long sorterBudget = Math.max(1L,
-				Math.max(0L, memoryBudgetBytes - resolvedReaderBytes - valueConversionBytes - 2L * largestSpillOutputBytes
-						- 4L * 256L * Integer.BYTES
-						- ExternalLongTupleSorter.asynchronousSpillMetadataBytes(4)) / 4L);
+				Math.max(0L,
+						memoryBudgetBytes - resolvedReaderBytes - valueConversionBytes - 2L * largestSpillOutputBytes
+								- 4L * 256L * Integer.BYTES
+								- ExternalLongTupleSorter.asynchronousSpillMetadataBytes(4))
+						/ 4L);
 		Path hashCandidatesPath = workspace.resolve("value-hash-candidates.bin");
 		Path referenceCandidatesPath = workspace.resolve("value-reference-candidates.bin");
 		Path tripleTermsPath = workspace.resolve("value-triple-terms.bin");
@@ -111,8 +115,10 @@ final class ValueStoreBulkRecords {
 			long synchronousSpillBytes = List.of(main.synchronousSpillMemoryEstimateBytes(),
 					hashCandidates.synchronousSpillMemoryEstimateBytes(),
 					referenceCandidates.synchronousSpillMemoryEstimateBytes(),
-					tripleTerms.synchronousSpillMemoryEstimateBytes(), hashes.synchronousSpillMemoryEstimateBytes()).stream()
-					.max(Long::compare).orElse(0L);
+					tripleTerms.synchronousSpillMemoryEstimateBytes(), hashes.synchronousSpillMemoryEstimateBytes())
+					.stream()
+					.max(Long::compare)
+					.orElse(0L);
 			values.forEach((sequence, id, roles, canonicalKey, dependencyIds) -> {
 				checkCancelled(cancellationSignal);
 				for (long dependencyId : dependencyIds) {
@@ -139,7 +145,7 @@ final class ValueStoreBulkRecords {
 				addDataRecords(main, sequence, id, data, hashCandidates);
 				hashes.add3(id, Integer.toUnsignedLong(value.hashCode()), 0L);
 			}, cancellationSignal, scheduler, synchronousSpillBytes, values.records() == 0L ? 0 : 1,
-				beforeReaderClose);
+					beforeReaderClose);
 
 			List<ExternalLongTupleSorter.SortedTupleFile> independentSorters = finishTupleSorters(
 					List.of(hashCandidates, referenceCandidates, tripleTerms, hashes),

@@ -50,6 +50,24 @@ async function activeMotionCount(locator) {
 		.filter(animation => animation.playState === 'running').length);
 }
 
+async function clickAndReadOpeningKeyframes(triggerSelector, target) {
+	return target.evaluate((element, selector) => new Promise(resolve => {
+		// The query-page bridge may update visibility after this click; observe from the renderer's animation frames.
+		document.querySelector(selector).click();
+		const deadline = performance.now() + 1000;
+		const read = () => {
+			const animation = element.getAnimations({ subtree: false })
+				.find(candidate => candidate.playState === 'running');
+			if (animation || performance.now() > deadline) {
+				resolve(animation ? animation.effect.getKeyframes() : []);
+			} else {
+				requestAnimationFrame(read);
+			}
+		};
+		read();
+	}), triggerSelector);
+}
+
 async function retainedForwardFillCount(locator) {
 	return locator.evaluate(element => element.getAnimations({ subtree: false })
 		.filter(animation => animation.effect && animation.effect.getTiming().fill === 'forwards').length);
@@ -176,21 +194,7 @@ test('comparison explanation reverses cleanly and respects reduced motion', asyn
 	const compareRow = page.locator('#query-explanation-row-compare');
 	await expect(compareRow).toBeHidden();
 	await recordIntermediateMotion(compareRow, 'opacity');
-	const opening = await compareRow.evaluate(element => new Promise(resolve => {
-		document.getElementById('compare-toggle').click();
-		// The motion may start with the next frame; its keyframes are fixed once it exists.
-		const deadline = performance.now() + 1000;
-		const read = () => {
-			const animation = element.getAnimations({ subtree: false })
-				.find(candidate => candidate.playState === 'running');
-			if (animation || performance.now() > deadline) {
-				resolve(animation ? animation.effect.getKeyframes() : []);
-			} else {
-				requestAnimationFrame(read);
-			}
-		};
-		read();
-	}));
+	const opening = await clickAndReadOpeningKeyframes('#compare-toggle', compareRow);
 	expect(opening.length).toBeGreaterThan(1);
 	expect(parseFloat(opening[0].height)).toBe(0);
 	expect(parseFloat(opening[0].opacity)).toBe(0);
@@ -203,8 +207,13 @@ test('comparison explanation reverses cleanly and respects reduced motion', asyn
 	expect(await activeMotionCount(compareRow)).toBe(0);
 	expect(await retainedForwardFillCount(compareRow)).toBe(0);
 
-	await page.locator('#compare-toggle').evaluate(element => element.click());
-	expect(await activeMotionCount(compareRow)).toBeGreaterThan(0);
+	await recordIntermediateMotion(compareRow, 'opacity');
+	const reopening = await clickAndReadOpeningKeyframes('#compare-toggle', compareRow);
+	expect(reopening.length).toBeGreaterThan(1);
+	expect(parseFloat(reopening[0].opacity)).toBe(0);
+	expect(parseFloat(reopening[reopening.length - 1].opacity)).toBe(1);
+	await expect(compareRow).toHaveAttribute('aria-hidden', 'false');
+	await expect.poll(() => wasSeenInIntermediateMotion(compareRow)).toBe(true);
 	await waitForOwnedAnimations(compareRow);
 	await expect(compareRow).toBeVisible();
 	expect(await retainedForwardFillCount(compareRow)).toBe(0);

@@ -278,7 +278,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 				extension -> extension.getElements()
 						.stream()
 						.allMatch(element -> element.getExpr() instanceof AggregateOperator)
-						&& (extension.getArg() instanceof Group || extension.getArg()instanceof Filter filter
+						&& (extension.getArg() instanceof Group || extension.getArg() instanceof Filter filter
 								&& filter.getArg() instanceof Group));
 		assertThat(placeholder.getArg()).as("optimized HAVING tree:\n%s", optimized).isInstanceOf(Filter.class);
 		assertThat(((Filter) placeholder.getArg()).getArg()).isInstanceOf(Group.class);
@@ -1690,8 +1690,8 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 	}
 
 	private static boolean isEqualityToConstant(Filter filter, String varName) {
-		if (!(filter.getCondition()instanceof Compare compare) || compare.getOperator() != CompareOp.EQ
-				|| !(compare.getLeftArg()instanceof Var var) || !varName.equals(var.getName())) {
+		if (!(filter.getCondition() instanceof Compare compare) || compare.getOperator() != CompareOp.EQ
+				|| !(compare.getLeftArg() instanceof Var var) || !varName.equals(var.getName())) {
 			return false;
 		}
 		return compare.getRightArg() instanceof ValueConstant;
@@ -1863,7 +1863,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		}
 
 		private boolean isNameFilter(Filter filter) {
-			if (!(filter.getArg()instanceof StatementPattern statementPattern)) {
+			if (!(filter.getArg() instanceof StatementPattern statementPattern)) {
 				return false;
 			}
 			return statementPattern.getPredicateVar() != null

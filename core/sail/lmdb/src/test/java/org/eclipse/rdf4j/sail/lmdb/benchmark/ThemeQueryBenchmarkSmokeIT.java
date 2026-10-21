@@ -512,7 +512,7 @@ class ThemeQueryBenchmarkSmokeIT {
 			assertTrue(!joinArgs.isEmpty(),
 					"Expected optimized medical q5 plan to retain the unused singleton VALUES ?limit; plan="
 							+ optimized);
-			assertTrue(joinArgs.getFirst()instanceof BindingSetAssignment assignment
+			assertTrue(joinArgs.getFirst() instanceof BindingSetAssignment assignment
 					&& assignment.getBindingNames().contains("limit") && hasExactlyOneBindingSet(assignment),
 					"Expected optimized medical q5 VALUES ?limit to lead its join segment; plan="
 							+ optimized);
@@ -719,7 +719,7 @@ class ThemeQueryBenchmarkSmokeIT {
 	}
 
 	private static boolean isRecordedOnFilter(Filter filter) {
-		if (!(filter.getArg()instanceof StatementPattern statementPattern)) {
+		if (!(filter.getArg() instanceof StatementPattern statementPattern)) {
 			return false;
 		}
 		return MEDICAL_RECORDED_ON.equals(statementPattern.getPredicateVar().getValue().stringValue())
@@ -727,7 +727,7 @@ class ThemeQueryBenchmarkSmokeIT {
 	}
 
 	private static boolean isPharmaPValueFilter(Filter filter) {
-		if (!(filter.getArg()instanceof StatementPattern statementPattern)) {
+		if (!(filter.getArg() instanceof StatementPattern statementPattern)) {
 			return false;
 		}
 		return (PHARMA + "pValue").equals(statementPattern.getPredicateVar().getValue().stringValue())

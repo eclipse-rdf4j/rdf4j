@@ -268,7 +268,7 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T> {
 					values.sort(ID_ORDER);
 					ValueStore owner = group.getKey().getValueStore();
 					ValueResolutionScope scope = owner == store && transactionScope != null && transactionScope.isOpen()
-							&& (!(group.getKey()instanceof ValueStoreRevision.Lazy lazy)
+							&& (!(group.getKey() instanceof ValueStoreRevision.Lazy lazy)
 									|| transactionScope.protects(lazy))
 											? transactionScope
 											: scopes.get(owner);

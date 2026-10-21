@@ -185,7 +185,7 @@ public class TupleQueryResultView extends QueryResultView {
 	@SuppressWarnings("rawtypes")
 	private boolean writeCommittedBinaryError(Map model, RuntimeException exception, String message) {
 		if (!(exception instanceof QueryEvaluationException)
-				|| !(model.get(RESPONSE_WRITER_KEY)instanceof BinaryQueryResultWriter writer)) {
+				|| !(model.get(RESPONSE_WRITER_KEY) instanceof BinaryQueryResultWriter writer)) {
 			return false;
 		}
 

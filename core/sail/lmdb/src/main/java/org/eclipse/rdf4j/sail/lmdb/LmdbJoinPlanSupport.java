@@ -325,7 +325,7 @@ final class LmdbJoinPlanSupport {
 	static BindingSetAssignment smallLiteralFilterAnchor(ValueExpr condition) {
 		if (condition instanceof ListMemberOperator) {
 			List<ValueExpr> arguments = ((ListMemberOperator) condition).getArguments();
-			if (arguments.isEmpty() || !(arguments.getFirst()instanceof Var filterVar)) {
+			if (arguments.isEmpty() || !(arguments.getFirst() instanceof Var filterVar)) {
 				return null;
 			}
 

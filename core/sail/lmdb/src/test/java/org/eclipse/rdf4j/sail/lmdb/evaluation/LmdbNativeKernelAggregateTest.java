@@ -437,15 +437,13 @@ public class LmdbNativeKernelAggregateTest {
 		LmdbNativeJaninoCodegen.resetForTests();
 		LmdbNativeCostCalibration.reset();
 		for (int i = 0; i < 100; i++) {
-			// This class proves IR lowering and exactness, not the production crossover against every
-			// competing specialist. Give the unified arbiter deterministic execution evidence for the strategy under
-			// test; production dispatch remains cost-based and the dedicated priority tests cover specialist wins.
-			LmdbNativeCostCalibration.record(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, 1_000_000D, 1_000L);
+			// Existing row-kernel engagement cases retain their calibration setup. Aggregate operator contracts use
+			// explicit executor requests and do not need fabricated aggregate timing evidence.
 			LmdbNativeCostCalibration.record(LmdbNativeAttemptMetrics.PATH_IR_KERNEL, 1_000_000D, 1_000L);
 		}
 	}
 
-	private void warmUntilEngaged(String query) {
+	private void warmAggregateSeeds() {
 		// CSR entries build from KEYED probe traffic (per-subject lookups), not scans; witness predicates only
 		// touched through EXISTS filters (source.has) never accumulate probe counts. Warm every predicate with
 		// VALUES-seeded keyed probes first. Production analogue: witness-only predicates need demand recording
@@ -485,6 +483,20 @@ public class LmdbNativeKernelAggregateTest {
 			rows("PREFIX ex: <" + EX
 					+ "> SELECT * WHERE { VALUES ?enc { ex:encounter0 ex:encounter1 ex:encounter2 ex:encounter3 ex:encounter4 ex:encounter5 ex:encounter6 } ?enc ex:hasCondition ?condition }");
 		}
+	}
+
+	private void assertAggregateExecutor(List<String> expected, String query) {
+		warmAggregateSeeds();
+		long plannedBefore = KernelExecutionTestAccess.aggPlanned();
+		long openedBefore = KernelExecutionTestAccess.aggOpened();
+		// These are operator-lowering contracts; cost-based dispatch may legitimately select another executor.
+		assertEquals(expected, rows(query, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED));
+		assertTrue(KernelExecutionTestAccess.aggPlanned() > plannedBefore, "aggregate rung must be planned");
+		assertTrue(KernelExecutionTestAccess.aggOpened() > openedBefore, "aggregate rung must be opened");
+	}
+
+	private void awaitColdAggregateEngagement(String query) {
+		warmAggregateSeeds();
 		for (int round = 0; round < 300 && KernelExecutionTestAccess.aggOpened() == 0L; round++) {
 			rows(query);
 		}
@@ -493,7 +505,8 @@ public class LmdbNativeKernelAggregateTest {
 	@Test
 	public void notExistsWitnessCountEngagesAndMatchesGeneric() {
 		List<String> expected = genericRows(NOT_EXISTS_COUNT_QUERY);
-		warmUntilEngaged(NOT_EXISTS_COUNT_QUERY);
+		assertFalse(expected.isEmpty(), "The NOT EXISTS fixture must produce its aggregate result");
+		assertAggregateExecutor(expected, NOT_EXISTS_COUNT_QUERY);
 		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L,
 				"aggregate rung never engaged (planned=" + KernelExecutionTestAccess.aggPlanned() + ", declined="
 						+ KernelExecutionTestAccess.aggDeclined() + ", compileFailures="
@@ -538,7 +551,7 @@ public class LmdbNativeKernelAggregateTest {
 		assertTrue(expected.stream().anyMatch(row -> row.contains("patient1") && row.contains("encCount=\"2\"")),
 				"patient1 must contribute two distinct encounters: " + expected);
 
-		warmUntilEngaged(GROUPED_OPTIONAL_EXISTS_QUERY);
+		assertAggregateExecutor(expected, GROUPED_OPTIONAL_EXISTS_QUERY);
 		String executedPlan = KernelExecutionTestAccess.aggOpened() == 0L
 				? explanation(GROUPED_OPTIONAL_EXISTS_QUERY, Explanation.Level.Executed)
 				: "";
@@ -558,7 +571,7 @@ public class LmdbNativeKernelAggregateTest {
 		String previousCalibration = System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, "false");
 		try {
 			LmdbNativeCostCalibration.reset();
-			warmUntilEngaged(NULL_REJECTED_OPTIONALS_COUNT_QUERY);
+			awaitColdAggregateEngagement(NULL_REJECTED_OPTIONALS_COUNT_QUERY);
 			String executedPlan = KernelExecutionTestAccess.aggOpened() == 0L
 					? explanation(NULL_REJECTED_OPTIONALS_COUNT_QUERY, Explanation.Level.Executed)
 					: "";
@@ -576,7 +589,7 @@ public class LmdbNativeKernelAggregateTest {
 	@Test
 	public void minMaxSumMatchGenericWithExactTypes() {
 		List<String> expected = genericRows(MIN_MAX_QUERY);
-		warmUntilEngaged(MIN_MAX_QUERY);
+		assertAggregateExecutor(expected, MIN_MAX_QUERY);
 		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L, "aggregate rung never engaged");
 		assertEquals(expected, rows(MIN_MAX_QUERY));
 	}
@@ -584,7 +597,7 @@ public class LmdbNativeKernelAggregateTest {
 	@Test
 	public void bigIntegerSumEngagesAndMatchesGeneric() {
 		List<String> expected = genericRows(BIG_SUM_QUERY);
-		warmUntilEngaged(BIG_SUM_QUERY);
+		assertAggregateExecutor(expected, BIG_SUM_QUERY);
 		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L,
 				"exact big-integer SUM never engaged (planned=" + KernelExecutionTestAccess.aggPlanned()
 						+ ", declined=" + KernelExecutionTestAccess.aggDeclined() + ")");
@@ -594,7 +607,7 @@ public class LmdbNativeKernelAggregateTest {
 	@Test
 	public void decimalSumAndAverageEngageWithExactPromotion() {
 		List<String> expected = genericRows(DECIMAL_SUM_AVG_QUERY);
-		warmUntilEngaged(DECIMAL_SUM_AVG_QUERY);
+		assertAggregateExecutor(expected, DECIMAL_SUM_AVG_QUERY);
 		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L, "decimal SUM/AVG never engaged");
 		assertEquals(expected, rows(DECIMAL_SUM_AVG_QUERY));
 	}
@@ -602,7 +615,7 @@ public class LmdbNativeKernelAggregateTest {
 	@Test
 	public void nonNumericSumAndAverageOmitBindingsInsideKernel() {
 		List<String> expected = genericRows(NON_NUMERIC_SUM_AVG_QUERY);
-		warmUntilEngaged(NON_NUMERIC_SUM_AVG_QUERY);
+		assertAggregateExecutor(expected, NON_NUMERIC_SUM_AVG_QUERY);
 		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L, "type-error SUM/AVG never engaged");
 		assertEquals(expected, rows(NON_NUMERIC_SUM_AVG_QUERY));
 	}
@@ -611,7 +624,7 @@ public class LmdbNativeKernelAggregateTest {
 	public void groupedDecimalAccumulatorsGrowAndMatchGeneric() {
 		List<String> expected = genericRows(GROUPED_DECIMAL_QUERY);
 		assertEquals(20, expected.size(), "fixture must exceed the initial sixteen-group sidecar capacity");
-		warmUntilEngaged(GROUPED_DECIMAL_QUERY);
+		assertAggregateExecutor(expected, GROUPED_DECIMAL_QUERY);
 		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L, "grouped decimal SUM/AVG never engaged");
 		assertEquals(expected, rows(GROUPED_DECIMAL_QUERY));
 	}
@@ -619,7 +632,7 @@ public class LmdbNativeKernelAggregateTest {
 	@Test
 	public void emptyNumericAggregatesEngageAndMatchGeneric() {
 		List<String> expected = genericRows(EMPTY_NUMERIC_QUERY);
-		warmUntilEngaged(EMPTY_NUMERIC_QUERY);
+		assertAggregateExecutor(expected, EMPTY_NUMERIC_QUERY);
 		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L, "empty SUM/AVG never engaged");
 		assertEquals(expected, rows(EMPTY_NUMERIC_QUERY));
 	}
@@ -669,7 +682,7 @@ public class LmdbNativeKernelAggregateTest {
 	@Test
 	public void minusArmAntiJoinCountMatchesGeneric() {
 		List<String> expected = genericRows(MINUS_COUNT_QUERY);
-		warmUntilEngaged(MINUS_COUNT_QUERY);
+		assertAggregateExecutor(expected, MINUS_COUNT_QUERY);
 		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L, "aggregate rung never engaged for MINUS");
 		assertEquals(expected, rows(MINUS_COUNT_QUERY));
 	}
@@ -677,7 +690,7 @@ public class LmdbNativeKernelAggregateTest {
 	@Test
 	public void unionBranchesWithDifferentProducersCountDistinctExactly() {
 		List<String> expected = genericRows(UNION_DISTINCT_QUERY);
-		warmUntilEngaged(UNION_DISTINCT_QUERY);
+		assertAggregateExecutor(expected, UNION_DISTINCT_QUERY);
 		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L,
 				"aggregate rung never engaged for union COUNT DISTINCT");
 		assertEquals(expected, rows(UNION_DISTINCT_QUERY));
@@ -689,7 +702,7 @@ public class LmdbNativeKernelAggregateTest {
 		assertFalse(expected.isEmpty(), "fixture must keep at least one group past the guard");
 		assertTrue(expected.size() < genericRows(HAVING_GROUPED_QUERY.replace("HAVING(COUNT(*) > 1)", "")).size(),
 				"fixture must also drop at least one group, or the guard proves nothing");
-		warmUntilEngaged(HAVING_GROUPED_QUERY);
+		assertAggregateExecutor(expected, HAVING_GROUPED_QUERY);
 		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L, "aggregate rung never engaged for HAVING shape");
 		assertTrue(KernelExecutionTestAccess.havingSinks() > 0L,
 				"count-kind HAVING guard was not sunk into the kernel terminal");
@@ -700,7 +713,7 @@ public class LmdbNativeKernelAggregateTest {
 	public void havingGuardWithConstantOnTheLeftReversesTheOperator() {
 		List<String> expected = genericRows(HAVING_REVERSED_QUERY);
 		assertFalse(expected.isEmpty(), "fixture must keep at least one group past the guard");
-		warmUntilEngaged(HAVING_REVERSED_QUERY);
+		assertAggregateExecutor(expected, HAVING_REVERSED_QUERY);
 		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L, "aggregate rung never engaged for reversed HAVING");
 		assertTrue(KernelExecutionTestAccess.havingSinks() > 0L, "reversed HAVING guard was not sunk");
 		assertEquals(expected, rows(HAVING_REVERSED_QUERY));
@@ -710,7 +723,7 @@ public class LmdbNativeKernelAggregateTest {
 	public void nonCountHavingKeepsTheKernelWithoutSinking() {
 		List<String> expected = genericRows(HAVING_SUM_QUERY);
 		assertFalse(expected.isEmpty(), "fixture must keep at least one group past the SUM guard");
-		warmUntilEngaged(HAVING_SUM_QUERY);
+		assertAggregateExecutor(expected, HAVING_SUM_QUERY);
 		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L, "aggregate rung never engaged for SUM HAVING");
 		assertEquals(0L, KernelExecutionTestAccess.havingSinks(),
 				"a non-count guard must not sink into the count-only kernel tier");
@@ -722,7 +735,7 @@ public class LmdbNativeKernelAggregateTest {
 		System.setProperty(LmdbNativeKernelLowering.HAVING_SINK_PROPERTY, "false");
 		try {
 			List<String> expected = genericRows(HAVING_GROUPED_QUERY);
-			warmUntilEngaged(HAVING_GROUPED_QUERY);
+			assertAggregateExecutor(expected, HAVING_GROUPED_QUERY);
 			assertTrue(KernelExecutionTestAccess.aggOpened() > 0L, "aggregate rung never engaged with the flag off");
 			assertEquals(0L, KernelExecutionTestAccess.havingSinks(), "flag off must keep the guard outside");
 			assertEquals(expected, rows(HAVING_GROUPED_QUERY));
@@ -735,7 +748,7 @@ public class LmdbNativeKernelAggregateTest {
 	public void strlenBindLowersThroughTheBindHookAndMatchesGeneric() {
 		List<String> expected = genericRows(BIND_STRLEN_GROUPED_QUERY);
 		assertTrue(expected.size() >= 4, "fixture must produce several distinct lengths, got " + expected);
-		warmUntilEngaged(BIND_STRLEN_GROUPED_QUERY);
+		assertAggregateExecutor(expected, BIND_STRLEN_GROUPED_QUERY);
 		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L,
 				"aggregate rung never engaged for the computed-BIND shape (planned="
 						+ KernelExecutionTestAccess.aggPlanned() + ", declined="
@@ -748,7 +761,7 @@ public class LmdbNativeKernelAggregateTest {
 	@Test
 	public void strlenBindErrorLeavesTheTargetUnboundInsideTheKernel() {
 		List<String> expected = genericRows(BIND_STRLEN_ERROR_QUERY);
-		warmUntilEngaged(BIND_STRLEN_ERROR_QUERY);
+		assertAggregateExecutor(expected, BIND_STRLEN_ERROR_QUERY);
 		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L,
 				"aggregate rung never engaged for the erroring computed-BIND shape");
 		assertTrue(KernelExecutionTestAccess.bindHookLowerings() > 0L,
@@ -760,7 +773,7 @@ public class LmdbNativeKernelAggregateTest {
 	public void constantBindFoldsToAnAliasWithoutABindHook() {
 		List<String> expected = genericRows(BIND_CONSTANT_QUERY);
 		assertFalse(expected.isEmpty(), "fixture must produce the constant group");
-		warmUntilEngaged(BIND_CONSTANT_QUERY);
+		assertAggregateExecutor(expected, BIND_CONSTANT_QUERY);
 		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L,
 				"aggregate rung never engaged for the constant-BIND shape");
 		assertEquals(0L, KernelExecutionTestAccess.bindHookLowerings(),
@@ -772,7 +785,7 @@ public class LmdbNativeKernelAggregateTest {
 	public void graphConstantCountEngagesTheKernelAndMatchesGeneric() {
 		List<String> expected = genericRows(GRAPH_CONSTANT_COUNT_QUERY);
 		assertFalse(expected.isEmpty(), "fixture must produce a count for the constant graph");
-		warmUntilEngaged(GRAPH_CONSTANT_COUNT_QUERY);
+		assertAggregateExecutor(expected, GRAPH_CONSTANT_COUNT_QUERY);
 		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L,
 				"aggregate rung never engaged for the constant-GRAPH shape (planned="
 						+ KernelExecutionTestAccess.aggPlanned() + ", declined="
@@ -787,7 +800,7 @@ public class LmdbNativeKernelAggregateTest {
 		List<String> expected = genericRows(GRAPH_VARIABLE_GROUPED_QUERY);
 		assertEquals(2, expected.size(),
 				"fixture must produce exactly the two named graphs (default graph excluded), got " + expected);
-		warmUntilEngaged(GRAPH_VARIABLE_GROUPED_QUERY);
+		assertAggregateExecutor(expected, GRAPH_VARIABLE_GROUPED_QUERY);
 		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L,
 				"aggregate rung never engaged for the GRAPH-variable shape");
 		assertTrue(KernelExecutionTestAccess.contextColumnLowerings() > 0L,
@@ -799,7 +812,7 @@ public class LmdbNativeKernelAggregateTest {
 	public void graphVariableMidChainGroupedMatchesGeneric() {
 		List<String> expected = genericRows(GRAPH_VARIABLE_PROBE_QUERY);
 		assertEquals(2, expected.size(), "fixture must join into both named graphs, got " + expected);
-		warmUntilEngaged(GRAPH_VARIABLE_PROBE_QUERY);
+		assertAggregateExecutor(expected, GRAPH_VARIABLE_PROBE_QUERY);
 		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L,
 				"aggregate rung never engaged for the mid-chain GRAPH shape");
 		assertTrue(KernelExecutionTestAccess.contextColumnLowerings() > 0L,
@@ -811,7 +824,7 @@ public class LmdbNativeKernelAggregateTest {
 	public void sharedGraphVariableJoinsOnlyWithinOneGraph() {
 		List<String> expected = genericRows(GRAPH_SHARED_VARIABLE_QUERY);
 		assertEquals(2, expected.size(), "fixture must produce a per-graph join count, got " + expected);
-		warmUntilEngaged(GRAPH_SHARED_VARIABLE_QUERY);
+		assertAggregateExecutor(expected, GRAPH_SHARED_VARIABLE_QUERY);
 		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L,
 				"aggregate rung never engaged for the shared-GRAPH-variable shape");
 		assertTrue(KernelExecutionTestAccess.contextColumnLowerings() > 0L,
@@ -904,7 +917,7 @@ public class LmdbNativeKernelAggregateTest {
 				+ "VALUES ?value { \"hello\"@EN \"hello\"@en } }";
 		List<String> expected = genericRows(query);
 		for (int round = 0; round < 20 && LmdbNativeKernelExecution.AGG_COMPILED_BINDS.get() == 0L; round++) {
-			rows(query);
+			assertEquals(expected, compiledAggregateRows(query));
 			JaninoPipelineTestAccess.awaitCompilations(5, TimeUnit.SECONDS);
 		}
 		assertTrue(LmdbNativeKernelExecution.AGG_COMPILED_BINDS.get() > 0L,
@@ -918,7 +931,7 @@ public class LmdbNativeKernelAggregateTest {
 				+ "VALUES ?value { \"hello\"@EN \"hello\"@en } } GROUP BY ?value";
 		List<String> expected = genericRows(query);
 		for (int round = 0; round < 20 && LmdbNativeKernelExecution.AGG_COMPILED_BINDS.get() == 0L; round++) {
-			rows(query);
+			assertEquals(expected, compiledAggregateRows(query));
 			JaninoPipelineTestAccess.awaitCompilations(5, TimeUnit.SECONDS);
 		}
 		assertTrue(LmdbNativeKernelExecution.AGG_COMPILED_BINDS.get() > 0L,
@@ -932,7 +945,7 @@ public class LmdbNativeKernelAggregateTest {
 				+ "(\"hello\"@EN \"same\") (\"hello\"@en \"same\") } } GROUP BY ?value ?key";
 		List<String> expected = genericRows(query);
 		for (int round = 0; round < 20 && LmdbNativeKernelExecution.AGG_COMPILED_BINDS.get() == 0L; round++) {
-			rows(query);
+			assertEquals(expected, compiledAggregateRows(query));
 			JaninoPipelineTestAccess.awaitCompilations(5, TimeUnit.SECONDS);
 		}
 		assertTrue(LmdbNativeKernelExecution.AGG_COMPILED_BINDS.get() > 0L,
@@ -1102,6 +1115,17 @@ public class LmdbNativeKernelAggregateTest {
 		return subjects.toString();
 	}
 
+	private List<String> compiledAggregateRows(String query) {
+		// An explicit compiled executor requires a ready kernel. Validate compilation on the requesting thread
+		// rather than relying on the number of query executions to outrun an asynchronous compiler.
+		String previous = System.setProperty(LmdbNativeJaninoCodegen.SYNCHRONOUS_PROPERTY, "true");
+		try {
+			return rows(query, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE);
+		} finally {
+			restoreProperty(LmdbNativeJaninoCodegen.SYNCHRONOUS_PROPERTY, previous);
+		}
+	}
+
 	private List<String> rows(String query) {
 		return rows(query, null);
 	}
@@ -1179,7 +1203,7 @@ public class LmdbNativeKernelAggregateTest {
 		}
 	}
 
-	/** Row-rung sibling of {@link #warmUntilEngaged}: loops until the IR row kernel opens for the query. */
+	/** Exercises row-kernel lowering after the keyed adjacency inputs have warmed. */
 	private void warmUntilRowEngaged(String query) {
 		warmRowSeeds();
 		// The seed queries themselves can open kernels once their shapes sit warm in the compile cache, so gating on

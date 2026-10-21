@@ -410,7 +410,7 @@ public class GeneratedValueKeysIntegrationTest {
 			}
 			for (int i = 0; i < ids.length; i++) {
 				assertEquals(values[i], keys.valueOf(ids[i]));
-				if (values[i]instanceof Literal original) {
+				if (values[i] instanceof Literal original) {
 					Literal materialized = (Literal) keys.valueOf(ids[i]);
 					assertEquals(original.getLanguage(), materialized.getLanguage());
 					assertEquals(original.getBaseDirection(), materialized.getBaseDirection());

@@ -100,7 +100,8 @@ final class ResolvedValueRecords {
 		Files.createDirectories(bucketDirectory);
 		long[] sequence = { 0L };
 		int[] maximumKeyBytes = { 0 };
-		try (DataOutputStream descriptors = BulkLz4.output(descriptorPath, compression.codecFor(BulkArtifact.RESOLVED_VALUES));
+		try (DataOutputStream descriptors = BulkLz4.output(descriptorPath,
+				compression.codecFor(BulkArtifact.RESOLVED_VALUES));
 				DependencyBucketWriter buckets = new DependencyBucketWriter(compression, bucketDirectory,
 						dictionary.partitionCount(), maxOpenFiles);
 				ExternalLongTupleSorter sorter = new ExternalLongTupleSorter(workspace, "resolved-value-components", 3,

@@ -59,7 +59,7 @@ class DataTransformationThemeQueryCountTest {
 					while (result.hasNext()) {
 						BindingSet bindings = result.next();
 						rows++;
-						if (rows == 1 && bindings.getValue("count")instanceof Literal literal) {
+						if (rows == 1 && bindings.getValue("count") instanceof Literal literal) {
 							countBinding = literal;
 						}
 					}
@@ -99,7 +99,7 @@ class DataTransformationThemeQueryCountTest {
 					outgoing.computeIfAbsent(statement.getSubject(), ignored -> new HashSet<>())
 							.add(new PredicateValue(statement.getPredicate(), statement.getObject()));
 					incomingPredicateGroups.add(new DirectionPredicate("incoming", statement.getPredicate()));
-					if (statement.getObject()instanceof IRI iri) {
+					if (statement.getObject() instanceof IRI iri) {
 						incoming.computeIfAbsent(iri, ignored -> new HashSet<>())
 								.add(new SubjectPredicate(statement.getSubject(), statement.getPredicate()));
 					}

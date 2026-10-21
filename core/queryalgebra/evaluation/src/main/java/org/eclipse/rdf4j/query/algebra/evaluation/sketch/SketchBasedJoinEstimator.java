@@ -161,9 +161,10 @@ import org.slf4j.LoggerFactory;
  * <pre>
  * {@code
  * System.setProperty(
- *     "org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.defaultContextString", "urn:ctx");
+ * 		"org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.defaultContextString",
+ * 		"urn:ctx");
  * System.setProperty(
- *     "org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.refreshSleepMillis", "500");
+ * 		"org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.refreshSleepMillis", "500");
  * var est = new SketchBasedJoinEstimator(source, Config.defaults().withNominalEntries(1024));
  * }
  * </pre>
@@ -2703,13 +2704,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private void rethrowAsyncIncrementalFailure() {
 		Throwable failure = asyncIncrementalFailure.get();
 		switch (failure) {
-			case null -> {
-				return;
-			}
-			case Error error -> throw error;
-			case RuntimeException runtimeException -> throw runtimeException;
-			default -> {
-			}
+		case null -> {
+			return;
+		}
+		case Error error -> throw error;
+		case RuntimeException runtimeException -> throw runtimeException;
+		default -> {
+		}
 		}
 		throw new RuntimeException("Asynchronous incremental join-estimator ingestion failed", failure);
 	}
@@ -3602,7 +3603,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	/* Mutable sketch state. Deletes use positive tombstone sketches. */
 	/* ────────────────────────────────────────────────────────────── */
 
-	private record StateComponents<T> (T S, T P, T O, T C) {
+	private record StateComponents<T>(T S, T P, T O, T C) {
 
 		T get(Component component) {
 			return switch (component) {
@@ -4397,7 +4398,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private TuplePlanEstimate exactFiniteBindingSetFilterPlan(Filter filter) {
-		if (!(filter.getArg()instanceof BindingSetAssignment assignment)) {
+		if (!(filter.getArg() instanceof BindingSetAssignment assignment)) {
 			return null;
 		}
 		if (!assignment.hasRepeatableBindingSets()) {
@@ -5939,41 +5940,41 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 
 		switch (tupleExpr) {
-			case Filter filter -> {
-				return estimateFilteredTupleExprPlan(filter, initiallyBoundVars);
+		case Filter filter -> {
+			return estimateFilteredTupleExprPlan(filter, initiallyBoundVars);
+		}
+		case Join join -> {
+			return estimateJoinedTupleExprPlan(join.getLeftArg(), join.getRightArg(), false, initiallyBoundVars);
+		}
+		case LeftJoin join -> {
+			if (join.hasCondition()) {
+				return null;
 			}
-			case Join join -> {
-				return estimateJoinedTupleExprPlan(join.getLeftArg(), join.getRightArg(), false, initiallyBoundVars);
-			}
-			case LeftJoin join -> {
-				if (join.hasCondition()) {
-					return null;
-				}
-				return estimateJoinedTupleExprPlan(join.getLeftArg(), join.getRightArg(), true, initiallyBoundVars);
-			}
-			case Union union -> {
-				return estimateUnionTupleExprPlan(union, initiallyBoundVars);
-			}
-			case Difference difference -> {
-				return estimateDifferenceTupleExprPlan(difference, initiallyBoundVars);
-			}
-			case Intersection intersection -> {
-				return estimateIntersectionTupleExprPlan(intersection, initiallyBoundVars);
-			}
-			case Group group -> {
-				return estimateGroupTupleExprPlan(group, initiallyBoundVars);
-			}
-			case EmptySet emptySet -> {
-				return new TuplePlanEstimate(0.0d, 0.0d, 1.0d, Collections.emptyMap());
-			}
-			case SingletonSet singletonSet -> {
-				return new TuplePlanEstimate(1.0d, 1.0d, 1.0d, Collections.emptyMap());
-			}
-			case Slice slice -> {
-				return estimateSliceTupleExprPlan(slice, initiallyBoundVars);
-			}
-			default -> {
-			}
+			return estimateJoinedTupleExprPlan(join.getLeftArg(), join.getRightArg(), true, initiallyBoundVars);
+		}
+		case Union union -> {
+			return estimateUnionTupleExprPlan(union, initiallyBoundVars);
+		}
+		case Difference difference -> {
+			return estimateDifferenceTupleExprPlan(difference, initiallyBoundVars);
+		}
+		case Intersection intersection -> {
+			return estimateIntersectionTupleExprPlan(intersection, initiallyBoundVars);
+		}
+		case Group group -> {
+			return estimateGroupTupleExprPlan(group, initiallyBoundVars);
+		}
+		case EmptySet emptySet -> {
+			return new TuplePlanEstimate(0.0d, 0.0d, 1.0d, Collections.emptyMap());
+		}
+		case SingletonSet singletonSet -> {
+			return new TuplePlanEstimate(1.0d, 1.0d, 1.0d, Collections.emptyMap());
+		}
+		case Slice slice -> {
+			return estimateSliceTupleExprPlan(slice, initiallyBoundVars);
+		}
+		default -> {
+		}
 		}
 		if (tupleExpr instanceof Distinct || tupleExpr instanceof Reduced) {
 			return estimateDistinctTupleExprPlan((UnaryTupleOperator) tupleExpr, initiallyBoundVars);
@@ -5996,43 +5997,43 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 
 		switch (tupleExpr) {
-			case Filter filter -> {
-				return estimateFilteredTupleExprPlan(filter, scope, initiallyBoundVarMask);
+		case Filter filter -> {
+			return estimateFilteredTupleExprPlan(filter, scope, initiallyBoundVarMask);
+		}
+		case Join join -> {
+			return estimateJoinedTupleExprPlan(join.getLeftArg(), join.getRightArg(), false, scope,
+					initiallyBoundVarMask);
+		}
+		case LeftJoin join -> {
+			if (join.hasCondition()) {
+				return null;
 			}
-			case Join join -> {
-				return estimateJoinedTupleExprPlan(join.getLeftArg(), join.getRightArg(), false, scope,
-						initiallyBoundVarMask);
-			}
-			case LeftJoin join -> {
-				if (join.hasCondition()) {
-					return null;
-				}
-				return estimateJoinedTupleExprPlan(join.getLeftArg(), join.getRightArg(), true, scope,
-						initiallyBoundVarMask);
-			}
-			case Union union -> {
-				return estimateUnionTupleExprPlan(union, scope, initiallyBoundVarMask);
-			}
-			case Difference difference -> {
-				return estimateDifferenceTupleExprPlan(difference, scope, initiallyBoundVarMask);
-			}
-			case Intersection intersection -> {
-				return estimateIntersectionTupleExprPlan(intersection, scope, initiallyBoundVarMask);
-			}
-			case Group group -> {
-				return estimateGroupTupleExprPlan(group, scope, initiallyBoundVarMask);
-			}
-			case EmptySet emptySet -> {
-				return new TuplePlanEstimate(0.0d, 0.0d, 1.0d, Collections.emptyMap());
-			}
-			case SingletonSet singletonSet -> {
-				return new TuplePlanEstimate(1.0d, 1.0d, 1.0d, Collections.emptyMap());
-			}
-			case Slice slice -> {
-				return estimateSliceTupleExprPlan(slice, scope, initiallyBoundVarMask);
-			}
-			default -> {
-			}
+			return estimateJoinedTupleExprPlan(join.getLeftArg(), join.getRightArg(), true, scope,
+					initiallyBoundVarMask);
+		}
+		case Union union -> {
+			return estimateUnionTupleExprPlan(union, scope, initiallyBoundVarMask);
+		}
+		case Difference difference -> {
+			return estimateDifferenceTupleExprPlan(difference, scope, initiallyBoundVarMask);
+		}
+		case Intersection intersection -> {
+			return estimateIntersectionTupleExprPlan(intersection, scope, initiallyBoundVarMask);
+		}
+		case Group group -> {
+			return estimateGroupTupleExprPlan(group, scope, initiallyBoundVarMask);
+		}
+		case EmptySet emptySet -> {
+			return new TuplePlanEstimate(0.0d, 0.0d, 1.0d, Collections.emptyMap());
+		}
+		case SingletonSet singletonSet -> {
+			return new TuplePlanEstimate(1.0d, 1.0d, 1.0d, Collections.emptyMap());
+		}
+		case Slice slice -> {
+			return estimateSliceTupleExprPlan(slice, scope, initiallyBoundVarMask);
+		}
+		default -> {
+		}
 		}
 		if (tupleExpr instanceof Distinct || tupleExpr instanceof Reduced) {
 			return estimateDistinctTupleExprPlan((UnaryTupleOperator) tupleExpr, scope, initiallyBoundVarMask);
@@ -6778,14 +6779,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		if (var == null || !var.hasValue() || var.getValue() == null) {
 			return null;
 		}
-		return var.getValue()instanceof Resource resource ? resource : null;
+		return var.getValue() instanceof Resource resource ? resource : null;
 	}
 
 	private IRI exactBoundIri(Var var) {
 		if (var == null || !var.hasValue() || var.getValue() == null) {
 			return null;
 		}
-		return var.getValue()instanceof IRI iri ? iri : null;
+		return var.getValue() instanceof IRI iri ? iri : null;
 	}
 
 	private Value exactBoundValue(Var var) {
@@ -6802,7 +6803,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		if (contextVar.getValue() == null) {
 			return new Resource[] { null };
 		}
-		if (!(contextVar.getValue()instanceof Resource resource)) {
+		if (!(contextVar.getValue() instanceof Resource resource)) {
 			return null;
 		}
 		return new Resource[] { resource };
@@ -7510,7 +7511,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 
 		List<ValueExpr> arguments = ((ListMemberOperator) condition).getArguments();
-		if (arguments == null || arguments.size() < 2 || !(arguments.getFirst()instanceof Var listedVar)
+		if (arguments == null || arguments.size() < 2 || !(arguments.getFirst() instanceof Var listedVar)
 				|| listedVar.getName() == null) {
 			return LookupAnalysis.none();
 		}
@@ -7541,7 +7542,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 
 		List<ValueExpr> arguments = ((ListMemberOperator) condition).getArguments();
-		if (arguments == null || arguments.size() < 2 || !(arguments.getFirst()instanceof Var listedVar)
+		if (arguments == null || arguments.size() < 2 || !(arguments.getFirst() instanceof Var listedVar)
 				|| listedVar.getName() == null) {
 			return LookupAnalysis.none();
 		}
@@ -8078,7 +8079,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 
 		List<ValueExpr> arguments = ((ListMemberOperator) condition).getArguments();
-		if (arguments == null || arguments.size() < 2 || !(arguments.getFirst()instanceof Var listedVar)) {
+		if (arguments == null || arguments.size() < 2 || !(arguments.getFirst() instanceof Var listedVar)) {
 			return -1.0d;
 		}
 		if (listedVar.getName() == null) {
@@ -8129,7 +8130,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 
 		List<ValueExpr> arguments = ((ListMemberOperator) condition).getArguments();
-		if (arguments == null || arguments.size() < 2 || !(arguments.getFirst()instanceof Var listedVar)) {
+		if (arguments == null || arguments.size() < 2 || !(arguments.getFirst() instanceof Var listedVar)) {
 			return -1.0d;
 		}
 		if (listedVar.getName() == null) {

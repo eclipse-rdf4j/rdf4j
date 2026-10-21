@@ -175,6 +175,6 @@ public class BoundedConcurrentCache<K, V> implements LmdbCache<K, V> {
 		}
 	}
 
-	private record Entry<K, V> (K key, V value, int hash) {
+	private record Entry<K, V>(K key, V value, int hash) {
 	}
 }

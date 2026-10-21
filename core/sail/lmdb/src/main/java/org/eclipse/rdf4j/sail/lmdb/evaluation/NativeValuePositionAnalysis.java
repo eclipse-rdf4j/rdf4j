@@ -269,13 +269,13 @@ final class NativeValuePositionAnalysis {
 
 		@Override
 		public void meet(ValueExprTripleRef node) {
-			if (node.getSubjectExpr()instanceof Var subject) {
+			if (node.getSubjectExpr() instanceof Var subject) {
 				position(subject, ValuePosition.SUBJECT);
 			}
-			if (node.getPredicateExpr()instanceof Var predicate) {
+			if (node.getPredicateExpr() instanceof Var predicate) {
 				position(predicate, ValuePosition.PREDICATE);
 			}
-			if (node.getObjectExpr()instanceof Var object) {
+			if (node.getObjectExpr() instanceof Var object) {
 				position(object, ValuePosition.OBJECT);
 			}
 			meetNode(node);
@@ -311,8 +311,8 @@ final class NativeValuePositionAnalysis {
 			// The parser splits cyclic property-path endpoints (including ?a a ?a) into an anonymous
 			// endpoint and an unconditional sameTerm constraint. That endpoint still denotes the original
 			// lexical binding. User-written comparisons between named variables do not create aliases.
-			if (node.getCondition()instanceof SameTerm sameTerm
-					&& sameTerm.getLeftArg()instanceof Var left && sameTerm.getRightArg()instanceof Var right
+			if (node.getCondition() instanceof SameTerm sameTerm
+					&& sameTerm.getLeftArg() instanceof Var left && sameTerm.getRightArg() instanceof Var right
 					&& variable(left) && variable(right) && !left.hasValue() && !right.hasValue()
 					&& (parserAnonymous(left) || parserAnonymous(right))) {
 				Set<String> assured = node.getArg().getAssuredBindingNames();
@@ -330,7 +330,7 @@ final class NativeValuePositionAnalysis {
 		@Override
 		public void meet(ExtensionElem node) {
 			Symbol output = scope.symbol(node.getName());
-			if (node.getExpr()instanceof Var var && variable(var)) {
+			if (node.getExpr() instanceof Var var && variable(var)) {
 				output.join(scope.symbol(var.getName()));
 			}
 			meetNode(node);

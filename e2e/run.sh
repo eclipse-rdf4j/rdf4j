@@ -203,10 +203,19 @@ run_playwright() {
     # Geometry specs need the same font metrics on every Linux host (see fontconfig/fonts.conf).
     export FONTCONFIG_FILE="${E2E_DIR}/fontconfig/fonts.conf"
   fi
+
   if [ -n "$E2E_BROWSER" ]; then
-    npx playwright test --project="$E2E_BROWSER"
+    if [ "$NEEDS_XVFB" = "true" ]; then
+      xvfb-run -a -s "-screen 0 1280x1024x24 -nolisten tcp" npx playwright test --project="$E2E_BROWSER"
+    else
+      npx playwright test --project="$E2E_BROWSER"
+    fi
   else
-    npx playwright test
+    if [ "$NEEDS_XVFB" = "true" ]; then
+      xvfb-run -a -s "-screen 0 1280x1024x24 -nolisten tcp" npx playwright test
+    else
+      npx playwright test
+    fi
   fi
 }
 
@@ -214,13 +223,27 @@ trap 'cleanup $?' EXIT
 trap 'cleanup 130' INT
 trap 'cleanup 143' TERM
 
+NEEDS_XVFB="false"
+if [ "$(uname -s)" = "Linux" ] && { [ -z "$E2E_BROWSER" ] || [ "$E2E_BROWSER" = "webkit" ]; }; then
+  NEEDS_XVFB="true"
+fi
+
+verify_xvfb() {
+  if [ "$NEEDS_XVFB" = "true" ] && ! command -v xvfb-run >/dev/null 2>&1; then
+    echo "Linux WebKit runs headed; install xvfb (which provides xvfb-run) before running the E2E suite" >&2
+    return 1
+  fi
+}
+
 case "$SERVER_RUNTIME" in
   spring-boot)
     install_e2e_dependencies
+    verify_xvfb
     start_spring_boot
     ;;
   docker | docker-tomcat | tomcat)
     install_e2e_dependencies
+    verify_xvfb
     start_docker_tomcat
     ;;
   *)

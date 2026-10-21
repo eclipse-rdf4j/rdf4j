@@ -49,7 +49,7 @@ final class LmdbTypeMatrixPlan {
 		PatternPlan[] patterns = new PatternPlan[join.children.length];
 		HashSet<Integer> seenSlots = new HashSet<>();
 		for (int i = 0; i < join.children.length; i++) {
-			if (!(join.children[i]instanceof PatternPlan pattern) || !prefixSafePattern(pattern)
+			if (!(join.children[i] instanceof PatternPlan pattern) || !prefixSafePattern(pattern)
 					|| pattern.range != null || pattern.c.hasSlot() || pattern.c.isConstant()) {
 				return null;
 			}

@@ -904,7 +904,7 @@ class QueryJoinOptimizerAdversarialTest {
 		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			public void meet(Filter filter) {
-				if (filter.getCondition()instanceof Not not && not.getArg() instanceof Exists) {
+				if (filter.getCondition() instanceof Not not && not.getArg() instanceof Exists) {
 					filters.add(filter);
 				}
 				super.meet(filter);

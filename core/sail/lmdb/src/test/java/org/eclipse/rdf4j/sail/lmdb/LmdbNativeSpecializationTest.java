@@ -79,7 +79,7 @@ public class LmdbNativeSpecializationTest {
 
 		// Drain and reset once more even on the pre-fix path so no old compiler work contaminates later tests.
 		LmdbNativeSpecialization.beforeCompileForTest = null;
-		assertThat(LmdbNativeSpecialization.filterKernel(4, 1L, 1L)).isNull();
+		requestColdKernel(4, 1L);
 		assertThat(LmdbNativeSpecialization.awaitFilterKernel(4, 1L, 30, TimeUnit.SECONDS)).isNotNull();
 		LmdbNativeSpecialization.resetForTests();
 
@@ -97,7 +97,7 @@ public class LmdbNativeSpecializationTest {
 		NativeBatch specialized = batch(3, 12, 0L);
 
 		int expected = LmdbNativeSpecialization.interpretFilter(interpreted, interpretedRow, evenMiddleSlot);
-		assertThat(LmdbNativeSpecialization.filterKernel(3, 1L)).isNull();
+		requestColdKernel(3, LmdbNativeSpecialization.allSlotsMask(3));
 		NativeBatchFilterKernel kernel = LmdbNativeSpecialization.awaitFilterKernel(3, 5, TimeUnit.SECONDS);
 
 		assertThat(kernel).isNotNull();
@@ -118,8 +118,10 @@ public class LmdbNativeSpecializationTest {
 		NativeBooleanFilter evenMiddleSlot = candidate -> (candidate.slots[1] & 1L) == 0L;
 		NativeBatch output = new NativeBatch(3, 8);
 		try (FilterBatchCursor cursor = new FilterBatchCursor(new TwoPageBatchCursor(), evenMiddleSlot, row)) {
-			assertThat(cursor.fill(output)).isEqualTo(4);
-			assertThat(LmdbNativeSpecialization.INTERPRETER_ROWS.get()).isEqualTo(8L);
+			withCompilationPaused(() -> {
+				assertThat(cursor.fill(output)).isEqualTo(4);
+				assertThat(LmdbNativeSpecialization.INTERPRETER_ROWS.get()).isEqualTo(8L);
+			});
 			assertThat(LmdbNativeSpecialization.awaitFilterKernel(3, 5, TimeUnit.SECONDS)).isNotNull();
 
 			assertThat(cursor.fill(output)).isEqualTo(4);
@@ -135,7 +137,10 @@ public class LmdbNativeSpecializationTest {
 		NativeBatch output = new NativeBatch(3, 8);
 		try (StageOwner stage = new StageOwner(new LmdbNativeChunkPipeline.FilterStage(
 				new TwoPageBatchStage(), evenMiddleSlot, row))) {
-			assertThat(stage.delegate.fill(output)).isEqualTo(4);
+			withCompilationPaused(() -> {
+				assertThat(stage.delegate.fill(output)).isEqualTo(4);
+				assertThat(LmdbNativeSpecialization.INTERPRETER_ROWS.get()).isEqualTo(8L);
+			});
 			assertThat(LmdbNativeSpecialization.awaitFilterKernel(3, 5, TimeUnit.SECONDS)).isNotNull();
 
 			assertThat(stage.delegate.fill(output)).isEqualTo(4);
@@ -236,7 +241,7 @@ public class LmdbNativeSpecializationTest {
 		NativeBatch expected = batch(3, 12, 0L);
 		NativeBatch actual = batch(3, 12, 0L);
 		int expectedCount = scalarSelect(expected, row(3), filter);
-		assertThat(LmdbNativeSpecialization.filterKernel(3, readMask, 1L)).isNull();
+		requestColdKernel(3, readMask);
 		NativeBatchFilterKernel kernel = LmdbNativeSpecialization.awaitFilterKernel(3, readMask, 5,
 				TimeUnit.SECONDS);
 		RowState scratch = row(3);
@@ -363,8 +368,37 @@ public class LmdbNativeSpecializationTest {
 		return accepted;
 	}
 
+	@FunctionalInterface
+	private interface CompilationAssertion {
+		void run() throws Exception;
+	}
+
+	private static void withCompilationPaused(CompilationAssertion assertion) throws Exception {
+		CountDownLatch releaseCompile = new CountDownLatch(1);
+		Runnable previous = LmdbNativeSpecialization.beforeCompileForTest;
+		LmdbNativeSpecialization.beforeCompileForTest = () -> {
+			try {
+				releaseCompile.await();
+			} catch (InterruptedException failure) {
+				Thread.currentThread().interrupt();
+				throw new AssertionError(failure);
+			}
+		};
+		try {
+			assertion.run();
+		} finally {
+			releaseCompile.countDown();
+			LmdbNativeSpecialization.beforeCompileForTest = previous;
+		}
+	}
+
+	private static void requestColdKernel(int slotCount, long readMask) throws Exception {
+		withCompilationPaused(
+				() -> assertThat(LmdbNativeSpecialization.filterKernel(slotCount, readMask, 1L)).isNull());
+	}
+
 	private static NativeBatchFilterKernel compile(int slotCount, long readMask) throws Exception {
-		assertThat(LmdbNativeSpecialization.filterKernel(slotCount, readMask, 1L)).isNull();
+		requestColdKernel(slotCount, readMask);
 		NativeBatchFilterKernel kernel = LmdbNativeSpecialization.awaitFilterKernel(slotCount, readMask, 5,
 				TimeUnit.SECONDS);
 		assertThat(kernel).isNotNull();

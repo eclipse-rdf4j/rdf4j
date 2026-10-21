@@ -5624,7 +5624,7 @@ class LmdbSailStore implements SailStore {
 		}
 		if (failed != null && (!(owner instanceof LmdbStoreConnection connection)
 				|| connection.retainsFailedWriteAttempt(failed.attempt()))) {
-			if (failed.failure()instanceof Error error) {
+			if (failed.failure() instanceof Error error) {
 				throw error;
 			}
 			throw new SailException(failed.failure().getMessage(), failed.failure());

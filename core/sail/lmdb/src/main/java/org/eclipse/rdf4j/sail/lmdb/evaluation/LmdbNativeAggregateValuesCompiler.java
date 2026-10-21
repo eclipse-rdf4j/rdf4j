@@ -335,7 +335,7 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 			found.add(new ValuesLeaf(values, null));
 			return;
 		}
-		if (expr instanceof Filter filter && filter.getArg()instanceof BindingSetAssignment values) {
+		if (expr instanceof Filter filter && filter.getArg() instanceof BindingSetAssignment values) {
 			found.add(new ValuesLeaf(values, filter));
 			return;
 		}

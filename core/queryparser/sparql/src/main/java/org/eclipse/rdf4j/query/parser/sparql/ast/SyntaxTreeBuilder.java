@@ -9283,7 +9283,7 @@ public class SyntaxTreeBuilder
 		}
 	}
 
-/// SPARQL 1.1 Update productions
+	/// SPARQL 1.1 Update productions
 	final public void GraphRefAll() throws ParseException {/* @bgen(jjtree) GraphRefAll */
 		ASTGraphRefAll jjtn000 = new ASTGraphRefAll(JJTGRAPHREFALL);
 		boolean jjtc000 = true;

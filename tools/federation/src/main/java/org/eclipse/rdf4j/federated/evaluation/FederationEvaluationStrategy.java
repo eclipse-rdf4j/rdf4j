@@ -224,7 +224,7 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 			try {
 				preparation.join();
 			} catch (CompletionException failure) {
-				if (failure.getCause()instanceof RuntimeException cause) {
+				if (failure.getCause() instanceof RuntimeException cause) {
 					throw cause;
 				}
 				throw new QueryEvaluationException(failure.getCause());
@@ -604,7 +604,7 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 		List<StatementPattern> remaining = new ArrayList<>();
 		for (StatementPattern statement : info.getStatements()) {
 			StatementPattern probe = info.sourceSelectionPattern(statement);
-			if (statement.getParentNode()instanceof FedXArbitraryLengthPath path) {
+			if (statement.getParentNode() instanceof FedXArbitraryLengthPath path) {
 				relevantMembers.addAll(performSourceSelection(path, probe, members, cache, queryInfo));
 			} else {
 				remaining.add(probe);
@@ -932,7 +932,7 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 				return new EmptyIteration<>();
 			}
 		}
-		if (endpoint.getTripleSource()instanceof TripleSourceBase source) {
+		if (endpoint.getTripleSource() instanceof TripleSourceBase source) {
 			return source.getStatements(prepared, queryInfo);
 		}
 		throw new QueryEvaluationException("Endpoint " + endpoint.getId()
