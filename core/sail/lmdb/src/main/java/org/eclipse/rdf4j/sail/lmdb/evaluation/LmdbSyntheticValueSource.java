@@ -25,6 +25,8 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
+import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
@@ -111,6 +113,20 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 			return new SyntheticValueSource(delegate, catalog, new NativeExecutionContext(active.context));
 		}
 		return new SyntheticValueSource(delegate, catalog, new NativeExecutionContext(queryExecutionPolicy));
+	}
+
+	/** Shares scalar/term authority while masking the independent entry frame used by nested native subqueries. */
+	NativeExecutionContext forConditionBindings(ConditionBindingScope scope) {
+		QueryBindingSet projected = new QueryBindingSet();
+		BindingSet base = context.queryBase();
+		for (String name : base.getBindingNames()) {
+			if (scope.bindingNames().contains(name)) {
+				projected.addBinding(name, base.getValue(name));
+			}
+		}
+		NativeExecutionContext projectedContext = new NativeExecutionContext(context, projected);
+		new SyntheticValueSource(delegate, catalog, projectedContext);
+		return projectedContext;
 	}
 
 	/** Returns the active source for a nested raw-source operator, or creates an empty-catalog evaluation source. */

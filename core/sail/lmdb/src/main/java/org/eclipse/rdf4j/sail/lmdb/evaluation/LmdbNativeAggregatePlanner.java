@@ -83,6 +83,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ScopedLeftJoinIterator.GraphFrameMapping;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
@@ -120,6 +121,13 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	}
 
 	QueryEvaluationStep compile(Filter filter) {
+		if (!FilterBindingScope.allowsAllConditionBindings(filter)) {
+			// Raw HAVING guards cannot see a different mapping from the authoritative condition.
+			GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(filter.getCondition(), strategy);
+			requiresExecutionContext |= !descriptor.shareableAcrossEvaluations();
+			QueryEvaluationStep group = compileGroup((Group) filter.getArg(), null, filter.getArg());
+			return group == null ? null : projectedFilterStep(group, filter);
+		}
 		GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(filter.getCondition(), strategy);
 		boolean evaluationScopedHaving = !descriptor.shareableAcrossEvaluations();
 		if (evaluationScopedHaving) {
@@ -188,6 +196,9 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			return step == null ? null : new AggregateRootStack(step, arg.group);
 		}
 		if (node instanceof Filter filter) {
+			GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(filter.getCondition(), strategy);
+			// The grouped source must own its query scope before compiling any post-group wrappers.
+			requiresExecutionContext |= !descriptor.shareableAcrossEvaluations();
 			if (filter.getArg() instanceof Group) {
 				QueryEvaluationStep step = compile(filter);
 				return step == null ? null : new AggregateRootStack(step, (Group) filter.getArg());
@@ -196,7 +207,9 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			if (arg == null) {
 				return null;
 			}
-			GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(filter.getCondition(), strategy);
+			if (!FilterBindingScope.allowsAllConditionBindings(filter)) {
+				return new AggregateRootStack(projectedFilterStep(arg.step, filter), arg.group);
+			}
 			if (!descriptor.shareableAcrossEvaluations()) {
 				// A retained aggregate wrapper must prepare its semantic predicate against the same evaluation context
 				// as the grouped source. Preparing it against the planner context would freeze query-scoped values such
@@ -226,6 +239,15 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	}
 
 	private record AggregateRootStack(QueryEvaluationStep step, Group group) {
+	}
+
+	private QueryEvaluationStep projectedFilterStep(QueryEvaluationStep argument, Filter filter) {
+		var scope = FilterBindingScope.resolve(filter);
+		GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(filter.getCondition(), strategy);
+		requiresExecutionContext |= !descriptor.shareableAcrossEvaluations();
+		NativeBindingSetValueEvaluator projected = compileProjectedValue(strategy, descriptor.pinnedExpr(), context,
+				scope);
+		return bindings -> new FilteringIteration(argument.evaluate(bindings), projected);
 	}
 
 	/** Compiles a root MultiProjection over any tuple argument admitted by the semantic native row floor. */
@@ -1916,6 +1938,23 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		}
 		if (expr instanceof Filter) {
 			Filter filter = (Filter) expr;
+			if (!FilterBindingScope.allowsAllConditionBindings(filter)) {
+				Set<String> previousRequired = requiredAggregateNames;
+				requiredAggregateNames = withRequired(previousRequired, filterConditionInputNames(filter));
+				SlotPlan arg;
+				try {
+					arg = compileTupleOrIsland(filter.getArg(), duplicateInsensitive);
+				} finally {
+					requiredAggregateNames = previousRequired;
+				}
+				if (arg == null) {
+					return null;
+				}
+				NativeBooleanFilter condition = compileProjectedFilter(filter);
+				return SlotPlan.filter(arg, recordFilterOutcomes(filter, condition),
+						projectedFilterMask(filter, condition),
+						null);
+			}
 			SlotPlan joinedValuesSip = compileFilterOverJoinedValues(filter, duplicateInsensitive);
 			if (joinedValuesSip != null) {
 				return joinedValuesSip;
@@ -1982,7 +2021,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			}
 			Set<String> previousRequired = requiredAggregateNames;
 			java.util.HashSet<String> filterRequired = new java.util.HashSet<>(previousRequired);
-			filterRequired.addAll(VarNameCollector.process(filter.getCondition()));
+			filterRequired.addAll(filterConditionInputNames(filter));
 			requiredAggregateNames = filterRequired;
 			SlotPlan arg;
 			try {

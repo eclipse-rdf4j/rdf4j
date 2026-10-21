@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
 import org.eclipse.rdf4j.query.algebra.Intersection;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -43,11 +44,13 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
@@ -94,6 +97,7 @@ public class FilterOptimizer implements QueryOptimizer {
 	private final EvaluationStatistics statistics;
 	private final boolean mergeAdjacentFilters;
 	private final boolean considerJoinPlacementCost;
+	private final EvaluationStrategy strategy;
 
 	public FilterOptimizer() {
 		this(null, true, true);
@@ -105,9 +109,15 @@ public class FilterOptimizer implements QueryOptimizer {
 
 	public FilterOptimizer(EvaluationStatistics statistics, boolean mergeAdjacentFilters,
 			boolean considerJoinPlacementCost) {
+		this(statistics, mergeAdjacentFilters, considerJoinPlacementCost, null);
+	}
+
+	public FilterOptimizer(EvaluationStatistics statistics, boolean mergeAdjacentFilters,
+			boolean considerJoinPlacementCost, EvaluationStrategy strategy) {
 		this.statistics = statistics;
 		this.mergeAdjacentFilters = mergeAdjacentFilters;
 		this.considerJoinPlacementCost = considerJoinPlacementCost;
+		this.strategy = strategy;
 	}
 
 	@Override
@@ -145,7 +155,7 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		// 2) run the three filter passes for *this* scope
 		expr.visit(new FilterUnMerger(analysis));
-		expr.visit(new FilterOrganizer(statistics, considerJoinPlacementCost, analysis));
+		expr.visit(new FilterOrganizer(statistics, considerJoinPlacementCost, analysis, strategy));
 		if (mergeAdjacentFilters) {
 			expr.visit(new FilterMerger(statistics, analysis));
 		}
@@ -166,6 +176,8 @@ public class FilterOptimizer implements QueryOptimizer {
 	}
 
 	private static And mergeConditionsInCostOrder(ValueExpr leftCondition, ValueExpr rightCondition) {
+		leftCondition = FilterBindingScope.unwrapBooleanExists(leftCondition);
+		rightCondition = FilterBindingScope.unwrapBooleanExists(rightCondition);
 		if (filterConditionCost(leftCondition) <= filterConditionCost(rightCondition)) {
 			return new And(leftCondition.clone(), rightCondition.clone());
 		}
@@ -174,6 +186,8 @@ public class FilterOptimizer implements QueryOptimizer {
 
 	private static And mergeConditionsInFilterOrder(TupleExpr filterArg, ValueExpr leftCondition,
 			ValueExpr rightCondition) {
+		leftCondition = FilterBindingScope.unwrapBooleanExists(leftCondition);
+		rightCondition = FilterBindingScope.unwrapBooleanExists(rightCondition);
 		Set<String> assignmentNames = bindingSetAssignmentOnlyNames(filterArg);
 		if (assignmentNames != null) {
 			if (shouldSwapBindingSetAssignmentFilterConditions(leftCondition, rightCondition, assignmentNames)) {
@@ -271,13 +285,22 @@ public class FilterOptimizer implements QueryOptimizer {
 			List<ValueExpr> constraints = new ArrayList<>();
 			getConjunctiveConstraints(filter.getCondition(), constraints);
 			if (constraints.size() > 1 && constraints.stream().allMatch(AlgebraEvaluationSafety::isRepeatable)) {
+				Set<String> declarations = filter.getBindingNames();
+				if (!declarations.equals(filter.getArg().getBindingNames())) {
+					return;
+				}
+				ConditionBindingScope bindingScope = FilterBindingScope.resolve(filter);
 				TupleExpr newArg = filter.getArg().clone();
 				for (int i = 0; i < constraints.size() - 1; i++) {
-					Filter newFilter = new Filter(newArg, constraints.get(i).clone());
+					Filter newFilter = new Filter(newArg, FilterBindingScope
+							.conditionPreservingDeclarations(constraints.get(i).clone(), declarations));
 					transferScopeChange(filter, newFilter);
+					newFilter.setConditionBindingScope(bindingScope);
 					newArg = newFilter;
 				}
-				filter.setCondition(constraints.getLast().clone());
+				filter.setCondition(FilterBindingScope.conditionPreservingDeclarations(constraints.getLast().clone(),
+						declarations));
+				filter.setConditionBindingScope(bindingScope);
 				filter.replaceChildNode(filter.getArg(), newArg);
 				analysis.invalidate();
 			}
@@ -311,6 +334,7 @@ public class FilterOptimizer implements QueryOptimizer {
 			if (filter.getArg() instanceof Filter childFilter && filter.getParentNode() != null
 					&& !TupleExprs.isVariableScopeChange(filter)
 					&& !TupleExprs.isVariableScopeChange(childFilter)
+					&& FilterBindingScope.resolve(filter).equals(FilterBindingScope.resolve(childFilter))
 					&& AlgebraEvaluationSafety.isRepeatable(childFilter.getCondition())
 					&& AlgebraEvaluationSafety.isRepeatable(filter.getCondition())) {
 
@@ -319,7 +343,13 @@ public class FilterOptimizer implements QueryOptimizer {
 						filter.getCondition());
 
 				Filter newFilter = new Filter(childFilter.getArg().clone(), merge);
+				if (!filter.getBindingNames().equals(newFilter.getBindingNames())) {
+					return;
+				}
 				transferScopeChange(filter, newFilter); // both have same scope flag
+				if (!filter.getConditionBindingScope().isAuto() || !childFilter.getConditionBindingScope().isAuto()) {
+					newFilter.setConditionBindingScope(FilterBindingScope.resolve(filter));
+				}
 				FilterSelectivityTelemetry.annotate(newFilter, statistics);
 				parent.replaceChildNode(filter, newFilter);
 				analysis.invalidate();
@@ -332,19 +362,21 @@ public class FilterOptimizer implements QueryOptimizer {
 		private final EvaluationStatistics statistics;
 		private final boolean considerJoinPlacementCost;
 		private final QueryAlgebraBindingAnalysis analysis;
+		private final EvaluationStrategy strategy;
 
 		public FilterOrganizer(EvaluationStatistics statistics, boolean considerJoinPlacementCost,
-				QueryAlgebraBindingAnalysis analysis) {
+				QueryAlgebraBindingAnalysis analysis, EvaluationStrategy strategy) {
 			super(false);
 			this.statistics = statistics;
 			this.considerJoinPlacementCost = considerJoinPlacementCost;
 			this.analysis = analysis;
+			this.strategy = strategy;
 		}
 
 		@Override
 		public void meet(Filter filter) {
 			super.meet(filter);
-			FilterRelocator.optimize(filter, statistics, considerJoinPlacementCost, analysis);
+			FilterRelocator.optimize(filter, statistics, considerJoinPlacementCost, analysis, strategy);
 			FilterSelectivityTelemetry.annotate(filter, statistics);
 		}
 	}
@@ -356,21 +388,64 @@ public class FilterOptimizer implements QueryOptimizer {
 		private final boolean considerJoinPlacementCost;
 		private final QueryAlgebraBindingAnalysis analysis;
 		private final FilterPlacementRules placementRules;
+		private final EvaluationStrategy strategy;
 
 		private FilterRelocator(Filter filter, EvaluationStatistics statistics, boolean considerJoinPlacementCost,
-				QueryAlgebraBindingAnalysis analysis) {
+				QueryAlgebraBindingAnalysis analysis, EvaluationStrategy strategy) {
 			this.filter = filter;
 			this.statistics = statistics;
 			this.considerJoinPlacementCost = considerJoinPlacementCost;
 			this.analysis = analysis;
 			this.placementRules = new FilterPlacementRules(filter, analysis);
+			this.strategy = strategy;
 		}
 
 		public static void optimize(Filter filter, EvaluationStatistics statistics, boolean considerJoinPlacementCost,
-				QueryAlgebraBindingAnalysis analysis) {
-			if (filter.getParentNode() != null && AlgebraEvaluationSafety.isRepeatable(filter.getCondition())) {
-				filter.visit(new FilterRelocator(filter, statistics, considerJoinPlacementCost, analysis));
+				QueryAlgebraBindingAnalysis analysis, EvaluationStrategy strategy) {
+			if (filter.getParentNode() == null || simplify(filter, analysis, strategy)) {
+				return;
 			}
+			if (filter.getParentNode() != null && AlgebraEvaluationSafety.isRepeatable(filter.getCondition())) {
+				filter.visit(new FilterRelocator(filter, statistics, considerJoinPlacementCost, analysis, strategy));
+			}
+		}
+
+		private static boolean simplify(Filter filter, QueryAlgebraBindingAnalysis analysis,
+				EvaluationStrategy strategy) {
+			// This is the argument's output before this filter. Filter output facts already include BOUND/type
+			// refinements and would make a proof that the same condition is redundant circular.
+			var input = analysis.childInput(filter, filter.getCondition(), analysis.contextAt(filter));
+			var simplified = new FilterConditionSimplifier(analysis, strategy).simplify(filter.getCondition(), input);
+			if (simplified.verdict() == FilterConditionSimplifier.FilterVerdict.ALWAYS_REJECTS
+					&& QueryEvaluationUtility.isRepeatable(filter.getArg())
+					&& QueryEvaluationUtility.canDiscardWithoutEvaluation(filter.getArg())) {
+				BindingSetAssignment empty = new BindingSetAssignment();
+				empty.setDeclaredBindingNames(filter.getBindingNames());
+				empty.setBindingSets(List.of());
+				empty.setCardinality(0);
+				QueryModelNormalizerOptimizer.replacePreservingScope(filter, empty);
+				analysis.invalidate();
+				return true;
+			}
+			if (simplified.verdict() == FilterConditionSimplifier.FilterVerdict.ALWAYS_TRUE
+					&& filter.getBindingNames().equals(filter.getArg().getBindingNames())) {
+				QueryModelNormalizerOptimizer.replacePreservingScope(filter, filter.getArg());
+				analysis.invalidate();
+				return true;
+			}
+			if (!filter.getCondition().equals(simplified.condition())) {
+				ConditionBindingScope bindingScope = FilterBindingScope.resolve(filter);
+				// A direct EXISTS contributes declared names in the legacy algebra. Keep it if changing the
+				// condition would silently remove that outgoing declaration.
+				Set<String> declarations = filter.getBindingNames();
+				Filter candidate = new Filter(filter.getArg().clone(), simplified.condition().clone());
+				if (declarations.equals(candidate.getBindingNames())) {
+					filter.setConditionBindingScope(bindingScope);
+					filter.setCondition(simplified.condition());
+					analysis.invalidate();
+				}
+			}
+			return false;
 		}
 
 		@Override
@@ -430,15 +505,45 @@ public class FilterOptimizer implements QueryOptimizer {
 			TupleExpr rightArg = union.getRightArg();
 			Filter clone = new Filter();
 			clone.setCondition(filter.getCondition().clone());
-			transferScopeChange(filter, clone);
+			boolean explicitScope = !filter.getConditionBindingScope().isAuto();
 			union.replaceChildNode(rightArg, clone);
 			clone.setArg(rightArg);
+			if (explicitScope || !FilterBindingScope.resolve(clone).equals(placementRules.conditionBindingScope())) {
+				clone.setConditionBindingScope(placementRules.conditionBindingScope());
+			}
 			analysis.invalidate();
 
 			relocate(filter, union.getLeftArg());
 
-			FilterRelocator.optimize(filter, statistics, considerJoinPlacementCost, analysis);
-			FilterRelocator.optimize(clone, statistics, considerJoinPlacementCost, analysis);
+			FilterRelocator.optimize(filter, statistics, considerJoinPlacementCost, analysis, strategy);
+			FilterRelocator.optimize(clone, statistics, considerJoinPlacementCost, analysis, strategy);
+			collapseEmptyUnion(union);
+		}
+
+		private void collapseEmptyUnion(Union union) {
+			if (union.getParentNode() == null) {
+				return;
+			}
+			boolean leftEmpty = analysis.outputFacts(union.getLeftArg()).isKnownEmpty()
+					&& QueryEvaluationUtility.isRepeatable(union.getLeftArg())
+					&& QueryEvaluationUtility.canDiscardWithoutEvaluation(union.getLeftArg());
+			boolean rightEmpty = analysis.outputFacts(union.getRightArg()).isKnownEmpty()
+					&& QueryEvaluationUtility.isRepeatable(union.getRightArg())
+					&& QueryEvaluationUtility.canDiscardWithoutEvaluation(union.getRightArg());
+			if (leftEmpty && rightEmpty) {
+				BindingSetAssignment empty = new BindingSetAssignment();
+				empty.setDeclaredBindingNames(union.getBindingNames());
+				empty.setBindingSets(List.of());
+				empty.setCardinality(0);
+				QueryModelNormalizerOptimizer.replacePreservingScope(union, empty);
+				analysis.invalidate();
+			} else if (leftEmpty || rightEmpty) {
+				TupleExpr live = leftEmpty ? union.getRightArg() : union.getLeftArg();
+				if (union.getBindingNames().equals(live.getBindingNames())) {
+					QueryModelNormalizerOptimizer.replacePreservingScope(union, live);
+					analysis.invalidate();
+				}
+			}
 		}
 
 		@Override
@@ -451,7 +556,7 @@ public class FilterOptimizer implements QueryOptimizer {
 				// and
 				// changes whether a compatible right row removes the left row.
 				relocate(filter, node.getLeftArg());
-				FilterRelocator.optimize(filter, statistics, considerJoinPlacementCost, analysis);
+				FilterRelocator.optimize(filter, statistics, considerJoinPlacementCost, analysis, strategy);
 			} else {
 				relocate(filter, node);
 			}
@@ -468,14 +573,15 @@ public class FilterOptimizer implements QueryOptimizer {
 			Filter clone = new Filter();
 			clone.setCondition(filter.getCondition().clone());
 			transferScopeChange(filter, clone);
+			clone.setConditionBindingScope(placementRules.conditionBindingScope());
 			node.replaceChildNode(rightArg, clone);
 			clone.setArg(rightArg);
 			analysis.invalidate();
 
 			relocate(filter, node.getLeftArg());
 
-			FilterRelocator.optimize(filter, statistics, considerJoinPlacementCost, analysis);
-			FilterRelocator.optimize(clone, statistics, considerJoinPlacementCost, analysis);
+			FilterRelocator.optimize(filter, statistics, considerJoinPlacementCost, analysis, strategy);
+			FilterRelocator.optimize(clone, statistics, considerJoinPlacementCost, analysis, strategy);
 		}
 
 		@Override
@@ -541,12 +647,21 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		private void relocate(Filter filter, TupleExpr newFilterArg) {
 			if (filter.getArg() != newFilterArg && filter.getParentNode() != null) {
-				// Remove filter from its original location
-				filter.replaceWith(filter.getArg());
+				ConditionBindingScope originalScope = placementRules.conditionBindingScope();
+				boolean explicitScope = !filter.getConditionBindingScope().isAuto();
+				// Preserve the group's input boundary, including an unmarked layer around an already marked child.
+				// The moved condition is a gate, not a new branch-local group root.
+				QueryModelNormalizerOptimizer.replacePreservingScope(filter, filter.getArg());
+				filter.setVariableScopeChange(false);
 
 				// Insert filter at the new location
 				newFilterArg.replaceWith(filter);
 				filter.setArg(newFilterArg);
+				if (explicitScope) {
+					filter.setConditionBindingScope(originalScope);
+				} else {
+					FilterBindingScope.preserve(filter, originalScope);
+				}
 				analysis.invalidate();
 			}
 		}
@@ -567,6 +682,7 @@ public class FilterOptimizer implements QueryOptimizer {
 
 			if (statistics instanceof JoinFactorCostModel costModel) {
 				Filter candidateFilter = new Filter(candidateArg.clone(), filter.getCondition().clone());
+				candidateFilter.setConditionBindingScope(placementRules.conditionBindingScope());
 				OptionalWorkRows joinWork = estimateWorkRows(costModel, join);
 				OptionalWorkRows candidateWork = estimateWorkRows(costModel, candidateFilter);
 				if (joinWork.available && candidateWork.available) {
@@ -615,6 +731,7 @@ public class FilterOptimizer implements QueryOptimizer {
 			}
 
 			Filter candidateFilter = new Filter(candidateArg.clone(), filter.getCondition().clone());
+			candidateFilter.setConditionBindingScope(placementRules.conditionBindingScope());
 			double filteredRows = statistics.getCardinality(candidateFilter);
 			if (isFiniteNonNegative(filteredRows) && filteredRows < baseRows) {
 				return filteredRows;

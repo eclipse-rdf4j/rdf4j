@@ -2012,8 +2012,19 @@ final class NativeExistsValueStep implements QueryValueEvaluationStep {
 
 	@Override
 	public Value evaluate(BindingSet bindings) {
-		RowState row = new RowState(step.source, step.layout, bindings, step.originalExpr);
-		if (!initializeRow(row, bindings, step.source, step.layout)) {
+		NativeLmdbQuerySource source = step.bulk.evaluationSource(bindings);
+		NativeExecutionContext ownedContext = source != step.source && source instanceof SyntheticValueSource synthetic
+				&& !SyntheticValueSource.inheritedEvaluation(source) ? synthetic.executionContext() : null;
+		try (ownedContext;
+				SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(source)) {
+			NativeRowsStep.initializeQueryBase(source, bindings);
+			return evaluate(bindings, source);
+		}
+	}
+
+	private Value evaluate(BindingSet bindings, NativeLmdbQuerySource source) {
+		RowState row = new RowState(source, step.layout, bindings, step.originalExpr);
+		if (!initializeRow(row, bindings, source, step.layout)) {
 			LmdbNativeExplain.recordExecutionPath(step.originalExpr, LmdbNativeAttemptMetrics.PATH_EMPTY_SEED);
 			return BooleanLiteral.FALSE;
 		}

@@ -39,6 +39,7 @@ import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
 
 /** Immutable lexical binding metadata captured before optimizers discard pattern uses or aliases. */
@@ -312,6 +313,7 @@ final class NativeValuePositionAnalysis {
 			// endpoint and an unconditional sameTerm constraint. That endpoint still denotes the original
 			// lexical binding. User-written comparisons between named variables do not create aliases.
 			if (node.getCondition() instanceof SameTerm sameTerm
+					&& FilterBindingScope.allowsAllConditionBindings(node)
 					&& sameTerm.getLeftArg() instanceof Var left && sameTerm.getRightArg() instanceof Var right
 					&& variable(left) && variable(right) && !left.hasValue() && !right.hasValue()
 					&& (parserAnonymous(left) || parserAnonymous(right))) {

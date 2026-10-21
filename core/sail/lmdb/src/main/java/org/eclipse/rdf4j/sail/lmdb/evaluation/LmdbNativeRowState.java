@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
@@ -26,6 +27,7 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 
 @Experimental
@@ -330,6 +332,34 @@ final class RowState implements LmdbNativeSlotReader {
 		copy.encounterOrderRequired = encounterOrderRequired;
 		copy.parallelOwnership = parallelOwnership;
 		return copy;
+	}
+
+	/** Independent condition frame: only retained names enter its base mapping or initial slot domain. */
+	RowState projectConditionInput(Set<String> retainedNames) {
+		QueryBindingSet projectedBase = new QueryBindingSet();
+		for (String name : base.getBindingNames()) {
+			if (retainedNames.contains(name)) {
+				projectedBase.addBinding(name, base.getValue(name));
+			}
+		}
+		RowState projected = new RowState(source, layout, projectedBase, telemetryTarget, exactValuesMetrics,
+				cancellation);
+		projected.copyConditionInput(this, retainedNames);
+		return projected;
+	}
+
+	void copyConditionInput(RowState parent, Set<String> retainedNames) {
+		for (int slot = 0; slot < slots.length; slot++) {
+			slots[slot] = retainedNames.contains(layout.slotName(slot)) ? parent.slots[slot] : UNKNOWN;
+		}
+		recomputeBoundMask();
+		memoryScope = parent.memoryScope;
+		runtimePlan = parent.runtimePlan;
+		lexicalInputMask = parent.lexicalInputMask & boundMask;
+		lexicalScopeDepth = parent.lexicalScopeDepth;
+		logicalSolutionIdentity = parent.logicalSolutionIdentity;
+		encounterOrderRequired = parent.encounterOrderRequired;
+		parallelOwnership = parent.parallelOwnership;
 	}
 
 	@Override

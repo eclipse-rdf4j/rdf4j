@@ -264,12 +264,15 @@ class OptimizerBindingAnalysisConsumersTest {
 	}
 
 	@Test
-	void constantOptimizerFoldsComparisonFromExactIncomingValue() {
+	void constantOptimizerFoldsComparisonFromExactIncomingValue() throws Exception {
 		Value value = VF.createLiteral("value");
 		MapBindingSet bindings = new MapBindingSet();
 		bindings.addBinding("x", value);
 		Filter filter = new Filter(new SingletonSet(),
 				new Compare(Var.of("x"), new ValueConstant(value), Compare.CompareOp.EQ));
+		filter.setConditionBindingScope(Filter.ConditionBindingScope.ALL);
+		List<BindingSet> expected = evaluate(filter.clone(), bindings);
+		assertThat(expected).containsExactly(bindings);
 		ConstantOptimizer optimizer = new ConstantOptimizer(
 				new DefaultEvaluationStrategy(new EmptyTripleSource(), null));
 
@@ -277,6 +280,21 @@ class OptimizerBindingAnalysisConsumersTest {
 
 		assertThat(filter.getCondition()).isInstanceOf(ValueConstant.class);
 		assertThat(((ValueConstant) filter.getCondition()).getValue()).isEqualTo(BooleanLiteral.TRUE);
+		assertThat(evaluate(filter, bindings)).containsExactlyElementsOf(expected);
+	}
+
+	@Test
+	void constantOptimizerKeepsAnAutomaticallyHiddenApiReadUnbound() throws Exception {
+		Value value = VF.createLiteral("value");
+		MapBindingSet bindings = new MapBindingSet();
+		bindings.addBinding("x", value);
+		Filter filter = new Filter(new SingletonSet(),
+				new Compare(Var.of("x"), new ValueConstant(value), Compare.CompareOp.EQ));
+		assertThat(evaluate(filter.clone(), bindings)).isEmpty();
+		new ConstantOptimizer(new DefaultEvaluationStrategy(new EmptyTripleSource(), null))
+				.optimize(filter, null, bindings);
+		assertThat(filter.getCondition()).isInstanceOf(Compare.class);
+		assertThat(evaluate(filter, bindings)).isEmpty();
 	}
 
 	@Test

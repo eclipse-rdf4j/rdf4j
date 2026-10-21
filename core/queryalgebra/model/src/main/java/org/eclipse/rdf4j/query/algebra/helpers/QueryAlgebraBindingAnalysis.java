@@ -44,6 +44,7 @@ import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
@@ -594,7 +595,9 @@ public final class QueryAlgebraBindingAnalysis {
 			return input;
 		}
 		if (parent instanceof Union union) {
-			return TupleExprs.isVariableScopeChange(union) ? input.enterScope(nextScopeId(union)) : input;
+			// UNION forwards its incoming mapping unchanged. Its parent join, not this lexical identity, decides
+			// whether an ordinary left row may be injected. EXISTS substitution inputs must survive this boundary.
+			return TupleExprs.isVariableScopeChange(union) ? input.enterCorrelatedScope(nextScopeId(union)) : input;
 		}
 		if (parent instanceof Difference || parent instanceof Intersection) {
 			return input;
@@ -640,51 +643,20 @@ public final class QueryAlgebraBindingAnalysis {
 	 * OPTIONAL left row) are hidden from the condition.
 	 */
 	private ReadOnlyContext scopedFilterConditionInput(Filter filter, ReadOnlyContext conditionInput) {
-		if (bindingAssignment) {
+		if (bindingAssignment && filter.getConditionBindingScope().isAuto()) {
 			return conditionInput;
 		}
-		for (QueryModelNode current = filter; current != null; current = current.getParentNode()) {
-			if (current instanceof SubQueryValueOperator) {
-				return conditionInput;
-			}
-		}
-		boolean[] containsSubQuery = { false };
-		filter.getCondition().visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
-			@Override
-			protected void meetSubQueryValueOperator(SubQueryValueOperator node) {
-				containsSubQuery[0] = true;
-			}
-		});
-		Set<String> conditionNames = VarNameCollector.process(filter.getCondition());
-		Set<String> scopeNames = new HashSet<>(filter.getBindingNames());
-		if (!containsSubQuery[0] && filter.getArg().getBindingNames().containsAll(conditionNames)) {
+		ConditionBindingScope scope = FilterBindingScope.resolve(filter);
+		if (scope.retainsAllBindings()) {
 			return conditionInput;
 		}
-		QueryModelNode child = filter;
-		QueryModelNode parent = filter.getParentNode();
-		while (!scopeNames.containsAll(conditionNames)) {
-			if (child instanceof TupleExpr tupleExpr && TupleExprs.isVariableScopeChange(tupleExpr)) {
-				Set<String> hidden = new HashSet<>(conditionInput.visibleNames);
-				hidden.addAll(conditionInput.maybeBoundNames);
-				hidden.addAll(conditionInput.externalValues.keySet());
-				hidden.removeAll(scopeNames);
-				return conditionInput.without(hidden);
-			}
-			if (parent == null) {
-				break;
-			}
-			if (parent instanceof Join join && join.getRightArg() == child) {
-				scopeNames.addAll(join.getLeftArg().getBindingNames());
-			} else if (parent instanceof LeftJoin leftJoin && leftJoin.getRightArg() == child) {
-				scopeNames.addAll(leftJoin.getLeftArg().getBindingNames());
-			} else if (parent instanceof Lateral lateral && lateral.getRightArg() == child) {
-				// FilterIterator exposes the input bindings a LATERAL deliberately passes to its right operand.
-				scopeNames.addAll(lateral.getRightInputBindingNames());
-			}
-			child = parent;
-			parent = parent.getParentNode();
-		}
-		return conditionInput;
+		Set<String> hidden = new HashSet<>(conditionInput.visibleNames);
+		hidden.addAll(conditionInput.maybeBoundNames);
+		hidden.addAll(conditionInput.guaranteedNames);
+		hidden.addAll(conditionInput.externalValues.keySet());
+		hidden.addAll(conditionInput.externalGuaranteedNames);
+		hidden.removeAll(scope.bindingNames());
+		return conditionInput.without(hidden);
 	}
 
 	private ReadOnlyContext joinRightInput(Join join, ReadOnlyContext input) {
@@ -1009,6 +981,9 @@ public final class QueryAlgebraBindingAnalysis {
 		}
 		if (expression instanceof Filter filter) {
 			OutputFacts child = outputFacts(filter.getArg(), childInput(filter, filter.getArg(), input));
+			if (child.isKnownEmpty()) {
+				return child;
+			}
 			if (!child.possibleOutputsKnown) {
 				return OutputFacts.unknown(input);
 			}
@@ -1033,6 +1008,15 @@ public final class QueryAlgebraBindingAnalysis {
 		if (expression instanceof Union union) {
 			OutputFacts left = outputFacts(union.getLeftArg(), childInput(union, union.getLeftArg(), input));
 			OutputFacts right = outputFacts(union.getRightArg(), childInput(union, union.getRightArg(), input));
+			if (left.isKnownEmpty() || right.isKnownEmpty()) {
+				OutputFacts live = left.isKnownEmpty() ? right : left;
+				return live.possibleOutputsKnown
+						? OutputFacts
+								.known(live.possibleOutputs, live.guaranteedOutputs, live.fixedValues, live.valueKinds,
+										input, live.canProduceRows, live.retainedInputNames)
+								.withOverwrittenInputs(live.overwrittenInputNames)
+						: OutputFacts.unknown(input);
+			}
 			if (!left.possibleOutputsKnown || !right.possibleOutputsKnown) {
 				return OutputFacts.unknown(input);
 			}
