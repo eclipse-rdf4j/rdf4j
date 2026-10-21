@@ -22,12 +22,29 @@ const [raw, scope = "default", loadedJson] = process.argv.slice(2);
 // "iri:<IRI>" anchors the queries on an IRI instead of a certified blank node.
 const id = raw.startsWith("iri:") ? raw.slice(4) : sparqlNodeId({type:"bnode",value:raw,"rdf4j:reference":true});
 const other = sparqlNodeId({type:"bnode",value:"other","rdf4j:reference":true});
-const loaded = loadedJson ? loadedLinksOf(JSON.parse(loadedJson), [id]) : undefined;
+const graph = loadedJson ? JSON.parse(loadedJson) : undefined;
+const loaded = graph ? loadedLinksOf(graph, [id]) : undefined;
+const expansion = expandQuery([id],80,scope,true,loaded);
+let expanded;
+if (graph?.answer) {
+  const { RdfExplorer } = await import("../../../main/frontend/graph-explorer/rdf-explorer.ts");
+  const explorer = new RdfExplorer("urn:blank-expansion-fixture", ["en"], async query => {
+    if (query !== expansion) throw new Error("The public explorer must execute the query evaluated by the repository.");
+    return graph.answer;
+  }, scope, false, true);
+  try {
+    expanded = { head: graph.answer.head,
+      results: { bindings: await explorer.expand([id], 80, undefined, loaded) } };
+  } finally {
+    explorer.dispose();
+  }
+}
 process.stdout.write(JSON.stringify({
   labels:labelQuery([id],[],scope),
   types:typesQuery([id],scope),
   predicates:discoveryQuery([id],scope),
-  expand:expandQuery([id],80,scope,true,loaded),
+  expand:expansion,
+  expanded,
   links:linkCountQuery([id],1000,scope,true),
   connections:connectionQuery([id,other,"urn:incoming"],scope),
   seed:seedQuery([id],scope,true),

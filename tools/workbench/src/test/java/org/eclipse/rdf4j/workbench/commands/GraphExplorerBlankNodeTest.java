@@ -14,12 +14,16 @@ package org.eclipse.rdf4j.workbench.commands;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.model.BNode;
@@ -31,6 +35,10 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.impl.BlankNodeReferences;
+import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
+import org.eclipse.rdf4j.query.impl.TupleQueryResultBuilder;
+import org.eclipse.rdf4j.query.resultio.QueryResultIO;
+import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
@@ -39,6 +47,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 /** Runs the actual browser query generators against a real repository, including arbitrary raw blank IDs. */
 class GraphExplorerBlankNodeTest {
@@ -184,32 +193,95 @@ class GraphExplorerBlankNodeTest {
 	 */
 	@Test
 	void expandingAgainDoesNotReloadUncertifiedBlankNeighboursAsCopies() throws Exception {
+		List<BindingSet> second = repeatedExpansion("default", Set.of());
+		assertThat(second).extracting(row -> row.getValue("predicate").stringValue() + " "
+				+ (row.getValue("source").stringValue().equals("urn:anchor") ? row.getValue("target")
+						: row.getValue("source")))
+				.containsExactlyInAnyOrder("urn:s _:out-new", "urn:q urn:named-new", "urn:t _:in-new");
+	}
+
+	@Test
+	void repeatedExpansionSeparatesDocumentAndCertifiedBlankNeighboursInEveryScope() throws Exception {
+		List<String> added = List.of("urn:s _:out-new", "urn:q urn:named-new", "urn:t _:in-new");
+		Map<Set<String>, List<String>> variants = Map.of(
+				Set.of(), added,
+				Set.of("out-1", "in-1"), List.of("urn:s _:out-new", "urn:q urn:named-new", "urn:t _:in-new",
+						"urn:p _:out-1", "urn:r _:in-1"),
+				Set.of("out-1", "out-2", "in-1"), List.of("urn:s _:out-new", "urn:q urn:named-new", "urn:t _:in-new",
+						"urn:p _:out-1", "urn:p _:out-2", "urn:r _:in-1"));
+		for (String scope : List.of("default", "all", "urn:named", "<_:graph>")) {
+			for (Map.Entry<Set<String>, List<String>> variant : variants.entrySet()) {
+				assertThat(repeatedExpansion(scope, variant.getKey()))
+						.as("scope %s, certified neighbours %s", scope, variant.getKey())
+						.extracting(row -> row.getValue("predicate").stringValue() + " "
+								+ (row.getValue("source").stringValue().equals("urn:anchor") ? row.getValue("target")
+										: row.getValue("source")))
+						.containsExactlyInAnyOrderElementsOf(variant.getValue());
+			}
+		}
+	}
+
+	private List<BindingSet> repeatedExpansion(String scope, Set<String> certified) throws Exception {
 		SailRepository repository = new SailRepository(new MemoryStore());
 		repository.init();
 		try (RepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = repository.getValueFactory();
 			Resource anchor = vf.createIRI("urn:anchor");
-			connection.add(anchor, vf.createIRI("urn:p"), vf.createBNode("out-1"));
-			connection.add(anchor, vf.createIRI("urn:p"), vf.createBNode("out-2"));
-			connection.add(anchor, vf.createIRI("urn:q"), vf.createIRI("urn:named"));
-			connection.add(vf.createBNode("in-1"), vf.createIRI("urn:r"), anchor);
-			List<BindingSet> first = rows(connection, generated("iri:urn:anchor", "default"), "expand");
+			Resource[] contexts = contexts(vf, scope);
+			connection.add(anchor, vf.createIRI("urn:p"), vf.createBNode("out-1"), contexts);
+			connection.add(anchor, vf.createIRI("urn:p"), vf.createBNode("out-2"), contexts);
+			connection.add(anchor, vf.createIRI("urn:q"), vf.createIRI("urn:named"), contexts);
+			connection.add(vf.createBNode("in-1"), vf.createIRI("urn:r"), anchor, contexts);
+			List<BindingSet> first = rows(connection, generated("iri:urn:anchor", scope), "expand");
 			assertThat(first).hasSize(4);
 
-			connection.add(anchor, vf.createIRI("urn:s"), vf.createBNode("out-new"));
-			connection.add(anchor, vf.createIRI("urn:q"), vf.createIRI("urn:named-new"));
-			connection.add(vf.createBNode("in-new"), vf.createIRI("urn:t"), anchor);
+			connection.add(anchor, vf.createIRI("urn:s"), vf.createBNode("out-new"), contexts);
+			connection.add(anchor, vf.createIRI("urn:q"), vf.createIRI("urn:named-new"), contexts);
+			connection.add(vf.createBNode("in-new"), vf.createIRI("urn:t"), anchor, contexts);
 			List<Map<String, String>> shown = first.stream()
 					.map(row -> Map.of("source", documentNodeId(row.getValue("source")),
 							"predicate", row.getValue("predicate").stringValue(),
 							"target", documentNodeId(row.getValue("target"))))
 					.toList();
-			List<BindingSet> second = rows(connection, generatedFromEdges("iri:urn:anchor", "default", shown),
+			List<BindingSet> candidates = rows(connection, generatedFromEdges("iri:urn:anchor", scope, shown),
 					"expand");
-
-			assertThat(second).extracting(row -> row.getValue("predicate").stringValue() + " "
-					+ (row.getValue("source").equals(anchor) ? row.getValue("target") : row.getValue("source")))
-					.containsExactlyInAnyOrder("urn:s _:out-new", "urn:q urn:named-new", "urn:t _:in-new");
+			// The extra query branch must include stored blanks whose response may certify their identity. The public
+			// explorer removes only the uncertified copies after the response reveals which origins are reusable.
+			assertThat(candidates).hasSize(6);
+			ByteArrayOutputStream wire = new ByteArrayOutputStream();
+			try (TupleQueryResult result = new IteratingTupleQueryResult(
+					List.of("selected", "source", "predicate", "target"), candidates)) {
+				QueryResultIO.writeTuple(result, TupleQueryResultFormat.JSON, wire);
+			}
+			JsonNode answer = JSON.readTree(wire.toByteArray());
+			for (JsonNode row : answer.path("results").path("bindings")) {
+				for (JsonNode term : row) {
+					if (term.path("type").asText().equals("bnode") && certified.contains(term.path("value").asText())) {
+						((ObjectNode) term).put("rdf4j:reference", true);
+					}
+				}
+			}
+			JsonNode expanded = generatedFromEdges("iri:urn:anchor", scope, shown, answer).path("expanded");
+			int references = 0;
+			for (JsonNode row : expanded.path("results").path("bindings")) {
+				for (JsonNode term : row) {
+					if (term.path("rdf4j:reference").asBoolean(false)) {
+						references++;
+					}
+					// Origin metadata has been consumed by the real browser path. The standard SPARQL result parser
+					// below reads RDF term values and deliberately rejects this Workbench-specific extension.
+					((ObjectNode) term).remove("rdf4j:reference");
+				}
+			}
+			assertThat(references).isEqualTo(certified.size());
+			TupleQueryResultBuilder builder = new TupleQueryResultBuilder();
+			QueryResultIO.parseTuple(new ByteArrayInputStream(JSON.writeValueAsBytes(expanded)),
+					TupleQueryResultFormat.JSON, builder, vf);
+			List<BindingSet> second = new ArrayList<>();
+			try (TupleQueryResult result = builder.getQueryResult()) {
+				result.forEach(second::add);
+			}
+			return second;
 		} finally {
 			repository.shutDown();
 		}
@@ -232,13 +304,22 @@ class GraphExplorerBlankNodeTest {
 	}
 
 	private JsonNode generatedFromEdges(String raw, String scope, List<Map<String, String>> edges) throws Exception {
+		return generatedFromEdges(raw, scope, edges, null);
+	}
+
+	private JsonNode generatedFromEdges(String raw, String scope, List<Map<String, String>> edges, JsonNode answer)
+			throws Exception {
+		Map<String, Object> graph = new LinkedHashMap<>(Map.of("nodes", List.of(), "edges", edges));
+		if (answer != null) {
+			graph.put("answer", answer);
+		}
 		Path node = Path.of("target/node", System.getProperty("os.name").startsWith("Windows") ? "node.exe" : "node")
 				.toAbsolutePath();
 		Path errors = Files.createTempFile(temporary, "query-generator-", ".log");
 		Path output = Files.createTempFile(temporary, "query-generator-", ".json");
 		Process process = new ProcessBuilder(node.toString(), "--experimental-strip-types",
 				"src/test/frontend/graph-explorer/fixed-blank-node-query-fixture.mjs", raw, scope,
-				JSON.writeValueAsString(Map.of("nodes", List.of(), "edges", edges)))
+				JSON.writeValueAsString(graph))
 						.redirectError(errors.toFile())
 						.redirectOutput(output.toFile())
 						.start();

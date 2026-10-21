@@ -224,13 +224,13 @@ trap 'cleanup 130' INT
 trap 'cleanup 143' TERM
 
 NEEDS_XVFB="false"
-if [ "$(uname -s)" = "Linux" ] && { [ -z "$E2E_BROWSER" ] || [ "$E2E_BROWSER" = "webkit" ]; }; then
+if [ "$(uname -s)" = "Linux" ] && { [ -z "$E2E_BROWSER" ] || [ "$E2E_BROWSER" = "firefox" ] || [ "$E2E_BROWSER" = "webkit" ]; }; then
   NEEDS_XVFB="true"
 fi
 
 verify_xvfb() {
   if [ "$NEEDS_XVFB" = "true" ] && ! command -v xvfb-run >/dev/null 2>&1; then
-    echo "Linux WebKit runs headed; install xvfb (which provides xvfb-run) before running the E2E suite" >&2
+    echo "Linux Firefox WebGL and headed WebKit require a display; install xvfb (which provides xvfb-run) before running the E2E suite" >&2
     return 1
   fi
 }

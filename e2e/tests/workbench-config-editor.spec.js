@@ -57,14 +57,31 @@ async function setEditor(page, value) {
     }, value);
 }
 
+function isConfigurationModelRequest(request, repositoryId) {
+    return request.method() === 'GET'
+        && !request.isNavigationRequest()
+        && request.url() === repositoryPageUrl(repositoryId, 'config')
+        && (request.headers().accept || '').includes('application/vnd.rdf4j.workbench+ndjson');
+}
+
 async function expectFreshReload(page, freezeSavedModel, submitInvalid = true) {
-    const initialResponse = page.waitForResponse(response => response.request().method() === 'GET'
-        && new URL(response.url()).pathname.endsWith('/config')
-        && (response.request().headers().accept || '').includes('application/vnd.rdf4j.workbench+ndjson'))
-        .then(response => response.text());
-    await page.goto(repositoryPageUrl(REPOSITORY_ID, 'config'));
+    const targetUrl = repositoryPageUrl(REPOSITORY_ID, 'config');
+    const modelRequest = request => isConfigurationModelRequest(request, REPOSITORY_ID);
+    let savedModel;
+    const captureInitialModel = async route => {
+        if (!modelRequest(route.request())) {
+            await route.continue();
+            return;
+        }
+        const response = await route.fetch();
+        savedModel = await response.text();
+        await route.fulfill({ response });
+    };
+    await page.route(targetUrl, captureInitialModel);
+    await page.goto(targetUrl);
     await waitForRoute(page, 'config');
-    const savedModel = await initialResponse;
+    await page.unroute(targetUrl, captureInitialModel);
+    expect(savedModel).toBeTruthy();
     await expect(page.locator('#configuration-editor .CodeMirror')).toBeVisible();
     const saved = await editorValue(page);
     expect(saved).toContain(REPOSITORY_ID);
@@ -80,24 +97,29 @@ async function expectFreshReload(page, freezeSavedModel, submitInvalid = true) {
     }
     await expect.poll(() => editorValue(page)).toBe(invalid);
     await page.evaluate(() => { window.configurationReloadDocumentMarker = 'same-document'; });
-    if (freezeSavedModel) {
-        await page.route(url => url.pathname.endsWith(`/repositories/${REPOSITORY_ID}/config`), async route => {
-            if (route.request().method() === 'GET'
-                    && (route.request().headers().accept || '').includes('application/vnd.rdf4j.workbench+ndjson')) {
-                await route.fulfill({ status: 200,
-                    contentType: 'application/vnd.rdf4j.workbench+ndjson; charset=UTF-8', body: savedModel });
-            } else {
-                await route.continue();
-            }
-        });
-    }
-    const fresh = page.waitForResponse(response => response.request().method() === 'GET'
-        && new URL(response.url()).pathname.endsWith('/config')
-        && (response.request().headers().accept || '').includes('application/vnd.rdf4j.workbench+ndjson'))
-        .then(async response => ({ status: response.status(), text: await response.text() }));
+    let resolveFreshModel;
+    const fresh = new Promise(resolve => { resolveFreshModel = resolve; });
+    const captureFreshModel = async route => {
+        if (!modelRequest(route.request())) {
+            await route.continue();
+            return;
+        }
+        if (freezeSavedModel) {
+            resolveFreshModel({ status: 200, text: savedModel });
+            await route.fulfill({ status: 200,
+                contentType: 'application/vnd.rdf4j.workbench+ndjson; charset=UTF-8', body: savedModel });
+        } else {
+            const response = await route.fetch();
+            const text = await response.text();
+            resolveFreshModel({ status: response.status(), text });
+            await route.fulfill({ response });
+        }
+    };
+    await page.route(targetUrl, captureFreshModel);
 
     await page.getByRole('link', { name: 'Reload saved configuration', exact: true }).click();
     const reloaded = await fresh;
+    await page.unroute(targetUrl, captureFreshModel);
     expect(reloaded.status).toBe(200);
     const freshModel = reloaded.text;
     if (freezeSavedModel) {
@@ -262,8 +284,53 @@ test('repository picker switches filtered configuration layers without replacing
         await expect(reference).toContainText('rdf4j:SchemaCachingRDFSInferencer');
         await expect(reference).not.toContainText('rdf4j:LmdbStore');
         await expect(reference.getByRole('searchbox', { name: 'Find a configuration option' })).toHaveValue('');
-        await expect(reference.locator('[data-config-reference-group]')).toHaveCount(4);
-        await expect(reference.locator('[data-config-reference-option]')).toHaveCount(20);
+        const groups = reference.locator('[data-config-reference-group]');
+        const groupDetails = await groups.evaluateAll(elements => elements.map(group => ({
+            title: group.querySelector('summary span')?.textContent?.trim(),
+            predicates: Array.from(group.querySelectorAll('[data-config-reference-option] > h3 code'))
+                .map(predicate => predicate.getAttribute('data-config-reference-iri')).sort()
+        })));
+        expect(groupDetails.map(group => group.title)).toEqual([
+            'Repository', 'openrdf:SailRepository', 'rdf4j:SchemaCachingRDFSInferencer', 'openrdf:MemoryStore'
+        ]);
+        const expectedByLayer = [
+            [
+                'http://www.w3.org/1999/02/22-rdf-syntax-ns#type',
+                'tag:rdf4j.org,2023:config/rep.id',
+                'http://www.w3.org/2000/01/rdf-schema#label',
+                'tag:rdf4j.org,2023:config/rep.impl'
+            ],
+            [
+                'tag:rdf4j.org,2023:config/rep.type',
+                'tag:rdf4j.org,2023:config/sail.impl'
+            ],
+            [
+                'tag:rdf4j.org,2023:config/sail.type',
+                'tag:rdf4j.org,2023:config/sail.iterationCacheSyncThreshold',
+                'tag:rdf4j.org,2023:config/sail.connectionTimeOut',
+                'tag:rdf4j.org,2023:config/delegate'
+            ],
+            [
+                'tag:rdf4j.org,2023:config/sail.type',
+                'tag:rdf4j.org,2023:config/sail.iterationCacheSyncThreshold',
+                'tag:rdf4j.org,2023:config/sail.connectionTimeOut',
+                'tag:rdf4j.org,2023:config/sail.defaultQueryEvaluationMode',
+                'tag:rdf4j.org,2023:config/sail.evaluationStrategyFactory',
+                'tag:rdf4j.org,2023:config/sail.slowQueryLogThresholdSeconds',
+                'tag:rdf4j.org,2023:config/sail.slowQueryLogFirstResultThresholdSeconds',
+                'tag:rdf4j.org,2023:config/sail.slowQueryLogFile',
+                'tag:rdf4j.org,2023:config/sail.experimentalQueryOptimizations',
+                'tag:rdf4j.org,2023:config/mem.persist',
+                'tag:rdf4j.org,2023:config/mem.syncDelay'
+            ]
+        ];
+        for (const [index, requiredPredicates] of expectedByLayer.entries()) {
+            expect(groupDetails[index].predicates, `${groupDetails[index].title} options`)
+                .toEqual([...requiredPredicates].sort());
+        }
+        expect(groupDetails.flatMap(group => group.predicates))
+            .not.toContain('http://rdf4j.org/config/sail/lmdb#tripleIndexes');
+        await expect(reference.locator('[data-config-reference-option][hidden]')).toHaveCount(0);
     } finally {
         for (const id of created.reverse()) { await deleteRepository(request, serverBaseUrl(), id); }
     }
