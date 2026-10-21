@@ -25,6 +25,7 @@ const {
 // says something about the statement: RDF 1.2 reifiers, classic rdf:Statement reifications and references.
 const REPOSITORY_ID = uniqueRepositoryId('graph-statements');
 const ALICE = 'http://example.org/statements/alice';
+const OTHER = 'http://example.org/statements/other';
 const DATA = `
 @prefix ex: <http://example.org/statements/> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
@@ -143,11 +144,121 @@ async function svgTextCenter(label) {
 async function pointerHit(page, point) {
     return page.evaluate(({ x, y }) => {
         const target = document.elementFromPoint(x, y);
-        return { tag: target?.tagName, text: target?.textContent?.trim(), title: target?.closest('.edge')?.querySelector('title')?.textContent,
+        return { tag: target?.tagName, className: target?.getAttribute('class'), text: target?.textContent?.trim(), title: target?.closest('.edge')?.querySelector('title')?.textContent,
             edgeId: target?.closest('[data-edge-id]')?.getAttribute('data-edge-id') ?? null,
+            nodeId: target?.closest('.graph-node')?.getAttribute('data-node-id') ?? null,
             owner: target?.closest('[data-hover-node-id]')?.getAttribute('data-hover-node-id') ?? null,
             bridge: Boolean(target?.closest('[data-graph-hover-bridge]')) };
     }, point);
+}
+
+async function observeLayoutComputation(explorer) {
+    await explorer.locator('[aria-label="Choose graph layout"]').evaluate((layout) => {
+        const trace = { values: [layout.getAttribute('aria-busy')], observer: null };
+        trace.observer = new MutationObserver((records) => {
+            for (const record of records) trace.values.push(record.oldValue);
+            trace.values.push(layout.getAttribute('aria-busy'));
+        });
+        trace.observer.observe(layout, { attributes: true, attributeFilter: ['aria-busy'], attributeOldValue: true });
+        Reflect.set(window, '__statementsLayoutTrace', trace);
+    });
+}
+
+async function waitForSettledGraphGeometry(explorer, nodeIds) {
+    return explorer.locator('svg.graph-canvas').evaluate(async (_svg, nodeIds) => {
+        const trace = Reflect.get(window, '__statementsLayoutTrace');
+        const signature = () => {
+            const currentSvg = document.querySelector('svg.graph-canvas');
+            const layer = currentSvg?.querySelector(':scope > g');
+            const layoutButton = document.querySelector('[aria-label="Choose graph layout"]');
+            const matrix = layer?.getScreenCTM();
+            const nodes = nodeIds.map((nodeId) => {
+                const node = [...(currentSvg?.querySelectorAll('.graph-node') ?? [])]
+                    .find((candidate) => candidate.getAttribute('data-node-id') === nodeId);
+                const bounds = node?.getBoundingClientRect();
+                const cardRect = node?.querySelector(':scope > rect')?.getBoundingClientRect();
+                const labelTexts = [...(node?.querySelectorAll(':scope > text') ?? [])]
+                    .map((text) => text.textContent?.trim() ?? '');
+                const validGeometry = [bounds?.x, bounds?.y, bounds?.width, bounds?.height,
+                    cardRect?.x, cardRect?.y, cardRect?.width, cardRect?.height].every(Number.isFinite) &&
+                    bounds?.width > 0 && bounds?.height > 0 && cardRect?.width > 0 && cardRect?.height > 0;
+                return {
+                    id: nodeId,
+                    connected: Boolean(node?.isConnected),
+                    labelsReady: labelTexts.length > 0 && labelTexts.every(Boolean),
+                    labelTexts,
+                    validGeometry,
+                    cardRect: cardRect ? [cardRect.x, cardRect.y, cardRect.width, cardRect.height] : null,
+                    transform: node?.getAttribute('transform') ?? null,
+                };
+            });
+            return {
+                connected: Boolean(currentSvg?.isConnected && layer?.isConnected),
+                geometryReady: nodes.every((node) => node.connected && node.validGeometry && node.labelsReady),
+                nodes,
+                layerTransform: layer?.getAttribute('transform') ?? null,
+                layerMatrix: matrix ? [matrix.a, matrix.b, matrix.c, matrix.d, matrix.e, matrix.f] : null,
+                layoutBusy: layoutButton?.getAttribute('aria-busy') ?? null,
+            };
+        };
+        let previous = null;
+        let stableFrames = 0;
+        let frames = 0;
+        let current = signature();
+        while (frames < 600 && stableFrames < 3) {
+            await new Promise((resolve) => window.requestAnimationFrame(resolve));
+            frames++;
+            current = signature();
+            const currentKey = JSON.stringify(current);
+            if (current.connected && current.geometryReady && current.layoutBusy === 'false' &&
+                currentKey === previous) {
+                stableFrames++;
+            } else {
+                stableFrames = 0;
+            }
+            previous = currentKey;
+        }
+        if (trace?.observer) trace.observer.disconnect();
+        Reflect.deleteProperty(window, '__statementsLayoutTrace');
+        return {
+            stable: stableFrames >= 3,
+            frames,
+            stableFrames,
+            sawComputation: Boolean(trace?.values?.includes('true')),
+            busyTransitions: trace?.values ?? [],
+            final: current,
+        };
+    }, nodeIds);
+}
+
+async function nodeFacingCornerPoint(node, labelPoint) {
+    return node.evaluate((group, labelPoint) => {
+        const card = group.querySelector(':scope > rect');
+        if (!card) return null;
+        const bounds = card.getBoundingClientRect();
+        const center = { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 };
+        const corner = {
+            x: labelPoint.x < center.x ? bounds.left : bounds.right,
+            y: labelPoint.y < center.y ? bounds.top : bounds.bottom,
+        };
+        const length = Math.hypot(center.x - corner.x, center.y - corner.y);
+        if (length === 0) return null;
+        const steps = Math.ceil(length * 2);
+        for (let step = 0; step <= steps; step++) {
+            const ratio = step / steps;
+            const entry = { x: corner.x + (center.x - corner.x) * ratio, y: corner.y + (center.y - corner.y) * ratio };
+            const hit = document.elementFromPoint(entry.x, entry.y);
+            if (hit?.closest('.graph-node') === group && !hit.closest('.node-more')) {
+                const insetRatio = Math.min(1, ratio + 2 / length);
+                const point = { x: corner.x + (center.x - corner.x) * insetRatio, y: corner.y + (center.y - corner.y) * insetRatio };
+                const insideHit = document.elementFromPoint(point.x, point.y);
+                if (insideHit?.closest('.graph-node') === group && !insideHit.closest('.node-more')) {
+                    return { corner, point, center, labelPoint, tag: insideHit.tagName, className: insideHit.getAttribute('class') };
+                }
+            }
+        }
+        return null;
+    }, labelPoint);
 }
 
 async function hoveredAliceLabel(page, { reducedMotion = 'no-preference', steps = 12 } = {}) {
@@ -174,12 +285,13 @@ async function hoveredAliceLabel(page, { reducedMotion = 'no-preference', steps 
 
 async function svgNodeCenter(node) {
     return node.evaluate((element) => {
-        const { x, y, width, height } = element.getBoundingClientRect();
+        const card = element.querySelector(':scope > rect');
+        const { x, y, width, height } = card.getBoundingClientRect();
         return { x: x + width / 2, y: y + height / 2 };
     });
 }
 
-async function hoveredIncidentCurvePoint(explorer, edgeId, ownerId) {
+async function hoveredIncidentCurvePoint(explorer, edgeId, ownerId, leaderAnchor) {
     return explorer.locator('svg.graph-canvas').evaluate((svg, ids) => {
         const edge = [...svg.querySelectorAll('.edge')]
             .find((candidate) => candidate.getAttribute('data-edge-id') === ids.edgeId);
@@ -187,17 +299,35 @@ async function hoveredIncidentCurvePoint(explorer, edgeId, ownerId) {
         if (!path) return null;
         const matrix = path.getScreenCTM();
         const length = path.getTotalLength();
-        for (let distance = 1; distance < length; distance += 0.5) {
+        let anchorAlong = null;
+        let anchorDistance = Infinity;
+        let closest = null;
+        for (let distance = 0; distance <= length; distance += 0.25) {
             const point = path.getPointAtLength(distance);
             const screen = new DOMPoint(point.x, point.y).matrixTransform(matrix);
             const hit = document.elementFromPoint(screen.x, screen.y);
-            if (hit?.closest('[data-edge-id]')?.getAttribute('data-edge-id') === ids.edgeId
+            const distanceFromAnchor = Math.hypot(screen.x - ids.leaderAnchor.x, screen.y - ids.leaderAnchor.y);
+            if (distanceFromAnchor < anchorDistance) {
+                anchorDistance = distanceFromAnchor;
+                anchorAlong = distance;
+            }
+            if (hit?.tagName === 'path' && hit.closest('[data-edge-id]')?.getAttribute('data-edge-id') === ids.edgeId
                 && hit.closest('[data-hover-node-id]')?.getAttribute('data-hover-node-id') === ids.ownerId) {
-                return { x: screen.x, y: screen.y, distance, target: hit.tagName };
+                if (!closest || distanceFromAnchor < closest.anchorDistance) {
+                    closest = { x: screen.x, y: screen.y, distance, anchorDistance: distanceFromAnchor };
+                }
             }
         }
-        return null;
-    }, { edgeId, ownerId });
+        if (!closest || anchorAlong === null) return null;
+        const steps = Math.max(1, Math.ceil(Math.abs(closest.distance - anchorAlong) / 0.5));
+        const curvePath = Array.from({ length: steps + 1 }, (_, index) => {
+            const distance = anchorAlong + (closest.distance - anchorAlong) * index / steps;
+            const point = path.getPointAtLength(distance);
+            const screen = new DOMPoint(point.x, point.y).matrixTransform(matrix);
+            return { x: screen.x, y: screen.y };
+        });
+        return { ...closest, path: curvePath };
+    }, { edgeId, ownerId, leaderAnchor });
 }
 
 async function graphLayerTransform(explorer) {
@@ -207,6 +337,7 @@ async function graphLayerTransform(explorer) {
 async function loadAllStatements(explorer) {
     await explorer.getByRole('button', { name: 'Query editor', exact: true }).click();
     await explorer.locator('#sparql').fill('CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }');
+    await observeLayoutComputation(explorer);
     await explorer.getByRole('button', { name: 'Run query' }).click();
     await expect(explorer.getByRole('button', { name: 'Run query' })).toBeEnabled({ timeout: 30000 });
     await explorer.getByRole('button', { name: 'Close query editor' }).click();
@@ -311,33 +442,71 @@ test('reduced-motion pointer travel still reaches the hovered relation label', a
     await expect(explorer.locator('.statement-details h3')).toHaveText('knows');
 });
 
-test('hover travels from an incident curve through its leader to the label', async ({ page }) => {
-    const { explorer, alice, edge, target } = await hoveredAliceLabel(page);
-    const edgeId = await edge.getAttribute('data-edge-id');
-    const aliceId = await alice.getAttribute('data-node-id');
-    const nodeCenter = await svgNodeCenter(alice);
-    await page.mouse.move(nodeCenter.x, nodeCenter.y, { steps: 12 });
-    const curvePoint = await hoveredIncidentCurvePoint(explorer, edgeId, aliceId);
-    expect(curvePoint, 'the hovered edge has a visible point inside Alice\'s hover-owned curve').not.toBeNull();
-    await page.mouse.move(curvePoint.x, curvePoint.y, { steps: 12 });
-    const curveHit = await pointerHit(page, curvePoint);
-    expect(curveHit).toMatchObject({ edgeId, owner: aliceId });
-    expect(curveHit.title).toContain('Alice — knows → Bob');
+test('slow travel between the rounded node corner and relation label preserves hover', async ({ page }, testInfo) => {
+    const { explorer, alice, aliceId, edge, label, target } = await hoveredAliceLabel(page);
+    const facingPoint = await nodeFacingCornerPoint(alice, target);
+    expect(facingPoint, 'the facing rounded corner enters Alice\'s main card rather than its more badge').not.toBeNull();
+    const cross = (facingPoint.point.x - facingPoint.center.x) * (target.y - facingPoint.center.y)
+        - (facingPoint.point.y - facingPoint.center.y) * (target.x - facingPoint.center.x);
+    expect(Math.abs(cross), 'the corner route differs from centerline travel').toBeGreaterThan(1);
+    await testInfo.attach('node-facing-corner-geometry', {
+        body: JSON.stringify({ ...facingPoint, cross }),
+        contentType: 'application/json',
+    });
+    await page.mouse.move(facingPoint.point.x, facingPoint.point.y, { steps: 12 });
+    const cardHit = await pointerHit(page, facingPoint.point);
+    expect(cardHit.nodeId).toBe(aliceId);
+    await expect(alice).toHaveClass(/is-focused/);
     await expect(edge).toHaveClass(/show-label/);
 
-    const leaderPoint = await edge.locator('.label-leader').evaluate((line) => {
+    const labelTarget = await svgTextCenter(label);
+    await page.mouse.move(labelTarget.x, labelTarget.y, { steps: 36 });
+    await expect(edge).toHaveClass(/show-label/);
+    await expect(label).toHaveCSS('opacity', '1');
+    const labelHit = await pointerHit(page, labelTarget);
+    expect(labelHit).toMatchObject({ tag: 'text', text: 'knows', owner: aliceId });
+    expect(labelHit.title).toContain('Alice — knows → Bob');
+    await testInfo.attach('hovered-relation-label', {
+        body: await page.screenshot(),
+        contentType: 'image/png',
+    });
+    await page.mouse.click(labelTarget.x, labelTarget.y);
+    await expect(explorer.locator('.statement-details h3')).toHaveText('knows');
+});
+
+test('hover travels from an incident curve through its leader to the label', async ({ page }) => {
+    const { explorer, aliceId, edge, label } = await hoveredAliceLabel(page);
+    const edgeId = await edge.getAttribute('data-edge-id');
+    const leader = await edge.locator('.label-leader').evaluate((line) => {
         const matrix = line.getScreenCTM();
         const start = new DOMPoint(Number(line.getAttribute('x1')), Number(line.getAttribute('y1'))).matrixTransform(matrix);
         const end = new DOMPoint(Number(line.getAttribute('x2')), Number(line.getAttribute('y2'))).matrixTransform(matrix);
-        return { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+        return { anchor: { x: start.x, y: start.y }, midpoint: { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 } };
     });
-    await page.mouse.move(leaderPoint.x, leaderPoint.y, { steps: 12 });
+    const curvePoint = await hoveredIncidentCurvePoint(explorer, edgeId, aliceId, leader.anchor);
+    expect(curvePoint, 'the visible edge curve reaches the label leader at its anchor').not.toBeNull();
+    await page.mouse.move(leader.anchor.x, leader.anchor.y, { steps: 12 });
     await expect(edge).toHaveClass(/show-label/);
-    const leaderHit = await pointerHit(page, leaderPoint);
-    expect(leaderHit).toMatchObject({ edgeId, owner: aliceId });
+    const anchorHit = await pointerHit(page, leader.anchor);
+    expect(anchorHit).toMatchObject({ edgeId, owner: aliceId });
+    for (const point of curvePoint.path) {
+        await page.mouse.move(point.x, point.y);
+    }
+    const curveHit = await pointerHit(page, curvePoint);
+    expect(curveHit).toMatchObject({ tag: 'path', edgeId, owner: aliceId });
+    expect(curveHit.title).toContain('Alice — knows → Bob');
+    await expect(edge).toHaveClass(/show-label/);
+
+    for (const point of curvePoint.path.slice(0, -1).reverse()) {
+        await page.mouse.move(point.x, point.y);
+    }
+    await page.mouse.move(leader.midpoint.x, leader.midpoint.y, { steps: 12 });
+    await expect(edge).toHaveClass(/show-label/);
+    const leaderHit = await pointerHit(page, leader.midpoint);
+    expect(leaderHit).toMatchObject({ tag: 'line', className: 'label-leader', edgeId, owner: aliceId });
     expect(leaderHit.title).toContain('Alice — knows → Bob');
 
-    const labelTarget = await svgTextCenter(edge.locator('text'));
+    const labelTarget = await svgTextCenter(label);
     await page.mouse.move(labelTarget.x, labelTarget.y, { steps: 12 });
     await expect(edge).toHaveClass(/show-label/);
     const labelHit = await pointerHit(page, labelTarget);
@@ -348,24 +517,39 @@ test('hover travels from an incident curve through its leader to the label', asy
     await expect(explorer.locator('.statement-details h3')).toHaveText('knows');
 });
 
-test('moving to an unrelated node clears Alice and preserves unrelated edge picking', async ({ page }) => {
+test('moving to an unrelated node clears Alice and preserves unrelated edge picking', async ({ page }, testInfo) => {
     const explorer = await openAliceGraph(page);
     await loadAllStatements(explorer);
     await page.keyboard.press('Escape');
     await expect(explorer.locator('.graph-node.is-focused')).toHaveCount(0);
     const alice = explorer.locator('.graph-node').filter({ has: page.locator('text', { hasText: 'Alice' }) }).first();
     const other = explorer.locator('.graph-node').filter({ has: page.locator('text', { hasText: 'Other' }) }).first();
+    await expect(alice).toBeAttached();
     await expect(other).toBeAttached();
+
+    const layoutEvidence = await waitForSettledGraphGeometry(explorer, [ALICE, OTHER]);
+    await testInfo.attach('query-layout-settlement', {
+        body: JSON.stringify(layoutEvidence, null, 2),
+        contentType: 'application/json',
+    });
+    expect(layoutEvidence.sawComputation, 'the query result starts its graph layout').toBe(true);
+    expect(layoutEvidence.stable, 'the graph layer and both node cards settle over consecutive animation frames').toBe(true);
+    expect(layoutEvidence.final.layoutBusy).toBe('false');
     const aliceEdge = explorer.locator('.edge', { has: page.locator('title', { hasText: 'Alice — knows → Bob' }) });
     const otherEdge = explorer.locator('.edge', { has: page.locator('title', { hasText: 'Other — connects → Remote' }) });
 
-    await alice.hover();
+    const aliceCenter = await svgNodeCenter(alice);
+    const aliceId = await alice.getAttribute('data-node-id');
+    const otherId = await other.getAttribute('data-node-id');
+    await page.mouse.move(aliceCenter.x, aliceCenter.y);
+    expect(await pointerHit(page, aliceCenter)).toMatchObject({ nodeId: aliceId });
     await expect(aliceEdge).toHaveClass(/show-label/);
-    await other.hover();
+    const otherCenter = await svgNodeCenter(other);
+    await page.mouse.move(otherCenter.x, otherCenter.y);
+    expect(await pointerHit(page, otherCenter)).toMatchObject({ nodeId: otherId });
     await expect(aliceEdge).not.toHaveClass(/show-label/);
     await expect(otherEdge).toHaveClass(/show-label/);
 
-    const otherId = await other.getAttribute('data-node-id');
     const edgePoint = await besideEdge(page, 'Other — connects → Remote', 0);
     await page.mouse.move(edgePoint.x, edgePoint.y, { steps: 8 });
     await expect(explorer.locator('svg.graph-canvas')).toHaveClass(/has-edge-hover/);

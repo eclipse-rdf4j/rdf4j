@@ -13,22 +13,27 @@ import type { PointerPosition } from './graph-types.ts';
 
 export type HoverRectangle = PointerPosition & { width: number; height: number };
 
-/** A hover-only corridor across the gap between a node and its visible label, no wider than the smaller target. */
+/** The smallest convex hover region joining a node and label, including straight travel from any target corner. */
 export function labelHoverBridge(node: HoverRectangle, label: HoverRectangle): PointerPosition[] {
   if (![node.x, node.y, node.width, node.height, label.x, label.y, label.width, label.height].every(Number.isFinite)
     || Math.min(node.width, node.height, label.width, label.height) <= 0) return [];
-  const dx = label.x - node.x, dy = label.y - node.y;
-  if (Math.abs(dx) <= (node.width + label.width) / 2 && Math.abs(dy) <= (node.height + label.height) / 2) return [];
-  const length = Math.hypot(dx, dy);
-  if (!Number.isFinite(length) || length === 0) return [];
-  const ux = dx / length, uy = dy / length;
-  const nodeExit = Math.min(node.width / 2 / Math.abs(ux), node.height / 2 / Math.abs(uy));
-  const labelExit = Math.min(label.width / 2 / Math.abs(ux), label.height / 2 / Math.abs(uy));
-  if (nodeExit + labelExit >= length) return [];
-  const start = {x: node.x + ux * nodeExit, y: node.y + uy * nodeExit};
-  const end = {x: label.x - ux * labelExit, y: label.y - uy * labelExit};
-  const halfWidth = Math.min(node.width, node.height, label.width, label.height) / 2;
-  const nx = -uy * halfWidth, ny = ux * halfWidth;
-  return [{x: start.x + nx, y: start.y + ny}, {x: start.x - nx, y: start.y - ny},
-    {x: end.x - nx, y: end.y - ny}, {x: end.x + nx, y: end.y + ny}];
+  const corners = [node, label].flatMap(rectangle => [-1, 1].flatMap(x => [-1, 1].map(y => ({
+    x: rectangle.x + x * rectangle.width / 2,
+    y: rectangle.y + y * rectangle.height / 2
+  }))));
+  if (!corners.every(point => Number.isFinite(point.x) && Number.isFinite(point.y))) return [];
+  corners.sort((a, b) => a.x - b.x || a.y - b.y);
+  const boundary = (points: PointerPosition[]) => {
+    const result: PointerPosition[] = [];
+    for (const point of points) {
+      while (result.length >= 2) {
+        const a = result[result.length - 2], b = result[result.length - 1];
+        if ((b.x - a.x) * (point.y - a.y) - (b.y - a.y) * (point.x - a.x) > 0) break;
+        result.pop();
+      }
+      result.push(point);
+    }
+    return result.slice(0, -1);
+  };
+  return [...boundary(corners), ...boundary([...corners].reverse())];
 }
