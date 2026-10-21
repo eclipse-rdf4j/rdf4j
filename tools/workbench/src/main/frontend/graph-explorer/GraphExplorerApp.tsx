@@ -3170,7 +3170,8 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
         return;
       }
       // A press alone (a click) lets a running layout go on; the layout stops when the node starts to move.
-      const now = performance.now();
+      // Input timestamps preserve the user's interval even when main-thread work delays event handlers.
+      const now = event.timeStamp;
       const previousTap = lastNodeTapRef.current;
       // The second press of a double click or double tap: dragging it brings the node's leaves along (neighbours linked
       // to it alone, in either direction, as the canvas draws them).
@@ -3239,7 +3240,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
       }));
     },
     pointerEnd(event, cancelled) {
-      finishNodePointer(event.pointerId, event.clientX, event.clientY, cancelled);
+      finishNodePointer(event.pointerId, event.timeStamp, event.clientX, event.clientY, cancelled);
     },
     focus(nodeId) {
       setRovingNodeId(nodeId);
@@ -3269,6 +3270,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
 
   const finishNodePointer = (
     pointerId: number,
+    completedAt: number,
     clientX?: number,
     clientY?: number,
     cancelled = false,
@@ -3296,7 +3298,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
         nodeId: drag.nodeId,
         x: clientX ?? drag.startClient.x,
         y: clientY ?? drag.startClient.y,
-        completedAt: performance.now(),
+        completedAt,
       };
     } else {
       lastNodeTapRef.current = null;
@@ -4103,7 +4105,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                 graphRef.current = next; setGraph(next);
               }}
               onBoxSelect={addToManualSelection}
-              onSelect={(id, multiple, byKeyboard) => {
+              onSelect={(id, multiple, byKeyboard, timeStamp) => {
                 if (id && multiple) {
                   toggleNodeInSelection(id);
                   return;
@@ -4117,7 +4119,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                 if (!id && multiple) return;
                 if (!id) clearManualSelection();
                 // As on the SVG canvas: the first click or tap shows the node, a second one right after expands it.
-                const now = performance.now();
+                const now = timeStamp;
                 const previous = largeGraphTapRef.current;
                 largeGraphTapRef.current = id ? { id, at: now } : null;
                 if (id && previous?.id === id && now - previous.at <= DOUBLE_TAP_DELAY) {
@@ -4206,7 +4208,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                       midpoint: { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 },
                     };
                   } else if (isBackground) {
-                    const now = performance.now();
+                    const now = event.timeStamp;
                     const previousTap = lastBackgroundTapRef.current;
                     const isDoubleTap =
                       previousTap !== null &&
@@ -4349,7 +4351,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                   finishMarquee(event.clientX, event.clientY, false);
                   return;
                 }
-                const completedAt = performance.now();
+                const completedAt = event.timeStamp;
                 // A click on the background opens the statement card of the edge under it; on empty canvas it closes
                 // the card and clears the selection. A press that moved the pointer panned, and changes neither.
                 const press = backgroundPressRef.current;

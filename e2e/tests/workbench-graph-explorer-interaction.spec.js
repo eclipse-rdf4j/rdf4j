@@ -25,6 +25,7 @@ const {
 // selects with a box, selected nodes move together, a double-click drag brings a node's leaves along, layouts act on
 // the selection, and the wheel zooms where scrolling zooms (Windows, Linux) but pans where pinching zooms (macOS).
 const REPOSITORY_ID = uniqueRepositoryId('graph-gestures');
+const DOUBLE_TAP_WINDOW_MS = 360;
 const DATA = `
 @prefix ex: <http://example.org/gestures/> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
@@ -59,6 +60,7 @@ async function openGraphPage(page) {
     const explorer = page.locator('.graph-explorer');
     await explorer.getByRole('button', { name: 'Load 100 statements' }).click();
     await expect(explorer.locator('.graph-node', { hasText: 'Oslo' })).toBeAttached({ timeout: 30000 });
+    await expectStableGraphNode(explorer, 'Oslo');
     return explorer;
 }
 
@@ -100,6 +102,7 @@ test('a double-click loads the neighbours of a node', async ({ page }) => {
         'SELECT ?source ?predicate ?target WHERE { BIND(<http://example.org/gestures/alice> AS ?source) ?source ?predicate ?target }');
     await explorer.getByRole('button', { name: 'Run query' }).click();
     await expect(explorer.locator('.graph-node')).toHaveCount(2);
+    await expectStableGraphNode(explorer, 'Bob');
     await explorer.getByRole('button', { name: 'Close query editor' }).click();
 
     await node(explorer, 'Bob').dblclick();
@@ -115,8 +118,8 @@ async function openWithBobUnderTheCard(page) {
         'SELECT ?source ?predicate ?target WHERE { BIND(<http://example.org/gestures/alice> AS ?source) ?source ?predicate ?target }');
     await explorer.getByRole('button', { name: 'Run query' }).click();
     await expect(explorer.locator('.graph-node')).toHaveCount(2);
+    await expectStableGraphNode(explorer, 'Alice');
     await explorer.getByRole('button', { name: 'Close query editor' }).click();
-    await page.waitForTimeout(800);
     await node(explorer, 'Alice').click();
     const explore = await centre(explorer.locator('.node-details').getByRole('link', { name: 'Explore' }));
     await explorer.getByRole('button', { name: 'Close details' }).click();
@@ -176,6 +179,59 @@ async function centre(locator) {
     return { x: box.x + box.width / 2, y: box.y + box.height / 2, box };
 }
 
+async function waitForStableGraphViewport(explorer, nodeId) {
+    return explorer.locator('svg.graph-canvas').evaluate(async (_svg, nodeId) => {
+        const signature = () => {
+            const currentSvg = document.querySelector('svg.graph-canvas');
+            const layer = currentSvg?.querySelector(':scope > g');
+            const layout = document.querySelector('.layout-menu summary');
+            const node = [...(currentSvg?.querySelectorAll('.graph-node') ?? [])]
+                .find((candidate) => candidate.getAttribute('data-node-id') === nodeId);
+            const bounds = node?.getBoundingClientRect();
+            const card = node?.querySelector(':scope > rect')?.getBoundingClientRect();
+            const matrix = layer?.getScreenCTM();
+            const labelTexts = [...(node?.querySelectorAll(':scope > text') ?? [])]
+                .map((text) => text.textContent?.trim() ?? '');
+            const validGeometry = [bounds?.x, bounds?.y, bounds?.width, bounds?.height,
+                card?.x, card?.y, card?.width, card?.height].every(Number.isFinite) &&
+                bounds?.width > 0 && bounds?.height > 0 && card?.width > 0 && card?.height > 0;
+            return {
+                connected: Boolean(currentSvg?.isConnected && layer?.isConnected && node?.isConnected),
+                validGeometry,
+                labelsReady: labelTexts.length > 0 && labelTexts.every(Boolean),
+                labelTexts,
+                node: bounds ? [bounds.x, bounds.y, bounds.width, bounds.height] : null,
+                card: card ? [card.x, card.y, card.width, card.height] : null,
+                transform: layer?.getAttribute('transform') ?? null,
+                matrix: matrix ? [matrix.a, matrix.b, matrix.c, matrix.d, matrix.e, matrix.f] : null,
+                layoutBusy: layout?.getAttribute('aria-busy') ?? null,
+            };
+        };
+        let previous = null;
+        let stableFrames = 0;
+        let frames = 0;
+        let current = signature();
+        while (frames < 600 && stableFrames < 3) {
+            await new Promise((resolve) => window.requestAnimationFrame(resolve));
+            frames++;
+            current = signature();
+            const key = JSON.stringify(current);
+            const ready = current.connected && current.validGeometry && current.labelsReady &&
+                current.layoutBusy === 'false';
+            stableFrames = ready && key === previous ? stableFrames + 1 : 0;
+            previous = key;
+        }
+        return { stable: stableFrames >= 3, frames, stableFrames, final: current };
+    }, nodeId);
+}
+
+async function expectStableGraphNode(explorer, label) {
+    const nodeId = await node(explorer, label).getAttribute('data-node-id');
+    expect(nodeId).not.toBeNull();
+    const settled = await waitForStableGraphViewport(explorer, nodeId);
+    expect(settled.stable, `the ${label} node geometry settles before interacting`).toBe(true);
+}
+
 /** A box drawn with a modifier held, from `from` to `to` (client coordinates). */
 async function boxSelect(page, from, to, modifier = 'Shift') {
     await page.keyboard.down(modifier);
@@ -206,7 +262,6 @@ async function emptyCanvasPoint(explorer, endpointOffset = { x: 0, y: 0 }) {
 
 test('Shift-drag selects with a box; dragging a selected node moves the whole selection', async ({ page }) => {
     const explorer = await openGraphPage(page);
-    await page.waitForTimeout(800);
     const alice = await centre(node(explorer, 'Alice'));
     const bob = await centre(node(explorer, 'Bob'));
     // One tight box around each node: the second adds to the first.
@@ -238,12 +293,15 @@ test('Shift-drag selects with a box; dragging a selected node moves the whole se
 
 test('dragging the background pans and keeps the clicked node; a click on the background lets it go', async ({ page }) => {
     const explorer = await openGraphPage(page);
-    await page.waitForTimeout(800);
     await node(explorer, 'Alice').click();
     const details = explorer.locator('.node-details');
     await expect(details.locator('h3')).toHaveText('Alice');
     await expect(node(explorer, 'Alice')).toHaveClass(/is-focused/);
     await expect(details).not.toHaveClass(/is-arriving/);
+
+    const aliceId = await node(explorer, 'Alice').getAttribute('data-node-id');
+    const settled = await waitForStableGraphViewport(explorer, aliceId);
+    expect(settled.stable, 'the card reveal and graph transform settle before measuring the pan').toBe(true);
 
     const before = await centre(node(explorer, 'Alice'));
     const empty = await emptyCanvasPoint(explorer);
@@ -268,14 +326,16 @@ test('dragging the background pans and keeps the clicked node; a click on the ba
 
 test('a double-click drag moves a node with its leaf neighbours and loads nothing', async ({ page }) => {
     const explorer = await openGraphPage(page);
-    await page.waitForTimeout(800);
     const acme = await centre(node(explorer, 'Acme'));
     const oslo = await centre(node(explorer, 'Oslo'));
     const bob = await centre(node(explorer, 'Bob'));
     await page.mouse.move(acme.x, acme.y);
     await page.mouse.down();
-    await page.mouse.up();
-    await page.mouse.down({ clickCount: 2 });
+    // Queue the first release and second press together so automation transport latency does not turn the
+    // intended double-click into two independent clicks.
+    const firstUp = page.mouse.up();
+    const secondDown = page.mouse.down({ clickCount: 2 });
+    await Promise.all([firstUp, secondDown]);
     await page.mouse.move(acme.x + 60, acme.y + 50, { steps: 8 });
     await page.mouse.up({ clickCount: 2 });
     const movedOslo = await centre(node(explorer, 'Oslo'));
@@ -287,9 +347,82 @@ test('a double-click drag moves a node with its leaf neighbours and loads nothin
     await expect(explorer.locator('.graph-node')).toHaveCount(4);
 });
 
+test('a queued double-click drag uses the input event time', async ({ page }) => {
+    await page.addInitScript((delayMs) => {
+        const acmeId = 'http://example.org/gestures/acme';
+        const evidence = { firstUp: null, secondDown: null };
+        Reflect.set(window, '__queuedDoubleClickEvidence', evidence);
+        document.addEventListener('pointerup', (event) => {
+            const target = event.target instanceof Element ? event.target : null;
+            const node = target?.closest('.graph-node');
+            if (node?.getAttribute('data-node-id') !== acmeId || evidence.firstUp) return;
+            evidence.firstUp = {
+                eventAt: event.timeStamp,
+                observedAt: performance.now(),
+                isTrusted: event.isTrusted,
+                pointerType: event.pointerType,
+            };
+        });
+        document.addEventListener('pointerdown', (event) => {
+            const target = event.target instanceof Element ? event.target : null;
+            const node = target?.closest('.graph-node');
+            if (node?.getAttribute('data-node-id') !== acmeId || !evidence.firstUp || evidence.secondDown) return;
+            evidence.secondDown = {
+                eventAt: event.timeStamp,
+                observedAt: performance.now(),
+                isTrusted: event.isTrusted,
+                pointerType: event.pointerType,
+                detail: event.detail,
+            };
+            // Hold this trusted input event after the browser stamps it but before React handles it. This models a
+            // busy main thread without changing the user's double-click interval or the graph's gesture threshold.
+            const resumeAt = performance.now() + delayMs;
+            while (performance.now() < resumeAt) { /* simulate queued main-thread input dispatch */ }
+            evidence.secondDown.processedAt = performance.now();
+        }, true);
+    }, DOUBLE_TAP_WINDOW_MS + 40);
+
+    const explorer = await openGraphPage(page);
+    const acme = await centre(node(explorer, 'Acme'));
+    const oslo = await centre(node(explorer, 'Oslo'));
+    const bob = await centre(node(explorer, 'Bob'));
+    await page.mouse.move(acme.x, acme.y);
+    await page.mouse.down();
+    // Queue the first release and second press together so automation transport latency does not turn the
+    // intended double-click into two independent clicks.
+    const firstUp = page.mouse.up();
+    const secondDown = page.mouse.down({ clickCount: 2 });
+    await Promise.all([firstUp, secondDown]);
+    await page.mouse.move(acme.x + 60, acme.y + 50, { steps: 8 });
+    await page.mouse.up({ clickCount: 2 });
+
+    const evidence = await page.evaluate(() => Reflect.get(window, '__queuedDoubleClickEvidence'));
+    expect(evidence.firstUp).not.toBeNull();
+    expect(evidence.secondDown).not.toBeNull();
+    expect(evidence.firstUp.isTrusted, 'the first input is browser-generated').toBe(true);
+    expect(evidence.secondDown.isTrusted, 'the delayed input is browser-generated').toBe(true);
+    const inputInterval = evidence.secondDown.eventAt - evidence.firstUp.eventAt;
+    const dispatchInterval = evidence.secondDown.processedAt - evidence.firstUp.observedAt;
+    await test.info().attach('queued-input-timing', {
+        body: JSON.stringify({ inputInterval, dispatchInterval, ...evidence }, null, 2),
+        contentType: 'application/json',
+    });
+    expect(inputInterval, 'the browser stamped the second press inside the existing double-click window')
+        .toBeLessThanOrEqual(DOUBLE_TAP_WINDOW_MS);
+    expect(dispatchInterval, 'the second press reached the graph handler after the existing window elapsed')
+        .toBeGreaterThan(DOUBLE_TAP_WINDOW_MS);
+
+    const movedOslo = await centre(node(explorer, 'Oslo'));
+    const stillBob = await centre(node(explorer, 'Bob'));
+    expect(Math.abs(movedOslo.x - oslo.x - 60)).toBeLessThan(2);
+    expect(Math.abs(movedOslo.y - oslo.y - 50)).toBeLessThan(2);
+    expect(Math.abs(stillBob.x - bob.x)).toBeLessThan(1);
+    await page.waitForTimeout(600);
+    await expect(explorer.locator('.graph-node')).toHaveCount(4);
+});
+
 test('a layout acts on the selected nodes only', async ({ page }) => {
     const explorer = await openGraphPage(page);
-    await page.waitForTimeout(800);
     await node(explorer, 'Alice').click({ modifiers: ['Shift'] });
     await node(explorer, 'Bob').click({ modifiers: ['Shift'] });
     await expect(explorer.locator('.graph-node.is-selected')).toHaveCount(2);
@@ -317,7 +450,6 @@ for (const [platform, zooms] of [['Win32', true], ['Linux x86_64', true], ['MacI
             Object.defineProperty(Navigator.prototype, 'userAgentData', { get: () => undefined });
         }, platform);
         const explorer = await openGraphPage(page);
-        await page.waitForTimeout(800);
         const layer = explorer.locator('svg.graph-canvas > g').first();
         const scale = async () => Number(/scale\(([^)]+)\)/.exec(await layer.getAttribute('transform'))[1]);
         const translate = async () => /translate\(([^)]+)\)/.exec(await layer.getAttribute('transform'))[1];
