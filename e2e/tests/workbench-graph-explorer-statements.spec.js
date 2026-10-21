@@ -38,6 +38,9 @@ ex:describes rdfs:label "describes" ; rdfs:comment "وصف العلاقة."@ar--
 ex:alice ex:knows ex:bob {| ex:since 2001 |} .
 ex:stmt a rdf:Statement ; rdf:subject ex:alice ; rdf:predicate ex:knows ; rdf:object ex:bob ; ex:by ex:dave .
 ex:carol rdfs:label "Carol" ; ex:believes <<( ex:alice ex:knows ex:bob )>> .
+ex:other rdfs:label "Other" ; ex:connects ex:remote .
+ex:remote rdfs:label "Remote" .
+ex:connects rdfs:label "connects" .
 `;
 
 test.beforeAll(async ({ request }) => {
@@ -130,6 +133,85 @@ async function hoverBridgeGap(explorer, nodeId) {
     }, nodeId);
 }
 
+async function svgTextCenter(label) {
+    return label.evaluate((element) => {
+        const { x, y, width, height } = element.getBoundingClientRect();
+        return { x: x + width / 2, y: y + height / 2 };
+    });
+}
+
+async function pointerHit(page, point) {
+    return page.evaluate(({ x, y }) => {
+        const target = document.elementFromPoint(x, y);
+        return { tag: target?.tagName, text: target?.textContent?.trim(), title: target?.closest('.edge')?.querySelector('title')?.textContent,
+            edgeId: target?.closest('[data-edge-id]')?.getAttribute('data-edge-id') ?? null,
+            owner: target?.closest('[data-hover-node-id]')?.getAttribute('data-hover-node-id') ?? null,
+            bridge: Boolean(target?.closest('[data-graph-hover-bridge]')) };
+    }, point);
+}
+
+async function hoveredAliceLabel(page, { reducedMotion = 'no-preference', steps = 12 } = {}) {
+    await page.emulateMedia({ reducedMotion });
+    const explorer = await openAliceGraph(page);
+    // The route opens Alice's details; remove that focus so the relation is shown only while the pointer hovers it.
+    await page.keyboard.press('Escape');
+    await expect(explorer.locator('.graph-node.is-focused')).toHaveCount(0);
+    const alice = explorer.locator('.graph-node').filter({ has: page.locator('text', { hasText: 'Alice' }) }).first();
+    const aliceId = await alice.getAttribute('data-node-id');
+    await alice.hover();
+    const edge = explorer.locator('.edge', { has: page.locator('title', { hasText: 'Alice — knows → Bob' }) });
+    const label = edge.locator('text');
+    await expect(edge).toHaveClass(/show-label/);
+    const target = await svgTextCenter(label);
+    await page.mouse.move(target.x, target.y, { steps });
+    await expect(edge).toHaveClass(/show-label/);
+    await expect(label).toHaveCSS('opacity', '1');
+    const hit = await pointerHit(page, target);
+    expect(hit).toMatchObject({ tag: 'text', text: 'knows', owner: aliceId });
+    expect(hit.title).toContain('Alice — knows → Bob');
+    return { explorer, alice, aliceId, edge, label, target };
+}
+
+async function svgNodeCenter(node) {
+    return node.evaluate((element) => {
+        const { x, y, width, height } = element.getBoundingClientRect();
+        return { x: x + width / 2, y: y + height / 2 };
+    });
+}
+
+async function hoveredIncidentCurvePoint(explorer, edgeId, ownerId) {
+    return explorer.locator('svg.graph-canvas').evaluate((svg, ids) => {
+        const edge = [...svg.querySelectorAll('.edge')]
+            .find((candidate) => candidate.getAttribute('data-edge-id') === ids.edgeId);
+        const path = edge?.querySelector('path');
+        if (!path) return null;
+        const matrix = path.getScreenCTM();
+        const length = path.getTotalLength();
+        for (let distance = 1; distance < length; distance += 0.5) {
+            const point = path.getPointAtLength(distance);
+            const screen = new DOMPoint(point.x, point.y).matrixTransform(matrix);
+            const hit = document.elementFromPoint(screen.x, screen.y);
+            if (hit?.closest('[data-edge-id]')?.getAttribute('data-edge-id') === ids.edgeId
+                && hit.closest('[data-hover-node-id]')?.getAttribute('data-hover-node-id') === ids.ownerId) {
+                return { x: screen.x, y: screen.y, distance, target: hit.tagName };
+            }
+        }
+        return null;
+    }, { edgeId, ownerId });
+}
+
+async function graphLayerTransform(explorer) {
+    return explorer.locator('svg.graph-canvas > g').getAttribute('transform');
+}
+
+async function loadAllStatements(explorer) {
+    await explorer.getByRole('button', { name: 'Query editor', exact: true }).click();
+    await explorer.locator('#sparql').fill('CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }');
+    await explorer.getByRole('button', { name: 'Run query' }).click();
+    await expect(explorer.getByRole('button', { name: 'Run query' })).toBeEnabled({ timeout: 30000 });
+    await explorer.getByRole('button', { name: 'Close query editor' }).click();
+}
+
 test('a click beside a link opens its statement, with the predicate and what is said about the statement', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`${repositoryPageUrl(REPOSITORY_ID, 'explore')}?resource=${encodeURIComponent(`<${ALICE}>`)}`);
@@ -185,22 +267,149 @@ test('a click on the line of a link, or on its label, opens its statement', asyn
     // Labels show for the links of the hovered node; a click on one opens that link's statement.
     await explorer.locator('.graph-node').filter({ has: page.locator('text', { hasText: 'Alice' }) }).first().hover();
     const label = explorer.locator('.edge.show-label', { has: page.locator('title', { hasText: 'Alice — knows → Bob' }) }).locator('text');
-    await label.click();
+    const target = await svgTextCenter(label);
+    const hit = await pointerHit(page, target);
+    expect(hit).toMatchObject({ tag: 'text', text: 'knows' });
+    expect(hit.title).toContain('Alice — knows → Bob');
+    await page.mouse.click(target.x, target.y);
     await expect(card.locator('h3')).toHaveText('knows');
 });
 
-test('a hovered link label remains reachable across the gap from its node', async ({ page }) => {
-    const explorer = await openAliceGraph(page);
-    const alice = explorer.locator('.graph-node').filter({ has: page.locator('text', { hasText: 'Alice' }) }).first();
-    await alice.hover();
-    const edge = explorer.locator('.edge', { has: page.locator('title', { hasText: 'Alice — knows → Bob' }) });
-    const label = edge.locator('text');
-    await expect(label).toBeVisible();
-    const target = await label.boundingBox();
-    await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 12 });
-    await expect(label).toBeVisible();
-    await label.click();
+test('a hovered link label remains reachable across the gap from its node', async ({ page }, testInfo) => {
+    const { explorer, edge, label, target } = await hoveredAliceLabel(page, { steps: 12 });
+    await testInfo.attach('hover-label-bridge', { body: await page.screenshot(), contentType: 'image/png' });
+    await page.mouse.click(target.x, target.y);
     await expect(explorer.locator('.statement-details h3')).toHaveText('knows');
+});
+
+test('slow pointer travel and reversals keep a hovered label until canvas exit', async ({ page }) => {
+    const { explorer, alice, edge, label, target } = await hoveredAliceLabel(page, { steps: 36 });
+    const nodeCenter = await svgNodeCenter(alice);
+    for (let reversal = 0; reversal < 3; reversal++) {
+        await page.mouse.move(nodeCenter.x, nodeCenter.y, { steps: 24 });
+        await expect(edge).toHaveClass(/show-label/);
+        await page.mouse.move(target.x, target.y, { steps: 24 });
+        await expect(edge).toHaveClass(/show-label/);
+        await expect(label).toHaveCSS('opacity', '1');
+        const hit = await pointerHit(page, target);
+        expect(hit).toMatchObject({ tag: 'text', text: 'knows' });
+    }
+    const canvas = explorer.locator('svg.graph-canvas');
+    const bounds = await canvas.evaluate((element) => {
+        const { right, top } = element.getBoundingClientRect();
+        return { x: right + 2, y: top + 20 };
+    });
+    await page.mouse.move(bounds.x, bounds.y, { steps: 1 });
+    await expect(edge).not.toHaveClass(/show-label/);
+    await expect(canvas).not.toHaveClass(/has-active/);
+});
+
+test('reduced-motion pointer travel still reaches the hovered relation label', async ({ page }, testInfo) => {
+    const { explorer, target } = await hoveredAliceLabel(page, { reducedMotion: 'reduce', steps: 36 });
+    await testInfo.attach('reduced-motion-hover-label', { body: await page.screenshot(), contentType: 'image/png' });
+    await page.mouse.click(target.x, target.y);
+    await expect(explorer.locator('.statement-details h3')).toHaveText('knows');
+});
+
+test('hover travels from an incident curve through its leader to the label', async ({ page }) => {
+    const { explorer, alice, edge, target } = await hoveredAliceLabel(page);
+    const edgeId = await edge.getAttribute('data-edge-id');
+    const aliceId = await alice.getAttribute('data-node-id');
+    const nodeCenter = await svgNodeCenter(alice);
+    await page.mouse.move(nodeCenter.x, nodeCenter.y, { steps: 12 });
+    const curvePoint = await hoveredIncidentCurvePoint(explorer, edgeId, aliceId);
+    expect(curvePoint, 'the hovered edge has a visible point inside Alice\'s hover-owned curve').not.toBeNull();
+    await page.mouse.move(curvePoint.x, curvePoint.y, { steps: 12 });
+    const curveHit = await pointerHit(page, curvePoint);
+    expect(curveHit).toMatchObject({ edgeId, owner: aliceId });
+    expect(curveHit.title).toContain('Alice — knows → Bob');
+    await expect(edge).toHaveClass(/show-label/);
+
+    const leaderPoint = await edge.locator('.label-leader').evaluate((line) => {
+        const matrix = line.getScreenCTM();
+        const start = new DOMPoint(Number(line.getAttribute('x1')), Number(line.getAttribute('y1'))).matrixTransform(matrix);
+        const end = new DOMPoint(Number(line.getAttribute('x2')), Number(line.getAttribute('y2'))).matrixTransform(matrix);
+        return { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+    });
+    await page.mouse.move(leaderPoint.x, leaderPoint.y, { steps: 12 });
+    await expect(edge).toHaveClass(/show-label/);
+    const leaderHit = await pointerHit(page, leaderPoint);
+    expect(leaderHit).toMatchObject({ edgeId, owner: aliceId });
+    expect(leaderHit.title).toContain('Alice — knows → Bob');
+
+    const labelTarget = await svgTextCenter(edge.locator('text'));
+    await page.mouse.move(labelTarget.x, labelTarget.y, { steps: 12 });
+    await expect(edge).toHaveClass(/show-label/);
+    const labelHit = await pointerHit(page, labelTarget);
+    expect(labelHit).toMatchObject({ tag: 'text', text: 'knows', edgeId, owner: aliceId });
+    expect(labelHit.title).toContain('Alice — knows → Bob');
+    await expect(label).toHaveCSS('opacity', '1');
+    await page.mouse.click(labelTarget.x, labelTarget.y);
+    await expect(explorer.locator('.statement-details h3')).toHaveText('knows');
+});
+
+test('moving to an unrelated node clears Alice and preserves unrelated edge picking', async ({ page }) => {
+    const explorer = await openAliceGraph(page);
+    await loadAllStatements(explorer);
+    await page.keyboard.press('Escape');
+    await expect(explorer.locator('.graph-node.is-focused')).toHaveCount(0);
+    const alice = explorer.locator('.graph-node').filter({ has: page.locator('text', { hasText: 'Alice' }) }).first();
+    const other = explorer.locator('.graph-node').filter({ has: page.locator('text', { hasText: 'Other' }) }).first();
+    await expect(other).toBeAttached();
+    const aliceEdge = explorer.locator('.edge', { has: page.locator('title', { hasText: 'Alice — knows → Bob' }) });
+    const otherEdge = explorer.locator('.edge', { has: page.locator('title', { hasText: 'Other — connects → Remote' }) });
+
+    await alice.hover();
+    await expect(aliceEdge).toHaveClass(/show-label/);
+    await other.hover();
+    await expect(aliceEdge).not.toHaveClass(/show-label/);
+    await expect(otherEdge).toHaveClass(/show-label/);
+
+    const otherId = await other.getAttribute('data-node-id');
+    const edgePoint = await besideEdge(page, 'Other — connects → Remote', 0);
+    await page.mouse.move(edgePoint.x, edgePoint.y, { steps: 8 });
+    await expect(explorer.locator('svg.graph-canvas')).toHaveClass(/has-edge-hover/);
+    const hit = await pointerHit(page, edgePoint);
+    expect(hit.owner).toBe(otherId);
+    expect(hit.title).toContain('Other — connects → Remote');
+    await page.mouse.click(edgePoint.x, edgePoint.y);
+    const card = explorer.locator('.statement-details');
+    await expect(card.locator('h3')).toHaveText('connects');
+    await expect(card.locator('.statement-details-triple')).toHaveText('Other→Remote');
+});
+
+test('the hover-only bridge still pans and double-click zooms as empty canvas', async ({ page }) => {
+    const { explorer, alice, aliceId } = await hoveredAliceLabel(page);
+    const canvas = explorer.locator('svg.graph-canvas');
+    const gap = await hoverBridgeGap(explorer, aliceId);
+    expect(gap, 'a pointer gap exists inside the transparent hover bridge').not.toBeNull();
+    expect(gap.edgeDistance).toBeGreaterThan(12);
+    const gapHit = await pointerHit(page, gap);
+    expect(gapHit).toMatchObject({ owner: aliceId, bridge: true });
+
+    const initialTransform = await graphLayerTransform(explorer);
+    const canvasBounds = await canvas.evaluate((element) => {
+        const { left, top, right, bottom } = element.getBoundingClientRect();
+        return { left, top, right, bottom };
+    });
+    const destination = { x: gap.x + 72, y: gap.y + 48 };
+    expect(destination.x).toBeLessThan(canvasBounds.right - 12);
+    expect(destination.y).toBeLessThan(canvasBounds.bottom - 12);
+    await page.mouse.move(gap.x, gap.y, { steps: 1 });
+    await page.mouse.down();
+    await page.mouse.move(destination.x, destination.y, { steps: 8 });
+    await page.mouse.up();
+    await expect.poll(() => graphLayerTransform(explorer)).not.toBe(initialTransform);
+    await expect(explorer.locator('.statement-details')).toHaveCount(0);
+
+    await alice.hover();
+    const zoomGap = await hoverBridgeGap(explorer, aliceId);
+    expect(zoomGap).not.toBeNull();
+    const layer = canvas.locator(':scope > g');
+    const scaleBefore = await layer.evaluate((element) => element.getScreenCTM().a);
+    await page.mouse.move(zoomGap.x, zoomGap.y, { steps: 1 });
+    await page.mouse.dblclick(zoomGap.x, zoomGap.y);
+    await expect.poll(() => layer.evaluate((element) => element.getScreenCTM().a)).toBeGreaterThan(scaleBefore * 1.4);
 });
 
 test('clicking an empty hovered-label bridge keeps the canvas background behavior', async ({ page }) => {
