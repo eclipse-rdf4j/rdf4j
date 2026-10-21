@@ -26,10 +26,14 @@ import java.util.Arrays;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
+import org.apache.commons.compress.compressors.bzip2.BZip2CompressorOutputStream;
+import org.eclipse.rdf4j.rio.helpers.RioCompression;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockFilterConfig;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.tukaani.xz.LZMA2Options;
+import org.tukaani.xz.XZOutputStream;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletRequest;
@@ -303,6 +307,45 @@ class HttpCompressionFilterTest {
 	}
 
 	@Test
+	void autodetectsBzip2RequestBodyWithoutContentEncoding() throws Exception {
+		String turtle = "<urn:s> <urn:p> <urn:o> .";
+		MockHttpServletRequest request = new MockHttpServletRequest("POST",
+				"/rdf4j-server/repositories/mem/statements");
+		request.setContentType("text/turtle");
+		request.setContent(bzip2(turtle));
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		new HttpCompressionFilter().doFilter(request, response, (servletRequest, servletResponse) -> assertThat(
+				new String(servletRequest.getInputStream().readAllBytes(), StandardCharsets.UTF_8)).isEqualTo(turtle));
+
+		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_OK);
+	}
+
+	@Test
+	void mapsDecoderMemoryLimitToPayloadTooLarge() throws Exception {
+		String previous = System.getProperty(RioCompression.MAX_DECODER_MEMORY_KIB_PROPERTY);
+		System.setProperty(RioCompression.MAX_DECODER_MEMORY_KIB_PROPERTY, "1");
+		try {
+			MockHttpServletRequest request = new MockHttpServletRequest("POST",
+					"/rdf4j-server/repositories/mem/statements");
+			request.setContentType("text/turtle");
+			request.setContent(xz("<urn:s> <urn:p> <urn:o> ."));
+			MockHttpServletResponse response = new MockHttpServletResponse();
+
+			new HttpCompressionFilter().doFilter(request, response,
+					(servletRequest, servletResponse) -> servletRequest.getInputStream().readAllBytes());
+
+			assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+		} finally {
+			if (previous == null) {
+				System.clearProperty(RioCompression.MAX_DECODER_MEMORY_KIB_PROPERTY);
+			} else {
+				System.setProperty(RioCompression.MAX_DECODER_MEMORY_KIB_PROPERTY, previous);
+			}
+		}
+	}
+
+	@Test
 	void doesNotCompressWhenContentTypeIsExcludedAfterOutputStreamIsRequested() throws Exception {
 		MockHttpServletRequest request = new MockHttpServletRequest("GET",
 				"/rdf4j-server/repositories/mem/statements");
@@ -414,6 +457,20 @@ class HttpCompressionFilterTest {
 	}
 
 	@Test
+	void rejectsBzip2AsExplicitRequestContentEncoding() throws Exception {
+		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/rdf4j-server/repositories/mem");
+		request.addHeader("Content-Encoding", "bzip2");
+		request.setContent(bzip2("query=ASK%7B%7D"));
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		new HttpCompressionFilter().doFilter(request, response,
+				(servletRequest,
+						servletResponse) -> fail("Unsupported Content-Encoding should not reach the application"));
+
+		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_UNSUPPORTED_MEDIA_TYPE);
+	}
+
+	@Test
 	void skipsDisabledResponseEncodingDuringNegotiation() {
 		String previousValue = System.getProperty(DISABLED_ENCODINGS_PROPERTY);
 		System.setProperty(DISABLED_ENCODINGS_PROPERTY, "br");
@@ -500,6 +557,22 @@ class HttpCompressionFilterTest {
 	private static byte[] gzip(String body) throws IOException {
 		ByteArrayOutputStream buffer = new ByteArrayOutputStream();
 		try (GZIPOutputStream outputStream = new GZIPOutputStream(buffer)) {
+			outputStream.write(body.getBytes(StandardCharsets.UTF_8));
+		}
+		return buffer.toByteArray();
+	}
+
+	private static byte[] bzip2(String body) throws IOException {
+		ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+		try (BZip2CompressorOutputStream outputStream = new BZip2CompressorOutputStream(buffer)) {
+			outputStream.write(body.getBytes(StandardCharsets.UTF_8));
+		}
+		return buffer.toByteArray();
+	}
+
+	private static byte[] xz(String body) throws IOException {
+		ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+		try (XZOutputStream outputStream = new XZOutputStream(buffer, new LZMA2Options())) {
 			outputStream.write(body.getBytes(StandardCharsets.UTF_8));
 		}
 		return buffer.toByteArray();

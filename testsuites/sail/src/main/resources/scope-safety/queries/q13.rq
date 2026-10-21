@@ -1,0 +1,5 @@
+SELECT * WHERE {
+  VALUES ?x { "1" "2" }
+  VALUES (?x ?y) { ("1" "yes") ("2" "no") }
+  FILTER(?y = "yes")
+}

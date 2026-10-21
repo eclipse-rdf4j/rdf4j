@@ -1,0 +1,3 @@
+# Unified-diff context must preserve the generator's whitespace exactly.
+# Java source whitespace is still checked by the project formatter.
+*.diff -whitespace

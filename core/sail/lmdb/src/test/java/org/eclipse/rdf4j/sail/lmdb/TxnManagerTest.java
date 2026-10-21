@@ -14,7 +14,11 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.lwjgl.system.MemoryStack.stackPush;
@@ -29,8 +33,10 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxreaders;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
+import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -41,17 +47,205 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
+import org.eclipse.rdf4j.http.client.QueryExecutionContext;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 
 public class TxnManagerTest {
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void closedUnexpiredDeadlineWaitsForNativeWriter(boolean capturedContext, @TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET);
+				ExecutorService executor = Executors.newSingleThreadExecutor();
+				QueryExecutionDeadline deadline = QueryExecutionDeadline.start(TimeUnit.MINUTES.toMillis(1))) {
+			QueryExecutionContext.ReplayContext context;
+			try (QueryExecutionDeadline.Scope ignored = deadline.enter()) {
+				context = QueryExecutionContext.captureReplayContext();
+			}
+			deadline.close();
+			assertEquals(Long.MAX_VALUE, deadline.remainingNanos());
+			assertFalse(deadline.isExpired());
+			AtomicReference<Thread> readerThread = new AtomicReference<>();
+			CountDownLatch started = new CountDownLatch(1);
+			long writeStamp = fixture.manager.lockManager().writeLock();
+			Future<Long> reader;
+			try {
+				reader = executor.submit(() -> {
+					readerThread.set(Thread.currentThread());
+					Supplier<Long> read = () -> {
+						assertSame(deadline, QueryExecutionDeadline.current());
+						started.countDown();
+						return nativeReadTransactionId(fixture.manager);
+					};
+					if (capturedContext) {
+						return context.get(read);
+					}
+					try (QueryExecutionDeadline.Scope ignored = deadline.enter()) {
+						return read.get();
+					}
+				});
+				assertTrue(started.await(5, TimeUnit.SECONDS));
+				awaitWaitingIn(readerThread.get(), "java.util.concurrent.locks.StampedLock", "acquireRead");
+				assertFalse(reader.isDone(), "An unexpired closed deadline must wait while the native writer is held");
+			} finally {
+				fixture.manager.lockManager().unlockWrite(writeStamp);
+			}
+			assertTrue(reader.get(5, TimeUnit.SECONDS) >= 0L,
+					"The reader must start a native transaction after release");
+			assertFalse(fixture.manager.lockManager().isReaderActive());
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void expiredClosedDeadlineRejectsNativeRead(boolean capturedContext, @TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET);
+				ExecutorService executor = Executors.newSingleThreadExecutor();
+				QueryExecutionDeadline deadline = QueryExecutionDeadline.start(1)) {
+			QueryExecutionContext.ReplayContext context;
+			CountDownLatch expired = new CountDownLatch(1);
+			deadline.onExpiration(expired::countDown);
+			try (QueryExecutionDeadline.Scope ignored = deadline.enter()) {
+				context = QueryExecutionContext.captureReplayContext();
+			}
+			assertTrue(expired.await(5, TimeUnit.SECONDS));
+			deadline.close();
+			assertEquals(0L, deadline.remainingNanos());
+			assertTrue(deadline.isExpired());
+			long writeStamp = fixture.manager.lockManager().writeLock();
+			try {
+				Future<?> reader = executor.submit(() -> {
+					Supplier<Long> read = () -> {
+						assertSame(deadline, QueryExecutionDeadline.current());
+						return nativeReadTransactionId(fixture.manager);
+					};
+					if (capturedContext) {
+						return context.get(read);
+					}
+					try (QueryExecutionDeadline.Scope ignored = deadline.enter()) {
+						return read.get();
+					}
+				});
+				ExecutionException failure = assertThrows(ExecutionException.class,
+						() -> reader.get(5, TimeUnit.SECONDS));
+				assertInstanceOf(QueryInterruptedException.class, failure.getCause());
+				assertFalse(fixture.manager.lockManager().isReaderActive());
+			} finally {
+				fixture.manager.lockManager().unlockWrite(writeStamp);
+			}
+		}
+	}
+
+	private static long nativeReadTransactionId(TxnManager manager) {
+		try {
+			return manager.doWith((stack, txn) -> {
+				assertNotEquals(0L, txn, "The barrier must admit an actual native transaction");
+				return mdb_txn_id(txn);
+			});
+		} catch (IOException failure) {
+			throw new UncheckedIOException(failure);
+		}
+	}
+
+	@Test
+	void ordinaryAdmissionReclaimsParkedReadersAfterWriteBarrierReleases(@TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET);
+				ExecutorService executor = Executors.newSingleThreadExecutor()) {
+			fixture.hold(TxnManager.POOL_SIZE - 1);
+			AtomicInteger reclaimed = new AtomicInteger();
+			for (TxnManager.Txn txn : fixture.readers) {
+				txn.setIdleReaderReclaimer(() -> {
+					txn.setIdleReaderReclaimer(null);
+					txn.close();
+					reclaimed.incrementAndGet();
+					return true;
+				});
+			}
+			CountDownLatch failedPressureScan = new CountDownLatch(1);
+			CountDownLatch resumeAdmission = new CountDownLatch(1);
+			fixture.manager.beforeBlockingReaderAdmissionForTest = () -> {
+				failedPressureScan.countDown();
+				try {
+					await(resumeAdmission);
+				} catch (IOException failure) {
+					throw new SailException(failure);
+				}
+			};
+			long writeStamp = fixture.manager.lockManager().writeLock();
+			Future<TxnManager.ReaderReservation> waiter = null;
+			try {
+				waiter = executor.submit(() -> fixture.manager.reserveReadTxn(false));
+				assertTrue(failedPressureScan.await(5, TimeUnit.SECONDS),
+						"The held native write barrier must prevent the final pressure scan");
+				assertEquals(0, reclaimed.get(), "No native reader may be reclaimed under the writer barrier");
+				fixture.manager.lockManager().unlockWrite(writeStamp);
+				writeStamp = 0L;
+				resumeAdmission.countDown();
+				try (TxnManager.ReaderReservation reservation = waiter.get(5, TimeUnit.SECONDS);
+						TxnManager.Txn acquired = reservation.start()) {
+					assertNotEquals(0L, acquired.get());
+					assertTrue(reclaimed.get() > 0,
+							"Admission must retry reclamation after the native write barrier releases");
+				}
+			} finally {
+				if (writeStamp != 0L) {
+					fixture.manager.lockManager().unlockWrite(writeStamp);
+				}
+				resumeAdmission.countDown();
+				if (waiter != null && !waiter.isDone()) {
+					waiter.cancel(true);
+				}
+				fixture.manager.beforeBlockingReaderAdmissionForTest = null;
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(value = TxnManager.Mode.class, names = { "RESET", "ABORT" })
+	void underReadAdmissionReclaimsParkedReadersInsideCallerBarrier(TxnManager.Mode mode, @TempDir Path dataDir)
+			throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, mode)) {
+			fixture.hold(TxnManager.POOL_SIZE - 1);
+			AtomicInteger reclaimed = new AtomicInteger();
+			for (TxnManager.Txn txn : fixture.readers) {
+				txn.setIdleReaderReclaimer(() -> {
+					assertTrue(fixture.manager.lockManager().isReaderActive(),
+							"Native reclamation must remain inside the caller's access interval");
+					txn.setIdleReaderReclaimer(null);
+					txn.close();
+					reclaimed.incrementAndGet();
+					return true;
+				});
+			}
+			long readStamp = fixture.manager.acquireReadBarrier();
+			try {
+				try (TxnManager.Txn acquired = fixture.manager.createReadTxnUnderReadLock()) {
+					assertNotEquals(0L, acquired.get());
+					assertTrue(reclaimed.get() > 0);
+					assertTrue(fixture.manager.lockManager().isReaderActive(),
+							"Admission must retain the caller's original native access interval");
+				}
+			} finally {
+				fixture.manager.lockManager().unlockRead(readStamp);
+			}
+		}
+	}
 
 	@Test
 	public void createReadTxnBlocksWhenPoolIsExhausted(@TempDir Path dataDir) throws Exception {
@@ -325,14 +519,18 @@ public class TxnManagerTest {
 	@Test
 	void priorityWaitersAreInterruptedAndWokenOnClose(@TempDir Path dataDir) throws Exception {
 		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET);
-				ExecutorService executor = Executors.newFixedThreadPool(3)) {
+				ExecutorService executor = Executors.newFixedThreadPool(4)) {
 			fixture.hold(TxnManager.POOL_SIZE - 1);
 			CountDownLatch entered = new CountDownLatch(1);
 			CountDownLatch release = new CountDownLatch(1);
 			try {
 				Future<Void> holder = executor.submit(() -> fixture.manager.doWithPriority((stack, txn) -> {
+					long transactionId = mdb_txn_id(txn);
+					assertNotEquals(0L, txn, "the priority callback must hold a live native transaction");
 					entered.countDown();
 					await(release);
+					assertEquals(transactionId, mdb_txn_id(txn),
+							"close must keep the active native transaction alive until its callback exits");
 					return null;
 				}));
 				assertTrue(entered.await(5, TimeUnit.SECONDS));
@@ -355,15 +553,25 @@ public class TxnManagerTest {
 				Future<Long> ordinary = executor.submit(() -> fixture.manager.doWith((stack, txn) -> txn));
 				assertThrows(TimeoutException.class, () -> priority.get(200, TimeUnit.MILLISECONDS));
 				assertThrows(TimeoutException.class, () -> ordinary.get(200, TimeUnit.MILLISECONDS));
-				fixture.closeManager();
+				CountDownLatch closeStarted = new CountDownLatch(1);
+				Future<Void> closing = executor.submit(() -> {
+					closeStarted.countDown();
+					fixture.closeManager();
+					return null;
+				});
+				assertTrue(closeStarted.await(5, TimeUnit.SECONDS));
 				for (Future<Long> waiter : List.of(priority, ordinary)) {
 					ExecutionException failure = assertThrows(ExecutionException.class,
 							() -> waiter.get(5, TimeUnit.SECONDS));
 					assertTrue(failure.getCause() instanceof IOException);
 					assertTrue(failure.getCause().getMessage().contains("closed"));
 				}
+				assertFalse(holder.isDone(), "close must still be waiting for its active native holder");
+				assertThrows(TimeoutException.class, () -> closing.get(200, TimeUnit.MILLISECONDS),
+						"close must retain the exclusive native barrier until the holder exits");
 				release.countDown();
 				holder.get(5, TimeUnit.SECONDS);
+				closing.get(5, TimeUnit.SECONDS);
 			} finally {
 				release.countDown();
 				executor.shutdownNow();
@@ -396,6 +604,263 @@ public class TxnManagerTest {
 		}
 	}
 
+	@ParameterizedTest
+	@EnumSource(value = TxnManager.Mode.class, names = { "RESET", "ABORT" })
+	void immediateScopedReadersDoNotUseReservedCapacity(TxnManager.Mode mode, @TempDir Path dataDir)
+			throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, mode)) {
+			fixture.hold(TxnManager.POOL_SIZE - 1);
+			AtomicBoolean entered = new AtomicBoolean();
+			TxnManager.ReaderStartScopeFactory scope = () -> {
+				entered.set(true);
+				return () -> {
+				};
+			};
+			assertNull(fixture.manager.tryDoWith((stack, txn) -> Boolean.TRUE, scope));
+			assertFalse(entered.get(), "Unavailable ordinary capacity must not enter the native admission scope");
+			fixture.manager.doWithPriority((stack, txn) -> {
+				assertNull(fixture.manager.tryDoWith((nestedStack, nestedTxn) -> Boolean.TRUE, scope),
+						"An immediate caller must also decline when the priority reader is held by its own thread");
+				return null;
+			});
+			fixture.releaseOne();
+			AtomicBoolean scopeClosed = new AtomicBoolean();
+			assertEquals(Boolean.FALSE, fixture.manager.tryDoWith((stack, txn) -> {
+				assertNotEquals(0L, txn);
+				assertTrue(scopeClosed.get(), "Application work must run after the reader-start scope closes");
+				return Boolean.FALSE;
+			}, () -> () -> scopeClosed.set(true)),
+					"A false callback result must remain distinct from unavailable capacity");
+			fixture.hold(1);
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(value = TxnManager.Mode.class, names = { "RESET", "ABORT" })
+	void immediateScopedReadersHonorQueuedOrdinaryFamilies(TxnManager.Mode mode, @TempDir Path dataDir)
+			throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, mode);
+				ExecutorService executor = Executors.newSingleThreadExecutor()) {
+			fixture.hold(TxnManager.POOL_SIZE - 1);
+			AtomicReference<Thread> waiter = new AtomicReference<>();
+			CountDownLatch started = new CountDownLatch(1);
+			Future<TxnManager.Txn[]> family = executor.submit(() -> {
+				waiter.set(Thread.currentThread());
+				started.countDown();
+				return fixture.manager.createReadTxnPinnedFamily(2, () -> 0L);
+			});
+			boolean firstPermitReleased = false;
+			try {
+				assertTrue(started.await(5, TimeUnit.SECONDS));
+				awaitWaitingIn(waiter.get(), "java.util.concurrent.Semaphore", "tryAcquire");
+				fixture.releaseOne();
+				firstPermitReleased = true;
+				assertFalse(family.isDone(), "The queued family requires two permits, and only one is free");
+				assertNull(fixture.manager.tryDoWith((stack, txn) -> Boolean.TRUE, () -> () -> {
+				}),
+						"Immediate admission must not take the one free permit ahead of a queued ordinary family");
+			} finally {
+				if (!firstPermitReleased) {
+					fixture.releaseOne();
+				}
+				fixture.releaseOne();
+				for (TxnManager.Txn txn : family.get(5, TimeUnit.SECONDS)) {
+					txn.close();
+				}
+			}
+			fixture.hold(2);
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(value = TxnManager.Mode.class, names = { "RESET", "ABORT" })
+	void immediateScopedFailuresReturnOrdinaryPermits(TxnManager.Mode mode, @TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, mode)) {
+			fixture.hold(TxnManager.POOL_SIZE - 2);
+			IOException scopeFailure = new IOException("reader-start scope failed");
+			assertSame(scopeFailure, assertThrows(IOException.class,
+					() -> fixture.manager.tryDoWith((stack, txn) -> Boolean.TRUE, () -> {
+						throw scopeFailure;
+					})));
+			AtomicBoolean scopeClosed = new AtomicBoolean();
+			IllegalStateException callbackFailure = new IllegalStateException("copied payload decode failed");
+			assertSame(callbackFailure, assertThrows(IllegalStateException.class,
+					() -> fixture.manager.tryDoWith((stack, txn) -> {
+						assertTrue(scopeClosed.get());
+						throw callbackFailure;
+					}, () -> () -> scopeClosed.set(true))));
+			assertEquals(Boolean.TRUE, fixture.manager.tryDoWith((stack, txn) -> Boolean.TRUE, () -> () -> {
+			}),
+					"Every rejected scope or failed callback must return the only free ordinary permit");
+			fixture.hold(1);
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void immediateScopedBarrierCancellationReturnsOrdinaryPermit(boolean deadlineExpires, @TempDir Path dataDir)
+			throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET);
+				ExecutorService executor = Executors.newSingleThreadExecutor();
+				QueryExecutionDeadline deadline = deadlineExpires ? QueryExecutionDeadline.start(1_000) : null) {
+			fixture.hold(TxnManager.POOL_SIZE - 2);
+			AtomicReference<Thread> readerThread = new AtomicReference<>();
+			AtomicBoolean interrupted = new AtomicBoolean();
+			CountDownLatch started = new CountDownLatch(1);
+			long writeStamp = fixture.manager.lockManager().writeLock();
+			Future<Boolean> reader = null;
+			try {
+				reader = executor.submit(() -> {
+					readerThread.set(Thread.currentThread());
+					try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
+						started.countDown();
+						return fixture.manager.tryDoWith((stack, txn) -> Boolean.TRUE, () -> () -> {
+						});
+					} finally {
+						interrupted.set(Thread.currentThread().isInterrupted());
+					}
+				});
+				assertTrue(started.await(5, TimeUnit.SECONDS));
+				awaitWaitingIn(readerThread.get(), TxnManager.class.getName(), "acquireReadBarrier");
+				if (!deadlineExpires) {
+					readerThread.get().interrupt();
+				}
+				Future<Boolean> blocked = reader;
+				ExecutionException failure = assertThrows(ExecutionException.class,
+						() -> blocked.get(5, TimeUnit.SECONDS));
+				if (deadlineExpires) {
+					assertInstanceOf(QueryInterruptedException.class, failure.getCause());
+				} else {
+					assertInstanceOf(InterruptedException.class,
+							assertInstanceOf(SailException.class, failure.getCause()).getCause());
+					assertTrue(interrupted.get(), "Interrupted admission must restore the worker's interrupt status");
+				}
+			} finally {
+				fixture.manager.lockManager().unlockWrite(writeStamp);
+				if (reader != null && !reader.isDone()) {
+					Thread worker = readerThread.get();
+					if (worker != null) {
+						worker.interrupt();
+					}
+					try {
+						reader.get(5, TimeUnit.SECONDS);
+					} catch (ExecutionException expected) {
+						assertTrue(expected.getCause() instanceof SailException,
+								"Cleanup may only drain the expected canceled admission");
+					}
+				}
+			}
+			assertEquals(Boolean.TRUE, fixture.manager.tryDoWith((stack, txn) -> Boolean.TRUE, () -> () -> {
+			}),
+					"Canceled barrier admission must return the only free ordinary permit");
+			fixture.hold(1);
+		}
+	}
+
+	@Test
+	void immediateScopedCloseDuringBarrierAdmissionCleansUp(@TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET);
+				ExecutorService executor = Executors.newSingleThreadExecutor()) {
+			AtomicReference<Thread> readerThread = new AtomicReference<>();
+			CountDownLatch started = new CountDownLatch(1);
+			long writeStamp = fixture.manager.lockManager().writeLock();
+			Future<Boolean> reader;
+			try {
+				reader = executor.submit(() -> {
+					readerThread.set(Thread.currentThread());
+					started.countDown();
+					return fixture.manager.tryDoWith((stack, txn) -> Boolean.TRUE, () -> () -> {
+					});
+				});
+				assertTrue(started.await(5, TimeUnit.SECONDS));
+				awaitWaitingIn(readerThread.get(), TxnManager.class.getName(), "acquireReadBarrier");
+				fixture.manager.closeUnderExclusiveLock();
+				fixture.managerClosed = true;
+			} finally {
+				fixture.manager.lockManager().unlockWrite(writeStamp);
+			}
+			ExecutionException failure = assertThrows(ExecutionException.class, () -> reader.get(5, TimeUnit.SECONDS));
+			assertEquals("Transaction manager is closed",
+					assertInstanceOf(IOException.class, failure.getCause()).getMessage());
+			assertFalse(fixture.manager.lockManager().isReaderActive(),
+					"A rejected native start must release its read barrier");
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(value = TxnManager.Mode.class, names = { "RESET", "ABORT" })
+	void immediateScopedAdmissionRejectsInterruptAndClosedManager(TxnManager.Mode mode, @TempDir Path dataDir)
+			throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, mode)) {
+			AtomicBoolean entered = new AtomicBoolean();
+			TxnManager.ReaderStartScopeFactory scope = () -> {
+				entered.set(true);
+				return () -> {
+				};
+			};
+			Thread.currentThread().interrupt();
+			try {
+				IOException failure = assertThrows(IOException.class,
+						() -> fixture.manager.tryDoWith((stack, txn) -> Boolean.TRUE, scope));
+				assertInstanceOf(InterruptedException.class, failure.getCause());
+				assertTrue(Thread.currentThread().isInterrupted());
+			} finally {
+				Thread.interrupted();
+			}
+			fixture.hold(TxnManager.POOL_SIZE - 1);
+			fixture.closeManager();
+			IOException failure = assertThrows(IOException.class,
+					() -> fixture.manager.tryDoWith((stack, txn) -> Boolean.TRUE, scope));
+			assertEquals("Transaction manager is closed", failure.getMessage());
+			assertFalse(entered.get(), "Rejected admission must never enter a reader-start scope");
+		}
+	}
+
+	@Test
+	void immediateScopedNativeStartFailureReturnsOrdinaryPermit(@TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.ABORT)) {
+			fixture.hold(TxnManager.POOL_SIZE - 2);
+			long firstForeign = beginReadTxn(fixture.env);
+			long secondForeign = 0L;
+			try {
+				secondForeign = beginReadTxn(fixture.env);
+				IOException failure = assertThrows(IOException.class,
+						() -> fixture.manager.tryDoWith((stack, txn) -> Boolean.TRUE, () -> () -> {
+						}));
+				assertTrue(failure.getMessage().contains("MDB_READERS_FULL"));
+			} finally {
+				if (secondForeign != 0L) {
+					mdb_txn_abort(secondForeign);
+				}
+				mdb_txn_abort(firstForeign);
+			}
+			assertEquals(Boolean.TRUE, fixture.manager.tryDoWith((stack, txn) -> Boolean.TRUE, () -> () -> {
+			}));
+			fixture.hold(1);
+		}
+	}
+
+	/** Waits for the actual admission boundary, rather than assuming a scheduled worker has already queued. */
+	private static void awaitWaitingIn(Thread thread, String className, String methodName) {
+		long fixtureDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+		while (thread.isAlive()) {
+			Thread.State state = thread.getState();
+			if (methodName.equals("acquireReadBarrier") || state == Thread.State.BLOCKED
+					|| state == Thread.State.WAITING
+					|| state == Thread.State.TIMED_WAITING) {
+				for (StackTraceElement frame : thread.getStackTrace()) {
+					if (frame.getClassName().equals(className) && frame.getMethodName().equals(methodName)) {
+						return;
+					}
+				}
+			}
+			assertTrue(System.nanoTime() < fixtureDeadline,
+					"The worker must reach the held " + className + "." + methodName + " boundary");
+			Thread.yield();
+		}
+		throw new AssertionError("The worker ended before reaching " + className + "." + methodName);
+	}
+
 	private static void await(CountDownLatch latch) throws IOException {
 		try {
 			if (!latch.await(5, TimeUnit.SECONDS)) {
@@ -404,6 +869,25 @@ public class TxnManagerTest {
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			throw new IOException(e);
+		}
+	}
+
+	@Test
+	void recycledReaderHandleRejectsTheLeaseOfItsPreviousOwner(@TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET)) {
+			TxnManager.Txn first = fixture.manager.createReadTxn();
+			long lease = first.lease();
+			first.ensureSnapshotValid(lease);
+			first.close();
+			TxnManager.Txn second = fixture.manager.createReadTxn();
+			try {
+				assertSame(first, second, "RESET mode recycles the pooled reader handle");
+				assertThrows(SailException.class, () -> second.ensureSnapshotValid(lease),
+						"a record iterator of the previous owner must not touch the recycled reader");
+				second.ensureSnapshotValid(second.lease());
+			} finally {
+				second.close();
+			}
 		}
 	}
 
@@ -424,6 +908,10 @@ public class TxnManagerTest {
 			}
 		}
 
+		private void releaseOne() {
+			readers.removeLast().close();
+		}
+
 		private void closeManager() {
 			if (!managerClosed) {
 				manager.close();
@@ -436,6 +924,166 @@ public class TxnManagerTest {
 			readers.forEach(TxnManager.Txn::close);
 			closeManager();
 			mdb_env_close(env);
+		}
+	}
+
+	@Test
+	public void closeDoesNotUseTransactionReadLockAsReaderBarrier(@TempDir Path dataDir) throws Exception {
+		long env = openEnv(dataDir, 2);
+		TxnManager manager = new TxnManager(env, TxnManager.Mode.ABORT);
+		int available = manager.availableReadTxnSlots(2, 0);
+		TxnManager.Txn txn = manager.createReadTxn();
+		long readStamp = txn.lockManager().readLock();
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		Future<?> closeTask = executor.submit(txn::close);
+		try {
+			closeTask.get(1, TimeUnit.SECONDS);
+			assertEquals(0L, txn.get(), "a closed transaction must not expose its aborted native handle");
+			assertEquals(available, manager.availableReadTxnSlots(2, 0),
+					"Txn.close() must return the reader permit while the transaction read lock remains held");
+		} finally {
+			txn.lockManager().unlockRead(readStamp);
+			if (!closeTask.isDone()) {
+				closeTask.get(5, TimeUnit.SECONDS);
+			}
+			executor.shutdownNow();
+			manager.close();
+			mdb_env_close(env);
+		}
+	}
+
+	@Test
+	public void pinnedReadTxnFamilyReadsOneRevisionForEverySibling(@TempDir Path dataDir) throws Exception {
+		long env = openEnv(dataDir, 8);
+		TxnManager.Txn[] transactions = null;
+
+		try {
+			TxnManager txnManager = new TxnManager(env, TxnManager.Mode.RESET);
+			AtomicLong suppliedRevision = new AtomicLong(41);
+			transactions = txnManager.createReadTxnPinnedFamily(4, suppliedRevision::getAndIncrement);
+
+			assertEquals(42, suppliedRevision.get(), "the family must sample the data revision exactly once");
+			long snapshotId = mdb_txn_id(transactions[0].get());
+			for (TxnManager.Txn transaction : transactions) {
+				assertEquals(41, transaction.snapshotRevision());
+				assertEquals(snapshotId, mdb_txn_id(transaction.get()));
+			}
+		} finally {
+			if (transactions != null) {
+				for (int i = transactions.length - 1; i >= 0; i--) {
+					transactions[i].close();
+				}
+			}
+			mdb_env_close(env);
+		}
+	}
+
+	@Test
+	public void pinnedReadTxnClosesWhenRevisionSupplierThrows(@TempDir Path dataDir) throws Exception {
+		long env = openEnv(dataDir, 1);
+		TxnManager.Txn replacementTxn = null;
+
+		try {
+			TxnManager txnManager = new TxnManager(env, TxnManager.Mode.RESET);
+			IllegalStateException revisionFailure = new IllegalStateException("synthetic revision failure");
+
+			assertSame(revisionFailure,
+					assertThrows(IllegalStateException.class,
+							() -> txnManager.createReadTxnPinned(() -> {
+								throw revisionFailure;
+							})));
+
+			replacementTxn = txnManager.createReadTxn();
+		} finally {
+			if (replacementTxn != null) {
+				replacementTxn.close();
+			}
+			mdb_env_close(env);
+		}
+	}
+
+	@Test
+	void reusedPinnedReaderDoesNotRetainInvalidationOrDictionaryView(@TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET)) {
+			TxnManager manager = fixture.manager;
+			long version;
+			Object dictionaryView;
+			Object dictionaryGeneration = new Object();
+			try (TxnManager.Txn pinned = manager.createReadTxnPinned(() -> 41)) {
+				assertEquals(41, manager.minPinnedSnapshotRevision());
+				dictionaryView = pinned.valueLookupScope(dictionaryGeneration);
+				manager.deactivate();
+				manager.activate();
+				assertThrows(SailException.class, pinned::ensureSnapshotValid);
+				version = pinned.version();
+			}
+			assertEquals(Long.MAX_VALUE, manager.minPinnedSnapshotRevision());
+			try (TxnManager.Txn ordinary = manager.createReadTxn()) {
+				ordinary.ensureSnapshotValid();
+				assertEquals(-1, ordinary.snapshotRevision());
+				assertTrue(ordinary.version() > version, "reused readers must rebind cached cursors");
+				assertNotSame(dictionaryView, ordinary.valueLookupScope(dictionaryGeneration));
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(value = TxnManager.Mode.class, names = { "RESET", "ABORT" })
+	void readerReservationOwnsOnlyUnconsumedPermits(TxnManager.Mode mode, @TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, mode)) {
+			TxnManager manager = fixture.manager;
+			int available = manager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0);
+			TxnManager.ReaderReservation unused = manager.reserveReadTxnPinnedFamily(2);
+			assertEquals(available - 2, manager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0));
+			assertEquals(Long.MAX_VALUE, manager.minPinnedSnapshotRevision(),
+					"Admission must not capture a database revision");
+			unused.close();
+			unused.close();
+			assertEquals(available, manager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0));
+			assertThrows(IllegalStateException.class, () -> unused.openPinnedFamily(() -> 41));
+
+			TxnManager.Txn[] transactions;
+			try (TxnManager.ReaderReservation consumed = manager.reserveReadTxnPinnedFamily(2)) {
+				transactions = consumed.openPinnedFamily(() -> 42);
+				assertThrows(IllegalStateException.class, () -> consumed.openPinnedFamily(() -> 43));
+			}
+			try {
+				assertEquals(available - 2, manager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0),
+						"Closing a consumed reservation must leave the transactions' permits owned");
+				assertEquals(42, manager.minPinnedSnapshotRevision());
+			} finally {
+				for (TxnManager.Txn transaction : transactions) {
+					transaction.close();
+				}
+			}
+			assertEquals(available, manager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0));
+			assertEquals(Long.MAX_VALUE, manager.minPinnedSnapshotRevision());
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(value = TxnManager.Mode.class, names = { "RESET", "ABORT" })
+	void failedPinnedFamilyReturnsAllReservedReaderSlots(TxnManager.Mode mode, @TempDir Path dataDir)
+			throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, mode)) {
+			TxnManager manager = fixture.manager;
+			IllegalStateException failure = new IllegalStateException("synthetic family revision failure");
+			assertSame(failure, assertThrows(IllegalStateException.class,
+					() -> manager.createReadTxnPinnedFamily(4, () -> {
+						throw failure;
+					})));
+			assertEquals(TxnManager.POOL_SIZE - 1, manager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0));
+			TxnManager.Txn[] family = manager.createReadTxnPinnedFamily(TxnManager.POOL_SIZE - 1, () -> 42);
+			try {
+				assertEquals(0, manager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0));
+				assertEquals(42, manager.minPinnedSnapshotRevision());
+			} finally {
+				for (TxnManager.Txn transaction : family) {
+					transaction.close();
+				}
+			}
+			assertEquals(Long.MAX_VALUE, manager.minPinnedSnapshotRevision());
+			assertEquals(TxnManager.POOL_SIZE - 1, manager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0));
 		}
 	}
 

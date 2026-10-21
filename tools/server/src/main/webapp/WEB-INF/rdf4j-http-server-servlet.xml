@@ -33,10 +33,13 @@
 			</list>
 		</property>
 	</bean>
-	<bean id="rdf4jRepositoryManager" class="org.eclipse.rdf4j.repository.manager.LocalRepositoryManager" init-method="init" destroy-method="shutDown" scope="singleton">
-		<constructor-arg>
+	<!-- The bean class is a FactoryBean: it constructs a plain LocalRepositoryManager, or a
+	     TracingLocalRepositoryManager (OpenTelemetry-instrumented), depending on the
+	     org.eclipse.rdf4j.opentelemetry.enabled system property. Disabled by default. -->
+	<bean id="rdf4jRepositoryManager" class="org.eclipse.rdf4j.http.server.repository.manager.LocalRepositoryManagerFactoryBean" scope="singleton">
+		<property name="baseDir">
 			<bean factory-bean="commonAppConfig" factory-method="getDataDir" />
-		</constructor-arg>
+		</property>
 	</bean>
 	<!-- INTERCEPTORS -->
 	<bean id="rdf4jRepositoryInterceptor" class="org.eclipse.rdf4j.http.server.repository.RepositoryInterceptor" scope="request">
@@ -83,6 +86,7 @@
 			<props>
 				<prop key="/repositories/*/namespaces/*">rdf4jRepositoryNamespaceController</prop>
 				<prop key="/repositories/*/namespaces">rdf4jRepositoryNamespacesController</prop>
+				<prop key="/repositories/*/lmdb/strategies">rdf4jRepositoryLmdbStrategiesController</prop>
 				<prop key="/repositories/*/config">rdf4jRepositoryConfigController</prop>
 				<prop key="/repositories/*/contexts">rdf4jRepositoryContextsController</prop>
 				<prop key="/repositories/*/statements">rdf4jRepositoryStatementsController</prop>
@@ -143,4 +147,5 @@
 	<bean id="rdf4jRepositoryTransactionStartController" class="org.eclipse.rdf4j.http.server.repository.transaction.TransactionStartController">
 		<property name="externalUrl" value="${rdf4j.externalurl:#{null}}" />
 	</bean>
+	<bean id="rdf4jRepositoryLmdbStrategiesController" class="org.eclipse.rdf4j.common.webapp.system.LmdbForceableStrategiesController" />
 </beans>

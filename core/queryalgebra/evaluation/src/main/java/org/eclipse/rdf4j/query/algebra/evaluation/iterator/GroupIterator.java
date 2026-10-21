@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.collection.factory.api.BindingSetEntry;
 import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
@@ -43,6 +44,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.Avg;
@@ -99,6 +101,7 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 	private final Group group;
 
 	private final QueryEvaluationContext context;
+	private final Object solutionBoundary = new Object();
 
 	private final QueryEvaluationStep arguments;
 
@@ -128,6 +131,21 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 	public GroupIterator(EvaluationStrategy strategy, Group group, BindingSet parentBindings,
 			long iterationCacheSyncThreshold, QueryEvaluationContext context, ValueFactory vf, CollectionFactory cf)
 			throws QueryEvaluationException {
+		this(strategy, group, parentBindings, iterationCacheSyncThreshold, context, vf, cf,
+				strategy.precompile(group.getArg(), context));
+	}
+
+	@Experimental
+	public GroupIterator(EvaluationStrategy strategy, Group group, BindingSet parentBindings,
+			QueryEvaluationContext context, QueryEvaluationStep arguments) throws QueryEvaluationException {
+		this(strategy, group, parentBindings, 0, context, SimpleValueFactory.getInstance(),
+				new DefaultCollectionFactory(),
+				arguments);
+	}
+
+	private GroupIterator(EvaluationStrategy strategy, Group group, BindingSet parentBindings,
+			long iterationCacheSyncThreshold, QueryEvaluationContext context, ValueFactory vf, CollectionFactory cf,
+			QueryEvaluationStep arguments) throws QueryEvaluationException {
 		this.strategy = strategy;
 		this.group = group;
 		this.parentBindings = parentBindings;
@@ -136,7 +154,7 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 		this.context = context;
 		this.vf = vf;
 		this.cf = cf;
-		this.arguments = strategy.precompile(group.getArg(), context);
+		this.arguments = arguments;
 	}
 
 	/*---------*
@@ -304,11 +322,14 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 			Map<BindingSetKey, Entry> entries = cf.createGroupByMap();
 			// Make an optimized hash function valid during this query evaluation step.
 			ToIntFunction<BindingSet> hashMaker = cf.hashOfBindingSetFuntion(getValues);
+			QueryExecutionContext.ReplayCheckpoint checkpoint = QueryExecutionContext.replayCheckpoint();
 			while (!isClosed()) {
+				checkpoint.checkpoint();
 				QueryExecutionContext.throwIfHeavyOperatorExecutionDisabled(OPERATOR_NAME);
 				if (!iter.hasNext()) {
 					break;
 				}
+				checkpoint.checkpoint();
 				BindingSet sol = iter.next();
 				inputRows++;
 				if ((inputRows & (BUILD_CHECKPOINT_INTERVAL - 1)) == 0) {
@@ -328,7 +349,10 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 					entries.put(key, entry);
 				}
 
-				entry.addSolution(sol, aggregates);
+				try (var ignored = context.getBlankNodeAllocationScope()
+						.visitSolutionOccurrence(sol, solutionBoundary)) {
+					entry.addSolution(sol, aggregates);
+				}
 				aggregateEvalCount += aggregates.size();
 			}
 			Collection<Entry> values = entries.values();
@@ -477,7 +501,8 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 			Supplier<Predicate<Value>> predicate = createDistinctSingleValueTest(operator);
 			return new AggregatePredicateCollectorSupplier<>(agg, predicate, ValueCollector::new, ge.getName());
 		} else if (operator instanceof Max) {
-			MaxAggregate agg = new MaxAggregate(precompileUnaryArg(operator), shouldValueComparisonBeStrict());
+			MaxAggregate agg = new MaxAggregate(precompileUnaryArg(operator), shouldValueComparisonBeStrict(),
+					strategy.getQueryExecutionPolicy());
 			Supplier<Predicate<Value>> predicate = createDistinctSingleValueTest(operator);
 			return new AggregatePredicateCollectorSupplier<>(agg, predicate, ValueCollector::new, ge.getName());
 		} else if (operator instanceof Sum) {
@@ -560,16 +585,26 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 			AggregateOperator operator,
 			AggregateFunctionCall aggOperator, AggregateFunctionFactory factory) {
 		Supplier<Predicate<Value>> predicate = createDistinctSingleValueTest(operator);
-		AggregateFunction function = factory.buildFunction(precompileNAryArg(aggOperator).asUnaryEvaluator(0));
-		return new AggregatePredicateCollectorSupplier<>(function, predicate, factory::getCollector, ge.getName());
+		Function<BindingSet, Value> evaluator = precompileNAryArg(aggOperator).asUnaryEvaluator(0);
+		AggregateFunction function = factory.buildFunction(
+				bindings -> QueryExecutionContext.initializeExternalValue(evaluator.apply(bindings)));
+		return new AggregatePredicateCollectorSupplier<>((bindings, distinct, collector) -> {
+			QueryExecutionContext.initializeExternalBindings(bindings);
+			function.processAggregate(bindings, distinct, collector);
+		}, predicate, factory::getCollector, ge.getName());
 	}
 
 	private AggregatePredicateCollectorSupplier<?, ?> createNAryCustomAggregate(GroupElem ge,
 			AggregateOperator operator,
 			AggregateFunctionCall aggOperator, AggregateNAryFunctionFactory factory) {
 		Supplier<Predicate<List<Value>>> predicate = createDistinctTupleValueTest(operator);
-		var function = factory.buildFunction(precompileNAryArg(aggOperator));
-		return new AggregatePredicateCollectorSupplier<>(function, predicate, factory::getCollector, ge.getName());
+		BiFunction<Integer, BindingSet, Value> evaluator = precompileNAryArg(aggOperator);
+		var function = factory.buildFunction(
+				(index, bindings) -> QueryExecutionContext.initializeExternalValue(evaluator.apply(index, bindings)));
+		return new AggregatePredicateCollectorSupplier<>((bindings, distinct, collector) -> {
+			QueryExecutionContext.initializeExternalBindings(bindings);
+			function.processAggregate(bindings, distinct, collector);
+		}, predicate, factory::getCollector, ge.getName());
 	}
 
 	private void validateNAryAggregateArity(AggregateFunctionCall aggregateOperator,
@@ -773,7 +808,7 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 
 	private class MinAggregate extends AggregateFunction<ValueCollector, Value> {
 
-		private final ValueComparator comparator = new ValueComparator();
+		private final ValueComparator comparator = new ValueComparator(strategy.getQueryExecutionPolicy());
 
 		public MinAggregate(Function<BindingSet, Value> f, boolean strict) {
 			super(f);
@@ -797,10 +832,11 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 
 	private static class MaxAggregate extends AggregateFunction<ValueCollector, Value> {
 
-		private final ValueComparator comparator = new ValueComparator();
+		private final ValueComparator comparator;
 
-		public MaxAggregate(Function<BindingSet, Value> f, boolean strict) {
+		public MaxAggregate(Function<BindingSet, Value> f, boolean strict, QueryExecutionPolicy policy) {
 			super(f);
+			comparator = new ValueComparator(policy);
 			comparator.setStrict(strict);
 		}
 

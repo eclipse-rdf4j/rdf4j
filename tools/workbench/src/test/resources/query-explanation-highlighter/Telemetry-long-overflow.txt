@@ -1,0 +1,3 @@
+Join (resultSizeActual=0, expansionFactorActual=0)
+   StatementPattern (resultSizeActual=9.2233720368547E12M)
+   Service (resultSizeActual=1, remoteRequestCountActual=9.2233720368547E12M, remoteAskRequestCountActual=9.2233720368547E12M, remoteSelectRequestCountActual=1)

@@ -55,6 +55,7 @@ import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Models;
+import org.eclipse.rdf4j.model.util.VersionLabel;
 import org.eclipse.rdf4j.model.vocabulary.DC;
 import org.eclipse.rdf4j.model.vocabulary.DCTERMS;
 import org.eclipse.rdf4j.model.vocabulary.EARL;
@@ -115,23 +116,23 @@ public abstract class RDFWriterTest {
 
 	private final BNode bnodeUseAcrossContextsObject;
 
-	private final IRI uri1;
+	protected final IRI uri1;
 
-	private final IRI uri2;
+	protected final IRI uri2;
 
-	private final IRI uri3;
+	protected final IRI uri3;
 
-	private final IRI uri4;
+	protected final IRI uri4;
 
-	private final IRI uri5;
+	protected final IRI uri5;
 
-	private final TripleTerm tripleTerm1;
+	protected final TripleTerm tripleTerm1;
 
-	private final TripleTerm tripleTerm2;
+	protected final TripleTerm tripleTerm2;
 
-	private final TripleTerm tripleTerm3;
+	protected final TripleTerm tripleTerm3;
 
-	private final TripleTerm tripleTerm4;
+	protected final TripleTerm tripleTerm4;
 
 	private final Literal plainLit;
 
@@ -1854,6 +1855,114 @@ public abstract class RDFWriterTest {
 		// 2 statements without triple terms
 		// 5 reification statements using RDF 1.2, each translates to 4 RDF 1.1 statements
 		assertEquals(22, parsedOutput.size());
+	}
+
+	@Test
+	public void testRDF12FullTo11Conversion() throws IOException {
+		Model model = new LinkedHashModel();
+
+		BNode triple1Reifier = vf.createBNode();
+		BNode triple2Reifier = vf.createBNode();
+		BNode triple3Reifier = vf.createBNode();
+		BNode triple5Reifier = vf.createBNode();
+		BNode triple6Reifier = vf.createBNode();
+		Literal rtlLiteral = vf.createLiteral("שלום", "he", Literal.BaseDirection.RTL);
+
+		TripleTerm tripleTerm6 = vf.createTripleTerm(triple2Reifier, uri4, rtlLiteral);
+
+		model.add(vf.createStatement(triple1Reifier, RDF.REIFIES, tripleTerm1, uri4));
+		model.add(vf.createStatement(triple2Reifier, RDF.REIFIES, tripleTerm2, uri4));
+		model.add(vf.createStatement(triple3Reifier, RDF.REIFIES, tripleTerm3, uri4));
+		// Repetition of triple term to verify a single blank node for both
+		model.add(vf.createStatement(triple5Reifier, RDF.REIFIES, tripleTerm1, uri4));
+		model.add(vf.createStatement(triple6Reifier, RDF.REIFIES, tripleTerm6, uri4));
+
+		model.add(vf.createStatement(triple3Reifier, uri1, triple6Reifier, uri4));
+		model.add(vf.createStatement(uri1, uri2, uri3, uri5));
+
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
+		setupWriterConfig(rdfWriter.getWriterConfig());
+		rdfWriter.getWriterConfig().set(BasicWriterSettings.RDF_OUTPUT_VERSION, VersionLabel.RDF_1_1);
+		rdfWriter.startRDF();
+		model.forEach(rdfWriter::handleStatement);
+		rdfWriter.endRDF();
+
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		setupParserConfig(rdfParser.getParserConfig().set(BasicParserSettings.VERIFY_URI_SYNTAX, false));
+		Model parsedOutput = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+		rdfParser.parse(inputReader, "");
+
+		// 4 rdf:reifies statements with 4 unique triple terms.
+		// Each becomes:
+		// 1 rdf:reifies statement
+		// + 4 rdf:PropositionForm statements.
+		// 1 rdf:reifies statement with an existing triple
+		// 2 statements without triple terms
+		// = 23
+		assertEquals(23, parsedOutput.size());
+		assertFalse(parsedOutput.stream()
+				.anyMatch(st -> st.getObject().isTripleTerm()));
+
+		assertTrue(parsedOutput.contains(null, RDF.TYPE, RDF.PROPOSITION_FORM));
+		IRI datatype = vf.createIRI("https://www.w3.org/ns/i18n#he_rtl");
+		assertTrue(parsedOutput.contains(null, RDF.PROPOSITION_FORM_OBJECT, vf.createLiteral("שלום", datatype)));
+	}
+
+	@Test
+	public void testRDF12FullTo12BasicConversion() throws IOException {
+		Model model = new LinkedHashModel();
+
+		BNode triple1Reifier = vf.createBNode();
+		BNode triple2Reifier = vf.createBNode();
+		BNode triple3Reifier = vf.createBNode();
+		BNode triple5Reifier = vf.createBNode();
+		BNode triple6Reifier = vf.createBNode();
+		Literal rtlLiteral = vf.createLiteral("שלום", "he", Literal.BaseDirection.RTL);
+
+		TripleTerm tripleTerm6 = vf.createTripleTerm(triple2Reifier, uri4, rtlLiteral);
+
+		model.add(vf.createStatement(triple1Reifier, RDF.REIFIES, tripleTerm1, uri4));
+		model.add(vf.createStatement(triple2Reifier, RDF.REIFIES, tripleTerm2, uri4));
+		model.add(vf.createStatement(triple3Reifier, RDF.REIFIES, tripleTerm3, uri4));
+		// Repetition of triple term to verify a single blank node for both
+		model.add(vf.createStatement(triple5Reifier, RDF.REIFIES, tripleTerm1, uri4));
+		model.add(vf.createStatement(triple6Reifier, RDF.REIFIES, tripleTerm6, uri4));
+
+		model.add(vf.createStatement(triple3Reifier, uri1, triple6Reifier, uri4));
+		model.add(vf.createStatement(uri1, uri2, uri3, uri5));
+
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
+		setupWriterConfig(rdfWriter.getWriterConfig());
+		rdfWriter.getWriterConfig().set(BasicWriterSettings.RDF_OUTPUT_VERSION, VersionLabel.RDF_1_2_BASIC);
+		rdfWriter.startRDF();
+		model.forEach(rdfWriter::handleStatement);
+		rdfWriter.endRDF();
+
+		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		setupParserConfig(rdfParser.getParserConfig().set(BasicParserSettings.VERIFY_URI_SYNTAX, false));
+		Model parsedOutput = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
+		rdfParser.parse(inputReader, "");
+
+		// 4 rdf:reifies statements with 4 unique triple terms.
+		// Each becomes:
+		// 1 rdf:reifies statement
+		// + 4 rdf:PropositionForm statements.
+		// 1 rdf:reifies statement with an existing triple
+		// 2 statements without triple terms
+		// = 23
+		assertEquals(23, parsedOutput.size());
+		assertFalse(parsedOutput.stream()
+				.anyMatch(st -> st.getObject().isTripleTerm()));
+
+		assertTrue(parsedOutput.contains(null, RDF.TYPE, RDF.PROPOSITION_FORM));
+		assertTrue(parsedOutput.contains(null, RDF.PROPOSITION_FORM_OBJECT,
+				vf.createLiteral("שלום", "he", Literal.BaseDirection.RTL)));
 	}
 
 	@Test

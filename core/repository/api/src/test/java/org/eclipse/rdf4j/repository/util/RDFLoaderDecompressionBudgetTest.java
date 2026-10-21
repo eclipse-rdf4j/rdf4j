@@ -263,6 +263,7 @@ class RDFLoaderDecompressionBudgetTest {
 		assertThat(RDFLoaderSettings.EXPANSION_RATIO_GRACE_BYTES.getDefaultValue()).isEqualTo(1024L * 1024);
 		assertThat(RDFLoaderSettings.MAX_NESTING_DEPTH.getDefaultValue()).isEqualTo(8L);
 		assertThat(RDFLoaderSettings.MAX_ZIP_ENTRIES.getDefaultValue()).isEqualTo(50_000L);
+		assertThat(RDFLoaderSettings.MAX_ARCHIVE_ENTRIES.getDefaultValue()).isEqualTo(50_000L);
 	}
 
 	private static void assertBudgetFailure(ParserConfig config, byte[] input, String detail) {

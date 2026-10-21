@@ -42,12 +42,15 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -55,10 +58,11 @@ import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKeys;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
-import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 
 final class LmdbJoinPlanSupport {
 
@@ -137,14 +141,24 @@ final class LmdbJoinPlanSupport {
 		if (tupleExpr instanceof Difference) {
 			return containsEquivalentRequiredPattern(((Difference) tupleExpr).getLeftArg(), expectedPattern);
 		}
-		if (tupleExpr instanceof UnaryTupleOperator) {
+		if (tupleExpr instanceof Union union) {
+			return containsEquivalentRequiredPattern(union.getLeftArg(), expectedPattern)
+					&& containsEquivalentRequiredPattern(union.getRightArg(), expectedPattern);
+		}
+		// Only cross operators whose output rows retain the input's graph scope and binding identities.
+		// GRAPH changes the active graph of its context-free child, while projections, groups, extensions,
+		// and SERVICE may hide/replace bindings or change the data source. Finding a child pattern there
+		// is not proof that the corresponding probe is true for the enclosing output row.
+		if (tupleExpr instanceof Filter || tupleExpr instanceof Distinct || tupleExpr instanceof Reduced
+				|| tupleExpr instanceof Order || tupleExpr instanceof Slice || tupleExpr instanceof QueryRoot) {
 			return containsEquivalentRequiredPattern(((UnaryTupleOperator) tupleExpr).getArg(), expectedPattern);
 		}
 		return false;
 	}
 
 	private static boolean sameStatementPattern(StatementPattern left, StatementPattern right) {
-		return samePatternVar(left.getSubjectVar(), right.getSubjectVar())
+		return left.getScope() == right.getScope()
+				&& samePatternVar(left.getSubjectVar(), right.getSubjectVar())
 				&& samePatternVar(left.getPredicateVar(), right.getPredicateVar())
 				&& samePatternVar(left.getObjectVar(), right.getObjectVar())
 				&& samePatternVar(left.getContextVar(), right.getContextVar());
@@ -288,6 +302,9 @@ final class LmdbJoinPlanSupport {
 	}
 
 	static Optional<Set<String>> positionableBindingSetAssignmentNames(TupleExpr tupleExpr) {
+		if (!QueryEvaluationUtility.isRepeatable(tupleExpr)) {
+			return Optional.empty();
+		}
 		if (tupleExpr instanceof BindingSetAssignment) {
 			return Optional.of(tupleExpr.getAssuredBindingNames());
 		}
@@ -415,7 +432,8 @@ final class LmdbJoinPlanSupport {
 	static boolean isJoinOrderSeparator(TupleExpr tupleExpr) {
 		return tupleExpr instanceof Lateral || TupleExprs.isVariableScopeChange(tupleExpr)
 				|| TupleExprs.containsExtension(tupleExpr)
-				|| TupleExprs.containsSubquery(tupleExpr);
+				|| TupleExprs.containsSubquery(tupleExpr)
+				|| !QueryEvaluationUtility.isRepeatable(tupleExpr);
 	}
 
 	static boolean isValidPassRatio(double passRatio) {
@@ -614,13 +632,12 @@ final class LmdbJoinPlanSupport {
 
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		assignment.setBindingNames(Set.of(bindingName));
+		List<String> bindingNames = List.of(bindingName);
 		List<BindingSet> bindingSets = new ArrayList<>(values.size());
 		for (Value value : values) {
-			MapBindingSet bindingSet = new MapBindingSet(1);
-			bindingSet.addBinding(bindingName, value);
-			bindingSets.add(bindingSet);
+			bindingSets.add(new ListBindingSet(bindingNames, List.of(value)));
 		}
-		assignment.setBindingSets(bindingSets);
+		assignment.setBindingSets(List.copyOf(bindingSets));
 		return assignment;
 	}
 

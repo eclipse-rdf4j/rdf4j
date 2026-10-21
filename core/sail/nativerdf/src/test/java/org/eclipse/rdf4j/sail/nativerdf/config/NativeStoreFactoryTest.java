@@ -13,6 +13,24 @@ package org.eclipse.rdf4j.sail.nativerdf.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.junit.jupiter.api.Test;
 
@@ -31,5 +49,84 @@ class NativeStoreFactoryTest {
 		assertThat(store.getSlowQueryLogThresholdSeconds()).isEqualTo(11L);
 		assertThat(store.getSlowQueryLogFirstResultThresholdSeconds()).isEqualTo(6L);
 		assertThat(store.getSlowQueryLogFile()).isEqualTo("native-slow.log");
+	}
+
+	@Test
+	void bindsExperimentalQueryOptimizationsBeforeInitialization() {
+		NativeStoreFactory factory = new NativeStoreFactory();
+		NativeStoreConfig config = new NativeStoreConfig();
+		config.setTripleIndexes("spoc");
+		NativeStore defaultStore = (NativeStore) factory.getSail(config);
+		assertThat(defaultStore.isExperimentalQueryOptimizations()).isFalse();
+
+		config.setExperimentalQueryOptimizations(true);
+		NativeStore optedInStore = (NativeStore) factory.getSail(config);
+		assertThat(optedInStore.isExperimentalQueryOptimizations()).isTrue();
+
+		config.setExperimentalQueryOptimizations(false);
+		NativeStore optedOutStore = (NativeStore) factory.getSail(config);
+		assertThat(optedOutStore.isExperimentalQueryOptimizations()).isFalse();
+	}
+
+	@Test
+	void repositoriesSharingAnEvaluationFactoryKeepIndependentReplayPolicies() {
+		AtomicInteger functionCalls = new AtomicInteger();
+		Function function = new Function() {
+			@Override
+			public String getURI() {
+				return "urn:test:native-policy:volatile";
+			}
+
+			@Override
+			public Value evaluate(ValueFactory factory, Value... arguments) {
+				functionCalls.incrementAndGet();
+				return factory.createLiteral(true);
+			}
+		};
+		FunctionRegistry registry = FunctionRegistry.getInstance();
+		registry.add(function);
+		try {
+			DefaultEvaluationStrategyFactory sharedFactory = new DefaultEvaluationStrategyFactory();
+			for (boolean experimental : new boolean[] { false, true, false }) {
+				NativeStoreConfig config = new NativeStoreConfig();
+				config.setTripleIndexes("spoc");
+				config.setExperimentalQueryOptimizations(experimental);
+				NativeStore store = (NativeStore) new NativeStoreFactory().getSail(config);
+				store.setEvaluationStrategyFactory(sharedFactory);
+				store.init();
+				functionCalls.set(0);
+				try {
+					consumeFirstReplayResult(store, function);
+					assertThat(functionCalls.get()).isEqualTo(experimental ? 3 : 1);
+				} finally {
+					store.shutDown();
+				}
+			}
+		} finally {
+			registry.remove(function);
+		}
+	}
+
+	private static void consumeFirstReplayResult(NativeStore store, Function function) {
+		try (SailConnection connection = store.getConnection()) {
+			connection.begin();
+			Join join = new Join(values("left", 1, 2), new Filter(values("right", 10, 20, 30),
+					new FunctionCall(function.getURI(), new Var("right"))));
+			try (var rows = connection.evaluate(join, null, EmptyBindingSet.getInstance(), false)) {
+				assertThat(rows.hasNext()).isTrue();
+				assertThat(rows.next().getValue("right").stringValue()).isEqualTo("10");
+			}
+			connection.rollback();
+		}
+	}
+
+	private static BindingSetAssignment values(String name, int... values) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(Arrays.stream(values).mapToObj(value -> {
+			MapBindingSet row = new MapBindingSet(1);
+			row.addBinding(name, SimpleValueFactory.getInstance().createLiteral(value));
+			return (BindingSet) row;
+		}).toList());
+		return assignment;
 	}
 }

@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
@@ -39,6 +41,7 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	}
 
 	public static final BindingAssignerOptimizer BINDING_ASSIGNER = new BindingAssignerOptimizer();
+	public static final GraphScopeOptimizer GRAPH_SCOPE_OPTIMIZER = new GraphScopeOptimizer();
 	public static final BindingSetAssignmentInlinerOptimizer BINDING_SET_ASSIGNMENT_INLINER = new BindingSetAssignmentInlinerOptimizer();
 	public static final CompareOptimizer COMPARE_OPTIMIZER = new CompareOptimizer();
 	public static final ConjunctiveConstraintSplitterOptimizer CONJUNCTIVE_CONSTRAINT_SPLITTER = new ConjunctiveConstraintSplitterOptimizer();
@@ -61,6 +64,13 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		this.evaluationStatistics = evaluationStatistics;
 	}
 
+	/** Returns the standard safe exact-filter rewrite without exposing its package-private implementation type. */
+	@Experimental
+	@InternalUseOnly
+	public static QueryOptimizer getFilterInValuesOptimizer() {
+		return FILTER_IN_VALUES_OPTIMIZER;
+	}
+
 	/*
 	 * (non-Javadoc)
 	 *
@@ -70,6 +80,7 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	public Iterable<QueryOptimizer> getOptimizers() {
 		List<QueryOptimizer> optimizers = List.of(
 				BINDING_ASSIGNER,
+				GRAPH_SCOPE_OPTIMIZER,
 				BINDING_SET_ASSIGNMENT_INLINER,
 				new ConstantOptimizer(strategy),
 				new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()),
@@ -80,7 +91,8 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				UNION_SCOPE_CHANGE_OPTIMIZER,
 				QUERY_MODEL_NORMALIZER,
 				PROJECTION_REMOVAL_OPTIMIZER, // Make sure this is after the UnionScopeChangeOptimizer
-				new QueryJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(), tripleSource),
+				new QueryJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(), tripleSource,
+						strategy.getQueryExecutionPolicy()),
 				ITERATIVE_EVALUATION_OPTIMIZER,
 				new FilterOptimizer(evaluationStatistics, false, true),
 				FILTER_IN_VALUES_OPTIMIZER,

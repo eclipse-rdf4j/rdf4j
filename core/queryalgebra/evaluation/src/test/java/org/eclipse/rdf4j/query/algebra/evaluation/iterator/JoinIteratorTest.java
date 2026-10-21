@@ -13,9 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
 import java.util.Set;
 
@@ -29,6 +27,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -38,7 +37,6 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
@@ -65,6 +63,12 @@ public class JoinIteratorTest {
 		}
 	}, null);
 
+	private static EvaluationStrategy experimentalEvaluator(TripleSource tripleSource) {
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		strategy.setQueryExecutionPolicy(QueryExecutionPolicy.EXPERIMENTAL);
+		return strategy;
+	}
+
 	/**
 	 * Tests joins between two different BindingSetAssignments with the same BindingSets but ordered differently.
 	 */
@@ -88,7 +92,7 @@ public class JoinIteratorTest {
 	@Test
 	public void testBoundStatementPatternJoinUsesGuardAlgorithm() {
 		CountingTripleSource tripleSource = new CountingTripleSource();
-		EvaluationStrategy evaluator = new StrictEvaluationStrategy(tripleSource, null);
+		EvaluationStrategy evaluator = experimentalEvaluator(tripleSource);
 		BindingSetAssignment left = new BindingSetAssignment();
 		List<BindingSet> rows = new ArrayList<>();
 		for (int i = 0; i < 3; i++) {
@@ -114,7 +118,7 @@ public class JoinIteratorTest {
 	@Test
 	public void testBoundLeftStatementPatternJoinUsesGuardAlgorithm() {
 		CountingTripleSource tripleSource = new CountingTripleSource();
-		EvaluationStrategy evaluator = new StrictEvaluationStrategy(tripleSource, null);
+		EvaluationStrategy evaluator = experimentalEvaluator(tripleSource);
 		QueryBindingSet bindings = new QueryBindingSet();
 		bindings.addBinding("s", tripleSource.statement.getSubject());
 		bindings.addBinding("p", tripleSource.statement.getPredicate());
@@ -143,7 +147,7 @@ public class JoinIteratorTest {
 	@Test
 	public void testBoundStatementPatternGuardChainJoinUsesGuardAlgorithm() {
 		CountingTripleSource tripleSource = new CountingTripleSource();
-		EvaluationStrategy evaluator = new StrictEvaluationStrategy(tripleSource, null);
+		EvaluationStrategy evaluator = experimentalEvaluator(tripleSource);
 		BindingSetAssignment left = new BindingSetAssignment();
 		List<BindingSet> rows = new ArrayList<>();
 		for (int i = 0; i < 3; i++) {
@@ -174,7 +178,7 @@ public class JoinIteratorTest {
 	@Test
 	public void testFilteredBoundStatementPatternGuardChainJoinUsesGuardAlgorithm() {
 		CountingTripleSource tripleSource = new CountingTripleSource();
-		EvaluationStrategy evaluator = new StrictEvaluationStrategy(tripleSource, null);
+		EvaluationStrategy evaluator = experimentalEvaluator(tripleSource);
 		BindingSetAssignment left = new BindingSetAssignment();
 		QueryBindingSet row = new QueryBindingSet();
 		row.addBinding("s", tripleSource.statement.getSubject());
@@ -204,7 +208,7 @@ public class JoinIteratorTest {
 	@Test
 	public void testConstantPredicateBoundStatementPatternGuardChainJoinUsesGuardAlgorithm() {
 		CountingTripleSource tripleSource = new CountingTripleSource();
-		EvaluationStrategy evaluator = new StrictEvaluationStrategy(tripleSource, null);
+		EvaluationStrategy evaluator = experimentalEvaluator(tripleSource);
 		BindingSetAssignment left = new BindingSetAssignment();
 		QueryBindingSet row = new QueryBindingSet();
 		row.addBinding("s", tripleSource.statement.getSubject());

@@ -1,0 +1,26 @@
+Maven packaging skipped by --no-build.
+Running benchmark with jar /Users/havardottestad/Documents/Programming/rdf4j/core/sail/lmdb/target/jmh-benchmarks.jar
+# JMH version: 1.37
+# VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
+# VM options: -Xms16G -Xmx16G -XX:+UseG1GC -Drdf4j.lmdb.directAdjacency.scanAggregates.enabled=false
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 1 iterations, 2 s each
+# Measurement: 3 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.AdjacencyQueryShapeBenchmark.degreePerSubject
+# Parameters: (cliquePercentage = 30, engineMode = native, maxCliqueSize = 8, minCliqueSize = 3, peopleCount = 5000, randomKnowsEdges = 15000, seed = 12345)
+# Run progress: 0.00% complete, ETA 00:00:08
+# Fork: 1 of 1
+# Warmup Iteration   1: 16:55:30,084 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.5.37
+2.210 ms/op
+Iteration   1: 1.691 ms/op
+Iteration   2: 1.782 ms/op
+Iteration   3: 2.033 ms/op
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.AdjacencyQueryShapeBenchmark.degreePerSubject":
+  1.835 ±(99.9%) 3.232 ms/op [Average]
+# Run complete. Total time: 00:00:08
+Benchmark                                      (cliquePercentage)  (engineMode)  (maxCliqueSize)  (minCliqueSize)  (peopleCount)  (randomKnowsEdges)  (seed)  Mode  Cnt  Score   Error  Units
+AdjacencyQueryShapeBenchmark.degreePerSubject                  30        native                8                3           5000               15000   12345  avgt    3  1.835 ± 3.232  ms/op

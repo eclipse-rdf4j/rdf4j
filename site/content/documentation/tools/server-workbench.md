@@ -85,6 +85,16 @@ For Jetty, it's just a matter of copying the war-files to `$JETTY_BASE\webapps`
 
 After you have deployed the RDF4J Workbench webapp, you should be able to access it, by default, at path `http://localhost:8080/rdf4j-workbench`. You can point your browser at this location to verify that the deployment succeeded.
 
+### Compressed RDF input
+
+RDF4J Server RDF upload endpoints and Workbench's **Add** upload accept RDF input compressed with gzip, zlib/deflate, BZip2, XZ, LZMA, framed LZ4, framed Snappy (`.sz` or `.snappy`), Unix compress (`.Z`), Brotli, or Zstandard. Compression is detected from a reliable stream signature when one exists and otherwise from the file-name suffix. The supplied Server and Workbench applications include the optional archive decoder libraries; using `RDFLoader` in an embedded application does not add those libraries as transitive runtime dependencies.
+
+ZIP and TAR archives are traversed recursively. This includes conventional compressed TAR names such as `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.tar.lz4`, and `.tar.zst`. Directories and special TAR entries are ignored. Regular members whose names identify an RDF format are parsed independently; unknown terminal members are skipped during automatic format detection, and an archive with no recognized RDF member is rejected. When an explicit RDF format is supplied, it is also used as the fallback for unnamed or otherwise unknown regular members.
+
+These formats are automatic RDF input decoding, not additional HTTP content codings. The accepted `Content-Encoding` values and response compression negotiation are unchanged.
+
+Decoder allocation is limited to 64 MiB by default. Set the Java system property `org.eclipse.rdf4j.rio.compression.maxDecoderMemoryKiB` to a positive KiB value to change that limit. The aggregate ZIP-and-TAR entry limit is 50,000 and can be configured with `org.eclipse.rdf4j.rio.loader.max_archive_entries`; the existing ZIP-specific limit remains in force as well.
+
 ### Configuring RDF4J Workbench for UTF-8 Support
 
 #### UTF-8 in the Request URI (GET)
@@ -124,6 +134,182 @@ followed by a `systemctl daemon-reload` and `systemctl restart tomcat9.service` 
 ReadWritePaths=/var/rdf4j/
 ```
 
+### Workbench policy configuration
+
+Workbench reads its flat `workbench.properties` policy once when the web application starts. Values are merged in this order, with later values taking precedence:
+
+1. Packaged defaults at `org/eclipse/rdf4j/common/app/config/defaults/workbench.properties`.
+2. An optional classpath override at `org/eclipse/rdf4j/common/app/config/workbench.properties`.
+3. The external file `[RDF4J_DATA]/Workbench/conf/workbench.properties` on Windows and macOS, or
+   `[RDF4J_DATA]/workbench/conf/workbench.properties` on Linux and other UNIX systems, where the application
+   directories are lower case (like the `server` and `workbench` directories mentioned above).
+
+The external file can hide Workbench pages and capabilities without changing the deployed WAR. It is read as UTF-8, so
+labels can use any characters; a file that is not valid UTF-8 is read as ISO-8859-1, and `\uXXXX` escapes work in
+both. Every key is validated when the Workbench starts: both the WAR and the Spring Boot runner load the Workbench at
+application startup. An unknown key, undeclared ID, malformed boolean or order, unsafe href, or invalid theme is a
+configuration error. It is logged as an error at startup, with the problem and the location of the external file. The
+application keeps running, in Tomcat, Jetty and the Spring Boot runner alike (so an RDF4J Server deployed next to it is
+not affected), but every Workbench page, including the Workbench root, answers `503 Service Unavailable` with a
+plain-text message that states the problem. The policy is read once, when the Workbench starts: after fixing the file,
+restart the Workbench (or redeploy the WAR), as for any other change to `workbench.properties`. For example:
+
+```properties
+# Show only the repository list and Query, and explicitly disable Summary. Keep a Workbench landing page
+# (repositories or server) visible: without one, the Workbench root answers 503 Service Unavailable.
+menu.items=repositories,query
+menu.groups=repositories,explore
+menu.group.repositories.visible=true
+menu.group.explore.visible=true
+menu.item.query.order=10
+page.summary.enabled=false
+
+# Hide a whole navigation group or one item.
+menu.group.modify.visible=false
+menu.item.namespaces.visible=false
+
+# Fix the query-result download default; zero means all rows.
+query.feature.result-download-limit.enabled=false
+query.download.default-limit=0
+
+# Initial theme before the user has selected a preference.
+theme.deployment-default=system
+```
+
+An embedding application can override the packaged settings without modifying RDF4J resources by adding
+`src/main/resources/org/eclipse/rdf4j/common/app/config/workbench.properties` to its own classpath. For example, a
+Spring Boot consumer can package this file in its application JAR:
+
+```properties
+menu.item.query.label=SPARQL workspace
+menu.item.query.order=5
+query.feature.result-wrap.enabled=false
+theme.deployment-default=dark
+```
+
+That resource overrides the packaged defaults in both the Workbench WAR and Spring Boot integration. The external
+`workbench.properties` file in the data directory has the final say when the same key appears in both overrides.
+
+The built-in menu IDs are `server`, `repositories`, `create`, `delete`, `summary`, `namespaces`, `contexts`, `types`, `explore`, `query`, `saved-queries`, `export`, `update`, `add`, `remove`, `clear`, and `information`. `menu.items` is a comma- or whitespace-separated list; an omitted built-in item is hidden. `menu.groups` lists groups in display order. Built-in group IDs are `server`, `repositories`, `explore`, `modify`, and `system`; the packaged defaults list and enable all five. A group must be listed and have `menu.group.<id>.visible=true` for its children to appear. The Workbench root and `/repositories/` land on the `repositories` page, or on `server` when the repository list is hidden; when both are hidden they answer `503 Service Unavailable`. Each item must also be listed and visible, and `page.<id>.enabled` can further disable its canonical page. A `true` page setting cannot restore an item or group hidden by another setting. Thus, adding a second menu link to `/query` does not make the Query page available when the built-in `query` item is omitted or hidden. The policy gates the canonical servlet behind every configured alias before proxy cache handling, redirects, or command dispatch. The raw `/info` endpoint remains available. Query and Update use the read-only `/_internal/namespaces` metadata route when the Namespaces page is hidden.
+
+The optional item keys are `menu.item.<id>.visible` (`true` or `false`), `.label`, `.order` (integer, default `0`), `.group`, `.icon`, `.href`, and `.route`. Group keys are `menu.group.<id>.visible`, `.label`, `.icon`, and `.order` (integer, default `0`). Item order sorts numerically, then by position in `menu.items`, then by ID; group order follows the same rule using position in `menu.groups`. Hrefs may be HTTP(S) URLs or application-relative paths. Opaque schemes such as `javascript:` and protocol-relative URLs are rejected at startup. To add an embedded application's page, list its ID in `menu.consumer-ids`, add it to `menu.items`, declare its group in `menu.groups`, enable the group, and provide the item's `.href`; set `.route` when the endpoint path differs from the item ID. The page is then controlled by `page.<id>.enabled` in addition to its menu visibility.
+
+Query capabilities use `query.feature.<id>.enabled` (`true` or `false`). These 47 built-in IDs are stable policy keys and map to the existing Workbench controls and operations:
+
+| Feature ID | Controls or operation |
+|---|---|
+| `query-execution` | Run a query and query-backed result downloads. |
+| `query-language` | Query language selector. |
+| `query-save` | Save-query controls and save operation. |
+| `query-private-save` | Save query privately. |
+| `query-options` | Named Query options disclosure. |
+| `query-timeout` | Query timeout. |
+| `query-inferred-statements` | Include-inferred option. |
+| `query-explain` | Explain action and server operation. |
+| `explain-level-unoptimized` | Unoptimized Explain level. |
+| `explain-level-optimized` | Optimized Explain level. |
+| `explain-level-executed` | Executed Explain level. |
+| `explain-level-telemetry` | Telemetry Explain level. |
+| `explain-level-timed` | Timed Explain level. |
+| `explain-format-text` | Text Explain format. |
+| `explain-format-dot` | DOT Explain format. |
+| `explain-format-json` | JSON Explain format. The Query page also uses JSON to transport Text explanations, so JSON requests stay allowed while `explain-format-text` is enabled. |
+| `explain-highlight-syntax` | Syntax highlighting for explanations. |
+| `explain-highlight-hotspot` | Hotspot highlighting for explanations. |
+| `explain-property-selection` | Explanation property selection controls. |
+| `explain-view-text` | Text explanation view. |
+| `explain-view-dot` | DOT graph explanation view. |
+| `explain-view-json` | JSON explanation view. |
+| `explain-download` | Download explanation. |
+| `explain-copy` | Copy explanation, including the compare-pane copy action. |
+| `explain-cancel` | Cancel control for a pending explanation. Disabling it hides the control only: the page still cancels explanations it abandons. |
+| `query-compare` | Open the comparison editor pane. |
+| `query-diff` | Show the explanation difference. |
+| `query-swap` | Swap the primary and comparison queries. |
+| `result-layout` | Tuple/graph result layout selection. |
+| `result-wrap` | Wrap long result values. |
+| `result-totals` | Display result totals. |
+| `result-paging` | Change result-page offset. |
+| `result-page-size` | Results-per-page selector. |
+| `result-page-previous` | Previous result page. |
+| `result-page-next` | Next result page. |
+| `result-download` | Download query results. |
+| `result-download-format` | Result download format selector. |
+| `result-download-format-tuple` | Tuple/boolean result download formats. |
+| `result-download-format-graph` | RDF graph result download formats. |
+| `result-download-limit` | Query-result download limit; `0` means all results. |
+| `result-show-datatypes` | Show datatype details in tuple results. |
+| `result-fullscreen` | Fullscreen for the result frame. |
+| `query-rerun` | Rerun an existing explanation. |
+| `query-cancel` | Cancel control for a running query. Disabling it hides the control only: the page still cancels queries it abandons, for example when you leave the page. |
+| `editor-namespaces` | Clear/reload editor namespaces. |
+| `editor-sidebar` | Toggle the query sidebar. |
+| `editor-fullscreen` | YASQE editor fullscreen button and F11 shortcut. |
+
+Plan copying is controlled by `explain-copy`; `query-copy` and `editor-reset` are not built-in IDs because no matching actions are exposed. The built-in `result-download-limit` capability controls the query-results download-limit selector. Embedded applications declare additional stable feature IDs in `query.consumer-feature-ids`; unknown feature keys are rejected. `query.download.default-limit` is the fixed fallback value and defaults to `0`, meaning all results. The deployment theme default accepts `system`, `light`, or `dark`.
+
+Feature flags for server operations and accepted values are checked on Workbench requests as well as reflected in the controls. A request that sets a disabled option to a value other than its default is rejected with `403 Forbidden`; the default itself is accepted. The defaults are the `default-queryLn`, `default-query-timeout` and `default-infer` init parameters of the Workbench servlet (see below) for `query-language`, `query-timeout` and `query-inferred-statements`, and `query.download.default-limit` for `result-download-limit`. Some flags describe only user-interface actions that share an enabled operation: `query-rerun` hides and disables the Explain again entry point while `query-explain` is still allowed, and `editor-fullscreen` controls the YASQE fullscreen toggle and F11 shortcut. These are presentation controls, not authorization boundaries; use RDF4J's security configuration to restrict access to server operations or data.
+
+#### Default query timeout
+
+Workbench queries have a default timeout of 60 seconds, set by the `default-query-timeout` init parameter of the
+Workbench servlet (in `WEB-INF/web.xml` of the WAR, and in the registration of the Spring Boot runner). Earlier releases
+defaulted to `0`, which means no limit. Users can change the timeout for their queries in the Query settings; when the
+`query-timeout` feature is disabled, the default applies to every query. To restore unlimited queries by default, set
+`default-query-timeout` to `0` in `WEB-INF/web.xml`.
+
+A query that runs longer than its timeout is reported as timed out (“Query timed out after 1 second”), also when the
+Workbench stopped waiting for the RDF4J Server's answer just before the server reported the timeout itself; rows that
+were already received are kept.
+
+### OpenTelemetry Tracing
+
+RDF4J Server can optionally be instrumented with [OpenTelemetry](https://opentelemetry.io/) tracing, recording one span per SPARQL query/update evaluated against a repository. This is entirely opt-in: with no configuration, RDF4J Server behaves exactly as before, with zero overhead. For general background on RDF4J's OpenTelemetry support (the underlying module, its configuration options, and programmatic use outside of Server/Workbench), see [Observability using OpenTelemetry](/documentation/programming/observability/).
+
+Server-side, tracing every repository served by RDF4J Server's repository manager is gated by a single system property:
+
+```
+org.eclipse.rdf4j.opentelemetry.enabled=true
+```
+
+Disabled by default. This can be set like any other RDF4J system property, e.g. via `JAVA_OPTS`/`CATALINA_OPTS` (see "Application directory configuration" above), or, in the Docker images, via `RDF4J_OPTS` as shown below. The remaining tracing behaviour (whether query text is captured, truncation length, `db.system.name`, ...) is configured via the system properties listed in [Observability using OpenTelemetry](/documentation/programming/observability/#configuration).
+
+#### Enabling tracing in the Docker images
+
+The `docker/` Dockerfiles for both Tomcat and Jetty bundle the [OpenTelemetry Java agent](https://github.com/open-telemetry/opentelemetry-java-instrumentation) and can activate it purely through environment variables - no image rebuild required.
+
+| Variable                       | Effect                                                                                                                   |
+|---------------------------------|---------------------------------------------------------------------------------------------------------------------------|
+| `OTEL_EXPORTER_OTLP_ENDPOINT`   | Presence of this variable is what switches tracing on. Set it to the OTLP endpoint of your collector/backend (e.g. `http://otel-collector:4318`). If unset, the agent is never attached and there is no overhead. |
+| `OTEL_SERVICE_NAME`             | The `service.name` reported for spans. Defaults to `rdf4j`.                                                              |
+| `RDF4J_OPTS`                    | Extra JVM options (typically further `-D` system properties, see above) appended on top of the image's own defaults, without having to repeat them. |
+
+Example `docker-compose.yml` snippet:
+
+```yaml
+services:
+  rdf4j:
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_SERVICE_NAME=rdf4j
+      - RDF4J_OPTS=-Dorg.eclipse.rdf4j.opentelemetry.enabled=true -Dorg.eclipse.rdf4j.opentelemetry.captureQueryText=true
+      - OTEL_INSTRUMENTATION_SERVLET_ENABLED=false
+      - OTEL_INSTRUMENTATION_LOGBACK_APPENDER_ENABLED=false
+      - OTEL_INSTRUMENTATION_LOGBACK_MDC_ENABLED=false
+      - OTEL_LOGS_EXPORTER=none
+```
+
+**Required for RDF4J Server/Workbench.** Any other OpenTelemetry Java agent behaviour (individual instrumentation modules, sampling, ...) is configured the standard OpenTelemetry way, via further `OTEL_*` environment variables that the agent reads directly - but the four settings below are not optional tuning, they work around two agent/instrumentation bugs that otherwise break RDF4J Server when the agent is attached. Set all four:
+
+```
+OTEL_INSTRUMENTATION_SERVLET_ENABLED=false
+OTEL_INSTRUMENTATION_LOGBACK_APPENDER_ENABLED=false
+OTEL_INSTRUMENTATION_LOGBACK_MDC_ENABLED=false
+OTEL_LOGS_EXPORTER=none
+```
+
+- `OTEL_INSTRUMENTATION_SERVLET_ENABLED=false` - **without this, RDF4J Server responses can come back empty/corrupted.** The generic Servlet auto-instrumentation interferes with RDF4J Server's manually-streamed, chunked binary query result responses - observed as an HTTP 200 response with the correct headers but a zero-byte body (e.g. on `GET /repositories`). Repository/query spans (the actual purpose of this module) are unaffected by disabling this, since those come from RDF4J's own instrumentation, not the generic Servlet instrumentation.
+- `OTEL_LOGS_EXPORTER=none`, `OTEL_INSTRUMENTATION_LOGBACK_APPENDER_ENABLED=false`, `OTEL_INSTRUMENTATION_LOGBACK_MDC_ENABLED=false` - **without these, RDF4J Server/Workbench can crash with a `NoSuchFieldError` while logging.** RDF4J Server and Workbench are deployed as two separate WARs, each bundling their own copy of `logback-classic`; the agent's logback instrumentation injects a virtual field onto the shared `LoggingEvent` class, which is not consistent across the two WARs' isolated classloaders and throws at runtime. RDF4J does not emit any OpenTelemetry log records, so disabling all three has no downside.
 
 ### Repository Configuration
 
@@ -267,6 +453,16 @@ Also nested inside the `<web-app>` element are definitions of security roles. Th
 </security-role>
 ```
 
+### LMDB execution strategy selection
+
+Server and Workbench do not expose JVM system-property administration. Configure LMDB properties through the JVM
+startup configuration and use repository configuration to enable the native query engine.
+
+`GET /repositories/{id}/lmdb/strategies` lists native execution strategies for the selected repository, using its normal
+repository routing and access rules. It returns an empty list when native execution is unavailable or disabled.
+Workbench shows the per-query strategy selector only after the selected repository advertises available strategies.
+The empty choice leaves strategy selection to the engine. A forced strategy must still be eligible for the query.
+
 ### User accounts
 
 Tomcat has a number of ways to manage user accounts. The different techniques are called 'realms' and the default one is called 'UserDatabaseRealm'. This is the simplest one to manage, but also the least secure, because usernames and passwords are stored in plain text.
@@ -314,6 +510,8 @@ There are two ways to reach the “Change Server” page, which allows you to en
 2. Clicking on “RDF4J Server” on the sidebar menu.
 
 A full URL is expected in the “Change Server” field. You may enter a `file:///` URL to access a local repository on the Workbench server, but need to be sure that the Workbench server process has permission to access the given folder.
+
+User names and passwords may contain any characters: the Workbench stores the credentials UTF-8 encoded (base64 of the UTF-8 bytes of `user:password` in the `server-user-password` cookie) and sends them to the RDF4J Server UTF-8 encoded.
 
 ### Configuring Accepted Server Prefixes
 
@@ -372,6 +570,8 @@ Click on “New repository” in the sidebar menu. This brings up the “New Rep
 
 The “ID:” and “Title:” fields are optional in this form. Clicking “Next” brings up a form with more fields specific to the repository type selected. On that form, it will be necessary to enter something in the “ID:” field before the “Create” button may be clicked. If creation is successful, the new repository is also opened and its “Summary” page is presented.
 
+A repository ID is part of the repository's URLs (and, on a local server, the name of its data directory), so the Workbench only creates repositories whose ID consists of the letters a–z and A–Z, digits, `-`, `_`, `.` and `@`, and is not made of dots only (`.` and `..` are not valid IDs). Other IDs are refused with a message saying so.
+
 ### Modifying the Data Contents of a Repository
 
 Data may be added to or removed from current repository using any of the sidebar menu items under “Modify”. After all successful operations, the user is presented with the repository “Summary” page.
@@ -379,6 +579,8 @@ Data may be added to or removed from current repository using any of the sidebar
 ### Add
 
 The “Add” page allows you to specify a URL with RDF data, a local file on your client system, or to enter serialized RDF data into its text area for loading into the present repository. It is also possible to specify the Base URI and a Context for the triples. Think of the Context as a 4th element of each RDF statement, specifying a graph within the repository. You may specify one of eight serialization formats, or select “auto-detect” to let the server do a best guess at the format.
+
+When the data is to be read from a URL that cannot be read (for example because it answers `404 Not Found` or its server cannot be reached), the Add page says so (“Could not read <url>: 404 Not Found”) and nothing is added.
 
 Local files (and URLs that serve compressed bytes) may be gzip-compressed for faster transfer, for example `data.ttl.gz` or `data.rdf.gzip`. Workbench decompresses the stream automatically before parsing. With auto-detect, the RDF format is taken from the name after the compression suffix (`ttl` in `data.ttl.gz`). Gzip is always available; deflate, zstd, and brotli are used when the matching library is on the classpath. Zip archives (`.zip` with multiple entries) are not unpacked here.
 
@@ -394,6 +596,8 @@ The “Clear Repository” page is powerful. Leaving the lone “Context:” fie
 
 The “Execute SPARQL Update on Repository” page gives a text area where you enter a SPARQL 1.1 Update command. SPARQL Update is an extension to the SPARQL query language that provides full CRUD (Create Read Update Delete) capabilities. For more information see the W3C Recommendation for SPARQL 1.1 Update. Clicking “Execute” executes the specified SPARQL Update operation.
 
+When a repository with SHACL validation rejects a change made with Add, Remove, Clear or SPARQL Update, the Workbench lists the violations, one per line, with the focus node, the path, the offending value and what the constraint expected (or the shape's `sh:message`), for example `- ex:alice, ex:age: value "abc": expected datatype xsd:integer`. Long reports list their first 20 violations.
+
 ### Exploring a Repository
 
 #### Summary Page
@@ -403,6 +607,8 @@ Click on “Summary” on the sidebar menu. A simple summary is displayed with t
 #### Namespaces Page
 
 Namespace-prefix pairings can be defined within a repository, so that URIs can be displayed in shorthand form as a qualified name. To edit them, click on “Namespaces” on the sidebar menu. A page is displayed with a table of all presently defined pairs. Existing namespaces may be edited by selecting them in the drop-down list, which populates the text fields. The text fields may then be edited, and the “Update” button will make the change on the repository. The “Delete” button will remove whichever pair has been selected.
+
+A change never silently replaces another binding: renaming a prefix onto one that is already defined is refused, and adding a prefix that is already bound to a different namespace replaces that namespace only once you confirm it.
 
 #### Contexts Page
 
@@ -436,8 +642,20 @@ If you have executed queries previously, the query text area will show the most 
 
 The two other action buttons are “Save Query” and “Execute”:
 
-- “Save Query” is only enabled when a name has been entered into the adjacent text field. Once clicked, your query is saved under the given name. An option to back out or overwrite is given if the name already exists. Saved queries are associated with the current repository and user name. If the “Save privately (do not share)” option is checked, then the saved query will only be visible to the current user.
-- “Execute” attempts to execute the given query text, and then you are presented with a query results page. Values are clickable, and clicking on a value brings you to its “Explore” page. Similar display options are presented as the “Explore” page, as well.
+- “Save Query” is only enabled when a name has been entered into the adjacent text field. Once clicked, your query is saved under the given name. An option to back out or overwrite is given if the name already exists. Saved queries are associated with the current repository and with the user you signed in as on the Connection page (the user name of the server credentials entered there). If the “Private” option is checked, then the saved query is visible only to that user. Private saving requires signing in: a query saved without a user is visible to, and can be changed by, everyone.
+- “Execute” runs the query and streams its results into the result area below the editor, on the same page. Large results arrive in batches: the first batch is shown while the query is still counting, and “Load more” fetches the next batch. Values are clickable, and clicking on a value brings you to its “Explore” page. Similar display options are presented as the “Explore” page, as well.
+
+#### Cancelling long-running queries
+
+For an ordinary, non-transactional query, the Query page shows a Cancel action while the query runs; Cancel stops the query on the server and keeps the results that have already arrived. Running the query again, editing a query that is being explained, or leaving the page also cancels the running query or explanation. The streamed result ends with a completion or failure record, so the page knows when the query has finished; a result download cannot signal its completion to the page.
+
+Cancellation identifiers are scoped to a repository. Clients do not need to supply an identifier for automatic cancellation; Server generates and registers one for the request. In a deployment with multiple RDF4J Server instances, a cancellation request that reaches an instance that does not own the query can return `404`, while cancellation of an active query on the owning instance returns `204`. Workbench retries failed cancellation requests a bounded number of times. When an HTTP-backed repository forwards cancellation to another RDF4J Server, a downstream failure is reported as `502` so the request can be retried instead of being acknowledged as successful.
+
+For supported result formats, RDF4J Server and Workbench can flush one ASCII space approximately every second while evaluation is waiting for the first result. The probe uses the negotiated writer's response stream and stops before the first byte written by the serializer. XML declarations are omitted before probing when the selected XML writer supports that setting. The supported formats are SPARQL Results JSON and XML, JSON-LD, NDJSON-LD, RDF/JSON, Turtle, N3, TriG, N-Triples, N-Quads, RDF/XML, and TriX; RDF/XML and TriX require the actual XML writer to support omitting its processing instruction. See the [SPARQL Results JSON](https://www.w3.org/TR/sparql11-results-json/), [SPARQL Results XML](https://www.w3.org/TR/sparql11-results-xml/), [JSON-LD 1.1](https://www.w3.org/TR/json-ld11/), and [RDF 1.1 Turtle](https://www.w3.org/TR/turtle/) specifications for the relevant grammars.
+
+Heartbeats are excluded for binary formats, CSV, TSV, XLSX, plain boolean responses, unknown formats, invalid requests, and `HEAD` responses. Proxy and TCP buffering can delay when a disconnected client is detected. The first heartbeat flush commits the response status and headers even when the serializer buffers ordinary bytes. Before that commitment, an evaluation or validation failure can use the normal HTTP error response. A failed response write triggers cancellation. After commitment, a query or evaluation failure terminates or invalidates the response body but does not necessarily invoke cancellation; the status may remain `200`, and the client must not treat an incomplete body as a successful empty result.
+
+This cancellation and disconnect handling does not apply to transaction-bound queries. A transaction connection may own pending updates and other work, so closing it to stop one result could invalidate the entire transaction.
 
 ### Working with Saved Queries
 

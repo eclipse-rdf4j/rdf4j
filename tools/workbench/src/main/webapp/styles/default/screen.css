@@ -107,7 +107,7 @@ div.resource:hover > a.resourceURL {
 #header {
 	background-color: white;
 	border-style: none none solid none;
-	border-color: #da5800;
+	border-color: var(--workbench-primary);
 	border-width: 10px;
 	height: 80px;
 }
@@ -362,6 +362,12 @@ div.resource:hover > a.resourceURL {
 .queryResult {
 	margin: 6em 6em;
 	font-size: 200%;
+}
+
+#content p.query-duration {
+	margin: 0 0 8px 0;
+	color: #333;
+	font-size: 90%;
 }
 
 #message {

@@ -1,0 +1,55 @@
+# LMDB native expression semantics
+
+Native expression support is an optimization over the RDF4J value evaluator, not a replacement for its rules. Compilers return `null` when they cannot prove a shape and its needed semantics; callers then retain a generic evaluator, residual hook, or strategy fallback. A value-level type error is different: a successfully compiled expression can return `ERROR` for that row, which is handled at the same filter/BIND site as the generic evaluator. The branch delta catalogued as Q7 adds native expression and fragment execution paths; RDF4J's generic value evaluator and SPARQL error rules remain the semantic authority against which those paths must decline or match.
+
+## Three outcomes for predicates
+
+[`LmdbNativeExpressionCompiler`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeExpressionCompiler.java) translates supported expressions over native slots into a required-slot mask and evaluator. Predicate evaluators use three values:
+
+| Result | Meaning | Filter-site behavior |
+|---|---|---|
+| `TRUE` | The expression evaluated successfully and has true effective boolean value. | Keep the row. |
+| `FALSE` | It evaluated successfully and is false. | Reject the row. |
+| `ERROR` | It has a SPARQL evaluation/type error, including a needed unbound variable. | Reject at FILTER; at BIND the target remains unbound according to the caller contract. |
+
+Compilation decline is `null`, not `ERROR`: unsupported expression shape cannot be answered by the expression compiler and must use another exact route. Short-circuit `AND`/`OR` preserve error behavior (`false && error` is false; `true || error` is true), and `NOT` preserves ERROR. `IF` is compiled only when its condition is proven not to produce an error. `COALESCE` evaluates arms in order and uses the first non-error value. Those constraints avoid eagerly surfacing errors from an unselected branch.
+
+The compiler clones the expression before retaining it in a scalar plan. Plans carry frozen slot resolution, strict-comparison mode, assured-binding mask, volatility policy, and whether evaluation is query-scoped. Worker kernels can bind the same shape against their own source/context. This separates plan structure from per-open source ids and bindings.
+
+## Comparison and value operations
+
+The currently recognized expression tree includes core boolean connectors, BOUND on a slot variable, SAME TERM, anchored comparisons, REGEX with constant pattern/flags, type tests, LANGMATCHES, `hasLANG`/`hasLANGDIR`, supported function calls, selected scalar math/string/language/datatype forms, `IF`, `COALESCE`, IRI resolution, directional-language operators, and enabled triple-term component/constructor forms. This is a compiler-recognition list, not a promise that all child shapes, datatypes, or nesting forms are admissible. [`LmdbNativeScalarExpressionCompiler`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeScalarExpressionCompiler.java) owns numeric, string, and ID channels; the expression compiler composes those channels and returns `null` when a child cannot be represented.
+
+`SAME TERM` means RDF term identity and can compare canonical ids when the plan's source guarantees canonical value IDs. SPARQL `=` and ordering use value comparison rules; they are not reducible to raw identifier equality. The compiler requires a comparison anchor and calls `LmdbNativeExpressionOps` with the selected strictness. Values with semantics the id representation cannot establish are decoded/compared or decline to the generic evaluator. This is particularly important for numeric literals, doubles/NaN, mixed datatypes, language-tagged strings and calendar values.
+
+Regex patterns and flags must be constants. The source compiles Java `Pattern`; unknown flags and invalid patterns become the expression's error outcome rather than silently changing meaning. String functions check string-literal and language/base-direction compatibility before comparing labels. Function evaluators map `ValueExprEvaluationException` to expression ERROR, while other runtime exceptions propagate as in the generic path.
+
+### Function families and result identity
+
+[`LmdbNativeFunctionLibrary`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeFunctionLibrary.java) has an always-on core set (length/selected numeric functions, starts/ends/contains, lower/upper case) plus separately kill-switchable strings, date parts, casts, hashes, RDF-term constructors/volatiles, and triple terms. The family-added registrations are controlled by the master `rdf4j.lmdb.nativeFunctions.enabled` and their family property; both default enabled and use case-insensitive `false` as the off value. Triple-term operators are additionally subject to the native triple-term setting. See [configuration](query-configuration.md) for the full list and read boundary.
+
+Each function entry describes arity, effect (`PURE`, `QUERY_STABLE`, or `VOLATILE`), comparability and whether its result is guaranteed to fit the store's inline id encoding. These are separate facts. An expression can be supported in value position without being safe to produce as an inline id. Computed values that do not have a proven inline round trip are interned into the evaluation's synthetic value catalog; they are not dropped or coerced to a nearby id. `NOW()` is query-stable and uses the same evaluation-scoped context as generic islands. `UUID()`, `STRUUID()`, and `RAND()` are volatile and are admitted only where the compile site and replay policy preserve the expected number/order of evaluations.
+
+The native triple-term evaluator can inspect subject/predicate/object and create a triple term when the triple-term gate is enabled. Components that cannot remain encoded are decoded at the semantic boundary, then re-imported through the value authority used by the current plan/source. Cross-authority ids must be imported by `Value`, never copied as if numeric ids were global.
+
+## Filter fragments and exact escape
+
+The separate `evaluation.fragment` subsystem recognizes a narrower raw-id fragment (`FragmentIR`) for filter predicates. It specializes cases such as bound checks, type guards, same-term identity, ordered integer comparisons/ranges and short boolean combinations. [`FragmentCompiler`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/fragment/FragmentCompiler.java) uses several small hand-written primitive implementations and otherwise returns an immutable interpreter closure. Its process-wide access-ordered cache is capped at 512 structural shapes; constants and plan-local hook IDs are represented by slots and bound separately.
+
+Fragment evaluation can return `TRUE`, `FALSE`, `ERROR`, or `ESCAPE`. `ESCAPE` is not reject: [`ExactFragmentFallback`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/fragment/ExactFragmentFallback.java) re-evaluates through the exact filter machinery for that placement. Raw id comparison escapes when identity-safe numeric/string semantics cannot be proven. The fragment's `AND`/`OR` composition can still resolve an escape if its other operand decides the three-valued result. `ERROR` is folded to reject only by the filter-site contract. This escape boundary is what allows a small fast fragment without approximating full SPARQL comparison.
+
+The fragment tier's primitive implementations must remain differential to [`FragmentInterpreter`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/fragment/FragmentInterpreter.java), which is the semantics reference for that IR. Do not implement a new raw-id comparison by assuming dictionary id order is RDF value order; only ordered-integer ids have that property in this code.
+
+## Materialization and memory implications
+
+The native expression evaluator usually consumes encoded ids and creates a decoded-value wrapper only for functions/operations that require RDF-level data. A `Value` may be materialized and interned when a BIND result cannot be represented inline, a generic island writes bindings back, or output is requested. Query-local resolution caches can reduce repeated lookups but are separate from compiler caches. See [values and records](storage-values-and-records.md) for the authority contract and [query memory and result lifecycle](query-memory-and-result-lifecycle.md) for iterator and lazy-value lifetime.
+
+Regex compiles its constant pattern at preparation time; each row still needs a matcher operation. String/hash/cast delegations construct argument `Value` objects only when the function path needs generic implementations. Native boolean/ID checks avoid that work where semantic proofs permit. These are allocation-path facts, not measured allocation reductions or speedup claims.
+
+## Illustrative examples (source-only)
+
+For `FILTER(?n >= 10 && LANG(?label) = "en")`, the first comparison might use the ordered-integer path if the encoded type and comparison proof permit; `LANG` and its comparison use decoded semantic information. If either side has a datatype/language representation the compiler does not safely handle, the expression can decline or a fragment can return ESCAPE to the exact filter evaluator. An unbound `?n` produces ERROR, and FILTER rejects that solution.
+
+For `BIND(COALESCE(STR(?kind), "unknown") AS ?label)`, the value compiler evaluates branches in order, retains query/runtime scope as needed, and produces either an inline value id or a decoded computed value that the current evaluation interns. This is a possible compiler path, not an observed route for a particular query.
+
+Source contracts: [`LmdbNativeExpressionFilterTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbNativeExpressionFilterTest.java), [`LmdbNativeLegacyScalarExpressionTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeLegacyScalarExpressionTest.java), [`LmdbNativeScalarPlanTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeScalarPlanTest.java), [`LmdbFunctionRepeatabilityTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbFunctionRepeatabilityTest.java), [`LmdbNativeExpressionRepeatabilityTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeExpressionRepeatabilityTest.java), [`LmdbNativeFragmentTranslatorTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeFragmentTranslatorTest.java), [`FragmentInterpreterTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/fragment/FragmentInterpreterTest.java), [`FragmentPrimitivesTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/fragment/FragmentPrimitivesTest.java), and [`LmdbNativeSparql12DifferentialTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeSparql12DifferentialTest.java). These links identify source contracts, not current pass evidence.

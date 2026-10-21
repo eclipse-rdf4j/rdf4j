@@ -21,18 +21,30 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.ByteArrayOutputStream;
+import java.io.OutputStream;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.http.client.QueryRequestContext;
+import org.eclipse.rdf4j.http.client.QueryResponseHeartbeat;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.GraphQuery;
+import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.IteratingGraphQueryResult;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.junit.jupiter.api.Test;
 
@@ -126,16 +138,17 @@ class QueryEvaluatorCoverageTest {
 		when(request.getInt("query-timeout")).thenReturn(0);
 		when(request.getParameter("query-timeout")).thenReturn("");
 		when(connection.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(graphQuery);
+		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
 		when(graphQuery.evaluate()).thenReturn(new IteratingGraphQueryResult(Map.of(), List.of(statement)));
 
-		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(),
-				"transformations", connection, queryText, request, cookies, queryText);
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(), connection,
+				queryText, request, cookies, queryText);
 
-		verify(builder).transform("transformations", "graph.xsl");
 		verify(builder).start("subject", "predicate", "object");
 		verify(builder).metadata("query-text", queryText);
 		verify(builder).metadata("infer", false);
 		verify(builder).metadata("query-timeout", 0);
+		verify(builder).metadata("total-result-count", 1);
 		verify(builder).result(statement.getSubject(), statement.getPredicate(), statement.getObject(),
 				statement.getContext());
 		verify(builder).end();
@@ -145,6 +158,11 @@ class QueryEvaluatorCoverageTest {
 	@Test
 	void graphQueriesCanBeStreamedThroughRioWriters() throws Exception {
 		String queryText = "construct { ?s ?p ?o } where { ?s ?p ?o }";
+		Statement statement = SimpleValueFactory.getInstance()
+				.createStatement(
+						SimpleValueFactory.getInstance().createIRI("urn:s"),
+						SimpleValueFactory.getInstance().createIRI("urn:p"),
+						SimpleValueFactory.getInstance().createLiteral("o"));
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 		HttpServletResponse response = mock(HttpServletResponse.class);
 		RepositoryConnection connection = mock(RepositoryConnection.class);
@@ -163,12 +181,82 @@ class QueryEvaluatorCoverageTest {
 		when(request.getInt("know_total")).thenReturn(0);
 		when(request.getInt("query-timeout")).thenReturn(0);
 		when(connection.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(graphQuery);
+		when(graphQuery.evaluate()).thenReturn(new IteratingGraphQueryResult(Map.of(), List.of(statement)));
 
-		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(),
-				"transformations", connection, queryText, request, cookies, null);
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(), connection,
+				queryText, request, cookies, null);
 
-		verify(graphQuery).evaluate(any(org.eclipse.rdf4j.rio.RDFWriter.class));
-		verify(builder, never()).transform(any(), any());
+		verify(graphQuery).evaluate();
+		verify(response).setContentType("text/turtle");
+	}
+
+	@Test
+	void graphDownloadsKeepProbingUntilEvaluationAndFirstStatementAreReady() throws Exception {
+		String queryText = "construct { ?s ?p ?o } where { ?s ?p ?o }";
+		Statement statement = SimpleValueFactory.getInstance()
+				.createStatement(
+						SimpleValueFactory.getInstance().createIRI("urn:s"),
+						SimpleValueFactory.getInstance().createIRI("urn:p"),
+						SimpleValueFactory.getInstance().createLiteral("o"));
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		GraphQuery graphQuery = mock(GraphQuery.class);
+		CountDownLatch releaseEvaluation = new CountDownLatch(1);
+		CountDownLatch evaluationReturned = new CountDownLatch(1);
+		BlockingGraphQueryResult graphResult = new BlockingGraphQueryResult(statement);
+		ProbeRecordingOutputStream output = new ProbeRecordingOutputStream();
+		QueryResponseHeartbeat heartbeat = new QueryResponseHeartbeat(output, Duration.ofMillis(5), () -> {
+		});
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+
+		when(request.getParameter("queryLn")).thenReturn("SPARQL");
+		when(request.isParameterPresent("explain")).thenReturn(false);
+		when(request.isParameterPresent("Accept")).thenReturn(true);
+		when(request.isParameterPresent("download_limit")).thenReturn(false);
+		when(request.getParameter("Accept")).thenReturn("text/turtle");
+		when(request.isParameterPresent("infer")).thenReturn(false);
+		when(request.getInt("offset")).thenReturn(0);
+		when(request.getInt("limit_query")).thenReturn(0);
+		when(request.getInt("know_total")).thenReturn(0);
+		when(request.getInt("query-timeout")).thenReturn(0);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(graphQuery);
+		when(graphQuery.evaluate()).thenAnswer(invocation -> {
+			evaluationReturned.countDown();
+			assertThat(releaseEvaluation.await(5, TimeUnit.SECONDS)).isTrue();
+			return graphResult;
+		});
+
+		Thread queryThread = Thread.startVirtualThread(() -> {
+			try {
+				QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, output,
+						connection,
+						queryText, request, cookies, null, "repository", heartbeat);
+			} catch (Throwable e) {
+				failure.set(e);
+			}
+		});
+		try {
+			assertThat(evaluationReturned.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(output.flushes.await(5, TimeUnit.SECONDS)).isTrue();
+			releaseEvaluation.countDown();
+			assertThat(graphResult.firstHasNext.await(5, TimeUnit.SECONDS)).isTrue();
+			int probesBeforeFirstStatement = output.flushCount;
+			assertThat(probesBeforeFirstStatement).isGreaterThanOrEqualTo(2);
+			graphResult.releaseFirstHasNext.countDown();
+			queryThread.join(5000);
+			assertThat(queryThread.isAlive()).isFalse();
+			assertThat(failure.get()).isNull();
+			assertThat(output.toString()).contains("urn:s").contains("urn:p").contains("o");
+			verify(response).setContentType("text/turtle");
+		} finally {
+			releaseEvaluation.countDown();
+			graphResult.releaseFirstHasNext.countDown();
+			queryThread.join(5000);
+			heartbeat.close();
+		}
 	}
 
 	@Test
@@ -201,10 +289,11 @@ class QueryEvaluatorCoverageTest {
 		when(request.getInt("query-timeout")).thenReturn(0);
 		when(request.getParameter("query-timeout")).thenReturn("");
 		when(connection.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(graphQuery);
+		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
 		when(graphQuery.evaluate()).thenReturn(new IteratingGraphQueryResult(Map.of(), List.of(first, second)));
 
-		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(),
-				"transformations", connection, queryText, request, cookies, null);
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(), connection,
+				queryText, request, cookies, null);
 
 		verify(cookies).addTotalResultCountCookie(request, response, 2);
 		verify(builder, never()).metadata(any(), any());
@@ -231,18 +320,22 @@ class QueryEvaluatorCoverageTest {
 		when(request.isParameterPresent("Accept")).thenReturn(false);
 		when(request.isParameterPresent("infer")).thenReturn(true);
 		when(request.getParameter("infer")).thenReturn("true");
+		when(request.getParameter("embedded")).thenReturn("true");
 		when(request.getInt("offset")).thenReturn(0);
 		when(request.getInt("limit_query")).thenReturn(0);
 		when(request.getInt("know_total")).thenReturn(0);
 		when(request.getInt("query-timeout")).thenReturn(7);
 		when(request.getParameter("query-timeout")).thenReturn("7");
 		when(connection.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(graphQuery);
+		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
 		when(graphQuery.evaluate()).thenReturn(new IteratingGraphQueryResult(Map.of(), List.of(statement)));
 
-		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(),
-				"transformations", connection, queryText, request, cookies, queryText);
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(), connection,
+				queryText, request, cookies, queryText);
 
 		verify(builder).metadata("query-text", queryText);
+		verify(builder).metadata("query-language", "SPARQL");
+		verify(builder).metadata("embedded", true);
 		verify(builder).metadata("infer", true);
 		verify(builder).metadata("query-timeout", "7");
 	}
@@ -263,19 +356,52 @@ class QueryEvaluatorCoverageTest {
 		when(request.isParameterPresent("download_limit")).thenReturn(false);
 		when(request.getParameter("Accept")).thenReturn("application/sparql-results+json");
 		when(request.isParameterPresent("infer")).thenReturn(false);
+		when(request.getParameter("embedded")).thenReturn("true");
 		when(request.getInt("offset")).thenReturn(0);
 		when(request.getInt("limit_query")).thenReturn(5);
 		when(request.getInt("query-timeout")).thenReturn(0);
 		when(connection.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(booleanQuery);
+		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
 		when(booleanQuery.evaluate()).thenReturn(true);
 
-		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(),
-				"transformations", connection, queryText, request, cookies, null);
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(), connection,
+				queryText, request, cookies, null);
 
-		verify(builder).transform("transformations", "boolean.xsl");
 		verify(builder).startBoolean();
 		verify(builder).bool(true);
 		verify(builder).endBoolean();
+	}
+
+	@Test
+	void booleanQueriesRenderRequestLifecycleMetadataForWorkbenchResults() throws Exception {
+		String queryText = "ask { ?s ?p ?o }";
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		BooleanQuery booleanQuery = mock(BooleanQuery.class);
+
+		when(request.getParameter("queryLn")).thenReturn("SPARQL");
+		when(request.isParameterPresent("explain")).thenReturn(false);
+		when(request.isParameterPresent("Accept")).thenReturn(false);
+		when(request.isParameterPresent("infer")).thenReturn(false);
+		when(request.getParameter("embedded")).thenReturn("true");
+		when(request.getInt("offset")).thenReturn(0);
+		when(request.getInt("limit_query")).thenReturn(0);
+		when(request.getInt("query-timeout")).thenReturn(0);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(booleanQuery);
+		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
+		when(booleanQuery.evaluate()).thenReturn(true);
+
+		try (QueryRequestContext.Activation ignored = QueryRequestContext.activate("boolean-1")) {
+			QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(), connection,
+					queryText, request, cookies, queryText);
+		}
+
+		verify(builder).metadata("query-request-id", "boolean-1");
+		verify(builder).metadata("query-result-status", "completed");
+		verify(builder).metadata("embedded", true);
 	}
 
 	@Test
@@ -297,7 +423,7 @@ class QueryEvaluatorCoverageTest {
 		when(connection.prepareQuery(QueryLanguage.SPARQL, "describe ?s where { ?s ?p ?o }")).thenReturn(query);
 
 		assertThatThrownBy(() -> QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response,
-				new ByteArrayOutputStream(), "transformations", connection, "describe ?s where { ?s ?p ?o }", request,
+				new ByteArrayOutputStream(), connection, "describe ?s where { ?s ?p ?o }", request,
 				cookies, null))
 						.isInstanceOf(BadRequestException.class)
 						.hasMessageContaining("Unknown query type:");
@@ -343,13 +469,97 @@ class QueryEvaluatorCoverageTest {
 		when(request.getInt("query-timeout")).thenReturn(0);
 		when(request.getParameter("query-timeout")).thenReturn("");
 		when(connection.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(graphQuery);
+		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
 		when(graphQuery.evaluate()).thenReturn(new IteratingGraphQueryResult(Map.of(), List.of(statement)));
 
-		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(),
-				"transformations", connection, queryText, request, cookies, null);
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(), connection,
+				queryText, request, cookies, null);
 
 		verify(cookies).addTotalResultCountCookie(request, response, 5);
 		verify(connection, times(2)).prepareQuery(QueryLanguage.SPARQL, queryText);
 		verify(builder, never()).metadata(any(), any());
+	}
+
+	private static RepositoryResult<Namespace> emptyNamespaces() {
+		return new RepositoryResult<>(new CloseableIteratorIteration<>(List.<Namespace>of().iterator()));
+	}
+
+	private static final class BlockingGraphQueryResult implements GraphQueryResult {
+		private final Statement statement;
+		private final CountDownLatch firstHasNext = new CountDownLatch(1);
+		private final CountDownLatch releaseFirstHasNext = new CountDownLatch(1);
+		private boolean firstCall = true;
+		private boolean consumed;
+
+		private BlockingGraphQueryResult(Statement statement) {
+			this.statement = statement;
+		}
+
+		@Override
+		public Map<String, String> getNamespaces() {
+			return Map.of("ex", "urn:ex:");
+		}
+
+		@Override
+		public boolean hasNext() {
+			if (firstCall) {
+				firstCall = false;
+				firstHasNext.countDown();
+				try {
+					if (!releaseFirstHasNext.await(5, TimeUnit.SECONDS)) {
+						throw new AssertionError("Timed out waiting for first graph statement");
+					}
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new AssertionError(e);
+				}
+			}
+			return !consumed;
+		}
+
+		@Override
+		public Statement next() {
+			if (!hasNext()) {
+				throw new NoSuchElementException();
+			}
+			consumed = true;
+			return statement;
+		}
+
+		@Override
+		public void remove() {
+			throw new UnsupportedOperationException();
+		}
+
+		@Override
+		public void close() {
+		}
+	}
+
+	private static final class ProbeRecordingOutputStream extends OutputStream {
+		private final ByteArrayOutputStream delegate = new ByteArrayOutputStream();
+		private final CountDownLatch flushes = new CountDownLatch(2);
+		private volatile int flushCount;
+
+		@Override
+		public void write(int value) {
+			delegate.write(value);
+		}
+
+		@Override
+		public void write(byte[] bytes, int offset, int length) {
+			delegate.write(bytes, offset, length);
+		}
+
+		@Override
+		public void flush() {
+			flushCount++;
+			flushes.countDown();
+		}
+
+		@Override
+		public String toString() {
+			return delegate.toString();
+		}
 	}
 }

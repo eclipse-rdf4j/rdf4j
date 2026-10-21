@@ -28,14 +28,18 @@ import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
-import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 
 /**
  * Rewrites safe RDF-term equality IN filters into a finite VALUES semijoin anchor.
@@ -46,33 +50,59 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		tupleExpr.visit(new Visitor());
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(tupleExpr, bindings);
+		tupleExpr.visit(new Visitor(analysis));
 	}
 
 	private static final class Visitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+		private final QueryAlgebraBindingAnalysis analysis;
 
-		private Visitor() {
+		private Visitor(QueryAlgebraBindingAnalysis analysis) {
 			super(false);
+			this.analysis = analysis;
 		}
 
 		@Override
 		public void meet(Filter filter) {
 			super.meet(filter);
-			if (filter.getParentNode() == null || isScopeBoundary(filter)) {
+			if (filter.getParentNode() == null || isScopeBoundary(filter)
+					|| !QueryEvaluationUtility.isRepeatable(filter.getArg())) {
 				return;
 			}
 
 			BindingSetAssignment assignment = safeValuesAnchor(filter.getCondition());
-			if (assignment == null
-					|| !filter.getArg().getAssuredBindingNames().containsAll(assignment.getBindingNames())) {
+			if (assignment == null) {
+				return;
+			}
+
+			QueryAlgebraBindingAnalysis.ReadOnlyContext input = analysis.contextAt(filter.getArg());
+			QueryAlgebraBindingAnalysis.OutputFacts facts = analysis.outputFacts(filter.getArg(), input);
+			if (!facts.possibleOutputsKnown() || !facts.guaranteedOutputsKnown()
+					|| !analysis.guaranteedAfter(facts).containsAll(assignment.getBindingNames())) {
 				return;
 			}
 
 			if (mergeWithExistingValuesAnchor(filter, assignment)) {
+				analysis.invalidate();
 				return;
 			}
 
+			invalidateAncestorMergeJoins(filter);
 			filter.replaceWith(new Join(assignment, filter.getArg().clone()));
+			analysis.invalidate();
+		}
+	}
+
+	/**
+	 * This optimizer runs after physical join planning. Introducing an unordered VALUES input changes the ordering
+	 * contract of every containing join, so an ancestor merge-join hint derived from the old subtree is no longer
+	 * valid. Descendant hints remain valid because their inputs are unchanged.
+	 */
+	private static void invalidateAncestorMergeJoins(QueryModelNode rewrittenNode) {
+		for (QueryModelNode parent = rewrittenNode.getParentNode(); parent != null; parent = parent.getParentNode()) {
+			if (parent instanceof Join join) {
+				join.setMergeJoin(false);
+			}
 		}
 	}
 
@@ -141,17 +171,23 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 		}
 
 		if (mergedBindingSets.isEmpty()) {
+			if (!QueryEvaluationUtility.canDiscardWithoutEvaluation(filter.getArg())) {
+				// skip the merge: the empty result may not suppress a query-fatal error in the argument
+				return false;
+			}
 			filter.replaceWith(new EmptySet());
 			return true;
 		}
 
 		existingAssignment.setBindingSets(mergedBindingSets);
+		existingAssignment.setLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES, 1L);
 		filter.replaceWith(filter.getArg().clone());
 		return true;
 	}
 
 	private static BindingSetAssignment findExistingValuesAnchor(TupleExpr tupleExpr, String bindingName) {
 		if (tupleExpr instanceof BindingSetAssignment assignment
+				&& assignment.hasRepeatableBindingSets()
 				&& Set.of(bindingName).equals(assignment.getBindingNames())) {
 			return assignment;
 		}
@@ -207,13 +243,13 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		assignment.setBindingNames(Set.of(bindingName));
+		assignment.setLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES, 1L);
+		List<String> bindingNames = List.of(bindingName);
 		List<BindingSet> bindingSets = new ArrayList<>(values.size());
 		for (Value value : values) {
-			MapBindingSet bindingSet = new MapBindingSet(1);
-			bindingSet.addBinding(bindingName, value);
-			bindingSets.add(bindingSet);
+			bindingSets.add(new ListBindingSet(bindingNames, List.of(value)));
 		}
-		assignment.setBindingSets(bindingSets);
+		assignment.setBindingSets(List.copyOf(bindingSets));
 		return assignment;
 	}
 

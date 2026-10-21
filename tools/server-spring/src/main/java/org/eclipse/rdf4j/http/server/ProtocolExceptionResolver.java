@@ -40,6 +40,10 @@ public class ProtocolExceptionResolver implements HandlerExceptionResolver {
 	public ModelAndView resolveException(HttpServletRequest request, HttpServletResponse response, Object handler,
 			Exception exception) {
 		logger.debug("ProtocolExceptionResolver.resolveException() called");
+		if (response.isCommitted()) {
+			logger.warn("Suppressing protocol error response after the HTTP response was committed", exception);
+			return new ModelAndView();
+		}
 
 		Map<String, Object> model = new HashMap<>();
 

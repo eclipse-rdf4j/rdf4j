@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.impl.DatasetUtils;
 import org.eclipse.rdf4j.rio.helpers.TripleTermUtil;
 
 /**
@@ -111,6 +112,7 @@ public class TransactionWriter {
 	}
 
 	protected void serialize(SPARQLUpdateOperation op, XMLWriter xmlWriter) throws IOException {
+		DatasetUtils.requireRepresentableReadDataset(op.getDataset());
 		String baseURI = op.getBaseURI();
 		if (baseURI != null) {
 			xmlWriter.setAttribute(TransactionXMLConstants.BASE_URI_ATT, baseURI);

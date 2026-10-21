@@ -36,6 +36,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -48,6 +49,7 @@ import org.eclipse.rdf4j.http.client.spi.HttpUtils;
 import org.eclipse.rdf4j.http.client.spi.NameValuePair;
 import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
 import org.eclipse.rdf4j.http.client.spi.UriBuilder;
+import org.eclipse.rdf4j.http.protocol.LmdbForceableStrategy;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.protocol.Protocol.Action;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
@@ -70,6 +72,7 @@ import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.ExplanationImpl;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
+import org.eclipse.rdf4j.query.impl.DatasetUtils;
 import org.eclipse.rdf4j.query.impl.TupleQueryResultBuilder;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -84,6 +87,7 @@ import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -96,11 +100,21 @@ import tools.jackson.databind.ObjectMapper;
  */
 public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	private static final ObjectMapper EXPLANATION_MAPPER = new ObjectMapper();
+	private static final ObjectMapper STRATEGY_MAPPER = new ObjectMapper();
+	private static final TypeReference<List<LmdbForceableStrategy>> FORCEABLE_STRATEGY_LIST = new TypeReference<>() {
+	};
 
 	/**
 	 * How long the client should wait before sending another PING to the server
 	 */
 	private static final long PINGDELAY = TimeUnit.MILLISECONDS.convert(Protocol.DEFAULT_TIMEOUT, TimeUnit.SECONDS) / 2;
+
+	/**
+	 * An explanation request spends its whole max query time running the query and only then stops it and writes the
+	 * plan it has collected, flagged as timed out. The client waits this much longer than the max query time for that
+	 * partial plan.
+	 */
+	private static final Duration EXPLANATION_RESPONSE_GRACE = Duration.ofSeconds(30);
 
 	private final Logger logger = LoggerFactory.getLogger(RDF4JProtocolSession.class);
 
@@ -113,6 +127,8 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	private ScheduledFuture<?> ping;
 
 	private long pingDelay = PINGDELAY;
+
+	private String forcedLmdbExecutionStrategy;
 
 	public RDF4JProtocolSession(RDF4JHttpClient client, ExecutorService executor) {
 		super(client, executor);
@@ -258,6 +274,43 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		} catch (RDF4JException e) {
 			throw new RepositoryException(e);
 		}
+	}
+
+	/** Lists the strategies available for native execution in the selected repository. */
+	@Experimental
+	public List<LmdbForceableStrategy> getLmdbForceableStrategies()
+			throws IOException, RepositoryException, UnauthorizedException {
+		checkRepositoryURL();
+		HttpRequest method = applyAdditionalHeaders(
+				HttpRequests.get(Protocol.getLmdbForceableStrategiesLocation(getRepositoryURL())))
+						.header(Protocol.ACCEPT_PARAM_NAME, "application/json")
+						.build();
+		try (HttpResponse response = executeOK(method)) {
+			return STRATEGY_MAPPER.readValue(response.getBodyAsStream(), FORCEABLE_STRATEGY_LIST);
+		} catch (RDF4JException e) {
+			throw new RepositoryException(e);
+		}
+	}
+
+	/**
+	 * Pins one named LMDB query-execution strategy for every query subsequently sent through this session, instead of
+	 * letting the store select adaptively. Every spelling of "no strategy" accepted by
+	 * {@link Protocol#isLmdbForcedExecutionStrategyUnset(String)} — {@code null}, blank, and
+	 * {@link Protocol#LMDB_FORCED_EXECUTION_STRATEGY_NOT_ACTIVATED} — means "do not force anything", which is the
+	 * default and which sends no parameter at all. Otherwise the value is sent as
+	 * {@link Protocol#LMDB_FORCED_EXECUTION_STRATEGY_PARAM_NAME} and is ignored by servers whose repository is not LMDB
+	 * backed.
+	 */
+	@Experimental
+	public void setForcedLmdbExecutionStrategy(String strategyOrNull) {
+		this.forcedLmdbExecutionStrategy = Protocol.isLmdbForcedExecutionStrategyUnset(strategyOrNull) ? null
+				: strategyOrNull;
+	}
+
+	/** The strategy set by {@link #setForcedLmdbExecutionStrategy(String)}, or {@code null} when none is forced. */
+	@Experimental
+	public String getForcedLmdbExecutionStrategy() {
+		return forcedLmdbExecutionStrategy;
 	}
 
 	/*-------------------------*
@@ -859,7 +912,32 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		if (maxQueryTime > 0) {
 			builder.responseTimeout(Duration.ofSeconds(maxQueryTime));
 		}
-		return builder.build();
+		HttpRequest method = builder.build();
+		String queryRequestId = transactionURL == null ? QueryRequestContext.getQueryRequestId() : null;
+		if (queryRequestId != null) {
+			method = withQueryParam(method, Protocol.QUERY_REQUEST_ID_PARAM_NAME, queryRequestId);
+		}
+		return method;
+	}
+
+	/**
+	 * Requests cancellation of a non-transactional regular query previously submitted with the supplied request id. The
+	 * server acknowledges cancellation with HTTP 204 when the id identifies an active operation. It returns HTTP 404
+	 * when no matching active operation is registered, including when the query is unknown or has already completed; in
+	 * those cases this method raises a {@link RepositoryException}.
+	 *
+	 * @param queryRequestId client-generated query request identifier
+	 */
+	public void cancelQuery(String queryRequestId) throws IOException, RepositoryException, UnauthorizedException {
+		String normalizedQueryRequestId = Objects.requireNonNull(queryRequestId, "Query request id was null").trim();
+		if (normalizedQueryRequestId.isEmpty()) {
+			throw new IllegalArgumentException("Query request id was blank");
+		}
+
+		HttpRequest cancelMethod = applyAdditionalHeaders(HttpRequests.post(getQueryURL())).build();
+		cancelMethod = withQueryParam(cancelMethod, Protocol.CANCEL_QUERY_PARAM_NAME, Boolean.TRUE.toString());
+		cancelMethod = withQueryParam(cancelMethod, Protocol.QUERY_REQUEST_ID_PARAM_NAME, normalizedQueryRequestId);
+		executeNoContent(cancelMethod);
 	}
 
 	public Explanation sendQueryExplanation(QueryLanguage ql, String query, String baseURI, Dataset dataset,
@@ -869,6 +947,11 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		Objects.requireNonNull(level, "Explanation level may not be null");
 		HttpRequest queryMethod = getQueryMethod(ql, query, baseURI, dataset, includeInferred, maxQueryTime, bindings);
 		HttpRequest explainMethod = withQueryParam(queryMethod, Protocol.EXPLAIN_PARAM_NAME, level.name());
+		if (maxQueryTime > 0) {
+			explainMethod = HttpRequest.copyOf(explainMethod, explainMethod.getUri())
+					.responseTimeout(Duration.ofSeconds(maxQueryTime).plus(EXPLANATION_RESPONSE_GRACE))
+					.build();
+		}
 		String explainRequestId = getTransactionURL() == null ? QueryExplanationRequestContext.getExplainRequestId()
 				: null;
 		if (explainRequestId != null) {
@@ -1007,6 +1090,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	protected List<NameValuePair> getQueryMethodParameters(QueryLanguage ql, String query, String baseURI,
 			Dataset dataset, boolean includeInferred, int maxQueryTime, Binding... bindings) {
 		Objects.requireNonNull(ql, "QueryLanguage may not be null");
+		DatasetUtils.requireRepresentableReadDataset(dataset);
 
 		List<NameValuePair> queryParams = new ArrayList<>();
 		queryParams.add(NameValuePair.of(Protocol.QUERY_LANGUAGE_PARAM_NAME, ql.getName()));
@@ -1017,6 +1101,11 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		}
 
 		queryParams.add(NameValuePair.of(Protocol.INCLUDE_INFERRED_PARAM_NAME, Boolean.toString(includeInferred)));
+
+		if (forcedLmdbExecutionStrategy != null) {
+			queryParams.add(NameValuePair.of(Protocol.LMDB_FORCED_EXECUTION_STRATEGY_PARAM_NAME,
+					forcedLmdbExecutionStrategy));
+		}
 
 		if (maxQueryTime > 0) {
 			queryParams.add(NameValuePair.of(Protocol.TIMEOUT_PARAM_NAME, Integer.toString(maxQueryTime)));
@@ -1045,6 +1134,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	protected List<NameValuePair> getUpdateMethodParameters(QueryLanguage ql, String update, String baseURI,
 			Dataset dataset, boolean includeInferred, int maxQueryTime, Binding... bindings) {
 		Objects.requireNonNull(ql, "QueryLanguage may not be null");
+		DatasetUtils.requireRepresentableReadDataset(dataset);
 
 		List<NameValuePair> queryParams = new ArrayList<>();
 

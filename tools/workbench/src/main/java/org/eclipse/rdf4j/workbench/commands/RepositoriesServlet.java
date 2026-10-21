@@ -21,9 +21,8 @@ import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 public class RepositoriesServlet extends TransformationServlet {
 
 	@Override
-	public void service(TupleResultBuilder builder, String xslPath)
+	public void service(TupleResultBuilder builder)
 			throws RepositoryException, QueryResultHandlerException {
-		builder.transform(xslPath, "repositories.xsl");
 		builder.start("readable", "writeable", "id", "description", "location");
 		builder.link(List.of(INFO));
 		for (RepositoryInfo info : manager.getAllRepositoryInfos()) {

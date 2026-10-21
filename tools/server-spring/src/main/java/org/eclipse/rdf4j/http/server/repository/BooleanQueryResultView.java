@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Map;
 
+import org.eclipse.rdf4j.http.client.QueryResponseHeartbeat;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriter;
@@ -59,14 +60,41 @@ public class BooleanQueryResultView extends QueryResultView {
 		boolean headersOnly = (Boolean) model.get(HEADERS_ONLY);
 
 		if (!headersOnly) {
-			try (OutputStream out = response.getOutputStream()) {
-				BooleanQueryResultWriter qrWriter = brWriterFactory.getWriter(out);
-				boolean value = (Boolean) model.get(QUERY_RESULT_KEY);
-				qrWriter.handleBoolean(value);
-			} catch (QueryResultHandlerException e) {
-				if (e.getCause() != null && e.getCause() instanceof IOException) {
-					throw (IOException) e.getCause();
-				} else {
+			QueryResponseHeartbeat heartbeat = getResponseHeartbeat(model);
+			// Keep the legacy branch for callers that do not hand off a heartbeat, including transactional responses.
+			if (heartbeat == null) {
+				try (OutputStream out = response.getOutputStream()) {
+					BooleanQueryResultWriter qrWriter = brWriterFactory.getWriter(out);
+					boolean value = (Boolean) model.get(QUERY_RESULT_KEY);
+					qrWriter.handleBoolean(value);
+				} catch (QueryResultHandlerException e) {
+					if (e.getCause() != null && e.getCause() instanceof IOException) {
+						throw (IOException) e.getCause();
+					} else {
+						throw new IOException(e);
+					}
+				}
+			} else {
+				try {
+					BooleanQueryResultWriter qrWriter = (BooleanQueryResultWriter) model.get(RESPONSE_WRITER_KEY);
+					if (qrWriter == null) {
+						qrWriter = brWriterFactory.getWriter(heartbeat.getOutputStream());
+					}
+					boolean value = (Boolean) model.get(QUERY_RESULT_KEY);
+					qrWriter.handleBoolean(value);
+					heartbeat.complete();
+				} catch (QueryResultHandlerException e) {
+					stopResponseHeartbeat(model);
+					if (responseWasCommitted(model, response) || isExplicitlyCancelled(model)) {
+						abortResponseHeartbeat(model);
+						if (e.getCause() instanceof IOException) {
+							throw (IOException) e.getCause();
+						}
+						throw e;
+					}
+					if (e.getCause() instanceof IOException) {
+						throw (IOException) e.getCause();
+					}
 					throw new IOException(e);
 				}
 			}

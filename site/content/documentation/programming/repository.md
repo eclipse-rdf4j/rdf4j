@@ -674,6 +674,92 @@ keywordQuery.setBinding("keyword", literal(keyword));
 TupleQueryResult keywordQueryResult = keywordQuery.evaluate();
 ```
 
+#### Addressing a blank node by its repository ID
+
+RDF4J enables fixed blank node references in SPARQL by default. This deliberately revises the BNR-1 proposal's opt-in
+activation rule. `<_:known>` is the blank node whose exact
+`BNode.getID()` is `known` in the executing repository. For example:
+
+```java
+ValueFactory vf = connection.getValueFactory();
+connection.add(vf.createBNode("known"), vf.createIRI("urn:name"), vf.createLiteral("Alice"));
+boolean found = connection.prepareBooleanQuery("ASK { <_:known> <urn:name> \"Alice\" }").evaluate();
+```
+
+The ordinary syntax `_:known` keeps its SPARQL meaning: an existential placeholder in a query pattern or a fresh
+node in an insertion or construction template. A fixed reference does not allocate a node, check that it exists,
+or write to the repository. IDs are case-sensitive, retain their Unicode spelling and literal percent sequences,
+and are independent of BASE and PREFIX declarations. Characters inside the reference identifier can be escaped
+with `\uXXXX` or `\UXXXXXXXX`; escapes are decoded once. `RenderUtils.toSPARQL(vf.createBNode(id))` encodes an exact ID
+when composing a reference in Java. Prefer typed `query.setBinding(name, value)` when composing a query from values.
+
+References can occur in query values, triple components, reifiers, graph names, construction templates and update
+targets, including INSERT DATA and DELETE DATA. Predicates, datatypes, function names, BASE/PREFIX declarations,
+SERVICE endpoints, LOAD sources, and FROM/USING selectors still require IRIs. Fresh template nodes, DATA nodes and BNODE results
+remain distinct from fixed identities and from other generated nodes in the request.
+
+Fixed references inherit the same configured dataset and update targets as IRIs. RDF4J's unconfigured union-default
+removal behavior is preserved: an unqualified deletion can remove matching statements from multiple contexts.
+To select only the physical default graph as the default removal target, supply an explicit dataset:
+
+```java
+SimpleDataset dataset = new SimpleDataset();
+dataset.addDefaultRemoveGraph(RDF4J.NIL);
+Update update = connection.prepareUpdate("DELETE DATA { <_:known> <urn:name> \"Alice\" }");
+update.setDataset(dataset);
+update.execute();
+```
+
+Explicit WITH, USING and GRAPH retain their existing target and read-selection precedence. The BNR conformance
+fixture supplies this same physical-default removal selection on every update; its request text and expected
+results remain unchanged. Conformance results state this effective-dataset precondition.
+
+Select strict syntax before preparing a query or update:
+
+```java
+connection.setQueryParseOptions(QueryParseOptions.STRICT);
+// Preparing a query containing <_:known> now fails.
+connection.setQueryParseOptions(QueryParseOptions.DEFAULT);
+
+SPARQLParser parser = new SPARQLParser(Set.of(), QueryParseOptions.STRICT);
+```
+
+Prepared operations retain their selected syntax policy. `VERSION "1.2"` keeps the existing base-language policy
+and does not override strict rejection. This syntax option is separate from query evaluation mode below.
+Implementations that cannot honor a nondefault policy report it explicitly. HTTP server deployments can set
+`RepositoryInterceptor.setQueryParseOptions(QueryParseOptions.STRICT)`; the selected policy also applies to
+connections used by HTTP transactions.
+
+A repository-owned blank node returned by the local Java API or SPARQL JSON results exposes its exact reusable
+ID. Reuse it with the same repository and identity epoch. Transaction boundaries, deletion/reinsertion of the same
+name, restart and dictionary maintenance preserve that name. Replacing the repository or exporting and reimporting
+data need not preserve the epoch. RDF4J's built-in stores check generated nodes against stored identities, fixed
+and bound request references, and identities already issued by that execution; RDF4J does not maintain a historical
+log of every unstored value ever mentioned. Third-party backends without exact identity lookup retain their existing
+generation behavior for requests without fixed references, including labelled BNODE IDs. A collision with a known
+request identity fails explicitly. Combining fixed references with fresh allocation requires trustworthy identity
+lookup. RDF serialization and other result formats may relabel nodes and do not establish the JSON handle guarantee.
+
+SERVICE references belong to the receiving service's namespace. Independent remote responses are standardized
+apart, including nodes inside triple terms. Imported aliases are ordinary blank node results but are not local
+repository handles. Sending a blank node back requires retained provenance, a configured scope and epoch, and a
+remote capability guaranteeing canonical result IDs or an explicit correspondence. Endpoint URL equality and an
+equal response label are insufficient. Unsafe transport fails explicitly and follows SERVICE SILENT semantics.
+Resolver implementations configure these capabilities; RDF4J does not discover them by sending new protocol
+requests. Generic SPARQL text binding transport rejects query shapes whose initial bindings cannot safely be
+represented. Native repository transports can carry typed values where supported.
+
+For `RepositoryFederatedService`, configure `setBlankNodeReferencesSupported`, `setBNodeIdentityScope` and
+`setCanonicalBNodeIDsSupported` from the receiving repository's actual guarantees. The identity-scope object
+represents one repository and epoch; share it only across connections with that identity correspondence. FedX
+endpoint configurations expose the corresponding capability methods. A custom resolver can retain an explicit
+label-to-canonical-ID correspondence when the remote result format does not expose canonical IDs.
+
+Applications selecting blank-node graphs through `Dataset` use `getDefaultGraphResources()`,
+`getNamedGraphResources()`, `getDefaultRemoveGraphResources()` and `getDefaultInsertGraphResource()`.
+The existing IRI getters remain available and report an error when a blank-node graph would make the legacy view
+lossy.
+
 #### Tweaking the query evaluation mode
 
 {{< tag " New in RDF4J 4.3" >}}

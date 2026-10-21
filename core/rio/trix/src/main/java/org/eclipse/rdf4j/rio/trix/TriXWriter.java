@@ -28,6 +28,8 @@ import static org.eclipse.rdf4j.rio.trix.TriXConstants.URI_TAG;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.Writer;
+import java.util.Collection;
+import java.util.HashSet;
 
 import org.eclipse.rdf4j.common.io.CharSink;
 import org.eclipse.rdf4j.common.xml.XMLWriter;
@@ -40,6 +42,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
+import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
 import org.eclipse.rdf4j.rio.helpers.XMLWriterSettings;
 
@@ -89,6 +92,13 @@ public class TriXWriter extends AbstractRDFWriter implements CharSink {
 	@Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.TRIX;
+	}
+
+	@Override
+	public Collection<RioSetting<?>> getSupportedSettings() {
+		final Collection<RioSetting<?>> settings = new HashSet<>(super.getSupportedSettings());
+		settings.add(XMLWriterSettings.INCLUDE_XML_PI);
+		return settings;
 	}
 
 	@Override

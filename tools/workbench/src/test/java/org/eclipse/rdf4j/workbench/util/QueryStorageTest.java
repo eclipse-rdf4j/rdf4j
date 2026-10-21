@@ -21,7 +21,13 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.app.AppConfiguration;
 import org.eclipse.rdf4j.model.IRI;
@@ -32,13 +38,157 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class QueryStorageTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+
+	@Test
+	void leasesShareCanonicalDirectoryAndLastReleasePreservesData(@TempDir Path directory) throws Exception {
+		AppConfiguration config = config(directory);
+		QueryStorage.Lease first = QueryStorage.acquire(config);
+		try (QueryStorage.Lease second = QueryStorage.acquire(config(directory.resolve(".")))) {
+			assertThat(second.storage()).isSameAs(first.storage());
+			first.storage()
+					.saveQuery("urn:test:repository", "saved", "alice", false, QueryLanguage.SPARQL,
+							"ASK {}", false, 10, 0);
+			first.close();
+			first.close();
+			assertThat(second.storage().getQueryText("urn:test:repository", "alice", "saved")).isEqualTo("ASK {}");
+		} finally {
+			first.close();
+		}
+		assertDirectoryReleased(directory);
+		try (QueryStorage.Lease reopened = QueryStorage.acquire(config)) {
+			assertThat(reopened.storage()).isNotSameAs(first.storage());
+			assertThat(reopened.storage().getQueryText("urn:test:repository", "alice", "saved")).isEqualTo("ASK {}");
+		}
+		assertDirectoryReleased(directory);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	void legacyAndLeasedConsumersShareOneStoreInEitherAcquisitionOrder(boolean legacyFirst,
+			@TempDir Path directory) throws Exception {
+		AppConfiguration config = config(directory);
+		QueryStorage legacy = legacyFirst ? QueryStorage.getSingletonInstance(config) : null;
+		try (QueryStorage.Lease lease = QueryStorage.acquire(config)) {
+			if (legacy == null) {
+				legacy = QueryStorage.getSingletonInstance(config);
+			}
+			assertThat(legacy).isSameAs(lease.storage());
+			legacy.saveQuery("urn:test:repository", "saved", "alice", false, QueryLanguage.SPARQL,
+					"ASK {}", false, 10, 0);
+			legacy.shutdown();
+			assertThat(lease.storage().getQueryText("urn:test:repository", "alice", "saved")).isEqualTo("ASK {}");
+		} finally {
+			if (legacy != null) {
+				legacy.shutdown();
+			}
+		}
+		assertDirectoryReleased(directory);
+	}
+
+	@Test
+	void legacyOwnerOutlivesLastLeasedConsumer(@TempDir Path directory) throws Exception {
+		AppConfiguration config = config(directory);
+		QueryStorage legacy = QueryStorage.getSingletonInstance(config);
+		try {
+			try (QueryStorage.Lease lease = QueryStorage.acquire(config)) {
+				assertThat(lease.storage()).isSameAs(legacy);
+			}
+			assertThat(QueryStorage.getSingletonInstance(config)).isSameAs(legacy);
+			legacy.saveQuery("urn:test:repository", "saved", "alice", false, QueryLanguage.SPARQL,
+					"ASK {}", false, 10, 0);
+		} finally {
+			legacy.shutdown();
+		}
+		assertDirectoryReleased(directory);
+	}
+
+	@Test
+	void differentApplicationDirectoriesNeverShareSavedQueries(@TempDir Path directory) throws Exception {
+		try (QueryStorage.Lease first = QueryStorage.acquire(config(directory.resolve("first")));
+				QueryStorage.Lease second = QueryStorage.acquire(config(directory.resolve("second")))) {
+			assertThat(first.storage()).isNotSameAs(second.storage());
+			first.storage()
+					.saveQuery("urn:test:repository", "saved", "alice", false, QueryLanguage.SPARQL,
+							"ASK {}", false, 10, 0);
+			assertThat(second.storage().askExists("urn:test:repository", "saved", "alice")).isFalse();
+		}
+	}
+
+	@Test
+	void simultaneousLastReleaseAndAcquisitionNeverOpenConflictingStores(@TempDir Path directory) throws Exception {
+		AppConfiguration config = config(directory);
+		try (QueryStorage.Lease initial = QueryStorage.acquire(config)) {
+			initial.storage()
+					.saveQuery("urn:test:repository", "saved", "alice", false, QueryLanguage.SPARQL,
+							"ASK {}", false, 10, 0);
+		}
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		try {
+			for (int round = 0; round < 20; round++) {
+				QueryStorage.Lease previous = QueryStorage.acquire(config);
+				CountDownLatch ready = new CountDownLatch(2);
+				CountDownLatch start = new CountDownLatch(1);
+				Future<?> release = executor.submit(() -> {
+					ready.countDown();
+					await(start);
+					previous.close();
+				});
+				Future<QueryStorage.Lease> acquire = executor.submit(() -> {
+					ready.countDown();
+					await(start);
+					return QueryStorage.acquire(config);
+				});
+				assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+				start.countDown();
+				try (QueryStorage.Lease next = acquire.get(10, TimeUnit.SECONDS)) {
+					release.get(10, TimeUnit.SECONDS);
+					assertThat(next.storage().getQueryText("urn:test:repository", "alice", "saved"))
+							.isEqualTo("ASK {}");
+				} finally {
+					previous.close();
+				}
+			}
+		} finally {
+			executor.shutdownNow();
+		}
+		assertDirectoryReleased(directory);
+	}
+
+	private static void await(CountDownLatch latch) {
+		try {
+			if (!latch.await(10, TimeUnit.SECONDS)) {
+				throw new AssertionError("Concurrent store operation did not start");
+			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new AssertionError(e);
+		}
+	}
+
+	private static AppConfiguration config(Path directory) {
+		AppConfiguration config = mock(AppConfiguration.class);
+		when(config.getDataDir()).thenReturn(directory.toFile());
+		return config;
+	}
+
+	private static void assertDirectoryReleased(Path directory) {
+		SailRepository reopened = new SailRepository(new NativeStore(directory.resolve("queries").toFile()));
+		try {
+			reopened.init();
+		} finally {
+			reopened.shutDown();
+		}
+	}
 
 	@Test
 	void saveReadUpdateDeleteAndListQueries() throws Exception {

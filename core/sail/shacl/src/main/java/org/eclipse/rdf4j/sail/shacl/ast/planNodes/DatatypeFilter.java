@@ -31,11 +31,17 @@ public class DatatypeFilter extends FilterPlanNode {
 	private final IRI datatype;
 	private final CoreDatatype.XSD xsdDatatype;
 	private StackTraceElement[] stackTrace;
+	// xsd:string has no lexical constraints beyond being a string -- any label is trivially
+	// valid, so calling XMLDatatypeUtil.isValidValue for it is unnecessary and would otherwise
+	// force literal.stringValue() (and, for out-of-line literals, a disk read) for every value,
+	// just to confirm something that's always true.
+	private final boolean needsConformanceCheck;
 
 	public DatatypeFilter(PlanNode parent, IRI datatype, ConnectionsGroup connectionsGroup) {
 		super(parent, connectionsGroup);
 		this.datatype = datatype;
 		this.xsdDatatype = CoreDatatype.from(datatype).asXSDDatatype().orElse(null);
+		this.needsConformanceCheck = xsdDatatype != null && xsdDatatype != CoreDatatype.XSD.STRING;
 	}
 
 	@Override
@@ -48,7 +54,8 @@ public class DatatypeFilter extends FilterPlanNode {
 		Literal literal = (Literal) t.get().getValue();
 		if (xsdDatatype != null) {
 			if (literal.getCoreDatatype() == xsdDatatype) {
-				boolean isValid = XMLDatatypeUtil.isValidValue(literal.stringValue(), xsdDatatype);
+				boolean isValid = !needsConformanceCheck
+						|| XMLDatatypeUtil.isValidValue(literal.stringValue(), xsdDatatype);
 				if (isValid) {
 					logger.trace(
 							"Tuple accepted because its literal value is valid according to the rules for the datatype in the XSD spec. Actual datatype: {}, Expected datatype: {}, Tuple: {}",

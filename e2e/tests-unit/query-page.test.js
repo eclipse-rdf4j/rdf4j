@@ -9,8 +9,7 @@ test('query page load initializes editors, fetches saved query text, and hydrate
         query: '',
         getJSONResponses: [{ queryText: ' ASK {} ' }],
         initialExplanation: 'Initial plan',
-        initialExplanationFormat: 'text',
-        noAuthenticatedUser: true
+        initialExplanationFormat: 'text'
     });
 
     harness.runPageLoad();
@@ -18,16 +17,13 @@ test('query page load initializes editors, fetches saved query text, and hydrate
     assert.equal(harness.getJSONRequests.length, 1);
     assert.equal(harness.context.workbench.query.getQueryValue(), 'ASK {}');
     assert.ok(harness.yasqeState.instances.query);
-    assert.equal(harness.getProperty('save-private', 'disabled'), true);
-    assert.equal(harness.getProperty('save-private', 'checked'), false);
+    // The view renders 'Private' disabled for anonymous users; the page script no longer guesses it (review fix B10).
     assert.equal(harness.getText('query-explanation'), 'Initial plan');
     assert.equal(harness.getProperty('download-explanation', 'disabled'), false);
 });
 
-test('query utilities cover namespace reset, name validation, query language switch, save, and submit branches', () => {
-    const harness = createQueryBrowserHarness({
-        confirmResponses: [false, true]
-    });
+test('query utilities cover name validation, query language switch, save, and submit branches', () => {
+    const harness = createQueryBrowserHarness();
 
     harness.runPageLoad();
 
@@ -40,13 +36,6 @@ test('query utilities cover namespace reset, name validation, query language swi
     harness.context.workbench.query.handleNameChange();
     harness.advanceTimers(0);
     assert.equal(harness.getProperty('save', 'disabled'), false);
-
-    harness.context.workbench.query.setQueryValue('SELECT * WHERE {?s ?p ?o}');
-    harness.context.workbench.query.resetNamespaces();
-    assert.equal(harness.context.workbench.query.getQueryValue(), 'SELECT * WHERE {?s ?p ?o}');
-
-    harness.context.workbench.query.resetNamespaces();
-    assert.match(harness.context.workbench.query.getQueryValue(), /PREFIX ex:/);
 
     const primaryEditor = harness.yasqeState.instances.query;
     harness.setValue('queryLn', 'SERQL');
@@ -62,17 +51,44 @@ test('query utilities cover namespace reset, name validation, query language swi
     harness.ajaxRequests[harness.ajaxRequests.length - 1].resolve({ accessible: true, written: true });
     assert.equal(harness.getText('save-feedback'), 'Query saved.');
     assert.equal(harness.hasClass('save-feedback', 'success'), true);
+    assert.equal(harness.getProperty('query-request-id', 'value'), '');
+    assert.equal(harness.getProperty('query-cancel', 'disabled'), true);
+    assert.equal(harness.openedWindows.length, 0);
 
+    // Execution belongs to the streamed result renderer (query-result-lifecycle.test.js); without it nothing runs.
     harness.setValue('action', 'exec');
     harness.context.workbench.query.setQueryValue('SELECT * WHERE {?s ?p ?o}');
     assert.equal(harness.context.workbench.query.doSubmit(), false);
-    assert.match(harness.document.location.href, /action=exec/);
+    assert.equal(harness.openedWindows.length, 0);
+    assert.equal(harness.document.location.pathname, '/rdf4j-workbench/repositories/test/query');
     assert.equal(harness.getProperty('include-query-text', 'value'), 'false');
+    assert.equal(harness.alerts.length, 0);
+});
 
-    harness.context.workbench.query.setQueryValue('x'.repeat(3000));
-    assert.equal(harness.context.workbench.query.doSubmit(), true);
-    assert.equal(harness.getProperty('include-query-text', 'value'), 'true');
-    assert.match(harness.alerts[harness.alerts.length - 1], /Due to its length/);
+test('disabled editor fullscreen hides YASQE control and blocks F11', () => {
+    const harness = createQueryBrowserHarness({ editorFullscreenEnabled: false });
+    harness.runPageLoad();
+    harness.context.workbench.query.toggleCompareMode();
+
+    ['query', 'query-compare'].forEach((editorId) => {
+        const editor = harness.yasqeState.instances[editorId];
+        const fullscreenControl = editor.getWrapperElement().querySelector('.fullscreenToggleBtns');
+
+        assert.ok(fullscreenControl.hidden, `${editorId} fullscreen control should be hidden`);
+        editor.getOption('extraKeys').F11();
+        assert.equal(editor.getOption('fullScreen'), false, `${editorId} F11 should not toggle fullscreen`);
+    });
+});
+
+test('editor fullscreen remains available with the default policy', () => {
+    const harness = createQueryBrowserHarness();
+    harness.runPageLoad();
+    const editor = harness.yasqeState.instances.query;
+    const fullscreenControl = editor.getWrapperElement().querySelector('.fullscreenToggleBtns');
+
+    assert.notEqual(fullscreenControl.hidden, true);
+    editor.getOption('extraKeys').F11();
+    assert.equal(editor.getOption('fullScreen'), true);
 });
 
 test('query explain flow covers success, error, download, and legacy change notifications', () => {
@@ -81,7 +97,8 @@ test('query explain flow covers success, error, download, and legacy change noti
     });
 
     harness.runPageLoad();
-    harness.context.workbench.query.runExplain('json', 'explain-trigger');
+    harness.setValue('explain-format', 'json');
+    harness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
     const explainRequest = harness.pendingExplainRequests[0];
     explainRequest.resolve({
         content: '{"plans":[{"selfTimeActual":2,"totalTimeActual":4}]}',
@@ -106,6 +123,95 @@ test('query explain flow covers success, error, download, and legacy change noti
         harness.getText('query-explanation-status'),
         'Timed out waiting for explanation response.'
     );
+});
+
+test('stale explanation status refreshes the explanation when clicked', () => {
+    const harness = createQueryBrowserHarness({
+        serverRequestIds: ['request-1', 'request-2']
+    });
+
+    harness.runPageLoad();
+    harness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
+    harness.pendingExplainRequests[0].resolve({
+        content: JSON.stringify({ type: 'Projection' }),
+        format: 'json',
+        error: '',
+        timedOut: false
+    });
+    harness.context.workbench.query.setQueryValue('SELECT * WHERE {?s ?p ?changed}');
+    harness.context.workbench.query.notifyQueryPageInputChange('PRIMARY_QUERY_CHANGED');
+
+    assert.equal(harness.getText('query-explanation-status'), 'Explanation is stale. Click here to refresh.');
+    const refresh = harness.document.getElementById('query-explanation-status').querySelector('button');
+    assert.ok(refresh, 'the stale status is a button');
+    refresh.click();
+
+    assert.equal(harness.pendingExplainRequests.length, 2);
+    assert.equal(harness.pendingExplainRequests[1].params.get('query'), 'SELECT * WHERE {?s ?p ?changed}');
+    assert.equal(harness.getText('query-explanation-status'), '');
+});
+
+test('timed-out explanation keeps the partial plan and warns that it is incomplete', () => {
+    const harness = createQueryBrowserHarness({
+        serverRequestIds: ['request-1', 'request-2']
+    });
+
+    harness.runPageLoad();
+    harness.context.workbench.query.runExplain('Executed', 'explain-trigger');
+    harness.pendingExplainRequests[0].resolve({
+        content: JSON.stringify({
+            type: 'Join',
+            timedOut: true,
+            resultSizeActual: 7710,
+            plans: [{ type: 'StatementPattern', resultSizeActual: 3 }, { type: 'StatementPattern' }]
+        }),
+        format: 'json',
+        error: '',
+        timedOut: true
+    });
+
+    assert.match(harness.getText('query-explanation'), /Join/);
+    assert.equal(harness.hasClass('query-explanation-status', 'query-explanation-status--visible'), true);
+    assert.equal(harness.hasClass('query-explanation-status', 'query-explanation-status--warning'), true);
+    assert.match(harness.getText('query-explanation-status'), /timed out/i);
+    assert.match(harness.getText('query-explanation-status'), /incomplete/i);
+
+    // A DOT plan has no room for the timed-out marker; the warning comes from the response flag.
+    harness.setValue('explain-format', 'dot');
+    harness.context.workbench.query.runExplain('Executed', 'explain-trigger');
+    harness.pendingExplainRequests[1].resolve({
+        content: 'digraph Explanation {}',
+        format: 'dot',
+        error: '',
+        timedOut: true
+    });
+
+    assert.equal(harness.hasClass('query-explanation-status', 'query-explanation-status--warning'), true);
+    assert.match(harness.getText('query-explanation-status'), /incomplete/i);
+});
+
+test('explanation shows its running time and then the final time', () => {
+    const harness = createQueryBrowserHarness({
+        serverRequestIds: ['request-1', 'request-2']
+    });
+
+    harness.runPageLoad();
+    assert.equal(harness.getText('query-explanation-timing'), '');
+    harness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
+    assert.equal(harness.getText('query-explanation-timing'), 'Explaining… 0.0 s');
+    harness.advanceTimers(1500);
+    assert.equal(harness.getText('query-explanation-timing'), 'Explaining… 1.5 s');
+    assert.equal(harness.getAttribute('query-explanation-timing', 'role'), 'timer');
+
+    harness.advanceTimers(750);
+    harness.pendingExplainRequests[0].resolve({ content: JSON.stringify({ type: 'Projection' }), format: 'json', error: '' });
+    assert.equal(harness.getText('query-explanation-timing'), 'Explained in 2,250 ms');
+    harness.advanceTimers(5000);
+    assert.equal(harness.getText('query-explanation-timing'), 'Explained in 2,250 ms', 'the final time stays put');
+
+    harness.context.workbench.query.setQueryValue('SELECT * WHERE {?s ?p ?changed}');
+    harness.context.workbench.query.notifyQueryPageInputChange('PRIMARY_QUERY_CHANGED');
+    assert.equal(harness.getText('query-explanation-timing'), '', 'a stale plan does not report its time');
 });
 
 test('query explanation copy writes the current pane explanation to the clipboard', async () => {
@@ -141,6 +247,356 @@ test('query explanation copy writes the current pane explanation to the clipboar
     assert.deepEqual(clipboardWrites, ['Primary plan', 'Compare plan']);
 });
 
+test('interactive Text explanation requests JSON and toggles cached highlighting', async () => {
+    const clipboardWrites = [];
+    const harness = createQueryBrowserHarness({
+        window: {
+            navigator: {
+                clipboard: {
+                    writeText(text) {
+                        clipboardWrites.push(text);
+                        return Promise.resolve();
+                    }
+                }
+            }
+        }
+    });
+    const plan = {
+        type: 'StatementPattern',
+        costEstimate: 1250,
+        plans: [
+            { type: 'Var (name=s)' },
+            { type: 'Var (name=p)' },
+            { type: 'Var (name=o)' }
+        ]
+    };
+    const expectedText = 'StatementPattern (costEstimate=1.3K)\r\n'
+        + '   s: Var (name=s)\r\n'
+        + '   p: Var (name=p)\r\n'
+        + '   o: Var (name=o)\r\n';
+
+    harness.runPageLoad();
+    harness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
+    const request = harness.pendingExplainRequests[0];
+    assert.equal(request.params.get('explain-format'), 'json');
+    request.resolve({
+        content: JSON.stringify(plan),
+        format: 'json',
+        error: '',
+        lineSeparator: '\r\n'
+    });
+
+    assert.equal(harness.getText('query-explanation'), expectedText);
+    assert.equal(harness.getAttribute('query-explanation', 'data-format'), 'text');
+    assert.equal(harness.document.getElementById('query-explanation').getElementsByTagName('span').length > 0, true);
+    assert.equal(harness.document.getElementById('query-explanation-json-view').children.length, 0);
+
+    const requestCount = harness.pendingExplainRequests.length;
+    harness.click('explanation-highlight-hotspot');
+    assert.equal(harness.pendingExplainRequests.length, requestCount);
+    assert.equal(harness.getProperty('explanation-highlight-hotspot', 'checked'), true);
+    assert.equal(harness.getProperty('explanation-highlight-syntax', 'checked'), false);
+    assert.equal(harness.getText('query-explanation'), expectedText);
+    assert.equal(
+        harness.document.getElementById('query-explanation').getElementsByTagName('span')
+            .some((element) => element.classList.contains('query-explanation-line--hotspot')),
+        true
+    );
+    assert.equal(harness.getText('explanation-hotspot-legend'), 'Heat: Cost estimate');
+
+    await harness.context.workbench.query.copyExplanation('primary');
+    assert.deepEqual(clipboardWrites, [expectedText]);
+    harness.context.workbench.query.downloadExplanation();
+    assert.deepEqual(Array.from(harness.createdBlobs[0].parts), [expectedText]);
+    assert.equal(harness.createdBlobs[0].options.type, 'text/plain;charset=utf-8');
+});
+
+test('property config filters both plans and persists hidden properties', () => {
+    const storedValues = new Map();
+    const localStorage = {
+        getItem(key) {
+            return storedValues.has(key) ? storedValues.get(key) : null;
+        },
+        removeItem(key) {
+            storedValues.delete(key);
+        },
+        setItem(key, value) {
+            storedValues.set(key, String(value));
+        }
+    };
+    const harness = createQueryBrowserHarness({ window: { localStorage } });
+
+    harness.runPageLoad();
+    harness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
+    harness.pendingExplainRequests[0].resolve({
+        content: JSON.stringify({
+            type: 'Join',
+            costEstimate: 10,
+            resultSizeEstimate: 4,
+            stringMetricsActual: { bindingState: 'bound' }
+        }),
+        format: 'json',
+        error: ''
+    });
+
+    const costToggle = harness.document.querySelectorAll(
+        '#explanation-property-options input[data-property-name="costEstimate"]'
+    )[0];
+    assert.ok(costToggle);
+    assert.equal(costToggle.checked, true);
+    assert.equal(harness.getText('explanation-property-count'), 'All 3');
+
+    costToggle.checked = false;
+    costToggle.trigger('change');
+    assert.equal(
+        harness.document.querySelectorAll(
+            '#explanation-property-options input[data-property-name="costEstimate"]'
+        )[0] === costToggle,
+        true
+    );
+    assert.doesNotMatch(harness.getText('query-explanation'), /costEstimate/);
+    assert.match(harness.getText('query-explanation'), /resultSizeEstimate=4\.00/);
+    assert.equal(harness.getText('explanation-property-count'), '2 of 3');
+    assert.equal(
+        storedValues.get('rdf4j.workbench.query.explanation.hiddenProperties'),
+        '["costEstimate"]'
+    );
+
+    harness.context.workbench.query.toggleCompareMode();
+    harness.pendingExplainRequests[1].resolve({
+        content: JSON.stringify({ type: 'StatementPattern', costEstimate: 20, resultSizeActual: 8 }),
+        format: 'json',
+        error: ''
+    });
+    assert.doesNotMatch(harness.getText('query-explanation'), /costEstimate/);
+    assert.doesNotMatch(harness.getText('query-explanation-compare'), /costEstimate/);
+    assert.match(harness.getText('query-explanation-compare'), /resultSizeActual=8/);
+    assert.equal(harness.getText('explanation-property-count'), '3 of 4');
+
+    harness.click('explanation-properties-none');
+    assert.equal(harness.getText('query-explanation'), 'Join\n');
+    assert.equal(harness.getText('query-explanation-compare'), 'StatementPattern\n');
+    assert.equal(harness.getText('explanation-property-count'), '0 of 4');
+
+    harness.click('explanation-properties-all');
+    assert.match(harness.getText('query-explanation'), /costEstimate=10/);
+    assert.match(harness.getText('query-explanation-compare'), /costEstimate=20/);
+    assert.equal(harness.getText('explanation-property-count'), 'All 4');
+
+    const restoredCostToggle = harness.document.querySelectorAll(
+        '#explanation-property-options input[data-property-name="costEstimate"]'
+    )[0];
+    restoredCostToggle.checked = false;
+    restoredCostToggle.trigger('change');
+    const reloadedHarness = createQueryBrowserHarness({ window: { localStorage } });
+    reloadedHarness.runPageLoad();
+    reloadedHarness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
+    reloadedHarness.pendingExplainRequests[0].resolve({
+        content: JSON.stringify({ type: 'Join', costEstimate: 10, resultSizeEstimate: 4 }),
+        format: 'json',
+        error: ''
+    });
+    assert.doesNotMatch(reloadedHarness.getText('query-explanation'), /costEstimate/);
+    assert.equal(
+        reloadedHarness.document.querySelectorAll(
+            '#explanation-property-options input[data-property-name="costEstimate"]'
+        )[0].checked,
+        false
+    );
+});
+
+test('Config uses radio controls and closes its panel on an outside click', () => {
+    const harness = createQueryBrowserHarness();
+
+    harness.runPageLoad();
+    harness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
+    harness.pendingExplainRequests[0].resolve({
+        content: JSON.stringify({ type: 'StatementPattern', costEstimate: 10, resultSizeEstimate: 4 }),
+        format: 'json',
+        error: ''
+    });
+
+    const panel = harness.document.getElementById('explanation-settings-panel');
+    const configToggle = harness.document.getElementById('explanation-settings-toggle');
+    const syntaxRadio = harness.document.getElementById('explanation-highlight-syntax');
+    const heatmapRadio = harness.document.getElementById('explanation-highlight-hotspot');
+    assert.equal(configToggle.tagName, 'BUTTON');
+    assert.equal(configToggle.textContent, 'Config');
+    assert.equal(syntaxRadio.tagName, 'INPUT');
+    assert.equal(syntaxRadio.type, 'radio');
+    assert.equal(syntaxRadio.name, 'explanation-highlight-mode');
+    assert.equal(syntaxRadio.checked, true);
+    assert.equal(heatmapRadio.tagName, 'INPUT');
+    assert.equal(heatmapRadio.type, 'radio');
+    assert.equal(heatmapRadio.name, 'explanation-highlight-mode');
+    assert.equal(heatmapRadio.checked, false);
+    assert.equal(harness.getAttribute('explanation-settings-toggle', 'aria-expanded'), 'false');
+    assert.equal(panel.hidden, true);
+    assert.equal(panel.getAttribute('aria-hidden'), 'true');
+    assert.equal(panel.inert, true);
+    assert.equal(harness.document.getElementById('explanation-highlight-mode').parentNode, panel.children[0]);
+    assert.equal(harness.document.getElementById('explanation-property-config').parentNode, panel.children[0]);
+
+    harness.click('explanation-settings-toggle');
+    assert.equal(harness.getAttribute('explanation-settings-toggle', 'aria-expanded'), 'true');
+    assert.equal(panel.hidden, false);
+    assert.equal(panel.getAttribute('aria-hidden'), 'false');
+    assert.equal(panel.inert, false);
+
+    harness.click('explanation-highlight-hotspot');
+    assert.equal(syntaxRadio.checked, false);
+    assert.equal(heatmapRadio.checked, true);
+    assert.equal(harness.getText('explanation-property-count'), 'All 2');
+
+    harness.document.trigger('click', { target: heatmapRadio });
+    assert.equal(harness.getAttribute('explanation-settings-toggle', 'aria-expanded'), 'true');
+    assert.equal(panel.hidden, false);
+
+    harness.document.trigger('click', {
+        target: harness.document.getElementById('query-explanation')
+    });
+    assert.equal(harness.getAttribute('explanation-settings-toggle', 'aria-expanded'), 'false');
+    assert.equal(panel.hidden, true);
+
+    harness.click('explanation-settings-toggle');
+    harness.document.trigger('keydown', { key: 'Escape' });
+    assert.equal(harness.getAttribute('explanation-settings-toggle', 'aria-expanded'), 'false');
+    assert.equal(panel.hidden, true);
+    assert.equal(harness.document.activeElement.id, 'explanation-settings-toggle');
+    assert.equal(heatmapRadio.checked, true);
+});
+
+test('hotspot mode shares one scale across comparison panes', () => {
+    const harness = createQueryBrowserHarness();
+
+    harness.runPageLoad();
+    harness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
+    harness.pendingExplainRequests[0].resolve({
+        content: JSON.stringify({ type: 'StatementPattern', costEstimate: 10 }),
+        format: 'json',
+        error: ''
+    });
+    harness.click('explanation-highlight-hotspot');
+
+    const primaryLine = () => harness.document.getElementById('query-explanation')
+        .getElementsByTagName('span')
+        .find((element) => element.classList.contains('query-explanation-line--hotspot'));
+    assert.equal(primaryLine().getAttribute('data-heat'), '1.000');
+
+    harness.context.workbench.query.toggleCompareMode();
+    assert.equal(harness.pendingExplainRequests[1].params.get('explain-format'), 'json');
+    harness.pendingExplainRequests[1].resolve({
+        content: JSON.stringify({ type: 'StatementPattern', costEstimate: 20 }),
+        format: 'json',
+        error: ''
+    });
+
+    const compareLine = harness.document.getElementById('query-explanation-compare')
+        .getElementsByTagName('span')
+        .find((element) => element.classList.contains('query-explanation-line--hotspot'));
+    assert.equal(primaryLine().getAttribute('data-heat'), '0.500');
+    assert.equal(compareLine.getAttribute('data-heat'), '1.000');
+
+    harness.context.workbench.query.openDiffModal();
+    assert.match(harness.getText('query-diff-explanation'), /StatementPattern \(costEstimate=10\)/);
+    assert.doesNotMatch(harness.getText('query-diff-explanation'), /"costEstimate"/);
+});
+
+test('hotspot mode does not mix metrics while comparison responses are staggered', () => {
+    const harness = createQueryBrowserHarness();
+    const hotspotLine = (elementId) => harness.document.getElementById(elementId)
+        .getElementsByTagName('span')
+        .find((element) => element.classList.contains('query-explanation-line--hotspot'));
+
+    harness.runPageLoad();
+    harness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
+    harness.pendingExplainRequests[0].resolve({
+        content: JSON.stringify({ type: 'StatementPattern', costEstimate: 10 }),
+        format: 'json',
+        error: ''
+    });
+    harness.click('explanation-highlight-hotspot');
+    harness.context.workbench.query.toggleCompareMode();
+    harness.pendingExplainRequests[1].resolve({
+        content: JSON.stringify({ type: 'StatementPattern', costEstimate: 20 }),
+        format: 'json',
+        error: ''
+    });
+
+    harness.setValue('explain-level', 'Timed');
+    harness.context.workbench.query.runCompareExplain('explain-trigger');
+    harness.pendingExplainRequests[2].resolve({
+        content: JSON.stringify({ type: 'StatementPattern', selfTimeActual: 5 }),
+        format: 'json',
+        error: ''
+    });
+
+    assert.equal(hotspotLine('query-explanation').getAttribute('data-heat'), '1.000');
+    assert.equal(hotspotLine('query-explanation-compare').getAttribute('data-heat'), '1.000');
+
+    harness.pendingExplainRequests[3].resolve({
+        content: JSON.stringify({ type: 'StatementPattern', selfTimeActual: 10 }),
+        format: 'json',
+        error: ''
+    });
+    assert.equal(hotspotLine('query-explanation').getAttribute('data-heat'), '0.500');
+    assert.equal(hotspotLine('query-explanation-compare').getAttribute('data-heat'), '1.000');
+});
+
+test('invalid Text JSON falls back to inert plain content', () => {
+    const harness = createQueryBrowserHarness();
+
+    harness.runPageLoad();
+    harness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
+    harness.pendingExplainRequests[0].resolve({
+        content: '<script>not json</script>',
+        format: 'json',
+        error: ''
+    });
+
+    assert.equal(harness.getText('query-explanation'), '<script>not json</script>');
+    assert.equal(harness.getAttribute('query-explanation', 'data-format'), 'text');
+    assert.equal(harness.document.getElementById('query-explanation').getElementsByTagName('script').length, 0);
+    assert.equal(harness.document.getElementById('query-explanation-json-view').children.length, 0);
+});
+
+test('highlight rendering failure falls back to generated inert plaintext', () => {
+    const harness = createQueryBrowserHarness();
+    const plan = { type: 'Var (value=<script>still inert</script>)' };
+    const displayContent = 'Var (value=<script>still inert</script>)\n';
+
+    harness.runPageLoad();
+    harness.context.workbench.queryExplanationHighlighter.render = () => {
+        throw new Error('render failed');
+    };
+    harness.context.workbench.query.testing.renderStableExplanation('primary', {
+        queryHash: 'query',
+        level: 'Optimized',
+        requestedFormat: 'text',
+        responseFormat: 'json',
+        view: 'highlightedText',
+        rawContent: JSON.stringify(plan),
+        displayContent,
+        plan
+    }, null);
+
+    assert.equal(harness.getText('query-explanation'), displayContent);
+    assert.equal(harness.document.getElementById('query-explanation').getElementsByTagName('script').length, 0);
+});
+
+test('highlight radios use native selection and hide outside Text format', () => {
+    const harness = createQueryBrowserHarness({ initialExplanation: 'Legacy plan' });
+
+    harness.runPageLoad();
+    harness.click('explanation-highlight-hotspot');
+    assert.equal(harness.getProperty('explanation-highlight-hotspot', 'checked'), true);
+    assert.equal(harness.getProperty('explanation-highlight-syntax', 'checked'), false);
+    assert.equal(harness.document.activeElement.id, 'explanation-highlight-hotspot');
+
+    harness.setValue('explain-format', 'json');
+    assert.equal(harness.getProperty('explanation-highlight-mode', 'visible'), false);
+});
+
 test('large primary query edits preserve existing hash-backed cookie state', () => {
     const longQuery = 'x'.repeat(3000);
     const harness = createQueryBrowserHarness({
@@ -171,6 +627,36 @@ test('large primary query edits do not create raw query cookies from empty state
     assert.equal(harness.context.workbench.getCookie('ref'), '');
 });
 
+test('primary query draft survives a page reload in the same tab without a query cookie', () => {
+    const sessionValues = new Map();
+    const sessionStorage = {
+        getItem(key) {
+            return sessionValues.has(key) ? sessionValues.get(key) : null;
+        },
+        setItem(key, value) {
+            sessionValues.set(key, String(value));
+        },
+        removeItem(key) {
+            sessionValues.delete(key);
+        }
+    };
+    const href = 'http://localhost:8080/rdf4j-workbench/repositories/test/query';
+    const query = 'SELECT * WHERE {?draft ?p ?o}';
+    const firstPage = createQueryBrowserHarness({ href, query: '', window: { sessionStorage } });
+
+    firstPage.runPageLoad();
+    firstPage.context.workbench.query.setQueryValue(query);
+    firstPage.context.workbench.query.notifyQueryPageInputChange('PRIMARY_QUERY_CHANGED');
+    assert.equal(sessionValues.get('workbench:query-draft:/rdf4j-workbench/repositories/test/query'), query);
+
+    const reloadedPage = createQueryBrowserHarness({ href, query: '', window: { sessionStorage } });
+    reloadedPage.runPageLoad();
+
+    assert.equal(reloadedPage.context.workbench.query.getQueryValue(), query);
+    assert.equal(reloadedPage.context.workbench.getCookie('query'), '',
+        'the tab draft should restore independently of cookie persistence');
+});
+
 test('query compare flow covers auto-explain, compare refresh, diff modal, and compare cancellation', () => {
     const harness = createQueryBrowserHarness({
         initialExplanation: 'Primary explanation',
@@ -193,7 +679,7 @@ test('query compare flow covers auto-explain, compare refresh, diff modal, and c
     assert.equal(harness.context.workbench.query.getQueryValue().length > 0, true);
 
     harness.setValue('query-compare', 'SELECT * WHERE {?o ?p ?s}');
-    harness.context.workbench.query.runCompareExplain('explain-compare-trigger');
+    harness.context.workbench.query.runCompareExplain('explain-trigger');
     assert.equal(harness.pendingExplainRequests.length, 3);
     harness.pendingExplainRequests[1].resolve({
         content: 'Primary refreshed',
@@ -213,7 +699,7 @@ test('query compare flow covers auto-explain, compare refresh, diff modal, and c
     harness.document.trigger('keydown', { key: 'Escape' });
     assert.equal(harness.hasClass('query-diff-modal', 'query-diff-modal--open'), false);
 
-    harness.context.workbench.query.runCompareExplain('explain-compare-trigger');
+    harness.context.workbench.query.runCompareExplain('explain-trigger');
     harness.context.workbench.query.cancelCompareExplain();
     assert.equal(harness.requestsByAction('cancel-explain').length >= 2, true);
 });
@@ -286,4 +772,309 @@ test('saved query edit takes precedence over stale tab draft', () => {
     harness.runPageLoad();
 
     assert.equal(harness.context.workbench.query.getQueryValue(), 'ASK {}');
+});
+
+test('editor shortcuts click Execute, Explain and Save and never use the YASQE endpoint', () => {
+    const harness = createQueryBrowserHarness();
+    harness.runPageLoad();
+    const editor = harness.yasqeState.instances.query;
+    assert.deepEqual(JSON.parse(JSON.stringify(editor.options.sparql)), { endpoint: '', showQueryButton: false });
+    const keys = editor.options.extraKeys;
+    const clicks = [];
+    for (const id of ['exec', 'explain-trigger']) {
+        harness.document.getElementById(id).addEventListener('click', () => clicks.push(id));
+    }
+    const idle = () => {
+        harness.document.getElementById('exec').disabled = false;
+        harness.document.getElementById('explain-trigger').disabled = false;
+        const runningCancel = harness.document.getElementById('query-cancel');
+        if (runningCancel) {
+            runningCancel.disabled = true;
+            runningCancel.setAttribute('aria-hidden', 'true');
+        }
+    };
+    keys['Ctrl-Enter']();
+    idle();
+    keys['Cmd-Enter']();
+    idle();
+    keys['Shift-Ctrl-Enter']();
+    idle();
+    keys['Shift-Cmd-Enter']();
+    idle();
+    assert.deepEqual(clicks, ['exec', 'exec', 'explain-trigger', 'explain-trigger']);
+
+    // A running query ignores the shortcuts.
+    harness.document.getElementById('exec').disabled = true;
+    keys['Ctrl-Enter']();
+    keys['Shift-Ctrl-Enter']();
+    assert.equal(clicks.length, 4);
+    harness.document.getElementById('exec').disabled = false;
+    const cancel = harness.document.getElementById('query-cancel') || harness.registerElement('input', { id: 'query-cancel' });
+    cancel.disabled = false;
+    cancel.setAttribute('aria-hidden', 'false');
+    keys['Cmd-Enter']();
+    assert.equal(clicks.length, 4);
+    cancel.disabled = true;
+    cancel.setAttribute('aria-hidden', 'true');
+
+    // Ctrl/Cmd+S opens the Save disclosure and focuses the query name.
+    const toggle = harness.registerElement('button', { id: 'save-query-toggle' });
+    toggle.setAttribute('aria-expanded', 'false');
+    let opened = 0;
+    toggle.addEventListener('click', () => { opened++; toggle.setAttribute('aria-expanded', 'true'); });
+    let focused = 0;
+    harness.document.getElementById('query-name').focus = () => { focused++; };
+    keys['Ctrl-S']();
+    keys['Cmd-S']();
+    assert.equal(opened, 1, 'an open Save disclosure stays open');
+    assert.equal(focused, 2);
+
+    // The compare editor explains both queries instead: Explain does that in compare mode.
+    harness.context.workbench.query.toggleCompareMode();
+    const compare = harness.yasqeState.instances['query-compare'];
+    if (compare) {
+        idle();
+        compare.options.extraKeys['Ctrl-Enter']();
+        idle();
+        compare.options.extraKeys['Shift-Cmd-Enter']();
+        assert.deepEqual(clicks.slice(4), ['explain-trigger', 'explain-trigger']);
+    }
+});
+
+test('Explain shows the output card on its Explanation tab and hides the explanation empty state', () => {
+    const harness = createQueryBrowserHarness({ serverRequestIds: ['request-1'] });
+    harness.runPageLoad();
+    const { queryOutput, resultsTab, explanationTab, resultsPanel, explanationPanel, explanationEmpty } = harness.output;
+    assert.equal(queryOutput.hidden, true);
+
+    harness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
+    assert.equal(queryOutput.hidden, false);
+    assert.equal(explanationTab.getAttribute('aria-selected'), 'true');
+    assert.equal(resultsTab.getAttribute('aria-selected'), 'false');
+    assert.equal(explanationPanel.hidden, false);
+    assert.equal(resultsPanel.hidden, true);
+    assert.equal(explanationEmpty.hidden, true, 'a loading explanation replaces the empty state');
+
+    harness.context.workbench.query.showOutputTab('results');
+    assert.equal(resultsTab.getAttribute('aria-selected'), 'true');
+    assert.equal(resultsPanel.hidden, false);
+    assert.equal(explanationPanel.hidden, true);
+    harness.context.workbench.query.showOutputTab('missing');
+    assert.equal(resultsTab.getAttribute('aria-selected'), 'true', 'an unknown tab leaves the selection alone');
+});
+
+test('the Results tab badge follows the result summary events', () => {
+    const harness = createQueryBrowserHarness();
+    harness.runPageLoad();
+    const { queryOutput, resultsCount } = harness.output;
+    const summary = (detail) => queryOutput.trigger('workbench:query-result-summary', { detail });
+
+    summary({ rows: true, rowCount: 7, total: null, complete: false, error: false });
+    assert.equal(resultsCount.hidden, false);
+    assert.equal(resultsCount.textContent, '7');
+    summary({ rows: true, rowCount: 7, total: 25, complete: true, error: false });
+    assert.equal(resultsCount.textContent, '25');
+    summary({ rows: false, rowCount: 0, total: null, complete: true, error: true });
+    assert.equal(resultsCount.hidden, true);
+    assert.equal(resultsCount.textContent, '');
+    harness.context.workbench.query.updateResultsBadge(null);
+    assert.equal(resultsCount.hidden, true);
+});
+
+test('the output card helpers do nothing on a page without the card', () => {
+    const harness = createQueryBrowserHarness({ outputCard: false });
+    harness.runPageLoad();
+    harness.context.workbench.query.showOutputTab('explanation');
+    harness.context.workbench.query.updateResultsBadge({ rows: true, rowCount: 1, total: 1 });
+    assert.equal(harness.document.getElementById('query-output'), null);
+});
+
+test('Insert prefixes adds the missing repository namespaces at the top without asking', () => {
+    const harness = createQueryBrowserHarness({
+        sparqlNamespaces: { ex: 'http://example.com/', rdfs: 'http://www.w3.org/2000/01/rdf-schema#' }
+    });
+    harness.runPageLoad();
+    harness.context.workbench.query.setQueryValue('PREFIX ex: <http://example.com/>\nSELECT * WHERE { ?s ?p ?o }');
+
+    harness.context.workbench.query.insertPrefixes();
+    assert.equal(harness.confirms.length, 0, 'inserting prefixes is undoable and needs no confirmation');
+    const query = harness.context.workbench.query.getQueryValue();
+    assert.equal(query.split('\n')[0], 'PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>');
+    assert.equal((query.match(/PREFIX ex:/g) || []).length, 1, 'a declared prefix is not inserted again');
+
+    harness.context.workbench.query.insertPrefixes();
+    assert.equal(harness.context.workbench.query.getQueryValue(), query, 'a second press inserts nothing');
+});
+
+test('Insert prefixes does nothing when the editor-namespaces policy is off', () => {
+    const harness = createQueryBrowserHarness({ sparqlNamespaces: { rdfs: 'http://www.w3.org/2000/01/rdf-schema#' } });
+    harness.runPageLoad();
+    harness.context.workbench.query.setQueryValue('SELECT * WHERE { ?s ?p ?o }');
+    const button = harness.registerElement('button', {
+        id: 'query-insert-prefixes',
+        attributes: { 'data-editor-namespaces-enabled': 'false' }
+    });
+    harness.document.body.appendChild(button);
+    harness.context.workbench.query.insertPrefixes();
+    assert.equal(harness.context.workbench.query.getQueryValue(), 'SELECT * WHERE { ?s ?p ?o }');
+});
+
+test('a server syntax error marks its editor line until the next edit and Go to line moves the cursor', () => {
+    const harness = createQueryBrowserHarness();
+    harness.runPageLoad();
+    harness.context.workbench.query.setQueryValue('SELECT *\nWHERE { ?s ?p ?o');
+    const editor = harness.yasqeState.instances.query;
+    const { queryOutput } = harness.output;
+
+    queryOutput.trigger('workbench:query-error-location', { detail: { line: 2, column: 18, reveal: false } });
+    assert.equal(editor.gutterMarkers['1:gutterErrorBar'].className, 'query-editor-error-marker');
+    assert.equal(editor.lineClasses['1:background'], 'query-editor-error-line');
+    assert.equal(editor.cursor, null, 'showing the error does not move the cursor');
+
+    queryOutput.trigger('workbench:query-error-location', { detail: { line: 9, column: 3, reveal: true } });
+    assert.deepEqual([editor.cursor.line, editor.cursor.ch], [1, 2], 'a line past the end is clamped to the last line');
+    assert.equal(editor.focused, true);
+    assert.equal(editor.scrolledIntoView, 1);
+
+    editor.triggerChange();
+    assert.equal(editor.gutterMarkers['1:gutterErrorBar'], null, 'the next edit clears the marker');
+    assert.equal(editor.lineClasses['1:background'], undefined);
+    harness.context.workbench.query.clearQueryErrorLocation();
+    harness.context.workbench.query.showQueryErrorLocation(0, 1, true);
+    assert.equal(editor.lineClasses['-1:background'], undefined, 'line numbers start at 1');
+});
+
+// Plan task M9.1: the Query route mounts, disposes and mounts again in one document.
+test('the Query page mounts, disposes and mounts again without leaving listeners or editors behind', () => {
+    const harness = createQueryBrowserHarness();
+    harness.runLoadHandlers();
+    const created = [];
+    const yasqe = harness.context.YASQE;
+    const fromTextArea = yasqe.fromTextArea;
+    yasqe.fromTextArea = (...args) => {
+        const instance = fromTextArea(...args);
+        created.push(instance);
+        return instance;
+    };
+    const query = harness.context.workbench.query;
+    const snapshot = () => JSON.parse(JSON.stringify({
+        window: harness.window.listenerCounts(), document: harness.document.listenerCounts()
+    }));
+    const beforeMount = snapshot();
+
+    const first = query.mountQueryPage(harness.document.body);
+    const afterFirst = snapshot();
+    assert.equal(created.filter((instance) => !instance.closed).length, 1, 'one editor');
+    first();
+    assert.equal(created.filter((instance) => !instance.closed).length, 0, 'dispose closes the editor');
+    const second = query.mountQueryPage(harness.document.body);
+
+    assert.deepEqual(snapshot(), afterFirst, 'listeners do not pile up');
+    assert.equal(created.filter((instance) => !instance.closed).length, 1, 'still one editor');
+    second();
+    assert.deepEqual(snapshot(), beforeMount, 'dispose removes every window and document listener it added');
+});
+
+test('disposing the Query page undoes compare mode, stops pending explanations and releases both editors', () => {
+    const harness = createQueryBrowserHarness();
+    for (const id of ['query-editor-resize', 'query-compare-editor-resize']) {
+        harness.document.body.appendChild(harness.registerElement('div', { id }));
+    }
+    const released = [];
+    harness.context.workbench.editorSizing = { install: (editor, handle) => () => released.push(handle.id) };
+    const cleanup = harness.runPageLoad();
+    const query = harness.context.workbench.query;
+    const resizeBefore = harness.window.listenerCount('resize');
+    const scrollBefore = harness.window.listenerCount('scroll');
+    query.toggleCompareMode();
+    assert.equal(harness.window.listenerCount('resize'), resizeBefore + 1, 'compare mode follows the window size');
+    harness.click('explain-trigger');
+    const explain = harness.ajaxRequests[harness.ajaxRequests.length - 1];
+    const compareEditor = harness.yasqeState.instances['query-compare'];
+
+    cleanup();
+
+    assert.equal(harness.window.listenerCount('resize'), resizeBefore);
+    assert.equal(harness.window.listenerCount('scroll'), scrollBefore);
+    assert.equal(harness.document.body.classList.contains('query-compare-mode'), false);
+    assert.equal(explain.aborted, true, 'a running explanation is abandoned');
+    assert.equal(compareEditor.closed, true);
+    assert.deepEqual(released.sort(), ['query-compare-editor-resize', 'query-editor-resize']);
+});
+
+// Plan task M11.3: a kept-alive Query page drops its window and document listeners while it is hidden.
+test('a suspended Query page has no window or document listeners, and gets them back on resume', () => {
+    const harness = createQueryBrowserHarness();
+    harness.runLoadHandlers();
+    const snapshot = () => JSON.parse(JSON.stringify({
+        window: harness.window.listenerCounts(), document: harness.document.listenerCounts()
+    }));
+    const beforeMount = snapshot();
+    const cleanup = harness.context.workbench.query.mountQueryPage(harness.document.body);
+    harness.context.workbench.query.toggleCompareMode();
+    const mounted = snapshot();
+
+    cleanup.suspend();
+    assert.deepEqual(snapshot(), beforeMount, 'nothing listens while the page is hidden');
+    assert.equal(harness.document.body.classList.contains('query-compare-mode'), false,
+        'compare mode does not change the page shown instead');
+    cleanup.resume();
+    assert.deepEqual(snapshot(), mounted);
+    assert.equal(harness.document.body.classList.contains('query-compare-mode'), true);
+    assert.notEqual(harness.yasqeState.instances.query.closed, true, 'the editor stays open');
+    cleanup();
+});
+
+test('compare mode shows Swap and Diff under the editors, and that Diff follows the Explanation toolbar Diff', () => {
+    const harness = createQueryBrowserHarness({ serverRequestIds: ['request-1', 'request-2', 'request-3'] });
+    const plan = { content: 'Plan', format: 'text', error: '' };
+    const diffStates = () => [harness.getProperty('query-diff-trigger', 'disabled'),
+        harness.getProperty('query-actions-diff', 'disabled')];
+    harness.runPageLoad();
+    harness.context.workbench.query.setQueryValue('ASK {}');
+    harness.click('explain-trigger');
+    harness.pendingExplainRequests[0].resolve(plan);
+    assert.equal(harness.getProperty('query-actions-compare', 'hidden'), true);
+
+    harness.context.workbench.query.toggleCompareMode();
+    assert.equal(harness.getProperty('query-actions-compare', 'hidden'), false, 'compare mode shows them');
+    assert.equal(harness.getProperty('query-compare-toolbar', 'hidden'), false);
+    assert.deepEqual(diffStates(), [true, true], 'Diff waits while the compare plan loads');
+    harness.pendingExplainRequests[1].resolve(plan);
+    harness.advanceTimers(1000);
+    assert.deepEqual(diffStates(), [false, false], 'both Diff buttons are ready once both plans are');
+
+    harness.context.workbench.query.toggleCompareMode();
+    assert.equal(harness.getProperty('query-actions-compare', 'hidden'), true, 'leaving compare mode hides them');
+    assert.equal(harness.getProperty('query-compare-toolbar', 'hidden'), true);
+});
+
+test('an explanation uses the Config timeout, or the query timeout while Config leaves it empty', () => {
+    const harness = createQueryBrowserHarness({ queryTimeout: '60', serverRequestIds: ['request-1', 'request-2', 'request-3'] });
+    const plan = { content: 'Plan', format: 'text', error: '' };
+    harness.runPageLoad();
+    harness.context.workbench.query.setQueryValue('ASK {}');
+    assert.equal(harness.getAttribute('explanation-timeout', 'placeholder'), '60');
+    assert.equal(harness.getText('explanation-timeout-help'), 'Empty uses the query timeout: 60 seconds. 0 means no limit.');
+
+    harness.click('explain-trigger');
+    assert.equal(harness.requestsByAction('explain')[0].params.get('query-timeout'), '60');
+    harness.pendingExplainRequests[0].resolve(plan);
+
+    harness.setValue('explanation-timeout', '5');
+    harness.click('rerun-explanation');
+    const explains = harness.requestsByAction('explain');
+    assert.deepEqual(explains[1].params.getAll('query-timeout'), ['5'], 'the Config timeout replaces the query timeout');
+    harness.pendingExplainRequests[1].resolve(plan);
+
+    harness.setValue('explanation-timeout', '');
+    harness.setValue('query-timeout', '0');
+    assert.equal(harness.getAttribute('explanation-timeout', 'placeholder'), '0');
+    assert.equal(harness.getText('explanation-timeout-help'), 'Empty uses the query timeout: no limit.',
+        'the help follows the query timeout as it changes');
+    harness.setValue('explain-format', 'json');
+    assert.notEqual(harness.document.getElementById('explanation-settings').style.display, 'none',
+        'Config stays available for every format because the timeout applies to all of them');
+    assert.equal(harness.document.getElementById('explanation-highlighting-section').style.display, 'none',
+        'highlighting only applies to the Text format');
 });
