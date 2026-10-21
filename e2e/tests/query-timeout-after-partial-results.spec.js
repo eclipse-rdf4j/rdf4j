@@ -12,6 +12,8 @@
 
 // @ts-check
 const { test, expect } = require('@playwright/test');
+const { monitorEventLoopDelay } = require('node:perf_hooks');
+const fs = require('node:fs/promises');
 const { serverBaseUrl, uniqueRepositoryId, workbenchBaseUrl } = require('./workbench-test-helpers.js');
 
 const SERVER_BASE_URL = serverBaseUrl();
@@ -25,7 +27,24 @@ const QUERY_TIMEOUT_SECONDS = 1;
 // both tuple and graph queries active past the timeout. Expensive per-row functions can instead expire before
 // the graph transport's Binary RDF statement buffer fills, producing no partial rows to exercise the renderer.
 const VALUES_PER_DIMENSION = 200;
+const TIMEOUT_RERUN_TEST_TITLE = 'shows partial rows on a real query timeout, cleans up, then executes again';
+const diagnosticsByTest = new WeakMap();
 let repositoryCreated = false;
+
+test.beforeEach(async ({ page, browserName }, testInfo) => {
+	if (testInfo.title !== TIMEOUT_RERUN_TEST_TITLE) {
+		return;
+	}
+	diagnosticsByTest.set(testInfo, await installTimeoutDiagnostics(page, browserName));
+});
+
+test.afterEach(async ({ page }, testInfo) => {
+	const diagnostics = diagnosticsByTest.get(testInfo);
+	if (!diagnostics) {
+		return;
+	}
+	await attachTimeoutDiagnostics(page, testInfo, diagnostics);
+});
 
 test.beforeAll(async ({ request }) => {
 	const existing = await request.get(REPOSITORY_URL);
@@ -474,6 +493,380 @@ function monitorPage(page) {
 		monitor.responses.push(entry);
 	});
 	return monitor;
+}
+
+async function installTimeoutDiagnostics(page, browserName) {
+	const state = {
+		startedAt: new Date().toISOString(),
+		browserName,
+		pageEvents: [],
+		nodeSamples: [],
+		rendererEvents: new Array(10000),
+		rendererEventCount: 0,
+		rendererEventsDropped: 0,
+		setupErrors: []
+	};
+	const recordNodeEvent = (type, details = {}) => {
+		state.pageEvents.push({ source: 'node', type, at: new Date().toISOString(), ...details });
+		if (state.pageEvents.length > 300) {
+			state.pageEvents.shift();
+		}
+	};
+	const delayHistogram = monitorEventLoopDelay({ resolution: 20 });
+	delayHistogram.enable();
+	state.delayHistogram = delayHistogram;
+	let previousCpu = process.cpuUsage();
+	const startedAt = process.hrtime.bigint();
+	const sampleNodeProcess = () => {
+		const cpu = process.cpuUsage(previousCpu);
+		previousCpu = process.cpuUsage();
+		const memory = process.memoryUsage();
+		state.nodeSamples.push({
+			elapsedMs: Number(process.hrtime.bigint() - startedAt) / 1e6,
+			rssBytes: memory.rss,
+			heapUsedBytes: memory.heapUsed,
+			heapTotalBytes: memory.heapTotal,
+			externalBytes: memory.external,
+			cpuUserMs: cpu.user / 1000,
+			cpuSystemMs: cpu.system / 1000,
+			eventLoopDelayMaxMs: delayHistogram.max / 1e6,
+			eventLoopDelayP99Ms: delayHistogram.percentile(99) / 1e6
+		});
+		delayHistogram.reset();
+		if (state.nodeSamples.length > 120) {
+			state.nodeSamples.shift();
+		}
+	};
+	state.nodeSampler = setInterval(sampleNodeProcess, 1000);
+	state.nodeSampler.unref();
+
+	page.on('dialog', dialog => {
+		recordNodeEvent('dialog', { kind: dialog.type(), message: dialog.message().slice(0, 300) });
+		// Match Playwright's no-listener behavior: dismiss the dialog so this observer cannot leave it blocking input.
+		void dialog.dismiss().then(() => recordNodeEvent('dialog-dismissed', { kind: dialog.type() }))
+			.catch(error => recordNodeEvent('dialog-dismiss-failed', { message: String(error).slice(0, 300) }));
+	});
+	page.on('pageerror', error => recordNodeEvent('pageerror', { message: error.message.slice(0, 500) }));
+	page.on('crash', () => recordNodeEvent('page-crash'));
+	page.on('close', () => recordNodeEvent('page-close'));
+	page.on('request', request => {
+		if (request.method() === 'POST' && /\/query(?:[?#]|$)/.test(request.url())) {
+			recordNodeEvent('query-request', { method: request.method(), url: request.url().slice(0, 500) });
+		}
+	});
+	page.on('response', response => {
+		const request = response.request();
+		if (request.method() === 'POST' && /\/query(?:[?#]|$)/.test(request.url())) {
+			recordNodeEvent('query-response', {
+				status: response.status(),
+				contentType: response.headers()['content-type'] || '',
+				url: request.url().slice(0, 500)
+			});
+		}
+	});
+	page.on('requestfailed', request => {
+		if (request.method() === 'POST' && /\/query(?:[?#]|$)/.test(request.url())) {
+			recordNodeEvent('query-request-failed', {
+				failure: request.failure()?.errorText || '',
+				url: request.url().slice(0, 500)
+			});
+		}
+	});
+	page.on('console', message => {
+		if (message.type() === 'error' || message.type() === 'warning') {
+			recordNodeEvent('console', { level: message.type(), message: message.text().slice(0, 500) });
+		}
+	});
+
+	await page.addInitScript(() => {
+		const events = [];
+		const heartbeats = [];
+		let droppedEvents = 0;
+		let previousHeartbeat = performance.now();
+		const record = (type, details = {}) => {
+			const event = { type, at: performance.now(), ...details };
+			if (events.length < 500) {
+				events.push(event);
+			} else {
+				droppedEvents++;
+				events.shift();
+				events.push(event);
+			}
+		};
+		const targetDetails = target => {
+			if (!(target instanceof Element)) {
+				return {};
+			}
+			const execButton = target.closest('#exec');
+			const form = target.closest('#query-form');
+			return {
+				target: `${target.tagName.toLowerCase()}${target.id ? `#${target.id}` : ''}`,
+				execButton: Boolean(execButton),
+				form: form && form.id,
+				className: typeof target.className === 'string' ? target.className.slice(0, 160) : ''
+			};
+		};
+		for (const type of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'submit']) {
+			for (const capture of [true, false]) {
+				window.addEventListener(type, event => {
+					const details = targetDetails(event.target);
+					if (!details.execButton && !(type === 'submit' && details.form === 'query-form')) {
+						return;
+					}
+					record(`${capture ? 'capture' : 'bubble'}-${type}`, {
+						...details,
+						trusted: event.isTrusted,
+						defaultPrevented: event.defaultPrevented,
+						button: 'button' in event ? event.button : undefined,
+						detail: 'detail' in event ? event.detail : undefined
+					});
+				}, capture);
+			}
+		}
+		window.addEventListener('beforeunload', () => record('beforeunload'));
+		window.addEventListener('pagehide', event => record('pagehide', { persisted: event.persisted }));
+		window.addEventListener('error', event => record('window-error', {
+			message: event.message.slice(0, 500),
+			filename: event.filename.slice(-300),
+			line: event.lineno
+		}));
+		window.addEventListener('unhandledrejection', event => record('unhandledrejection', {
+			reason: String(event.reason).slice(0, 500)
+		}));
+		document.addEventListener('visibilitychange', () => record('visibilitychange', {
+			visibility: document.visibilityState
+		}));
+
+		try {
+			new PerformanceObserver(list => {
+				for (const entry of list.getEntries()) {
+					record('longtask', {
+						start: entry.startTime,
+						duration: entry.duration,
+						attribution: Array.from(entry.attribution || [], item => ({
+							name: item.name,
+							containerType: item.containerType,
+							containerName: item.containerName,
+							containerId: item.containerId
+						}))
+					});
+				}
+			}).observe({ type: 'longtask', buffered: true });
+		} catch (error) {
+			record('longtask-observer-unavailable', { message: String(error).slice(0, 300) });
+		}
+
+		const observeBusyState = root => {
+			record('results-busy-initial', { value: root.getAttribute('aria-busy') });
+			new MutationObserver(records => records.forEach(mutation => record('results-busy-change', {
+				oldValue: mutation.oldValue,
+				value: root.getAttribute('aria-busy')
+			}))).observe(root, { attributes: true, attributeFilter: ['aria-busy'], attributeOldValue: true });
+		};
+		const existingRoot = document.getElementById('query-results');
+		if (existingRoot) {
+			observeBusyState(existingRoot);
+		} else {
+			const rootObserver = new MutationObserver(() => {
+				const root = document.getElementById('query-results');
+				if (root) {
+					rootObserver.disconnect();
+					observeBusyState(root);
+				}
+			});
+			rootObserver.observe(document, { childList: true, subtree: true });
+		}
+
+		window.setInterval(() => {
+			const now = performance.now();
+			const memory = performance.memory;
+			heartbeats.push({
+				at: now,
+				gapMs: now - previousHeartbeat,
+				visibility: document.visibilityState,
+				usedJSHeapSize: memory && memory.usedJSHeapSize,
+				totalJSHeapSize: memory && memory.totalJSHeapSize,
+				jsHeapSizeLimit: memory && memory.jsHeapSizeLimit
+			});
+			previousHeartbeat = now;
+			if (heartbeats.length > 150) {
+				heartbeats.shift();
+			}
+		}, 1000);
+		window.__queryTimeoutDiagnostics = {
+			events,
+			heartbeats,
+			get droppedEvents() { return droppedEvents; }
+		};
+	});
+
+	if (browserName === 'chromium') {
+		try {
+			state.rendererSession = await page.context().newCDPSession(page);
+			state.rendererSession.on('Tracing.dataCollected', ({ value }) => {
+				for (const event of value) {
+					const details = event.args && event.args.data;
+					const longDuration = Number(event.dur) >= 50000;
+					if (!longDuration && !['RunTask', 'FunctionCall', 'EventDispatch', 'UpdateLayoutTree',
+						'Layout', 'Paint', 'CompositeLayers', 'V8.GCScavenger', 'V8.GCCompactor', 'MajorGC', 'MinorGC',
+						'FireAnimationFrame', 'RunMicrotasks'].includes(event.name)) {
+						continue;
+					}
+					state.rendererEvents[state.rendererEventCount % state.rendererEvents.length] = {
+						name: event.name,
+						category: event.cat,
+						phase: event.ph,
+						startUs: event.ts,
+						durationUs: event.dur,
+						pid: event.pid,
+						tid: event.tid,
+						data: details && {
+							functionName: details.functionName,
+							scriptName: details.scriptName,
+							url: details.url,
+							lineNumber: details.lineNumber,
+							columnNumber: details.columnNumber,
+							type: details.type,
+							name: details.name
+						}
+					};
+					state.rendererEventCount++;
+				}
+			});
+			await state.rendererSession.send('Performance.enable');
+			await state.rendererSession.send('Tracing.start', {
+				categories: 'devtools.timeline,v8,disabled-by-default-v8.gc,blink.user_timing',
+				options: 'record-continuously'
+			});
+			state.tracingStarted = true;
+
+			state.browserSession = await page.context().browser().newBrowserCDPSession();
+			const processInfo = await diagnosticCall(state.browserSession.send('SystemInfo.getProcessInfo'), 2000);
+			state.browserProcessBefore = processInfo.value && processInfo.value.processInfo;
+		} catch (error) {
+			state.setupErrors.push(`Chromium diagnostics setup: ${String(error).slice(0, 500)}`);
+		}
+	}
+
+	return state;
+}
+
+async function attachTimeoutDiagnostics(page, testInfo, state) {
+	clearInterval(state.nodeSampler);
+	await fs.mkdir(testInfo.outputDir, { recursive: true });
+	state.eventLoopDelay = {
+		maxMs: state.delayHistogram.max / 1e6,
+		p99Ms: state.delayHistogram.percentile(99) / 1e6
+	};
+	state.delayHistogram.disable();
+	state.nodeSamples.push({ at: 'after-test', ...process.memoryUsage() });
+	try {
+		const pageState = await diagnosticCall(page.evaluate(() => {
+			const root = document.getElementById('query-results');
+			const button = document.getElementById('exec');
+			const rect = button && button.getBoundingClientRect();
+			return {
+				readyState: document.readyState,
+				visibility: document.visibilityState,
+				activeElement: document.activeElement && {
+					tag: document.activeElement.tagName,
+					id: document.activeElement.id
+				},
+				url: location.href,
+				busy: root && root.getAttribute('aria-busy'),
+				status: root && root.querySelector('.query-result-status')?.textContent,
+				requestId: document.getElementById('query-request-id')?.value,
+				executeButton: button && {
+					disabled: button.disabled,
+					ariaDisabled: button.getAttribute('aria-disabled'),
+					box: rect && { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+				},
+				memory: performance.memory && {
+					usedJSHeapSize: performance.memory.usedJSHeapSize,
+					totalJSHeapSize: performance.memory.totalJSHeapSize,
+					jsHeapSizeLimit: performance.memory.jsHeapSizeLimit
+				},
+				diagnostics: window.__queryTimeoutDiagnostics && {
+					events: window.__queryTimeoutDiagnostics.events,
+					heartbeats: window.__queryTimeoutDiagnostics.heartbeats,
+					droppedEvents: window.__queryTimeoutDiagnostics.droppedEvents
+				}
+			};
+		}), 1500);
+		state.pageState = pageState.value || null;
+		state.pageStateError = pageState.error || (pageState.timedOut ? 'page snapshot timed out' : null);
+
+		if (state.tracingStarted && state.rendererSession) {
+			let complete;
+			const tracingComplete = new Promise(resolve => { complete = resolve; });
+			const onTracingComplete = event => complete(event);
+			state.rendererSession.on('Tracing.tracingComplete', onTracingComplete);
+			state.tracingStarted = false;
+			const ended = await diagnosticCall(state.rendererSession.send('Tracing.end'), 1500);
+			const trace = await diagnosticCall(tracingComplete, 2000);
+			state.tracingComplete = Boolean(trace.value);
+			state.tracingEndError = ended.error || (ended.timedOut ? 'Tracing.end timed out' : null);
+			state.rendererSession.off('Tracing.tracingComplete', onTracingComplete);
+		}
+		if (state.rendererSession) {
+			const metrics = await diagnosticCall(state.rendererSession.send('Performance.getMetrics'), 1500);
+			state.rendererMetrics = metrics.value && metrics.value.metrics;
+			state.rendererMetricsError = metrics.error || (metrics.timedOut ? 'Performance.getMetrics timed out' : null);
+			const heap = await diagnosticCall(state.rendererSession.send('Runtime.getHeapUsage'), 1000);
+			state.rendererHeap = heap.value || null;
+			const dom = await diagnosticCall(state.rendererSession.send('Memory.getDOMCounters'), 1000);
+			state.rendererDomCounters = dom.value || null;
+		}
+		if (state.browserSession) {
+			const processes = await diagnosticCall(state.browserSession.send('SystemInfo.getProcessInfo'), 1500);
+			state.browserProcessAfter = processes.value && processes.value.processInfo;
+			state.browserProcessError = processes.error || (processes.timedOut ? 'SystemInfo.getProcessInfo timed out' : null);
+		}
+	} finally {
+		state.sessionDetachErrors = [];
+		for (const [name, session] of [['renderer', state.rendererSession], ['browser', state.browserSession]]) {
+			if (!session) {
+				continue;
+			}
+			const detached = await diagnosticCall(Promise.resolve().then(() => session.detach()), 750);
+			if (detached.error || detached.timedOut) {
+				state.sessionDetachErrors.push(`${name}: ${detached.error || 'detach timed out'}`);
+			}
+		}
+	}
+	const retainedRendererEventCount = Math.min(state.rendererEventCount, state.rendererEvents.length);
+	const firstRetainedIndex = state.rendererEventCount > state.rendererEvents.length
+		? state.rendererEventCount % state.rendererEvents.length : 0;
+	state.rendererEvents = Array.from({ length: retainedRendererEventCount }, (_, index) =>
+		state.rendererEvents[(firstRetainedIndex + index) % state.rendererEvents.length]);
+	state.rendererEventsDropped = state.rendererEventCount - retainedRendererEventCount;
+	state.nodeSamples = state.nodeSamples.slice(-120);
+	const diagnosticsPath = testInfo.outputPath('query-timeout-diagnostics.json');
+	const diagnosticsBody = JSON.stringify({
+		...state,
+		delayHistogram: undefined,
+		nodeSampler: undefined,
+		rendererSession: undefined,
+		browserSession: undefined
+	}, null, 2);
+	await fs.writeFile(diagnosticsPath, diagnosticsBody);
+	await testInfo.attach('query-timeout-diagnostics.json', {
+		path: diagnosticsPath,
+		contentType: 'application/json'
+	});
+}
+
+async function diagnosticCall(promise, timeoutMs) {
+	return new Promise(resolve => {
+		const timer = setTimeout(() => resolve({ timedOut: true }), timeoutMs);
+		Promise.resolve(promise).then(value => {
+			clearTimeout(timer);
+			resolve({ value });
+		}, error => {
+			clearTimeout(timer);
+			resolve({ error: String(error).slice(0, 500) });
+		});
+	});
 }
 
 async function captureQueryResponseBodies(page) {
