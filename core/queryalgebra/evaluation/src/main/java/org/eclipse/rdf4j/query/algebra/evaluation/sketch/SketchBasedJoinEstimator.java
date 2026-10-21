@@ -1056,7 +1056,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		private final ArrayList<StatementUpdate> updates;
 		private int limit;
 		private int inFlightCount;
-		private Future<?> future;
 
 		private StatementUpdateQueue(int limit) {
 			this.limit = limit;
@@ -1064,7 +1063,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 
 		private boolean isReusable() {
-			return inFlightCount == 0 && (future == null || future.isDone());
+			return inFlightCount == 0;
 		}
 	}
 
@@ -2405,7 +2404,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 					break;
 				}
 			}
-			applyStatementUpdateBatch(batch.updates, batch.updates.length);
+			applyDrainedStatementUpdateBatch(batch);
 			waitForAsyncIncrementalBatches();
 		}
 		waitForAsyncIncrementalBatches();
@@ -2479,12 +2478,18 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private StatementUpdateBatch drainActiveStatementQueueLocked() {
+		assert Thread.holdsLock(incrementalBufferLock);
 		StatementUpdateQueue active = activeStatementQueue();
 		if (active.updates.isEmpty()) {
 			return null;
 		}
 		StatementUpdate[] updates = active.updates.toArray(StatementUpdate[]::new);
 		active.updates.clear();
+		// A drain remains visible to other readers even before submission or caller-side conversion starts.
+		// Include synchronous drains: refresh, persistence and query threads can all flush concurrently.
+		active.inFlightCount += updates.length;
+		incrementAsyncIncrementalBatchCount();
+		asyncIncrementalUpdateCount.addAndGet(updates.length);
 		return new StatementUpdateBatch(active, updates);
 	}
 
@@ -2492,36 +2497,34 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		if (batch == null || batch.updates.length == 0) {
 			return;
 		}
-		incrementAsyncIncrementalBatchCount();
-		asyncIncrementalUpdateCount.addAndGet(batch.updates.length);
-		StatementUpdateQueue queue = batch.queue;
-		if (queue != null) {
-			synchronized (incrementalBufferLock) {
-				queue.inFlightCount = batch.updates.length;
-			}
-		}
-		Future<?> future = asyncIncrementalExecutor.submit(() -> {
-			try {
-				applyStatementUpdateBatch(batch.updates, batch.updates.length);
-			} catch (Throwable t) {
-				recordAsyncIncrementalFailure(t);
-			} finally {
-				if (queue != null) {
-					synchronized (incrementalBufferLock) {
-						queue.inFlightCount = 0;
-						incrementalBufferLock.notifyAll();
-					}
-				}
-				asyncIncrementalUpdateCount.addAndGet(-batch.updates.length);
-				completeAsyncIncrementalBatch();
-			}
-		});
-		if (queue != null) {
-			synchronized (incrementalBufferLock) {
-				queue.future = future;
-			}
+		try {
+			asyncIncrementalExecutor.submit(() -> applyDrainedStatementUpdateBatch(batch));
+		} catch (RuntimeException | Error failure) {
+			recordAsyncIncrementalFailure(failure);
+			completeDrainedStatementUpdateBatch(batch);
+			throw failure;
 		}
 		rethrowAsyncIncrementalFailure();
+	}
+
+	private void applyDrainedStatementUpdateBatch(StatementUpdateBatch batch) {
+		try {
+			applyStatementUpdateBatch(batch.updates, batch.updates.length);
+		} catch (RuntimeException | Error failure) {
+			recordAsyncIncrementalFailure(failure);
+			throw failure;
+		} finally {
+			completeDrainedStatementUpdateBatch(batch);
+		}
+	}
+
+	private void completeDrainedStatementUpdateBatch(StatementUpdateBatch batch) {
+		synchronized (incrementalBufferLock) {
+			batch.queue.inFlightCount -= batch.updates.length;
+			incrementalBufferLock.notifyAll();
+		}
+		asyncIncrementalUpdateCount.addAndGet(-batch.updates.length);
+		completeAsyncIncrementalBatch();
 	}
 
 	private void applyStatementUpdateBatch(StatementUpdate[] updates, int updateCount) {
