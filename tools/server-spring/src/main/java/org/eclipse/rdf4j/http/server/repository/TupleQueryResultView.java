@@ -73,70 +73,99 @@ public class TupleQueryResultView extends QueryResultView {
 	@Override
 	protected void renderInternal(Map model, HttpServletRequest request, HttpServletResponse response)
 			throws IOException {
-		TupleQueryResultWriterFactory qrWriterFactory = (TupleQueryResultWriterFactory) model.get(FACTORY_KEY);
-		TupleQueryResultFormat qrFormat = qrWriterFactory.getTupleQueryResultFormat();
-		UnaryOperator<Value> origin = bNodeOriginMapper(model, request, response, qrFormat);
+		TupleQueryResult tupleQueryResult = (TupleQueryResult) model.get(QUERY_RESULT_KEY);
+		boolean reportStarted = false;
+		Throwable renderingFailure = null;
+		try {
+			TupleQueryResultWriterFactory qrWriterFactory = (TupleQueryResultWriterFactory) model.get(FACTORY_KEY);
+			TupleQueryResultFormat qrFormat = qrWriterFactory.getTupleQueryResultFormat();
+			UnaryOperator<Value> origin = bNodeOriginMapper(model, request, response, qrFormat);
 
-		response.setStatus(SC_OK);
-		setContentType(response, qrFormat);
-		setContentDisposition(model, response, qrFormat);
+			response.setStatus(SC_OK);
+			setContentType(response, qrFormat);
+			setContentDisposition(model, response, qrFormat);
 
-		final Boolean headersOnly = (Boolean) model.get(HEADERS_ONLY);
-		if (headersOnly == null || !headersOnly.booleanValue()) {
-			QueryResponseHeartbeat heartbeat = getResponseHeartbeat(model);
-			// Keep the legacy branch for callers that do not hand off a heartbeat, including transactional responses.
-			if (heartbeat == null) {
-				try (OutputStream out = response.getOutputStream()) {
-					// ensure we handle exceptions _before_ closing the stream
+			final Boolean headersOnly = (Boolean) model.get(HEADERS_ONLY);
+			if (headersOnly == null || !headersOnly.booleanValue()) {
+				QueryResponseHeartbeat heartbeat = getResponseHeartbeat(model);
+				// Keep the legacy branch for callers that do not hand off a heartbeat, including transactional
+				// responses.
+				if (heartbeat == null) {
+					try (OutputStream out = response.getOutputStream()) {
+						// ensure we handle exceptions _before_ closing the stream
+						try {
+							TupleQueryResultWriter qrWriter = qrWriterFactory.getWriter(out);
+							configureWriter(qrWriter, request);
+							TupleQueryResult reportedResult = origin == null ? tupleQueryResult
+									: BNodeOriginTransport.map(tupleQueryResult, origin);
+							reportStarted = true;
+							QueryResults.report(reportedResult, qrWriter);
+						} catch (QueryInterruptedException e) {
+							if (isExplicitlyCancelled(model)) {
+								return;
+							}
+							logger.error("Query interrupted", e);
+							sendServiceUnavailable(response, e, "Query evaluation took too long");
+						} catch (QueryEvaluationException e) {
+							if (isExplicitlyCancelled(model)) {
+								return;
+							}
+							logger.error("Query evaluation error", e);
+							response.sendError(SC_INTERNAL_SERVER_ERROR, "Query evaluation error: " + e.getMessage());
+						} catch (TupleQueryResultHandlerException e) {
+							logger.error("Serialization error", e);
+							response.sendError(SC_INTERNAL_SERVER_ERROR, "Serialization error: " + e.getMessage());
+						}
+					}
+				} else {
 					try {
-						TupleQueryResultWriter qrWriter = qrWriterFactory.getWriter(out);
-						configureWriter(qrWriter, request);
-						TupleQueryResult tupleQueryResult = (TupleQueryResult) model.get(QUERY_RESULT_KEY);
-						QueryResults.report(
-								origin == null ? tupleQueryResult : BNodeOriginTransport.map(tupleQueryResult, origin),
-								qrWriter);
+						try {
+							tupleQueryResult = PrefetchedQueryResults.tuple(tupleQueryResult);
+						} catch (RuntimeException e) {
+							// PrefetchedQueryResults closes the delegate when prefetch fails.
+							tupleQueryResult = null;
+							throw e;
+						}
+						model.put(QUERY_RESULT_KEY, tupleQueryResult);
+						TupleQueryResultWriter qrWriter = (TupleQueryResultWriter) model.get(RESPONSE_WRITER_KEY);
+						if (qrWriter == null) {
+							qrWriter = qrWriterFactory.getWriter(heartbeat.getOutputStream());
+							configureWriter(qrWriter, request);
+						}
+						TupleQueryResult reportedResult = origin == null ? tupleQueryResult
+								: BNodeOriginTransport.map(tupleQueryResult, origin);
+						reportStarted = true;
+						QueryResults.report(reportedResult, qrWriter);
+						heartbeat.complete();
 					} catch (QueryInterruptedException e) {
-						if (isExplicitlyCancelled(model)) {
-							return;
-						}
-						logger.error("Query interrupted", e);
-						sendServiceUnavailable(response, e, "Query evaluation took too long");
+						handleHeartbeatFailure(model, response, e, "Query evaluation took too long");
 					} catch (QueryEvaluationException e) {
-						if (isExplicitlyCancelled(model)) {
-							return;
-						}
-						logger.error("Query evaluation error", e);
-						response.sendError(SC_INTERNAL_SERVER_ERROR, "Query evaluation error: " + e.getMessage());
+						handleHeartbeatFailure(model, response, e,
+								"Query evaluation error: " + e.getMessage());
 					} catch (TupleQueryResultHandlerException e) {
-						logger.error("Serialization error", e);
-						response.sendError(SC_INTERNAL_SERVER_ERROR, "Serialization error: " + e.getMessage());
+						handleHeartbeatFailure(model, response, e, "Serialization error: " + e.getMessage());
 					}
 				}
-			} else {
+			}
+			logEndOfRequest(request);
+		} catch (IOException | RuntimeException | Error e) {
+			renderingFailure = e;
+			throw e;
+		} finally {
+			if (!reportStarted && tupleQueryResult != null) {
 				try {
-					TupleQueryResult tupleQueryResult = PrefetchedQueryResults
-							.tuple((TupleQueryResult) model.get(QUERY_RESULT_KEY));
-					model.put(QUERY_RESULT_KEY, tupleQueryResult);
-					TupleQueryResultWriter qrWriter = (TupleQueryResultWriter) model.get(RESPONSE_WRITER_KEY);
-					if (qrWriter == null) {
-						qrWriter = qrWriterFactory.getWriter(heartbeat.getOutputStream());
-						configureWriter(qrWriter, request);
+					tupleQueryResult.close();
+				} catch (RuntimeException | Error closeFailure) {
+					if (renderingFailure != null) {
+						if (renderingFailure != closeFailure) {
+							renderingFailure.addSuppressed(closeFailure);
+						}
+					} else {
+						throw closeFailure;
 					}
-					QueryResults.report(
-							origin == null ? tupleQueryResult : BNodeOriginTransport.map(tupleQueryResult, origin),
-							qrWriter);
-					heartbeat.complete();
-				} catch (QueryInterruptedException e) {
-					handleHeartbeatFailure(model, response, e, "Query evaluation took too long");
-				} catch (QueryEvaluationException e) {
-					handleHeartbeatFailure(model, response, e,
-							"Query evaluation error: " + e.getMessage());
-				} catch (TupleQueryResultHandlerException e) {
-					handleHeartbeatFailure(model, response, e, "Serialization error: " + e.getMessage());
 				}
 			}
 		}
-		logEndOfRequest(request);
 	}
 
 	public static void configureWriter(TupleQueryResultWriter writer, HttpServletRequest request) throws IOException {
