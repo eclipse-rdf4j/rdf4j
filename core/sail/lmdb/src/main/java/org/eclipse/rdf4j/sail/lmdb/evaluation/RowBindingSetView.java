@@ -81,8 +81,11 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 	public Iterator<Binding> iterator() {
 		ArrayDeque<Binding> bindings = new ArrayDeque<>(size());
 		if (base != null) {
-			for (Binding binding : base) {
-				bindings.add(binding);
+			for (String name : base.getBindingNames()) {
+				Binding effective = getBinding(name);
+				if (effective != null) {
+					bindings.add(effective);
+				}
 			}
 		}
 		String[] slotNames = layout.slotNames();
@@ -259,6 +262,14 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 	boolean hasNativeId(String name) {
 		int slot = slot(name);
 		return slot >= 0 && slots[slot] != UNKNOWN;
+	}
+
+	Object nativeIdSpace() {
+		return source.idSpace();
+	}
+
+	BindingSet baseBindings() {
+		return base;
 	}
 
 	long nativeId(String name) {

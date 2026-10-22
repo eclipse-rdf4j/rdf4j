@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
@@ -65,6 +66,12 @@ public class BindingAssignerOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meetOther(QueryModelNode node) {
+			if (node.getClass() == TupleFunctionCall.class) {
+				// Standard tuple-function result Vars constrain incoming bindings; capturing an API value keeps
+				// that constraint when a prepared plan subsequently executes with an empty input mapping.
+				super.meetOther(node);
+				return;
+			}
 			// Unknown operators own their binding contract; keep their variables opaque.
 			if (node instanceof TupleExpr) {
 				unknownOperatorDepth++;

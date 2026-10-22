@@ -43,6 +43,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
@@ -68,9 +69,21 @@ public class ConstantOptimizer implements QueryOptimizer {
 	private static final Logger logger = LoggerFactory.getLogger(ConstantOptimizer.class);
 
 	private final EvaluationStrategy strategy;
+	private final BindingSet evaluationBindings;
 
 	public ConstantOptimizer(EvaluationStrategy strategy) {
+		this(strategy, null);
+	}
+
+	/**
+	 * Separates logical parameters used for projection recovery from the actual prepared-plan input used by proofs. A
+	 * null input preserves the direct optimizer contract, which uses the bindings passed to {@link #optimize}.
+	 */
+	public ConstantOptimizer(EvaluationStrategy strategy, BindingSet evaluationBindings) {
 		this.strategy = strategy;
+		this.evaluationBindings = evaluationBindings == null ? null
+				: evaluationBindings.isEmpty() ? EmptyBindingSet.getInstance()
+						: new QueryBindingSet(evaluationBindings);
 	}
 
 	/**
@@ -79,7 +92,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		QueryAlgebraBindingAnalysis bindingAnalysis = QueryAlgebraBindingAnalysis.withBindingValues(tupleExpr,
-				bindings);
+				evaluationBindings == null ? bindings : evaluationBindings);
 		ConstantVisitor visitor = new ConstantVisitor(strategy, bindingAnalysis,
 				new QueryEvaluationContext.Minimal(new SimpleDataset()));
 		tupleExpr.visit(visitor);
@@ -178,10 +191,10 @@ public class ConstantOptimizer implements QueryOptimizer {
 					}
 				} else if (isConstant(or.getRightArg())) {
 					boolean rightIsTrue = isTrueWithKnownValues(or.getRightArg());
-					if (rightIsTrue) {
+					if (rightIsTrue && canDiscardLogicalOperand(or.getLeftArg())) {
 						or.replaceWith(new ValueConstant(BooleanLiteral.TRUE));
 						bindingAnalysis.invalidate();
-					} else {
+					} else if (!rightIsTrue) {
 						or.replaceWith(new Not(new Not(or.getLeftArg().clone())));
 						bindingAnalysis.invalidate();
 					}
@@ -218,7 +231,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 					if (rightIsTrue) {
 						and.replaceWith(new Not(new Not(and.getLeftArg().clone())));
 						bindingAnalysis.invalidate();
-					} else {
+					} else if (canDiscardLogicalOperand(and.getLeftArg())) {
 						and.replaceWith(new ValueConstant(BooleanLiteral.FALSE));
 						bindingAnalysis.invalidate();
 					}
@@ -230,6 +243,11 @@ public class ConstantOptimizer implements QueryOptimizer {
 			} catch (QueryEvaluationException e) {
 				logger.error("Query evaluation exception caught", e);
 			}
+		}
+
+		private boolean canDiscardLogicalOperand(ValueExpr expression) {
+			return AlgebraEvaluationSafety.isRepeatable(expression)
+					&& QueryEvaluationUtility.canDiscardWithoutEvaluation(expression);
 		}
 
 		@Override

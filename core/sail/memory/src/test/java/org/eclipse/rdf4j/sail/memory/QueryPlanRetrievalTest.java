@@ -20,13 +20,17 @@ import java.io.IOException;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.function.Predicate;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.benchmark.common.BenchmarkResources;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
@@ -339,89 +343,86 @@ public class QueryPlanRetrievalTest {
 				"  }\n" +
 				"  FILTER (?o2 IN (1,2,3,4,5))            # top‑level filter\n" +
 				"}";
+		assertSpecificScopeResultBags(sparql);
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		addData(sailRepository);
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			TupleQuery query = connection.prepareTupleQuery(sparql);
 			String actual = query.explain(Explanation.Level.Optimized).toString();
-			assertExplainTextEqualsIgnoringAnnotations(actual,
-					"Projection\n" +
-							"╠══ ProjectionElemList\n" +
-							"║     ProjectionElem \"s\"\n" +
-							"║     ProjectionElem \"p\"\n" +
-							"║     ProjectionElem \"o\"\n" +
-							"║     ProjectionElem \"o2\"\n" +
-							"║     ProjectionElem \"g\"\n" +
-							"╚══ LeftJoin (LeftJoinIterator)\n" +
-							"      Compare (>)\n" +
-							"      ╠══ PinnedFunctionCall (http://www.w3.org/2005/xpath-functions#string-length)\n" +
-							"      ║     Str\n" +
-							"      ║        Var (name=x)\n" +
-							"      ╚══ ValueConstant (value=\"3\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
-							"      Filter\n" +
-							"      ╠══ ListMemberOperator\n" +
-							"      ║     Var (name=o2)\n" +
-							"      ║     ValueConstant (value=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
-							"      ║     ValueConstant (value=\"2\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
-							"      ║     ValueConstant (value=\"3\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
-							"      ║     ValueConstant (value=\"4\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
-							"      ║     ValueConstant (value=\"5\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
-							"      ╚══ Union (new scope)\n" +
-							"         ├── Join (JoinIterator)\n" +
-							"         │  ╠══ Filter (new scope) [left]\n" +
-							"         │  ║  ├── Not\n" +
-							"         │  ║  │     Bound\n" +
-							"         │  ║  │        Var (name=g)\n" +
-							"         │  ║  └── Filter\n" +
-							"         │  ║     ╠══ And\n" +
-							"         │  ║     ║  ├── Compare (>)\n" +
-							"         │  ║     ║  │     Var (name=o)\n" +
-							"         │  ║     ║  │     ValueConstant (value=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
-							+
-							"         │  ║     ║  └── Bound\n" +
-							"         │  ║     ║        Var (name=s)\n" +
-							"         │  ║     ╚══ StatementPattern (costEstimate=2.00, resultSizeEstimate=0)\n" +
-							"         │  ║           s: Var (name=s)\n" +
-							"         │  ║           p: Var (name=_const_0, value=http://example.com/p, anonymous)\n"
-							+
-							"         │  ║           o: Var (name=o)\n" +
-							"         │  ╚══ Filter [right]\n" +
-							"         │     ├── Compare (<)\n" +
-							"         │     │     Var (name=o2)\n" +
-							"         │     │     ValueConstant (value=\"5\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
-							+
-							"         │     └── StatementPattern (costEstimate=1.79, resultSizeEstimate=0)\n" +
-							"         │           s: Var (name=s)\n" +
-							"         │           p: Var (name=_const_1, value=http://example.com/q, anonymous)\n"
-							+
-							"         │           o: Var (name=o2)\n" +
-							"         └── Filter (new scope)\n" +
-							"            ╠══ Compare (!=)\n" +
-							"            ║     Var (name=g)\n" +
-							"            ║     ValueConstant (value=http://example.com/Bad)\n" +
-							"            ╚══ Filter\n" +
-							"               ├── Compare (!=)\n" +
-							"               │     Var (name=o)\n" +
-							"               │     ValueConstant (value=\"42\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
-							+
-							"               └── Graph\n" +
-							"                  ╠══ Var (name=g)\n" +
-							"                  ╚══ StatementPattern (resultSizeEstimate=0)\n" +
-							"                        s: Var (name=s)\n" +
-							"                        p: Var (name=_const_2, value=http://example.com/r, anonymous)\n"
-							+
-							"                        o: Var (name=o)\n" +
-							"      Filter\n" +
-							"      ╠══ Var (name=hasX)\n" +
-							"      ╚══ Extension\n" +
-							"         ├── SingletonSet\n" +
-							"         └── ExtensionElem (hasX)\n" +
-							"               Exists\n" +
-							"                  StatementPattern (resultSizeEstimate=0)\n" +
-							"                     s: Var (name=s)\n" +
-							"                     p: Var (name=_const_3, value=http://example.com/p2, anonymous)\n"
-							+
-							"                     o: Var (name=x)\n");
+			assertExplainTextEqualsIgnoringAnnotations(actual, """
+					Projection
+					╠══ ProjectionElemList
+					║     ProjectionElem "s"
+					║     ProjectionElem "p"
+					║     ProjectionElem "o"
+					║     ProjectionElem "o2"
+					║     ProjectionElem "g"
+					╚══ LeftJoin (LeftJoinIterator)
+					      Compare (>)
+					      ╠══ PinnedFunctionCall (http://www.w3.org/2005/xpath-functions#string-length)
+					      ║     Str
+					      ║        Var (name=x)
+					      ╚══ ValueConstant (value="3"^^<http://www.w3.org/2001/XMLSchema#integer>)
+					      Union (new scope)
+					      ╠══ Extension
+					      ║     Join (new scope) (JoinIterator)
+					      ║     ╠══ Filter [left]
+					      ║     ║  ├── Compare (>)
+					      ║     ║  │     Var (name=o)
+					      ║     ║  │     ValueConstant (value="1"^^<http://www.w3.org/2001/XMLSchema#integer>)
+					      ║     ║  └── StatementPattern (costEstimate=2.00, resultSizeEstimate=0)
+					      ║     ║        s: Var (name=s)
+					      ║     ║        p: Var (name=_const_0, value=http://example.com/p, anonymous)
+					      ║     ║        o: Var (name=o)
+					      ║     ╚══ Filter [right]
+					      ║        ├── ListMemberOperator
+					      ║        │     Var (name=o2)
+					      ║        │     ValueConstant (value="1"^^<http://www.w3.org/2001/XMLSchema#integer>)
+					      ║        │     ValueConstant (value="2"^^<http://www.w3.org/2001/XMLSchema#integer>)
+					      ║        │     ValueConstant (value="3"^^<http://www.w3.org/2001/XMLSchema#integer>)
+					      ║        │     ValueConstant (value="4"^^<http://www.w3.org/2001/XMLSchema#integer>)
+					      ║        │     ValueConstant (value="5"^^<http://www.w3.org/2001/XMLSchema#integer>)
+					      ║        └── Filter
+					      ║           ╠══ Compare (<)
+					      ║           ║     Var (name=o2)
+					      ║           ║     ValueConstant (value="5"^^<http://www.w3.org/2001/XMLSchema#integer>)
+					      ║           ╚══ StatementPattern (costEstimate=1.79, resultSizeEstimate=0)
+					      ║                 s: Var (name=s)
+					      ║                 p: Var (name=_const_1, value=http://example.com/q, anonymous)
+					      ║                 o: Var (name=o2)
+					      ╚══ Filter
+					         ├── ListMemberOperator
+					         │     Var (name=o2)
+					         │     ValueConstant (value="1"^^<http://www.w3.org/2001/XMLSchema#integer>)
+					         │     ValueConstant (value="2"^^<http://www.w3.org/2001/XMLSchema#integer>)
+					         │     ValueConstant (value="3"^^<http://www.w3.org/2001/XMLSchema#integer>)
+					         │     ValueConstant (value="4"^^<http://www.w3.org/2001/XMLSchema#integer>)
+					         │     ValueConstant (value="5"^^<http://www.w3.org/2001/XMLSchema#integer>)
+					         └── Filter (new scope)
+					            ╠══ Compare (!=)
+					            ║     Var (name=g)
+					            ║     ValueConstant (value=http://example.com/Bad)
+					            ╚══ Filter
+					               ├── Compare (!=)
+					               │     Var (name=o)
+					               │     ValueConstant (value="42"^^<http://www.w3.org/2001/XMLSchema#integer>)
+					               └── Graph
+					                  ╠══ Var (name=g)
+					                  ╚══ StatementPattern (resultSizeEstimate=0)
+					                        s: Var (name=s)
+					                        p: Var (name=_const_2, value=http://example.com/r, anonymous)
+					                        o: Var (name=o)
+					      Filter
+					      ╠══ Var (name=hasX)
+					      ╚══ Extension
+					         ├── SingletonSet
+					         └── ExtensionElem (hasX)
+					               Exists
+					                  StatementPattern (resultSizeEstimate=0)
+					                     s: Var (name=s)
+					                     p: Var (name=_const_3, value=http://example.com/p2, anonymous)
+					                     o: Var (name=x)
+					""");
 			try (TupleQueryResult results = query.evaluate()) {
 				assertThat(results.hasNext()).isFalse();
 			}
@@ -467,101 +468,80 @@ public class QueryPlanRetrievalTest {
 				"  }\n" +
 				"}";
 
+		assertMultipleScopeResultBags(sparql);
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		addData(sailRepository);
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			Query query = connection.prepareTupleQuery(sparql);
 			String actual = query.explain(Explanation.Level.Optimized).toString();
-			assertExplainTextEqualsIgnoringAnnotations(actual, "Projection\n" +
-					"╠══ ProjectionElemList\n" +
-					"║     ProjectionElem \"s\"\n" +
-					"║     ProjectionElem \"o\"\n" +
-					"║     ProjectionElem \"score\"\n" +
-					"║     ProjectionElem \"lvl\"\n" +
-					"╚══ Join (JoinIterator)\n" +
-					"   ├── Filter [left]\n" +
-					"   │  ╠══ Bound\n" +
-					"   │  ║     Var (name=s)\n" +
-					"   │  ╚══ BindingSetAssignment ([[s=http://example.com/A], [s=http://example.com/B], [s=http://example.com/C]]) (costEstimate=0, resultSizeEstimate=1.00)\n"
-					+
-					"   └── Join (JoinIterator) [right]\n" +
-					"      ╠══ Filter (new scope) (costEstimate=1.00, resultSizeEstimate=1.00) [left]\n" +
-					"      ║  ├── Not\n" +
-					"      ║  │     Exists\n" +
-					"      ║  │        StatementPattern (resultSizeEstimate=0)\n" +
-					"      ║  │           s: Var (name=s)\n" +
-					"      ║  │           p: Var (name=_const_1, value=http://example.com/deprecated, anonymous)\n"
-					+
-					"      ║  │           o: Var (name=_const_2, value=\"true\"^^<http://www.w3.org/2001/XMLSchema#boolean>, anonymous)\n"
-					+
-					"      ║  └── Filter\n" +
-					"      ║     ╠══ Compare (!=)\n" +
-					"      ║     ║  ├── PinnedFunctionCall (http://www.w3.org/2005/xpath-functions#lower-case)\n" +
-					"      ║     ║  │     Str\n" +
-					"      ║     ║  │        Var (name=o)\n" +
-					"      ║     ║  └── ValueConstant (value=\"bad\")\n" +
-					"      ║     ╚══ SingletonSet\n" +
-					"      ╚══ Join (JoinIterator) [right]\n" +
-					"         ├── Filter [left]\n" +
-					"         │  ╠══ Compare (!=)\n" +
-					"         │  ║     Var (name=o)\n" +
-					"         │  ║     ValueConstant (value=http://example.com/Forbidden)\n" +
-					"         │  ╚══ StatementPattern (costEstimate=1.79, resultSizeEstimate=0)\n" +
-					"         │        s: Var (name=s)\n" +
-					"         │        p: Var (name=_const_0, value=http://example.com/prop, anonymous)\n" +
-					"         │        o: Var (name=o)\n" +
-					"         └── LeftJoin (LeftJoinIterator) [right]\n" +
-					"            ╠══ Join (HashJoinIteration) [left]\n" +
-					"            ║  ├── Filter (new scope) (costEstimate=2.92, resultSizeEstimate=0) [left]\n" +
-					"            ║  │  ╠══ Compare (!=)\n" +
-					"            ║  │  ║  ├── MathExpr (-)\n" +
-					"            ║  │  ║  │     Var (name=score)\n" +
-					"            ║  │  ║  │     ValueConstant (value=\"2\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
-					+
-					"            ║  │  ║  └── ValueConstant (value=\"0\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
-					+
-					"            ║  │  ╚══ Filter\n" +
-					"            ║  │     ├── Compare (>)\n" +
-					"            ║  │     │     Var (name=score)\n" +
-					"            ║  │     │     ValueConstant (value=\"10\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
-					+
-					"            ║  │     └── StatementPattern (costEstimate=1.79, resultSizeEstimate=0)\n" +
-					"            ║  │           s: Var (name=s)\n" +
-					"            ║  │           p: Var (name=_const_3, value=http://example.com/score, anonymous)\n"
-					+
-					"            ║  │           o: Var (name=score)\n" +
-					"            ║  └── Filter (new scope) (costEstimate=6.00, resultSizeEstimate=1.00) [right]\n" +
-					"            ║     ╠══ Compare (<)\n" +
-					"            ║     ║     Var (name=score)\n" +
-					"            ║     ║     ValueConstant (value=\"100\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
-					+
-					"            ║     ╚══ SingletonSet\n" +
-					"            ╚══ Join (JoinIterator) [right]\n" +
-					"               ├── Filter [left]\n" +
-					"               │  ╠══ Regex\n" +
-					"               │  ║  ├── Str\n" +
-					"               │  ║  │     Var (name=reviewer)\n" +
-					"               │  ║  └── ValueConstant (value=\"^http://example\\.com/user\")\n" +
-					"               │  ╚══ StatementPattern (costEstimate=0.89, resultSizeEstimate=0)\n" +
-					"               │        s: Var (name=s)\n" +
-					"               │        p: Var (name=_const_4, value=http://example.com/reviewedBy, anonymous)\n"
-					+
-					"               │        o: Var (name=reviewer)\n" +
-					"               └── Filter [right]\n" +
-					"                  ╠══ And\n" +
-					"                  ║  ├── Compare (<=)\n" +
-					"                  ║  │     Var (name=lvl)\n" +
-					"                  ║  │     ValueConstant (value=\"8\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
-					+
-					"                  ║  └── Compare (>=)\n" +
-					"                  ║        Var (name=lvl)\n" +
-					"                  ║        ValueConstant (value=\"3\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
-					+
-					"                  ╚══ StatementPattern (costEstimate=1.79, resultSizeEstimate=0)\n" +
-					"                        s: Var (name=reviewer)\n" +
-					"                        p: Var (name=_const_5, value=http://example.com/level, anonymous)\n"
-					+
-					"                        o: Var (name=lvl)\n");
+			assertExplainTextEqualsIgnoringAnnotations(actual,
+					"""
+							Projection
+							╠══ ProjectionElemList
+							║     ProjectionElem "s"
+							║     ProjectionElem "o"
+							║     ProjectionElem "score"
+							║     ProjectionElem "lvl"
+							╚══ Join (JoinIterator)
+							   ├── BindingSetAssignment ([[s=http://example.com/A], [s=http://example.com/B], [s=http://example.com/C]]) (costEstimate=0, resultSizeEstimate=1.00) [left]
+							   └── Join (JoinIterator) [right]
+							      ╠══ Filter (new scope) (costEstimate=1.00, resultSizeEstimate=1.00) [left]
+							      ║  ├── Not
+							      ║  │     Exists
+							      ║  │        StatementPattern (resultSizeEstimate=0)
+							      ║  │           s: Var (name=s)
+							      ║  │           p: Var (name=_const_1, value=http://example.com/deprecated, anonymous)
+							      ║  │           o: Var (name=_const_2, value="true"^^<http://www.w3.org/2001/XMLSchema#boolean>, anonymous)
+							      ║  └── BindingSetAssignment ([])
+							      ╚══ Join (HashJoinIteration) [right]
+							         ├── Filter [left]
+							         │  ╠══ Compare (!=)
+							         │  ║     Var (name=o)
+							         │  ║     ValueConstant (value=http://example.com/Forbidden)
+							         │  ╚══ StatementPattern (costEstimate=1.79, resultSizeEstimate=0)
+							         │        s: Var (name=s)
+							         │        p: Var (name=_const_0, value=http://example.com/prop, anonymous)
+							         │        o: Var (name=o)
+							         └── LeftJoin (new scope) (LeftJoinIterator) [right]
+							            ╠══ Join (HashJoinIteration) [left]
+							            ║  ├── Filter [left]
+							            ║  │  ╠══ And
+							            ║  │  ║  ├── Compare (!=)
+							            ║  │  ║  │  ╠══ MathExpr (-)
+							            ║  │  ║  │  ║     Var (name=score)
+							            ║  │  ║  │  ║     ValueConstant (value="2"^^<http://www.w3.org/2001/XMLSchema#integer>)
+							            ║  │  ║  │  ╚══ ValueConstant (value="0"^^<http://www.w3.org/2001/XMLSchema#integer>)
+							            ║  │  ║  └── Compare (>)
+							            ║  │  ║        Var (name=score)
+							            ║  │  ║        ValueConstant (value="10"^^<http://www.w3.org/2001/XMLSchema#integer>)
+							            ║  │  ╚══ StatementPattern (costEstimate=1.79, resultSizeEstimate=0)
+							            ║  │        s: Var (name=s)
+							            ║  │        p: Var (name=_const_3, value=http://example.com/score, anonymous)
+							            ║  │        o: Var (name=score)
+							            ║  └── BindingSetAssignment ([]) (new scope) [right]
+							            ╚══ Join (JoinIterator) [right]
+							               ├── Filter [left]
+							               │  ╠══ Regex
+							               │  ║  ├── Str
+							               │  ║  │     Var (name=reviewer)
+							               │  ║  └── ValueConstant (value="^http://example\\.com/user")
+							               │  ╚══ StatementPattern (costEstimate=0.89, resultSizeEstimate=0)
+							               │        s: Var (name=s)
+							               │        p: Var (name=_const_4, value=http://example.com/reviewedBy, anonymous)
+							               │        o: Var (name=reviewer)
+							               └── Filter [right]
+							                  ╠══ And
+							                  ║  ├── Compare (>=)
+							                  ║  │     Var (name=lvl)
+							                  ║  │     ValueConstant (value="3"^^<http://www.w3.org/2001/XMLSchema#integer>)
+							                  ║  └── Compare (<=)
+							                  ║        Var (name=lvl)
+							                  ║        ValueConstant (value="8"^^<http://www.w3.org/2001/XMLSchema#integer>)
+							                  ╚══ StatementPattern (costEstimate=1.79, resultSizeEstimate=0)
+							                        s: Var (name=reviewer)
+							                        p: Var (name=_const_5, value=http://example.com/level, anonymous)
+							                        o: Var (name=lvl)
+							""");
 		}
 		sailRepository.shutDown();
 	}
@@ -586,6 +566,7 @@ public class QueryPlanRetrievalTest {
 
 				"  }\n" +
 				"}";
+		assertIndependentBindResultBags(sparql);
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		addData(sailRepository);
 
@@ -618,23 +599,19 @@ public class QueryPlanRetrievalTest {
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			Query query = connection.prepareTupleQuery(sparql);
 			String actual = query.explain(Explanation.Level.Optimized).toString();
-			assertExplainTextEqualsIgnoringAnnotations(actual, "Join (JoinIterator)\n" +
-					"╠══ Filter (new scope) [left]\n" +
-					"║  ├── Not\n" +
-					"║  │     Exists\n" +
-					"║  │        StatementPattern (resultSizeEstimate=12)\n" +
-					"║  │           s: Var (name=o)\n" +
-					"║  │           p: Var (name=s)\n" +
-					"║  │           o: Var (name=c)\n" +
-					"║  └── Filter\n" +
-					"║     ╠══ Compare (!=)\n" +
-					"║     ║     Var (name=o)\n" +
-					"║     ║     Var (name=s)\n" +
-					"║     ╚══ Extension\n" +
-					"║        ├── SingletonSet\n" +
-					"║        └── ExtensionElem (o)\n" +
-					"║              Var (name=s)\n" +
-					"╚══ BindingSetAssignment ([[s=http://example/S]]) (costEstimate=6.00, resultSizeEstimate=1.00) [right]\n");
+			assertExplainTextEqualsIgnoringAnnotations(actual,
+					"""
+							Join (JoinIterator)
+							╠══ Filter (new scope) [left]
+							║  ├── Not
+							║  │     Exists
+							║  │        StatementPattern (resultSizeEstimate=12)
+							║  │           s: Var (name=o)
+							║  │           p: Var (name=s)
+							║  │           o: Var (name=c)
+							║  └── BindingSetAssignment ([])
+							╚══ BindingSetAssignment ([[s=http://example/S]]) (costEstimate=6.00, resultSizeEstimate=1.00) [right]
+							""");
 		}
 		sailRepository.shutDown();
 	}
@@ -1022,6 +999,110 @@ public class QueryPlanRetrievalTest {
 			assertThat(unboundVar).isNotNull();
 		}
 		sailRepository.shutDown();
+	}
+
+	private static void assertSpecificScopeResultBags(String sparql) {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		String ex = "http://example.com/";
+		SailRepository repository = new SailRepository(new MemoryStore());
+		repository.init();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.add(vf.createIRI(ex + "S"), vf.createIRI(ex + "p"), vf.createLiteral(2));
+			connection.add(vf.createIRI(ex + "S"), vf.createIRI(ex + "p"), vf.createLiteral(1));
+			connection.add(vf.createIRI(ex + "S"), vf.createIRI(ex + "q"), vf.createLiteral(3));
+			connection.add(vf.createIRI(ex + "S"), vf.createIRI(ex + "q"), vf.createLiteral(4));
+			connection.add(vf.createIRI(ex + "S"), vf.createIRI(ex + "q"), vf.createLiteral(7));
+			connection.add(vf.createIRI(ex + "S"), vf.createIRI(ex + "p2"), vf.createLiteral("long value"));
+			connection.add(vf.createIRI(ex + "graph-subject"), vf.createIRI(ex + "r"), vf.createLiteral(3),
+					vf.createIRI(ex + "Good"));
+			Map<String, Value> first = Map.of("s", vf.createIRI(ex + "S"), "o", vf.createLiteral(2), "o2",
+					vf.createLiteral(3));
+			Map<String, Value> second = Map.of("s", vf.createIRI(ex + "S"), "o", vf.createLiteral(2), "o2",
+					vf.createLiteral(4));
+			assertOriginalAndRepositoryBags(connection, sparql, Map.of(first, 1, second, 1));
+			String duplicates = sparql.replace("SELECT ?s ?p ?o ?o2 ?g WHERE {",
+					"SELECT ?s ?p ?o ?o2 ?g WHERE { VALUES ?duplicate { 1 1 }");
+			assertOriginalAndRepositoryBags(connection, duplicates, Map.of(first, 2, second, 2));
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private static void assertMultipleScopeResultBags(String sparql) {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		String ex = "http://example.com/";
+		SailRepository repository = new SailRepository(new MemoryStore());
+		repository.init();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.add(vf.createIRI(ex + "A"), vf.createIRI(ex + "prop"), vf.createLiteral("good"));
+			connection.add(vf.createIRI(ex + "A"), vf.createIRI(ex + "prop"), vf.createIRI(ex + "Forbidden"));
+			connection.add(vf.createIRI(ex + "A"), vf.createIRI(ex + "score"), vf.createLiteral(20));
+			connection.add(vf.createIRI(ex + "A"), vf.createIRI(ex + "score"), vf.createLiteral(200));
+			connection.add(vf.createIRI(ex + "A"), vf.createIRI(ex + "reviewedBy"), vf.createIRI(ex + "user1"));
+			connection.add(vf.createIRI(ex + "user1"), vf.createIRI(ex + "level"), vf.createLiteral(5));
+			connection.add(vf.createIRI(ex + "B"), vf.createIRI(ex + "prop"), vf.createLiteral("bad"));
+			connection.add(vf.createIRI(ex + "B"), vf.createIRI(ex + "score"), vf.createLiteral(20));
+			connection.add(vf.createIRI(ex + "C"), vf.createIRI(ex + "prop"), vf.createLiteral("good"));
+			connection.add(vf.createIRI(ex + "C"), vf.createIRI(ex + "score"), vf.createLiteral(20));
+			connection.add(vf.createIRI(ex + "C"), vf.createIRI(ex + "deprecated"), vf.createLiteral(true));
+			assertOriginalAndRepositoryBags(connection, sparql, Map.of());
+			String local = sparql.replace("VALUES ?s { :A :B :C }", "VALUES ?s { :A :A :B :C }")
+					.replace("{FILTER (LCASE(STR(?o)) != \"bad\")", "FILTER (LCASE(STR(?o)) != \"bad\")")
+					.replace("FILTER (NOT EXISTS { ?s :deprecated true }) }",
+							"FILTER (NOT EXISTS { ?s :deprecated true })")
+					.replace("{FILTER (?score  < 100)}", "FILTER (?score  < 100)");
+			assertOriginalAndRepositoryBags(connection, local,
+					Map.of(Map.of("s", vf.createIRI(ex + "A"), "o", vf.createLiteral("good"), "score",
+							vf.createLiteral(20), "lvl", vf.createLiteral(5)), 2));
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private static void assertIndependentBindResultBags(String sparql) {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		String ex = "http://example/";
+		SailRepository repository = new SailRepository(new MemoryStore());
+		repository.init();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.add(vf.createIRI(ex + "unrelated"), vf.createIRI(ex + "predicate"), vf.createLiteral("object"));
+			assertOriginalAndRepositoryBags(connection, sparql, Map.of());
+			String local = sparql.replace("VALUES ?s { :S }", "")
+					.replace("BIND(?s as ?o)", "VALUES ?s { :S :S } BIND(:O AS ?o)");
+			assertOriginalAndRepositoryBags(connection, local,
+					Map.of(Map.of("s", vf.createIRI(ex + "S"), "o", vf.createIRI(ex + "O")), 2));
+			connection.add(vf.createIRI(ex + "O"), vf.createIRI(ex + "S"), vf.createLiteral("blocked"));
+			assertOriginalAndRepositoryBags(connection, local, Map.of());
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private static void assertOriginalAndRepositoryBags(SailRepositoryConnection connection, String sparql,
+			Map<Map<String, Value>, Integer> expected) {
+		ParsedTupleQuery parsed = (ParsedTupleQuery) new SPARQLParser().parseQuery(sparql, null);
+		DefaultEvaluationStrategy raw = new DefaultEvaluationStrategy(new RepositoryTripleSource(connection),
+				parsed.getDataset(), null);
+		List<BindingSet> originalRows = new ArrayList<>();
+		try (var rows = raw.precompile(parsed.getTupleExpr()).evaluate(EmptyBindingSet.getInstance())) {
+			rows.forEachRemaining(originalRows::add);
+		}
+		assertThat(resultBag(originalRows)).as("original parsed algebra: %s", sparql).isEqualTo(expected);
+		List<BindingSet> optimizedRows = new ArrayList<>();
+		try (TupleQueryResult rows = connection.prepareTupleQuery(sparql).evaluate()) {
+			rows.forEachRemaining(optimizedRows::add);
+		}
+		assertThat(resultBag(optimizedRows)).as("repository optimization: %s", sparql).isEqualTo(expected);
+	}
+
+	private static Map<Map<String, Value>, Integer> resultBag(List<BindingSet> rows) {
+		Map<Map<String, Value>, Integer> bag = new HashMap<>();
+		for (BindingSet row : rows) {
+			Map<String, Value> values = new TreeMap<>();
+			row.forEach(binding -> values.put(binding.getName(), binding.getValue()));
+			bag.merge(values, 1, Integer::sum);
+		}
+		return bag;
 	}
 
 	private static void assertExplainTextEqualsIgnoringAnnotations(String actual, String expected) {
