@@ -73,7 +73,7 @@ public final class FragmentInterpreter {
 	static PredicateStatus truth(FragmentNode node, long a0, long a1, long a2, FragmentBinding binding) {
 		if (node instanceof IsBound isBound) {
 			long id = idValue(isBound.input(), a0, a1, a2, binding);
-			return id != -1L ? PredicateStatus.TRUE : PredicateStatus.FALSE;
+			return IdCapability.BOUND.test(id) ? PredicateStatus.TRUE : PredicateStatus.FALSE;
 		}
 		if (node instanceof TypeGuard guard) {
 			long id = idValue(guard.input(), a0, a1, a2, binding);

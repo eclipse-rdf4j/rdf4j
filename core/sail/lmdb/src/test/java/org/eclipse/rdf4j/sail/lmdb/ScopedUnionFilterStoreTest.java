@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
@@ -21,6 +22,8 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -30,6 +33,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 class ScopedUnionFilterStoreTest {
+	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
 
 	@TempDir
 	File directory;
@@ -120,6 +124,397 @@ class ScopedUnionFilterStoreTest {
 		}
 	}
 
+	@ParameterizedTest
+	@EnumSource(QueryEvaluationMode.class)
+	void correlatedSelectSubqueriesPreserveEntryBindingsInLmdb(QueryEvaluationMode mode) {
+		LmdbStore lmdb = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled(true));
+		lmdb.setDefaultQueryEvaluationMode(mode);
+		SailRepository repository = new SailRepository(lmdb);
+		String previousNativeSetting = System.getProperty(NATIVE_FLAG);
+		System.setProperty(NATIVE_FLAG, "true");
+		try {
+			seedCorrelatedSubqueryData(repository);
+			List<CorrelatedSubquery> cases = List.of(
+					new CorrelatedSubquery("""
+							SELECT ?x WHERE {
+							  ?s <urn:p> ?x
+							  FILTER EXISTS {
+							    SELECT ?x WHERE { ?z <urn:q> ?v FILTER(?x = 1) }
+							  }
+							}
+							""", List.of(row("x", "1"), row("x", "1")), true),
+					new CorrelatedSubquery("""
+							SELECT ?x WHERE {
+							  ?s <urn:p> ?x
+							  FILTER NOT EXISTS {
+							    SELECT ?x WHERE { ?z <urn:q> ?v FILTER(?x = 1) }
+							  }
+							}
+							""", List.of(row("x", "2")), false),
+					new CorrelatedSubquery("""
+							SELECT ?x WHERE {
+							  ?s <urn:p> ?x
+							  FILTER EXISTS {
+							    SELECT ?x WHERE {
+							      { ?z <urn:q> ?v } UNION { VALUES ?z { <urn:other> } }
+							      FILTER(?x = 1)
+							    }
+							  }
+							}
+							""", List.of(row("x", "1"), row("x", "1")), false),
+					new CorrelatedSubquery("""
+							SELECT ?x WHERE {
+							  VALUES ?seed { 1 2 }
+							  OPTIONAL { VALUES ?x { 1 } FILTER(?seed = 1) }
+							  FILTER EXISTS {
+							    SELECT ?x WHERE { ?z <urn:q> ?v FILTER(?x = 1) }
+							  }
+							}
+							""", List.of(row("x", "1")), false),
+					new CorrelatedSubquery("""
+							SELECT ?x WHERE {
+							  ?s <urn:p> ?x
+							  FILTER EXISTS {
+							    SELECT ?x WHERE {
+							      ?z <urn:q> ?v MINUS { VALUES ?x { 2 } }
+							      FILTER(?x = 1)
+							    }
+							  }
+							}
+							""", List.of(row("x", "1"), row("x", "1")), false),
+					new CorrelatedSubquery("""
+							SELECT ?x WHERE {
+							  ?s <urn:p> ?x
+							  FILTER EXISTS {
+							    SELECT ?x WHERE {
+							      ?z <urn:q> ?v
+							      OPTIONAL { VALUES ?w { 1 } FILTER(?x = 1) }
+							      FILTER(?x = 1)
+							    }
+							  }
+							}
+							""", List.of(row("x", "1"), row("x", "1")), false),
+					new CorrelatedSubquery("""
+							SELECT ?x WHERE {
+							  ?s <urn:p> ?x
+							  FILTER EXISTS {
+							    SELECT ?x (COUNT(?v) AS ?n) WHERE {
+							      ?z <urn:q> ?v FILTER(?x = 1)
+							    }
+							    GROUP BY ?x HAVING(COUNT(?v) > 0)
+							  }
+							}
+							""", List.of(row("x", "1"), row("x", "1")), false),
+					new CorrelatedSubquery("""
+							SELECT ?x WHERE {
+							  ?s <urn:p> ?x
+							  FILTER EXISTS {
+							    SELECT ?x WHERE { ?z <urn:q> ?v FILTER(?x = 1) }
+							    ORDER BY ?x LIMIT 1
+							  }
+							}
+							""", List.of(row("x", "1"), row("x", "1")), false),
+					new CorrelatedSubquery("""
+							SELECT ?x WHERE {
+							  ?s <urn:p> ?x
+							  FILTER EXISTS {
+							    SELECT ?x (?x AS ?copy) WHERE {
+							      ?z <urn:q> ?v FILTER(?x = 1)
+							    }
+							  }
+							}
+							""", List.of(row("x", "1"), row("x", "1")), false),
+					new CorrelatedSubquery("""
+							VERSION "1.2"
+							SELECT ?x WHERE {
+							  VALUES ?x { 1 2 }
+							  FILTER EXISTS {
+							    SELECT ?z WHERE { ?z <urn:q> ?v FILTER(?x = 1) }
+							  }
+							}
+							""", List.of(row("x", "1")), false),
+					new CorrelatedSubquery("""
+							SELECT ?x WHERE {
+							  VALUES ?x { 1 2 UNDEF }
+							  FILTER EXISTS {
+							    SELECT ?x WHERE { ?z <urn:q> ?v FILTER(?x = 1) }
+							  }
+							}
+							""", List.of(row("x", "1")), false),
+					new CorrelatedSubquery("""
+							SELECT ?x WHERE {
+							  ?s <urn:p> ?x
+							  FILTER EXISTS {
+							    SELECT ?z WHERE { ?z <urn:q> ?v FILTER(?v = \"present\") }
+							  }
+							}
+							""", List.of(row("x", "1"), row("x", "1"), row("x", "2")), false),
+					new CorrelatedSubquery("""
+							SELECT ?x WHERE {
+							  VALUES ?x { 1 }
+							  { SELECT ?z WHERE { VALUES ?z { 1 } FILTER(?x = 1) } }
+							}
+							""", List.of(), false));
+			try {
+				for (CorrelatedSubquery test : cases) {
+					try (var connection = repository.getConnection()) {
+						TupleQuery prepared = connection.prepareTupleQuery(test.query());
+						List<BindingSet> actual;
+						try (var result = prepared.evaluate()) {
+							actual = QueryResults.asList(result);
+						}
+						assertThat(actual).as("%s / %s\n%s", mode, test.query(),
+								prepared.explain(Explanation.Level.Optimized))
+								.containsExactlyInAnyOrderElementsOf(test.expected());
+						if (test.assertNativeExecution()) {
+							assertThat(prepared.explain(Explanation.Level.Telemetry).toString())
+									.as("the LMDB native engine must execute the correlated query")
+									.contains("LMDB native physical plan (executed)");
+						}
+					}
+				}
+			} finally {
+				repository.shutDown();
+			}
+		} finally {
+			if (previousNativeSetting == null) {
+				System.clearProperty(NATIVE_FLAG);
+			} else {
+				System.setProperty(NATIVE_FLAG, previousNativeSetting);
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(QueryEvaluationMode.class)
+	void nestedProjectedExistsSubqueriesPreserveBindingsAcrossLmdbModes(QueryEvaluationMode mode) {
+		String query = """
+				SELECT ?x WHERE {
+				  ?s <urn:p> ?x
+				  FILTER EXISTS {
+				    SELECT ?x WHERE {
+				      ?z <urn:q> ?v
+				      FILTER EXISTS {
+				        SELECT ?x WHERE { ?w <urn:q> ?v2 FILTER(?x = 1) }
+				      }
+				      FILTER(?x = 1)
+				    }
+				  }
+				}
+				""";
+		MemoryStore memory = new MemoryStore();
+		memory.setDefaultQueryEvaluationMode(mode);
+		LmdbStore lmdb = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled(true));
+		lmdb.setDefaultQueryEvaluationMode(mode);
+		SailRepository memoryRepository = new SailRepository(memory);
+		SailRepository lmdbRepository = new SailRepository(lmdb);
+		String previousNativeSetting = System.getProperty(NATIVE_FLAG);
+		System.setProperty(NATIVE_FLAG, "false");
+		try {
+			seedCorrelatedSubqueryData(memoryRepository);
+			seedCorrelatedSubqueryData(lmdbRepository);
+			List<BindingSet> expected = List.of(row("x", "1"), row("x", "1"));
+			Evaluation memoryEvaluation = evaluateWithTelemetry(memoryRepository, query);
+			Evaluation genericEvaluation = evaluateWithTelemetry(lmdbRepository, query);
+			System.setProperty(NATIVE_FLAG, "true");
+			Evaluation nativeEvaluation = evaluateWithTelemetry(lmdbRepository, query);
+
+			assertThat(memoryEvaluation.rows()).as("independent Memory result")
+					.containsExactlyInAnyOrderElementsOf(expected);
+			assertThat(genericEvaluation.rows())
+					.as("LMDB with native query engine disabled\noptimized:\n%s\ntelemetry:\n%s",
+							genericEvaluation.optimized(), genericEvaluation.telemetry())
+					.containsExactlyInAnyOrderElementsOf(expected);
+			assertThat(nativeEvaluation.rows())
+					.as("LMDB with native query engine enabled\noptimized:\n%s\ntelemetry:\n%s",
+							nativeEvaluation.optimized(), nativeEvaluation.telemetry())
+					.containsExactlyInAnyOrderElementsOf(expected);
+			assertThat(nativeEvaluation.telemetry())
+					.as("native execution must be visible in the executed plan")
+					.contains("LMDB native physical plan (executed)");
+		} finally {
+			lmdbRepository.shutDown();
+			memoryRepository.shutDown();
+			if (previousNativeSetting == null) {
+				System.clearProperty(NATIVE_FLAG);
+			} else {
+				System.setProperty(NATIVE_FLAG, previousNativeSetting);
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(QueryEvaluationMode.class)
+	void projectedAndVersion12CorrelationsMatchMemoryAndBothLmdbModes(QueryEvaluationMode mode) {
+		MemoryStore memory = new MemoryStore();
+		memory.setDefaultQueryEvaluationMode(mode);
+		LmdbStore lmdb = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled(true));
+		lmdb.setDefaultQueryEvaluationMode(mode);
+		SailRepository memoryRepository = new SailRepository(memory);
+		SailRepository lmdbRepository = new SailRepository(lmdb);
+		String previousNativeSetting = System.getProperty(NATIVE_FLAG);
+		List<CorrelatedSubquery> cases = new ArrayList<>(projectedCorrelationCases());
+		cases.addAll(List.of(
+				new CorrelatedSubquery("""
+						VERSION "1.2"
+						SELECT ?x WHERE {
+						  ?seed <urn:marker> true OPTIONAL { ?seed <urn:p> ?x }
+						  FILTER EXISTS { SELECT ?z WHERE { ?z <urn:q> ?v FILTER(?x = 1) } }
+						}
+						""", List.of(row("x", "1"), row("x", "1")), false),
+				new CorrelatedSubquery("""
+						VERSION "1.2"
+						SELECT ?x WHERE {
+						  ?seed <urn:marker> true OPTIONAL { ?seed <urn:p> ?x }
+						  FILTER NOT EXISTS { SELECT ?z WHERE { ?z <urn:q> ?v FILTER(?x = 1) } }
+						}
+						""", List.of(row("x", "2"), emptyRow()), false),
+				new CorrelatedSubquery("""
+								VERSION "1.2"
+								SELECT ?x ?ok WHERE {
+								  ?seed <urn:marker> true OPTIONAL { ?seed <urn:p> ?x }
+								  BIND(EXISTS { SELECT ?z WHERE { ?z <urn:q> ?v FILTER(?x = 1) } } AS ?ok)
+								}
+						""", List.of(rowWithBoolean("1", true), rowWithBoolean("1", true),
+						rowWithBoolean("2", false), rowWithBoolean(null, false)), false)));
+		try {
+			seedCorrelatedSubqueryData(memoryRepository);
+			seedCorrelatedSubqueryData(lmdbRepository);
+			for (CorrelatedSubquery test : cases) {
+				Evaluation memoryEvaluation = evaluateWithTelemetry(memoryRepository, test.query());
+				System.setProperty(NATIVE_FLAG, "false");
+				Evaluation genericEvaluation = evaluateWithTelemetry(lmdbRepository, test.query());
+				System.setProperty(NATIVE_FLAG, "true");
+				Evaluation nativeEvaluation = evaluateWithTelemetry(lmdbRepository, test.query());
+
+				assertThat(memoryEvaluation.rows()).as("independent Memory result: %s", test.query())
+						.containsExactlyInAnyOrderElementsOf(test.expected());
+				assertThat(genericEvaluation.rows())
+						.as("LMDB native query engine disabled\noptimized:\n%s\ntelemetry:\n%s",
+								genericEvaluation.optimized(), genericEvaluation.telemetry())
+						.containsExactlyInAnyOrderElementsOf(test.expected());
+				assertThat(nativeEvaluation.rows())
+						.as("LMDB native query engine requested\noptimized:\n%s\ntelemetry:\n%s",
+								nativeEvaluation.optimized(), nativeEvaluation.telemetry())
+						.containsExactlyInAnyOrderElementsOf(test.expected());
+			}
+		} finally {
+			lmdbRepository.shutDown();
+			memoryRepository.shutDown();
+			if (previousNativeSetting == null) {
+				System.clearProperty(NATIVE_FLAG);
+			} else {
+				System.setProperty(NATIVE_FLAG, previousNativeSetting);
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(QueryEvaluationMode.class)
+	void nativeProjectedExistsIsolatesUnionOptionalAndMinusRoutes(QueryEvaluationMode mode) {
+		MemoryStore memory = new MemoryStore();
+		memory.setDefaultQueryEvaluationMode(mode);
+		LmdbStore lmdb = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled(true));
+		lmdb.setDefaultQueryEvaluationMode(mode);
+		SailRepository memoryRepository = new SailRepository(memory);
+		SailRepository lmdbRepository = new SailRepository(lmdb);
+		String previousNativeSetting = System.getProperty(NATIVE_FLAG);
+		List<String> bodies = List.of(
+				"{ VALUES ?z { 1 } } UNION { VALUES ?w { 2 } } FILTER(?x = 1)",
+				"{ VALUES ?z { 1 } } UNION { VALUES ?w { 2 } } OPTIONAL { VALUES ?opt { 3 } } "
+						+ "FILTER(?x = 1)",
+				"{ VALUES ?z { 1 } } UNION { VALUES ?w { 2 } } MINUS { VALUES ?none { 4 } } "
+						+ "FILTER(?x = 1)",
+				"{ VALUES ?z { 1 } } UNION { VALUES ?w { 2 } } OPTIONAL { VALUES ?opt { 3 } } "
+						+ "MINUS { VALUES ?none { 4 } } FILTER(?x = 1)");
+		try {
+			seedCorrelatedSubqueryData(memoryRepository);
+			seedCorrelatedSubqueryData(lmdbRepository);
+			List<BindingSet> expected = List.of(row("x", "1"), row("x", "1"));
+			for (String body : bodies) {
+				String query = "SELECT ?x WHERE { VALUES ?x { 1 2 UNDEF 1 } "
+						+ "FILTER EXISTS { SELECT ?x WHERE { " + body + " } } }";
+				Evaluation memoryEvaluation = evaluateWithTelemetry(memoryRepository, query);
+				System.setProperty(NATIVE_FLAG, "false");
+				Evaluation genericEvaluation = evaluateWithTelemetry(lmdbRepository, query);
+				System.setProperty(NATIVE_FLAG, "true");
+				Evaluation nativeEvaluation = evaluateWithTelemetry(lmdbRepository, query);
+
+				assertThat(memoryEvaluation.rows()).as("independent Memory result: %s", query)
+						.containsExactlyInAnyOrderElementsOf(expected);
+				assertThat(genericEvaluation.rows()).as("LMDB generic result: %s", query)
+						.containsExactlyInAnyOrderElementsOf(expected);
+				assertThat(nativeEvaluation.rows())
+						.as("LMDB native-requested result for query:\n%s\noptimized:\n%s\ntelemetry:\n%s",
+								query, nativeEvaluation.optimized(), nativeEvaluation.telemetry())
+						.containsExactlyInAnyOrderElementsOf(expected);
+			}
+		} finally {
+			lmdbRepository.shutDown();
+			memoryRepository.shutDown();
+			if (previousNativeSetting == null) {
+				System.clearProperty(NATIVE_FLAG);
+			} else {
+				System.setProperty(NATIVE_FLAG, previousNativeSetting);
+			}
+		}
+	}
+
+	private static List<CorrelatedSubquery> projectedCorrelationCases() {
+		List<String> subqueries = List.of(
+				"SELECT ?x (?x AS ?copy) WHERE { VALUES ?z { 1 } FILTER(?x = 1) }",
+				"SELECT DISTINCT ?x (?x AS ?copy) WHERE { VALUES ?z { 1 1 } FILTER(?x = 1) } "
+						+ "ORDER BY ?copy LIMIT 1",
+				"SELECT ?x (?x AS ?copy) WHERE { { VALUES ?z { 1 } } UNION { VALUES ?w { 2 } } "
+						+ "OPTIONAL { VALUES ?opt { 3 } } MINUS { VALUES ?none { 4 } } FILTER(?x = 1) }");
+		List<BindingSet> existsExpected = List.of(row("x", "1"), row("x", "1"));
+		List<BindingSet> notExistsExpected = List.of(row("x", "2"), emptyRow());
+		List<BindingSet> bindExpected = List.of(rowWithBoolean("1", true), rowWithBoolean("1", true),
+				rowWithBoolean("2", false), rowWithBoolean(null, false));
+		List<CorrelatedSubquery> cases = new ArrayList<>();
+		for (String subquery : subqueries) {
+			String outer = "VALUES ?x { 1 2 UNDEF 1 } ";
+			cases.add(new CorrelatedSubquery("SELECT ?x WHERE { " + outer
+					+ "FILTER EXISTS { " + subquery + " } }", existsExpected, false));
+			cases.add(new CorrelatedSubquery("SELECT ?x WHERE { " + outer
+					+ "FILTER NOT EXISTS { " + subquery + " } }", notExistsExpected, false));
+			cases.add(new CorrelatedSubquery("SELECT ?x ?ok WHERE { " + outer
+					+ "BIND(EXISTS { " + subquery + " } AS ?ok) }", bindExpected, false));
+		}
+		return cases;
+	}
+
+	private static Evaluation evaluateWithTelemetry(SailRepository repository, String query) {
+		try (var connection = repository.getConnection()) {
+			TupleQuery prepared = connection.prepareTupleQuery(query);
+			String optimized = prepared.explain(Explanation.Level.Optimized).toString();
+			List<BindingSet> results;
+			try (var result = prepared.evaluate()) {
+				results = QueryResults.asList(result);
+			}
+			String telemetry = prepared.explain(Explanation.Level.Telemetry).toString();
+			return new Evaluation(results, optimized, telemetry);
+		}
+	}
+
+	private static void seedCorrelatedSubqueryData(SailRepository repository) {
+		var vf = repository.getValueFactory();
+		try (var connection = repository.getConnection()) {
+			connection.add(vf.createIRI("urn:s1"), vf.createIRI("urn:p"), vf.createLiteral("1", XSD.INTEGER));
+			connection.add(vf.createIRI("urn:s1-copy"), vf.createIRI("urn:p"), vf.createLiteral("1", XSD.INTEGER));
+			connection.add(vf.createIRI("urn:s2"), vf.createIRI("urn:p"), vf.createLiteral("2", XSD.INTEGER));
+			connection.add(vf.createIRI("urn:z"), vf.createIRI("urn:q"), vf.createLiteral("present"));
+			connection.add(vf.createIRI("urn:w"), vf.createIRI("urn:q"), vf.createLiteral("also-present"));
+			for (String seed : List.of("urn:s1", "urn:s1-copy", "urn:s2", "urn:s-missing")) {
+				connection.add(vf.createIRI(seed), vf.createIRI("urn:marker"), vf.createLiteral(true));
+			}
+		}
+	}
+
 	private static void seedGraphs(SailRepository repository) {
 		var vf = repository.getValueFactory();
 		try (var connection = repository.getConnection()) {
@@ -148,6 +543,19 @@ class ScopedUnionFilterStoreTest {
 		return row;
 	}
 
+	private static BindingSet emptyRow() {
+		return new MapBindingSet();
+	}
+
+	private static BindingSet rowWithBoolean(String x, boolean value) {
+		MapBindingSet row = new MapBindingSet();
+		if (x != null) {
+			row.addBinding("x", SimpleValueFactory.getInstance().createLiteral(x, XSD.INTEGER));
+		}
+		row.addBinding("ok", SimpleValueFactory.getInstance().createLiteral(value));
+		return row;
+	}
+
 	private static List<BindingSet> rows(SailRepository repository, String query, boolean bindX) {
 		try (var connection = repository.getConnection()) {
 			var prepared = connection.prepareTupleQuery(query);
@@ -161,5 +569,11 @@ class ScopedUnionFilterStoreTest {
 	}
 
 	private record Composition(String query, List<BindingSet> expected, boolean bindX) {
+	}
+
+	private record CorrelatedSubquery(String query, List<BindingSet> expected, boolean assertNativeExecution) {
+	}
+
+	private record Evaluation(List<BindingSet> rows, String optimized, String telemetry) {
 	}
 }

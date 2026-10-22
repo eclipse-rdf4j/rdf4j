@@ -12,10 +12,14 @@
 package org.eclipse.rdf4j.query.algebra;
 
 import java.io.Serializable;
+import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 
 /**
  * The FILTER operator, as defined in <a href="http://www.w3.org/TR/rdf-sparql-query/#defn_algFilter">SPARQL Query
@@ -175,6 +179,20 @@ public class Filter extends UnaryTupleOperator {
 
 		public Set<String> bindingNames() {
 			return bindingNames;
+		}
+
+		/** Maps captured declarations through the same lexical rename as their condition variables. */
+		@InternalUseOnly
+		public ConditionBindingScope mapBindingNames(UnaryOperator<String> mapper) {
+			Objects.requireNonNull(mapper, "mapper");
+			if (mode != Mode.RETAINED || bindingNames.isEmpty()) {
+				return this;
+			}
+			Set<String> mapped = new HashSet<>(bindingNames.size());
+			for (String name : bindingNames) {
+				mapped.add(Objects.requireNonNull(mapper.apply(name), "mapped binding name"));
+			}
+			return mapped.equals(bindingNames) ? this : retain(mapped);
 		}
 
 		public boolean allows(String name) {

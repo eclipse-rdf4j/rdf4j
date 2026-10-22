@@ -357,6 +357,16 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 		}
 
 		@Override
+		public void meet(Filter filter) {
+			if (!filter.isVariableScopeChange()) {
+				filter.setConditionBindingScope(filter.getConditionBindingScope()
+						.mapBindingNames(
+								name -> name.equals(oldVar.getName()) ? newVar.getName() : name));
+			}
+			super.meet(filter);
+		}
+
+		@Override
 		public void meet(Var var) {
 			if (var.equals(oldVar)) {
 				var.replaceWith(newVar.clone());

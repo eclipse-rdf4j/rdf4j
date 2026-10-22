@@ -17,15 +17,29 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.File;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
+import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Lateral;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.Arm;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.CanonicalBinding;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.CanonicalBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.CanonicalIri;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.CanonicalLiteral;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.CanonicalTripleTerm;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.EvaluationResult;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.ResultOrder;
 import org.junit.jupiter.api.AfterEach;
@@ -78,6 +92,9 @@ public class LmdbNativeLateralDifferentialTest {
 					conn.add(vf.createIRI(EX, "s2"), vf.createIRI(EX, "p"), vf.createIRI(EX, "o2"));
 					conn.add(vf.createIRI(EX, "s2"), q, vf.createIRI(EX, "left2"));
 					conn.add(vf.createIRI(EX, "left2"), r, vf.createIRI(EX, "r2"));
+					TripleTerm annotated = vf.createTripleTerm(vf.createIRI(EX, "quotedSubject"),
+							vf.createIRI(EX, "quotedPredicate"), vf.createLiteral("quoted object"));
+					conn.add(vf.createIRI(EX, "annotated"), vf.createIRI(EX, "annotation"), annotated);
 				})
 				.build();
 	}
@@ -156,8 +173,175 @@ public class LmdbNativeLateralDifferentialTest {
 				lateralRow("s1", "left1", "r1b"), 2L,
 				lateralRow("s2", "left2", "r2"), 1L);
 		for (EvaluationResult result : oracle.assertEquivalent(query, ResultOrder.UNORDERED).values()) {
+			assertThat(result.failure()).as("arm=%s must successfully parse and evaluate", result.arm()).isNull();
 			assertThat(result.multiset()).as("arm=%s", result.arm()).isEqualTo(expected);
 		}
+	}
+
+	@Test
+	public void existsSubselectPreservesLateralRowVaryingCorrelationAndDuplicates() {
+		String query = PREFIX + "SELECT ?s ?label WHERE { VALUES ?s { ex:s1 ex:s2 ex:s1 } "
+				+ "LATERAL { ?s ex:q ?label FILTER EXISTS { "
+				+ "SELECT ?s WHERE { ?label ex:r ?r FILTER(?s = ex:s1) } } } }";
+		Map<CanonicalBindingSet, Long> expected = Map.of(lateralFilterRow("s1", "left1"), 2L);
+		for (EvaluationResult result : oracle.assertEquivalent(query, ResultOrder.UNORDERED).values()) {
+			assertThat(result.failure()).as("arm=%s must successfully parse and evaluate", result.arm()).isNull();
+			assertThat(result.multiset()).as("arm=%s", result.arm()).isEqualTo(expected);
+		}
+	}
+
+	@Test
+	public void lateralSubselectSeedsLanguageAndTripleValuesFromCurrentRowFrame() {
+		String triple = "<<( ex:s ex:p \"value\" )>>";
+		String query = PREFIX + "SELECT ?label ?triple WHERE { "
+				+ "VALUES (?label ?triple) { (\"bonjour\"@fr " + triple + ") } "
+				+ "LATERAL { SELECT ?label ?triple WHERE { FILTER(?label = \"bonjour\"@fr) "
+				+ "FILTER(sameTerm(?triple, " + triple + ")) } } }";
+		CanonicalTripleTerm expectedTriple = new CanonicalTripleTerm(
+				new CanonicalIri(EX + "s"), new CanonicalIri(EX + "p"),
+				new CanonicalLiteral("value", "http://www.w3.org/2001/XMLSchema#string", Optional.empty(),
+						Literal.BaseDirection.NONE));
+		Map<CanonicalBindingSet, Long> expected = Map.of(new CanonicalBindingSet(List.of(
+				new CanonicalBinding("label", new CanonicalLiteral("bonjour", RDF.LANGSTRING.stringValue(),
+						Optional.of("fr"), Literal.BaseDirection.NONE)),
+				new CanonicalBinding("triple", expectedTriple))), 1L);
+		for (EvaluationResult result : oracle.assertEquivalent(query, ResultOrder.UNORDERED).values()) {
+			assertThat(result.failure()).as("arm=%s must successfully parse and evaluate", result.arm()).isNull();
+			assertThat(result.multiset()).as("arm=%s", result.arm()).isEqualTo(expected);
+		}
+		oracle.assertRoute(Arm.LMDB_PRODUCTION, query, Explanation.Level.Optimized,
+				evidence -> assertThat(evidence.rendered())
+						.contains("plannedExecutionEngine=lmdb-native", "nativePhysicalPlan=NativeRows"));
+	}
+
+	@Test
+	public void lateralSubselectPreservesCaseVariantLanguageTagInput() {
+		String query = PREFIX + "SELECT ?label WHERE { VALUES ?label { \"bonjour\"@FR } "
+				+ "LATERAL { SELECT ?label WHERE { FILTER(sameTerm(?label, \"bonjour\"@fr)) } } }";
+		CanonicalLiteral label = new CanonicalLiteral("bonjour", RDF.LANGSTRING.stringValue(), Optional.of("fr"),
+				Literal.BaseDirection.NONE);
+		Map<CanonicalBindingSet, Long> expected = Map.of(
+				new CanonicalBindingSet(List.of(new CanonicalBinding("label", label))), 1L);
+		for (EvaluationResult result : oracle.assertEquivalent(query, ResultOrder.UNORDERED).values()) {
+			assertThat(result.failure()).as("arm=%s must successfully parse and evaluate", result.arm()).isNull();
+			assertThat(result.multiset()).as("arm=%s", result.arm()).isEqualTo(expected);
+		}
+	}
+
+	@Test
+	public void lateralSubselectUsesTripleTermInputInPatternObjectPosition() {
+		String term = "<<( ex:quotedSubject ex:quotedPredicate \"quoted object\" )>>";
+		String query = PREFIX + "SELECT ?term WHERE { VALUES ?term { " + term + " } "
+				+ "LATERAL { SELECT ?term WHERE { ex:annotated ex:annotation ?term } } }";
+		CanonicalTripleTerm expectedTerm = new CanonicalTripleTerm(new CanonicalIri(EX + "quotedSubject"),
+				new CanonicalIri(EX + "quotedPredicate"),
+				new CanonicalLiteral("quoted object", XSD.STRING.stringValue(), Optional.empty(),
+						Literal.BaseDirection.NONE));
+		Map<CanonicalBindingSet, Long> expected = Map.of(new CanonicalBindingSet(List.of(
+				new CanonicalBinding("term", expectedTerm))), 1L);
+		for (EvaluationResult result : oracle.assertEquivalent(query, ResultOrder.UNORDERED).values()) {
+			assertThat(result.failure()).as("arm=%s must successfully parse and evaluate", result.arm()).isNull();
+			assertThat(result.multiset()).as("arm=%s", result.arm()).isEqualTo(expected);
+		}
+		oracle.assertRoute(Arm.LMDB_PRODUCTION, query, Explanation.Level.Optimized,
+				evidence -> assertThat(evidence.rendered())
+						.contains("plannedExecutionEngine=lmdb-native", "NativeRows", "NativeSubquery"));
+	}
+
+	@Test
+	public void lateralSubselectFilterUsesItsLocalSameNamedBinding() {
+		String query = PREFIX + "SELECT ?s ?left ?r WHERE { VALUES ?s { ex:s1 } "
+				+ "LATERAL { ?s ex:q ?left LATERAL { SELECT ?r WHERE { "
+				+ "?s ex:q ?left . ?left ex:r ?r FILTER(?s = ex:s2) } } } }";
+		TupleExpr parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		StringBuilder scopeDetails = new StringBuilder("Parsed algebra:\n").append(parsed).append('\n');
+		parsed.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Lateral node) {
+				scopeDetails.append("Lateral rightInputBindingNames=")
+						.append(node.getRightInputBindingNames())
+						.append('\n');
+				super.meet(node);
+			}
+
+			@Override
+			public void meet(Filter node) {
+				Filter.ConditionBindingScope scope = node.getConditionBindingScope();
+				scopeDetails.append("Filter conditionBindingScope auto=")
+						.append(scope.isAuto())
+						.append(" all=")
+						.append(scope.retainsAllBindings())
+						.append(" retained=")
+						.append(scope.bindingNames())
+						.append('\n');
+				super.meet(node);
+			}
+
+			@Override
+			public void meet(Var node) {
+				scopeDetails.append("Var name=")
+						.append(node.getName())
+						.append(" value=")
+						.append(node.getValue())
+						.append(" hasValue=")
+						.append(node.hasValue())
+						.append(" isConstant=")
+						.append(node.isConstant())
+						.append('\n');
+				super.meet(node);
+			}
+		});
+		scopeDetails.append("Optimized LMDB plan:\n")
+				.append(oracle.explain(Arm.LMDB_PRODUCTION, query, Explanation.Level.Optimized).rendered())
+				.append("\nLMDB telemetry plan:\n")
+				.append(oracle.explain(Arm.LMDB_PRODUCTION, query, Explanation.Level.Telemetry).rendered());
+		System.out.println(scopeDetails);
+		Map<CanonicalBindingSet, Long> expected = Map.of(new CanonicalBindingSet(List.of(
+				new CanonicalBinding("left", new CanonicalIri(EX + "left1")),
+				new CanonicalBinding("r", new CanonicalIri(EX + "r2")),
+				new CanonicalBinding("s", new CanonicalIri(EX + "s1")))), 1L);
+		oracle.assertRoute(Arm.LMDB_PRODUCTION, query, Explanation.Level.Optimized,
+				evidence -> assertThat(evidence.rendered())
+						.contains("plannedExecutionEngine=lmdb-native", "NativeRows", "NativeSubquery"));
+		for (EvaluationResult result : oracle.assertEquivalent(query, ResultOrder.UNORDERED).values()) {
+			assertThat(result.failure()).as("arm=%s must successfully parse and evaluate", result.arm()).isNull();
+			assertThat(result.multiset()).as("arm=%s", result.arm()).isEqualTo(expected);
+		}
+	}
+
+	@Test
+	public void hiddenLateralInputIsRenamedAcrossValuesBindNestedProjectionAndGroup() {
+		String query = PREFIX + "SELECT ?r ?n WHERE { VALUES ?s { ex:outer } LATERAL { "
+				+ "VALUES ?anchor { 1 } FILTER(BOUND(?s)) "
+				+ "{ SELECT (MIN(?copy) AS ?r) (COUNT(*) AS ?n) WHERE { "
+				+ "{ VALUES ?s { ex:s1 ex:s2 } } UNION "
+				+ "{ VALUES ?v { ex:s1 ex:s2 } BIND(?v AS ?s) } UNION "
+				+ "{ SELECT ?s WHERE { ?s ex:q ?left } } "
+				+ "BIND(?s AS ?copy) FILTER(?s IN (ex:s1, ex:s2)) } GROUP BY ?s } } }";
+		CanonicalLiteral three = new CanonicalLiteral("3", XSD.INTEGER.stringValue(), Optional.empty(),
+				Literal.BaseDirection.NONE);
+		Map<CanonicalBindingSet, Long> expected = Map.of(
+				lateralAggregateRow("s1", three), 1L,
+				lateralAggregateRow("s2", three), 1L);
+		oracle.assertRoute(Arm.LMDB_PRODUCTION, query, Explanation.Level.Optimized,
+				evidence -> assertThat(evidence.rendered())
+						.contains("plannedExecutionEngine=lmdb-native", "NativeRows"));
+		for (EvaluationResult result : oracle.assertEquivalent(query, ResultOrder.UNORDERED).values()) {
+			assertThat(result.failure()).as("arm=%s must successfully parse and evaluate", result.arm()).isNull();
+			assertThat(result.multiset()).as("arm=%s", result.arm()).isEqualTo(expected);
+		}
+	}
+
+	private static CanonicalBindingSet lateralFilterRow(String subject, String label) {
+		return new CanonicalBindingSet(List.of(
+				new CanonicalBinding("label", new CanonicalIri(EX + label)),
+				new CanonicalBinding("s", new CanonicalIri(EX + subject))));
+	}
+
+	private static CanonicalBindingSet lateralAggregateRow(String result, CanonicalLiteral count) {
+		return new CanonicalBindingSet(List.of(
+				new CanonicalBinding("n", count),
+				new CanonicalBinding("r", new CanonicalIri(EX + result))));
 	}
 
 	private static CanonicalBindingSet lateralRow(String subject, String label, String result) {

@@ -334,15 +334,31 @@ final class RowState implements LmdbNativeSlotReader {
 		return copy;
 	}
 
+	/** A semantic witness entry owns its current mapping and replay caches, retaining this row's execution identity. */
+	RowState invocationInput() {
+		BindingSet input = NativeEntryBindings.snapshot(view);
+		SyntheticValueSource invocation = SyntheticValueSource.forInvocation(source, input);
+		RowState copy = new RowState(invocation, layout, input, telemetryTarget, exactValuesMetrics, cancellation);
+		copy.inheritDecodedInputAccounting(this);
+		copy.runtimePlan = runtimePlan;
+		copy.lexicalScopeDepth = lexicalScopeDepth;
+		copy.lateralOccurrence = lateralOccurrence;
+		copy.logicalSolutionIdentity = logicalSolutionIdentity;
+		copy.encounterOrderRequired = encounterOrderRequired;
+		copy.parallelOwnership = parallelOwnership;
+		return copy;
+	}
+
 	/** Independent condition frame: only retained names enter its base mapping or initial slot domain. */
 	RowState projectConditionInput(Set<String> retainedNames) {
-		QueryBindingSet projectedBase = new QueryBindingSet();
+		QueryBindingSet projectedBase = NativeEntryBindings.copyValues(base);
 		for (String name : base.getBindingNames()) {
-			if (retainedNames.contains(name)) {
-				projectedBase.addBinding(name, base.getValue(name));
+			if (!retainedNames.contains(name)) {
+				projectedBase.removeBinding(name);
 			}
 		}
-		RowState projected = new RowState(source, layout, projectedBase, telemetryTarget, exactValuesMetrics,
+		RowState projected = new RowState(source, layout, NativeEntryBindings.preserve(base, projectedBase),
+				telemetryTarget, exactValuesMetrics,
 				cancellation);
 		projected.copyConditionInput(this, retainedNames);
 		return projected;

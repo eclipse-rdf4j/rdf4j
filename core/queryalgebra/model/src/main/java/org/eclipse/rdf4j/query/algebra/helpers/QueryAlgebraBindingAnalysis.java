@@ -416,6 +416,8 @@ public final class QueryAlgebraBindingAnalysis {
 		}
 		outputCache.clear();
 		resultSetModifierCache.clear();
+		childInputCache.clear();
+		leftJoinInputCache.clear();
 		scopeIdentities.clear();
 	}
 
@@ -450,7 +452,7 @@ public final class QueryAlgebraBindingAnalysis {
 		externalNames.addAll(parameters.keySet());
 		parameters.forEach((name, value) -> kinds.put(name, Set.of(valueKind(value))));
 		return new ReadOnlyContext(visible, maybe, guaranteed, fixed, kinds, external, externalNames,
-				frame.scopeIdentity, frame.bindingDomainKnown);
+				frame.scopeIdentity, frame.bindingDomainKnown, frame.lateralInputs);
 	}
 
 	public Dependencies dependencies(ValueExpr expression, ReadOnlyContext input) {
@@ -557,7 +559,8 @@ public final class QueryAlgebraBindingAnalysis {
 			ReadOnlyContext leftJoinInput = leftJoinInput(leftJoin, input);
 			if (child == leftJoin.getRightArg()) {
 				if (TupleExprs.containsSubquery(leftJoin.getRightArg())) {
-					return input.enterScope(nextScopeId(leftJoin.getRightArg()));
+					// ScopedLeftJoinIterator withholds the left row, but forwards the OPTIONAL's entry input.
+					return input.withScopeIdentity(nextScopeId(leftJoin.getRightArg()));
 				}
 				if (TupleExprs.requiresIndependentEvaluation(leftJoin.getRightArg())
 						|| containsResultSetModifier(leftJoin.getRightArg(), input)) {
@@ -597,13 +600,19 @@ public final class QueryAlgebraBindingAnalysis {
 		if (parent instanceof Union union) {
 			// UNION forwards its incoming mapping unchanged. Its parent join, not this lexical identity, decides
 			// whether an ordinary left row may be injected. EXISTS substitution inputs must survive this boundary.
-			return TupleExprs.isVariableScopeChange(union) ? input.enterCorrelatedScope(nextScopeId(union)) : input;
+			return TupleExprs.isVariableScopeChange(union) ? input.withScopeIdentity(nextScopeId(union)) : input;
 		}
 		if (parent instanceof Difference || parent instanceof Intersection) {
 			return input;
 		}
-		if (parent instanceof Projection projection && child == projection.getArg() && projection.isSubquery()) {
-			return input.enterScope(nextScopeId(projection));
+		if (parent instanceof Projection projection && child == projection.getArg()) {
+			// Projection forwards the caller's input before projecting its output. Its parent join has already
+			// selected whether this input includes a left row; a lexical SELECT boundary must not erase it.
+			ReadOnlyContext selected = input.selectLateralProjectionInput(List.of(projection.getProjectionElemList()));
+			return projection.isSubquery() ? selected.withScopeIdentity(nextScopeId(projection)) : selected;
+		}
+		if (parent instanceof MultiProjection projection && child == projection.getArg()) {
+			return input.selectLateralProjectionInput(projection.getProjections());
 		}
 		if (parent instanceof Group group) {
 			if (child == group.getArg()) {
@@ -622,10 +631,10 @@ public final class QueryAlgebraBindingAnalysis {
 			return input;
 		}
 		if (parent instanceof Exists exists && child == exists.getSubQuery()) {
-			return input.enterCorrelatedScope(nextScopeId(exists));
+			return input.withScopeIdentity(nextScopeId(exists));
 		}
 		if (parent instanceof SubQueryValueOperator subQuery && child instanceof TupleExpr) {
-			return input.enterCorrelatedScope(nextScopeId(subQuery));
+			return input.withScopeIdentity(nextScopeId(subQuery));
 		}
 		if (parent instanceof UnaryTupleOperator unary && child == unary.getArg()) {
 			return unknownChildInput(parent, input);
@@ -777,7 +786,7 @@ public final class QueryAlgebraBindingAnalysis {
 				rightInput.possible(name);
 			}
 		}
-		return rightInput.snapshot();
+		return rightInput.snapshot().withLateralInputs(lateral, input);
 	}
 
 	private Set<ValueKind> unionKinds(Set<ValueKind> left, Set<ValueKind> right) {
@@ -1951,6 +1960,11 @@ public final class QueryAlgebraBindingAnalysis {
 		}
 	}
 
+	/** Lexical LATERAL input origins refer to existing immutable frames; no second Value snapshot is captured. */
+	private record LateralInputFrame(ReadOnlyContext original, Set<String> names, boolean conditional,
+			LateralInputFrame previous) {
+	}
+
 	public static final class ReadOnlyContext {
 		private final Set<String> visibleNames;
 		private final Set<String> maybeBoundNames;
@@ -1961,11 +1975,20 @@ public final class QueryAlgebraBindingAnalysis {
 		private final Set<String> externalGuaranteedNames;
 		private final long scopeIdentity;
 		private final boolean bindingDomainKnown;
+		private final LateralInputFrame lateralInputs;
 
 		private ReadOnlyContext(Set<String> visibleNames, Set<String> maybeBoundNames, Set<String> guaranteedNames,
 				Map<String, Value> fixedValues, Map<String, Set<ValueKind>> valueKinds,
 				Map<String, Value> externalValues, Set<String> externalGuaranteedNames, long scopeIdentity,
 				boolean bindingDomainKnown) {
+			this(visibleNames, maybeBoundNames, guaranteedNames, fixedValues, valueKinds, externalValues,
+					externalGuaranteedNames, scopeIdentity, bindingDomainKnown, null);
+		}
+
+		private ReadOnlyContext(Set<String> visibleNames, Set<String> maybeBoundNames, Set<String> guaranteedNames,
+				Map<String, Value> fixedValues, Map<String, Set<ValueKind>> valueKinds,
+				Map<String, Value> externalValues, Set<String> externalGuaranteedNames, long scopeIdentity,
+				boolean bindingDomainKnown, LateralInputFrame lateralInputs) {
 			this.visibleNames = Set.copyOf(visibleNames);
 			this.maybeBoundNames = Set.copyOf(maybeBoundNames);
 			this.guaranteedNames = Set.copyOf(guaranteedNames);
@@ -1977,6 +2000,7 @@ public final class QueryAlgebraBindingAnalysis {
 			this.externalGuaranteedNames = Set.copyOf(externalGuaranteedNames);
 			this.scopeIdentity = scopeIdentity;
 			this.bindingDomainKnown = bindingDomainKnown;
+			this.lateralInputs = lateralInputs;
 		}
 
 		private static ReadOnlyContext external(Map<String, Value> values, Set<String> externalNames,
@@ -1993,7 +2017,66 @@ public final class QueryAlgebraBindingAnalysis {
 			visible.addAll(names);
 			maybe.addAll(names);
 			return new ReadOnlyContext(visible, maybe, guaranteedNames, fixedValues, valueKinds, externalValues,
-					externalGuaranteedNames, scopeIdentity, bindingDomainKnown);
+					externalGuaranteedNames, scopeIdentity, bindingDomainKnown, lateralInputs);
+		}
+
+		private ReadOnlyContext withLateralInputs(Lateral lateral, ReadOnlyContext original) {
+			Set<String> candidates = new HashSet<>(lateral.getRightInputBindingNames());
+			candidates.removeAll(original.guaranteedNames);
+			if (candidates.isEmpty()) {
+				return this;
+			}
+			boolean conditional = TupleExprs.preservesDirectSubSelectBindings(lateral.getRightArg(), candidates);
+			if (conditional) {
+				Set<String> outside = new HashSet<>(candidates);
+				outside.removeAll(lateral.getRightArg().getBindingNames());
+				if (original.bindingDomainKnown
+						&& outside.stream().anyMatch(name -> !original.maybeBoundNames.contains(name))) {
+					// A certainly-new unprojected input makes generic preparation keep the direct subselect intact.
+					return this;
+				}
+			}
+			return new ReadOnlyContext(visibleNames, maybeBoundNames, guaranteedNames, fixedValues, valueKinds,
+					externalValues, externalGuaranteedNames, scopeIdentity, bindingDomainKnown,
+					new LateralInputFrame(original, Set.copyOf(candidates), conditional, lateralInputs));
+		}
+
+		private ReadOnlyContext selectLateralProjectionInput(List<ProjectionElemList> projections) {
+			if (lateralInputs == null) {
+				return this;
+			}
+			MutableScope selected = new MutableScope(this);
+			Set<String> consumed = new HashSet<>();
+			for (LateralInputFrame frame = lateralInputs; frame != null; frame = frame.previous) {
+				for (String name : frame.names) {
+					if (projections.stream().anyMatch(elements -> TupleExprs.projectsSourceName(elements, name))) {
+						continue;
+					}
+					consumed.add(name);
+					selected.remove(name);
+					if (frame.conditional || !frame.original.bindingDomainKnown
+							|| frame.original.maybeBoundNames.contains(name)) {
+						// Hiding is conditional on the actual original domain. Do not resurrect an old fixed Value.
+						selected.possible(name);
+					}
+				}
+			}
+			if (consumed.isEmpty()) {
+				return this;
+			}
+			selected.lateralInputs = consumeLateralInputs(lateralInputs, consumed);
+			return selected.snapshot();
+		}
+
+		private static LateralInputFrame consumeLateralInputs(LateralInputFrame frame, Set<String> names) {
+			if (frame == null) {
+				return null;
+			}
+			LateralInputFrame previous = consumeLateralInputs(frame.previous, names);
+			Set<String> remaining = new HashSet<>(frame.names);
+			remaining.removeAll(names);
+			return remaining.isEmpty() ? previous
+					: new LateralInputFrame(frame.original, Set.copyOf(remaining), frame.conditional, previous);
 		}
 
 		/**
@@ -2044,7 +2127,8 @@ public final class QueryAlgebraBindingAnalysis {
 			}
 			if (!facts.possibleOutputsKnown || !facts.canProduceRows) {
 				return new ReadOnlyContext(Set.of(), Set.of(), Set.of(), Map.of(), Map.of(), Map.of(), Set.of(),
-						facts.inheritedInput.scopeIdentity, facts.possibleOutputsKnown);
+						facts.inheritedInput.scopeIdentity, facts.possibleOutputsKnown,
+						facts.inheritedInput.lateralInputs);
 			}
 			for (String name : facts.possibleOutputs) {
 				visible.add(name);
@@ -2073,7 +2157,8 @@ public final class QueryAlgebraBindingAnalysis {
 			}
 			return new ReadOnlyContext(visible, maybe, guaranteed, values, kinds, external, externalNames,
 					facts.inheritedInput.scopeIdentity,
-					facts.possibleOutputsKnown && facts.inheritedInput.bindingDomainKnown);
+					facts.possibleOutputsKnown && facts.inheritedInput.bindingDomainKnown,
+					facts.inheritedInput.lateralInputs);
 		}
 
 		ReadOnlyContext without(Set<String> names) {
@@ -2095,33 +2180,24 @@ public final class QueryAlgebraBindingAnalysis {
 			external.keySet().removeAll(names);
 			externalNames.removeAll(names);
 			return new ReadOnlyContext(visible, maybe, guaranteed, values, kinds, external, externalNames,
-					scopeIdentity, bindingDomainKnown);
-		}
-
-		ReadOnlyContext enterScope(long newIdentity) {
-			Set<String> visible = new HashSet<>(externalGuaranteedNames);
-			Set<String> maybe = new HashSet<>(externalGuaranteedNames);
-			Set<String> guaranteed = new HashSet<>(externalGuaranteedNames);
-			Map<String, Set<ValueKind>> kinds = new HashMap<>();
-			externalValues.forEach((name, value) -> kinds.put(name, Set.of(valueKindOf(value))));
-			return new ReadOnlyContext(visible, maybe, guaranteed, externalValues, kinds, externalValues,
-					externalGuaranteedNames, newIdentity, bindingDomainKnown);
+					scopeIdentity, bindingDomainKnown, lateralInputs);
 		}
 
 		ReadOnlyContext enterUnknownScope(long newIdentity) {
 			return new ReadOnlyContext(Set.of(), Set.of(), Set.of(), Map.of(), Map.of(), Map.of(), Set.of(),
 					newIdentity,
-					false);
+					false, lateralInputs);
 		}
 
-		ReadOnlyContext enterCorrelatedScope(long newIdentity) {
+		/** Changes lexical identity without changing the input mapping already selected by the caller. */
+		ReadOnlyContext withScopeIdentity(long newIdentity) {
 			return new ReadOnlyContext(visibleNames, maybeBoundNames, guaranteedNames, fixedValues, valueKinds,
-					externalValues, externalGuaranteedNames, newIdentity, bindingDomainKnown);
+					externalValues, externalGuaranteedNames, newIdentity, bindingDomainKnown, lateralInputs);
 		}
 
 		ReadOnlyContext withUnknownDomain() {
 			return new ReadOnlyContext(visibleNames, maybeBoundNames, guaranteedNames, fixedValues, valueKinds,
-					externalValues, externalGuaranteedNames, scopeIdentity, false);
+					externalValues, externalGuaranteedNames, scopeIdentity, false, lateralInputs);
 		}
 
 		private static ValueKind valueKindOf(Value value) {
@@ -2182,6 +2258,7 @@ public final class QueryAlgebraBindingAnalysis {
 				return true;
 			}
 			return other instanceof ReadOnlyContext context && scopeIdentity == context.scopeIdentity
+					&& lateralInputs == context.lateralInputs
 					&& bindingDomainKnown == context.bindingDomainKnown
 					&& visibleNames.equals(context.visibleNames) && maybeBoundNames.equals(context.maybeBoundNames)
 					&& guaranteedNames.equals(context.guaranteedNames) && fixedValues.equals(context.fixedValues)
@@ -2197,7 +2274,8 @@ public final class QueryAlgebraBindingAnalysis {
 			int h = hash;
 			if (h == 0) {
 				h = Objects.hash(visibleNames, maybeBoundNames, guaranteedNames, fixedValues, valueKinds,
-						externalValues, externalGuaranteedNames, scopeIdentity, bindingDomainKnown);
+						externalValues, externalGuaranteedNames, scopeIdentity, bindingDomainKnown,
+						System.identityHashCode(lateralInputs));
 				if (h == 0) {
 					h = 1;
 				}
@@ -2208,6 +2286,7 @@ public final class QueryAlgebraBindingAnalysis {
 	}
 
 	static final class MutableScope {
+		private LateralInputFrame lateralInputs;
 		private final Set<String> visibleNames;
 		private final Set<String> maybeBoundNames;
 		private final Set<String> guaranteedNames;
@@ -2219,6 +2298,7 @@ public final class QueryAlgebraBindingAnalysis {
 		private final boolean bindingDomainKnown;
 
 		private MutableScope(ReadOnlyContext initial) {
+			this.lateralInputs = initial.lateralInputs;
 			this.visibleNames = new HashSet<>(initial.visibleNames);
 			this.maybeBoundNames = new HashSet<>(initial.maybeBoundNames);
 			this.guaranteedNames = new HashSet<>(initial.guaranteedNames);
@@ -2262,7 +2342,7 @@ public final class QueryAlgebraBindingAnalysis {
 
 		ReadOnlyContext snapshot() {
 			return new ReadOnlyContext(visibleNames, maybeBoundNames, guaranteedNames, fixedValues, valueKinds,
-					externalValues, externalGuaranteedNames, scopeIdentity, bindingDomainKnown);
+					externalValues, externalGuaranteedNames, scopeIdentity, bindingDomainKnown, lateralInputs);
 		}
 	}
 

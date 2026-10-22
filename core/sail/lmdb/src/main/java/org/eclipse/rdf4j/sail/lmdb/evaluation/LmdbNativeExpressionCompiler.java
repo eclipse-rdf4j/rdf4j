@@ -64,6 +64,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.IdCapability;
 
 /**
  * Interpreted native expression compiler for LMDB row ids. Unsupported shapes return {@code null}; supported shapes
@@ -414,7 +415,7 @@ public final class LmdbNativeExpressionCompiler {
 				}
 				return assured(slot) ? truth(1L << slot, row -> TRUE)
 						: truth(1L << slot,
-								row -> row.id(slot) == NativeLmdbQuerySource.UNKNOWN_ID ? FALSE : TRUE);
+								row -> IdCapability.BOUND.test(row.id(slot)) ? TRUE : FALSE);
 			}
 			return null;
 		}

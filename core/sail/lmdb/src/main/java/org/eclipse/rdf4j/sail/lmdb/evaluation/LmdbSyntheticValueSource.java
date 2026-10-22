@@ -115,17 +115,39 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 		return new SyntheticValueSource(delegate, catalog, new NativeExecutionContext(queryExecutionPolicy));
 	}
 
+	/**
+	 * One semantic evaluate(input) call: isolate its immutable input and binding-dependent caches. A matching native
+	 * term space remains shared, exactly where forEvaluation() previously borrowed the active source itself.
+	 */
+	SyntheticValueSource forInvocation(BindingSet bindings) {
+		SyntheticValueSource parent = ACTIVE_EVALUATION.get();
+		if (parent == null && context != null) {
+			parent = this;
+		}
+		if (parent != null && parent.queryExecutionPolicy == queryExecutionPolicy) {
+			boolean shareTerms = parent.delegate == delegate && parent.catalog == catalog
+					&& parent.generatedKeyAuthority == null;
+			NativeExecutionContext invocation = new NativeExecutionContext(parent.context, bindings, shareTerms);
+			return new SyntheticValueSource(delegate, catalog, invocation, shareTerms ? parent.idSpace() : null,
+					queryExecutionPolicy);
+		}
+		NativeExecutionContext invocation = new NativeExecutionContext(queryExecutionPolicy);
+		invocation.initializeQueryBase(bindings);
+		return new SyntheticValueSource(delegate, catalog, invocation);
+	}
+
 	/** Shares scalar/term authority while masking the independent entry frame used by nested native subqueries. */
 	NativeExecutionContext forConditionBindings(ConditionBindingScope scope) {
-		QueryBindingSet projected = new QueryBindingSet();
 		BindingSet base = context.queryBase();
+		QueryBindingSet projected = NativeEntryBindings.copyValues(base);
 		for (String name : base.getBindingNames()) {
-			if (scope.bindingNames().contains(name)) {
-				projected.addBinding(name, base.getValue(name));
+			if (!scope.bindingNames().contains(name)) {
+				projected.removeBinding(name);
 			}
 		}
-		NativeExecutionContext projectedContext = new NativeExecutionContext(context, projected);
-		new SyntheticValueSource(delegate, catalog, projectedContext);
+		NativeExecutionContext projectedContext = new NativeExecutionContext(context,
+				NativeEntryBindings.preserve(base, projected));
+		new SyntheticValueSource(delegate, catalog, projectedContext, idSpace(), queryExecutionPolicy);
 		return projectedContext;
 	}
 
@@ -150,11 +172,24 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 		return new SyntheticValueSource(source, PlanValueCatalog.EMPTY, policy).forEvaluation();
 	}
 
+	static SyntheticValueSource forInvocation(NativeLmdbQuerySource source, QueryExecutionPolicy policy,
+			BindingSet bindings) {
+		return source instanceof SyntheticValueSource synthetic ? synthetic.forInvocation(bindings)
+				: new SyntheticValueSource(source, PlanValueCatalog.EMPTY, policy).forInvocation(bindings);
+	}
+
+	static SyntheticValueSource forInvocation(NativeLmdbQuerySource source, BindingSet bindings) {
+		SyntheticValueSource active = ACTIVE_EVALUATION.get();
+		QueryExecutionPolicy policy = source instanceof SyntheticValueSource synthetic
+				? synthetic.queryExecutionPolicy
+				: active == null ? QueryExecutionPolicy.DEFAULT : active.queryExecutionPolicy;
+		return forInvocation(source, policy, bindings);
+	}
+
 	/** Activate once, before evaluation: no first-batch guesses, property changes or mutable plan flags. */
-	SyntheticValueSource forEvaluation(NativeGeneratedKeyPlan proof, NativeSlotLayout layout, BindingSet bindings) {
-		SyntheticValueSource result = forEvaluation();
-		// A borrowed context is not this operator's terminal scope. Never alter another operator's identity policy.
-		if (result != ACTIVE_EVALUATION.get() && proof.enabled(layout, bindings)) {
+	SyntheticValueSource forInvocation(NativeGeneratedKeyPlan proof, NativeSlotLayout layout, BindingSet bindings) {
+		SyntheticValueSource result = forInvocation(bindings);
+		if (proof.enabled(layout, bindings)) {
 			result.generatedKeyPlan = proof;
 			result.generatedKeyAuthority = result.context.nativeState(proof,
 					() -> new NativeGeneratedKeyAuthority(result.authority, result.context));

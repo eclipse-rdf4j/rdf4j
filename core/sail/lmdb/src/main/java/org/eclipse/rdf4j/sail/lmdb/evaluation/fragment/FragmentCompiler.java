@@ -80,7 +80,7 @@ public final class FragmentCompiler {
 	private static LongPredicateFragment primitiveFor(FragmentNode root) {
 		if (root instanceof IsBound isBound && isBound.input() instanceof Argument argument) {
 			int index = argument.index();
-			return (a0, a1, a2, binding) -> argumentAt(index, a0, a1, a2) != -1L
+			return (a0, a1, a2, binding) -> IdCapability.BOUND.test(argumentAt(index, a0, a1, a2))
 					? PredicateStatus.TRUE
 					: PredicateStatus.FALSE;
 		}

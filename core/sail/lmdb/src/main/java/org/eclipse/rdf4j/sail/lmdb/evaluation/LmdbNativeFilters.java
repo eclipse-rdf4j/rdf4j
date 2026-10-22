@@ -1024,6 +1024,25 @@ final class ExistsFilter implements NativeBooleanFilter {
 	}
 
 	boolean exists(RowState row) {
+		if (memoSlots == null) {
+			// Hidden entry reads (notably independent SELECT operands) need an immutable witness entry. Proven
+			// row-local probes below keep their existing current-slot path and allocation shape.
+			RowState input = row.invocationInput();
+			try (NativeExecutionContext invocation = executionContext(input);
+					SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource
+							.attachEvaluation(input.source)) {
+				if (!LmdbNativeAggregateCompiler.initializeRow(input, input.base, input.source, input.layout)) {
+					return false;
+				}
+				return existsInScope(input);
+			} finally {
+				input.closeDecodedInputs();
+			}
+		}
+		return existsInScope(row);
+	}
+
+	private boolean existsInScope(RowState row) {
 		long previousLexicalInput = row.enterLexicalScope(row.boundMask());
 		try {
 			if (existsPlan != null) {

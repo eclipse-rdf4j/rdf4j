@@ -19,6 +19,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
+import java.util.function.BiFunction;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -54,6 +56,7 @@ final class NativeSubqueryPlan implements SlotPlan {
 	private final Projection projection;
 	private final QueryEvaluationContext context;
 	private final long producedMask;
+	private final BiFunction<Set<String>, NativeExecutionContext, QueryEvaluationStep> lateralStepFactory;
 
 	NativeSubqueryPlan(QueryEvaluationStep step, int[] outSlots, String[] outNames, int[] frameInputSlots,
 			String[] frameInputNames) {
@@ -63,6 +66,14 @@ final class NativeSubqueryPlan implements SlotPlan {
 	NativeSubqueryPlan(QueryEvaluationStep step, int[] outSlots, String[] outNames, int[] frameInputSlots,
 			String[] frameInputNames, String[] frameParameterNames, String[] privateGraphParameters,
 			Projection projection, QueryEvaluationContext context) {
+		this(step, outSlots, outNames, frameInputSlots, frameInputNames, frameParameterNames, privateGraphParameters,
+				projection, context, null);
+	}
+
+	NativeSubqueryPlan(QueryEvaluationStep step, int[] outSlots, String[] outNames, int[] frameInputSlots,
+			String[] frameInputNames, String[] frameParameterNames, String[] privateGraphParameters,
+			Projection projection, QueryEvaluationContext context,
+			BiFunction<Set<String>, NativeExecutionContext, QueryEvaluationStep> lateralStepFactory) {
 		this.step = step;
 		this.outSlots = outSlots;
 		this.outNames = outNames;
@@ -77,6 +88,7 @@ final class NativeSubqueryPlan implements SlotPlan {
 		}
 		this.projection = projection;
 		this.context = context;
+		this.lateralStepFactory = lateralStepFactory;
 		long mask = 0L;
 		for (int slot : outSlots) {
 			mask |= 1L << slot;
@@ -174,7 +186,7 @@ final class NativeSubqueryPlan implements SlotPlan {
 		if (frameInputSlots.length == 0 && privateGraphParameters.length == 0) {
 			return base;
 		}
-		MutableBindingSet bindings = new QueryBindingSet(base);
+		MutableBindingSet bindings = NativeEntryBindings.copyValues(base);
 		for (String parameter : privateGraphParameters) {
 			if (!GraphFrameBindings.isSupplied(base, parameter)) {
 				bindings.removeBinding(parameter);
@@ -196,15 +208,23 @@ final class NativeSubqueryPlan implements SlotPlan {
 				}
 			}
 		}
-		return bindings;
+		return NativeEntryBindings.preserveFrame(base, bindings, row.view, frameInputNames, frameParameterNames);
 	}
 
 	private NativeSubqueryState evaluateOnce(RowState row, BindingSet input) {
 		List<BindingSet> rows = new ArrayList<>();
+		QueryEvaluationStep prepared = step;
+		if (lateralStepFactory != null) {
+			NativeExecutionContext execution = executionContext(row);
+			Set<String> originalDomain = Set.copyOf(row.base.getBindingNames());
+			prepared = execution.nativeState(new ScopedStepKey(this, originalDomain),
+					() -> lateralStepFactory.apply(originalDomain, execution));
+		}
 		BindingSet bodyInput = projection == null ? input
 				: ProjectionQueryEvaluationStep.withInheritedGraphInput(projection, input, context);
+		bodyInput = NativeEntryBindings.preserve(input, bodyInput);
 		try (SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(row.source);
-				CloseableIteration<BindingSet> iteration = step.evaluate(bodyInput)) {
+				CloseableIteration<BindingSet> iteration = prepared.evaluate(bodyInput)) {
 			while (!row.cancellation.isCancellationRequested() && iteration.hasNext()) {
 				// Native projected rows may be lazy and may refer to a child-owned execution context. Resolve every
 				// authoritative Value before the child closes so replay never observes a dead id authority.
@@ -216,6 +236,10 @@ final class NativeSubqueryPlan implements SlotPlan {
 			}
 		}
 		return new NativeSubqueryState(List.copyOf(rows));
+	}
+
+	/** Preparation depends on the original domain, while result replay separately depends on frame values. */
+	private record ScopedStepKey(NativeSubqueryPlan plan, Set<String> originalDomain) {
 	}
 
 	private static NativeExecutionContext executionContext(RowState row) {

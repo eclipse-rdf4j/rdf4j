@@ -510,6 +510,63 @@ class LmdbNativeWildcardPredicateBatchTest {
 	}
 
 	@Test
+	void minusWithUnboundSharedValuesKeepsTheIndependentExpectedBag(@TempDir File dataDir) {
+		open(dataDir);
+		String query = "SELECT ?subject WHERE { VALUES ?subject { <" + NS + "s0> } FILTER EXISTS { "
+				+ "SELECT ?subject WHERE { VALUES ?x { UNDEF } MINUS { ?subject ?p ?x } } } }";
+		List<String> expected = List.of("subject=" + NS + "s0");
+
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "false");
+		assertThat(allRows(query)).as("the generic evaluator keeps the row with an empty MINUS-domain intersection")
+				.containsExactlyElementsOf(expected);
+
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		assertThat(allRows(query))
+				.as("an unbound shared VALUES value remains non-overlapping under the native optimizer")
+				.containsExactlyElementsOf(expected);
+	}
+
+	@Test
+	void minusBatchUsesOnlyTheDeclaredOperandDomain(@TempDir File dataDir) {
+		open(dataDir);
+		String query = "SELECT ?subject WHERE { VALUES ?subject { <" + NS + "s0> } FILTER EXISTS { "
+				+ "SELECT ?subject WHERE { VALUES ?x { UNDEF <" + NS + "o0> } MINUS { ?subject ?p ?x } } } }";
+		List<String> expected = List.of("subject=" + NS + "s0");
+
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "false");
+		assertThat(allRows(query))
+				.as("the unbound VALUES row has no compatible MINUS overlap")
+				.containsExactlyElementsOf(expected);
+
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		long batchesBefore = LmdbNativeKernelIrTestAccess.wildcardBatches();
+		List<String> actual = allRows(query);
+		assertThat(LmdbNativeKernelIrTestAccess.wildcardBatches())
+				.as("the MINUS query actually executed a wildcard batch%n%s", explain(query))
+				.isGreaterThan(batchesBefore);
+		assertThat(actual).as("the wildcard MINUS route must preserve the independent expected bag%n%s", explain(query))
+				.containsExactlyElementsOf(expected);
+	}
+
+	@Test
+	void allUndefSharedValuesHeaderRetainsBoundLexicalInput(@TempDir File dataDir) {
+		open(dataDir);
+		String query = "SELECT ?x WHERE { VALUES ?x { 1 } FILTER EXISTS { "
+				+ "VALUES ?x { UNDEF } MINUS { VALUES ?x { UNDEF } } } }";
+
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "false");
+		assertThat(allRows(query))
+				.as("the explicit shared VALUES header lets the bound lexical x remove the left UNDEF row")
+				.isEmpty();
+
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		assertThat(allRows(query))
+				.as("the compiled MINUS retains the explicit shared domain despite producedMask zero%n%s",
+						explain(query))
+				.isEmpty();
+	}
+
+	@Test
 	void uncorrelatedExistsStopsAtTheFirstPredicatePlaneWitness(@TempDir File dataDir) {
 		open(dataDir);
 		String exists = "SELECT ?s WHERE { ?s a <" + NS + "SomeClass> . FILTER EXISTS { ?x ?p ?y } }";
