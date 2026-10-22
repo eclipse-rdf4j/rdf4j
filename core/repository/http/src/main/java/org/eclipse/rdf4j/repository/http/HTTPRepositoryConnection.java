@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
@@ -103,6 +104,12 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 	private final List<TransactionOperation> txn = Collections.synchronizedList(new ArrayList<>());
 
 	private final RDF4JProtocolSession client;
+
+	/** Internal opt-in for one Workbench connection; shared repository clients remain unchanged. */
+	@InternalUseOnly
+	public void setBNodeOriginEnabled(boolean enabled) {
+		client.setBNodeOriginEnabled(enabled);
+	}
 
 	private boolean active;
 

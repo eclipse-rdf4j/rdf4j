@@ -32,6 +32,8 @@ jobs:
         run: mvn -B --quiet -T 2C compile -DskipTests -Pquick
       - name: Download all other dependencies
         run: mvn -B --quiet -T 2C dependency:go-offline
+      - name: Verify Maven test partition behavior
+        run: python3 scripts/ci/verify_pr_verify_partitions.py --no-offline
 
   compile:
     needs: formatting-and-quick-compile
@@ -74,7 +76,7 @@ jobs:
       - name: Build
         run: mvn --quiet clean && mvn -B --quiet -T 2C install -Pquick
       - name: Test
-        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B test -DskipITs -P-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
+        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B test -DskipITs -PskipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Publish Test Report
         if: failure()
         uses: ScalableCapital/action-surefire-report@v2.0.5
@@ -104,7 +106,7 @@ jobs:
       - name: Build
         run: mvn --quiet clean && mvn -B --quiet -T 2C install -Pquick
       - name: Verify
-        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B verify -PskipUnitTests,-formatting -Dmaven.javadoc.skip -Denforcer.skip -Danimal.sniffer.skip
+        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B verify -PskipUnitTests,skipSlowTests,-formatting -Dmaven.javadoc.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Publish Test Report
         if: failure()
         uses: ScalableCapital/action-surefire-report@v2.0.5
@@ -190,10 +192,21 @@ jobs:
         with:
           node-version: 22
       - name: Run end-to-end tests of RDF4J Server and Workbench (${{ matrix.runtime.label }}, ${{ matrix.browser }})
+        id: e2e
         working-directory: ./e2e
         env:
           E2E_BROWSER: ${{ matrix.browser }}
         run: exec ../scripts/ci/run-with-thread-dump.sh ./run.sh ${{ matrix.runtime.argument }}
+      - name: Upload Playwright failure diagnostics (${{ matrix.runtime.label }}, ${{ matrix.browser }})
+        if: ${{ (failure() && steps.e2e.outcome == 'failure') || hashFiles('e2e/test-results/**/trace.zip') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-test-diagnostics-${{ matrix.runtime.argument }}-${{ matrix.browser }}
+          path: |
+            e2e/test-results/
+            e2e/playwright-report/
+          if-no-files-found: warn
+          retention-days: 7
 
   frontend-unit-tests:
     needs: formatting-and-quick-compile
@@ -205,11 +218,25 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: e2e/package-lock.json
-      - name: Install dependencies
+          cache-dependency-path: |
+            tools/workbench/package-lock.json
+            e2e/package-lock.json
+      - name: Build the Workbench front end
+        working-directory: ./tools/workbench
+        run: npm ci && npm run build
+      - name: Type-check the Workbench front end
+        working-directory: ./tools/workbench
+        run: npm run typecheck
+      - name: Run Workbench front-end unit tests
+        working-directory: ./tools/workbench
+        env:
+          # The classic pages' and the graph explorer's tests; runners are slower than the layout budgets assume.
+          GRAPH_PERFORMANCE_SLOWDOWN: 3
+        run: npm test
+      - name: Install e2e dependencies
         working-directory: ./e2e
         run: npm ci
-      - name: Run frontend unit tests
+      - name: Run e2e helper unit tests
         working-directory: ./e2e
         run: npm run test:unit
 

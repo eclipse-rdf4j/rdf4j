@@ -14,6 +14,7 @@ const {
     hostFromServer,
     listenAddressForServer,
     serverBaseUrl,
+    signInOnConnectionPage,
     uniqueRepositoryId,
     waitForRoute,
     workbenchBaseUrl
@@ -54,24 +55,6 @@ function digits(text) {
     return (text || '').replace(/\D/g, '');
 }
 
-/** Signs in on the Connection page like a user: server URL as shown, user and password under Advanced settings. */
-async function signIn(page, user) {
-    await page.goto(`${WORKBENCH}/repositories/NONE/server`, { waitUntil: 'domcontentloaded' });
-    await waitForRoute(page, 'server');
-    await page.locator('#server-auth-toggle').click();
-    await page.locator('#server-user').fill(user);
-    await page.locator('#server-password').fill(`${user}-secret`);
-    // The Advanced settings pane opens over the form, so submit from the password field as a user does with Enter.
-    await Promise.all([
-        page.waitForURL(url => !/\/NONE\/server(?:[?#]|$)/.test(url.toString()), { timeout: 15000 }),
-        page.locator('#server-password').press('Enter')
-    ]);
-    const cookies = await page.context().cookies(WORKBENCH);
-    const credentials = cookies.find(cookie => cookie.name === 'server-user-password');
-    expect(credentials, 'the Connection page stores the server credentials').toBeTruthy();
-    expect(Buffer.from(credentials.value, 'base64').toString('latin1')).toBe(`${user}:${user}-secret`);
-}
-
 async function openQueryPage(page, repositoryId) {
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto(repositoryUrl(repositoryId, 'query'), { waitUntil: 'domcontentloaded' });
@@ -110,7 +93,7 @@ test.describe('R2 private saved queries', () => {
         const anonymous = await browser.newContext();
         try {
             const page = await alice.newPage();
-            await signIn(page, 'alice');
+            await signInOnConnectionPage(page, 'alice', 'alice-secret');
             await openQueryPage(page, repositoryId);
             await setEditor(page, 'SELECT * WHERE { ?s ?p ?o } LIMIT 3');
             await page.locator('#save-query-toggle').click();
@@ -138,7 +121,7 @@ test.describe('R2 private saved queries', () => {
             await expect(page.getByText('Current user may not read the given query.')).toHaveCount(0);
 
             const bobPage = await bob.newPage();
-            await signIn(bobPage, 'bob');
+            await signInOnConnectionPage(bobPage, 'bob', 'bob-secret');
             await expect(await savedQueryRows(bobPage, repositoryId, queryName),
                 'another signed-in user does not see it').toHaveCount(0);
 
@@ -153,7 +136,7 @@ test.describe('R2 private saved queries', () => {
                     query: 'SELECT * WHERE { ?s ?p ?o }', 'save-private': 'true', 'query-timeout': '0' }
             });
             expect(refused.status(), 'the server refuses an anonymous private save').toBe(400);
-            expect((await refused.json()).error).toBe('Private saved queries require a signed-in user');
+            expect((await refused.json()).error).toBe('Private saved queries require a signed-in user with a password');
             await expect(await savedQueryRows(page, repositoryId, `${queryName}-anonymous`)).toHaveCount(0);
 
             // Clean up as the owner.

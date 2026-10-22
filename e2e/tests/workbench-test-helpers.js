@@ -24,6 +24,14 @@ async function typeIntoCodeMirror(page, index, value) {
     }, [index, value]);
 }
 
+/**
+ * An origin the server may import from (run.sh approves it) where nothing listens, so a URL there is refused. Set
+ * RDF4J_E2E_REFUSED_URL_ORIGIN and the server's org.eclipse.rdf4j.workbench.add-url-allowed-origins together.
+ */
+function refusedUrlOrigin() {
+    return (process.env.RDF4J_E2E_REFUSED_URL_ORIGIN || 'http://127.0.0.1:9').replace(/\/+$/, '');
+}
+
 function workbenchBaseUrl() {
     return (process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:8080/rdf4j-workbench').replace(/\/+$/, '');
 }
@@ -148,6 +156,28 @@ async function waitForRoute(page, viewId, options = {}) {
 }
 
 /**
+ * Signs in on the Connection page as a user does: user and password under Advanced settings, then Enter. The server
+ * keeps the credentials in the session, so later requests of the page's context (page.request too) are the user's; no
+ * cookie holds them, and the page names the signed-in user.
+ */
+async function signInOnConnectionPage(page, user, password) {
+    const { expect } = require('@playwright/test');
+    await page.goto(`${workbenchBaseUrl()}/repositories/NONE/server`, { waitUntil: 'domcontentloaded' });
+    await waitForRoute(page, 'server');
+    await page.locator('#server-auth-toggle').click();
+    await page.locator('#server-user').fill(user);
+    await page.locator('#server-password').fill(password);
+    // The Advanced settings pane opens over the form, so submit from the password field as a user does with Enter.
+    await Promise.all([
+        page.waitForURL((url) => !/\/NONE\/server(?:[?#]|$)/.test(url.toString()), { timeout: 15000 }),
+        page.locator('#server-password').press('Enter')
+    ]);
+    const cookies = (await page.context().cookies()).map((cookie) => cookie.name);
+    expect(cookies, 'credentials are never stored in a cookie').not.toContain('server-user-password');
+    await expect(page.locator('#workbench-menu-sheet .workbench-menu-sheet__context')).toContainText(user);
+}
+
+/**
  * Wait until a write sent in place (Update, Add, Remove or Clear, plan task M14.2) is done: its page stays and its
  * status shows the tick.
  */
@@ -196,10 +226,12 @@ module.exports = {
     listenAddressForServer,
     memoryRepositoryConfiguration,
     openQueryPage,
+    refusedUrlOrigin,
     repositoryPageUrl,
     runQuery,
     serverBaseUrl,
     setQueryEditor,
+    signInOnConnectionPage,
     typeIntoCodeMirror,
     uniqueRepositoryId,
     waitForRoute,

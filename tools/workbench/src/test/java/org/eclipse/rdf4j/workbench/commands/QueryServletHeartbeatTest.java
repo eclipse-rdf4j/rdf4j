@@ -101,7 +101,7 @@ class QueryServletHeartbeatTest {
 	void publishesParseableProgressWhileEvaluationOrIterationIsBlocked(String blockedStage, int version, String coding)
 			throws Exception {
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockedConnection();
 		TupleQuery tupleQuery = mock(TupleQuery.class);
 		TupleQueryResult result = mock(TupleQueryResult.class);
 		CountDownLatch blocked = new CountDownLatch(1);
@@ -180,7 +180,7 @@ class QueryServletHeartbeatTest {
 	void publishesEachHundredThousandCountMilestoneAfterTheInitialMillionWithATwoRowWindow() throws Exception {
 		int totalRows = 1_300_000;
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockedConnection();
 		TupleQuery tupleQuery = mock(TupleQuery.class);
 		TupleQueryResult result = mock(TupleQueryResult.class);
 		AtomicInteger consumedRows = new AtomicInteger();
@@ -228,7 +228,7 @@ class QueryServletHeartbeatTest {
 		long timedProgressCount = 1_050_000;
 		long countMilestone = 1_100_000;
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockedConnection();
 		TupleQuery tupleQuery = mock(TupleQuery.class);
 		TupleQueryResult result = mock(TupleQueryResult.class);
 		AtomicInteger consumedRows = new AtomicInteger();
@@ -304,7 +304,7 @@ class QueryServletHeartbeatTest {
 	@CsvSource({ "tail-iteration", "iterator-close" })
 	void lateTailAndIteratorCloseFailuresDoNotClaimCompletion(String failurePoint) throws Exception {
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockedConnection();
 		TupleQuery tupleQuery = mock(TupleQuery.class);
 		TupleQueryResult result = mock(TupleQueryResult.class);
 		AtomicInteger consumedRows = new AtomicInteger();
@@ -365,7 +365,7 @@ class QueryServletHeartbeatTest {
 		String requestId = "full-query-lookahead-cancellation";
 		String repositoryUrl = "http://localhost/repositories/batch-cancellation";
 		HTTPRepository repository = mock(HTTPRepository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockedConnection();
 		TupleQuery originalQuery = mock(TupleQuery.class);
 		TupleQueryResult result = mock(TupleQueryResult.class);
 		CountDownLatch lookaheadEntered = new CountDownLatch(1);
@@ -458,7 +458,7 @@ class QueryServletHeartbeatTest {
 	@MethodSource("typedFailuresAfterACommittedLegacyResponse")
 	void typedFailureAfterACommittedLegacyResponseInvalidatesIt(Throwable typedFailure) throws Exception {
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockedConnection();
 		TupleQuery tupleQuery = mock(TupleQuery.class);
 		CountDownLatch releaseEvaluation = new CountDownLatch(1);
 		ProbeServletOutputStream output = new ProbeServletOutputStream(2);
@@ -523,7 +523,7 @@ class QueryServletHeartbeatTest {
 	@Test
 	void wrappedCircuitBreakerFailureAnswersRetryAfter() throws Exception {
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockedConnection();
 		TupleQuery tupleQuery = mock(TupleQuery.class);
 		ProbeServletOutputStream output = new ProbeServletOutputStream(0);
 		HttpServletResponse response = responseWith(output);
@@ -556,7 +556,7 @@ class QueryServletHeartbeatTest {
 	@Test
 	void generatesAnInternalIdAndCompletesXmlAfterMultipleProbes() throws Exception {
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockedConnection();
 		TupleQuery tupleQuery = mock(TupleQuery.class);
 		CountDownLatch releaseEvaluation = new CountDownLatch(1);
 		ProbeServletOutputStream output = new ProbeServletOutputStream(2);
@@ -601,7 +601,7 @@ class QueryServletHeartbeatTest {
 	@Test
 	void malformedQueriesReturnAnImmediateErrorDocumentWithoutAProbe() throws Exception {
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockedConnection();
 		ProbeServletOutputStream output = new ProbeServletOutputStream(1);
 		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
 		FastHeartbeatQueryServlet servlet = servlet(repository, coordinator);
@@ -622,7 +622,7 @@ class QueryServletHeartbeatTest {
 	@Test
 	void postProbeEvaluationFailureInvalidatesTheCommittedResponse() throws Exception {
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockedConnection();
 		TupleQuery tupleQuery = mock(TupleQuery.class);
 		CountDownLatch releaseEvaluation = new CountDownLatch(1);
 		ProbeServletOutputStream output = new ProbeServletOutputStream(2);
@@ -663,7 +663,7 @@ class QueryServletHeartbeatTest {
 	@Test
 	void postProbePageDataFailureEndsWithATerminalErrorRecord() throws Exception {
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockedConnection();
 		TupleQuery tupleQuery = mock(TupleQuery.class);
 		CountDownLatch releaseEvaluation = new CountDownLatch(1);
 		ProbeServletOutputStream output = new ProbeServletOutputStream(1);
@@ -734,7 +734,7 @@ class QueryServletHeartbeatTest {
 	void clientReadTimeoutBeforeAnyRowIsReportedAsTheQueryTimeout() throws Exception {
 		Repository repository = mock(HTTPRepository.class);
 		when(((HTTPRepository) repository).getRepositoryURL()).thenReturn("http://localhost/repositories/test");
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockedConnection();
 		TupleQuery tupleQuery = mock(TupleQuery.class);
 		ProbeServletOutputStream output = new ProbeServletOutputStream(0);
 		HttpServletResponse response = responseWith(output);
@@ -793,7 +793,7 @@ class QueryServletHeartbeatTest {
 	@Test
 	void remoteTruncatedTupleStreamAfterRowsIsIncompleteNotTimeout() throws Exception {
 		HTTPRepository repository = mock(HTTPRepository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockedConnection();
 		TupleQuery tupleQuery = mock(TupleQuery.class);
 		TupleQueryResult result = mock(TupleQueryResult.class);
 		AtomicInteger resultCalls = new AtomicInteger();
@@ -883,7 +883,7 @@ class QueryServletHeartbeatTest {
 		if (remote) {
 			when(((HTTPRepository) repository).getRepositoryURL()).thenReturn("http://localhost/repositories/test");
 		}
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockedConnection();
 		GraphQuery graphQuery = mock(GraphQuery.class);
 		GraphQueryResult result = mock(GraphQueryResult.class);
 		AtomicInteger resultCalls = new AtomicInteger();
@@ -947,7 +947,7 @@ class QueryServletHeartbeatTest {
 		if (remote) {
 			when(((HTTPRepository) repository).getRepositoryURL()).thenReturn("http://localhost/repositories/test");
 		}
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockedConnection();
 		TupleQuery tupleQuery = mock(TupleQuery.class);
 		TupleQueryResult result = mock(TupleQueryResult.class);
 		AtomicInteger resultCalls = new AtomicInteger();
@@ -1105,7 +1105,7 @@ class QueryServletHeartbeatTest {
 	@Test
 	void successfulPageDataGraphQueryDeclaresContextColumnAndTypedView() throws Exception {
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockedConnection();
 		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
 		String query = "construct { ?s ?p ?o } where { values (?s ?p ?o) { (<urn:s> <urn:p> <urn:o>) } }";
 		IRI context = SimpleValueFactory.getInstance().createIRI("urn:context");
@@ -1151,7 +1151,7 @@ class QueryServletHeartbeatTest {
 	@Test
 	void successfulPageDataBooleanQueryDeclaresItsTypedView() throws Exception {
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockedConnection();
 		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
 		String query = "ask { ?s ?p ?o }";
 		try {
@@ -1188,7 +1188,7 @@ class QueryServletHeartbeatTest {
 	@Test
 	void unlimitedPageDataStreamsRowsBeforeTheResultFinishesAndReportsItsTotal() throws Exception {
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockedConnection();
 		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
 		CountDownLatch firstBatchReached = new CountDownLatch(1);
 		CountDownLatch releaseRemainingRows = new CountDownLatch(1);
@@ -1280,7 +1280,7 @@ class QueryServletHeartbeatTest {
 	@Test
 	void disconnectDuringEvaluationCancelsTheGeneratedRequest() throws Exception {
 		HTTPRepository repository = mock(HTTPRepository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockedConnection();
 		TupleQuery tupleQuery = mock(TupleQuery.class);
 		CountDownLatch releaseEvaluation = new CountDownLatch(1);
 		CountDownLatch cancelCalled = new CountDownLatch(1);
@@ -1357,7 +1357,7 @@ class QueryServletHeartbeatTest {
 	@Test
 	void unsupportedCsvDownloadsDoNotStartAHeartbeat() throws Exception {
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockedConnection();
 		TupleQuery tupleQuery = mock(TupleQuery.class);
 		CountDownLatch releaseEvaluation = new CountDownLatch(1);
 		ProbeServletOutputStream output = new ProbeServletOutputStream(0);
@@ -1397,7 +1397,7 @@ class QueryServletHeartbeatTest {
 	@Test
 	void headRequestsDoNotStartAHeartbeat() throws Exception {
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockedConnection();
 		TupleQuery tupleQuery = mock(TupleQuery.class);
 		CountDownLatch releaseEvaluation = new CountDownLatch(1);
 		ProbeServletOutputStream output = new ProbeServletOutputStream(0);
@@ -1438,7 +1438,7 @@ class QueryServletHeartbeatTest {
 	@Test
 	void completesTheCoordinatorWhenASuccessfulResponseFlushFails() throws Exception {
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockedConnection();
 		TupleQuery tupleQuery = mock(TupleQuery.class);
 		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
 		FastHeartbeatQueryServlet servlet = servlet(repository, coordinator);
@@ -1480,7 +1480,7 @@ class QueryServletHeartbeatTest {
 	@Test
 	void doesNotCompleteARequestWhenCancellationSkipsTheOperation() throws Exception {
 		HTTPRepository repository = mock(HTTPRepository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockedConnection();
 		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
 		FastHeartbeatQueryServlet servlet = servlet(repository, coordinator);
 		String repositoryUrl = "https://example.org/repositories/test";
@@ -1544,6 +1544,12 @@ class QueryServletHeartbeatTest {
 		when(request.getInt("query-timeout")).thenReturn(0);
 		when(request.getContextPath()).thenReturn("");
 		return request;
+	}
+
+	private static RepositoryConnection mockedConnection() {
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		when(connection.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
+		return connection;
 	}
 
 	private static void stubTupleQuery(RepositoryConnection connection, TupleQuery tupleQuery) {

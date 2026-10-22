@@ -147,9 +147,11 @@ test('Add keeps compact source choices, selected input, Format, then Upload with
 	await expect(page.locator('#add-source-tabs')).toBeVisible();
 	const sourceLabels = await page.locator('#add-source-tabs label').evaluateAll(labels =>
 		labels.map(label => label.textContent.replace(/\s+/g, ' ').trim()));
-	expect(sourceLabels).toEqual(['File', 'URL', 'Text']);
-	await expect(page.locator('#add-source-tabs .workbench-action-icon')).toHaveCount(3);
+	// Server file adds the files of the approved import directory.
+	expect(sourceLabels).toEqual(['File', 'Server file', 'URL', 'Text']);
+	await expect(page.locator('#add-source-tabs .workbench-action-icon')).toHaveCount(4);
 	await expect(page.locator('#add-source-file-panel')).toBeVisible();
+	await expect(page.locator('#add-source-server-file-panel')).toBeHidden();
 	await expect(page.locator('#add-source-url-panel')).toBeHidden();
 	await expect(page.locator('#add-source-text-panel')).toBeHidden();
 	const order = await page.evaluate(() => {

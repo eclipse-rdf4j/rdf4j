@@ -19,15 +19,13 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
@@ -41,13 +39,16 @@ import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyResponse;
 import org.eclipse.rdf4j.workbench.security.WorkbenchSessionState;
 import org.eclipse.rdf4j.workbench.util.BasicServletConfig;
+import org.eclipse.rdf4j.workbench.util.ServerCredentials;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageResultWriter;
+import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 
 import jakarta.servlet.ServletConfig;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.annotation.MultipartConfig;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
@@ -55,7 +56,9 @@ import jakarta.servlet.http.HttpSession;
 /**
  * All requests are serviced by this Servlet, though it usually delegates to other Servlets.
  */
-@MultipartConfig
+// An upload of up to 10 GiB a file: a part over the threshold spools to disk and the parser reads it as a stream, so
+// a multi-gigabyte .nq or .nq.gz file costs no heap. Form fields are bounded by WorkbenchRequest as well.
+@MultipartConfig(fileSizeThreshold = WorkbenchRequest.UPLOAD_SPOOL_THRESHOLD_BYTES, maxFileSize = WorkbenchRequest.MAX_UPLOAD_BYTES, maxRequestSize = WorkbenchRequest.MAX_UPLOAD_REQUEST_BYTES)
 public class WorkbenchGateway extends AbstractServlet {
 
 	private static final String DEFAULT_SERVER = "default-server";
@@ -63,8 +66,16 @@ public class WorkbenchGateway extends AbstractServlet {
 	private static final String CHANGE_SERVER = "change-server-path";
 
 	private static final String SERVER_COOKIE = "workbench-server";
+
+	private static final String CONNECTION_STATE = WorkbenchGateway.class.getName() + ".connection";
+	private static final String ANONYMOUS_SCOPE = WorkbenchGateway.class.getName() + ".anonymousScope";
+	/** Keeps an anonymous browser session's scope (see bindBrowserScope) while its server sessions come and go. */
+	private static final String BROWSER_SCOPE_COOKIE = "workbench-browser-scope";
+	private static final Pattern BROWSER_SCOPE = Pattern
+			.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
+	private static final Set<String> LEGACY_SENSITIVE_COOKIES = Set.of("query", "ref", SERVER_USER_PASSWORD);
+
 	static final String SESSION_STATE_ATTRIBUTE = WorkbenchGateway.class.getName() + ".sessionState";
-	private static final String CREDENTIAL_MARKER_ALGORITHM = "SHA-256";
 
 	private CookieHandler cookies;
 
@@ -126,6 +137,7 @@ public class WorkbenchGateway extends AbstractServlet {
 			throws ServletException, IOException {
 		// Before the page-protocol checks below read the first parameter, which makes the container decode the body.
 		useUtf8RequestEncoding(req);
+		expireLegacySensitiveCookies(req, resp);
 		WorkbenchPolicy policy = this.policy;
 		if (policy == null) {
 			try {
@@ -162,6 +174,7 @@ public class WorkbenchGateway extends AbstractServlet {
 				return;
 			}
 		}
+		bindBrowserScope(req, resp);
 		if (change != null && change.equals(req.getPathInfo())) {
 			if (!isChangeServerPageAllowed(change)) {
 				resp.sendError(HttpServletResponse.SC_NOT_FOUND);
@@ -200,6 +213,27 @@ public class WorkbenchGateway extends AbstractServlet {
 		}
 	}
 
+	private static void expireLegacySensitiveCookies(HttpServletRequest req, HttpServletResponse resp) {
+		Cookie[] cookies = req.getCookies();
+		if (cookies == null) {
+			return;
+		}
+		for (String name : LEGACY_SENSITIVE_COOKIES) {
+			for (Cookie existing : cookies) {
+				if (name.equals(existing.getName())) {
+					Cookie expired = new Cookie(name, "");
+					expired.setMaxAge(0);
+					expired.setPath(req.getContextPath().isEmpty() ? "/" : req.getContextPath());
+					expired.setHttpOnly(true);
+					expired.setSecure(req.isSecure());
+					expired.setAttribute("SameSite", "Lax");
+					resp.addCookie(expired);
+					break;
+				}
+			}
+		}
+	}
+
 	/**
 	 * The route of a repository path ({@code /{repository}/{route}}), or null for the repository itself: a repository
 	 * whose ID equals a page ID is not that page, and its landing is chosen by the Workbench servlet.
@@ -228,6 +262,14 @@ public class WorkbenchGateway extends AbstractServlet {
 	private void changeServer(final HttpServletRequest req, final HttpServletResponse resp)
 			throws IOException, QueryResultHandlerException {
 		String server = req.getParameter(SERVER_COOKIE);
+		if (!"GET".equalsIgnoreCase(req.getMethod()) && !"POST".equalsIgnoreCase(req.getMethod())) {
+			resp.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+			return;
+		}
+		if (server != null && !"POST".equalsIgnoreCase(req.getMethod())) {
+			resp.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+			return;
+		}
 		if (server == null) {
 			// see if server url was still present in cookie, if so use that
 			// value as prefilled value in the form
@@ -268,11 +310,19 @@ public class WorkbenchGateway extends AbstractServlet {
 
 		}
 
-		// Valid server was submitted by form. Set cookie and redirect to
-		// repository selection page.
+		// A credential-bearing connection is bound to the browser's server-side session. Only the server choice is a
+		// browser preference; the password must never be sent back to the browser.
+		ServerCredentials.Credentials credentials;
+		try {
+			credentials = ServerCredentials.fromConnectionForm(getOptionalParameter(req, SERVER_USER_PASSWORD));
+		} catch (IllegalArgumentException e) {
+			resp.sendError(HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
+			return;
+		}
+		HttpSession session = req.getSession();
+		session.setAttribute(CONNECTION_STATE, new ConnectionState(server, credentials));
+		req.changeSessionId();
 		this.cookies.addNewCookie(req, resp, SERVER_COOKIE, server);
-		final String user_password = getOptionalParameter(req, SERVER_USER_PASSWORD);
-		this.cookies.addNewCookie(req, resp, SERVER_USER_PASSWORD, user_password);
 		final StringBuilder uri = new StringBuilder(req.getRequestURI());
 		uri.setLength(uri.length() - req.getPathInfo().length());
 		clearSessionState(req.getSession(false));
@@ -357,22 +407,27 @@ public class WorkbenchGateway extends AbstractServlet {
 			return null;
 		}
 
-		String credentialMarker = credentialMarker(
-				cookies.getCookieNullIfEmpty(req, resp, SERVER_USER_PASSWORD));
+		ConnectionState connection = connectionState(req);
+		ServerCredentials.Credentials credentials = connection == null ? null : connection.credentialsFor(server);
+		ServerCredentials.bindRequest(req, credentials);
+		String credentialMarker = credentials == null ? null : connection.identity;
 		WorkbenchSessionState state = getSessionState(req.getSession(true));
 		try {
-			return state.acquire(server, credentialMarker, () -> createAndInitializeWorkbenchServlet(server));
+			return state.acquire(server, credentialMarker,
+					() -> createAndInitializeWorkbenchServlet(server, credentials));
 		} catch (ServletInitializationException e) {
 			throw e.getServletException();
 		}
 	}
 
-	private WorkbenchServlet createAndInitializeWorkbenchServlet(String server) {
+	private WorkbenchServlet createAndInitializeWorkbenchServlet(String server,
+			ServerCredentials.Credentials credentials) {
 		final Map<String, String> params = new HashMap<>(3);
 		params.put(SERVER_PARAM, server);
 		params.put(CookieHandler.COOKIE_AGE_PARAM, this.cookies.getMaxAge());
 		final ServletConfig cfg = createWorkbenchServletConfig(server, params);
 		WorkbenchServlet servlet = createWorkbenchServlet();
+		servlet.setServerCredentials(credentials);
 		try {
 			servlet.init(cfg);
 			return servlet;
@@ -412,16 +467,75 @@ public class WorkbenchGateway extends AbstractServlet {
 		}
 	}
 
-	private static String credentialMarker(String credentials) {
-		if (credentials == null) {
+	private static ConnectionState connectionState(HttpServletRequest request) {
+		HttpSession session = request.getSession(false);
+		if (session == null) {
 			return null;
 		}
-		try {
-			MessageDigest digest = MessageDigest.getInstance(CREDENTIAL_MARKER_ALGORITHM);
-			return HexFormat.of().formatHex(digest.digest(credentials.getBytes(StandardCharsets.UTF_8)));
-		} catch (NoSuchAlgorithmException e) {
-			throw new IllegalStateException(CREDENTIAL_MARKER_ALGORITHM + " is not available", e);
+		Object value = session.getAttribute(CONNECTION_STATE);
+		return value instanceof ConnectionState ? (ConnectionState) value : null;
+	}
+
+	private static void bindBrowserScope(HttpServletRequest request, HttpServletResponse response) {
+		HttpSession session = request.getSession();
+		if (session == null) {
+			return;
 		}
+		Object connection = session.getAttribute(CONNECTION_STATE);
+		if (connection instanceof ConnectionState) {
+			request.setAttribute(WorkbenchPageProtocol.CLIENT_SCOPE_ATTRIBUTE, ((ConnectionState) connection).identity);
+			return;
+		}
+		String remembered = browserScope(request);
+		synchronized (session) {
+			Object scope = session.getAttribute(ANONYMOUS_SCOPE);
+			if (!(scope instanceof String)) {
+				// The browser session's scope outlives an expired server session, so the stored graphs stay its own.
+				scope = remembered != null ? remembered : UUID.randomUUID().toString();
+				session.setAttribute(ANONYMOUS_SCOPE, scope);
+			}
+			if (!scope.equals(remembered)) {
+				Cookie cookie = new Cookie(BROWSER_SCOPE_COOKIE, (String) scope);
+				// No Max-Age: the browser drops it when it closes; a later browser session gets a scope of its own.
+				cookie.setPath(request.getContextPath().isEmpty() ? "/" : request.getContextPath());
+				cookie.setHttpOnly(true);
+				cookie.setSecure(request.isSecure());
+				cookie.setAttribute("SameSite", "Lax");
+				response.addCookie(cookie);
+			}
+			request.setAttribute(WorkbenchPageProtocol.CLIENT_SCOPE_ATTRIBUTE, scope);
+		}
+	}
+
+	/** The scope this gateway gave the browser earlier in its session: a random UUID, nothing else. */
+	private static String browserScope(HttpServletRequest request) {
+		Cookie[] cookies = request.getCookies();
+		if (cookies != null) {
+			for (Cookie cookie : cookies) {
+				if (BROWSER_SCOPE_COOKIE.equals(cookie.getName()) && cookie.getValue() != null
+						&& BROWSER_SCOPE.matcher(cookie.getValue()).matches()) {
+					return cookie.getValue();
+				}
+			}
+		}
+		return null;
+	}
+
+	/** Immutable connection identity; WorkbenchSessionState owns and retires its leased servlet trees. */
+	private static final class ConnectionState {
+		private final String server;
+		private final ServerCredentials.Credentials credentials;
+		private final String identity = UUID.randomUUID().toString();
+
+		private ConnectionState(String server, ServerCredentials.Credentials credentials) {
+			this.server = server;
+			this.credentials = credentials;
+		}
+
+		private ServerCredentials.Credentials credentialsFor(String selectedServer) {
+			return server.equals(selectedServer) ? credentials : null;
+		}
+
 	}
 
 	private boolean isRelativeDefaultServer(ServerSelection selection) {

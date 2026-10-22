@@ -1,0 +1,631 @@
+const assert = require('node:assert/strict');
+const { createAjaxRequest, createScriptHarness, parseRequestData } = require('./script-harness.js');
+
+function appendOption(registerElement, select, value, text, selected) {
+    const option = registerElement('option', {
+        value,
+        textContent: text || value,
+        selected: !!selected,
+        attributes: { value }
+    });
+    select.appendChild(option);
+    if (selected) {
+        select.value = value;
+    }
+    return option;
+}
+
+function createYasqeStub(registerElement, harnessOptions) {
+    const state = {
+        instances: {},
+        storeQueryCalls: []
+    };
+
+    return {
+        state,
+        api: {
+            defaults: {},
+            Autocompleters: {
+                prefixes: {
+                    appendPrefixIfNeeded() {
+                    },
+                    isValidCompletionPosition() {
+                        return true;
+                    },
+                    preprocessPrefixTokenForCompletion(yasqe, token) {
+                        return token;
+                    }
+                }
+            },
+            fromTextArea(textarea, options) {
+                const wrapper = registerElement('div', { className: 'yasqe-wrapper' });
+                wrapper.appendChild(registerElement('div', { className: 'CodeMirror' }));
+                wrapper.appendChild(registerElement('div', { className: 'CodeMirror-scroll' }));
+                const fullscreenControl = registerElement('div', { className: 'fullscreenToggleBtns' });
+                fullscreenControl.appendChild(registerElement('div', { className: 'yasqe_fullscreenBtn' }));
+                wrapper.appendChild(fullscreenControl);
+                const editorOptions = Object.assign({ fullScreen: false, extraKeys: {} }, options);
+                const instance = {
+                    options: editorOptions,
+                    textarea,
+                    changeHandler: null,
+                    closed: false,
+                    refreshCount: 0,
+                    saveCount: 0,
+                    getValue() {
+                        return textarea.value || '';
+                    },
+                    getWrapperElement() {
+                        return wrapper;
+                    },
+                    getOption(name) {
+                        return editorOptions[name];
+                    },
+                    setOption(name, value) {
+                        editorOptions[name] = value;
+                    },
+                    on(eventName, handler) {
+                        if (eventName === 'change') {
+                            instance.changeHandler = handler;
+                        }
+                    },
+                    refresh() {
+                        instance.refreshCount += 1;
+                    },
+                    save() {
+                        instance.saveCount += 1;
+                    },
+                    setValue(value) {
+                        textarea.value = value;
+                        if (harnessOptions.emitProgrammaticEditorChanges && instance.changeHandler) {
+                            instance.changeHandler();
+                        }
+                    },
+                    gutterMarkers: {},
+                    lineClasses: {},
+                    cursor: null,
+                    scrolledIntoView: 0,
+                    setGutterMarker(line, gutter, element) {
+                        instance.gutterMarkers[line + ':' + gutter] = element;
+                    },
+                    addLineClass(line, where, className) {
+                        instance.lineClasses[line + ':' + where] = className;
+                    },
+                    removeLineClass(line, where) {
+                        delete instance.lineClasses[line + ':' + where];
+                    },
+                    scrollIntoView() {
+                        instance.scrolledIntoView += 1;
+                    },
+                    getDoc() {
+                        return {
+                            lineCount() {
+                                return (textarea.value || '').split('\n').length;
+                            },
+                            setCursor(position) {
+                                instance.cursor = { line: position.line, ch: position.ch };
+                            },
+                            replaceRange(text, from, to) {
+                                // The script runs in another VM realm, so compare fields, not objects.
+                                assert.deepEqual([from.line, from.ch, to.line, to.ch], [0, 0, 0, 0],
+                                    'the stub only inserts at the start');
+                                textarea.value = text + (textarea.value || '');
+                                instance.triggerChange();
+                            }
+                        };
+                    },
+                    focus() {
+                        instance.focused = true;
+                    },
+                    toTextArea() {
+                        instance.closed = true;
+                    },
+                    triggerChange() {
+                        if (instance.changeHandler) {
+                            instance.changeHandler();
+                        }
+                    }
+                };
+                editorOptions.extraKeys = Object.assign({}, editorOptions.extraKeys, {
+                    F11() {
+                        instance.setOption('fullScreen', !instance.getOption('fullScreen'));
+                    }
+                });
+                state.instances[textarea.id] = instance;
+                return instance;
+            },
+            registerAutocompleter() {
+            },
+            storeQuery(editor) {
+                state.storeQueryCalls.push(editor);
+            }
+        }
+    };
+}
+
+function createQueryBrowserHarness(options = {}) {
+    const getJSONRequests = [];
+    const pendingGetJSONRequests = [];
+    const pendingExplainRequests = [];
+    const createdBlobs = [];
+    const getJSONResponses = Array.from(options.getJSONResponses || []);
+    const harness = createScriptHarness(Object.assign({}, options, {
+        ajaxHandler(ajaxOptions, helpers) {
+            const request = createAjaxRequest(ajaxOptions);
+            request.data = typeof ajaxOptions.data === 'string' ? ajaxOptions.data : '';
+            request.params = parseRequestData(ajaxOptions.data);
+            request.action = request.params.get('action');
+            helpers.ajaxRequests.push(request);
+            if (typeof options.onAjaxRequest === 'function') {
+                options.onAjaxRequest(request);
+            }
+            if (request.action === 'explain') {
+                pendingExplainRequests.push(request);
+                return request.jqXHR;
+            }
+            if (request.action === 'cancel-explain') {
+                request.completed = true;
+                if (typeof ajaxOptions.complete === 'function') {
+                    ajaxOptions.complete(request.jqXHR, 'success');
+                }
+            }
+            return request.jqXHR;
+        }
+    }));
+    const { $, context, document, registerElement } = harness;
+    $.extend = Object.assign;
+    const yasqe = createYasqeStub(registerElement, options);
+    context.YASQE = yasqe.api;
+    context.sparqlNamespaces = Object.assign({
+        ex: 'http://example.com/'
+    }, options.sparqlNamespaces || {});
+    context.Blob = function Blob(parts, options) {
+        this.parts = parts;
+        this.options = options;
+        createdBlobs.push(this);
+    };
+    context.URL = {
+        createObjectURL() {
+            return 'blob:query-explanation';
+        },
+        revokeObjectURL() {
+        }
+    };
+    context.window.URL = context.URL;
+
+    $.getJSON = (url, data, callback) => {
+        const request = {
+            url,
+            data,
+            response: getJSONResponses.length ? getJSONResponses.shift() : {},
+            callback
+        };
+        getJSONRequests.push(request);
+        if (options.deferGetJSON) {
+            pendingGetJSONRequests.push(request);
+            return;
+        }
+        if (typeof callback === 'function') {
+            callback(request.response);
+        }
+    };
+
+    const app = registerElement('div', { id: 'workbench-app', attributes: {
+        'data-workbench-server-identity': options.serverIdentity || 'test-session'
+    } });
+    document.body.appendChild(app);
+    const navigation = registerElement('div', { id: 'navigation' });
+    const titleHeading = registerElement('div', { id: 'title_heading', textContent: 'Query' });
+    const queryFormContainer = registerElement('div', { className: 'query-form' });
+    const queryPageOptions = { id: 'query-page' };
+    if (options.editorFullscreenEnabled === false) {
+        queryPageOptions.attributes = { 'data-editor-fullscreen-enabled': 'false' };
+    }
+    const queryPage = registerElement('div', queryPageOptions);
+    const queryResults = registerElement('section', { id: 'query-results', hidden: true });
+    const queryResultsLoading = registerElement('div', {
+        id: 'query-results-loading',
+        hidden: true,
+        attributes: { 'aria-live': 'polite', role: 'status' }
+    });
+    const queryResultsStatus = registerElement('div', {
+        id: 'query-results-status',
+        attributes: { 'aria-live': 'polite', role: 'status' }
+    });
+    queryResults.appendChild(queryResultsLoading);
+    queryResults.appendChild(queryResultsStatus);
+    document.body.appendChild(navigation);
+    document.body.appendChild(titleHeading);
+    document.body.appendChild(queryFormContainer);
+    // The output card below the form: Results and Explanation tabs (M3.3).
+    const queryOutputElements = {};
+    if (options.outputCard === false) {
+        document.body.appendChild(queryResults);
+    } else {
+        const queryOutput = registerElement('section', { id: 'query-output', className: 'query-output', hidden: true });
+        const tablist = registerElement('div', { attributes: { role: 'tablist' } });
+        const resultsTab = registerElement('button', { id: 'query-output-tab-results', attributes: {
+            role: 'tab', 'aria-selected': 'true', 'aria-controls': 'query-results-panel' } });
+        const resultsCount = registerElement('span', { id: 'query-results-count', hidden: true });
+        resultsTab.appendChild(resultsCount);
+        const explanationTab = registerElement('button', { id: 'query-output-tab-explanation', attributes: {
+            role: 'tab', 'aria-selected': 'false', 'aria-controls': 'query-explanation-panel' } });
+        tablist.appendChild(resultsTab);
+        tablist.appendChild(explanationTab);
+        const resultsPanel = registerElement('div', { id: 'query-results-panel', attributes: { role: 'tabpanel' } });
+        resultsPanel.appendChild(queryResults);
+        const explanationPanel = registerElement('div', { id: 'query-explanation-panel', hidden: true,
+            attributes: { role: 'tabpanel' } });
+        const explanationEmpty = registerElement('p', { className: 'query-output__empty query-explanation-panel__empty' });
+        explanationPanel.appendChild(explanationEmpty);
+        queryOutput.appendChild(tablist);
+        queryOutput.appendChild(resultsPanel);
+        queryOutput.appendChild(explanationPanel);
+        document.body.appendChild(queryOutput);
+        Object.assign(queryOutputElements, { queryOutput, tablist, resultsTab, resultsCount, explanationTab,
+            resultsPanel, explanationPanel, explanationEmpty });
+    }
+
+    const form = registerElement('form', {
+        attributes: {
+            action: 'query'
+        }
+    });
+    const actionInput = registerElement('input', { id: 'action', name: 'action', value: '' });
+    const explainInput = registerElement('input', { id: 'explain', name: 'explain', value: '' });
+    const explainLevel = registerElement('select', { id: 'explain-level', name: 'explain-level', value: 'Optimized' });
+    const forcedStrategy = registerElement('select', { id: 'lmdb-forced-strategy', name: 'lmdb-forced-strategy', value: '' });
+    appendOption(registerElement, explainLevel, 'Optimized', 'Optimized', true);
+    appendOption(registerElement, explainLevel, 'Unoptimized');
+    appendOption(registerElement, explainLevel, 'Executed');
+    appendOption(registerElement, explainLevel, 'Timed');
+    appendOption(registerElement, explainLevel, 'Telemetry');
+    const explainFormat = registerElement('select', { id: 'explain-format', name: 'explain-format', value: 'text' });
+    appendOption(registerElement, explainFormat, 'text', 'text', true);
+    appendOption(registerElement, explainFormat, 'dot');
+    appendOption(registerElement, explainFormat, 'json');
+    const explainRequestIdInput = registerElement('input', { id: 'explain-request-id', name: 'explain-request-id', value: '' });
+    const queryInput = registerElement('textarea', {
+        id: 'query',
+        name: 'query',
+        value: Object.prototype.hasOwnProperty.call(options, 'query')
+            ? options.query
+            : 'SELECT * WHERE {?s ?p ?o}'
+    });
+    const compareQueryInput = registerElement('textarea', {
+        id: 'query-compare',
+        value: Object.prototype.hasOwnProperty.call(options, 'compareQuery') ? options.compareQuery : ''
+    });
+    const queryLn = registerElement('select', { id: 'queryLn', name: 'queryLn', value: options.queryLn || 'SPARQL' });
+    appendOption(registerElement, queryLn, 'SPARQL', 'SPARQL', (options.queryLn || 'SPARQL') === 'SPARQL');
+    appendOption(registerElement, queryLn, 'SERQL', 'SERQL', options.queryLn === 'SERQL');
+    const limitQuery = registerElement('input', { id: 'limit_query', name: 'limit_query', value: options.limitQuery || '25' });
+    const queryTimeout = registerElement('input', { id: 'query-timeout', name: 'query-timeout', value: options.queryTimeout || '0' });
+    const infer = registerElement('input', { id: 'infer', name: 'infer', type: 'checkbox', checked: !!options.infer });
+    const includeQueryText = registerElement('input', {
+        id: 'include-query-text',
+        name: 'include-query-text',
+        value: 'false'
+    });
+    const queryRequestId = registerElement('input', {
+        id: 'query-request-id',
+        name: 'query-request-id',
+        value: ''
+    });
+    const queryName = registerElement('input', { id: 'query-name', name: 'query-name', value: options.queryName || '' });
+    const savePrivate = registerElement('input', { id: 'save-private', name: 'save-private', type: 'checkbox', checked: true });
+    form.formControls = [
+        actionInput,
+        explainInput,
+        explainFormat,
+        explainRequestIdInput,
+        queryInput,
+        queryLn,
+        limitQuery,
+        queryTimeout,
+        infer,
+        includeQueryText,
+        queryRequestId,
+        queryName,
+        savePrivate
+    ];
+
+    const sparqlNamespaces = registerElement('pre', {
+        id: 'SPARQL-namespaces',
+        textContent: options.sparqlNamespacesText || 'PREFIX ex: <http://example.com/>'
+    });
+    const serqlNamespaces = registerElement('pre', { id: 'SERQL-namespaces', textContent: 'using namespace ex = <http://example.com/>' });
+
+    const exec = registerElement('button', { id: 'exec' });
+    const queryCancel = registerElement('button', {
+        id: 'query-cancel',
+        className: 'query-cancel',
+        disabled: true,
+        attributes: { 'aria-hidden': 'true' }
+    });
+    const save = registerElement('button', { id: 'save' });
+    const saveFeedback = registerElement('div', { id: 'save-feedback' });
+
+    const explainTrigger = registerElement('input', { id: 'explain-trigger', type: 'button' });
+    const explainTriggerCancel = registerElement('input', {
+        id: 'explain-trigger-cancel',
+        type: 'button',
+        className: 'query-explain-cancel',
+        disabled: true,
+        attributes: { 'aria-hidden': 'true' }
+    });
+    const rerunExplanation = registerElement('input', { id: 'rerun-explanation', type: 'button' });
+    const rerunExplanationCancel = registerElement('input', {
+        id: 'rerun-explanation-cancel',
+        type: 'button',
+        className: 'query-explain-cancel',
+        disabled: true,
+        attributes: { 'aria-hidden': 'true' }
+    });
+    const explanationCancel = registerElement('button', {
+        id: 'explanation-cancel',
+        className: 'query-explain-cancel',
+        disabled: true,
+        attributes: { 'aria-hidden': 'true' }
+    });
+
+    const queryExplanationRow = registerElement('div', { id: 'query-explanation-row' });
+    const queryExplanationControlsRow = registerElement('div', { id: 'query-explanation-controls-row' });
+    const queryExplanationStatus = registerElement('div', { id: 'query-explanation-status' });
+    const queryExplanationTiming = registerElement('div', { id: 'query-explanation-timing', attributes: { role: 'timer' } });
+    const queryExplanationOverlay = registerElement('div', { id: 'query-explanation-overlay' });
+    const copyExplanation = registerElement('button', { id: 'copy-explanation', type: 'button' });
+    const queryExplanation = registerElement('pre', {
+        id: 'query-explanation',
+        textContent: options.initialExplanation || '',
+        attributes: { 'data-format': options.initialExplanationFormat || 'text',
+            'data-strategy-decisions': options.initialStrategyDecisions ? JSON.stringify(options.initialStrategyDecisions) : '' }
+    });
+    const queryExplanationDotView = registerElement('div', { id: 'query-explanation-dot-view' });
+    const strategyTables = registerElement('div', { id: 'query-explanation-strategies' });
+    const queryExplanationJsonView = registerElement('div', { id: 'query-explanation-json-view' });
+    const queryErrors = registerElement('div', { id: 'queryString.errors' });
+    const queryErrorsCompare = registerElement('div', { id: 'queryString.errors-compare' });
+    const downloadExplanation = registerElement('button', { id: 'download-explanation' });
+    const primaryExplainSettings = registerElement('div', { id: 'primary-explain-settings' });
+    const explanationSettings = registerElement('div', {
+        id: 'explanation-settings',
+        className: 'workbench-disclosure query-explanation-settings',
+        attributes: { 'data-workbench-detail-disclosure': 'true' }
+    });
+    const explanationSettingsToggle = registerElement('button', {
+        id: 'explanation-settings-toggle',
+        type: 'button',
+        className: 'workbench-disclosure__toggle query-explanation-settings__toggle',
+        textContent: 'Config',
+        attributes: {
+            'aria-controls': 'explanation-settings-panel',
+            'aria-expanded': 'false',
+            'aria-label': 'Configure query explanation'
+        }
+    });
+    const explanationSettingsPanel = registerElement('div', {
+        id: 'explanation-settings-panel',
+        className: 'workbench-disclosure__panel query-explanation-settings__panel',
+        attributes: { role: 'group', 'aria-labelledby': 'explanation-settings-toggle' }
+    });
+    explanationSettingsPanel.hidden = true;
+    const explanationSettingsContent = registerElement('div', { className: 'workbench-disclosure__content' });
+    explanationSettingsPanel.appendChild(explanationSettingsContent);
+    const explanationHighlightMode = registerElement('span', {
+        id: 'explanation-highlight-mode',
+        attributes: { 'aria-label': 'Text explanation highlighting' }
+    });
+    const explanationHighlightSyntax = registerElement('input', {
+        id: 'explanation-highlight-syntax',
+        name: 'explanation-highlight-mode',
+        type: 'radio',
+        value: 'syntax',
+        checked: true
+    });
+    const explanationHighlightHotspot = registerElement('input', {
+        id: 'explanation-highlight-hotspot',
+        name: 'explanation-highlight-mode',
+        type: 'radio',
+        value: 'hotspot'
+    });
+    explanationHighlightMode.appendChild(explanationHighlightSyntax);
+    explanationHighlightMode.appendChild(explanationHighlightHotspot);
+    const explanationHotspotLegend = registerElement('span', { id: 'explanation-hotspot-legend' });
+    const explanationPropertyConfig = registerElement('details', { id: 'explanation-property-config' });
+    const explanationPropertySummary = registerElement('summary', { id: 'explanation-property-summary' });
+    const explanationPropertyCount = registerElement('span', { id: 'explanation-property-count' });
+    const explanationPropertyPanel = registerElement('div', { id: 'explanation-property-panel' });
+    const explanationPropertyOptions = registerElement('div', {
+        id: 'explanation-property-options',
+        attributes: { 'aria-label': 'Visible query plan properties' }
+    });
+    const explanationPropertiesAll = registerElement('button', {
+        id: 'explanation-properties-all',
+        type: 'button'
+    });
+    const explanationPropertiesNone = registerElement('button', {
+        id: 'explanation-properties-none',
+        type: 'button'
+    });
+    explanationPropertySummary.appendChild(explanationPropertyCount);
+    explanationPropertyPanel.appendChild(explanationPropertiesAll);
+    explanationPropertyPanel.appendChild(explanationPropertiesNone);
+    explanationPropertyPanel.appendChild(explanationPropertyOptions);
+    explanationPropertyConfig.appendChild(explanationPropertySummary);
+    explanationPropertyConfig.appendChild(explanationPropertyPanel);
+    const explanationTimeoutSection = registerElement('div', { id: 'explanation-timeout-section' });
+    const explanationTimeout = registerElement('input', { id: 'explanation-timeout', type: 'number', value: '' });
+    const explanationTimeoutHelp = registerElement('p', { id: 'explanation-timeout-help' });
+    explanationTimeoutSection.appendChild(explanationTimeout);
+    explanationTimeoutSection.appendChild(explanationTimeoutHelp);
+    const explanationHighlightingSection = registerElement('div', { id: 'explanation-highlighting-section' });
+    explanationSettingsContent.appendChild(explanationHighlightMode);
+    explanationSettingsContent.appendChild(explanationHotspotLegend);
+    explanationSettingsContent.appendChild(explanationPropertyConfig);
+    explanationSettingsContent.appendChild(explanationTimeoutSection);
+    explanationSettingsContent.appendChild(explanationHighlightingSection);
+    explanationSettings.appendChild(explanationSettingsToggle);
+    explanationSettings.appendChild(explanationSettingsPanel);
+    primaryExplainSettings.appendChild(explanationSettings);
+    const primaryExplainRepeatControls = registerElement('div', { id: 'primary-explain-repeat-controls' });
+    const compareToggle = registerElement('button', { id: 'compare-toggle' });
+    const queryDiffTrigger = registerElement('button', { id: 'query-diff-trigger' });
+    const queryCompareToolbar = registerElement('span', { id: 'query-compare-toolbar', attributes: { hidden: '' } });
+    const queryActionsCompare = registerElement('span', { id: 'query-actions-compare', attributes: { hidden: '' } });
+    const queryActionsDiff = registerElement('button', { id: 'query-actions-diff', disabled: true });
+    const queryCompareLayout = registerElement('div', { id: 'query-compare-layout' });
+    const queryExplanationRowCompare = registerElement('div', { id: 'query-explanation-row-compare' });
+    const queryExplanationStatusCompare = registerElement('div', { id: 'query-explanation-status-compare' });
+    const queryExplanationTimingCompare = registerElement('div', { id: 'query-explanation-timing-compare',
+        attributes: { role: 'timer' } });
+    const queryExplanationOverlayCompare = registerElement('div', { id: 'query-explanation-overlay-compare' });
+    const copyExplanationCompare = registerElement('button', { id: 'copy-explanation-compare', type: 'button' });
+    const queryExplanationCompare = registerElement('pre', { id: 'query-explanation-compare' });
+    const queryExplanationDotViewCompare = registerElement('div', { id: 'query-explanation-dot-view-compare' });
+    const comparisonStrategyTables = registerElement('div', { id: 'query-explanation-compare-strategies' });
+    const queryExplanationJsonViewCompare = registerElement('div', { id: 'query-explanation-json-view-compare' });
+    const queryDiffModal = registerElement('div', {
+        id: 'query-diff-modal',
+        attributes: { 'aria-hidden': 'true' }
+    });
+    const queryDiffClose = registerElement('button', { id: 'query-diff-close' });
+    const querySidebarToggle = registerElement('button', {
+        id: 'query-sidebar-toggle',
+        attributes: {
+            'data-hide-label': 'Hide compare sidebar',
+            'data-show-label': 'Show compare sidebar'
+        }
+    });
+    const queryDiffQuery = registerElement('div', { id: 'query-diff-query' });
+    const queryDiffExplanation = registerElement('div', {
+        id: 'query-diff-explanation',
+        textContent: options.diffNotReadyLabel || 'Run explanations for both queries.'
+    });
+
+    document.body.appendChild(form);
+    document.body.appendChild(queryPage);
+    [
+        actionInput,
+        explainInput,
+        explainLevel,
+        explainFormat,
+        explainRequestIdInput,
+        queryInput,
+        compareQueryInput,
+        queryLn,
+        limitQuery,
+        queryTimeout,
+        infer,
+        includeQueryText,
+        queryRequestId,
+        queryName,
+        savePrivate,
+        sparqlNamespaces,
+        serqlNamespaces,
+        exec,
+        queryCancel,
+        save,
+        saveFeedback,
+        explainTrigger,
+        explainTriggerCancel,
+        rerunExplanation,
+        rerunExplanationCancel,
+        explanationCancel,
+        queryExplanationRow,
+        queryExplanationControlsRow,
+        queryExplanationStatus,
+        queryExplanationTiming,
+        queryExplanationOverlay,
+        copyExplanation,
+        queryExplanation,
+        strategyTables,
+        comparisonStrategyTables,
+        queryExplanationDotView,
+        queryExplanationJsonView,
+        queryErrors,
+        queryErrorsCompare,
+        downloadExplanation,
+        primaryExplainSettings,
+        primaryExplainRepeatControls,
+        compareToggle,
+        queryDiffTrigger,
+        queryCompareToolbar,
+        queryActionsCompare,
+        queryActionsDiff,
+        queryCompareLayout,
+        queryExplanationRowCompare,
+        queryExplanationStatusCompare,
+        queryExplanationTimingCompare,
+        queryExplanationOverlayCompare,
+        copyExplanationCompare,
+        queryExplanationCompare,
+        queryExplanationDotViewCompare,
+        queryExplanationJsonViewCompare,
+        queryDiffModal,
+        queryDiffClose,
+        querySidebarToggle,
+        queryDiffQuery,
+        queryDiffExplanation
+    ].forEach((element) => {
+        document.body.appendChild(element);
+    });
+
+    if (!context.Diff) {
+        harness.runScript('scripts/diff.min.js');
+    }
+    const injectedQueryPage = options.workbench && options.workbench.queryPage
+        ? Object.assign({}, options.workbench.queryPage) : null;
+    harness.runScript('scripts/template.js');
+    harness.runScript('scripts/queryStream.js');
+    if (injectedQueryPage) {
+        context.workbench.queryPage = injectedQueryPage;
+    }
+    harness.runScript('scripts/queryCancelPolicy.js');
+    harness.runScript('scripts/queryExplanationHighlighter.js');
+    harness.runScript(options.queryScriptPath || 'scripts/query.js');
+
+    explainTrigger.onclick = () => context.workbench.query.runExplain(null, 'explain-trigger');
+    explainTriggerCancel.onclick = () => context.workbench.query.cancelExplain();
+    rerunExplanation.onclick = () => context.workbench.query.runExplain(null, 'rerun-explanation');
+    rerunExplanationCancel.onclick = () => context.workbench.query.cancelExplain();
+    explanationCancel.onclick = () => context.workbench.query.cancelExplain();
+    explainLevel.onchange = () => context.workbench.query.notifyQueryPageInputChange('EXPLAIN_LEVEL_CHANGED');
+    explainFormat.onchange = () => context.workbench.query.notifyQueryPageInputChange('EXPLAIN_FORMAT_CHANGED');
+    queryCancel.onclick = () => context.workbench.query.cancelQuery();
+    explanationHighlightSyntax.onclick = () => context.workbench.query.setExplanationHighlightMode('syntax');
+    explanationHighlightHotspot.onclick = () => context.workbench.query.setExplanationHighlightMode('hotspot');
+
+    return Object.assign({}, harness, {
+        output: queryOutputElements,
+        createdBlobs,
+        getJSONRequests,
+        pendingGetJSONRequests,
+        pendingExplainRequests,
+        yasqeState: yasqe.state,
+        requestsByAction(action) {
+            return harness.ajaxRequests.filter((request) => request.action === action);
+        },
+        resolveNextGetJSON(response) {
+            const request = pendingGetJSONRequests.shift();
+            if (!request) {
+                throw new Error('No pending getJSON request to resolve');
+            }
+            if (typeof response !== 'undefined') {
+                request.response = response;
+            }
+            if (typeof request.callback === 'function') {
+                request.callback(request.response);
+            }
+        },
+        /** The template's load handlers, then the Query route's mount of the page (M9.1). */
+        runPageLoad() {
+            harness.runLoadHandlers();
+            return context.workbench.query.mountQueryPage(document.body);
+        }
+    });
+}
+
+module.exports = {
+    createQueryBrowserHarness
+};

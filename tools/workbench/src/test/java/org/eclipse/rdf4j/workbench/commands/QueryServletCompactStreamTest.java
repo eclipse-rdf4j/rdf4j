@@ -91,13 +91,13 @@ class QueryServletCompactStreamTest {
 			List<JsonNode> rows = rows(records(fixture.execute(QUERY, V2 + "," + V1, null)));
 
 			assertThat(rows).hasSize(4);
-			assertThat(rows.get(0).get(0)).isEqualTo(JSON.readTree("[1,\"fixture-blank\"]"));
+			assertThat(rows.get(0).get(0)).isEqualTo(JSON.readTree("[1,\"fixture-blank\",null,true]"));
 			assertThat(rows.get(0).get(1)).isEqualTo(JSON.readTree("[0,\"urn:predicate:language\"]"));
 			assertThat(rows.get(0).get(2)).isEqualTo(JSON.readTree("[2,\"Åβ😃\",null,\"en\"]"));
 			assertThat(rows.get(1).get(2)).isEqualTo(JSON.readTree("[2,\"17\",\"" + XSD.INT + "\"]"));
 			assertThat(rows.get(2).get(2)).isEqualTo(JSON.readTree("[0,\"urn:object\"]"));
 			assertThat(rows.get(3).get(2)).isEqualTo(JSON.readTree(
-					"[3,[0,\"urn:outer\"],[0,\"urn:predicate:triple\"],[3,[1,\"nested-blank\"],"
+					"[3,[0,\"urn:outer\"],[0,\"urn:predicate:triple\"],[3,[1,\"nested-blank\",null,true],"
 							+ "[0,\"urn:predicate:language\"],[2,\"nested\",\"" + XSD.STRING + "\"]]]"));
 			assertThat(rows).allSatisfy(row -> assertThat(row.get(3).isNull()).isTrue());
 		}
@@ -124,7 +124,7 @@ class QueryServletCompactStreamTest {
 			assertThat(rows.get(0).get(0)).isEqualTo(JSON.readTree("[2,\"left-to-right\",null,\"en\",\"ltr\"]"));
 			assertThat(rows.get(1).get(0)).isEqualTo(JSON.readTree("[2,\"مرحبا\",null,\"ar\",\"rtl\"]"));
 			assertThat(rows.get(2).get(0)).isEqualTo(JSON.readTree(
-					"[3,[0,\"urn:outer\"],[0,\"urn:p\"],[3,[1,\"directed-blank\"],[0,\"urn:p\"],"
+					"[3,[0,\"urn:outer\"],[0,\"urn:p\"],[3,[1,\"directed-blank\",null,true],[0,\"urn:p\"],"
 							+ "[2,\"عَرَبِيّ\",null,\"ar\",\"rtl\"]]]"));
 		}
 	}

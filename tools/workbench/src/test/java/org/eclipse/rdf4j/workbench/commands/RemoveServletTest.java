@@ -30,10 +30,13 @@ import static org.mockito.Mockito.when;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.math.BigInteger;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.rdf4j.http.client.BNodeOriginTransport;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -50,11 +53,14 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.impl.BlankNodeReferences;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
@@ -68,6 +74,7 @@ import org.springframework.mock.web.MockHttpServletResponse;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sun.net.httpserver.HttpServer;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -339,6 +346,75 @@ public class RemoveServletTest {
 
 		assertThat(rows(records)).hasSize(RemoveServlet.PREVIEW_LIMIT);
 		assertThat(metadata(records).path("preview-truncated").asBoolean()).isTrue();
+	}
+
+	@Test
+	public void previewMarksStoredBlankNodesAsReusableReferences() throws Exception {
+		Repository repository = new SailRepository(new MemoryStore());
+		repository.init();
+		ValueFactory vf = repository.getValueFactory();
+		BNode stored = vf.createBNode("stored-node");
+		try (RepositoryConnection connection = repository.getConnection()) {
+			connection.add(stored, vf.createIRI("urn:test:p"), vf.createLiteral("value"), stored);
+		}
+
+		List<JsonNode> records = preview(repository, new MockHttpServletResponse(), "subj",
+				BlankNodeReferences.toReference("stored-node"));
+
+		// The preview's blank nodes are the repository's own, so the page can show and reuse them as <_:id>.
+		assertThat(rows(records)).singleElement().satisfies(row -> {
+			assertThat(row.get(0).path("kind").asText()).isEqualTo("bnode");
+			assertThat(row.get(0).path("value").asText()).isEqualTo("stored-node");
+			assertThat(row.get(0).path("reference").asBoolean()).isTrue();
+			assertThat(row.get(3).path("reference").asBoolean()).isTrue();
+		});
+	}
+
+	@Test
+	public void previewAsksARemoteServerWhichBlankNodesItStores() throws Exception {
+		AtomicReference<String> originRequested = new AtomicReference<>();
+		HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/protocol", exchange -> {
+			byte[] protocolVersion = "12".getBytes(StandardCharsets.UTF_8);
+			exchange.sendResponseHeaders(200, protocolVersion.length);
+			try (exchange; OutputStream body = exchange.getResponseBody()) {
+				body.write(protocolVersion);
+			}
+		});
+		server.createContext("/repositories", exchange -> {
+			byte[] list = ("{\"head\":{\"vars\":[\"uri\",\"id\",\"title\",\"readable\",\"writable\"]},"
+					+ "\"results\":{\"bindings\":[{\"id\":{\"type\":\"literal\",\"value\":\"remote\"},"
+					+ "\"readable\":{\"type\":\"literal\",\"value\":\"true\"},"
+					+ "\"writable\":{\"type\":\"literal\",\"value\":\"true\"}}]}}")
+							.getBytes(StandardCharsets.UTF_8);
+			exchange.getResponseHeaders().set("Content-Type", "application/sparql-results+json");
+			exchange.sendResponseHeaders(200, list.length);
+			try (exchange; OutputStream body = exchange.getResponseBody()) {
+				body.write(list);
+			}
+		});
+		server.createContext("/repositories/remote/statements", exchange -> {
+			originRequested.set(exchange.getRequestHeaders().getFirst(BNodeOriginTransport.HEADER));
+			byte[] statements = "_:node <urn:test:p> \"value\" .\n".getBytes(StandardCharsets.UTF_8);
+			exchange.getResponseHeaders().set("Content-Type", RDFFormat.NQUADS.getDefaultMIMEType());
+			exchange.sendResponseHeaders(200, statements.length);
+			try (exchange; OutputStream body = exchange.getResponseBody()) {
+				body.write(statements);
+			}
+		});
+		server.start();
+		try {
+			HTTPRepository repository = new HTTPRepository(
+					"http://127.0.0.1:" + server.getAddress().getPort() + "/repositories/remote");
+
+			List<JsonNode> records = preview(repository, new MockHttpServletResponse(), "pred", "<urn:test:p>");
+
+			assertThat(rows(records)).hasSize(1);
+			// A remote server says which of its blank nodes it stores only when the statements request asks.
+			assertThat(originRequested.get()).isEqualTo(BNodeOriginTransport.VERSION);
+		} finally {
+			server.stop(0);
+		}
 	}
 
 	@Test

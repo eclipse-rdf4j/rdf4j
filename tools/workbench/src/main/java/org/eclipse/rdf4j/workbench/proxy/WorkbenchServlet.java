@@ -17,11 +17,12 @@ import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -38,6 +39,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
 import org.eclipse.rdf4j.repository.manager.RemoteRepositoryManager;
+import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
@@ -46,6 +48,7 @@ import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.workbench.base.AbstractServlet;
 import org.eclipse.rdf4j.workbench.base.WorkbenchHtmlShell;
 import org.eclipse.rdf4j.workbench.base.WorkbenchViewRegistry;
+import org.eclipse.rdf4j.workbench.commands.QueryServlet;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPageUrl;
@@ -55,14 +58,15 @@ import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyResponse;
 import org.eclipse.rdf4j.workbench.util.BasicServletConfig;
 import org.eclipse.rdf4j.workbench.util.DynamicHttpRequest;
 import org.eclipse.rdf4j.workbench.util.ServerCredentials;
+import org.eclipse.rdf4j.workbench.util.ServerIdentity;
 import org.eclipse.rdf4j.workbench.util.ShaclValidationSummary;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageResultWriter;
+import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import jakarta.servlet.Servlet;
 import jakarta.servlet.ServletConfig;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -82,10 +86,18 @@ public class WorkbenchServlet extends AbstractServlet {
 	public static final String SERVER_PARAM = "server";
 
 	private RepositoryManager manager;
+	private String serverIdentity;
+	private ServerCredentials.Credentials credentials;
 
 	private WorkbenchPolicy policy;
 
-	private final ConcurrentMap<String, ProxyRepositoryServlet> repositories = new ConcurrentHashMap<>();
+	private final ConcurrentMap<String, RepositoryServletSlot> repositories = new ConcurrentHashMap<>();
+	private final ConcurrentMap<String, ProxyRepositoryServlet> metadataServlets = new ConcurrentHashMap<>();
+	private final Map<RepositoryOperation, OperationOwner> activeOperations = new HashMap<>();
+
+	void setServerCredentials(ServerCredentials.Credentials credentials) {
+		this.credentials = credentials;
+	}
 
 	@Override
 	public void init(final ServletConfig config) throws ServletException {
@@ -99,7 +111,12 @@ public class WorkbenchServlet extends AbstractServlet {
 		}
 		this.policy = WorkbenchPolicyLoader.getPolicy(config.getServletContext(), null);
 		try {
+			serverIdentity = ServerIdentity.of(param);
 			manager = createRepositoryManager(param);
+			if (manager instanceof RemoteRepositoryManager remote && credentials != null) {
+				remote.setUsernameAndPassword(credentials.userName(), credentials.password());
+			}
+			manager.init();
 		} catch (IOException | RepositoryException e) {
 			throw new ServletException(e);
 		}
@@ -107,10 +124,10 @@ public class WorkbenchServlet extends AbstractServlet {
 
 	@Override
 	public void destroy() {
-		for (Servlet servlet : repositories.values()) {
-			servlet.destroy();
-		}
+		repositories.values().forEach(RepositoryServletSlot::retire);
 		repositories.clear();
+		metadataServlets.values().forEach(ProxyRepositoryServlet::destroy);
+		metadataServlets.clear();
 		if (manager != null) {
 			manager.shutDown();
 			manager = null;
@@ -118,15 +135,28 @@ public class WorkbenchServlet extends AbstractServlet {
 	}
 
 	public void resetCache() {
-		for (ProxyRepositoryServlet proxy : repositories.values()) {
+		for (RepositoryServletSlot slot : repositories.values()) {
 			// inform browser that server changed and cache is invalid
-			proxy.resetCache();
+			RepositoryServletEntry entry = slot.current;
+			if (entry != null) {
+				entry.servlet.resetCache();
+			}
 		}
+		metadataServlets.values().forEach(ProxyRepositoryServlet::resetCache);
 	}
 
 	@Override
 	public void service(final HttpServletRequest req, final HttpServletResponse resp)
 			throws ServletException, IOException {
+		ServerCredentials.bindRequest(req, credentials);
+		// This servlet is selected after the gateway resolves the cookie, relative default, or local manager.
+		String responseIdentity = serverIdentity;
+		if (req.getAttribute(WorkbenchPageProtocol.CLIENT_SCOPE_ATTRIBUTE) instanceof String scope) {
+			responseIdentity += ":" + scope;
+		}
+		req.setAttribute(WorkbenchPageProtocol.SERVER_IDENTITY_ATTRIBUTE, responseIdentity);
+		req.setAttribute(WorkbenchPageProtocol.SERVER_USER_ATTRIBUTE, ServerCredentials.userName(req));
+		resp.setHeader(WorkbenchPageProtocol.SERVER_IDENTITY_HEADER, responseIdentity);
 		final String pathInfo = req.getPathInfo();
 		boolean landingRequest = pathInfo == null || "/".equals(pathInfo);
 		String landingPath = landingRequest
@@ -306,10 +336,18 @@ public class WorkbenchServlet extends AbstractServlet {
 		String viewId = pageViewId(request);
 		pageWriter.view(viewId);
 		TupleResultBuilder builder = new TupleResultBuilder(pageWriter, SimpleValueFactory.getInstance());
-		builder.start("error-message")
-				.link(List.of("info"))
-				.result(UNAUTHORIZED_MESSAGE)
-				.end();
+		boolean configurationPost = "config".equals(viewId) && "POST".equalsIgnoreCase(request.getMethod());
+		if (configurationPost) {
+			String[] values = request.getParameterValues("configuration");
+			String turtle = values == null || values.length == 0 ? "" : values[values.length - 1];
+			builder.start("configuration", "error-message")
+					.link(List.of("info"))
+					.result(turtle, UNAUTHORIZED_MESSAGE)
+					.end();
+			response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+		} else {
+			builder.start("error-message").link(List.of("info")).result(UNAUTHORIZED_MESSAGE).end();
+		}
 		if (WorkbenchPageProtocol.requestsHtmlNavigation(request)) {
 			WorkbenchHtmlShell.writeInitialPageModel(request, response, config, viewId, pageData.toByteArray());
 			return;
@@ -390,66 +428,241 @@ public class WorkbenchServlet extends AbstractServlet {
 	private void service(final String repoID, final HttpServletRequest req, final HttpServletResponse resp)
 			throws RepositoryConfigException, RepositoryException, ServletException, IOException {
 		LOGGER.info("Servicing repository: {}", repoID);
-		setCredentials(req, resp);
 		final DynamicHttpRequest http = new DynamicHttpRequest(req);
 		final String path = req.getPathInfo();
 		final int idx = path.indexOf(repoID) + repoID.length();
 		http.setServletPath(http.getServletPath() + path.substring(0, idx));
 		final String pathInfo = path.substring(idx);
 		http.setPathInfo(pathInfo.isEmpty() ? null : pathInfo);
-		if (repositories.containsKey(repoID)) {
-			repositories.get(repoID).service(http, resp);
-		} else {
-			final Repository repository = manager.getRepository(repoID);
-			if (repository == null) {
-				final String noId = config.getInitParameter(NO_REPOSITORY);
-				if (noId == null || !noId.equals(repoID)) {
-					writeRepositoryNotFound(repoID, req, resp);
+		String noId = config.getInitParameter(NO_REPOSITORY);
+		if (("/config".equals(pathInfo) || "/info".equals(pathInfo)) && !repoID.equals(noId)) {
+			// A broken configuration must remain repairable. Neither its editor nor its linked shell metadata needs
+			// to initialize the repository, and their servlets hold no repository object that could go stale.
+			RepositoryInfo repositoryInfo = manager.getRepositoryInfo(repoID);
+			if (repositoryInfo == null) {
+				writeRepositoryNotFound(repoID, req, resp);
+				return;
+			}
+			metadataServlet(repoID, repositoryInfo).service(http, resp);
+			return;
+		}
+		QueryServlet.RequestOperation operation = "/query".equals(pathInfo)
+				? QueryServlet.requestOperation(new WorkbenchRequest(null, http, Map.of()))
+				: null;
+		RepositoryOperation key = operation == null ? null
+				: new RepositoryOperation(repoID, operation.kind(), operation.requestId());
+		RepositoryServletEntry entry = null;
+		OperationOwner owner = null;
+		if (key != null) {
+			synchronized (activeOperations) {
+				OperationOwner existing = activeOperations.get(key);
+				if (existing != null && existing.entry.acquire(true)) {
+					entry = existing.entry;
+					if (!operation.cancellation()) {
+						owner = existing;
+						owner.requests++;
+					}
+				} else if (operation.cancellation()) {
+					resp.sendError(HttpServletResponse.SC_NOT_FOUND);
 					return;
 				}
 			}
-			final ProxyRepositoryServlet createdServlet = createProxyRepositoryServlet();
-			createdServlet.setRepositoryManager(manager);
-			if (repository != null) {
-				createdServlet.setRepositoryInfo(manager.getRepositoryInfo(repoID));
-				createdServlet.setRepository(repository);
+		}
+		if (entry == null) {
+			RepositoryServletSlot slot = repositories.computeIfAbsent(repoID, RepositoryServletSlot::new);
+			entry = slot.acquire();
+			if (entry == null) {
+				writeRepositoryNotFound(repoID, req, resp);
+				return;
 			}
-			createdServlet.init(new BasicServletConfig(repoID, config));
-			repositories.putIfAbsent(repoID, createdServlet);
-			repositories.get(repoID).service(http, resp);
+			if (key != null) {
+				RepositoryServletEntry candidate = entry;
+				boolean reusedOwner = false;
+				synchronized (activeOperations) {
+					// Two executions with the same ID retain the same coordinator, even across a repository restart;
+					// that coordinator applies the existing duplicate-ID contract.
+					OperationOwner existing = activeOperations.get(key);
+					if (existing != null && existing.entry.acquire(true)) {
+						reusedOwner = true;
+						entry = existing.entry;
+						owner = existing;
+					} else {
+						owner = new OperationOwner(entry);
+						activeOperations.put(key, owner);
+					}
+					owner.requests++;
+				}
+				if (reusedOwner) {
+					candidate.release();
+				}
+			}
+		}
+		try {
+			entry.servlet.service(http, resp);
+		} finally {
+			if (owner != null) {
+				synchronized (activeOperations) {
+					if (--owner.requests == 0) {
+						activeOperations.remove(key, owner);
+					}
+				}
+			}
+			entry.release();
 		}
 	}
 
 	/**
-	 * Set the username and password for all requests to the repository.
-	 *
-	 * @param req  the servlet request
-	 * @param resp the servlet response
-	 * @throws MalformedURLException if the repository location is malformed
+	 * The metadata-only servlet tree of a repository (its Info and Configuration pages), built once and kept: it holds
+	 * no repository object, so it never goes stale, and each request hands it the repository's current info.
 	 */
-	private void setCredentials(final HttpServletRequest req, final HttpServletResponse resp)
-			throws MalformedURLException, RepositoryException {
-		if (manager instanceof RemoteRepositoryManager) {
-			final RemoteRepositoryManager rrm = (RemoteRepositoryManager) manager;
-			LOGGER.info("RemoteRepositoryManager URL: {}", rrm.getLocation());
-			final CookieHandler cookies = createCookieHandler();
-			final String user_password = cookies.getCookieNullIfEmpty(req, resp, WorkbenchGateway.SERVER_USER_PASSWORD);
-			if (user_password == null) {
-				rrm.setUsernameAndPassword(null, null);
-			} else {
-				String decoded = ServerCredentials.decode(user_password);
-				if (decoded == null) {
-					decoded = user_password; // older browsers
+	private ProxyRepositoryServlet metadataServlet(String repositoryId, RepositoryInfo repositoryInfo)
+			throws ServletException {
+		ProxyRepositoryServlet servlet = metadataServlets.get(repositoryId);
+		if (servlet == null) {
+			synchronized (metadataServlets) {
+				servlet = metadataServlets.get(repositoryId);
+				if (servlet == null) {
+					servlet = createProxyRepositoryServlet(null, repositoryInfo, repositoryId, true);
+					metadataServlets.put(repositoryId, servlet);
 				}
-				int colon = decoded.indexOf(':');
-				final String user = colon >= 0 ? decoded.substring(0, colon) : decoded;
-				final String password = colon >= 0 ? decoded.substring(colon + 1) : "";
-				LOGGER.info("Setting user '{}' and their password.", user);
-				rrm.setUsernameAndPassword(user, password);
 			}
-			// init() required to push credentials to internal HTTP
-			// client.
-			rrm.init();
+		}
+		servlet.setRepositoryInfo(repositoryInfo);
+		return servlet;
+	}
+
+	private ProxyRepositoryServlet createProxyRepositoryServlet(Repository repository, RepositoryInfo repositoryInfo,
+			String repositoryId, boolean metadataOnly) throws ServletException {
+		ProxyRepositoryServlet proxy = createProxyRepositoryServlet();
+		proxy.setRepositoryManager(manager);
+		if (repositoryInfo != null) {
+			proxy.setRepositoryInfo(repositoryInfo);
+		}
+		if (repository != null) {
+			proxy.setRepository(repository);
+		}
+		if (metadataOnly) {
+			Map<String, String> parameters = new HashMap<>();
+			var names = config.getInitParameterNames();
+			while (names.hasMoreElements()) {
+				String name = names.nextElement();
+				if (!name.startsWith("/") || "/config".equals(name) || "/info".equals(name)) {
+					parameters.put(name, config.getInitParameter(name));
+				}
+			}
+			proxy.init(new BasicServletConfig(repositoryId, config.getServletContext(), parameters));
+		} else {
+			proxy.init(new BasicServletConfig(repositoryId, config));
+		}
+		return proxy;
+	}
+
+	/** A slow resolution/restart of one repository never holds a sibling repository's cache lock. */
+	private final class RepositoryServletSlot {
+		private final String repositoryId;
+		private volatile RepositoryServletEntry current;
+		private boolean retired;
+
+		private RepositoryServletSlot(String repositoryId) {
+			this.repositoryId = repositoryId;
+		}
+
+		private RepositoryServletEntry acquire() throws ServletException {
+			RepositoryServletEntry cached = current;
+			if (cached != null && cached.usable() && cached.acquire(false)) {
+				return cached;
+			}
+			synchronized (this) {
+				if (retired) {
+					throw new RepositoryException("The Workbench repository route is closed.");
+				}
+				cached = current;
+				if (cached != null && cached.usable() && cached.acquire(false)) {
+					return cached;
+				}
+				// Resolve and bind under the same repository-specific lock so an older resolution cannot overwrite a
+				// newer binding. Managers replace configured repositories by shutting down the previous instance.
+				Repository repository = manager.getRepository(repositoryId);
+				if (repository == null && !repositoryId.equals(config.getInitParameter(NO_REPOSITORY))) {
+					return null;
+				}
+				if (cached == null || cached.repository != repository) {
+					ProxyRepositoryServlet servlet = createProxyRepositoryServlet(repository,
+							repository == null ? null : manager.getRepositoryInfo(repositoryId), repositoryId, false);
+					RepositoryServletEntry replacement = new RepositoryServletEntry(repository, servlet);
+					current = replacement;
+					if (cached != null) {
+						cached.retire();
+					}
+					cached = replacement;
+				}
+				if (!cached.acquire(false)) {
+					throw new RepositoryException("The Workbench repository route is closed.");
+				}
+				return cached;
+			}
+		}
+
+		private synchronized void retire() {
+			retired = true;
+			if (current != null) {
+				current.retire();
+			}
+		}
+	}
+
+	private record RepositoryOperation(String repositoryId, String kind, String requestId) {
+	}
+
+	private static final class OperationOwner {
+		private final RepositoryServletEntry entry;
+		private int requests;
+
+		private OperationOwner(RepositoryServletEntry entry) {
+			this.entry = entry;
+		}
+	}
+
+	/** Ownership follows the session's servlet-tree lease: retirement waits for its last active request. */
+	private static final class RepositoryServletEntry {
+		private final Repository repository;
+		private final ProxyRepositoryServlet servlet;
+		private int activeRequests;
+		private boolean retired;
+		private boolean destroyed;
+
+		private RepositoryServletEntry(Repository repository, ProxyRepositoryServlet servlet) {
+			this.repository = repository;
+			this.servlet = servlet;
+		}
+
+		private boolean usable() {
+			return repository == null || repository.isInitialized();
+		}
+
+		private synchronized boolean acquire(boolean ownedOperation) {
+			if (destroyed || retired && !ownedOperation) {
+				return false;
+			}
+			activeRequests++;
+			return true;
+		}
+
+		private synchronized void release() {
+			activeRequests--;
+			destroyIfUnused();
+		}
+
+		private synchronized void retire() {
+			retired = true;
+			destroyIfUnused();
+		}
+
+		private void destroyIfUnused() {
+			if (retired && activeRequests == 0 && !destroyed) {
+				destroyed = true;
+				servlet.destroy();
+			}
 		}
 	}
 
@@ -460,7 +673,6 @@ public class WorkbenchServlet extends AbstractServlet {
 		} else {
 			manager = new RemoteRepositoryManager(param);
 		}
-		manager.init();
 		return manager;
 	}
 

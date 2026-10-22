@@ -1,0 +1,9 @@
+SELECT ?p ?o WHERE { {
+ SELECT DISTINCT (<urn:ex:tag> AS ?p) ?o WHERE {
+ VALUES ?s { <urn:ex:hub> } ?s <urn:ex:tag> ?o . FILTER(!isTRIPLE(?o))
+ } LIMIT 11
+ } UNION {
+ SELECT DISTINCT (<urn:ex:rare> AS ?p) ?o WHERE {
+ VALUES ?s { <urn:ex:hub> } ?s <urn:ex:rare> ?o . FILTER(!isTRIPLE(?o))
+ } LIMIT 11
+ } }

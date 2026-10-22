@@ -36,9 +36,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.query.impl.BNodeOrigins;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryResult;
@@ -70,7 +72,7 @@ final class BrowseList {
 
 	static final int COUNT_BUDGET_SECONDS = (int) TimeUnit.MILLISECONDS.toSeconds(COUNT_BUDGET_MILLIS);
 
-	static final Comparator<Value> BY_NAME = Comparator.comparing(Value::stringValue);
+	static final Comparator<Value> BY_NAME = Comparator.comparing(BrowseList::shownName);
 
 	/** {@link #statementCounts} key of the whole repository. */
 	static final String REPOSITORY = "*";
@@ -129,7 +131,12 @@ final class BrowseList {
 			return value -> true;
 		}
 		String needle = filter.toLowerCase(Locale.ROOT);
-		return value -> value.stringValue().toLowerCase(Locale.ROOT).contains(needle);
+		return value -> shownName(value).toLowerCase(Locale.ROOT).contains(needle);
+	}
+
+	/** The name a list shows: a remote server's blank node by its repository ID, not its transport envelope. */
+	private static String shownName(Value value) {
+		return value instanceof BNode blank ? BNodeOrigins.rawID(blank) : value.stringValue();
 	}
 
 	/** Repeats a non-empty filter in the page metadata, so the page can show it in its filter field. */
@@ -430,6 +437,11 @@ final class BrowseList {
 	}
 
 	static String key(Resource context) {
+		if (context instanceof BNode blank) {
+			// By its ID, unchanged: N-Triples renames an ID that is not a valid label, and two such IDs can share a
+			// name.
+			return "_:" + blank.getID();
+		}
 		return context == null ? DEFAULT_GRAPH : NTriplesUtil.toNTriplesString(context);
 	}
 

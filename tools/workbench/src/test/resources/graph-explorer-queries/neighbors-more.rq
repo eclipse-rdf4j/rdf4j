@@ -1,0 +1,8 @@
+SELECT ?selected ?source ?predicate ?target WHERE { {
+ SELECT DISTINCT ?selected ?source ?predicate ?target WHERE {
+ VALUES ?__anchor { <urn:ex:one> }
+BIND(?__anchor AS ?selected) BIND(?selected AS ?source) ?source <urn:ex:relation> ?target .
+ BIND(<urn:ex:relation> AS ?predicate)
+ MINUS { VALUES (?predicate ?target) { (<urn:ex:relation> <urn:ex:two>) (<urn:ex:relation> <urn:ex:three>) } }
+ }
+ } }

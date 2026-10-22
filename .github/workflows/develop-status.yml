@@ -48,10 +48,24 @@ jobs:
       with:
         node-version: 22
         cache: npm
-        cache-dependency-path: e2e/package-lock.json
-    - name: Install dependencies
+        cache-dependency-path: |
+          tools/workbench/package-lock.json
+          e2e/package-lock.json
+    - name: Build the Workbench front end
+      working-directory: ./tools/workbench
+      run: npm ci && npm run build
+    - name: Type-check the Workbench front end
+      working-directory: ./tools/workbench
+      run: npm run typecheck
+    - name: Run Workbench front-end unit tests
+      working-directory: ./tools/workbench
+      env:
+        # The classic pages' and the graph explorer's tests; runners are slower than the layout budgets assume.
+        GRAPH_PERFORMANCE_SLOWDOWN: 3
+      run: npm test
+    - name: Install e2e dependencies
       working-directory: ./e2e
       run: npm ci
-    - name: Run frontend unit tests
+    - name: Run e2e helper unit tests
       working-directory: ./e2e
       run: npm run test:unit

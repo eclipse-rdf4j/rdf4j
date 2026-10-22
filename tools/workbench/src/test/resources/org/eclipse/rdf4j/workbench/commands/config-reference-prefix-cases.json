@@ -1,0 +1,98 @@
+[
+  {
+    "name": "shared alias and literal query",
+    "source": "@prefix cfg: <tag:rdf4j.org,2023:config/> .\n[] cfg:label \"\"\"SELECT <tag:rdf4j.org,2023:config/queryIRI> WHERE { ?s ?p ?o } # PREFIX fake: <urn:fake:>\"\"\" .\n",
+    "iris": [
+      "tag:rdf4j.org,2023:config/setting",
+      "http://www.w3.org/2001/XMLSchema#boolean"
+    ],
+    "fragment": "[] <tag:rdf4j.org,2023:config/setting> \"true\"^^<http://www.w3.org/2001/XMLSchema#boolean> .",
+    "added": "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n",
+    "compact": "[] cfg:setting \"true\"^^xsd:boolean ."
+  },
+  {
+    "name": "default overlap Unicode escaped local and list",
+    "source": "@prefix : <https://example.org/> .\n@prefix deep: <https://example.org/nested/> .\n[] :label \"unchanged\" .\n",
+    "iris": [
+      "https://example.org/nested/naïve~.",
+      "https://example.org/a%20b",
+      "https://example.org/123"
+    ],
+    "fragment": "[] <https://example.org/nested/naïve~.> ( <https://example.org/a%20b> [ <https://example.org/123> \"<urn:literal:untouched>\" ] ) .",
+    "added": "",
+    "compact": "[] deep:naïve\\~\\. ( :a%20b [ :123 \"<urn:literal:untouched>\" ] ) ."
+  },
+  {
+    "name": "foreign standard binding preserved",
+    "source": "@prefix config: <urn:foreign:> .\n[] config:value \"foreign\" .\n",
+    "iris": [
+      "tag:rdf4j.org,2023:config/setting",
+      "http://www.w3.org/2001/XMLSchema#boolean"
+    ],
+    "fragment": "[] <tag:rdf4j.org,2023:config/setting> \"true\"^^<http://www.w3.org/2001/XMLSchema#boolean> .",
+    "added": "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n@prefix config1: <tag:rdf4j.org,2023:config/> .\n",
+    "compact": "[] config1:setting \"true\"^^xsd:boolean ."
+  },
+  {
+    "name": "BOM and CRLF preserved",
+    "source": "﻿@prefix cfg: <tag:rdf4j.org,2023:config/> .\r\n[] cfg:value \"unchanged\" .\r\n",
+    "iris": [
+      "tag:rdf4j.org,2023:config/setting",
+      "http://www.w3.org/2001/XMLSchema#long"
+    ],
+    "fragment": "[] <tag:rdf4j.org,2023:config/setting> \"42\"^^<http://www.w3.org/2001/XMLSchema#long> .",
+    "added": "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\r\n",
+    "compact": "[] cfg:setting \"42\"^^xsd:long ."
+  },
+  {
+    "name": "SPARQL directives and escaped namespace",
+    "source": "BASE <https://example.org/>\nPREFIX cfg: <tag:rdf4j.org,2023:config\\u002F>\nPREFIX xs: <http://www.w3.org/2001/XMLSchema#>\n[] cfg:value \"unchanged\" .\n",
+    "iris": [
+      "tag:rdf4j.org,2023:config/setting",
+      "http://www.w3.org/2001/XMLSchema#integer"
+    ],
+    "fragment": "[] <tag:rdf4j.org,2023:config/setting> \"7\"^^<http://www.w3.org/2001/XMLSchema#integer> .",
+    "added": "",
+    "compact": "[] cfg:setting \"7\"^^xs:integer ."
+  },
+  {
+    "name": "conflicting contextual bindings use fresh absolute alias",
+    "source": "@prefix config: <urn:first:> .\n[] config:value \"first\" .\n@prefix config: <urn:second:> .\n[] config:value \"second\" .\n",
+    "iris": [
+      "tag:rdf4j.org,2023:config/setting"
+    ],
+    "fragment": "[] <tag:rdf4j.org,2023:config/setting> \"value\" .",
+    "added": "@prefix config1: <tag:rdf4j.org,2023:config/> .\n",
+    "compact": "[] config1:setting \"value\" ."
+  },
+  {
+    "name": "relative binding under base is preserved",
+    "source": "@base <https://example.org/> .\n@prefix config: <relative/> .\n[] config:value \"relative\" .\n",
+    "iris": [
+      "tag:rdf4j.org,2023:config/setting"
+    ],
+    "fragment": "[] <tag:rdf4j.org,2023:config/setting> \"value\" .",
+    "added": "@prefix config1: <tag:rdf4j.org,2023:config/> .\n",
+    "compact": "[] config1:setting \"value\" ."
+  },
+  {
+    "name": "fake directives and escaped short literal",
+    "source": "# @prefix config: <urn:fake:> .\n<urn:s> <urn:p> \"PREFIX config: <urn:fake:> \\\"quoted\\\"\" .\n",
+    "iris": [
+      "tag:rdf4j.org,2023:config/setting"
+    ],
+    "fragment": "[] <tag:rdf4j.org,2023:config/setting> \"value\" .",
+    "added": "@prefix config: <tag:rdf4j.org,2023:config/> .\n",
+    "compact": "[] config:setting \"value\" ."
+  },
+  {
+    "name": "directive after adjacent statement period",
+    "source": "<urn:s> <urn:p> 1.\n@prefix cfg: <tag:rdf4j.org,2023:config/> .\n[] cfg:value \"unchanged\" .\n",
+    "iris": [
+      "tag:rdf4j.org,2023:config/setting"
+    ],
+    "fragment": "[] <tag:rdf4j.org,2023:config/setting> \"value\" .",
+    "added": "",
+    "compact": "[] cfg:setting \"value\" ."
+  }
+]

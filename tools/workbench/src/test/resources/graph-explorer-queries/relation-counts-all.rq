@@ -1,0 +1,9 @@
+SELECT ?selected ?links WHERE { {
+ SELECT ?selected (COUNT(*) AS ?links) WHERE { {
+ SELECT DISTINCT ?selected ?source ?target WHERE {
+ { VALUES ?__anchor { <urn:ex:one> }
+BIND(?__anchor AS ?selected) BIND(?selected AS ?target) ?source <urn:ex:relation> ?target . } UNION { GRAPH ?__graph { VALUES ?__anchor { <urn:ex:one> }
+BIND(?__anchor AS ?selected) BIND(?selected AS ?target) ?source <urn:ex:relation> ?target . } }
+ } LIMIT 1001
+ } } GROUP BY ?selected
+ } }

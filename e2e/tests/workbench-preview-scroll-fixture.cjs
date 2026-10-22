@@ -16,7 +16,14 @@ const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
 
-const webRoot = path.resolve(__dirname, '../../tools/workbench/src/main/webapp');
+// The files the Workbench serves: the scripts compiled by npm run build (and, after a Maven build, everything else of the
+// front end) in target/frontend, the hand-written scripts and styles in the front-end tree, images in the web
+// application directory.
+const webRoots = [
+    path.resolve(__dirname, '../../tools/workbench/target/frontend'),
+    path.resolve(__dirname, '../../tools/workbench/src/main/frontend/static'),
+    path.resolve(__dirname, '../../tools/workbench/src/main/webapp')
+];
 const basePath = '/rdf4j-workbench';
 const statement = [
     { kind: 'iri', value: 'urn:subject:' + 's'.repeat(180) },
@@ -84,7 +91,8 @@ function shell(viewId) {
 <meta name="color-scheme" content="light"><script src="${basePath}/scripts/workbench-theme.js"></script>
 <link rel="stylesheet" href="${basePath}/styles/workbench-refresh.css">
 <link rel="stylesheet" href="${basePath}/styles/query.css">
-<link rel="stylesheet" href="${basePath}/styles/yasqe.min.css"></head>
+<link rel="stylesheet" href="${basePath}/styles/yasqe.min.css">
+<link rel="stylesheet" href="${basePath}/scripts/vendor/codemirror-5.65.21/codemirror.css"></head>
 <body class="workbench-body"><div id="workbench-app" data-workbench-view="${viewId}"
 data-workbench-context-path="${basePath}" data-workbench-base-path="${basePath}"
 data-workbench-repository-id="a" data-workbench-fetch-page-model="true"></div>
@@ -125,17 +133,21 @@ function createServer() {
         if (url.pathname.startsWith(`${basePath}/scripts/`) || url.pathname.startsWith(`${basePath}/styles/`)
                 || url.pathname.startsWith(`${basePath}/images/`)) {
             const relativePath = decodeURIComponent(url.pathname.slice(basePath.length + 1));
-            const file = path.resolve(webRoot, relativePath);
-            if (!file.startsWith(webRoot + path.sep)) {
+            const candidates = webRoots.map(root => ({ root, file: path.resolve(root, relativePath) }));
+            if (candidates.some(({ root, file }) => !file.startsWith(root + path.sep))) {
                 response.writeHead(403).end();
                 return;
             }
-            const extension = path.extname(file);
+            const found = candidates.find(({ file }) => fs.existsSync(file) && fs.statSync(file).isFile());
+            if (!found) {
+                response.writeHead(404).end();
+                return;
+            }
+            const extension = path.extname(found.file);
             const contentType = extension === '.js' || extension === '.mjs' ? 'text/javascript' : extension === '.css' ? 'text/css'
                 : extension === '.map' ? 'application/json' : 'application/octet-stream';
-            fs.createReadStream(file).on('error', () => response.writeHead(404).end()).pipe(response.writeHead(200, {
-                'content-type': contentType
-            }));
+            response.writeHead(200, { 'content-type': contentType });
+            fs.createReadStream(found.file).pipe(response);
             return;
         }
         if (url.pathname.startsWith(`${basePath}/repositories/a/`)) {

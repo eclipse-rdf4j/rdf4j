@@ -33,6 +33,7 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 
 import org.apache.commons.io.IOUtils;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.exception.RDF4JConfigException;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.io.ByteSink;
@@ -159,6 +160,13 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	private AuthenticationHandler authenticationHandler;
 
 	private ParserConfig parserConfig = new ParserConfig();
+	private boolean bNodeOriginEnabled;
+
+	/** Enables origin negotiation only for operations performed by this session. */
+	@InternalUseOnly
+	public void setBNodeOriginEnabled(boolean enabled) {
+		bNodeOriginEnabled = enabled;
+	}
 
 	private TupleQueryResultFormat preferredTQRFormat = TupleQueryResultFormat.SPARQL;
 
@@ -668,6 +676,9 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 							"Server responded with an unsupported file format: " + mimeType));
 			TupleQueryResultParser parser = QueryResultIO.createTupleParser(format, getValueFactory());
 			tRes = background.parse(parser, responseClosingStream(response), callerRef);
+			if (negotiatedBNodeOrigin(method, response, TupleQueryResultFormat.BINARY.equals(format))) {
+				tRes = BNodeOriginTransport.map(tRes, BNodeOriginTransport::decode);
+			}
 			submitted = true;
 			return tRes;
 		} finally {
@@ -701,13 +712,15 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 								"Server responded with an unsupported file format: " + mimeType));
 
 				// Check if we can pass through to the writer directly
-				if (handler instanceof Sink && passThrough(response, format, ((Sink) handler))) {
+				boolean origins = negotiatedBNodeOrigin(method, response, TupleQueryResultFormat.BINARY.equals(format));
+				if (!origins && handler instanceof Sink && passThrough(response, format, ((Sink) handler))) {
 					return;
 				}
 
 				// we need to parse the result and re-serialize.
 				TupleQueryResultParser parser = QueryResultIO.createTupleParser(format, getValueFactory());
-				parser.setQueryResultHandler(handler);
+				parser.setQueryResultHandler(
+						origins ? BNodeOriginTransport.map(handler, BNodeOriginTransport::decode) : handler);
 				parser.parseQueryResult(response.getBodyAsStream());
 			} catch (QueryResultParseException e) {
 				throw new RepositoryException("Malformed query result from server", e);
@@ -735,6 +748,9 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	private HttpResponse sendTupleQueryViaHttp(HttpRequest method, Set<QueryResultFormat> tqrFormats)
 			throws RepositoryException, IOException, QueryInterruptedException, MalformedQueryException {
 
+		if (bNodeOriginEnabled) {
+			method.addHeader(BNodeOriginTransport.HEADER, BNodeOriginTransport.VERSION);
+		}
 		final List<String> acceptValues = new ArrayList<>(tqrFormats.size());
 		for (QueryResultFormat format : tqrFormats) {
 
@@ -816,6 +832,9 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 
 			String baseURI = method.getUri().toASCIIString();
 			gRes = background.parse(parser, responseClosingStream(response), charset, baseURI, callerRef);
+			if (negotiatedBNodeOrigin(method, response, RDFFormat.BINARY.equals(format))) {
+				gRes = BNodeOriginTransport.map(gRes, BNodeOriginTransport::decode);
+			}
 			submitted = true;
 			return gRes;
 		} finally {
@@ -849,7 +868,8 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 								"Server responded with an unsupported file format: " + mimeType));
 
 				// Check if we can pass through to the writer directly
-				if (handler instanceof Sink && passThrough(response, format, ((Sink) handler))) {
+				boolean origins = negotiatedBNodeOrigin(method, response, RDFFormat.BINARY.equals(format));
+				if (!origins && handler instanceof Sink && passThrough(response, format, ((Sink) handler))) {
 					return;
 				}
 
@@ -857,7 +877,8 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 				RDFParser parser = Rio.createParser(format, getValueFactory());
 				parser.setParserConfig(getParserConfig());
 				parser.setParseErrorListener(new ParseErrorLogger());
-				parser.setRDFHandler(handler);
+				parser.setRDFHandler(
+						origins ? BNodeOriginTransport.map(handler, BNodeOriginTransport::decode) : handler);
 				parser.parse(response.getBodyAsStream(), method.getUri().toASCIIString());
 			} catch (RDFParseException e) {
 				throw new RepositoryException("Malformed query result from server", e);
@@ -902,6 +923,9 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 			Set<RDFFormat> rdfFormats)
 			throws RepositoryException, IOException, QueryInterruptedException, MalformedQueryException {
 
+		if (bNodeOriginEnabled) {
+			method.addHeader(BNodeOriginTransport.HEADER, BNodeOriginTransport.VERSION);
+		}
 		List<String> acceptParams = RDFFormat.getAcceptParams(rdfFormats, requireContext, getPreferredRDFFormat());
 
 		method.addHeader(ACCEPT_PARAM_NAME, String.join(", ", acceptParams));
@@ -913,6 +937,15 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		} catch (RDF4JException e) {
 			throw new RepositoryException(e);
 		}
+	}
+
+	private static boolean negotiatedBNodeOrigin(HttpRequest request, HttpResponse response, boolean binary) {
+		return binary
+				&& BNodeOriginTransport.VERSION.equals(response.getHeader(BNodeOriginTransport.HEADER).orElse(null))
+				&& request.getHeaders()
+						.stream()
+						.anyMatch(header -> header.getName().equalsIgnoreCase(BNodeOriginTransport.HEADER)
+								&& BNodeOriginTransport.VERSION.equals(header.getValue()));
 	}
 
 	/**
