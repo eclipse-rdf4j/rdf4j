@@ -489,7 +489,7 @@ final class LmdbNativeAggregateCompiler {
 		return Math.max(1L, (long) estimate);
 	}
 
-	/** Seeds a fresh RowState's slots from external base bindings; false when a base value cannot exist here. */
+	/** Seeds a fresh RowState; false declines an unrepresentable input, rather than proving an empty result. */
 	static boolean initializeRow(RowState row, BindingSet base, NativeLmdbQuerySource source, NativeSlotLayout layout) {
 		if (!NativeRowSeeder.seed(row.slots, layout, base, source)) {
 			return false;

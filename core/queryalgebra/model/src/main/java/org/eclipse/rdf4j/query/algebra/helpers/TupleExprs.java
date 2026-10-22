@@ -30,7 +30,9 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Service;
@@ -46,6 +48,20 @@ import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
  * @author Jeen Broekstra
  */
 public class TupleExprs {
+
+	/** The direct-SELECT exemption used when preparing an RDF4J LATERAL caller scope. */
+	public static boolean preservesDirectSubSelectBindings(TupleExpr rightArg, Set<String> newInputNames) {
+		TupleExpr node = rightArg;
+		while (node instanceof Slice || node instanceof Order || node instanceof Distinct || node instanceof Reduced) {
+			node = ((UnaryTupleOperator) node).getArg();
+		}
+		return node instanceof Projection && !rightArg.getBindingNames().containsAll(newInputNames);
+	}
+
+	/** Projection source names, before any output alias, determine lexical LATERAL visibility. */
+	public static boolean projectsSourceName(ProjectionElemList elements, String name) {
+		return elements.getElements().stream().anyMatch(element -> element.getName().equals(name));
+	}
 
 	/**
 	 * Whether a local operand contains a GRAPH boundary and therefore must receive invocation input rather than a

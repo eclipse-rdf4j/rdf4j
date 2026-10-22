@@ -36,19 +36,24 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.CompareAny;
 import org.eclipse.rdf4j.query.algebra.Count;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Intersection;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
@@ -65,6 +70,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -454,6 +460,33 @@ public class LmdbNativeGenericBridgeScopeTest {
 	}
 
 	@Test
+	public void projectedHavingAfterExtensionKeepsFreshNowPerRetainedEvaluation() {
+		IRI link = repository.getValueFactory().createIRI(EX, "link");
+		Group group = new Group(new StatementPattern(Var.of("s"), Var.of("link", link), Var.of("o")), List.of("s"));
+		group.addGroupElement(new GroupElem("count", new Count(Var.of("o"), false)));
+		Extension extension = new Extension(group,
+				new ExtensionElem(new ValueConstant(repository.getValueFactory().createLiteral(7)), "extra"));
+		Filter filter = new Filter(extension, new And(new Not(new Bound(Var.of("hidden"))),
+				new FunctionCall(RECORD_NOW_URI, new FunctionCall("NOW"))));
+		filter.setConditionBindingScope(ConditionBindingScope.retain(Set.of()));
+		TupleExpr root = new QueryRoot(new Projection(filter,
+				new ProjectionElemList(new ProjectionElem("s"), new ProjectionElem("count")), false));
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null,
+				null, 0L, new EvaluationStatistics(), false);
+		LmdbNativeAggregateCompiler.CompileOutcome outcome = LmdbNativeAggregateCompiler.compileRoot(root,
+				new DelayedDatasetContext(), strategy, (NativeLmdbQuerySource) dataset);
+		assertThat(outcome.isSupported()).as("projected HAVING after an Extension retains its native group").isTrue();
+		List<Value> first = drainAndCollectNow(outcome.step());
+		List<Value> second = drainAndCollectNow(outcome.step());
+		assertThat(first).hasSize(3);
+		assertThat(second).hasSize(3);
+		assertThat(first).allSatisfy(now -> assertThat(now).isSameAs(first.getFirst()));
+		assertThat(second).allSatisfy(now -> assertThat(now).isSameAs(second.getFirst()));
+		assertThat(second.getFirst()).as("a retained plan allocates a fresh query NOW without a clock delay")
+				.isNotSameAs(first.getFirst());
+	}
+
+	@Test
 	public void interiorRetainedPostGroupFilterGetsFreshNowPerEvaluation() {
 		IRI link = repository.getValueFactory().createIRI(EX + "link");
 		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("link", link), Var.of("o"));
@@ -688,6 +721,128 @@ public class LmdbNativeGenericBridgeScopeTest {
 				System.clearProperty(NATIVE_FLAG);
 			} else {
 				System.setProperty(NATIVE_FLAG, previous);
+			}
+		}
+	}
+
+	@Test
+	void projectedExistsSubqueryCannotReadTheUnprojectedNativeEntryFrame() {
+		ValueFactory vf = repository.getValueFactory();
+		QueryBindingSet api = new QueryBindingSet();
+		api.addBinding("hidden", vf.createIRI(EX, "excluded"));
+		var unfilteredSource = new SailDatasetTripleTermSource(vf, dataset);
+		StatementPattern unfiltered = new StatementPattern(Var.of("s"),
+				Var.of("p", vf.createIRI(EX, "link"), true, true), Var.of("o"));
+		Projection unfilteredProjection = new Projection(unfiltered,
+				new ProjectionElemList(new ProjectionElem("s"), new ProjectionElem("o"), new ProjectionElem("hidden")));
+		List<BindingSet> unfilteredExpected = evaluateStep(
+				new DefaultEvaluationStrategy(unfilteredSource, null, null).precompile(unfilteredProjection.clone()),
+				api);
+		var unfilteredNative = LmdbNativeAggregateCompiler.compileRoot(new QueryRoot(unfilteredProjection),
+				new QueryEvaluationContext.Minimal(null), new LmdbNativeEvaluationStrategy(unfilteredSource, null, null,
+						0L, new EvaluationStatistics(), false),
+				(NativeLmdbQuerySource) dataset);
+		assertThat(unfilteredNative.isSupported()).isTrue();
+		assertThat(evaluateStep(unfilteredNative.step(), api)).as("unfiltered generic/native input control")
+				.containsExactlyInAnyOrderElementsOf(unfilteredExpected);
+		assertThat(unfilteredExpected).hasSize(3)
+				.allSatisfy(row -> assertThat(row.getBindingNames())
+						.containsExactlyInAnyOrder("s", "o", "hidden"));
+		for (boolean nested : List.of(false, true)) {
+			for (ConditionBindingScope scope : List.of(ConditionBindingScope.retain(Set.of("s", "o")),
+					ConditionBindingScope.retain(Set.of("s", "o", "hidden")), ConditionBindingScope.ALL)) {
+				for (boolean matching : List.of(false, true)) {
+					api.setBinding("hidden", vf.createIRI(EX, matching ? "local" : "excluded"));
+					BindingSetAssignment values = new BindingSetAssignment();
+					MapBindingSet cell = new MapBindingSet();
+					cell.addBinding("hidden", vf.createIRI(EX, "local"));
+					values.setBindingSets(List.of(cell));
+					Projection subquery = new Projection(values, new ProjectionElemList(new ProjectionElem("hidden")));
+					subquery.setSubquery(true);
+					StatementPattern pattern = new StatementPattern(Var.of("s"),
+							Var.of("p", vf.createIRI(EX, "link"), true, true), Var.of("o"));
+					TupleExpr witness = nested ? new Filter(pattern.clone(), new Exists(subquery)) : subquery;
+					Filter filter = new Filter(pattern, new Exists(witness));
+					filter.setConditionBindingScope(scope);
+					Projection projection = new Projection(filter,
+							new ProjectionElemList(new ProjectionElem("s"), new ProjectionElem("o"),
+									new ProjectionElem("hidden")));
+					var tripleSource = new SailDatasetTripleTermSource(vf, dataset);
+					DefaultEvaluationStrategy generic = new DefaultEvaluationStrategy(tripleSource, null, null);
+					List<BindingSet> expected = evaluateStep(generic.precompile(projection.clone()), api);
+					boolean visible = scope.retainsAllBindings() || scope.bindingNames().contains("hidden");
+					assertThat(expected).as("generic condition input, scope=%s, matching=%s", scope, matching)
+							.hasSize(visible && !matching ? 0 : 3);
+					LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(tripleSource, null, null,
+							0L,
+							new EvaluationStatistics(), false);
+					var outcome = LmdbNativeAggregateCompiler.compileRoot(new QueryRoot(projection),
+							new QueryEvaluationContext.Minimal(null), strategy, (NativeLmdbQuerySource) dataset);
+					assertThat(outcome.isSupported()).as("the outer tuple retains native compilation").isTrue();
+					assertThat(evaluateStep(outcome.step(), api))
+							.as("nested=%s, scope=%s, matching=%s", nested, scope, matching)
+							.containsExactlyInAnyOrderElementsOf(expected);
+				}
+			}
+		}
+	}
+
+	@Test
+	void projectedNestedSubquerySharesNowAndRefreshesRetainedEvaluations() {
+		ValueFactory vf = repository.getValueFactory();
+		StatementPattern pattern = new StatementPattern(Var.of("s"),
+				Var.of("p", vf.createIRI(EX, "link"), true, true), Var.of("o"));
+		BindingSetAssignment values = new BindingSetAssignment();
+		MapBindingSet cell = new MapBindingSet();
+		cell.addBinding("hidden", vf.createIRI(EX, "local"));
+		values.setBindingSets(List.of(cell));
+		Extension innerNow = new Extension(values,
+				new ExtensionElem(new FunctionCall(RECORD_SCALAR_INNER_NOW_URI, new FunctionCall("NOW")), "innerNow"));
+		Projection subquery = new Projection(innerNow,
+				new ProjectionElemList(new ProjectionElem("hidden"), new ProjectionElem("innerNow")));
+		subquery.setSubquery(true);
+		Filter witness = new Filter(pattern.clone(), new Exists(subquery));
+		Extension outerNow = new Extension(pattern,
+				new ExtensionElem(new FunctionCall(RECORD_SCALAR_OUTER_NOW_URI, new FunctionCall("NOW")), "outerNow"));
+		Filter filter = new Filter(outerNow, new And(new Not(new Bound(Var.of("hidden"))), new Exists(witness)));
+		filter.setConditionBindingScope(ConditionBindingScope.retain(Set.of("s", "o")));
+		Projection projection = new Projection(filter,
+				new ProjectionElemList(new ProjectionElem("s"), new ProjectionElem("o"), new ProjectionElem("hidden"),
+						new ProjectionElem("outerNow")));
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+		var outcome = LmdbNativeAggregateCompiler.compileRoot(new QueryRoot(projection),
+				new QueryEvaluationContext.Minimal(null), strategy, (NativeLmdbQuerySource) dataset);
+		assertThat(outcome.isSupported()).as("the projected nested query retains native outer execution").isTrue();
+		Value firstNow = null;
+		for (int evaluation = 0; evaluation < 2; evaluation++) {
+			SCALAR_OUTER_NOW_RECORDED.clear();
+			SCALAR_INNER_NOW_RECORDED.clear();
+			MapBindingSet api = new MapBindingSet();
+			api.addBinding("hidden", vf.createIRI(EX, "excluded" + evaluation));
+			List<BindingSet> actual = evaluateStep(outcome.step(), api);
+			assertThat(SCALAR_OUTER_NOW_RECORDED).isNotEmpty();
+			assertThat(SCALAR_INNER_NOW_RECORDED).isNotEmpty();
+			Value now = SCALAR_OUTER_NOW_RECORDED.getFirst();
+			assertThat(SCALAR_OUTER_NOW_RECORDED).allSatisfy(value -> assertThat(value).isSameAs(now));
+			assertThat(SCALAR_INNER_NOW_RECORDED).as("a projected entry frame shares the outer query's scalar scope")
+					.allSatisfy(value -> assertThat(value).isSameAs(now));
+			List<BindingSet> expected = new ArrayList<>();
+			for (int row = 0; row < 3; row++) {
+				MapBindingSet result = new MapBindingSet();
+				result.addBinding("s", vf.createIRI(EX, "s" + row));
+				result.addBinding("o", vf.createIRI(EX, "o" + row));
+				result.addBinding("hidden", api.getValue("hidden"));
+				result.addBinding("outerNow", now);
+				expected.add(result);
+			}
+			assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
+			assertThat(actual).allSatisfy(row -> assertThat(row.getValue("outerNow")).isSameAs(now));
+			if (firstNow == null) {
+				firstNow = now;
+			} else {
+				assertThat(now).as("each evaluation owns a fresh NOW object without relying on clock delays")
+						.isNotSameAs(firstNow);
 			}
 		}
 	}

@@ -16,11 +16,11 @@ import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 
 /**
  * Capabilities a {@code TypeGuard} node can require of a dictionary id, answerable from the id encoding alone without
- * decoding an RDF value. {@code -1} (unbound) satisfies none of them.
+ * decoding an RDF value. Neither {@code -1} (unbound) nor {@code 0} (the non-value context marker) satisfies them.
  */
 @Experimental
 public enum IdCapability {
-	/** The id is bound (not the {@code -1} sentinel). */
+	/** The id denotes an RDF value rather than an unbound or context marker. */
 	BOUND,
 	/** The id is in the value-ordered inline integer family; its numeric value compares as a plain long. */
 	ORDERED_INTEGER,
@@ -45,7 +45,7 @@ public enum IdCapability {
 
 	/** Evaluates this capability against an id. Never errors and never escapes. */
 	public boolean test(long id) {
-		if (id == -1L) {
+		if (id == -1L || id == 0L) {
 			return false;
 		}
 		switch (this) {

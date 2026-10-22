@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -42,6 +43,7 @@ final class DeferredFilter {
 	final StatementPattern patternLocalBase;
 	final Set<StatementPattern> originPatterns;
 	final EvaluationStatistics.FilterPassEstimate passEstimate;
+	final ConditionBindingScope bindingScope;
 	boolean applied;
 
 	DeferredFilter(ValueExpr condition, Set<String> requiredVars,
@@ -54,6 +56,14 @@ final class DeferredFilter {
 	DeferredFilter(ValueExpr condition, Set<String> requiredVars, Set<String> conditionVars,
 			int conditionCost, int originalIndex, StatementPattern patternLocalBase,
 			Set<StatementPattern> originPatterns, EvaluationStatistics.FilterPassEstimate passEstimate) {
+		this(condition, requiredVars, conditionVars, conditionCost, originalIndex, patternLocalBase, originPatterns,
+				passEstimate, ConditionBindingScope.AUTO);
+	}
+
+	DeferredFilter(ValueExpr condition, Set<String> requiredVars, Set<String> conditionVars,
+			int conditionCost, int originalIndex, StatementPattern patternLocalBase,
+			Set<StatementPattern> originPatterns, EvaluationStatistics.FilterPassEstimate passEstimate,
+			ConditionBindingScope bindingScope) {
 		this.condition = condition;
 		this.requiredVars = Set.copyOf(requiredVars);
 		this.conditionVars = Set.copyOf(conditionVars);
@@ -62,6 +72,7 @@ final class DeferredFilter {
 		this.patternLocalBase = patternLocalBase;
 		this.originPatterns = identityCopy(originPatterns);
 		this.passEstimate = passEstimate;
+		this.bindingScope = bindingScope;
 	}
 
 	static Set<String> conditionBindingNames(ValueExpr condition) {

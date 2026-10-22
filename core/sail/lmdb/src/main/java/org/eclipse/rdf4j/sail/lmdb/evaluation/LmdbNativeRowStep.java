@@ -450,35 +450,48 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
-		if (hasOptionalOnlyBinding(bindings)) {
-			NativeEntryBindingVariant variant = NativeEntryBindingVariant.tryCreate(source, layout, bindings,
-					optionalOnlyNames);
-			if (variant == null) {
-				NativeLmdbQuerySource evalSource = evaluationSourceForGenericFallback(bindings);
-				initializeQueryBase(evalSource, bindings);
-				LmdbNativeStrategyArbiter.logDirect(originalExpr, "optional entry binding dispatch",
-						LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK,
-						"An optional-only binding cannot be represented in the native ID space");
-				LmdbNativeExplain.recordExecutionPath(originalExpr,
-						LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK + "(optionalOnlyBinding)");
-				SyntheticValueSource synthetic = (SyntheticValueSource) evalSource;
-				return NativeExecutionContextCarrier.forEvaluation(
-						genericStep(synthetic.executionContext()).evaluate(bindings), synthetic);
-			}
-			LmdbNativeExplain.recordExecutionPath(originalExpr, variant.executionPath());
-			return withEntryBindingVariant(variant).evaluate(variant.filteredBase);
-		}
 		NativeLmdbQuerySource evalSource = evaluationSource(bindings);
 		initializeQueryBase(evalSource, bindings);
+		NativeRowsStep nativeStep = this;
+		BindingSet nativeBindings = bindings;
+		if (hasOptionalOnlyBinding(bindings)) {
+			NativeEntryBindingVariant variant = NativeEntryBindingVariant.tryCreate(evalSource, layout, bindings,
+					optionalOnlyNames);
+			if (variant == null) {
+				return genericFallback(bindings, evalSource, false, "optionalOnlyBinding");
+			}
+			LmdbNativeExplain.recordExecutionPath(originalExpr, variant.executionPath());
+			nativeStep = withEntryBindingVariant(variant);
+			nativeBindings = variant.filteredBase;
+		}
+		if (!NativeRowSeeder.supports(nativeBindings, layout, evalSource)) {
+			return genericFallback(bindings, evalSource, false, "unrepresentableEntry");
+		}
+		return nativeStep.evaluateNative(nativeBindings, evalSource);
+	}
+
+	private CloseableIteration<BindingSet> evaluateNative(BindingSet bindings, NativeLmdbQuerySource evalSource) {
 		if (orderSlots.length == 0) {
 			return withContextLifetime(new NativeRowsIteration(this, evalSource, bindings), evalSource);
 		}
 		return withContextLifetime(new NativeOrderedRowsIteration(this, evalSource, bindings), evalSource);
 	}
 
-	private NativeLmdbQuerySource evaluationSourceForGenericFallback(BindingSet bindings) {
-		return source instanceof SyntheticValueSource ? evaluationSource(bindings)
-				: SyntheticValueSource.forEvaluation(source, queryExecutionPolicy());
+	CloseableIteration<BindingSet> genericFallback(BindingSet bindings, NativeLmdbQuerySource evalSource,
+			boolean borrowed, String reason) {
+		SyntheticValueSource synthetic = evalSource instanceof SyntheticValueSource existing ? existing
+				: SyntheticValueSource.forInvocation(evalSource, queryExecutionPolicy(), bindings);
+		initializeQueryBase(synthetic, bindings);
+		LmdbNativeExplain.recordExecutionPath(originalExpr,
+				LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK + "(" + reason + ")");
+		boolean closeContext = (!borrowed || synthetic != evalSource)
+				&& !SyntheticValueSource.inheritedEvaluation(synthetic);
+		return NativeExecutionContextCarrier.evaluate(() -> {
+			if (strategy == null && genericStep == null) {
+				throw new IllegalStateException("unsupported native entry requires a semantic evaluation strategy");
+			}
+			return genericStep(synthetic.executionContext()).evaluate(bindings);
+		}, synthetic, closeContext);
 	}
 
 	/**
@@ -554,9 +567,9 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	 */
 	NativeLmdbQuerySource evaluationSource(BindingSet bindings) {
 		NativeLmdbQuerySource evaluated = source instanceof SyntheticValueSource synthetic
-				? synthetic.forEvaluation(generatedKeys, layout, bindings)
+				? synthetic.forInvocation(generatedKeys, layout, bindings)
 				: queryExecutionPolicy().experimentalQueryOptimizations()
-						? SyntheticValueSource.forEvaluation(source, queryExecutionPolicy())
+						? SyntheticValueSource.forInvocation(source, queryExecutionPolicy(), bindings)
 						: source;
 		return strategy == null ? evaluated : strategy.captureEvaluationValues(evaluated);
 	}
@@ -610,7 +623,14 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	}
 
 	List<BindingSet> evaluateAll(BindingSet base) {
-		return evaluateAll(base, evaluationSource(base));
+		NativeLmdbQuerySource evalSource = evaluationSource(base);
+		NativeExecutionContext ownedContext = evalSource != source
+				&& evalSource instanceof SyntheticValueSource synthetic
+				&& !SyntheticValueSource.inheritedEvaluation(evalSource) ? synthetic.executionContext() : null;
+		try (ownedContext;
+				SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(evalSource)) {
+			return evaluateAll(base, evalSource);
+		}
 	}
 
 	List<BindingSet> evaluateAll(BindingSet base, NativeLmdbQuerySource evalSource) {
@@ -620,6 +640,16 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	List<BindingSet> evaluateAll(BindingSet base, NativeLmdbQuerySource evalSource,
 			NativeCancellationToken cancellation) {
 		initializeQueryBase(evalSource, base);
+		if (!NativeRowSeeder.supports(base, layout, evalSource)) {
+			List<BindingSet> result = new ArrayList<>();
+			try (CloseableIteration<BindingSet> rows = genericFallback(base, evalSource, true,
+					"unrepresentableEntry")) {
+				while (!cancellation.isCancellationRequested() && rows.hasNext()) {
+					result.add(materialize(rows.next()));
+				}
+			}
+			return result;
+		}
 		RowState row = new RowState(evalSource, layout, base, originalExpr, cancellation);
 		if (!initializeRow(row, base, evalSource, layout)) {
 			LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_EMPTY_SEED);
@@ -1949,8 +1979,11 @@ final class NativeBareRowsStep implements QueryEvaluationStep, LmdbNativePhysica
 		if (bulk.hasOptionalOnlyBinding(bindings)) {
 			return bulk.evaluate(bindings);
 		}
-		NativeLmdbQuerySource evalSource = bulk.evaluationSource();
+		NativeLmdbQuerySource evalSource = bulk.evaluationSource(bindings);
 		NativeRowsStep.initializeQueryBase(evalSource, bindings);
+		if (!NativeRowSeeder.supports(bindings, layout, evalSource)) {
+			return bulk.genericFallback(bindings, evalSource, false, "unrepresentableEntry");
+		}
 		return bulk.withContextLifetime(new NativeBareRowsIteration(this, evalSource, bindings), evalSource);
 	}
 
@@ -1995,10 +2028,12 @@ final class NativeBareRowsStep implements QueryEvaluationStep, LmdbNativePhysica
 final class NativeExistsValueStep implements QueryValueEvaluationStep {
 	final NativeBareRowsStep step;
 	final NativeExistsPatternCursor.Plan existsPlan;
+	final boolean rowLocal;
 
 	NativeExistsValueStep(NativeBareRowsStep step, NativeExistsPatternCursor.Plan existsPlan) {
 		this.step = step;
 		this.existsPlan = existsPlan;
+		this.rowLocal = LmdbNativeAggregateCompiler.memoReadMask(step.arg) >= 0L;
 	}
 
 	void explainStrategies() {
@@ -2012,8 +2047,25 @@ final class NativeExistsValueStep implements QueryValueEvaluationStep {
 
 	@Override
 	public Value evaluate(BindingSet bindings) {
-		RowState row = new RowState(step.source, step.layout, bindings, step.originalExpr);
-		if (!initializeRow(row, bindings, step.source, step.layout)) {
+		NativeLmdbQuerySource source = rowLocal ? step.bulk.evaluationSource() : step.bulk.evaluationSource(bindings);
+		NativeExecutionContext ownedContext = source != step.source && source instanceof SyntheticValueSource synthetic
+				&& !SyntheticValueSource.inheritedEvaluation(source) ? synthetic.executionContext() : null;
+		try (ownedContext;
+				SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(source)) {
+			NativeRowsStep.initializeQueryBase(source, bindings);
+			return evaluate(bindings, source);
+		}
+	}
+
+	private Value evaluate(BindingSet bindings, NativeLmdbQuerySource source) {
+		if (!NativeRowSeeder.supports(bindings, step.layout, source)) {
+			try (CloseableIteration<BindingSet> rows = step.bulk.genericFallback(bindings, source, true,
+					"unrepresentableEntry")) {
+				return BooleanLiteral.valueOf(rows.hasNext());
+			}
+		}
+		RowState row = new RowState(source, step.layout, bindings, step.originalExpr);
+		if (!initializeRow(row, bindings, source, step.layout)) {
 			LmdbNativeExplain.recordExecutionPath(step.originalExpr, LmdbNativeAttemptMetrics.PATH_EMPTY_SEED);
 			return BooleanLiteral.FALSE;
 		}
