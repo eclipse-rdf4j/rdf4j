@@ -81,23 +81,19 @@ public class AndValueEvaluationStep implements QueryValueEvaluationStep {
 					.getEffectiveBooleanValue(leftStep.evaluate(EmptyBindingSet.getInstance()));
 			if (constantLeftValue == QueryEvaluationUtility.Result._false) {
 				return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(BooleanLiteral.FALSE);
-			} else if (constantLeftValue == QueryEvaluationUtility.Result._true && rightStep.isConstant()) {
+			} else if (rightStep.isConstant()) {
 				Result constantRightValue = QueryEvaluationUtility
 						.getEffectiveBooleanValue(rightStep.evaluate(EmptyBindingSet.getInstance()));
 				if (constantRightValue == QueryEvaluationUtility.Result._false) {
 					return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(BooleanLiteral.FALSE);
-				} else if (constantRightValue == QueryEvaluationUtility.Result._true) {
+				} else if (constantLeftValue == QueryEvaluationUtility.Result._true
+						&& constantRightValue == QueryEvaluationUtility.Result._true) {
 					return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(BooleanLiteral.TRUE);
 				}
 			}
 		}
-		if (rightStep.isConstant()) {
-			Result constantRightValue = QueryEvaluationUtility
-					.getEffectiveBooleanValue(rightStep.evaluate(EmptyBindingSet.getInstance()));
-			if (constantRightValue == QueryEvaluationUtility.Result._false) {
-				return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(BooleanLiteral.FALSE);
-			}
-		}
+		// A constant false right operand determines the boolean result, but the reachable left operand still
+		// has to run. An arbitrary evaluation step may be volatile or raise an observable query-fatal error.
 		return new AndValueEvaluationStep(leftStep, rightStep, metricTarget);
 	}
 

@@ -22,10 +22,43 @@ import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 class QueryModelSerializationTest {
+	@Test
+	void filterSerializedBeforeConditionScopesRetainsAutomaticVisibility() throws Exception {
+		// Captured from immutable pre-change commit a794f9432d08978d91f9c5dd4cd37cc19647b364.
+		try (ObjectInputStream input = new ObjectInputStream(getClass()
+				.getResourceAsStream("/filter-before-condition-binding-scope.ser"))) {
+			Filter restored = (Filter) input.readObject();
+			assertThat(restored.getConditionBindingScope()).isSameAs(ConditionBindingScope.AUTO);
+			assertThat(restored).isEqualTo(new Filter(new SingletonSet(), new Bound(Var.of("hidden"))));
+		}
+	}
+
+	@Test
+	void filterConditionVisibilitySurvivesCloneAndSerialization() throws Exception {
+		Filter original = new Filter(new SingletonSet(), new Bound(Var.of("hidden")));
+		Filter automatic = original.clone();
+		assertThat(automatic.getConditionBindingScope()).isSameAs(ConditionBindingScope.AUTO);
+		assertThat(automatic.hashCode()).isEqualTo(original.getArg().hashCode() ^ original.getCondition().hashCode());
+		original.setConditionBindingScope(ConditionBindingScope.retain(Set.of("visible")));
+		assertThat(original.clone()).isEqualTo(original).isNotEqualTo(automatic);
+		assertThat(original.clone().getConditionBindingScope()).isSameAs(original.getConditionBindingScope());
+		ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+		try (ObjectOutputStream output = new ObjectOutputStream(bytes)) {
+			output.writeObject(original);
+		}
+		try (ObjectInputStream input = new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
+			Filter restored = (Filter) input.readObject();
+			assertThat(restored).isEqualTo(original);
+			assertThat(restored.getConditionBindingScope().bindingNames()).containsExactly("visible");
+			assertThat(restored.getConditionBindingScope().allows("hidden")).isFalse();
+		}
+	}
+
 	@Test
 	void repeatableValuesAlgebraTreeRoundTripsWithItsRowsAndParentLinks() throws Exception {
 		MapBindingSet row = new MapBindingSet();

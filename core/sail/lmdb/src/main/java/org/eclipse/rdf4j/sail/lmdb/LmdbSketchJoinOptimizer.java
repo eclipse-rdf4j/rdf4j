@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.IsBNode;
 import org.eclipse.rdf4j.query.algebra.IsLiteral;
@@ -80,6 +81,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -308,7 +310,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					previousOptional.hasCondition() ? previousOptional.getCondition() : null);
 			branches.add(new OptionalBranch(leftJoin.getRightArg(), leftJoin.hasCondition()
 					? leftJoin.getCondition()
-					: null));
+					: null, ConditionBindingScope.AUTO));
 			Set<String> baseNames = plannerBindingNames(previousOptional.getLeftArg().getBindingNames());
 			if (!hasMutuallyExclusiveBaseDiscriminator(branches, baseNames)) {
 				return null;
@@ -332,10 +334,12 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				branches.addAll(collectOptionalUnionBranches(union.getRightArg(), null));
 				return branches;
 			}
-			if (condition == null && tupleExpr instanceof Filter filter) {
-				return List.of(new OptionalBranch(filter.getArg(), filter.getCondition()));
+			if (condition == null && tupleExpr instanceof Filter filter && !filter.isVariableScopeChange()
+					&& FilterBindingScope.allowsAllConditionBindings(filter)) {
+				return List.of(new OptionalBranch(filter.getArg(), filter.getCondition(),
+						FilterBindingScope.resolve(filter)));
 			}
-			return new ArrayList<>(List.of(new OptionalBranch(tupleExpr, condition)));
+			return new ArrayList<>(List.of(new OptionalBranch(tupleExpr, condition, ConditionBindingScope.AUTO)));
 		}
 
 		private boolean hasMutuallyExclusiveBaseDiscriminator(List<OptionalBranch> branches, Set<String> baseNames) {
@@ -458,7 +462,9 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			if (branch.condition() == null) {
 				return arg;
 			}
-			return new Filter(arg, branch.condition().clone());
+			Filter filter = new Filter(arg, branch.condition().clone());
+			filter.setConditionBindingScope(branch.bindingScope());
+			return filter;
 		}
 
 		private boolean containsLeftJoin(TupleExpr tupleExpr) {
@@ -478,7 +484,8 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private TupleExpr rewriteNullRejectingOptionalFilter(Filter filter, LeftJoin leftJoin) {
-			if (filter.getArg() != leftJoin || leftJoin.hasCondition()) {
+			if (filter.getArg() != leftJoin || leftJoin.hasCondition()
+					|| !FilterBindingScope.allowsAllConditionBindings(filter)) {
 				return null;
 			}
 			Set<String> optionalBindings = optionalDirectProducedBindingNames(leftJoin);
@@ -500,6 +507,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			if (replacement == null) {
 				replacement = new Filter(new Join(leftJoin.getLeftArg().clone(), leftJoin.getRightArg().clone()),
 						filter.getCondition().clone());
+				((Filter) replacement).setConditionBindingScope(FilterBindingScope.resolve(filter));
 			}
 			filter.replaceWith(replacement);
 			return replacement;
@@ -585,6 +593,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 			Filter joinedFilter = new Filter(new Join(extension.getArg().clone(), leftJoin.getRightArg().clone()),
 					filter.getCondition().clone());
+			joinedFilter.setConditionBindingScope(FilterBindingScope.resolve(filter));
 			Extension delayedExtension = new Extension(joinedFilter);
 			for (ExtensionElem element : extension.getElements()) {
 				delayedExtension.addElement(element.clone());
@@ -2007,6 +2016,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			TupleExpr current = filter;
 			while (current instanceof Filter currentFilter && !TupleExprs.isVariableScopeChange(current)
 					&& QueryEvaluationUtility.isRepeatable(currentFilter.getCondition())) {
+				currentFilter.setConditionBindingScope(FilterBindingScope.resolve(currentFilter));
 				filters.add(currentFilter);
 				current = currentFilter.getArg();
 			}
@@ -2014,6 +2024,10 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private boolean relocateLeftJoinLocalFilters(Filter filter, LeftJoin leftJoin) {
+			if (!FilterBindingScope.allowsAllConditionBindings(filter)) {
+				return false;
+			}
+			ConditionBindingScope bindingScope = FilterBindingScope.resolve(filter);
 			List<ValueExpr> movable = new ArrayList<>();
 			List<ValueExpr> remaining = new ArrayList<>();
 			Set<String> leftBindingNames = leftJoin.getLeftArg().getBindingNames();
@@ -2028,7 +2042,9 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			if (movable.isEmpty()) {
 				return false;
 			}
-			leftJoin.setLeftArg(new Filter(leftJoin.getLeftArg(), LmdbJoinPlanSupport.combinedCondition(movable)));
+			Filter moved = new Filter(leftJoin.getLeftArg(), LmdbJoinPlanSupport.combinedCondition(movable));
+			moved.setConditionBindingScope(bindingScope);
+			leftJoin.setLeftArg(moved);
 			if (remaining.isEmpty()) {
 				filter.replaceWith(leftJoin);
 			} else {
@@ -2266,6 +2282,10 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 			List<Filter> remainingFilters = new ArrayList<>();
 			for (Filter filter : collected.deferredFilters) {
+				if (!FilterBindingScope.allowsAllConditionBindings(filter)) {
+					remainingFilters.add(filter);
+					continue;
+				}
 				List<ValueExpr> remainingConditions = new ArrayList<>();
 				for (ValueExpr condition : LmdbJoinPlanSupport.splitConjuncts(filter.getCondition())) {
 					BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(condition);
@@ -2290,6 +2310,10 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		private void dropFiltersCoveredByAssignments(CollectedJoinArgs collected) {
 			List<Filter> remainingFilters = new ArrayList<>();
 			for (Filter filter : collected.deferredFilters) {
+				if (!FilterBindingScope.allowsAllConditionBindings(filter)) {
+					remainingFilters.add(filter);
+					continue;
+				}
 				Map<String, LinkedHashSet<Value>> assignmentValues = smallLiteralAssignmentValuesInFilterSegment(
 						collected.joinArgs, filter.getArg());
 				List<ValueExpr> remainingConditions = new ArrayList<>();
@@ -2304,8 +2328,10 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					remainingConditions.add(condition);
 				}
 				if (!costingConditions.isEmpty()) {
-					collected.costingOnlyFilters.add(new Filter(filter.getArg().clone(),
-							LmdbJoinPlanSupport.combinedCondition(costingConditions)));
+					Filter costing = new Filter(filter.getArg().clone(),
+							LmdbJoinPlanSupport.combinedCondition(costingConditions));
+					costing.setConditionBindingScope(FilterBindingScope.resolve(filter));
+					collected.costingOnlyFilters.add(costing);
 				}
 				if (remainingConditions.isEmpty()) {
 					continue;
@@ -3937,6 +3963,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				}
 			}
 			Filter filter = new Filter(root, deferredFilter.condition.clone());
+			filter.setConditionBindingScope(deferredFilter.bindingScope);
 			optimizeConditionSubqueries(filter.getCondition(), root,
 					estimatedSubplanInvocationRows(root), root);
 			double passRatio = deferredFilter.passEstimate.getPlanningPassRatio();
@@ -4270,7 +4297,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 	}
 
-	private record OptionalBranch(TupleExpr tupleExpr, ValueExpr condition) {
+	private record OptionalBranch(TupleExpr tupleExpr, ValueExpr condition, ConditionBindingScope bindingScope) {
 
 	}
 

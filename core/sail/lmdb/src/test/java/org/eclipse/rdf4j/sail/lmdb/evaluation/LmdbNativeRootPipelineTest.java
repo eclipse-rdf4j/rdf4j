@@ -46,6 +46,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.TupleFunctionEvaluationStrategy;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
@@ -421,7 +422,15 @@ public class LmdbNativeRootPipelineTest {
 
 			MapBindingSet prebound = new MapBindingSet();
 			prebound.addBinding("value", vf.createLiteral("alpha"));
-			assertThat(evaluate(repeatedRoot, "value", prebound)).containsExactly("alpha");
+			List<String> expected = new ArrayList<>();
+			try (var rows = TupleFunctionEvaluationStrategy.evaluate(CONTRACT_TUPLE_FUNCTION,
+					repeated.getResultVars(), prebound, vf, vf.createLiteral("repeat"))) {
+				while (rows.hasNext()) {
+					expected.add(rows.next().getValue("value").stringValue());
+				}
+			}
+			assertThat(expected).containsExactly("alpha");
+			assertThat(evaluate(repeatedRoot, "value", prebound)).containsExactlyElementsOf(expected);
 
 			TupleFunctionCall constant = tupleFunctionCall(vf, "constant", new Var("value"),
 					new Var("tag", vf.createLiteral("keep")));

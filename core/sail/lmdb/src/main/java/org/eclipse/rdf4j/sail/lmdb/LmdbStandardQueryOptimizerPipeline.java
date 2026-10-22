@@ -66,6 +66,11 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 	}
 
 	@Override
+	public BindingSet getOptimizerInputBindings(QueryOptimizer optimizer, BindingSet initialBindings) {
+		return delegate.getOptimizerInputBindings(optimizer, initialBindings);
+	}
+
+	@Override
 	public Iterable<QueryOptimizer> getOptimizers() {
 		if (!strategy.getQueryExecutionPolicy().experimentalQueryOptimizations()) {
 			return delegate.getOptimizers();

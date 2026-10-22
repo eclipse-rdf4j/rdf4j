@@ -32,8 +32,11 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
@@ -481,17 +484,41 @@ public class LmdbNativeInteriorIslandTest {
 			assertScopeRows("SELECT ?s ?o WHERE { " + left + " MINUS { ?s <" + q
 					+ "> ?x BIND(2 AS ?o) FILTER(?x < ?o) } }", Map.of(), List.of(expected.get(1), expected.get(2)));
 			// Ordinary sibling values constrain the left relation without becoming external API substitutions.
-			// The existing M-F1 root value guard cannot cross a filter that reads its guarded name: retain the
-			// explicit generic-host policy for this shape while checking the exact relational result.
+			// The right filter cannot read the sibling's ?o across its group boundary, so it becomes a scoped empty
+			// relation. With that observer removed, the native root value guard can preserve the left VALUES exactly.
+			String valuesQuery = "SELECT ?s ?o WHERE { VALUES ?o { 2 } " + body + " }";
+			long compiledBefore = LmdbNativeAggregateCompiler.COMPILED.get();
 			long hostedBefore = LmdbNativeAggregateCompiler.HOSTED_GENERIC.get();
-			assertScopeRows("SELECT ?s ?o WHERE { VALUES ?o { 2 } " + body + " }", Map.of(), List.of(expected.get(0)));
-			assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get()).isEqualTo(hostedBefore + 1);
+			assertScopeRows(valuesQuery, Map.of(), List.of(expected.get(0)));
+			long compiledDelta = LmdbNativeAggregateCompiler.COMPILED.get() - compiledBefore;
+			long hostedDelta = LmdbNativeAggregateCompiler.HOSTED_GENERIC.get() - hostedBefore;
 			// Equal numeric values of different RDF datatypes are deliberately incompatible join/MINUS terms.
 			assertScopeRows(query, Map.of("o", vf.createLiteral(3)), List.of());
 			assertScopeRows("SELECT ?s ?o WHERE { " + left + " MINUS { ?s <" + q
 					+ "> ?x BIND(\"2\"^^<" + XSD.INT + "> AS ?o) FILTER(?x < ?o) } }", Map.of(), expected);
 			assertScopeRows("SELECT ?s ?o WHERE { VALUES ?o { \"2\"^^<" + XSD.INT + "> } " + body + " }",
 					Map.of(), List.of());
+			assertThat(compiledDelta).as("the pruned lexical right operand permits native root compilation")
+					.isPositive();
+			assertThat(hostedDelta).as("a provably empty right operand needs no hosted generic query").isZero();
+			Explanation optimized = scopeExplanation(valuesQuery, Map.of());
+			assertThat(optimized.toString())
+					.contains("NativeRows(", "BindingSetAssignment ([]) (new scope)")
+					.doesNotContain(q.stringValue());
+			List<TupleExpr> originalRight = minusRightOperands(
+					QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, valuesQuery, null).getTupleExpr());
+			List<TupleExpr> optimizedRight = minusRightOperands((TupleExpr) optimized.tupleExpr());
+			assertThat(originalRight).hasSize(1);
+			assertThat(optimizedRight).singleElement().isInstanceOfSatisfying(BindingSetAssignment.class, empty -> {
+				assertThat(empty.getBindingSets()).as("the scoped MINUS right operand has zero rows").isEmpty();
+				assertThat(empty.isCardinalitySet()).as("pruning records the right operand's cardinality").isTrue();
+				assertThat(empty.getCardinality()).as("the pruned right operand has zero cardinality")
+						.isZero();
+				assertThat(empty.getBindingNames()).as("pruning preserves the original declared MINUS domain")
+						.isEqualTo(originalRight.getFirst().getBindingNames());
+				assertThat(TupleExprs.isVariableScopeChange(empty)).as("the independent right input scope remains")
+						.isTrue();
+			});
 		});
 	}
 
@@ -659,11 +686,27 @@ public class LmdbNativeInteriorIslandTest {
 	}
 
 	private String scopeOptimizedPlan(String query, Map<String, Value> inputs) {
+		return scopeExplanation(query, inputs).toString();
+	}
+
+	private Explanation scopeExplanation(String query, Map<String, Value> inputs) {
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			var prepared = conn.prepareTupleQuery(query);
 			inputs.forEach(prepared::setBinding);
-			return prepared.explain(Explanation.Level.Optimized).toString();
+			return prepared.explain(Explanation.Level.Optimized);
 		}
+	}
+
+	private static List<TupleExpr> minusRightOperands(TupleExpr expression) {
+		List<TupleExpr> rightOperands = new ArrayList<>();
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Difference difference) {
+				rightOperands.add(difference.getRightArg());
+				super.meet(difference);
+			}
+		});
+		return rightOperands;
 	}
 
 	private List<BindingSet> scopeBindingRows(String query, Map<String, Value> inputs, boolean nativeEvaluation) {

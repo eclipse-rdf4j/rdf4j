@@ -62,6 +62,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
@@ -210,6 +211,9 @@ final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
 					aliases.put(elem.getName(), alias);
 				}
 			} else if (wrappers.get(i) instanceof Filter selection) {
+				if (!FilterBindingScope.allowsAllConditionBindings(selection)) {
+					return null;
+				}
 				BooleanExpression compiled = expressions.bool(selection.getCondition());
 				if (compiled == null) {
 					return null;

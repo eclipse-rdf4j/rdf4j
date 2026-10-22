@@ -242,11 +242,22 @@ final class NativeBindingSetValueCompiler {
 			return new EvaluationScopedValueEvaluator(descriptor, strategy, context);
 		}
 		QueryValueEvaluationStep valueStep = strategy.precompile(expression, context);
-		return bindings -> {
-			try {
-				return NativeValueOutcome.bound(valueStep.evaluate(bindings));
-			} catch (ValueExprEvaluationException e) {
-				return NativeValueOutcome.ERROR;
+		return new NativeBindingSetValueEvaluator() {
+			@Override
+			public NativeValueOutcome evaluate(BindingSet bindings) {
+				return evaluate(bindings, null);
+			}
+
+			@Override
+			public NativeValueOutcome evaluate(BindingSet bindings, NativeExecutionContext executionContext) {
+				SyntheticValueSource source = executionContext == null ? null : executionContext.evaluationSource();
+				try (SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(source)) {
+					try {
+						return NativeValueOutcome.bound(valueStep.evaluate(bindings));
+					} catch (ValueExprEvaluationException e) {
+						return NativeValueOutcome.ERROR;
+					}
+				}
 			}
 		};
 	}
@@ -282,10 +293,13 @@ final class NativeBindingSetValueCompiler {
 								.genericContext(compileContext, strategy);
 						return descriptor.precompileValue(strategy, scoped);
 					});
-			try {
-				return NativeValueOutcome.bound(valueStep.evaluate(bindings));
-			} catch (ValueExprEvaluationException e) {
-				return NativeValueOutcome.ERROR;
+			SyntheticValueSource source = executionContext == null ? null : executionContext.evaluationSource();
+			try (SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(source)) {
+				try {
+					return NativeValueOutcome.bound(valueStep.evaluate(bindings));
+				} catch (ValueExprEvaluationException e) {
+					return NativeValueOutcome.ERROR;
+				}
 			}
 		}
 	}

@@ -458,11 +458,10 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			TupleExpr optimized = prepared;
 			for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
 				optimized = QueryEvaluationUtility.withFreshPreparedQuerySafetySnapshot(optimized, optimizerRoot -> {
-					optimizer.optimize(optimizerRoot, dataset, bindings);
+					optimizer.optimize(optimizerRoot, dataset, pipeline.getOptimizerInputBindings(optimizer, bindings));
 					return optimizerRoot;
 				});
 			}
-			// The last pass can introduce VALUES or change a bare assignment root too.
 			return QueryEvaluationUtility.withFreshPreparedQuerySafetySnapshot(optimized,
 					optimizerRoot -> optimizerRoot);
 		});

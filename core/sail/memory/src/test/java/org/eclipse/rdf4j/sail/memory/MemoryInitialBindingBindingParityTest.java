@@ -21,6 +21,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -29,21 +30,27 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLQueries;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.evaluation.RepositoryTripleSource;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
@@ -110,8 +117,22 @@ class MemoryInitialBindingBindingParityTest {
 	@Test
 	void optionalMissingSubjectRequiresExplicitUnsupportedTransport() {
 		String query = "SELECT ?s ?o WHERE { OPTIONAL { ?s <urn:p> ?o } }";
+		// Raw row input and the public substitution pipeline intentionally have different OPTIONAL contracts.
+		assertOriginalApiBag(query, "s", VF.createBNode("optional-missing"), Map.of());
 		assertUnsupportedTransport("OPTIONAL", query, "s", VF.createBNode("optional-missing"),
 				bag(new MapBindingSet()), "OPTIONAL");
+	}
+
+	@Test
+	void optionalMatchingSubjectRetainsTheOriginalApiResult() {
+		String query = "SELECT ?s ?o WHERE { OPTIONAL { ?s <urn:p> ?o } }";
+		MapBindingSet expected = new MapBindingSet(2);
+		expected.addBinding("s", VF.createIRI("urn:s"));
+		expected.addBinding("o", VF.createIRI("urn:object"));
+		assertOriginalApiBag(query, "s", VF.createIRI("urn:s"), bag(expected));
+		try (RepositoryConnection connection = repository.getConnection()) {
+			assertEquals(bag(expected), bag(evaluate(connection, query, binding("s", VF.createIRI("urn:s")))));
+		}
 	}
 
 	@Test
@@ -124,9 +145,66 @@ class MemoryInitialBindingBindingParityTest {
 	void groupingAndModifiersRequireExplicitUnsupportedTransport() {
 		String query = "SELECT ?group (COUNT(?o) AS ?count) WHERE { ?s <urn:p> ?o } "
 				+ "GROUP BY ?group ORDER BY ?group LIMIT 1 OFFSET 0";
+		MapBindingSet expected = new MapBindingSet(2);
+		expected.addBinding("group", VF.createLiteral("group-key"));
+		expected.addBinding("count", VF.createLiteral("2", XSD.INTEGER));
+		// A raw incoming group key is not an additional public Query.setBinding result column.
+		assertOriginalApiBag(query, "group", VF.createLiteral("group-key"), bag(expected));
 		assertUnsupportedTransport("GROUP BY/ORDER BY/LIMIT/OFFSET", query, "group", VF.createLiteral("group-key"),
-				bag(binding("count", VF.createLiteral("2", VF.createIRI("http://www.w3.org/2001/XMLSchema#integer")))),
-				"GROUP BY");
+				bag(binding("count", VF.createLiteral("2", XSD.INTEGER))), "GROUP BY");
+	}
+
+	@ParameterizedTest(name = "public initial-binding contract: {0}")
+	@MethodSource("publicInitialBindingCases")
+	void publicInitialBindingsPreserveIndependentBaselineBags(String shape, String query, Value value,
+			Map<Map<String, Value>, Integer> expected) {
+		try (RepositoryConnection connection = repository.getConnection()) {
+			assertEquals(expected, bag(evaluate(connection, query, binding("x", value))),
+					shape + " must preserve the public Query.setBinding result bag");
+		}
+	}
+
+	private static Stream<Arguments> publicInitialBindingCases() {
+		Value one = VF.createLiteral("1", XSD.INTEGER);
+		Value two = VF.createLiteral("2", XSD.INTEGER);
+		Value three = VF.createLiteral("3", XSD.INTEGER);
+		Value four = VF.createLiteral("4", XSD.INTEGER);
+		String select = "SELECT ?x ?y WHERE { ";
+		// Literal bags recorded through Query.setBinding on the immutable baseline, independently of raw-row input.
+		return Stream.of(
+				Arguments.of("empty projection", "SELECT ?x WHERE { }", one, Map.of(Map.of(), 1)),
+				Arguments.of("group key", "SELECT ?x (COUNT(?o) AS ?count) WHERE { ?s <urn:p> ?o } GROUP BY ?x",
+						one, Map.of(Map.of("count", two), 1)),
+				Arguments.of("ORDER BY API read", "SELECT ?y WHERE { VALUES ?y { 3 2 } } ORDER BY ?x", one,
+						Map.of(Map.of("y", two), 1, Map.of("y", three), 1)),
+				Arguments.of("FILTER API read", "SELECT ?y WHERE { VALUES ?y { 3 } FILTER(?x = 1) }", one,
+						Map.of(Map.of("y", three), 1)),
+				Arguments.of("BIND API read with unprojected target", select + "VALUES ?y { 3 } BIND(?x + 1 AS ?z) }",
+						one, Map.of(Map.of("x", one, "y", three), 1)),
+				Arguments.of("BIND API read with projected target",
+						"SELECT ?x ?y ?z WHERE { VALUES ?y { 3 } BIND(?x + 1 AS ?z) }", one,
+						Map.of(Map.of("x", one, "y", three, "z", two), 1)),
+				Arguments.of("VALUES owns conflicting values", select + "VALUES ?x { 1 2 } VALUES ?y { 3 } }", one,
+						Map.of(Map.of("x", one, "y", three), 1, Map.of("x", two, "y", three), 1)),
+				Arguments.of("statement API IRI", "SELECT ?x ?o WHERE { ?x <urn:p> ?o }", VF.createIRI("urn:s"),
+						Map.of(Map.of("x", VF.createIRI("urn:s"), "o", VF.createIRI("urn:object")), 1)),
+				Arguments.of("local BIND owns output", "SELECT ?x WHERE { BIND(2 AS ?x) }", one,
+						Map.of(Map.of("x", two), 1)),
+				Arguments.of("scoped UNION with filter",
+						select + "{ BIND(2 AS ?x) } UNION { VALUES ?y { 3 } } FILTER(?x = 1) }", one, Map.of()),
+				Arguments.of("scoped UNION without filter", select + "{ BIND(2 AS ?x) } UNION { VALUES ?y { 3 } } }",
+						one, Map.of(Map.of("x", two), 1, Map.of("y", three), 1)),
+				Arguments.of("OPTIONAL VALUES owns output", select + "VALUES ?y { 3 } OPTIONAL { VALUES ?x { 2 } } }",
+						one, Map.of(Map.of("x", two, "y", three), 1)),
+				Arguments.of("UNION with UNDEF",
+						select + "{ VALUES (?x ?y) { (UNDEF 3) } } UNION { VALUES ?y { 4 } } }", one,
+						Map.of(Map.of("y", three), 1, Map.of("y", four), 1)),
+				Arguments.of("UNION with failed local BIND",
+						select + "{ BIND(?missing AS ?x) VALUES ?y { 3 } } UNION { VALUES ?y { 4 } } }", one,
+						Map.of(Map.of("y", three), 1, Map.of("y", four), 1)),
+				Arguments.of("UNION with nullable OPTIONAL",
+						select + "{ VALUES ?y { 3 } OPTIONAL { BIND(2 AS ?x) FILTER(false) } } UNION { BIND(4 AS ?x) } }",
+						one, Map.of(Map.of("y", three), 1, Map.of("x", four), 1)));
 	}
 
 	@Test
@@ -285,6 +363,22 @@ class MemoryInitialBindingBindingParityTest {
 			assertFalse(nativeRows.isEmpty(), shape + " must exercise a non-empty native result");
 			assertEquals(bag(nativeRows), bag(serializedRows),
 					shape + " must match the result bag from Query.setBinding");
+		}
+	}
+
+	private void assertOriginalApiBag(String query, String bindingName, Value value,
+			Map<Map<String, Value>, Integer> expected) {
+		try (RepositoryConnection connection = repository.getConnection()) {
+			MapBindingSet input = new MapBindingSet(1);
+			input.addBinding(bindingName, value);
+			var parsed = new SPARQLParser().parseQuery(query, null);
+			DefaultEvaluationStrategy raw = new DefaultEvaluationStrategy(new RepositoryTripleSource(connection),
+					parsed.getDataset(), null);
+			List<BindingSet> rows = new ArrayList<>();
+			try (var results = raw.precompile(parsed.getTupleExpr()).evaluate(input)) {
+				results.forEachRemaining(rows::add);
+			}
+			assertEquals(expected, bag(rows), "original parsed algebra with the actual API frame: " + query);
 		}
 	}
 

@@ -35,58 +35,68 @@ final class NativeRowSeeder {
 		if (base == null || base.isEmpty()) {
 			return true;
 		}
-		seedByQueryIndex(slots, layout, base, source);
-		String[] slotNames = layout.slotNames();
-		RowBindingSetView nativeBase = base instanceof RowBindingSetView ? (RowBindingSetView) base : null;
-		for (int i = 0; i < slotNames.length; i++) {
-			if (slots[i] != UNKNOWN) {
-				continue;
+		for (int slot = 0; slot < slots.length; slot++) {
+			long id = resolve(slot, layout, base, source);
+			if (id == UNKNOWN && base.hasBinding(layout.slotNames()[slot])) {
+				return false;
 			}
-			String name = slotNames[i];
-			if (nativeBase != null && nativeBase.sameIdSpace(source) && nativeBase.hasNativeId(name)) {
-				slots[i] = nativeBase.nativeId(name);
-				continue;
-			}
-			if (base.hasBinding(name)) {
-				Value value = base.getValue(name);
-				if (value == null) {
-					slots[i] = NULL_CONTEXT_ID;
-				} else {
-					long id = source.idOf(value, layout.positionMask(i));
-					if (id == UNKNOWN && source instanceof SyntheticValueSource) {
-						// A term-safe value the store does not know still has a correct native execution: an
-						// evaluation-scoped interned id whose probes stay empty while filters and projections
-						// materialize the value. Term-ambiguous classes keep the historical abort.
-						id = ((SyntheticValueSource) source).internEntryBinding(value);
-					}
-					if (id == UNKNOWN) {
-						return false;
-					}
-					slots[i] = id;
-				}
+			slots[slot] = id;
+		}
+		return true;
+	}
+
+	/**
+	 * An unresolved incoming value declines this native entry; it does not prove the query has no solutions. Callers
+	 * select semantic evaluation before opening native cursors when this returns false.
+	 */
+	static boolean supports(BindingSet base, NativeSlotLayout layout, NativeLmdbQuerySource source) {
+		if (base == null || base.isEmpty()) {
+			return true;
+		}
+		for (int slot = 0; slot < layout.slotNames().length; slot++) {
+			if (resolve(slot, layout, base, source) == UNKNOWN && base.hasBinding(layout.slotNames()[slot])) {
+				return false;
 			}
 		}
 		return true;
 	}
 
-	private static void seedByQueryIndex(long[] slots, NativeSlotLayout layout, BindingSet base,
-			NativeLmdbQuerySource source) {
+	private static long resolve(int slot, NativeSlotLayout layout, BindingSet base, NativeLmdbQuerySource source) {
 		QueryWideVarLayout queryLayout = layout.queryLayout();
-		if (queryLayout == null || !(base instanceof SlotBindingSetView)) {
-			return;
-		}
-		SlotBindingSetView nativeBase = (SlotBindingSetView) base;
-		if (nativeBase.queryLayout() != queryLayout || !nativeBase.sameIdSpace(source)) {
-			return;
-		}
-		for (int slot = 0; slot < slots.length; slot++) {
+		if (queryLayout != null && base instanceof SlotBindingSetView nativeBase
+				&& nativeBase.queryLayout() == queryLayout && nativeBase.sameIdSpace(source)) {
 			int queryIndex = layout.queryIndexForSlot(slot);
 			if (queryIndex >= 0) {
 				long id = nativeBase.nativeIdByQueryIndex(queryIndex);
 				if (id != UNKNOWN) {
-					slots[slot] = id;
+					return id;
 				}
 			}
 		}
+		String name = layout.slotNames()[slot];
+		if (base instanceof NativeEntryBindings entry) {
+			long id = entry.nativeId(name, source);
+			if (id != UNKNOWN) {
+				return id;
+			}
+		}
+		if (base instanceof RowBindingSetView nativeBase && nativeBase.sameIdSpace(source)
+				&& nativeBase.hasNativeId(name)) {
+			return nativeBase.nativeId(name);
+		}
+		if (!base.hasBinding(name)) {
+			return UNKNOWN;
+		}
+		Value value = base.getValue(name);
+		if (value == null) {
+			return NULL_CONTEXT_ID;
+		}
+		long id = source.idOf(value, layout.positionMask(slot));
+		if (id == UNKNOWN && source instanceof SyntheticValueSource synthetic) {
+			// Only term-safe classes may mint an unresolved runtime ID. Language/triple values may have a
+			// term-equal stored spelling that lexical lookup missed, so retain the conservative import guard.
+			id = synthetic.internEntryBinding(value);
+		}
+		return id;
 	}
 }
