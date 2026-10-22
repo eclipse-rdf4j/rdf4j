@@ -14,9 +14,18 @@ package org.eclipse.rdf4j.tools.lmdb.bulk;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.lwjgl.system.MemoryStack.stackPush;
+import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
+import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_close;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_mapsize;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -25,22 +34,316 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.GZIPOutputStream;
 
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.repository.config.RepositoryConfig;
+import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
+import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.bulk.BulkArtifact;
 import org.eclipse.rdf4j.sail.lmdb.bulk.BulkLoadPhase;
 import org.eclipse.rdf4j.sail.lmdb.bulk.LmdbBulkLoader;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.lwjgl.PointerBuffer;
+import org.lwjgl.system.MemoryStack;
+import org.lwjgl.util.lmdb.MDBEnvInfo;
 
 class LmdbBulkLoadTest {
 
 	@TempDir
 	Path temporaryDirectory;
+
+	@Test
+	void writesCompleteRepositoryConfigurationAfterSuccessfulLoad() throws Exception {
+		Path input = temporaryDirectory.resolve("input.nt");
+		Files.writeString(input, "<urn:subject> <urn:predicate> <urn:object> .\n");
+		Path managerBase = temporaryDirectory.resolve("server");
+		Path store = managerBase.resolve("repositories").resolve("store");
+		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
+
+		int exitCode = LmdbBulkLoad.run(new String[] {
+				"--store", store.toString(),
+				"--input", input.toString(),
+				"--progress", "none"
+		}, new ByteArrayInputStream(new byte[0]), new PrintStream(new ByteArrayOutputStream()),
+				new PrintStream(standardError));
+
+		assertThat(exitCode).as(standardError.toString(StandardCharsets.UTF_8)).isZero();
+		assertThat(store.resolve("config.ttl"))
+				.as("a successful CLI load publishes a reusable repository configuration")
+				.isRegularFile();
+		LmdbStoreConfig config = readStoreConfiguration(store);
+		assertThat(config.getTripleIndexes()).isEqualTo("spoc,posc");
+		assertThat(config.getTripleTermIndexes()).isEqualTo("spoc,cspo");
+		assertThat(config.getInlineLiterals()).isTrue();
+		assertThat(config.getOrderedNumericIds()).isTrue();
+		assertThat(config.getValueHashCacheEnabled()).isFalse();
+		assertThat(config.getNativeEvaluationEnabled()).isFalse();
+		assertThat(config.getDirectAdjacencyEnabled()).isFalse();
+		assertThat(config.getValueOverlayEnabled()).isFalse();
+		assertThat(config.getForceSync()).isFalse();
+		assertThat(config.getNoReadahead()).isFalse();
+		assertThat(config.getAutoGrow()).isTrue();
+		assertThat(config.getPageCardinalityEstimator()).isTrue();
+		assertManagerCanOpenPreparedStore(managerBase, store, 1);
+	}
+
+	@Test
+	void exportsEffectiveCustomSettingsAndSupportsRelocatedManagerDirectories() throws Exception {
+		Path input = temporaryDirectory.resolve("input.nt");
+		Files.writeString(input, "<urn:subject> <urn:predicate> \"literal\" .\n");
+		Path managerBase = temporaryDirectory.resolve("server");
+		Path store = managerBase.resolve("repositories").resolve("Málaga store");
+		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
+
+		int exitCode = LmdbBulkLoad.run(new String[] {
+				"--store", store.toString(),
+				"--input", input.toString(),
+				"--statement-indexes", "ospc,spoc,posc",
+				"--triple-term-indexes", "posc",
+				"--inline-literals", "false",
+				"--value-hash-cache", "true",
+				"--progress", "none"
+		}, new ByteArrayInputStream(new byte[0]), new PrintStream(new ByteArrayOutputStream()),
+				new PrintStream(standardError));
+
+		assertThat(exitCode).as(standardError.toString(StandardCharsets.UTF_8)).isZero();
+		LmdbStoreConfig config = readStoreConfiguration(store);
+		assertThat(config.getTripleIndexes()).isEqualTo("ospc,spoc,posc");
+		assertThat(config.getTripleTermIndexes().split(",")).containsExactlyInAnyOrder("spoc", "cspo", "posc");
+		assertThat(config.getInlineLiterals()).isFalse();
+		assertThat(config.getValueHashCacheEnabled()).isTrue();
+		Path relocatedBase = temporaryDirectory.resolve("relocated server");
+		Files.move(managerBase, relocatedBase);
+		Path relocatedStore = relocatedBase.resolve("repositories").resolve(store.getFileName());
+		assertManagerCanOpenPreparedStore(relocatedBase, relocatedStore, 1);
+	}
+
+	@Test
+	void resumedLoadExportsTheRecordedSettingsAndFinalNativeMapSizes() throws Exception {
+		Path input = temporaryDirectory.resolve("input.nt");
+		Files.writeString(input, "<urn:subject> <urn:predicate> \"literal\" .\n");
+		Path managerBase = temporaryDirectory.resolve("server");
+		Path store = managerBase.resolve("repositories").resolve("resumed-store");
+		LmdbStoreConfig original = new LmdbStoreConfig("spoc,ospc,posc")
+				.setTripleTermIndexes("posc")
+				.setInlineLiterals(false)
+				.setValueHashCacheEnabled(true);
+		AtomicBoolean nativeRunsComplete = new AtomicBoolean();
+		LmdbBulkLoader interrupted = LmdbBulkLoader.builder(store, original)
+				.progressListener(snapshot -> {
+					if (snapshot.phase() == BulkLoadPhase.BUILD_NATIVE_RUNS && snapshot.phaseComplete()) {
+						nativeRunsComplete.set(true);
+					}
+				})
+				.cancellationSignal(nativeRunsComplete::get)
+				.build();
+		assertThatThrownBy(() -> interrupted.load(List.of(
+				new LmdbBulkLoader.PathInput(input, RDFFormat.NTRIPLES, "urn:test:base:"))))
+						.isInstanceOf(CancellationException.class);
+		assertThat(store.resolve("config.ttl")).doesNotExist();
+		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
+
+		int exitCode = LmdbBulkLoad.run(new String[] {
+				"--interactive", "--store", store.toString(), "--progress", "none"
+		}, new ByteArrayInputStream("y\n".getBytes(StandardCharsets.UTF_8)),
+				new PrintStream(new ByteArrayOutputStream()), new PrintStream(standardError));
+
+		assertThat(exitCode).as(standardError.toString(StandardCharsets.UTF_8)).isZero();
+		LmdbStoreConfig config = readStoreConfiguration(store);
+		assertThat(config.getTripleIndexes()).isEqualTo("spoc,ospc,posc");
+		assertThat(config.getTripleTermIndexes().split(",")).containsExactlyInAnyOrder("spoc", "cspo", "posc");
+		assertThat(config.getInlineLiterals()).isFalse();
+		assertThat(config.getValueHashCacheEnabled()).isTrue();
+		assertThat(store.resolveSibling(".resumed-store.lmdb-bulk-load")).doesNotExist();
+		assertManagerCanOpenPreparedStore(managerBase, store, 1);
+	}
+
+	@Test
+	void resumesAfterConfigurationPreparationFailsOrIsCancelled() throws Exception {
+		Path input = temporaryDirectory.resolve("input.nt");
+		Files.writeString(input, "<urn:subject> <urn:predicate> \"literal\" .\n");
+		for (boolean cancel : List.of(false, true)) {
+			Path managerBase = temporaryDirectory.resolve(cancel ? "cancelled-server" : "failed-server");
+			Path store = managerBase.resolve("repositories").resolve("resumed-store");
+			LmdbStoreConfig original = new LmdbStoreConfig("spoc,ospc,posc")
+					.setTripleTermIndexes("posc")
+					.setInlineLiterals(false)
+					.setValueHashCacheEnabled(true);
+			AtomicBoolean cancelled = new AtomicBoolean();
+			LmdbBulkLoader interrupted = LmdbBulkLoader.builder(store, original)
+					.preparedGenerationWriter((generation, config) -> {
+						Files.writeString(generation.resolve("config.ttl"), "incomplete configuration");
+						Files.writeString(generation.resolve("config.ttl.part"), "incomplete configuration");
+						if (cancel) {
+							cancelled.set(true);
+						} else {
+							throw new IOException("configuration preparation failed");
+						}
+					})
+					.cancellationSignal(cancelled::get)
+					.build();
+			assertThatThrownBy(() -> interrupted.load(List.of(
+					new LmdbBulkLoader.PathInput(input, RDFFormat.NTRIPLES, "urn:test:base:"))))
+							.isInstanceOf(cancel ? CancellationException.class : IOException.class);
+			assertThat(store.resolve("config.ttl")).doesNotExist();
+			assertThat(store.resolve("config.ttl.part")).doesNotExist();
+			ByteArrayOutputStream standardError = new ByteArrayOutputStream();
+
+			int exitCode = LmdbBulkLoad.run(new String[] {
+					"--interactive", "--store", store.toString(), "--progress", "none"
+			}, new ByteArrayInputStream("y\n".getBytes(StandardCharsets.UTF_8)),
+					new PrintStream(new ByteArrayOutputStream()), new PrintStream(standardError));
+
+			assertThat(exitCode).as(standardError.toString(StandardCharsets.UTF_8)).isZero();
+			LmdbStoreConfig config = readStoreConfiguration(store);
+			assertThat(config.getTripleIndexes()).isEqualTo("spoc,ospc,posc");
+			assertThat(config.getTripleTermIndexes().split(",")).containsExactlyInAnyOrder("spoc", "cspo", "posc");
+			assertThat(config.getInlineLiterals()).isFalse();
+			assertThat(config.getValueHashCacheEnabled()).isTrue();
+			assertThat(store.resolve("config.ttl.part")).doesNotExist();
+			assertThat(store.resolveSibling(".resumed-store.lmdb-bulk-load")).doesNotExist();
+			assertManagerCanOpenPreparedStore(managerBase, store, 1);
+		}
+	}
+
+	@Test
+	void failedLoadDoesNotPublishRepositoryConfiguration() throws Exception {
+		Path input = temporaryDirectory.resolve("invalid.nt");
+		Files.writeString(input, "invalid RDF\n");
+		Path store = temporaryDirectory.resolve("store");
+
+		int exitCode = LmdbBulkLoad.run(new String[] {
+				"--store", store.toString(), "--input", input.toString(), "--progress", "none"
+		}, new ByteArrayInputStream(new byte[0]), new PrintStream(new ByteArrayOutputStream()),
+				new PrintStream(new ByteArrayOutputStream()));
+
+		assertThat(exitCode).isEqualTo(1);
+		assertThat(store.resolve("config.ttl")).doesNotExist();
+	}
+
+	@Test
+	void rejectsUnusableRepositoryDirectoryNamesBeforeLoading() throws Exception {
+		Path input = temporaryDirectory.resolve("input.nt");
+		Files.writeString(input, "<urn:subject> <urn:predicate> <urn:object> .\n");
+		for (String name : List.of("CON", "trailing.", "unsafe%2fpart", "unsafe\\part", "Cafe\u0301")) {
+			Path store = temporaryDirectory.resolve(name);
+			ByteArrayOutputStream standardError = new ByteArrayOutputStream();
+
+			int exitCode = LmdbBulkLoad.run(new String[] {
+					"--store", store.toString(), "--input", input.toString(), "--progress", "none"
+			}, new ByteArrayInputStream(new byte[0]), new PrintStream(new ByteArrayOutputStream()),
+					new PrintStream(standardError));
+
+			assertThat(exitCode).as("invalid repository ID %s: %s", name, standardError).isEqualTo(2);
+			assertThat(standardError.toString(StandardCharsets.UTF_8)).contains("Repository ID");
+			assertThat(store).doesNotExist();
+			assertThat(store.resolveSibling("." + name + ".lmdb-bulk-load")).doesNotExist();
+		}
+	}
+
+	@Test
+	void standaloneMainPublishesAnImmediatelyUsableRepository() throws Exception {
+		Path input = temporaryDirectory.resolve("input.nt");
+		Files.writeString(input, "<urn:subject> <urn:predicate> <urn:object> .\n");
+		Path managerBase = temporaryDirectory.resolve("server");
+		Path store = managerBase.resolve("repositories").resolve("standalone-store");
+		Path log = temporaryDirectory.resolve("standalone.log");
+		String classPath = System.getProperty("surefire.test.class.path", System.getProperty("java.class.path"));
+		Process process = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+				"-cp", classPath, LmdbBulkLoad.class.getName(), "--store", store.toString(),
+				"--input", input.toString(), "--progress", "none")
+						.redirectErrorStream(true)
+						.redirectOutput(log.toFile())
+						.start();
+		try {
+			assertThat(process.waitFor(60, TimeUnit.SECONDS)).as("standalone CLI completion").isTrue();
+			assertThat(process.exitValue()).as(Files.readString(log)).isZero();
+			assertThat(Files.readString(log)).contains("LMDB bulk load complete:");
+			assertManagerCanOpenPreparedStore(managerBase, store, 1);
+		} finally {
+			if (process.isAlive()) {
+				process.destroyForcibly();
+			}
+		}
+	}
+
+	private static LmdbStoreConfig readStoreConfiguration(Path store) throws Exception {
+		Path configFile = store.resolve("config.ttl");
+		assertThat(configFile).isRegularFile();
+		Model model;
+		try (var input = Files.newInputStream(configFile)) {
+			model = Rio.parse(input, configFile.toUri().toString(), RDFFormat.TURTLE);
+		}
+		String repositoryId = store.getFileName().toString();
+		assertThat(RepositoryConfigUtil.getRepositoryIDs(model)).containsExactly(repositoryId);
+		RepositoryConfig repositoryConfig = RepositoryConfigUtil.getRepositoryConfig(model, repositoryId);
+		assertThat(repositoryConfig).isNotNull();
+		repositoryConfig.validate();
+		assertThat(repositoryConfig.getRepositoryImplConfig()).isInstanceOf(SailRepositoryConfig.class);
+		SailRepositoryConfig sailConfig = (SailRepositoryConfig) repositoryConfig.getRepositoryImplConfig();
+		assertThat(sailConfig.getSailImplConfig()).isInstanceOf(LmdbStoreConfig.class);
+		LmdbStoreConfig config = (LmdbStoreConfig) sailConfig.getSailImplConfig();
+		assertThat(config.getValueDBSize()).isEqualTo(persistedMapSize(store.resolve("values")));
+		assertThat(config.getTripleDBSize()).isEqualTo(persistedMapSize(store.resolve("triples")));
+		Properties properties = new Properties();
+		try (var input = Files.newInputStream(store.resolve("store.properties"))) {
+			properties.load(input);
+		}
+		assertThat(config.getTripleIndexes()).isEqualTo(properties.getProperty("triple-indexes"));
+		assertThat(config.getTripleTermIndexes()).isEqualTo(properties.getProperty("triple-term-indexes"));
+		return config;
+	}
+
+	private static void assertManagerCanOpenPreparedStore(Path managerBase, Path store, long expectedSize)
+			throws Exception {
+		LmdbStoreConfig config = readStoreConfiguration(store);
+		LocalRepositoryManager manager = new LocalRepositoryManager(managerBase.toFile());
+		manager.init();
+		try {
+			assertThat(manager.getRepositoryConfig(store.getFileName().toString())).isNotNull();
+			SailRepository repository = (SailRepository) manager.getRepository(store.getFileName().toString());
+			assertThat(repository).isNotNull();
+			assertThat(((LmdbStore) repository.getSail()).getMapGrowthCount())
+					.as("the ordinary repository manager opens the prepared store without growing a map")
+					.isZero();
+			try (var connection = repository.getConnection()) {
+				assertThat(connection.size()).isEqualTo(expectedSize);
+			}
+		} finally {
+			manager.shutDown();
+		}
+		assertThat(persistedMapSize(store.resolve("values"))).isEqualTo(config.getValueDBSize());
+		assertThat(persistedMapSize(store.resolve("triples"))).isEqualTo(config.getTripleDBSize());
+	}
+
+	private static long persistedMapSize(Path environmentDirectory) {
+		try (MemoryStack stack = stackPush()) {
+			PointerBuffer pointer = stack.mallocPointer(1);
+			assertThat(mdb_env_create(pointer)).isZero();
+			long environment = pointer.get(0);
+			try {
+				assertThat(mdb_env_open(environment, environmentDirectory.toString(), MDB_RDONLY | MDB_NOTLS, 0))
+						.isZero();
+				assertThat(mdb_env_set_mapsize(environment, 0)).isZero();
+				MDBEnvInfo info = MDBEnvInfo.malloc(stack);
+				assertThat(mdb_env_info(environment, info)).isZero();
+				return info.me_mapsize();
+			} finally {
+				mdb_env_close(environment);
+			}
+		}
+	}
 
 	@Test
 	void interactivelyCollectsMissingOptionsAndCreatesSelectedIndexes() throws Exception {

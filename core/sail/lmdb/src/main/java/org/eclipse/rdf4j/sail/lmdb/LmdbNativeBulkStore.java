@@ -13,11 +13,14 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.UUID;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.sail.lmdb.bulk.ValidatedBulkGeneration;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 
 /**
@@ -47,6 +50,7 @@ public final class LmdbNativeBulkStore implements AutoCloseable {
 	private final TripleStore tripleStore;
 	private final LmdbStoreConfig config;
 	private final LmdbStoreFormat format;
+	private final Path directory;
 	private boolean closed;
 
 	public LmdbNativeBulkStore(Path directory, LmdbStoreConfig config) throws IOException {
@@ -63,6 +67,7 @@ public final class LmdbNativeBulkStore implements AutoCloseable {
 			config.setTripleIndexes(DEFAULT_TRIPLE_INDEXES);
 		}
 		Path normalized = directory.toAbsolutePath().normalize();
+		this.directory = normalized;
 		Files.createDirectories(normalized);
 		File root = normalized.toFile();
 		LmdbStoreFormat.requireEmptyDirectory(root);
@@ -83,6 +88,8 @@ public final class LmdbNativeBulkStore implements AutoCloseable {
 		namespaceStore = openedNamespaces;
 		valueStore = openedValues;
 		tripleStore = openedTriples;
+		valueStore.beginBulkOwnership();
+		tripleStore.beginBulkOwnership();
 		if (properties.getTripleIndexes() == null || properties.getTripleIndexes().isBlank()) {
 			properties.setTripleIndexes(DEFAULT_TRIPLE_INDEXES);
 		}
@@ -144,6 +151,40 @@ public final class LmdbNativeBulkStore implements AutoCloseable {
 
 	public long mapGrowthCount() {
 		return valueStore.getBulkMapGrowthCount() + tripleStore.getBulkMapGrowthCount();
+	}
+
+	/** Completes only a generation whose canonical loader streams and index cardinalities have been verified. */
+	public void completeGeneration(ValidatedBulkGeneration validation) throws IOException {
+		validation.requireDirectory(directory);
+		UUID identity = UUID.randomUUID();
+		byte[] generation = ByteBuffer.allocate(16)
+				.putLong(identity.getMostSignificantBits())
+				.putLong(identity.getLeastSignificantBits())
+				.array();
+		tripleStore.completeValidatedBulkGeneration(generation, validation.statements());
+		valueStore.completeValidatedBulkGeneration(generation, config);
+		validation.bindNativeTransactions(valueStore.validatedBulkTransactionId(),
+				tripleStore.validatedBulkTransactionId());
+	}
+
+	/** Capture only after closing both owned native environments, including their last clean-close writes. */
+	public static LmdbStoreConfig sealPreparedGeneration(Path directory, LmdbStoreConfig config,
+			ValidatedBulkGeneration validation) throws IOException {
+		validation.requireDirectory(directory);
+		return PreparedBulkStore.seal(directory, config, validation.valueTransaction(), validation.tripleTransaction());
+	}
+
+	/** A metadata writer may add files but cannot change and silently re-certify either native environment. */
+	public static void requirePreparedGeneration(Path directory, LmdbStoreConfig config,
+			ValidatedBulkGeneration validation) throws IOException {
+		validation.requireDirectory(directory);
+		StoreProperties properties = new StoreProperties(directory.toFile());
+		properties.load();
+		PreparedBulkStore.Snapshot snapshot = PreparedBulkStore.read(directory, properties, config);
+		if (snapshot == null || snapshot.values().transactionId() != validation.valueTransaction()
+				|| snapshot.triples().transactionId() != validation.tripleTransaction()) {
+			throw new IOException("Prepared bulk generation changed before publication");
+		}
 	}
 
 	@Override

@@ -197,6 +197,28 @@ Batched RDF additions to existing format-2 repositories continue to use their or
 writes. The standalone bulk loader publishes a new format-6 repository and requires an empty target; it does not
 replace or upgrade an existing repository in place. These write paths do not depend on the experimental query profile.
 
+A successful standalone bulk load also publishes `config.ttl`, using the final target directory name as its repository
+ID. That name must satisfy the local repository manager's portable-name rules. The configuration records the effective
+statement and RDF-star indexes, all selected store settings, and the final native map capacities, including growth during
+loading. Place the target directly in the server's repository directory, or move the complete directory to another
+repository manager while retaining its name. If you rename the repository directory, update its repository ID in
+`config.ttl` to match.
+
+The loader establishes reference-count integrity and reserves startup capacity before publication, using its existing
+value and index passes. Its preparation metadata binds both native environments to the same generation and committed
+transactions. An unchanged repository opened with its generated configuration skips startup discovery scans,
+reference-count reconstruction, value reclamation, retirement recovery and map growth. Ordinary writes invalidate that
+prepared state; a later open uses the normal safety checks. Missing, corrupt, stale or incompatible preparation metadata
+also uses ordinary validation and recovery. Explicitly enabled experimental value-overlay, sketch-estimator and
+direct-adjacency caches retain their separate startup build behavior; the standalone defaults leave them disabled.
+
+For the Java bulk-loader API, repository configuration remains application-owned. Its
+`preparedGenerationWriter` callback receives the private directory and effective `LmdbStoreConfig`, so application
+metadata can be included in the same publication. A callback failure or cancellation leaves the load unpublished, and
+native database files must not be modified by the callback. Resuming a current load preserves its recorded settings and
+publishes configuration with the completed native generation. Older interrupted workspaces without required integrity
+metadata must be restarted from their inputs using a new workspace.
+
 A genuinely new, empty repository uses format 6. It records an older-reader rejection marker and cannot be opened by
 the format-2 implementation, even when optional query optimizations and all three accelerators are disabled. To move
 format-6 data to an older release, export RDF with a format-6-capable reader, then import it into a fresh repository created

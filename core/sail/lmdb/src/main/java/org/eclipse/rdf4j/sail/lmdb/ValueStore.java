@@ -51,6 +51,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_mapsize;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxdbs;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxreaders;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_sync;
 import static org.lwjgl.util.lmdb.LMDB.mdb_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
@@ -471,7 +472,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 	}
 
-	private static boolean isValidRefCountMarker(ByteBuffer marker, long nativeTransactionId) {
+	static boolean isValidRefCountMarker(ByteBuffer marker, long nativeTransactionId) {
 		if (marker == null || marker.remaining() != REFCOUNT_MARKER_BYTES) {
 			return false;
 		}
@@ -641,7 +642,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private static final byte REFCOUNT_MARKER_VERSION = 1;
 	private static final byte REFCOUNT_MARKER_DIRTY = 0;
 	private static final byte REFCOUNT_MARKER_CLEAN = 1;
-	private static final int REFCOUNT_MARKER_BYTES = Integer.BYTES + 2 + Long.BYTES + Integer.BYTES;
+	static final int REFCOUNT_MARKER_BYTES = Integer.BYTES + 2 + Long.BYTES + Integer.BYTES;
 	private static final int REFCOUNT_REBUILD_BATCH_SIZE = 4096;
 
 	private static final class PreparedValueFootprint {
@@ -936,6 +937,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private boolean auxiliaryDatabasesInitialized;
 	/** True only after a complete live-owner count establishment or a valid clean-close marker. */
 	private boolean refCountIntegrityEstablished;
+	private boolean bulkNativeOwnership;
+	private boolean bulkCompletionSynced;
 	private final boolean refCountRepairEnabled;
 	/** A known structured marker left by a previous format-2 opener, to be removed when repair is disabled. */
 	private boolean legacyStructuredRefCountMarker;
@@ -1230,6 +1233,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	private void initializeAfterOpen(LmdbStoreConfig config) throws IOException {
 		valueStoreInitializationComplete = false;
+		if (properties.preparedBulkStore != null && (startupMarkerStatus == null || !startupMarkerStatus.valid()
+				|| startupMarkerStatus.nativeTransactionId() != properties.preparedBulkStore.values()
+						.transactionId())) {
+			throw new IOException("Prepared bulk value generation changed during startup");
+		}
 		if (!refCountRepairEnabled) {
 			logger.warn("LMDB format-2 component reference-count repair is disabled; historical counts remain "
 					+ "unverified and dictionary reclamation is deferred. Enable "
@@ -1272,7 +1280,13 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			startupExpectedLastTransactionId = -1L;
 			throw failure;
 		}
-		establishRefCountIntegrity();
+		if (properties.preparedBulkStore != null && startupMarkerStatus != null && startupMarkerStatus.valid()
+				&& !refCountRecoveryRequired && lastTransactionId() == lastTrustedNativeTransactionId) {
+			// The owning store already checked both native generation identities and this exact clean marker.
+			refCountIntegrityEstablished = true;
+		} else {
+			establishRefCountIntegrity();
+		}
 		if (!deferPersistedUnusedRecovery) {
 			freePersistedUnusedValuesAfterRecovery();
 		}
@@ -1478,6 +1492,54 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		refCountRecoveryRequired = true;
 	}
 
+	void beginBulkOwnership() throws IOException {
+		bulkNativeOwnership = true;
+		lastTrustedNativeTransactionId = lastTransactionId();
+	}
+
+	long validatedBulkTransactionId() throws IOException {
+		long current = lastTransactionId();
+		if (!bulkCompletionSynced || current != lastTrustedNativeTransactionId) {
+			throw new IOException("Bulk dictionary changed after validated completion");
+		}
+		return current;
+	}
+
+	/** Called only by the native owner after the canonical loader has verified all generated streams. */
+	void completeValidatedBulkGeneration(byte[] generation, LmdbStoreConfig config) throws IOException {
+		if (!bulkNativeOwnership || !auxiliaryDatabasesInitialized || writeTxn != 0L
+				|| lastTransactionId() != lastTrustedNativeTransactionId) {
+			throw new IOException("Cannot certify an unowned or incomplete bulk dictionary");
+		}
+		long startupBytes = preflightStartupBootstrapCapacity(config);
+		// Reserve the same bounded metadata footprint needed by an ordinary opening, plus this preparation and clean
+		// close. These are actual database-tree reservations, not a whole-dictionary reconstruction estimate.
+		long requiredBytes = Math.multiplyExact(startupBytes, 3L);
+		reserveWriteCapacity(requiredBytes);
+		readTransaction(env, (stack, txn) -> {
+			if (growthPolicy.hardCapacityRequired(mapSize, LmdbUtil.getNewSize(pageSize, txn, 0L), requiredBytes)) {
+				throw new IOException("Insufficient value-map capacity to complete bulk startup preparation");
+			}
+			return null;
+		});
+		writeTransaction((stack, txn) -> {
+			int metadata = openDatabaseWithTxn(txn, "gc_meta", 0);
+			MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(PreparedBulkStore.GENERATION_KEY));
+			MDBVal value = MDBVal.calloc(stack).mv_data(stack.bytes(generation));
+			E(mdb_put(txn, metadata, key, value, 0));
+			return null;
+		});
+		refCountRecoveryRequired = false;
+		refCountIntegrityEstablished = true;
+		valueStoreInitializationComplete = true;
+		writeCleanRefCountMarker();
+		if (!refCountIntegrityEstablished) {
+			throw new IOException("Could not complete bulk reference-count integrity metadata");
+		}
+		E(mdb_env_sync(env, true));
+		bulkCompletionSynced = true;
+	}
+
 	private void initializeIdsAndTermIndexes(LmdbStoreConfig config) throws IOException {
 		// Recover the counter before opening the term indexes commits and persists it.
 		readTransaction(env, (stack, txn) -> {
@@ -1597,6 +1659,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private void establishRefCountIntegrity() throws IOException {
+		LmdbStartupDiagnostics.observe(LmdbStartupDiagnostics.Operation.REFCOUNT_INTEGRITY);
 		refCountIntegrityEstablished = false;
 		if (!refCountRepairEnabled) {
 			return;
@@ -1698,6 +1761,14 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		currentTripleLivenessAvailable = true;
 	}
 
+	void completePreparedStoreInitialization(ValueIdLivenessChecker livenessChecker) throws IOException {
+		if (!refCountIntegrityEstablished || refCountRecoveryRequired) {
+			throw new IOException("Prepared store lost its reference-count integrity proof during startup");
+		}
+		this.valueIdLivenessChecker = Objects.requireNonNull(livenessChecker);
+		currentTripleLivenessAvailable = true;
+	}
+
 	/** Owner startup retirement recovery may author further unused rows after the initial reclaim phase. */
 	void completeRetiredValueIdRecovery() throws IOException {
 		if (!currentTripleLivenessAvailable) {
@@ -1724,6 +1795,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private void rebuildRefCounts() throws IOException {
+		LmdbStartupDiagnostics.observe(LmdbStartupDiagnostics.Operation.REFCOUNT_REBUILD);
 		if (tripleTermSpocIndex == null) {
 			throw new IOException("Cannot rebuild ValueStore ref_counts: the live SPOC term index is unavailable");
 		}
@@ -2634,6 +2706,20 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private void openAuxiliaryDatabases(boolean freshBulkLoad) throws IOException {
 		if (auxiliaryDatabasesInitialized) {
 			throw new IllegalStateException("ValueStore auxiliary databases are already initialized");
+		}
+		if (freshBulkLoad) {
+			writeTransaction((stack, txn) -> {
+				unusedDbi = openDatabaseWithTxn(txn, "unused_ids", MDB_CREATE);
+				freeDbi = openDatabaseWithTxn(txn, "free_ids", MDB_CREATE);
+				refCountsDbi = openDatabaseWithTxn(txn, "ref_counts", MDB_CREATE);
+				retiredIdStore.openWithTransaction(env, txn, true);
+				return null;
+			});
+			retiredIdStore.syncAfterTransaction(env);
+			txnManager.reset();
+			freeIdsAvailable = false;
+			auxiliaryDatabasesInitialized = true;
+			return;
 		}
 		// open unused IDs database
 		unusedDbi = openDatabase(env, "unused_ids", MDB_CREATE);
@@ -9884,7 +9970,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				refreshCommittedHighWater();
 				long observedNativeTransactionId = trustedPostCommitTransactionId(nativeTransactionId[0],
 						priorNativeTransactionId[0]);
-				if (refCountIntegrityEstablished) {
+				if (refCountIntegrityEstablished || bulkNativeOwnership) {
 					lastTrustedNativeTransactionId = observedNativeTransactionId;
 				}
 				// Never publish from inside the native transaction callback.
@@ -10182,7 +10268,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (startupInitializationInProgress) {
 			startupExpectedLastTransactionId = observedNativeTransactionId;
 		}
-		if (refCountIntegrityEstablished) {
+		if (refCountIntegrityEstablished || bulkNativeOwnership) {
 			lastTrustedNativeTransactionId = observedNativeTransactionId;
 		}
 	}
@@ -10207,7 +10293,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private void validateNativeWriterTransaction(long txn, long expectedLastTransactionId) throws IOException {
-		if ((!refCountIntegrityEstablished && !startupInitializationInProgress) || expectedLastTransactionId < 0L) {
+		if ((!refCountIntegrityEstablished && !startupInitializationInProgress && !bulkNativeOwnership)
+				|| expectedLastTransactionId < 0L) {
 			return;
 		}
 		long expected;
@@ -12198,7 +12285,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				if (startupInitializationInProgress) {
 					startupExpectedLastTransactionId = observed;
 				}
-				if (refCountIntegrityEstablished) {
+				if (refCountIntegrityEstablished || bulkNativeOwnership) {
 					lastTrustedNativeTransactionId = observed;
 				}
 				completeCompressedValueMutation(overlay);
@@ -12774,6 +12861,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private void writeCleanRefCountMarker() {
+		if (bulkCompletionSynced) {
+			return;
+		}
 		if (!refCountRepairEnabled || !valueStoreInitializationComplete || !auxiliaryDatabasesInitialized
 				|| !refCountIntegrityEstablished
 				|| refCountRecoveryRequired

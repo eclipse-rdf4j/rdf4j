@@ -85,6 +85,7 @@ final class LegacyStoreDiscovery {
 	}
 
 	static void discover(File directory, StoreProperties properties) throws IOException {
+		LmdbStartupDiagnostics.observe(LmdbStartupDiagnostics.Operation.DISCOVERY);
 		File values = new File(directory, "values/data.mdb");
 		File triples = new File(directory, "triples/data.mdb");
 		boolean valuesPresent = values.isFile();
@@ -107,6 +108,7 @@ final class LegacyStoreDiscovery {
 				triplesEnv = openReadOnlyEnvironment(stack, triples.getParentFile());
 				valuesTxn = beginReadOnly(stack, valuesEnv);
 				triplesTxn = beginReadOnly(stack, triplesEnv);
+				PreparedBulkStore.validateGenerationPair(stack, valuesTxn, triplesTxn);
 				int valuesMain = openMainDatabase(stack, valuesTxn);
 				int triplesMain = openMainDatabase(stack, triplesTxn);
 				Map<String, Integer> valuesDatabases = readDatabaseCatalog(stack, valuesTxn, valuesMain, false);
@@ -204,6 +206,7 @@ final class LegacyStoreDiscovery {
 	/** Enumerates named databases from LMDB's own catalog, retaining raw names until the allowlist check. */
 	private static Map<String, Integer> readDatabaseCatalog(MemoryStack stack, long transaction, int mainDatabase,
 			boolean requireOnlyNamedEntries) throws IOException {
+		LmdbStartupDiagnostics.observe(LmdbStartupDiagnostics.Operation.CATALOG_SCAN);
 		Map<String, Integer> databases = new HashMap<>();
 		PointerBuffer cursorHandle = stack.mallocPointer(1);
 		E(mdb_cursor_open(transaction, mainDatabase, cursorHandle));
@@ -395,7 +398,8 @@ final class LegacyStoreDiscovery {
 				if (!Arrays.equals(bytes, TripleStore.NAMESPACE_FORMAT_KEY)
 						&& !Arrays.equals(bytes, TripleStore.NAMESPACE_SNAPSHOT_KEY)
 						&& !Arrays.equals(bytes, TripleStore.INDEX_FORMAT_KEY)
-						&& !Arrays.equals(bytes, TripleStore.INDEX_SPECS_KEY)) {
+						&& !Arrays.equals(bytes, TripleStore.INDEX_SPECS_KEY)
+						&& !Arrays.equals(bytes, PreparedBulkStore.GENERATION_KEY)) {
 					throw new IOException("Unrecognized namespace database metadata key: " + printablePrefix(bytes));
 				}
 				result = mdb_cursor_get(cursor, key, value, MDB_NEXT);

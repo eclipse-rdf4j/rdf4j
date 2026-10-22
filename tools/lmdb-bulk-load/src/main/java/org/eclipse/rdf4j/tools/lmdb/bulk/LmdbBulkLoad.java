@@ -18,10 +18,12 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -37,6 +39,13 @@ import java.util.TreeMap;
 import java.util.concurrent.CancellationException;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.repository.config.LocalRepositoryIdValidator;
+import org.eclipse.rdf4j.repository.config.RepositoryConfig;
+import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
+import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParserRegistry;
 import org.eclipse.rdf4j.rio.Rio;
@@ -133,6 +142,13 @@ public final class LmdbBulkLoad {
 		diskSpaceMonitor.watch(options.store(), options.temporaryDirectory());
 
 		try {
+			Path targetName = options.store().toAbsolutePath().normalize().getFileName();
+			String repositoryId = targetName == null ? null : targetName.toString();
+			try {
+				LocalRepositoryIdValidator.validate(repositoryId);
+			} catch (RepositoryConfigException e) {
+				throw new UsageException(e.getMessage());
+			}
 			LmdbStoreConfig config = new LmdbStoreConfig();
 			if (options.statementIndexes() != null) {
 				config.setTripleIndexes(options.statementIndexes());
@@ -150,7 +166,9 @@ public final class LmdbBulkLoad {
 			}
 
 			LmdbBulkLoader.Builder builder = LmdbBulkLoader.builder(options.store(), config)
-					.parserMode(options.parserMode());
+					.parserMode(options.parserMode())
+					.preparedGenerationWriter((generation, preparedConfig) -> writeRepositoryConfiguration(generation,
+							repositoryId, preparedConfig));
 			// Without a compression option the loader picks its own default, which skips compressing the staged
 			// inputs when every input is read by the fast parser.
 			if (options.compression() != null) {
@@ -222,6 +240,24 @@ public final class LmdbBulkLoad {
 			error.println("LMDB bulk load failed: " + failure.getMessage());
 			failure.printStackTrace(error);
 			return LOAD_FAILURE;
+		}
+	}
+
+	private static void writeRepositoryConfiguration(Path generation, String repositoryId, LmdbStoreConfig config)
+			throws IOException {
+		RepositoryConfig repositoryConfig = new RepositoryConfig(repositoryId, new SailRepositoryConfig(config));
+		repositoryConfig.validate();
+		Model model = new LinkedHashModel();
+		repositoryConfig.export(model, Values.bnode());
+		Path configFile = generation.resolve("config.ttl");
+		Path temporaryFile = generation.resolve("config.ttl.part");
+		try (var output = Files.newOutputStream(temporaryFile)) {
+			Rio.write(model, output, RDFFormat.TURTLE);
+		}
+		try {
+			Files.move(temporaryFile, configFile, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+		} catch (AtomicMoveNotSupportedException e) {
+			Files.move(temporaryFile, configFile, StandardCopyOption.REPLACE_EXISTING);
 		}
 	}
 

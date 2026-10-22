@@ -55,6 +55,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_mapsize;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxdbs;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxreaders;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_stat;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_sync;
 import static org.lwjgl.util.lmdb.LMDB.mdb_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
@@ -431,6 +432,7 @@ class TripleStore implements Closeable {
 	private TxnReplayPolicy.Decision replayDecision;
 	private final Object capacityOrigin = new Object();
 	private long bulkMapGrowthCount;
+	private long bulkExpectedTransactionId = -1L;
 	volatile Runnable beforePhysicalCommitForTest;
 	private final TxnManager txnManager;
 	private volatile LmdbSailStore.MapGrowthAttemptSupplier mapGrowthAttemptSupplier;
@@ -1050,6 +1052,41 @@ class TripleStore implements Closeable {
 			E(mdb_env_info(env, info));
 			return info.me_last_txnid();
 		}
+	}
+
+	void beginBulkOwnership() throws IOException {
+		bulkExpectedTransactionId = lastTransactionId();
+	}
+
+	long validatedBulkTransactionId() throws IOException {
+		long current = lastTransactionId();
+		if (bulkExpectedTransactionId < 0L || current != bulkExpectedTransactionId) {
+			throw new IOException("Bulk triple generation changed after validated completion");
+		}
+		return current;
+	}
+
+	void completeValidatedBulkGeneration(byte[] generation, long expectedStatements) throws IOException {
+		if (bulkExpectedTransactionId < 0L || lastTransactionId() != bulkExpectedTransactionId) {
+			throw new IOException("Bulk triple generation has an unrecognized native writer");
+		}
+		for (long entries : explicitIndexEntryCounts().values()) {
+			if (entries != expectedStatements) {
+				throw new IOException("Incomplete bulk statement index");
+			}
+		}
+		reserveWriteCapacity(PreparedBulkStore.GENERATION_KEY.length + generation.length);
+		startTransaction();
+		try (MemoryStack stack = stackPush()) {
+			writeNamespaceDatabaseValue(stack, writeTxn, PreparedBulkStore.GENERATION_KEY, generation);
+			nativeMutation = true;
+			unjournaledMutation = true;
+			endTransaction(true);
+		} catch (IOException | RuntimeException | Error failure) {
+			endTransaction(false);
+			throw failure;
+		}
+		E(mdb_env_sync(env, true));
 	}
 
 	char[] mainIndexFieldSequence() {
@@ -2211,7 +2248,7 @@ class TripleStore implements Closeable {
 
 		// Align the configured size with LMDB's page size, preserving the zero-size and empty-versus-populated rules.
 		long configMapSize = (tripleDbSize / pageSize) * pageSize;
-		if (state.empty()) {
+		if (state.empty() && properties.preparedBulkStore == null) {
 			// This is an empty database, so use the configured map size.
 			E(setMapSize(configMapSize));
 		}
@@ -4987,6 +5024,11 @@ class TripleStore implements Closeable {
 			PointerBuffer pp = stack.mallocPointer(1);
 			E(mdb_txn_begin(env, NULL, 0, pp));
 			writeTxn = pp.get(0);
+			if (bulkExpectedTransactionId >= 0L && mdb_txn_id(writeTxn) != bulkExpectedTransactionId + 1L) {
+				mdb_txn_abort(writeTxn);
+				writeTxn = 0L;
+				throw new IOException("Bulk triple generation observed an intervening native writer");
+			}
 		}
 	}
 
@@ -6471,7 +6513,12 @@ class TripleStore implements Closeable {
 	}
 
 	int commitWriteTransaction(long transaction) {
-		return mdb_txn_commit(transaction);
+		long transactionId = bulkExpectedTransactionId >= 0L ? mdb_txn_id(transaction) : -1L;
+		int result = mdb_txn_commit(transaction);
+		if (result == MDB_SUCCESS && bulkExpectedTransactionId >= 0L) {
+			bulkExpectedTransactionId = transactionId;
+		}
+		return result;
 	}
 
 	private void commit(boolean advanceDataRevision) throws IOException {

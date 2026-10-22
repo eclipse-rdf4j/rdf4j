@@ -138,6 +138,9 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	private SailStore store;
 
 	private LmdbSailStore backingStore;
+	private PreparedBulkStore.Snapshot preparedBulkSnapshot;
+	private long preparedAdmissionValueTransaction;
+	private long preparedAdmissionTripleTransaction;
 
 	// used to decide if store is writable, is true if the store was writable during initialization
 	private boolean isWritable;
@@ -404,7 +407,11 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		try {
 			StoreProperties properties = new StoreProperties(dataDir);
 			properties.load();
-			LegacyStoreDiscovery.discover(dataDir, properties);
+			preparedBulkSnapshot = PreparedBulkStore.read(dataDir.toPath(), properties, config);
+			properties.preparedBulkStore = preparedBulkSnapshot;
+			if (preparedBulkSnapshot == null) {
+				LegacyStoreDiscovery.discover(dataDir, properties);
+			}
 			format = LmdbStoreFormat.resolve(dataDir, properties, config);
 			if (!properties.isLoaded() && !properties.hasNativeGeneration()) {
 				format.initializeProperties(properties);
@@ -415,6 +422,10 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 			boolean useSketchBasedJoinEstimator = shouldUseSketchBasedJoinEstimator();
 			backingStore = createBackingStore(dataDir, properties, config, useSketchBasedJoinEstimator);
+			if (preparedBulkSnapshot != null) {
+				preparedAdmissionValueTransaction = backingStore.valueStore().lastTransactionId();
+				preparedAdmissionTripleTransaction = backingStore.getTripleStore().lastTransactionId();
+			}
 			properties.save();
 
 			this.store = new SnapshotSailStore(backingStore, () -> new MemoryOverflowModel() {
@@ -463,6 +474,15 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 		try {
 			store.close();
+			if (preparedBulkSnapshot != null) {
+				try {
+					PreparedBulkStore.refreshAfterReadOnlyClose(getDataDir().toPath(), preparedBulkSnapshot,
+							preparedAdmissionValueTransaction, preparedAdmissionTripleTransaction, config);
+				} catch (IOException | RuntimeException notRenewable) {
+					// A stale optimization hint is safe: the next open performs ordinary discovery and recovery.
+					logger.debug("Bulk startup certificate was not renewed after close", notRenewable);
+				}
+			}
 		} finally {
 			dirLock.release();
 			if (dependentServiceResolver != null) {

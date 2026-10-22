@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFHandler;
+import org.eclipse.rdf4j.sail.lmdb.LmdbNativeBulkStore;
 
 final class LmdbBulkLoaderEngine {
 
@@ -203,9 +204,17 @@ final class LmdbBulkLoaderEngine {
 						loader.config(), loader.format(),
 						nativeValueRecords, statements, staged, loader.memoryBudgetBytes(), loader.maxOpenFiles(),
 						loader.writeTransactionRecords(), loader.writeTransactionBytes(), workspace.compression(),
-						loader.cancellationSignal(), scheduler);
+						loader.cancellationSignal(), scheduler, () -> {
+							workspace.completePhase(BulkLoadPhase.WRITE_GENERATION);
+							workspace.startPhase(BulkLoadPhase.VALIDATE_GENERATION);
+						});
+				checkCancelled(loader);
+				loader.preparedGenerationWriter().write(generation.directory(), writeResult.preparedConfig());
+				checkCancelled(loader);
+				LmdbNativeBulkStore.requirePreparedGeneration(generation.directory(),
+						writeResult.preparedConfig(), writeResult.validation());
 				workspace.progress(writeResult.storedStatements(), 0L);
-				workspace.completePhase(BulkLoadPhase.WRITE_GENERATION);
+				workspace.completePhase(BulkLoadPhase.VALIDATE_GENERATION);
 
 				long storedStatements = writeResult.storedStatements();
 				long temporaryBytes = workspace.bytesWritten();

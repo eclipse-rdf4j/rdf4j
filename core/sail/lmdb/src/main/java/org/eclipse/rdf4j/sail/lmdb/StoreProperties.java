@@ -106,6 +106,8 @@ class StoreProperties {
 
 	/** Both native environments were present during the locked, read-only startup preflight. */
 	private boolean nativeGenerationPresent;
+	/** Validated only while the owning LmdbStore holds its directory lock; never serialized as a boolean. */
+	PreparedBulkStore.Snapshot preparedBulkStore;
 
 	protected boolean dirty;
 
