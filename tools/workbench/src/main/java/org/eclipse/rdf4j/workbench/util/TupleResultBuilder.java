@@ -27,6 +27,8 @@ import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
 import org.eclipse.rdf4j.query.resultio.QueryResultWriter;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.http.HTTPRepository;
 
 /**
  * A small wrapper around {@link QueryResultWriter} to make it easier to generate results in servlets.
@@ -55,6 +57,14 @@ public class TupleResultBuilder {
 			((WorkbenchPageResultWriter) out).view(viewId);
 		}
 		return this;
+	}
+
+	/** Configures proof and transport only for this browser page response and connection. */
+	public void repositoryOrigins(RepositoryConnection connection) {
+		if (out instanceof WorkbenchPageResultWriter pageWriter) {
+			pageWriter.repositoryOrigins(connection.getValueFactory());
+			HTTPRepository.setBNodeOriginEnabled(connection, true);
+		}
 	}
 
 	/**

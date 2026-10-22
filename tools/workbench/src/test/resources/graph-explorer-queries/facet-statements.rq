@@ -1,0 +1,9 @@
+SELECT ?s ?p ?o WHERE { {
+ SELECT DISTINCT ?s ?p ?o WHERE {
+ VALUES ?s { <urn:ex:one> } ?s ?p ?o . FILTER(!isTRIPLE(?o))
+ } LIMIT 101
+ } UNION {
+ SELECT DISTINCT ?s ?p ?o WHERE {
+ VALUES ?s { <urn:ex:hub> } ?s ?p ?o . FILTER(!isTRIPLE(?o))
+ } LIMIT 101
+ } }

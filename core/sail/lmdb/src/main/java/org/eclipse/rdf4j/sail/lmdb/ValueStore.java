@@ -122,6 +122,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.StoredBNodeIdResolver;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractValueFactory;
@@ -166,7 +167,11 @@ import org.slf4j.LoggerFactory;
  */
 @Experimental
 @InternalUseOnly
-public class ValueStore extends AbstractValueFactory implements BNodeIdResolver {
+public class ValueStore extends AbstractValueFactory implements BNodeIdResolver, StoredBNodeIdResolver {
+	@Override
+	public boolean hasStoredBNodeId(String id) {
+		return hasBNodeId(id);
+	}
 
 	@Override
 	public boolean hasBNodeId(String id) {
@@ -3863,6 +3868,48 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		valueResolutionScopes.remove(scope);
 	}
 
+	/** Admission did not start; the caller must release every native/publication resource before waiting. */
+	static final class ValueReadAdmissionException extends IOException {
+		private static final long serialVersionUID = 1L;
+
+		private ValueReadAdmissionException() {
+			super("Dictionary identity admission must wait outside native barriers");
+		}
+	}
+
+	/** Waits only after a failed admission has released native barriers, snapshot handles and reader permits. */
+	void awaitValueReaderAdmission() throws IOException {
+		acquireAssociationGate(QueryExecutionDeadline.current());
+		try {
+			synchronized (writerAdmission) {
+				if (shuttingDown || env == 0) {
+					throw new IOException("ValueStore is closed");
+				}
+			}
+		} finally {
+			associationGate.unlock();
+		}
+	}
+
+	private boolean tryAcquireAssociationGate(QueryExecutionDeadline deadline) throws IOException {
+		checkValueScopeDeadline(deadline);
+		try {
+			if (!associationGate.tryLock(0L, TimeUnit.NANOSECONDS)) {
+				return false;
+			}
+		} catch (InterruptedException failure) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while capturing dictionary identity", failure);
+		}
+		try {
+			checkValueScopeDeadline(deadline);
+			return true;
+		} catch (RuntimeException | Error failure) {
+			associationGate.unlock();
+			throw failure;
+		}
+	}
+
 	private boolean canRetainValueReader(ValueStoreRevision.Lazy revision) {
 		if (revision.association() == null
 				|| revision.association().state != NativeValueAssociation.State.COMMITTED) {
@@ -3879,6 +3926,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		ValueReadScope scope = new ValueReadScope(revision, true);
 		try {
 			return txnManager.tryCreateRetainedReadTxnUnderReadLock(scope::open);
+		} catch (ValueReadAdmissionException notAdmitted) {
+			return null;
 		} finally {
 			scope.releaseReservation();
 		}
@@ -3936,7 +3985,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		return scope == null ? revision : scope.revision(lazy);
 	}
 
-	/** Reader admission takes the native barrier first; this gate covers native begin and identity capture only. */
+	/** Native admission never waits for this gate; it covers native begin and identity capture only. */
 	private final class ValueReadScope implements TxnManager.ReaderStartScope {
 		private final ValueStoreRevision.Lazy requested;
 		private final boolean retained;
@@ -3975,7 +4024,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 				}
 			}
 			QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
-			acquireAssociationGate(deadline);
+			if (!tryAcquireAssociationGate(deadline)) {
+				throw new ValueReadAdmissionException();
+			}
 			gateHeld = true;
 			boolean capturedIdentity = false;
 			try {
@@ -4037,6 +4088,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 			// association ownership through the complete borrowed read, and recheck after acquiring that ownership.
 			acquireAssociationGate(QueryExecutionDeadline.current());
 			try {
+				synchronized (writerAdmission) {
+					if (shuttingDown) {
+						throw new IOException("ValueStore is closed");
+					}
+				}
 				WriterPublication publication = writerPublication;
 				if (isWriteTransactionOwner() && publication != null
 						&& (publication.consumer == null || publication.consumer == Thread.currentThread())) {
@@ -4055,12 +4111,20 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 			}
 			return LmdbUtil.readTransaction(env, borrowed, transaction);
 		}
-		ValueReadScope scope = new ValueReadScope(requested);
-		try {
-			return txnManager.doWithPriority((stack, txn) -> withScopedValueReadContext(txn, scope, transaction),
-					scope::open);
-		} finally {
-			scope.releaseReservation();
+		while (true) {
+			ValueReadScope scope = new ValueReadScope(requested);
+			try {
+				try {
+					return txnManager.doWithPriority(
+							(stack, txn) -> withScopedValueReadContext(txn, scope, transaction),
+							scope::open);
+				} finally {
+					scope.releaseReservation();
+				}
+			} catch (ValueReadAdmissionException notAdmitted) {
+				// The failed native start returned its permit and read barrier before this event-driven wait.
+				awaitValueReaderAdmission();
+			}
 		}
 	}
 
@@ -5686,6 +5750,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 						resolved = txnManager.tryDoWith(
 								(stack, txn) -> withScopedValueReadContext(txn, scope, decode),
 								scope::open);
+					} catch (ValueReadAdmissionException notAdmitted) {
+						resolved = null;
 					} finally {
 						scope.releaseReservation();
 					}
@@ -8792,8 +8858,23 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 			return start(null);
 		}
 
-		/** Captures shared ID retention atomically with native admission under an already-pinned triple capability. */
+		/** Waits outside its native barrier, retaining only the caller-owned triple capability across admission. */
 		synchronized ReadSnapshot start(Txn tripleTxn) throws IOException {
+			while (true) {
+				try {
+					return tryStart(tripleTxn);
+				} catch (ValueReadAdmissionException notAdmitted) {
+					awaitValueReaderAdmission();
+					reservation = txnManager.reserveReadTxn(false);
+				}
+			}
+		}
+
+		/**
+		 * Captures shared ID retention atomically with native admission. A caller holding publication or paired-reader
+		 * resources must unwind all of them on ValueReadAdmissionException before waiting and reserving again.
+		 */
+		synchronized ReadSnapshot tryStart(Txn tripleTxn) throws IOException {
 			if (reservation == null) {
 				throw new IllegalStateException(
 						"ValueStore read snapshot reservation has already been consumed or closed");
@@ -12771,6 +12852,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 				Thread.currentThread().interrupt();
 			}
 		}
+		// A borrowed writer can need the native exclusive barrier to resize. Drain its association ownership
+		// before taking either that barrier or the store monitor, which its checkpoint may also need.
+		associationGate.lock();
+		associationGate.unlock();
 	}
 
 	/** Rechecks after taking the store monitor, since another clear may have reopened writer admission. */
@@ -12814,15 +12899,18 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 			try (TxnManager.CloseBarrier ignored = txnManager.acquireCloseBarrier()) {
 				nativeQuiesced = true;
 				if (env != 0) {
-					try {
-						// Capture/claim under the association gate before freezing values or retiring readers.
-						// A commit that wins this race owns all native refresh and publication cleanup.
-						endTransaction(false, false);
-					} catch (Throwable closeFailure) {
-						failure = appendFailure(failure, closeFailure);
+					if (!associationGate.tryLock()) {
+						// Release the exclusive barrier and monitor before waiting for a borrowed writer to finish.
+						return false;
 					}
-					associationGate.lock();
 					try {
+						try {
+							// Capture/claim under the association gate before freezing values or retiring readers.
+							// A commit that wins this race owns all native refresh and publication cleanup.
+							endTransaction(false, false);
+						} catch (Throwable closeFailure) {
+							failure = appendFailure(failure, closeFailure);
+						}
 						if (hasActiveWriterConsumer()) {
 							// Retry outside both locks. The winning consumer may need native access to finish.
 							return false;

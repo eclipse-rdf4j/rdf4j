@@ -13,14 +13,13 @@
 
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const http = require('node:http');
-const https = require('node:https');
 const {
 	createSeededRepository,
 	deleteRepository,
 	openQueryPage,
 	serverBaseUrl,
 	setQueryEditor,
+	signInOnConnectionPage,
 	uniqueRepositoryId,
 	waitForRoute
 } = require('./workbench-test-helpers.js');
@@ -343,6 +342,9 @@ test('Load more after the result shrank below the offset completes with the rows
 // R14: a stream that breaks the protocol is the server's fault; only a failure to keep the rows is the browser's.
 test('a result stream that breaks the protocol is not blamed on the browser', async ({ page }) => {
 	await openQueryPage(page, REPOSITORY_ID, { viewport: { width: 1280, height: 900 } });
+	// A stream from another server is refused before it is read: the stand-in answers as the page's server.
+	const serverIdentity = await page.locator('#workbench-app').getAttribute('data-workbench-server-identity');
+	expect(serverIdentity).toBeTruthy();
 	await page.route(/\/query$/, async (route) => {
 		const sent = route.request();
 		if (sent.method() !== 'POST' || !(sent.postData() || '').includes('action=exec')) {
@@ -358,6 +360,7 @@ test('a result stream that breaks the protocol is not blamed on the browser', as
 				'result-has-more': false, 'result-next-offset': 3 } }
 		];
 		return route.fulfill({ status: 200, contentType: 'application/vnd.rdf4j.workbench-query-v2+ndjson;charset=UTF-8',
+			headers: { 'X-Workbench-Server-Identity': serverIdentity },
 			body: records.map((record) => JSON.stringify(record)).join('\n') + '\n' });
 	});
 	await setQueryEditor(page, 'SELECT ?value WHERE { VALUES ?value { "one" "two" } }');
@@ -398,93 +401,6 @@ test('Cancel retries a cancellation the server answers with 404, at the query\'s
 
 function workbenchBaseUrlForSpec() {
 	return require('./workbench-test-helpers.js').workbenchBaseUrl();
-}
-
-/** A same-origin receiver that holds an explanation and records the browser's real keepalive cancellation request. */
-async function startQueryCancellationProxy(repositoryId) {
-	const upstream = new URL(workbenchBaseUrlForSpec());
-	const upstreamTransport = upstream.protocol === 'https:' ? https : http;
-	const workbenchPath = upstream.pathname.replace(/\/+$/, '');
-	const queryPath = `${workbenchPath}/repositories/${encodeURIComponent(repositoryId)}/query`;
-	const explanations = [];
-	const cancellations = [];
-	const heldExplanations = new Map();
-	const server = http.createServer((incoming, outgoing) => {
-		const chunks = [];
-		incoming.on('data', chunk => chunks.push(chunk));
-		incoming.on('end', () => {
-			const body = Buffer.concat(chunks);
-			const url = new URL(incoming.url || '/', upstream.origin);
-			if (incoming.method === 'POST' && url.pathname === queryPath) {
-				const parameters = new URLSearchParams(body.toString('utf8'));
-				const action = parameters.get('action');
-				const id = parameters.get('explain-request-id');
-				if (action === 'explain') {
-					explanations.push({ id });
-					heldExplanations.set(id, outgoing);
-					return;
-				}
-				if (action === 'cancel-explain') {
-					cancellations.push({ id, path: url.pathname, body: body.toString('utf8') });
-					outgoing.writeHead(204).end();
-					const explanation = heldExplanations.get(id);
-					if (explanation && !explanation.destroyed) {
-						explanation.writeHead(200, { 'Content-Type': 'application/json' });
-						explanation.end('{}');
-					}
-					heldExplanations.delete(id);
-					return;
-				}
-			}
-
-			const headers = Object.assign({}, incoming.headers, { host: upstream.host });
-			const forwarded = upstreamTransport.request(new URL(incoming.url || '/', upstream.origin), {
-				method: incoming.method,
-				headers
-			}, answer => {
-				outgoing.writeHead(answer.statusCode || 502, answer.headers);
-				answer.pipe(outgoing);
-			});
-			forwarded.on('error', error => {
-				if (!outgoing.headersSent) {
-					outgoing.writeHead(502, { 'Content-Type': 'text/plain' });
-				}
-				if (!outgoing.destroyed) {
-					outgoing.end(error.message);
-				}
-			});
-			if (body.length) {
-				forwarded.end(body);
-			} else {
-				forwarded.end();
-			}
-		});
-	});
-	await new Promise((resolve, reject) => {
-		server.once('error', reject);
-		server.listen(0, '127.0.0.1', resolve);
-	});
-	const address = server.address();
-	if (!address || typeof address === 'string') {
-		throw new Error('The query cancellation proxy did not bind a TCP port.');
-	}
-	return {
-		baseUrl: `http://127.0.0.1:${address.port}${workbenchPath}`,
-		queryPath,
-		explanations,
-		cancellations,
-		close: async () => {
-			for (const explanation of heldExplanations.values()) {
-				if (!explanation.destroyed) {
-					explanation.destroy();
-				}
-			}
-			server.closeAllConnections();
-			await new Promise((resolve, reject) => {
-				server.close(error => error ? reject(error) : resolve());
-			});
-		}
-	};
 }
 
 /** Serves the Info answers without their menu rows, as a server answers a user it does not authorize. */
@@ -565,60 +481,54 @@ test('the Explore truncation notice follows the limit of the request, not an ear
 // XHR that retries does not outlive the page. pagehide runs before the document is hidden, so the page must not wait
 // for visibilityState to tell it that it is being unloaded.
 test('unloading the Query page during an explanation cancels it with a keepalive request', async ({ page }) => {
-	const proxy = await startQueryCancellationProxy(REPOSITORY_ID);
-	const captureKey = `__rdf4j_query_cancel_${REPOSITORY_ID}`;
-	try {
-		await page.addInitScript(({ key, queryPath }) => {
-			const read = () => JSON.parse(sessionStorage.getItem(key) || '{"pagehide":[],"keepalive":[]}');
-			const write = state => sessionStorage.setItem(key, JSON.stringify(state));
-			window.addEventListener('pagehide', event => {
-				const state = read();
-				state.pagehide.push({ path: location.pathname, persisted: event.persisted });
-				write(state);
-			});
-			const originalFetch = window.fetch;
-			window.fetch = function (input, init) {
-				const url = new URL(typeof input === 'string' ? input : input.url, location.href);
-				if (init && init.keepalive === true && url.pathname === queryPath) {
-					const state = read();
-					state.keepalive.push({ url: url.href, method: init.method, body: init.body });
-					write(state);
-				}
-				return originalFetch.apply(this, arguments);
-			};
-		}, { key: captureKey, queryPath: proxy.queryPath });
-		await page.setViewportSize({ width: 1280, height: 900 });
-		await page.goto(`${proxy.baseUrl}/repositories/${REPOSITORY_ID}/query`, { waitUntil: 'domcontentloaded' });
-		await page.locator('#query-form').waitFor({ state: 'visible', timeout: 15000 });
-		await page.locator('.CodeMirror').first().waitFor({ state: 'visible' });
-		await setQueryEditor(page, 'SELECT ?s WHERE { ?s ?p ?o } LIMIT 5');
-		await page.locator('#explain-trigger').click();
-		await expect.poll(() => proxy.explanations.length).toBe(1);
-		const explainId = proxy.explanations[0].id;
-		expect(explainId).toMatch(/\S/);
+	// Playwright does not see the requests a page sends while it is being unloaded, so the page notes each request it
+	// sends (in local storage, which outlives it) and the next page of the Workbench reads them.
+	await page.addInitScript(() => {
+		const note = (transport, body) => {
+			try {
+				const sent = JSON.parse(window.localStorage.getItem('e2e-sent-requests') || '[]');
+				sent.push({ transport, body: String(body || '') });
+				window.localStorage.setItem('e2e-sent-requests', JSON.stringify(sent));
+			} catch (error) {
+				// Storage refused: nothing is noted, and the test fails on the missing cancellation.
+			}
+		};
+		const fetchOriginal = window.fetch;
+		window.fetch = function (input, init) {
+			note(init && init.keepalive ? 'keepalive-fetch' : 'fetch', init && init.body);
+			return fetchOriginal.apply(this, arguments);
+		};
+		const sendOriginal = XMLHttpRequest.prototype.send;
+		XMLHttpRequest.prototype.send = function (body) {
+			note('xhr', body);
+			return sendOriginal.apply(this, arguments);
+		};
+	});
+	await openQueryPage(page, REPOSITORY_ID, { viewport: { width: 1280, height: 900 } });
+	await page.evaluate(() => window.localStorage.removeItem('e2e-sent-requests'));
+	const queryUrl = new RegExp(`/repositories/${REPOSITORY_ID}/query$`);
+	let explainId = null;
+	await page.route(queryUrl, async (route) => {
+		const sent = route.request();
+		const parameters = new URLSearchParams(sent.postData() || '');
+		if (sent.method() === 'POST' && parameters.get('action') === 'explain') {
+			explainId = parameters.get('explain-request-id');
+			return; // held: the explanation keeps running until the page goes
+		}
+		return route.fallback();
+	});
+	await setQueryEditor(page, 'SELECT ?s WHERE { ?s ?p ?o } LIMIT 5');
+	await page.locator('#explain-trigger').click();
+	await expect.poll(() => explainId).not.toBeNull();
 
-		// A same-origin document navigation guarantees a destructive pagehide and keeps the captured call readable.
-		await page.goto(`${proxy.baseUrl}/repositories/${REPOSITORY_ID}/information`, { waitUntil: 'domcontentloaded' });
-		await expect(page.locator('#workbench-app')).toBeVisible();
-		await expect.poll(() => proxy.cancellations.length).toBe(1);
-		expect(proxy.cancellations[0]).toEqual({
-			id: explainId,
-			path: proxy.queryPath,
-			body: `action=cancel-explain&explain-request-id=${explainId}`
-		});
-		const captured = await page.evaluate(key => JSON.parse(sessionStorage.getItem(key)
-			|| '{"pagehide":[],"keepalive":[]}'), captureKey);
-		expect(captured.pagehide.filter(event => event.path === proxy.queryPath)).toEqual([
-			{ path: proxy.queryPath, persisted: false }
-		]);
-		expect(captured.keepalive).toEqual([{
-			url: `${new URL(proxy.baseUrl).origin}${proxy.queryPath}`,
-			method: 'POST',
-			body: `action=cancel-explain&explain-request-id=${explainId}`
-		}]);
-	} finally {
-		await proxy.close();
-	}
+	await page.goto(`${workbenchBaseUrlForSpec()}/repositories/NONE/information`);
+	await waitForRoute(page, 'information');
+	const cancels = await page.evaluate(() => JSON.parse(window.localStorage.getItem('e2e-sent-requests') || '[]')
+		.map((sent) => ({ transport: sent.transport, parameters: new URLSearchParams(sent.body) }))
+		.filter((sent) => sent.parameters.get('action') === 'cancel-explain')
+		.map((sent) => ({ id: sent.parameters.get('explain-request-id'), transport: sent.transport })));
+	expect(cancels, 'one cancellation, sent with a keepalive fetch')
+		.toEqual([{ id: explainId, transport: 'keepalive-fetch' }]);
 });
 
 // R12: a page shown from a form's answer (Saved queries Edit posts to the Query page) that fails to open must stay,
@@ -758,29 +668,13 @@ test('reduced motion turns off control transitions also where :has() is unsuppor
 		'without :has()').toBe(true);
 });
 
-/** Signs in on the Connection page as a user does: user and password under Advanced settings, then Enter. */
-async function signIn(page, user, password) {
-	await page.goto(`${workbenchBaseUrlForSpec()}/repositories/NONE/server`, { waitUntil: 'domcontentloaded' });
-	await waitForRoute(page, 'server');
-	await page.locator('#server-auth-toggle').click();
-	await page.locator('#server-user').fill(user);
-	await page.locator('#server-password').fill(password);
-	await Promise.all([
-		page.waitForURL((url) => !/\/NONE\/server(?:[?#]|$)/.test(url.toString()), { timeout: 15000 }),
-		page.locator('#server-password').press('Enter')
-	]);
-	const credentials = (await page.context().cookies()).find((cookie) => cookie.name === 'server-user-password');
-	expect(Buffer.from(credentials.value, 'base64').toString('latin1')).toBe(`${user}:${password}`);
-	return credentials.value;
-}
-
-// R2 (client): the signed-in user is the text before ':' in the base64 server-user-password cookie, as the server reads
-// it. Base64 may contain '+', which the generic cookie reader turns into a space (form encoding): the user must be
-// decoded from the raw cookie value, or the page shows (and checks against) another user than the server uses.
+// R2 (client): the signed-in user is the user the server signs in with. "n>>:pw" encodes in base64 with '+', which a
+// form decoder turns into a space: the page must show (and check against) the user the server uses, not such a misread.
 test('a user whose credentials encode with "+" is the signed-in user everywhere in the page', async ({ page, request }) => {
 	const user = 'n>>';
 	const password = 'pw';
-	expect(await signIn(page, user, password)).toContain('+');
+	expect(Buffer.from(`${user}:${password}`, 'latin1').toString('base64')).toContain('+');
+	await signInOnConnectionPage(page, user, password);
 	const queryName = `round2-plus-${process.pid}-${Date.now().toString(36)}`;
 	const savedQueries = `${workbenchBaseUrlForSpec()}/repositories/${REPOSITORY_ID}/saved-queries`;
 	let urn = null;

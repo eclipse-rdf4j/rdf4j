@@ -23,6 +23,8 @@ import java.util.Map;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
+import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+import org.eclipse.rdf4j.workbench.exceptions.UploadSizeLimitException;
 import org.eclipse.rdf4j.workbench.util.CookieHandler;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
@@ -102,7 +104,20 @@ public abstract class TransformationServlet extends AbstractRepositoryServlet {
 
 		String nativePostView = nativePagePostView(req);
 		try {
-			final WorkbenchRequest wreq = new WorkbenchRequest(repository, req, defaults);
+			final WorkbenchRequest wreq;
+			try {
+				wreq = new WorkbenchRequest(repository, req, defaults);
+			} catch (BadRequestException e) {
+				// The request could not be read (an upload over the limit, a bad multipart body): answer with the
+				// reason instead of a container error page.
+				int status = e instanceof UploadSizeLimitException ? HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE
+						: HttpServletResponse.SC_BAD_REQUEST;
+				LOGGER.warn("Rejecting the request: {}", e.getMessage());
+				if (!writePageDataFailure(req, resp, status, e.getMessage())) {
+					resp.sendError(status, e.getMessage());
+				}
+				return;
+			}
 
 			cookies.updateCookies(wreq, resp, getCookieNames(wreq));
 			if (nativePostView == null) {
@@ -187,7 +202,7 @@ public abstract class TransformationServlet extends AbstractRepositoryServlet {
 	 *
 	 * @return whether the answer was written
 	 */
-	protected boolean writePageDataFailure(WorkbenchRequest req, HttpServletResponse resp, int status,
+	protected boolean writePageDataFailure(HttpServletRequest req, HttpServletResponse resp, int status,
 			String message) throws IOException {
 		if (!WorkbenchPageProtocol.requestsPageData(req) || resp.isCommitted()) {
 			return false;

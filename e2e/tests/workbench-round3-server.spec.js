@@ -15,8 +15,10 @@ const { test, expect } = require('@playwright/test');
 const {
     deleteRepository,
     openQueryPage,
+    refusedUrlOrigin,
     serverBaseUrl,
     setQueryEditor,
+    signInOnConnectionPage,
     uniqueRepositoryId,
     waitForRoute,
     workbenchBaseUrl
@@ -260,8 +262,9 @@ test.describe('C11 Add from a URL that cannot be read', () => {
         await expect(page.locator('#workbench-outlet')).not.toContainText('The server answered 500');
     });
 
+    // Workbench imports only from approved origins (run.sh approves the server's and this one, where nothing listens).
     test('a URL whose server refuses the connection is reported on the Add page', async ({ page }) => {
-        const url = `http://127.0.0.1:${await closedPort()}/data.ttl`;
+        const url = `${refusedUrlOrigin()}/data.ttl`;
         const answer = await addFromUrl(page, url);
         expect(answer.status(), 'not a server error').toBeLessThan(500);
         await expect(page.locator('#workbench-outlet')).toContainText(`Could not read ${url}: Connection refused`);
@@ -365,14 +368,9 @@ test.describe('C15 credentials beyond Latin-1', () => {
         await deleteRepository(request, SERVER, repositoryId);
     });
 
-    test('a private query saved by a user named beyond Latin-1 belongs to that user', async ({ page, context }) => {
-        const host = new URL(WORKBENCH);
-        await context.addCookies([{
-            name: 'server-user-password',
-            value: Buffer.from('håvard✓:pass✓', 'utf8').toString('base64'),
-            domain: host.hostname,
-            path: '/'
-        }]);
+    test('a private query saved by a user named beyond Latin-1 belongs to that user', async ({ page }) => {
+        // The session holds the credentials, so the page's own requests save as the signed-in user.
+        await signInOnConnectionPage(page, 'håvard✓', 'pass✓');
         const saved = await page.request.post(pageUrl(repositoryId, 'query'), {
             form: { action: 'save', 'query-name': queryName, queryLn: 'SPARQL',
                 query: 'SELECT * WHERE { ?s ?p ?o } LIMIT 1', 'save-private': 'true', 'query-timeout': '0' }

@@ -48,7 +48,8 @@ async function expectClosedDisclosure(page, disclosureId, actionsId) {
 test('Add RDF exposes source choices and a collapsed import settings panel', async ({ page }) => {
     await page.goto(`${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/add`, { waitUntil: 'domcontentloaded' });
     await expect(page.locator('#add-source-tabs')).toHaveCount(1);
-    await expect(page.locator('#add-source-tabs input[type="radio"]')).toHaveCount(3);
+    // File, Server file (the approved import directory), URL and Text.
+    await expect(page.locator('#add-source-tabs input[type="radio"]')).toHaveCount(4);
     await expect(page.locator('#add-import-settings')).toHaveCount(1);
     await expectClosedDisclosure(page, 'add-import-settings', 'add-upload-actions');
 });

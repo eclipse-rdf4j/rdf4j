@@ -43,6 +43,7 @@ import org.eclipse.rdf4j.model.BNodeIdResolver;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.StoredBNodeIdResolver;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
@@ -82,7 +83,12 @@ import org.slf4j.LoggerFactory;
  *          one release to the next.
  */
 @InternalUseOnly
-public class ValueStore extends SimpleValueFactory implements AutoCloseable, BNodeIdResolver {
+public class ValueStore extends SimpleValueFactory implements AutoCloseable, BNodeIdResolver, StoredBNodeIdResolver {
+	@Override
+	public boolean hasStoredBNodeId(String id) {
+		return hasBNodeId(id);
+	}
+
 	@Override
 	public boolean hasBNodeId(String id) {
 		try {

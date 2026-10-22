@@ -1082,12 +1082,17 @@ test('cancelled execution clears busy state and a new Execute starts cleanly', a
 	await page.locator('#exec').click();
 	await requestReceived;
 	const result = page.locator('#query-results .query-result-layout');
+	const skeleton = result.locator('.query-result-skeleton');
+	await expect(skeleton).toBeVisible();
+	await expect(result).toHaveCSS('overflow-x', 'visible');
 	await expect(result.getByRole('button', { name: 'Cancel query' })).toBeVisible();
 	const cancelRequest = page.waitForRequest(request => request.method() === 'POST'
 		&& /\/query(?:[?#]|$)/.test(request.url())
 		&& new URLSearchParams(request.postData() || '').get('action') === 'cancel-query', { timeout: 15000 });
 	await result.getByRole('button', { name: 'Cancel query' }).click();
 	await expect(result.locator('.query-result-status')).toHaveText('Query cancelled.');
+	await expect(skeleton).toBeHidden();
+	await expect(result).toHaveCSS('overflow-x', 'clip');
 	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
 	await expect(page.locator('#query-cancel')).toBeDisabled();
 	const cancel = await cancelRequest;
@@ -1455,6 +1460,7 @@ test('saved-query error can be corrected and re-executed through the same saved 
 test('compact tuple rows preserve namespaced, directed, typed, nested, unbound, and long RDF terms', async ({ page, request }) => {
 	const monitor = monitorExecutions(page);
 	await openQueryPage(page);
+	await page.setViewportSize({ width: 390, height: 844 });
 	const directedStatement = await request.post(`${REPOSITORY_URL}/statements`, {
 		headers: { 'Content-Type': 'text/turtle' },
 		data: '<urn:load:item> <urn:load:directed-predicate> "مرحبا"@ar--rtl .'
@@ -1481,11 +1487,15 @@ test('compact tuple rows preserve namespaced, directed, typed, nested, unbound, 
 	await expect(result.locator('.query-result-load-more')).toBeVisible();
 	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Display' });
 	await options.click();
+	await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth
+		<= document.documentElement.clientWidth)).toBe(true);
 	await result.locator('select[name="result-layout"]').selectOption('table');
 	await result.locator('.query-result-load-more').click();
 	await expect.poll(() => monitor.executions.length).toBe(2);
 	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
 	await expectCompletedRows(result.locator('.query-result-status'), 2, 2);
+	await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth
+		<= document.documentElement.clientWidth)).toBe(true);
 	const firstRow = result.locator('tbody tr[data-query-row-index="0"]');
 	const cells = firstRow.locator('td');
 	await expect(cells.nth(0)).toContainText('ex:item');

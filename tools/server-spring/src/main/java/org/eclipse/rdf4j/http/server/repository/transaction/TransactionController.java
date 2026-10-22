@@ -490,6 +490,8 @@ public class TransactionController extends AbstractController implements Disposa
 			model.put(QueryResultView.HEADERS_ONLY, false); // TODO needed for HEAD
 			// requests.
 			model.put(QueryResultView.BREAKER_HANDLE_KEY, breakerHandle);
+			// The transaction keeps its connection; the view negotiates blank-node origins with its value factory.
+			model.put(QueryResultView.VALUE_FACTORY_KEY, txn.getValueFactory());
 			handedOffToView = true;
 			return new ModelAndView(view, model);
 		} catch (QueryInterruptedException | InterruptedException | ExecutionException e) {

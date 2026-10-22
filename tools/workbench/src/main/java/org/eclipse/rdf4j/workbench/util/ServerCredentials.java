@@ -17,24 +17,76 @@ import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 
 /**
- * The signed-in Workbench user. The Connection page signs in by storing the server credentials in the {@value #COOKIE}
- * cookie, as base64 of the UTF-8 bytes of {@code user:password}, so that any user name and password can be stored (see
- * {@link #decode(String)} for values stored by earlier versions). The Workbench sends these credentials to the RDF4J
- * Server, and its pages decode the same cookie to show who is signed in, so saved queries are owned by, listed for and
- * checked against that same user.
- * <p>
- * A {@code server-user} request parameter or cookie is not a sign-in: any request could carry one.
+ * Credentials selected by the Workbench gateway for this request. The gateway keeps them in the HTTP session and binds
+ * the selected server's immutable credentials to the request before any repository command runs. Neither a browser
+ * cookie nor a request parameter establishes the signed-in user.
  */
 public final class ServerCredentials {
 
-	/** The cookie that holds the server credentials. */
+	/** Name of the legacy browser cookie, used only to expire it after a connection change. */
 	public static final String COOKIE = "server-user-password";
 
+	private static final String REQUEST_ATTRIBUTE = ServerCredentials.class.getName() + ".current";
+
 	private ServerCredentials() {
+	}
+
+	/** The server credentials captured when the Connection form was submitted. */
+	public static final class Credentials {
+		private final String userName;
+		private final String password;
+
+		private Credentials(String userName, String password) {
+			this.userName = userName;
+			this.password = password;
+		}
+
+		public String userName() {
+			return userName;
+		}
+
+		public String password() {
+			return password;
+		}
+	}
+
+	/** Decode the Connection form, which sends base64 UTF-8 {@code user:password}. */
+	public static Credentials fromConnectionForm(String submitted) {
+		if (submitted == null || submitted.isEmpty()) {
+			return null;
+		}
+		String decoded = decode(submitted);
+		if (decoded == null) {
+			decoded = submitted; // legacy forms submitted the unencoded value
+		}
+		int colon = decoded.indexOf(':');
+		String user = colon >= 0 ? decoded.substring(0, colon) : decoded;
+		String password = colon >= 0 ? decoded.substring(colon + 1) : "";
+		if (user.isEmpty() || "\"\"".equals(user)) {
+			return null;
+		}
+		if (user.length() > 512 || password.length() > 4096 || user.chars().anyMatch(Character::isISOControl)
+				|| password.chars().anyMatch(Character::isISOControl)) {
+			throw new IllegalArgumentException("Invalid server credentials");
+		}
+		return new Credentials(user, password);
+	}
+
+	/** Bind a session's credentials for the selected server to one request, preventing mid-request identity changes. */
+	public static void bindRequest(HttpServletRequest request, Credentials credentials) {
+		if (credentials == null) {
+			request.removeAttribute(REQUEST_ATTRIBUTE);
+		} else {
+			request.setAttribute(REQUEST_ATTRIBUTE, credentials);
+		}
+	}
+
+	public static Credentials current(HttpServletRequest request) {
+		Object value = request.getAttribute(REQUEST_ATTRIBUTE);
+		return value instanceof Credentials ? (Credentials) value : null;
 	}
 
 	/**
@@ -42,16 +94,8 @@ public final class ServerCredentials {
 	 *         are none or they cannot be decoded
 	 */
 	public static String userName(HttpServletRequest request) {
-		Cookie[] cookies = request.getCookies();
-		if (cookies == null) {
-			return "";
-		}
-		for (Cookie cookie : cookies) {
-			if (COOKIE.equals(cookie.getName())) {
-				return userName(cookie.getValue());
-			}
-		}
-		return "";
+		Credentials credentials = current(request);
+		return credentials == null ? "" : credentials.userName();
 	}
 
 	/**

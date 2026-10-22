@@ -157,6 +157,7 @@ class ExploreServletPageDataTest {
 		assertThat(rows(records)).singleElement().satisfies(row -> {
 			assertThat(row.get(0).path("kind").asText()).isEqualTo("bnode");
 			assertThat(row.get(0).path("value").asText()).isEqualTo(id);
+			assertThat(row.get(0).path("reference").asBoolean()).isTrue();
 		});
 		assertThat(records.stream().filter(record -> "metadata".equals(record.path("type").asText())).toList())
 				.singleElement()

@@ -493,6 +493,7 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 			CancellableOperationCoordinator.Handle registeredHandle) throws IOException, ClientHTTPException {
 		Object factory = ProtocolUtil.getAcceptableService(request, response, registry);
 		FileFormat format = getFormat(factory);
+		QueryResultView.negotiateBNodeOrigin(request, response, format);
 
 		response.setStatus(HttpServletResponse.SC_OK);
 		String mimeType = format.getDefaultMIMEType();

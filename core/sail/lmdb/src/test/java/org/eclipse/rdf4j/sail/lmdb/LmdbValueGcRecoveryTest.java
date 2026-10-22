@@ -24,6 +24,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
@@ -65,9 +66,13 @@ public class LmdbValueGcRecoveryTest {
 		CountDownLatch secondWriterBuffered = new CountDownLatch(1);
 		CountDownLatch allowSecondCommit = new CountDownLatch(1);
 		CountDownLatch secondWriterWaiting = new CountDownLatch(1);
+		CountDownLatch secondInlineGcFailed = new CountDownLatch(1);
 		CountDownLatch commitsFinished = new CountDownLatch(2);
 		AtomicInteger capacityFaults = new AtomicInteger();
+		AtomicInteger finalMaintenanceFaults = new AtomicInteger();
+		AtomicLong mapBefore = new AtomicLong();
 		AtomicBoolean armed = new AtomicBoolean();
+		AtomicReference<Thread> firstWriterIdentity = new AtomicReference<>();
 		AtomicReference<Throwable> firstFailure = new AtomicReference<>();
 		AtomicReference<Throwable> secondFailure = new AtomicReference<>();
 		LmdbStore store = new LmdbStore(dataDir, options) {
@@ -77,12 +82,40 @@ public class LmdbValueGcRecoveryTest {
 				return new LmdbSailStore(directory, properties, config, sketchEnabled,
 						(valueDirectory, valueProperties, valueOptions) -> new ValueStore(valueDirectory,
 								valueProperties, valueOptions) {
+							private final ThreadLocal<Boolean> attemptedInlineGc = ThreadLocal.withInitial(() -> false);
+							private final ThreadLocal<Boolean> finalMaintenance = ThreadLocal.withInitial(() -> false);
+
+							@Override
+							boolean hasRetiredIds() {
+								boolean retired = super.hasRetiredIds();
+								if (armed.get() && attemptedInlineGc.get()) {
+									// The second check is final maintenance, after this writer released admission.
+									finalMaintenance.set(true);
+									if (Thread.currentThread() == firstWriterIdentity.get()
+											&& capacityFaults.get() == 1) {
+										awaitGate(secondInlineGcFailed);
+									}
+								}
+								return retired;
+							}
+
 							@Override
 							public void gcIds(Collection<Long> ids, Collection<Long> nextIds) throws IOException {
-								if (armed.get() && capacityFaults.getAndUpdate(count -> Math.min(2, count + 1)) < 2) {
-									if (capacityFaults.get() == 1) {
+								if (armed.get()) {
+									attemptedInlineGc.set(true);
+								}
+								// A full map remains full until growth. A finite call quota can be exhausted by the
+								// two inline publications before either writer reaches final maintenance.
+								if (armed.get() && mapSizeBytes() <= mapBefore.get()) {
+									int fault = capacityFaults.incrementAndGet();
+									if (finalMaintenance.get()) {
+										finalMaintenanceFaults.incrementAndGet();
+									}
+									if (fault == 1) {
 										firstGcEntered.countDown();
 										awaitGate(releaseFirstGc);
+									} else if (!finalMaintenance.get()) {
+										secondInlineGcFailed.countDown();
 									}
 									LmdbUtil.checkMapFull(MDB_MAP_FULL);
 								}
@@ -120,6 +153,7 @@ public class LmdbValueGcRecoveryTest {
 				commitsFinished.countDown();
 			}
 		}, "adjacency-maintenance-writer");
+		firstWriterIdentity.set(firstWriter);
 		store.init();
 		try {
 			LmdbSailStore backing = store.getBackingStore();
@@ -141,7 +175,7 @@ public class LmdbValueGcRecoveryTest {
 			}
 			assertThat(backing.valueStore().hasRetiredIds()).isTrue();
 			assertThat(backing.directAdjacencyStore().buildNowForTest()).isTrue();
-			long mapBefore = backing.valueStore().mapSizeBytes();
+			mapBefore.set(backing.valueStore().mapSizeBytes());
 			backing.directAdjacencyStore().beforeWriteAdmissionWaitForTest = () -> {
 				if (Thread.currentThread() == secondWriter) {
 					secondWriterWaiting.countDown();
@@ -164,8 +198,12 @@ public class LmdbValueGcRecoveryTest {
 					.isTrue();
 			assertThat(firstFailure.get()).isNull();
 			assertThat(secondFailure.get()).isNull();
-			assertThat(capacityFaults.get()).isEqualTo(2);
-			assertThat(backing.valueStore().mapSizeBytes()).isGreaterThan(mapBefore);
+			assertThat(secondInlineGcFailed.getCount()).as("both inline publications must encounter a full map")
+					.isZero();
+			assertThat(capacityFaults.get()).isGreaterThanOrEqualTo(3);
+			assertThat(backing.valueStore().mapSizeBytes()).isGreaterThan(mapBefore.get());
+			assertThat(finalMaintenanceFaults.get()).as("final maintenance must encounter the capacity fault")
+					.isPositive();
 			assertThat(backing.valueStore().hasRetiredIds()).isFalse();
 			try (NotifyingSailConnection reader = store.getConnection()) {
 				assertThat(reader.size()).isEqualTo(2);
@@ -191,6 +229,7 @@ public class LmdbValueGcRecoveryTest {
 			}
 		} finally {
 			releaseFirstGc.countDown();
+			secondInlineGcFailed.countDown();
 			allowSecondCommit.countDown();
 			secondWriter.interrupt();
 			secondWriter.join(10_000);

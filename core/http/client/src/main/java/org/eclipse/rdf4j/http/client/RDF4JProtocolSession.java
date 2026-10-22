@@ -396,6 +396,11 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	 * @throws RepositoryException
 	 */
 	public void updateRepository(RepositoryConfig config) throws IOException, RepositoryException {
+		updateRepository(config, false);
+	}
+
+	/** Updates configuration and, when requested, waits for server-side shutdown and initialization to complete. */
+	public void updateRepository(RepositoryConfig config, boolean restart) throws IOException, RepositoryException {
 		String baseURI = Protocol.getRepositoryLocation(serverURL, config.getID());
 		setRepository(baseURI);
 		Resource ctx = SimpleValueFactory.getInstance().createIRI(baseURI + "#" + config.getID());
@@ -405,13 +410,33 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		Rio.write(model, baos, getPreferredRDFFormat());
 		byte[] bytes = baos.toByteArray();
 
+		String location = Protocol.getRepositoryConfigLocation(baseURI);
+		if (restart) {
+			location = UriBuilder.from(location)
+					.addParameter(Protocol.REPOSITORY_RESTART_PARAM, "true")
+					.build()
+					.toString();
+		}
 		HttpRequest method = applyAdditionalHeaders(
-				HttpRequests.post(Protocol.getRepositoryConfigLocation(baseURI))
+				HttpRequests.post(location)
 						.body(HttpRequestBody.ofBytes(bytes, getPreferredRDFFormat().getDefaultMIMEType())))
 								.build();
 
 		try {
-			executeNoContent(method);
+			if (!restart) {
+				executeNoContent(method);
+			} else {
+				try (HttpResponse response = execute(method)) {
+					if (response.getStatusCode() >= 300) {
+						throw new RepositoryException("The configuration update failed with HTTP status "
+								+ response.getStatusCode());
+					}
+					if (!response.getHeader(Protocol.REPOSITORY_RESTART_HEADER).filter("done"::equals).isPresent()) {
+						throw new RepositoryException("The server did not confirm repository restart. "
+								+ "The configuration may have been saved; verify the server supports this operation.");
+					}
+				}
+			}
 		} catch (RepositoryException | RDFParseException e) {
 			throw e;
 		} catch (RDF4JException e) {

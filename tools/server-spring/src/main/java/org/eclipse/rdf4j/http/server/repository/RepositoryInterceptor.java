@@ -133,6 +133,13 @@ public class RepositoryInterceptor extends ServerInterceptor {
 				// For requests to delete a repository, we must not attempt to initialize the repository. Otherwise a
 				// corrupt/invalid configuration can block deletion.
 				String requestPath = resolvePath(request);
+				if (("/" + nextRepositoryID + "/" + Protocol.CONFIG).equals(requestPath)) {
+					if (!repositoryManager.hasRepositoryConfig(nextRepositoryID)) {
+						throw new ClientHTTPException(SC_NOT_FOUND, "Unknown repository: " + nextRepositoryID);
+					}
+					request.setAttribute(REPOSITORY_ID_KEY, nextRepositoryID);
+					return;
+				}
 				if ("DELETE".equals(request.getMethod()) && ("/" + nextRepositoryID).equals(requestPath)) {
 					request.setAttribute(REPOSITORY_ID_KEY, nextRepositoryID);
 					return;

@@ -14,10 +14,18 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.lang.management.LockInfo;
+import java.lang.management.ManagementFactory;
+import java.lang.management.MonitorInfo;
+import java.lang.management.ThreadInfo;
+import java.lang.management.ThreadMXBean;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
@@ -25,6 +33,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -47,6 +56,9 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 class LmdbDeferredDelegateCloseTest {
+	private static final long CHILD_TIMEOUT_SECONDS = 15;
+	private static final long CHILD_DIAGNOSTIC_LEAD_MILLIS = TimeUnit.SECONDS.toMillis(2);
+
 	@Test
 	void capturedWorkerIsDeniedWhenOwnerClosesBeforeNativeDelegate(@TempDir Path directory) throws Exception {
 		LmdbStore store = new LmdbStore(directory.toFile(), new LmdbStoreConfig("spoc,posc"));
@@ -136,14 +148,16 @@ class LmdbDeferredDelegateCloseTest {
 	@EnumSource(Drain.class)
 	void everyQueuedDelegateClosesAndPreservesFailureOrder(Drain drain, @TempDir Path directory) throws Exception {
 		Path transcript = directory.resolve("delegate-close-child.txt");
+		long diagnosticAtMillis = System.currentTimeMillis()
+				+ TimeUnit.SECONDS.toMillis(CHILD_TIMEOUT_SECONDS) - CHILD_DIAGNOSTIC_LEAD_MILLIS;
 		Process child = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
 				"-ea", "-Xmx256m", "-cp", System.getProperty("java.class.path"), getClass().getName(), drain.name(),
-				directory.resolve("store").toString()).redirectErrorStream(true)
+				directory.resolve("store").toString(), Long.toString(diagnosticAtMillis)).redirectErrorStream(true)
 						.redirectOutput(transcript.toFile())
 						.start();
 		boolean finished;
 		try {
-			finished = child.waitFor(15, TimeUnit.SECONDS);
+			finished = child.waitFor(CHILD_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 		} finally {
 			if (child.isAlive()) {
 				child.destroyForcibly();
@@ -159,8 +173,21 @@ class LmdbDeferredDelegateCloseTest {
 	public static void main(String[] arguments) throws Exception {
 		Drain drain = Drain.valueOf(arguments[0]);
 		if (drain.name().startsWith("OPENER_")) {
-			LmdbReplayOpenCloseProbe.run(Path.of(arguments[1]), drain.name());
-			System.out.println("DELEGATES_RELEASED " + drain);
+			long diagnosticAtMillis = arguments.length > 2
+					? Long.parseLong(arguments[2])
+					: System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(CHILD_TIMEOUT_SECONDS)
+							- CHILD_DIAGNOSTIC_LEAD_MILLIS;
+			ChildDiagnostics diagnostics = new ChildDiagnostics(drain.name(), diagnosticAtMillis);
+			diagnostics.phase("child main entered");
+			diagnostics.start();
+			try {
+				diagnostics.phase("opener probe starting");
+				LmdbReplayOpenCloseProbe.run(Path.of(arguments[1]), drain.name(), diagnostics);
+				diagnostics.phase("opener probe completed");
+				System.out.println("DELEGATES_RELEASED " + drain);
+			} finally {
+				diagnostics.complete();
+			}
 			return;
 		}
 		if (drain == Drain.REPLAY) {
@@ -241,6 +268,85 @@ class LmdbDeferredDelegateCloseTest {
 		connection.close();
 		store.shutDown();
 		System.out.println("DELEGATES_RELEASED " + drain);
+	}
+
+	private static final class ChildDiagnostics implements Consumer<String> {
+		private final String mode;
+		private final long diagnosticAtMillis;
+		private final Map<String, String> phases = new ConcurrentHashMap<>();
+		private final AtomicBoolean dumped = new AtomicBoolean();
+
+		ChildDiagnostics(String mode, long diagnosticAtMillis) {
+			this.mode = mode;
+			this.diagnosticAtMillis = diagnosticAtMillis;
+		}
+
+		@Override
+		public void accept(String phase) {
+			phase(phase);
+		}
+
+		void phase(String phase) {
+			phases.put(Thread.currentThread().getName(), phase);
+		}
+
+		void start() {
+			Thread monitor = new Thread(this::dumpIfStillRunning, "lmdb-child-diagnostic-watchdog");
+			monitor.setDaemon(true);
+			monitor.start();
+		}
+
+		void complete() {
+			phase("opener probe returned or threw");
+		}
+
+		private void dumpIfStillRunning() {
+			long delayMillis = diagnosticAtMillis - System.currentTimeMillis();
+			if (delayMillis > 0) {
+				try {
+					TimeUnit.MILLISECONDS.sleep(delayMillis);
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					return;
+				}
+			}
+			if (!dumped.compareAndSet(false, true)) {
+				return;
+			}
+
+			System.err.printf("%nLMDB_CHILD_DIAGNOSTICS mode=%s timeMillis=%d childTimeoutSeconds=%d%n", mode,
+					System.currentTimeMillis(), CHILD_TIMEOUT_SECONDS);
+			System.err.println("Recent lifecycle phase by thread:");
+			new TreeMap<>(phases).forEach((thread, phase) -> System.err.printf("  %s: %s%n", thread, phase));
+			System.err.println("ThreadMXBean.dumpAllThreads:");
+			ThreadMXBean threadBean = ManagementFactory.getThreadMXBean();
+			for (ThreadInfo thread : threadBean.dumpAllThreads(true, true)) {
+				if (thread == null) {
+					continue;
+				}
+				System.err.printf("\"%s\" id=%d state=%s", thread.getThreadName(), thread.getThreadId(),
+						thread.getThreadState());
+				LockInfo lock = thread.getLockInfo();
+				if (lock != null) {
+					System.err.printf(" waitingOn=%s", lock);
+				}
+				if (thread.getLockOwnerId() != -1) {
+					System.err.printf(" lockOwner=%s#%d", thread.getLockOwnerName(), thread.getLockOwnerId());
+				}
+				System.err.println();
+				for (StackTraceElement frame : thread.getStackTrace()) {
+					System.err.printf("    at %s%n", frame);
+				}
+				for (MonitorInfo monitor : thread.getLockedMonitors()) {
+					System.err.printf("    locked monitor %s at stack depth %d%n", monitor,
+							monitor.getLockedStackDepth());
+				}
+				for (LockInfo synchronizer : thread.getLockedSynchronizers()) {
+					System.err.printf("    locked synchronizer %s%n", synchronizer);
+				}
+			}
+			System.err.flush();
+		}
 	}
 
 	private static void replayDoesNotDiscardDelegateFailure(Path directory) throws Exception {

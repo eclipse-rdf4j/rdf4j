@@ -1830,6 +1830,82 @@ public class ValueStoreTest {
 				output.contains("RECLAMATION_CHECKPOINT_COMPLETED"));
 	}
 
+	@Test
+	public void testValueReaderCannotDeadlockWriterResizeAtAssociationGate() throws Exception {
+		Path scenarioDirectory = dataDir.toPath().resolve("association-native-barrier-checkpoint");
+		Path outputFile = dataDir.toPath().resolve("association-native-barrier-checkpoint-output.txt");
+		String javaBinary = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+		Process child = new ProcessBuilder(javaBinary, "-ea", "-cp", System.getProperty("java.class.path"),
+				AssociationNativeBarrierResizeScenario.class.getName(), scenarioDirectory.toString())
+						.redirectErrorStream(true)
+						.redirectOutput(outputFile.toFile())
+						.start();
+		boolean completed;
+		try {
+			completed = child.waitFor(30, TimeUnit.SECONDS);
+		} finally {
+			if (child.isAlive()) {
+				child.destroyForcibly();
+			}
+			if (!child.waitFor(10, TimeUnit.SECONDS)) {
+				throw new IOException("The association/native-barrier child did not terminate after destroyForcibly");
+			}
+		}
+		String output = Files.readString(outputFile);
+		System.out.println(output);
+		assertTrue("A value reader and a map-growth writer must drain. Child output:\n" + output, completed);
+		assertEquals("The isolated resize scenario must complete successfully. Child output:\n" + output, 0,
+				child.exitValue());
+		assertTrue("The scenario must reach a real allocation resize checkpoint. Child output:\n" + output,
+				output.contains("ASSOCIATION_NATIVE_BARRIER_RESIZE_CHECKPOINT"));
+		assertFalse(
+				"A value reader and resizing writer must not wait on each other's admission barriers. Child output:\n"
+						+ output,
+				output.contains("ASSOCIATION_NATIVE_BARRIER_CYCLE"));
+		assertTrue("The committed reader value must remain available after resize. Child output:\n" + output,
+				output.contains("ASSOCIATION_NATIVE_BARRIER_READER_COMPLETED"));
+	}
+
+	@Test
+	public void testCloseDoesNotHoldNativeBarrierWhileWaitingForWriterResize() throws Exception {
+		Path scenarioDirectory = dataDir.toPath().resolve("association-close-native-barrier-checkpoint");
+		Path outputFile = dataDir.toPath().resolve("association-close-native-barrier-checkpoint-output.txt");
+		String javaBinary = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+		Process child = new ProcessBuilder(javaBinary, "-ea", "-cp", System.getProperty("java.class.path"),
+				CloseAssociationNativeBarrierResizeScenario.class.getName(), scenarioDirectory.toString())
+						.redirectErrorStream(true)
+						.redirectOutput(outputFile.toFile())
+						.start();
+		boolean completed;
+		try {
+			completed = child.waitFor(30, TimeUnit.SECONDS);
+		} finally {
+			if (child.isAlive()) {
+				child.destroyForcibly();
+			}
+			if (!child.waitFor(10, TimeUnit.SECONDS)) {
+				throw new IOException("The close/resize child did not terminate after destroyForcibly");
+			}
+		}
+		String output = Files.readString(outputFile);
+		System.out.println(output);
+		assertTrue("The isolated close/resize scenario must complete. Child output:\n" + output, completed);
+		assertEquals("The isolated close/resize child must clean up successfully. Child output:\n" + output, 0,
+				child.exitValue());
+		assertTrue("The scenario must reach a real allocation resize checkpoint. Child output:\n" + output,
+				output.contains("CLOSE_ASSOCIATION_NATIVE_BARRIER_RESIZE_CHECKPOINT"));
+		assertTrue("The closer must reach its real barrier or out-of-lock admission boundary. Child output:\n" + output,
+				output.contains("CLOSE_ASSOCIATION_NATIVE_BARRIER_CLOSE_FENCE_READY")
+						|| output.contains("CLOSE_ASSOCIATION_NATIVE_BARRIER_CYCLE"));
+		assertTrue("Close must finish and the prior committed value must be readable after reopening. Child output:\n"
+				+ output,
+				output.contains("CLOSE_ASSOCIATION_NATIVE_BARRIER_REOPENED_BASELINE"));
+		assertFalse(
+				"Close must not hold the native barrier while waiting for the writer's association gate. Child output:\n"
+						+ output,
+				output.contains("CLOSE_ASSOCIATION_NATIVE_BARRIER_CYCLE"));
+	}
+
 	/** An isolated native owner keeps a reproduced noninterruptible lock cycle out of the Surefire process. */
 	public static final class WriterRevisionCheckpointScenario {
 		public static void main(String[] arguments) throws Exception {
@@ -1895,6 +1971,469 @@ public class ValueStoreTest {
 			} finally {
 				store.close();
 			}
+		}
+	}
+
+	/** Uses a real value-map growth checkpoint to expose association-gate/native-reader barrier lock ordering. */
+	public static final class AssociationNativeBarrierResizeScenario {
+		private static final long OBSERVATION_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(8);
+
+		public static void main(String[] arguments) throws Exception {
+			LmdbStoreConfig config = new LmdbStoreConfig().setValueDBSize(1024L * 1024)
+					.setAutoGrow(true)
+					.setInlineLiterals(false);
+			CountDownLatch checkpointEntered = new CountDownLatch(1);
+			CountDownLatch continueResize = new CountDownLatch(1);
+			AtomicReference<Thread> readerThread = new AtomicReference<>();
+			AtomicReference<String> readerValue = new AtomicReference<>();
+			AtomicReference<Throwable> readerFailure = new AtomicReference<>();
+			AtomicReference<Throwable> monitorFailure = new AtomicReference<>();
+			AtomicBoolean readerCompleted = new AtomicBoolean();
+			AtomicBoolean cycleDetected = new AtomicBoolean();
+			AtomicReference<Long> initialId = new AtomicReference<>();
+			Thread writerThread = Thread.currentThread();
+			ValueStore store = new ValueStore(Path.of(arguments[0]).toFile(), config);
+			Thread monitor = Thread.ofPlatform().daemon().name("association-native-barrier-monitor").unstarted(() -> {
+				try {
+					if (!checkpointEntered.await(10, TimeUnit.SECONDS)) {
+						System.out.println("ASSOCIATION_NATIVE_BARRIER_CHECKPOINT_NOT_REACHED");
+						return;
+					}
+					printThread("ASSOCIATION_NATIVE_BARRIER_WRITER_AT_CHECKPOINT", writerThread);
+					Thread reader = Thread.ofPlatform().name("association-native-barrier-reader").unstarted(() -> {
+						try {
+							readerValue.set(store.getValue(initialId.get()).stringValue());
+						} catch (Throwable failure) {
+							readerFailure.set(failure);
+						} finally {
+							readerCompleted.set(true);
+						}
+					});
+					readerThread.set(reader);
+					reader.start();
+					long deadline = System.nanoTime() + OBSERVATION_TIMEOUT_NANOS;
+					boolean admissionBoundaryObserved = false;
+					while (!readerCompleted.get() && System.nanoTime() < deadline) {
+						ThreadInfo state = threadInfo(reader);
+						boolean unsafeNativeAdmission = state != null
+								&& state.getLockOwnerId() == writerThread.threadId()
+								&& hasFrame(state, ValueStore.class.getName(), "acquireAssociationGate")
+								&& hasFrame(state, ValueStore.class.getName() + "$ValueReadScope", "open")
+								&& hasFrame(state, TxnManager.class.getName(), "doWithScoped");
+						boolean safeOutOfLockAdmission = state != null
+								&& state.getLockOwnerId() == writerThread.threadId()
+								&& hasFrame(state, ValueStore.class.getName(), "awaitValueReaderAdmission")
+								&& hasFrame(state, ValueStore.class.getName(), "acquireAssociationGate");
+						if (unsafeNativeAdmission || safeOutOfLockAdmission) {
+							admissionBoundaryObserved = true;
+							System.out.println("ASSOCIATION_NATIVE_BARRIER_READER_ADMISSION_BOUNDARY "
+									+ (unsafeNativeAdmission ? "unsafe-native-scope" : "safe-out-of-lock"));
+							printThread("ASSOCIATION_NATIVE_BARRIER_READER_WAITING_FOR_GATE", reader);
+							break;
+						}
+						Thread.yield();
+					}
+					if (!admissionBoundaryObserved) {
+						throw new IOException(
+								"The reader did not reach either actual association-gate admission boundary");
+					}
+					continueResize.countDown();
+					deadline = System.nanoTime() + OBSERVATION_TIMEOUT_NANOS;
+					while (!readerCompleted.get() && System.nanoTime() < deadline) {
+						ThreadInfo readerState = threadInfo(reader);
+						ThreadInfo writerState = threadInfo(writerThread);
+						boolean readerWaitingForGate = readerState != null
+								&& readerState.getLockOwnerId() == writerThread.threadId()
+								&& hasFrame(readerState, ValueStore.class.getName(), "acquireAssociationGate")
+								&& hasFrame(readerState, ValueStore.class.getName() + "$ValueReadScope", "open")
+								&& hasFrame(readerState, TxnManager.class.getName(), "doWithScoped");
+						boolean readerHoldsNativeReadBarrier = hasFrame(readerState, TxnManager.class.getName(),
+								"startScopedReadTxn")
+								&& hasFrame(readerState, ValueStore.class.getName() + "$ValueReadScope", "open")
+								&& hasFrame(readerState, TxnManager.class.getName(), "doWithScoped");
+						boolean writerWaitingForBarrier = hasFrame(writerState,
+								"org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager", "writeLock")
+								&& hasFrame(writerState, ValueStore.class.getName(), "resizeMapInternal");
+						if (readerWaitingForGate && readerHoldsNativeReadBarrier && writerWaitingForBarrier) {
+							cycleDetected.set(true);
+							System.out.println("ASSOCIATION_NATIVE_BARRIER_CYCLE");
+							System.out.println("ASSOCIATION_NATIVE_BARRIER_READER_HOLDS_NATIVE_READ_BARRIER");
+							printThread("ASSOCIATION_NATIVE_BARRIER_WRITER_WAITING_FOR_READERS", writerThread);
+							printThread("ASSOCIATION_NATIVE_BARRIER_READER_WAITING_FOR_GATE", reader);
+							reader.interrupt();
+							break;
+						}
+						Thread.yield();
+					}
+				} catch (Throwable failure) {
+					monitorFailure.set(failure);
+				} finally {
+					continueResize.countDown();
+				}
+			});
+			try {
+				store.startTransaction(true);
+				initialId.set(store.storeValue(Values.literal("committed reader value")));
+				store.commit();
+				long initialMapSize = store.mapSizeBytes();
+				long initialMapGeneration = store.nativeMapGeneration();
+				store.setResizeCheckpointListener(() -> {
+					System.out.println("ASSOCIATION_NATIVE_BARRIER_RESIZE_CHECKPOINT");
+					checkpointEntered.countDown();
+					try {
+						if (!continueResize.await(15, TimeUnit.SECONDS)) {
+							throw new IllegalStateException("Timed out waiting for the resize lock-order observation");
+						}
+					} catch (InterruptedException interrupted) {
+						Thread.currentThread().interrupt();
+						throw new IllegalStateException("Interrupted while waiting at the resize checkpoint",
+								interrupted);
+					}
+				});
+				monitor.start();
+				store.startTransaction(true);
+				String label = "native association resize ".repeat(Math.toIntExact(initialMapSize / 4));
+				long largeId = store.storeValue(Values.literal(label));
+				store.commit();
+				assertEquals("the allocation must preserve the complete value across resize", label,
+						store.getValue(largeId).stringValue());
+				long grownMapSize = store.mapSizeBytes();
+				long grownMapGeneration = store.nativeMapGeneration();
+				assertTrue("the real allocation must grow the value map from " + initialMapSize + " bytes to "
+						+ grownMapSize, grownMapSize > initialMapSize);
+				assertTrue("the real allocation must advance the native map generation from " + initialMapGeneration
+						+ " to " + grownMapGeneration, grownMapGeneration > initialMapGeneration);
+				System.out.println("ASSOCIATION_NATIVE_BARRIER_MAP_GROWTH map=" + initialMapSize + "->" + grownMapSize
+						+ ", generation=" + initialMapGeneration + "->" + grownMapGeneration + ", valueLength="
+						+ label.length());
+				monitor.join(TimeUnit.SECONDS.toMillis(12));
+				if (monitor.isAlive()) {
+					throw new IOException("The association/native-barrier monitor did not finish");
+				}
+				Thread reader = readerThread.get();
+				if (reader != null) {
+					reader.join(TimeUnit.SECONDS.toMillis(5));
+					if (reader.isAlive()) {
+						throw new IOException("The committed-value reader did not terminate");
+					}
+				}
+				if (monitorFailure.get() != null) {
+					throw new IOException("The association/native-barrier monitor failed", monitorFailure.get());
+				}
+				if (readerCompleted.get() && readerFailure.get() == null) {
+					assertEquals("the concurrently read committed value must remain intact", "committed reader value",
+							readerValue.get());
+					System.out.println("ASSOCIATION_NATIVE_BARRIER_READER_COMPLETED");
+				} else if (cycleDetected.get()) {
+					assertEquals("the committed value must remain readable after releasing the lock cycle",
+							"committed reader value", store.getValue(initialId.get()).stringValue());
+					System.out.println("ASSOCIATION_NATIVE_BARRIER_COMMITTED_VALUE_REMAINS_READABLE");
+					System.out.println("ASSOCIATION_NATIVE_BARRIER_READER_INTERRUPTED_TO_RELEASE_CYCLE");
+				} else {
+					throw new IOException("The concurrent committed-value reader did not complete",
+							readerFailure.get());
+				}
+				System.out.println("ASSOCIATION_NATIVE_BARRIER_RESIZE_COMPLETED");
+			} finally {
+				continueResize.countDown();
+				Thread reader = readerThread.get();
+				if (reader != null && reader.isAlive()) {
+					reader.interrupt();
+					reader.join(TimeUnit.SECONDS.toMillis(5));
+				}
+				monitor.interrupt();
+				monitor.join(TimeUnit.SECONDS.toMillis(5));
+				store.close();
+			}
+		}
+
+		private static ThreadInfo threadInfo(Thread thread) {
+			return ManagementFactory.getThreadMXBean().getThreadInfo(thread.threadId(), Integer.MAX_VALUE);
+		}
+
+		private static boolean hasFrame(ThreadInfo thread, String className, String methodName) {
+			if (thread == null) {
+				return false;
+			}
+			for (StackTraceElement frame : thread.getStackTrace()) {
+				if (frame.getClassName().equals(className) && frame.getMethodName().equals(methodName)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private static void printThread(String label, Thread thread) {
+			ThreadInfo info = threadInfo(thread);
+			if (info == null) {
+				System.out.println(label + " unavailable");
+				return;
+			}
+			System.out.println(label + " " + info.getThreadName() + " state=" + info.getThreadState() + " lock="
+					+ info.getLockName() + " lockOwner=" + info.getLockOwnerName() + "#" + info.getLockOwnerId());
+			for (StackTraceElement frame : info.getStackTrace()) {
+				System.out.println("\tat " + frame);
+			}
+			System.out.flush();
+		}
+	}
+
+	/** Proves close must release its native barrier before waiting on a borrowed writer's association gate. */
+	public static final class CloseAssociationNativeBarrierResizeScenario {
+		private static final long OBSERVATION_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(8);
+
+		private final Path directory;
+		private final LmdbStoreConfig config = new LmdbStoreConfig().setValueDBSize(1024L * 1024)
+				.setAutoGrow(true)
+				.setInlineLiterals(false);
+		private final CountDownLatch checkpointEntered = new CountDownLatch(1);
+		private final CountDownLatch continueResize = new CountDownLatch(1);
+		private final AtomicReference<Thread> closerThread = new AtomicReference<>();
+		private final AtomicReference<Throwable> closeFailure = new AtomicReference<>();
+		private final AtomicReference<Throwable> writerFailure = new AtomicReference<>();
+		private final AtomicReference<Throwable> monitorFailure = new AtomicReference<>();
+		private final AtomicBoolean closeCompleted = new AtomicBoolean();
+		private final AtomicBoolean writerCompleted = new AtomicBoolean();
+		private final AtomicBoolean cycleDetected = new AtomicBoolean();
+		private final Thread writerThread = Thread.currentThread();
+		private final ValueStore store;
+		private final Thread monitor = Thread.ofPlatform()
+				.daemon()
+				.name("close-association-native-barrier-monitor")
+				.unstarted(this::monitorResize);
+
+		private long initialId;
+		private String label;
+
+		public static void main(String[] arguments) throws Exception {
+			new CloseAssociationNativeBarrierResizeScenario(Path.of(arguments[0])).run();
+		}
+
+		private CloseAssociationNativeBarrierResizeScenario(Path directory) throws IOException {
+			this.directory = directory;
+			store = new ValueStore(directory.toFile(), config);
+		}
+
+		private void run() throws Exception {
+			try {
+				store.startTransaction(true);
+				initialId = store.storeValue(Values.literal("committed close baseline"));
+				store.commit();
+				long initialMapSize = store.mapSizeBytes();
+				label = "native close association resize ".repeat(Math.toIntExact(initialMapSize / 4));
+				store.setResizeCheckpointListener(() -> {
+					System.out.println("CLOSE_ASSOCIATION_NATIVE_BARRIER_RESIZE_CHECKPOINT");
+					checkpointEntered.countDown();
+					try {
+						if (!continueResize.await(15, TimeUnit.SECONDS)) {
+							throw new IllegalStateException(
+									"Timed out waiting for the close/resize lock-order observation");
+						}
+					} catch (InterruptedException interrupted) {
+						Thread.currentThread().interrupt();
+						throw new IllegalStateException("Interrupted while waiting at the close/resize checkpoint",
+								interrupted);
+					}
+				});
+				monitor.start();
+				store.startTransaction(true);
+				try {
+					store.storeValue(Values.literal(label));
+				} catch (Throwable failure) {
+					writerFailure.set(failure);
+				} finally {
+					writerCompleted.set(true);
+				}
+				monitor.join(TimeUnit.SECONDS.toMillis(12));
+				if (monitor.isAlive()) {
+					throw new IOException("The close/resize monitor did not finish");
+				}
+				Thread closer = closerThread.get();
+				if (closer == null) {
+					throw new IOException("The close/resize monitor did not start the closer");
+				}
+				closer.join(TimeUnit.SECONDS.toMillis(10));
+				if (closer.isAlive() || !closeCompleted.get()) {
+					throw new IOException("The close/resize closer did not finish");
+				}
+				if (monitorFailure.get() != null) {
+					throw new IOException("The close/resize monitor failed", monitorFailure.get());
+				}
+				if (closeFailure.get() != null) {
+					throw new IOException("ValueStore.close must finish after the active resize settles",
+							closeFailure.get());
+				}
+				System.out.println("CLOSE_ASSOCIATION_NATIVE_BARRIER_CLOSE_COMPLETED");
+				Throwable resizeFailure = writerFailure.get();
+				if (cycleDetected.get()) {
+					if (!(resizeFailure instanceof IOException ioException
+							&& ioException.getCause() instanceof InterruptedException)) {
+						throw new IOException(
+								"The captured cycle must be released only by the interrupted native-write wait",
+								resizeFailure);
+					}
+					System.out.println("CLOSE_ASSOCIATION_NATIVE_BARRIER_WRITER_INTERRUPTED "
+							+ ioExceptionText(resizeFailure));
+				} else {
+					if (!(resizeFailure instanceof IOException ioException
+							&& "ValueStore is closed".equals(ioException.getMessage()))) {
+						throw new IOException(
+								"Close must reject the resize restart with IOException(\"ValueStore is closed\")",
+								resizeFailure);
+					}
+					System.out.println("CLOSE_ASSOCIATION_NATIVE_BARRIER_WRITER_RESTART_REJECTED "
+							+ ioExceptionText(resizeFailure));
+				}
+
+				ValueStore reopened = new ValueStore(directory.toFile(), config);
+				try {
+					assertEquals("the committed baseline must survive close and reopen", "committed close baseline",
+							reopened.getValue(initialId).stringValue());
+					assertEquals("the uncommitted value must not be published by concurrent close",
+							LmdbValue.UNKNOWN_ID,
+							reopened.getId(Values.literal(label), false));
+					System.out.println("CLOSE_ASSOCIATION_NATIVE_BARRIER_REOPENED_BASELINE");
+				} finally {
+					reopened.close();
+				}
+			} finally {
+				continueResize.countDown();
+				monitor.interrupt();
+				monitor.join(TimeUnit.SECONDS.toMillis(5));
+			}
+		}
+
+		private void monitorResize() {
+			try {
+				if (!checkpointEntered.await(10, TimeUnit.SECONDS)) {
+					System.out.println("CLOSE_ASSOCIATION_NATIVE_BARRIER_CHECKPOINT_NOT_REACHED");
+					return;
+				}
+				printThread("CLOSE_ASSOCIATION_NATIVE_BARRIER_WRITER_AT_CHECKPOINT", writerThread);
+				Thread closer = Thread.ofPlatform()
+						.daemon()
+						.name("close-association-native-barrier-closer")
+						.unstarted(() -> {
+							closerThread.set(Thread.currentThread());
+							try {
+								store.close();
+							} catch (Throwable failure) {
+								closeFailure.set(failure);
+							} finally {
+								closeCompleted.set(true);
+							}
+						});
+				closer.start();
+				long deadline = System.nanoTime() + OBSERVATION_TIMEOUT_NANOS;
+				boolean closeFenceReady = false;
+				while (System.nanoTime() < deadline) {
+					ThreadInfo closerState = threadInfo(closer);
+					boolean waitingForNativeBarrier = hasFrame(closerState, ValueStore.class.getName(),
+							"closeUnderMonitor")
+							&& hasFrame(closerState, TxnManager.class.getName(), "acquireCloseBarrier")
+							&& hasFrame(closerState,
+									"org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager",
+									"writeLock");
+					boolean waitingForHeldBarrierGate = closerState != null
+							&& closerState.getLockOwnerId() == writerThread.threadId()
+							&& hasFrame(closerState, ValueStore.class.getName(), "closeUnderMonitor")
+							&& hasFrame(closerState, ValueStore.class.getName(), "endWriterTransaction")
+							&& hasFrame(closerState, "java.util.concurrent.locks.ReentrantLock", "lock");
+					boolean waitingOutsideBarrier = closerState != null
+							&& closerState.getThreadState() == Thread.State.WAITING
+							&& closerState.getLockOwnerId() == writerThread.threadId()
+							&& hasFrame(closerState, ValueStore.class.getName(), "awaitWriterStartsForShutdown")
+							&& hasFrame(closerState, "java.util.concurrent.locks.ReentrantLock", "lock")
+							&& !hasFrame(closerState, ValueStore.class.getName(), "closeUnderMonitor")
+							&& !hasFrame(closerState, TxnManager.class.getName(), "acquireCloseBarrier");
+					if (waitingForNativeBarrier || waitingForHeldBarrierGate || waitingOutsideBarrier) {
+						closeFenceReady = true;
+						System.out.println("CLOSE_ASSOCIATION_NATIVE_BARRIER_CLOSE_FENCE_READY "
+								+ (waitingForNativeBarrier ? "native-barrier"
+										: waitingForHeldBarrierGate ? "unsafe-held-barrier-gate"
+												: "safe-out-of-lock-admission"));
+						printThread("CLOSE_ASSOCIATION_NATIVE_BARRIER_CLOSER_AT_FENCE", closer);
+						break;
+					}
+					Thread.yield();
+				}
+				if (!closeFenceReady) {
+					System.out.println("CLOSE_ASSOCIATION_NATIVE_BARRIER_CLOSE_FENCE_NOT_OBSERVED");
+					printThread("CLOSE_ASSOCIATION_NATIVE_BARRIER_CLOSER_NOT_READY", closer);
+					throw new AssertionError("The close/resize schedule did not reach a safe or unsafe close fence");
+				}
+				continueResize.countDown();
+				deadline = System.nanoTime() + OBSERVATION_TIMEOUT_NANOS;
+				while (System.nanoTime() < deadline) {
+					ThreadInfo closerState = threadInfo(closer);
+					ThreadInfo writerState = threadInfo(writerThread);
+					boolean closerWaitingForGate = closerState != null
+							&& closerState.getLockOwnerId() == writerThread.threadId()
+							&& hasFrame(closerState, ValueStore.class.getName(), "closeUnderMonitor")
+							&& hasFrame(closerState, ValueStore.class.getName(), "endWriterTransaction")
+							&& hasFrame(closerState, "java.util.concurrent.locks.ReentrantLock", "lock");
+					boolean writerWaitingForBarrier = hasFrame(writerState,
+							"org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager", "writeLock")
+							&& hasFrame(writerState, TxnManager.class.getName() + "$NativeBarrier", "writeLock")
+							&& hasFrame(writerState, ValueStore.class.getName(), "resizeMapInternal");
+					if (closerWaitingForGate && writerWaitingForBarrier) {
+						cycleDetected.set(true);
+						System.out.println("CLOSE_ASSOCIATION_NATIVE_BARRIER_CYCLE");
+						printThread("CLOSE_ASSOCIATION_NATIVE_BARRIER_CLOSER_WAITING_FOR_GATE", closer);
+						printThread("CLOSE_ASSOCIATION_NATIVE_BARRIER_WRITER_WAITING_FOR_NATIVE_WRITE", writerThread);
+						writerThread.interrupt();
+						break;
+					}
+					if (writerCompleted.get() && closeCompleted.get()) {
+						System.out.println("CLOSE_ASSOCIATION_NATIVE_BARRIER_THREADS_SETTLED");
+						break;
+					}
+					Thread.yield();
+				}
+				if (!cycleDetected.get() && !(writerCompleted.get() && closeCompleted.get())) {
+					System.out.println("CLOSE_ASSOCIATION_NATIVE_BARRIER_SETTLEMENT_NOT_OBSERVED");
+					printThread("CLOSE_ASSOCIATION_NATIVE_BARRIER_CLOSER_AT_TIMEOUT", closer);
+					printThread("CLOSE_ASSOCIATION_NATIVE_BARRIER_WRITER_AT_TIMEOUT", writerThread);
+				}
+			} catch (Throwable failure) {
+				monitorFailure.set(failure);
+			} finally {
+				continueResize.countDown();
+			}
+		}
+
+		private static ThreadInfo threadInfo(Thread thread) {
+			return ManagementFactory.getThreadMXBean().getThreadInfo(thread.threadId(), Integer.MAX_VALUE);
+		}
+
+		private static boolean hasFrame(ThreadInfo thread, String className, String methodName) {
+			if (thread == null) {
+				return false;
+			}
+			for (StackTraceElement frame : thread.getStackTrace()) {
+				if (frame.getClassName().equals(className) && frame.getMethodName().equals(methodName)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private static void printThread(String label, Thread thread) {
+			ThreadInfo info = threadInfo(thread);
+			if (info == null) {
+				System.out.println(label + " unavailable");
+				return;
+			}
+			System.out.println(label + " " + info.getThreadName() + " state=" + info.getThreadState() + " lock="
+					+ info.getLockName() + " lockOwner=" + info.getLockOwnerName() + "#" + info.getLockOwnerId());
+			for (StackTraceElement frame : info.getStackTrace()) {
+				System.out.println("\tat " + frame);
+			}
+			System.out.flush();
+		}
+
+		private static String ioExceptionText(Throwable failure) {
+			return failure.getClass().getName() + ": " + failure.getMessage() + " caused by " + failure.getCause();
 		}
 	}
 
