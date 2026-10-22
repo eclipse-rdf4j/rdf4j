@@ -97,6 +97,73 @@ test('explore page leaves its lists to the view, restores limits, and renders ra
     assert.equal(harness.document.getElementById('explore-resource-summary').hidden, false);
 });
 
+function exploreHasMoreHarness(answer) {
+    const harness = createExploreBrowserHarness({
+        href: 'http://localhost:8080/rdf4j-workbench/repositories/test/explore?resource=http%3A%2F%2Fexample.com%2Fhub'
+            + '&offset=100&limit_explore=100'
+    });
+    const total = harness.registerElement('input', { id: 'workbench-total-result-count', value: '' });
+    total.setAttribute('data-has-more', 'true');
+    harness.document.body.appendChild(total);
+    harness.document.getElementById('nextX').value = 'Next 100';
+    harness.document.cookie = 'total_result_count=9';
+    const requests = [];
+    harness.window.fetch = () => Promise.reject(new Error('fetched directly'));
+    harness.loadExploreScript();
+    harness.workbench.app = {
+        loadModel(fetcher, url) {
+            requests.push(url);
+            return answer;
+        }
+    };
+    return { harness, requests, total };
+}
+
+test('explore page that stopped before the end shows "of …" and fills in the counted total', async () => {
+    const { harness, requests, total } = exploreHasMoreHarness(Promise.resolve({
+        metadata: { 'total-result-count': 250 }
+    }));
+
+    harness.workbench.explore.mount(harness.document.body);
+
+    const resultCount = harness.document.getElementById('explore-result-count');
+    assert.equal(resultCount.textContent, 'Rows 101–200 of …', 'a stale total cookie is not the total');
+    assert.equal(resultCount.title, 'Counting…');
+    assert.equal(harness.document.getElementById('nextX').disabled, false, 'rows follow the page');
+    assert.equal(requests.length, 1);
+    assert.equal(new URL(requests[0]).searchParams.get('counts'), 'true');
+
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(total.value, '250');
+    assert.equal(resultCount.textContent, 'Rows 101–200 of 250');
+    assert.equal(resultCount.title, '');
+});
+
+test('explore page whose count timed out keeps "of …" and says why', async () => {
+    const { harness } = exploreHasMoreHarness(Promise.resolve({ metadata: { 'counts-timed-out': true } }));
+
+    harness.workbench.explore.mount(harness.document.body);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const resultCount = harness.document.getElementById('explore-result-count');
+    assert.equal(resultCount.textContent, 'Rows 101–200 of …');
+    assert.equal(resultCount.title, 'Counting took longer than five minutes');
+    assert.equal(harness.document.getElementById('nextX').disabled, false);
+});
+
+test('explore page that is left before its count arrives ignores the late answer', async () => {
+    let answer;
+    const { harness, total } = exploreHasMoreHarness(new Promise((resolve) => { answer = resolve; }));
+
+    const unmount = harness.workbench.explore.mount(harness.document.body);
+    unmount();
+    answer({ metadata: { 'total-result-count': 250 } });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(total.value, '');
+});
+
 test('explore page without a resource empties the summary a previous page filled', () => {
     const harness = createExploreBrowserHarness({
         href: 'http://localhost:8080/rdf4j-workbench/repositories/test/explore'

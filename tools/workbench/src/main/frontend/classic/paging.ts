@@ -208,7 +208,9 @@ namespace workbench {
             var hasParams = (url.indexOf('?') + 1 || url.indexOf(';') + 1);
             var sep = hasParams ? AMP : ';';
             url = url + sep + name + '=' + value;
-            if (!hasQueryParameter(KT) || 'false' == getQueryParameter(KT)) {
+            // A total counted after the page was shown (Explore's has-more pages) replaces the unknown 0.
+            if (!hasQueryParameter(KT) || 'false' == getQueryParameter(KT)
+                    || ('0' == getQueryParameter(KT) && getTotalResultCount() > 0)) {
                 url += AMP + KT + '=' + getTotalResultCount();
             }
             if (!hasQueryParameter('query')) {
@@ -339,8 +341,19 @@ namespace workbench {
                 .val(buttonWordPattern.exec(<string>previousButton.val())[0] + limit);
             var offset = workbench.paging.getOffset();
             previousButton.prop('disabled', (offset <= 0 || limit <= 0));
+            // A page whose total is still being counted says whether a row follows it.
             nextButton.prop('disabled',
-                (count < limit || limit <= 0 || (offset + count) >= getTotalResultCount()));
+                (count < limit || limit <= 0 || (!resultHasMore() && (offset + count) >= getTotalResultCount())));
+        }
+
+        /**
+         * Whether the shown page said that rows follow it while its total is not known yet (Explore streams its
+         * pages and counts the total separately).
+         */
+        export function resultHasMore(): boolean {
+            var resultMetadata = document.getElementById(RESULT_TOTAL_COUNT_ID) as HTMLInputElement;
+            return Boolean(resultMetadata && !resultMetadata.value
+                && resultMetadata.getAttribute('data-has-more') === 'true');
         }
 
         /**
@@ -359,6 +372,10 @@ namespace workbench {
                 if (!isNaN(resultMetadataCount)) {
                     return resultMetadataCount;
                 }
+            }
+            if (resultHasMore()) {
+                // The page said its total is not known yet: no older count stands in for it.
+                return 0;
             }
             var s_trc = workbench.paging.getQueryParameter(KT);
             if (s_trc.length == 0) {
