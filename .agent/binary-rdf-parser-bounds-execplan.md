@@ -15,7 +15,12 @@ Binary RDF documents can claim enormous string lengths and value IDs before supp
 - [x] [done] Verify focused and full affected modules.
 - [x] [done] Add negative-ID red regression.
 - [x] [done] Reject negative IDs and reverify.
-- [ ] [in_progress] Review scope and publish draft PR.
+- [x] [done] Review scope and publish draft PR.
+- [x] [done] Reproduce nested triple stack exhaustion.
+- [x] [done] Implement iterative value term parsing.
+- [x] [done] Reverify nested triple follow-up.
+- [x] [done] Obtain follow-up scope review.
+- [ ] [in_progress] Commit and push approved follow-up.
 - [ ] [todo] Monitor exact-head CI to completion.
 
 ## Surprises & Discoveries
@@ -73,3 +78,8 @@ Plan revision note (2026-10-23): Full common IO and Binary RDF module suites pas
 Plan revision note (2026-10-23): Parent review identified that negative version 1 reference IDs are not established as valid by the format despite their signed storage type. Add new red tests for negative declarations and references, then reject them as malformed before publication.
 Plan revision note (2026-10-23): Negative declaration and reference tests ran red in the candidate: 12 tests, 2 failures. Preserved report as `negative-id-initial-evidence.txt` before changing production.
 Plan revision note (2026-10-23): Shared ID validation now rejects negative declarations and references before value parsing or table lookup. The focused parser class passed 12 tests; the full Binary RDF module passed 182 tests with four skips. The final formatter passed.
+Plan revision note (2026-10-23): Published draft PR #6215 at `bf196608f2a66121f7b6d4a9c7fa3889eaf83ca2`. Parent review then identified unbounded recursion in nested TRIPLE_VALUE parsing. Add a red-first stack regression and compatible iterative fix as a separate follow-up commit on this same PR; do not amend.
+Plan revision note (2026-10-23): A 50,000-level nested triple statement failed in Surefire with StackOverflowError through `readTripleTerm/readValue`; preserved `triple-stack-initial-evidence.txt` before implementation.
+Plan revision note (2026-10-23): `readValue` now uses pending frames for nested triples and a direct path for ordinary values. The focused stack test and full malformed-parser class pass (16 tests, 0 failures/errors); added coverage for nested declarations/references and invalid subject/predicate types. Run the full module, format, and review before a follow-up commit.
+Plan revision note (2026-10-23): Full Binary RDF module passed 186 tests, 0 failures/errors, 4 skips. Copyright, root formatter, and diff check passed. Sent the three-file follow-up candidate to parent for review before pushing a new head.
+Plan revision note (2026-10-23): Parent approved the iterative nested-triple candidate for a new commit on draft PR #6215. Preserve the separate preexisting NULL_VALUE triple-object factory exception for later assessment; do not delay the stack fix.

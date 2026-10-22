@@ -38,7 +38,9 @@ import java.io.InputStream;
 import java.io.Reader;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
 import java.util.Arrays;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -48,7 +50,6 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
@@ -251,7 +252,48 @@ public class BinaryRDFParser extends AbstractRDFParser {
 	}
 
 	private Value readValue() throws RDFParseException, IOException {
-		byte valueType = in.readByte();
+		Deque<TripleTermFrame> pending = null;
+		while (true) {
+			byte valueType = in.readByte();
+			if (valueType == TRIPLE_VALUE) {
+				if (pending == null) {
+					pending = new ArrayDeque<>();
+				}
+				pending.push(new TripleTermFrame());
+				continue;
+			}
+
+			Value value = readDirectValue(valueType);
+			if (pending == null) {
+				return value;
+			}
+			while (true) {
+				TripleTermFrame frame = pending.peek();
+				if (frame.subject == null) {
+					if (!(value instanceof Resource)) {
+						reportFatalError("Invalid RDF-star triple value");
+					}
+					frame.subject = (Resource) value;
+					break;
+				}
+				if (frame.predicate == null) {
+					if (!(value instanceof IRI)) {
+						reportFatalError("Invalid RDF-star triple value");
+					}
+					frame.predicate = (IRI) value;
+					break;
+				}
+
+				pending.pop();
+				value = valueFactory.createTripleTerm(frame.subject, frame.predicate, value);
+				if (pending.isEmpty()) {
+					return value;
+				}
+			}
+		}
+	}
+
+	private Value readDirectValue(byte valueType) throws RDFParseException, IOException {
 		switch (valueType) {
 		case NULL_VALUE:
 			return null;
@@ -267,8 +309,6 @@ public class BinaryRDFParser extends AbstractRDFParser {
 			return readLangLiteral();
 		case DATATYPE_LITERAL_VALUE:
 			return readDatatypeLiteral();
-		case TRIPLE_VALUE:
-			return readTripleTerm();
 		default:
 			reportFatalError("Unknown value type: " + valueType);
 			return null;
@@ -315,19 +355,9 @@ public class BinaryRDFParser extends AbstractRDFParser {
 		return createLiteral(label, null, dtUri, -1, -1);
 	}
 
-	private TripleTerm readTripleTerm() throws IOException {
-		Value subject = readValue();
-		if (subject instanceof Resource) {
-			Value predicate = readValue();
-			if (predicate instanceof IRI) {
-				Value object = readValue();
-
-				return valueFactory.createTripleTerm((Resource) subject, (IRI) predicate, object);
-			}
-		}
-
-		reportFatalError("Invalid RDF-star triple value");
-		return null;
+	private static final class TripleTermFrame {
+		private Resource subject;
+		private IRI predicate;
 	}
 
 	private int readId() throws IOException, RDFParseException {

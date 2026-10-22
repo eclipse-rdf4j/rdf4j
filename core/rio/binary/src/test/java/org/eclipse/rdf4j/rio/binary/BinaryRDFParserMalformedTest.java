@@ -26,6 +26,8 @@ import java.util.List;
 
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.TripleTerm;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.rio.RDFParseException;
@@ -194,6 +196,122 @@ class BinaryRDFParserMalformedTest {
 
 		assertThrows(EOFException.class,
 				() -> new BinaryRDFParser().parse(new ByteArrayInputStream(bytes), "urn:base"));
+	}
+
+	@Test
+	void deeplyNestedTripleTermsDoNotExhaustCallStack() throws Exception {
+		int depth = 50_000;
+		byte[] bytes = versionOne(out -> {
+			out.writeByte(BinaryRDFConstants.STATEMENT);
+			out.writeByte(BinaryRDFConstants.URI_VALUE);
+			writeString(out, "urn:subject");
+			out.writeByte(BinaryRDFConstants.URI_VALUE);
+			writeString(out, "urn:predicate");
+			for (int i = 0; i < depth; i++) {
+				out.writeByte(BinaryRDFConstants.TRIPLE_VALUE);
+				out.writeByte(BinaryRDFConstants.URI_VALUE);
+				writeString(out, "urn:subject");
+				out.writeByte(BinaryRDFConstants.URI_VALUE);
+				writeString(out, "urn:predicate");
+			}
+			out.writeByte(BinaryRDFConstants.PLAIN_LITERAL_VALUE);
+			writeString(out, "leaf");
+			out.writeByte(BinaryRDFConstants.NULL_VALUE);
+		});
+		List<Statement> statements = new ArrayList<>();
+		BinaryRDFParser parser = new BinaryRDFParser();
+		parser.setRDFHandler(new StatementCollector(statements));
+
+		parser.parse(new ByteArrayInputStream(bytes), "urn:base");
+
+		assertEquals(1, statements.size());
+		Value value = statements.get(0).getObject();
+		for (int i = 0; i < depth; i++) {
+			TripleTerm term = (TripleTerm) value;
+			assertEquals("urn:subject", term.getSubject().stringValue());
+			assertEquals("urn:predicate", term.getPredicate().stringValue());
+			value = term.getObject();
+		}
+		assertEquals("leaf", value.stringValue());
+	}
+
+	@Test
+	void declaredNestedTripleCanUseValueReferences() throws Exception {
+		byte[] bytes = versionOne(out -> {
+			writeDeclaration(out, 0, "urn:subject");
+			writeDeclaration(out, 1, "urn:predicate");
+			out.writeByte(BinaryRDFConstants.VALUE_DECL);
+			out.writeInt(2);
+			for (int i = 0; i < 2; i++) {
+				out.writeByte(BinaryRDFConstants.TRIPLE_VALUE);
+				out.writeByte(BinaryRDFConstants.VALUE_REF);
+				out.writeInt(0);
+				out.writeByte(BinaryRDFConstants.VALUE_REF);
+				out.writeInt(1);
+			}
+			out.writeByte(BinaryRDFConstants.PLAIN_LITERAL_VALUE);
+			writeString(out, "leaf");
+			out.writeByte(BinaryRDFConstants.STATEMENT);
+			out.writeByte(BinaryRDFConstants.VALUE_REF);
+			out.writeInt(0);
+			out.writeByte(BinaryRDFConstants.VALUE_REF);
+			out.writeInt(1);
+			out.writeByte(BinaryRDFConstants.VALUE_REF);
+			out.writeInt(2);
+			out.writeByte(BinaryRDFConstants.NULL_VALUE);
+		});
+		List<Statement> statements = new ArrayList<>();
+		BinaryRDFParser parser = new BinaryRDFParser();
+		parser.setRDFHandler(new StatementCollector(statements));
+
+		parser.parse(new ByteArrayInputStream(bytes), "urn:base");
+
+		Value value = statements.get(0).getObject();
+		for (int i = 0; i < 2; i++) {
+			TripleTerm term = (TripleTerm) value;
+			assertEquals("urn:subject", term.getSubject().stringValue());
+			assertEquals("urn:predicate", term.getPredicate().stringValue());
+			value = term.getObject();
+		}
+		assertEquals("leaf", value.stringValue());
+	}
+
+	@Test
+	void invalidNestedTripleSubjectRemainsAParseFailure() throws Exception {
+		byte[] bytes = versionOne(out -> {
+			out.writeByte(BinaryRDFConstants.STATEMENT);
+			out.writeByte(BinaryRDFConstants.URI_VALUE);
+			writeString(out, "urn:subject");
+			out.writeByte(BinaryRDFConstants.URI_VALUE);
+			writeString(out, "urn:predicate");
+			out.writeByte(BinaryRDFConstants.TRIPLE_VALUE);
+			out.writeByte(BinaryRDFConstants.PLAIN_LITERAL_VALUE);
+			writeString(out, "invalid-subject");
+		});
+
+		RDFParseException failure = assertThrows(RDFParseException.class,
+				() -> new BinaryRDFParser().parse(new ByteArrayInputStream(bytes), "urn:base"));
+		assertTrue(failure.getMessage().contains("Invalid RDF-star triple value"));
+	}
+
+	@Test
+	void invalidNestedTriplePredicateRemainsAParseFailure() throws Exception {
+		byte[] bytes = versionOne(out -> {
+			out.writeByte(BinaryRDFConstants.STATEMENT);
+			out.writeByte(BinaryRDFConstants.URI_VALUE);
+			writeString(out, "urn:subject");
+			out.writeByte(BinaryRDFConstants.URI_VALUE);
+			writeString(out, "urn:predicate");
+			out.writeByte(BinaryRDFConstants.TRIPLE_VALUE);
+			out.writeByte(BinaryRDFConstants.URI_VALUE);
+			writeString(out, "urn:nested-subject");
+			out.writeByte(BinaryRDFConstants.PLAIN_LITERAL_VALUE);
+			writeString(out, "invalid-predicate");
+		});
+
+		RDFParseException failure = assertThrows(RDFParseException.class,
+				() -> new BinaryRDFParser().parse(new ByteArrayInputStream(bytes), "urn:base"));
+		assertTrue(failure.getMessage().contains("Invalid RDF-star triple value"));
 	}
 
 	private static byte[] versionOne(RecordWriter records) throws IOException {
