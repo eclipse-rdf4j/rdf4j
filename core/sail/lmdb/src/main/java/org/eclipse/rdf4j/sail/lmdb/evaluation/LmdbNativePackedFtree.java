@@ -27,6 +27,7 @@ import java.util.Map;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -38,6 +39,9 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.PackedFtreeContext;
 import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
 import org.eclipse.rdf4j.sail.lmdb.factor.FactorEnvironment;
@@ -454,9 +458,7 @@ final class LmdbNativePackedFtree {
 			if (aggregate.slot >= 0 && !slotAvailable(plan, row, aggregate.slot)) {
 				return null;
 			}
-			if (aggregate.kind == AggKind.SAMPLE || aggregate.kind == AggKind.GROUP_CONCAT
-					|| aggregate.kind == AggKind.CUSTOM || aggregate.distinct && aggregate.rowSlots != null) {
-				// M-F1/M-F3: serial-only aggregates — the packed weighted/popcount paths have no combination rule
+			if (aggregate.reducer.spillEncoding == NativeReducerCapabilities.SpillEncoding.OPAQUE) {
 				return null;
 			}
 		}
@@ -485,6 +487,14 @@ final class LmdbNativePackedFtree {
 		} catch (IOException | RuntimeException | Error problem) {
 			parallelLease.abort(problem);
 			throw problem;
+		}
+		for (AggregateSpec aggregate : aggregates) {
+			if (aggregate.reducer.rowState
+					|| aggregate.reducer.inputDomain == NativeReducerCapabilities.InputDomain.VISIBLE_MAPPING) {
+				// These channels use the bounded exact-event consumer above. The historical scalar popcount sink
+				// below has no full mapping/order representation and must not silently consume one of them.
+				return null;
+			}
 		}
 		try (Runtime runtime = Runtime.open(plan, row)) {
 			if (runtime == null) {
@@ -650,11 +660,12 @@ final class LmdbNativePackedFtree {
 						"interrupted while joining packed parallel aggregation workers"));
 			}
 			if (failure == null) {
-				HashMap<GroupKey, AggState> merged = null;
-				for (HashMap<GroupKey, AggState> map : maps) {
-					merged = mergeGroupMaps(merged, map);
-				}
 				try {
+					HashMap<GroupKey, AggState> merged = null;
+					for (HashMap<GroupKey, AggState> map : maps) {
+						row.cancellation.check();
+						merged = mergeGroupMaps(merged, map, row.cancellation);
+					}
 					finished = finisher.apply(merged == null ? new HashMap<>() : merged);
 				} catch (RuntimeException | Error e) {
 					failure = e;
@@ -702,6 +713,16 @@ final class LmdbNativePackedFtree {
 		if (next instanceof PackedParallelDecline && !(primary instanceof PackedParallelDecline)) {
 			return primary;
 		}
+		if (primary instanceof KernelQueryCancelledException) {
+			if (next instanceof EncounterOrderFallback || next instanceof KernelCancelledException
+					|| next instanceof LmdbNativeProbeDeadlineExceeded || next instanceof CancellationException) {
+				return primary;
+			}
+			// The terminal singleton deliberately cannot accumulate suppressed exceptions across evaluations.
+			// Retain a real cleanup failure on its own throwable; the outer deadline still owns the public timeout.
+			next.addSuppressed(primary);
+			return next;
+		}
 		primary.addSuppressed(next);
 		return primary;
 	}
@@ -730,7 +751,8 @@ final class LmdbNativePackedFtree {
 					&& failure.get() == null; index = nextPartition.getAndIncrement()) {
 				runtime.resetRoots(partitions[index].openFor(runtime));
 				collected = mergeGroupMaps(collected,
-						collectGroups(runtime, workerPlan, workerRow, groupSlots, aggregates, context));
+						collectGroups(runtime, workerPlan, workerRow, groupSlots, aggregates, context),
+						parentRow.cancellation);
 			}
 		}
 		return collected == null ? new HashMap<>() : collected;
@@ -743,7 +765,8 @@ final class LmdbNativePackedFtree {
 	 * never mixes a popcount count with a hash-channel set.
 	 */
 	private static HashMap<GroupKey, AggState> mergeGroupMaps(HashMap<GroupKey, AggState> left,
-			HashMap<GroupKey, AggState> right) {
+			HashMap<GroupKey, AggState> right, NativeCancellationToken cancellation) {
+		cancellation.check();
 		if (left == null || left.isEmpty()) {
 			return right;
 		}
@@ -752,12 +775,14 @@ final class LmdbNativePackedFtree {
 		}
 		HashMap<GroupKey, AggState> into = left.size() >= right.size() ? left : right;
 		HashMap<GroupKey, AggState> from = into == left ? right : left;
+		int tick = 0;
 		for (Map.Entry<GroupKey, AggState> entry : from.entrySet()) {
+			cancellation.poll(tick++);
 			AggState existing = into.putIfAbsent(entry.getKey(), entry.getValue());
 			if (existing != null) {
 				assert existing.distinctChannels.channelCount() == entry.getValue().distinctChannels.channelCount()
 						: "cross-mode group collision: popcount injectivity was violated";
-				existing.mergeFrom(entry.getValue());
+				existing.mergeFrom(entry.getValue(), cancellation);
 			}
 		}
 		return into;
@@ -4584,6 +4609,9 @@ final class LmdbNativePackedFtree {
 
 	/** Dynamic root-domain claims shared by workers; all storage access remains worker-confined. */
 	static final class RootMorsels {
+		record Claim(long from, RootProducer producer) {
+		}
+
 		final RootPartition domain;
 		final LmdbNativeMorselRange ranges;
 		final boolean ordered;
@@ -4595,6 +4623,11 @@ final class LmdbNativePackedFtree {
 		}
 
 		RootProducer claim(Runtime worker) throws IOException {
+			Claim claim = claimWithOrdinal(worker);
+			return claim == null ? null : claim.producer();
+		}
+
+		Claim claimWithOrdinal(Runtime worker) throws IOException {
 			java.util.function.LongUnaryOperator boundary = null;
 			if (ordered) {
 				NativeLmdbQuerySource.NativeAdjacency a = worker.adjacency(domain.seed.pattern.p.constant,
@@ -4609,9 +4642,9 @@ final class LmdbNativePackedFtree {
 			}
 			LmdbNativeMorselRange.Range range = ranges.claim(boundary);
 			return range == null ? null
-					: new RootPartition(domain.kind, domain.seed, range.from(), range.to(),
+					: new Claim(range.from(), new RootPartition(domain.kind, domain.seed, range.from(), range.to(),
 							domain.expectedTotal, domain.values, domain.multiplicities, domain.coveredPattern)
-									.openFor(worker);
+									.openFor(worker));
 		}
 	}
 
@@ -6990,6 +7023,9 @@ final class LmdbNativePackedFtree {
 		final RowState row;
 		final Runtime runtime;
 		final int baseMark;
+		final boolean ownsRuntime, orderedOccurrences;
+		final long[] nodeRepeats;
+		final LmdbQueryMemoryManager.Reservation replayMemory;
 		Chunk chunk;
 		int[] lanes;
 		long repeatRemaining;
@@ -7013,13 +7049,34 @@ final class LmdbNativePackedFtree {
 		}
 
 		PackedRowCursor(Plan plan, RowState row, Runtime runtime) {
+			this(plan, row, runtime, true, false);
+		}
+
+		PackedRowCursor(Plan plan, RowState row, Runtime runtime, boolean ownsRuntime, boolean orderedOccurrences) {
 			this.plan = plan;
 			this.row = row;
 			this.runtime = runtime;
 			this.baseMark = row.mark();
-			this.lanes = new int[plan.nodes.length];
-			this.borrowedReaders = new BorrowedFactorBatch.Cursor[plan.nodes.length];
-			Arrays.fill(lanes, -1);
+			this.ownsRuntime = ownsRuntime;
+			this.orderedOccurrences = orderedOccurrences;
+			this.replayMemory = orderedOccurrences
+					? row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory())
+							.reserve(128L + 24L * plan.nodes.length, null)
+					: null;
+			if (orderedOccurrences && replayMemory == null) {
+				throw new QueryEvaluationException("Query memory limit cannot retain ordered packed cursor state");
+			}
+			try {
+				this.nodeRepeats = orderedOccurrences ? new long[plan.nodes.length] : null;
+				this.lanes = new int[plan.nodes.length];
+				this.borrowedReaders = new BorrowedFactorBatch.Cursor[plan.nodes.length];
+				Arrays.fill(lanes, -1);
+			} catch (RuntimeException | Error failure) {
+				if (replayMemory != null) {
+					replayMemory.close();
+				}
+				throw failure;
+			}
 		}
 
 		static PackedRowCursor open(Plan plan, RowState row) throws IOException {
@@ -7034,6 +7091,7 @@ final class LmdbNativePackedFtree {
 		@Override
 		public boolean next() throws IOException {
 			LmdbNativeProbeDeadline.poll(++cancellationTick);
+			row.cancellation.poll(cancellationTick);
 			if (closed) {
 				return false;
 			}
@@ -7064,7 +7122,7 @@ final class LmdbNativePackedFtree {
 					Arrays.fill(lanes, -1);
 					continue;
 				}
-				long multiplicity = tupleMultiplicity();
+				long multiplicity = orderedOccurrences ? 1L : tupleMultiplicity();
 				if (multiplicity == 0L) {
 					continue;
 				}
@@ -7082,6 +7140,9 @@ final class LmdbNativePackedFtree {
 					return false;
 				}
 				lanes[node.ordinal] = lane;
+				if (orderedOccurrences) {
+					nodeRepeats[node.ordinal] = nodeWeight(node) - 1L;
+				}
 			}
 			return true;
 		}
@@ -7089,11 +7150,15 @@ final class LmdbNativePackedFtree {
 		private boolean advanceTuple() {
 			for (int ordinal = plan.nodes.length - 1; ordinal >= 0; ordinal--) {
 				NodePlan node = plan.nodes[ordinal];
-				int next = nextLane(node, lanes[ordinal] + 1);
+				boolean repeat = orderedOccurrences && nodeRepeats[ordinal] > 0L;
+				int next = repeat ? lanes[ordinal] : nextLane(node, lanes[ordinal] + 1);
 				if (next < 0) {
 					continue;
 				}
 				lanes[ordinal] = next;
+				if (orderedOccurrences) {
+					nodeRepeats[ordinal] = repeat ? nodeRepeats[ordinal] - 1L : nodeWeight(node) - 1L;
+				}
 				boolean resetOk = true;
 				for (int later = ordinal + 1; later < plan.nodes.length; later++) {
 					NodePlan laterNode = plan.nodes[later];
@@ -7103,6 +7168,9 @@ final class LmdbNativePackedFtree {
 						break;
 					}
 					lanes[later] = first;
+					if (orderedOccurrences) {
+						nodeRepeats[later] = nodeWeight(laterNode) - 1L;
+					}
 				}
 				if (resetOk) {
 					return true;
@@ -7165,6 +7233,11 @@ final class LmdbNativePackedFtree {
 			return weight;
 		}
 
+		private long nodeWeight(NodePlan node) {
+			NodeData data = chunk.data[node.ordinal];
+			return data.borrowed == null ? data.weight(lanes[node.ordinal]) : borrowedReaders[node.ordinal].weight();
+		}
+
 		private void installCurrentRow() {
 			row.rollback(baseMark);
 			for (int i = 0; i < plan.fixedSlots.length; i++) {
@@ -7189,7 +7262,15 @@ final class LmdbNativePackedFtree {
 					if (reader != null)
 						reader.close();
 			} finally {
-				runtime.close();
+				try {
+					if (ownsRuntime) {
+						runtime.close();
+					}
+				} finally {
+					if (replayMemory != null) {
+						replayMemory.close();
+					}
+				}
 			}
 		}
 	}

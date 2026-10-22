@@ -1019,7 +1019,8 @@ abstract class LmdbNativeAggregatePlannerBase {
 		for (int i = 0; i < specs.length; i++) {
 			int positionMask = specs[i].slot < 0 ? 0
 					: inputPositions.getOrDefault(slotNames.get(specs[i].slot), 0);
-			specs[i] = specs[i].withPositionMask(positionMask);
+			specs[i] = specs[i].withPositionMask(positionMask)
+					.withResultDemand(strategy.aggregateResultDemand(groupElements.get(i)));
 		}
 		return specs;
 	}

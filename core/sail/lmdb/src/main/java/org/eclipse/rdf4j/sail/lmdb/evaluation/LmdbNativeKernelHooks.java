@@ -86,6 +86,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	 */
 	private final KernelRuntime.LongHashSet[][] distinctSets;
 	private final int distinctExpected;
+	private final Runnable cancellationPoll;
 	/**
 	 * Fragment fast paths per filter hook (fragment-fusion M1/M3): a recognized hook evaluates its compiled id-space
 	 * fragment first and only takes the scratch-row round trip when the fragment ESCAPEs. Null entries (and a null
@@ -135,7 +136,17 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	LmdbNativeKernelHooks(RowState liveRow, LmdbNativeKernelBindings bindings,
 			LmdbNativeKernelBindings.FilterHook[] filterHooks,
 			LmdbNativeKernelBindings.BindHook[] bindHooks, int distinctExpected) {
+		this(liveRow, bindings, filterHooks, bindHooks, distinctExpected, () -> {
+			liveRow.cancellation.check();
+			LmdbNativeProbeDeadline.poll(0);
+		});
+	}
+
+	LmdbNativeKernelHooks(RowState liveRow, LmdbNativeKernelBindings bindings,
+			LmdbNativeKernelBindings.FilterHook[] filterHooks,
+			LmdbNativeKernelBindings.BindHook[] bindHooks, int distinctExpected, Runnable cancellationPoll) {
 		this.source = liveRow.source;
+		this.cancellationPoll = cancellationPoll;
 		SyntheticValueSource evaluationScope = liveRow.evaluationScope();
 		this.comparator = new ValueComparator(evaluationScope == null ? QueryExecutionPolicy.DEFAULT
 				: evaluationScope.queryExecutionPolicy);
@@ -145,8 +156,8 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 					"kernel-hook-memory");
 			this.scratchWriteSlots = new int[8];
 			this.scratchWritePrevious = new long[8];
-			this.scratch = new RowState(liveRow.source, liveRow.layout, liveRow.base, liveRow.exactValuesMetrics,
-					liveRow.cancellation);
+			this.scratch = new RowState(liveRow.source, liveRow.layout, liveRow.base, liveRow.telemetryTarget,
+					liveRow.exactValuesMetrics, liveRow.cancellation);
 			this.keyHooks = scratch.keyAuthority()instanceof NativeGeneratedKeyAuthority generated
 					? new NativeGeneratedKeyHooks(this, generated)
 					: this;
@@ -410,7 +421,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	 */
 	private long computeInternedBind(LmdbNativeCompiledValue computedValue) {
 		RowState scratchRow = scratch;
-		LmdbNativeValueCodec.DecodedValue decoded = computedValue.evaluator.eval(scratchRow);
+		LmdbNativeValueCodec.DecodedValue decoded = computedValue.value(scratchRow);
 		if (decoded == null || decoded.error()) {
 			return UNKNOWN;
 		}
@@ -664,7 +675,15 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		pendingScratchStart = scratchWriteCount;
 		boolean nested = LmdbNativeEvaluationStrategy.enterKernelSubplan();
 		try {
-			rowState(aggregateId, groupId).add(scratch);
+			AggregateSpec spec = groupLayout.outs[aggregateId].spec;
+			if (spec.reducer.mergeLaw == NativeReducerCapabilities.MergeLaw.ELIGIBLE_SAMPLE) {
+				if (spec.hasInput(scratch) && sampleAt(aggregateId, groupId) == null) {
+					installSample(aggregateId, groupId,
+							rowAggregateContext.value(spec.value(scratch), spec.positionMask));
+				}
+			} else {
+				rowState(aggregateId, groupId).add(scratch);
+			}
 		} finally {
 			LmdbNativeEvaluationStrategy.leaveKernelSubplan(nested);
 			restoreScratchInputs(start);
@@ -691,10 +710,33 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		}
 		if (states[groupId] == null) {
 			AggregateSpec[] specs = { groupLayout.outs[aggregateId].spec };
+			if (specs[0].reducer.mergeLaw == NativeReducerCapabilities.MergeLaw.ELIGIBLE_SAMPLE) {
+				memory.reserveOrThrow(512L, "kernel-sample-state-memory");
+			}
 			states[groupId] = new AggState(specs, distinctExpected, rowAggregateContext,
 					AggregateDistinctChannels.allHash(specs));
 		}
 		return states[groupId];
+	}
+
+	Value sampleAt(int aggregateId, int groupId) {
+		if (groupLayout.outs[aggregateId].spec.reducer.mergeLaw != NativeReducerCapabilities.MergeLaw.ELIGIBLE_SAMPLE) {
+			throw new IllegalArgumentException("Aggregate has no eligible-sample merge law");
+		}
+		AggState[] states = rowStates[aggregateId];
+		return groupId >= states.length || states[groupId] == null ? null : states[groupId].extremes[0];
+	}
+
+	void installSample(int aggregateId, int groupId, Value value) {
+		if (sampleAt(aggregateId, groupId) != null || value == null) {
+			return;
+		}
+		long retained = AggContext.ownedValueBytes(value);
+		if (retained < 0L) {
+			throw new LmdbNativeKernelPartitions.ParallelKernelDecline("sample-value-memory");
+		}
+		memory.reserveOrThrow(retained, "kernel-sample-value-memory");
+		rowState(aggregateId, groupId).extremes[0] = value;
 	}
 
 	Value rowAggregateResult(int aggregateId, int groupId) {
@@ -775,7 +817,8 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		KernelRuntime.LongHashSet[] sets = distinctSets[aggregateId];
 		KernelRuntime.LongHashSet set = sets[groupId];
 		if (set == null) {
-			KernelRuntime.LongHashSet created = new KernelRuntime.LongHashSet(distinctExpected, keyHooks, memory);
+			KernelRuntime.LongHashSet created = new KernelRuntime.LongHashSet(distinctExpected, keyHooks, memory,
+					cancellationPoll);
 			try {
 				boolean added = created.add(valueId);
 				sets[groupId] = created;
@@ -1043,6 +1086,16 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 			scratch.closeDecodedInputs();
 		} catch (RuntimeException | Error problem) {
 			failure = problem;
+		}
+		for (AggState[] states : rowStates) {
+			if (states != null) {
+				for (AggState state : states) {
+					if (state != null) {
+						failure = KernelRuntime.closeResource(state::closeExternal, failure);
+					}
+				}
+				Arrays.fill(states, null);
+			}
 		}
 		for (KernelRuntime.LongHashSet[] sets : distinctSets) {
 			if (sets == null) {

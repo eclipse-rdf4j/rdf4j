@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Literal;
@@ -57,6 +58,8 @@ final class LmdbNativeScalarExpressionCompiler {
 	private final boolean scopedEvaluation;
 	/** The compile-time generic context, when the caller has one; NOW needs it to build the per-evaluation scope. */
 	private final QueryEvaluationContext compileContext;
+	/** The outer compiler owns composition such as IF, COALESCE and Boolean-valued children. */
+	private final Function<ValueExpr, LmdbNativeCompiledValue> childValueCompiler;
 
 	LmdbNativeScalarExpressionCompiler(NativeLmdbQuerySource source, LmdbNativeValueCodec codec,
 			LmdbNativeSlotResolver slots) {
@@ -71,6 +74,13 @@ final class LmdbNativeScalarExpressionCompiler {
 	LmdbNativeScalarExpressionCompiler(NativeLmdbQuerySource source, LmdbNativeValueCodec codec,
 			LmdbNativeSlotResolver slots, long assuredMask, boolean allowVolatile, boolean scopedEvaluation,
 			QueryEvaluationContext compileContext) {
+		this(source, codec, slots, assuredMask, allowVolatile, scopedEvaluation, compileContext, null);
+	}
+
+	LmdbNativeScalarExpressionCompiler(NativeLmdbQuerySource source, LmdbNativeValueCodec codec,
+			LmdbNativeSlotResolver slots, long assuredMask, boolean allowVolatile, boolean scopedEvaluation,
+			QueryEvaluationContext compileContext,
+			Function<ValueExpr, LmdbNativeCompiledValue> childValueCompiler) {
 		this.source = source;
 		this.codec = codec;
 		this.slots = slots;
@@ -78,6 +88,11 @@ final class LmdbNativeScalarExpressionCompiler {
 		this.allowVolatile = allowVolatile;
 		this.scopedEvaluation = scopedEvaluation;
 		this.compileContext = compileContext;
+		this.childValueCompiler = childValueCompiler;
+	}
+
+	private LmdbNativeCompiledValue compileChildValue(ValueExpr expression) {
+		return childValueCompiler == null ? compileValue(expression) : childValueCompiler.apply(expression);
 	}
 
 	LmdbNativeCompiledValue compileValue(ValueExpr expr) {
@@ -99,7 +114,7 @@ final class LmdbNativeScalarExpressionCompiler {
 			return value(0L, row -> constant);
 		}
 		if (expr instanceof Str) {
-			LmdbNativeCompiledValue arg = compileValue(((Str) expr).getArg());
+			LmdbNativeCompiledValue arg = compileChildValue(((Str) expr).getArg());
 			return arg == null ? null : value(arg.requiredMask, row -> strValue(arg.evaluator.eval(row)));
 		}
 		if (expr instanceof Lang) {
@@ -110,7 +125,7 @@ final class LmdbNativeScalarExpressionCompiler {
 			});
 		}
 		if (expr instanceof Datatype) {
-			LmdbNativeCompiledValue arg = compileValue(((Datatype) expr).getArg());
+			LmdbNativeCompiledValue arg = compileChildValue(((Datatype) expr).getArg());
 			return arg == null ? null : value(arg.requiredMask, row -> {
 				LmdbNativeValueCodec.DecodedValue value = arg.evaluator.eval(row);
 				if (!value.literal() || value.datatypeIri() == null) {
@@ -123,14 +138,14 @@ final class LmdbNativeScalarExpressionCompiler {
 			return compileBNode((BNodeGenerator) expr);
 		}
 		if (expr instanceof Label) {
-			LmdbNativeCompiledValue arg = compileValue(((Label) expr).getArg());
+			LmdbNativeCompiledValue arg = compileChildValue(((Label) expr).getArg());
 			return arg == null ? null : value(arg.requiredMask, row -> {
 				LmdbNativeValueCodec.DecodedValue decoded = arg.evaluator.eval(row);
 				return decoded.literal() ? stringLiteral(decoded.label()) : LmdbNativeValueCodec.DecodedValue.ERROR;
 			});
 		}
 		if (expr instanceof LocalName) {
-			LmdbNativeCompiledValue arg = compileValue(((LocalName) expr).getArg());
+			LmdbNativeCompiledValue arg = compileChildValue(((LocalName) expr).getArg());
 			return arg == null ? null : value(arg.requiredMask, row -> {
 				LmdbNativeValueCodec.DecodedValue decoded = arg.evaluator.eval(row);
 				if (!decoded.iri()) {
@@ -143,7 +158,7 @@ final class LmdbNativeScalarExpressionCompiler {
 			});
 		}
 		if (expr instanceof Namespace) {
-			LmdbNativeCompiledValue arg = compileValue(((Namespace) expr).getArg());
+			LmdbNativeCompiledValue arg = compileChildValue(((Namespace) expr).getArg());
 			return arg == null ? null : value(arg.requiredMask, row -> {
 				LmdbNativeValueCodec.DecodedValue decoded = arg.evaluator.eval(row);
 				if (!decoded.iri()) {
@@ -192,7 +207,7 @@ final class LmdbNativeScalarExpressionCompiler {
 				&& !(((ValueConstant) labelExpression).getValue() instanceof Literal)) {
 			return value(0L, row -> LmdbNativeValueCodec.DecodedValue.ERROR);
 		}
-		LmdbNativeCompiledValue label = compileValue(labelExpression);
+		LmdbNativeCompiledValue label = compileChildValue(labelExpression);
 		if (label == null) {
 			return null;
 		}
@@ -255,7 +270,7 @@ final class LmdbNativeScalarExpressionCompiler {
 		LmdbNativeCompiledValue[] compiled = new LmdbNativeCompiledValue[args.size()];
 		long mask = 0L;
 		for (int i = 0; i < args.size(); i++) {
-			LmdbNativeCompiledValue arg = compileValue(args.get(i));
+			LmdbNativeCompiledValue arg = compileChildValue(args.get(i));
 			if (arg == null) {
 				return null;
 			}
@@ -304,21 +319,21 @@ final class LmdbNativeScalarExpressionCompiler {
 			return constant == null ? null : string(0L, row -> constant);
 		}
 		if (expr instanceof Var) {
-			LmdbNativeCompiledValue value = compileValue(expr);
+			LmdbNativeCompiledValue value = compileChildValue(expr);
 			return value == null ? null : string(value.requiredMask, row -> {
 				LmdbNativeValueCodec.DecodedValue decoded = value.evaluator.eval(row);
 				return decoded.stringLiteral() ? decoded.label() : null;
 			});
 		}
 		if (expr instanceof Str) {
-			LmdbNativeCompiledValue value = compileValue(((Str) expr).getArg());
+			LmdbNativeCompiledValue value = compileChildValue(((Str) expr).getArg());
 			return value == null ? null : string(value.requiredMask, row -> {
 				LmdbNativeValueCodec.DecodedValue decoded = value.evaluator.eval(row);
 				return strLexicalValue(decoded);
 			});
 		}
 		if (expr instanceof Lang) {
-			LmdbNativeCompiledValue value = compileValue(((Lang) expr).getArg());
+			LmdbNativeCompiledValue value = compileChildValue(((Lang) expr).getArg());
 			return value == null ? null : string(value.requiredMask, row -> {
 				LmdbNativeValueCodec.DecodedValue decoded = value.evaluator.eval(row);
 				if (!decoded.literal()) {
@@ -327,12 +342,10 @@ final class LmdbNativeScalarExpressionCompiler {
 				return decoded.language().orElse("");
 			});
 		}
-		if (expr instanceof FunctionCall) {
-			FunctionCall call = (FunctionCall) expr;
+		if (expr instanceof FunctionCall call && call.getArgs().size() == 1
+				&& (FN.LOWER_CASE.stringValue().equals(call.getURI())
+						|| FN.UPPER_CASE.stringValue().equals(call.getURI()))) {
 			List<ValueExpr> args = call.getArgs();
-			if (args.size() != 1) {
-				return null;
-			}
 			LmdbNativeCompiledString arg = compileString(args.get(0));
 			if (arg == null) {
 				return null;
@@ -352,7 +365,14 @@ final class LmdbNativeScalarExpressionCompiler {
 				});
 			}
 		}
-		return null;
+		// Convert the recursively compiled RDF value only after checking its string type. Calling the value
+		// channel here is safe: its scalar entry handles this expression, then recurses only into children.
+		// In particular STRLEN -> string -> STRBEFORE/IF/COALESCE no longer loses the outer compiler's coverage.
+		LmdbNativeCompiledValue value = compileChildValue(expr);
+		return value == null ? null : string(value.requiredMask, row -> {
+			LmdbNativeValueCodec.DecodedValue decoded = value.evaluator.eval(row);
+			return decoded.stringLiteral() ? decoded.label() : null;
+		});
 	}
 
 	LmdbNativeCompiledId compileId(ValueExpr expr) {
@@ -403,7 +423,17 @@ final class LmdbNativeScalarExpressionCompiler {
 				return null;
 			}
 			LmdbNativeCompiledString arg = compileString(args.get(0));
+			int summarySlot = args.get(0)instanceof Var variable && !variable.hasValue()
+					? slots.slot(variable.getName())
+					: NO_SLOT;
 			return arg == null ? null : numeric(arg.requiredMask, row -> {
+				NativeResultCell summary = summarySlot < 0 ? null : row.summaryCell(summarySlot);
+				if (summary != null) {
+					return summary.state() == NativeResultCell.State.BOUND
+							? LmdbNativeNumericValue.decimal(BigDecimal.valueOf(summary.codePointLength()),
+									CoreDatatype.XSD.INTEGER)
+							: LmdbNativeNumericValue.ERROR;
+				}
 				String value = arg.evaluator.eval(row);
 				return value == null ? LmdbNativeNumericValue.ERROR
 						: LmdbNativeNumericValue.decimal(
@@ -421,7 +451,7 @@ final class LmdbNativeScalarExpressionCompiler {
 			return arg == null ? null
 					: numeric(arg.requiredMask, row -> applyNumericBuiltin(call.getURI(), arg.evaluator.eval(row)));
 		}
-		LmdbNativeCompiledValue value = compileValue(expr);
+		LmdbNativeCompiledValue value = compileChildValue(expr);
 		if (value == null) {
 			return null;
 		}

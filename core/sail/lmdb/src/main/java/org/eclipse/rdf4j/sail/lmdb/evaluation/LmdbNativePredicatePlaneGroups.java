@@ -44,7 +44,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjace
  * that plane. Output-group state is the only cardinality-dependent scratch.
  */
 @Experimental
-final class LmdbNativePredicatePlaneGroups implements QueryEvaluationStep {
+final class LmdbNativePredicatePlaneGroups implements NativeAggregateAlternative {
 	private static final int PLANE_BATCH_CAPACITY = 256;
 
 	static final AtomicLong PLANNED = new AtomicLong();
@@ -105,10 +105,41 @@ final class LmdbNativePredicatePlaneGroups implements QueryEvaluationStep {
 	}
 
 	@Override
+	public LmdbNativeWork estimateWork(NativeLmdbQuerySource source) throws IOException {
+		if (!plan.usesAdjacency()) {
+			return LmdbNativeWork.UNKNOWN;
+		}
+		try (NativeLmdbQuerySource.NativeProbe probe = source.newProbe();
+				NativeLmdbQuerySource.WildcardAdjacency planes = probe.wildcardAdjacency(true)) {
+			return planes == null ? LmdbNativeWork.UNKNOWN
+					: LmdbNativeWork.exact(planes.predicateCount() * (2D + channels.length));
+		}
+	}
+
+	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
+		return evaluate(bindings, NativeCancellationToken.forSource(source));
+	}
+
+	@Override
+	public CloseableIteration<BindingSet> evaluate(BindingSet bindings, NativeCancellationToken owner) {
+		NativeCancellationToken cancellation = new NativeCancellationToken(owner);
+		cancellation.check();
 		if (!bindings.isEmpty()) {
 			return NativeExecutionContextCarrier.forEvaluation(genericStep().evaluate(bindings), source);
 		}
+		try (NativeExecutionPhaseEvent.Span scan = NativeExecutionPhaseEvent.startNested("scan", cancellation);
+				NativeExecutionPhaseEvent.Span expressions = NativeExecutionPhaseEvent.startNested("expressions",
+						cancellation)) {
+			CloseableIteration<BindingSet> result = evaluateUnmeasured(bindings, cancellation);
+			expressions.complete();
+			scan.complete();
+			return result;
+		}
+	}
+
+	private CloseableIteration<BindingSet> evaluateUnmeasured(BindingSet bindings,
+			NativeCancellationToken cancellation) {
 		LmdbAdjacencyOptimizationTelemetry telemetry = LmdbAdjacencyOptimizationTelemetry.create(originalExpr,
 				LmdbAdjacencyOptimizationTelemetry.Grain.PLANE,
 				LmdbAdjacencyOptimizationTelemetry.Direction.BOTH);
@@ -117,23 +148,28 @@ final class LmdbNativePredicatePlaneGroups implements QueryEvaluationStep {
 		}
 		Map<Literal, GroupState> groups;
 		try {
-			groups = collectGroups(telemetry);
+			groups = collectGroups(telemetry, cancellation);
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
 		}
+		cancellation.check();
 		if (groups == null) {
 			return NativeExecutionContextCarrier.forEvaluation(genericStep().evaluate(bindings), source);
 		}
 		ArrayList<BindingSet> rows = new ArrayList<>(groups.size());
+		int tick = 0;
 		for (GroupState group : groups.values()) {
+			cancellation.poll(tick++);
 			QueryBindingSet row = new QueryBindingSet(channels.length + 1);
 			row.addBinding(groupBindingName, group.key);
 			for (int i = 0; i < channels.length; i++) {
+				cancellation.poll(i);
 				row.addBinding(channels[i].bindingName(),
 						SimpleValueFactory.getInstance().createLiteral(BigInteger.valueOf(group.counts[i])));
 			}
 			rows.add(row);
 		}
+		cancellation.check();
 		RUNS.incrementAndGet();
 		if (telemetry != null) {
 			telemetry.publish(originalExpr);
@@ -142,32 +178,38 @@ final class LmdbNativePredicatePlaneGroups implements QueryEvaluationStep {
 		return NativeExecutionContextCarrier.forEvaluation(new CloseableIteratorIteration<>(rows.iterator()), source);
 	}
 
-	private Map<Literal, GroupState> collectGroups(LmdbAdjacencyOptimizationTelemetry telemetry) throws IOException {
+	private Map<Literal, GroupState> collectGroups(LmdbAdjacencyOptimizationTelemetry telemetry,
+			NativeCancellationToken cancellation) throws IOException {
+		cancellation.check();
 		PlaneBatch batch = new PlaneBatch(PLANE_BATCH_CAPACITY);
 		Map<Literal, GroupState> groups = new LinkedHashMap<>();
 		try (LmdbPrefixRunCursor cursor = source.prefixRuns(plan, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, true)) {
 			if (cursor == null) {
 				return null;
 			}
-			while (fill(cursor, batch)) {
+			while (fill(cursor, batch, cancellation)) {
 				if (telemetry != null) {
 					telemetry.planesVisited(batch.size());
 					telemetry.planeMetadataReads(batch.size());
 				}
-				consume(batch, groups);
+				consume(batch, groups, cancellation);
 			}
 		}
+		cancellation.check();
 		if (telemetry != null) {
 			telemetry.source("PREDICATE_PLANE_METADATA");
 		}
 		return groups;
 	}
 
-	private static boolean fill(LmdbPrefixRunCursor cursor, PlaneBatch batch) throws IOException {
+	private static boolean fill(LmdbPrefixRunCursor cursor, PlaneBatch batch, NativeCancellationToken cancellation)
+			throws IOException {
 		batch.clear();
 		while (batch.size() < batch.capacity() && cursor.next()) {
+			cancellation.poll(batch.size());
 			batch.append(cursor.prefixValue(TripleIndex.PRED_IDX), cursor.runRowCount(), -1L, -1L);
 		}
+		cancellation.check();
 		if (batch.size() != 0) {
 			BATCHES.incrementAndGet();
 			PLANES.addAndGet(batch.size());
@@ -176,10 +218,11 @@ final class LmdbNativePredicatePlaneGroups implements QueryEvaluationStep {
 		return false;
 	}
 
-	private void consume(PlaneBatch batch, Map<Literal, GroupState> groups) {
+	private void consume(PlaneBatch batch, Map<Literal, GroupState> groups, NativeCancellationToken cancellation) {
 		long[] predicates = batch.predicates();
 		long[] quadCounts = batch.quadCounts();
 		for (int lane = 0; lane < batch.size(); lane++) {
+			cancellation.poll(lane);
 			Value value = source.lazyValue(predicates[lane], predicatePositionMask);
 			PREDICATE_DECODES.incrementAndGet();
 			if (!(value instanceof IRI)) {
@@ -193,6 +236,7 @@ final class LmdbNativePredicatePlaneGroups implements QueryEvaluationStep {
 				groups.put(key, group);
 			}
 			for (int channel = 0; channel < channels.length; channel++) {
+				cancellation.poll(channel);
 				long contribution = channels[channel].kind() == ChannelKind.ROWS ? quadCounts[lane] : 1L;
 				group.counts[channel] = Math.addExact(group.counts[channel], contribution);
 			}

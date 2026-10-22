@@ -50,6 +50,133 @@ import ch.qos.logback.core.read.ListAppender;
 public class LmdbNativeStrategyArbiterTest {
 
 	@Test
+	void mappingFailureClosesTheOpenedCarrierExactlyOnce() {
+		AtomicInteger closes = new AtomicInteger();
+		AutoCloseable value = closes::incrementAndGet;
+		IllegalStateException failure = new IllegalStateException("carrier mapping failed");
+		LmdbNativeStrategyProposal<AutoCloseable> original = new LmdbNativeStrategyProposal<>(() -> value,
+				1D, "nestedLoop");
+		LmdbNativeStrategyProposal<String> mapped = original.map(ignored -> {
+			throw failure;
+		}, "nestedLoop(fullValue)");
+		assertThatThrownBy(mapped::open).isSameAs(failure);
+		mapped.close();
+		original.close();
+		assertThat(closes).hasValue(1);
+	}
+
+	@Test
+	void mappingFailureRetainsItsPrimaryWhenOpenedCarrierCloseAlsoFails() {
+		AtomicInteger closes = new AtomicInteger();
+		IllegalStateException primary = new IllegalStateException("mapping primary");
+		IllegalArgumentException cleanup = new IllegalArgumentException("carrier cleanup");
+		AutoCloseable value = () -> {
+			closes.incrementAndGet();
+			throw cleanup;
+		};
+		LmdbNativeStrategyProposal<AutoCloseable> original = new LmdbNativeStrategyProposal<>(() -> value,
+				1D, "nestedLoop");
+		LmdbNativeStrategyProposal<String> mapped = original.map(ignored -> {
+			throw primary;
+		}, "nestedLoop(fullValue)");
+		assertThatThrownBy(mapped::open).isSameAs(primary);
+		mapped.close();
+		original.close();
+		assertThat(closes).hasValue(1);
+		assertThat(primary.getSuppressed()).containsExactly(cleanup);
+	}
+
+	@Test
+	void mappedCarrierPreservesPhysicalQuoteAndUnopenedOwnership() {
+		AtomicInteger opens = new AtomicInteger();
+		AtomicInteger releases = new AtomicInteger();
+		LmdbNativeStrategyProposal<String> original = new LmdbNativeStrategyProposal<>(() -> {
+			opens.incrementAndGet();
+			return "four";
+		}, 7D, "nestedLoop", releases::incrementAndGet);
+		LmdbNativeCostEstimate estimate = original.adaptiveEstimate(-1D);
+		original.withPhysicalEstimate(estimate);
+		LmdbNativeStrategyProposal<Integer> mapped = original.map(String::length, "nestedLoop(fullValue)");
+		assertThat(mapped.adaptiveEstimate(-1D)).isSameAs(estimate);
+		assertThat(mapped.work).isSameAs(original.work);
+		mapped.close();
+		mapped.close();
+		assertThat(opens).hasValue(0);
+		assertThat(releases).hasValue(1);
+	}
+
+	@Test
+	void mappedCarrierRetainsDominanceAndTransfersOnlyTheOpenedResult() throws IOException {
+		List<String> opens = new ArrayList<>();
+		LmdbNativeStrategyProposal<String> metadata = new LmdbNativeStrategyProposal<>(() -> {
+			opens.add("metadata");
+			return "exact";
+		}, 1000D, "adjacencyAggregate");
+		LmdbNativeStrategyProposal<String> scan = new LmdbNativeStrategyProposal<>(() -> {
+			opens.add("scan");
+			return "rows";
+		}, 0D, "irAggregate");
+		scan.physicallyDominatedBy(metadata, "identical demand with an additional scan");
+		try (LmdbNativeStrategyArbiter<Integer> arbiter = LmdbNativeStrategyArbiter.forExpr(null)) {
+			arbiter.offer(() -> scan.map(String::length, "irAggregate"));
+			arbiter.offer(() -> metadata.map(String::length, "adjacencyAggregate"));
+			assertThat(arbiter.select()).isEqualTo(5);
+		}
+		assertThat(opens).containsExactly("metadata");
+	}
+
+	@Test
+	void provedPhysicalDominanceRetainsADeclinedArmsExactFallback() throws IOException {
+		List<String> opens = new ArrayList<>();
+		LmdbNativeStrategyProposal<String> header = new LmdbNativeStrategyProposal<>(() -> {
+			opens.add("header");
+			return null;
+		}, 1000D, "adjacencyAggregate");
+		LmdbNativeStrategyProposal<String> rows = new LmdbNativeStrategyProposal<>(() -> {
+			opens.add("rows");
+			return "exact fallback";
+		}, 0D, "irAggregate");
+		rows.physicallyDominatedBy(header, "same visible header plus additional row enumeration");
+		try (LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter.forExpr(null)) {
+			arbiter.offer(() -> rows).offer(() -> header);
+			assertThat(arbiter.select()).isEqualTo("exact fallback");
+		}
+		assertThat(opens).containsExactly("header", "rows");
+	}
+
+	@Test
+	void provedPhysicalDominanceRemainsInPreviewAndCanBeExplicitlyForced() throws IOException {
+		AtomicInteger rowOpens = new AtomicInteger();
+		try (var scope = QueryExplanationContext.enter(Explanation.Level.Optimized);
+				LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter.forExpr(null)) {
+			LmdbNativeStrategyProposal<String> header = new LmdbNativeStrategyProposal<>(() -> "header", 1000D,
+					"adjacencyAggregate");
+			LmdbNativeStrategyProposal<String> rows = new LmdbNativeStrategyProposal<>(() -> {
+				rowOpens.incrementAndGet();
+				return "rows";
+			}, 0D, "irAggregate");
+			rows.physicallyDominatedBy(header, "same visible header plus additional row enumeration");
+			arbiter.offer(() -> rows).offer(() -> header);
+			assertThat(arbiter.preview("GROUP BY dispatch").candidates().toString())
+					.contains("irAggregate", "Physically dominated", "same visible header");
+			assertThat(rowOpens).hasValue(0);
+		}
+		try (LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter.<String>forExpr(null)
+				.forcing("irAggregate", "GROUP BY dispatch")) {
+			LmdbNativeStrategyProposal<String> header = new LmdbNativeStrategyProposal<>(() -> "header", 1000D,
+					"adjacencyAggregate");
+			LmdbNativeStrategyProposal<String> rows = new LmdbNativeStrategyProposal<>(() -> {
+				rowOpens.incrementAndGet();
+				return "rows";
+			}, 0D, "irAggregate");
+			rows.physicallyDominatedBy(header, "same visible header plus additional row enumeration");
+			arbiter.offer(() -> rows).offer(() -> header);
+			assertThat(arbiter.select()).isEqualTo("rows");
+		}
+		assertThat(rowOpens).hasValue(1);
+	}
+
+	@Test
 	public void workerQuotesDoNotReserveCapacityUntilTheOpenerIsAdmitted() {
 		try (var first = LmdbNativeParallelPipelines.quoteTasks(false, Integer.MAX_VALUE);
 				var second = LmdbNativeParallelPipelines.quoteTasks(false, Integer.MAX_VALUE)) {
@@ -853,6 +980,22 @@ public class LmdbNativeStrategyArbiterTest {
 		assertThat(index >= 0 ? candidates.get(index).tag : null)
 				.as("an arm with completed exact measurements is not cold; the static band may not cull it")
 				.isEqualTo(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE);
+	}
+
+	@Test
+	void completedRowsDoNotInvalidateAProvedSharedHeaderReduction() {
+		LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(),
+				new LmdbNativeStoreCostModel(), new LmdbNativeAdaptiveCostModel.Configuration(true, true));
+		LmdbNativeStrategyProposal<String> header = proposal(LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE, 1000D);
+		LmdbNativeStrategyProposal<String> rows = proposal(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, 1D);
+		LmdbNativeCostEstimate rowEstimate = rows.adaptiveEstimate(-1D);
+		for (int i = 0; i < 6; i++) {
+			model.recordCompleted(rowEstimate, rowEstimate.total(), 1_000_000D, 1D, model.currentRegime());
+		}
+		rows.physicallyDominatedBy(header, "same visible header plus additional row enumeration");
+		List<LmdbNativeStrategyProposal<String>> candidates = List.of(rows, header);
+		assertThat(candidates.get(LmdbNativeStrategyArbiter.rankAdaptive(candidates, -1D, model)))
+				.isSameAs(header);
 	}
 
 	/**

@@ -546,6 +546,93 @@ class LmdbNativeGeneratedQueryCoverageTest {
 	}
 
 	@Test
+	void generatedNestedExistsMinusUnionPreservesIndependentBranchRows() {
+		String property = "rdf4j.lmdb.janinoCodegen.debug";
+		String previous = System.getProperty(property);
+		System.setProperty(property, "true");
+		try {
+			assertGeneratedParity(3512);
+		} finally {
+			if (previous == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, previous);
+			}
+		}
+	}
+
+	@Test
+	void generatedNestedExistsMinusUnionSemanticRowsPreserveIndependentBranchRows() {
+		GeneratedQuery query = generatedQueriesAt(3512).get(3512);
+		assertThat(query).isNotNull();
+		List<String> expected = genericRows(query.sparql(), true);
+		assertThat(rows(query.sparql(), true, "nestedLoop"))
+				.as("the semantic native row route must retain each independent UNION branch\n%s", query.sparql())
+				.containsExactlyElementsOf(expected);
+	}
+
+	@Test
+	void branchLocalPredicatesRetainTheirLexicalScopeThroughNestedOperators() {
+		String witness = """
+				EXISTS {
+				  ?s ex:pB ?inner .
+				  MINUS { { SELECT ?s WHERE { ?s !^<http://example.org/p/I1> ?path } } }
+				}
+				""";
+		String independent = "VALUES ?tag { ex:accept } ?independent ex:pD ?value .";
+		for (String condition : List.of(witness, "NOT " + witness)) {
+			String filtered = "?s ex:pC ?condition . FILTER (" + condition + ")";
+			for (boolean filteredFirst : List.of(true, false)) {
+				String union = filteredFirst ? "{ " + filtered + " } UNION { " + independent + " }"
+						: "{ " + independent + " } UNION { " + filtered + " }";
+				for (String body : List.of(
+						union,
+						"{ { " + union + " } UNION { VALUES ?third { ex:third } } }",
+						"?s ex:pA ?outer . OPTIONAL { " + union + " }",
+						"?s ex:pA ?outer . MINUS { " + union + " }",
+						"?s ex:pA ?outer . FILTER EXISTS { " + union + " }",
+						"?s ex:pA ?outer . FILTER NOT EXISTS { " + union + " }",
+						"{ SELECT * WHERE { " + union + " } }")) {
+					assertScopedPredicateParity(body);
+				}
+			}
+		}
+		// SPARQL's error-aware boolean operations must be evaluated inside the filtered arm. Neither a false
+		// witness nor an expression error in that arm may reject an unrelated accepting arm.
+		for (String condition : List.of("(" + witness + ") || (1 / 0 = 0)",
+				"(NOT " + witness + ") || (1 / 0 = 0)",
+				"(1 / 0 = 0) || (NOT " + witness + ")", "(1 / 0 = 0) && (" + witness + ")")) {
+			String filtered = "?s ex:pC ?condition . FILTER (" + condition + ")";
+			assertScopedPredicateParity("{ " + filtered + " } UNION { " + independent + " }");
+			assertScopedPredicateParity("{ " + independent + " } UNION { " + filtered + " }");
+		}
+	}
+
+	private void assertScopedPredicateParity(String body) {
+		String query = "PREFIX ex: <http://ex/> SELECT * WHERE { VALUES ?s { ex:s1 ex:s2 } " + body + " }";
+		List<String> expected = genericRows(query, true);
+		resetMetricsOnly();
+		assertThat(nativeRowsUntilClassified(query, true))
+				.as("a local predicate retains its complete lexical relation\n%s", query)
+				.containsExactlyElementsOf(expected);
+	}
+
+	@Test
+	void generatedNestedMinusOptionalNeverLeaksARejectedProbeDeadline() {
+		assertGeneratedParity(1694);
+	}
+
+	private void assertGeneratedParity(int index) {
+		GeneratedQuery query = generatedQueriesAt(index).get(index);
+		assertThat(query).as("the deterministic generated corpus must contain index %s", index).isNotNull();
+		List<String> expected = genericRows(query.sparql(), true);
+		resetMetricsOnly();
+		assertThat(nativeRowsUntilClassified(query.sparql(), true))
+				.as("generated query %s\n%s", index, query.sparql())
+				.containsExactlyElementsOf(expected);
+	}
+
+	@Test
 	void strategyAwareDeclineClassificationRequiresSerialEvidence() {
 		assertThat(serialDeclinesAreNonCapability(Set.of(
 				new StrategyDecline("irKernel", "outranked"),
@@ -964,6 +1051,36 @@ class LmdbNativeGeneratedQueryCoverageTest {
 		long hostedBefore = LmdbNativeAggregateCompiler.HOSTED_GENERIC.get();
 		resetMetricsOnly();
 		List<String> actual = nativeRowsUntilClassified(OPTIONAL_WITH_INDEPENDENT_UNION_BRANCH_QUERY, true);
+		assertThat(actual)
+				.as("an independent UNION arm must be evaluated once for every OPTIONAL left row")
+				.containsExactlyElementsOf(expected);
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			assertThat(KernelExecutionTestAccess.eligibleStrategies(connection
+					.prepareTupleQuery(OPTIONAL_WITH_INDEPENDENT_UNION_BRANCH_QUERY)
+					.explain(Explanation.Level.Optimized)
+					.toGenericPlanNode()))
+							.contains(LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
+									LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED,
+									LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+		}
+		String previousSynchronous = System.setProperty(LmdbNativeJaninoCodegen.SYNCHRONOUS_PROPERTY, "true");
+		try {
+			assertThat(rows(OPTIONAL_WITH_INDEPENDENT_UNION_BRANCH_QUERY, true,
+					LmdbNativeAttemptMetrics.PATH_IR_KERNEL)).containsExactlyElementsOf(expected);
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				SailTupleQuery forced = (SailTupleQuery) connection
+						.prepareTupleQuery(OPTIONAL_WITH_INDEPENDENT_UNION_BRANCH_QUERY);
+				forced.setForcedLmdbExecutionStrategy(LmdbNativeAttemptMetrics.PATH_IR_KERNEL);
+				assertThat(forced.explain(Explanation.Level.Telemetry).toString())
+						.contains("nativeExecutionPath=irKernel");
+			}
+		} finally {
+			if (previousSynchronous == null) {
+				System.clearProperty(LmdbNativeJaninoCodegen.SYNCHRONOUS_PROPERTY);
+			} else {
+				System.setProperty(LmdbNativeJaninoCodegen.SYNCHRONOUS_PROPERTY, previousSynchronous);
+			}
+		}
 		Set<StrategyDecline> declines = declineReasons(OPTIONAL_WITH_INDEPENDENT_UNION_BRANCH_QUERY);
 		long planned = plannedKernels();
 		long opened = openedKernels();
@@ -971,7 +1088,7 @@ class LmdbNativeGeneratedQueryCoverageTest {
 		long compilations = LmdbNativeJaninoCodegen.COMPILATIONS.get();
 		long pendingCompiles = LmdbNativeJaninoCodegen.PENDING_COMPILES.get();
 		long compileFailures = LmdbNativeJaninoCodegen.COMPILE_FAILURES.get();
-		assertThat(planned).as(() -> "OPTIONAL UNION query must be recognized by a Janino kernel"
+		assertThat(planned).as(() -> "the forced OPTIONAL UNION route must open a Janino kernel"
 				+ "; planned=" + planned + " opened=" + opened + " declined=" + declined
 				+ " compilations=" + compilations + " pendingCompiles=" + pendingCompiles
 				+ " compileFailures=" + compileFailures + " declines=" + declines
@@ -988,9 +1105,6 @@ class LmdbNativeGeneratedQueryCoverageTest {
 		assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get() - islandsBefore)
 				.as("stateful OPTIONAL must not use a generic island")
 				.isZero();
-		assertThat(actual)
-				.as("an independent UNION arm must be evaluated once for every OPTIONAL left row")
-				.containsExactlyElementsOf(expected);
 	}
 
 	@Test

@@ -45,10 +45,15 @@ final class NativeFilterLease {
 	 * directly; execution keeps using the facade so the lease observes use and closes the right owner.
 	 */
 	static NativeBooleanFilter inspect(NativeBooleanFilter filter) {
-		while (filter instanceof BorrowedFilter borrowed) {
-			filter = borrowed.entry.attempt;
+		while (true) {
+			if (filter instanceof BorrowedFilter borrowed) {
+				filter = borrowed.entry.attempt;
+			} else if (filter instanceof PlannedNativeBooleanFilter planned) {
+				filter = planned.delegate;
+			} else {
+				return filter;
+			}
 		}
-		return filter;
 	}
 
 	NativeBooleanFilter borrow(NativeBooleanFilter original) {
@@ -251,6 +256,11 @@ final class NativeFilterLease {
 		@Override
 		public long batchReadMask() {
 			return entry.attempt.batchReadMask();
+		}
+
+		@Override
+		public NativePredicateCapabilities capabilities() {
+			return entry.attempt.capabilities();
 		}
 
 		@Override

@@ -87,7 +87,7 @@ final class NativeGraphFusion {
 		LmdbNativeExplain.bindLogicalOrigin(lowered, graph);
 	}
 
-	private static void linkLogicalOrigins(QueryModelNode logical, QueryModelNode physical) {
+	static void linkLogicalOrigins(QueryModelNode logical, QueryModelNode physical) {
 		if (logical instanceof TupleExpr logicalTuple && physical instanceof TupleExpr physicalTuple) {
 			LmdbNativeExplain.bindLogicalOrigin(physicalTuple, logicalTuple);
 		}

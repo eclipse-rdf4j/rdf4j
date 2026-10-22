@@ -49,6 +49,9 @@ final class RowState implements LmdbNativeSlotReader {
 	final NativeCancellationToken cancellation;
 	final int[] trailSlots;
 	final long[] trailOldValues;
+	/** Summary cells are never encoded in the primitive RDF term-id lane. */
+	private NativeResultCell[] summaryCells;
+	private NativeResultCell[] trailOldCells;
 	LmdbNativeRuntimePlan.Invocation runtimePlan;
 	PathResultMemo pathEstimateMemos;
 	/** Replay the ordinary generic source order without mandating adjacency or LMDB. */
@@ -80,19 +83,25 @@ final class RowState implements LmdbNativeSlotReader {
 	private boolean decodedInputAccounting;
 	private LmdbQueryMemoryManager.Reservation decodedInputReservation;
 	private long decodedInputValueBytes;
+	private NativeExpressionDomain.Scope expressionDomains;
+	private LmdbNativeProbeDeadline expressionDomainAttempt;
+	/** Current physical scalar producer; never inherited across lowering or worker boundaries. */
+	RowCursor expressionProducer;
+	/** Installed only by the separately arbitrated internal hash alternative. */
+	boolean hashedExpressionDomains;
 
 	RowState(NativeLmdbQuerySource source, NativeSlotLayout layout, BindingSet base) {
-		this(source, layout, base, null, null, new NativeCancellationToken());
+		this(source, layout, base, null, null, NativeCancellationToken.forSource(source));
 	}
 
 	RowState(NativeLmdbQuerySource source, NativeSlotLayout layout, BindingSet base, TupleExpr telemetryTarget) {
 		this(source, layout, base, telemetryTarget, ExactValuesRuntimeMetrics.create(telemetryTarget),
-				new NativeCancellationToken());
+				NativeCancellationToken.forSource(source));
 	}
 
 	RowState(NativeLmdbQuerySource source, NativeSlotLayout layout, BindingSet base,
 			ExactValuesRuntimeMetrics exactValuesMetrics) {
-		this(source, layout, base, null, exactValuesMetrics, new NativeCancellationToken());
+		this(source, layout, base, null, exactValuesMetrics, NativeCancellationToken.forSource(source));
 	}
 
 	RowState(NativeLmdbQuerySource source, NativeSlotLayout layout, BindingSet base, TupleExpr telemetryTarget,
@@ -105,13 +114,17 @@ final class RowState implements LmdbNativeSlotReader {
 		this(source, layout, base, null, exactValuesMetrics, cancellation);
 	}
 
-	private RowState(NativeLmdbQuerySource source, NativeSlotLayout layout, BindingSet base,
+	RowState(NativeLmdbQuerySource source, NativeSlotLayout layout, BindingSet base,
 			TupleExpr telemetryTarget, ExactValuesRuntimeMetrics exactValuesMetrics,
 			NativeCancellationToken cancellation) {
 		this.source = source;
+		if (source instanceof SyntheticValueSource synthetic && synthetic.executionContext() != null) {
+			this.memoryScope = synthetic.executionContext().memoryScope();
+		}
 		this.layout = layout;
 		this.base = base;
 		this.telemetryTarget = telemetryTarget;
+		NativeExpressionDomain.initializeMetrics(telemetryTarget);
 		this.slots = new long[layout.slotNames().length];
 		long baseMask = 0L;
 		for (int slot = 0; slot < layout.slotNames().length; slot++) {
@@ -121,7 +134,7 @@ final class RowState implements LmdbNativeSlotReader {
 		}
 		this.baseBindingMask = baseMask;
 		this.lexicalInputMask = baseMask;
-		this.view = new RowBindingSetView(source, layout, base, slots, false);
+		this.view = new RowBindingSetView(source, layout, base, slots, false, this);
 		this.exactValuesMetrics = exactValuesMetrics;
 		this.cancellation = cancellation;
 		this.trailSlots = new int[Math.max(8, slots.length * 4)];
@@ -130,7 +143,50 @@ final class RowState implements LmdbNativeSlotReader {
 
 	@Override
 	public long id(int slot) {
+		requireRdfTerm(slot);
 		return slots[slot];
+	}
+
+	@Override
+	public NativeResultCell summaryCell(int slot) {
+		return summaryCells == null ? null : summaryCells[slot];
+	}
+
+	void requireRdfTerm(int slot) {
+		if (summaryCell(slot) != null) {
+			throw new IllegalStateException(
+					"Unconsumed lexical summary at RDF term boundary: " + layout.slotName(slot));
+		}
+	}
+
+	void requireRdfTerms() {
+		if (summaryCells != null) {
+			for (int slot = 0; slot < summaryCells.length; slot++) {
+				requireRdfTerm(slot);
+			}
+		}
+	}
+
+	boolean bindSummary(int slot, NativeResultCell cell) {
+		if (cell.kind() != NativeResultCell.Kind.LEXICAL_SUMMARY) {
+			throw new IllegalArgumentException("Only lexical summaries belong in the typed summary lane");
+		}
+		if (summaryCell(slot) != null || slots[slot] != UNKNOWN) {
+			throw new IllegalStateException("Summary reached a term compatibility boundary: " + layout.slotName(slot));
+		}
+		if (summaryCells == null) {
+			summaryCells = new NativeResultCell[slots.length];
+			trailOldCells = new NativeResultCell[trailSlots.length];
+		}
+		trailSlots[trailSize] = slot;
+		trailOldValues[trailSize] = slots[slot];
+		trailOldCells[trailSize++] = null;
+		summaryCells[slot] = cell;
+		if (cell.state() == NativeResultCell.State.BOUND) {
+			boundMask |= 1L << slot;
+			view.slotBound();
+		}
+		return true;
 	}
 
 	@Override
@@ -140,6 +196,7 @@ final class RowState implements LmdbNativeSlotReader {
 
 	@Override
 	public LmdbNativeValueCodec.DecodedValue decodedValue(int slot, LmdbNativeValueCodec codec, boolean assured) {
+		requireRdfTerm(slot);
 		long id = slots[slot];
 		NativeTermAuthority authority = termAuthority();
 		SyntheticValueSource scope = evaluationScope();
@@ -320,6 +377,10 @@ final class RowState implements LmdbNativeSlotReader {
 	RowState fork() {
 		RowState copy = new RowState(source, layout, base, telemetryTarget, exactValuesMetrics, cancellation);
 		System.arraycopy(slots, 0, copy.slots, 0, slots.length);
+		if (summaryCells != null) {
+			copy.summaryCells = summaryCells.clone();
+			copy.trailOldCells = new NativeResultCell[copy.trailSlots.length];
+		}
 		copy.recomputeBoundMask();
 		copy.memoryScope = memoryScope;
 		copy.runtimePlan = runtimePlan;
@@ -345,6 +406,36 @@ final class RowState implements LmdbNativeSlotReader {
 	@Override
 	public SyntheticValueSource evaluationScope() {
 		return source instanceof SyntheticValueSource ? (SyntheticValueSource) source : null;
+	}
+
+	@Override
+	public NativeExpressionDomain.Scope expressionDomains() {
+		LmdbNativeProbeDeadline attempt = LmdbNativeProbeDeadline.currentOrNull();
+		if (expressionDomains == null || expressionDomainAttempt != attempt) {
+			expressionDomains = NativeExpressionDomain.scope(this);
+			expressionDomainAttempt = attempt;
+		}
+		return expressionDomains;
+	}
+
+	@Override
+	public NativeCancellationToken expressionCancellation() {
+		return cancellation;
+	}
+
+	@Override
+	public NativeExpressionDomainPolicy.Decision expressionDomainDecision(Object carrier, NativeScalarPlan plan) {
+		if (hashedExpressionDomains) {
+			return NativeExpressionDomainPolicy.Decision.HASHED;
+		}
+		NativeExpressionDomainPolicy.Input input = expressionProducer == null ? null
+				: expressionProducer.expressionInput();
+		return input == null ? NativeExpressionDomainPolicy.Decision.UNCACHED : input.decide(carrier, plan);
+	}
+
+	@Override
+	public TupleExpr expressionTelemetryTarget() {
+		return telemetryTarget;
 	}
 
 	@Override
@@ -386,12 +477,16 @@ final class RowState implements LmdbNativeSlotReader {
 	}
 
 	boolean bind(int slot, long id) {
+		requireRdfTerm(slot);
 		long current = slots[slot];
 		if (current != UNKNOWN) {
 			return current == id;
 		}
 		trailSlots[trailSize] = slot;
 		trailOldValues[trailSize] = current;
+		if (trailOldCells != null) {
+			trailOldCells[trailSize] = null;
+		}
 		trailSize++;
 		slots[slot] = id;
 		boundMask |= 1L << slot;
@@ -425,10 +520,20 @@ final class RowState implements LmdbNativeSlotReader {
 		while (trailSize > mark) {
 			trailSize--;
 			int slot = trailSlots[trailSize];
+			boolean wasBound = (boundMask & 1L << slot) != 0;
 			slots[slot] = trailOldValues[trailSize];
-			// only UNKNOWN -> bound transitions are trailed, so the restored value is always UNKNOWN
-			boundMask &= ~(1L << slot);
-			view.slotCleared();
+			if (summaryCells != null) {
+				summaryCells[slot] = trailOldCells[trailSize];
+				trailOldCells[trailSize] = null;
+			}
+			boolean isBound = slots[slot] != UNKNOWN || (summaryCell(slot) != null
+					&& summaryCell(slot).state() == NativeResultCell.State.BOUND);
+			if (isBound) {
+				boundMask |= 1L << slot;
+			} else {
+				boundMask &= ~(1L << slot);
+			}
+			view.slotReplaced(wasBound, isBound);
 		}
 	}
 
@@ -529,6 +634,7 @@ final class RowState implements LmdbNativeSlotReader {
 	 * generated-kernel hooks, whose argument set is known and bounded.
 	 */
 	long replaceSlot(int slot, long id) {
+		requireRdfTerm(slot);
 		long previous = slots[slot];
 		if (previous == id) {
 			return previous;
@@ -586,7 +692,8 @@ final class RowState implements LmdbNativeSlotReader {
 	void recomputeBoundMask() {
 		long mask = 0L;
 		for (int i = 0; i < slots.length; i++) {
-			if (slots[i] != UNKNOWN) {
+			if (slots[i] != UNKNOWN || (summaryCell(i) != null
+					&& summaryCell(i).state() == NativeResultCell.State.BOUND)) {
 				mask |= 1L << i;
 			}
 		}
@@ -1108,7 +1215,7 @@ final class CopyBinding {
 					row.positionMask(targetSlot));
 		}
 		if (computedValue != null) {
-			LmdbNativeValueCodec.DecodedValue decoded = computedValue.evaluator.eval(row);
+			LmdbNativeValueCodec.DecodedValue decoded = computedValue.value(row);
 			if (decoded == null || decoded.error()) {
 				return UNKNOWN;
 			}
@@ -1117,7 +1224,7 @@ final class CopyBinding {
 							row.positionMask(targetSlot), row)
 					: UNKNOWN;
 		}
-		return computed != null ? computed.id(row) : sourceSlot >= 0 ? row.slots[sourceSlot] : constant;
+		return computed != null ? computed.id(row) : sourceSlot >= 0 ? row.id(sourceSlot) : constant;
 	}
 
 	/** Slots read to produce this binding, or {@code -1} when the semantic evaluator has no native read mask. */

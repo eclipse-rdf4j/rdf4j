@@ -18,7 +18,6 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -33,9 +32,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativePackedFtree.Plan;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativePackedFtree.RootMorsels;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativePackedFtree.RootProducer;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativePackedFtree.Runtime;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.EffectClass;
 import org.eclipse.rdf4j.sail.lmdb.factor.FactorProjectionLayout;
 
 /**
@@ -96,33 +93,47 @@ final class LmdbNativePackedMorsels {
 		if (!eligible(plan, row))
 			return null;
 		for (AggregateSpec spec : aggregates)
-			if (spec.kind == AggKind.SAMPLE || spec.kind == AggKind.GROUP_CONCAT || spec.kind == AggKind.CUSTOM
-					|| spec.distinct && spec.rowSlots != null)
+			if (spec.reducer.spillEncoding == NativeReducerCapabilities.SpillEncoding.OPAQUE)
 				return null;
-		AggregateProgram program = new AggregateProgram(plan, groups, aggregates, owner.strictCompare);
+		AggregateProgram program = new AggregateProgram(plan, groups, aggregates, owner);
 		Session session = Session.open(plan, row, program.columns, program.exact, program, explainTarget);
 		if (session == null)
 			return null;
 		List<BindingSet> results;
+		boolean stoppedBeforeCleanup;
 		try (session) {
 			session.start();
 			session.execution.finish();
-			if (session.execution.stopped())
-				return List.of();
-			NativeGroupTable combined = null;
-			for (NativeGroupTable table : session.tables) {
-				if (table == null)
-					continue;
+			stoppedBeforeCleanup = session.execution.stopped();
+			row.cancellation.check();
+			if (stoppedBeforeCleanup) {
+				results = List.of();
+			} else if (session.typedGroups != null) {
+				results = NativeReplayBindingList.copy(session.typedGroups.cursor(owner), owner,
+						session.typedGroups.ledger());
+			} else {
+				NativeGroupTable combined = null;
+				for (NativeGroupTable table : session.tables) {
+					row.cancellation.check();
+					if (table == null)
+						continue;
+					if (combined == null)
+						combined = table;
+					else
+						combined.mergeFrom(table, row.cancellation);
+				}
 				if (combined == null)
-					combined = table;
-				else
-					combined.mergeFrom(table);
+					throw new IllegalStateException("completed packed aggregation has no worker state");
+				// Adopted states can retain worker contexts, including deferred DISTINCT SUM/AVG membership. Finish
+				// while every context and sibling source is still alive, after all worker tasks have really exited.
+				results = combined.results(owner, LmdbNativeAttemptMetrics.direct());
 			}
-			if (combined == null)
-				throw new IllegalStateException("completed packed aggregation has no worker state");
-			// Adopted states can retain worker contexts, including deferred DISTINCT SUM/AVG membership. Finish
-			// while every context and sibling source is still alive, after all worker tasks have really exited.
-			results = combined.results(owner, LmdbNativeAttemptMetrics.direct());
+		}
+		// Accepted tasks and all source/context owners have closed before terminal publication.
+		row.cancellation.check();
+		LmdbNativeProbeDeadline.poll(0);
+		if (stoppedBeforeCleanup) {
+			return results;
 		}
 		AGGREGATE_RUNS.incrementAndGet();
 		LmdbNativePackedFtree.PARALLEL_GROUP_RUNS.incrementAndGet();
@@ -130,40 +141,45 @@ final class LmdbNativePackedMorsels {
 	}
 
 	private static boolean forkable(SlotPlan plan) {
-		if (plan instanceof PatternPlan || plan instanceof ValuesPlan || plan instanceof EmptyPlan
-				|| plan instanceof SingletonPlan)
-			return true;
-		if (plan instanceof FilterPlan filter)
-			return filter.filterMask >= 0L && filter.filter.parallelWorkerForkable() && forkable(filter.arg);
-		if (plan instanceof EntryBindingCompatibilityPlan entry)
-			return forkable(entry.arg);
-		if (plan instanceof ExtensionPlan extension) {
-			for (CopyBinding copy : extension.copies) {
-				if (!copy.encounterOrderReplaySafe || copy.semanticValue != null)
-					return false;
-				NativeScalarPlan scalar = copy.computed != null ? copy.computed.scalarPlan()
-						: copy.computedValue != null ? copy.computedValue.scalarPlan() : null;
-				if (copy.computed != null || copy.computedValue != null)
-					if (scalar == null || !scalar.workerBindable()
-							|| scalar.effect() != EffectClass.PURE && scalar.effect() != EffectClass.QUERY_STABLE)
-						return false;
+		return NativeWorkerPlanBinder.canBind(plan);
+	}
+
+	/** A scalar encounter boundary must remain active during lazy continuation opens, reads and cleanup. */
+	static RowCursor openOrderedScalar(SlotPlan plan, RowState row) throws IOException {
+		boolean previous = row.encounterOrderRequired;
+		row.encounterOrderRequired = true;
+		RowCursor input;
+		try {
+			input = plan.open(row);
+		} finally {
+			row.encounterOrderRequired = previous;
+		}
+		return new RowCursor() {
+			@Override
+			public boolean next() throws IOException {
+				boolean prior = row.encounterOrderRequired;
+				row.encounterOrderRequired = true;
+				try {
+					row.cancellation.check();
+					boolean advanced = input.next();
+					row.cancellation.check();
+					return advanced;
+				} finally {
+					row.encounterOrderRequired = prior;
+				}
 			}
-			return forkable(extension.arg);
-		}
-		if (plan instanceof UnionPlan union)
-			return forkable(union.left) && forkable(union.right);
-		if (plan instanceof JoinPlan join)
-			return forkable(join.left) && forkable(join.right);
-		if (plan instanceof LeftJoinPlan optional)
-			return optional.lexicalSharedSlots == null && optional.lexicalProblemSlots == null
-					&& forkable(optional.left) && forkable(optional.right);
-		if (plan instanceof MultiJoinPlan multi) {
-			for (SlotPlan child : multi.children)
-				if (!forkable(child))
-					return false;
-			return LmdbNativeParallelPipelines.parallelWorkerForkable(multi.filters);
-		}
-		return false;
+
+			@Override
+			public void close() {
+				boolean prior = row.encounterOrderRequired;
+				row.encounterOrderRequired = true;
+				try {
+					input.close();
+				} finally {
+					row.encounterOrderRequired = prior;
+				}
+			}
+		};
 	}
 
 	/** Only the left spine is distributed; an OPTIONAL RHS UNION must not independently null-extend its left row. */
@@ -251,6 +267,7 @@ final class LmdbNativePackedMorsels {
 		final RootMorsels morsels;
 		/** The exact parent physical plan whose root domain produced {@link #morsels}. */
 		final Plan packed;
+		long ordinalBase;
 		final AtomicBoolean once = new AtomicBoolean();
 
 		Job(SlotPlan template, MultiJoinPlan anchor, MultiJoinPlan specialized, RootMorsels morsels, Plan packed) {
@@ -272,24 +289,27 @@ final class LmdbNativePackedMorsels {
 		final Plan packed;
 		final Runtime runtime;
 		final RowState row;
+		final boolean orderedReplay;
 
-		Leaf(MultiJoinPlan template, Plan packed, Runtime runtime, RowState row) {
+		Leaf(MultiJoinPlan template, Plan packed, Runtime runtime, RowState row, boolean orderedReplay) {
 			this.template = template;
 			this.packed = packed;
 			this.runtime = runtime;
 			this.row = row;
+			this.orderedReplay = orderedReplay;
 		}
 
 		@Override
 		public LmdbNativeFactorCursor openFactors(RowState target) {
 			if (target != row)
 				throw new IllegalStateException("a morsel leaf cannot move to a different binding frame");
-			return new LmdbNativePackedFtree.GroupedRowCursor(packed, row, runtime, false);
+			return orderedReplay ? null : new LmdbNativePackedFtree.GroupedRowCursor(packed, row, runtime, false);
 		}
 
 		@Override
 		public RowCursor open(RowState target) {
-			return LmdbNativeFactorRows.asRows(openFactors(target), target);
+			return orderedReplay ? new LmdbNativePackedFtree.PackedRowCursor(packed, row, runtime, false, true)
+					: LmdbNativeFactorRows.asRows(openFactors(target), target);
 		}
 
 		@Override
@@ -316,25 +336,24 @@ final class LmdbNativePackedMorsels {
 	}
 
 	/** One worker's plan, filters and packed runtime, retained over all of that worker's morsels for this job. */
-	private static final class WorkerPlan implements AutoCloseable {
+	private static final class WorkerPlan extends NativeWorkerPlanBinder {
 		final RowState row;
-		final NativeScalarPlan.WorkerContext context;
-		final NativeFilterLease filters = new NativeFilterLease(true);
-		final IdentityHashMap<NativeBooleanFilter, NativeBooleanFilter> copies = new IdentityHashMap<>();
 		final Job job;
+		final boolean orderedReplay;
 		SlotPlan plan;
 		Leaf leaf;
 
-		WorkerPlan(Job job, RowState row) {
+		WorkerPlan(Job job, RowState row, boolean orderedReplay) {
+			super(NativeScalarPlan.WorkerContext.forSource(row.source, null));
 			this.job = job;
 			this.row = row;
-			context = NativeScalarPlan.WorkerContext.forSource(row.source, null);
+			this.orderedReplay = orderedReplay;
 		}
 
-		static WorkerPlan open(Job job, RowState row) throws IOException {
+		static WorkerPlan open(Job job, RowState row, boolean orderedReplay) throws IOException {
 			WorkerPlan worker;
 			try {
-				worker = new WorkerPlan(job, row);
+				worker = new WorkerPlan(job, row, orderedReplay);
 			} catch (RuntimeException | Error problem) {
 				try {
 					row.closeDecodedInputs();
@@ -344,7 +363,7 @@ final class LmdbNativePackedMorsels {
 				throw problem;
 			}
 			try {
-				worker.plan = worker.fork(job.template);
+				worker.plan = worker.bind(job.template);
 				return worker;
 			} catch (IOException | RuntimeException | Error problem) {
 				closeSuppressing(worker, problem);
@@ -352,78 +371,22 @@ final class LmdbNativePackedMorsels {
 			}
 		}
 
-		NativeBooleanFilter forkFilter(NativeBooleanFilter filter) {
-			NativeBooleanFilter existing = copies.get(filter);
-			if (existing != null)
-				return existing;
-			NativeBooleanFilter forked = filter.forkForParallelWorker(context);
-			if (forked == null)
-				throw new IllegalStateException("parallel filter admission disagreed with worker binding");
-			NativeBooleanFilter borrowed = filters.borrow(new CloseOnceNativeBooleanFilter(forked));
-			copies.put(filter, borrowed);
-			return borrowed;
-		}
-
-		SlotPlan fork(SlotPlan input) throws IOException {
-			if (input == job.anchor) {
-				MultiJoinPlan owned = forkMulti(job.specialized);
-				Plan packed = LmdbNativePackedFtree.Planner.rebindForWorker(job.packed, owned);
-				if (packed == null || packed.root.slot != job.packed.root.slot)
-					throw new QueryEvaluationException("packed worker root differs from the planned morsel domain");
-				Runtime runtime = Runtime.openForWorker(packed, row);
-				if (runtime == null)
-					throw new QueryEvaluationException("packed worker adjacency is unavailable");
-				leaf = new Leaf(owned, packed, runtime, row);
-				return leaf;
+		@Override
+		SlotPlan replacement(SlotPlan input) throws IOException {
+			if (input != job.anchor) {
+				return null;
 			}
-			if (input instanceof MultiJoinPlan multi)
-				return forkMulti(multi);
-			if (input instanceof FilterPlan filter)
-				return new FilterPlan(fork(filter.arg), forkFilter(filter.filter), filter.filterMask,
-						filter.termKindFilter);
-			if (input instanceof EntryBindingCompatibilityPlan entry)
-				return new EntryBindingCompatibilityPlan(fork(entry.arg), entry.slots, entry.ids, entry.restoredMask);
-			if (input instanceof JoinPlan join)
-				return new JoinPlan(fork(join.left), fork(join.right));
-			if (input instanceof LeftJoinPlan optional)
-				return new LeftJoinPlan(fork(optional.left), fork(optional.right));
-			if (input instanceof UnionPlan union)
-				return new UnionPlan(fork(union.left), fork(union.right));
-			if (input instanceof ExtensionPlan extension) {
-				CopyBinding[] bindings = extension.copies.clone();
-				for (int i = 0; i < bindings.length; i++) {
-					CopyBinding binding = bindings[i];
-					if (binding.computed != null) {
-						LmdbNativeCompiledInlineId rebound = binding.computed.bindForWorker(context);
-						if (rebound == null)
-							throw new QueryEvaluationException("packed worker BIND could not be rebound");
-						bindings[i] = binding.withComputed(rebound);
-					} else if (binding.computedValue != null) {
-						LmdbNativeCompiledValue rebound = binding.computedValue.bindForWorker(context);
-						if (rebound == null)
-							throw new QueryEvaluationException("packed worker value BIND could not be rebound");
-						bindings[i] = binding.withComputedValue(rebound);
-					}
-				}
-				return new ExtensionPlan(fork(extension.arg), bindings);
+			MultiJoinPlan owned = bindMulti(job.specialized);
+			Plan packed = LmdbNativePackedFtree.Planner.rebindForWorker(job.packed, owned);
+			if (packed == null || packed.root.slot != job.packed.root.slot) {
+				throw new QueryEvaluationException("packed worker root differs from the planned morsel domain");
 			}
-			if (input instanceof PatternPlan || input instanceof ValuesPlan || input instanceof EmptyPlan
-					|| input instanceof SingletonPlan)
-				return input;
-			throw new IllegalStateException("unsupported plan passed packed worker admission");
-		}
-
-		MultiJoinPlan forkMulti(MultiJoinPlan multi) throws IOException {
-			SlotPlan[] children = new SlotPlan[multi.children.length];
-			for (int i = 0; i < children.length; i++)
-				children[i] = fork(multi.children[i]);
-			MaskedFilter[] owned = new MaskedFilter[multi.filters.length];
-			for (int i = 0; i < owned.length; i++) {
-				MaskedFilter filter = multi.filters[i];
-				owned[i] = new MaskedFilter(forkFilter(filter.filter), filter.mask, filter.adaptive,
-						filter.plannedDepth);
+			Runtime runtime = Runtime.openForWorker(packed, row);
+			if (runtime == null) {
+				throw new QueryEvaluationException("packed worker adjacency is unavailable");
 			}
-			return new MultiJoinPlan(children, owned);
+			leaf = new Leaf(owned, packed, runtime, row, orderedReplay);
+			return leaf;
 		}
 
 		NativeFactorProjections projections(int[][] columns, boolean[] exact) throws IOException {
@@ -439,6 +402,10 @@ final class LmdbNativePackedMorsels {
 			}
 		}
 
+		RowCursor orderedRows() throws IOException {
+			return openOrderedScalar(plan, row);
+		}
+
 		@Override
 		public void close() {
 			Throwable failure = null;
@@ -449,7 +416,7 @@ final class LmdbNativePackedMorsels {
 				failure = problem;
 			}
 			try {
-				filters.commit();
+				super.close();
 			} catch (RuntimeException | Error problem) {
 				failure = addFailure(failure, problem);
 			}
@@ -473,11 +440,21 @@ final class LmdbNativePackedMorsels {
 		final int[][] memberships;
 		final boolean marginal;
 		final boolean strict;
+		final NativeGroupIteration owner;
+		final boolean bounded, ordered, scalarReplay;
 
-		AggregateProgram(SlotPlan input, int[] groupSlots, AggregateSpec[] aggregates, boolean strict) {
+		AggregateProgram(SlotPlan input, int[] groupSlots, AggregateSpec[] aggregates, NativeGroupIteration owner) {
 			this.groups = groupSlots.clone();
 			this.specs = aggregates.clone();
-			this.strict = strict;
+			this.strict = owner.strictCompare;
+			this.owner = owner;
+			this.bounded = !AggregateSpec.allCounts(aggregates)
+					|| Arrays.stream(aggregates).anyMatch(spec -> spec.distinct);
+			this.ordered = Arrays.stream(aggregates)
+					.anyMatch(spec -> spec.reducer.mergeLaw == NativeReducerCapabilities.MergeLaw.ORDERED_CONCAT);
+			this.scalarReplay = Arrays.stream(aggregates)
+					.anyMatch(spec -> spec.reducer.mergeLaw == NativeReducerCapabilities.MergeLaw.ORDERED_CONCAT
+							&& !spec.distinct);
 			long assured = SlotPlan.assuredMask(input);
 			for (int i = 0; i < specs.length; i++) {
 				AggregateSpec spec = specs[i];
@@ -489,14 +466,13 @@ final class LmdbNativePackedMorsels {
 			}
 			membership = AggregateDistinctChannels.allHash(specs);
 			marginal = !"false".equals(System.getProperty(LmdbNativeKernelIr.FACTOR_MARGINALS_PROPERTY))
-					&& Arrays.stream(specs).allMatch(spec -> spec.rowSlots == null);
+					&& Arrays.stream(specs).allMatch(spec -> spec.reducer.supportsMarginal());
 			needsWeight = new boolean[specs.length];
 			if (marginal) {
 				int[] arguments = new int[specs.length];
 				for (int i = 0; i < specs.length; i++) {
 					arguments[i] = specs[i].slot;
-					needsWeight[i] = !specs[i].distinct && specs[i].kind != AggKind.MIN
-							&& specs[i].kind != AggKind.MAX;
+					needsWeight[i] = specs[i].reducer.weightSensitive;
 				}
 				FactorProjectionLayout layout = new FactorProjectionLayout(groups, arguments, needsWeight);
 				columns = layout.columns();
@@ -512,7 +488,9 @@ final class LmdbNativePackedMorsels {
 							.toArray();
 				}
 			} else {
-				long demand = 0L;
+				// Full ordered projections retain the complete logical mapping; dropping an independent dimension
+				// would turn its separated occurrences into an unjustified contiguous weight.
+				long demand = ordered ? input.producedMask() : 0L;
 				for (int group : groups)
 					demand |= 1L << group;
 				for (AggregateSpec spec : specs) {
@@ -529,23 +507,34 @@ final class LmdbNativePackedMorsels {
 		}
 
 		void add(NativeFactorProjections input, int projection, RowState target, NativeGroupTable table, int mark) {
+			install(input, projection, target, mark);
+			if (!marginal) {
+				table.add(target, input.multiplicity());
+				return;
+			}
+			long weight = weight(input, projection, target);
+			table.addProjected(target, weight, updates[projection], memberships[projection]);
+		}
+
+		void install(NativeFactorProjections input, int projection, RowState target, int mark) {
 			target.rollback(mark);
 			for (int slot : columns[projection]) {
 				long id = input.value(slot);
 				if (id != UNKNOWN && !target.bindOrCheckTerm(slot, id))
 					throw new IllegalStateException("morsel projection changed an entry binding");
 			}
-			if (!marginal) {
-				table.add(target, input.multiplicity());
-				return;
-			}
+		}
+
+		long weight(NativeFactorProjections input, int projection, RowState target) {
+			if (!marginal)
+				return input.multiplicity();
 			long weight = 1L;
 			for (int i : updates[projection])
 				if (needsWeight[i] && specs[i].hasInput(target)) {
 					weight = input.multiplicity();
 					break;
 				}
-			table.addProjected(target, weight, updates[projection], memberships[projection]);
+			return weight;
 		}
 	}
 
@@ -589,6 +578,7 @@ final class LmdbNativePackedMorsels {
 		final LongAdder completed = new LongAdder();
 		final AggContext[] contexts;
 		final NativeGroupTable[] tables;
+		final NativeTypedGroupStore typedGroups;
 		final ArrayBlockingQueue<Page> free;
 		final LmdbQueryMemoryManager.Reservation outputMemory;
 		boolean started;
@@ -614,6 +604,10 @@ final class LmdbNativePackedMorsels {
 			execution = new LmdbNativeMorselExecutor<>(sources.length, queuePages, parent.cancellation);
 			contexts = new AggContext[sources.length];
 			tables = new NativeGroupTable[sources.length];
+			typedGroups = aggregate != null && aggregate.bounded
+					? new NativeTypedGroupStore(aggregate.groups, aggregate.specs, aggregate.owner.aggContext,
+							this.parent, null, !aggregate.scalarReplay)
+					: null;
 			if (aggregate == null) {
 				// Preallocate exactly this many pages. A slow consumer cannot cause another page allocation.
 				int count = queuePages + sources.length + 1;
@@ -638,8 +632,9 @@ final class LmdbNativePackedMorsels {
 				split(template, row, UnaryOperator.identity(), jobs);
 				long units = 0L, roots = 0L;
 				for (Job job : jobs) {
+					job.ordinalBase = roots;
 					units = saturatingAdd(units, job.morsels == null ? 1L : job.morsels.ranges.estimatedMorsels());
-					roots = saturatingAdd(roots, job.morsels == null ? 1L : job.morsels.ranges.size);
+					roots = Math.addExact(roots, job.morsels == null ? 1L : job.morsels.ranges.size);
 				}
 				long floor = LmdbNativePackedFtree.parallelMinRootsPerPartition();
 				if (units < 2L || roots / 2L < floor)
@@ -701,8 +696,14 @@ final class LmdbNativePackedMorsels {
 		void start() throws IOException {
 			started = true;
 			execution.start(LmdbNativeParallelPipelines.pool(), (index, executor) -> {
-				try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.inherit(probeDeadline)) {
+				try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.inherit(probeDeadline);
+						NativeExecutionPhaseEvent.InputScope inputPhases = NativeExecutionPhaseEvent
+								.inputScope(execution.cancellation)) {
+					NativeExecutionPhaseEvent.activateInput("scan", execution.cancellation);
 					runWorker(index);
+					if (!execution.stopped()) {
+						inputPhases.complete();
+					}
 				}
 			});
 		}
@@ -715,9 +716,11 @@ final class LmdbNativePackedMorsels {
 			Throwable failure = null;
 			try {
 				if (aggregate != null) {
-					contexts[index] = new AggContext(sources[index], aggregate.strict, true, true);
-					tables[index] = NativeGroupTable.createParallel(aggregate.groups, aggregate.specs,
-							contexts[index], aggregate.membership);
+					if (typedGroups == null) {
+						contexts[index] = new AggContext(sources[index], aggregate.strict, true, true);
+						tables[index] = NativeGroupTable.createParallel(aggregate.groups, aggregate.specs,
+								contexts[index], aggregate.membership);
+					}
 					projected = workerRow(sources[index], parent, execution.cancellation);
 				}
 				int mark = projected == null ? 0 : projected.mark();
@@ -739,21 +742,41 @@ final class LmdbNativePackedMorsels {
 						worker = null;
 						if (previous != null)
 							previous.close();
-						worker = WorkerPlan.open(job, workerRow(sources[index], parent, execution.cancellation));
+						worker = WorkerPlan.open(job, workerRow(sources[index], parent, execution.cancellation),
+								aggregate != null && aggregate.scalarReplay);
 						workerJob = at;
 					}
+					long rootOrdinal = job.ordinalBase;
 					if (job.morsels != null) {
-						RootProducer roots = job.morsels.claim(worker.leaf.runtime);
-						if (roots == null)
+						RootMorsels.Claim claim = job.morsels.claimWithOrdinal(worker.leaf.runtime);
+						if (claim == null)
 							continue;
-						worker.leaf.runtime.resetRoots(roots);
+						rootOrdinal = Math.addExact(rootOrdinal, claim.from());
+						worker.leaf.runtime.resetRoots(claim.producer());
+					}
+					long localOrdinal = 0L;
+					if (aggregate != null && aggregate.scalarReplay) {
+						try (RowCursor input = worker.orderedRows()) {
+							while (!execution.stopped() && worker.row.advance(input)) {
+								addScalar(worker.row, rootOrdinal, localOrdinal);
+								localOrdinal = Math.addExact(localOrdinal, 1L);
+							}
+						}
+						if (!execution.stopped())
+							completed.increment();
+						continue;
 					}
 					try (NativeFactorProjections input = worker.projections(columns, exact)) {
 						while (!execution.stopped() && input.nextBatch()) {
 							for (int p = 0; p < columns.length; p++) {
 								while (!execution.stopped() && input.next(p)) {
 									if (aggregate != null) {
-										aggregate.add(input, p, projected, tables[index], mark);
+										if (typedGroups != null) {
+											aggregate.install(input, p, projected, mark);
+											addTyped(input, p, projected, rootOrdinal, localOrdinal);
+											localOrdinal = Math.addExact(localOrdinal, 1L);
+										} else
+											aggregate.add(input, p, projected, tables[index], mark);
 									} else {
 										if (page == null) {
 											page = free.poll();
@@ -815,6 +838,20 @@ final class LmdbNativePackedMorsels {
 			}
 		}
 
+		private synchronized void addTyped(NativeFactorProjections input, int projection, RowState projected,
+				long rootOrdinal, long localOrdinal) {
+			long weight = aggregate.weight(input, projection, projected);
+			if (aggregate.marginal)
+				typedGroups.addOrderedProjected(projected, weight, aggregate.updates[projection], rootOrdinal,
+						localOrdinal);
+			else
+				typedGroups.addOrdered(projected, weight, rootOrdinal, localOrdinal);
+		}
+
+		private synchronized void addScalar(RowState input, long rootOrdinal, long localOrdinal) {
+			typedGroups.addOrdered(input, 1L, rootOrdinal, localOrdinal);
+		}
+
 		void recycle(Page page) {
 			page.rows = 0;
 			if (!free.offer(page))
@@ -827,41 +864,59 @@ final class LmdbNativePackedMorsels {
 				return;
 			closed = true;
 			Throwable failure = null;
-			try {
-				execution.close();
-			} catch (IOException | RuntimeException | Error problem) {
-				failure = problem;
-			}
-			// Real task exit is guaranteed above, even after partial submission, failure or interrupted close.
-			for (int i = 0; i < sources.length; i++) {
+			// Includes waiting for real task exit and every accepted resource owner; cancellation never aborts this
+			// scope.
+			try (NativeExecutionPhaseEvent.Span cleanup = NativeExecutionPhaseEvent.start("coordinator-cleanup",
+					parent.cancellation)) {
 				try {
-					if (tables[i] != null)
-						tables[i].close();
+					execution.close();
+				} catch (IOException | RuntimeException | Error problem) {
+					failure = problem;
+				}
+				// Real task exit is guaranteed above, even after partial submission, failure or interrupted close.
+				try {
+					if (typedGroups != null)
+						typedGroups.close();
+				} catch (RuntimeException | Error problem) {
+					failure = addFailure(failure, problem);
+				}
+				for (int i = 0; i < sources.length; i++) {
+					try {
+						if (tables[i] != null)
+							tables[i].close();
+					} catch (RuntimeException | Error problem) {
+						failure = addFailure(failure, problem);
+					}
+					try {
+						if (contexts[i] != null)
+							contexts[i].close();
+					} catch (RuntimeException | Error problem) {
+						failure = addFailure(failure, problem);
+					}
+				}
+				failure = LmdbNativeParallelPipelines.closeSources(sources, failure);
+				try {
+					owners.commit();
+				} catch (RuntimeException | Error problem) {
+					failure = addFailure(failure, problem);
+				}
+				if (free != null)
+					free.clear();
+				try {
+					if (outputMemory != null)
+						outputMemory.close();
 				} catch (RuntimeException | Error problem) {
 					failure = addFailure(failure, problem);
 				}
 				try {
-					if (contexts[i] != null)
-						contexts[i].close();
+					reservation.close();
 				} catch (RuntimeException | Error problem) {
 					failure = addFailure(failure, problem);
 				}
+				if (failure == null) {
+					cleanup.complete();
+				}
 			}
-			failure = LmdbNativeParallelPipelines.closeSources(sources, failure);
-			try {
-				owners.commit();
-			} catch (RuntimeException | Error problem) {
-				failure = addFailure(failure, problem);
-			}
-			if (free != null)
-				free.clear();
-			try {
-				if (outputMemory != null)
-					outputMemory.close();
-			} catch (RuntimeException | Error problem) {
-				failure = addFailure(failure, problem);
-			}
-			reservation.close();
 			if (started) {
 				long count = completed.sum();
 				MORSELS.addAndGet(count);

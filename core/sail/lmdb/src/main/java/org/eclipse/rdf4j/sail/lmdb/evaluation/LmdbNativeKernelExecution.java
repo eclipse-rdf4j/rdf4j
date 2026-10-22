@@ -378,6 +378,8 @@ final class LmdbNativeKernelExecution {
 		TypeMatrixContext[] typeMatrices = null;
 		boolean publishWork = false;
 		boolean parallelAttempt = false;
+		boolean executionStarted = false;
+		List<BindingSet> retainedResults = null;
 		Throwable primaryFailure = null;
 		try {
 			LmdbNativeKernelLowering.Lowered semantic = LmdbNativeKernelLowering.lowerAggregate(arg, row, groupSlots,
@@ -405,7 +407,8 @@ final class LmdbNativeKernelExecution {
 				// predicate sites to ScanQuad. Do this before touching a store view so the compiled proposal remains
 				// an honest, retryable arm rather than disappearing behind the interpreted wildcard arm.
 				if (wildcardKernel && !scanVariablePredicates && LmdbNativeKernelLowering.scanSourcesEnabled()) {
-					return tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget,
+					return retainedResults = tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter,
+							explainTarget,
 							havingCondition, false, true, parallelExecution, requestedTier, allowFixedContexts);
 				}
 				LmdbNativeAttemptMetrics.recordDecline(explainTarget,
@@ -469,6 +472,7 @@ final class LmdbNativeKernelExecution {
 			// actually executed, keeping each tier's cost evidence separate (kernel-interpreter plan, D1/M3).
 			final String pathTag = route;
 			final long observedRowsForVariants = observedRows;
+			NativeExecutionPhaseEvent.kernelInput(lowered.kernel, lowered.bindings, row.cancellation);
 			probe = row.source.newProbe();
 			typeMatrices = LmdbNativeKernelBindings.requestTypeMatrices(lowered.bindings, probe, row);
 			if (typeMatrices == null) {
@@ -501,7 +505,8 @@ final class LmdbNativeKernelExecution {
 					views = null;
 					kernel.close();
 					kernel = null;
-					return tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget,
+					return retainedResults = tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter,
+							explainTarget,
 							havingCondition, false, true, parallelExecution, requestedTier, allowFixedContexts);
 				}
 				LmdbNativeAttemptMetrics.recordDecline(explainTarget, pathTag,
@@ -522,7 +527,8 @@ final class LmdbNativeKernelExecution {
 					probe = null;
 					kernel.close();
 					kernel = null;
-					return tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget,
+					return retainedResults = tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter,
+							explainTarget,
 							havingCondition, true, scanVariablePredicates, parallelExecution, requestedTier,
 							allowFixedContexts);
 				}
@@ -554,7 +560,16 @@ final class LmdbNativeKernelExecution {
 							nodeDomainIntersections, typeMatrices, domains, arg, row,
 							emitter, explainTarget,
 							workerKernelFactory(requestedTier, interpretedExecution, observedRowsForVariants,
-									LmdbNativeKernelInterpreter::forAggregate));
+									variant -> variant.terminal instanceof LmdbNativeKernelIr.Emit
+											? LmdbNativeKernelInterpreter.forRows(variant)
+											: LmdbNativeKernelInterpreter.forAggregate(variant)),
+							lowered.kernel.requirements.typeMatrices > 0
+									? interpretedExecution
+											? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL_INTERPRETED
+											: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL
+									: interpretedExecution
+											? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED
+											: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL);
 			parallelAttempt = false;
 			if (parallel != null) {
 				String parallelRoute = lowered.kernel.requirements.typeMatrices > 0
@@ -574,7 +589,7 @@ final class LmdbNativeKernelExecution {
 					row.runtimePlan.janinoActivated(activationRoute(route + "Parallel", lowered), actualOrder);
 					row.runtimePlan.activate(parallelRoute, actualOrder);
 				}
-				return parallel;
+				return retainedResults = parallel;
 			}
 			if (parallelExecution == ParallelExecution.REQUIRE) {
 				return null;
@@ -592,16 +607,31 @@ final class LmdbNativeKernelExecution {
 			KernelContext kernelContext = lowered.bindings.context(views, domains, row, hooks, scanner, variableViews)
 					.withNodeDomainIntersections(nodeDomainIntersections)
 					.withTypeMatrices(typeMatrices);
+			executionStarted = true;
 			LmdbNativeJaninoCodegen.bind(kernel, kernelContext, route);
+			// Preserve the bound kernel's terminal control before an outer replay poll or output allocation can
+			// observe the same deadline through a different carrier. No result state is published after this check.
+			KernelRuntime.checkCancelled(kernelContext.cancellation);
 			int stride = lowered.kernel.stride();
 			long[] buffer = new long[stride * FILL_ROWS];
-			List<BindingSet> results = new ArrayList<>();
-			int filled;
-			while ((filled = LmdbNativeJaninoCodegen.fill(kernel, buffer, FILL_ROWS, route)) > 0) {
-				for (int r = 0; r < filled; r++) {
-					results.add(emitter.kernelGroupRow(buffer, r * stride, lowered.bindings.groupLayout, hooks));
+			JaninoKernel acceptedKernel = kernel;
+			LmdbNativeKernelHooks acceptedHooks = hooks;
+			List<BindingSet> results = NativeReplayBindingList.copy(new NativeReplayBindingList.BindingRows() {
+				private int next, filled;
+
+				@Override
+				public BindingSet next() {
+					if (next >= filled) {
+						filled = LmdbNativeJaninoCodegen.fill(acceptedKernel, buffer, FILL_ROWS, route);
+						next = 0;
+						if (filled == 0) {
+							return null;
+						}
+					}
+					return emitter.kernelGroupRow(buffer, next++ * stride, lowered.bindings.groupLayout, acceptedHooks);
 				}
-			}
+			}, emitter, row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()));
+			retainedResults = results;
 			AGG_OPENED.incrementAndGet();
 			AGG_ROWS.addAndGet(results.size());
 			publishWork = true;
@@ -637,6 +667,15 @@ final class LmdbNativeKernelExecution {
 				// shape. Record the exact object before entering finally so resource cleanup cannot replace it.
 				primaryFailure = validationFailure;
 				throw validationFailure;
+			}
+			if (executionStarted && !hasControlCause(problem)) {
+				if (problem instanceof IOException) {
+					QueryEvaluationException propagated = new QueryEvaluationException(problem);
+					primaryFailure = propagated;
+					throw propagated;
+				}
+				primaryFailure = problem;
+				throw (RuntimeException) problem;
 			}
 			Throwable terminalFailure = serialTerminalFailure(problem);
 			if (terminalFailure != null) {
@@ -698,6 +737,17 @@ final class LmdbNativeKernelExecution {
 				failure = addFailure(failure, problem);
 			}
 			Throwable retainedFailure = addFailure(primaryFailure, failure);
+			if (retainedFailure == null) {
+				try {
+					row.cancellation.check();
+					LmdbNativeProbeDeadline.poll(0);
+				} catch (RuntimeException | Error problem) {
+					retainedFailure = problem;
+				}
+			}
+			if (retainedFailure != null && retainedResults instanceof AutoCloseable resource) {
+				retainedFailure = KernelRuntime.closeResource(resource, retainedFailure);
+			}
 			if (primaryFailure == null || retainedFailure != primaryFailure) {
 				rethrowFailure(retainedFailure);
 			}
@@ -1209,6 +1259,7 @@ final class LmdbNativeKernelExecution {
 			final long observedRowsForVariants = observedRows;
 			final boolean interpretedVariants = interpretedExecution;
 
+			NativeExecutionPhaseEvent.kernelInput(lowered.kernel, lowered.bindings, row.cancellation);
 			probe = row.source.newProbe();
 			LmdbNativeKernelBindings.VariablePredicateViews variableViews = LmdbNativeKernelBindings
 					.requestVariablePredicateViews(lowered.bindings, probe);

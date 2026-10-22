@@ -32,6 +32,7 @@ class LmdbNativeGroupArbitrationFallbackTest {
 	void allDeclinedStrategiesRestartExactAggregation() throws Exception {
 		try (MockedConstruction<LmdbNativeStrategyArbiter> ignored = mockConstruction(
 				LmdbNativeStrategyArbiter.class, (arbiter, context) -> {
+					when(arbiter.estimateWith(any())).thenReturn(arbiter);
 					when(arbiter.probeHarness(any())).thenReturn(arbiter);
 					when(arbiter.hedgeSupport(any())).thenReturn(arbiter);
 					when(arbiter.forcing(any(), anyString())).thenReturn(arbiter);

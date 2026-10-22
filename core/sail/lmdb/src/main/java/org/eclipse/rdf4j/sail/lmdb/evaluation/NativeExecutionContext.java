@@ -34,6 +34,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Value;
@@ -42,6 +43,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.model.RdfTermKey;
 
 /**
@@ -261,6 +263,10 @@ final class NativeExecutionContext implements AutoCloseable {
 
 	/** Owner of query-wide state; nested synthetic catalogs retain separate runtime-id maps but share this owner. */
 	private final NativeExecutionContext queryScopeOwner;
+	/** One terminal query signal; operator-local and worker tokens retain it as their parent. */
+	private final NativeCancellationToken cancellation;
+	/** Owned by the root evaluation and released only after the last retained consumer finishes. */
+	private final QueryExecutionDeadline.Registration deadlineRegistration;
 	final boolean valueResolutionCacheEnabled;
 	final QueryExecutionPolicy queryExecutionPolicy;
 	private final long executionId = NEXT_EXECUTION_ID.getAndIncrement();
@@ -270,6 +276,7 @@ final class NativeExecutionContext implements AutoCloseable {
 	private final Object runtimeValuesLock = new Object();
 	/** One admission budget across the separately owned runtime-ID spaces of nested native roots. */
 	private volatile NativeRuntimeValueTable.Budget runtimeValueBudget;
+	private final LmdbNativeQueryMemoryScope memoryScope = new LmdbNativeQueryMemoryScope();
 	/** Query-scoped representatives (notably NOW), shared by nested native catalogs of this evaluation. */
 	private final ConcurrentHashMap<RdfTermKey, Value> queryScopedValues = new ConcurrentHashMap<>();
 	/** Authoritative representatives for canonical store ids whose decoder would otherwise allocate a fresh Value. */
@@ -315,14 +322,31 @@ final class NativeExecutionContext implements AutoCloseable {
 
 	NativeExecutionContext(QueryExecutionPolicy policy) {
 		this.queryScopeOwner = this;
+		this.cancellation = new NativeCancellationToken();
+		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
+		this.deadlineRegistration = deadline == null ? null : deadline.onExpiration(cancellation::requestCancellation);
 		this.queryExecutionPolicy = policy;
 		this.valueResolutionCacheEnabled = !"false".equalsIgnoreCase(System.getProperty(NativeValueResolver.PROPERTY));
 	}
 
 	NativeExecutionContext(NativeExecutionContext parent) {
 		this.queryScopeOwner = parent.queryScopeOwner;
+		this.cancellation = new NativeCancellationToken(parent.cancellation);
+		this.deadlineRegistration = null;
 		this.queryExecutionPolicy = parent.queryExecutionPolicy;
 		this.valueResolutionCacheEnabled = parent.valueResolutionCacheEnabled;
+	}
+
+	NativeCancellationToken cancellation() {
+		return cancellation;
+	}
+
+	LmdbNativeQueryMemoryScope memoryScope() {
+		return queryScopeOwner == this ? memoryScope : queryScopeOwner.memoryScope();
+	}
+
+	LmdbQueryMemoryManager.QueryLedger memoryLedger() {
+		return memoryScope().ledger(LmdbNativeHashJoin.queryMemory());
 	}
 
 	void initializeQueryBase(BindingSet bindings) {
@@ -569,6 +593,20 @@ final class NativeExecutionContext implements AutoCloseable {
 		}
 	}
 
+	/** A declined attempt relinquishes only the exact state it published, leaving ordinary and newer owners intact. */
+	void discardNativeState(Object key, Object expected) {
+		boolean removed;
+		synchronized (nativeStateLock) {
+			removed = nativeStates.remove(key, expected);
+		}
+		if (removed) {
+			Throwable failure = closeNativeState(expected);
+			if (failure != null) {
+				throw nativeStateFailure(failure);
+			}
+		}
+	}
+
 	@SuppressWarnings("unchecked")
 	private static <T> T awaitNativeState(NativeStateInitialization initialization) {
 		try {
@@ -667,7 +705,8 @@ final class NativeExecutionContext implements AutoCloseable {
 				}
 				table = runtimeValues;
 				if (table == null) {
-					runtimeValues = table = new NativeRuntimeValueTable(nextId, runtimeValueBudget());
+					runtimeValues = table = new NativeRuntimeValueTable(nextId, runtimeValueBudget(), cancellation,
+							this::authoritativeQueryScopedValue);
 				}
 			}
 		}
@@ -683,7 +722,7 @@ final class NativeExecutionContext implements AutoCloseable {
 			synchronized (runtimeValuesLock) {
 				budget = runtimeValueBudget;
 				if (budget == null) {
-					runtimeValueBudget = budget = NativeRuntimeValueTable.Budget.configured();
+					runtimeValueBudget = budget = NativeRuntimeValueTable.Budget.configured(memoryLedger());
 				}
 			}
 		}
@@ -818,6 +857,20 @@ final class NativeExecutionContext implements AutoCloseable {
 		}
 	}
 
+	/**
+	 * Protects one advance by an already accepted consumer. A close request forbids new consumers, but an existing
+	 * reader lease may still need its cached producer. An idle producer must never retain its own state's owner.
+	 */
+	Lease retainActiveLease() {
+		synchronized (this) {
+			if (isClosed() || closeRequested && leaseCount == 0) {
+				throw new IllegalStateException("execution context is closed");
+			}
+			leaseCount++;
+			return new Lease(this);
+		}
+	}
+
 	private void releaseLease() {
 		RuntimeException failure = null;
 		synchronized (this) {
@@ -854,7 +907,20 @@ final class NativeExecutionContext implements AutoCloseable {
 
 	/** Performs terminal cleanup while this context's monitor is held. */
 	private RuntimeException closeResourcesLocked() {
+		try (NativeExecutionPhaseEvent.Span phase = NativeExecutionPhaseEvent.start("cleanup", cancellation)) {
+			RuntimeException failure = closeResourcesUnmeasured();
+			if (failure == null) {
+				phase.complete();
+			}
+			return failure;
+		}
+	}
+
+	private RuntimeException closeResourcesUnmeasured() {
 		closed = true;
+		if (deadlineRegistration != null) {
+			deadlineRegistration.close();
+		}
 		RuntimeException failure = null;
 		Object[] states;
 		synchronized (nativeStateLock) {
@@ -886,10 +952,19 @@ final class NativeExecutionContext implements AutoCloseable {
 			NativeRuntimeValueTable table = runtimeValues;
 			runtimeValues = null;
 			if (table != null) {
-				table.close();
+				try {
+					table.close();
+				} catch (RuntimeException cleanup) {
+					if (failure == null) {
+						failure = cleanup;
+					} else {
+						failure.addSuppressed(cleanup);
+					}
+				}
 			}
 		}
 		if (queryScopeOwner == this) {
+			memoryScope.close();
 			queryScopedValues.clear();
 			queryScopedStoreValuesById.clear();
 			hasQueryScopedStoreValues = false;

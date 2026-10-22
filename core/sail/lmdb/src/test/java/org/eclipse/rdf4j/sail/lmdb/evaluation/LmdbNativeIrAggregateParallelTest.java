@@ -13,10 +13,13 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import java.io.File;
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -26,6 +29,8 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
@@ -36,6 +41,10 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
+import jdk.jfr.Recording;
+import jdk.jfr.consumer.RecordedEvent;
+import jdk.jfr.consumer.RecordingFile;
 
 /**
  * Milestone 10B (three-tier parity ExecPlan): with {@code rdf4j.lmdb.irAggregateParallel.enabled=true}, an IR aggregate
@@ -142,6 +151,39 @@ class LmdbNativeIrAggregateParallelTest {
 	private SailRepository repository;
 	private Map<String, String> previousProperties;
 
+	@Test
+	void fusedParallelWorkersAttributeScanAndExpressionsToTheirQuery(@TempDir Path directory) throws Exception {
+		String eventName = "org.eclipse.rdf4j.lmdb.NativeExecutionPhase";
+		Path path = directory.resolve("parallel-input-phases.jfr");
+		long consumerThread = Thread.currentThread().threadId();
+		try (Recording recording = new Recording()) {
+			recording.enable(eventName).withThreshold(Duration.ZERO);
+			recording.start();
+			assertAllExecutionRungs(COMPUTED_GROUP_QUERY);
+			recording.stop();
+			recording.dump(path);
+		}
+		List<RecordedEvent> events = RecordingFile.readAllEvents(path)
+				.stream()
+				.filter(event -> eventName.equals(event.getEventType().getName()))
+				.toList();
+		List<Long> groupIdentities = events.stream()
+				.filter(event -> "group".equals(event.getString("phase")))
+				.map(event -> event.getLong("evaluationId"))
+				.toList();
+		for (String phase : List.of("scan", "expressions")) {
+			List<RecordedEvent> workers = events.stream()
+					.filter(event -> phase.equals(event.getString("phase"))
+							&& event.getThread().getJavaThreadId() != consumerThread)
+					.toList();
+			assertThat(workers).as("actual fused workers must publish their %s lifetime", phase).isNotEmpty();
+			assertThat(workers).allSatisfy(event -> {
+				assertThat(event.getString("outcome")).isEqualTo("COMPLETED");
+				assertThat(event.getLong("evaluationId")).isIn(groupIdentities);
+			});
+		}
+	}
+
 	@BeforeEach
 	void setUp() {
 		previousProperties = new HashMap<>();
@@ -176,6 +218,7 @@ class LmdbNativeIrAggregateParallelTest {
 					conn.add(m, q, vf.createLiteral(i * 7 + j));
 					// q2 equals q for j==0 and differs for j==1, so FILTER(?v != ?v2) keeps exactly the j==1 rows
 					conn.add(m, q2, vf.createLiteral(i * 7 + 2 * j));
+					conn.add(m, q2, vf.createLiteral(i * 7 + 2 * j), vf.createIRI(EX, "graph"));
 					// q3: the global minimum is a tie between two distinct terms on the first and last root keys
 					if (i == 0 && j == 0) {
 						conn.add(m, q3, vf.createLiteral(new BigDecimal("1")));
@@ -253,6 +296,92 @@ class LmdbNativeIrAggregateParallelTest {
 	@Test
 	void sipKeyWildcardParallelUsesWholePredicateWindows() {
 		assertAllExecutionRungs(SIP_KEY_WILDCARD_QUERY);
+	}
+
+	@Test
+	void nestedStringAggregatesBindAndExecuteEveryWorkerRung() {
+		for (String expression : List.of("STRLEN(STRAFTER(STR(?m), \"m\"))",
+				"STRLEN(STRBEFORE(STR(?m), \"m\"))",
+				"xsd:integer(STRSTARTS(STR(?m), \"http://\"))",
+				"xsd:integer(STRENDS(STR(?m), \"0\"))",
+				"STRLEN(IF(BOUND(?m), STRAFTER(STR(?m), \"m\"), COALESCE(?missing, \"fallback\")))")) {
+			assertAllExecutionRungs("PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> "
+					+ "SELECT (SUM(" + expression + ") AS ?total) WHERE { ?s <" + EX + "p> ?m . ?m <" + EX
+					+ "q> ?v }");
+		}
+	}
+
+	@Test
+	void correlatedExistsAggregatesExecuteIndependentWorkerPredicates() {
+		for (String predicate : List.of(
+				"EXISTS { ?m <" + EX + "q2> ?probe FILTER(?probe = ?v) }",
+				"NOT EXISTS { ?m <" + EX + "q2> ?probe FILTER(?probe != ?v) }",
+				"EXISTS { { ?m <" + EX + "q2> ?probe } UNION { ?m <" + EX
+						+ "missing> ?probe } FILTER(?probe = ?v) }",
+				"EXISTS { ?m <" + EX + "q2> ?probe OPTIONAL { ?m <" + EX
+						+ "missing> ?unused } FILTER(?probe = ?v) }",
+				"EXISTS { ?m <" + EX + "q2> ?probe MINUS { ?m <" + EX
+						+ "missing> ?probe } FILTER(?probe = ?v) }")) {
+			assertAllExecutionRungs("SELECT (COUNT(?v) AS ?count) WHERE { ?s <" + EX + "p> ?m . ?m <" + EX
+					+ "q> ?v . FILTER(" + predicate + ") }");
+		}
+	}
+
+	@Test
+	void lexicalExistsAggregatesKeepIndependentWorkerFrames() {
+		long subqueriesBefore = NativeSubqueryPlan.WORKER_BINDINGS.get();
+		long graphsBefore = NativeGraphPlan.WORKER_BINDINGS.get();
+		String subquery = "{ SELECT ?m ?probe WHERE { ?m <" + EX + "q2> ?probe } }";
+		for (String predicate : List.of(
+				"EXISTS { " + subquery + " FILTER(?probe = ?v) }",
+				"EXISTS { GRAPH <" + EX + "graph> { ?m <" + EX + "q2> ?probe } FILTER(?probe = ?v) }",
+				"EXISTS { GRAPH ?graph { " + subquery + " } FILTER(?probe = ?v) }",
+				"EXISTS { ?m <" + EX + "q2> ?probe OPTIONAL { " + subquery
+						+ " FILTER(?probe = ?v) } FILTER(?probe = ?v) }",
+				"NOT EXISTS { ?m <" + EX + "q2> ?probe FILTER(?probe != ?v) MINUS { " + subquery
+						+ " FILTER(?probe = ?v) } }",
+				"EXISTS { FILTER NOT EXISTS { ?m <" + EX + "q2> ?probe FILTER(?probe != ?v) } }")) {
+			assertAllExecutionRungs("SELECT (COUNT(?v) AS ?count) WHERE { ?s <" + EX + "p> ?m . ?m <" + EX
+					+ "q> ?v . FILTER(" + predicate + ") }");
+		}
+		assertThat(NativeSubqueryPlan.WORKER_BINDINGS.get()).isGreaterThan(subqueriesBefore);
+		assertThat(NativeGraphPlan.WORKER_BINDINGS.get()).isGreaterThan(graphsBefore);
+	}
+
+	@Test
+	void lexicalRootProducersRetainTheirNaturalPartitionGuard() {
+		String subquery = "{ SELECT ?m ?v WHERE { ?m <" + EX + "q> ?v } }";
+		for (String producer : List.of(subquery,
+				"GRAPH ?graph { { SELECT ?m ?v WHERE { ?m <" + EX + "q2> ?v } } }",
+				"OPTIONAL { " + subquery + " }")) {
+			// The lexical producer itself must be the root. A separate outer pattern may supply a legitimate
+			// scan/adjacency partition. Even variable GRAPH over a plain pattern can fuse to a partitionable
+			// named-context scan, so retain a lexical subquery inside the graph boundary in this fixture.
+			String query = "SELECT (COUNT(?v) AS ?count) WHERE { " + producer + " }";
+			System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+			List<String> expected = rows(query);
+			System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+			System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
+			long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
+			assertThat(rows(query, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE))
+					.containsExactlyInAnyOrderElementsOf(expected);
+			System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
+			assertThat(rows(query, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED))
+					.containsExactlyInAnyOrderElementsOf(expected);
+			assertThat(catchThrowable(() -> rows(query,
+					LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED)))
+							.as(() -> query + '\n' + explain(query))
+							.isInstanceOf(QueryEvaluationException.class)
+							.hasMessageContaining("root-not-partitionable");
+			assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get()).isEqualTo(parallelBefore);
+		}
+	}
+
+	@Test
+	void lexicalGraphProducersBindWithinPartitionedOptionalKernels() {
+		assertAllExecutionRungs("SELECT (COUNT(?probe) AS ?count) WHERE { ?s <" + EX
+				+ "p> ?m . ?m <" + EX + "q> ?v . OPTIONAL { GRAPH <" + EX + "graph> { ?m <" + EX
+				+ "q2> ?probe } FILTER(?probe != ?v) } }");
 	}
 
 	@Test
@@ -498,10 +627,11 @@ class LmdbNativeIrAggregateParallelTest {
 		assertThat(interpretedParallel).as("forced interpreted parallel IR must match the generic evaluator")
 				.containsExactlyInAnyOrderElementsOf(expected);
 		assertThat(generatedParallelRuns)
-				.as("the generated route must execute through the parallel aggregate scheduler")
+				.as(() -> "the generated route must execute through the parallel aggregate scheduler: " + query
+						+ '\n' + explain(query))
 				.isGreaterThan(parallelBefore);
 		assertThat(interpretedParallelRuns)
-				.as("the interpreted route must execute through the parallel aggregate scheduler")
+				.as("the interpreted route must execute through the parallel aggregate scheduler: %s", query)
 				.isGreaterThan(generatedParallelRuns);
 	}
 
@@ -523,6 +653,14 @@ class LmdbNativeIrAggregateParallelTest {
 
 	private List<String> rows(String query) {
 		return rows(query, null);
+	}
+
+	private String explain(String query) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return connection.prepareTupleQuery(query)
+					.explain(Explanation.Level.Telemetry)
+					.toString();
+		}
 	}
 
 	private List<String> rows(String query, String forcedStrategy) {

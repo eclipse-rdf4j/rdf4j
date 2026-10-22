@@ -161,17 +161,144 @@ final class LmdbAdjacencyAggregatePlan {
 	}
 
 	LmdbNativeWork estimateWork(RowState row) {
-		double rows = pattern.estimateRows(row, row.boundMask());
-		return Double.isFinite(rows) ? LmdbNativeWork.exact(Math.max(1D, Math.sqrt(Math.max(1D, rows))))
-				: LmdbNativeWork.UNKNOWN;
+		// Only revision-valid physical metadata can establish a smaller grain. Logical cardinality does not imply
+		// any particular page, root or run count, especially after graph/context constraints.
+		if (!handles(row)) {
+			return LmdbNativeWork.UNKNOWN;
+		}
+		if (predicate == UNKNOWN) {
+			try {
+				Counts counts = completeNodeDomainCounts(row.source, row.cancellation);
+				return counts == null ? LmdbNativeWork.UNKNOWN
+						: LmdbNativeWork.exact((needsDistinct(TripleIndex.SUBJ_IDX) ? 1 : 0)
+								+ (needsDistinct(TripleIndex.OBJ_IDX) ? 1 : 0) + channels.length);
+			} catch (IOException e) {
+				throw new QueryEvaluationException(e);
+			}
+		}
+		if (subject != UNKNOWN || object != UNKNOWN
+				|| acceptedContexts != null || namedContextsOnly || pattern.range != null) {
+			return LmdbNativeWork.UNKNOWN;
+		}
+		OptionalLong subjects = row.source.adjacencyKeyDomainCardinality(predicate, true);
+		OptionalLong objects = row.source.adjacencyKeyDomainCardinality(predicate, false);
+		if (groupField == TripleIndex.SUBJ_IDX || groupField == TripleIndex.OBJ_IDX) {
+			OptionalLong groups = groupField == TripleIndex.SUBJ_IDX ? subjects : objects;
+			if (groups.isEmpty()) {
+				return LmdbNativeWork.UNKNOWN;
+			}
+			double roots = groups.getAsLong();
+			// Each root must be visited, reduced and emitted. Opposite-endpoint DISTINCT may require all fibers.
+			int opposite = groupField == TripleIndex.SUBJ_IDX ? TripleIndex.OBJ_IDX : TripleIndex.SUBJ_IDX;
+			if (needsDistinct(opposite)) {
+				return LmdbNativeWork.UNKNOWN;
+			}
+			return LmdbNativeWork.between(roots, 1D + roots * (2D + channels.length));
+		}
+		int lookups = 0;
+		if (needsRows() || needsDistinct(STAR) || needsDistinct(CONSTANT) || needsDistinct(TripleIndex.PRED_IDX)) {
+			// planeRows uses this exact visible predicate-total plan. Prove its availability without opening the
+			// cursor during pricing; pricing must not consume rows or double the execution telemetry.
+			LmdbPrefixRunPlan totals = row.source.prefixRunPlan(new int[] { TripleIndex.PRED_IDX }, UNKNOWN,
+					predicate, UNKNOWN, UNKNOWN);
+			if (totals == null || !totals.usesAdjacency()) {
+				return LmdbNativeWork.UNKNOWN;
+			}
+			lookups++;
+		}
+		if (needsDistinct(TripleIndex.SUBJ_IDX)) {
+			if (subjects.isEmpty()) {
+				return LmdbNativeWork.UNKNOWN;
+			}
+			lookups++;
+		}
+		if (needsDistinct(TripleIndex.OBJ_IDX)) {
+			if (objects.isEmpty()) {
+				return LmdbNativeWork.UNKNOWN;
+			}
+			lookups++;
+		}
+		return LmdbNativeWork.exact(lookups + channels.length);
+	}
+
+	/**
+	 * Proof for a global COUNT reduction from the complete visible predicate metadata of a lowered key/neighbor loop.
+	 * Each requested endpoint domain must be exact for this revision; enumeration direction does not change that
+	 * domain. Graph restrictions, mappings and grouped output deliberately have no such proof.
+	 */
+	boolean reducesCompleteVisiblePlaneFromMetadata(RowState row, long fixedPredicate) {
+		if (!handles(row) || predicate != fixedPredicate || predicate == UNKNOWN || groupSlot >= 0
+				|| subject != UNKNOWN || object != UNKNOWN || acceptedContexts != null || namedContextsOnly
+				|| pattern.range != null) {
+			return false;
+		}
+		NativeLmdbQuerySource backing = row.source;
+		while (backing instanceof SyntheticValueSource synthetic) {
+			backing = synthetic.delegate;
+		}
+		if (!backing.hasCanonicalIds()) {
+			return false;
+		}
+		boolean rows = false;
+		for (CountChannel channel : channels) {
+			if (channel.distinct && (channel.field == TripleIndex.SUBJ_IDX || channel.field == TripleIndex.OBJ_IDX)) {
+				if (row.source.adjacencyKeyDomainCardinality(predicate, channel.field == TripleIndex.SUBJ_IDX)
+						.isEmpty()) {
+					return false;
+				}
+			} else {
+				rows = true;
+			}
+		}
+		if (rows) {
+			LmdbPrefixRunPlan totals = row.source.prefixRunPlan(new int[] { TripleIndex.PRED_IDX }, UNKNOWN,
+					predicate, UNKNOWN, UNKNOWN);
+			if (totals == null || !totals.usesAdjacency()) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** Exact predicate-plane totals suffice only when no output observes a varying endpoint or context. */
+	boolean reducesCompleteVisiblePredicateCatalog(RowState row) {
+		if (!handles(row) || predicate != UNKNOWN || subject != UNKNOWN || object != UNKNOWN
+				|| acceptedContexts != null || namedContextsOnly || pattern.range != null
+				|| groupField != STAR && groupField != CONSTANT && groupField != TripleIndex.PRED_IDX) {
+			return false;
+		}
+		NativeLmdbQuerySource backing = row.source;
+		while (backing instanceof SyntheticValueSource synthetic) {
+			backing = synthetic.delegate;
+		}
+		if (!backing.hasCanonicalIds()) {
+			return false;
+		}
+		for (CountChannel channel : channels) {
+			if (channel.distinct && channel.field != STAR && channel.field != CONSTANT
+					&& channel.field != TripleIndex.PRED_IDX) {
+				return false;
+			}
+		}
+		LmdbPrefixRunPlan catalog = row.source.prefixRunPlan(new int[] { TripleIndex.PRED_IDX }, UNKNOWN,
+				UNKNOWN, UNKNOWN, UNKNOWN);
+		// This concrete source contract is the complete visible nonempty-predicate catalog with exact row totals.
+		// A disk prefix plan, selected predicate coverage, or a stale snapshot does not establish that contract.
+		return catalog != null && catalog.usesAdjacency() && catalog.prefixLength() == 1
+				&& Arrays.equals(catalog.prefixFields(), new int[] { TripleIndex.PRED_IDX });
 	}
 
 	List<BindingSet> evaluate(NativeGroupIteration owner, RowState row) {
 		if (!handles(row)) {
 			return null;
 		}
-		try {
-			return predicate == UNKNOWN ? evaluateVariablePredicate(owner) : evaluateFixedPredicate(owner, predicate);
+		try (NativeExecutionPhaseEvent.Span scan = NativeExecutionPhaseEvent.inputStage("scan", row.cancellation)) {
+			List<BindingSet> result = predicate == UNKNOWN ? evaluateVariablePredicate(owner)
+					: evaluateFixedPredicate(owner, predicate);
+			if (result != null) {
+				scan.complete();
+			}
+			return result;
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
 		}
@@ -189,7 +316,7 @@ final class LmdbAdjacencyAggregatePlan {
 		if (counts == null) {
 			return null;
 		}
-		if (groupSlot >= 0 && counts.rows == 0L) {
+		if (groupSlot >= 0 && !counts.hasInput()) {
 			return List.of();
 		}
 		long groupId = groupSlot < 0 ? UNKNOWN : groupConstant != UNKNOWN ? groupConstant : fixedPredicate;
@@ -253,11 +380,23 @@ final class LmdbAdjacencyAggregatePlan {
 
 	private List<BindingSet> groupedDirectional(NativeGroupIteration owner, long fixedPredicate, boolean outgoing)
 			throws IOException {
+		int neighborField = outgoing ? TripleIndex.OBJ_IDX : TripleIndex.SUBJ_IDX;
+		if (needsDistinct(neighborField) && acceptedContexts == null && !namedContextsOnly && pattern.range == null) {
+			List<BindingSet> metadata = groupedDirectional(owner, fixedPredicate, outgoing, true);
+			if (metadata != null) {
+				return metadata;
+			}
+		}
+		// Exact neighbor-fiber metadata can be unavailable in an overlay or composite view. Reopen at the finer
+		// ordered (root, neighbor) grain before publishing output; row counts and RDF DISTINCT remain exact.
+		return groupedDirectional(owner, fixedPredicate, outgoing, false);
+	}
+
+	private List<BindingSet> groupedDirectional(NativeGroupIteration owner, long fixedPredicate, boolean outgoing,
+			boolean metadataDistinctNeighbors) throws IOException {
 		int rootField = outgoing ? TripleIndex.SUBJ_IDX : TripleIndex.OBJ_IDX;
 		int neighborField = outgoing ? TripleIndex.OBJ_IDX : TripleIndex.SUBJ_IDX;
 		boolean needDistinctNeighbors = needsDistinct(neighborField);
-		boolean metadataDistinctNeighbors = needDistinctNeighbors && acceptedContexts == null && !namedContextsOnly
-				&& pattern.range == null;
 		int[] prefixFields = needDistinctNeighbors && !metadataDistinctNeighbors
 				? new int[] { rootField, neighborField }
 				: new int[] { rootField };
@@ -310,6 +449,11 @@ final class LmdbAdjacencyAggregatePlan {
 	}
 
 	private List<BindingSet> evaluateVariablePredicate(NativeGroupIteration owner) throws IOException {
+		Counts metadata = completeNodeDomainCounts(owner.source, owner.cancellation);
+		if (metadata != null) {
+			return groupSlot >= 0 && !metadata.hasInput() ? List.of()
+					: List.of(binding(owner, groupConstant, metadata));
+		}
 		PredicateCatalog catalog = PredicateCatalog.open(owner.source);
 		if (catalog == null) {
 			return null;
@@ -337,7 +481,47 @@ final class LmdbAdjacencyAggregatePlan {
 			return groupedVariablePredicate(owner, catalog, groupField == TripleIndex.SUBJ_IDX);
 		}
 		Counts counts = variablePredicateGlobalCounts(owner.source, catalog);
-		return counts == null ? null : List.of(binding(owner, UNKNOWN, counts));
+		if (counts == null) {
+			return null;
+		}
+		return groupSlot >= 0 && !counts.hasInput() ? List.of()
+				: List.of(binding(owner, groupConstant, counts));
+	}
+
+	/** Complete visible root domains answer only unrestricted endpoint DISTINCT, never a filtered graph or fiber. */
+	private Counts completeNodeDomainCounts(NativeLmdbQuerySource source, NativeCancellationToken cancellation)
+			throws IOException {
+		if (predicate != UNKNOWN || subject != UNKNOWN || object != UNKNOWN || acceptedContexts != null
+				|| namedContextsOnly || pattern.range != null || groupField != STAR && groupField != CONSTANT
+				|| needsRows() || needsDistinct(STAR) || needsDistinct(CONSTANT)
+				|| needsDistinct(TripleIndex.PRED_IDX)) {
+			return null;
+		}
+		NativeLmdbQuerySource backing = source;
+		while (backing instanceof SyntheticValueSource synthetic) {
+			backing = synthetic.delegate;
+		}
+		if (!backing.hasCanonicalIds()) {
+			return null;
+		}
+		long subjects = 0L, objects = 0L;
+		try (NativeLmdbQuerySource.NativeProbe probe = source.newProbe()) {
+			cancellation.check();
+			if (needsDistinct(TripleIndex.SUBJ_IDX)) {
+				NativeLmdbQuerySource.NodePredicates nodes = probe.nodePredicates(true);
+				if (nodes == null || (subjects = nodes.nodeCount()) < 0L) {
+					return null;
+				}
+			}
+			cancellation.check();
+			if (needsDistinct(TripleIndex.OBJ_IDX)) {
+				NativeLmdbQuerySource.NodePredicates nodes = probe.nodePredicates(false);
+				if (nodes == null || (objects = nodes.nodeCount()) < 0L) {
+					return null;
+				}
+			}
+		}
+		return new Counts(0L, subjects, 0L, objects);
 	}
 
 	private Counts variablePredicateGlobalCounts(NativeLmdbQuerySource source, PredicateCatalog catalog)
@@ -698,6 +882,11 @@ final class LmdbAdjacencyAggregatePlan {
 	}
 
 	private record Counts(long rows, long subjects, long predicates, long objects) {
+		boolean hasInput() {
+			// Metadata-only DISTINCT can know domain presence without ever requesting an expanded row count.
+			return rows > 0L || subjects > 0L || predicates > 0L || objects > 0L;
+		}
+
 		long distinct(int field) {
 			return switch (field) {
 			case STAR, CONSTANT -> rows == 0L ? 0L : 1L;

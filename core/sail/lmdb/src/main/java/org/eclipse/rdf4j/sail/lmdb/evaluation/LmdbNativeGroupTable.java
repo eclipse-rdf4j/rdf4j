@@ -22,6 +22,8 @@ import java.util.List;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
  * The one arity-adaptive group table behind every native aggregation consumer. The group-key arity picks the backing
@@ -78,6 +80,9 @@ final class NativeGroupTable implements AutoCloseable {
 	AggState spareGroupState;
 	private boolean boundedAllowed, boundedChecked, unboundedReady, boundedConsumed, closed;
 	private NativeCountGroupStore boundedCounts;
+	private LmdbQueryMemoryManager.QueryLedger countLedger;
+	private boolean typedAllowed;
+	private NativeTypedGroupStore typedGroups;
 	private long[] boundedKeys, boundedInputs;
 
 	private NativeGroupTable(int[] groupSlots, AggregateSpec[] aggregates, AggContext ctx,
@@ -100,13 +105,14 @@ final class NativeGroupTable implements AutoCloseable {
 
 	private void initializeUnbounded() {
 		checkOpen();
-		if (boundedCounts != null)
+		if (boundedCounts != null || typedGroups != null)
 			throw new IllegalStateException("Cannot expose AggState after bounded input");
 		if (unboundedReady)
 			return;
 		// Once a caller has exposed a native state/map (or merged a worker), subsequent direct adds must
 		// use that same representation. Switching later would silently discard the earlier groups.
 		boundedAllowed = false;
+		typedAllowed = false;
 		unboundedReady = true;
 		switch (mode) {
 		case ZERO:
@@ -147,13 +153,29 @@ final class NativeGroupTable implements AutoCloseable {
 				&& AggregateSpec.allCounts(aggregates) && !AggregateSpec.anyFullRowDistinct(aggregates)
 				&& !hasMonotonicDistinct(channels)
 				&& (groupSlots.length > 0 || java.util.Arrays.stream(aggregates).anyMatch(a -> a.distinct));
-		return new NativeGroupTable(groupSlots, aggregates, ctx, channels, mode, rowMetrics, bounded);
+		boolean typed = NativeCountGroupStore.enabled()
+				&& NativeTypedGroupStore.supports(aggregates)
+				&& (!AggregateSpec.allCounts(aggregates) || AggregateSpec.anyFullRowDistinct(aggregates))
+				&& (groupSlots.length > 0 || Arrays.stream(aggregates)
+						.anyMatch(a -> a.distinct
+								|| a.kind == AggKind.GROUP_CONCAT
+										&& a.resultDemand == NativeAggregateResultDemand.FULL_VALUE));
+		NativeGroupTable table = new NativeGroupTable(groupSlots, aggregates, ctx, channels, mode, rowMetrics,
+				bounded || typed);
+		table.boundedAllowed = bounded;
+		table.typedAllowed = typed;
+		return table;
 	}
 
 	/** Worker-owned states must merge before finalization; direct-add spill tables use a different protocol. */
 	static NativeGroupTable createParallel(int[] groups, AggregateSpec[] aggregates, AggContext context,
 			AggregateDistinctChannels channels) {
-		NativeGroupTable table = create(groups, aggregates, context, channels, true, false);
+		return createParallel(groups, aggregates, context, channels, false);
+	}
+
+	static NativeGroupTable createParallel(int[] groups, AggregateSpec[] aggregates, AggContext context,
+			AggregateDistinctChannels channels, boolean rowMetrics) {
+		NativeGroupTable table = create(groups, aggregates, context, channels, true, rowMetrics);
 		table.boundedAllowed = false;
 		table.initializeUnbounded();
 		return table;
@@ -327,6 +349,11 @@ final class NativeGroupTable implements AutoCloseable {
 	 * produced at least one match, so zero-match prefix rows never create empty groups (inner-join semantics).
 	 */
 	void aggregateFactorized(RowState row, FactorizedTail tail) throws IOException {
+		if (typedAllowed) {
+			prepareTyped(row);
+			tail.aggregateInto(row, this);
+			return;
+		}
 		if (boundedCounts != null) {
 			throw new IllegalStateException("Cannot mix an owned factor tail with bounded direct-add groups");
 		}
@@ -381,6 +408,18 @@ final class NativeGroupTable implements AutoCloseable {
 		}
 	}
 
+	void addProvedCount(RowState row, int index, long weight, int[] selected) {
+		if (!prepareTyped(row)) {
+			throw new IllegalStateException("Structural count contribution requires bounded typed grouping");
+		}
+		typedGroups.addCountContribution(row, index, weight, selected);
+	}
+
+	boolean observesFactorWeight(int index, long id) {
+		return typedGroups == null ? AggState.observesWeight(aggregates[index], ctx, id)
+				: typedGroups.observesWeight(index, id);
+	}
+
 	/** Group keys observe values, not the assignment-domain sentinel used by COUNT(*). */
 	private static long groupValue(long id) {
 		return id == NULL_CONTEXT_ID ? UNKNOWN : id;
@@ -393,6 +432,10 @@ final class NativeGroupTable implements AutoCloseable {
 	void addProjected(RowState row, long weight, int[] indices, int[] membershipChannels) {
 		if (weight <= 0L)
 			throw new IllegalArgumentException("Nonpositive marginal contribution");
+		if (prepareTyped(row)) {
+			typedGroups.add(row, weight, indices);
+			return;
+		}
 		if (prepareBounded(row)) {
 			for (int i = 0; i < groupSlots.length; i++)
 				boundedKeys[i] = groupValue(row.slots[groupSlots[i]]);
@@ -459,9 +502,10 @@ final class NativeGroupTable implements AutoCloseable {
 			boolean[] distinct = new boolean[aggregates.length];
 			for (int i = 0; i < distinct.length; i++)
 				distinct[i] = aggregates[i].distinct;
+			countLedger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
 			boundedCounts = new NativeCountGroupStore(groupSlots.length, distinct, authority::canonicalTermKey,
 					LmdbNativeProbeDeadline.currentKernelCancellation(row.cancellation::isCancellationRequested, null),
-					row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()));
+					countLedger);
 			boundedKeys = new long[groupSlots.length];
 			boundedInputs = new long[aggregates.length];
 		}
@@ -469,6 +513,10 @@ final class NativeGroupTable implements AutoCloseable {
 	}
 
 	private boolean addBounded(RowState row, long weight) {
+		if (prepareTyped(row)) {
+			typedGroups.add(row, weight);
+			return true;
+		}
 		if (!prepareBounded(row))
 			return false;
 		for (int i = 0; i < groupSlots.length; i++)
@@ -490,6 +538,17 @@ final class NativeGroupTable implements AutoCloseable {
 		return true;
 	}
 
+	private boolean prepareTyped(RowState row) {
+		checkOpen();
+		if (!typedAllowed) {
+			return false;
+		}
+		if (typedGroups == null) {
+			typedGroups = new NativeTypedGroupStore(groupSlots, aggregates, ctx, row);
+		}
+		return true;
+	}
+
 	private void checkOpen() {
 		if (closed || boundedConsumed)
 			throw new IllegalStateException("Grouping table is closed or already drained");
@@ -502,8 +561,13 @@ final class NativeGroupTable implements AutoCloseable {
 		closed = true;
 		NativeCountGroupStore store = boundedCounts;
 		boundedCounts = null;
-		if (store != null)
-			store.close();
+		NativeTypedGroupStore typed = typedGroups;
+		typedGroups = null;
+		Throwable failure = KernelRuntime.closeResource(store, null);
+		failure = KernelRuntime.closeResource(typed, failure);
+		if (failure != null) {
+			NativeContextClosingIteration.throwFailure(failure);
+		}
 	}
 
 	/**
@@ -511,7 +575,22 @@ final class NativeGroupTable implements AutoCloseable {
 	 * union-only partials for deferred DISTINCT SUM/AVG; both tables must share the construction parameters.
 	 */
 	void mergeFrom(NativeGroupTable other) {
-		if (boundedCounts != null || other.boundedCounts != null) {
+		mergeFrom(other, ctx.cancellation);
+	}
+
+	void mergeFrom(NativeGroupTable other, NativeCancellationToken cancellation) {
+		try (NativeExecutionPhaseEvent.Span phase = NativeExecutionPhaseEvent.start("merge", cancellation)) {
+			mergeFromUnmeasured(other, cancellation);
+			cancellation.check();
+			LmdbNativeProbeDeadline.poll(0);
+			phase.complete();
+		}
+	}
+
+	private void mergeFromUnmeasured(NativeGroupTable other, NativeCancellationToken cancellation) {
+		cancellation.check();
+		LmdbNativeProbeDeadline.poll(0);
+		if (boundedCounts != null || other.boundedCounts != null || typedGroups != null || other.typedGroups != null) {
 			throw new IllegalStateException("Bounded groups must merge through their record stream, not AggState");
 		}
 		initializeUnbounded();
@@ -525,17 +604,19 @@ final class NativeGroupTable implements AutoCloseable {
 		}
 		switch (mode) {
 		case ZERO:
-			single.mergeFrom(other.single);
+			single.mergeFrom(other.single, cancellation);
 			sawRow |= other.sawRow;
 			break;
 		case SINGLE_SLOT:
 			for (int i = 0; i < other.longGroups.values.length; i++) {
+				cancellation.poll(i);
+				LmdbNativeProbeDeadline.poll(i);
 				if (other.longGroups.values[i] != null) {
 					AggState existing = longGroups.get(other.longGroups.keys[i]);
 					if (existing == null) {
 						longGroups.put(other.longGroups.keys[i], other.longGroups.values[i]);
 					} else {
-						existing.mergeFrom(other.longGroups.values[i]);
+						existing.mergeFrom(other.longGroups.values[i], cancellation);
 					}
 				}
 			}
@@ -544,6 +625,8 @@ final class NativeGroupTable implements AutoCloseable {
 			long[] scratch = new long[groupSlots.length];
 			int[] identity = identitySlots(groupSlots.length);
 			for (int otherGroup = 0; otherGroup < other.tuples.size; otherGroup++) {
+				cancellation.poll(otherGroup);
+				LmdbNativeProbeDeadline.poll(otherGroup);
 				for (int i = 0; i < scratch.length; i++) {
 					scratch[i] = other.tuples.key(otherGroup, i);
 				}
@@ -565,6 +648,8 @@ final class NativeGroupTable implements AutoCloseable {
 			long[] scratch = new long[groupSlots.length];
 			int[] identity = identitySlots(groupSlots.length);
 			for (int otherGroup = 0; otherGroup < other.tuples.size; otherGroup++) {
+				cancellation.poll(otherGroup);
+				LmdbNativeProbeDeadline.poll(otherGroup);
 				for (int i = 0; i < scratch.length; i++) {
 					scratch[i] = other.tuples.key(otherGroup, i);
 				}
@@ -575,7 +660,7 @@ final class NativeGroupTable implements AutoCloseable {
 				if (tupleStates[group] == null) {
 					tupleStates[group] = other.tupleStates[otherGroup];
 				} else {
-					tupleStates[group].mergeFrom(other.tupleStates[otherGroup]);
+					tupleStates[group].mergeFrom(other.tupleStates[otherGroup], cancellation);
 				}
 			}
 			break;
@@ -592,24 +677,146 @@ final class NativeGroupTable implements AutoCloseable {
 	}
 
 	/** Renders the accumulated groups as binding sets through the iteration's value materialization. */
-	List<BindingSet> results(NativeGroupIteration it, LmdbNativeAttemptMetrics metrics) {
+	NativeResultCursor physicalResults(NativeGroupIteration iteration) {
+		iteration.cancellation.check();
+		LmdbNativeProbeDeadline.poll(0);
 		checkOpen();
+		if (typedGroups != null) {
+			return typedGroups.cursor(iteration);
+		}
+		if (boundedCounts != null) {
+			boundedCounts.finish();
+		} else {
+			initializeUnbounded();
+		}
+		return new NativeResultCursor() {
+			private final NativeExecutionPhaseEvent.Coalesced render = NativeExecutionPhaseEvent.coalesced("render",
+					iteration.cancellation);
+			private int position;
+			private boolean exhausted;
+			private final long[] countRow = boundedCounts == null ? null
+					: new long[groupSlots.length + aggregates.length];
+
+			@Override
+			public NativeExecutionContext executionContext() {
+				return ctx.source instanceof SyntheticValueSource synthetic ? synthetic.executionContext() : null;
+			}
+
+			@Override
+			public NativeCancellationToken cancellation() {
+				return iteration.cancellation;
+			}
+
+			@Override
+			public NativeResultRow next() {
+				if (exhausted) {
+					return null;
+				}
+				render.start();
+				try {
+					iteration.cancellation.check();
+					LmdbNativeProbeDeadline.poll(0);
+					NativeResultRow row = nextRow();
+					iteration.cancellation.check();
+					LmdbNativeProbeDeadline.poll(0);
+					return row;
+				} catch (Throwable failure) {
+					NativeContextClosingIteration.throwFailure(KernelRuntime.closeResource(this, failure));
+					throw new AssertionError("unreachable");
+				}
+			}
+
+			private NativeResultRow nextRow() {
+				if (countRow != null) {
+					if (boundedCounts.next(countRow)) {
+						AggState state = AggState.externalMembership(aggregates, ctx);
+						System.arraycopy(countRow, groupSlots.length, state.counts, 0, aggregates.length);
+						return iteration.toPhysicalRow(new GroupKey(Arrays.copyOf(countRow, groupSlots.length)), state,
+								true);
+					}
+				} else {
+					switch (mode) {
+					case ZERO:
+						if (position++ == 0) {
+							return iteration.toPhysicalRow(null, single, sawRow);
+						}
+						break;
+					case SINGLE_SLOT:
+						while (position < longGroups.values.length) {
+							int current = position++;
+							iteration.cancellation.poll(current);
+							LmdbNativeProbeDeadline.poll(current);
+							if (longGroups.values[current] != null) {
+								return iteration.toPhysicalRow(new GroupKey(new long[] { longGroups.keys[current] }),
+										longGroups.values[current], true);
+							}
+						}
+						break;
+					case TUPLE_COUNTS:
+						if (position < tuples.size) {
+							int current = position++;
+							AggState state = AggState.externalMembership(aggregates, ctx);
+							System.arraycopy(tupleCounts, current * aggregates.length, state.counts, 0,
+									aggregates.length);
+							return iteration.toPhysicalRow(tuples.groupKey(current), state, true);
+						}
+						break;
+					case TUPLE_STATES:
+						if (position < tuples.size) {
+							int current = position++;
+							return iteration.toPhysicalRow(tuples.groupKey(current), tupleStates[current], true);
+						}
+						break;
+					}
+				}
+				render.complete();
+				close();
+				return null;
+			}
+
+			@Override
+			public void close() {
+				if (!exhausted) {
+					exhausted = true;
+					try {
+						NativeGroupTable.this.close();
+					} finally {
+						render.close();
+					}
+				}
+			}
+		};
+	}
+
+	/** Renders the accumulated groups as binding sets through the iteration's value materialization. */
+	List<BindingSet> results(NativeGroupIteration it, LmdbNativeAttemptMetrics metrics) {
+		try (NativeExecutionPhaseEvent.Span phase = NativeExecutionPhaseEvent.start("render", it.cancellation)) {
+			List<BindingSet> results = resultsUnmeasured(it, metrics);
+			it.cancellation.check();
+			LmdbNativeProbeDeadline.poll(0);
+			phase.complete();
+			return results;
+		}
+	}
+
+	private List<BindingSet> resultsUnmeasured(NativeGroupIteration it, LmdbNativeAttemptMetrics metrics) {
+		it.cancellation.check();
+		LmdbNativeProbeDeadline.poll(0);
+		checkOpen();
+		if (typedGroups != null) {
+			List<BindingSet> result = NativeReplayBindingList.copy(typedGroups.cursor(it), it, typedGroups.ledger());
+			boundedConsumed = true;
+			commitRowMetrics(metrics);
+			return result;
+		}
 		if (boundedAllowed && !boundedChecked && !unboundedReady) {
 			return groupSlots.length == 0 ? List.of(it.toCountBindingSet(new long[aggregates.length])) : List.of();
 		}
 		if (boundedCounts != null) {
-			try (NativeCountGroupStore store = boundedCounts) {
-				store.finish();
-				ArrayList<BindingSet> results = new ArrayList<>();
-				long[] result = new long[groupSlots.length + aggregates.length];
-				while (store.next(result))
-					results.add(it.toCountBindingSet(result));
-				commitRowMetrics(metrics);
-				return results;
-			} finally {
-				boundedCounts = null;
-				boundedConsumed = true;
-			}
+			List<BindingSet> results = NativeReplayBindingList.copy(physicalResults(it), it, countLedger);
+			boundedConsumed = true;
+			commitRowMetrics(metrics);
+			return results;
 		}
 		initializeUnbounded();
 		switch (mode) {
@@ -620,6 +827,8 @@ final class NativeGroupTable implements AutoCloseable {
 			long[] keys = longGroups.keys;
 			AggState[] states = longGroups.values;
 			for (int i = 0; i < states.length; i++) {
+				it.cancellation.poll(i);
+				LmdbNativeProbeDeadline.poll(i);
 				if (states[i] != null) {
 					results.add(it.toBindingSet(new GroupKey(new long[] { keys[i] }), states[i], true));
 				}
@@ -629,6 +838,8 @@ final class NativeGroupTable implements AutoCloseable {
 		case TUPLE_COUNTS: {
 			ArrayList<BindingSet> results = new ArrayList<>(tuples.size);
 			for (int group = 0; group < tuples.size; group++) {
+				it.cancellation.poll(group);
+				LmdbNativeProbeDeadline.poll(group);
 				AggState state = new AggState(aggregates, 4, ctx, channels);
 				int offset = group * aggregates.length;
 				for (int i = 0; i < aggregates.length; i++) {
@@ -642,6 +853,8 @@ final class NativeGroupTable implements AutoCloseable {
 		case TUPLE_STATES: {
 			ArrayList<BindingSet> results = new ArrayList<>(tuples.size);
 			for (int group = 0; group < tuples.size; group++) {
+				it.cancellation.poll(group);
+				LmdbNativeProbeDeadline.poll(group);
 				results.add(it.toBindingSet(tuples.groupKey(group), tupleStates[group], true));
 			}
 			commitRowMetrics(metrics);

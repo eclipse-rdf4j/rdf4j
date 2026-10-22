@@ -77,7 +77,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledExcept
  * functions of RDF kinds, compiled once into coefficients. They never construct an intermediate literal per quad. All
  * counts are read from the current probe's existing structures; this step retains no evaluation results.
  */
-final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
+final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 
 	static final String PATH = "adjacencyCensus";
 	private static final int S = TripleIndex.SUBJ_IDX;
@@ -106,6 +106,67 @@ final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
 	private final int idMask;
 	private final boolean[] distinctFields;
 	private QueryEvaluationStep fallback;
+
+	@Override
+	public LmdbNativeWork estimateWork(NativeLmdbQuerySource source) throws IOException {
+		NativeCancellationToken cancellation = NativeCancellationToken.forSource(source);
+		try (NativeProbe probe = source.newProbe(); WildcardAdjacency wildcard = probe.wildcardAdjacency(true)) {
+			if (wildcard == null) {
+				return LmdbNativeWork.UNKNOWN;
+			}
+			int requiredIds = idMask;
+			for (int field = 0; field < 4; field++) {
+				if (distinctFields[field]) {
+					requiredIds |= 1 << field;
+				}
+			}
+			double low = wildcard.predicateCount(), high = low;
+			for (int index = 0; index < wildcard.predicateCount(); index++) {
+				cancellation.check();
+				LmdbNativeProbeDeadline.poll(0);
+				long predicate = wildcard.predicateAt(index);
+				if (constants[P] != UNKNOWN && constants[P] != predicate) {
+					continue;
+				}
+				wildcard.bind(index);
+				if (wildcard.keyCount() == 0L) {
+					continue;
+				}
+				NativeAdjacency adjacency = probe.adjacency(predicate, true);
+				if (adjacency == null) {
+					return LmdbNativeWork.UNKNOWN;
+				}
+				try (AdjacencyPageCursor pages = adjacency.openPageCursor()) {
+					if (pages == null) {
+						return LmdbNativeWork.UNKNOWN;
+					}
+					while (pages.advance()) {
+						cancellation.check();
+						LmdbNativeProbeDeadline.poll(0);
+						// Execution makes one coverage pass and one reduction pass over these exact visible headers.
+						low += 2D;
+						high += 2D;
+						boolean common = pages.hasCommonContext();
+						if (common && !acceptsContext(pages.commonContext())) {
+							// The optional distinct-domain complement can inspect the excluded payload.
+							high += pages.quadCount();
+							continue;
+						}
+						boolean roots = (requiredIds & 1 << S) != 0
+								|| (kindMask & 1 << S) != 0 && !pages.uniformRowTermKind();
+						boolean neighbors = (requiredIds & 1 << O) != 0
+								|| (kindMask & 1 << O) != 0 && !pages.uniformNeighborTermKind();
+						double minimumUpdates = common && !roots && !neighbors ? 1D : pages.rowCount();
+						double maximumUpdates = common && !neighbors ? minimumUpdates : pages.quadCount();
+						low += minimumUpdates;
+						// Reducer channels, grouping/membership and output are bounded by the physical input grain.
+						high += maximumUpdates * (channels.length + 3D);
+					}
+				}
+			}
+			return LmdbNativeWork.between(low, high);
+		}
+	}
 
 	private LmdbNativeCensusAggregate(NativeLmdbQuerySource source, LmdbNativeEvaluationStrategy strategy,
 			QueryEvaluationContext context, Group group, TupleExpr explainTarget, StatementPattern pattern,
@@ -259,22 +320,31 @@ final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
 
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
+		return evaluate(bindings, null);
+	}
+
+	@Override
+	public CloseableIteration<BindingSet> evaluate(BindingSet bindings, NativeCancellationToken owner) {
+		if (owner != null) {
+			owner.check();
+		}
 		if (!bindings.isEmpty()
 				|| !Boolean.parseBoolean(
 						System.getProperty("rdf4j.lmdb.directAdjacency.scanAggregates.enabled", "true"))) {
 			return NativeExecutionContextCarrier.forEvaluation(fallback().evaluate(bindings), source);
 		}
-		return NativeExecutionContextCarrier.forEvaluation(new CensusIteration(bindings), source);
+		return NativeExecutionContextCarrier.forEvaluation(new CensusIteration(bindings, owner), source);
 	}
 
 	private final class CensusIteration extends ThreadSafeDelayedIteration<BindingSet>
 			implements CooperativeCancellation {
-		private final NativeCancellationToken cancellation = new NativeCancellationToken();
+		private final NativeCancellationToken cancellation;
 		private final BindingSet bindings;
 		private volatile CloseableIteration<BindingSet> delegate;
 
-		CensusIteration(BindingSet bindings) {
+		CensusIteration(BindingSet bindings, NativeCancellationToken owner) {
 			this.bindings = bindings;
+			this.cancellation = new NativeCancellationToken(owner);
 		}
 
 		@Override
@@ -312,6 +382,15 @@ final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
 	}
 
 	private CloseableIteration<BindingSet> evaluateNow(BindingSet bindings, NativeCancellationToken cancellation) {
+		try (NativeExecutionPhaseEvent.Span scan = NativeExecutionPhaseEvent.startNested("scan", cancellation)) {
+			CloseableIteration<BindingSet> result = evaluateUnmeasured(bindings, cancellation);
+			scan.complete();
+			return result;
+		}
+	}
+
+	private CloseableIteration<BindingSet> evaluateUnmeasured(BindingSet bindings,
+			NativeCancellationToken cancellation) {
 		checkCancelled(cancellation);
 		LmdbAdjacencyOptimizationTelemetry telemetry = LmdbAdjacencyOptimizationTelemetry.create(explainTarget,
 				LmdbAdjacencyOptimizationTelemetry.Grain.PLANE, LmdbAdjacencyOptimizationTelemetry.Direction.SOC);

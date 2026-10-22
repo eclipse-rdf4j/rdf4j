@@ -16,6 +16,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -239,6 +240,25 @@ public final class LmdbNativeAttemptMetrics {
 	 * records for everything else.
 	 */
 	private static final ThreadLocal<Map<String, String>> DECLINE_CAPTURE = new ThreadLocal<>();
+	private static final ThreadLocal<DeclineRoute> DECLINE_ROUTE = new ThreadLocal<>();
+
+	private record DeclineRoute(String implementation, String selected) {
+	}
+
+	/** Shared implementations must report the actual selected execution tier, including forced interpreter arms. */
+	static <T> T withDeclineRoute(String implementation, String selected, Supplier<T> action) {
+		DeclineRoute previous = DECLINE_ROUTE.get();
+		DECLINE_ROUTE.set(new DeclineRoute(implementation, selected));
+		try {
+			return action.get();
+		} finally {
+			if (previous == null) {
+				DECLINE_ROUTE.remove();
+			} else {
+				DECLINE_ROUTE.set(previous);
+			}
+		}
+	}
 
 	/**
 	 * Directs subsequent {@link #recordDecline} calls on this thread into {@code capture} (keyed by base tag), and
@@ -256,6 +276,10 @@ public final class LmdbNativeAttemptMetrics {
 	}
 
 	static void recordDecline(TupleExpr target, String strategy, String reason) {
+		DeclineRoute route = DECLINE_ROUTE.get();
+		if (route != null && route.implementation.equals(strategy)) {
+			strategy = route.selected;
+		}
 		Map<String, String> capture = DECLINE_CAPTURE.get();
 		if (LmdbNativeStrategyPreview.active()) {
 			if (capture != null && strategy != null && reason != null) {

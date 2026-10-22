@@ -459,7 +459,9 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 			NativeBooleanFilter comparison = compileCompare((Compare) expr, assuredMask);
 			if (comparison != null) {
 				LmdbNativeExpressionCompiler.recordCompiledFilter();
-				return comparison;
+				NativeScalarPlan recipe = NativeScalarPlan.create(expr, this::existingSlot,
+						NativeScalarPlan.ResultKind.BOOLEAN, strictCompare(), assuredMask, false, false);
+				return comparison.plannedBy(recipe);
 			}
 		}
 		if (expr instanceof And) {
@@ -504,6 +506,11 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 				SlotPlan subPlan = compileTuple(exists.getSubQuery(), false);
 				if (subPlan == null && Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
 					System.err.println("[exists-compile] decline: sub-plan " + exists.getSubQuery().getSignature());
+				}
+				if (subPlan != null && Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
+					System.err.println("[exists-compile] replay=" + SlotPlan.encounterOrderReplaySafe(subPlan)
+							+ " worker=" + NativeWorkerPlanBinder.canBind(subPlan) + " plan="
+							+ LmdbNativeExplain.describe(subPlan, slotNames.toArray(String[]::new), 0L));
 				}
 				return subPlan == null ? null : new ExistsFilter(subPlan);
 			} finally {

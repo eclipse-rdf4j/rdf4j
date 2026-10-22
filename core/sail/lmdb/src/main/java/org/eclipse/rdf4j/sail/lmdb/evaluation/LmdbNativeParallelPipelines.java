@@ -481,21 +481,31 @@ final class LmdbNativeParallelPipelines {
 	}
 
 	static Throwable closeWorkerPlans(MultiJoinPlan[] plans, int fromInclusive, Throwable failure) {
+		return closeWorkerPlans(plans, fromInclusive, failure, null);
+	}
+
+	static Throwable closeWorkerPlans(MultiJoinPlan[] plans, int fromInclusive, Throwable failure,
+			NativeExecutionPhaseEvent.Span observer) {
 		if (plans == null) {
 			return failure;
 		}
 		for (int i = fromInclusive; i < plans.length; i++) {
-			failure = closePlanFilters(plans[i], failure);
+			failure = closePlanFilters(plans[i], failure, observer);
 		}
 		return failure;
 	}
 
 	static Throwable closePlanFilters(MultiJoinPlan plan, Throwable failure) {
+		return closePlanFilters(plan, failure, null);
+	}
+
+	private static Throwable closePlanFilters(MultiJoinPlan plan, Throwable failure,
+			NativeExecutionPhaseEvent.Span observer) {
 		if (plan == null) {
 			return failure;
 		}
-		failure = closeFilters(plan.filters, failure);
-		return closeChildren(plan.children, failure);
+		failure = closeFilters(plan.filters, failure, observer);
+		return closeChildren(plan.children, failure, observer);
 	}
 
 	/**
@@ -518,6 +528,11 @@ final class LmdbNativeParallelPipelines {
 	}
 
 	private static Throwable closeChildren(SlotPlan[] children, Throwable failure) {
+		return closeChildren(children, failure, null);
+	}
+
+	private static Throwable closeChildren(SlotPlan[] children, Throwable failure,
+			NativeExecutionPhaseEvent.Span observer) {
 		if (children == null) {
 			return failure;
 		}
@@ -528,6 +543,9 @@ final class LmdbNativeParallelPipelines {
 					try {
 						fallbackFilter.close();
 					} catch (RuntimeException | Error closeFailure) {
+						if (observer != null) {
+							observer.resourceFailed();
+						}
 						failure = addCleanupFailure(failure, closeFailure);
 					}
 				}
@@ -537,6 +555,11 @@ final class LmdbNativeParallelPipelines {
 	}
 
 	private static Throwable closeFilters(MaskedFilter[] filters, Throwable failure) {
+		return closeFilters(filters, failure, null);
+	}
+
+	private static Throwable closeFilters(MaskedFilter[] filters, Throwable failure,
+			NativeExecutionPhaseEvent.Span observer) {
 		if (filters == null) {
 			return failure;
 		}
@@ -547,6 +570,9 @@ final class LmdbNativeParallelPipelines {
 			try {
 				filter.filter.close();
 			} catch (RuntimeException | Error closeFailure) {
+				if (observer != null) {
+					observer.resourceFailed();
+				}
 				failure = addCleanupFailure(failure, closeFailure);
 			}
 		}
@@ -561,6 +587,11 @@ final class LmdbNativeParallelPipelines {
 	}
 
 	static Throwable closeSources(NativeLmdbQuerySource.ParallelSource[] sources, Throwable failure) {
+		return closeSources(sources, failure, null);
+	}
+
+	static Throwable closeSources(NativeLmdbQuerySource.ParallelSource[] sources, Throwable failure,
+			NativeExecutionPhaseEvent.Span observer) {
 		if (sources == null) {
 			return failure;
 		}
@@ -569,6 +600,9 @@ final class LmdbNativeParallelPipelines {
 				try {
 					source.close();
 				} catch (RuntimeException | Error problem) {
+					if (observer != null) {
+						observer.resourceFailed();
+					}
 					failure = addCleanupFailure(failure, problem);
 				}
 			}

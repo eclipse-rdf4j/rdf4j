@@ -13,8 +13,13 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.io.IOException;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Objects;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /** A guarded native strategy whose resources are not opened until cost arbitration selects it. */
 @Experimental
@@ -63,6 +68,70 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	private final Runnable releaseIfUnused;
 	private boolean opened;
 	private boolean closed;
+	private LmdbNativeCostEstimate physicalEstimate;
+	private IdentityHashMap<LmdbNativeStrategyProposal<?>, String> physicalDominators;
+	private LmdbNativeStrategyProposal<?> mappedOrigin;
+
+	/** Changes only the result carrier; the original opener, quote, dominance and unopened release remain owned. */
+	<R> LmdbNativeStrategyProposal<R> map(Function<? super T, ? extends R> mapper, String mappedTag) {
+		LmdbNativeStrategyProposal<R> result = new LmdbNativeStrategyProposal<>(() -> {
+			T value = open();
+			if (value == null) {
+				return null;
+			}
+			try {
+				return mapper.apply(value);
+			} catch (RuntimeException | Error failure) {
+				if (value instanceof AutoCloseable resource) {
+					KernelRuntime.closeResource(resource, failure);
+				}
+				throw failure;
+			}
+		}, work, startupWork, estRows, mappedTag, this::close, probeable);
+		result.physicalEstimate = physicalEstimate;
+		result.mappedOrigin = this;
+		return result;
+	}
+
+	/** A plan-owned shared-work proof, independent of scalar calibration and completed timing confidence. */
+	void physicallyDominatedBy(LmdbNativeStrategyProposal<?> alternative, String proof) {
+		if (opened || closed || alternative == this) {
+			throw new IllegalStateException("Physical dominance belongs to distinct unopened alternatives");
+		}
+		if (physicalDominators == null) {
+			physicalDominators = new IdentityHashMap<>();
+		}
+		physicalDominators.put(Objects.requireNonNull(alternative), Objects.requireNonNull(proof));
+	}
+
+	String physicalDominanceProof(List<? extends LmdbNativeStrategyProposal<?>> remaining) {
+		if (mappedOrigin != null) {
+			return mappedOrigin.physicalDominanceProof(remaining.stream()
+					.map(LmdbNativeStrategyProposal::mappedOriginOrSelf)
+					.toList());
+		}
+		if (physicalDominators != null) {
+			for (LmdbNativeStrategyProposal<?> alternative : remaining) {
+				String proof = physicalDominators.get(alternative);
+				if (proof != null) {
+					return alternative.tag + ": " + proof;
+				}
+			}
+		}
+		return null;
+	}
+
+	private static LmdbNativeStrategyProposal<?> mappedOriginOrSelf(LmdbNativeStrategyProposal<?> proposal) {
+		return proposal.mappedOrigin == null ? proposal : proposal.mappedOrigin;
+	}
+
+	LmdbNativeStrategyProposal<T> withPhysicalEstimate(LmdbNativeCostEstimate estimate) {
+		if (opened || closed || physicalEstimate != null) {
+			throw new IllegalStateException("A physical estimate belongs to one unopened proposal");
+		}
+		physicalEstimate = Objects.requireNonNull(estimate);
+		return this;
+	}
 
 	LmdbNativeStrategyProposal(Opener<T> opener, double estCost, String tag) {
 		this(opener, estCost, tag, () -> {
@@ -155,6 +224,12 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	}
 
 	LmdbNativeCostEstimate adaptiveEstimate(double sliceRows) {
+		if (physicalEstimate != null) {
+			return sliceRows >= 0D && physicalEstimate.estimatedOutputRows() > 0D
+					&& sliceRows < physicalEstimate.estimatedOutputRows()
+							? physicalEstimate.forConsumption(sliceRows / physicalEstimate.estimatedOutputRows())
+							: physicalEstimate;
+		}
 		LmdbNativeWork effective = effectiveWork(sliceRows);
 		if (!effective.known()) {
 			return null;
@@ -197,6 +272,9 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 			double fraction = sliceRows / outputRows;
 			outputRows = sliceRows;
 			consumptionBucket = (int) Math.round(fraction * 100D);
+		}
+		if (outputRows > 0D) {
+			total.add(LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION, outputRows);
 		}
 		double uncertainty = totalExpected > 0D
 				? Math.min(4D, (effective.high() - effective.low()) / (2D * totalExpected))

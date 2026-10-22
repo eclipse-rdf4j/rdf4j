@@ -43,6 +43,15 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelTermKindProof;
 interface NativeBooleanFilter {
 	boolean accept(RowState row);
 
+	/** Attach immutable compiler proof before the predicate is published, preserving intrinsic specializations. */
+	default NativeBooleanFilter plannedBy(NativeScalarPlan plan) {
+		return plan == null ? this : new PlannedNativeBooleanFilter(this, plan);
+	}
+
+	default NativePredicateCapabilities capabilities() {
+		return NativePredicateCapabilities.opaque(batchReadMask());
+	}
+
 	default void explainStrategies() {
 	}
 
@@ -105,6 +114,64 @@ interface NativeBooleanFilter {
 	}
 
 	default void close() {
+	}
+}
+
+/** A structural proof attached to an existing specialized predicate without changing its fast execution path. */
+final class PlannedNativeBooleanFilter implements NativeBooleanFilter {
+	final NativeBooleanFilter delegate;
+	private final NativeScalarPlan plan;
+
+	PlannedNativeBooleanFilter(NativeBooleanFilter delegate, NativeScalarPlan plan) {
+		this.delegate = delegate;
+		this.plan = plan;
+	}
+
+	@Override
+	public NativePredicateCapabilities capabilities() {
+		return NativePredicateCapabilities.scalar(plan);
+	}
+
+	@Override
+	public boolean accept(RowState row) {
+		return delegate.accept(row);
+	}
+
+	@Override
+	public int selectBatch(NativeBatch batch, int[] selection, int count, RowState scratch) {
+		return delegate.selectBatch(batch, selection, count, scratch);
+	}
+
+	@Override
+	public long batchReadMask() {
+		return delegate.batchReadMask();
+	}
+
+	@Override
+	public KernelTermKindProof pageProof(int[] slots) {
+		return delegate.pageProof(slots);
+	}
+
+	@Override
+	public boolean parallelWorkerForkable() {
+		return plan.workerBindable() && delegate.parallelWorkerForkable();
+	}
+
+	@Override
+	public NativeBooleanFilter forkForParallelWorker() {
+		NativeBooleanFilter forked = delegate.forkForParallelWorker();
+		return forked == null ? null : new PlannedNativeBooleanFilter(forked, plan);
+	}
+
+	@Override
+	public NativeBooleanFilter forkForParallelWorker(NativeScalarPlan.WorkerContext context) {
+		NativeBooleanFilter forked = delegate.forkForParallelWorker(context);
+		return forked == null ? null : new PlannedNativeBooleanFilter(forked, plan);
+	}
+
+	@Override
+	public void close() {
+		delegate.close();
 	}
 }
 
@@ -234,6 +301,11 @@ final class RecordingNativeBooleanFilter implements NativeBooleanFilter {
 	}
 
 	@Override
+	public NativePredicateCapabilities capabilities() {
+		return delegate.capabilities();
+	}
+
+	@Override
 	public int selectBatch(NativeBatch batch, int[] sel, int n, RowState scratch) {
 		int accepted = delegate.selectBatch(batch, sel, n, scratch);
 		localPassed += accepted;
@@ -351,6 +423,11 @@ final class NativeConstantFalseWhenUnboundFilter implements NativeBooleanFilter 
 	}
 
 	@Override
+	public NativePredicateCapabilities capabilities() {
+		return fallback.capabilities();
+	}
+
+	@Override
 	public boolean parallelWorkerForkable() {
 		return fallback.parallelWorkerForkable();
 	}
@@ -397,6 +474,11 @@ final class CloseOnceNativeBooleanFilter implements NativeBooleanFilter {
 	@Override
 	public boolean accept(RowState row) {
 		return delegate.accept(row);
+	}
+
+	@Override
+	public NativePredicateCapabilities capabilities() {
+		return delegate.capabilities();
 	}
 
 	@Override
@@ -477,6 +559,32 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 			}
 		}
 		this.varyingSlots = Arrays.copyOf(varying, n);
+	}
+
+	@Override
+	public NativePredicateCapabilities capabilities() {
+		long reads = 0L;
+		for (int slot : varyingSlots) {
+			reads |= 1L << slot;
+		}
+		return NativePredicateCapabilities.snapshot(reads, true, true);
+	}
+
+	@Override
+	public boolean parallelWorkerForkable() {
+		return capabilities().workerBindable();
+	}
+
+	@Override
+	public NativeBooleanFilter forkForParallelWorker() {
+		// The recipe holds terms/context constraints only; mutable probes are keyed by this new identity in the
+		// worker's evaluation context and resolve exclusively through the accepting row's sibling source.
+		return new StatementPatternExistsFilter(null, s, p, o, c, contexts, namedContextScope);
+	}
+
+	@Override
+	public NativeBooleanFilter forkForParallelWorker(NativeScalarPlan.WorkerContext context) {
+		return context == null ? null : forkForParallelWorker();
 	}
 
 	@Override
@@ -849,6 +957,7 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 final class ExistsFilter implements NativeBooleanFilter {
 	final SlotPlan subPlan;
 	final NativeExistsPatternCursor.Plan existsPlan;
+	private final NativeWorkerPlanBinder workerBinding;
 	/**
 	 * When the subplan's outcome depends only on the current values of a known slot set (see {@link #memoReadMask}),
 	 * the per-row existence probe is memoized on those values instead of reopening the whole subplan cursor tree per
@@ -858,10 +967,52 @@ final class ExistsFilter implements NativeBooleanFilter {
 	final int[] memoSlots;
 
 	ExistsFilter(SlotPlan subPlan) {
+		this(subPlan, null);
+	}
+
+	private ExistsFilter(SlotPlan subPlan, NativeWorkerPlanBinder workerBinding) {
 		this.subPlan = subPlan;
+		this.workerBinding = workerBinding;
 		this.existsPlan = NativeExistsPatternCursor.plan(subPlan);
 		long readMask = memoReadMask(subPlan);
 		this.memoSlots = readMask < 0L ? null : slotsOf(readMask);
+	}
+
+	@Override
+	public NativePredicateCapabilities capabilities() {
+		return NativePredicateCapabilities.snapshot(memoReadMask(subPlan), SlotPlan.encounterOrderReplaySafe(subPlan),
+				NativeWorkerPlanBinder.canBind(subPlan));
+	}
+
+	@Override
+	public boolean parallelWorkerForkable() {
+		NativePredicateCapabilities proof = capabilities();
+		return proof.replaySafe() && proof.workerBindable();
+	}
+
+	@Override
+	public NativeBooleanFilter forkForParallelWorker(NativeScalarPlan.WorkerContext context) {
+		if (context == null || !parallelWorkerForkable()) {
+			return null;
+		}
+		NativeWorkerPlanBinder binder = new NativeWorkerPlanBinder(context);
+		try {
+			return new ExistsFilter(binder.bind(subPlan), binder);
+		} catch (IOException failure) {
+			SailException problem = new SailException(failure);
+			binder.abort(problem);
+			throw problem;
+		} catch (RuntimeException | Error problem) {
+			binder.abort(problem);
+			throw problem;
+		}
+	}
+
+	@Override
+	public void close() {
+		if (workerBinding != null) {
+			workerBinding.close();
+		}
 	}
 
 	@Override
@@ -1216,6 +1367,7 @@ final class ValueSetFilter implements NativeBooleanFilter {
 
 @Experimental
 final class CachedCompareFilter implements NativeBooleanFilter {
+	private NativeScalarPlan scalarPlan;
 	final int slot;
 	final long constant;
 	final boolean constantOnLeft;
@@ -1228,6 +1380,18 @@ final class CachedCompareFilter implements NativeBooleanFilter {
 	final boolean constantStoreId;
 	final boolean checkBound;
 	final KeyedMatches memo = new KeyedMatches(1, 512).withVerdicts();
+
+	@Override
+	public NativeBooleanFilter plannedBy(NativeScalarPlan plan) {
+		scalarPlan = plan;
+		return this;
+	}
+
+	@Override
+	public NativePredicateCapabilities capabilities() {
+		return scalarPlan == null ? NativeBooleanFilter.super.capabilities()
+				: NativePredicateCapabilities.scalar(scalarPlan);
+	}
 
 	CachedCompareFilter(NativeLmdbQuerySource source, int slot, long constant, boolean constantOnLeft,
 			Compare.CompareOp op, boolean strict,
@@ -1308,7 +1472,7 @@ final class CachedCompareFilter implements NativeBooleanFilter {
 	@Override
 	public NativeBooleanFilter forkForParallelWorker() {
 		return new CachedCompareFilter(slot, constant, constantOnLeft, op, strict, fallback, codec, constantDecoded,
-				constantStoreId, checkBound);
+				constantStoreId, checkBound).plannedBy(scalarPlan);
 	}
 
 	@Override
@@ -1325,7 +1489,7 @@ final class CachedCompareFilter implements NativeBooleanFilter {
 			return null;
 		}
 		return new CachedCompareFilter(slot, constant, constantOnLeft, op, strict, fallback, workerCodec,
-				constantDecoded, constantStoreId, checkBound);
+				constantDecoded, constantStoreId, checkBound).plannedBy(scalarPlan);
 	}
 
 	@Override
@@ -1461,6 +1625,11 @@ final class NegatedNativeBooleanFilter implements NativeBooleanFilter {
 	}
 
 	@Override
+	public NativePredicateCapabilities capabilities() {
+		return delegate.capabilities();
+	}
+
+	@Override
 	public int selectBatch(NativeBatch batch, int[] selection, int count, RowState scratch) {
 		if (delegate instanceof StatementPatternExistsFilter exists) {
 			return exists.selectBatchNegated(batch, selection, count, scratch);
@@ -1518,6 +1687,11 @@ final class BooleanCombinationFilter implements NativeBooleanFilter {
 		this.left = left;
 		this.right = right;
 		this.conjunction = conjunction;
+	}
+
+	@Override
+	public NativePredicateCapabilities capabilities() {
+		return left.capabilities().and(right.capabilities());
 	}
 
 	@Override
@@ -1635,12 +1809,25 @@ final class BooleanCombinationFilter implements NativeBooleanFilter {
 
 @Experimental
 final class OrderedSlotCompareFilter implements NativeBooleanFilter {
+	private NativeScalarPlan scalarPlan;
 	final int leftSlot;
 	final int rightSlot;
 	final Compare.CompareOp op;
 	final Predicate<BindingSet> fallback;
 	final boolean checkLeftBound;
 	final boolean checkRightBound;
+
+	@Override
+	public NativeBooleanFilter plannedBy(NativeScalarPlan plan) {
+		scalarPlan = plan;
+		return this;
+	}
+
+	@Override
+	public NativePredicateCapabilities capabilities() {
+		return scalarPlan == null ? NativeBooleanFilter.super.capabilities()
+				: NativePredicateCapabilities.scalar(scalarPlan);
+	}
 
 	OrderedSlotCompareFilter(int leftSlot, int rightSlot, Compare.CompareOp op, Predicate<BindingSet> fallback,
 			boolean checkLeftBound, boolean checkRightBound) {
@@ -1693,7 +1880,15 @@ final class OrderedSlotCompareFilter implements NativeBooleanFilter {
 
 	@Override
 	public NativeBooleanFilter forkForParallelWorker() {
-		return new OrderedSlotCompareFilter(leftSlot, rightSlot, op, fallback, checkLeftBound, checkRightBound);
+		return new OrderedSlotCompareFilter(leftSlot, rightSlot, op, fallback, checkLeftBound, checkRightBound)
+				.plannedBy(scalarPlan);
+	}
+
+	@Override
+	public NativeBooleanFilter forkForParallelWorker(NativeScalarPlan.WorkerContext context) {
+		// Slot/constant comparisons capture immutable RDF comparison semantics; each owner retains its own
+		// specialization, and CachedCompareFilter separately rebinds any source codec it uses.
+		return context == null ? null : forkForParallelWorker();
 	}
 
 	private Boolean nativeDecision(long left, long right, NativeTermAuthority authority) {

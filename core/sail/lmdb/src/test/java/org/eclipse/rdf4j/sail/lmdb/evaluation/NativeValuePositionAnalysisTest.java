@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -47,6 +48,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
 import org.junit.jupiter.api.Test;
 
@@ -248,6 +250,89 @@ class NativeValuePositionAnalysisTest {
 		TupleExpr root = new StatementPattern(named, constant, new Var("o"));
 		assertThat(masks(root, root).get("x")).isEqualTo(1);
 		assertThat(masks(root, root)).doesNotContainKey("constant");
+	}
+
+	@Test
+	void aggregateDemandFollowsAliasesAcrossLexicalDefinitions() {
+		TupleExpr query = parse("SELECT (SUM(STRLEN(?forwarded)) AS ?total) WHERE { "
+				+ "{ SELECT (?cat AS ?renamed) WHERE { { SELECT (GROUP_CONCAT(?v) AS ?cat) "
+				+ "WHERE { VALUES ?v { \"one\" \"two\" } } } } } BIND(?renamed AS ?forwarded) }");
+		NativeValuePositionAnalysis analysis = NativeValuePositionAnalysis.analyze(query);
+		GroupElem concat = aggregates(query).stream()
+				.filter(element -> element.getName().equals("cat"))
+				.findFirst()
+				.orElseThrow();
+		assertThat(analysis.aggregateDemand(concat)).isEqualTo(NativeAggregateResultDemand.LEXICAL_LENGTH);
+		// A detached clone has no proved correspondence until it is transported with the metadata.
+		assertThat(analysis.aggregateDemand(concat.clone())).isEqualTo(NativeAggregateResultDemand.FULL_VALUE);
+		TupleExpr copy = query.clone();
+		GroupElem copiedConcat = aggregates(copy).stream()
+				.filter(element -> element.getName().equals("cat"))
+				.findFirst()
+				.orElseThrow();
+		assertThat(analysis.copySubtree(query, copy).aggregateDemand(copiedConcat))
+				.isEqualTo(NativeAggregateResultDemand.LEXICAL_LENGTH);
+	}
+
+	@Test
+	void fullValueEnvironmentDominatesAliasesAndSurvivesCloningWithoutMutatingTheSummaryPlan() {
+		TupleExpr query = parse("SELECT (SUM(STRLEN(?renamed)) AS ?total) WHERE { "
+				+ "{ SELECT (GROUP_CONCAT(?v) AS ?cat) WHERE { VALUES ?v { \"one\" \"two\" } } } "
+				+ "BIND(?cat AS ?renamed) }");
+		NativeValuePositionAnalysis summary = NativeValuePositionAnalysis.analyze(query);
+		NativeValuePositionAnalysis full = summary.fullAggregateValues();
+		assertThat(aggregates(query).stream().map(summary::aggregateDemand))
+				.contains(NativeAggregateResultDemand.LEXICAL_LENGTH);
+		assertThat(aggregates(query)).allSatisfy(element -> assertThat(full.aggregateDemand(element))
+				.isEqualTo(NativeAggregateResultDemand.FULL_VALUE));
+		TupleExpr copied = query.clone();
+		NativeValuePositionAnalysis transported = full.copySubtree(query, copied);
+		assertThat(transported.requiresFullAggregateValues()).isTrue();
+		assertThat(aggregates(copied)).allSatisfy(element -> assertThat(transported.aggregateDemand(element))
+				.isEqualTo(NativeAggregateResultDemand.FULL_VALUE));
+		assertThat(transported.aggregateDemand(aggregates(copied).getFirst().clone()))
+				.isEqualTo(NativeAggregateResultDemand.FULL_VALUE);
+		assertThat(summary.requiresFullAggregateValues()).isFalse();
+	}
+
+	@Test
+	void shadowedAggregateDefinitionsDoNotShareResultDemands() {
+		TupleExpr query = parse("SELECT ?cat ?length WHERE { "
+				+ "{ SELECT (GROUP_CONCAT(?v) AS ?cat) WHERE { VALUES ?v { \"outer\" } } } "
+				+ "{ SELECT (STRLEN(?cat) AS ?length) WHERE { "
+				+ "{ SELECT (GROUP_CONCAT(?v) AS ?cat) WHERE { VALUES ?v { \"inner\" } } } } } }");
+		NativeValuePositionAnalysis analysis = NativeValuePositionAnalysis.analyze(query);
+		List<NativeAggregateResultDemand> demands = aggregates(query).stream()
+				.map(analysis::aggregateDemand)
+				.toList();
+		assertThat(demands).containsExactlyInAnyOrder(NativeAggregateResultDemand.FULL_VALUE,
+				NativeAggregateResultDemand.LEXICAL_LENGTH);
+	}
+
+	@Test
+	void everyFullTermObserverPreventsLexicalSummaries() {
+		String grouped = "{ SELECT (GROUP_CONCAT(?v) AS ?cat) WHERE { VALUES ?v { \"x\" } } }";
+		for (String body : List.of(grouped + " FILTER(?cat = \"x\")",
+				"{ SELECT DISTINCT ?cat WHERE { " + grouped + " } }",
+				"{ SELECT ?cat WHERE { " + grouped + " } ORDER BY ?cat }",
+				grouped + " FILTER EXISTS { FILTER(?cat = \"x\") }")) {
+			TupleExpr query = parse("SELECT (STRLEN(?cat) AS ?length) WHERE { " + body + " }");
+			NativeValuePositionAnalysis analysis = NativeValuePositionAnalysis.analyze(query);
+			assertThat(aggregates(query)).isNotEmpty();
+			assertThat(aggregates(query)).allSatisfy(element -> assertThat(analysis.aggregateDemand(element))
+					.isEqualTo(NativeAggregateResultDemand.FULL_VALUE));
+		}
+	}
+
+	private static List<GroupElem> aggregates(TupleExpr query) {
+		List<GroupElem> result = new ArrayList<>();
+		query.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(GroupElem element) {
+				result.add(element);
+			}
+		});
+		return result;
 	}
 
 	private static TupleExpr parse(String query) {
