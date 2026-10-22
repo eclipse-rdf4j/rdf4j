@@ -498,6 +498,8 @@ This chapter will refer to URLs on a local server served from port 8080, which i
 
 To start using Workbench for the first time, point your browser to `http://localhost:8080/rdf4j-workbench`. Your browser will be automatically redirected to `http://localhost:8080/rdf4j-workbench/repositories/NONE/repositories`. This page will display all repositories in the default server, as indicated by the “default-server” property in `WEB-INF/web.xml`. Normally this is set to `/rdf4j-server`. That is, the default server for Workbench is usually the RDF4J Server instance at the path `/rdf4j-server` on the same web server. To view information about the RDF4J Server instance, click on “RDF4J Server” at the top of the side menu.
 
+A relative `default-server` path is resolved against the address, port, and TLS state of the local servlet connector. The browser's `Host` and forwarded headers do not choose the backend. Keep the RDF4J Server reachable at that connector address and include the relative path in `accepted-server-prefixes`. If a reverse proxy routes `/rdf4j-server` to another host or port, configure an absolute `default-server` URL and an explicit accepted prefix for that URL instead.
+
 ### Setting the Server, Repository and User Credentials
 
 A “current selection” section sits at the top right in the Workbench, informing you of the URL of the server you are using, the repository you are currently using, and the user name used when accessing the server. Each of these items can be changed by clicking the “change” link immediately to the right of them. Since the Workbench is generally used for prototyping and exploration, “user” is commonly set to “none”. In this case, the Workbench is connecting to the RDF4J Server without authenticating, and below we refer to the user in this mode as the anonymous user.
@@ -515,7 +517,7 @@ User names and passwords may contain any characters: the Workbench stores the cr
 
 ### Configuring Accepted Server Prefixes
 
-For security, Workbench does not allow users to switch to arbitrary servers by default. A server URL entered on the "Change Server" page must start with one of the accepted server prefixes before Workbench will connect to it. The default accepted prefix is `/rdf4j-server`, which allows the RDF4J Server deployed next to Workbench and rejects remote `http://...`, `https://...`, and `file:///...` targets unless an administrator explicitly allows them.
+For security, Workbench does not allow users to switch to arbitrary servers by default. A server URL entered on the "Change Server" page must start with one of the accepted server prefixes before Workbench will connect to it. The default accepted prefix is `/rdf4j-server`, which allows the RDF4J Server deployed next to Workbench and rejects remote `http://...`, `https://...`, and `file:///...` targets unless an administrator explicitly allows them. An absolute URL can use a relative prefix only when its origin matches the local servlet connector. Relative defaults must also match an accepted prefix, even when server switching is disabled.
 
 Administrators can configure the allow-list as a whitespace-separated list of concrete prefixes. The JVM system property `org.eclipse.rdf4j.workbench.accepted-server-prefixes` has highest precedence and overrides the Workbench servlet init-param `accepted-server-prefixes` in `WEB-INF/web.xml`. If neither value is set to a non-blank value, Workbench uses `/rdf4j-server`.
 

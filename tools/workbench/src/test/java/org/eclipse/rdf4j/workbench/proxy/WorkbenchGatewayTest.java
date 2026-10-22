@@ -777,6 +777,143 @@ class WorkbenchGatewayTest {
 	}
 
 	@Test
+	void relativeDefaultServerUsesLocalConnectorDespiteHostHeaders() throws Exception {
+		TestWorkbenchGateway gateway = new TestWorkbenchGateway(new TestCookieHandler("10"),
+				new ServerValidator(TestServletConfig.withParams("validator",
+						"accepted-server-prefixes", "/rdf4j-server")));
+		gateway.init(TestServletConfig.withParams("gateway",
+				"default-server", "/rdf4j-server",
+				"change-server-path", "/change",
+				LEGACY_TRANSFORMATIONS, "/transform"));
+		MockHttpServletRequest request = request("GET", "/workbench/repositories", "/repositories");
+		request.setServerName("169.254.169.254");
+		request.setServerPort(81);
+		request.addHeader("Host", "169.254.169.254:81");
+		request.addHeader("Forwarded", "host=attacker.example:9090;proto=https");
+		request.addHeader("X-Forwarded-Host", "attacker.example:9091");
+		request.removeAttribute("jakarta.servlet.request.cipher_suite");
+		request.setLocalAddr("192.0.2.10");
+		request.setLocalPort(8080);
+
+		gateway.service(request, new CapturedResponse());
+
+		assertThat(gateway.lastServletConfigParams).containsEntry(WorkbenchServlet.SERVER_PARAM,
+				"http://192.0.2.10:8080/rdf4j-server");
+	}
+
+	@Test
+	void relativeDefaultServerUsesTlsConnectorAndIpv6Address() throws Exception {
+		TestWorkbenchGateway gateway = new TestWorkbenchGateway(new TestCookieHandler("10"),
+				new ServerValidator(TestServletConfig.withParams("validator",
+						"accepted-server-prefixes", "/rdf4j-server")));
+		gateway.init(TestServletConfig.withParams("gateway",
+				"default-server", "/rdf4j-server",
+				LEGACY_TRANSFORMATIONS, "/transform"));
+		MockHttpServletRequest request = request("GET", "/workbench/repositories", "/repositories");
+		request.setScheme("http");
+		request.setServerName("attacker.example");
+		request.addHeader("Forwarded", "host=attacker.example;proto=http");
+		request.setLocalAddr("2001:db8::10");
+		request.setLocalPort(8443);
+
+		gateway.service(request, new CapturedResponse());
+
+		assertThat(gateway.lastServletConfigParams).containsEntry(WorkbenchServlet.SERVER_PARAM,
+				"https://[2001:db8::10]:8443/rdf4j-server");
+	}
+
+	@Test
+	void relativeDefaultMustPassAllowlistEvenWhenServerIsFixed() throws Exception {
+		TestWorkbenchGateway gateway = new TestWorkbenchGateway(new TestCookieHandler("10"),
+				new ServerValidator(TestServletConfig.withParams("validator",
+						"accepted-server-prefixes", "/allowed-server")));
+		gateway.init(TestServletConfig.withParams("gateway",
+				"default-server", "/rdf4j-server",
+				LEGACY_TRANSFORMATIONS, "/transform"));
+
+		gateway.service(request("GET", "/workbench/repositories", "/repositories"), new CapturedResponse());
+
+		assertThat(gateway.createdServlets).isEmpty();
+	}
+
+	@Test
+	void mutableRelativeDefaultCannotBypassAllowlistThroughSelection() throws Exception {
+		TestCookieHandler cookies = new TestCookieHandler("10");
+		TestWorkbenchGateway gateway = new TestWorkbenchGateway(cookies,
+				new ServerValidator(TestServletConfig.withParams("validator",
+						"accepted-server-prefixes", "/allowed-server")));
+		gateway.init(TestServletConfig.withParams("gateway",
+				"default-server", "/rdf4j-server",
+				"change-server-path", "/change",
+				LEGACY_TRANSFORMATIONS, "/transform"));
+
+		gateway.service(request("GET", "/workbench/repositories", "/repositories"), new CapturedResponse());
+		assertThat(gateway.createdServlets).isEmpty();
+
+		MockHttpServletRequest selection = request("POST", "/workbench/change", "/change");
+		selection.addParameter("workbench-server", "/rdf4j-server");
+		gateway.service(selection, new CapturedResponse());
+		assertThat(cookies.addedCookies).doesNotContainKey("workbench-server");
+	}
+
+	@Test
+	void absoluteSubmittedServerCannotBorrowRelativeAllowlistFromHostHeader() throws Exception {
+		TestCookieHandler cookies = new TestCookieHandler("10");
+		TestWorkbenchGateway gateway = new TestWorkbenchGateway(cookies,
+				new ServerValidator(TestServletConfig.withParams("validator",
+						"accepted-server-prefixes", "/rdf4j-server")));
+		gateway.init(TestServletConfig.withParams("gateway",
+				"default-server", "/rdf4j-server",
+				"change-server-path", "/change",
+				LEGACY_TRANSFORMATIONS, "/transform"));
+		MockHttpServletRequest request = request("POST", "/workbench/change", "/change");
+		request.setServerName("attacker.example");
+		request.addHeader("Host", "attacker.example");
+		request.addParameter("workbench-server", "https://attacker.example/rdf4j-server");
+
+		gateway.service(request, new CapturedResponse());
+
+		assertThat(cookies.addedCookies).doesNotContainKey("workbench-server");
+	}
+
+	@Test
+	void localConnectorAbsoluteSubmissionMayUseRelativeAllowlist() throws Exception {
+		TestCookieHandler cookies = new TestCookieHandler("10");
+		TestWorkbenchGateway gateway = new TestWorkbenchGateway(cookies,
+				new ServerValidator(TestServletConfig.withParams("validator",
+						"accepted-server-prefixes", "/rdf4j-server")));
+		gateway.init(TestServletConfig.withParams("gateway",
+				"default-server", "/rdf4j-server",
+				"change-server-path", "/change",
+				LEGACY_TRANSFORMATIONS, "/transform"));
+		MockHttpServletRequest request = request("POST", "/workbench/change", "/change");
+		request.setServerName("attacker.example");
+		request.addParameter("workbench-server", "https://example.org/rdf4j-server");
+
+		gateway.service(request, new CapturedResponse());
+
+		assertThat(cookies.addedCookies).containsEntry("workbench-server", "https://example.org/rdf4j-server");
+	}
+
+	@Test
+	void absoluteFixedServerIsIndependentOfRequestOrigin() throws Exception {
+		TestWorkbenchGateway gateway = new TestWorkbenchGateway(new TestCookieHandler("10"),
+				new ServerValidator(TestServletConfig.withParams("validator",
+						"accepted-server-prefixes", "/other-server")));
+		gateway.init(TestServletConfig.withParams("gateway",
+				"default-server", "https://configured.example/rdf4j-server",
+				LEGACY_TRANSFORMATIONS, "/transform"));
+		MockHttpServletRequest request = request("GET", "/workbench/repositories", "/repositories");
+		request.setServerName("attacker.example");
+		request.addHeader("Host", "attacker.example");
+
+		gateway.service(request, new CapturedResponse());
+
+		assertThat(gateway.lastServletConfigParams).containsEntry(WorkbenchServlet.SERVER_PARAM,
+				"https://configured.example/rdf4j-server");
+	}
+
+	@Test
 	void changeServerAcceptsSubmittedRelativeDefaultServer() throws Exception {
 		TestCookieHandler cookies = new TestCookieHandler("10");
 		TestWorkbenchGateway gateway = new TestWorkbenchGateway(cookies,
@@ -853,6 +990,7 @@ class WorkbenchGatewayTest {
 
 		MockHttpServletRequest changeRequest = request("POST", "/workbench/change", "/change");
 		changeRequest.setServerPort(8443);
+		changeRequest.setLocalPort(8443);
 		changeRequest.addParameter("workbench-server", "/rdf4j-server/tenant-a");
 		CapturedResponse response = new CapturedResponse();
 
@@ -1084,6 +1222,7 @@ class WorkbenchGatewayTest {
 				.isInstanceOf(BasicServletConfig.class);
 
 		ServerValidator fixedValidator = mock(ServerValidator.class);
+		when(fixedValidator.isValidServer("/rdf4j-server")).thenReturn(true);
 		TestWorkbenchGateway fixedGateway = new TestWorkbenchGateway(new TestCookieHandler("15"), fixedValidator);
 		fixedGateway.init(TestServletConfig.withParams("gateway",
 				"default-server", "/rdf4j-server",
@@ -1156,6 +1295,7 @@ class WorkbenchGatewayTest {
 		TestCookieHandler cookies = new TestCookieHandler("10");
 		ServerValidator validator = mock(ServerValidator.class);
 		when(validator.isValidServer("https://valid.example/rdf4j-server")).thenReturn(true);
+		when(validator.isValidServer("/rdf4j-server")).thenReturn(true);
 		TestWorkbenchGateway changeGateway = new TestWorkbenchGateway(cookies, validator);
 		changeGateway.init(TestServletConfig.withParams("gateway",
 				"default-server", "/rdf4j-server",
@@ -1181,6 +1321,9 @@ class WorkbenchGatewayTest {
 		when(sparseRequest.getRequestURI()).thenReturn("/workbench");
 		when(sparseRequest.getContextPath()).thenReturn("/workbench");
 		when(sparseRequest.getServletPath()).thenReturn(null);
+		when(sparseRequest.getLocalAddr()).thenReturn("example.org");
+		when(sparseRequest.getLocalPort()).thenReturn(443);
+		when(sparseRequest.getAttribute("jakarta.servlet.request.cipher_suite")).thenReturn("TLS_AES_128_GCM_SHA256");
 		MockHttpSession sparseSession = new MockHttpSession();
 		when(sparseRequest.getSession(true)).thenReturn(sparseSession);
 		sparseGateway.service(sparseRequest, new CapturedResponse());
@@ -1194,6 +1337,10 @@ class WorkbenchGatewayTest {
 		when(servletOnlyRequest.getRequestURI()).thenReturn("/workbench");
 		when(servletOnlyRequest.getContextPath()).thenReturn(null);
 		when(servletOnlyRequest.getServletPath()).thenReturn("/workbench");
+		when(servletOnlyRequest.getLocalAddr()).thenReturn("example.org");
+		when(servletOnlyRequest.getLocalPort()).thenReturn(443);
+		when(servletOnlyRequest.getAttribute("jakarta.servlet.request.cipher_suite"))
+				.thenReturn("TLS_AES_128_GCM_SHA256");
 		when(servletOnlyRequest.getSession(true)).thenReturn(sparseSession);
 		sparseGateway.service(servletOnlyRequest, new CapturedResponse());
 
@@ -1335,8 +1482,11 @@ class WorkbenchGatewayTest {
 	private static MockHttpServletRequest request(String method, String requestUri, String pathInfo) {
 		MockHttpServletRequest request = new MockHttpServletRequest(method, requestUri);
 		request.setScheme("https");
+		request.setAttribute("jakarta.servlet.request.cipher_suite", "TLS_AES_128_GCM_SHA256");
 		request.setServerName("example.org");
 		request.setServerPort(443);
+		request.setLocalAddr("example.org");
+		request.setLocalPort(443);
 		request.setContextPath("/workbench");
 		request.setRequestURI(requestUri);
 		request.setServletPath("");
