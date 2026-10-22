@@ -12,9 +12,15 @@
 package org.eclipse.rdf4j.workbench.util;
 
 import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.impl.BNodeOrigins;
 import org.eclipse.rdf4j.query.impl.BlankNodeReferences;
+import org.eclipse.rdf4j.query.impl.GeneratedBNode;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
+import org.eclipse.rdf4j.query.impl.RepositoryBNode;
 import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
 
 /** Resource operands for Workbench forms and links, retaining exact repository blank node identities. */
@@ -25,12 +31,29 @@ public final class WorkbenchValueEncoder {
 
 	public static String encode(Value value) {
 		if (value instanceof BNode blank) {
-			return BlankNodeReferences.toReference(blank.getID());
+			if (blank instanceof GeneratedBNode || blank instanceof RemoteBNode
+					|| blank instanceof RepositoryBNode result && !result.isReference()) {
+				throw new IllegalArgumentException("Blank node has no reusable repository identity");
+			}
+			return BlankNodeReferences.toReference(BNodeOrigins.rawID(blank));
 		}
 		if (value instanceof TripleTerm triple) {
 			return "<<( " + encode(triple.getSubject()) + " " + encode(triple.getPredicate()) + " "
 					+ encode(triple.getObject()) + " )>>";
 		}
 		return NTriplesUtil.toNTriplesString(value, true);
+	}
+
+	/** Normalizes certified transport values when comparing them with an explicit resource request operand. */
+	public static Value canonicalValue(Value value) {
+		var factory = SimpleValueFactory.getInstance();
+		if (value instanceof RepositoryBNode blank && blank.isReference()) {
+			return factory.createBNode(blank.getRawID());
+		}
+		if (value instanceof TripleTerm triple) {
+			return factory.createTripleTerm((Resource) canonicalValue(triple.getSubject()), triple.getPredicate(),
+					canonicalValue(triple.getObject()));
+		}
+		return value;
 	}
 }

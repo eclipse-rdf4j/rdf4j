@@ -36,6 +36,7 @@
 			<groupId>no.hasmac</groupId>
 			<artifactId>hasmac-json-ld</artifactId>
 			<exclusions>
+				<!-- The explicit module provider below avoids the bundled, outdated JSON-P API. -->
 				<exclusion>
 					<groupId>org.glassfish</groupId>
 					<artifactId>jakarta.json</artifactId>

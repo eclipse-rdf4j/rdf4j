@@ -1,0 +1,11 @@
+{
+  "compiler": "Zig 0.15.1 (bundled Clang/LLVM and wasm-ld)",
+  "target": "wasm32-freestanding",
+  "source": "stress-pairs.c",
+  "artifact": "stress-pairs.wasm",
+  "bytes": 1740,
+  "sha256": "06166c750d22def16452cfdee4a53efb23196d106ce1501a99acff28afe4202c",
+  "maximumMemoryBytes": 67108864,
+  "floatingPoint": "scalar f64, f32 hop storage; no fast math, contraction, or vectorization",
+  "exports": ["memory", "__heap_base", "shuffle", "pair_epoch", "epoch"]
+}

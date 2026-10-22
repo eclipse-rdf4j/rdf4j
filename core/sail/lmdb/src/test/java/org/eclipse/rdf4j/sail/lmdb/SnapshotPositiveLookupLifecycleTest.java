@@ -670,8 +670,8 @@ class SnapshotPositiveLookupLifecycleTest {
 		ReadSnapshotReservation reserveReadSnapshot() throws IOException {
 			return new ReadSnapshotReservation(getTxnManager().reserveReadTxn(false)) {
 				@Override
-				synchronized ReadSnapshot start(Txn tripleTxn) throws IOException {
-					ReadSnapshot snapshot = super.start(tripleTxn);
+				synchronized ReadSnapshot tryStart(Txn tripleTxn) throws IOException {
+					ReadSnapshot snapshot = super.tryStart(tripleTxn);
 					if (tripleTxn != null) {
 						lastPairedSnapshot = snapshot;
 					}

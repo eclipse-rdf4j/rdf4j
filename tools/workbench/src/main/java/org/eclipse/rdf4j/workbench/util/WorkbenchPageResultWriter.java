@@ -32,9 +32,12 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
+import org.eclipse.rdf4j.query.impl.BNodeOrigins;
 import org.eclipse.rdf4j.query.resultio.QueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.rio.RioSetting;
@@ -45,6 +48,11 @@ import tools.jackson.databind.ObjectMapper;
 
 /** Writes Workbench page data as a line-oriented stream of structured records. */
 public final class WorkbenchPageResultWriter implements QueryResultWriter {
+	private BNodeOrigins origins = new BNodeOrigins(SimpleValueFactory.getInstance());
+
+	public void repositoryOrigins(ValueFactory factory) {
+		origins = new BNodeOrigins(factory);
+	}
 
 	private static final int ROW_BATCH_SIZE = 32;
 	private static final int COMPACT_ROW_BATCH_SIZE = 1024;
@@ -458,14 +466,17 @@ public final class WorkbenchPageResultWriter implements QueryResultWriter {
 		writer.write('\n');
 	}
 
-	private static Object term(Value value) {
+	private Object term(Value value) {
 		Map<String, Object> result = new LinkedHashMap<>();
 		if (value instanceof IRI iri) {
 			result.put("kind", "iri");
 			result.put("value", iri.stringValue());
 		} else if (value instanceof BNode bNode) {
 			result.put("kind", "bnode");
-			result.put("value", bNode.getID());
+			result.put("value", BNodeOrigins.rawID(bNode));
+			if (origins.isReference(bNode)) {
+				result.put("reference", true);
+			}
 		} else if (value instanceof Literal literal) {
 			result.put("kind", "literal");
 			result.put("value", literal.getLabel());
@@ -488,12 +499,13 @@ public final class WorkbenchPageResultWriter implements QueryResultWriter {
 		return result;
 	}
 
-	private static Object packedTerm(Value value) {
+	private Object packedTerm(Value value) {
 		if (value instanceof IRI iri) {
 			return new Object[] { 0, iri.stringValue() };
 		}
 		if (value instanceof BNode blank) {
-			return new Object[] { 1, blank.getID() };
+			return origins.isReference(blank) ? new Object[] { 1, BNodeOrigins.rawID(blank), null, true }
+					: new Object[] { 1, BNodeOrigins.rawID(blank) };
 		}
 		if (value instanceof Literal literal) {
 			Optional<String> language = literal.getLanguage();

@@ -132,6 +132,10 @@ class Rdf4jServerWorkbenchApplicationTest {
 	@Qualifier("cacheFilter")
 	private FilterRegistrationBean<CacheFilter> cacheFilter;
 
+	@Autowired
+	@Qualifier("revalidatedEntryFilter")
+	private FilterRegistrationBean<CacheFilter> revalidatedEntryFilter;
+
 	private ListAppender<ILoggingEvent> loggingAppender;
 	private Logger loggingFilterLogger;
 	private RemoteRepositoryManager repositoryManager;
@@ -259,6 +263,11 @@ class Rdf4jServerWorkbenchApplicationTest {
 		assertThat(rdf4jWorkbenchServlet.getMultipartConfig())
 				.as("Workbench servlet must be configured for multipart requests")
 				.isNotNull();
+		// The same limits as the Workbench WAR's own gateway: 10 GiB a file, every part spooled to disk.
+		assertThat(rdf4jWorkbenchServlet.getMultipartConfig().getMaxFileSize()).isEqualTo(10L << 30);
+		assertThat(rdf4jWorkbenchServlet.getMultipartConfig().getMaxRequestSize())
+				.isGreaterThanOrEqualTo(10L << 30);
+		assertThat(rdf4jWorkbenchServlet.getMultipartConfig().getFileSizeThreshold()).isZero();
 	}
 
 	@Test
@@ -274,6 +283,19 @@ class Rdf4jServerWorkbenchApplicationTest {
 		assertThat(serverPrefixForwardFilter.isAsyncSupported()).isTrue();
 		assertThat(workbenchRedirectFilter.isAsyncSupported()).isTrue();
 		assertThat(cacheFilter.isAsyncSupported()).isTrue();
+	}
+
+	@Test
+	void theExplorerEntryIsRevalidatedAfterTheLongCacheHeaderLikeTheWar() {
+		assertThat(revalidatedEntryFilter.getUrlPatterns()).containsExactlyInAnyOrder(
+				"/rdf4j-workbench/scripts/graph-explorer/graph-explorer.mjs",
+				"/rdf4j-workbench/scripts/graph-explorer/query-graph-renderer.mjs",
+				"/rdf4j-workbench/styles/graph-explorer.css");
+		assertThat(revalidatedEntryFilter.getInitParameters()).containsEntry("Cache-Control", "0");
+		assertThat(cacheFilter.getInitParameters()).containsEntry("Cache-Control", "600");
+		assertThat(revalidatedEntryFilter.getOrder()).as("runs after, so its header wins")
+				.isGreaterThan(cacheFilter.getOrder());
+		assertThat(revalidatedEntryFilter.isAsyncSupported()).isTrue();
 	}
 
 	@Test

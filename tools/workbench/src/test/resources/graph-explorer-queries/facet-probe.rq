@@ -1,0 +1,9 @@
+SELECT ?p WHERE { {
+ SELECT (<urn:ex:rare> AS ?p) WHERE {
+ VALUES ?s { <urn:ex:hub> } ?s <urn:ex:rare> ?o . FILTER(!isTRIPLE(?o))
+ } LIMIT 1
+ } UNION {
+ SELECT (<urn:ex:missing> AS ?p) WHERE {
+ VALUES ?s { <urn:ex:hub> } ?s <urn:ex:missing> ?o . FILTER(!isTRIPLE(?o))
+ } LIMIT 1
+ } }

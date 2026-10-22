@@ -23,8 +23,8 @@ class WorkbenchFrontendSecurityTest {
 
 	@Test
 	void browserShouldNeverWriteCredentialDerivedIdentityAsHtml() throws Exception {
-		String template = Files.readString(Path.of("src/main/webapp/scripts/ts/template.ts"));
-		String views = Files.readString(Path.of("src/main/webapp/scripts/ts/workbenchViews.ts"));
+		String template = Files.readString(Path.of("src/main/frontend/classic/template.ts"));
+		String views = Files.readString(Path.of("src/main/frontend/classic/workbenchViews.ts"));
 
 		// The server user is part of the rendered shell state and reaches the DOM only as a Lit text binding.
 		assertThat(template).doesNotContain("innerHTML = user");

@@ -16,6 +16,8 @@ import static org.eclipse.rdf4j.model.util.Values.literal;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.eclipse.rdf4j.common.annotation.ConfigProperty;
+import org.eclipse.rdf4j.common.annotation.Configurable;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.util.Configurations;
@@ -27,6 +29,26 @@ import org.eclipse.rdf4j.sail.config.SailConfigException;
 /**
  * @author Håvard Mikkelsen Ottestad
  */
+@Configurable(description = "ElasticsearchStore connection and index settings.")
+@ConfigProperty(
+		predicate = "tag:rdf4j.org,2023:config/ess.hostname", description = "Elasticsearch host name or IP address.", examples = {
+				"\"localhost\"" }, aliases = {
+						"http://rdf4j.org/config/sail/elasticsearchstore#hostname" }, required = true
+)
+@ConfigProperty(
+		predicate = "tag:rdf4j.org,2023:config/ess.clusterName", description = "Elasticsearch cluster name.", examples = {
+				"\"rdf4j\"" }, aliases = {
+						"http://rdf4j.org/config/sail/elasticsearchstore#clusterName" }, required = true
+)
+@ConfigProperty(
+		predicate = "tag:rdf4j.org,2023:config/ess.index", description = "Elasticsearch index name used by this store.", examples = {
+				"\"rdf4j\"" }, aliases = { "http://rdf4j.org/config/sail/elasticsearchstore#index" }, required = true
+)
+@ConfigProperty(
+		predicate = "tag:rdf4j.org,2023:config/ess.port", description = "Elasticsearch TCP port.", datatype = "http://www.w3.org/2001/XMLSchema#int", examples = {
+				"\"9200\"^^<http://www.w3.org/2001/XMLSchema#int>" }, aliases = {
+						"http://rdf4j.org/config/sail/elasticsearchstore#port" }, required = true
+)
 public class ElasticsearchStoreConfig extends BaseSailConfig {
 
 	private String hostname;

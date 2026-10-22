@@ -59,7 +59,7 @@
 		<logback.version>1.6.5</logback.version>
 		<log4j.version>2.26.1</log4j.version>
 		<httpclient.version>4.5.14</httpclient.version>
-		<httpclient5.version>5.6.4</httpclient5.version>
+		<httpclient5.version>5.6.5</httpclient5.version>
 		<httpcore5.version>5.4.4</httpcore5.version>
 		<jackson.version>2.22.3</jackson.version>
 		<jackson.annotations.version>2.22</jackson.annotations.version>
@@ -75,8 +75,9 @@
 		<elasticsearch.version>9.5.4</elasticsearch.version>
 		<spring.version>7.0.9</spring.version>
 		<guava.version>33.7.2-jre</guava.version>
+		<gson.version>2.14.0</gson.version>
 		<brotli4j.version>1.23.0</brotli4j.version>
-		<zstd-jni.version>1.5.7-21</zstd-jni.version>
+		<zstd-jni.version>1.5.7-23</zstd-jni.version>
 		<commons-compress.version>1.28.0</commons-compress.version>
 		<xz.version>1.12</xz.version>
 		<jmhVersion>1.37</jmhVersion>
@@ -498,6 +499,7 @@
 										<exclude>esclipse-settings/**</exclude>
 										<exclude>logs/**</exclude>
 										<exclude>**/target/**</exclude>
+										<exclude>**/node_modules/**</exclude>
 										<exclude>/core/sail/lmdb/work/**</exclude>
 										<exclude>/work/**</exclude>
 										<exclude>**/site/themes/**</exclude>
@@ -644,16 +646,6 @@
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
-			<dependency>
-				<groupId>tools.jackson.core</groupId>
-				<artifactId>jackson-core</artifactId>
-				<version>${jackson3.version}</version>
-			</dependency>
-			<dependency>
-				<groupId>tools.jackson.core</groupId>
-				<artifactId>jackson-databind</artifactId>
-				<version>${jackson3.version}</version>
-			</dependency>
 			<!-- Runtime source-level code generation for the LMDB native query engine -->
 			<dependency>
 				<groupId>org.codehaus.janino</groupId>
@@ -762,6 +754,11 @@
 						<artifactId>commons-logging</artifactId>
 					</exclusion>
 				</exclusions>
+			</dependency>
+			<dependency>
+				<groupId>co.elastic.clients</groupId>
+				<artifactId>elasticsearch-rest5-client</artifactId>
+				<version>${elasticsearch.version}</version>
 			</dependency>
 			<dependency>
 				<groupId>org.elasticsearch.client</groupId>
@@ -963,6 +960,11 @@
 				<version>1.20.0</version>
 			</dependency>
 			<dependency>
+				<groupId>com.google.code.gson</groupId>
+				<artifactId>gson</artifactId>
+				<version>${gson.version}</version>
+			</dependency>
+			<dependency>
 				<groupId>com.google.guava</groupId>
 				<artifactId>guava</artifactId>
 				<version>${guava.version}</version>
@@ -1109,6 +1111,7 @@
 				<artifactId>shacl</artifactId>
 				<version>${topbraid.shacl.version}</version>
 				<exclusions>
+					<!-- RDF4J supplies the separate JSON-P API and module provider. -->
 					<exclusion>
 						<groupId>org.glassfish</groupId>
 						<artifactId>jakarta.json</artifactId>
@@ -1216,6 +1219,17 @@
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-dependency-plugin</artifactId>
 					<version>3.11.0</version>
+				</plugin>
+				<plugin>
+					<!-- Builds the Workbench front end (npm project in tools/workbench) without a locally installed Node.
+					     The Node tarball is cached in the Maven local repository, so offline builds work after one online run. -->
+					<groupId>com.github.eirslett</groupId>
+					<artifactId>frontend-maven-plugin</artifactId>
+					<version>2.0.2</version>
+					<configuration>
+						<nodeVersion>v22.23.3</nodeVersion>
+						<installDirectory>${project.build.directory}</installDirectory>
+					</configuration>
 				</plugin>
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>

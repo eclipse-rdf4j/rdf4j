@@ -72,7 +72,7 @@ test('menu links change the page without loading a document, and Back returns', 
 	});
 
 	for (const [name, view, heading] of [['Namespaces', 'namespaces', 'Namespaces In Repository'],
-		['Types', 'types', 'Types In Repository'], ['Graphs', 'contexts', 'Graphs']]) {
+		['Types', 'types', 'Types In Repository'], ['Named Graphs', 'contexts', 'Named Graphs']]) {
 		await menuLink(page, name).click();
 		await expectRoute(page, view);
 		await expect(page.locator('#workbench-outlet h1')).toHaveText(heading);
@@ -104,12 +104,12 @@ test('a slow page keeps the old one visible, and a newer click wins', async ({ p
 	await expect(page.locator('#workbench-outlet')).toHaveAttribute('aria-busy', 'true');
 	await expect(page.locator('#workbench-outlet h1')).toHaveText('Namespaces In Repository');
 	await expect(page).toHaveURL(new RegExp('/namespaces$'));
-	await menuLink(page, 'Graphs').click();
+	await menuLink(page, 'Named Graphs').click();
 
 	await expectRoute(page, 'contexts');
 	await page.waitForTimeout(1700);
 	await expectRoute(page, 'contexts');
-	await expect(page.locator('#workbench-outlet h1')).toHaveText('Graphs');
+	await expect(page.locator('#workbench-outlet h1')).toHaveText('Named Graphs');
 	await expect(page.locator('#workbench-outlet')).not.toHaveAttribute('aria-busy', 'true');
 	expect(documents).toEqual([]);
 });
@@ -479,7 +479,7 @@ test('the Query page loads the graph renderer only when a DOT explanation is sho
 	await page.setViewportSize({ width: 1440, height: 900 });
 	const renderer = [];
 	page.on('request', (request) => {
-		if (request.url().endsWith('/full.render.js')) {
+		if (request.url().endsWith('/query-graph-renderer.mjs')) {
 			renderer.push(request.url());
 		}
 	});
@@ -495,6 +495,15 @@ test('the Query page loads the graph renderer only when a DOT explanation is sho
 
 	await expect(page.locator('#query-explanation-dot-view svg').first()).toBeVisible({ timeout: 15000 });
 	expect(renderer).toHaveLength(1);
+	await expect(page.locator('#query-explanation-dot-view svg .node').first()).toBeVisible();
+	await expect(page.locator('#query-explanation-dot-view #svg-pan-zoom-controls')).toBeVisible();
+	const viewport = page.locator('#query-explanation-dot-view .svg-pan-zoom_viewport');
+	const beforeZoom = await viewport.getAttribute('transform');
+	await page.locator('#query-explanation-dot-view #svg-pan-zoom-zoom-in').click();
+	await expect(viewport).not.toHaveAttribute('transform', beforeZoom);
+	await page.locator('#rerun-explanation').click();
+	await expect(page.locator('#query-explanation-dot-view svg .node').first()).toBeVisible();
+	expect(renderer, 'later explanations reuse the lazily loaded modern engine').toHaveLength(1);
 });
 
 // Plan task M11.2: route code is prefetched when its link is hovered.
