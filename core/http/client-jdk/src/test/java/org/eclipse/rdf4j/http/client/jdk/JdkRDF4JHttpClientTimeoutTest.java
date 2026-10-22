@@ -14,11 +14,20 @@ package org.eclipse.rdf4j.http.client.jdk;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.OutputStream;
+import java.net.Authenticator;
+import java.net.CookieManager;
 import java.net.InetSocketAddress;
+import java.net.PasswordAuthentication;
+import java.net.ProxySelector;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLParameters;
 
 import org.eclipse.rdf4j.http.client.spi.HttpRequest;
 import org.eclipse.rdf4j.http.client.spi.HttpResponse;
@@ -28,6 +37,47 @@ import org.junit.jupiter.api.Test;
 import com.sun.net.httpserver.HttpServer;
 
 class JdkRDF4JHttpClientTimeoutTest {
+
+	@Test
+	void noRedirectClientKeepsConfiguredTransportSettings() throws Exception {
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		try {
+			ProxySelector proxy = ProxySelector.of(new InetSocketAddress("127.0.0.1", 9999));
+			Authenticator authenticator = new Authenticator() {
+				@Override
+				protected PasswordAuthentication getPasswordAuthentication() {
+					return null;
+				}
+			};
+			CookieManager cookies = new CookieManager();
+			SSLContext sslContext = SSLContext.getDefault();
+			SSLParameters sslParameters = new SSLParameters();
+			sslParameters.setEndpointIdentificationAlgorithm("HTTPS");
+			HttpClient configured = HttpClient.newBuilder()
+					.followRedirects(HttpClient.Redirect.ALWAYS)
+					.proxy(proxy)
+					.authenticator(authenticator)
+					.cookieHandler(cookies)
+					.sslContext(sslContext)
+					.sslParameters(sslParameters)
+					.executor(executor)
+					.connectTimeout(Duration.ofSeconds(7))
+					.version(HttpClient.Version.HTTP_2)
+					.build();
+			HttpClient noRedirects = JdkRDF4JHttpClient.withoutRedirects(configured);
+			assertThat(noRedirects.followRedirects()).isEqualTo(HttpClient.Redirect.NEVER);
+			assertThat(noRedirects.proxy()).contains(proxy);
+			assertThat(noRedirects.authenticator()).contains(authenticator);
+			assertThat(noRedirects.cookieHandler()).contains(cookies);
+			assertThat(noRedirects.sslContext()).isSameAs(sslContext);
+			assertThat(noRedirects.sslParameters().getEndpointIdentificationAlgorithm()).isEqualTo("HTTPS");
+			assertThat(noRedirects.executor()).contains(executor);
+			assertThat(noRedirects.connectTimeout()).contains(Duration.ofSeconds(7));
+			assertThat(noRedirects.version()).isEqualTo(HttpClient.Version.HTTP_2);
+		} finally {
+			executor.shutdownNow();
+		}
+	}
 
 	@Test
 	void zeroResponseTimeoutDisablesConfiguredSocketTimeoutForTheRequest() throws Exception {

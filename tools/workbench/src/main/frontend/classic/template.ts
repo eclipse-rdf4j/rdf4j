@@ -397,6 +397,29 @@ namespace workbench {
             return element;
         }
 
+        /** Include controls supplied by the dialog body as well as its own input and actions. */
+        function tabbableControls(dialog: HTMLDialogElement): HTMLElement[] {
+            var candidates = <HTMLElement[]>Array.prototype.slice.call(dialog.querySelectorAll('*'));
+            return candidates.filter(function(candidate) {
+                var tabIndex = candidate.getAttribute('tabindex');
+                var tag = candidate.tagName.toLowerCase();
+                var naturallyTabbable = tag === 'button' || tag === 'input' || tag === 'select'
+                    || tag === 'textarea' || tag === 'summary' || tag === 'iframe'
+                    || ((tag === 'a' || tag === 'area') && candidate.getAttribute('href') != null);
+                if (!naturallyTabbable && tabIndex == null && candidate.getAttribute('contenteditable') !== 'true') {
+                    return false;
+                }
+                var style = typeof window.getComputedStyle === 'function' ? window.getComputedStyle(candidate) : null;
+                return !(<any>candidate).disabled && !candidate.hidden
+                    && !(tag === 'input' && candidate.getAttribute('type') === 'hidden')
+                    && (tabIndex == null || Number(tabIndex) >= 0)
+                    && !candidate.closest('[hidden], [inert]')
+                    && (typeof candidate.getClientRects !== 'function' || candidate.getClientRects().length > 0)
+                    && (!style || (style.display !== 'none' && style.visibility !== 'hidden'
+                        && style.visibility !== 'collapse'));
+            });
+        }
+
         export function open(options: ConfirmDialogOptions): Promise<boolean> {
             var doc = document;
             var returnFocusTo = opener(doc);
@@ -462,6 +485,25 @@ namespace workbench {
                     if (!confirm.disabled) {
                         confirmed = true;
                         dialog.close();
+                    }
+                });
+                dialog.addEventListener('keydown', function(event: KeyboardEvent) {
+                    if (event.key !== 'Tab') {
+                        return;
+                    }
+                    var controls = tabbableControls(dialog);
+                    if (!controls.length) {
+                        event.preventDefault();
+                        dialog.focus();
+                        return;
+                    }
+                    var first = controls[0];
+                    var last = controls[controls.length - 1];
+                    var active = doc.activeElement;
+                    if (event.shiftKey ? active === first || !dialog.contains(active)
+                        : active === last || !dialog.contains(active)) {
+                        event.preventDefault();
+                        (event.shiftKey ? last : first).focus();
                     }
                 });
                 dialog.addEventListener('close', function() {
@@ -1915,12 +1957,13 @@ namespace workbench {
      * Submit a form from a script, for example after a confirmation dialog: through the in-page router when it
      * runs and can show the answer (M10.1), natively otherwise.
      */
-    export function submitForm(form: HTMLFormElement): void {
+    export function submitForm(form: HTMLFormElement): Promise<any> {
         var router: any = (<any>workbench).router;
         if (router && typeof router.submit === 'function') {
-            router.submit(form);
+            return Promise.resolve(router.submit(form));
         } else {
             form.submit();
+            return Promise.resolve('fallback');
         }
     }
 

@@ -33,11 +33,34 @@ import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClientConfig;
 public class JdkRDF4JHttpClient implements RDF4JHttpClient {
 
 	private final HttpClient httpClient;
+	private final HttpClient noRedirectHttpClient;
 	private final RDF4JHttpClientConfig config;
 
 	public JdkRDF4JHttpClient(HttpClient httpClient, RDF4JHttpClientConfig config) {
+		this(httpClient, withoutRedirects(httpClient), config);
+	}
+
+	JdkRDF4JHttpClient(HttpClient httpClient, HttpClient noRedirectHttpClient, RDF4JHttpClientConfig config) {
 		this.httpClient = httpClient;
+		this.noRedirectHttpClient = noRedirectHttpClient;
 		this.config = config;
+	}
+
+	static HttpClient withoutRedirects(HttpClient client) {
+		if (client.followRedirects() == HttpClient.Redirect.NEVER) {
+			return client;
+		}
+		HttpClient.Builder builder = HttpClient.newBuilder()
+				.followRedirects(HttpClient.Redirect.NEVER)
+				.version(client.version())
+				.sslContext(client.sslContext())
+				.sslParameters(client.sslParameters());
+		client.connectTimeout().ifPresent(builder::connectTimeout);
+		client.proxy().ifPresent(builder::proxy);
+		client.authenticator().ifPresent(builder::authenticator);
+		client.cookieHandler().ifPresent(builder::cookieHandler);
+		client.executor().ifPresent(builder::executor);
+		return builder.build();
 	}
 
 	@Override
@@ -93,7 +116,8 @@ public class JdkRDF4JHttpClient implements RDF4JHttpClient {
 			builder.method(request.getMethod(), bodyPublisher);
 
 			HttpRequest jdkRequest = builder.build();
-			HttpResponse<java.io.InputStream> response = httpClient.send(jdkRequest, BodyHandlers.ofInputStream());
+			HttpClient selectedClient = request.isRedirectsAllowed() ? httpClient : noRedirectHttpClient;
+			HttpResponse<java.io.InputStream> response = selectedClient.send(jdkRequest, BodyHandlers.ofInputStream());
 			return new JdkHttpClientResponse(response);
 
 		} catch (InterruptedException e) {

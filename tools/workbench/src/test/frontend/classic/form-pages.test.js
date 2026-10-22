@@ -249,13 +249,13 @@ test('delete page reports timeout and successful unsafe-delete confirmation', as
         confirmResponses: [true]
     });
     const form = harness.registerElement('form', { id: 'delete-form' });
-    const button = harness.registerElement('button', { id: 'delete-button' });
-    const id = harness.registerElement('input', { id: 'id', value: 'repo-1' });
+    const button = harness.registerElement('button', { id: 'delete-button', type: 'submit' });
+    const id = harness.registerElement('select', { id: 'id', value: 'repo-1' });
     const feedback = harness.registerElement('div', { id: 'delete-feedback' });
     form.appendChild(button);
+    form.appendChild(id);
+    form.appendChild(feedback);
     harness.document.body.appendChild(form);
-    harness.document.body.appendChild(id);
-    harness.document.body.appendChild(feedback);
 
     harness.loadScripts(['delete.js']);
 
@@ -286,13 +286,13 @@ test('delete page asks for the typed id for every repository and keeps a cancell
         confirmResponses: [true, false]
     });
     const form = harness.registerElement('form', { id: 'delete-form' });
-    const button = harness.registerElement('button', { id: 'delete-button' });
-    const id = harness.registerElement('input', { id: 'id', value: 'repo-1' });
+    const button = harness.registerElement('button', { id: 'delete-button', type: 'submit' });
+    const id = harness.registerElement('select', { id: 'id', value: 'repo-1' });
     const feedback = harness.registerElement('div', { id: 'delete-feedback' });
     form.appendChild(button);
+    form.appendChild(id);
+    form.appendChild(feedback);
     harness.document.body.appendChild(form);
-    harness.document.body.appendChild(id);
-    harness.document.body.appendChild(feedback);
     harness.loadScripts(['delete.js']);
     const event = { target: button, preventDefault() {} };
 
@@ -313,13 +313,13 @@ test('delete page asks for the typed id for every repository and keeps a cancell
 test('delete page reports generic server errors', () => {
     const harness = createFormBrowserHarness();
     const form = harness.registerElement('form', { id: 'delete-form' });
-    const button = harness.registerElement('button', { id: 'delete-button' });
-    const id = harness.registerElement('input', { id: 'id', value: 'repo-1' });
+    const button = harness.registerElement('button', { id: 'delete-button', type: 'submit' });
+    const id = harness.registerElement('select', { id: 'id', value: 'repo-1' });
     const feedback = harness.registerElement('div', { id: 'delete-feedback' });
     form.appendChild(button);
+    form.appendChild(id);
+    form.appendChild(feedback);
     harness.document.body.appendChild(form);
-    harness.document.body.appendChild(id);
-    harness.document.body.appendChild(feedback);
 
     harness.loadScripts(['delete.js']);
     harness.context.checkIsSafeToDelete({
@@ -330,6 +330,44 @@ test('delete page reports generic server errors', () => {
     harness.ajaxRequests[0].reject('error', 'Forbidden');
 
     assert.match(feedback.textContent, /HTTP Status Text = "Forbidden"/);
+});
+
+test('protected delete sends the live password once and clears it after submission', async () => {
+    const harness = createFormBrowserHarness({ confirmResponses: [true] });
+    const form = harness.registerElement('form', { id: 'delete-form' });
+    const button = harness.registerElement('button', { id: 'delete-button', type: 'submit' });
+    const id = harness.registerElement('select', { id: 'id', value: 'repo-1' });
+    const password = harness.registerElement('input', {
+        id: 'delete-password', type: 'password', value: '  å秘密🔒  '
+    });
+    const feedback = harness.registerElement('div', { id: 'delete-feedback' });
+    [button, id, password, feedback].forEach((element) => form.appendChild(element));
+    harness.document.body.appendChild(form);
+    harness.loadScripts(['delete.js']);
+    let sent = 0;
+    let captured;
+    let finish;
+    harness.context.workbench.submitForm = () => {
+        sent++;
+        captured = password.value;
+        return new Promise((resolve) => { finish = resolve; });
+    };
+    const event = { target: button, preventDefault() {} };
+
+    harness.context.checkIsSafeToDelete(event);
+    harness.context.checkIsSafeToDelete(event);
+    assert.equal(harness.ajaxRequests.length, 1, 'only one safety check runs while confirmation is pending');
+    harness.ajaxRequests[0].resolve({ safe: true });
+    await settle();
+    assert.equal(sent, 1);
+    assert.equal(captured, '  å秘密🔒  ');
+    assert.equal(password.value, '');
+    assert.equal(button.disabled, true);
+    harness.context.checkIsSafeToDelete(event);
+    assert.equal(harness.ajaxRequests.length, 1, 'no duplicate delete starts before the response');
+    finish('committed');
+    await settle();
+    assert.ok(!harness.confirms[0].includes(captured), 'the dialog does not contain the password');
 });
 
 test('server page rewrites password field when credentials are present', () => {
