@@ -98,6 +98,9 @@ public class TypesServlet extends TupleServlet {
 		Optional<List<Value[]>> counts = browseList.withinBudget(() -> {
 			List<Value[]> rows = new ArrayList<>();
 			try (RepositoryConnection connection = repository.getConnection()) {
+				// The count rows replace the listed ones: a remote server must say which blank nodes it stores here
+				// too.
+				builder.repositoryOrigins(connection);
 				TupleQuery query = connection.prepareTupleQuery(SPARQL, TYPE_COUNTS);
 				query.setMaxExecutionTime(BrowseList.COUNT_BUDGET_SECONDS);
 				try (TupleQueryResult result = query.evaluate()) {

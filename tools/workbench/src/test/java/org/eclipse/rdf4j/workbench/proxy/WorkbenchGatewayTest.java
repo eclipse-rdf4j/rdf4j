@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.workbench.proxy;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -33,6 +34,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -41,6 +43,7 @@ import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
 import org.eclipse.rdf4j.workbench.security.WorkbenchSessionState;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.BasicServletConfig;
+import org.eclipse.rdf4j.workbench.util.ServerCredentials;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -51,12 +54,83 @@ import jakarta.servlet.ServletConfig;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.WriteListener;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 class WorkbenchGatewayTest {
+
+	@Test
+	void everyWorkbenchPageExpiresLegacySensitiveCookies() throws Exception {
+		TestWorkbenchGateway gateway = new TestWorkbenchGateway(new TestCookieHandler("10"),
+				mock(ServerValidator.class));
+		gateway.init(TestServletConfig.withParams("gateway", "default-server", "/rdf4j-server",
+				"change-server-path", "/change"));
+		MockHttpServletRequest request = request("GET", "/workbench/change", "/change");
+		request.setCookies(new Cookie("query", "sensitive SPARQL"), new Cookie("ref", "text"),
+				new Cookie("server-user-password", "encoded-password"));
+		CapturedResponse response = new CapturedResponse();
+
+		gateway.service(request, response);
+
+		assertThat(response.getCookiesAdded()).filteredOn(cookie -> "query".equals(cookie.getName())
+				|| "ref".equals(cookie.getName()) || "server-user-password".equals(cookie.getName()))
+				.extracting(Cookie::getName, Cookie::getValue, Cookie::getMaxAge, Cookie::getPath)
+				.containsExactlyInAnyOrder(
+						tuple("query", "", 0, "/workbench"), tuple("ref", "", 0, "/workbench"),
+						tuple("server-user-password", "", 0, "/workbench"));
+	}
+
+	@Test
+	void gatewayAssignsDifferentWorkspaceScopesToDifferentBrowserSessions() throws Exception {
+		TestWorkbenchGateway gateway = new TestWorkbenchGateway(new TestCookieHandler("10"),
+				mock(ServerValidator.class));
+		gateway.init(TestServletConfig.withParams("gateway", "default-server", "/rdf4j-server"));
+		MockHttpServletRequest first = request("GET", "/workbench/repositories", "/repositories");
+		MockHttpServletRequest second = request("GET", "/workbench/repositories", "/repositories");
+
+		gateway.service(first, new CapturedResponse());
+		gateway.service(second, new CapturedResponse());
+
+		assertThat(first.getAttribute("org.eclipse.rdf4j.workbench.clientScope")).isInstanceOf(String.class)
+				.isNotEqualTo(second.getAttribute("org.eclipse.rdf4j.workbench.clientScope"));
+	}
+
+	@Test
+	void aBrowserKeepsItsWorkspaceScopeWhenItsServerSessionExpires() throws Exception {
+		TestWorkbenchGateway gateway = new TestWorkbenchGateway(new TestCookieHandler("10"),
+				mock(ServerValidator.class));
+		gateway.init(TestServletConfig.withParams("gateway", "default-server", "/rdf4j-server"));
+		MockHttpServletRequest first = request("GET", "/workbench/repositories", "/repositories");
+		CapturedResponse firstResponse = new CapturedResponse();
+		gateway.service(first, firstResponse);
+		Cookie scopeCookie = firstResponse.getCookiesAdded()
+				.stream()
+				.filter(cookie -> "workbench-browser-scope".equals(cookie.getName()))
+				.findFirst()
+				.orElseThrow();
+		// Kept while the browser runs, whatever the server session's timeout; another browser session gets its own.
+		assertThat(scopeCookie.getMaxAge()).isNegative();
+		assertThat(scopeCookie.isHttpOnly()).isTrue();
+		assertThat(scopeCookie.getPath()).isEqualTo("/workbench");
+
+		// The server session expired (idle, or the server restarted): the next request starts a new one.
+		MockHttpServletRequest later = request("GET", "/workbench/repositories", "/repositories");
+		later.setCookies(new Cookie(scopeCookie.getName(), scopeCookie.getValue()));
+		gateway.service(later, new CapturedResponse());
+
+		assertThat(later.getAttribute("org.eclipse.rdf4j.workbench.clientScope"))
+				.isEqualTo(first.getAttribute("org.eclipse.rdf4j.workbench.clientScope"));
+		MockHttpServletRequest forged = request("GET", "/workbench/repositories", "/repositories");
+		forged.setCookies(new Cookie(scopeCookie.getName(), "x\r\nSet-Cookie: y"));
+		gateway.service(forged, new CapturedResponse());
+		assertThat((String) forged.getAttribute("org.eclipse.rdf4j.workbench.clientScope"))
+				.as("only a scope this gateway could have issued is taken from the browser")
+				.matches("[0-9a-f-]{36}");
+	}
+
 	private static final String LEGACY_TRANSFORMATIONS = "transformations";
 
 	@Test
@@ -496,7 +570,7 @@ class WorkbenchGatewayTest {
 		gateway.service(changeRequest, changeResponse);
 		assertThat(changeResponse.getRedirect()).isEqualTo("/workbench");
 		assertThat(cookies.addedCookies).containsEntry("workbench-server", "https://next.example/rdf4j-server")
-				.containsEntry("server-user-password", "encoded");
+				.doesNotContainKey("server-user-password");
 		assertThat(gateway.createdServlets.get(0).resetCount).isZero();
 		assertThat(gateway.createdServlets.get(0).destroyCount).isEqualTo(1);
 
@@ -505,9 +579,32 @@ class WorkbenchGatewayTest {
 	}
 
 	@Test
-	void credentialBearingServletsAreIsolatedAcrossHttpSessions() throws Exception {
-		TestCookieHandler cookies = new TestCookieHandler("11");
-		cookies.cookies.put("workbench-server", "https://default.example/rdf4j-server");
+	void connectionGetCannotChangeServerEvenWhenAnAcceptParameterMasksHtmlNavigation() throws Exception {
+		TestCookieHandler cookies = new TestCookieHandler("10");
+		ServerValidator validator = mock(ServerValidator.class);
+		when(validator.isValidServer("https://attacker.example/rdf4j-server")).thenReturn(true);
+		TestWorkbenchGateway gateway = new TestWorkbenchGateway(cookies, validator);
+		gateway.init(TestServletConfig.withParams("gateway",
+				"default-server", "https://default.example/rdf4j-server",
+				"change-server-path", "/change",
+				LEGACY_TRANSFORMATIONS, "/transform"));
+		MockHttpServletRequest request = request("GET", "/workbench/change", "/change");
+		request.addHeader("Accept", "text/html");
+		request.addParameter("Accept", "application/json");
+		request.addParameter("workbench-server", "https://attacker.example/rdf4j-server");
+		request.addParameter("server-user-password", "attacker:password");
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		gateway.service(request, response);
+
+		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+		assertThat(cookies.addedCookies).isEmpty();
+		assertThat(gateway.createdServlets).isEmpty();
+	}
+
+	@Test
+	void connectionPostKeepsCredentialsOutOfCookiesAndSeparatesSignedInSessions() throws Exception {
+		TestCookieHandler cookies = new TestCookieHandler("10");
 		ServerValidator validator = mock(ServerValidator.class);
 		when(validator.isValidServer("https://default.example/rdf4j-server")).thenReturn(true);
 		TestWorkbenchGateway gateway = new TestWorkbenchGateway(cookies, validator);
@@ -516,53 +613,148 @@ class WorkbenchGatewayTest {
 				"change-server-path", "/change",
 				LEGACY_TRANSFORMATIONS, "/transform"));
 
-		MockHttpServletRequest alice = request("GET", "/workbench/repositories", "/repositories");
-		alice.setSession(new MockHttpSession());
-		alice.setAttribute("test-cookie-server-user-password", "alice-credentials");
-		MockHttpServletRequest bob = request("GET", "/workbench/repositories", "/repositories");
-		bob.setSession(new MockHttpSession());
-		bob.setAttribute("test-cookie-server-user-password", "bob-credentials");
+		for (String user : List.of("alice", "bob")) {
+			MockHttpSession session = new MockHttpSession();
+			MockHttpServletRequest connection = request("POST", "/workbench/change", "/change");
+			connection.setSession(session);
+			connection.addParameter("workbench-server", "https://default.example/rdf4j-server");
+			connection.addParameter("server-user-password",
+					Base64.getEncoder().encodeToString((user + ":secret").getBytes(StandardCharsets.UTF_8)));
+			gateway.service(connection, new MockHttpServletResponse());
 
-		gateway.service(alice, new CapturedResponse());
-		gateway.service(bob, new CapturedResponse());
+			MockHttpServletRequest navigation = request("GET", "/workbench/repositories", "/repositories");
+			navigation.setSession(session);
+			gateway.service(navigation, new MockHttpServletResponse());
+		}
 
+		assertThat(cookies.addedCookies).doesNotContainKey("server-user-password");
 		assertThat(gateway.createdServlets).hasSize(2);
+		assertThat(gateway.createdServlets.get(0)).isNotSameAs(gateway.createdServlets.get(1));
+		assertThat(gateway.createdServlets).extracting(servlet -> servlet.lastUser).containsExactly("alice", "bob");
 		assertThat(gateway.createdServlets).allSatisfy(servlet -> assertThat(servlet.serviceCount).isEqualTo(1));
 		gateway.destroy();
 		assertThat(gateway.createdServlets).allSatisfy(servlet -> assertThat(servlet.destroyCount).isEqualTo(1));
 	}
 
 	@Test
+	void legacyCredentialCookiesCannotAuthenticateOrShareServletsAcrossSessions() throws Exception {
+		TestWorkbenchGateway gateway = connectionGateway();
+		for (String user : List.of("alice", "bob")) {
+			MockHttpServletRequest navigation = request("GET", "/workbench/repositories", "/repositories");
+			navigation.setSession(new MockHttpSession());
+			navigation.setCookies(new Cookie("server-user-password", user + ":secret"));
+			navigation.setAttribute("test-cookie-server-user-password", user + ":secret");
+			gateway.service(navigation, new MockHttpServletResponse());
+		}
+		assertThat(gateway.createdServlets).hasSize(2);
+		assertThat(gateway.createdServlets).extracting(servlet -> servlet.lastUser).containsExactly("", "");
+		gateway.destroy();
+		assertThat(gateway.createdServlets).allSatisfy(servlet -> assertThat(servlet.destroyCount).isEqualTo(1));
+	}
+
+	@Test
 	void credentialChangesAndLogoutReplaceOnlyTheCurrentSessionsServlet() throws Exception {
-		TestCookieHandler cookies = new TestCookieHandler("11");
-		cookies.cookies.put("workbench-server", "https://default.example/rdf4j-server");
+		TestWorkbenchGateway gateway = connectionGateway();
+		MockHttpSession session = new MockHttpSession();
+		MockHttpSession otherSession = new MockHttpSession();
+		connect(gateway, session, "alice:secret");
+		navigate(gateway, session);
+		connect(gateway, otherSession, "other:secret");
+		navigate(gateway, otherSession);
+		connect(gateway, session, "bob:secret");
+		navigate(gateway, session);
+		assertThat(gateway.createdServlets).hasSize(3);
+		assertThat(gateway.createdServlets.get(0).destroyCount).isEqualTo(1);
+		assertThat(gateway.createdServlets.get(1).destroyCount).isZero();
+		connect(gateway, session, "");
+		navigate(gateway, session);
+		navigate(gateway, otherSession);
+		assertThat(gateway.createdServlets).hasSize(4);
+		assertThat(gateway.createdServlets).extracting(servlet -> servlet.lastUser)
+				.containsExactly("alice", "other", "bob", "");
+		assertThat(gateway.createdServlets.get(2).destroyCount).isEqualTo(1);
+		assertThat(gateway.createdServlets.get(1).destroyCount).isZero();
+		gateway.destroy();
+		assertThat(gateway.createdServlets).allSatisfy(servlet -> assertThat(servlet.destroyCount).isEqualTo(1));
+	}
+
+	@Test
+	void retiringAConnectionWaitsForItsActiveRequestWithoutChangingItsCredentials() throws Exception {
+		for (String retirement : List.of("credentials", "logout", "expiry", "application")) {
+			TestWorkbenchGateway gateway = connectionGateway();
+			MockHttpSession session = new MockHttpSession();
+			connect(gateway, session, "alice:secret");
+			navigate(gateway, session);
+			RecordingWorkbenchServlet original = gateway.createdServlets.get(0);
+			CountDownLatch entered = new CountDownLatch(1);
+			CountDownLatch release = new CountDownLatch(1);
+			original.duringService = request -> {
+				assertThat(ServerCredentials.userName(request)).isEqualTo("alice");
+				entered.countDown();
+				try {
+					assertThat(release.await(5, TimeUnit.SECONDS)).isTrue();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new IllegalStateException(e);
+				}
+				assertThat(ServerCredentials.userName(request)).isEqualTo("alice");
+			};
+			ExecutorService executor = Executors.newSingleThreadExecutor();
+			try {
+				Future<?> active = executor.submit(() -> {
+					try {
+						navigate(gateway, session);
+					} catch (Exception e) {
+						throw new IllegalStateException(e);
+					}
+				});
+				assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+				if (retirement.equals("expiry")) {
+					session.invalidate();
+				} else if (retirement.equals("application")) {
+					gateway.destroy();
+				} else {
+					connect(gateway, session, retirement.equals("logout") ? "" : "bob:secret");
+					navigate(gateway, session);
+					assertThat(gateway.createdServlets.get(1).lastUser)
+							.isEqualTo(retirement.equals("logout") ? "" : "bob");
+				}
+				assertThat(original.destroyCount).as(retirement + " while request is active").isZero();
+				release.countDown();
+				active.get(5, TimeUnit.SECONDS);
+				assertThat(original.destroyCount).as(retirement + " after request completes").isEqualTo(1);
+			} finally {
+				release.countDown();
+				executor.shutdownNow();
+				gateway.destroy();
+			}
+		}
+	}
+
+	private static TestWorkbenchGateway connectionGateway() throws ServletException {
 		ServerValidator validator = mock(ServerValidator.class);
 		when(validator.isValidServer("https://default.example/rdf4j-server")).thenReturn(true);
-		TestWorkbenchGateway gateway = new TestWorkbenchGateway(cookies, validator);
-		gateway.init(TestServletConfig.withParams("gateway",
-				"default-server", "https://default.example/rdf4j-server",
-				"change-server-path", "/change",
-				LEGACY_TRANSFORMATIONS, "/transform"));
-		MockHttpSession session = new MockHttpSession();
+		return new TestWorkbenchGateway(new TestCookieHandler("11"), validator).initAndReturn(
+				TestServletConfig.withParams("gateway", "default-server", "https://default.example/rdf4j-server",
+						"change-server-path", "/change"));
+	}
 
-		MockHttpServletRequest alice = request("GET", "/workbench/repositories", "/repositories");
-		alice.setSession(session);
-		alice.setAttribute("test-cookie-server-user-password", "alice-credentials");
-		gateway.service(alice, new CapturedResponse());
+	private static void connect(TestWorkbenchGateway gateway, MockHttpSession session, String credentials)
+			throws Exception {
+		MockHttpServletRequest connection = request("POST", "/workbench/change", "/change");
+		connection.setSession(session);
+		connection.addParameter("workbench-server", "https://default.example/rdf4j-server");
+		connection.addParameter("server-user-password",
+				Base64.getEncoder().encodeToString(credentials.getBytes(StandardCharsets.UTF_8)));
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		gateway.service(connection, response);
+		assertThat(response.getRedirectedUrl()).isEqualTo("/workbench");
+	}
 
-		MockHttpServletRequest bob = request("GET", "/workbench/repositories", "/repositories");
-		bob.setSession(session);
-		bob.setAttribute("test-cookie-server-user-password", "bob-credentials");
-		gateway.service(bob, new CapturedResponse());
-		assertThat(gateway.createdServlets).hasSize(2);
-		assertThat(gateway.createdServlets.get(0).destroyCount).isEqualTo(1);
-
-		MockHttpServletRequest anonymous = request("GET", "/workbench/repositories", "/repositories");
-		anonymous.setSession(session);
-		gateway.service(anonymous, new CapturedResponse());
-		assertThat(gateway.createdServlets).hasSize(3);
-		assertThat(gateway.createdServlets.get(1).destroyCount).isEqualTo(1);
-		assertThat(gateway.createdServlets.get(2).destroyCount).isZero();
+	private static void navigate(TestWorkbenchGateway gateway, MockHttpSession session) throws Exception {
+		MockHttpServletRequest navigation = request("GET", "/workbench/repositories", "/repositories");
+		navigation.setSession(session);
+		gateway.service(navigation, new MockHttpServletResponse());
 	}
 
 	@Test
@@ -976,7 +1168,7 @@ class WorkbenchGatewayTest {
 		changeGateway.service(changeRequest, changeResponse);
 
 		assertThat(cookies.addedCookies).containsEntry("workbench-server", "https://valid.example/rdf4j-server")
-				.containsEntry("server-user-password", "");
+				.doesNotContainKey("server-user-password");
 		assertThat(changeResponse.getRedirect()).isEqualTo("/workbench");
 
 		TestWorkbenchGateway sparseGateway = new TestWorkbenchGateway(new TestCookieHandler("10"), validator);
@@ -1213,6 +1405,8 @@ class WorkbenchGatewayTest {
 
 	private static final class RecordingWorkbenchServlet extends WorkbenchServlet {
 		private int serviceCount;
+		private String lastUser;
+		private Consumer<HttpServletRequest> duringService;
 		private Object lastServerFixed;
 		private int resetCount;
 		private int destroyCount;
@@ -1243,6 +1437,10 @@ class WorkbenchGatewayTest {
 		public void service(HttpServletRequest req, HttpServletResponse resp) {
 			serviceCount++;
 			lastServerFixed = req.getAttribute(WorkbenchPageProtocol.SERVER_FIXED_ATTRIBUTE);
+			lastUser = ServerCredentials.userName(req);
+			if (duringService != null) {
+				duringService.accept(req);
+			}
 		}
 
 		@Override

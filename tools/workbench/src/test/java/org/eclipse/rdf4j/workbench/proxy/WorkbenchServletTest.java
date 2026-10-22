@@ -19,9 +19,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockConstruction;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.io.File;
@@ -38,6 +41,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -65,11 +71,16 @@ import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
+import org.eclipse.rdf4j.workbench.util.ServerCredentials;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageResultWriter;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.InOrder;
+import org.mockito.MockedConstruction;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.mock.web.MockServletContext;
@@ -83,6 +94,211 @@ import tools.jackson.databind.ObjectMapper;
 
 public class WorkbenchServletTest {
 	private static final String LEGACY_TRANSFORMATIONS = "transformations";
+
+	@ParameterizedTest
+	@ValueSource(strings = { "query", "explain" })
+	void cancellationRetainsItsActiveOperationOwnerAcrossRepositoryReplacement(String kind) throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		when(manager.getRepository("repo")).thenReturn(mock(Repository.class), mock(Repository.class));
+		when(manager.getRepositoryInfo("repo")).thenReturn(new RepositoryInfo());
+		TestWorkbenchServlet servlet = initServlet(manager);
+		RecordingProxyRepositoryServlet previous = new RecordingProxyRepositoryServlet();
+		RecordingProxyRepositoryServlet replacement = new RecordingProxyRepositoryServlet();
+		previous.serviceEntered = new CountDownLatch(1);
+		previous.serviceRelease = new CountDownLatch(1);
+		servlet.createdServlets.add(previous);
+		servlet.createdServlets.add(replacement);
+		MockHttpServletRequest execution = request("/workbench/repo/query", "/repo/query");
+		execution.setMethod("POST");
+		execution.addParameter("action", "query".equals(kind) ? "exec" : "explain");
+		execution.addParameter(kind + "-request-id", "  active-id  ");
+		try (var executor = Executors.newSingleThreadExecutor()) {
+			var active = executor.submit(() -> {
+				servlet.service(execution, new CapturedResponse());
+				return null;
+			});
+			try {
+				assertThat(previous.serviceEntered.await(30, TimeUnit.SECONDS)).isTrue();
+				servlet.service(request("/workbench/repo/summary", "/repo/summary"), new CapturedResponse());
+				MockHttpServletRequest cancel = request("/workbench/repo/query", "/repo/query");
+				cancel.setMethod("POST");
+				cancel.addParameter("action", "cancel-" + kind);
+				cancel.addParameter(kind + "-request-id", "active-id");
+
+				servlet.service(cancel, new CapturedResponse());
+
+				assertThat(previous.serviceCount).as("cancellation uses the original operation's coordinator")
+						.isEqualTo(2);
+				assertThat(replacement.serviceCount).isEqualTo(1);
+				assertThat(previous.destroyCount).isZero();
+			} finally {
+				previous.serviceRelease.countDown();
+				active.get(30, TimeUnit.SECONDS);
+			}
+			assertThat(previous.destroyCount).isEqualTo(1);
+			MockHttpServletRequest completed = request("/workbench/repo/query", "/repo/query");
+			completed.setMethod("POST");
+			completed.addParameter("action", "cancel-" + kind);
+			completed.addParameter(kind + "-request-id", "active-id");
+			MockHttpServletResponse response = new MockHttpServletResponse();
+			servlet.service(completed, response);
+			assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_NOT_FOUND);
+		} finally {
+			servlet.destroy();
+		}
+	}
+
+	@Test
+	void anInitializedCachedSiblingDoesNotResolveTheManagerAgain() throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		Repository sibling = mock(Repository.class);
+		when(sibling.isInitialized()).thenReturn(true);
+		when(manager.getRepository("sibling")).thenReturn(sibling);
+		when(manager.getRepositoryInfo("sibling")).thenReturn(new RepositoryInfo());
+		TestWorkbenchServlet servlet = initServlet(manager);
+		RecordingProxyRepositoryServlet commands = new RecordingProxyRepositoryServlet();
+		servlet.createdServlets.add(commands);
+		try {
+			servlet.service(request("/workbench/sibling/summary", "/sibling/summary"), new CapturedResponse());
+			servlet.service(request("/workbench/sibling/summary", "/sibling/summary"), new CapturedResponse());
+			verify(manager, times(1)).getRepository("sibling");
+			assertThat(commands.serviceCount).isEqualTo(2);
+		} finally {
+			servlet.destroy();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "text/html", WorkbenchPageProtocol.ACCEPT })
+	void anUnauthorizedConfigurationPostRetainsTheSubmittedText(String accept) throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		when(manager.getRepositoryInfo("repo")).thenReturn(new RepositoryInfo());
+		TestWorkbenchServlet servlet = initServlet(manager);
+		RecordingProxyRepositoryServlet commands = new RecordingProxyRepositoryServlet();
+		commands.toThrow = new RepositoryException(new UnauthorizedException("credentials expired"));
+		servlet.createdServlets.add(commands);
+		try {
+			MockHttpServletRequest request = request("/workbench/repo/config", "/repo/config");
+			request.setMethod("POST");
+			request.addHeader("Accept", accept);
+			request.addParameter("configuration", "my submitted Turtle configuration");
+			CapturedResponse response = new CapturedResponse();
+
+			servlet.service(request, response);
+
+			assertThat(response.getStatusCode()).isEqualTo(HttpServletResponse.SC_UNAUTHORIZED);
+			String model = "text/html".equals(accept) ? initialPageModel(response.getBody()) : response.getBody();
+			assertThat(model).contains("configuration", "my submitted Turtle configuration", "failed to authenticate");
+		} finally {
+			servlet.destroy();
+		}
+	}
+
+	@Test
+	void replacedCommandsStayAliveUntilTheirActiveRequestsFinish() throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		when(manager.getRepository("repo")).thenReturn(mock(Repository.class), mock(Repository.class));
+		when(manager.getRepositoryInfo("repo")).thenReturn(new RepositoryInfo());
+		TestWorkbenchServlet servlet = initServlet(manager);
+		RecordingProxyRepositoryServlet previous = new RecordingProxyRepositoryServlet();
+		RecordingProxyRepositoryServlet replacement = new RecordingProxyRepositoryServlet();
+		previous.serviceEntered = new CountDownLatch(1);
+		previous.serviceRelease = new CountDownLatch(1);
+		servlet.createdServlets.add(previous);
+		servlet.createdServlets.add(replacement);
+		try (var executor = Executors.newSingleThreadExecutor()) {
+			var active = executor.submit(() -> {
+				servlet.service(request("/workbench/repo/summary", "/repo/summary"), new CapturedResponse());
+				return null;
+			});
+			try {
+				assertThat(previous.serviceEntered.await(30, TimeUnit.SECONDS)).isTrue();
+				servlet.service(request("/workbench/repo/summary", "/repo/summary"), new CapturedResponse());
+				assertThat(previous.destroyCount).as("the active request still owns its servlet tree").isZero();
+				assertThat(replacement.serviceCount).isEqualTo(1);
+			} finally {
+				previous.serviceRelease.countDown();
+				active.get(30, TimeUnit.SECONDS);
+			}
+			assertThat(previous.destroyCount).isEqualTo(1);
+		} finally {
+			servlet.destroy();
+		}
+	}
+
+	@Test
+	void cachedCommandsBindTheReplacementRepositoryAfterRestart() throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		Repository previous = mock(Repository.class);
+		Repository replacement = mock(Repository.class);
+		when(manager.getRepository("repo")).thenReturn(previous, replacement);
+		when(manager.getRepositoryInfo("repo")).thenReturn(new RepositoryInfo());
+		TestWorkbenchServlet servlet = initServlet(manager);
+		RecordingProxyRepositoryServlet oldCommands = new RecordingProxyRepositoryServlet();
+		RecordingProxyRepositoryServlet newCommands = new RecordingProxyRepositoryServlet();
+		servlet.createdServlets.add(oldCommands);
+		servlet.createdServlets.add(newCommands);
+		try {
+			servlet.service(request("/workbench/repo/summary", "/repo/summary"), new CapturedResponse());
+			servlet.service(request("/workbench/repo/summary", "/repo/summary"), new CapturedResponse());
+
+			assertThat(oldCommands.serviceCount).isEqualTo(1);
+			assertThat(newCommands.serviceCount).isEqualTo(1);
+			assertThat(newCommands.assignedRepository).isSameAs(replacement);
+		} finally {
+			servlet.destroy();
+		}
+	}
+
+	@Test
+	void repositoryMetadataDoesNotInitializeAnUnavailableRepository() throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		when(manager.hasRepositoryConfig("repo")).thenReturn(true);
+		RepositoryInfo info = new RepositoryInfo();
+		info.setId("repo");
+		when(manager.getRepositoryInfo("repo")).thenReturn(info);
+		TestWorkbenchServlet servlet = initServlet(manager);
+		RecordingProxyRepositoryServlet metadata = new RecordingProxyRepositoryServlet();
+		servlet.createdServlets.add(metadata);
+		try {
+			servlet.service(request("/workbench/repo/info", "/repo/info"), new CapturedResponse());
+
+			verify(manager, never()).getRepository("repo");
+			assertThat(metadata.serviceCount).isEqualTo(1);
+			assertThat(metadata.assignedInfo).isSameAs(info);
+		} finally {
+			servlet.destroy();
+		}
+	}
+
+	@Test
+	void repositoryMetadataServletsAreReusedAcrossRequestsWithCurrentInfo() throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		when(manager.hasRepositoryConfig("repo")).thenReturn(true);
+		RepositoryInfo first = new RepositoryInfo();
+		first.setId("repo");
+		first.setDescription("first title");
+		RepositoryInfo renamed = new RepositoryInfo();
+		renamed.setId("repo");
+		renamed.setDescription("renamed");
+		when(manager.getRepositoryInfo("repo")).thenReturn(first, renamed);
+		TestWorkbenchServlet servlet = initServlet(manager);
+		RecordingProxyRepositoryServlet metadata = new RecordingProxyRepositoryServlet();
+		// Only one metadata servlet may be created: a second creation would take a servlet that is not there.
+		servlet.createdServlets.add(metadata);
+		try {
+			servlet.service(request("/workbench/repo/info", "/repo/info"), new CapturedResponse());
+			servlet.service(request("/workbench/repo/config", "/repo/config"), new CapturedResponse());
+
+			assertThat(metadata.initCount).isEqualTo(1);
+			assertThat(metadata.serviceCount).isEqualTo(2);
+			assertThat(metadata.destroyCount).isZero();
+			assertThat(metadata.assignedInfo).as("each request sees the repository's current info").isSameAs(renamed);
+		} finally {
+			servlet.destroy();
+		}
+		assertThat(metadata.destroyCount).isEqualTo(1);
+	}
 
 	@Test
 	void initValidatesParametersAndManagerCreation(@TempDir File tempDir) throws Exception {
@@ -135,6 +351,52 @@ public class WorkbenchServletTest {
 		servlet.destroy();
 
 		verify(manager).shutDown();
+	}
+
+	@Test
+	void serverIdentitySeparatesBrowserSessionsForWorkspaceStorage() throws Exception {
+		TestWorkbenchServlet servlet = initServlet(mock(RepositoryManager.class));
+		MockHttpServletRequest first = request("/workbench", null);
+		first.setAttribute("org.eclipse.rdf4j.workbench.clientScope", "session-one");
+		MockHttpServletResponse firstResponse = new MockHttpServletResponse();
+		servlet.service(first, firstResponse);
+		MockHttpServletRequest second = request("/workbench", null);
+		second.setAttribute("org.eclipse.rdf4j.workbench.clientScope", "session-two");
+		MockHttpServletResponse secondResponse = new MockHttpServletResponse();
+		servlet.service(second, secondResponse);
+
+		assertThat(firstResponse.getHeader(WorkbenchPageProtocol.SERVER_IDENTITY_HEADER))
+				.isNotEqualTo(secondResponse.getHeader(WorkbenchPageProtocol.SERVER_IDENTITY_HEADER));
+	}
+
+	@Test
+	void signedInUserIsPublishedWithoutExposingCredentialsToTheBrowser() throws Exception {
+		TestWorkbenchServlet servlet = initServlet(mock(RepositoryManager.class));
+		servlet.setServerCredentials(ServerCredentials.fromConnectionForm(
+				Base64.getEncoder().encodeToString("alice:private-password".getBytes(StandardCharsets.UTF_8))));
+		MockHttpServletRequest request = request("/workbench", null);
+		servlet.service(request, new MockHttpServletResponse());
+
+		assertThat(request.getAttribute(WorkbenchPageProtocol.SERVER_USER_ATTRIBUTE)).isEqualTo("alice");
+		assertThat(request.getAttribute(WorkbenchPageProtocol.SERVER_IDENTITY_ATTRIBUTE).toString())
+				.doesNotContain("private-password");
+	}
+
+	@Test
+	void remoteManagerGetsItsSessionCredentialsBeforeItsFirstInitialization() throws Exception {
+		try (MockedConstruction<RemoteRepositoryManager> managers = mockConstruction(RemoteRepositoryManager.class)) {
+			WorkbenchServlet servlet = new WorkbenchServlet();
+			servlet.setServerCredentials(ServerCredentials.fromConnectionForm(
+					Base64.getEncoder().encodeToString("alice:secret".getBytes(StandardCharsets.UTF_8))));
+			servlet.init(TestServletConfig.withParams("workbench", "default-path", "/repositories",
+					WorkbenchServlet.SERVER_PARAM, "https://example.org/rdf4j-server"));
+
+			RemoteRepositoryManager manager = managers.constructed().get(0);
+			InOrder order = inOrder(manager);
+			order.verify(manager).setUsernameAndPassword("alice", "secret");
+			order.verify(manager).init();
+			verify(manager, times(1)).init();
+		}
 	}
 
 	@Test
@@ -223,7 +485,7 @@ public class WorkbenchServletTest {
 			servlet.service(request("/workbench/repo/summary", "/repo/summary"), response);
 
 			assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_NOT_FOUND);
-			verifyNoInteractions(manager);
+			verify(manager, never()).getRepository(anyString());
 		} finally {
 			servlet.destroy();
 		}
@@ -655,7 +917,7 @@ public class WorkbenchServletTest {
 	}
 
 	@Test
-	void remoteManagersReceiveCookieCredentials() throws Exception {
+	void remoteManagersReceiveSessionCredentialsBeforeInitialization() throws Exception {
 		RemoteRepositoryManager remoteManager = mock(RemoteRepositoryManager.class);
 		Repository repository = mock(Repository.class);
 		when(remoteManager.getLocation()).thenReturn(new URL("https://remote.example/rdf4j-server"));
@@ -663,18 +925,16 @@ public class WorkbenchServletTest {
 		when(remoteManager.getRepositoryInfo(anyString())).thenReturn(new RepositoryInfo());
 
 		TestWorkbenchServlet noCookieServlet = initServlet(remoteManager);
-		noCookieServlet.cookieHandler = new FixedCookieHandler(null);
 		noCookieServlet.createdServlets.add(new RecordingProxyRepositoryServlet());
 		noCookieServlet.service(request("/workbench/repo", "/repo"), new CapturedResponse());
-		verify(remoteManager).setUsernameAndPassword(null, null);
+		verify(remoteManager, never()).setUsernameAndPassword(any(), any());
 		verify(remoteManager).init();
 
 		RemoteRepositoryManager base64Manager = mock(RemoteRepositoryManager.class);
 		when(base64Manager.getLocation()).thenReturn(new URL("https://remote.example/rdf4j-server"));
 		when(base64Manager.getRepository(anyString())).thenReturn(repository);
 		when(base64Manager.getRepositoryInfo(anyString())).thenReturn(new RepositoryInfo());
-		TestWorkbenchServlet base64Servlet = initServlet(base64Manager);
-		base64Servlet.cookieHandler = new FixedCookieHandler(
+		TestWorkbenchServlet base64Servlet = initServletWithCredentials(base64Manager,
 				Base64.getEncoder().encodeToString("alice:secret".getBytes(StandardCharsets.UTF_8)));
 		base64Servlet.createdServlets.add(new RecordingProxyRepositoryServlet());
 		base64Servlet.service(request("/workbench/repo", "/repo"), new CapturedResponse());
@@ -684,8 +944,7 @@ public class WorkbenchServletTest {
 		when(rawManager.getLocation()).thenReturn(new URL("https://remote.example/rdf4j-server"));
 		when(rawManager.getRepository(anyString())).thenReturn(repository);
 		when(rawManager.getRepositoryInfo(anyString())).thenReturn(new RepositoryInfo());
-		TestWorkbenchServlet rawServlet = initServlet(rawManager);
-		rawServlet.cookieHandler = new FixedCookieHandler("bob:hunter2");
+		TestWorkbenchServlet rawServlet = initServletWithCredentials(rawManager, "bob:hunter2");
 		rawServlet.createdServlets.add(new RecordingProxyRepositoryServlet());
 		rawServlet.service(request("/workbench/repo", "/repo"), new CapturedResponse());
 		verify(rawManager).setUsernameAndPassword("bob", "hunter2");
@@ -697,7 +956,7 @@ public class WorkbenchServletTest {
 	 * is a user without a password rather than a server error.
 	 */
 	@Test
-	void cookieCredentialsAreDecodedAsUtf8() throws Exception {
+	void sessionCredentialsAreDecodedAsUtf8() throws Exception {
 		assertThat(credentialsSentFor(Base64.getEncoder()
 				.encodeToString("håvard:pass✓".getBytes(StandardCharsets.UTF_8)))).containsExactly("håvard", "pass✓");
 		assertThat(credentialsSentFor(Base64.getEncoder()
@@ -718,8 +977,7 @@ public class WorkbenchServletTest {
 			sent.add(invocation.getArgument(1));
 			return null;
 		}).when(manager).setUsernameAndPassword(anyString(), anyString());
-		TestWorkbenchServlet servlet = initServlet(manager);
-		servlet.cookieHandler = new FixedCookieHandler(cookie);
+		TestWorkbenchServlet servlet = initServletWithCredentials(manager, cookie);
 		servlet.createdServlets.add(new RecordingProxyRepositoryServlet());
 		servlet.service(request("/workbench/repo", "/repo"), new CapturedResponse());
 		return sent;
@@ -756,6 +1014,18 @@ public class WorkbenchServletTest {
 
 	private static TestWorkbenchServlet initServlet(RepositoryManager manager) throws Exception {
 		return initServlet(manager, null);
+	}
+
+	private static TestWorkbenchServlet initServletWithCredentials(RepositoryManager manager, String submitted)
+			throws Exception {
+		TestWorkbenchServlet servlet = new TestWorkbenchServlet();
+		servlet.managerToReturn = manager;
+		servlet.setServerCredentials(ServerCredentials.fromConnectionForm(submitted));
+		servlet.init(TestServletConfig.withParams("workbench",
+				"default-path", "/repositories",
+				WorkbenchServlet.SERVER_PARAM, "https://example.org/rdf4j-server",
+				LEGACY_TRANSFORMATIONS, "/transform"));
+		return servlet;
 	}
 
 	private static TestWorkbenchServlet initServlet(RepositoryManager manager, String noRepositoryId) throws Exception {
@@ -907,6 +1177,8 @@ public class WorkbenchServletTest {
 		private Throwable toThrow;
 		private String writtenBeforeThrowing;
 		private boolean sentPageBeforeThrowing;
+		private CountDownLatch serviceEntered;
+		private CountDownLatch serviceRelease;
 
 		@Override
 		public void setRepositoryManager(RepositoryManager manager) {
@@ -931,6 +1203,17 @@ public class WorkbenchServletTest {
 		@Override
 		public void service(HttpServletRequest req, HttpServletResponse resp) throws ServletException {
 			serviceCount++;
+			if (serviceEntered != null && serviceEntered.getCount() > 0) {
+				serviceEntered.countDown();
+				try {
+					if (!serviceRelease.await(30, TimeUnit.SECONDS)) {
+						throw new ServletException("Timed out waiting for the test's active request release");
+					}
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new ServletException(e);
+				}
+			}
 			lastServletPath = req.getServletPath();
 			lastPathInfo = req.getPathInfo();
 			if (sentPageBeforeThrowing) {

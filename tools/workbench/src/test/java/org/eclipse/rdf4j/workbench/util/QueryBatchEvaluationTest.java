@@ -88,7 +88,7 @@ class QueryBatchEvaluationTest {
 
 	@Test
 	void smallTupleBatchStreamsItsWindowAndDrainsForAnExactTotal() throws Exception {
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockedConnection();
 		TupleQuery query = mock(TupleQuery.class);
 		AtomicInteger consumed = new AtomicInteger();
 		AtomicBoolean closed = new AtomicBoolean();
@@ -217,8 +217,14 @@ class QueryBatchEvaluationTest {
 						.hasMessageContaining("batch-known-total");
 	}
 
-	private static RepositoryConnection countingConnection(AtomicInteger consumed, int size) {
+	private static RepositoryConnection mockedConnection() {
 		RepositoryConnection connection = mock(RepositoryConnection.class);
+		when(connection.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
+		return connection;
+	}
+
+	private static RepositoryConnection countingConnection(AtomicInteger consumed, int size) {
+		RepositoryConnection connection = mockedConnection();
 		TupleQuery query = mock(TupleQuery.class);
 		when(connection.prepareQuery(eq(QueryLanguage.SPARQL), anyString())).thenReturn(query);
 		when(connection.getNamespaces()).thenReturn(new RepositoryResult<Namespace>(
@@ -250,7 +256,7 @@ class QueryBatchEvaluationTest {
 
 	@Test
 	void defaultBatchStreamsOneMillionRowsAndDrainsTheSameQueryToCompletion() throws Exception {
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockedConnection();
 		TupleQuery query = mock(TupleQuery.class);
 		AtomicInteger consumed = new AtomicInteger();
 		AtomicBoolean closed = new AtomicBoolean();

@@ -36,12 +36,17 @@ public final class WorkbenchHtmlShell {
 	private static final String WORKBENCH_BASE_PATH = "workbenchBasePath";
 	private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
 	private static final String APPLICATION_TITLE = "RDF4J Workbench";
-	/** Short page names for the document title; keep in sync with shortTitles in scripts/ts/workbenchViews.ts. */
+	/**
+	 * Short page names for the document title; keep in sync with shortTitles in
+	 * src/main/frontend/classic/workbenchViews.ts.
+	 */
 	private static final Map<String, String> SHORT_TITLES = Map.ofEntries(
 			Map.entry("summary", "Summary"), Map.entry("information", "Information"),
 			Map.entry("repositories", "Repositories"), Map.entry("create", "Create repository"),
 			Map.entry("delete", "Delete repository"), Map.entry("namespaces", "Namespaces"),
-			Map.entry("contexts", "Graphs"), Map.entry("types", "Types"), Map.entry("explore", "Explore"),
+			Map.entry("config", "Configuration"),
+			Map.entry("contexts", "Named Graphs"), Map.entry("types", "Types"), Map.entry("explore", "Explore"),
+			Map.entry("graph", "Graph"),
 			Map.entry("query", "Query"), Map.entry("saved-queries", "Saved queries"), Map.entry("export", "Export"),
 			Map.entry("add", "Add RDF"), Map.entry("remove", "Remove"), Map.entry("clear", "Clear"),
 			Map.entry("update", "SPARQL Update"), Map.entry("server", "Connection"));
@@ -95,7 +100,10 @@ public final class WorkbenchHtmlShell {
 		writer.write("/styles/query.css\">");
 		writer.write("<link rel=\"stylesheet\" href=\"");
 		writer.write(escape(basePath));
-		writer.write("/styles/yasqe.min.css\"></head>");
+		writer.write("/styles/yasqe.min.css\">");
+		writer.write("<link rel=\"stylesheet\" href=\"");
+		writer.write(escape(basePath));
+		writer.write("/scripts/vendor/codemirror-5.65.21/codemirror.css\"></head>");
 		writer.write("<body class=\"workbench-body\"><div id=\"workbench-app\" data-workbench-view=\"");
 		writer.write(escape(viewId));
 		writer.write("\" data-workbench-context-path=\"");
@@ -116,6 +124,16 @@ public final class WorkbenchHtmlShell {
 		if (repositoryId != null) {
 			writer.write(" data-workbench-repository-id=\"");
 			writer.write(escape(repositoryId));
+			writer.write('"');
+		}
+		if (request.getAttribute(WorkbenchPageProtocol.SERVER_IDENTITY_ATTRIBUTE) instanceof String serverIdentity) {
+			writer.write(" data-workbench-server-identity=\"");
+			writer.write(escape(serverIdentity));
+			writer.write('"');
+		}
+		if (request.getAttribute(WorkbenchPageProtocol.SERVER_USER_ATTRIBUTE) instanceof String serverUser) {
+			writer.write(" data-workbench-server-user=\"");
+			writer.write(escape(serverUser));
 			writer.write('"');
 		}
 		if (Boolean.TRUE.equals(request.getAttribute(WorkbenchPageProtocol.SERVER_FIXED_ATTRIBUTE))) {

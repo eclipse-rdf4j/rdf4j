@@ -1,0 +1,6 @@
+SELECT DISTINCT ?kind ?about ?property ?value WHERE {
+{ BIND("reification" AS ?kind)
+ ?about <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> <urn:ex:six> ; <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:ex:mentions> ; <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> <urn:ex:seven> .
+ OPTIONAL { ?about ?property ?value .
+ FILTER(?property NOT IN (<http://www.w3.org/1999/02/22-rdf-syntax-ns#subject>, <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate>, <http://www.w3.org/1999/02/22-rdf-syntax-ns#object>) && (?property != <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> || ?value != <http://www.w3.org/1999/02/22-rdf-syntax-ns#Statement>)) } }
+} LIMIT 500

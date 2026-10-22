@@ -119,6 +119,51 @@ class TransformationServletCoverageTest {
 	}
 
 	@Test
+	void anUploadOverTheLimitAnswersRequestEntityTooLargeOnThePageModel() throws Exception {
+		RecordingTransformationServlet servlet = new RecordingTransformationServlet();
+		servlet.setRepositoryManager(mock(RepositoryManager.class));
+		servlet.init(new TestServletConfig("transform", new MockServletContext(), Map.of()));
+		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/add") {
+			@Override
+			public java.util.Collection<jakarta.servlet.http.Part> getParts() {
+				throw new IllegalStateException(
+						"The field content exceeds its maximum permitted size of 10737418240 bytes.");
+			}
+		};
+		request.setContentType("multipart/form-data; boundary=test");
+		request.addHeader("Accept", org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol.ACCEPT);
+		org.springframework.mock.web.MockHttpServletResponse response = new org.springframework.mock.web.MockHttpServletResponse();
+
+		servlet.service(request, response);
+
+		assertThat(servlet.lastMethod).as("the page never runs on an upload it cannot read").isNull();
+		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+		assertThat(response.getContentAsString()).contains("error-message").contains("10 GiB");
+	}
+
+	@Test
+	void anUploadOverTheLimitAnswersRequestEntityTooLargeOnANativeFormPost() throws Exception {
+		RecordingTransformationServlet servlet = new RecordingTransformationServlet();
+		servlet.setRepositoryManager(mock(RepositoryManager.class));
+		servlet.init(new TestServletConfig("transform", new MockServletContext(), Map.of()));
+		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/add") {
+			@Override
+			public java.util.Collection<jakarta.servlet.http.Part> getParts() {
+				throw new IllegalStateException("Multipart Mime part content exceeds max filesize");
+			}
+		};
+		request.setContentType("multipart/form-data; boundary=test");
+		request.addHeader("Accept", "text/html");
+		org.springframework.mock.web.MockHttpServletResponse response = new org.springframework.mock.web.MockHttpServletResponse();
+
+		servlet.service(request, response);
+
+		assertThat(servlet.lastMethod).isNull();
+		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+		assertThat(response.getErrorMessage()).contains("10 GiB");
+	}
+
+	@Test
 	void publicServiceWrapsCheckedExceptions() throws Exception {
 		FailingTransformationServlet servlet = new FailingTransformationServlet();
 		servlet.setRepositoryManager(mock(RepositoryManager.class));

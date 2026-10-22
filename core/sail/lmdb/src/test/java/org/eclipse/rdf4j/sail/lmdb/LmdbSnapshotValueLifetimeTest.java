@@ -24,6 +24,9 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadInfo;
+import java.lang.management.ThreadMXBean;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -33,6 +36,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -1347,6 +1351,188 @@ class LmdbSnapshotValueLifetimeTest {
 
 	@Test
 	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void pairedSnapshotAdmissionReleasesBothReaderSlotsWhileWriterOwnsAssociationGate(@TempDir File dataDir)
+			throws Exception {
+		AdmissionObservationStore store = new AdmissionObservationStore(dataDir);
+		List<SailDataset> heldSnapshots = new ArrayList<>();
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		Future<?> writerCommit = null;
+		Future<SailDataset> pendingAdmission = null;
+		SailDataset admittedDataset = null;
+		Throwable primaryFailure = null;
+
+		IRI subject = VF.createIRI("urn:snapshot-lifetime:paired-admission:subject");
+		IRI nestedSubject = VF.createIRI("urn:snapshot-lifetime:paired-admission:nested");
+		IRI context = VF.createIRI("urn:snapshot-lifetime:paired-admission:context");
+		IRI datatype = VF.createIRI("urn:snapshot-lifetime:paired-admission:datatype");
+		Literal literal = VF.createLiteral("materialized after paired admission", datatype);
+		TripleTerm nested = VF.createTripleTerm(nestedSubject, PREDICATE, literal);
+		TripleTerm outer = VF.createTripleTerm(subject, PREDICATE, nested);
+
+		store.init();
+		try {
+			try (SailConnection seed = store.getConnection()) {
+				seed.begin(IsolationLevels.SNAPSHOT);
+				seed.addStatement(subject, PREDICATE, outer, context);
+				seed.commit();
+			}
+
+			TxnManager tripleManager = store.tripleStore.getTxnManager();
+			TxnManager valueManager = store.valueStore.getTxnManager();
+			int initialTripleSlots = tripleManager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0);
+			int initialValueSlots = valueManager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0);
+			assertEquals(TxnManager.POOL_SIZE - 1, initialTripleSlots,
+					"the fixture must begin with every ordinary TripleStore reader slot available");
+			assertEquals(TxnManager.POOL_SIZE - 1, initialValueSlots,
+					"the fixture must begin with every ordinary ValueStore reader slot available");
+			int externalSnapshotCount = initialValueSlots - 1;
+			SailSource source = store.getBackingStore().getExplicitSailSource();
+			for (int i = 0; i < externalSnapshotCount; i++) {
+				heldSnapshots.add(source.dataset(IsolationLevels.SNAPSHOT_READ));
+			}
+			assertEquals(126, heldSnapshots.size(),
+					"the fixture must hold all but one ordinary paired reader slot externally");
+			assertEquals(1, tripleManager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0),
+					"each external snapshot must retain its TripleStore reader slot");
+			assertEquals(1, valueManager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0),
+					"each external snapshot must retain its ValueStore reader slot");
+
+			store.pauseNextNativeCommit();
+			AtomicReference<Thread> readerThread = new AtomicReference<>();
+			CountDownLatch readerStarted = new CountDownLatch(1);
+			writerCommit = executor.submit(() -> {
+				store.valueStore.startTransaction(true);
+				store.valueStore.storeValue(VF.createLiteral("paired admission writer commit"));
+				store.valueStore.commit();
+				return null;
+			});
+			assertTrue(store.nativeCommitReached.await(5, TimeUnit.SECONDS),
+					"the writer must pause after its native commit while it still owns associationGate");
+			Thread writerThread = store.nativeCommitThread.get();
+			assertNotNull(writerThread, "the commit seam must identify the actual association-gate owner");
+
+			pendingAdmission = executor.submit(() -> {
+				readerThread.set(Thread.currentThread());
+				readerStarted.countDown();
+				return source.dataset(IsolationLevels.SNAPSHOT_READ);
+			});
+			assertTrue(readerStarted.await(5, TimeUnit.SECONDS), "the paired snapshot reader must start");
+			ThreadInfo waitingReader = awaitPairedAdmissionWait(readerThread.get(), writerThread);
+			assertTrue(hasStackFrame(waitingReader, LmdbSailStore.class.getName(), "createFreshReadView"),
+					"the waiter must be the outer paired read-view admission path: " + waitingReader);
+			assertTrue(hasStackFrame(waitingReader, ValueStore.class.getName(), "awaitValueReaderAdmission"),
+					"the waiter must block only after paired resources are unwound: " + waitingReader);
+			assertFalse(hasStackFrame(waitingReader, LmdbSailStore.class.getName(), "tryCreateFreshReadView"),
+					"the event-driven wait must not retain the paired reservation attempt: " + waitingReader);
+			assertFalse(pendingAdmission.isDone(), "the paired read must wait for the association owner to finish");
+			assertEquals(1, tripleManager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0),
+					"the deferred paired attempt must return its TripleStore reservation");
+			assertEquals(1, valueManager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0),
+					"the deferred paired attempt must return its ValueStore reservation");
+			assertEquals(126, heldSnapshots.size(),
+					"all external paired snapshots must remain open while admission is deferred");
+
+			store.releaseNativeCommit.countDown();
+			writerCommit.get(5, TimeUnit.SECONDS);
+			admittedDataset = pendingAdmission.get(5, TimeUnit.SECONDS);
+			assertEquals(0, tripleManager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0),
+					"the admitted view must hold the final TripleStore reader slot");
+			assertEquals(0, valueManager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0),
+					"the admitted view must hold the final ValueStore reader slot");
+			assertEquals(126, heldSnapshots.size(),
+					"the original paired snapshots must remain held during nested value materialization");
+			try (CloseableIteration<? extends Statement> statements = admittedDataset.getStatements(subject, PREDICATE,
+					null, context)) {
+				assertTrue(statements.hasNext(), "the admitted snapshot must retain the seeded statement");
+				Statement result = statements.next();
+				assertFalse(statements.hasNext(), "the seeded snapshot must contain exactly one matching statement");
+				assertEquals(subject.stringValue(), result.getSubject().stringValue());
+				assertEquals(context, result.getContext());
+				TripleTerm resultOuter = (TripleTerm) result.getObject();
+				assertEquals(outer, resultOuter,
+						"the admitted view must fully materialize the exact recursively seeded TripleTerm");
+				assertEquals(subject.stringValue(), resultOuter.getSubject().stringValue());
+				TripleTerm resultNested = (TripleTerm) resultOuter.getObject();
+				assertEquals(nestedSubject.stringValue(), resultNested.getSubject().stringValue());
+				Literal resultLiteral = (Literal) resultNested.getObject();
+				assertEquals(literal.getLabel(), resultLiteral.getLabel());
+				assertEquals(datatype, resultLiteral.getDatatype());
+			}
+		} catch (Exception | Error failure) {
+			primaryFailure = failure;
+			throw failure;
+		} finally {
+			store.releaseNativeCommit.countDown();
+			Exception cleanupFailure = null;
+			if (writerCommit != null) {
+				try {
+					writerCommit.get(5, TimeUnit.SECONDS);
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					cleanupFailure = interrupted;
+				} catch (ExecutionException | TimeoutException failure) {
+					cleanupFailure = failure;
+				}
+			}
+			if (pendingAdmission != null) {
+				try {
+					SailDataset completed = pendingAdmission.get(5, TimeUnit.SECONDS);
+					if (admittedDataset == null) {
+						admittedDataset = completed;
+					}
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					if (cleanupFailure == null) {
+						cleanupFailure = interrupted;
+					} else {
+						cleanupFailure.addSuppressed(interrupted);
+					}
+				} catch (ExecutionException | TimeoutException failure) {
+					if (cleanupFailure == null) {
+						cleanupFailure = failure;
+					} else {
+						cleanupFailure.addSuppressed(failure);
+					}
+				}
+			}
+			if (admittedDataset != null) {
+				admittedDataset.close();
+			}
+			for (SailDataset heldSnapshot : heldSnapshots) {
+				heldSnapshot.close();
+			}
+			executor.shutdownNow();
+			try {
+				if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+					TimeoutException timeout = new TimeoutException(
+							"Paired admission worker threads did not terminate");
+					if (cleanupFailure == null) {
+						cleanupFailure = timeout;
+					} else {
+						cleanupFailure.addSuppressed(timeout);
+					}
+				}
+			} catch (InterruptedException interrupted) {
+				Thread.currentThread().interrupt();
+				if (cleanupFailure == null) {
+					cleanupFailure = interrupted;
+				} else {
+					cleanupFailure.addSuppressed(interrupted);
+				}
+			}
+			store.shutDown();
+			if (cleanupFailure != null) {
+				if (primaryFailure != null) {
+					primaryFailure.addSuppressed(cleanupFailure);
+				} else {
+					throw cleanupFailure;
+				}
+			}
+		}
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
 	void dictionaryGrowthKeepsObservedSnapshotAndDeferredValues(@TempDir File dataDir) throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")
 				.setForceSync(true)
@@ -1999,7 +2185,7 @@ class LmdbSnapshotValueLifetimeTest {
 							ReadSnapshotReservation reserveReadSnapshot() throws IOException {
 								return new ReadSnapshotReservation(getTxnManager().reserveReadTxn(false)) {
 									@Override
-									synchronized ReadSnapshot start(Txn tripleTxn) throws IOException {
+									synchronized ReadSnapshot tryStart(Txn tripleTxn) throws IOException {
 										if (failNextSnapshotStart.compareAndSet(true, false)) {
 											try {
 												assertEquals(expectedTriplePermits - 1,
@@ -2008,11 +2194,11 @@ class LmdbSnapshotValueLifetimeTest {
 											} catch (ReflectiveOperationException e) {
 												throw new IOException(e);
 											}
-											ReadSnapshot snapshot = super.start(tripleTxn);
+											ReadSnapshot snapshot = super.tryStart(tripleTxn);
 											snapshot.close();
 											throw new IOException("injected ValueStore snapshot start failure");
 										}
-										return super.start(tripleTxn);
+										return super.tryStart(tripleTxn);
 									}
 								};
 							}
@@ -2024,6 +2210,92 @@ class LmdbSnapshotValueLifetimeTest {
 						return tripleStore;
 					});
 		}
+	}
+
+	private static final class AdmissionObservationStore extends LmdbStore {
+
+		private final CountDownLatch nativeCommitReached = new CountDownLatch(1);
+		private final CountDownLatch releaseNativeCommit = new CountDownLatch(1);
+		private final AtomicBoolean pauseNextNativeCommit = new AtomicBoolean();
+		private final AtomicReference<Thread> nativeCommitThread = new AtomicReference<>();
+		private PausingCommitValueStore valueStore;
+		private TripleStore tripleStore;
+
+		private AdmissionObservationStore(File dataDir) {
+			super(dataDir, new LmdbStoreConfig("spoc,posc").setForceSync(true));
+		}
+
+		void pauseNextNativeCommit() {
+			if (!pauseNextNativeCommit.compareAndSet(false, true)) {
+				throw new IllegalStateException("A native commit pause is already armed");
+			}
+		}
+
+		@Override
+		LmdbSailStore createBackingStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
+				boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
+			return new LmdbSailStore(dataDir, properties, config, sketchBasedJoinEstimatorEnabled,
+					(valueDir, valueProperties, valueConfig) -> {
+						valueStore = new PausingCommitValueStore(valueDir, valueProperties, valueConfig);
+						return valueStore;
+					},
+					(tripleDir, tripleProperties, tripleConfig, values) -> {
+						tripleStore = new TripleStore(tripleDir, tripleProperties, tripleConfig, values);
+						return tripleStore;
+					});
+		}
+
+		private final class PausingCommitValueStore extends ValueStore {
+
+			private PausingCommitValueStore(File valueDir, StoreProperties properties, LmdbStoreConfig config)
+					throws IOException {
+				super(valueDir, properties, config);
+			}
+
+			@Override
+			int commitWriteTransaction(long transaction) {
+				int result = super.commitWriteTransaction(transaction);
+				if (result == MDB_SUCCESS && pauseNextNativeCommit.compareAndSet(true, false)) {
+					nativeCommitThread.set(Thread.currentThread());
+					nativeCommitReached.countDown();
+					try {
+						if (!releaseNativeCommit.await(20, TimeUnit.SECONDS)) {
+							throw new IllegalStateException("Timed out waiting to release the native commit seam");
+						}
+					} catch (InterruptedException interrupted) {
+						Thread.currentThread().interrupt();
+						throw new IllegalStateException("Native commit seam was interrupted", interrupted);
+					}
+				}
+				return result;
+			}
+		}
+	}
+
+	private static ThreadInfo awaitPairedAdmissionWait(Thread reader, Thread writer) {
+		ThreadMXBean threadBean = ManagementFactory.getThreadMXBean();
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(8);
+		ThreadInfo lastObserved = null;
+		do {
+			lastObserved = threadBean.getThreadInfo(reader.threadId(), 100);
+			if (lastObserved != null && lastObserved.getLockOwnerId() == writer.threadId()
+					&& hasStackFrame(lastObserved, LmdbSailStore.class.getName(), "createFreshReadView")
+					&& hasStackFrame(lastObserved, ValueStore.class.getName(), "awaitValueReaderAdmission")) {
+				return lastObserved;
+			}
+			Thread.yield();
+		} while (System.nanoTime() < deadline);
+		throw new AssertionError("The paired reader did not wait outside its native reservations at the writer-owned "
+				+ "association gate; last ThreadInfo=" + lastObserved);
+	}
+
+	private static boolean hasStackFrame(ThreadInfo threadInfo, String className, String methodName) {
+		for (StackTraceElement frame : threadInfo.getStackTrace()) {
+			if (className.equals(frame.getClassName()) && methodName.equals(frame.getMethodName())) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static int availableReaderPermits(TxnManager manager) throws ReflectiveOperationException {

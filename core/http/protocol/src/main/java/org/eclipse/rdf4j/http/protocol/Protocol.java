@@ -288,6 +288,12 @@ public abstract class Protocol {
 	 */
 	public static final String CONFIG = "config";
 
+	/** Explicitly activates a saved repository configuration when posting to its configuration resource. */
+	public static final String REPOSITORY_RESTART_PARAM = "restart";
+
+	/** Present with value {@code done} only after the server initialized the replacement repository. */
+	public static final String REPOSITORY_RESTART_HEADER = "X-RDF4J-Repository-Restart";
+
 	/**
 	 * Relative location of the repository list resource.
 	 */

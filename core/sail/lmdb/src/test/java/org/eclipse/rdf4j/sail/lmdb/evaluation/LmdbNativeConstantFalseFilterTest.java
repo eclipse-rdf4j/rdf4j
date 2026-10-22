@@ -41,10 +41,9 @@ import org.junit.jupiter.api.io.TempDir;
  * samples in HotSpot's cross-frame exception dispatch for exactly this shape — ~112K throws per query execution,
  * forever, whenever C2 lost the inlining race between the throwing and the catching frame.
  * <p>
- * The native engine must instead prove the condition constant-false at evaluation entry and return an empty result
- * without opening the scan at all — recording {@code constantFalseFilter} as the execution path. The proof must be
- * per-evaluation, not per-plan: the same fragment driven with the variable supplied by entry bindings (or bound in
- * scope by VALUES) must still evaluate the filter for real.
+ * Binding analysis or the native entry predicate must instead prove the condition unable to accept a row and return an
+ * empty result without opening a scan. That proof uses the actual execution input: a query with a supplied API
+ * parameter or an in-scope VALUES binding must still evaluate its matching rows.
  */
 public class LmdbNativeConstantFalseFilterTest {
 
@@ -98,10 +97,14 @@ public class LmdbNativeConstantFalseFilterTest {
 			String explanation = prepared.explain(Explanation.Level.Telemetry).toString();
 
 			assertThat(rows(query)).isEmpty();
+			try (var result = prepared.evaluate()) {
+				assertThat(result.getBindingNames()).containsExactly("meter", "load");
+				assertThat(result.hasNext()).isFalse();
+			}
 			assertThat(explanation)
 					.as("a filter proven unable to accept any row must short-circuit the fragment instead of "
 							+ "scanning and erroring once per row")
-					.contains("constantFalseFilter");
+					.contains("NativeRows(arg=Empty", "NO_STATEMENT_ACCESS_REACHED");
 		}
 	}
 
@@ -130,6 +133,21 @@ public class LmdbNativeConstantFalseFilterTest {
 		List<String> generic = genericRows(query);
 		assertThat(generic).hasSize(1);
 		assertThat(rows(query)).isEqualTo(generic);
+	}
+
+	@Test
+	public void apiBoundCompareStillEvaluatesTheFilter() {
+		String query = "PREFIX ex: <" + EX + "> "
+				+ "SELECT ?meter ?load WHERE { ?meter ex:measures ?load . FILTER(?load = ?substation) }";
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			var prepared = connection.prepareTupleQuery(query);
+			prepared.setBinding("substation", connection.getValueFactory().createIRI(EX, "substation0"));
+			try (var result = prepared.evaluate()) {
+				assertThat(QueryResults.asList(result)).singleElement()
+						.satisfies(row -> assertThat(row.getValue("load"))
+								.isEqualTo(connection.getValueFactory().createIRI(EX, "substation0")));
+			}
+		}
 	}
 
 	private List<String> genericRows(String query) {

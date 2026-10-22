@@ -22,6 +22,7 @@ import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -32,8 +33,7 @@ import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Collections;
-import java.util.HashMap;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -69,14 +69,16 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
-import org.eclipse.rdf4j.workbench.support.TestServerCredentials;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.CookieHandler;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
+import org.eclipse.rdf4j.workbench.util.SavedQueryIdentity;
+import org.eclipse.rdf4j.workbench.util.ServerCredentials;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.mock.web.MockServletContext;
@@ -98,25 +100,46 @@ public class QueryServletTest {
 
 	private String longQuery;
 
+	@Test
+	public void destroyingOneSessionQueryServletMustKeepTheSharedSavedQueryStoreOpen() {
+		QueryStorage storage = mock(QueryStorage.class);
+		servlet.substituteQueryStorage(storage);
+
+		servlet.destroy();
+
+		verify(storage, never()).shutdown();
+	}
+
 	@BeforeEach
 	public void setUp() throws IOException {
 		longQuery = ResourceUtil.getString("long.rq");
-		QueryServlet.substituteQueryCache(new HashMap<>());
 	}
 
 	@Test
 	public final void testLongQuery() throws ServletException {
-		assertThat(servlet.shouldWriteQueryCookie(longQuery)).isFalse();
+		assertThat(servlet.getCookieNames()).doesNotContain(QueryServlet.QUERY, QueryServlet.REF);
 	}
 
 	@Test
 	public final void testShortQuery() throws ServletException {
-		assertThat(servlet.shouldWriteQueryCookie(SHORT_QUERY)).isTrue();
+		assertThat(servlet.getCookieNames()).doesNotContain(QueryServlet.QUERY, QueryServlet.REF);
 	}
 
 	@Test
 	public final void testNoQuery() throws ServletException {
-		assertThat(servlet.shouldWriteQueryCookie(null)).isTrue();
+		assertThat(servlet.getCookieNames()).doesNotContain(QueryServlet.QUERY, QueryServlet.REF);
+	}
+
+	@Test
+	public void forcedExecutionStrategyIsNeverACookiePreference() {
+		// A forced LMDB strategy applies to the page it was chosen on; a refreshed query page starts unforced.
+		assertThat(servlet.getCookieNames()).doesNotContain("lmdb-forced-strategy");
+	}
+
+	@Test
+	public void queryTextAndReferencesAreNeverCookiePreferences() {
+		assertThat(servlet.getCookieNames()).doesNotContain(QueryServlet.QUERY, QueryServlet.REF);
+		assertThat(servlet.getCookieNames()).doesNotContain(QueryServlet.QUERY, QueryServlet.REF);
 	}
 
 	@Test
@@ -419,10 +442,13 @@ public class QueryServletTest {
 		QueryStorage storage = prepareSave("true", "alice");
 		HttpServletResponse response = mock(HttpServletResponse.class);
 		when(response.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
+		WorkbenchRequest request = saveRequest("true", "alice");
+		String owner = SavedQueryIdentity.owner(request, null);
 
-		servlet.doPost(saveRequest("true", "alice"), response);
+		servlet.doPost(request, response);
 
-		verify(storage).saveQuery(any(), eq("my-query"), eq("alice"), eq(false), eq(QueryLanguage.SPARQL),
+		verify(storage).saveQuery(any(), eq("my-query"), eq(owner), eq(false),
+				eq(QueryLanguage.SPARQL),
 				eq(SHORT_QUERY), eq(true), eq(100), eq(17));
 	}
 
@@ -431,7 +457,7 @@ public class QueryServletTest {
 	 * base64 of {@code user:password}; nothing sends a {@code server-user} parameter or cookie.
 	 */
 	@Test
-	public void privateSavesBelongToTheUserOfTheServerCredentialsCookie() throws Exception {
+	public void privateSavesDoNotTrustTheServerCredentialsCookie() throws Exception {
 		QueryStorage storage = prepareSave("true", null);
 		MockHttpServletRequest rawRequest = rawSaveRequest("true");
 		rawRequest.setCookies(credentialsCookie("alice", "secret"));
@@ -439,9 +465,42 @@ public class QueryServletTest {
 
 		servlet.doPost(new WorkbenchRequest(servlet.repository(), rawRequest, Map.of()), response);
 
-		assertThat(response.getContentAsString()).doesNotContain("require a signed-in user");
-		verify(storage).saveQuery(any(), eq("my-query"), eq("alice"), eq(false), eq(QueryLanguage.SPARQL),
-				eq(SHORT_QUERY), eq(true), eq(100), eq(17));
+		assertThat(response.getContentAsString()).contains("require a signed-in user");
+		verify(storage, never()).saveQuery(any(), any(), any(), org.mockito.ArgumentMatchers.anyBoolean(), any(),
+				any(), org.mockito.ArgumentMatchers.anyBoolean(), org.mockito.ArgumentMatchers.anyInt(),
+				org.mockito.ArgumentMatchers.anyInt());
+	}
+
+	@Test
+	public void privateSavesWithTheSameClaimedUserButDifferentPasswordsHaveDifferentOwners() throws Exception {
+		QueryStorage storage = prepareSave("true", null);
+		for (String password : List.of("first-secret", "second-secret")) {
+			MockHttpServletRequest raw = rawSaveRequest("true");
+			ServerCredentials.bindRequest(raw, ServerCredentials.fromConnectionForm(Base64.getEncoder()
+					.encodeToString(("alice:" + password).getBytes(StandardCharsets.UTF_8))));
+			servlet.doPost(new WorkbenchRequest(servlet.repository(), raw, Map.of()),
+					new MockHttpServletResponse());
+		}
+		ArgumentCaptor<String> owners = ArgumentCaptor.forClass(String.class);
+		verify(storage, times(2)).saveQuery(any(), eq("my-query"), owners.capture(), eq(false),
+				eq(QueryLanguage.SPARQL), eq(SHORT_QUERY), eq(true), eq(100), eq(17));
+		assertThat(owners.getAllValues()).doesNotHaveDuplicates();
+	}
+
+	@Test
+	public void privateSavesRequireASecretBeyondTheClaimedUserName() throws Exception {
+		QueryStorage storage = prepareSave("true", null);
+		MockHttpServletRequest raw = rawSaveRequest("true");
+		ServerCredentials.bindRequest(raw, ServerCredentials.fromConnectionForm(Base64.getEncoder()
+				.encodeToString("alice:".getBytes(StandardCharsets.UTF_8))));
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		servlet.doPost(new WorkbenchRequest(servlet.repository(), raw, Map.of()), response);
+
+		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_BAD_REQUEST);
+		verify(storage, never()).saveQuery(any(), any(), any(), org.mockito.ArgumentMatchers.anyBoolean(), any(),
+				any(), org.mockito.ArgumentMatchers.anyBoolean(), org.mockito.ArgumentMatchers.anyInt(),
+				org.mockito.ArgumentMatchers.anyInt());
 	}
 
 	@Test
@@ -474,11 +533,11 @@ public class QueryServletTest {
 	}
 
 	@Test
-	public void savedQueryReadsAreCheckedForTheUserOfTheServerCredentialsCookie() throws Exception {
+	public void savedQueryReadsDoNotTrustTheServerCredentialsCookie() throws Exception {
 		QueryStorage storage = prepareSave("false", null);
 		IRI queryId = SimpleValueFactory.getInstance().createIRI("urn:query:private");
 		when(storage.selectSavedQuery(anyString(), eq("alice"), eq("private-query"))).thenReturn(queryId);
-		when(storage.canRead(queryId, "bob")).thenReturn(false);
+		when(storage.canRead(queryId, "")).thenReturn(false);
 		MockHttpServletRequest rawRequest = new MockHttpServletRequest("POST", "/query");
 		rawRequest.addParameter("action", "edit");
 		rawRequest.addParameter("ref", "id");
@@ -492,7 +551,7 @@ public class QueryServletTest {
 		assertThatThrownBy(() -> servlet.doPost(request, response))
 				.isInstanceOf(BadRequestException.class)
 				.hasMessage("Current user may not read the given query.");
-		verify(storage).canRead(queryId, "bob");
+		verify(storage).canRead(queryId, "");
 	}
 
 	private static Cookie credentialsCookie(String user, String password) {
@@ -674,9 +733,15 @@ public class QueryServletTest {
 		when(request.isParameterPresent("infer")).thenReturn(true);
 		when(request.getParameter("infer")).thenReturn("true");
 		if (user != null) {
-			when(request.getCookies()).thenReturn(TestServerCredentials.signedIn(user));
+			mockSignedIn(request, user, "secret");
 		}
 		return request;
+	}
+
+	private static void mockSignedIn(WorkbenchRequest request, String user, String password) {
+		ServerCredentials.Credentials credentials = ServerCredentials.fromConnectionForm(Base64.getEncoder()
+				.encodeToString((user + ":" + password).getBytes(StandardCharsets.UTF_8)));
+		when(request.getAttribute(ServerCredentials.class.getName() + ".current")).thenReturn(credentials);
 	}
 
 	private HttpServletResponse assertFeatureRequestAllowed(WorkbenchPolicy policy, Map<String, String> initParameters,
@@ -825,20 +890,18 @@ public class QueryServletTest {
 
 	@Test
 	public void testCookieNamesShouldPreserveSavedQueryOwner() {
-		servlet.writeQueryCookie = true;
 
 		assertThat(List.of(servlet.getCookieNames())).contains("owner");
 	}
 
 	@Test
-	public void testExecShouldCacheLongQueryReferenceInCookies() throws Exception {
+	public void testExecNeverCachesLongQueryReferenceInCookies() throws Exception {
 		SailRepository repository = new SailRepository(new MemoryStore());
 		repository.init();
 		try {
 			CookieHandler cookieHandler = mock(CookieHandler.class);
 			servlet.setCookieHandler(cookieHandler);
 			servlet.setRepository(repository);
-			servlet.writeQueryCookie = false;
 
 			WorkbenchRequest request = mock(WorkbenchRequest.class);
 			stubAction(request, "exec");
@@ -861,9 +924,8 @@ public class QueryServletTest {
 
 			servlet.service(request, response);
 
-			verify(cookieHandler).addCookie(request, response, QueryServlet.REF, "hash");
-			verify(cookieHandler).addCookie(request, response, QueryServlet.QUERY,
-					String.valueOf(longQuery.hashCode()));
+			verify(cookieHandler, never()).addCookie(eq(request), eq(response), eq(QueryServlet.REF), anyString());
+			verify(cookieHandler, never()).addCookie(eq(request), eq(response), eq(QueryServlet.QUERY), anyString());
 		} finally {
 			repository.shutDown();
 		}
@@ -913,8 +975,8 @@ public class QueryServletTest {
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn(hash);
 		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(true);
 		when(request.getParameter(QueryServlet.REF)).thenReturn("hash");
-		QueryServlet.substituteQueryCache(Collections.singletonMap(hash, longQuery));
-		assertThat(servlet.getQueryText(request)).isEqualTo(longQuery);
+		assertThatThrownBy(() -> servlet.getQueryText(request)).isInstanceOf(BadRequestException.class)
+				.hasMessage("Legacy query references are no longer supported.");
 	}
 
 	@Test
@@ -925,8 +987,8 @@ public class QueryServletTest {
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn(hash);
 		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(true);
 		when(request.getParameter(QueryServlet.REF)).thenReturn("hash");
-		QueryServlet.substituteQueryCache(Collections.<String, String>emptyMap());
-		assertThat(servlet.getQueryText(request)).isEmpty();
+		assertThatThrownBy(() -> servlet.getQueryText(request)).isInstanceOf(BadRequestException.class)
+				.hasMessage("Legacy query references are no longer supported.");
 	}
 
 	@Test
@@ -937,6 +999,9 @@ public class QueryServletTest {
 		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(true);
 		when(request.getParameter(QueryServlet.REF)).thenReturn("id");
 		QueryStorage storage = mock(QueryStorage.class);
+		IRI queryId = SimpleValueFactory.getInstance().createIRI("urn:query:readable");
+		when(storage.selectSavedQuery(anyString(), anyString(), eq("test save name"))).thenReturn(queryId);
+		when(storage.canRead(queryId, "")).thenReturn(true);
 		when(storage.getQueryText(any(), anyString(), eq("test save name"))).thenReturn(longQuery);
 		servlet.substituteQueryStorage(storage);
 		assertThat(servlet.getQueryText(request)).isEqualTo(longQuery);
@@ -1067,7 +1132,6 @@ public class QueryServletTest {
 
 		QueryStorage storage = mock(QueryStorage.class);
 		servlet.substituteQueryStorage(storage);
-		servlet.writeQueryCookie = true;
 
 		RepositoryConnection connection = mock(RepositoryConnection.class);
 		TupleQuery tupleQuery = mock(TupleQuery.class);
@@ -1080,12 +1144,12 @@ public class QueryServletTest {
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn("private-query");
 		when(request.getParameter("owner")).thenReturn("other-user");
-		when(request.getCookies()).thenReturn(TestServerCredentials.signedIn("current-user"));
+		mockSignedIn(request, "current-user", "secret");
 		when(request.getParameter("queryLn")).thenReturn("SPARQL");
 		when(request.getParameter("explain")).thenReturn("Optimized");
 		when(request.getParameter("explain-format")).thenReturn("text");
 		when(storage.selectSavedQuery(anyString(), eq("other-user"), eq("private-query"))).thenReturn(queryId);
-		when(storage.canRead(queryId, "current-user")).thenReturn(false);
+		when(storage.canRead(queryId, SavedQueryIdentity.owner(request, null))).thenReturn(false);
 		when(storage.getQueryText(anyString(), eq("other-user"), eq("private-query"))).thenReturn(SHORT_QUERY);
 		when(repository.getConnection()).thenReturn(connection);
 		when(connection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(tupleQuery);
@@ -1099,8 +1163,39 @@ public class QueryServletTest {
 				.isInstanceOf(BadRequestException.class)
 				.hasMessage("Current user may not read the given query.");
 
-		verify(storage).canRead(queryId, "current-user");
+		verify(storage).canRead(queryId, SavedQueryIdentity.owner(request, null));
 		verify(repository, never()).getConnection();
+	}
+
+	@Test
+	public void testGetQueryTextRequiresReadAccessForPrivateSavedQuery() throws Exception {
+		Repository repository = mock(Repository.class);
+		when(repository.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
+		servlet.setRepository(repository);
+
+		QueryStorage storage = mock(QueryStorage.class);
+		servlet.substituteQueryStorage(storage);
+		IRI queryId = SimpleValueFactory.getInstance().createIRI("urn:query:private");
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		stubAction(request, "get");
+		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(true);
+		when(request.getParameter(QueryServlet.REF)).thenReturn("id");
+		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
+		when(request.getParameter(QueryServlet.QUERY)).thenReturn("private-query");
+		when(request.getParameter("owner")).thenReturn("other-user");
+		mockSignedIn(request, "current-user", "secret");
+		when(storage.selectSavedQuery(anyString(), eq("other-user"), eq("private-query"))).thenReturn(queryId);
+		when(storage.canRead(queryId, SavedQueryIdentity.owner(request, null))).thenReturn(false);
+		when(storage.getQueryText(anyString(), eq("other-user"), eq("private-query"))).thenReturn(SHORT_QUERY);
+
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		when(response.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
+
+		assertThatThrownBy(() -> servlet.service(request, response))
+				.isInstanceOf(BadRequestException.class)
+				.hasMessage("Current user may not read the given query.");
+		verify(storage).canRead(queryId, SavedQueryIdentity.owner(request, null));
+		verify(storage, never()).getQueryText(anyString(), anyString(), anyString());
 	}
 
 	@Test
@@ -1459,7 +1554,6 @@ public class QueryServletTest {
 		repository.init();
 		try {
 			servlet.setRepository(repository);
-			servlet.writeQueryCookie = true;
 			WorkbenchRequest request = mock(WorkbenchRequest.class);
 			stubAction(request, "exec");
 			when(request.isParameterPresent("Accept")).thenReturn(true);
@@ -1485,7 +1579,6 @@ public class QueryServletTest {
 		repository.init();
 		try {
 			servlet.setRepository(repository);
-			servlet.writeQueryCookie = true;
 			WorkbenchRequest request = mock(WorkbenchRequest.class);
 			stubAction(request, "exec");
 			when(request.isParameterPresent("Accept")).thenReturn(true);
@@ -1513,7 +1606,6 @@ public class QueryServletTest {
 			CookieHandler cookieHandler = mock(CookieHandler.class);
 			servlet.setCookieHandler(cookieHandler);
 			servlet.setRepository(repository);
-			servlet.writeQueryCookie = false;
 
 			WorkbenchRequest request = mock(WorkbenchRequest.class);
 			stubAction(request, "exec");
@@ -1558,7 +1650,6 @@ public class QueryServletTest {
 			CookieHandler cookieHandler = mock(CookieHandler.class);
 			servlet.setCookieHandler(cookieHandler);
 			servlet.setRepository(repository);
-			servlet.writeQueryCookie = true;
 
 			WorkbenchRequest request = mock(WorkbenchRequest.class);
 			stubAction(request, "exec");
@@ -1606,7 +1697,6 @@ public class QueryServletTest {
 			CookieHandler cookieHandler = mock(CookieHandler.class);
 			servlet.setCookieHandler(cookieHandler);
 			servlet.setRepository(repository);
-			servlet.writeQueryCookie = true;
 
 			WorkbenchRequest request = mock(WorkbenchRequest.class);
 			stubAction(request, "exec");
@@ -1651,7 +1741,6 @@ public class QueryServletTest {
 			CookieHandler cookieHandler = mock(CookieHandler.class);
 			servlet.setCookieHandler(cookieHandler);
 			servlet.setRepository(repository);
-			servlet.writeQueryCookie = true;
 
 			WorkbenchRequest request = mock(WorkbenchRequest.class);
 			String queryText = "select ?__workbench_query_text where { values ?__workbench_query_text { \"user value\" } }";
@@ -1719,7 +1808,6 @@ public class QueryServletTest {
 		try {
 			servlet.setCookieHandler(mock(CookieHandler.class));
 			servlet.setRepository(repository);
-			servlet.writeQueryCookie = true;
 
 			WorkbenchRequest request = mock(WorkbenchRequest.class);
 			when(request.getParameter("action")).thenReturn("exec");

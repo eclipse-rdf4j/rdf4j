@@ -30,7 +30,7 @@ class WorkbenchModuleScriptTypeTest {
 	@Test
 	void webApplicationServesItsModuleScriptsAsJavaScript() throws Exception {
 		List<Path> moduleScripts;
-		try (Stream<Path> files = Files.walk(Path.of("src/main/webapp/scripts"))) {
+		try (Stream<Path> files = Files.walk(Path.of("src/main/frontend/static/scripts"))) {
 			moduleScripts = files.filter(file -> file.getFileName().toString().endsWith(".mjs")).toList();
 		}
 		assertThat(moduleScripts).as("the Workbench ships module scripts").isNotEmpty();

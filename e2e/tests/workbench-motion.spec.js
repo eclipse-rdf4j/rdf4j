@@ -413,13 +413,74 @@ test('query options animate reversibly while semantic state and focus update imm
 
 test('live reduced-motion changes settle only the requested disclosure state', async ({ page }) => {
 	await page.emulateMedia({ reducedMotion: 'no-preference' });
+	await page.exposeFunction('__requestReducedMotion', () => page.emulateMedia({ reducedMotion: 'reduce' }));
 	await openRoute(page, QUERY_URL, 'query');
 	const toggle = page.locator('#query-options-toggle');
 	const panel = page.locator('#query-options-panel');
-	await toggle.click();
-	expect(await activeMotionCount(panel)).toBeGreaterThan(0);
-
-	await page.emulateMedia({ reducedMotion: 'reduce' });
+	const mediaChange = await panel.evaluate(element => new Promise(resolve => {
+		const button = document.getElementById('query-options-toggle');
+		button.click();
+		const sample = () => {
+			const animation = element.getAnimations({ subtree: false })
+				.find(candidate => candidate.playState === 'running');
+			if (!animation) {
+				resolve({ active: false });
+				return;
+			}
+			const currentTime = Number(animation.currentTime);
+			const duration = Number(animation.effect.getTiming().duration);
+			if (currentTime > 0 && currentTime < duration) {
+				const keyframes = animation.effect.getKeyframes();
+				const requested = {
+					currentTime,
+					duration,
+					height: element.getBoundingClientRect().height,
+					startHeight: parseFloat(keyframes[0]?.height),
+					endHeight: parseFloat(keyframes[keyframes.length - 1]?.height)
+				};
+				let cancelEvent = null;
+				const cancelled = new Promise(resolveCancellation => {
+					animation.addEventListener('cancel', event => {
+						cancelEvent = {
+							currentTime: event.currentTime,
+							timelineTime: event.timelineTime,
+							playState: animation.playState
+						};
+						resolveCancellation(cancelEvent);
+					}, { once: true });
+				});
+				const finished = animation.finished.then(
+					() => ({ state: 'finished' }),
+					reason => ({ state: 'cancelled', reason: reason?.name ?? String(reason) })
+				);
+				window.__requestReducedMotion().then(async () => {
+					const outcome = await finished;
+					if (outcome.state === 'cancelled') {
+						await cancelled;
+					}
+					resolve({ started: true, requested, outcome, cancelEvent });
+				}, error => resolve({
+					started: true,
+					requested,
+					mediaError: error?.message ?? String(error)
+				}));
+			} else {
+				requestAnimationFrame(sample);
+			}
+		};
+		requestAnimationFrame(sample);
+	}));
+	expect(mediaChange.started, 'the media change must start during a real disclosure animation').toBe(true);
+	expect(mediaChange.mediaError).toBeUndefined();
+	expect(mediaChange.requested.currentTime).toBeGreaterThan(0);
+	expect(mediaChange.requested.currentTime).toBeLessThan(mediaChange.requested.duration);
+	expect(mediaChange.requested.height).toBeGreaterThan(
+		Math.min(mediaChange.requested.startHeight, mediaChange.requested.endHeight));
+	expect(mediaChange.requested.height).toBeLessThan(
+		Math.max(mediaChange.requested.startHeight, mediaChange.requested.endHeight));
+	expect(mediaChange.outcome).toEqual({ state: 'cancelled', reason: 'AbortError' });
+	expect(mediaChange.cancelEvent).toMatchObject({ playState: 'idle' });
+	expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(true);
 	await expect.poll(() => activeMotionCount(panel)).toBe(0);
 	await expect(toggle).toHaveAttribute('aria-expanded', 'true');
 	await expect(panel).toBeVisible();

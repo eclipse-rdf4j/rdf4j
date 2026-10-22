@@ -1,0 +1,1 @@
+SELECT (COUNT(*) AS ?uses) WHERE { { SELECT DISTINCT ?subject ?object WHERE { { ?subject <urn:ex:relation> ?object . } UNION { GRAPH ?__graph { ?subject <urn:ex:relation> ?object . } } } LIMIT 10001 } }

@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.workbench.commands;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
@@ -30,6 +31,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.Base64;
 import java.util.List;
+import java.util.Properties;
 import java.util.UUID;
 
 import org.eclipse.rdf4j.common.app.AppConfiguration;
@@ -44,6 +46,8 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
+import org.eclipse.rdf4j.workbench.util.SavedQueryIdentity;
+import org.eclipse.rdf4j.workbench.util.ServerCredentials;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
 import org.junit.jupiter.api.Test;
@@ -53,7 +57,6 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.WriteListener;
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpServletResponseWrapper;
 import tools.jackson.databind.JsonNode;
@@ -62,6 +65,9 @@ import tools.jackson.databind.ObjectMapper;
 class SavedQueriesServletTest {
 
 	private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
+
+	@TempDir
+	Path ownerDataDir;
 
 	@Test
 	void initWrapsQueryStorageFailures() {
@@ -92,12 +98,13 @@ class SavedQueriesServletTest {
 		TestSavedQueriesServlet servlet = initServlet(storage, repository, info);
 		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/saved");
 		request.setContextPath("/workbench");
-		request.setCookies(credentialsCookie("alice", "secret"));
+		bindCredentials(request, "alice", "secret");
 		CapturingHttpServletResponse response = new CapturingHttpServletResponse();
 
 		servlet.service(request, response);
 
-		verify(storage).selectSavedQueries(eq(expectedReference("test-id")), eq("alice"), any());
+		verify(storage).selectSavedQueries(eq(expectedReference("test-id")),
+				argThat(owner -> owner != null && "alice".equals(SavedQueryIdentity.displayName(owner))), any());
 		assertThat(response.getBody()).contains("team-query").doesNotContain("saved-queries.xsl");
 	}
 
@@ -160,13 +167,14 @@ class SavedQueriesServletTest {
 
 		TestSavedQueriesServlet servlet = initServlet(storage, repository, info);
 		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/saved");
-		request.setCookies(credentialsCookie("alice", "secret"));
+		bindCredentials(request, "alice", "secret");
 		// A server-user parameter is not a sign-in: anyone could send one.
 		request.addParameter("server-user", "mallory");
 
 		servlet.service(request, new CapturingHttpServletResponse());
 
-		verify(storage).selectSavedQueries(eq(expectedReference("test-id")), eq("alice"), any());
+		verify(storage).selectSavedQueries(eq(expectedReference("test-id")),
+				argThat(owner -> owner != null && "alice".equals(SavedQueryIdentity.displayName(owner))), any());
 	}
 
 	@Test
@@ -174,7 +182,9 @@ class SavedQueriesServletTest {
 		QueryStorage storage = mock(QueryStorage.class);
 		Repository repository = accessibleRepository();
 		when(storage.checkAccess(repository)).thenReturn(true);
-		when(storage.canChange(any(IRI.class), eq("alice"))).thenReturn(true);
+		when(storage.canChange(any(IRI.class),
+				argThat(owner -> owner != null && "alice".equals(SavedQueryIdentity.displayName(owner)))))
+						.thenReturn(true);
 		doAnswer(invocation -> {
 			TupleResultBuilder builder = invocation.getArgument(2);
 			builder.variables("queryName");
@@ -184,16 +194,17 @@ class SavedQueriesServletTest {
 		TestSavedQueriesServlet servlet = initServlet(storage, repository, new RepositoryInfo());
 		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/saved");
 		request.addParameter("delete", "urn:test:query");
-		request.setCookies(credentialsCookie("alice", "secret"));
+		bindCredentials(request, "alice", "secret");
 
 		servlet.service(request, new CapturingHttpServletResponse());
 
-		verify(storage).deleteQuery(eq(SimpleValueFactory.getInstance().createIRI("urn:test:query")), eq("alice"));
+		verify(storage).deleteQuery(eq(SimpleValueFactory.getInstance().createIRI("urn:test:query")),
+				argThat(owner -> owner != null && "alice".equals(SavedQueryIdentity.displayName(owner))));
 	}
 
-	private static Cookie credentialsCookie(String user, String password) {
-		return new Cookie("server-user-password", Base64.getEncoder()
-				.encodeToString((user + ":" + password).getBytes(StandardCharsets.ISO_8859_1)));
+	private static void bindCredentials(MockHttpServletRequest request, String user, String password) {
+		ServerCredentials.bindRequest(request, ServerCredentials.fromConnectionForm(Base64.getEncoder()
+				.encodeToString((user + ":" + password).getBytes(StandardCharsets.UTF_8))));
 	}
 
 	@Test
@@ -245,7 +256,9 @@ class SavedQueriesServletTest {
 		QueryStorage storage = mock(QueryStorage.class);
 		Repository repository = accessibleRepository();
 		when(storage.checkAccess(repository)).thenReturn(true);
-		when(storage.canChange(any(IRI.class), eq("bob"))).thenReturn(false);
+		when(storage.canChange(any(IRI.class),
+				argThat(owner -> owner != null && "bob".equals(SavedQueryIdentity.displayName(owner)))))
+						.thenReturn(false);
 
 		TestSavedQueriesServlet servlet = initServlet(storage, repository, new RepositoryInfo());
 
@@ -256,7 +269,7 @@ class SavedQueriesServletTest {
 
 		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/saved");
 		request.addParameter("delete", "urn:test:query");
-		request.setCookies(credentialsCookie("bob", "secret"));
+		bindCredentials(request, "bob", "secret");
 
 		assertThatThrownBy(() -> servlet.service(request, new CapturingHttpServletResponse()))
 				.isInstanceOf(BadRequestException.class)
@@ -296,7 +309,9 @@ class SavedQueriesServletTest {
 		RepositoryInfo info = new RepositoryInfo();
 		info.setLocation(new URL("https://example.org/rdf4j-server/repositories/test"));
 		when(storage.checkAccess(repository)).thenReturn(true);
-		when(storage.canChange(any(IRI.class), eq("alice"))).thenReturn(true);
+		when(storage.canChange(any(IRI.class),
+				argThat(owner -> owner != null && "alice".equals(SavedQueryIdentity.displayName(owner)))))
+						.thenReturn(true);
 		doAnswer(invocation -> {
 			TupleResultBuilder builder = invocation.getArgument(2);
 			builder.variables("queryName");
@@ -308,12 +323,13 @@ class SavedQueriesServletTest {
 		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/saved");
 		request.setContextPath("/workbench");
 		request.addParameter("delete", "urn:test:query");
-		request.setCookies(credentialsCookie("alice", "secret"));
+		bindCredentials(request, "alice", "secret");
 		CapturingHttpServletResponse response = new CapturingHttpServletResponse();
 
 		servlet.service(request, response);
 
-		verify(storage).deleteQuery(eq(SimpleValueFactory.getInstance().createIRI("urn:test:query")), eq("alice"));
+		verify(storage).deleteQuery(eq(SimpleValueFactory.getInstance().createIRI("urn:test:query")),
+				argThat(owner -> owner != null && "alice".equals(SavedQueryIdentity.displayName(owner))));
 		assertThat(response.getBody()).contains("remaining-query");
 	}
 
@@ -356,7 +372,7 @@ class SavedQueriesServletTest {
 		assertThat(invokeRepositoryReference(servlet)).isEqualTo(expectedReference(repository.getClass().getName()));
 	}
 
-	private static TestSavedQueriesServlet initServlet(QueryStorage storage, Repository repository, RepositoryInfo info)
+	private TestSavedQueriesServlet initServlet(QueryStorage storage, Repository repository, RepositoryInfo info)
 			throws Exception {
 		TestSavedQueriesServlet servlet = new TestSavedQueriesServlet(storage, null);
 		servlet.setRepositoryManager(mock(RepositoryManager.class));
@@ -367,6 +383,7 @@ class SavedQueriesServletTest {
 			servlet.setRepositoryInfo(info);
 		}
 		servlet.init(TestServletConfig.withParams("saved", "transformations", "/transform"));
+		servlet.useOwnerDataDir(ownerDataDir);
 		return servlet;
 	}
 
@@ -400,6 +417,13 @@ class SavedQueriesServletTest {
 		private TestSavedQueriesServlet(QueryStorage storage, RepositoryException failure) {
 			this.storage = storage;
 			this.failure = failure;
+		}
+
+		private void useOwnerDataDir(Path dataDir) {
+			AppConfiguration isolatedConfig = mock(AppConfiguration.class);
+			when(isolatedConfig.getDataDir()).thenReturn(dataDir.toFile());
+			when(isolatedConfig.getProperties()).thenReturn(new Properties());
+			this.appConfig = isolatedConfig;
 		}
 
 		@Override

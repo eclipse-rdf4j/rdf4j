@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.workbench.RepositoryServlet;
+import org.eclipse.rdf4j.workbench.commands.GraphServlet;
 import org.eclipse.rdf4j.workbench.commands.QueryServlet;
 import org.eclipse.rdf4j.workbench.proxy.ProxyRepositoryServlet;
 import org.eclipse.rdf4j.workbench.proxy.RedirectFilter;
@@ -63,6 +64,20 @@ class WorkbenchPagePolicyTest {
 	Path dataBaseDir;
 
 	@Test
+	void graphPageIsABuiltInPageThatCanBeHiddenLikeTheOthers() throws Exception {
+		WorkbenchPolicy visible = WorkbenchPolicy.fromProperties(packagedDefaults(), Set.of());
+		assertThat(visible.isRouteAllowed("graph", GraphServlet.class)).isTrue();
+		assertThat(visible.isRouteAllowed("/repositories/repo/graph", GraphServlet.class)).isTrue();
+
+		Properties hidden = packagedDefaults();
+		hidden.setProperty("menu.item.graph.visible", "false");
+		WorkbenchPolicy hiddenPolicy = WorkbenchPolicy.fromProperties(hidden, Set.of());
+		assertThat(hiddenPolicy.isRouteAllowed("graph", GraphServlet.class)).isFalse();
+		assertThat(hiddenPolicy.getVisibleMenuGroups().get(0).getItems()).extracting(WorkbenchPolicy.MenuItem::getId)
+				.doesNotContain("graph");
+	}
+
+	@Test
 	void packagedDefaultMenuPutsQueryFirstInLabeledGroups() throws Exception {
 		WorkbenchPolicy policy = WorkbenchPolicy.fromProperties(packagedDefaults(), Set.of());
 
@@ -71,9 +86,13 @@ class WorkbenchPagePolicyTest {
 		assertThat(policy.getVisibleMenuGroups()).extracting(WorkbenchPolicy.MenuGroup::getLabel)
 				.containsExactly("Repository", "Data", "Server", "System");
 		assertThat(policy.getVisibleMenuGroups().get(0).getItems()).extracting(WorkbenchPolicy.MenuItem::getId)
-				.containsExactly("query", "saved-queries", "explore", "summary", "namespaces", "contexts", "types");
+				.containsExactly("query", "saved-queries", "explore", "graph", "summary", "config", "namespaces",
+						"contexts",
+						"types");
 		assertThat(policy.getVisibleMenuGroups().get(0).getItems()).extracting(WorkbenchPolicy.MenuItem::getLabel)
-				.containsExactly("Query", "Saved queries", "Explore", "Summary", "Namespaces", "Graphs", "Types");
+				.containsExactly("Query", "Saved queries", "Explore", "Graph", "Summary", "Configuration", "Namespaces",
+						"Named Graphs",
+						"Types");
 		assertThat(policy.getVisibleMenuGroups().get(1).getItems()).extracting(WorkbenchPolicy.MenuItem::getId)
 				.containsExactly("add", "export", "update", "remove", "clear");
 		assertThat(policy.getVisibleMenuGroups().get(1).getItems()).extracting(WorkbenchPolicy.MenuItem::getLabel)

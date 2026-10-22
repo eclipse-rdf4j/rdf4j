@@ -16,6 +16,7 @@ import java.util.List;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
@@ -23,6 +24,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 /**
  * A standard pipeline with the default {@link QueryOptimizer}s that will be used by {@link StrictEvaluationStrategy}
@@ -72,6 +74,19 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		return FILTER_IN_VALUES_OPTIMIZER;
 	}
 
+	@Override
+	public BindingSet getOptimizerInputBindings(QueryOptimizer optimizer, BindingSet initialBindings) {
+		return preparedPlanInputBindings(optimizer, initialBindings);
+	}
+
+	/** Shared by standard and store-specific prepared pipelines without wrapping their optimizer identities. */
+	@InternalUseOnly
+	public static BindingSet preparedPlanInputBindings(QueryOptimizer optimizer, BindingSet initialBindings) {
+		return optimizer instanceof BindingAssignerOptimizer || optimizer instanceof ConstantOptimizer
+				? initialBindings
+				: EmptyBindingSet.getInstance();
+	}
+
 	/*
 	 * (non-Javadoc)
 	 *
@@ -84,7 +99,7 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				GRAPH_SCOPE_OPTIMIZER,
 				TUPLE_FUNCTION_MAGIC_PROPERTY_OPTIMIZER,
 				BINDING_SET_ASSIGNMENT_INLINER,
-				new ConstantOptimizer(strategy),
+				new ConstantOptimizer(strategy, EmptyBindingSet.getInstance()),
 				new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()),
 				COMPARE_OPTIMIZER,
 				CONJUNCTIVE_CONSTRAINT_SPLITTER,
@@ -96,9 +111,9 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				new QueryJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(), tripleSource,
 						strategy.getQueryExecutionPolicy()),
 				ITERATIVE_EVALUATION_OPTIMIZER,
-				new FilterOptimizer(evaluationStatistics, false, true),
+				new FilterOptimizer(evaluationStatistics, false, true, strategy),
 				FILTER_IN_VALUES_OPTIMIZER,
-				new FilterOptimizer(evaluationStatistics),
+				new FilterOptimizer(evaluationStatistics, true, true, strategy),
 				ORDER_LIMIT_OPTIMIZER
 		);
 

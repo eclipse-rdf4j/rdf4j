@@ -264,7 +264,6 @@ class QueryServletFlowCoverageTest {
 		when(connection.getNamespaces()).thenReturn(repositoryResultOf(new SimpleNamespace("ex", "urn:ex:")));
 		when(namespaceResponse.getOutputStream()).thenReturn(namespaceOut);
 		namespaceServlet.setRepository(repository);
-		namespaceServlet.writeQueryCookie = true;
 		namespaceServlet.setCookieHandler(mock(CookieHandler.class));
 
 		namespaceServlet.service(namespaceRequest, namespaceResponse);
@@ -285,7 +284,6 @@ class QueryServletFlowCoverageTest {
 						new org.eclipse.rdf4j.query.MalformedQueryException("remote syntax")));
 		when(malformedResponse.getOutputStream()).thenReturn(malformedOut);
 		malformedServlet.setRepository(malformedRepository);
-		malformedServlet.writeQueryCookie = true;
 		malformedServlet.setCookieHandler(mock(CookieHandler.class));
 
 		malformedServlet.service(malformedRequest, malformedResponse);
@@ -305,7 +303,6 @@ class QueryServletFlowCoverageTest {
 
 			when(response.getOutputStream()).thenReturn(outputStream);
 			servlet.setRepository(repository);
-			servlet.writeQueryCookie = true;
 			servlet.setCookieHandler(mock(CookieHandler.class));
 
 			servlet.service(request, response);
@@ -324,7 +321,6 @@ class QueryServletFlowCoverageTest {
 
 		when(response.getOutputStream()).thenReturn(new ByteArrayServletOutputStream());
 		servlet.setRepository(repository);
-		servlet.writeQueryCookie = true;
 		servlet.setCookieHandler(mock(CookieHandler.class));
 
 		servlet.service(request, response);
@@ -344,7 +340,6 @@ class QueryServletFlowCoverageTest {
 
 		when(response.getOutputStream()).thenReturn(new ByteArrayServletOutputStream());
 		servlet.setRepository(repository);
-		servlet.writeQueryCookie = true;
 		servlet.setCookieHandler(mock(CookieHandler.class));
 
 		servlet.service(request, response);

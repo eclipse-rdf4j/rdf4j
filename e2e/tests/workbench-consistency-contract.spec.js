@@ -156,8 +156,11 @@ test('query, upload, create, saved, and embedded controls share their locked act
 	await page.locator('#save-query-toggle').click();
 	const queryField = await readControlSignature(page, page.locator('#query-name'));
 	await openWorkbenchPage(page, `repositories/${REPOSITORY_ID}/add`);
+	// The sources are File, Server file, URL and Text: two steps right select URL.
 	await page.locator('#source-file').focus();
 	await page.keyboard.press('ArrowRight');
+	await page.keyboard.press('ArrowRight');
+	await expect(page.locator('#source-url')).toBeChecked();
 	const addField = await readControlSignature(page, page.locator('#url'));
 	const uploadAction = await readControlSignature(page, page.locator('#add-upload-actions .workbench-action--primary'));
 	await openWorkbenchPage(page, 'repositories/NONE/create?type=memory-rdfs-dt');
@@ -217,26 +220,35 @@ test('Add Source is a keyboard-operable, equal-width segmented radio group on mo
 	await page.setViewportSize({ width: 390, height: 1000 });
 	await openWorkbenchPage(page, `repositories/${REPOSITORY_ID}/add`);
 	const radios = page.locator('#add-source-tabs input[type="radio"]');
-	await expect(radios).toHaveCount(3);
+	// File, Server file (the approved import directory), URL and Text.
+	await expect(radios).toHaveCount(4);
 	const labels = page.locator('#add-source-tabs label');
+	await expect(labels).toHaveText(['File', 'Server file', 'URL', 'Text']);
 	const geometry = await labels.evaluateAll(elements => elements.map(element => {
 		const rect = element.getBoundingClientRect();
 		const style = getComputedStyle(element);
 		return { width: rect.width, height: rect.height, radius: style.borderRadius, background: style.backgroundColor };
 	}));
-	expect(geometry[0].width).toBeCloseTo(geometry[1].width, 0);
-	expect(geometry[1].width).toBeCloseTo(geometry[2].width, 0);
+	for (const segment of geometry.slice(1)) {
+		expect(segment.width).toBeCloseTo(geometry[0].width, 0);
+	}
 	for (const segment of geometry) {
 		expect(segment.height).toBeGreaterThanOrEqual(44);
 	}
-	// The segments join into one control with rounded outer corners (plan task M5.5, mockup 10).
-	expect(geometry.map(segment => segment.radius)).toEqual(['7px 0px 0px 7px', '0px', '0px 7px 7px 0px']);
+	// The segments join into one control with rounded outer corners (plan task M5.5, mockup 10): on a phone, two rows
+	// of two.
+	expect(geometry.map(segment => segment.radius))
+		.toEqual(['7px 0px 0px', '0px 7px 0px 0px', '0px 0px 0px 7px', '0px 0px 7px']);
 	expect(geometry[0].background).not.toBe(geometry[1].background);
 	await page.locator('#source-file').focus();
 	await page.keyboard.press('ArrowRight');
+	await expect(page.locator('#source-server-file')).toBeChecked();
+	await expect(page.locator('#add-source-server-file-panel')).toBeVisible();
+	await expect(page.locator('#add-source-file-panel')).toBeHidden();
+	await page.keyboard.press('ArrowRight');
 	await expect(page.locator('#source-url')).toBeChecked();
 	await expect(page.locator('#add-source-url-panel')).toBeVisible();
-	await expect(page.locator('#add-source-file-panel')).toBeHidden();
+	await expect(page.locator('#add-source-server-file-panel')).toBeHidden();
 });
 
 test('System Information keeps every section and live value inside one aligned surface', async ({ page }) => {

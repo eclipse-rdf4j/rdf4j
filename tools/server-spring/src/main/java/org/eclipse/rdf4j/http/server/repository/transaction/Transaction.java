@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.BooleanQuery;
@@ -90,6 +91,11 @@ class Transaction implements AutoCloseable {
 	private final Repository rep;
 
 	private final RepositoryConnection txnConnection;
+
+	/** The value factory of this transaction's repository, which says which blank nodes it stores. */
+	ValueFactory getValueFactory() {
+		return txnConnection.getValueFactory();
+	}
 
 	/**
 	 * The {@link ExecutorService} that performs all of the operations related to this Transaction.

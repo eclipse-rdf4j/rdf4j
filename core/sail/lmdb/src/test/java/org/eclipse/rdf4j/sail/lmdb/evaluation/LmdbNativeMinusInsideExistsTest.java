@@ -22,22 +22,26 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
+import org.eclipse.rdf4j.repository.evaluation.RepositoryTripleSource;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * M-F1: MINUS-inside-EXISTS scope pins. RDF4J's generic evaluation flows the outer solution into BOTH arms of a
- * Difference inside an EXISTS witness, so a right solution that binds nothing of its own still inherits the outer
- * bindings — its domain intersects every left solution and it removes everything. Syntactic name-uncorrelatedness is
- * therefore not evaluation-uncorrelatedness, and the native witness route must therefore preserve the complete lexical
- * input frame while evaluating both operands. These tests freeze the oracle answers across name-uncorrelated,
- * correlated, and assured-shared variants.
+ * M-F1: MINUS-inside-EXISTS scope pins. The generic evaluator makes the lexical input available while evaluating both
+ * operands, but that input alone does not create overlap between their produced binding domains. An explicitly shared
+ * operand name still creates overlap. These tests freeze the oracle answers across name-uncorrelated, correlated, and
+ * assured-shared variants, while the native route preserves input bindings separately from MINUS comparison names.
  */
 public class LmdbNativeMinusInsideExistsTest {
 
@@ -54,15 +58,19 @@ public class LmdbNativeMinusInsideExistsTest {
 				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 		repository.init();
 		try (SailRepositoryConnection conn = repository.getConnection()) {
-			conn.begin();
-			ValueFactory vf = conn.getValueFactory();
-			IRI person = vf.createIRI(EX, "Person");
-			conn.add(vf.createIRI(EX, "s1"), RDF.TYPE, person);
-			conn.add(vf.createIRI(EX, "s2"), RDF.TYPE, person);
-			conn.add(vf.createIRI(EX, "s1"), vf.createIRI(EX, "q"), vf.createIRI(EX, "v1"));
-			conn.add(vf.createIRI(EX, "a1"), vf.createIRI(EX, "t"), vf.createIRI(EX, "b1"));
-			conn.commit();
+			populate(conn);
 		}
+	}
+
+	private static void populate(SailRepositoryConnection conn) {
+		conn.begin();
+		ValueFactory vf = conn.getValueFactory();
+		IRI person = vf.createIRI(EX, "Person");
+		conn.add(vf.createIRI(EX, "s1"), RDF.TYPE, person);
+		conn.add(vf.createIRI(EX, "s2"), RDF.TYPE, person);
+		conn.add(vf.createIRI(EX, "s1"), vf.createIRI(EX, "q"), vf.createIRI(EX, "v1"));
+		conn.add(vf.createIRI(EX, "a1"), vf.createIRI(EX, "t"), vf.createIRI(EX, "b1"));
+		conn.commit();
 	}
 
 	@AfterEach
@@ -73,12 +81,86 @@ public class LmdbNativeMinusInsideExistsTest {
 	}
 
 	private List<String> subjects(String query) {
-		try (SailRepositoryConnection conn = repository.getConnection()) {
+		return subjects(repository, query);
+	}
+
+	private static List<String> subjects(SailRepository evaluationRepository, String query) {
+		try (SailRepositoryConnection conn = evaluationRepository.getConnection()) {
 			return QueryResults.asList(conn.prepareTupleQuery(query).evaluate())
 					.stream()
 					.map(row -> row.getValue("s").stringValue().substring(EX.length()))
 					.sorted()
 					.collect(Collectors.toList());
+		}
+	}
+
+	private static List<String> rawSubjects(SailRepositoryConnection conn, String query) {
+		ParsedTupleQuery parsed = (ParsedTupleQuery) new SPARQLParser().parseQuery(query, null);
+		DefaultEvaluationStrategy raw = new DefaultEvaluationStrategy(new RepositoryTripleSource(conn),
+				parsed.getDataset(), null);
+		try (var rows = raw.precompile(parsed.getTupleExpr()).evaluate(EmptyBindingSet.getInstance())) {
+			return QueryResults.asList(rows)
+					.stream()
+					.map(row -> row.getValue("s").stringValue().substring(EX.length()))
+					.sorted()
+					.collect(Collectors.toList());
+		}
+	}
+
+	@Test
+	public void rawAndGenericModesEstablishNullableSharedMinusOracle() {
+		String nameUncorrelated = "SELECT ?s WHERE { ?s a <" + EX + "Person> . FILTER EXISTS { ?s <" + EX
+				+ "q> ?v . { ?a <" + EX + "t> ?b } MINUS { OPTIONAL { ?a <" + EX + "nope> ?w } } } }";
+		String correlated = "SELECT ?s WHERE { ?s a <" + EX + "Person> . FILTER EXISTS {"
+				+ " { ?s <" + EX + "q> ?v } MINUS { OPTIONAL { ?s <" + EX + "nope> ?w } } } }";
+
+		SailRepository memoryRepository = new SailRepository(new MemoryStore());
+		memoryRepository.init();
+		try {
+			try (SailRepositoryConnection conn = memoryRepository.getConnection()) {
+				populate(conn);
+			}
+			assertThat(subjects(memoryRepository, nameUncorrelated))
+					.as("MemoryStore provides the generic oracle for the name-uncorrelated MINUS")
+					.containsExactly("s1");
+			assertThat(subjects(memoryRepository, correlated))
+					.as("a syntactically shared, bound MINUS name still removes the correlated witness")
+					.isEmpty();
+			try (SailRepositoryConnection conn = memoryRepository.getConnection()) {
+				assertThat(rawSubjects(conn, nameUncorrelated))
+						.as("raw parsed algebra independently establishes the name-uncorrelated result bag")
+						.containsExactly("s1");
+				assertThat(rawSubjects(conn, correlated))
+						.as("raw parsed algebra preserves the correlated shared-name control")
+						.isEmpty();
+			}
+		} finally {
+			memoryRepository.shutDown();
+		}
+
+		SailRepository genericLmdbRepository = new SailRepository(new LmdbStore(new File(dataDir, "generic"),
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(false)));
+		genericLmdbRepository.init();
+		try {
+			try (SailRepositoryConnection conn = genericLmdbRepository.getConnection()) {
+				populate(conn);
+			}
+			assertThat(subjects(genericLmdbRepository, nameUncorrelated))
+					.as("native-disabled LMDB provides an independent generic-engine oracle")
+					.containsExactly("s1");
+			assertThat(subjects(genericLmdbRepository, correlated))
+					.as("native-disabled LMDB preserves the correlated shared-name control")
+					.isEmpty();
+			try (SailRepositoryConnection conn = genericLmdbRepository.getConnection()) {
+				assertThat(rawSubjects(conn, nameUncorrelated))
+						.as("raw parsed algebra over the LMDB triple source agrees on the name-uncorrelated bag")
+						.containsExactly("s1");
+				assertThat(rawSubjects(conn, correlated))
+						.as("raw parsed algebra over the LMDB triple source keeps the correlated control")
+						.isEmpty();
+			}
+		} finally {
+			genericLmdbRepository.shutDown();
 		}
 	}
 
@@ -91,16 +173,15 @@ public class LmdbNativeMinusInsideExistsTest {
 	}
 
 	/**
-	 * The disproof witness: the Difference shares no variable name with the outer scope, yet the outer solution flows
-	 * into its right arm, whose inherited domain then removes every left solution — the oracle answer is EMPTY, not
-	 * "the empty-domain right solution removes nothing". Native evaluation must retain the outer solution domain even
-	 * when the child-produced domains are disjoint.
+	 * The inner MINUS operands share no variable name with each other. The incoming ?s remains available as lexical
+	 * input, but does not become an operand comparison name; raw generic evaluation returns the matching outer row. The
+	 * native implementation must retain ?s for reads without treating it as an overlap.
 	 */
 	@Test
-	public void nameUncorrelatedNullableSharedMinusUsesLexicalInputFrame() {
+	public void nameUncorrelatedNullableSharedMinusDoesNotCreateOverlapFromLexicalInput() {
 		String query = "SELECT ?s WHERE { ?s a <" + EX + "Person> . FILTER EXISTS { ?s <" + EX + "q> ?v ."
 				+ " { ?a <" + EX + "t> ?b } MINUS { OPTIONAL { ?a <" + EX + "nope> ?w } } } }";
-		assertThat(subjects(query)).as(explain(query)).isEmpty();
+		assertThat(subjects(query)).as(explain(query)).containsExactly("s1");
 	}
 
 	/** Outer-name-correlated variant: same oracle answer and the same lexical-frame rule. */

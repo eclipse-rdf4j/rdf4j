@@ -40,6 +40,7 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.mock.web.MockPart;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -77,13 +78,14 @@ class InPlaceWriteSuccessTest {
 	}
 
 	static Stream<Arguments> writes() throws Exception {
-		Path data = tempDir.resolve("data.ttl");
-		Files.writeString(data, "<urn:added> <urn:p> \"added\" .", StandardCharsets.UTF_8);
 		return Stream.of(
 				Arguments.of("add", (Supplier<TransformationServlet>) AddServlet::new,
 						(Consumer<MockHttpServletRequest>) request -> {
-							request.addParameter("url", data.toUri().toString());
-							request.addParameter("Content-Type", "text/turtle");
+							request.setContentType("multipart/form-data; boundary=test");
+							request.addPart(
+									new MockPart("Content-Type", "text/turtle".getBytes(StandardCharsets.UTF_8)));
+							request.addPart(new MockPart("content", "data.ttl",
+									"<urn:added> <urn:p> \"added\" .".getBytes(StandardCharsets.UTF_8)));
 						}),
 				Arguments.of("update", (Supplier<TransformationServlet>) UpdateServlet::new,
 						(Consumer<MockHttpServletRequest>) request -> request.addParameter("update",
