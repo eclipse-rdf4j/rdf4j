@@ -173,17 +173,19 @@ final class ValueStoreBulkRecords {
 
 	static Output restore(Path workspace, long mainRecords, long mainBytes, long referenceCounts,
 			long referenceCountBytes, long tripleTerms, long tripleTermBytes, long valueHashes, long valueHashBytes,
-			BulkCompression compression) throws IOException {
+			BulkCompression compression, String mainDigest, String referenceCountDigest, String tripleTermDigest,
+			String valueHashDigest) throws IOException {
 		return new Output(
 				ExternalByteKeySorter.SortedRecordFile.restore(workspace.resolve("value-main-records.bin"),
-						mainRecords, mainBytes, compression.codecFor(BulkArtifact.VALUE_RECORDS)),
+						mainRecords, mainBytes, compression.codecFor(BulkArtifact.VALUE_RECORDS), mainDigest),
 				ExternalByteKeySorter.SortedRecordFile.restore(workspace.resolve("value-ref-count-records.bin"),
 						referenceCounts, referenceCountBytes,
-						compression.codecFor(BulkArtifact.VALUE_REFERENCE_COUNTS)),
+						compression.codecFor(BulkArtifact.VALUE_REFERENCE_COUNTS), referenceCountDigest),
 				ExternalLongTupleSorter.SortedTupleFile.restore(workspace.resolve("value-triple-terms.bin"), 4,
-						tripleTerms, tripleTermBytes, compression.codecFor(BulkArtifact.TRIPLE_TERMS)),
+						tripleTerms, tripleTermBytes, compression.codecFor(BulkArtifact.TRIPLE_TERMS),
+						tripleTermDigest),
 				ExternalLongTupleSorter.SortedTupleFile.restore(workspace.resolve("value-hashes.bin"), 3,
-						valueHashes, valueHashBytes, compression.codecFor(BulkArtifact.VALUE_HASHES)));
+						valueHashes, valueHashBytes, compression.codecFor(BulkArtifact.VALUE_HASHES), valueHashDigest));
 	}
 
 	private static void addDataRecords(ExternalByteKeySorter sorter, long sequence, long id, byte[] data,
