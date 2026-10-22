@@ -196,7 +196,7 @@ jobs:
           E2E_BROWSER: ${{ matrix.browser }}
         run: exec ../scripts/ci/run-with-thread-dump.sh ./run.sh ${{ matrix.runtime.argument }}
       - name: Upload Playwright failure diagnostics (${{ matrix.runtime.label }}, ${{ matrix.browser }})
-        if: ${{ failure() && steps.e2e.outcome == 'failure' }}
+        if: ${{ (failure() && steps.e2e.outcome == 'failure') || hashFiles('e2e/test-results/**/trace.zip') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: e2e-test-diagnostics-${{ matrix.runtime.argument }}-${{ matrix.browser }}
