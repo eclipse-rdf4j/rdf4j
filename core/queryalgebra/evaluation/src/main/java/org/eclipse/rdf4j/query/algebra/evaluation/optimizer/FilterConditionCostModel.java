@@ -30,8 +30,8 @@ final class FilterConditionCostModel {
 		if (condition instanceof Exists || condition instanceof CompareAny || condition instanceof CompareAll) {
 			return JoinOrderPlanner.FILTER_COST_EXPENSIVE;
 		}
-		if (condition instanceof Not not && not.getArg() instanceof Exists) {
-			return JoinOrderPlanner.FILTER_COST_EXPENSIVE;
+		if (condition instanceof Not not) {
+			return conditionCostClass(not.getArg());
 		}
 		return JoinOrderPlanner.FILTER_COST_CHEAP;
 	}

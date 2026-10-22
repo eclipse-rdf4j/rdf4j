@@ -72,11 +72,13 @@ public class GraphScopeOptimizer implements QueryOptimizer {
 	}
 
 	private static boolean hasCompatibleInput(Var graphName, QueryAlgebraBindingAnalysis.ReadOnlyContext input) {
-		// A fixed public graph name still rejects conflicting invocation bindings. Its physical context alone cannot
-		// implement that check, so only lower when the existing input-domain proof guarantees the selected value.
+		// A fixed public graph name still rejects conflicting invocation bindings. Captured API selectors also admit
+		// the prepared plan's proven-absent input: substitution has already fixed their value before execution.
+		// Arbitrary named prevalued selectors retain their invocation check for reusable direct-algebra plans.
 		return graphName.isConstant() || input.bindingDomainKnown()
-				&& input.guaranteedNames().contains(graphName.getName())
-				&& graphName.getValue().equals(input.fixedValues().get(graphName.getName()));
+				&& (graphName.hasApiInputOrigin() && !input.maybeBoundNames().contains(graphName.getName())
+						|| input.guaranteedNames().contains(graphName.getName())
+								&& graphName.getValue().equals(input.fixedValues().get(graphName.getName())));
 	}
 
 	private static boolean isPositiveBasicGraphPattern(TupleExpr expression, Var graphName) {
