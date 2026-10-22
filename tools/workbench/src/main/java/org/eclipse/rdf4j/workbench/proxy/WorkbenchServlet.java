@@ -668,7 +668,7 @@ public class WorkbenchServlet extends AbstractServlet {
 
 	protected RepositoryManager createRepositoryManager(final String param) throws IOException, RepositoryException {
 		RepositoryManager manager;
-		if (param.startsWith("file:")) {
+		if (ServerValidator.hasScheme(param, "file")) {
 			manager = new LocalRepositoryManager(asLocalFile(new URL(param)));
 		} else {
 			manager = new RemoteRepositoryManager(param);

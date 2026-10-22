@@ -21,6 +21,8 @@ import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
+import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,6 +44,7 @@ class ServerValidator {
 	static final String ACCEPTED_SERVER_PREFIXES_PROPERTY = "org.eclipse.rdf4j.workbench.accepted-server-prefixes";
 
 	private static final String DEFAULT_ACCEPTED_SERVER_PREFIXES = "/rdf4j-server";
+	private static final Pattern SCHEME_ONLY_PREFIX = Pattern.compile("[A-Za-z][A-Za-z0-9+.-]*:");
 
 	private final String prefixes;
 
@@ -78,9 +81,9 @@ class ServerValidator {
 	protected boolean isValidServer(final String server) {
 		boolean isValid = checkServerPrefixes(server);
 		if (isValid) {
-			if (server.startsWith("http://") || server.startsWith("https://")) {
+			if (hasScheme(server, "http") || hasScheme(server, "https")) {
 				isValid = canConnect(server);
-			} else if (server.startsWith("file:")) {
+			} else if (hasScheme(server, "file")) {
 				isValid = isDirectory(server);
 			}
 		}
@@ -113,22 +116,39 @@ class ServerValidator {
 
 	private boolean matchesServerPrefix(String server, String prefix) {
 		String normalizedServer = normalizePrefixMatchValue(server);
-		String normalizedPrefix = normalizePrefixMatchValue(prefix);
+		String normalizedPrefix = SCHEME_ONLY_PREFIX.matcher(prefix).matches()
+				? prefix.toLowerCase(Locale.ROOT)
+				: normalizePrefixMatchValue(prefix);
 		if (normalizedServer == null || normalizedPrefix == null) {
 			return false;
 		}
 		if (!normalizedServer.startsWith(normalizedPrefix)) {
 			return false;
 		}
+		boolean prefixMatch;
 		if (normalizedPrefix.endsWith(":") || normalizedPrefix.endsWith("/") || normalizedPrefix.endsWith("?")
 				|| normalizedPrefix.endsWith("#")) {
-			return true;
+			prefixMatch = true;
+		} else if (normalizedServer.length() == normalizedPrefix.length()) {
+			prefixMatch = true;
+		} else {
+			char next = normalizedServer.charAt(normalizedPrefix.length());
+			prefixMatch = next == '/' || next == '?' || next == '#';
 		}
-		if (normalizedServer.length() == normalizedPrefix.length()) {
-			return true;
+		return prefixMatch && (!hasScheme(server, "file") || isWithinLocalPrefix(server, prefix));
+	}
+
+	private boolean isWithinLocalPrefix(String server, String prefix) {
+		if (!hasScheme(prefix, "file")) {
+			return false;
 		}
-		char next = normalizedServer.charAt(normalizedPrefix.length());
-		return next == '/' || next == '?' || next == '#';
+		try {
+			return asLocalFile(new URL(server)).getCanonicalFile()
+					.toPath()
+					.startsWith(asLocalFile(new URL(prefix)).getCanonicalFile().toPath());
+		} catch (IOException | IllegalArgumentException e) {
+			return false;
+		}
 	}
 
 	private String normalizePrefixMatchValue(String value) {
@@ -137,9 +157,20 @@ class ServerValidator {
 			if (hasUnsafePathSegment(uri.getRawPath())) {
 				return null;
 			}
-			return uri.normalize().toASCIIString();
+			String normalized = uri.normalize().toASCIIString();
+			String scheme = uri.getScheme();
+			return scheme == null ? normalized
+					: scheme.toLowerCase(Locale.ROOT) + normalized.substring(scheme.length());
 		} catch (URISyntaxException e) {
-			return value;
+			return null;
+		}
+	}
+
+	static boolean hasScheme(String value, String scheme) {
+		try {
+			return scheme.equalsIgnoreCase(new URI(value).getScheme());
+		} catch (URISyntaxException e) {
+			return false;
 		}
 	}
 

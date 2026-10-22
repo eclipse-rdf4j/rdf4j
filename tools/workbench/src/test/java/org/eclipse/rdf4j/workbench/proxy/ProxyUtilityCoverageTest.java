@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.workbench.proxy;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -28,7 +29,9 @@ import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
 import org.eclipse.rdf4j.workbench.support.TestFilterConfig;
+import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
@@ -317,6 +320,90 @@ class ProxyUtilityCoverageTest {
 
 		assertThat(defaultValidator.isValidServer("/rdf4j-server")).isTrue();
 		assertThat(defaultValidator.isValidServer("/rdf4j-server2")).isFalse();
+	}
+
+	@Test
+	void serverValidatorRejectsMalformedFilePathOutsideApprovedDirectory(@TempDir Path tempDir) throws Exception {
+		Path approved = Files.createDirectory(tempDir.resolve("approved"));
+		Files.createDirectory(tempDir.resolve("outside dir"));
+		String approvedUrl = approved.toUri().toString();
+		ServerValidator validator = new ServerValidator(new TestServletConfig(
+				"validator", new MockServletContext(), Map.of("accepted-server-prefixes", approvedUrl)));
+
+		assertThat(validator.isValidServer(approvedUrl + "../outside dir")).isFalse();
+		assertThat(validator.isValidServer(approvedUrl + "%2e%2e/outside%20dir")).isFalse();
+		assertThat(validator.isValidServer(approvedUrl + "../outside%20dir")).isFalse();
+	}
+
+	@Test
+	void serverValidatorAllowsLocalDirectoryWithinCanonicalPrefix(@TempDir Path tempDir) throws Exception {
+		Path approved = Files.createDirectory(tempDir.resolve("approved dir"));
+		Path inside = Files.createDirectory(approved.resolve("inside dir"));
+		ServerValidator validator = new ServerValidator(new TestServletConfig(
+				"validator", new MockServletContext(),
+				Map.of("accepted-server-prefixes", approved.toUri().toString())));
+
+		assertThat(validator.isValidServer(inside.toUri().toString())).isTrue();
+		assertThat(((LocalRepositoryManager) new WorkbenchServlet()
+				.createRepositoryManager(inside.toUri().toString())).getBaseDir().getCanonicalFile())
+						.isEqualTo(inside.toFile().getCanonicalFile());
+	}
+
+	@Test
+	void serverValidatorRejectsSymlinkOutsideCanonicalPrefix(@TempDir Path tempDir) throws Exception {
+		Path approved = Files.createDirectory(tempDir.resolve("approved"));
+		Path outside = Files.createDirectory(tempDir.resolve("outside"));
+		Path link = approved.resolve("linked");
+		try {
+			Files.createSymbolicLink(link, outside);
+		} catch (IOException | UnsupportedOperationException | SecurityException e) {
+			assumeTrue(false, "Symbolic links are unavailable: " + e.getMessage());
+		}
+		ServerValidator validator = new ServerValidator(new TestServletConfig(
+				"validator", new MockServletContext(),
+				Map.of("accepted-server-prefixes", approved.toUri().toString())));
+
+		assertThat(validator.isValidServer(link.toUri().toString())).isFalse();
+	}
+
+	@Test
+	void serverValidatorRejectsUppercaseFileSchemeEscape(@TempDir Path tempDir) throws Exception {
+		Path approved = Files.createDirectory(tempDir.resolve("approved"));
+		Path outside = Files.createDirectory(tempDir.resolve("outside"));
+		Path link = approved.resolve("linked");
+		try {
+			Files.createSymbolicLink(link, outside);
+		} catch (IOException | UnsupportedOperationException | SecurityException e) {
+			assumeTrue(false, "Symbolic links are unavailable: " + e.getMessage());
+		}
+		String prefix = approved.toUri().toString().replaceFirst("^file:", "FILE:");
+		String server = link.toUri().toString().replaceFirst("^file:", "FILE:");
+		ServerValidator validator = new ServerValidator(new TestServletConfig(
+				"validator", new MockServletContext(), Map.of("accepted-server-prefixes", prefix)));
+
+		assertThat(validator.isValidServer(server)).isFalse();
+	}
+
+	@Test
+	void serverValidatorAllowsUppercaseFileSchemeWithinPrefix(@TempDir Path tempDir) throws Exception {
+		Path approved = Files.createDirectory(tempDir.resolve("approved"));
+		Path inside = Files.createDirectory(approved.resolve("inside"));
+		String prefix = approved.toUri().toString().replaceFirst("^file:", "FILE:");
+		String server = inside.toUri().toString().replaceFirst("^file:", "FILE:");
+		ServerValidator validator = new ServerValidator(new TestServletConfig(
+				"validator", new MockServletContext(), Map.of("accepted-server-prefixes", prefix)));
+		ServerValidator lowercasePrefix = new ServerValidator(new TestServletConfig(
+				"validator", new MockServletContext(),
+				Map.of("accepted-server-prefixes", approved.toUri().toString())));
+		ServerValidator broadPrefix = new ServerValidator(new TestServletConfig(
+				"validator", new MockServletContext(), Map.of("accepted-server-prefixes", "FILE:")));
+
+		assertThat(validator.isValidServer(server)).isTrue();
+		assertThat(lowercasePrefix.isValidServer(server)).isTrue();
+		assertThat(broadPrefix.isValidServer(server)).isFalse();
+		assertThat(validator.isValidServer(prefix + "missing")).isFalse();
+		assertThat(((LocalRepositoryManager) new WorkbenchServlet().createRepositoryManager(server)).getBaseDir()
+				.getCanonicalFile()).isEqualTo(inside.toFile().getCanonicalFile());
 	}
 
 	@Test
