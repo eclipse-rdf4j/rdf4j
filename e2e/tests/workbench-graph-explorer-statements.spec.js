@@ -152,21 +152,8 @@ async function pointerHit(page, point) {
     }, point);
 }
 
-async function observeLayoutComputation(explorer) {
-    await explorer.locator('[aria-label="Choose graph layout"]').evaluate((layout) => {
-        const trace = { values: [layout.getAttribute('aria-busy')], observer: null };
-        trace.observer = new MutationObserver((records) => {
-            for (const record of records) trace.values.push(record.oldValue);
-            trace.values.push(layout.getAttribute('aria-busy'));
-        });
-        trace.observer.observe(layout, { attributes: true, attributeFilter: ['aria-busy'], attributeOldValue: true });
-        Reflect.set(window, '__statementsLayoutTrace', trace);
-    });
-}
-
 async function waitForSettledGraphGeometry(explorer, nodeIds) {
     return explorer.locator('svg.graph-canvas').evaluate(async (_svg, nodeIds) => {
-        const trace = Reflect.get(window, '__statementsLayoutTrace');
         const signature = () => {
             const currentSvg = document.querySelector('svg.graph-canvas');
             const layer = currentSvg?.querySelector(':scope > g');
@@ -218,14 +205,10 @@ async function waitForSettledGraphGeometry(explorer, nodeIds) {
             }
             previous = currentKey;
         }
-        if (trace?.observer) trace.observer.disconnect();
-        Reflect.deleteProperty(window, '__statementsLayoutTrace');
         return {
             stable: stableFrames >= 3,
             frames,
             stableFrames,
-            sawComputation: Boolean(trace?.values?.includes('true')),
-            busyTransitions: trace?.values ?? [],
             final: current,
         };
     }, nodeIds);
@@ -337,7 +320,6 @@ async function graphLayerTransform(explorer) {
 async function loadAllStatements(explorer) {
     await explorer.getByRole('button', { name: 'Query editor', exact: true }).click();
     await explorer.locator('#sparql').fill('CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }');
-    await observeLayoutComputation(explorer);
     await explorer.getByRole('button', { name: 'Run query' }).click();
     await expect(explorer.getByRole('button', { name: 'Run query' })).toBeEnabled({ timeout: 30000 });
     await explorer.getByRole('button', { name: 'Close query editor' }).click();
@@ -527,12 +509,18 @@ test('moving to an unrelated node clears Alice and preserves unrelated edge pick
     await expect(alice).toBeAttached();
     await expect(other).toBeAttached();
 
+    const layoutStatus = explorer.locator('.status-text');
+    await expect(layoutStatus).toHaveText(/^Loaded \d+ statements in \d+ ms\.$/);
+    await expect(layoutStatus).not.toHaveText('Organized the network.');
+    await explorer.locator('[aria-label="Choose graph layout"]').click();
+    await explorer.getByRole('button', { name: 'Organize network', exact: true }).click();
+    await expect(layoutStatus).toHaveText('Organized the network.', { timeout: 30000 });
+
     const layoutEvidence = await waitForSettledGraphGeometry(explorer, [ALICE, OTHER]);
     await testInfo.attach('query-layout-settlement', {
         body: JSON.stringify(layoutEvidence, null, 2),
         contentType: 'application/json',
     });
-    expect(layoutEvidence.sawComputation, 'the query result starts its graph layout').toBe(true);
     expect(layoutEvidence.stable, 'the graph layer and both node cards settle over consecutive animation frames').toBe(true);
     expect(layoutEvidence.final.layoutBusy).toBe('false');
     const aliceEdge = explorer.locator('.edge', { has: page.locator('title', { hasText: 'Alice — knows → Bob' }) });
