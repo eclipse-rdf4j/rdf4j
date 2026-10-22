@@ -1122,6 +1122,56 @@ class TripleStore implements Closeable {
 		E(mdb_env_sync(env, true));
 	}
 
+	/**
+	 * Explicit final planning under the private bulk owner's exclusive lifecycle. The next metadata commit persists it.
+	 */
+	void reserveBulkCompletionCapacity(long additionalStatements, long minimumBytes) throws IOException {
+		trustedTransactionId();
+		if (writeTxn != 0L || additionalStatements < 0L) {
+			throw new IOException("Cannot plan capacity for an active bulk triple generation");
+		}
+		long reservation = estimateWriteBytes(additionalStatements);
+		if (additionalStatements > 0L) {
+			long copiedTreeBytes = LmdbUtil.readTransaction(env, (stack, txn) -> {
+				MDBStat stat = MDBStat.malloc(stack);
+				long treePages = 0L;
+				for (TripleIndex index : indexes) {
+					E(mdb_stat(txn, index.getDB(true), stat));
+					treePages = Math.addExact(treePages,
+							Math.addExact(stat.ms_branch_pages(), Math.multiplyExact(stat.ms_leaf_pages(), 2L)));
+				}
+				return Math.multiplyExact(treePages, pageSize);
+			});
+			reservation = Math.addExact(reservation, copiedTreeBytes);
+		}
+		reservation = Math.addExact(reservation, LmdbUtil.MIN_FREE_SPACE);
+		long target = growthPolicy.minimumMapSize(Math.max(mapSize, Math.max(1L, minimumBytes)), pageSize,
+				Math.addExact(occupiedBytes(), reservation));
+		if (target <= mapSize) {
+			return;
+		}
+		var manager = txnManager.lockManager();
+		long stamp;
+		try {
+			stamp = manager.writeLock();
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while reserving bulk triple capacity", interrupted);
+		}
+		try {
+			txnManager.deactivate();
+			try {
+				E(setMapSize(target));
+				mapSize = target;
+				bulkMapGrowthCount++;
+			} finally {
+				txnManager.activate();
+			}
+		} finally {
+			manager.unlockWrite(stamp);
+		}
+	}
+
 	char[] mainIndexFieldSequence() {
 		return indexes.getFirst().getFieldSeq();
 	}
@@ -2296,7 +2346,7 @@ class TripleStore implements Closeable {
 		pageSize = state.pageSize();
 
 		// Align the configured size with LMDB's page size, preserving the zero-size and empty-versus-populated rules.
-		long configMapSize = (tripleDbSize / pageSize) * pageSize;
+		long configMapSize = LmdbUtil.pageAlignedCapacity(tripleDbSize, pageSize);
 		if (state.empty() && properties.preparedBulkStore == null) {
 			// This is an empty database, so use the configured map size.
 			E(setMapSize(configMapSize));

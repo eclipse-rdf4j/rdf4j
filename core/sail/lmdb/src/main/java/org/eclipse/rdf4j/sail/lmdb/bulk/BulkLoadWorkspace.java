@@ -189,6 +189,33 @@ final class BulkLoadWorkspace implements AutoCloseable {
 		}
 	}
 
+	BulkLoadSettings recordedSettings() {
+		return BulkLoadSettings.restore(state);
+	}
+
+	long maximumCanonicalValueBytes() throws IOException {
+		return state.getProperty("resolved.values.max-key-bytes") == null ? 0L
+				: parseNonNegativeLong("resolved.values.max-key-bytes");
+	}
+
+	/** Records the completed sizing algorithm; native readiness remains independently bound by the native seal. */
+	void recordPreparedCapacity(BulkCapacityPolicy value, BulkCapacityPolicy triple) {
+		BulkLoadSettings.storeCapacityPolicies(state, value, triple);
+		state.setProperty("capacity.preparation.version", "1");
+	}
+
+	/** Checks preparation and structural compatibility under target ownership, before recovery changes artifacts. */
+	static void requireCapacityPreparedPublication(Path target, BulkLoadSettings requested) throws IOException {
+		Properties recorded = inspect(controlDirectory(target));
+		if (recorded == null || !BulkLoadSettings.hasCapacityPolicies(recorded)
+				|| !"1".equals(recorded.getProperty("capacity.preparation.version"))) {
+			throw new IOException("Cannot certify the new capacity headroom contract for older published bulk load "
+					+ target + ". Its publication and workspace are preserved under the previous capacity contract. "
+					+ "Resume with the original loader, or retain the older store and load into a new empty target.");
+		}
+		requireSameConfiguration(recorded, requested, target, controlDirectory(target));
+	}
+
 	/**
 	 * Records what this load is reading, so a run interrupted while staging can read it again without being told.
 	 */

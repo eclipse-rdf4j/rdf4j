@@ -19,6 +19,8 @@ import java.nio.file.Path;
 import java.util.concurrent.CancellationException;
 import java.util.function.BooleanSupplier;
 
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.sail.lmdb.LmdbNativeBulkStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStoreFormat;
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
@@ -52,6 +54,18 @@ final class NativeStoreWriter {
 			int maxTransactionRecords, long maxTransactionBytes, BulkCompression compression,
 			BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler, PreparationHook preparationHook)
 			throws IOException {
+		return write(generation, config, format, values, statements, staged, memoryBudgetBytes, maxOpenFiles,
+				maxTransactionRecords, maxTransactionBytes, compression, cancellationSignal, scheduler, preparationHook,
+				BulkCapacityPolicy.defaultHeadroom(), BulkCapacityPolicy.defaultHeadroom(), 0L);
+	}
+
+	static WriteResult write(Path generation, LmdbStoreConfig config, LmdbStoreFormat format,
+			ValueStoreBulkRecords.Output values, ResolvedIdQuadSpool statements, CanonicalStagedInput staged,
+			long memoryBudgetBytes, int maxOpenFiles, int maxTransactionRecords, long maxTransactionBytes,
+			BulkCompression compression, BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler,
+			PreparationHook preparationHook, BulkCapacityPolicy valueCapacity, BulkCapacityPolicy tripleCapacity,
+			long maximumCanonicalValueBytes)
+			throws IOException {
 		long storedStatements;
 		long mapGrowthCount;
 		ValidatedBulkGeneration validation;
@@ -61,7 +75,7 @@ final class NativeStoreWriter {
 				TripleTermIndexBulkRecords tripleTermIndexes = TripleTermIndexBulkRecords.build(values.tripleTerms(),
 						statements.path().getParent(), config.getTripleTermIndexes(), memoryBudgetBytes, maxOpenFiles,
 						compression, cancellationSignal, scheduler);
-				LmdbNativeBulkStore store = new LmdbNativeBulkStore(generation, config, format)) {
+				LmdbNativeBulkStore store = openStore(generation, config, format, valueCapacity, tripleCapacity)) {
 			try (ByteRecordCursor cursor = new ByteRecordCursor(values.mainRecords())) {
 				store.appendValueRecords(() -> {
 					checkCancelled(cancellationSignal);
@@ -150,11 +164,33 @@ final class NativeStoreWriter {
 			checkCancelled(cancellationSignal);
 			storedStatements = Math.max(0L, expectedStatements);
 			validation = new ValidatedBulkGeneration(generation, storedStatements);
-			store.completeGeneration(validation);
+			store.completeGeneration(validation, valueCapacity, tripleCapacity, maximumCanonicalValueBytes,
+					CanonicalTermCodec.MAX_TRIPLE_TERM_DEPTH);
 			mapGrowthCount = store.mapGrowthCount();
 		}
 		return new WriteResult(storedStatements, mapGrowthCount,
 				LmdbNativeBulkStore.sealPreparedGeneration(generation, config, validation), validation);
+	}
+
+	private static LmdbNativeBulkStore openStore(Path generation, LmdbStoreConfig config, LmdbStoreFormat format,
+			BulkCapacityPolicy valueCapacity, BulkCapacityPolicy tripleCapacity) throws IOException {
+		long values = Math.max(config.getValueDBSize(), valueCapacity.minimumBytes());
+		long triples = Math.max(config.getTripleDBSize(), tripleCapacity.minimumBytes());
+		if (values == config.getValueDBSize() && triples == config.getTripleDBSize()) {
+			return new LmdbNativeBulkStore(generation, config, format);
+		}
+		// Preserve every configured capability while applying a floor before any dictionary/index records are written.
+		// This is explicit initial allocation, including when reactive automatic growth is disabled.
+		Model model = new LinkedHashModel();
+		LmdbStoreConfig initial = new LmdbStoreConfig();
+		initial.parse(model, config.export(model));
+		initial.setValueDBSize(values).setTripleDBSize(triples);
+		try {
+			return new LmdbNativeBulkStore(generation, initial, format);
+		} catch (IOException failure) {
+			throw new IOException("Cannot initialize the requested LMDB capacity floors: values=" + values
+					+ ", triples=" + triples, failure);
+		}
 	}
 
 	private static void checkCancelled(BooleanSupplier cancellationSignal) {

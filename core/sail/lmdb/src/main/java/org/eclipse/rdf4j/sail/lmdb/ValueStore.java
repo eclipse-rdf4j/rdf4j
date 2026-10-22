@@ -955,6 +955,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	/** Last native transaction ID whose dictionary/ref-count state this instance has established as trustworthy. */
 	private long lastTrustedNativeTransactionId = -1L;
 	private long closingTripleTransactionId = -1L;
+	private long bulkMaximumDataBytes;
+	private long bulkMaximumNamespaceBytes;
+	private long bulkMaximumIriBytes;
+	private long bulkDataRecordCount;
 	/** Expected transaction predecessor while startup initialization owns the LMDB writer across bootstrap phases. */
 	private long startupExpectedLastTransactionId = -1L;
 	private boolean startupInitializationInProgress;
@@ -1504,6 +1508,95 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			throw new IOException("Bulk dictionary changed after validated completion");
 		}
 		return current;
+	}
+
+	/** Called only by the native owner after the canonical loader has verified all generated streams. */
+	long bulkStoredValueCount() throws IOException {
+		return add(bulkDataRecordCount, bulkStoredTripleTermCount());
+	}
+
+	private long bulkStoredTripleTermCount() throws IOException {
+		return readTransaction(env, (stack, txn) -> {
+			MDBStat stat = MDBStat.malloc(stack);
+			E(mdb_stat(txn, tripleTermSpocIndex.getDB(true), stat));
+			return stat.ms_entries();
+		});
+	}
+
+	/** Called only by the native owner after the canonical loader has verified all generated streams. */
+	void reserveBulkCompletionCapacity(long additionalValues, long additionalStatements, long minimumBytes,
+			LmdbStoreConfig config, long maximumCanonicalBytes, int maximumTermDepth) throws IOException {
+		if (!bulkNativeOwnership || writeTxn != 0L || additionalValues < 0L || additionalStatements < 0L
+				|| maximumCanonicalBytes < 0L || maximumTermDepth < 0) {
+			throw new IOException("Cannot plan capacity for an unowned or active bulk value generation");
+		}
+		long lexicalBytes = Math.max(bulkMaximumDataBytes,
+				add(bulkMaximumIriBytes, bulkMaximumNamespaceBytes));
+		long depth = Math.min(bulkStoredTripleTermCount(), maximumTermDepth);
+		if (maximumCanonicalBytes == 0L) {
+			// Older direct writer callers lack the canonical envelope. Conservatively include every scalar position
+			// in the possible existing term chain; normal/resumed loader calls supply their already-recorded envelope.
+			maximumCanonicalBytes = multiply(add(multiply(depth, 2L), 2L), add(lexicalBytes, 32L));
+		}
+		long scalarAdvisory = DictionaryByteEstimate.bulkPayloadUpperBound(lexicalBytes);
+		long statementAdvisory = Math.max(DictionaryByteEstimate.UNINSPECTED_STATEMENT_BYTES,
+				add(multiply(scalarAdvisory, 3L),
+						DictionaryByteEstimate.bulkCanonicalClosureUpperBound(maximumCanonicalBytes, depth)));
+		long advisoryBytes = add(multiply(additionalValues, scalarAdvisory),
+				multiply(additionalStatements, statementAdvisory));
+		long dataBound = add(multiply(lexicalBytes, 3L), 32L + MAX_UNSIGNED_ID_BYTES);
+		PreparedValueFootprint one = new PreparedValueFootprint();
+		one.addStoredRecordUpperBound(dataBound, pageSize);
+		PreparedValueFootprint future = new PreparedValueFootprint();
+		// The total new inventory remains reserved even when committed in small chunks. Foreign-model lookup also
+		// reserves existing identities as potential writes, but only for one native lookup batch: approveAllBulk uses
+		// the configured lexical batch, while ordinary scalar approval uses the fixed value-resolution chunk.
+		long lookupStatements = Math.min(additionalStatements,
+				Math.max(config.getBulkOperationSize(), LmdbSailStore.valueResolutionChunkCapacity(Integer.MAX_VALUE)));
+		long lookupScalars = multiply(lookupStatements, 4L);
+		long admittedScalars = add(additionalValues, lookupScalars);
+		future.mainPuts = multiply(one.mainPuts, admittedScalars);
+		future.mainEntryBytes = multiply(one.mainEntryBytes, admittedScalars);
+		future.mainOverflowPages = multiply(one.mainOverflowPages, admittedScalars);
+		future.tripleRecords = additionalValues;
+		future.tripleEntryBytes = multiply(additionalValues, leafEntryBytes(TripleIndex.MAX_KEY_LENGTH, 0L));
+		// Only newly stored owners add pending dependencies: one namespace/datatype for a scalar, three components
+		// for a term. Statement edges are tracked by triple liveness, not this cache. Keep every possible pending key
+		// across the complete user transaction, plus one batch's speculative namespace/datatype lookup admission.
+		future.referencePuts = add(multiply(additionalValues, 3L), lookupScalars);
+		future.referenceEntryBytes = multiply(future.referencePuts,
+				leafEntryBytes(MAX_ID_KEY_BYTES, MAX_UNSIGNED_ID_BYTES));
+		completePreparedValueFootprint(future);
+		long startupBytes = multiply(preflightStartupBootstrapCapacity(config), 3L);
+		long target = readTransaction(env, (stack, txn) -> {
+			long nativeBytes = preparedValueReservation(stack, txn, future);
+			long projected = add(LmdbUtil.getNewSize(pageSize, txn, 0L),
+					add(Math.max(nativeBytes, advisoryBytes), startupBytes));
+			return growthPolicy.minimumMapSize(Math.max(mapSize, Math.max(1L, minimumBytes)), pageSize, projected);
+		});
+		if (target > mapSize) {
+			var manager = txnManager.lockManager();
+			long stamp;
+			try {
+				stamp = manager.writeLock();
+			} catch (InterruptedException interrupted) {
+				Thread.currentThread().interrupt();
+				throw new IOException("Interrupted while reserving bulk value capacity", interrupted);
+			}
+			try {
+				txnManager.deactivate();
+				try {
+					E(mdb_env_set_mapsize(env, target));
+					mapSize = target;
+					nativeMapGeneration++;
+					bulkMapGrowthCount++;
+				} finally {
+					txnManager.activate();
+				}
+			} finally {
+				manager.unlockWrite(stamp);
+			}
+		}
 	}
 
 	/** Called only by the native owner after the canonical loader has verified all generated streams. */
@@ -2529,6 +2622,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		open(deferAuxiliaryDatabases, false);
 	}
 
+	private record InitialMapState(int pageSize, boolean empty) {
+	}
+
 	private void open(boolean deferAuxiliaryDatabases, boolean replacingNativeGeneration) throws IOException {
 		valueStoreInitializationComplete = false;
 		refCountIntegrityEstablished = false;
@@ -2611,33 +2707,28 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			startupMarkerStatus = markerStatus;
 		}
 
-		// initialize page size and set map size for env
-		readTransaction(env, (stack, txn) -> {
+		// End the discovery reader before a remap can invalidate its native mapping.
+		InitialMapState initial = readTransaction(env, (stack, txn) -> {
 			MDBStat stat = MDBStat.malloc(stack);
-			mdb_stat(txn, dbi, stat);
-
-			boolean isEmpty = stat.ms_entries() == 0;
-			pageSize = stat.ms_psize();
-			// align map size with page size
-			long configMapSize = (mapSize / pageSize) * pageSize;
-			if (configMapSize < 6L * pageSize) {
-				logger.debug("configMapSize needs to be at least 6 pages");
-				configMapSize = 6L * pageSize;
-			}
-			if (isEmpty) {
-				// this is an empty db, use configured map size
-				mdb_env_set_mapsize(env, configMapSize);
+			E(mdb_stat(txn, dbi, stat));
+			return new InitialMapState(stat.ms_psize(), stat.ms_entries() == 0L);
+		});
+		pageSize = initial.pageSize();
+		long configMapSize = Math.max(6L * pageSize, LmdbUtil.pageAlignedCapacity(mapSize, pageSize));
+		try (MemoryStack stack = stackPush()) {
+			if (initial.empty()) {
+				E(mdb_env_set_mapsize(env, configMapSize));
 			}
 			MDBEnvInfo info = MDBEnvInfo.malloc(stack);
-			mdb_env_info(env, info);
+			E(mdb_env_info(env, info));
 			mapSize = info.me_mapsize();
 			if (mapSize < configMapSize) {
 				// configured map size is larger than map size stored in env, increase map size
-				mdb_env_set_mapsize(env, configMapSize);
-				mapSize = configMapSize;
+				E(mdb_env_set_mapsize(env, configMapSize));
+				E(mdb_env_info(env, info));
+				mapSize = info.me_mapsize();
 			}
-			return null;
-		});
+		}
 
 		txnManager.reset();
 		if (newNativeGeneration && !format.isLegacy()) {
@@ -12442,6 +12533,15 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 						throw new IOException("ValueStore bulk records are not strictly increasing");
 					}
 					if (targetDbi == dbi && pending.key().length > 1 && pending.key()[0] == ID_KEY) {
+						bulkDataRecordCount = add(bulkDataRecordCount, 1L);
+						bulkMaximumDataBytes = Math.max(bulkMaximumDataBytes, pending.value().length);
+						if (pending.value().length > 0) {
+							if (pending.value()[0] == NAMESPACE_VALUE) {
+								bulkMaximumNamespaceBytes = Math.max(bulkMaximumNamespaceBytes, pending.value().length);
+							} else if (pending.value()[0] == URI_VALUE) {
+								bulkMaximumIriBytes = Math.max(bulkMaximumIriBytes, pending.value().length);
+							}
+						}
 						nextId = Math.max(nextId,
 								Math.addExact(ValueIds.referenceOrdinal(data2id(ByteBuffer.wrap(pending.key()))), 1L));
 					}

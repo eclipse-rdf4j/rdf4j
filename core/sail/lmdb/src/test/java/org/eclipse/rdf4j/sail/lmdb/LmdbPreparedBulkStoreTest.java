@@ -48,15 +48,19 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.sail.lmdb.bulk.BulkCapacityPolicy;
 import org.eclipse.rdf4j.sail.lmdb.bulk.LmdbBulkLoader;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
@@ -112,6 +116,411 @@ class LmdbPreparedBulkStoreTest {
 		Path nested = directory.resolve("nested-" + inline);
 		load(nested, config, row.repeat(3));
 		assertPreparedOpening(nested, config, 1L);
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 1, 1_000 })
+	void defaultCapacityAllowsTenPercentAppendsWithoutGrowth(int statementsPerCommit) throws Exception {
+		Path target = directory.resolve("capacity-default-" + statementsPerCommit);
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setInlineLiterals(false)
+				.setValueDBSize(1024L * 1024L)
+				.setTripleDBSize(1024L * 1024L);
+		StringBuilder input = new StringBuilder();
+		for (int index = 0; index < 10_000; index++) {
+			input.append("<urn:capacity:s")
+					.append(index)
+					.append("> <urn:capacity:p> \"")
+					.append("loaded lexical payload ")
+					.append("x".repeat(96))
+					.append(index)
+					.append("\" .\n");
+		}
+		load(target, config, input.toString());
+		List<Long> capacities = mapSizes(target);
+		LmdbStore store = new LmdbStore(target.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		List<LmdbStartupDiagnostics.Operation> operations = new ArrayList<>();
+		LmdbStartupDiagnostics.OBSERVER.set(operations::add);
+		try {
+			repository.init();
+			assertEquals(List.of(), operations, "capacity reservation must retain prepared startup");
+			LmdbStartupDiagnostics.OBSERVER.remove();
+			var values = SimpleValueFactory.getInstance();
+			try (var connection = repository.getConnection()) {
+				for (int start = 10_000; start < 11_000; start += statementsPerCommit) {
+					connection.begin();
+					for (int index = start; index < Math.min(11_000, start + statementsPerCommit); index++) {
+						connection.add(values.createIRI("urn:capacity:s" + index), values.createIRI("urn:capacity:p"),
+								values.createLiteral("appended lexical payload " + "x".repeat(64) + index));
+					}
+					connection.commit();
+				}
+				assertEquals(11_000L, connection.size());
+			}
+			assertEquals(0L, store.getMapGrowthCount(),
+					"default capacity must admit 10% additional distinct statements and their stored values");
+		} finally {
+			LmdbStartupDiagnostics.OBSERVER.remove();
+			repository.shutDown();
+		}
+		assertEquals(capacities, mapSizes(target));
+		assertPreparedOpening(target, config, 11_000L);
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "1.5,false,1", "2.0,true,400", "3.0,false,800" })
+	void countFactorsCoverNestedTermsAndVariedValues(double factor, boolean inline, int statementsPerCommit)
+			throws Exception {
+		int loaded = 400;
+		int additional = (int) BulkCapacityPolicy.factor(factor).additionalItems(loaded);
+		Path target = directory.resolve("capacity-nested-" + factor);
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setInlineLiterals(inline)
+				.setTripleTermIndexes("spoc,cspo,posc")
+				.setValueDBSize(1024L * 1024L)
+				.setTripleDBSize(1024L * 1024L);
+		StringBuilder input = new StringBuilder();
+		for (int index = 0; index < loaded; index++) {
+			input.append("<urn:nested:owner")
+					.append(index)
+					.append("> <urn:nested:p> <<( <urn:nested:s")
+					.append(index)
+					.append("> <urn:nested:p> <<( <urn:nested:s")
+					.append(index)
+					.append("> <urn:nested:p> \"")
+					.append("載入語".repeat(32))
+					.append(index)
+					.append("\"@EN )>> )>> .\n");
+		}
+		LmdbBulkLoader.builder(target, config)
+				.partitionCount(256)
+				.memoryBudgetBytes(64L * 1024 * 1024)
+				.maxOpenFiles(64)
+				.valueCapacity(BulkCapacityPolicy.factor(factor))
+				.tripleCapacity(BulkCapacityPolicy.factor(factor))
+				.build()
+				.load(new ByteArrayInputStream(input.toString().getBytes(StandardCharsets.UTF_8)), "urn:nested:",
+						RDFFormat.NQUADS);
+		List<Long> capacities = mapSizes(target);
+		LmdbStore store = new LmdbStore(target.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		var values = SimpleValueFactory.getInstance();
+		try {
+			repository.init();
+			try (var connection = repository.getConnection()) {
+				for (int start = loaded; start < loaded + additional; start += statementsPerCommit) {
+					connection.begin();
+					for (int index = start; index < Math.min(loaded + additional,
+							start + statementsPerCommit); index++) {
+						var subject = values.createIRI("urn:nested:s" + index);
+						var predicate = values.createIRI("urn:nested:p");
+						var inner = values.createTripleTerm(subject, predicate,
+								values.createLiteral("追加語".repeat(16) + index, "en"));
+						connection.add(values.createIRI("urn:nested:owner" + index), predicate,
+								values.createTripleTerm(subject, predicate, inner));
+					}
+					connection.commit();
+				}
+				assertEquals(loaded + additional, connection.size());
+			}
+			assertEquals(0L, store.getMapGrowthCount());
+		} finally {
+			repository.shutDown();
+		}
+		assertEquals(capacities, mapSizes(target));
+		assertPreparedOpening(target, config, loaded + additional);
+	}
+
+	@Test
+	void capacitySeparatesLookupChunksFromTotalFutureInventory() throws Exception {
+		var values = SimpleValueFactory.getInstance();
+		StringBuilder input = new StringBuilder();
+		List<Statement> additions = new ArrayList<>();
+		for (int index = 0; index < 150; index++) {
+			input.append("<urn:chunk:s")
+					.append(index)
+					.append("> <urn:chunk:p> \"value")
+					.append(index)
+					.append("\" .\n");
+			for (int shift = 1; shift <= 7; shift++) {
+				additions.add(values.createStatement(values.createIRI("urn:chunk:s" + index),
+						values.createIRI("urn:chunk:p"), values.createLiteral("value" + ((index + shift) % 150))));
+			}
+		}
+		List<Long> reserved = new ArrayList<>();
+		for (int chunk : new int[] { 32, 4_096 }) {
+			Path target = directory.resolve("capacity-chunk-" + chunk);
+			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setBulkOperationSize(chunk)
+					.setInlineLiterals(false)
+					.setValueDBSize(1024L * 1024L)
+					.setTripleDBSize(1024L * 1024L);
+			LmdbBulkLoader.builder(target, config)
+					.partitionCount(256)
+					.memoryBudgetBytes(64L * 1024 * 1024)
+					.maxOpenFiles(64)
+					.valueCapacity(BulkCapacityPolicy.factor(1))
+					.tripleCapacity(BulkCapacityPolicy.factor(8))
+					.build()
+					.load(new ByteArrayInputStream(input.toString().getBytes(StandardCharsets.UTF_8)),
+							"urn:chunk:", RDFFormat.NQUADS);
+			List<Long> before = mapSizes(target);
+			reserved.add(before.getFirst());
+			LmdbStore store = new LmdbStore(target.toFile(), config);
+			SailRepository repository = new SailRepository(store);
+			try {
+				repository.init();
+				try (var connection = repository.getConnection()) {
+					connection.begin();
+					connection.add(additions);
+					connection.commit();
+					assertEquals(1_200L, connection.size());
+				}
+				assertEquals(0L, store.getMapGrowthCount());
+			} finally {
+				repository.shutDown();
+			}
+			assertEquals(before, mapSizes(target));
+			assertPreparedOpening(target, config, 1_200L);
+		}
+		assertTrue(reserved.getFirst() < reserved.getLast(),
+				"Smaller native lookup chunks must reserve less peak admission while retaining the full future inventory: "
+						+ reserved);
+	}
+
+	@Test
+	void capacityCoversDistinctPendingDependenciesOfNewTerms() throws Exception {
+		Path target = directory.resolve("capacity-distinct-dependencies");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setInlineLiterals(false)
+				.setTripleTermIndexes("spoc,cspo,posc")
+				.setValueDBSize(1024L * 1024L)
+				.setTripleDBSize(1024L * 1024L);
+		StringBuilder input = new StringBuilder();
+		for (int index = 0; index < 150; index++) {
+			input.append("<urn:dependency:s")
+					.append(index)
+					.append("> <urn:dependency:p")
+					.append(index)
+					.append("> \"payload")
+					.append(index)
+					.append("\" .\n");
+		}
+		// Establish the complete future canonical term envelope without sharing any future dependency IDs.
+		input.append("<urn:dependency:s149> <urn:dependency:p149> "
+				+ "<<( <urn:dependency:s149> <urn:dependency:p149> \"payload149\" )>> .\n");
+		LmdbBulkLoader.builder(target, config)
+				.partitionCount(256)
+				.memoryBudgetBytes(64L * 1024 * 1024)
+				.maxOpenFiles(64)
+				.valueCapacity(BulkCapacityPolicy.factor(1.5))
+				.tripleCapacity(BulkCapacityPolicy.factor(2))
+				.build()
+				.load(new ByteArrayInputStream(input.toString().getBytes(StandardCharsets.UTF_8)),
+						"urn:dependency:", RDFFormat.NQUADS);
+		List<Long> capacities = mapSizes(target);
+		int initialReferenceKeys = referenceCounts(target).size();
+		LmdbStore store = new LmdbStore(target.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		var values = SimpleValueFactory.getInstance();
+		try {
+			repository.init();
+			try (var connection = repository.getConnection()) {
+				connection.begin();
+				for (int index = 0; index < 149; index++) {
+					var subject = values.createIRI("urn:dependency:s" + index);
+					var predicate = values.createIRI("urn:dependency:p" + index);
+					connection.add(subject, predicate,
+							values.createTripleTerm(subject, predicate, values.createLiteral("payload" + index)));
+				}
+				connection.commit();
+				assertEquals(300L, connection.size());
+			}
+			assertEquals(0L, store.getMapGrowthCount());
+		} finally {
+			repository.shutDown();
+		}
+		assertEquals(initialReferenceKeys + 3 * 149, referenceCounts(target).size(),
+				"Every new term must retain its three distinct existing component dependencies");
+		assertEquals(capacities, mapSizes(target));
+		assertPreparedOpening(target, config, 300L);
+	}
+
+	@Test
+	void tripleHeadroomIncludesReferencesToExistingValues() throws Exception {
+		Path target = directory.resolve("capacity-existing-values");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setInlineLiterals(false)
+				.setValueDBSize(1024L * 1024L)
+				.setTripleDBSize(1024L * 1024L);
+		StringBuilder input = new StringBuilder();
+		for (int index = 0; index < 400; index++) {
+			input.append("<urn:existing:s")
+					.append(index)
+					.append("> <urn:existing:p> \"")
+					.append("x".repeat(128))
+					.append(index)
+					.append("\" .\n");
+		}
+		LmdbBulkLoader.builder(target, config)
+				.partitionCount(256)
+				.memoryBudgetBytes(64L * 1024 * 1024)
+				.maxOpenFiles(64)
+				.valueCapacity(BulkCapacityPolicy.factor(1))
+				.tripleCapacity(BulkCapacityPolicy.factor(1.5))
+				.build()
+				.load(new ByteArrayInputStream(input.toString().getBytes(StandardCharsets.UTF_8)), "urn:existing:",
+						RDFFormat.NQUADS);
+		List<Long> capacities = mapSizes(target);
+		LmdbStore store = new LmdbStore(target.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		var values = SimpleValueFactory.getInstance();
+		try {
+			repository.init();
+			try (var connection = repository.getConnection()) {
+				connection.begin();
+				for (int index = 0; index < 200; index++) {
+					connection.add(values.createIRI("urn:existing:s" + index), values.createIRI("urn:existing:p"),
+							values.createLiteral("x".repeat(128) + (index + 1)));
+				}
+				connection.commit();
+				assertEquals(600L, connection.size());
+			}
+			assertEquals(0L, store.getMapGrowthCount());
+		} finally {
+			repository.shutDown();
+		}
+		assertEquals(capacities, mapSizes(target));
+		assertPreparedOpening(target, config, 600L);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void tripleHeadroomIncludesExistingNestedForeignValueClosures(boolean byteFloor) throws Exception {
+		Path target = directory.resolve("capacity-existing-nested-" + byteFloor);
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setInlineLiterals(byteFloor)
+				.setTripleTermIndexes("spoc,cspo,posc")
+				.setValueDBSize(1024L * 1024L)
+				.setTripleDBSize(1024L * 1024L);
+		var values = SimpleValueFactory.getInstance();
+		var component = values.createIRI("urn:deep:shared");
+		List<Value> terms = new ArrayList<>();
+		StringBuilder input = new StringBuilder();
+		for (int index = 0; index < 64; index++) {
+			String label = "x".repeat(32 * 1024) + index;
+			Value term = values.createLiteral(label, "en");
+			input.append("<urn:deep:owner").append(index).append("> <urn:deep:p> ");
+			for (int level = 0; level < 16; level++) {
+				term = values.createTripleTerm(component, component, term);
+				input.append("<<( <urn:deep:shared> <urn:deep:shared> ");
+			}
+			input.append('"').append(label).append("\"@EN ").append(")>> ".repeat(16)).append(".\n");
+			terms.add(term);
+		}
+		LmdbBulkLoader.builder(target, config)
+				.partitionCount(256)
+				.memoryBudgetBytes(64L * 1024 * 1024)
+				.maxOpenFiles(64)
+				.valueCapacity(byteFloor ? BulkCapacityPolicy.minimumBytes(1L) : BulkCapacityPolicy.factor(1))
+				.tripleCapacity(BulkCapacityPolicy.factor(2))
+				.build()
+				.load(new ByteArrayInputStream(input.toString().getBytes(StandardCharsets.UTF_8)), "urn:deep:",
+						RDFFormat.NQUADS);
+		List<Long> capacities = mapSizes(target);
+		LmdbStore store = new LmdbStore(target.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		try {
+			repository.init();
+			try (var connection = repository.getConnection()) {
+				connection.begin();
+				for (int index = 0; index < 64; index++) {
+					connection.add(values.createIRI("urn:deep:owner" + index), values.createIRI("urn:deep:p"),
+							terms.get((index + 1) % 64));
+				}
+				connection.commit();
+				assertEquals(128L, connection.size());
+			}
+			assertEquals(0L, store.getMapGrowthCount());
+		} finally {
+			repository.shutDown();
+		}
+		assertEquals(capacities, mapSizes(target));
+		assertPreparedOpening(target, config, 128L);
+	}
+
+	@Test
+	void byteFloorAppliesBeforeLoadingWhenAutomaticGrowthIsDisabled() throws Exception {
+		Path target = directory.resolve("capacity-floor-before-load");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setInlineLiterals(false)
+				.setAutoGrow(false)
+				.setValueDBSize(1024L * 1024L)
+				.setTripleDBSize(1024L * 1024L);
+		StringBuilder input = new StringBuilder();
+		for (int index = 0; index < 5_000; index++) {
+			input.append("<urn:floor:s")
+					.append(index)
+					.append("> <urn:floor:p> \"")
+					.append("x".repeat(512))
+					.append(index)
+					.append("\" .\n");
+		}
+		long floor = 64L * 1024 * 1024;
+		LmdbBulkLoader.builder(target, config)
+				.partitionCount(256)
+				.memoryBudgetBytes(64L * 1024 * 1024)
+				.maxOpenFiles(64)
+				.valueCapacity(BulkCapacityPolicy.minimumBytes(floor))
+				.tripleCapacity(BulkCapacityPolicy.minimumBytes(floor))
+				.build()
+				.load(new ByteArrayInputStream(input.toString().getBytes(StandardCharsets.UTF_8)), "urn:floor:",
+						RDFFormat.NQUADS);
+		assertTrue(mapSizes(target).stream().allMatch(size -> size >= floor));
+		assertPreparedOpening(target, config, 5_000L);
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "values", "triples", "native-values", "native-triples" })
+	void unrepresentableConfiguredCapacityFailsCleanly(String environment) throws Exception {
+		Path output = directory.resolve(environment + "-capacity-child.log");
+		Process child = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+				"-XX:ErrorFile=" + directory.resolve(environment + "-hs_err_pid%p.log"),
+				"-cp", System.getProperty("java.class.path"), CapacityConfigurationProbe.class.getName(),
+				directory.resolve(environment + "-unrepresentable").toString(), environment)
+						.redirectErrorStream(true)
+						.redirectOutput(output.toFile())
+						.start();
+		int exit = child.waitFor();
+		String diagnostic = Files.readString(output);
+		assertEquals(0, exit, diagnostic);
+		assertTrue(diagnostic.contains("CAPACITY_REJECTED"), diagnostic);
+	}
+
+	public static final class CapacityConfigurationProbe {
+		public static void main(String[] arguments) {
+			LmdbStoreConfig config = new LmdbStoreConfig();
+			boolean nativeAllocation = arguments[1].startsWith("native-");
+			// A multiple of LMDB's maximum supported 64 KiB page is representable, but cannot be mapped alongside
+			// this JVM. Exercise native allocation errors separately from arithmetic overflow before allocation.
+			long requested = nativeAllocation ? Long.MAX_VALUE - 65_535L : Long.MAX_VALUE;
+			if (arguments[1].endsWith("values")) {
+				config.setValueDBSize(requested);
+			} else {
+				config.setTripleDBSize(requested);
+			}
+			SailRepository repository = new SailRepository(new LmdbStore(Path.of(arguments[0]).toFile(), config));
+			try {
+				repository.init();
+				throw new AssertionError("An unrepresentable page-aligned capacity must be rejected");
+			} catch (RuntimeException failure) {
+				for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+					boolean rejected = nativeAllocation ? cause instanceof IOException
+							: cause instanceof IllegalArgumentException && cause.getMessage().contains("capacity");
+					if (rejected) {
+						System.out.println("CAPACITY_REJECTED: " + cause.getMessage());
+						return;
+					}
+				}
+				throw failure;
+			} finally {
+				repository.shutDown();
+			}
+		}
 	}
 
 	@Test

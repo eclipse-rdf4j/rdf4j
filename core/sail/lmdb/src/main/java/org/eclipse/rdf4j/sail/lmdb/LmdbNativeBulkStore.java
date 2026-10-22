@@ -20,6 +20,7 @@ import java.util.UUID;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.sail.lmdb.bulk.BulkCapacityPolicy;
 import org.eclipse.rdf4j.sail.lmdb.bulk.ValidatedBulkGeneration;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 
@@ -155,7 +156,29 @@ public final class LmdbNativeBulkStore implements AutoCloseable {
 
 	/** Completes only a generation whose canonical loader streams and index cardinalities have been verified. */
 	public void completeGeneration(ValidatedBulkGeneration validation) throws IOException {
+		completeGeneration(validation, BulkCapacityPolicy.defaultHeadroom(), BulkCapacityPolicy.defaultHeadroom());
+	}
+
+	/** Plans capacity while both environments are private, before their final durable metadata commits. */
+	public void completeGeneration(ValidatedBulkGeneration validation, BulkCapacityPolicy valueCapacity,
+			BulkCapacityPolicy tripleCapacity) throws IOException {
+		completeGeneration(validation, valueCapacity, tripleCapacity, 0L, Integer.MAX_VALUE);
+	}
+
+	/** Uses the canonical loader's existing full-value envelope, including nested term lexical closures. */
+	public void completeGeneration(ValidatedBulkGeneration validation, BulkCapacityPolicy valueCapacity,
+			BulkCapacityPolicy tripleCapacity, long maximumCanonicalBytes, int maximumTermDepth) throws IOException {
 		validation.requireDirectory(directory);
+		try {
+			long additionalStatements = tripleCapacity.additionalItems(validation.statements());
+			valueStore.reserveBulkCompletionCapacity(valueCapacity.additionalItems(valueStore.bulkStoredValueCount()),
+					additionalStatements, valueCapacity.minimumBytes(), config, maximumCanonicalBytes,
+					maximumTermDepth);
+			tripleStore.reserveBulkCompletionCapacity(additionalStatements, tripleCapacity.minimumBytes());
+		} catch (ArithmeticException | IllegalArgumentException unrepresentable) {
+			throw new IllegalArgumentException("Requested bulk capacity cannot be represented: values " + valueCapacity
+					+ ", triples " + tripleCapacity, unrepresentable);
+		}
 		UUID identity = UUID.randomUUID();
 		byte[] generation = ByteBuffer.allocate(16)
 				.putLong(identity.getMostSignificantBits())

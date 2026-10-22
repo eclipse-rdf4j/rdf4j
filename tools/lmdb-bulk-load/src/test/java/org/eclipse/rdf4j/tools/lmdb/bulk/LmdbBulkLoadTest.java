@@ -49,11 +49,14 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.bulk.BulkArtifact;
+import org.eclipse.rdf4j.sail.lmdb.bulk.BulkCapacityPolicy;
 import org.eclipse.rdf4j.sail.lmdb.bulk.BulkLoadPhase;
 import org.eclipse.rdf4j.sail.lmdb.bulk.LmdbBulkLoader;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBEnvInfo;
@@ -96,6 +99,194 @@ class LmdbBulkLoadTest {
 		assertThat(config.getAutoGrow()).isTrue();
 		assertThat(config.getPageCardinalityEstimator()).isTrue();
 		assertManagerCanOpenPreparedStore(managerBase, store, 1);
+	}
+
+	@Test
+	void acceptsIndependentCapacityPoliciesAndExportsActualMaps() throws Exception {
+		Path input = temporaryDirectory.resolve("input.nt");
+		Files.writeString(input, "<urn:subject> <urn:predicate> <urn:object> .\n");
+		Path store = temporaryDirectory.resolve("capacity-store");
+		ByteArrayOutputStream standardOutput = new ByteArrayOutputStream();
+		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
+
+		int exitCode = LmdbBulkLoad.run(new String[] {
+				"--store", store.toString(),
+				"--input", input.toString(),
+				"--value-capacity", "min:64MiB",
+				"--triple-capacity", "factor:2",
+				"--progress", "none"
+		}, new ByteArrayInputStream(new byte[0]), new PrintStream(standardOutput),
+				new PrintStream(standardError));
+
+		assertThat(exitCode).as(standardError.toString(StandardCharsets.UTF_8)).isZero();
+		LmdbStoreConfig config = readStoreConfiguration(store);
+		long minimumCapacity = 64L * 1024 * 1024;
+		assertThat(config.getValueDBSize()).isGreaterThanOrEqualTo(minimumCapacity);
+		assertThat(config.getTripleDBSize())
+				.as("a value-store minimum does not become a triple-store minimum")
+				.isLessThan(minimumCapacity);
+		assertThat(config.getValueDBSize()).isEqualTo(persistedMapSize(store.resolve("values")));
+		assertThat(config.getTripleDBSize()).isEqualTo(persistedMapSize(store.resolve("triples")));
+		assertThat(standardOutput.toString(StandardCharsets.UTF_8))
+				.contains("value-capacity=min:" + minimumCapacity)
+				.contains("triple-capacity=factor:2")
+				.contains("config=" + store.resolve("config.ttl"));
+	}
+
+	@Test
+	void acceptsFractionalCapacityAndMinimumFloorsForEmptyAndNonemptyInputs() throws Exception {
+		for (String contents : List.of("", "<urn:subject> <urn:predicate> <urn:object> .\n")) {
+			String name = contents.isEmpty() ? "empty" : "nonempty";
+			Path input = temporaryDirectory.resolve(name + ".nt");
+			Files.writeString(input, contents);
+			Path store = temporaryDirectory.resolve(name + "-capacity-store");
+			ByteArrayOutputStream standardOutput = new ByteArrayOutputStream();
+			ByteArrayOutputStream standardError = new ByteArrayOutputStream();
+
+			int exitCode = LmdbBulkLoad.run(new String[] {
+					"--store", store.toString(), "--input", input.toString(),
+					"--value-capacity", "factor:1.5", "--triple-capacity", "min:1", "--progress", "none"
+			}, new ByteArrayInputStream(new byte[0]), new PrintStream(standardOutput), new PrintStream(standardError));
+
+			assertThat(exitCode).as(standardError.toString(StandardCharsets.UTF_8)).isZero();
+			LmdbStoreConfig config = readStoreConfiguration(store);
+			assertThat(config.getValueDBSize()).isPositive();
+			assertThat(config.getTripleDBSize())
+					.as("the byte selection is a minimum, never a limit on loading")
+					.isGreaterThan(1L);
+			assertThat(standardOutput.toString(StandardCharsets.UTF_8))
+					.contains("stored=" + (contents.isEmpty() ? 0 : 1))
+					.contains("value-capacity=factor:1.5")
+					.contains("triple-capacity=min:1");
+		}
+	}
+
+	@Test
+	void rejectsInvalidCapacityPoliciesBeforeCreatingAWorkspace() throws Exception {
+		Path input = temporaryDirectory.resolve("input.nt");
+		Files.writeString(input, "<urn:subject> <urn:predicate> <urn:object> .\n");
+		Path store = temporaryDirectory.resolve("invalid-capacity-store");
+		for (String option : List.of("--value-capacity", "--triple-capacity")) {
+			for (String policy : List.of("", "unknown", "min:0", "min:-1", "min:1.5MiB",
+					"min:9223372036854775808", "min:9223372036854775807GiB", "factor:0.5",
+					"factor:NaN", "factor:Infinity", "factor:-Infinity", "factor:")) {
+				ByteArrayOutputStream standardError = new ByteArrayOutputStream();
+				int exitCode = LmdbBulkLoad.run(new String[] {
+						"--store", store.toString(), "--input", input.toString(), option, policy, "--progress", "none"
+				}, new ByteArrayInputStream(new byte[0]), new PrintStream(new ByteArrayOutputStream()),
+						new PrintStream(standardError));
+
+				assertThat(exitCode).as("%s %s: %s", option, policy, standardError).isEqualTo(2);
+				assertThat(standardError.toString(StandardCharsets.UTF_8)).contains(option);
+				assertThat(store).doesNotExist();
+				assertThat(store.resolveSibling(".invalid-capacity-store.lmdb-bulk-load")).doesNotExist();
+			}
+		}
+	}
+
+	@Test
+	void rejectsUnrepresentableNativeMinimumWithoutPublishing() throws Exception {
+		Path input = temporaryDirectory.resolve("input.nt");
+		Files.writeString(input, "<urn:subject> <urn:predicate> <urn:object> .\n");
+		for (String option : List.of("--value-capacity", "--triple-capacity")) {
+			Path store = temporaryDirectory.resolve(option.substring(2) + "-unrepresentable");
+			ByteArrayOutputStream standardError = new ByteArrayOutputStream();
+
+			int exitCode = LmdbBulkLoad.run(new String[] {
+					"--store", store.toString(), "--input", input.toString(), option, "min:" + Long.MAX_VALUE,
+					"--progress", "none"
+			}, new ByteArrayInputStream(new byte[0]), new PrintStream(new ByteArrayOutputStream()),
+					new PrintStream(standardError));
+
+			assertThat(exitCode).as(standardError.toString(StandardCharsets.UTF_8)).isEqualTo(2);
+			assertThat(standardError.toString(StandardCharsets.UTF_8)).containsIgnoringCase("capacity");
+			assertThat(store).doesNotExist();
+			assertThat(store.resolve("config.ttl")).doesNotExist();
+		}
+	}
+
+	@Test
+	void extremeFactorRoundTripsForEmptyInputsAndRejectsNonemptyCapacityOverflow() throws Exception {
+		Path emptyInput = temporaryDirectory.resolve("empty.nt");
+		Files.writeString(emptyInput, "");
+		String canonical = "factor:1E+999999999";
+		int run = 0;
+		for (String token : List.of("factor:1e999999999", canonical)) {
+			Path store = temporaryDirectory.resolve("empty-extreme-factor-" + run++);
+			ByteArrayOutputStream standardOutput = new ByteArrayOutputStream();
+			ByteArrayOutputStream standardError = new ByteArrayOutputStream();
+
+			int exitCode = LmdbBulkLoad.run(new String[] {
+					"--store", store.toString(), "--input", emptyInput.toString(),
+					"--value-capacity", token, "--triple-capacity", token, "--progress", "none"
+			}, new ByteArrayInputStream(new byte[0]), new PrintStream(standardOutput), new PrintStream(standardError));
+
+			assertThat(exitCode).as(standardError.toString(StandardCharsets.UTF_8)).isZero();
+			assertThat(standardOutput.toString(StandardCharsets.UTF_8))
+					.contains("stored=0")
+					.contains("value-capacity=" + canonical)
+					.contains("triple-capacity=" + canonical);
+			assertThat(readStoreConfiguration(store).getValueDBSize()).isPositive();
+		}
+		Path input = temporaryDirectory.resolve("nonempty.nt");
+		Files.writeString(input, "<urn:subject> <urn:predicate> <urn:object> .\n");
+		Path store = temporaryDirectory.resolve("nonempty-extreme-factor");
+		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
+
+		int exitCode = LmdbBulkLoad.run(new String[] {
+				"--store", store.toString(), "--input", input.toString(),
+				"--value-capacity", canonical, "--triple-capacity", canonical, "--progress", "none"
+		}, new ByteArrayInputStream(new byte[0]), new PrintStream(new ByteArrayOutputStream()),
+				new PrintStream(standardError));
+
+		assertThat(exitCode).as(standardError.toString(StandardCharsets.UTF_8)).isEqualTo(2);
+		assertThat(standardError.toString(StandardCharsets.UTF_8)).containsIgnoringCase("capacity");
+		assertThat(store).doesNotExist();
+		assertThat(store.resolve("config.ttl")).doesNotExist();
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "--value-capacity", "--triple-capacity" })
+	void noninteractiveResumeRetainsRecordedCapacityAndRejectsExplicitConflicts(String option) throws Exception {
+		Path input = temporaryDirectory.resolve("input.nt");
+		Files.writeString(input, "<urn:subject> <urn:predicate> <urn:object> .\n");
+		Path store = temporaryDirectory.resolve("resumed-capacity-store");
+		AtomicBoolean staged = new AtomicBoolean();
+		LmdbBulkLoader interrupted = LmdbBulkLoader.builder(store, new LmdbStoreConfig())
+				.valueCapacity(BulkCapacityPolicy.minimumBytes(64L * 1024 * 1024))
+				.tripleCapacity(BulkCapacityPolicy.factor(3))
+				.progressListener(snapshot -> {
+					if (snapshot.phase() == BulkLoadPhase.STAGE_INPUTS && snapshot.phaseComplete()) {
+						staged.set(true);
+					}
+				})
+				.cancellationSignal(staged::get)
+				.build();
+		assertThatThrownBy(() -> interrupted.load(List.of(
+				new LmdbBulkLoader.PathInput(input, RDFFormat.NTRIPLES, input.toUri().toString()))))
+						.isInstanceOf(CancellationException.class);
+		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
+
+		int rejected = LmdbBulkLoad.run(new String[] {
+				"--store", store.toString(), "--input", input.toString(), option, "factor:2",
+				"--progress", "none"
+		}, new ByteArrayInputStream(new byte[0]), new PrintStream(new ByteArrayOutputStream()),
+				new PrintStream(standardError));
+
+		assertThat(rejected).as(standardError.toString(StandardCharsets.UTF_8)).isEqualTo(2);
+		assertThat(standardError.toString(StandardCharsets.UTF_8)).contains("capacity");
+		assertThat(store.resolve("config.ttl")).doesNotExist();
+		standardError.reset();
+		ByteArrayOutputStream standardOutput = new ByteArrayOutputStream();
+		int resumed = LmdbBulkLoad.run(new String[] {
+				"--store", store.toString(), "--input", input.toString(), "--progress", "none"
+		}, new ByteArrayInputStream(new byte[0]), new PrintStream(standardOutput), new PrintStream(standardError));
+
+		assertThat(resumed).as(standardError.toString(StandardCharsets.UTF_8)).isZero();
+		assertThat(readStoreConfiguration(store).getValueDBSize()).isGreaterThanOrEqualTo(64L * 1024 * 1024);
+		assertThat(standardOutput.toString(StandardCharsets.UTF_8))
+				.contains("value-capacity=min:67108864")
+				.contains("triple-capacity=factor:3");
 	}
 
 	@Test
@@ -370,7 +561,9 @@ class LmdbBulkLoadTest {
 				"false",
 				"true",
 				"1000",
-				"1MiB") + "\n";
+				"1MiB",
+				"",
+				"") + "\n";
 		ByteArrayOutputStream standardOutput = new ByteArrayOutputStream();
 		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
 
@@ -387,7 +580,9 @@ class LmdbBulkLoadTest {
 				.contains("RDF-star term indexes [spoc,cspo]");
 		assertThat(standardOutput.toString(StandardCharsets.UTF_8))
 				.contains("parsed=1")
-				.contains("stored=1");
+				.contains("stored=1")
+				.contains("value-capacity=default")
+				.contains("triple-capacity=default");
 		Properties properties = new Properties();
 		try (var inputStream = Files.newInputStream(store.resolve("store.properties"))) {
 			properties.load(inputStream);
@@ -396,6 +591,52 @@ class LmdbBulkLoadTest {
 				.containsEntry("triple-indexes", "spoc,ospc,posc")
 				.containsEntry("triple-term-indexes", "spoc,cspo,posc")
 				.containsEntry("inline-literals", "false");
+	}
+
+	@Test
+	void interactiveCapacityOffersIndependentChoicesAndRetriesInvalidAnswers() throws Exception {
+		Path input = temporaryDirectory.resolve("input.nt");
+		Files.writeString(input, "<urn:subject> <urn:predicate> <urn:object> .\n");
+		Path store = temporaryDirectory.resolve("interactive-capacity-store");
+		String answers = String.join("\n", "unknown", "minimum size", "0", "64MiB",
+				"factor", "NaN", "0.5", "1.5") + "\n";
+		ByteArrayOutputStream standardOutput = new ByteArrayOutputStream();
+		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
+
+		int exitCode = LmdbBulkLoad.run(interactiveCapacityArguments(store, input),
+				new ByteArrayInputStream(answers.getBytes(StandardCharsets.UTF_8)),
+				new PrintStream(standardOutput), new PrintStream(standardError));
+
+		String prompts = standardError.toString(StandardCharsets.UTF_8);
+		assertThat(exitCode).as(prompts).isZero();
+		assertThat(prompts)
+				.contains("Value-store capacity (default, minimum size, or factor) [default]")
+				.contains("Triple-store capacity (default, minimum size, or factor) [default]")
+				.contains("64MiB")
+				.contains("1.5")
+				.contains("never a limit")
+				.contains("Choose default, minimum size, or factor.")
+				.contains("Minimum capacity bytes must be positive")
+				.contains("Capacity factor must be finite and at least 1");
+		LmdbStoreConfig config = readStoreConfiguration(store);
+		assertThat(config.getValueDBSize()).isGreaterThanOrEqualTo(64L * 1024 * 1024);
+		assertThat(config.getTripleDBSize()).isLessThan(64L * 1024 * 1024);
+		assertThat(standardOutput.toString(StandardCharsets.UTF_8))
+				.contains("value-capacity=min:67108864")
+				.contains("triple-capacity=factor:1.5");
+	}
+
+	private String[] interactiveCapacityArguments(Path store, Path input) {
+		return new String[] {
+				"--interactive", "--store", store.toString(), "--input", input.toString(),
+				"--format", "nt", "--base-uri", input.toUri().toString(), "--parser", "auto",
+				"--statement-indexes", "spoc,posc", "--triple-term-indexes", "spoc,cspo",
+				"--memory", "64MiB", "--partitions", "2", "--max-open-files", "64",
+				"--workers", "1", "--queue-batches", "1", "--compression", "none", "--progress", "none",
+				"--temporary-directory", temporaryDirectory.resolve("spill").toString(),
+				"--inline-literals", "true", "--value-hash-cache", "false",
+				"--write-transaction-records", "1000", "--write-transaction-bytes", "1MiB"
+		};
 	}
 
 	@Test
@@ -471,7 +712,8 @@ class LmdbBulkLoadTest {
 				"--interactive",
 				"--store", store.toString(),
 				"--input", input.toString(),
-				"--statement-indexes", "ospc,spoc,posc"
+				"--statement-indexes", "ospc,spoc,posc",
+				"--value-capacity", "factor:2", "--triple-capacity", "min:32MiB"
 		}, new ByteArrayInputStream(answers.getBytes(StandardCharsets.UTF_8)),
 				new PrintStream(standardOutput), new PrintStream(standardError));
 
@@ -482,7 +724,12 @@ class LmdbBulkLoadTest {
 				.doesNotContain("Store directory:")
 				.doesNotContain("RDF input file or directory:")
 				.doesNotContain("Statement indexes [")
+				.doesNotContain("Value-store capacity (")
+				.doesNotContain("Triple-store capacity (")
 				.contains("RDF-star term indexes [spoc,cspo]");
+		assertThat(standardOutput.toString(StandardCharsets.UTF_8))
+				.contains("value-capacity=factor:2")
+				.contains("triple-capacity=min:33554432");
 		Properties properties = new Properties();
 		try (var inputStream = Files.newInputStream(store.resolve("store.properties"))) {
 			properties.load(inputStream);
@@ -597,7 +844,7 @@ class LmdbBulkLoadTest {
 				"", "", "", "", "", "", "", "", "", "",
 				"",
 				"none",
-				"", "", "", "", "") + "\n";
+				"", "", "", "", "", "", "") + "\n";
 		ByteArrayOutputStream standardOutput = new ByteArrayOutputStream();
 		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
 
@@ -632,6 +879,8 @@ class LmdbBulkLoadTest {
 		LmdbBulkLoader interrupted = LmdbBulkLoader.builder(store, original)
 				.partitionCount(8)
 				.workers(3)
+				.valueCapacity(BulkCapacityPolicy.minimumBytes(64L * 1024 * 1024))
+				.tripleCapacity(BulkCapacityPolicy.factor(2))
 				.cancellationSignal(() -> checks.incrementAndGet() >= 4)
 				.build();
 		assertThatThrownBy(() -> interrupted
@@ -666,9 +915,15 @@ class LmdbBulkLoadTest {
 				.doesNotContain("Inline literals (")
 				.doesNotContain("Worker count [")
 				.doesNotContain("Value partition count [")
+				.doesNotContain("Value-store capacity (")
+				.doesNotContain("Triple-store capacity (")
 				.doesNotContain("Compression (")
 				.doesNotContain("RDF input file")
 				.doesNotContain("Store directory");
+		assertThat(standardOutput.toString(StandardCharsets.UTF_8))
+				.contains("value-capacity=min:67108864")
+				.contains("triple-capacity=factor:2");
+		assertThat(readStoreConfiguration(store).getValueDBSize()).isGreaterThanOrEqualTo(64L * 1024 * 1024);
 	}
 
 	/**
@@ -701,6 +956,25 @@ class LmdbBulkLoadTest {
 		assertThat(exitCode).isZero();
 		assertThat(standardOutput.toString(StandardCharsets.UTF_8))
 				.contains("--interactive");
+	}
+
+	@Test
+	void helpDocumentsIndependentCapacityPolicies() {
+		ByteArrayOutputStream standardOutput = new ByteArrayOutputStream();
+		int exitCode = LmdbBulkLoad.run(new String[] { "--help" }, new ByteArrayInputStream(new byte[0]),
+				new PrintStream(standardOutput), new PrintStream(new ByteArrayOutputStream()));
+
+		assertThat(exitCode).isZero();
+		assertThat(standardOutput.toString(StandardCharsets.UTF_8))
+				.contains("--value-capacity")
+				.contains("--triple-capacity")
+				.contains("min:64MiB")
+				.contains("factor:2")
+				.contains("factor:3")
+				.contains("factor:1.5")
+				.contains("100,000")
+				.contains("10%")
+				.contains("floor, never a limit");
 	}
 
 	@Test
@@ -1109,7 +1383,7 @@ class LmdbBulkLoadTest {
 		for (BulkArtifact artifact : BulkArtifact.values()) {
 			answers.add(artifact == BulkArtifact.ID_QUADS ? "none" : "");
 		}
-		answers.addAll(List.of("none", "", "", "", "", ""));
+		answers.addAll(List.of("none", "", "", "", "", "", "", ""));
 		ByteArrayOutputStream standardOutput = new ByteArrayOutputStream();
 		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
 
@@ -1138,12 +1412,12 @@ class LmdbBulkLoadTest {
 		Path store = temporaryDirectory.resolve("store");
 		// Prompts in order: format, parser, base-uri, statement-indexes, triple-term-indexes, memory, partitions,
 		// max-open-files, workers, queue-batches, compression, progress, temporary-directory, inline-literals,
-		// value-hash-cache, write-transaction-records, write-transaction-bytes.
+		// value-hash-cache, write-transaction-records, write-transaction-bytes, value-capacity, triple-capacity.
 		String answers = String.join("\n",
 				"", "", "", "", "", "", "", "", "", "",
 				"9",
 				"none",
-				"", "", "", "", "") + "\n";
+				"", "", "", "", "", "", "") + "\n";
 		ByteArrayOutputStream standardOutput = new ByteArrayOutputStream();
 		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
 
@@ -1178,7 +1452,7 @@ class LmdbBulkLoadTest {
 				"turbo",
 				"",
 				"none",
-				"", "", "", "", "") + "\n";
+				"", "", "", "", "", "", "") + "\n";
 		ByteArrayOutputStream standardOutput = new ByteArrayOutputStream();
 		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
 
@@ -1213,12 +1487,12 @@ class LmdbBulkLoadTest {
 		Path store = temporaryDirectory.resolve("store");
 		// Prompts in order: format, parser, base-uri, statement-indexes, triple-term-indexes, memory, partitions,
 		// max-open-files, workers, queue-batches, compression, progress, temporary-directory, inline-literals,
-		// value-hash-cache, write-transaction-records, write-transaction-bytes.
+		// value-hash-cache, write-transaction-records, write-transaction-bytes, value-capacity, triple-capacity.
 		String answers = String.join("\n",
 				"", "", "", "", "", "", "", "", "", "",
 				"runs=fast,staged=17",
 				"none",
-				"", "", "", "", "") + "\n";
+				"", "", "", "", "", "", "") + "\n";
 		ByteArrayOutputStream standardOutput = new ByteArrayOutputStream();
 		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
 

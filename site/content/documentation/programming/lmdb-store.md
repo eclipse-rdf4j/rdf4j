@@ -200,9 +200,49 @@ replace or upgrade an existing repository in place. These write paths do not dep
 A successful standalone bulk load also publishes `config.ttl`, using the final target directory name as its repository
 ID. That name must satisfy the local repository manager's portable-name rules. The configuration records the effective
 statement and RDF-star indexes, all selected store settings, and the final native map capacities, including growth during
-loading. Place the target directly in the server's repository directory, or move the complete directory to another
-repository manager while retaining its name. If you rename the repository directory, update its repository ID in
-`config.ttl` to match.
+loading and the selected capacity reserve. Place the target directly in the server's repository directory, or move the
+complete directory to another repository manager while retaining its name. If you rename the repository directory,
+update its repository ID in `config.ttl` to match.
+
+Choose value-store and triple-store capacity independently with `--value-capacity POLICY` and `--triple-capacity POLICY`.
+Interactive setup offers the same choices separately for each store: default headroom, a minimum size, or a factor.
+Press Enter to keep the default, or choose a minimum size such as `64MiB` or a total-count factor such as `2`, `3`, or `1.5`.
+
+| Policy | Meaning |
+|---|---|
+| `default` | Reserve room for the smaller of 100,000 additional items and 10% of the actual loaded distinct count, rounded up. |
+| `min:64MiB` | Keep the native map at least 64 MiB. This is a floor, never a limit: larger data still loads and grows normally. Byte counts also accept KiB, GiB and TiB. |
+| `factor:2` | Reserve room for twice the total loaded count. `factor:3` means three times the count; `factor:1.5` means one and a half times. Factors must be finite and at least one. |
+
+For example, reserve at least 64 MiB for values and room for twice the loaded statement count:
+
+```bash
+./lmdb-bulk-load.sh --store repositories/example --input data.nt \
+  --value-capacity min:64MiB --triple-capacity factor:2
+```
+
+The value count is the number of unique stored dictionary and RDF-star term identities; inline values do not consume
+dictionary entries. The triple count is the number of distinct stored statements, so duplicate input does not increase
+that count. RDF-star term indexes share the value store's capacity. Adding a statement can require space in both stores,
+and each reserve must cover its own demand. Factors multiply counts, rather than map byte sizes. Minimum-size policies
+reserve a byte floor without promising an additional item count. All policies retain the space required for loaded data
+and prepared startup, and the generated `config.ttl` records the actual final bytes for both maps.
+
+Count-based reservations use the encoded-size envelope observed while loading and the existing native write estimates.
+They assume subsequent items fit that envelope, index families and generated write/batch settings remain unchanged,
+and ordinary appends do not keep historical readers pinned across writes. Increasing `bulkOperationSize` later can
+increase native admission demand. Arbitrarily larger future literals or pinned transaction histories can require
+growth before the selected count is reached. Resuming an interrupted load keeps its recorded policies; an explicitly
+conflicting policy is rejected.
+
+An unfinished older workspace that has not published its native output can rebuild using the new default policies.
+Already-published output without recorded capacity policies and completed sizing evidence is preserved, and recovery
+reports a compatibility error. It remains an older publication under its previous capacity contract; use its original
+loader to finish recovery, or retain that store and choose a new empty target for a capacity-managed load.
+
+An item-count percentage is not a percentage of native map bytes. Existing native copy-on-write admission estimates can
+require a substantially larger virtual map reserve than the item percentage suggests. Map size reserves address capacity;
+physical memory and disk allocation depend on the platform and LMDB mapping mode.
 
 The loader establishes reference-count integrity and reserves startup capacity before publication, using its existing
 value and index passes. Its preparation metadata binds both native environments to the same generation and committed

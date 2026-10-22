@@ -76,6 +76,8 @@ public final class LmdbBulkLoader {
 	private final IntConsumer benchmarkActivePartitionObserver;
 	private final int stagingBlockBytes;
 	private final PreparedGenerationWriter preparedGenerationWriter;
+	private final BulkCapacityPolicy valueCapacity;
+	private final BulkCapacityPolicy tripleCapacity;
 
 	private LmdbBulkLoader(Builder builder) {
 		target = builder.target;
@@ -98,6 +100,26 @@ public final class LmdbBulkLoader {
 		benchmarkActivePartitionObserver = builder.benchmarkActivePartitionObserver;
 		stagingBlockBytes = builder.stagingBlockBytes;
 		preparedGenerationWriter = builder.preparedGenerationWriter;
+		valueCapacity = builder.valueCapacity;
+		tripleCapacity = builder.tripleCapacity;
+	}
+
+	/** Configured value-capacity policy; an unspecified policy inherits the workspace choice on resume. */
+	public BulkCapacityPolicy valueCapacity() {
+		return valueCapacity == null ? BulkCapacityPolicy.defaultHeadroom() : valueCapacity;
+	}
+
+	/** Configured triple-capacity policy; an unspecified policy inherits the workspace choice on resume. */
+	public BulkCapacityPolicy tripleCapacity() {
+		return tripleCapacity == null ? BulkCapacityPolicy.defaultHeadroom() : tripleCapacity;
+	}
+
+	BulkCapacityPolicy requestedValueCapacity() {
+		return valueCapacity;
+	}
+
+	BulkCapacityPolicy requestedTripleCapacity() {
+		return tripleCapacity;
 	}
 
 	/** Writes application-owned configuration into a private, validated generation before publication. */
@@ -321,6 +343,8 @@ public final class LmdbBulkLoader {
 		private int stagingBlockBytes;
 		private PreparedGenerationWriter preparedGenerationWriter = (directory, preparedConfig) -> {
 		};
+		private BulkCapacityPolicy valueCapacity;
+		private BulkCapacityPolicy tripleCapacity;
 
 		private Builder(Path target, LmdbStoreConfig config) {
 			this.target = Objects.requireNonNull(target, "target").toAbsolutePath().normalize();
@@ -329,6 +353,18 @@ public final class LmdbBulkLoader {
 
 		public Builder parserMode(ParserMode parserMode) {
 			this.parserMode = Objects.requireNonNull(parserMode, "parserMode");
+			return this;
+		}
+
+		/** Plans independent final value-map capacity, including all RDF-star term indexes. */
+		public Builder valueCapacity(BulkCapacityPolicy policy) {
+			valueCapacity = Objects.requireNonNull(policy, "policy");
+			return this;
+		}
+
+		/** Plans final statement-map capacity. A factor describes total statement count, not map bytes. */
+		public Builder tripleCapacity(BulkCapacityPolicy policy) {
+			tripleCapacity = Objects.requireNonNull(policy, "policy");
 			return this;
 		}
 
