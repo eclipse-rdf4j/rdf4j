@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -111,6 +112,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.StrLangDir;
+import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Sum;
 import org.eclipse.rdf4j.query.algebra.TripleComponent;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
@@ -1009,9 +1011,12 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		if (expr instanceof ValueConstant constant && constant.getValue() instanceof Literal literal) {
 			CoreDatatype datatype = literal.getCoreDatatype();
 			if (datatype.isXSDDatatype() && ((CoreDatatype.XSD) datatype).isIntegerDatatype()) {
+				if (!XMLDatatypeUtil.isValidValue(literal.getLabel(), datatype)) {
+					throw new VisitorException("invalid frame bound: " + literal);
+				}
 				try {
-					return literal.longValue();
-				} catch (NumberFormatException e) {
+					return literal.integerValue().longValueExact();
+				} catch (NumberFormatException | ArithmeticException e) {
 					throw new VisitorException("invalid frame bound: " + literal);
 				}
 			}
@@ -1034,6 +1039,11 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		public List<FunctionCall> getCalls() {
 			return calls;
+		}
+
+		@Override
+		protected void meetSubQueryValueOperator(SubQueryValueOperator node) {
+			// A graph pattern has its own expression positions. Nested SELECTs already lower their own windows.
 		}
 
 		@Override

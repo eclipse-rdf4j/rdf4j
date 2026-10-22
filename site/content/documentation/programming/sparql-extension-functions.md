@@ -75,7 +75,7 @@ JSON values are `rdf:JSON` literals; string literals holding JSON text are accep
 
 `jsonf:jsonValue(json, path)` (one scalar as a typed literal), `jsonQuery(json, path)` (`rdf:JSON`, several matches are wrapped in an array), `jsonExists`, `jsonKeys(json [, path])`, `jsonArrayLength(json [, path])`, `jsonObject(k1, v1, ...)`, `jsonArray(...)`, `jsonSet(json, path, value)`.
 
-Arrays are `rdf:JSON` arrays. RDF terms are stored losslessly: plain strings, numbers and booleans as JSON primitives, IRIs as `{"@id": ...}` and other literals as `{"@value": ..., "@type"|"@language": ...}`. `arrf:arrayContains(array, x)`, `arrf:arrayLength(array)` and `arrf:generateSeries(start, stop [, step])` are scalar functions.
+Arrays are `rdf:JSON` arrays. RDF terms are stored losslessly: strings, numbers and booleans use JSON primitives only when their exact RDF datatype and lexical form survive decoding; other literals use `{"@value": ..., "@type"|"@language": ...}`, and IRIs use `{"@id": ...}`. This preserves derived numeric types, noncanonical or malformed literal forms, floating-point types and non-finite values. Numeric array membership compares values across primitive and typed encodings. JSON exponent numbers outside the finite, nonzero `double` range remain exact and compact in JSON queries; extracting this category as an RDF number with `jsonValue` or `unnest` raises an evaluation error rather than expanding its decimal lexical form. `arrf:arrayContains(array, x)`, `arrf:arrayLength(array)` and `arrf:generateSeries(start, stop [, step])` are scalar functions.
 
 ### Set-returning functions (magic properties)
 

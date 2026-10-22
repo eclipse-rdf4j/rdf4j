@@ -13,6 +13,18 @@ package org.eclipse.rdf4j.queryrender;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import org.eclipse.rdf4j.model.vocabulary.WINF;
+import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.Window;
+import org.eclipse.rdf4j.query.algebra.WindowElem;
+import org.eclipse.rdf4j.query.algebra.WindowFunctionCall;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
 
 public class VarNameNormalizerTest {
@@ -29,5 +41,60 @@ public class VarNameNormalizerTest {
 				""";
 
 		assertThat(VarNameNormalizer.normalizeVars(actual)).isEqualTo(VarNameNormalizer.normalizeVars(expected));
+	}
+
+	@Test
+	void normalizesWindowBindingNamesAndReferencesTogether() {
+		TupleExpr first = windowQuery();
+		TupleExpr second = windowQuery();
+		String firstBefore = first.toString();
+		String secondBefore = second.toString();
+		assertThat(VarNameNormalizer.normalizeModelVariables(first))
+				.isEqualTo(VarNameNormalizer.normalizeModelVariables(second));
+		assertThat(first.toString()).isEqualTo(firstBefore);
+		assertThat(second.toString()).isEqualTo(secondBefore);
+	}
+
+	@Test
+	void keepsGenuineWindowOutputNames() {
+		Window window = new Window(new SingletonSet());
+		window.addElement(new WindowElem("_anon_visible", new WindowFunctionCall(WINF.ROW_NUMBER.stringValue())));
+		Extension expression = new Extension(window);
+		expression.addElement(new ExtensionElem(Var.of("_anon_visible"), "output"));
+		String normalized = VarNameNormalizer.normalizeModelVariables(expression);
+		assertThat(normalized).contains("WindowElem (_anon_visible)", "Var (name=_anon_visible)");
+	}
+
+	@Test
+	void distinguishesSwappedWindowBindingReferences() {
+		TupleExpr original = windowQuery();
+		TupleExpr swapped = original.clone();
+		String[] names = new String[2];
+		swapped.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Window window) {
+				names[0] = window.getElements().get(0).getName();
+				names[1] = window.getElements().get(1).getName();
+			}
+
+			@Override
+			public void meet(ExtensionElem element) {
+				if (element.getName().equals("rank") || element.getName().equals("number")) {
+					String name = names[element.getName().equals("rank") ? 1 : 0];
+					element.setExpr(Var.of(name, null, true, false));
+				}
+			}
+		});
+		assertThat(VarNameNormalizer.normalizeModelVariables(swapped))
+				.isNotEqualTo(VarNameNormalizer.normalizeModelVariables(original));
+	}
+
+	private static TupleExpr windowQuery() {
+		return QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"PREFIX winf:<http://rdf4j.org/function/window#> SELECT"
+						+ " (winf:rank(winf:orderBy(?x)) AS ?rank)"
+						+ " (winf:rowNumber(winf:orderBy(?x)) AS ?number) WHERE {VALUES ?x {1 2}}",
+				null)
+				.getTupleExpr();
 	}
 }
