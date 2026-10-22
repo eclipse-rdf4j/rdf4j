@@ -107,7 +107,10 @@ import {
   sparqlResourceToken,
   type SparqlTerm,
 } from "./rdf-terms";
-import type { WorkspacePayload } from "./workspace";
+import type { WorkspacePayload, WorkspaceViewState } from "./workspace";
+import { useWorkspaceLibrary } from "./use-workspace-library.tsx";
+import { workspaceSnapshotSource } from "./workspace-snapshots.ts";
+import type { WorkspaceSnapshotMetadata } from "./workspace-snapshot-store.ts";
 import { repositoryScope } from "./repository-identity.ts";
 
 export type GraphExplorerProps = {
@@ -122,6 +125,11 @@ export type GraphExplorerProps = {
 };
 
 const EMPTY_LABEL_EVIDENCE: LabelEvidence = { properties: [], languages: [], complete: false };
+
+type WorkspaceHistorySnapshot = GraphHistorySnapshot & {
+  workspace: Pick<WorkspacePayload, "query" | "scope" | "view">;
+  namedSnapshot: WorkspaceSnapshotMetadata | null;
+};
 
 export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limits }: GraphExplorerProps) {
   const workspaceScope = repositoryScope(basePath, repositoryId, serverIdentity);
@@ -148,7 +156,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     [drawnGraph, largeGraph],
   );
   const shownGraph = classLinks.graph;
-  const { policy: labelPolicy, updateLanguages, updateProperties, resetLanguages, resetProperties } = useLabelPolicy();
+  const { policy: labelPolicy, updateLanguages, updateProperties, resetLanguages, resetProperties, restorePolicy } = useLabelPolicy();
   const languages = labelPolicy.languages, labelProperties = labelPolicy.properties;
   const { dismissed: dismissedLabelGuidance, dismiss: dismissLabelGuidance } = useDismissedLabelGuidance(workspaceScope);
   const [labelEvidence, setLabelEvidence] = useState<{ explorer: RdfExplorer | null; evidence: LabelEvidence }>(
@@ -226,6 +234,9 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
   /** The filters' range texts and how to put them back, from `useFacetFilters` (set once it is called). */
   const rangeDraftsRef = useRef<ReadonlyMap<string, RangeDraft>>(new Map());
   const restoreRangeDraftsRef = useRef<(drafts: ReadonlyMap<string, RangeDraft>) => void>(() => {});
+  const workspaceSettingsRef = useRef<WorkspaceHistorySnapshot["workspace"]>({ query, scope: graphScope });
+  const currentNamedSnapshotRef = useRef<() => WorkspaceSnapshotMetadata | null>(() => null);
+  const restoreNamedSnapshotRef = useRef<(snapshot: WorkspaceSnapshotMetadata | null) => void>(() => {});
   const focusedNodeRef = useRef(focusedNodeId);
   const transformRef = useRef(transform);
   const graphRequestAbortRef = useRef<AbortController | null>(null);
@@ -326,7 +337,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     groupDrag: boolean;
     leafGroupDrag: boolean;
     moved: boolean;
-    historySnapshot: GraphHistorySnapshot;
+    historySnapshot: WorkspaceHistorySnapshot;
   } | null>(null);
   const lastNodeTapRef = useRef<{
     nodeId: string;
@@ -670,8 +681,52 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     setEdgeRoutes(routed.routes);
   };
 
+  const captureView = (): WorkspaceViewState => ({
+    version: 1,
+    showValues,
+    showAllEdgeLabels,
+    viewMode,
+    selectedFacetValues: [...facetValuesRef.current].map(([id, values]) => [id, [...values]]),
+    facetModes: [...facetModesRef.current],
+    rangeDrafts: [...rangeDraftsRef.current].map(([id, range]) => [id, { ...range }]),
+    labelPolicy: { ...labelPolicy, languages: [...labelPolicy.languages], properties: [...labelPolicy.properties] },
+    panels: { query: queryPanelOpen, filters: filterSidebarOpen, navigator: navigatorOpen, history: provenanceOpen, inspector: inspectorOpen },
+    focusedEdgeId,
+  });
+
+  const applyView = useCallback((view?: WorkspaceViewState) => {
+    if (!view) {
+      // Old workspaces keep the user's display preferences and open in the graph view without filters.
+      clearFacetFilters();
+      restoreRangeDraftsRef.current(new Map());
+      setViewMode("graph");
+      setQueryPanelOpen(false);
+      setFilterSidebarOpen(false);
+      setNavigatorOpen(false);
+      setProvenanceOpen(false);
+      return;
+    }
+    showValuesRef.current = view.showValues;
+    setShowValues(view.showValues);
+    setShowAllEdgeLabels(view.showAllEdgeLabels);
+    setViewMode(view.viewMode);
+    setSelectedFacetValues(new Map(view.selectedFacetValues.map(([id, values]) => [id, new Set(values)])));
+    setFacetModes(new Map(view.facetModes));
+    restoreRangeDraftsRef.current(new Map(view.rangeDrafts.map(([id, range]) => [id, { ...range }])));
+    restorePolicy({ ...view.labelPolicy, languages: [...view.labelPolicy.languages], properties: [...view.labelPolicy.properties] });
+    setQueryPanelOpen(view.panels.query);
+    setFilterSidebarOpen(view.panels.filters);
+    setNavigatorOpen(view.panels.navigator);
+    setProvenanceOpen(view.panels.history);
+    setInspectorOpen(view.panels.inspector);
+    setFocusedEdgeId(view.focusedEdgeId);
+  }, [clearFacetFilters, restorePolicy]);
+
+  // History callbacks stay stable; settings are read when a change is recorded, including after range edits.
+  workspaceSettingsRef.current = { query, scope: graphScope, view: captureView() };
+
   const makeHistorySnapshot = useCallback(
-    (): GraphHistorySnapshot => ({
+    (): WorkspaceHistorySnapshot => ({
       graph: graphRef.current,
       provenanceBatches: provenanceBatchesRef.current,
       transform: { ...transformRef.current },
@@ -684,12 +739,18 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
       facetValues: [...facetValuesRef.current].map(([facetId, values]) => [facetId, [...values]]),
       rangeDrafts: [...rangeDraftsRef.current],
       facetModes: [...facetModesRef.current],
+      workspace: workspaceSettingsRef.current,
+      namedSnapshot: currentNamedSnapshotRef.current(),
     }),
     [],
   );
 
-  const applyHistorySnapshot = useCallback((snapshot: GraphHistorySnapshot) => {
+  const applyHistorySnapshot = useCallback((snapshot: WorkspaceHistorySnapshot) => {
     invalidateAsyncRequests();
+    layoutJobRef.current?.cancel();
+    layoutJobRef.current = null;
+    setMetadataEpoch((epoch) => epoch + 1);
+    if (snapshot.workspace.view) showValuesRef.current = snapshot.workspace.view.showValues;
     setProvenanceBatches(snapshot.provenanceBatches);
     layoutIntentRef.current = null;
     localLayoutNodeIdsRef.current = null;
@@ -715,8 +776,12 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     setHoveredNodeId(null);
     setPathHighlight(null);
     dismissContextMenu(true);
+    setQuery(snapshot.workspace.query);
+    setGraphScope(snapshot.workspace.scope ?? "default");
+    applyView(snapshot.workspace.view);
+    restoreNamedSnapshotRef.current(snapshot.namedSnapshot);
     applyRouting(snapshot.graph);
-  }, [animateProgrammaticGraph, dismissContextMenu, invalidateAsyncRequests]);
+  }, [animateProgrammaticGraph, applyView, dismissContextMenu, invalidateAsyncRequests]);
 
   const history = useUndoHistory(makeHistorySnapshot, applyHistorySnapshot, HISTORY_LIMIT);
   const pushHistory = history.push;
@@ -730,10 +795,16 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
   /** The graph is kept in the browser's database, per repository, and comes back when the page opens again. */
   /** Shows a stored graph: when the page opens, or (replacing what is shown) when another tab saved a newer one. */
   const showStored = (saved: WorkspacePayload) => {
+    layoutJobRef.current?.cancel();
+    layoutJobRef.current = null;
+    setIsLayoutComputing(false);
+    setMetadataEpoch((epoch) => epoch + 1);
     layoutIntentRef.current = null;
     localLayoutNodeIdsRef.current = null;
-    applyRouting(saved.graph);
-    const restoredGraph = { ...saved.graph, revision: graphRef.current.revision + saved.graph.revision + 1 };
+    if (saved.view) showValuesRef.current = saved.view.showValues;
+    applyRouting(saved.graph, saved.view?.showValues);
+    // The incoming revision belongs to another view; only this page's generation orders asynchronous work.
+    const restoredGraph = { ...saved.graph, revision: graphRef.current.revision + 1 };
     animateProgrammaticGraph(restoredGraph, saved.transform, { skipLayout: true, duration: 0 });
     setQuery(saved.query);
     setProvenanceBatches(saved.provenanceBatches);
@@ -741,29 +812,37 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     setManualSelectedNodeIds(new Set(saved.selectedNodeIds));
     setFocusedNodeId(saved.focusedNodeId);
     setFocusedEdgeId(null);
-    clearFacetFilters();
+    setHoveredNodeId(null);
+    setHoveredEdgeId(null);
+    setPathHighlight(null);
+    selectionAnchorRef.current = null;
     // A focused node dims the rest of the graph; its card says why.
     setInspectorOpen(Boolean(saved.focusedNodeId));
     setGraphScope(saved.scope ?? "default");
+    applyView(saved.view);
   };
+  const captureWorkspace = (): WorkspacePayload => ({
+    graph: graphRef.current,
+    transform: { ...transformRef.current },
+    query,
+    endpointId: `rdf4j:${repositoryId}`,
+    customUrl: "",
+    provenanceBatches: provenanceBatchesRef.current,
+    namedGroups: namedGroupsRef.current,
+    selectedNodeIds: [...manualSelectedNodeIdsRef.current],
+    focusedNodeId: focusedNodeRef.current,
+    scope: graphScope,
+    savedAt: null,
+    view: captureView(),
+  });
   const {
     restored: workspaceRestored, checkForNewer, unreadable: unreadableWorkspace, recoverUnreadable, discardUnreadable,
   } = useStoredWorkspace({
     scope: workspaceScope,
-    snapshot: (): WorkspacePayload => ({
-      graph: graphRef.current,
-      transform: transformRef.current,
-      query,
-      endpointId: `rdf4j:${repositoryId}`,
-      customUrl: "",
-      provenanceBatches: provenanceBatchesRef.current,
-      namedGroups: namedGroupsRef.current,
-      selectedNodeIds: [...manualSelectedNodeIdsRef.current],
-      focusedNodeId: focusedNodeRef.current,
-      scope: graphScope,
-      savedAt: null,
-    }),
-    changes: [graph, transform, query, provenanceBatches, namedGroups, manualSelectedNodeIds, focusedNodeId, graphScope],
+    snapshot: captureWorkspace,
+    changes: [graph, transform, query, provenanceBatches, namedGroups, manualSelectedNodeIds, focusedNodeId, graphScope,
+      showValues, showAllEdgeLabels, viewMode, selectedFacetValues, facetModes, labelPolicy, queryPanelOpen,
+      filterSidebarOpen, navigatorOpen, provenanceOpen, inspectorOpen, focusedEdgeId],
     busy: isLayoutAnimating || isLayoutComputing || draggingNodeId !== null || isLargeGraphDragging,
     restore: (saved) => {
       if (graphRef.current.nodes.length) return false;
@@ -774,11 +853,34 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
       invalidateAsyncRequests();
       dismissContextMenu(true);
       pushHistory();
+      restoreNamedSnapshotRef.current(null);
       showStored(saved);
       setStatus(message);
     },
     notify: setStatus,
   });
+
+  const librarySource = useMemo(() => workspaceSnapshotSource(basePath, repositoryId, serverIdentity), [basePath, repositoryId, serverIdentity]);
+  const workspaceBusy = isQuerying || isDiscoveringEdges || expandingNodeIds.size > 0 || isLayoutAnimating ||
+    isLayoutComputing || draggingNodeId !== null || isLargeGraphDragging;
+  const workspaceLibrary = useWorkspaceLibrary({
+    source: librarySource,
+    capture: captureWorkspace,
+    hasContent: () => graphRef.current.nodes.length > 0 || query.trim() !== DEFAULT_QUERY.trim() ||
+      namedGroupsRef.current.length > 0 || graphScope !== "default",
+    returnFocusTarget: () => toolbarMenuRef.current?.querySelector<HTMLElement>("summary") ?? null,
+    ready: workspaceRestored,
+    busy: workspaceBusy,
+    replace: (saved) => {
+      pushHistory();
+      invalidateAsyncRequests();
+      dismissContextMenu(true);
+      showStored(saved);
+    },
+    notify: setStatus,
+  });
+  currentNamedSnapshotRef.current = workspaceLibrary.getActive;
+  restoreNamedSnapshotRef.current = workspaceLibrary.setActive;
 
   const endpoint = useMemo(() => graphEndpoint(basePath, repositoryId), [basePath, repositoryId]);
   const rdf4jRepository = useMemo(
@@ -937,6 +1039,9 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
   });
   rangeDraftsRef.current = filters.rangeDrafts;
   restoreRangeDraftsRef.current = filters.restoreRangeDrafts;
+  if (workspaceSettingsRef.current.view) {
+    workspaceSettingsRef.current.view.rangeDrafts = [...filters.rangeDrafts].map(([id, range]) => [id, { ...range }]);
+  }
   const selectedNodeIds = filters.hasActive ? filters.matches : manualSelectedNodeIds;
   const selectedNodeIdList = useMemo(
     () => [...selectedNodeIds],
@@ -1638,6 +1743,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     const closeWithEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       const target = event.target;
+      if (target instanceof Element && target.closest("dialog[open]")) return;
       const typing = target instanceof HTMLElement && Boolean(target.closest("input, textarea, select, [contenteditable]"));
       const popoverOpen = [layoutMenuRef, toolbarMenuRef, viewMenuRef].some((ref) => ref.current?.open);
       // A node menu that is fading out (its close timer runs) is already closed.
@@ -1666,6 +1772,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target;
+      if (target instanceof Element && target.closest("dialog[open]")) return;
       const typing = target instanceof HTMLElement && Boolean(target.closest("input, textarea, select, [contenteditable]"));
       if (event.key === "/" && !typing && !event.metaKey && !event.ctrlKey && !event.altKey) {
         event.preventDefault();
@@ -3873,6 +3980,30 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
             ]}
             toolItems={[
               {
+                label: "Save in browser",
+                description: "Keep a named snapshot of this graph and its view",
+                disabled: !workspaceRestored || workspaceBusy,
+                onSelect: () => workspaceLibrary.save(),
+              },
+              {
+                label: "Save and download",
+                description: "Save in this browser and download a graph workspace file",
+                disabled: !workspaceRestored || workspaceBusy,
+                onSelect: () => workspaceLibrary.save(true),
+              },
+              {
+                label: "Open from browser",
+                description: "Open a saved graph for this repository",
+                disabled: !workspaceRestored,
+                onSelect: workspaceLibrary.open,
+              },
+              {
+                label: "Load and open",
+                description: "Open a graph workspace file",
+                disabled: !workspaceRestored,
+                onSelect: workspaceLibrary.load,
+              },
+              {
                 label: "Paths and groups",
                 description: "Shortest paths, shared neighbours, saved groups",
                 pressed: navigatorOpen,
@@ -4665,6 +4796,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
           )}
         </section>
       </section>
+      {workspaceLibrary.dialogs}
     </main>
   );
 }

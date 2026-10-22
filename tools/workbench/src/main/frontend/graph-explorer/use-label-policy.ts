@@ -67,7 +67,9 @@ export function useLabelPolicy() {
     languages: defaultLabelPolicy().languages, languagesConfigured: false }, true), [replace]);
   const resetProperties = useCallback(() => replace({ ...current.current,
     properties: defaultLabelPolicy().properties, propertiesConfigured: false }, true), [replace]);
-  return { policy, updateLanguages, updateProperties, resetLanguages, resetProperties };
+  // A saved view restores its own policy without changing preferences in other tabs or repositories.
+  const restorePolicy = useCallback((next: LabelPolicy) => replace(next), [replace]);
+  return { policy, updateLanguages, updateProperties, resetLanguages, resetProperties, restorePolicy };
 }
 
 /** A dismissed category stays quiet across policy changes and graph loads for this server/repository. */
