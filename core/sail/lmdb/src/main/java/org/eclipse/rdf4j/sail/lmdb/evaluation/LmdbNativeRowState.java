@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
@@ -25,7 +26,9 @@ import java.util.function.Supplier;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 
 @Experimental
@@ -391,6 +394,65 @@ final class RowState implements LmdbNativeSlotReader {
 		copy.encounterOrderRequired = encounterOrderRequired;
 		copy.parallelOwnership = parallelOwnership;
 		return copy;
+	}
+
+	/** A semantic witness entry owns its current mapping and replay caches, retaining this row's execution identity. */
+	RowState invocationInput() {
+		BindingSet input = NativeEntryBindings.snapshot(view);
+		SyntheticValueSource invocation = SyntheticValueSource.forInvocation(source, input);
+		RowState copy = new RowState(invocation, layout, input, telemetryTarget, exactValuesMetrics, cancellation);
+		copy.inheritDecodedInputAccounting(this);
+		copy.runtimePlan = runtimePlan;
+		copy.lexicalScopeDepth = lexicalScopeDepth;
+		copy.lateralOccurrence = lateralOccurrence;
+		copy.logicalSolutionIdentity = logicalSolutionIdentity;
+		copy.encounterOrderRequired = encounterOrderRequired;
+		copy.parallelOwnership = parallelOwnership;
+		return copy;
+	}
+
+	/** Independent condition frame: only retained names enter its base mapping or initial slot domain. */
+	RowState projectConditionInput(Set<String> retainedNames) {
+		QueryBindingSet projectedBase = NativeEntryBindings.copyValues(base);
+		for (String name : base.getBindingNames()) {
+			if (!retainedNames.contains(name)) {
+				projectedBase.removeBinding(name);
+			}
+		}
+		NativeLmdbQuerySource projectedSource = source;
+		if (source instanceof SyntheticValueSource synthetic && synthetic.executionContext() != null) {
+			projectedSource = synthetic.executionContext()
+					.forConditionBindings(ConditionBindingScope.retain(retainedNames), synthetic)
+					.evaluationSource();
+		}
+		RowState projected = new RowState(projectedSource, layout, NativeEntryBindings.preserve(base, projectedBase),
+				telemetryTarget, exactValuesMetrics,
+				cancellation);
+		projected.copyConditionInput(this, retainedNames);
+		return projected;
+	}
+
+	void copyConditionInput(RowState parent, Set<String> retainedNames) {
+		rollback(0);
+		if (parent.summaryCells != null && summaryCells == null) {
+			summaryCells = new NativeResultCell[slots.length];
+			trailOldCells = new NativeResultCell[trailSlots.length];
+		}
+		for (int slot = 0; slot < slots.length; slot++) {
+			boolean retained = retainedNames.contains(layout.slotName(slot));
+			slots[slot] = retained ? parent.slots[slot] : UNKNOWN;
+			if (summaryCells != null) {
+				summaryCells[slot] = retained ? parent.summaryCell(slot) : null;
+			}
+		}
+		recomputeBoundMask();
+		memoryScope = parent.memoryScope;
+		runtimePlan = parent.runtimePlan;
+		lexicalInputMask = parent.lexicalInputMask & boundMask;
+		lexicalScopeDepth = parent.lexicalScopeDepth;
+		logicalSolutionIdentity = parent.logicalSolutionIdentity;
+		encounterOrderRequired = parent.encounterOrderRequired;
+		parallelOwnership = parent.parallelOwnership;
 	}
 
 	@Override

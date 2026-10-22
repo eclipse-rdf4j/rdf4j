@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -43,6 +44,31 @@ import org.junit.jupiter.api.Test;
 class LmdbDeferredFilterPlacerSoundnessTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
+
+	@Test
+	void materializedDeferredConditionsKeepTheirOriginalVisibility() {
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setDeclaredBindingNames(Set.of("x", "hidden"));
+		values.setBindingSets(List.of(row("x", VF.createLiteral(1), "hidden", VF.createLiteral(1))));
+		Compare condition = new Compare(Var.of("x"), Var.of("hidden"));
+		DeferredFilter filter = new DeferredFilter(condition, Set.of("x", "hidden"), Set.of("x", "hidden"),
+				JoinOrderPlanner.FILTER_COST_CHEAP, 0, null, Set.of(),
+				new EvaluationStatistics.FilterPassEstimate(-1.0d,
+						EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN),
+				ConditionBindingScope.retain(Set.of("x")));
+		LmdbDeferredFilterPlacer placer = new LmdbDeferredFilterPlacer((tupleExpr, bound) -> tupleExpr,
+				Join::new, (root, filters, scope) -> {
+					Filter gate = new Filter(root, filters.getFirst().condition.clone());
+					gate.setConditionBindingScope(filters.getFirst().bindingScope);
+					return gate;
+				});
+		TupleExpr placed = placer.buildSegmentRoot(new ArrayDeque<>(List.of(values)), List.of(filter), Set.of());
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(new EmptyTripleSource(), null);
+		try (CloseableIteration<BindingSet> rows = strategy.precompile(placed)
+				.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(rows.hasNext()).as("the hidden equality operand remains unbound").isFalse();
+		}
+	}
 
 	@Test
 	void undefDoesNotCloseBindingCoverBeforeLaterValues() {

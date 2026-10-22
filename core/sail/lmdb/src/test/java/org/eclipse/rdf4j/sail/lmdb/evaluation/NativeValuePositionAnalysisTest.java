@@ -104,6 +104,23 @@ class NativeValuePositionAnalysisTest {
 	}
 
 	@Test
+	void hiddenSameTermEndpointDoesNotCreateBindingAliases() {
+		for (boolean endpointVisible : List.of(false, true)) {
+			Var left = Var.of("x");
+			Var right = Var.of("parserEndpoint", true);
+			Filter query = new Filter(new StatementPattern(left, Var.of("p"), right),
+					new SameTerm(left.clone(), right.clone()));
+			query.setConditionBindingScope(Filter.ConditionBindingScope.retain(endpointVisible
+					? Set.of("x", "parserEndpoint")
+					: Set.of("x")));
+			assertThat(masks(query, query).get("x")).as("endpointVisible=%s", endpointVisible)
+					.isEqualTo(endpointVisible ? 5 : 1);
+			assertThat(masks(query, query).get("parserEndpoint")).as("endpointVisible=%s", endpointVisible)
+					.isEqualTo(endpointVisible ? 5 : 4);
+		}
+	}
+
+	@Test
 	void multiProjectionAliasesUnifyTransitively() {
 		StatementPattern pattern = new StatementPattern(new Var("x"), new Var("p"), new Var("o"));
 		MultiProjection projection = new MultiProjection(pattern, List.of(

@@ -62,6 +62,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
@@ -260,7 +261,7 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 		// Resolve bindings in their evaluation scope. Forward references, cycles and unused partial/volatile
 		// expressions must decline before execution, even when the aggregate itself would not read them.
 		for (int i = wrappers.size() - 1; i >= 0; i--) {
-			if (wrappers.get(i)instanceof Extension extension) {
+			if (wrappers.get(i) instanceof Extension extension) {
 				for (ExtensionElem elem : extension.getElements()) {
 					ValueExpr alias = elem.getExpr();
 					if (fields.containsKey(elem.getName()) || aliases.containsKey(elem.getName())
@@ -270,7 +271,10 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 					}
 					aliases.put(elem.getName(), alias);
 				}
-			} else if (wrappers.get(i)instanceof Filter selection) {
+			} else if (wrappers.get(i) instanceof Filter selection) {
+				if (!FilterBindingScope.allowsAllConditionBindings(selection)) {
+					return null;
+				}
 				BooleanExpression compiled = expressions.bool(selection.getCondition());
 				if (compiled == null) {
 					return null;
@@ -289,7 +293,7 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 		Channel[] channels = new Channel[group.getGroupElements().size()];
 		for (int i = 0; i < channels.length; i++) {
 			GroupElem element = group.getGroupElements().get(i);
-			if (element.getOperator()instanceof Count count) {
+			if (element.getOperator() instanceof Count count) {
 				int field = count.getArg() == null ? -1 : expressions.field(count.getArg());
 				ValueExpr argument = expressions.resolve(count.getArg(), 0);
 				IntegerExpression number = field < 0 && argument != null ? expressions.integer(argument) : null;
@@ -298,7 +302,7 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 					return null;
 				}
 				channels[i] = new Channel(element.getName(), field, count.isDistinct(), false, number);
-			} else if (element.getOperator()instanceof Sum sum) {
+			} else if (element.getOperator() instanceof Sum sum) {
 				IntegerExpression number = expressions.integer(sum.getArg());
 				if (number == null) {
 					return null;
@@ -935,7 +939,7 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 
 		IntegerExpression integer(ValueExpr input) {
 			ValueExpr expression = resolve(input, 0);
-			if (expression instanceof ValueConstant constant && constant.getValue()instanceof Literal literal
+			if (expression instanceof ValueConstant constant && constant.getValue() instanceof Literal literal
 					&& XMLDatatypeUtil.isIntegerDatatype(literal.getDatatype())) {
 				try {
 					BigInteger[] values = new BigInteger[COMBINATIONS];
@@ -980,7 +984,7 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 				}
 				return new BooleanExpression(values, test.mask | yes.mask | no.mask);
 			}
-			if (expression instanceof ValueConstant constant && constant.getValue()instanceof Literal literal
+			if (expression instanceof ValueConstant constant && constant.getValue() instanceof Literal literal
 					&& literal.getDatatype().equals(XSD.BOOLEAN)) {
 				try {
 					return BooleanExpression.constant(literal.booleanValue());

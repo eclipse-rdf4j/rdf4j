@@ -18,11 +18,13 @@ import java.util.Optional;
 
 import org.eclipse.rdf4j.workbench.commands.AddServlet;
 import org.eclipse.rdf4j.workbench.commands.ClearServlet;
+import org.eclipse.rdf4j.workbench.commands.ConfigServlet;
 import org.eclipse.rdf4j.workbench.commands.ContextsServlet;
 import org.eclipse.rdf4j.workbench.commands.CreateServlet;
 import org.eclipse.rdf4j.workbench.commands.DeleteServlet;
 import org.eclipse.rdf4j.workbench.commands.ExploreServlet;
 import org.eclipse.rdf4j.workbench.commands.ExportServlet;
+import org.eclipse.rdf4j.workbench.commands.GraphServlet;
 import org.eclipse.rdf4j.workbench.commands.InfoServlet;
 import org.eclipse.rdf4j.workbench.commands.InformationServlet;
 import org.eclipse.rdf4j.workbench.commands.NamespacesServlet;
@@ -50,11 +52,13 @@ public final class WorkbenchViewRegistry {
 			Map.entry(RepositoriesServlet.class, new View("repositories", true)),
 			Map.entry(CreateServlet.class, new View("create", true)),
 			Map.entry(DeleteServlet.class, new View("delete", true)),
+			Map.entry(ConfigServlet.class, new View("config", true)),
 			Map.entry(NamespacesServlet.class, new View("namespaces", true)),
 			Map.entry(WorkbenchNamespaceMetadataServlet.class, new View("namespace-metadata", false)),
 			Map.entry(ContextsServlet.class, new View("contexts", true)),
 			Map.entry(TypesServlet.class, new View("types", true)),
 			Map.entry(ExploreServlet.class, new View("explore", true)),
+			Map.entry(GraphServlet.class, new View("graph", true)),
 			Map.entry(QueryServlet.class, new View("query", true)),
 			Map.entry(SavedQueriesServlet.class, new View("saved-queries", true)),
 			Map.entry(ExportServlet.class, new View("export", true)),

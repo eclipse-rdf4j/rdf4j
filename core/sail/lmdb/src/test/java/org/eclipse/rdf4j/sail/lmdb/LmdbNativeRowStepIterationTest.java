@@ -1158,6 +1158,58 @@ class LmdbNativeRowStepIterationTest {
 	}
 
 	@Test
+	void unencodableOptionalOnlyBindingRetainsCachedGenericFallbackForGroup() {
+		SingletonSet explanationTarget = new SingletonSet();
+		explanationTarget.setExecutionSummaryEnabled(true);
+		NativeLmdbQuerySource source = new RecordingNativeSource();
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("optional", 0), null);
+		layout.freeze(List.of("optional"));
+		NativeGroupStep step = new NativeGroupStep(source, new OptionalEntryRecordingPlan(), layout,
+				new int[] { 0 }, new AggregateSpec[] { AggregateSpec.star("count") }, true, null, explanationTarget,
+				null, Set.of("optional"), null, null, false, false, null, 0L, null, null);
+		AtomicInteger genericCalls = new AtomicInteger();
+		step.genericStep = ignored -> {
+			genericCalls.incrementAndGet();
+			return QueryEvaluationStep.EMPTY_ITERATION;
+		};
+		step.genericStep();
+		QueryBindingSet bindings = new QueryBindingSet();
+		bindings.addBinding("optional", VF.createIRI("urn:test:not-in-native-id-space"));
+
+		step.evaluate(bindings).close();
+
+		assertThat(genericCalls).hasValue(1);
+		assertThat(explanationTarget.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH))
+				.isEqualTo("genericFallback(optionalOnlyBinding)");
+	}
+
+	@Test
+	void unencodableOptionalOnlyBindingRetainsCachedGenericFallbackForBareRows() {
+		SingletonSet explanationTarget = new SingletonSet();
+		explanationTarget.setExecutionSummaryEnabled(true);
+		NativeLmdbQuerySource source = new RecordingNativeSource();
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("optional", 0), null);
+		layout.freeze(List.of("optional"));
+		NativeBareRowsStep step = NativeRowsStep.bareFragment(source, new OptionalEntryRecordingPlan(), layout,
+				new int[] { 0 }, new String[] { "optional" }, true, null, explanationTarget, null,
+				Set.of("optional"));
+		AtomicInteger genericCalls = new AtomicInteger();
+		step.bulk.genericStep = ignored -> {
+			genericCalls.incrementAndGet();
+			return QueryEvaluationStep.EMPTY_ITERATION;
+		};
+		step.bulk.genericStep();
+		QueryBindingSet bindings = new QueryBindingSet();
+		bindings.addBinding("optional", VF.createIRI("urn:test:not-in-native-id-space"));
+
+		step.evaluate(bindings).close();
+
+		assertThat(genericCalls).hasValue(1);
+		assertThat(explanationTarget.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH))
+				.isEqualTo("genericFallback(optionalOnlyBinding)");
+	}
+
+	@Test
 	void zeroLimitReportsEarlyExitStrategy() {
 		SingletonSet explanationTarget = new SingletonSet();
 		explanationTarget.setExecutionSummaryEnabled(true);

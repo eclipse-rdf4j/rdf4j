@@ -60,6 +60,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKey
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
@@ -89,7 +90,7 @@ final class LmdbJoinPlanSupport {
 						.add(new DeferredFilter(condition, requiredVars, conditionVars, filterConditionCost(condition),
 								originalIndex++, patternLocalBaseForFilterCondition(filter, condition),
 								FilterSelectivityKeys.originPatternsForFilter(filter),
-								estimateFilterPass(statistics, filter, condition)));
+								estimateFilterPass(statistics, filter, condition), FilterBindingScope.resolve(filter)));
 			}
 		}
 		return deferredFilters;
@@ -325,7 +326,7 @@ final class LmdbJoinPlanSupport {
 	static BindingSetAssignment smallLiteralFilterAnchor(ValueExpr condition) {
 		if (condition instanceof ListMemberOperator) {
 			List<ValueExpr> arguments = ((ListMemberOperator) condition).getArguments();
-			if (arguments.isEmpty() || !(arguments.getFirst()instanceof Var filterVar)) {
+			if (arguments.isEmpty() || !(arguments.getFirst() instanceof Var filterVar)) {
 				return null;
 			}
 

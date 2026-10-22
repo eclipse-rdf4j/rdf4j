@@ -1105,6 +1105,20 @@ class LmdbNativeGeneratedQueryCoverageTest {
 		assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get() - islandsBefore)
 				.as("stateful OPTIONAL must not use a generic island")
 				.isZero();
+		assertThat(actual)
+				.as("an independent UNION arm must be evaluated once for every OPTIONAL left row")
+				.containsExactlyElementsOf(expected);
+
+		// A losing proposal deliberately does not lower a kernel. Keep adaptive semantics above independent
+		// of the chosen strategy, then request the IR executor to verify its lowering and execution contracts.
+		resetMetricsOnly();
+		assertThat(rows(OPTIONAL_WITH_INDEPENDENT_UNION_BRANCH_QUERY, true,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED))
+						.containsExactlyElementsOf(expected);
+		assertThat(plannedKernels()).as("the requested OPTIONAL UNION kernel must be planned").isPositive();
+		assertThat(openedKernels()).as("the requested OPTIONAL UNION kernel must execute").isPositive();
+		assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get() - hostedBefore).isZero();
+		assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get() - islandsBefore).isZero();
 	}
 
 	@Test

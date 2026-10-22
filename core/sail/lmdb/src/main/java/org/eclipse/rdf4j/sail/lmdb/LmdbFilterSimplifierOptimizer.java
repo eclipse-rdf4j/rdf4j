@@ -51,6 +51,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
@@ -96,9 +97,11 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		public void meet(Filter filter) {
 			super.meet(filter);
 			annotateFilter(filter);
-			if (filter.getArg()instanceof Filter childFilter && canMerge(filter, (Filter) filter.getArg())) {
+			if (filter.getArg() instanceof Filter childFilter && canMerge(filter, (Filter) filter.getArg())) {
+				var bindingScope = FilterBindingScope.resolve(filter);
 				filter.setCondition(mergeConditions(childFilter.getCondition(), filter.getCondition()));
 				filter.setArg(childFilter.getArg());
+				FilterBindingScope.preserve(filter, bindingScope);
 				annotateFilter(filter);
 			}
 			rewriteSmallLiteralFilterAnchors(filter);
@@ -108,7 +111,11 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 	private static boolean canMerge(Filter parent, Filter child) {
 		return !isVariableScopeChange(parent) && !isVariableScopeChange(child)
 				&& QueryEvaluationUtility.isRepeatable(parent.getCondition())
-				&& QueryEvaluationUtility.isRepeatable(child.getCondition());
+				&& QueryEvaluationUtility.isRepeatable(child.getCondition())
+				&& FilterBindingScope.resolve(parent).equals(FilterBindingScope.resolve(child))
+				&& new Filter(child.getArg().clone(), mergeConditions(child.getCondition(), parent.getCondition()))
+						.getBindingNames()
+						.equals(parent.getBindingNames());
 	}
 
 	private static boolean isVariableScopeChange(Filter filter) {
@@ -116,6 +123,8 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 	}
 
 	private static And mergeConditions(ValueExpr leftCondition, ValueExpr rightCondition) {
+		leftCondition = FilterBindingScope.unwrapBooleanExists(leftCondition);
+		rightCondition = FilterBindingScope.unwrapBooleanExists(rightCondition);
 		if (conditionCostClass(leftCondition) <= conditionCostClass(rightCondition)) {
 			return new And(leftCondition.clone(), rightCondition.clone());
 		}
@@ -123,7 +132,8 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 	}
 
 	private void rewriteSmallLiteralFilterAnchors(Filter filter) {
-		if (isVariableScopeChange(filter) || !QueryEvaluationUtility.isRepeatable(filter.getCondition())) {
+		if (isVariableScopeChange(filter) || !QueryEvaluationUtility.isRepeatable(filter.getCondition())
+				|| !FilterBindingScope.allowsAllConditionBindings(filter)) {
 			return;
 		}
 
@@ -272,7 +282,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 			@Override
 			public void meet(Extension extension) {
 				for (ExtensionElem element : extension.getElements()) {
-					if (extensionName.equals(element.getName()) && element.getExpr()instanceof Var sourceVar) {
+					if (extensionName.equals(element.getName()) && element.getExpr() instanceof Var sourceVar) {
 						if (!sourceVar.hasValue() && sourceVar.getName() != null) {
 							sourceNames.add(sourceVar.getName());
 						}
@@ -458,7 +468,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 	private static boolean collectValuesVariableAnchorValues(ListMemberOperator list,
 			ValuesVariableAnchorCollector collector) {
 		List<ValueExpr> arguments = list.getArguments();
-		if (arguments.size() < 2 || !(arguments.get(0)instanceof Var filterVar)) {
+		if (arguments.size() < 2 || !(arguments.get(0) instanceof Var filterVar)) {
 			return false;
 		}
 		for (int i = 1; i < arguments.size(); i++) {

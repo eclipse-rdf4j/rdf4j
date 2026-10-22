@@ -1883,7 +1883,7 @@ final class BulkTaskScheduler implements AutoCloseable {
 	private record MemoryClaim(FileDescriptorContext context, long bytes) {
 	}
 
-	record Work<T> (long memoryBytes, int fileDescriptors, Callable<T> operation, boolean allowSerialMemoryFloor) {
+	record Work<T>(long memoryBytes, int fileDescriptors, Callable<T> operation, boolean allowSerialMemoryFloor) {
 		Work(long memoryBytes, int fileDescriptors, Callable<T> operation) {
 			this(memoryBytes, fileDescriptors, operation, false);
 		}
@@ -1905,7 +1905,7 @@ final class BulkTaskScheduler implements AutoCloseable {
 		}
 	}
 
-	record AdaptiveWorkPoll<T> (Kind kind, AdaptiveWorkRequest<T> request) {
+	record AdaptiveWorkPoll<T>(Kind kind, AdaptiveWorkRequest<T> request) {
 		AdaptiveWorkPoll {
 			Objects.requireNonNull(kind, "kind");
 			if ((kind == Kind.REQUEST) != (request != null)) {
@@ -1948,7 +1948,7 @@ final class BulkTaskScheduler implements AutoCloseable {
 		}
 	}
 
-	record AdaptiveWorkRequest<T> (long memoryBytes, int fileDescriptors, boolean allowSerialMemoryFloor,
+	record AdaptiveWorkRequest<T>(long memoryBytes, int fileDescriptors, boolean allowSerialMemoryFloor,
 			long stageEpoch, int actualActivePartitions, AdaptivePreparation<T> preparation,
 			ResourceLease exclusiveFloorBaseLease) {
 		AdaptiveWorkRequest(long memoryBytes, int fileDescriptors, boolean allowSerialMemoryFloor, long stageEpoch,
@@ -1971,7 +1971,7 @@ final class BulkTaskScheduler implements AutoCloseable {
 		AdaptiveTaskResult<T> run(ResourceLease lease) throws Exception;
 	}
 
-	record AdaptivePreparedWork<T> (long workId, AdaptiveOperation<T> operation, Runnable cleanup) {
+	record AdaptivePreparedWork<T>(long workId, AdaptiveOperation<T> operation, Runnable cleanup) {
 		AdaptivePreparedWork {
 			if (operation == null || cleanup == null) {
 				throw new IllegalArgumentException("adaptive prepared work requires an operation and cleanup action");
@@ -1979,7 +1979,7 @@ final class BulkTaskScheduler implements AutoCloseable {
 		}
 	}
 
-	record AdaptiveTaskResult<T> (T value, long committedWorkBytes, Runnable cleanup) {
+	record AdaptiveTaskResult<T>(T value, long committedWorkBytes, Runnable cleanup) {
 		AdaptiveTaskResult(T value, long committedWorkBytes) {
 			this(value, committedWorkBytes, () -> {
 			});
@@ -2053,7 +2053,7 @@ final class BulkTaskScheduler implements AutoCloseable {
 		void accept(AdaptiveCompletion<T> completion) throws IOException;
 	}
 
-	private record AdaptiveFinished<T> (long workId, long stageEpoch, int actualActivePartitions,
+	private record AdaptiveFinished<T>(long workId, long stageEpoch, int actualActivePartitions,
 			AdaptiveTaskResult<T> result, Throwable failure) {
 	}
 

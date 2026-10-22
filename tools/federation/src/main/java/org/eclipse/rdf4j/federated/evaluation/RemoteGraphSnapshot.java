@@ -130,7 +130,7 @@ final class RemoteGraphSnapshot implements NativeTripleTermSource {
 	private static RemoteGraphSnapshot owner(Value value) {
 		if (value instanceof RemoteBNode remote) {
 			RemoteBNode.Provenance provenance = remote.getProvenance();
-			if (provenance != null && provenance.identityScope()instanceof RemoteGraphSnapshot snapshot) {
+			if (provenance != null && provenance.identityScope() instanceof RemoteGraphSnapshot snapshot) {
 				return snapshot;
 			}
 		}

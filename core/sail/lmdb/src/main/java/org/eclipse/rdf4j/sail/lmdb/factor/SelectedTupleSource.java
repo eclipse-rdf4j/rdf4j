@@ -119,7 +119,7 @@ public final class SelectedTupleSource extends BorrowedTupleBatch.Source {
 		checkInput(input, lane);
 		selected.validateBounds(input.count(lane));
 		clear();
-		if (input.source()instanceof SelectedTupleSource view && !view.direct) {
+		if (input.source() instanceof SelectedTupleSource view && !view.direct) {
 			ranges.compose(view.ranges, selected);
 			base = view.base;
 			baseLane = view.baseLane;

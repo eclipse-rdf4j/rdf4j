@@ -1407,7 +1407,8 @@ final class LmdbNativeKernelExecution {
 			}
 
 			KernelRowCursor cursor = new KernelRowCursor(kernel, probe, scanner, hooks, views, row,
-					lowered.bindings.columnEngineSlots, lowered.bindings.residualFilters, hashReservation, route);
+					lowered.bindings.columnEngineSlots, lowered.bindings.residualFilters, hashReservation, route,
+					SlotPlan.encounterOrderReplaySafe(arg) ? FILL_ROWS : 1);
 			// Ownership has moved to the cursor. Null every local so the finally block cannot double-close it.
 			kernel = null;
 			probe = null;
@@ -1767,6 +1768,7 @@ final class LmdbNativeKernelExecution {
 		private final int[] columnSlots;
 		private final List<MaskedFilter> residualFilters;
 		private final long[] buffer;
+		private final int fillRows;
 		private int bufferRows;
 		private int bufferPos;
 		private int activeMark = -1;
@@ -1778,16 +1780,9 @@ final class LmdbNativeKernelExecution {
 		KernelRowCursor(JaninoKernel kernel, NativeLmdbQuerySource.NativeProbe probe,
 				LmdbNativeKernelScanner scanner, LmdbNativeKernelHooks hooks,
 				NativeLmdbQuerySource.NativeAdjacency[] views, RowState row, int[] columnSlots,
-				List<MaskedFilter> residualFilters) {
-			this(kernel, probe, scanner, hooks, views, row, columnSlots, residualFilters, null,
-					LmdbNativeAttemptMetrics.PATH_IR_KERNEL);
-		}
-
-		KernelRowCursor(JaninoKernel kernel, NativeLmdbQuerySource.NativeProbe probe,
-				LmdbNativeKernelScanner scanner, LmdbNativeKernelHooks hooks,
-				NativeLmdbQuerySource.NativeAdjacency[] views, RowState row, int[] columnSlots,
 				List<MaskedFilter> residualFilters,
-				org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation hashReservation, String route) {
+				org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation hashReservation, String route,
+				int fillRows) {
 			this.route = route;
 			this.kernel = kernel;
 			this.probe = probe;
@@ -1798,7 +1793,8 @@ final class LmdbNativeKernelExecution {
 			this.columnSlots = columnSlots;
 			this.residualFilters = residualFilters;
 			this.hashReservation = hashReservation;
-			this.buffer = new long[Math.max(columnSlots.length, 1) * FILL_ROWS];
+			this.fillRows = fillRows;
+			this.buffer = new long[Math.max(columnSlots.length, 1) * fillRows];
 		}
 
 		@Override
@@ -1810,7 +1806,7 @@ final class LmdbNativeKernelExecution {
 			while (true) {
 				if (bufferPos == bufferRows) {
 					try {
-						bufferRows = LmdbNativeJaninoCodegen.fill(kernel, buffer, FILL_ROWS, route);
+						bufferRows = LmdbNativeJaninoCodegen.fill(kernel, buffer, fillRows, route);
 					} catch (LmdbNativeKernelBindings.PlanFailure problem) {
 						throw problem.ioCause();
 					}

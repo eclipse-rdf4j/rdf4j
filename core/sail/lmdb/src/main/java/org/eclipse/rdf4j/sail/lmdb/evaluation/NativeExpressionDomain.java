@@ -254,7 +254,7 @@ final class NativeExpressionDomain implements AutoCloseable {
 			if (domains != null) {
 				for (Map.Entry<Object, NativeExpressionDomain> entry : domains.entrySet()) {
 					NativeExpressionDomain domain = entry.getValue();
-					if (entry.getKey()instanceof NativeExpressionDomainPolicy.Entry input) {
+					if (entry.getKey() instanceof NativeExpressionDomainPolicy.Entry input) {
 						input.scope = null;
 					}
 					if (domain != null) {
@@ -568,11 +568,11 @@ final class NativeExpressionDomain implements AutoCloseable {
 		case TRUTH -> LmdbNativeTruth.values()[payload.readUnsignedByte()];
 		case ID -> payload.readLong();
 		case VALUE -> switch (payload.readUnsignedByte()) {
-			case 0 -> null;
-			case 1 -> LmdbNativeValueCodec.DecodedValue.ERROR;
-			case 2 -> LmdbNativeValueCodec.fromValue(codec.read(payload));
-			default -> throw new IOException("Invalid expression-domain outcome");
-			};
+		case 0 -> null;
+		case 1 -> LmdbNativeValueCodec.DecodedValue.ERROR;
+		case 2 -> LmdbNativeValueCodec.fromValue(codec.read(payload));
+		default -> throw new IOException("Invalid expression-domain outcome");
+		};
 		};
 	}
 

@@ -1732,6 +1732,18 @@ class LmdbSailStore implements SailStore {
 		}
 
 		private void validatePairedEnvironments(Object owner) throws IOException {
+			while (true) {
+				try {
+					validatePairedEnvironmentsOnce(owner);
+					return;
+				} catch (ValueStore.ValueReadAdmissionException notAdmitted) {
+					// Both reservations, both snapshots, publicationGate and the writer lease have unwound.
+					valueStore.awaitValueReaderAdmission();
+				}
+			}
+		}
+
+		private void validatePairedEnvironmentsOnce(Object owner) throws IOException {
 			// A failed resize may have enlarged one map. Do not shrink it: verify both environments can
 			// reserve the same stable publication before allowing unrelated work to use the pair again.
 			try (WriterLease ignored = acquireWriterLease(owner);
@@ -1746,7 +1758,7 @@ class LmdbSailStore implements SailStore {
 								"Unable to establish a stable paired LMDB publication after resize failure");
 					}
 					try (Txn tripleTxn = tripleReservation.startPinned(tripleStore::getDataRevision);
-							ValueStore.ReadSnapshot values = valueReservation.start(tripleTxn)) {
+							ValueStore.ReadSnapshot values = valueReservation.tryStart(tripleTxn)) {
 						// Successful paired native acquisition is the consistency/lifetime check. No data was published
 						// by a map-size change, so the stable publication remains authoritative in both environments.
 					}
@@ -5624,7 +5636,7 @@ class LmdbSailStore implements SailStore {
 		}
 		if (failed != null && (!(owner instanceof LmdbStoreConnection connection)
 				|| connection.retainsFailedWriteAttempt(failed.attempt()))) {
-			if (failed.failure()instanceof Error error) {
+			if (failed.failure() instanceof Error error) {
 				throw error;
 			}
 			throw new SailException(failed.failure().getMessage(), failed.failure());
@@ -6142,6 +6154,22 @@ class LmdbSailStore implements SailStore {
 
 	private ReadView createFreshReadView(MapGrowthObserver observer, ReadAttemptLease readAttempt)
 			throws SailException {
+		while (true) {
+			try {
+				return tryCreateFreshReadView(observer, readAttempt);
+			} catch (ValueStore.ValueReadAdmissionException notAdmitted) {
+				try {
+					// Release the pending growth view too: it must not keep the gated writer from quiescing.
+					valueStore.awaitValueReaderAdmission();
+				} catch (IOException failure) {
+					throw new SailException("Unable to admit an LMDB read snapshot", failure);
+				}
+			}
+		}
+	}
+
+	private ReadView tryCreateFreshReadView(MapGrowthObserver observer, ReadAttemptLease readAttempt)
+			throws SailException, ValueStore.ValueReadAdmissionException {
 		checkPublicationAdmission(QueryExecutionDeadline.current());
 		if (isCurrentThreadCheckpointOwner()) {
 			// Check this self-deadlock boundary before growth admission can wait for the same writer to finish.
@@ -6171,7 +6199,7 @@ class LmdbSailStore implements SailStore {
 						ValueStore.ReadSnapshot valueSnapshot = null;
 						try {
 							tripleTxn = tripleReservation.startPinned(tripleStore::getDataRevision);
-							valueSnapshot = valueReservation.start(tripleTxn);
+							valueSnapshot = valueReservation.tryStart(tripleTxn);
 							if (pendingDictionaryCheckpointGeneration != 0L) {
 								valueSnapshot.close();
 								valueSnapshot = null;
@@ -6200,6 +6228,8 @@ class LmdbSailStore implements SailStore {
 					} finally {
 						publicationGate.unlock();
 					}
+				} catch (ValueStore.ValueReadAdmissionException notAdmitted) {
+					throw notAdmitted;
 				} catch (IOException e) {
 					throw new SailException("Unable to admit an LMDB read snapshot", e);
 				}

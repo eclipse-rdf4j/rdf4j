@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -38,9 +39,11 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.GeneratedBNode;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -390,6 +393,210 @@ class NativeResultReplayTest {
 		}
 	}
 
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void projectedReplayReadersRetainSharedFrameAndTermOwners(boolean spill) {
+		LmdbQueryMemoryManager previous = LmdbNativeHashJoin.queryMemoryOverride;
+		LmdbQueryMemoryManager memory = LmdbQueryMemoryManager.createForTesting(64L << 10, 64L << 10);
+		LmdbNativeHashJoin.queryMemoryOverride = memory;
+		NativeExecutionContext root = null;
+		NativeExecutionContext child = null;
+		NativeResultReplay replay = null;
+		NativeResultCursor first = null;
+		NativeResultCursor second = null;
+		Throwable failure = null;
+		try {
+			root = new NativeExecutionContext();
+			Value generatedValue = GeneratedBNode.restore("projected-frame-generated-term");
+			long generatedId = root.internGeneratedKey(generatedValue);
+			MapBindingSet projected = new MapBindingSet();
+			projected.addBinding("projected", generatedValue);
+			child = new NativeExecutionContext(root, projected);
+
+			assertSame(root.memoryScope(), child.memoryScope(),
+					"a projected frame shares its parent's query-owned ledger");
+			assertEquals(generatedValue, child.queryBase().getValue("projected"));
+			assertSame(generatedValue, child.internedValueOf(generatedId),
+					"a projected frame resolves generated IDs through its shared term owner");
+
+			NativeResultRow.Schema schema = new NativeResultRow.Schema("term", "summary", "unbound", "error");
+			replay = new NativeResultReplay(schema, child, child.cancellation(), child.memoryLedger(), 12L << 10);
+			int rowCount = spill ? 40 : 2;
+			for (int index = 0; index < rowCount; index++) {
+				replay.append(new NativeResultRow(schema, new NativeResultCell[] {
+						NativeResultCell.term(generatedValue), NativeResultCell.lexicalLength(5L + index),
+						NativeResultCell.unbound(), NativeResultCell.error() }));
+			}
+			replay.finish();
+			assertEquals(spill, replay.spilled(), "each projection must exercise its intended replay storage mode");
+			first = replay.cursor();
+			second = replay.cursor();
+			assertTrue(memory.usedBytes() > 0L, "accepted replay readers retain their query-owned storage");
+
+			// Request every owner close while both independent readers still need the projected frame and term table.
+			replay.close();
+			child.close();
+			root.close();
+			assertFalse(root.isClosed(), "accepted child readers must retain the shared root owner");
+			assertFalse(child.isClosed(), "the replay's child lease must remain live until its readers finish");
+			assertEquals(generatedValue, root.internedValueOf(generatedId),
+					"the shared term table must stay authoritative while readers remain accepted");
+			assertEquals(generatedValue, child.internedValueOf(generatedId));
+			assertTrue(root.runtimeValueAccountedBytes() > 0L,
+					"the shared term table remains charged until the final projected reader closes");
+			assertEquals(generatedValue, child.queryBase().getValue("projected"));
+
+			assertProjectedResultRow(first.next(), generatedValue, 0);
+			first.close();
+			assertFalse(root.isClosed(),
+					"the independent reader must retain the shared root after its sibling closes early");
+			assertEquals(generatedValue, root.internedValueOf(generatedId));
+			assertNull(first.next(), "an explicitly closed reader cannot publish more rows");
+			for (int index = 0; index < rowCount; index++) {
+				assertProjectedResultRow(second.next(), generatedValue, index);
+			}
+			assertNull(second.next(), "the final independent reader reaches EOF");
+			assertTrue(root.isClosed(), "the root owner closes after the last accepted reader releases its lease");
+			assertNull(root.internedValueOf(generatedId), "the term authority is released with the root owner");
+			assertEquals(0L, memory.usedBytes(), "all replay and term-owner reservations release exactly once");
+		} catch (RuntimeException | Error primary) {
+			failure = primary;
+		} finally {
+			try {
+				failure = KernelRuntime.closeResource(first, failure);
+				failure = KernelRuntime.closeResource(second, failure);
+				failure = KernelRuntime.closeResource(replay, failure);
+				failure = KernelRuntime.closeResource(child, failure);
+				failure = KernelRuntime.closeResource(root, failure);
+			} finally {
+				LmdbNativeHashJoin.queryMemoryOverride = previous;
+			}
+		}
+		if (failure != null) {
+			NativeContextClosingIteration.throwFailure(failure);
+		}
+	}
+
+	@Test
+	void refusedDescendantRollsBackEarlierAncestorOwnerAcquisition() {
+		LmdbQueryMemoryManager previous = LmdbNativeHashJoin.queryMemoryOverride;
+		LmdbQueryMemoryManager memory = LmdbQueryMemoryManager.createForTesting(64L << 10, 64L << 10);
+		LmdbNativeHashJoin.queryMemoryOverride = memory;
+		NativeExecutionContext root = null;
+		NativeExecutionContext middle = null;
+		NativeExecutionContext descendant = null;
+		AtomicReference<NativeExecutionContext.Lease> refusedLease = new AtomicReference<>();
+		AtomicInteger middleCloses = new AtomicInteger();
+		Throwable failure = null;
+		try {
+			root = new NativeExecutionContext();
+			long generatedId = root.internGeneratedKey(GeneratedBNode.restore("owner-acquisition-rollback"));
+			middle = new NativeExecutionContext(root, EmptyBindingSet.getInstance());
+			middle.nativeState(new Object(), () -> (AutoCloseable) middleCloses::incrementAndGet);
+			descendant = new NativeExecutionContext(middle);
+			assertTrue(memory.usedBytes() > 0L, "the root fixture must own query-accounted term state");
+
+			// The descendant exists, but its middle owner closes before it is accepted; root remains open.
+			middle.close();
+			assertTrue(middle.isClosed(), "the middle frame must close before descendant admission");
+			assertEquals(1, middleCloses.get(), "the middle native state closes exactly once");
+			assertFalse(root.isClosed(), "the root must remain available while acquisition reaches the closed middle");
+			NativeExecutionContext refusedContext = descendant;
+			assertThrows(IllegalStateException.class, () -> refusedLease.set(refusedContext.retainLease()),
+					"a descendant must refuse a closed frame owner after releasing earlier ancestor claims");
+			assertNull(refusedLease.get(), "a refused lease must not escape partial owner acquisition");
+
+			root.close();
+			assertTrue(root.isClosed(), "failed lease acquisition must not leak its earlier root-owner lease");
+			assertNull(root.internedValueOf(generatedId), "the root term table closes with the root owner");
+			assertEquals(0L, memory.usedBytes(), "failed partial acquisition releases every owner reservation");
+		} catch (RuntimeException | Error primary) {
+			failure = primary;
+		} finally {
+			try {
+				failure = KernelRuntime.closeResource(refusedLease.get(), failure);
+				failure = KernelRuntime.closeResource(descendant, failure);
+				failure = KernelRuntime.closeResource(middle, failure);
+				failure = KernelRuntime.closeResource(root, failure);
+			} finally {
+				LmdbNativeHashJoin.queryMemoryOverride = previous;
+			}
+		}
+		if (failure != null) {
+			NativeContextClosingIteration.throwFailure(failure);
+		}
+	}
+
+	@Test
+	void childLeasePreservesAllOwnerCleanupFailuresAndReleasesEveryOwnerOnce() {
+		LmdbQueryMemoryManager previous = LmdbNativeHashJoin.queryMemoryOverride;
+		LmdbQueryMemoryManager memory = LmdbQueryMemoryManager.createForTesting(64L << 10, 64L << 10);
+		LmdbNativeHashJoin.queryMemoryOverride = memory;
+		NativeExecutionContext root = null;
+		NativeExecutionContext child = null;
+		NativeExecutionContext.Lease acceptedChild = null;
+		Throwable failure = null;
+		try {
+			root = new NativeExecutionContext();
+			long generatedId = root.internGeneratedKey(GeneratedBNode.restore("owner-cleanup-failures"));
+			assertTrue(memory.usedBytes() > 0L, "the root fixture must own a real query-memory reservation");
+			RuntimeException childFailure = new IllegalStateException("child native state cleanup failed");
+			RuntimeException rootFailure = new IllegalArgumentException("root native state cleanup failed");
+			AtomicInteger childCloses = new AtomicInteger();
+			AtomicInteger rootCloses = new AtomicInteger();
+			Object childKey = new Object();
+			Object rootKey = new Object();
+			child = new NativeExecutionContext(root, EmptyBindingSet.getInstance(), false);
+			child.nativeState(childKey, () -> (AutoCloseable) () -> {
+				childCloses.incrementAndGet();
+				throw childFailure;
+			});
+			root.nativeState(rootKey, () -> (AutoCloseable) () -> {
+				rootCloses.incrementAndGet();
+				throw rootFailure;
+			});
+			acceptedChild = child.retainLease();
+
+			child.close();
+			root.close();
+			assertEquals(0, childCloses.get(), "accepted work defers child native-state cleanup");
+			assertEquals(0, rootCloses.get(), "the child lease defers root native-state cleanup");
+			assertFalse(child.isClosed());
+			assertFalse(root.isClosed());
+
+			RuntimeException actual = assertThrows(RuntimeException.class, acceptedChild::close);
+			acceptedChild = null;
+			assertSame(childFailure, actual, "the first owner cleanup failure remains primary");
+			assertEquals(1, actual.getSuppressed().length,
+					"failure while releasing the other owner must be retained as suppressed evidence");
+			assertSame(rootFailure, actual.getSuppressed()[0]);
+			assertEquals(1, childCloses.get(), "child native state closes exactly once");
+			assertEquals(1, rootCloses.get(), "root native state closes despite the child cleanup failure");
+			assertTrue(child.isClosed());
+			assertTrue(root.isClosed());
+			assertNull(root.internedValueOf(generatedId));
+			assertEquals(0L, memory.usedBytes(), "all owner accounting is released despite cleanup failures");
+
+			assertDoesNotThrow(child::close, "a repeated child close cannot retry native-state cleanup");
+			assertDoesNotThrow(root::close, "a repeated root close cannot retry native-state cleanup");
+			assertEquals(1, childCloses.get());
+			assertEquals(1, rootCloses.get());
+		} catch (RuntimeException | Error primary) {
+			failure = primary;
+		} finally {
+			try {
+				failure = KernelRuntime.closeResource(acceptedChild, failure);
+				failure = KernelRuntime.closeResource(child, failure);
+				failure = KernelRuntime.closeResource(root, failure);
+			} finally {
+				LmdbNativeHashJoin.queryMemoryOverride = previous;
+			}
+		}
+		if (failure != null) {
+			NativeContextClosingIteration.throwFailure(failure);
+		}
+	}
+
 	@Test
 	void cancelledReplayIsTerminalAndReleasesItsOwnedReader() {
 		LmdbQueryMemoryManager memory = LmdbQueryMemoryManager.createForTesting(64L << 10, 64L << 10);
@@ -406,6 +613,19 @@ class NativeResultReplayTest {
 			}
 		}
 		assertEquals(0L, memory.usedBytes());
+	}
+
+	private static void assertProjectedResultRow(NativeResultRow row, Value generatedValue, int index) {
+		assertTrue(row != null, "each accepted reader must retain every projected result row");
+		assertEquals(NativeResultCell.Kind.RDF_TERM, row.cell("term").kind());
+		assertEquals(NativeResultCell.State.BOUND, row.cell("term").state());
+		assertEquals(generatedValue, row.cell("term").value());
+		assertEquals(NativeResultCell.Kind.LEXICAL_SUMMARY, row.cell("summary").kind());
+		assertEquals(5L + index, row.cell("summary").codePointLength());
+		assertEquals(NativeResultCell.State.UNBOUND, row.cell("unbound").state());
+		assertEquals(NativeResultCell.State.ERROR, row.cell("error").state());
+		assertThrows(IllegalStateException.class, row::toBindingSet,
+				"an unconsumed summary must remain typed rather than impersonating an RDF value");
 	}
 
 	private static String label(int index) {

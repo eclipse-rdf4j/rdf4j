@@ -29,6 +29,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.impl.RepositoryBNode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -39,6 +40,37 @@ import tools.jackson.databind.ObjectMapper;
 class WorkbenchPageResultWriterTest {
 
 	private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void negotiatedBlankNodeTermsKeepRawIdsAndPerValueAuthority(boolean compact) throws Exception {
+		var output = new ByteArrayOutputStream();
+		var writer = new WorkbenchPageResultWriter(output, compact);
+		writer.startQueryResult(List.of("stored", "transient"));
+		var row = new QueryBindingSet();
+		row.addBinding("stored", RepositoryBNode.fromNegotiatedResult("stored-wire", "raw >\\雪", true));
+		row.addBinding("transient", RepositoryBNode.fromNegotiatedResult("transient-wire", "raw >\\雪", false));
+		writer.handleSolution(row);
+		writer.endQueryResult();
+		var terms = output.toString(StandardCharsets.UTF_8)
+				.lines()
+				.map(JSON_MAPPER::readTree)
+				.filter(record -> record.path("type").asText().equals("rows"))
+				.findFirst()
+				.orElseThrow()
+				.path("values")
+				.get(0);
+		if (compact) {
+			assertThat(terms.get(0).get(1).asText()).isEqualTo("raw >\\雪");
+			assertThat(terms.get(0).get(2).isNull()).isTrue();
+			assertThat(terms.get(0).get(3).asBoolean()).isTrue();
+			assertThat(terms.get(1)).hasSize(2);
+		} else {
+			assertThat(terms.get(0).path("value").asText()).isEqualTo("raw >\\雪");
+			assertThat(terms.get(0).path("reference").asBoolean()).isTrue();
+			assertThat(terms.get(1).has("reference")).isFalse();
+		}
+	}
 
 	@ParameterizedTest
 	@ValueSource(strings = { "query-result-tuple", "query-result-graph" })

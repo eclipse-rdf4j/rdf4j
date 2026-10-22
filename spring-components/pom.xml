@@ -13,7 +13,7 @@
 		<module>rdf4j-spring-demo</module>
 	</modules>
 	<properties>
-		<spring.boot.version>4.1.0</spring.boot.version>
+		<spring.boot.version>4.1.1</spring.boot.version>
 	</properties>
 	<artifactId>rdf4j-spring-components</artifactId>
 	<name>RDF4J: Spring components</name>
@@ -35,13 +35,6 @@
 				<scope>import</scope>
 			</dependency>
 			<dependency>
-				<groupId>org.springframework.boot</groupId>
-				<artifactId>spring-boot-dependencies</artifactId>
-				<version>${spring.boot.version}</version>
-				<type>pom</type>
-				<scope>import</scope>
-			</dependency>
-			<dependency>
 				<groupId>org.eclipse.jetty</groupId>
 				<artifactId>jetty-bom</artifactId>
 				<version>${jetty.version}</version>
@@ -59,6 +52,34 @@
 				<groupId>io.netty</groupId>
 				<artifactId>netty-bom</artifactId>
 				<version>${netty.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+			<dependency>
+				<groupId>io.opentelemetry</groupId>
+				<artifactId>opentelemetry-bom</artifactId>
+				<version>${opentelemetry.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+			<dependency>
+				<groupId>com.fasterxml.jackson</groupId>
+				<artifactId>jackson-bom</artifactId>
+				<version>${jackson.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+			<dependency>
+				<groupId>tools.jackson</groupId>
+				<artifactId>jackson-bom</artifactId>
+				<version>${jackson3.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+			<dependency>
+				<groupId>org.springframework.boot</groupId>
+				<artifactId>spring-boot-dependencies</artifactId>
+				<version>${spring.boot.version}</version>
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>

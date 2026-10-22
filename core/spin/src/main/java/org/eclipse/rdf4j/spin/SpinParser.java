@@ -809,7 +809,7 @@ public class SpinParser {
 					SP.SERVICE_URI_PROPERTY, SP.WITH_PROPERTY, SP.INTO_PROPERTY, SP.DOCUMENT_PROPERTY);
 			while (!pending.isEmpty()) {
 				Reachable current = pending.removeLast();
-				if (!(current.value()instanceof Resource value) || !visited.add(current)) {
+				if (!(current.value() instanceof Resource value) || !visited.add(current)) {
 					continue;
 				}
 				if (current.role() == PreflightRole.VARIABLE_NAMES

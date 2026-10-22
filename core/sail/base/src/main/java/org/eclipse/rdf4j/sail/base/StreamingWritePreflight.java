@@ -550,39 +550,39 @@ public final class StreamingWritePreflight implements SailClosable {
 		private void collect(SailSource source, List<StatementInput> inherited, Object requestedOwner) {
 			sources.add(source);
 			switch (source) {
-				case SailSourceBranch branch -> {
-					boolean first = collected.add(branch);
-					SailSourceBranch.StreamingSnapshot snapshot = branch.streamingSnapshot(nonblocking, requestedOwner,
-							first, frontiers.contains(branch), frozenContexts, preparing.getOrDefault(branch, Set.of()),
-							failure);
-					if (snapshot.publicationFrontier()) {
-						frontiers.add(branch);
-					}
-					List<StatementInput> routed = new ArrayList<>();
-					if (first) {
-						Set<Changeset> own = identitySet();
-						members.put(branch, own);
-						for (SailSourceBranch.StreamingChange entry : snapshot.changes()) {
-							Changeset change = entry.change();
-							StatementInput input = entry.input();
-							inputs.put(change, input);
-							if (input.hasChanges()) {
-								own.add(change);
-								if (!snapshot.forwarded()) {
-									routed.add(input);
-								}
+			case SailSourceBranch branch -> {
+				boolean first = collected.add(branch);
+				SailSourceBranch.StreamingSnapshot snapshot = branch.streamingSnapshot(nonblocking, requestedOwner,
+						first, frontiers.contains(branch), frozenContexts, preparing.getOrDefault(branch, Set.of()),
+						failure);
+				if (snapshot.publicationFrontier()) {
+					frontiers.add(branch);
+				}
+				List<StatementInput> routed = new ArrayList<>();
+				if (first) {
+					Set<Changeset> own = identitySet();
+					members.put(branch, own);
+					for (SailSourceBranch.StreamingChange entry : snapshot.changes()) {
+						Changeset change = entry.change();
+						StatementInput input = entry.input();
+						inputs.put(change, input);
+						if (input.hasChanges()) {
+							own.add(change);
+							if (!snapshot.forwarded()) {
+								routed.add(input);
 							}
 						}
 					}
-					routed.addAll(inherited);
-					collect(branch.streamingBacking(), routed, snapshot.owner());
 				}
-				case UnionSailSource union -> {
-					collect(union.streamingPrimary(), inherited, requestedOwner);
-					collect(union.streamingAdditional(), List.of(), requestedOwner);
-				}
-				case DelegatingSailSource delegating -> collect(delegating.streamingDelegate(), inherited, requestedOwner);
-				default -> routes.add(new Route(source, inherited, source.writeIntentOwner(requestedOwner)));
+				routed.addAll(inherited);
+				collect(branch.streamingBacking(), routed, snapshot.owner());
+			}
+			case UnionSailSource union -> {
+				collect(union.streamingPrimary(), inherited, requestedOwner);
+				collect(union.streamingAdditional(), List.of(), requestedOwner);
+			}
+			case DelegatingSailSource delegating -> collect(delegating.streamingDelegate(), inherited, requestedOwner);
+			default -> routes.add(new Route(source, inherited, source.writeIntentOwner(requestedOwner)));
 			}
 		}
 

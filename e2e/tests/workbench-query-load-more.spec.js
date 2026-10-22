@@ -1082,12 +1082,17 @@ test('cancelled execution clears busy state and a new Execute starts cleanly', a
 	await page.locator('#exec').click();
 	await requestReceived;
 	const result = page.locator('#query-results .query-result-layout');
+	const skeleton = result.locator('.query-result-skeleton');
+	await expect(skeleton).toBeVisible();
+	await expect(result).toHaveCSS('overflow-x', 'visible');
 	await expect(result.getByRole('button', { name: 'Cancel query' })).toBeVisible();
 	const cancelRequest = page.waitForRequest(request => request.method() === 'POST'
 		&& /\/query(?:[?#]|$)/.test(request.url())
 		&& new URLSearchParams(request.postData() || '').get('action') === 'cancel-query', { timeout: 15000 });
 	await result.getByRole('button', { name: 'Cancel query' }).click();
 	await expect(result.locator('.query-result-status')).toHaveText('Query cancelled.');
+	await expect(skeleton).toBeHidden();
+	await expect(result).toHaveCSS('overflow-x', 'clip');
 	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
 	await expect(page.locator('#query-cancel')).toBeDisabled();
 	const cancel = await cancelRequest;
@@ -1455,6 +1460,7 @@ test('saved-query error can be corrected and re-executed through the same saved 
 test('compact tuple rows preserve namespaced, directed, typed, nested, unbound, and long RDF terms', async ({ page, request }) => {
 	const monitor = monitorExecutions(page);
 	await openQueryPage(page);
+	await page.setViewportSize({ width: 390, height: 844 });
 	const directedStatement = await request.post(`${REPOSITORY_URL}/statements`, {
 		headers: { 'Content-Type': 'text/turtle' },
 		data: '<urn:load:item> <urn:load:directed-predicate> "مرحبا"@ar--rtl .'
@@ -1481,11 +1487,15 @@ test('compact tuple rows preserve namespaced, directed, typed, nested, unbound, 
 	await expect(result.locator('.query-result-load-more')).toBeVisible();
 	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Display' });
 	await options.click();
+	await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth
+		<= document.documentElement.clientWidth)).toBe(true);
 	await result.locator('select[name="result-layout"]').selectOption('table');
 	await result.locator('.query-result-load-more').click();
 	await expect.poll(() => monitor.executions.length).toBe(2);
 	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
 	await expectCompletedRows(result.locator('.query-result-status'), 2, 2);
+	await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth
+		<= document.documentElement.clientWidth)).toBe(true);
 	const firstRow = result.locator('tbody tr[data-query-row-index="0"]');
 	const cells = firstRow.locator('td');
 	await expect(cells.nth(0)).toContainText('ex:item');
@@ -1703,10 +1713,7 @@ async function expectCompletedRows(status, loadedRows, totalRows) {
 	}
 }
 
-/**
- * Waits until a scroll position stops changing and returns it. WebKit animates wheel scrolling and adds the next
- * wheel turn to a motion that is still running, so progress is judged only once the scroll has settled.
- */
+/** Waits until a scroll snapshot stops changing, including browser-animated wheel and keyboard movement. */
 async function settledScroll(read) {
 	let last = await read();
 	let unchanged = 0;
@@ -1721,107 +1728,54 @@ async function settledScroll(read) {
 }
 
 async function scrollToResultEnd(scrollport, page) {
-	await expect(scrollport).toBeVisible();
-	await pointAtVisibleResult(scrollport, page);
-	let state = await readResultScrollProgress(scrollport);
-	let usedKeyboardFallback = false;
-	// WebKit on Linux scrolls one fixed line step (about 45 px) per wheel event, so turn while the wheel moves the result.
-	for (let attempt = 0; attempt < 400 && !state.lastVisible; attempt++) {
-		await pointAtVisibleResult(scrollport, page);
-		const previous = state;
-		// A result that scrolls with the page is followed by the page footer: the wheel stops at the result's end
-		// rather than scrolling its last rows above the window.
-		const step = Math.min(Math.max(450, Math.floor(state.clientHeight * 0.75)), state.distanceToEnd);
-		if (step > 0) {
-			await page.mouse.wheel(0, step);
-		}
-		await settledScroll(async () => (await readResultScrollProgress(scrollport)).scrollTop);
-		state = await readResultScrollProgress(scrollport);
-		const advanced = state.lastVisible || state.scrollTop > previous.scrollTop || state.lastIndex > previous.lastIndex;
-		if (!advanced) {
-			await scrollport.focus();
-			await scrollport.press('PageDown');
-			state = await readResultScrollProgress(scrollport);
-			if (!state.lastVisible && state.scrollTop === previous.scrollTop
-					&& state.lastIndex === previous.lastIndex) {
-				await scrollport.press('End');
-				state = await readResultScrollProgress(scrollport);
-			}
-			if (!state.lastVisible && state.scrollSource === 'page' && state.scrollTop === previous.scrollTop
-					&& state.lastIndex === previous.lastIndex) {
-				// WebKit does not pass keys from the result to the page that scrolls it; End on the page does.
-				await page.evaluate(() => document.activeElement && document.activeElement.blur());
-				await page.keyboard.press('End');
-				await expect.poll(async () => {
-					state = await readResultScrollProgress(scrollport);
-					return state.lastVisible;
-				}, { timeout: 1500 }).toBe(true).catch(() => {});
-			}
-			usedKeyboardFallback = true;
-		}
-		state = await readResultScrollProgress(scrollport);
-		if (usedKeyboardFallback && !state.lastVisible
-				&& state.scrollTop === previous.scrollTop && state.lastIndex === previous.lastIndex) {
-			break;
-		}
-	}
-	if (!state.lastVisible && state.scrollSource === 'page') {
-		// WebKit on Linux scrolls one fixed line step per wheel event, so the turns above can run out first; End on
-		// the page finishes the way.
-		await page.evaluate(() => document.activeElement && document.activeElement.blur());
-		await page.keyboard.press('End');
-		await expect.poll(async () => {
-			state = await readResultScrollProgress(scrollport);
-			return state.lastVisible;
-		}, { timeout: 3000 }).toBe(true).catch(() => {});
-		usedKeyboardFallback = true;
-	}
-	expect(state.lastVisible, `native wheel input should bring the final result row into view: ${JSON.stringify(state)}`)
-		.toBe(true);
-	if (usedKeyboardFallback) {
-		console.log('[native-scroll-edge-fallback] End key was needed after wheel progress stopped');
-	}
+	await scrollResultToEdge(scrollport, page, 'End', 'lastVisible');
 }
 
 async function scrollToResultStart(scrollport, page) {
+	await scrollResultToEdge(scrollport, page, 'Home', 'firstVisible');
+}
+
+async function scrollResultToEdge(scrollport, page, key, visibleEdge) {
 	await expect(scrollport).toBeVisible();
 	await pointAtVisibleResult(scrollport, page);
 	let state = await readResultScrollProgress(scrollport);
-	let usedKeyboardFallback = false;
-	// WebKit on Linux scrolls one fixed line step (about 45 px) per wheel event, so turn while the wheel moves the result.
-	for (let attempt = 0; attempt < 400 && !state.firstVisible; attempt++) {
-		await pointAtVisibleResult(scrollport, page);
-		const previous = state;
-		// A result that scrolls with the page has the query form above it: the wheel stops at the result's start
-		// rather than scrolling its first rows below the window.
-		const step = Math.min(Math.max(450, Math.floor(state.clientHeight * 0.75)), state.distanceToStart);
-		if (step > 0) {
-			await page.mouse.wheel(0, -step);
-		}
-		await settledScroll(async () => (await readResultScrollProgress(scrollport)).scrollTop);
+	if (state.scrollSource === 'page') {
+		await page.evaluate(() => document.activeElement && document.activeElement.blur());
+		await page.keyboard.press(key);
+		await settledScroll(async () => JSON.stringify(await readResultScrollProgress(scrollport)));
 		state = await readResultScrollProgress(scrollport);
-		const advanced = state.firstVisible || state.scrollTop < previous.scrollTop || state.firstIndex < previous.firstIndex;
-		if (!advanced) {
-			await scrollport.focus();
-			await scrollport.press('PageUp');
+		while (!state[visibleEdge]) {
+			const edgePosition = await scrollport.evaluate((element, edge) => {
+				const selector = edge === 'firstVisible' ? '[data-query-record-index="0"], tr[data-query-row-index="0"]'
+					: '[data-query-record-index], tr[data-query-row-index]';
+				const rows = Array.from(element.querySelectorAll(selector));
+				const row = edge === 'firstVisible' ? rows[0] : rows.at(-1);
+				const bounds = (row || element).getBoundingClientRect();
+				return { scrollTop: window.scrollY, top: bounds.top, bottom: bounds.bottom, viewportHeight: window.innerHeight };
+			}, visibleEdge);
+			const pageKey = visibleEdge === 'firstVisible'
+				? (edgePosition.top >= edgePosition.viewportHeight ? 'PageDown' : 'PageUp')
+				: (edgePosition.bottom <= 0 ? 'PageUp' : 'PageDown');
+			const previousScrollTop = state.scrollTop;
+			await page.keyboard.press(pageKey);
+			await settledScroll(async () => JSON.stringify(await readResultScrollProgress(scrollport)));
 			state = await readResultScrollProgress(scrollport);
-			if (!state.firstVisible && state.scrollTop === previous.scrollTop
-					&& state.firstIndex === previous.firstIndex) {
-				await scrollport.press('Home');
+			const madeProgress = pageKey === 'PageDown'
+				? state.scrollTop > previousScrollTop : state.scrollTop < previousScrollTop;
+			if (!madeProgress) {
+				break;
 			}
-			usedKeyboardFallback = true;
 		}
-		state = await readResultScrollProgress(scrollport);
-		if (usedKeyboardFallback && !state.firstVisible
-				&& state.scrollTop === previous.scrollTop && state.firstIndex === previous.firstIndex) {
-			break;
-		}
+	} else {
+		await scrollport.focus();
+		await scrollport.press(key);
 	}
-	expect(state.firstVisible, `native wheel input should bring the first result row into view: ${JSON.stringify(state)}`)
+	if (!state[visibleEdge]) {
+		await expect.poll(async () => (await readResultScrollProgress(scrollport))[visibleEdge]).toBe(true);
+	}
+	const finalState = await readResultScrollProgress(scrollport);
+	expect(finalState[visibleEdge], `native ${key} input should bring the result edge into view: ${JSON.stringify(finalState)}`)
 		.toBe(true);
-	if (usedKeyboardFallback) {
-		console.log('[native-scroll-edge-fallback] Home key was needed after wheel progress stopped');
-	}
 }
 
 /**

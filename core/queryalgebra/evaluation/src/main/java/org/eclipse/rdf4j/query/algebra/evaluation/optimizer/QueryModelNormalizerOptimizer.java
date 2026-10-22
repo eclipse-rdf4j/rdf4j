@@ -342,7 +342,7 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 
 	private boolean bindingsStableAcrossReorder(LeftJoin leftJoin, TupleExpr newlyJoinedInput,
 			Set<String> overlappingNames, QueryAlgebraBindingAnalysis analysis) {
-		if (!(leftJoin.getParentNode()instanceof Join parentJoin)) {
+		if (!(leftJoin.getParentNode() instanceof Join parentJoin)) {
 			return false;
 		}
 		boolean optionalWasLeft = parentJoin.getLeftArg() == leftJoin;

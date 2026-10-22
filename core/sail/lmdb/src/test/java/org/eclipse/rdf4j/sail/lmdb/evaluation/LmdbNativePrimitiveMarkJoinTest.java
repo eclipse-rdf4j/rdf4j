@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.NULL_CONTEXT_ID;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 
@@ -22,8 +23,11 @@ import java.util.List;
 import java.util.Map;
 
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.IdCapability;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -208,6 +212,243 @@ class LmdbNativePrimitiveMarkJoinTest {
 			assertThat(cursor.next()).isTrue();
 			assertThat(row.slots[0]).isEqualTo(999L);
 			assertThat(cursor.next()).isFalse();
+		}
+	}
+
+	@Test
+	void minusDoesNotCompareSlottedLexicalInputOutsideEitherOperandDomain() throws Exception {
+		TrackingMembershipSource source = new TrackingMembershipSource(new long[0][]);
+		RowState row = row(source, 3);
+		setKey(row, 101L);
+		row.lexicalInputMask = 1L;
+		int[] filterCalls = { 0 };
+		SlotPlan left = new ValuesPlan(new ValuesRow[] { new ValuesRow(new int[] { 1 }, new long[] { 201L }) });
+		SlotPlan rightRows = new ValuesPlan(new ValuesRow[] { new ValuesRow(new int[] { 2 }, new long[] { 301L }) });
+		SlotPlan right = new FilterPlan(rightRows, candidate -> {
+			filterCalls[0]++;
+			return candidate.slots[0] == 101L;
+		}, 1L);
+		SlotPlan minus = new MinusPlan(left, right, 0L);
+
+		try (RowCursor cursor = minus.open(row)) {
+			assertThat(cursor.next())
+					.as("the disjoint MINUS operands keep their left row despite inherited x")
+					.isTrue();
+			assertThat(row.slots[1]).isEqualTo(201L);
+			assertThat(cursor.next()).isFalse();
+		}
+		assertThat(filterCalls).as("the right child still evaluates its inherited input filter").containsExactly(1);
+	}
+
+	@Test
+	void minusDoesNotTreatUnslottedBaseInputAsAnOperandOverlap() throws Exception {
+		TrackingMembershipSource source = new TrackingMembershipSource(new long[0][]);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("left", 0, "right", 1), null);
+		layout.freeze(List.of("left", "right"));
+		MapBindingSet base = new MapBindingSet();
+		base.addBinding("x", SimpleValueFactory.getInstance().createIRI("urn:input"));
+		RowState row = new RowState(source, layout, base);
+		Arrays.fill(row.slots, UNKNOWN);
+		row.recomputeBoundMask();
+		SlotPlan left = new ValuesPlan(new ValuesRow[] { new ValuesRow(new int[] { 0 }, new long[] { 201L }) });
+		SlotPlan right = new ValuesPlan(new ValuesRow[] { new ValuesRow(new int[] { 1 }, new long[] { 301L }) });
+
+		try (RowCursor cursor = new MinusPlan(left, right, 0L).open(row)) {
+			assertThat(cursor.next())
+					.as("a base binding outside the native slot layout is not shared by disjoint operands")
+					.isTrue();
+			assertThat(row.slots[0]).isEqualTo(201L);
+			assertThat(cursor.next()).isFalse();
+		}
+	}
+
+	@Test
+	void minusKeepsDeclaredSharedRowsWhenTheCurrentLeftMappingLeavesTheNameUnbound() throws Exception {
+		TrackingMembershipSource source = new TrackingMembershipSource(new long[0][]);
+		RowState row = row(source, 1);
+		SlotPlan boundLeftRow = new ValuesPlan(new ValuesRow[] { new ValuesRow(new int[] { 0 }, new long[] { 101L }) });
+		SlotPlan unboundLeftRow = new ValuesPlan(new ValuesRow[] { new ValuesRow(new int[0], new long[0]) });
+		SlotPlan left = new UnionPlan(boundLeftRow, unboundLeftRow);
+		SlotPlan right = new ValuesPlan(new ValuesRow[] { new ValuesRow(new int[] { 0 }, new long[] { 101L }) });
+		List<Long> emitted = new ArrayList<>();
+
+		try (RowCursor cursor = new MinusPlan(left, right, 1L).open(row)) {
+			while (cursor.next()) {
+				emitted.add(row.slots[0]);
+			}
+		}
+
+		assertThat(emitted).containsExactly(UNKNOWN);
+	}
+
+	@Test
+	void minusUsesDeclaredSharedValuesDomainWhenRowsLeaveTheNameUnbound() throws Exception {
+		TrackingMembershipSource source = new TrackingMembershipSource(new long[0][]);
+		SlotPlan right = new ValuesPlan(new ValuesRow[] { new ValuesRow(new int[0], new long[0]) });
+		assertThat(right.producedMask()).as("an explicit VALUES header with only UNDEF has no bound row slots")
+				.isZero();
+
+		RowState boundInput = row(source, 1);
+		setKey(boundInput, 101L);
+		boundInput.lexicalInputMask = 1L;
+		SlotPlan boundLeft = new ValuesPlan(new ValuesRow[] { new ValuesRow(new int[] { 0 }, new long[] { 101L }) });
+		try (RowCursor cursor = new MinusPlan(boundLeft, right, 1L).open(boundInput)) {
+			assertThat(cursor.next())
+					.as("the declared shared name carries the bound lexical entry through an UNDEF VALUES row")
+					.isFalse();
+		}
+
+		RowState absentInput = row(source, 1);
+		SlotPlan absentLeft = new ValuesPlan(new ValuesRow[] { new ValuesRow(new int[] { 0 }, new long[] { 101L }) });
+		try (RowCursor cursor = new MinusPlan(absentLeft, right, 1L).open(absentInput)) {
+			assertThat(cursor.next()).as("an absent lexical input does not become a shared value").isTrue();
+			assertThat(absentInput.slots[0]).isEqualTo(101L);
+			assertThat(cursor.next()).isFalse();
+		}
+
+		RowState nullMarkerInput = row(source, 1);
+		nullMarkerInput.slots[0] = NULL_CONTEXT_ID;
+		nullMarkerInput.recomputeBoundMask();
+		nullMarkerInput.lexicalInputMask = 1L;
+		SlotPlan unboundLeft = new ValuesPlan(new ValuesRow[] { new ValuesRow(new int[0], new long[0]) });
+		try (RowCursor cursor = new MinusPlan(unboundLeft, right, 1L).open(nullMarkerInput)) {
+			assertThat(cursor.next())
+					.as("the internal null marker is not an RDF binding shared by the two operands")
+					.isTrue();
+			assertThat(nullMarkerInput.view.hasBinding("k0"))
+					.as("the row retains the internal marker for shadowing")
+					.isTrue();
+			assertThat(nullMarkerInput.view.getValue("k0"))
+					.as("the internal marker does not expose an RDF value")
+					.isNull();
+			assertThat(nullMarkerInput.view.getBinding("k0")).isNull();
+			assertThat(IdCapability.BOUND.test(nullMarkerInput.slots[0]))
+					.as("the internal marker does not satisfy SPARQL BOUND")
+					.isFalse();
+			assertThat(nullMarkerInput.slots[0]).isEqualTo(NULL_CONTEXT_ID);
+			assertThat(cursor.next()).isFalse();
+		}
+	}
+
+	@Test
+	void disjointMinusDrainsTheRightWithEntryInputAndWithoutLeftSlots() throws Exception {
+		TrackingMembershipSource source = new TrackingMembershipSource(new long[0][]);
+		RowState row = row(source, 2);
+		setKey(row, 101L);
+		row.lexicalInputMask = 1L;
+		int[] rightRows = { 0 };
+		boolean[] sawExpectedInput = { false };
+		SlotPlan left = new ValuesPlan(new ValuesRow[] { new ValuesRow(new int[] { 1 }, new long[] { 201L }) });
+		SlotPlan right = new FilterPlan(
+				new ValuesPlan(new ValuesRow[] { new ValuesRow(new int[0], new long[0]) }), candidate -> {
+					rightRows[0]++;
+					sawExpectedInput[0] = candidate.slots[0] == 101L && candidate.slots[1] == UNKNOWN;
+					return true;
+				}, 0L);
+
+		try (RowCursor cursor = new MinusPlan(left, right, 0L).open(row)) {
+			assertThat(cursor.next()).isTrue();
+			assertThat(row.slots[1]).isEqualTo(201L);
+			assertThat(cursor.next()).isFalse();
+		}
+
+		assertThat(rightRows).as("a disjoint MINUS still evaluates its non-discardable right row").containsExactly(1);
+		assertThat(sawExpectedInput)
+				.as("the right side sees lexical input but not bindings produced by the left side")
+				.containsExactly(true);
+	}
+
+	@Test
+	void disjointMinusDoesNotOpenTheRightWhenTheLeftIsEmpty() throws Exception {
+		TrackingMembershipSource source = new TrackingMembershipSource(new long[0][]);
+		RowState row = row(source, 1);
+		int[] rightRows = { 0 };
+		SlotPlan right = new FilterPlan(
+				new ValuesPlan(new ValuesRow[] { new ValuesRow(new int[0], new long[0]) }), candidate -> {
+					rightRows[0]++;
+					return true;
+				}, 0L);
+
+		try (RowCursor cursor = new MinusPlan(new ValuesPlan(new ValuesRow[0]), right, 0L).open(row)) {
+			assertThat(cursor.next()).isFalse();
+		}
+
+		assertThat(rightRows).as("an empty left operand never evaluates the right side").containsExactly(0);
+	}
+
+	@Test
+	void disjointMinusDrainsTheRightOnceAcrossDuplicateLeftRows() throws Exception {
+		TrackingMembershipSource source = new TrackingMembershipSource(new long[0][]);
+		RowState row = row(source, 2);
+		int[] rightRows = { 0 };
+		SlotPlan left = new ValuesPlan(new ValuesRow[] {
+				new ValuesRow(new int[] { 1 }, new long[] { 201L }),
+				new ValuesRow(new int[] { 1 }, new long[] { 201L })
+		});
+		SlotPlan right = new FilterPlan(
+				new ValuesPlan(new ValuesRow[] { new ValuesRow(new int[0], new long[0]) }), candidate -> {
+					rightRows[0]++;
+					return true;
+				}, 0L);
+		List<Long> emitted = new ArrayList<>();
+
+		try (RowCursor cursor = new MinusPlan(left, right, 0L).open(row)) {
+			while (cursor.next()) {
+				emitted.add(row.slots[1]);
+			}
+		}
+
+		assertThat(emitted).containsExactly(201L, 201L);
+		assertThat(rightRows).as("the disjoint right side is drained only once per MINUS cursor").containsExactly(1);
+	}
+
+	@Test
+	void disjointMinusRestoresTheLeftRowWhenRightEvaluationThrows() throws Exception {
+		TrackingMembershipSource source = new TrackingMembershipSource(new long[0][]);
+		RowState row = row(source, 2);
+		setKey(row, 101L);
+		row.lexicalInputMask = 1L;
+		SlotPlan left = new ValuesPlan(new ValuesRow[] { new ValuesRow(new int[] { 1 }, new long[] { 201L }) });
+		boolean[] sawExpectedInput = { false };
+		SlotPlan right = new FilterPlan(
+				new ValuesPlan(new ValuesRow[] { new ValuesRow(new int[0], new long[0]) }), candidate -> {
+					sawExpectedInput[0] = candidate.slots[0] == 101L && candidate.slots[1] == UNKNOWN;
+					throw new IllegalStateException("right evaluation failed");
+				}, 0L);
+
+		try (RowCursor cursor = new MinusPlan(left, right, 0L).open(row)) {
+			assertThatThrownBy(cursor::next).isInstanceOf(IllegalStateException.class)
+					.hasMessage("right evaluation failed");
+			assertThat(row.slots[0]).isEqualTo(101L);
+			assertThat(row.slots[1]).isEqualTo(201L);
+		}
+
+		assertThat(sawExpectedInput)
+				.as("the right-side failure occurs after clearing left-produced bindings")
+				.containsExactly(true);
+		assertThat(row.slots[0]).isEqualTo(101L);
+		assertThat(row.slots[1]).isEqualTo(UNKNOWN);
+	}
+
+	@Test
+	void minusRemovesBoundCompatibleRowsButKeepsConflictingRows() throws Exception {
+		for (long rightValue : new long[] { 101L, 202L }) {
+			TrackingMembershipSource source = new TrackingMembershipSource(new long[0][]);
+			RowState row = row(source, 1);
+			SlotPlan left = new ValuesPlan(new ValuesRow[] { new ValuesRow(new int[] { 0 }, new long[] { 101L }) });
+			SlotPlan right = new ValuesPlan(
+					new ValuesRow[] { new ValuesRow(new int[] { 0 }, new long[] { rightValue }) });
+			List<Long> emitted = new ArrayList<>();
+
+			try (RowCursor cursor = new MinusPlan(left, right, 1L).open(row)) {
+				while (cursor.next()) {
+					emitted.add(row.slots[0]);
+				}
+			}
+
+			assertThat(emitted)
+					.as("MINUS right value %s", rightValue)
+					.containsExactlyElementsOf(rightValue == 101L ? List.of() : List.of(101L));
 		}
 	}
 

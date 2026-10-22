@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.RUNTIME_INTERN_BASE;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -41,9 +42,11 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
+import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.model.RdfTermKey;
 
 /**
@@ -267,6 +270,10 @@ final class NativeExecutionContext implements AutoCloseable {
 	private final NativeCancellationToken cancellation;
 	/** Owned by the root evaluation and released only after the last retained consumer finishes. */
 	private final QueryExecutionDeadline.Registration deadlineRegistration;
+	/** Independent binding-frame ownership; condition projections still share the outer scalar and term authority. */
+	private final NativeExecutionContext queryFrameOwner;
+	/** Term-space owner; an invocation can replace its input/caches without replacing already bound native terms. */
+	private final NativeExecutionContext termOwner;
 	final boolean valueResolutionCacheEnabled;
 	final QueryExecutionPolicy queryExecutionPolicy;
 	private final long executionId = NEXT_EXECUTION_ID.getAndIncrement();
@@ -315,6 +322,8 @@ final class NativeExecutionContext implements AutoCloseable {
 	private boolean closeRequested;
 	/** Number of active consumers that may still evaluate against this context after an inner close request. */
 	private int leaseCount;
+	/** Immutable ownership graph, not retained claims: cached producers must never keep their own owners alive. */
+	private volatile NativeExecutionContext[] leaseOwners;
 
 	NativeExecutionContext() {
 		this(QueryExecutionPolicy.DEFAULT);
@@ -325,6 +334,8 @@ final class NativeExecutionContext implements AutoCloseable {
 		this.cancellation = new NativeCancellationToken();
 		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
 		this.deadlineRegistration = deadline == null ? null : deadline.onExpiration(cancellation::requestCancellation);
+		this.queryFrameOwner = this;
+		this.termOwner = this;
 		this.queryExecutionPolicy = policy;
 		this.valueResolutionCacheEnabled = !"false".equalsIgnoreCase(System.getProperty(NativeValueResolver.PROPERTY));
 	}
@@ -333,6 +344,8 @@ final class NativeExecutionContext implements AutoCloseable {
 		this.queryScopeOwner = parent.queryScopeOwner;
 		this.cancellation = new NativeCancellationToken(parent.cancellation);
 		this.deadlineRegistration = null;
+		this.queryFrameOwner = parent.queryFrameOwner;
+		this.termOwner = this;
 		this.queryExecutionPolicy = parent.queryExecutionPolicy;
 		this.valueResolutionCacheEnabled = parent.valueResolutionCacheEnabled;
 	}
@@ -349,9 +362,46 @@ final class NativeExecutionContext implements AutoCloseable {
 		return memoryScope().ledger(LmdbNativeHashJoin.queryMemory());
 	}
 
+	NativeExecutionContext(NativeExecutionContext parent, BindingSet projectedQueryBase) {
+		this(parent, projectedQueryBase, true);
+	}
+
+	NativeExecutionContext(NativeExecutionContext parent, BindingSet input, boolean shareTermSpace) {
+		this.queryScopeOwner = parent.queryScopeOwner;
+		this.cancellation = new NativeCancellationToken(parent.cancellation);
+		this.deadlineRegistration = null;
+		this.queryFrameOwner = this;
+		this.termOwner = shareTermSpace ? parent.termOwner : this;
+		this.queryExecutionPolicy = parent.queryExecutionPolicy;
+		this.valueResolutionCacheEnabled = parent.valueResolutionCacheEnabled;
+		this.queryBase = NativeEntryBindings.snapshot(input);
+	}
+
+	/** One cached frame per exact projection and entry-frame owner, with isolated binding-dependent operator caches. */
+	NativeExecutionContext forConditionBindings(ConditionBindingScope scope) {
+		if (scope.retainsAllBindings()) {
+			return this;
+		}
+		if (queryFrameOwner != this) {
+			return queryFrameOwner.forConditionBindings(scope);
+		}
+		return forConditionBindings(scope, evaluationSource());
+	}
+
+	/** A worker facade may share this frame/term owner while requiring its own dictionary and mutable preparation. */
+	NativeExecutionContext forConditionBindings(ConditionBindingScope scope, SyntheticValueSource source) {
+		if (scope.retainsAllBindings()) {
+			return this;
+		}
+		return nativeState(new ConditionFrameKey(scope, source), () -> source.forConditionBindings(scope));
+	}
+
+	private record ConditionFrameKey(ConditionBindingScope scope, SyntheticValueSource source) {
+	}
+
 	void initializeQueryBase(BindingSet bindings) {
-		if (queryScopeOwner != this) {
-			queryScopeOwner.initializeQueryBase(bindings);
+		if (queryFrameOwner != this) {
+			queryFrameOwner.initializeQueryBase(bindings);
 			return;
 		}
 		if (queryBase == null) {
@@ -359,15 +409,15 @@ final class NativeExecutionContext implements AutoCloseable {
 				if (queryBase == null) {
 					queryBase = bindings == null || bindings.isEmpty()
 							? org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance()
-							: new QueryBindingSet(bindings);
+							: NativeEntryBindings.snapshot(bindings);
 				}
 			}
 		}
 	}
 
 	BindingSet queryBase() {
-		if (queryScopeOwner != this) {
-			return queryScopeOwner.queryBase();
+		if (queryFrameOwner != this) {
+			return queryFrameOwner.queryBase();
 		}
 		BindingSet base = queryBase;
 		if (base == null) {
@@ -459,8 +509,8 @@ final class NativeExecutionContext implements AutoCloseable {
 	 * replacing the owner's query-scope authority, so scalar subqueries and generic islands can borrow the same scope.
 	 */
 	void installEvaluationSource(SyntheticValueSource source) {
-		if (queryScopeOwner != this) {
-			queryScopeOwner.installEvaluationSource(source);
+		if (queryFrameOwner != this) {
+			queryFrameOwner.installEvaluationSource(source);
 			return;
 		}
 		if (source == null) {
@@ -475,7 +525,7 @@ final class NativeExecutionContext implements AutoCloseable {
 
 	/** Returns the root source that owns this context's query-scoped values, if one has been installed. */
 	SyntheticValueSource evaluationSource() {
-		return queryScopeOwner == this ? evaluationSource : queryScopeOwner.evaluationSource();
+		return queryFrameOwner == this ? evaluationSource : queryFrameOwner.evaluationSource();
 	}
 
 	void installValueCapturer(Function<Value, Value> capturer) {
@@ -508,8 +558,8 @@ final class NativeExecutionContext implements AutoCloseable {
 	 */
 	@SuppressWarnings("unchecked")
 	<T> T genericStep(GenericSubplanDescriptor descriptor, Supplier<T> factory) {
-		if (queryScopeOwner != this) {
-			return queryScopeOwner.genericStep(descriptor, factory);
+		if (queryFrameOwner != this) {
+			return queryFrameOwner.genericStep(descriptor, factory);
 		}
 		if (closed) {
 			throw new IllegalStateException("execution context is closed");
@@ -697,6 +747,9 @@ final class NativeExecutionContext implements AutoCloseable {
 		if (isClosed()) {
 			throw new IllegalStateException("execution context is closed");
 		}
+		if (termOwner != this) {
+			return termOwner.runtimeValueTable();
+		}
 		NativeRuntimeValueTable table = runtimeValues;
 		if (table == null) {
 			synchronized (runtimeValuesLock) {
@@ -730,11 +783,17 @@ final class NativeExecutionContext implements AutoCloseable {
 	}
 
 	boolean isUnresolvedKey(long id) {
+		if (termOwner != this) {
+			return termOwner.isUnresolvedKey(id);
+		}
 		NativeRuntimeValueTable table = runtimeValues;
 		return table != null && table.unresolved(id);
 	}
 
 	Value valueOf(long id) {
+		if (termOwner != this) {
+			return termOwner.valueOf(id);
+		}
 		NativeRuntimeValueTable table = runtimeValues;
 		Value value = table == null ? null : table.valueOf(id);
 		if (value != null) {
@@ -745,11 +804,17 @@ final class NativeExecutionContext implements AutoCloseable {
 
 	/** Membership is a published payload word, never a sign test or an allocated-but-unpublished ordinal. */
 	Value internedValueOf(long id) {
+		if (termOwner != this) {
+			return termOwner.internedValueOf(id);
+		}
 		NativeRuntimeValueTable table = runtimeValues;
 		return table == null ? null : table.valueOf(id);
 	}
 
 	boolean contains(long id) {
+		if (termOwner != this) {
+			return termOwner.contains(id);
+		}
 		NativeRuntimeValueTable table = runtimeValues;
 		return (table != null && table.contains(id)) || (queryScopeOwner.hasQueryScopedStoreValues
 				&& queryScopeOwner.queryScopedStoreValuesById.containsKey(id));
@@ -757,6 +822,9 @@ final class NativeExecutionContext implements AutoCloseable {
 
 	/** Metadata-only diagnostics; no scan or materialization of retained terms. */
 	long runtimeValueAccountedBytes() {
+		if (termOwner != this) {
+			return termOwner.runtimeValueAccountedBytes();
+		}
 		NativeRuntimeValueTable table = runtimeValues;
 		return table == null ? 0L : table.accountedBytes();
 	}
@@ -835,6 +903,9 @@ final class NativeExecutionContext implements AutoCloseable {
 	}
 
 	int internedCount() {
+		if (termOwner != this) {
+			return termOwner.internedCount();
+		}
 		NativeRuntimeValueTable table = runtimeValues;
 		return (table == null ? 0 : table.size()) + queryScopeOwner.queryScopedStoreValuesById.size();
 	}
@@ -844,17 +915,11 @@ final class NativeExecutionContext implements AutoCloseable {
 	}
 
 	/**
-	 * Retains this exact context while a wrapper may continue evaluating rows after an inner carrier requests close.
-	 * Leases are deliberately local to a context: a child context must not keep an unrelated parent context alive.
+	 * Retains this context and its actual scalar, entry-frame and term authorities while an accepted consumer may
+	 * continue evaluating after an inner carrier requests close. Unrelated parent contexts are not dependencies.
 	 */
 	Lease retainLease() {
-		synchronized (this) {
-			if (isClosed() || closeRequested) {
-				throw new IllegalStateException("execution context is closed");
-			}
-			leaseCount++;
-			return new Lease(this);
-		}
+		return retainLease(false);
 	}
 
 	/**
@@ -862,13 +927,76 @@ final class NativeExecutionContext implements AutoCloseable {
 	 * reader lease may still need its cached producer. An idle producer must never retain its own state's owner.
 	 */
 	Lease retainActiveLease() {
+		return retainLease(true);
+	}
+
+	private Lease retainLease(boolean active) {
+		NativeExecutionContext[] owners = leaseOwners();
+		int acquired = 0;
+		try {
+			for (NativeExecutionContext owner : owners) {
+				owner.retainLocalLease(active);
+				acquired++;
+			}
+			return new Lease(owners);
+		} catch (RuntimeException | Error failure) {
+			NativeContextClosingIteration.throwFailure(releaseLeases(owners, acquired, failure));
+			throw new AssertionError("unreachable");
+		}
+	}
+
+	private void retainLocalLease(boolean active) {
 		synchronized (this) {
-			if (isClosed() || closeRequested && leaseCount == 0) {
+			if (isClosed() || closeRequested && (!active || leaseCount == 0)) {
 				throw new IllegalStateException("execution context is closed");
 			}
 			leaseCount++;
-			return new Lease(this);
 		}
+	}
+
+	private NativeExecutionContext[] leaseOwners() {
+		NativeExecutionContext[] cached = leaseOwners;
+		if (cached != null) {
+			return cached;
+		}
+		ArrayList<NativeExecutionContext> owners = new ArrayList<>();
+		IdentityHashMap<NativeExecutionContext, Boolean> seen = new IdentityHashMap<>();
+		owners.add(this);
+		seen.put(this, Boolean.TRUE);
+		for (int index = 0; index < owners.size(); index++) {
+			NativeExecutionContext owner = owners.get(index);
+			for (NativeExecutionContext dependency : new NativeExecutionContext[] {
+					owner.queryScopeOwner, owner.queryFrameOwner, owner.termOwner }) {
+				if (seen.put(dependency, Boolean.TRUE) == null) {
+					owners.add(dependency);
+				}
+			}
+		}
+		// Ancestors were created first. No monitor is held while another owner is acquired or released; closing
+		// claims in reverse order keeps every authority available during its dependent's cleanup.
+		owners.sort((left, right) -> Long.compare(left.executionId, right.executionId));
+		cached = owners.toArray(NativeExecutionContext[]::new);
+		leaseOwners = cached;
+		return cached;
+	}
+
+	private static Throwable releaseLeases(NativeExecutionContext[] owners, int acquired, Throwable failure) {
+		for (int index = acquired - 1; index >= 0; index--) {
+			NativeExecutionContext owner = owners[index];
+			Throwable cleanup = KernelRuntime.closeResource(owner::releaseLease, null);
+			if (failure == LmdbNativeProbeDeadlineExceeded.INSTANCE) {
+				// This private stackless signal is deliberately outside the code-generation package's dependencies.
+				Throwable real = LmdbNativeParallelKernelAggregate.realFailureInControlGraph(cleanup);
+				if (real != null) {
+					real.addSuppressed(failure);
+					failure = real;
+				}
+			} else if (cleanup != null) {
+				failure = KernelRuntime.closeResource(() -> NativeContextClosingIteration.throwFailure(cleanup),
+						failure);
+			}
+		}
+		return failure;
 	}
 
 	private void releaseLease() {
@@ -948,17 +1076,19 @@ final class NativeExecutionContext implements AutoCloseable {
 				}
 			}
 		}
-		synchronized (runtimeValuesLock) {
-			NativeRuntimeValueTable table = runtimeValues;
-			runtimeValues = null;
-			if (table != null) {
-				try {
-					table.close();
-				} catch (RuntimeException cleanup) {
-					if (failure == null) {
-						failure = cleanup;
-					} else {
-						failure.addSuppressed(cleanup);
+		if (termOwner == this) {
+			synchronized (runtimeValuesLock) {
+				NativeRuntimeValueTable table = runtimeValues;
+				runtimeValues = null;
+				if (table != null) {
+					try {
+						table.close();
+					} catch (RuntimeException cleanup) {
+						if (failure == null) {
+							failure = cleanup;
+						} else {
+							failure.addSuppressed(cleanup);
+						}
 					}
 				}
 			}
@@ -973,35 +1103,40 @@ final class NativeExecutionContext implements AutoCloseable {
 				scoped.clearQueryScopedValueRegistrar();
 			}
 			labeledBNodes.clear();
+		}
+		if (queryFrameOwner == this) {
 			genericSteps.clear();
+			queryBase = null;
+			evaluationSource = null;
 		}
 		if (queryScopeOwner == this) {
 			genericContext = null;
 			genericContexts.clear();
 			valueCapturer = null;
-			queryBase = null;
-			evaluationSource = null;
 		}
 		return failure;
 	}
 
 	/** One-shot ownership token for a context-bearing semantic wrapper. */
 	static final class Lease implements AutoCloseable {
-		private NativeExecutionContext context;
+		private NativeExecutionContext[] owners;
 
-		private Lease(NativeExecutionContext context) {
-			this.context = context;
+		private Lease(NativeExecutionContext[] owners) {
+			this.owners = owners;
 		}
 
 		@Override
 		public void close() {
-			NativeExecutionContext current;
+			NativeExecutionContext[] current;
 			synchronized (this) {
-				current = context;
-				context = null;
+				current = owners;
+				owners = null;
 			}
 			if (current != null) {
-				current.releaseLease();
+				Throwable failure = releaseLeases(current, current.length, null);
+				if (failure != null) {
+					NativeContextClosingIteration.throwFailure(failure);
+				}
 			}
 		}
 	}

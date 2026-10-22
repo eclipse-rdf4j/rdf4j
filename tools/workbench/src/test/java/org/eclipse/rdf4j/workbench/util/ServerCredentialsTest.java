@@ -22,7 +22,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import jakarta.servlet.http.Cookie;
 
 /**
- * The signed-in user is decoded from the server credentials cookie exactly as the Workbench pages decode it.
+ * Connection form credentials are decoded once, then held on the server and bound to each request.
  */
 class ServerCredentialsTest {
 
@@ -72,8 +72,16 @@ class ServerCredentialsTest {
 	}
 
 	@Test
-	void valuesThatAreNotBase64AreAnonymous() {
-		assertThat(userOf("alice:secret")).isEmpty();
+	void aClientWrittenCredentialsCookieCannotChooseSavedQueryOwnership() {
+		MockHttpServletRequest request = new MockHttpServletRequest();
+		request.setCookies(new Cookie(ServerCredentials.COOKIE, btoa("alice:guessed")));
+
+		assertThat(ServerCredentials.userName(request)).isEmpty();
+	}
+
+	@Test
+	void legacyPlainFormValuesStillNameTheUser() {
+		assertThat(userOf("alice:secret")).isEqualTo("alice");
 	}
 
 	@Test
@@ -85,6 +93,7 @@ class ServerCredentialsTest {
 	private static String userOf(String cookieValue) {
 		MockHttpServletRequest request = new MockHttpServletRequest();
 		request.setCookies(new Cookie("other", "x"), new Cookie(ServerCredentials.COOKIE, cookieValue));
+		ServerCredentials.bindRequest(request, ServerCredentials.fromConnectionForm(cookieValue));
 		return ServerCredentials.userName(request);
 	}
 

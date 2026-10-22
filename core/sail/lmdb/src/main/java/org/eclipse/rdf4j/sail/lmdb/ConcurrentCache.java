@@ -1009,7 +1009,7 @@ public class ConcurrentCache<K, V> implements LmdbCache<K, V> {
 			return 1 << (Integer.SIZE - Integer.numberOfLeadingZeros(n - 1));
 		}
 
-		private record Entry<K, V> (K key, V value, int hash, long generation, long weight) {
+		private record Entry<K, V>(K key, V value, int hash, long generation, long weight) {
 
 		}
 

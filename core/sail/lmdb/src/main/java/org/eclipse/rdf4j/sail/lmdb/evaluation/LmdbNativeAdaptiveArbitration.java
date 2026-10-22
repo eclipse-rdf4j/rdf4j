@@ -28,7 +28,7 @@ final class LmdbNativeAdaptiveArbitration {
 		T open(LmdbNativeCostObservation observation) throws Exception;
 	}
 
-	record Candidate<T> (LmdbNativeCostEstimate estimate, int staticPreference, Opener<T> opener, boolean probeable) {
+	record Candidate<T>(LmdbNativeCostEstimate estimate, int staticPreference, Opener<T> opener, boolean probeable) {
 		Candidate(LmdbNativeCostEstimate estimate, int staticPreference, Opener<T> opener) {
 			this(estimate, staticPreference, opener, true);
 		}
@@ -47,11 +47,11 @@ final class LmdbNativeAdaptiveArbitration {
 	 */
 	sealed interface DispatchPlan<T> {
 
-		record Normal<T> (Candidate<T> candidate, LmdbNativeCostPrediction prediction, String reason)
+		record Normal<T>(Candidate<T> candidate, LmdbNativeCostPrediction prediction, String reason)
 				implements DispatchPlan<T> {
 		}
 
-		record Probe<T> (Candidate<T> trial, LmdbNativeCostPrediction trialPrediction, Candidate<T> fallback,
+		record Probe<T>(Candidate<T> trial, LmdbNativeCostPrediction trialPrediction, Candidate<T> fallback,
 				LmdbNativeCostPrediction fallbackPrediction, long deadlineNanos,
 				LmdbNativeSafetyLedger.Reservation reservation, LmdbNativeRegimeKey regime, long epoch,
 				String reason, LmdbNativeProbeScheduler.Flight flight) implements DispatchPlan<T> {
@@ -71,7 +71,7 @@ final class LmdbNativeAdaptiveArbitration {
 		 * serial fallback. Emitted only when the SLO-derived latest launch lands before the trial's deadline; execution
 		 * degrades it back to its inner {@link Probe} when no pool slot or sibling snapshot is available.
 		 */
-		record Hedge<T> (Probe<T> probe, long launchDelayNanos) implements DispatchPlan<T> {
+		record Hedge<T>(Probe<T> probe, long launchDelayNanos) implements DispatchPlan<T> {
 		}
 
 		/**
@@ -80,7 +80,7 @@ final class LmdbNativeAdaptiveArbitration {
 		 * late parallel backup and the two race. The ledger reservation for the rescue is taken at fire time, not here
 		 * — an armed-but-never-fired guard must cost nothing.
 		 */
-		record Guarded<T> (Normal<T> normal, long triggerNanos, Candidate<T> backup,
+		record Guarded<T>(Normal<T> normal, long triggerNanos, Candidate<T> backup,
 				LmdbNativeCostPrediction backupPrediction) implements DispatchPlan<T> {
 		}
 	}
@@ -706,6 +706,6 @@ final class LmdbNativeAdaptiveArbitration {
 				orderLosing ? logGammaOrderLosing : logGamma, !orderLosing);
 	}
 
-	record Priced<T> (Candidate<T> candidate, LmdbNativeCostPrediction prediction) {
+	record Priced<T>(Candidate<T> candidate, LmdbNativeCostPrediction prediction) {
 	}
 }

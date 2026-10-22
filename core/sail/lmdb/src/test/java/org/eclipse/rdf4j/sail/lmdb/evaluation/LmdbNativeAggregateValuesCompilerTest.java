@@ -12,7 +12,12 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.UNKNOWN_ID;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -31,16 +36,30 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Count;
+import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
@@ -64,6 +83,259 @@ class LmdbNativeAggregateValuesCompilerTest {
 	private static final long LINK_ID = ValueIds.createId(ValueIds.T_URI, 2L);
 	private static final long NAME_1_ID = ValueIds.createId(ValueIds.T_URI, 3L);
 	private static final long NAME_2_ID = ValueIds.createId(ValueIds.T_URI, 4L);
+
+	@Test
+	void semanticConditionCompilerPropagatesQueryFatalPreparationErrors() {
+		LmdbNativeEvaluationStrategy strategy = mock(LmdbNativeEvaluationStrategy.class);
+		when(strategy.precompile(any(ValueExpr.class), any(QueryEvaluationContext.class)))
+				.thenThrow(new QueryEvaluationException("fatal-condition-preparation"));
+		assertThatThrownBy(() -> LmdbNativeAggregateFilterCompiler.compileSemanticValue(strategy,
+				new ValueConstant(VF.createLiteral(true)), new QueryEvaluationContext.Minimal((Dataset) null)))
+						.isInstanceOf(QueryEvaluationException.class)
+						.hasMessage("fatal-condition-preparation");
+	}
+
+	@Test
+	void nativeConditionsProjectHiddenApiBindingsIncludingImplicitExistsCorrelation() {
+		List<ValueExpr> conditions = List.of(new Not(new Bound(Var.of("hidden"))),
+				new Compare(Var.of("hidden"), new ValueConstant(NAME_1)), new Exists(values("hidden", NAME_2)));
+		List<Boolean> expected = List.of(true, false, true);
+		for (int i = 0; i < conditions.size(); i++) {
+			StatementPattern pattern = new StatementPattern(Var.of("subject"), Var.of("link", LINK, true),
+					Var.of("name"));
+			Filter filter = new Filter(pattern, conditions.get(i));
+			filter.setConditionBindingScope(ConditionBindingScope.retain(Set.of("subject", "name")));
+			SingleStatementSource source = new SingleStatementSource();
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null,
+					null, 0L, new EvaluationStatistics(), false);
+			QueryEvaluationStep step = LmdbNativeAggregateCompiler.tryCompile(filter,
+					new QueryEvaluationContext.Minimal((Dataset) null), strategy, source);
+			assertThat(step).as("projected scalar/EXISTS condition retains a native tuple plan").isNotNull();
+			MapBindingSet api = new MapBindingSet();
+			api.addBinding("hidden", NAME_1);
+			try (CloseableIteration<BindingSet> rows = step.evaluate(api)) {
+				assertThat(rows.hasNext()).as("condition %s", conditions.get(i)).isEqualTo(expected.get(i));
+				if (expected.get(i)) {
+					assertThat(rows.next().getValue("hidden")).as("condition projection does not trim output rows")
+							.isEqualTo(NAME_1);
+					assertThat(rows.hasNext()).isFalse();
+				}
+			}
+		}
+	}
+
+	@Test
+	void projectedSinglePatternWitnessKeepsItsNativeProbeAndHidesCallerBindings() {
+		for (boolean negated : List.of(false, true)) {
+			StatementPattern witness = new StatementPattern(Var.of("subject"), Var.of("link", LINK, true),
+					Var.of("hidden"));
+			ValueExpr condition = new Exists(witness);
+			if (negated) {
+				condition = new Not(condition);
+			}
+			Filter filter = new Filter(new SingletonSet(), condition);
+			filter.setConditionBindingScope(ConditionBindingScope.retain(Set.of("subject")));
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null,
+					null, 0L, new EvaluationStatistics(), false);
+			LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(
+					new QueryEvaluationContext.Minimal((Dataset) null), strategy, new SingleStatementSource());
+			planner.slot("subject");
+			planner.slot("hidden");
+			NativeBooleanFilter predicate = planner.compileProjectedFilter(filter);
+			NativeBooleanFilter probe = predicate instanceof NegatedNativeBooleanFilter not ? not.delegate : predicate;
+			assertThat(probe).as("projected witness keeps the direct native existence probe")
+					.isInstanceOf(StatementPatternExistsFilter.class);
+			planner.layout.freeze(planner.slotNames);
+			MapBindingSet api = new MapBindingSet();
+			api.addBinding("subject", SUBJECT);
+			api.addBinding("hidden", NAME_2);
+			RowState row = new RowState(planner.source, planner.layout, api);
+			row.slots[planner.slot("subject")] = SUBJECT_ID;
+			row.slots[planner.slot("hidden")] = NAME_2_ID;
+			row.recomputeBoundMask();
+			assertThat(predicate.accept(row))
+					.as("hidden caller value cannot constrain the witness, negated=%s", negated)
+					.isEqualTo(!negated);
+			assertThat(row.view.getValue("hidden")).as("projection applies only to the condition").isEqualTo(NAME_2);
+		}
+	}
+
+	@Test
+	void projectedCompoundWitnessKeepsNativeFramesAndHidesImplicitCallerCorrelation() {
+		StatementPattern first = new StatementPattern(Var.of("subject"), Var.of("link", LINK, true), Var.of("hidden"));
+		StatementPattern second = new StatementPattern(Var.of("subject"), Var.of("link", LINK, true), Var.of("other"));
+		List<TupleExpr> witnesses = List.of(new Join(first.clone(), second.clone()),
+				new Union(new Join(first.clone(), second.clone()), values("hidden", NAME_1)),
+				new LeftJoin(first.clone(), second.clone()),
+				new Difference(first.clone(), values("hidden", NAME_2)),
+				new Join(values("hidden", NAME_1), second.clone()));
+		for (TupleExpr witness : witnesses) {
+			Filter filter = new Filter(new SingletonSet(), new Exists(witness));
+			filter.setConditionBindingScope(ConditionBindingScope.retain(Set.of("subject")));
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null,
+					null, 0L, new EvaluationStatistics(), false);
+			LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(
+					new QueryEvaluationContext.Minimal((Dataset) null), strategy, new SingleStatementSource());
+			planner.slot("subject");
+			planner.slot("hidden");
+			planner.slot("other");
+			NativeBooleanFilter predicate = planner.compileProjectedFilter(filter);
+			assertThat(predicate).as("compound witness retains a native frame: %s", witness)
+					.isInstanceOf(ExistsFilter.class);
+			planner.layout.freeze(planner.slotNames);
+			MapBindingSet api = new MapBindingSet();
+			api.addBinding("subject", SUBJECT);
+			api.addBinding("hidden", NAME_2);
+			api.addBinding("other", NAME_2);
+			RowState row = new RowState(planner.source, planner.layout, api);
+			row.slots[planner.slot("subject")] = SUBJECT_ID;
+			row.slots[planner.slot("hidden")] = NAME_2_ID;
+			row.slots[planner.slot("other")] = NAME_2_ID;
+			row.recomputeBoundMask();
+			assertThat(predicate.accept(row)).as("excluded API columns remain witness-local: %s", witness).isTrue();
+			assertThat(row.view.getValue("hidden")).isEqualTo(NAME_2);
+			assertThat(row.view.getValue("other")).isEqualTo(NAME_2);
+		}
+	}
+
+	@Test
+	void automaticConditionVisibilityAlsoHidesUndeclaredApiBindings() {
+		StatementPattern pattern = new StatementPattern(Var.of("subject"), Var.of("link", LINK, true), Var.of("name"));
+		Filter filter = new Filter(pattern, new Not(new Bound(Var.of("hidden"))));
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null,
+				null, 0L, new EvaluationStatistics(), false);
+		QueryEvaluationStep step = LmdbNativeAggregateCompiler.tryCompile(filter,
+				new QueryEvaluationContext.Minimal((Dataset) null), strategy, new SingleStatementSource());
+		assertThat(step).isNotNull();
+		MapBindingSet api = new MapBindingSet();
+		api.addBinding("hidden", NAME_1);
+		try (var rows = step.evaluate(api)) {
+			assertThat(rows.hasNext()).isTrue();
+			assertThat(rows.next().getValue("name")).isEqualTo(NAME_1);
+			assertThat(rows.hasNext()).isFalse();
+		}
+	}
+
+	@Test
+	void restrictedHavingCannotReadAnAggregateThroughRawCountGuards() {
+		for (boolean extensionStack : List.of(false, true)) {
+			Group group = new Group(
+					new StatementPattern(Var.of("subject"), Var.of("link", LINK, true), Var.of("name")));
+			group.addGroupElement(new GroupElem("count", new Count(Var.of("name"), false)));
+			TupleExpr argument = extensionStack ? new Extension(group,
+					new ExtensionElem(new ValueConstant(VF.createLiteral(7)), "extra")) : group;
+			Filter filter = new Filter(argument, new Not(new Bound(Var.of("count"))));
+			filter.setConditionBindingScope(ConditionBindingScope.retain(Set.of()));
+			TupleExpr root = extensionStack ? new Projection(filter,
+					new ProjectionElemList(new ProjectionElem("count"))) : filter;
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null,
+					null, 0L, new EvaluationStatistics(), false);
+			QueryEvaluationStep step = LmdbNativeAggregateCompiler.tryCompile(root,
+					new QueryEvaluationContext.Minimal((Dataset) null), strategy, new SingleStatementSource());
+			assertThat(step).isNotNull();
+			try (var rows = step.evaluate(EmptyBindingSet.getInstance())) {
+				assertThat(rows.hasNext()).as("projected HAVING, extension stack=%s", extensionStack).isTrue();
+				assertThat(((Literal) rows.next().getValue("count")).longValue()).isEqualTo(1);
+				assertThat(rows.hasNext()).isFalse();
+			}
+		}
+	}
+
+	@Test
+	void restrictedHavingRetainsNativeGroupPhysicalPlanAcrossRootShapes() {
+		boolean[] exposesPhysicalPlan = new boolean[2];
+		String[] physicalPlans = new String[2];
+		for (boolean extensionStack : List.of(false, true)) {
+			Group group = new Group(
+					new StatementPattern(Var.of("subject"), Var.of("link", LINK, true), Var.of("name")));
+			group.addGroupElement(new GroupElem("count", new Count(Var.of("name"), false)));
+			TupleExpr argument = extensionStack ? new Extension(group,
+					new ExtensionElem(new ValueConstant(VF.createLiteral(7)), "extra")) : group;
+			Filter filter = new Filter(argument, new Not(new Bound(Var.of("count"))));
+			filter.setConditionBindingScope(ConditionBindingScope.retain(Set.of()));
+			TupleExpr root = extensionStack ? new Projection(filter,
+					new ProjectionElemList(new ProjectionElem("count"))) : filter;
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null,
+					null, 0L, new EvaluationStatistics(), false);
+			QueryEvaluationStep step = LmdbNativeAggregateCompiler.tryCompile(root,
+					new QueryEvaluationContext.Minimal((Dataset) null), strategy, new SingleStatementSource());
+			assertThat(step).as("HAVING compiles, extension stack=%s", extensionStack).isNotNull();
+			try (var rows = step.evaluate(EmptyBindingSet.getInstance())) {
+				assertThat(rows.hasNext()).as("projected HAVING, extension stack=%s", extensionStack).isTrue();
+				assertThat(((Literal) rows.next().getValue("count")).longValue()).isEqualTo(1);
+				assertThat(rows.hasNext()).isFalse();
+			}
+			int rootShape = extensionStack ? 1 : 0;
+			exposesPhysicalPlan[rootShape] = step instanceof LmdbNativePhysicalPlan;
+			physicalPlans[rootShape] = step instanceof LmdbNativePhysicalPlan physical
+					? physical.nativePhysicalPlan()
+					: null;
+		}
+		assertAll("restricted HAVING retains the grouped physical child",
+				() -> assertThat(exposesPhysicalPlan[0]).as("direct Filter exposes LmdbNativePhysicalPlan").isTrue(),
+				() -> assertThat(physicalPlans[0]).as("direct Filter physical child")
+						.contains("NativeHaving", "NativeGroup("),
+				() -> assertThat(exposesPhysicalPlan[1]).as("Extension + Projection exposes LmdbNativePhysicalPlan")
+						.isTrue(),
+				() -> assertThat(physicalPlans[1]).as("Extension + Projection physical child")
+						.contains("NativeHaving", "NativeGroup("));
+	}
+
+	@Test
+	void undeclaredValuesColumnsRemainObservableToDistinctAggregatesAndFolds() {
+		for (boolean folded : List.of(false, true)) {
+			BindingSetAssignment inputs = values("target", NAME_1);
+			MapBindingSet row = new MapBindingSet();
+			row.addBinding("target", NAME_1);
+			row.addBinding("api", NAME_2);
+			inputs.setBindingSets(List.of(row));
+			TupleExpr argument;
+			if (folded) {
+				argument = new Join(
+						new StatementPattern(Var.of("subject"), Var.of("link", LINK, true), Var.of("name")),
+						new Filter(inputs, new Compare(Var.of("name"), Var.of("target"))));
+			} else {
+				inputs.setDeclaredBindingNames(Set.of());
+				argument = inputs;
+			}
+			Group group = new Group(argument);
+			group.addGroupElement(new GroupElem("count", new Count(Var.of("api"), true)));
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null,
+					null, 0L, new EvaluationStatistics(), false);
+			QueryEvaluationStep step = LmdbNativeAggregateCompiler.tryCompile(group,
+					new QueryEvaluationContext.Minimal((Dataset) null), strategy, new SingleStatementSource());
+			assertThat(step).as("undeclared row columns remain native, folded=%s", folded).isNotNull();
+			try (var rows = step.evaluate(EmptyBindingSet.getInstance())) {
+				assertThat(rows.hasNext()).isTrue();
+				assertThat(((Literal) rows.next().getValue("count")).longValue())
+						.as("the aggregate observes the actual api column, folded=%s", folded)
+						.isEqualTo(1);
+				assertThat(rows.hasNext()).isFalse();
+			}
+		}
+	}
+
+	@Test
+	void foldedJoinedValuesPreserveANestedConditionProjection() {
+		Filter data = new Filter(new StatementPattern(Var.of("subject"), Var.of("link", LINK, true), Var.of("name")),
+				new Not(new Bound(Var.of("hidden"))));
+		data.setConditionBindingScope(ConditionBindingScope.retain(Set.of("subject", "name")));
+		Filter domain = new Filter(values("target", NAME_1), new Compare(Var.of("name"), Var.of("target")));
+		Group group = new Group(new Join(data, domain));
+		group.addGroupElement(new GroupElem("count", new Count(Var.of("name"), true)));
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null,
+				null, 0L, new EvaluationStatistics(), false);
+		QueryEvaluationStep step = LmdbNativeAggregateCompiler.tryCompile(group,
+				new QueryEvaluationContext.Minimal((Dataset) null), strategy, new SingleStatementSource());
+		assertThat(step).isNotNull();
+		MapBindingSet api = new MapBindingSet();
+		api.addBinding("hidden", NAME_1);
+		try (var rows = step.evaluate(api)) {
+			assertThat(rows.hasNext()).isTrue();
+			assertThat(((Literal) rows.next().getValue("count")).longValue()).isEqualTo(1);
+			assertThat(rows.hasNext()).isFalse();
+		}
+	}
 
 	@Test
 	void foldedValuesFilterConstrainsEveryUnionChild() {

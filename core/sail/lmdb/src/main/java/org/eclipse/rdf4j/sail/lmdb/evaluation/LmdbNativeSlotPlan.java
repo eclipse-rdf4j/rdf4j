@@ -408,14 +408,16 @@ interface SlotPlan {
 	}
 
 	static SlotPlan minus(SlotPlan left, SlotPlan right) {
+		return minus(left, right, left.producedMask() & right.producedMask());
+	}
+
+	static SlotPlan minus(SlotPlan left, SlotPlan right, long comparisonMask) {
 		if (left == EmptyPlan.INSTANCE || right == EmptyPlan.INSTANCE) {
 			return left;
 		}
-		long shared = left.producedMask() & right.producedMask();
-		// Statically disjoint child domains are not proof of a disjoint runtime domain: caller-supplied bindings and
-		// the outer mapping inherited by an EXISTS scope occur in both operands. MinusCursor retains the O(1) keep-left
-		// path when the actual lexical input domain is empty.
-		return new MinusPlan(left, right, shared);
+		// Declared comparison names can include a VALUES column that is UNDEF in every row. The compiler supplies
+		// that domain separately from the slots this physical plan can produce.
+		return new MinusPlan(left, right, comparisonMask);
 	}
 
 	static SlotPlan values(ValuesRow[] rows) {

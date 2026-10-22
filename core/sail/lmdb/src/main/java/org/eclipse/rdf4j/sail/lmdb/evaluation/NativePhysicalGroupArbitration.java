@@ -110,7 +110,7 @@ final class NativePhysicalGroupArbitration {
 		FullAttempt(NativeGroupStep full, NativeGroupIteration parent) {
 			try (SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(parent.source)) {
 				evaluation = full.source instanceof SyntheticValueSource synthetic
-						? synthetic.forEvaluation(full.generatedKeys, full.layout, parent.base)
+						? synthetic.forInvocation(full.generatedKeys, full.layout, parent.base)
 						: SyntheticValueSource.forEvaluation(full.source);
 				closeContext = !SyntheticValueSource.inheritedEvaluation(evaluation);
 			}

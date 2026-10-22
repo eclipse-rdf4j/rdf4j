@@ -50,6 +50,24 @@ async function activeMotionCount(locator) {
 		.filter(animation => animation.playState === 'running').length);
 }
 
+async function clickAndReadOpeningKeyframes(triggerSelector, target) {
+	return target.evaluate((element, selector) => new Promise(resolve => {
+		// The query-page bridge may update visibility after this click; observe from the renderer's animation frames.
+		document.querySelector(selector).click();
+		const deadline = performance.now() + 1000;
+		const read = () => {
+			const animation = element.getAnimations({ subtree: false })
+				.find(candidate => candidate.playState === 'running');
+			if (animation || performance.now() > deadline) {
+				resolve(animation ? animation.effect.getKeyframes() : []);
+			} else {
+				requestAnimationFrame(read);
+			}
+		};
+		read();
+	}), triggerSelector);
+}
+
 async function retainedForwardFillCount(locator) {
 	return locator.evaluate(element => element.getAnimations({ subtree: false })
 		.filter(animation => animation.effect && animation.effect.getTiming().fill === 'forwards').length);
@@ -176,21 +194,7 @@ test('comparison explanation reverses cleanly and respects reduced motion', asyn
 	const compareRow = page.locator('#query-explanation-row-compare');
 	await expect(compareRow).toBeHidden();
 	await recordIntermediateMotion(compareRow, 'opacity');
-	const opening = await compareRow.evaluate(element => new Promise(resolve => {
-		document.getElementById('compare-toggle').click();
-		// The motion may start with the next frame; its keyframes are fixed once it exists.
-		const deadline = performance.now() + 1000;
-		const read = () => {
-			const animation = element.getAnimations({ subtree: false })
-				.find(candidate => candidate.playState === 'running');
-			if (animation || performance.now() > deadline) {
-				resolve(animation ? animation.effect.getKeyframes() : []);
-			} else {
-				requestAnimationFrame(read);
-			}
-		};
-		read();
-	}));
+	const opening = await clickAndReadOpeningKeyframes('#compare-toggle', compareRow);
 	expect(opening.length).toBeGreaterThan(1);
 	expect(parseFloat(opening[0].height)).toBe(0);
 	expect(parseFloat(opening[0].opacity)).toBe(0);
@@ -203,8 +207,13 @@ test('comparison explanation reverses cleanly and respects reduced motion', asyn
 	expect(await activeMotionCount(compareRow)).toBe(0);
 	expect(await retainedForwardFillCount(compareRow)).toBe(0);
 
-	await page.locator('#compare-toggle').evaluate(element => element.click());
-	expect(await activeMotionCount(compareRow)).toBeGreaterThan(0);
+	await recordIntermediateMotion(compareRow, 'opacity');
+	const reopening = await clickAndReadOpeningKeyframes('#compare-toggle', compareRow);
+	expect(reopening.length).toBeGreaterThan(1);
+	expect(parseFloat(reopening[0].opacity)).toBe(0);
+	expect(parseFloat(reopening[reopening.length - 1].opacity)).toBe(1);
+	await expect(compareRow).toHaveAttribute('aria-hidden', 'false');
+	await expect.poll(() => wasSeenInIntermediateMotion(compareRow)).toBe(true);
 	await waitForOwnedAnimations(compareRow);
 	await expect(compareRow).toBeVisible();
 	expect(await retainedForwardFillCount(compareRow)).toBe(0);
@@ -404,13 +413,74 @@ test('query options animate reversibly while semantic state and focus update imm
 
 test('live reduced-motion changes settle only the requested disclosure state', async ({ page }) => {
 	await page.emulateMedia({ reducedMotion: 'no-preference' });
+	await page.exposeFunction('__requestReducedMotion', () => page.emulateMedia({ reducedMotion: 'reduce' }));
 	await openRoute(page, QUERY_URL, 'query');
 	const toggle = page.locator('#query-options-toggle');
 	const panel = page.locator('#query-options-panel');
-	await toggle.click();
-	expect(await activeMotionCount(panel)).toBeGreaterThan(0);
-
-	await page.emulateMedia({ reducedMotion: 'reduce' });
+	const mediaChange = await panel.evaluate(element => new Promise(resolve => {
+		const button = document.getElementById('query-options-toggle');
+		button.click();
+		const sample = () => {
+			const animation = element.getAnimations({ subtree: false })
+				.find(candidate => candidate.playState === 'running');
+			if (!animation) {
+				resolve({ active: false });
+				return;
+			}
+			const currentTime = Number(animation.currentTime);
+			const duration = Number(animation.effect.getTiming().duration);
+			if (currentTime > 0 && currentTime < duration) {
+				const keyframes = animation.effect.getKeyframes();
+				const requested = {
+					currentTime,
+					duration,
+					height: element.getBoundingClientRect().height,
+					startHeight: parseFloat(keyframes[0]?.height),
+					endHeight: parseFloat(keyframes[keyframes.length - 1]?.height)
+				};
+				let cancelEvent = null;
+				const cancelled = new Promise(resolveCancellation => {
+					animation.addEventListener('cancel', event => {
+						cancelEvent = {
+							currentTime: event.currentTime,
+							timelineTime: event.timelineTime,
+							playState: animation.playState
+						};
+						resolveCancellation(cancelEvent);
+					}, { once: true });
+				});
+				const finished = animation.finished.then(
+					() => ({ state: 'finished' }),
+					reason => ({ state: 'cancelled', reason: reason?.name ?? String(reason) })
+				);
+				window.__requestReducedMotion().then(async () => {
+					const outcome = await finished;
+					if (outcome.state === 'cancelled') {
+						await cancelled;
+					}
+					resolve({ started: true, requested, outcome, cancelEvent });
+				}, error => resolve({
+					started: true,
+					requested,
+					mediaError: error?.message ?? String(error)
+				}));
+			} else {
+				requestAnimationFrame(sample);
+			}
+		};
+		requestAnimationFrame(sample);
+	}));
+	expect(mediaChange.started, 'the media change must start during a real disclosure animation').toBe(true);
+	expect(mediaChange.mediaError).toBeUndefined();
+	expect(mediaChange.requested.currentTime).toBeGreaterThan(0);
+	expect(mediaChange.requested.currentTime).toBeLessThan(mediaChange.requested.duration);
+	expect(mediaChange.requested.height).toBeGreaterThan(
+		Math.min(mediaChange.requested.startHeight, mediaChange.requested.endHeight));
+	expect(mediaChange.requested.height).toBeLessThan(
+		Math.max(mediaChange.requested.startHeight, mediaChange.requested.endHeight));
+	expect(mediaChange.outcome).toEqual({ state: 'cancelled', reason: 'AbortError' });
+	expect(mediaChange.cancelEvent).toMatchObject({ playState: 'idle' });
+	expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(true);
 	await expect.poll(() => activeMotionCount(panel)).toBe(0);
 	await expect(toggle).toHaveAttribute('aria-expanded', 'true');
 	await expect(panel).toBeVisible();

@@ -716,11 +716,11 @@ class SailSourceBranchDeepGenerationTest {
 						Value object) {
 					Set<TripleTerm> matches = new LinkedHashSet<>();
 					for (Statement statement : snapshot) {
-						if (statement.getSubject()instanceof TripleTerm tripleTerm
+						if (statement.getSubject() instanceof TripleTerm tripleTerm
 								&& matchesTriple(tripleTerm, subject, predicate, object)) {
 							matches.add(tripleTerm);
 						}
-						if (statement.getObject()instanceof TripleTerm tripleTerm
+						if (statement.getObject() instanceof TripleTerm tripleTerm
 								&& matchesTriple(tripleTerm, subject, predicate, object)) {
 							matches.add(tripleTerm);
 						}

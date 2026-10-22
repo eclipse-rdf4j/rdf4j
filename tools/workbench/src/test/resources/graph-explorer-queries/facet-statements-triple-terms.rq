@@ -1,0 +1,5 @@
+SELECT ?s ?p ?o WHERE { {
+ SELECT DISTINCT ?s ?p ?o WHERE {
+ VALUES ?s { <urn:ex:alice> } ?s ?p ?o . FILTER(!isTRIPLE(?o))
+ } LIMIT 101
+ } }

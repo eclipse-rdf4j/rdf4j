@@ -24,6 +24,14 @@ E2E_BROWSER="${E2E_BROWSER:-}"
 # Some specs stand in for RDF4J Servers of their own (one that refuses the user, one without repositories) at the host
 # where the server reaches this machine; the Workbench connects to them only when its accepted-server-prefixes allow it.
 ACCEPTED_SERVER_PREFIXES_PROPERTY="org.eclipse.rdf4j.workbench.accepted-server-prefixes"
+# The specs address the server this script starts; some (those that change configuration) refuse to run unless told so.
+export RDF4J_SERVER_BASE_URL="${RDF4J_SERVER_BASE_URL:-http://127.0.0.1:8080/rdf4j-server}"
+export RDF4J_WORKBENCH_BASE_URL="${RDF4J_WORKBENCH_BASE_URL:-http://127.0.0.1:8080/rdf4j-workbench}"
+# The Workbench imports only from approved URL origins. The specs add from the server itself (a missing file) and from an
+# origin where nothing listens (a refused connection), as the server sees them: 127.0.0.1 is the server's own host.
+ADD_URL_ALLOWED_ORIGINS_PROPERTY="org.eclipse.rdf4j.workbench.add-url-allowed-origins"
+export RDF4J_E2E_REFUSED_URL_ORIGIN="${RDF4J_E2E_REFUSED_URL_ORIGIN:-http://127.0.0.1:9}"
+ADD_URL_ALLOWED_ORIGINS="http://127.0.0.1:8080,${RDF4J_E2E_REFUSED_URL_ORIGIN}"
 
 stop_spring_boot() {
   if [ -z "${SERVER_PID:-}" ]; then
@@ -166,7 +174,7 @@ start_spring_boot() {
   (
     cd "$ROOT_DIR"
     mvn -pl tools/server-boot spring-boot:run \
-      -Dspring-boot.run.jvmArguments="-Dorg.eclipse.rdf4j.appdata.basedir=${SPRING_BOOT_DATA_DIR} '-D${ACCEPTED_SERVER_PREFIXES_PROPERTY}=${accepted}'"
+      -Dspring-boot.run.jvmArguments="-Dorg.eclipse.rdf4j.appdata.basedir=${SPRING_BOOT_DATA_DIR} '-D${ACCEPTED_SERVER_PREFIXES_PROPERTY}=${accepted}' -D${ADD_URL_ALLOWED_ORIGINS_PROPERTY}=${ADD_URL_ALLOWED_ORIGINS}"
   ) &
   SERVER_PID=$!
 }
@@ -181,7 +189,7 @@ start_docker_tomcat() {
   export RDF4J_E2E_HOST_FROM_SERVER="${RDF4J_E2E_HOST_FROM_SERVER:-host.docker.internal}"
   echo "RDF4J Server reaches this host at ${RDF4J_E2E_HOST_FROM_SERVER}"
   # Tomcat's catalina.sh evaluates CATALINA_OPTS, to which the image adds RDF4J_OPTS: the quotes keep the list whole.
-  export RDF4J_OPTS="'-D${ACCEPTED_SERVER_PREFIXES_PROPERTY}=/rdf4j-server http://${RDF4J_E2E_HOST_FROM_SERVER}:'"
+  export RDF4J_OPTS="'-D${ACCEPTED_SERVER_PREFIXES_PROPERTY}=/rdf4j-server http://${RDF4J_E2E_HOST_FROM_SERVER}:' -D${ADD_URL_ALLOWED_ORIGINS_PROPERTY}=${ADD_URL_ALLOWED_ORIGINS}"
 
   echo "Starting Docker/Tomcat RDF4J container"
   (cd "$DOCKER_DIR" && APP_SERVER=tomcat docker compose -f docker-compose.yml -f "${E2E_DIR}/docker-compose.e2e.yml" \
@@ -195,10 +203,19 @@ run_playwright() {
     # Geometry specs need the same font metrics on every Linux host (see fontconfig/fonts.conf).
     export FONTCONFIG_FILE="${E2E_DIR}/fontconfig/fonts.conf"
   fi
+
   if [ -n "$E2E_BROWSER" ]; then
-    npx playwright test --project="$E2E_BROWSER"
+    if [ "$NEEDS_XVFB" = "true" ]; then
+      xvfb-run -a -s "-screen 0 1280x1024x24 -nolisten tcp" npx playwright test --project="$E2E_BROWSER"
+    else
+      npx playwright test --project="$E2E_BROWSER"
+    fi
   else
-    npx playwright test
+    if [ "$NEEDS_XVFB" = "true" ]; then
+      xvfb-run -a -s "-screen 0 1280x1024x24 -nolisten tcp" npx playwright test
+    else
+      npx playwright test
+    fi
   fi
 }
 
@@ -206,13 +223,27 @@ trap 'cleanup $?' EXIT
 trap 'cleanup 130' INT
 trap 'cleanup 143' TERM
 
+NEEDS_XVFB="false"
+if [ "$(uname -s)" = "Linux" ] && { [ -z "$E2E_BROWSER" ] || [ "$E2E_BROWSER" = "firefox" ] || [ "$E2E_BROWSER" = "webkit" ]; }; then
+  NEEDS_XVFB="true"
+fi
+
+verify_xvfb() {
+  if [ "$NEEDS_XVFB" = "true" ] && ! command -v xvfb-run >/dev/null 2>&1; then
+    echo "Linux Firefox WebGL and headed WebKit require a display; install xvfb (which provides xvfb-run) before running the E2E suite" >&2
+    return 1
+  fi
+}
+
 case "$SERVER_RUNTIME" in
   spring-boot)
     install_e2e_dependencies
+    verify_xvfb
     start_spring_boot
     ;;
   docker | docker-tomcat | tomcat)
     install_e2e_dependencies
+    verify_xvfb
     start_docker_tomcat
     ;;
   *)

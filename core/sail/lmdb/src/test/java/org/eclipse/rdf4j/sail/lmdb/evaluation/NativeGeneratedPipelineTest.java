@@ -413,7 +413,7 @@ class NativeGeneratedPipelineTest {
 			SlotPlan producer = SlotPlan.extension(SlotPlan.singleton(), new CopyBinding[] { generated });
 			NativeGeneratedKeyPlan proof = NativeGeneratedKeyPlan.distinct(producer, new int[] { 1 });
 			SyntheticValueSource runtimeEvaluation = new SyntheticValueSource(dictionary, PlanValueCatalog.EMPTY)
-					.forEvaluation(proof, layout(), EmptyBindingSet.getInstance());
+					.forInvocation(proof, layout(), EmptyBindingSet.getInstance());
 			try {
 				RowState runtimeRow = new RowState(runtimeEvaluation, layout(), EmptyBindingSet.getInstance());
 				NativeRowSeeder.seed(runtimeRow.slots, layout(), EmptyBindingSet.getInstance(), runtimeEvaluation);
@@ -476,7 +476,7 @@ class NativeGeneratedPipelineTest {
 		}), true);
 		SlotPlan producer = SlotPlan.extension(SlotPlan.singleton(), new CopyBinding[] { key, unused, error });
 		SyntheticValueSource evaluation = new SyntheticValueSource(dictionary, PlanValueCatalog.EMPTY)
-				.forEvaluation(NativeGeneratedKeyPlan.distinct(producer, new int[] { 1 }), layout(),
+				.forInvocation(NativeGeneratedKeyPlan.distinct(producer, new int[] { 1 }), layout(),
 						EmptyBindingSet.getInstance());
 		try {
 			RowState row = new RowState(evaluation, layout(), EmptyBindingSet.getInstance());
@@ -520,7 +520,7 @@ class NativeGeneratedPipelineTest {
 						new LmdbNativeCompiledValue(1L, row -> literal(keyValue)), true);
 				SlotPlan producer = SlotPlan.extension(SlotPlan.singleton(), new CopyBinding[] { intermediate, key });
 				SyntheticValueSource evaluation = new SyntheticValueSource(dictionary, PlanValueCatalog.EMPTY)
-						.forEvaluation(NativeGeneratedKeyPlan.distinct(producer, new int[] { 1 }), layout(),
+						.forInvocation(NativeGeneratedKeyPlan.distinct(producer, new int[] { 1 }), layout(),
 								EmptyBindingSet.getInstance());
 				try {
 					RowState row = new RowState(evaluation, layout(), EmptyBindingSet.getInstance());
@@ -704,7 +704,7 @@ class NativeGeneratedPipelineTest {
 			assertFalse(proof.discards(middle));
 			assertTrue(proof.discards(unused));
 			SyntheticValueSource evaluation = new SyntheticValueSource(dictionary, PlanValueCatalog.EMPTY)
-					.forEvaluation(proof, layout(), EmptyBindingSet.getInstance());
+					.forInvocation(proof, layout(), EmptyBindingSet.getInstance());
 			try {
 				RowState row = new RowState(evaluation, layout(), EmptyBindingSet.getInstance());
 				assertTrue(NativeRowSeeder.seed(row.slots, layout(), EmptyBindingSet.getInstance(), evaluation));

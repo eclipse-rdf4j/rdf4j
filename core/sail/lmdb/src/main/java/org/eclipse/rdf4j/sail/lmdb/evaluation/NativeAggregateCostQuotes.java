@@ -198,7 +198,7 @@ final class NativeAggregateCostQuotes {
 		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerAggregate(owner.arg, row,
 				owner.groupSlots, owner.aggregates, null, null, false, false, owner.strictCompare, false);
 		if (lowered == null || lowered.kernel.pipeline.size() != 1
-				|| !(lowered.kernel.pipeline.get(0)instanceof LmdbNativeKernelIr.EnumerateWildcard enumerate)
+				|| !(lowered.kernel.pipeline.get(0) instanceof LmdbNativeKernelIr.EnumerateWildcard enumerate)
 				|| enumerate.ctxActive() || lowered.bindings.wildcardRequests.length != 1
 				|| lowered.kernel.requirements.wildcardViews != 1) {
 			return null;
@@ -228,7 +228,7 @@ final class NativeAggregateCostQuotes {
 		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerAggregate(owner.arg, row,
 				owner.groupSlots, owner.aggregates, null, null, false, false, owner.strictCompare, false);
 		if (lowered == null || lowered.kernel.pipeline.size() != 1
-				|| !(lowered.kernel.pipeline.get(0)instanceof LmdbNativeKernelIr.EnumerateAdjKeys enumerate)
+				|| !(lowered.kernel.pipeline.get(0) instanceof LmdbNativeKernelIr.EnumerateAdjKeys enumerate)
 				|| enumerate.wildcard || enumerate.ctxActive() || lowered.bindings.adjacencies.length != 1) {
 			return null;
 		}

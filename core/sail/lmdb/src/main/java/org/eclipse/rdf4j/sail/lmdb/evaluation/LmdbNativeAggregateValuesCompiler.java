@@ -43,6 +43,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
@@ -67,7 +68,7 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 	 * possible, drives the constrained statement pattern through its reverse index.
 	 */
 	SlotPlan compileFilterOverJoinedValues(Filter filter, boolean duplicateInsensitive) {
-		if (!duplicateInsensitive) {
+		if (!duplicateInsensitive || !FilterBindingScope.allowsAllConditionBindings(filter)) {
 			return null;
 		}
 		BindingSetAssignment values = singleValuesLeaf(filter.getArg());
@@ -138,7 +139,7 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 	private BindingSetAssignment firstOptimizerExactValuesLeaf(TupleExpr expr) {
 		if (expr instanceof BindingSetAssignment values) {
 			return values.getLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES) == 1L
-					&& values.getBindingNames().size() == 1 ? values : null;
+					&& values.getBindingNames().size() == 1 && hasOnlyDeclaredColumns(values) ? values : null;
 		}
 		if (!(expr instanceof Join join)) {
 			return null;
@@ -255,7 +256,7 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 			return null;
 		}
 		BindingSetAssignment values = leaf.values();
-		if (!values.hasRepeatableBindingSets() || values.getBindingNames().size() != 1) {
+		if (!hasOnlyDeclaredColumns(values) || values.getBindingNames().size() != 1) {
 			return null;
 		}
 		String valuesVariable = values.getBindingNames().iterator().next();
@@ -305,6 +306,7 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 				NativeBooleanFilter valueSet = new ValueSetFilter(source, slot(wrapperFold.filteredVariable),
 						wrapperFold.ids, wrapperFold.values);
 				Filter feedback = new Filter(join.clone(), leaf.wrapper().getCondition().clone());
+				feedback.setConditionBindingScope(FilterBindingScope.resolve(leaf.wrapper()));
 				return SlotPlan.filter(plan.plan(), recordFilterOutcomes(feedback, valueSet),
 						1L << slot(wrapperFold.filteredVariable));
 			}
@@ -335,7 +337,8 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 			found.add(new ValuesLeaf(values, null));
 			return;
 		}
-		if (expr instanceof Filter filter && filter.getArg()instanceof BindingSetAssignment values) {
+		if (expr instanceof Filter filter && filter.getArg() instanceof BindingSetAssignment values
+				&& FilterBindingScope.allowsAllConditionBindings(filter)) {
 			found.add(new ValuesLeaf(values, filter));
 			return;
 		}
@@ -367,6 +370,9 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 					&& collectValuesObservers(union.getRightArg(), leaf, values, valuesVariable, folds);
 		}
 		if (expr instanceof Filter filter) {
+			if (!FilterBindingScope.allowsAllConditionBindings(filter)) {
+				return false;
+			}
 			if (!VarNameCollector.process(filter.getCondition()).contains(valuesVariable)) {
 				return collectValuesObservers(filter.getArg(), leaf, values, valuesVariable, folds);
 			}
@@ -444,6 +450,9 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 			return new DomainDrivenPlan(SlotPlan.union(left.plan(), right.plan()), left.driven() || right.driven());
 		}
 		if (expr instanceof Filter filter) {
+			if (!FilterBindingScope.allowsAllConditionBindings(filter)) {
+				return null;
+			}
 			DomainDrivenPlan arg = compileFoldingValues(filter.getArg(), leaf, values, valuesVariable, folds,
 					wrapperFold, wrapperPushed, duplicateInsensitive);
 			if (arg == null) {
@@ -479,6 +488,7 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 					fold.values);
 			Filter feedback = new Filter(new Join(filter.getArg().clone(), values.clone()),
 					filter.getCondition().clone());
+			feedback.setConditionBindingScope(FilterBindingScope.resolve(filter));
 			return new DomainDrivenPlan(SlotPlan.filter(data, recordFilterOutcomes(feedback, valueSet),
 					1L << slot(fold.filteredVariable)), false);
 		} finally {
@@ -546,7 +556,8 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 			return null;
 		}
 		Filter filter = (Filter) maybeValuesFilter;
-		if (!(filter.getArg() instanceof BindingSetAssignment)) {
+		if (!(filter.getArg() instanceof BindingSetAssignment)
+				|| !FilterBindingScope.allowsAllConditionBindings(filter)) {
 			return null;
 		}
 		FoldedValueSet folded = extractFoldedValuesFilter(filter.getCondition(),
@@ -633,6 +644,9 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 		}
 		if (expr instanceof Filter) {
 			Filter filter = (Filter) expr;
+			if (!FilterBindingScope.allowsAllConditionBindings(filter)) {
+				return null;
+			}
 			SlotPlan arg = compileTupleWithConstantFilter(filter.getArg(), variable, ids, values, duplicateInsensitive,
 					exactFilterRewrite, exactProbeCount);
 			if (arg == null) {
@@ -690,7 +704,7 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 
 	FoldedValueSet extractFoldedValuesFilter(ValueExpr condition, BindingSetAssignment values) {
 		Set<String> bindingNames = values.getBindingNames();
-		if (bindingNames.size() != 1) {
+		if (bindingNames.size() != 1 || !hasOnlyDeclaredColumns(values)) {
 			return null;
 		}
 		String valuesVariable = bindingNames.iterator().next();
@@ -861,10 +875,16 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 	 * for no semantic effect (the benchmark's {@code VALUES ?limit { 55 }} shape).
 	 */
 	SlotPlan compileValuesOrIdentity(BindingSetAssignment values, boolean duplicateInsensitive) {
-		if (duplicateInsensitive && java.util.Collections.disjoint(values.getBindingNames(), requiredAggregateNames)) {
+		if (duplicateInsensitive && values.hasRepeatableBindingSets()
+				&& java.util.Collections.disjoint(values.getPossibleBindingNames(), requiredAggregateNames)) {
 			return values.getBindingSets().iterator().hasNext() ? SlotPlan.singleton() : SlotPlan.empty();
 		}
 		return compileValues(values);
+	}
+
+	private static boolean hasOnlyDeclaredColumns(BindingSetAssignment values) {
+		return values.hasRepeatableBindingSets()
+				&& values.getBindingNames().containsAll(values.getPossibleBindingNames());
 	}
 
 }

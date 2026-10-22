@@ -77,7 +77,8 @@ test('Types are sorted by instance count and filtered from the card header', asy
 	expect(counts.length).toBeGreaterThan(2);
 	expect(counts).toEqual([...counts].sort((left, right) => right - left));
 	await expect(card.locator('thead th').nth(1)).toHaveAttribute('aria-sort', 'descending');
-	await expect(rows.first().locator('td').first()).toHaveText(/^[\w-]+:[\w-]+$/);
+	// The type cell holds the type's link and its Add to graph button; the link shows the prefixed name.
+	await expect(rows.first().locator('td').first().locator('a')).toHaveText(/^[\w-]+:[\w-]+$/);
 
 	await card.locator('#types-filter').fill('PRODUCTTYPE');
 	await card.locator('#types-filter').press('Enter');
@@ -130,9 +131,9 @@ test('A long windowed list scrolls by the distance the wheel moves', async ({ pa
 test('Graphs list statements per graph, the default graph last, and Explore and Clear actions', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'contexts'), { waitUntil: 'domcontentloaded' });
-	await expect(page.locator('#title_heading')).toHaveText('Graphs');
+	await expect(page.locator('#title_heading')).toHaveText('Named Graphs');
 	const card = page.locator('#contexts-results');
-	await expect(card.locator('.workbench-browse-card__header h2')).toHaveText('Graphs');
+	await expect(card.locator('.workbench-browse-card__header h2')).toHaveText('Named Graphs');
 	await expect(card.locator('.workbench-browse-card__count')).toHaveText('2');
 	await expect(card.locator('thead th')).toHaveText(['Graph', 'Statements', 'Actions']);
 	const rows = card.locator('tbody tr:not(.workbench-virtual-spacer)');
@@ -192,7 +193,7 @@ test('Repository rows open their summary, list access as text and offer actions'
 	await row.getByRole('button', { name: `Actions for ${REPOSITORY_ID}` }).click();
 	const menu = row.locator('.workbench-row-menu__panel');
 	await expect(menu).toBeVisible();
-	await expect(menu.getByRole('link')).toHaveText(['Query', 'Explore', 'Summary', 'Delete…']);
+	await expect(menu.getByRole('link')).toHaveText(['Query', 'Explore', 'Graph', 'Summary', 'Delete…']);
 	await expect(menu.getByRole('link', { name: 'Delete…' }))
 		.toHaveAttribute('href', new RegExp(`/repositories/NONE/delete\\?id=${REPOSITORY_ID}$`));
 	await page.keyboard.press('Escape');

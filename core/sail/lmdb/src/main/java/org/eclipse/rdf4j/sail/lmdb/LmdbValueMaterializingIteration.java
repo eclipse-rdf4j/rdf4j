@@ -239,7 +239,7 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 			initializeUnknownValues();
 			copyDeferredValues();
 			for (int i = 0; i < bufferSize; i++) {
-				if (buffer[i]instanceof NativeProjectedBindingSet nativeRow) {
+				if (buffer[i] instanceof NativeProjectedBindingSet nativeRow) {
 					nativeRow.detachAfterMaterialization();
 				}
 			}

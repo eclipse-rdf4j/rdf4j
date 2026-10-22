@@ -263,7 +263,13 @@ final class LmdbNativeStrategyPreference {
 			return false;
 		}
 		return switch (family) {
-		case LmdbNativeAttemptMetrics.PATH_WCOJ, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE, LmdbNativeAttemptMetrics.PATH_ADAPTIVE_FILTER_PLACEMENT, LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS, LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED, LmdbNativeCensusAggregate.PATH, LmdbNativeAttemptMetrics.PATH_RUN_COUNT_HISTOGRAM, LmdbNativeAttemptMetrics.PATH_DATATYPE_HISTOGRAM, LmdbNativeAttemptMetrics.PATH_PREDICATE_PLANE_GROUPS -> true;
+		case LmdbNativeAttemptMetrics.PATH_WCOJ, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE,
+				LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE,
+				LmdbNativeAttemptMetrics.PATH_ADAPTIVE_FILTER_PLACEMENT, LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS,
+				LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED, LmdbNativeCensusAggregate.PATH,
+				LmdbNativeAttemptMetrics.PATH_RUN_COUNT_HISTOGRAM, LmdbNativeAttemptMetrics.PATH_DATATYPE_HISTOGRAM,
+				LmdbNativeAttemptMetrics.PATH_PREDICATE_PLANE_GROUPS ->
+			true;
 		default -> false;
 		};
 	}
@@ -284,7 +290,19 @@ final class LmdbNativeStrategyPreference {
 			return false;
 		}
 		return switch (family) {
-		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_NODE_DOMAIN_INTERSECTION, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_NODE_DOMAIN_INTERSECTION_INTERPRETED, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_INTERPRETED, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD_INTERPRETED, LmdbNativeAttemptMetrics.PATH_IR_KERNEL, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD_INTERPRETED, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED -> true;
+		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_NODE_DOMAIN_INTERSECTION,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_NODE_DOMAIN_INTERSECTION_INTERPRETED,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_INTERPRETED,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD_INTERPRETED,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD_INTERPRETED,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED ->
+			true;
 		default -> false;
 		};
 	}

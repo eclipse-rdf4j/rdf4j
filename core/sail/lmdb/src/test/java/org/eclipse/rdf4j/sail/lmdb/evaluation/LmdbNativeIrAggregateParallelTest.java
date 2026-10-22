@@ -349,6 +349,28 @@ class LmdbNativeIrAggregateParallelTest {
 	}
 
 	@Test
+	void lateralLexicalWitnessesRebindGraphAndNullableEntryDomainsInEveryWorkerRung() {
+		long subqueriesBefore = NativeSubqueryPlan.WORKER_BINDINGS.get();
+		String query = "SELECT (COUNT(?v) AS ?c) WHERE { ?s <" + EX + "p> ?m . ?m <" + EX
+				+ "q> ?v . FILTER EXISTS { VALUES (?graph ?marker) { (<" + EX + "graph> UNDEF) (<" + EX
+				+ "graph> 1) } LATERAL { SELECT ?m ?probe ?graph WHERE { GRAPH ?graph { ?m <" + EX
+				+ "q2> ?probe FILTER EXISTS { ?m <" + EX
+				+ "q2> ?probe } } } LIMIT 1 } FILTER(?probe = ?v) } }";
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		assertThat(count(query, null)).as("the generic graph-scoped witness must accept the 600 equal-value rows")
+				.isEqualTo(600L);
+		try {
+			assertAllExecutionRungs(query);
+		} catch (QueryEvaluationException failure) {
+			throw new AssertionError("The LATERAL worker candidate must have a proved legal path:\n" + explain(query),
+					failure);
+		}
+		assertThat(NativeSubqueryPlan.WORKER_BINDINGS.get())
+				.as("the actual workers must prepare the LATERAL lexical producer")
+				.isGreaterThan(subqueriesBefore);
+	}
+
+	@Test
 	void lexicalRootProducersRetainTheirNaturalPartitionGuard() {
 		String subquery = "{ SELECT ?m ?v WHERE { ?m <" + EX + "q> ?v } }";
 		for (String producer : List.of(subquery,

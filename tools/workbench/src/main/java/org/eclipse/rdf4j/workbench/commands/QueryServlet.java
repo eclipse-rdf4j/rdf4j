@@ -30,7 +30,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.WeakHashMap;
 import java.util.zip.GZIPOutputStream;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
@@ -73,6 +72,7 @@ import org.eclipse.rdf4j.workbench.util.QueryBatch;
 import org.eclipse.rdf4j.workbench.util.QueryEvaluator;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
 import org.eclipse.rdf4j.workbench.util.QueryStreamCompression;
+import org.eclipse.rdf4j.workbench.util.SavedQueryIdentity;
 import org.eclipse.rdf4j.workbench.util.ServerCredentials;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
@@ -123,9 +123,6 @@ public class QueryServlet extends TransformationServlet {
 	private static final String ACTION_CANCEL_EXPLAIN = "cancel-explain";
 	private static final String ACTION_LMDB_STRATEGIES = "lmdb-strategies";
 
-	/** Per-query request parameter pinning one named LMDB execution strategy; see {@code Protocol}. */
-	private static final String LMDB_FORCED_STRATEGY = "lmdb-forced-strategy";
-
 	private static final String ACTION_CANCEL_QUERY = "cancel-query";
 
 	private static final String EXPLAIN = "explain";
@@ -163,21 +160,6 @@ public class QueryServlet extends TransformationServlet {
 
 	private CancellableOperationCoordinator queryCoordinator = new CancellableOperationCoordinator();
 
-	protected boolean writeQueryCookie;
-
-	// Poor Man's Cache: At the very least, garbage collection can clean up keys
-	// followed by values whenever the JVM faces memory pressure.
-	private static Map<String, String> queryCache = Collections.synchronizedMap(new WeakHashMap<>());
-
-	/**
-	 * For testing purposes only.
-	 *
-	 * @param testQueryCache cache to use instead of the production cache instance
-	 */
-	protected static void substituteQueryCache(Map<String, String> testQueryCache) {
-		queryCache = testQueryCache;
-	}
-
 	protected void substituteQueryStorage(QueryStorage storage) {
 		releaseQueryStorage();
 		this.storage = storage;
@@ -196,21 +178,14 @@ public class QueryServlet extends TransformationServlet {
 	 */
 	@Override
 	public String[] getCookieNames() {
-		return getCookieNames(writeQueryCookie);
+		// A forced LMDB strategy is not a preference: it applies to the page it was chosen on.
+		return new String[] { "owner", LIMIT, QUERY_LN, INFER, QUERY_TIMEOUT, "total_result_count",
+				"show-datatypes" };
 	}
 
 	@Override
 	public String[] getCookieNames(WorkbenchRequest req) {
-		return getCookieNames(shouldWriteQueryCookie(req.getParameter(QUERY)));
-	}
-
-	private String[] getCookieNames(boolean shouldWriteQueryCookie) {
-		if (shouldWriteQueryCookie) {
-			return new String[] { QUERY, REF, "owner", LIMIT, QUERY_LN, INFER, QUERY_TIMEOUT, LMDB_FORCED_STRATEGY,
-					"total_result_count", "show-datatypes" };
-		}
-		return new String[] { REF, "owner", LIMIT, QUERY_LN, INFER, QUERY_TIMEOUT, LMDB_FORCED_STRATEGY,
-				"total_result_count", "show-datatypes" };
+		return getCookieNames();
 	}
 
 	/**
@@ -247,39 +222,18 @@ public class QueryServlet extends TransformationServlet {
 		}
 	}
 
-	/**
-	 * Long query strings could blow past the Tomcat default 8k HTTP header limit if stuffed into a cookie. In this
-	 * case, we need to set a flag to avoid this happening before
-	 * {@link TransformationServlet#service(HttpServletRequest, HttpServletResponse)} is called. A much lower limit on
-	 * the size of the query text is used to stay well below the Tomcat limitation.
-	 */
 	@Override
 	public final void service(final HttpServletRequest req, final HttpServletResponse resp)
 			throws ServletException, IOException {
 		if (req.getCharacterEncoding() == null) {
 			req.setCharacterEncoding(StandardCharsets.UTF_8.name());
 		}
-		this.writeQueryCookie = shouldWriteQueryCookie(req.getParameter(QUERY));
 		if (WorkbenchPageProtocol.requestsQueryExecutionPostShell(req)) {
 			WorkbenchHtmlShell.writeQueryExecutionShell(req, resp, config,
 					WorkbenchViewRegistry.viewId(getClass()).orElse("query"));
 			return;
 		}
 		super.service(req, resp);
-	}
-
-	/**
-	 * <p>
-	 * Determines if the servlet should write out the query text into a cookie as received, or write it's hash instead.
-	 * </p>
-	 * <p>
-	 * Note: This is a separate method for testing purposes.
-	 * </p>
-	 *
-	 * @param queryText the text received as the value for the parameter 'query'
-	 */
-	protected boolean shouldWriteQueryCookie(String queryText) {
-		return (null == queryText || queryText.length() <= 2048);
 	}
 
 	@Override
@@ -361,8 +315,28 @@ public class QueryServlet extends TransformationServlet {
 		return ACTION_EXPLAIN.equals(getRequestAction(req)) || req.isParameterPresent(EXPLAIN);
 	}
 
-	private String getRequestAction(WorkbenchRequest req) {
+	private static String getRequestAction(WorkbenchRequest req) {
 		return req.isParameterPresent(ACTION) ? req.getParameter(ACTION) : null;
+	}
+
+	/** The operation identity used to keep cancellation on its owning servlet across repository reinitialization. */
+	public static RequestOperation requestOperation(WorkbenchRequest request) {
+		String action = getRequestAction(request);
+		boolean post = "POST".equalsIgnoreCase(request.getMethod());
+		boolean cancellation = post && (ACTION_CANCEL_QUERY.equals(action) || ACTION_CANCEL_EXPLAIN.equals(action));
+		if (post && !cancellation && !"exec".equals(action) && !ACTION_EXPLAIN.equals(action)) {
+			return null;
+		}
+		if (!post && (ACTION_GET.equals(action) || WorkbenchViewRegistry.requestsQueryPagePrefill(request))) {
+			return null;
+		}
+		boolean explanation = ACTION_EXPLAIN.equals(action) || post && ACTION_CANCEL_EXPLAIN.equals(action);
+		String requestId = explanation ? getExplainRequestId(request) : getQueryRequestId(request);
+		return requestId == null ? null
+				: new RequestOperation(explanation ? "explain" : "query", requestId, cancellation);
+	}
+
+	public record RequestOperation(String kind, String requestId, boolean cancellation) {
 	}
 
 	private boolean rejectDisabledExplainFeature(HttpServletResponse resp) throws IOException {
@@ -1022,8 +996,6 @@ public class QueryServlet extends TransformationServlet {
 		QueryResponseHeartbeat[] responseHeartbeat = new QueryResponseHeartbeat[1];
 		boolean responseCompleted = false;
 		try {
-			boolean shouldWriteQueryCookie = shouldWriteQueryCookie(req.getParameter(QUERY));
-			cacheLongQueryReferenceIfNeeded(req, resp, shouldWriteQueryCookie);
 			boolean downloadResponse = setContentType(req, resp);
 			out = getResponseOutputStream(req, resp, downloadResponse);
 			if (out == null) {
@@ -1340,10 +1312,11 @@ public class QueryServlet extends TransformationServlet {
 					|| (privateSave && rejectDisabledFeature(resp, "query-private-save"))) {
 				return;
 			}
-			if (privateSave && ServerCredentials.userName(req).isEmpty()) {
-				// An anonymous query is stored for the empty user name, which every user may read and change.
+			if (privateSave && (ServerCredentials.current(req) == null
+					|| ServerCredentials.current(req).password().isEmpty())) {
+				// A public server can accept an arbitrary user name; private ownership needs a secret too.
 				writeSaveError(resp, HttpServletResponse.SC_BAD_REQUEST,
-						"Private saved queries require a signed-in user");
+						"Private saved queries require a signed-in user with a password");
 				return;
 			}
 			saveQuery(withConfiguredDefaultsForDisabledFeatures(req), resp);
@@ -1501,7 +1474,7 @@ public class QueryServlet extends TransformationServlet {
 		jsonObject.put("accessible", accessible);
 		if (accessible) {
 			final String queryName = req.getParameter("query-name");
-			String userName = ServerCredentials.userName(req);
+			String userName = SavedQueryIdentity.owner(req, appConfig);
 			final boolean existed = storage.askExists(repositoryReference, queryName, userName);
 			jsonObject.put("existed", existed);
 			final boolean written = Boolean.valueOf(req.getParameter("overwrite")) || !existed;
@@ -1571,7 +1544,7 @@ public class QueryServlet extends TransformationServlet {
 		return userName;
 	}
 
-	private String getExplainRequestId(WorkbenchRequest req) {
+	private static String getExplainRequestId(WorkbenchRequest req) {
 		if (!req.isParameterPresent(EXPLAIN_REQUEST_ID)) {
 			return null;
 		}
@@ -1583,7 +1556,7 @@ public class QueryServlet extends TransformationServlet {
 		return explainRequestId.isEmpty() ? null : explainRequestId;
 	}
 
-	private String getQueryRequestId(WorkbenchRequest req) {
+	private static String getQueryRequestId(WorkbenchRequest req) {
 		if (!req.isParameterPresent(QUERY_REQUEST_ID)) {
 			return null;
 		}
@@ -1739,18 +1712,6 @@ public class QueryServlet extends TransformationServlet {
 		}
 	}
 
-	private void cacheLongQueryReferenceIfNeeded(WorkbenchRequest req, HttpServletResponse resp,
-			boolean shouldWriteQueryCookie) {
-		if (!shouldWriteQueryCookie) {
-			// If we suppressed putting the query text into the cookies before.
-			cookies.addCookie(req, resp, REF, "hash");
-			String queryValue = req.getParameter(QUERY);
-			String hash = String.valueOf(queryValue.hashCode());
-			queryCache.put(hash, queryValue);
-			cookies.addCookie(req, resp, QUERY, hash);
-		}
-	}
-
 	private void writeBrowserErrorResponse(WorkbenchRequest req, HttpServletResponse resp, OutputStream out,
 			CancellableOperationCoordinator.Handle handle, QueryResponseHeartbeat responseHeartbeat,
 			String message) throws IOException, QueryResultHandlerException {
@@ -1857,11 +1818,11 @@ public class QueryServlet extends TransformationServlet {
 				if ("text".equals(ref)) {
 					result = query;
 				} else if ("hash".equals(ref)) {
-					result = queryCache.get(query);
-					if (null == result) {
-						result = "";
-					}
+					throw new BadRequestException("Legacy query references are no longer supported.");
 				} else if ("id".equals(ref)) {
+					if (!canReadSavedQuery(req)) {
+						throw new BadRequestException("Current user may not read the given query.");
+					}
 					result = storage.getQueryText(getRepositoryReference(), getUserNameFromParameter(req, "owner"),
 							query);
 				} else {
@@ -1883,7 +1844,7 @@ public class QueryServlet extends TransformationServlet {
 					? storage.canRead(
 							storage.selectSavedQuery(getRepositoryReference(),
 									getUserNameFromParameter(req, "owner"), req.getParameter(QUERY)),
-							ServerCredentials.userName(req))
+							SavedQueryIdentity.owner(req, appConfig))
 					: true;
 		} else {
 			throw new BadRequestException("Expected 'ref' parameter in request.");

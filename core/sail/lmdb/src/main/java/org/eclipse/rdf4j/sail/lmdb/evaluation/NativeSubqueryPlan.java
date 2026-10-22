@@ -17,7 +17,9 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BiFunction;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -44,7 +46,12 @@ final class NativeSubqueryPlan implements SlotPlan {
 
 	@FunctionalInterface
 	interface WorkerFactory {
-		QueryEvaluationStep bind(NativeScalarPlan.WorkerContext worker);
+		BoundExecution bind(NativeScalarPlan.WorkerContext worker);
+	}
+
+	/** Both preparations belong to the same actual source/strategy/frame; worker forks never copy a parent closure. */
+	record BoundExecution(QueryEvaluationStep step, QueryEvaluationContext context,
+			BiFunction<Set<String>, NativeExecutionContext, QueryEvaluationStep> lateralStepFactory) {
 	}
 
 	private final QueryEvaluationStep step;
@@ -59,6 +66,7 @@ final class NativeSubqueryPlan implements SlotPlan {
 	private final QueryEvaluationContext context;
 	private final long producedMask;
 	private final WorkerFactory workerFactory;
+	private final BiFunction<Set<String>, NativeExecutionContext, QueryEvaluationStep> lateralStepFactory;
 
 	NativeSubqueryPlan(QueryEvaluationStep step, int[] outSlots, String[] outNames, int[] frameInputSlots,
 			String[] frameInputNames) {
@@ -69,12 +77,21 @@ final class NativeSubqueryPlan implements SlotPlan {
 			String[] frameInputNames, String[] frameParameterNames, String[] privateGraphParameters,
 			Projection projection, QueryEvaluationContext context) {
 		this(step, outSlots, outNames, frameInputSlots, frameInputNames, frameParameterNames, privateGraphParameters,
-				projection, context, null);
+				projection, context, null, null);
 	}
 
 	NativeSubqueryPlan(QueryEvaluationStep step, int[] outSlots, String[] outNames, int[] frameInputSlots,
 			String[] frameInputNames, String[] frameParameterNames, String[] privateGraphParameters,
 			Projection projection, QueryEvaluationContext context, WorkerFactory workerFactory) {
+		this(step, outSlots, outNames, frameInputSlots, frameInputNames, frameParameterNames, privateGraphParameters,
+				projection, context, workerFactory, null);
+	}
+
+	NativeSubqueryPlan(QueryEvaluationStep step, int[] outSlots, String[] outNames, int[] frameInputSlots,
+			String[] frameInputNames, String[] frameParameterNames, String[] privateGraphParameters,
+			Projection projection, QueryEvaluationContext context,
+			WorkerFactory workerFactory,
+			BiFunction<Set<String>, NativeExecutionContext, QueryEvaluationStep> lateralStepFactory) {
 		this.step = step;
 		this.outSlots = outSlots.clone();
 		this.outNames = outNames.clone();
@@ -90,6 +107,7 @@ final class NativeSubqueryPlan implements SlotPlan {
 		this.projection = projection;
 		this.context = context;
 		this.workerFactory = workerFactory;
+		this.lateralStepFactory = lateralStepFactory;
 		long mask = 0L;
 		for (int slot : outSlots) {
 			mask |= 1L << slot;
@@ -106,13 +124,14 @@ final class NativeSubqueryPlan implements SlotPlan {
 	}
 
 	NativeSubqueryPlan forWorker(NativeScalarPlan.WorkerContext worker) {
-		QueryEvaluationStep bound = workerFactory == null ? null : workerFactory.bind(worker);
-		if (bound == null) {
+		BoundExecution bound = workerFactory == null ? null : workerFactory.bind(worker);
+		if (bound == null || bound.step() == null) {
 			throw new IllegalStateException("native lexical boundary has no worker construction recipe");
 		}
 		WORKER_BINDINGS.incrementAndGet();
-		return new NativeSubqueryPlan(bound, outSlots, outNames, frameInputSlots, frameInputNames, frameParameterNames,
-				privateGraphParameters, projection, context, workerFactory);
+		return new NativeSubqueryPlan(bound.step(), outSlots, outNames, frameInputSlots, frameInputNames,
+				frameParameterNames, privateGraphParameters, projection, bound.context(), workerFactory,
+				bound.lateralStepFactory());
 	}
 
 	@Override
@@ -227,7 +246,7 @@ final class NativeSubqueryPlan implements SlotPlan {
 		if (frameInputSlots.length == 0 && privateGraphParameters.length == 0) {
 			return base;
 		}
-		MutableBindingSet bindings = new QueryBindingSet(base);
+		MutableBindingSet bindings = NativeEntryBindings.copyValues(base);
 		for (String parameter : privateGraphParameters) {
 			if (!GraphFrameBindings.isSupplied(base, parameter)) {
 				bindings.removeBinding(parameter);
@@ -249,17 +268,18 @@ final class NativeSubqueryPlan implements SlotPlan {
 				}
 			}
 		}
-		return bindings;
+		return NativeEntryBindings.preserveFrame(base, bindings, row.view, frameInputNames, frameParameterNames);
 	}
 
 	private NativeLazyResultReplay evaluateOnce(RowState row, BindingSet input) {
 		row.cancellation.check();
-		BindingSet bodyInput = projection == null ? input
-				: ProjectionQueryEvaluationStep.withInheritedGraphInput(projection, input, context);
+		QueryEvaluationStep prepared = preparedStep(row);
+		BindingSet bodyInput = NativeEntryBindings.preserve(input, projection == null ? input
+				: ProjectionQueryEvaluationStep.withInheritedGraphInput(projection, input, context));
 		NativeLmdbQuerySource source = row.source;
 		NativeCancellationToken cancellation = row.cancellation;
 		NativeResultCursor delegate = inLexicalScope(source, cancellation,
-				() -> NativeResultSteps.open(step, bodyInput));
+				() -> NativeResultSteps.open(prepared, bodyInput));
 		NativeResultCursor scoped = new NativeResultCursor() {
 			@Override
 			public NativeResultRow next() {
@@ -297,6 +317,16 @@ final class NativeSubqueryPlan implements SlotPlan {
 		return new NativeLazyResultReplay(outNames, executionContextOrNull(row), cancellation, scoped);
 	}
 
+	private QueryEvaluationStep preparedStep(RowState row) {
+		if (lateralStepFactory == null) {
+			return step;
+		}
+		NativeExecutionContext execution = executionContext(row);
+		Set<String> originalDomain = Set.copyOf(row.base.getBindingNames());
+		return execution.nativeState(new ScopedStepKey(this, originalDomain),
+				() -> lateralStepFactory.apply(originalDomain, execution));
+	}
+
 	private static <T> T inLexicalScope(NativeLmdbQuerySource source, NativeCancellationToken cancellation,
 			Supplier<T> action) {
 		try (NativeCancellationToken.Scope cancellationScope = cancellation.enter();
@@ -310,6 +340,10 @@ final class NativeSubqueryPlan implements SlotPlan {
 				LmdbNativeEvaluationStrategy.leaveKernelSubplan(nested);
 			}
 		}
+	}
+
+	/** Preparation depends on the original domain, while result replay separately depends on frame values. */
+	private record ScopedStepKey(NativeSubqueryPlan plan, Set<String> originalDomain) {
 	}
 
 	private static NativeExecutionContext executionContext(RowState row) {

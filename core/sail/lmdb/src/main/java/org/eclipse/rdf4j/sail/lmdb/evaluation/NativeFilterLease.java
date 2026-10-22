@@ -73,7 +73,7 @@ final class NativeFilterLease {
 					recording.adaptive);
 			attempt = recorder;
 		} else if (original instanceof ExistsFilter exists) {
-			attempt = new ExistsFilter(borrow(exists.subPlan));
+			attempt = new ExistsFilter(borrow(exists.subPlan), exists.retainedBindingNames);
 		} else {
 			attempt = original;
 		}

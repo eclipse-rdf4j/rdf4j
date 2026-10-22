@@ -369,7 +369,7 @@ class NativeRemapAccessTest {
 		}
 	}
 
-	private record BarrierRead<T> (boolean workerStarted, boolean completedWhileLocked, T result) {
+	private record BarrierRead<T>(boolean workerStarted, boolean completedWhileLocked, T result) {
 	}
 
 	private static <T> T whileOwningWriteLock(StampedLongAdderLockManager lockManager, Callable<T> read)

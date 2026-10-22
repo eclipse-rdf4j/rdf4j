@@ -94,7 +94,7 @@ public final class SelectedFactorSource extends BorrowedFactorBatch.Source {
 		long sourceCount = input.count(lane);
 		selection.validateBounds(sourceCount);
 		clear();
-		if (input.source()instanceof SelectedFactorSource selected) {
+		if (input.source() instanceof SelectedFactorSource selected) {
 			// Empty selections can have no base relation. Their count is still exactly zero.
 			ranges.compose(selected.ranges, selection);
 			base = selected.base;

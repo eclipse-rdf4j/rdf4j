@@ -178,9 +178,9 @@ public class ExploreServlet extends TupleServlet {
 	 */
 	private boolean isFirstTimeSeen(Statement result, IRI patternPredicate, Value patternObject,
 			Resource... patternContext) {
-		Resource resultSubject = result.getSubject();
+		Resource resultSubject = (Resource) WorkbenchValueEncoder.canonicalValue(result.getSubject());
 		IRI resultPredicate = result.getPredicate();
-		Value resultObject = result.getObject();
+		Value resultObject = WorkbenchValueEncoder.canonicalValue(result.getObject());
 		boolean firstTimeSeen;
 		if (1 == patternContext.length) {
 			// I.e., when context matches explore value.

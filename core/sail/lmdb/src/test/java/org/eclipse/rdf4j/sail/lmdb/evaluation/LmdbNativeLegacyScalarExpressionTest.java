@@ -100,7 +100,14 @@ class LmdbNativeLegacyScalarExpressionTest {
 	}
 
 	@Test
-	void compareSubqueryOperatorsUseNativeScalarPlan() throws ClassNotFoundException {
+	void repeatedScalarComparisonsPreserveUnforcedNativeSemantics() {
+		for (int round = 0; round < 128; round++) {
+			compareSubqueryOperatorsUseNativeScalarPlan();
+		}
+	}
+
+	@Test
+	void compareSubqueryOperatorsUseNativeScalarPlan() {
 		long evaluationsBefore = NativeScalarSubqueryValueEvaluator.EVALUATIONS.get();
 		Extension extension = scalarSubqueryExtension();
 
@@ -134,7 +141,6 @@ class LmdbNativeLegacyScalarExpressionTest {
 		assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get())
 				.as("legacy scalar expressions must not force a generic root host")
 				.isEqualTo(hostedBefore);
-		Class.forName("org.eclipse.rdf4j.sail.lmdb.evaluation.NativeScalarSubqueryValueEvaluator");
 		assertThat(NativeScalarSubqueryValueEvaluator.EVALUATIONS.get() - evaluationsBefore)
 				.as(() -> "native scalar evaluator count must remain 3; generic delta=" + genericEvaluations
 						+ " native delta=" + nativeEvaluations
@@ -155,6 +161,7 @@ class LmdbNativeLegacyScalarExpressionTest {
 						+ " adaptive="
 						+ nativeExpression.getStringMetricActual(LmdbNativeExplain.ADAPTIVE_COST_DECISION))
 				.isEqualTo(3L);
+		assertThat(genericEvaluations).as("the generic oracle must not use native scalar evaluators").isZero();
 	}
 
 	@Test

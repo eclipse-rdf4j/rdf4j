@@ -37,7 +37,9 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 
@@ -67,6 +69,11 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 			super.meet(filter);
 			if (filter.getParentNode() == null || isScopeBoundary(filter)
 					|| !QueryEvaluationUtility.isRepeatable(filter.getArg())) {
+				return;
+			}
+			var bindingScope = FilterBindingScope.resolve(filter);
+			if (!bindingScope.retainsAllBindings()
+					&& !bindingScope.bindingNames().containsAll(VarNameCollector.process(filter.getCondition()))) {
 				return;
 			}
 
@@ -125,7 +132,7 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 
 	private static BindingSetAssignment listValuesAnchor(ListMemberOperator operator) {
 		List<ValueExpr> arguments = operator.getArguments();
-		if (arguments == null || arguments.size() < 2 || !(arguments.getFirst()instanceof Var var)) {
+		if (arguments == null || arguments.size() < 2 || !(arguments.getFirst() instanceof Var var)) {
 			return null;
 		}
 

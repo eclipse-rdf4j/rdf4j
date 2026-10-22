@@ -352,7 +352,7 @@ final class LmdbNativeFactorizedRows {
 		TailBranch[] branches = new TailBranch[n - flatCount];
 		ArrayList<NativeBooleanFilter> prefixOnly = new ArrayList<>();
 		for (int d = flatCount; d < n; d++) {
-			PatternPlan pattern = order[d]instanceof PatternPlan physical ? physical : null;
+			PatternPlan pattern = order[d] instanceof PatternPlan physical ? physical : null;
 			SlotPlan lexical = pattern == null ? order[d] : null;
 			ArrayList<NativeBooleanFilter> branchFilters = new ArrayList<>();
 			long filterReadMask = 0L;
@@ -673,7 +673,7 @@ final class LmdbNativeFactorizedRows {
 			laterNeeds[d] = laterNeeds[d + 1] | reads[d] | (filtersAtDepth & ~fresh[d]);
 		}
 		int flatCount = n;
-		while (flatCount > 0 && (order[flatCount - 1]instanceof PatternPlan pattern
+		while (flatCount > 0 && (order[flatCount - 1] instanceof PatternPlan pattern
 				? !pattern.hasRepeatedSlot()
 				: lexicalTailEligible(order[flatCount - 1]))
 				&& (fresh[flatCount - 1] & laterNeeds[flatCount]) == 0L) {

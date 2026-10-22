@@ -33,10 +33,10 @@ final class NativeScalarResultDomain {
 	 */
 	static boolean exactNumeric(ValueExpr expression) {
 		if (expression instanceof ValueConstant constant) {
-			return constant.getValue()instanceof Literal literal && exact(literal.getCoreDatatype());
+			return constant.getValue() instanceof Literal literal && exact(literal.getCoreDatatype());
 		}
 		if (expression instanceof Var variable) {
-			return variable.hasValue() && variable.getValue()instanceof Literal literal
+			return variable.hasValue() && variable.getValue() instanceof Literal literal
 					&& exact(literal.getCoreDatatype());
 		}
 		if (expression instanceof MathExpr math) {

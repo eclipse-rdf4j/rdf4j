@@ -423,7 +423,7 @@ final class LmdbNativeScalarExpressionCompiler {
 				return null;
 			}
 			LmdbNativeCompiledString arg = compileString(args.get(0));
-			int summarySlot = args.get(0)instanceof Var variable && !variable.hasValue()
+			int summarySlot = args.get(0) instanceof Var variable && !variable.hasValue()
 					? slots.slot(variable.getName())
 					: NO_SLOT;
 			return arg == null ? null : numeric(arg.requiredMask, row -> {

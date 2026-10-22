@@ -246,7 +246,7 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 			return null;
 		}
 		if (nodeDomainSynopsisStates != null
-				&& nodeDomainSynopsisStates[plane]instanceof LmdbNodeDomainSynopsis synopsis) {
+				&& nodeDomainSynopsisStates[plane] instanceof LmdbNodeDomainSynopsis synopsis) {
 			return synopsis;
 		}
 		if (nodeDomainPresenceStates == null && !allocateNodeDomainPresenceRouting(account)) {

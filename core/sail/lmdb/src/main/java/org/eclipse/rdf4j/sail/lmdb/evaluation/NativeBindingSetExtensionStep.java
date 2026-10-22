@@ -172,7 +172,7 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 				long length;
 				if (cell.kind() == NativeResultCell.Kind.LEXICAL_SUMMARY) {
 					length = cell.codePointLength();
-				} else if (cell.value()instanceof Literal literal && QueryEvaluationUtility.isStringLiteral(literal)) {
+				} else if (cell.value() instanceof Literal literal && QueryEvaluationUtility.isStringLiteral(literal)) {
 					String label = literal.getLabel();
 					length = label.codePointCount(0, label.length());
 				} else {
@@ -187,7 +187,8 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 			return (row, execution) -> {
 				NativeResultCell l = left.evaluate(row, execution), r = right.evaluate(row, execution);
 				if (l.state() != NativeResultCell.State.BOUND || r.state() != NativeResultCell.State.BOUND
-						|| !(l.value()instanceof Literal leftLiteral) || !(r.value()instanceof Literal rightLiteral)) {
+						|| !(l.value() instanceof Literal leftLiteral)
+						|| !(r.value() instanceof Literal rightLiteral)) {
 					return NativeResultCell.error();
 				}
 				try {
@@ -351,11 +352,22 @@ final class NativeBindingSetValueCompiler {
 			return new EvaluationScopedValueEvaluator(descriptor, strategy, context);
 		}
 		QueryValueEvaluationStep valueStep = strategy.precompile(expression, context);
-		return bindings -> {
-			try {
-				return NativeValueOutcome.bound(valueStep.evaluate(bindings));
-			} catch (ValueExprEvaluationException e) {
-				return NativeValueOutcome.ERROR;
+		return new NativeBindingSetValueEvaluator() {
+			@Override
+			public NativeValueOutcome evaluate(BindingSet bindings) {
+				return evaluate(bindings, null);
+			}
+
+			@Override
+			public NativeValueOutcome evaluate(BindingSet bindings, NativeExecutionContext executionContext) {
+				SyntheticValueSource source = executionContext == null ? null : executionContext.evaluationSource();
+				try (SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(source)) {
+					try {
+						return NativeValueOutcome.bound(valueStep.evaluate(bindings));
+					} catch (ValueExprEvaluationException e) {
+						return NativeValueOutcome.ERROR;
+					}
+				}
 			}
 		};
 	}
@@ -391,10 +403,13 @@ final class NativeBindingSetValueCompiler {
 								.genericContext(compileContext, strategy);
 						return descriptor.precompileValue(strategy, scoped);
 					});
-			try {
-				return NativeValueOutcome.bound(valueStep.evaluate(bindings));
-			} catch (ValueExprEvaluationException e) {
-				return NativeValueOutcome.ERROR;
+			SyntheticValueSource source = executionContext == null ? null : executionContext.evaluationSource();
+			try (SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(source)) {
+				try {
+					return NativeValueOutcome.bound(valueStep.evaluate(bindings));
+				} catch (ValueExprEvaluationException e) {
+					return NativeValueOutcome.ERROR;
+				}
 			}
 		}
 	}

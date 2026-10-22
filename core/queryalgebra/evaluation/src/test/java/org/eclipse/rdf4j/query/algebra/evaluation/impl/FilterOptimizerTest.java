@@ -86,6 +86,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceChecker;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -278,7 +279,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 				extension -> extension.getElements()
 						.stream()
 						.allMatch(element -> element.getExpr() instanceof AggregateOperator)
-						&& (extension.getArg() instanceof Group || extension.getArg()instanceof Filter filter
+						&& (extension.getArg() instanceof Group || extension.getArg() instanceof Filter filter
 								&& filter.getArg() instanceof Group));
 		assertThat(placeholder.getArg()).as("optimized HAVING tree:\n%s", optimized).isInstanceOf(Filter.class);
 		assertThat(((Filter) placeholder.getArg()).getArg()).isInstanceOf(Group.class);
@@ -469,9 +470,17 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 			}
 			QueryRoot original = new QueryRoot(new Filter(extension, new Bound(Var.of("copy"))));
 			List<BindingSet> expected = evaluate(original.clone());
+			Set<String> declarations = original.getBindingNames();
 			new FilterOptimizer().optimize(original, null, EmptyBindingSet.getInstance());
-			assertThat(original.getArg()).isInstanceOf(Filter.class);
-			assertThat(((Filter) original.getArg()).getArg()).isInstanceOf(Extension.class);
+			assertThat(original.getBindingNames()).isEqualTo(declarations);
+			if (expected.isEmpty()) {
+				// Aggregate placeholders remain opaque to the binding proof; preserve the original runtime guard.
+				assertThat(original.getArg()).isInstanceOf(Filter.class);
+				assertThat(((Filter) original.getArg()).getArg()).isInstanceOf(Extension.class);
+			} else {
+				assertThat(original.getArg()).isInstanceOf(Extension.class);
+				assertThat(((Extension) original.getArg()).getElements()).containsExactlyElementsOf(orders.get(index));
+			}
 			assertThat(evaluate(original)).containsExactlyInAnyOrderElementsOf(expected);
 		}
 	}
@@ -1095,7 +1104,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		String expectedQuery = "SELECT * WHERE {?s <urn:parent> ?u . {?u <urn:name> ?v . FILTER(?u != ?v) } FILTER EXISTS {?v <urn:follows> ?u .} }";
 		String query = "SELECT * WHERE {?s <urn:parent> ?u . ?u <urn:name> ?v . FILTER(?u != ?v && EXISTS {?v <urn:follows> ?u .}) }";
 
-		testOptimizer(expectedQuery, query, new SelectiveJoinStatistics(10.0d, 100.0d, 20.0d));
+		testSchemaPreservingExistsPlacement(expectedQuery, query, new SelectiveJoinStatistics(10.0d, 100.0d, 20.0d));
 	}
 
 	@Test
@@ -1103,7 +1112,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		String expectedQuery = "SELECT * WHERE {?s <urn:parent> ?u . {?u <urn:name> ?v . FILTER(?u != ?v) } FILTER EXISTS {?v <urn:follows> ?u .} }";
 		String query = "SELECT * WHERE {?s <urn:parent> ?u . ?u <urn:name> ?v . FILTER(EXISTS {?v <urn:follows> ?u .} && ?u != ?v) }";
 
-		testOptimizer(expectedQuery, query, new SelectiveJoinStatistics(10.0d, 100.0d, 20.0d));
+		testSchemaPreservingExistsPlacement(expectedQuery, query, new SelectiveJoinStatistics(10.0d, 100.0d, 20.0d));
 	}
 
 	@Test
@@ -1111,7 +1120,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		String expectedQuery = "SELECT * WHERE {?u <urn:name> ?v . FILTER(?u != ?v && EXISTS {?v <urn:follows> ?u .}) }";
 		String query = "SELECT * WHERE {?u <urn:name> ?v . FILTER(EXISTS {?v <urn:follows> ?u .} && ?u != ?v) }";
 
-		testOptimizer(expectedQuery, query);
+		testSchemaPreservingExistsPlacement(expectedQuery, query, null);
 	}
 
 	@Test
@@ -1138,10 +1147,16 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
-	public void mergesExistsBeforeCompareForValuesOnlyJoinWhenCostingDisabled() {
+	public void retainsExistsDeclarationWhenAdjacentValuesFiltersCannotMerge() throws Exception {
 		String query = "SELECT * WHERE {VALUES ?u {<urn:u1> <urn:u2>} VALUES ?v {<urn:v1> <urn:v2>} "
 				+ "FILTER(?u != ?v) FILTER EXISTS {?v <urn:follows> ?u .} }";
 		TupleExpr optimized = parseTupleExpr(query);
+		Set<String> declarations = findFirst(optimized, Filter.class, ignored -> true).getBindingNames();
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		TripleSource source = statementListTripleSource(vf.createStatement(vf.createIRI("urn:v1"),
+				vf.createIRI("urn:follows"), vf.createIRI("urn:u1")));
+		List<BindingSet> expected = evaluate(optimized.clone(), source);
+		assertThat(expected).hasSize(1);
 		new FilterOptimizer(null, true, false).optimize(optimized, null, EmptyBindingSet.getInstance());
 		Join join = findFirst(optimized, Join.class, ignored -> true);
 		assertThat(join.getParentNode()).isInstanceOf(Projection.class);
@@ -1149,11 +1164,17 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		assertThat(((BindingSetAssignment) join.getLeftArg()).getBindingNames()).containsExactly("u");
 		assertThat(join.getRightArg()).isInstanceOf(Filter.class);
 		Filter movedFilter = (Filter) join.getRightArg();
-		assertThat(movedFilter.getArg()).isInstanceOf(BindingSetAssignment.class);
-		assertThat(((BindingSetAssignment) movedFilter.getArg()).getBindingNames()).containsExactly("v");
-		assertThat(findAll(movedFilter.getCondition(), Exists.class)).hasSize(1);
-		assertThat(findAll(movedFilter.getCondition(), Compare.class)).singleElement()
+		assertThat(movedFilter.getArg()).as("merging direct EXISTS would erase its declared predicate name")
+				.isInstanceOf(Filter.class);
+		Filter inner = (Filter) movedFilter.getArg();
+		assertThat(inner.getArg()).isInstanceOf(BindingSetAssignment.class);
+		assertThat(((BindingSetAssignment) inner.getArg()).getBindingNames()).containsExactly("v");
+		assertThat(findAll(movedFilter, Filter.class)).hasSize(2);
+		assertThat(findAll(movedFilter, Exists.class)).hasSize(1);
+		assertThat(findAll(movedFilter, Compare.class)).singleElement()
 				.satisfies(compare -> assertThat(compare.getOperator()).isEqualTo(CompareOp.NE));
+		assertThat(join.getBindingNames()).isEqualTo(declarations);
+		assertThat(evaluate(optimized, source)).containsExactlyInAnyOrderElementsOf(expected);
 	}
 
 	@Test
@@ -1411,14 +1432,23 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
-	public void standardPipelineConvertsSameTermStringFilterToValues() {
+	public void standardPipelineKeepsSameTermConstraintAfterRemovingRedundantFilter() throws Exception {
 		TupleExpr optimized = optimizeWithStandardPipeline(
 				"SELECT ?s ?label WHERE {?s <urn:label> ?label . FILTER sameTerm(?label, \"Eclipse\")}");
 
-		List<String> values = values(singleValuesAnchor(optimized, "label"), "label");
-
-		assertThat(values).containsExactly("\"Eclipse\"");
+		StatementPattern pattern = findFirst(optimized, StatementPattern.class, ignored -> true);
+		Value expected = SimpleValueFactory.getInstance().createLiteral("Eclipse");
+		assertThat(pattern.getObjectVar().getName()).isEqualTo("label");
+		assertThat(pattern.getObjectVar().getValue()).isEqualTo(expected);
 		assertThat(findAll(optimized, Filter.class)).isEmpty();
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		TripleSource source = statementListTripleSource(
+				vf.createStatement(vf.createIRI("urn:matched"), vf.createIRI("urn:label"), expected),
+				vf.createStatement(vf.createIRI("urn:other"), vf.createIRI("urn:label"), vf.createLiteral("Other")));
+		assertThat(evaluate(optimized, source)).singleElement().satisfies(row -> {
+			assertThat(row.getValue("s")).isEqualTo(vf.createIRI("urn:matched"));
+			assertThat(row.getValue("label")).isEqualTo(expected);
+		});
 		new ParentReferenceChecker(null).optimize(optimized, null, EmptyBindingSet.getInstance());
 	}
 
@@ -1690,8 +1720,8 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 	}
 
 	private static boolean isEqualityToConstant(Filter filter, String varName) {
-		if (!(filter.getCondition()instanceof Compare compare) || compare.getOperator() != CompareOp.EQ
-				|| !(compare.getLeftArg()instanceof Var var) || !varName.equals(var.getName())) {
+		if (!(filter.getCondition() instanceof Compare compare) || compare.getOperator() != CompareOp.EQ
+				|| !(compare.getLeftArg() instanceof Var var) || !varName.equals(var.getName())) {
 			return false;
 		}
 		return compare.getRightArg() instanceof ValueConstant;
@@ -1700,6 +1730,25 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 	void testOptimizer(String expectedQuery, String actualQuery)
 			throws MalformedQueryException, UnsupportedQueryLanguageException {
 		testOptimizer(expectedQuery, actualQuery, null);
+	}
+
+	private void testSchemaPreservingExistsPlacement(String expectedQuery, String actualQuery,
+			EvaluationStatistics statistics) {
+		TupleExpr actual = parseTupleExpr(actualQuery);
+		Filter source = findFirst(actual, Filter.class, ignored -> true);
+		var scope = FilterBindingScope.resolve(source);
+		Set<String> declarations = source.getBindingNames();
+		boolean sourceBoundary = source.isVariableScopeChange();
+		new FilterOptimizer(statistics).optimize(actual, null, EmptyBindingSet.getInstance());
+		TupleExpr expected = parseTupleExpr(expectedQuery);
+		for (Filter filter : findAll(expected, Filter.class)) {
+			filter.setCondition(
+					FilterBindingScope.conditionPreservingDeclarations(filter.getCondition().clone(), declarations));
+			filter.setConditionBindingScope(scope);
+			filter.setVariableScopeChange(sourceBoundary);
+		}
+		assertThat(findFirst(actual, Filter.class, ignored -> true).getBindingNames()).isEqualTo(declarations);
+		assertEquals(expected, actual);
 	}
 
 	void testOptimizer(String expectedQuery, String actualQuery, EvaluationStatistics statistics)
@@ -1863,7 +1912,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		}
 
 		private boolean isNameFilter(Filter filter) {
-			if (!(filter.getArg()instanceof StatementPattern statementPattern)) {
+			if (!(filter.getArg() instanceof StatementPattern statementPattern)) {
 				return false;
 			}
 			return statementPattern.getPredicateVar() != null

@@ -227,7 +227,7 @@ public class SPARQLQueries {
 				int insertion = graph.getGroupStartOffset() + 1;
 				edits.add(new SourceEdit(insertion, insertion, initialMapping(bodyNames, bindings)));
 			}
-			if (graph.jjtGetChild(0)instanceof ASTVar selector && names.contains(selector.getName())) {
+			if (graph.jjtGetChild(0) instanceof ASTVar selector && names.contains(selector.getName())) {
 				Value selected = bindings.getValue(selector.getName());
 				if (!(selected instanceof IRI || selected instanceof BNode)) {
 					throw unsupportedBindings("GRAPH selector must be an IRI or blank node");
@@ -387,7 +387,7 @@ public class SPARQLQueries {
 			}
 			return names;
 		}
-		if (node instanceof ASTGraphGraphPattern && node.jjtGetChild(0)instanceof ASTVar graph) {
+		if (node instanceof ASTGraphGraphPattern && node.jjtGetChild(0) instanceof ASTVar graph) {
 			names.add(graph.getName());
 		}
 		for (int i = 0; i < node.jjtGetNumChildren(); i++) {

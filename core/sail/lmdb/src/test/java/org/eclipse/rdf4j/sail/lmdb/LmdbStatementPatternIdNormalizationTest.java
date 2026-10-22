@@ -341,7 +341,7 @@ class LmdbStatementPatternIdNormalizationTest {
 		private void assertPayloadLookupCount(String label, int expected) {
 			int captures = 0;
 			for (Map.Entry<Value, Integer> entry : store.values.payloadLookups.entrySet()) {
-				if (entry.getKey()instanceof Literal literal && literal.getLabel().equals(label)
+				if (entry.getKey() instanceof Literal literal && literal.getLabel().equals(label)
 						&& literal.getDatatype().equals(DATATYPE)) {
 					captures += entry.getValue();
 				}

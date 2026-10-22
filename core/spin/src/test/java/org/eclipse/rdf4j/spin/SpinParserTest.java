@@ -210,7 +210,7 @@ public class SpinParserTest {
 
 			@Override
 			public void meet(ExtensionElem node) {
-				if (node.getExpr()instanceof ValueConstant constant
+				if (node.getExpr() instanceof ValueConstant constant
 						&& !sourceVariableNames.contains(node.getName())) {
 					addInternalConstant(constants, sourceVariableNames, node.getName(), constant.getValue());
 				}
@@ -248,7 +248,7 @@ public class SpinParserTest {
 			@Override
 			public void meet(ExtensionElem node) {
 				Value value = constants.get(node.getName());
-				if (value != null && node.getExpr()instanceof ValueConstant constant
+				if (value != null && node.getExpr() instanceof ValueConstant constant
 						&& value.equals(constant.getValue())) {
 					node.setName(canonicalNames.get(value));
 				}
@@ -622,7 +622,7 @@ public class SpinParserTest {
 
 			@Override
 			public void meet(ExtensionElem node) {
-				if (node.getExpr()instanceof ValueConstant constant) {
+				if (node.getExpr() instanceof ValueConstant constant) {
 					constantExtensions.add(node);
 					addProjectedValue(valuesByName, node.getName(), constant.getValue());
 				}
