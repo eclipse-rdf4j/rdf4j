@@ -12,11 +12,13 @@
 package org.eclipse.rdf4j.federated.util;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
 import org.eclipse.rdf4j.federated.algebra.ResolvedGraphSelection;
@@ -25,6 +27,9 @@ import org.eclipse.rdf4j.federated.algebra.StatementSource.StatementSourceType;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.TripleTerm;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -34,6 +39,9 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
 
@@ -44,6 +52,62 @@ public class QueryStringUtilTest {
 		Literal literal = Values.getValueFactory().createLiteral("שלום", "he", Literal.BaseDirection.RTL);
 
 		assertEquals("'''שלום'''@he--rtl", QueryStringUtil.appendValue(new StringBuilder(), literal).toString());
+	}
+
+	@Test
+	public void delimiterBearingIriAndDatatypeStayInsideTerms() {
+		IRI iri = SimpleValueFactory.getInstance().createIRI("urn:value> } ; DROP ALL ; INSERT DATA { <urn:other");
+		Literal literal = Values.getValueFactory().createLiteral("label", iri);
+
+		assertEquals(iri, parseObject(QueryStringUtil.appendValue(new StringBuilder(), iri).toString()));
+		assertEquals(literal, parseObject(QueryStringUtil.appendValue(new StringBuilder(), literal).toString()));
+	}
+
+	@Test
+	public void quotedLiteralAndNestedTripleTermRoundTrip() {
+		Literal literal = Values.literal("single ' triple ''' slash \\ newline\n control\u0001");
+		TripleTerm inner = Values.getValueFactory()
+				.createTripleTerm(
+						SimpleValueFactory.getInstance().createIRI("urn:inner> ; DROP ALL"), Values.iri("urn:p"),
+						literal);
+		TripleTerm outer = Values.getValueFactory().createTripleTerm(Values.iri("urn:s"), Values.iri("urn:p"), inner);
+
+		assertEquals(literal, parseObject(QueryStringUtil.appendValue(new StringBuilder(), literal).toString()));
+		String nested = QueryStringUtil.appendValue(new StringBuilder(), outer).toString();
+		assertThat(QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT * WHERE { ?s <urn:p> " + nested + " . }", null)).isNotNull();
+	}
+
+	@Test
+	public void datasetGraphIriCannotInjectAnotherClause() throws Exception {
+		IRI graph = SimpleValueFactory.getInstance().createIRI("urn:graph> FROM NAMED <urn:other");
+		SimpleDataset dataset = new SimpleDataset();
+		dataset.addNamedGraph(graph);
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+
+		String query = QueryStringUtil.selectQueryString(pattern, EmptyBindingSet.getInstance(), null,
+				new AtomicBoolean(), dataset);
+		var parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		assertThat(parsed.getDataset().getNamedGraphs()).containsExactly(graph);
+	}
+
+	@Test
+	public void malformedLanguageAndBlankReferenceCollisionAreRejected() {
+		Literal language = SimpleValueFactory.getInstance().createLiteral("label", "en> ; DROP ALL");
+		IRI alias = SimpleValueFactory.getInstance().createIRI("_:known");
+
+		assertThatThrownBy(() -> QueryStringUtil.appendValue(new StringBuilder(), language))
+				.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> QueryStringUtil.appendValue(new StringBuilder(), alias))
+				.isInstanceOf(IllegalArgumentException.class);
+	}
+
+	private Value parseObject(String term) {
+		var parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT * WHERE { ?s <urn:p> " + term + " . }", null);
+		var patterns = StatementPatternCollector.process(parsed.getTupleExpr());
+		assertThat(patterns).hasSize(1);
+		return patterns.get(0).getObjectVar().getValue();
 	}
 
 	@Test

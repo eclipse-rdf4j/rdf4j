@@ -61,6 +61,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.DatasetUtils;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLTermRenderer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -1164,8 +1165,7 @@ public class QueryStringUtil {
 	 * @return the string builder
 	 */
 	protected static StringBuilder appendURI(StringBuilder sb, IRI uri) {
-		sb.append("<").append(uri.stringValue()).append(">");
-		return sb;
+		return SPARQLTermRenderer.appendIRIRef(sb, uri);
 	}
 
 	/**
@@ -1192,18 +1192,15 @@ public class QueryStringUtil {
 	 */
 	protected static StringBuilder appendLiteral(StringBuilder sb, Literal lit) {
 		sb.append("'''");
-		sb.append(lit.getLabel().replace("\"", "\\\"").replace("'", "\\'"));
+		sb.append(SPARQLTermRenderer.escapeString(lit.getLabel()));
 		sb.append("'''");
 
 		if (lit.getLanguage().isPresent()) {
-			sb.append('@');
-			sb.append(lit.getLanguage().get());
-			sb.append(lit.getBaseDirection());
+			SPARQLTermRenderer.appendLanguageTag(sb, lit);
 		} else {
 			if (lit.getDatatype() != null) {
-				sb.append("^^<");
-				sb.append(lit.getDatatype().stringValue());
-				sb.append('>');
+				sb.append("^^");
+				SPARQLTermRenderer.appendIRIRef(sb, lit.getDatatype());
 			}
 		}
 		return sb;
@@ -1269,6 +1266,7 @@ public class QueryStringUtil {
 			throw new QueryEvaluationException(
 					"Unsupported blank-node identity: SPARQL Protocol graph sources require IRIs");
 		}
-		sb.append(named ? "FROM NAMED <" : "FROM <").append(graph.stringValue()).append("> ");
+		sb.append(named ? "FROM NAMED " : "FROM ");
+		SPARQLTermRenderer.appendIRIRef(sb, (IRI) graph).append(' ');
 	}
 }

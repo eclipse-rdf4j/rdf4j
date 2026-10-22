@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLQueries;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLTermRenderer;
 
 /**
  * Utility class to perfom query string manipulations as used in {@link SPARQLTupleQuery}, {@link SPARQLGraphQuery} and
@@ -155,32 +156,32 @@ public class QueryStringUtil {
 			return appendValue(sb, (IRI) value);
 		} else if (value instanceof Literal) {
 			return appendValue(sb, (Literal) value);
+		} else if (value instanceof TripleTerm triple) {
+			sb.append("<<(");
+			appendValueAsString(sb, triple.getSubject()).append(' ');
+			appendValueAsString(sb, triple.getPredicate()).append(' ');
+			appendValueAsString(sb, triple.getObject()).append(")>>");
+			return sb;
 		} else {
 			throw new IllegalArgumentException("BNode references not supported by SPARQL end-points");
 		}
 	}
 
 	private static StringBuilder appendValue(StringBuilder sb, IRI uri) {
-		sb.append("<").append(uri.stringValue()).append(">");
-		return sb;
+		return SPARQLTermRenderer.appendIRIRef(sb, uri);
 	}
 
 	private static StringBuilder appendValue(StringBuilder sb, Literal lit) {
 		sb.append('"');
-		sb.append(SPARQLQueries.escape(lit.getLabel()));
+		sb.append(SPARQLTermRenderer.escapeString(lit.getLabel()));
 		sb.append('"');
 
 		if (Literals.isLanguageLiteral(lit)) {
-			sb.append('@');
-			sb.append(lit.getLanguage().get());
-			if (lit.getBaseDirection() != Literal.BaseDirection.NONE) {
-				sb.append(lit.getBaseDirection());
-			}
+			SPARQLTermRenderer.appendLanguageTag(sb, lit);
 		} else if (lit.getCoreDatatype() != CoreDatatype.XSD.STRING) {
 			// Don't append type if it's xsd:string, this keeps it compatible with RDF 1.0
-			sb.append("^^<");
-			sb.append(lit.getDatatype().stringValue());
-			sb.append('>');
+			sb.append("^^");
+			SPARQLTermRenderer.appendIRIRef(sb, lit.getDatatype());
 		}
 		return sb;
 	}

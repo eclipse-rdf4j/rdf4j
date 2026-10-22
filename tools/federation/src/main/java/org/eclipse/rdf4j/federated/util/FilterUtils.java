@@ -19,12 +19,14 @@ import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
 import org.eclipse.rdf4j.federated.exception.FilterConversionException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLTermRenderer;
 
 /**
  * Various utility functions to handle filter expressions.
@@ -162,29 +164,31 @@ public class FilterUtils {
 		if (value instanceof Literal) {
 			return appendLiteral(sb, (Literal) value);
 		}
+		if (value instanceof TripleTerm triple) {
+			sb.append("<<(");
+			appendValue(sb, triple.getSubject()).append(' ');
+			appendValue(sb, triple.getPredicate()).append(' ');
+			return appendValue(sb, triple.getObject()).append(")>>");
+		}
 
 		// XXX check for other types ? BNode ?
 		throw new RuntimeException("Type not supported: " + value.getClass().getCanonicalName());
 	}
 
 	protected static StringBuilder appendURI(StringBuilder sb, IRI uri) {
-		sb.append("<").append(uri.stringValue()).append(">");
-		return sb;
+		return SPARQLTermRenderer.appendIRIRef(sb, uri);
 	}
 
 	protected static StringBuilder appendLiteral(StringBuilder sb, Literal lit) {
 		sb.append('\'');
-		sb.append(lit.getLabel().replace("\"", "\\\""));
+		sb.append(SPARQLTermRenderer.escapeString(lit.getLabel()));
 		sb.append('\'');
 
 		if (lit.getLanguage().isPresent()) {
-			sb.append('@');
-			sb.append(lit.getLanguage().get());
-			sb.append(lit.getBaseDirection());
+			SPARQLTermRenderer.appendLanguageTag(sb, lit);
 		} else if (lit.getDatatype() != null) {
-			sb.append("^^<");
-			sb.append(lit.getDatatype().stringValue());
-			sb.append('>');
+			sb.append("^^");
+			SPARQLTermRenderer.appendIRIRef(sb, lit.getDatatype());
 		}
 		return sb;
 	}
