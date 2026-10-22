@@ -520,7 +520,15 @@ public final class FilterPlacementAnalyzer {
 			if (detached != null) {
 				Filter clone = (Filter) clones.get(detached);
 				clone.setConditionBindingScope(FilterBindingScope.resolve(detached));
-				QueryModelNormalizerOptimizer.replacePreservingScope(clone, clone.getArg());
+				TupleExpr argument = clone.getArg();
+				QueryModelNode parent = clone.getParentNode();
+				QueryModelNormalizerOptimizer.replacePreservingScope(clone, argument);
+				if (argument.getParentNode() != parent) {
+					// Detaching can insert a physical scope boundary. It denotes the same original argument
+					// when encountered from its parent, while clones keeps the actual argument so its input
+					// still flows through that boundary and its descendants remain independently traversable.
+					originals.put(argument.getParentNode(), detached.getArg());
+				}
 				// Runtime gates do not create group boundaries. The physical source boundary remains on the
 				// surviving tuple root, independently of this detached logical condition.
 				clone.setVariableScopeChange(false);

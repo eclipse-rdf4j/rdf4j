@@ -588,6 +588,48 @@ class FilterPlacementAnalyzerTest {
 	}
 
 	@Test
+	void detachedScopeBoundariesKeepOriginalSitesAndNestedTraversal() {
+		for (boolean scopedSource : List.of(false, true)) {
+			for (int shape = 0; shape < 3; shape++) {
+				TupleExpr argument = switch (shape) {
+				case 0 -> new Union(values("x", 1, 1, 2), values("x", 2, 3));
+				case 1 -> new Join(values("x", 1, 1, 2), values("y", 3));
+				default -> new Distinct(new Union(values("x", 1, 1, 2), values("x", 2, 3)));
+				};
+				if (!scopedSource) {
+					// An unscoped source over a scoped child needs an unscoped physical boundary when detached.
+					Extension scoped = new Extension(argument);
+					scoped.setVariableScopeChange(true);
+					argument = scoped;
+				}
+				Filter filter = new Filter(argument, new And(new Bound(Var.of("x")),
+						new Compare(Var.of("x"), constant(1), Compare.CompareOp.GT)));
+				filter.setVariableScopeChange(scopedSource);
+				Join parent = new Join(values("outer", 9), filter);
+				QueryRoot root = new QueryRoot(parent);
+				List<QueryModelNode> before = nodes(root);
+				Envelope envelope = analyzer(root).analyze(filter);
+
+				assertThat(singletonSites(envelope)).contains(argument);
+				if (scopedSource && argument instanceof Union) {
+					// Moving the gate cannot replace an independently evaluated scoped UNION on the right.
+					assertThat(singletonSites(envelope)).doesNotContain(parent);
+				} else {
+					assertThat(singletonSites(envelope)).contains(parent);
+				}
+				assertThat(envelope.potentialSites(candidate -> true))
+						.allSatisfy(candidate -> assertThat(before).anyMatch(node -> node == candidate));
+				assertThat(alternatives(envelope))
+						.anySatisfy(alternative -> assertThat(arguments(alternative)).doesNotContain(filter.getArg(),
+								parent));
+				assertEveryPlacementPreservesBag(root, filter, envelope);
+				assertThat(nodes(root)).containsExactlyElementsOf(before);
+				assertThat(envelope.isCurrent()).isTrue();
+			}
+		}
+	}
+
+	@Test
 	void scopedUnionCutsKeepGroupInputsSeparateFromConditionVisibility() {
 		for (boolean sourceMarker : List.of(false, true)) {
 			BindingSetAssignment first = values("x", 1, 1, 2);
