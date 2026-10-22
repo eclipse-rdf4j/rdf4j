@@ -139,8 +139,6 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 	private LmdbSailStore backingStore;
 	private PreparedBulkStore.Snapshot preparedBulkSnapshot;
-	private long preparedAdmissionValueTransaction;
-	private long preparedAdmissionTripleTransaction;
 
 	// used to decide if store is writable, is true if the store was writable during initialization
 	private boolean isWritable;
@@ -407,12 +405,17 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		try {
 			StoreProperties properties = new StoreProperties(dataDir);
 			properties.load();
+			// Diagnose unsupported persisted capabilities before optimization metadata is considered. This pure
+			// validation does not open either native environment or reinterpret mutable native index manifests.
+			LmdbStoreFormat loadedFormat = properties.isLoaded()
+					? LmdbStoreFormat.resolve(dataDir, properties, config)
+					: null;
 			preparedBulkSnapshot = PreparedBulkStore.read(dataDir.toPath(), properties, config);
 			properties.preparedBulkStore = preparedBulkSnapshot;
 			if (preparedBulkSnapshot == null) {
 				LegacyStoreDiscovery.discover(dataDir, properties);
 			}
-			format = LmdbStoreFormat.resolve(dataDir, properties, config);
+			format = loadedFormat != null ? loadedFormat : LmdbStoreFormat.resolve(dataDir, properties, config);
 			if (!properties.isLoaded() && !properties.hasNativeGeneration()) {
 				format.initializeProperties(properties);
 				writeCoreLiteralReferenceMarker(dataDir.toPath());
@@ -422,10 +425,6 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 			boolean useSketchBasedJoinEstimator = shouldUseSketchBasedJoinEstimator();
 			backingStore = createBackingStore(dataDir, properties, config, useSketchBasedJoinEstimator);
-			if (preparedBulkSnapshot != null) {
-				preparedAdmissionValueTransaction = backingStore.valueStore().lastTransactionId();
-				preparedAdmissionTripleTransaction = backingStore.getTripleStore().lastTransactionId();
-			}
 			properties.save();
 
 			this.store = new SnapshotSailStore(backingStore, () -> new MemoryOverflowModel() {
@@ -474,10 +473,11 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 		try {
 			store.close();
-			if (preparedBulkSnapshot != null) {
+			if (format != null && !format.isLegacy()) {
 				try {
-					PreparedBulkStore.refreshAfterReadOnlyClose(getDataDir().toPath(), preparedBulkSnapshot,
-							preparedAdmissionValueTransaction, preparedAdmissionTripleTransaction, config);
+					PreparedBulkStore.refreshAfterCleanClose(getDataDir().toPath(),
+							backingStore.valueStore().trustedClosedTransactionId(),
+							backingStore.getTripleStore().trustedClosedTransactionId(), config);
 				} catch (IOException | RuntimeException notRenewable) {
 					// A stale optimization hint is safe: the next open performs ordinary discovery and recovery.
 					logger.debug("Bulk startup certificate was not renewed after close", notRenewable);

@@ -162,7 +162,7 @@ public final class LmdbNativeBulkStore implements AutoCloseable {
 				.putLong(identity.getLeastSignificantBits())
 				.array();
 		tripleStore.completeValidatedBulkGeneration(generation, validation.statements());
-		valueStore.completeValidatedBulkGeneration(generation, config);
+		valueStore.completeValidatedBulkGeneration(generation, config, tripleStore.validatedBulkTransactionId());
 		validation.bindNativeTransactions(valueStore.validatedBulkTransactionId(),
 				tripleStore.validatedBulkTransactionId());
 	}
@@ -180,7 +180,7 @@ public final class LmdbNativeBulkStore implements AutoCloseable {
 		validation.requireDirectory(directory);
 		StoreProperties properties = new StoreProperties(directory.toFile());
 		properties.load();
-		PreparedBulkStore.Snapshot snapshot = PreparedBulkStore.read(directory, properties, config);
+		PreparedBulkStore.Snapshot snapshot = PreparedBulkStore.readSealed(directory, properties, config);
 		if (snapshot == null || snapshot.values().transactionId() != validation.valueTransaction()
 				|| snapshot.triples().transactionId() != validation.tripleTransaction()) {
 			throw new IOException("Prepared bulk generation changed before publication");

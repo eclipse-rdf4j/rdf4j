@@ -207,9 +207,12 @@ repository manager while retaining its name. If you rename the repository direct
 The loader establishes reference-count integrity and reserves startup capacity before publication, using its existing
 value and index passes. Its preparation metadata binds both native environments to the same generation and committed
 transactions. An unchanged repository opened with its generated configuration skips startup discovery scans,
-reference-count reconstruction, value reclamation, retirement recovery and map growth. Ordinary writes invalidate that
-prepared state; a later open uses the normal safety checks. Missing, corrupt, stale or incompatible preparation metadata
-also uses ordinary validation and recovery. Explicitly enabled experimental value-overlay, sketch-estimator and
+reference-count reconstruction, value reclamation, retirement recovery and map growth. Clean ordinary writes and shutdown
+retain bounded startup authority. Current-format stores can also use native clean metadata when the optional preparation
+sidecar is missing: startup checks known database names, manifests and statistics rather than traversing stored RDF values.
+Dirty or stale native integrity metadata, unknown writers, invalid formats and real pending reclamation or retirement work
+trigger the required validation or recovery. A reusable free-ID pool alone does not require recovery. Explicitly enabled
+experimental value-overlay, sketch-estimator and
 direct-adjacency caches retain their separate startup build behavior; the standalone defaults leave them disabled.
 
 For the Java bulk-loader API, repository configuration remains application-owned. Its

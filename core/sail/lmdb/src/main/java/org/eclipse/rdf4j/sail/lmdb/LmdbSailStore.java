@@ -6410,19 +6410,21 @@ class LmdbSailStore implements SailStore {
 					() -> beginMapGrowthAttemptForCurrentWriter(MapResizeKind.TRIPLE_STORE));
 			tripleStore.setMapGrowthRequestListener(this::requestMapGrowthForCurrentWriter);
 			if (properties.preparedBulkStore != null
-					&& tripleStore.lastTransactionId() != properties.preparedBulkStore.triples().transactionId()) {
-				throw new IOException("Prepared bulk triple generation changed during startup");
+					&& tripleStore.trustedTransactionId() != properties.verifiedTripleTransactionId) {
+				throw new IOException("Clean native triple generation changed during startup");
 			}
 			namespaceStore = properties.preparedBulkStore == null ? recoverNamespaceStore()
 					: new NamespaceStore(dataDir, tripleStore);
 			publishedNamespaces = namespaceStore.snapshot();
 			statementPatternCardinalitySource = new LmdbStatementPatternCardinalitySource(valueStore, tripleStore);
 			mayHaveInferred = tripleStore.hasTriples(false);
-			if (properties.preparedBulkStore == null) {
+			if (properties.preparedBulkStore == null || properties.preparedBulkStore.pendingUnused()) {
 				completeStartupValueReclamation(false);
-				recoverRetiredValueIds();
 			} else {
 				valueStore.completePreparedStoreInitialization(tripleStore::filterUsedIds);
+			}
+			if (properties.preparedBulkStore == null || properties.preparedBulkStore.pendingRetired()) {
+				recoverRetiredValueIds();
 			}
 			LmdbDirectAdjacencyOptions directAdjacencyOptions = LmdbDirectAdjacencyOptions.resolve(config);
 			directAdjacency = directAdjacencyOptions.mode() != DirectAdjacencyMode.DISABLED
@@ -6439,7 +6441,8 @@ class LmdbSailStore implements SailStore {
 			}
 			preparedImportBudget = new AlignedWriteBudget(calculatePreparedImportStatementLimit(
 					Runtime.getRuntime().maxMemory(), tripleStore.secondaryIndexCount()));
-			if (properties.preparedBulkStore == null) {
+			if (properties.preparedBulkStore == null || properties.preparedBulkStore.pendingUnused()
+					|| properties.preparedBulkStore.pendingRetired()) {
 				completeStartupValueReclamation(true);
 			}
 			LmdbDirectAdjacencyStore adjacencyForContext = directAdjacency;
@@ -7778,6 +7781,14 @@ class LmdbSailStore implements SailStore {
 			}
 			if (namespaceStore != null) {
 				failure = attemptClose(failure, namespaceStore::close);
+			}
+			if (failure == null && valueStore != null && tripleStore != null && tripleStore.tracksNativeOwnership()) {
+				try {
+					valueStore.prepareCleanClose(tripleStore.trustedTransactionId());
+				} catch (IOException unknownWriter) {
+					valueStore.invalidateCleanCloseAfterUnknownTripleWriter();
+					logger.warn("Cannot certify clean native state before close", unknownWriter);
+				}
 			}
 			if (tripleStore != null) {
 				failure = attemptClose(failure, () -> tripleStore.getTxnManager().close());

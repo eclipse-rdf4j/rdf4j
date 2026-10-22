@@ -108,6 +108,8 @@ class StoreProperties {
 	private boolean nativeGenerationPresent;
 	/** Validated only while the owning LmdbStore holds its directory lock; never serialized as a boolean. */
 	PreparedBulkStore.Snapshot preparedBulkStore;
+	long verifiedValueTransactionId = -1L;
+	long verifiedTripleTransactionId = -1L;
 
 	protected boolean dirty;
 

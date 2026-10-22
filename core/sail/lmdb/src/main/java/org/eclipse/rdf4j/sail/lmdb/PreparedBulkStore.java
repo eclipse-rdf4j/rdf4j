@@ -42,6 +42,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.Set;
@@ -57,13 +59,18 @@ import org.lwjgl.util.lmdb.MDBStat;
 import org.lwjgl.util.lmdb.MDBVal;
 
 /**
- * A bounded, transaction-bound startup certificate for a validated bulk generation. This is only an optimization hint:
- * absent, corrupt or stale certificates leave the ordinary discovery and recovery path in charge.
+ * Bounded admission from exact native CLEAN authority, with a transaction-bound certificate for bulk publication. The
+ * certificate is derived metadata: ordinary current-format stores can establish the same native authority without it.
+ * Invalid or untrusted native authority leaves ordinary discovery and recovery in charge.
  */
 final class PreparedBulkStore {
 
 	static final String FILE_NAME = ".lmdb-bulk-prepared";
 	static final byte[] GENERATION_KEY = "bulk-generation".getBytes(StandardCharsets.US_ASCII);
+	static final byte[] CLEAN_TRIPLE_TRANSACTION_KEY = "clean-triple-txn".getBytes(StandardCharsets.US_ASCII);
+	static final byte[] CLEAN_PROPERTIES_FINGERPRINT_KEY = "clean-properties-sha256"
+			.getBytes(StandardCharsets.US_ASCII);
+	private static final int PROPERTIES_FINGERPRINT_BYTES = 32;
 	private static final int MAGIC = 0x52444250;
 	private static final int VERSION = 1;
 	private static final int MAX_CERTIFICATE_BYTES = 16 * 1024;
@@ -72,7 +79,10 @@ final class PreparedBulkStore {
 	}
 
 	record Snapshot(Environment values, Environment triples, String properties, double growthThreshold,
-			boolean hashCache) {
+			boolean hashCache, boolean pendingUnused, boolean pendingRetired) {
+	}
+
+	private record Captured(Snapshot snapshot, boolean tripleTransactionBound) {
 	}
 
 	private PreparedBulkStore() {
@@ -85,6 +95,47 @@ final class PreparedBulkStore {
 		byte[] triples = readGeneration(stack, triplesTransaction, TripleStore.NAMESPACE_DATABASE_NAME);
 		if (!Arrays.equals(values, triples)) {
 			throw new IOException("LMDB environments belong to different bulk generations");
+		}
+	}
+
+	/**
+	 * Rejects changed persisted structural properties before any catalog traversal or writable setup. Only an exact
+	 * native CLEAN transaction can authorize this guard; dirty/crashed generations still use ordinary recovery. The
+	 * missing new key preserves historical stores, including generations sealed before this binding existed.
+	 */
+	static void validateCleanProperties(MemoryStack stack, long valuesTransaction, StoreProperties properties)
+			throws IOException {
+		stack.push();
+		try {
+			IntBuffer handle = stack.mallocInt(1);
+			int result = mdb_dbi_open(valuesTransaction, "ref_counts", 0, handle);
+			if (result == MDB_NOTFOUND) {
+				return;
+			}
+			E(result);
+			MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(new byte[] { 0 }));
+			MDBVal value = MDBVal.calloc(stack);
+			result = mdb_get(valuesTransaction, handle.get(0), key, value);
+			if (result == MDB_NOTFOUND) {
+				return;
+			}
+			E(result);
+			if (value.mv_size() != ValueStore.REFCOUNT_MARKER_BYTES
+					|| !ValueStore.isValidRefCountMarker(value.mv_data(), mdb_txn_id(valuesTransaction))) {
+				return;
+			}
+			result = mdb_dbi_open(valuesTransaction, "gc_meta", 0, handle);
+			if (result == MDB_NOTFOUND) {
+				return;
+			}
+			E(result);
+			byte[] fingerprint = getOptional(stack, valuesTransaction, handle.get(0), CLEAN_PROPERTIES_FINGERPRINT_KEY,
+					PROPERTIES_FINGERPRINT_BYTES);
+			if (fingerprint != null && !Arrays.equals(fingerprint, cleanPropertiesFingerprint(properties))) {
+				throw new IOException("Persisted LmdbStore format properties disagree with clean native generation");
+			}
+		} finally {
+			stack.pop();
 		}
 	}
 
@@ -115,9 +166,12 @@ final class PreparedBulkStore {
 			throws IOException {
 		StoreProperties properties = new StoreProperties(directory.toFile());
 		properties.load();
-		Snapshot snapshot = capture(directory, properties, supplied);
+		Snapshot snapshot = capture(directory, properties, supplied).snapshot;
 		if (snapshot.values.transactionId != valueTransaction || snapshot.triples.transactionId != tripleTransaction) {
 			throw new IOException("Native bulk generation changed after its validated completion");
+		}
+		if (snapshot.values.generation.isEmpty() || snapshot.pendingUnused || snapshot.pendingRetired) {
+			throw new IOException("Native bulk generation has no complete identity or has pending value recovery");
 		}
 		write(directory, snapshot);
 		Model model = new LinkedHashModel();
@@ -131,6 +185,12 @@ final class PreparedBulkStore {
 	}
 
 	static Snapshot read(Path directory, StoreProperties properties, LmdbStoreConfig config) {
+		Snapshot sealed = readSealed(directory, properties, config);
+		return sealed != null ? sealed : readCurrent(directory, properties, config);
+	}
+
+	/** Publication callbacks must preserve this exact certificate; native-only trust cannot replace a changed seal. */
+	static Snapshot readSealed(Path directory, StoreProperties properties, LmdbStoreConfig config) {
 		Path certificate = directory.resolve(FILE_NAME);
 		try {
 			if (!properties.isLoaded()
@@ -160,7 +220,7 @@ final class PreparedBulkStore {
 					return null;
 				}
 				expected = new Snapshot(readEnvironment(input), readEnvironment(input), input.readUTF(),
-						input.readDouble(), input.readBoolean());
+						input.readDouble(), input.readBoolean(), false, false);
 				if (input.available() != Integer.BYTES) {
 					return null;
 				}
@@ -168,11 +228,11 @@ final class PreparedBulkStore {
 			if (!compatible(expected, properties, config)) {
 				return null;
 			}
-			Snapshot actual = capture(directory, properties, config);
+			Snapshot actual = capture(directory, properties, config).snapshot;
 			if (!expected.equals(actual)) {
 				return null;
 			}
-			properties.setNativeGenerationPresent(true);
+			admit(properties, actual);
 			return expected;
 		} catch (IOException | RuntimeException invalid) {
 			// The authoritative ordinary opener supplies the diagnostic for invalid native state.
@@ -180,24 +240,55 @@ final class PreparedBulkStore {
 		}
 	}
 
-	static void refreshAfterReadOnlyClose(Path directory, Snapshot admitted, long valueTransactionAtAdmission,
-			long tripleTransactionAtAdmission, LmdbStoreConfig config) throws IOException {
+	/**
+	 * A missing or damaged derived certificate is not a reason to walk a clean current dictionary. Native bulk UUIDs
+	 * require the paired triple binding; two absent UUIDs retain compatibility with historical ordinary stores.
+	 */
+	static Snapshot readCurrent(Path directory, StoreProperties properties, LmdbStoreConfig config) {
+		if (!properties.isLoaded()
+				|| !Integer.toString(LmdbStoreFormat.CURRENT_VERSION).equals(properties.getVersion())) {
+			return null;
+		}
+		try {
+			Captured captured = capture(directory, properties, config);
+			Snapshot snapshot = captured.snapshot;
+			if ((!captured.tripleTransactionBound && !snapshot.values.generation.isEmpty())
+					|| !compatible(snapshot, properties, config)) {
+				return null;
+			}
+			admit(properties, snapshot);
+			return snapshot;
+		} catch (IOException | RuntimeException invalid) {
+			return null;
+		}
+	}
+
+	private static void admit(StoreProperties properties, Snapshot snapshot) {
+		properties.setNativeGenerationPresent(true);
+		properties.verifiedValueTransactionId = snapshot.values.transactionId;
+		properties.verifiedTripleTransactionId = snapshot.triples.transactionId;
+	}
+
+	static void refreshAfterCleanClose(Path directory, long expectedValues, long expectedTriples,
+			LmdbStoreConfig config) throws IOException {
+		if (expectedValues < 0L || expectedTriples < 0L) {
+			return;
+		}
 		StoreProperties properties = new StoreProperties(directory.toFile());
 		properties.load();
-		Snapshot closed = capture(directory, properties, config);
-		// Startup and close are the only permitted value writers. The clean-close marker adds exactly one transaction;
-		// a user write or an unknown native writer prevents renewal, even when it left superficially valid metadata.
-		if (closed.values.transactionId == Math.addExact(valueTransactionAtAdmission, 1L)
-				&& closed.triples.transactionId == tripleTransactionAtAdmission
-				&& closed.values.mapSize == admitted.values.mapSize
-				&& closed.triples.mapSize == admitted.triples.mapSize
-				&& closed.values.generation.equals(admitted.values.generation)
-				&& closed.triples.generation.equals(admitted.triples.generation)) {
+		Captured captured = capture(directory, properties, config);
+		Snapshot closed = captured.snapshot;
+		// These IDs come from the owning writers, never from a post-commit environment probe. An intervening native
+		// transaction cannot be adopted merely because it left superficially well-formed metadata.
+		if (captured.tripleTransactionBound && closed.values.transactionId == expectedValues
+				&& closed.triples.transactionId == expectedTriples && !closed.pendingUnused && !closed.pendingRetired) {
 			write(directory, closed);
 		}
 	}
 
 	private static boolean compatible(Snapshot snapshot, StoreProperties properties, LmdbStoreConfig config) {
+		// Growth threshold and hash-cache policy do not change native dictionary authority. A strict seal includes
+		// both; native-only capture records the requested policies and lets normal bounded reservations honor them.
 		return snapshot.properties.equals(propertiesFingerprint(properties))
 				&& snapshot.growthThreshold == config.getMapGrowthThreshold()
 				&& snapshot.hashCache == config.getValueHashCacheEnabled()
@@ -224,57 +315,104 @@ final class PreparedBulkStore {
 				String.valueOf(properties.canonicalLanguageTags), String.valueOf(properties.dateTimeIdEncoding));
 	}
 
-	private static Snapshot capture(Path directory, StoreProperties properties, LmdbStoreConfig config)
-			throws IOException {
-		Environment values = inspect(directory.resolve("values"), true);
-		Environment triples = inspect(directory.resolve("triples"), false);
-		if (!values.generation.equals(triples.generation)) {
-			throw new IOException("Prepared bulk environments belong to different generations");
+	/**
+	 * Immutable format capabilities, stored atomically with CLEAN and the owned triple transaction. Mutable index sets
+	 * have their own native manifests; their sidecar descriptors may legitimately lag a committed reindex.
+	 */
+	static byte[] cleanPropertiesFingerprint(StoreProperties properties) {
+		String immutableProperties = String.join("\n", String.valueOf(properties.getVersion()),
+				String.valueOf(properties.numericIdEncoding), String.valueOf(properties.literalReferenceEncoding),
+				String.valueOf(properties.inlineLiterals), String.valueOf(properties.canonicalLanguageTags),
+				String.valueOf(properties.dateTimeIdEncoding));
+		try {
+			return MessageDigest.getInstance("SHA-256")
+					.digest(immutableProperties.getBytes(StandardCharsets.UTF_8));
+		} catch (NoSuchAlgorithmException unavailable) {
+			throw new IllegalStateException("The required SHA-256 digest is unavailable", unavailable);
 		}
-		return new Snapshot(values, triples, propertiesFingerprint(properties), config.getMapGrowthThreshold(),
-				config.getValueHashCacheEnabled());
 	}
 
-	private static Environment inspect(Path directory, boolean values) throws IOException {
-		long env = 0L;
-		long txn = 0L;
+	private static Captured capture(Path directory, StoreProperties properties, LmdbStoreConfig config)
+			throws IOException {
+		long valuesEnv = 0L;
+		long triplesEnv = 0L;
+		long valuesTxn = 0L;
+		long triplesTxn = 0L;
 		try (MemoryStack stack = MemoryStack.stackPush()) {
+			valuesEnv = openEnvironment(stack, directory.resolve("values"));
+			triplesEnv = openEnvironment(stack, directory.resolve("triples"));
 			PointerBuffer pointer = stack.mallocPointer(1);
-			E(mdb_env_create(pointer));
-			env = pointer.get(0);
-			E(mdb_env_set_maxdbs(env, 128));
-			E(mdb_env_open(env, directory.toString(), MDB_RDONLY | MDB_NOTLS, 0664));
-			E(mdb_txn_begin(env, NULL, MDB_RDONLY, pointer));
-			txn = pointer.get(0);
-			long transactionId = mdb_txn_id(txn);
-			int metadata = open(stack, txn, values ? "gc_meta" : TripleStore.NAMESPACE_DATABASE_NAME);
-			byte[] generation = get(stack, txn, metadata, GENERATION_KEY, 16);
-			if (values) {
-				int counts = open(stack, txn, "ref_counts");
-				if (!ValueStore.isValidRefCountMarker(ByteBuffer.wrap(
-						get(stack, txn, counts, new byte[] { 0 }, ValueStore.REFCOUNT_MARKER_BYTES)),
-						transactionId)) {
-					throw new IOException("Prepared bulk reference counts are not clean");
-				}
-				MDBStat stat = MDBStat.malloc(stack);
-				for (String name : new String[] { "unused_ids", "free_ids", "retired_ids", "retired_ids_seq" }) {
-					E(mdb_stat(txn, open(stack, txn, name), stat));
-					if (stat.ms_entries() != 0L) {
-						throw new IOException("Prepared bulk store has pending value recovery in " + name);
-					}
-				}
+			E(mdb_txn_begin(valuesEnv, NULL, MDB_RDONLY, pointer));
+			valuesTxn = pointer.get(0);
+			E(mdb_txn_begin(triplesEnv, NULL, MDB_RDONLY, pointer));
+			triplesTxn = pointer.get(0);
+			validateGenerationPair(stack, valuesTxn, triplesTxn);
+			long valueTransaction = mdb_txn_id(valuesTxn);
+			long tripleTransaction = mdb_txn_id(triplesTxn);
+			int metadata = open(stack, valuesTxn, "gc_meta");
+			int counts = open(stack, valuesTxn, "ref_counts");
+			if (!ValueStore.isValidRefCountMarker(ByteBuffer.wrap(get(stack, valuesTxn, counts, new byte[] { 0 },
+					ValueStore.REFCOUNT_MARKER_BYTES)), valueTransaction)) {
+				throw new IOException("Current LMDB reference counts are not clean");
 			}
-			MDBEnvInfo info = MDBEnvInfo.malloc(stack);
-			E(mdb_env_info(env, info));
-			return new Environment(transactionId, info.me_mapsize(), HexFormat.of().formatHex(generation));
+			validateCleanProperties(stack, valuesTxn, properties);
+			byte[] binding = getOptional(stack, valuesTxn, metadata, CLEAN_TRIPLE_TRANSACTION_KEY, Long.BYTES);
+			if (binding != null && ByteBuffer.wrap(binding).getLong() != tripleTransaction) {
+				throw new IOException("Native triple transaction changed after clean ValueStore completion");
+			}
+			LegacyStoreDiscovery.validateCurrentMetadata(stack, valuesTxn, triplesTxn, properties);
+			byte[] generation = readGeneration(stack, valuesTxn, "gc_meta");
+			String identity = generation == null ? "" : HexFormat.of().formatHex(generation);
+			Environment values = environment(stack, valuesEnv, valueTransaction, identity);
+			Environment triples = environment(stack, triplesEnv, tripleTransaction, identity);
+			boolean pendingUnused = hasEntries(stack, valuesTxn, "unused_ids");
+			boolean pendingRetired = hasEntries(stack, valuesTxn, "retired_ids")
+					| hasEntries(stack, valuesTxn, "retired_ids_seq");
+			// free_ids is a legitimate reusable pool and carries no outstanding reclamation obligation.
+			Snapshot snapshot = new Snapshot(values, triples, propertiesFingerprint(properties),
+					config.getMapGrowthThreshold(), config.getValueHashCacheEnabled(), pendingUnused, pendingRetired);
+			return new Captured(snapshot, binding != null);
 		} finally {
-			if (txn != 0L) {
-				mdb_txn_abort(txn);
+			if (triplesTxn != 0L) {
+				mdb_txn_abort(triplesTxn);
 			}
-			if (env != 0L) {
-				mdb_env_close(env);
+			if (valuesTxn != 0L) {
+				mdb_txn_abort(valuesTxn);
+			}
+			if (triplesEnv != 0L) {
+				mdb_env_close(triplesEnv);
+			}
+			if (valuesEnv != 0L) {
+				mdb_env_close(valuesEnv);
 			}
 		}
+	}
+
+	private static long openEnvironment(MemoryStack stack, Path directory) throws IOException {
+		PointerBuffer pointer = stack.mallocPointer(1);
+		E(mdb_env_create(pointer));
+		long environment = pointer.get(0);
+		try {
+			E(mdb_env_set_maxdbs(environment, 128));
+			E(mdb_env_open(environment, directory.toString(), MDB_RDONLY | MDB_NOTLS, 0664));
+			return environment;
+		} catch (IOException | RuntimeException | Error failure) {
+			mdb_env_close(environment);
+			throw failure;
+		}
+	}
+
+	private static Environment environment(MemoryStack stack, long environment, long transactionId, String generation)
+			throws IOException {
+		MDBEnvInfo info = MDBEnvInfo.malloc(stack);
+		E(mdb_env_info(environment, info));
+		return new Environment(transactionId, info.me_mapsize(), generation);
+	}
+
+	private static boolean hasEntries(MemoryStack stack, long transaction, String name) throws IOException {
+		MDBStat stat = MDBStat.malloc(stack);
+		E(mdb_stat(transaction, open(stack, transaction, name), stat));
+		return stat.ms_entries() != 0L;
 	}
 
 	private static int open(MemoryStack stack, long txn, String name) throws IOException {
@@ -285,13 +423,26 @@ final class PreparedBulkStore {
 
 	private static byte[] get(MemoryStack stack, long txn, int database, byte[] keyBytes, int expectedBytes)
 			throws IOException {
+		byte[] bytes = getOptional(stack, txn, database, keyBytes, expectedBytes);
+		if (bytes == null) {
+			throw new IOException("Missing prepared bulk metadata");
+		}
+		return bytes;
+	}
+
+	private static byte[] getOptional(MemoryStack stack, long txn, int database, byte[] keyBytes, int expectedBytes)
+			throws IOException {
 		MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(keyBytes));
 		MDBVal value = MDBVal.calloc(stack);
 		int result = mdb_get(txn, database, key, value);
-		if (result != 0 || value.mv_size() != expectedBytes) {
-			throw new IOException("Missing prepared bulk metadata");
+		if (result == MDB_NOTFOUND) {
+			return null;
 		}
-		byte[] bytes = new byte[value.mv_data().remaining()];
+		E(result);
+		if (value.mv_size() != expectedBytes) {
+			throw new IOException("Malformed prepared bulk metadata");
+		}
+		byte[] bytes = new byte[expectedBytes];
 		value.mv_data().duplicate().get(bytes);
 		return bytes;
 	}

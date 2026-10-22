@@ -590,7 +590,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	static final String TERM_INDEX_MANIFEST_DATABASE = "term_index_manifest";
 	static final byte[] TERM_INDEX_MANIFEST_KEY = "term-index-specs".getBytes(StandardCharsets.US_ASCII);
 	private static final int TERM_INDEX_MANIFEST_VERSION = 1;
-	private static final int MAX_TERM_INDEXES = 12;
+	static final int MAX_TERM_INDEXES = 12;
 	private static final int TERM_INDEX_REBUILD_BATCH_SIZE = 2_048;
 	private static final long TERM_INDEX_REBUILD_BYTES_PER_RECORD = TripleIndex.MAX_KEY_LENGTH + 64L;
 	private static final Set<String> ALL_TERM_INDEX_SPECS = allTermIndexSpecs();
@@ -954,6 +954,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private volatile boolean lastNativeCommitSucceeded;
 	/** Last native transaction ID whose dictionary/ref-count state this instance has established as trustworthy. */
 	private long lastTrustedNativeTransactionId = -1L;
+	private long closingTripleTransactionId = -1L;
 	/** Expected transaction predecessor while startup initialization owns the LMDB writer across bootstrap phases. */
 	private long startupExpectedLastTransactionId = -1L;
 	private boolean startupInitializationInProgress;
@@ -1506,7 +1507,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	/** Called only by the native owner after the canonical loader has verified all generated streams. */
-	void completeValidatedBulkGeneration(byte[] generation, LmdbStoreConfig config) throws IOException {
+	void completeValidatedBulkGeneration(byte[] generation, LmdbStoreConfig config, long tripleTransactionId)
+			throws IOException {
 		if (!bulkNativeOwnership || !auxiliaryDatabasesInitialized || writeTxn != 0L
 				|| lastTransactionId() != lastTrustedNativeTransactionId) {
 			throw new IOException("Cannot certify an unowned or incomplete bulk dictionary");
@@ -1532,6 +1534,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		refCountRecoveryRequired = false;
 		refCountIntegrityEstablished = true;
 		valueStoreInitializationComplete = true;
+		prepareCleanClose(tripleTransactionId);
 		writeCleanRefCountMarker();
 		if (!refCountIntegrityEstablished) {
 			throw new IOException("Could not complete bulk reference-count integrity metadata");
@@ -2533,6 +2536,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		legacyStructuredRefCountMarker = false;
 		startupMarkerStatus = null;
 		lastTrustedNativeTransactionId = -1L;
+		closingTripleTransactionId = -1L;
 		startupExpectedLastTransactionId = -1L;
 		startupInitializationInProgress = false;
 		boolean nativeGenerationExists = new File(dir, "data.mdb").exists();
@@ -12860,6 +12864,22 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		PREVIOUS_NAMESPACE_HANDLE.setRelease(this, null);
 	}
 
+	/** The paired store supplies only its last owned native triple commit, after its writers have drained. */
+	void prepareCleanClose(long tripleTransactionId) {
+		closingTripleTransactionId = tripleTransactionId;
+	}
+
+	void invalidateCleanCloseAfterUnknownTripleWriter() {
+		closingTripleTransactionId = -1L;
+		invalidateRefCountIntegrity("an intervening native triple writer before clean close");
+	}
+
+	long trustedClosedTransactionId() {
+		return refCountIntegrityEstablished && !refCountRecoveryRequired && !refCountRecoveryInProgress
+				? lastTrustedNativeTransactionId
+				: -1L;
+	}
+
 	private void writeCleanRefCountMarker() {
 		if (bulkCompletionSynced) {
 			return;
@@ -12872,6 +12892,19 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 		try {
 			writeTransaction((stack, txn) -> {
+				if (closingTripleTransactionId >= 0L) {
+					int metadata = openDatabaseWithTxn(txn, "gc_meta", 0);
+					MDBVal key = MDBVal.calloc(stack)
+							.mv_data(stack.bytes(PreparedBulkStore.CLEAN_TRIPLE_TRANSACTION_KEY));
+					MDBVal value = MDBVal.calloc(stack)
+							.mv_data(stack.bytes(ByteBuffer.allocate(Long.BYTES)
+									.putLong(closingTripleTransactionId)
+									.array()));
+					E(mdb_put(txn, metadata, key, value, 0));
+					key.mv_data(stack.bytes(PreparedBulkStore.CLEAN_PROPERTIES_FINGERPRINT_KEY));
+					value.mv_data(stack.bytes(PreparedBulkStore.cleanPropertiesFingerprint(properties)));
+					E(mdb_put(txn, metadata, key, value, 0));
+				}
 				writeRefCountMarker(stack, txn, REFCOUNT_MARKER_CLEAN);
 				return null;
 			});

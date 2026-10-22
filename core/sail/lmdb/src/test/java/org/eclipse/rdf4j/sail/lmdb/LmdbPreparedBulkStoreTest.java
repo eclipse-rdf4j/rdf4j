@@ -31,6 +31,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxdbs;
 import static org.lwjgl.util.lmdb.LMDB.mdb_put;
+import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
@@ -45,6 +46,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -59,6 +61,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBEnvInfo;
+import org.lwjgl.util.lmdb.MDBStat;
 import org.lwjgl.util.lmdb.MDBVal;
 
 class LmdbPreparedBulkStoreTest {
@@ -133,7 +136,7 @@ class LmdbPreparedBulkStoreTest {
 	}
 
 	@Test
-	void missingOrCorruptCertificateUsesOrdinaryValidation() throws Exception {
+	void missingOrCorruptOptimizationHintUsesNativeCleanAuthority() throws Exception {
 		for (boolean missing : new boolean[] { false, true }) {
 			Path target = directory.resolve("invalid-certificate-" + missing);
 			LmdbStoreConfig config = new LmdbStoreConfig();
@@ -148,9 +151,106 @@ class LmdbPreparedBulkStoreTest {
 			}
 			List<LmdbStartupDiagnostics.Operation> operations = new ArrayList<>();
 			openAndObserve(target, config, 1L, operations);
-			assertTrue(operations.contains(LmdbStartupDiagnostics.Operation.DISCOVERY));
-			assertTrue(operations.contains(LmdbStartupDiagnostics.Operation.REFCOUNT_INTEGRITY));
+			assertEquals(List.of(), operations,
+					"a missing derived hint alone is not evidence of damaged current native state");
 		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "data", "namespace", "noop" })
+	void cleanOrdinaryCurrentWritesKeepStartupBounded(String change) throws Exception {
+		Path target = directory.resolve("ordinary-" + change);
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		var values = SimpleValueFactory.getInstance();
+		SailRepository repository = new SailRepository(new LmdbStore(target.toFile(), config));
+		try {
+			repository.init();
+			try (var connection = repository.getConnection()) {
+				connection.add(values.createIRI("urn:s"), values.createIRI("urn:p"), values.createIRI("urn:o"));
+			}
+		} finally {
+			repository.shutDown();
+		}
+		repository = new SailRepository(new LmdbStore(target.toFile(), config));
+		try {
+			repository.init();
+			try (var connection = repository.getConnection()) {
+				switch (change) {
+				case "data" -> connection.add(values.createIRI("urn:new"), values.createIRI("urn:p"),
+						values.createLiteral("new"));
+				case "namespace" -> connection.setNamespace("test", "urn:namespace:");
+				case "noop" -> {
+					connection.begin();
+					connection.commit();
+				}
+				default -> throw new AssertionError(change);
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+		assertPreparedOpening(target, config, "data".equals(change) ? 2L : 1L);
+		Files.deleteIfExists(target.resolve(PreparedBulkStore.FILE_NAME));
+		assertPreparedOpening(target, config, "data".equals(change) ? 2L : 1L);
+	}
+
+	@Test
+	void reusableFreeIdsDoNotTriggerStartupRecovery() throws Exception {
+		Path target = directory.resolve("reusable-ids");
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		LmdbStore store = new LmdbStore(target.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		try {
+			repository.init();
+			try (var connection = repository.getConnection()) {
+				var values = SimpleValueFactory.getInstance();
+				connection.begin();
+				for (int index = 0; index < 200; index++) {
+					connection.add(values.createIRI("urn:delete:" + index), values.createIRI("urn:p"),
+							values.createLiteral("value " + index));
+				}
+				connection.commit();
+				connection.clear();
+			}
+			store.getBackingStore().recoverRetiredValueIds();
+			assertFalse(store.getBackingStore().hasRetiredValueIds());
+		} finally {
+			repository.shutDown();
+		}
+		assertTrue(entryCount(target.resolve("values"), "unused_ids") > 0L,
+				"normal retirement must leave a real deferred reclamation obligation");
+		List<LmdbStartupDiagnostics.Operation> operations = new ArrayList<>();
+		openAndObserve(target, config, 0L, operations);
+		assertEquals(List.of(LmdbStartupDiagnostics.Operation.VALUE_RECLAMATION,
+				LmdbStartupDiagnostics.Operation.VALUE_RECLAMATION), operations,
+				"pending unused IDs justify targeted reclamation, without catalog or refcount scans");
+		long reusable = entryCount(target.resolve("values"), "free_ids");
+		assertTrue(reusable > 0L, "the fixture must contain a real reusable ID pool");
+		assertPreparedOpening(target, config, 0L);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void unknownTripleWriterCannotGainCleanStartupAuthority(boolean whileOpen) throws Exception {
+		Path target = directory.resolve("unknown-triple-writer-" + whileOpen);
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		load(target, config, "<urn:s> <urn:p> <urn:o> .\n");
+		if (whileOpen) {
+			SailRepository repository = new SailRepository(new LmdbStore(target.toFile(), config));
+			try {
+				repository.init();
+				mutateNativeTriples(target);
+			} finally {
+				repository.shutDown();
+			}
+		} else {
+			mutateNativeTriples(target);
+		}
+		Files.deleteIfExists(target.resolve(PreparedBulkStore.FILE_NAME));
+		List<LmdbStartupDiagnostics.Operation> operations = new ArrayList<>();
+		openAndObserve(target, config, 1L, operations);
+		assertTrue(operations.contains(LmdbStartupDiagnostics.Operation.DISCOVERY),
+				"an unknown triple writer is concrete evidence requiring authoritative validation");
 	}
 
 	@Test
@@ -182,12 +282,60 @@ class LmdbPreparedBulkStoreTest {
 	}
 
 	@Test
+	void metadataCallbackCannotRemoveTheValidatedPreparationSeal() throws Exception {
+		Path target = directory.resolve("removed-callback-seal");
+		IOException failure = assertThrows(IOException.class,
+				() -> LmdbBulkLoader.builder(target, new LmdbStoreConfig())
+						.partitionCount(4)
+						.workers(1)
+						.memoryBudgetBytes(2L * 1024 * 1024)
+						.preparedGenerationWriter((generation, config) -> Files.delete(
+								generation.resolve(PreparedBulkStore.FILE_NAME)))
+						.build()
+						.load(new ByteArrayInputStream("<urn:s> <urn:p> <urn:o> .\n"
+								.getBytes(StandardCharsets.UTF_8)), "urn:test:", RDFFormat.NQUADS));
+		assertTrue(failure.getMessage().contains("changed before publication"));
+		assertFalse(Files.exists(target.resolve("values/data.mdb")));
+	}
+
+	@Test
 	void changedIndexesUseOrdinaryReindexing() throws Exception {
 		Path target = directory.resolve("changed-indexes");
 		load(target, new LmdbStoreConfig("spoc,posc"), "<urn:s> <urn:p> <urn:o> .\n");
 		List<LmdbStartupDiagnostics.Operation> operations = new ArrayList<>();
 		openAndObserve(target, new LmdbStoreConfig("spoc,posc,ospc"), 1L, operations);
 		assertTrue(operations.contains(LmdbStartupDiagnostics.Operation.DISCOVERY));
+		assertPreparedOpening(target, new LmdbStoreConfig("spoc,posc,ospc"), 1L);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void changedPersistedFormatCannotGainNativeCleanAuthority(boolean removeHint) throws Exception {
+		Path target = directory.resolve("changed-format-" + removeHint);
+		LmdbStoreConfig config = new LmdbStoreConfig().setOrderedNumericIds(true);
+		load(target, config, "<urn:s> <urn:p> \"42\"^^<http://www.w3.org/2001/XMLSchema#int> .\n");
+		Path propertiesPath = target.resolve(StoreProperties.FILE_NAME);
+		Properties properties = new Properties();
+		try (var input = Files.newInputStream(propertiesPath)) {
+			properties.load(input);
+		}
+		assertEquals(StoreProperties.NUMERIC_ID_ENCODING_ORDERED_V1,
+				properties.remove(StoreProperties.NUMERIC_ID_ENCODING_KEY));
+		try (var output = Files.newOutputStream(propertiesPath)) {
+			properties.store(output, "externally changed writer capability");
+		}
+		if (removeHint) {
+			Files.delete(target.resolve(PreparedBulkStore.FILE_NAME));
+		}
+		List<Long> transactions = transactionIds(target);
+		SailRepository repository = new SailRepository(new LmdbStore(target.toFile(), config));
+		try {
+			assertThrows(RepositoryException.class, repository::init,
+					"an externally changed persisted format must fail before writable setup can certify it");
+		} finally {
+			repository.shutDown();
+		}
+		assertEquals(transactions, transactionIds(target), "format mismatch rejection must precede native mutation");
 	}
 
 	@Test
@@ -255,11 +403,14 @@ class LmdbPreparedBulkStoreTest {
 			LmdbStartupDiagnostics.OBSERVER.remove();
 		}
 		assertEquals(capacities, mapSizes(target));
+		assertTrue(entryCount(target.resolve("values"), "unused_ids") > 0L,
+				"retired dictionary identities remain pending until their normal reclamation phase");
 		operations.clear();
 		openAndObserve(target, config, 2L, operations);
-		assertTrue(operations.contains(LmdbStartupDiagnostics.Operation.DISCOVERY),
-				"user writes must prevent renewal of the bulk completion certificate");
-		assertTrue(operations.contains(LmdbStartupDiagnostics.Operation.REFCOUNT_INTEGRITY));
+		assertEquals(List.of(LmdbStartupDiagnostics.Operation.VALUE_RECLAMATION,
+				LmdbStartupDiagnostics.Operation.VALUE_RECLAMATION), operations,
+				"pending IDs justify targeted reclamation, without catalog or refcount scans");
+		assertPreparedOpening(target, config, 2L);
 		SailRepository reopened = new SailRepository(new LmdbStore(target.toFile(), config));
 		try {
 			reopened.init();
@@ -334,6 +485,28 @@ class LmdbPreparedBulkStoreTest {
 				.maxOpenFiles(16)
 				.build()
 				.load(new ByteArrayInputStream(input.getBytes(StandardCharsets.UTF_8)), "urn:test:", RDFFormat.NQUADS);
+	}
+
+	private static long entryCount(Path environment, String databaseName) throws Exception {
+		return inspect(environment, (stack, env, txn) -> {
+			var database = stack.mallocInt(1);
+			E(mdb_dbi_open(txn, databaseName, 0, database));
+			MDBStat stat = MDBStat.malloc(stack);
+			E(mdb_stat(txn, database.get(0), stat));
+			return stat.ms_entries();
+		});
+	}
+
+	private static List<Long> transactionIds(Path target) throws Exception {
+		List<Long> transactions = new ArrayList<>();
+		for (String name : List.of("values", "triples")) {
+			transactions.add(inspect(target.resolve(name), (stack, env, txn) -> {
+				MDBEnvInfo info = MDBEnvInfo.malloc(stack);
+				E(mdb_env_info(env, info));
+				return info.me_last_txnid();
+			}));
+		}
+		return transactions;
 	}
 
 	private static void assertPreparedOpening(Path target, LmdbStoreConfig config, long size) throws Exception {
@@ -423,6 +596,17 @@ class LmdbPreparedBulkStoreTest {
 	}
 
 	private static void mutateNativeValues(Path target) throws IOException {
+		mutateNativeMetadata(target.resolve("values"), "gc_meta", "external-writer".getBytes(StandardCharsets.UTF_8),
+				new byte[] { 1 });
+	}
+
+	private static void mutateNativeTriples(Path target) throws IOException {
+		mutateNativeMetadata(target.resolve("triples"), TripleStore.NAMESPACE_DATABASE_NAME,
+				TripleStore.NAMESPACE_SNAPSHOT_KEY, NamespaceStore.encodeSnapshot(Map.of("foreign", "urn:foreign:")));
+	}
+
+	private static void mutateNativeMetadata(Path nativeDirectory, String name, byte[] keyBytes, byte[] valueBytes)
+			throws IOException {
 		long env = 0L;
 		long txn = 0L;
 		try (MemoryStack stack = MemoryStack.stackPush()) {
@@ -430,13 +614,13 @@ class LmdbPreparedBulkStoreTest {
 			E(mdb_env_create(pointer));
 			env = pointer.get(0);
 			E(mdb_env_set_maxdbs(env, 128));
-			E(mdb_env_open(env, target.resolve("values").toString(), MDB_NOTLS, 0664));
+			E(mdb_env_open(env, nativeDirectory.toString(), MDB_NOTLS, 0664));
 			E(mdb_txn_begin(env, NULL, 0, pointer));
 			txn = pointer.get(0);
 			var database = stack.mallocInt(1);
-			E(mdb_dbi_open(txn, "gc_meta", 0, database));
-			MDBVal key = MDBVal.calloc(stack).mv_data(stack.UTF8("external-writer"));
-			MDBVal value = MDBVal.calloc(stack).mv_data(stack.bytes((byte) 1));
+			E(mdb_dbi_open(txn, name, 0, database));
+			MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(keyBytes));
+			MDBVal value = MDBVal.calloc(stack).mv_data(stack.bytes(valueBytes));
 			E(mdb_put(txn, database.get(0), key, value, 0));
 			long completed = txn;
 			txn = 0L;

@@ -432,7 +432,10 @@ class TripleStore implements Closeable {
 	private TxnReplayPolicy.Decision replayDecision;
 	private final Object capacityOrigin = new Object();
 	private long bulkMapGrowthCount;
-	private long bulkExpectedTransactionId = -1L;
+	private long expectedNativeTransactionId = -1L;
+	private boolean nativeOwnershipInvalidated;
+	private boolean setupCommitWithoutNativeWrites;
+	private boolean indexDatabaseCreated;
 	volatile Runnable beforePhysicalCommitForTest;
 	private final TxnManager txnManager;
 	private volatile LmdbSailStore.MapGrowthAttemptSupplier mapGrowthAttemptSupplier;
@@ -513,7 +516,7 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	private record DatabaseHandles(int mainDbi, int contextsDbi, int namespacesDbi) {
+	private record DatabaseHandles(int mainDbi, int contextsDbi, int namespacesDbi, long ownedTransactionId) {
 	}
 
 	private record PageAndMapState(int pageSize, boolean empty) {
@@ -545,6 +548,7 @@ class TripleStore implements Closeable {
 		this.dir = dir;
 		this.dataMdbFile = new File(dir, "data.mdb");
 		this.properties = properties;
+		expectedNativeTransactionId = properties.verifiedTripleTransactionId;
 		this.environmentLifecycle = Objects.requireNonNull(environmentLifecycle);
 		boolean forceSync = config.getForceSync();
 		boolean noReadahead = config.getNoReadahead();
@@ -581,22 +585,33 @@ class TripleStore implements Closeable {
 			// retained for page-estimator read scopes; opening it again while readers are active mutates LMDB's shared
 			// comparator state.
 			DatabaseHandles databaseHandles = writeTransaction(env, (stack, txn) -> {
+				validateNativeWriterTransaction(txn);
 				cleanupAbandonedMutationJournals();
 				int mainDbi = openDatabaseWithTxn(txn, null, 0);
 				String name = "contexts";
 				IntBuffer ip = stack.mallocInt(1);
-				if (mdb_dbi_open(txn, name, 0, ip) == MDB_NOTFOUND) {
+				boolean created = false;
+				int contextResult = mdb_dbi_open(txn, name, 0, ip);
+				if (contextResult == MDB_NOTFOUND) {
 					E(mdb_dbi_open(txn, name, MDB_CREATE, ip));
+					created = true;
+				} else {
+					E(contextResult);
 				}
 				int contextsDbi = ip.get(0);
 				int namespaceResult = mdb_dbi_open(txn, NAMESPACE_DATABASE_NAME, 0, ip);
 				if (namespaceResult == MDB_NOTFOUND) {
 					E(mdb_dbi_open(txn, NAMESPACE_DATABASE_NAME, MDB_CREATE, ip));
+					created = true;
 				} else {
 					E(namespaceResult);
 				}
-				return new DatabaseHandles(mainDbi, contextsDbi, ip.get(0));
+				return new DatabaseHandles(mainDbi, contextsDbi, ip.get(0),
+						created ? mdb_txn_id(txn) : expectedNativeTransactionId);
 			});
+			if (expectedNativeTransactionId >= 0L) {
+				expectedNativeTransactionId = databaseHandles.ownedTransactionId();
+			}
 			mainDbi = databaseHandles.mainDbi();
 			contextsDbi = databaseHandles.contextsDbi();
 			namespacesDbi = databaseHandles.namespacesDbi();
@@ -632,6 +647,7 @@ class TripleStore implements Closeable {
 						}
 					}
 					initIndexes(effectiveIndexSpecs);
+					setupCommitWithoutNativeWrites = nativeIndexManifest && !indexDatabaseCreated;
 					rebuildIndexSelectionTable();
 					resetAlignedWriteCursorState();
 					if (!nativeIndexManifest) {
@@ -1055,19 +1071,36 @@ class TripleStore implements Closeable {
 	}
 
 	void beginBulkOwnership() throws IOException {
-		bulkExpectedTransactionId = lastTransactionId();
+		if (expectedNativeTransactionId >= 0L) {
+			trustedTransactionId();
+		} else {
+			expectedNativeTransactionId = lastTransactionId();
+		}
 	}
 
 	long validatedBulkTransactionId() throws IOException {
+		return trustedTransactionId();
+	}
+
+	long trustedTransactionId() throws IOException {
 		long current = lastTransactionId();
-		if (bulkExpectedTransactionId < 0L || current != bulkExpectedTransactionId) {
-			throw new IOException("Bulk triple generation changed after validated completion");
+		if (nativeOwnershipInvalidated || expectedNativeTransactionId < 0L || current != expectedNativeTransactionId) {
+			nativeOwnershipInvalidated = true;
+			throw new IOException("TripleStore observed an unowned native transaction");
 		}
 		return current;
 	}
 
+	long trustedClosedTransactionId() {
+		return nativeOwnershipInvalidated ? -1L : expectedNativeTransactionId;
+	}
+
+	boolean tracksNativeOwnership() {
+		return expectedNativeTransactionId >= 0L;
+	}
+
 	void completeValidatedBulkGeneration(byte[] generation, long expectedStatements) throws IOException {
-		if (bulkExpectedTransactionId < 0L || lastTransactionId() != bulkExpectedTransactionId) {
+		if (expectedNativeTransactionId < 0L || lastTransactionId() != expectedNativeTransactionId) {
 			throw new IOException("Bulk triple generation has an unrecognized native writer");
 		}
 		for (long entries : explicitIndexEntryCounts().values()) {
@@ -2192,14 +2225,30 @@ class TripleStore implements Closeable {
 	}
 
 	private void initIndexes(Set<String> indexSpecs) throws IOException {
+		indexDatabaseCreated = false;
 		for (String fieldSeq : TripleIndex.orderIndexSpecs(indexSpecs)) {
 			logger.trace("Initializing index '{}'...", fieldSeq);
-			indexes.add(new TripleIndex(getIndexName(fieldSeq), fieldSeq, true, env, writeTxn));
+			indexes.add(new TripleIndex(getIndexName(fieldSeq), fieldSeq, true, env, writeTxn,
+					this::openIndexDatabaseForInitialization));
 			nativeMutation = true;
 			unjournaledMutation = true;
 		}
 		resetSpoContextWildcardIndex();
 		rebuildIndexSelectionTable();
+	}
+
+	private int openIndexDatabaseForInitialization(long transaction, String name, int flags) throws IOException {
+		try (MemoryStack stack = stackPush()) {
+			IntBuffer handle = stack.mallocInt(1);
+			int result = mdb_dbi_open(transaction, name, 0, handle);
+			if (result == MDB_NOTFOUND) {
+				indexDatabaseCreated = true;
+				E(mdb_dbi_open(transaction, name, flags, handle));
+			} else {
+				E(result);
+			}
+			return handle.get(0);
+		}
 	}
 
 	private void rebuildIndexSelectionTable() {
@@ -2540,9 +2589,13 @@ class TripleStore implements Closeable {
 		int result;
 		try {
 			long transaction = writeTxn;
+			long ownedTransaction = expectedNativeTransactionId >= 0L ? mdb_txn_id(transaction) : -1L;
 			writeTxn = 0;
 			result = mdb_txn_commit(transaction);
 			if (result == MDB_SUCCESS) {
+				if (expectedNativeTransactionId >= 0L) {
+					expectedNativeTransactionId = ownedTransaction;
+				}
 				nativeCommitGeneration.incrementAndGet();
 				nativeMutation = false;
 				tripleMutation = false;
@@ -5024,11 +5077,21 @@ class TripleStore implements Closeable {
 			PointerBuffer pp = stack.mallocPointer(1);
 			E(mdb_txn_begin(env, NULL, 0, pp));
 			writeTxn = pp.get(0);
-			if (bulkExpectedTransactionId >= 0L && mdb_txn_id(writeTxn) != bulkExpectedTransactionId + 1L) {
+			try {
+				validateNativeWriterTransaction(writeTxn);
+			} catch (IOException failure) {
 				mdb_txn_abort(writeTxn);
 				writeTxn = 0L;
-				throw new IOException("Bulk triple generation observed an intervening native writer");
+				throw failure;
 			}
+		}
+	}
+
+	private void validateNativeWriterTransaction(long transaction) throws IOException {
+		if (expectedNativeTransactionId >= 0L
+				&& mdb_txn_id(transaction) != Math.addExact(expectedNativeTransactionId, 1L)) {
+			nativeOwnershipInvalidated = true;
+			throw new IOException("TripleStore observed an intervening native writer");
 		}
 	}
 
@@ -6476,6 +6539,7 @@ class TripleStore implements Closeable {
 				mutationFailure = null;
 				legacyWriterIndexFailure = null;
 				nativeMutation = false;
+				setupCommitWithoutNativeWrites = false;
 				tripleMutation = false;
 				unjournaledMutation = false;
 				if (!commit || committed || !(failure instanceof LmdbTransactionRetryException)) {
@@ -6513,10 +6577,10 @@ class TripleStore implements Closeable {
 	}
 
 	int commitWriteTransaction(long transaction) {
-		long transactionId = bulkExpectedTransactionId >= 0L ? mdb_txn_id(transaction) : -1L;
+		long transactionId = expectedNativeTransactionId >= 0L ? mdb_txn_id(transaction) : -1L;
 		int result = mdb_txn_commit(transaction);
-		if (result == MDB_SUCCESS && bulkExpectedTransactionId >= 0L) {
-			bulkExpectedTransactionId = transactionId;
+		if (result == MDB_SUCCESS && expectedNativeTransactionId >= 0L && !setupCommitWithoutNativeWrites) {
+			expectedNativeTransactionId = transactionId;
 		}
 		return result;
 	}

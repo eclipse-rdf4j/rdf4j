@@ -31,9 +31,10 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
  * <p>
  * Successful publication includes verified reference counts, native generation metadata and capacity reserved for
  * ordinary startup. Opening the unchanged store with its effective configuration avoids discovery scans,
- * reference-count reconstruction, value recovery and startup map growth. Missing, stale or incompatible preparation
- * metadata leaves ordinary validation and recovery in charge. Explicit experimental overlay, sketch-estimator and
- * adjacency options keep their separate cache-build semantics.
+ * reference-count reconstruction, value recovery and startup map growth. Clean ordinary writes preserve bounded startup
+ * authority; missing optional sidecars can be checked against native clean metadata. Dirty, stale or incompatible
+ * native authority leaves ordinary validation and required recovery in charge. Explicit experimental overlay,
+ * sketch-estimator and adjacency options keep their separate cache-build semantics.
  * </p>
  * <p>
  * Applications own repository configuration. Use {@link Builder#preparedGenerationWriter(PreparedGenerationWriter)} to
