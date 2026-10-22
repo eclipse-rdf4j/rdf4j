@@ -20,10 +20,13 @@ import {
 
 /** IndexedDB keeps large graphs out of localStorage's small synchronous quota. */
 const LEGACY_KEY = "graph-field-workspace-v1";
-export async function workspaceDatabase() {
+/** How long opening waits for another tab's connection to let an upgrade of the database go ahead. */
+const BLOCKED_WAIT_MS = 10_000;
+export async function workspaceDatabase(blockedWaitMs = BLOCKED_WAIT_MS) {
   return new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open("graph-field-workspaces", 2);
     let blocked = false;
+    let waiting: ReturnType<typeof setTimeout> | undefined;
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains("workspaces")) db.createObjectStore("workspaces");
@@ -33,15 +36,25 @@ export async function workspaceDatabase() {
       }
     };
     request.onsuccess = () => {
+      clearTimeout(waiting);
       const db = request.result;
       db.onversionchange = () => db.close();
       if (blocked) db.close();
       else resolve(db);
     };
-    request.onerror = () => reject(request.error);
+    request.onerror = () => {
+      clearTimeout(waiting);
+      reject(request.error);
+    };
+    // An older page's connection holds the previous version; the upgrade goes ahead once it closes, which such a page
+    // does after each transaction. Failing at once would open the page without its stored graph, and its next save
+    // would replace that graph.
     request.onblocked = () => {
-      blocked = true;
-      reject(new Error("Workspace storage is blocked by another tab. Close other Workbench tabs and retry."));
+      if (waiting !== undefined || blocked) return;
+      waiting = setTimeout(() => {
+        blocked = true;
+        reject(new Error("Workspace storage is blocked by another tab. Close other Workbench tabs and retry."));
+      }, blockedWaitMs);
     };
   });
 }

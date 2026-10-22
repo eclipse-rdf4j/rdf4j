@@ -87,6 +87,35 @@ export function readLabelPolicy(storage?: PolicyStorage, locales: readonly strin
   } catch {}
   return defaults;
 }
+/**
+ * The policy a page shows and the preference stored for every page. A saved view shows its own policy without storing
+ * it; an edit is shown and stored on top of the stored preference, so a view's other choices never become preferences.
+ * `local` counts the changes made in this page (not those it follows from other tabs or the browser): only these are
+ * the page's to save with its graph.
+ */
+export type LabelPolicyState = { shown: LabelPolicy; stored: LabelPolicy; local: number };
+export type LabelPolicyChange =
+  | { kind: "edit"; edit: Partial<LabelPolicy> }
+  | { kind: "show"; policy: LabelPolicy }
+  | { kind: "revert" }
+  | { kind: "follow"; policy: LabelPolicy }
+  | { kind: "locales"; languages: string[] };
+export function changeLabelPolicy(state: LabelPolicyState, change: LabelPolicyChange): LabelPolicyState {
+  switch (change.kind) {
+    case "edit":
+      return { shown: { ...state.shown, ...change.edit }, stored: { ...state.stored, ...change.edit }, local: state.local + 1 };
+    case "show":
+      return { ...state, shown: change.policy, local: state.local + 1 };
+    case "revert":
+      return { ...state, shown: state.stored, local: state.local + 1 };
+    case "follow":
+      return { shown: change.policy, stored: change.policy, local: state.local };
+    case "locales": {
+      const follow = (policy: LabelPolicy) => policy.languagesConfigured ? policy : { ...policy, languages: change.languages };
+      return { shown: follow(state.shown), stored: follow(state.stored), local: state.local };
+    }
+  }
+}
 export function saveLabelPolicy(storage: PolicyStorage | undefined, policy: LabelPolicy) {
   try {
     storage?.setItem(LABEL_POLICY_STORAGE_KEY, JSON.stringify(policy));
