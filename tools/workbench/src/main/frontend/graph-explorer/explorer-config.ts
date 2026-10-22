@@ -35,6 +35,18 @@ export const SHOW_VALUES_STORAGE_KEY = "graph-field-show-values-v1";
 
 export const SHOW_LABELS_STORAGE_KEY = "graph-field-show-labels-v1";
 
+/** The Values and edge-label switches as last chosen in this browser; a graph saved without its view shows them. */
+export function readDisplayPreferences(storage: Pick<Storage, "getItem"> | undefined) {
+  const read = (key: string) => {
+    try {
+      return storage?.getItem(key) === "true";
+    } catch {
+      return false;
+    }
+  };
+  return { showValues: read(SHOW_VALUES_STORAGE_KEY), showAllEdgeLabels: read(SHOW_LABELS_STORAGE_KEY) };
+}
+
 export const DETAILS_ITEM_LIMIT = 12;
 
 export const LEGEND_TYPE_LIMIT = 6;

@@ -674,6 +674,7 @@ public class TransactionController extends AbstractController implements Disposa
 			result = txn.prepareQuery(queryLn, queryStr, baseURI);
 			result.setIncludeInferred(includeInferred);
 			ProtocolUtil.applyForcedLmdbExecutionStrategy(request, result);
+			ProtocolUtil.applyLmdbResultCache(request, result);
 
 			if (maxQueryTime > 0) {
 				result.setMaxExecutionTime(maxQueryTime);

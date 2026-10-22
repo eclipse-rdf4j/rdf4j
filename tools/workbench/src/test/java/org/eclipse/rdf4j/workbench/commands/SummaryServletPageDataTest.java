@@ -105,8 +105,8 @@ class SummaryServletPageDataTest {
 	}
 
 	@Test
-	void countingStopsAfterTwoSecondsAndAnswersTheCountThatFinished() throws Exception {
-		assertThat(SummaryServlet.COUNT_BUDGET_MILLIS).isEqualTo(2000);
+	void countingStopsAfterFiveSecondsAndAnswersTheCountThatFinished() throws Exception {
+		assertThat(SummaryServlet.COUNT_BUDGET_MILLIS).isEqualTo(5000);
 		long started = System.nanoTime();
 		// A shorter budget keeps the test fast; listing the named graphs is the count that does not finish.
 		List<JsonNode> records = run(new SummaryServlet(300), slowStore(false), true);

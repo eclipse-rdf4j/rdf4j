@@ -2340,7 +2340,7 @@ namespace workbench {
                 return h`<td class="workbench-count-cell" data-label=${list.countLabel} aria-busy="true"><span
                     title="Counting…">…</span></td>`;
             }
-            const reason = counts.state === 'timed-out' ? 'Counting took longer than two seconds' : 'No count is available';
+            const reason = counts.state === 'timed-out' ? 'Counting took longer than five minutes' : 'No count is available';
             return h`<td class="workbench-count-cell" data-label=${list.countLabel}><span title=${reason}>—</span></td>`;
         }
 
@@ -2899,7 +2899,8 @@ namespace workbench {
             // values: the router renders the next Explore page in place, and Lit must find its own nodes there (M12.1).
             return h`<form id="explore-form" class="workbench-island explore-form" action="explore">
                     <input id="workbench-total-result-count" type="hidden"
-                        value=${text(pageValue(model, 'total-result-count'))} />
+                        value=${text(pageValue(model, 'total-result-count'))}
+                        data-has-more=${text(pageValue(model, 'has-more')) === 'true' ? 'true' : 'false'} />
                     <div id="explore-controls"><div id="explore-resource-field" class="workbench-field">
                         <label for="resource">Resource</label>
                         <div class="workbench-search-field">${icon(runtime, 'search', 'workbench-search-field__icon')}<input id="resource"
@@ -3962,7 +3963,7 @@ namespace workbench {
                 }
             },
             summary: {
-                timedOut: 'Counting took longer than two seconds',
+                timedOut: 'Counting took longer than five seconds',
                 absorb(_answer: PageModel, rows: any[][], counts: PageCounts): void {
                     const values = counts.values;
                     const row = rows[0] || [];
