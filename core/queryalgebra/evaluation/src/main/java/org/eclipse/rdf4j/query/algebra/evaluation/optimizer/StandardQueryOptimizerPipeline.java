@@ -42,6 +42,7 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 
 	public static final BindingAssignerOptimizer BINDING_ASSIGNER = new BindingAssignerOptimizer();
 	public static final GraphScopeOptimizer GRAPH_SCOPE_OPTIMIZER = new GraphScopeOptimizer();
+	public static final TupleFunctionMagicPropertyOptimizer TUPLE_FUNCTION_MAGIC_PROPERTY_OPTIMIZER = new TupleFunctionMagicPropertyOptimizer();
 	public static final BindingSetAssignmentInlinerOptimizer BINDING_SET_ASSIGNMENT_INLINER = new BindingSetAssignmentInlinerOptimizer();
 	public static final CompareOptimizer COMPARE_OPTIMIZER = new CompareOptimizer();
 	public static final ConjunctiveConstraintSplitterOptimizer CONJUNCTIVE_CONSTRAINT_SPLITTER = new ConjunctiveConstraintSplitterOptimizer();
@@ -81,6 +82,7 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		List<QueryOptimizer> optimizers = List.of(
 				BINDING_ASSIGNER,
 				GRAPH_SCOPE_OPTIMIZER,
+				TUPLE_FUNCTION_MAGIC_PROPERTY_OPTIMIZER,
 				BINDING_SET_ASSIGNMENT_INLINER,
 				new ConstantOptimizer(strategy),
 				new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()),

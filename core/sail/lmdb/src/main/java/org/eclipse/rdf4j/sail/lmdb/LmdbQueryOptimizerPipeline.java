@@ -79,6 +79,7 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 		List<QueryOptimizer> optimizers = List.of(
 				BINDING_ASSIGNER,
 				GRAPH_SCOPE_OPTIMIZER,
+				StandardQueryOptimizerPipeline.TUPLE_FUNCTION_MAGIC_PROPERTY_OPTIMIZER,
 				new ConstantOptimizer(strategy),
 				new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()),
 				COMPARE_OPTIMIZER,
