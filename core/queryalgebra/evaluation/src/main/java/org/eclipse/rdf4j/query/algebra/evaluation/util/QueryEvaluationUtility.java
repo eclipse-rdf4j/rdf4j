@@ -286,7 +286,7 @@ public class QueryEvaluationUtility {
 		QueryModelPreparation preparation = preparationFactory.get();
 		try {
 			TupleExpr prepared = (TupleExpr) preparation.prepare(root);
-			ACTIVE_SAFETY_SNAPSHOT.set(new QuerySafetySnapshot(prepared, preparation, policy));
+			ACTIVE_SAFETY_SNAPSHOT.set(new QuerySafetySnapshot(preparation, policy));
 			return action.apply(prepared);
 		} finally {
 			if (previous == null) {
@@ -311,7 +311,7 @@ public class QueryEvaluationUtility {
 		QueryModelPreparation preparation = previous.valuesPreparation;
 		preparation.resetTraversal();
 		TupleExpr prepared = (TupleExpr) preparation.prepare(root);
-		ACTIVE_SAFETY_SNAPSHOT.set(new QuerySafetySnapshot(prepared, preparation, previous.policy));
+		ACTIVE_SAFETY_SNAPSHOT.set(new QuerySafetySnapshot(preparation, previous.policy));
 		try {
 			return action.apply(prepared);
 		} finally {
@@ -582,6 +582,12 @@ public class QueryEvaluationUtility {
 		public QuerySafetySnapshot() {
 			valuesPreparation = null;
 			policy = activePolicy();
+		}
+
+		/** Prepared phases classify only requested safety facts; many optimizer passes never need them. */
+		private QuerySafetySnapshot(QueryModelPreparation valuesPreparation, QueryExecutionPolicy policy) {
+			this.valuesPreparation = valuesPreparation;
+			this.policy = Objects.requireNonNull(policy, "policy must not be null");
 		}
 
 		private QuerySafetySnapshot(QueryModelNode root, QueryModelPreparation valuesPreparation,
