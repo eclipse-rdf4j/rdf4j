@@ -3040,7 +3040,7 @@ namespace workbench {
         var queryResultRendererSequence = 0;
         /** A query that answers within this many milliseconds never shows its Cancel buttons. */
         var CANCEL_DELAY_MS = 1200;
-        /** Placeholder rows a result shows while it waits for its first rows, unless the area it keeps needs more. */
+        /** Detailed placeholder rows shown while a result waits for its first rows. */
         var SKELETON_ROWS = 6;
 
         function normalizeDownloadChoices(values: any): { value: string; label: string }[] {
@@ -5103,6 +5103,12 @@ namespace workbench {
                 skeleton.setAttribute('aria-hidden', 'true');
                 skeleton.hidden = true;
                 this.addSkeletonRows(skeleton, SKELETON_ROWS);
+                var continuation = createElement(this.document, 'div', 'query-result-skeleton__continuation');
+                for (var cell = 0; cell < 3; cell++) {
+                    continuation.appendChild(createElement(this.document, 'span',
+                        'query-result-skeleton__continuation-cell'));
+                }
+                skeleton.appendChild(continuation);
                 return skeleton;
             }
 
@@ -5118,8 +5124,8 @@ namespace workbench {
             }
 
             /**
-             * Show the placeholder while the result waits; it reaches down to where the results area ended before, so
-             * the area keeps its height.
+             * Show the placeholder while the result waits; its six detailed rows and CSS continuation fill the held
+             * result area without creating one DOM row for every pixel of the previous result.
              */
             private showSkeleton(show: boolean): void {
                 this.skeleton.hidden = !show;
@@ -5129,19 +5135,16 @@ namespace workbench {
                 if (!show) {
                     return;
                 }
-                // Measured anew each time (the toolbar grows a Cancel button once the request starts); the held
-                // min-height keeps the page from shortening meanwhile.
+                // Measure below the toolbar again because it grows a Cancel button once the request starts. The
+                // holder preserves the outer area while this in-flow skeleton fills it.
                 if (!this.holding || !this.skeleton.style || typeof this.root.getBoundingClientRect !== 'function') {
                     return;
                 }
-                // The rows take what the area has to spare, or give up what it lacks (the running query's toolbar is
-                // taller than a finished result's), down to two rows.
                 var spare = this.target.getBoundingClientRect().top + this.heldContentBottom
                     - this.root.getBoundingClientRect().bottom;
                 var firstRow = this.skeleton.firstChild;
                 var rowHeight = firstRow && firstRow.getBoundingClientRect().height || 40;
                 var height = Math.max(2 * rowHeight, this.skeleton.getBoundingClientRect().height + spare);
-                this.addSkeletonRows(this.skeleton, Math.ceil(height / rowHeight));
                 this.skeleton.style.height = Math.floor(height) + 'px';
             }
 

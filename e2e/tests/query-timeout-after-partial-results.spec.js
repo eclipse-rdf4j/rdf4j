@@ -12,8 +12,7 @@
 
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const { monitorEventLoopDelay } = require('node:perf_hooks');
-const fs = require('node:fs/promises');
+const { PNG } = require('pngjs');
 const { serverBaseUrl, uniqueRepositoryId, workbenchBaseUrl } = require('./workbench-test-helpers.js');
 
 const SERVER_BASE_URL = serverBaseUrl();
@@ -27,24 +26,7 @@ const QUERY_TIMEOUT_SECONDS = 1;
 // both tuple and graph queries active past the timeout. Expensive per-row functions can instead expire before
 // the graph transport's Binary RDF statement buffer fills, producing no partial rows to exercise the renderer.
 const VALUES_PER_DIMENSION = 200;
-const TIMEOUT_RERUN_TEST_TITLE = 'shows partial rows on a real query timeout, cleans up, then executes again';
-const diagnosticsByTest = new WeakMap();
 let repositoryCreated = false;
-
-test.beforeEach(async ({ page, browserName }, testInfo) => {
-	if (testInfo.title !== TIMEOUT_RERUN_TEST_TITLE) {
-		return;
-	}
-	diagnosticsByTest.set(testInfo, await installTimeoutDiagnostics(page, browserName));
-});
-
-test.afterEach(async ({ page }, testInfo) => {
-	const diagnostics = diagnosticsByTest.get(testInfo);
-	if (!diagnostics) {
-		return;
-	}
-	await attachTimeoutDiagnostics(page, testInfo, diagnostics);
-});
 
 test.beforeAll(async ({ request }) => {
 	const existing = await request.get(REPOSITORY_URL);
@@ -79,9 +61,93 @@ test('shows partial rows on a real query timeout, cleans up, then executes again
 	test.setTimeout(90000);
 	await page.setViewportSize({ width: 390, height: 844 });
 	const monitor = monitorPage(page);
+	const navigationEvents = { events: [], dropped: 0 };
+	page.on('framenavigated', frame => {
+		if (frame === page.mainFrame()) {
+			if (navigationEvents.events.length === 8) {
+				navigationEvents.events.shift();
+				navigationEvents.dropped++;
+			}
+			navigationEvents.events.push(frame.url());
+		}
+	});
+	page.on('requestfailed', request => {
+		if (/\/query(?:[?#]|$)/.test(request.url())) {
+			monitor.errors.push(`Query request failed: ${request.failure()?.errorText || 'unknown error'}`);
+		}
+	});
 	// The compact stream sends several hundred thousand rows in the one second before the timeout (about 100 MB),
 	// more than Chromium's inspector keeps for response.text(), so the page keeps its own copy of the body.
 	await captureQueryResponseBodies(page);
+	await page.addInitScript(() => {
+		const inputEventBuffer = { events: new Array(32), next: 0, count: 0, dropped: 0 };
+		const recordInputEvent = event => {
+			inputEventBuffer.events[inputEventBuffer.next] = event;
+			inputEventBuffer.next = (inputEventBuffer.next + 1) % inputEventBuffer.events.length;
+			if (inputEventBuffer.count < inputEventBuffer.events.length) {
+				inputEventBuffer.count++;
+			} else {
+				inputEventBuffer.dropped++;
+			}
+		};
+		const inputEventSnapshot = () => {
+			const events = [];
+			const start = (inputEventBuffer.next - inputEventBuffer.count + inputEventBuffer.events.length)
+				% inputEventBuffer.events.length;
+			for (let index = 0; index < inputEventBuffer.count; index++) {
+				events.push(inputEventBuffer.events[(start + index) % inputEventBuffer.events.length]);
+			}
+			return { events, dropped: inputEventBuffer.dropped };
+		};
+		window.__queryTimeoutInputEvents = { snapshot: inputEventSnapshot };
+		const eventTypes = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'submit', 'invalid',
+			'beforeunload', 'pagehide'];
+		const describeTarget = target => target instanceof Element
+			? { tag: target.tagName, id: target.id, className: String(target.className || '').slice(0, 120) } : null;
+		for (const type of eventTypes) {
+			const eventTarget = type === 'beforeunload' || type === 'pagehide' ? window : document;
+			eventTarget.addEventListener(type, event => {
+				const button = document.getElementById('exec');
+				const box = button && button.getBoundingClientRect();
+				const inButtonBox = box && 'clientX' in event && event.clientX >= box.left && event.clientX <= box.right
+					&& event.clientY >= box.top && event.clientY <= box.bottom;
+				const inSubmitPath = event.composedPath().some(target => target instanceof Element
+					&& (target.id === 'exec' || target.id === 'query-form'));
+				const relevant = type === 'beforeunload' || type === 'pagehide' || type === 'submit'
+					|| type === 'invalid' || inButtonBox || inSubmitPath;
+				if (!relevant) {
+					return;
+				}
+				const form = document.getElementById('query-form');
+				const invalidControls = form ? Array.from(form.elements).filter(control => 'validity' in control
+					&& !control.validity.valid).map(control => ({ name: control.name, id: control.id,
+						validationMessage: control.validationMessage })) : [];
+				recordInputEvent({
+					type,
+					at: performance.now(),
+					trusted: event.isTrusted,
+					inButtonBox: Boolean(inButtonBox),
+					inSubmitPath: Boolean(inSubmitPath),
+					target: describeTarget(event.target),
+					defaultPrevented: event.defaultPrevented,
+					point: 'clientX' in event ? { x: event.clientX, y: event.clientY } : null,
+					hitTarget: 'clientX' in event ? describeTarget(document.elementFromPoint(event.clientX, event.clientY)) : null,
+					button: button ? { disabled: button.disabled, rect: box && { x: box.x, y: box.y,
+						width: box.width, height: box.height }, formNoValidate: button.formNoValidate } : null,
+				form: form ? { action: form.getAttribute('action'), method: form.method, noValidate: form.noValidate,
+						invalidControls } : null,
+					activeElement: describeTarget(document.activeElement)
+				});
+			}, true);
+			document.addEventListener(type, event => {
+				if (type === 'click' && event.composedPath().some(target => target instanceof Element
+					&& target.id === 'exec')) {
+					recordInputEvent({ type: 'click-bubble', at: performance.now(),
+						trusted: event.isTrusted, inSubmitPath: true, defaultPrevented: event.defaultPrevented });
+				}
+			}, false);
+		}
+	});
 	await page.goto(QUERY_URL, { waitUntil: 'domcontentloaded' });
 	await page.locator('#query-form').waitFor({ state: 'visible' });
 	await page.locator('.CodeMirror').first().waitFor({ state: 'visible' });
@@ -96,23 +162,38 @@ test('shows partial rows on a real query timeout, cleans up, then executes again
 		const root = document.getElementById('query-results');
 		const metrics = {
 			startedAt: performance.now(),
-			firstBusyRowAt: null,
-			busyRowsAtFirstPaint: 0,
+			firstBusyAt: null,
+			firstBusySnapshot: null,
+			busyRowsAtFirst: 0,
 			maxRowsWhileBusy: 0,
 			terminalAt: null
 		};
 		window.__queryTimeoutMetrics = metrics;
 		const observe = () => {
-			const busy = root.getAttribute('aria-busy') === 'true';
+			const busyValue = root.getAttribute('aria-busy');
+			const busy = busyValue === 'true';
 			const visibleRows = root.querySelectorAll('[data-query-row-index], [data-query-record-index]').length;
+			const layout = root.querySelector('.query-result-layout');
 			if (busy && visibleRows > 0) {
 				metrics.maxRowsWhileBusy = Math.max(metrics.maxRowsWhileBusy, visibleRows);
-				if (metrics.firstBusyRowAt === null) {
-					metrics.firstBusyRowAt = performance.now();
-					metrics.busyRowsAtFirstPaint = visibleRows;
+				if (metrics.firstBusySnapshot === null) {
+					const firstBusyAt = performance.now();
+					metrics.firstBusyAt = firstBusyAt;
+					metrics.busyRowsAtFirst = visibleRows;
+					metrics.firstBusySnapshot = Object.freeze({
+						busy: busyValue,
+						visibleRows,
+						layoutVisible: Boolean(layout && !layout.hidden && layout.getClientRects().length > 0),
+						effectiveLayout: layout && layout.getAttribute('data-effective-layout') || null,
+						scrollSource: layout && layout.getAttribute('data-scroll-source') || null,
+						at: firstBusyAt,
+						metrics: Object.freeze({ startedAt: metrics.startedAt, firstBusyAt,
+							busyRowsAtFirst: visibleRows, maxRowsWhileBusy: metrics.maxRowsWhileBusy,
+							terminalAt: metrics.terminalAt })
+					});
 				}
 			}
-			if (!busy && metrics.firstBusyRowAt !== null && metrics.terminalAt === null) {
+			if (!busy && metrics.firstBusySnapshot !== null && metrics.terminalAt === null) {
 				metrics.terminalAt = performance.now();
 			}
 		};
@@ -123,15 +204,50 @@ test('shows partial rows on a real query timeout, cleans up, then executes again
 
 	const timeoutExecutionIndex = monitor.executions.length;
 	await page.locator('#exec').click();
-	await expect.poll(() => monitor.executions.length - timeoutExecutionIndex).toBe(1);
-	await page.waitForFunction(() => window.__queryTimeoutMetrics.firstBusyRowAt !== null,
+	try {
+		await expect.poll(() => monitor.executions.length - timeoutExecutionIndex).toBe(1);
+	} catch (error) {
+		let inputFailure = null;
+		let diagnosticCollectionError = null;
+		try {
+			inputFailure = await page.evaluate(() => ({
+				url: location.href,
+				inputEvents: window.__queryTimeoutInputEvents.snapshot(),
+				button: (() => { const element = document.getElementById('exec');
+					if (!element) { return null; }
+					const box = element.getBoundingClientRect();
+					return { disabled: element.disabled, rect: { x: box.x, y: box.y, width: box.width, height: box.height } };
+				})(),
+				form: (() => { const element = document.getElementById('query-form');
+					return element && { action: element.getAttribute('action'), method: element.method,
+						noValidate: element.noValidate,
+						invalidControls: Array.from(element.elements).filter(control => 'validity' in control
+							&& !control.validity.valid).map(control => ({ name: control.name, id: control.id,
+								validationMessage: control.validationMessage })) };
+				})(),
+				busy: document.getElementById('query-results')?.getAttribute('aria-busy')
+			}));
+		} catch (diagnosticError) {
+			diagnosticCollectionError = String(diagnosticError).slice(0, 500);
+		}
+		const evidence = { inputFailure, diagnosticCollectionError, navigations: navigationEvents,
+			requests: monitor.executions, responses: monitor.responses.map(response => ({
+				url: response.url, status: response.status, contentType: response.contentType })),
+			pageErrors: monitor.errors };
+		console.error(`[query-timeout-first-submit-diagnostics] ${JSON.stringify(evidence)}`);
+		try {
+			await testInfo.attach('query-timeout-first-submit-diagnostics.json', {
+				body: Buffer.from(JSON.stringify(evidence, null, 2)),
+				contentType: 'application/json'
+			});
+		} catch (attachmentError) {
+			console.error(`[query-timeout-first-submit-diagnostics-attach-error] ${String(attachmentError).slice(0, 500)}`);
+		}
+		throw error;
+	}
+	await page.waitForFunction(() => window.__queryTimeoutMetrics.firstBusySnapshot !== null,
 		null, { timeout: 20000 });
-	const busySnapshot = await page.evaluate(() => ({
-		busy: document.getElementById('query-results').getAttribute('aria-busy'),
-		visibleRows: document.querySelectorAll(
-			'#query-results [data-query-row-index], #query-results [data-query-record-index]').length,
-			metrics: window.__queryTimeoutMetrics
-	}));
+	const busySnapshot = await page.evaluate(() => window.__queryTimeoutMetrics.firstBusySnapshot);
 	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false', { timeout: 20000 });
 	const terminalMetrics = await page.evaluate(() => window.__queryTimeoutMetrics);
 	await expect.poll(() => monitor.responses.length).toBeGreaterThan(timeoutExecutionIndex);
@@ -212,7 +328,8 @@ test('shows partial rows on a real query timeout, cleans up, then executes again
 
 	expect(busySnapshot.busy).toBe('true');
 	expect(busySnapshot.visibleRows, 'the page should display partial rows before the response terminates').toBeGreaterThan(0);
-	expect(terminalMetrics.firstBusyRowAt).toBeLessThan(terminalMetrics.terminalAt);
+	expect(busySnapshot.layoutVisible, 'the first partial rows should be in the visible result layout').toBe(true);
+	expect(terminalMetrics.firstBusyAt).toBeLessThan(terminalMetrics.terminalAt);
 	expect(timeoutRecord, 'the real evaluator should terminate the stream with a typed error').toBeTruthy();
 	expect(timeoutRecord.code).toBe('timeout');
 	expect(timeoutRecord.message).toMatch(/timed out after 1 second/i);
@@ -461,6 +578,367 @@ test('construct timeout leaves visibly incomplete graph statements without downl
 	}
 });
 
+test('a tall waiting result preserves its extent and paints continuation at deep scroll', async ({ page }, testInfo) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.goto(QUERY_URL, { waitUntil: 'domcontentloaded' });
+	await page.locator('#query-form').waitFor({ state: 'visible' });
+	await page.waitForFunction(() => typeof window.workbench?.queryStream?.QueryResultRenderer === 'function');
+
+	const initial = await page.evaluate(async () => {
+		const target = document.createElement('section');
+		target.id = 'query-skeleton-paint-regression';
+		target.className = 'query-results';
+		target.style.width = 'calc(100vw - 24px)';
+		target.style.boxSizing = 'border-box';
+		document.querySelector('#content').prepend(target);
+		const storedRows = [];
+		const rowStore = {
+			append: async batch => { storedRows.push(...batch); return storedRows.length; },
+			read: async (start, count) => storedRows.slice(start, start + count),
+			count: async () => storedRows.length,
+			truncate: async () => 0,
+			dispose: async () => {}
+		};
+		const renderer = new window.workbench.queryStream.QueryResultRenderer(target, {
+			reservedHeight: 20640100, initialLayout: 'records', rowStore
+		});
+		window.__querySkeletonPaintRenderer = renderer;
+		renderer.setBusy(true);
+		await renderer.accept({ type: 'head', version: 1 });
+		await renderer.accept({ type: 'view', id: 'tuple' });
+		await renderer.accept({ type: 'vars', values: ['long_result_variable_'.repeat(6), 'predicate', 'object'] });
+		const skeleton = target.querySelector('.query-result-skeleton');
+		const continuation = skeleton.querySelector('.query-result-skeleton__continuation');
+		const rect = element => { const box = element.getBoundingClientRect();
+			return { x: box.x, y: box.y, top: box.top, width: box.width, height: box.height, bottom: box.bottom }; };
+		return { cells: Array.from(continuation.children).map(rect), skeleton: rect(skeleton),
+			continuation: rect(continuation), target: rect(target), heldHeight: parseFloat(target.style.minHeight),
+			detailedRows: skeleton.querySelectorAll('.query-result-skeleton__row').length,
+			busyOverflowX: getComputedStyle(renderer.root).overflowX,
+			themeColors: {
+				inset: getComputedStyle(document.documentElement).getPropertyValue('--workbench-inset').trim(),
+				muted: getComputedStyle(document.documentElement).getPropertyValue('--workbench-muted').trim(),
+				softRule: getComputedStyle(document.documentElement).getPropertyValue('--workbench-soft-rule').trim()
+			},
+			viewport: { clientWidth: document.documentElement.clientWidth,
+				scrollWidth: document.documentElement.scrollWidth },
+			devicePixelRatio: window.devicePixelRatio, viewportHeight: window.innerHeight };
+	});
+	expect(initial.busyOverflowX, 'the self-clipping skeleton can paint while it is visible').toBe('visible');
+	expect(initial.viewport.scrollWidth, 'the mobile result toolbar stays within the page viewport')
+		.toBeLessThanOrEqual(initial.viewport.clientWidth);
+	const optionsToggle = page.locator('#query-skeleton-paint-regression .query-result-options-toggle');
+	const optionsPanel = page.locator('#query-skeleton-paint-regression .query-result-options-panel');
+	await optionsToggle.click();
+	await expect(optionsPanel).toBeVisible();
+	const menuViewport = await page.evaluate(() => ({
+		clientWidth: document.documentElement.clientWidth,
+		scrollWidth: document.documentElement.scrollWidth
+	}));
+	expect(menuViewport.scrollWidth, 'the open result options menu stays within the page viewport')
+		.toBeLessThanOrEqual(menuViewport.clientWidth);
+	await page.screenshot({ path: testInfo.outputPath('mobile-result-options-menu.png') });
+	await optionsToggle.click();
+	const assertPainted = async (cells, continuationBox, screenshot, label, viewportHeight, visibleTop = 60) => {
+		const pixelAt = (x, y) => {
+			const offset = (y * screenshot.width + x) * 4;
+			return Array.from(screenshot.data.subarray(offset, offset + 3));
+		};
+		const devicePixelRatio = initial.devicePixelRatio;
+		const period = Math.round(40 * devicePixelRatio);
+		const rowDifferenceCount = (x, start, end) => {
+			const colors = new Map();
+			for (let y = start; y < end; y++) {
+				const color = pixelAt(x, y).join(',');
+				colors.set(color, (colors.get(color) || 0) + 1);
+			}
+			const background = Array.from(colors.entries()).sort((first, second) => second[1] - first[1])[0][0];
+			return Array.from(colors.entries()).reduce((count, [color, rows]) => count
+				+ (color === background ? 0 : rows), 0);
+		};
+		for (const cell of cells) {
+			const x = Math.floor((cell.x + cell.width / 2) * devicePixelRatio);
+			const top = Math.max(visibleTop, continuationBox.top, cell.y, 0);
+			const bottom = Math.min(viewportHeight, continuationBox.bottom, cell.bottom);
+			let contrastSamples = 0;
+			const topPixel = Math.ceil(top * devicePixelRatio);
+			const bottomPixel = Math.floor(bottom * devicePixelRatio);
+			for (let start = Math.ceil(topPixel / period) * period; start + period <= bottomPixel; start += period) {
+				const differentRows = rowDifferenceCount(x, start, start + period);
+				expect(differentRows, `${label} continuation bars contrast with the cell background`)
+					.toBeGreaterThan(5 * devicePixelRatio);
+				contrastSamples++;
+			}
+			const visiblePixels = Math.max(0, bottom - top);
+			expect(visiblePixels, `${label} placeholder column should intersect the viewport`).toBeGreaterThan(0);
+			expect(contrastSamples, `${label} continuation in column ${x} should show repeated bars`)
+				.toBeGreaterThan(1);
+		}
+		const first = cells[0];
+		const second = cells[1];
+		const separatorX = Math.floor((first.x + first.width + second.x) / 2 * devicePixelRatio);
+		const top = Math.max(visibleTop, continuationBox.top, 0);
+		const bottom = Math.min(viewportHeight, continuationBox.bottom);
+		let separatorSamples = 0;
+		const topPixel = Math.ceil(top * devicePixelRatio);
+		const bottomPixel = Math.floor(bottom * devicePixelRatio);
+		for (let start = Math.ceil(topPixel / period) * period; start + period <= bottomPixel; start += period) {
+			const differentRows = rowDifferenceCount(separatorX, start, start + period);
+			expect(differentRows, `${label} row separator contrasts with the column gap`).toBeGreaterThan(0);
+			separatorSamples++;
+		}
+		expect(separatorSamples, `${label} row separators should repeat in the column gap`).toBeGreaterThan(1);
+	};
+	expect(initial.heldHeight).toBe(20640100);
+	expect(initial.detailedRows).toBe(6);
+	expect(initial.skeleton.height, 'the skeleton should preserve the full held result extent')
+		.toBeGreaterThan(initial.viewportHeight * 100);
+	const topImage = await page.screenshot({ path: testInfo.outputPath('skeleton-top.png') });
+	const topShot = PNG.sync.read(topImage);
+	await assertPainted(initial.cells, initial.continuation, topShot, 'top', initial.viewportHeight);
+
+	const deep = await page.evaluate(async () => {
+		window.scrollTo(0, 10000000);
+		await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+		const target = document.querySelector('#query-skeleton-paint-regression');
+		const skeleton = target.querySelector('.query-result-skeleton');
+		const continuation = skeleton.querySelector('.query-result-skeleton__continuation');
+		const rect = element => { const box = element.getBoundingClientRect();
+			return { x: box.x, y: box.y, top: box.top, width: box.width, height: box.height, bottom: box.bottom }; };
+		return { cells: Array.from(continuation.children).map(rect), target: rect(target), skeleton: rect(skeleton),
+			continuation: rect(continuation), detailedRows: skeleton.querySelectorAll('.query-result-skeleton__row').length,
+			heldHeight: parseFloat(target.style.minHeight), scrollY: window.scrollY, viewportHeight: innerHeight };
+	});
+	expect(deep.scrollY, 'the deep-scroll sample must remain inside the large held result').toBeGreaterThan(5000000);
+	expect(deep.heldHeight).toBe(20640100);
+	expect(deep.detailedRows).toBe(6);
+	expect(deep.target.bottom).toBeGreaterThan(60);
+	expect(deep.skeleton.height).toBeGreaterThan(deep.viewportHeight * 100);
+	expect(deep.skeleton.top).toBeLessThan(0);
+	expect(deep.skeleton.bottom).toBeGreaterThan(deep.viewportHeight);
+	const deepImage = await page.screenshot({ path: testInfo.outputPath('skeleton-deep-scroll.png') });
+	const deepShot = PNG.sync.read(deepImage);
+	await assertPainted(deep.cells, deep.continuation, deepShot, 'deep-scroll', deep.viewportHeight);
+
+	await page.setViewportSize({ width: 768, height: 900 });
+	const resized = await page.evaluate(async () => {
+		await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+		const target = document.querySelector('#query-skeleton-paint-regression');
+		const skeleton = target.querySelector('.query-result-skeleton');
+		const continuation = skeleton.querySelector('.query-result-skeleton__continuation');
+		const rect = element => { const box = element.getBoundingClientRect();
+			return { x: box.x, y: box.y, top: box.top, width: box.width, height: box.height, bottom: box.bottom }; };
+		return { cells: Array.from(continuation.children).map(rect), target: rect(target), skeleton: rect(skeleton),
+			continuation: rect(continuation), viewportHeight: innerHeight };
+	});
+	expect(resized.target.width).toBeGreaterThan(deep.target.width);
+	expect(resized.skeleton.height).toBeGreaterThan(resized.viewportHeight * 100);
+	const resizedImage = await page.screenshot({ path: testInfo.outputPath('skeleton-resized-deep-scroll.png') });
+	const resizedShot = PNG.sync.read(resizedImage);
+	await assertPainted(resized.cells, resized.continuation, resizedShot, 'resized deep-scroll', resized.viewportHeight);
+
+	await page.evaluate(() => {
+		window.scrollTo(0, document.documentElement.scrollHeight);
+		return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+	});
+	const bottom = await page.evaluate(() => {
+		const target = document.querySelector('#query-skeleton-paint-regression');
+		const skeleton = target.querySelector('.query-result-skeleton');
+		const continuation = skeleton.querySelector('.query-result-skeleton__continuation');
+		const rect = element => { const box = element.getBoundingClientRect();
+			return { x: box.x, y: box.y, top: box.top, width: box.width, height: box.height, bottom: box.bottom }; };
+		return { cells: Array.from(continuation.children).map(rect), skeleton: rect(skeleton),
+			continuation: rect(continuation), scrollY, viewportHeight: innerHeight };
+	});
+	expect(bottom.scrollY).toBeGreaterThan(deep.scrollY);
+	expect(bottom.skeleton.bottom).toBeGreaterThan(0);
+	const bottomImage = await page.screenshot({ path: testInfo.outputPath('skeleton-maximum-scroll.png') });
+	const bottomShot = PNG.sync.read(bottomImage);
+	await assertPainted(bottom.cells, bottom.continuation, bottomShot, 'maximum-scroll', bottom.viewportHeight);
+
+	await page.emulateMedia({ reducedMotion: 'reduce' });
+	await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'));
+	const darkReducedMotion = await page.evaluate(() => {
+		const root = document.querySelector('#query-skeleton-paint-regression');
+		const cell = root.querySelector('.query-result-skeleton__cell');
+		const colors = getComputedStyle(document.documentElement);
+		return { theme: document.documentElement.getAttribute('data-theme'),
+			inset: colors.getPropertyValue('--workbench-inset').trim(),
+			muted: colors.getPropertyValue('--workbench-muted').trim(),
+			softRule: colors.getPropertyValue('--workbench-soft-rule').trim(),
+			prefersReducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
+			animationName: getComputedStyle(cell).animationName };
+	});
+	console.log(`[query-skeleton-dark-reduced-motion] ${JSON.stringify(darkReducedMotion)}`);
+	expect(darkReducedMotion.theme).toBe('dark');
+	expect(darkReducedMotion.inset).not.toBe(initial.themeColors.inset);
+	expect(darkReducedMotion.muted).not.toBe(initial.themeColors.muted);
+	expect(darkReducedMotion.softRule).not.toBe(initial.themeColors.softRule);
+	expect(darkReducedMotion.prefersReducedMotion).toBe(true);
+	expect(darkReducedMotion.animationName).toBe('none');
+	const darkMaximumImage = await page.screenshot({ path: testInfo.outputPath('skeleton-dark-reduced-maximum-scroll.png') });
+	await assertPainted(bottom.cells, bottom.continuation, PNG.sync.read(darkMaximumImage),
+		'dark reduced-motion maximum-scroll', bottom.viewportHeight);
+	const darkDeep = await page.evaluate(async () => {
+		window.scrollTo(0, 10000000);
+		await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+		const target = document.querySelector('#query-skeleton-paint-regression');
+		const skeleton = target.querySelector('.query-result-skeleton');
+		const continuation = skeleton.querySelector('.query-result-skeleton__continuation');
+		const rect = element => { const box = element.getBoundingClientRect();
+			return { x: box.x, y: box.y, top: box.top, width: box.width, height: box.height, bottom: box.bottom }; };
+		return { cells: Array.from(continuation.children).map(rect), continuation: rect(continuation),
+			viewportHeight: innerHeight };
+	});
+	const darkDeepImage = await page.screenshot({ path: testInfo.outputPath('skeleton-dark-reduced-deep-scroll.png') });
+	await assertPainted(darkDeep.cells, darkDeep.continuation, PNG.sync.read(darkDeepImage),
+		'dark reduced-motion deep-scroll', darkDeep.viewportHeight);
+	await page.emulateMedia({ reducedMotion: 'no-preference' });
+	await page.evaluate(() => document.documentElement.removeAttribute('data-theme'));
+
+	await page.setViewportSize({ width: 480, height: 390 });
+	await page.evaluate(() => window.scrollTo(0, 0));
+	const fullscreenButton = page.locator('#query-skeleton-paint-regression .query-results__fullscreen');
+	await expect(fullscreenButton).toBeVisible();
+	await fullscreenButton.click();
+	await expect(page.locator('#query-skeleton-paint-regression')).toHaveAttribute('data-fullscreen', 'true');
+	const fullscreen = await page.evaluate(async () => {
+		await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+		const target = document.querySelector('#query-skeleton-paint-regression');
+		const box = target.getBoundingClientRect();
+		const layout = target.querySelector('.query-result-layout');
+		return { minHeight: getComputedStyle(target).minHeight, inlineMinHeight: target.style.minHeight,
+			height: box.height, top: box.top, bottom: box.bottom, viewportHeight: innerHeight,
+			held: target.hasAttribute('data-query-height-holder'), pageScrollHeight: document.documentElement.scrollHeight,
+			pageScrollY: scrollY, bodyOverflow: getComputedStyle(document.body).overflow,
+			scrollSource: layout.getAttribute('data-scroll-source') };
+	});
+	expect(fullscreen.held, 'full screen must retain the result-height holder until the query settles').toBe(true);
+	expect(parseFloat(fullscreen.inlineMinHeight)).toBe(20640100);
+	expect(fullscreen.minHeight, 'full screen releases the held page minimum from the fixed viewport').toBe('0px');
+	expect(fullscreen.height, 'full screen occupies the short viewport').toBeLessThanOrEqual(fullscreen.viewportHeight + 1);
+	expect(fullscreen.height).toBeGreaterThanOrEqual(fullscreen.viewportHeight - 1);
+	expect(fullscreen.top).toBe(0);
+	expect(fullscreen.bottom).toBeLessThanOrEqual(fullscreen.viewportHeight + 1);
+	expect(fullscreen.bodyOverflow).toBe('hidden');
+	expect(fullscreen.pageScrollHeight, 'a fixed full-screen result does not extend the document').toBeLessThan(1000000);
+	await page.screenshot({ path: testInfo.outputPath('skeleton-fullscreen-short.png') });
+	const elementMode = await page.evaluate(async () => {
+		const renderer = window.__querySkeletonPaintRenderer;
+		await renderer.accept({ type: 'rows', values: Array.from({ length: 400 }, (_, index) => [
+			{ kind: 'literal', value: `value ${index + 2}` },
+			{ kind: 'literal', value: `predicate ${index + 2}` },
+			{ kind: 'literal', value: `object ${index + 2}` }
+		]) });
+		const target = document.querySelector('#query-skeleton-paint-regression');
+		const layout = target.querySelector('.query-result-layout');
+		const records = layout.querySelector('.query-result-records');
+		const box = target.getBoundingClientRect();
+		return { scrollSource: layout.getAttribute('data-scroll-source'),
+			minHeight: getComputedStyle(target).minHeight, held: target.hasAttribute('data-query-height-holder'),
+			targetHeight: box.height, viewportHeight: innerHeight,
+			records: { hidden: records.hidden, clientHeight: records.clientHeight, scrollHeight: records.scrollHeight,
+				overflowY: getComputedStyle(records).overflowY } };
+	});
+	expect(elementMode.scrollSource, 'a full-screen results view uses its bounded element scrollport').toBe('element');
+	expect(elementMode.held, 'the held area remains during an incomplete result').toBe(true);
+	expect(elementMode.minHeight).toBe('0px');
+	expect(elementMode.targetHeight).toBeLessThanOrEqual(elementMode.viewportHeight + 1);
+	expect(elementMode.records.hidden).toBe(false);
+	expect(elementMode.records.clientHeight).toBeGreaterThan(0);
+	expect(elementMode.records.scrollHeight).toBeGreaterThan(elementMode.records.clientHeight);
+	expect(elementMode.records.overflowY).toBe('auto');
+	await page.screenshot({ path: testInfo.outputPath('skeleton-fullscreen-element-short.png') });
+	await page.keyboard.press('Escape');
+	await expect(page.locator('#query-skeleton-paint-regression')).not.toHaveAttribute('data-fullscreen', 'true');
+	const restored = await page.evaluate(async () => {
+		const renderer = window.__querySkeletonPaintRenderer;
+		const target = document.querySelector('#query-skeleton-paint-regression');
+		const box = target.getBoundingClientRect();
+		return { minHeight: getComputedStyle(target).minHeight, inlineMinHeight: target.style.minHeight,
+			held: target.hasAttribute('data-query-height-holder'), pageScrollHeight: document.documentElement.scrollHeight,
+			targetHeight: box.height, scrollSource: target.querySelector('.query-result-layout').getAttribute('data-scroll-source'),
+			viewportHeight: innerHeight, bodyOverflow: getComputedStyle(document.body).overflow,
+			layoutOverflowX: getComputedStyle(target.querySelector('.query-result-layout')).overflowX };
+	});
+	const fullscreenEvidence = { fullscreen, restored };
+	console.log(`[query-skeleton-fullscreen] ${JSON.stringify(fullscreenEvidence)}`);
+	await testInfo.attach('query-skeleton-fullscreen.json', {
+		body: Buffer.from(JSON.stringify(fullscreenEvidence, null, 2)),
+		contentType: 'application/json'
+	});
+	expect(restored.held, 'leaving full screen leaves the waiting height holder active').toBe(true);
+	expect(parseFloat(restored.inlineMinHeight)).toBe(20640100);
+	expect(parseFloat(restored.minHeight)).toBe(20640100);
+	expect(restored.targetHeight).toBeGreaterThan(restored.viewportHeight * 100);
+	expect(restored.pageScrollHeight).toBeGreaterThanOrEqual(restored.targetHeight);
+	expect(restored.scrollSource).toBe('page');
+	expect(restored.bodyOverflow).not.toBe('hidden');
+	expect(restored.layoutOverflowX).toBe('clip');
+	await page.screenshot({ path: testInfo.outputPath('skeleton-after-fullscreen-exit.png') });
+
+	const terminal = await page.evaluate(async () => {
+		const renderer = window.__querySkeletonPaintRenderer;
+		await renderer.accept({ type: 'end', metadata: {
+			'total-result-count': 400, 'query-elapsed-ms': 5, 'query-result-status': 'completed'
+		} });
+		renderer.setBusy(false);
+		const skeleton = renderer.root.querySelector('.query-result-skeleton');
+		const target = document.querySelector('#query-skeleton-paint-regression');
+		return { skeletonHidden: skeleton.hidden, overflowX: getComputedStyle(renderer.root).overflowX,
+			heldHeight: target.hasAttribute('data-query-height-holder'), inlineMinHeight: target.style.minHeight };
+	});
+	expect(terminal.skeletonHidden, 'a terminal result hides its waiting skeleton').toBe(true);
+	expect(terminal.overflowX, 'rendered results restore horizontal clipping').toBe('clip');
+	expect(terminal.heldHeight, 'a terminal result releases its held page height').toBe(false);
+	expect(terminal.inlineMinHeight, 'a terminal result releases its inline minimum height').toBe('');
+	await page.evaluate(() => {
+		window.__querySkeletonPaintRenderer.dispose();
+		document.querySelector('#query-skeleton-paint-regression').remove();
+	});
+	const twoRowClip = await page.evaluate(async () => {
+		const target = document.createElement('section');
+		target.id = 'query-skeleton-two-row-clip';
+		target.className = 'query-results';
+		target.style.width = 'calc(100vw - 24px)';
+		document.querySelector('#content').prepend(target);
+		const renderer = new window.workbench.queryStream.QueryResultRenderer(target, {
+			reservedHeight: 180, initialLayout: 'records'
+		});
+		renderer.setBusy(true);
+		await renderer.accept({ type: 'head', version: 1 });
+		await renderer.accept({ type: 'view', id: 'tuple' });
+		await renderer.accept({ type: 'vars', values: ['subject', 'predicate', 'object'] });
+		const skeleton = target.querySelector('.query-result-skeleton');
+		const box = skeleton.getBoundingClientRect();
+		const clipTop = box.top + skeleton.clientTop;
+		const clipBottom = clipTop + skeleton.clientHeight;
+		const visibleRows = Array.from(skeleton.querySelectorAll('.query-result-skeleton__row')).filter(row => {
+			const rowBox = row.getBoundingClientRect();
+			return rowBox.top < clipBottom && rowBox.bottom > clipTop;
+		}).length;
+		const evidence = { skeletonHeight: box.height, clipHeight: skeleton.clientHeight, detailedRows:
+			skeleton.querySelectorAll('.query-result-skeleton__row').length, visibleRows,
+			heldHeight: parseFloat(target.style.minHeight) };
+		await renderer.accept({ type: 'end', metadata: { 'query-result-status': 'completed' } });
+		renderer.setBusy(false);
+		renderer.dispose();
+		target.remove();
+		return evidence;
+	});
+	console.log(`[query-skeleton-two-row-clip] ${JSON.stringify(twoRowClip)}`);
+	expect(twoRowClip.skeletonHeight).toBe(80);
+	expect(twoRowClip.clipHeight).toBeLessThan(80);
+	expect(twoRowClip.detailedRows).toBe(6);
+	expect(twoRowClip.visibleRows).toBe(2);
+	await page.evaluate(() => window.scrollTo(0, 0));
+	await page.screenshot({ path: testInfo.outputPath('skeleton-two-row-clip.png') });
+	await testInfo.attach('query-skeleton-two-row-clip.json', {
+		body: Buffer.from(JSON.stringify(twoRowClip, null, 2)),
+		contentType: 'application/json'
+	});
+});
+
 function monitorPage(page) {
 	const monitor = { errors: [], executions: [], responses: [] };
 	page.on('pageerror', error => monitor.errors.push(error.message));
@@ -493,380 +971,6 @@ function monitorPage(page) {
 		monitor.responses.push(entry);
 	});
 	return monitor;
-}
-
-async function installTimeoutDiagnostics(page, browserName) {
-	const state = {
-		startedAt: new Date().toISOString(),
-		browserName,
-		pageEvents: [],
-		nodeSamples: [],
-		rendererEvents: new Array(10000),
-		rendererEventCount: 0,
-		rendererEventsDropped: 0,
-		setupErrors: []
-	};
-	const recordNodeEvent = (type, details = {}) => {
-		state.pageEvents.push({ source: 'node', type, at: new Date().toISOString(), ...details });
-		if (state.pageEvents.length > 300) {
-			state.pageEvents.shift();
-		}
-	};
-	const delayHistogram = monitorEventLoopDelay({ resolution: 20 });
-	delayHistogram.enable();
-	state.delayHistogram = delayHistogram;
-	let previousCpu = process.cpuUsage();
-	const startedAt = process.hrtime.bigint();
-	const sampleNodeProcess = () => {
-		const cpu = process.cpuUsage(previousCpu);
-		previousCpu = process.cpuUsage();
-		const memory = process.memoryUsage();
-		state.nodeSamples.push({
-			elapsedMs: Number(process.hrtime.bigint() - startedAt) / 1e6,
-			rssBytes: memory.rss,
-			heapUsedBytes: memory.heapUsed,
-			heapTotalBytes: memory.heapTotal,
-			externalBytes: memory.external,
-			cpuUserMs: cpu.user / 1000,
-			cpuSystemMs: cpu.system / 1000,
-			eventLoopDelayMaxMs: delayHistogram.max / 1e6,
-			eventLoopDelayP99Ms: delayHistogram.percentile(99) / 1e6
-		});
-		delayHistogram.reset();
-		if (state.nodeSamples.length > 120) {
-			state.nodeSamples.shift();
-		}
-	};
-	state.nodeSampler = setInterval(sampleNodeProcess, 1000);
-	state.nodeSampler.unref();
-
-	page.on('dialog', dialog => {
-		recordNodeEvent('dialog', { kind: dialog.type(), message: dialog.message().slice(0, 300) });
-		// Match Playwright's no-listener behavior: dismiss the dialog so this observer cannot leave it blocking input.
-		void dialog.dismiss().then(() => recordNodeEvent('dialog-dismissed', { kind: dialog.type() }))
-			.catch(error => recordNodeEvent('dialog-dismiss-failed', { message: String(error).slice(0, 300) }));
-	});
-	page.on('pageerror', error => recordNodeEvent('pageerror', { message: error.message.slice(0, 500) }));
-	page.on('crash', () => recordNodeEvent('page-crash'));
-	page.on('close', () => recordNodeEvent('page-close'));
-	page.on('request', request => {
-		if (request.method() === 'POST' && /\/query(?:[?#]|$)/.test(request.url())) {
-			recordNodeEvent('query-request', { method: request.method(), url: request.url().slice(0, 500) });
-		}
-	});
-	page.on('response', response => {
-		const request = response.request();
-		if (request.method() === 'POST' && /\/query(?:[?#]|$)/.test(request.url())) {
-			recordNodeEvent('query-response', {
-				status: response.status(),
-				contentType: response.headers()['content-type'] || '',
-				url: request.url().slice(0, 500)
-			});
-		}
-	});
-	page.on('requestfailed', request => {
-		if (request.method() === 'POST' && /\/query(?:[?#]|$)/.test(request.url())) {
-			recordNodeEvent('query-request-failed', {
-				failure: request.failure()?.errorText || '',
-				url: request.url().slice(0, 500)
-			});
-		}
-	});
-	page.on('console', message => {
-		if (message.type() === 'error' || message.type() === 'warning') {
-			recordNodeEvent('console', { level: message.type(), message: message.text().slice(0, 500) });
-		}
-	});
-
-	await page.addInitScript(() => {
-		const events = [];
-		const heartbeats = [];
-		let droppedEvents = 0;
-		let previousHeartbeat = performance.now();
-		const record = (type, details = {}) => {
-			const event = { type, at: performance.now(), ...details };
-			if (events.length < 500) {
-				events.push(event);
-			} else {
-				droppedEvents++;
-				events.shift();
-				events.push(event);
-			}
-		};
-		const targetDetails = target => {
-			if (!(target instanceof Element)) {
-				return {};
-			}
-			const execButton = target.closest('#exec');
-			const form = target.closest('#query-form');
-			return {
-				target: `${target.tagName.toLowerCase()}${target.id ? `#${target.id}` : ''}`,
-				execButton: Boolean(execButton),
-				form: form && form.id,
-				className: typeof target.className === 'string' ? target.className.slice(0, 160) : ''
-			};
-		};
-		for (const type of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'submit']) {
-			for (const capture of [true, false]) {
-				window.addEventListener(type, event => {
-					const details = targetDetails(event.target);
-					if (!details.execButton && !(type === 'submit' && details.form === 'query-form')) {
-						return;
-					}
-					record(`${capture ? 'capture' : 'bubble'}-${type}`, {
-						...details,
-						trusted: event.isTrusted,
-						defaultPrevented: event.defaultPrevented,
-						button: 'button' in event ? event.button : undefined,
-						detail: 'detail' in event ? event.detail : undefined
-					});
-				}, capture);
-			}
-		}
-		window.addEventListener('beforeunload', () => record('beforeunload'));
-		window.addEventListener('pagehide', event => record('pagehide', { persisted: event.persisted }));
-		window.addEventListener('error', event => record('window-error', {
-			message: event.message.slice(0, 500),
-			filename: event.filename.slice(-300),
-			line: event.lineno
-		}));
-		window.addEventListener('unhandledrejection', event => record('unhandledrejection', {
-			reason: String(event.reason).slice(0, 500)
-		}));
-		document.addEventListener('visibilitychange', () => record('visibilitychange', {
-			visibility: document.visibilityState
-		}));
-
-		try {
-			new PerformanceObserver(list => {
-				for (const entry of list.getEntries()) {
-					record('longtask', {
-						start: entry.startTime,
-						duration: entry.duration,
-						attribution: Array.from(entry.attribution || [], item => ({
-							name: item.name,
-							containerType: item.containerType,
-							containerName: item.containerName,
-							containerId: item.containerId
-						}))
-					});
-				}
-			}).observe({ type: 'longtask', buffered: true });
-		} catch (error) {
-			record('longtask-observer-unavailable', { message: String(error).slice(0, 300) });
-		}
-
-		const observeBusyState = root => {
-			record('results-busy-initial', { value: root.getAttribute('aria-busy') });
-			new MutationObserver(records => records.forEach(mutation => record('results-busy-change', {
-				oldValue: mutation.oldValue,
-				value: root.getAttribute('aria-busy')
-			}))).observe(root, { attributes: true, attributeFilter: ['aria-busy'], attributeOldValue: true });
-		};
-		const existingRoot = document.getElementById('query-results');
-		if (existingRoot) {
-			observeBusyState(existingRoot);
-		} else {
-			const rootObserver = new MutationObserver(() => {
-				const root = document.getElementById('query-results');
-				if (root) {
-					rootObserver.disconnect();
-					observeBusyState(root);
-				}
-			});
-			rootObserver.observe(document, { childList: true, subtree: true });
-		}
-
-		window.setInterval(() => {
-			const now = performance.now();
-			const memory = performance.memory;
-			heartbeats.push({
-				at: now,
-				gapMs: now - previousHeartbeat,
-				visibility: document.visibilityState,
-				usedJSHeapSize: memory && memory.usedJSHeapSize,
-				totalJSHeapSize: memory && memory.totalJSHeapSize,
-				jsHeapSizeLimit: memory && memory.jsHeapSizeLimit
-			});
-			previousHeartbeat = now;
-			if (heartbeats.length > 150) {
-				heartbeats.shift();
-			}
-		}, 1000);
-		window.__queryTimeoutDiagnostics = {
-			events,
-			heartbeats,
-			get droppedEvents() { return droppedEvents; }
-		};
-	});
-
-	if (browserName === 'chromium') {
-		try {
-			state.rendererSession = await page.context().newCDPSession(page);
-			state.rendererSession.on('Tracing.dataCollected', ({ value }) => {
-				for (const event of value) {
-					const details = event.args && event.args.data;
-					const longDuration = Number(event.dur) >= 50000;
-					if (!longDuration && !['RunTask', 'FunctionCall', 'EventDispatch', 'UpdateLayoutTree',
-						'Layout', 'Paint', 'CompositeLayers', 'V8.GCScavenger', 'V8.GCCompactor', 'MajorGC', 'MinorGC',
-						'FireAnimationFrame', 'RunMicrotasks'].includes(event.name)) {
-						continue;
-					}
-					state.rendererEvents[state.rendererEventCount % state.rendererEvents.length] = {
-						name: event.name,
-						category: event.cat,
-						phase: event.ph,
-						startUs: event.ts,
-						durationUs: event.dur,
-						pid: event.pid,
-						tid: event.tid,
-						data: details && {
-							functionName: details.functionName,
-							scriptName: details.scriptName,
-							url: details.url,
-							lineNumber: details.lineNumber,
-							columnNumber: details.columnNumber,
-							type: details.type,
-							name: details.name
-						}
-					};
-					state.rendererEventCount++;
-				}
-			});
-			await state.rendererSession.send('Performance.enable');
-			await state.rendererSession.send('Tracing.start', {
-				categories: 'devtools.timeline,v8,disabled-by-default-v8.gc,blink.user_timing',
-				options: 'record-continuously'
-			});
-			state.tracingStarted = true;
-
-			state.browserSession = await page.context().browser().newBrowserCDPSession();
-			const processInfo = await diagnosticCall(state.browserSession.send('SystemInfo.getProcessInfo'), 2000);
-			state.browserProcessBefore = processInfo.value && processInfo.value.processInfo;
-		} catch (error) {
-			state.setupErrors.push(`Chromium diagnostics setup: ${String(error).slice(0, 500)}`);
-		}
-	}
-
-	return state;
-}
-
-async function attachTimeoutDiagnostics(page, testInfo, state) {
-	clearInterval(state.nodeSampler);
-	await fs.mkdir(testInfo.outputDir, { recursive: true });
-	state.eventLoopDelay = {
-		maxMs: state.delayHistogram.max / 1e6,
-		p99Ms: state.delayHistogram.percentile(99) / 1e6
-	};
-	state.delayHistogram.disable();
-	state.nodeSamples.push({ at: 'after-test', ...process.memoryUsage() });
-	try {
-		const pageState = await diagnosticCall(page.evaluate(() => {
-			const root = document.getElementById('query-results');
-			const button = document.getElementById('exec');
-			const rect = button && button.getBoundingClientRect();
-			return {
-				readyState: document.readyState,
-				visibility: document.visibilityState,
-				activeElement: document.activeElement && {
-					tag: document.activeElement.tagName,
-					id: document.activeElement.id
-				},
-				url: location.href,
-				busy: root && root.getAttribute('aria-busy'),
-				status: root && root.querySelector('.query-result-status')?.textContent,
-				requestId: document.getElementById('query-request-id')?.value,
-				executeButton: button && {
-					disabled: button.disabled,
-					ariaDisabled: button.getAttribute('aria-disabled'),
-					box: rect && { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
-				},
-				memory: performance.memory && {
-					usedJSHeapSize: performance.memory.usedJSHeapSize,
-					totalJSHeapSize: performance.memory.totalJSHeapSize,
-					jsHeapSizeLimit: performance.memory.jsHeapSizeLimit
-				},
-				diagnostics: window.__queryTimeoutDiagnostics && {
-					events: window.__queryTimeoutDiagnostics.events,
-					heartbeats: window.__queryTimeoutDiagnostics.heartbeats,
-					droppedEvents: window.__queryTimeoutDiagnostics.droppedEvents
-				}
-			};
-		}), 1500);
-		state.pageState = pageState.value || null;
-		state.pageStateError = pageState.error || (pageState.timedOut ? 'page snapshot timed out' : null);
-
-		if (state.tracingStarted && state.rendererSession) {
-			let complete;
-			const tracingComplete = new Promise(resolve => { complete = resolve; });
-			const onTracingComplete = event => complete(event);
-			state.rendererSession.on('Tracing.tracingComplete', onTracingComplete);
-			state.tracingStarted = false;
-			const ended = await diagnosticCall(state.rendererSession.send('Tracing.end'), 1500);
-			const trace = await diagnosticCall(tracingComplete, 2000);
-			state.tracingComplete = Boolean(trace.value);
-			state.tracingEndError = ended.error || (ended.timedOut ? 'Tracing.end timed out' : null);
-			state.rendererSession.off('Tracing.tracingComplete', onTracingComplete);
-		}
-		if (state.rendererSession) {
-			const metrics = await diagnosticCall(state.rendererSession.send('Performance.getMetrics'), 1500);
-			state.rendererMetrics = metrics.value && metrics.value.metrics;
-			state.rendererMetricsError = metrics.error || (metrics.timedOut ? 'Performance.getMetrics timed out' : null);
-			const heap = await diagnosticCall(state.rendererSession.send('Runtime.getHeapUsage'), 1000);
-			state.rendererHeap = heap.value || null;
-			const dom = await diagnosticCall(state.rendererSession.send('Memory.getDOMCounters'), 1000);
-			state.rendererDomCounters = dom.value || null;
-		}
-		if (state.browserSession) {
-			const processes = await diagnosticCall(state.browserSession.send('SystemInfo.getProcessInfo'), 1500);
-			state.browserProcessAfter = processes.value && processes.value.processInfo;
-			state.browserProcessError = processes.error || (processes.timedOut ? 'SystemInfo.getProcessInfo timed out' : null);
-		}
-	} finally {
-		state.sessionDetachErrors = [];
-		for (const [name, session] of [['renderer', state.rendererSession], ['browser', state.browserSession]]) {
-			if (!session) {
-				continue;
-			}
-			const detached = await diagnosticCall(Promise.resolve().then(() => session.detach()), 750);
-			if (detached.error || detached.timedOut) {
-				state.sessionDetachErrors.push(`${name}: ${detached.error || 'detach timed out'}`);
-			}
-		}
-	}
-	const retainedRendererEventCount = Math.min(state.rendererEventCount, state.rendererEvents.length);
-	const firstRetainedIndex = state.rendererEventCount > state.rendererEvents.length
-		? state.rendererEventCount % state.rendererEvents.length : 0;
-	state.rendererEvents = Array.from({ length: retainedRendererEventCount }, (_, index) =>
-		state.rendererEvents[(firstRetainedIndex + index) % state.rendererEvents.length]);
-	state.rendererEventsDropped = state.rendererEventCount - retainedRendererEventCount;
-	state.nodeSamples = state.nodeSamples.slice(-120);
-	const diagnosticsPath = testInfo.outputPath('query-timeout-diagnostics.json');
-	const diagnosticsBody = JSON.stringify({
-		...state,
-		delayHistogram: undefined,
-		nodeSampler: undefined,
-		rendererSession: undefined,
-		browserSession: undefined
-	}, null, 2);
-	await fs.writeFile(diagnosticsPath, diagnosticsBody);
-	await testInfo.attach('query-timeout-diagnostics.json', {
-		path: diagnosticsPath,
-		contentType: 'application/json'
-	});
-}
-
-async function diagnosticCall(promise, timeoutMs) {
-	return new Promise(resolve => {
-		const timer = setTimeout(() => resolve({ timedOut: true }), timeoutMs);
-		Promise.resolve(promise).then(value => {
-			clearTimeout(timer);
-			resolve({ value });
-		}, error => {
-			clearTimeout(timer);
-			resolve({ error: String(error).slice(0, 500) });
-		});
-	});
 }
 
 async function captureQueryResponseBodies(page) {

@@ -690,6 +690,10 @@ body.query-results-fullscreen-active {
 	overflow-y: visible;
 }
 
+.query-result-layout:has(> .query-result-skeleton:not([hidden])) {
+	overflow-x: visible;
+}
+
 .query-result-toolbar {
 	position: sticky;
 	top: 0;
@@ -1410,9 +1414,10 @@ body.workbench-body #content .query-output .query-results:not([data-fullscreen="
     display: none;
 }
 
-/* While a query has shown nothing yet, grey rows stand where its results will be. The renderer sizes the block to
- * fill the height the previous result had, so running a query again does not move the page. */
+/* While a query waits, the holder preserves the old result extent and the in-flow skeleton keeps that space stable. */
 .query-result-skeleton {
+    display: flex;
+    flex-direction: column;
     overflow: hidden;
     box-sizing: border-box;
     border: 1px solid var(--workbench-soft-rule);
@@ -1423,7 +1428,13 @@ body.workbench-body #content .query-output .query-results:not([data-fullscreen="
     display: none;
 }
 
+/* The fixed viewport takes over the page's held extent; its inline minimum remains available when full screen exits. */
+.query-results[data-fullscreen="true"][data-query-height-holder] {
+    min-height: 0 !important;
+}
+
 .query-result-skeleton__row {
+    flex: 0 0 40px;
     display: grid;
     grid-template-columns: 3fr 4fr 2fr;
     gap: 24px;
@@ -1437,6 +1448,43 @@ body.workbench-body #content .query-output .query-results:not([data-fullscreen="
 .query-result-skeleton__row--head {
     border-top: 0;
     background: var(--workbench-inset);
+}
+
+.query-result-skeleton__continuation {
+    flex: 1 0 0;
+    display: grid;
+    grid-template-columns: 3fr 4fr 2fr;
+    gap: 24px;
+    min-height: 0;
+    padding: 0 12px;
+    background: repeating-linear-gradient(to bottom, var(--workbench-soft-rule) 0 1px, transparent 1px 40px);
+    background-size: 100% 40px;
+    background-repeat: repeat-y;
+    background-attachment: fixed;
+    pointer-events: none;
+}
+
+.query-result-skeleton__continuation-cell {
+    display: block;
+    min-width: 0;
+    height: 100%;
+    background: repeating-linear-gradient(to bottom, transparent 0 15px,
+        color-mix(in srgb, var(--workbench-muted) 18%, transparent) 15px 25px, transparent 25px 40px);
+    background-size: 100% 40px;
+    background-repeat: repeat-y;
+    background-attachment: fixed;
+}
+
+.query-result-skeleton__continuation-cell:first-child {
+    width: 72%;
+}
+
+.query-result-skeleton__continuation-cell:nth-child(2) {
+    width: 72%;
+}
+
+.query-result-skeleton__continuation-cell:nth-child(3) {
+    width: 90%;
 }
 
 .query-result-skeleton__cell {

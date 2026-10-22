@@ -604,6 +604,123 @@ test('large batched results stay in worker storage and bound table DOM', async (
     assert.equal(renderer.tableBody.children.length <= 82, true);
 });
 
+test('a held result preserves its height with six detailed skeleton rows in page and full-screen layouts', async () => {
+    const queryStream = loadQueryStreamApi();
+    const viewport = queryStream.__testWindow;
+    viewport.innerHeight = 800;
+    viewport.scrollY = 0;
+    viewport.scrollBy = () => {};
+    const getComputedStyle = viewport.getComputedStyle.bind(viewport);
+    viewport.getComputedStyle = element => {
+        const style = getComputedStyle(element);
+        style.getPropertyValue = name => style[name] || '';
+        return style;
+    };
+    const createSurface = () => {
+        const document = new FakeDocument();
+        document.defaultView = viewport;
+        document.documentElement = { clientWidth: 390 };
+        const target = document.createElement('section');
+        document.body.appendChild(target);
+        const appendChild = target.appendChild.bind(target);
+        target.appendChild = child => {
+            const appended = appendChild(child);
+            if (child.classList && child.classList.contains('query-result-layout')) {
+                child.getBoundingClientRect = () => ({ top: 0, left: 0, right: 390, bottom: 120,
+                    width: 390, height: 120 });
+                const insertBefore = child.insertBefore.bind(child);
+                child.insertBefore = (inserted, reference) => {
+                    const result = insertBefore(inserted, reference);
+                    if (inserted.classList && inserted.classList.contains('query-result-skeleton')) {
+                        inserted.getBoundingClientRect = () => ({ top: 120, left: 0, right: 390, bottom: 120,
+                            width: 390, height: 0 });
+                    }
+                    return result;
+                };
+            } else if (child.classList && child.classList.contains('query-result-skeleton')) {
+                child.getBoundingClientRect = () => ({ top: 120, left: 0, right: 390, bottom: 120,
+                    width: 390, height: 0 });
+            }
+            return appended;
+        };
+        return { document, target };
+    };
+
+    for (const presentation of ['page', 'fullscreen']) {
+        const { document, target } = createSurface();
+        for (const previousHeight of [100, 100000, 20640100]) {
+            target.getBoundingClientRect = () => ({ top: 0, left: 0, right: 390, bottom: previousHeight,
+                width: 390, height: previousHeight });
+            const replacement = new queryStream.QueryResultRenderer(target, {
+                reservedHeight: target.getBoundingClientRect().height,
+                rowStore: inMemoryRowStore()
+            });
+            if (presentation === 'fullscreen') {
+                queryStream.__testWorkbench.resultFullscreen.set(target, replacement.fullscreenButton, true, false);
+            }
+            const skeleton = target.querySelector('.query-result-skeleton');
+            try {
+                assert.equal(target.style.minHeight, `${previousHeight}px`,
+                    'the replacement must reserve the previous result height until it can render');
+                assert.equal(skeleton.style.height, `${Math.max(80, previousHeight - 120)}px`,
+                    'the six-row skeleton fills the held result extent below the running toolbar');
+                const skeletonRows = skeleton.children.filter(child =>
+                    child.classList.contains('query-result-skeleton__row'));
+                assert.equal(skeletonRows.length, 6,
+                    `a ${previousHeight}px held result keeps six detailed rows regardless of reserved height`);
+                const continuation = skeleton.children.find(child =>
+                    child.classList.contains('query-result-skeleton__continuation'));
+                assert.ok(continuation, 'the bounded rows should have a CSS-painted continuation');
+                assert.equal(continuation.children.length, 3,
+                    'the continuation should use one decorative cell for each result column');
+            } finally {
+                replacement.dispose();
+            }
+            assert.equal(target.style.minHeight, '', 'disposing the replacement releases the reserved height');
+            assert.equal(target.getAttribute('data-query-height-holder') || '', '',
+                'disposing the replacement releases its height ownership');
+        }
+    }
+});
+
+test('unreserved and cancelled query skeletons keep six detailed rows', async () => {
+    const queryStream = loadQueryStreamApi();
+    const document = new FakeDocument();
+    document.defaultView = queryStream.__testWindow;
+    const target = document.createElement('section');
+    document.body.appendChild(target);
+    const appendChild = target.appendChild.bind(target);
+    target.appendChild = child => {
+        const appended = appendChild(child);
+        if (child.classList && child.classList.contains('query-result-layout')) {
+            child.getBoundingClientRect = () => ({ top: 0, left: 0, right: 390, bottom: 120,
+                width: 390, height: 120 });
+        }
+        return appended;
+    };
+    const first = new queryStream.QueryResultRenderer(target, { rowStore: inMemoryRowStore() });
+    const firstSkeleton = target.querySelector('.query-result-skeleton');
+    assert.equal(firstSkeleton.parentNode, first.root,
+        'an unreserved first query keeps its natural placeholder inside the result layout');
+    assert.equal(target.style.minHeight || '', '', 'a first query does not reserve a prior result height');
+    assert.equal(firstSkeleton.style.height || '', '', 'an unreserved skeleton keeps its natural six-row height');
+    assert.equal(firstSkeleton.children.filter(child => child.classList.contains('query-result-skeleton__row')).length, 6);
+    first.dispose();
+
+    target.getBoundingClientRect = () => ({ top: 0, left: 0, right: 390, bottom: 100000,
+        width: 390, height: 100000 });
+    const second = new queryStream.QueryResultRenderer(target, {
+        reservedHeight: 100000, rowStore: inMemoryRowStore()
+    });
+    const secondSkeleton = target.querySelector('.query-result-skeleton');
+    assert.equal(target.style.minHeight, '100000px');
+    await new Promise(resolve => setImmediate(resolve));
+    second.fail('Query cancelled.', 'cancelled');
+    assert.equal(secondSkeleton.hidden, true, 'terminal cancellation hides the tall placeholder');
+    assert.equal(target.style.minHeight || '', '', 'terminal cancellation releases the reserved height');
+    second.dispose();
+});
+
 test('records layout scrolls through loaded rows with bounded DOM and no local page controls', async () => {
     const queryStream = loadQueryStreamApi();
     const document = new FakeDocument();

@@ -2109,10 +2109,11 @@ test('a result waiting for its first rows shows placeholder rows and keeps the a
     document.body.appendChild(target);
     const renderer = new queryStream.QueryResultRenderer(target,
         { initialLayout: 'table', rowStore: inMemoryRowStore(), reservedHeight: 300 });
-    const skeleton = renderer.root.children.find(child => child.className === 'query-result-skeleton');
+    const skeleton = target.querySelector('.query-result-skeleton');
     assert.equal(skeleton.getAttribute('aria-hidden'), 'true');
     assert.equal(skeleton.hidden, false, 'grey rows before the request starts');
-    assert.ok(skeleton.children.length > 3);
+    assert.equal(skeleton.children.filter(child => child.classList.contains('query-result-skeleton__row')).length, 6);
+    assert.equal(skeleton.querySelector('.query-result-skeleton__continuation').children.length, 3);
     assert.equal(target.style.minHeight, '300px');
     renderer.setBusy(true);
     await renderer.accept({ type: 'view', id: 'tuple' });
@@ -2131,7 +2132,7 @@ test('a result waiting for its first rows shows placeholder rows and keeps the a
     renderer.dispose();
 
     const failing = new queryStream.QueryResultRenderer(target, { rowStore: inMemoryRowStore(), reservedHeight: 200 });
-    const failingSkeleton = failing.root.children.find(child => child.className === 'query-result-skeleton');
+    const failingSkeleton = target.querySelector('.query-result-skeleton');
     failing.setBusy(true);
     failing.fail('Query failed.');
     assert.equal(failingSkeleton.hidden, true, 'an error replaces the grey rows');
@@ -2141,7 +2142,7 @@ test('a result waiting for its first rows shows placeholder rows and keeps the a
     failing.dispose();
 
     const stopped = new queryStream.QueryResultRenderer(target, { rowStore: inMemoryRowStore(), reservedHeight: 200 });
-    const stoppedSkeleton = stopped.root.children.find(child => child.className === 'query-result-skeleton');
+    const stoppedSkeleton = target.querySelector('.query-result-skeleton');
     stopped.setBusy(true);
     stopped.setBusy(false);
     await new Promise((resolve) => setImmediate(resolve));
