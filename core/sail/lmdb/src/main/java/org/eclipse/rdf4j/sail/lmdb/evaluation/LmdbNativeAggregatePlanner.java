@@ -25,6 +25,7 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.BiFunction;
 import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -79,10 +80,14 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingSetQueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.LateralQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.MinusQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ScopedLeftJoinIterator.GraphFrameMapping;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
@@ -120,6 +125,13 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	}
 
 	QueryEvaluationStep compile(Filter filter) {
+		if (!FilterBindingScope.allowsAllConditionBindings(filter)) {
+			// Raw HAVING guards cannot see a different mapping from the authoritative condition.
+			GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(filter.getCondition(), strategy);
+			requiresExecutionContext |= !descriptor.shareableAcrossEvaluations();
+			QueryEvaluationStep group = compileGroup((Group) filter.getArg(), null, filter.getArg());
+			return group == null ? null : projectedFilterStep(group, filter);
+		}
 		GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(filter.getCondition(), strategy);
 		boolean evaluationScopedHaving = !descriptor.shareableAcrossEvaluations();
 		if (evaluationScopedHaving) {
@@ -188,6 +200,9 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			return step == null ? null : new AggregateRootStack(step, arg.group);
 		}
 		if (node instanceof Filter filter) {
+			GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(filter.getCondition(), strategy);
+			// The grouped source must own its query scope before compiling any post-group wrappers.
+			requiresExecutionContext |= !descriptor.shareableAcrossEvaluations();
 			if (filter.getArg() instanceof Group) {
 				QueryEvaluationStep step = compile(filter);
 				return step == null ? null : new AggregateRootStack(step, (Group) filter.getArg());
@@ -196,7 +211,9 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			if (arg == null) {
 				return null;
 			}
-			GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(filter.getCondition(), strategy);
+			if (!FilterBindingScope.allowsAllConditionBindings(filter)) {
+				return new AggregateRootStack(projectedFilterStep(arg.step, filter), arg.group);
+			}
 			if (!descriptor.shareableAcrossEvaluations()) {
 				// A retained aggregate wrapper must prepare its semantic predicate against the same evaluation context
 				// as the grouped source. Preparing it against the planner context would freeze query-scoped values such
@@ -226,6 +243,15 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	}
 
 	private record AggregateRootStack(QueryEvaluationStep step, Group group) {
+	}
+
+	private QueryEvaluationStep projectedFilterStep(QueryEvaluationStep argument, Filter filter) {
+		var scope = FilterBindingScope.resolve(filter);
+		GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(filter.getCondition(), strategy);
+		requiresExecutionContext |= !descriptor.shareableAcrossEvaluations();
+		NativeBindingSetValueEvaluator projected = compileProjectedValue(strategy, descriptor.pinnedExpr(), context,
+				scope);
+		return bindings -> new FilteringIteration(argument.evaluate(bindings), projected);
 	}
 
 	/** Compiles a root MultiProjection over any tuple argument admitted by the semantic native row floor. */
@@ -1650,7 +1676,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		try {
 			String[] frameInputNames = lateralSubqueryFrameInputNames(rightArg, lateralFrameInputNames);
 			right = isSubqueryBoundary(rightArg) || TupleExprs.isVariableScopeChange(rightArg)
-					? compileNativeSubquery(rightArg, frameInputNames)
+					? compileNativeSubquery(rightArg, frameInputNames, lateral.getRightInputBindingNames())
 					: compileTupleOrIsland(rightArg, duplicateInsensitive);
 		} finally {
 			lateralFrameInputNames = previousFrameInputNames;
@@ -1890,7 +1916,10 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		}
 		if (expr instanceof Difference) {
 			Difference difference = (Difference) expr;
+			Set<String> comparisonNames = MinusQueryEvaluationStep.comparisonBindingNames(difference.getLeftArg(),
+					difference.getRightArg());
 			Set<String> shared = observedAcrossNames(difference.getLeftArg(), difference.getRightArg());
+			shared.addAll(comparisonNames);
 			Set<String> previousRequired = requiredAggregateNames;
 			SlotPlan left;
 			SlotPlan right;
@@ -1905,17 +1934,36 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			if (left == null || right == null) {
 				return null;
 			}
-			SlotPlan plan = SlotPlan.minus(left, right);
-			if (islandsEnabled && plan == left && left != EmptyPlan.INSTANCE && right != EmptyPlan.INSTANCE
-					&& !canDiscardWithoutEvaluation(difference.getRightArg())) {
-				// No statically shared names: the compiler would discard the right operand, but the generic engine
-				// evaluates it once the left is non-empty and must surface its query-fatal effects.
-				return new DrainGuardPlan(left, right, false);
+			long comparisonMask = 0L;
+			for (String name : comparisonNames) {
+				comparisonMask |= 1L << slot(name);
 			}
-			return plan;
+			if (comparisonMask == 0L && canDiscardWithoutEvaluation(difference.getRightArg())) {
+				return left;
+			}
+			// A non-discardable disjoint right operand must still observe its entry input and surface fatal errors.
+			// MinusCursor drains it once independently after the first left result, preserving generic laziness.
+			return SlotPlan.minus(left, right, comparisonMask);
 		}
 		if (expr instanceof Filter) {
 			Filter filter = (Filter) expr;
+			if (!FilterBindingScope.allowsAllConditionBindings(filter)) {
+				Set<String> previousRequired = requiredAggregateNames;
+				requiredAggregateNames = withRequired(previousRequired, filterConditionInputNames(filter));
+				SlotPlan arg;
+				try {
+					arg = compileTupleOrIsland(filter.getArg(), duplicateInsensitive);
+				} finally {
+					requiredAggregateNames = previousRequired;
+				}
+				if (arg == null) {
+					return null;
+				}
+				NativeBooleanFilter condition = compileProjectedFilter(filter);
+				return SlotPlan.filter(arg, recordFilterOutcomes(filter, condition),
+						projectedFilterMask(filter, condition),
+						null);
+			}
 			SlotPlan joinedValuesSip = compileFilterOverJoinedValues(filter, duplicateInsensitive);
 			if (joinedValuesSip != null) {
 				return joinedValuesSip;
@@ -1982,7 +2030,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			}
 			Set<String> previousRequired = requiredAggregateNames;
 			java.util.HashSet<String> filterRequired = new java.util.HashSet<>(previousRequired);
-			filterRequired.addAll(VarNameCollector.process(filter.getCondition()));
+			filterRequired.addAll(filterConditionInputNames(filter));
 			requiredAggregateNames = filterRequired;
 			SlotPlan arg;
 			try {
@@ -2164,6 +2212,11 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	}
 
 	private SlotPlan compileNativeSubquery(TupleExpr expr, String[] frameInputNames) {
+		return compileNativeSubquery(expr, frameInputNames, Set.of());
+	}
+
+	private SlotPlan compileNativeSubquery(TupleExpr expr, String[] frameInputNames,
+			Set<String> declaredLateralInputs) {
 		LinkedHashSet<GraphFrameMapping> mappings = new LinkedHashSet<>(Arrays.asList(subqueryGraphFrames(expr)));
 		LinkedHashSet<String> privateParameters = new LinkedHashSet<>();
 		for (GraphFrameMapping frame : mappings) {
@@ -2200,6 +2253,35 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		if (step == null) {
 			return null;
 		}
+		BiFunction<Set<String>, NativeExecutionContext, QueryEvaluationStep> scopedStep = null;
+		if (!declaredLateralInputs.isEmpty()) {
+			GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(expr, strategy);
+			Set<String> declaredInputs = Set.copyOf(declaredLateralInputs);
+			Set<String> selectedFrames = nestedFrameInputNames;
+			Set<String> selectedLateralFrames = nestedLateralFrameInputNames;
+			scopedStep = (originalDomain, execution) -> descriptor.prepare(() -> {
+				TupleExpr original = descriptor.pinnedExpr();
+				TupleExpr scoped = LateralQueryEvaluationStep.prepareRightScope(original, declaredInputs,
+						originalDomain);
+				if (scoped == original) {
+					return step;
+				}
+				NativeValuePositionAnalysis positions = strategy.copyValuePositions(original, scoped);
+				QueryEvaluationContext evaluationContext = new BindingSetQueryEvaluationContext(
+						execution.genericContext(context, strategy));
+				QueryEvaluationStep nativeStep = strategy.withValuePositions(positions,
+						() -> LmdbNativeAggregateCompiler.tryCompileSemanticSubquery(scoped, evaluationContext,
+								strategy, source, selectedFrames, selectedLateralFrames));
+				if (nativeStep != null) {
+					return nativeStep;
+				}
+				// Renaming may exceed a native slot budget; prepare the exact scoped tree in the declared fallback.
+				LmdbNativeExplain.recordExecutionPath(expr,
+						LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK + "(lateralScope)");
+				return GenericSubplanDescriptor.create(scoped, strategy, positions)
+						.genericPrecompile(strategy, evaluationContext);
+			});
+		}
 		String[] outNames = expr.getBindingNames().toArray(String[]::new);
 		int[] outSlots = new int[outNames.length];
 		for (int i = 0; i < outNames.length; i++) {
@@ -2219,7 +2301,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		}
 		requiresExecutionContext = true;
 		return new NativeSubqueryPlan(step, outSlots, outNames, frameInputSlots, sourceNames, parameterNames,
-				privateParameters.toArray(String[]::new), boundary, context);
+				privateParameters.toArray(String[]::new), boundary, context, scopedStep);
 	}
 
 	private GraphFrameMapping[] subqueryGraphFrames(TupleExpr expr) {

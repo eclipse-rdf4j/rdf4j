@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbWildcardPhysicalDemand.Demand;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbWildcardPhysicalDemand.DuplicatePolicy;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbWildcardPhysicalDemand.Scope;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.IdCapability;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -1240,18 +1241,18 @@ final class LmdbWildcardPredicateBatch {
 
 	/** Safe single-pattern MINUS specialization backed by the same complemented NODE_ANY verdict bitmap. */
 	static RowCursor tryOpenMinus(SlotPlan left, PatternPlan right, long sharedMask, RowState row) throws IOException {
-		if (!enabled() || !NativeBatch.enabled() || right.range != null || !right.p.hasSlot()
+		if (sharedMask == 0L || !enabled() || !NativeBatch.enabled() || right.range != null || !right.p.hasSlot()
 				|| right.p.isConstant()) {
 			return null;
 		}
-		long compatibilityMask = sharedMask | row.lexicalInputMask;
+		long retainedMask = sharedMask | row.lexicalInputMask;
 		if ((sharedMask & ~SlotPlan.assuredMask(right)) != 0L) {
 			return null;
 		}
 		// MINUS compatibility is decided per left row. A shared endpoint may therefore be a safe physical direction
 		// even when the left plan cannot prove that slot bound on every row; ExistenceBatch declines the individual
 		// batch before output if an eligible row does not actually provide the endpoint.
-		long available = (row.boundMask() | SlotPlan.assuredMask(left) | sharedMask) & compatibilityMask;
+		long available = (row.boundMask() | SlotPlan.assuredMask(left) | sharedMask) & retainedMask;
 		boolean subjectAvailable = right.s.isConstant()
 				|| right.s.hasSlot() && (available & 1L << right.s.slot) != 0L;
 		boolean objectAvailable = right.o.isConstant()
@@ -1280,9 +1281,8 @@ final class LmdbWildcardPredicateBatch {
 		RowCursor leftCursor = null;
 		try {
 			leftCursor = left.open(row);
-			boolean unslottedBase = row.base.size() > Long.bitCount(row.baseBindingMask);
-			return new MinusBatchCursor(leftCursor, right, sharedMask, existence, row, compatibilityMask,
-					unslottedBase, capacity, memory, claimedBytes);
+			return new MinusBatchCursor(leftCursor, right, sharedMask, existence, row, retainedMask,
+					capacity, memory, claimedBytes);
 		} catch (IOException | RuntimeException | Error failure) {
 			if (leftCursor != null) {
 				leftCursor.close();
@@ -1299,8 +1299,7 @@ final class LmdbWildcardPredicateBatch {
 		private final long sharedMask;
 		private final ExistenceBatch existence;
 		private final RowState row;
-		private final long compatibilityMask;
-		private final boolean unslottedBase;
+		private final long retainedMask;
 		private final NativeBatch batch;
 		private final int[] eligible;
 		private final boolean[] survives;
@@ -1315,15 +1314,14 @@ final class LmdbWildcardPredicateBatch {
 		private boolean closed;
 
 		private MinusBatchCursor(RowCursor left, PatternPlan right, long sharedMask, ExistenceBatch existence,
-				RowState row, long compatibilityMask, boolean unslottedBase, int capacity,
+				RowState row, long retainedMask, int capacity,
 				LmdbFusedSipFactorizedRuntime.Session memory, long claimedBytes) {
 			this.left = left;
 			this.right = right;
 			this.sharedMask = sharedMask;
 			this.existence = existence;
 			this.row = row;
-			this.compatibilityMask = compatibilityMask;
-			this.unslottedBase = unslottedBase;
+			this.retainedMask = retainedMask;
 			this.batch = new NativeBatch(row.slots.length, capacity);
 			this.eligible = new int[capacity];
 			this.survives = new boolean[capacity];
@@ -1367,13 +1365,13 @@ final class LmdbWildcardPredicateBatch {
 			batch.finishRows(count);
 			int eligibleCount = 0;
 			for (int physical = 0; physical < count; physical++) {
-				if (!unslottedBase && !anyBound(batch, physical, compatibilityMask)) {
+				if (!anyBound(batch, physical, sharedMask)) {
 					survives[physical] = true;
 				} else {
 					eligible[eligibleCount++] = physical;
 				}
 			}
-			int survivingEligible = existence.select(batch, eligible, eligibleCount, true, compatibilityMask);
+			int survivingEligible = existence.select(batch, eligible, eligibleCount, true, retainedMask);
 			if (survivingEligible < 0) {
 				selectScalarFallback(eligibleCount, count);
 			} else {
@@ -1404,7 +1402,7 @@ final class LmdbWildcardPredicateBatch {
 		private static boolean anyBound(NativeBatch batch, int physical, long mask) {
 			while (mask != 0L) {
 				int slot = Long.numberOfTrailingZeros(mask);
-				if (batch.get(slot, physical) != UNKNOWN) {
+				if (IdCapability.BOUND.test(batch.get(slot, physical))) {
 					return true;
 				}
 				mask &= mask - 1L;

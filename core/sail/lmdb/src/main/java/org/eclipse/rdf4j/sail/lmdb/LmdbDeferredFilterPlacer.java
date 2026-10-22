@@ -42,6 +42,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
@@ -1051,16 +1052,22 @@ final class LmdbDeferredFilterPlacer {
 			if (containsModeSensitiveFiniteValue(filter.condition, rows)) {
 				return null;
 			}
-			rows = filterFiniteBindingRows(rows, filter.condition);
+			rows = filterFiniteBindingRows(rows, filter);
 			pendingFilters.remove(i);
 		}
 		return rows;
 	}
 
-	private List<BindingSet> filterFiniteBindingRows(List<BindingSet> rows, ValueExpr condition) {
+	private List<BindingSet> filterFiniteBindingRows(List<BindingSet> rows, DeferredFilter filter) {
 		List<BindingSet> filteredRows = new ArrayList<>(rows.size());
 		for (BindingSet row : rows) {
-			if (evaluateFiniteCondition(condition, row)) {
+			BindingSet conditionInput = row;
+			if (!filter.bindingScope.isAuto() && !filter.bindingScope.retainsAllBindings()) {
+				QueryBindingSet retained = new QueryBindingSet(row);
+				retained.retainAll(filter.bindingScope.bindingNames());
+				conditionInput = retained;
+			}
+			if (evaluateFiniteCondition(filter.condition, conditionInput)) {
 				filteredRows.add(row);
 			}
 		}

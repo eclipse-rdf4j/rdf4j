@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
@@ -27,6 +28,7 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
 /**
@@ -69,6 +71,7 @@ public class DisjunctiveConstraintOptimizer implements QueryOptimizer {
 					return;
 				}
 
+				ConditionBindingScope bindingScope = FilterBindingScope.resolve(filter);
 				QueryModelNode parent = filter.getParentNode();
 				boolean scopeChange = filter.isVariableScopeChange();
 				scopeChange |= TupleExprs.isVariableScopeChange(node);
@@ -86,6 +89,8 @@ public class DisjunctiveConstraintOptimizer implements QueryOptimizer {
 				Union union = new Union(leftFilter, rightFilter);
 				union.setVariableScopeChange(scopeChange);
 				node.replaceWith(union);
+				FilterBindingScope.preserve(leftFilter, bindingScope);
+				FilterBindingScope.preserve(rightFilter, bindingScope);
 
 				if (parent != null) {
 					parent.visit(this);

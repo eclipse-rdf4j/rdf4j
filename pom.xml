@@ -346,6 +346,71 @@
 			</properties>
 		</profile>
 		<profile>
+			<id>skipSlowTests</id>
+			<activation>
+				<jdk>[25,)</jdk>
+			</activation>
+			<properties>
+				<nativerdf.surefire.excludedGroups>slow</nativerdf.surefire.excludedGroups>
+				<nativerdf.surefire.excludeTags>slow</nativerdf.surefire.excludeTags>
+			</properties>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-surefire-plugin</artifactId>
+						<configuration>
+							<excludedGroups>slow</excludedGroups>
+							<properties>
+								<excludeTags>slow</excludeTags>
+							</properties>
+						</configuration>
+					</plugin>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-failsafe-plugin</artifactId>
+						<configuration>
+							<excludedGroups>slow</excludedGroups>
+							<properties>
+								<excludeTags>slow</excludeTags>
+							</properties>
+						</configuration>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+		<profile>
+			<id>slowTestsOnly</id>
+			<properties>
+				<nativerdf.surefire.groups>slow</nativerdf.surefire.groups>
+				<nativerdf.surefire.includeTags>slow</nativerdf.surefire.includeTags>
+			</properties>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-surefire-plugin</artifactId>
+						<configuration>
+							<groups>slow</groups>
+							<properties>
+								<includeTags>slow</includeTags>
+							</properties>
+						</configuration>
+					</plugin>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-failsafe-plugin</artifactId>
+						<configuration>
+							<groups>slow</groups>
+							<properties>
+								<includeTags>slow</includeTags>
+							</properties>
+						</configuration>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+		<profile>
 			<id>lmdb-sync-validation</id>
 			<build>
 				<plugins>
