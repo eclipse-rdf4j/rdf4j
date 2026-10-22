@@ -139,7 +139,7 @@ class ServerValidator {
 	}
 
 	private boolean isWithinLocalPrefix(String server, String prefix) {
-		if (!hasScheme(prefix, "file")) {
+		if (!hasLocalFileAuthority(server) || !hasLocalFileAuthority(prefix)) {
 			return false;
 		}
 		try {
@@ -169,6 +169,17 @@ class ServerValidator {
 	static boolean hasScheme(String value, String scheme) {
 		try {
 			return scheme.equalsIgnoreCase(new URI(value).getScheme());
+		} catch (URISyntaxException e) {
+			return false;
+		}
+	}
+
+	static boolean hasLocalFileAuthority(String value) {
+		try {
+			URI uri = new URI(value);
+			String authority = uri.getRawAuthority();
+			return "file".equalsIgnoreCase(uri.getScheme())
+					&& (authority == null || authority.isEmpty() || "localhost".equalsIgnoreCase(authority));
 		} catch (URISyntaxException e) {
 			return false;
 		}

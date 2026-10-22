@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.workbench.proxy;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -364,6 +365,45 @@ class ProxyUtilityCoverageTest {
 				Map.of("accepted-server-prefixes", approved.toUri().toString())));
 
 		assertThat(validator.isValidServer(link.toUri().toString())).isFalse();
+	}
+
+	@Test
+	void workbenchManagerOpensCanonicalTargetOfAllowedLocalAlias(@TempDir Path tempDir) throws Exception {
+		Path approved = Files.createDirectory(tempDir.resolve("approved"));
+		Path inside = Files.createDirectory(approved.resolve("inside"));
+		Path alias = approved.resolve("alias");
+		try {
+			Files.createSymbolicLink(alias, inside);
+		} catch (IOException | UnsupportedOperationException | SecurityException e) {
+			assumeTrue(false, "Symbolic links are unavailable: " + e.getMessage());
+		}
+		String server = alias.toUri().toString();
+		ServerValidator validator = new ServerValidator(new TestServletConfig(
+				"validator", new MockServletContext(),
+				Map.of("accepted-server-prefixes", approved.toUri().toString())));
+
+		assertThat(validator.isValidServer(server)).isTrue();
+		assertThat(((LocalRepositoryManager) new WorkbenchServlet().createRepositoryManager(server)).getBaseDir())
+				.isEqualTo(inside.toFile().getCanonicalFile());
+	}
+
+	@Test
+	void serverValidatorRejectsNonlocalFileAuthority(@TempDir Path tempDir) throws Exception {
+		Path approved = Files.createDirectory(tempDir.resolve("approved"));
+		Path inside = Files.createDirectory(approved.resolve("inside"));
+		String remotePrefix = approved.toUri().toString().replaceFirst("^file:/+", "file://remote.example/");
+		String remoteServer = inside.toUri().toString().replaceFirst("^file:/+", "file://remote.example/");
+		ServerValidator validator = new ServerValidator(new TestServletConfig(
+				"validator", new MockServletContext(), Map.of("accepted-server-prefixes", remotePrefix)));
+		String localPrefix = approved.toUri().toString().replaceFirst("^file:/+", "file://localhost/");
+		String localServer = inside.toUri().toString().replaceFirst("^file:/+", "file://localhost/");
+		ServerValidator localValidator = new ServerValidator(new TestServletConfig(
+				"validator", new MockServletContext(), Map.of("accepted-server-prefixes", localPrefix)));
+
+		assertThat(validator.isValidServer(remoteServer)).isFalse();
+		assertThatThrownBy(() -> new WorkbenchServlet().createRepositoryManager(remoteServer))
+				.isInstanceOf(IOException.class);
+		assertThat(localValidator.isValidServer(localServer)).isTrue();
 	}
 
 	@Test

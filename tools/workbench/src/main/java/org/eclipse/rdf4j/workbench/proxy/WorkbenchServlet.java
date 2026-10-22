@@ -669,7 +669,10 @@ public class WorkbenchServlet extends AbstractServlet {
 	protected RepositoryManager createRepositoryManager(final String param) throws IOException, RepositoryException {
 		RepositoryManager manager;
 		if (ServerValidator.hasScheme(param, "file")) {
-			manager = new LocalRepositoryManager(asLocalFile(new URL(param)));
+			if (!ServerValidator.hasLocalFileAuthority(param)) {
+				throw new IOException("File URL authority must be local");
+			}
+			manager = new LocalRepositoryManager(asLocalFile(new URL(param)).getCanonicalFile());
 		} else {
 			manager = new RemoteRepositoryManager(param);
 		}

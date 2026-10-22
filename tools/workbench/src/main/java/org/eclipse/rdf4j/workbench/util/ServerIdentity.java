@@ -29,9 +29,9 @@ public final class ServerIdentity {
 
 	public static String of(String server) throws IOException {
 		String canonical;
-		if (server.startsWith("file:")) {
+		URL url = new URL(server);
+		if ("file".equalsIgnoreCase(url.getProtocol())) {
 			// Match WorkbenchServlet's local-file interpretation, then resolve directory aliases before hashing.
-			URL url = new URL(server);
 			canonical = new File(URLDecoder.decode(url.getFile(), StandardCharsets.UTF_8))
 					.getCanonicalFile()
 					.toURI()
@@ -39,7 +39,6 @@ public final class ServerIdentity {
 		} else {
 			// RemoteRepositoryManager uses URL, which also accepts configured underscore and Unicode hostnames.
 			// URI.getHost() would reject those configurations before the existing manager can use them.
-			URL url = new URL(server);
 			String scheme = url.getProtocol().toLowerCase(Locale.ROOT);
 			int port = url.getPort();
 			boolean defaultPort = port == url.getDefaultPort();

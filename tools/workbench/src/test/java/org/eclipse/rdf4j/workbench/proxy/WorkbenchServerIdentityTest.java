@@ -51,6 +51,7 @@ class WorkbenchServerIdentityTest {
 	void localManagersUseTheirCanonicalDirectory(@TempDir File directory) throws Exception {
 		String expected = identity(directory.toURI().toString());
 		assertThat(expected).isNotBlank();
+		assertThat(expected).isEqualTo(identity(directory.toURI().toString().replaceFirst("^file:", "FILE:")));
 		assertThat(expected).isEqualTo(identity(Path.of(directory.toString(), ".").toUri().toString()));
 		assertThat(expected).isNotEqualTo(identity(new File(directory, "other").toURI().toString()));
 	}
