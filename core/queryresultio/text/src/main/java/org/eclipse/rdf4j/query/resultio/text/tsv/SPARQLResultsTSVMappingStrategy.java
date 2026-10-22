@@ -72,7 +72,7 @@ public class SPARQLResultsTSVMappingStrategy extends SPARQLResultsXSVMappingStra
 			v = valueFactory.createBNode(valueString.substring(2));
 		} else if (valueString.startsWith("<") && valueString.endsWith(">")) {
 			try {
-				v = valueFactory.createIRI(valueString.substring(1, valueString.length() - 1));
+				v = NTriplesUtil.parseURI(valueString, valueFactory);
 			} catch (IllegalArgumentException e) {
 				v = valueFactory.createLiteral(valueString);
 			}
@@ -125,8 +125,7 @@ public class SPARQLResultsTSVMappingStrategy extends SPARQLResultsXSVMappingStra
 				} else if (startDtIdx != -1) {
 					// Get datatype
 					String datatype = literal.substring(startDtIdx + 2);
-					datatype = datatype.substring(1, datatype.length() - 1);
-					IRI dtURI = valueFactory.createIRI(datatype);
+					IRI dtURI = NTriplesUtil.parseURI(datatype, valueFactory);
 					return valueFactory.createLiteral(label, dtURI);
 				} else {
 					return valueFactory.createLiteral(label);
