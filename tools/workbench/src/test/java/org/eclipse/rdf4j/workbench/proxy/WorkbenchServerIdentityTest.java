@@ -12,9 +12,12 @@
 package org.eclipse.rdf4j.workbench.proxy;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 import org.eclipse.rdf4j.repository.manager.RemoteRepositoryManager;
@@ -54,6 +57,22 @@ class WorkbenchServerIdentityTest {
 		assertThat(expected).isEqualTo(identity(directory.toURI().toString().replaceFirst("^file:", "FILE:")));
 		assertThat(expected).isEqualTo(identity(Path.of(directory.toString(), ".").toUri().toString()));
 		assertThat(expected).isNotEqualTo(identity(new File(directory, "other").toURI().toString()));
+	}
+
+	@Test
+	void localIdentityDistinguishesLiteralPlusFromEncodedSpace(@TempDir Path tempDir) throws Exception {
+		Path plus = Files.createDirectory(tempDir.resolve("repository+data"));
+		Path space = Files.createDirectory(tempDir.resolve("repository data"));
+		String plusUrl = plus.toUri().toString();
+
+		assertThat(identity(plusUrl)).isEqualTo(identity(plusUrl.replace("+", "%2B")));
+		assertThat(identity(plusUrl)).isNotEqualTo(identity(space.toUri().toString()));
+	}
+
+	@Test
+	void localIdentityRejectsNonlocalFileAuthority(@TempDir Path tempDir) {
+		String remote = tempDir.toUri().toString().replaceFirst("^file:/+", "file://remote.example/");
+		assertThatThrownBy(() -> identity(remote)).hasRootCauseInstanceOf(IOException.class);
 	}
 
 	@Test

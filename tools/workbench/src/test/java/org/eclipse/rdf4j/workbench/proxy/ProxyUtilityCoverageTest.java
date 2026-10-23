@@ -351,6 +351,34 @@ class ProxyUtilityCoverageTest {
 	}
 
 	@Test
+	void localFilePrefixOpensLiteralPlusDirectoryAndAcceptsEquivalentEncoding(@TempDir Path tempDir)
+			throws Exception {
+		Path plusRoot = Files.createDirectory(tempDir.resolve("approved+dir"));
+		Path plusInside = Files.createDirectory(plusRoot.resolve("inside"));
+		Path spaceRoot = Files.createDirectory(tempDir.resolve("approved dir"));
+		Files.createDirectory(spaceRoot.resolve("inside"));
+		String prefix = plusRoot.toUri().toString();
+		String server = plusInside.toUri().toString();
+		ServerValidator validator = new ServerValidator(new TestServletConfig(
+				"validator", new MockServletContext(), Map.of("accepted-server-prefixes", prefix)));
+
+		assertThat(validator.isValidServer(server)).isTrue();
+		assertThat(((LocalRepositoryManager) new WorkbenchServlet().createRepositoryManager(server)).getBaseDir())
+				.isEqualTo(plusInside.toFile().getCanonicalFile());
+		assertThat(validator.isValidServer(server.replace("+", "%2B"))).isTrue();
+		String localhostServer = server.replaceFirst("^file:/+", "file://localhost/");
+		assertThat(validator.isValidServer(localhostServer)).isTrue();
+		assertThat(((LocalRepositoryManager) new WorkbenchServlet().createRepositoryManager(localhostServer))
+				.getBaseDir()).isEqualTo(plusInside.toFile().getCanonicalFile());
+		assertThat(validator.isValidServer(spaceRoot.resolve("inside").toUri().toString())).isFalse();
+		assertThat(validator.isValidServer(server + "?other=true")).isFalse();
+		assertThat(validator.isValidServer(server + "#other")).isFalse();
+		assertThat(validator.isValidServer(prefix + "inside%2F..%2Foutside")).isFalse();
+		assertThatThrownBy(() -> new WorkbenchServlet().createRepositoryManager("file:////remote.example/share"))
+				.isInstanceOf(IOException.class);
+	}
+
+	@Test
 	void serverValidatorRejectsSymlinkOutsideCanonicalPrefix(@TempDir Path tempDir) throws Exception {
 		Path approved = Files.createDirectory(tempDir.resolve("approved"));
 		Path outside = Files.createDirectory(tempDir.resolve("outside"));
