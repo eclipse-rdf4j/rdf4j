@@ -269,13 +269,14 @@ final class QueryResultSpool implements AutoCloseable {
 		}
 		try {
 			Files.deleteIfExists(path);
-			budgetedOutput.release();
 		} catch (IOException e) {
 			if (failure == null) {
 				failure = e;
 			} else {
 				failure.addSuppressed(e);
 			}
+		} finally {
+			budgetedOutput.release();
 		}
 		if (failure != null) {
 			throw failure;

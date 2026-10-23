@@ -83,6 +83,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import jakarta.servlet.http.HttpServletResponse;
 
@@ -139,6 +140,50 @@ class QueryEvaluatorTest {
 				System.clearProperty(key);
 			} else {
 				System.setProperty(key, previous);
+			}
+		}
+	}
+
+	@Test
+	void failedSpoolDeletionStillReleasesTheAggregateDiskReservation(@TempDir Path tempDirectory) throws Exception {
+		String budgetKey = "rdf4j.workbench.query.spool.maxBytes";
+		String previousBudget = System.getProperty(budgetKey);
+		String previousTemp = System.getProperty("java.io.tmpdir");
+		var iri = SimpleValueFactory.getInstance().createIRI("urn:test:aaaaaaaaaa");
+		try {
+			System.setProperty(budgetKey, "80");
+			System.setProperty("java.io.tmpdir", tempDirectory.toString());
+			QueryResultSpool first = new QueryResultSpool();
+			first.writeRow(iri);
+			first.finishWriting();
+			Path firstPath;
+			try (var files = Files.list(tempDirectory)) {
+				firstPath = files.findFirst().orElseThrow();
+			}
+			Files.delete(firstPath);
+			Files.createDirectory(firstPath);
+			Path blocker = Files.writeString(firstPath.resolve("keep"), "prevent deletion");
+			try {
+				assertThatThrownBy(first::close).isInstanceOf(IOException.class);
+			} finally {
+				Files.deleteIfExists(blocker);
+				Files.deleteIfExists(firstPath);
+			}
+			try (QueryResultSpool later = new QueryResultSpool()) {
+				later.writeRow(iri);
+				later.finishWriting();
+				assertThat(later.readRow(1)).containsExactly(iri);
+			}
+		} finally {
+			if (previousBudget == null) {
+				System.clearProperty(budgetKey);
+			} else {
+				System.setProperty(budgetKey, previousBudget);
+			}
+			if (previousTemp == null) {
+				System.clearProperty("java.io.tmpdir");
+			} else {
+				System.setProperty("java.io.tmpdir", previousTemp);
 			}
 		}
 	}
