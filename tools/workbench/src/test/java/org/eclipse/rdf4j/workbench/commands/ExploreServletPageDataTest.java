@@ -14,29 +14,40 @@
 package org.eclipse.rdf4j.workbench.commands;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
 import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.impl.BlankNodeReferences;
+import org.eclipse.rdf4j.query.impl.RepositoryBNode;
 import org.eclipse.rdf4j.query.impl.TupleQueryResultBuilder;
 import org.eclipse.rdf4j.query.resultio.QueryResultIO;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.base.RepositoryConnectionWrapper;
+import org.eclipse.rdf4j.repository.base.RepositoryWrapper;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
@@ -93,6 +104,224 @@ class ExploreServletPageDataTest {
 		assertThat(error.path("status").asInt()).isEqualTo(400);
 		assertThat(error.path("message").asText()).isEqualTo("Malformed value: missing:resource");
 		assertThat(response.getContentType()).isEqualTo(WorkbenchPageProtocol.CONTENT_TYPE);
+	}
+
+	@Test
+	void unlimitedPageDeliversFirstLargeRowBeforeScanningTheNext() throws Exception {
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		ValueFactory factory = repository.getValueFactory();
+		IRI subject = factory.createIRI("urn:test:subject");
+		IRI predicate = factory.createIRI("urn:test:predicate");
+		Statement first = factory.createStatement(subject, predicate,
+				factory.createLiteral("first-marker" + "x".repeat(300_000)));
+		Statement second = factory.createStatement(subject, predicate, factory.createLiteral("second-marker"));
+		servlet.destroy();
+		servlet = new ExploreServlet() {
+			@Override
+			protected void processResource(RepositoryConnection connection, Value value, ResultCursor cursor)
+					throws RDFHandlerException {
+				cursor.advance(first);
+				assertThat(new String(response.getContentAsByteArray(), StandardCharsets.UTF_8))
+						.as("the first row reaches the response before the second statement is consumed")
+						.contains("first-marker");
+				cursor.advance(second);
+			}
+		};
+		servlet.setRepository(repository);
+		servlet.setRepositoryManager(mock(RepositoryManager.class));
+		servlet.init(TestServletConfig.withParams("explore", "cookie-max-age", "300"));
+		MockHttpServletRequest request = pageRequest("<urn:test:subject>");
+		request.addParameter("limit_explore", "0");
+
+		servlet.service(request, response);
+
+		List<JsonNode> records = records(response);
+		assertThat(rows(records)).extracting(row -> row.get(2).path("value").asText())
+				.containsExactly(first.getObject().stringValue(), "second-marker");
+		assertThat(records.getLast().path("metadata").path("total-result-count").asInt()).isEqualTo(2);
+		assertThat(response.getCookie("total_result_count").getValue()).isEqualTo("0");
+	}
+
+	@Test
+	void boundedPagePreservesOnlyProvenBlankNodeOriginsAcrossSpoolReplay() throws Exception {
+		ValueFactory factory = repository.getValueFactory();
+		IRI predicate = factory.createIRI("urn:test:predicate");
+		BNode trusted = RepositoryBNode.fromNegotiatedResult("same-wire", "repository-raw", true);
+		BNode plain = SimpleValueFactory.getInstance().createBNode("same-wire");
+		Statement trustedRow = factory.createStatement(trusted, predicate, factory.createLiteral("trusted"));
+		Statement plainRow = factory.createStatement(plain, predicate, factory.createLiteral("plain"));
+		servlet.destroy();
+		servlet = new ExploreServlet() {
+			@Override
+			protected void processResource(RepositoryConnection connection, Value value, ResultCursor cursor)
+					throws RDFHandlerException {
+				cursor.advance(trustedRow);
+				cursor.advance(plainRow);
+			}
+		};
+		servlet.setRepository(repository);
+		servlet.setRepositoryManager(mock(RepositoryManager.class));
+		servlet.init(TestServletConfig.withParams("explore", "cookie-max-age", "300"));
+		MockHttpServletRequest request = pageRequest("<urn:test:resource>");
+		request.addParameter("limit_explore", "2");
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		servlet.service(request, response);
+
+		List<JsonNode> rows = rows(records(response));
+		assertThat(rows).hasSize(2);
+		assertThat(rows.get(0).get(0).path("value").asText()).isEqualTo("repository-raw");
+		assertThat(rows.get(0).get(0).path("reference").asBoolean()).isTrue();
+		assertThat(rows.get(1).get(0).path("value").asText()).isEqualTo("same-wire");
+		assertThat(rows.get(1).get(0).path("reference").asBoolean()).isFalse();
+	}
+
+	@Test
+	void unlimitedPagePreservesLocallyStoredBlankNodeReference() throws Exception {
+		ValueFactory factory = repository.getValueFactory();
+		BNode resource = factory.createBNode("local-stored-node");
+		try (RepositoryConnection connection = repository.getConnection()) {
+			connection.add(resource, factory.createIRI("urn:test:predicate"), factory.createLiteral("value"));
+		}
+		Repository store = repository;
+		AtomicInteger opened = new AtomicInteger();
+		servlet.setRepository(new RepositoryWrapper(store) {
+			@Override
+			public RepositoryConnection getConnection() {
+				int index = opened.getAndIncrement();
+				return new RepositoryConnectionWrapper(this, store.getConnection()) {
+					@Override
+					public ValueFactory getValueFactory() {
+						// The response connection cannot prove scan-local blank-node identity.
+						return index == 0 ? SimpleValueFactory.getInstance() : factory;
+					}
+				};
+			}
+		});
+		MockHttpServletRequest request = pageRequest(BlankNodeReferences.toReference(resource.getID()));
+		request.addParameter("limit_explore", "0");
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		servlet.service(request, response);
+
+		assertThat(rows(records(response))).singleElement().satisfies(row -> {
+			assertThat(row.get(0).path("value").asText()).isEqualTo(resource.getID());
+			assertThat(row.get(0).path("reference").asBoolean()).isTrue();
+		});
+	}
+
+	@Test
+	void unlimitedPagePreservesNegotiatedRepositoryBlankNodeReference() throws Exception {
+		ValueFactory factory = repository.getValueFactory();
+		BNode trusted = RepositoryBNode.fromNegotiatedResult("remote-wire", "remote-raw", true);
+		Statement row = factory.createStatement(trusted, factory.createIRI("urn:test:predicate"),
+				factory.createLiteral("value"));
+		servlet.destroy();
+		servlet = new ExploreServlet() {
+			@Override
+			protected void processResource(RepositoryConnection connection, Value value, ResultCursor cursor)
+					throws RDFHandlerException {
+				cursor.advance(row);
+			}
+		};
+		servlet.setRepository(repository);
+		servlet.setRepositoryManager(mock(RepositoryManager.class));
+		servlet.init(TestServletConfig.withParams("explore", "cookie-max-age", "300"));
+		MockHttpServletRequest request = pageRequest("<urn:test:resource>");
+		request.addParameter("limit_explore", "0");
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		servlet.service(request, response);
+
+		assertThat(rows(records(response))).singleElement().satisfies(result -> {
+			assertThat(result.get(0).path("value").asText()).isEqualTo("remote-raw");
+			assertThat(result.get(0).path("reference").asBoolean()).isTrue();
+		});
+	}
+
+	@Test
+	void boundedPageRejectsAnOversizedWindowAndReleasesItsSpoolBudget() throws Exception {
+		String property = "rdf4j.workbench.query.spool.maxBytes";
+		String previous = System.getProperty(property);
+		ValueFactory factory = repository.getValueFactory();
+		IRI subject = factory.createIRI("urn:test:subject");
+		IRI predicate = factory.createIRI("urn:test:predicate");
+		try {
+			System.setProperty(property, "1024");
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.add(subject, predicate, factory.createLiteral("x".repeat(2048)));
+			}
+			MockHttpServletRequest large = pageRequest("<urn:test:subject>");
+			large.addParameter("limit_explore", "1000000");
+			assertThatThrownBy(() -> servlet.service(large, new MockHttpServletResponse()))
+					.hasStackTraceContaining("Workbench query spool disk budget exceeded");
+
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.add(factory.createIRI("urn:test:small"), predicate, factory.createLiteral("small"));
+			}
+			MockHttpServletResponse response = new MockHttpServletResponse();
+			servlet.service(pageRequest("<urn:test:small>"), response);
+			assertThat(rows(records(response))).hasSize(1);
+		} finally {
+			if (previous == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, previous);
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 0, 2 })
+	void timedOutPageCannotWriteAfterItsResponseEnds(int limit) throws Exception {
+		ValueFactory factory = repository.getValueFactory();
+		IRI subject = factory.createIRI("urn:test:subject");
+		IRI predicate = factory.createIRI("urn:test:predicate");
+		Statement first = factory.createStatement(subject, predicate, factory.createLiteral("first"));
+		Statement late = factory.createStatement(subject, predicate, factory.createLiteral("late-marker"));
+		CountDownLatch release = new CountDownLatch(1);
+		CountDownLatch finished = new CountDownLatch(1);
+		AtomicReference<Throwable> lateFailure = new AtomicReference<>();
+		servlet.destroy();
+		servlet = new ExploreServlet(500) {
+			@Override
+			protected void processResource(RepositoryConnection connection, Value value, ResultCursor cursor)
+					throws RDFHandlerException {
+				cursor.advance(first);
+				while (true) {
+					try {
+						release.await();
+						break;
+					} catch (InterruptedException ignored) {
+						// Emulate a remote result source that ignores cancellation until it unblocks.
+					}
+				}
+				try {
+					cursor.advance(late);
+				} catch (RDFHandlerException e) {
+					lateFailure.set(e);
+				} finally {
+					finished.countDown();
+				}
+			}
+		};
+		servlet.setRepository(repository);
+		servlet.setRepositoryManager(mock(RepositoryManager.class));
+		servlet.init(TestServletConfig.withParams("explore", "cookie-max-age", "300"));
+		MockHttpServletRequest request = pageRequest("<urn:test:subject>");
+		request.addParameter("limit_explore", Integer.toString(limit));
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		try {
+			servlet.service(request, response);
+			assertThat(records(response).getLast().path("status").asInt()).isEqualTo(504);
+		} finally {
+			release.countDown();
+		}
+		assertThat(finished.await(5, TimeUnit.SECONDS)).isTrue();
+		assertThat(lateFailure.get()).hasStackTraceContaining(
+				limit == 0 ? "Exploring was abandoned" : "Workbench query spool has been closed");
+		assertThat(new String(response.getContentAsByteArray(), StandardCharsets.UTF_8))
+				.doesNotContain("late-marker");
 	}
 
 	@Test
@@ -182,7 +411,12 @@ class ExploreServletPageDataTest {
 
 		List<JsonNode> records = records(response);
 		if (pageReachesTheEnd) {
-			assertResultTotal(records, 300);
+			if (limit == 0) {
+				assertUnlimitedResultTotal(records, 300);
+				assertThat(response.getCookie("total_result_count").getValue()).isEqualTo("0");
+			} else {
+				assertResultTotal(records, 300);
+			}
 		} else {
 			assertMore(records);
 			assertThat(countedTotal("<urn:test:subject>")).isEqualTo(300);
@@ -324,6 +558,17 @@ class ExploreServletPageDataTest {
 		assertThat(terminalTotal.asInt()).isEqualTo(expectedTotal);
 	}
 
+	private static void assertUnlimitedResultTotal(List<JsonNode> records, int expectedTotal) {
+		List<String> types = records.stream().map(record -> record.path("type").asText()).toList();
+		assertThat(types).containsOnlyOnce("head", "view", "vars", "links", "metadata", "end");
+		assertThat(types.indexOf("metadata")).isLessThan(types.indexOf("rows"));
+		assertThat(records.stream().filter(record -> "metadata".equals(record.path("type").asText())).toList())
+				.singleElement()
+				.satisfies(metadata -> assertThat(metadata.path("values").has("total-result-count")).isFalse());
+		assertThat(records.getLast().path("metadata").path("total-result-count").asInt())
+				.isEqualTo(expectedTotal);
+	}
+
 	private static List<JsonNode> rows(List<JsonNode> records) {
 		List<JsonNode> rows = new ArrayList<>();
 		for (JsonNode record : records) {
@@ -448,6 +693,23 @@ class ExploreServletPageDataTest {
 		assertThat(rows(records)).isEmpty();
 	}
 
+	@ParameterizedTest
+	@ValueSource(strings = { "0", "-1" })
+	void unlimitedEmptyResourcePublishesAnExactTerminalZero(String limit) throws Exception {
+		MockHttpServletRequest request = pageRequest(null);
+		request.addParameter("limit_explore", limit);
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		servlet.service(request, response);
+
+		List<JsonNode> records = records(response);
+		assertThat(records).extracting(record -> record.path("type").asText())
+				.containsExactly("head", "view", "vars", "links", "end");
+		assertThat(rows(records)).isEmpty();
+		assertThat(records.getLast().path("metadata").path("total-result-count").asInt()).isZero();
+		assertThat(response.getCookie("total_result_count").getValue()).isEqualTo("0");
+	}
+
 	@Test
 	void explicitSparqlXmlKeepsTheLegacyErrorFallback() throws Exception {
 		MockHttpServletRequest request = pageRequest("missing:resource");
@@ -489,6 +751,28 @@ class ExploreServletPageDataTest {
 			assertThat(result.getBindingNames()).containsExactly("subject", "predicate", "object", "context");
 			assertThat(result.next().getValue("subject").stringValue()).isEqualTo("urn:test:subject");
 			assertThat(result.hasNext()).isFalse();
+		}
+	}
+
+	@Test
+	void explicitSparqlXmlUnlimitedPageKeepsRowsAndFinalCount() throws Exception {
+		addSubjectMatches(2);
+		MockHttpServletRequest request = pageRequest("<urn:test:subject>");
+		request.addParameter("Accept", "application/sparql-results+xml");
+		request.addParameter("limit_explore", "0");
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		servlet.service(request, response);
+
+		assertThat(response.getContentAsString())
+				.contains("<workbench:total-result-count>2</workbench:total-result-count>");
+		TupleQueryResultBuilder resultBuilder = new TupleQueryResultBuilder();
+		QueryResultIO.parseTuple(new ByteArrayInputStream(response.getContentAsByteArray()),
+				TupleQueryResultFormat.SPARQL, resultBuilder, repository.getValueFactory());
+		try (TupleQueryResult result = resultBuilder.getQueryResult()) {
+			assertThat(result.getBindingNames()).containsExactly("subject", "predicate", "object", "context");
+			assertThat(result.stream().map(row -> row.getValue("object").stringValue()).toList())
+					.containsExactlyElementsOf(matchingValues());
 		}
 	}
 
