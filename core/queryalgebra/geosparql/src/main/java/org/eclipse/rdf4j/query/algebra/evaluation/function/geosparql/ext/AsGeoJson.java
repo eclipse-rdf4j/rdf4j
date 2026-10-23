@@ -41,7 +41,7 @@ public class AsGeoJson extends GeoExtensionFunction {
 
 	@Override
 	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
-		arity(1, args.length);
+		arity(args, 1);
 		GeoSupport.Geo geo = GeoSupport.parse(this, args[0]);
 		Geometry geometry = GeoSupport.CRS84.equals(geo.crs()) ? geo.geometry()
 				: GeoSupport.transform(this, geo, GeoSupport.CRS84);

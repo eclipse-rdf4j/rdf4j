@@ -83,6 +83,16 @@ class TupleFunctionMagicPropertyRegressionTest {
 	}
 
 	@Test
+	void graphClauseEvaluatesTheCallOncePerNamedGraph() {
+		// GRAPH ?g iterates the named graphs of the store (none here) and binds ?g for each; the call itself does not
+		// read data, so a constant graph never restricts its results
+		assertEquals(List.of(),
+				query("SELECT ?g ?x WHERE { GRAPH ?g { (1 2) arrf:generateSeries ?x } }", false, "g", "x"));
+		assertEquals(List.of("1", "2"), query(
+				"SELECT ?x WHERE { GRAPH <urn:absent> { (1 2) arrf:generateSeries ?x } } ORDER BY ?x", false, "x"));
+	}
+
+	@Test
 	void ordersLongerDependencyChains() {
 		assertEquals(List.of("1,1,1", "1,1,2", "1,2,2", "2,2,2"), query("""
 				SELECT ?x ?y ?z WHERE {

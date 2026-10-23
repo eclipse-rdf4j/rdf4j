@@ -65,19 +65,7 @@ public class Metaphone extends TextFunction {
 		// handle prefixes
 		switch (input[0]) {
 		case 'K':
-			if (input[1] == 'N') {
-				local.append(input, 1, input.length - 1);
-			} else {
-				local.append(input);
-			}
-			break;
 		case 'G':
-			if (input[1] == 'N') {
-				local.append(input, 1, input.length - 1);
-			} else {
-				local.append(input);
-			}
-			break;
 		case 'P':
 			if (input[1] == 'N') {
 				local.append(input, 1, input.length - 1);

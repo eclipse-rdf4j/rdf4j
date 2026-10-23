@@ -32,7 +32,7 @@ public class MakePoint extends GeoExtensionFunction {
 
 	@Override
 	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
-		arity(2, 3, args.length);
+		arity(args, 2, 3);
 		double x = FunctionArgs.toDouble(this, args[0]);
 		double y = FunctionArgs.toDouble(this, args[1]);
 		String crs = args.length == 3 ? GeoSupport.crs(this, args[2]) : GeoSupport.CRS84;

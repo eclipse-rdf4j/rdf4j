@@ -47,19 +47,23 @@ public class QuantileCollector extends ExtensionCollector {
 
 	@Override
 	public void addTuple(List<Value> tuple) {
+		Literal p = NumericValues.asNumeric(tuple.get(1));
+		BigDecimal f;
+		try {
+			f = FunctionArgs.numericKind(p) == FunctionArgs.NumericKind.INTEGER ? new BigDecimal(p.integerValue())
+					: new BigDecimal(p.getLabel());
+		} catch (NumberFormatException e) {
+			throw new ValueExprEvaluationException("percentile fraction is not a valid number: " + p);
+		}
+		if (f.signum() < 0 || f.compareTo(BigDecimal.ONE) > 0) {
+			throw new ValueExprEvaluationException("percentile fraction must be between 0 and 1: " + p);
+		}
 		if (fraction == null) {
-			Literal p = NumericValues.asNumeric(tuple.get(1));
-			BigDecimal f;
-			try {
-				f = FunctionArgs.numericKind(p) == FunctionArgs.NumericKind.INTEGER ? new BigDecimal(p.integerValue())
-						: new BigDecimal(p.getLabel());
-			} catch (NumberFormatException e) {
-				throw new ValueExprEvaluationException("percentile fraction is not a valid number: " + p);
-			}
-			if (f.signum() < 0 || f.compareTo(BigDecimal.ONE) > 0) {
-				throw new ValueExprEvaluationException("percentile fraction must be between 0 and 1: " + p);
-			}
 			fraction = f;
+		} else if (fraction.compareTo(f) != 0) {
+			throw new ValueExprEvaluationException(
+					"percentile fraction must be the same for every solution of a group, got " + fraction + " and "
+							+ p);
 		}
 		values.add(tuple.get(0));
 	}

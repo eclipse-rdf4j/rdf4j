@@ -33,7 +33,7 @@ public class ClosestPoint extends GeoExtensionFunction {
 
 	@Override
 	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
-		arity(2, args.length);
+		arity(args, 2);
 		GeoSupport.Geo a = GeoSupport.parse(this, args[0]);
 		GeoSupport.Geo b = GeoSupport.parse(this, args[1]);
 		if (a.geometry().isEmpty() || b.geometry().isEmpty()) {

@@ -32,7 +32,7 @@ public class Transform extends GeoExtensionFunction {
 
 	@Override
 	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
-		arity(2, args.length);
+		arity(args, 2);
 		GeoSupport.Geo geo = GeoSupport.parse(this, args[0]);
 		String target = GeoSupport.crs(this, args[1]);
 		return GeoSupport.toLiteral(valueFactory, GeoSupport.transform(this, geo, target), target);

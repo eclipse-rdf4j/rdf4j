@@ -39,7 +39,7 @@ The Java constants live in `org.eclipse.rdf4j.model.vocabulary` (`MATHF`, `STRF`
 
 ## Date and time functions
 
-`dtf:dateTrunc(unit, dt)`, `dateBin(stride, dt [, origin])`, `dateDiff(unit, start, end)`, `dateAdd(dt, duration)`, `dayOfWeek` (ISO, Monday = 1), `dayOfYear`, `week` (ISO), `quarter`, `epoch` (seconds as `xsd:decimal`), `epochMillis`, `fromUnixtime(seconds)`, `fromEpochMillis(millis)`, `dateFormat(dt, pattern [, locale])`, `parseDate(s, pattern [, locale])`, `makeDate(y, m, d)`, `age(later, earlier)` (an `xsd:duration` with calendar components) and `atTimeZone(dt, zone)`. Inputs are `xsd:dateTime`, `xsd:dateTimeStamp`, `xsd:date` or `xsd:time`; results keep the datatype and timezone of their input. Durations are `xsd:duration` literals (`"P1M"`, `"PT15M"`); patterns are `java.time` patterns.
+`dtf:dateTrunc(unit, dt)`, `dateBin(stride, dt [, origin])`, `dateDiff(unit, start, end)`, `dateAdd(dt, duration)`, `dayOfWeek` (ISO, Monday = 1), `dayOfYear`, `week` (ISO), `quarter`, `epoch` (seconds as `xsd:decimal`), `epochMillis`, `fromUnixtime(seconds)`, `fromEpochMillis(millis)`, `dateFormat(dt, pattern [, locale])`, `parseDate(s, pattern [, locale])`, `makeDate(y, m, d)`, `age(later, earlier)` (an `xsd:duration` with calendar components) and `atTimeZone(dt, zone)`. Inputs are `xsd:dateTime`, `xsd:dateTimeStamp`, `xsd:date` or `xsd:time`; results keep the datatype and timezone of their input, except `atTimeZone`, which returns an `xsd:dateTime` (or `xsd:time` for a time input) carrying the offset of the requested zone. Durations are `xsd:duration` literals (`"P1M"`, `"PT15M"`); patterns are `java.time` patterns.
 
 ## Aggregates
 
@@ -50,7 +50,7 @@ Used like any aggregate, with optional `DISTINCT`:
            (agg:argMax(?employee, ?salary) AS ?topEarner)
     WHERE { ?employee :dept ?dept ; :salary ?salary } GROUP BY ?dept
 
-Unary: `agg:median`, `mode`, `countIf(condition)`, `boolAnd`, `boolOr`, `first`, `last`, `approxCountDistinct` (HyperLogLog), `histogram` (an `rdf:JSON` array of `{"value", "count"}` objects) and `arrayAgg` (an `rdf:JSON` array). Two-argument: `percentileCont(x, p)`, `percentileDisc(x, p)`, `approxQuantile(x, p)` (KLL sketch), `corr(x, y)`, `covarPop(x, y)`, `covarSamp(x, y)`, `argMin(value, key)` and `argMax(value, key)`. Medians and percentiles are exact for integer and decimal input; empty groups leave the aggregate unbound (`countIf` yields 0).
+Unary: `agg:median`, `mode`, `countIf(condition)`, `boolAnd`, `boolOr`, `first`, `last`, `approxCountDistinct` (HyperLogLog), `histogram` (an `rdf:JSON` array of `{"value", "count"}` objects) and `arrayAgg` (an `rdf:JSON` array). Two-argument: `percentileCont(x, p)`, `percentileDisc(x, p)`, `approxQuantile(x, p)` (KLL sketch), `corr(x, y)`, `covarPop(x, y)`, `covarSamp(x, y)`, `argMin(value, key)` and `argMax(value, key)`. Medians and percentiles are exact for integer and decimal input, and the percentile fraction must be the same for every solution of a group. Empty groups leave the aggregate unbound, except `countIf` and `approxCountDistinct` (0) and `histogram` and `arrayAgg` (an empty array).
 
 ## Window functions
 
@@ -89,7 +89,7 @@ Functions that produce several rows are invoked as *magic properties*: the argum
     ?text textf:tokenize ?token .
     (?text 3) textf:ngrams (?gram) .
 
-The RDF4J query optimizer rewrites such patterns into tuple function calls evaluated once per solution of the surrounding group; argument variables must be bound by that group (or by the enclosing query).
+The RDF4J query optimizer rewrites such patterns into tuple function calls evaluated once per solution of the surrounding group; argument variables must be bound by that group (or by the enclosing query). Window functions cannot be nested inside aggregates (`SUM(winf:rowNumber())` is rejected), while aggregates inside window functions are allowed. A set-returning function does not read data, so a `GRAPH` clause around it follows the usual SPARQL semantics without restricting the function: `GRAPH <g> { ... }` returns the same rows as the bare pattern, and `GRAPH ?g { ... }` evaluates the call once per named graph in the store with `?g` bound to that graph (no rows when the store has no named graphs).
 
 ## Geospatial functions
 
@@ -97,4 +97,4 @@ In addition to the GeoSPARQL functions of the `rdf4j-queryalgebra-geosparql` mod
 
 ## Bitwise, encoding and miscellaneous functions
 
-`bitf:bitAnd`, `bitOr`, `bitXor`, `bitNot`, `bitCount`, `bitShiftLeft`, `bitShiftRight` operate on `xsd:integer` values with arbitrary precision. `encf:base64Encode`, `base64Decode`, `toHex`, `fromHex`, `crc32`, `xxhash64(s [, seed])` and `hmac(message, key [, algorithm])` accept strings (UTF-8), `xsd:hexBinary` and `xsd:base64Binary`. `miscf:nullIf(a, b)` returns `a` unless `a = b`, in which case it raises an error, leaving a `BIND` variable unbound (the SPARQL counterpart of SQL `NULL`).
+`bitf:bitAnd`, `bitOr`, `bitXor`, `bitNot`, `bitCount`, `bitShiftLeft`, `bitShiftRight` operate on `xsd:integer` values with arbitrary precision; `bitCount` and `toHex` treat a negative value as a 64-bit two's complement number and raise an error for negative values outside that range. `encf:base64Encode`, `base64Decode`, `toHex`, `fromHex`, `crc32`, `xxhash64(s [, seed])` and `hmac(message, key [, algorithm])` accept strings (UTF-8), `xsd:hexBinary` and `xsd:base64Binary`. `miscf:nullIf(a, b)` returns `a` unless `a = b`, in which case it raises an error, leaving a `BIND` variable unbound (the SPARQL counterpart of SQL `NULL`).

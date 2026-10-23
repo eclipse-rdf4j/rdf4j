@@ -14,11 +14,11 @@ package org.eclipse.rdf4j.query.algebra.evaluation.function.bitwise;
 import java.math.BigInteger;
 
 import org.eclipse.rdf4j.model.vocabulary.BITF;
+import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 
 /**
- * bitf:bitCount(x): the number of set bits of {@code x}. Negative values are counted in 64-bit two's complement when
- * they fit in a long (PostgreSQL {@code bit_count(bigint)} semantics), otherwise as the number of bits differing from
- * the sign bit.
+ * bitf:bitCount(x): the number of set bits of {@code x}. Negative values are counted in 64-bit two's complement
+ * (PostgreSQL {@code bit_count(bigint)} semantics) and must fit in a long, like {@code encf:toHex}.
  */
 public class BitCount extends BitwiseFunction {
 
@@ -35,7 +35,12 @@ public class BitCount extends BitwiseFunction {
 	@Override
 	protected BigInteger compute(BigInteger[] operands) {
 		BigInteger x = operands[0];
-		if (x.signum() < 0 && x.bitLength() < 64) {
+		if (x.signum() < 0) {
+			// a negative number has infinitely many leading one bits; count it as a 64-bit two's complement value,
+			// like toHex, and refuse wider negatives instead of switching to another definition
+			if (x.bitLength() >= 64) {
+				throw new ValueExprEvaluationException("Negative value out of 64-bit range for " + getURI());
+			}
 			return BigInteger.valueOf(Long.bitCount(x.longValue()));
 		}
 		return BigInteger.valueOf(x.bitCount());

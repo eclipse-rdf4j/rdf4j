@@ -55,7 +55,14 @@ public final class RegexCache {
 		return pattern;
 	}
 
-	private static Pattern doCompile(String regex, String flags) {
+	/**
+	 * Converts SPARQL/XPath regular expression flags ({@code s m i x q} plus Java's {@code d u}) to {@link Pattern}
+	 * flag bits; shared by the {@code REGEX} built-in and the extension functions.
+	 *
+	 * @param flags the flag characters, or {@code null} for none
+	 * @throws ValueExprEvaluationException for an unsupported flag character
+	 */
+	public static int flags(String flags) {
 		int f = 0;
 		if (flags != null) {
 			for (int i = 0; i < flags.length(); i++) {
@@ -86,6 +93,11 @@ public final class RegexCache {
 				}
 			}
 		}
+		return f;
+	}
+
+	private static Pattern doCompile(String regex, String flags) {
+		int f = flags(flags);
 		try {
 			return Pattern.compile(regex, f);
 		} catch (PatternSyntaxException e) {

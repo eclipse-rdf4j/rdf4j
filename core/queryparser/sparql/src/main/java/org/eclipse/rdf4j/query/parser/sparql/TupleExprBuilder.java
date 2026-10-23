@@ -787,6 +787,17 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				if (!collector.getOperators().isEmpty()) {
 					elem.setAggregateOperatorInExpression(true);
 					for (AggregateOperator operator : collector.getOperators()) {
+						// Aggregates are evaluated inside the Group, below the Window operator, so a window function
+						// nested in an aggregate could never see its window result.
+						WindowFunctionCollector nestedWindows = new WindowFunctionCollector();
+						operator.visit(nestedWindows);
+						if (!nestedWindows.getCalls().isEmpty()) {
+							throw new VisitorException("window function " + nestedWindows.getCalls().get(0).getURI()
+									+ " cannot be used inside an aggregate; window functions are evaluated after"
+									+ " grouping and may only take aggregates as input, not the other way round.");
+						}
+					}
+					for (AggregateOperator operator : collector.getOperators()) {
 						// Apply implicit grouping if necessary
 						if (group == null) {
 							group = new Group(orderClause != null ? orderClause.getArg() : result);

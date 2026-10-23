@@ -55,9 +55,15 @@ public class DecimalFormat extends MathFunction {
 		case DECIMAL:
 			value = number.decimalValue();
 			break;
+		case FLOAT: {
+			// format the shortest decimal representation (like round/trunc), not the binary expansion
+			float f = number.floatValue();
+			value = Float.isFinite(f) ? new BigDecimal(Float.toString(f)) : (double) f;
+			break;
+		}
 		default:
 			double d = number.doubleValue();
-			value = Double.isFinite(d) ? new BigDecimal(d) : d;
+			value = Double.isFinite(d) ? BigDecimal.valueOf(d) : d;
 		}
 		return valueFactory.createLiteral(format.format(value), CoreDatatype.XSD.STRING);
 	}

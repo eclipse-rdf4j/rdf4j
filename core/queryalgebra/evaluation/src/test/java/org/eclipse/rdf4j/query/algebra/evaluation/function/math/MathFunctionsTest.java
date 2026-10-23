@@ -140,6 +140,17 @@ class MathFunctionsTest {
 	}
 
 	@Test
+	void decimalFormatUsesShortestDoubleRepresentation() {
+		// a double is formatted from its decimal lexical value, like round/trunc, not from its binary expansion
+		assertThat(new DecimalFormat().evaluate(VF, VF.createLiteral(0.1), VF.createLiteral("0.00000000000000000000")))
+				.isEqualTo(VF.createLiteral("0.10000000000000000000"));
+		assertThat(new DecimalFormat().evaluate(VF, VF.createLiteral(1e23), VF.createLiteral("#")))
+				.isEqualTo(VF.createLiteral("100000000000000000000000"));
+		assertThat(new DecimalFormat().evaluate(VF, VF.createLiteral(0.1f), VF.createLiteral("0.000000000")))
+				.isEqualTo(VF.createLiteral("0.100000000"));
+	}
+
+	@Test
 	void decimalFormatUsesRootLocaleByDefault() {
 		assertThat(new DecimalFormat().evaluate(VF, VF.createLiteral(1234567.891), VF.createLiteral("#,##0.00")))
 				.isEqualTo(VF.createLiteral("1,234,567.89"));

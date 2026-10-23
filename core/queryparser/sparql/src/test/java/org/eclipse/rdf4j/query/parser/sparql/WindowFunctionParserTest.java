@@ -165,6 +165,20 @@ class WindowFunctionParserTest {
 	}
 
 	@Test
+	void windowFunctionInsideAggregateIsRejected() {
+		// an aggregate is evaluated inside the Group, below the Window operator, so it could never see the window
+		// result; the parser must reject the nesting instead of silently aggregating an unbound variable
+		for (String query : List.of("SELECT (SUM(winf:rowNumber()) AS ?n) WHERE { ?x ex:s ?s }",
+				"SELECT (1 + SUM(winf:rowNumber()) AS ?n) WHERE { ?x ex:s ?s }",
+				"SELECT (COUNT(winf:rank(winf:orderBy(?s))) AS ?n) WHERE { ?x ex:s ?s }",
+				"SELECT ?d (MAX(winf:rowNumber()) AS ?n) WHERE { ?x ex:d ?d ; ex:s ?s } GROUP BY ?d")) {
+			assertThatThrownBy(() -> parse(query)).as(query)
+					.isInstanceOf(MalformedQueryException.class)
+					.hasMessageContaining("aggregate");
+		}
+	}
+
+	@Test
 	void windowReferencingSelectExpressionAliasIsRejected() {
 		// a SELECT alias is bound above the Window operator, so a window keyed on it would silently see it unbound
 		assertThatThrownBy(() -> parse(

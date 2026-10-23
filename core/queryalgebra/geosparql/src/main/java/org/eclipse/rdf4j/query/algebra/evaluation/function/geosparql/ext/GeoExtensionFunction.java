@@ -12,8 +12,9 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.ext;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
-import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.support.FunctionArgs;
 
 /**
  * Base class of the {@code geox:} functions (geospatial functions beyond the GeoSPARQL standard set, implemented with
@@ -27,17 +28,11 @@ public abstract class GeoExtensionFunction implements Function {
 		return Determinism.DETERMINISTIC;
 	}
 
-	protected void arity(int expected, int actual) {
-		if (actual != expected) {
-			throw new ValueExprEvaluationException(
-					getURI() + " requires exactly " + expected + " argument(s), got " + actual);
-		}
+	protected void arity(Value[] args, int expected) {
+		FunctionArgs.arity(this, args, expected);
 	}
 
-	protected void arity(int min, int max, int actual) {
-		if (actual < min || actual > max) {
-			throw new ValueExprEvaluationException(
-					getURI() + " requires between " + min + " and " + max + " arguments, got " + actual);
-		}
+	protected void arity(Value[] args, int min, int max) {
+		FunctionArgs.arity(this, args, min, max);
 	}
 }

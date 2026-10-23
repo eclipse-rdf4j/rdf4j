@@ -45,22 +45,26 @@ public class ApproxQuantileAggregateFactory extends AbstractNAryAggregateFactory
 
 			@Override
 			public void addTuple(List<Value> tuple) {
+				Literal p = NumericValues.asNumeric(tuple.get(1));
+				double f = NumericValues.asDouble(p);
+				boolean outsideRange = !Double.isFinite(f) || f < 0 || f > 1;
+				// Check exact fractions before promotion: values just outside the interval can round to its ends.
+				var kind = FunctionArgs.numericKind(p);
+				if (kind == FunctionArgs.NumericKind.INTEGER || kind == FunctionArgs.NumericKind.DECIMAL) {
+					BigDecimal exact = kind == FunctionArgs.NumericKind.INTEGER
+							? new BigDecimal(p.integerValue())
+							: p.decimalValue();
+					outsideRange |= exact.signum() < 0 || exact.compareTo(BigDecimal.ONE) > 0;
+				}
+				if (outsideRange) {
+					throw new ValueExprEvaluationException("quantile fraction must be between 0 and 1: " + p);
+				}
 				if (Double.isNaN(fraction)) {
-					Literal p = NumericValues.asNumeric(tuple.get(1));
-					double f = NumericValues.asDouble(p);
-					boolean outsideRange = !Double.isFinite(f) || f < 0 || f > 1;
-					// Check exact fractions before promotion: values just outside the interval can round to its ends.
-					var kind = FunctionArgs.numericKind(p);
-					if (kind == FunctionArgs.NumericKind.INTEGER || kind == FunctionArgs.NumericKind.DECIMAL) {
-						BigDecimal exact = kind == FunctionArgs.NumericKind.INTEGER
-								? new BigDecimal(p.integerValue())
-								: p.decimalValue();
-						outsideRange |= exact.signum() < 0 || exact.compareTo(BigDecimal.ONE) > 0;
-					}
-					if (outsideRange) {
-						throw new ValueExprEvaluationException("quantile fraction must be between 0 and 1: " + p);
-					}
 					fraction = f;
+				} else if (fraction != f) {
+					throw new ValueExprEvaluationException(
+							"quantile fraction must be the same for every solution of a group, got " + fraction
+									+ " and " + p);
 				}
 				sketch.update(NumericValues.asDouble(tuple.get(0)));
 			}

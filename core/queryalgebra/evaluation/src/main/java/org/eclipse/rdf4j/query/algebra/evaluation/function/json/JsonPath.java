@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.function.json;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -264,7 +265,7 @@ public final class JsonPath {
 				} else {
 					Object child = object.get(step.key);
 					if (!(child instanceof Map) && !(child instanceof List)) {
-						child = steps[i + 1].kind == Kind.INDEX ? new ArrayList<>() : new java.util.LinkedHashMap<>();
+						child = steps[i + 1].kind == Kind.INDEX ? new ArrayList<>() : new LinkedHashMap<>();
 						object.put(step.key, child);
 					}
 					node = child;
@@ -290,7 +291,7 @@ public final class JsonPath {
 					}
 					Object child = list.get(index);
 					if (!(child instanceof Map) && !(child instanceof List)) {
-						child = steps[i + 1].kind == Kind.INDEX ? new ArrayList<>() : new java.util.LinkedHashMap<>();
+						child = steps[i + 1].kind == Kind.INDEX ? new ArrayList<>() : new LinkedHashMap<>();
 						list.set(index, child);
 					}
 					node = child;

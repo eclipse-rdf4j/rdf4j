@@ -70,6 +70,35 @@ class ExtensionAggregateBoundaryRegressionTest {
 		assertThrows(ValueExprEvaluationException.class, collector::getFinalValue);
 	}
 
+	static Stream<AbstractNAryAggregateFactory> quantileFactories() {
+		return Stream.of(new PercentileContAggregateFactory(), new PercentileDiscAggregateFactory(),
+				new ApproxQuantileAggregateFactory());
+	}
+
+	@ParameterizedTest
+	@MethodSource("quantileFactories")
+	void quantileFractionMustBeTheSameForEveryRow(AbstractNAryAggregateFactory factory) {
+		ExtensionCollector collector = factory.getCollector();
+		var function = factory.buildFunction((index, row) -> row.getValue(index == 0 ? "x" : "p"));
+		QueryBindingSet first = new QueryBindingSet();
+		first.setBinding("x", VF.createLiteral(1));
+		first.setBinding("p", VF.createLiteral(new BigDecimal("0.1")));
+		QueryBindingSet second = new QueryBindingSet();
+		second.setBinding("x", VF.createLiteral(2));
+		second.setBinding("p", VF.createLiteral(new BigDecimal("0.9")));
+		assertDoesNotThrow(() -> function.processAggregate(first, tuple -> true, collector));
+		assertDoesNotThrow(() -> function.processAggregate(second, tuple -> true, collector));
+		assertThrows(ValueExprEvaluationException.class, collector::getFinalValue);
+
+		ExtensionCollector sameFraction = factory.getCollector();
+		QueryBindingSet third = new QueryBindingSet();
+		third.setBinding("x", VF.createLiteral(2));
+		third.setBinding("p", VF.createLiteral(new BigDecimal("0.10")));
+		assertDoesNotThrow(() -> function.processAggregate(first, tuple -> true, sameFraction));
+		assertDoesNotThrow(() -> function.processAggregate(third, tuple -> true, sameFraction));
+		assertDoesNotThrow(sameFraction::getFinalValue);
+	}
+
 	static Stream<Arguments> invalidPairs() {
 		return Stream.of(new CorrAggregateFactory(), new CovarPopAggregateFactory(), new CovarSampAggregateFactory())
 				.flatMap(factory -> Stream.of(VF.createLiteral("bad", XSD.INTEGER),

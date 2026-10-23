@@ -18,11 +18,9 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.slotsOf;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.Deque;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -86,6 +84,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingSetQueryEvaluation
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.LateralQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.MinusQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.TupleFunctionGroupQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ScopedLeftJoinIterator.GraphFrameMapping;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -1659,7 +1658,8 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	 * null and fall back to the existing island path unchanged.
 	 */
 	private SlotPlan compileLateral(org.eclipse.rdf4j.query.algebra.Lateral lateral, boolean duplicateInsensitive) {
-		if (lateral.getRightArg() instanceof Join join && isTupleFunctionGroup(join)) {
+		if (lateral.getRightArg() instanceof Join join
+				&& TupleFunctionGroupQueryEvaluationStep.isTupleFunctionGroup(join)) {
 			// A tuple-only group chooses its next call from each row's actual argument bindings. Native joins have
 			// a fixed operand order, so retain the entire LATERAL as one generic island, including input filtering,
 			// rather than compiling calls separately and losing the row-dependent scheduler.
@@ -1703,21 +1703,6 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			}
 		}
 		return new LateralPlan(left, right, inputMask);
-	}
-
-	private static boolean isTupleFunctionGroup(Join root) {
-		Deque<TupleExpr> remaining = new ArrayDeque<>();
-		remaining.push(root);
-		while (!remaining.isEmpty()) {
-			TupleExpr node = remaining.pop();
-			if (node instanceof Join join && (node == root || !join.isVariableScopeChange())) {
-				remaining.push(join.getRightArg());
-				remaining.push(join.getLeftArg());
-			} else if (!(node instanceof TupleFunctionCall)) {
-				return false;
-			}
-		}
-		return true;
 	}
 
 	/**

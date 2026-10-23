@@ -18,6 +18,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -38,7 +39,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
  * Calls therefore run in a deterministic ready order for each mapping. Output names constrain compatibility in the
  * ordinary tuple-call evaluator; they never introduce argument dependencies here.
  */
-final class TupleFunctionGroupQueryEvaluationStep implements QueryEvaluationStep {
+@InternalUseOnly
+public final class TupleFunctionGroupQueryEvaluationStep implements QueryEvaluationStep {
 	private final QueryEvaluationStep[] calls;
 	private final String[][] requiredNames;
 
@@ -47,15 +49,22 @@ final class TupleFunctionGroupQueryEvaluationStep implements QueryEvaluationStep
 		this.requiredNames = requiredNames;
 	}
 
-	/** Returns null for an ordinary right arm, leaving its established join compilation unchanged. */
-	static QueryEvaluationStep tryPrepare(TupleExpr right, EvaluationStrategy strategy,
-			QueryEvaluationContext context) {
+	/**
+	 * True when {@code expression} is a {@link TupleFunctionCall} or a chain of plain joins (a scope-changing join only
+	 * as the root) consisting of tuple function calls only: the shape this step schedules per input row.
+	 */
+	public static boolean isTupleFunctionGroup(TupleExpr expression) {
+		return collectCalls(expression) != null;
+	}
+
+	/** The calls of a tuple function group in join order, or null when the expression is not such a group. */
+	private static List<TupleFunctionCall> collectCalls(TupleExpr root) {
 		List<TupleFunctionCall> functions = new ArrayList<>();
 		Deque<TupleExpr> remaining = new ArrayDeque<>();
-		remaining.push(right);
+		remaining.push(root);
 		while (!remaining.isEmpty()) {
 			TupleExpr node = remaining.pop();
-			if (node instanceof Join join && (node == right || !join.isVariableScopeChange())) {
+			if (node instanceof Join join && (node == root || !join.isVariableScopeChange())) {
 				remaining.push(join.getRightArg());
 				remaining.push(join.getLeftArg());
 			} else if (node instanceof TupleFunctionCall call) {
@@ -63,6 +72,16 @@ final class TupleFunctionGroupQueryEvaluationStep implements QueryEvaluationStep
 			} else {
 				return null;
 			}
+		}
+		return functions;
+	}
+
+	/** Returns null for an ordinary right arm, leaving its established join compilation unchanged. */
+	static QueryEvaluationStep tryPrepare(TupleExpr right, EvaluationStrategy strategy,
+			QueryEvaluationContext context) {
+		List<TupleFunctionCall> functions = collectCalls(right);
+		if (functions == null) {
+			return null;
 		}
 		QueryEvaluationStep[] calls = new QueryEvaluationStep[functions.size()];
 		String[][] names = new String[functions.size()][];

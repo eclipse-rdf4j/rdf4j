@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.ext;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -167,7 +168,7 @@ public final class DurationSupport {
 					case 'S':
 						nanos = Math.addExact(nanos,
 								new BigDecimal(number).movePointRight(9)
-										.setScale(0, java.math.RoundingMode.DOWN)
+										.setScale(0, RoundingMode.DOWN)
 										.longValueExact());
 						break;
 					default:

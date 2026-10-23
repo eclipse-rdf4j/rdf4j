@@ -32,7 +32,7 @@ public class Simplify extends GeoExtensionFunction {
 
 	@Override
 	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
-		arity(2, args.length);
+		arity(args, 2);
 		GeoSupport.Geo geo = GeoSupport.parse(this, args[0]);
 		double tolerance = FunctionArgs.toDouble(this, args[1]);
 		if (tolerance < 0 || Double.isNaN(tolerance)) {

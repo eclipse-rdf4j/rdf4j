@@ -31,7 +31,7 @@ public class Length extends GeoExtensionFunction {
 
 	@Override
 	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
-		arity(1, 2, args.length);
+		arity(args, 1, 2);
 		GeoSupport.Geo geo = GeoSupport.parse(this, args[0]);
 		boolean metres = args.length == 2 && GeoSupport.metres(this, args[1]);
 		if (metres && geo.isGeographic()) {

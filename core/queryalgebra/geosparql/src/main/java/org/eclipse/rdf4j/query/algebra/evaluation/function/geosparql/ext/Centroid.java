@@ -29,7 +29,7 @@ public class Centroid extends GeoExtensionFunction {
 
 	@Override
 	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
-		arity(1, args.length);
+		arity(args, 1);
 		GeoSupport.Geo geo = GeoSupport.parse(this, args[0]);
 		return GeoSupport.toLiteral(valueFactory, geo.geometry().getCentroid(), geo.crs());
 	}

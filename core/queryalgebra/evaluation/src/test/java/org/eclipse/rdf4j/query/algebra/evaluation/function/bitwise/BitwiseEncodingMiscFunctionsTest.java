@@ -57,6 +57,12 @@ class BitwiseEncodingMiscFunctionsTest {
 		assertThat(new BitCount().evaluate(VF, integer(-1))).isEqualTo(integer(64));
 		assertThat(new BitCount().evaluate(VF, VF.createLiteral(BigInteger.TWO.pow(100))))
 				.isEqualTo(integer(1));
+		// negative values are counted as 64-bit two's complement, like toHex; wider negatives are an error rather
+		// than silently switching to another definition
+		assertThat(new BitCount().evaluate(VF, integer(Long.MIN_VALUE))).isEqualTo(integer(1));
+		assertThatThrownBy(() -> new BitCount().evaluate(VF,
+				VF.createLiteral(BigInteger.TWO.pow(64).negate().subtract(BigInteger.ONE))))
+						.isInstanceOf(ValueExprEvaluationException.class);
 		assertThat(new BitShiftLeft().evaluate(VF, integer(1), integer(70)))
 				.isEqualTo(VF.createLiteral(BigInteger.TWO.pow(70)));
 		assertThat(new BitShiftRight().evaluate(VF, integer(-16), integer(2))).isEqualTo(integer(-4));
