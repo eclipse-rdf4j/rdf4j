@@ -14,6 +14,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
+import org.eclipse.rdf4j.rio.AbortableRDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 
@@ -24,7 +25,7 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
  * @author Arjohn Kampman
  * @author Jeen Broekstra
  */
-public class RDFHandlerWrapper implements RDFHandler {
+public class RDFHandlerWrapper implements AbortableRDFHandler {
 
 	/*-----------*
 	 * Variables *
@@ -83,6 +84,27 @@ public class RDFHandlerWrapper implements RDFHandler {
 	public void endRDF() throws RDFHandlerException {
 		for (RDFHandler rdfHandler : rdfHandlers) {
 			rdfHandler.endRDF();
+		}
+	}
+
+	@Override
+	public void abortRDF() throws RDFHandlerException {
+		RDFHandlerException failure = null;
+		for (RDFHandler rdfHandler : rdfHandlers) {
+			if (rdfHandler instanceof AbortableRDFHandler abortable) {
+				try {
+					abortable.abortRDF();
+				} catch (RDFHandlerException e) {
+					if (failure == null) {
+						failure = e;
+					} else {
+						failure.addSuppressed(e);
+					}
+				}
+			}
+		}
+		if (failure != null) {
+			throw failure;
 		}
 	}
 

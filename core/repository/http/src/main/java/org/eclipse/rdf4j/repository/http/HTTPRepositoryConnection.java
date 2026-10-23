@@ -74,6 +74,7 @@ import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.UnknownTransactionStateException;
 import org.eclipse.rdf4j.repository.base.AbstractRepositoryConnection;
 import org.eclipse.rdf4j.repository.http.helpers.HTTPRepositorySettings;
+import org.eclipse.rdf4j.rio.AbortableRDFHandler;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandler;
@@ -277,11 +278,16 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 	@Override
 	public void exportStatements(Resource subj, IRI pred, Value obj, boolean includeInferred, RDFHandler handler,
 			Resource... contexts) throws RDFHandlerException, RepositoryException {
-		flushTransactionState(Action.GET);
 		try {
+			flushTransactionState(Action.GET);
 			client.getStatements(subj, pred, obj, includeInferred, handler, contexts);
 		} catch (IOException | QueryInterruptedException e) {
-			throw new RepositoryException(e);
+			RepositoryException failure = new RepositoryException(e);
+			AbortableRDFHandler.abortOnFailure(handler, failure);
+			throw failure;
+		} catch (RuntimeException | Error e) {
+			AbortableRDFHandler.abortOnFailure(handler, e);
+			throw e;
 		}
 	}
 

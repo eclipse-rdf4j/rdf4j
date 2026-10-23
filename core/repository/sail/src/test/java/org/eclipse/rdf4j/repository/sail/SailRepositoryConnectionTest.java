@@ -18,6 +18,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.verify;
@@ -43,6 +44,8 @@ import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.rio.AbortableRDFHandler;
+import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.helpers.SlowQueryContextHolder;
 import org.junit.jupiter.api.BeforeEach;
@@ -65,6 +68,17 @@ public class SailRepositoryConnectionTest {
 		sailRepository = mock(SailRepository.class);
 
 		subject = new SailRepositoryConnection(sailRepository, sailConnection);
+	}
+
+	@Test
+	public void exportAbortsHandlerWhenStartFails() {
+		AbortableRDFHandler handler = mock(AbortableRDFHandler.class);
+		doThrow(new RDFHandlerException("test start failure")).when(handler).startRDF();
+
+		assertThatThrownBy(() -> subject.exportStatements(null, null, null, false, handler))
+				.isInstanceOf(RDFHandlerException.class)
+				.hasMessageContaining("test start failure");
+		verify(handler).abortRDF();
 	}
 
 	@Test
