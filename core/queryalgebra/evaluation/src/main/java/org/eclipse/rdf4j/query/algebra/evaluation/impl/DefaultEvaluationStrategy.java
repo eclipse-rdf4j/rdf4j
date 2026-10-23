@@ -290,7 +290,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 								Var resultVar = resultVars.get(i);
 								Value varValue = resultVar.getValue();
 								String varName = resultVar.getName();
-								Value boundValue = bindings.getValue(varName);
+								// Earlier columns can bind the same result name within this row.
+								Value boundValue = resultBindings.getValue(varName);
 								if ((varValue == null || result.equals(varValue))
 										&& (boundValue == null || result.equals(boundValue))) {
 									if (boundValue == null) { // if not already present

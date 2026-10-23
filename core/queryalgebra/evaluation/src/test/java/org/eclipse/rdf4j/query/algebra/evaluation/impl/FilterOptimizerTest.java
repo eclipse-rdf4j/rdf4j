@@ -70,6 +70,7 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -99,6 +100,33 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 	@Override
 	public FilterOptimizer getOptimizer() {
 		return new FilterOptimizer();
+	}
+
+	@Test
+	public void serviceFiltersRemainOwnedByReceivingEvaluator() {
+		for (String silent : List.of("", "SILENT ")) {
+			ParsedQuery parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, """
+					SELECT ?s WHERE {
+					  VALUES ?wanted { <urn:o> }
+					  SERVICE %s<urn:receiving-evaluator> {
+					    ?s <urn:p> ?o FILTER(?o = ?wanted)
+					  }
+					}
+					""".formatted(silent), null);
+			QueryRoot root = new QueryRoot(parsed.getTupleExpr().clone());
+			List<Service> services = new ArrayList<>();
+			root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(Service service) {
+					services.add(service);
+				}
+			});
+			Service service = services.get(0);
+			TupleExpr receivedBody = service.getServiceExpr().clone();
+			getOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+			assertEquals(receivedBody, service.getServiceExpr(),
+					"The receiving evaluator must interpret the service's expression inputs");
+		}
 	}
 
 	@Test

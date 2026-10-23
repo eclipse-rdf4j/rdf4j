@@ -1,0 +1,4 @@
+@prefix ex: <https://example.org/> .
+ex:alice ex:knows ex:bob .
+ex:bob ex:worksFor ex:company .
+ex:company ex:name "Example Ltd" .
