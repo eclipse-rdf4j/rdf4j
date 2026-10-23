@@ -271,6 +271,7 @@ class LmdbSketchAwareFilterPlacementIT {
 			var source = new SailDatasetTripleTermSource(store.getValueFactory(), dataset);
 			var statistics = store.getBackingStore().getEvaluationStatistics();
 			var strategy = new DefaultEvaluationStrategy(source, null, null);
+			strategy.setQueryExecutionPolicy(store.getQueryExecutionPolicy());
 			var pipeline = new LmdbQueryOptimizerPipeline(strategy, source, statistics);
 			pipeline.withPreparedQueryEntry(completeQuery.clone(), null, EmptyBindingSet.getInstance(),
 					(prepared, cascades) -> {
@@ -614,8 +615,7 @@ class LmdbSketchAwareFilterPlacementIT {
 		runPlannerTest(dataDir,
 				"backgroundRawSamplingMovesMedicalRecordedOnFilterBeforeOtherMandatoryPatternsWhenForegroundSamplingDisabled",
 				attemptDir -> {
-					LmdbStoreConfig config = new LmdbStoreConfig()
-							.setSketchEstimatorEnabled(true)
+					LmdbStoreConfig config = sketchEnabledConfig()
 							.setFrontierEstimatorMode(FrontierEstimatorMode.OFF)
 							.setOptimizerSamplingEnabled(false)
 							.setBackgroundRawSamplingMaxMillisPerCycle(0L);
@@ -677,8 +677,21 @@ class LmdbSketchAwareFilterPlacementIT {
 		});
 	}
 
+	@Test
+	void sketchFixtureRequestsExperimentalPolicyAndAutomaticEstimator() {
+		LmdbStoreConfig config = sketchEnabledConfig();
+		assertTrue(config.isExperimentalQueryOptimizations(), "sketch fixture must request its immutable policy");
+		assertTrue(Boolean.TRUE.equals(config.getSketchEstimatorEnabled()));
+		LmdbStore store = new LmdbStore(config);
+		assertTrue(store.getQueryExecutionPolicy().experimentalQueryOptimizations());
+		assertTrue(store.shouldUseSketchBasedJoinEstimator(0L),
+				"an automatic factory with both prerequisites must select the sketch estimator");
+	}
+
 	private static LmdbStoreConfig sketchEnabledConfig() {
-		return new LmdbStoreConfig().setSketchEstimatorEnabled(true);
+		LmdbStoreConfig config = new LmdbStoreConfig().setSketchEstimatorEnabled(true);
+		config.setExperimentalQueryOptimizations(true);
+		return config;
 	}
 
 	@RetriedWithinTimeout
