@@ -41,16 +41,17 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /** One execution's reserved identities, generated identities, and solution-scoped BNODE labels. */
 @InternalUseOnly
-public final class BlankNodeAllocationScope {
+public final class BlankNodeAllocationScope implements AutoCloseable {
 	private static final ThreadLocal<BlankNodeAllocationScope> ACTIVE = new ThreadLocal<>();
 	private static final ReferenceQueue<Object> OWNERS = new ReferenceQueue<>();
 	private static final Map<OwnerReference, BlankNodeAllocationScope> SCOPES = new HashMap<>();
 
-	private final Set<String> unavailable = new HashSet<>();
+	private final BoundedStringMap unavailable;
 	private final Set<BNode> pendingBNodeReservations = Collections.newSetFromMap(new IdentityHashMap<>());
 	private final Set<TripleTerm> pendingTripleTermReservations = Collections
 			.newSetFromMap(new IdentityHashMap<>());
-	private final Map<Object, Map<String, String>> remoteAliases = new IdentityHashMap<>();
+	private final Map<Object, Integer> remoteScopeIds = new IdentityHashMap<>();
+	private final BoundedStringMap remoteAliases = new BoundedStringMap();
 	private final Object remoteIdentityOwner = new Object();
 	private final ReferenceQueue<Object> solutionQueue = new ReferenceQueue<>();
 	private final Map<OwnerReference, SolutionOccurrence> solutions = new HashMap<>();
@@ -70,8 +71,13 @@ public final class BlankNodeAllocationScope {
 
 	/** The namespace identifies this execution; the counter advances without wraparound. */
 	public BlankNodeAllocationScope(String namespace, Predicate<String> alreadyKnown) {
+		this(namespace, alreadyKnown, new BoundedStringMap());
+	}
+
+	private BlankNodeAllocationScope(String namespace, Predicate<String> alreadyKnown, BoundedStringMap unavailable) {
 		this.namespace = Objects.requireNonNull(namespace);
 		this.alreadyKnown = alreadyKnown;
+		this.unavailable = unavailable;
 	}
 
 	/**
@@ -82,13 +88,21 @@ public final class BlankNodeAllocationScope {
 	 */
 	public synchronized BlankNodeAllocationScope newEvaluationScope() {
 		BlankNodeAllocationScope evaluation = new BlankNodeAllocationScope("rdf4j-" + UUID.randomUUID() + "-",
-				alreadyKnown);
-		evaluation.unavailable.addAll(unavailable);
+				alreadyKnown, unavailable.fork());
 		evaluation.pendingBNodeReservations.addAll(pendingBNodeReservations);
 		evaluation.pendingTripleTermReservations.addAll(pendingTripleTermReservations);
 		evaluation.fixedReferences = fixedReferences;
 		evaluation.localIdentityResolver = localIdentityResolver;
 		return evaluation;
+	}
+
+	@Override
+	public synchronized void close() {
+		try {
+			unavailable.close();
+		} finally {
+			remoteAliases.close();
+		}
 	}
 
 	/** Captures the executing local backend's read-only membership lookup before deferred or remote work begins. */
@@ -105,6 +119,11 @@ public final class BlankNodeAllocationScope {
 	public static BlankNodeAllocationScope currentOrNew() {
 		BlankNodeAllocationScope active = ACTIVE.get();
 		return active == null ? new BlankNodeAllocationScope() : active;
+	}
+
+	/** Returns the executing request's allocation state, or null when this query must own a new scope. */
+	public static BlankNodeAllocationScope current() {
+		return ACTIVE.get();
 	}
 
 	/** Activation only propagates state while constructing evaluators; each evaluator retains its own scope. */
@@ -147,13 +166,13 @@ public final class BlankNodeAllocationScope {
 
 	/** Reserves a fixed reference from the complete request before any operation is executed. */
 	public synchronized void reserve(String id) {
-		unavailable.add(Objects.requireNonNull(id));
+		unavailable.putIfAbsent(Objects.requireNonNull(id), "");
 		fixedReferences = true;
 	}
 
 	/** Reserves a known binding identity without assigning it the role of fixed reference syntax. */
 	public synchronized void reserveKnownID(String id) {
-		unavailable.add(Objects.requireNonNull(id));
+		unavailable.putIfAbsent(Objects.requireNonNull(id), "");
 	}
 
 	/** An ephemeral observation; stored snapshots retain only weak identities and immutable state. */
@@ -260,7 +279,7 @@ public final class BlankNodeAllocationScope {
 				continue;
 			}
 			if (current instanceof BNode) {
-				unavailable.add(((BNode) current).getID());
+				unavailable.putIfAbsent(((BNode) current).getID(), "");
 			} else if (current instanceof TripleTerm) {
 				TripleTerm triple = (TripleTerm) current;
 				pending.add(triple.getSubject());
@@ -272,7 +291,7 @@ public final class BlankNodeAllocationScope {
 
 	private void reservePendingBNodes() {
 		for (BNode bnode : pendingBNodeReservations) {
-			unavailable.add(bnode.getID());
+			unavailable.putIfAbsent(bnode.getID(), "");
 		}
 		pendingBNodeReservations.clear();
 	}
@@ -320,7 +339,7 @@ public final class BlankNodeAllocationScope {
 		// Keep existing third-party factory allocation behavior when the request has no fixed references.
 		if (known == null && label == null) {
 			BNode fresh = factory.createBNode();
-			if (unavailable.add(fresh.getID())) {
+			if (unavailable.putIfAbsent(fresh.getID(), "") == null) {
 				return new GeneratedBNode(fresh.getID());
 			}
 			throw new QueryEvaluationException(
@@ -331,7 +350,7 @@ public final class BlankNodeAllocationScope {
 			String candidate = prefix + next.toString(36);
 			next = next.add(BigInteger.ONE);
 			// Check before materialization: MemoryStore's factory registers created values immediately.
-			if (unavailable.contains(candidate)) {
+			if (unavailable.containsKey(candidate)) {
 				if (known == null) {
 					throw new QueryEvaluationException(
 							"Unsupported blank-node freshness: backend cannot check stored IDs after an allocation collision");
@@ -350,7 +369,7 @@ public final class BlankNodeAllocationScope {
 			if (!candidate.equals(fresh.getID())) {
 				throw new QueryEvaluationException("Unsupported blank-node identity: factory changed a candidate ID");
 			}
-			unavailable.add(candidate);
+			unavailable.putIfAbsent(candidate, "");
 			return new GeneratedBNode(fresh.getID());
 		}
 	}
@@ -460,8 +479,21 @@ public final class BlankNodeAllocationScope {
 	}
 
 	synchronized String getOrCreateRemoteAlias(Object identityScope, String remoteID, ValueFactory factory) {
-		return remoteAliases.computeIfAbsent(identityScope, ignored -> new HashMap<>())
-				.computeIfAbsent(remoteID, ignored -> createBNode(factory).getID());
+		Integer scope = remoteScopeIds.get(identityScope);
+		if (scope == null) {
+			if (remoteScopeIds.size() == Integer.MAX_VALUE) {
+				throw new QueryEvaluationException("Too many remote blank-node identity scopes");
+			}
+			scope = remoteScopeIds.size();
+			remoteScopeIds.put(identityScope, scope);
+		}
+		String key = scope + ":" + remoteID;
+		String alias = remoteAliases.get(key);
+		if (alias == null) {
+			alias = createBNode(factory).getID();
+			remoteAliases.putIfAbsent(key, alias);
+		}
+		return alias;
 	}
 
 	/** A detached proof token; remote wrappers cannot keep the executing allocation scope alive. */
