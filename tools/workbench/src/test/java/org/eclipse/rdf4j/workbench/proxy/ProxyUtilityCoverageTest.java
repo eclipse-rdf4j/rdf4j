@@ -496,6 +496,108 @@ class ProxyUtilityCoverageTest {
 	}
 
 	@Test
+	void serverValidatorRejectsRedirectOutsideAcceptedPrefix() throws Exception {
+		AtomicInteger redirectedRequests = new AtomicInteger();
+		HttpServer redirected = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		redirected.createContext("/protocol", exchange -> {
+			redirectedRequests.incrementAndGet();
+			writeProtocolVersion(exchange);
+		});
+		redirected.start();
+		HttpServer accepted = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		accepted.createContext("/protocol", exchange -> {
+			exchange.getResponseHeaders().set("Location",
+					"http://127.0.0.1:" + redirected.getAddress().getPort() + "/protocol");
+			exchange.sendResponseHeaders(302, -1);
+			exchange.close();
+		});
+		accepted.start();
+		try {
+			String acceptedUrl = "http://127.0.0.1:" + accepted.getAddress().getPort();
+			ServerValidator validator = new ServerValidator(new TestServletConfig("validator",
+					new MockServletContext(), Map.of("accepted-server-prefixes", acceptedUrl)));
+
+			assertThat(redirectedRequests).hasValue(0);
+			assertThat(validator.isValidServer(acceptedUrl)).isFalse();
+			assertThat(redirectedRequests).hasValue(0);
+		} finally {
+			accepted.stop(0);
+			redirected.stop(0);
+		}
+	}
+
+	@Test
+	void serverValidatorRejectsOversizedNumericProtocolLine() throws Exception {
+		HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/protocol", exchange -> {
+			byte[] body = "0".repeat(65).getBytes(StandardCharsets.UTF_8);
+			exchange.sendResponseHeaders(200, body.length);
+			try (OutputStream outputStream = exchange.getResponseBody()) {
+				outputStream.write(body);
+			}
+		});
+		server.start();
+		try {
+			String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+			ServerValidator validator = new ServerValidator(new TestServletConfig("validator",
+					new MockServletContext(), Map.of("accepted-server-prefixes", baseUrl)));
+			assertThat(validator.isValidServer(baseUrl)).isFalse();
+		} finally {
+			server.stop(0);
+		}
+	}
+
+	@Test
+	void serverValidatorAcceptsRedirectWithinAcceptedPrefix() throws Exception {
+		HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/protocol", exchange -> {
+			exchange.getResponseHeaders().set("Location", "/redirected-protocol");
+			exchange.sendResponseHeaders(302, -1);
+			exchange.close();
+		});
+		server.createContext("/redirected-protocol", ProxyUtilityCoverageTest::writeProtocolVersion);
+		server.start();
+		try {
+			String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+			ServerValidator validator = new ServerValidator(new TestServletConfig("validator",
+					new MockServletContext(), Map.of("accepted-server-prefixes", baseUrl)));
+			assertThat(validator.isValidServer(baseUrl)).isTrue();
+		} finally {
+			server.stop(0);
+		}
+	}
+
+	@Test
+	void serverValidatorAcceptsRedirectToAnotherExplicitlyAcceptedPrefix() throws Exception {
+		AtomicInteger redirectedRequests = new AtomicInteger();
+		HttpServer redirected = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		redirected.createContext("/protocol", exchange -> {
+			redirectedRequests.incrementAndGet();
+			writeProtocolVersion(exchange);
+		});
+		redirected.start();
+		HttpServer accepted = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		accepted.createContext("/protocol", exchange -> {
+			exchange.getResponseHeaders().set("Location",
+					"http://127.0.0.1:" + redirected.getAddress().getPort() + "/protocol");
+			exchange.sendResponseHeaders(302, -1);
+			exchange.close();
+		});
+		accepted.start();
+		try {
+			String acceptedUrl = "http://127.0.0.1:" + accepted.getAddress().getPort();
+			String redirectedUrl = "http://127.0.0.1:" + redirected.getAddress().getPort();
+			ServerValidator validator = new ServerValidator(new TestServletConfig("validator",
+					new MockServletContext(), Map.of("accepted-server-prefixes", acceptedUrl + " " + redirectedUrl)));
+			assertThat(validator.isValidServer(acceptedUrl)).isTrue();
+			assertThat(redirectedRequests).hasValue(1);
+		} finally {
+			accepted.stop(0);
+			redirected.stop(0);
+		}
+	}
+
+	@Test
 	void serverValidatorUsesSystemPropertyPrefixesForRemoteServers() throws Exception {
 		AtomicInteger requests = new AtomicInteger();
 		HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
