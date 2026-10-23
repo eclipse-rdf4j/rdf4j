@@ -58,9 +58,20 @@ async function delayExplainRequests(page, delayMs = 2200) {
     });
 }
 
-async function trackExplainTraffic(page, delayMs = 2200) {
+async function trackExplainTraffic(page) {
     const explainRequests = [];
     const cancelRequests = [];
+    const pendingExplanations = [];
+    const unsettledRequests = new Map();
+    const settleRequest = request => {
+        const settle = unsettledRequests.get(request);
+        if (settle) {
+            unsettledRequests.delete(request);
+            settle();
+        }
+    };
+    page.on('requestfinished', settleRequest);
+    page.on('requestfailed', settleRequest);
 
     await page.route(repositoryPageUrl(repositoryId, 'query'), async route => {
         const request = route.request();
@@ -73,13 +84,27 @@ async function trackExplainTraffic(page, delayMs = 2200) {
         const action = params.get('action');
 
         if (action === 'explain') {
+            let releaseResponse;
+            let finishResponse;
+            const responseGate = new Promise(resolve => { releaseResponse = resolve; });
+            const responseFinished = new Promise(resolve => { finishResponse = resolve; });
+            const browserFinished = new Promise(resolve => { unsettledRequests.set(request, resolve); });
+            pendingExplanations.push({ releaseResponse, responseFinished, browserFinished });
             explainRequests.push({
                 requestId: params.get('explain-request-id'),
                 query: params.get('query'),
                 level: params.get('explain'),
                 format: params.get('explain-format')
             });
-            await new Promise(resolve => setTimeout(resolve, delayMs));
+            try {
+                // Obtain the real result, but keep the browser request pending until its Cancel action is observed.
+                const response = await route.fetch();
+                await responseGate;
+                await route.fulfill({ response });
+            } finally {
+                finishResponse();
+            }
+            return;
         } else if (action === 'cancel-explain') {
             cancelRequests.push({
                 requestId: params.get('explain-request-id')
@@ -89,7 +114,18 @@ async function trackExplainTraffic(page, delayMs = 2200) {
         await route.continue();
     });
 
-    return { explainRequests, cancelRequests };
+    return {
+        explainRequests,
+        cancelRequests,
+        async releaseExplanations(expectedCount) {
+            await expect.poll(() => pendingExplanations.length).toBe(expectedCount);
+            const responses = pendingExplanations.splice(0);
+            responses.forEach(response => response.releaseResponse());
+            await Promise.all(responses.map(response => response.responseFinished));
+            // A canceled XHR must be terminal in the browser before checking that its late result did not repaint.
+            await Promise.all(responses.map(response => response.browserFinished));
+        }
+    };
 }
 
 function getTrackedRequestIds(requests) {
@@ -412,7 +448,7 @@ test('Primary cancel posts matching request id and stale responses do not repain
     await expect.poll(() => getTrackedRequestIds(traffic.cancelRequests).length).toBe(1);
     await expect(getTrackedRequestIds(traffic.cancelRequests)).toEqual(getTrackedRequestIds(traffic.explainRequests));
 
-    await page.waitForTimeout(2500);
+    await traffic.releaseExplanations(1);
     await expect.poll(async () => page.evaluate(() => {
         return document.getElementById('query-explanation').textContent.trim();
     })).toBe(initialExplanation);
@@ -448,12 +484,13 @@ test('Compare-mode left cancel buttons abort explanation refresh', async ({page}
     await expect(getTrackedRequestIds(traffic.cancelRequests)).toEqual(getTrackedRequestIds(traffic.explainRequests));
     await expect(page.locator('#explain-trigger-cancel')).toBeHidden();
     await expect(page.locator('#explanation-cancel')).toBeHidden();
-    await page.waitForTimeout(2500);
+    await traffic.releaseExplanations(2);
     await expect.poll(async () => page.evaluate(() => {
         return document.getElementById('query-explanation-compare').textContent.trim();
     })).toBe(initialCompareExplanation);
 
     await page.locator('#explain-trigger').click();
+    await traffic.releaseExplanations(2);
     const refreshedCompareExplanation = await waitForChangedStableExplanation(
         page, '#query-explanation-compare', initialCompareExplanation
     );
@@ -464,7 +501,7 @@ test('Compare-mode left cancel buttons abort explanation refresh', async ({page}
     await page.locator('#explanation-cancel').click();
     await expect(page.locator('#rerun-explanation-cancel')).toBeHidden();
     await expect(page.locator('#explanation-cancel')).toBeHidden();
-    await page.waitForTimeout(2500);
+    await traffic.releaseExplanations(2);
     await expect.poll(async () => page.evaluate(() => {
         return document.getElementById('query-explanation-compare').textContent.trim();
     })).toBe(refreshedCompareExplanation);
@@ -498,7 +535,7 @@ test('Changing explain level implicitly cancels pending explain with matching re
     await expect(getTrackedRequestIds(traffic.cancelRequests)).toEqual(getTrackedRequestIds(traffic.explainRequests));
     await expect(page.locator('#explain-trigger-cancel')).toBeHidden();
 
-    await page.waitForTimeout(2500);
+    await traffic.releaseExplanations(1);
     await expect.poll(async () => page.evaluate(() => {
         return document.getElementById('query-explanation').textContent.trim();
     })).toBe(initialExplanation);
