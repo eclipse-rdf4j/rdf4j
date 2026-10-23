@@ -14,8 +14,13 @@ A client can supply an RDF term containing SPARQL punctuation to SPARQLRepositor
 - [x] [done] Implement shared lexical rules at rendering boundaries (2026-10-22 21:50Z).
 - [x] [done] Run focused and affected module verification (2026-10-22 22:09Z).
 - [x] [done] Review design before scoped draft publication (2026-10-23 00:10Z).
-- [ ] [in_progress] Publish scoped draft and verify exact head.
-- [ ] [todo] Monitor exact-head checks to completion.
+- [x] [done] Publish scoped draft and verify exact head (2026-10-23).
+- [x] [done] Monitor initial exact-head checks to completion (2026-10-23).
+- [x] [done] Reproduce nested term stack exhaustion (2026-10-23).
+- [x] [done] Render deep terms without recursion (2026-10-23).
+- [x] [done] Verify focused and module regressions (2026-10-23).
+- [ ] [in_progress] Review and publish follow-up commit.
+- [ ] [todo] Monitor follow-up exact-head checks.
 
 ## Surprises & Discoveries
 
@@ -26,6 +31,8 @@ A client can supply an RDF term containing SPARQL punctuation to SPARQLRepositor
 - `Values.iri` and `Values.getValueFactory` validate inputs early; `SimpleValueFactory` is needed in regression tests to represent the permissive RDF values already accepted by normal model code. Repository variant tests were red at 29 tests, 4 failures, 5 errors. FedX variant tests were red at 14 tests, 3 failures, 3 errors. Notably, `FROM NAMED` split one supplied graph IRI into two parsed graphs.
 - SPARQL `INSERT DATA` uses the Turtle data-block parser, which applies `ParsedIRI` syntax validation after IRIREF decoding. Query expressions can round-trip an escaped delimiter-bearing IRI, but update data blocks cannot. The connection now rejects such malformed update IRIs before remote send. A separate focused red test showed the deprecated operation's raw `BASE` IRI insertion accepted a malformed base; it now validates that base first. Another focused red showed FedX filter constants lacked recursive triple-term support; the filter renderer now recurses.
 - A focused Surefire test showed `SPARQLQueries.escape` leaves NUL raw. The shared renderer now rejects NUL; new tests show other C0 characters at U+0001 and U+001F round-trip through the parser, while standard escaped controls retain their existing behavior. A separate focused red showed the deprecated operation's `setBinding` assertion excluded nested triple terms even though its renderer handled them; it now admits them, and a parser-algebra assertion verifies both nested levels.
+- A follow-up on the published PR found recursive TripleTerm traversal in repository value rendering, initial-binding rendering, deprecated operations, connection updates, FedX values, and FedX filters. Focused 20,000-level tests produced StackOverflowError in each writer. A public connection test uses a structurally valid TripleTerm subclass with cached hash codes so model indexing does not mask the rendering failure.
+- `TripleTerm` is a `Value`, not a `Resource`, so nested triple terms can occur as objects under the public model contract, not as subjects. A proposed nested-subject assertion could not compile and was removed before verification; the supported deep-object variants remain unchanged.
 
 ## Decision Log
 
@@ -87,6 +94,8 @@ The focused selections passed: `core/repository/sparql` 30 tests, zero failures 
 
 New failures are preserved in `nul-initial-evidence.txt`/`nul-red.log` and `legacy-nested-initial-evidence.txt`/`legacy-nested-red.log` before their production fixes.
 
+The deep-term follow-up's first red is in `term-depth-initial-evidence.txt`, with further repository, parser, connection, FedX value, and FedX filter failures in the corresponding `term-depth-*-evidence.txt` files. Each writer failed with `StackOverflowError` at 20,000 object-nested triple terms before implementation. The full repository module passed 106 tests, the SPARQL parser passed 388, and FedX passed 607 with 52 existing skips, all with zero failures and errors. Retained verify logs are `.mvnf/workspaces/sparql-term-rendering/logs/20261023T001203.863069Z-34561-91dbcb91/verify.log`, `20261023T001338.890182Z-36006-968306c3/verify.log`, and `20261023T001517.765231Z-37607-632609d8/verify.log` under the same logs directory. Copyright and formatter checks passed in `copyright-term-depth.log` and `formatting-term-depth.log`; `git diff --check` is clean.
+
 ## Interfaces and Dependencies
 
 Use existing `core/query` IRIREF encoding and existing `core/queryparser/sparql` literal escaping. Both affected modules already consume these libraries. Any shared helper must be internal use only and should expose narrow methods for one IRIREF, one literal, and, if needed, a syntactically valid blank-node label. Do not add third-party dependencies or change the public repository API.
@@ -104,3 +113,5 @@ Plan revision note (2026-10-23): Parent review requested parser-algebra identity
 Plan revision note (2026-10-23): All three affected module suites passed. Formatting and copyright checks passed. Advanced to final scoped review and parent approval before authorized publication.
 
 Plan revision note (2026-10-23): Parent final review found no blocker and authorized the scoped commit and draft PR. Advanced to publication and exact-head verification.
+
+Plan revision note (2026-10-23): On the published PR, deep object-nested terms reproduced recursive writer stack exhaustion in all affected renderers. Parent reviewed and approved the shared iterative frame traversal. Full affected-module suites, copyright, formatting, and scoped diff checks passed; publish as a new commit without amending.

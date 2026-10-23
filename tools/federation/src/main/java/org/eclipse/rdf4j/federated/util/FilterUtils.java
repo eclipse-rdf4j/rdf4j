@@ -19,7 +19,6 @@ import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
 import org.eclipse.rdf4j.federated.exception.FilterConversionException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.Compare;
@@ -157,18 +156,17 @@ public class FilterUtils {
 	}
 
 	protected static StringBuilder appendValue(StringBuilder sb, Value value) {
+		return SPARQLTermRenderer.appendValueTree(sb, value, "<<(", ")>>", FilterUtils::appendLeafValue);
+	}
 
+	private static void appendLeafValue(StringBuilder sb, Value value) {
 		if (value instanceof IRI) {
-			return appendURI(sb, (IRI) value);
+			appendURI(sb, (IRI) value);
+			return;
 		}
 		if (value instanceof Literal) {
-			return appendLiteral(sb, (Literal) value);
-		}
-		if (value instanceof TripleTerm triple) {
-			sb.append("<<(");
-			appendValue(sb, triple.getSubject()).append(' ');
-			appendValue(sb, triple.getPredicate()).append(' ');
-			return appendValue(sb, triple.getObject()).append(")>>");
+			appendLiteral(sb, (Literal) value);
+			return;
 		}
 
 		// XXX check for other types ? BNode ?

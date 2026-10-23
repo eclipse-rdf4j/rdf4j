@@ -16,6 +16,7 @@ import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
 import java.util.AbstractSet;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -110,8 +111,22 @@ public class QueryStringUtil {
 	}
 
 	public static boolean containsBlankNode(Value value) {
-		return value instanceof BNode || value instanceof TripleTerm triple
-				&& (containsBlankNode(triple.getSubject()) || containsBlankNode(triple.getObject()));
+		if (value == null) {
+			return false;
+		}
+		ArrayDeque<Value> pending = new ArrayDeque<>();
+		pending.push(value);
+		while (!pending.isEmpty()) {
+			Value current = pending.pop();
+			if (current instanceof BNode) {
+				return true;
+			}
+			if (current instanceof TripleTerm triple) {
+				pending.push(triple.getObject());
+				pending.push(triple.getSubject());
+			}
+		}
+		return false;
 	}
 
 	/* TODO make operations more performant, i.e. use same instance of StringBuilder more permanently */
@@ -1137,22 +1152,21 @@ public class QueryStringUtil {
 	 * @return the string builder
 	 */
 	protected static StringBuilder appendValue(StringBuilder sb, Value value) {
+		return SPARQLTermRenderer.appendValueTree(sb, value, "<<(", ")>>", QueryStringUtil::appendLeafValue);
+	}
 
+	private static void appendLeafValue(StringBuilder sb, Value value) {
 		if (value instanceof IRI) {
-			return appendURI(sb, (IRI) value);
+			appendURI(sb, (IRI) value);
+			return;
 		}
 		if (value instanceof Literal) {
-			return appendLiteral(sb, (Literal) value);
+			appendLiteral(sb, (Literal) value);
+			return;
 		}
 		if (value instanceof BNode) {
-			return appendBNode(sb, (BNode) value);
-		}
-		if (value instanceof TripleTerm triple) {
-			sb.append("<<(");
-			appendValue(sb, triple.getSubject()).append(' ');
-			appendValue(sb, triple.getPredicate()).append(' ');
-			appendValue(sb, triple.getObject()).append(")>>");
-			return sb;
+			appendBNode(sb, (BNode) value);
+			return;
 		}
 		throw new QueryEvaluationException("Type not supported: " + value.getClass().getCanonicalName());
 	}

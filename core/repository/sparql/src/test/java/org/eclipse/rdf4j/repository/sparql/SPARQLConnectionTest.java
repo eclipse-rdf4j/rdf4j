@@ -27,13 +27,17 @@ import static org.mockito.Mockito.verify;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.TripleTerm;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleTripleTerm;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -258,6 +262,37 @@ public class SPARQLConnectionTest {
 
 		assertThat(QueryParserUtil.parseUpdate(QueryLanguage.SPARQL, update.getValue(), null).getUpdateExprs())
 				.hasSize(1);
+	}
+
+	@Test
+	public void deepTripleTermUpdateRendersWithoutStackExhaustion() throws Exception {
+		IRI nestedSubject = vf.createIRI("urn:s");
+		IRI nestedPredicate = vf.createIRI("urn:p");
+		Value value = vf.createIRI("urn:o");
+		for (int i = 0; i < 20_000; i++) {
+			value = new CachedHashTripleTerm(nestedSubject, nestedPredicate, value);
+		}
+		ArgumentCaptor<String> update = ArgumentCaptor.forClass(String.class);
+
+		subject.begin();
+		subject.add(FOAF.PERSON, RDF.TYPE, value);
+		subject.commit();
+		verify(client).sendUpdate(any(), update.capture(), any(), any(), anyBoolean(), anyInt());
+		assertThat(update.getValue()).contains("<urn:o>" + ")>>".repeat(20_000));
+	}
+
+	private static final class CachedHashTripleTerm extends SimpleTripleTerm {
+		private final int cachedHash;
+
+		private CachedHashTripleTerm(Resource subject, IRI predicate, Value object) {
+			super(subject, predicate, object);
+			cachedHash = Objects.hash(subject, predicate, object);
+		}
+
+		@Override
+		public int hashCode() {
+			return cachedHash;
+		}
 	}
 
 	@Test

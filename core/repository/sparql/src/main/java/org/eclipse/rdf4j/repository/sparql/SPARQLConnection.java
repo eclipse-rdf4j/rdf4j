@@ -40,7 +40,6 @@ import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -1010,22 +1009,21 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	}
 
 	private static StringBuilder appendTerm(StringBuilder qb, Value value) {
+		return SPARQLTermRenderer.appendValueTree(qb, value, "<<(", ")>>", SPARQLConnection::appendLeafTerm);
+	}
+
+	private static void appendLeafTerm(StringBuilder qb, Value value) {
 		if (value instanceof IRI iri) {
-			return appendUpdateIRI(qb, iri);
+			appendUpdateIRI(qb, iri);
+			return;
 		}
 		if (value instanceof BNode node) {
-			return SPARQLTermRenderer.appendBlankNodeLabel(qb, node);
+			SPARQLTermRenderer.appendBlankNodeLabel(qb, node);
+			return;
 		}
 		if (value instanceof Literal literal) {
 			appendLiteral(qb, literal);
-			return qb;
-		}
-		if (value instanceof TripleTerm triple) {
-			qb.append("<<(");
-			appendTerm(qb, triple.getSubject()).append(' ');
-			appendTerm(qb, triple.getPredicate()).append(' ');
-			appendTerm(qb, triple.getObject()).append(")>>");
-			return qb;
+			return;
 		}
 		throw new RepositoryException("Unsupported RDF term in SPARQL update: " + value.getClass().getName());
 	}

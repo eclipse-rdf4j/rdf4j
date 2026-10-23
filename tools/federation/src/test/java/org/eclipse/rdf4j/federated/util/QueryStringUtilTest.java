@@ -79,6 +79,39 @@ public class QueryStringUtilTest {
 	}
 
 	@Test
+	public void deeplyNestedTripleTermRendersInFedxValue() {
+		Value value = deeplyNestedTripleTerm(20_000);
+
+		String valueText = QueryStringUtil.appendValue(new StringBuilder(), value).toString();
+		assertThat(valueText).endsWith("<urn:o>" + ")>>".repeat(20_000));
+	}
+
+	@Test
+	public void deeplyNestedTripleTermRendersInFedxFilter() {
+		Value value = deeplyNestedTripleTerm(20_000);
+
+		String filterText = FilterUtils.appendValue(new StringBuilder(), value).toString();
+		assertThat(filterText).endsWith("<urn:o>" + ")>>".repeat(20_000));
+	}
+
+	@Test
+	public void deeplyNestedTripleTermBlankNodeDetectionAvoidsStackExhaustion() {
+		Value value = deeplyNestedTripleTerm(20_000);
+
+		assertThat(QueryStringUtil.containsBlankNode(value)).isFalse();
+	}
+
+	private static Value deeplyNestedTripleTerm(int depth) {
+		IRI subject = Values.iri("urn:s");
+		IRI predicate = Values.iri("urn:p");
+		Value value = Values.iri("urn:o");
+		for (int i = 0; i < depth; i++) {
+			value = Values.getValueFactory().createTripleTerm(subject, predicate, value);
+		}
+		return value;
+	}
+
+	@Test
 	public void datasetGraphIriCannotInjectAnotherClause() throws Exception {
 		IRI graph = SimpleValueFactory.getInstance().createIRI("urn:graph> FROM NAMED <urn:other");
 		SimpleDataset dataset = new SimpleDataset();

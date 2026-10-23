@@ -163,20 +163,16 @@ public abstract class SPARQLOperation implements Operation {
 	}
 
 	private String getReplacement(Value value) {
-		StringBuilder sb = new StringBuilder();
+		return SPARQLTermRenderer
+				.appendValueTree(new StringBuilder(), value, "<<(", ")>>", this::appendReplacementLeaf)
+				.toString();
+	}
+
+	private void appendReplacementLeaf(StringBuilder sb, Value value) {
 		if (value instanceof IRI) {
-			return appendValue(sb, (IRI) value).toString();
+			appendValue(sb, (IRI) value);
 		} else if (value instanceof Literal) {
-			return appendValue(sb, (Literal) value).toString();
-		} else if (value instanceof TripleTerm triple) {
-			sb.append("<<(")
-					.append(getReplacement(triple.getSubject()))
-					.append(' ')
-					.append(getReplacement(triple.getPredicate()))
-					.append(' ')
-					.append(getReplacement(triple.getObject()))
-					.append(")>>");
-			return sb.toString();
+			appendValue(sb, (Literal) value);
 		} else {
 			throw new IllegalArgumentException("BNode references not supported by SPARQL end-points");
 		}

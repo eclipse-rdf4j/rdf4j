@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.repository.sparql.query;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import java.util.ArrayList;
@@ -29,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
 
@@ -142,6 +144,34 @@ public class QueryStringUtilTest {
 	}
 
 	@Test
+	public void deeplyNestedTripleTermRendersWithoutStackExhaustion() {
+		Value value = nestedTripleTerm(20_000);
+
+		String rendered = QueryStringUtil.valueToString(value);
+		assertTrue(rendered.startsWith("<<(<urn:s> <urn:p> "));
+		assertTrue(rendered.endsWith("<urn:o>" + ")>>".repeat(20_000)));
+	}
+
+	@Test
+	public void deeplyNestedTripleBindingRendersWithoutStackExhaustion() {
+		MapBindingSet bindings = new MapBindingSet();
+		bindings.addBinding("value", nestedTripleTerm(20_000));
+
+		String rendered = QueryStringUtil.getTupleQueryString(
+				"SELECT * WHERE { ?s <urn:p> ?value }", bindings);
+		assertTrue(rendered.contains("<urn:o>" + " )>>".repeat(20_000)));
+	}
+
+	@Test
+	public void legacyOperationRendersDeepTripleBindingWithoutStackExhaustion() {
+		OperationProbe operation = new OperationProbe("SELECT * WHERE { ?s <urn:p> ?value }");
+		operation.setBinding("value", nestedTripleTerm(20_000));
+
+		String rendered = operation.render();
+		assertTrue(rendered.contains("<urn:o>" + ")>>".repeat(20_000)));
+	}
+
+	@Test
 	public void testSimpleLiteral() {
 		Literal literal = VF.createLiteral("simple \"literal\"");
 
@@ -208,6 +238,16 @@ public class QueryStringUtilTest {
 
 	private String valueToStringWithStringBuilder(Value value) {
 		return QueryStringUtil.appendValueAsString(new StringBuilder(), value).toString();
+	}
+
+	private static Value nestedTripleTerm(int depth) {
+		IRI subject = VF.createIRI("urn:s");
+		IRI predicate = VF.createIRI("urn:p");
+		Value value = VF.createIRI("urn:o");
+		for (int i = 0; i < depth; i++) {
+			value = VF.createTripleTerm(subject, predicate, value);
+		}
+		return value;
 	}
 
 	private Value parseObject(String term) {
