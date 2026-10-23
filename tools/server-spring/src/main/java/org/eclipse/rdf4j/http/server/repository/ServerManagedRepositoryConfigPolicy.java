@@ -54,6 +54,8 @@ public final class ServerManagedRepositoryConfigPolicy {
 	private static final String ALLOWED_CLASSES_PROPERTY = "rdf4j.server.allowedRepositoryConfigClasses";
 	private static final Set<String> BUILT_IN_INDEX_CLASSES = Set.of(LuceneIndex.class.getName(),
 			LuceneIndexNIOFS.class.getName(), ElasticsearchIndex.class.getName());
+	private static final Set<String> FILE_INDEX_CLASSES = Set.of(LuceneIndex.class.getName(),
+			LuceneIndexNIOFS.class.getName());
 	private static final Set<String> BUILT_IN_ANALYZER_CLASSES = Set.of(
 			"org.apache.lucene.analysis.standard.StandardAnalyzer",
 			"org.apache.lucene.analysis.core.KeywordAnalyzer",
@@ -107,6 +109,9 @@ public final class ServerManagedRepositoryConfigPolicy {
 						: LuceneIndex.class.getName();
 			}
 			requireApprovedClass(indexClass, BUILT_IN_INDEX_CLASSES, "SearchIndex");
+			if (FILE_INDEX_CLASSES.contains(indexClass)) {
+				configureLuceneIndexDir(lucene, repositoryDir);
+			}
 			requireApprovedClass(lucene.getParameter(LuceneSail.ANALYZER_CLASS_KEY), BUILT_IN_ANALYZER_CLASSES,
 					"repository configuration");
 			requireApprovedClass(lucene.getParameter(LuceneSail.QUERY_ANALYZER_CLASS_KEY), BUILT_IN_ANALYZER_CLASSES,
@@ -122,6 +127,30 @@ public final class ServerManagedRepositoryConfigPolicy {
 		}
 		if (config instanceof DelegatingSailImplConfig delegating && delegating.getDelegate() != null) {
 			configureSail(delegating.getDelegate(), repositoryDir);
+		}
+	}
+
+	private static void configureLuceneIndexDir(AbstractLuceneSailConfig lucene, Path repositoryDir) {
+		String configured = lucene.getConfiguredParameter(LuceneSail.LUCENE_DIR_KEY);
+		if (configured == null) {
+			configured = lucene.getConfiguredIndexDir();
+		}
+		if (configured == null) {
+			throw new RepositoryConfigException("Invalid Lucene index directory");
+		}
+		try {
+			Path root = repositoryDir.toFile().getCanonicalFile().toPath();
+			Path selected = Path.of(configured);
+			Path resolved = (selected.isAbsolute() ? selected : root.resolve(selected))
+					.toFile()
+					.getCanonicalFile()
+					.toPath();
+			if (!resolved.startsWith(root)) {
+				throw new RepositoryConfigException("Lucene index directory must be within the repository directory");
+			}
+			lucene.setRuntimeIndexDir(resolved.toString());
+		} catch (IOException | InvalidPathException e) {
+			throw new RepositoryConfigException("Invalid Lucene index directory", e);
 		}
 	}
 

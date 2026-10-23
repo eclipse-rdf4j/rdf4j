@@ -1,6 +1,6 @@
 # Confine Server-managed Lucene indexes to repository data
 
-This ExecPlan is maintained under `.agent/PLANS.md`. It applies to the isolated worktree `/Users/havardottestad/.codex/worktrees/security-lucene-index-dir/rdf4j` on branch `GH-0000-server-lucene-index-dir`, stacked on draft PR #6246 at `084dd6fd5722f6f212a42239b847927a0b3318be` (which depends on #6242). The Lucene diff reuses #6246's repository-root-aware Server config hook. No issue number was assigned, so `GH-0000` follows the repository branch convention.
+This ExecPlan is maintained under `.agent/PLANS.md`. It applies to the isolated worktree `/Users/havardottestad/.codex/worktrees/security-lucene-index-dir/rdf4j` on branch `GH-0000-server-lucene-index-dir`, stacked on draft PR #6246 at `2251a4188ea2d169bc6cad8d64f45711aef67750` (which depends on #6242). The Lucene diff reuses #6246's repository-root-aware Server config hook. No issue number was assigned, so `GH-0000` follows the repository branch convention.
 
 ## Purpose / Big Picture
 
@@ -10,9 +10,10 @@ A client permitted to write RDF4J Server repository configurations can choose a 
 
 - [done] prepare isolated base and build (2026-10-23 08:28Z)
 - [done] reproduce managed Lucene directory escapes (2026-10-23 08:40Z)
-- [in_progress] rebase tests and rerun focused red
-- [todo] design effective parameter path confinement
-- [todo] implement validated runtime path override
+- [done] rebase tests and rerun focused red (2026-10-23 08:47Z)
+- [done] design effective parameter path confinement (2026-10-23 08:49Z)
+- [done] implement validated runtime path override (2026-10-23 08:55Z)
+- [in_progress] align repaired prerequisite and verify
 - [todo] verify nested reload and embedded behavior
 - [todo] format review and publish draft
 - [todo] monitor exact published CI head
@@ -25,10 +26,11 @@ A client permitted to write RDF4J Server repository configurations can choose a 
 
 - Decision: Stack this PR on #6246. Rationale: #6246 passes the managed repository root into the Server config hook, which Lucene confinement needs; the original #6242 hook had no root parameter. Parent approved the stack after source review. Date/Author: 2026-10-23, Codex.
 - Decision: Test both `lucene.indexDir` and generic `lucene.lucenedir`. Rationale: the factory's parameter application order makes the latter the effective runtime path when present. Date/Author: 2026-10-23, Codex.
+- Decision: Validate the effective configured value for built-in filesystem index classes, then pass a canonical runtime value through either factory assignment while exporting the original RDF spelling. Rationale: `LuceneSailFactory` applies generic parameters after `indexDir`, and validation of only one field could be bypassed. Date/Author: 2026-10-23, Codex.
 
 ## Outcomes & Retrospective
 
-Not complete. The initial offline root clean install passed; no production code has changed. The live 14-case Server regression suite is red on #6242 with nine security-path failures and five passing compatibility cases. The focused test must be rerun on #6246 before production edits.
+Not complete. The initial offline root clean install passed. The live 14-case Server regression suite was red on #6242 with nine security-path failures and five passing compatibility cases. The focused test was rerun on the exact #6246 base and failed as expected (Failsafe 1/1/0); `rebased-initial-evidence.txt` retains the report. No production code had changed at that gate.
 
 ## Context and Orientation
 
