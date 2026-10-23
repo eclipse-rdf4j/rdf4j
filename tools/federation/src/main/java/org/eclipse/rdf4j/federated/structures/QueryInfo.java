@@ -12,6 +12,8 @@
 package org.eclipse.rdf4j.federated.structures;
 
 import java.math.BigInteger;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -30,6 +32,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResultHandler;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -56,10 +59,24 @@ public class QueryInfo {
 	private final long start;
 	private final boolean includeInferred;
 	private final Dataset dataset;
-	private final BlankNodeAllocationScope blankNodes = BlankNodeAllocationScope.currentOrNew();
+	private final BlankNodeAllocationScope blankNodes;
+	private final boolean ownsBlankNodes;
+	private Set<RemoteBNode.ResponseScope> responseScopes;
 
 	public BlankNodeAllocationScope getBlankNodeAllocationScope() {
 		return blankNodes;
+	}
+
+	/** Release response-owned spill files with the query, including cancellation paths. */
+	public synchronized void registerResponseScope(RemoteBNode.ResponseScope response) {
+		if (done) {
+			response.close();
+			throw new QueryEvaluationException("Query is already closed");
+		}
+		if (responseScopes == null) {
+			responseScopes = Collections.newSetFromMap(new IdentityHashMap<>());
+		}
+		responseScopes.add(response);
 	}
 
 	private TupleQueryResultHandler resultHandler = null;
@@ -84,6 +101,9 @@ public class QueryInfo {
 	public QueryInfo(String query, String baseURI, QueryType queryType, int maxExecutionTime, boolean includeInferred,
 			FederationContext federationContext, FederationEvaluationStrategy strategy, Dataset dataset) {
 		super();
+		BlankNodeAllocationScope active = BlankNodeAllocationScope.current();
+		this.blankNodes = active == null ? new BlankNodeAllocationScope() : active;
+		this.ownsBlankNodes = active == null;
 		this.queryID = federationContext.getQueryManager().getNextQueryId();
 
 		this.federationContext = federationContext;
@@ -213,14 +233,7 @@ public class QueryInfo {
 			return;
 		}
 		done = true;
-
-		try {
-			abortScheduledTasks();
-		} finally {
-			if (strategy != null) {
-				strategy.releaseGraphSnapshots();
-			}
-		}
+		closeResources(true);
 	}
 
 	/**
@@ -233,13 +246,73 @@ public class QueryInfo {
 			return;
 		}
 		done = true;
+		closeResources(false);
+	}
 
+	private void closeResources(boolean abort) {
+		Throwable failure = null;
 		try {
-			closeScheduledTasks();
-		} finally {
+			if (abort) {
+				abortScheduledTasks();
+			} else {
+				closeScheduledTasks();
+			}
+		} catch (RuntimeException | Error closeFailure) {
+			failure = closeFailure;
+		}
+		try {
 			if (strategy != null) {
 				strategy.releaseGraphSnapshots();
 			}
+		} catch (RuntimeException | Error closeFailure) {
+			failure = combineFailures(failure, closeFailure);
+		}
+		try {
+			closeIdentityScopes();
+		} catch (RuntimeException | Error closeFailure) {
+			failure = combineFailures(failure, closeFailure);
+		}
+		throwFailure(failure);
+	}
+
+	private void closeIdentityScopes() {
+		Throwable failure = null;
+		if (responseScopes != null) {
+			for (RemoteBNode.ResponseScope response : responseScopes) {
+				try {
+					response.close();
+				} catch (RuntimeException | Error closeFailure) {
+					failure = combineFailures(failure, closeFailure);
+				}
+			}
+			responseScopes.clear();
+		}
+		if (ownsBlankNodes) {
+			try {
+				blankNodes.close();
+			} catch (RuntimeException | Error closeFailure) {
+				failure = combineFailures(failure, closeFailure);
+			}
+		}
+		throwFailure(failure);
+	}
+
+	private static Throwable combineFailures(Throwable first, Throwable later) {
+		if (first == null) {
+			return later;
+		}
+		if (first != later) {
+			first.addSuppressed(later);
+		}
+		return first;
+	}
+
+	private static void throwFailure(Throwable failure) {
+		if (failure instanceof RuntimeException exception) {
+			throw exception;
+		}
+		if (failure instanceof Error error) {
+			throw error;
 		}
 	}
 

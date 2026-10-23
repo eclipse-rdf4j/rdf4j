@@ -166,6 +166,15 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 					protected BindingSet convert(BindingSet row) {
 						return response.map(row, invocationBindings);
 					}
+
+					@Override
+					protected void handleClose() {
+						try {
+							super.handleClose();
+						} finally {
+							response.close();
+						}
+					}
 				};
 				CloseableIteration<BindingSet> checked = ExternalValuePreparation.checkReplayAfterCalls(results);
 				if (service.isSilent()) {

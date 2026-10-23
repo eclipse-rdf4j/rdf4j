@@ -49,13 +49,26 @@ public class QueryResultIteration extends AbstractCloseableIteration<BindingSet>
 
 	@Override
 	public boolean hasNext() throws QueryEvaluationException {
-		if (inner.hasNext()) {
-			return true;
-		} else {
-			// inform the query manager that this query is done
-			qm.finishQuery(queryInfo);
+		if (isClosed()) {
 			return false;
 		}
+		boolean hasNext;
+		try {
+			hasNext = inner.hasNext();
+		} catch (RuntimeException | Error failure) {
+			closeAfterFailure(failure);
+			throw failure;
+		}
+		if (hasNext) {
+			return true;
+		}
+		// Closing after a completed result also releases query-owned blank-node spill files.
+		try {
+			qm.finishQuery(queryInfo);
+		} finally {
+			close();
+		}
+		return false;
 	}
 
 	@Override
@@ -63,12 +76,16 @@ public class QueryResultIteration extends AbstractCloseableIteration<BindingSet>
 		try {
 			BindingSet next = inner.next();
 			if (next == null) {
-				qm.finishQuery(queryInfo);
+				try {
+					qm.finishQuery(queryInfo);
+				} finally {
+					close();
+				}
 			}
 			return next;
-		} catch (QueryEvaluationException e) {
-			abortQuery();
-			throw e;
+		} catch (RuntimeException | Error failure) {
+			closeAfterFailure(failure);
+			throw failure;
 		}
 	}
 
@@ -86,6 +103,16 @@ public class QueryResultIteration extends AbstractCloseableIteration<BindingSet>
 				abortQuery();
 			} finally {
 				queryInfo.close();
+			}
+		}
+	}
+
+	private void closeAfterFailure(Throwable failure) {
+		try {
+			close();
+		} catch (RuntimeException | Error closeFailure) {
+			if (closeFailure != failure) {
+				failure.addSuppressed(closeFailure);
 			}
 		}
 	}

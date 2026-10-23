@@ -97,7 +97,11 @@ final class RemoteGraphSnapshot implements NativeTripleTermSource {
 			failure = captureFailure;
 			throw captureFailure;
 		} finally {
-			load.closeIteration(failure);
+			try {
+				load.closeIteration(failure);
+			} finally {
+				identities.close();
+			}
 		}
 		return snapshot;
 	}

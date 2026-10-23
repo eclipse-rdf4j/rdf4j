@@ -58,8 +58,11 @@ public final class EndpointIdentity {
 	private final boolean local;
 	private final RemoteBNode.ResponseScope response;
 	private final BlankNodeAllocationScope allocation;
+	private final QueryInfo query;
+	private boolean registered;
 
 	public EndpointIdentity(Endpoint endpoint, QueryInfo query) {
+		this.query = query;
 		allocation = query.getBlankNodeAllocationScope();
 		EndpointConfiguration configuration = endpoint.getEndpointConfiguration();
 		Sail localStore = localStore(endpoint);
@@ -211,11 +214,44 @@ public final class EndpointIdentity {
 	}
 
 	public Value incoming(Value value) {
-		return response.map(value);
+		Value mapped;
+		try {
+			mapped = response.map(value);
+		} catch (RuntimeException | Error failure) {
+			registerSpillAfterFailure(failure);
+			throw failure;
+		}
+		registerSpill();
+		return mapped;
 	}
 
 	public BindingSet incoming(BindingSet row, BindingSet originals) {
-		return response.map(row, originals);
+		BindingSet mapped;
+		try {
+			mapped = response.map(row, originals);
+		} catch (RuntimeException | Error failure) {
+			registerSpillAfterFailure(failure);
+			throw failure;
+		}
+		registerSpill();
+		return mapped;
+	}
+
+	private void registerSpillAfterFailure(Throwable failure) {
+		try {
+			registerSpill();
+		} catch (RuntimeException | Error registrationFailure) {
+			if (registrationFailure != failure) {
+				failure.addSuppressed(registrationFailure);
+			}
+		}
+	}
+
+	private synchronized void registerSpill() {
+		if (!registered && response.hasSpill()) {
+			query.registerResponseScope(response);
+			registered = true;
+		}
 	}
 
 	public CloseableIteration<BindingSet> incoming(CloseableIteration<BindingSet> rows, BindingSet originals) {

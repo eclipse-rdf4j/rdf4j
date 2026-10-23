@@ -368,6 +368,15 @@ public class RepositoryFederatedService implements FederatedService {
 			protected BindingSet convert(BindingSet row) {
 				return response.map(row, originals);
 			}
+
+			@Override
+			protected void handleClose() {
+				try {
+					super.handleClose();
+				} finally {
+					response.close();
+				}
+			}
 		};
 	}
 
@@ -488,6 +497,15 @@ public class RepositoryFederatedService implements FederatedService {
 						}
 						return response.map(row, originals.get(index));
 					}
+
+					@Override
+					protected void handleClose() {
+						try {
+							super.handleClose();
+						} finally {
+							response.close();
+						}
+					}
 				};
 				result = new ServiceJoinConversionIteration(mapped, originals, rowIndexVar);
 			}
@@ -603,7 +621,11 @@ public class RepositoryFederatedService implements FederatedService {
 
 		@Override
 		protected void handleClose() {
-			remote.close();
+			try {
+				remote.close();
+			} finally {
+				response.close();
+			}
 		}
 	}
 
