@@ -471,6 +471,175 @@ class ImmutablePagedQuadCsfIndexTest {
 	}
 
 	@Test
+	void findsFragmentContinuationWhoseRowIsNotFirstInPrecedingShard() {
+		long row = 2_932_299_266L;
+		try (ImmutablePagedQuadCsfIndex index = buildFragments(0, 0, List.of(
+				List.of(new Row(row - 128, new long[] { id(1, 10) }, new long[] { 0 }),
+						new Row(row, new long[] { id(1, 20) }, new long[] { 0 })),
+				List.of(new Row(row, new long[] { id(1, 20), id(1, 21) }, new long[] { id(1, 1), 0 }),
+						new Row(row + 128, new long[] { id(1, 30) }, new long[] { 0 }))),
+				new boolean[] { false, true })) {
+			long reference = index.findLocalReference(0, 0, row);
+			assertThat(reference).as("the complete row must remain addressable after fragment stitching").isNotZero();
+			ImmutablePagedQuadCsfIndex.RowCursor cursor = new ImmutablePagedQuadCsfIndex.RowCursor();
+			index.resolve(reference, cursor);
+			assertThat(cursor.edgeCount()).isEqualTo(3);
+			assertThat(cursor.neighborAt(2)).isEqualTo(id(1, 21));
+		}
+	}
+
+	@Test
+	void enumeratesCompleteRowsAcrossFragmentBoundariesInsideMultiRowPages() {
+		long row = 2_932_299_266L;
+		try (ImmutablePagedQuadCsfIndex index = buildFragments(0, 0, List.of(
+				List.of(new Row(row - 128, new long[] { id(1, 10) }, new long[] { 0 }),
+						new Row(row, new long[] { id(1, 20) }, new long[] { 0 })),
+				List.of(new Row(row, new long[] { id(1, 20), id(1, 21) }, new long[] { id(1, 1), 0 }),
+						new Row(row + 128, new long[] { id(1, 30) }, new long[] { 0 }))),
+				new boolean[] { false, true })) {
+			ImmutablePagedQuadCsfIndex.KeyCursor keys = index.keyDomain(0, 0).cursor();
+			assertThat(keys.advance()).isTrue();
+			assertThat(keys.key()).isEqualTo(row - 128);
+			assertThat(keys.advance()).isTrue();
+			assertThat(keys.key()).isEqualTo(row);
+			assertThat(keys.edgeCount()).isEqualTo(3);
+			assertThat(keys.distinctNeighborCount()).isEqualTo(2);
+			long[] neighbors = new long[3];
+			long[] contexts = new long[3];
+			assertThat(keys.copyPairs(0, 3, neighbors, 0, contexts, 0)).isEqualTo(3);
+			assertThat(neighbors).containsExactly(id(1, 20), id(1, 20), id(1, 21));
+			assertThat(contexts).containsExactly(0, id(1, 1), 0);
+		}
+	}
+
+	@Test
+	void fragmentedRowsPreserveCountsFibersAndUnsignedCoordinatesInEveryPartition() {
+		for (int predicate = 0; predicate < 2; predicate++) {
+			for (int plane = 0; plane < ImmutablePagedQuadCsfIndex.PLANE_COUNT; plane++) {
+				for (boolean predecessor : new boolean[] { false, true }) {
+					long row = Long.MIN_VALUE + 258;
+					List<Row> head = new ArrayList<>();
+					if (predecessor) {
+						head.add(new Row(row - 128, new long[] { id(1, 10) }, new long[] { 0 }));
+					}
+					head.add(new Row(row, new long[] { id(1, 20) }, new long[] { 0 }));
+					try (ImmutablePagedQuadCsfIndex index = buildFragments(predicate, plane, List.of(head,
+							List.of(),
+							List.of(new Row(row, new long[] { id(1, 20), id(1, 21) }, new long[] { id(1, 1), 0 })),
+							List.of(new Row(row, new long[] { id(1, 21), Long.MIN_VALUE + 130 },
+									new long[] { Long.MIN_VALUE + 2, 0 }),
+									new Row(row + 128, new long[] { id(1, 30) }, new long[] { 0 }))),
+							new boolean[] { false, false, true, true })) {
+						long[] expectedNeighbors = { id(1, 20), id(1, 20), id(1, 21), id(1, 21), Long.MIN_VALUE + 130 };
+						long[] expectedContexts = { 0, id(1, 1), 0, Long.MIN_VALUE + 2, 0 };
+						assertThat(index.rowCount(predicate, plane)).isEqualTo(predecessor ? 3 : 2);
+						assertThat(index.quadCount(predicate, plane)).isEqualTo(predecessor ? 7 : 6);
+						ImmutablePagedQuadCsfIndex.KeyDomain domain = index.keyDomain(predicate, plane);
+						long ordinal = predecessor ? 1 : 0;
+						assertThat(domain.keyAt(ordinal)).isEqualTo(row);
+						ImmutablePagedQuadCsfIndex.KeyCursor keys = domain.cursor(ordinal, ordinal + 1);
+						assertThat(keys.advance()).isTrue();
+						assertThat(keys.edgeCount()).isEqualTo(5);
+						assertThat(keys.distinctNeighborCount()).isEqualTo(3);
+						assertThat(keys.singlePageRow()).isFalse();
+						assertThat(keys.neighborAt(4)).isEqualTo(Long.MIN_VALUE + 130);
+						assertThat(keys.contextAt(3)).isEqualTo(Long.MIN_VALUE + 2);
+						long[] neighbors = new long[5];
+						long[] contexts = new long[5];
+						assertThat(keys.copyPairs(0, 5, neighbors, 0, contexts, 0)).isEqualTo(5);
+						assertThat(neighbors).containsExactly(expectedNeighbors);
+						assertThat(contexts).containsExactly(expectedContexts);
+						long[] weights = new long[5];
+						assertThat(keys.copyFibers(0, 5, neighbors, 0, weights, 0)).isEqualTo(3);
+						assertThat(Arrays.copyOf(neighbors, 3)).containsExactly(id(1, 20), id(1, 21),
+								Long.MIN_VALUE + 130);
+						assertThat(Arrays.copyOf(weights, 3)).containsExactly(2, 2, 1);
+						long[] roots = new long[3];
+						long[] counts = new long[3];
+						assertThat(domain.cursor().fillRootCounts(roots, 0, counts, 0, 3))
+								.isEqualTo(predecessor ? 3 : 2);
+						assertThat(counts[(int) ordinal]).isEqualTo(5);
+						Arrays.fill(counts, -1);
+						ImmutablePagedQuadCsfIndex.KeyCursor batches = domain.cursor();
+						for (int key = 0; key < domain.keyCount(); key++) {
+							assertThat(batches.fillRootCounts(roots, key, counts, key, 1)).isEqualTo(1);
+							assertThat(counts[key]).isEqualTo(key == ordinal ? 5 : 1);
+						}
+						assertThat(batches.fillRootCounts(roots, 0, counts, 0, 1)).isZero();
+						if (predecessor) {
+							ImmutablePagedQuadCsfIndex.KeyCursor adjacent = domain.cursor(0, 1);
+							assertThat(adjacent.advance()).isTrue();
+							assertThat(adjacent.singlePageRow()).isTrue();
+							assertThat(adjacent.edgeCount()).isEqualTo(1);
+							assertThat(adjacent.neighborAt(0)).isEqualTo(id(1, 10));
+						}
+						ImmutablePagedQuadCsfIndex.RowCursor run = new ImmutablePagedQuadCsfIndex.RowCursor();
+						index.resolve(keys.localReference(), run);
+						assertThat(run.edgeCount()).isEqualTo(5);
+						assertThat(run.copy(0, 5, neighbors, 0, contexts, 0)).isEqualTo(5);
+						assertThat(neighbors).containsExactly(expectedNeighbors);
+						assertThat(contexts).containsExactly(expectedContexts);
+						assertThat(run.lowerBound(0, id(1, 21), Long.MIN_VALUE + 2)).isEqualTo(3);
+						assertThat(run.lowerBound(2, Long.MIN_VALUE + 130, 0)).isEqualTo(4);
+						assertThat(run.copy(2, 2, neighbors, 0, contexts, 0)).isEqualTo(2);
+						assertThat(Arrays.copyOf(neighbors, 2)).containsExactly(id(1, 21), id(1, 21));
+						assertThat(Arrays.copyOf(contexts, 2)).containsExactly(0, Long.MIN_VALUE + 2);
+						try (ImmutablePagedQuadCsfIndex.LookupCursor lookup = new ImmutablePagedQuadCsfIndex.LookupCursor();
+								ImmutablePagedQuadCsfIndex.PartitionLookup partition = index.partitionLookup(predicate,
+										plane)) {
+							if (predecessor) {
+								assertThat(index.findLocalReference(predicate, plane, row - 128, lookup)).isNotZero();
+							}
+							assertThat(index.findLocalReference(predicate, plane, row, lookup))
+									.isEqualTo(keys.localReference());
+							assertThat(index.findLocalReference(predicate, plane, row))
+									.isEqualTo(keys.localReference());
+							assertThat(partition.find(row)).isEqualTo(keys.localReference());
+							assertThat(index.findLocalReference(predicate, plane, row + 1)).isZero();
+						}
+					}
+				}
+			}
+		}
+	}
+
+	@Test
+	void rewritesFragmentedRowsWithoutTruncatingPreservedOrRetainedRows() {
+		long row = 2_932_299_266L;
+		for (long changedRow : new long[] { row - 128, row, row + 128 }) {
+			for (boolean tombstone : new boolean[] { false, true }) {
+				TrackingBudget budget = new TrackingBudget();
+				try (ImmutablePagedQuadCsfIndex original = buildFragments(0, 0, List.of(
+						List.of(new Row(row - 128, new long[] { id(1, 10) }, new long[] { 0 }),
+								new Row(row, new long[] { id(1, 20) }, new long[] { 0 })),
+						List.of(new Row(row, new long[] { id(1, 21) }, new long[] { 0 }),
+								new Row(row + 128, new long[] { id(1, 30) }, new long[] { 0 }))),
+						new boolean[] { false, true })) {
+					Updates updates = new Updates(new int[] { 0 }, new long[] { changedRow },
+							new boolean[] { tombstone },
+							new long[][] { { id(1, 50) } }, new long[][] { { 0 } });
+					try (ImmutablePagedQuadCsfIndex rewritten = original.rewrite(1, updates, budget).index()) {
+						for (long key : new long[] { row - 128, row, row + 128 }) {
+							long reference = rewritten.findLocalReference(0, 0, key);
+							if (key == changedRow && tombstone) {
+								assertThat(reference).isZero();
+							} else {
+								ImmutablePagedQuadCsfIndex.RowCursor run = new ImmutablePagedQuadCsfIndex.RowCursor();
+								rewritten.resolve(reference, run);
+								assertThat(run.edgeCount()).isEqualTo(key == row && key != changedRow ? 2 : 1);
+							}
+						}
+						ImmutablePagedQuadCsfIndex.KeyCursor keys = original.keyDomain(0, 0).cursor(1, 2);
+						assertThat(keys.advance()).isTrue();
+						assertThat(keys.edgeCount()).isEqualTo(2);
+					}
+				}
+				assertThat(budget.liveBytes).hasValue(0);
+			}
+		}
+	}
+
+	@Test
 	void splitsOneSupernodeIntoLinkedFibreExtents() {
 		int count = 80_000;
 		long[] neighbours = new long[count];
@@ -970,6 +1139,51 @@ class ImmutablePagedQuadCsfIndexTest {
 			}
 		}
 		assertThat(found).isEqualTo(expectedFound);
+	}
+
+	private static ImmutablePagedQuadCsfIndex buildFragments(int predicate, int plane, List<List<Row>> fragments,
+			boolean[] continuations) {
+		ImmutablePagedQuadCsfIndex.BuildPlan[] plans = new ImmutablePagedQuadCsfIndex.BuildPlan[fragments.size()];
+		ImmutablePagedQuadCsfIndex[] indexes = new ImmutablePagedQuadCsfIndex[fragments.size()];
+		try {
+			for (int fragment = 0; fragment < fragments.size(); fragment++) {
+				try (ImmutablePagedQuadCsfIndex.Builder sizing = ImmutablePagedQuadCsfIndex
+						.sizingBuilder(predicate + 1)) {
+					feedFragment(sizing, predicate, plane, fragments.get(fragment), continuations[fragment]);
+					plans[fragment] = sizing.finishPlan();
+				}
+				try (ImmutablePagedQuadCsfIndex.Builder materializing = ImmutablePagedQuadCsfIndex
+						.materializingBuilder(plans[fragment])) {
+					feedFragment(materializing, predicate, plane, fragments.get(fragment), continuations[fragment]);
+					indexes[fragment] = materializing.finishIndex();
+				}
+			}
+			return ImmutablePagedQuadCsfIndex.mergeMaterializedFragments(
+					ImmutablePagedQuadCsfIndex.mergeBuildPlans(plans), indexes, (nativeBytes, javaBytes) -> () -> {
+					});
+		} finally {
+			for (ImmutablePagedQuadCsfIndex index : indexes) {
+				if (index != null) {
+					index.close();
+				}
+			}
+		}
+	}
+
+	private static void feedFragment(ImmutablePagedQuadCsfIndex.Builder builder, long predicate, int plane,
+			List<Row> rows, boolean continuation) {
+		for (int rowIndex = 0; rowIndex < rows.size(); rowIndex++) {
+			Row row = rows.get(rowIndex);
+			if (rowIndex == 0 && continuation) {
+				builder.beginContinuationRow(predicate, plane, row.row);
+			} else {
+				builder.beginRow(predicate, plane, row.row);
+			}
+			for (int ordinal = 0; ordinal < row.neighbours.length; ordinal++) {
+				builder.pair(row.neighbours[ordinal], row.contexts[ordinal]);
+			}
+			builder.endRow();
+		}
 	}
 
 	private static void feed(ImmutablePagedQuadCsfIndex.Builder builder, long predicate, int plane, List<Row> rows) {

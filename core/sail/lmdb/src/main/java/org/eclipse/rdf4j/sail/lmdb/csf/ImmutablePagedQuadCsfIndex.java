@@ -1397,8 +1397,14 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	}
 
 	private int floorShard(int partition, int start, int count, long row) {
-		return CsfRadixDirectory.floorShards(shards, start, count, row, partitionShardRadixBounds,
+		int floor = CsfRadixDirectory.floorShards(shards, start, count, row, partitionShardRadixBounds,
 				partitionShardRadixDescriptors[partition]);
+		// A raw source-range split can start a shard inside the preceding shard's last row. Its first fence
+		// identifies the continuation, while a handle must identify the head in the preceding shard.
+		while (floor > start && shards[floor].firstRow() == row && shards[floor].pageIsContinuation(0, row)) {
+			floor--;
+		}
+		return floor;
 	}
 
 	private void buildPartitionShardRadixDirectories() {
@@ -4061,11 +4067,12 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			if (localRow >= this.rowCount() || this.continuation()) {
 				throw new IllegalArgumentException("CSF handle does not identify a first-row coordinate");
 			}
-			long row = this.rowCount() == 1 ? this.firstRow() : 0;
+			boolean lastRow = localRow == this.rowCount() - 1;
+			long row = lastRow ? this.lastRow() : 0;
 			long count = this.rowQuadCount(localRow);
 			boolean ordered = this.allOrderedIntegerNeighbors();
 			extentCount = 0;
-			int currentPage = nextExtentPageId(pageId, row);
+			int currentPage = lastRow ? nextExtentPageId(pageId, row) : CompactCsfPageFormat.NO_PAGE;
 			boolean singlePage = currentPage == CompactCsfPageFormat.NO_PAGE;
 			if (!singlePage) {
 				addExtent(pageId, 0L);
@@ -4145,7 +4152,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		}
 
 		private int nextExtentPageId(int pageId, long expectedRow) {
-			if (this.rowCount() != 1) {
+			if (this.lastRow() != expectedRow) {
 				return CompactCsfPageFormat.NO_PAGE;
 			}
 			int next = pageId + 1;
@@ -4630,10 +4637,13 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 					copyRows(firstRow, batch, rootTarget, rootOffset + output);
 					copyRowQuadCounts(firstRow, batch, countTarget, countOffset + output);
 
-					if (rowCount() == 1) {
-						long root = rootTarget[rootOffset + output];
-						countTarget[countOffset + output] = countExtentEdges(pageId, root,
-								countTarget[countOffset + output]);
+					// Only the page's last row may continue into the next fragment, even when earlier rows share
+					// its head page. Count that row once its complete physical-page prefix has entered this batch.
+					if (firstRow + batch == rowCount()) {
+						int last = output + batch - 1;
+						long root = rootTarget[rootOffset + last];
+						countTarget[countOffset + last] = countExtentEdges(pageId, root,
+								countTarget[countOffset + last]);
 					}
 
 					copied += batch;
@@ -4909,7 +4919,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		}
 
 		private int nextExtentPageId(int pageId, CompactCsfPageReader current) {
-			if (current.rowCount() != 1) {
+			if (current.lastRow() != key) {
 				return CompactCsfPageFormat.NO_PAGE;
 			}
 			int next = pageId + 1;
