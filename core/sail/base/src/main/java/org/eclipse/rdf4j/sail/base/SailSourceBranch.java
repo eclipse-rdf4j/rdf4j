@@ -1197,16 +1197,16 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 				admission.completed.await();
 			} else {
 				while (admission.completed.getCount() != 0) {
-					long remainingNanos = deadline.remainingNanos();
-					if (remainingNanos == 0) {
+					long remainingMillis = deadline.remainingMillis();
+					if (remainingMillis == 0) {
 						throw new QueryInterruptedException("Query evaluation took too long");
 					}
-					if (!admission.completed.await(remainingNanos, TimeUnit.NANOSECONDS)
-							&& deadline.remainingNanos() == 0) {
+					if (!admission.completed.await(remainingMillis, TimeUnit.MILLISECONDS)
+							&& deadline.remainingMillis() == 0) {
 						throw new QueryInterruptedException("Query evaluation took too long");
 					}
 				}
-				if (deadline.remainingNanos() == 0) {
+				if (deadline.remainingMillis() == 0) {
 					throw new QueryInterruptedException("Query evaluation took too long");
 				}
 			}

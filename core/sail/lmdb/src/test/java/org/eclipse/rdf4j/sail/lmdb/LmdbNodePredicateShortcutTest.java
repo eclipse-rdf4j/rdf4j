@@ -40,6 +40,7 @@ class LmdbNodePredicateShortcutTest {
 
 	private TripleStore tripleStore;
 	private LmdbDirectAdjacencyStore store;
+	private String previousServingProperty;
 
 	private static long uri(long payload) {
 		return ValueIds.createId(ValueIds.T_URI, payload);
@@ -57,13 +58,18 @@ class LmdbNodePredicateShortcutTest {
 
 	@BeforeEach
 	void setUp(@TempDir File dataDir) throws Exception {
+		previousServingProperty = System.getProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY);
 		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null);
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
 				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		LmdbDirectAdjacencyOptions options = LmdbDirectAdjacencyOptions.resolve(config, 8L << 30,
-				name -> LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY.equals(name) ? "true" : null, 4);
+				name -> LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY.equals(name)
+						|| LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_INCOMING_PROPERTY.equals(name)
+								? "true"
+								: null,
+				4);
 		System.setProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY, "true");
 		store = new LmdbDirectAdjacencyStore(tripleStore, null, new AtomicBoolean(false), options);
 		tripleStore.setDirectAdjacencyCommitHooks(store.commitListener(), store.newCommitDelta());
@@ -83,7 +89,11 @@ class LmdbNodePredicateShortcutTest {
 
 	@AfterEach
 	void tearDown() throws Exception {
-		System.clearProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY);
+		if (previousServingProperty == null) {
+			System.clearProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY);
+		} else {
+			System.setProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY, previousServingProperty);
+		}
 		if (store != null) {
 			store.close();
 		}
@@ -161,8 +171,8 @@ class LmdbNodePredicateShortcutTest {
 	void countsEveryStatementOfANodeWithoutMaterialisingThem() throws Exception {
 		assertThat(count(S1, -1, -1)).isEqualTo(5);
 		assertThat(count(S_EMPTY, -1, -1)).isZero();
-		// the reverse direction is not covered here: the incoming planes are gated separately and off
-		assertThat(count(-1, O1, -1)).isEqualTo(-1);
+		assertThat(count(-1, O1, -1)).as("incoming counts include the same object in distinct graphs").isEqualTo(3);
+		assertThat(count(-1, S_EMPTY, -1)).as("an object with no incoming statements has an empty row").isZero();
 	}
 
 	/**
