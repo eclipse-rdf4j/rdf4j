@@ -355,6 +355,19 @@ final class LmdbUtil {
 		return saturatedAdd(saturatedMultiply(nextPgno, pageSize), requiredSize);
 	}
 
+	/** Rounds a configured capacity upward without silently reducing a byte floor or overflowing native offsets. */
+	static long pageAlignedCapacity(long bytes, long pageSize) {
+		if (bytes < 0L || pageSize <= 0L) {
+			throw new IllegalArgumentException("LMDB capacity must be nonnegative and page size positive");
+		}
+		try {
+			long remainder = bytes % pageSize;
+			return remainder == 0L ? bytes : Math.addExact(bytes, pageSize - remainder);
+		} catch (ArithmeticException overflow) {
+			throw new IllegalArgumentException("LMDB capacity cannot be represented as page-aligned bytes", overflow);
+		}
+	}
+
 	static long saturatedAdd(long left, long right) {
 		return Long.MAX_VALUE - left < right ? Long.MAX_VALUE : left + right;
 	}

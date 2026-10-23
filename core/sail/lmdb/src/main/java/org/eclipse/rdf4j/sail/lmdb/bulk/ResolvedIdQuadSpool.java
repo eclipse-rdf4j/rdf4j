@@ -18,6 +18,7 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -39,15 +40,17 @@ final class ResolvedIdQuadSpool {
 	private final Path path;
 	private final long statements;
 	private final BulkCompression compression;
+	private final String contentDigest;
 
-	private ResolvedIdQuadSpool(Path path, long statements, BulkCompression compression) {
+	private ResolvedIdQuadSpool(Path path, long statements, BulkCompression compression, String contentDigest) {
 		this.path = path;
 		this.statements = statements;
 		this.compression = compression;
+		this.contentDigest = contentDigest;
 	}
 
-	static ResolvedIdQuadSpool restore(Path workspace, long statements, long bytes, BulkCompression compression)
-			throws IOException {
+	static ResolvedIdQuadSpool restore(Path workspace, long statements, long bytes, BulkCompression compression,
+			String contentDigest) throws IOException {
 		if (statements < 0L || bytes < 0L) {
 			throw new IOException("Invalid resolved statement metadata: " + statements);
 		}
@@ -58,7 +61,8 @@ final class ResolvedIdQuadSpool {
 			throw new IOException("Resolved statement file size mismatch for " + path + ": expected "
 					+ bytes + " bytes");
 		}
-		return new ResolvedIdQuadSpool(path, statements, compression);
+		return new ResolvedIdQuadSpool(path, statements, compression,
+				BulkArtifactIntegrity.requireDigest(contentDigest, path));
 	}
 
 	/**
@@ -71,6 +75,7 @@ final class ResolvedIdQuadSpool {
 		staged.verifyComponentFiles();
 		Path spoolPath = workspace.resolve("id-quads.bin");
 		long resolved = 0L;
+		String contentDigest;
 		try (ExternalLongTupleSorter sorter = new ExternalLongTupleSorter(workspace, "resolved-components", 3,
 				memoryBudgetBytes, maxOpenFiles, compression.codecFor(BulkArtifact.RESOLVED_COMPONENTS))) {
 			for (int partition = 0; partition < dictionary.partitionCount(); partition++) {
@@ -94,13 +99,15 @@ final class ResolvedIdQuadSpool {
 				throw new IOException("Resolved component count mismatch: expected " + staged.componentRecords()
 						+ " but got " + resolved);
 			}
-			try (QuadAssembler assembler = new QuadAssembler(spoolPath, staged.statements(), compression,
-					cancellationSignal)) {
+			QuadAssembler assembler = new QuadAssembler(spoolPath, staged.statements(), compression,
+					cancellationSignal);
+			try (assembler) {
 				sorter.finishInto(assembler::accept);
 				assembler.finish();
 			}
+			contentDigest = assembler.contentDigest();
 		}
-		return new ResolvedIdQuadSpool(spoolPath, staged.statements(), compression);
+		return new ResolvedIdQuadSpool(spoolPath, staged.statements(), compression, contentDigest);
 	}
 
 	static ResolvedIdQuadSpool build(CanonicalStagedInput staged, PartitionValueDictionary dictionary,
@@ -154,20 +161,23 @@ final class ResolvedIdQuadSpool {
 		}
 		// Every partition produced one run in ascending (ordinal, component) order, so a single merge pass over at
 		// most partitionCount runs restores statement order, streamed straight into the spool.
+		String contentDigest;
 		try (ExternalLongTupleSorter sorter = new ExternalLongTupleSorter(workspace, "resolved-components", 3,
 				memoryBudgetBytes, maxOpenFiles, runCodec, scheduler, () -> {
 				})) {
 			for (PartitionRun run : partitionRuns) {
 				sorter.addSortedRun(ExternalLongTupleSorter.SortedTupleFile.restore(run.path(), 3, run.rows(),
-						run.bytes(), runCodec));
+						run.bytes(), runCodec, run.contentDigest()));
 			}
-			try (QuadAssembler assembler = new QuadAssembler(spoolPath, staged.statements(), compression,
-					cancellationSignal)) {
+			QuadAssembler assembler = new QuadAssembler(spoolPath, staged.statements(), compression,
+					cancellationSignal);
+			try (assembler) {
 				sorter.finishInto(assembler::accept);
 				assembler.finish();
 			}
+			contentDigest = assembler.contentDigest();
 		}
-		return new ResolvedIdQuadSpool(spoolPath, staged.statements(), compression);
+		return new ResolvedIdQuadSpool(spoolPath, staged.statements(), compression, contentDigest);
 	}
 
 	static void deleteContents(Path directory) throws IOException {
@@ -207,7 +217,7 @@ final class ResolvedIdQuadSpool {
 	}
 
 	/** One partition's finished resolved-component run, sorted by (ordinal, component). */
-	record PartitionRun(Path path, long rows, long bytes) {
+	record PartitionRun(Path path, long rows, long bytes, String contentDigest) {
 	}
 
 	/**
@@ -220,19 +230,22 @@ final class ResolvedIdQuadSpool {
 		private final ComponentBucketCursor cursor;
 		private final Path runPath;
 		private final LookupCache cache;
+		private final MessageDigest digest;
 		private DataOutputStream output;
 		private long rows;
 		private boolean inFlight;
 		private boolean closed;
 
 		private PartitionWork(int partition, PartitionValueDictionary.PartitionReader reader,
-				ComponentBucketCursor cursor, Path runPath, DataOutputStream output, LookupCache cache) {
+				ComponentBucketCursor cursor, Path runPath, DataOutputStream output, LookupCache cache,
+				MessageDigest digest) {
 			this.partition = partition;
 			this.reader = reader;
 			this.cursor = cursor;
 			this.runPath = runPath;
 			this.output = output;
 			this.cache = cache;
+			this.digest = digest;
 		}
 
 		/** Runs on the worker: streams up to one chunk of records through the dictionary into the run output. */
@@ -543,11 +556,12 @@ final class ResolvedIdQuadSpool {
 			try {
 				reader = dictionary.openPartition(partition, scheduler, lease);
 				frames = BulkLz4.openConcatenated(staged.componentPath(partition), inputCodec, scheduler, lease);
-				output = BulkLz4.output(runPath, runCodec, scheduler, lease);
+				MessageDigest digest = BulkArtifactIntegrity.newDigest();
+				output = BulkLz4.output(runPath, runCodec, scheduler, lease, digest);
 				ComponentBucketCursor cursor = new ComponentBucketCursor(partition, dictionary.partitionCount(),
 						frames, lease);
 				return new PartitionWork(partition, reader, cursor, runPath, output,
-						new LookupCache(LOOKUP_CACHE_ENTRIES));
+						new LookupCache(LOOKUP_CACHE_ENTRIES), digest);
 			} catch (IOException | RuntimeException | Error failure) {
 				if (output != null) {
 					try {
@@ -590,7 +604,8 @@ final class ResolvedIdQuadSpool {
 			try {
 				long bytes = partition.finishOutput();
 				if (partition.rows > 0L) {
-					completedRuns.add(new PartitionRun(partition.runPath, partition.rows, bytes));
+					completedRuns.add(new PartitionRun(partition.runPath, partition.rows, bytes,
+							BulkArtifactIntegrity.finish(partition.digest)));
 				} else {
 					Files.deleteIfExists(partition.runPath);
 				}
@@ -852,6 +867,10 @@ final class ResolvedIdQuadSpool {
 		return statements;
 	}
 
+	String contentDigest() {
+		return contentDigest;
+	}
+
 	long scanReaderMemoryEstimateBytes() throws IOException {
 		return Files.size(path) == 0L ? 0L
 				: Math.addExact(BulkLz4.mergeInputMemoryBytes(compression.codecFor(BulkArtifact.ID_QUADS)),
@@ -879,6 +898,7 @@ final class ResolvedIdQuadSpool {
 	 */
 	private static final class QuadAssembler implements AutoCloseable {
 		private final DataOutputStream output;
+		private final MessageDigest digest = BulkArtifactIntegrity.newDigest();
 		private final long statements;
 		private final BooleanSupplier cancellationSignal;
 		private final long[] ids = new long[COMPONENTS];
@@ -889,7 +909,7 @@ final class ResolvedIdQuadSpool {
 
 		private QuadAssembler(Path spoolPath, long statements, BulkCompression compression,
 				BooleanSupplier cancellationSignal) throws IOException {
-			this.output = BulkLz4.output(spoolPath, compression.codecFor(BulkArtifact.ID_QUADS));
+			this.output = BulkLz4.output(spoolPath, compression.codecFor(BulkArtifact.ID_QUADS), null, digest);
 			this.statements = statements;
 			this.cancellationSignal = cancellationSignal;
 		}
@@ -941,6 +961,10 @@ final class ResolvedIdQuadSpool {
 				throw new IOException("Incomplete ID-quad spool: expected " + statements + " statements but assembled "
 						+ assembled);
 			}
+		}
+
+		private String contentDigest() {
+			return BulkArtifactIntegrity.finish(digest);
 		}
 
 		@Override
