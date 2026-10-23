@@ -10,15 +10,16 @@ An operator can permit an absolute RDF4J Server URL in Workbench with `accepted-
 
 - [done] prepare isolated branch and build (2026-10-23 09:39Z)
 - [done] reproduce redirect and line issues (2026-10-23 09:46Z)
-- [in_progress] align #6210 and rerun red
-- [todo] implement per-hop bounded probe
-- [todo] verify Workbench compatibility variants
-- [todo] format review and publish draft
+- [done] align #6210 and rerun red (2026-10-23 09:52Z)
+- [done] implement per-hop bounded probe (2026-10-23 10:02Z)
+- [done] verify Workbench compatibility variants (2026-10-23 10:07Z)
+- [done] format and review candidate (2026-10-23 10:13Z)
+- [in_progress] publish scoped draft after review
 - [todo] monitor exact published checks
 
 ## Surprises & Discoveries
 
-`ServerValidator.isValidServer` first checks the selected URL against `accepted-server-prefixes`, then `canConnect` calls `new URL(server + "/protocol").openStream()` and `BufferedReader.readLine()`. The default accepted prefix is the relative `/rdf4j-server`; arbitrary remote selection requires an administrator to configure an absolute prefix. Java URL connections can follow redirects before Workbench checks the destination. The current line read has no Workbench byte or character budget. On current main, the first focused Surefire test failed 1/1 because the unapproved redirect still made validation true (`initial-evidence.txt`); the second failed 1/1 because 65 zeroes still made validation true (`line-initial-evidence.txt`).
+`ServerValidator.isValidServer` first checks the selected URL against `accepted-server-prefixes`, then `canConnect` calls `new URL(server + "/protocol").openStream()` and `BufferedReader.readLine()`. The default accepted prefix is the relative `/rdf4j-server`; arbitrary remote selection requires an administrator to configure an absolute prefix. Java URL connections can follow redirects before Workbench checks the destination. The current line read has no Workbench byte or character budget. On current main, the first focused Surefire test failed 1/1 because the unapproved redirect still made validation true (`initial-evidence.txt`); the second failed 1/1 because 65 zeroes still made validation true (`line-initial-evidence.txt`). On #6210's exact head, the redirect remained red 1/1 (`rebased-initial-evidence.txt`), and a same-origin redirect outside an accepted path also failed 1/1 (`same-origin-path-red-evidence.txt`).
 
 ## Decision Log
 
@@ -28,7 +29,7 @@ An operator can permit an absolute RDF4J Server URL in Workbench with `accepted-
 
 ## Outcomes & Retrospective
 
-Not complete. The initial build is green. Two focused test methods are red on main before production edits and their Surefire reports are preserved. The test-only branch must be rebased onto #6210 and the focused red rerun there before production changes.
+Candidate ready for independent review. The initial build is green. Two focused test methods were red on main before production edits and their Surefire reports are preserved. The test-only branch was rebased onto #6210's exact head and redirect and path-prefix regressions were confirmed red there, still before any production edit. The expanded validator class passed 35 tests and the formatted full Workbench module passed 1,348 tests. The first full-module run could not find the bundled Node runtime at the Java fixture's hard-coded `target/node` path even though mvnf built it under the private workspace; its failure report was preserved, a test-artifact symlink supplied the expected path, and the later full runs passed. Copyright, formatter, and `git diff --check` passed.
 
 ## Context and Orientation
 
@@ -67,4 +68,4 @@ All HTTP fixtures bind ephemeral local ports and stop in `finally`. Preserve unt
 
 Use JDK `HttpURLConnection` and `URL` for the narrow Workbench probe; no new dependency is needed. Keep `ServerValidator.isValidServer(String)` as the caller-facing validation result. The redirect helper should use the existing `checkServerPrefixes` policy and must never call `getInputStream()` on an unapproved target. A bounded first-line reader should retain `Integer.parseInt` acceptance for ordinary numeric versions.
 
-Plan change note (2026-10-23): created after the isolated baseline build and source trace, before any test or production edit. Updated after two focused red reports and the decision to stack on #6210's accepted-prefix implementation.
+Plan change note (2026-10-23): created after the isolated baseline build and source trace, before any test or production edit. Updated after two focused red reports and the decision to stack on #6210's accepted-prefix implementation. Updated again after the exact-base redirect and same-origin path-prefix red reports.
