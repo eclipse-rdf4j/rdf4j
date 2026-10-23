@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.http.server.repository.resolver;
 
 import org.eclipse.rdf4j.http.server.repository.RepositoryInterceptor;
 import org.eclipse.rdf4j.http.server.repository.ServerRemoteResourceOpener;
+import org.eclipse.rdf4j.http.server.repository.ServerServiceConnections;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -48,7 +49,7 @@ public class DefaultRepositoryResolver implements RepositoryResolver {
 		ServerRemoteResourceOpener.configure(conn);
 		conn.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);
 		conn.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_LANGUAGE_TAGS);
-		return conn;
+		return ServerServiceConnections.configure(conn);
 	}
 
 	public Repository getRepository(HttpServletRequest request) {

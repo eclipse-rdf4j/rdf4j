@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreakerHandle;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.http.server.repository.ServerRemoteResourceOpener;
+import org.eclipse.rdf4j.http.server.repository.ServerServiceConnections;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -468,7 +469,7 @@ class Transaction implements AutoCloseable {
 			config.addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);
 			config.addNonFatalError(BasicParserSettings.VERIFY_LANGUAGE_TAGS);
 
-			return conn;
+			return ServerServiceConnections.configure(conn);
 		});
 		return getFromFuture(result);
 	}

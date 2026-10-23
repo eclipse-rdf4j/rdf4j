@@ -265,7 +265,7 @@ public abstract class TripleSourceBase implements TripleSource {
 				monitorRemoteRequest();
 				res = query.evaluate();
 			} else {
-				res = snapshot.evaluate(text, query, nativeBindings, federationContext.getFederatedServiceResolver());
+				res = snapshot.evaluate(text, query, nativeBindings, strategy.getFederatedServiceResolver());
 			}
 			if (snapshot == null) {
 				res = identity.incoming(res, bindings);
