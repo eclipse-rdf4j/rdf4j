@@ -129,7 +129,6 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrText;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrValues;
-import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms;
 import org.eclipse.rdf4j.queryrender.sparql.util.ExprTextUtils;
 import org.eclipse.rdf4j.queryrender.sparql.util.TermRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.util.TextEscapes;
@@ -302,7 +301,7 @@ public class TupleExprToIrConverter {
 		// Apply standard transforms for consistent property path and grouping rewrites
 		IrSelect tmp = new IrSelect(false);
 		tmp.setWhere(where);
-		IrSelect transformed = IrTransforms.transformUsingChildren(tmp, r);
+		IrSelect transformed = r.transformIrRecursively(tmp);
 		where = transformed.getWhere();
 		StringBuilder sb = new StringBuilder(64);
 		InlinePrinter p = new InlinePrinter(sb);
@@ -491,6 +490,7 @@ public class TupleExprToIrConverter {
 	}
 
 	private String renderExpr(final ValueExpr e) {
+		IrNode.checkInterrupted();
 		if (e == null) {
 			return "()";
 		}
@@ -675,7 +675,7 @@ public class TupleExprToIrConverter {
 		this.prefixIndex = new PrefixIndex(this.cfg.prefixes);
 	}
 
-	/** Build IrSelect; by default apply transforms (used for subselects). */
+	/** Build raw IrSelect, including raw nested subselects. The renderer owns transformation. */
 	public static IrSelect toIRSelectRaw(final TupleExpr tupleExpr, TupleExprIRRenderer r) {
 		return toIRSelectRaw(tupleExpr, r, true);
 	}
@@ -724,21 +724,12 @@ public class TupleExprToIrConverter {
 		final IRBuilder builder = new TupleExprToIrConverter(r).new IRBuilder();
 		ir.setWhere(builder.build(n.where));
 
-		// Optionally apply transforms (useful for nested subselects; top-level transforms are handled by the renderer).
-		if (applyTransforms) {
-			IrSelect transformed = IrTransforms.transformUsingChildren(ir, r);
-			ir.setWhere(transformed.getWhere());
-
-			// Preserve explicit grouping braces around a single‑line WHERE when the original algebra
-			// indicated a variable scope change at the root of the subselect. This mirrors the old behavior
-			// and keeps nested queries' grouping stable for tests.
-			if (ir.getWhere() != null && ir.getWhere().getLines() != null && ir.getWhere().getLines().size() == 1
-					&& rootHasExplicitScope(n.where)) {
-				final IrNode only = ir.getWhere().getLines().get(0);
-				if (only instanceof IrStatementPattern || only instanceof IrPathTriple || only instanceof IrGraph
-						|| only instanceof IrSubSelect) {
-					ir.getWhere().setNewScope(true);
-				}
+		// Conversion stays raw: the renderer owns the pipeline for this SELECT and each nested SELECT.
+		if (ir.getWhere() != null && ir.getWhere().getLines().size() == 1 && rootHasExplicitScope(n.where)) {
+			final IrNode only = ir.getWhere().getLines().get(0);
+			if (only instanceof IrStatementPattern || only instanceof IrPathTriple || only instanceof IrGraph
+					|| only instanceof IrSubSelect) {
+				ir.getWhere().setNewScope(true);
 			}
 		}
 
@@ -801,12 +792,20 @@ public class TupleExprToIrConverter {
 	}
 
 	private static Normalized normalize(final TupleExpr root, final boolean peelScopedWrappers) {
+		IrNode.checkInterrupted();
 		final Normalized n = new Normalized();
 		TupleExpr cur = root;
 
 		boolean changed;
 		do {
 			changed = false;
+			IrNode.checkInterrupted();
+			// Once this SELECT's header is known, a scoped wrapper belongs to an inner SELECT. Its DISTINCT,
+			// LIMIT/OFFSET, ordering and aggregation must stay inside the WHERE rather than moving to this header.
+			if (n.projection != null && cur instanceof AbstractQueryModelNode
+					&& ((AbstractQueryModelNode) cur).isVariableScopeChange()) {
+				break;
+			}
 
 			if (cur instanceof QueryRoot) {
 				cur = ((QueryRoot) cur).getArg();
@@ -917,12 +916,10 @@ public class TupleExprToIrConverter {
 					if (containsAggregate(cond) || isHavingCandidate(cond, n.groupByVarNames, n.aggregateOutputNames)) {
 						n.havingConditions.add(cond);
 						cur = afterGroup;
-						changed = true;
-						continue;
+						break;
 					} else {
 						cur = new Filter(afterGroup, cond); // keep as WHERE filter
-						changed = true;
-						continue;
+						break;
 					}
 				}
 
@@ -1013,7 +1010,9 @@ public class TupleExprToIrConverter {
 				}
 
 				cur = afterGroup;
-				changed = true;
+				// Operators below GROUP describe its input, even when programmatically constructed algebra carries no
+				// parser scope flags. Leave their projection/modifiers inside the WHERE as a nested SELECT.
+				break;
 			}
 
 		} while (changed);
@@ -2399,6 +2398,7 @@ public class TupleExprToIrConverter {
 		}
 
 		IrBGP build(final TupleExpr t) {
+			IrNode.checkInterrupted();
 			if (t == null) {
 				return where;
 			}
@@ -2565,7 +2565,13 @@ public class TupleExprToIrConverter {
 		private IrBGP buildLateralRight(final TupleExpr rightArg) {
 			if (isSubSelectRoot(rightArg)) {
 				IrBGP rightWhere = new IrBGP(false);
-				rightWhere.add(toIRSelectRaw(rightArg, r));
+				IrSelect select = toIRSelectRaw(rightArg, r);
+				if (rightArg instanceof AbstractQueryModelNode
+						&& ((AbstractQueryModelNode) rightArg).isVariableScopeChange()) {
+					rightWhere.add(new IrSubSelect(select, true));
+				} else {
+					rightWhere.add(select);
+				}
 				return rightWhere;
 			}
 

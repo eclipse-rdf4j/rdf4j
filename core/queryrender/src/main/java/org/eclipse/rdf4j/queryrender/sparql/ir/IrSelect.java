@@ -90,6 +90,7 @@ public class IrSelect extends IrNode {
 
 	@Override
 	public IrNode transformChildren(UnaryOperator<IrNode> op) {
+		checkInterrupted();
 		IrBGP newWhere = this.where;
 		if (newWhere != null) {
 			IrNode t = op.apply(newWhere);
