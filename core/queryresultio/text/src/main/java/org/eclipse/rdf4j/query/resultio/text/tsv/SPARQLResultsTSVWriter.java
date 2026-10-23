@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 import org.eclipse.rdf4j.query.resultio.AbstractQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
+import org.eclipse.rdf4j.query.resultio.text.SPARQLResultResourceWriter;
 
 /**
  * TupleQueryResultWriter for the SPARQL TSV (Tab-Separated Values) format.
@@ -68,6 +69,11 @@ public class SPARQLResultsTSVWriter extends AbstractQueryResultWriter implements
 
 	@Override
 	public void startQueryResult(List<String> bindingNames) throws TupleQueryResultHandlerException {
+		for (String bindingName : bindingNames) {
+			if (bindingName.indexOf('\t') >= 0 || bindingName.indexOf('\r') >= 0 || bindingName.indexOf('\n') >= 0) {
+				throw new IllegalArgumentException("Binding name contains a TSV delimiter");
+			}
+		}
 		super.startQueryResult(bindingNames);
 
 		tupleVariablesFound = true;
@@ -161,16 +167,18 @@ public class SPARQLResultsTSVWriter extends AbstractQueryResultWriter implements
 	}
 
 	protected void writeURI(IRI uri) throws IOException {
-		String uriString = uri.toString();
-		writer.write("<" + uriString + ">");
+		SPARQLResultResourceWriter.appendIRI(uri, writer);
 	}
 
 	protected void writeBNode(BNode bNode) throws IOException {
-		writer.write("_:");
-		writer.write(bNode.getID());
+		SPARQLResultResourceWriter.appendBNode(bNode, writer);
 	}
 
 	private void writeLiteral(Literal lit) throws IOException {
+		String language = lit.getLanguage().orElse(null);
+		if (language != null && !Literals.isValidLanguageTag(language)) {
+			throw new IllegalArgumentException("Invalid language tag");
+		}
 		String label = lit.getLabel();
 
 		IRI datatype = lit.getDatatype();
@@ -194,7 +202,7 @@ public class SPARQLResultsTSVWriter extends AbstractQueryResultWriter implements
 			writer.write("\"");
 			// Append the literal's language
 			writer.write("@");
-			writer.write(lit.getLanguage().get());
+			writer.write(language);
 			if (lit.getBaseDirection() != Literal.BaseDirection.NONE) {
 				writer.write(lit.getBaseDirection().toString());
 			}

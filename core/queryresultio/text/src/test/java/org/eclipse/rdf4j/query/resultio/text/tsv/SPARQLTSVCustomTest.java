@@ -12,6 +12,9 @@
 package org.eclipse.rdf4j.query.resultio.text.tsv;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -19,7 +22,10 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
+import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -130,6 +136,120 @@ public class SPARQLTSVCustomTest {
 				"<http://example.org/1>\n", result);
 	}
 
+	@Test
+	public void resourceDelimitersRemainInOneResultRow() throws Exception {
+		var factory = SimpleValueFactory.getInstance();
+		IRI iri = factory.createIRI("urn:part\t<urn:forged>\r\nnext\"part");
+		BNode bNode = factory.createBNode("part\t<urn:forged>\r\n_:next\"part");
+		List<String> names = List.of("iri", "bnode");
+		String result = writeTupleResult(new IteratingTupleQueryResult(names,
+				List.of(new ListBindingSet(names, iri, bNode))));
+
+		QueryResultCollector parsed = parseTupleResult(result);
+		assertEquals(names, parsed.getBindingNames());
+		assertEquals(1, parsed.getBindingSets().size());
+		BindingSet row = parsed.getBindingSets().get(0);
+		assertEquals(iri, row.getValue("iri"));
+		assertInstanceOf(BNode.class, row.getValue("bnode"));
+		assertEquals(2, row.size());
+	}
+
+	@Test
+	public void nestedResourcesCannotCreateAnotherResultRow() throws Exception {
+		var factory = SimpleValueFactory.getInstance();
+		IRI subject = factory.createIRI("urn:subject\t<urn:forged>\nnext");
+		TripleTerm nested = factory.createTripleTerm(subject, factory.createIRI("urn:predicate"),
+				factory.createBNode("part\t<urn:forged>\n_:next"));
+		List<String> names = List.of("term", "tail");
+		String result = writeTupleResult(new IteratingTupleQueryResult(names,
+				List.of(new ListBindingSet(names, nested, factory.createLiteral("tail")))));
+
+		QueryResultCollector parsed = parseTupleResult(result);
+		assertEquals(1, parsed.getBindingSets().size());
+		BindingSet row = parsed.getBindingSets().get(0);
+		TripleTerm parsedTriple = assertInstanceOf(TripleTerm.class, row.getValue("term"));
+		assertEquals(subject, parsedTriple.getSubject());
+		assertInstanceOf(BNode.class, parsedTriple.getObject());
+		assertEquals("tail", row.getValue("tail").stringValue());
+		assertEquals(2, row.size());
+	}
+
+	@Test
+	public void datatypeIriEscapesRoundTrip() throws Exception {
+		var factory = SimpleValueFactory.getInstance();
+		IRI datatype = factory.createIRI("urn:datatype\t<unsafe>\n😀");
+		Literal literal = factory.createLiteral("value", datatype);
+		List<String> names = List.of("value");
+		String result = writeTupleResult(new IteratingTupleQueryResult(names,
+				List.of(new ListBindingSet(names, literal))));
+
+		QueryResultCollector parsed = parseTupleResult(result);
+		assertEquals(1, parsed.getBindingSets().size());
+		assertEquals(literal, parsed.getBindingSets().get(0).getValue("value"));
+	}
+
+	@Test
+	public void doublyNestedTermPreservesIriAndLiteral() throws Exception {
+		var factory = SimpleValueFactory.getInstance();
+		TripleTerm inner = factory.createTripleTerm(factory.createIRI("urn:subject\t<unsafe>\r\n😀"),
+				factory.createIRI("urn:predicate"), factory.createLiteral("quoted \"literal\""));
+		TripleTerm outer = factory.createTripleTerm(factory.createIRI("urn:outer"), factory.createIRI("urn:other"),
+				inner);
+		List<String> names = List.of("term", "tail");
+		String result = writeTupleResult(new IteratingTupleQueryResult(names,
+				List.of(new ListBindingSet(names, outer, factory.createLiteral("tail")))));
+
+		QueryResultCollector parsed = parseTupleResult(result);
+		assertEquals(1, parsed.getBindingSets().size());
+		assertEquals(outer, parsed.getBindingSets().get(0).getValue("term"));
+		assertEquals("tail", parsed.getBindingSets().get(0).getValue("tail").stringValue());
+	}
+
+	@Test
+	public void invalidBlankNodeIdsCannotAliasWithinOrAcrossRows() throws Exception {
+		var factory = SimpleValueFactory.getInstance();
+		BNode first = factory.createBNode("Aa\n");
+		BNode second = factory.createBNode("BB\n");
+		BNode reserved = factory.createBNode("rdf4jEsc00410061000A");
+		assertEquals(first.hashCode(), second.hashCode());
+		List<String> names = List.of("first", "second", "reserved");
+		String result = writeTupleResult(new IteratingTupleQueryResult(names,
+				List.of(new ListBindingSet(names, first, second, reserved),
+						new ListBindingSet(names, first, second, reserved))));
+
+		QueryResultCollector parsed = parseTupleResult(result);
+		assertEquals(2, parsed.getBindingSets().size());
+		assertNotEquals(parsed.getBindingSets().get(0).getValue("first"),
+				parsed.getBindingSets().get(0).getValue("second"));
+		assertNotEquals(parsed.getBindingSets().get(0).getValue("first"),
+				parsed.getBindingSets().get(0).getValue("reserved"));
+		assertNotEquals(parsed.getBindingSets().get(0).getValue("second"),
+				parsed.getBindingSets().get(0).getValue("reserved"));
+		assertEquals(parsed.getBindingSets().get(0).getValue("first"),
+				parsed.getBindingSets().get(1).getValue("first"));
+		assertEquals(parsed.getBindingSets().get(0).getValue("second"),
+				parsed.getBindingSets().get(1).getValue("second"));
+		assertEquals(parsed.getBindingSets().get(0).getValue("reserved"),
+				parsed.getBindingSets().get(1).getValue("reserved"));
+	}
+
+	@Test
+	public void bindingNameCannotInjectAnotherColumnOrRow() {
+		var factory = SimpleValueFactory.getInstance();
+		List<String> names = List.of("safe\t?forged\n?next");
+		assertThrows(IllegalArgumentException.class, () -> writeTupleResult(new IteratingTupleQueryResult(names,
+				List.of(new ListBindingSet(names, factory.createLiteral("value"))))));
+	}
+
+	@Test
+	public void languageTagCannotInjectAnotherResultRow() {
+		var factory = SimpleValueFactory.getInstance();
+		List<String> names = List.of("value");
+		Literal literal = factory.createLiteral("value", "en\n?forged");
+		assertThrows(IllegalArgumentException.class, () -> writeTupleResult(new IteratingTupleQueryResult(names,
+				List.of(new ListBindingSet(names, literal)))));
+	}
+
 	private String writeTupleResult(TupleQueryResult tqr)
 			throws IOException, TupleQueryResultHandlerException, QueryEvaluationException {
 		ByteArrayOutputStream output = new ByteArrayOutputStream();
@@ -139,12 +259,15 @@ public class SPARQLTSVCustomTest {
 	}
 
 	private Literal parseSingleLiteral(String result) throws Exception {
+		return (Literal) parseTupleResult(result).getBindingSets().get(0).getValue("test");
+	}
+
+	private QueryResultCollector parseTupleResult(String result) throws Exception {
 		QueryResultCollector collector = new QueryResultCollector();
 		QueryResultIO.parseTuple(new ByteArrayInputStream(result.getBytes(StandardCharsets.UTF_8)),
 				TupleQueryResultFormat.TSV,
 				collector, SimpleValueFactory.getInstance());
-		BindingSet parsed = collector.getBindingSets().get(0);
-		return (Literal) parsed.getValue("test");
+		return collector;
 	}
 
 }
