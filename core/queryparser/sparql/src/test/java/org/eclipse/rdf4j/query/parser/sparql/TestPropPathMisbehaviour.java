@@ -10,8 +10,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.sparql;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Distinct;
@@ -22,6 +27,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -108,5 +114,31 @@ public class TestPropPathMisbehaviour {
 		assertTrue(((Union) proj2.getArg()).getRightArg() instanceof StatementPattern,
 				"expect Union Right arg to be StatementPattern");
 		assertTrue(!proj2.isSubquery(), "expect projection to do NOT be a subQuery");
+	}
+
+	@Test
+	public void testGH3220() {
+		String query = "select * where { ?i <urn:prop1> / <urn:prop2> ?v1, ?v2 . }";
+		ParsedQuery parsedQuery = parser.parseQuery(query, "http://example.org/");
+
+		assertNotNull(parsedQuery);
+
+		List<StatementPattern> statementPatterns = StatementPatternCollector
+				.process(parsedQuery.getTupleExpr());
+
+		List<StatementPattern> prop1Patterns = statementPatterns.stream()
+				.filter(sp -> sp.getPredicateVar().hasValue()
+						&& "urn:prop1".equals(sp.getPredicateVar().getValue().stringValue()))
+				.collect(Collectors.toList());
+
+		assertEquals(2, prop1Patterns.size(),
+				"expected each object list entry to yield its own statement pattern for the first path element");
+
+		Set<String> intermediateVarNames = prop1Patterns.stream()
+				.map(sp -> sp.getObjectVar().getName())
+				.collect(Collectors.toSet());
+
+		assertEquals(2, intermediateVarNames.size(),
+				"expected unique intermediate variable per object list entry for the first path element");
 	}
 }
