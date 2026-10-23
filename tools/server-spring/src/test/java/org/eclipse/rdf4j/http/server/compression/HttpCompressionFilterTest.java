@@ -110,6 +110,236 @@ class HttpCompressionFilterTest {
 	}
 
 	@Test
+	void boundsPlainFormWithUnknownContentLengthBeforeParameterParsing() throws Exception {
+		HttpCompressionFilter filter = configuredFilter(1024, 12, 1000, 1024);
+		MockHttpServletRequest form = new MockHttpServletRequest("POST", "/repositories/example") {
+			@Override
+			public long getContentLengthLong() {
+				return -1;
+			}
+		};
+		form.setContentType("application/x-www-form-urlencoded; charset=UTF-8");
+		form.addHeader("Transfer-Encoding", "chunked");
+		form.setContent(("query=" + "a".repeat(20)).getBytes(StandardCharsets.UTF_8));
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		filter.doFilter(form, response, (request, servletResponse) -> request.getParameter("query"));
+
+		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+	}
+
+	@Test
+	void boundsCompressedFormQueryStringBeforeDecodingParameters() throws Exception {
+		HttpCompressionFilter filter = configuredFilter(1024, 12, 1000, 1024);
+		MockHttpServletRequest form = compressedFormRequest("query=ok");
+		form.setQueryString("other=" + "a".repeat(20));
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		filter.doFilter(form, response, (request, servletResponse) -> request.getParameter("query"));
+
+		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+	}
+
+	@Test
+	void plainAndCompressedFormsPreserveQueryAndRepeatedDecodedValues() throws Exception {
+		for (boolean compressed : new boolean[] { false, true }) {
+			MockHttpServletRequest form = compressed
+					? compressedFormRequest("query=%C3%A9&query=a+b")
+					: new MockHttpServletRequest("POST", "/repositories/example");
+			if (!compressed) {
+				form.setContentType("application/x-www-form-urlencoded; charset=UTF-8");
+				form.setContent("query=%C3%A9&query=a+b".getBytes(StandardCharsets.UTF_8));
+			}
+			form.setQueryString("timeout=3&query=prefix");
+			MockHttpServletResponse response = new MockHttpServletResponse();
+
+			configuredFilter(1024, 64, 1000, 1024).doFilter(form, response, (request, servletResponse) -> {
+				HttpServletRequest parsed = (HttpServletRequest) request;
+				assertThat(parsed.getParameterValues("query")).containsExactly("prefix", "é", "a b");
+				assertThat(parsed.getParameter("timeout")).isEqualTo("3");
+			});
+			assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_OK);
+		}
+	}
+
+	@Test
+	void combinedQueryAndBodyBudgetAppliesToBothFormTransports() throws Exception {
+		for (boolean compressed : new boolean[] { false, true }) {
+			MockHttpServletRequest form = compressed
+					? compressedFormRequest("query=ok")
+					: new MockHttpServletRequest("POST", "/repositories/example");
+			if (!compressed) {
+				form.setContentType("application/x-www-form-urlencoded");
+				form.setContent("query=ok".getBytes(StandardCharsets.UTF_8));
+			}
+			form.setQueryString("timeout=3");
+			MockHttpServletResponse response = new MockHttpServletResponse();
+
+			configuredFilter(1024, 12, 1000, 1024).doFilter(form, response,
+					(request, servletResponse) -> request.getParameter("query"));
+			assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+		}
+	}
+
+	@Test
+	void boundsDistinctFormFieldsBeforeMapGrowthForBothTransports() throws Exception {
+		StringBuilder body = new StringBuilder();
+		for (int i = 0; i < 101; i++) {
+			if (i > 0) {
+				body.append('&');
+			}
+			body.append('p').append(i).append('=').append(i);
+		}
+		for (boolean compressed : new boolean[] { false, true }) {
+			MockHttpServletRequest request = formRequest(body.toString(), compressed);
+			MockHttpServletResponse response = new MockHttpServletResponse();
+
+			filterWithFormParameterLimit(100).doFilter(request, response,
+					(servletRequest, servletResponse) -> servletRequest.getParameterMap());
+
+			assertThat(response.getStatus()).as("compressed=%s", compressed)
+					.isEqualTo(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+		}
+	}
+
+	@Test
+	void countsEmptyFormFieldsBeforeSplitting() throws Exception {
+		for (boolean compressed : new boolean[] { false, true }) {
+			MockHttpServletRequest request = formRequest("&&&&", compressed);
+			MockHttpServletResponse response = new MockHttpServletResponse();
+
+			filterWithFormParameterLimit(4).doFilter(request, response,
+					(servletRequest, servletResponse) -> servletRequest.getParameterMap());
+
+			assertThat(response.getStatus()).as("compressed=%s", compressed)
+					.isEqualTo(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+		}
+	}
+
+	@Test
+	void countsDuplicateFieldsAcrossQueryAndBody() throws Exception {
+		for (boolean compressed : new boolean[] { false, true }) {
+			MockHttpServletRequest request = formRequest("query=body1&query=body2", compressed);
+			request.setQueryString("query=url1&query=url2");
+			MockHttpServletResponse response = new MockHttpServletResponse();
+
+			filterWithFormParameterLimit(3).doFilter(request, response,
+					(servletRequest, servletResponse) -> servletRequest.getParameterValues("query"));
+
+			assertThat(response.getStatus()).as("compressed=%s", compressed)
+					.isEqualTo(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+		}
+	}
+
+	@Test
+	void acceptsExactFormFieldLimitWithRepeatedValuesAndEmptyFields() throws Exception {
+		for (boolean compressed : new boolean[] { false, true }) {
+			MockHttpServletRequest request = formRequest("query=body", compressed);
+			request.setQueryString("query=url&timeout=3");
+			MockHttpServletResponse response = new MockHttpServletResponse();
+
+			filterWithFormParameterLimit(3).doFilter(request, response, (servletRequest, servletResponse) -> {
+				assertThat(servletRequest.getParameterValues("query")).containsExactly("url", "body");
+				assertThat(servletRequest.getParameter("timeout")).isEqualTo("3");
+			});
+			assertThat(response.getStatus()).as("compressed=%s", compressed).isEqualTo(HttpServletResponse.SC_OK);
+
+			MockHttpServletRequest empty = formRequest("&&", compressed);
+			MockHttpServletResponse emptyResponse = new MockHttpServletResponse();
+			filterWithFormParameterLimit(3).doFilter(empty, emptyResponse,
+					(servletRequest, servletResponse) -> assertThat(servletRequest.getParameterMap()).isEmpty());
+			assertThat(emptyResponse.getStatus()).as("compressed=%s", compressed).isEqualTo(HttpServletResponse.SC_OK);
+		}
+	}
+
+	@Test
+	void defaultFormFieldLimitAppliesBeforeParsing() throws Exception {
+		MockHttpServletRequest request = formRequest("&".repeat(10_000), false);
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		new HttpCompressionFilter().doFilter(request, response,
+				(servletRequest, servletResponse) -> servletRequest.getParameterMap());
+
+		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+	}
+
+	@Test
+	void boundsGetQueryStringBeforeContainerParameterParsing() throws Exception {
+		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/repositories/example");
+		request.setQueryString("query=" + "a".repeat(20));
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		configuredFilter(1024, 12, 1000, 1024).doFilter(request, response,
+				(servletRequest, servletResponse) -> fail("oversized query reached the application"));
+
+		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+	}
+
+	@Test
+	void boundsGetQueryParameterCountBeforeContainerParameterParsing() throws Exception {
+		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/repositories/example");
+		request.setQueryString("a=1&b=2&c=3&d=4");
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		filterWithFormParameterLimit(3).doFilter(request, response,
+				(servletRequest, servletResponse) -> fail("excess query parameters reached the application"));
+
+		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+	}
+
+	@Test
+	void plainFormPutLeavesBodyAsStreamRatherThanCreatingParameters() throws Exception {
+		MockHttpServletRequest request = new MockHttpServletRequest("PUT", "/repositories/example");
+		request.setContentType("application/x-www-form-urlencoded");
+		request.setContent("query=body".getBytes(StandardCharsets.UTF_8));
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		new HttpCompressionFilter().doFilter(request, response, (servletRequest, servletResponse) -> {
+			HttpServletRequest parsed = (HttpServletRequest) servletRequest;
+			assertThat(parsed.getParameter("query")).isNull();
+			assertThat(parsed.getInputStream().readAllBytes()).isEqualTo(request.getContentAsByteArray());
+		});
+		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_OK);
+	}
+
+	@Test
+	void plainFormWithoutCharsetPreservesServletDefaultPercentDecoding() throws Exception {
+		MockHttpServletRequest plain = new MockHttpServletRequest("POST", "/repositories/example");
+		plain.setContentType("application/x-www-form-urlencoded");
+		plain.setContent("query=%E9".getBytes(StandardCharsets.US_ASCII));
+		MockHttpServletResponse plainResponse = new MockHttpServletResponse();
+
+		new HttpCompressionFilter().doFilter(plain, plainResponse,
+				(servletRequest, servletResponse) -> assertThat(servletRequest.getParameter("query")).isEqualTo("é"));
+		assertThat(plainResponse.getStatus()).isEqualTo(HttpServletResponse.SC_OK);
+
+		MockHttpServletRequest compressed = compressedFormRequest("query=%C3%A9");
+		MockHttpServletResponse compressedResponse = new MockHttpServletResponse();
+		new HttpCompressionFilter().doFilter(compressed, compressedResponse,
+				(servletRequest, servletResponse) -> assertThat(servletRequest.getParameter("query")).isEqualTo("é"));
+		assertThat(compressedResponse.getStatus()).isEqualTo(HttpServletResponse.SC_OK);
+	}
+
+	@Test
+	void malformedEncodedFormIsBadRequestForBothTransports() throws Exception {
+		for (boolean compressed : new boolean[] { false, true }) {
+			MockHttpServletRequest request = compressed
+					? compressedFormRequest("query=%ZZ")
+					: new MockHttpServletRequest("POST", "/repositories/example");
+			if (!compressed) {
+				request.setContentType("application/x-www-form-urlencoded");
+				request.setContent("query=%ZZ".getBytes(StandardCharsets.US_ASCII));
+			}
+			MockHttpServletResponse response = new MockHttpServletResponse();
+
+			new HttpCompressionFilter().doFilter(request, response,
+					(servletRequest, servletResponse) -> servletRequest.getParameter("query"));
+
+			assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_BAD_REQUEST);
+		}
+	}
+
+	@Test
 	void boundsDefaultBufferedFormAtFourMiB() throws Exception {
 		HttpCompressionFilter filter = new HttpCompressionFilter();
 		MockHttpServletRequest exact = repeatedCompressedFormRequest(MAX_FIXED_BUFFER_BYTES);
@@ -222,12 +452,12 @@ class HttpCompressionFilterTest {
 		HttpCompressionFilter filter = configuredFilter(32, 32, 1000, 32);
 		MockHttpServletRequest request = compressedFormRequest("query=" + "a".repeat(33));
 		MockHttpServletResponse response = new MockHttpServletResponse();
+		response.flushBuffer();
 
-		assertThatThrownBy(() -> filter.doFilter(request, response, (servletRequest, servletResponse) -> {
-			((HttpServletResponse) servletResponse).flushBuffer();
-			servletRequest.getParameter("query");
-		})).isInstanceOf(IOException.class)
-				.hasMessageContaining("HTTP request decompression limit exceeded: expanded form bytes");
+		assertThatThrownBy(() -> filter.doFilter(request, response,
+				(servletRequest, servletResponse) -> fail("over-limit form reached the application")))
+						.isInstanceOf(IOException.class)
+						.hasMessageContaining("HTTP request decompression limit exceeded: expanded form bytes");
 	}
 
 	@Test
@@ -259,6 +489,11 @@ class HttpCompressionFilterTest {
 		MockFilterConfig nonPositive = new MockFilterConfig();
 		nonPositive.addInitParameter("maxExpandedFormBytes", "0");
 		assertThatThrownBy(() -> new HttpCompressionFilter().init(nonPositive))
+				.isInstanceOf(IllegalArgumentException.class);
+
+		MockFilterConfig nonPositiveParameters = new MockFilterConfig();
+		nonPositiveParameters.addInitParameter("maxFormParameters", "0");
+		assertThatThrownBy(() -> new HttpCompressionFilter().init(nonPositiveParameters))
 				.isInstanceOf(IllegalArgumentException.class);
 
 		MockFilterConfig formerStreamingLimits = new MockFilterConfig();
@@ -528,6 +763,24 @@ class HttpCompressionFilterTest {
 		request.addHeader("Content-Encoding", "gzip");
 		request.setContent(gzip(body));
 		return request;
+	}
+
+	private static MockHttpServletRequest formRequest(String body, boolean compressed) throws IOException {
+		if (compressed) {
+			return compressedFormRequest(body);
+		}
+		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/query");
+		request.setContentType("application/x-www-form-urlencoded");
+		request.setContent(body.getBytes(StandardCharsets.US_ASCII));
+		return request;
+	}
+
+	private static HttpCompressionFilter filterWithFormParameterLimit(int limit) {
+		MockFilterConfig config = new MockFilterConfig();
+		config.addInitParameter("maxFormParameters", Integer.toString(limit));
+		HttpCompressionFilter filter = new HttpCompressionFilter();
+		filter.init(config);
+		return filter;
 	}
 
 	private static MockHttpServletRequest repeatedCompressedFormRequest(int expandedBytes) throws IOException {

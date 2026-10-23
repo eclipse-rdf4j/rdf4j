@@ -12,12 +12,16 @@
 package org.eclipse.rdf4j.http.server.repository.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.ByteArrayOutputStream;
 
+import org.eclipse.rdf4j.http.server.ClientHTTPException;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
@@ -35,7 +39,10 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.web.servlet.ModelAndView;
 
+import jakarta.servlet.ServletInputStream;
+
 public class ConfigControllerTest {
+	private static final String CONFIG_LIMIT_PROPERTY = "org.eclipse.rdf4j.http.server.maxRepositoryConfigBytes";
 
 	final String repositoryId = "test-config";
 	final ConfigController controller = new ConfigController();
@@ -90,5 +97,51 @@ public class ConfigControllerTest {
 
 		verify(manager).addRepositoryConfig(config.capture());
 		assertThat(config.getValue().getID()).isEqualTo(repositoryId);
+	}
+
+	@Test
+	public void oversizedConfigurationIsRejectedBeforeMutation() throws Exception {
+		String previous = System.getProperty(CONFIG_LIMIT_PROPERTY);
+		System.setProperty(CONFIG_LIMIT_PROPERTY, "32");
+		try {
+			request.setMethod(HttpMethod.POST.name());
+			request.setContentType(RDFFormat.NTRIPLES.getDefaultMIMEType());
+			Model submitted = new LinkedHashModel();
+			new RepositoryConfig(repositoryId, new SailRepositoryConfig(new MemoryStoreConfig())).export(submitted);
+			ByteArrayOutputStream serialized = new ByteArrayOutputStream();
+			Rio.write(submitted, serialized, RDFFormat.NTRIPLES);
+			request.setContent(serialized.toByteArray());
+			when(manager.hasRepositoryConfig(repositoryId)).thenReturn(true);
+
+			assertThatThrownBy(() -> controller.handleRequest(request, response))
+					.isInstanceOf(ClientHTTPException.class)
+					.satisfies(e -> assertThat(((ClientHTTPException) e).getStatusCode()).isEqualTo(413));
+			verify(manager, never()).addRepositoryConfig(any());
+		} finally {
+			if (previous == null) {
+				System.clearProperty(CONFIG_LIMIT_PROPERTY);
+			} else {
+				System.setProperty(CONFIG_LIMIT_PROPERTY, previous);
+			}
+		}
+	}
+
+	@Test
+	public void unsupportedConfigurationFormatIsRejectedBeforeReadingBody() {
+		request = new MockHttpServletRequest() {
+			@Override
+			public ServletInputStream getInputStream() {
+				throw new AssertionError("unsupported configuration body was read");
+			}
+		};
+		request.setAttribute("repositoryID", repositoryId);
+		request.setMethod(HttpMethod.POST.name());
+		request.setContentType("application/not-rdf");
+		when(manager.hasRepositoryConfig(repositoryId)).thenReturn(true);
+
+		assertThatThrownBy(() -> controller.handleRequest(request, response))
+				.isInstanceOf(ClientHTTPException.class)
+				.hasMessage("unrecognized content type application/not-rdf")
+				.satisfies(e -> assertThat(((ClientHTTPException) e).getStatusCode()).isEqualTo(400));
 	}
 }

@@ -28,7 +28,6 @@ import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.apache.commons.io.IOUtils;
 import org.apache.http.HttpStatus;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.lang.FileFormat;
@@ -40,6 +39,7 @@ import org.eclipse.rdf4j.http.protocol.error.ErrorType;
 import org.eclipse.rdf4j.http.server.ClientHTTPException;
 import org.eclipse.rdf4j.http.server.HTTPException;
 import org.eclipse.rdf4j.http.server.ProtocolUtil;
+import org.eclipse.rdf4j.http.server.ServerRequestBodyLimits;
 import org.eclipse.rdf4j.http.server.repository.BooleanQueryResultView;
 import org.eclipse.rdf4j.http.server.repository.ExplainQueryResultView;
 import org.eclipse.rdf4j.http.server.repository.GraphQueryResultView;
@@ -166,20 +166,20 @@ public class DefaultQueryRequestHandler extends AbstractQueryRequestHandler {
 			case Protocol.SPARQL_QUERY_MIME_TYPE:
 				// The query should be the entire body
 				try {
-					queryString = IOUtils.toString(request.getReader());
+					queryString = ServerRequestBodyLimits.readScalarText(request.getReader());
 				} catch (IOException e) {
 					throw new HTTPException(HttpStatus.SC_BAD_REQUEST, "Error reading request message body", e);
 				}
 				break;
 			case Protocol.FORM_MIME_TYPE:
-				queryString = request.getParameter(QUERY_PARAM_NAME);
+				queryString = ServerRequestBodyLimits.requireScalarText(request.getParameter(QUERY_PARAM_NAME));
 				break;
 			default:
 				throw new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE, "Unsupported MIME type: " + mimeType);
 			}
 
 		} else {
-			queryString = request.getParameter(QUERY_PARAM_NAME);
+			queryString = ServerRequestBodyLimits.requireScalarText(request.getParameter(QUERY_PARAM_NAME));
 		}
 
 		if (queryString == null) {

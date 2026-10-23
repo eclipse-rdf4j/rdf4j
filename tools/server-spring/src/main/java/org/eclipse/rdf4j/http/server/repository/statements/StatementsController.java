@@ -34,7 +34,6 @@ import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.common.webapp.util.HttpServerUtil;
 import org.eclipse.rdf4j.common.webapp.views.EmptySuccessView;
 import org.eclipse.rdf4j.http.protocol.Protocol;
@@ -46,6 +45,7 @@ import org.eclipse.rdf4j.http.server.ClientHTTPException;
 import org.eclipse.rdf4j.http.server.HTTPException;
 import org.eclipse.rdf4j.http.server.ProtocolUtil;
 import org.eclipse.rdf4j.http.server.ServerHTTPException;
+import org.eclipse.rdf4j.http.server.ServerRequestBodyLimits;
 import org.eclipse.rdf4j.http.server.repository.RepositoryInterceptor;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -146,12 +146,13 @@ public class StatementsController extends AbstractController {
 		if (Protocol.SPARQL_UPDATE_MIME_TYPE.equals(mimeType)) {
 			// The query should be the entire body
 			try {
-				sparqlUpdateString = IOUtils.toString(request.getReader());
+				sparqlUpdateString = ServerRequestBodyLimits.readScalarText(request.getReader());
 			} catch (IOException e) {
 				throw new ClientHTTPException(SC_BAD_REQUEST, "Error reading request message body", e);
 			}
 		} else {
-			sparqlUpdateString = request.getParameterValues(Protocol.UPDATE_PARAM_NAME)[0];
+			sparqlUpdateString = ServerRequestBodyLimits
+					.requireScalarText(request.getParameterValues(Protocol.UPDATE_PARAM_NAME)[0]);
 		}
 
 		if (sparqlUpdateString.isEmpty()) {

@@ -95,6 +95,21 @@ These formats are automatic RDF input decoding, not additional HTTP content codi
 
 Decoder allocation is limited to 64 MiB by default. Set the Java system property `org.eclipse.rdf4j.rio.compression.maxDecoderMemoryKiB` to a positive KiB value to change that limit. The aggregate ZIP-and-TAR entry limit is 50,000 and can be configured with `org.eclipse.rdf4j.rio.loader.max_archive_entries`; the existing ZIP-specific limit remains in force as well.
 
+### Buffered RDF4J Server requests
+
+RDF4J Server limits request values that it must hold in memory and returns HTTP 413 when a limit is exceeded:
+
+| Request value | Default limit | Java system property |
+| --- | ---: | --- |
+| SPARQL query or update text, and namespace PUT text | 4,194,304 Java characters (UTF-16 code units) per value | `org.eclipse.rdf4j.http.server.maxScalarTextCharacters` |
+| Repository configuration CREATE or update body | 4,194,304 expanded bytes | `org.eclipse.rdf4j.http.server.maxRepositoryConfigBytes` |
+| URL-encoded form body plus its encoded query string | 4,194,304 bytes for the body, with query-string characters counted against the same budget | `org.eclipse.rdf4j.http.decompression.maxExpandedFormBytes` |
+| URL-encoded fields across query string and form body | 10,000 fields, including repeated names and empty fields | `org.eclipse.rdf4j.http.decompression.maxFormParameters` |
+
+The first two properties accept positive integer values below 2,147,483,647. The form byte budget can be lowered but cannot exceed 4,194,304 bytes. Both form limits apply to ordinary and compressed `application/x-www-form-urlencoded` posts; long query strings and excessive query-string fields are rejected before parameter parsing on any request. The field-count property accepts a positive long integer. If a legitimate query or update exceeds the form budget, send it as `application/sparql-query` or `application/sparql-update` and adjust the scalar limit if necessary. A repository configuration larger than its default requires raising the configuration limit.
+
+RDF statement uploads (for example, Turtle or RDF/XML sent to `/statements`) continue to stream and are not subject to these buffered request limits.
+
 ### Configuring RDF4J Workbench for UTF-8 Support
 
 #### UTF-8 in the Request URI (GET)

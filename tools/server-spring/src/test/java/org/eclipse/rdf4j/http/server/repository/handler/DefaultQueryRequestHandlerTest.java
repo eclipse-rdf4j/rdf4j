@@ -24,6 +24,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -40,6 +41,7 @@ import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.http.client.QueryExplanationRequestContext;
 import org.eclipse.rdf4j.http.client.QueryRequestContext;
 import org.eclipse.rdf4j.http.protocol.Protocol;
+import org.eclipse.rdf4j.http.server.ClientHTTPException;
 import org.eclipse.rdf4j.http.server.repository.ExplainQueryResultView;
 import org.eclipse.rdf4j.http.server.repository.resolver.RepositoryResolver;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -67,6 +69,38 @@ class DefaultQueryRequestHandlerTest {
 	private static final String BREAKER_HIGH_FREE_MB = "rdf4j.query.breaker.high.free.mb";
 	private static final String BREAKER_CRITICAL_FREE_MB = "rdf4j.query.breaker.critical.free.mb";
 	private static final String BREAKER_RETRY_AFTER_SECONDS = "rdf4j.query.breaker.retry.after.seconds";
+	private static final String SCALAR_LIMIT_PROPERTY = "org.eclipse.rdf4j.http.server.maxScalarTextCharacters";
+
+	@Test
+	void limitsDirectAndFormQueryTextBeforeParsing() throws Exception {
+		String previous = System.getProperty(SCALAR_LIMIT_PROPERTY);
+		System.setProperty(SCALAR_LIMIT_PROPERTY, "32");
+		try {
+			DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(mock(RepositoryResolver.class));
+			MockHttpServletRequest direct = new MockHttpServletRequest();
+			direct.setMethod(RequestMethod.POST.name());
+			direct.setContentType(Protocol.SPARQL_QUERY_MIME_TYPE);
+			direct.setContent("a".repeat(33).getBytes(StandardCharsets.UTF_8));
+
+			assertThatThrownBy(() -> handler.getQueryString(direct, RequestMethod.POST))
+					.isInstanceOf(ClientHTTPException.class)
+					.satisfies(e -> assertThat(((ClientHTTPException) e).getStatusCode()).isEqualTo(413));
+
+			MockHttpServletRequest form = new MockHttpServletRequest();
+			form.setMethod(RequestMethod.POST.name());
+			form.setContentType(Protocol.FORM_MIME_TYPE);
+			form.setParameter(Protocol.QUERY_PARAM_NAME, "a".repeat(33));
+			assertThatThrownBy(() -> handler.getQueryString(form, RequestMethod.POST))
+					.isInstanceOf(ClientHTTPException.class)
+					.satisfies(e -> assertThat(((ClientHTTPException) e).getStatusCode()).isEqualTo(413));
+		} finally {
+			if (previous == null) {
+				System.clearProperty(SCALAR_LIMIT_PROPERTY);
+			} else {
+				System.setProperty(SCALAR_LIMIT_PROPERTY, previous);
+			}
+		}
+	}
 
 	@Test
 	void explainRequestIdShouldRunInlineAndCloseConnectionOnCancel() throws Exception {

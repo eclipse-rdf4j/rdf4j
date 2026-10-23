@@ -64,15 +64,18 @@ public class HttpCompressionFilter implements Filter {
 	private static final String EXCLUDE_CONTENT_TYPES = "excludeContentTypes";
 	private static final String FORM_CONTENT_TYPE = "application/x-www-form-urlencoded";
 	private static final String MAX_EXPANDED_FORM_BYTES = "maxExpandedFormBytes";
+	private static final String MAX_FORM_PARAMETERS = "maxFormParameters";
 	private static final String PROPERTY_PREFIX = "org.eclipse.rdf4j.http.decompression.";
 	private static final long MAX_BUFFERED_FORM_BYTES = 4L * 1024 * 1024;
 	private static final long DEFAULT_MAX_FORM_BYTES = MAX_BUFFERED_FORM_BYTES;
+	private static final long DEFAULT_MAX_FORM_PARAMETERS = 10_000;
 	private static final Set<String> DEFAULT_EXCLUDED_CONTENT_TYPES = Set.of(
 			"application/x-binary-rdf",
 			"application/x-binary-rdf-results-table");
 
 	private Set<String> excludedContentTypes = DEFAULT_EXCLUDED_CONTENT_TYPES;
 	private long maxExpandedFormBytes = DEFAULT_MAX_FORM_BYTES;
+	private long maxFormParameters = DEFAULT_MAX_FORM_PARAMETERS;
 
 	@Override
 	public void init(FilterConfig filterConfig) {
@@ -88,6 +91,7 @@ public class HttpCompressionFilter implements Filter {
 			excludedContentTypes = Collections.unmodifiableSet(parsedTypes);
 		}
 		maxExpandedFormBytes = positiveLong(filterConfig, MAX_EXPANDED_FORM_BYTES, DEFAULT_MAX_FORM_BYTES);
+		maxFormParameters = positiveLong(filterConfig, MAX_FORM_PARAMETERS, DEFAULT_MAX_FORM_PARAMETERS);
 		if (maxExpandedFormBytes > MAX_BUFFERED_FORM_BYTES) {
 			throw new IllegalArgumentException(MAX_EXPANDED_FORM_BYTES + " must not exceed " + MAX_BUFFERED_FORM_BYTES);
 		}
@@ -113,12 +117,27 @@ public class HttpCompressionFilter implements Filter {
 		HttpCompressionEncoding requestContentEncoding = HttpCompressionEncoding.requestContentEncoding(
 				contentEncodingHeader);
 		HttpCompressionEncoding responseContentEncoding = HttpCompressionEncoding.acceptedResponseEncoding(httpRequest);
-		ServletRequest requestToUse = requestToUse(httpRequest, requestContentEncoding, maxExpandedFormBytes);
+		String queryString = httpRequest.getQueryString();
+		if (queryString != null && queryString.length() > maxExpandedFormBytes) {
+			httpResponse.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE,
+					"HTTP request form limit exceeded: encoded query string");
+			return;
+		}
+		if (hasTooManyParameters(queryString, maxFormParameters)) {
+			httpResponse.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE,
+					"HTTP request form parameter limit exceeded");
+			return;
+		}
+		ServletRequest requestToUse = requestToUse(httpRequest, requestContentEncoding, maxExpandedFormBytes,
+				maxFormParameters);
 		CompressedHttpServletResponseWrapper responseToUse = new CompressedHttpServletResponseWrapper(httpResponse,
 				"HEAD".equalsIgnoreCase(httpRequest.getMethod()) ? null : responseContentEncoding,
 				excludedContentTypes);
 
 		try {
+			if (requestToUse instanceof FormParametersHttpServletRequestWrapper formRequest) {
+				formRequest.getParameterMap();
+			}
 			chain.doFilter(requestToUse, responseToUse);
 		} catch (IOException | ServletException | RuntimeException e) {
 			if (!handleDecompressionFailure(e, responseToUse)) {
@@ -130,26 +149,32 @@ public class HttpCompressionFilter implements Filter {
 	}
 
 	private static ServletRequest requestToUse(HttpServletRequest request, HttpCompressionEncoding contentEncoding,
-			long maxExpandedFormBytes) {
+			long maxExpandedFormBytes, long maxFormParameters) {
+		HttpServletRequest wrapped = request;
 		if (contentEncoding != null) {
-			return new CompressedHttpServletRequestWrapper(request, contentEncoding, maxExpandedFormBytes);
+			wrapped = new CompressedHttpServletRequestWrapper(request, contentEncoding);
+		} else if (mayHaveRequestBody(request)) {
+			wrapped = new AutoDetectingHttpServletRequestWrapper(request);
 		}
-		if (mayHaveRequestBody(request)) {
-			return new AutoDetectingHttpServletRequestWrapper(request);
+		if (mayHaveRequestBody(request) && FORM_CONTENT_TYPE.equals(normalizedMimeType(request.getContentType()))
+				&& (contentEncoding != null || "POST".equalsIgnoreCase(request.getMethod()))) {
+			return new FormParametersHttpServletRequestWrapper(wrapped, maxExpandedFormBytes, maxFormParameters,
+					contentEncoding != null);
 		}
-		return request;
+		return wrapped;
 	}
 
 	private static boolean handleDecompressionFailure(Throwable failure, HttpServletResponse response)
 			throws IOException {
 		Throwable cause = null;
 		for (Throwable candidate = failure; candidate != null; candidate = candidate.getCause()) {
-			if (candidate instanceof DecompressionLimitException
+			if (candidate instanceof DecompressionLimitException || candidate instanceof FormParameterLimitException
 					|| candidate instanceof RDFInputDecompressionLimitException) {
 				cause = candidate;
 				break;
 			}
-			if (cause == null && candidate instanceof MalformedCompressionException) {
+			if (cause == null && (candidate instanceof MalformedCompressionException
+					|| candidate instanceof MalformedFormException)) {
 				cause = candidate;
 			}
 		}
@@ -163,7 +188,7 @@ public class HttpCompressionFilter implements Filter {
 			throw new IOException(cause);
 		}
 		response.reset();
-		response.sendError(cause instanceof DecompressionLimitException
+		response.sendError(cause instanceof DecompressionLimitException || cause instanceof FormParameterLimitException
 				|| cause instanceof RDFInputDecompressionLimitException
 						? HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE
 						: HttpServletResponse.SC_BAD_REQUEST,
@@ -176,6 +201,20 @@ public class HttpCompressionFilter implements Filter {
 		return !"GET".equalsIgnoreCase(method)
 				&& !"HEAD".equalsIgnoreCase(method)
 				&& request.getContentLengthLong() != 0L;
+	}
+
+	private static boolean hasTooManyParameters(String encoded, long maximum) {
+		if (encoded == null || encoded.isEmpty()) {
+			return false;
+		}
+		long count = 1;
+		for (int separator = encoded.indexOf('&'); separator >= 0; separator = encoded.indexOf('&', separator + 1)) {
+			if (count == maximum) {
+				return true;
+			}
+			count++;
+		}
+		return false;
 	}
 
 	private static boolean isHeader(String actual, String expected) {
@@ -193,18 +232,14 @@ public class HttpCompressionFilter implements Filter {
 	private static final class CompressedHttpServletRequestWrapper extends HttpServletRequestWrapper {
 
 		private final HttpCompressionEncoding contentEncoding;
-		private final long maxExpandedFormBytes;
 		private ServletInputStream inputStream;
 		private BufferedReader reader;
-		private Map<String, String[]> parameterMap;
 		private boolean inputStreamRequested;
 		private boolean readerRequested;
 
-		CompressedHttpServletRequestWrapper(HttpServletRequest request, HttpCompressionEncoding contentEncoding,
-				long maxExpandedFormBytes) {
+		CompressedHttpServletRequestWrapper(HttpServletRequest request, HttpCompressionEncoding contentEncoding) {
 			super(request);
 			this.contentEncoding = contentEncoding;
-			this.maxExpandedFormBytes = maxExpandedFormBytes;
 		}
 
 		@Override
@@ -270,46 +305,6 @@ public class HttpCompressionFilter implements Filter {
 			return -1L;
 		}
 
-		@Override
-		public String getParameter(String name) {
-			if (!hasFormParameters()) {
-				return super.getParameter(name);
-			}
-			String[] values = getParameterMap().get(name);
-			return values == null || values.length == 0 ? null : values[0];
-		}
-
-		@Override
-		public Map<String, String[]> getParameterMap() {
-			if (!hasFormParameters()) {
-				return super.getParameterMap();
-			}
-			if (parameterMap == null) {
-				try {
-					parameterMap = readDecompressedFormParameters();
-				} catch (IOException e) {
-					throw new IllegalStateException("Could not read compressed form parameters", e);
-				}
-			}
-			return parameterMap;
-		}
-
-		@Override
-		public Enumeration<String> getParameterNames() {
-			if (!hasFormParameters()) {
-				return super.getParameterNames();
-			}
-			return Collections.enumeration(getParameterMap().keySet());
-		}
-
-		@Override
-		public String[] getParameterValues(String name) {
-			if (!hasFormParameters()) {
-				return super.getParameterValues(name);
-			}
-			return getParameterMap().get(name);
-		}
-
 		private ServletInputStream decompressedInputStream() throws IOException {
 			if (inputStream == null) {
 				try {
@@ -323,23 +318,91 @@ public class HttpCompressionFilter implements Filter {
 			return inputStream;
 		}
 
-		private boolean hasFormParameters() {
-			return FORM_CONTENT_TYPE.equals(normalizedMimeType(getContentType()));
+	}
+
+	private static final class FormParametersHttpServletRequestWrapper extends HttpServletRequestWrapper {
+		private final long maximumBytes;
+		private final long maximumParameters;
+		private final boolean compressed;
+		private Map<String, String[]> parameterMap;
+		private boolean inputStreamRequested;
+		private boolean readerRequested;
+
+		FormParametersHttpServletRequestWrapper(HttpServletRequest request, long maximumBytes, long maximumParameters,
+				boolean compressed) {
+			super(request);
+			this.maximumBytes = maximumBytes;
+			this.maximumParameters = maximumParameters;
+			this.compressed = compressed;
 		}
 
-		private Map<String, String[]> readDecompressedFormParameters() throws IOException {
+		@Override
+		public ServletInputStream getInputStream() throws IOException {
+			if (readerRequested) {
+				throw new IllegalStateException("getReader() has already been called");
+			}
+			inputStreamRequested = true;
+			return super.getInputStream();
+		}
+
+		@Override
+		public BufferedReader getReader() throws IOException {
+			if (inputStreamRequested) {
+				throw new IllegalStateException("getInputStream() has already been called");
+			}
+			readerRequested = true;
+			return super.getReader();
+		}
+
+		@Override
+		public String getParameter(String name) {
+			String[] values = getParameterMap().get(name);
+			return values == null || values.length == 0 ? null : values[0];
+		}
+
+		@Override
+		public Map<String, String[]> getParameterMap() {
+			if (parameterMap == null) {
+				try {
+					parameterMap = readFormParameters();
+				} catch (IOException e) {
+					throw new IllegalStateException("Could not read form parameters", e);
+				} catch (IllegalArgumentException e) {
+					throw new IllegalStateException("Could not decode form parameters", new MalformedFormException(e));
+				}
+			}
+			return parameterMap;
+		}
+
+		@Override
+		public Enumeration<String> getParameterNames() {
+			return Collections.enumeration(getParameterMap().keySet());
+		}
+
+		@Override
+		public String[] getParameterValues(String name) {
+			return getParameterMap().get(name);
+		}
+
+		private Map<String, String[]> readFormParameters() throws IOException {
 			if (readerRequested || inputStreamRequested) {
 				throw new IllegalStateException("Request body has already been read");
 			}
-
-			Charset charset = requestCharset();
+			Charset declaredCharset = getCharacterEncoding() == null ? null : Charset.forName(getCharacterEncoding());
+			Charset bodyCharset = declaredCharset != null ? declaredCharset
+					: compressed ? StandardCharsets.UTF_8 : StandardCharsets.ISO_8859_1;
+			Charset rawBodyCharset = declaredCharset != null ? declaredCharset
+					: compressed ? StandardCharsets.UTF_8 : StandardCharsets.US_ASCII;
+			Charset queryCharset = declaredCharset != null ? declaredCharset : StandardCharsets.UTF_8;
 			Map<String, List<String>> parameters = new LinkedHashMap<>();
-			addUrlEncodedParameters(parameters, getQueryString(), charset);
-			try (InputStream formInputStream = decompressedInputStream()) {
+			String query = getQueryString();
+			long remainingParameters = addUrlEncodedParameters(parameters, query, queryCharset, maximumParameters);
+			long queryBytes = query == null ? 0 : query.length();
+			try (InputStream body = super.getInputStream()) {
 				addUrlEncodedParameters(parameters,
-						new String(readBounded(formInputStream, maxExpandedFormBytes), charset), charset);
+						new String(readBounded(body, maximumBytes - queryBytes), rawBodyCharset), bodyCharset,
+						remainingParameters);
 			}
-
 			Map<String, String[]> result = new LinkedHashMap<>();
 			for (Map.Entry<String, List<String>> entry : parameters.entrySet()) {
 				result.put(entry.getKey(), entry.getValue().toArray(String[]::new));
@@ -367,26 +430,37 @@ public class HttpCompressionFilter implements Filter {
 			return count == result.length ? result : Arrays.copyOf(result, count);
 		}
 
-		private Charset requestCharset() {
-			String characterEncoding = getCharacterEncoding();
-			return characterEncoding == null ? StandardCharsets.UTF_8 : Charset.forName(characterEncoding);
-		}
-
-		private static void addUrlEncodedParameters(Map<String, List<String>> parameters, String encodedParameters,
-				Charset charset) {
+		private static long addUrlEncodedParameters(Map<String, List<String>> parameters, String encodedParameters,
+				Charset charset, long remaining) throws FormParameterLimitException {
 			if (encodedParameters == null || encodedParameters.isEmpty()) {
-				return;
+				return remaining;
 			}
-			for (String encodedParameter : encodedParameters.split("&", -1)) {
-				if (encodedParameter.isEmpty()) {
-					continue;
+			int start = 0;
+			while (start <= encodedParameters.length()) {
+				if (remaining == 0) {
+					throw new FormParameterLimitException();
 				}
-				int separator = encodedParameter.indexOf('=');
-				String encodedName = separator >= 0 ? encodedParameter.substring(0, separator) : encodedParameter;
-				String encodedValue = separator >= 0 ? encodedParameter.substring(separator + 1) : "";
-				parameters.computeIfAbsent(URLDecoder.decode(encodedName, charset), ignored -> new ArrayList<>())
-						.add(URLDecoder.decode(encodedValue, charset));
+				remaining--;
+				int end = encodedParameters.indexOf('&', start);
+				if (end < 0) {
+					end = encodedParameters.length();
+				}
+				if (end > start) {
+					int separator = encodedParameters.indexOf('=', start);
+					if (separator < 0 || separator >= end) {
+						separator = end;
+					}
+					String encodedName = encodedParameters.substring(start, separator);
+					String encodedValue = separator == end ? "" : encodedParameters.substring(separator + 1, end);
+					parameters.computeIfAbsent(URLDecoder.decode(encodedName, charset), ignored -> new ArrayList<>())
+							.add(URLDecoder.decode(encodedValue, charset));
+				}
+				if (end == encodedParameters.length()) {
+					break;
+				}
+				start = end + 1;
 			}
+			return remaining;
 		}
 	}
 
@@ -485,6 +559,22 @@ public class HttpCompressionFilter implements Filter {
 
 		MalformedCompressionException(Throwable cause) {
 			super("Malformed compressed HTTP request", cause);
+		}
+	}
+
+	private static final class MalformedFormException extends IOException {
+		private static final long serialVersionUID = 1L;
+
+		MalformedFormException(Throwable cause) {
+			super("Malformed URL-encoded form request", cause);
+		}
+	}
+
+	private static final class FormParameterLimitException extends IOException {
+		private static final long serialVersionUID = 1L;
+
+		FormParameterLimitException() {
+			super("HTTP request form parameter limit exceeded");
 		}
 	}
 

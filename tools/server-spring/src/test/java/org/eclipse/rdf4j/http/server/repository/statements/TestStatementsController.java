@@ -42,6 +42,7 @@ import org.tukaani.xz.XZOutputStream;
  * @author jeen
  */
 public class TestStatementsController extends TestStatementsCommon {
+	private static final String SCALAR_LIMIT_PROPERTY = "org.eclipse.rdf4j.http.server.maxScalarTextCharacters";
 
 	private final StatementsController controller = new StatementsController();
 
@@ -50,6 +51,35 @@ public class TestStatementsController extends TestStatementsCommon {
 		request.setMethod(HttpMethod.POST.name());
 
 		super.initMocks();
+	}
+
+	@Test
+	public void shouldRejectOversizedRawAndFormUpdatesBeforeExecution() throws Exception {
+		String previous = System.getProperty(SCALAR_LIMIT_PROPERTY);
+		System.setProperty(SCALAR_LIMIT_PROPERTY, "32");
+		try {
+			String updateString = "INSERT DATA { <urn:s> <urn:p> <urn:o> . }";
+			Update update = Mockito.mock(Update.class);
+			Mockito.when(connectionMock.prepareUpdate(QueryLanguage.SPARQL, updateString, null)).thenReturn(update);
+
+			request.setContentType(Protocol.SPARQL_UPDATE_MIME_TYPE);
+			request.setContent(updateString.getBytes(StandardCharsets.UTF_8));
+			assertEquals(413, assertThrows(ClientHTTPException.class,
+					() -> controller.handleRequest(request, response)).getStatusCode());
+
+			request.setContentType(Protocol.FORM_MIME_TYPE);
+			request.setContent(new byte[0]);
+			request.setParameter(Protocol.UPDATE_PARAM_NAME, updateString);
+			assertEquals(413, assertThrows(ClientHTTPException.class,
+					() -> controller.handleRequest(request, response)).getStatusCode());
+			Mockito.verify(update, Mockito.never()).execute();
+		} finally {
+			if (previous == null) {
+				System.clearProperty(SCALAR_LIMIT_PROPERTY);
+			} else {
+				System.setProperty(SCALAR_LIMIT_PROPERTY, previous);
+			}
+		}
 	}
 
 	@Test
@@ -105,6 +135,35 @@ public class TestStatementsController extends TestStatementsCommon {
 				() -> controller.handleRequest(request, response));
 
 		assertEquals(413, exception.getStatusCode());
+	}
+
+	@Test
+	public void rdfStatementUploadStreamsBeyondScalarTextLimit() throws Exception {
+		String previous = System.getProperty(SCALAR_LIMIT_PROPERTY);
+		System.setProperty(SCALAR_LIMIT_PROPERTY, "4");
+		try {
+			byte[] rdf = "<urn:s> <urn:p> <urn:o> .".getBytes(StandardCharsets.UTF_8);
+			request.setContentType(RDFFormat.TURTLE.getDefaultMIMEType());
+			request.setContent(rdf);
+			Mockito.doAnswer(invocation -> {
+				assertEquals(rdf.length, ((InputStream) invocation.getArgument(0)).readAllBytes().length);
+				return null;
+			})
+					.when(connectionMock)
+					.add(Mockito.any(InputStream.class), Mockito.any(), Mockito.eq(RDFFormat.TURTLE),
+							Mockito.any(Resource[].class));
+
+			controller.handleRequest(request, response);
+			Mockito.verify(connectionMock)
+					.add(Mockito.any(InputStream.class), Mockito.any(),
+							Mockito.eq(RDFFormat.TURTLE), Mockito.any(Resource[].class));
+		} finally {
+			if (previous == null) {
+				System.clearProperty(SCALAR_LIMIT_PROPERTY);
+			} else {
+				System.setProperty(SCALAR_LIMIT_PROPERTY, previous);
+			}
+		}
 	}
 
 	private static RDFInputDecompressionLimitException decoderMemoryLimit() throws IOException {
