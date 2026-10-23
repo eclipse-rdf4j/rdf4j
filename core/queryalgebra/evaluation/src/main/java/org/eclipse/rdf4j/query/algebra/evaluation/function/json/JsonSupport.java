@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.BNode;
@@ -60,7 +61,10 @@ public final class JsonSupport {
 		}
 	};
 
-	private static final int PARSE_CACHE_SIZE = 16;
+	private static final int PARSE_CACHE_SIZE = 256;
+
+	/** Larger documents are parsed on every call rather than kept resident in the shared cache. */
+	private static final int PARSE_CACHE_MAX_LABEL_LENGTH = 1 << 16;
 
 	/**
 	 * An exact exponent number outside the finite, nonzero double range. Keep its compact notation when writing JSON;
@@ -74,15 +78,11 @@ public final class JsonSupport {
 		}
 	}
 
-	private static final ThreadLocal<LinkedHashMap<String, Object>> PARSE_CACHE = ThreadLocal
-			.withInitial(() -> new LinkedHashMap<>(32, 0.75f, true) {
-				private static final long serialVersionUID = 1L;
-
-				@Override
-				protected boolean removeEldestEntry(Map.Entry<String, Object> eldest) {
-					return size() > PARSE_CACHE_SIZE;
-				}
-			});
+	/**
+	 * Bounded, shared cache of parsed (immutable) trees, cleared wholesale when full like {@link JsonPath}'s cache, so
+	 * no thread pins documents beyond the cache bound.
+	 */
+	private static final ConcurrentHashMap<String, Object> PARSE_CACHE = new ConcurrentHashMap<>();
 
 	private JsonSupport() {
 	}
@@ -107,11 +107,16 @@ public final class JsonSupport {
 	}
 
 	public static Object parseCached(String json) {
-		LinkedHashMap<String, Object> cache = PARSE_CACHE.get();
-		Object parsed = cache.get(json);
+		if (json.length() > PARSE_CACHE_MAX_LABEL_LENGTH) {
+			return parse(json);
+		}
+		Object parsed = PARSE_CACHE.get(json);
 		if (parsed == null) {
 			parsed = parse(json);
-			cache.put(json, parsed);
+			if (PARSE_CACHE.size() >= PARSE_CACHE_SIZE) {
+				PARSE_CACHE.clear();
+			}
+			PARSE_CACHE.put(json, parsed);
 		}
 		return parsed;
 	}
@@ -570,32 +575,44 @@ public final class JsonSupport {
 			return vf.createLiteral(number.doubleValue());
 		}
 		if (json instanceof Map) {
-			Map<String, Object> object = (Map<String, Object>) json;
-			Object id = object.get("@id");
-			if (id instanceof String idString && object.size() == 1) {
-				if (idString.startsWith("_:")) {
-					return vf.createBNode(idString.substring(2));
+			try {
+				Value term = termObject((Map<String, Object>) json, vf);
+				if (term != null) {
+					return term;
 				}
-				return vf.createIRI(idString);
-			}
-			Object literalValue = object.get("@value");
-			if (literalValue instanceof String label && object.size() <= 3) {
-				Object language = object.get("@language");
-				Object type = object.get("@type");
-				if (language instanceof String lang && type == null) {
-					Object direction = object.get("@direction");
-					if (direction instanceof String dir) {
-						return vf.createLiteral(label, lang, Literal.BaseDirection.valueOf(dir.toUpperCase()));
-					}
-					if (object.size() == 2) {
-						return vf.createLiteral(label, lang);
-					}
-				} else if (type instanceof String typeIri && language == null && object.size() == 2) {
-					return vf.createLiteral(label, vf.createIRI(typeIri));
-				}
+			} catch (IllegalArgumentException e) {
+				// a malformed @id, @type or @direction is an evaluation error, not a failure of the whole query
+				throw new ValueExprEvaluationException("Invalid RDF term in JSON: " + e.getMessage(), e);
 			}
 		}
 		return jsonLiteral(vf, json);
+	}
+
+	private static Value termObject(Map<String, Object> object, ValueFactory vf) {
+		Object id = object.get("@id");
+		if (id instanceof String idString && object.size() == 1) {
+			if (idString.startsWith("_:")) {
+				return vf.createBNode(idString.substring(2));
+			}
+			return vf.createIRI(idString);
+		}
+		Object literalValue = object.get("@value");
+		if (literalValue instanceof String label && object.size() <= 3) {
+			Object language = object.get("@language");
+			Object type = object.get("@type");
+			if (language instanceof String lang && type == null) {
+				Object direction = object.get("@direction");
+				if (direction instanceof String dir) {
+					return vf.createLiteral(label, lang, Literal.BaseDirection.valueOf(dir.toUpperCase()));
+				}
+				if (object.size() == 2) {
+					return vf.createLiteral(label, lang);
+				}
+			} else if (type instanceof String typeIri && language == null && object.size() == 2) {
+				return vf.createLiteral(label, vf.createIRI(typeIri));
+			}
+		}
+		return null;
 	}
 
 	/** A JSON array of the JSON mappings of the given RDF terms. */

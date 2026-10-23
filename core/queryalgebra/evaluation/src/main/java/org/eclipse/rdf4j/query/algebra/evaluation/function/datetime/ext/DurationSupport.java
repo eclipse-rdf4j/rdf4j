@@ -45,17 +45,9 @@ public final class DurationSupport {
 			return months != 0;
 		}
 
-		public Duration negate() {
-			return new Duration(-months, -nanos);
-		}
-
 		public LocalDateTime addTo(LocalDateTime value) {
 			LocalDateTime result = months == 0 ? value : value.plusMonths(months);
 			return nanos == 0 ? result : result.plusNanos(nanos);
-		}
-
-		public LocalDateTime subtractFrom(LocalDateTime value) {
-			return negate().addTo(value);
 		}
 	}
 
@@ -225,20 +217,5 @@ public final class DurationSupport {
 			sb.append("T0S");
 		}
 		return sb.toString();
-	}
-
-	/** Canonical lexical form of a nanosecond-based duration (days, hours, minutes, seconds). */
-	public static String formatNanos(long months, long nanos) {
-		boolean negative = months < 0 || nanos < 0;
-		long absMonths = Math.abs(months);
-		long absNanos = Math.abs(nanos);
-		long days = absNanos / NANOS_PER_DAY;
-		absNanos -= days * NANOS_PER_DAY;
-		long hours = absNanos / (3600L * NANOS_PER_SECOND);
-		absNanos -= hours * 3600L * NANOS_PER_SECOND;
-		long minutes = absNanos / (60L * NANOS_PER_SECOND);
-		absNanos -= minutes * 60L * NANOS_PER_SECOND;
-		BigDecimal seconds = BigDecimal.valueOf(absNanos, 9);
-		return format(absMonths / 12, absMonths % 12, days, hours, minutes, seconds, negative);
 	}
 }

@@ -16,6 +16,7 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.function.BiConsumer;
@@ -256,8 +257,7 @@ public final class WindowQueryEvaluationStep implements QueryEvaluationStep {
 				compute(spec, rows);
 			}
 		}
-		List<BindingSet> result = new ArrayList<>(rows);
-		return new CloseableIteratorIteration<>(result.iterator());
+		return new CloseableIteratorIteration<>(Collections.<BindingSet>unmodifiableList(rows).iterator());
 	}
 
 	private Value eval(QueryValueEvaluationStep step, BindingSet row) {

@@ -15,6 +15,7 @@ import java.time.DayOfWeek;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalAdjusters;
+import java.time.temporal.TemporalUnit;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -40,7 +41,7 @@ public class DateTrunc extends DateTimeFunction {
 	@Override
 	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		FunctionArgs.arity(this, args, 2);
-		ChronoUnit unit = DateTimeSupport.unit(this, args[0]);
+		TemporalUnit unit = DateTimeSupport.unit(this, args[0]);
 		Temporal t = DateTimeSupport.parse(this, args[1]);
 		LocalDateTime local = t.local();
 		LocalDateTime truncated = truncate(local, unit);
@@ -53,12 +54,15 @@ public class DateTrunc extends DateTimeFunction {
 		return DateTimeSupport.toLiteral(valueFactory, t.withLocal(truncated));
 	}
 
-	static LocalDateTime truncate(LocalDateTime local, ChronoUnit unit) {
+	static LocalDateTime truncate(LocalDateTime local, TemporalUnit unit) {
 		if (unit == DateTimeSupport.QUARTER) {
 			int month = local.getMonthValue();
 			return local.toLocalDate().withMonth(month - (month - 1) % 3).withDayOfMonth(1).atStartOfDay();
 		}
-		switch (unit) {
+		if (!(unit instanceof ChronoUnit chronoUnit)) {
+			return null;
+		}
+		switch (chronoUnit) {
 		case NANOS:
 			return local;
 		case MICROS:

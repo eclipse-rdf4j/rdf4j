@@ -39,12 +39,14 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.tuple.AbstractTupleFunction;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
 /**
  * Rewrites "magic property" statement patterns into {@link TupleFunctionCall} nodes so that set-returning extension
- * functions ({@link TupleFunction}s registered in the {@link TupleFunctionRegistry}) can be invoked from plain SPARQL:
+ * functions ({@link AbstractTupleFunction}s registered in the {@link TupleFunctionRegistry}; other
+ * {@link TupleFunction} registrations are left alone) can be invoked from plain SPARQL:
  *
  * <pre>
  * ?s strf:split ?part .                 # one argument, one result
@@ -96,8 +98,11 @@ public class TupleFunctionMagicPropertyOptimizer implements QueryOptimizer {
 
 	private boolean isMagicPattern(StatementPattern node) {
 		Var predicate = node.getPredicateVar();
+		// Only the set-returning extension functions opt in to the magic-property syntax. Other registrations (SPIN's
+		// functions, third-party tuple functions) are invoked by their own machinery, and triples using their IRIs
+		// as predicates keep matching data.
 		return predicate != null && predicate.hasValue() && predicate.getValue() instanceof IRI iri
-				&& registry.has(iri.stringValue());
+				&& registry.get(iri.stringValue()).filter(AbstractTupleFunction.class::isInstance).isPresent();
 	}
 
 	private static int depth(QueryModelNode node) {

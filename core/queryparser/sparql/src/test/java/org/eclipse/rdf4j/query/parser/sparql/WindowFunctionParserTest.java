@@ -165,6 +165,21 @@ class WindowFunctionParserTest {
 	}
 
 	@Test
+	void windowReferencingSelectExpressionAliasIsRejected() {
+		// a SELECT alias is bound above the Window operator, so a window keyed on it would silently see it unbound
+		assertThatThrownBy(() -> parse(
+				"SELECT (?s * 2 AS ?b) (winf:rank(winf:orderBy(?b)) AS ?r) WHERE { ?x ex:s ?s }"))
+						.isInstanceOf(MalformedQueryException.class)
+						.hasMessageContaining("variable 'b'");
+		assertThatThrownBy(() -> parse(
+				"SELECT (winf:sum(?b, winf:partitionBy(?s)) AS ?r) (?s + 1 AS ?b) WHERE { ?x ex:s ?s }"))
+						.isInstanceOf(MalformedQueryException.class);
+		assertThatThrownBy(() -> parse(
+				"SELECT (winf:rowNumber() AS ?rn) (winf:sum(?rn) AS ?r) WHERE { ?x ex:s ?s }"))
+						.isInstanceOf(MalformedQueryException.class);
+	}
+
+	@Test
 	void windowFunctionOutsideSelectStaysAPlainFunctionCall() {
 		TupleExpr expr = parse("SELECT ?a WHERE { ?x ex:s ?s BIND(winf:rowNumber() AS ?a) }");
 		assertThat(windows(expr)).isEmpty();

@@ -95,6 +95,15 @@ class GeoExtensionFunctionsTest {
 	}
 
 	@Test
+	void nonNumericEpsgCodeIsAnEvaluationError() {
+		assertThatThrownBy(() -> new Transform().evaluate(VF, wkt("POINT (10 60)"), VF.createLiteral("EPSG:foo")))
+				.isInstanceOf(ValueExprEvaluationException.class);
+		assertThatThrownBy(() -> new MakePoint().evaluate(VF, VF.createLiteral(1), VF.createLiteral(2),
+				VF.createLiteral("EPSG:")))
+						.isInstanceOf(ValueExprEvaluationException.class);
+	}
+
+	@Test
 	void geoJson() {
 		assertThat(new AsGeoJson().evaluate(VF, wkt("POINT (10.5 59)")))
 				.isEqualTo(VF.createLiteral("{\"type\":\"Point\",\"coordinates\":[10.5,59]}", CoreDatatype.RDF.JSON));

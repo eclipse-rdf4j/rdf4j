@@ -121,7 +121,12 @@ public final class GeoSupport {
 			}
 			String label = literal.getLabel().trim();
 			if (label.regionMatches(true, 0, "EPSG:", 0, 5)) {
-				return EPSG_PREFIX + new BigInteger(label.substring(5).trim());
+				try {
+					return EPSG_PREFIX + new BigInteger(label.substring(5).trim());
+				} catch (NumberFormatException e) {
+					throw new ValueExprEvaluationException(
+							"Invalid CRS argument for " + function.getURI() + ": " + arg, e);
+				}
 			}
 			if (label.equalsIgnoreCase("CRS84") || label.equalsIgnoreCase("OGC:CRS84")) {
 				return CRS84;

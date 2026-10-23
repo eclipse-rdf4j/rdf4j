@@ -72,6 +72,18 @@ class JsonFunctionsTest {
 	}
 
 	@Test
+	void malformedTermObjectsAreEvaluationErrors() {
+		assertThatThrownBy(() -> new JsonValue().evaluate(VF, str("{\"x\":{\"@id\":\"not an iri\"}}"), str("$.x")))
+				.isInstanceOf(ValueExprEvaluationException.class);
+		assertThatThrownBy(() -> new JsonValue().evaluate(VF,
+				str("{\"x\":{\"@value\":\"a\",\"@language\":\"en\",\"@direction\":\"up\"}}"), str("$.x")))
+						.isInstanceOf(ValueExprEvaluationException.class);
+		assertThatThrownBy(() -> new JsonValue().evaluate(VF,
+				str("{\"x\":{\"@value\":\"a\",\"@type\":\"not an iri\"}}"), str("$.x")))
+						.isInstanceOf(ValueExprEvaluationException.class);
+	}
+
+	@Test
 	void jsonQueryWrapsMultipleMatches() {
 		assertThat(new JsonQuery().evaluate(VF, DOC, str("$.address")))
 				.isEqualTo(json("{\"city\":\"Oslo\",\"zip\":null}"));

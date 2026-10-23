@@ -21,6 +21,8 @@ import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
+import java.time.temporal.IsoFields;
+import java.time.temporal.TemporalUnit;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Literal;
@@ -304,9 +306,10 @@ public final class DateTimeSupport {
 	}
 
 	/** Resolves a unit name ({@code "day"}, {@code "days"}, {@code "Hour"}, ...) to a {@link ChronoUnit}. */
-	public static ChronoUnit unit(Function function, Value arg) {
+	public static TemporalUnit unit(Function function, Value arg) {
 		String name = FunctionArgs.lexical(function, arg).trim().toLowerCase();
-		if (name.endsWith("s") && !name.equals("s")) {
+		// "ms" is the millisecond abbreviation, not the plural of "m" (minute)
+		if (name.endsWith("s") && !name.equals("s") && !name.equals("ms")) {
 			name = name.substring(0, name.length() - 1);
 		}
 		switch (name) {
@@ -359,8 +362,8 @@ public final class DateTimeSupport {
 		}
 	}
 
-	/** Marker for quarters (3 months), which {@link ChronoUnit} does not define. */
-	public static final ChronoUnit QUARTER = ChronoUnit.ERAS;
+	/** Quarters (3 months), which {@link ChronoUnit} does not define; a real unit, so arithmetic on it is correct. */
+	public static final TemporalUnit QUARTER = IsoFields.QUARTER_YEARS;
 
 	/** Seconds since the epoch of the value (UTC assumed when no timezone), with nanosecond precision. */
 	public static BigDecimal epochSeconds(Temporal t) {

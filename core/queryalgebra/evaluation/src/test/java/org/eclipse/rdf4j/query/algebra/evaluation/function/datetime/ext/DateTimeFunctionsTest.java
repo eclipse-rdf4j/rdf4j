@@ -122,6 +122,14 @@ class DateTimeFunctionsTest {
 	}
 
 	@Test
+	void msUnitMeansMilliseconds() {
+		assertThat(new DateDiff().evaluate(VF, str("ms"), dt("2024-01-01T00:00:00"), dt("2024-01-01T00:02:00")))
+				.isEqualTo(integer(120_000));
+		assertThat(new DateTrunc().evaluate(VF, str("ms"), dt("2024-01-01T00:01:02.3456")))
+				.isEqualTo(dt("2024-01-01T00:01:02.345"));
+	}
+
+	@Test
 	void dateAddFollowsXPathOrder() {
 		assertThat(new DateAdd().evaluate(VF, date("2024-01-31"), dur("P1M"))).isEqualTo(date("2024-02-29"));
 		assertThat(new DateAdd().evaluate(VF, dt("2024-01-31T23:00:00Z"), dur("P1MT2H")))

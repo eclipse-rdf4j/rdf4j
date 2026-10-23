@@ -852,6 +852,20 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			}
 		}
 
+		if (window != null && group == null) {
+			// SELECT expression aliases are bound above the Window operator, so a window keyed on one would silently
+			// evaluate with that variable unbound; the GROUP BY branch below rejects the same case.
+			for (WindowElem windowElem : window.getElements()) {
+				for (String varName : VarNameCollector.process(windowElem.getOperator())) {
+					if (aliasesInProjection.contains(varName)) {
+						throw new VisitorException("variable '" + varName
+								+ "' in window function is a SELECT expression alias; window functions can only use"
+								+ " variables bound in the WHERE clause.");
+					}
+				}
+			}
+		}
+
 		verifyLateralProjectedAssignments(projElemList);
 
 		if (!extension.getElements().isEmpty()) {
