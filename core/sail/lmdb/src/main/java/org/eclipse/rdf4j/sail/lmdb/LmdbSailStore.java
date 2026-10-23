@@ -6412,12 +6412,23 @@ class LmdbSailStore implements SailStore {
 			tripleStore.setMapGrowthAttemptSupplier(
 					() -> beginMapGrowthAttemptForCurrentWriter(MapResizeKind.TRIPLE_STORE));
 			tripleStore.setMapGrowthRequestListener(this::requestMapGrowthForCurrentWriter);
-			namespaceStore = recoverNamespaceStore();
+			if (properties.preparedBulkStore != null
+					&& tripleStore.trustedTransactionId() != properties.verifiedTripleTransactionId) {
+				throw new IOException("Clean native triple generation changed during startup");
+			}
+			namespaceStore = properties.preparedBulkStore == null ? recoverNamespaceStore()
+					: new NamespaceStore(dataDir, tripleStore);
 			publishedNamespaces = namespaceStore.snapshot();
 			statementPatternCardinalitySource = new LmdbStatementPatternCardinalitySource(valueStore, tripleStore);
 			mayHaveInferred = tripleStore.hasTriples(false);
-			completeStartupValueReclamation(false);
-			recoverRetiredValueIds();
+			if (properties.preparedBulkStore == null || properties.preparedBulkStore.pendingUnused()) {
+				completeStartupValueReclamation(false);
+			} else {
+				valueStore.completePreparedStoreInitialization(tripleStore::filterUsedIds);
+			}
+			if (properties.preparedBulkStore == null || properties.preparedBulkStore.pendingRetired()) {
+				recoverRetiredValueIds();
+			}
 			LmdbDirectAdjacencyOptions directAdjacencyOptions = LmdbDirectAdjacencyOptions.resolve(config);
 			directAdjacency = directAdjacencyOptions.mode() != DirectAdjacencyMode.DISABLED
 					? new LmdbDirectAdjacencyStore(tripleStore, valueStore, storeTxnStarted, storeTxnDirty,
@@ -6433,7 +6444,10 @@ class LmdbSailStore implements SailStore {
 			}
 			preparedImportBudget = new AlignedWriteBudget(calculatePreparedImportStatementLimit(
 					Runtime.getRuntime().maxMemory(), tripleStore.secondaryIndexCount()));
-			completeStartupValueReclamation(true);
+			if (properties.preparedBulkStore == null || properties.preparedBulkStore.pendingUnused()
+					|| properties.preparedBulkStore.pendingRetired()) {
+				completeStartupValueReclamation(true);
+			}
 			LmdbDirectAdjacencyStore adjacencyForContext = directAdjacency;
 			costModelContext = new LmdbNativeCostModelContext(
 					dataDir.toPath(),
@@ -7380,6 +7394,7 @@ class LmdbSailStore implements SailStore {
 
 	/** Recovers durable value-ID retirement intents only after opening the authoritative TripleStore. */
 	private void completeStartupValueReclamation(boolean afterRetirementRecovery) throws IOException {
+		LmdbStartupDiagnostics.observe(LmdbStartupDiagnostics.Operation.VALUE_RECLAMATION);
 		long initialMapSize = mapSizeBytesWithNativeReadBarrier(MapResizeKind.VALUE_STORE);
 		while (true) {
 			Object owner = new Object();
@@ -7503,6 +7518,7 @@ class LmdbSailStore implements SailStore {
 
 	private void recoverRetiredValueIds(long maxRevisionInclusive, boolean recoverBufferedRetirements)
 			throws IOException {
+		LmdbStartupDiagnostics.observe(LmdbStartupDiagnostics.Operation.RETIREMENT_RECOVERY);
 		long initialMapSize = mapSizeBytesWithNativeReadBarrier(MapResizeKind.VALUE_STORE);
 		while (true) {
 			Object owner = new Object();
@@ -7778,6 +7794,14 @@ class LmdbSailStore implements SailStore {
 			}
 			if (namespaceStore != null) {
 				failure = attemptClose(failure, namespaceStore::close);
+			}
+			if (failure == null && valueStore != null && tripleStore != null && tripleStore.tracksNativeOwnership()) {
+				try {
+					valueStore.prepareCleanClose(tripleStore.trustedTransactionId());
+				} catch (IOException unknownWriter) {
+					valueStore.invalidateCleanCloseAfterUnknownTripleWriter();
+					logger.warn("Cannot certify clean native state before close", unknownWriter);
+				}
 			}
 			if (tripleStore != null) {
 				failure = attemptClose(failure, () -> tripleStore.getTxnManager().close());

@@ -372,30 +372,30 @@ class LmdbSnapshotValueLifetimeTest {
 		return null;
 	}
 
-	private void awaitMapGrowthQuiescence(LmdbStore store, Future<?> writer, MapGrowthMetrics.Snapshot before)
+	private void awaitForcedReadViewInvalidation(LmdbStore store, Future<?> writer, MapGrowthMetrics.Snapshot before)
 			throws Exception {
-		Object coordinator = privateField(store.getBackingStore(), "mapGrowthCoordinator");
 		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
 		while (System.nanoTime() - deadline < 0) {
 			MapGrowthMetrics.Snapshot current = store.getBackingStore().growthMetricsSnapshot();
-			Object episode = privateField(coordinator, "episode");
-			if (current.growthEpisodes() > before.growthEpisodes() && episode != null
-					&& (boolean) privateField(episode, "quiescenceRunning")) {
+			// Entering quiescence starts reader grace; only forced invalidation establishes cancellation.
+			if (current.forcedInvalidatedViews() > before.forcedInvalidatedViews()) {
 				return;
 			}
 			if (writer.isDone()) {
 				writer.get();
-				if (current.growthEpisodes() > before.growthEpisodes()) {
+				current = store.getBackingStore().growthMetricsSnapshot();
+				if (current.forcedInvalidatedViews() > before.forcedInvalidatedViews()) {
 					return;
 				}
-				throw new AssertionError("the buffered writer completed without starting a fresh map-growth episode");
+				throw new AssertionError("the buffered writer completed without invalidating its pinned read views; "
+						+ "metrics=" + current);
 			}
 			LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(5));
 		}
 		MapGrowthMetrics.Snapshot current = store.getBackingStore().growthMetricsSnapshot();
-		throw new AssertionError("writer did not enter a fresh shared map-growth drain episode; phase="
-				+ current.currentPhase() + ", growthEpisodes=" + current.growthEpisodes() + ", before="
-				+ before.growthEpisodes());
+		throw new AssertionError("writer did not invalidate its pinned read views after reader grace; phase="
+				+ current.currentPhase() + ", forcedInvalidatedViews=" + current.forcedInvalidatedViews() + ", before="
+				+ before.forcedInvalidatedViews());
 	}
 
 	@Test
@@ -700,7 +700,7 @@ class LmdbSnapshotValueLifetimeTest {
 					});
 					assertTrue(writesBuffered.await(10, TimeUnit.SECONDS), "writer must buffer the growth batch");
 					Set<Object> unobservedGrowthViews = awaitResultGrowthViews(reader, unobservedResult);
-					awaitMapGrowthQuiescence(store, writer, beforeGrowth);
+					awaitForcedReadViewInvalidation(store, writer, beforeGrowth);
 
 					SailException observedFailure = assertThrows(SailException.class,
 							observed::hasNext,

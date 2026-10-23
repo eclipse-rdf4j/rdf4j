@@ -25,6 +25,8 @@ import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.security.DigestOutputStream;
+import java.security.MessageDigest;
 import java.util.Objects;
 
 import net.jpountz.lz4.LZ4BlockInputStream;
@@ -35,7 +37,7 @@ import net.jpountz.lz4.LZ4Factory;
 final class BulkLz4 {
 
 	static final int BLOCK_BYTES = 256 * 1024;
-	private static final int STREAM_BUFFER_BYTES = 8 * 1024;
+	static final int STREAM_BUFFER_BYTES = 8 * 1024;
 	private static final int LZ4_HEADER_AND_BOUND_BYTES = BLOCK_BYTES / 255 + 64;
 	private static final int OBJECT_AND_STREAM_STATE_BYTES = 1024;
 	private static final int COMPRESSOR_SCRATCH_BYTES = 256 * 1024;
@@ -114,12 +116,23 @@ final class BulkLz4 {
 		});
 	}
 
+	static DataOutputStream output(Path path, BulkCodec codec, BulkTaskScheduler scheduler, MessageDigest digest)
+			throws IOException {
+		return output(path, codec, scheduler, () -> {
+		}, Objects.requireNonNull(digest, "digest"));
+	}
+
 	/**
 	 * Single-stream output whose buffers and descriptor are claimed from an already admitted coordinator lease, so it
 	 * can be opened by the coordinator and written by whichever worker currently owns the lease's work.
 	 */
 	static DataOutputStream output(Path path, BulkCodec codec, BulkTaskScheduler scheduler,
 			BulkTaskScheduler.ResourceLease lease) throws IOException {
+		return output(path, codec, scheduler, lease, null);
+	}
+
+	static DataOutputStream output(Path path, BulkCodec codec, BulkTaskScheduler scheduler,
+			BulkTaskScheduler.ResourceLease lease, MessageDigest digest) throws IOException {
 		Objects.requireNonNull(path, "path");
 		Objects.requireNonNull(codec, "codec");
 		Objects.requireNonNull(scheduler, "scheduler");
@@ -135,10 +148,13 @@ final class BulkLz4 {
 		try {
 			handle = scheduler.trackOpenFileHandle(lease);
 			resources.trackHandle(handle);
-			raw = new BufferedOutputStream(Files.newOutputStream(path, StandardOpenOption.CREATE,
-					StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING));
+			raw = Files.newOutputStream(path, StandardOpenOption.CREATE,
+					StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
+			if (digest == null) {
+				raw = new BufferedOutputStream(raw, STREAM_BUFFER_BYTES);
+			}
 			raw = new TrackedOutputStream(raw, handle, resources);
-			return new DataOutputStream(compress(raw, codec));
+			return encodedOutput(raw, codec, digest);
 		} catch (IOException | RuntimeException | Error failure) {
 			if (raw != null) {
 				try {
@@ -157,6 +173,11 @@ final class BulkLz4 {
 
 	static DataOutputStream output(Path path, BulkCodec codec, BulkTaskScheduler scheduler, Runnable afterOpen)
 			throws IOException {
+		return output(path, codec, scheduler, afterOpen, null);
+	}
+
+	static DataOutputStream output(Path path, BulkCodec codec, BulkTaskScheduler scheduler, Runnable afterOpen,
+			MessageDigest digest) throws IOException {
 		Objects.requireNonNull(path, "path");
 		Objects.requireNonNull(codec, "codec");
 		Objects.requireNonNull(afterOpen, "afterOpen");
@@ -175,12 +196,15 @@ final class BulkLz4 {
 					resources.trackHandle(handle);
 				}
 			}
-			raw = new BufferedOutputStream(Files.newOutputStream(path, StandardOpenOption.CREATE,
-					StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING));
+			raw = Files.newOutputStream(path, StandardOpenOption.CREATE,
+					StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
+			if (digest == null) {
+				raw = new BufferedOutputStream(raw, STREAM_BUFFER_BYTES);
+			}
 			if (handle != null) {
 				raw = new TrackedOutputStream(raw, handle, resources);
 			}
-			DataOutputStream output = new DataOutputStream(compress(raw, codec));
+			DataOutputStream output = encodedOutput(raw, codec, digest);
 			afterOpen.run();
 			return output;
 		} catch (IOException | RuntimeException | Error failure) {
@@ -197,6 +221,16 @@ final class BulkLz4 {
 			closeResources(resources, failure);
 			throw failure;
 		}
+	}
+
+	private static DataOutputStream encodedOutput(OutputStream raw, BulkCodec codec, MessageDigest digest) {
+		OutputStream encoded = compress(raw, codec);
+		if (digest != null) {
+			// Move the existing output buffer above the digest and codec, keeping the admitted footprint while
+			// hashing decoded bytes in chunks instead of hashing every primitive field separately.
+			encoded = new BufferedOutputStream(new DigestOutputStream(encoded, digest), STREAM_BUFFER_BYTES);
+		}
+		return new DataOutputStream(encoded);
 	}
 
 	/**
@@ -625,6 +659,8 @@ final class BulkLz4 {
 
 	/** Memory retained by one merge input, including buffered I/O and the largest framed decode buffers. */
 	static long mergeInputMemoryBytes(BulkCodec codec) {
+		// Single streams use the second buffer for decoded integrity reads; concatenated streams use it to drain
+		// their current frame. Both keep the same two-buffer envelope.
 		long streamBytes = 2L * STREAM_BUFFER_BYTES + OBJECT_AND_STREAM_STATE_BYTES;
 		if (codec.kind() == BulkCodec.Kind.NONE) {
 			return streamBytes;
@@ -719,15 +755,21 @@ final class BulkLz4 {
 		}
 	}
 
-	private static final class TrackedOutputStream extends FilterOutputStream {
+	static final class TrackedOutputStream extends FilterOutputStream {
 		private final BulkTaskScheduler.OpenFileHandle handle;
 		private final BulkTaskScheduler.ResourceScope resources;
 
-		private TrackedOutputStream(OutputStream output, BulkTaskScheduler.OpenFileHandle handle,
+		TrackedOutputStream(OutputStream output, BulkTaskScheduler.OpenFileHandle handle,
 				BulkTaskScheduler.ResourceScope resources) {
 			super(output);
 			this.handle = handle;
 			this.resources = resources;
+		}
+
+		@Override
+		public void write(byte[] values, int offset, int length) throws IOException {
+			Objects.checkFromIndexSize(offset, length, values.length);
+			out.write(values, offset, length);
 		}
 
 		@Override
