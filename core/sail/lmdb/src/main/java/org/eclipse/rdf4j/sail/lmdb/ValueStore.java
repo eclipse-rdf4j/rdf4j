@@ -97,6 +97,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.StampedLock;
 import java.util.function.BooleanSupplier;
@@ -973,6 +974,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	// An optional exact-read-view accelerator. It owns compressed copies, not LMDB page addresses.
 	private volatile ValueOverlayRegistry compressedValues;
+	/** Snapshot value-to-ID lookups answered by the overlay's reverse index, and those that read the dictionary. */
+	private final LongAdder snapshotIdOverlayHits = new LongAdder();
+	private final LongAdder snapshotIdDictionaryReads = new LongAdder();
 	/** Logical initial-import lifetime; native checkpoint generation changes do not release it. */
 	private volatile boolean valueOverlayMaintenanceDeferred;
 	private volatile boolean valueOverlayCaptureDeferred;
@@ -5153,6 +5157,14 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 	}
 
+	/** How read-snapshot value-to-ID lookups were answered so far. */
+	record SnapshotIdLookups(long overlayHits, long dictionaryReads) {
+	}
+
+	SnapshotIdLookups snapshotIdLookups() {
+		return new SnapshotIdLookups(snapshotIdOverlayHits.sum(), snapshotIdDictionaryReads.sum());
+	}
+
 	@InternalUseOnly
 	public CompressedValueOverlay.Stats compressedValueOverlayStats() {
 		ValueOverlayRegistry registry = compressedValues;
@@ -8913,6 +8925,17 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (snapshot != null) {
 			snapshot.ensureValid();
 		}
+		// The overlay lease is keyed to this exact transaction, so its reverse index answers as the dictionary would.
+		try (ValueOverlayRegistry.SnapshotLease overlay = borrowValueOverlay(txn)) {
+			if (overlay != null) {
+				OptionalLong hit = overlay.findId(data);
+				if (hit.isPresent()) {
+					snapshotIdOverlayHits.increment();
+					return hit.getAsLong();
+				}
+			}
+		}
+		snapshotIdDictionaryReads.increment();
 		try (MemoryStack stack = stackPush()) {
 			MDBVal dataVal = MDBVal.calloc(stack);
 			MDBVal idVal = MDBVal.calloc(stack);

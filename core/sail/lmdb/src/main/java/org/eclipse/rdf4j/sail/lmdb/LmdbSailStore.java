@@ -2614,6 +2614,9 @@ class LmdbSailStore implements SailStore {
 
 	private final TripleStore tripleStore;
 
+	/** Results of tuple queries whose caller asked for caching, valid until the next committed write. */
+	private final LmdbQueryResultCache queryResultCache = new LmdbQueryResultCache();
+
 	private final ValueStore valueStore;
 	private ValueStore.FreshValueSession freshValueSession;
 	private final List<ValueStore.PreparedValueBatch> pendingFreshValueBatches = new ArrayList<>();
@@ -7733,6 +7736,15 @@ class LmdbSailStore implements SailStore {
 		return directAdjacency;
 	}
 
+	LmdbQueryResultCache queryResultCache() {
+		return queryResultCache;
+	}
+
+	/** The revision of the last committed write, published after the LMDB commit and before it returns. */
+	long dataRevision() {
+		return tripleStore.getDataRevision();
+	}
+
 	/** Package-private for tests and readiness diagnostics (see LmdbStore.awaitValueOverlayReady). */
 	ValueStore valueStore() {
 		return valueStore;
@@ -7753,6 +7765,7 @@ class LmdbSailStore implements SailStore {
 		}
 		initialImportClosing = true;
 		Throwable failure = null;
+		failure = attemptClose(failure, queryResultCache::clear);
 		failure = attemptClose(failure, () -> NativeLmdbQuerySource.releaseCostModel(valueStore));
 		failure = attemptClose(failure, mapGrowthCoordinator::shutdown);
 		failure = attemptClose(failure, this::awaitReplayRetirements);

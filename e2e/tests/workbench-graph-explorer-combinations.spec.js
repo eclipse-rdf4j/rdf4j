@@ -87,19 +87,36 @@ async function runQuery(explorer, query) {
 
 /** The stored graph of this repository, as text, from the browser's database. */
 function storedGraph(page, suffix = '') {
-    return page.evaluate(([repositoryId, suffix]) => new Promise((resolve) => {
+    return page.evaluate(([repositoryId, suffix]) => new Promise((resolve, reject) => {
         const app = document.querySelector('#workbench-app');
         const serverIdentity = app?.getAttribute('data-workbench-server-identity');
         const appRepositoryId = app?.getAttribute('data-workbench-repository-id');
         if (!app || !serverIdentity || appRepositoryId !== repositoryId) return resolve('');
         const basePath = (app.getAttribute('data-workbench-base-path') || '').replace(/\/+$/, '');
         const scope = JSON.stringify(['repository-v2', basePath, serverIdentity, repositoryId]);
-        const request = indexedDB.open('graph-field-workspaces', 1);
-        request.onupgradeneeded = () => request.result.createObjectStore('workspaces');
+        const request = indexedDB.open('graph-field-workspaces');
+        request.onupgradeneeded = () => {
+            if (!request.result.objectStoreNames.contains('workspaces')) request.result.createObjectStore('workspaces');
+        };
+        request.onerror = () => reject(request.error);
         request.onsuccess = () => {
-            const store = request.result.transaction('workspaces').objectStore('workspaces');
-            const read = store.get(`workspace:${scope}${suffix}`);
-            read.onsuccess = () => resolve(String(read.result ?? ''));
+            const db = request.result;
+            db.onversionchange = () => db.close();
+            try {
+                const transaction = db.transaction('workspaces');
+                const read = transaction.objectStore('workspaces').get(`workspace:${scope}${suffix}`);
+                let raw = '';
+                read.onsuccess = () => { raw = String(read.result ?? ''); };
+                read.onerror = () => { db.close(); reject(read.error); };
+                transaction.oncomplete = () => { db.close(); resolve(raw); };
+                transaction.onerror = transaction.onabort = () => {
+                    db.close();
+                    reject(transaction.error ?? new Error('Reading the stored graph was aborted.'));
+                };
+            } catch (error) {
+                db.close();
+                reject(error);
+            }
         };
     }), [REPOSITORY_ID, suffix]);
 }
@@ -122,19 +139,33 @@ test('a graph with an empty value and a 25,000-character value comes back whole 
 test('a stored graph this version cannot read is kept, not saved over when the page opens', async ({ page }) => {
     await openGraph(page);
     const unreadable = JSON.stringify({ graph: { nodes: [{ id: 'urn:x', label: 'X', kind: 'nonsense' }], edges: [], revision: 1 } });
-    await page.evaluate(([repositoryId, raw]) => new Promise((resolve) => {
+    await page.evaluate(([repositoryId, raw]) => new Promise((resolve, reject) => {
         const app = document.querySelector('#workbench-app');
         const serverIdentity = app?.getAttribute('data-workbench-server-identity');
         const appRepositoryId = app?.getAttribute('data-workbench-repository-id');
         if (!app || !serverIdentity || appRepositoryId !== repositoryId) throw new Error('Workbench server identity is unavailable');
         const basePath = (app.getAttribute('data-workbench-base-path') || '').replace(/\/+$/, '');
         const scope = JSON.stringify(['repository-v2', basePath, serverIdentity, repositoryId]);
-        const request = indexedDB.open('graph-field-workspaces', 1);
-        request.onupgradeneeded = () => request.result.createObjectStore('workspaces');
+        const request = indexedDB.open('graph-field-workspaces');
+        request.onupgradeneeded = () => {
+            if (!request.result.objectStoreNames.contains('workspaces')) request.result.createObjectStore('workspaces');
+        };
+        request.onerror = () => reject(request.error);
         request.onsuccess = () => {
-            const transaction = request.result.transaction('workspaces', 'readwrite');
-            transaction.objectStore('workspaces').put(raw, `workspace:${scope}`);
-            transaction.oncomplete = resolve;
+            const db = request.result;
+            db.onversionchange = () => db.close();
+            try {
+                const transaction = db.transaction('workspaces', 'readwrite');
+                transaction.objectStore('workspaces').put(raw, `workspace:${scope}`);
+                transaction.oncomplete = () => { db.close(); resolve(); };
+                transaction.onerror = transaction.onabort = () => {
+                    db.close();
+                    reject(transaction.error ?? new Error('Writing the unreadable graph was aborted.'));
+                };
+            } catch (error) {
+                db.close();
+                reject(error);
+            }
         };
     }), [REPOSITORY_ID, unreadable]);
     await page.reload();
