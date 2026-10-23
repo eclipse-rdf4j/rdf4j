@@ -17,8 +17,10 @@ An RDF4J Server client can submit a repository configuration that points an `HTT
 - [done] verify managed plugin class boundaries (2026-10-23 06:46Z)
 - [done] run affected module test suites (2026-10-23 07:13Z)
 - [done] rerun formatter and copyright gates (2026-10-23 07:15Z)
-- [in_progress] review candidate and publish draft
-- [todo] monitor exact published head checks
+- [done] review candidate and publish draft (2026-10-23 07:40Z)
+- [done] repair exact-head test fixture failures (2026-10-23 09:01Z)
+- [done] rerun affected compliance and browser tests (2026-10-23 09:09Z)
+- [in_progress] republish and monitor exact-head checks
 
 ## Surprises & Discoveries
 
@@ -70,6 +72,10 @@ No production edit is allowed before the first in-repo red Failsafe report has b
 ## Artifacts and Notes
 
 The initial private Maven build log, red Failsafe reports, final green summaries (`managed-egress-final-green-evidence.txt`, `trusted-origin-nine-green-evidence.txt`, `server-full-green-evidence.txt`), final formatter and copyright logs, and exact diff are retained in this worktree. CI head inventory will be recorded after publication.
+
+CI repair note (2026-10-23): exact-head `b53ad9a` exposed test fixture assumptions that Server-managed endpoints can call loopback without an explicit administrator trust origin. The in-repo `SPARQLServiceEvaluationTest#test3` Failsafe reproduction is red (1 test, 1 error) in `ci-service-compliance-red-evidence.txt`; the browser jobs report the same policy denial for their local black-hole and closed-port SPARQLRepository fixtures. The repair will explicitly trust only test-owned exact origins, preserve the original SERVICE, timeout, and connection-refusal assertions, and leave production defaults unchanged.
+
+CI repair verification (2026-10-23): the focused compliance case is green (1/0/0), its full class is green (18/0/0), and the two originally failing Playwright specs pass on an isolated Spring Boot candidate (2/2; `ci-e2e-targeted.log`). `bash -n`, Node syntax checks, copyright, root formatter, and `git diff --check` pass. The exact test origin is configured before Server starts; production policy code is unchanged.
 
 ## Interfaces and Dependencies
 
