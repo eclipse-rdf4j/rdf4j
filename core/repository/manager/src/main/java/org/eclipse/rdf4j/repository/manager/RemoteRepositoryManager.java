@@ -191,8 +191,9 @@ public class RemoteRepositoryManager extends RepositoryManager {
 
 	@Override
 	public RepositoryConfig getRepositoryConfig(String id) throws RepositoryException {
-		return RepositoryConfigUtil.getRepositoryConfig(
+		RepositoryConfig config = RepositoryConfigUtil.getRepositoryConfig(
 				RepositoryConfigSecrets.publicProjection(fetchRepositoryConfigModel(id)), id);
+		return config == null ? null : new ReadRepositoryConfig(this, config);
 	}
 
 	/** Returns the Server's public RDF view with credential values represented by typed markers. */
@@ -329,8 +330,28 @@ public class RemoteRepositoryManager extends RepositoryManager {
 		Resource context = SimpleValueFactory.getInstance().createIRI(baseURI + "#" + config.getID());
 		Model edited = new LinkedHashModel();
 		config.export(edited, context);
-		RepositoryConfigSecrets.carryForwardMarkers(fetchRepositoryConfigModel(config.getID()), edited, config.getID());
+		if (config instanceof ReadRepositoryConfig read) {
+			if (read.source != this || !read.originalID.equals(config.getID())) {
+				throw new RepositoryConfigException(
+						"A remote configuration can retain credentials only on its original manager and repository.");
+			}
+			RepositoryConfigSecrets.carryForwardMarkers(fetchRepositoryConfigModel(config.getID()), edited,
+					config.getID());
+		} else {
+			RepositoryConfigSecrets.rejectMarkers(edited);
+		}
 		return edited;
+	}
+
+	private static final class ReadRepositoryConfig extends RepositoryConfig {
+		private final RemoteRepositoryManager source;
+		private final String originalID;
+
+		private ReadRepositoryConfig(RemoteRepositoryManager source, RepositoryConfig config) {
+			super(config.getID(), config.getTitle(), config.getRepositoryImplConfig());
+			this.source = source;
+			this.originalID = config.getID();
+		}
 	}
 
 	@Override

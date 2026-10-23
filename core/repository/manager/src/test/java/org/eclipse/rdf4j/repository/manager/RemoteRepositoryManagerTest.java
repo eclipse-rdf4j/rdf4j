@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigSchema;
+import org.eclipse.rdf4j.repository.http.config.HTTPRepositoryConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.junit.jupiter.api.BeforeEach;
@@ -240,6 +241,37 @@ public class RemoteRepositoryManagerTest extends RepositoryManagerTest {
 						.createLiteral("REDACTED",
 								SimpleValueFactory.getInstance().createIRI(CONFIG.NAMESPACE, "redactedSecret"))))
 										.hasSize(1);
+	}
+
+	@Test
+	public void freshReplacementWithoutCredentialClearsInsteadOfCarryingMarker(MockServerClient client)
+			throws Exception {
+		client.when(request().withMethod("GET").withPath("/rdf4j-server/protocol"))
+				.respond(response().withBody(Protocol.VERSION));
+		client.when(request().withMethod("GET").withPath("/rdf4j-server/repositories/mem-rdf/config"))
+				.respond(response().withContentType(MediaType.parse(RDFFormat.NTRIPLES.getDefaultMIMEType()))
+						.withBody("_:root <" + CONFIG.Rep.id + "> \"mem-rdf\" .\n"
+								+ "_:root <" + CONFIG.Rep.impl + "> _:impl .\n"
+								+ "_:impl <" + CONFIG.Rep.type + "> \"openrdf:HTTPRepository\" .\n"
+								+ "_:impl <" + CONFIG.Http.url
+								+ "> <https://trusted.example/repositories/r> .\n"
+								+ "_:impl <" + CONFIG.Http.password + "> \"REDACTED\"^^<"
+								+ CONFIG.NAMESPACE + "redactedSecret> .\n"));
+		client.when(request().withMethod("GET").withPath("/rdf4j-server/repositories"))
+				.respond(response().withContentType(MediaType.parse(TupleQueryResultFormat.SPARQL.getDefaultMIMEType()))
+						.withBody(readFileToString("repository-list-response.srx")));
+		client.when(request().withMethod("POST").withPath("/rdf4j-server/repositories/mem-rdf/config"))
+				.respond(response().withStatusCode(204).withHeader(Protocol.REPOSITORY_RESTART_HEADER, "done"));
+
+		RepositoryConfig replacement = new RepositoryConfig("mem-rdf",
+				new HTTPRepositoryConfig("https://trusted.example/repositories/r"));
+		((RemoteRepositoryManager) subject).updateRepositoryConfig(replacement);
+
+		HttpRequest[] requests = client.retrieveRecordedRequests(
+				request().withMethod("POST").withPath("/rdf4j-server/repositories/mem-rdf/config"));
+		assertThat(requests).hasSize(1);
+		Model submitted = Rio.parse(new ByteArrayInputStream(requests[0].getBodyAsRawBytes()), RDFFormat.BINARY);
+		assertThat(submitted.filter(null, CONFIG.Http.password, null)).isEmpty();
 	}
 
 	@Test

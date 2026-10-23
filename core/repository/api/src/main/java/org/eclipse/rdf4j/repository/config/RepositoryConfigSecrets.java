@@ -115,7 +115,7 @@ public final class RepositoryConfigSecrets {
 			if (key == null || !REDACTED.equals(marker.getObject())) {
 				throw invalidMarker();
 			}
-			List<Step> path = currentPaths.byNode.get(marker.getSubject());
+			PathKey path = currentPaths.byNode.get(marker.getSubject());
 			if (path == null || currentPaths.ambiguous.contains(marker.getSubject())
 					|| currentPaths.ambiguousPaths.contains(path)) {
 				throw invalidMarker();
@@ -171,7 +171,7 @@ public final class RepositoryConfigSecrets {
 			if (key == null || !REDACTED.equals(marker.getObject())) {
 				throw invalidMarker();
 			}
-			List<Step> path = submittedPaths.byNode.get(marker.getSubject());
+			PathKey path = submittedPaths.byNode.get(marker.getSubject());
 			if (path == null || submittedPaths.ambiguous.contains(marker.getSubject())) {
 				throw invalidMarker();
 			}
@@ -215,7 +215,7 @@ public final class RepositoryConfigSecrets {
 	private static Map<String, Set<Value>> destination(Model model, Resource node, String secretKey) {
 		Set<String> relevant = HTTP_PASSWORD.equals(secretKey)
 				? Set.of("http.url", "http.username")
-				: Set.of("lucene.indexClass", "lucene.transport", "lucene.elasticsearch.http.scheme",
+				: Set.of("lucene.index", "lucene.transport", "lucene.elasticsearch.http.scheme",
 						"lucene.elasticsearch.http.pathPrefix", "lucene.elasticsearch.sslEnabled",
 						"lucene.elasticsearch.http.ssl.enabled", "lucene.elasticsearch.http.username");
 		Map<String, Set<Value>> signature = new HashMap<>();
@@ -230,7 +230,7 @@ public final class RepositoryConfigSecrets {
 
 	private static Map<IRI, String> destinationKeys() {
 		Map<IRI, String> keys = new HashMap<>();
-		for (String name : List.of("indexClass", "transport", "elasticsearch.http.scheme",
+		for (String name : List.of("index", "transport", "elasticsearch.http.scheme",
 				"elasticsearch.http.pathPrefix",
 				"elasticsearch.sslEnabled", "elasticsearch.http.ssl.enabled", "elasticsearch.http.username")) {
 			String key = "lucene." + name;
@@ -258,9 +258,8 @@ public final class RepositoryConfigSecrets {
 		}
 		Paths paths = new Paths();
 		Resource root = roots.iterator().next();
-		List<Step> empty = List.of();
-		paths.byNode.put(root, empty);
-		paths.byPath.put(empty, root);
+		paths.byNode.put(root, PathKey.ROOT);
+		paths.byPath.put(PathKey.ROOT, root);
 		ArrayDeque<Resource> queue = new ArrayDeque<>();
 		queue.add(root);
 		while (!queue.isEmpty()) {
@@ -270,14 +269,12 @@ public final class RepositoryConfigSecrets {
 				if (link == null || !(statement.getObject() instanceof Resource child)) {
 					continue;
 				}
-				List<Step> path = new ArrayList<>(paths.byNode.get(parent));
-				path.add(new Step(link, types(model, child)));
-				path = List.copyOf(path);
+				PathKey path = paths.byNode.get(parent).child(new Step(link, types(model, child)));
 				Resource priorAtPath = paths.byPath.putIfAbsent(path, child);
 				if (priorAtPath != null && !priorAtPath.equals(child)) {
 					paths.ambiguousPaths.add(path);
 				}
-				List<Step> priorPath = paths.byNode.putIfAbsent(child, path);
+				PathKey priorPath = paths.byNode.putIfAbsent(child, path);
 				if (priorPath != null && !priorPath.equals(path)) {
 					paths.ambiguous.add(child);
 				} else if (priorPath == null) {
@@ -309,10 +306,55 @@ public final class RepositoryConfigSecrets {
 	private record Step(IRI link, Set<Value> types) {
 	}
 
+	private static final class PathKey {
+		private static final PathKey ROOT = new PathKey(null, null, 1, 0);
+
+		private final PathKey parent;
+		private final Step step;
+		private final int hash;
+		private final int depth;
+
+		private PathKey(PathKey parent, Step step, int hash, int depth) {
+			this.parent = parent;
+			this.step = step;
+			this.hash = hash;
+			this.depth = depth;
+		}
+
+		private PathKey child(Step step) {
+			return new PathKey(this, step, 31 * hash + step.hashCode(), depth + 1);
+		}
+
+		@Override
+		public int hashCode() {
+			return hash;
+		}
+
+		@Override
+		public boolean equals(Object object) {
+			if (this == object) {
+				return true;
+			}
+			if (!(object instanceof PathKey other) || depth != other.depth || hash != other.hash) {
+				return false;
+			}
+			PathKey left = this;
+			PathKey right = other;
+			while (left.depth > 0) {
+				if (!left.step.equals(right.step)) {
+					return false;
+				}
+				left = left.parent;
+				right = right.parent;
+			}
+			return true;
+		}
+	}
+
 	private static final class Paths {
-		private final Map<Resource, List<Step>> byNode = new HashMap<>();
-		private final Map<List<Step>, Resource> byPath = new HashMap<>();
+		private final Map<Resource, PathKey> byNode = new HashMap<>();
+		private final Map<PathKey, Resource> byPath = new HashMap<>();
 		private final Set<Resource> ambiguous = new HashSet<>();
-		private final Set<List<Step>> ambiguousPaths = new HashSet<>();
+		private final Set<PathKey> ambiguousPaths = new HashSet<>();
 	}
 }

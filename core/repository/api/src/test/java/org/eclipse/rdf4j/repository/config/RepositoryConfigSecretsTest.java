@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.repository.config;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.lang.management.ManagementFactory;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -21,6 +23,8 @@ import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.junit.jupiter.api.Test;
+
+import com.sun.management.ThreadMXBean;
 
 class RepositoryConfigSecretsTest {
 
@@ -87,7 +91,7 @@ class RepositoryConfigSecretsTest {
 		publicCurrent.add(implementation, CONFIG.Rep.type, VF.createLiteral("elasticsearch"));
 		publicCurrent.add(implementation, VF.createIRI(CONFIG.NAMESPACE, "lucene.transport"),
 				VF.createLiteral("trusted.example:9200"));
-		publicCurrent.add(implementation, VF.createIRI(CONFIG.NAMESPACE, "lucene.indexClass"),
+		publicCurrent.add(implementation, VF.createIRI(CONFIG.NAMESPACE, "lucene.index"),
 				VF.createLiteral("trusted.Index"));
 		publicCurrent.add(implementation, PASSWORD, VF.createLiteral("REDACTED", MARKER_TYPE));
 		Model edited = new LinkedHashModel(publicCurrent);
@@ -99,11 +103,11 @@ class RepositoryConfigSecretsTest {
 	}
 
 	@Test
-	void refusesRemoteMarkerCarryWhenIndexClassChanges() {
+	void refusesRemoteMarkerCarryWhenEffectiveIndexChanges() {
 		Model publicCurrent = new LinkedHashModel();
 		Resource root = VF.createBNode();
 		Resource implementation = VF.createBNode();
-		IRI indexClass = VF.createIRI(CONFIG.NAMESPACE, "lucene.indexClass");
+		IRI indexClass = VF.createIRI(CONFIG.NAMESPACE, "lucene.index");
 		publicCurrent.add(root, CONFIG.Rep.id, VF.createLiteral("memory"));
 		publicCurrent.add(root, CONFIG.Rep.impl, implementation);
 		publicCurrent.add(implementation, CONFIG.Rep.type, VF.createLiteral("elasticsearch"));
@@ -174,6 +178,41 @@ class RepositoryConfigSecretsTest {
 	}
 
 	@Test
+	void restoresDeepDelegateChainWithinBoundedHeap() {
+		Model original = new LinkedHashModel();
+		Resource root = VF.createBNode();
+		original.add(root, CONFIG.Rep.id, VF.createLiteral("memory"));
+		Resource node = root;
+		for (int i = 0; i < 10_000; i++) {
+			Resource child = VF.createBNode();
+			original.add(node, CONFIG.delegate, child);
+			original.add(child, CONFIG.Sail.type, VF.createLiteral("wrapper"));
+			node = child;
+		}
+		original.add(node, PASSWORD, VF.createLiteral("private-password-marker"));
+		Resource leaf = node;
+		RepositoryConfig persisted = new RepositoryConfig("memory") {
+			@Override
+			public void export(Model model) {
+				model.addAll(original);
+			}
+		};
+		Model submitted = new LinkedHashModel(original);
+		submitted.remove(leaf, PASSWORD, null);
+		submitted.add(leaf, PASSWORD, VF.createLiteral("REDACTED", MARKER_TYPE));
+
+		ThreadMXBean allocations = (ThreadMXBean) ManagementFactory.getThreadMXBean();
+		assertThat(allocations.isThreadAllocatedMemorySupported()).isTrue();
+		allocations.setThreadAllocatedMemoryEnabled(true);
+		long before = allocations.getThreadAllocatedBytes(Thread.currentThread().threadId());
+		RepositoryConfigSecrets.restore(submitted, "memory", persisted);
+		long allocated = allocations.getThreadAllocatedBytes(Thread.currentThread().threadId()) - before;
+
+		assertThat(submitted.filter(leaf, PASSWORD, VF.createLiteral("private-password-marker"))).hasSize(1);
+		assertThat(allocated).isLessThan(100_000_000L);
+	}
+
+	@Test
 	void refusesMarkerWithoutAStoredSecretAtTheSamePath() {
 		Model original = new LinkedHashModel();
 		Resource root = VF.createBNode();
@@ -224,15 +263,15 @@ class RepositoryConfigSecretsTest {
 	}
 
 	@Test
-	void refusesElasticsearchPasswordReuseWhenIndexClassChanges() {
+	void refusesElasticsearchPasswordReuseWhenEffectiveIndexChanges() {
 		Model original = new LinkedHashModel();
 		Resource root = VF.createBNode();
 		Resource implementation = VF.createBNode();
-		IRI indexClass = VF.createIRI(CONFIG.NAMESPACE, "lucene.indexClass");
+		IRI index = VF.createIRI(CONFIG.NAMESPACE, "lucene.index");
 		original.add(root, CONFIG.Rep.id, VF.createLiteral("memory"));
 		original.add(root, CONFIG.Rep.impl, implementation);
 		original.add(implementation, CONFIG.Rep.type, VF.createLiteral("elasticsearch"));
-		original.add(implementation, indexClass, VF.createLiteral("trusted.Index"));
+		original.add(implementation, index, VF.createLiteral("trusted.Index"));
 		original.add(implementation, PASSWORD, VF.createLiteral("private-password-marker"));
 		RepositoryConfig persisted = new RepositoryConfig("memory") {
 			@Override
@@ -241,11 +280,19 @@ class RepositoryConfigSecretsTest {
 			}
 		};
 		Model submitted = new LinkedHashModel(original);
-		submitted.remove(implementation, indexClass, null);
-		submitted.add(implementation, indexClass, VF.createLiteral("attacker.Index"));
+		submitted.remove(implementation, index, null);
+		submitted.add(implementation, index, VF.createLiteral("attacker.Index"));
 		submitted.remove(implementation, PASSWORD, null);
 		submitted.add(implementation, PASSWORD, VF.createLiteral("REDACTED", MARKER_TYPE));
 
+		assertThatThrownBy(() -> RepositoryConfigSecrets.restore(submitted, "memory", persisted))
+				.isInstanceOf(RepositoryConfigException.class);
+
+		IRI legacyIndex = VF.createIRI("http://www.openrdf.org/config/sail/lucene#index");
+		original.remove(implementation, index, null);
+		original.add(implementation, legacyIndex, VF.createLiteral("trusted.Index"));
+		submitted.remove(implementation, index, null);
+		submitted.add(implementation, legacyIndex, VF.createLiteral("attacker.Index"));
 		assertThatThrownBy(() -> RepositoryConfigSecrets.restore(submitted, "memory", persisted))
 				.isInstanceOf(RepositoryConfigException.class);
 	}
