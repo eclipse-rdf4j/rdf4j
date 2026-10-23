@@ -51,6 +51,7 @@ public class HttpRequest {
 	private final List<HttpHeader> headers;
 	private final HttpRequestBody body;
 	private final Duration responseTimeout;
+	private final boolean redirectsAllowed;
 
 	private HttpRequest(Builder builder) {
 		this.method = builder.method;
@@ -58,6 +59,7 @@ public class HttpRequest {
 		this.headers = new ArrayList<>(builder.headers);
 		this.body = builder.body;
 		this.responseTimeout = builder.responseTimeout;
+		this.redirectsAllowed = builder.redirectsAllowed;
 	}
 
 	/**
@@ -158,6 +160,11 @@ public class HttpRequest {
 		return Optional.ofNullable(responseTimeout);
 	}
 
+	/** Returns whether this request permits the client's configured redirect behavior. */
+	public boolean isRedirectsAllowed() {
+		return redirectsAllowed;
+	}
+
 	/**
 	 * Creates a new {@link Builder} for the given HTTP method and target URI.
 	 *
@@ -182,7 +189,8 @@ public class HttpRequest {
 		return new Builder(original.method, uri)
 				.headers(original.headers)
 				.body(original.body)
-				.responseTimeout(original.responseTimeout);
+				.responseTimeout(original.responseTimeout)
+				.redirectsAllowed(original.redirectsAllowed);
 	}
 
 	/**
@@ -199,6 +207,7 @@ public class HttpRequest {
 		private final List<HttpHeader> headers = new ArrayList<>();
 		private HttpRequestBody body;
 		private Duration responseTimeout;
+		private boolean redirectsAllowed = true;
 
 		private Builder(String method, URI uri) {
 			this.method = method;
@@ -265,6 +274,15 @@ public class HttpRequest {
 		 */
 		public Builder responseTimeout(Duration timeout) {
 			this.responseTimeout = timeout;
+			return this;
+		}
+
+		/**
+		 * Controls redirect following for this request. Setting this to false overrides a client configured to follow
+		 * redirects, including redirects that would otherwise preserve the method and request headers.
+		 */
+		public Builder redirectsAllowed(boolean redirectsAllowed) {
+			this.redirectsAllowed = redirectsAllowed;
 			return this;
 		}
 

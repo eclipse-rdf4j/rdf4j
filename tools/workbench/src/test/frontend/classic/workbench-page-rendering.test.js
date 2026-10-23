@@ -869,6 +869,27 @@ test('Server form restores the username while keeping the password blank', () =>
     assert.ok(!output.includes('must-not-be-rendered'), 'the server password must remain blank on render');
 });
 
+test('Delete page prompts only for a protected repository and never renders the password', () => {
+    const workbench = loadWorkbench();
+    const context = { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} };
+    const base = { viewId: 'delete', vars: ['id', 'description'],
+        rows: [['repo-1', 'Example repository']], pickerRows: [['repo-1', 'Example repository']], rowCount: 1 };
+    const protectedModel = { ...base, metadata: {
+        'repository-deletion-password-required': true, selectedRepositoryId: 'repo-1',
+        'delete-password': 'must-not-be-rendered'
+    } };
+    const protectedMarkup = flattenTemplateMarkup(workbench.views.pageTemplate(
+        protectedModel, context, fakeRuntime()));
+    assert.ok(protectedMarkup.includes('id="delete-password"'));
+    assert.ok(protectedMarkup.includes('type="password"'));
+    assert.ok(protectedMarkup.includes('autocomplete="off"'));
+    assert.ok(!protectedMarkup.includes('must-not-be-rendered'));
+
+    const unprotectedMarkup = flattenTemplateMarkup(workbench.views.pageTemplate(
+        { ...base, metadata: { 'repository-deletion-password-required': false } }, context, fakeRuntime()));
+    assert.ok(!unprotectedMarkup.includes('id="delete-password"'));
+});
+
 test('all repository creation variants preserve their page-model fields and actions', () => {
     const workbench = loadWorkbench();
     const runtime = fakeRuntime();

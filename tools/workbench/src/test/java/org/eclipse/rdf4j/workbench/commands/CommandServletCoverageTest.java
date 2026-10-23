@@ -117,6 +117,7 @@ class CommandServletCoverageTest {
 		HttpServletResponse response = mock(HttpServletResponse.class);
 
 		servlet.setRepositoryManager(manager);
+		when(request.getRequest()).thenReturn(mock(HttpServletRequest.class));
 		when(request.getParameter("id")).thenReturn("memory");
 
 		servlet.doPost(request, response);

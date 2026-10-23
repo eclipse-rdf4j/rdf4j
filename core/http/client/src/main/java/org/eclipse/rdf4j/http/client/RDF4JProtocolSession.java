@@ -25,6 +25,7 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -279,6 +280,23 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		}
 	}
 
+	/**
+	 * Discover the server's whole-repository deletion policy. An absent header on a successful response means an older,
+	 * unprotected server; transport or protocol errors are not interpreted as absence.
+	 */
+	public boolean isRepositoryDeletionPasswordRequired() throws IOException, RepositoryException {
+		checkServerURL();
+		HttpRequest request = applyAdditionalHeaders(
+				HttpRequest.newBuilder("HEAD", URI.create(Protocol.getProtocolLocation(serverURL)))).build();
+		try (HttpResponse response = executeOK(request)) {
+			String value = response.getHeader(Protocol.REPOSITORY_DELETE_PASSWORD_REQUIRED_HEADER).orElse("false");
+			if (!"true".equalsIgnoreCase(value) && !"false".equalsIgnoreCase(value)) {
+				throw new RepositoryException("Invalid repository deletion policy response header");
+			}
+			return Boolean.parseBoolean(value);
+		}
+	}
+
 	/** Lists the strategies available for native execution in the selected repository. */
 	@Experimental
 	public List<LmdbForceableStrategy> getLmdbForceableStrategies()
@@ -464,10 +482,19 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	}
 
 	public void deleteRepository(String repositoryID) throws IOException, RepositoryException {
+		deleteRepository(repositoryID, null);
+	}
 
-		HttpRequest method = applyAdditionalHeaders(
-				HttpRequests.delete(Protocol.getRepositoryLocation(serverURL, repositoryID)))
-						.build();
+	/** Deletes a repository with an optional password confined to this one request. */
+	public void deleteRepository(String repositoryID, String deletionPassword) throws IOException, RepositoryException {
+		HttpRequest.Builder builder = applyAdditionalHeaders(
+				HttpRequests.delete(Protocol.getRepositoryLocation(serverURL, repositoryID)));
+		if (deletionPassword != null) {
+			builder.header(Protocol.REPOSITORY_DELETE_PASSWORD_HEADER,
+					Base64.getEncoder().encodeToString(deletionPassword.getBytes(StandardCharsets.UTF_8)));
+			builder.redirectsAllowed(false);
+		}
+		HttpRequest method = builder.build();
 
 		try {
 			executeNoContent(method);

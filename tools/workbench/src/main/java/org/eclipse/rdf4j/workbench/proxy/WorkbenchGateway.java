@@ -29,6 +29,7 @@ import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
+import org.eclipse.rdf4j.repository.manager.RepositoryDeletionPolicy;
 import org.eclipse.rdf4j.workbench.base.AbstractServlet;
 import org.eclipse.rdf4j.workbench.base.WorkbenchHtmlShell;
 import org.eclipse.rdf4j.workbench.base.WorkbenchViewRegistry;
@@ -89,6 +90,14 @@ public class WorkbenchGateway extends AbstractServlet {
 		super.init(config);
 		if (getDefaultServerPath() == null) {
 			throw new MissingInitParameterException(DEFAULT_SERVER);
+		}
+		try {
+			// Command servlets are created lazily; validate and snapshot the local policy at application startup.
+			config.getServletContext()
+					.setAttribute(RepositoryDeletionPolicy.class.getName(),
+							RepositoryDeletionPolicy.fromSystemProperty());
+		} catch (IllegalArgumentException | IllegalStateException e) {
+			throw new ServletException("Invalid repository deletion password configuration", e);
 		}
 		try {
 			this.policy = WorkbenchPolicyLoader.getPolicy(config.getServletContext(), appConfig);

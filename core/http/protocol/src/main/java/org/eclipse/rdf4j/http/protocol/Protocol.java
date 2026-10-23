@@ -114,6 +114,12 @@ public abstract class Protocol {
 	 */
 	public static final String VERSION = "12";
 
+	/** Request header carrying the base64-encoded UTF-8 password for whole-repository deletion. */
+	public static final String REPOSITORY_DELETE_PASSWORD_HEADER = "X-RDF4J-Repository-Delete-Password";
+
+	/** Boolean response header advertising whole-repository deletion password protection. */
+	public static final String REPOSITORY_DELETE_PASSWORD_REQUIRED_HEADER = "X-RDF4J-Repository-Delete-Password-Required";
+
 	/**
 	 * Parameter name for the 'subject' parameter of a statement query.
 	 */

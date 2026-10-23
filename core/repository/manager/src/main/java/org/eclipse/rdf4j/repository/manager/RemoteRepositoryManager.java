@@ -289,6 +289,23 @@ public class RemoteRepositoryManager extends RepositoryManager {
 
 	@Override
 	public boolean removeRepository(String repositoryID) throws RepositoryException, RepositoryConfigException {
+		return removeRepository(repositoryID, null);
+	}
+
+	/** Discover the remote server policy; this manager's JVM property does not govern remote deletion. */
+	public boolean isRepositoryDeletionPasswordRequired() throws RepositoryException {
+		try (RDF4JProtocolSession protocolSession = getSharedHttpClientSessionManager()
+				.createRDF4JProtocolSession(serverURL)) {
+			protocolSession.setUsernameAndPassword(username, password);
+			return protocolSession.isRepositoryDeletionPasswordRequired();
+		} catch (IOException e) {
+			throw new RepositoryException("Unable to discover repository deletion policy", e);
+		}
+	}
+
+	/** Remove a remote repository with a deletion password confined to this invocation. */
+	public boolean removeRepository(String repositoryID, String deletionPassword)
+			throws RepositoryException, RepositoryConfigException {
 
 		boolean existingRepo = hasRepositoryConfig(repositoryID);
 
@@ -296,7 +313,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 			try (RDF4JProtocolSession protocolSession = getSharedHttpClientSessionManager()
 					.createRDF4JProtocolSession(serverURL)) {
 				protocolSession.setUsernameAndPassword(username, password);
-				protocolSession.deleteRepository(repositoryID);
+				protocolSession.deleteRepository(repositoryID, deletionPassword);
 			} catch (IOException e) {
 				logger.warn("error while deleting remote repository", e);
 				throw new RepositoryConfigException(e);

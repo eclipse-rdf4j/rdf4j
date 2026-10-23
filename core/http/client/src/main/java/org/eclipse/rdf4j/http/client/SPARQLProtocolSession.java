@@ -53,6 +53,7 @@ import org.eclipse.rdf4j.http.client.spi.NameValuePair;
 import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
 import org.eclipse.rdf4j.http.client.spi.UriBuilder;
 import org.eclipse.rdf4j.http.protocol.Protocol;
+import org.eclipse.rdf4j.http.protocol.RepositoryDeletionDeniedException;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
 import org.eclipse.rdf4j.http.protocol.error.ErrorInfo;
 import org.eclipse.rdf4j.http.protocol.error.ErrorType;
@@ -1080,7 +1081,10 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 			default:
 				ErrorInfo errInfo = getErrorInfo(response);
 				consumed = true;
-				if (errInfo.getErrorType() == ErrorType.MALFORMED_DATA) {
+				if (httpCode == HttpURLConnection.HTTP_FORBIDDEN
+						&& errInfo.getErrorType() == ErrorType.REPOSITORY_DELETION_DENIED) {
+					throw new RepositoryDeletionDeniedException();
+				} else if (errInfo.getErrorType() == ErrorType.MALFORMED_DATA) {
 					throw new RDFParseException(errInfo.getErrorMessage());
 				} else if (errInfo.getErrorType() == ErrorType.UNSUPPORTED_FILE_FORMAT) {
 					throw new UnsupportedRDFormatException(errInfo.getErrorMessage());
