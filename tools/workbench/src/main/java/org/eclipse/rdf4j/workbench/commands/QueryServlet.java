@@ -1820,11 +1820,10 @@ public class QueryServlet extends TransformationServlet {
 				} else if ("hash".equals(ref)) {
 					throw new BadRequestException("Legacy query references are no longer supported.");
 				} else if ("id".equals(ref)) {
-					if (!canReadSavedQuery(req)) {
-						throw new BadRequestException("Current user may not read the given query.");
-					}
-					result = storage.getQueryText(getRepositoryReference(), getUserNameFromParameter(req, "owner"),
-							query);
+					String currentUser = SavedQueryIdentity.owner(req, appConfig);
+					IRI savedQuery = storage.selectReadableSavedQuery(getRepositoryReference(),
+							getUserNameFromParameter(req, "owner"), query, currentUser);
+					result = storage.getReadableQueryText(savedQuery, currentUser);
 				} else {
 					// if ref not recognized assume request meant "text"
 					result = query;
@@ -1840,12 +1839,13 @@ public class QueryServlet extends TransformationServlet {
 
 	private boolean canReadSavedQuery(WorkbenchRequest req) throws BadRequestException, RDF4JException {
 		if (req.isParameterPresent(REF)) {
-			return "id".equals(req.getParameter(REF))
-					? storage.canRead(
-							storage.selectSavedQuery(getRepositoryReference(),
-									getUserNameFromParameter(req, "owner"), req.getParameter(QUERY)),
-							SavedQueryIdentity.owner(req, appConfig))
-					: true;
+			if (!"id".equals(req.getParameter(REF))) {
+				return true;
+			}
+			storage.selectReadableSavedQuery(getRepositoryReference(),
+					getUserNameFromParameter(req, "owner"), req.getParameter(QUERY),
+					SavedQueryIdentity.owner(req, appConfig));
+			return true;
 		} else {
 			throw new BadRequestException("Expected 'ref' parameter in request.");
 		}
