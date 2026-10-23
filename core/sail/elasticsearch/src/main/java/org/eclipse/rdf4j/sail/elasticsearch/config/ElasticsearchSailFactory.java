@@ -60,6 +60,9 @@ public class ElasticsearchSailFactory implements SailFactory {
 			for (String key : luceneConfig.getParameterNames()) {
 				luceneSail.setParameter(key, luceneConfig.getParameter(key));
 			}
+			if (luceneConfig.getIndexCustomizer() != null) {
+				luceneSail.setIndexCustomizer(luceneConfig.getIndexCustomizer());
+			}
 		}
 
 		return luceneSail;

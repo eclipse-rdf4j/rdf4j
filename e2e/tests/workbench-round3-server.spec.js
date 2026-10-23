@@ -10,7 +10,6 @@
 //  C15  the credentials cookie is UTF-8 (user names beyond Latin-1);
 //  C25  the delete safety check answers JSON;
 //  C32c Summary counts of an unreachable SPARQL endpoint answer the reason instead of a server error.
-const net = require('node:net');
 const { test, expect } = require('@playwright/test');
 const {
     deleteRepository,
@@ -97,17 +96,6 @@ function columnOf(text, name) {
     const index = vars.indexOf(name);
     const cell = index >= 0 && rows.length ? rows[0][index] : null;
     return cell && typeof cell === 'object' ? cell.value : cell;
-}
-
-async function closedPort() {
-    return new Promise((resolve, reject) => {
-        const server = net.createServer();
-        server.listen(0, '127.0.0.1', () => {
-            const { port } = server.address();
-            server.close(() => resolve(port));
-        });
-        server.on('error', reject);
-    });
 }
 
 /** Whether a confirmation dialog opens within two seconds (a client may ask before it sends). */
@@ -424,7 +412,7 @@ test.describe('C32c Summary of an unreachable SPARQL endpoint', () => {
 
     test.beforeAll(async ({ request }) => {
         await putRepository(request, repositoryId, '[ config:rep.type "openrdf:SPARQLRepository" ; '
-            + `config:sparql.queryEndpoint <http://127.0.0.1:${await closedPort()}/sparql> ]`);
+            + `config:sparql.queryEndpoint <${refusedUrlOrigin()}/sparql> ]`);
     });
 
     test.afterAll(async ({ request }) => {

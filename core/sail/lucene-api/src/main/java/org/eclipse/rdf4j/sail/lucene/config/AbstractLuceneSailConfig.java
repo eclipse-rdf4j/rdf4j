@@ -17,6 +17,7 @@ import static org.eclipse.rdf4j.sail.lucene.config.LuceneSailConfigSchema.INDEX_
 
 import java.util.Properties;
 import java.util.Set;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.annotation.ConfigProperty;
 import org.eclipse.rdf4j.common.annotation.Configurable;
@@ -29,6 +30,7 @@ import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.sail.config.AbstractDelegatingSailImplConfig;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.eclipse.rdf4j.sail.config.SailImplConfig;
+import org.eclipse.rdf4j.sail.lucene.SearchIndex;
 
 @Configurable(description = "Base Lucene Sail configuration for index location and extensible indexer parameters.")
 @ConfigProperty(
@@ -112,6 +114,7 @@ public abstract class AbstractLuceneSailConfig extends AbstractDelegatingSailImp
 
 	private String indexDir;
 	private final Properties parameters = new Properties();
+	private transient Consumer<SearchIndex> indexCustomizer;
 
 	protected AbstractLuceneSailConfig(String type) {
 		super(type);
@@ -153,6 +156,15 @@ public abstract class AbstractLuceneSailConfig extends AbstractDelegatingSailImp
 
 	public Set<String> getParameterNames() {
 		return parameters.stringPropertyNames();
+	}
+
+	/** Runtime-only index customization; this value is not exported to RDF configuration. */
+	public Consumer<SearchIndex> getIndexCustomizer() {
+		return indexCustomizer;
+	}
+
+	public void setIndexCustomizer(Consumer<SearchIndex> indexCustomizer) {
+		this.indexCustomizer = indexCustomizer;
 	}
 
 	@Override
