@@ -64,6 +64,10 @@ final class ServerOutboundDestinationPolicy implements Serializable {
 		return new PolicyDnsResolver(origin.host(), trustedOrigins.contains(origin));
 	}
 
+	boolean isTrusted(Origin origin) {
+		return trustedOrigins.contains(origin);
+	}
+
 	static Origin origin(URI uri) throws IOException {
 		String scheme = uri.getScheme();
 		String host = uri.getHost();

@@ -114,6 +114,11 @@ import co.elastic.clients.util.NamedValue;
  */
 public class ElasticsearchIndex extends AbstractSearchIndex {
 
+	@FunctionalInterface
+	public interface ClientBuilderCustomizer {
+		void customize(Properties parameters, HttpHost[] hosts, Rest5ClientBuilder builder) throws IOException;
+	}
+
 	/**
 	 * Set the parameter "indexName=" to specify the index to use.
 	 */
@@ -209,6 +214,8 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 
 	private volatile Rest5Client lowLevelClient;
 
+	private ClientBuilderCustomizer clientBuilderCustomizer;
+
 	private volatile ElasticsearchTransport transport;
 
 	private volatile ElasticsearchClient client;
@@ -226,6 +233,10 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	private Function<? super String, ? extends SpatialContext> geoContextMapper;
 
 	public ElasticsearchIndex() {
+	}
+
+	public void setClientBuilderCustomizer(ClientBuilderCustomizer clientBuilderCustomizer) {
+		this.clientBuilderCustomizer = clientBuilderCustomizer;
 	}
 
 	public String getClusterName() {
@@ -258,6 +269,9 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		configurePathPrefix(parameters, restClientBuilder);
 		configureDefaultHeaders(parameters, restClientBuilder);
 		configureRequestTimeouts(parameters, restClientBuilder);
+		if (clientBuilderCustomizer != null) {
+			clientBuilderCustomizer.customize(parameters, httpHosts, restClientBuilder);
+		}
 
 		lowLevelClient = restClientBuilder.build();
 		transport = new Rest5ClientTransport(lowLevelClient, new JacksonJsonpMapper());
