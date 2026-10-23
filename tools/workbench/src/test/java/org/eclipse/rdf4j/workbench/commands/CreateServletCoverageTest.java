@@ -31,9 +31,14 @@ import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
+import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 
 import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletOutputStream;
@@ -79,6 +84,94 @@ class CreateServletCoverageTest {
 				.contains("beta")
 				.contains("Beta repo")
 				.contains("http://example.com/beta");
+	}
+
+	@Test
+	void serviceReturnsBadRequestForTemplateResourceOutsideRepositoryTemplatePackage() throws Exception {
+		CreateServlet servlet = new CreateServlet();
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+
+		servlet.setRepositoryManager(mock(RepositoryManager.class));
+		when(request.isParameterPresent("type")).thenReturn(true);
+		when(request.getTypeParameter()).thenReturn("/configFiles/memory");
+		servlet.service(request, response);
+
+		verify(response).sendError(HttpServletResponse.SC_BAD_REQUEST,
+				"Invalid template type: expected one resource filename");
+	}
+
+	@Test
+	void invalidTemplateTypeReturnsBadRequestForGet() throws Exception {
+		CreateServlet servlet = new CreateServlet();
+		servlet.setRepositoryManager(mock(RepositoryManager.class));
+		servlet.init(TestServletConfig.withParams("create", "cookie-max-age", "300"));
+		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/create");
+		request.addParameter("type", "/configFiles/memory");
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		servlet.service(request, response);
+
+		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_BAD_REQUEST);
+		assertThat(response.getErrorMessage()).contains("template type");
+	}
+
+	@Test
+	void invalidTemplateTypeReturnsPageDataErrorForGet() throws Exception {
+		CreateServlet servlet = new CreateServlet();
+		servlet.setRepositoryManager(mock(RepositoryManager.class));
+		servlet.init(TestServletConfig.withParams("create", "cookie-max-age", "300"));
+		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/create");
+		request.addHeader("Accept", WorkbenchPageProtocol.ACCEPT);
+		request.addParameter("type", "../configFiles/memory");
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		servlet.service(request, response);
+
+		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_BAD_REQUEST);
+		assertThat(response.getContentType()).isEqualTo(WorkbenchPageProtocol.CONTENT_TYPE);
+		assertThat(response.getContentAsString()).contains("error-message", "template type");
+	}
+
+	@Test
+	void invalidTemplateTypeReturnsBadRequestForPost() throws Exception {
+		CreateServlet servlet = new CreateServlet();
+		servlet.setRepositoryManager(mock(RepositoryManager.class));
+		servlet.init(TestServletConfig.withParams("create", "cookie-max-age", "300"));
+		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/create");
+		request.addParameter("type", "/configFiles/memory");
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		servlet.service(request, response);
+
+		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_BAD_REQUEST);
+		assertThat(response.getErrorMessage()).contains("template type");
+	}
+
+	@Test
+	void invalidTemplateTypeReturnsPageDataErrorForPost() throws Exception {
+		CreateServlet servlet = new CreateServlet();
+		servlet.setRepositoryManager(mock(RepositoryManager.class));
+		servlet.init(TestServletConfig.withParams("create", "cookie-max-age", "300"));
+		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/create");
+		request.addHeader("Accept", WorkbenchPageProtocol.ACCEPT);
+		request.addParameter("type", "../configFiles/memory");
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		servlet.service(request, response);
+
+		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_BAD_REQUEST);
+		assertThat(response.getContentType()).isEqualTo(WorkbenchPageProtocol.CONTENT_TYPE);
+		assertThat(response.getContentAsString()).contains("error-message", "template type");
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "/configFiles/memory", "./memory", "../config/memory", "..\\memory",
+			"%2FconfigFiles%2Fmemory", "%2e%2e%2fconfigFiles%2fmemory" })
+	void configTemplateHelperRejectsPathLikeTypes(String type) {
+		assertThatThrownBy(() -> CreateServlet.getConfigTemplate(type))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("template type");
 	}
 
 	@Test

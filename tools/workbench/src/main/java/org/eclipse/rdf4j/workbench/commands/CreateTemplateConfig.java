@@ -205,8 +205,26 @@ final class CreateTemplateConfig {
 	}
 
 	static CreateTemplateConfig load(String type) throws IOException {
+		validateType(type);
 		String templateText = readTemplate(type);
 		return parse(type, templateText);
+	}
+
+	static void validateType(String type) {
+		if (type == null || type.isEmpty() || type.equals(".") || type.equals("..") || type.indexOf('/') >= 0
+				|| type.indexOf('\\') >= 0 || type.indexOf('\0') >= 0 || containsEncodedPathSeparator(type)) {
+			throw new IllegalArgumentException("Invalid template type: expected one resource filename");
+		}
+	}
+
+	private static boolean containsEncodedPathSeparator(String type) {
+		for (int i = 0; i <= type.length() - 3; i++) {
+			if (type.charAt(i) == '%' && (type.regionMatches(true, i, "%2f", 0, 3)
+					|| type.regionMatches(true, i, "%5c", 0, 3) || type.regionMatches(true, i, "%00", 0, 3))) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	static List<CreateTemplateConfig> loadBuiltin() throws IOException {
