@@ -151,9 +151,11 @@ class ManagedLuceneIndexDirIT {
 					new MemoryStoreConfig());
 			Throwable failure = catchThrowable(() -> manager.updateRepositoryConfig(
 					new RepositoryConfig(repositoryId, new SailRepositoryConfig(escaping))));
-			assertThat(failure).hasStackTraceContaining("Lucene index directory must be within the repository directory");
+			assertThat(failure)
+					.hasStackTraceContaining("Lucene index directory must be within the repository directory");
 			LuceneSailConfig persisted = (LuceneSailConfig) ((SailRepositoryConfig) manager
-					.getRepositoryConfig(repositoryId).getRepositoryImplConfig()).getSailImplConfig();
+					.getRepositoryConfig(repositoryId)
+					.getRepositoryImplConfig()).getSailImplConfig();
 			assertThat(persisted.getIndexDir()).isEqualTo("index");
 		} finally {
 			manager.removeRepository(repositoryId);
@@ -179,7 +181,8 @@ class ManagedLuceneIndexDirIT {
 					connection.commit();
 				}
 			});
-			assertThat(failure).hasStackTraceContaining("Lucene index directory must be within the repository directory");
+			assertThat(failure)
+					.hasStackTraceContaining("Lucene index directory must be within the repository directory");
 			assertThat(manager.hasRepositoryConfig(repositoryId)).isFalse();
 		} finally {
 			manager.removeRepository(repositoryId);
@@ -233,7 +236,8 @@ class ManagedLuceneIndexDirIT {
 			assertThat(server.serverRepositoryFailure(repositoryId, null)).isNull();
 			assertThat(actual).isDirectory();
 			LuceneSailConfig persisted = (LuceneSailConfig) ((SailRepositoryConfig) manager
-					.getRepositoryConfig(repositoryId).getRepositoryImplConfig()).getSailImplConfig();
+					.getRepositoryConfig(repositoryId)
+					.getRepositoryImplConfig()).getSailImplConfig();
 			assertThat(persisted.getIndexDir()).isEqualTo("alias");
 		} finally {
 			manager.removeRepository(repositoryId);
@@ -255,7 +259,8 @@ class ManagedLuceneIndexDirIT {
 			assertThat(repositoryDir.resolve("actual-index")).isDirectory();
 			assertThat(outside.resolve("unused-index")).doesNotExist();
 			LuceneSailConfig persisted = (LuceneSailConfig) ((SailRepositoryConfig) manager
-					.getRepositoryConfig(repositoryId).getRepositoryImplConfig()).getSailImplConfig();
+					.getRepositoryConfig(repositoryId)
+					.getRepositoryImplConfig()).getSailImplConfig();
 			assertThat(persisted.getIndexDir()).isEqualTo(outside.resolve("unused-index").toString());
 			assertThat(persisted.getParameter(LuceneSail.LUCENE_DIR_KEY)).isEqualTo("actual-index");
 		} finally {
@@ -280,7 +285,8 @@ class ManagedLuceneIndexDirIT {
 			Files.createSymbolicLink(alias, outside);
 			server.refreshManagedRepositories();
 			Throwable failure = catchThrowable(() -> server.serverRepositoryFailure(repositoryId, null));
-			assertThat(failure).hasStackTraceContaining("Lucene index directory must be within the repository directory");
+			assertThat(failure)
+					.hasStackTraceContaining("Lucene index directory must be within the repository directory");
 		} finally {
 			manager.removeRepository(repositoryId);
 			manager.shutDown();
