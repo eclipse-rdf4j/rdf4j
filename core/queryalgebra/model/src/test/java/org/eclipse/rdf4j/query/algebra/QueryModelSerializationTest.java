@@ -12,12 +12,15 @@
 package org.eclipse.rdf4j.query.algebra;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.InvalidClassException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.io.ObjectStreamClass;
 import java.util.List;
 import java.util.Set;
 
@@ -28,13 +31,31 @@ import org.junit.jupiter.api.Test;
 
 class QueryModelSerializationTest {
 	@Test
-	void filterSerializedBeforeConditionScopesRetainsAutomaticVisibility() throws Exception {
-		// Captured from immutable pre-change commit a794f9432d08978d91f9c5dd4cd37cc19647b364.
+	void interimUnreleasedVarDescriptorIsRejectedWithoutChangingReleasedIdentity() throws Exception {
+		// Preserve the exact a794f9432d08978d91f9c5dd4cd37cc19647b364 stream as an interim-lineage control.
+		assertThat(ObjectStreamClass.lookup(Var.class).getSerialVersionUID()).isEqualTo(-2002917920842280721L);
 		try (ObjectInputStream input = new ObjectInputStream(getClass()
 				.getResourceAsStream("/filter-before-condition-binding-scope.ser"))) {
+			assertThatThrownBy(input::readObject)
+					.isInstanceOf(InvalidClassException.class)
+					.hasMessageContaining("org.eclipse.rdf4j.query.algebra.Var")
+					.hasMessageContaining("3530254272235103934")
+					.hasMessageContaining("-2002917920842280721");
+		}
+	}
+
+	@Test
+	void filterSerializedBeforeConditionScopesRetainsAutomaticVisibility() throws Exception {
+		// Existing pre-contract stream uses the supported Var identity and has no conditionBindingScope field.
+		try (ObjectInputStream input = new ObjectInputStream(getClass()
+				.getResourceAsStream("/org/eclipse/rdf4j/query/algebra/helpers/legacy-filter.ser"))) {
 			Filter restored = (Filter) input.readObject();
 			assertThat(restored.getConditionBindingScope()).isSameAs(ConditionBindingScope.AUTO);
-			assertThat(restored).isEqualTo(new Filter(new SingletonSet(), new Bound(Var.of("hidden"))));
+			assertThat(restored.getRequiredInputBindingNames()).isEmpty();
+			assertThat(restored).isEqualTo(new Filter(new SingletonSet(), new Bound(Var.of("input"))));
+			assertSame(restored, restored.getArg().getParentNode());
+			assertSame(restored, restored.getCondition().getParentNode());
+			assertSame(restored.getCondition(), ((Bound) restored.getCondition()).getArg().getParentNode());
 		}
 	}
 
@@ -45,6 +66,7 @@ class QueryModelSerializationTest {
 		assertThat(automatic.getConditionBindingScope()).isSameAs(ConditionBindingScope.AUTO);
 		assertThat(automatic.hashCode()).isEqualTo(original.getArg().hashCode() ^ original.getCondition().hashCode());
 		original.setConditionBindingScope(ConditionBindingScope.retain(Set.of("visible")));
+		original.setRequiredInputBindingNames(Set.of("parameter"));
 		assertThat(original.clone()).isEqualTo(original).isNotEqualTo(automatic);
 		assertThat(original.clone().getConditionBindingScope()).isSameAs(original.getConditionBindingScope());
 		ByteArrayOutputStream bytes = new ByteArrayOutputStream();
@@ -56,6 +78,10 @@ class QueryModelSerializationTest {
 			assertThat(restored).isEqualTo(original);
 			assertThat(restored.getConditionBindingScope().bindingNames()).containsExactly("visible");
 			assertThat(restored.getConditionBindingScope().allows("hidden")).isFalse();
+			assertThat(restored.getRequiredInputBindingNames()).containsExactly("parameter");
+			assertSame(restored, restored.getArg().getParentNode());
+			assertSame(restored, restored.getCondition().getParentNode());
+			assertSame(restored.getCondition(), ((Bound) restored.getCondition()).getArg().getParentNode());
 		}
 	}
 
