@@ -164,7 +164,9 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 				var hook = filterHooks[i];
 				NativeBooleanFilter opened = hook.source.filter.open(scratch);
 				// Page-level proofs may bypass testFilter; their physical coverage is not this recorder's coverage.
-				if (hook.source.filter.pageProof(hook.argSlots) != null) { opened.incompleteInput(); }
+				if (hook.source.filter.pageProof(hook.argSlots) != null) {
+					opened.incompleteInput();
+				}
 				this.filters[i] = new LmdbNativeKernelBindings.FilterHook(new MaskedFilter(opened,
 						hook.source.mask, hook.source.adaptive, hook.source.plannedDepth), hook.argSlots);
 			}
@@ -240,18 +242,33 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		} catch (RuntimeException | Error problem) {
 			for (var hook : filters) {
 				if (hook != null) {
-					try { hook.source.filter.close(); }
-					catch (RuntimeException | Error cleanup) { if (cleanup != problem) { problem.addSuppressed(cleanup); } }
+					try {
+						hook.source.filter.close();
+					} catch (RuntimeException | Error cleanup) {
+						if (cleanup != problem) {
+							problem.addSuppressed(cleanup);
+						}
+					}
 				}
 			}
 			for (MaskedFilter residual : residuals) {
 				if (residual != null) {
-					try { residual.filter.close(); }
-					catch (RuntimeException | Error cleanup) { if (cleanup != problem) { problem.addSuppressed(cleanup); } }
+					try {
+						residual.filter.close();
+					} catch (RuntimeException | Error cleanup) {
+						if (cleanup != problem) {
+							problem.addSuppressed(cleanup);
+						}
+					}
 				}
 			}
-			try { this.memory.close(); }
-			catch (RuntimeException | Error cleanup) { if (cleanup != problem) { problem.addSuppressed(cleanup); } }
+			try {
+				this.memory.close();
+			} catch (RuntimeException | Error cleanup) {
+				if (cleanup != problem) {
+					problem.addSuppressed(cleanup);
+				}
+			}
 			throw problem;
 		}
 	}
@@ -890,13 +907,17 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	 * native read stamp and eventually wedges the dataset close (found via the generated-query coverage hang,
 	 * 2026-08-05). Filter close is reuse-tolerant by convention (closed filters lazily re-acquire).
 	 */
-	void closeFilters() { closeFilters(false); }
+	void closeFilters() {
+		closeFilters(false);
+	}
 
 	void closeFilters(boolean inputExhausted) {
 		Throwable failure = null;
 		for (LmdbNativeKernelBindings.FilterHook hook : filters) {
 			try {
-				if (inputExhausted) { hook.source.filter.inputExhausted(); }
+				if (inputExhausted) {
+					hook.source.filter.inputExhausted();
+				}
 				hook.source.filter.close();
 			} catch (RuntimeException | Error problem) {
 				if (failure == null) {
@@ -908,7 +929,9 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		}
 		for (MaskedFilter residual : residuals) {
 			try {
-				if (inputExhausted) { residual.filter.inputExhausted(); }
+				if (inputExhausted) {
+					residual.filter.inputExhausted();
+				}
 				residual.filter.close();
 			} catch (RuntimeException | Error problem) {
 				if (failure == null) {

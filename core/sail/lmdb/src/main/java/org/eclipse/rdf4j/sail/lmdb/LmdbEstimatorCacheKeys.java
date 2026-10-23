@@ -91,7 +91,8 @@ record ScopedFactorCostCacheKey(Object factor, Set<String> boundVars, long outer
 		boolean prefixFactorsDescribeCurrentRows,
 		Map<String, Set<Value>> finiteBindingValues, JoinFactorCostModel.EstimationTier estimationTier,
 		FiniteBranchRowsCacheKey prefixFactors,
-		QuadSnapshotIdentity snapshotIdentity, long snapshotVersion, long learnedRevision, LmdbFilterReadContext filterReadContext) {
+		QuadSnapshotIdentity snapshotIdentity, long snapshotVersion, long learnedRevision,
+		LmdbFilterReadContext filterReadContext) {
 
 	static ScopedFactorCostCacheKey of(TupleExpr factor, JoinFactorCostModel.CostContext context,
 			EstimateContext estimateContext) {

@@ -210,7 +210,7 @@ class PackedGroupGraphSafetyTest {
 			});
 			String having = group[0].getGroupElements()
 					.stream()
-					.filter(element -> element.getOperator()instanceof Count count && !count.isDistinct())
+					.filter(element -> element.getOperator() instanceof Count count && !count.isDistinct())
 					.findFirst()
 					.orElseThrow()
 					.getName();
@@ -252,7 +252,7 @@ class PackedGroupGraphSafetyTest {
 					if (duplicateForwarding) {
 						GroupElem count = group.getGroupElements()
 								.stream()
-								.filter(element -> element.getOperator()instanceof Count candidate
+								.filter(element -> element.getOperator() instanceof Count candidate
 										&& !candidate.isDistinct())
 								.findFirst()
 								.orElseThrow();
@@ -457,7 +457,7 @@ class PackedGroupGraphSafetyTest {
 		source.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			public void meet(Filter filter) {
-				if (filter.getCondition()instanceof Compare compare && compare.getLeftArg()instanceof Var var) {
+				if (filter.getCondition() instanceof Compare compare && compare.getLeftArg() instanceof Var var) {
 					name[0] = var.getName();
 				}
 				super.meet(filter);

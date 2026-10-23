@@ -42,111 +42,111 @@ import org.junit.jupiter.api.io.TempDir;
 
 /** Boundary controls distinguish private copied VALUES storage from caller/foreign capabilities. */
 class LmdbValuesCacheOwnershipBoundaryTest {
-    private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 
-    @Test
-    void ordinaryValuesAreCopiedAwayFromTheCallersCollection() {
-        Value value = VF.createLiteral("ordinary");
-        BindingSet row = new ListBindingSet(List.of("value"), value);
-        List<BindingSet> callerRows = new ArrayList<>(List.of(row));
-        BindingSetAssignment source = assignment(callerRows);
-        BindingSetAssignment prepared = (BindingSetAssignment) LmdbCacheValueCopies.CODEC.prepareCacheSource(source);
-        assertNotNull(prepared);
-        assertNotSame(source, prepared);
-        assertNotSame(callerRows, prepared.getBindingSets());
-        BindingSet copied = prepared.getBindingSets().iterator().next();
-        assertNotSame(row, copied);
-        assertNotSame(value, copied.getValue("value"));
-        assertEquals(value, copied.getValue("value"));
-        assertSame(callerRows, source.getBindingSets());
-        assertSame(row, callerRows.getFirst());
-        assertSame(value, row.getValue("value"));
-    }
+	@Test
+	void ordinaryValuesAreCopiedAwayFromTheCallersCollection() {
+		Value value = VF.createLiteral("ordinary");
+		BindingSet row = new ListBindingSet(List.of("value"), value);
+		List<BindingSet> callerRows = new ArrayList<>(List.of(row));
+		BindingSetAssignment source = assignment(callerRows);
+		BindingSetAssignment prepared = (BindingSetAssignment) LmdbCacheValueCopies.CODEC.prepareCacheSource(source);
+		assertNotNull(prepared);
+		assertNotSame(source, prepared);
+		assertNotSame(callerRows, prepared.getBindingSets());
+		BindingSet copied = prepared.getBindingSets().iterator().next();
+		assertNotSame(row, copied);
+		assertNotSame(value, copied.getValue("value"));
+		assertEquals(value, copied.getValue("value"));
+		assertSame(callerRows, source.getBindingSets());
+		assertSame(row, callerRows.getFirst());
+		assertSame(value, row.getValue("value"));
+	}
 
-    @Test
-    void unknownCallerValueRefusesWithoutObservingOrReplacingIt() {
-        var value = new CallbackLiteral();
-        BindingSet row = new ListBindingSet(List.of("value"), value);
-        var rows = List.of(row);
-        BindingSetAssignment source = assignment(rows);
-        assertNull(LmdbCacheValueCopies.CODEC.prepareCacheSource(source));
-        assertEquals(0, value.observations.get());
-        assertSame(rows, source.getBindingSets());
-        assertSame(value, row.getValue("value"));
-    }
+	@Test
+	void unknownCallerValueRefusesWithoutObservingOrReplacingIt() {
+		var value = new CallbackLiteral();
+		BindingSet row = new ListBindingSet(List.of("value"), value);
+		var rows = List.of(row);
+		BindingSetAssignment source = assignment(rows);
+		assertNull(LmdbCacheValueCopies.CODEC.prepareCacheSource(source));
+		assertEquals(0, value.observations.get());
+		assertSame(rows, source.getBindingSets());
+		assertSame(value, row.getValue("value"));
+	}
 
-    @Test
-    void foreignPublicNativeValuesAreRefusedColdAndLoadedWithoutLosingTheirOwner(@TempDir Path directory) {
-        var subject = VF.createIRI("urn:values-owner:subject");
-        var predicate = VF.createIRI("urn:values-owner:predicate");
-        Value expected = VF.createBNode("foreign-values-owner");
-        LmdbStore seed = new LmdbStore(directory.toFile(), new LmdbStoreConfig().setInlineLiterals(false));
-        seed.init();
-        try {
-            try (SailConnection writer = seed.getConnection()) {
-                writer.begin();
-                writer.addStatement(subject, predicate, expected);
-                writer.commit();
-            }
-        } finally {
-            seed.shutDown();
-        }
-        Value retained;
-        LmdbStore foreign = new LmdbStore(directory.toFile(), new LmdbStoreConfig().setInlineLiterals(false));
-        foreign.init();
-        try {
-            try (SailConnection reader = foreign.getConnection();
-                    CloseableIteration<? extends Statement> statements = reader.getStatements(subject, predicate,
-                            null, false)) {
-                assertTrue(statements.hasNext());
-                retained = statements.next().getObject();
-                assertFalse(statements.hasNext());
-            }
-            LmdbValue nativeValue = assertInstanceOf(LmdbValue.class, retained);
-            assertFalse(nativeValue.isInitialized());
-            assertTrue(nativeValue.isExternallyOwned());
-            BindingSet row = new ListBindingSet(List.of("value"), retained);
-            var rows = List.of(row);
-            BindingSetAssignment source = assignment(rows);
-            assertNull(LmdbCacheValueCopies.CODEC.prepareCacheSource(source));
-            assertFalse(nativeValue.isInitialized(), "optional cache capture must not decode a foreign public input");
-            assertSame(rows, source.getBindingSets());
-            assertSame(retained, row.getValue("value"));
-            assertEquals(expected.stringValue(), retained.stringValue(), "an actual caller may consume the value");
-            assertTrue(nativeValue.isInitialized());
-            assertNull(LmdbCacheValueCopies.CODEC.prepareCacheSource(source),
-                    "loading does not turn a public foreign capability into a private cache value");
-            assertSame(retained, row.getValue("value"));
-        } finally {
-            foreign.shutDown();
-        }
-        assertEquals(expected, retained, "the original public owner survives its store closing");
-    }
+	@Test
+	void foreignPublicNativeValuesAreRefusedColdAndLoadedWithoutLosingTheirOwner(@TempDir Path directory) {
+		var subject = VF.createIRI("urn:values-owner:subject");
+		var predicate = VF.createIRI("urn:values-owner:predicate");
+		Value expected = VF.createBNode("foreign-values-owner");
+		LmdbStore seed = new LmdbStore(directory.toFile(), new LmdbStoreConfig().setInlineLiterals(false));
+		seed.init();
+		try {
+			try (SailConnection writer = seed.getConnection()) {
+				writer.begin();
+				writer.addStatement(subject, predicate, expected);
+				writer.commit();
+			}
+		} finally {
+			seed.shutDown();
+		}
+		Value retained;
+		LmdbStore foreign = new LmdbStore(directory.toFile(), new LmdbStoreConfig().setInlineLiterals(false));
+		foreign.init();
+		try {
+			try (SailConnection reader = foreign.getConnection();
+					CloseableIteration<? extends Statement> statements = reader.getStatements(subject, predicate,
+							null, false)) {
+				assertTrue(statements.hasNext());
+				retained = statements.next().getObject();
+				assertFalse(statements.hasNext());
+			}
+			LmdbValue nativeValue = assertInstanceOf(LmdbValue.class, retained);
+			assertFalse(nativeValue.isInitialized());
+			assertTrue(nativeValue.isExternallyOwned());
+			BindingSet row = new ListBindingSet(List.of("value"), retained);
+			var rows = List.of(row);
+			BindingSetAssignment source = assignment(rows);
+			assertNull(LmdbCacheValueCopies.CODEC.prepareCacheSource(source));
+			assertFalse(nativeValue.isInitialized(), "optional cache capture must not decode a foreign public input");
+			assertSame(rows, source.getBindingSets());
+			assertSame(retained, row.getValue("value"));
+			assertEquals(expected.stringValue(), retained.stringValue(), "an actual caller may consume the value");
+			assertTrue(nativeValue.isInitialized());
+			assertNull(LmdbCacheValueCopies.CODEC.prepareCacheSource(source),
+					"loading does not turn a public foreign capability into a private cache value");
+			assertSame(retained, row.getValue("value"));
+		} finally {
+			foreign.shutDown();
+		}
+		assertEquals(expected, retained, "the original public owner survives its store closing");
+	}
 
-    private static BindingSetAssignment assignment(Iterable<BindingSet> rows) {
-        BindingSetAssignment source = new BindingSetAssignment();
-        source.setBindingNames(Set.of("value"));
-        source.setBindingSets(rows);
-        return source;
-    }
+	private static BindingSetAssignment assignment(Iterable<BindingSet> rows) {
+		BindingSetAssignment source = new BindingSetAssignment();
+		source.setBindingNames(Set.of("value"));
+		source.setBindingSets(rows);
+		return source;
+	}
 
-    private static final class CallbackLiteral extends SimpleLiteral {
-        private final AtomicInteger observations = new AtomicInteger();
+	private static final class CallbackLiteral extends SimpleLiteral {
+		private final AtomicInteger observations = new AtomicInteger();
 
-        private CallbackLiteral() {
-            super("foreign callback value");
-        }
+		private CallbackLiteral() {
+			super("foreign callback value");
+		}
 
-        @Override
-        public String getLabel() {
-            observations.incrementAndGet();
-            return super.getLabel();
-        }
+		@Override
+		public String getLabel() {
+			observations.incrementAndGet();
+			return super.getLabel();
+		}
 
-        @Override
-        public int hashCode() {
-            observations.incrementAndGet();
-            return super.hashCode();
-        }
-    }
+		@Override
+		public int hashCode() {
+			observations.incrementAndGet();
+			return super.hashCode();
+		}
+	}
 }

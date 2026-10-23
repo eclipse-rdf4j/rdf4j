@@ -543,12 +543,16 @@ class LmdbDevelopBaselineCompatibilityTest {
 			canonicalOwner = valueId(repository, original);
 			payload = valueStore(repository).getData(canonicalOwner);
 			assertEquals(expected, allStatements(connection));
-		} finally { repository.shutDown(); }
+		} finally {
+			repository.shutDown();
+		}
 		// Only this historical-input fixture converts the captured association. No owner, payload or hash is guessed.
 		LegacyRawReverseFixture.canonicalOnly(directory.resolve("values"), canonicalOwner, payload);
 		Properties metadata = loadProperties(metadataFile);
 		metadata.setProperty("current.language.id", Long.toString(canonicalOwner));
-		try (var output = Files.newOutputStream(metadataFile)) { metadata.store(output, "Captured canonical-only owner"); }
+		try (var output = Files.newOutputStream(metadataFile)) {
+			metadata.store(output, "Captured canonical-only owner");
+		}
 		runBaselineProcess("duplicate-current-canonical-only-language-" + literalIndex, directory, metadataFile, false);
 		metadata = loadProperties(metadataFile);
 		long rawOwner = Long.parseLong(metadata.getProperty("old.variant.id"));
@@ -563,7 +567,9 @@ class LmdbDevelopBaselineCompatibilityTest {
 			assertTrue(bare.getFormat().isLegacy());
 			assertTrue(Arrays.equals(payload, bare.getData(canonicalOwner)));
 			assertTrue(Arrays.equals(payload, bare.getData(rawOwner)));
-		} finally { bare.close(); }
+		} finally {
+			bare.close();
+		}
 		LegacyRawReverseFixture.assertCanonicalAndRawOwners(directory.resolve("values"), canonicalOwner, rawOwner,
 				payload);
 		long survivor = Math.min(canonicalOwner, rawOwner); // LanguageTagVariantMergePlan's existing survivor rule.
@@ -572,19 +578,25 @@ class LmdbDevelopBaselineCompatibilityTest {
 			assertEquals(expected, allStatements(connection), "all128 real rows survive the triple-aware merge");
 			assertEquals(survivor, valueId(repository, original));
 			assertTrue(Arrays.equals(payload, valueStore(repository).getData(survivor)));
-		} finally { repository.shutDown(); }
+		} finally {
+			repository.shutDown();
+		}
 		// Expected baseline compatibility control; canonical-alias absence has separate physical tests. Still unrun.
 		LegacyRawReverseFixture.assertRawOwner(directory.resolve("values"), survivor, payload);
 		metadata = loadProperties(metadataFile);
 		metadata.setProperty("current.language.id", Long.toString(survivor));
-		try (var output = Files.newOutputStream(metadataFile)) { metadata.store(output, "Actual merge survivor"); }
+		try (var output = Files.newOutputStream(metadataFile)) {
+			metadata.store(output, "Actual merge survivor");
+		}
 		runBaselineProcess("reuse-current-language-" + literalIndex, directory, metadataFile, false);
 		expected.add(VF.createIRI("urn:compat:old-current-language-reuse"), CURRENT_PREDICATE, original);
 		repository = openRepository(directory, false);
 		try (RepositoryConnection connection = repository.getConnection()) {
 			assertEquals(expected, allStatements(connection));
 			assertEquals(survivor, valueId(repository, original));
-		} finally { repository.shutDown(); }
+		} finally {
+			repository.shutDown();
+		}
 	}
 
 	@ParameterizedTest(name = "literal={0}")
@@ -1227,7 +1239,8 @@ class LmdbDevelopBaselineCompatibilityTest {
 					assertEquals(currentOwnerLanguageRows(original), allStatements(connection));
 					ValueStore values = valueStore(repository);
 					values.clearCaches();
-					assertEquals(-1L, values.getId(original), "the old lookup cannot see the historical canonical-only key");
+					assertEquals(-1L, values.getId(original),
+							"the old lookup cannot see the historical canonical-only key");
 					values.startTransaction(true);
 					long rawOwner = values.storeValue(original);
 					values.commit();
@@ -1236,7 +1249,9 @@ class LmdbDevelopBaselineCompatibilityTest {
 							"the real old writer allocated the SAME exact original spelling, not a different case variant");
 					assertEquals(currentOwnerLanguageRows(original), allStatements(connection));
 					metadata.setProperty("old.variant.id", Long.toString(rawOwner));
-				} finally { repository.shutDown(); }
+				} finally {
+					repository.shutDown();
+				}
 				try (var output = Files.newOutputStream(metadataFile)) {
 					metadata.store(output, "Authentic old raw owner beside a valid canonical-only owner");
 				}
@@ -1281,7 +1296,8 @@ class LmdbDevelopBaselineCompatibilityTest {
 						assertEquals(currentOwnerLanguageRows(literal), allStatements(connection));
 						ValueStore values = valueStore(repository);
 						values.clearCaches();
-						assertEquals(owner, values.getId(literal), "the real old cold lookup reaches the captured owner");
+						assertEquals(owner, values.getId(literal),
+								"the real old cold lookup reaches the captured owner");
 						assertEquals(NTriplesUtil.toNTriplesString(literal),
 								NTriplesUtil.toNTriplesString(values.getValue(owner)));
 						byte[] payload = values.getData(owner);
@@ -1303,14 +1319,16 @@ class LmdbDevelopBaselineCompatibilityTest {
 					values.gcIds(List.of(owner), dependencies);
 					values.gcIds(dependencies, new ArrayList<>());
 					values.commit();
-					// Use the same actual pinned-revision reclamation protocol as mutateBaselineFixture; no ID is forged.
+					// Use the same actual pinned-revision reclamation protocol as mutateBaselineFixture; no ID is
+					// forged.
 					values.unusedRevisionIds.add(priorRevision.getRevisionId());
 					values.forceEvictionOfValues();
 					values.startTransaction(true);
 					values.commit();
 					values.clearCaches();
 					assertEquals(-1L, values.getId(literal), "the old writer removed its raw lookup association");
-					assertNull(values.getData(owner), "the captured native owner record is actually absent after old GC");
+					assertNull(values.getData(owner),
+							"the captured native owner record is actually absent after old GC");
 					metadata.setProperty("old.gc.language.forward.absent", "true");
 				} finally {
 					repository.shutDown();

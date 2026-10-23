@@ -778,13 +778,17 @@ final class SuffixFilterCursor implements RowCursor {
 				return true;
 			}
 		}
-		if (!row.cancellation.isCancellationRequested()) { filter.inputExhausted(); }
+		if (!row.cancellation.isCancellationRequested()) {
+			filter.inputExhausted();
+		}
 		return false;
 	}
 
 	@Override
 	public void close() {
-		if (closed) { return; }
+		if (closed) {
+			return;
+		}
 		closed = true;
 		// mirror FilterCursor: the filter may hold lazily acquired native resources (an EXISTS witness's
 		// semijoin probe pins a dataset read stamp), and the cursor that ran it owns their release

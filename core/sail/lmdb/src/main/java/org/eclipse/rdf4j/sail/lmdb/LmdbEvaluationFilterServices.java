@@ -99,8 +99,10 @@ final class LmdbEvaluationFilterServices {
 		return optionalOutcomeAllowed() && readIdentity != null
 				&& readIdentity.dataEpoch() == runtime.snapshotVersion() && LmdbPlanningGraphEvidence.allows(filter)
 				&& LmdbReinvocablePositions.filterOutcomeRecordable(filter)
-				? LmdbFilterOutcomeFeedbackDescriptor.capture(learned.outcomeOwnerToken(), readIdentity.dataEpoch(),
-						readIdentity, filter) : null;
+						? LmdbFilterOutcomeFeedbackDescriptor.capture(learned.outcomeOwnerToken(),
+								readIdentity.dataEpoch(),
+								readIdentity, filter)
+						: null;
 	}
 
 	boolean supportsFilterSelectivityCosting() {
@@ -123,15 +125,18 @@ final class LmdbEvaluationFilterServices {
 		}
 		boolean adaptiveEvidenceAllowed = adaptiveEvidenceAllowed()
 				&& (estimator == null || estimator.adaptiveEvidenceAllowed());
-		EvaluationStatistics.FilterPassEstimate best = LmdbFilterPassSelection.bestAvailable(filterStatistics, filter, pattern, heuristic,
+		EvaluationStatistics.FilterPassEstimate best = LmdbFilterPassSelection.bestAvailable(filterStatistics, filter,
+				pattern, heuristic,
 				adaptiveEvidenceAllowed);
 		return learned == null || !adaptiveEvidenceAllowed
 				|| runtime.frontierSettings().mode() == FrontierEstimatorMode.AUTHORITATIVE
-				? best : LmdbFilterPassSelection.prefer(best,
-				LmdbFilterPassSelection.prefer(
-						learned.estimateQualified(runtime.valueStore(), runtime.snapshotVersion(),
-								filter, readIdentity),
-						learned.estimateQualified(runtime.valueStore(), runtime.snapshotVersion(), filter)));
+						? best
+						: LmdbFilterPassSelection.prefer(best,
+								LmdbFilterPassSelection.prefer(
+										learned.estimateQualified(runtime.valueStore(), runtime.snapshotVersion(),
+												filter, readIdentity),
+										learned.estimateQualified(runtime.valueStore(), runtime.snapshotVersion(),
+												filter)));
 	}
 
 	private EvaluationStatistics.FilterPassEstimate heuristicFilterPass(Filter filter) {
@@ -165,7 +170,8 @@ final class LmdbEvaluationFilterServices {
 				&& (estimator == null || estimator.adaptiveEvidenceAllowed())
 				&& filter != null && LmdbPlanningGraphEvidence.allows(filter)
 				&& contract != null && contract.admits(RuntimeFeedbackContract.ADMIT_FILTER)
-				&& contract.dataEpoch() == runtime.snapshotVersion() && contract.catalogEpoch() == runtime.snapshotVersion()
+				&& contract.dataEpoch() == runtime.snapshotVersion()
+				&& contract.catalogEpoch() == runtime.snapshotVersion()
 				&& contract.descriptor() instanceof LmdbRuntimeFeedbackDescriptor descriptor
 				&& observation != null && observation.completed() && observation.poisonReason().isEmpty()
 				&& LmdbReinvocablePositions.filterOutcomeRecordable(filter)) {
@@ -232,7 +238,7 @@ final class LmdbEvaluationFilterServices {
 		if (Boolean.getBoolean("rdf4j.optimizer.lmdb.estimateTrace")) {
 			System.err.println("[lmdb-operator-feedback-trace] event=resolve-runtime-target"
 					+ " node=" + node.getClass().getSimpleName() + " active=" + target.active()
-					+ (contract.descriptor()instanceof LmdbRuntimeFeedbackDescriptor descriptor
+					+ (contract.descriptor() instanceof LmdbRuntimeFeedbackDescriptor descriptor
 							? " logical=" + descriptor.logicalKey().digest()
 									+ " applicability=" + descriptor.applicability().digest()
 									+ " physical=" + descriptor.physicalKey().digest()

@@ -224,7 +224,8 @@ class LmdbNativePackedMorselsTest {
 				+ " (its structural precondition was not met).", failure.getMessage());
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			String explanation = connection.prepareTupleQuery(PREFIX + RANGE_AGGREGATE_QUERY)
-					.explain(Explanation.Level.Optimized).toString();
+					.explain(Explanation.Level.Optimized)
+					.toString();
 			assertTrue(explanation.contains("NativeGroup(arg=Empty"), explanation);
 			assertTrue(explanation.contains("packed-predicate-range-empty"), explanation);
 			assertTrue(explanation.contains("facts=emptyObjectDomain"), explanation);
@@ -381,7 +382,8 @@ class LmdbNativePackedMorselsTest {
 			assertEquals(hand, canonical(evaluateRangeRepository(ranged, query, null)), query);
 			try (SailRepositoryConnection connection = ranged.getConnection()) {
 				String explanation = connection.prepareTupleQuery(PREFIX + query)
-						.explain(Explanation.Level.Optimized).toString();
+						.explain(Explanation.Level.Optimized)
+						.toString();
 				assertTrue(explanation.contains("range="), explanation);
 			}
 			QueryEvaluationException failure = assertThrows(QueryEvaluationException.class,

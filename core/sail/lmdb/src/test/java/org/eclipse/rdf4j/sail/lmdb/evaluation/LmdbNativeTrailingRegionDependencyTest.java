@@ -78,8 +78,14 @@ class LmdbNativeTrailingRegionDependencyTest {
 	private SailRepository repository;
 
 	enum Association {
-		TRAILING, NESTED_TRAILING, MULTIPLE_TRAILING, PREFIX_AND_TRAILING,
-		PREFIX_CONTIGUOUS, PREFIX_MULTIPLE_CONTIGUOUS, SINGLE_TRAILING, SINGLE_PREFIX;
+		TRAILING,
+		NESTED_TRAILING,
+		MULTIPLE_TRAILING,
+		PREFIX_AND_TRAILING,
+		PREFIX_CONTIGUOUS,
+		PREFIX_MULTIPLE_CONTIGUOUS,
+		SINGLE_TRAILING,
+		SINGLE_PREFIX;
 
 		boolean alternative() {
 			return this == TRAILING || this == NESTED_TRAILING || this == MULTIPLE_TRAILING
@@ -101,7 +107,11 @@ class LmdbNativeTrailingRegionDependencyTest {
 	}
 
 	enum Dependency {
-		FILTER_PLAN, MASKED_FILTER, INTERIOR_FILTER, REUSED_CARRIER, DISJOINT_READ;
+		FILTER_PLAN,
+		MASKED_FILTER,
+		INTERIOR_FILTER,
+		REUSED_CARRIER,
+		DISJOINT_READ;
 
 		boolean hasR() {
 			return this == MASKED_FILTER || this == REUSED_CARRIER;
@@ -259,10 +269,12 @@ class LmdbNativeTrailingRegionDependencyTest {
 					SlotPlan originalOther = original;
 					if (mixed) {
 						FilterPlan filter = (FilterPlan) other;
-						originalOther = new FilterPlan(original, filter.filter, filter.filterMask, filter.termKindFilter);
+						originalOther = new FilterPlan(original, filter.filter, filter.filterMask,
+								filter.termKindFilter);
 					}
 					SlotPlan originalShared = reverse
-							? new JoinPlan(originalOther, original) : new JoinPlan(original, originalOther);
+							? new JoinPlan(originalOther, original)
+							: new JoinPlan(original, originalOther);
 					List<BindingSet> nativeUnknown = originalRows(step, owned.row(), originalShared, false);
 					List<BindingSet> nativeOrdered = originalRows(step, owned.row(), originalShared, true);
 					assertThat(nativeUnknown).containsExactlyInAnyOrderElementsOf(expected);
@@ -291,11 +303,14 @@ class LmdbNativeTrailingRegionDependencyTest {
 					}
 					assertThat(root.getLongMetricActual(OPTIMIZED) > before).isEqualTo(!mixed);
 					long opened = root.getLongMetricActual(OPTIMIZED);
-					assertThat(drainSelected(step, owned.row(), selected, true)).containsExactlyElementsOf(nativeOrdered);
+					assertThat(drainSelected(step, owned.row(), selected, true))
+							.containsExactlyElementsOf(nativeOrdered);
 					assertThat(root.getLongMetricActual(OPTIMIZED)).isEqualTo(opened);
 					RowState unknown = owned.row();
-					LmdbNativeInteriorPlans.Selection unknownInput = LmdbNativeInteriorPlans.select(shared, unknown, null);
-					assertThat(drainSelected(step, unknown, unknownInput, false)).containsExactlyElementsOf(nativeUnknown);
+					LmdbNativeInteriorPlans.Selection unknownInput = LmdbNativeInteriorPlans.select(shared, unknown,
+							null);
+					assertThat(drainSelected(step, unknown, unknownInput, false))
+							.containsExactlyElementsOf(nativeUnknown);
 					assertThat(root.getLongMetricActual(OPTIMIZED)).isEqualTo(opened);
 				}
 			}
@@ -405,9 +420,11 @@ class LmdbNativeTrailingRegionDependencyTest {
 					step.consumerRequest);
 			MultiJoinPlan core = core(selected.plan);
 			assertThat(LmdbNativeFactorAlgebra.onePassCandidate(selected.plan, row))
-					.as("existing real-source native-region premise, without policy or force changes").isTrue();
+					.as("existing real-source native-region premise, without policy or force changes")
+					.isTrue();
 			LmdbNativeFactorCursor packed = LmdbNativePackedFtree.openLeaf(core, row);
-			assertThat(packed).as("actual complete MultiJoin core opens through the existing packed executor").isNotNull();
+			assertThat(packed).as("actual complete MultiJoin core opens through the existing packed executor")
+					.isNotNull();
 			try (RowCursor cursor = LmdbNativeFactorRows.asRows(packed, row)) {
 				assertThat(read(step, row, cursor)).containsExactlyInAnyOrderElementsOf(base);
 			}
@@ -420,12 +437,14 @@ class LmdbNativeTrailingRegionDependencyTest {
 			try (LmdbNativeFactorAlgebra.OnePass input = LmdbNativeFactorAlgebra.openOnePass(selected.plan, row)) {
 				assertThat(read(step, row, input)).containsExactlyInAnyOrderElementsOf(expected);
 				input.requireComplete();
-				assertThat(input.packedRegions).as("successful actual packed opens, after complete bag drain").isPositive();
+				assertThat(input.packedRegions).as("successful actual packed opens, after complete bag drain")
+						.isPositive();
 			}
 			assertThat(row.encounterOrderRequired).isFalse();
 		}
 		assertThat(step.originalExpr.getLongMetricActual(OPTIMIZED))
-				.as("direct physical proof must not manufacture consumer-stream events").isEqualTo(before);
+				.as("direct physical proof must not manufacture consumer-stream events")
+				.isEqualTo(before);
 	}
 
 	/** Reference the retained native graph directly, without creating any Request or Selection. */
@@ -451,7 +470,8 @@ class LmdbNativeTrailingRegionDependencyTest {
 			public RowCursor open(RowState input) throws IOException {
 				assertThat(input.encounterOrderRequired).isEqualTo(ordered);
 				LmdbNativeInteriorPlans.Selection qualified = selected.requiresLexical(input)
-						? LmdbNativeInteriorPlans.select(selected.original, input, null) : selected;
+						? LmdbNativeInteriorPlans.select(selected.original, input, null)
+						: selected;
 				assertThat(qualified.requiresLexical(input)).isFalse();
 				RowCursor delegate = qualified.open(input, qualified.plan);
 				return new RowCursor() {
@@ -704,7 +724,8 @@ class LmdbNativeTrailingRegionDependencyTest {
 		TupleExpr q = pattern("q", "n");
 		TupleExpr p = pattern("p", "o");
 		TupleExpr second = association.multiple()
-				? boundary("SELECT (CONCAT(\"c\", \"d\") AS ?d) ?v WHERE { VALUES ?v { 2 2 } }") : null;
+				? boundary("SELECT (CONCAT(\"c\", \"d\") AS ?d) ?v WHERE { VALUES ?v { 2 2 } }")
+				: null;
 		TupleExpr body = switch (association) {
 		case TRAILING, NESTED_TRAILING -> new Join(new Join(q, p), boundary);
 		case MULTIPLE_TRAILING -> new Join(new Join(new Join(q, p), second), boundary);

@@ -65,9 +65,9 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.DistinctBindingFeedback;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics.InvocationAggregateObservation;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics.SemiAntiOutcomeObservation;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.InvocationAggregateView;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.RuntimeFeedbackAccumulator;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.RuntimeFeedbackTarget;
@@ -77,8 +77,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoConfidenceMod
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoEvidence;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoLearnedEvidenceService;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoMemoFeedback;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorKey.UnkeyableOperatorException;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorKey;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorKey.UnkeyableOperatorException;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorLearningPolicy;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanCandidate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanRanking;
@@ -345,7 +345,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 					learnedOutcome));
 		}
 		if (adaptiveEvidenceAllowed() && contract != null
-				&& contract.descriptor()instanceof LmdbPhysicalEventFeedbackDescriptor physical) {
+				&& contract.descriptor() instanceof LmdbPhysicalEventFeedbackDescriptor physical) {
 			// No logical/filter/lifecycle/exact destination exists for this descriptor type.
 			if (contract.admissionFlags() != RuntimeFeedbackContract.ADMIT_PHYSICAL) {
 				return RuntimeFeedbackTarget.NO_OP;
@@ -362,7 +362,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			return new RuntimeFeedbackAccumulator(contract, destination);
 		}
 		if (!adaptiveEvidenceAllowed() || contract == null
-				|| !(contract.descriptor()instanceof LmdbRuntimeFeedbackDescriptor descriptor)) {
+				|| !(contract.descriptor() instanceof LmdbRuntimeFeedbackDescriptor descriptor)) {
 			return RuntimeFeedbackTarget.NO_OP;
 		}
 		boolean resolveLogical = contract.admits(RuntimeFeedbackContract.ADMIT_LOGICAL)
@@ -468,7 +468,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	private static LmdbPlanDecisionCache.PlanExecutionToken planExecutionToken(RuntimeFeedbackTarget target) {
 		RuntimeFeedbackContract contract = target.contract();
-		if (contract == null || !(contract.descriptor()instanceof LmdbRuntimeFeedbackDescriptor descriptor)) {
+		if (contract == null || !(contract.descriptor() instanceof LmdbRuntimeFeedbackDescriptor descriptor)) {
 			return null;
 		}
 		return descriptor.planExecutionToken();
@@ -477,7 +477,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private synchronized boolean lifecycleBlocked(RuntimeFeedbackTarget target) {
 		RuntimeFeedbackContract contract = target.contract();
 		if (contract == null || !contract.admits(RuntimeFeedbackContract.ADMIT_LIFECYCLE)
-				|| !(contract.descriptor()instanceof LmdbRuntimeFeedbackDescriptor descriptor)) {
+				|| !(contract.descriptor() instanceof LmdbRuntimeFeedbackDescriptor descriptor)) {
 			return false;
 		}
 		PlanLifecycleStore.ObjectiveEnvelope envelope = new PlanLifecycleStore.ObjectiveEnvelope(
@@ -559,7 +559,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			return;
 		}
 		if (estimateTraceEnabled
-				&& destination.contract.descriptor()instanceof LmdbRuntimeFeedbackDescriptor descriptor) {
+				&& destination.contract.descriptor() instanceof LmdbRuntimeFeedbackDescriptor descriptor) {
 			System.err.println("[lmdb-operator-feedback-trace] event=publish-runtime-observation"
 					+ " logical=" + descriptor.logicalKey().digest()
 					+ " applicability=" + descriptor.applicability().digest()
@@ -603,7 +603,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			destination.exactFact.rows = observation.actualRowsSum();
 			destination.exactFact.statementMutationStamp = appliedStatementMutationStamp;
 			if (estimateTraceEnabled
-					&& destination.contract.descriptor()instanceof LmdbRuntimeFeedbackDescriptor descriptor) {
+					&& destination.contract.descriptor() instanceof LmdbRuntimeFeedbackDescriptor descriptor) {
 				System.err.println("[lmdb-operator-feedback-trace] event=publish-runtime-exact-fact"
 						+ " logical=" + descriptor.logicalKey().digest()
 						+ " applicability=" + descriptor.applicability().digest()
@@ -621,7 +621,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		}
 		if (semanticallyValid && matchingPhysicalImplementation
 				&& destination.contract.admits(RuntimeFeedbackContract.ADMIT_SEMI_ANTI)
-				&& destination.contract.descriptor()instanceof LmdbRuntimeFeedbackDescriptor descriptor) {
+				&& destination.contract.descriptor() instanceof LmdbRuntimeFeedbackDescriptor descriptor) {
 			DistinctBindingFeedback distinctFeedback = observation.distinctBindingFeedback();
 			if (distinctFeedback.available()) {
 				TypedSemiAntiDistinctKey key = new TypedSemiAntiDistinctKey(descriptor.logicalKey(),
@@ -1210,7 +1210,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		 * to a different kernel. OUTPUT_ROWS above stays recorded — match cardinality is access-independent.
 		 */
 		if (semiAntiDriftGuardEnabled()
-				&& SemiAntiSurfaceKey.rhs(filter)instanceof StatementPattern rhsPattern) {
+				&& SemiAntiSurfaceKey.rhs(filter) instanceof StatementPattern rhsPattern) {
 			String runtimeIndexName = rhsPattern.getIndexName();
 			if (runtimeIndexName != null && !runtimeIndexName.isBlank() && !"none".equals(physicalKey.indexName())
 					&& !physicalKey.indexName().equalsIgnoreCase(runtimeIndexName.trim())) {
@@ -1772,7 +1772,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	private static LmdbRuntimeFeedbackDescriptor runtimeFeedbackDescriptor(TupleExpr node) {
 		RuntimeFeedbackContract contract = node.getRuntimeFeedbackContract();
-		if (contract != null && contract.descriptor()instanceof LmdbRuntimeFeedbackDescriptor descriptor) {
+		if (contract != null && contract.descriptor() instanceof LmdbRuntimeFeedbackDescriptor descriptor) {
 			return descriptor;
 		}
 		return null;

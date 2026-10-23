@@ -260,8 +260,8 @@ class PackedSearchTest {
 				OptimizationGoal.root(), costs, null, 100);
 		PackedPlanQualityAlternative dependentBushy = null;
 		for (PackedPlanQualityAlternative alternative : audit.alternatives()) {
-			if (alternative.plan()instanceof Join join
-					&& join.getLeftArg()instanceof StatementPattern left
+			if (alternative.plan() instanceof Join join
+					&& join.getLeftArg() instanceof StatementPattern left
 					&& left.getPredicateVar().hasValue()
 					&& "urn:targets".equals(left.getPredicateVar().getValue().stringValue())
 					&& join.getRightArg() instanceof Join) {
@@ -636,7 +636,7 @@ class PackedSearchTest {
 		List<TupleExpr> selectedFactors = joinFactors(result.selectedPlan());
 
 		assertTrue(result.workLimitReached());
-		assertTrue(selectedFactors.get(0)instanceof StatementPattern first
+		assertTrue(selectedFactors.get(0) instanceof StatementPattern first
 				&& "urn:type".equals(first.getPredicateVar().getValue().stringValue()),
 				() -> "A bounded seed must compare the first expansion, not select an isolated one-row anchor: "
 						+ result.selectedPlan());
@@ -1793,7 +1793,7 @@ class PackedSearchTest {
 		assertTrue(result.selectedPlan() instanceof Join, result.selectedPlan()::toString);
 		Join selected = (Join) result.selectedPlan();
 		TupleExpr finiteRecipe;
-		if (selected.getLeftArg()instanceof StatementPattern pattern
+		if (selected.getLeftArg() instanceof StatementPattern pattern
 				&& "urn:availability".equals(pattern.getPredicateVar().getValue().stringValue())) {
 			finiteRecipe = selected.getRightArg();
 		} else {
@@ -2626,12 +2626,12 @@ class PackedSearchTest {
 					}
 
 					private boolean selectedWeightFilter(PackedQueryView view, int relationId) {
-						return view.materializeRelation(relationId)instanceof Filter filter
+						return view.materializeRelation(relationId) instanceof Filter filter
 								&& filter.getCondition() instanceof ListMemberOperator;
 					}
 
 					private boolean antiFilter(PackedQueryView view, int relationId) {
-						return view.materializeRelation(relationId)instanceof Filter filter
+						return view.materializeRelation(relationId) instanceof Filter filter
 								&& filter.getCondition() instanceof Not;
 					}
 				};

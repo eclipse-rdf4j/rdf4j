@@ -29,6 +29,7 @@ import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.model.IRI;
@@ -309,7 +310,7 @@ public class SailRepositoryConnectionTest {
 		}
 	}
 
-@Test
+	@Test
 	void iterableAddUsesSingleSailBulkInvocation() {
 		var valueFactory = SimpleValueFactory.getInstance();
 		var statements = List.of(

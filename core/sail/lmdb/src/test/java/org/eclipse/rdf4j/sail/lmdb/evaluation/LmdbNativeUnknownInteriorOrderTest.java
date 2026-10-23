@@ -163,7 +163,8 @@ class LmdbNativeUnknownInteriorOrderTest {
 				assertThat(row.encounterOrderRequired).isFalse();
 				try (RowCursor cursor = LmdbNativeFactorAlgebra.openOrdered(step.arg, row)) {
 					while (cursor.next()) {
-						values.add(LmdbNativeValueCodec.toValue(row.decodedValue(slot, evaluated.nativeValueCodec(), false)));
+						values.add(LmdbNativeValueCodec
+								.toValue(row.decodedValue(slot, evaluated.nativeValueCodec(), false)));
 						assertThat(row.encounterOrderRequired).isFalse();
 					}
 				}
@@ -217,14 +218,16 @@ class LmdbNativeUnknownInteriorOrderTest {
 		}
 	}
 
-
 	private void assertOrderedValues(SailDatasetTripleTermSource source, LmdbNativeEvaluationStrategy strategy) {
 		List<Value> expected = List.of(repository.getValueFactory().createLiteral(VALUES[0]),
-				repository.getValueFactory().createLiteral(VALUES[1]), repository.getValueFactory().createLiteral(VALUES[2]));
+				repository.getValueFactory().createLiteral(VALUES[1]),
+				repository.getValueFactory().createLiteral(VALUES[2]));
 		assertThat(drain(strategy.genericOnlyView().precompile(orderedRoot(bOnly(), source))).stream()
-				.map(row -> row.getValue("n")).toList()).containsExactlyElementsOf(expected);
+				.map(row -> row.getValue("n"))
+				.toList()).containsExactlyElementsOf(expected);
 		assertThat(drain(strategy.precompile(orderedRoot(bOnly(), source))).stream()
-				.map(row -> row.getValue("n")).toList()).containsExactlyElementsOf(expected);
+				.map(row -> row.getValue("n"))
+				.toList()).containsExactlyElementsOf(expected);
 	}
 
 	private List<Value> lexicalValues() {

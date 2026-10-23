@@ -120,7 +120,8 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	}
 
 	LmdbNativeStrategyProposal(AttemptOpener<T> opener, double estCost, String tag) {
-		this(opener, LmdbNativeWork.exact(estCost), tag, () -> { });
+		this(opener, LmdbNativeWork.exact(estCost), tag, () -> {
+		});
 	}
 
 	LmdbNativeStrategyProposal(AttemptOpener<T> opener, double estCost, String tag, Runnable releaseIfUnused) {
@@ -361,47 +362,73 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		return interval.low() + (interval.high() - interval.low()) * 0.5D;
 	}
 
-	synchronized T open() throws IOException { return openObserved(null); }
+	synchronized T open() throws IOException {
+		return openObserved(null);
+	}
 
 	synchronized T openObserved(LmdbNativeCostObservation observation) throws IOException {
-		if (closed || opened) { throw new IllegalStateException("strategy proposal already opened or closed"); }
-		if (attemptOpener == null) { return openInFilterAttempt(null); }
+		if (closed || opened) {
+			throw new IllegalStateException("strategy proposal already opened or closed");
+		}
+		if (attemptOpener == null) {
+			return openInFilterAttempt(null);
+		}
 		NativeFilterLease filters = new NativeFilterLease(filterParent);
 		filterAttempt = filters;
 		ownsFilterAttempt = true;
-		if (observation != null) { observation.bindFilterAttempt(filters); }
+		if (observation != null) {
+			observation.bindFilterAttempt(filters);
+		}
 		return openInFilterAttempt(filters);
 	}
 
 	/** An adapter forwards its existing attempt; it does not allocate or own a second lease. */
 	synchronized T openInFilterAttempt(NativeFilterLease filters) throws IOException {
-		if (closed) { throw new IllegalStateException("strategy proposal already closed"); }
-		if (opened) { throw new IllegalStateException("strategy proposal already opened"); }
+		if (closed) {
+			throw new IllegalStateException("strategy proposal already closed");
+		}
+		if (opened) {
+			throw new IllegalStateException("strategy proposal already opened");
+		}
 		opened = true;
-		if (filterAttempt == null) { filterAttempt = filters; }
+		if (filterAttempt == null) {
+			filterAttempt = filters;
+		}
 		return attemptOpener == null ? opener.open() : attemptOpener.open(filters);
 	}
 
 	synchronized LmdbNativeStrategyProposal<T> filterParent(NativeFilterLease parent) {
-		if (opened || closed) { throw new IllegalStateException("native filter parent must be bound before opening"); }
+		if (opened || closed) {
+			throw new IllegalStateException("native filter parent must be bound before opening");
+		}
 		filterParent = parent;
 		return this;
 	}
 
-	synchronized NativeFilterLease filterAttempt() { return filterAttempt; }
+	synchronized NativeFilterLease filterAttempt() {
+		return filterAttempt;
+	}
 
 	void selected() {
 		NativeFilterLease filters = filterAttempt();
-		if (filters != null) { filters.selected(); }
+		if (filters != null) {
+			filters.selected();
+		}
 	}
 
 	/** Unselected opens are discarded only after their cursor/materializer cleanup; old openers retain old behavior. */
 	@Override
 	public synchronized void close() {
-		if (closed) { return; }
+		if (closed) {
+			return;
+		}
 		closed = true;
-		if (!opened) { releaseIfUnused.run(); }
-		if (ownsFilterAttempt && filterAttempt != null && !filterAttempt.isSelected()) { filterAttempt.discard(); }
+		if (!opened) {
+			releaseIfUnused.run();
+		}
+		if (ownsFilterAttempt && filterAttempt != null && !filterAttempt.isSelected()) {
+			filterAttempt.discard();
+		}
 	}
 
 	static double batchCost(double leftRows, double buildRows) {

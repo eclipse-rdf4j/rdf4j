@@ -177,7 +177,6 @@ public interface LmdbValue extends Value {
 	default void visitValueChildren(Consumer<Value> visitor) {
 	}
 
-
 	/**
 	 * Gets the revision of the value store that created this value. The value's internal ID is only valid when it's
 	 * value store revision is equal to the value store's current revision.

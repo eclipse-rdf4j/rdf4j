@@ -1881,7 +1881,9 @@ final class LmdbNativeChunkPipeline {
 			while (true) {
 				int rows = upstream.fill(out);
 				if (rows == 0) {
-					if (!row.cancellation.isCancellationRequested()) { filter.inputExhausted(); }
+					if (!row.cancellation.isCancellationRequested()) {
+						filter.inputExhausted();
+					}
 					return 0;
 				}
 				observedRows += out.selectedCount;

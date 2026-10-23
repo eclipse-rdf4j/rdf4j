@@ -49,7 +49,9 @@ final class LmdbNativeMorselExecutor<T> implements AutoCloseable {
 		this.workers = workers;
 		output = new ArrayBlockingQueue<>(queueCapacity);
 		finished = new NativeExecutionContext.WorkerTasks(workers);
-		if (owner != null) { owner.registerFilterWorkers(finished); }
+		if (owner != null) {
+			owner.registerFilterWorkers(finished);
+		}
 		cancellation = new NativeCancellationToken(Objects.requireNonNull(parent, "parent"));
 	}
 
@@ -171,7 +173,9 @@ final class LmdbNativeMorselExecutor<T> implements AutoCloseable {
 		Throwable problem = failure;
 		if (problem == null || reported)
 			return;
-		if (!finished.isCleanupOwnerThread()) { reported = true; }
+		if (!finished.isCleanupOwnerThread()) {
+			reported = true;
+		}
 		if (problem instanceof IOException io)
 			throw io;
 		if (problem instanceof RuntimeException runtime)

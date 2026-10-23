@@ -50,7 +50,8 @@ final class LmdbNativePackedAlgebraAggregate {
 		boolean countOnePass = onePass(plan, row, aggregates);
 		if (!countOnePass && ordered && owner.consumerInput != null) {
 			// This collector declares ordered input before construction, including when the outer COUNT permits a bag.
-			// Requalify the exact lexical alternative before any owned open; the selected graph drives actual telemetry.
+			// Requalify the exact lexical alternative before any owned open; the selected graph drives actual
+			// telemetry.
 			LmdbNativeInteriorPlans.Selection lexical = LmdbNativeInteriorPlans.select(owner.consumerInput.original,
 					row, null);
 			owner = owner.withArg(lexical.plan);

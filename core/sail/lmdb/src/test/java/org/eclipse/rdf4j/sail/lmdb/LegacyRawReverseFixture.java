@@ -66,7 +66,8 @@ final class LegacyRawReverseFixture {
 			assertTrue(owns(stack, txn, main, payload, owner), "the captured owner has its real raw association");
 			byte[] canonical = ValueStoreRecordCodec.canonicalLanguageKey(payload);
 			if (distinctPhysicalKeys(payload, canonical)) {
-				assertFalse(owns(stack, txn, main, canonical, owner), "no extra canonical association may outlive old GC");
+				assertFalse(owns(stack, txn, main, canonical, owner),
+						"no extra canonical association may outlive old GC");
 			}
 			return null;
 		});
@@ -128,8 +129,9 @@ final class LegacyRawReverseFixture {
 		long hash = ValueStoreRecordCodec.hash(payload);
 		byte[] first = ValueStoreRecordCodec.hashKey(hash);
 		byte[] previous = get(stack, txn, main, first);
-		if (previous == null) { put(stack, txn, main, first, id); }
-		else if (!Arrays.equals(id, previous)) {
+		if (previous == null) {
+			put(stack, txn, main, first, id);
+		} else if (!Arrays.equals(id, previous)) {
 			assertNotNull(get(stack, txn, main, previous), "a collision predecessor must have an actual forward owner");
 			put(stack, txn, main, ValueStoreRecordCodec.collisionKey(hash, owner), new byte[0]);
 		}
@@ -169,13 +171,17 @@ final class LegacyRawReverseFixture {
 					E(mdb_cursor_del(cursor, 0));
 				}
 			}
-		} finally { mdb_cursor_close(cursor); }
+		} finally {
+			mdb_cursor_close(cursor);
+		}
 	}
 
 	private static byte[] get(MemoryStack stack, long txn, int main, byte[] key) throws IOException {
 		MDBVal value = MDBVal.calloc(stack);
 		int result = mdb_get(txn, main, MDBVal.calloc(stack).mv_data(stack.bytes(key)), value);
-		if (result == MDB_NOTFOUND) { return null; }
+		if (result == MDB_NOTFOUND) {
+			return null;
+		}
 		E(result);
 		return bytes(value);
 	}
@@ -214,6 +220,8 @@ final class LegacyRawReverseFixture {
 			E(mdb_env_set_maxdbs(env, 18));
 			E(mdb_env_open(env, directory.toString(), MDB_NOTLS | (write ? 0 : MDB_RDONLY), 0664));
 			return write ? LmdbUtil.writeTransaction(env, work) : LmdbUtil.readTransaction(env, work);
-		} finally { mdb_env_close(env); }
+		} finally {
+			mdb_env_close(env);
+		}
 	}
 }

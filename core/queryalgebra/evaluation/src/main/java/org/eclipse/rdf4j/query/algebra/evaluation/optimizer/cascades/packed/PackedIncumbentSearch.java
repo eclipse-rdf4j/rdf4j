@@ -1845,8 +1845,10 @@ final class PackedIncumbentSearch {
 					&& winnerHasMeasuredContextualRows(memo.winnerChildWinnerId(winnerId, 1));
 		}
 		return childCount == 1 && switch (operator) {
-		case PackedRelOp.QUERY_ROOT, PackedRelOp.PROJECTION, PackedRelOp.EXTENSION, PackedRelOp.ORDER, PackedRelOp.MATERIALIZE, PackedRelOp.FILTER, PackedRelOp.SEMI_JOIN, PackedRelOp.ANTI_JOIN -> winnerHasMeasuredContextualRows(
-				memo.winnerChildWinnerId(winnerId, 0));
+		case PackedRelOp.QUERY_ROOT, PackedRelOp.PROJECTION, PackedRelOp.EXTENSION, PackedRelOp.ORDER,
+				PackedRelOp.MATERIALIZE, PackedRelOp.FILTER, PackedRelOp.SEMI_JOIN, PackedRelOp.ANTI_JOIN ->
+			winnerHasMeasuredContextualRows(
+					memo.winnerChildWinnerId(winnerId, 0));
 		default -> false;
 		};
 	}

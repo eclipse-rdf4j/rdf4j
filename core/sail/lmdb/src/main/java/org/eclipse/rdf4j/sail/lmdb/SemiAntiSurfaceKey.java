@@ -97,10 +97,10 @@ record SemiAntiSurfaceKey(int schemaVersion, String semanticKind, String physica
 		if (filter == null || filter.getArg() == null || filter.getCondition() == null) {
 			return null;
 		}
-		if (filter.getCondition()instanceof Exists exists) {
+		if (filter.getCondition() instanceof Exists exists) {
 			return exists.getSubQuery();
 		}
-		if (filter.getCondition()instanceof Not not && not.getArg()instanceof Exists exists) {
+		if (filter.getCondition() instanceof Not not && not.getArg() instanceof Exists exists) {
 			return exists.getSubQuery();
 		}
 		return null;

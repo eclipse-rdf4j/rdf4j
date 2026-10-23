@@ -55,7 +55,8 @@ class TripleStoreWriteRouteJournalCompositionTest {
 	@ParameterizedTest
 	@EnumSource(WriteRoute.class)
 	void abortedWritePublishesNeitherRowsNorJournal(WriteRoute route, @TempDir Path directory) throws Exception {
-		try (TripleStore store = new TripleStore(directory.toFile(), config(FrontierEstimatorMode.AUTHORITATIVE), null)) {
+		try (TripleStore store = new TripleStore(directory.toFile(), config(FrontierEstimatorMode.AUTHORITATIVE),
+				null)) {
 			store.startTransaction();
 			write(store, route);
 			store.rollback();
@@ -147,6 +148,9 @@ class TripleStoreWriteRouteJournalCompositionTest {
 	}
 
 	enum WriteRoute {
-		SCALAR, ALIGNED, PREPARED, GLOBAL
+		SCALAR,
+		ALIGNED,
+		PREPARED,
+		GLOBAL
 	}
 }

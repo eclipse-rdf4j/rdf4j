@@ -1053,7 +1053,8 @@ public class GenericPlanNode {
 			for (Map.Entry<String, Long> entry : visibleLongMetrics.entrySet()) {
 				String metricName = entry.getKey();
 				Long metricValue = entry.getValue();
-				if (metricValue == null || metricValue < 0 && !TelemetryMetricNames.isOptimizerExplainMetric(metricName)) {
+				if (metricValue == null
+						|| metricValue < 0 && !TelemetryMetricNames.isOptimizerExplainMetric(metricName)) {
 					continue;
 				}
 				if (!isMetricApplicableToNode(metricName) || metrics.containsKey(metricName)) {
@@ -1068,7 +1069,8 @@ public class GenericPlanNode {
 			for (Map.Entry<String, Double> entry : visibleDoubleMetrics.entrySet()) {
 				String metricName = entry.getKey();
 				Double metricValue = entry.getValue();
-				if (metricValue == null || metricValue <= 0 && !TelemetryMetricNames.isOptimizerExplainMetric(metricName)) {
+				if (metricValue == null
+						|| metricValue <= 0 && !TelemetryMetricNames.isOptimizerExplainMetric(metricName)) {
 					continue;
 				}
 				if (!isMetricApplicableToNode(metricName) || metrics.containsKey(metricName)) {

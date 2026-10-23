@@ -79,7 +79,7 @@ class LmdbRemoteValueCaptureTest {
 			new LmdbValueLookupOptimizer(values).optimize(root, null, EmptyBindingSet.getInstance());
 			Value captured = root instanceof BindingSetAssignment assignment
 					? assignment.getBindingSets().iterator().next().getValue("value")
-					: ((Extension) root).getElements().getFirst().getExpr()instanceof Var variable
+					: ((Extension) root).getElements().getFirst().getExpr() instanceof Var variable
 							? variable.getValue()
 							: constant.getValue();
 			assertEquals(0, values.lookups, "lexical capture must not add dictionary membership reads");

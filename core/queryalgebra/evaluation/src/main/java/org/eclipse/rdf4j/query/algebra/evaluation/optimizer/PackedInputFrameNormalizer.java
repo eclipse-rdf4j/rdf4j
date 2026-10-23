@@ -206,7 +206,7 @@ public final class PackedInputFrameNormalizer {
 			throw unsupported(filter);
 		}
 		TupleExpr current = filter;
-		while (current.getParentNode()instanceof TupleExpr parent) {
+		while (current.getParentNode() instanceof TupleExpr parent) {
 			if (parent instanceof Filter crossed && !TupleExprs.isVariableScopeChange(crossed)
 					&& ScalarEvaluationEffects.reorderingIsSafe(crossed.getCondition())) {
 				proveFrame(filter, parent, null, originalFrame, observations, analysis, effects);
@@ -235,12 +235,12 @@ public final class PackedInputFrameNormalizer {
 
 	private static void apply(GatePlan plan) {
 		Filter filter = plan.filter();
-		if (plan.destination()instanceof Join join) {
+		if (plan.destination() instanceof Join join) {
 			filter.replaceWith(filter.getArg());
 			join.replaceWith(filter);
 			filter.setArg(join);
 			filter.setRequiredInputBindingNames(Set.of());
-		} else if (plan.destination()instanceof LeftJoin optional) {
+		} else if (plan.destination() instanceof LeftJoin optional) {
 			filter.replaceWith(filter.getArg());
 			optional.setCondition(optional.hasCondition()
 					? new If(filter.getCondition(), optional.getCondition(), new ValueConstant(BooleanLiteral.FALSE))

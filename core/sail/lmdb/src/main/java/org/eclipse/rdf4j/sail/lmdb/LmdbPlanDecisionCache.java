@@ -107,7 +107,7 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		PHYSICAL_CAPABILITY
 	}
 
-	sealed interface LookupDecision permits Use,UseAndRefresh,ReplanBeforeUse {
+	sealed interface LookupDecision permits Use, UseAndRefresh, ReplanBeforeUse {
 
 		LookupOutcome outcome();
 
@@ -2346,7 +2346,7 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 	}
 
 	private static void accountProvider(PlanVersion plan, FactorCostCacheKey.ProviderRetainedMemory memory) {
-		if (plan.physicalRecipe()instanceof ExactTupleRecipe exact) {
+		if (plan.physicalRecipe() instanceof ExactTupleRecipe exact) {
 			if (exact.automaticPlanningState) {
 				memory.accountCacheModels(exact.template);
 			} else {
@@ -2403,7 +2403,7 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		}
 		long refreshBytes = plan.detachedRefreshWork() == null ? 0L : plan.detachedRefreshWork().retainedBytes();
 		// Exact native recipes are charged structurally here; the whole family shares one provider identity scope.
-		long structuralBytes = plan.physicalRecipe()instanceof ExactTupleRecipe exact
+		long structuralBytes = plan.physicalRecipe() instanceof ExactTupleRecipe exact
 				? exact.retainedBytes
 				: plan.physicalRecipe().retainedBytes();
 		return saturatedAdd(structuralBytes, refreshBytes);

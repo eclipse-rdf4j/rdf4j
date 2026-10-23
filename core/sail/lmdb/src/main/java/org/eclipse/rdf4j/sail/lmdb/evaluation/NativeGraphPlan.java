@@ -71,15 +71,25 @@ final class NativeGraphPlan implements SlotPlan {
 	}
 
 	private NativeGraphPlan(NativeGraphPlan source, NativeFilterLease filters) {
-		this.graph = source.graph; this.memoIdentity = source.memoIdentity; this.filterAttempt = filters;
-		this.structural = source.structural; this.strategy = source.strategy; this.source = source.source;
-		this.outSlots = source.outSlots; this.outNames = source.outNames;
-		this.frameInputSlots = source.frameInputSlots; this.frameInputNames = source.frameInputNames;
-		this.inheritedFrameInputs = source.inheritedFrameInputs; this.lateralFrameInputs = source.lateralFrameInputs;
-		this.produced = source.produced; this.assured = source.assured;
+		this.graph = source.graph;
+		this.memoIdentity = source.memoIdentity;
+		this.filterAttempt = filters;
+		this.structural = source.structural;
+		this.strategy = source.strategy;
+		this.source = source.source;
+		this.outSlots = source.outSlots;
+		this.outNames = source.outNames;
+		this.frameInputSlots = source.frameInputSlots;
+		this.frameInputNames = source.frameInputNames;
+		this.inheritedFrameInputs = source.inheritedFrameInputs;
+		this.lateralFrameInputs = source.lateralFrameInputs;
+		this.produced = source.produced;
+		this.assured = source.assured;
 	}
 
-	NativeGraphPlan withFilterAttempt(NativeFilterLease filters) { return new NativeGraphPlan(this, filters); }
+	NativeGraphPlan withFilterAttempt(NativeFilterLease filters) {
+		return new NativeGraphPlan(this, filters);
+	}
 
 	@Override
 	public long producedMask() {
@@ -114,21 +124,23 @@ final class NativeGraphPlan implements SlotPlan {
 			throw new IllegalStateException("native GRAPH evaluated without an evaluation-scoped term authority");
 		}
 		NativeExecutionContext execution = synthetic.executionContext();
-		NativeSubqueryPlan delegate = execution.nativeState(memoIdentity, () -> memoIdentity.prepareDelegate(execution));
+		NativeSubqueryPlan delegate = execution.nativeState(memoIdentity,
+				() -> memoIdentity.prepareDelegate(execution));
 		return delegate.open(row, filterAttempt);
 	}
+
 	private NativeSubqueryPlan prepareDelegate(NativeExecutionContext execution) {
-			QueryEvaluationContext scoped = execution.genericContext(structural, strategy);
-			QueryEvaluationStep selected = GraphQueryEvaluationStep.supply(graph, strategy.graphTripleSource(), scoped,
-					(body, activeGraph) -> {
-						QueryEvaluationStep nativeBody = LmdbNativeAggregateCompiler.tryCompileSemanticSubquery(body,
-								activeGraph, strategy, source, inheritedFrameInputs, lateralFrameInputs);
-						// Unsupported backend extensions keep the same ordinary evaluator fallback as other native
-						// semantic boundaries. Supported bodies retain native compilation under this exact graph.
-						return nativeBody != null ? nativeBody : strategy.precompile(body, activeGraph);
-					});
-			return new NativeSubqueryPlan(selected, outSlots, outNames, frameInputSlots, frameInputNames,
-					frameInputNames, new String[0], null, scoped);
+		QueryEvaluationContext scoped = execution.genericContext(structural, strategy);
+		QueryEvaluationStep selected = GraphQueryEvaluationStep.supply(graph, strategy.graphTripleSource(), scoped,
+				(body, activeGraph) -> {
+					QueryEvaluationStep nativeBody = LmdbNativeAggregateCompiler.tryCompileSemanticSubquery(body,
+							activeGraph, strategy, source, inheritedFrameInputs, lateralFrameInputs);
+					// Unsupported backend extensions keep the same ordinary evaluator fallback as other native
+					// semantic boundaries. Supported bodies retain native compilation under this exact graph.
+					return nativeBody != null ? nativeBody : strategy.precompile(body, activeGraph);
+				});
+		return new NativeSubqueryPlan(selected, outSlots, outNames, frameInputSlots, frameInputNames,
+				frameInputNames, new String[0], null, scoped);
 	}
 
 }

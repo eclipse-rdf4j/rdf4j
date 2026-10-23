@@ -154,7 +154,7 @@ class VirtualThemeCatalogProfileTest {
 					graphPredicates.add(new PredicatePair(graph, statement.getPredicate()));
 					outgoing.computeIfAbsent(subject, ignored -> new HashSet<>())
 							.add(new PredicateValue(statement.getPredicate(), statement.getObject()));
-					if (statement.getObject()instanceof IRI iri) {
+					if (statement.getObject() instanceof IRI iri) {
 						for (String foreignPrefix : foreignPrefixes) {
 							assertFalse(iri.stringValue().startsWith(foreignPrefix),
 									"Fixture cross-theme resource edge requires a global data profile");
@@ -200,7 +200,7 @@ class VirtualThemeCatalogProfileTest {
 							classProperties.add(new PredicatePair(type, value.predicate()));
 						}
 					}
-					if (value.value()instanceof IRI iri) {
+					if (value.value() instanceof IRI iri) {
 						Set<IRI> objectTypes = types(outgoing.getOrDefault(iri, Set.of()));
 						for (IRI objectType : objectTypes.isEmpty() ? Set.of(UNTYPED) : objectTypes) {
 							objectClasses.add(new PredicatePair(value.predicate(), objectType));

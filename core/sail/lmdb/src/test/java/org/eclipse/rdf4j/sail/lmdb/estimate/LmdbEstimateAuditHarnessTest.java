@@ -1792,7 +1792,7 @@ class LmdbEstimateAuditHarnessTest {
 				return 0L;
 			}
 			BindingSet bindingSet = result.next();
-			if (bindingSet.getValue(bindingName)instanceof Literal literal) {
+			if (bindingSet.getValue(bindingName) instanceof Literal literal) {
 				return literal.longValue();
 			}
 			return 0L;

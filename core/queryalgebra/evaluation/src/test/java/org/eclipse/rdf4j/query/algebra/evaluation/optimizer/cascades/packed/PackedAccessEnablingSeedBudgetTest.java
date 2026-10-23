@@ -1290,7 +1290,7 @@ class PackedAccessEnablingSeedBudgetTest {
 		}
 
 		private static boolean isExistsFilter(PackedQueryView query, int relationId) {
-			return query.materializeRelation(relationId)instanceof Filter filter
+			return query.materializeRelation(relationId) instanceof Filter filter
 					&& filter.getCondition() instanceof Exists;
 		}
 	}

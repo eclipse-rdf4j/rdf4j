@@ -235,10 +235,11 @@ class UnionSailDatasetTest {
 	}
 
 	private static final class MetricStatements implements CloseableIteration<Statement>, IndexReportingIterator {
-		private static final Statement ROW = SimpleValueFactory.getInstance().createStatement(
-				SimpleValueFactory.getInstance().createIRI("urn:union:subject"),
-				SimpleValueFactory.getInstance().createIRI("urn:union:predicate"),
-				SimpleValueFactory.getInstance().createIRI("urn:union:object"));
+		private static final Statement ROW = SimpleValueFactory.getInstance()
+				.createStatement(
+						SimpleValueFactory.getInstance().createIRI("urn:union:subject"),
+						SimpleValueFactory.getInstance().createIRI("urn:union:predicate"),
+						SimpleValueFactory.getInstance().createIRI("urn:union:object"));
 		private final long skips;
 		private final long seeks;
 		private final long skipAhead;

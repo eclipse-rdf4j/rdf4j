@@ -88,7 +88,7 @@ final class BindingShapeAnalyzer {
 		}
 		if (tupleExpr instanceof Filter filter) {
 			BindingShape argument = analyze(filter.getArg());
-			if (filter.getArg()instanceof LeftJoin leftJoin && !leftJoin.hasCondition()) {
+			if (filter.getArg() instanceof LeftJoin leftJoin && !leftJoin.hasCondition()) {
 				BindingShape left = analyze(leftJoin.getLeftArg());
 				BindingShape right = analyze(leftJoin.getRightArg());
 				if (OptionalNegatedBoundSemantics.retainsOnlyLeft(universe, filter.getCondition(), left.possible(),

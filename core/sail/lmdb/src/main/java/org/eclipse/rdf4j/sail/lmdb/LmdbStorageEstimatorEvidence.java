@@ -136,7 +136,7 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 			return statementCandidates(pattern, context);
 		}
 		if (expression instanceof ArbitraryLengthPath path) {
-			StatementPattern step = path.getPathExpression()instanceof StatementPattern pattern
+			StatementPattern step = path.getPathExpression() instanceof StatementPattern pattern
 					? unboundPathEndpoints(pattern)
 					: null;
 			List<EstimateCandidate> directCandidates = step == null
@@ -347,15 +347,17 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 			EvaluationStatistics.FilterPassEstimate estimate = readContext != null
 					&& readContext.family().ownerToken() == learned.outcomeOwnerToken()
 					&& readContext.allows(synthetic, context)
-					? learned.estimateQualified(valueStore, readContext.read().dataEpoch(), synthetic, readContext.read())
-					: null;
+							? learned.estimateQualified(valueStore, readContext.read().dataEpoch(), synthetic,
+									readContext.read())
+							: null;
 			if (estimate == null) {
 				// Keep the original legacy namespace separate; a source-less key cannot address new read keys.
 				estimate = learned.estimateQualified(valueStore, context.snapshotVersion(), synthetic);
 			}
 			if (estimate != null && validPassRatio(estimate.getPassRatio())) {
 				return Optional.of(new FilterEvidence(estimate.getPassRatio(), estimate.getLower95PassRatio(),
-						estimate.getUpper95PassRatio(), estimate.getConfidenceScore(), false, estimate.getSource().name().toLowerCase()));
+						estimate.getUpper95PassRatio(), estimate.getConfidenceScore(), false,
+						estimate.getSource().name().toLowerCase()));
 			}
 		}
 		return finiteConstantFilterEvidence(pattern, condition, inputEstimate);
@@ -399,7 +401,7 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 			ValueExpr constantExpression) {
 		if (!(variableExpression instanceof Var variable) || variable.hasValue() || variable.getName() == null
 				|| !(constantExpression instanceof ValueConstant constant)
-				|| !(constant.getValue()instanceof IRI iri)) {
+				|| !(constant.getValue() instanceof IRI iri)) {
 			return null;
 		}
 		return new MissingIriComparison(variable.getName(), iri);

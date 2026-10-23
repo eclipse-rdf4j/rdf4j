@@ -157,8 +157,6 @@ public interface ValueStoreRevision {
 			return positionMask;
 		}
 
-
-
 		Lazy epoch() {
 			return retainedEpoch == null ? this : retainedEpoch;
 		}

@@ -625,12 +625,12 @@ public final class QueryPlanSnapshotCli {
 			applyDirectAdjacencyDebugMetadata(currentSnapshot, storeRuntime, plannerStatsHitsBefore);
 			if (!perQueryOptions.planOnly) {
 				executionVerification = perQueryOptions.factorizedVerification
-					? verifyFactorizedExecution(connection, currentSnapshot, expectedResultCount(benchmarkQuery),
-							expectedCountBindingValue(perQueryOptions, benchmarkQuery))
-					: verifyRepeatedExecution(connection, queryText,
-							perQueryOptions.queryTimeoutSeconds,
-							expectedResultCount(benchmarkQuery),
-							expectedCountBindingValue(perQueryOptions, benchmarkQuery));
+						? verifyFactorizedExecution(connection, currentSnapshot, expectedResultCount(benchmarkQuery),
+								expectedCountBindingValue(perQueryOptions, benchmarkQuery))
+						: verifyRepeatedExecution(connection, queryText,
+								perQueryOptions.queryTimeoutSeconds,
+								expectedResultCount(benchmarkQuery),
+								expectedCountBindingValue(perQueryOptions, benchmarkQuery));
 			}
 		}
 		applyExecutionVerificationMetadata(currentSnapshot, executionVerification);

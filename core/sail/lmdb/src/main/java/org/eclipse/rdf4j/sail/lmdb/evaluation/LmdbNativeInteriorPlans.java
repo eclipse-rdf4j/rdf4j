@@ -46,8 +46,8 @@ final class LmdbNativeInteriorPlans {
 	}
 
 	/**
-	 * The native grammar consists only of compiler-created reorderable cores and facts-qualified native boundaries.
-	 * It handles left-deep, right-deep, bushy and previously built alternatives without entering an opaque body.
+	 * The native grammar consists only of compiler-created reorderable cores and facts-qualified native boundaries. It
+	 * handles left-deep, right-deep, bushy and previously built alternatives without entering an opaque body.
 	 */
 	static SlotPlan nativeJoin(SlotPlan left, SlotPlan right, BiPredicate<SlotPlan, Long> independent) {
 		SlotPlan unchanged = SlotPlan.join(left, right);
@@ -292,7 +292,8 @@ final class LmdbNativeInteriorPlans {
 		// retaining their existing source/frame/order semantics and exposing their old graph to recognizers.
 		if (plan instanceof FilterPlan filter) {
 			SlotPlan arg = resolve(filter.arg, false, resolution);
-			return arg == filter.arg ? plan : new FilterPlan(arg, filter.filter, filter.filterMask, filter.termKindFilter);
+			return arg == filter.arg ? plan
+					: new FilterPlan(arg, filter.filter, filter.filterMask, filter.termKindFilter);
 		}
 		if (plan instanceof ExtensionPlan extension) {
 			SlotPlan arg = resolve(extension.arg, false, resolution);
@@ -315,7 +316,8 @@ final class LmdbNativeInteriorPlans {
 		if (plan instanceof OrderedUnionPlan union) {
 			SlotPlan left = resolve(union.left, false, resolution);
 			SlotPlan right = resolve(union.right, false, resolution);
-			return left == union.left && right == union.right ? plan : new OrderedUnionPlan(left, right, union.orderSlots);
+			return left == union.left && right == union.right ? plan
+					: new OrderedUnionPlan(left, right, union.orderSlots);
 		}
 		if (plan instanceof LeftJoinPlan optional) {
 			SlotPlan left = resolve(optional.left, false, resolution);
@@ -338,14 +340,16 @@ final class LmdbNativeInteriorPlans {
 		if (plan instanceof LateralPlan lateral) {
 			SlotPlan left = resolve(lateral.left, false, resolution);
 			SlotPlan right = resolve(lateral.right, false, resolution);
-			return left == lateral.left && right == lateral.right ? plan : new LateralPlan(left, right, lateral.rightInputMask);
+			return left == lateral.left && right == lateral.right ? plan
+					: new LateralPlan(left, right, lateral.rightInputMask);
 		}
 		return plan;
 	}
 
 	static long frameInputMask(SlotPlan plan) {
 		return plan instanceof Carrier carrier
-				? LmdbNativeAggregatePlanner.subqueryFrameInputMask(carrier.lexical) : 0L;
+				? LmdbNativeAggregatePlanner.subqueryFrameInputMask(carrier.lexical)
+				: 0L;
 	}
 
 	static String describe(SlotPlan plan, String[] slotNames, long boundMask) {
@@ -374,7 +378,8 @@ final class LmdbNativeInteriorPlans {
 			NativeTupleFacts inputFacts) {
 		return hasAlternatives(plan) && inputFacts != null && inputFacts.repeatable()
 				&& !inputFacts.mappingParameterized() && inputFacts.discardable()
-				? new Request(plan, source, layout) : null;
+						? new Request(plan, source, layout)
+						: null;
 	}
 
 	static Selection select(SlotPlan plan, RowState row, Request request) {
@@ -490,7 +495,8 @@ final class LmdbNativeInteriorPlans {
 			if (!matches(row) || graph != plan && !boundaries.containsKey(graph)) {
 				throw new IllegalStateException("interior input outlived its owned evaluation frame");
 			}
-			if (row.encounterOrderRequired && (graph == plan ? optimized : Boolean.TRUE.equals(boundaries.get(graph)))) {
+			if (row.encounterOrderRequired
+					&& (graph == plan ? optimized : Boolean.TRUE.equals(boundaries.get(graph)))) {
 				throw new IllegalStateException("ordered consumer must select the lexical input before recognition");
 			}
 		}
@@ -525,7 +531,8 @@ final class LmdbNativeInteriorPlans {
 		private final boolean nativePrefix;
 		private final int nativeOperandCount;
 
-		private Carrier(SlotPlan lexical, SlotPlan core, Spine boundaries, boolean nativePrefix, int nativeOperandCount) {
+		private Carrier(SlotPlan lexical, SlotPlan core, Spine boundaries, boolean nativePrefix,
+				int nativeOperandCount) {
 			this.lexical = lexical;
 			this.core = core;
 			this.boundaries = boundaries;

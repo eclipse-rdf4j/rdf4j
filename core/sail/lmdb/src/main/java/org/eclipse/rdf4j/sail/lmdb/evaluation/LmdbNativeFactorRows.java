@@ -605,7 +605,9 @@ final class LmdbNativeFactorRows {
 					if (filter.accept(row))
 						return true;
 				}
-				if (!row.cancellation.isCancellationRequested()) { filter.inputExhausted(); }
+				if (!row.cancellation.isCancellationRequested()) {
+					filter.inputExhausted();
+				}
 				close();
 				return false;
 			} catch (IOException | RuntimeException | Error failure) {
@@ -635,17 +637,24 @@ final class LmdbNativeFactorRows {
 				return;
 			closed = true;
 			Throwable failure = null;
-			try { input.close(); }
-			catch (RuntimeException | Error problem) {
+			try {
+				input.close();
+			} catch (RuntimeException | Error problem) {
 				failure = problem;
 				filter.incompleteInput();
 			}
-			try { filter.close(); }
-			catch (RuntimeException | Error problem) {
-				if (failure == null) { failure = problem; }
-				else if (failure != problem) { failure.addSuppressed(problem); }
+			try {
+				filter.close();
+			} catch (RuntimeException | Error problem) {
+				if (failure == null) {
+					failure = problem;
+				} else if (failure != problem) {
+					failure.addSuppressed(problem);
+				}
 			}
-			if (failure != null) { NativeContextClosingIteration.throwFailure(failure); }
+			if (failure != null) {
+				NativeContextClosingIteration.throwFailure(failure);
+			}
 		}
 	}
 

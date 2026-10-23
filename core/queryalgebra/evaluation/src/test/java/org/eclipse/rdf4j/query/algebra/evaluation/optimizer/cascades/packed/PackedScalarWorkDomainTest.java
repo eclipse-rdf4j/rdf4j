@@ -262,7 +262,9 @@ class PackedScalarWorkDomainTest {
 				double leafWork = switch (price) {
 				case ISOLATED_SCALAR -> 1.0d + rows * 9.0d;
 				case ISOLATED_EXPLICIT, ISOLATED_INCLUSIVE -> rows * 10.0d;
-				case CONTEXTUAL_SCALAR, CONTEXTUAL_EXPLICIT, CONTEXTUAL_INCLUSIVE, COMPONENT_SCALAR, COMPONENT_EXPLICIT -> rows;
+				case CONTEXTUAL_SCALAR, CONTEXTUAL_EXPLICIT, CONTEXTUAL_INCLUSIVE, COMPONENT_SCALAR,
+						COMPONENT_EXPLICIT ->
+					rows;
 				};
 				// This entry also prices the first factor JOIN with the inherited prefix.
 				assertEquals(factorCount * leafWork + factorCount * rows,
@@ -309,7 +311,9 @@ class PackedScalarWorkDomainTest {
 				double childWork = switch (price) {
 				case ISOLATED_SCALAR -> 1.0d + rows * 9.0d;
 				case ISOLATED_EXPLICIT, ISOLATED_INCLUSIVE -> rows * 10.0d;
-				case CONTEXTUAL_SCALAR, CONTEXTUAL_EXPLICIT, CONTEXTUAL_INCLUSIVE, COMPONENT_SCALAR, COMPONENT_EXPLICIT -> rows;
+				case CONTEXTUAL_SCALAR, CONTEXTUAL_EXPLICIT, CONTEXTUAL_INCLUSIVE, COMPONENT_SCALAR,
+						COMPONENT_EXPLICIT ->
+					rows;
 				};
 				int children = operator.equals("union") || operator.equals("optional") ? 2 : 1;
 				double outputRows = operator.equals("union") ? rows * 2.0d : rows;

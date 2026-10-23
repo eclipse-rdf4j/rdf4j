@@ -518,7 +518,7 @@ class LmdbMappedWholeOperatorSurfaceTest {
 						|| invocation.getMethod().getName().equals("estimateSubgraph")
 						|| invocation.getMethod().getName().equals("estimateConditionalJoin"))
 				.map(invocation -> invocation.getMethod().getName()
-						+ (invocation.getArgument(0)instanceof FrontierJoinProgram program
+						+ (invocation.getArgument(0) instanceof FrontierJoinProgram program
 								? ":" + program.patternCount()
 								: ":2"))
 				.toList()

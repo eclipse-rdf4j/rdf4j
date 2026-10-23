@@ -443,7 +443,7 @@ final class LmdbFrontierProbeFactory {
 				} else {
 					List<StatementLineage> child = results.peek();
 					for (ExtensionElem element : extension.getElements()) {
-						if (!(element.getExpr()instanceof Var source) || source.hasValue() || source.getName() == null
+						if (!(element.getExpr() instanceof Var source) || source.hasValue() || source.getName() == null
 								|| element.getName() == null || element.getName().isBlank()) {
 							return null;
 						}

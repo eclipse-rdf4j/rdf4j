@@ -891,7 +891,7 @@ public final class PackedQueryView {
 		int child = query.relChild(relationId, 0);
 		Set<String> assigned = new HashSet<>();
 		for (ExtensionElem element : extension.getElements()) {
-			if (!(element.getExpr()instanceof Var source) || source.hasValue() || source.getName() == null
+			if (!(element.getExpr() instanceof Var source) || source.hasValue() || source.getName() == null
 					|| element.getName() == null || element.getName().isBlank()) {
 				return false;
 			}
@@ -1030,9 +1030,9 @@ public final class PackedQueryView {
 				continue;
 			}
 			int count = query.relChildCount(origin.relation());
-			if (origin.expression()instanceof UnaryTupleOperator unary && count == 1) {
+			if (origin.expression() instanceof UnaryTupleOperator unary && count == 1) {
 				pending.push(new MaterializedOrigin(query.relChild(origin.relation(), 0), unary.getArg()));
-			} else if (origin.expression()instanceof BinaryTupleOperator binary && count == 2) {
+			} else if (origin.expression() instanceof BinaryTupleOperator binary && count == 2) {
 				pending.push(new MaterializedOrigin(query.relChild(origin.relation(), 0), binary.getLeftArg()));
 				pending.push(new MaterializedOrigin(query.relChild(origin.relation(), 1), binary.getRightArg()));
 			}

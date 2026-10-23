@@ -354,7 +354,7 @@ record LmdbFilterOutcomeFeedbackDescriptor(Object ownerToken, long epoch, ReadId
 		while (!output.isEmpty()) {
 			ValueOutput next = output.pop();
 			result.append(next.prefix());
-			if (next.value()instanceof TripleTerm triple) {
+			if (next.value() instanceof TripleTerm triple) {
 				result.append('T');
 				output.push(new ValueOutput(triple.getObject(), lengths.get(triple.getObject()) + ":"));
 				output.push(new ValueOutput(triple.getPredicate(), lengths.get(triple.getPredicate()) + ":"));

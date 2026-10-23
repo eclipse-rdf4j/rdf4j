@@ -327,7 +327,9 @@ final class FilterCursor implements FactorizedRowCursor {
 				return true;
 			}
 		}
-		if (!row.cancellation.isCancellationRequested()) { filter.inputExhausted(); }
+		if (!row.cancellation.isCancellationRequested()) {
+			filter.inputExhausted();
+		}
 		return false;
 	}
 

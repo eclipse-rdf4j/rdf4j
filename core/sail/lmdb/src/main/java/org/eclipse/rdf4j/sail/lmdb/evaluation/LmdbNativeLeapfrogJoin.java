@@ -1883,7 +1883,9 @@ final class LmdbNativeLeapfrogJoin {
 			}
 			if (forkDeclined) {
 				Throwable cleanup = closeParallelSetup(workerFilters, null, reservation, null);
-				if (cleanup != null) { NativeContextClosingIteration.throwFailure(cleanup); }
+				if (cleanup != null) {
+					NativeContextClosingIteration.throwFailure(cleanup);
+				}
 				return null;
 			}
 			NativeLmdbQuerySource.ParallelSource[] sources;
@@ -1899,7 +1901,9 @@ final class LmdbNativeLeapfrogJoin {
 							+ (sources == null ? "null" : sources.length) + " workers=" + workers);
 				}
 				Throwable cleanup = closeParallelSetup(workerFilters, sources, reservation, null);
-				if (cleanup != null) { NativeContextClosingIteration.throwFailure(cleanup); }
+				if (cleanup != null) {
+					NativeContextClosingIteration.throwFailure(cleanup);
+				}
 				return null;
 			}
 			PARALLEL_RUNS.incrementAndGet();
@@ -1922,8 +1926,11 @@ final class LmdbNativeLeapfrogJoin {
 						try {
 							filter.filter.close();
 						} catch (RuntimeException | Error problem) {
-							if (primary == null) { primary = problem; }
-							else if (primary != problem) { primary.addSuppressed(problem); }
+							if (primary == null) {
+								primary = problem;
+							} else if (primary != problem) {
+								primary.addSuppressed(problem);
+							}
 						}
 					}
 				}
@@ -1937,18 +1944,28 @@ final class LmdbNativeLeapfrogJoin {
 			primary = closeWorkerFilters(filters, primary);
 			if (sources != null) {
 				for (NativeLmdbQuerySource.ParallelSource source : sources) {
-					if (source == null) { continue; }
-					try { source.close(); }
-					catch (RuntimeException | Error cleanup) {
-						if (primary == null) { primary = cleanup; }
-						else if (primary != cleanup) { primary.addSuppressed(cleanup); }
+					if (source == null) {
+						continue;
+					}
+					try {
+						source.close();
+					} catch (RuntimeException | Error cleanup) {
+						if (primary == null) {
+							primary = cleanup;
+						} else if (primary != cleanup) {
+							primary.addSuppressed(cleanup);
+						}
 					}
 				}
 			}
-			try { reservation.close(); }
-			catch (RuntimeException | Error cleanup) {
-				if (primary == null) { primary = cleanup; }
-				else if (primary != cleanup) { primary.addSuppressed(cleanup); }
+			try {
+				reservation.close();
+			} catch (RuntimeException | Error cleanup) {
+				if (primary == null) {
+					primary = cleanup;
+				} else if (primary != cleanup) {
+					primary.addSuppressed(cleanup);
+				}
 			}
 			return primary;
 		}
@@ -1967,7 +1984,9 @@ final class LmdbNativeLeapfrogJoin {
 			this.output = new java.util.concurrent.ArrayBlockingQueue<>(workers * 2);
 			this.tasks = new NativeExecutionContext.WorkerTasks(workers, reservation::close);
 			SyntheticValueSource filterScope = row.evaluationScope();
-			if (filterScope != null) { filterScope.executionContext().registerFilterWorkers(tasks); }
+			if (filterScope != null) {
+				filterScope.executionContext().registerFilterWorkers(tasks);
+			}
 
 			long[] candidates = levels[0].values;
 			long[] candidateMults = levels[0].multiplicities;
@@ -2001,12 +2020,18 @@ final class LmdbNativeLeapfrogJoin {
 			} finally {
 				for (int w = submitted; w < workers; w++) {
 					Throwable cleanup = closeWorkerFilters(new MaskedFilter[][] { workerFilters[w] }, startupFailure);
-					try { sources[w].close(); }
-					catch (RuntimeException | Error problem) {
-						if (cleanup == null) { cleanup = problem; }
-						else if (cleanup != problem) { cleanup.addSuppressed(problem); }
+					try {
+						sources[w].close();
+					} catch (RuntimeException | Error problem) {
+						if (cleanup == null) {
+							cleanup = problem;
+						} else if (cleanup != problem) {
+							cleanup.addSuppressed(problem);
+						}
 					}
-					if (cleanup != null) { tasks.recordOwnedCleanupFailure(cleanup); }
+					if (cleanup != null) {
+						tasks.recordOwnedCleanupFailure(cleanup);
+					}
 					tasks.countDown(cleanup);
 				}
 				if (submitted < workers) {
@@ -2021,12 +2046,18 @@ final class LmdbNativeLeapfrogJoin {
 				NativeExecutionContext.WorkerContext replayContext) {
 			try (var worker = tasks.enter(() -> {
 				Throwable cleanup = closeWorkerFilters(new MaskedFilter[][] { ownFilters }, null);
-				try { workerSource.close(); }
-				catch (RuntimeException | Error problem) {
-					if (cleanup == null) { cleanup = problem; }
-					else if (cleanup != problem) { cleanup.addSuppressed(problem); }
+				try {
+					workerSource.close();
+				} catch (RuntimeException | Error problem) {
+					if (cleanup == null) {
+						cleanup = problem;
+					} else if (cleanup != problem) {
+						cleanup.addSuppressed(problem);
+					}
 				}
-				if (cleanup != null) { NativeContextClosingIteration.throwFailure(cleanup); }
+				if (cleanup != null) {
+					NativeContextClosingIteration.throwFailure(cleanup);
+				}
 			}, problem -> {
 				Throwable primary = failure.get();
 				if (primary == null && failure.compareAndSet(null, problem)) {
@@ -2180,7 +2211,9 @@ final class LmdbNativeLeapfrogJoin {
 				return;
 			}
 			cancelled.set(true);
-			if (!tasks.isCleanupOwnerThread()) { failureReported = true; }
+			if (!tasks.isCleanupOwnerThread()) {
+				failureReported = true;
+			}
 			if (problem instanceof IOException io) {
 				throw io;
 			}
@@ -2211,7 +2244,9 @@ final class LmdbNativeLeapfrogJoin {
 				Thread.currentThread().interrupt();
 			}
 			if (!failureReported && tasks.cleanupFailure() != null) {
-				if (!tasks.isCleanupOwnerThread()) { failureReported = true; }
+				if (!tasks.isCleanupOwnerThread()) {
+					failureReported = true;
+				}
 				Throwable problem = failure.get();
 				NativeContextClosingIteration.throwFailure(problem == null ? tasks.cleanupFailure() : problem);
 			}

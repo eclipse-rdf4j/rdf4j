@@ -20,8 +20,8 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics.FilterPassEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics.FilterPassEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKeys;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
 
@@ -78,9 +78,12 @@ final class LmdbLearnedFilterSelectivity {
 	private TripleStore outcomeTripleOwner;
 
 	private record ReadFilterKey(LmdbFilterOutcomeFeedbackDescriptor.ReadIdentity read, FilterSurfaceKey filter,
-			Map<String, LmdbFilterOutcomeFeedbackDescriptor.PreparedBinding> preparedBindings) { }
+			Map<String, LmdbFilterOutcomeFeedbackDescriptor.PreparedBinding> preparedBindings) {
+	}
+
 	private record ReadPatternKey(LmdbFilterOutcomeFeedbackDescriptor.ReadIdentity read,
-			Object pattern, Map<String, LmdbFilterOutcomeFeedbackDescriptor.PreparedBinding> preparedBindings) { }
+			Object pattern, Map<String, LmdbFilterOutcomeFeedbackDescriptor.PreparedBinding> preparedBindings) {
+	}
 
 	Object outcomeOwnerToken() {
 		return outcomeOwnerToken;
@@ -116,7 +119,8 @@ final class LmdbLearnedFilterSelectivity {
 			LmdbFilterOutcomeFeedbackDescriptor descriptor, BooleanSupplier adaptiveAllowed) {
 		return enabled() && candidate == owner && triples != null && triples == outcomeTripleOwner && descriptor != null
 				&& descriptor.ownerToken() == outcomeOwnerToken && descriptor.epoch() == triples.getDataRevision()
-				? new BoundOutcome(this, descriptor, triples, adaptiveAllowed) : null;
+						? new BoundOutcome(this, descriptor, triples, adaptiveAllowed)
+						: null;
 	}
 
 	private synchronized void recordBound(BoundOutcome handle, long passed, long rejected) {
@@ -135,15 +139,16 @@ final class LmdbLearnedFilterSelectivity {
 				passed, rejected);
 		if (descriptor.pattern() != null) {
 			accumulate(qualifiedPatterns,
-				new ReadPatternKey(descriptor.read(), descriptor.pattern(), descriptor.preparedBindings()),
-				passed, rejected);
+					new ReadPatternKey(descriptor.read(), descriptor.pattern(), descriptor.preparedBindings()),
+					passed, rejected);
 		}
 		planningRevision++;
 	}
 
 	synchronized FilterPassEstimate estimateQualified(ValueStore candidate, long epoch, Filter filter,
 			LmdbFilterOutcomeFeedbackDescriptor.ReadIdentity read) {
-		if (!enabled() || candidate != owner || outcomeTripleOwner == null || epoch != outcomeTripleOwner.getDataRevision()
+		if (!enabled() || candidate != owner || outcomeTripleOwner == null
+				|| epoch != outcomeTripleOwner.getDataRevision()
 				|| read == null || read.dataEpoch() != epoch || epoch != qualifiedEpoch
 				|| !LmdbPlanningGraphEvidence.allows(filter)) {
 			return null;
@@ -154,19 +159,23 @@ final class LmdbLearnedFilterSelectivity {
 		if (surface == null) {
 			return null;
 		}
-		FilterPassEstimate exact = exactKey == null ? null : lookup(qualifiedExact,
-				new ReadFilterKey(read, exactKey, surface.preparedBindings()),
-				FilterPassEstimate.Source.LEARNED_FILTER);
+		FilterPassEstimate exact = exactKey == null ? null
+				: lookup(qualifiedExact,
+						new ReadFilterKey(read, exactKey, surface.preparedBindings()),
+						FilterPassEstimate.Source.LEARNED_FILTER);
 		if (exact != null) {
 			return exact;
 		}
-		FilterPassEstimate generalized = generalizedKey == null ? null : lookup(qualifiedGeneralized,
-				new ReadFilterKey(read, generalizedKey, surface.preparedBindings()),
-				FilterPassEstimate.Source.LEARNED_TEMPLATE);
+		FilterPassEstimate generalized = generalizedKey == null ? null
+				: lookup(qualifiedGeneralized,
+						new ReadFilterKey(read, generalizedKey, surface.preparedBindings()),
+						FilterPassEstimate.Source.LEARNED_TEMPLATE);
 		var pattern = LmdbFilterOutcomeFeedbackDescriptor.patternSurface(filter, exactKey);
-		return generalized != null ? generalized : pattern == null ? null : lookup(qualifiedPatterns,
-				new ReadPatternKey(read, pattern, surface.preparedBindings()),
-				FilterPassEstimate.Source.LEARNED_PATTERN);
+		return generalized != null ? generalized
+				: pattern == null ? null
+						: lookup(qualifiedPatterns,
+								new ReadPatternKey(read, pattern, surface.preparedBindings()),
+								FilterPassEstimate.Source.LEARNED_PATTERN);
 	}
 
 	private void advanceQualifiedEpoch(long epoch) {
@@ -177,6 +186,7 @@ final class LmdbLearnedFilterSelectivity {
 			qualifiedEpoch = epoch;
 		}
 	}
+
 	private long qualifiedEpoch = -1L;
 	private long planningRevision;
 	private final Map<ReadFilterKey, Outcome> qualifiedExact = new ConcurrentHashMap<>();
@@ -238,14 +248,18 @@ final class LmdbLearnedFilterSelectivity {
 	}
 
 	private record QualifiedPattern(PatternKey pattern, String topology, String bindingShape, String nullableMask,
-			String predicateContextIdentity, String effects) { }
+			String predicateContextIdentity, String effects) {
+	}
 
 	private static QualifiedPattern qualifiedPattern(Filter filter, FilterSurfaceKey exact) {
-		if (filter == null || exact == null) { return null; }
+		if (filter == null || exact == null) {
+			return null;
+		}
 		StatementPattern pattern = FilterSelectivityKeys.patternLocalBaseForFilter(filter);
 		PatternKey key = FilterSelectivityKeys.patternKeyFor(pattern);
-		return key == null ? null : new QualifiedPattern(key, exact.inputTopology(), exact.bindingShape(),
-				exact.nullableMask(), exact.predicateContextIdentity(), exact.deterministicExpressionClass());
+		return key == null ? null
+				: new QualifiedPattern(key, exact.inputTopology(), exact.bindingShape(),
+						exact.nullableMask(), exact.predicateContextIdentity(), exact.deterministicExpressionClass());
 	}
 
 	synchronized FilterPassEstimate estimateQualified(ValueStore candidate, long epoch, Filter filter) {
@@ -254,13 +268,16 @@ final class LmdbLearnedFilterSelectivity {
 		}
 		FilterPassEstimate exact = lookup(qualifiedExact, legacyFilterKey(FilterSurfaceKey.exact(filter)),
 				FilterPassEstimate.Source.LEARNED_FILTER);
-		if (exact != null) { return exact; }
+		if (exact != null) {
+			return exact;
+		}
 		FilterPassEstimate template = lookup(qualifiedGeneralized,
 				legacyFilterKey(FilterSurfaceKey.generalized(filter)),
 				FilterPassEstimate.Source.LEARNED_TEMPLATE);
-		return template != null ? template : lookup(qualifiedPatterns,
-				legacyPatternKey(qualifiedPattern(filter, FilterSurfaceKey.exact(filter))),
-				FilterPassEstimate.Source.LEARNED_PATTERN);
+		return template != null ? template
+				: lookup(qualifiedPatterns,
+						legacyPatternKey(qualifiedPattern(filter, FilterSurfaceKey.exact(filter))),
+						FilterPassEstimate.Source.LEARNED_PATTERN);
 	}
 
 	static boolean enabled() {
@@ -354,7 +371,8 @@ final class LmdbLearnedFilterSelectivity {
 
 	/** Observations retained, per tier. Test and telemetry hook. */
 	int size() {
-		return byFilter.size() + byTemplate.size() + byPattern.size() + qualifiedExact.size() + qualifiedGeneralized.size() + qualifiedPatterns.size();
+		return byFilter.size() + byTemplate.size() + byPattern.size() + qualifiedExact.size()
+				+ qualifiedGeneralized.size() + qualifiedPatterns.size();
 	}
 
 	synchronized void clear() {

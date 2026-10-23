@@ -120,7 +120,8 @@ class LmdbLegacyPredicateDomainFreshnessTest {
 			IRI subject = VF.createIRI("urn:compat:current-literal-subject:" + index);
 			Literal expected = VF.createLiteral(inline ? "2001-02-02-14:00" : "0002-01-01", XSD.DATE);
 			LmdbStoreConfig config = new LmdbStoreConfig().setTripleIndexes("spoc,posc")
-					.setTripleTermIndexes("spoc,cspo").setInlineLiterals(inline)
+					.setTripleTermIndexes("spoc,cspo")
+					.setInlineLiterals(inline)
 					.setPredicateGuaranteeIndexAutoRebuild(rebuild);
 			LmdbStore store = new LmdbStore(copy.toFile(), config);
 			SailRepository repository = new SailRepository(store);
@@ -305,7 +306,8 @@ class LmdbLegacyPredicateDomainFreshnessTest {
 				Files.createDirectories(destination.getParent());
 				long expectedSize = expectedSize(member);
 				assertEquals(expectedSize, entry.getSize(), "fixture member metadata size: " + member);
-				try (var output = Files.newOutputStream(destination, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
+				try (var output = Files.newOutputStream(destination, StandardOpenOption.CREATE_NEW,
+						StandardOpenOption.WRITE)) {
 					byte[] buffer = new byte[8192];
 					long copied = 0;
 					int read;
@@ -334,7 +336,10 @@ class LmdbLegacyPredicateDomainFreshnessTest {
 		List<String> hashes = inline ? INLINE_TRUE_HASHES : INLINE_FALSE_HASHES;
 		try (Stream<Path> entries = Files.walk(original)) {
 			Set<String> actual = entries.filter(path -> !Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS))
-					.map(original::relativize).map(Path::toString).map(path -> path.replace('\\', '/')).collect(Collectors.toSet());
+					.map(original::relativize)
+					.map(Path::toString)
+					.map(path -> path.replace('\\', '/'))
+					.collect(Collectors.toSet());
 			assertEquals(Set.copyOf(PROFILE_FILES), actual,
 					"the closed profile contains exactly four authenticated corpus files");
 		}
@@ -343,8 +348,9 @@ class LmdbLegacyPredicateDomainFreshnessTest {
 			assertTrue(Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS));
 			assertEquals(PROFILE_SIZES.get(index).longValue(), Files.size(file),
 					"closed evidence file size must remain unchanged: " + PROFILE_FILES.get(index));
-			String actual = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
-					.digest(Files.readAllBytes(file)));
+			String actual = HexFormat.of()
+					.formatHex(MessageDigest.getInstance("SHA-256")
+							.digest(Files.readAllBytes(file)));
 			assertEquals(hashes.get(index), actual,
 					"closed evidence file must remain unchanged: " + PROFILE_FILES.get(index));
 		}

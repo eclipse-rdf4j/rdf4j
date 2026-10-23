@@ -95,7 +95,8 @@ record LmdbFilterReadContext(LmdbFilterOutcomeFeedbackDescriptor.ReadIdentity re
 		List<String> operands = operandFrame(prepared);
 		if (actual == null || frame == null || operands == null) {
 			return required == null ? null
-					: new LmdbFilterReadContext(null, required, new CostIdentity(required, null, false, List.of()), List.of());
+					: new LmdbFilterReadContext(null, required, new CostIdentity(required, null, false, List.of()),
+							List.of());
 		}
 		FamilyIdentity observed = new FamilyIdentity(learned.outcomeOwnerToken(), sourceFrame(actual), frame, operands);
 		FamilyIdentity family = required == null ? observed : required;
@@ -115,7 +116,8 @@ record LmdbFilterReadContext(LmdbFilterOutcomeFeedbackDescriptor.ReadIdentity re
 				|| runtime.frontierSettings().mode() == FrontierEstimatorMode.AUTHORITATIVE) {
 			return null;
 		}
-		FamilyIdentity family = new FamilyIdentity(learned.outcomeOwnerToken(), sourceFrame(read), List.of(), List.of());
+		FamilyIdentity family = new FamilyIdentity(learned.outcomeOwnerToken(), sourceFrame(read), List.of(),
+				List.of());
 		return new LmdbFilterReadContext(read, family, new CostIdentity(family, family, true, List.of()), List.of());
 	}
 
@@ -124,7 +126,8 @@ record LmdbFilterReadContext(LmdbFilterOutcomeFeedbackDescriptor.ReadIdentity re
 		return operands == null ? new LmdbFilterReadContext(null, family,
 				new CostIdentity(family, costIdentity.actual(), false, List.of()), List.of())
 				: new LmdbFilterReadContext(read, family,
-						new CostIdentity(family, costIdentity.actual(), costIdentity.optionalLookup(), operands), operands);
+						new CostIdentity(family, costIdentity.actual(), costIdentity.optionalLookup(), operands),
+						operands);
 	}
 
 	LmdbFilterReadContext withoutOptionalLookup() {
@@ -136,7 +139,8 @@ record LmdbFilterReadContext(LmdbFilterOutcomeFeedbackDescriptor.ReadIdentity re
 		if (read == null || !costIdentity.optionalLookup() || context == null) {
 			return false;
 		}
-		var descriptor = LmdbFilterOutcomeFeedbackDescriptor.capture(family.ownerToken(), read.dataEpoch(), read, filter);
+		var descriptor = LmdbFilterOutcomeFeedbackDescriptor.capture(family.ownerToken(), read.dataEpoch(), read,
+				filter);
 		if (descriptor == null) {
 			return false;
 		}
@@ -178,7 +182,8 @@ record LmdbFilterReadContext(LmdbFilterOutcomeFeedbackDescriptor.ReadIdentity re
 			Value mapping = bindings.getValue(name);
 			Value parameter = origin.parameterValue(name);
 			String mapped = mapping == null ? "absent" : LmdbFilterOutcomeFeedbackDescriptor.valueIdentity(mapping);
-			String supplied = parameter == null ? "absent" : LmdbFilterOutcomeFeedbackDescriptor.valueIdentity(parameter);
+			String supplied = parameter == null ? "absent"
+					: LmdbFilterOutcomeFeedbackDescriptor.valueIdentity(parameter);
 			if (mapped == null || supplied == null) {
 				return null;
 			}
@@ -198,7 +203,8 @@ record LmdbFilterReadContext(LmdbFilterOutcomeFeedbackDescriptor.ReadIdentity re
 			@Override
 			public void meet(Var variable) {
 				String value = variable.hasValue()
-						? LmdbFilterOutcomeFeedbackDescriptor.valueIdentity(variable.getValue()) : "unbound";
+						? LmdbFilterOutcomeFeedbackDescriptor.valueIdentity(variable.getValue())
+						: "unbound";
 				if (value == null) {
 					refused[0] = true;
 					return;
@@ -218,10 +224,14 @@ record LmdbFilterReadContext(LmdbFilterOutcomeFeedbackDescriptor.ReadIdentity re
 				result.add("VALUES");
 				List<String> columns = assignment.getBindingNames().stream().sorted().toList();
 				result.add("columns:" + columns.size());
-				for (String column : columns) { result.add(field(column)); }
+				for (String column : columns) {
+					result.add(field(column));
+				}
 				List<String> assured = assignment.getAssuredBindingNames().stream().sorted().toList();
 				result.add("assured:" + assured.size());
-				for (String column : assured) { result.add(field(column)); }
+				for (String column : assured) {
+					result.add(field(column));
+				}
 				if (rows != null) {
 					for (BindingSet row : rows) {
 						List<String> frame = bindingFrame(row);

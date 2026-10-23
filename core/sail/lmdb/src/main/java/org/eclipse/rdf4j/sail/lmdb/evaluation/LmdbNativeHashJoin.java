@@ -232,7 +232,8 @@ final class LmdbNativeHashJoin {
 	static LmdbNativeStrategyProposal<BatchCursor> propose(MultiJoinPlan plan, RowState row, int capacity) {
 		Candidate candidate = tryPlan(plan, row);
 		return candidate == null ? null
-				: new LmdbNativeStrategyProposal<>(filters -> candidate.open(filters.borrow(plan), row, capacity), candidate.estCost,
+				: new LmdbNativeStrategyProposal<>(filters -> candidate.open(filters.borrow(plan), row, capacity),
+						candidate.estCost,
 						LmdbNativeAttemptMetrics.PATH_BATCH);
 	}
 

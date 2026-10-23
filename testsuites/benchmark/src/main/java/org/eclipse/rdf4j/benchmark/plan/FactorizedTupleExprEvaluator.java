@@ -486,7 +486,7 @@ final class FactorizedTupleExprEvaluator {
 		if (!ScalarEvaluationEffects.reorderingIsSafe(filter.getCondition())) {
 			throw unsupported(filter, "filter condition is not a stable scalar expression");
 		}
-		if (filter.getArg()instanceof LeftJoin leftJoin && leftJoin.getCondition() == null
+		if (filter.getArg() instanceof LeftJoin leftJoin && leftJoin.getCondition() == null
 				&& !containsSubquery(filter.getCondition())) {
 			return evaluateOuterFilteredLeftJoin(filter, leftJoin, inputBindings, parentGroupNames);
 		}
@@ -788,7 +788,7 @@ final class FactorizedTupleExprEvaluator {
 		if (condition instanceof Exists exists) {
 			return new ExistencePredicate(exists.getSubQuery(), false);
 		}
-		if (condition instanceof Not not && not.getArg()instanceof Exists exists) {
+		if (condition instanceof Not not && not.getArg() instanceof Exists exists) {
 			return new ExistencePredicate(exists.getSubQuery(), true);
 		}
 		return null;
@@ -1648,7 +1648,7 @@ final class FactorizedTupleExprEvaluator {
 		if (expression instanceof Extension extension) {
 			Set<String> fixed = new LinkedHashSet<>(fixedBindingNames(extension.getArg()));
 			for (ExtensionElem element : extension.getElements()) {
-				if (element.getExpr()instanceof Var source
+				if (element.getExpr() instanceof Var source
 						&& (source.hasValue() || fixed.contains(source.getName()))) {
 					fixed.add(element.getName());
 				}

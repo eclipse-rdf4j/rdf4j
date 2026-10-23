@@ -1471,7 +1471,8 @@ final class LmdbWildcardPredicateBatch {
 			MaskedFilter[] owned = new MaskedFilter[filters.length];
 			for (int i = 0; i < owned.length; i++) {
 				MaskedFilter filter = filters[i];
-				owned[i] = new MaskedFilter(lease.borrow(filter.filter), filter.mask, filter.adaptive, filter.plannedDepth);
+				owned[i] = new MaskedFilter(lease.borrow(filter.filter), filter.mask, filter.adaptive,
+						filter.plannedDepth);
 			}
 			return new Shape(lease.borrow(prefix), wildcard, nodeSlot, predicateSlot, bySubject, adaptiveDirection,
 					scanAll, owned, demand);

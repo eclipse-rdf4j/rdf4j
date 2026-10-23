@@ -1075,7 +1075,7 @@ final class PackedPlanRecipe {
 			retainedProviderObjects = providerObjects.clone();
 			retainedContractIds = runtimeFeedbackContractIds.clone();
 			for (int objectId = 1; objectId < retainedProviderObjects.length; objectId++) {
-				if (retainedProviderObjects[objectId]instanceof RuntimeFeedbackContract contract
+				if (retainedProviderObjects[objectId] instanceof RuntimeFeedbackContract contract
 						&& retainsProviderPayload(contract)) {
 					retainedProviderObjects[objectId] = null;
 				}

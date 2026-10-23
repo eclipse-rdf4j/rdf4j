@@ -377,7 +377,9 @@ final class LmdbNativeKernelIr {
 	 * factor, hash, path and nested branch kernels retain execution but require their own per-input proof.
 	 */
 	static boolean filterInputCompletionSupported(Kernel kernel) {
-		if (!(kernel.terminal instanceof Emit || kernel.terminal instanceof Aggregate)) { return false; }
+		if (!(kernel.terminal instanceof Emit || kernel.terminal instanceof Aggregate)) {
+			return false;
+		}
 		for (Node node : kernel.pipeline) {
 			if (node instanceof EnumeratePredicates predicates
 					&& predicates.demand != LmdbWildcardPhysicalDemand.Demand.PAYLOAD

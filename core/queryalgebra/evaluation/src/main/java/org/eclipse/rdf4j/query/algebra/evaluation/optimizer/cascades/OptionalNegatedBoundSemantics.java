@@ -52,7 +52,7 @@ public final class OptionalNegatedBoundSemantics {
 	}
 
 	private static String negatedBoundName(ValueExpr expression) {
-		if (expression instanceof Not not && not.getArg()instanceof Bound bound) {
+		if (expression instanceof Not not && not.getArg() instanceof Bound bound) {
 			Var var = bound.getArg();
 			return var == null || var.hasValue() ? null : var.getName();
 		}

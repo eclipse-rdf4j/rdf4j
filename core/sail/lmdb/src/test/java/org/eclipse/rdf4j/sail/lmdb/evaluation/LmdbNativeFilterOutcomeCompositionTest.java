@@ -44,9 +44,17 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
 class LmdbNativeFilterOutcomeCompositionTest {
-	@TempDir File directory;
+	@TempDir
+	File directory;
 
-	enum Termination { EXHAUSTED, EARLY_CLOSE, CANCELLED, FAILED, POISONED, EMPTY }
+	enum Termination {
+		EXHAUSTED,
+		EARLY_CLOSE,
+		CANCELLED,
+		FAILED,
+		POISONED,
+		EMPTY
+	}
 
 	@ParameterizedTest
 	@EnumSource(Termination.class)
@@ -68,7 +76,9 @@ class LmdbNativeFilterOutcomeCompositionTest {
 				for (int i = 0; i < 128; i++) {
 					connection.add(vf.createIRI("urn:outcome:s" + i), predicate, vf.createLiteral(i));
 				}
-				if (termination == Termination.EMPTY) { connection.clear(); }
+				if (termination == Termination.EMPTY) {
+					connection.clear();
+				}
 				connection.commit();
 			}
 			try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
@@ -87,13 +97,20 @@ class LmdbNativeFilterOutcomeCompositionTest {
 				Throwable surfaced = null;
 				try (var rows = outcome.step().evaluate(EmptyBindingSet.getInstance())) {
 					while (rows.hasNext()) {
-						rows.next(); consumed++;
-						if (termination == Termination.EARLY_CLOSE) { break; }
+						rows.next();
+						consumed++;
+						if (termination == Termination.EARLY_CLOSE) {
+							break;
+						}
 					}
-				} catch (RuntimeException | Error failure) { surfaced = failure; }
+				} catch (RuntimeException | Error failure) {
+					surfaced = failure;
+				}
 				if (aborting) {
-					assertThat(abort.calls.get()).as("actual generic predicate bridge reached the termination").isGreaterThan(16);
-					assertThat(surfaced).as("native execution must surface the initiating termination").isSameAs(abort.failure);
+					assertThat(abort.calls.get()).as("actual generic predicate bridge reached the termination")
+							.isGreaterThan(16);
+					assertThat(surfaced).as("native execution must surface the initiating termination")
+							.isSameAs(abort.failure);
 				} else {
 					assertThat(surfaced).isNull();
 					assertThat(consumed).isEqualTo(termination == Termination.EMPTY ? 0
@@ -105,10 +122,12 @@ class LmdbNativeFilterOutcomeCompositionTest {
 							&& observation.poisonReason().isEmpty() && observation.passedCount() == 0L
 							&& observation.filteredCount() == 0L);
 				} else {
-					assertThat(statistics.typed).as("actual termination must accompany native filter counts").isNotEmpty();
+					assertThat(statistics.typed).as("actual termination must accompany native filter counts")
+							.isNotEmpty();
 					boolean complete = termination == Termination.EXHAUSTED;
 					assertThat(statistics.typed).allMatch(observation -> observation.completed() == complete);
-					assertThat(statistics.typed).allMatch(observation -> complete == observation.poisonReason().isEmpty());
+					assertThat(statistics.typed)
+							.allMatch(observation -> complete == observation.poisonReason().isEmpty());
 				}
 				if (termination == Termination.EXHAUSTED) {
 					// A complete zero placeholder cannot substitute for the real nonempty residual input.
@@ -117,14 +136,19 @@ class LmdbNativeFilterOutcomeCompositionTest {
 					assertThat(observation.passedCount()).as("all real residual-filter inputs passed").isEqualTo(128L);
 					assertThat(observation.filteredCount()).isZero();
 				}
-				assertThat(statistics.rawCalls).as("legacy raw counts do not certify a native execution's completion").isZero();
+				assertThat(statistics.rawCalls).as("legacy raw counts do not certify a native execution's completion")
+						.isZero();
 			}
 		} finally {
-			try { repository.shutDown(); }
-			finally {
+			try {
+				repository.shutDown();
+			} finally {
 				FunctionRegistry.getInstance().remove(abort);
-				if (previous == null) { System.clearProperty("rdf4j.lmdb.native.rangePushdown"); }
-				else { System.setProperty("rdf4j.lmdb.native.rangePushdown", previous); }
+				if (previous == null) {
+					System.clearProperty("rdf4j.lmdb.native.rangePushdown");
+				} else {
+					System.setProperty("rdf4j.lmdb.native.rangePushdown", previous);
+				}
 			}
 		}
 	}
@@ -133,18 +157,32 @@ class LmdbNativeFilterOutcomeCompositionTest {
 		private final Termination termination;
 		private final AtomicInteger calls = new AtomicInteger();
 		private final Throwable failure;
+
 		AbortFunction(Termination termination) {
 			this.termination = termination;
-			failure = termination == Termination.CANCELLED ? new QueryInterruptedException("native outcome cancellation")
+			failure = termination == Termination.CANCELLED
+					? new QueryInterruptedException("native outcome cancellation")
 					: termination == Termination.POISONED ? new AssertionError("native outcome poisoned")
-					: new IllegalStateException("native outcome failed");
+							: new IllegalStateException("native outcome failed");
 		}
-		@Override public String getURI() { return "urn:outcome:abort:" + termination; }
-		@Override public Determinism getDeterminism() { return Determinism.VOLATILE; }
-		@Override @SuppressWarnings("deprecation")
+
+		@Override
+		public String getURI() {
+			return "urn:outcome:abort:" + termination;
+		}
+
+		@Override
+		public Determinism getDeterminism() {
+			return Determinism.VOLATILE;
+		}
+
+		@Override
+		@SuppressWarnings("deprecation")
 		public Value evaluate(ValueFactory factory, Value... values) {
 			if (calls.incrementAndGet() == 17) {
-				if (failure instanceof Error error) { throw error; }
+				if (failure instanceof Error error) {
+					throw error;
+				}
 				throw (RuntimeException) failure;
 			}
 			return factory.createLiteral(true);
@@ -154,7 +192,15 @@ class LmdbNativeFilterOutcomeCompositionTest {
 	private static final class RecordingStatistics extends EvaluationStatistics {
 		final List<FilterOutcomeObservation> typed = new ArrayList<>();
 		int rawCalls;
-		@Override public void recordFilterOutcome(Filter filter, long passed, long rejected) { rawCalls++; }
-		@Override public void recordFilterOutcome(Filter filter, FilterOutcomeObservation observation) { typed.add(observation); }
+
+		@Override
+		public void recordFilterOutcome(Filter filter, long passed, long rejected) {
+			rawCalls++;
+		}
+
+		@Override
+		public void recordFilterOutcome(Filter filter, FilterOutcomeObservation observation) {
+			typed.add(observation);
+		}
 	}
 }

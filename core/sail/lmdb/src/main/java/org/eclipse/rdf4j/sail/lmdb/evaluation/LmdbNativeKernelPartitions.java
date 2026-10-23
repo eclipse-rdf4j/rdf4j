@@ -476,7 +476,9 @@ final class LmdbNativeKernelPartitions {
 			if (fork == null) {
 				closeForkedHooks(forked, new ParallelKernelDecline("filter-fork-unavailable"));
 			}
-			forked[i] = new FilterHook(new MaskedFilter(new CloseOnceNativeBooleanFilter(fork), source.mask, source.adaptive, source.plannedDepth),
+			forked[i] = new FilterHook(
+					new MaskedFilter(new CloseOnceNativeBooleanFilter(fork), source.mask, source.adaptive,
+							source.plannedDepth),
 					hooks[i].argSlots);
 		}
 		return forked;
@@ -561,8 +563,11 @@ final class LmdbNativeKernelPartitions {
 			try {
 				hook.source.filter.close();
 			} catch (RuntimeException | Error problem) {
-				if (failure == null) { failure = problem; }
-				else if (failure != problem) { failure.addSuppressed(problem); }
+				if (failure == null) {
+					failure = problem;
+				} else if (failure != problem) {
+					failure.addSuppressed(problem);
+				}
 			}
 		}
 		if (failure != null) {
@@ -580,8 +585,11 @@ final class LmdbNativeKernelPartitions {
 			try {
 				filter.close();
 			} catch (RuntimeException | Error problem) {
-				if (failure == null) { failure = problem; }
-				else if (failure != problem) { failure.addSuppressed(problem); }
+				if (failure == null) {
+					failure = problem;
+				} else if (failure != problem) {
+					failure.addSuppressed(problem);
+				}
 			}
 		}
 		if (failure != null) {

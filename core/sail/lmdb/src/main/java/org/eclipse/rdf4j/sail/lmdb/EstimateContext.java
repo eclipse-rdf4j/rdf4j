@@ -43,7 +43,8 @@ record EstimateContext(BindingUniverse universe, BindingMask boundMask,
 			QuadSnapshotIdentity snapshotIdentity, long snapshotVersion, long learnedRevision,
 			MetricsPreference metricsPreference, boolean exactProbePermitted, PlanningGraphDomain graphDomain) {
 		this(universe, boundMask, finiteBindings, prefixEstimate, invocationCount, evidencePolicy, estimationTier,
-				snapshotIdentity, snapshotVersion, learnedRevision, metricsPreference, exactProbePermitted, graphDomain, null);
+				snapshotIdentity, snapshotVersion, learnedRevision, metricsPreference, exactProbePermitted, graphDomain,
+				null);
 	}
 
 	EstimateContext withFilterReadContext(LmdbFilterReadContext readContext) {

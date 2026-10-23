@@ -148,7 +148,7 @@ final class PackedPlanDifferentialSupport {
 		plan.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			public void meet(Filter filter) {
-				if (filter.getCondition()instanceof Not not && not.getArg() instanceof Exists
+				if (filter.getCondition() instanceof Not not && not.getArg() instanceof Exists
 						|| "minus-assured-shared".equals(filter.getStringMetricPlanned("optimizer.semiAntiKind"))) {
 					found[0] = true;
 				}

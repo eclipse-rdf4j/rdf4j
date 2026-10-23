@@ -140,7 +140,8 @@ class LmdbNativeFinalTupleResultOrderContractTest {
 			assertThat(drain(strategy.precompile(firstFragment, context()))).containsExactlyElementsOf(hand);
 			assertLexicalNativeOpen(firstFragment);
 			TupleExpr finalRoot = orderedRoot(query(), source);
-			QueryEvaluationStep finalStep = strategy.precompileFinalTupleResult(QueryEvaluationUtility.pinFunctions(finalRoot));
+			QueryEvaluationStep finalStep = strategy
+					.precompileFinalTupleResult(QueryEvaluationUtility.pinFunctions(finalRoot));
 			assertThat(drain(finalStep)).containsExactlyInAnyOrderElementsOf(hand);
 			long firstOpens = finalRoot.getLongMetricActual(OPTIMIZED);
 			assertThat(firstOpens).isPositive();
@@ -203,7 +204,8 @@ class LmdbNativeFinalTupleResultOrderContractTest {
 				assertThat(row.encounterOrderRequired).isFalse();
 				try (RowCursor cursor = LmdbNativeFactorAlgebra.openOrdered(step.arg, row)) {
 					while (cursor.next()) {
-						values.add(LmdbNativeValueCodec.toValue(row.decodedValue(slot, evaluated.nativeValueCodec(), false)));
+						values.add(LmdbNativeValueCodec
+								.toValue(row.decodedValue(slot, evaluated.nativeValueCodec(), false)));
 						assertThat(row.encounterOrderRequired).isFalse();
 					}
 				}
@@ -239,7 +241,7 @@ class LmdbNativeFinalTupleResultOrderContractTest {
 	private List<Value> drainOwnedFinalInput(NativeRowsStep step, boolean ordered) throws Exception {
 		NativeLmdbQuerySource evaluated = step.evaluationSource(EmptyBindingSet.getInstance());
 		assertThat(evaluated).isInstanceOf(SyntheticValueSource.class);
-			assertThat(SyntheticValueSource.inheritedEvaluation(evaluated)).isFalse();
+		assertThat(SyntheticValueSource.inheritedEvaluation(evaluated)).isFalse();
 		try (NativeExecutionContext owner = ((SyntheticValueSource) evaluated).executionContext()) {
 			NativeRowsStep.initializeQueryBase(evaluated, EmptyBindingSet.getInstance());
 			RowState row = new RowState(evaluated, step.layout, EmptyBindingSet.getInstance(), step.originalExpr);
@@ -261,7 +263,8 @@ class LmdbNativeFinalTupleResultOrderContractTest {
 			int slot = step.layout.slot("n");
 			try (RowCursor cursor = ordered ? LmdbNativeFactorAlgebra.openOrdered(consumer, row) : consumer.open(row)) {
 				while (cursor.next()) {
-					values.add(LmdbNativeValueCodec.toValue(row.decodedValue(slot, evaluated.nativeValueCodec(), false)));
+					values.add(
+							LmdbNativeValueCodec.toValue(row.decodedValue(slot, evaluated.nativeValueCodec(), false)));
 				}
 			}
 			assertThat(row.encounterOrderRequired).isFalse();
@@ -279,7 +282,8 @@ class LmdbNativeFinalTupleResultOrderContractTest {
 					+ "{ SELECT (UUID() AS ?u) WHERE { } } ?b <" + EX + "b> ?n }";
 			List<BindingSet> generic = drain(strategy.genericOnlyView().precompile(orderedRoot(query, source)));
 			TupleExpr root = orderedRoot(query, source);
-			QueryEvaluationStep prepared = strategy.precompileFinalTupleResult(QueryEvaluationUtility.pinFunctions(root));
+			QueryEvaluationStep prepared = strategy
+					.precompileFinalTupleResult(QueryEvaluationUtility.pinFunctions(root));
 			List<BindingSet> first = drain(prepared);
 			List<BindingSet> second = drain(prepared);
 			List<BindingSet> expected = baseRows(hand().subList(0, VALUES.length));
@@ -316,8 +320,10 @@ class LmdbNativeFinalTupleResultOrderContractTest {
 			assertOrderedValues(source, strategy);
 			for (boolean reverse : List.of(false, true)) {
 				TupleExpr root = orderedRoot(query(), source);
-				LmdbNativeAggregateCompiler.CompileOutcome compiled = LmdbNativeAggregateCompiler.compileFinalTupleResult(
-						QueryEvaluationUtility.pinFunctions(root), context(), strategy, (NativeLmdbQuerySource) dataset);
+				LmdbNativeAggregateCompiler.CompileOutcome compiled = LmdbNativeAggregateCompiler
+						.compileFinalTupleResult(
+								QueryEvaluationUtility.pinFunctions(root), context(), strategy,
+								(NativeLmdbQuerySource) dataset);
 				assertThat(compiled.isSupported()).isTrue();
 				assertThat(compiled.step()).isInstanceOf(NativeRowsStep.class);
 				NativeRowsStep step = (NativeRowsStep) compiled.step();
@@ -328,9 +334,11 @@ class LmdbNativeFinalTupleResultOrderContractTest {
 				SlotPlan shared = reverse ? new JoinPlan(other, step.arg) : new JoinPlan(step.arg, other);
 				TupleExpr rootArg = ((QueryRoot) root).getArg();
 				TupleExpr otherExpr = opaque
-						? new Filter(rootArg.clone(), new ValueConstant(repository.getValueFactory().createLiteral(true)))
+						? new Filter(rootArg.clone(),
+								new ValueConstant(repository.getValueFactory().createLiteral(true)))
 						: rootArg.clone();
-				TupleExpr sharedExpr = reverse ? new Join(otherExpr, rootArg.clone()) : new Join(rootArg.clone(), otherExpr);
+				TupleExpr sharedExpr = reverse ? new Join(otherExpr, rootArg.clone())
+						: new Join(rootArg.clone(), otherExpr);
 				LmdbNativeInteriorPlans.Request request = LmdbNativeInteriorPlans.request(shared, step.source,
 						step.layout, NativeTupleFacts.of(sharedExpr));
 				assertThat(request).isNotNull();
@@ -394,7 +402,8 @@ class LmdbNativeFinalTupleResultOrderContractTest {
 				assertThat(input.encounterOrderRequired).isEqualTo(ordered);
 				assertThat(selected.requiresLexical(input)).isEqualTo(expectRequalification);
 				LmdbNativeInteriorPlans.Selection qualified = selected.requiresLexical(input)
-						? LmdbNativeInteriorPlans.select(selected.original, input, null) : selected;
+						? LmdbNativeInteriorPlans.select(selected.original, input, null)
+						: selected;
 				assertThat(qualified.requiresLexical(input)).isFalse();
 				assertThat(LmdbNativeInteriorPlans.hasAlternatives(qualified.plan)).isFalse();
 				return qualified.open(input, qualified.plan);
@@ -438,8 +447,10 @@ class LmdbNativeFinalTupleResultOrderContractTest {
 				assertThat(drain(strategy.genericOnlyView().precompile(root.clone())))
 						.containsExactlyElementsOf(expected);
 				long before = LmdbNativeAggregateCompiler.ISLAND_HOISTS.get();
-				LmdbNativeAggregateCompiler.CompileOutcome compiled = LmdbNativeAggregateCompiler.compileFinalTupleResult(
-						QueryEvaluationUtility.pinFunctions(root), context(), strategy, (NativeLmdbQuerySource) dataset);
+				LmdbNativeAggregateCompiler.CompileOutcome compiled = LmdbNativeAggregateCompiler
+						.compileFinalTupleResult(
+								QueryEvaluationUtility.pinFunctions(root), context(), strategy,
+								(NativeLmdbQuerySource) dataset);
 				assertThat(compiled.isSupported()).isTrue();
 				assertThat(compiled.step()).isInstanceOf(NativeRowsStep.class);
 				assertThat(LmdbNativeAggregateCompiler.ISLAND_HOISTS.get() - before)
@@ -566,11 +577,14 @@ class LmdbNativeFinalTupleResultOrderContractTest {
 
 	private void assertOrderedValues(SailDatasetTripleTermSource source, LmdbNativeEvaluationStrategy strategy) {
 		List<Value> expected = List.of(repository.getValueFactory().createLiteral(VALUES[0]),
-				repository.getValueFactory().createLiteral(VALUES[1]), repository.getValueFactory().createLiteral(VALUES[2]));
+				repository.getValueFactory().createLiteral(VALUES[1]),
+				repository.getValueFactory().createLiteral(VALUES[2]));
 		assertThat(drain(strategy.genericOnlyView().precompile(orderedRoot(bOnly(), source))).stream()
-				.map(row -> row.getValue("n")).toList()).containsExactlyElementsOf(expected);
+				.map(row -> row.getValue("n"))
+				.toList()).containsExactlyElementsOf(expected);
 		assertThat(drain(strategy.precompile(orderedRoot(bOnly(), source))).stream()
-				.map(row -> row.getValue("n")).toList()).containsExactlyElementsOf(expected);
+				.map(row -> row.getValue("n"))
+				.toList()).containsExactlyElementsOf(expected);
 	}
 
 	private void assertLexicalNativeOpen(TupleExpr root) {

@@ -301,8 +301,10 @@ final class LmdbNativeParallelKernelRows {
 		WorkerFailures failures = new WorkerFailures(failure, cancelled);
 		CountDownLatch startup = new CountDownLatch(threads);
 		NativeExecutionContext.WorkerTasks tasks = new NativeExecutionContext.WorkerTasks(threads, reservation::close);
-			SyntheticValueSource filterScope = row.evaluationScope();
-			if (filterScope != null) { filterScope.executionContext().registerFilterWorkers(tasks); }
+		SyntheticValueSource filterScope = row.evaluationScope();
+		if (filterScope != null) {
+			filterScope.executionContext().registerFilterWorkers(tasks);
+		}
 		LmdbFusedSipFactorizedRuntime.Session fusedParent = LmdbFusedSipFactorizedRuntime.currentOrNull();
 		LmdbNativeProbeDeadline probeParent = LmdbNativeProbeDeadline.currentOrNull();
 		ArrayList<Future<?>> futures = new ArrayList<>(threads);
@@ -621,7 +623,9 @@ final class LmdbNativeParallelKernelRows {
 					throw new LmdbNativeKernelPartitions.ParallelKernelDecline("worker-seed-unavailable");
 				}
 				residualRow.recomputeBoundMask();
-				for (int i = 0; i < forkedResiduals.length; i++) { forkedResiduals[i] = forkedResiduals[i].open(residualRow); }
+				for (int i = 0; i < forkedResiduals.length; i++) {
+					forkedResiduals[i] = forkedResiduals[i].open(residualRow);
+				}
 			}
 			// A streamed cursor cannot fall back once any worker has published a page. Complete every fallible worker
 			// acquisition, including the first kernel construction, before allowing any worker to execute. A decline in
@@ -733,16 +737,30 @@ final class LmdbNativeParallelKernelRows {
 				startup.countDown();
 			}
 			Throwable closeFailure = kernelCloseFailure;
-			try { if (prefetchedKernel != null) { prefetchedKernel.close(); } }
-			catch (RuntimeException | Error problem) { closeFailure = addCloseFailure(closeFailure, problem); }
+			try {
+				if (prefetchedKernel != null) {
+					prefetchedKernel.close();
+				}
+			} catch (RuntimeException | Error problem) {
+				closeFailure = addCloseFailure(closeFailure, problem);
+			}
 			boolean complete = primaryFailure == null && assignedInputDrained && allRangesExhausted;
-			try { if (hooks != null) { hooks.closeFilters(complete); } }
-			catch (RuntimeException | Error problem) { closeFailure = addCloseFailure(closeFailure, problem); }
+			try {
+				if (hooks != null) {
+					hooks.closeFilters(complete);
+				}
+			} catch (RuntimeException | Error problem) {
+				closeFailure = addCloseFailure(closeFailure, problem);
+			}
 			try {
 				if (complete && forkedResiduals != null) {
-					for (NativeBooleanFilter filter : forkedResiduals) { filter.inputExhausted(); }
+					for (NativeBooleanFilter filter : forkedResiduals) {
+						filter.inputExhausted();
+					}
 				}
-			} catch (RuntimeException | Error problem) { closeFailure = addCloseFailure(closeFailure, problem); }
+			} catch (RuntimeException | Error problem) {
+				closeFailure = addCloseFailure(closeFailure, problem);
+			}
 			try {
 				if (scanner != null) {
 					scanner.close();
@@ -780,7 +798,9 @@ final class LmdbNativeParallelKernelRows {
 			// Cleanup remains publishable after owner cancellation and does not become a body failure
 			// merely because a different worker has already requested the group to stop.
 			failures.cleanup(closeFailure);
-			if (primaryFailure == null) { rethrowCloseFailure(closeFailure); }
+			if (primaryFailure == null) {
+				rethrowCloseFailure(closeFailure);
+			}
 		}
 	}
 
@@ -807,9 +827,13 @@ final class LmdbNativeParallelKernelRows {
 		}
 
 		synchronized void execution(Throwable problem) {
-			if (problem == null) { return; }
+			if (problem == null) {
+				return;
+			}
 			if (LmdbNativeParallelKernelAggregate.isWorkerControl(problem)) {
-				if (control == null) { control = problem; }
+				if (control == null) {
+					control = problem;
+				}
 				// A generated kernel can already have attached real cleanup while a control unwinds.
 				// Preserve that provenance rather than allowing it to beat a later real body failure.
 				cleanupFailure = addCloseFailure(cleanupFailure,
@@ -822,7 +846,9 @@ final class LmdbNativeParallelKernelRows {
 		}
 
 		synchronized void cleanup(Throwable problem) {
-			if (problem == null) { return; }
+			if (problem == null) {
+				return;
+			}
 			cleanupFailure = addCloseFailure(cleanupFailure, problem);
 			record(problem);
 			stop(problem);
@@ -831,7 +857,9 @@ final class LmdbNativeParallelKernelRows {
 		synchronized void escaping(Throwable problem) {
 			// The enclosing scope sees propagated bodies and local cleanup too. Their originating sites
 			// already chose the provenance; do not turn a rethrown cleanup into a new execution failure.
-			if (!contains(problem)) { execution(problem); }
+			if (!contains(problem)) {
+				execution(problem);
+			}
 		}
 
 		synchronized Throwable selected() {
@@ -855,7 +883,9 @@ final class LmdbNativeParallelKernelRows {
 		}
 
 		private void record(Throwable problem) {
-			if (recorded == null) { recorded = new IdentityHashMap<>(); }
+			if (recorded == null) {
+				recorded = new IdentityHashMap<>();
+			}
 			recorded.put(problem, Boolean.TRUE);
 		}
 
@@ -1200,15 +1230,23 @@ final class LmdbNativeParallelKernelRows {
 
 		private void throwSettledFailure() throws IOException {
 			Throwable problem = failures.selected();
-			if (problem == null) { return; }
-			if (!tasks.isCleanupOwnerThread()) { cleanupFailureReported = true; }
+			if (problem == null) {
+				return;
+			}
+			if (!tasks.isCleanupOwnerThread()) {
+				cleanupFailureReported = true;
+			}
 			throwFailure(problem);
 		}
 
 		private void throwOwnedCleanupFailure() {
 			Throwable problem = failures.ownedCleanup();
-			if (cleanupFailureReported || problem == null) { return; }
-			if (!tasks.isCleanupOwnerThread()) { cleanupFailureReported = true; }
+			if (cleanupFailureReported || problem == null) {
+				return;
+			}
+			if (!tasks.isCleanupOwnerThread()) {
+				cleanupFailureReported = true;
+			}
 			NativeContextClosingIteration.throwFailure(problem);
 		}
 
@@ -1221,7 +1259,9 @@ final class LmdbNativeParallelKernelRows {
 			if (closed) {
 				awaitTasks(tasks);
 				failures.cleanup(tasks.cleanupFailure());
-				if (reportCleanup) { throwOwnedCleanupFailure(); }
+				if (reportCleanup) {
+					throwOwnedCleanupFailure();
+				}
 				return;
 			}
 			closed = true;
@@ -1240,7 +1280,9 @@ final class LmdbNativeParallelKernelRows {
 			if (hashLedger != null) {
 				hashLedger.close();
 			}
-			if (reportCleanup) { throwOwnedCleanupFailure(); }
+			if (reportCleanup) {
+				throwOwnedCleanupFailure();
+			}
 		}
 	}
 

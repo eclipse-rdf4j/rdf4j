@@ -107,9 +107,9 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	QueryEvaluationStep precompile(TupleExpr expr);
 
 	/**
-	 * Prepares the complete tuple result consumed by a Sail evaluation request. Implementations which do not
-	 * explicitly support that consumer contract retain their existing precompile dispatch, including overrides.
-	 * This entry supplies no permission to separately compiled children or runtime fragments.
+	 * Prepares the complete tuple result consumed by a Sail evaluation request. Implementations which do not explicitly
+	 * support that consumer contract retain their existing precompile dispatch, including overrides. This entry
+	 * supplies no permission to separately compiled children or runtime fragments.
 	 */
 	@InternalUseOnly
 	default QueryEvaluationStep precompileFinalTupleResult(TupleExpr expr) {

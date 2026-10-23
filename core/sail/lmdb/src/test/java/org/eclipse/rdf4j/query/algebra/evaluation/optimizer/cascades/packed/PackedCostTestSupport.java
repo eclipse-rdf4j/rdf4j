@@ -693,7 +693,7 @@ public final class PackedCostTestSupport {
 	public static AliasStatementChainCostCall finiteAliasStatementChain(PlanningGraphDomain inputDomain,
 			BindingSetAssignment prefix, StatementPattern scanBudgetConsumer, Extension aliasFactor,
 			StatementPattern continuation) {
-		if (!(aliasFactor.getArg()instanceof StatementPattern aliasStatement)) {
+		if (!(aliasFactor.getArg() instanceof StatementPattern aliasStatement)) {
 			throw new IllegalArgumentException("Packed alias factor must wrap one statement pattern");
 		}
 		PackedQuery query = encodeInDomain(
@@ -787,7 +787,7 @@ public final class PackedCostTestSupport {
 
 	public static FilteredPairCostCall filteredConnectedStatementFactors(PlanningGraphDomain inputDomain, Filter prefix,
 			StatementPattern factor) {
-		if (!(prefix.getArg()instanceof StatementPattern prefixStatement)) {
+		if (!(prefix.getArg() instanceof StatementPattern prefixStatement)) {
 			throw new IllegalArgumentException("Filtered packed test prefix must wrap one statement pattern");
 		}
 		PackedQuery query = encodeInDomain(new Join(prefix, factor), inputDomain);

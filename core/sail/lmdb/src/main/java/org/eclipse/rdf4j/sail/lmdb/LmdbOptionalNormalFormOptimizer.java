@@ -67,7 +67,7 @@ final class LmdbOptionalNormalFormOptimizer implements QueryOptimizer {
 		}
 
 		private void normalizeAdjacentIndependentOptionals(LeftJoin leftJoin) {
-			if (leftJoin.hasCondition() || !(leftJoin.getLeftArg()instanceof LeftJoin innerLeftJoin)
+			if (leftJoin.hasCondition() || !(leftJoin.getLeftArg() instanceof LeftJoin innerLeftJoin)
 					|| innerLeftJoin.hasCondition()) {
 				return;
 			}

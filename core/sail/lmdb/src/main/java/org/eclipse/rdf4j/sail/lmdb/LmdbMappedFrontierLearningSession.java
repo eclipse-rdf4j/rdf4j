@@ -228,12 +228,12 @@ final class LmdbMappedFrontierLearningSession {
 	void refresh(PackedCostEstimate output) {
 		if (output != null && output.runtimeFeedbackContract() != null
 				&& output.runtimeFeedbackContract()
-						.descriptor()instanceof LmdbPhysicalEventFeedbackDescriptor physical) {
+						.descriptor() instanceof LmdbPhysicalEventFeedbackDescriptor physical) {
 			output.setRuntimeFeedbackContract(independentContract(physical, output));
 			return;
 		}
 		if (output == null || !(output.runtimeFeedbackContract() != null
-				&& output.runtimeFeedbackContract().descriptor()instanceof LmdbRuntimeFeedbackDescriptor descriptor)) {
+				&& output.runtimeFeedbackContract().descriptor() instanceof LmdbRuntimeFeedbackDescriptor descriptor)) {
 			return;
 		}
 		output.setRuntimeFeedbackContract(runtimeFeedbackContract(descriptor, output,
@@ -550,10 +550,10 @@ final class LmdbMappedFrontierLearningSession {
 		if (exactFactEligible) {
 			output.putPlannedStringMetric("optimizer.frontierLogicalGroupKey", identity.logicalKey().externalForm());
 		}
-		FilterSurfaceKey exactFilter = identity.expression()instanceof Filter filter
+		FilterSurfaceKey exactFilter = identity.expression() instanceof Filter filter
 				? FilterSurfaceKey.exact(filter)
 				: null;
-		FilterSurfaceKey generalizedFilter = identity.expression()instanceof Filter filter
+		FilterSurfaceKey generalizedFilter = identity.expression() instanceof Filter filter
 				? FilterSurfaceKey.generalized(filter)
 				: null;
 		LmdbRuntimeFeedbackDescriptor descriptor = new LmdbRuntimeFeedbackDescriptor(

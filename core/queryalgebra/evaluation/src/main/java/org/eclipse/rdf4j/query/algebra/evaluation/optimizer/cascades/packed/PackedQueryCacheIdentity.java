@@ -329,7 +329,7 @@ final class PackedQueryCacheIdentity {
 			} else if (node instanceof ExtensionElem element) {
 				String name = element.getName();
 				extensionDefinitions.merge(name, 1, Integer::sum);
-				if (!(element.getParentNode()instanceof Extension extension)
+				if (!(element.getParentNode() instanceof Extension extension)
 						|| extension.getArg().getBindingNames().contains(name)) {
 					extensionInputConflicts.add(name);
 				}

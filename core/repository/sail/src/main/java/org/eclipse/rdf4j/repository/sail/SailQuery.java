@@ -14,11 +14,11 @@ package org.eclipse.rdf4j.repository.sail;
 
 import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
+import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryOperationContext;
 import org.eclipse.rdf4j.query.QueryOperationDeadline;
-import org.eclipse.rdf4j.common.annotation.Experimental;
-import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.explanation.Explanation;

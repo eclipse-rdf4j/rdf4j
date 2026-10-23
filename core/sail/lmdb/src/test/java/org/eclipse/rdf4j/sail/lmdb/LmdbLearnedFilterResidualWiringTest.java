@@ -171,12 +171,12 @@ public class LmdbLearnedFilterResidualWiringTest {
 			});
 			assertThat(containsPlannedStringMetric(prepared.optimized(), "optimizer.cascadesProofs",
 					"packed-predicate-range-anchor"))
-				.as("the actual selected plan retains the predicate-range proof")
-				.isTrue();
+							.as("the actual selected plan retains the predicate-range proof")
+							.isTrue();
 			assertThat(containsPlannedStringMetric(prepared.optimized(), "optimizer.cascadesProofs",
 					"packed-finite-filter-values"))
-				.as("the actual selected plan retains the finite-filter values proof")
-				.isTrue();
+							.as("the actual selected plan retains the finite-filter values proof")
+							.isTrue();
 			List<String> actualSubjects = evaluateSubjects(prepared);
 			assertThat(actualSubjects).as("the full query result bag has the independently derived twenty subjects")
 					.containsExactlyElementsOf(expectedSubjects(firstValue));
@@ -208,7 +208,8 @@ public class LmdbLearnedFilterResidualWiringTest {
 			emitInitialFilterTelemetry(profile, initialPlannedSource, initialPlannedRatio);
 			List<Filter> filters = findFilters(prepared.optimized());
 			System.out.println("RESIDUAL_PLAN\t" + profile + "\tfilters=" + filters.size()
-					+ "\tmathExprs=" + filters.stream().mapToInt(filter -> countMathExprs(filter.getCondition())).sum());
+					+ "\tmathExprs="
+					+ filters.stream().mapToInt(filter -> countMathExprs(filter.getCondition())).sum());
 			List<String> actualSubjects = evaluateSubjects(prepared);
 			assertThat(actualSubjects).as("the complete residual-filter subject bag")
 					.containsExactlyElementsOf(expectedSubjects(firstSubject));
@@ -294,8 +295,9 @@ public class LmdbLearnedFilterResidualWiringTest {
 		TupleExpr projectionRoot = projectionQuery.getParsedQuery().getTupleExpr().clone();
 		assertThat(projectionRoot).as("the changed projection is still a real repository QueryRoot")
 				.isInstanceOf(QueryRoot.class);
-		TupleExpr projectionPlan = trainedQuery.strategy().optimize(projectionRoot, trainedQuery.statistics(),
-				projectionQuery.getBindings());
+		TupleExpr projectionPlan = trainedQuery.strategy()
+				.optimize(projectionRoot, trainedQuery.statistics(),
+						projectionQuery.getBindings());
 		emitNextPlanCacheMetadata(profile + "-different-projection", projectionPlan);
 		assertThat(projectionPlan.getStringMetricPlanned("optimizer.pipelinePlanCacheHit"))
 				.as("a different projection has a distinct structural pipeline-cache identity")
@@ -372,8 +374,9 @@ public class LmdbLearnedFilterResidualWiringTest {
 		SailDatasetTripleTermSource source = new SailDatasetTripleTermSource(store.getValueFactory(), dataset);
 		assertThat(source.getClass()).isEqualTo(SailDatasetTripleTermSource.class);
 		assertThat(source.getSnapshotEpoch()).as("the audited full-read source is pinned").isPresent();
-		EvaluationStrategy evaluationStrategy = store.getConnectionEvaluationStrategyFactory().createEvaluationStrategy(
-				tupleQuery.getActiveDataset(), source, statistics, store.getQueryExecutionPolicy());
+		EvaluationStrategy evaluationStrategy = store.getConnectionEvaluationStrategyFactory()
+				.createEvaluationStrategy(
+						tupleQuery.getActiveDataset(), source, statistics, store.getQueryExecutionPolicy());
 		assertThat(evaluationStrategy).isInstanceOf(LmdbEvaluationStrategy.class)
 				.isNotInstanceOf(LmdbNativeEvaluationStrategy.class);
 		assertThat(evaluationStrategy.getQueryExecutionPolicy().experimentalQueryOptimizations()).isTrue();
@@ -394,7 +397,8 @@ public class LmdbLearnedFilterResidualWiringTest {
 	}
 
 	private static List<SubjectValue> evaluateSubjectValues(QueryEvaluationStep step, BindingSet bindings) {
-		return QueryResults.asList(step.evaluate(bindings)).stream()
+		return QueryResults.asList(step.evaluate(bindings))
+				.stream()
 				.map(bindingSet -> {
 					Value subject = bindingSet.getValue("s");
 					Value value = bindingSet.getValue("v");

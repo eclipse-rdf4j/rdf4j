@@ -70,7 +70,9 @@ final class NativeContextClosingIteration
 			return false;
 		}
 		if (!hasNext) {
-			if (closeContext) { context.filterRootExhausted(); }
+			if (closeContext) {
+				context.filterRootExhausted();
+			}
 			close();
 		}
 		return hasNext;
@@ -106,7 +108,9 @@ final class NativeContextClosingIteration
 			return false;
 		}
 		boolean requested = cancellation.requestCancellation();
-		if (requested) { context.filterFailure(); }
+		if (requested) {
+			context.filterFailure();
+		}
 		return requested;
 	}
 
@@ -217,7 +221,9 @@ interface NativeExecutionContextCarrier {
 			failure = cleanup;
 		}
 		if (lease != null) {
-			if (failure != null) { lease.failed(); }
+			if (failure != null) {
+				lease.failed();
+			}
 			try {
 				lease.close();
 			} catch (Throwable cleanup) {

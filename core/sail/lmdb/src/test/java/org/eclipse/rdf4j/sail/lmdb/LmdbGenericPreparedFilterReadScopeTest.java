@@ -80,7 +80,7 @@ class LmdbGenericPreparedFilterReadScopeTest {
 			connection.begin();
 			for (int i = 0; i < ROWS; i++) {
 				connection.add(vf.createIRI("urn:prepared-filter:s:" + i), vf.createIRI("urn:prepared-filter:p"),
-					vf.createLiteral((i % 4 == 0 ? "hit:" : "miss:") + i));
+						vf.createLiteral((i % 4 == 0 ? "hit:" : "miss:") + i));
 			}
 			connection.commit();
 		}
@@ -110,13 +110,18 @@ class LmdbGenericPreparedFilterReadScopeTest {
 			for (Filter filter : residuals) {
 				assertScopePremise(surface, filter);
 				assertThat(PlanningGraphDomains.domain(filter).allowsNativeEvidence())
-						.as("UNKNOWN graph scope must not supply the refusal: %s", surface).isTrue();
+						.as("UNKNOWN graph scope must not supply the refusal: %s", surface)
+						.isTrue();
 				assertThat(FilterSurfaceKey.exact(filter))
 						.as("fixture retains a different normalized input/effect surface: %s", surface)
 						.isNotEqualTo(baselineKey);
-				assertThat(store.getBackingStore().learnedFilterSelectivity().estimateQualified(
-						store.getBackingStore().valueStore(), read.statistics.estimatorRuntime().snapshotVersion(),
-						filter, identity)).as("qualified namespace refuses this different surface: %s", surface).isNull();
+				assertThat(store.getBackingStore()
+						.learnedFilterSelectivity()
+						.estimateQualified(
+								store.getBackingStore().valueStore(),
+								read.statistics.estimatorRuntime().snapshotVersion(),
+								filter, identity)).as("qualified namespace refuses this different surface: %s", surface)
+										.isNull();
 				assertThat(read.statistics.estimateFilterPass(filter).getSource())
 						.as("actual source-bound facade retains the same refusal: %s", surface)
 						.isNotIn(FilterPassEstimate.Source.LEARNED_FILTER, FilterPassEstimate.Source.LEARNED_TEMPLATE,
@@ -136,7 +141,8 @@ class LmdbGenericPreparedFilterReadScopeTest {
 			List<Filter> residuals = filters(prepare(read, query));
 			Filter normalized = residuals.stream()
 					.filter(filter -> FilterSurfaceKey.exact(baseline).equals(FilterSurfaceKey.exact(filter)))
-					.findFirst().orElseThrow(() -> new AssertionError(
+					.findFirst()
+					.orElseThrow(() -> new AssertionError(
 							"existing left-only OPTIONAL filter placement must retain its valid single-pattern surface"));
 			assertThat(PlanningGraphDomains.domain(normalized).allowsNativeEvidence()).isTrue();
 			assertLearned(read.statistics.estimateFilterPass(normalized));
@@ -194,7 +200,8 @@ class LmdbGenericPreparedFilterReadScopeTest {
 	private void train(Read read) {
 		TupleExpr optimized = read.strategy.optimize(parse(QUERY), read.statistics, EmptyBindingSet.getInstance());
 		List<String> actual = QueryResults.asList(
-				read.strategy.precompile(optimized).evaluate(EmptyBindingSet.getInstance())).stream()
+				read.strategy.precompile(optimized).evaluate(EmptyBindingSet.getInstance()))
+				.stream()
 				.map(row -> row.getValue("s").stringValue() + "|" + ((Literal) row.getValue("v")).getLabel())
 				.toList();
 		List<String> expected = new ArrayList<>();
@@ -214,12 +221,15 @@ class LmdbGenericPreparedFilterReadScopeTest {
 		SailDataset dataset = store.getBackingStore().getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT_READ);
 		try {
 			SailDatasetTripleTermSource source = new SailDatasetTripleTermSource(store.getValueFactory(), dataset);
-			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore().getEvaluationStatistics();
-			EvaluationStrategy strategy = store.getConnectionEvaluationStrategyFactory().createEvaluationStrategy(
-					null, source, statistics, store.getQueryExecutionPolicy());
+			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics();
+			EvaluationStrategy strategy = store.getConnectionEvaluationStrategyFactory()
+					.createEvaluationStrategy(
+							null, source, statistics, store.getQueryExecutionPolicy());
 			assertThat(source.getClass()).isEqualTo(SailDatasetTripleTermSource.class);
 			assertThat(source.getSnapshotEpoch()).isPresent();
-			assertThat(strategy).isInstanceOf(LmdbEvaluationStrategy.class).isNotInstanceOf(LmdbNativeEvaluationStrategy.class);
+			assertThat(strategy).isInstanceOf(LmdbEvaluationStrategy.class)
+					.isNotInstanceOf(LmdbNativeEvaluationStrategy.class);
 			assertThat(strategy.getQueryExecutionPolicy().experimentalQueryOptimizations()).isTrue();
 			assertThat(statistics.estimatorRuntime().frontierSettings().mode()).isEqualTo(FrontierEstimatorMode.OFF);
 			assertThat(statistics.estimatorRuntime().statisticsService() == null

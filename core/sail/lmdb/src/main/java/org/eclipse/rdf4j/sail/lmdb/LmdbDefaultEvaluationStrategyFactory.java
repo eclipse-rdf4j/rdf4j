@@ -31,7 +31,8 @@ final class LmdbDefaultEvaluationStrategyFactory extends DefaultEvaluationStrate
 	}
 
 	@Override
-	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource source, EvaluationStatistics statistics) {
+	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource source,
+			EvaluationStatistics statistics) {
 		return createEvaluationStrategy(dataset, source, statistics, QueryExecutionPolicy.DEFAULT);
 	}
 
@@ -40,7 +41,8 @@ final class LmdbDefaultEvaluationStrategyFactory extends DefaultEvaluationStrate
 			EvaluationStatistics statistics, QueryExecutionPolicy policy) {
 		EvaluationStatistics effective = statistics == null ? new EvaluationStatistics() : statistics;
 		LmdbEvaluationStrategy.bindExecutionSnapshot(effective, source);
-		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, dataset, getFederatedServiceResolver(),
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, dataset,
+				getFederatedServiceResolver(),
 				getQuerySolutionCacheThreshold(), effective, isTrackResultSize());
 		strategy.setQueryExecutionPolicy(policy);
 		strategy.setOptimizerPipeline(getOptimizerPipeline()

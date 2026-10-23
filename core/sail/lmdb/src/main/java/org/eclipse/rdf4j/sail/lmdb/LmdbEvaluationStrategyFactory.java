@@ -27,7 +27,8 @@ final class LmdbEvaluationStrategyFactory extends DefaultEvaluationStrategyFacto
 	}
 
 	@Override
-	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource source, EvaluationStatistics statistics) {
+	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource source,
+			EvaluationStatistics statistics) {
 		return createEvaluationStrategy(dataset, source, statistics, QueryExecutionPolicy.DEFAULT);
 	}
 

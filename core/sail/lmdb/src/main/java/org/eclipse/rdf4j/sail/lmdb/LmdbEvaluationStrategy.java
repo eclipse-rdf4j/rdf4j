@@ -85,7 +85,7 @@ public class LmdbEvaluationStrategy extends DefaultEvaluationStrategy {
 	protected QueryEvaluationStep prepare(UnaryTupleOperator expression, QueryEvaluationContext context) {
 		if (expression.getClass() == Graph.class && expression instanceof Graph graph
 				&& graph.getArg().getClass() == StatementPattern.class
-				&& graph.getArg()instanceof StatementPattern body) {
+				&& graph.getArg() instanceof StatementPattern body) {
 			LmdbGraphDistinctQueryEvaluationStep.recordOrdinary(body);
 			var decorator = preparedStepDecorator(body);
 			QueryEvaluationStep ordinary = GraphQueryEvaluationStep.supply(graph, tripleSource, context,

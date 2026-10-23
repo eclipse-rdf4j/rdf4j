@@ -147,7 +147,10 @@ public final class QueryOperationDeadline {
 		return remainingNanos() <= other.remainingNanos() ? this : other;
 	}
 
-	/** Absolute timestamp for an owned monotonic budget; borrowed views return zero because no monotonic timestamp exists. */
+	/**
+	 * Absolute timestamp for an owned monotonic budget; borrowed views return zero because no monotonic timestamp
+	 * exists.
+	 */
 	long deadlineNanos() {
 		return deadlineNanos;
 	}

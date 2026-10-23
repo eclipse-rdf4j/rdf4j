@@ -930,7 +930,6 @@ class LmdbRecordIterator implements RecordIterator {
 		return sourceRowsFilteredActual;
 	}
 
-
 	private int fetchNextCursorPosition() {
 		if (distinctPrefixLength > 0) {
 			distinctCursorSkipCountActual++;
@@ -995,7 +994,9 @@ class LmdbRecordIterator implements RecordIterator {
 	@Override
 	public boolean skipTo(long subject, long predicate, long object, long context) {
 		boolean advanced = seekForward(subject, predicate, object, context);
-		if (advanced) { skipAheadSeekCountActual++; }
+		if (advanced) {
+			skipAheadSeekCountActual++;
+		}
 		return advanced;
 	}
 

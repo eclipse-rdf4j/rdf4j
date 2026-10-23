@@ -40,7 +40,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 /** Detached optional namespace refuses erased value/input origins without changing ordinary evaluation. */
 class LmdbFilterReadContextIdentityTest {
-	@TempDir File directory;
+	@TempDir
+	File directory;
 	private static final String QUERY = "SELECT ?s WHERE { ?s <urn:read-frame:p> ?v FILTER(STRSTARTS(STR(?v), \"hit:\")) }";
 
 	@Test
@@ -67,13 +68,18 @@ class LmdbFilterReadContextIdentityTest {
 		try {
 			try (var connection = repository.getConnection()) {
 				connection.add(store.getValueFactory().createIRI("urn:read-frame:s"),
-						store.getValueFactory().createIRI("urn:read-frame:p"), store.getValueFactory().createLiteral("hit:one"));
+						store.getValueFactory().createIRI("urn:read-frame:p"),
+						store.getValueFactory().createLiteral("hit:one"));
 			}
-			try (SailDataset dataset = store.getBackingStore().getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT_READ)) {
+			try (SailDataset dataset = store.getBackingStore()
+					.getExplicitSailSource()
+					.dataset(IsolationLevels.SNAPSHOT_READ)) {
 				SailDatasetTripleTermSource source = new SailDatasetTripleTermSource(store.getValueFactory(), dataset);
-				LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore().getEvaluationStatistics();
-				store.getConnectionEvaluationStrategyFactory().createEvaluationStrategy(null, source, statistics,
-						store.getQueryExecutionPolicy());
+				LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
+						.getEvaluationStatistics();
+				store.getConnectionEvaluationStrategyFactory()
+						.createEvaluationStrategy(null, source, statistics,
+								store.getQueryExecutionPolicy());
 				LmdbEstimatorRuntime runtime = statistics.estimatorRuntime();
 				MapBindingSet mapping = new MapBindingSet();
 				mapping.addBinding("v", store.getValueFactory().createLiteral("hit:one"));
@@ -82,38 +88,52 @@ class LmdbFilterReadContextIdentityTest {
 				TupleExpr expression = parse();
 				var unknown = LmdbFilterReadContext.capture(runtime, source, null, mapping, expression, null);
 				var api = LmdbFilterReadContext.capture(runtime, source, null, parameter, expression, null);
-				var empty = LmdbFilterReadContext.capture(runtime, source, null, EmptyBindingSet.getInstance(), expression, null);
+				var empty = LmdbFilterReadContext.capture(runtime, source, null, EmptyBindingSet.getInstance(),
+						expression, null);
 				assertThat(unknown).isNotNull();
 				assertThat(api).isNotNull();
 				assertThat(api.family()).isNotEqualTo(unknown.family()).isNotEqualTo(empty.family());
 				EstimateContext context = EstimateContext.root(expression, new QuadSnapshotIdentity(1L, 2L, 3L), 3L)
-						.withFilterReadContext(api).withBoundNames(Set.of("v")).withInvocationCount(2d)
+						.withFilterReadContext(api)
+						.withBoundNames(Set.of("v"))
+						.withInvocationCount(2d)
 						.withPrefixEstimate(BagEstimate.exact(2d, "input"));
 				assertThat(context.filterReadContext()).isEqualTo(api);
 				assertThat(api.allows(filter(expression), context)).isFalse();
 				TupleExpr prepared = expression.clone();
 				prepared.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-					@Override public void meet(Var variable) {
+					@Override
+					public void meet(Var variable) {
 						if ("v".equals(variable.getName())) {
-							variable.replaceWith(Var.of(variable.getName(), mapping.getValue("v"), variable.isAnonymous(),
-									variable.isConstant(), variable.isBNode()));
+							variable.replaceWith(
+									Var.of(variable.getName(), mapping.getValue("v"), variable.isAnonymous(),
+											variable.isConstant(), variable.isBNode()));
 						}
 					}
 				});
-				assertThat(api.forExpression(prepared).costIdentity()).isNotEqualTo(api.forExpression(expression).costIdentity());
+				assertThat(api.forExpression(prepared).costIdentity())
+						.isNotEqualTo(api.forExpression(expression).costIdentity());
 				var mismatchingRefresh = LmdbFilterReadContext.capture(runtime, source, null,
 						EmptyBindingSet.getInstance(), expression, api.family());
 				assertThat(mismatchingRefresh.read()).isNull();
 				assertThat(mismatchingRefresh.costIdentity().optionalLookup()).isFalse();
 			}
-		} finally { repository.shutDown(); }
+		} finally {
+			repository.shutDown();
+		}
 	}
 
-	private static TupleExpr parse() { return QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, QUERY, null).getTupleExpr(); }
+	private static TupleExpr parse() {
+		return QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, QUERY, null).getTupleExpr();
+	}
+
 	private static Filter filter(TupleExpr expression) {
 		Filter[] result = { null };
 		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-			@Override public void meet(Filter filter) { result[0] = filter; }
+			@Override
+			public void meet(Filter filter) {
+				result[0] = filter;
+			}
 		});
 		return result[0];
 	}

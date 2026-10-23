@@ -325,8 +325,9 @@ final class LmdbNativeKernelLowering {
 		}
 
 		Lowered withConsumerInput(LmdbNativeInteriorPlans.Selection input) {
-			return input == null ? this : new Lowered(kernel, bindings.withConsumerInput(input), planBridgeReason,
-					strictOrderCompare);
+			return input == null ? this
+					: new Lowered(kernel, bindings.withConsumerInput(input), planBridgeReason,
+							strictOrderCompare);
 		}
 
 		Lowered withTelemetry(Kernel.TelemetryMode mode) {

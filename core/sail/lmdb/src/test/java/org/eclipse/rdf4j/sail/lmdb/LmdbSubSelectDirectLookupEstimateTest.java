@@ -134,7 +134,7 @@ class LmdbSubSelectDirectLookupEstimateTest {
 			tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
 				@Override
 				public void meet(Join node) {
-					if (node.getRightArg()instanceof StatementPattern rightPattern
+					if (node.getRightArg() instanceof StatementPattern rightPattern
 							&& "directLookup".equals(rightPattern
 									.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE))) {
 						double joinRows = node.getResultSizeEstimate();
@@ -238,7 +238,7 @@ class LmdbSubSelectDirectLookupEstimateTest {
 		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
 			@Override
 			public void meet(Join node) {
-				if (node.getRightArg()instanceof StatementPattern rightPattern
+				if (node.getRightArg() instanceof StatementPattern rightPattern
 						&& "directLookup".equals(rightPattern
 								.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE))) {
 					double joinRows = node.getResultSizeEstimate();
@@ -282,8 +282,8 @@ class LmdbSubSelectDirectLookupEstimateTest {
 		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
 			@Override
 			public void meet(Join node) {
-				if (node.getLeftArg()instanceof StatementPattern leftPattern
-						&& node.getRightArg()instanceof StatementPattern rightPattern
+				if (node.getLeftArg() instanceof StatementPattern leftPattern
+						&& node.getRightArg() instanceof StatementPattern rightPattern
 						&& isTypePattern(leftPattern, "type2")
 						&& isTypePattern(rightPattern, "type1")
 						&& !(isBoundedSubjectPredicateLookup(leftPattern)
@@ -324,8 +324,8 @@ class LmdbSubSelectDirectLookupEstimateTest {
 				if (found[0]) {
 					return;
 				}
-				if (node.getLeftArg()instanceof StatementPattern leftPattern
-						&& node.getRightArg()instanceof StatementPattern rightPattern
+				if (node.getLeftArg() instanceof StatementPattern leftPattern
+						&& node.getRightArg() instanceof StatementPattern rightPattern
 						&& isTypePattern(leftPattern, "type2")
 						&& isTypePattern(rightPattern, "type1")
 						&& !(isBoundedSubjectPredicateLookup(leftPattern)

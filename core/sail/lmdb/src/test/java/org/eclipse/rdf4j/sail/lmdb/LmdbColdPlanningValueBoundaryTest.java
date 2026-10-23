@@ -142,7 +142,8 @@ class LmdbColdPlanningValueBoundaryTest {
 		Value retained;
 		Value expected;
 		try (Fixture fixture = new Fixture(directory, triple);
-				SailDataset dataset = fixture.target.getBackingStore().getExplicitSailSource()
+				SailDataset dataset = fixture.target.getBackingStore()
+						.getExplicitSailSource()
 						.dataset(IsolationLevels.SNAPSHOT_READ)) {
 			retained = fixture.nativeValue;
 			expected = fixture.expected;

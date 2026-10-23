@@ -27,7 +27,7 @@ final class OracleSamplingDesign<T> {
 		HORVITZ_THOMPSON
 	}
 
-	record Outcome<T> (ExactRational probability, T value) {
+	record Outcome<T>(ExactRational probability, T value) {
 		Outcome {
 			Objects.requireNonNull(probability, "probability");
 			Objects.requireNonNull(value, "value");

@@ -274,7 +274,9 @@ final class PackedBindingFacts {
 			return false;
 		}
 		return switch (operator) {
-		case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.BINDING_SET_ASSIGNMENT, PackedRelOp.SINGLETON_SET, PackedRelOp.EMPTY_SET -> true;
+		case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.BINDING_SET_ASSIGNMENT, PackedRelOp.SINGLETON_SET,
+				PackedRelOp.EMPTY_SET ->
+			true;
 		case PackedRelOp.JOIN -> safeEmbeddedSubquery(query, query.relChild(relationId, 0))
 				&& safeEmbeddedSubquery(query, query.relChild(relationId, 1));
 		case PackedRelOp.FILTER -> scalarSafeToRelocate(query.relPayload(relationId))
@@ -294,7 +296,16 @@ final class PackedBindingFacts {
 
 	private static boolean safeScalarOperator(int operator) {
 		return switch (operator) {
-		case PackedScalarOp.VARIABLE, PackedScalarOp.VALUE_CONSTANT, PackedScalarOp.COMPARE, PackedScalarOp.AND, PackedScalarOp.OR, PackedScalarOp.NOT, PackedScalarOp.SAME_TERM, PackedScalarOp.STR, PackedScalarOp.MATH, PackedScalarOp.REGEX, PackedScalarOp.BOUND, PackedScalarOp.DATATYPE, PackedScalarOp.NAMESPACE, PackedScalarOp.LOCAL_NAME, PackedScalarOp.IS_RESOURCE, PackedScalarOp.IS_URI, PackedScalarOp.IS_BNODE, PackedScalarOp.IS_LITERAL, PackedScalarOp.IS_NUMERIC, PackedScalarOp.IS_TRIPLE, PackedScalarOp.LABEL, PackedScalarOp.LANG, PackedScalarOp.LANG_DIR, PackedScalarOp.HAS_LANG, PackedScalarOp.HAS_LANG_DIR, PackedScalarOp.IRI_FUNCTION, PackedScalarOp.LANG_MATCHES, PackedScalarOp.COALESCE, PackedScalarOp.LIST_MEMBER, PackedScalarOp.STR_LANG_DIR, PackedScalarOp.IF, PackedScalarOp.VALUE_TRIPLE_REF, PackedScalarOp.TRIPLE_COMPONENT -> true;
+		case PackedScalarOp.VARIABLE, PackedScalarOp.VALUE_CONSTANT, PackedScalarOp.COMPARE, PackedScalarOp.AND,
+				PackedScalarOp.OR, PackedScalarOp.NOT, PackedScalarOp.SAME_TERM, PackedScalarOp.STR,
+				PackedScalarOp.MATH, PackedScalarOp.REGEX, PackedScalarOp.BOUND, PackedScalarOp.DATATYPE,
+				PackedScalarOp.NAMESPACE, PackedScalarOp.LOCAL_NAME, PackedScalarOp.IS_RESOURCE, PackedScalarOp.IS_URI,
+				PackedScalarOp.IS_BNODE, PackedScalarOp.IS_LITERAL, PackedScalarOp.IS_NUMERIC, PackedScalarOp.IS_TRIPLE,
+				PackedScalarOp.LABEL, PackedScalarOp.LANG, PackedScalarOp.LANG_DIR, PackedScalarOp.HAS_LANG,
+				PackedScalarOp.HAS_LANG_DIR, PackedScalarOp.IRI_FUNCTION, PackedScalarOp.LANG_MATCHES,
+				PackedScalarOp.COALESCE, PackedScalarOp.LIST_MEMBER, PackedScalarOp.STR_LANG_DIR, PackedScalarOp.IF,
+				PackedScalarOp.VALUE_TRIPLE_REF, PackedScalarOp.TRIPLE_COMPONENT ->
+			true;
 		default -> false;
 		};
 	}
@@ -322,9 +333,11 @@ final class PackedBindingFacts {
 				}
 			}
 			switch (operator) {
-			case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.ZERO_LENGTH_PATH, PackedRelOp.TRIPLE_REF, PackedRelOp.REIFIED_TRIPLE_REF, PackedRelOp.ANNOTATION_TRIPLE_REF -> addPayloadTerms(
-					query,
-					query.relPayload(relationId));
+			case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.ZERO_LENGTH_PATH, PackedRelOp.TRIPLE_REF,
+					PackedRelOp.REIFIED_TRIPLE_REF, PackedRelOp.ANNOTATION_TRIPLE_REF ->
+				addPayloadTerms(
+						query,
+						query.relPayload(relationId));
 			case PackedRelOp.ARBITRARY_LENGTH_PATH -> addPayloadTerms(query, query.relPayload(relationId));
 			case PackedRelOp.GRAPH -> addGraphName(query, query.relPayload(relationId));
 			case PackedRelOp.PROJECTION -> addProjectionList(query,
@@ -354,9 +367,11 @@ final class PackedBindingFacts {
 			}
 			clearScratch();
 			switch (query.relOperator(relationId)) {
-			case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.ZERO_LENGTH_PATH, PackedRelOp.TRIPLE_REF, PackedRelOp.REIFIED_TRIPLE_REF, PackedRelOp.ANNOTATION_TRIPLE_REF -> addPayloadTerms(
-					query,
-					query.relPayload(relationId));
+			case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.ZERO_LENGTH_PATH, PackedRelOp.TRIPLE_REF,
+					PackedRelOp.REIFIED_TRIPLE_REF, PackedRelOp.ANNOTATION_TRIPLE_REF ->
+				addPayloadTerms(
+						query,
+						query.relPayload(relationId));
 			case PackedRelOp.ARBITRARY_LENGTH_PATH -> {
 				addAssuredChild(query, relationId, 0);
 				addPayloadTerms(query, query.relPayload(relationId));
@@ -371,9 +386,13 @@ final class PackedBindingFacts {
 				addAssuredChild(query, relationId, 0);
 				addAssuredChild(query, relationId, 1);
 			}
-			case PackedRelOp.LEFT_JOIN, PackedRelOp.DIFFERENCE, PackedRelOp.FILTER, PackedRelOp.SEMI_JOIN, PackedRelOp.ANTI_JOIN, PackedRelOp.QUERY_ROOT, PackedRelOp.DESCRIBE, PackedRelOp.SLICE, PackedRelOp.REDUCED, PackedRelOp.DISTINCT, PackedRelOp.MATERIALIZE, PackedRelOp.ORDER -> addAssuredChild(
-					query,
-					relationId, 0);
+			case PackedRelOp.LEFT_JOIN, PackedRelOp.DIFFERENCE, PackedRelOp.FILTER, PackedRelOp.SEMI_JOIN,
+					PackedRelOp.ANTI_JOIN, PackedRelOp.QUERY_ROOT, PackedRelOp.DESCRIBE, PackedRelOp.SLICE,
+					PackedRelOp.REDUCED, PackedRelOp.DISTINCT, PackedRelOp.MATERIALIZE,
+					PackedRelOp.ORDER ->
+				addAssuredChild(
+						query,
+						relationId, 0);
 			case PackedRelOp.EXTENSION -> addAssuredExtension(query, relationId);
 			case PackedRelOp.UNION, PackedRelOp.INTERSECTION -> addAssuredIntersection(query, relationId);
 			case PackedRelOp.PROJECTION -> addAssuredProjection(query, relationId);

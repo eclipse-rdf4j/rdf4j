@@ -735,9 +735,9 @@ class LmdbMappedOperatorLearningContextTest {
 
 	private static int filteredLeaf(PackedQueryView query, Compare.CompareOp comparison) {
 		for (int relation = 1; relation <= query.relationCount(); relation++) {
-			if (query.isFilter(relation) && query.materializeRelation(relation)instanceof Filter filter
+			if (query.isFilter(relation) && query.materializeRelation(relation) instanceof Filter filter
 					&& filter.getArg() instanceof StatementPattern
-					&& filter.getCondition()instanceof Compare condition
+					&& filter.getCondition() instanceof Compare condition
 					&& condition.getOperator() == comparison) {
 				return relation;
 			}

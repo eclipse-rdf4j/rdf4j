@@ -362,7 +362,8 @@ class SailDatasetReadCompositionTest {
 			AtomicInteger statementCalls = new AtomicInteger();
 			SailDataset opaque = new DelegatingSailDataset(new Leaf("hidden")) {
 				@Override
-				public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
+				public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate,
+						Value object,
 						Resource... contexts) {
 					statementCalls.incrementAndGet();
 					return new EmptyIteration<>();

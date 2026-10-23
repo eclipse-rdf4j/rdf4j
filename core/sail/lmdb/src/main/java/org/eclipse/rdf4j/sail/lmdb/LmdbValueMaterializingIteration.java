@@ -170,6 +170,7 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 			}
 		}
 	}
+
 	@Override
 	public boolean requestCancellation() {
 		if (sourceClosing || isClosed()) {
@@ -219,7 +220,6 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 			return next;
 		}
 	}
-
 
 	private boolean fillBuffer() {
 		bufferIndex = 0;
@@ -747,7 +747,6 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 		return left == right || left != null && left.equals(right);
 	}
 
-
 	private static boolean sameValueScope(ValueStoreRevision left, ValueStoreRevision right) {
 		return sameRevision(left, right) && cacheBank(left) == cacheBank(right);
 	}
@@ -755,6 +754,7 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 	private static int cacheBank(ValueStoreRevision revision) {
 		return ValuePosition.cacheBank(revision == null ? ValuePosition.NONE : revision.getPositionMask());
 	}
+
 	private static boolean canUseInternalId(ValueStoreRevision revision) {
 		return revision != null && revision.getValueStore() != null;
 	}

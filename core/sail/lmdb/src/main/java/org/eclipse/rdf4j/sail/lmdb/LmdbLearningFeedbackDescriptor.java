@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor;
 
 /** Common physical feedback values; logical population authority is deliberately absent from this interface. */
 sealed interface LmdbLearningFeedbackDescriptor
-		extends RuntimeFeedbackDescriptor permits LmdbRuntimeFeedbackDescriptor,LmdbPhysicalEventFeedbackDescriptor {
+		extends RuntimeFeedbackDescriptor permits LmdbRuntimeFeedbackDescriptor, LmdbPhysicalEventFeedbackDescriptor {
 	LearningApplicability applicability();
 
 	PhysicalResidualKey physicalKey();

@@ -254,7 +254,7 @@ public final class DerivedStateBuildExecutor implements AutoCloseable {
 		}
 	}
 
-	private record IndexedResult<T> (int index, T value) {
+	private record IndexedResult<T>(int index, T value) {
 	}
 
 	@Override

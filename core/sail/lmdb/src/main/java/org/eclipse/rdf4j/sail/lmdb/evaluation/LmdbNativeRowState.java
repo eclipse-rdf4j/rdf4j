@@ -54,14 +54,21 @@ final class RowState implements LmdbNativeSlotReader {
 
 	void noteUnqualifiedFilter(RecordingNativeBooleanFilter filter) {
 		SyntheticValueSource scope = evaluationScope();
-		if (scope == null) { return; }
-		if (unqualifiedFilters == null) { unqualifiedFilters = new IdentityHashMap<>(); }
+		if (scope == null) {
+			return;
+		}
+		if (unqualifiedFilters == null) {
+			unqualifiedFilters = new IdentityHashMap<>();
+		}
 		if (unqualifiedFilters.put(filter, Boolean.TRUE) == null) {
 			NativeExecutionContext context = scope.executionContext().filterOutcomeOwner();
-			if (filter.attempt != null) { filter.attempt.unqualified(filter, context); }
-			else {
+			if (filter.attempt != null) {
+				filter.attempt.unqualified(filter, context);
+			} else {
 				NativeFilterLease.Outcome outcome = context.openFilterOutcome(filter);
-				if (outcome != null) { outcome.terminal(0L, 0L, false); }
+				if (outcome != null) {
+					outcome.terminal(0L, 0L, false);
+				}
 			}
 		}
 	}

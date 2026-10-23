@@ -107,6 +107,6 @@ final class LmdbSnapshotProbeCache<V> {
 	private record ProbeKey(FilterSurfaceKey surface, int probeBound) {
 	}
 
-	private record WeightedValue<V> (V value, long weight) {
+	private record WeightedValue<V>(V value, long weight) {
 	}
 }

@@ -4,7 +4,7 @@
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/documents/edl-v10.php.
+ * http://www.eclipse.org/org/documents/edl-v10.php.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
@@ -54,7 +54,9 @@ class ValueStoreLegacyRawReverseCompatibilityTest {
 			assertNotEquals(LmdbValue.UNKNOWN_ID, id);
 			payload = values.getData(id);
 			assertEquals(original.getLanguage(), ((Literal) values.getValue(id)).getLanguage());
-		} finally { values.close(); }
+		} finally {
+			values.close();
+		}
 		LegacyRawReverseFixture.assertRawOnly(directory.resolve("values"), id, payload);
 	}
 
@@ -62,7 +64,8 @@ class ValueStoreLegacyRawReverseCompatibilityTest {
 	@ValueSource(ints = { 0, 1, 2 })
 	void coldScalarBatchNestedAndSnapshotKeepSemanticOwnerAcrossRollback(int index) throws Exception {
 		Literal original = literal(index);
-		Literal lower = VF.createLiteral(original.getLabel(), original.getLanguage().orElseThrow().toLowerCase(Locale.ROOT),
+		Literal lower = VF.createLiteral(original.getLabel(),
+				original.getLanguage().orElseThrow().toLowerCase(Locale.ROOT),
 				original.getBaseDirection());
 		TripleTerm nested = term(term(original));
 		long id;
@@ -73,7 +76,9 @@ class ValueStoreLegacyRawReverseCompatibilityTest {
 			id = values.storeValue(original);
 			nestedId = values.storeValue(nested);
 			payload = values.getData(id);
-		} finally { values.close(); }
+		} finally {
+			values.close();
+		}
 		values = open(true);
 		try {
 			values.clearCaches();
@@ -98,8 +103,13 @@ class ValueStoreLegacyRawReverseCompatibilityTest {
 				assertEquals(nestedId, values.storeValue(term(term(lower))));
 				values.commit();
 			} catch (Exception | Error failure) {
-				try { values.rollback(); }
-				catch (Exception | Error cleanup) { if (cleanup != failure) { failure.addSuppressed(cleanup); } }
+				try {
+					values.rollback();
+				} catch (Exception | Error cleanup) {
+					if (cleanup != failure) {
+						failure.addSuppressed(cleanup);
+					}
+				}
 				throw failure;
 			}
 			Literal temporary = VF.createLiteral("rollback raw owner", "EN");
@@ -111,7 +121,9 @@ class ValueStoreLegacyRawReverseCompatibilityTest {
 			assertEquals(id, values.getId(lower));
 			assertEquals(nestedId, values.getId(term(term(lower))));
 			assertArrayEquals(payload, values.getData(id));
-		} finally { values.close(); }
+		} finally {
+			values.close();
+		}
 		LegacyRawReverseFixture.assertRawOnly(directory.resolve("values"), id, payload);
 	}
 
@@ -126,7 +138,9 @@ class ValueStoreLegacyRawReverseCompatibilityTest {
 		try {
 			id = values.storeValue(original);
 			payload = values.getData(id);
-		} finally { values.close(); }
+		} finally {
+			values.close();
+		}
 		LegacyRawReverseFixture.canonicalOnly(directory.resolve("values"), id, payload);
 		if (missingPolicy) {
 			StoreProperties properties = new StoreProperties(directory.toFile());
@@ -140,12 +154,15 @@ class ValueStoreLegacyRawReverseCompatibilityTest {
 				assertEquals(ValueStore.LanguageTagKeyMode.CANONICAL, values.languageTagKeyMode());
 				values.clearCaches();
 				assertEquals(id, values.getId(original));
-				Literal lower = VF.createLiteral(original.getLabel(), original.getLanguage().orElseThrow()
+				Literal lower = VF.createLiteral(original.getLabel(), original.getLanguage()
+						.orElseThrow()
 						.toLowerCase(Locale.ROOT), original.getBaseDirection());
 				assertEquals(id, values.storeValue(lower));
 				assertArrayEquals(payload, values.getData(id));
 				assertEquals(original.getLanguage(), ((Literal) values.getValue(id)).getLanguage());
-			} finally { values.close(); }
+			} finally {
+				values.close();
+			}
 			LegacyRawReverseFixture.assertRawOnly(directory.resolve("values"), id, payload);
 		}
 	}
@@ -164,7 +181,9 @@ class ValueStoreLegacyRawReverseCompatibilityTest {
 			payload = values.getData(id);
 			assertEquals(ValueStoreRecordCodec.hash(payload),
 					ValueStoreRecordCodec.hash(ValueStoreRecordCodec.canonicalLanguageKey(payload)));
-		} finally { values.close(); }
+		} finally {
+			values.close();
+		}
 		for (int reopen = 0; reopen < 2; reopen++) {
 			values = open(true);
 			try {
@@ -173,7 +192,9 @@ class ValueStoreLegacyRawReverseCompatibilityTest {
 				assertEquals(id, values.storeValue(VF.createLiteral(original.getLabel(),
 						original.getLanguage().orElseThrow().toLowerCase(Locale.ROOT))));
 				assertArrayEquals(payload, values.getData(id));
-			} finally { values.close(); }
+			} finally {
+				values.close();
+			}
 			LegacyRawReverseFixture.assertRawOnly(directory.resolve("values"), id, payload);
 		}
 	}
@@ -188,21 +209,31 @@ class ValueStoreLegacyRawReverseCompatibilityTest {
 		// Actual collection requires the supported legacy ref-count repair profile; the default queues IDs.
 		ValueStore values = openLegacyWithRefCountRepair();
 		try {
-			for (int i = 0; i < 2; i++) { ids[i] = values.storeValue(originals[i]); payloads[i] = values.getData(ids[i]); }
+			for (int i = 0; i < 2; i++) {
+				ids[i] = values.storeValue(originals[i]);
+				payloads[i] = values.getData(ids[i]);
+			}
 			assertNotEquals(ids[0], ids[1]);
 			assertTrue(payloads[0].length > ValueStoreRecordCodec.MAX_INLINE_KEY_BYTES);
 			assertEquals(ValueStoreRecordCodec.hash(payloads[0]), ValueStoreRecordCodec.hash(payloads[1]));
 			assertEquals(ValueStoreRecordCodec.hash(ValueStoreRecordCodec.canonicalLanguageKey(payloads[0])),
 					ValueStoreRecordCodec.hash(ValueStoreRecordCodec.canonicalLanguageKey(payloads[1])));
-		} finally { values.close(); }
+		} finally {
+			values.close();
+		}
 		for (int i = 0; i < 2; i++) {
 			LegacyRawReverseFixture.canonicalOnly(directory.resolve("values"), ids[i], payloads[i]);
 		}
 		values = openLegacyWithRefCountRepair();
 		int collected = collectFirst ? 0 : 1;
 		try {
-			for (int i = 0; i < 2; i++) { values.clearCaches(); assertEquals(ids[i], values.getId(originals[i])); }
-		} finally { values.close(); }
+			for (int i = 0; i < 2; i++) {
+				values.clearCaches();
+				assertEquals(ids[i], values.getId(originals[i]));
+			}
+		} finally {
+			values.close();
+		}
 		for (int i = 0; i < 2; i++) {
 			LegacyRawReverseFixture.assertRawOnly(directory.resolve("values"), ids[i], payloads[i]);
 		}
@@ -222,12 +253,16 @@ class ValueStoreLegacyRawReverseCompatibilityTest {
 				assertEquals(ids[1 - collected], values.getId(originals[1 - collected]));
 			}
 			Reference.reachabilityFence(retained);
-		} finally { values.close(); }
+		} finally {
+			values.close();
+		}
 		values = openLegacyWithRefCountRepair();
 		try {
 			assertEquals(LmdbValue.UNKNOWN_ID, values.getId(originals[collected]));
 			assertEquals(ids[1 - collected], values.getId(originals[1 - collected]));
-		} finally { values.close(); }
+		} finally {
+			values.close();
+		}
 	}
 
 	@Test
@@ -243,7 +278,9 @@ class ValueStoreLegacyRawReverseCompatibilityTest {
 			assertEquals("en", ((Literal) values.getValue(id)).getLanguage().orElseThrow());
 			values.clearCaches();
 			assertEquals(id, values.getId(VF.createLiteral("current default", "en")));
-		} finally { values.close(); }
+		} finally {
+			values.close();
+		}
 		LegacyRawReverseFixture.assertRawOnly(directory.resolve("values"), id, payload);
 	}
 
@@ -263,7 +300,9 @@ class ValueStoreLegacyRawReverseCompatibilityTest {
 		int[] positions = new int[64];
 		int count = 0;
 		for (int i = 0; i < lower.length && count < positions.length; i++) {
-			if (lower[i] >= 'a' && lower[i] <= 'z') { positions[count++] = i; }
+			if (lower[i] >= 'a' && lower[i] <= 'z') {
+				positions[count++] = i;
+			}
 		}
 		assertEquals(64, count);
 		long canonical = ValueStoreRecordCodec.hash(ValueStoreRecordCodec.literalData(
@@ -277,19 +316,30 @@ class ValueStoreLegacyRawReverseCompatibilityTest {
 					VF.createLiteral(label, new String(flipped)), datatype, false));
 			long mask = 1L << i;
 			for (int bit = 31; bit >= 0; bit--) {
-				if ((column & 1L << bit) == 0L) { continue; }
-				if (basis[bit] != 0L) { column ^= basis[bit]; mask ^= masks[bit]; }
-				else { basis[bit] = column; masks[bit] = mask; break; }
+				if ((column & 1L << bit) == 0L) {
+					continue;
+				}
+				if (basis[bit] != 0L) {
+					column ^= basis[bit];
+					mask ^= masks[bit];
+				} else {
+					basis[bit] = column;
+					masks[bit] = mask;
+					break;
+				}
 			}
 			if (column == 0L) {
 				assertNotEquals(0L, mask);
 				char[] upper = lower.clone();
 				for (int j = 0; j < positions.length; j++) {
-					if ((mask & 1L << j) != 0L) { upper[positions[j]] = Character.toUpperCase(upper[positions[j]]); }
+					if ((mask & 1L << j) != 0L) {
+						upper[positions[j]] = Character.toUpperCase(upper[positions[j]]);
+					}
 				}
 				Literal result = VF.createLiteral(label, new String(upper));
 				assertNotEquals(new String(lower), result.getLanguage().orElseThrow());
-				assertEquals(canonical, ValueStoreRecordCodec.hash(ValueStoreRecordCodec.literalData(result, datatype, false)));
+				assertEquals(canonical,
+						ValueStoreRecordCodec.hash(ValueStoreRecordCodec.literalData(result, datatype, false)));
 				return result;
 			}
 		}
@@ -315,7 +365,9 @@ class ValueStoreLegacyRawReverseCompatibilityTest {
 			if (legacy) {
 				properties.setVersion("2");
 				properties.setLanguageTagKey(StoreProperties.LANGUAGE_TAG_KEY_CANONICAL);
-			} else { LmdbStoreFormat.forNewStore(config).initializeProperties(properties); }
+			} else {
+				LmdbStoreFormat.forNewStore(config).initializeProperties(properties);
+			}
 		}
 		ValueStore store = new ValueStore(directory.resolve("values").toFile(), properties, config);
 		properties.save();

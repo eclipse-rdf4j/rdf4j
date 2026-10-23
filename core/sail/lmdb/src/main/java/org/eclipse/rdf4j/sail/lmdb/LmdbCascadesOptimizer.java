@@ -746,7 +746,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			LmdbPredicateObjectDomainSource guaranteeSource, Set<String> consumedPredicates,
 			Set<String> anchoredBindingNames) {
 		org.eclipse.rdf4j.query.algebra.Var predicateVar = node.getPredicateVar();
-		if (predicateVar == null || !(predicateVar.getValue()instanceof IRI predicate)) {
+		if (predicateVar == null || !(predicateVar.getValue() instanceof IRI predicate)) {
 			return;
 		}
 		RdfTermDomain guarantee = guaranteeSource.getKnownRdfTermDomain(predicate).orElse(RdfTermDomain.UNKNOWN);
@@ -878,7 +878,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	}
 
 	private void annotateDistinct(Distinct distinct) {
-		if (!(distinct.getArg()instanceof Projection projection) || !isIdentityProjection(projection)) {
+		if (!(distinct.getArg() instanceof Projection projection) || !isIdentityProjection(projection)) {
 			return;
 		}
 		Set<String> distinctVars = identityProjectionNames(projection);
@@ -889,8 +889,8 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	}
 
 	private void annotateReduced(Reduced reduced) {
-		if (!(reduced.getArg()instanceof Order order)
-				|| !(order.getArg()instanceof Projection projection)
+		if (!(reduced.getArg() instanceof Order order)
+				|| !(order.getArg() instanceof Projection projection)
 				|| !isIdentityProjection(projection)) {
 			return;
 		}
@@ -911,7 +911,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		}
 		if (tupleExpr instanceof StatementPattern statementPattern) {
 			annotateDistinctStatementPattern(statementPattern, distinctVars, blockedVars, source);
-		} else if (tupleExpr instanceof Graph graph && graph.getArg()instanceof StatementPattern body) {
+		} else if (tupleExpr instanceof Graph graph && graph.getArg() instanceof StatementPattern body) {
 			Set<String> required = union(distinctVars, intersect(graph.getBindingNames(), blockedVars));
 			LmdbDistinctRequirement requirement = new LmdbDistinctRequirement(distinctVars, required, blockedVars,
 					source + "|retainedGraph");

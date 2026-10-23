@@ -760,7 +760,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			if (depth[0] == 1) {
 				reserveLocalValues(expr, context.getBlankNodeAllocationScope());
 			}
-			return withPreparedTupleExpr(expr, prepared -> precompileWithSafetySnapshot(prepared, context, generic, compiler));
+			return withPreparedTupleExpr(expr,
+					prepared -> precompileWithSafetySnapshot(prepared, context, generic, compiler));
 		} finally {
 			if (--depth[0] == 0) {
 				compilationDepth.remove();

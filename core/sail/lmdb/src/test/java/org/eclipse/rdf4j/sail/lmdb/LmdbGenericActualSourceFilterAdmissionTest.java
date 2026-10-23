@@ -27,8 +27,8 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics.FilterPassEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics.FilterPassEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.RuntimeFeedbackTarget;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -554,11 +554,14 @@ class LmdbGenericActualSourceFilterAdmissionTest {
 			assertThat(QueryResults.asList(compiled.step.evaluate(EmptyBindingSet.getInstance()))).hasSize(ROWS / 4);
 			assertLearned(compiled.statistics.estimateFilterPass(preparedFilter(compiled)));
 		}
-		try (SailDataset next = store.getBackingStore().getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT_READ)) {
+		try (SailDataset next = store.getBackingStore()
+				.getExplicitSailSource()
+				.dataset(IsolationLevels.SNAPSHOT_READ)) {
 			LmdbEvaluationStatistics statistics = statistics();
 			SailDatasetTripleTermSource source = new SailDatasetTripleTermSource(store.getValueFactory(), next);
-			EvaluationStrategy strategy = store.getConnectionEvaluationStrategyFactory().createEvaluationStrategy(
-					null, source, statistics, store.getQueryExecutionPolicy());
+			EvaluationStrategy strategy = store.getConnectionEvaluationStrategyFactory()
+					.createEvaluationStrategy(
+							null, source, statistics, store.getQueryExecutionPolicy());
 			assertLearned(statistics.estimateFilterPass(preparedFilter(strategy, source, statistics)));
 		}
 	}
@@ -569,11 +572,14 @@ class LmdbGenericActualSourceFilterAdmissionTest {
 			assertThat(QueryResults.asList(compiled.step.evaluate(EmptyBindingSet.getInstance()))).hasSize(ROWS / 4);
 			assertLearned(compiled.statistics.estimateFilterPass(preparedFilter(compiled)));
 		}
-		try (SailDataset next = store.getBackingStore().getInferredSailSource().dataset(IsolationLevels.SNAPSHOT_READ)) {
+		try (SailDataset next = store.getBackingStore()
+				.getInferredSailSource()
+				.dataset(IsolationLevels.SNAPSHOT_READ)) {
 			LmdbEvaluationStatistics statistics = statistics();
 			SailDatasetTripleTermSource source = new SailDatasetTripleTermSource(store.getValueFactory(), next);
-			EvaluationStrategy strategy = store.getConnectionEvaluationStrategyFactory().createEvaluationStrategy(
-					null, source, statistics, store.getQueryExecutionPolicy());
+			EvaluationStrategy strategy = store.getConnectionEvaluationStrategyFactory()
+					.createEvaluationStrategy(
+							null, source, statistics, store.getQueryExecutionPolicy());
 			assertThat(statistics.estimateFilterPass(preparedFilter(strategy, source, statistics)).getSource())
 					.as("even an empty real inferred plane cannot borrow an explicit-plane census")
 					.isNotIn(FilterPassEstimate.Source.LEARNED_FILTER, FilterPassEstimate.Source.LEARNED_TEMPLATE,
@@ -599,16 +605,21 @@ class LmdbGenericActualSourceFilterAdmissionTest {
 		}
 		// This is a facade-policy control over the same real owner/read and already observed optional evidence.
 		// No mapped generation, population, descriptor, contract or admission flags are manufactured.
-		try (SailDataset next = store.getBackingStore().getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT_READ)) {
+		try (SailDataset next = store.getBackingStore()
+				.getExplicitSailSource()
+				.dataset(IsolationLevels.SNAPSHOT_READ)) {
 			LmdbEvaluationStatistics authoritative = new LmdbEvaluationStatistics(
 					store.getBackingStore().valueStore(), store.getBackingStore().getTripleStore(), null, null,
 					statistics().estimatorRuntime().feedback(), null, null,
-					LmdbFrontierPlannerSettings.from(new LmdbStoreConfig().setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)),
+					LmdbFrontierPlannerSettings
+							.from(new LmdbStoreConfig().setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)),
 					() -> false, () -> true, null, learned(), store.getQueryExecutionPolicy());
 			SailDatasetTripleTermSource source = new SailDatasetTripleTermSource(store.getValueFactory(), next);
-			EvaluationStrategy strategy = store.getConnectionEvaluationStrategyFactory().createEvaluationStrategy(
-					null, source, authoritative, store.getQueryExecutionPolicy());
-			assertThat(authoritative.estimatorRuntime().frontierSettings().mode()).isEqualTo(FrontierEstimatorMode.AUTHORITATIVE);
+			EvaluationStrategy strategy = store.getConnectionEvaluationStrategyFactory()
+					.createEvaluationStrategy(
+							null, source, authoritative, store.getQueryExecutionPolicy());
+			assertThat(authoritative.estimatorRuntime().frontierSettings().mode())
+					.isEqualTo(FrontierEstimatorMode.AUTHORITATIVE);
 			assertThat(authoritative.estimateFilterPass(preparedFilter(strategy, source, authoritative)).getSource())
 					.isNotIn(FilterPassEstimate.Source.LEARNED_FILTER, FilterPassEstimate.Source.LEARNED_TEMPLATE,
 							FilterPassEstimate.Source.LEARNED_PATTERN);
@@ -621,7 +632,8 @@ class LmdbGenericActualSourceFilterAdmissionTest {
 			assertThat(QueryResults.asList(compiled.step.evaluate(EmptyBindingSet.getInstance()))).hasSize(ROWS / 4);
 			assertLearned(compiled.statistics.estimateFilterPass(preparedFilter(compiled)));
 			for (String other : List.of(
-					"SELECT ?s WHERE { " + PATTERN + " OPTIONAL { ?s <urn:generic-learn:q> ?extra } FILTER(" + CONDITION + ") }",
+					"SELECT ?s WHERE { " + PATTERN + " OPTIONAL { ?s <urn:generic-learn:q> ?extra } FILTER(" + CONDITION
+							+ ") }",
 					"SELECT ?s WHERE { { SELECT ?s WHERE { " + PATTERN + " } } FILTER(" + CONDITION + ") }",
 					"SELECT ?s WHERE { VALUES ?v { \"hit:0\" UNDEF } " + PATTERN + " FILTER(" + CONDITION + ") }",
 					"SELECT ?s WHERE { " + PATTERN + " FILTER(<urn:generic-learn:unknown-function>(?v)) }")) {

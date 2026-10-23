@@ -680,7 +680,6 @@ public final class Varint {
 		}
 	}
 
-
 	private static long readSignificantBitsDirect(ByteBuffer bb, int n) {
 		return SignificantBytesBE.readDirect(bb, n);
 	}

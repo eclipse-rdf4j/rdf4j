@@ -213,8 +213,11 @@ class LmdbLanguageTagVariantMergeTest {
 			}
 			assertEquals(0, coldInternalValues.size(),
 					() -> "startup predicate-domain bookkeeping exported cold native IDs "
-							+ coldInternalValues.stream().map(value -> value.getInternalIdentity().id())
-									.distinct().sorted().toList());
+							+ coldInternalValues.stream()
+									.map(value -> value.getInternalIdentity().id())
+									.distinct()
+									.sorted()
+									.toList());
 		} finally {
 			try {
 				store.shutDown();
@@ -487,8 +490,7 @@ class LmdbLanguageTagVariantMergeTest {
 			add(reference.getSail(), session);
 		}
 		try (RepositoryConnection referenceConnection = reference.getConnection()) {
-			assertTrue(fixture.explicitRows() + fixture.inferredRows()
-					> statements(referenceConnection, true).size(),
+			assertTrue(fixture.explicitRows() + fixture.inferredRows() > statements(referenceConnection, true).size(),
 					"fixture: the legacy store must hold duplicate statements for case variants");
 		}
 		Map<String, Long> ids = fixture.idBySpelling();

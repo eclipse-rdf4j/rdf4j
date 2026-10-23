@@ -420,7 +420,7 @@ final class PackedLogicalRuleProgram {
 		}
 		filterFactRange.reset();
 		for (int ordinal = 0; ordinal < finiteValueCount; ordinal++) {
-			if (!(objects.value(finiteValueObjectIds[ordinal])instanceof Value value)
+			if (!(objects.value(finiteValueObjectIds[ordinal]) instanceof Value value)
 					|| !termIdentityExact(value)) {
 				return;
 			}
@@ -707,12 +707,15 @@ final class PackedLogicalRuleProgram {
 	 */
 	private boolean executorProbesMinusBodyBySelection(int expressionId, long[] sharedNames) {
 		return switch (relations.operatorTag(expressionId)) {
-		case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.BINDING_SET_ASSIGNMENT, PackedRelOp.SINGLETON_SET, PackedRelOp.EMPTY_SET -> true;
+		case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.BINDING_SET_ASSIGNMENT, PackedRelOp.SINGLETON_SET,
+				PackedRelOp.EMPTY_SET ->
+			true;
 		case PackedRelOp.JOIN, PackedRelOp.UNION -> executorProbesMinusBodyBySelection(
 				relations.childGroupId(expressionId, 0), sharedNames)
 				&& executorProbesMinusBodyBySelection(relations.childGroupId(expressionId, 1), sharedNames);
-		case PackedRelOp.QUERY_ROOT, PackedRelOp.DISTINCT, PackedRelOp.REDUCED, PackedRelOp.ORDER -> executorProbesMinusBodyBySelection(
-				relations.childGroupId(expressionId, 0), sharedNames);
+		case PackedRelOp.QUERY_ROOT, PackedRelOp.DISTINCT, PackedRelOp.REDUCED, PackedRelOp.ORDER ->
+			executorProbesMinusBodyBySelection(
+					relations.childGroupId(expressionId, 0), sharedNames);
 		case PackedRelOp.FILTER -> !scalarContainsSubqueryValue(relations.payloadId(expressionId))
 				&& executorProbesMinusBodyBySelection(relations.childGroupId(expressionId, 0), sharedNames);
 		case PackedRelOp.EXTENSION -> extensionIsProbeSelection(relations.payloadId(expressionId), sharedNames)
@@ -767,18 +770,25 @@ final class PackedLogicalRuleProgram {
 	private boolean safeCorrelatedMinusProbeUncached(int expressionId) {
 		int operator = relations.operatorTag(expressionId);
 		return switch (operator) {
-		case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.BINDING_SET_ASSIGNMENT, PackedRelOp.SINGLETON_SET, PackedRelOp.EMPTY_SET, PackedRelOp.ZERO_LENGTH_PATH, PackedRelOp.ARBITRARY_LENGTH_PATH, PackedRelOp.TRIPLE_REF, PackedRelOp.REIFIED_TRIPLE_REF, PackedRelOp.ANNOTATION_TRIPLE_REF -> true;
-		case PackedRelOp.JOIN, PackedRelOp.UNION, PackedRelOp.DIFFERENCE, PackedRelOp.INTERSECTION -> safeCorrelatedMinusProbe(
-				relations.childGroupId(expressionId, 0))
-				&& safeCorrelatedMinusProbe(relations.childGroupId(expressionId, 1));
+		case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.BINDING_SET_ASSIGNMENT, PackedRelOp.SINGLETON_SET,
+				PackedRelOp.EMPTY_SET, PackedRelOp.ZERO_LENGTH_PATH, PackedRelOp.ARBITRARY_LENGTH_PATH,
+				PackedRelOp.TRIPLE_REF, PackedRelOp.REIFIED_TRIPLE_REF, PackedRelOp.ANNOTATION_TRIPLE_REF ->
+			true;
+		case PackedRelOp.JOIN, PackedRelOp.UNION, PackedRelOp.DIFFERENCE,
+				PackedRelOp.INTERSECTION ->
+			safeCorrelatedMinusProbe(
+					relations.childGroupId(expressionId, 0))
+					&& safeCorrelatedMinusProbe(relations.childGroupId(expressionId, 1));
 		case PackedRelOp.LEFT_JOIN -> (relations.payloadId(expressionId) == 0
 				|| safeRepeatedScalar(relations.payloadId(expressionId)))
 				&& safeCorrelatedMinusProbe(relations.childGroupId(expressionId, 0))
 				&& safeCorrelatedMinusProbe(relations.childGroupId(expressionId, 1));
 		case PackedRelOp.FILTER -> safeRepeatedScalar(relations.payloadId(expressionId))
 				&& safeCorrelatedMinusProbe(relations.childGroupId(expressionId, 0));
-		case PackedRelOp.QUERY_ROOT, PackedRelOp.DESCRIBE, PackedRelOp.SLICE, PackedRelOp.REDUCED, PackedRelOp.DISTINCT, PackedRelOp.MATERIALIZE, PackedRelOp.PROJECTION, PackedRelOp.MULTI_PROJECTION -> safeCorrelatedMinusProbe(
-				relations.childGroupId(expressionId, 0));
+		case PackedRelOp.QUERY_ROOT, PackedRelOp.DESCRIBE, PackedRelOp.SLICE, PackedRelOp.REDUCED, PackedRelOp.DISTINCT,
+				PackedRelOp.MATERIALIZE, PackedRelOp.PROJECTION, PackedRelOp.MULTI_PROJECTION ->
+			safeCorrelatedMinusProbe(
+					relations.childGroupId(expressionId, 0));
 		case PackedRelOp.ORDER -> safeOrderForRepeatedEvaluation(relations.payloadId(expressionId))
 				&& safeCorrelatedMinusProbe(relations.childGroupId(expressionId, 0));
 		case PackedRelOp.EXTENSION -> safeExtensionForRepeatedEvaluation(relations.payloadId(expressionId))
@@ -2584,7 +2594,7 @@ final class PackedLogicalRuleProgram {
 		}
 		int derivedId = leftDerived ? leftId : rightId;
 		int constantValueId = scalarConstantValueId(leftDerived ? rightId : leftId);
-		if (constantValueId == 0 || !(objects.value(constantValueId)instanceof Value constant)) {
+		if (constantValueId == 0 || !(objects.value(constantValueId) instanceof Value constant)) {
 			return VERDICT_UNKNOWN;
 		}
 		return scalars.operatorTag(derivedId) == PackedScalarOp.DATATYPE
@@ -2664,7 +2674,7 @@ final class PackedLogicalRuleProgram {
 		int langId = scalars.childGroupId(scalarId, 0);
 		int patternValueId = scalarConstantValueId(scalars.childGroupId(scalarId, 1));
 		if (scalars.operatorTag(langId) != PackedScalarOp.LANG || patternValueId == 0
-				|| !(objects.value(patternValueId)instanceof Literal pattern)
+				|| !(objects.value(patternValueId) instanceof Literal pattern)
 				|| !"*".equals(pattern.getLabel())) {
 			return VERDICT_UNKNOWN;
 		}
@@ -2749,7 +2759,7 @@ final class PackedLogicalRuleProgram {
 			return VERDICT_UNKNOWN;
 		}
 		int rangeId = domainFacts.rangeId(inputGroupId, symbolId);
-		if (rangeId == 0 || !(objects.value(constantValueId)instanceof Value constant)) {
+		if (rangeId == 0 || !(objects.value(constantValueId) instanceof Value constant)) {
 			return VERDICT_UNKNOWN;
 		}
 		return valuePossiblyEqualsRange(constant, rangeId) ? VERDICT_UNKNOWN : VERDICT_ALWAYS_DROPPED;
@@ -2780,7 +2790,7 @@ final class PackedLogicalRuleProgram {
 		}
 		int variableNameId = leftVariable ? leftNameId : rightNameId;
 		int constantValueId = scalarConstantValueId(leftVariable ? rightId : leftId);
-		if (constantValueId == 0 || !(objects.value(constantValueId)instanceof Literal literal)) {
+		if (constantValueId == 0 || !(objects.value(constantValueId) instanceof Literal literal)) {
 			return null;
 		}
 		BigInteger threshold = integerValueOf(literal);
@@ -2968,7 +2978,7 @@ final class PackedLogicalRuleProgram {
 		int[] expanded = new int[MAX_FINITE_VALUES];
 		for (int ordinal = 0; ordinal < collectedCount; ordinal++) {
 			int objectId = finiteValueObjectIds[ordinal];
-			if (!(objects.value(objectId)instanceof Value value)) {
+			if (!(objects.value(objectId) instanceof Value value)) {
 				return;
 			}
 			if (!valuePossiblyEqualsRange(value, rangeId)) {
@@ -3155,7 +3165,7 @@ final class PackedLogicalRuleProgram {
 		int count = expandedCount;
 		for (int ordinal = 0; ordinal < arena.finiteValueCount(rangeId); ordinal++) {
 			int storedObjectId = arena.finiteValueObjectId(rangeId, ordinal);
-			if (!(objects.value(storedObjectId)instanceof Value stored)) {
+			if (!(objects.value(storedObjectId) instanceof Value stored)) {
 				return -1;
 			}
 			QueryEvaluationUtility.Result strict;
@@ -3961,8 +3971,10 @@ final class PackedLogicalRuleProgram {
 	private boolean relationAssuresSymbolUncached(int expressionId, int symbolId) {
 		int operator = relations.operatorTag(expressionId);
 		return switch (operator) {
-		case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.ZERO_LENGTH_PATH, PackedRelOp.ARBITRARY_LENGTH_PATH, PackedRelOp.TRIPLE_REF, PackedRelOp.REIFIED_TRIPLE_REF, PackedRelOp.ANNOTATION_TRIPLE_REF -> relationOutputContains(
-				expressionId, symbolId);
+		case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.ZERO_LENGTH_PATH, PackedRelOp.ARBITRARY_LENGTH_PATH,
+				PackedRelOp.TRIPLE_REF, PackedRelOp.REIFIED_TRIPLE_REF, PackedRelOp.ANNOTATION_TRIPLE_REF ->
+			relationOutputContains(
+					expressionId, symbolId);
 		case PackedRelOp.BINDING_SET_ASSIGNMENT -> nameSetContainsSymbol(
 				payloads.semanticScopeId(relations.payloadId(expressionId)), symbolId);
 		case PackedRelOp.LEFT_JOIN, PackedRelOp.DIFFERENCE -> relationAssuresSymbol(
@@ -3973,8 +3985,11 @@ final class PackedLogicalRuleProgram {
 		case PackedRelOp.JOIN, PackedRelOp.LATERAL -> relationAssuresSymbol(
 				relations.childGroupId(expressionId, 0), symbolId)
 				|| relationAssuresSymbol(relations.childGroupId(expressionId, 1), symbolId);
-		case PackedRelOp.FILTER, PackedRelOp.SEMI_JOIN, PackedRelOp.ANTI_JOIN, PackedRelOp.QUERY_ROOT, PackedRelOp.DESCRIBE, PackedRelOp.SLICE, PackedRelOp.REDUCED, PackedRelOp.DISTINCT, PackedRelOp.MATERIALIZE, PackedRelOp.ORDER -> relationAssuresSymbol(
-				relations.childGroupId(expressionId, 0), symbolId);
+		case PackedRelOp.FILTER, PackedRelOp.SEMI_JOIN, PackedRelOp.ANTI_JOIN, PackedRelOp.QUERY_ROOT,
+				PackedRelOp.DESCRIBE, PackedRelOp.SLICE, PackedRelOp.REDUCED, PackedRelOp.DISTINCT,
+				PackedRelOp.MATERIALIZE, PackedRelOp.ORDER ->
+			relationAssuresSymbol(
+					relations.childGroupId(expressionId, 0), symbolId);
 		case PackedRelOp.PROJECTION -> projectionListAssuresSymbol(
 				payloads.payloadId(relations.payloadId(expressionId)),
 				relations.childGroupId(expressionId, 0), symbolId);
@@ -4123,8 +4138,10 @@ final class PackedLogicalRuleProgram {
 		}
 		int payloadId = relations.payloadId(expressionId);
 		switch (operator) {
-		case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.ZERO_LENGTH_PATH, PackedRelOp.TRIPLE_REF, PackedRelOp.REIFIED_TRIPLE_REF, PackedRelOp.ANNOTATION_TRIPLE_REF, PackedRelOp.ARBITRARY_LENGTH_PATH -> addPayloadTerms(
-				payloadId, output);
+		case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.ZERO_LENGTH_PATH, PackedRelOp.TRIPLE_REF,
+				PackedRelOp.REIFIED_TRIPLE_REF, PackedRelOp.ANNOTATION_TRIPLE_REF, PackedRelOp.ARBITRARY_LENGTH_PATH ->
+			addPayloadTerms(
+					payloadId, output);
 		case PackedRelOp.PROJECTION -> addProjectionOutputs(payloads.payloadId(payloadId), output);
 		case PackedRelOp.GRAPH -> {
 			int term = payloads.childGroupId(payloadId, 0);
@@ -4300,8 +4317,10 @@ final class PackedLogicalRuleProgram {
 		int payloadId = relations.payloadId(expressionId);
 		boolean complete = true;
 		switch (operator) {
-		case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.ZERO_LENGTH_PATH, PackedRelOp.ARBITRARY_LENGTH_PATH, PackedRelOp.TRIPLE_REF, PackedRelOp.REIFIED_TRIPLE_REF, PackedRelOp.ANNOTATION_TRIPLE_REF -> addPayloadTerms(
-				payloadId, output);
+		case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.ZERO_LENGTH_PATH, PackedRelOp.ARBITRARY_LENGTH_PATH,
+				PackedRelOp.TRIPLE_REF, PackedRelOp.REIFIED_TRIPLE_REF, PackedRelOp.ANNOTATION_TRIPLE_REF ->
+			addPayloadTerms(
+					payloadId, output);
 		case PackedRelOp.GRAPH -> addPayloadTerms(payloadId, output);
 		case PackedRelOp.BINDING_SET_ASSIGNMENT -> addNameSet(payloads.payloadId(payloadId), output);
 		case PackedRelOp.FILTER, PackedRelOp.LEFT_JOIN -> addScalarDependencies(payloadId, output);
@@ -4360,8 +4379,11 @@ final class PackedLogicalRuleProgram {
 			addTerm(payloads.payloadId(payloadId), output);
 			complete = false;
 		}
-		case PackedRelOp.JOIN, PackedRelOp.UNION, PackedRelOp.DIFFERENCE, PackedRelOp.INTERSECTION, PackedRelOp.DISTINCT, PackedRelOp.REDUCED, PackedRelOp.SLICE, PackedRelOp.QUERY_ROOT, PackedRelOp.DESCRIBE, PackedRelOp.MATERIALIZE, PackedRelOp.EMPTY_SET, PackedRelOp.SINGLETON_SET -> {
-		}
+		case PackedRelOp.JOIN, PackedRelOp.UNION, PackedRelOp.DIFFERENCE, PackedRelOp.INTERSECTION,
+				PackedRelOp.DISTINCT, PackedRelOp.REDUCED, PackedRelOp.SLICE, PackedRelOp.QUERY_ROOT,
+				PackedRelOp.DESCRIBE, PackedRelOp.MATERIALIZE, PackedRelOp.EMPTY_SET, PackedRelOp.SINGLETON_SET ->
+			{
+			}
 		default -> complete = false;
 		}
 		return complete;

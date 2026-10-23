@@ -63,8 +63,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.Pack
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostSession;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanValidationRequest;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedProviderCacheIdentity;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedQueryView.PrefixMaterialization;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedQueryView;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedQueryView.PrefixMaterialization;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedRootCardinalityCertifier;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedStalePlanValidation;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedStalePlanValidator;
@@ -74,8 +74,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EstimateMath;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceStateSummary;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
-import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.ReadOnlyContext;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.ReadOnlyContext;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -2875,7 +2875,8 @@ final class LmdbPackedCostModel
 				JoinFactorCostModel.CostContext.forOptimization(boundNames, context.prefixRows(), Double.NaN,
 						connected, true, finiteBindings, prefixFactors)
 						.withPrefixFactorsDescribeCurrentRows(context.prefixRelationsDescribeRows())
-						.withUnrelatedPrefixRows(context.unrelatedPrefixRows()), filterReadContext);
+						.withUnrelatedPrefixRows(context.unrelatedPrefixRows()),
+				filterReadContext);
 		if (estimate.isEmpty()) {
 			return false;
 		}
@@ -2935,7 +2936,8 @@ final class LmdbPackedCostModel
 				boundNames, context.prefixRows(), Double.NaN, hasPrefix, true, finiteBindings, prefixFactors)
 				.withPrefixFactorsDescribeCurrentRows(context.prefixRelationsDescribeRows())
 				.withUnrelatedPrefixRows(context.unrelatedPrefixRows());
-		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = runtime.factorCost(expression, factorContext, filterReadContext);
+		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = runtime.factorCost(expression, factorContext,
+				filterReadContext);
 		if (estimate.isEmpty()) {
 			return false;
 		}
@@ -3060,10 +3062,10 @@ final class LmdbPackedCostModel
 		while (current instanceof Filter || current instanceof Projection || current instanceof Extension) {
 			decorated = true;
 			current = switch (current) {
-				case Filter filter -> filter.getArg();
-				case Projection projection -> projection.getArg();
-				case Extension extension -> extension.getArg();
-				default -> throw new IllegalStateException("Unexpected statement access wrapper");
+			case Filter filter -> filter.getArg();
+			case Projection projection -> projection.getArg();
+			case Extension extension -> extension.getArg();
+			default -> throw new IllegalStateException("Unexpected statement access wrapper");
 			};
 		}
 		return decorated && current instanceof StatementPattern;
@@ -3095,7 +3097,9 @@ final class LmdbPackedCostModel
 				assuredInputs, context.prefixRows(), Double.NaN, true, true, Map.of(), List.of())
 				.withPrefixFactorsDescribeCurrentRows(false)
 				.withUnrelatedPrefixRows(context.unrelatedPrefixRows());
-		JoinFactorCostModel.FactorCostEstimate estimate = runtime.factorCost(expression, physicalContext, filterReadContext).orElse(null);
+		JoinFactorCostModel.FactorCostEstimate estimate = runtime
+				.factorCost(expression, physicalContext, filterReadContext)
+				.orElse(null);
 		if (estimate == null || !finiteNonNegative(estimate.getWorkRows())
 				&& !finiteNonNegative(estimate.getOutputRows())) {
 			return null;
@@ -3205,7 +3209,8 @@ final class LmdbPackedCostModel
 				JoinFactorCostModel.CostContext.forOptimization(boundNames, context.prefixRows(), Double.NaN,
 						connected, true, finiteBindings, prefixFactors)
 						.withPrefixFactorsDescribeCurrentRows(context.prefixRelationsDescribeRows())
-						.withUnrelatedPrefixRows(context.unrelatedPrefixRows()), filterReadContext);
+						.withUnrelatedPrefixRows(context.unrelatedPrefixRows()),
+				filterReadContext);
 		if (estimate.isEmpty()) {
 			return false;
 		}
@@ -3270,7 +3275,7 @@ final class LmdbPackedCostModel
 	private MappedPropertyPathEstimate mappedPropertyPathEstimate(TupleExpr expression,
 			List<TupleExpr> prefixFactors, PackedCostContext context, boolean completePrefixComponent) {
 		if (statisticsView == null || !(expression instanceof ArbitraryLengthPath path)
-				|| !(path.getPathExpression()instanceof StatementPattern step)) {
+				|| !(path.getPathExpression() instanceof StatementPattern step)) {
 			return null;
 		}
 		boolean subjectBound = prefixBinds(path.getSubjectVar(), prefixFactors);
@@ -3523,7 +3528,8 @@ final class LmdbPackedCostModel
 				JoinFactorCostModel.CostContext.forOptimization(boundNames, context.prefixRows(),
 						Double.NaN, true, true, prefix.finiteBindingValues(), prefixFactors)
 						.withPrefixFactorsDescribeCurrentRows(context.prefixRelationsDescribeRows())
-						.withUnrelatedPrefixRows(context.unrelatedPrefixRows()), filterReadContext);
+						.withUnrelatedPrefixRows(context.unrelatedPrefixRows()),
+				filterReadContext);
 		if (estimate.isEmpty()) {
 			return false;
 		}
@@ -3710,7 +3716,8 @@ final class LmdbPackedCostModel
 		Set<String> boundNames = bindingNames(boundBindingNames);
 		return runtime.factorCost(expression,
 				JoinFactorCostModel.CostContext.forOptimization(
-						boundNames, 1.0d, Double.NaN, true, true, Map.of(), List.of()), filterReadContext);
+						boundNames, 1.0d, Double.NaN, true, true, Map.of(), List.of()),
+				filterReadContext);
 	}
 
 	private static Set<String> bindingNames(String[] names) {

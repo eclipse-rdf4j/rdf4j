@@ -136,7 +136,8 @@ class LmdbGenericFilterFactorReadContextTest {
 			TupleExpr annotationOnly = new LmdbQueryOptimizerPipeline(next.strategy, next.source, next.statistics)
 					.withPreparedQueryEntry(parse(NEXT_QUERY), null, EmptyBindingSet.getInstance(),
 							(prepared, cascades) -> prepared);
-			TupleExpr planned = next.strategy.optimize(parse(NEXT_QUERY), next.statistics, EmptyBindingSet.getInstance());
+			TupleExpr planned = next.strategy.optimize(parse(NEXT_QUERY), next.statistics,
+					EmptyBindingSet.getInstance());
 			TupleExpr hit = next.strategy.optimize(parse(NEXT_QUERY), next.statistics, EmptyBindingSet.getInstance());
 			// All real optimization calls occur before assertions; annotation success does not gate the cost oracle.
 			assertAll(() -> assertLearnedPlan(planned), () -> assertLearnedPlan(hit),

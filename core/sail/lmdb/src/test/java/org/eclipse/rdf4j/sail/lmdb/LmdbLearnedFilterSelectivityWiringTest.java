@@ -161,7 +161,8 @@ public class LmdbLearnedFilterSelectivityWiringTest {
 						.as("optimized explanation must not publish feedback before query evaluation")
 						.isZero();
 
-				List<String> actualSubjects = QueryResults.asList(queryExecution.evaluate()).stream()
+				List<String> actualSubjects = QueryResults.asList(queryExecution.evaluate())
+						.stream()
 						.map(bindingSet -> bindingSet.getValue("s").stringValue())
 						.sorted()
 						.toList();
@@ -180,9 +181,11 @@ public class LmdbLearnedFilterSelectivityWiringTest {
 				EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
 				SailDatasetTripleTermSource source = new SailDatasetTripleTermSource(store.getValueFactory(), dataset);
 				assertThat(source.getClass()).isEqualTo(SailDatasetTripleTermSource.class);
-				assertThat(source.getSnapshotEpoch()).as("the next estimate uses a pinned full-read source").isPresent();
-				EvaluationStrategy strategy = store.getConnectionEvaluationStrategyFactory().createEvaluationStrategy(
-						nextQuery.getActiveDataset(), source, statistics, store.getQueryExecutionPolicy());
+				assertThat(source.getSnapshotEpoch()).as("the next estimate uses a pinned full-read source")
+						.isPresent();
+				EvaluationStrategy strategy = store.getConnectionEvaluationStrategyFactory()
+						.createEvaluationStrategy(
+								nextQuery.getActiveDataset(), source, statistics, store.getQueryExecutionPolicy());
 				assertThat(strategy).isInstanceOf(LmdbEvaluationStrategy.class)
 						.isNotInstanceOf(LmdbNativeEvaluationStrategy.class);
 				assertThat(strategy.getQueryExecutionPolicy().experimentalQueryOptimizations()).isTrue();
@@ -208,13 +211,13 @@ public class LmdbLearnedFilterSelectivityWiringTest {
 					assertThat(nextPlan.getStringMetricPlanned("optimizer.planCacheRefreshReason"))
 							.isEqualTo("outside-stability-envelope");
 					assertThat(nextPlan.getStringMetricPlanned("optimizer.planCacheQualityState"))
-						.isEqualTo("SUSPECT");
+							.isEqualTo("SUSPECT");
 					assertThat(nextPlan.getStringMetricPlanned("optimizer.planCacheStabilityEnvelopeResult"))
-						.isEqualTo("OUTSIDE");
+							.isEqualTo("OUTSIDE");
 					assertThat(plannedFilter.getStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE))
 							.isEqualTo(initialPlannedSource);
 					assertThat(plannedFilter.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO))
-						.isEqualTo(initialPlannedRatio);
+							.isEqualTo(initialPlannedRatio);
 				} else {
 					assertLearnedPlannedTelemetry(plannedFilter);
 				}

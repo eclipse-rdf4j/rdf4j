@@ -33,8 +33,8 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics.FilterPassEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics.FilterPassEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.RuntimeFeedbackTarget;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -59,12 +59,25 @@ class LmdbGenericPreboundLearnedFilterCompositionTest {
 	private static final String PATTERN = "?s <urn:generic-learn:p> ?v";
 	private static final String CONDITION = "REGEX(STR(?v), \"^hit:\")";
 	private static final String QUERY = "SELECT ?s WHERE { " + PATTERN + " FILTER(" + CONDITION + ") }";
-	@TempDir File directory;
+	@TempDir
+	File directory;
 	private LmdbStore store;
 	private SailRepository repository;
 
-	enum Stop { EARLY_CLOSE, STALE, RESET }
-	enum IncompleteAggregate { EARLY_SUCCESS, OPEN_NOT_CLOSED, ONLY_ONE_OPEN_EXHAUSTED, NEVER_OPENED, CANCELLED, FAILED }
+	enum Stop {
+		EARLY_CLOSE,
+		STALE,
+		RESET
+	}
+
+	enum IncompleteAggregate {
+		EARLY_SUCCESS,
+		OPEN_NOT_CLOSED,
+		ONLY_ONE_OPEN_EXHAUSTED,
+		NEVER_OPENED,
+		CANCELLED,
+		FAILED
+	}
 
 	@BeforeEach
 	void setUp() {
@@ -83,7 +96,10 @@ class LmdbGenericPreboundLearnedFilterCompositionTest {
 		assertThat(learned().size()).isZero();
 	}
 
-	@AfterEach void tearDown() { repository.shutDown(); }
+	@AfterEach
+	void tearDown() {
+		repository.shutDown();
+	}
 
 	@Test
 	void exhaustedRealGenericPlanTrainsTheSameStoresQualifiedEstimate() throws Exception {
@@ -91,19 +107,25 @@ class LmdbGenericPreboundLearnedFilterCompositionTest {
 			int count = 0;
 			var rows = compiled.step.evaluate(EmptyBindingSet.getInstance());
 			try (rows) {
-				while (rows.hasNext()) { rows.next(); count++; }
+				while (rows.hasNext()) {
+					rows.next();
+					count++;
+				}
 			}
 			assertThat(count).isEqualTo(ROWS / 4);
 			assertThat(patterns(compiled.optimized)).hasSize(1);
 			assertThat(patterns(compiled.optimized).getFirst().getResultSizeActual())
-					.as("real generic statement step consumed all input rows").isEqualTo(ROWS);
+					.as("real generic statement step consumed all input rows")
+					.isEqualTo(ROWS);
 			assertThat(compiled.filter.getResultSizeActual()).isEqualTo(ROWS / 4);
-			assertThat(learned().size()).as("new store-owned service receives the compiled prebound observation").isPositive();
+			assertThat(learned().size()).as("new store-owned service receives the compiled prebound observation")
+					.isPositive();
 			FilterPassEstimate direct = compiled.statistics.estimateFilterPass(preparedFilter(compiled));
 			assertLearned(direct);
 			assertLearned(compiled.statistics.estimateFilterPass(compiled.filter.clone()));
 			for (String otherShape : List.of(
-					"SELECT ?s WHERE { " + PATTERN + " OPTIONAL { ?s <urn:generic-learn:q> ?extra } FILTER(" + CONDITION + ") }",
+					"SELECT ?s WHERE { " + PATTERN + " OPTIONAL { ?s <urn:generic-learn:q> ?extra } FILTER(" + CONDITION
+							+ ") }",
 					"SELECT ?s WHERE { { SELECT ?s WHERE { " + PATTERN + " } } FILTER(" + CONDITION + ") }",
 					"SELECT ?s WHERE { VALUES ?v { \"hit:0\" UNDEF } " + PATTERN + " FILTER(" + CONDITION + ") }",
 					"SELECT ?s WHERE { " + PATTERN + " FILTER(<urn:generic-learn:unknown-function>(?v)) }")) {
@@ -111,8 +133,8 @@ class LmdbGenericPreboundLearnedFilterCompositionTest {
 						.getTupleExpr()).getFirst();
 				assertThat(learned().estimateQualified(store.getBackingStore().valueStore(),
 						compiled.statistics.estimatorRuntime().snapshotVersion(), otherFilter))
-						.as("nullable/composed, projection-hidden, UNDEF-bound and unknown-effect surfaces keep their own authority")
-						.isNull();
+								.as("nullable/composed, projection-hidden, UNDEF-bound and unknown-effect surfaces keep their own authority")
+								.isNull();
 			}
 			long revision = learned().planningRevision();
 			rows.close();
@@ -125,8 +147,11 @@ class LmdbGenericPreboundLearnedFilterCompositionTest {
 			assertThat(other.getBackingStore().learnedFilterSelectivity().size()).isZero();
 			assertThat(learned().estimateQualified(other.getBackingStore().valueStore(),
 					statistics().estimatorRuntime().snapshotVersion(), freshFilter()))
-					.as("actual foreign ValueStore cannot borrow this store's learned binding").isNull();
-		} finally { other.shutDown(); }
+							.as("actual foreign ValueStore cannot borrow this store's learned binding")
+							.isNull();
+		} finally {
+			other.shutDown();
+		}
 	}
 
 	@ParameterizedTest
@@ -141,7 +166,8 @@ class LmdbGenericPreboundLearnedFilterCompositionTest {
 							vf.createLiteral("unrelated committed row"));
 				}
 				assertThat(statistics().estimatorRuntime().snapshotVersion())
-						.as("a genuine committed mutation made the bound destination stale").isGreaterThan(originalEpoch);
+						.as("a genuine committed mutation made the bound destination stale")
+						.isGreaterThan(originalEpoch);
 			} else if (stop == Stop.RESET) {
 				compiled.statistics.estimatorRuntime().feedback().reset();
 			}
@@ -149,16 +175,21 @@ class LmdbGenericPreboundLearnedFilterCompositionTest {
 			Throwable surfaced = null;
 			try (var rows = compiled.step.evaluate(EmptyBindingSet.getInstance())) {
 				while (rows.hasNext()) {
-					rows.next(); count++;
-					if (stop == Stop.EARLY_CLOSE) { break; }
+					rows.next();
+					count++;
+					if (stop == Stop.EARLY_CLOSE) {
+						break;
+					}
 				}
-			} catch (RuntimeException | Error failure) { surfaced = failure; }
+			} catch (RuntimeException | Error failure) {
+				surfaced = failure;
+			}
 			assertThat(surfaced).isNull();
 			assertThat(count).isEqualTo(stop == Stop.EARLY_CLOSE ? 1 : ROWS / 4);
 			assertThat(learned().size()).as("only actual complete current-epoch filter exhaustion may train").isZero();
 			assertThat(learned().estimateQualified(store.getBackingStore().valueStore(),
 					statistics().estimatorRuntime().snapshotVersion(), freshFilter()))
-					.isNull();
+							.isNull();
 		}
 	}
 
@@ -168,7 +199,8 @@ class LmdbGenericPreboundLearnedFilterCompositionTest {
 		try (Compiled compiled = compile()) {
 			// Close the real query early so its own prebound leases finish without creating positive learning.
 			try (var rows = compiled.step.evaluate(EmptyBindingSet.getInstance())) {
-				assertThat(rows.hasNext()).isTrue(); rows.next();
+				assertThat(rows.hasNext()).isTrue();
+				rows.next();
 			}
 			RuntimeFeedbackTarget target = compiled.statistics.resolveRuntimeFeedbackTarget(compiled.filter,
 					compiled.filter.getRuntimeFeedbackContract());
@@ -176,7 +208,9 @@ class LmdbGenericPreboundLearnedFilterCompositionTest {
 			try {
 				// These are explicit negative aggregate API controls, not an alternate positive producer.
 				// No descriptor, contract, epoch, origin, or Filter authority is manufactured or replaced.
-				if (state != IncompleteAggregate.NEVER_OPENED) { target.open(EmptyBindingSet.getInstance()); }
+				if (state != IncompleteAggregate.NEVER_OPENED) {
+					target.open(EmptyBindingSet.getInstance());
+				}
 				if (state == IncompleteAggregate.EARLY_SUCCESS || state == IncompleteAggregate.ONLY_ONE_OPEN_EXHAUSTED
 						|| state == IncompleteAggregate.CANCELLED || state == IncompleteAggregate.FAILED) {
 					var termination = switch (state) {
@@ -187,12 +221,18 @@ class LmdbGenericPreboundLearnedFilterCompositionTest {
 					};
 					target.close(16L, 64d, 64L, 0L, 64L, 0L, 0L, 0L, 0L, 0L, termination);
 				}
-				if (state == IncompleteAggregate.ONLY_ONE_OPEN_EXHAUSTED) { target.open(EmptyBindingSet.getInstance()); }
+				if (state == IncompleteAggregate.ONLY_ONE_OPEN_EXHAUSTED) {
+					target.open(EmptyBindingSet.getInstance());
+				}
 				target.recordFilter(16L, 48L);
 				target.publish(true);
 				target.publish(true);
-				assertThat(learned().size()).as("root completion alone cannot certify all filter inputs exhausted").isZero();
-			} finally { target.release(); target.release(); }
+				assertThat(learned().size()).as("root completion alone cannot certify all filter inputs exhausted")
+						.isZero();
+			} finally {
+				target.release();
+				target.release();
+			}
 		}
 	}
 
@@ -219,7 +259,8 @@ class LmdbGenericPreboundLearnedFilterCompositionTest {
 		}
 		assertThat(learned().estimateQualified(store.getBackingStore().valueStore(),
 				statistics().estimatorRuntime().snapshotVersion(), freshFilter()))
-				.as("completed outer root does not establish exhaustion of the unrestricted filter input").isNull();
+						.as("completed outer root does not establish exhaustion of the unrestricted filter input")
+						.isNull();
 	}
 
 	@Test
@@ -231,14 +272,16 @@ class LmdbGenericPreboundLearnedFilterCompositionTest {
 		}
 		assertThat(learned().estimateQualified(store.getBackingStore().valueStore(),
 				statistics().estimatorRuntime().snapshotVersion(), freshFilter()))
-				.as("an actual early successful witness is not a standalone filter census").isNull();
+						.as("an actual early successful witness is not a standalone filter census")
+						.isNull();
 	}
 
 	@Test
 	void completedEmptyInputDoesNotInventNonemptyEvidence() {
 		try (var connection = repository.getConnection()) {
-			assertThat(QueryResults.asList(connection.prepareTupleQuery(QUERY.replace("generic-learn:p", "generic-learn:absent"))
-					.evaluate())).isEmpty();
+			assertThat(QueryResults
+					.asList(connection.prepareTupleQuery(QUERY.replace("generic-learn:p", "generic-learn:absent"))
+							.evaluate())).isEmpty();
 		}
 		assertThat(learned().size()).isZero();
 	}
@@ -261,7 +304,9 @@ class LmdbGenericPreboundLearnedFilterCompositionTest {
 				assertThat(QueryResults.asList(connection.prepareTupleQuery(QUERY).evaluate())).hasSize(ROWS / 4);
 			}
 			assertThat(isolated.getBackingStore().learnedFilterSelectivity().size()).isZero();
-		} finally { isolatedRepository.shutDown(); }
+		} finally {
+			isolatedRepository.shutDown();
+		}
 	}
 
 	private Compiled compile() {
@@ -271,9 +316,11 @@ class LmdbGenericPreboundLearnedFilterCompositionTest {
 			assertThat(source.getClass()).isEqualTo(SailDatasetTripleTermSource.class);
 			assertThat(source.getSnapshotEpoch()).as("real committed source admission must exist").isPresent();
 			LmdbEvaluationStatistics statistics = statistics();
-			EvaluationStrategy strategy = store.getConnectionEvaluationStrategyFactory().createEvaluationStrategy(
-					null, source, statistics, store.getQueryExecutionPolicy());
-			assertThat(strategy).isInstanceOf(LmdbEvaluationStrategy.class).isNotInstanceOf(LmdbNativeEvaluationStrategy.class);
+			EvaluationStrategy strategy = store.getConnectionEvaluationStrategyFactory()
+					.createEvaluationStrategy(
+							null, source, statistics, store.getQueryExecutionPolicy());
+			assertThat(strategy).isInstanceOf(LmdbEvaluationStrategy.class)
+					.isNotInstanceOf(LmdbNativeEvaluationStrategy.class);
 			assertThat(strategy.getQueryExecutionPolicy().experimentalQueryOptimizations()).isTrue();
 			((LmdbEvaluationStrategy) strategy).setTrackResultSize(true);
 			assertThat(statistics.estimatorRuntime().frontierSettings().mode()).isEqualTo(FrontierEstimatorMode.OFF);
@@ -285,7 +332,8 @@ class LmdbGenericPreboundLearnedFilterCompositionTest {
 			Filter filter = filters(optimized).stream()
 					.filter(candidate -> candidate.getRuntimeFeedbackContract() != null
 							&& candidate.getRuntimeFeedbackContract().admits(RuntimeFeedbackContract.ADMIT_FILTER))
-					.findFirst().orElseThrow(() -> new AssertionError("actual unmodified OFF source needs a FILTER-only contract"));
+					.findFirst()
+					.orElseThrow(() -> new AssertionError("actual unmodified OFF source needs a FILTER-only contract"));
 			RuntimeFeedbackContract contract = filter.getRuntimeFeedbackContract();
 			assertThat(contract.admissionFlags()).isEqualTo(RuntimeFeedbackContract.ADMIT_FILTER);
 			assertThat(contract.rawPrediction()).isEqualTo(RuntimeFeedbackContract.PredictionVector.UNKNOWN);
@@ -294,13 +342,20 @@ class LmdbGenericPreboundLearnedFilterCompositionTest {
 			assertThat(statistics.shouldTrackCostFeedback(filter)).isTrue();
 			assertThat(FilterSurfaceKey.exact(filter)).isNotNull();
 			return new Compiled(dataset, statistics, filter, step, optimized, source, strategy);
-		} catch (RuntimeException | Error failure) { dataset.close(); throw failure; }
+		} catch (RuntimeException | Error failure) {
+			dataset.close();
+			throw failure;
+		}
 	}
 
-	private LmdbLearnedFilterSelectivity learned() { return store.getBackingStore().learnedFilterSelectivity(); }
+	private LmdbLearnedFilterSelectivity learned() {
+		return store.getBackingStore().learnedFilterSelectivity();
+	}
+
 	private LmdbEvaluationStatistics statistics() {
 		return (LmdbEvaluationStatistics) store.getBackingStore().getEvaluationStatistics();
 	}
+
 	private static LmdbStoreConfig config() {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc");
 		config.setNativeEvaluationEnabled(false);
@@ -308,6 +363,7 @@ class LmdbGenericPreboundLearnedFilterCompositionTest {
 		config.setExperimentalQueryOptimizations(true);
 		return config;
 	}
+
 	/** Uses the same real entry boundary as the next optimizer; a raw parser tree owns no graph proof. */
 	private Filter preparedFilter(Compiled compiled) {
 		return preparedFilter(compiled.strategy, compiled.source, compiled.statistics);
@@ -323,13 +379,19 @@ class LmdbGenericPreboundLearnedFilterCompositionTest {
 	private static Filter freshFilter() {
 		return filters(QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, QUERY, null).getTupleExpr()).getFirst();
 	}
+
 	private static List<Filter> filters(TupleExpr root) {
 		List<Filter> filters = new ArrayList<>();
 		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-			@Override public void meet(Filter filter) { filters.add(filter); super.meet(filter); }
+			@Override
+			public void meet(Filter filter) {
+				filters.add(filter);
+				super.meet(filter);
+			}
 		});
 		return filters;
 	}
+
 	private static void assertLearned(FilterPassEstimate estimate) {
 		assertThat(estimate).isNotNull();
 		assertThat(estimate.getSource()).isIn(FilterPassEstimate.Source.LEARNED_FILTER,
@@ -341,15 +403,22 @@ class LmdbGenericPreboundLearnedFilterCompositionTest {
 	private record Compiled(SailDataset dataset, LmdbEvaluationStatistics statistics, Filter filter,
 			QueryEvaluationStep step, TupleExpr optimized, SailDatasetTripleTermSource source,
 			EvaluationStrategy strategy) implements AutoCloseable {
-		@Override public void close() { dataset.close(); }
+		@Override
+		public void close() {
+			dataset.close();
+		}
 	}
+
 	@Test
 	void instrumentedSourceSubclassCannotBorrowTheRealDatasetAdmission() {
-		try (SailDataset dataset = store.getBackingStore().getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT_READ)) {
+		try (SailDataset dataset = store.getBackingStore()
+				.getExplicitSailSource()
+				.dataset(IsolationLevels.SNAPSHOT_READ)) {
 			SailDatasetTripleTermSource source = new FaultSource(store.getValueFactory(), dataset);
 			LmdbEvaluationStatistics statistics = statistics();
-			EvaluationStrategy strategy = store.getConnectionEvaluationStrategyFactory().createEvaluationStrategy(
-					null, source, statistics, store.getQueryExecutionPolicy());
+			EvaluationStrategy strategy = store.getConnectionEvaluationStrategyFactory()
+					.createEvaluationStrategy(
+							null, source, statistics, store.getQueryExecutionPolicy());
 			TupleExpr optimized = strategy.optimize(QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, QUERY, null)
 					.getTupleExpr(), statistics, EmptyBindingSet.getInstance());
 			QueryEvaluationStep step = strategy.precompile(optimized);
@@ -363,18 +432,28 @@ class LmdbGenericPreboundLearnedFilterCompositionTest {
 	private static List<StatementPattern> patterns(TupleExpr root) {
 		List<StatementPattern> result = new ArrayList<>();
 		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-			@Override public void meet(StatementPattern pattern) { result.add(pattern); super.meet(pattern); }
+			@Override
+			public void meet(StatementPattern pattern) {
+				result.add(pattern);
+				super.meet(pattern);
+			}
 		});
 		return result;
 	}
 
 	private static final class FaultSource extends SailDatasetTripleTermSource {
-		FaultSource(ValueFactory factory, SailDataset dataset) { super(factory, dataset); }
-		@Override public CloseableIteration<? extends Statement> getStatements(StatementPattern pattern, Resource subject,
+		FaultSource(ValueFactory factory, SailDataset dataset) {
+			super(factory, dataset);
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(StatementPattern pattern, Resource subject,
 				IRI predicate, Value object, Resource... contexts) {
 			return super.getStatements(pattern, subject, predicate, object, contexts);
 		}
-		@Override public CloseableIteration<? extends Statement> getStatements(StatementOrder order, Resource subject,
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(StatementOrder order, Resource subject,
 				IRI predicate, Value object, Resource... contexts) {
 			return super.getStatements(order, subject, predicate, object, contexts);
 		}

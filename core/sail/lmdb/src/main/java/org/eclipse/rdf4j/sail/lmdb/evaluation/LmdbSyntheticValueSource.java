@@ -124,7 +124,9 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 		this.filterParent = parent;
 	}
 
-	NativeFilterLease filterParent() { return filterParent; }
+	NativeFilterLease filterParent() {
+		return filterParent;
+	}
 
 	/** A fresh evaluation-scoped instance over the same store and catalog, owning its own runtime interner. */
 	SyntheticValueSource forEvaluation() {
@@ -133,7 +135,8 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 			if (active.delegate == delegate && active.catalog == catalog && active.generatedKeyAuthority == null) {
 				return active;
 			}
-			SyntheticValueSource child = new SyntheticValueSource(delegate, catalog, new NativeExecutionContext(active.context));
+			SyntheticValueSource child = new SyntheticValueSource(delegate, catalog,
+					new NativeExecutionContext(active.context));
 			return active.filterParent == null ? child : new SyntheticValueSource(child, active.filterParent);
 		}
 		return new SyntheticValueSource(delegate, catalog, new NativeExecutionContext(queryExecutionPolicy));
@@ -285,7 +288,9 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 		SyntheticValueSource active = source instanceof SyntheticValueSource synthetic ? synthetic : null;
 		SyntheticValueSource previous = ACTIVE_EVALUATION.get();
 		if (active != null) {
-			if (parent != null) { active = new SyntheticValueSource(active, parent); }
+			if (parent != null) {
+				active = new SyntheticValueSource(active, parent);
+			}
 			ACTIVE_EVALUATION.set(active);
 		}
 		return new EvaluationScope(previous, active != null);

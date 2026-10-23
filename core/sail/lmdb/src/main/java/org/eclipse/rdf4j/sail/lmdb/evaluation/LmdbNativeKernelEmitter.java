@@ -561,7 +561,8 @@ final class LmdbNativeKernelEmitter {
 					.append("();\n")
 					.append(!kernel.resumable && (kernel.terminal instanceof Aggregate
 							|| kernel.terminal.mods.limit < 0 || kernel.terminal.mods.orderKeys != null)
-							? "        filterInputExhausted = true;\n" : "")
+									? "        filterInputExhausted = true;\n"
+									: "")
 					.append("    }\n\n");
 
 			if (flatRootExists == null) {

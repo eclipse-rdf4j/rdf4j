@@ -137,5 +137,4 @@ class ObservingSailDataset extends DelegatingSailDataset {
 		return super.hasStatements(subj, pred, obj, contexts);
 	}
 
-
 }

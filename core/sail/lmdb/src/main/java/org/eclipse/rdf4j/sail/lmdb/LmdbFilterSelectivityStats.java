@@ -522,7 +522,7 @@ class LmdbFilterSelectivityStats
 	private static LmdbRuntimeFeedbackDescriptor runtimeFeedbackDescriptor(Filter filter) {
 		if (filter == null || filter.getRuntimeFeedbackContract() == null
 				|| !(filter.getRuntimeFeedbackContract()
-						.descriptor()instanceof LmdbRuntimeFeedbackDescriptor descriptor)) {
+						.descriptor() instanceof LmdbRuntimeFeedbackDescriptor descriptor)) {
 			return null;
 		}
 		return descriptor;
@@ -1573,8 +1573,10 @@ class LmdbFilterSelectivityStats
 			try {
 				for (boolean explicit : new boolean[] { true, false }) {
 					try (RecordIterator triples = samplingOrder == null
-							? tripleStore.getTriples(planningTxn, candidate.subjId, candidate.predId, candidate.objId, candidate.contextId, explicit)
-							: tripleStore.getTriples(planningTxn, samplingOrder, candidate.subjId, candidate.predId, candidate.objId, candidate.contextId, explicit)) {
+							? tripleStore.getTriples(planningTxn, candidate.subjId, candidate.predId, candidate.objId,
+									candidate.contextId, explicit)
+							: tripleStore.getTriples(planningTxn, samplingOrder, candidate.subjId, candidate.predId,
+									candidate.objId, candidate.contextId, explicit)) {
 						long[] row;
 						while (scannedRows[0] < effectiveScanBudget && !samplingDeadlineExceeded(deadlineNanos)
 								&& (row = triples.next()) != null) {
@@ -2004,12 +2006,12 @@ class LmdbFilterSelectivityStats
 			return false;
 		}
 		List<ValueExpr> arguments = listMemberOperator.getArguments();
-		if (arguments == null || arguments.size() < 2 || !(arguments.getFirst()instanceof Var var)
+		if (arguments == null || arguments.size() < 2 || !(arguments.getFirst() instanceof Var var)
 				|| var.hasValue() || var.getName() == null || !patternBindings.contains(var.getName())) {
 			return false;
 		}
 		for (int i = 1; i < arguments.size(); i++) {
-			if (!(arguments.get(i)instanceof ValueConstant constant) || constant.getValue() == null) {
+			if (!(arguments.get(i) instanceof ValueConstant constant) || constant.getValue() == null) {
 				return false;
 			}
 		}

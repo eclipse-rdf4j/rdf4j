@@ -282,7 +282,7 @@ public record OptimizationGoal(PhysicalProperties requiredProperties, String sem
 		}
 		List<String> result = new ArrayList<>(order.getElements().size());
 		for (OrderElem element : order.getElements()) {
-			if (element != null && element.getExpr()instanceof Var var && var.getName() != null
+			if (element != null && element.getExpr() instanceof Var var && var.getName() != null
 					&& !var.getName().startsWith("_const_")) {
 				result.add(var.getName() + (element.isAscending() ? ":asc" : ":desc"));
 			} else {

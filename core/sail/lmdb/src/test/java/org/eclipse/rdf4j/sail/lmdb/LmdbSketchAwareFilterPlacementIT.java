@@ -1148,7 +1148,7 @@ class LmdbSketchAwareFilterPlacementIT {
 			return;
 		}
 		if (tupleExpr instanceof Filter filter) {
-			if (filter.getArg()instanceof BindingSetAssignment bindingSetAssignment) {
+			if (filter.getArg() instanceof BindingSetAssignment bindingSetAssignment) {
 				addValuesLocalityLeaf(bindingSetAssignment, leaves);
 				return;
 			}

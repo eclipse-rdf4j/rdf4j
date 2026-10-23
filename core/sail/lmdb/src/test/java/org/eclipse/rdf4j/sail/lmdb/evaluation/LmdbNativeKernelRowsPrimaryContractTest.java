@@ -51,8 +51,16 @@ class LmdbNativeKernelRowsPrimaryContractTest {
 	private static final long TAIL_PREDICATE = 88L;
 	private final Map<String, String> previousProperties = new HashMap<>();
 
-	enum CleanupSite { SOURCE, PROBE }
-	enum Schedule { BODY_FIRST, CLEANUP_FIRST, EXTERNAL_STOP }
+	enum CleanupSite {
+		SOURCE,
+		PROBE
+	}
+
+	enum Schedule {
+		BODY_FIRST,
+		CLEANUP_FIRST,
+		EXTERNAL_STOP
+	}
 
 	@BeforeEach
 	void enableSupportedInterpretedParallelProfile() {
@@ -198,7 +206,10 @@ class LmdbNativeKernelRowsPrimaryContractTest {
 				assertThat(fixture.blockedWorkers.await(10L, TimeUnit.SECONDS)).isTrue();
 				deadline.trip();
 				fixture.releaseFailure.countDown();
-				observed = catchThrowable(() -> { while (cursor.next()) { } });
+				observed = catchThrowable(() -> {
+					while (cursor.next()) {
+					}
+				});
 				assertThat(KernelCancelledException.INSTANCE.getSuppressed()).isEmpty();
 				assertThat(catchThrowable(cursor::close)).isNull();
 			} finally {
@@ -319,7 +330,8 @@ class LmdbNativeKernelRowsPrimaryContractTest {
 			assertThat(cursor.next()).as("a real first page must escape before the body failure is enabled").isTrue();
 			fixture.releaseFailure.countDown();
 			assertThat(fixture.failedProbeClosed.await(10L, TimeUnit.SECONDS))
-					.as("the failing worker probe must close before the owner closes the cursor").isTrue();
+					.as("the failing worker probe must close before the owner closes the cursor")
+					.isTrue();
 			assertThat(catchThrowable(cursor::close)).as("public close reports the distinct cleanup failure")
 					.isSameAs(cleanup);
 			assertThat(catchThrowable(cursor::close)).as("the terminal cursor close is reported once").isNull();
@@ -400,7 +412,8 @@ class LmdbNativeKernelRowsPrimaryContractTest {
 			assertThat(closeCall).hasValue(1);
 		}
 		assertThat(LmdbNativeKernelBindings.closeAdjacencies(views, null))
-				.as("releasing an already released view array is quiet").isNull();
+				.as("releasing an already released view array is quiet")
+				.isNull();
 		for (AtomicInteger closeCall : closeCalls) {
 			assertThat(closeCall).hasValue(1);
 		}
@@ -413,7 +426,8 @@ class LmdbNativeKernelRowsPrimaryContractTest {
 		RowCursor cursor = null;
 		Future<Throwable> outcome = null;
 		Throwable observed;
-		try (var registration = QueryExecutionContext.activateReplaySafepoint(() -> { }, () -> () -> () -> {
+		try (var registration = QueryExecutionContext.activateReplaySafepoint(() -> {
+		}, () -> () -> () -> {
 			if (fixture.children.size() == 2 && fixture.children.get(1).workerThread == Thread.currentThread()
 					&& fixture.children.get(1).cleanupCalls.get() == 1) {
 				// WorkerTasks closes the captured scope AFTER native cleanup publishes its failure destination.
@@ -429,20 +443,28 @@ class LmdbNativeKernelRowsPrimaryContractTest {
 				}
 			}));
 			assertThat(fixture.primaryEntered.await(10L, TimeUnit.SECONDS))
-					.as("the real body probe must already be in flight before earlier cleanup settles").isTrue();
+					.as("the real body probe must already be in flight before earlier cleanup settles")
+					.isTrue();
 			assertThat(fixture.cleanupPublished.await(10L, TimeUnit.SECONDS))
-					.as("the distinct cleanup destination is published before the body is released").isTrue();
+					.as("the distinct cleanup destination is published before the body is released")
+					.isTrue();
 			fixture.releaseFailure.countDown();
 			observed = outcome.get(10L, TimeUnit.SECONDS);
 			assertThat(observed).isNotNull();
 			assertThat(observed.getSuppressed()).contains(cleanup);
 			int copies = 0;
-			for (Throwable suppressed : observed.getSuppressed()) { if (suppressed == cleanup) { copies++; } }
+			for (Throwable suppressed : observed.getSuppressed()) {
+				if (suppressed == cleanup) {
+					copies++;
+				}
+			}
 			assertThat(copies).as("the distinct cleanup is retained exactly once on the final body failure").isOne();
 			assertThat(catchThrowable(selected::close)).isNull();
 		} finally {
 			fixture.releaseFailure.countDown();
-			if (outcome != null && !outcome.isDone()) { outcome.cancel(true); }
+			if (outcome != null && !outcome.isDone()) {
+				outcome.cancel(true);
+			}
 			consumer.shutdownNow();
 			try (RowCursor owned = cursor) {
 				assertThat(consumer.awaitTermination(10L, TimeUnit.SECONDS)).isTrue();
@@ -544,8 +566,13 @@ class LmdbNativeKernelRowsPrimaryContractTest {
 			} catch (IOException | RuntimeException | Error problem) {
 				releaseFailure.countDown();
 				if (cursor != null) {
-					try { cursor.close(); }
-					catch (RuntimeException | Error closing) { if (closing != problem) { problem.addSuppressed(closing); } }
+					try {
+						cursor.close();
+					} catch (RuntimeException | Error closing) {
+						if (closing != problem) {
+							problem.addSuppressed(closing);
+						}
+					}
 				}
 				throw problem;
 			}
@@ -584,15 +611,28 @@ class LmdbNativeKernelRowsPrimaryContractTest {
 			this.worker = worker;
 		}
 
-		@Override public long idOf(Value value) { return UNKNOWN_ID; }
-		@Override public Value lazyValue(long id) {
+		@Override
+		public long idOf(Value value) {
+			return UNKNOWN_ID;
+		}
+
+		@Override
+		public Value lazyValue(long id) {
 			return SimpleValueFactory.getInstance().createIRI("urn:kernel-primary:" + id);
 		}
-		@Override public Object idSpace() { return fixture.idSpace; }
-		@Override public RecordIterator statements(long s, long p, long o, long c) {
+
+		@Override
+		public Object idSpace() {
+			return fixture.idSpace;
+		}
+
+		@Override
+		public RecordIterator statements(long s, long p, long o, long c) {
 			return new RecordIterator() {
 				private int ordinal;
-				@Override public long[] next() {
+
+				@Override
+				public long[] next() {
 					while (ordinal < ROOTS * 2) {
 						int index = ordinal++;
 						long root = index % ROOTS + 1L;
@@ -606,19 +646,39 @@ class LmdbNativeKernelRowsPrimaryContractTest {
 					}
 					return null;
 				}
-				@Override public void close() { ordinal = ROOTS * 2; }
+
+				@Override
+				public void close() {
+					ordinal = ROOTS * 2;
+				}
 			};
 		}
-		@Override public long count(long s, long p, long o, long c) {
+
+		@Override
+		public long count(long s, long p, long o, long c) {
 			try (RecordIterator records = statements(s, p, o, c)) {
 				long count = 0L;
-				while (records.next() != null) { count++; }
+				while (records.next() != null) {
+					count++;
+				}
 				return count;
 			}
 		}
-		@Override public boolean has(long s, long p, long o, long c) { return count(s, p, o, c) != 0L; }
-		@Override public double estimate(long s, long p, long o, long c) { return ROOTS; }
-		@Override public boolean hasStatementsInSource() { return true; }
+
+		@Override
+		public boolean has(long s, long p, long o, long c) {
+			return count(s, p, o, c) != 0L;
+		}
+
+		@Override
+		public double estimate(long s, long p, long o, long c) {
+			return ROOTS;
+		}
+
+		@Override
+		public boolean hasStatementsInSource() {
+			return true;
+		}
 
 		@Override
 		public NativeProbe newProbe() {
@@ -635,20 +695,31 @@ class LmdbNativeKernelRowsPrimaryContractTest {
 
 				@Override
 				public RecordIterator open(long s, long p, long o, long c) throws IOException {
-					if (current != null) { current.close(); current = null; }
+					if (current != null) {
+						current.close();
+						current = null;
+					}
 					assertThat(p).isEqualTo(TAIL_PREDICATE);
 					int opened = tailOpens.incrementAndGet();
 					if ((fixture.primary != null || fixture.schedule == Schedule.EXTERNAL_STOP) && opened > 256) {
-						if (gateEntered.compareAndSet(false, true)) { fixture.blockedWorkers.countDown(); }
-						if (worker == 0) { fixture.primaryEntered.countDown(); }
+						if (gateEntered.compareAndSet(false, true)) {
+							fixture.blockedWorkers.countDown();
+						}
+						if (worker == 0) {
+							fixture.primaryEntered.countDown();
+						}
 						if (fixture.schedule == Schedule.CLEANUP_FIRST && worker == 1) {
 							await(fixture.primaryEntered, "the other worker did not enter its body probe");
 						} else {
 							await(fixture.releaseFailure, "the selected cursor did not release its failure gate");
 						}
 						if (fixture.primary != null && worker == 0 && failureCalls.getAndIncrement() == 0) {
-							if (fixture.primary instanceof IOException checked) { throw checked; }
-							if (fixture.primary instanceof RuntimeException runtime) { throw runtime; }
+							if (fixture.primary instanceof IOException checked) {
+								throw checked;
+							}
+							if (fixture.primary instanceof RuntimeException runtime) {
+								throw runtime;
+							}
 							throw (Error) fixture.primary;
 						}
 					}
@@ -656,13 +727,22 @@ class LmdbNativeKernelRowsPrimaryContractTest {
 					current = new RecordIterator() {
 						private boolean emitted;
 						private boolean released;
-						@Override public long[] next() {
-							if (emitted) { return null; }
+
+						@Override
+						public long[] next() {
+							if (emitted) {
+								return null;
+							}
 							emitted = true;
 							return new long[] { s, p, s + 10_000L, 0L };
 						}
-						@Override public void close() {
-							if (!released) { released = true; activeIterators.decrementAndGet(); }
+
+						@Override
+						public void close() {
+							if (!released) {
+								released = true;
+								activeIterators.decrementAndGet();
+							}
 						}
 					};
 					return current;
@@ -670,12 +750,21 @@ class LmdbNativeKernelRowsPrimaryContractTest {
 
 				@Override
 				public void close() {
-					if (closed) { return; }
+					if (closed) {
+						return;
+					}
 					closed = true;
-					if (current != null) { current.close(); current = null; }
+					if (current != null) {
+						current.close();
+						current = null;
+					}
 					probesClosed.incrementAndGet();
-					if (worker == 0 && failureCalls.get() != 0) { fixture.failedProbeClosed.countDown(); }
-					if (worker == 1 && fixture.cleanupSite == CleanupSite.PROBE) { failCleanup(); }
+					if (worker == 0 && failureCalls.get() != 0) {
+						fixture.failedProbeClosed.countDown();
+					}
+					if (worker == 1 && fixture.cleanupSite == CleanupSite.PROBE) {
+						failCleanup();
+					}
 				}
 			};
 		}
@@ -696,7 +785,9 @@ class LmdbNativeKernelRowsPrimaryContractTest {
 		public void close() {
 			closedWithLiveProbe |= probesClosed.get() != probesOpened.get();
 			closeCalls.incrementAndGet();
-			if (worker == 1 && fixture.cleanupSite == CleanupSite.SOURCE) { failCleanup(); }
+			if (worker == 1 && fixture.cleanupSite == CleanupSite.SOURCE) {
+				failCleanup();
+			}
 		}
 
 		private void failCleanup() {
@@ -708,22 +799,58 @@ class LmdbNativeKernelRowsPrimaryContractTest {
 						await(fixture.failedProbeClosed, "the primary worker did not finish its failed probe");
 					}
 				}
-				if (fixture.cleanup instanceof RuntimeException runtime) { throw runtime; }
+				if (fixture.cleanup instanceof RuntimeException runtime) {
+					throw runtime;
+				}
 				throw (Error) fixture.cleanup;
 			}
 		}
 	}
 
-	private static final NativeLmdbQuerySource.NativeAdjacency ROOT_ADJACENCY =
-			new NativeLmdbQuerySource.NativeAdjacency() {
-				@Override public long find(long key) { return key >= 1L && key <= ROOTS ? key : NOT_FOUND; }
-				@Override public long size(long handle) { return handle >= 1L && handle <= ROOTS ? 1L : 0L; }
-				@Override public long neighborAt(long handle, long offset) { return 10_000L + handle; }
-				@Override public long contextAt(long handle, long offset) { return 0L; }
-				@Override public boolean runsNeighborOrdered() { return true; }
-				@Override public boolean supportsKeyEnumeration() { return true; }
-				@Override public boolean keysImplyNonEmptyRuns() { return true; }
-				@Override public long keyCount() { return ROOTS; }
-				@Override public long keyAt(long ordinal) { return ordinal + 1L; }
-			};
+	private static final NativeLmdbQuerySource.NativeAdjacency ROOT_ADJACENCY = new NativeLmdbQuerySource.NativeAdjacency() {
+		@Override
+		public long find(long key) {
+			return key >= 1L && key <= ROOTS ? key : NOT_FOUND;
+		}
+
+		@Override
+		public long size(long handle) {
+			return handle >= 1L && handle <= ROOTS ? 1L : 0L;
+		}
+
+		@Override
+		public long neighborAt(long handle, long offset) {
+			return 10_000L + handle;
+		}
+
+		@Override
+		public long contextAt(long handle, long offset) {
+			return 0L;
+		}
+
+		@Override
+		public boolean runsNeighborOrdered() {
+			return true;
+		}
+
+		@Override
+		public boolean supportsKeyEnumeration() {
+			return true;
+		}
+
+		@Override
+		public boolean keysImplyNonEmptyRuns() {
+			return true;
+		}
+
+		@Override
+		public long keyCount() {
+			return ROOTS;
+		}
+
+		@Override
+		public long keyAt(long ordinal) {
+			return ordinal + 1L;
+		}
+	};
 }

@@ -30,8 +30,15 @@ final class NativeFilterLease {
 	private final boolean suppressFeedback;
 	private boolean finished;
 	private boolean selected;
-	synchronized void selected() { selected = true; }
-	synchronized boolean isSelected() { return selected; }
+
+	synchronized void selected() {
+		selected = true;
+	}
+
+	synchronized boolean isSelected() {
+		return selected;
+	}
+
 	private NativeFilterLease parent;
 	private NativeExecutionContext ownerContext;
 	private final boolean capture;
@@ -42,9 +49,13 @@ final class NativeFilterLease {
 		this(false);
 	}
 
-	NativeFilterLease(boolean suppressFeedback) { this(suppressFeedback, null, false); }
+	NativeFilterLease(boolean suppressFeedback) {
+		this(suppressFeedback, null, false);
+	}
 
-	NativeFilterLease(NativeFilterLease parent) { this(false, parent, false); }
+	NativeFilterLease(NativeFilterLease parent) {
+		this(false, parent, false);
+	}
 
 	private NativeFilterLease(boolean suppressFeedback, NativeFilterLease parent, boolean capture) {
 		this.suppressFeedback = suppressFeedback;
@@ -53,10 +64,16 @@ final class NativeFilterLease {
 	}
 
 	static NativeBooleanFilter openInput(NativeBooleanFilter filter, RowState row, AutoCloseable input) {
-		try { return filter.open(row); }
-		catch (RuntimeException | Error failure) {
-			try { input.close(); }
-			catch (Throwable cleanup) { if (cleanup != failure) { failure.addSuppressed(cleanup); } }
+		try {
+			return filter.open(row);
+		} catch (RuntimeException | Error failure) {
+			try {
+				input.close();
+			} catch (Throwable cleanup) {
+				if (cleanup != failure) {
+					failure.addSuppressed(cleanup);
+				}
+			}
 			throw failure;
 		}
 	}
@@ -73,7 +90,9 @@ final class NativeFilterLease {
 	}
 
 	synchronized void include(Frozen frozen, NativeExecutionContext context) {
-		if (finished) { throw new IllegalStateException("native filter attempt already finalized"); }
+		if (finished) {
+			throw new IllegalStateException("native filter attempt already finalized");
+		}
 		NativeExecutionContext owner = context.filterOutcomeOwner();
 		if (frozen.owner != owner.filterOwnerIdentity()) {
 			throw new IllegalArgumentException("memo outcomes crossed evaluation owners");
@@ -99,26 +118,37 @@ final class NativeFilterLease {
 		private final Object owner;
 		private final FrozenOutcome[] outcomes;
 		private final Frozen[] inclusions;
+
 		private Frozen(Object owner, FrozenOutcome[] outcomes, Frozen[] inclusions) {
 			this.owner = owner;
 			this.outcomes = outcomes;
 			this.inclusions = inclusions;
 		}
+
 		void mergeInto(NativeExecutionContext owner, IdentityHashMap<Frozen, Boolean> seen) {
 			if (this.owner != owner.filterOwnerIdentity()) {
 				throw new IllegalArgumentException("memo outcomes crossed evaluation owners");
 			}
-			if (seen.put(this, Boolean.TRUE) != null) { return; }
-			for (FrozenOutcome outcome : outcomes) { owner.mergeFrozenFilterOutcome(outcome); }
-			for (Frozen included : inclusions) { included.mergeInto(owner, seen); }
+			if (seen.put(this, Boolean.TRUE) != null) {
+				return;
+			}
+			for (FrozenOutcome outcome : outcomes) {
+				owner.mergeFrozenFilterOutcome(outcome);
+			}
+			for (Frozen included : inclusions) {
+				included.mergeInto(owner, seen);
+			}
 		}
 	}
 
 	static record FrozenOutcome(Object template, long opens, long terminals, long exhausted,
-			long passed, long rejected, boolean incomplete) { }
+			long passed, long rejected, boolean incomplete) {
+	}
 
 	synchronized Frozen freeze(boolean complete) {
-		if (!capture || finished) { throw new IllegalStateException("only an open capture may freeze"); }
+		if (!capture || finished) {
+			throw new IllegalStateException("only an open capture may freeze");
+		}
 		finished = true;
 		Throwable failure = closeEntries(null, true);
 		try {
@@ -144,7 +174,9 @@ final class NativeFilterLease {
 				}
 			}
 			return new Frozen(ownerContext.filterOwnerIdentity(), values, children);
-		} finally { clearReferences(); }
+		} finally {
+			clearReferences();
+		}
 	}
 
 	/**
@@ -168,7 +200,9 @@ final class NativeFilterLease {
 		}
 		if (original instanceof BorrowedFilter facade) {
 			NativeFilterLease outer = facade.entry.owner;
-			if (outer == this) { return original; }
+			if (outer == this) {
+				return original;
+			}
 			if (parent != null && parent != outer) {
 				throw new IllegalArgumentException("one native attempt cannot borrow unrelated attempts");
 			}
@@ -210,7 +244,9 @@ final class NativeFilterLease {
 
 	synchronized SlotPlan borrow(SlotPlan plan) {
 		SlotPlan existing = plans.get(plan);
-		if (existing != null) { return existing; }
+		if (existing != null) {
+			return existing;
+		}
 		SlotPlan result = borrowPlan(plan);
 		plans.put(plan, result);
 		return result;
@@ -220,8 +256,12 @@ final class NativeFilterLease {
 		if (LmdbNativeInteriorPlans.carrier(plan)) {
 			return LmdbNativeInteriorPlans.borrow(plan, this);
 		}
-		if (plan instanceof NativeSubqueryPlan subquery) { return subquery.withFilterAttempt(this); }
-		if (plan instanceof NativeGraphPlan graph) { return graph.withFilterAttempt(this); }
+		if (plan instanceof NativeSubqueryPlan subquery) {
+			return subquery.withFilterAttempt(this);
+		}
+		if (plan instanceof NativeGraphPlan graph) {
+			return graph.withFilterAttempt(this);
+		}
 		if (plan instanceof LateralPlan lateral) {
 			return new LateralPlan(borrow(lateral.left), borrow(lateral.right), lateral.rightInputMask);
 		}
@@ -270,7 +310,9 @@ final class NativeFilterLease {
 
 	MultiJoinPlan borrow(MultiJoinPlan plan) {
 		SlotPlan existing = plans.get(plan);
-		if (existing != null) { return (MultiJoinPlan) existing; }
+		if (existing != null) {
+			return (MultiJoinPlan) existing;
+		}
 		SlotPlan[] children = new SlotPlan[plan.children.length];
 		for (int i = 0; i < children.length; i++) {
 			children[i] = borrow(plan.children[i]);
@@ -287,7 +329,9 @@ final class NativeFilterLease {
 
 	MultiJoinPlan.OrderedPlan borrow(MultiJoinPlan.OrderedPlan plan) {
 		SlotPlan[] order = new SlotPlan[plan.order.length];
-		for (int i = 0; i < order.length; i++) { order[i] = borrow(plan.order[i]); }
+		for (int i = 0; i < order.length; i++) {
+			order[i] = borrow(plan.order[i]);
+		}
 		return new MultiJoinPlan.OrderedPlan(order, plan.filterDepth, plan.placement, plan.sunkCount);
 	}
 
@@ -301,7 +345,9 @@ final class NativeFilterLease {
 		}
 		finished = true;
 		// Retain diagnostics only for a terminal failed root. A discarded trial never trains or poisons its winner.
-		for (Outcome outcome : outcomes.values()) { outcome.context.mergeDiscardedFilterOutcome(outcome); }
+		for (Outcome outcome : outcomes.values()) {
+			outcome.context.mergeDiscardedFilterOutcome(outcome);
+		}
 		outcomes.clear();
 		Throwable failure = null;
 		for (int i = entries.size() - 1; i >= 0; i--) {
@@ -344,7 +390,9 @@ final class NativeFilterLease {
 			// Acceptance is a separate gate from EOF. Child summaries merge only after every owner closed successfully.
 			if (!capture && !suppressFeedback && (publishFeedback || primary != null)) {
 				for (Outcome outcome : outcomes.values()) {
-					if (failure != null) { outcome.incomplete = true; }
+					if (failure != null) {
+						outcome.incomplete = true;
+					}
 					if (parent == null) {
 						outcome.context.mergeFilterOutcome(outcome);
 					} else {
@@ -354,13 +402,19 @@ final class NativeFilterLease {
 			}
 			if (!capture && !suppressFeedback && publishFeedback && !inclusions.isEmpty()) {
 				if (parent == null) {
-					for (Frozen frozen : inclusions.keySet()) { ownerContext.mergeFrozenFilterOutcomes(frozen); }
+					for (Frozen frozen : inclusions.keySet()) {
+						ownerContext.mergeFrozenFilterOutcomes(frozen);
+					}
 				} else {
-					for (Frozen frozen : inclusions.keySet()) { parent.include(frozen, ownerContext); }
+					for (Frozen frozen : inclusions.keySet()) {
+						parent.include(frozen, ownerContext);
+					}
 				}
 			}
 			if (capture && primary != null) {
-				for (Outcome outcome : outcomes.values()) { outcome.context.mergeDiscardedFilterOutcome(outcome); }
+				for (Outcome outcome : outcomes.values()) {
+					outcome.context.mergeDiscardedFilterOutcome(outcome);
+				}
 			}
 		} catch (RuntimeException | Error publicationFailure) {
 			failure = addFailure(failure, publicationFailure);
@@ -424,7 +478,9 @@ final class NativeFilterLease {
 	}
 
 	private synchronized Outcome open(RecordingNativeBooleanFilter template, NativeExecutionContext context) {
-		if (finished) { throw new IllegalStateException("native filter attempt already finalized"); }
+		if (finished) {
+			throw new IllegalStateException("native filter attempt already finalized");
+		}
 		bindOwner(context);
 		context.registerFilterTemplate(template.origin);
 		Outcome result = outcomes.get(template.origin);
@@ -439,7 +495,9 @@ final class NativeFilterLease {
 	}
 
 	private synchronized void merge(Outcome other) {
-		if (finished) { throw new IllegalStateException("native parent attempt already finalized"); }
+		if (finished) {
+			throw new IllegalStateException("native parent attempt already finalized");
+		}
 		bindOwner(other.context);
 		Outcome result = outcomes.get(other.template);
 		if (result == null) {
@@ -455,17 +513,27 @@ final class NativeFilterLease {
 		final NativeExecutionContext context;
 		long opens, terminals, exhausted, passed, rejected;
 		boolean incomplete;
+
 		Outcome(RecordingNativeBooleanFilter template, NativeExecutionContext context) {
 			this.template = template;
 			this.context = context;
 		}
-		synchronized void open() { opens++; }
+
+		synchronized void open() {
+			opens++;
+		}
+
 		synchronized void terminal(long accepted, long filtered, boolean complete) {
 			terminals++;
 			passed += accepted;
 			rejected += filtered;
-			if (complete) { exhausted++; } else { incomplete = true; }
+			if (complete) {
+				exhausted++;
+			} else {
+				incomplete = true;
+			}
 		}
+
 		synchronized void merge(Outcome other) {
 			opens += other.opens;
 			terminals += other.terminals;
@@ -474,6 +542,7 @@ final class NativeFilterLease {
 			rejected += other.rejected;
 			incomplete |= other.incomplete;
 		}
+
 		void publish(boolean rootComplete) {
 			boolean complete = rootComplete && opens > 0L && opens == terminals && opens == exhausted && !incomplete;
 			EvaluationStatistics.FilterOutcomeObservation observation = complete
@@ -494,41 +563,80 @@ final class NativeFilterLease {
 		final Outcome outcome;
 		long passed, rejected;
 		boolean eof, incomplete, closed;
+
 		Invocation(RecordingNativeBooleanFilter template, NativeBooleanFilter delegate, RowState row) {
 			this.delegate = delegate;
 			SyntheticValueSource scope = row.evaluationScope();
 			NativeExecutionContext context = scope == null ? null : scope.executionContext().filterOutcomeOwner();
-			this.outcome = context == null ? null : template.attempt == null
-					? context.openFilterOutcome(template) : template.attempt.open(template, context);
+			this.outcome = context == null ? null
+					: template.attempt == null
+							? context.openFilterOutcome(template)
+							: template.attempt.open(template, context);
 		}
-		@Override public boolean accept(RowState row) {
+
+		@Override
+		public boolean accept(RowState row) {
 			boolean accepted = delegate.accept(row);
 			recordDecision(accepted);
 			return accepted;
 		}
-		@Override public int selectBatch(NativeBatch batch, int[] sel, int n, RowState row) {
+
+		@Override
+		public int selectBatch(NativeBatch batch, int[] sel, int n, RowState row) {
 			int accepted = delegate.selectBatch(batch, sel, n, row);
 			passed += accepted;
 			rejected += n - accepted;
 			return accepted;
 		}
-		@Override public void recordDecision(boolean accepted) {
-			if (accepted) { passed++; } else { rejected++; }
+
+		@Override
+		public void recordDecision(boolean accepted) {
+			if (accepted) {
+				passed++;
+			} else {
+				rejected++;
+			}
 		}
-		@Override public void inputExhausted() { eof = true; }
-		@Override public void incompleteInput() { incomplete = true; }
-		@Override public long batchReadMask() { return delegate.batchReadMask(); }
-		@Override public KernelTermKindProof pageProof(int[] slots) { return delegate.pageProof(slots); }
-		@Override public boolean variablePredicateExists() { return delegate.variablePredicateExists(); }
-		@Override public void close() {
-			if (closed) { return; }
+
+		@Override
+		public void inputExhausted() {
+			eof = true;
+		}
+
+		@Override
+		public void incompleteInput() {
+			incomplete = true;
+		}
+
+		@Override
+		public long batchReadMask() {
+			return delegate.batchReadMask();
+		}
+
+		@Override
+		public KernelTermKindProof pageProof(int[] slots) {
+			return delegate.pageProof(slots);
+		}
+
+		@Override
+		public boolean variablePredicateExists() {
+			return delegate.variablePredicateExists();
+		}
+
+		@Override
+		public void close() {
+			if (closed) {
+				return;
+			}
 			closed = true;
 			boolean clean = false;
 			try {
 				delegate.close();
 				clean = true;
 			} finally {
-				if (outcome != null) { outcome.terminal(passed, rejected, clean && eof && !incomplete); }
+				if (outcome != null) {
+					outcome.terminal(passed, rejected, clean && eof && !incomplete);
+				}
 			}
 		}
 	}
@@ -543,7 +651,8 @@ final class NativeFilterLease {
 		boolean used;
 		NativeBooleanFilter cleanup;
 
-		Entry(NativeFilterLease owner, NativeBooleanFilter attempt, RecordingNativeBooleanFilter recorder, boolean owned) {
+		Entry(NativeFilterLease owner, NativeBooleanFilter attempt, RecordingNativeBooleanFilter recorder,
+				boolean owned) {
 			this.owner = owner;
 			this.attempt = attempt;
 			this.recorder = recorder;

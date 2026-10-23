@@ -195,7 +195,7 @@ final class FrontierLearningModel {
 			return false;
 		}
 		LmdbLearningFeedbackDescriptor physicalDescriptor = contract
-				.descriptor()instanceof LmdbLearningFeedbackDescriptor typed
+				.descriptor() instanceof LmdbLearningFeedbackDescriptor typed
 						? typed
 						: null;
 		LmdbRuntimeFeedbackDescriptor descriptor = physicalDescriptor instanceof LmdbRuntimeFeedbackDescriptor logical
@@ -1295,7 +1295,7 @@ final class FrontierLearningModel {
 		}
 	}
 
-	private sealed interface PhysicalPopulation permits LogicalPopulation,EventPopulation {
+	private sealed interface PhysicalPopulation permits LogicalPopulation, EventPopulation {
 	}
 
 	private record LogicalPopulation(LogicalLearningKey key) implements PhysicalPopulation {

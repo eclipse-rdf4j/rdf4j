@@ -771,7 +771,7 @@ class PackedDphypEnumeratorTest {
 			try {
 				return (boolean) method.invoke(null, graph, arena, receiver);
 			} catch (InvocationTargetException e) {
-				if (e.getCause()instanceof AssertionError assertionError) {
+				if (e.getCause() instanceof AssertionError assertionError) {
 					throw assertionError;
 				}
 				throw e;

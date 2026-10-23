@@ -29,7 +29,9 @@ final class LmdbNativeStrategySelection<T> implements AutoCloseable {
 		this.value = Objects.requireNonNull(value, "value");
 		this.observation = observation;
 		this.filterAttempt = filterAttempt;
-		if (filterAttempt != null) { filterAttempt.selected(); }
+		if (filterAttempt != null) {
+			filterAttempt.selected();
+		}
 	}
 
 	T value() {
@@ -53,16 +55,22 @@ final class LmdbNativeStrategySelection<T> implements AutoCloseable {
 	}
 
 	void failed(Throwable failure) {
-		if (this.failure == null) { this.failure = failure; }
-		else if (failure != null && this.failure != failure) { this.failure.addSuppressed(failure); }
+		if (this.failure == null) {
+			this.failure = failure;
+		} else if (failure != null && this.failure != failure) {
+			this.failure.addSuppressed(failure);
+		}
 		if (observation != null) {
 			observation.failed(failure);
 		}
 	}
 
 	void cancelled(Throwable failure) {
-		if (this.failure == null) { this.failure = failure; }
-		else if (failure != null && this.failure != failure) { this.failure.addSuppressed(failure); }
+		if (this.failure == null) {
+			this.failure = failure;
+		} else if (failure != null && this.failure != failure) {
+			this.failure.addSuppressed(failure);
+		}
 		if (observation != null) {
 			observation.cancelled(failure);
 		}
@@ -70,24 +78,41 @@ final class LmdbNativeStrategySelection<T> implements AutoCloseable {
 
 	@Override
 	public void close() {
-		if (closed) { return; }
+		if (closed) {
+			return;
+		}
 		closed = true;
 		Throwable cleanup = null;
-		try { if (observation != null) { observation.close(); } }
-		catch (RuntimeException | Error problem) { cleanup = problem; }
+		try {
+			if (observation != null) {
+				observation.close();
+			}
+		} catch (RuntimeException | Error problem) {
+			cleanup = problem;
+		}
 		if (filterAttempt != null) {
 			try {
-				if (failure != null) { filterAttempt.abort(failure); }
-				else if (cleanup != null) { filterAttempt.abort(cleanup); }
-				else { filterAttempt.commit(); }
+				if (failure != null) {
+					filterAttempt.abort(failure);
+				} else if (cleanup != null) {
+					filterAttempt.abort(cleanup);
+				} else {
+					filterAttempt.commit();
+				}
 			} catch (RuntimeException | Error problem) {
-				if (cleanup == null) { cleanup = problem; }
-				else if (cleanup != problem) { cleanup.addSuppressed(problem); }
+				if (cleanup == null) {
+					cleanup = problem;
+				} else if (cleanup != problem) {
+					cleanup.addSuppressed(problem);
+				}
 			}
 		}
 		if (cleanup != null) {
-			if (failure != null && failure != cleanup) { failure.addSuppressed(cleanup); }
-			else { NativeContextClosingIteration.throwFailure(cleanup); }
+			if (failure != null && failure != cleanup) {
+				failure.addSuppressed(cleanup);
+			} else {
+				NativeContextClosingIteration.throwFailure(cleanup);
+			}
 		}
 	}
 }

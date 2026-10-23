@@ -622,13 +622,15 @@ public class LmdbNativeInteriorIslandTest {
 		String query = "SELECT ?s ?o ?n ?c WHERE { ?s <" + EX + "p> ?o . "
 				+ "{ SELECT (CONCAT(\"a\", \"b\") AS ?c) WHERE { } } ?s <" + EX + "q> ?n }";
 		withIslands(() -> {
-			List<String> hand = nativeHoistHand(false).stream().map(LmdbNativeInteriorIslandTest::render)
+			List<String> hand = nativeHoistHand(false).stream()
+					.map(LmdbNativeInteriorIslandTest::render)
 					.collect(Collectors.toList());
 			assertThat(genericRows(query)).containsExactlyInAnyOrderElementsOf(hand);
 			long before = LmdbNativeAggregateCompiler.ISLAND_HOISTS.get();
 			assertThat(rows(query)).containsExactlyInAnyOrderElementsOf(hand);
 			assertThat(LmdbNativeAggregateCompiler.ISLAND_HOISTS.get() - before)
-					.as("the native lexical boundary must reach the facts-gated local movement rule").isPositive();
+					.as("the native lexical boundary must reach the facts-gated local movement rule")
+					.isPositive();
 			String plan = scopeOptimizedPlan(query, Map.of());
 			assertThat(plan).contains("MultiJoin(", "NativeSubquery(").doesNotContain("GenericEvalPlan");
 		});
@@ -644,7 +646,8 @@ public class LmdbNativeInteriorIslandTest {
 		String query = "SELECT ?s ?o ?n ?c ?u WHERE { ?s <" + EX + "p> ?o . " + boundary
 				+ " ?s <" + EX + "q> ?n }";
 		withIslands(() -> {
-			List<String> hand = nativeHoistHand(true).stream().map(LmdbNativeInteriorIslandTest::render)
+			List<String> hand = nativeHoistHand(true).stream()
+					.map(LmdbNativeInteriorIslandTest::render)
 					.collect(Collectors.toList());
 			assertThat(genericRows(query)).containsExactlyInAnyOrderElementsOf(hand);
 			long before = LmdbNativeAggregateCompiler.ISLAND_HOISTS.get();
@@ -780,14 +783,16 @@ public class LmdbNativeInteriorIslandTest {
 		String query = "SELECT ?s ?o ?n ?c WHERE { ?s <" + EX + "p> ?o . "
 				+ "{ SELECT (CONCAT(\"a\", \"b\") AS ?c) WHERE { } } ?s <" + EX + "q> ?n }";
 		withIslands(() -> {
-			List<String> hand = nativeHoistHand(false).stream().map(LmdbNativeInteriorIslandTest::render)
+			List<String> hand = nativeHoistHand(false).stream()
+					.map(LmdbNativeInteriorIslandTest::render)
 					.collect(Collectors.toList());
 			assertThat(genericRows(query)).containsExactlyInAnyOrderElementsOf(hand);
 			assertThat(rows(query)).containsExactlyInAnyOrderElementsOf(hand);
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				Explanation executed = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
 				assertThat(hasActualOptimizedHoistOpen(executed.toGenericPlanNode()))
-						.as("actual Sail final-result input must open the optimized alternative: %s", executed).isTrue();
+						.as("actual Sail final-result input must open the optimized alternative: %s", executed)
+						.isTrue();
 			}
 		});
 	}

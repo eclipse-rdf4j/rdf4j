@@ -489,7 +489,7 @@ class LmdbPhysicalEventPublicationTest {
 				}
 				RuntimeFeedbackContract inputContract = input.runtimeFeedbackContract();
 				LeafEpochWitness leafEpochs = inputContract != null
-						&& inputContract.descriptor()instanceof LmdbLearningFeedbackDescriptor descriptor
+						&& inputContract.descriptor() instanceof LmdbLearningFeedbackDescriptor descriptor
 								? new LeafEpochWitness(descriptor.applicability().dataEpoch(),
 										descriptor.applicability().catalogEpoch(),
 										descriptor.applicability().modelEpoch(),

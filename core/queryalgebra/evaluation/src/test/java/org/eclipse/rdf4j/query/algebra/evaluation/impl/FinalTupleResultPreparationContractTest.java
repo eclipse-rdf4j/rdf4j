@@ -233,28 +233,48 @@ class FinalTupleResultPreparationContractTest {
 		}
 
 		@Override
-		public FederatedService getService(String url) { throw new UnsupportedOperationException(); }
+		public FederatedService getService(String url) {
+			throw new UnsupportedOperationException();
+		}
+
 		@Override
-		public void setOptimizerPipeline(QueryOptimizerPipeline pipeline) { throw new UnsupportedOperationException(); }
+		public void setOptimizerPipeline(QueryOptimizerPipeline pipeline) {
+			throw new UnsupportedOperationException();
+		}
+
 		@Override
 		public TupleExpr optimize(TupleExpr expr, EvaluationStatistics statistics, BindingSet bindings) {
 			throw new UnsupportedOperationException();
 		}
+
 		@Override
 		public CloseableIteration<BindingSet> evaluate(TupleExpr expr, BindingSet bindings) {
 			throw new UnsupportedOperationException();
 		}
+
 		@Override
-		public Value evaluate(ValueExpr expr, BindingSet bindings) { throw new UnsupportedOperationException(); }
+		public Value evaluate(ValueExpr expr, BindingSet bindings) {
+			throw new UnsupportedOperationException();
+		}
+
 		@Override
-		public boolean isTrue(ValueExpr expr, BindingSet bindings) { throw new UnsupportedOperationException(); }
+		public boolean isTrue(ValueExpr expr, BindingSet bindings) {
+			throw new UnsupportedOperationException();
+		}
+
 		@Override
 		public boolean isTrue(QueryValueEvaluationStep expr, BindingSet bindings) {
 			throw new UnsupportedOperationException();
 		}
+
 		@Override
-		public QueryEvaluationMode getQueryEvaluationMode() { return mode; }
+		public QueryEvaluationMode getQueryEvaluationMode() {
+			return mode;
+		}
+
 		@Override
-		public void setQueryEvaluationMode(QueryEvaluationMode value) { mode = value; }
+		public void setQueryEvaluationMode(QueryEvaluationMode value) {
+			mode = value;
+		}
 	}
 }

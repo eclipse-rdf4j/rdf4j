@@ -180,7 +180,7 @@ class LmdbAASQuery3MappedInputIdentityTest {
 										"COVERAGE_PREREQUISITE: actual mapped-leaf computation resolved lexical idShort");
 								assertTrue(
 										calls.stream()
-												.anyMatch(c -> c.mappedLeaf() && c.value()instanceof Literal literal
+												.anyMatch(c -> c.mappedLeaf() && c.value() instanceof Literal literal
 														&& "ratedPower".equals(literal.getLabel())),
 										"COVERAGE_PREREQUISITE: actual mapped-leaf computation resolved lexical ratedPower");
 								for (NativeInput call : calls) {
@@ -299,7 +299,7 @@ class LmdbAASQuery3MappedInputIdentityTest {
 			public void meet(StatementPattern pattern) {
 				if (pattern.getPredicateVar().hasValue()
 						&& ID_SHORT.equals(pattern.getPredicateVar().getValue().stringValue())
-						&& pattern.getObjectVar().getValue()instanceof Literal literal
+						&& pattern.getObjectVar().getValue() instanceof Literal literal
 						&& "ratedPower".equals(literal.getLabel())) {
 					result.add(pattern);
 				}

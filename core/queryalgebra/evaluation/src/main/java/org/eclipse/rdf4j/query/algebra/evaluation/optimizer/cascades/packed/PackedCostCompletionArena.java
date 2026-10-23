@@ -290,7 +290,14 @@ final class PackedCostCompletionArena {
 		vectors.resetBuilderToUnknown();
 		for (int axis = 1; axis <= PackedCostDimensionRegistry.dimensionCount(); axis++) {
 			boolean profile = switch (axis) {
-			case PackedCostDimensionRegistry.STARTUP_WORK, PackedCostDimensionRegistry.DEPENDENT_INVOCATIONS, PackedCostDimensionRegistry.FIRST_MATCH_WORK, PackedCostDimensionRegistry.EXHAUSTION_WORK, PackedCostDimensionRegistry.REBIND_WORK, PackedCostDimensionRegistry.CLOSE_WORK, PackedCostDimensionRegistry.OUTPUT_WORK, PackedCostDimensionRegistry.DISTINCT_KEY_MISSES, PackedCostDimensionRegistry.CACHE_HITS, PackedCostDimensionRegistry.CACHE_MISSES, PackedCostDimensionRegistry.CACHE_EVICTIONS, PackedCostDimensionRegistry.MATERIALIZATION_BUILDS, PackedCostDimensionRegistry.MATERIALIZATION_LOOKUPS, PackedCostDimensionRegistry.SPILL_WORK -> true;
+			case PackedCostDimensionRegistry.STARTUP_WORK, PackedCostDimensionRegistry.DEPENDENT_INVOCATIONS,
+					PackedCostDimensionRegistry.FIRST_MATCH_WORK, PackedCostDimensionRegistry.EXHAUSTION_WORK,
+					PackedCostDimensionRegistry.REBIND_WORK, PackedCostDimensionRegistry.CLOSE_WORK,
+					PackedCostDimensionRegistry.OUTPUT_WORK, PackedCostDimensionRegistry.DISTINCT_KEY_MISSES,
+					PackedCostDimensionRegistry.CACHE_HITS, PackedCostDimensionRegistry.CACHE_MISSES,
+					PackedCostDimensionRegistry.CACHE_EVICTIONS, PackedCostDimensionRegistry.MATERIALIZATION_BUILDS,
+					PackedCostDimensionRegistry.MATERIALIZATION_LOOKUPS, PackedCostDimensionRegistry.SPILL_WORK ->
+				true;
 			default -> false;
 			};
 			if (!profile && vectors.isKnown(vector, axis)) {

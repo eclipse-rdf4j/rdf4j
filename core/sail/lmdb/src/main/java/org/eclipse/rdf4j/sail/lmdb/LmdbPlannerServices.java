@@ -39,7 +39,7 @@ final class LmdbPlannerServices {
 
 	Optional<BindingSetAssignment> exactStoredTermFilterAnchor(Filter filter, ValueExpr condition,
 			String bindingName) {
-		if (filter == null || !(filter.getArg()instanceof StatementPattern pattern)) {
+		if (filter == null || !(filter.getArg() instanceof StatementPattern pattern)) {
 			return Optional.empty();
 		}
 		return runtime.exactStoredTermFilterAnchor(pattern, condition, bindingName);

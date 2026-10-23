@@ -1225,10 +1225,10 @@ class FrontierPayloadStateTest {
 							int.class)
 					.invoke(arena, raw, calibration, operationRecipeId);
 		} catch (InvocationTargetException failure) {
-			if (failure.getCause()instanceof RuntimeException runtimeFailure) {
+			if (failure.getCause() instanceof RuntimeException runtimeFailure) {
 				throw runtimeFailure;
 			}
-			if (failure.getCause()instanceof Error error) {
+			if (failure.getCause() instanceof Error error) {
 				throw error;
 			}
 			throw new AssertionError(failure.getCause());
@@ -1269,10 +1269,10 @@ class FrontierPayloadStateTest {
 							FrontierPayloadWriter.class)
 					.invoke(arena, key, summary, operation, firstParent, secondParent, operationRecipeId, writer);
 		} catch (InvocationTargetException failure) {
-			if (failure.getCause()instanceof RuntimeException runtimeFailure) {
+			if (failure.getCause() instanceof RuntimeException runtimeFailure) {
 				throw runtimeFailure;
 			}
-			if (failure.getCause()instanceof Error error) {
+			if (failure.getCause() instanceof Error error) {
 				throw error;
 			}
 			throw new AssertionError(failure.getCause());

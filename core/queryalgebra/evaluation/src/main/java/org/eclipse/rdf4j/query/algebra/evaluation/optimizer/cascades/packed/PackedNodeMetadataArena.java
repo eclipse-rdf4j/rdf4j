@@ -144,7 +144,11 @@ final class PackedNodeMetadataArena {
 			return proof == 2;
 		}
 		boolean compositional = switch (expressions.operatorTag(id)) {
-		case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.SINGLETON_SET, PackedRelOp.EMPTY_SET, PackedRelOp.BINDING_SET_ASSIGNMENT, PackedRelOp.JOIN, PackedRelOp.UNION, PackedRelOp.DIFFERENCE, PackedRelOp.INTERSECTION, PackedRelOp.QUERY_ROOT, PackedRelOp.PROJECTION, PackedRelOp.MULTI_PROJECTION, PackedRelOp.DISTINCT, PackedRelOp.REDUCED, PackedRelOp.SLICE -> true;
+		case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.SINGLETON_SET, PackedRelOp.EMPTY_SET,
+				PackedRelOp.BINDING_SET_ASSIGNMENT, PackedRelOp.JOIN, PackedRelOp.UNION, PackedRelOp.DIFFERENCE,
+				PackedRelOp.INTERSECTION, PackedRelOp.QUERY_ROOT, PackedRelOp.PROJECTION, PackedRelOp.MULTI_PROJECTION,
+				PackedRelOp.DISTINCT, PackedRelOp.REDUCED, PackedRelOp.SLICE ->
+			true;
 		default -> false;
 		};
 		if (!compositional) {

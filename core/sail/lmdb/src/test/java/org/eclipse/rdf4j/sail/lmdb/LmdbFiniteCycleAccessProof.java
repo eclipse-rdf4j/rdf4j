@@ -263,7 +263,7 @@ public final class LmdbFiniteCycleAccessProof {
 			result.putAll(finiteDomains(unary.getArg()));
 			if (tree instanceof Extension extension) {
 				for (var element : extension.getElements()) {
-					if (!(element.getExpr()instanceof Var var && var.getName().equals(element.getName()))) {
+					if (!(element.getExpr() instanceof Var var && var.getName().equals(element.getName()))) {
 						result.remove(element.getName());
 					}
 				}

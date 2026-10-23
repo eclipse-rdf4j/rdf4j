@@ -1284,16 +1284,16 @@ class PackedPlanCacheTest {
 				case "estimateRows" -> 1.0d;
 				case "statementPatternSemanticsCodec" -> PackedStatementPatternSemanticsCodec.NONE;
 				case "openSession" -> {
-				sessions.incrementAndGet();
-				yield frontier.openSession((PackedQueryView) arguments[0]);
+					sessions.incrementAndGet();
+					yield frontier.openSession((PackedQueryView) arguments[0]);
 				}
 				case "validateStalePlan" -> {
-				validations.incrementAndGet();
-				PackedPlanValidationRequest request = (PackedPlanValidationRequest) arguments[0];
-				double[] changedCosts = request.candidateCostsCopy();
-				changedCosts[0] += 1.0d;
-				yield PackedStalePlanValidation.certified(request.evidenceBundle(), changedCosts,
-						1.0d, 0.0d, 1L, "missing-current-replay");
+					validations.incrementAndGet();
+					PackedPlanValidationRequest request = (PackedPlanValidationRequest) arguments[0];
+					double[] changedCosts = request.candidateCostsCopy();
+					changedCosts[0] += 1.0d;
+					yield PackedStalePlanValidation.certified(request.evidenceBundle(), changedCosts,
+							1.0d, 0.0d, 1L, "missing-current-replay");
 				}
 				case "recordStalePlanAudit" -> null;
 				case "toString" -> "incomplete-validation-test-model";

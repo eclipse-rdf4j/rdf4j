@@ -91,9 +91,10 @@ class ValueStoreDictionaryOwnershipTest {
 	void incompatibleInlineSettingIsRejectedBeforeNativeMutation() throws Exception {
 		writeExplicitCurrentDictionary();
 		Map<String, String> before = fileHashes();
-		assertThatThrownBy(() -> new ValueStore(directory.toFile(), new LmdbStoreConfig().setInlineLiterals(true)).close())
-				.isInstanceOf(SailException.class)
-				.hasMessageContaining("must be opened with its original setting");
+		assertThatThrownBy(
+				() -> new ValueStore(directory.toFile(), new LmdbStoreConfig().setInlineLiterals(true)).close())
+						.isInstanceOf(SailException.class)
+						.hasMessageContaining("must be opened with its original setting");
 		assertThat(fileHashes()).isEqualTo(before);
 	}
 
@@ -102,9 +103,10 @@ class ValueStoreDictionaryOwnershipTest {
 		writeExplicitCurrentDictionary();
 		Files.delete(directory.resolve(StoreProperties.FILE_NAME));
 		Map<String, String> before = fileHashes();
-		assertThatThrownBy(() -> new ValueStore(directory.toFile(), new LmdbStoreConfig().setInlineLiterals(false)).close())
-				.isInstanceOf(IOException.class)
-				.hasMessageContaining("Missing store.properties in a nonempty ValueStore dictionary directory");
+		assertThatThrownBy(
+				() -> new ValueStore(directory.toFile(), new LmdbStoreConfig().setInlineLiterals(false)).close())
+						.isInstanceOf(IOException.class)
+						.hasMessageContaining("Missing store.properties in a nonempty ValueStore dictionary directory");
 		assertThat(fileHashes()).isEqualTo(before);
 	}
 
@@ -143,8 +145,9 @@ class ValueStoreDictionaryOwnershipTest {
 		Map<String, String> hashes = new TreeMap<>();
 		try (var files = Files.walk(directory)) {
 			for (Path file : files.filter(Files::isRegularFile).toList()) {
-				hashes.put(directory.relativize(file).toString(), HexFormat.of().formatHex(
-						MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(file))));
+				hashes.put(directory.relativize(file).toString(), HexFormat.of()
+						.formatHex(
+								MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(file))));
 			}
 		}
 		return hashes;

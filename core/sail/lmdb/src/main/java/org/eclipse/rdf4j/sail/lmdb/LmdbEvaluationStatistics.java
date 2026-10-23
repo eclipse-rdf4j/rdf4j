@@ -128,7 +128,8 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 			LmdbFrontierPlannerSettings frontierSettings, BooleanSupplier mayHaveInferred,
 			BooleanSupplier adaptiveEvidenceAllowedSupplier, LmdbStatisticsService statistics) {
 		this(valueStore, tripleStore, estimator, filters, feedback, cardinalities, cascadesPlanCache,
-				frontierSettings, mayHaveInferred, adaptiveEvidenceAllowedSupplier, statistics, null, QueryExecutionPolicy.DEFAULT);
+				frontierSettings, mayHaveInferred, adaptiveEvidenceAllowedSupplier, statistics, null,
+				QueryExecutionPolicy.DEFAULT);
 	}
 
 	LmdbEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
@@ -145,7 +146,8 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 				estimator == null ? null : estimator.synopsisService(), filters, feedback, cardinalities,
 				cascadesPlanCache, frontierSettings, mayHaveInferred,
 				adaptiveEvidenceAllowed, statistics, qualifiedLearned);
-		filterServices = new LmdbEvaluationFilterServices(runtime, filters, estimator, adaptiveEvidenceAllowed, qualifiedLearned);
+		filterServices = new LmdbEvaluationFilterServices(runtime, filters, estimator, adaptiveEvidenceAllowed,
+				qualifiedLearned);
 	}
 
 	@Override
@@ -214,8 +216,12 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 				mask |= 1 << i;
 			}
 		}
-		return runtime.physicalTripleStore().indexAccessPaths(mask).stream()
-				.mapToInt(TripleStore.IndexAccessPath::prefixLength).max().orElse(0);
+		return runtime.physicalTripleStore()
+				.indexAccessPaths(mask)
+				.stream()
+				.mapToInt(TripleStore.IndexAccessPath::prefixLength)
+				.max()
+				.orElse(0);
 	}
 
 	@Override
@@ -326,7 +332,8 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 		TupleExpr expression = LmdbEstimatorExpressionSupport.join(orderedFactors);
 		return expression == null ? Optional.empty()
 				: Optional.of(LmdbStatisticsEstimateAdapter.from(
-						runtime.estimate(expression, boundVars, EstimationTier.STANDARD, false, filterServices.filterReadContext())));
+						runtime.estimate(expression, boundVars, EstimationTier.STANDARD, false,
+								filterServices.filterReadContext())));
 	}
 
 	public Optional<StatisticsEstimate> filter(TupleExpr input, ValueExpr condition, StatisticsEstimate inputEstimate,

@@ -332,10 +332,10 @@ class LmdbAASQuery2CascadesHypergraphPlanningTest {
 
 	private static int indexOfRatedPowerAnchor(List<TupleExpr> factors) {
 		for (int i = 0; i < factors.size(); i++) {
-			if (factors.get(i)instanceof StatementPattern pattern
+			if (factors.get(i) instanceof StatementPattern pattern
 					&& predicateLocalName(pattern).equals("idShort")
 					&& pattern.getObjectVar() != null
-					&& pattern.getObjectVar().getValue()instanceof Literal literal
+					&& pattern.getObjectVar().getValue() instanceof Literal literal
 					&& "ratedPower".equals(literal.getLabel())) {
 				return i;
 			}
@@ -374,7 +374,7 @@ class LmdbAASQuery2CascadesHypergraphPlanningTest {
 	}
 
 	private static String predicateLocalName(StatementPattern pattern) {
-		if (pattern.getPredicateVar() == null || !(pattern.getPredicateVar().getValue()instanceof IRI iri)) {
+		if (pattern.getPredicateVar() == null || !(pattern.getPredicateVar().getValue() instanceof IRI iri)) {
 			return "";
 		}
 		String value = iri.stringValue();
@@ -388,7 +388,7 @@ class LmdbAASQuery2CascadesHypergraphPlanningTest {
 				return 0L;
 			}
 			BindingSet bindingSet = result.next();
-			if (bindingSet.getValue(bindingName)instanceof Literal literal) {
+			if (bindingSet.getValue(bindingName) instanceof Literal literal) {
 				return literal.longValue();
 			}
 			return 0L;

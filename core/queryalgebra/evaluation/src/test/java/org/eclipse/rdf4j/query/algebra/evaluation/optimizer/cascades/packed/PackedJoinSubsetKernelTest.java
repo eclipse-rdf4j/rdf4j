@@ -93,7 +93,7 @@ class PackedJoinSubsetKernelTest {
 
 	private static Join firstJoin(TupleExpr expression) {
 		Join current = (Join) expression;
-		while (current.getLeftArg()instanceof Join left) {
+		while (current.getLeftArg() instanceof Join left) {
 			current = left;
 		}
 		return current;

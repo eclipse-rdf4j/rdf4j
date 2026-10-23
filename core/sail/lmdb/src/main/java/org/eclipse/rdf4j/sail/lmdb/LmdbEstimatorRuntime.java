@@ -38,8 +38,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationSco
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedQueryView.PrefixMaterialization;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedQueryView;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedQueryView.PrefixMaterialization;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -183,7 +183,8 @@ final class LmdbEstimatorRuntime {
 	}
 
 	BagEstimate estimateFilter(TupleExpr input, ValueExpr condition, BagEstimate inputEstimate,
-			Set<String> boundNames, EstimationTier tier, boolean exactProbePermitted, LmdbFilterReadContext readContext) {
+			Set<String> boundNames, EstimationTier tier, boolean exactProbePermitted,
+			LmdbFilterReadContext readContext) {
 		EstimateContext context = rootContext(input, readContext)
 				.withBoundNames(boundNames == null ? Set.of() : boundNames)
 				.withEstimationTier(tier)
@@ -405,7 +406,8 @@ final class LmdbEstimatorRuntime {
 				0x4c454f5f52455649L, feedback == null ? 0L : feedback.planningRevision());
 		revision = LmdbEstimatorRevisionSupport.mixRevision(revision,
 				filters == null ? 0L : filters.planningRevision());
-		return LmdbEstimatorRevisionSupport.mixRevision(revision, learned == null ? 0L : learned.planningRevision()) & Long.MAX_VALUE;
+		return LmdbEstimatorRevisionSupport.mixRevision(revision, learned == null ? 0L : learned.planningRevision())
+				& Long.MAX_VALUE;
 	}
 
 	/**
@@ -613,7 +615,8 @@ final class LmdbEstimatorRuntime {
 		// Keep the historical scalar fallback intact while refusing an unconditioned new sample for an unknown
 		// conditional provider input. Refusal must also cover the inner estimate, before any heuristic relabeling.
 		BagEstimate input = estimate(pattern, effectiveRead);
-		BagEstimate output = estimateFilter(pattern, condition, input, Set.of(), EstimationTier.STANDARD, false, effectiveRead);
+		BagEstimate output = estimateFilter(pattern, condition, input, Set.of(), EstimationTier.STANDARD, false,
+				effectiveRead);
 		// Preserve qualified source provenance before scalar ratio fallback relabels it.
 		LmdbFilterReadContext qualifiedRead = qualifiedContext.filterReadContext();
 		if (frontierSettings.mode() != FrontierEstimatorMode.AUTHORITATIVE && adaptiveEvidenceAllowed()
@@ -650,7 +653,8 @@ final class LmdbEstimatorRuntime {
 
 	private EstimateContext context(TupleExpr expression, CostContext cost, LmdbFilterReadContext readContext) {
 		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
-		return LmdbEstimateContextBuilder.forCost(expression, cost, rootContext(expression, readContext), prefixEvidence, scope);
+		return LmdbEstimateContextBuilder.forCost(expression, cost, rootContext(expression, readContext),
+				prefixEvidence, scope);
 	}
 
 	private EstimateContext rootContext(TupleExpr expression) {

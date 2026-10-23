@@ -73,7 +73,8 @@ class LmdbNativeGenericCoreReadDependencyTest {
 	private SailRepository repository;
 
 	enum Position {
-		LEADING, INTERIOR
+		LEADING,
+		INTERIOR
 	}
 
 	@BeforeEach
@@ -357,7 +358,8 @@ class LmdbNativeGenericCoreReadDependencyTest {
 			public RowCursor open(RowState input) throws IOException {
 				assertThat(input.encounterOrderRequired).isEqualTo(ordered);
 				LmdbNativeInteriorPlans.Selection qualified = selected.requiresLexical(input)
-						? LmdbNativeInteriorPlans.select(selected.original, input, null) : selected;
+						? LmdbNativeInteriorPlans.select(selected.original, input, null)
+						: selected;
 				assertThat(qualified.requiresLexical(input)).isFalse();
 				RowCursor delegate = qualified.open(input, qualified.plan);
 				return new RowCursor() {

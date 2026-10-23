@@ -388,7 +388,9 @@ final class FilterBatchCursor implements WeightedBatchCursor {
 				return accepted;
 			}
 		}
-		if (!row.cancellation.isCancellationRequested()) { filter.inputExhausted(); }
+		if (!row.cancellation.isCancellationRequested()) {
+			filter.inputExhausted();
+		}
 		close();
 		return 0;
 	}

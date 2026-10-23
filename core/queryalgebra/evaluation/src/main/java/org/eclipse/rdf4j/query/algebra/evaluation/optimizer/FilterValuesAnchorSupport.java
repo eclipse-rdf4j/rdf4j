@@ -89,7 +89,7 @@ public final class FilterValuesAnchorSupport {
 
 	private static BindingSetAssignment listValuesAnchor(ListMemberOperator operator) {
 		List<ValueExpr> arguments = operator.getArguments();
-		if (arguments == null || arguments.size() < 2 || !(arguments.getFirst()instanceof Var var)) {
+		if (arguments == null || arguments.size() < 2 || !(arguments.getFirst() instanceof Var var)) {
 			return null;
 		}
 

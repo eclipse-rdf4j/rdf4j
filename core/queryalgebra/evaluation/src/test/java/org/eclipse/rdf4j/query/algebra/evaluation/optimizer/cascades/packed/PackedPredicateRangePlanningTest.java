@@ -982,7 +982,7 @@ class PackedPredicateRangePlanningTest {
 	private static Set<Value> pooledValues(PackedQuery query) {
 		Set<Value> values = new LinkedHashSet<>();
 		for (int objectId = 1; objectId <= query.objectCount(); objectId++) {
-			if (query.objectValue(objectId)instanceof Value value) {
+			if (query.objectValue(objectId) instanceof Value value) {
 				values.add(value);
 			}
 		}
