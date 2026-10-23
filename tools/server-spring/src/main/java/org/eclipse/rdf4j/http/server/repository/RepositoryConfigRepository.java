@@ -44,6 +44,7 @@ import org.eclipse.rdf4j.repository.UnknownTransactionStateException;
 import org.eclipse.rdf4j.repository.base.AbstractRepository;
 import org.eclipse.rdf4j.repository.base.AbstractRepositoryConnection;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
+import org.eclipse.rdf4j.repository.config.RepositoryConfigSecrets;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.rio.RDFHandler;
@@ -186,6 +187,7 @@ public class RepositoryConfigRepository extends AbstractRepository {
 						if (model.isEmpty()) {
 							manager.removeRepository(id);
 						} else {
+							RepositoryConfigSecrets.restore(model, id, manager.getRepositoryConfig(id));
 							manager.addRepositoryConfig(RepositoryConfigUtil.getRepositoryConfig(model, id));
 						}
 					}
@@ -293,6 +295,7 @@ public class RepositoryConfigRepository extends AbstractRepository {
 					RepositoryConfig config = manager.getRepositoryConfig(id);
 					Model cfg = new TreeModel();
 					config.export(cfg, ctx);
+					RepositoryConfigSecrets.redact(cfg);
 					cfg.getNamespaces().forEach(ns -> {
 						model.setNamespace(ns);
 					});
