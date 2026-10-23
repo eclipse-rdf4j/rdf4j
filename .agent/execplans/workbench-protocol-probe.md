@@ -14,8 +14,8 @@ An operator can permit an absolute RDF4J Server URL in Workbench with `accepted-
 - [done] implement per-hop bounded probe (2026-10-23 10:02Z)
 - [done] verify Workbench compatibility variants (2026-10-23 10:07Z)
 - [done] format and review candidate (2026-10-23 10:13Z)
-- [in_progress] publish scoped draft after review
-- [todo] monitor exact published checks
+- [done] publish scoped draft after review (2026-10-23 10:18Z)
+- [in_progress] monitor exact published checks
 
 ## Surprises & Discoveries
 
@@ -29,7 +29,7 @@ An operator can permit an absolute RDF4J Server URL in Workbench with `accepted-
 
 ## Outcomes & Retrospective
 
-Candidate ready for independent review. The initial build is green. Two focused test methods were red on main before production edits and their Surefire reports are preserved. The test-only branch was rebased onto #6210's exact head and redirect and path-prefix regressions were confirmed red there, still before any production edit. The expanded validator class passed 35 tests and the formatted full Workbench module passed 1,348 tests. The first full-module run could not find the bundled Node runtime at the Java fixture's hard-coded `target/node` path even though mvnf built it under the private workspace; its failure report was preserved, a test-artifact symlink supplied the expected path, and the later full runs passed. Copyright, formatter, and `git diff --check` passed.
+The candidate was independently reviewed and published as draft PR #6251, stacked on #6210. The initial build is green. Two focused test methods were red on main before production edits and their Surefire reports are preserved. The test-only branch was rebased onto #6210's exact head and redirect and path-prefix regressions were confirmed red there, still before any production edit. The expanded validator class passed 35 tests and the formatted full Workbench module passed 1,348 tests. The first full-module run could not find the bundled Node runtime at the Java fixture's hard-coded `target/node` path even though mvnf built it under the private workspace; its failure report was preserved, a test-artifact symlink supplied the expected path, and the later full runs passed. Copyright, formatter, and `git diff --check` passed. The published local, remote, and PR head SHAs matched at creation; ECA passed, and exact-head CI is running.
 
 ## Context and Orientation
 
