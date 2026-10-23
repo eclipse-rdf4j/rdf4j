@@ -914,6 +914,27 @@ public class TxnManagerTest {
 		}
 	}
 
+	@ParameterizedTest
+	@EnumSource(value = TxnManager.Mode.class, names = { "RESET", "ABORT" })
+	void readerRetirementCallbacksEndWithManagerShutdown(TxnManager.Mode mode, @TempDir Path dataDir)
+			throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, mode)) {
+			AtomicInteger retirements = new AtomicInteger();
+			fixture.manager.setReaderRetirementListener(retirements::incrementAndGet);
+			TxnManager.Txn retired = fixture.manager.createReadTxn();
+			retired.close();
+			assertEquals(1, retirements.get(), "a live manager must notify its owner when a reader retires");
+
+			TxnManager.Txn shutdownReader = fixture.manager.createReadTxn();
+			fixture.closeManager();
+			assertTrue(shutdownReader.isClosed(), "shutdown retires the remaining native reader");
+			shutdownReader.close();
+			retired.close();
+			fixture.closeManager();
+			assertEquals(1, retirements.get(), "late reader releases cannot notify a retired maintenance owner");
+		}
+	}
+
 	private static final class ReaderFixture implements AutoCloseable {
 		private final long env;
 		private final TxnManager manager;

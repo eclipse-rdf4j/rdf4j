@@ -305,6 +305,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		return maintenanceState;
 	}
 
+	/** Factual in-memory work state; querying it never starts a build or opens a native reader. */
+	boolean hasPendingMaintenance() {
+		return maintenanceCanReachReadiness();
+	}
+
 	/** Monotone publish counter; a component of the adaptive cost model's regime key. */
 	long epochCount() {
 		return epochs.get();

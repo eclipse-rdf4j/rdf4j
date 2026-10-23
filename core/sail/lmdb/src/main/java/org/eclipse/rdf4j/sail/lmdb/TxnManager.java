@@ -131,6 +131,23 @@ final class TxnManager {
 	private final NativeBarrier lockManager = new NativeBarrier();
 
 	private volatile boolean managerClosed;
+	private volatile Runnable readerRetirementListener;
+
+	/** Listener must only signal its maintenance worker; native work belongs outside the notification. */
+	void setReaderRetirementListener(Runnable listener) {
+		readerRetirementListener = listener;
+	}
+
+	/** Caller holds the exclusive native barrier, which also fences admission and snapshot renewal. */
+	boolean hasActiveReadersBefore(long nativeTransactionId) {
+		for (Txn reader : open) {
+			if (!reader.closed && !reader.idle && reader.active && reader.nativeTransactionId < nativeTransactionId) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	// Deterministic admission-race seam; only the blocking path visits it.
 	volatile Runnable beforeBlockingReaderAdmissionForTest;
 
@@ -882,6 +899,9 @@ final class TxnManager {
 				failure = appendCloseFailure(failure, cleanupFailure);
 			}
 		}
+		// Closed cursor entries can remain in a caller's thread-local pool. Their transaction manager must not
+		// retain the maintenance owner after its last reader has retired, including when native cleanup failed.
+		readerRetirementListener = null;
 		rethrowCloseFailure(failure);
 	}
 
@@ -1619,6 +1639,10 @@ final class TxnManager {
 				releaseReaderPermit(permit);
 			} else {
 				signalReaderInactive();
+			}
+			Runnable listener = readerRetirementListener;
+			if (listener != null) {
+				listener.run();
 			}
 		}
 

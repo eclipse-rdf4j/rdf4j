@@ -41,7 +41,7 @@ class LmdbValueRetirementRecoveryTest {
 
 	@Test
 	void reopenKeepsAValueReferencedByCommittedTriples(@TempDir File dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setForceSync(true);
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setForceSync(true);
 		IRI subject = SimpleValueFactory.getInstance().createIRI("urn:retirement:live-subject");
 		TripleTerm quoted = SimpleValueFactory.getInstance()
 				.createTripleTerm(subject, PREDICATE,
@@ -77,18 +77,21 @@ class LmdbValueRetirementRecoveryTest {
 
 		LmdbStore reopened = new LmdbStore(dataDir, config);
 		reopened.init();
-		try (SailConnection connection = reopened.getConnection();
-				CloseableIteration<? extends Statement> statements = connection.getStatements(null, null, null,
-						false)) {
-			assertTrue(statements.hasNext(), "the committed statement must survive retirement recovery");
-			Statement statement = statements.next();
-			assertEquals(subject, statement.getSubject(),
-					"recovery must recheck committed triple liveness before freeing a retired quoted value ID");
-			assertEquals(nestedQuoted, statement.getObject(),
-					"recursive quoted values must resolve through their preserved dictionary generation");
-			assertTrue(statement.getObject().isTripleTerm());
-			assertEquals(quoted, ((TripleTerm) statement.getObject()).getObject());
-			assertFalse(statements.hasNext());
+		try {
+			LmdbGcTestMaintenance.drainRetirements(reopened.getBackingStore());
+			try (SailConnection connection = reopened.getConnection();
+					CloseableIteration<? extends Statement> statements = connection.getStatements(null, null, null,
+							false)) {
+				assertTrue(statements.hasNext(), "the committed statement must survive retirement recovery");
+				Statement statement = statements.next();
+				assertEquals(subject, statement.getSubject(),
+						"recovery must recheck committed triple liveness before freeing a retired quoted value ID");
+				assertEquals(nestedQuoted, statement.getObject(),
+						"recursive quoted values must resolve through their preserved dictionary generation");
+				assertTrue(statement.getObject().isTripleTerm());
+				assertEquals(quoted, ((TripleTerm) statement.getObject()).getObject());
+				assertFalse(statements.hasNext());
+			}
 		} finally {
 			reopened.shutDown();
 		}
@@ -104,7 +107,7 @@ class LmdbValueRetirementRecoveryTest {
 
 	@Test
 	void failedTripleCommitPreservesLiveQuotedValuesAcrossReopen(@TempDir File dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setForceSync(true);
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setForceSync(true);
 		IRI subject = SimpleValueFactory.getInstance().createIRI("urn:retirement:failed-commit-subject");
 		TripleTerm quoted = SimpleValueFactory.getInstance()
 				.createTripleTerm(subject, PREDICATE,
@@ -140,17 +143,21 @@ class LmdbValueRetirementRecoveryTest {
 
 		LmdbStore reopened = new LmdbStore(dataDir, config);
 		reopened.init();
-		try (SailConnection connection = reopened.getConnection();
-				CloseableIteration<? extends Statement> statements = connection.getStatements(null, PREDICATE, null,
-						false)) {
-			assertTrue(statements.hasNext(), "the pre-failure committed triple must remain authoritative after reopen");
-			Statement statement = statements.next();
-			assertEquals(subject, statement.getSubject());
-			assertEquals(nestedQuoted, statement.getObject(),
-					"startup retirement recovery must preserve nested values still referenced by the failed transaction's old triples");
-			assertFalse(statements.hasNext(), "the failed replacement triple must not be visible");
-			assertFalse(reopened.getBackingStore().hasRetiredValueIds(),
-					"recovery must finish after preserving live IDs and consuming the durable intent");
+		try {
+			LmdbGcTestMaintenance.drainRetirements(reopened.getBackingStore());
+			try (SailConnection connection = reopened.getConnection();
+					CloseableIteration<? extends Statement> statements = connection.getStatements(null, PREDICATE, null,
+							false)) {
+				assertTrue(statements.hasNext(),
+						"the pre-failure committed triple must remain authoritative after reopen");
+				Statement statement = statements.next();
+				assertEquals(subject, statement.getSubject());
+				assertEquals(nestedQuoted, statement.getObject(),
+						"startup retirement recovery must preserve nested values still referenced by the failed transaction's old triples");
+				assertFalse(statements.hasNext(), "the failed replacement triple must not be visible");
+				assertFalse(reopened.getBackingStore().hasRetiredValueIds(),
+						"recovery must finish after preserving live IDs and consuming the durable intent");
+			}
 		} finally {
 			reopened.shutDown();
 		}

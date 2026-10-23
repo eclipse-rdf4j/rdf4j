@@ -139,6 +139,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	private SailStore store;
 
 	private LmdbSailStore backingStore;
+	private boolean offlineMaintenance;
 	private PreparedBulkStore.Snapshot preparedBulkSnapshot;
 
 	// used to decide if store is writable, is true if the store was writable during initialization
@@ -368,6 +369,15 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	 *
 	 * @throws SailException If this LmdbStore could not be initialized using the parameters that have been set.
 	 */
+	@Override
+	public void init() throws SailException {
+		super.init();
+		LmdbSailStore current = backingStore;
+		if (!offlineMaintenance && isInitialized() && current != null) {
+			current.startBackgroundMaintenanceAfterInitialization();
+		}
+	}
+
 	@Override
 	protected void initializeInternal() throws SailException {
 		logger.debug("Initializing LmdbStore...");
@@ -698,6 +708,93 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	public boolean awaitSketchesReady(long timeout, TimeUnit unit) throws InterruptedException {
 		SketchBasedJoinEstimator estimator = getSketchBasedJoinEstimator();
 		return estimator != null && estimator.awaitReady(timeout, unit);
+	}
+
+	/** Bounded authority and maintenance information; obtaining it never walks native records. */
+	@InternalUseOnly
+	public record StartupStatus(boolean exactReferenceCounts, boolean referenceCountVerificationPending,
+			boolean retainedValueMaintenance, String statementIndexBuild, String tripleTermIndexBuild,
+			String auxiliaryMaintenance, boolean optionalMaintenancePending) {
+		public boolean backgroundWorkPending() {
+			return referenceCountVerificationPending || retainedValueMaintenance || optionalMaintenancePending
+					|| !statementIndexBuild.equals("IDLE") || !tripleTermIndexBuild.equals("IDLE")
+					|| auxiliaryMaintenance.equals("NOT_STARTED") || auxiliaryMaintenance.equals("RUNNING");
+		}
+	}
+
+	@InternalUseOnly
+	public StartupStatus getStartupStatus() {
+		LmdbSailStore current = initializedBackingStore();
+		try {
+			LmdbDirectAdjacencyStore adjacency = current.directAdjacencyStore();
+			return new StartupStatus(current.valueStore().hasTrustedReferenceCounts(),
+					current.valueStore().isReferenceCountVerificationPending(),
+					current.valueStore().hasDeferredValueMaintenance(),
+					current.getTripleStore().indexRebuildStatus(), current.valueStore().indexRebuildStatus(),
+					current.postReadyMaintenanceStatus(), current.valueStore().hasPendingValueOverlayMaintenance()
+							|| adjacency != null && adjacency.hasPendingMaintenance());
+		} catch (IOException failure) {
+			throw new SailException("Could not inspect bounded value-maintenance metadata", failure);
+		}
+	}
+
+	/** Waits for requested index layouts without making their completion a readiness requirement. */
+	@InternalUseOnly
+	public boolean awaitIndexRebuild(long timeout, TimeUnit unit) throws IOException, InterruptedException {
+		Objects.requireNonNull(unit, "unit");
+		if (timeout < 0L) {
+			throw new IllegalArgumentException("timeout must be non-negative");
+		}
+		LmdbSailStore current = initializedBackingStore();
+		long started = System.nanoTime();
+		long budget = unit.toNanos(timeout);
+		if (!current.getTripleStore().awaitIndexRebuild(budget, TimeUnit.NANOSECONDS)) {
+			return false;
+		}
+		long remaining = Math.max(0L, budget - (System.nanoTime() - started));
+		return current.valueStore().awaitIndexRebuild(remaining, TimeUnit.NANOSECONDS);
+	}
+
+	private LmdbSailStore initializedBackingStore() {
+		LmdbSailStore current = backingStore;
+		if (current == null) {
+			throw new IllegalStateException("LMDB store is not initialized");
+		}
+		return current;
+	}
+
+	/** Exhaustively checks a closed repository while holding its directory lock; does not repair native records. */
+	@InternalUseOnly
+	public static void verifyStoreOffline(File directory, LmdbStoreConfig config) throws IOException {
+		Objects.requireNonNull(directory, "directory");
+		Objects.requireNonNull(config, "config");
+		Lock lock = new DirectoryLockManager(directory).lockOrFail();
+		try {
+			StoreProperties properties = new StoreProperties(directory);
+			properties.load();
+			if (properties.isLoaded()) {
+				LmdbStoreFormat.resolve(directory, properties, config);
+			}
+			LegacyStoreDiscovery.verify(directory, properties);
+		} finally {
+			lock.release();
+		}
+	}
+
+	/**
+	 * Reconstructs the complete active owner graph in a closed repository. Partial work remains UNKNOWN; exact-count
+	 * authority is published only by the final successful native transaction. Ordinary durability settings apply.
+	 */
+	@InternalUseOnly
+	public static void reconstructReferenceCountsOffline(File directory, LmdbStoreConfig config) throws IOException {
+		LmdbStore maintenance = new LmdbStore(directory, config);
+		maintenance.offlineMaintenance = true;
+		try {
+			maintenance.init();
+			maintenance.backingStore.reconstructReferenceCountsOffline();
+		} finally {
+			maintenance.shutDown();
+		}
 	}
 
 	/**
