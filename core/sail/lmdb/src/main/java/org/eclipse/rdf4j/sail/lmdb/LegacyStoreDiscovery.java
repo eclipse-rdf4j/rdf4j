@@ -35,6 +35,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
+import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 
 import java.io.File;
 import java.io.IOException;
@@ -85,6 +86,7 @@ final class LegacyStoreDiscovery {
 	}
 
 	static void discover(File directory, StoreProperties properties) throws IOException {
+		LmdbStartupDiagnostics.observe(LmdbStartupDiagnostics.Operation.DISCOVERY);
 		File values = new File(directory, "values/data.mdb");
 		File triples = new File(directory, "triples/data.mdb");
 		boolean valuesPresent = values.isFile();
@@ -94,6 +96,8 @@ final class LegacyStoreDiscovery {
 		}
 		properties.setNativeGenerationPresent(valuesPresent);
 		if (!valuesPresent) {
+			properties.verifiedValueTransactionId = 0L;
+			properties.verifiedTripleTransactionId = 0L;
 			return;
 		}
 
@@ -107,6 +111,8 @@ final class LegacyStoreDiscovery {
 				triplesEnv = openReadOnlyEnvironment(stack, triples.getParentFile());
 				valuesTxn = beginReadOnly(stack, valuesEnv);
 				triplesTxn = beginReadOnly(stack, triplesEnv);
+				PreparedBulkStore.validateGenerationPair(stack, valuesTxn, triplesTxn);
+				PreparedBulkStore.validateCleanProperties(stack, valuesTxn, properties);
 				int valuesMain = openMainDatabase(stack, valuesTxn);
 				int triplesMain = openMainDatabase(stack, triplesTxn);
 				Map<String, Integer> valuesDatabases = readDatabaseCatalog(stack, valuesTxn, valuesMain, false);
@@ -142,6 +148,8 @@ final class LegacyStoreDiscovery {
 							valuesDatabases.get("unused_ids"), termCspoDatabase, termSpocDatabase);
 				}
 				validateDescriptors(properties, statementIndexes, termIndexes, legacy, statementManifest, termManifest);
+				properties.verifiedValueTransactionId = mdb_txn_id(valuesTxn);
+				properties.verifiedTripleTransactionId = mdb_txn_id(triplesTxn);
 			} finally {
 				if (triplesTxn != NULL) {
 					mdb_txn_abort(triplesTxn);
@@ -188,6 +196,157 @@ final class LegacyStoreDiscovery {
 		}
 	}
 
+	/**
+	 * Checks the fixed current-format schema without walking a dictionary, index, namespace snapshot or DB catalog. The
+	 * caller must separately establish native CLEAN transaction authority before using this as admission evidence.
+	 */
+	static void validateCurrentMetadata(MemoryStack stack, long valuesTxn, long triplesTxn,
+			StoreProperties properties) throws IOException {
+		Map<String, Integer> valueDatabases = new HashMap<>();
+		Map<String, Integer> tripleDatabases = new HashMap<>();
+		int valuesMain = openMainDatabase(stack, valuesTxn);
+		int triplesMain = openMainDatabase(stack, triplesTxn);
+		validateDatabaseFlags(stack, valuesTxn, valuesMain, "values main");
+		validateDatabaseFlags(stack, triplesTxn, triplesMain, "triples main");
+		for (String name : V6_VALUE_METADATA_DBS) {
+			openKnownDatabase(stack, valuesTxn, name, valueDatabases, true);
+		}
+		openKnownDatabase(stack, valuesTxn, ValueStore.TERM_INDEX_MANIFEST_DATABASE, valueDatabases, true);
+		openKnownDatabase(stack, triplesTxn, "contexts", tripleDatabases, true);
+		openKnownDatabase(stack, triplesTxn, TripleStore.NAMESPACE_DATABASE_NAME, tripleDatabases, true);
+		openKnownDatabase(stack, triplesTxn, TripleStore.PREDICATE_OBJECT_DOMAINS_DB, tripleDatabases, true);
+		openKnownDatabase(stack, triplesTxn, TripleStore.PREDICATE_OBJECT_DOMAIN_DEGRADATIONS_DB, tripleDatabases,
+				true);
+		openKnownDatabase(stack, triplesTxn, TripleStore.FRONTIER_MUTATION_JOURNAL_DB, tripleDatabases, true);
+		// Every legal permutation is probed, including absent indexes, so incomplete pairs and staged term indexes
+		// force ordinary recovery. This fixed work is independent of the number of dictionary or statement entries.
+		for (String spec : INDEX_SPECS) {
+			openKnownDatabase(stack, triplesTxn, TripleIndex.nativeDatabaseName(spec, true), tripleDatabases, false);
+			openKnownDatabase(stack, triplesTxn, TripleIndex.nativeDatabaseName(spec, false), tripleDatabases, false);
+			openKnownDatabase(stack, valuesTxn, TripleIndex.nativeDatabaseName("term-" + spec, true), valueDatabases,
+					false);
+		}
+		if (databaseEntries(stack, triplesTxn, triplesMain) != tripleDatabases.size()) {
+			throw new IOException("Unrecognized entry in current LMDB triple database catalog");
+		}
+		Set<String> statementIndexes = classifyStatementIndexes(tripleDatabases);
+		Set<String> termIndexes = classifyTermIndexes(valueDatabases, properties, false);
+		int metadata = valueDatabases.get("gc_meta");
+		byte[] schema = getBoundedValue(valuesTxn, metadata, new byte[] { 2 }, 1, 1);
+		if (schema[0] != 1) {
+			throw new IOException("Unsupported ValueStore retirement metadata schema");
+		}
+		byte[] format = getBoundedValue(valuesTxn, metadata, new byte[] { 3 }, 1, 1);
+		if (format[0] != LmdbStoreFormat.CURRENT_VERSION) {
+			throw new IOException("ValueStore native format fence disagrees with current LmdbStore format");
+		}
+		ByteBuffer epoch = ByteBuffer.wrap(getBoundedValue(valuesTxn, metadata, new byte[] { 1 }, 1, 9));
+		if (readCanonicalUnsigned(epoch) <= 0L || epoch.hasRemaining()) {
+			throw new IOException("Malformed ValueStore retirement boot epoch");
+		}
+
+		int namespaces = tripleDatabases.get(TripleStore.NAMESPACE_DATABASE_NAME);
+		validateMetadataVersion(getBoundedValue(triplesTxn, namespaces, TripleStore.NAMESPACE_FORMAT_KEY,
+				Integer.BYTES, Integer.BYTES), TripleStore.NAMESPACE_DATABASE_VERSION, "namespace");
+		// NamespaceStore performs the functional decode once when opened. Here only presence is needed; copying a
+		// potentially large snapshot would duplicate that work and make admission depend on namespace count.
+		try (MemoryStack lookup = MemoryStack.stackPush()) {
+			MDBVal key = MDBVal.calloc(lookup).mv_data(lookup.bytes(TripleStore.NAMESPACE_SNAPSHOT_KEY));
+			MDBVal value = MDBVal.calloc(lookup);
+			int result = mdb_get(triplesTxn, namespaces, key, value);
+			if (result != MDB_SUCCESS || value.mv_size() < Integer.BYTES) {
+				throw new IOException("Missing or truncated namespace database snapshot metadata");
+			}
+		}
+		validateMetadataVersion(getBoundedValue(triplesTxn, namespaces, TripleStore.INDEX_FORMAT_KEY,
+				Integer.BYTES, Integer.BYTES), TripleStore.INDEX_DATABASE_VERSION, "native triple index");
+		byte[] specs = getBoundedValue(triplesTxn, namespaces, TripleStore.INDEX_SPECS_KEY, 4,
+				INDEX_SPECS.size() * 5 - 1);
+		validateUtf8(ByteBuffer.wrap(specs), "native triple index specifications");
+		String descriptor = new String(specs, StandardCharsets.UTF_8);
+		validateDescriptor("native triple index", descriptor, statementIndexes, true, false);
+		long namespaceEntries = 4L;
+		try (MemoryStack lookup = MemoryStack.stackPush()) {
+			MDBVal key = MDBVal.calloc(lookup).mv_data(lookup.bytes(PreparedBulkStore.GENERATION_KEY));
+			MDBVal value = MDBVal.calloc(lookup);
+			int result = mdb_get(triplesTxn, namespaces, key, value);
+			if (result != MDB_NOTFOUND) {
+				E(result);
+				if (value.mv_size() != 16L) {
+					throw new IOException("Invalid native bulk generation identity");
+				}
+				namespaceEntries++;
+			}
+		}
+		if (databaseEntries(stack, triplesTxn, namespaces) != namespaceEntries) {
+			throw new IOException("Unrecognized namespace database metadata key");
+		}
+
+		int manifest = valueDatabases.get(ValueStore.TERM_INDEX_MANIFEST_DATABASE);
+		// The binary manifest has two ints followed by length-prefixed four-byte permutations.
+		Set<String> activeTerms = ValueStore.decodeTermIndexManifest(ByteBuffer.wrap(getBoundedValue(valuesTxn,
+				manifest, ValueStore.TERM_INDEX_MANIFEST_KEY, 2 * Integer.BYTES,
+				2 * Integer.BYTES + ValueStore.MAX_TERM_INDEXES * (Integer.BYTES + 4))));
+		if (!activeTerms.contains("spoc") || !activeTerms.contains("cspo") || !activeTerms.equals(termIndexes)
+				|| databaseEntries(stack, valuesTxn, manifest) != 1L) {
+			throw new IOException("Native triple-term manifest disagrees with named index databases");
+		}
+		validateDescriptor(StoreProperties.INDEXES_KEY, properties.getTripleIndexes(), statementIndexes, true, true);
+		validateDescriptor(StoreProperties.TRIPLE_TERM_INDEXES_KEY, properties.getTripleTermIndexes(), termIndexes,
+				true, true);
+		if (!TripleIndex.parseIndexSpecList(properties.getTripleIndexes()).equals(statementIndexes)
+				|| !TripleIndex.parseIndexSpecList(properties.getTripleTermIndexes()).equals(termIndexes)) {
+			// Preserve exact matching text for the strict publication seal. Only an actual lagging set needs the
+			// existing native-manifest reconciliation and a subsequent properties save.
+			validateDescriptors(properties, statementIndexes, termIndexes, false, true, true);
+		}
+	}
+
+	private static void openKnownDatabase(MemoryStack stack, long transaction, String name,
+			Map<String, Integer> databases, boolean required) throws IOException {
+		stack.push();
+		try {
+			IntBuffer handle = stack.mallocInt(1);
+			int result = mdb_dbi_open(transaction, name, 0, handle);
+			if (result == MDB_NOTFOUND && !required) {
+				return;
+			}
+			E(result);
+			validateDatabaseFlags(stack, transaction, handle.get(0), name);
+			databases.put(name, handle.get(0));
+		} finally {
+			stack.pop();
+		}
+	}
+
+	private static void validateDatabaseFlags(MemoryStack stack, long transaction, int database, String name)
+			throws IOException {
+		IntBuffer flags = stack.mallocInt(1);
+		E(mdb_dbi_flags(transaction, database, flags));
+		if (flags.get(0) != 0) {
+			throw new IOException("Unexpected flags on native database " + name);
+		}
+	}
+
+	private static long databaseEntries(MemoryStack stack, long transaction, int database) throws IOException {
+		MDBStat stat = MDBStat.malloc(stack);
+		E(mdb_stat(transaction, database, stat));
+		return stat.ms_entries();
+	}
+
+	private static byte[] getBoundedValue(long transaction, int database, byte[] keyBytes, int minimum, int maximum)
+			throws IOException {
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(keyBytes));
+			MDBVal value = MDBVal.calloc(stack);
+			int result = mdb_get(transaction, database, key, value);
+			if (result != MDB_SUCCESS || value.mv_size() < minimum || value.mv_size() > maximum) {
+				throw new IOException("Missing or malformed current LMDB metadata");
+			}
+			return copy(value.mv_data());
+		}
+	}
+
 	private static long openReadOnlyEnvironment(MemoryStack stack, File directory) throws IOException {
 		PointerBuffer environment = stack.mallocPointer(1);
 		E(mdb_env_create(environment));
@@ -217,6 +376,7 @@ final class LegacyStoreDiscovery {
 	/** Enumerates named databases from LMDB's own catalog, retaining raw names until the allowlist check. */
 	private static Map<String, Integer> readDatabaseCatalog(MemoryStack stack, long transaction, int mainDatabase,
 			boolean requireOnlyNamedEntries) throws IOException {
+		LmdbStartupDiagnostics.observe(LmdbStartupDiagnostics.Operation.CATALOG_SCAN);
 		Map<String, Integer> databases = new HashMap<>();
 		PointerBuffer cursorHandle = stack.mallocPointer(1);
 		E(mdb_cursor_open(transaction, mainDatabase, cursorHandle));
@@ -418,7 +578,8 @@ final class LegacyStoreDiscovery {
 				if (!Arrays.equals(bytes, TripleStore.NAMESPACE_FORMAT_KEY)
 						&& !Arrays.equals(bytes, TripleStore.NAMESPACE_SNAPSHOT_KEY)
 						&& !Arrays.equals(bytes, TripleStore.INDEX_FORMAT_KEY)
-						&& !Arrays.equals(bytes, TripleStore.INDEX_SPECS_KEY)) {
+						&& !Arrays.equals(bytes, TripleStore.INDEX_SPECS_KEY)
+						&& !Arrays.equals(bytes, PreparedBulkStore.GENERATION_KEY)) {
 					throw new IOException("Unrecognized namespace database metadata key: " + printablePrefix(bytes));
 				}
 				result = mdb_cursor_get(cursor, key, value, MDB_NEXT);

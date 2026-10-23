@@ -57,6 +57,7 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
@@ -573,7 +574,19 @@ public final class FilterPlacementAnalyzer {
 			}
 			if (detached != null) {
 				Filter clone = (Filter) clones.get(detached);
-				clone.replaceWith(clone.getArg());
+				clone.setConditionBindingScope(FilterBindingScope.resolve(detached));
+				TupleExpr argument = clone.getArg();
+				QueryModelNode parent = clone.getParentNode();
+				QueryModelNormalizerOptimizer.replacePreservingScope(clone, argument);
+				if (argument.getParentNode() != parent) {
+					// Detaching can insert a physical scope boundary. It denotes the same original argument
+					// when encountered from its parent, while clones keeps the actual argument so its input
+					// still flows through that boundary and its descendants remain independently traversable.
+					originals.put(argument.getParentNode(), detached.getArg());
+				}
+				// Runtime gates do not create group boundaries. The physical source boundary remains on the
+				// surviving tuple root, independently of this detached logical condition.
+				clone.setVariableScopeChange(false);
 			}
 			this.bindingAnalysis = QueryAlgebraBindingAnalysis.withInputContextAndPossibleInputs(scratch,
 					rootInput, Set.of());
@@ -696,7 +709,7 @@ public final class FilterPlacementAnalyzer {
 				QueryAlgebraBindingAnalysis.ReadOnlyContext parentInput = bindingAnalysis.contextAt(parent);
 				Filter gate = new Filter();
 				gate.setCondition(new ValueConstant(BooleanLiteral.TRUE));
-				gate.setVariableScopeChange(scopeChange);
+				gate.setVariableScopeChange(TupleExprs.isVariableScopeChange(node));
 				gate.setRequiredInputBindingNames(logical.getRequiredInputBindingNames());
 				node.replaceWith(gate);
 				gate.setArg(node);

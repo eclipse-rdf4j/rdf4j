@@ -158,21 +158,28 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 
 	private CloseableIteration<BindingSet> evaluate(BindingSet bindings,
 			GenericSubplanDescriptor havingDescriptor) {
+		NativeLmdbQuerySource evalSource = source instanceof SyntheticValueSource synthetic
+				? synthetic.forInvocation(generatedKeys, layout, bindings)
+				: source;
+		if (strategy != null) {
+			strategy.captureEvaluationValues(evalSource);
+		}
+		initializeQueryBase(evalSource, bindings);
+		NativeEntryBindingVariant variant = null;
+		BindingSet nativeBindings = bindings;
 		if (hasOptionalOnlyBinding(bindings)) {
-			NativeEntryBindingVariant variant = NativeEntryBindingVariant.tryCreate(source, layout, bindings,
+			variant = NativeEntryBindingVariant.tryCreate(evalSource, layout, bindings,
 					optionalOnlyNames);
 			if (variant == null) {
-				NativeLmdbQuerySource evalSource = evaluationSourceForGenericFallback(bindings);
-				initializeQueryBase(evalSource, bindings);
-				LmdbNativeExplain.recordExecutionPath(originalExpr,
-						LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK + "(optionalOnlyBinding)");
-				SyntheticValueSource synthetic = (SyntheticValueSource) evalSource;
-				return NativeExecutionContextCarrier.forEvaluation(
-						genericStep(synthetic.executionContext()).evaluate(bindings), synthetic);
+				return genericFallback(bindings, evalSource, havingDescriptor, "optionalOnlyBinding");
 			}
 			LmdbNativeExplain.recordExecutionPath(originalExpr, variant.executionPath());
-			NativeLmdbQuerySource evalSource = evaluationSource();
-			initializeQueryBase(evalSource, bindings);
+			nativeBindings = variant.filteredBase;
+		}
+		if (!NativeRowSeeder.supports(nativeBindings, layout, evalSource)) {
+			return genericFallback(bindings, evalSource, havingDescriptor, "unrepresentableEntry");
+		}
+		if (variant != null) {
 			QueryEvaluationContext evaluationContext = evaluationContext(evalSource);
 			CloseableIteration<BindingSet> iteration = new NativeGroupIteration(evalSource, variant.wrap(arg), layout,
 					groupSlots, aggregates,
@@ -180,13 +187,6 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 					null, havingCondition, originalExpr, forcedExecutionStrategyName(), evaluationContext);
 			return applyScopedHaving(withContextLifetime(iteration, evalSource), evalSource, havingDescriptor);
 		}
-		NativeLmdbQuerySource evalSource = source instanceof SyntheticValueSource synthetic
-				? synthetic.forEvaluation(generatedKeys, layout, bindings)
-				: source;
-		if (strategy != null) {
-			strategy.captureEvaluationValues(evalSource);
-		}
-		initializeQueryBase(evalSource, bindings);
 		QueryEvaluationContext evaluationContext = evaluationContext(evalSource);
 		NativeGroupIteration nativeIteration = new NativeGroupIteration(evalSource, arg, layout, groupSlots,
 				aggregates, strictCompare, bindings,
@@ -272,26 +272,24 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 		}
 	}
 
-	/**
-	 * The value source of one evaluation: plans without synthetic id spaces run directly on the compiled source, plans
-	 * with them get a fresh evaluation-scoped instance so runtime interning never lives in compiled-plan state.
-	 */
-	private NativeLmdbQuerySource evaluationSource() {
-		NativeLmdbQuerySource evaluated = source instanceof SyntheticValueSource
-				? ((SyntheticValueSource) source).forEvaluation()
-				: queryExecutionPolicy().experimentalQueryOptimizations()
-						? SyntheticValueSource.forEvaluation(source, queryExecutionPolicy())
-						: source;
-		return strategy == null ? evaluated : strategy.captureEvaluationValues(evaluated);
-	}
-
 	private QueryExecutionPolicy queryExecutionPolicy() {
 		return strategy == null ? QueryExecutionPolicy.DEFAULT : strategy.getQueryExecutionPolicy();
 	}
 
-	private NativeLmdbQuerySource evaluationSourceForGenericFallback(BindingSet bindings) {
-		return source instanceof SyntheticValueSource ? evaluationSource()
-				: SyntheticValueSource.forEvaluation(source, queryExecutionPolicy());
+	private CloseableIteration<BindingSet> genericFallback(BindingSet bindings, NativeLmdbQuerySource evalSource,
+			GenericSubplanDescriptor havingDescriptor, String reason) {
+		SyntheticValueSource synthetic = evalSource instanceof SyntheticValueSource existing ? existing
+				: SyntheticValueSource.forInvocation(evalSource, queryExecutionPolicy(), bindings);
+		initializeQueryBase(synthetic, bindings);
+		LmdbNativeExplain.recordExecutionPath(originalExpr,
+				LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK + "(" + reason + ")");
+		CloseableIteration<BindingSet> rows = NativeExecutionContextCarrier.evaluate(() -> {
+			if (strategy == null && genericStep == null) {
+				throw new IllegalStateException("unsupported native entry requires a semantic evaluation strategy");
+			}
+			return genericStep(synthetic.executionContext()).evaluate(bindings);
+		}, synthetic, !SyntheticValueSource.inheritedEvaluation(synthetic));
+		return applyScopedHaving(rows, synthetic, havingDescriptor);
 	}
 
 	/**

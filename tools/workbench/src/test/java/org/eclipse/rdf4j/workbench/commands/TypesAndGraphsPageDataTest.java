@@ -15,25 +15,42 @@ package org.eclipse.rdf4j.workbench.commands;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
+import java.io.File;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.http.client.BNodeOriginTransport;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
+import org.eclipse.rdf4j.query.resultio.QueryResultIO;
+import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.base.RepositoryConnectionWrapper;
 import org.eclipse.rdf4j.repository.base.RepositoryWrapper;
+import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.workbench.base.TupleServlet;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
@@ -41,11 +58,13 @@ import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sun.net.httpserver.HttpServer;
 
 /**
  * The Types and Graphs pages (plan task M5.2, mockup 06): lists sorted by name, a case-insensitive filter, and counts
@@ -124,7 +143,9 @@ class TypesAndGraphsPageDataTest {
 		MockHttpServletRequest request = request("types");
 		request.addParameter("counts", "true");
 
-		List<JsonNode> records = run(new TypesServlet(), "types", slowCountingStore(), request);
+		assertThat(BrowseList.BROWSE_BUDGET_MILLIS).isEqualTo(TimeUnit.MINUTES.toMillis(5));
+		// A shorter budget keeps the test fast.
+		List<JsonNode> records = run(new TypesServlet(300), "types", slowCountingStore(), request);
 
 		assertThat(slowCounts.getCount()).as("the response did not wait for the count").isEqualTo(1);
 		assertThat(metadata(records).path("counts-timed-out").asBoolean()).isTrue();
@@ -219,11 +240,88 @@ class TypesAndGraphsPageDataTest {
 		MockHttpServletRequest request = request("contexts");
 		request.addParameter("counts", "true");
 
-		List<JsonNode> records = run(new ContextsServlet(), "contexts", slowCountingStore(), request);
+		// A shorter budget than the five minutes keeps the test fast.
+		List<JsonNode> records = run(new ContextsServlet(300), "contexts", slowCountingStore(), request);
 
 		assertThat(slowCounts.getCount()).as("the response did not wait for the count").isEqualTo(1);
 		assertThat(metadata(records).path("counts-timed-out").asBoolean()).isTrue();
 		assertThat(rows(records)).isEmpty();
+	}
+
+	@Test
+	void anLmdbRepositoryCountsItsGraphsWithCachedQueriesThatMatchTheGraphSizes(@TempDir File dataDir)
+			throws Exception {
+		LmdbStore lmdb = new LmdbStore(dataDir);
+		Repository lmdbRepository = new SailRepository(lmdb);
+		lmdbRepository.init();
+		try {
+			try (RepositoryConnection connection = lmdbRepository.getConnection()) {
+				ValueFactory factory = connection.getValueFactory();
+				connection.add(factory.createIRI(NS + "a1"), RDF.TYPE, factory.createIRI(NS + "T"),
+						factory.createIRI(NS + "graph/a"));
+				connection.add(factory.createIRI(NS + "a2"), RDF.TYPE, factory.createIRI(NS + "T"),
+						factory.createIRI(NS + "graph/a"));
+				connection.add(factory.createIRI(NS + "b1"), RDF.TYPE, factory.createIRI(NS + "T"),
+						factory.createIRI(NS + "graph/b"));
+				for (int i = 0; i < 3; i++) {
+					connection.add(factory.createIRI(NS + "d" + i), RDF.TYPE, factory.createIRI(NS + "T"));
+				}
+			}
+			MockHttpServletRequest counts = request("contexts");
+			counts.addParameter("counts", "true");
+			List<JsonNode> first = run(new ContextsServlet(), "contexts", lmdbRepository, counts);
+			long hitsAfterFirst = lmdb.getQueryResultCacheHits();
+			List<JsonNode> second = run(new ContextsServlet(), "contexts", lmdbRepository, counts);
+			MockHttpServletRequest filtered = request("contexts");
+			filtered.addParameter("counts", "true");
+			filtered.addParameter("filter", "GRAPH/B");
+			List<JsonNode> matching = run(new ContextsServlet(), "contexts", lmdbRepository, filtered);
+
+			assertThat(column(first, 0)).containsExactly(NS + "graph/a", NS + "graph/b", null);
+			assertThat(column(first, 1)).containsExactly("2", "1", "3");
+			assertThat(rows(second).toString()).isEqualTo(rows(first).toString());
+			assertThat(lmdb.getQueryResultCacheHits()).as("the second and the filtered request read the cache")
+					.isEqualTo(hitsAfterFirst + 4);
+			assertThat(column(matching, 0)).containsExactly(NS + "graph/b");
+			assertThat(column(matching, 1)).containsExactly("1");
+
+			try (RepositoryConnection connection = lmdbRepository.getConnection()) {
+				connection.add(vf.createIRI(NS + "b2"), RDF.TYPE, vf.createIRI(NS + "T"), vf.createIRI(NS + "graph/b"));
+			}
+			List<JsonNode> afterWrite = run(new ContextsServlet(), "contexts", lmdbRepository, counts);
+			assertThat(column(afterWrite, 1)).as("a write is counted again").containsExactly("2", "2", "3");
+		} finally {
+			lmdbRepository.shutDown();
+		}
+	}
+
+	@Test
+	void anLmdbRepositoryAnswersTheTypesPageFromItsCacheTheSecondTime(@TempDir File dataDir) throws Exception {
+		LmdbStore lmdb = new LmdbStore(dataDir);
+		Repository lmdbRepository = new SailRepository(lmdb);
+		lmdbRepository.init();
+		try {
+			try (RepositoryConnection connection = lmdbRepository.getConnection()) {
+				for (int i = 0; i < 3; i++) {
+					connection.add(vf.createIRI(NS + "p" + i), RDF.TYPE, vf.createIRI(NS + "Person"));
+				}
+				connection.add(vf.createIRI(NS + "o"), RDF.TYPE, vf.createIRI(NS + "Place"));
+			}
+			MockHttpServletRequest counts = request("types");
+			counts.addParameter("counts", "true");
+			run(new TypesServlet(), "types", lmdbRepository, request("types"));
+			run(new TypesServlet(), "types", lmdbRepository, counts);
+			long hitsAfterFirst = lmdb.getQueryResultCacheHits();
+			List<JsonNode> listed = run(new TypesServlet(), "types", lmdbRepository, request("types"));
+			List<JsonNode> counted = run(new TypesServlet(), "types", lmdbRepository, counts);
+
+			assertThat(lmdb.getQueryResultCacheHits()).isEqualTo(hitsAfterFirst + 2);
+			assertThat(column(listed, 0)).containsExactly(NS + "Person", NS + "Place");
+			assertThat(column(counted, 0)).containsExactly(NS + "Person", NS + "Place");
+			assertThat(column(counted, 1)).containsExactly("3", "1");
+		} finally {
+			lmdbRepository.shutDown();
+		}
 	}
 
 	private void addInstances(String type, int count) {
@@ -243,6 +341,78 @@ class TypesAndGraphsPageDataTest {
 						vf.createLiteral(String.valueOf(graph) + index), context);
 			}
 		}
+	}
+
+	@Test
+	void aRemoteServersBlankNodeTypeKeepsItsExploreLinkOnceCountsLoad() throws Exception {
+		HttpServer server = remoteServer();
+		HTTPRepository remote = new HTTPRepository(
+				"http://127.0.0.1:" + server.getAddress().getPort() + "/repositories/remote");
+		try {
+			MockHttpServletRequest counts = request("types");
+			counts.addParameter("counts", "true");
+
+			List<JsonNode> listed = run(new TypesServlet(), "types", remote, request("types"));
+			List<JsonNode> counted = run(new TypesServlet(), "types", remote, counts);
+
+			assertThat(rows(listed).get(0).get(0).path("reference").asBoolean()).as("the list links it").isTrue();
+			// The counts replace the listed rows on the page: their blank node must still be one it can explore.
+			assertThat(column(counted, 0)).containsExactly("abc");
+			assertThat(rows(counted).get(0).get(0).path("reference").asBoolean()).isTrue();
+		} finally {
+			remote.shutDown();
+			server.stop(0);
+		}
+	}
+
+	/**
+	 * An RDF4J Server whose only type is the stored blank node {@code _:abc}. Like the real one, it says which blank
+	 * nodes the repository stores only when the request asks it to (BNodeOriginTransport); otherwise they are plain.
+	 */
+	private static HttpServer remoteServer() throws IOException {
+		HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/protocol", exchange -> {
+			byte[] version = "12".getBytes(StandardCharsets.UTF_8);
+			exchange.sendResponseHeaders(200, version.length);
+			try (exchange; OutputStream body = exchange.getResponseBody()) {
+				body.write(version);
+			}
+		});
+		server.createContext("/repositories", exchange -> {
+			ValueFactory values = SimpleValueFactory.getInstance();
+			List<String> names = List.of("uri", "id", "title", "readable", "writable");
+			List<Value> row = List.of(values.createIRI("http://127.0.0.1/repositories/remote"),
+					values.createLiteral("remote"), values.createLiteral("Remote"), values.createLiteral(true),
+					values.createLiteral(true));
+			exchange.getResponseHeaders().set("Content-Type", TupleQueryResultFormat.BINARY.getDefaultMIMEType());
+			exchange.sendResponseHeaders(200, 0);
+			try (exchange; OutputStream body = exchange.getResponseBody()) {
+				QueryResultIO.writeTuple(new IteratingTupleQueryResult(names,
+						List.<BindingSet>of(new ListBindingSet(names, row))), TupleQueryResultFormat.BINARY, body);
+			}
+		});
+		server.createContext("/repositories/remote", exchange -> {
+			String query = URLDecoder.decode(
+					new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8),
+					StandardCharsets.UTF_8);
+			boolean negotiated = BNodeOriginTransport.VERSION
+					.equals(exchange.getRequestHeaders().getFirst(BNodeOriginTransport.HEADER));
+			ValueFactory values = SimpleValueFactory.getInstance();
+			BNode type = values.createBNode(negotiated ? "rdf4jbo1_s_YWJj" : "abc");
+			List<String> names = query.contains("COUNT") ? List.of("type", "instances") : List.of("type");
+			List<Value> row = query.contains("COUNT") ? List.of(type, values.createLiteral(2)) : List.of(type);
+			exchange.getResponseHeaders().set("Content-Type", TupleQueryResultFormat.BINARY.getDefaultMIMEType());
+			if (negotiated) {
+				exchange.getResponseHeaders().set(BNodeOriginTransport.HEADER, BNodeOriginTransport.VERSION);
+			}
+			exchange.sendResponseHeaders(200, 0);
+			try (exchange; OutputStream body = exchange.getResponseBody()) {
+				QueryResultIO.writeTuple(new IteratingTupleQueryResult(names,
+						List.<BindingSet>of(new ListBindingSet(names, row))), TupleQueryResultFormat.BINARY, body);
+			}
+		});
+		server.start();
+		return server;
 	}
 
 	/** A store whose counting calls (statement sizes and COUNT queries) wait until the test ends. */

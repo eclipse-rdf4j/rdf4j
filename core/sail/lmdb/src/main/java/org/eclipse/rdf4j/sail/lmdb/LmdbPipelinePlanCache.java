@@ -418,7 +418,7 @@ final class LmdbPipelinePlanCache {
 			@Override
 			protected void meetNode(QueryModelNode node) {
 				RuntimeFeedbackContract contract = node.getRuntimeFeedbackContract();
-				if (contract != null && contract.descriptor()instanceof LmdbRuntimeFeedbackDescriptor descriptor) {
+				if (contract != null && contract.descriptor() instanceof LmdbRuntimeFeedbackDescriptor descriptor) {
 					node.setRuntimeFeedbackContract(
 							contract.withDescriptor(descriptor.withPlanExecutionToken(executionToken)));
 				}
@@ -710,13 +710,18 @@ final class LmdbPipelinePlanCache {
 	record BindingIdentity(List<BoundValue> values) implements PackedProviderCacheIdentity {
 
 		static BindingIdentity of(BindingSet bindings) {
+			return of(bindings, false);
+		}
+
+		/** Result caching may copy an already consumed scalar; query inputs retain the public capability boundary. */
+		static BindingIdentity of(BindingSet bindings, boolean allowLoadedNative) {
 			if (bindings == null || bindings.isEmpty()) {
 				return new BindingIdentity(List.of());
 			}
 			List<String> names = new ArrayList<>(bindings.getBindingNames());
 			names.sort(String::compareTo);
 			List<BoundValue> values = new ArrayList<>(names.size());
-			LmdbQueryValueIdentity.Capture capture = new LmdbQueryValueIdentity.Capture();
+			LmdbQueryValueIdentity.Capture capture = new LmdbQueryValueIdentity.Capture(allowLoadedNative);
 			for (String name : names) {
 				LmdbQueryValueIdentity identity = capture.of(bindings.getValue(name));
 				if (identity == null) {

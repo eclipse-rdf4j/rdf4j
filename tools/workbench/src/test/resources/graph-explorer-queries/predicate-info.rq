@@ -1,0 +1,4 @@
+SELECT DISTINCT ?property ?value WHERE {
+ VALUES ?property { <http://www.w3.org/2000/01/rdf-schema#comment> <http://www.w3.org/2004/02/skos/core#definition> <http://schema.org/description> <http://purl.org/dc/terms/description> <http://www.w3.org/2000/01/rdf-schema#domain> <http://schema.org/domainIncludes> <http://www.w3.org/2000/01/rdf-schema#range> <http://schema.org/rangeIncludes> <http://www.w3.org/2000/01/rdf-schema#subPropertyOf> <http://www.w3.org/2002/07/owl#inverseOf> }
+ <urn:ex:mentions> ?property ?value .
+} LIMIT 100

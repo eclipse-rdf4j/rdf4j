@@ -17,6 +17,7 @@ import java.io.File;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -27,10 +28,13 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -152,6 +156,46 @@ class LmdbNativeCensusAggregateTest {
 			String telemetry = telemetry(CENSUS);
 			assertThat(telemetry).as(mode).contains("nativeExecutionPath=adjacencyCensus");
 			assertThat(telemetry).as(mode).doesNotContain("ENCOUNTER_ORDER_REQUIRES_LMDB");
+		}
+	}
+
+	@Test
+	void censusSelectionPreservesRestrictedConditionBindings() {
+		String query = CENSUS.replace("COUNT(DISTINCT ?g)", "COUNT(*)")
+				.replace("GRAPH ?g { ?s ?p ?o }", "?s ?p ?o FILTER(isIRI(?o))");
+		TupleExpr root = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		TupleExpr unrestricted = root.clone();
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter filter) {
+				filter.setConditionBindingScope(Filter.ConditionBindingScope.retain(Set.of("s", "p", "g")));
+			}
+		});
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			DefaultEvaluationStrategy generic = new DefaultEvaluationStrategy(
+					new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null);
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+					new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+					new EvaluationStatistics(), false);
+			LmdbNativeAggregateCompiler.CompileOutcome control = LmdbNativeAggregateCompiler.compileRoot(
+					unrestricted, new QueryEvaluationContext.Minimal((Dataset) null), strategy,
+					(NativeLmdbQuerySource) dataset);
+			assertThat(control.isSupported()).isTrue();
+			assertThat(((LmdbNativePhysicalPlan) control.step()).nativePhysicalPlan())
+					.contains("LmdbNativeCensusAggregate");
+			List<BindingSet> unrestrictedExpected = evaluate(generic.precompile(unrestricted.clone(),
+					new QueryEvaluationContext.Minimal((Dataset) null)));
+			assertThat(((Literal) unrestrictedExpected.getFirst().getValue("quads")).longValue()).isPositive();
+			assertThat(evaluate(control.step())).containsExactlyElementsOf(unrestrictedExpected);
+			List<BindingSet> expected = evaluate(generic.precompile(root.clone(),
+					new QueryEvaluationContext.Minimal((Dataset) null)));
+			assertThat(expected).hasSize(1);
+			assertThat(((Literal) expected.getFirst().getValue("quads")).longValue()).isZero();
+			LmdbNativeAggregateCompiler.CompileOutcome outcome = LmdbNativeAggregateCompiler.compileRoot(
+					root, new QueryEvaluationContext.Minimal((Dataset) null), strategy,
+					(NativeLmdbQuerySource) dataset);
+			assertThat(outcome.isSupported()).isTrue();
+			assertThat(evaluate(outcome.step())).containsExactlyElementsOf(expected);
 		}
 	}
 

@@ -353,20 +353,31 @@ public class QueryModelTreeToGenericPlanNodeTest {
 
 	@Test
 	public void preservesApiNamesButNotSiblingNamesAcrossSubqueryScope() {
-		Projection subquery = new Projection(
+		Projection hashSubquery = new Projection(
 				pattern("x", "p", "api"),
 				new ProjectionElemList(new ProjectionElem("x"), new ProjectionElem("api")),
 				true);
-		Join join = new Join(bindingSetAssignment(bindingSet("x")), subquery);
-		join.setAlgorithm("JoinIterator");
+		Join hashJoin = new Join(bindingSetAssignment(bindingSet("x")), hashSubquery);
+		hashJoin.setAlgorithm("HashJoinIteration");
 
-		GenericPlanNode plan = explain(join, Set.of("api"));
-		GenericPlanNode subqueryPlan = plan.getPlans().get(1);
-		GenericPlanNode childPattern = findFirstPlan(subqueryPlan,
+		Projection iteratorSubquery = new Projection(
+				pattern("x", "p", "api"),
+				new ProjectionElemList(new ProjectionElem("x"), new ProjectionElem("api")),
+				true);
+		Join iteratorJoin = new Join(bindingSetAssignment(bindingSet("x")), iteratorSubquery);
+		iteratorJoin.setAlgorithm("JoinIterator");
+
+		GenericPlanNode hashPlan = explain(hashJoin, Set.of("api"));
+		GenericPlanNode iteratorPlan = explain(iteratorJoin, Set.of("api"));
+		GenericPlanNode hashChildPattern = findFirstPlan(hashPlan.getPlans().get(1),
+				node -> node.getType().startsWith("StatementPattern"));
+		GenericPlanNode iteratorChildPattern = findFirstPlan(iteratorPlan.getPlans().get(1),
 				node -> node.getType().startsWith("StatementPattern"));
 
-		assertBindingState(childPattern, "x", "unbound");
-		assertBindingState(childPattern, "api", "bound");
+		assertBindingState(hashChildPattern, "x", "unbound");
+		assertBindingState(hashChildPattern, "api", "bound");
+		assertBindingState(iteratorChildPattern, "x", "bound");
+		assertBindingState(iteratorChildPattern, "api", "bound");
 	}
 
 	@Test

@@ -17,12 +17,17 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.store.ByteBuffersDirectory;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.eclipse.rdf4j.sail.lucene.LuceneSailConnection;
 import org.junit.jupiter.api.Test;
@@ -85,9 +90,41 @@ public class LuceneSailTest extends AbstractGenericLuceneTest {
 
 	@Test
 	public void preservesLuceneUnionScopeForExternalDependentBranchBind() {
-		CapturedQuery actual = evaluateAndCapturePlan(luceneUnionQuery(
+		assertExternalDependentUnionRows(
 				"BIND(BOUND(?pMatch) AS ?source)",
-				"BIND(false AS ?source)"));
+				"BIND(false AS ?source)");
+	}
+
+	@Test
+	public void preservesLuceneUnionScopeForExternalDependentRightBranchBind() {
+		assertExternalDependentUnionRows(
+				"BIND(false AS ?source)",
+				"BIND(BOUND(?pMatch) AS ?source)");
+	}
+
+	@Test
+	public void preservesLuceneUnionScopeForBothExternalDependentBranchBinds() {
+		assertExternalDependentUnionRows(
+				"BIND(BOUND(?pMatch) AS ?source)",
+				"BIND(BOUND(?pMatch) AS ?source)");
+	}
+
+	@Test
+	public void suppliedApiBindingRemainsVisibleToLuceneUnionBranchBinds() {
+		CapturedQuery actual = evaluateAndCapturePlan(
+				luceneUnionQuery(
+						"BIND(BOUND(?pMatch) AS ?source)",
+						"BIND(BOUND(?pMatch) AS ?source)"),
+				Map.of("pMatch", PREDICATE_1));
+
+		assertThat(actual.rows()).containsExactlyInAnyOrder(
+				luceneRow(SUBJECT_1, PREDICATE_1, "one", true),
+				luceneRow(SUBJECT_2, PREDICATE_1, "one", true),
+				luceneRow(SUBJECT_1, PREDICATE_1, "two", true));
+	}
+
+	private void assertExternalDependentUnionRows(String leftBind, String rightBind) {
+		CapturedQuery actual = evaluateAndCapturePlan(luceneUnionQuery(leftBind, rightBind));
 
 		assertThat(actual.rows()).containsExactlyInAnyOrder(
 				luceneRow(SUBJECT_1, PREDICATE_1, "one", false),
@@ -97,12 +134,31 @@ public class LuceneSailTest extends AbstractGenericLuceneTest {
 				luceneRow(SUBJECT_1, PREDICATE_1, "two", false),
 				luceneRow(SUBJECT_1, PREDICATE_2, "two", false));
 
-		String unionPlan = unionPlan(actual.optimizedPlan());
-		assertThat(unionPlan.lines().filter(line -> line.strip().equals("Union (new scope)")).count()).isEqualTo(1L);
-		assertThat(unionPlan.lines().filter(line -> line.strip().equals("Filter (new scope)")).count()).isEqualTo(2L);
+		assertScopedLuceneUnionBranches(actual.optimizedAlgebra());
+	}
+
+	private void assertScopedLuceneUnionBranches(TupleExpr optimizedAlgebra) {
+		List<Union> unions = new ArrayList<>();
+		optimizedAlgebra.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Union union) {
+				unions.add(union);
+				super.meet(union);
+			}
+		});
+
+		assertThat(unions).hasSize(1);
+		Union union = unions.get(0);
+		assertThat(union.isVariableScopeChange()).isTrue();
+		assertThat(TupleExprs.isVariableScopeChange(union.getLeftArg())).isTrue();
+		assertThat(TupleExprs.isVariableScopeChange(union.getRightArg())).isTrue();
 	}
 
 	private CapturedQuery evaluateAndCapturePlan(String queryString) {
+		return evaluateAndCapturePlan(queryString, Map.of());
+	}
+
+	private CapturedQuery evaluateAndCapturePlan(String queryString, Map<String, Value> bindings) {
 		sleepAfterCommitIfNeeded();
 		Logger luceneLogger = (Logger) LoggerFactory.getLogger(LuceneSailConnection.class);
 		Level previousLevel = luceneLogger.getLevel();
@@ -114,6 +170,7 @@ public class LuceneSailTest extends AbstractGenericLuceneTest {
 
 		try {
 			TupleQuery query = connection.prepareTupleQuery(queryString);
+			bindings.forEach(query::setBinding);
 			List<List<Value>> actual = new ArrayList<>();
 			try (TupleQueryResult result = query.evaluate()) {
 				while (result.hasNext()) {
@@ -126,12 +183,16 @@ public class LuceneSailTest extends AbstractGenericLuceneTest {
 				}
 			}
 
-			String optimizedPlan = optimizedPlanAppender.list.stream()
-					.map(ILoggingEvent::getFormattedMessage)
-					.filter(message -> message.startsWith("Optimized query model:"))
-					.findFirst()
-					.orElseThrow(() -> new AssertionError("Lucene optimized query plan was not traced"));
-			return new CapturedQuery(actual, optimizedPlan);
+			List<ILoggingEvent> optimizedPlanEvents = optimizedPlanAppender.list.stream()
+					.filter(event -> event.getFormattedMessage().startsWith("Optimized query model:"))
+					.toList();
+			assertThat(optimizedPlanEvents).hasSize(1);
+			ILoggingEvent optimizedPlanEvent = optimizedPlanEvents.get(0);
+			Object[] arguments = optimizedPlanEvent.getArgumentArray();
+			assertThat(arguments).isNotNull().hasSize(1);
+			assertThat(arguments[0]).isInstanceOf(TupleExpr.class);
+			TupleExpr optimizedAlgebra = ((TupleExpr) arguments[0]).clone();
+			return new CapturedQuery(actual, optimizedPlanEvent.getFormattedMessage(), optimizedAlgebra);
 		} finally {
 			luceneLogger.detachAppender(optimizedPlanAppender);
 			luceneLogger.setLevel(previousLevel);
@@ -206,6 +267,6 @@ public class LuceneSailTest extends AbstractGenericLuceneTest {
 		return subtree.toString();
 	}
 
-	private record CapturedQuery(List<List<Value>> rows, String optimizedPlan) {
+	private record CapturedQuery(List<List<Value>> rows, String optimizedPlan, TupleExpr optimizedAlgebra) {
 	}
 }

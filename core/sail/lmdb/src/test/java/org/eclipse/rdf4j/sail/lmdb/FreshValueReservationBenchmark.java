@@ -59,12 +59,12 @@ public class FreshValueReservationBenchmark {
 			case "language" -> factory.createLiteral("多言語-" + i + "😀".repeat(64),
 					"EN-" + "İ".repeat(24));
 			case "mixed" -> switch (i % 5) {
-				case 0 -> factory.createLiteral(Integer.toString(i), XSD.INT);
-				case 1 -> factory.createLiteral(i + ".125", XSD.DECIMAL);
-				case 2 -> factory.createLiteral("2026-10-02T08:00:00." + i + "Z", XSD.DATETIME);
-				case 3 -> factory.createLiteral("lexical-" + i + "😀".repeat(32));
-				default -> factory.createIRI("urn:reservation:resource:", Integer.toString(i));
-				};
+			case 0 -> factory.createLiteral(Integer.toString(i), XSD.INT);
+			case 1 -> factory.createLiteral(i + ".125", XSD.DECIMAL);
+			case 2 -> factory.createLiteral("2026-10-02T08:00:00." + i + "Z", XSD.DATETIME);
+			case 3 -> factory.createLiteral("lexical-" + i + "😀".repeat(32));
+			default -> factory.createIRI("urn:reservation:resource:", Integer.toString(i));
+			};
 			default -> throw new IllegalArgumentException(workload);
 			};
 		}

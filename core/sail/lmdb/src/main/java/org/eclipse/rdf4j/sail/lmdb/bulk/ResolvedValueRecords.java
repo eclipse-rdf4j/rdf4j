@@ -18,6 +18,7 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -62,33 +63,37 @@ final class ResolvedValueRecords {
 	private final long records;
 	private final int maximumCanonicalKeyBytes;
 	private final BulkCompression compression;
+	private final String descriptorDigest;
 
 	private ResolvedValueRecords(Path descriptors, ExternalLongTupleSorter.SortedTupleFile dependencies, long records,
-			int maximumCanonicalKeyBytes, BulkCompression compression) {
+			int maximumCanonicalKeyBytes, BulkCompression compression, String descriptorDigest) {
 		this.descriptors = descriptors;
 		this.dependencies = dependencies;
 		this.records = records;
 		this.maximumCanonicalKeyBytes = maximumCanonicalKeyBytes;
 		this.compression = compression;
+		this.descriptorDigest = descriptorDigest;
 	}
 
-	static ResolvedValueRecords restore(Path workspace, long records, long dependencyRecords, long dependencyBytes,
-			BulkCompression compression, int maximumCanonicalKeyBytes, BulkTaskScheduler scheduler) throws IOException {
+	static ResolvedValueRecords restore(Path workspace, long records, long descriptorBytes, long dependencyRecords,
+			long dependencyBytes, BulkCompression compression, int maximumCanonicalKeyBytes,
+			BulkTaskScheduler scheduler, String descriptorDigest, String dependencyDigest) throws IOException {
 		if (records < 0L || dependencyRecords < 0L) {
 			throw new IOException("Invalid resolved value metadata in " + workspace);
 		}
 		Path descriptors = workspace.resolve("assigned-values.bin");
-		if (!Files.isRegularFile(descriptors)) {
-			throw new IOException("Missing resolved value descriptors: " + descriptors);
+		if (!Files.isRegularFile(descriptors) || descriptorBytes < 0L || Files.size(descriptors) != descriptorBytes) {
+			throw new IOException("Resolved value descriptor file size mismatch for " + descriptors);
 		}
+		BulkArtifactIntegrity.requireDigest(descriptorDigest, descriptors);
+		Path dependenciesPath = workspace.resolve("resolved-value-components.bin");
+		BulkArtifactIntegrity.requireDigest(dependencyDigest, dependenciesPath);
 		ExternalLongTupleSorter.SortedTupleFile dependencies = ExternalLongTupleSorter.SortedTupleFile.restore(
-				workspace.resolve("resolved-value-components.bin"), 3, dependencyRecords, dependencyBytes,
-				compression.codecFor(BulkArtifact.RESOLVED_VALUE_COMPONENTS));
-		int maximumKeyBytes = maximumCanonicalKeyBytes < 0
-				? maximumCanonicalKeyBytes(descriptors, records,
-						compression.codecFor(BulkArtifact.RESOLVED_VALUES), scheduler)
-				: validateMaximumCanonicalKeyBytes(maximumCanonicalKeyBytes);
-		return new ResolvedValueRecords(descriptors, dependencies, records, maximumKeyBytes, compression);
+				dependenciesPath, 3, dependencyRecords, dependencyBytes,
+				compression.codecFor(BulkArtifact.RESOLVED_VALUE_COMPONENTS), dependencyDigest);
+		int maximumKeyBytes = validateMaximumCanonicalKeyBytes(maximumCanonicalKeyBytes);
+		return new ResolvedValueRecords(descriptors, dependencies, records, maximumKeyBytes, compression,
+				descriptorDigest);
 	}
 
 	static ResolvedValueRecords build(PartitionValueDictionary dictionary, Path workspace, int maxOpenFiles,
@@ -100,7 +105,10 @@ final class ResolvedValueRecords {
 		Files.createDirectories(bucketDirectory);
 		long[] sequence = { 0L };
 		int[] maximumKeyBytes = { 0 };
-		try (DataOutputStream descriptors = BulkLz4.output(descriptorPath, compression.codecFor(BulkArtifact.RESOLVED_VALUES));
+		MessageDigest descriptorDigest = BulkArtifactIntegrity.newDigest();
+		ExternalLongTupleSorter.SortedTupleFile dependencies;
+		try (DataOutputStream descriptors = BulkLz4.output(descriptorPath,
+				compression.codecFor(BulkArtifact.RESOLVED_VALUES), null, descriptorDigest);
 				DependencyBucketWriter buckets = new DependencyBucketWriter(compression, bucketDirectory,
 						dictionary.partitionCount(), maxOpenFiles);
 				ExternalLongTupleSorter sorter = new ExternalLongTupleSorter(workspace, "resolved-value-components", 3,
@@ -157,9 +165,10 @@ final class ResolvedValueRecords {
 					});
 				}
 			}
-			return new ResolvedValueRecords(descriptorPath, sorter.finish(sortedDependencies), sequence[0],
-					maximumKeyBytes[0], compression);
+			dependencies = sorter.finish(sortedDependencies);
 		}
+		return new ResolvedValueRecords(descriptorPath, dependencies, sequence[0], maximumKeyBytes[0], compression,
+				BulkArtifactIntegrity.finish(descriptorDigest));
 	}
 
 	static ResolvedValueRecords build(PartitionValueDictionary dictionary, Path workspace, int maxOpenFiles,
@@ -224,9 +233,11 @@ final class ResolvedValueRecords {
 		int[] maximumKeyBytes = { 0 };
 		long descriptorScanMemory = Math.addExact(PartitionValueDictionary.ENTRY_READER_BUFFER_BYTES,
 				BulkLz4.mergeOutputMemoryBytes(descriptorCodec));
+		MessageDigest descriptorDigest = BulkArtifactIntegrity.newDigest();
 		try (BulkTaskScheduler.ResourceScope descriptorEnvelope = scheduler.reserveStreamEnvelope(
 				descriptorScanMemory, 2);
-				DataOutputStream descriptors = BulkLz4.output(descriptorPath, descriptorCodec, scheduler)) {
+				DataOutputStream descriptors = BulkLz4.output(descriptorPath, descriptorCodec, scheduler,
+						descriptorDigest)) {
 			dictionary.forEachEntry(entry -> {
 				checkCancelled(cancellationSignal);
 				if (ValueIds.isInlined(entry.id())) {
@@ -267,14 +278,15 @@ final class ResolvedValueRecords {
 				})) {
 			for (ResolvedIdQuadSpool.PartitionRun run : partitionRuns) {
 				sorter.addSortedRun(ExternalLongTupleSorter.SortedTupleFile.restore(run.path(), 3, run.rows(),
-						run.bytes(), runCodec));
+						run.bytes(), runCodec, run.contentDigest()));
 			}
 			ExternalLongTupleSorter.SortedTupleFile sorted = sorter.finish(sortedDependencies);
 			if (sorted.rows() != dependencyCount[0]) {
 				throw new IOException("Resolved assigned-value dependency count mismatch: expected "
 						+ dependencyCount[0] + " but got " + sorted.rows());
 			}
-			return new ResolvedValueRecords(descriptorPath, sorted, records[0], maximumKeyBytes[0], compression);
+			return new ResolvedValueRecords(descriptorPath, sorted, records[0], maximumKeyBytes[0], compression,
+					BulkArtifactIntegrity.finish(descriptorDigest));
 		}
 	}
 
@@ -309,6 +321,7 @@ final class ResolvedValueRecords {
 		private final DependencyBucketCursor cursor;
 		private final Path runPath;
 		private final LookupCache cache;
+		private final MessageDigest digest;
 		private DataOutputStream output;
 		private long rows;
 		private long previousOwner = -1L;
@@ -317,13 +330,15 @@ final class ResolvedValueRecords {
 		private boolean closed;
 
 		private DependencyPartition(int partition, PartitionValueDictionary.PartitionReader reader,
-				DependencyBucketCursor cursor, Path runPath, DataOutputStream output, LookupCache cache) {
+				DependencyBucketCursor cursor, Path runPath, DataOutputStream output, LookupCache cache,
+				MessageDigest digest) {
 			this.partition = partition;
 			this.reader = reader;
 			this.cursor = cursor;
 			this.runPath = runPath;
 			this.output = output;
 			this.cache = cache;
+			this.digest = digest;
 		}
 
 		/** Runs on the worker: streams up to one chunk of records through the dictionary into the run output. */
@@ -656,11 +671,12 @@ final class ResolvedValueRecords {
 				reader = dictionary.openPartition(partition, scheduler, lease);
 				frames = BulkLz4.openConcatenated(DependencyBucketWriter.path(bucketDirectory, partition), inputCodec,
 						scheduler, lease);
-				output = BulkLz4.output(runPath, runCodec, scheduler, lease);
+				MessageDigest digest = BulkArtifactIntegrity.newDigest();
+				output = BulkLz4.output(runPath, runCodec, scheduler, lease, digest);
 				DependencyBucketCursor cursor = new DependencyBucketCursor(partition, dictionary.partitionCount(),
 						frames, lease);
 				return new DependencyPartition(partition, reader, cursor, runPath, output,
-						new LookupCache(LOOKUP_CACHE_ENTRIES));
+						new LookupCache(LOOKUP_CACHE_ENTRIES), digest);
 			} catch (IOException | RuntimeException | Error failure) {
 				if (output != null) {
 					try {
@@ -703,7 +719,8 @@ final class ResolvedValueRecords {
 			try {
 				long bytes = partition.finishOutput();
 				if (partition.rows > 0L) {
-					completedRuns.add(new ResolvedIdQuadSpool.PartitionRun(partition.runPath, partition.rows, bytes));
+					completedRuns.add(new ResolvedIdQuadSpool.PartitionRun(partition.runPath, partition.rows, bytes,
+							BulkArtifactIntegrity.finish(partition.digest)));
 				} else {
 					Files.deleteIfExists(partition.runPath);
 				}
@@ -949,6 +966,18 @@ final class ResolvedValueRecords {
 		return dependencies.path();
 	}
 
+	Path descriptorsPath() {
+		return descriptors;
+	}
+
+	String descriptorDigest() {
+		return descriptorDigest;
+	}
+
+	String dependencyDigest() {
+		return dependencies.contentDigest();
+	}
+
 	void forEach(ResolvedValueConsumer consumer, BooleanSupplier cancellationSignal) throws IOException {
 		forEach(consumer, cancellationSignal, null);
 	}
@@ -974,10 +1003,13 @@ final class ResolvedValueRecords {
 						records == 0L ? 0L : conversionMemoryEstimateBytes(), synchronousSpillMemoryBytes,
 						spillFileDescriptors);
 		try (BulkTaskScheduler.ResourceScope ignored = readers;
-				DataInputStream descriptorInput = BulkLz4.input(descriptors,
-						descriptorCodec, scheduler);
-				DataInputStream dependencyInput = BulkLz4.input(dependencies.path(), dependencies.codec(), scheduler)) {
+				DataInputStream descriptorInput = BulkArtifactIntegrity.input(
+						BulkLz4.input(descriptors, descriptorCodec, scheduler), descriptors, descriptorDigest);
+				DataInputStream dependencyInput = BulkArtifactIntegrity.input(
+						BulkLz4.input(dependencies.path(), dependencies.codec(), scheduler), dependencies.path(),
+						dependencies.contentDigest())) {
 			long seen = 0L;
+			long seenDependencies = 0L;
 			while (true) {
 				long sequence;
 				try {
@@ -1008,6 +1040,7 @@ final class ResolvedValueRecords {
 									+ dependencyComponent);
 						}
 						dependencyIds[component] = dependencyId;
+						seenDependencies++;
 					}
 					consumer.accept(sequence, id, roles, key, dependencyIds);
 					seen++;
@@ -1017,6 +1050,10 @@ final class ResolvedValueRecords {
 			}
 			if (dependencyInput.read() != -1) {
 				throw new IOException("Extra resolved assigned-value dependencies");
+			}
+			if (seenDependencies != dependencies.rows()) {
+				throw new IOException("Assigned-value dependency integrity count mismatch: expected "
+						+ dependencies.rows() + " but got " + seenDependencies);
 			}
 			if (seen != records) {
 				throw new IOException("Assigned-value descriptor count mismatch: expected " + records + " but got "
@@ -1046,41 +1083,6 @@ final class ResolvedValueRecords {
 		// The canonical key remains live while decoding can materialize UTF-16 text and a value-store record. Four
 		// times the encoded key plus fixed arrays/objects conservatively covers those simultaneous payloads.
 		return Math.addExact(Math.multiplyExact((long) maximumCanonicalKeyBytes, 4L), 16L * 1024L);
-	}
-
-	private static int maximumCanonicalKeyBytes(Path descriptorPath, long expectedRecords, BulkCodec codec,
-			BulkTaskScheduler scheduler) throws IOException {
-		if (expectedRecords == 0L) {
-			return 0;
-		}
-		int maximumKeyBytes = 0;
-		long readerBytes = Files.size(descriptorPath) == 0L ? 0L : BulkLz4.mergeInputMemoryBytes(codec);
-		int readerDescriptors = Files.size(descriptorPath) == 0L ? 0 : 1;
-		try (BulkTaskScheduler.ResourceScope scan = scheduler == null ? null
-				: scheduler.reserveScanEnvelope(readerBytes, readerDescriptors, 0L, 0L, 0);
-				DataInputStream input = BulkLz4.input(descriptorPath, codec, scheduler)) {
-			for (long expectedSequence = 0L; expectedSequence < expectedRecords; expectedSequence++) {
-				long sequence;
-				try {
-					sequence = input.readLong();
-				} catch (EOFException e) {
-					throw new IOException("Truncated assigned-value descriptors at sequence " + expectedSequence, e);
-				}
-				long id = input.readLong();
-				int roles = input.readInt();
-				int keyLength = input.readInt();
-				if (sequence != expectedSequence || id == 0L || roles == 0 || keyLength < 0
-						|| keyLength > MAX_KEY_BYTES) {
-					throw new IOException("Malformed assigned-value descriptor at sequence " + expectedSequence);
-				}
-				input.skipNBytes(keyLength);
-				maximumKeyBytes = Math.max(maximumKeyBytes, keyLength);
-			}
-			if (input.read() != -1) {
-				throw new IOException("Extra assigned-value descriptors");
-			}
-		}
-		return maximumKeyBytes;
 	}
 
 	private static int validateMaximumCanonicalKeyBytes(int maximumKeyBytes) throws IOException {

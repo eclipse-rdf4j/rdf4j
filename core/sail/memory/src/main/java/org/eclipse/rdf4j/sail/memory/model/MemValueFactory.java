@@ -13,11 +13,13 @@ package org.eclipse.rdf4j.sail.memory.model;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.BNodeIdResolver;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.StoredBNodeIdResolver;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractValueFactory;
@@ -34,7 +36,24 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
  * @author Arjohn Kampman
  * @author David Huynh
  */
-public class MemValueFactory extends AbstractValueFactory implements BNodeIdResolver {
+public class MemValueFactory extends AbstractValueFactory implements BNodeIdResolver, StoredBNodeIdResolver {
+	@Override
+	public boolean hasStoredBNodeId(String id) {
+		MemBNode value = getMemBNode(SimpleValueFactory.getInstance().createBNode(id));
+		return value != null && value.hasStoredOrigin();
+	}
+
+	/** Records actual storage admission, including components that occur only inside a triple term. */
+	@InternalUseOnly
+	public void markStoredOrigin(Value value) {
+		if (value instanceof MemBNode blank) {
+			blank.markStoredOrigin();
+		} else if (value instanceof TripleTerm triple) {
+			markStoredOrigin(triple.getSubject());
+			markStoredOrigin(triple.getObject());
+		}
+	}
+
 	@Override
 	public boolean hasBNodeId(String id) {
 		return getMemBNode(SimpleValueFactory.getInstance().createBNode(id)) != null;

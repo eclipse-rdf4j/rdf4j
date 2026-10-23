@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Set;
+
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
@@ -56,5 +58,33 @@ class LmdbNativeExpressionRepeatabilityTest {
 				new CopyBinding[] { CopyBinding.computed(0, repeatable) }))).isTrue();
 		assertThat(SlotPlan.encounterOrderReplaySafe(new ExtensionPlan(SingletonPlan.INSTANCE,
 				new CopyBinding[] { CopyBinding.computed(0, nonRepeatable) }))).isFalse();
+	}
+
+	@Test
+	void rowStepCopyDerivesReplaySafetyFromItsReplacementArgument() {
+		SlotPlan safe = SingletonPlan.INSTANCE;
+		SlotPlan unsafe = new FilterPlan(SingletonPlan.INSTANCE, row -> true, -1L);
+		NativeRowsStep safeStep = rowsStep(safe);
+		NativeRowsStep unsafeReplacement = safeStep.withArg(unsafe);
+
+		assertThat(safeStep.replaySafe).isTrue();
+		assertThat(unsafeReplacement.replaySafe)
+				.as("a copied row step must classify its replacement argument, not its source argument")
+				.isEqualTo(SlotPlan.encounterOrderReplaySafe(unsafe))
+				.isFalse();
+
+		SlotPlan safeReplacementPlan = new FilterPlan(SingletonPlan.INSTANCE, row -> true, 0L);
+		NativeRowsStep unsafeStep = rowsStep(unsafe);
+		NativeRowsStep safeReplacement = unsafeStep.withArg(safeReplacementPlan);
+
+		assertThat(unsafeStep.replaySafe).isFalse();
+		assertThat(safeReplacement.replaySafe)
+				.isEqualTo(SlotPlan.encounterOrderReplaySafe(safeReplacementPlan))
+				.isTrue();
+	}
+
+	private static NativeRowsStep rowsStep(SlotPlan arg) {
+		return new NativeRowsStep(null, arg, NativeSlotLayout.empty(), new int[0], new String[0], false, new int[0],
+				new boolean[0], 0L, -1L, false, null, null, null, Set.of(), null, null);
 	}
 }

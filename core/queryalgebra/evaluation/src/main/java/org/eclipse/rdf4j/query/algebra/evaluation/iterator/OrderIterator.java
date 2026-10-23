@@ -581,7 +581,7 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 
 		private final TreeMap<E, ArrayDeque<Head<E>>> head;
 
-		private record Head<E> (E value, int source) {
+		private record Head<E>(E value, int source) {
 		}
 
 		private final boolean distinct;

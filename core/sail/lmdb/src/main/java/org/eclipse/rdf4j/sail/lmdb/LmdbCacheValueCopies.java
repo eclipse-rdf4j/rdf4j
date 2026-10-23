@@ -259,7 +259,8 @@ final class LmdbCacheValueCopies {
 		public TupleExpr cloneWithSemantics(TupleExpr source) {
 			TupleExpr result = copy(source, true);
 			if (result == null) {
-				throw PackedStatementPatternSemanticsCodec.unsupportedOperator(source.getClass(), "root.detachedCacheValues");
+				throw PackedStatementPatternSemanticsCodec.unsupportedOperator(source.getClass(),
+						"root.detachedCacheValues");
 			}
 			return result;
 		}
@@ -625,6 +626,8 @@ final class LmdbCacheValueCopies {
 			}
 			if (node instanceof Filter value) {
 				names(account, value.getRequiredInputBindingNames());
+				account.add(value.getConditionBindingScope(), 32L);
+				names(account, value.getConditionBindingScope().bindingNames());
 			}
 			if (node instanceof BindingSetAssignment value) {
 				names(account, value.getDeclaredBindingNames());

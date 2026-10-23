@@ -256,13 +256,17 @@ public class RemoveServlet extends TransformationServlet {
 	private void preview(TupleResultBuilder builder, Pattern pattern) throws Exception {
 		Optional<List<Statement>> found = browseList.withinBudget(() -> {
 			List<Statement> statements = new ArrayList<>();
-			try (RepositoryConnection con = repository.getConnection();
-					RepositoryResult<Statement> matches = matching(con, pattern)) {
-				while (statements.size() <= PREVIEW_LIMIT && matches.hasNext()) {
-					if (Thread.currentThread().isInterrupted()) {
-						throw new InterruptedException("The preview was abandoned");
+			try (RepositoryConnection con = repository.getConnection()) {
+				// The listed blank nodes are this repository's own: the page shows and reuses them as <_:id>. A remote
+				// server says which they are only when it is asked before the statements are requested.
+				builder.repositoryOrigins(con);
+				try (RepositoryResult<Statement> matches = matching(con, pattern)) {
+					while (statements.size() <= PREVIEW_LIMIT && matches.hasNext()) {
+						if (Thread.currentThread().isInterrupted()) {
+							throw new InterruptedException("The preview was abandoned");
+						}
+						statements.add(matches.next());
 					}
-					statements.add(matches.next());
 				}
 			}
 			return statements;

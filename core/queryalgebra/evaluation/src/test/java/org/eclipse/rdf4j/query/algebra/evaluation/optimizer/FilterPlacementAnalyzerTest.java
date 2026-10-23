@@ -44,6 +44,7 @@ import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.If;
@@ -74,6 +75,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterPlacementAnaly
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterPlacementAnalyzer.Envelope;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.junit.jupiter.api.Test;
@@ -169,18 +171,12 @@ class FilterPlacementAnalyzerTest {
 		assertThat(envelope.singletonAlternatives()).hasSizeGreaterThan(1).allSatisfy(alternative -> {
 			for (FilterPlacementAnalyzer.Site site : alternative.cut()) {
 				assertThat(site.input().guaranteedNames()).contains("outer");
-				if (site.retainsAllBindings()) {
-					assertThat(site.conditionFrame().guaranteedNames()).contains("outer");
-				} else {
-					assertThat(site.argument()).isSameAs(((Join) filter.getArg()).getRightArg());
-					assertThat(site.retainedBindingNames()).containsExactlyInAnyOrder("x", "y");
-					assertThat(site.conditionFrame().guaranteedNames()).containsExactlyInAnyOrder("x", "y");
-				}
+				assertThat(site.retainsAllBindings()).as("the source gate's ALL contract applies at every site")
+						.isTrue();
+				assertThat(site.conditionFrame().guaranteedNames()).contains("outer");
 			}
 		});
-		assertThat(envelope.singletonAlternatives())
-				.anySatisfy(alternative -> assertThat(alternative.cut()).singleElement()
-						.satisfies(site -> assertThat(site.retainsAllBindings()).isFalse()));
+		assertEveryPlacementPreservesBag(root, filter, envelope);
 	}
 
 	@Test
@@ -215,13 +211,16 @@ class FilterPlacementAnalyzerTest {
 		Envelope envelope = new FilterPlacementAnalyzer(island, analysis).analyze(filter);
 
 		assertThat(envelope.originalSite().conditionFrame().guaranteedNames()).contains("outer");
-		assertThat(envelope.singletonAlternatives()).singleElement()
-				.satisfies(alternative -> assertThat(alternative.cut()).containsExactly(envelope.originalSite()));
+		assertThat(envelope.singletonAlternatives()).hasSize(3);
 		assertThat(alternatives(envelope)).isEqualTo(envelope.singletonAlternatives());
-		assertThat(envelope.potentialSites(argument -> true)).containsExactly(filter.getArg());
+		Join local = (Join) filter.getArg();
+		assertThat(envelope.potentialSites(argument -> true)).containsExactlyInAnyOrder(local, local.getLeftArg(),
+				local.getRightArg());
 		assertThat(envelope.earliestCompleteCut(argument -> true).orElseThrow().cut())
-				.containsExactly(envelope.originalSite());
+				.singleElement()
+				.satisfies(site -> assertThat(site.argument()).isSameAs(local.getLeftArg()));
 		assertThat(envelope.alternatives(argument -> false)).isEmpty();
+		assertEveryPlacementPreservesBag(root, filter, envelope);
 	}
 
 	@Test
@@ -627,6 +626,65 @@ class FilterPlacementAnalyzerTest {
 	}
 
 	@Test
+	void detachedScopeBoundariesKeepOriginalSitesAndNestedTraversal() {
+		for (boolean scopedSource : List.of(false, true)) {
+			for (int shape = 0; shape < 3; shape++) {
+				TupleExpr argument = switch (shape) {
+				case 0 -> new Union(values("x", 1, 1, 2), values("x", 2, 3));
+				case 1 -> new Join(values("x", 1, 1, 2), values("y", 3));
+				default -> new Distinct(new Union(values("x", 1, 1, 2), values("x", 2, 3)));
+				};
+				if (!scopedSource) {
+					// An unscoped source over a scoped child needs an unscoped physical boundary when detached.
+					Extension scoped = new Extension(argument);
+					scoped.setVariableScopeChange(true);
+					argument = scoped;
+				}
+				Filter filter = new Filter(argument, new And(new Bound(Var.of("x")),
+						new Compare(Var.of("x"), constant(1), Compare.CompareOp.GT)));
+				filter.setVariableScopeChange(scopedSource);
+				Join parent = new Join(values("outer", 9), filter);
+				QueryRoot root = new QueryRoot(parent);
+				List<QueryModelNode> before = nodes(root);
+				Envelope envelope = analyzer(root).analyze(filter);
+
+				assertThat(singletonSites(envelope)).contains(argument);
+				if (scopedSource && argument instanceof Union) {
+					// Moving the gate cannot replace an independently evaluated scoped UNION on the right.
+					assertThat(singletonSites(envelope)).doesNotContain(parent);
+				} else {
+					assertThat(singletonSites(envelope)).contains(parent);
+				}
+				assertThat(envelope.potentialSites(candidate -> true))
+						.allSatisfy(candidate -> assertThat(before).anyMatch(node -> node == candidate));
+				assertThat(alternatives(envelope))
+						.anySatisfy(alternative -> assertThat(arguments(alternative)).doesNotContain(filter.getArg(),
+								parent));
+				assertEveryPlacementPreservesBag(root, filter, envelope);
+				assertThat(nodes(root)).containsExactlyElementsOf(before);
+				assertThat(envelope.isCurrent()).isTrue();
+			}
+		}
+	}
+
+	@Test
+	void scopedUnionCutsKeepGroupInputsSeparateFromConditionVisibility() {
+		for (boolean sourceMarker : List.of(false, true)) {
+			BindingSetAssignment first = values("x", 1, 1, 2);
+			BindingSetAssignment second = values("other", 3, 4);
+			Union union = new Union(first, second);
+			union.setVariableScopeChange(!sourceMarker);
+			Filter filter = new Filter(union, new Compare(Var.of("x"), constant(1), Compare.CompareOp.GT));
+			filter.setVariableScopeChange(sourceMarker);
+			QueryRoot root = new QueryRoot(new Join(values("x", 9), filter));
+			Envelope envelope = analyzer(root).analyze(filter);
+			assertThat(alternatives(envelope))
+					.anySatisfy(alternative -> assertThat(arguments(alternative)).containsExactly(first, second));
+			assertEveryPlacementPreservesBag(root, filter, envelope);
+		}
+	}
+
+	@Test
 	void unionArmSeedCannotFilterTheOtherArm() {
 		BindingSetAssignment left = values("x", 1);
 		Filter filter = new Filter(left, new Bound(Var.of("x")));
@@ -698,8 +756,8 @@ class FilterPlacementAnalyzerTest {
 			Filter filter = new Filter(join, condition);
 			QueryRoot root = new QueryRoot(filter);
 			Envelope envelope = analyzer(root).analyze(filter);
-			assertThat(singletonSites(envelope)).containsExactly(join);
-			assertThat(envelope.potentialSites(argument -> true)).containsExactly(join);
+			assertThat(singletonSites(envelope)).containsExactly(join, right);
+			assertThat(envelope.potentialSites(argument -> true)).containsExactlyInAnyOrder(join, right);
 			assertEveryPlacementPreservesBag(root, filter, envelope);
 		}
 	}
@@ -715,7 +773,7 @@ class FilterPlacementAnalyzerTest {
 		assertThat(envelope.originalSite().input().maybeBoundNames()).contains("x");
 		assertThat(envelope.originalSite().conditionFrame().maybeBoundNames()).containsExactly("y");
 		assertThat(envelope.originalSite().retainedBindingNames()).containsExactly("y");
-		assertThat(singletonSites(envelope)).containsExactly(right);
+		assertThat(singletonSites(envelope)).containsExactly(right, join);
 		assertThat(evaluate(root.clone())).isEmpty();
 		assertEveryPlacementPreservesBag(root, filter, envelope);
 	}
@@ -855,7 +913,9 @@ class FilterPlacementAnalyzerTest {
 		QueryRoot root = new QueryRoot(join);
 		Envelope envelope = analyzer(root).analyze(filter);
 		assertThat(envelope.originalSite().conditionFrame().maybeBoundNames()).doesNotContain("outer");
-		assertThat(envelope.originalSite().retainedBindingNames()).containsExactly("local");
+		assertThat(envelope.originalSite().retainedBindingNames())
+				.containsExactlyInAnyOrder("local", "outer", "predicate", "object");
+		assertThat(envelope.originalSite().conditionFrame().maybeBoundNames()).containsExactly("local");
 		assertThat(singletonSites(envelope)).doesNotContain(join, root);
 	}
 
@@ -958,12 +1018,14 @@ class FilterPlacementAnalyzerTest {
 				clones.put(original.get(i), copied.get(i));
 			}
 			Filter old = (Filter) clones.get(logicalFilter);
-			old.replaceWith(old.getArg());
+			QueryModelNormalizerOptimizer.replacePreservingScope(old, old.getArg());
 			for (FilterPlacementAnalyzer.Site site : alternative.cut()) {
 				TupleExpr child = (TupleExpr) clones.get(site.argument());
 				Filter replacement = new Filter();
 				replacement.setCondition(logicalFilter.getCondition().clone());
-				replacement.setVariableScopeChange(logicalFilter.isVariableScopeChange());
+				replacement.setVariableScopeChange(TupleExprs.isVariableScopeChange(child));
+				replacement.setConditionBindingScope(site.retainsAllBindings() ? ConditionBindingScope.ALL
+						: ConditionBindingScope.retain(site.retainedBindingNames()));
 				if (child.getParentNode() == null) {
 					QueryRoot wrapper = new QueryRoot(child);
 					placed = wrapper;

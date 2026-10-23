@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.impl.BlankNodeReferences;
+import org.eclipse.rdf4j.query.impl.RepositoryBNode;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -96,5 +97,17 @@ class ValueDecoderBlankNodeReferenceTest {
 				factory.createIRI("urn:test:p"), nested);
 		assertThat(WorkbenchValueEncoder.encode(value)).contains("<_:_:space\\u0020\\u003E\\u005C雪>", "<_:>");
 		assertThat(decoder.decodeValue(WorkbenchValueEncoder.encode(value))).isEqualTo(value);
+	}
+
+	@Test
+	void negotiatedReferenceOperandsUseRawIdsWhileTransientResultsHaveNoOperand() throws Exception {
+		String raw = "space >\\雪";
+		var stored = RepositoryBNode.fromNegotiatedResult("rdf4jbo1_s_encoded", raw, true);
+		assertThat(WorkbenchValueEncoder.encode(stored)).isEqualTo(BlankNodeReferences.toReference(raw));
+		assertThat(decoder.decodeValue(WorkbenchValueEncoder.encode(stored))).isEqualTo(factory.createBNode(raw));
+		var transientResult = RepositoryBNode.fromNegotiatedResult("rdf4jbo1_u_encoded", raw, false);
+		assertThatThrownBy(() -> WorkbenchValueEncoder.encode(transientResult))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("no reusable");
 	}
 }

@@ -42,6 +42,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteCert
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteSafety;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
 /**
@@ -72,7 +73,8 @@ final class LmdbNullRejectingOptionalSupport {
 	static TupleExpr rewrite(Filter filter, Set<String> outerVisibleBindings) {
 		if (filter == null
 				|| TupleExprs.isVariableScopeChange(filter)
-				|| !(filter.getArg()instanceof LeftJoin leftJoin)
+				|| !FilterBindingScope.allowsAllConditionBindings(filter)
+				|| !(filter.getArg() instanceof LeftJoin leftJoin)
 				|| leftJoin.hasCondition()
 				|| TupleExprs.isVariableScopeChange(leftJoin)) {
 			return null;
@@ -95,6 +97,8 @@ final class LmdbNullRejectingOptionalSupport {
 			return null;
 		}
 		Filter replacement = new Filter(mandatoryJoinArg(leftJoin, hoist), filter.getCondition().clone());
+		replacement.setRequiredInputBindingNames(filter.getRequiredInputBindingNames());
+		replacement.setConditionBindingScope(FilterBindingScope.resolve(filter));
 		markRewrittenOptionalBindings(replacement, "filter-simplifier", optionalOnlyBindings);
 		return replacement;
 	}

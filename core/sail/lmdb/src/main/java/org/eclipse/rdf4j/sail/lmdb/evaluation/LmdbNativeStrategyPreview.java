@@ -185,16 +185,26 @@ final class LmdbNativeStrategyPreview {
 		case "orderedDistinctGroups" -> "No replay-safe aggregate with an ordered DISTINCT input";
 		case "orderedSinglePatternGroups" -> "No replay-safe, ordered aggregate over a single pattern";
 		case "factorizedTail" -> "No separable aggregate tail retaining the group and aggregate variables";
-		case "factorizedRows", "packedFtree", "packedFtreeAggregate", "janinoAggregate", "parallelAggregation" -> "The compiled input is not a multi-pattern join supported by this strategy";
+		case "factorizedRows", "packedFtree", "packedFtreeAggregate", "janinoAggregate", "parallelAggregation" ->
+			"The compiled input is not a multi-pattern join supported by this strategy";
 		case "orderedFactorizedSort" -> "Requires an unbounded ORDER BY without DISTINCT or computed sort values";
 		case "orderedFactorizedTopK" -> "Requires a bounded ORDER BY without DISTINCT or computed sort values";
 		case "orderedTopK", "orderedFullSort" -> "General sorting is the fallback after ordered specialists decline";
-		case "irKernelDistinct", "irKernelDistinctInterpreted", "irKernelDistinctParallel", "irKernelDistinctParallelInterpreted" -> "Requires a DISTINCT terminal with projected slots and a fusible input";
-		case "irKernelWildcard", "irKernelWildcardInterpreted", "irAggregateWildcard", "irAggregateWildcardInterpreted" -> "Requires a supported wildcard-predicate terminal";
-		case "irAggregateNodeDomainIntersection", "irAggregateNodeDomainIntersectionInterpreted" -> "Requires a recognized node-domain intersection aggregate";
-		case "irAggregateTypeMatrix", "irAggregateTypeMatrixInterpreted", "irAggregateTypeMatrixParallel", "irAggregateTypeMatrixParallelInterpreted" -> "Requires a recognized type-matrix aggregate terminal";
-		case "irAggregate", "irAggregateInterpreted", "irAggregateParallel", "irAggregateParallelInterpreted" -> "This aggregate dispatch uses a specialized terminal or an algorithmic specialist";
-		case "irKernel", "irKernelInterpreted", "irKernelParallel", "irKernelParallelInterpreted" -> "The compiled row terminal uses a specialized wildcard route";
+		case "irKernelDistinct", "irKernelDistinctInterpreted", "irKernelDistinctParallel",
+				"irKernelDistinctParallelInterpreted" ->
+			"Requires a DISTINCT terminal with projected slots and a fusible input";
+		case "irKernelWildcard", "irKernelWildcardInterpreted", "irAggregateWildcard",
+				"irAggregateWildcardInterpreted" ->
+			"Requires a supported wildcard-predicate terminal";
+		case "irAggregateNodeDomainIntersection", "irAggregateNodeDomainIntersectionInterpreted" ->
+			"Requires a recognized node-domain intersection aggregate";
+		case "irAggregateTypeMatrix", "irAggregateTypeMatrixInterpreted", "irAggregateTypeMatrixParallel",
+				"irAggregateTypeMatrixParallelInterpreted" ->
+			"Requires a recognized type-matrix aggregate terminal";
+		case "irAggregate", "irAggregateInterpreted", "irAggregateParallel", "irAggregateParallelInterpreted" ->
+			"This aggregate dispatch uses a specialized terminal or an algorithmic specialist";
+		case "irKernel", "irKernelInterpreted", "irKernelParallel", "irKernelParallelInterpreted" ->
+			"The compiled row terminal uses a specialized wildcard route";
 		default -> "This strategy is not offered at " + point;
 		};
 	}

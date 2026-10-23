@@ -2481,7 +2481,7 @@ class LmdbOptimizerPipelineTest {
 					if (extension.getElements()
 							.stream()
 							.allMatch(element -> element.getExpr() instanceof AggregateOperator)
-							&& extension.getArg()instanceof Filter filter && filter.getArg() instanceof Group) {
+							&& extension.getArg() instanceof Filter filter && filter.getArg() instanceof Group) {
 						placeholder[0] = extension;
 					}
 					super.meet(extension);

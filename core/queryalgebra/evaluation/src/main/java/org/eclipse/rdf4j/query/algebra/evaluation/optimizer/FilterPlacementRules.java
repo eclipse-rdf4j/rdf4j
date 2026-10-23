@@ -23,6 +23,7 @@ import java.util.function.Function;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
 import org.eclipse.rdf4j.query.algebra.Intersection;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -31,7 +32,7 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
-import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -55,11 +56,7 @@ final class FilterPlacementRules {
 		private final Filter filter;
 		private final ValueExpr expression;
 		private final boolean scopeChange;
-		private final Set<String> names;
-		private final TupleExprs.ConditionBindingDomain observed;
-		/** Per candidate node, memoized for the many sites and filters that ask about the same candidate. */
-		private final Map<TupleExpr, Set<String>> retainedNames = new IdentityHashMap<>();
-		private final Map<TupleExpr, Boolean> subQueryMembership = new IdentityHashMap<>();
+		private final ConditionBindingScope bindingScope;
 		/** By condition frame identity: frames are memoized, so sites with the same frame share one analysis. */
 		private final Map<QueryAlgebraBindingAnalysis.ReadOnlyContext, QueryAlgebraBindingAnalysis.Dependencies> dependencies = new IdentityHashMap<>();
 
@@ -67,8 +64,7 @@ final class FilterPlacementRules {
 			this.filter = Objects.requireNonNull(filter);
 			this.expression = filter.getCondition();
 			this.scopeChange = TupleExprs.isVariableScopeChange(filter);
-			this.names = Set.copyOf(VarNameCollector.process(expression));
-			this.observed = TupleExprs.conditionBindingDomain(expression);
+			this.bindingScope = FilterBindingScope.resolve(filter);
 		}
 
 		Filter filter() {
@@ -91,32 +87,13 @@ final class FilterPlacementRules {
 		 */
 		boolean retainsAllBindings(TupleExpr gateArgument, TupleExpr candidate,
 				Function<TupleExpr, Set<String>> bindingNames) {
-			return (bindingNames instanceof TupleExprs.DeclaredOutputBindings memo
-					? memo.isPartOfSubQuery(gateArgument)
-					: isPartOfSubQuery(gateArgument))
-					|| TupleExprs.conditionFrameContainsAllObservations(observed, bindingNames.apply(candidate));
+			return bindingScope.retainsAllBindings();
 		}
 
-		private boolean isPartOfSubQuery(TupleExpr gateArgument) {
-			Boolean cached = subQueryMembership.get(gateArgument);
-			if (cached == null) {
-				cached = FilterIterator.isPartOfSubQuery(gateArgument);
-				subQueryMembership.put(gateArgument, cached);
-			}
-			return cached;
-		}
-
-		/**
-		 * Computes the same model-owned whitelist as FilterIterator and binding analysis for a prospective gate,
-		 * without changing parent links. Its argument supplies local output names and visible LATERAL parameters; the
-		 * logical filter supplies direct reads and its scope flag. Results are immutable and memoized per candidate.
-		 */
+		/** The full source whitelist, independent of the candidate's narrower output schema. */
 		Set<String> retainedBindingNames(TupleExpr candidate, Function<TupleExpr, Set<String>> bindingNames) {
-			return retainedNames.computeIfAbsent(candidate,
-					ignored -> TupleExprs.filterConditionBindingNames(expression, scopeChange, candidate,
-							bindingNames));
+			return bindingScope.bindingNames();
 		}
-
 	}
 
 	private final Condition condition;
@@ -175,7 +152,7 @@ final class FilterPlacementRules {
 
 	/** Wrapping the independently evaluated right group would change its join input frame. */
 	TupleExpr scopeBoundaryTarget(TupleExpr scopedGroup) {
-		if (TupleExprs.isVariableScopeChange(scopedGroup) && scopedGroup.getParentNode()instanceof Join join
+		if (TupleExprs.isVariableScopeChange(scopedGroup) && scopedGroup.getParentNode() instanceof Join join
 				&& join.getRightArg() == scopedGroup) {
 			return join;
 		}
@@ -259,55 +236,19 @@ final class FilterPlacementRules {
 
 	private boolean runsWithoutSiblingRow(TupleExpr candidate,
 			QueryAlgebraBindingAnalysis.ReadOnlyContext candidateInput) {
-		return candidate.getParentNode()instanceof TupleExpr parent
+		return candidate.getParentNode() instanceof TupleExpr parent
 				&& candidateInput.equals(analysis.contextAt(parent));
 	}
 
 	boolean canDistributeAcrossUnion(Union union) {
-		if (TupleExprs.isVariableScopeChange(union)) {
-			return false;
-		}
-		QueryAlgebraBindingAnalysis.ReadOnlyContext input = analysis.contextAt(union);
-		QueryAlgebraBindingAnalysis.OutputFacts unionFacts = analysis.outputFacts(union, input);
-		QueryAlgebraBindingAnalysis.ReadOnlyContext leftInput = analysis.contextAt(union.getLeftArg());
-		QueryAlgebraBindingAnalysis.ReadOnlyContext rightInput = analysis.contextAt(union.getRightArg());
-		QueryAlgebraBindingAnalysis.OutputFacts leftFacts = outputFactsVisibleToFilter(union.getLeftArg(), leftInput);
-		QueryAlgebraBindingAnalysis.OutputFacts rightFacts = outputFactsVisibleToFilter(union.getRightArg(),
-				rightInput);
-		return branchPreservesKnownBindings(unionFacts, leftFacts, leftInput, union.getLeftArg())
-				&& branchPreservesKnownBindings(unionFacts, rightFacts, rightInput, union.getRightArg());
+		// UNION passes the same incoming mapping to each branch, and a complete cut evaluates every output row
+		// once. Keep the group's input boundary and the source condition projection rather than inferring a new
+		// projection from each branch's narrower declaration. Branch variables may remain genuinely unbound.
+		return AlgebraEvaluationSafety.isRepeatable(condition.expression);
 	}
 
-	private boolean branchPreservesKnownBindings(QueryAlgebraBindingAnalysis.OutputFacts unionFacts,
-			QueryAlgebraBindingAnalysis.OutputFacts branchFacts,
-			QueryAlgebraBindingAnalysis.ReadOnlyContext branchInput, TupleExpr branch) {
-		if (!unionFacts.possibleOutputsKnown() || !unionFacts.guaranteedOutputsKnown()
-				|| !branchFacts.possibleOutputsKnown() || !branchFacts.guaranteedOutputsKnown()) {
-			return false;
-		}
-		QueryAlgebraBindingAnalysis.ReadOnlyContext visible = branchInput.withOutput(branchFacts);
-		QueryAlgebraBindingAnalysis.ReadOnlyContext raw = branchInput
-				.withOutput(analysis.outputFacts(branch, branchInput));
-		for (String name : stableNames()) {
-			// An absent branch output remains absent when filtering the UNION result. The consumer projection must
-			// nevertheless neither hide an available branch value nor expose a value hidden at the source gate.
-			if (visible.maybeBoundNames().contains(name) && !filterContext.maybeBoundNames().contains(name)
-					|| filterContext.maybeBoundNames().contains(name) && raw.maybeBoundNames().contains(name)
-							&& !visible.maybeBoundNames().contains(name)) {
-				return false;
-			}
-		}
-		for (String name : dependencyNames()) {
-			if ((unionFacts.guaranteedOutputs().contains(name) || filterContext.guaranteedNames().contains(name))
-					&& !guaranteedAfter(branchFacts, name)) {
-				return false;
-			}
-			if (dependencies.correlatedInputs().contains(name)
-					&& !visible.maybeBoundNames().contains(name)) {
-				return false;
-			}
-		}
-		return true;
+	ConditionBindingScope conditionBindingScope() {
+		return condition.bindingScope;
 	}
 
 	private boolean candidateHasStableBindings(TupleExpr candidate) {
@@ -409,16 +350,7 @@ final class FilterPlacementRules {
 		boolean retainAll = condition.retainsAllBindings(gateArgument, gateArgument, bindingNames);
 		Set<String> retained = condition.retainedBindingNames(gateArgument, bindingNames);
 		QueryAlgebraBindingAnalysis.ReadOnlyContext frame = input.withOutput(retainAll ? facts : facts.only(retained));
-		// A syntactic EXISTS-local name may be definitely absent at this site. Omitting it from the evaluator's
-		// prepared projection is equivalent and avoids treating the declared name as a condition-visible binding.
-		if (frame.bindingDomainKnown() && !frame.maybeBoundNames().containsAll(retained)) {
-			Set<String> visible = new LinkedHashSet<>(retained);
-			visible.retainAll(frame.maybeBoundNames());
-			retained = Set.copyOf(visible);
-		}
-		if (!retainAll) {
-			frame = analysis.filterConditionContext(condition.filter(), gateArgument, input);
-		}
+
 		return new ConditionVisibility(input, frame, retained, retainAll);
 	}
 

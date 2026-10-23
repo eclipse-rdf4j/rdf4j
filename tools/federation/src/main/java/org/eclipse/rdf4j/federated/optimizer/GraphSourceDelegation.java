@@ -289,7 +289,7 @@ final class GraphSourceDelegation {
 		if (expression instanceof Extension extension) {
 			StoredObjects result = storedObjects(extension.getArg()).copy();
 			for (var element : extension.getElements()) {
-				boolean copied = element.getExpr()instanceof Var variable && !variable.hasValue()
+				boolean copied = element.getExpr() instanceof Var variable && !variable.hasValue()
 						&& result.names.contains(variable.getName());
 				result.names.remove(element.getName());
 				if (copied) {

@@ -2349,7 +2349,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				groupRoot = root;
 				try {
 					// The parser lifts a filter in an OPTIONAL group into the LeftJoin condition.
-					if (root.getParentNode()instanceof LeftJoin optional && root == optional.getRightArg()
+					if (root.getParentNode() instanceof LeftJoin optional && root == optional.getRightArg()
 							&& optional.hasCondition()) {
 						addFilterVariables(optional.getCondition());
 					}

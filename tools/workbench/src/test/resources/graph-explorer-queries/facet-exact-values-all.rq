@@ -1,0 +1,3 @@
+SELECT DISTINCT ?s WHERE {
+ { VALUES ?s { <urn:ex:dup> <urn:ex:one> } ?s <urn:ex:dupOf> ?o . VALUES ?o { <urn:ex:dupTarget> } } UNION { GRAPH ?__graph { VALUES ?s { <urn:ex:dup> <urn:ex:one> } ?s <urn:ex:dupOf> ?o . VALUES ?o { <urn:ex:dupTarget> } } }
+}

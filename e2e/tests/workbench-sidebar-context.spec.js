@@ -85,8 +85,8 @@ test('opening the repository switcher widens the sidebar and shows its panel ins
 	await expect.poll(width, { message: 'the sidebar widens' }).toBeGreaterThanOrEqual(before.bar.width + 120);
 	// Measure once the widening has finished: the sidebar and its panel are read in separate calls, and mid-way
 	// through the transition the panel would already have grown past the width read for the sidebar a moment before.
-	await page.waitForFunction(() => [document.body, document.querySelector('#workbench-contextbar')]
-		.every((element) => element.getAnimations().length === 0));
+	await page.waitForFunction(() => [document.body, document.querySelector('#workbench-contextbar'),
+		document.querySelector('#content')].every((element) => element.getAnimations().length === 0));
 	const after = await shellGeometry(page);
 	const box = await panel.boundingBox();
 	expect(box.x, 'the panel starts inside the sidebar').toBeGreaterThanOrEqual(after.bar.x);

@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.util.HashMap;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.IdCapability;
 
 @Experimental
 final class UnionPlan implements SlotPlan {
@@ -654,12 +655,10 @@ final class MinusCursor implements FactorizedRowCursor {
 	final SlotPlan right;
 	final long sharedMask;
 	final RowState row;
-	final long compatibilityMask;
 	final int[] sharedSlots;
 	final long[] leftSharedValues;
 	final int[] clearedSlots;
 	final long[] clearedValues;
-	final boolean hasUnslottedBaseBindings;
 	final long assuredRightMask;
 	/**
 	 * When the right side's outcome depends only on the current values of a known slot set (see {@link #memoReadMask}),
@@ -673,27 +672,24 @@ final class MinusCursor implements FactorizedRowCursor {
 	final SubplanMarkProbe markProbe;
 	LongVerdictMemo memo;
 	int probePollTick;
+	boolean disjointRightDrained;
 
 	MinusCursor(RowCursor leftCursor, SlotPlan right, long sharedMask, RowState row) {
 		this.leftCursor = leftCursor;
 		this.right = right;
 		this.sharedMask = sharedMask;
 		this.row = row;
-		// The monolithic native plan keeps surrounding join bindings in the mutable row. They are physical probe
-		// constraints, not part of either MINUS operand's algebraic solution domain. Bindings inherited at the current
-		// lexical boundary (the caller's base mapping at a root, or the complete outer mapping inside EXISTS) occur in
-		// both operands in addition to names statically shared by the two children.
-		this.compatibilityMask = sharedMask | row.lexicalInputMask;
-		this.sharedSlots = slotsOf(compatibilityMask);
+		// Caller input remains available to both children, but only names declared by both operands participate in
+		// this evaluator's MINUS comparison domain. Physical slots and unslotted base bindings cannot add names to it.
+		this.sharedSlots = slotsOf(sharedMask);
 		this.leftSharedValues = new long[sharedSlots.length];
 		this.clearedSlots = new int[row.slots.length];
 		this.clearedValues = new long[row.slots.length];
-		this.hasUnslottedBaseBindings = row.base.size() > Long.bitCount(row.baseBindingMask);
 		this.assuredRightMask = SlotPlan.assuredMask(right);
 		long readMask = memoReadMask(right);
 		// Compatibility depends on the left values even when the right plan's own read mask does not mention them
 		// (notably a UNION branch that binds none of the shared variables).
-		this.memoSlots = readMask < 0L ? null : slotsOf(readMask | compatibilityMask);
+		this.memoSlots = readMask < 0L ? null : slotsOf(readMask | sharedMask);
 		PatternPlan rightPattern = right instanceof PatternPlan ? (PatternPlan) right : null;
 		this.membershipProbe = PatternMembershipProbe.tryCreate(rightPattern);
 		this.adjacencyProbe = AdjacencyIntersectionProbe.tryCreate(rightPattern);
@@ -730,7 +726,14 @@ final class MinusCursor implements FactorizedRowCursor {
 	}
 
 	boolean hasCompatibleRight() throws IOException {
-		if ((row.boundMask() & compatibilityMask) == 0L && !hasUnslottedBaseBindings) {
+		if (sharedMask == 0L) {
+			if (!disjointRightDrained) {
+				openIndependentAndCheckRight(0L);
+				disjointRightDrained = true;
+			}
+			return false;
+		}
+		if (boundComparisonMask() == 0L) {
 			return false;
 		}
 		// A direct membership probe may correlate shared left values, but it must not see physical bindings from
@@ -800,9 +803,8 @@ final class MinusCursor implements FactorizedRowCursor {
 	}
 
 	boolean openAndCheckRight() throws IOException {
-		long leftBoundMask = row.boundMask() & compatibilityMask;
-		long boundSharedMask = leftBoundMask & sharedMask;
-		if ((boundSharedMask & ~assuredRightMask) == 0L) {
+		long leftBoundMask = boundComparisonMask();
+		if ((leftBoundMask & ~assuredRightMask) == 0L) {
 			return openCorrelatedRight();
 		}
 		return openIndependentAndCheckRight(leftBoundMask);
@@ -844,8 +846,8 @@ final class MinusCursor implements FactorizedRowCursor {
 			try (RowCursor cursor = right.open(row)) {
 				while (cursor.next()) {
 					LmdbNativeProbeDeadline.poll(++probePollTick);
-					long overlap = leftBoundMask & row.boundMask() & compatibilityMask;
-					if (overlap == 0L && !hasUnslottedBaseBindings) {
+					long overlap = leftBoundMask & boundComparisonMask();
+					if (overlap == 0L) {
 						continue;
 					}
 					boolean compatible = true;
@@ -866,6 +868,16 @@ final class MinusCursor implements FactorizedRowCursor {
 		} finally {
 			restoreSlots(clearedCount);
 		}
+	}
+
+	private long boundComparisonMask() {
+		long mask = 0L;
+		for (int slot : sharedSlots) {
+			if (IdCapability.BOUND.test(row.slots[slot])) {
+				mask |= 1L << slot;
+			}
+		}
+		return mask;
 	}
 
 	/**

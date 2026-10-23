@@ -194,7 +194,7 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 		if (ValueStore.canReuseNativeLeaf(value) && value instanceof LmdbValue nativeValue
 				&& nativeValue.getSemanticVersion() != LmdbValue.UNKNOWN_ID) {
 			LmdbValue.InternalIdentity identity = nativeValue.getInternalIdentity();
-			ValueStoreRevision owner = identity.revision()instanceof ValueStoreRevision.Lazy lazy ? lazy.unwrapped()
+			ValueStoreRevision owner = identity.revision() instanceof ValueStoreRevision.Lazy lazy ? lazy.unwrapped()
 					: identity.revision();
 			if (identity.id() != LmdbValue.UNKNOWN_ID && revision.equals(owner)) {
 				return identity.id();

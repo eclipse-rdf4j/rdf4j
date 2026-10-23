@@ -1269,7 +1269,7 @@ class LmdbSketchAwareFilterPlacementIT {
 	}
 
 	private static boolean isRecordedOnFilter(Filter filter) {
-		if (!(filter.getArg()instanceof StatementPattern statementPattern)) {
+		if (!(filter.getArg() instanceof StatementPattern statementPattern)) {
 			return false;
 		}
 		return MEDICAL_RECORDED_ON.equals(statementPattern.getPredicateVar().getValue())
@@ -1300,10 +1300,10 @@ class LmdbSketchAwareFilterPlacementIT {
 		if (!VarNameCollector.process(filter.getCondition()).contains("name")) {
 			return false;
 		}
-		if (filter.getArg()instanceof StatementPattern statementPattern) {
+		if (filter.getArg() instanceof StatementPattern statementPattern) {
 			return GRID_NAME.equals(statementPattern.getPredicateVar().getValue());
 		}
-		return filter.getArg()instanceof BindingSetAssignment bindingSetAssignment
+		return filter.getArg() instanceof BindingSetAssignment bindingSetAssignment
 				&& bindingSetAssignment.getBindingNames().contains("name");
 	}
 

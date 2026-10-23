@@ -71,6 +71,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
@@ -393,8 +394,10 @@ abstract class LmdbNativeAggregatePlannerBase {
 	}
 
 	Filter feedbackFilterForValuesFold(TupleExpr dataExpr, Filter valuesFilter) {
-		return new Filter(new Join(dataExpr.clone(), valuesFilter.getArg().clone()),
+		Filter feedback = new Filter(new Join(dataExpr.clone(), valuesFilter.getArg().clone()),
 				valuesFilter.getCondition().clone());
+		feedback.setConditionBindingScope(FilterBindingScope.resolve(valuesFilter));
+		return feedback;
 	}
 
 	Set<String> wellDesignedOptionalOnlyNames(TupleExpr root) {

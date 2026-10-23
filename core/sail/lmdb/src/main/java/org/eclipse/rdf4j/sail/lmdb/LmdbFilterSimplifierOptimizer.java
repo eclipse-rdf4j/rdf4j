@@ -82,6 +82,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.BindingScopeAnalysis;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -187,9 +188,14 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Filter filter) {
 			super.meet(filter);
-			if (filter.getArg()instanceof Filter childFilter && canMerge(filter, (Filter) filter.getArg())) {
+			if (filter.getArg() instanceof Filter childFilter && canMerge(filter, (Filter) filter.getArg())) {
+				var bindingScope = FilterBindingScope.resolve(filter);
+				Set<String> requiredInputs = new LinkedHashSet<>(filter.getRequiredInputBindingNames());
+				requiredInputs.addAll(childFilter.getRequiredInputBindingNames());
+				filter.setRequiredInputBindingNames(requiredInputs);
 				filter.setCondition(mergeConditions(childFilter.getCondition(), filter.getCondition()));
 				filter.setArg(childFilter.getArg());
+				FilterBindingScope.preserve(filter, bindingScope);
 			}
 			// Names the enclosing evaluation context may substitute into this filter's rows (EXISTS owner row,
 			// LATERAL left row, join left rows, incoming bindings). A right-only OPTIONAL binding that is
@@ -214,6 +220,10 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 	}
 
 	private static boolean rewriteRedundantPositiveExists(Filter filter) {
+		if (!FilterBindingScope.allowsAllConditionBindings(filter)) {
+			return false;
+		}
+		var conditionScope = FilterBindingScope.resolve(filter);
 		ConditionRewrite rewrite = removeRedundantPositiveExists(filter.getCondition(), filter.getArg());
 		if (rewrite.removedCount() == 0) {
 			return false;
@@ -227,12 +237,13 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		}
 
 		filter.setCondition(rewrite.condition());
+		FilterBindingScope.preserve(filter, conditionScope);
 		annotateRequiredPatternExistsProof(filter, rewrite.removedCount());
 		return false;
 	}
 
 	private static ConditionRewrite removeRedundantPositiveExists(ValueExpr condition, TupleExpr outerArg) {
-		if (condition instanceof Exists exists && exists.getSubQuery()instanceof StatementPattern existsPattern
+		if (condition instanceof Exists exists && exists.getSubQuery() instanceof StatementPattern existsPattern
 				&& outerArg.getAssuredBindingNames().containsAll(existsPattern.getBindingNames())
 				&& LmdbJoinPlanSupport.containsEquivalentRequiredPattern(outerArg, existsPattern)) {
 			return new ConditionRewrite(null, 1);
@@ -269,8 +280,9 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 	}
 
 	private static TupleExpr rewriteRedundantPatternMinusFilter(Difference difference) {
-		if (!(difference.getRightArg()instanceof Filter rightFilter)
-				|| !(rightFilter.getArg()instanceof StatementPattern rightPattern)) {
+		if (!(difference.getRightArg() instanceof Filter rightFilter)
+				|| !(rightFilter.getArg() instanceof StatementPattern rightPattern)
+				|| !FilterBindingScope.allowsAllConditionBindings(rightFilter)) {
 			return null;
 		}
 
@@ -330,7 +342,11 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 	private static boolean canMerge(Filter parent, Filter child) {
 		return !isVariableScopeChange(parent) && !isVariableScopeChange(child)
 				&& QueryEvaluationUtility.isRepeatable(parent.getCondition())
-				&& QueryEvaluationUtility.isRepeatable(child.getCondition());
+				&& QueryEvaluationUtility.isRepeatable(child.getCondition())
+				&& FilterBindingScope.resolve(parent).equals(FilterBindingScope.resolve(child))
+				&& new Filter(child.getArg().clone(), mergeConditions(child.getCondition(), parent.getCondition()))
+						.getBindingNames()
+						.equals(parent.getBindingNames());
 	}
 
 	private static boolean isVariableScopeChange(Filter filter) {
@@ -338,6 +354,8 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 	}
 
 	private static And mergeConditions(ValueExpr leftCondition, ValueExpr rightCondition) {
+		leftCondition = FilterBindingScope.unwrapBooleanExists(leftCondition);
+		rightCondition = FilterBindingScope.unwrapBooleanExists(rightCondition);
 		if (conditionCostClass(leftCondition) <= conditionCostClass(rightCondition)) {
 			return new And(leftCondition.clone(), rightCondition.clone());
 		}
@@ -345,10 +363,12 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 	}
 
 	private boolean rewriteSmallLiteralFilterAnchors(Filter filter, Set<String> outerVisibleBindingNames) {
-		if (isVariableScopeChange(filter) || !QueryEvaluationUtility.isRepeatable(filter.getCondition())) {
+		if (isVariableScopeChange(filter) || !QueryEvaluationUtility.isRepeatable(filter.getCondition())
+				|| !FilterBindingScope.allowsAllConditionBindings(filter)) {
 			return false;
 		}
 
+		var conditionScope = FilterBindingScope.resolve(filter);
 		TupleExpr arg = filter.getArg();
 		List<ValueExpr> conditions = LmdbJoinPlanSupport.splitConjuncts(filter.getCondition());
 		if (!hasSmallLiteralAnchorCandidate(conditions)) {
@@ -449,6 +469,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		TupleExpr anchoredArg = prependAnchors(arg, anchors);
 		filter.setArg(anchoredArg);
 		filter.setCondition(LmdbJoinPlanSupport.combinedCondition(remainingConditions));
+		FilterBindingScope.preserve(filter, conditionScope);
 		return false;
 	}
 
@@ -613,7 +634,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 			@Override
 			public void meet(Extension extension) {
 				for (ExtensionElem element : extension.getElements()) {
-					if (extensionName.equals(element.getName()) && element.getExpr()instanceof Var sourceVar) {
+					if (extensionName.equals(element.getName()) && element.getExpr() instanceof Var sourceVar) {
 						if (!sourceVar.hasValue() && sourceVar.getName() != null) {
 							sourceNames.add(sourceVar.getName());
 						}
@@ -965,7 +986,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 	private static boolean collectFiniteListMemberDomains(ListMemberOperator list,
 			Map<String, LinkedHashSet<Value>> domains) {
 		List<ValueExpr> arguments = list.getArguments();
-		if (arguments.size() < 2 || !(arguments.getFirst()instanceof Var filterVar)) {
+		if (arguments.size() < 2 || !(arguments.getFirst() instanceof Var filterVar)) {
 			return false;
 		}
 		String filterName = unboundName(filterVar);
@@ -1492,7 +1513,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 			return false;
 		}
 		for (BindingSet bindingSet : anchor.getBindingSets()) {
-			if (bindingSet.getValue(bindingName)instanceof Literal literal && literal.getLanguage().isPresent()) {
+			if (bindingSet.getValue(bindingName) instanceof Literal literal && literal.getLanguage().isPresent()) {
 				return true;
 			}
 		}
@@ -1799,7 +1820,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 
 	private static IdKindCandidate datatypeIdKindCandidate(ValueExpr datatypeExpr, ValueExpr valueExpr) {
 		if (!(datatypeExpr instanceof Datatype datatype) || !(valueExpr instanceof ValueConstant constant)
-				|| !(constant.getValue()instanceof IRI datatypeIri)) {
+				|| !(constant.getValue() instanceof IRI datatypeIri)) {
 			return null;
 		}
 		return idKindCandidate(datatype.getArg(), LmdbValueIdFilter.Kind.fromDatatype(datatypeIri));

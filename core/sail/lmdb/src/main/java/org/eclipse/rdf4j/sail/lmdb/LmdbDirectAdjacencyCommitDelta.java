@@ -298,7 +298,7 @@ final class LmdbDirectAdjacencyCommitDelta {
 				} catch (InterruptedException e) {
 					interrupted = true;
 				} catch (ExecutionException e) {
-					if (e.getCause()instanceof Error error) {
+					if (e.getCause() instanceof Error error) {
 						throw error;
 					}
 					throw new IllegalStateException("asynchronous delta capture failed", e.getCause());

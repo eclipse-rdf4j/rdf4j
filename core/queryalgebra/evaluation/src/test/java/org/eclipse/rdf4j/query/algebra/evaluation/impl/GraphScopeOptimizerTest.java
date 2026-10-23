@@ -33,11 +33,15 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Graph;
+import org.eclipse.rdf4j.query.algebra.Lateral;
+import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
@@ -46,6 +50,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.GraphScopeOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -247,6 +252,57 @@ class GraphScopeOptimizerTest {
 			MapBindingSet conflicting = bindings("g", OTHER_GRAPH);
 			assertThat(evaluate(strategy, original, conflicting)).isEmpty();
 			assertThat(evaluate(strategy, lowered, conflicting)).as(subjectName).isEmpty();
+		}
+	}
+
+	@Test
+	void capturedApiSelectorRequiresProvenAbsentOrEqualInput() {
+		for (BindingSet input : List.of(EmptyBindingSet.getInstance(), bindings("g", TARGET_GRAPH),
+				bindings("g", OTHER_GRAPH))) {
+			Graph graph = capturedApiGraph();
+			QueryRoot root = new QueryRoot(graph);
+			new GraphScopeOptimizer().optimize(root, null, input);
+			if (OTHER_GRAPH.equals(input.getValue("g"))) {
+				assertThat(graphs(root)).containsExactly(graph);
+			} else {
+				assertThat(graphs(root)).isEmpty();
+				assertThat(statements(root)).singleElement()
+						.satisfies(statement -> assertThat(statement.getContextVar().hasApiInputOrigin()).isTrue());
+			}
+		}
+
+		BindingSetAssignment possible = new BindingSetAssignment();
+		possible.setDeclaredBindingNames(Set.of("g"));
+		possible.setBindingSets(List.of(bindings("g", TARGET_GRAPH), EmptyBindingSet.getInstance()));
+		Graph graph = capturedApiGraph();
+		QueryRoot root = new QueryRoot(new Lateral(possible, graph));
+		var input = QueryAlgebraBindingAnalysis.withBindingValues(root, EmptyBindingSet.getInstance()).contextAt(graph);
+		assertThat(input.maybeBoundNames()).contains("g");
+		assertThat(input.guaranteedNames()).doesNotContain("g");
+		new GraphScopeOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+		assertThat(graphs(root)).containsExactly(graph);
+
+		graph = capturedApiGraph();
+		root = new QueryRoot(new OpaqueUnary(graph));
+		input = QueryAlgebraBindingAnalysis.withBindingValues(root, EmptyBindingSet.getInstance()).contextAt(graph);
+		assertThat(input.bindingDomainKnown()).isFalse();
+		new GraphScopeOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+		assertThat(graphs(root)).containsExactly(graph);
+	}
+
+	private static Graph capturedApiGraph() {
+		return new Graph(Var.of("g", TARGET_GRAPH, false, false).withApiInputOrigin(),
+				new StatementPattern(Var.of("s"), Var.of("p", P, true, true), Var.of("o")));
+	}
+
+	private static final class OpaqueUnary extends UnaryTupleOperator {
+		private OpaqueUnary(TupleExpr argument) {
+			super(argument);
+		}
+
+		@Override
+		public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
+			visitor.meetOther(this);
 		}
 	}
 

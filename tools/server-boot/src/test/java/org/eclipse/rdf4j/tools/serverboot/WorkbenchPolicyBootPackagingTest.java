@@ -115,6 +115,51 @@ class WorkbenchPolicyBootPackagingTest {
 	}
 
 	@Test
+	void graphPageServesTheShellAndIsRegisteredInTheBootInitParameters() {
+		assertThat(workbenchServlet.getInitParameters())
+				.containsEntry("/graph", "org.eclipse.rdf4j.workbench.commands.GraphServlet")
+				.containsEntry("graph-max-query-length", "150000");
+		HttpHeaders htmlHeaders = new HttpHeaders();
+		htmlHeaders.set(HttpHeaders.ACCEPT, "text/html");
+		ResponseEntity<String> page = restTemplate.exchange(workbenchUrl("/repositories/NONE/graph"),
+				HttpMethod.GET, new HttpEntity<>(htmlHeaders), String.class);
+
+		assertThat(page.getStatusCode()).isEqualTo(HttpStatus.OK);
+		assertThat(page.getBody()).contains("data-workbench-view=\"graph\"");
+	}
+
+	@Test
+	void workbenchScriptsComeFromTheBuiltWebapp() {
+		// The compiled classic scripts and the graph explorer bundle are produced by the Workbench npm build and only
+		// exist in the Workbench WAR, which the boot jar unpacks; neither is a committed source file any more.
+		ResponseEntity<String> classic = restTemplate.getForEntity(
+				"http://localhost:" + port + "/boot-mount/rdf4j-workbench/scripts/workbenchApp.js", String.class);
+		assertThat(classic.getStatusCode()).isEqualTo(HttpStatus.OK);
+		assertThat(classic.getBody()).contains("workbench");
+		ResponseEntity<String> island = restTemplate.getForEntity(
+				"http://localhost:" + port + "/boot-mount/rdf4j-workbench/scripts/graph-explorer/graph-explorer.mjs",
+				String.class);
+		assertThat(island.getStatusCode()).isEqualTo(HttpStatus.OK);
+		assertThat(island.getHeaders().getContentType()).isNotNull();
+		assertThat(island.getHeaders().getContentType().toString()).contains("javascript");
+	}
+
+	@Test
+	void theExplorerEntryAndStylesheetAreRevalidatedWhileOtherScriptsStayCached() {
+		// The entry and stylesheet keep their names across releases but load hashed chunks: a cached entry must not
+		// outlive an upgrade that removed the chunks it imports.
+		String base = "http://localhost:" + port + "/boot-mount/rdf4j-workbench";
+		for (String path : List.of("/scripts/graph-explorer/graph-explorer.mjs", "/styles/graph-explorer.css")) {
+			ResponseEntity<String> revalidated = restTemplate.getForEntity(base + path, String.class);
+			assertThat(revalidated.getStatusCode()).as(path).isEqualTo(HttpStatus.OK);
+			assertThat(revalidated.getHeaders().get(HttpHeaders.CACHE_CONTROL)).as(path)
+					.containsExactly("max-age=0, public");
+		}
+		ResponseEntity<String> classic = restTemplate.getForEntity(base + "/scripts/workbenchApp.js", String.class);
+		assertThat(classic.getHeaders().get(HttpHeaders.CACHE_CONTROL)).containsExactly("max-age=600, public");
+	}
+
+	@Test
 	void workbenchBundleDoesNotPackageStylesheetResources() throws IOException {
 		Path workbenchWebapp = webappResourceExtractor.getServerDocBase().resolve("rdf4j-workbench");
 		try (Stream<Path> resources = Files.walk(workbenchWebapp)) {

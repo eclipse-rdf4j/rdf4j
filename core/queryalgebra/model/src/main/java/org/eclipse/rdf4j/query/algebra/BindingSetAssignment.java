@@ -94,6 +94,12 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 		return Collections.unmodifiableSet(bindingNames);
 	}
 
+	/** Whether a header was supplied explicitly, without inspecting or consuming the row source. */
+	@InternalUseOnly
+	public boolean hasExplicitBindingNames() {
+		return bindingNamesExplicit;
+	}
+
 	/**
 	 * Returns the names that are bound by at least one row. If rows have not been supplied or cannot be inspected
 	 * repeatedly, the declared names are used as a conservative fallback. A known empty row collection, or rows that

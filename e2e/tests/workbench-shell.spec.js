@@ -182,7 +182,7 @@ test('menu groups are labeled the same way, with Query first', async ({ page }) 
 	expect(groups.map(group => group.label)).toEqual(['Repository', 'Data', 'Server', 'System']);
 	expect(groups.every(group => !group.disclosure)).toBe(true);
 	expect(groups[0].items[0]).toBe('Query');
-	expect(groups[0].items).toContain('Graphs');
+	expect(groups[0].items).toContain('Named Graphs');
 	expect(groups[3].items).toEqual(['Information']);
 });
 

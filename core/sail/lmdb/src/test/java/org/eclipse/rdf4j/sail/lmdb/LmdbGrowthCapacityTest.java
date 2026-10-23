@@ -144,6 +144,36 @@ class LmdbGrowthCapacityTest {
 	}
 
 	@Test
+	void explicitMinimumCapacityKeepsStrictReserveWithoutForcedDoubling() {
+		long mebibyte = 1024L * 1024L;
+		long page = 4096L;
+		MapGrowthPolicy policy = new MapGrowthPolicy(0.75d);
+		assertEquals(4L * mebibyte, policy.minimumMapSize(4L * mebibyte, page, mebibyte));
+		assertEquals(4L * mebibyte + page, policy.minimumMapSize(4L * mebibyte + 1L, page, mebibyte));
+		long strictTarget = policy.minimumMapSize(page, page, mebibyte);
+		assertEquals(2_101_248L, strictTarget);
+		assertTrue(policy.retainsGrowthReserve(strictTarget, mebibyte));
+		assertFalse(policy.requiresGrowth(strictTarget, mebibyte, 0L));
+		assertThrows(IllegalArgumentException.class, () -> policy.minimumMapSize(Long.MAX_VALUE, page, 0L));
+		assertThrows(IllegalArgumentException.class, () -> policy.minimumMapSize(page, page, Long.MAX_VALUE));
+		assertThrows(IllegalArgumentException.class, () -> policy.minimumMapSize(0L, page, 0L));
+		assertThrows(IllegalArgumentException.class, () -> policy.minimumMapSize(page, 0L, 0L));
+		assertThrows(IllegalArgumentException.class, () -> policy.minimumMapSize(page, page, -1L));
+	}
+
+	@Test
+	void configuredCapacityFloorsRoundUpBeforeNativeAllocation() {
+		assertEquals(0L, LmdbUtil.pageAlignedCapacity(0L, 4096L));
+		assertEquals(4096L, LmdbUtil.pageAlignedCapacity(1L, 4096L));
+		assertEquals(4096L, LmdbUtil.pageAlignedCapacity(4096L, 4096L));
+		assertEquals(8192L, LmdbUtil.pageAlignedCapacity(4097L, 4096L));
+		assertEquals(Long.MAX_VALUE - 4095L, LmdbUtil.pageAlignedCapacity(Long.MAX_VALUE - 4095L, 4096L));
+		assertThrows(IllegalArgumentException.class, () -> LmdbUtil.pageAlignedCapacity(Long.MAX_VALUE, 4096L));
+		assertThrows(IllegalArgumentException.class, () -> LmdbUtil.pageAlignedCapacity(-1L, 4096L));
+		assertThrows(IllegalArgumentException.class, () -> LmdbUtil.pageAlignedCapacity(1L, 0L));
+	}
+
+	@Test
 	void mapGrowthPolicyUsesACeilingWatermarkForOccupiedAndProjectedBytes() {
 		long mebibyte = 1024L * 1024L;
 		long mapBytes = 16L * mebibyte - 1L;

@@ -84,3 +84,7 @@ e2e/test-results
 papers/
 /work/
 /core/sail/lmdb/work/
+
+# Workbench front end (npm project in tools/workbench)
+tools/workbench/node_modules/
+/.playwright-cli/

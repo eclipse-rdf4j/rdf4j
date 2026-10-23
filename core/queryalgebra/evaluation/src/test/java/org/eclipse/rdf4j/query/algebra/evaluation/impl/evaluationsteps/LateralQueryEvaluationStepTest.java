@@ -17,14 +17,19 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.Projection;
@@ -124,6 +129,140 @@ class LateralQueryEvaluationStepTest {
 		});
 	}
 
+	@Test
+	void hiddenLateralInputRenamesExplicitValuesHeaderAndOneShotRowsLazily() {
+		Value value = SimpleValueFactory.getInstance().createLiteral("value");
+		QueryBindingSet row = new QueryBindingSet();
+		row.addBinding("s", value);
+		AtomicInteger iteratorCalls = new AtomicInteger();
+		Iterable<BindingSet> oneShotRows = () -> {
+			assertThat(iteratorCalls.incrementAndGet()).isEqualTo(1);
+			return List.<BindingSet>of(row).iterator();
+		};
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setDeclaredBindingNames(Set.of("s", "undefined"));
+		values.setBindingSets(oneShotRows);
+
+		TupleExpr prepared = prepareHiddenLateralInput(values);
+		BindingSetAssignment renamed = valuesAssignment(prepared);
+		Projection outer = outerProjection(prepared);
+		Projection inner = innerProjection(prepared);
+		String renamedSource = inner.getProjectionElemList().getElements().getFirst().getName();
+
+		assertThat(renamedSource).startsWith("-lateral-hidden-").endsWith("-s");
+		assertThat(outer.getProjectionElemList().getElements().getFirst().getName()).isEqualTo("visible");
+		assertThat(inner.getProjectionElemList().getElements().getFirst().getProjectionAlias()).contains("out");
+		assertThat(renamed.getDeclaredBindingNames()).containsExactlyInAnyOrder(renamedSource, "undefined");
+		assertThat(iteratorCalls).as("preparing the right scope must leave one-shot VALUES rows untouched")
+				.hasValue(0);
+
+		BindingSet renamedRow = renamed.getBindingSets().iterator().next();
+		assertThat(renamedRow.getBindingNames()).containsExactly(renamedSource);
+		assertThat(renamedRow.getValue(renamedSource)).isEqualTo(value);
+		assertThat(iteratorCalls).hasValue(1);
+		renamed.setBindingSets(List.of(renamedRow));
+		assertThat(renamed.getDeclaredBindingNames())
+				.as("an explicit VALUES header survives replacing its rows")
+				.containsExactlyInAnyOrder(renamedSource, "undefined");
+	}
+
+	@Test
+	void hiddenLateralInputRenamesRowsOnlyValuesWithoutAddingAnExplicitHeader() {
+		Value value = SimpleValueFactory.getInstance().createLiteral("value");
+		QueryBindingSet row = new QueryBindingSet();
+		row.addBinding("s", value);
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setBindingSets(List.of(row));
+
+		TupleExpr prepared = prepareHiddenLateralInput(values);
+		BindingSetAssignment renamed = valuesAssignment(prepared);
+		String renamedSource = innerProjection(prepared).getProjectionElemList().getElements().getFirst().getName();
+
+		assertThat(renamed.getDeclaredBindingNames()).containsExactly(renamedSource);
+		assertThat(renamed.getBindingSets()).singleElement()
+				.satisfies(renamedRow -> assertThat(renamedRow.getBindingNames()).containsExactly(renamedSource))
+				.satisfies(renamedRow -> assertThat(renamedRow.getValue(renamedSource)).isEqualTo(value));
+		QueryBindingSet replacementRow = new QueryBindingSet();
+		replacementRow.addBinding("replacement", value);
+		renamed.setBindingSets(List.of(replacementRow));
+		assertThat(renamed.getDeclaredBindingNames())
+				.as("rows-only VALUES names remain inferred from replacement rows")
+				.containsExactly("replacement");
+	}
+
+	@Test
+	void hiddenLateralInputRenamesValuedVariableAndPreservesLiteralConstant() {
+		Value inputValue = SimpleValueFactory.getInstance().createIRI("urn:input");
+		Value constantValue = SimpleValueFactory.getInstance().createIRI("urn:constant");
+		Var valuedVariable = Var.of("s", inputValue, true, false, true).withApiInputOrigin();
+		valuedVariable.setVariableScopeChange(true);
+		valuedVariable.setGraphContextDepth(2);
+		Var literalConstant = Var.of("s", constantValue, false, true, false);
+		TupleExpr source = new Join(
+				new StatementPattern(valuedVariable, Var.of("p1"), Var.of("visible")),
+				new StatementPattern(literalConstant, Var.of("p2"), Var.of("other")));
+		Projection innerProjection = new Projection(source,
+				new ProjectionElemList(new ProjectionElem("visible", "private")));
+		Projection outerProjection = new Projection(innerProjection,
+				new ProjectionElemList(new ProjectionElem("private", "s")));
+
+		TupleExpr prepared = LateralQueryEvaluationStep.prepareRightScope(outerProjection, Set.of("s"), Set.of());
+		List<Var> variables = allVariables(prepared);
+
+		assertThat(variables).filteredOn(variable -> inputValue.equals(variable.getValue()))
+				.singleElement()
+				.satisfies(variable -> {
+					assertThat(variable.getName()).startsWith("-lateral-hidden-").endsWith("-s");
+					assertThat(variable.getValue()).isEqualTo(inputValue);
+					assertThat(variable.isAnonymous()).isTrue();
+					assertThat(variable.isConstant()).isFalse();
+					assertThat(variable.isBNode()).isTrue();
+					assertThat(variable.isVariableScopeChange()).isTrue();
+					assertThat(variable.getGraphContextDepth()).isEqualTo(2);
+					assertThat(variable.hasApiInputOrigin()).isTrue();
+				});
+		assertThat(variables).filteredOn(variable -> constantValue.equals(variable.getValue()))
+				.singleElement()
+				.satisfies(variable -> {
+					assertThat(variable.getName()).isEqualTo("s");
+					assertThat(variable.isConstant()).isTrue();
+					assertThat(variable.getValue()).isEqualTo(constantValue);
+				});
+		Projection preparedOuterProjection = (Projection) prepared;
+		Projection preparedInnerProjection = (Projection) preparedOuterProjection.getArg();
+		assertThat(preparedOuterProjection.getProjectionElemList().getElements()).singleElement()
+				.satisfies(element -> {
+					assertThat(element.getName()).isEqualTo("private");
+					assertThat(element.getProjectionAlias()).contains("s");
+				});
+		assertThat(preparedInnerProjection.getProjectionElemList().getElements()).singleElement()
+				.satisfies(element -> {
+					assertThat(element.getName()).isEqualTo("visible");
+					assertThat(element.getProjectionAlias()).contains("private");
+				});
+	}
+
+	private static TupleExpr prepareHiddenLateralInput(BindingSetAssignment values) {
+		Projection innerProjection = new Projection(new Filter(values, new Bound(new Var("s"))),
+				new ProjectionElemList(new ProjectionElem("s", "out")));
+		Projection outerProjection = new Projection(innerProjection,
+				new ProjectionElemList(new ProjectionElem("visible")));
+		TupleExpr rightArg = new Filter(outerProjection, new Bound(new Var("visible")));
+		return LateralQueryEvaluationStep.prepareRightScope(rightArg, Set.of("s"), Set.of());
+	}
+
+	private static BindingSetAssignment valuesAssignment(TupleExpr prepared) {
+		return (BindingSetAssignment) ((Filter) innerProjection(prepared).getArg()).getArg();
+	}
+
+	private static Projection outerProjection(TupleExpr prepared) {
+		return (Projection) ((Filter) prepared).getArg();
+	}
+
+	private static Projection innerProjection(TupleExpr prepared) {
+		return (Projection) outerProjection(prepared).getArg();
+	}
+
 	private static CloseableIteration<BindingSet> iteration(BindingSet bindingSet) {
 		return new CloseableIteratorIteration<>(List.of(bindingSet).iterator());
 	}
@@ -132,6 +271,17 @@ class LateralQueryEvaluationStepTest {
 		try (iteration) {
 			return iteration.stream().toList();
 		}
+	}
+
+	private static List<Var> allVariables(TupleExpr tupleExpr) {
+		List<Var> variables = new ArrayList<>();
+		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var var) {
+				variables.add(var);
+			}
+		});
+		return variables;
 	}
 
 	private static StatementPattern statementUsing(String bindingName) {

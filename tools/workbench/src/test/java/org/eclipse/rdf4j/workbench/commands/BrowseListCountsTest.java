@@ -15,9 +15,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -100,6 +105,89 @@ class BrowseListCountsTest {
 				assertThat(next).as("attempt %d: the cancelled count gave its place back", attempt).contains(2L);
 			}
 		} finally {
+			browseList.shutdown();
+		}
+	}
+
+	@Test
+	void requestsForTheSameCountShareOneRunningCount() throws Exception {
+		BrowseList browseList = new BrowseList(8);
+		ExecutorService requests = Executors.newFixedThreadPool(3);
+		CountDownLatch started = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		AtomicInteger runs = new AtomicInteger();
+		Callable<Long> count = () -> {
+			runs.incrementAndGet();
+			started.countDown();
+			release.await(10, TimeUnit.SECONDS);
+			return 42L;
+		};
+		try {
+			Future<Optional<Long>> first = requests.submit(() -> browseList.sharedWithinBudget("types", count, 5000));
+			assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+			Future<Optional<Long>> reload = requests.submit(() -> browseList.sharedWithinBudget("types", count, 5000));
+			Future<Optional<Long>> other = requests.submit(() -> browseList.sharedWithinBudget("graphs", () -> 7L,
+					5000));
+			assertThat(other.get(5, TimeUnit.SECONDS)).as("another count runs on its own").contains(7L);
+			release.countDown();
+
+			assertThat(first.get(5, TimeUnit.SECONDS)).contains(42L);
+			assertThat(reload.get(5, TimeUnit.SECONDS)).contains(42L);
+			assertThat(runs).as("the reload joined the running count").hasValue(1);
+			assertThat(browseList.sharedWithinBudget("types", count, 5000)).as("a later request counts again")
+					.contains(42L);
+			assertThat(runs).hasValue(2);
+		} finally {
+			release.countDown();
+			requests.shutdownNow();
+			browseList.shutdown();
+		}
+	}
+
+	@Test
+	void aSharedCountRunsOnUntilItsLastWaiterGivesUp() throws Exception {
+		BrowseList browseList = new BrowseList(8);
+		ExecutorService requests = Executors.newSingleThreadExecutor();
+		CountDownLatch started = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		CountDownLatch interrupted = new CountDownLatch(1);
+		Callable<Long> count = () -> {
+			started.countDown();
+			try {
+				release.await(10, TimeUnit.SECONDS);
+				return 42L;
+			} catch (InterruptedException e) {
+				interrupted.countDown();
+				throw e;
+			}
+		};
+		try {
+			Future<Optional<Long>> patient = requests.submit(() -> browseList.sharedWithinBudget("types", count,
+					5000));
+			assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(browseList.sharedWithinBudget("types", count, 50)).as("an impatient request gives up")
+					.isEmpty();
+			assertThat(interrupted.getCount()).as("the count still runs for the patient request").isEqualTo(1);
+			release.countDown();
+			assertThat(patient.get(5, TimeUnit.SECONDS)).contains(42L);
+
+			CountDownLatch secondStarted = new CountDownLatch(1);
+			CountDownLatch secondInterrupted = new CountDownLatch(1);
+			assertThat(browseList.sharedWithinBudget("graphs", () -> {
+				secondStarted.countDown();
+				try {
+					new CountDownLatch(1).await(10, TimeUnit.SECONDS);
+					return 1L;
+				} catch (InterruptedException e) {
+					secondInterrupted.countDown();
+					throw e;
+				}
+			}, 100)).isEmpty();
+			assertThat(secondInterrupted.await(5, TimeUnit.SECONDS)).as("its only waiter gave up, so it is cancelled")
+					.isTrue();
+		} finally {
+			release.countDown();
+			requests.shutdownNow();
 			browseList.shutdown();
 		}
 	}

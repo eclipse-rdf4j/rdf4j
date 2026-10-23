@@ -22,6 +22,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
@@ -39,8 +40,9 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 
 /** Exercises the actual opener's accepted-replay close boundary with an actual stored cooperative signal. */
 final class LmdbReplayOpenCloseProbe {
-	static void run(Path directory, String mode) throws Exception {
-		Gate gate = new Gate(mode);
+	static void run(Path directory, String mode, Consumer<String> phase) throws Exception {
+		phase.accept("constructing LMDB store");
+		Gate gate = new Gate(mode, phase);
 		LmdbStore store = new LmdbStore(directory.toFile(), new LmdbStoreConfig("spoc,posc")
 				.setMapGrowthReadDrainTimeoutMillis(50)) {
 			@Override
@@ -53,18 +55,24 @@ final class LmdbReplayOpenCloseProbe {
 				};
 			}
 		};
+		phase.accept("initializing LMDB store");
 		store.init();
+		phase.accept("LMDB store initialized");
 		try (var seed = store.getConnection()) {
+			phase.accept("seeding namespace");
 			seed.begin();
 			seed.setNamespace("seed", "urn:opener:seed:");
 			seed.commit();
 		}
+		phase.accept("namespace seed committed");
 		try (var reader = store.getConnection();
 				var queryExecutor = Executors.newSingleThreadExecutor();
 				var growthExecutor = Executors.newSingleThreadExecutor()) {
 			gate.armed.set(true);
 			AtomicReference<Map<String, String>> observedNamespaces = new AtomicReference<>();
+			phase.accept("starting namespace query");
 			var query = queryExecutor.submit(() -> {
+				phase.accept("namespace query running");
 				try (var rows = reader.getNamespaces()) {
 					Map<String, String> namespaces = new LinkedHashMap<>();
 					while (rows.hasNext()) {
@@ -78,29 +86,36 @@ final class LmdbReplayOpenCloseProbe {
 				}
 			});
 			assertThat(gate.entered.await(5, TimeUnit.SECONDS)).as("actual native namespace factory entered").isTrue();
+			phase.accept("namespace factory gate entered");
 			LmdbSailStore backing = store.getBackingStore();
 			TripleStore triples = backing.getTripleStore();
 			long mapSize = triples.mapSizeBytes();
 			long requests = backing.growthMetricsSnapshot().replayRequests();
 			long accepted = backing.growthMetricsSnapshot().replayAccepted();
 			Object owner = new Object();
+			phase.accept("starting native map growth");
 			var growth = growthExecutor.submit(() -> {
+				phase.accept("map growth worker running");
 				try (LmdbSailStore.ReadAttemptLease writer = backing.registerReadAttempt(owner,
 						(kind, token, nanos, attempts, views) -> false)) {
 					try {
 						writer.markWriteIntent();
 						try (LmdbSailStore.MapGrowthAttempt warning = backing.beginMapGrowthWarning(owner);
 								LmdbSailStore.MapGrowthAttempt attempt = backing.beginMapGrowthAttempt(owner)) {
+							phase.accept("map growth requesting quiescence");
 							attempt.requestQuiescence(LmdbSailStore.MapResizeKind.TRIPLE_STORE);
 							assertThat(triples.growMapForEstimatedWrite(mapSize * 2L, attempt)).isTrue();
+							phase.accept("native map growth returned");
 						}
 					} finally {
 						writer.completeTransaction();
 					}
 				}
+				phase.accept("map growth worker completed");
 				return null;
 			});
 			try {
+				phase.accept("waiting for growth replay admission");
 				long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
 				while (!backing.growthAdmissionClosed()
 						|| backing.growthMetricsSnapshot().replayRequests() == requests
@@ -112,8 +127,12 @@ final class LmdbReplayOpenCloseProbe {
 					}
 					Thread.onSpinWait();
 				}
+				phase.accept("growth replay admitted");
+				phase.accept("releasing namespace opener");
 				gate.release.countDown();
+				phase.accept("waiting for namespace query completion");
 				Throwable failure = query.get(5, TimeUnit.SECONDS);
+				phase.accept("namespace query completed");
 				assertThat(backing.growthMetricsSnapshot().replayAccepted()).isGreaterThan(accepted);
 				assertThat(gate.storedSignal.get()).as("a real query safepoint stores the opener's own signal")
 						.isNotNull();
@@ -128,18 +147,24 @@ final class LmdbReplayOpenCloseProbe {
 					assertThat(gate.opens).hasValue(1);
 					assertThat(observedNamespaces.get()).isNull();
 				}
+				phase.accept("waiting for native growth completion");
 				growth.get(5, TimeUnit.SECONDS);
 				assertThat(triples.mapSizeBytes()).isGreaterThan(mapSize);
 				assertThat(backing.growthAdmissionClosed()).isFalse();
 			} finally {
+				phase.accept("releasing namespace opener during cleanup");
 				gate.release.countDown();
 				query.get(5, TimeUnit.SECONDS);
+				phase.accept("closing namespace reader");
 				reader.close();
+				phase.accept("namespace reader closed");
 				growth.get(5, TimeUnit.SECONDS);
 			}
 		} finally {
+			phase.accept("shutting down LMDB store");
 			gate.release.countDown();
 			store.shutDown();
+			phase.accept("LMDB store shut down");
 		}
 	}
 
@@ -166,10 +191,12 @@ final class LmdbReplayOpenCloseProbe {
 		final CountDownLatch entered = new CountDownLatch(1);
 		final CountDownLatch release = new CountDownLatch(1);
 		final AtomicReference<RuntimeException> storedSignal = new AtomicReference<>();
+		final Consumer<String> phase;
 		final RuntimeException cleanupFailure;
 
-		Gate(String mode) {
+		Gate(String mode, Consumer<String> phase) {
 			this.mode = mode;
+			this.phase = phase;
 			cleanupFailure = mode.equals("OPENER_OWNERSHIP")
 					? new SailConflictException("unrelated ownership rejection")
 					: new IllegalStateException("opener delegate cleanup failed");
@@ -183,32 +210,40 @@ final class LmdbReplayOpenCloseProbe {
 			if (!armed.compareAndSet(true, false)) {
 				return rows;
 			}
+			phase.accept("native namespace factory entered");
 			entered.countDown();
 			try {
+				phase.accept("native namespace factory waiting for opener release");
 				assertThat(release.await(5, TimeUnit.SECONDS)).isTrue();
+				phase.accept("native namespace factory requesting replay safepoint");
 				try {
 					QueryExecutionContext.checkpointReplaySafepoint();
 					throw new AssertionError("the real requested safepoint must reject this unobserved attempt");
 				} catch (RuntimeException signal) {
 					assertThat(QueryExecutionContext.isReplaySafepointFailure(signal)).isTrue();
 					storedSignal.set(signal);
+					phase.accept("opener replay signal stored");
 				}
 			} catch (InterruptedException interrupted) {
 				Thread.currentThread().interrupt();
 				throw new AssertionError(interrupted);
 			}
+			phase.accept("native namespace factory returning delegate");
 			return new IterationWrapper<Namespace>(rows) {
 				@Override
 				protected void handleClose() {
+					phase.accept("namespace delegate cleanup started");
 					super.handleClose();
 					closes.incrementAndGet();
 					RuntimeException signal = storedSignal.get();
 					if (mode.equals("OPENER_OWNERSHIP")) {
+						phase.accept("namespace delegate cleanup throwing ownership failure");
 						throw cleanupFailure;
 					}
 					if (mode.equals("OPENER_SIGNAL_CLEANUP")) {
 						signal.addSuppressed(cleanupFailure);
 					}
+					phase.accept("namespace delegate cleanup throwing replay signal");
 					throw signal;
 				}
 			};

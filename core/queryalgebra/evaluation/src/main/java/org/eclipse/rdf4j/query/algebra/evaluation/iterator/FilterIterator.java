@@ -45,9 +45,8 @@ import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
 import org.eclipse.rdf4j.query.algebra.Join;
-import org.eclipse.rdf4j.query.algebra.Lateral;
-import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
@@ -65,7 +64,6 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
@@ -84,6 +82,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -161,13 +160,9 @@ public class FilterIterator extends FilterIteration<BindingSet>
 			// Which means empty. so let's short circuit that.
 			return QueryEvaluationStep.EMPTY;
 		}
-		Function<BindingSet, BindingSet> retain;
-		if (!isPartOfSubQuery(filter)) {
-			retain = canEvaluateConditionAgainstInputBindings(filter) ? Function.identity()
-					: buildRetainFunction(filter, context);
-		} else {
-			retain = Function.identity();
-		}
+		ConditionBindingScope bindingScope = FilterBindingScope.resolve(filter);
+		Function<BindingSet, BindingSet> retain = bindingScope.retainsAllBindings() ? Function.identity()
+				: retainBindings(bindingScope.bindingNames(), context);
 		FilterFeedbackMode feedbackMode = feedbackMode(filter, evaluationStatistics);
 		Function<BindingSet, BindingSet> argumentBindings = resourceEqualityArgumentBindings(filter);
 
@@ -176,7 +171,7 @@ public class FilterIterator extends FilterIteration<BindingSet>
 		QueryEvaluationStep generic = AdaptiveFilterEvaluationStep.filter(context, prepared, movable
 				? () -> automaticSpecialization(filter, strategy, context, evaluationStatistics)
 				: null);
-		QueryEvaluationStep batched = supplyBatchExistsFilter(filter, strategy, context, arg, generic);
+		QueryEvaluationStep batched = supplyBatchExistsFilter(filter, strategy, context, arg, generic, bindingScope);
 		return batched != null ? batched : generic;
 	}
 
@@ -196,10 +191,10 @@ public class FilterIterator extends FilterIteration<BindingSet>
 	 * distinct lexical RDF terms.
 	 */
 	private static Function<BindingSet, BindingSet> resourceEqualityArgumentBindings(Filter filter) {
-		if (!(filter.getCondition()instanceof Compare compare)
+		if (!(filter.getCondition() instanceof Compare compare)
 				|| compare.getOperator() != Compare.CompareOp.EQ
-				|| !(compare.getLeftArg()instanceof Var left)
-				|| !(compare.getRightArg()instanceof Var right)
+				|| !(compare.getLeftArg() instanceof Var left)
+				|| !(compare.getRightArg() instanceof Var right)
 				|| left.hasValue()
 				|| right.hasValue()
 				|| left.getName() == null
@@ -218,11 +213,11 @@ public class FilterIterator extends FilterIteration<BindingSet>
 		}
 		return bindings -> {
 			if (leftAssured && !bindings.hasBinding(leftName)
-					&& bindings.getValue(rightName)instanceof Resource resource) {
+					&& bindings.getValue(rightName) instanceof Resource resource) {
 				return withBinding(bindings, leftName, resource);
 			}
 			if (rightAssured && !bindings.hasBinding(rightName)
-					&& bindings.getValue(leftName)instanceof Resource resource) {
+					&& bindings.getValue(leftName) instanceof Resource resource) {
 				return withBinding(bindings, rightName, resource);
 			}
 			return bindings;
@@ -266,8 +261,8 @@ public class FilterIterator extends FilterIteration<BindingSet>
 		if (isPartOfSubQuery(filter)) {
 			return declineMaterializedExists(filter, algorithmHint, "nested-subquery-scope");
 		}
-		boolean negated = filter.getCondition()instanceof Not not && not.getArg() instanceof Exists;
-		Exists exists = filter.getCondition()instanceof Exists direct
+		boolean negated = filter.getCondition() instanceof Not not && not.getArg() instanceof Exists;
+		Exists exists = filter.getCondition() instanceof Exists direct
 				? direct
 				: negated ? (Exists) ((Not) filter.getCondition()).getArg() : null;
 		if (exists == null) {
@@ -350,7 +345,7 @@ public class FilterIterator extends FilterIteration<BindingSet>
 		if (!MINUS_ASSURED_SHARED.equals(filter.getStringMetricPlanned(OPTIMIZER_SEMI_ANTI_KIND))) {
 			return null;
 		}
-		if (!(filter.getCondition()instanceof Not not) || !(not.getArg()instanceof Exists exists)
+		if (!(filter.getCondition() instanceof Not not) || !(not.getArg() instanceof Exists exists)
 				|| exists.getSubQuery() == null) {
 			// not the NOT EXISTS shape the rewrite produces: evaluated as the filter it is
 			return null;
@@ -667,18 +662,19 @@ public class FilterIterator extends FilterIteration<BindingSet>
 	 * bindings that pre-bind a subquery-only variable keep the generic per-row filter.
 	 */
 	private static QueryEvaluationStep supplyBatchExistsFilter(Filter filter, EvaluationStrategy strategy,
-			QueryEvaluationContext context, QueryEvaluationStep arg, QueryEvaluationStep generic) {
+			QueryEvaluationContext context, QueryEvaluationStep arg, QueryEvaluationStep generic,
+			ConditionBindingScope bindingScope) {
 		if (filter.isRuntimeTelemetryEnabled() || strategy.isTrackResultSize() || strategy.isTrackTime()
 				|| !(strategy instanceof BatchCorrelatedJoinProvider.Host host)) {
 			return null;
 		}
-		ValueExpr conditionExpr = filter.getCondition();
+		ValueExpr conditionExpr = FilterBindingScope.unwrapBooleanExists(filter.getCondition());
 		BatchCorrelatedJoinProvider.Mode mode;
 		Exists exists;
 		if (conditionExpr instanceof Exists existsCondition) {
 			exists = existsCondition;
 			mode = BatchCorrelatedJoinProvider.Mode.SEMI;
-		} else if (conditionExpr instanceof Not not && not.getArg()instanceof Exists negatedExists) {
+		} else if (conditionExpr instanceof Not not && not.getArg() instanceof Exists negatedExists) {
 			exists = negatedExists;
 			mode = BatchCorrelatedJoinProvider.Mode.ANTI;
 		} else {
@@ -696,6 +692,11 @@ public class FilterIterator extends FilterIteration<BindingSet>
 		Set<String> outerNames = filter.getArg().getBindingNames();
 		Set<String> subNames = sub.getBindingNames();
 		String[] shared = outerNames.stream().filter(subNames::contains).toArray(String[]::new);
+		for (String name : shared) {
+			if (!bindingScope.allows(name)) {
+				return null;
+			}
+		}
 		if (shared.length < 1 || shared.length > 4
 				|| QueryEvaluationUtility.usesMappingParameterizedEvaluation(sub)
 				|| !QueryEvaluationUtility.isRepeatable(sub)
@@ -732,16 +733,18 @@ public class FilterIterator extends FilterIteration<BindingSet>
 				|| strategy.isTrackResultSize()
 				|| strategy.isTrackTime()
 				|| isPartOfSubQuery(filter)
-				|| !(filter.getArg()instanceof Join join)
+				|| !(filter.getArg() instanceof Join join)
 				|| join.isRuntimeTelemetryEnabled()
-				|| !(join.getRightArg()instanceof BindingSetAssignment assignment)
+				|| !(join.getRightArg() instanceof BindingSetAssignment assignment)
 				|| !assignment.hasRepeatableBindingSets()
 				|| assignment.isRuntimeTelemetryEnabled()) {
 			return null;
 		}
 
 		Set<String> conditionBindingNames = VarNameCollector.process(filter.getCondition());
+		ConditionBindingScope bindingScope = FilterBindingScope.resolve(filter);
 		if (conditionBindingNames.isEmpty()
+				|| !bindingScope.retainsAllBindings() && !bindingScope.bindingNames().containsAll(conditionBindingNames)
 				|| !filter.getArg().getBindingNames().containsAll(conditionBindingNames)
 				|| !containsAny(assignment.getBindingNames(), conditionBindingNames)
 				|| containsSubQueryValueOperator(filter.getCondition())) {
@@ -892,19 +895,15 @@ public class FilterIterator extends FilterIteration<BindingSet>
 		this.allocation = BlankNodeAllocationScope.currentOrNew();
 		this.condition = condition;
 		this.strategy = strategy;
-		if (!isPartOfSubQuery(filter)) {
-			if (canEvaluateConditionAgainstInputBindings(filter)) {
-				this.retain = Function.identity();
-			} else {
-				final Set<String> bindingNames = filterScopeBindingNames(filter);
-				this.retain = (bs) -> {
-					QueryBindingSet nbs = new QueryBindingSet(bs);
-					nbs.retainAll(bindingNames);
-					return nbs;
-				};
-			}
-		} else {
+		ConditionBindingScope bindingScope = FilterBindingScope.resolve(filter);
+		if (bindingScope.retainsAllBindings()) {
 			this.retain = Function.identity();
+		} else {
+			this.retain = (bs) -> {
+				QueryBindingSet nbs = new QueryBindingSet(bs);
+				nbs.retainAll(bindingScope.bindingNames());
+				return nbs;
+			};
 		}
 	}
 
@@ -955,10 +954,6 @@ public class FilterIterator extends FilterIteration<BindingSet>
 
 	}
 
-	private static Function<BindingSet, BindingSet> buildRetainFunction(Filter filter, QueryEvaluationContext context) {
-		return retainBindings(filterScopeBindingNames(filter), context);
-	}
-
 	/** Prepares the same condition-visible binding projection for a proven alternate filter placement. */
 	public static Function<BindingSet, BindingSet> retainBindings(Set<String> bindingNames,
 			QueryEvaluationContext context) {
@@ -985,18 +980,6 @@ public class FilterIterator extends FilterIteration<BindingSet>
 			}
 			return nbs;
 		};
-	}
-
-	private static Set<String> filterScopeBindingNames(Filter filter) {
-		return TupleExprs.filterConditionBindingNames(filter.getCondition(), filter.isVariableScopeChange(),
-				filter.getArg(), TupleExpr::getBindingNames);
-	}
-
-	private static boolean canEvaluateConditionAgainstInputBindings(Filter filter) {
-		// Unobserved extra bindings do not require a copy. Implicit structural inputs, including VALUES headers,
-		// must be proved inside the frame before the original row can be used for subquery substitution.
-		return TupleExprs.conditionFrameContainsAllObservations(
-				TupleExprs.conditionBindingDomain(filter.getCondition()), filterScopeBindingNames(filter));
 	}
 
 	private static boolean containsSubQueryValueOperator(ValueExpr condition) {

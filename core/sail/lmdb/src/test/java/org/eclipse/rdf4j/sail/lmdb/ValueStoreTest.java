@@ -50,8 +50,8 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_drop;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
-import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxdbs;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_mapsize;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxdbs;
 import static org.lwjgl.util.lmdb.LMDB.mdb_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
@@ -78,8 +78,8 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -124,6 +124,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreSchema;
@@ -829,7 +830,8 @@ public class ValueStoreTest {
 		assertClosedCleanRefCountMarker(new File(dataDir, "values"));
 		assertTrue("fixture: the store persisted reference counts", rewritePersistedRefCountsToOne() > 0);
 		inspectNativeStore(new File(dataDir, "values"), (stack, txn) -> {
-			assertMigrationMarkerAbsent(stack, txn); return null;
+			assertMigrationMarkerAbsent(stack, txn);
+			return null;
 		});
 		valueStore = createValueStore();
 		assertResolvedCurrentFormatCapabilities(seededFormat, valueStore.getFormat());
@@ -1421,7 +1423,7 @@ public class ValueStoreTest {
 		LmdbValue held = valueStore.getLazyValue(id);
 		valueStore.startTransaction(true);
 		valueStore.rollback();
-		CountDownLatch laterRevisionCollected = trackRevisionCollection(valueStore.getLazyValue(id));
+		RevisionCollection laterRevisionCollected = trackRevisionCollection(valueStore.getLazyValue(id));
 		retireValues(Set.of(id));
 		awaitRevisionCollection(laterRevisionCollected);
 		evictRetiredValues();
@@ -1436,7 +1438,7 @@ public class ValueStoreTest {
 		long[] ids = storeBNodes("first-cohort", "older-held");
 		LmdbValue held = valueStore.getLazyValue(ids[1]);
 		retireValues(Set.of(ids[0]));
-		CountDownLatch laterRevisionCollected = trackRevisionCollection(valueStore.getLazyValue(ids[1]));
+		RevisionCollection laterRevisionCollected = trackRevisionCollection(valueStore.getLazyValue(ids[1]));
 		retireValues(Set.of(ids[1]));
 		awaitRevisionCollection(laterRevisionCollected);
 		evictRetiredValues();
@@ -1460,7 +1462,7 @@ public class ValueStoreTest {
 		LmdbTripleTerm held = (LmdbTripleTerm) valueStore.getLazyValue(outerId);
 		long originalRevisionId = held.getValueStoreRevision().getRevisionId();
 		retireValues(Set.of(unrelatedId));
-		CountDownLatch laterRevisionCollected = trackRevisionCollection(valueStore.getLazyValue(outerId));
+		RevisionCollection laterRevisionCollected = trackRevisionCollection(valueStore.getLazyValue(outerId));
 		retireValues(Set.of(outerId));
 		if (primeNewerCache) {
 			valueStore.getValue(outerId);
@@ -1482,13 +1484,13 @@ public class ValueStoreTest {
 	public void testRetiredIdsBecomeReusableAfterAllLazyValuesAreCollected() throws Exception {
 		long id = storeBNodes("collectable-held")[0];
 		LmdbValue held = valueStore.getLazyValue(id);
-		CountDownLatch revisionCollected = trackRevisionCollection(held);
+		RevisionCollection revisionCollected = trackRevisionCollection(held);
 		retireValues(Set.of(id));
 		evictRetiredValues();
 		assertNotEquals("A reachable lazy value must retain its ID", id, storeBNodes("before-release")[0]);
 		Reference.reachabilityFence(held);
 		held = null;
-		awaitRevisionCollection(revisionCollected);
+		awaitReclamationEligibility(revisionCollected);
 		evictRetiredValues();
 		assertNull("The retired dictionary bytes may be removed once all lazy values are gone",
 				valueStore.getValue(id));
@@ -1498,9 +1500,9 @@ public class ValueStoreTest {
 	@Test
 	public void testRolledBackEvictionKeepsRetiredIdsEligibleForReclamation() throws Exception {
 		long id = storeBNodes("eviction-rollback")[0];
-		CountDownLatch revisionCollected = trackRevisionCollection(valueStore.getLazyValue(id));
+		RevisionCollection revisionCollected = trackRevisionCollection(valueStore.getLazyValue(id));
 		retireValues(Set.of(id));
-		awaitRevisionCollection(revisionCollected);
+		awaitReclamationEligibility(revisionCollected);
 		valueStore.forceEvictionOfValues();
 		valueStore.startTransaction(true);
 		valueStore.rollback();
@@ -1528,9 +1530,9 @@ public class ValueStoreTest {
 				assertEquals("Rollback must restore the current dictionary mapping", id, valueStore.getId(original));
 				assertEquals(id, valueStore.getId(snapshot, original));
 			}
-			CountDownLatch revisionCollected = trackRevisionCollection(valueStore.getLazyValue(id));
+			RevisionCollection revisionCollected = trackRevisionCollection(valueStore.getLazyValue(id));
 			retireValues(Set.of(id));
-			awaitRevisionCollection(revisionCollected);
+			awaitReclamationEligibility(revisionCollected);
 			evictRetiredValues();
 			assertNull("The current dictionary has physically removed the original bytes", valueStore.getValue(id));
 			assertEquals("The committed writer may reuse the ID outside the strict snapshot", id,
@@ -2295,9 +2297,9 @@ public class ValueStoreTest {
 			}
 		};
 		long id = storeBNodes("admission-maintenance-retired")[0];
-		CountDownLatch collected = trackRevisionCollection(valueStore.getLazyValue(id));
+		RevisionCollection collected = trackRevisionCollection(valueStore.getLazyValue(id));
 		retireValues(Set.of(id));
-		awaitRevisionCollection(collected);
+		awaitReclamationEligibility(collected);
 		valueStore.forceEvictionOfValues();
 		pauseMaintenance.set(true);
 		ExecutorService executor = Executors.newFixedThreadPool(2);
@@ -2374,9 +2376,9 @@ public class ValueStoreTest {
 			}
 		};
 		long id = storeBNodes("clear-admission-retired")[0];
-		CountDownLatch collected = trackRevisionCollection(valueStore.getLazyValue(id));
+		RevisionCollection collected = trackRevisionCollection(valueStore.getLazyValue(id));
 		retireValues(Set.of(id));
-		awaitRevisionCollection(collected);
+		awaitReclamationEligibility(collected);
 		valueStore.forceEvictionOfValues();
 		armed.set(true);
 		ExecutorService executor = Executors.newFixedThreadPool(2);
@@ -2432,9 +2434,9 @@ public class ValueStoreTest {
 			}
 		};
 		long id = storeBNodes("checkpoint-admission-retired")[0];
-		CountDownLatch collected = trackRevisionCollection(valueStore.getLazyValue(id));
+		RevisionCollection collected = trackRevisionCollection(valueStore.getLazyValue(id));
 		retireValues(Set.of(id));
-		awaitRevisionCollection(collected);
+		awaitReclamationEligibility(collected);
 		valueStore.forceEvictionOfValues();
 		restartArmed.set(true);
 		valueStore.startTransaction(true);
@@ -2482,9 +2484,9 @@ public class ValueStoreTest {
 			}
 		};
 		long id = storeBNodes("settlement-original")[0];
-		CountDownLatch collected = trackRevisionCollection(valueStore.getLazyValue(id));
+		RevisionCollection collected = trackRevisionCollection(valueStore.getLazyValue(id));
 		retireValues(Set.of(id));
-		awaitRevisionCollection(collected);
+		awaitReclamationEligibility(collected);
 		valueStore.forceEvictionOfValues();
 		AtomicReference<LmdbValue> writerShell = new AtomicReference<>();
 		AtomicReference<Thread> readerThread = new AtomicReference<>();
@@ -2665,6 +2667,84 @@ public class ValueStoreTest {
 				output.contains("RECLAMATION_CHECKPOINT_COMPLETED"));
 	}
 
+	@Test
+	public void testValueReaderCannotDeadlockWriterResizeAtAssociationGate() throws Exception {
+		Path scenarioDirectory = dataDir.toPath().resolve("association-native-barrier-checkpoint");
+		Path outputFile = dataDir.toPath().resolve("association-native-barrier-checkpoint-output.txt");
+		String javaBinary = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+		Process child = new ProcessBuilder(javaBinary, "-ea", "-cp", System.getProperty("java.class.path"),
+				AssociationNativeBarrierResizeScenario.class.getName(), scenarioDirectory.toString())
+						.redirectErrorStream(true)
+						.redirectOutput(outputFile.toFile())
+						.start();
+		boolean completed;
+		try {
+			completed = child.waitFor(30, TimeUnit.SECONDS);
+		} finally {
+			if (child.isAlive()) {
+				child.destroyForcibly();
+			}
+			if (!child.waitFor(10, TimeUnit.SECONDS)) {
+				throw new IOException("The association/native-barrier child did not terminate after destroyForcibly");
+			}
+		}
+		String output = Files.readString(outputFile);
+		System.out.println(output);
+		assertTrue("A value reader and a map-growth writer must drain. Child output:\n" + output, completed);
+		assertEquals("The isolated resize scenario must complete successfully. Child output:\n" + output, 0,
+				child.exitValue());
+		assertTrue("The scenario must reach a real allocation resize checkpoint. Child output:\n" + output,
+				output.contains("ASSOCIATION_NATIVE_BARRIER_RESIZE_CHECKPOINT"));
+		assertFalse(
+				"A value reader and resizing writer must not wait on each other's admission barriers. Child output:\n"
+						+ output,
+				output.contains("ASSOCIATION_NATIVE_BARRIER_CYCLE"));
+		assertTrue("The committed reader value must remain available after resize. Child output:\n" + output,
+				output.contains("ASSOCIATION_NATIVE_BARRIER_READER_COMPLETED"));
+	}
+
+	@Test
+	public void testCloseDoesNotHoldNativeBarrierWhileWaitingForWriterResize() throws Exception {
+		Path scenarioDirectory = dataDir.toPath().resolve("association-close-native-barrier-checkpoint");
+		Path outputFile = dataDir.toPath().resolve("association-close-native-barrier-checkpoint-output.txt");
+		String javaBinary = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+		Process child = new ProcessBuilder(javaBinary, "-ea", "-cp", System.getProperty("java.class.path"),
+				CloseAssociationNativeBarrierResizeScenario.class.getName(), scenarioDirectory.toString())
+						.redirectErrorStream(true)
+						.redirectOutput(outputFile.toFile())
+						.start();
+		boolean completed;
+		try {
+			completed = child.waitFor(30, TimeUnit.SECONDS);
+		} finally {
+			if (child.isAlive()) {
+				child.destroyForcibly();
+			}
+			if (!child.waitFor(10, TimeUnit.SECONDS)) {
+				throw new IOException("The close/resize child did not terminate after destroyForcibly");
+			}
+		}
+		String output = Files.readString(outputFile);
+		System.out.println(output);
+		assertTrue("The isolated close/resize scenario must complete. Child output:\n" + output, completed);
+		assertEquals("The isolated close/resize child must clean up successfully. Child output:\n" + output, 0,
+				child.exitValue());
+		assertTrue("The scenario must reach a real allocation resize checkpoint. Child output:\n" + output,
+				output.contains("CLOSE_ASSOCIATION_NATIVE_BARRIER_RESIZE_CHECKPOINT"));
+		assertTrue("The closer must reach its real barrier or out-of-lock admission boundary. Child output:\n" + output,
+				output.contains("CLOSE_ASSOCIATION_NATIVE_BARRIER_CLOSE_FENCE_READY")
+						|| output.contains("CLOSE_ASSOCIATION_NATIVE_BARRIER_CYCLE"));
+		assertTrue("Close must finish and the prior committed value must be readable after reopening. Child output:\n"
+				+ output,
+				output.contains("CLOSE_ASSOCIATION_NATIVE_BARRIER_REOPENED_BASELINE"));
+		assertFalse(
+				"Close must not hold the native barrier while waiting for the writer's association gate. Child output:\n"
+						+ output,
+				output.contains("CLOSE_ASSOCIATION_NATIVE_BARRIER_CYCLE"));
+	}
+
+	/** An isolated native owner keeps a reproduced noninterruptible lock cycle out of the Surefire process. */
+
 	/**
 	 * An isolated native owner keeps a reproduced noninterruptible lock cycle out of the Surefire process.
 	 */
@@ -2736,6 +2816,469 @@ public class ValueStoreTest {
 		}
 	}
 
+	/** Uses a real value-map growth checkpoint to expose association-gate/native-reader barrier lock ordering. */
+	public static final class AssociationNativeBarrierResizeScenario {
+		private static final long OBSERVATION_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(8);
+
+		public static void main(String[] arguments) throws Exception {
+			LmdbStoreConfig config = new LmdbStoreConfig().setValueDBSize(1024L * 1024)
+					.setAutoGrow(true)
+					.setInlineLiterals(false);
+			CountDownLatch checkpointEntered = new CountDownLatch(1);
+			CountDownLatch continueResize = new CountDownLatch(1);
+			AtomicReference<Thread> readerThread = new AtomicReference<>();
+			AtomicReference<String> readerValue = new AtomicReference<>();
+			AtomicReference<Throwable> readerFailure = new AtomicReference<>();
+			AtomicReference<Throwable> monitorFailure = new AtomicReference<>();
+			AtomicBoolean readerCompleted = new AtomicBoolean();
+			AtomicBoolean cycleDetected = new AtomicBoolean();
+			AtomicReference<Long> initialId = new AtomicReference<>();
+			Thread writerThread = Thread.currentThread();
+			ValueStore store = new ValueStore(Path.of(arguments[0]).toFile(), config);
+			Thread monitor = Thread.ofPlatform().daemon().name("association-native-barrier-monitor").unstarted(() -> {
+				try {
+					if (!checkpointEntered.await(10, TimeUnit.SECONDS)) {
+						System.out.println("ASSOCIATION_NATIVE_BARRIER_CHECKPOINT_NOT_REACHED");
+						return;
+					}
+					printThread("ASSOCIATION_NATIVE_BARRIER_WRITER_AT_CHECKPOINT", writerThread);
+					Thread reader = Thread.ofPlatform().name("association-native-barrier-reader").unstarted(() -> {
+						try {
+							readerValue.set(store.getValue(initialId.get()).stringValue());
+						} catch (Throwable failure) {
+							readerFailure.set(failure);
+						} finally {
+							readerCompleted.set(true);
+						}
+					});
+					readerThread.set(reader);
+					reader.start();
+					long deadline = System.nanoTime() + OBSERVATION_TIMEOUT_NANOS;
+					boolean admissionBoundaryObserved = false;
+					while (!readerCompleted.get() && System.nanoTime() < deadline) {
+						ThreadInfo state = threadInfo(reader);
+						boolean unsafeNativeAdmission = state != null
+								&& state.getLockOwnerId() == writerThread.threadId()
+								&& hasFrame(state, ValueStore.class.getName(), "acquireAssociationGate")
+								&& hasFrame(state, ValueStore.class.getName() + "$ValueReadScope", "open")
+								&& hasFrame(state, TxnManager.class.getName(), "doWithScoped");
+						boolean safeOutOfLockAdmission = state != null
+								&& state.getLockOwnerId() == writerThread.threadId()
+								&& hasFrame(state, ValueStore.class.getName(), "awaitValueReaderAdmission")
+								&& hasFrame(state, ValueStore.class.getName(), "acquireAssociationGate");
+						if (unsafeNativeAdmission || safeOutOfLockAdmission) {
+							admissionBoundaryObserved = true;
+							System.out.println("ASSOCIATION_NATIVE_BARRIER_READER_ADMISSION_BOUNDARY "
+									+ (unsafeNativeAdmission ? "unsafe-native-scope" : "safe-out-of-lock"));
+							printThread("ASSOCIATION_NATIVE_BARRIER_READER_WAITING_FOR_GATE", reader);
+							break;
+						}
+						Thread.yield();
+					}
+					if (!admissionBoundaryObserved) {
+						throw new IOException(
+								"The reader did not reach either actual association-gate admission boundary");
+					}
+					continueResize.countDown();
+					deadline = System.nanoTime() + OBSERVATION_TIMEOUT_NANOS;
+					while (!readerCompleted.get() && System.nanoTime() < deadline) {
+						ThreadInfo readerState = threadInfo(reader);
+						ThreadInfo writerState = threadInfo(writerThread);
+						boolean readerWaitingForGate = readerState != null
+								&& readerState.getLockOwnerId() == writerThread.threadId()
+								&& hasFrame(readerState, ValueStore.class.getName(), "acquireAssociationGate")
+								&& hasFrame(readerState, ValueStore.class.getName() + "$ValueReadScope", "open")
+								&& hasFrame(readerState, TxnManager.class.getName(), "doWithScoped");
+						boolean readerHoldsNativeReadBarrier = hasFrame(readerState, TxnManager.class.getName(),
+								"startScopedReadTxn")
+								&& hasFrame(readerState, ValueStore.class.getName() + "$ValueReadScope", "open")
+								&& hasFrame(readerState, TxnManager.class.getName(), "doWithScoped");
+						boolean writerWaitingForBarrier = hasFrame(writerState,
+								"org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager", "writeLock")
+								&& hasFrame(writerState, ValueStore.class.getName(), "resizeMapInternal");
+						if (readerWaitingForGate && readerHoldsNativeReadBarrier && writerWaitingForBarrier) {
+							cycleDetected.set(true);
+							System.out.println("ASSOCIATION_NATIVE_BARRIER_CYCLE");
+							System.out.println("ASSOCIATION_NATIVE_BARRIER_READER_HOLDS_NATIVE_READ_BARRIER");
+							printThread("ASSOCIATION_NATIVE_BARRIER_WRITER_WAITING_FOR_READERS", writerThread);
+							printThread("ASSOCIATION_NATIVE_BARRIER_READER_WAITING_FOR_GATE", reader);
+							reader.interrupt();
+							break;
+						}
+						Thread.yield();
+					}
+				} catch (Throwable failure) {
+					monitorFailure.set(failure);
+				} finally {
+					continueResize.countDown();
+				}
+			});
+			try {
+				store.startTransaction(true);
+				initialId.set(store.storeValue(Values.literal("committed reader value")));
+				store.commit();
+				long initialMapSize = store.mapSizeBytes();
+				long initialMapGeneration = store.nativeMapGeneration();
+				store.setResizeCheckpointListener(() -> {
+					System.out.println("ASSOCIATION_NATIVE_BARRIER_RESIZE_CHECKPOINT");
+					checkpointEntered.countDown();
+					try {
+						if (!continueResize.await(15, TimeUnit.SECONDS)) {
+							throw new IllegalStateException("Timed out waiting for the resize lock-order observation");
+						}
+					} catch (InterruptedException interrupted) {
+						Thread.currentThread().interrupt();
+						throw new IllegalStateException("Interrupted while waiting at the resize checkpoint",
+								interrupted);
+					}
+				});
+				monitor.start();
+				store.startTransaction(true);
+				String label = "native association resize ".repeat(Math.toIntExact(initialMapSize / 4));
+				long largeId = store.storeValue(Values.literal(label));
+				store.commit();
+				assertEquals("the allocation must preserve the complete value across resize", label,
+						store.getValue(largeId).stringValue());
+				long grownMapSize = store.mapSizeBytes();
+				long grownMapGeneration = store.nativeMapGeneration();
+				assertTrue("the real allocation must grow the value map from " + initialMapSize + " bytes to "
+						+ grownMapSize, grownMapSize > initialMapSize);
+				assertTrue("the real allocation must advance the native map generation from " + initialMapGeneration
+						+ " to " + grownMapGeneration, grownMapGeneration > initialMapGeneration);
+				System.out.println("ASSOCIATION_NATIVE_BARRIER_MAP_GROWTH map=" + initialMapSize + "->" + grownMapSize
+						+ ", generation=" + initialMapGeneration + "->" + grownMapGeneration + ", valueLength="
+						+ label.length());
+				monitor.join(TimeUnit.SECONDS.toMillis(12));
+				if (monitor.isAlive()) {
+					throw new IOException("The association/native-barrier monitor did not finish");
+				}
+				Thread reader = readerThread.get();
+				if (reader != null) {
+					reader.join(TimeUnit.SECONDS.toMillis(5));
+					if (reader.isAlive()) {
+						throw new IOException("The committed-value reader did not terminate");
+					}
+				}
+				if (monitorFailure.get() != null) {
+					throw new IOException("The association/native-barrier monitor failed", monitorFailure.get());
+				}
+				if (readerCompleted.get() && readerFailure.get() == null) {
+					assertEquals("the concurrently read committed value must remain intact", "committed reader value",
+							readerValue.get());
+					System.out.println("ASSOCIATION_NATIVE_BARRIER_READER_COMPLETED");
+				} else if (cycleDetected.get()) {
+					assertEquals("the committed value must remain readable after releasing the lock cycle",
+							"committed reader value", store.getValue(initialId.get()).stringValue());
+					System.out.println("ASSOCIATION_NATIVE_BARRIER_COMMITTED_VALUE_REMAINS_READABLE");
+					System.out.println("ASSOCIATION_NATIVE_BARRIER_READER_INTERRUPTED_TO_RELEASE_CYCLE");
+				} else {
+					throw new IOException("The concurrent committed-value reader did not complete",
+							readerFailure.get());
+				}
+				System.out.println("ASSOCIATION_NATIVE_BARRIER_RESIZE_COMPLETED");
+			} finally {
+				continueResize.countDown();
+				Thread reader = readerThread.get();
+				if (reader != null && reader.isAlive()) {
+					reader.interrupt();
+					reader.join(TimeUnit.SECONDS.toMillis(5));
+				}
+				monitor.interrupt();
+				monitor.join(TimeUnit.SECONDS.toMillis(5));
+				store.close();
+			}
+		}
+
+		private static ThreadInfo threadInfo(Thread thread) {
+			return ManagementFactory.getThreadMXBean().getThreadInfo(thread.threadId(), Integer.MAX_VALUE);
+		}
+
+		private static boolean hasFrame(ThreadInfo thread, String className, String methodName) {
+			if (thread == null) {
+				return false;
+			}
+			for (StackTraceElement frame : thread.getStackTrace()) {
+				if (frame.getClassName().equals(className) && frame.getMethodName().equals(methodName)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private static void printThread(String label, Thread thread) {
+			ThreadInfo info = threadInfo(thread);
+			if (info == null) {
+				System.out.println(label + " unavailable");
+				return;
+			}
+			System.out.println(label + " " + info.getThreadName() + " state=" + info.getThreadState() + " lock="
+					+ info.getLockName() + " lockOwner=" + info.getLockOwnerName() + "#" + info.getLockOwnerId());
+			for (StackTraceElement frame : info.getStackTrace()) {
+				System.out.println("\tat " + frame);
+			}
+			System.out.flush();
+		}
+	}
+
+	/** Proves close must release its native barrier before waiting on a borrowed writer's association gate. */
+	public static final class CloseAssociationNativeBarrierResizeScenario {
+		private static final long OBSERVATION_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(8);
+
+		private final Path directory;
+		private final LmdbStoreConfig config = new LmdbStoreConfig().setValueDBSize(1024L * 1024)
+				.setAutoGrow(true)
+				.setInlineLiterals(false);
+		private final CountDownLatch checkpointEntered = new CountDownLatch(1);
+		private final CountDownLatch continueResize = new CountDownLatch(1);
+		private final AtomicReference<Thread> closerThread = new AtomicReference<>();
+		private final AtomicReference<Throwable> closeFailure = new AtomicReference<>();
+		private final AtomicReference<Throwable> writerFailure = new AtomicReference<>();
+		private final AtomicReference<Throwable> monitorFailure = new AtomicReference<>();
+		private final AtomicBoolean closeCompleted = new AtomicBoolean();
+		private final AtomicBoolean writerCompleted = new AtomicBoolean();
+		private final AtomicBoolean cycleDetected = new AtomicBoolean();
+		private final Thread writerThread = Thread.currentThread();
+		private final ValueStore store;
+		private final Thread monitor = Thread.ofPlatform()
+				.daemon()
+				.name("close-association-native-barrier-monitor")
+				.unstarted(this::monitorResize);
+
+		private long initialId;
+		private String label;
+
+		public static void main(String[] arguments) throws Exception {
+			new CloseAssociationNativeBarrierResizeScenario(Path.of(arguments[0])).run();
+		}
+
+		private CloseAssociationNativeBarrierResizeScenario(Path directory) throws IOException {
+			this.directory = directory;
+			store = new ValueStore(directory.toFile(), config);
+		}
+
+		private void run() throws Exception {
+			try {
+				store.startTransaction(true);
+				initialId = store.storeValue(Values.literal("committed close baseline"));
+				store.commit();
+				long initialMapSize = store.mapSizeBytes();
+				label = "native close association resize ".repeat(Math.toIntExact(initialMapSize / 4));
+				store.setResizeCheckpointListener(() -> {
+					System.out.println("CLOSE_ASSOCIATION_NATIVE_BARRIER_RESIZE_CHECKPOINT");
+					checkpointEntered.countDown();
+					try {
+						if (!continueResize.await(15, TimeUnit.SECONDS)) {
+							throw new IllegalStateException(
+									"Timed out waiting for the close/resize lock-order observation");
+						}
+					} catch (InterruptedException interrupted) {
+						Thread.currentThread().interrupt();
+						throw new IllegalStateException("Interrupted while waiting at the close/resize checkpoint",
+								interrupted);
+					}
+				});
+				monitor.start();
+				store.startTransaction(true);
+				try {
+					store.storeValue(Values.literal(label));
+				} catch (Throwable failure) {
+					writerFailure.set(failure);
+				} finally {
+					writerCompleted.set(true);
+				}
+				monitor.join(TimeUnit.SECONDS.toMillis(12));
+				if (monitor.isAlive()) {
+					throw new IOException("The close/resize monitor did not finish");
+				}
+				Thread closer = closerThread.get();
+				if (closer == null) {
+					throw new IOException("The close/resize monitor did not start the closer");
+				}
+				closer.join(TimeUnit.SECONDS.toMillis(10));
+				if (closer.isAlive() || !closeCompleted.get()) {
+					throw new IOException("The close/resize closer did not finish");
+				}
+				if (monitorFailure.get() != null) {
+					throw new IOException("The close/resize monitor failed", monitorFailure.get());
+				}
+				if (closeFailure.get() != null) {
+					throw new IOException("ValueStore.close must finish after the active resize settles",
+							closeFailure.get());
+				}
+				System.out.println("CLOSE_ASSOCIATION_NATIVE_BARRIER_CLOSE_COMPLETED");
+				Throwable resizeFailure = writerFailure.get();
+				if (cycleDetected.get()) {
+					if (!(resizeFailure instanceof IOException ioException
+							&& ioException.getCause() instanceof InterruptedException)) {
+						throw new IOException(
+								"The captured cycle must be released only by the interrupted native-write wait",
+								resizeFailure);
+					}
+					System.out.println("CLOSE_ASSOCIATION_NATIVE_BARRIER_WRITER_INTERRUPTED "
+							+ ioExceptionText(resizeFailure));
+				} else {
+					if (!(resizeFailure instanceof IOException ioException
+							&& "ValueStore is closed".equals(ioException.getMessage()))) {
+						throw new IOException(
+								"Close must reject the resize restart with IOException(\"ValueStore is closed\")",
+								resizeFailure);
+					}
+					System.out.println("CLOSE_ASSOCIATION_NATIVE_BARRIER_WRITER_RESTART_REJECTED "
+							+ ioExceptionText(resizeFailure));
+				}
+
+				ValueStore reopened = new ValueStore(directory.toFile(), config);
+				try {
+					assertEquals("the committed baseline must survive close and reopen", "committed close baseline",
+							reopened.getValue(initialId).stringValue());
+					assertEquals("the uncommitted value must not be published by concurrent close",
+							LmdbValue.UNKNOWN_ID,
+							reopened.getId(Values.literal(label), false));
+					System.out.println("CLOSE_ASSOCIATION_NATIVE_BARRIER_REOPENED_BASELINE");
+				} finally {
+					reopened.close();
+				}
+			} finally {
+				continueResize.countDown();
+				monitor.interrupt();
+				monitor.join(TimeUnit.SECONDS.toMillis(5));
+			}
+		}
+
+		private void monitorResize() {
+			try {
+				if (!checkpointEntered.await(10, TimeUnit.SECONDS)) {
+					System.out.println("CLOSE_ASSOCIATION_NATIVE_BARRIER_CHECKPOINT_NOT_REACHED");
+					return;
+				}
+				printThread("CLOSE_ASSOCIATION_NATIVE_BARRIER_WRITER_AT_CHECKPOINT", writerThread);
+				Thread closer = Thread.ofPlatform()
+						.daemon()
+						.name("close-association-native-barrier-closer")
+						.unstarted(() -> {
+							closerThread.set(Thread.currentThread());
+							try {
+								store.close();
+							} catch (Throwable failure) {
+								closeFailure.set(failure);
+							} finally {
+								closeCompleted.set(true);
+							}
+						});
+				closer.start();
+				long deadline = System.nanoTime() + OBSERVATION_TIMEOUT_NANOS;
+				boolean closeFenceReady = false;
+				while (System.nanoTime() < deadline) {
+					ThreadInfo closerState = threadInfo(closer);
+					boolean waitingForNativeBarrier = hasFrame(closerState, ValueStore.class.getName(),
+							"closeUnderMonitor")
+							&& hasFrame(closerState, TxnManager.class.getName(), "acquireCloseBarrier")
+							&& hasFrame(closerState,
+									"org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager",
+									"writeLock");
+					boolean waitingForHeldBarrierGate = closerState != null
+							&& closerState.getLockOwnerId() == writerThread.threadId()
+							&& hasFrame(closerState, ValueStore.class.getName(), "closeUnderMonitor")
+							&& hasFrame(closerState, ValueStore.class.getName(), "endWriterTransaction")
+							&& hasFrame(closerState, "java.util.concurrent.locks.ReentrantLock", "lock");
+					boolean waitingOutsideBarrier = closerState != null
+							&& closerState.getThreadState() == Thread.State.WAITING
+							&& closerState.getLockOwnerId() == writerThread.threadId()
+							&& hasFrame(closerState, ValueStore.class.getName(), "awaitWriterStartsForShutdown")
+							&& hasFrame(closerState, "java.util.concurrent.locks.ReentrantLock", "lock")
+							&& !hasFrame(closerState, ValueStore.class.getName(), "closeUnderMonitor")
+							&& !hasFrame(closerState, TxnManager.class.getName(), "acquireCloseBarrier");
+					if (waitingForNativeBarrier || waitingForHeldBarrierGate || waitingOutsideBarrier) {
+						closeFenceReady = true;
+						System.out.println("CLOSE_ASSOCIATION_NATIVE_BARRIER_CLOSE_FENCE_READY "
+								+ (waitingForNativeBarrier ? "native-barrier"
+										: waitingForHeldBarrierGate ? "unsafe-held-barrier-gate"
+												: "safe-out-of-lock-admission"));
+						printThread("CLOSE_ASSOCIATION_NATIVE_BARRIER_CLOSER_AT_FENCE", closer);
+						break;
+					}
+					Thread.yield();
+				}
+				if (!closeFenceReady) {
+					System.out.println("CLOSE_ASSOCIATION_NATIVE_BARRIER_CLOSE_FENCE_NOT_OBSERVED");
+					printThread("CLOSE_ASSOCIATION_NATIVE_BARRIER_CLOSER_NOT_READY", closer);
+					throw new AssertionError("The close/resize schedule did not reach a safe or unsafe close fence");
+				}
+				continueResize.countDown();
+				deadline = System.nanoTime() + OBSERVATION_TIMEOUT_NANOS;
+				while (System.nanoTime() < deadline) {
+					ThreadInfo closerState = threadInfo(closer);
+					ThreadInfo writerState = threadInfo(writerThread);
+					boolean closerWaitingForGate = closerState != null
+							&& closerState.getLockOwnerId() == writerThread.threadId()
+							&& hasFrame(closerState, ValueStore.class.getName(), "closeUnderMonitor")
+							&& hasFrame(closerState, ValueStore.class.getName(), "endWriterTransaction")
+							&& hasFrame(closerState, "java.util.concurrent.locks.ReentrantLock", "lock");
+					boolean writerWaitingForBarrier = hasFrame(writerState,
+							"org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager", "writeLock")
+							&& hasFrame(writerState, TxnManager.class.getName() + "$NativeBarrier", "writeLock")
+							&& hasFrame(writerState, ValueStore.class.getName(), "resizeMapInternal");
+					if (closerWaitingForGate && writerWaitingForBarrier) {
+						cycleDetected.set(true);
+						System.out.println("CLOSE_ASSOCIATION_NATIVE_BARRIER_CYCLE");
+						printThread("CLOSE_ASSOCIATION_NATIVE_BARRIER_CLOSER_WAITING_FOR_GATE", closer);
+						printThread("CLOSE_ASSOCIATION_NATIVE_BARRIER_WRITER_WAITING_FOR_NATIVE_WRITE", writerThread);
+						writerThread.interrupt();
+						break;
+					}
+					if (writerCompleted.get() && closeCompleted.get()) {
+						System.out.println("CLOSE_ASSOCIATION_NATIVE_BARRIER_THREADS_SETTLED");
+						break;
+					}
+					Thread.yield();
+				}
+				if (!cycleDetected.get() && !(writerCompleted.get() && closeCompleted.get())) {
+					System.out.println("CLOSE_ASSOCIATION_NATIVE_BARRIER_SETTLEMENT_NOT_OBSERVED");
+					printThread("CLOSE_ASSOCIATION_NATIVE_BARRIER_CLOSER_AT_TIMEOUT", closer);
+					printThread("CLOSE_ASSOCIATION_NATIVE_BARRIER_WRITER_AT_TIMEOUT", writerThread);
+				}
+			} catch (Throwable failure) {
+				monitorFailure.set(failure);
+			} finally {
+				continueResize.countDown();
+			}
+		}
+
+		private static ThreadInfo threadInfo(Thread thread) {
+			return ManagementFactory.getThreadMXBean().getThreadInfo(thread.threadId(), Integer.MAX_VALUE);
+		}
+
+		private static boolean hasFrame(ThreadInfo thread, String className, String methodName) {
+			if (thread == null) {
+				return false;
+			}
+			for (StackTraceElement frame : thread.getStackTrace()) {
+				if (frame.getClassName().equals(className) && frame.getMethodName().equals(methodName)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private static void printThread(String label, Thread thread) {
+			ThreadInfo info = threadInfo(thread);
+			if (info == null) {
+				System.out.println(label + " unavailable");
+				return;
+			}
+			System.out.println(label + " " + info.getThreadName() + " state=" + info.getThreadState() + " lock="
+					+ info.getLockName() + " lockOwner=" + info.getLockOwnerName() + "#" + info.getLockOwnerId());
+			for (StackTraceElement frame : info.getStackTrace()) {
+				System.out.println("\tat " + frame);
+			}
+			System.out.flush();
+		}
+
+		private static String ioExceptionText(Throwable failure) {
+			return failure.getClass().getName() + ": " + failure.getMessage() + " caused by " + failure.getCause();
+		}
+	}
+
 	private long[] storeBNodes(String... labels) throws IOException {
 		long[] ids = new long[labels.length];
 		valueStore.startTransaction(true);
@@ -2752,7 +3295,7 @@ public class ValueStoreTest {
 		LmdbStoreConfig config = new LmdbStoreConfig();
 		try (TripleStore triples = new TripleStore(new File(dataDir, "borrow-reused-id-triples"), config, valueStore)) {
 			long id = storeBNodes("borrow-retired-old-value")[0];
-			CountDownLatch collected = trackRevisionCollection(valueStore.getLazyValue(id));
+			RevisionCollection collected = trackRevisionCollection(valueStore.getLazyValue(id));
 			retireValues(Set.of(id));
 			try (TxnManager.ReaderReservation oldTripleReservation = triples.getTxnManager().reserveReadTxn(false);
 					Txn oldTripleTxn = oldTripleReservation.startPinned(triples::getDataRevision);
@@ -2761,7 +3304,7 @@ public class ValueStoreTest {
 				// This paired view opens after reverse-map retirement, but its dictionary still contains the
 				// old ID-to-value association while the earlier Lazy retention cohort awaits reclamation.
 				oldSnapshot.retainStableIds(oldTripleTxn);
-				awaitRevisionCollection(collected);
+				awaitReclamationEligibility(collected);
 				evictRetiredValues();
 				long replacementId = storeBNodes("borrow-reused-new-value")[0];
 				assertEquals("Native reclamation must actually reuse the retired ID", id, replacementId);
@@ -2791,11 +3334,11 @@ public class ValueStoreTest {
 		valueStore = createValueStore(hashCacheEnabledConfig());
 		long id = storeBNodes("late-completion-original")[0];
 		LmdbValue original = valueStore.getLazyValue(id);
-		CountDownLatch collected = trackRevisionCollection(original);
+		RevisionCollection collected = trackRevisionCollection(original);
 		original.init();
 		ValueStoreRevision originalRevision = original.getValueStoreRevision();
 		retireValues(Set.of(id));
-		awaitRevisionCollection(collected);
+		awaitReclamationEligibility(collected);
 		evictRetiredValues();
 		assertEquals(id, storeBNodes("late-completion-replacement")[0]);
 		for (int i = 0; i < 3; i++) {
@@ -2859,7 +3402,7 @@ public class ValueStoreTest {
 		assertNotEquals(0, replacementHash);
 		long id = storeBNodes("hash-association-original")[0];
 		LmdbValue ready = valueStore.getLazyValue(id);
-		CountDownLatch collected = trackRevisionCollection(ready);
+		RevisionCollection collected = trackRevisionCollection(ready);
 		ready.init();
 		assertEquals(originalHash, ready.hashCode());
 		if ("storeHash".equals(hashOperation)) {
@@ -2876,7 +3419,7 @@ public class ValueStoreTest {
 			assertTrue("Hash access must capture the current, real dictionary revision before reclamation",
 					revisionCaptured.await(5, TimeUnit.SECONDS));
 			retireValues(Set.of(id));
-			awaitRevisionCollection(collected);
+			awaitReclamationEligibility(collected);
 			evictRetiredValues();
 			assertEquals("The replacement must physically reuse the original compound ID", id,
 					storeBNodes("hash-association-replacement")[0]);
@@ -2973,7 +3516,7 @@ public class ValueStoreTest {
 				Txn tripleTxn = tripleReservation.startPinned(triples::getDataRevision)) {
 			try {
 				long id = storeBNodes("borrow-capacity-retired")[0];
-				CountDownLatch collected = trackRevisionCollection(valueStore.getLazyValue(id));
+				RevisionCollection collected = trackRevisionCollection(valueStore.getLazyValue(id));
 				retireValues(Set.of(id));
 				for (int i = 0; i < TxnManager.POOL_SIZE - 1; i++) {
 					try (ValueStore.ReadSnapshotReservation reservation = valueStore.reserveReadSnapshot()) {
@@ -2982,7 +3525,7 @@ public class ValueStoreTest {
 						snapshots.add(snapshot);
 					}
 				}
-				awaitRevisionCollection(collected);
+				awaitReclamationEligibility(collected);
 				evictRetiredValues();
 				assertEquals(id, storeBNodes("borrow-capacity-replacement")[0]);
 				Value expected = Values.bnode("borrow-capacity-replacement");
@@ -3042,11 +3585,11 @@ public class ValueStoreTest {
 		};
 		long[] originalIds = storeBNodes("pending-retired", "pending-committed");
 		LmdbValue oldReady = valueStore.getLazyValue(originalIds[0]);
-		CountDownLatch collected = trackRevisionCollection(oldReady);
+		RevisionCollection collected = trackRevisionCollection(oldReady);
 		oldReady.init();
 		if (reclaim) {
 			retireValues(Set.of(originalIds[0]));
-			awaitRevisionCollection(collected);
+			awaitReclamationEligibility(collected);
 			valueStore.forceEvictionOfValues();
 		}
 		valueStore.startTransaction(true);
@@ -3350,9 +3893,11 @@ public class ValueStoreTest {
 	@ValueSource(booleans = { false, true })
 	public void testUncommittedWriterLazyDoesNotBorrowCommittedAssociation(boolean nested) throws Exception {
 		long id = storeBNodes("uncommitted-retired")[0];
-		CountDownLatch collected = trackRevisionCollection(valueStore.getLazyValue(id));
-		retireValues(Set.of(id));
-		awaitRevisionCollection(collected);
+		try (ValueResolutionScope scope = valueStore.openValueResolutionScope();
+				SailClosable ignored = scope.activate()) {
+			assertEquals(id, valueStore.getLazyValue(id).getInternalID());
+			retireValues(Set.of(id));
+		}
 		valueStore.forceEvictionOfValues();
 		valueStore.startTransaction(true);
 		assertEquals(id, valueStore.storeValue(Values.bnode("uncommitted-replacement")));
@@ -3387,7 +3932,7 @@ public class ValueStoreTest {
 		long oldLiteralId = valueStore.storeValue(Values.literal("old literal", oldDatatype));
 		long oldDatatypeId = valueStore.getId(oldDatatype);
 		valueStore.commit();
-		CountDownLatch collected = trackRevisionCollection(valueStore.getLazyValue(oldDatatypeId));
+		RevisionCollection collected = trackRevisionCollection(valueStore.getLazyValue(oldDatatypeId));
 		retireValues(Set.of(oldLiteralId));
 		try (TripleStore triples = new TripleStore(new File(dataDir, "datatype-cache-reuse-triples"), config,
 				valueStore);
@@ -3439,21 +3984,37 @@ public class ValueStoreTest {
 		valueStore.commit();
 	}
 
-	private CountDownLatch trackRevisionCollection(LmdbValue value) {
-		return trackCollection(value.getValueStoreRevision());
+	private record RevisionCollection(long revisionId, CountDownLatch collected) {
 	}
 
-	private CountDownLatch trackCollection(Object referent) {
+	private RevisionCollection trackRevisionCollection(LmdbValue value) {
+		ValueStoreRevision.Lazy revision = ((ValueStoreRevision.Lazy) value.getValueStoreRevision()).epoch();
 		CountDownLatch collected = new CountDownLatch(1);
-		revisionCleaner.register(referent, collected::countDown);
-		return collected;
+		revisionCleaner.register(revision, collected::countDown);
+		return new RevisionCollection(revision.getRevisionId(), collected);
 	}
 
-	private void awaitRevisionCollection(CountDownLatch collected) throws InterruptedException {
-		awaitCollection(collected);
-		// Both registrations use the registering thread's shared ConcurrentCleaner. A subsequent collection
-		// barrier lets it finish the value store's cleanup actions for the previously collected revision.
-		awaitCollection(trackCollection(new Object()));
+	private void awaitRevisionCollection(RevisionCollection revision) throws InterruptedException {
+		awaitCollection(revision.collected());
+	}
+
+	private void awaitReclamationEligibility(RevisionCollection revision) throws InterruptedException {
+		awaitRevisionCollection(revision);
+		// Cleaner callbacks for the same referent have no ordering guarantee. Observe the store's real
+		// eligibility publication before asking a writer to reclaim its retired dictionary records.
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+		while (!isReclamationEligible(revision.revisionId()) && System.nanoTime() < deadline) {
+			System.gc();
+			Thread.yield();
+		}
+		assertTrue("The collected revision must be eligible before checking reclamation",
+				isReclamationEligible(revision.revisionId()));
+	}
+
+	private boolean isReclamationEligible(long revisionId) {
+		synchronized (valueStore.unusedRevisionIds) {
+			return valueStore.unusedRevisionIds.contains(revisionId);
+		}
 	}
 
 	private void awaitCollection(CountDownLatch collected) throws InterruptedException {
@@ -3580,7 +4141,7 @@ public class ValueStoreTest {
 		long retainedId = retiredIds[0];
 		LmdbValue retainedValue = valueStore.getLazyValue(retainedId);
 		long retainedRevisionId = retainedValue.getValueStoreRevision().getRevisionId();
-		CountDownLatch retainedRevisionCollected = trackRevisionCollection(retainedValue);
+		RevisionCollection retainedRevisionCollected = trackRevisionCollection(retainedValue);
 		retireValues(retiredIdSet);
 		assertEquals("the retirement transaction must remove the old dictionary mappings", LmdbValue.UNKNOWN_ID,
 				valueStore.getId(Values.bnode(labels[0])));
@@ -3670,7 +4231,7 @@ public class ValueStoreTest {
 				+ pressureDiagnostic, cohortDemandWouldResize);
 		Reference.reachabilityFence(retainedValue);
 		retainedValue = null;
-		awaitRevisionCollection(retainedRevisionCollected);
+		awaitReclamationEligibility(retainedRevisionCollected);
 		assertTrue("the collected lazy epoch must produce a real reclamation candidate",
 				valueStore.unusedRevisionIds.contains(retainedRevisionId));
 		valueStore.forceEvictionOfValues();
@@ -4015,8 +4576,8 @@ public class ValueStoreTest {
 		valueStore.close();
 		File directory = new File(dataDir, "values");
 		long cleanTransaction = assertClosedCleanRefCountMarker(directory);
-		List<NativeDictionaryOwner> owners = inspectNativeStore(directory, (stack, txn) ->
-				List.of(captureNativeDictionaryOwner(stack, txn, datatypeId),
+		List<NativeDictionaryOwner> owners = inspectNativeStore(directory,
+				(stack, txn) -> List.of(captureNativeDictionaryOwner(stack, txn, datatypeId),
 						captureNativeDictionaryOwner(stack, txn, firstId),
 						captureNativeDictionaryOwner(stack, txn, secondId)));
 		assertEquals("the first colliding owner uses the native HASH association", ValueStoreRecordCodec.HASH_KEY,
@@ -4025,10 +4586,15 @@ public class ValueStoreTest {
 				owners.get(2).forwardKey()[0]);
 		assertNotEquals("collision owners have different real forward associations",
 				ByteBuffer.wrap(owners.get(1).forwardKey()), ByteBuffer.wrap(owners.get(2).forwardKey()));
-		mutateClosedNativeStore(directory, (stack, txn) -> { replaceRefCount(stack, txn, datatypeId, 1); return null; });
+		mutateClosedNativeStore(directory, (stack, txn) -> {
+			replaceRefCount(stack, txn, datatypeId, 1);
+			return null;
+		});
 		assertClosedExternalRefCountInput(directory, cleanTransaction, datatypeId, 1);
 		inspectNativeStore(directory, (stack, txn) -> {
-			for (NativeDictionaryOwner owner : owners) { assertNativeDictionaryOwner(stack, txn, owner, true); }
+			for (NativeDictionaryOwner owner : owners) {
+				assertNativeDictionaryOwner(stack, txn, owner, true);
+			}
 			return null;
 		});
 		valueStore = createValueStore();
@@ -4130,7 +4696,10 @@ public class ValueStoreTest {
 		valueStore.close();
 		File directory = new File(dataDir, "values");
 		long cleanTransaction = assertClosedCleanRefCountMarker(directory);
-		mutateClosedNativeStore(directory, (stack, txn) -> { replaceRefCount(stack, txn, sharedId, 1); return null; });
+		mutateClosedNativeStore(directory, (stack, txn) -> {
+			replaceRefCount(stack, txn, sharedId, 1);
+			return null;
+		});
 		assertClosedExternalRefCountInput(directory, cleanTransaction, sharedId, 1);
 		inspectNativeStore(directory, (stack, txn) -> {
 			assertNativeDictionaryOwner(stack, txn, captureNativeDictionaryOwner(stack, txn, sharedId), true);
@@ -4201,7 +4770,8 @@ public class ValueStoreTest {
 		for (int attempt = 0; attempt < 3; attempt++) {
 			IOException failure = assertThrows(IOException.class, this::createValueStore);
 			assertAll("one failed open preserves both its diagnostic and native no-mutation contract",
-					() -> assertTrue(failure.getMessage(), failure.getMessage().contains("has no live value-to-ID mapping")),
+					() -> assertTrue(failure.getMessage(),
+							failure.getMessage().contains("has no live value-to-ID mapping")),
 					() -> inspectNativeStore(new File(dataDir, "values"), (stack, txn) -> {
 						assertNativeRecordExists(stack, txn, datatypeId);
 						assertNativeRecordExists(stack, txn, literalId);
@@ -4209,7 +4779,8 @@ public class ValueStoreTest {
 						assertStructuredRefCountCompletionUntrusted(stack, txn);
 						MDBStat stat = MDBStat.calloc(stack);
 						E(mdb_stat(txn, openDatabaseWithTxn(txn, "unused_ids", 0), stat));
-						assertEquals("Failed validation must retain the pending retired datatype", 1L, stat.ms_entries());
+						assertEquals("Failed validation must retain the pending retired datatype", 1L,
+								stat.ms_entries());
 						return null;
 					}));
 		}
@@ -4244,7 +4815,8 @@ public class ValueStoreTest {
 		byte[] authoritativeBefore = authoritativeDictionaryDigest(constrainedDir);
 		for (int attempt = 0; attempt < 3; attempt++) {
 			IOException failure = assertThrows(IOException.class, () -> new ValueStore(constrainedDir, config).close());
-			assertAll("bounded recovery keeps authoritative bytes and cannot publish completion on native capacity failure",
+			assertAll(
+					"bounded recovery keeps authoritative bytes and cannot publish completion on native capacity failure",
 					() -> {
 						assertNotNull("Recovery must retain the native capacity failure", failure.getCause());
 						assertTrue("Recovery must encounter actual native capacity exhaustion: " + failure.getCause(),
@@ -4253,7 +4825,8 @@ public class ValueStoreTest {
 					() -> assertArrayEquals("Failed bounded recovery must preserve every dictionary and term record",
 							authoritativeBefore, authoritativeDictionaryDigest(constrainedDir)),
 					() -> inspectNativeStore(constrainedDir, (stack, txn) -> {
-						assertStructuredRefCountCompletionUntrusted(stack, txn); return null;
+						assertStructuredRefCountCompletionUntrusted(stack, txn);
+						return null;
 					}));
 		}
 		valueStore = new ValueStore(constrainedDir, config.setAutoGrow(true));
@@ -4305,7 +4878,8 @@ public class ValueStoreTest {
 		});
 		IOException failure = assertThrows(IOException.class, this::createValueStore);
 		assertAll("one rejected active-owner retirement preserves the native no-mutation contract",
-				() -> assertTrue(failure.getMessage(), failure.getMessage().contains("pending retirement for active value")),
+				() -> assertTrue(failure.getMessage(),
+						failure.getMessage().contains("pending retirement for active value")),
 				() -> inspectNativeStore(new File(dataDir, "values"), (stack, txn) -> {
 					assertEquals("Validation before rebuilding must preserve the existing count", 17L,
 							nativeRefCount(stack, txn, id));
@@ -4325,7 +4899,8 @@ public class ValueStoreTest {
 				actual.inlinesLiterals());
 		assertEquals("reopen retains actual persisted numeric capability", expected.usesOrderedNumericIds(),
 				actual.usesOrderedNumericIds());
-		assertEquals("reopen retains actual persisted datatype capability", expected.usesCoreDatatypeLiteralReferences(),
+		assertEquals("reopen retains actual persisted datatype capability",
+				expected.usesCoreDatatypeLiteralReferences(),
 				actual.usesCoreDatatypeLiteralReferences());
 		assertEquals("reopen retains actual persisted language capability", expected.usesCanonicalLanguageTags(),
 				actual.usesCanonicalLanguageTags());
@@ -4337,16 +4912,20 @@ public class ValueStoreTest {
 		MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes((byte) 0));
 		MDBVal data = MDBVal.calloc(stack);
 		int result = E(mdb_get(txn, openDatabaseWithTxn(txn, "ref_counts", 0), key, data));
-		if (result == MDB_NOTFOUND) { return; }
+		if (result == MDB_NOTFOUND) {
+			return;
+		}
 		assertEquals(MDB_SUCCESS, result);
 		byte[] marker = nativeBytes(data);
-		assertEquals("failed current-format recovery retains only a structured DIRTY marker or absence", 18, marker.length);
+		assertEquals("failed current-format recovery retains only a structured DIRTY marker or absence", 18,
+				marker.length);
 		ByteBuffer fields = ByteBuffer.wrap(marker);
 		assertEquals("RCFT magic", 0x52434654, fields.getInt());
 		assertEquals("RCFT schema", 1, fields.get());
 		assertEquals("incomplete recovery cannot author CLEAN", 0, fields.get());
 		assertTrue("DIRTY provenance cannot name a future native generation", fields.getLong() <= mdb_txn_id(txn));
-		CRC32 checksum = new CRC32(); checksum.update(marker, 0, 14);
+		CRC32 checksum = new CRC32();
+		checksum.update(marker, 0, 14);
 		assertEquals("incomplete marker checksum covers its native provenance", checksum.getValue(),
 				Integer.toUnsignedLong(fields.getInt()));
 	}
@@ -4365,7 +4944,8 @@ public class ValueStoreTest {
 			assertEquals("only a clean completion qualifies this generation", 1, fields.get());
 			long transaction = fields.getLong();
 			assertEquals("completion names this exact native snapshot", mdb_txn_id(txn), transaction);
-			CRC32 checksum = new CRC32(); checksum.update(marker, 0, 14);
+			CRC32 checksum = new CRC32();
+			checksum.update(marker, 0, 14);
 			assertEquals("completion checksum covers all preceding fields", checksum.getValue(),
 					Integer.toUnsignedLong(fields.getInt()));
 			return transaction;
@@ -4375,7 +4955,8 @@ public class ValueStoreTest {
 	private void assertClosedExternalRefCountInput(File directory, long cleanTransaction, long id, long count)
 			throws IOException {
 		inspectNativeStore(directory, (stack, txn) -> {
-			assertTrue("independent corruption advances the real native generation", mdb_txn_id(txn) > cleanTransaction);
+			assertTrue("independent corruption advances the real native generation",
+					mdb_txn_id(txn) > cleanTransaction);
 			assertMigrationMarkerAbsent(stack, txn);
 			assertEquals("the exact corrupted count is present before opening", count, nativeRefCount(stack, txn, id));
 			return null;
@@ -4389,20 +4970,26 @@ public class ValueStoreTest {
 			E(mdb_cursor_open(txn, openDatabaseWithTxn(txn, "ref_counts", 0), pointer));
 			long cursor = pointer.get(0);
 			try {
-				MDBVal key = MDBVal.calloc(stack); MDBVal data = MDBVal.calloc(stack);
-				for (int rc = E(mdb_cursor_get(cursor, key, data, MDB_FIRST)); rc == MDB_SUCCESS;
-						rc = E(mdb_cursor_get(cursor, key, data, MDB_NEXT))) {
+				MDBVal key = MDBVal.calloc(stack);
+				MDBVal data = MDBVal.calloc(stack);
+				for (int rc = E(mdb_cursor_get(cursor, key, data, MDB_FIRST)); rc == MDB_SUCCESS; rc = E(
+						mdb_cursor_get(cursor, key, data, MDB_NEXT))) {
 					ByteBuffer bytes = key.mv_data().duplicate();
-					if (bytes.get(bytes.position()) == 0) { continue; }
+					if (bytes.get(bytes.position()) == 0) {
+						continue;
+					}
 					assertEquals(ValueStoreRecordCodec.ID_KEY, bytes.get());
 					counts.put(Varint.readUnsigned(bytes), Varint.readUnsigned(data.mv_data().duplicate()));
 				}
-			} finally { mdb_cursor_close(cursor); }
+			} finally {
+				mdb_cursor_close(cursor);
+			}
 			return Map.copyOf(counts);
 		});
 	}
 
-	private record NativeDictionaryOwner(long id, byte[] reverse, byte[] forwardKey, byte[] forwardValue) { }
+	private record NativeDictionaryOwner(long id, byte[] reverse, byte[] forwardKey, byte[] forwardValue) {
+	}
 
 	private long nativeIdFromAssociation(MDBVal key, MDBVal data) {
 		byte[] value = nativeBytes(data);
@@ -4421,7 +5008,8 @@ public class ValueStoreTest {
 		return id;
 	}
 
-	private NativeDictionaryOwner captureNativeDictionaryOwner(MemoryStack stack, long txn, long id) throws IOException {
+	private NativeDictionaryOwner captureNativeDictionaryOwner(MemoryStack stack, long txn, long id)
+			throws IOException {
 		int main = openDatabaseWithTxn(txn, null, 0);
 		MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(ValueStoreRecordCodec.idKey(id)));
 		MDBVal data = MDBVal.calloc(stack);
@@ -4435,7 +5023,8 @@ public class ValueStoreTest {
 			assertTrue("only a real colliding hash owner needs its per-ID association",
 					reverse.length > ValueStoreRecordCodec.MAX_INLINE_KEY_BYTES);
 			forward = ValueStoreRecordCodec.collisionKey(ValueStoreRecordCodec.hash(reverse), id);
-			key.mv_data(stack.bytes(forward)); result = E(mdb_get(txn, main, key, data));
+			key.mv_data(stack.bytes(forward));
+			result = E(mdb_get(txn, main, key, data));
 		}
 		assertEquals("capture the actual active forward association", MDB_SUCCESS, result);
 		assertEquals(id, nativeIdFromAssociation(key, data));
@@ -4454,11 +5043,15 @@ public class ValueStoreTest {
 		if (forwardPresent) {
 			assertEquals("the exact active forward key remains", MDB_SUCCESS, result);
 			assertArrayEquals("the captured forward value remains exact", owner.forwardValue(), nativeBytes(data));
-		} else { assertEquals("only the real retired owner's forward key was removed", MDB_NOTFOUND, result); }
+		} else {
+			assertEquals("only the real retired owner's forward key was removed", MDB_NOTFOUND, result);
+		}
 	}
 
 	private static byte[] nativeBytes(MDBVal value) {
-		byte[] bytes = new byte[Math.toIntExact(value.mv_size())]; value.mv_data().duplicate().get(bytes); return bytes;
+		byte[] bytes = new byte[Math.toIntExact(value.mv_size())];
+		value.mv_data().duplicate().get(bytes);
+		return bytes;
 	}
 
 	private void putExternalUnusedHint(MemoryStack stack, long txn, long revision, long id) throws IOException {
@@ -4468,21 +5061,26 @@ public class ValueStoreTest {
 
 	private byte[] externalUnusedKey(long revision, long id) {
 		ByteBuffer bytes = ByteBuffer.allocate(32);
-		Varint.writeUnsigned(bytes, revision); bytes.put(ValueStoreRecordCodec.idKey(id));
+		Varint.writeUnsigned(bytes, revision);
+		bytes.put(ValueStoreRecordCodec.idKey(id));
 		return Arrays.copyOf(bytes.array(), bytes.position());
 	}
 
 	private void assertExternalUnusedHint(MemoryStack stack, long txn, long revision, long id) throws IOException {
 		MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(externalUnusedKey(revision, id)));
 		assertEquals(MDB_SUCCESS, mdb_get(txn, openDatabaseWithTxn(txn, "unused_ids", 0), key, MDBVal.calloc(stack)));
-		MDBStat stat = MDBStat.calloc(stack); E(mdb_stat(txn, openDatabaseWithTxn(txn, "unused_ids", 0), stat));
+		MDBStat stat = MDBStat.calloc(stack);
+		E(mdb_stat(txn, openDatabaseWithTxn(txn, "unused_ids", 0), stat));
 		assertEquals("the one captured real owner has one pending hint", 1L, stat.ms_entries());
 	}
 
-	private void fillClosedNativeMapToCapacity(File directory, long actualMapSize, long corruptedId) throws IOException {
+	private void fillClosedNativeMapToCapacity(File directory, long actualMapSize, long corruptedId)
+			throws IOException {
 		long env;
 		try (MemoryStack stack = stackPush()) {
-			PointerBuffer pointer = stack.mallocPointer(1); E(mdb_env_create(pointer)); env = pointer.get(0);
+			PointerBuffer pointer = stack.mallocPointer(1);
+			E(mdb_env_create(pointer));
+			env = pointer.get(0);
 		}
 		try {
 			E(mdb_env_set_maxdbs(env, 18));
@@ -4490,7 +5088,10 @@ public class ValueStoreTest {
 			E(mdb_env_open(env, directory.getAbsolutePath(), MDB_NOTLS, 0664));
 			// Every writer in this fixed-map fixture uses the owner's captured physical map size.
 			LmdbUtil.writeTransaction(env,
-					(stack, txn) -> { replaceRefCount(stack, txn, corruptedId, 17); return null; });
+					(stack, txn) -> {
+						replaceRefCount(stack, txn, corruptedId, 17);
+						return null;
+					});
 			int maximumEntries = Math.toIntExact(actualMapSize / 2048L + 1L);
 			for (int filler = 0; filler < maximumEntries; filler++) {
 				int entry = filler;
@@ -4507,7 +5108,9 @@ public class ValueStoreTest {
 				}
 			}
 			throw new AssertionError("physical payload bound exhausted without native MDB_MAP_FULL");
-		} finally { mdb_env_close(env); }
+		} finally {
+			mdb_env_close(env);
+		}
 	}
 
 	private <T> T inspectNativeStore(File directory, LmdbUtil.Transaction<T> inspection) throws IOException {

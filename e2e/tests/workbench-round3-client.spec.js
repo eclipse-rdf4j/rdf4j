@@ -18,6 +18,7 @@ const {
 	deleteRepository,
 	repositoryPageUrl,
 	serverBaseUrl,
+	signInOnConnectionPage,
 	uniqueRepositoryId,
 	waitForRoute,
 	workbenchBaseUrl
@@ -475,13 +476,11 @@ test('the Execute shortcut is shown as Cmd on macOS also where the platform says
 	}
 });
 
-// C15 (client decoding): the credentials cookie is base64 of the UTF-8 bytes of "user:password"; a user name outside
-// Latin-1 is shown as itself.
-test('a signed-in user name outside Latin-1 is shown as itself', async ({ page, context }) => {
+// C15 (client decoding): a user name outside Latin-1, signed in on the Connection page, is shown as itself.
+test('a signed-in user name outside Latin-1 is shown as itself', async ({ page }) => {
 	const user = 'José✓';
-	await context.addCookies([{ name: 'server-user-password', url: workbenchBaseUrl() + '/',
-		value: Buffer.from(user + ':pw', 'utf8').toString('base64') }]);
 	await page.setViewportSize({ width: 1280, height: 900 });
+	await signInOnConnectionPage(page, user, 'pw');
 	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'summary'));
 	await waitForRoute(page, 'summary');
 	await expect(page.locator('#workbench-menu-sheet .workbench-menu-sheet__context')).toContainText(user);

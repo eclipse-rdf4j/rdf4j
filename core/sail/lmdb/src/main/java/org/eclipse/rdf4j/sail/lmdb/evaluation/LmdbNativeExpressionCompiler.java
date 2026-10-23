@@ -64,6 +64,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.IdCapability;
 
 /**
  * Interpreted native expression compiler for LMDB row ids. Unsupported shapes return {@code null}; supported shapes
@@ -414,7 +415,7 @@ public final class LmdbNativeExpressionCompiler {
 				}
 				return assured(slot) ? truth(1L << slot, row -> TRUE)
 						: truth(1L << slot,
-								row -> row.id(slot) == NativeLmdbQuerySource.UNKNOWN_ID ? FALSE : TRUE);
+								row -> IdCapability.BOUND.test(row.id(slot)) ? TRUE : FALSE);
 			}
 			return null;
 		}
@@ -743,7 +744,14 @@ public final class LmdbNativeExpressionCompiler {
 
 	private boolean numericType(int type) {
 		return switch (type) {
-		case ValueIds.T_DOUBLE, ValueIds.T_INTEGER, ValueIds.T_DECIMAL, ValueIds.T_FLOAT, ValueIds.T_POSITIVE_INTEGER, ValueIds.T_NEGATIVE_INTEGER, ValueIds.T_NON_NEGATIVE_INTEGER, ValueIds.T_NON_POSITIVE_INTEGER, ValueIds.T_LONG, ValueIds.T_INT, ValueIds.T_SHORT, ValueIds.T_BYTE, ValueIds.T_UNSIGNEDLONG, ValueIds.T_UNSIGNEDINT, ValueIds.T_UNSIGNEDSHORT, ValueIds.T_UNSIGNEDBYTE, ValueIds.T_ORD_INTEGER, ValueIds.T_ORD_LONG, ValueIds.T_ORD_INT, ValueIds.T_ORD_SHORT, ValueIds.T_ORD_BYTE, ValueIds.T_ORD_POSITIVE_INTEGER, ValueIds.T_ORD_NEGATIVE_INTEGER, ValueIds.T_ORD_NON_NEGATIVE_INTEGER, ValueIds.T_ORD_NON_POSITIVE_INTEGER -> true;
+		case ValueIds.T_DOUBLE, ValueIds.T_INTEGER, ValueIds.T_DECIMAL, ValueIds.T_FLOAT, ValueIds.T_POSITIVE_INTEGER,
+				ValueIds.T_NEGATIVE_INTEGER, ValueIds.T_NON_NEGATIVE_INTEGER, ValueIds.T_NON_POSITIVE_INTEGER,
+				ValueIds.T_LONG, ValueIds.T_INT, ValueIds.T_SHORT, ValueIds.T_BYTE, ValueIds.T_UNSIGNEDLONG,
+				ValueIds.T_UNSIGNEDINT, ValueIds.T_UNSIGNEDSHORT, ValueIds.T_UNSIGNEDBYTE, ValueIds.T_ORD_INTEGER,
+				ValueIds.T_ORD_LONG, ValueIds.T_ORD_INT, ValueIds.T_ORD_SHORT, ValueIds.T_ORD_BYTE,
+				ValueIds.T_ORD_POSITIVE_INTEGER, ValueIds.T_ORD_NEGATIVE_INTEGER, ValueIds.T_ORD_NON_NEGATIVE_INTEGER,
+				ValueIds.T_ORD_NON_POSITIVE_INTEGER ->
+			true;
 		default -> false;
 		};
 	}

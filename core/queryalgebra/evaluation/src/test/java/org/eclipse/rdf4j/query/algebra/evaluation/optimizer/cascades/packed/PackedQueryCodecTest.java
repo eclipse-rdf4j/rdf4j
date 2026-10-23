@@ -122,6 +122,19 @@ class PackedQueryCodecTest {
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 
 	@Test
+	void explicitConditionProjectionCannotBeSilentlyErasedByPackedEncoding() {
+		for (Filter.ConditionBindingScope scope : List.of(Filter.ConditionBindingScope.ALL,
+				Filter.ConditionBindingScope.retain(Set.of()),
+				Filter.ConditionBindingScope.retain(Set.of("input")))) {
+			Filter filter = new Filter(new SingletonSet(), new Bound(Var.of("input")));
+			filter.setConditionBindingScope(scope);
+			UnsupportedCascadesOperatorException failure = assertThrows(UnsupportedCascadesOperatorException.class,
+					() -> PackedQueryCodec.encode(filter));
+			assertTrue(failure.getMessage().contains("conditionBindingScope"));
+		}
+	}
+
+	@Test
 	void roundTripsJoinFilterAndScalarTreeWithoutRetainingSourceNodes() {
 		StatementPattern left = new StatementPattern(Var.of("person"),
 				Var.of("namePredicate", VF.createIRI("urn:name")), Var.of("name"));

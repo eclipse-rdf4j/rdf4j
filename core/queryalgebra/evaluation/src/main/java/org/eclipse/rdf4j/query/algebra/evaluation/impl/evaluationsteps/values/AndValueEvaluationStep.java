@@ -101,23 +101,18 @@ public class AndValueEvaluationStep implements QueryValueEvaluationStep {
 					.getEffectiveBooleanValue(leftStep.evaluate(EmptyBindingSet.getInstance()));
 			if (constantLeftValue == QueryEvaluationUtility.Result._false) {
 				return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(BooleanLiteral.FALSE);
-			} else if (constantLeftValue == QueryEvaluationUtility.Result._true && rightStep.isConstant()) {
+			} else if (rightStep.isConstant()) {
 				Result constantRightValue = QueryEvaluationUtility
 						.getEffectiveBooleanValue(rightStep.evaluate(EmptyBindingSet.getInstance()));
 				if (constantRightValue == QueryEvaluationUtility.Result._false) {
 					return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(BooleanLiteral.FALSE);
-				} else if (constantRightValue == QueryEvaluationUtility.Result._true) {
+				} else if (constantLeftValue == QueryEvaluationUtility.Result._true
+						&& constantRightValue == QueryEvaluationUtility.Result._true) {
 					return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(BooleanLiteral.TRUE);
 				}
 			}
 		}
-		if (rightStep.isConstant()) {
-			Result constantRightValue = QueryEvaluationUtility
-					.getEffectiveBooleanValue(rightStep.evaluate(EmptyBindingSet.getInstance()));
-			if (constantRightValue == QueryEvaluationUtility.Result._false) {
-				return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(BooleanLiteral.FALSE);
-			}
-		}
+		// Reachable left evaluation may be volatile or raise a query-fatal error even when right is false.
 		return shortCircuitRecorder == null
 				? new AndValueEvaluationStep(leftStep, rightStep, metricTarget)
 				: new AndValueEvaluationStep(leftStep, rightStep, shortCircuitRecorder);

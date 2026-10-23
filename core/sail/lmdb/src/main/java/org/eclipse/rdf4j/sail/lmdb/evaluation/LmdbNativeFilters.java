@@ -20,6 +20,7 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -829,6 +830,8 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 final class ExistsFilter implements NativeBooleanFilter {
 	final SlotPlan subPlan;
 	final NativeExistsPatternCursor.Plan existsPlan;
+	/** Null retains the caller's complete row; otherwise this witness owns an exact projected native input frame. */
+	final Set<String> retainedBindingNames;
 	/**
 	 * When the subplan's outcome depends only on the current values of a known slot set (see {@link #memoReadMask}),
 	 * the per-row existence probe is memoized on those values instead of reopening the whole subplan cursor tree per
@@ -838,7 +841,12 @@ final class ExistsFilter implements NativeBooleanFilter {
 	final int[] memoSlots;
 
 	ExistsFilter(SlotPlan subPlan) {
+		this(subPlan, null);
+	}
+
+	ExistsFilter(SlotPlan subPlan, Set<String> retainedBindingNames) {
 		this.subPlan = subPlan;
+		this.retainedBindingNames = retainedBindingNames == null ? null : Set.copyOf(retainedBindingNames);
 		this.existsPlan = NativeExistsPatternCursor.plan(subPlan);
 		long readMask = memoReadMask(subPlan);
 		this.memoSlots = readMask < 0L ? null : slotsOf(readMask);
@@ -849,7 +857,7 @@ final class ExistsFilter implements NativeBooleanFilter {
 		NativeExecutionContext execution = executionContext(row);
 		State state = execution == null ? new State() : execution.nativeState(this, State::new);
 		try {
-			return accept(row, state);
+			return accept(state.conditionInput(row), state);
 		} finally {
 			if (execution == null) {
 				state.close();
@@ -923,7 +931,7 @@ final class ExistsFilter implements NativeBooleanFilter {
 
 	@Override
 	public int selectBatch(NativeBatch batch, int[] sel, int n, RowState scratch) {
-		if (memoSlots == null || memoSlots.length < 2 || memoSlots.length > 4) {
+		if (retainedBindingNames != null || memoSlots == null || memoSlots.length < 2 || memoSlots.length > 4) {
 			return NativeBooleanFilter.super.selectBatch(batch, sel, n, scratch);
 		}
 		NativeExecutionContext execution = executionContext(scratch);
@@ -996,6 +1004,25 @@ final class ExistsFilter implements NativeBooleanFilter {
 	}
 
 	boolean exists(RowState row) {
+		if (memoSlots == null) {
+			// Hidden entry reads (notably independent SELECT operands) need an immutable witness entry. Proven
+			// row-local probes below keep their existing current-slot path and allocation shape.
+			RowState input = row.invocationInput();
+			try (NativeExecutionContext invocation = executionContext(input);
+					SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource
+							.attachEvaluation(input.source)) {
+				if (!LmdbNativeAggregateCompiler.initializeRow(input, input.base, input.source, input.layout)) {
+					return false;
+				}
+				return existsInScope(input);
+			} finally {
+				input.closeDecodedInputs();
+			}
+		}
+		return existsInScope(row);
+	}
+
+	private boolean existsInScope(RowState row) {
 		long previousLexicalInput = row.enterLexicalScope(row.boundMask());
 		try {
 			if (existsPlan != null) {
@@ -1024,8 +1051,33 @@ final class ExistsFilter implements NativeBooleanFilter {
 		final PatternMembershipProbe membershipProbe;
 		final AdjacencyIntersectionProbe adjacencyProbe;
 		/** Build-once mark tier for multi-operator subplans; single patterns use the probes above. */
-		final SubplanMarkProbe markProbe;
+		SubplanMarkProbe markProbe;
 		KeyedMatches memo;
+		RowState projected;
+		BindingSet projectedFromBase;
+
+		RowState conditionInput(RowState row) {
+			if (retainedBindingNames == null) {
+				return row;
+			}
+			if (projected == null || projectedFromBase != row.base || projected.source != row.source
+					|| projected.layout != row.layout) {
+				if (projected != null) {
+					projected.closeDecodedInputs();
+				}
+				RowState next = row.projectConditionInput(retainedBindingNames);
+				if (projected != null && !projected.base.equals(next.base)) {
+					// Correlation callbacks may borrow the evaluation with a different base mapping.
+					memo = null;
+					markProbe = memoSlots == null ? null : SubplanMarkProbe.tryCreateExists(subPlan, memoSlots);
+				}
+				projected = next;
+				projectedFromBase = row.base;
+			} else {
+				projected.copyConditionInput(row, retainedBindingNames);
+			}
+			return projected;
+		}
 
 		State() {
 			PatternPlan pattern = subPlan instanceof PatternPlan ? (PatternPlan) subPlan : null;
@@ -1045,6 +1097,9 @@ final class ExistsFilter implements NativeBooleanFilter {
 		public void close() {
 			if (adjacencyProbe != null) {
 				adjacencyProbe.close();
+			}
+			if (projected != null) {
+				projected.closeDecodedInputs();
 			}
 		}
 	}

@@ -17,8 +17,11 @@ import static jakarta.servlet.http.HttpServletResponse.SC_OK;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Map;
+import java.util.function.UnaryOperator;
 
+import org.eclipse.rdf4j.http.client.BNodeOriginTransport;
 import org.eclipse.rdf4j.http.client.QueryResponseHeartbeat;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
@@ -64,6 +67,7 @@ public class GraphQueryResultView extends QueryResultView {
 			throws IOException {
 		RDFWriterFactory rdfWriterFactory = (RDFWriterFactory) model.get(FACTORY_KEY);
 		RDFFormat rdfFormat = rdfWriterFactory.getRDFFormat();
+		UnaryOperator<Value> origin = bNodeOriginMapper(model, request, response, rdfFormat);
 
 		response.setStatus(SC_OK);
 		setContentType(response, rdfFormat);
@@ -80,7 +84,9 @@ public class GraphQueryResultView extends QueryResultView {
 					try {
 						RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
 						GraphQueryResult graphQueryResult = (GraphQueryResult) model.get(QUERY_RESULT_KEY);
-						QueryResults.report(graphQueryResult, rdfWriter);
+						QueryResults.report(
+								origin == null ? graphQueryResult : BNodeOriginTransport.map(graphQueryResult, origin),
+								rdfWriter);
 					} catch (QueryInterruptedException e) {
 						if (isExplicitlyCancelled(model)) {
 							return;
@@ -107,7 +113,9 @@ public class GraphQueryResultView extends QueryResultView {
 					if (rdfWriter == null) {
 						rdfWriter = rdfWriterFactory.getWriter(heartbeat.getOutputStream());
 					}
-					QueryResults.report(graphQueryResult, rdfWriter);
+					QueryResults.report(
+							origin == null ? graphQueryResult : BNodeOriginTransport.map(graphQueryResult, origin),
+							rdfWriter);
 					heartbeat.complete();
 				} catch (QueryInterruptedException e) {
 					handleHeartbeatFailure(model, response, e, "Query evaluation took too long");

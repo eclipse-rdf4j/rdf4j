@@ -56,6 +56,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Optimizatio
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCascadesPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanDecisionSummary;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 
@@ -336,7 +337,7 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 
 	private void prepareRequestBoundInput(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		for (QueryOptimizer optimizer : requestBoundOptimizers()) {
-			optimizer.optimize(tupleExpr, dataset, bindings);
+			optimizer.optimize(tupleExpr, dataset, getOptimizerInputBindings(optimizer, bindings));
 			PlanningGraphDomains.refresh(tupleExpr, PlanningGraphDomain.defaultGraph());
 		}
 	}
@@ -346,7 +347,7 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 			return null;
 		}
 		for (QueryOptimizer optimizer : getOptimizers()) {
-			optimizer.optimize(tupleExpr, dataset, bindings);
+			optimizer.optimize(tupleExpr, dataset, getOptimizerInputBindings(optimizer, bindings));
 			PlanningGraphDomains.refresh(tupleExpr, PlanningGraphDomain.defaultGraph());
 		}
 		return tupleExpr;
@@ -489,6 +490,11 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 	}
 
 	@Override
+	public BindingSet getOptimizerInputBindings(QueryOptimizer optimizer, BindingSet initialBindings) {
+		return StandardQueryOptimizerPipeline.preparedPlanInputBindings(optimizer, initialBindings);
+	}
+
+	@Override
 	public Iterable<QueryOptimizer> getOptimizers() {
 		List<QueryOptimizer> optimizers = requestBoundOptimizerList();
 		optimizers.add(cascadesOptimizer());
@@ -508,7 +514,7 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 		List<QueryOptimizer> optimizers = new ArrayList<>();
 		optimizers.add(BINDING_ASSIGNER);
 		optimizers.add(GRAPH_SCOPE_OPTIMIZER);
-		optimizers.add(new ConstantOptimizer(strategy));
+		optimizers.add(new ConstantOptimizer(strategy, EmptyBindingSet.getInstance()));
 		optimizers.add(new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()));
 		Optional<LmdbPlannerServices> services = LmdbPlannerServices.from(invocationStatistics);
 		if (services.isPresent() && services.get().valueStore() != null) {
@@ -521,7 +527,7 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 		optimizers.add(UNION_SCOPE_CHANGE_OPTIMIZER);
 		optimizers.add(QUERY_MODEL_NORMALIZER);
 		optimizers.add(new LmdbOptionalNormalFormOptimizer(invocationStatistics));
-		optimizers.add(new FilterOptimizer(null, false, false));
+		optimizers.add(new FilterOptimizer(null, false, false, strategy));
 		optimizers.add(new LmdbBoundSimplifierOptimizer());
 		if (!preserveSerializableObservationOrder) {
 			optimizers.add(new LmdbSetSemanticsOptimizer());

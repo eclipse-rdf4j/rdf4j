@@ -44,7 +44,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.BindingScopeAnalysis;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 /**
  * A query optimizer that embeds {@link Filter}s with {@link SameTerm} operators in statement patterns as much as
@@ -77,6 +79,11 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Filter filter) {
 			super.meet(filter);
+			var bindingScope = FilterBindingScope.resolve(filter);
+			if (!bindingScope.retainsAllBindings()
+					&& !bindingScope.bindingNames().containsAll(VarNameCollector.process(filter.getCondition()))) {
+				return;
+			}
 
 			if (filter.getCondition() instanceof SameTerm) {
 				extracted(filter);
@@ -364,6 +371,16 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 			super(true);
 			this.oldVar = oldVar;
 			this.newVar = newVar;
+		}
+
+		@Override
+		public void meet(Filter filter) {
+			if (!filter.isVariableScopeChange()) {
+				filter.setConditionBindingScope(filter.getConditionBindingScope()
+						.mapBindingNames(
+								name -> name.equals(oldVar.getName()) ? newVar.getName() : name));
+			}
+			super.meet(filter);
 		}
 
 		@Override

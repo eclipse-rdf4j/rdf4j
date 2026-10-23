@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.BindingScopeAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 
 /**
  * Simplifies {@link Bound} expressions where the tuple expression below a {@link Filter} already proves that a binding
@@ -77,6 +78,11 @@ final class LmdbBoundSimplifierOptimizer implements QueryOptimizer {
 			Set<String> possibleBindingNames = new HashSet<>(arg.getBindingNames());
 			possibleBindingNames.addAll(outerScope.possibleInScope());
 
+			var conditionScope = FilterBindingScope.resolve(filter);
+			if (!conditionScope.retainsAllBindings()) {
+				assuredBindingNames.retainAll(conditionScope.bindingNames());
+				possibleBindingNames.retainAll(conditionScope.bindingNames());
+			}
 			ValueExpr condition = simplify(filter.getCondition(), assuredBindingNames, possibleBindingNames);
 			Boolean value = booleanConstant(condition);
 			if (Boolean.TRUE.equals(value)) {
@@ -85,6 +91,7 @@ final class LmdbBoundSimplifierOptimizer implements QueryOptimizer {
 				filter.replaceWith(new EmptySet());
 			} else if (condition != filter.getCondition()) {
 				filter.setCondition(condition);
+				FilterBindingScope.preserve(filter, conditionScope);
 			}
 		}
 	}
@@ -181,7 +188,7 @@ final class LmdbBoundSimplifierOptimizer implements QueryOptimizer {
 	}
 
 	private static Boolean booleanConstant(ValueExpr expr) {
-		if (expr instanceof ValueConstant valueConstant && valueConstant.getValue()instanceof Literal literal) {
+		if (expr instanceof ValueConstant valueConstant && valueConstant.getValue() instanceof Literal literal) {
 			return literal.booleanValue();
 		}
 		return null;

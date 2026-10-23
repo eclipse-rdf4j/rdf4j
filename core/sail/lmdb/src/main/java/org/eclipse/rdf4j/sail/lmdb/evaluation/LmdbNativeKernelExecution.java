@@ -881,7 +881,8 @@ final class LmdbNativeKernelExecution {
 				filters -> {
 					SlotPlan execution = filters.borrow(arg);
 					return openWithFusedRuntime(execution, row,
-							() -> tryOpenRows(execution, row, originalExpr, false, distinctSlots, null, parallelExecution,
+							() -> tryOpenRows(execution, row, originalExpr, false, distinctSlots, null,
+									parallelExecution,
 									requestedTier));
 				},
 				work, startup, rows, tag, () -> {
@@ -1388,7 +1389,8 @@ final class LmdbNativeKernelExecution {
 			}
 
 			KernelRowCursor cursor = new KernelRowCursor(kernel, probe, scanner, hooks, views, row,
-					lowered.bindings.columnEngineSlots, lowered.bindings.residualFilters, hashReservation, route);
+					lowered.bindings.columnEngineSlots, lowered.bindings.residualFilters, hashReservation, route,
+					SlotPlan.encounterOrderReplaySafe(arg) ? FILL_ROWS : 1);
 			// Ownership has moved to the cursor. Null every local so the finally block cannot double-close it.
 			kernel = null;
 			probe = null;
@@ -1748,6 +1750,7 @@ final class LmdbNativeKernelExecution {
 		private final int[] columnSlots;
 		private final List<MaskedFilter> residualFilters;
 		private final long[] buffer;
+		private final int fillRows;
 		private int bufferRows;
 		private int bufferPos;
 		private int activeMark = -1;
@@ -1759,16 +1762,9 @@ final class LmdbNativeKernelExecution {
 		KernelRowCursor(JaninoKernel kernel, NativeLmdbQuerySource.NativeProbe probe,
 				LmdbNativeKernelScanner scanner, LmdbNativeKernelHooks hooks,
 				NativeLmdbQuerySource.NativeAdjacency[] views, RowState row, int[] columnSlots,
-				List<MaskedFilter> residualFilters) {
-			this(kernel, probe, scanner, hooks, views, row, columnSlots, residualFilters, null,
-					LmdbNativeAttemptMetrics.PATH_IR_KERNEL);
-		}
-
-		KernelRowCursor(JaninoKernel kernel, NativeLmdbQuerySource.NativeProbe probe,
-				LmdbNativeKernelScanner scanner, LmdbNativeKernelHooks hooks,
-				NativeLmdbQuerySource.NativeAdjacency[] views, RowState row, int[] columnSlots,
 				List<MaskedFilter> residualFilters,
-				org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation hashReservation, String route) {
+				org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation hashReservation, String route,
+				int fillRows) {
 			this.route = route;
 			this.kernel = kernel;
 			this.probe = probe;
@@ -1779,16 +1775,22 @@ final class LmdbNativeKernelExecution {
 			this.columnSlots = columnSlots;
 			this.residualFilters = new ArrayList<>(residualFilters.size());
 			try {
-			for (MaskedFilter residual : residualFilters) {
-				this.residualFilters.add(new MaskedFilter(residual.filter.open(row), residual.mask,
-						residual.adaptive, residual.plannedDepth));
-			}
-			this.hashReservation = hashReservation;
-			this.buffer = new long[Math.max(columnSlots.length, 1) * FILL_ROWS];
+				for (MaskedFilter residual : residualFilters) {
+					this.residualFilters.add(new MaskedFilter(residual.filter.open(row), residual.mask,
+							residual.adaptive, residual.plannedDepth));
+				}
+				this.hashReservation = hashReservation;
+				this.fillRows = fillRows;
+				this.buffer = new long[Math.max(columnSlots.length, 1) * fillRows];
 			} catch (RuntimeException | Error failure) {
 				for (MaskedFilter residual : this.residualFilters) {
-					try { residual.filter.close(); }
-					catch (RuntimeException | Error cleanup) { if (cleanup != failure) { failure.addSuppressed(cleanup); } }
+					try {
+						residual.filter.close();
+					} catch (RuntimeException | Error cleanup) {
+						if (cleanup != failure) {
+							failure.addSuppressed(cleanup);
+						}
+					}
 				}
 				throw failure;
 			}
@@ -1803,7 +1805,7 @@ final class LmdbNativeKernelExecution {
 			while (true) {
 				if (bufferPos == bufferRows) {
 					try {
-						bufferRows = LmdbNativeJaninoCodegen.fill(kernel, buffer, FILL_ROWS, route);
+						bufferRows = LmdbNativeJaninoCodegen.fill(kernel, buffer, fillRows, route);
 					} catch (LmdbNativeKernelBindings.PlanFailure problem) {
 						throw problem.ioCause();
 					}
@@ -1846,7 +1848,9 @@ final class LmdbNativeKernelExecution {
 
 		@Override
 		public void close() {
-			if (closed) { return; }
+			if (closed) {
+				return;
+			}
 			closed = true;
 			if (activeMark >= 0) {
 				row.rollback(activeMark);
@@ -1855,7 +1859,9 @@ final class LmdbNativeKernelExecution {
 			Throwable failure = null;
 			for (MaskedFilter residual : residualFilters) {
 				try {
-					if (kernel.filterInputExhausted()) { residual.filter.inputExhausted(); }
+					if (kernel.filterInputExhausted()) {
+						residual.filter.inputExhausted();
+					}
 					residual.filter.close();
 				} catch (RuntimeException | Error problem) {
 					failure = addFailure(failure, problem);

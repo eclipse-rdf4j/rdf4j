@@ -345,7 +345,7 @@ final class LmdbNativePackedFtree {
 			return input;
 		SlotPlan[] children = new SlotPlan[input.children.length];
 		for (int i = 0; i < children.length; i++) {
-			if (!(input.children[i]instanceof PatternPlan pattern))
+			if (!(input.children[i] instanceof PatternPlan pattern))
 				return null;
 			children[i] = new PatternPlan(specialize(pattern.s, row), specialize(pattern.p, row),
 					specialize(pattern.o, row), specialize(pattern.c, row), pattern.contexts,

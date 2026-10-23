@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -408,6 +409,65 @@ class LmdbForegroundFilterSamplingEpochTest {
 			}
 			sampler.shutdownNow();
 			assertTrue(sampler.awaitTermination(10, TimeUnit.SECONDS), "The foreground sampler must terminate");
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDirectory.toFile());
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void unrelatedReadersMustNotClaimTheSamplingPause(boolean samplerSnapshotReserved) throws Exception {
+		Path dataDirectory = Files.createTempDirectory("lmdb-foreground-filter-pause-owner");
+		SamplingPause pause = new SamplingPause();
+		ProbeLmdbStore sail = new ProbeLmdbStore(dataDirectory.toFile(), samplingConfig(), pause);
+		SailRepository repository = new SailRepository(sail);
+		ExecutorService otherReader = Executors.newSingleThreadExecutor();
+		LmdbSailStore.DatasetAdmission admission = null;
+		try {
+			repository.init();
+			seedMatchedRows(repository, sail, ROW_COUNT);
+			pause.arm();
+			// A foreign callback must return even when the broken probe mistakes it for the sampler. Its
+			// recorded ownership and latch state prove which row claimed the pause without a timed race.
+			pause.release.countDown();
+			if (samplerSnapshotReserved) {
+				pause.registerSamplerThread();
+				admission = sail.getBackingStore().beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, null);
+				assertTrue(pause.readSnapshotReserved(), "The sampler must reserve its paired dictionary first");
+			}
+			Future<long[]> otherRow = otherReader.submit(() -> {
+				try (TxnManager.Txn txn = sail.tripleStore().getTxnManager().createReadTxnUntracked();
+						RecordIterator rows = sail.tripleStore().getTriples(txn, -1, -1, -1, -1, true)) {
+					return rows.next();
+				}
+			});
+			assertNotNull(otherRow.get(10, TimeUnit.SECONDS), "The competing reader must consume a real native row");
+			assertEquals(1L, pause.rowRead.getCount(),
+					"An unrelated reader must not signal that the registered sampler has paused");
+			assertNull(pause.sampledRow.get(), "An unrelated reader must not publish the sampler's captured row");
+			if (!samplerSnapshotReserved) {
+				pause.registerSamplerThread();
+				admission = sail.getBackingStore().beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, null);
+			}
+			assertTrue(pause.isSamplingThread(), "Only explicit registration establishes the sampling owner");
+			assertTrue(pause.readSnapshotReserved(), "The real sampler's paired reservation must remain observable");
+			try (RecordIterator rows = sail.tripleStore()
+					.getTriples(admission.view().tripleTxn(), -1, -1, -1, -1,
+							true)) {
+				long[] sampled = rows.next();
+				assertNotNull(sampled, "The registered sampler must still consume a real native row");
+				assertEquals(0L, pause.rowRead.getCount(), "The registered sampler must claim the armed pause");
+				assertNotNull(pause.sampledRow.get(), "The registered sampler must capture its actual native row");
+				assertEquals(sampled[TripleIndex.SUBJ_IDX], pause.sampledRow.get()[TripleIndex.SUBJ_IDX]);
+				assertEquals(sampled[TripleIndex.OBJ_IDX], pause.sampledRow.get()[TripleIndex.OBJ_IDX]);
+			}
+		} finally {
+			pause.release.countDown();
+			if (admission != null) {
+				admission.close();
+			}
+			otherReader.shutdownNow();
+			assertTrue(otherReader.awaitTermination(10, TimeUnit.SECONDS), "The competing reader must terminate");
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDirectory.toFile());
 		}
@@ -885,6 +945,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 				writerCommittedWhilePaused = true;
 			} catch (TimeoutException ignored) {
 				// Release the old read epoch before collecting the bounded writer completion below.
+				pause.release.countDown();
 			}
 			try {
 				assertTrue(writerCommittedWhilePaused,
@@ -1732,6 +1793,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 		}
 
 		private void pauseAfterRead(long[] row) {
+			// Other readers cannot claim the explicitly registered sampler's pause or publish its row.
 			if (!isSamplingThread() || !armed.compareAndSet(true, false)) {
 				return;
 			}

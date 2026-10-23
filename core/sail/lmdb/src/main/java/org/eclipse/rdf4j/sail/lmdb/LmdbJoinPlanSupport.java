@@ -190,7 +190,7 @@ final class LmdbJoinPlanSupport {
 	static BindingSetAssignment smallLiteralFilterAnchor(ValueExpr condition, Predicate<Value> valueFilter) {
 		if (condition instanceof ListMemberOperator) {
 			List<ValueExpr> arguments = ((ListMemberOperator) condition).getArguments();
-			if (arguments.isEmpty() || !(arguments.getFirst()instanceof Var filterVar)) {
+			if (arguments.isEmpty() || !(arguments.getFirst() instanceof Var filterVar)) {
 				return null;
 			}
 
@@ -284,7 +284,6 @@ final class LmdbJoinPlanSupport {
 		});
 		return contains[0];
 	}
-
 
 	static boolean isValidPassRatio(double passRatio) {
 		return Double.isFinite(passRatio) && passRatio >= 0.0d && passRatio <= 1.0d;

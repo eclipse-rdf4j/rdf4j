@@ -546,8 +546,10 @@ final class PackedQueryCodec {
 				domainFacts.copyAll(relations.childGroupId(relationId, 0), groupId);
 				logicalRules.deriveFilterDomainFacts(relationId, groupId);
 			}
-			case PackedRelOp.QUERY_ROOT, PackedRelOp.DESCRIBE, PackedRelOp.SLICE, PackedRelOp.REDUCED, PackedRelOp.DISTINCT, PackedRelOp.MATERIALIZE, PackedRelOp.ORDER -> domainFacts
-					.copyAll(relations.childGroupId(relationId, 0), groupId);
+			case PackedRelOp.QUERY_ROOT, PackedRelOp.DESCRIBE, PackedRelOp.SLICE, PackedRelOp.REDUCED,
+					PackedRelOp.DISTINCT, PackedRelOp.MATERIALIZE, PackedRelOp.ORDER ->
+				domainFacts
+						.copyAll(relations.childGroupId(relationId, 0), groupId);
 			case PackedRelOp.PROJECTION -> deriveProjectionFacts(relationId, groupId);
 			case PackedRelOp.EXTENSION -> deriveExtensionFacts(relationId, groupId);
 			case PackedRelOp.GROUP -> deriveGroupKeyFacts(relationId, groupId);
@@ -814,6 +816,9 @@ final class PackedQueryCodec {
 				return binaryRelation(PackedRelOp.JOIN, 0, join.getLeftArg(), join.getRightArg(), path, nodeFlags);
 			}
 			if (expression instanceof Filter filter) {
+				if (!filter.getConditionBindingScope().isAuto()) {
+					throw new UnsupportedCascadesOperatorException(filter.getClass(), path + ".conditionBindingScope");
+				}
 				if (!filter.getRequiredInputBindingNames().isEmpty()) {
 					// This packed format has no parameter-frame payload. Never intern, cache, or materialize a
 					// logically equal unparameterized filter in its place; the standard correlated path retains it.
@@ -892,7 +897,7 @@ final class PackedQueryCodec {
 			Var predicateVar = pattern.getPredicateVar();
 			Var objectVar = pattern.getObjectVar();
 			if (predicateVar == null || objectVar == null
-					|| !(predicateVar.getValue()instanceof org.eclipse.rdf4j.model.IRI predicate)) {
+					|| !(predicateVar.getValue() instanceof org.eclipse.rdf4j.model.IRI predicate)) {
 				return;
 			}
 			if (objectVar.hasValue()) {
@@ -1013,12 +1018,12 @@ final class PackedQueryCodec {
 				return mergeFiniteDomains(finiteDomain(or.getLeftArg()), finiteDomain(or.getRightArg()));
 			}
 			if (condition instanceof Compare compare && compare.getOperator() == Compare.CompareOp.EQ) {
-				if (compare.getLeftArg()instanceof Var variable
-						&& !variable.hasValue() && compare.getRightArg()instanceof ValueConstant constant) {
+				if (compare.getLeftArg() instanceof Var variable
+						&& !variable.hasValue() && compare.getRightArg() instanceof ValueConstant constant) {
 					return new FiniteDomain(variable.getName(), new Value[] { constant.getValue() });
 				}
-				if (compare.getRightArg()instanceof Var variable
-						&& !variable.hasValue() && compare.getLeftArg()instanceof ValueConstant constant) {
+				if (compare.getRightArg() instanceof Var variable
+						&& !variable.hasValue() && compare.getLeftArg() instanceof ValueConstant constant) {
 					return new FiniteDomain(variable.getName(), new Value[] { constant.getValue() });
 				}
 			}
@@ -1027,14 +1032,14 @@ final class PackedQueryCodec {
 
 		private static FiniteDomain finiteListDomain(ListMemberOperator member) {
 			if (member.getArguments() == null || member.getArguments().size() < 2
-					|| !(member.getArguments().get(0)instanceof Var variable) || variable.hasValue()
+					|| !(member.getArguments().get(0) instanceof Var variable) || variable.hasValue()
 					|| member.getArguments().size() - 1 > MAX_FINITE_FILTER_VALUES) {
 				return null;
 			}
 			Value[] values = new Value[member.getArguments().size() - 1];
 			int count = 0;
 			for (int ordinal = 1; ordinal < member.getArguments().size(); ordinal++) {
-				if (!(member.getArguments().get(ordinal)instanceof ValueConstant constant)) {
+				if (!(member.getArguments().get(ordinal) instanceof ValueConstant constant)) {
 					return null;
 				}
 				count = appendDistinct(values, count, constant.getValue());

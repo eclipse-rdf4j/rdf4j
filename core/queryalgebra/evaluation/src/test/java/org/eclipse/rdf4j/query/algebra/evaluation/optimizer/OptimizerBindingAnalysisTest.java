@@ -17,8 +17,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -57,10 +59,14 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
 import org.junit.jupiter.api.Test;
 
 class OptimizerBindingAnalysisTest {
@@ -432,10 +438,45 @@ class OptimizerBindingAnalysisTest {
 		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withGuaranteedInputNames(extension,
 				Set.of("x"));
 
-		QueryAlgebraBindingAnalysis.ReadOnlyContext input = analysis.contextAt(innerPattern.getSubjectVar());
+		QueryAlgebraBindingAnalysis.ReadOnlyContext beforeProjection = analysis.contextAt(nestedSubquery);
+		QueryAlgebraBindingAnalysis.ReadOnlyContext afterProjection = analysis.contextAt(innerPattern.getSubjectVar());
 
-		assertThat(analysis.bindingState(innerPattern.getSubjectVar(), input))
-				.isEqualTo(QueryAlgebraBindingAnalysis.BindingState.UNBOUND);
+		assertThat(analysis.bindingState(innerPattern.getSubjectVar(), beforeProjection))
+				.isEqualTo(QueryAlgebraBindingAnalysis.BindingState.POSSIBLY_BOUND);
+		assertThat(analysis.bindingState(innerPattern.getSubjectVar(), afterProjection))
+				.isEqualTo(QueryAlgebraBindingAnalysis.BindingState.POSSIBLY_BOUND);
+		for (QueryAlgebraBindingAnalysis.ReadOnlyContext context : List.of(beforeProjection, afterProjection)) {
+			assertThat(context.guaranteedNames()).doesNotContain("x");
+			assertThat(context.fixedValues()).doesNotContainKey("x");
+			assertThat(context.externalValues()).doesNotContainKey("x");
+			assertThat(context.externalGuaranteedNames()).doesNotContain("x");
+		}
+	}
+
+	@Test
+	void failedBindRemovesOldInputBeforeNestedSelectExistsEvaluation() {
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("x", VF.createIRI("urn:old-input"));
+
+		assertThat(assertNestedSelectExistsBound(input, "SELECT ?seen WHERE { "
+				+ "BIND(EXISTS { SELECT ?x WHERE { FILTER(BOUND(?x)) } } AS ?seen) }"))
+						.isEqualTo(VF.createLiteral(true));
+		assertThat(assertNestedSelectExistsBound(input, "SELECT ?seen WHERE { BIND(?missing AS ?x) "
+				+ "BIND(EXISTS { SELECT ?x WHERE { FILTER(BOUND(?x)) } } AS ?seen) }"))
+						.isEqualTo(VF.createLiteral(false));
+	}
+
+	private Literal assertNestedSelectExistsBound(MapBindingSet input, String query) {
+		ParsedTupleQuery parsed = (ParsedTupleQuery) new SPARQLParser().parseQuery(query, null);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), parsed.getDataset(),
+				null);
+		try (var rows = strategy.precompile(parsed.getTupleExpr()).evaluate(input)) {
+			assertThat(rows.hasNext()).isTrue();
+			BindingSet result = rows.next();
+			Literal seen = (Literal) result.getValue("seen");
+			assertThat(rows.hasNext()).isFalse();
+			return seen;
+		}
 	}
 
 	@Test
@@ -528,8 +569,8 @@ class OptimizerBindingAnalysisTest {
 		QueryAlgebraBindingAnalysis.Dependencies dependencies = analysis.dependencies(exists,
 				analysis.contextAt(exists));
 
-		assertThat(dependencies.correlatedInputs()).doesNotContain("x");
-		assertThat(dependencies.existsLocals()).contains("x");
+		assertThat(dependencies.correlatedInputs()).contains("x");
+		assertThat(dependencies.existsLocals()).doesNotContain("x").contains("p", "o");
 	}
 
 	@Test

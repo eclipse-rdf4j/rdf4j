@@ -55,6 +55,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_mapsize;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxdbs;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxreaders;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_sync;
 import static org.lwjgl.util.lmdb.LMDB.mdb_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
@@ -100,6 +101,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.StampedLock;
 import java.util.function.BooleanSupplier;
@@ -127,6 +129,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.StoredBNodeIdResolver;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractValueFactory;
@@ -180,7 +183,11 @@ import it.unimi.dsi.fastutil.longs.LongArrayList;
  */
 @Experimental
 @InternalUseOnly
-public class ValueStore extends AbstractValueFactory implements BNodeIdResolver {
+public class ValueStore extends AbstractValueFactory implements BNodeIdResolver, StoredBNodeIdResolver {
+	@Override
+	public boolean hasStoredBNodeId(String id) {
+		return hasBNodeId(id);
+	}
 
 	@Override
 	public boolean hasBNodeId(String id) {
@@ -489,7 +496,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		}
 	}
 
-	private static boolean isValidRefCountMarker(ByteBuffer marker, long nativeTransactionId) {
+	static boolean isValidRefCountMarker(ByteBuffer marker, long nativeTransactionId) {
 		if (marker == null || marker.remaining() != REFCOUNT_MARKER_BYTES) {
 			return false;
 		}
@@ -607,7 +614,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 	static final String TERM_INDEX_MANIFEST_DATABASE = "term_index_manifest";
 	static final byte[] TERM_INDEX_MANIFEST_KEY = "term-index-specs".getBytes(StandardCharsets.US_ASCII);
 	private static final int TERM_INDEX_MANIFEST_VERSION = 1;
-	private static final int MAX_TERM_INDEXES = 12;
+	static final int MAX_TERM_INDEXES = 12;
 	private static final int TERM_INDEX_REBUILD_BATCH_SIZE = 2_048;
 	private static final long TERM_INDEX_REBUILD_BYTES_PER_RECORD = TripleIndex.MAX_KEY_LENGTH + 64L;
 	private static final Set<String> ALL_TERM_INDEX_SPECS = allTermIndexSpecs();
@@ -659,7 +666,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 	private static final byte REFCOUNT_MARKER_VERSION = 1;
 	private static final byte REFCOUNT_MARKER_DIRTY = 0;
 	private static final byte REFCOUNT_MARKER_CLEAN = 1;
-	private static final int REFCOUNT_MARKER_BYTES = Integer.BYTES + 2 + Long.BYTES + Integer.BYTES;
+	static final int REFCOUNT_MARKER_BYTES = Integer.BYTES + 2 + Long.BYTES + Integer.BYTES;
 	private static final int REFCOUNT_REBUILD_BATCH_SIZE = 4096;
 
 	private static final class PreparedValueFootprint {
@@ -969,6 +976,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 	private boolean auxiliaryDatabasesInitialized;
 	/** True only after a complete live-owner count establishment or a valid clean-close marker. */
 	private boolean refCountIntegrityEstablished;
+	private boolean bulkNativeOwnership;
+	private boolean bulkCompletionSynced;
 	private final boolean refCountRepairEnabled;
 	/** A known structured marker left by a previous format-2 opener, to be removed when repair is disabled. */
 	private boolean legacyStructuredRefCountMarker;
@@ -984,6 +993,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 	private volatile boolean lastNativeCommitSucceeded;
 	/** Last native transaction ID whose dictionary/ref-count state this instance has established as trustworthy. */
 	private long lastTrustedNativeTransactionId = -1L;
+	private long closingTripleTransactionId = -1L;
+	private long bulkMaximumDataBytes;
+	private long bulkMaximumNamespaceBytes;
+	private long bulkMaximumIriBytes;
+	private long bulkDataRecordCount;
 	/** Expected transaction predecessor while startup initialization owns the LMDB writer across bootstrap phases. */
 	private long startupExpectedLastTransactionId = -1L;
 	private boolean startupInitializationInProgress;
@@ -998,6 +1012,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 
 	// An optional exact-read-view accelerator. It owns compressed copies, not LMDB page addresses.
 	private volatile ValueOverlayRegistry compressedValues;
+	/** Snapshot value-to-ID lookups answered by the overlay's reverse index, and those that read the dictionary. */
+	private final LongAdder snapshotIdOverlayHits = new LongAdder();
+	private final LongAdder snapshotIdDictionaryReads = new LongAdder();
 	/** Logical initial-import lifetime; native checkpoint generation changes do not release it. */
 	private volatile boolean valueOverlayMaintenanceDeferred;
 	private volatile boolean valueOverlayCaptureDeferred;
@@ -1325,6 +1342,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 
 	private void initializeAfterOpen(LmdbStoreConfig config) throws IOException {
 		valueStoreInitializationComplete = false;
+		if (properties.preparedBulkStore != null && (startupMarkerStatus == null || !startupMarkerStatus.valid()
+				|| startupMarkerStatus.nativeTransactionId() != properties.preparedBulkStore.values()
+						.transactionId())) {
+			throw new IOException("Prepared bulk value generation changed during startup");
+		}
 		if (!refCountRepairEnabled) {
 			logger.warn("LMDB format-2 component reference-count repair is disabled; historical counts remain "
 					+ "unverified and dictionary reclamation is deferred. Enable "
@@ -1373,7 +1395,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 			commit();
 		}
 		migrateLanguageTagKeysIfNeeded();
-		establishRefCountIntegrity();
+		if (properties.preparedBulkStore != null && startupMarkerStatus != null && startupMarkerStatus.valid()
+				&& !refCountRecoveryRequired && lastTransactionId() == lastTrustedNativeTransactionId) {
+			refCountIntegrityEstablished = true;
+		} else {
+			establishRefCountIntegrity();
+		}
 		if (!deferPersistedUnusedRecovery) {
 			freePersistedUnusedValuesAfterRecovery();
 		}
@@ -1579,6 +1606,145 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		refCountRecoveryRequired = true;
 	}
 
+	void beginBulkOwnership() throws IOException {
+		bulkNativeOwnership = true;
+		lastTrustedNativeTransactionId = lastTransactionId();
+	}
+
+	long validatedBulkTransactionId() throws IOException {
+		long current = lastTransactionId();
+		if (!bulkCompletionSynced || current != lastTrustedNativeTransactionId) {
+			throw new IOException("Bulk dictionary changed after validated completion");
+		}
+		return current;
+	}
+
+	/** Called only by the native owner after the canonical loader has verified all generated streams. */
+	long bulkStoredValueCount() throws IOException {
+		return add(bulkDataRecordCount, bulkStoredTripleTermCount());
+	}
+
+	private long bulkStoredTripleTermCount() throws IOException {
+		return readTransaction(env, (stack, txn) -> {
+			MDBStat stat = MDBStat.malloc(stack);
+			E(mdb_stat(txn, tripleTermSpocIndex.getDB(true), stat));
+			return stat.ms_entries();
+		});
+	}
+
+	/** Called only by the native owner after the canonical loader has verified all generated streams. */
+	void reserveBulkCompletionCapacity(long additionalValues, long additionalStatements, long minimumBytes,
+			LmdbStoreConfig config, long maximumCanonicalBytes, int maximumTermDepth) throws IOException {
+		if (!bulkNativeOwnership || writeTxn != 0L || additionalValues < 0L || additionalStatements < 0L
+				|| maximumCanonicalBytes < 0L || maximumTermDepth < 0) {
+			throw new IOException("Cannot plan capacity for an unowned or active bulk value generation");
+		}
+		long lexicalBytes = Math.max(bulkMaximumDataBytes,
+				add(bulkMaximumIriBytes, bulkMaximumNamespaceBytes));
+		long depth = Math.min(bulkStoredTripleTermCount(), maximumTermDepth);
+		if (maximumCanonicalBytes == 0L) {
+			// Older direct writer callers lack the canonical envelope. Conservatively include every scalar position
+			// in the possible existing term chain; normal/resumed loader calls supply their already-recorded envelope.
+			maximumCanonicalBytes = multiply(add(multiply(depth, 2L), 2L), add(lexicalBytes, 32L));
+		}
+		long scalarAdvisory = DictionaryByteEstimate.bulkPayloadUpperBound(lexicalBytes);
+		long statementAdvisory = Math.max(DictionaryByteEstimate.UNINSPECTED_STATEMENT_BYTES,
+				add(multiply(scalarAdvisory, 3L),
+						DictionaryByteEstimate.bulkCanonicalClosureUpperBound(maximumCanonicalBytes, depth)));
+		long advisoryBytes = add(multiply(additionalValues, scalarAdvisory),
+				multiply(additionalStatements, statementAdvisory));
+		long dataBound = add(multiply(lexicalBytes, 3L), 32L + MAX_UNSIGNED_ID_BYTES);
+		PreparedValueFootprint one = new PreparedValueFootprint();
+		one.addStoredRecordUpperBound(dataBound, pageSize);
+		PreparedValueFootprint future = new PreparedValueFootprint();
+		// The total new inventory remains reserved even when committed in small chunks. Foreign-model lookup also
+		// reserves existing identities as potential writes, but only for one native lookup batch: approveAllBulk uses
+		// the configured lexical batch, while ordinary scalar approval uses the fixed value-resolution chunk.
+		long lookupStatements = Math.min(additionalStatements,
+				Math.max(config.getBulkOperationSize(), LmdbSailStore.valueResolutionChunkCapacity(Integer.MAX_VALUE)));
+		long lookupScalars = multiply(lookupStatements, 4L);
+		long admittedScalars = add(additionalValues, lookupScalars);
+		future.mainPuts = multiply(one.mainPuts, admittedScalars);
+		future.mainEntryBytes = multiply(one.mainEntryBytes, admittedScalars);
+		future.mainOverflowPages = multiply(one.mainOverflowPages, admittedScalars);
+		future.tripleRecords = additionalValues;
+		future.tripleEntryBytes = multiply(additionalValues, leafEntryBytes(TripleIndex.MAX_KEY_LENGTH, 0L));
+		// Only newly stored owners add pending dependencies: one namespace/datatype for a scalar, three components
+		// for a term. Statement edges are tracked by triple liveness, not this cache. Keep every possible pending key
+		// across the complete user transaction, plus one batch's speculative namespace/datatype lookup admission.
+		future.referencePuts = add(multiply(additionalValues, 3L), lookupScalars);
+		future.referenceEntryBytes = multiply(future.referencePuts,
+				leafEntryBytes(MAX_ID_KEY_BYTES, MAX_UNSIGNED_ID_BYTES));
+		completePreparedValueFootprint(future);
+		long startupBytes = multiply(preflightStartupBootstrapCapacity(config), 3L);
+		long target = readTransaction(env, (stack, txn) -> {
+			long nativeBytes = preparedValueReservation(stack, txn, future);
+			long projected = add(LmdbUtil.getNewSize(pageSize, txn, 0L),
+					add(Math.max(nativeBytes, advisoryBytes), startupBytes));
+			return growthPolicy.minimumMapSize(Math.max(mapSize, Math.max(1L, minimumBytes)), pageSize, projected);
+		});
+		if (target > mapSize) {
+			var manager = txnManager.lockManager();
+			long stamp;
+			try {
+				stamp = manager.writeLock();
+			} catch (InterruptedException interrupted) {
+				Thread.currentThread().interrupt();
+				throw new IOException("Interrupted while reserving bulk value capacity", interrupted);
+			}
+			try {
+				txnManager.deactivate();
+				try {
+					E(mdb_env_set_mapsize(env, target));
+					mapSize = target;
+					nativeMapGeneration++;
+					bulkMapGrowthCount++;
+				} finally {
+					txnManager.activate();
+				}
+			} finally {
+				manager.unlockWrite(stamp);
+			}
+		}
+	}
+
+	/** Called only by the native owner after the canonical loader has verified all generated streams. */
+	void completeValidatedBulkGeneration(byte[] generation, LmdbStoreConfig config, long tripleTransactionId)
+			throws IOException {
+		if (!bulkNativeOwnership || !auxiliaryDatabasesInitialized || writeTxn != 0L
+				|| lastTransactionId() != lastTrustedNativeTransactionId) {
+			throw new IOException("Cannot certify an unowned or incomplete bulk dictionary");
+		}
+		long startupBytes = preflightStartupBootstrapCapacity(config);
+		// Reserve the same bounded metadata footprint needed by an ordinary opening, plus this preparation and clean
+		// close. These are actual database-tree reservations, not a whole-dictionary reconstruction estimate.
+		long requiredBytes = Math.multiplyExact(startupBytes, 3L);
+		reserveWriteCapacity(requiredBytes);
+		readTransaction(env, (stack, txn) -> {
+			if (growthPolicy.hardCapacityRequired(mapSize, LmdbUtil.getNewSize(pageSize, txn, 0L), requiredBytes)) {
+				throw new IOException("Insufficient value-map capacity to complete bulk startup preparation");
+			}
+			return null;
+		});
+		writeTransaction((stack, txn) -> {
+			int metadata = openDatabaseWithTxn(txn, "gc_meta", 0);
+			MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(PreparedBulkStore.GENERATION_KEY));
+			MDBVal value = MDBVal.calloc(stack).mv_data(stack.bytes(generation));
+			E(mdb_put(txn, metadata, key, value, 0));
+			return null;
+		});
+		refCountRecoveryRequired = false;
+		refCountIntegrityEstablished = true;
+		valueStoreInitializationComplete = true;
+		prepareCleanClose(tripleTransactionId);
+		writeCleanRefCountMarker();
+		if (!refCountIntegrityEstablished) {
+			throw new IOException("Could not complete bulk reference-count integrity metadata");
+		}
+		E(mdb_env_sync(env, true));
+		bulkCompletionSynced = true;
+	}
+
 	private void initializeIdsAndTermIndexes(LmdbStoreConfig config) throws IOException {
 		// Recover the counter before opening the term indexes commits and persists it.
 		readTransaction(env, (stack, txn) -> {
@@ -1720,6 +1886,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 	}
 
 	private void establishRefCountIntegrity() throws IOException {
+		LmdbStartupDiagnostics.observe(LmdbStartupDiagnostics.Operation.REFCOUNT_INTEGRITY);
 		refCountIntegrityEstablished = false;
 		if (!refCountRepairEnabled) {
 			return;
@@ -1821,6 +1988,14 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		currentTripleLivenessAvailable = true;
 	}
 
+	void completePreparedStoreInitialization(ValueIdLivenessChecker livenessChecker) throws IOException {
+		if (!refCountIntegrityEstablished || refCountRecoveryRequired) {
+			throw new IOException("Prepared store lost its reference-count integrity proof during startup");
+		}
+		this.valueIdLivenessChecker = Objects.requireNonNull(livenessChecker);
+		currentTripleLivenessAvailable = true;
+	}
+
 	/** Owner startup retirement recovery may author further unused rows after the initial reclaim phase. */
 	void completeRetiredValueIdRecovery() throws IOException {
 		if (!currentTripleLivenessAvailable) {
@@ -1847,6 +2022,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 	}
 
 	private void rebuildRefCounts() throws IOException {
+		LmdbStartupDiagnostics.observe(LmdbStartupDiagnostics.Operation.REFCOUNT_REBUILD);
 		if (tripleTermSpocIndex == null) {
 			throw new IOException("Cannot rebuild ValueStore ref_counts: the live SPOC term index is unavailable");
 		}
@@ -2559,6 +2735,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		open(deferAuxiliaryDatabases, false);
 	}
 
+	private record InitialMapState(int pageSize, boolean empty) {
+	}
+
 	private void open(boolean deferAuxiliaryDatabases, boolean replacingNativeGeneration) throws IOException {
 		valueStoreInitializationComplete = false;
 		refCountIntegrityEstablished = false;
@@ -2566,6 +2745,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		legacyStructuredRefCountMarker = false;
 		startupMarkerStatus = null;
 		lastTrustedNativeTransactionId = -1L;
+		closingTripleTransactionId = -1L;
 		startupExpectedLastTransactionId = -1L;
 		startupInitializationInProgress = false;
 		boolean nativeGenerationExists = new File(dir, "data.mdb").exists();
@@ -2641,33 +2821,28 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 			startupMarkerStatus = markerStatus;
 		}
 
-		// initialize page size and set map size for env
-		readTransaction(env, (stack, txn) -> {
+		// End the discovery reader before a remap can invalidate its native mapping.
+		InitialMapState initial = readTransaction(env, (stack, txn) -> {
 			MDBStat stat = MDBStat.malloc(stack);
-			mdb_stat(txn, dbi, stat);
-
-			boolean isEmpty = stat.ms_entries() == 0;
-			pageSize = stat.ms_psize();
-			// align map size with page size
-			long configMapSize = (mapSize / pageSize) * pageSize;
-			if (configMapSize < 6L * pageSize) {
-				logger.debug("configMapSize needs to be at least 6 pages");
-				configMapSize = 6L * pageSize;
-			}
-			if (isEmpty) {
-				// this is an empty db, use configured map size
-				mdb_env_set_mapsize(env, configMapSize);
+			E(mdb_stat(txn, dbi, stat));
+			return new InitialMapState(stat.ms_psize(), stat.ms_entries() == 0L);
+		});
+		pageSize = initial.pageSize();
+		long configMapSize = Math.max(6L * pageSize, LmdbUtil.pageAlignedCapacity(mapSize, pageSize));
+		try (MemoryStack stack = stackPush()) {
+			if (initial.empty()) {
+				E(mdb_env_set_mapsize(env, configMapSize));
 			}
 			MDBEnvInfo info = MDBEnvInfo.malloc(stack);
-			mdb_env_info(env, info);
+			E(mdb_env_info(env, info));
 			mapSize = info.me_mapsize();
 			if (mapSize < configMapSize) {
 				// configured map size is larger than map size stored in env, increase map size
-				mdb_env_set_mapsize(env, configMapSize);
-				mapSize = configMapSize;
+				E(mdb_env_set_mapsize(env, configMapSize));
+				E(mdb_env_info(env, info));
+				mapSize = info.me_mapsize();
 			}
-			return null;
-		});
+		}
 
 		txnManager.reset();
 		if (newNativeGeneration && !format.isLegacy()) {
@@ -2740,6 +2915,20 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 	private void openAuxiliaryDatabases(boolean freshBulkLoad) throws IOException {
 		if (auxiliaryDatabasesInitialized) {
 			throw new IllegalStateException("ValueStore auxiliary databases are already initialized");
+		}
+		if (freshBulkLoad) {
+			writeTransaction((stack, txn) -> {
+				unusedDbi = openDatabaseWithTxn(txn, "unused_ids", MDB_CREATE);
+				freeDbi = openDatabaseWithTxn(txn, "free_ids", MDB_CREATE);
+				refCountsDbi = openDatabaseWithTxn(txn, "ref_counts", MDB_CREATE);
+				retiredIdStore.openWithTransaction(env, txn, true);
+				return null;
+			});
+			retiredIdStore.syncAfterTransaction(env);
+			txnManager.reset();
+			freeIdsAvailable = false;
+			auxiliaryDatabasesInitialized = true;
+			return;
 		}
 		// open unused IDs database
 		unusedDbi = openDatabase(env, "unused_ids", MDB_CREATE);
@@ -3981,6 +4170,48 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		valueResolutionScopes.remove(scope);
 	}
 
+	/** Admission did not start; the caller must release every native/publication resource before waiting. */
+	static final class ValueReadAdmissionException extends IOException {
+		private static final long serialVersionUID = 1L;
+
+		private ValueReadAdmissionException() {
+			super("Dictionary identity admission must wait outside native barriers");
+		}
+	}
+
+	/** Waits only after a failed admission has released native barriers, snapshot handles and reader permits. */
+	void awaitValueReaderAdmission() throws IOException {
+		acquireAssociationGate(QueryExecutionDeadline.current());
+		try {
+			synchronized (writerAdmission) {
+				if (shuttingDown || env == 0) {
+					throw new IOException("ValueStore is closed");
+				}
+			}
+		} finally {
+			associationGate.unlock();
+		}
+	}
+
+	private boolean tryAcquireAssociationGate(QueryExecutionDeadline deadline) throws IOException {
+		checkValueScopeDeadline(deadline);
+		try {
+			if (!associationGate.tryLock(0L, TimeUnit.NANOSECONDS)) {
+				return false;
+			}
+		} catch (InterruptedException failure) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while capturing dictionary identity", failure);
+		}
+		try {
+			checkValueScopeDeadline(deadline);
+			return true;
+		} catch (RuntimeException | Error failure) {
+			associationGate.unlock();
+			throw failure;
+		}
+	}
+
 	private boolean canRetainValueReader(ValueStoreRevision.Lazy revision) {
 		if (revision.association() == null
 				|| revision.association().state != NativeValueAssociation.State.COMMITTED) {
@@ -3997,6 +4228,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		ValueReadScope scope = new ValueReadScope(revision, true);
 		try {
 			return txnManager.tryCreateRetainedReadTxnUnderReadLock(scope::open);
+		} catch (ValueReadAdmissionException notAdmitted) {
+			return null;
 		} finally {
 			scope.releaseReservation();
 		}
@@ -4054,7 +4287,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		return scope == null ? revision : scope.revision(lazy);
 	}
 
-	/** Reader admission takes the native barrier first; this gate covers native begin and identity capture only. */
+	/** Native admission never waits for this gate; it covers native begin and identity capture only. */
 	private final class ValueReadScope implements TxnManager.ReaderStartScope {
 		private final ValueStoreRevision.Lazy requested;
 		private final boolean retained;
@@ -4093,7 +4326,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 				}
 			}
 			QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
-			acquireAssociationGate(deadline);
+			if (!tryAcquireAssociationGate(deadline)) {
+				throw new ValueReadAdmissionException();
+			}
 			gateHeld = true;
 			boolean capturedIdentity = false;
 			try {
@@ -4157,8 +4392,25 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 			ensureAssociationReadable(requested);
 		}
 		if (isWriteTransactionOwner()) {
-			return withBorrowedReadContext(writeTxn,
-					requested == null ? currentReadRevision(LmdbValue.UNKNOWN_ID) : requested, false, transaction);
+			// The native writer can be consumed by commit, rollback, clear or close on another thread. Keep its
+			// association ownership through the complete borrowed read, and recheck after acquiring that ownership.
+			acquireAssociationGate(QueryExecutionDeadline.current());
+			try {
+				synchronized (writerAdmission) {
+					if (shuttingDown) {
+						throw new IOException("ValueStore is closed");
+					}
+				}
+				WriterPublication publication = writerPublication;
+				if (isWriteTransactionOwner() && publication != null
+						&& (publication.consumer == null || publication.consumer == Thread.currentThread())) {
+					return withBorrowedReadContext(writeTxn,
+							requested == null ? currentReadRevision(LmdbValue.UNKNOWN_ID) : requested, false,
+							transaction);
+				}
+			} finally {
+				associationGate.unlock();
+			}
 		}
 		long borrowed = readContext.get().borrowedTxn;
 		if (borrowed != 0) {
@@ -4167,16 +4419,26 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 			}
 			return LmdbUtil.readTransaction(env, borrowed, transaction);
 		}
-		ValueReadScope scope = new ValueReadScope(requested);
-		try {
-			if (ordinaryOnly) {
-				return txnManager.tryDoWith((stack, txn) -> withScopedValueReadContext(txn, scope, transaction),
-						scope::open);
+		while (true) {
+			ValueReadScope scope = new ValueReadScope(requested);
+			try {
+				try {
+					if (ordinaryOnly) {
+						return txnManager.tryDoWith((stack, txn) -> withScopedValueReadContext(txn, scope, transaction),
+								scope::open);
+					}
+					return txnManager.doWithPriority(
+							(stack, txn) -> withScopedValueReadContext(txn, scope, transaction),
+							scope::open);
+				} finally {
+					scope.releaseReservation();
+				}
+			} catch (ValueReadAdmissionException notAdmitted) {
+				if (ordinaryOnly) {
+					return null;
+				}
+				awaitValueReaderAdmission();
 			}
-			return txnManager.doWithPriority((stack, txn) -> withScopedValueReadContext(txn, scope, transaction),
-					scope::open);
-		} finally {
-			scope.releaseReservation();
 		}
 	}
 
@@ -5026,6 +5288,14 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		}
 	}
 
+	/** How read-snapshot value-to-ID lookups were answered so far. */
+	record SnapshotIdLookups(long overlayHits, long dictionaryReads) {
+	}
+
+	SnapshotIdLookups snapshotIdLookups() {
+		return new SnapshotIdLookups(snapshotIdOverlayHits.sum(), snapshotIdDictionaryReads.sum());
+	}
+
 	@InternalUseOnly
 	public CompressedValueOverlay.Stats compressedValueOverlayStats() {
 		ValueOverlayRegistry registry = compressedValues;
@@ -5657,7 +5927,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		}
 		ValueResolutionScope scope = requested instanceof ValueStoreRevision.Lazy lazy ? lazy.resolutionScope() : null;
 		if ((scope == null || !scope.isOpen())
-				&& value.getValueStoreRevision()instanceof ValueStoreRevision.Lazy lazy) {
+				&& value.getValueStoreRevision() instanceof ValueStoreRevision.Lazy lazy) {
 			// Naked lazy access preserves the low-level escape contract, including shells first published
 			// by an internal scope. Promotion preserves both the canonical object and immutable ID identity.
 			protectExternalValue(value);
@@ -5930,6 +6200,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 						resolved = txnManager.tryDoWith(
 								(stack, txn) -> withScopedValueReadContext(txn, scope, decode),
 								scope::open);
+					} catch (ValueReadAdmissionException notAdmitted) {
+						resolved = null;
 					} finally {
 						scope.releaseReservation();
 					}
@@ -8544,7 +8816,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 			return LmdbValue.UNKNOWN_ID;
 		}
 		ensureAssociationReadable(identity.revision());
-		if (identity.revision()instanceof ValueStoreRevision.Lazy lazy && lazy.association() != null
+		if (identity.revision() instanceof ValueStoreRevision.Lazy lazy && lazy.association() != null
 				&& lazy.association().state != NativeValueAssociation.State.COMMITTED) {
 			return LmdbValue.UNKNOWN_ID;
 		}
@@ -8947,6 +9219,18 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		}
 		byte[] key = lookupKey(data);
 		long languageRange = lookupLanguageRange(key);
+		// An exact payload match proves the same dictionary identity. A miss still consults the physical key,
+		// including legacy byte-exact keys and current-format canonical language matching.
+		try (ValueOverlayRegistry.SnapshotLease overlay = borrowValueOverlay(txn)) {
+			if (overlay != null) {
+				OptionalLong hit = overlay.findId(data);
+				if (hit.isPresent()) {
+					snapshotIdOverlayHits.increment();
+					return hit.getAsLong();
+				}
+			}
+		}
+		snapshotIdDictionaryReads.increment();
 		try (MemoryStack stack = stackPush()) {
 			MDBVal dataVal = MDBVal.calloc(stack);
 			MDBVal idVal = MDBVal.calloc(stack);
@@ -9074,8 +9358,23 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 			return start(null);
 		}
 
-		/** Captures shared ID retention atomically with native admission under an already-pinned triple capability. */
+		/** Waits outside its native barrier, retaining only the caller-owned triple capability across admission. */
 		synchronized ReadSnapshot start(Txn tripleTxn) throws IOException {
+			while (true) {
+				try {
+					return tryStart(tripleTxn);
+				} catch (ValueReadAdmissionException notAdmitted) {
+					awaitValueReaderAdmission();
+					reservation = txnManager.reserveReadTxn(false);
+				}
+			}
+		}
+
+		/**
+		 * Captures shared ID retention atomically with native admission. A caller holding publication or paired-reader
+		 * resources must unwind all of them on ValueReadAdmissionException before waiting and reserving again.
+		 */
+		synchronized ReadSnapshot tryStart(Txn tripleTxn) throws IOException {
 			if (reservation == null) {
 				throw new IllegalStateException(
 						"ValueStore read snapshot reservation has already been consumed or closed");
@@ -9174,7 +9473,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 				return false;
 			}
 			LmdbValue.InternalIdentity identity = nativeValue.getInternalIdentity();
-			return identity.id() != LmdbValue.UNKNOWN_ID && identity.revision()instanceof ValueStoreRevision.Lazy lazy
+			return identity.id() != LmdbValue.UNKNOWN_ID && identity.revision() instanceof ValueStoreRevision.Lazy lazy
 					&& current.provesStatementIds(lazy);
 		}
 
@@ -10042,7 +10341,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 
 	<T> T readTransaction(long env, Transaction<T> transaction) throws IOException {
 		if (isWriteTransactionOwner()) {
-			return LmdbUtil.readTransaction(env, writeTxn, transaction);
+			return withValueReadTransaction(null, transaction);
 		}
 		ReadContext context = readContext.get();
 		long borrowed = context.borrowedTxn;
@@ -10111,7 +10410,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 				refreshCommittedHighWater();
 				long observedNativeTransactionId = trustedPostCommitTransactionId(nativeTransactionId[0],
 						priorNativeTransactionId[0]);
-				if (refCountIntegrityEstablished) {
+				if (refCountIntegrityEstablished || bulkNativeOwnership) {
 					lastTrustedNativeTransactionId = observedNativeTransactionId;
 				}
 				// Never publish from inside the native transaction callback.
@@ -11317,7 +11616,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		if (startupInitializationInProgress) {
 			startupExpectedLastTransactionId = observedNativeTransactionId;
 		}
-		if (refCountIntegrityEstablished) {
+		if (refCountIntegrityEstablished || bulkNativeOwnership) {
 			lastTrustedNativeTransactionId = observedNativeTransactionId;
 		}
 	}
@@ -11342,7 +11641,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 	}
 
 	private void validateNativeWriterTransaction(long txn, long expectedLastTransactionId) throws IOException {
-		if ((!refCountIntegrityEstablished && !startupInitializationInProgress) || expectedLastTransactionId < 0L) {
+		if ((!refCountIntegrityEstablished && !startupInitializationInProgress && !bulkNativeOwnership)
+				|| expectedLastTransactionId < 0L) {
 			return;
 		}
 		long expected;
@@ -11499,13 +11799,15 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		case SnapshotKnownId known -> known.id();
 		case SnapshotEncodedValue encoded -> findCapturedId(txn, encoded.data());
 		case SnapshotIRI iri -> {
-			String namespace = new String(iri.namespaceData(), 1, iri.namespaceData().length - 1, StandardCharsets.UTF_8);
+			String namespace = new String(iri.namespaceData(), 1, iri.namespaceData().length - 1,
+					StandardCharsets.UTF_8);
 			ReverseIdCache.State<NamespaceKey> namespaces = namespaceIDCache.state();
 			ReverseIdCache.Entry<NamespaceKey> found = namespaceIDCache.get(namespaces, namespace, ValuePosition.NONE);
 			long namespaceId = LmdbValue.UNKNOWN_ID;
 			boolean hit = false;
 			if (found != null && sameRevision(found.revision(), selected)) {
-				if (found.id() == LmdbValue.UNKNOWN_ID && lookup.scope != null && found.negativeScope() == lookup.scope) {
+				if (found.id() == LmdbValue.UNKNOWN_ID && lookup.scope != null
+						&& found.negativeScope() == lookup.scope) {
 					hit = true;
 				} else if (found.id() != LmdbValue.UNKNOWN_ID && containsValueId(txn, found.id())) {
 					namespaceId = found.id();
@@ -11533,7 +11835,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 			if (result == LmdbValue.UNKNOWN_ID) {
 				byte[] lexical = new byte[iri.namespaceData().length - 1 + iri.localNameData().length];
 				System.arraycopy(iri.namespaceData(), 1, lexical, 0, iri.namespaceData().length - 1);
-				System.arraycopy(iri.localNameData(), 0, lexical, iri.namespaceData().length - 1, iri.localNameData().length);
+				System.arraycopy(iri.localNameData(), 0, lexical, iri.namespaceData().length - 1,
+						iri.localNameData().length);
 				try (MemoryStack stack = stackPush()) {
 					result = findAlternativeIriId(lexical, -1, LmdbValue.UNKNOWN_ID, stack, txn);
 				}
@@ -11541,7 +11844,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 			yield result;
 		}
 		case SnapshotLiteral literal -> {
-			long datatypeId = literal.datatype() == null ? 0 : getCapturedId(txn, literal.datatype(), ValuePosition.NONE, lookup);
+			long datatypeId = literal.datatype() == null ? 0
+					: getCapturedId(txn, literal.datatype(), ValuePosition.NONE, lookup);
 			if (datatypeId == LmdbValue.UNKNOWN_ID) {
 				yield LmdbValue.UNKNOWN_ID;
 			}
@@ -11557,7 +11861,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 			long predicate = getCapturedId(txn, triple.predicate(), ValuePosition.PREDICATE, lookup);
 			long object = getCapturedId(txn, triple.object(), ValuePosition.OBJECT, lookup);
 			yield subject == LmdbValue.UNKNOWN_ID || predicate == LmdbValue.UNKNOWN_ID || object == LmdbValue.UNKNOWN_ID
-					? LmdbValue.UNKNOWN_ID : findTripleTermId(null, txn, subject, predicate, object);
+					? LmdbValue.UNKNOWN_ID
+					: findTripleTermId(null, txn, subject, predicate, object);
 		}
 		};
 		if (key != null && id == LmdbValue.UNKNOWN_ID) {
@@ -11586,16 +11891,20 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		case SnapshotKnownId ignored -> null;
 		case SnapshotEncodedValue encoded -> encoded.data()[0] == BNODE_VALUE
 				? new RdfTermKey(Value.Type.BNode, new String(encoded.data(), 1, encoded.data().length - 1,
-						StandardCharsets.UTF_8), null, null, null, null, null, null) : null;
+						StandardCharsets.UTF_8), null, null, null, null, null, null)
+				: null;
 		case SnapshotIRI iri -> new RdfTermKey(Value.Type.IRI,
 				new String(iri.namespaceData(), 1, iri.namespaceData().length - 1, StandardCharsets.UTF_8)
-						+ new String(iri.localNameData(), StandardCharsets.UTF_8), null, null, null, null, null, null);
+						+ new String(iri.localNameData(), StandardCharsets.UTF_8),
+				null, null, null, null, null, null);
 		case SnapshotLiteral literal -> {
 			RdfTermKey datatype = literal.datatype() == null ? null : capturedTermKey(literal.datatype());
-			yield datatype == null ? null : new RdfTermKey(Value.Type.Literal,
-					new String(literal.labelData(), StandardCharsets.UTF_8),
-					literal.languageData() == null ? null : new String(literal.languageData(), StandardCharsets.UTF_8),
-					datatype.lexical(), literal.baseDirection(), null, null, null);
+			yield datatype == null ? null
+					: new RdfTermKey(Value.Type.Literal,
+							new String(literal.labelData(), StandardCharsets.UTF_8),
+							literal.languageData() == null ? null
+									: new String(literal.languageData(), StandardCharsets.UTF_8),
+							datatype.lexical(), literal.baseDirection(), null, null, null);
 		}
 		case SnapshotTriple triple -> {
 			RdfTermKey subject = capturedTermKey(triple.subject());
@@ -13441,7 +13750,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 				if (startupInitializationInProgress) {
 					startupExpectedLastTransactionId = observed;
 				}
-				if (refCountIntegrityEstablished) {
+				if (refCountIntegrityEstablished || bulkNativeOwnership) {
 					lastTrustedNativeTransactionId = observed;
 				}
 				completeCompressedValueMutation(overlay);
@@ -13594,6 +13903,15 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 						throw new IOException("ValueStore bulk records are not strictly increasing");
 					}
 					if (targetDbi == dbi && pending.key().length > 1 && pending.key()[0] == ID_KEY) {
+						bulkDataRecordCount = add(bulkDataRecordCount, 1L);
+						bulkMaximumDataBytes = Math.max(bulkMaximumDataBytes, pending.value().length);
+						if (pending.value().length > 0) {
+							if (pending.value()[0] == NAMESPACE_VALUE) {
+								bulkMaximumNamespaceBytes = Math.max(bulkMaximumNamespaceBytes, pending.value().length);
+							} else if (pending.value()[0] == URI_VALUE) {
+								bulkMaximumIriBytes = Math.max(bulkMaximumIriBytes, pending.value().length);
+							}
+						}
 						nextId = Math.max(nextId,
 								Math.addExact(ValueIds.referenceOrdinal(data2id(ByteBuffer.wrap(pending.key()))), 1L));
 					}
@@ -14119,7 +14437,26 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		PREVIOUS_NAMESPACE_HANDLE.setRelease(this, null);
 	}
 
+	/** The paired store supplies only its last owned native triple commit, after its writers have drained. */
+	void prepareCleanClose(long tripleTransactionId) {
+		closingTripleTransactionId = tripleTransactionId;
+	}
+
+	void invalidateCleanCloseAfterUnknownTripleWriter() {
+		closingTripleTransactionId = -1L;
+		invalidateRefCountIntegrity("an intervening native triple writer before clean close");
+	}
+
+	long trustedClosedTransactionId() {
+		return refCountIntegrityEstablished && !refCountRecoveryRequired && !refCountRecoveryInProgress
+				? lastTrustedNativeTransactionId
+				: -1L;
+	}
+
 	private void writeCleanRefCountMarker() {
+		if (bulkCompletionSynced) {
+			return;
+		}
 		if (!refCountRepairEnabled || !valueStoreInitializationComplete || !auxiliaryDatabasesInitialized
 				|| !refCountIntegrityEstablished
 				|| refCountRecoveryRequired
@@ -14128,6 +14465,19 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		}
 		try {
 			writeTransaction((stack, txn) -> {
+				if (closingTripleTransactionId >= 0L) {
+					int metadata = openDatabaseWithTxn(txn, "gc_meta", 0);
+					MDBVal key = MDBVal.calloc(stack)
+							.mv_data(stack.bytes(PreparedBulkStore.CLEAN_TRIPLE_TRANSACTION_KEY));
+					MDBVal value = MDBVal.calloc(stack)
+							.mv_data(stack.bytes(ByteBuffer.allocate(Long.BYTES)
+									.putLong(closingTripleTransactionId)
+									.array()));
+					E(mdb_put(txn, metadata, key, value, 0));
+					key.mv_data(stack.bytes(PreparedBulkStore.CLEAN_PROPERTIES_FINGERPRINT_KEY));
+					value.mv_data(stack.bytes(PreparedBulkStore.cleanPropertiesFingerprint(properties)));
+					E(mdb_put(txn, metadata, key, value, 0));
+				}
 				writeRefCountMarker(stack, txn, REFCOUNT_MARKER_CLEAN);
 				return null;
 			});
@@ -14198,6 +14548,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 				Thread.currentThread().interrupt();
 			}
 		}
+		// A borrowed writer can need the native exclusive barrier to resize. Drain its association ownership
+		// before taking either that barrier or the store monitor, which its checkpoint may also need.
+		associationGate.lock();
+		associationGate.unlock();
 	}
 
 	/** Rechecks after taking the store monitor, since another clear may have reopened writer admission. */
@@ -14241,15 +14595,18 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 			try (TxnManager.CloseBarrier ignored = txnManager.acquireCloseBarrier()) {
 				nativeQuiesced = true;
 				if (env != 0) {
-					try {
-						// Capture/claim under the association gate before freezing values or retiring readers.
-						// A commit that wins this race owns all native refresh and publication cleanup.
-						endTransaction(false, false);
-					} catch (Throwable closeFailure) {
-						failure = appendFailure(failure, closeFailure);
+					if (!associationGate.tryLock()) {
+						// Release the exclusive barrier and monitor before waiting for a borrowed writer to finish.
+						return false;
 					}
-					associationGate.lock();
 					try {
+						try {
+							// Capture/claim under the association gate before freezing values or retiring readers.
+							// A commit that wins this race owns all native refresh and publication cleanup.
+							endTransaction(false, false);
+						} catch (Throwable closeFailure) {
+							failure = appendFailure(failure, closeFailure);
+						}
 						if (hasActiveWriterConsumer()) {
 							// Retry outside both locks. The winning consumer may need native access to finish.
 							return false;
@@ -14361,7 +14718,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		while (!pending.isEmpty()) {
 			Value next = pending.removeLast();
 			if (next instanceof LmdbValue lmdb) {
-				if (lmdb.getValueStoreRevision()instanceof ValueStoreRevision.Lazy lazy
+				if (lmdb.getValueStoreRevision() instanceof ValueStoreRevision.Lazy lazy
 						&& lazy.association() != null && lazy.association().isAborted()) {
 					// A ready parent can contain unpublished children. Each child's own capability decides
 					// whether shutdown may materialize it; aborted IDs must never read a replacement record.
@@ -14993,7 +15350,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 	}
 
 	private boolean isWriteTransactionOwner() {
-		return writeTxn != 0 && (writeTxnOwner == Thread.currentThread() || readContext.get().borrowedTxn == writeTxn);
+		long borrowed = readContext.get().borrowedTxn;
+		long transaction = writeTxn;
+		// A nonowner's empty borrowed context must not become an owner when the shared writer is cleared.
+		return transaction != 0
+				&& (writeTxnOwner == Thread.currentThread() || borrowed != 0 && borrowed == transaction);
 	}
 
 	/** Mutating APIs already admitted to the serialized writer must also resolve its uncommitted dependencies. */

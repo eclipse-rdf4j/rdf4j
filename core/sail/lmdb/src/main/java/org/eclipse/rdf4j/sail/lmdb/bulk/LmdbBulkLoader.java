@@ -28,6 +28,19 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 
 /**
  * Builds a new LMDB store from an RDF stream with bounded working memory.
+ * <p>
+ * Successful publication includes verified reference counts, native generation metadata and capacity reserved for
+ * ordinary startup. Opening the unchanged store with its effective configuration avoids discovery scans,
+ * reference-count reconstruction, value recovery and startup map growth. Clean ordinary writes preserve bounded startup
+ * authority; missing optional sidecars can be checked against native clean metadata. Dirty, stale or incompatible
+ * native authority leaves ordinary validation and required recovery in charge. Explicit experimental overlay,
+ * sketch-estimator and adjacency options keep their separate cache-build semantics.
+ * </p>
+ * <p>
+ * Applications own repository configuration. Use {@link Builder#preparedGenerationWriter(PreparedGenerationWriter)} to
+ * add it to the private generation before publication; the standalone CLI uses this callback to export
+ * {@code config.ttl}.
+ * </p>
  */
 @Experimental
 public final class LmdbBulkLoader {
@@ -62,6 +75,9 @@ public final class LmdbBulkLoader {
 	private final int benchmarkPartitionConcurrency;
 	private final IntConsumer benchmarkActivePartitionObserver;
 	private final int stagingBlockBytes;
+	private final PreparedGenerationWriter preparedGenerationWriter;
+	private final BulkCapacityPolicy valueCapacity;
+	private final BulkCapacityPolicy tripleCapacity;
 
 	private LmdbBulkLoader(Builder builder) {
 		target = builder.target;
@@ -83,6 +99,37 @@ public final class LmdbBulkLoader {
 		benchmarkPartitionConcurrency = builder.benchmarkPartitionConcurrency;
 		benchmarkActivePartitionObserver = builder.benchmarkActivePartitionObserver;
 		stagingBlockBytes = builder.stagingBlockBytes;
+		preparedGenerationWriter = builder.preparedGenerationWriter;
+		valueCapacity = builder.valueCapacity;
+		tripleCapacity = builder.tripleCapacity;
+	}
+
+	/** Configured value-capacity policy; an unspecified policy inherits the workspace choice on resume. */
+	public BulkCapacityPolicy valueCapacity() {
+		return valueCapacity == null ? BulkCapacityPolicy.defaultHeadroom() : valueCapacity;
+	}
+
+	/** Configured triple-capacity policy; an unspecified policy inherits the workspace choice on resume. */
+	public BulkCapacityPolicy tripleCapacity() {
+		return tripleCapacity == null ? BulkCapacityPolicy.defaultHeadroom() : tripleCapacity;
+	}
+
+	BulkCapacityPolicy requestedValueCapacity() {
+		return valueCapacity;
+	}
+
+	BulkCapacityPolicy requestedTripleCapacity() {
+		return tripleCapacity;
+	}
+
+	/** Writes application-owned configuration into a private, validated generation before publication. */
+	@FunctionalInterface
+	public interface PreparedGenerationWriter {
+		void write(Path generationDirectory, LmdbStoreConfig preparedConfig) throws IOException;
+	}
+
+	PreparedGenerationWriter preparedGenerationWriter() {
+		return preparedGenerationWriter;
 	}
 
 	/**
@@ -294,6 +341,10 @@ public final class LmdbBulkLoader {
 		private int benchmarkPartitionConcurrency;
 		private IntConsumer benchmarkActivePartitionObserver;
 		private int stagingBlockBytes;
+		private PreparedGenerationWriter preparedGenerationWriter = (directory, preparedConfig) -> {
+		};
+		private BulkCapacityPolicy valueCapacity;
+		private BulkCapacityPolicy tripleCapacity;
 
 		private Builder(Path target, LmdbStoreConfig config) {
 			this.target = Objects.requireNonNull(target, "target").toAbsolutePath().normalize();
@@ -302,6 +353,29 @@ public final class LmdbBulkLoader {
 
 		public Builder parserMode(ParserMode parserMode) {
 			this.parserMode = Objects.requireNonNull(parserMode, "parserMode");
+			return this;
+		}
+
+		/** Plans independent final value-map capacity, including all RDF-star term indexes. */
+		public Builder valueCapacity(BulkCapacityPolicy policy) {
+			valueCapacity = Objects.requireNonNull(policy, "policy");
+			return this;
+		}
+
+		/** Plans final statement-map capacity. A factor describes total statement count, not map bytes. */
+		public Builder tripleCapacity(BulkCapacityPolicy policy) {
+			tripleCapacity = Objects.requireNonNull(policy, "policy");
+			return this;
+		}
+
+		/**
+		 * Adds application metadata, such as repository configuration, before atomic publication. The supplied
+		 * configuration is a defensive copy with effective indexes and actual native map capacities. Failure keeps the
+		 * load unpublished. The callback must not modify native database files; their validated identities are checked
+		 * again after it returns.
+		 */
+		public Builder preparedGenerationWriter(PreparedGenerationWriter writer) {
+			preparedGenerationWriter = Objects.requireNonNull(writer, "writer");
 			return this;
 		}
 

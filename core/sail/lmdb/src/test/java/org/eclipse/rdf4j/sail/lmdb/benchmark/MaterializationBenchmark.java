@@ -224,7 +224,7 @@ public class MaterializationBenchmark {
 
 	private static long tripleTermDigest(BindingSet bindings) {
 		Value value = bindings.getValue("term");
-		if (!(value instanceof TripleTerm term) || !(term.getObject()instanceof Literal literal)) {
+		if (!(value instanceof TripleTerm term) || !(term.getObject() instanceof Literal literal)) {
 			throw new IllegalStateException("TRIPLE_TERMS returned an unexpected row: " + bindings);
 		}
 		return rowDigest(term.getSubject().stringValue().hashCode(), term.getPredicate().stringValue().hashCode(),

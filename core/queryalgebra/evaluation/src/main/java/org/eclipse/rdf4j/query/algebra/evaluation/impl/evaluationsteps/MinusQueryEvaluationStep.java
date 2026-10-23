@@ -123,6 +123,12 @@ public class MinusQueryEvaluationStep implements QueryEvaluationStep {
 		return rightInput;
 	}
 
+	/** Shared operand-output domain for generic and native MINUS compatibility checks. */
+	@InternalUseOnly
+	public static Set<String> comparisonBindingNames(TupleExpr leftArg, TupleExpr rightArg) {
+		return Set.copyOf(sharedOutputBindingNames(leftArg, rightArg));
+	}
+
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 		CloseableIteration<BindingSet> left = leftQes.evaluate(bindings);

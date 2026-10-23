@@ -50,6 +50,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteCert
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteSafety;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ScalarEvaluationEffects;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 /**
@@ -179,7 +180,7 @@ final class LmdbSetSemanticsOptimizer implements QueryOptimizer {
 				askRootSlice = previousAskRootSlice;
 				setContextName = previousSetContextName;
 			}
-			if (rootExistenceSlice && slice.getArg()instanceof LeftJoin leftJoin
+			if (rootExistenceSlice && slice.getArg() instanceof LeftJoin leftJoin
 					&& canRemoveTopLevelAskOptional(leftJoin)) {
 				TupleExpr replacement = leftJoin.getLeftArg();
 				annotateProof(replacement, LmdbRewriteProof.RewriteKind.ASK_TOP_LEVEL_OPTIONAL,
@@ -257,6 +258,8 @@ final class LmdbSetSemanticsOptimizer implements QueryOptimizer {
 						requiredBindings);
 				if (rewrittenArg != filter.getArg()) {
 					Filter replacement = new Filter(rewrittenArg, filter.getCondition().clone());
+					replacement.setRequiredInputBindingNames(filter.getRequiredInputBindingNames());
+					replacement.setConditionBindingScope(FilterBindingScope.resolve(filter));
 					annotateDistinctMembershipSemiFilter(replacement, duplicateKeyVars);
 					return replacement;
 				}
@@ -271,7 +274,7 @@ final class LmdbSetSemanticsOptimizer implements QueryOptimizer {
 				return tupleExpr;
 			}
 			for (int anchorIndex = 0; anchorIndex < factors.size(); anchorIndex++) {
-				if (!(factors.get(anchorIndex)instanceof BindingSetAssignment anchor)) {
+				if (!(factors.get(anchorIndex) instanceof BindingSetAssignment anchor)) {
 					continue;
 				}
 				Set<String> anchorBindings = new LinkedHashSet<>(anchor.getBindingNames());
@@ -281,7 +284,7 @@ final class LmdbSetSemanticsOptimizer implements QueryOptimizer {
 				}
 				for (int patternIndex = 0; patternIndex < factors.size(); patternIndex++) {
 					if (patternIndex == anchorIndex
-							|| !(factors.get(patternIndex)instanceof StatementPattern pattern)) {
+							|| !(factors.get(patternIndex) instanceof StatementPattern pattern)) {
 						continue;
 					}
 					TupleExpr replacement = rewriteFiniteMembershipPair(factors, anchorIndex, anchor, patternIndex,
@@ -507,7 +510,7 @@ final class LmdbSetSemanticsOptimizer implements QueryOptimizer {
 		for (GroupElem groupElement : group.getGroupElements()) {
 			AggregateOperator operator = groupElement.getOperator();
 			if (!(operator instanceof Count count) || !count.isDistinct()
-					|| !(count.getArg()instanceof Var var) || var.hasValue() || var.getName() == null) {
+					|| !(count.getArg() instanceof Var var) || var.hasValue() || var.getName() == null) {
 				return Set.of();
 			}
 			vars.add(var.getName());

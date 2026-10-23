@@ -18,12 +18,14 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.withSettings;
+
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -37,6 +39,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -47,8 +50,10 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractIRI;
+import org.eclipse.rdf4j.model.base.AbstractTripleTerm;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.query.algebra.evaluation.OwnedValueCapturer;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
@@ -62,9 +67,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
-import static org.junit.jupiter.api.Assertions.assertNotSame;
-import org.eclipse.rdf4j.model.base.AbstractTripleTerm;
-import org.eclipse.rdf4j.query.algebra.evaluation.OwnedValueCapturer;
 
 /**
  * Optional positive lookup reuse must preserve native lifetime and caller callback boundaries.
@@ -72,645 +74,696 @@ import org.eclipse.rdf4j.query.algebra.evaluation.OwnedValueCapturer;
 @Timeout(30)
 class SnapshotPositiveLookupLifecycleTest {
 
-    private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
-
-    private static final IRI SUBJECT = VF.createIRI("urn:snapshot-lookup-lifecycle:subject");
-
-    private static final IRI PREDICATE = VF.createIRI("urn:snapshot-lookup-lifecycle:predicate");
-
-    private static final IRI OBJECT = VF.createIRI("urn:snapshot-lookup-lifecycle:object");
-
-    private static final Set<String> PAYLOAD_GETTERS = Set.of("getNamespace", "getLocalName", "getID", "getLabel", "getDatatype", "getLanguage", "getBaseDirection", "getCoreDatatype", "getSubject", "getPredicate", "getObject", "stringValue", "getType", "isTripleTerm");
-
-    @ParameterizedTest
-    @CsvSource({ "TRIPLE_STORE,false", "TRIPLE_STORE,true", "VALUE_STORE,false", "VALUE_STORE,true" })
-    void retiredPreparationRetainsAuthoritativeResizeKind(LmdbSailStore.MapResizeKind kind, boolean capture, @TempDir Path directory) throws Exception {
-        try (Fixture fixture = new Fixture(directory, 3);
-            DirectView view = new DirectView(fixture.values)) {
-            Function<Value, Value> preparation = capture ? fixture.values.valueCapturer(view.snapshot) : fixture.values.valuePreparer(view.snapshot);
-            view.snapshot.retireForMapResize(kind);
-            LmdbSailStore.MapResizeConflictException failure = assertThrows(LmdbSailStore.MapResizeConflictException.class, () -> preparation.apply(OBJECT));
-            assertEquals(kind, failure.kind(), "closed preparation must preserve the authoritative invalidation");
-            assertNull(failure.replayToken(), "forced retirement must not invent an accepted cooperative replay");
-        }
-    }
-
-    @ParameterizedTest
-    @ValueSource(booleans = { false, true })
-    void ordinaryClosedPreparationDoesNotInventResizeConflict(boolean capture, @TempDir Path directory) throws Exception {
-        try (Fixture fixture = new Fixture(directory, 3);
-            DirectView view = new DirectView(fixture.values)) {
-            Function<Value, Value> preparation = capture ? fixture.values.valueCapturer(view.snapshot) : fixture.values.valuePreparer(view.snapshot);
-            view.snapshot.close();
-            SailException failure = assertThrows(SailException.class, () -> preparation.apply(OBJECT));
-            assertFalse(failure instanceof LmdbSailStore.MapResizeConflictException);
-            assertInstanceOf(IOException.class, failure.getCause());
-        }
-    }
-
-    @Test
-    void warmedPairedMemoDetachesAcrossGrowthAndPreservesRetirementHorizon(@TempDir Path directory) throws Exception {
-        InspectingStore store = new InspectingStore(directory.toFile());
-        store.init();
-        try {
-            commitStatement(store, SUBJECT, OBJECT);
-            long originalTripleMap = store.triples.mapSizeBytes();
-            long originalValueMap = store.values.mapSizeBytes();
-            Statement escaped;
-            long originalId;
-            try (SailDataset reader = store.getBackingStore().getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT_READ)) {
-                ValueStore.ReadSnapshot snapshot = store.values.lastPairedSnapshot;
-                assertNotNull(snapshot);
-                assertTrue(snapshot.hasStableIds());
-                escaped = onlyStatement(reader, SUBJECT, null);
-                originalId = assertInstanceOf(LmdbValue.class, escaped.getObject()).getInternalIdentity().id();
-                assertNotEquals(LmdbValue.UNKNOWN_ID, originalId);
-                TrackedIRI input = new TrackedIRI(OBJECT, snapshot);
-                assertWarm(store.values, snapshot, input, originalId);
-                int capturesBeforeGrowth = input.captureCalls.get();
-                removeStatement(store);
-                assertTrue(store.getBackingStore().hasRetiredValueIds(), "The actual old TripleStore horizon must protect the removed dictionary association");
-                growDictionary(store, originalValueMap);
-                assertEquals(originalTripleMap, store.triples.mapSizeBytes());
-                assertTrue(store.values.mapSizeBytes() > originalValueMap, "The dictionary must really be remapped");
-                assertTrue(snapshot.dictionaryDetached(), "The actual paired dictionary reader must detach");
-                assertEquals(0L, store.getBackingStore().growthMetricsSnapshot().forcedInvalidatedViews());
-                assertEquals(originalId, store.values.getId(snapshot, input));
-                assertTrue(input.captureCalls.get() > capturesBeforeGrowth, "A detached view must discard its old memo and recapture through the current reader");
-                int firstDetachedCapture = input.captureCalls.get();
-                assertEquals(originalId, store.values.getId(snapshot, input));
-                assertTrue(input.captureCalls.get() > firstDetachedCapture, "The detached view must not learn a new memo from its advancing fallback reader");
-                assertOldStatement(reader, input, originalId);
-                commitStatement(store, SUBJECT, OBJECT);
-                assertTrue(store.getBackingStore().hasRetiredValueIds());
-                assertOldStatement(reader, input, originalId);
-                try (SailDataset current = store.getBackingStore().getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT_READ)) {
-                    assertEquals(originalId, assertInstanceOf(LmdbValue.class, onlyStatement(current, SUBJECT, null).getObject()).getInternalIdentity().id(), "Reinsertion cannot retire the association protected by the older Sail reader");
-                }
-            }
-            assertEquals(VF.createStatement(SUBJECT, PREDICATE, OBJECT), escaped, "A value issued by the valid older result must retain its meaning after the reader closes");
-            long oldest = store.triples.getTxnManager().minPinnedSnapshotRevision();
-            assertTrue(oldest == Long.MAX_VALUE || oldest >= store.triples.getDataRevision());
-            removeStatement(store);
-            assertFalse(store.getBackingStore().hasRetiredValueIds(), "Closing the detached reader must release the retirement horizon before later publication");
-        } finally {
-            store.shutDown();
-        }
-    }
-
-    @Test
-    void warmedDirectMemoCannotBypassActualDictionaryRemap(@TempDir Path directory) throws Exception {
-        InspectingStore store = new InspectingStore(directory.toFile());
-        store.init();
-        try {
-            commitStatement(store, SUBJECT, OBJECT);
-            long originalMap = store.values.mapSizeBytes();
-            try (DirectView view = new DirectView(store.values)) {
-                assertFalse(view.snapshot.hasStableIds());
-                TrackedIRI input = new TrackedIRI(OBJECT, view.snapshot);
-                long id = store.values.getId(view.snapshot, input);
-                assertNotEquals(LmdbValue.UNKNOWN_ID, id);
-                assertWarm(store.values, view.snapshot, input, id);
-                growDictionary(store, originalMap);
-                assertTrue(store.values.mapSizeBytes() > originalMap);
-                LmdbSailStore.MapResizeConflictException conflict = assertThrows(LmdbSailStore.MapResizeConflictException.class, () -> store.values.getId(view.snapshot, input));
-                assertEquals(LmdbSailStore.MapResizeKind.VALUE_STORE, conflict.kind());
-            }
-        } finally {
-            store.shutDown();
-        }
-    }
-
-    @Test
-    void warmValidationCallbackClosingViewCannotReturnCachedId(@TempDir Path directory) throws Exception {
-        try (Fixture fixture = new Fixture(directory, 3)) {
-            long id = fixture.store(OBJECT);
-            try (DirectView committed = new DirectView(fixture.values)) {
-                TrackedIRI input = new TrackedIRI(OBJECT, committed.snapshot);
-                assertWarm(fixture.values, committed.snapshot, input, id);
-                input.onValidation = committed.snapshot::close;
-                assertThrows(IOException.class, () -> fixture.values.getId(committed.snapshot, input));
-                int validations = input.validationCalls.get();
-                assertThrows(IOException.class, () -> fixture.values.getId(committed.snapshot, input));
-                assertEquals(validations, input.validationCalls.get(), "A closed view must fail before another getter");
-            }
-        }
-    }
-
-    @Test
-    void warmValidationCallbackInterruptionCannotReturnCachedId(@TempDir Path directory) throws Exception {
-        try (Fixture fixture = new Fixture(directory, 3)) {
-            long id = fixture.store(OBJECT);
-            try (DirectView view = new DirectView(fixture.values)) {
-                TrackedIRI input = new TrackedIRI(OBJECT, view.snapshot);
-                assertWarm(fixture.values, view.snapshot, input, id);
-                input.onValidation = () -> Thread.currentThread().interrupt();
-                try {
-                    assertThrows(IOException.class, () -> fixture.values.getId(view.snapshot, input));
-                    assertTrue(Thread.currentThread().isInterrupted(), "Lookup must preserve the caller's interrupt");
-                } finally {
-                    Thread.interrupted();
-                    input.onValidation = null;
-                }
-                assertEquals(id, fixture.values.getId(view.snapshot, input));
-            }
-        }
-    }
-
-    @Test
-    void warmValidationCallbackKeepsOriginalExpiringDeadline(@TempDir Path directory) throws Exception {
-        try (Fixture fixture = new Fixture(directory, 3)) {
-            long id = fixture.store(OBJECT);
-            try (DirectView view = new DirectView(fixture.values)) {
-                TrackedIRI input = new TrackedIRI(OBJECT, view.snapshot);
-                assertWarm(fixture.values, view.snapshot, input, id);
-                CountDownLatch expiration = new CountDownLatch(1);
-                AtomicInteger entered = new AtomicInteger();
-                try (QueryExecutionDeadline deadline = QueryExecutionDeadline.start(1_000);
-                    QueryExecutionDeadline.Scope scope = deadline.enter();
-                    QueryExecutionDeadline.Registration registration = deadline.onExpiration(expiration::countDown)) {
-                    input.onValidation = () -> {
-                        assertSame(deadline, QueryExecutionDeadline.current());
-                        entered.incrementAndGet();
-                        await(expiration);
-                    };
-                    assertThrows(QueryInterruptedException.class, () -> fixture.values.getId(view.snapshot, input));
-                    assertEquals(1, entered.get(), "The deadline must expire across the real warmed getter callback");
-                    assertTrue(deadline.isExpired());
-                } finally {
-                    input.onValidation = null;
-                }
-                assertEquals(id, fixture.values.getId(view.snapshot, input));
-            }
-        }
-    }
-
-    @Test
-    void coldCaptureRacingCloseCannotPublishOrReviveMemo(@TempDir Path directory) throws Exception {
-        try (Fixture fixture = new Fixture(directory, 3)) {
-            fixture.store(OBJECT);
-            try (DirectView view = new DirectView(fixture.values)) {
-                TrackedIRI input = new TrackedIRI(OBJECT, view.snapshot);
-                CountDownLatch captured = new CountDownLatch(1);
-                CountDownLatch resume = new CountDownLatch(1);
-                input.onCapture = () -> {
-                    captured.countDown();
-                    await(resume);
-                };
-                ExecutorService executor = Executors.newFixedThreadPool(2);
-                try {
-                    Future<?> lookup = executor.submit(() -> {
-                        assertThrows(IOException.class, () -> fixture.values.getId(view.snapshot, input));
-                    });
-                    await(captured);
-                    Future<?> close = executor.submit(view.snapshot::close);
-                    close.get(10, TimeUnit.SECONDS);
-                    resume.countDown();
-                    lookup.get(10, TimeUnit.SECONDS);
-                    int captures = input.captureCalls.get();
-                    assertThrows(IOException.class, () -> fixture.values.getId(view.snapshot, input));
-                    assertEquals(captures, input.captureCalls.get());
-                } finally {
-                    resume.countDown();
-                    stop(executor);
-                }
-            }
-        }
-    }
-
-    @Test
-    void nonPowerOfTwoMemoPublishesConcurrentColdEntriesWithoutMixingIds(@TempDir Path directory) throws Exception {
-        try (Fixture fixture = new Fixture(directory, 3)) {
-            List<IRI> values = new ArrayList<>();
-            List<Long> ids = new ArrayList<>();
-            for (int i = 0; i < 4; i++) {
-                IRI value = VF.createIRI("urn:snapshot-lookup-lifecycle:concurrent:" + i);
-                values.add(value);
-                ids.add(fixture.store(value));
-            }
-            assertEquals(4, Set.copyOf(ids).size());
-            try (DirectView view = new DirectView(fixture.values)) {
-                CountDownLatch firstCaptures = new CountDownLatch(values.size());
-                CountDownLatch publish = new CountDownLatch(1);
-                List<TrackedIRI> inputs = values.stream().map(value -> new TrackedIRI(value, view.snapshot)).toList();
-                for (TrackedIRI input : inputs) {
-                    input.onCapture = () -> {
-                        firstCaptures.countDown();
-                        await(publish);
-                    };
-                }
-                ExecutorService executor = Executors.newFixedThreadPool(inputs.size());
-                try {
-                    List<Future<?>> futures = new ArrayList<>();
-                    for (int owner = 0; owner < inputs.size(); owner++) {
-                        int first = owner;
-                        futures.add(executor.submit(() -> {
-                            assertEquals(ids.get(first).longValue(), fixture.values.getId(view.snapshot, inputs.get(first)));
-                            for (int round = 0; round < 32; round++) {
-                                for (int offset = 0; offset < inputs.size(); offset++) {
-                                    int index = (first + offset) % inputs.size();
-                                    assertEquals(ids.get(index).longValue(), fixture.values.getId(view.snapshot, inputs.get(index)));
-                                }
-                            }
-                            return null;
-                        }));
-                    }
-                    await(firstCaptures);
-                    publish.countDown();
-                    for (Future<?> future : futures) {
-                        future.get(10, TimeUnit.SECONDS);
-                    }
-                    assertTrue(inputs.stream().allMatch(input -> input.captureCalls.get() > 0));
-                } finally {
-                    publish.countDown();
-                    stop(executor);
-                }
-            }
-        }
-    }
-
-    @ParameterizedTest
-    @EnumSource(MixedShape.class)
-    void mixedUnknownTreesKeepAdmittedKnownChildrenLazy(MixedShape shape, @TempDir Path directory) throws Exception {
-        InspectingStore store = new InspectingStore(directory.toFile());
-        store.init();
-        try {
-            IRI datatype = VF.createIRI("urn:snapshot-lookup-lifecycle:datatype");
-            Literal literal = VF.createLiteral("mixed known datatype", datatype);
-            Value expected = shape == MixedShape.LITERAL ? literal : VF.createTripleTerm(SUBJECT, PREDICATE, VF.createTripleTerm(SUBJECT, PREDICATE, literal));
-            commitStatement(store, SUBJECT, expected);
-            try (SailDataset reader = store.getBackingStore().getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT_READ)) {
-                ValueStore.ReadSnapshot snapshot = store.values.lastPairedSnapshot;
-                assertNotNull(snapshot);
-                assertTrue(snapshot.hasStableIds());
-                assertTrue(onlyStatement(reader, SUBJECT, null).getObject() instanceof LmdbValue);
-                long datatypeId = store.values.getId(snapshot, datatype);
-                long subjectId = store.values.getId(snapshot, SUBJECT);
-                long predicateId = store.values.getId(snapshot, PREDICATE);
-                long expectedId = store.values.getId(snapshot, expected);
-                assertNotEquals(LmdbValue.UNKNOWN_ID, expectedId);
-                LmdbValue lazyDatatype = payloadTrap(store.values.getLazyValue(snapshot, datatypeId), snapshot);
-                List<LmdbValue> children = new ArrayList<>();
-                children.add(lazyDatatype);
-                Value input = store.values.createLiteral(literal.getLabel(), (IRI) lazyDatatype);
-                if (shape == MixedShape.NESTED_TERM) {
-                    LmdbValue lazySubject = payloadTrap(store.values.getLazyValue(snapshot, subjectId), snapshot);
-                    LmdbValue lazyPredicate = payloadTrap(store.values.getLazyValue(snapshot, predicateId), snapshot);
-                    children.add(lazySubject);
-                    children.add(lazyPredicate);
-                    TripleTerm inner = store.values.createTripleTerm((Resource) lazySubject, (IRI) lazyPredicate, input);
-                    input = store.values.createTripleTerm((Resource) lazySubject, (IRI) lazyPredicate, inner);
-                }
-                assertEquals(LmdbValue.UNKNOWN_ID, assertInstanceOf(LmdbValue.class, input).getInternalIdentity().id());
-                for (int call = 0; call < 3; call++) {
-                    assertEquals(expectedId, store.values.getId(snapshot, input));
-                    for (LmdbValue child : children) {
-                        assertInstanceOf(ValueStoreRevision.Lazy.class, child.getValueStoreRevision());
-                    }
-                }
-            }
-        } finally {
-            store.shutDown();
-        }
-    }
-
-    private static LmdbValue payloadTrap(LmdbValue lazy, ValueStore.ReadSnapshot snapshot) {
-        LmdbValue observed = mock(lazy.getClass(), withSettings().spiedInstance(lazy).defaultAnswer(invocation -> {
-            if (PAYLOAD_GETTERS.contains(invocation.getMethod().getName())) {
-                assertFalse(Thread.holdsLock(snapshot.txnRef()));
-                throw new AssertionError("Optional memoization must not decode an admitted known-ID child: " + invocation.getMethod().getName());
-            }
-            return invocation.callRealMethod();
-        }));
-        assertEquals(lazy.getClass(), observed.getClass());
-        return observed;
-    }
-
-    private static void assertWarm(ValueStore values, ValueStore.ReadSnapshot snapshot, TrackedIRI input, long id) throws IOException {
-        assertEquals(id, values.getId(snapshot, input));
-        int captures = input.captureCalls.get();
-        assertTrue(captures > 0, "The first successful lookup must really capture lexical fields");
-        assertEquals(id, values.getId(snapshot, input));
-        assertEquals(captures, input.captureCalls.get(), "The control must prove a warmed memo before lifecycle work");
-    }
-
-    private static void assertOldStatement(SailDataset reader, IRI object, long id) {
-        Statement statement = onlyStatement(reader, SUBJECT, object);
-        assertEquals(id, assertInstanceOf(LmdbValue.class, statement.getObject()).getInternalIdentity().id());
-        assertEquals(VF.createStatement(SUBJECT, PREDICATE, OBJECT), statement);
-    }
-
-    private static Statement onlyStatement(SailDataset reader, IRI subject, Value object) {
-        try (CloseableIteration<? extends Statement> statements = reader.getStatements(subject, PREDICATE, object)) {
-            assertTrue(statements.hasNext());
-            Statement statement = statements.next();
-            assertFalse(statements.hasNext());
-            return statement;
-        }
-    }
-
-    private static void commitStatement(LmdbStore store, IRI subject, Value object) {
-        try (SailConnection writer = store.getConnection()) {
-            writer.begin(IsolationLevels.SNAPSHOT);
-            writer.addStatement(subject, PREDICATE, object);
-            writer.commit();
-        }
-    }
-
-    private static void removeStatement(LmdbStore store) {
-        try (SailConnection writer = store.getConnection()) {
-            writer.begin(IsolationLevels.SNAPSHOT);
-            writer.removeStatements(SUBJECT, PREDICATE, null);
-            writer.commit();
-        }
-    }
-
-    private static void growDictionary(LmdbStore store, long currentMapSize) {
-        int payloadLength = Math.toIntExact(Math.multiplyExact(currentMapSize, 2L));
-        commitStatement(store, VF.createIRI("urn:snapshot-lookup-lifecycle:growth"), VF.createLiteral("g".repeat(payloadLength)));
-    }
-
-    private static void await(CountDownLatch latch) {
-        try {
-            assertTrue(latch.await(10, TimeUnit.SECONDS), "The controlled callback did not reach its lifecycle boundary");
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new AssertionError("Interrupted while awaiting a controlled lookup callback", e);
-        }
-    }
-
-    private static void stop(ExecutorService executor) throws InterruptedException {
-        executor.shutdownNow();
-        assertTrue(executor.awaitTermination(10, TimeUnit.SECONDS));
-    }
-
-    enum MixedShape {
-
-        LITERAL, NESTED_TERM
-    }
-
-    private static final class TrackedIRI extends AbstractIRI {
-
-        private final IRI delegate;
-
-        private final ValueStore.ReadSnapshot snapshot;
-
-        private final AtomicInteger captureCalls = new AtomicInteger();
-
-        private final AtomicInteger validationCalls = new AtomicInteger();
-
-        private volatile Runnable onCapture;
-
-        private volatile Runnable onValidation;
-
-        private TrackedIRI(IRI delegate, ValueStore.ReadSnapshot snapshot) {
-            this.delegate = delegate;
-            this.snapshot = snapshot;
-        }
-
-        @Override
-        public String getNamespace() {
-            assertOutsideTransaction();
-            captureCalls.incrementAndGet();
-            Runnable callback = onCapture;
-            if (callback != null) {
-                callback.run();
-            }
-            return delegate.getNamespace();
-        }
-
-        @Override
-        public String getLocalName() {
-            assertOutsideTransaction();
-            captureCalls.incrementAndGet();
-            return delegate.getLocalName();
-        }
-
-        @Override
-        public String stringValue() {
-            assertOutsideTransaction();
-            validationCalls.incrementAndGet();
-            Runnable callback = onValidation;
-            if (callback != null) {
-                callback.run();
-            }
-            return delegate.stringValue();
-        }
-
-        private void assertOutsideTransaction() {
-            assertFalse(Thread.holdsLock(snapshot.txnRef()), "Caller getters must remain outside the native Txn monitor");
-        }
-    }
-
-    private static final class Fixture implements AutoCloseable {
-
-        private final ValueStore values;
-
-        private Fixture(Path directory, int capacity) throws IOException {
-            values = new ValueStore(directory.resolve("values").toFile(), new LmdbStoreConfig().setValueDBSize(64L * 1024L * 1024L).setInlineLiterals(false).setValueIDCacheSize(capacity));
-        }
-
-        private long store(Value value) throws IOException {
-            values.startTransaction(true);
-            try {
-                long id = values.storeValue(value);
-                values.commit();
-                return id;
-            } catch (IOException | RuntimeException | Error failure) {
-                try {
-                    values.rollback();
-                } catch (IOException | RuntimeException | Error cleanup) {
-                    if (cleanup != failure) {
-                        failure.addSuppressed(cleanup);
-                    }
-                }
-                throw failure;
-            }
-        }
-
-        @Override
-        public void close() throws IOException {
-            values.close();
-        }
-    }
-
-    private static final class DirectView implements AutoCloseable {
-
-        private final ValueStore.ReadSnapshotReservation reservation;
-
-        private final ValueStore.ReadSnapshot snapshot;
-
-        private DirectView(ValueStore values) throws IOException {
-            reservation = values.reserveReadSnapshot();
-            try {
-                snapshot = reservation.start();
-            } catch (IOException | RuntimeException | Error failure) {
-                reservation.close();
-                throw failure;
-            }
-        }
-
-        @Override
-        public void close() {
-            try {
-                snapshot.close();
-            } finally {
-                reservation.close();
-            }
-        }
-    }
-
-    private static final class InspectingValueStore extends ValueStore {
-
-        private volatile ReadSnapshot lastPairedSnapshot;
-
-        private InspectingValueStore(File directory, StoreProperties properties, LmdbStoreConfig config) throws IOException {
-            super(directory, properties, config);
-        }
-
-        @Override
-        ReadSnapshotReservation reserveReadSnapshot() throws IOException {
-            return new ReadSnapshotReservation(getTxnManager().reserveReadTxn(false)) {
-
-                @Override
-                synchronized ReadSnapshot start(Txn tripleTxn) throws IOException {
-                    ReadSnapshot snapshot = super.start(tripleTxn);
-                    if (tripleTxn != null) {
-                        lastPairedSnapshot = snapshot;
-                    }
-                    return snapshot;
-                }
-            };
-        }
-    }
-
-    private static final class InspectingStore extends LmdbStore {
-
-        private InspectingValueStore values;
-
-        private TripleStore triples;
-
-        private InspectingStore(File directory) {
-            super(directory, new LmdbStoreConfig("spoc,posc").setForceSync(true).setInlineLiterals(false).setValueIDCacheSize(3).setTripleDBSize(64L * 1024L * 1024L).setValueDBSize(1024L * 1024L).setMapGrowthReadDrainTimeoutMillis(100).setAutoGrow(true));
-        }
-
-        @Override
-        LmdbSailStore createBackingStore(File directory, StoreProperties properties, LmdbStoreConfig config, boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
-            return new LmdbSailStore(directory, properties, config, sketchBasedJoinEstimatorEnabled, (valueDirectory, valueProperties, valueConfig) -> {
-                values = new InspectingValueStore(valueDirectory, valueProperties, valueConfig);
-                return values;
-            }, (tripleDirectory, tripleProperties, tripleConfig, valueStore) -> {
-                triples = new TripleStore(tripleDirectory, tripleProperties, tripleConfig, valueStore);
-                return triples;
-            });
-        }
-    }
-
-    @Test
-    void captureDeepSharedTreeWithoutRecursion(@TempDir Path directory) throws Exception {
-        try (Fixture fixture = new Fixture(directory, 3);
-            DirectView view = new DirectView(fixture.values)) {
-            Value input = VF.createLiteral("leaf", "en", Literal.BaseDirection.RTL);
-            int depth = 10_000;
-            for (int level = 0; level < depth; level++) {
-                input = VF.createTripleTerm(SUBJECT, SUBJECT, input);
-            }
-            Value captured = fixture.values.valueCapturer(view.snapshot).apply(input);
-            for (int level = 0; level < depth; level++) {
-                TripleTerm triple = (TripleTerm) captured;
-                assertSame(triple.getSubject(), triple.getPredicate(), "one shared input has one captured owner");
-                captured = triple.getObject();
-            }
-            Literal leaf = (Literal) captured;
-            assertEquals("leaf", leaf.getLabel());
-            assertEquals("en", leaf.getLanguage().orElseThrow());
-            assertEquals(Literal.BaseDirection.RTL, leaf.getBaseDirection());
-        }
-    }
-
-    @Test
-    void captureSnapshotsInitializedNativeCompositeWithMutableForeignChild(@TempDir Path directory) throws Exception {
-        try (Fixture fixture = new Fixture(directory, 3);
-            DirectView view = new DirectView(fixture.values)) {
-            MutableCaptureIRI mutableObject = new MutableCaptureIRI("before");
-            TripleTerm nativeComposite = fixture.values.createTripleTerm(SUBJECT, PREDICATE, mutableObject);
-            LmdbValue nativeValue = assertInstanceOf(LmdbValue.class, nativeComposite);
-            assertTrue(nativeValue.isInitialized());
-            assertEquals(LmdbValue.UNKNOWN_ID, nativeValue.getSemanticVersion(), "A mutable foreign child makes the native composite unstable");
-            TripleTerm captured = (TripleTerm) fixture.values.valueCapturer(view.snapshot).apply(nativeComposite);
-            assertNotSame(nativeComposite, captured, "An unstable native composite needs a semantic snapshot");
-            assertEquals("urn:mutable-capture:before", captured.getObject().stringValue());
-            mutableObject.changeLocalName("after");
-            assertEquals("urn:mutable-capture:after", nativeComposite.getObject().stringValue());
-            assertEquals("urn:mutable-capture:before", captured.getObject().stringValue(), "A captured composite must not retain a mutable foreign child");
-        }
-    }
-
-    @Test
-    void captureRejectsCycleBeforeCreatingPreparedPayload(@TempDir Path directory) throws Exception {
-        try (Fixture fixture = new Fixture(directory, 3);
-            DirectView view = new DirectView(fixture.values)) {
-            TripleTerm cycle = new AbstractTripleTerm() {
-
-                @Override
-                public Resource getSubject() {
-                    return SUBJECT;
-                }
-
-                @Override
-                public IRI getPredicate() {
-                    return PREDICATE;
-                }
-
-                @Override
-                public Value getObject() {
-                    return this;
-                }
-            };
-            assertThrows(IllegalArgumentException.class, () -> fixture.values.valueCapturer(view.snapshot).apply(cycle));
-        }
-    }
-
-    @Test
-    void foreignPreparedChildrenAcquireCurrentPreparationOwner(@TempDir Path directory) throws Exception {
-        try (Fixture fixture = new Fixture(directory, 3)) {
-            Value foreign;
-            try (DirectView first = new DirectView(fixture.values)) {
-                foreign = fixture.values.valueCapturer(first.snapshot).apply(VF.createTripleTerm(SUBJECT, SUBJECT, VF.createLiteral("typed", OBJECT)));
-            }
-            try (DirectView second = new DirectView(fixture.values)) {
-                var capturer = (OwnedValueCapturer) fixture.values.valueCapturer(second.snapshot);
-                TripleTerm captured = (TripleTerm) capturer.apply(foreign);
-                assertTrue(capturer.owns(captured));
-                assertTrue(capturer.owns(captured.getSubject()));
-                assertTrue(capturer.owns(captured.getPredicate()));
-                assertTrue(capturer.owns(captured.getObject()));
-                assertTrue(capturer.owns(((Literal) captured.getObject()).getDatatype()));
-                assertSame(captured.getSubject(), captured.getPredicate());
-            }
-        }
-    }
-
-    private static final class MutableCaptureIRI extends AbstractIRI {
-
-        private volatile String localName;
-
-        private MutableCaptureIRI(String localName) {
-            this.localName = localName;
-        }
-
-        @Override
-        public String getNamespace() {
-            return "urn:mutable-capture:";
-        }
-
-        @Override
-        public String getLocalName() {
-            return localName;
-        }
-
-        private void changeLocalName(String localName) {
-            this.localName = localName;
-        }
-    }
+	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+
+	private static final IRI SUBJECT = VF.createIRI("urn:snapshot-lookup-lifecycle:subject");
+
+	private static final IRI PREDICATE = VF.createIRI("urn:snapshot-lookup-lifecycle:predicate");
+
+	private static final IRI OBJECT = VF.createIRI("urn:snapshot-lookup-lifecycle:object");
+
+	private static final Set<String> PAYLOAD_GETTERS = Set.of("getNamespace", "getLocalName", "getID", "getLabel",
+			"getDatatype", "getLanguage", "getBaseDirection", "getCoreDatatype", "getSubject", "getPredicate",
+			"getObject", "stringValue", "getType", "isTripleTerm");
+
+	@ParameterizedTest
+	@CsvSource({ "TRIPLE_STORE,false", "TRIPLE_STORE,true", "VALUE_STORE,false", "VALUE_STORE,true" })
+	void retiredPreparationRetainsAuthoritativeResizeKind(LmdbSailStore.MapResizeKind kind, boolean capture,
+			@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, 3);
+				DirectView view = new DirectView(fixture.values)) {
+			Function<Value, Value> preparation = capture ? fixture.values.valueCapturer(view.snapshot)
+					: fixture.values.valuePreparer(view.snapshot);
+			view.snapshot.retireForMapResize(kind);
+			LmdbSailStore.MapResizeConflictException failure = assertThrows(
+					LmdbSailStore.MapResizeConflictException.class, () -> preparation.apply(OBJECT));
+			assertEquals(kind, failure.kind(), "closed preparation must preserve the authoritative invalidation");
+			assertNull(failure.replayToken(), "forced retirement must not invent an accepted cooperative replay");
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void ordinaryClosedPreparationDoesNotInventResizeConflict(boolean capture, @TempDir Path directory)
+			throws Exception {
+		try (Fixture fixture = new Fixture(directory, 3);
+				DirectView view = new DirectView(fixture.values)) {
+			Function<Value, Value> preparation = capture ? fixture.values.valueCapturer(view.snapshot)
+					: fixture.values.valuePreparer(view.snapshot);
+			view.snapshot.close();
+			SailException failure = assertThrows(SailException.class, () -> preparation.apply(OBJECT));
+			assertFalse(failure instanceof LmdbSailStore.MapResizeConflictException);
+			assertInstanceOf(IOException.class, failure.getCause());
+		}
+	}
+
+	@Test
+	void warmedPairedMemoDetachesAcrossGrowthAndPreservesRetirementHorizon(@TempDir Path directory) throws Exception {
+		InspectingStore store = new InspectingStore(directory.toFile());
+		store.init();
+		try {
+			commitStatement(store, SUBJECT, OBJECT);
+			long originalTripleMap = store.triples.mapSizeBytes();
+			long originalValueMap = store.values.mapSizeBytes();
+			Statement escaped;
+			long originalId;
+			try (SailDataset reader = store.getBackingStore()
+					.getExplicitSailSource()
+					.dataset(IsolationLevels.SNAPSHOT_READ)) {
+				ValueStore.ReadSnapshot snapshot = store.values.lastPairedSnapshot;
+				assertNotNull(snapshot);
+				assertTrue(snapshot.hasStableIds());
+				escaped = onlyStatement(reader, SUBJECT, null);
+				originalId = assertInstanceOf(LmdbValue.class, escaped.getObject()).getInternalIdentity().id();
+				assertNotEquals(LmdbValue.UNKNOWN_ID, originalId);
+				TrackedIRI input = new TrackedIRI(OBJECT, snapshot);
+				assertWarm(store.values, snapshot, input, originalId);
+				int capturesBeforeGrowth = input.captureCalls.get();
+				removeStatement(store);
+				assertTrue(store.getBackingStore().hasRetiredValueIds(),
+						"The actual old TripleStore horizon must protect the removed dictionary association");
+				growDictionary(store, originalValueMap);
+				assertEquals(originalTripleMap, store.triples.mapSizeBytes());
+				assertTrue(store.values.mapSizeBytes() > originalValueMap, "The dictionary must really be remapped");
+				assertTrue(snapshot.dictionaryDetached(), "The actual paired dictionary reader must detach");
+				assertEquals(0L, store.getBackingStore().growthMetricsSnapshot().forcedInvalidatedViews());
+				assertEquals(originalId, store.values.getId(snapshot, input));
+				assertTrue(input.captureCalls.get() > capturesBeforeGrowth,
+						"A detached view must discard its old memo and recapture through the current reader");
+				int firstDetachedCapture = input.captureCalls.get();
+				assertEquals(originalId, store.values.getId(snapshot, input));
+				assertTrue(input.captureCalls.get() > firstDetachedCapture,
+						"The detached view must not learn a new memo from its advancing fallback reader");
+				assertOldStatement(reader, input, originalId);
+				commitStatement(store, SUBJECT, OBJECT);
+				assertTrue(store.getBackingStore().hasRetiredValueIds());
+				assertOldStatement(reader, input, originalId);
+				try (SailDataset current = store.getBackingStore()
+						.getExplicitSailSource()
+						.dataset(IsolationLevels.SNAPSHOT_READ)) {
+					assertEquals(originalId,
+							assertInstanceOf(LmdbValue.class, onlyStatement(current, SUBJECT, null).getObject())
+									.getInternalIdentity()
+									.id(),
+							"Reinsertion cannot retire the association protected by the older Sail reader");
+				}
+			}
+			assertEquals(VF.createStatement(SUBJECT, PREDICATE, OBJECT), escaped,
+					"A value issued by the valid older result must retain its meaning after the reader closes");
+			long oldest = store.triples.getTxnManager().minPinnedSnapshotRevision();
+			assertTrue(oldest == Long.MAX_VALUE || oldest >= store.triples.getDataRevision());
+			removeStatement(store);
+			assertFalse(store.getBackingStore().hasRetiredValueIds(),
+					"Closing the detached reader must release the retirement horizon before later publication");
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void warmedDirectMemoCannotBypassActualDictionaryRemap(@TempDir Path directory) throws Exception {
+		InspectingStore store = new InspectingStore(directory.toFile());
+		store.init();
+		try {
+			commitStatement(store, SUBJECT, OBJECT);
+			long originalMap = store.values.mapSizeBytes();
+			try (DirectView view = new DirectView(store.values)) {
+				assertFalse(view.snapshot.hasStableIds());
+				TrackedIRI input = new TrackedIRI(OBJECT, view.snapshot);
+				long id = store.values.getId(view.snapshot, input);
+				assertNotEquals(LmdbValue.UNKNOWN_ID, id);
+				assertWarm(store.values, view.snapshot, input, id);
+				growDictionary(store, originalMap);
+				assertTrue(store.values.mapSizeBytes() > originalMap);
+				LmdbSailStore.MapResizeConflictException conflict = assertThrows(
+						LmdbSailStore.MapResizeConflictException.class, () -> store.values.getId(view.snapshot, input));
+				assertEquals(LmdbSailStore.MapResizeKind.VALUE_STORE, conflict.kind());
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void warmValidationCallbackClosingViewCannotReturnCachedId(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, 3)) {
+			long id = fixture.store(OBJECT);
+			try (DirectView committed = new DirectView(fixture.values)) {
+				TrackedIRI input = new TrackedIRI(OBJECT, committed.snapshot);
+				assertWarm(fixture.values, committed.snapshot, input, id);
+				input.onValidation = committed.snapshot::close;
+				assertThrows(IOException.class, () -> fixture.values.getId(committed.snapshot, input));
+				int validations = input.validationCalls.get();
+				assertThrows(IOException.class, () -> fixture.values.getId(committed.snapshot, input));
+				assertEquals(validations, input.validationCalls.get(), "A closed view must fail before another getter");
+			}
+		}
+	}
+
+	@Test
+	void warmValidationCallbackInterruptionCannotReturnCachedId(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, 3)) {
+			long id = fixture.store(OBJECT);
+			try (DirectView view = new DirectView(fixture.values)) {
+				TrackedIRI input = new TrackedIRI(OBJECT, view.snapshot);
+				assertWarm(fixture.values, view.snapshot, input, id);
+				input.onValidation = () -> Thread.currentThread().interrupt();
+				try {
+					assertThrows(IOException.class, () -> fixture.values.getId(view.snapshot, input));
+					assertTrue(Thread.currentThread().isInterrupted(), "Lookup must preserve the caller's interrupt");
+				} finally {
+					Thread.interrupted();
+					input.onValidation = null;
+				}
+				assertEquals(id, fixture.values.getId(view.snapshot, input));
+			}
+		}
+	}
+
+	@Test
+	void warmValidationCallbackKeepsOriginalExpiringDeadline(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, 3)) {
+			long id = fixture.store(OBJECT);
+			try (DirectView view = new DirectView(fixture.values)) {
+				TrackedIRI input = new TrackedIRI(OBJECT, view.snapshot);
+				assertWarm(fixture.values, view.snapshot, input, id);
+				CountDownLatch expiration = new CountDownLatch(1);
+				AtomicInteger entered = new AtomicInteger();
+				try (QueryExecutionDeadline deadline = QueryExecutionDeadline.start(1_000);
+						QueryExecutionDeadline.Scope scope = deadline.enter();
+						QueryExecutionDeadline.Registration registration = deadline
+								.onExpiration(expiration::countDown)) {
+					input.onValidation = () -> {
+						assertSame(deadline, QueryExecutionDeadline.current());
+						entered.incrementAndGet();
+						await(expiration);
+					};
+					assertThrows(QueryInterruptedException.class, () -> fixture.values.getId(view.snapshot, input));
+					assertEquals(1, entered.get(), "The deadline must expire across the real warmed getter callback");
+					assertTrue(deadline.isExpired());
+				} finally {
+					input.onValidation = null;
+				}
+				assertEquals(id, fixture.values.getId(view.snapshot, input));
+			}
+		}
+	}
+
+	@Test
+	void coldCaptureRacingCloseCannotPublishOrReviveMemo(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, 3)) {
+			fixture.store(OBJECT);
+			try (DirectView view = new DirectView(fixture.values)) {
+				TrackedIRI input = new TrackedIRI(OBJECT, view.snapshot);
+				CountDownLatch captured = new CountDownLatch(1);
+				CountDownLatch resume = new CountDownLatch(1);
+				input.onCapture = () -> {
+					captured.countDown();
+					await(resume);
+				};
+				ExecutorService executor = Executors.newFixedThreadPool(2);
+				try {
+					Future<?> lookup = executor.submit(() -> {
+						assertThrows(IOException.class, () -> fixture.values.getId(view.snapshot, input));
+					});
+					await(captured);
+					Future<?> close = executor.submit(view.snapshot::close);
+					close.get(10, TimeUnit.SECONDS);
+					resume.countDown();
+					lookup.get(10, TimeUnit.SECONDS);
+					int captures = input.captureCalls.get();
+					assertThrows(IOException.class, () -> fixture.values.getId(view.snapshot, input));
+					assertEquals(captures, input.captureCalls.get());
+				} finally {
+					resume.countDown();
+					stop(executor);
+				}
+			}
+		}
+	}
+
+	@Test
+	void nonPowerOfTwoMemoPublishesConcurrentColdEntriesWithoutMixingIds(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, 3)) {
+			List<IRI> values = new ArrayList<>();
+			List<Long> ids = new ArrayList<>();
+			for (int i = 0; i < 4; i++) {
+				IRI value = VF.createIRI("urn:snapshot-lookup-lifecycle:concurrent:" + i);
+				values.add(value);
+				ids.add(fixture.store(value));
+			}
+			assertEquals(4, Set.copyOf(ids).size());
+			try (DirectView view = new DirectView(fixture.values)) {
+				CountDownLatch firstCaptures = new CountDownLatch(values.size());
+				CountDownLatch publish = new CountDownLatch(1);
+				List<TrackedIRI> inputs = values.stream().map(value -> new TrackedIRI(value, view.snapshot)).toList();
+				for (TrackedIRI input : inputs) {
+					input.onCapture = () -> {
+						firstCaptures.countDown();
+						await(publish);
+					};
+				}
+				ExecutorService executor = Executors.newFixedThreadPool(inputs.size());
+				try {
+					List<Future<?>> futures = new ArrayList<>();
+					for (int owner = 0; owner < inputs.size(); owner++) {
+						int first = owner;
+						futures.add(executor.submit(() -> {
+							assertEquals(ids.get(first).longValue(),
+									fixture.values.getId(view.snapshot, inputs.get(first)));
+							for (int round = 0; round < 32; round++) {
+								for (int offset = 0; offset < inputs.size(); offset++) {
+									int index = (first + offset) % inputs.size();
+									assertEquals(ids.get(index).longValue(),
+											fixture.values.getId(view.snapshot, inputs.get(index)));
+								}
+							}
+							return null;
+						}));
+					}
+					await(firstCaptures);
+					publish.countDown();
+					for (Future<?> future : futures) {
+						future.get(10, TimeUnit.SECONDS);
+					}
+					assertTrue(inputs.stream().allMatch(input -> input.captureCalls.get() > 0));
+				} finally {
+					publish.countDown();
+					stop(executor);
+				}
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(MixedShape.class)
+	void mixedUnknownTreesKeepAdmittedKnownChildrenLazy(MixedShape shape, @TempDir Path directory) throws Exception {
+		InspectingStore store = new InspectingStore(directory.toFile());
+		store.init();
+		try {
+			IRI datatype = VF.createIRI("urn:snapshot-lookup-lifecycle:datatype");
+			Literal literal = VF.createLiteral("mixed known datatype", datatype);
+			Value expected = shape == MixedShape.LITERAL ? literal
+					: VF.createTripleTerm(SUBJECT, PREDICATE, VF.createTripleTerm(SUBJECT, PREDICATE, literal));
+			commitStatement(store, SUBJECT, expected);
+			try (SailDataset reader = store.getBackingStore()
+					.getExplicitSailSource()
+					.dataset(IsolationLevels.SNAPSHOT_READ)) {
+				ValueStore.ReadSnapshot snapshot = store.values.lastPairedSnapshot;
+				assertNotNull(snapshot);
+				assertTrue(snapshot.hasStableIds());
+				assertTrue(onlyStatement(reader, SUBJECT, null).getObject() instanceof LmdbValue);
+				long datatypeId = store.values.getId(snapshot, datatype);
+				long subjectId = store.values.getId(snapshot, SUBJECT);
+				long predicateId = store.values.getId(snapshot, PREDICATE);
+				long expectedId = store.values.getId(snapshot, expected);
+				assertNotEquals(LmdbValue.UNKNOWN_ID, expectedId);
+				LmdbValue lazyDatatype = payloadTrap(store.values.getLazyValue(snapshot, datatypeId), snapshot);
+				List<LmdbValue> children = new ArrayList<>();
+				children.add(lazyDatatype);
+				Value input = store.values.createLiteral(literal.getLabel(), (IRI) lazyDatatype);
+				if (shape == MixedShape.NESTED_TERM) {
+					LmdbValue lazySubject = payloadTrap(store.values.getLazyValue(snapshot, subjectId), snapshot);
+					LmdbValue lazyPredicate = payloadTrap(store.values.getLazyValue(snapshot, predicateId), snapshot);
+					children.add(lazySubject);
+					children.add(lazyPredicate);
+					TripleTerm inner = store.values.createTripleTerm((Resource) lazySubject, (IRI) lazyPredicate,
+							input);
+					input = store.values.createTripleTerm((Resource) lazySubject, (IRI) lazyPredicate, inner);
+				}
+				assertEquals(LmdbValue.UNKNOWN_ID, assertInstanceOf(LmdbValue.class, input).getInternalIdentity().id());
+				for (int call = 0; call < 3; call++) {
+					assertEquals(expectedId, store.values.getId(snapshot, input));
+					for (LmdbValue child : children) {
+						assertInstanceOf(ValueStoreRevision.Lazy.class, child.getValueStoreRevision());
+					}
+				}
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	private static LmdbValue payloadTrap(LmdbValue lazy, ValueStore.ReadSnapshot snapshot) {
+		LmdbValue observed = mock(lazy.getClass(), withSettings().spiedInstance(lazy).defaultAnswer(invocation -> {
+			if (PAYLOAD_GETTERS.contains(invocation.getMethod().getName())) {
+				assertFalse(Thread.holdsLock(snapshot.txnRef()));
+				throw new AssertionError("Optional memoization must not decode an admitted known-ID child: "
+						+ invocation.getMethod().getName());
+			}
+			return invocation.callRealMethod();
+		}));
+		assertEquals(lazy.getClass(), observed.getClass());
+		return observed;
+	}
+
+	private static void assertWarm(ValueStore values, ValueStore.ReadSnapshot snapshot, TrackedIRI input, long id)
+			throws IOException {
+		assertEquals(id, values.getId(snapshot, input));
+		int captures = input.captureCalls.get();
+		assertTrue(captures > 0, "The first successful lookup must really capture lexical fields");
+		assertEquals(id, values.getId(snapshot, input));
+		assertEquals(captures, input.captureCalls.get(), "The control must prove a warmed memo before lifecycle work");
+	}
+
+	private static void assertOldStatement(SailDataset reader, IRI object, long id) {
+		Statement statement = onlyStatement(reader, SUBJECT, object);
+		assertEquals(id, assertInstanceOf(LmdbValue.class, statement.getObject()).getInternalIdentity().id());
+		assertEquals(VF.createStatement(SUBJECT, PREDICATE, OBJECT), statement);
+	}
+
+	private static Statement onlyStatement(SailDataset reader, IRI subject, Value object) {
+		try (CloseableIteration<? extends Statement> statements = reader.getStatements(subject, PREDICATE, object)) {
+			assertTrue(statements.hasNext());
+			Statement statement = statements.next();
+			assertFalse(statements.hasNext());
+			return statement;
+		}
+	}
+
+	private static void commitStatement(LmdbStore store, IRI subject, Value object) {
+		try (SailConnection writer = store.getConnection()) {
+			writer.begin(IsolationLevels.SNAPSHOT);
+			writer.addStatement(subject, PREDICATE, object);
+			writer.commit();
+		}
+	}
+
+	private static void removeStatement(LmdbStore store) {
+		try (SailConnection writer = store.getConnection()) {
+			writer.begin(IsolationLevels.SNAPSHOT);
+			writer.removeStatements(SUBJECT, PREDICATE, null);
+			writer.commit();
+		}
+	}
+
+	private static void growDictionary(LmdbStore store, long currentMapSize) {
+		int payloadLength = Math.toIntExact(Math.multiplyExact(currentMapSize, 2L));
+		commitStatement(store, VF.createIRI("urn:snapshot-lookup-lifecycle:growth"),
+				VF.createLiteral("g".repeat(payloadLength)));
+	}
+
+	private static void await(CountDownLatch latch) {
+		try {
+			assertTrue(latch.await(10, TimeUnit.SECONDS),
+					"The controlled callback did not reach its lifecycle boundary");
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new AssertionError("Interrupted while awaiting a controlled lookup callback", e);
+		}
+	}
+
+	private static void stop(ExecutorService executor) throws InterruptedException {
+		executor.shutdownNow();
+		assertTrue(executor.awaitTermination(10, TimeUnit.SECONDS));
+	}
+
+	enum MixedShape {
+
+		LITERAL,
+		NESTED_TERM
+	}
+
+	private static final class TrackedIRI extends AbstractIRI {
+
+		private final IRI delegate;
+
+		private final ValueStore.ReadSnapshot snapshot;
+
+		private final AtomicInteger captureCalls = new AtomicInteger();
+
+		private final AtomicInteger validationCalls = new AtomicInteger();
+
+		private volatile Runnable onCapture;
+
+		private volatile Runnable onValidation;
+
+		private TrackedIRI(IRI delegate, ValueStore.ReadSnapshot snapshot) {
+			this.delegate = delegate;
+			this.snapshot = snapshot;
+		}
+
+		@Override
+		public String getNamespace() {
+			assertOutsideTransaction();
+			captureCalls.incrementAndGet();
+			Runnable callback = onCapture;
+			if (callback != null) {
+				callback.run();
+			}
+			return delegate.getNamespace();
+		}
+
+		@Override
+		public String getLocalName() {
+			assertOutsideTransaction();
+			captureCalls.incrementAndGet();
+			return delegate.getLocalName();
+		}
+
+		@Override
+		public String stringValue() {
+			assertOutsideTransaction();
+			validationCalls.incrementAndGet();
+			Runnable callback = onValidation;
+			if (callback != null) {
+				callback.run();
+			}
+			return delegate.stringValue();
+		}
+
+		private void assertOutsideTransaction() {
+			assertFalse(Thread.holdsLock(snapshot.txnRef()),
+					"Caller getters must remain outside the native Txn monitor");
+		}
+	}
+
+	private static final class Fixture implements AutoCloseable {
+
+		private final ValueStore values;
+
+		private Fixture(Path directory, int capacity) throws IOException {
+			values = new ValueStore(directory.resolve("values").toFile(),
+					new LmdbStoreConfig().setValueDBSize(64L * 1024L * 1024L)
+							.setInlineLiterals(false)
+							.setValueIDCacheSize(capacity));
+		}
+
+		private long store(Value value) throws IOException {
+			values.startTransaction(true);
+			try {
+				long id = values.storeValue(value);
+				values.commit();
+				return id;
+			} catch (IOException | RuntimeException | Error failure) {
+				try {
+					values.rollback();
+				} catch (IOException | RuntimeException | Error cleanup) {
+					if (cleanup != failure) {
+						failure.addSuppressed(cleanup);
+					}
+				}
+				throw failure;
+			}
+		}
+
+		@Override
+		public void close() throws IOException {
+			values.close();
+		}
+	}
+
+	private static final class DirectView implements AutoCloseable {
+
+		private final ValueStore.ReadSnapshotReservation reservation;
+
+		private final ValueStore.ReadSnapshot snapshot;
+
+		private DirectView(ValueStore values) throws IOException {
+			reservation = values.reserveReadSnapshot();
+			try {
+				snapshot = reservation.start();
+			} catch (IOException | RuntimeException | Error failure) {
+				reservation.close();
+				throw failure;
+			}
+		}
+
+		@Override
+		public void close() {
+			try {
+				snapshot.close();
+			} finally {
+				reservation.close();
+			}
+		}
+	}
+
+	private static final class InspectingValueStore extends ValueStore {
+
+		private volatile ReadSnapshot lastPairedSnapshot;
+
+		private InspectingValueStore(File directory, StoreProperties properties, LmdbStoreConfig config)
+				throws IOException {
+			super(directory, properties, config);
+		}
+
+		@Override
+		ReadSnapshotReservation reserveReadSnapshot() throws IOException {
+			return new ReadSnapshotReservation(getTxnManager().reserveReadTxn(false)) {
+
+				@Override
+				synchronized ReadSnapshot tryStart(Txn tripleTxn) throws IOException {
+					ReadSnapshot snapshot = super.tryStart(tripleTxn);
+					if (tripleTxn != null) {
+						lastPairedSnapshot = snapshot;
+					}
+					return snapshot;
+				}
+			};
+		}
+	}
+
+	private static final class InspectingStore extends LmdbStore {
+
+		private InspectingValueStore values;
+
+		private TripleStore triples;
+
+		private InspectingStore(File directory) {
+			super(directory,
+					new LmdbStoreConfig("spoc,posc").setForceSync(true)
+							.setInlineLiterals(false)
+							.setValueIDCacheSize(3)
+							.setTripleDBSize(64L * 1024L * 1024L)
+							.setValueDBSize(1024L * 1024L)
+							.setMapGrowthReadDrainTimeoutMillis(100)
+							.setAutoGrow(true));
+		}
+
+		@Override
+		LmdbSailStore createBackingStore(File directory, StoreProperties properties, LmdbStoreConfig config,
+				boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
+			return new LmdbSailStore(directory, properties, config, sketchBasedJoinEstimatorEnabled,
+					(valueDirectory, valueProperties, valueConfig) -> {
+						values = new InspectingValueStore(valueDirectory, valueProperties, valueConfig);
+						return values;
+					}, (tripleDirectory, tripleProperties, tripleConfig, valueStore) -> {
+						triples = new TripleStore(tripleDirectory, tripleProperties, tripleConfig, valueStore);
+						return triples;
+					});
+		}
+	}
+
+	@Test
+	void captureDeepSharedTreeWithoutRecursion(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, 3);
+				DirectView view = new DirectView(fixture.values)) {
+			Value input = VF.createLiteral("leaf", "en", Literal.BaseDirection.RTL);
+			int depth = 10_000;
+			for (int level = 0; level < depth; level++) {
+				input = VF.createTripleTerm(SUBJECT, SUBJECT, input);
+			}
+			Value captured = fixture.values.valueCapturer(view.snapshot).apply(input);
+			for (int level = 0; level < depth; level++) {
+				TripleTerm triple = (TripleTerm) captured;
+				assertSame(triple.getSubject(), triple.getPredicate(), "one shared input has one captured owner");
+				captured = triple.getObject();
+			}
+			Literal leaf = (Literal) captured;
+			assertEquals("leaf", leaf.getLabel());
+			assertEquals("en", leaf.getLanguage().orElseThrow());
+			assertEquals(Literal.BaseDirection.RTL, leaf.getBaseDirection());
+		}
+	}
+
+	@Test
+	void captureSnapshotsInitializedNativeCompositeWithMutableForeignChild(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, 3);
+				DirectView view = new DirectView(fixture.values)) {
+			MutableCaptureIRI mutableObject = new MutableCaptureIRI("before");
+			TripleTerm nativeComposite = fixture.values.createTripleTerm(SUBJECT, PREDICATE, mutableObject);
+			LmdbValue nativeValue = assertInstanceOf(LmdbValue.class, nativeComposite);
+			assertTrue(nativeValue.isInitialized());
+			assertEquals(LmdbValue.UNKNOWN_ID, nativeValue.getSemanticVersion(),
+					"A mutable foreign child makes the native composite unstable");
+			TripleTerm captured = (TripleTerm) fixture.values.valueCapturer(view.snapshot).apply(nativeComposite);
+			assertNotSame(nativeComposite, captured, "An unstable native composite needs a semantic snapshot");
+			assertEquals("urn:mutable-capture:before", captured.getObject().stringValue());
+			mutableObject.changeLocalName("after");
+			assertEquals("urn:mutable-capture:after", nativeComposite.getObject().stringValue());
+			assertEquals("urn:mutable-capture:before", captured.getObject().stringValue(),
+					"A captured composite must not retain a mutable foreign child");
+		}
+	}
+
+	@Test
+	void captureRejectsCycleBeforeCreatingPreparedPayload(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, 3);
+				DirectView view = new DirectView(fixture.values)) {
+			TripleTerm cycle = new AbstractTripleTerm() {
+
+				@Override
+				public Resource getSubject() {
+					return SUBJECT;
+				}
+
+				@Override
+				public IRI getPredicate() {
+					return PREDICATE;
+				}
+
+				@Override
+				public Value getObject() {
+					return this;
+				}
+			};
+			assertThrows(IllegalArgumentException.class,
+					() -> fixture.values.valueCapturer(view.snapshot).apply(cycle));
+		}
+	}
+
+	@Test
+	void foreignPreparedChildrenAcquireCurrentPreparationOwner(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, 3)) {
+			Value foreign;
+			try (DirectView first = new DirectView(fixture.values)) {
+				foreign = fixture.values.valueCapturer(first.snapshot)
+						.apply(VF.createTripleTerm(SUBJECT, SUBJECT, VF.createLiteral("typed", OBJECT)));
+			}
+			try (DirectView second = new DirectView(fixture.values)) {
+				var capturer = (OwnedValueCapturer) fixture.values.valueCapturer(second.snapshot);
+				TripleTerm captured = (TripleTerm) capturer.apply(foreign);
+				assertTrue(capturer.owns(captured));
+				assertTrue(capturer.owns(captured.getSubject()));
+				assertTrue(capturer.owns(captured.getPredicate()));
+				assertTrue(capturer.owns(captured.getObject()));
+				assertTrue(capturer.owns(((Literal) captured.getObject()).getDatatype()));
+				assertSame(captured.getSubject(), captured.getPredicate());
+			}
+		}
+	}
+
+	private static final class MutableCaptureIRI extends AbstractIRI {
+
+		private volatile String localName;
+
+		private MutableCaptureIRI(String localName) {
+			this.localName = localName;
+		}
+
+		@Override
+		public String getNamespace() {
+			return "urn:mutable-capture:";
+		}
+
+		@Override
+		public String getLocalName() {
+			return localName;
+		}
+
+		private void changeLocalName(String localName) {
+			this.localName = localName;
+		}
+	}
 }

@@ -947,6 +947,43 @@ class LmdbNativeFilterAttemptCompletionTest {
 		}
 	}
 
+	@Test
+	void borrowedLateralFacadesReusePreparationButKeepRealFrameOutcomesSeparate() throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			RecordingNativeBooleanFilter template = fixture.recording(new TrackingFilter());
+			AtomicInteger evaluations = new AtomicInteger();
+			AtomicInteger preparations = new AtomicInteger();
+			List<Set<String>> domains = new ArrayList<>();
+			fixture.block(parent -> {
+				NativeSlotLayout layout = new NativeSlotLayout(Map.of("frame", 0), null);
+				layout.freeze(List.of("frame"));
+				NativeSubqueryPlan memo = scopedMemoPlan(fixture, template, evaluations, preparations, domains,
+						3, new int[] { 0 }, new String[] { "frame" });
+				NativeFilterLease selected = new NativeFilterLease();
+				int[] values = { 4, 8, 12, 4 };
+				for (int i = 0; i < values.length; i++) {
+					QueryBindingSet originalInput = new QueryBindingSet();
+					if (i == 2) {
+						originalInput.addBinding("original", fixture.repository.getValueFactory().createLiteral(true));
+					}
+					RowState row = new RowState(parent.source, layout, originalInput);
+					row.slots[0] = row.source.idOf(fixture.repository.getValueFactory().createLiteral(values[i]));
+					assertThat(row.slots[0]).isNotEqualTo(NativeLmdbQuerySource.UNKNOWN_ID);
+					row.recomputeBoundMask();
+					NativeFilterLease opening = new NativeFilterLease(selected);
+					assertThat(drainPlan(opening.borrow(memo), row)).isEqualTo(3);
+					opening.commit();
+				}
+				selected.commit();
+			});
+			assertThat(preparations).as("one preparation per canonical plan and original binding domain").hasValue(2);
+			assertThat(domains).containsExactly(Set.of(), Set.of("original"));
+			assertThat(evaluations).as("real frame values stay separate; a repeated frame reuses its frozen result")
+					.hasValue(3);
+			assertComplete(fixture.statistics, 9L, 0L);
+		}
+	}
+
 	/** A child stays visible to its real query owner until its resource outcome reaches that owner. */
 	@ParameterizedTest
 	@ValueSource(ints = { 0, 1, 2 })
@@ -2229,6 +2266,12 @@ class LmdbNativeFilterAttemptCompletionTest {
 
 	private static NativeSubqueryPlan memoPlan(Fixture fixture, RecordingNativeBooleanFilter template,
 			AtomicInteger evaluations, int count, int[] frameSlots, String[] frameNames) {
+		return scopedMemoPlan(fixture, template, evaluations, null, null, count, frameSlots, frameNames);
+	}
+
+	private static NativeSubqueryPlan scopedMemoPlan(Fixture fixture, RecordingNativeBooleanFilter template,
+			AtomicInteger evaluations, AtomicInteger preparations, List<Set<String>> domains, int count,
+			int[] frameSlots, String[] frameNames) {
 		QueryEvaluationStep step = ignored -> {
 			evaluations.incrementAndGet();
 			SyntheticValueSource source = SyntheticValueSource.forEvaluation((NativeLmdbQuerySource) fixture.dataset);
@@ -2246,7 +2289,15 @@ class LmdbNativeFilterAttemptCompletionTest {
 				throw new IllegalStateException(failure);
 			}
 		};
-		return new NativeSubqueryPlan(step, new int[0], new String[0], frameSlots, frameNames);
+		if (preparations == null) {
+			return new NativeSubqueryPlan(step, new int[0], new String[0], frameSlots, frameNames);
+		}
+		return new NativeSubqueryPlan(step, new int[0], new String[0], frameSlots, frameNames, frameNames,
+				new String[0], null, null, null, (domain, execution) -> {
+					preparations.incrementAndGet();
+					domains.add(domain);
+					return step;
+				});
 	}
 
 	private static void assertQuarterBag(List<Integer> actual) {

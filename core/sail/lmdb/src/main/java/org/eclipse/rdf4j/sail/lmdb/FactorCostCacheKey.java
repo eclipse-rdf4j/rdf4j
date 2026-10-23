@@ -207,7 +207,8 @@ final class FactorCostCacheKey {
 		}
 		if (factor instanceof Filter filter) {
 			return UnaryFactorFingerprint.of("Filter", factorFingerprint(filter.getArg(), scope),
-					queryModelFingerprint(filter.getCondition(), scope), filter.getRequiredInputBindingNames());
+					queryModelFingerprint(filter.getCondition(), scope), filter.getRequiredInputBindingNames(),
+					filter.getConditionBindingScope());
 		}
 		if (factor instanceof LeftJoin leftJoin) {
 			return BinaryFactorFingerprint.of("LeftJoin", factorFingerprint(leftJoin.getLeftArg(), scope),
@@ -413,16 +414,17 @@ final class FactorCostCacheKey {
 	}
 
 	private record UnaryFactorFingerprint(int hash, String operator, Object arg, Object condition,
-			Set<String> requiredInputs) {
+			Set<String> requiredInputs, Filter.ConditionBindingScope conditionScope) {
 
 		private static UnaryFactorFingerprint of(String operator, Object arg, Object condition,
-				Set<String> requiredInputs) {
+				Set<String> requiredInputs, Filter.ConditionBindingScope conditionScope) {
 			Set<String> inputs = Set.copyOf(requiredInputs);
 			int hash = nullableHash(operator);
 			hash = hashStep(hash, arg);
 			hash = hashStep(hash, condition);
 			hash = hashStep(hash, inputs);
-			return new UnaryFactorFingerprint(hash, operator, arg, condition, inputs);
+			hash = hashStep(hash, conditionScope);
+			return new UnaryFactorFingerprint(hash, operator, arg, condition, inputs, conditionScope);
 		}
 
 		@Override
@@ -487,7 +489,7 @@ final class FactorCostCacheKey {
 
 	/** Physical work identities supplement logical equality without changing the public algebra contract. */
 	private record PhysicalInputContract(int position, Set<String> names, boolean independentInputScope,
-			boolean inheritedContextOrigin, long rawKinds) {
+			boolean inheritedContextOrigin, long rawKinds, Filter.ConditionBindingScope conditionScope) {
 	}
 
 	private static class PhysicalInputVisitor extends AbstractQueryModelVisitor<RuntimeException> {
@@ -498,17 +500,21 @@ final class FactorCostCacheKey {
 		protected final void captureNode(QueryModelNode node) {
 			int ordinal = position++;
 			Set<String> names = node instanceof Filter filter ? filter.getRequiredInputBindingNames() : Set.of();
+			Filter.ConditionBindingScope conditionScope = node instanceof Filter filter
+					? filter.getConditionBindingScope()
+					: Filter.ConditionBindingScope.AUTO;
 			boolean independent = node.isIndependentInputScope();
 			boolean inherited = node instanceof StatementPattern statement
 					&& statement.isContextBindingOriginInherited();
 			long rawKinds = node instanceof StatementPattern statement
 					? LmdbValueIdFilter.fromStatementPattern(statement).semanticKindWord()
 					: 0L;
-			if (!names.isEmpty() || independent || inherited || rawKinds != 0L) {
+			if (!names.isEmpty() || !conditionScope.isAuto() || independent || inherited || rawKinds != 0L) {
 				if (contracts.isEmpty()) {
 					contracts = new ArrayList<>();
 				}
-				contracts.add(new PhysicalInputContract(ordinal, Set.copyOf(names), independent, inherited, rawKinds));
+				contracts.add(new PhysicalInputContract(ordinal, Set.copyOf(names), independent, inherited, rawKinds,
+						conditionScope));
 			}
 		}
 
@@ -550,6 +556,7 @@ final class FactorCostCacheKey {
 				hash = hashStep(hash, BindingSetAssignmentFactorFingerprint.of(assignment));
 			} else if (node instanceof Filter filter) {
 				hash = hashStep(hash, filter.getRequiredInputBindingNames());
+				hash = hashStep(hash, filter.getConditionBindingScope());
 			}
 			node.visitChildren(this);
 			hash = hashStep(hash, "end");
@@ -605,8 +612,13 @@ final class FactorCostCacheKey {
 						retainedBytes = saturatedAdd(retainedBytes, 256L * bindingSet.size());
 					}
 				}
-			} else if (node instanceof Filter filter && !filter.getRequiredInputBindingNames().isEmpty()) {
+			} else if (node instanceof Filter filter) {
 				retainedBytes = saturatedAdd(retainedBytes, 64L + 32L * filter.getRequiredInputBindingNames().size());
+				retainedBytes = saturatedAdd(retainedBytes,
+						64L + 32L * filter.getConditionBindingScope().bindingNames().size());
+				for (String name : filter.getConditionBindingScope().bindingNames()) {
+					retainedBytes = saturatedAdd(retainedBytes, stringBytes(name));
+				}
 				for (String name : filter.getRequiredInputBindingNames()) {
 					retainedBytes = saturatedAdd(retainedBytes, stringBytes(name));
 				}

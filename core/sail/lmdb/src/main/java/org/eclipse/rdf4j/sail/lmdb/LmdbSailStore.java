@@ -1770,6 +1770,18 @@ class LmdbSailStore implements SailStore {
 		}
 
 		private void validatePairedEnvironments(Object owner) throws IOException {
+			while (true) {
+				try {
+					validatePairedEnvironmentsOnce(owner);
+					return;
+				} catch (ValueStore.ValueReadAdmissionException notAdmitted) {
+					// Both reservations, both snapshots, publicationGate and the writer lease have unwound.
+					valueStore.awaitValueReaderAdmission();
+				}
+			}
+		}
+
+		private void validatePairedEnvironmentsOnce(Object owner) throws IOException {
 			// A failed resize may have enlarged one map. Do not shrink it: verify both environments can
 			// reserve the same stable publication before allowing unrelated work to use the pair again.
 			try (WriterLease ignored = acquireWriterLease(owner);
@@ -1784,7 +1796,7 @@ class LmdbSailStore implements SailStore {
 								"Unable to establish a stable paired LMDB publication after resize failure");
 					}
 					try (Txn tripleTxn = tripleReservation.startPinned(tripleStore::getDataRevision);
-							ValueStore.ReadSnapshot values = valueReservation.start(tripleTxn)) {
+							ValueStore.ReadSnapshot values = valueReservation.tryStart(tripleTxn)) {
 						// Successful paired native acquisition is the consistency/lifetime check. No data was published
 						// by a map-size change, so the stable publication remains authoritative in both environments.
 					}
@@ -2658,6 +2670,9 @@ class LmdbSailStore implements SailStore {
 
 	private final TripleStore tripleStore;
 	private final PackedPlanCache cascadesPlanCache;
+
+	/** Results of tuple queries whose caller asked for caching, valid until the next committed write. */
+	private final LmdbQueryResultCache queryResultCache = new LmdbQueryResultCache();
 
 	private final ValueStore valueStore;
 	private ValueStore.FreshValueSession freshValueSession;
@@ -5761,7 +5776,7 @@ class LmdbSailStore implements SailStore {
 		}
 		if (failed != null && (!(owner instanceof LmdbStoreConnection connection)
 				|| connection.retainsFailedWriteAttempt(failed.attempt()))) {
-			if (failed.failure()instanceof Error error) {
+			if (failed.failure() instanceof Error error) {
 				throw error;
 			}
 			throw new SailException(failed.failure().getMessage(), failed.failure());
@@ -6279,6 +6294,22 @@ class LmdbSailStore implements SailStore {
 
 	private ReadView createFreshReadView(MapGrowthObserver observer, ReadAttemptLease readAttempt)
 			throws SailException {
+		while (true) {
+			try {
+				return tryCreateFreshReadView(observer, readAttempt);
+			} catch (ValueStore.ValueReadAdmissionException notAdmitted) {
+				try {
+					// Release the pending growth view too: it must not keep the gated writer from quiescing.
+					valueStore.awaitValueReaderAdmission();
+				} catch (IOException failure) {
+					throw new SailException("Unable to admit an LMDB read snapshot", failure);
+				}
+			}
+		}
+	}
+
+	private ReadView tryCreateFreshReadView(MapGrowthObserver observer, ReadAttemptLease readAttempt)
+			throws SailException, ValueStore.ValueReadAdmissionException {
 		checkPublicationAdmission(QueryExecutionDeadline.current());
 		if (isCurrentThreadCheckpointOwner()) {
 			// Check this self-deadlock boundary before growth admission can wait for the same writer to finish.
@@ -6308,7 +6339,7 @@ class LmdbSailStore implements SailStore {
 						ValueStore.ReadSnapshot valueSnapshot = null;
 						try {
 							tripleTxn = tripleReservation.startPinned(tripleStore::getDataRevision);
-							valueSnapshot = valueReservation.start(tripleTxn);
+							valueSnapshot = valueReservation.tryStart(tripleTxn);
 							if (pendingDictionaryCheckpointGeneration != 0L) {
 								valueSnapshot.close();
 								valueSnapshot = null;
@@ -6337,6 +6368,8 @@ class LmdbSailStore implements SailStore {
 					} finally {
 						publicationGate.unlock();
 					}
+				} catch (ValueStore.ValueReadAdmissionException notAdmitted) {
+					throw notAdmitted;
 				} catch (IOException e) {
 					throw new SailException("Unable to admit an LMDB read snapshot", e);
 				}
@@ -6547,9 +6580,16 @@ class LmdbSailStore implements SailStore {
 			tripleStore.setMapGrowthAttemptSupplier(
 					() -> beginMapGrowthAttemptForCurrentWriter(MapResizeKind.TRIPLE_STORE));
 			tripleStore.setMapGrowthRequestListener(this::requestMapGrowthForCurrentWriter);
-			namespaceStore = recoverNamespaceStore();
+			if (properties.preparedBulkStore != null
+					&& tripleStore.trustedTransactionId() != properties.verifiedTripleTransactionId) {
+				throw new IOException("Clean native triple generation changed during startup");
+			}
+			namespaceStore = properties.preparedBulkStore == null ? recoverNamespaceStore()
+					: new NamespaceStore(dataDir, tripleStore);
 			publishedNamespaces = namespaceStore.snapshot();
-			recoverRetiredValueIds();
+			if (properties.preparedBulkStore == null || properties.preparedBulkStore.pendingRetired()) {
+				recoverRetiredValueIds();
+			}
 			statementPatternCardinalitySource = new LmdbStatementPatternCardinalitySource(valueStore, tripleStore);
 			mayHaveInferred = tripleStore.hasTriples(false);
 			LeoRolloutProfile leoProfile = LeoRolloutProfile.fromSystemProperties();
@@ -6619,7 +6659,11 @@ class LmdbSailStore implements SailStore {
 			boolean snapshotExists = Files.isRegularFile(estimatorPath.resolve("synopsis-v8.bin"))
 					|| Files.isRegularFile(estimatorPath.resolve("metadata.bin"));
 			boolean storeHasTriples = tripleStore.hasTriples(true) || tripleStore.hasTriples(false);
-			completeStartupValueReclamation(false);
+			if (properties.preparedBulkStore == null || properties.preparedBulkStore.pendingUnused()) {
+				completeStartupValueReclamation(false);
+			} else {
+				valueStore.completePreparedStoreInitialization(tripleStore::filterUsedIds);
+			}
 			LmdbDirectAdjacencyOptions directAdjacencyOptions = LmdbDirectAdjacencyOptions.resolve(config);
 			directAdjacency = directAdjacencyOptions.mode() != DirectAdjacencyMode.DISABLED
 					? new LmdbDirectAdjacencyStore(tripleStore, valueStore, storeTxnStarted, storeTxnDirty,
@@ -6635,7 +6679,10 @@ class LmdbSailStore implements SailStore {
 			}
 			preparedImportBudget = new AlignedWriteBudget(calculatePreparedImportStatementLimit(
 					Runtime.getRuntime().maxMemory(), tripleStore.secondaryIndexCount()));
-			completeStartupValueReclamation(true);
+			if (properties.preparedBulkStore == null || properties.preparedBulkStore.pendingUnused()
+					|| properties.preparedBulkStore.pendingRetired()) {
+				completeStartupValueReclamation(true);
+			}
 			LmdbDirectAdjacencyStore adjacencyForContext = directAdjacency;
 			costModelContext = new LmdbNativeCostModelContext(
 					dataDir.toPath(),
@@ -7770,6 +7817,7 @@ class LmdbSailStore implements SailStore {
 
 	/** Recovers durable value-ID retirement intents only after opening the authoritative TripleStore. */
 	private void completeStartupValueReclamation(boolean afterRetirementRecovery) throws IOException {
+		LmdbStartupDiagnostics.observe(LmdbStartupDiagnostics.Operation.VALUE_RECLAMATION);
 		long initialMapSize = mapSizeBytesWithNativeReadBarrier(MapResizeKind.VALUE_STORE);
 		while (true) {
 			Object owner = new Object();
@@ -7893,6 +7941,7 @@ class LmdbSailStore implements SailStore {
 
 	private void recoverRetiredValueIds(long maxRevisionInclusive, boolean recoverBufferedRetirements)
 			throws IOException {
+		LmdbStartupDiagnostics.observe(LmdbStartupDiagnostics.Operation.RETIREMENT_RECOVERY);
 		long initialMapSize = mapSizeBytesWithNativeReadBarrier(MapResizeKind.VALUE_STORE);
 		while (true) {
 			Object owner = new Object();
@@ -8133,6 +8182,15 @@ class LmdbSailStore implements SailStore {
 		return directAdjacency;
 	}
 
+	LmdbQueryResultCache queryResultCache() {
+		return queryResultCache;
+	}
+
+	/** The revision of the last committed write, published after the LMDB commit and before it returns. */
+	long dataRevision() {
+		return tripleStore.getDataRevision();
+	}
+
 	/** Package-private for tests and readiness diagnostics (see LmdbStore.awaitValueOverlayReady). */
 	ValueStore valueStore() {
 		return valueStore;
@@ -8162,6 +8220,7 @@ class LmdbSailStore implements SailStore {
 		}
 		Throwable failure = null;
 		failure = attemptClose(failure, frontierPlannerSettings::close);
+		failure = attemptClose(failure, queryResultCache::clear);
 		initialImportClosing = true;
 		failure = attemptClose(failure, () -> NativeLmdbQuerySource.releaseCostModel(valueStore));
 		failure = attemptClose(failure, mapGrowthCoordinator::shutdown);
@@ -8198,6 +8257,14 @@ class LmdbSailStore implements SailStore {
 			}
 			if (namespaceStore != null) {
 				failure = attemptClose(failure, namespaceStore::close);
+			}
+			if (failure == null && valueStore != null && tripleStore != null && tripleStore.tracksNativeOwnership()) {
+				try {
+					valueStore.prepareCleanClose(tripleStore.trustedTransactionId());
+				} catch (IOException unknownWriter) {
+					valueStore.invalidateCleanCloseAfterUnknownTripleWriter();
+					logger.warn("Cannot certify clean native state before close", unknownWriter);
+				}
 			}
 			if (tripleStore != null) {
 				failure = attemptClose(failure, () -> tripleStore.getTxnManager().close());

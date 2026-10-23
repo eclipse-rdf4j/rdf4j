@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -42,6 +43,19 @@ import org.junit.jupiter.params.provider.ValueSource;
 class LmdbDeferredFilterPlacerSoundnessTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void materializedDeferredConditionsKeepTheirOriginalVisibility(boolean experimental, @TempDir Path directory) {
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setDeclaredBindingNames(Set.of("x", "hidden"));
+		values.setBindingSets(List.of(row("x", VF.createLiteral(1), "hidden", VF.createLiteral(1))));
+		Filter gate = new Filter(values, new Compare(Var.of("x"), Var.of("hidden")));
+		gate.setConditionBindingScope(ConditionBindingScope.retain(Set.of("x")));
+		assertThat(evaluate(gate, experimental, directory))
+				.as("the hidden equality operand remains unbound")
+				.isEmpty();
+	}
 
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })

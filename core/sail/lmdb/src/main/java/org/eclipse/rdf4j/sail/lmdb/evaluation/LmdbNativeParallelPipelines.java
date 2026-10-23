@@ -31,6 +31,8 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStoreConnection.ReadOperationClosedException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Shared same-snapshot morsel scheduler for native pipelines. The query thread keeps its original source; one sibling
@@ -42,6 +44,8 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbStoreConnection.ReadOperationClosedExcept
  */
 @Experimental
 final class LmdbNativeParallelPipelines {
+
+	private static final Logger logger = LoggerFactory.getLogger(LmdbNativeParallelPipelines.class);
 
 	static final int OUTPUT_ROWS = 256;
 	static final int MAX_POOL_TASKS = 65;
@@ -865,6 +869,9 @@ final class LmdbNativeParallelPipelines {
 				WORKER_FAILURES.incrementAndGet();
 			}
 			cancelled.set(true);
+			if (recorded) {
+				logger.debug("Native parallel pipeline worker failed", problem);
+			}
 		}
 
 		void recordCleanupFailure(Throwable closeFailure) {
@@ -885,6 +892,7 @@ final class LmdbNativeParallelPipelines {
 			}
 			if (recorded) {
 				WORKER_FAILURES.incrementAndGet();
+				logger.debug("Native parallel pipeline worker cleanup failed", closeFailure);
 			}
 		}
 

@@ -513,7 +513,7 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 		if (TupleExprs.isVariableScopeChange(filter)) {
 			return false;
 		}
-		if (filter.getArg()instanceof Join join && join.getRightArg() instanceof BindingSetAssignment) {
+		if (filter.getArg() instanceof Join join && join.getRightArg() instanceof BindingSetAssignment) {
 			boolean[] subquery = { false };
 			filter.getCondition().visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
 				@Override
@@ -658,7 +658,7 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 
 		private boolean capable(TupleExpr expression, Kind kind) {
 			// A marker is necessary but not sufficient: invocation/scope admission may keep this operator opaque.
-			return physical.get(expression)instanceof PhysicalOperator operator && operator.kind == kind
+			return physical.get(expression) instanceof PhysicalOperator operator && operator.kind == kind
 					&& TupleExprs.getChildren(expression).stream().allMatch(members::containsKey);
 		}
 	}
@@ -1345,7 +1345,7 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 		}
 
 		private boolean capable(TupleExpr expression, Kind kind) {
-			return physicalSteps.get(expression)instanceof PhysicalOperator operator && operator.kind == kind;
+			return physicalSteps.get(expression) instanceof PhysicalOperator operator && operator.kind == kind;
 		}
 
 		void partitionPrefix(List<Envelope> envelopes, TupleExpr prefix) {

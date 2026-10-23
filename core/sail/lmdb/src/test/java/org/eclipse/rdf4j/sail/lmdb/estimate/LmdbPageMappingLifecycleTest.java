@@ -737,8 +737,10 @@ class LmdbPageMappingLifecycleTest {
 			String scenario = args[0];
 			Path dataDir = Path.of(args[1]);
 			switch (scenario) {
-			case "entry-ranks-close", "entry-ranks-empty-database", "entry-ranks-unknown-database", "entry-ranks-empty-keys", "entry-ranks-exception", "entry-ranks-nested-view" -> runEntryRanksCloseScenario(
-					dataDir, scenario);
+			case "entry-ranks-close", "entry-ranks-empty-database", "entry-ranks-unknown-database",
+					"entry-ranks-empty-keys", "entry-ranks-exception", "entry-ranks-nested-view" ->
+				runEntryRanksCloseScenario(
+						dataDir, scenario);
 			case "active-read-view" -> runActiveReadViewScenario(dataDir, false);
 			case "active-managed-read-view" -> runActiveReadViewScenario(dataDir, true);
 			case "nested-read-views" -> runNestedReadViewsScenario(dataDir);

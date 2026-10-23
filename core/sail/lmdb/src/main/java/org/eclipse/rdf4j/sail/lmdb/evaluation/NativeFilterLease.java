@@ -197,7 +197,7 @@ final class NativeFilterLease {
 					recording.adaptive, recording.origin, this);
 			attempt = recorder;
 		} else if (original instanceof ExistsFilter exists) {
-			attempt = new ExistsFilter(borrow(exists.subPlan));
+			attempt = new ExistsFilter(borrow(exists.subPlan), exists.retainedBindingNames);
 		} else {
 			attempt = original;
 		}

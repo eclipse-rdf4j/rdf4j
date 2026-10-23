@@ -549,10 +549,10 @@ class SailDatasetImpl implements SailDataset, TreeOwnedDataset {
 								pendingObject = null;
 							} else if (approved != null && approved.hasNext()) {
 								Statement statement = approved.next();
-								if (statement.getObject()instanceof TripleTerm triple) {
+								if (statement.getObject() instanceof TripleTerm triple) {
 									pendingObject = triple;
 								}
-								if (statement.getSubject()instanceof TripleTerm triple) {
+								if (statement.getSubject() instanceof TripleTerm triple) {
 									candidate = triple;
 								}
 							} else {

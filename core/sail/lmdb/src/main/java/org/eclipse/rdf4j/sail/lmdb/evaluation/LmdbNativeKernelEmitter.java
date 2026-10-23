@@ -746,10 +746,10 @@ final class LmdbNativeKernelEmitter {
 					|| aggregate.mods.limit >= 0
 					|| aggregate.mods.offset != 0
 					|| kernel.pipeline.size() != 2
-					|| !(kernel.pipeline.get(0)instanceof EnumerateAdjKeys root)
+					|| !(kernel.pipeline.get(0) instanceof EnumerateAdjKeys root)
 					|| root.valueCol >= 0
 					|| root.ctxActive()
-					|| !(kernel.pipeline.get(1)instanceof Exists exists)
+					|| !(kernel.pipeline.get(1) instanceof Exists exists)
 					|| exists.negated) {
 				return null;
 			}
@@ -8812,7 +8812,7 @@ final class LmdbNativeKernelEmitter {
 			LmdbNativeKernelIr.FactorCountGuards spec = kernel.factorCountGuards;
 			for (long rest = region; rest != 0L; rest &= rest - 1L) {
 				int guard = Long.numberOfTrailingZeros(rest);
-				if (spec.guards[guard]instanceof FilterCompareId filter && filter.negated
+				if (spec.guards[guard] instanceof FilterCompareId filter && filter.negated
 						&& Long.bitCount(spec.dependencies[guard]) == 2) {
 					return true;
 				}

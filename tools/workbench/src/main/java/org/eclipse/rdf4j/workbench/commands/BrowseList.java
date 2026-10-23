@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.WeakHashMap;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -36,20 +37,28 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.http.client.query.AbstractHTTPQuery;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.impl.BNodeOrigins;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryResult;
+import org.eclipse.rdf4j.repository.sail.SailQuery;
 import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
+import org.eclipse.rdf4j.workbench.exceptions.OperationTimedOutException;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 
 /**
  * Shared behavior of the Types and Graphs pages: values in name order, a case-insensitive substring filter, and counts
  * that are requested separately and abandoned after a time budget. A count runs on its own connection, so that an
- * abandoned count never keeps the page's connection (and with it the response) open.
+ * abandoned count never keeps the page's connection (and with it the response) open. Requests that wait for the same
+ * count of the same repository at the same time share one running count ({@link #sharedWithinBudget}).
  */
 final class BrowseList {
 
@@ -65,12 +74,17 @@ final class BrowseList {
 
 	static final String STATEMENT_COUNTS_TIMED_OUT = "statement-counts-timed-out";
 
-	/** The same budget the Summary page gives the repository size. */
+	/** The budget of a quick count that a page waits for before it answers (the Remove and Export previews). */
 	static final long COUNT_BUDGET_MILLIS = 2000;
 
 	static final int COUNT_BUDGET_SECONDS = (int) TimeUnit.MILLISECONDS.toSeconds(COUNT_BUDGET_MILLIS);
 
-	static final Comparator<Value> BY_NAME = Comparator.comparing(Value::stringValue);
+	/** The budget of every operation of the Types, Named Graphs and Explore pages: five minutes. */
+	static final long BROWSE_BUDGET_MILLIS = TimeUnit.MINUTES.toMillis(5);
+
+	static final int BROWSE_BUDGET_SECONDS = (int) TimeUnit.MILLISECONDS.toSeconds(BROWSE_BUDGET_MILLIS);
+
+	static final Comparator<Value> BY_NAME = Comparator.comparing(BrowseList::shownName);
 
 	/** {@link #statementCounts} key of the whole repository. */
 	static final String REPOSITORY = "*";
@@ -87,11 +101,27 @@ final class BrowseList {
 	 */
 	static final int MAX_IN_FLIGHT_COUNTS = 8;
 
+	/**
+	 * How many page operations of one repository (an Explore page, the Graphs listing) may run at once. They have a
+	 * limit of their own, so that counts that run for minutes never stop a page from being shown.
+	 */
+	static final int MAX_IN_FLIGHT_PAGE_OPERATIONS = 32;
+
 	/** The in-flight limit of each repository, shared by all of its pages. */
 	private static final Map<Repository, Semaphore> IN_FLIGHT_COUNTS_PER_REPOSITORY = Collections
 			.synchronizedMap(new WeakHashMap<>());
 
+	/** The in-flight limit of each repository's page operations. */
+	private static final Map<Repository, Semaphore> IN_FLIGHT_PAGE_OPERATIONS_PER_REPOSITORY = Collections
+			.synchronizedMap(new WeakHashMap<>());
+
+	/** Counts that requests are waiting for, by repository (or list) and what they count. */
+	private static final Map<SharedKey, SharedCount<?>> SHARED_COUNTS = new ConcurrentHashMap<>();
+
 	private final Supplier<Semaphore> inFlightCounts;
+
+	/** What shared counts belong to: the counted repository, or this list when it has its own limit. */
+	private final Supplier<Object> sharingScope;
 
 	private final ExecutorService executor = Executors.newCachedThreadPool(runnable -> {
 		Thread thread = new Thread(runnable, "rdf4j-workbench-counts");
@@ -104,14 +134,55 @@ final class BrowseList {
 	 *                   constructed)
 	 */
 	BrowseList(Supplier<Repository> repository) {
-		this.inFlightCounts = () -> IN_FLIGHT_COUNTS_PER_REPOSITORY.computeIfAbsent(repository.get(),
-				counted -> new Semaphore(MAX_IN_FLIGHT_COUNTS));
+		this(repository, IN_FLIGHT_COUNTS_PER_REPOSITORY, MAX_IN_FLIGHT_COUNTS);
+	}
+
+	private BrowseList(Supplier<Repository> repository, Map<Repository, Semaphore> limits, int maxInFlight) {
+		this.inFlightCounts = () -> limits.computeIfAbsent(repository.get(), counted -> new Semaphore(maxInFlight));
+		this.sharingScope = repository::get;
+	}
+
+	/** A list for page operations, which run within their budget under a limit apart from the counts. */
+	static BrowseList forPageOperations(Supplier<Repository> repository) {
+		return new BrowseList(repository, IN_FLIGHT_PAGE_OPERATIONS_PER_REPOSITORY, MAX_IN_FLIGHT_PAGE_OPERATIONS);
 	}
 
 	/** A list with its own limit of counts in flight (tests use a small one). */
 	BrowseList(int maxInFlightCounts) {
 		Semaphore limit = new Semaphore(maxInFlightCounts);
 		this.inFlightCounts = () -> limit;
+		this.sharingScope = () -> this;
+	}
+
+	/**
+	 * A query of the Types or Graphs page: limited to {@link #BROWSE_BUDGET_SECONDS}, and asking an LMDB store to keep
+	 * its results until the next write, so that showing the page again is answered from that cache.
+	 */
+	static TupleQuery browseQuery(RepositoryConnection connection, String query) {
+		TupleQuery tupleQuery = connection.prepareTupleQuery(QueryLanguage.SPARQL, query);
+		tupleQuery.setMaxExecutionTime(BROWSE_BUDGET_SECONDS);
+		if (tupleQuery instanceof SailQuery sailQuery) {
+			sailQuery.setLmdbResultCacheRequested(true);
+		} else if (tupleQuery instanceof AbstractHTTPQuery httpQuery) {
+			httpQuery.setLmdbResultCacheRequested(true);
+		}
+		return tupleQuery;
+	}
+
+	/** Runs a listing on the request's thread and reports one stopped by its query's time limit as timed out. */
+	static <T> T reportingTimeLimit(String what, Callable<T> listing) throws Exception {
+		try {
+			return listing.call();
+		} catch (Exception e) {
+			if (stoppedByTimeLimit(e)) {
+				throw new OperationTimedOutException(timedOutMessage(what), e);
+			}
+			throw e;
+		}
+	}
+
+	static String timedOutMessage(String what) {
+		return what + " took longer than five minutes.";
 	}
 
 	static boolean countsRequested(WorkbenchRequest req) {
@@ -129,7 +200,12 @@ final class BrowseList {
 			return value -> true;
 		}
 		String needle = filter.toLowerCase(Locale.ROOT);
-		return value -> value.stringValue().toLowerCase(Locale.ROOT).contains(needle);
+		return value -> shownName(value).toLowerCase(Locale.ROOT).contains(needle);
+	}
+
+	/** The name a list shows: a remote server's blank node by its repository ID, not its transport envelope. */
+	private static String shownName(Value value) {
+		return value instanceof BNode blank ? BNodeOrigins.rawID(blank) : value.stringValue();
 	}
 
 	/** Repeats a non-empty filter in the page metadata, so the page can show it in its filter field. */
@@ -194,6 +270,100 @@ final class BrowseList {
 
 	private <T> Optional<T> withinBudget(Callable<T> count, Deadline deadline) throws Exception {
 		return await(submit(count, deadline), deadline);
+	}
+
+	/**
+	 * Runs a count, or joins the same count of the same repository that another request already started, and waits at
+	 * most the given time for it. The count runs within the budget of the request that started it and is cancelled only
+	 * when every request waiting for it has stopped waiting, so reloading a page while a long count runs neither starts
+	 * a second count nor takes another place of the repository's in-flight limit.
+	 *
+	 * @param what what is counted; requests with equal values share a count, so it must describe everything the count
+	 *             depends on
+	 * @return the count, or empty when it did not finish within this request's budget
+	 */
+	<T> Optional<T> sharedWithinBudget(Object what, Callable<T> count, long budgetMillis) throws Exception {
+		Deadline own = new Deadline(budgetMillis);
+		SharedKey key = new SharedKey(sharingScope.get(), what);
+		SharedCount<?> joined = SHARED_COUNTS.compute(key, (ignored, running) -> {
+			if (running != null && running.join()) {
+				return running;
+			}
+			Deadline deadline = new Deadline(budgetMillis);
+			return new SharedCount<>(submit(count, deadline), deadline);
+		});
+		@SuppressWarnings("unchecked")
+		SharedCount<T> shared = (SharedCount<T>) joined;
+		try {
+			if (shared.future == null) {
+				// Too many counts of this repository are still running.
+				return Optional.empty();
+			}
+			long remainingNanos = own.remainingNanos();
+			if (remainingNanos <= 0 && !shared.future.isDone()) {
+				return Optional.empty();
+			}
+			return Optional.ofNullable(shared.future.get(remainingNanos, TimeUnit.NANOSECONDS));
+		} catch (TimeoutException | CancellationException e) {
+			return Optional.empty();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw e;
+		} catch (ExecutionException e) {
+			Throwable cause = e.getCause();
+			if (cause instanceof InterruptedException && shared.deadline.isCancelledOrExpired()
+					|| stoppedByTimeLimit(cause)) {
+				return Optional.empty();
+			}
+			if (cause instanceof Exception exception) {
+				throw exception;
+			}
+			throw e;
+		} finally {
+			shared.leave(key);
+		}
+	}
+
+	/** Which count: the repository (or list) it belongs to and what it counts. */
+	private record SharedKey(Object scope, Object what) {
+	}
+
+	/** A running count and the number of requests waiting for it. */
+	private static final class SharedCount<T> {
+
+		private final Future<T> future;
+
+		private final Deadline deadline;
+
+		private int waiters = 1;
+
+		private SharedCount(Future<T> future, Deadline deadline) {
+			this.future = future;
+			this.deadline = deadline;
+		}
+
+		/** Adds a waiter, unless this count is over or abandoned; then a new count must start. */
+		private synchronized boolean join() {
+			if (waiters == 0 || future == null || future.isDone()) {
+				return false;
+			}
+			waiters++;
+			return true;
+		}
+
+		private void leave(SharedKey key) {
+			boolean last;
+			synchronized (this) {
+				last = --waiters == 0;
+			}
+			if (last) {
+				SHARED_COUNTS.remove(key, this);
+				if (future != null && !future.isDone()) {
+					deadline.cancel();
+					future.cancel(true);
+				}
+			}
+		}
 	}
 
 	/** Starts a count, or answers null when the repository's in-flight limit is reached. */
@@ -430,6 +600,11 @@ final class BrowseList {
 	}
 
 	static String key(Resource context) {
+		if (context instanceof BNode blank) {
+			// By its ID, unchanged: N-Triples renames an ID that is not a valid label, and two such IDs can share a
+			// name.
+			return "_:" + blank.getID();
+		}
 		return context == null ? DEFAULT_GRAPH : NTriplesUtil.toNTriplesString(context);
 	}
 
