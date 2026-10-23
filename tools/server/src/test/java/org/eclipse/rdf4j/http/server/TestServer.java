@@ -114,6 +114,16 @@ public class TestServer {
 		webapp.setExtraClasspath(testClasses.getAbsolutePath());
 	}
 
+	File managedRepositoryDirectory(String repositoryId) throws ReflectiveOperationException {
+		Object dispatcherContext = webapp.getServletContext().getAttribute(DISPATCHER_CONTEXT_ATTRIBUTE);
+		Object serverManager = dispatcherContext.getClass()
+				.getMethod("getBean", String.class)
+				.invoke(dispatcherContext, "rdf4jRepositoryManager");
+		return (File) serverManager.getClass()
+				.getMethod("getRepositoryDir", String.class)
+				.invoke(serverManager, repositoryId);
+	}
+
 	LongSupplier replayAcceptedCounter(String repositoryId) throws ReflectiveOperationException {
 		return growthCounter(repositoryId, "replayAcceptedCounter");
 	}

@@ -353,8 +353,7 @@ class ManagedRepositoryEgressIT {
 			FedXRepositoryConfig fedx = new FedXRepositoryConfig();
 			if (dataConfig) {
 				fedx.setDataConfig("members.ttl");
-				Path memberFile = Path.of(System.getProperty("org.eclipse.rdf4j.appdata.basedir"), "Server",
-						"repositories", repositoryId, "members.ttl");
+				Path memberFile = server.managedRepositoryDirectory(repositoryId).toPath().resolve("members.ttl");
 				Files.createDirectories(memberFile.getParent());
 				try (var output = Files.newOutputStream(memberFile)) {
 					Rio.write(members, output, RDFFormat.TURTLE);
