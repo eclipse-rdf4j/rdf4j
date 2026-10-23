@@ -17,6 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
 import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
@@ -24,6 +25,7 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -35,6 +37,7 @@ import org.eclipse.rdf4j.query.resultio.QueryResultIO;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
@@ -93,6 +96,41 @@ class ExploreServletPageDataTest {
 		assertThat(error.path("status").asInt()).isEqualTo(400);
 		assertThat(error.path("message").asText()).isEqualTo("Malformed value: missing:resource");
 		assertThat(response.getContentType()).isEqualTo(WorkbenchPageProtocol.CONTENT_TYPE);
+	}
+
+	@Test
+	void unlimitedPageDeliversFirstLargeRowBeforeScanningTheNext() throws Exception {
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		ValueFactory factory = repository.getValueFactory();
+		IRI subject = factory.createIRI("urn:test:subject");
+		IRI predicate = factory.createIRI("urn:test:predicate");
+		Statement first = factory.createStatement(subject, predicate,
+				factory.createLiteral("first-marker" + "x".repeat(300_000)));
+		Statement second = factory.createStatement(subject, predicate, factory.createLiteral("second-marker"));
+		servlet.destroy();
+		servlet = new ExploreServlet() {
+			@Override
+			protected void processResource(RepositoryConnection connection, Value value, ResultCursor cursor)
+					throws RDFHandlerException {
+				cursor.advance(first);
+				assertThat(new String(response.getContentAsByteArray(), StandardCharsets.UTF_8))
+						.as("the first row reaches the response before the second statement is consumed")
+						.contains("first-marker");
+				cursor.advance(second);
+			}
+		};
+		servlet.setRepository(repository);
+		servlet.setRepositoryManager(mock(RepositoryManager.class));
+		servlet.init(TestServletConfig.withParams("explore", "cookie-max-age", "300"));
+		MockHttpServletRequest request = pageRequest("<urn:test:subject>");
+		request.addParameter("limit_explore", "0");
+
+		servlet.service(request, response);
+
+		List<JsonNode> records = records(response);
+		assertThat(rows(records)).extracting(row -> row.get(2).path("value").asText())
+				.containsExactly(first.getObject().stringValue(), "second-marker");
+		assertThat(records.getLast().path("metadata").path("total-result-count").asInt()).isEqualTo(2);
 	}
 
 	@Test
