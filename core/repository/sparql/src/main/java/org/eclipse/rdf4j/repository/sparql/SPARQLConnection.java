@@ -70,6 +70,7 @@ import org.eclipse.rdf4j.repository.sparql.query.SPARQLGraphQuery;
 import org.eclipse.rdf4j.repository.sparql.query.SPARQLTupleQuery;
 import org.eclipse.rdf4j.repository.sparql.query.SPARQLUpdate;
 import org.eclipse.rdf4j.repository.util.RDFLoader;
+import org.eclipse.rdf4j.rio.AbortableRDFHandler;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandler;
@@ -219,7 +220,12 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			setBindings(query, subj, pred, obj, contexts);
 			query.evaluate(handler);
 		} catch (MalformedQueryException | QueryEvaluationException e) {
-			throw new RepositoryException(e);
+			RepositoryException failure = new RepositoryException(e);
+			AbortableRDFHandler.abortOnFailure(handler, failure);
+			throw failure;
+		} catch (RuntimeException | Error e) {
+			AbortableRDFHandler.abortOnFailure(handler, e);
+			throw e;
 		}
 	}
 

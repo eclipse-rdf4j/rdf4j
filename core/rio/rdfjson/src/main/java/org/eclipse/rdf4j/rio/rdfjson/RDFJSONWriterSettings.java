@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.rio.rdfjson;
 
 import org.eclipse.rdf4j.rio.helpers.BooleanRioSetting;
+import org.eclipse.rdf4j.rio.helpers.LongRioSetting;
 
 /**
  * A selection of writer settings specific to RDF/JSON parsers.
@@ -25,7 +26,8 @@ public class RDFJSONWriterSettings {
 
 	/**
 	 * Boolean setting for RDF/JSON writer to determine whether it should stream output which can result in duplicate
-	 * object keys. By default, the writer sorts output in-memory first to avoid duplicate keys.
+	 * object keys. By default, the writer sorts output with a bounded memory window and temporary disk runs to avoid
+	 * duplicate keys.
 	 * <p>
 	 * Defaults to false.
 	 * <p>
@@ -34,6 +36,22 @@ public class RDFJSONWriterSettings {
 	public static final BooleanRioSetting ALLOW_MULTIPLE_OBJECT_VALUES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.rdfjson.allow_multiple_object_values", "Allow multiple object values",
 			Boolean.FALSE);
+
+	/**
+	 * Maximum estimated bytes of statements sorted in memory before spilling a run. A single RDF value may exceed this
+	 * limit because it is already supplied in memory by the caller. Defaults to 8 MiB.
+	 */
+	public static final LongRioSetting MAX_IN_MEMORY_BYTES = new LongRioSetting(
+			"org.eclipse.rdf4j.rio.rdfjson.max_in_memory_bytes", "RDF/JSON sorting window bytes",
+			8L * 1024 * 1024);
+
+	/**
+	 * Maximum aggregate temporary bytes held by concurrent RDF/JSON writers. Exports that exceed this budget fail with
+	 * an {@code RDFHandlerException}. Defaults to 1 GiB.
+	 */
+	public static final LongRioSetting MAX_SPILL_BYTES = new LongRioSetting(
+			"org.eclipse.rdf4j.rio.rdfjson.max_spill_bytes", "RDF/JSON temporary disk bytes",
+			1024L * 1024 * 1024);
 
 	private RDFJSONWriterSettings() {
 	}

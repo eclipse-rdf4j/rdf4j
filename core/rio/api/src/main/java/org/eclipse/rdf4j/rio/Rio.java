@@ -639,18 +639,23 @@ public class Rio {
 	 * @throws RDFHandlerException Thrown if there is an error writing the statements.
 	 */
 	public static void write(Iterable<Statement> model, RDFHandler writer) throws RDFHandlerException {
-		writer.startRDF();
+		try {
+			writer.startRDF();
 
-		if (model instanceof NamespaceAware) {
-			for (Namespace nextNamespace : ((NamespaceAware) model).getNamespaces()) {
-				writer.handleNamespace(nextNamespace.getPrefix(), nextNamespace.getName());
+			if (model instanceof NamespaceAware) {
+				for (Namespace nextNamespace : ((NamespaceAware) model).getNamespaces()) {
+					writer.handleNamespace(nextNamespace.getPrefix(), nextNamespace.getName());
+				}
 			}
-		}
 
-		for (final Statement st : model) {
-			writer.handleStatement(st);
+			for (final Statement st : model) {
+				writer.handleStatement(st);
+			}
+			writer.endRDF();
+		} catch (RuntimeException | Error e) {
+			AbortableRDFHandler.abortOnFailure(writer, e);
+			throw e;
 		}
-		writer.endRDF();
 	}
 
 	/**
@@ -725,9 +730,14 @@ public class Rio {
 	 * @throws RDFHandlerException Thrown if there is an error writing the statement.
 	 */
 	public static void write(Statement statement, RDFHandler writer) throws RDFHandlerException {
-		writer.startRDF();
-		writer.handleStatement(statement);
-		writer.endRDF();
+		try {
+			writer.startRDF();
+			writer.handleStatement(statement);
+			writer.endRDF();
+		} catch (RuntimeException | Error e) {
+			AbortableRDFHandler.abortOnFailure(writer, e);
+			throw e;
+		}
 	}
 
 	public static void main(String[] args)

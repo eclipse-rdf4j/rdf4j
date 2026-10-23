@@ -39,6 +39,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.UnknownTransactionStateException;
+import org.eclipse.rdf4j.rio.AbortableRDFHandler;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandler;
@@ -454,20 +455,25 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	 */
 	protected void exportStatements(RepositoryResult<Statement> stIter, RDFHandler handler)
 			throws RepositoryException, RDFHandlerException {
-		try (stIter) {
-			handler.startRDF();
-			try ( // Export namespace information
-					RepositoryResult<Namespace> nsIter = getNamespaces()) {
-				while (nsIter.hasNext()) {
-					Namespace ns = nsIter.next();
-					handler.handleNamespace(ns.getPrefix(), ns.getName());
+		try {
+			try (stIter) {
+				handler.startRDF();
+				try ( // Export namespace information
+						RepositoryResult<Namespace> nsIter = getNamespaces()) {
+					while (nsIter.hasNext()) {
+						Namespace ns = nsIter.next();
+						handler.handleNamespace(ns.getPrefix(), ns.getName());
+					}
 				}
+				// Export statements
+				while (stIter.hasNext()) {
+					handler.handleStatement(stIter.next());
+				}
+				handler.endRDF();
 			}
-			// Export statemnts
-			while (stIter.hasNext()) {
-				handler.handleStatement(stIter.next());
-			}
-			handler.endRDF();
+		} catch (RuntimeException | Error e) {
+			AbortableRDFHandler.abortOnFailure(handler, e);
+			throw e;
 		}
 	}
 

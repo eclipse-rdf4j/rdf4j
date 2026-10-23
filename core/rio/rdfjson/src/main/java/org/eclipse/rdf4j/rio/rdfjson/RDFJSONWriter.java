@@ -18,6 +18,7 @@ import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -28,9 +29,12 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.TreeModel;
+import org.eclipse.rdf4j.model.util.LexicalValueComparator;
 import org.eclipse.rdf4j.model.util.Literals;
+import org.eclipse.rdf4j.rio.AbortableRDFHandler;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
@@ -55,13 +59,13 @@ import tools.jackson.core.util.DefaultPrettyPrinter.Indenter;
  *
  * @author Peter Ansell p_ansell@yahoo.com
  */
-public class RDFJSONWriter extends AbstractRDFWriter implements CharSink {
+public class RDFJSONWriter extends AbstractRDFWriter implements CharSink, AbortableRDFHandler {
 
 	private final Writer writer;
 
 	private final RDFFormat actualFormat;
 
-	private Model graph;
+	private RDFJSONStatementSpool graph;
 
 	private Resource lastWrittenSubject;
 
@@ -111,7 +115,9 @@ public class RDFJSONWriter extends AbstractRDFWriter implements CharSink {
 				lastWrittenSubject = null;
 				jg.writeStartObject();
 			} else {
-				graph = new TreeModel();
+				graph = new RDFJSONStatementSpool(
+						getWriterConfig().get(RDFJSONWriterSettings.MAX_IN_MEMORY_BYTES),
+						getWriterConfig().get(RDFJSONWriterSettings.MAX_SPILL_BYTES));
 			}
 		} catch (final JacksonException e) {
 			throw new RDFHandlerException(e);
@@ -131,14 +137,48 @@ public class RDFJSONWriter extends AbstractRDFWriter implements CharSink {
 					lastWrittenPredicate = null;
 					lastWrittenSubject = null;
 				} else {
-					RDFJSONWriter.modelToRdfJsonInternal(this.graph, this.getWriterConfig(), jg);
+					try (RDFJSONStatementSpool spool = graph;
+							RDFJSONStatementSpool.SortedStatements statements = spool.sortedStatements()) {
+						writeGroupedStatements(statements, jg);
+					}
 				}
 			} finally {
+				graph = null;
 				jg.close();
 				writer.flush();
 			}
 		} catch (final IOException | JacksonException e) {
 			throw new RDFHandlerException(e);
+		}
+	}
+
+	@Override
+	public void abortRDF() throws RDFHandlerException {
+		RDFHandlerException failure = null;
+		RDFJSONStatementSpool spool = graph;
+		graph = null;
+		if (spool != null) {
+			try {
+				spool.close();
+			} catch (IOException e) {
+				failure = new RDFHandlerException("Could not remove RDF/JSON temporary files", e);
+			}
+		}
+		JsonGenerator generator = jg;
+		jg = null;
+		if (generator != null) {
+			try {
+				generator.close();
+			} catch (JacksonException e) {
+				if (failure == null) {
+					failure = new RDFHandlerException("Could not close RDF/JSON generator after abort", e);
+				} else {
+					failure.addSuppressed(e);
+				}
+			}
+		}
+		if (failure != null) {
+			throw failure;
 		}
 	}
 
@@ -153,6 +193,8 @@ public class RDFJSONWriter extends AbstractRDFWriter implements CharSink {
 
 		results.add(BasicWriterSettings.PRETTY_PRINT);
 		results.add(RDFJSONWriterSettings.ALLOW_MULTIPLE_OBJECT_VALUES);
+		results.add(RDFJSONWriterSettings.MAX_IN_MEMORY_BYTES);
+		results.add(RDFJSONWriterSettings.MAX_SPILL_BYTES);
 		results.add(BasicWriterSettings.RDF_OUTPUT_VERSION);
 
 		return results;
@@ -172,10 +214,27 @@ public class RDFJSONWriter extends AbstractRDFWriter implements CharSink {
 
 	@Override
 	public void consumeStatement(final Statement statement) throws RDFHandlerException {
+		if (statement.getSubject() instanceof TripleTerm || statement.getObject() instanceof TripleTerm) {
+			RDFHandlerException failure = new RDFHandlerException(
+					"RDF/JSON does not support triple terms when encoding is disabled");
+			AbortableRDFHandler.abortOnFailure(this, failure);
+			throw failure;
+		}
 		if (isStreaming) {
 			consumeStreamingStatement(statement);
 		} else {
-			graph.add(statement);
+			try {
+				graph.add(statement);
+			} catch (IOException | RuntimeException e) {
+				try {
+					graph.close();
+				} catch (IOException cleanup) {
+					e.addSuppressed(cleanup);
+				} finally {
+					graph = null;
+				}
+				throw new RDFHandlerException(e.getMessage(), e);
+			}
 		}
 	}
 
@@ -189,6 +248,23 @@ public class RDFJSONWriter extends AbstractRDFWriter implements CharSink {
 	 * @throws JacksonException
 	 */
 	protected static void writeObject(final Value object, final Set<Resource> contexts, final JsonGenerator jg) {
+		writeObjectStart(object, jg);
+		if (contexts != null && !contexts.isEmpty() && !(contexts.size() == 1 && contexts.iterator().next() == null)) {
+			jg.writeArrayPropertyStart(RDFJSONUtility.GRAPHS);
+			for (final Resource nextContext : contexts) {
+				if (nextContext == null) {
+					jg.writeNull();
+				} else {
+					jg.writeString(resourceToString(nextContext));
+				}
+			}
+			jg.writeEndArray();
+		}
+
+		jg.writeEndObject();
+	}
+
+	private static void writeObjectStart(Value object, JsonGenerator jg) {
 		jg.writeStartObject();
 		if (object instanceof Literal) {
 			jg.writeStringProperty(RDFJSONUtility.VALUE, object.stringValue());
@@ -211,19 +287,6 @@ public class RDFJSONWriter extends AbstractRDFWriter implements CharSink {
 			jg.writeStringProperty(RDFJSONUtility.TYPE, RDFJSONUtility.URI);
 		}
 
-		if (contexts != null && !contexts.isEmpty() && !(contexts.size() == 1 && contexts.iterator().next() == null)) {
-			jg.writeArrayPropertyStart(RDFJSONUtility.GRAPHS);
-			for (final Resource nextContext : contexts) {
-				if (nextContext == null) {
-					jg.writeNull();
-				} else {
-					jg.writeString(resourceToString(nextContext));
-				}
-			}
-			jg.writeEndArray();
-		}
-
-		jg.writeEndObject();
 	}
 
 	private static String getLanguage(Literal literal) {
@@ -268,6 +331,111 @@ public class RDFJSONWriter extends AbstractRDFWriter implements CharSink {
 			jg.writeEndObject();
 		}
 		jg.writeEndObject();
+	}
+
+	private static void writeGroupedStatements(RDFJSONStatementSpool.SortedStatements statements, JsonGenerator jg)
+			throws IOException {
+		GroupedOutput grouped = new GroupedOutput(jg);
+		Statement statement;
+		while ((statement = statements.next()) != null) {
+			grouped.accept(statement);
+		}
+		grouped.finish();
+	}
+
+	/** Emits one nested JSON object per subject, predicate, and object from a lexical SPOG stream. */
+	private static final class GroupedOutput {
+		private final JsonGenerator jg;
+		private final Comparator<? super Statement> comparator = new TreeModel().comparator();
+		private final LexicalValueComparator values = new LexicalValueComparator();
+		private Statement previous;
+		private Resource subject;
+		private IRI predicate;
+		private Value object;
+		private boolean graphArrayOpen;
+
+		private GroupedOutput(JsonGenerator jg) {
+			this.jg = jg;
+			jg.writeStartObject();
+		}
+
+		private void accept(Statement statement) {
+			if (previous != null && comparator.compare(previous, statement) == 0) {
+				return;
+			}
+			Resource nextSubject = statement.getSubject();
+			IRI nextPredicate = statement.getPredicate();
+			Value nextObject = statement.getObject();
+			if (subject == null || values.compare(subject, nextSubject) != 0) {
+				closeObject();
+				closePredicate();
+				closeSubject();
+				jg.writeObjectPropertyStart(resourceToString(nextSubject));
+				subject = nextSubject;
+			}
+			if (predicate == null || values.compare(predicate, nextPredicate) != 0) {
+				closeObject();
+				closePredicate();
+				jg.writeArrayPropertyStart(nextPredicate.stringValue());
+				predicate = nextPredicate;
+			}
+			if (object == null || values.compare(object, nextObject) != 0) {
+				closeObject();
+				writeObjectStart(nextObject, jg);
+				object = nextObject;
+				Resource firstContext = statement.getContext();
+				if (firstContext != null) {
+					jg.writeArrayPropertyStart(RDFJSONUtility.GRAPHS);
+					jg.writeString(resourceToString(firstContext));
+					graphArrayOpen = true;
+				}
+			} else {
+				if (!graphArrayOpen) {
+					jg.writeArrayPropertyStart(RDFJSONUtility.GRAPHS);
+					jg.writeNull();
+					graphArrayOpen = true;
+				}
+				Resource context = statement.getContext();
+				if (context == null) {
+					jg.writeNull();
+				} else {
+					jg.writeString(resourceToString(context));
+				}
+			}
+			previous = statement;
+		}
+
+		private void finish() {
+			closeObject();
+			closePredicate();
+			closeSubject();
+			jg.writeEndObject();
+		}
+
+		private void closeObject() {
+			if (object != null) {
+				if (graphArrayOpen) {
+					jg.writeEndArray();
+					graphArrayOpen = false;
+				}
+				jg.writeEndObject();
+				object = null;
+			}
+		}
+
+		private void closePredicate() {
+			if (predicate != null) {
+				jg.writeEndArray();
+				predicate = null;
+			}
+		}
+
+		private void closeSubject() {
+			if (subject != null) {
+				jg.writeEndObject();
+				subject = null;
+			}
+		}
 	}
 
 	/**

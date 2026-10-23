@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.rio.AbortableRDFHandler;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
@@ -146,18 +147,21 @@ public class ExportStatementsView implements View {
 				out.flush();
 				response.flushBuffer();
 			} catch (RDFHandlerException e) {
+				AbortableRDFHandler.abortOnFailure(writer, e);
 				var serverHTTPException = new ServerHTTPException("Serialization error: " + e.getMessage(), e);
 				if (!response.isCommitted()) {
 					response.reset();
 				}
 				throw serverHTTPException;
 			} catch (RepositoryException e) {
+				AbortableRDFHandler.abortOnFailure(writer, e);
 				var serverHTTPException = new ServerHTTPException("Repository error: " + e.getMessage(), e);
 				if (!response.isCommitted()) {
 					response.reset();
 				}
 				throw serverHTTPException;
 			} catch (Throwable e) {
+				AbortableRDFHandler.abortOnFailure(writer, e);
 				if (!response.isCommitted()) {
 					response.reset();
 				}
@@ -176,24 +180,31 @@ public class ExportStatementsView implements View {
 		}
 
 		try (OutputStream out = OutputStream.nullOutputStream()) {
-			RDFHandler rdfWriter = new LimitedSizeRDFHandler(rdfWriterFactory.getWriter(out),
+			RDFWriter preflightWriter = rdfWriterFactory.getWriter(out);
+			RDFHandler rdfWriter = new LimitedSizeRDFHandler(preflightWriter,
 					MAX_NUMBER_OF_STATEMENTS_WHEN_TESTING_FOR_POSSIBLE_EXCEPTIONS);
 			if (!headersOnly) {
 				try (RepositoryConnection conn = RepositoryInterceptor.getRepositoryConnection(request)) {
 					conn.exportStatements(subj, pred, obj, useInferencing, rdfWriter, contexts);
 				} catch (RDFHandlerException e) {
+					AbortableRDFHandler.abortOnFailure(preflightWriter, e);
 					throw new ServerHTTPException("Serialization error: " + e.getMessage(), e);
 				} catch (RepositoryException e) {
+					AbortableRDFHandler.abortOnFailure(preflightWriter, e);
 					throw new ServerHTTPException("Repository error: " + e.getMessage(), e);
 				} catch (ClientHTTPException e) {
+					AbortableRDFHandler.abortOnFailure(preflightWriter, e);
 					throw new ServerHTTPException("Client error: " + e.getMessage(), e);
 				} catch (LimitedSizeReachedException ignored) {
+				} catch (RuntimeException | Error e) {
+					AbortableRDFHandler.abortOnFailure(preflightWriter, e);
+					throw e;
 				}
 			}
 		}
 	}
 
-	private static class LimitedSizeRDFHandler implements RDFHandler {
+	private static class LimitedSizeRDFHandler implements AbortableRDFHandler {
 
 		private final RDFHandler delegate;
 		private final long maxSize;
@@ -212,6 +223,13 @@ public class ExportStatementsView implements View {
 		@Override
 		public void endRDF() throws RDFHandlerException {
 			delegate.endRDF();
+		}
+
+		@Override
+		public void abortRDF() throws RDFHandlerException {
+			if (delegate instanceof AbortableRDFHandler abortable) {
+				abortable.abortRDF();
+			}
 		}
 
 		@Override
