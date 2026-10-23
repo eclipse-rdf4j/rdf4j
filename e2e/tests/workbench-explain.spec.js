@@ -122,10 +122,14 @@ test('Executed explanation shows the LMDB native physical plan when native evalu
     await page.goto(NATIVE_QUERY_URL);
     await page.waitForSelector('.CodeMirror');
     await setPrimaryQuery(page, JOIN_QUERY);
+    await expect(page.locator('#explain-level')).toHaveValue('Optimized');
 
     await page.locator('#explain-trigger').click();
     await waitForExplanation(page);
+    await expect(page.locator('#query-explanation')).toContainText('LMDB native physical plan (planned)');
     const initialExplanation = await page.locator('#query-explanation').textContent();
+    await expect(initialExplanation).toContain('LMDB native physical plan (planned)');
+    await expect(initialExplanation).not.toContain('LMDB native physical plan (executed)');
 
     await page.locator('#explain-level').selectOption('Executed');
     await page.locator('#explain-trigger').click();
@@ -134,10 +138,12 @@ test('Executed explanation shows the LMDB native physical plan when native evalu
         const text = explanation && explanation.textContent.trim();
         return text && text.length > 0 && text !== previousExplanation;
     }, initialExplanation && initialExplanation.trim());
+    await expect(page.locator('#query-explanation')).toContainText('LMDB native physical plan (executed)');
 
     const explanation = await page.locator('#query-explanation').textContent();
 
-    await expect(explanation).toContain('LMDB native physical plan (planned)');
+    await expect(explanation).toContain('LMDB native physical plan (executed)');
+    await expect(explanation).not.toContain('LMDB native physical plan (planned)');
     await expect(explanation).toContain('plannedExecutionEngine=lmdb-native');
     await expect(explanation).not.toContain('sampleCountActual=');
     await expect(explanation).not.toContain('varianceActual=');
