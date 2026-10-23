@@ -94,6 +94,7 @@ class ValueStoreAsyncOverlayWarmupTest {
 		var store = new ValueStore(dir, new StoreProperties(dir),
 				new LmdbStoreConfig().setValueOverlayEnabled(true), false, hook);
 		try {
+			startStandaloneMaintenance(store);
 			assertTrue(scanStarted.await(10, TimeUnit.SECONDS),
 					"constructor must return control before the background scan finishes");
 			assertTrue(store.isValueOverlayWarmupInProgress());
@@ -130,6 +131,7 @@ class ValueStoreAsyncOverlayWarmupTest {
 
 		var store = new ValueStore(dir, new StoreProperties(dir),
 				new LmdbStoreConfig().setValueOverlayEnabled(true), false, hook);
+		startStandaloneMaintenance(store);
 		assertTrue(scanStarted.await(10, TimeUnit.SECONDS));
 
 		Thread closer = new Thread(() -> {
@@ -162,6 +164,7 @@ class ValueStoreAsyncOverlayWarmupTest {
 
 		var store = new ValueStore(dir, new LmdbStoreConfig().setValueOverlayEnabled(true));
 		try {
+			startStandaloneMaintenance(store);
 			assertFalse(store.isValueOverlayWarmupInProgress());
 			assertTrue(store.compressedValueOverlayMaintenanceStats().lastFailure().contains("zero budget"));
 			boolean anyWarmupThread = Thread.getAllStackTraces()
@@ -183,6 +186,7 @@ class ValueStoreAsyncOverlayWarmupTest {
 
 		var store = new ValueStore(dir, new LmdbStoreConfig().setValueOverlayEnabled(true));
 		try {
+			startStandaloneMaintenance(store);
 			assertTrue(store.awaitValueOverlayReady(20, TimeUnit.SECONDS));
 			assertEquals(OverlayMemoryBudget.configuredShared().stats().limit(),
 					store.compressedValueOverlayRetainedMemoryStats().limit());
@@ -206,6 +210,7 @@ class ValueStoreAsyncOverlayWarmupTest {
 			long refusalsBeforeWarmup = budget.stats().refusals();
 			var store = new ValueStore(dir, new LmdbStoreConfig().setValueOverlayEnabled(true));
 			try {
+				startStandaloneMaintenance(store);
 				assertFalse(store.awaitValueOverlayReady(20, TimeUnit.SECONDS));
 				assertTrue(budget.stats().refusals() > refusalsBeforeWarmup,
 						"automatic warming must attempt allocations under the shared retained-memory limit");
@@ -229,6 +234,7 @@ class ValueStoreAsyncOverlayWarmupTest {
 		try {
 			var store = new ValueStore(dir, new LmdbStoreConfig().setValueOverlayEnabled(true));
 			try {
+				startStandaloneMaintenance(store);
 				assertFalse(store.awaitValueOverlayReady(10, TimeUnit.SECONDS));
 				assertNotNull(store.compressedValueOverlayMaintenanceStats().lastFailure());
 				assertTrue(store.compressedValueOverlayMaintenanceStats().lastFailure().contains("invalid"));
@@ -257,6 +263,7 @@ class ValueStoreAsyncOverlayWarmupTest {
 					throw new IllegalStateException("controlled warm-up failure");
 				});
 		try {
+			startStandaloneMaintenance(store);
 			assertFalse(store.awaitValueOverlayReady(10, TimeUnit.SECONDS));
 			assertNotNull(store.compressedValueOverlayMaintenanceStats().lastFailure());
 			assertTrue(store.compressedValueOverlayMaintenanceStats()
@@ -288,6 +295,7 @@ class ValueStoreAsyncOverlayWarmupTest {
 					}
 				});
 		try {
+			startStandaloneMaintenance(store);
 			assertTrue(scanStarted.await(10, TimeUnit.SECONDS));
 			store.startTransaction(false);
 			releaseScan.countDown();
@@ -309,5 +317,12 @@ class ValueStoreAsyncOverlayWarmupTest {
 			releaseScan.countDown();
 			store.close();
 		}
+	}
+
+	private static void startStandaloneMaintenance(ValueStore store) throws Exception {
+		assertFalse(store.isValueOverlayWarmupInProgress(), "construction must leave optional warming queued");
+		store.startIndexRebuildAfterStoreInitialization();
+		assertTrue(store.awaitIndexRebuild(20, TimeUnit.SECONDS), store.indexRebuildStatus());
+		store.startValueOverlayWarmupAfterStoreInitialization();
 	}
 }

@@ -46,6 +46,43 @@ class ValueStoreTermBackgroundTest {
 	Path directory;
 
 	@Test
+	void closeCancelsCleanupWaitingForAHeldTermReader() throws Exception {
+		StoreProperties properties = new StoreProperties(directory.toFile());
+		seed(properties, 20);
+		try (ClosingValueStore initial = open(properties, "spoc,cspo,posc")) {
+			initial.startIndexRebuildAfterStoreInitialization();
+			assertTrue(initial.awaitIndexRebuild(20, TimeUnit.SECONDS), initial.indexRebuildStatus());
+		}
+		try (ClosingValueStore store = open(properties, "spoc,cspo,ospc")) {
+			CountDownLatch cleanupWaiting = new CountDownLatch(1);
+			store.setTermIndexMaintenanceObserver(phase -> {
+				if (phase.equals("cleanup-readers")) {
+					cleanupWaiting.countDown();
+				}
+			});
+			try (RecordIterator held = store.getTripleTerms(-1,
+					store.getId(VF.createIRI("urn:term-background:predicate")), -1)) {
+				assertTrue(held.next() != null);
+				store.startIndexRebuildAfterStoreInitialization();
+				assertTrue(cleanupWaiting.await(10, TimeUnit.SECONDS));
+				CompletableFuture<Void> closed = new CompletableFuture<>();
+				Thread closer = new Thread(() -> {
+					try {
+						store.close();
+						closed.complete(null);
+					} catch (Throwable failure) {
+						closed.completeExceptionally(failure);
+					}
+				});
+				closer.start();
+				closed.get(10, TimeUnit.SECONDS);
+				closer.join(TimeUnit.SECONDS.toMillis(10));
+				assertFalse(closer.isAlive());
+			}
+		}
+	}
+
+	@Test
 	void heldStandaloneTermIteratorRetainsItsIndexUntilClose() throws Exception {
 		StoreProperties properties = new StoreProperties(directory.toFile());
 		seed(properties, 20);

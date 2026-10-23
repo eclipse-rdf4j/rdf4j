@@ -179,16 +179,18 @@ class LmdbSnapshotValueLifetimeTest {
 	void failedValueSnapshotStartReturnsBothReaderReservations(@TempDir File dataDir) throws Exception {
 		FailingReadSnapshotStore store = new FailingReadSnapshotStore(dataDir);
 		store.init();
-		LmdbSailStore backingStore = store.getBackingStore();
-		TripleStore tripleStore = store.tripleStore;
-		ValueStore valueStore = store.valueStore;
-		int triplePermits = availableReaderPermits(tripleStore.getTxnManager());
-		int valuePermits = availableReaderPermits(valueStore.getTxnManager());
-		store.expectedTriplePermits = triplePermits;
-
 		try {
+			LmdbGcTestMaintenance.awaitPostReady(store);
+			LmdbSailStore backingStore = store.getBackingStore();
+			TripleStore tripleStore = store.tripleStore;
+			ValueStore valueStore = store.valueStore;
+			int triplePermits = availableReaderPermits(tripleStore.getTxnManager());
+			int valuePermits = availableReaderPermits(valueStore.getTxnManager());
+			store.expectedTriplePermits = triplePermits;
+			store.failNextSnapshotStart.set(true);
 			SailException failure = assertThrows(SailException.class,
 					() -> backingStore.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT_READ));
+			assertFalse(store.failNextSnapshotStart.get(), "the measured paired acquisition must consume the fault");
 			assertFalse(failure instanceof SailConflictException,
 					"an injected native snapshot-start I/O failure is not a transaction conflict");
 			assertTrue(failure.getCause() instanceof IOException,
@@ -1613,7 +1615,7 @@ class LmdbSnapshotValueLifetimeTest {
 	void retirementWaitsForOldestPinnedReaderThenDrainsAfterClose(@TempDir File dataDir) throws Exception {
 		// Keep this test independent of resize fallback. The small-map test below covers forced invalidation.
 		long mapSize = 64L * 1024 * 1024;
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")
 				.setForceSync(true)
 				.setTripleDBSize(mapSize)
 				.setValueDBSize(mapSize));
@@ -1623,11 +1625,12 @@ class LmdbSnapshotValueLifetimeTest {
 		long originalId;
 
 		store.init();
-		TripleStore tripleStore = tripleStoreOf(store);
-		ValueStore valueStore = valueStoreOf(store);
-		long initialTripleMapSize = mapSize(tripleStore);
-		long initialValueMapSize = mapSize(valueStore);
 		try {
+			LmdbGcTestMaintenance.awaitPostReady(store);
+			TripleStore tripleStore = tripleStoreOf(store);
+			ValueStore valueStore = valueStoreOf(store);
+			long initialTripleMapSize = mapSize(tripleStore);
+			long initialValueMapSize = mapSize(valueStore);
 			try (SailConnection writer = store.getConnection()) {
 				writer.begin(IsolationLevels.SNAPSHOT);
 				writer.addStatement(subject, PREDICATE, object, context);
@@ -1694,6 +1697,7 @@ class LmdbSnapshotValueLifetimeTest {
 			long oldestPinnedRevision = tripleStore.getTxnManager().minPinnedSnapshotRevision();
 			assertTrue(oldestPinnedRevision == Long.MAX_VALUE || oldestPinnedRevision >= tripleStore.getDataRevision(),
 					"all remaining readers must be at or beyond the removal generation before reclamation");
+			LmdbGcTestMaintenance.drainRetirements(store.getBackingStore());
 			assertFalse(store.getBackingStore().hasRetiredValueIds(),
 					"the deleting connection's detached snapshot must not pin IDs beyond publication");
 			long tripleTxnIdBeforeEmpty = lastTxnId(tripleStore.env);
@@ -1863,7 +1867,7 @@ class LmdbSnapshotValueLifetimeTest {
 		long tripleMapSize = 64L * 1024 * 1024;
 		long smallValueMapSize = 1024L * 1024;
 		long drainTimeoutMillis = 1_000;
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")
 				.setForceSync(true)
 				.setTripleDBSize(tripleMapSize)
 				.setValueDBSize(smallValueMapSize)
@@ -1877,9 +1881,10 @@ class LmdbSnapshotValueLifetimeTest {
 		long originalId;
 
 		store.init();
-		TripleStore tripleStore = tripleStoreOf(store);
-		ValueStore valueStore = valueStoreOf(store);
 		try {
+			LmdbGcTestMaintenance.awaitPostReady(store);
+			TripleStore tripleStore = tripleStoreOf(store);
+			ValueStore valueStore = valueStoreOf(store);
 			try (SailConnection writer = store.getConnection()) {
 				writer.begin(IsolationLevels.SNAPSHOT);
 				writer.addStatement(subject, PREDICATE, object, context);
@@ -2007,6 +2012,7 @@ class LmdbSnapshotValueLifetimeTest {
 						VF.createLiteral("maintenance"));
 				writer.commit();
 			}
+			LmdbGcTestMaintenance.drainRetirements(store.getBackingStore());
 			assertFalse(store.getBackingStore().hasRetiredValueIds(),
 					"after the invalidated dataset closes, a later publication must drain retired values");
 			try (SailConnection writer = store.getConnection()) {
@@ -2166,7 +2172,7 @@ class LmdbSnapshotValueLifetimeTest {
 
 	private static class FailingReadSnapshotStore extends LmdbStore {
 
-		private final AtomicBoolean failNextSnapshotStart = new AtomicBoolean(true);
+		private final AtomicBoolean failNextSnapshotStart = new AtomicBoolean();
 		private TripleStore tripleStore;
 		private ValueStore valueStore;
 		private int expectedTriplePermits;
