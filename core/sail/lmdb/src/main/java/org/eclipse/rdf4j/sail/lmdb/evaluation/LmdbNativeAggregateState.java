@@ -18,16 +18,19 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
+import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
@@ -227,6 +230,9 @@ final class AggregateSpec {
 	final int[] rowSlots;
 	/** Custom aggregate description (M5); non-null exactly when {@link #kind} is {@link AggKind#CUSTOM}. */
 	final NativeCustomAggregate custom;
+	final NativeAggregateResultDemand resultDemand;
+	final int separatorCodePoints;
+	final NativeReducerCapabilities reducer;
 
 	AggregateSpec(String name, int slot, long constant, boolean distinct, AggKind kind) {
 		this(name, slot, constant, distinct, kind, null, null, null);
@@ -244,6 +250,12 @@ final class AggregateSpec {
 
 	private AggregateSpec(String name, int slot, long constant, boolean distinct, AggKind kind, String separator,
 			int[] rowSlots, NativeCustomAggregate custom, int positionMask) {
+		this(name, slot, constant, distinct, kind, separator, rowSlots, custom, positionMask,
+				NativeAggregateResultDemand.FULL_VALUE);
+	}
+
+	private AggregateSpec(String name, int slot, long constant, boolean distinct, AggKind kind, String separator,
+			int[] rowSlots, NativeCustomAggregate custom, int positionMask, NativeAggregateResultDemand resultDemand) {
 		this.name = name;
 		this.slot = slot;
 		this.constant = constant;
@@ -253,10 +265,23 @@ final class AggregateSpec {
 		this.rowSlots = rowSlots;
 		this.custom = custom;
 		this.positionMask = positionMask;
+		this.resultDemand = Objects.requireNonNull(resultDemand, "aggregate result demand");
+		this.separatorCodePoints = kind == AggKind.GROUP_CONCAT
+				? String.valueOf(separator).codePointCount(0, String.valueOf(separator).length())
+				: 0;
+		this.reducer = NativeReducerCapabilities.of(this);
 	}
 
 	AggregateSpec withPositionMask(int mask) {
-		return new AggregateSpec(name, slot, constant, distinct, kind, separator, rowSlots, custom, mask);
+		return new AggregateSpec(name, slot, constant, distinct, kind, separator, rowSlots, custom, mask, resultDemand);
+	}
+
+	AggregateSpec withResultDemand(NativeAggregateResultDemand demand) {
+		if (kind != AggKind.GROUP_CONCAT && demand != NativeAggregateResultDemand.FULL_VALUE) {
+			throw new IllegalArgumentException("Lexical aggregate demand requires GROUP_CONCAT");
+		}
+		return new AggregateSpec(name, slot, constant, distinct, kind, separator, rowSlots, custom, positionMask,
+				demand);
 	}
 
 	static AggregateSpec custom(String name, NativeCustomAggregate custom) {
@@ -389,10 +414,12 @@ final class AggContext {
 
 	final NativeLmdbQuerySource source;
 	final NativeTermAuthority termAuthority;
+	final NativeCancellationToken cancellation;
 	final ValueComparator comparator;
 	final boolean encounterOrderChanging;
 	final boolean deferDistinctValueAggregates;
 	private final KernelRuntime.MemoryAccount memory;
+	private final KernelRuntime.AggregateMemory ownedMemory;
 	private long[] valueCacheIds;
 	private Value[] valueCacheValues;
 	private byte[] valueCacheStates;
@@ -400,6 +427,7 @@ final class AggContext {
 	private int valueCacheThreshold = INITIAL_VALUE_CACHE_CAPACITY * 3 >>> 2;
 	private long valueCacheArrayBytes;
 	private long retainedValueBytes;
+	private boolean valueCacheUnavailable;
 	/** One custom processor per aggregate evaluation; processors may carry factory-local state between rows. */
 	private IdentityHashMap<NativeCustomAggregate, org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateProcessor<?, ?>> customFunctions;
 
@@ -419,6 +447,7 @@ final class AggContext {
 	AggContext(NativeLmdbQuerySource source, boolean strictCompare, boolean encounterOrderChanging,
 			boolean deferDistinctValueAggregates, KernelRuntime.MemoryAccount memory) {
 		this.source = source;
+		this.cancellation = NativeCancellationToken.forSource(source);
 		this.comparator = new ValueComparator(source instanceof SyntheticValueSource synthetic
 				? synthetic.queryExecutionPolicy
 				: QueryExecutionPolicy.DEFAULT);
@@ -426,23 +455,36 @@ final class AggContext {
 				: null;
 		this.encounterOrderChanging = encounterOrderChanging;
 		this.deferDistinctValueAggregates = deferDistinctValueAggregates;
-		this.memory = memory;
+		this.ownedMemory = memory == null && source instanceof SyntheticValueSource synthetic
+				&& synthetic.executionContext() != null
+						? KernelRuntime.AggregateMemory.forLedger(synthetic.executionContext().memoryLedger())
+						: null;
+		this.memory = memory != null ? memory : ownedMemory;
 		this.comparator.setStrict(strictCompare);
+	}
+
+	/** COUNT-only and other primitive routes never own an unused value-cache reservation. */
+	private boolean initializeValueCache() {
+		if (valueCacheUnavailable) {
+			return false;
+		}
 		long bytes = valueCacheMemoryBytes(INITIAL_VALUE_CACHE_CAPACITY);
-		if (memory != null) {
-			memory.reserve(bytes);
+		if (memory != null && !memory.tryReserve(bytes)) {
+			valueCacheUnavailable = true;
+			return false;
 		}
 		try {
 			this.valueCacheIds = new long[INITIAL_VALUE_CACHE_CAPACITY];
 			this.valueCacheValues = new Value[INITIAL_VALUE_CACHE_CAPACITY];
 			this.valueCacheStates = new byte[INITIAL_VALUE_CACHE_CAPACITY];
-			this.valueCacheArrayBytes = memory == null ? 0L : bytes;
+			this.valueCacheArrayBytes = this.memory == null ? 0L : bytes;
 		} catch (RuntimeException | Error problem) {
-			if (memory != null) {
-				memory.release(bytes);
+			if (this.memory != null) {
+				this.memory.release(bytes);
 			}
 			throw problem;
 		}
+		return true;
 	}
 
 	Value value(long id) {
@@ -450,6 +492,9 @@ final class AggContext {
 	}
 
 	Value value(long id, int positionMask) {
+		if (valueCacheIds == null && !initializeValueCache()) {
+			return source.lazyValue(id, positionMask);
+		}
 		byte bankState = (byte) (ValuePosition.cacheBank(positionMask) + 1);
 		int slot = valueCacheSlot(id, bankState);
 		if (valueCacheStates[slot] != 0) {
@@ -561,6 +606,7 @@ final class AggContext {
 
 	/** Releases optional cache arrays and retained values. Generic contexts have no owner and remain unchanged. */
 	void close() {
+		valueCacheUnavailable = true;
 		if (memory == null) {
 			return;
 		}
@@ -571,6 +617,9 @@ final class AggContext {
 		if (valueCacheArrayBytes > 0L) {
 			memory.release(valueCacheArrayBytes);
 			valueCacheArrayBytes = 0L;
+		}
+		if (ownedMemory != null) {
+			ownedMemory.close();
 		}
 		valueCacheIds = null;
 		valueCacheValues = null;
@@ -672,6 +721,10 @@ final class AggState {
 	boolean[] typeErrors;
 	/** GROUP_CONCAT running concatenations; null per spec until its first value. */
 	StringBuilder[] concats;
+	NativeBoundedConcat[] externalConcats;
+	/** Physical lexical summaries retain neither concatenated text nor a fabricated RDF value. */
+	long[] concatLengths;
+	long[] concatItems;
 	/** COUNT(DISTINCT *) full-row membership per spec; null unless DISTINCT and row slots are both present. */
 	NativeDistinctTracker[] rowDistinct;
 	/** Custom-aggregate per-group collectors; null unless a CUSTOM spec exists. Index-aligned with specs. */
@@ -681,6 +734,11 @@ final class AggState {
 
 	AggState(AggregateSpec[] specs, int expectedDistinctSize, AggContext ctx,
 			AggregateDistinctChannels distinctChannels) {
+		this(specs, expectedDistinctSize, ctx, distinctChannels, false);
+	}
+
+	private AggState(AggregateSpec[] specs, int expectedDistinctSize, AggContext ctx,
+			AggregateDistinctChannels distinctChannels, boolean externalMembership) {
 		this.specs = specs;
 		this.ctx = ctx;
 		this.counts = new long[specs.length];
@@ -698,6 +756,7 @@ final class AggState {
 		}
 		boolean anyValueTyped = false;
 		boolean anyConcat = false;
+		boolean anySummary = false;
 		for (int i = 0; i < specs.length; i++) {
 			AggKind kind = specs[i].kind;
 			int channel = distinctChannels.specChannels[i];
@@ -709,8 +768,9 @@ final class AggState {
 			}
 			if (kind == AggKind.GROUP_CONCAT) {
 				anyConcat = true;
+				anySummary |= specs[i].resultDemand == NativeAggregateResultDemand.LEXICAL_LENGTH;
 			}
-			if (specs[i].distinct && specs[i].rowSlots != null) {
+			if (!externalMembership && specs[i].distinct && specs[i].rowSlots != null) {
 				if (rowDistinct == null) {
 					rowDistinct = new NativeDistinctTracker[specs.length];
 				}
@@ -731,6 +791,10 @@ final class AggState {
 		if (anyConcat) {
 			this.concats = new StringBuilder[specs.length];
 		}
+		if (anySummary) {
+			this.concatLengths = new long[specs.length];
+			this.concatItems = new long[specs.length];
+		}
 		if (anyValueTyped) {
 			this.sums = new Literal[specs.length];
 			this.avgCounts = new long[specs.length];
@@ -738,6 +802,71 @@ final class AggState {
 			this.extremeIds = new long[specs.length];
 			Arrays.fill(this.extremeIds, UNKNOWN);
 			this.typeErrors = new boolean[specs.length];
+		}
+	}
+
+	/** A sorted reducer stream has already performed exact DISTINCT before it reaches this accumulator. */
+	static AggState externalMembership(AggregateSpec[] specs, AggContext context) {
+		int[] channels = new int[specs.length];
+		Arrays.fill(channels, -1);
+		return new AggState(specs, 0, context, new AggregateDistinctChannels(channels, new int[0], new long[0],
+				new NativeDistinctChannelMode[0]), true);
+	}
+
+	static AggState externalMembership(AggregateSpec[] specs, AggContext context,
+			NativeCancellationToken cancellation, LmdbQueryMemoryManager.QueryLedger ledger) {
+		AggState result = externalMembership(specs, context);
+		try {
+			for (int index = 0; index < specs.length; index++) {
+				if (specs[index].kind == AggKind.GROUP_CONCAT
+						&& specs[index].resultDemand == NativeAggregateResultDemand.FULL_VALUE) {
+					if (result.externalConcats == null) {
+						result.externalConcats = new NativeBoundedConcat[specs.length];
+					}
+					result.externalConcats[index] = new NativeBoundedConcat(context, specs[index], cancellation,
+							ledger);
+				}
+			}
+			return result;
+		} catch (Throwable failure) {
+			NativeContextClosingIteration.throwFailure(KernelRuntime.closeResource(result::closeExternal, failure));
+			throw new AssertionError("unreachable");
+		}
+	}
+
+	/** The external stream has already tested boundness and exact DISTINCT, retaining original encounter order. */
+	void addExternal(int index, long value, long weight) {
+		if (weight <= 0L || specs[index].custom != null) {
+			throw new IllegalArgumentException("Invalid external reducer contribution");
+		}
+		if (specs[index].kind == AggKind.GROUP_CONCAT && externalConcats != null
+				&& externalConcats[index] != null) {
+			externalConcats[index].add(value, weight);
+		} else if (weight == 1L && specs[index].kind == AggKind.SUM) {
+			addSum(index, value);
+		} else if (weight == 1L && specs[index].kind == AggKind.AVG) {
+			addAvg(index, value);
+		} else {
+			addWeighted(index, value, weight);
+		}
+	}
+
+	String concatValue(int index) {
+		return externalConcats != null && externalConcats[index] != null
+				? externalConcats[index].materialize()
+				: concats == null || concats[index] == null ? "" : concats[index].toString();
+	}
+
+	void closeExternal() {
+		Throwable failure = null;
+		if (externalConcats != null) {
+			for (NativeBoundedConcat concat : externalConcats) {
+				failure = KernelRuntime.closeResource(concat, failure);
+			}
+			externalConcats = null;
+		}
+		if (failure != null) {
+			NativeContextClosingIteration.throwFailure(failure);
 		}
 	}
 
@@ -851,6 +980,10 @@ final class AggState {
 			}
 			break;
 		case GROUP_CONCAT: {
+			if (specs[i].resultDemand == NativeAggregateResultDemand.LEXICAL_LENGTH) {
+				addConcatSummary(i, value, 1L);
+				break;
+			}
 			if (ctx.encounterOrderChanging) {
 				throw EncounterOrderFallback.groupConcatOrder();
 			}
@@ -962,6 +1095,13 @@ final class AggState {
 			case MAX:
 				// the first copy already updated the extremum; duplicates cannot change it
 				break;
+			case GROUP_CONCAT:
+				if (specs[i].resultDemand == NativeAggregateResultDemand.LEXICAL_LENGTH) {
+					addConcatSummary(i, value, extra);
+				} else {
+					appendConcatCopies(i, value, extra);
+				}
+				break;
 			}
 		}
 	}
@@ -997,10 +1137,115 @@ final class AggState {
 			}
 			break;
 		case GROUP_CONCAT:
-			// defense in depth: the weighted paths must have declined at admission — never drop inputs silently
-			throw EncounterOrderFallback.groupConcatOrder();
+			if (specs[i].resultDemand == NativeAggregateResultDemand.LEXICAL_LENGTH) {
+				addConcatSummary(i, id, weight);
+				break;
+			}
+			if (ctx.encounterOrderChanging) {
+				throw EncounterOrderFallback.groupConcatOrder();
+			}
+			appendConcatCopies(i, id, weight);
+			break;
 		case CUSTOM:
 			throw EncounterOrderFallback.customAggregateOrder();
+		}
+	}
+
+	/** Type errors and presence-only reducers do not observe an independent sibling's Cartesian-product weight. */
+	static boolean observesWeight(AggregateSpec spec, AggContext context, long id) {
+		if (!spec.reducer.weightSensitive || !spec.isWildcardCount() && (id == UNKNOWN || id == NULL_CONTEXT_ID)) {
+			return false;
+		}
+		if (spec.kind == AggKind.SUM || spec.kind == AggKind.AVG) {
+			Value value = context.value(id, spec.positionMask);
+			if (!(value instanceof Literal literal)) {
+				return false;
+			}
+			CoreDatatype.XSD type = literal.getCoreDatatype().asXSDDatatypeOrNull();
+			if (type == null || !type.isNumericDatatype()) {
+				return false;
+			}
+			context.preserveFloatingEncounterOrder(literal);
+		}
+		return true;
+	}
+
+	private void addConcatSummary(int index, long id, long copies) {
+		if (copies <= 0L) {
+			return;
+		}
+		Value value = ctx.value(id, specs[index].positionMask);
+		if (value == null) {
+			return;
+		}
+		String text = value.stringValue();
+		long length = text.codePointCount(0, text.length());
+		long separators = concatItems[index] == 0L ? copies - 1L : copies;
+		long additional = Math.addExact(Math.multiplyExact(copies, length),
+				Math.multiplyExact(separators, specs[index].separatorCodePoints));
+		long totalLength = Math.addExact(concatLengths[index], additional);
+		long totalItems = Math.addExact(concatItems[index], copies);
+		concatLengths[index] = totalLength;
+		concatItems[index] = totalItems;
+	}
+
+	private void mergeConcatSummary(int index, AggState other, NativeCancellationToken cancellation) {
+		if (specs[index].distinct) {
+			concatLengths[index] = 0L;
+			concatItems[index] = 0L;
+			LongHashSet values = channelSets[distinctChannels.specChannels[index]];
+			if (values.containsEmptySentinel) {
+				addConcatSummary(index, LongHashSet.EMPTY, 1L);
+			}
+			int tick = 0;
+			for (long id : values.table) {
+				cancellation.poll(tick++);
+				if (id != LongHashSet.EMPTY) {
+					addConcatSummary(index, id, 1L);
+				}
+			}
+		} else if (other.concatItems[index] != 0L) {
+			long separator = concatItems[index] == 0L ? 0L : specs[index].separatorCodePoints;
+			long length = Math.addExact(Math.addExact(concatLengths[index], other.concatLengths[index]), separator);
+			long items = Math.addExact(concatItems[index], other.concatItems[index]);
+			concatLengths[index] = length;
+			concatItems[index] = items;
+		}
+	}
+
+	private void appendConcatCopies(int index, long id, long copies) {
+		if (copies <= 0L) {
+			return;
+		}
+		Value value = ctx.value(id, specs[index].positionMask);
+		if (value == null) {
+			return;
+		}
+		String text = value.stringValue();
+		String separator = String.valueOf(specs[index].separator);
+		StringBuilder result = concats[index];
+		long separators = result == null ? copies - 1L : copies;
+		long additional;
+		try {
+			additional = Math.addExact(Math.multiplyExact(copies, text.length()),
+					Math.multiplyExact(separators, separator.length()));
+		} catch (ArithmeticException tooLong) {
+			throw new QueryEvaluationException("GROUP_CONCAT exceeds the JVM string length", tooLong);
+		}
+		if (additional > Integer.MAX_VALUE - (result == null ? 0L : result.length())) {
+			throw new QueryEvaluationException("GROUP_CONCAT exceeds the JVM string length");
+		}
+		if (result == null) {
+			result = concats[index] = new StringBuilder();
+			result.append(text);
+			copies--;
+		}
+		if (additional == 0L) {
+			return;
+		}
+		for (long copy = 0L; copy < copies; copy++) {
+			ctx.cancellation.poll((int) copy);
+			result.append(separator).append(text);
 		}
 	}
 
@@ -1101,9 +1346,24 @@ final class AggState {
 
 	/** Folds one merged parallel DISTINCT channel exactly once per result materialization. */
 	void finishDistinctValueAggregate(int index) {
+		if (deferredDistinctValueAggregate(index)) {
+			finishDistinctValueAggregate(index, ctx.cancellation);
+		}
+	}
+
+	void finishDistinctValueAggregate(int index, NativeCancellationToken cancellation) {
 		if (!deferredDistinctValueAggregate(index)) {
 			return;
 		}
+		try (NativeExecutionPhaseEvent.Span phase = NativeExecutionPhaseEvent.start("distinct", cancellation)) {
+			finishDistinctValueAggregateUnmeasured(index, cancellation);
+			phase.complete();
+		}
+	}
+
+	private void finishDistinctValueAggregateUnmeasured(int index, NativeCancellationToken cancellation) {
+		cancellation.check();
+		LmdbNativeProbeDeadline.poll(0);
 		sums[index] = null;
 		avgCounts[index] = 0L;
 		typeErrors[index] = false;
@@ -1111,15 +1371,21 @@ final class AggState {
 		if (values.containsEmptySentinel) {
 			addDeferredDistinctValue(index, LongHashSet.EMPTY);
 		}
+		int tick = 0;
 		for (long value : values.table) {
+			cancellation.poll(tick++);
+			LmdbNativeProbeDeadline.poll(tick - 1);
 			if (value != LongHashSet.EMPTY) {
 				addDeferredDistinctValue(index, value);
 			}
 		}
+		cancellation.check();
+		LmdbNativeProbeDeadline.poll(0);
 	}
 
-	private boolean deferredDistinctValueAggregate(int index) {
+	boolean deferredDistinctValueAggregate(int index) {
 		return ctx != null && ctx.deferDistinctValueAggregates && specs[index].distinct
+				&& (specs[index].kind == AggKind.SUM || specs[index].kind == AggKind.AVG)
 				&& distinctChannels.specChannels[index] >= 0;
 	}
 
@@ -1137,12 +1403,22 @@ final class AggState {
 	 * arithmetic until result emission, after their merged ID set is complete.
 	 */
 	void mergeFrom(AggState other) {
+		mergeFrom(other, ctx.cancellation);
+	}
+
+	void mergeFrom(AggState other, NativeCancellationToken cancellation) {
+		cancellation.check();
+		LmdbNativeProbeDeadline.poll(0);
 		for (int channel = 0; channel < channelSets.length; channel++) {
+			cancellation.poll(channel);
+			LmdbNativeProbeDeadline.poll(channel);
 			if (channelSets[channel] != null) {
-				channelSets[channel].addAll(other.channelSets[channel]);
+				channelSets[channel].addAll(other.channelSets[channel], cancellation);
 			}
 		}
 		for (int i = 0; i < specs.length; i++) {
+			cancellation.poll(i);
+			LmdbNativeProbeDeadline.poll(i);
 			switch (specs[i].kind) {
 			case COUNT:
 				if (distinctChannels.specChannels[i] < 0) {
@@ -1168,6 +1444,19 @@ final class AggState {
 			case MAX:
 				mergeExtreme(i, other, false);
 				break;
+			case SAMPLE:
+				if (extremes[i] == null && other.extremes != null) {
+					extremes[i] = other.extremes[i];
+					extremeIds[i] = other.extremeIds[i];
+				}
+				break;
+			case GROUP_CONCAT:
+				if (specs[i].resultDemand == NativeAggregateResultDemand.LEXICAL_LENGTH) {
+					mergeConcatSummary(i, other, cancellation);
+				} else {
+					throw EncounterOrderFallback.groupConcatOrder();
+				}
+				break;
 			case CUSTOM:
 				// defense in depth: parallel admission declines CUSTOM — partial collectors cannot merge
 				throw EncounterOrderFallback.customAggregateOrder();
@@ -1175,6 +1464,8 @@ final class AggState {
 				break;
 			}
 		}
+		cancellation.check();
+		LmdbNativeProbeDeadline.poll(0);
 	}
 
 	private void mergeSum(int i, AggState other) {
@@ -1286,16 +1577,24 @@ final class LongHashSet {
 	}
 
 	boolean add(long value) {
+		return add(value, null);
+	}
+
+	private boolean add(long value, NativeCancellationToken cancellation) {
 		if (isNonCanonical(value)) {
 			Value term = authority.valueOf(value);
 			if (term != null && nonCanonicalValues.putIfAbsent(term, value) != null) {
 				return false;
 			}
 		}
-		return addRaw(value);
+		return addRaw(value, cancellation);
 	}
 
 	private boolean addRaw(long value) {
+		return addRaw(value, null);
+	}
+
+	private boolean addRaw(long value, NativeCancellationToken cancellation) {
 		long key = canonicalKeys ? authority.canonicalTermKey(value) : value;
 		if (key == EMPTY) {
 			boolean added = !containsEmptySentinel;
@@ -1307,12 +1606,17 @@ final class LongHashSet {
 			return added;
 		}
 		if (size >= threshold) {
-			rehash();
+			rehash(cancellation);
 		}
 		long[] t = table;
 		int mask = t.length - 1;
 		int index = mix(key) & mask;
+		int tick = 0;
 		while (true) {
+			if (cancellation != null) {
+				cancellation.poll(tick);
+				LmdbNativeProbeDeadline.poll(tick++);
+			}
 			long current = t[index];
 			if (current == EMPTY) {
 				t[index] = value;
@@ -1429,33 +1733,63 @@ final class LongHashSet {
 
 	/** Unions another set into this one (parallel worker merge). */
 	void addAll(LongHashSet other) {
+		addAll(other, new NativeCancellationToken());
+	}
+
+	void addAll(LongHashSet other, NativeCancellationToken cancellation) {
+		try (NativeExecutionPhaseEvent.Span phase = NativeExecutionPhaseEvent.start("distinct", cancellation)) {
+			addAllUnmeasured(other, cancellation);
+			phase.complete();
+		}
+	}
+
+	private void addAllUnmeasured(LongHashSet other, NativeCancellationToken cancellation) {
+		cancellation.check();
+		LmdbNativeProbeDeadline.poll(0);
 		if (other.containsEmptySentinel) {
 			long value = other.emptyRepresentative;
 			add(authority != null && other.authority != null && authority.token() != other.authority.token()
 					? authority.importId(other.authority, value)
-					: value);
+					: value, cancellation);
 		}
+		int tick = 0;
 		for (long value : other.table) {
+			cancellation.poll(tick++);
+			LmdbNativeProbeDeadline.poll(tick - 1);
 			if (value != EMPTY) {
 				long imported = authority != null && other.authority != null
 						&& authority.token() != other.authority.token()
 								? authority.importId(other.authority, value)
 								: value;
-				add(imported);
+				if (size >= threshold) {
+					rehash(cancellation);
+				}
+				add(imported, cancellation);
 			}
 		}
+		cancellation.check();
+		LmdbNativeProbeDeadline.poll(0);
 	}
 
 	void rehash() {
+		rehash(null);
+	}
+
+	private void rehash(NativeCancellationToken cancellation) {
 		long[] old = table;
 		table = new long[old.length << 1];
 		Arrays.fill(table, EMPTY);
 		threshold = table.length >>> 1;
 		int oldSize = containsEmptySentinel ? 1 : 0;
 		size = oldSize;
+		int tick = 0;
 		for (long value : old) {
+			if (cancellation != null) {
+				cancellation.poll(tick++);
+				LmdbNativeProbeDeadline.poll(tick - 1);
+			}
 			if (value != EMPTY) {
-				addRaw(value);
+				addRaw(value, cancellation);
 			}
 		}
 	}

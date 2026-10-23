@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -29,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.explanation.StrategyDecision;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -56,7 +58,7 @@ import org.slf4j.LoggerFactory;
  * again.
  */
 @Experimental
-final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
+final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> implements AutoCloseable {
 	private static final Logger logger = LoggerFactory.getLogger(LmdbNativeStrategyArbiter.class);
 	private static final AtomicLong DECISIONS = new AtomicLong();
 	private final long decisionId = LmdbNativeStrategyPreview.active() ? 0 : DECISIONS.incrementAndGet();
@@ -76,6 +78,7 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 	private final LmdbNativeQueryProbeBudget probeBudget = new LmdbNativeQueryProbeBudget();
 	private LmdbNativeProbeHarness<T> probeHarness;
 	private LmdbNativeHedgeSupport<T> hedgeSupport;
+	private Consumer<LmdbNativeStrategyProposal<T>> estimateResolver;
 	/** A semantic last resort that must not be consumed as an adaptive trial. */
 	private Proposer<T> terminalFallback;
 	private String winningTag;
@@ -144,7 +147,19 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		LmdbNativeStrategyProposal<T> proposal = proposer.propose();
 		if (proposal != null) {
 			candidates.add(proposal);
+			if (estimateResolver != null) {
+				estimateResolver.accept(proposal);
+			}
 		}
+		return this;
+	}
+
+	/** The same plan-owned quote is installed before either preview or execution ranks the admitted candidate. */
+	LmdbNativeStrategyArbiter<T> estimateWith(Consumer<LmdbNativeStrategyProposal<T>> resolver) {
+		if (!candidates.isEmpty() || estimateResolver != null) {
+			throw new IllegalStateException("Estimate ownership must be installed before offering candidates");
+		}
+		estimateResolver = resolver;
 		return this;
 	}
 
@@ -347,9 +362,11 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 					mode = "guarded";
 				}
 			}
+			String physicalProof = forcedTag == null ? chosen.physicalDominanceProof(candidates) : null;
 			entries.add(new StrategyDecision.Candidate(chosen.tag, entries.size() + 1, true,
-					first ? "Would select now" : "Eligible", null,
-					first ? "Execution-time binding and admission must still succeed" : decision.reason));
+					first ? "Would select now" : physicalProof != null ? "Physically dominated" : "Eligible", null,
+					first ? "Execution-time binding and admission must still succeed"
+							: physicalProof != null ? physicalProof : decision.reason));
 			remaining.remove(chosen);
 			if (backup != null) {
 				entries.add(new StrategyDecision.Candidate(backup.tag, entries.size() + 1, true,
@@ -412,7 +429,7 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 	private static <T> int rankLegacy(List<LmdbNativeStrategyProposal<T>> candidates, LmdbNativeWork[] costs) {
 		int best = -1;
 		for (int i = 0; i < candidates.size(); i++) {
-			if (isDominated(costs, i)) {
+			if (candidates.get(i).physicalDominanceProof(candidates) != null || isDominated(candidates, costs, i)) {
 				continue;
 			}
 			if (best < 0
@@ -446,13 +463,14 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 	static final double COLD_STATIC_DOMINATION_BAND = 256D;
 
 	/** Whether a rival's whole static cost interval lies more than the cold band below this candidate's. */
-	private static boolean isColdStaticallyDominated(LmdbNativeWork[] costs, int candidateIndex) {
+	private static boolean isColdStaticallyDominated(List<? extends LmdbNativeStrategyProposal<?>> candidates,
+			LmdbNativeWork[] costs, int candidateIndex) {
 		LmdbNativeWork candidateCost = costs[candidateIndex];
 		if (!candidateCost.known()) {
 			return false;
 		}
 		for (int i = 0; i < costs.length; i++) {
-			if (i == candidateIndex) {
+			if (i == candidateIndex || candidates.get(i).physicalDominanceProof(candidates) != null) {
 				continue;
 			}
 			LmdbNativeWork rival = costs[i];
@@ -467,7 +485,8 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 	private static <T> int rankColdStatic(List<LmdbNativeStrategyProposal<T>> candidates, LmdbNativeWork[] costs) {
 		int best = -1;
 		for (int i = 0; i < candidates.size(); i++) {
-			if (isColdStaticallyDominated(costs, i)) {
+			if (candidates.get(i).physicalDominanceProof(candidates) != null
+					|| isColdStaticallyDominated(candidates, costs, i)) {
 				continue;
 			}
 			if (best < 0 || stablePreference(candidates.get(i), candidates.get(best)) < 0) {
@@ -518,7 +537,13 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		for (int i = 0; i < candidates.size(); i++) {
 			LmdbNativeStrategyProposal<T> proposal = candidates.get(i);
 			LmdbNativeCostEstimate estimate = estimates.get(i);
-			if (isColdStaticallyDominated(costs, i)
+			if (proposal.physicalDominanceProof(candidates) != null) {
+				// Keep the legal proposal in the inventory and as a fallback if its dominator declines. A proved
+				// shared physical prefix plus strictly extra work cannot justify a speculative trial, even when an
+				// unrelated earlier sample gave this arm completed timing confidence.
+				continue;
+			}
+			if (isColdStaticallyDominated(candidates, costs, i)
 					&& captured.predictions().get(i).exactCompletedCount() == 0L) {
 				// Statically beyond any family speed ratio: never offered to the adaptive frontier (G8). The band
 				// is a COLD gate — an arm with completed exact measurements is not cold, and culling it on a
@@ -607,10 +632,12 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 	 * equally cheap proposals both beat an expensive specialist: neither cheap proposal uniquely dominates the other,
 	 * but their tie must not resurrect the expensive proposal merely because it has a higher preference rank.
 	 */
-	private static boolean isDominated(LmdbNativeWork[] costs, int candidateIndex) {
+	private static boolean isDominated(List<? extends LmdbNativeStrategyProposal<?>> candidates,
+			LmdbNativeWork[] costs, int candidateIndex) {
 		LmdbNativeWork candidateCost = costs[candidateIndex];
 		for (int i = 0; i < costs.length; i++) {
-			if (i != candidateIndex && costs[i].beats(candidateCost)) {
+			if (i != candidateIndex && candidates.get(i).physicalDominanceProof(candidates) == null
+					&& costs[i].beats(candidateCost)) {
 				return true;
 			}
 		}
@@ -850,7 +877,68 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 	 * preconditions fail the guard DEGRADES to a serial deadline: the winner runs under {@code enter(start + trigger)}
 	 * and expiry is treated exactly like a probe timeout (censor, unwind, serial re-rank on the retained candidates).
 	 */
+	@FunctionalInterface
+	private interface AttemptAction<R> {
+		LmdbNativeStrategySelection<R> run() throws Exception;
+	}
+
+	/** Explicit settlement is outside deadline scopes, after the opener and its native worker finalizers unwind. */
+	private LmdbNativeStrategySelection<T> withAttemptStates(AttemptAction<T> action) throws IOException {
+		LmdbNativeProbeDeadline.AttemptStates states = LmdbNativeProbeDeadline.ownAttemptStates();
+		LmdbNativeStrategySelection<T> result = null;
+		Throwable failure = null;
+		try {
+			result = action.run();
+			return result;
+		} catch (IOException | RuntimeException | Error problem) {
+			failure = problem;
+			throw problem;
+		} catch (Exception problem) {
+			IOException wrapped = new IOException("native attempt failed", problem);
+			failure = wrapped;
+			throw wrapped;
+		} finally {
+			Throwable retained = states.settled(failure, result != null);
+			if (retained != failure) {
+				if (result != null) {
+					discardUnpublished(result.value(), retained);
+				}
+				NativeContextClosingIteration.throwFailure(retained);
+			}
+		}
+	}
+
+	/** Backup production is fully withheld; settle its cached cursors before the result can win the race. */
+	private T produceBackupWithAttemptStates(LmdbNativeHedgeSupport.ShadowContext shadow, String tag,
+			LmdbNativeCostObservation observation, LmdbNativeProbeDeadline deadline) throws Exception {
+		LmdbNativeProbeDeadline.AttemptStates states = LmdbNativeProbeDeadline.ownAttemptStates();
+		T produced = null;
+		Throwable failure = null;
+		try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(deadline)) {
+			produced = hedgeSupport.produceBackup(shadow, tag, observation);
+			return produced;
+		} catch (Exception | Error problem) {
+			failure = problem;
+			throw problem;
+		} finally {
+			Throwable retained = states.settled(failure, false);
+			if (retained != failure) {
+				T unpublished = produced;
+				if (unpublished != null) {
+					retained = KernelRuntime.closeResource(() -> hedgeSupport.discard(unpublished), retained);
+				}
+				NativeContextClosingIteration.throwFailure(retained);
+			}
+		}
+	}
+
 	private LmdbNativeStrategySelection<T> executeGuarded(
+			LmdbNativeAdaptiveArbitration.DispatchPlan.Guarded<T> plan, int winnerIndex, int backupIndex)
+			throws IOException {
+		return withAttemptStates(() -> executeGuardedOwned(plan, winnerIndex, backupIndex));
+	}
+
+	private LmdbNativeStrategySelection<T> executeGuardedOwned(
 			LmdbNativeAdaptiveArbitration.DispatchPlan.Guarded<T> plan, int winnerIndex, int backupIndex)
 			throws IOException {
 		var replayContext = NativeExecutionContext.captureWorkerContext();
@@ -937,33 +1025,30 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 					return;
 				}
 				launchMillis = adaptiveModel.store().nowMillis();
-				try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(backupDeadline)) {
-					logSelected(explainTarget, decisionId, forcedDecisionPoint, backupTag, "guard backup",
-							"watchdog fired");
-					T produced = hedgeSupport.produceBackup(shadowForTask, backupTag, backupObservation);
-					long backupElapsed = chargeNanos(elapsedNanosSince(launchMillis));
-					if (produced == null) {
-						backupObservation.declined();
-						guardReservation.refund();
-						guardReservation = null;
-						race.backupFailed(new IllegalStateException("guard backup declined on the shadow row"));
-					} else if (race.tryCommit(LmdbNativeHedgeRace.Arm.BACKUP)) {
-						backupObservation.markContended(hedgeConfig.evidenceWeight());
-						backupObservation.exhausted();
-						backupValue.set(produced);
-						// the winning rescue's runtime is useful work: charge only interference + cancel bound
-						guardReservation.commit((long) (2.0 * hedgeConfig.interferenceFraction() * backupElapsed)
-								+ probeConfig.cancelBoundNanos());
-						guardReservation = null;
-					} else {
-						backupObservation.cancelled(null);
-						hedgeSupport.discard(produced);
-						// the whole backup was waste (the primary won): charge it with interference
-						guardReservation.commit(
-								(long) (backupElapsed * (1.0 + 2.0 * hedgeConfig.interferenceFraction())));
-						guardReservation = null;
-					}
+				logSelected(explainTarget, decisionId, forcedDecisionPoint, backupTag, "guard backup",
+						"watchdog fired");
+				T produced = produceBackupWithAttemptStates(shadowForTask, backupTag, backupObservation,
+						backupDeadline);
+				long backupElapsed = chargeNanos(elapsedNanosSince(launchMillis));
+				if (produced == null) {
+					backupObservation.declined();
+					guardReservation.refund();
+					race.backupFailed(new IllegalStateException("guard backup declined on the shadow row"));
+				} else if (race.tryCommit(LmdbNativeHedgeRace.Arm.BACKUP)) {
+					backupObservation.markContended(hedgeConfig.evidenceWeight());
+					backupObservation.exhausted();
+					backupValue.set(produced);
+					// the winning rescue's runtime is useful work: charge only interference + cancel bound
+					guardReservation.commit((long) (2.0 * hedgeConfig.interferenceFraction() * backupElapsed)
+							+ probeConfig.cancelBoundNanos());
+				} else {
+					backupObservation.cancelled(null);
+					hedgeSupport.discard(produced);
+					// the whole backup was waste (the primary won): charge it with interference
+					guardReservation.commit(
+							(long) (backupElapsed * (1.0 + 2.0 * hedgeConfig.interferenceFraction())));
 				}
+				guardReservation = null;
 			} catch (KernelQueryCancelledException cancelled) {
 				backupObservation.cancelled(cancelled);
 				race.backupFailed(cancelled);
@@ -1092,6 +1177,11 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 	/** The sanctioned serial degradation of a guard: a deadline scope at the trigger, probe-timeout semantics. */
 	private LmdbNativeStrategySelection<T> executeGuardedDegraded(
 			LmdbNativeAdaptiveArbitration.DispatchPlan.Guarded<T> plan, int winnerIndex) throws IOException {
+		return withAttemptStates(() -> executeGuardedDegradedOwned(plan, winnerIndex));
+	}
+
+	private LmdbNativeStrategySelection<T> executeGuardedDegradedOwned(
+			LmdbNativeAdaptiveArbitration.DispatchPlan.Guarded<T> plan, int winnerIndex) throws IOException {
 		LmdbNativeAdaptiveArbitration.DispatchPlan.Normal<T> normalPlan = plan.normal();
 		LmdbNativeStrategyProposal<T> chosen = candidates.get(winnerIndex);
 		LmdbNativeCostObservation observation = new LmdbNativeCostObservation(normalPlan.candidate().estimate(),
@@ -1185,6 +1275,11 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 
 	private LmdbNativeStrategySelection<T> executeHedgeAttempt(LmdbNativeAdaptiveArbitration.DispatchPlan.Hedge<T> plan,
 			int trialIndex, int fallbackIndex) throws IOException {
+		return withAttemptStates(() -> executeHedgeOwned(plan, trialIndex, fallbackIndex));
+	}
+
+	private LmdbNativeStrategySelection<T> executeHedgeOwned(LmdbNativeAdaptiveArbitration.DispatchPlan.Hedge<T> plan,
+			int trialIndex, int fallbackIndex) throws IOException {
 		var replayContext = NativeExecutionContext.captureWorkerContext();
 		LmdbNativeAdaptiveArbitration.DispatchPlan.Probe<T> probe = plan.probe();
 		String fallbackTag = fallbackIndex >= 0 ? candidates.get(fallbackIndex).tag : null;
@@ -1236,21 +1331,20 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 					backupObservation.cancelled(null);
 					return;
 				}
-				try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(backupDeadline)) {
-					logSelected(explainTarget, decisionId, forcedDecisionPoint, fallbackTag, "hedge backup",
-							"hedge launched");
-					T produced = hedgeSupport.produceBackup(shadowForTask, fallbackTag, backupObservation);
-					if (produced == null) {
-						backupObservation.declined();
-						race.backupFailed(new IllegalStateException("hedge backup declined on the shadow row"));
-					} else if (race.tryCommit(LmdbNativeHedgeRace.Arm.BACKUP)) {
-						backupObservation.markContended(hedgeConfig.evidenceWeight());
-						backupObservation.exhausted();
-						backupValue.set(produced);
-					} else {
-						backupObservation.cancelled(null);
-						hedgeSupport.discard(produced);
-					}
+				logSelected(explainTarget, decisionId, forcedDecisionPoint, fallbackTag, "hedge backup",
+						"hedge launched");
+				T produced = produceBackupWithAttemptStates(shadowForTask, fallbackTag, backupObservation,
+						backupDeadline);
+				if (produced == null) {
+					backupObservation.declined();
+					race.backupFailed(new IllegalStateException("hedge backup declined on the shadow row"));
+				} else if (race.tryCommit(LmdbNativeHedgeRace.Arm.BACKUP)) {
+					backupObservation.markContended(hedgeConfig.evidenceWeight());
+					backupObservation.exhausted();
+					backupValue.set(produced);
+				} else {
+					backupObservation.cancelled(null);
+					hedgeSupport.discard(produced);
 				}
 			} catch (KernelQueryCancelledException cancelled) {
 				backupObservation.cancelled(cancelled);
@@ -1547,6 +1641,11 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 	}
 
 	private LmdbNativeStrategySelection<T> executeProbeAttempt(LmdbNativeAdaptiveArbitration.DispatchPlan.Probe<T> plan,
+			int trialIndex) throws IOException {
+		return withAttemptStates(() -> executeProbeOwned(plan, trialIndex));
+	}
+
+	private LmdbNativeStrategySelection<T> executeProbeOwned(LmdbNativeAdaptiveArbitration.DispatchPlan.Probe<T> plan,
 			int trialIndex) throws IOException {
 		LmdbNativeStrategyProposal<T> trial = candidates.get(trialIndex);
 		LmdbNativePhysicalVariantKey trialKey = plan.trial().estimate().variantKey();
@@ -1873,4 +1972,11 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 			return new AdaptiveDecision<>(-1, null, -1, "no candidates");
 		}
 	}
+}
+
+/** Shared legal candidate offering, independent of whether the consumer retains RDF lists or physical cursors. */
+abstract class LmdbNativeCandidateOffers<T> {
+	abstract LmdbNativeCandidateOffers<T> offer(LmdbNativeStrategyArbiter.Proposer<T> proposer) throws IOException;
+
+	abstract LmdbNativeCandidateOffers<T> terminalFallback(LmdbNativeStrategyArbiter.Proposer<T> proposer);
 }

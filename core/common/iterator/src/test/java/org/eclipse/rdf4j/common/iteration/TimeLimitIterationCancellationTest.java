@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.NoSuchElementException;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -30,6 +31,149 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 class TimeLimitIterationCancellationTest {
+
+	@Test
+	void deadlineRequestsCancellationBeforeClosingActiveAggregate() throws Exception {
+		for (boolean nested : new boolean[] { false, true }) {
+			CooperativeAggregate source = new CooperativeAggregate();
+			CloseableIteration<Integer> delegate = nested ? new IterationWrapper<>(source) : source;
+			try (QueryExecutionDeadline deadline = QueryExecutionDeadline.start(60_000);
+					ExecutorService executor = Executors.newSingleThreadExecutor()) {
+				DeadlineIteration timed = new DeadlineIteration(delegate, deadline);
+				Future<Boolean> call = executor.submit(timed::hasNext);
+				try {
+					assertTrue(source.entered.await(5, TimeUnit.SECONDS));
+					timed.interrupt();
+					assertTrue(source.cancelled.await(2, TimeUnit.SECONDS),
+							"a deadline must signal the active in-memory aggregate before deferred close");
+					assertEquals(0, source.closeCalls.get(), "native cleanup must wait for the aggregate to exit");
+					source.release.countDown();
+					ExecutionException failure = assertThrows(ExecutionException.class,
+							() -> call.get(5, TimeUnit.SECONDS));
+					assertSame(timed.timeout, failure.getCause());
+					timed.close();
+					assertEquals(1, source.cancellationCalls.get(), "a terminal timeout signals cancellation once");
+					assertEquals(1, source.closeCalls.get());
+					assertFalse(source.closedWhileActive);
+				} finally {
+					source.cancelled.countDown();
+					source.release.countDown();
+					timed.close();
+				}
+			}
+		}
+	}
+
+	@Test
+	void expirationBeforeRegistrationStillSignalsBeforeClosing() throws Exception {
+		CooperativeAggregate source = new CooperativeAggregate();
+		try (QueryExecutionDeadline deadline = QueryExecutionDeadline.start(1)) {
+			CompletableFuture<Void> expired = new CompletableFuture<>();
+			try (QueryExecutionDeadline.Registration ignored = deadline.onExpiration(() -> expired.complete(null))) {
+				expired.get(5, TimeUnit.SECONDS);
+			}
+			DeadlineIteration timed = new DeadlineIteration(source, deadline);
+			assertSame(timed.timeout, assertThrows(IllegalStateException.class, timed::hasNext));
+			timed.close();
+			assertEquals(1, source.cancellationCalls.get());
+			assertEquals(1, source.closeCalls.get());
+			assertFalse(source.closedBeforeCancellation);
+		}
+	}
+
+	@Test
+	void explicitCloseCannotOvertakeActiveCancellationCallback() throws Exception {
+		CooperativeAggregate source = new CooperativeAggregate();
+		source.cancellationGate = new CountDownLatch(1);
+		try (QueryExecutionDeadline deadline = QueryExecutionDeadline.start(60_000);
+				ExecutorService executor = Executors.newFixedThreadPool(3)) {
+			DeadlineIteration timed = new DeadlineIteration(source, deadline);
+			Future<Boolean> call = executor.submit(timed::hasNext);
+			Future<?> cancellation = null;
+			try {
+				assertTrue(source.entered.await(5, TimeUnit.SECONDS));
+				cancellation = executor.submit(timed::interrupt);
+				assertTrue(source.cancelled.await(5, TimeUnit.SECONDS));
+				executor.submit(timed::close).get(5, TimeUnit.SECONDS);
+				assertEquals(0, source.closeCalls.get(), "close must retain the active aggregate's native ownership");
+				source.cancellationGate.countDown();
+				cancellation.get(5, TimeUnit.SECONDS);
+				source.release.countDown();
+				ExecutionException failure = assertThrows(ExecutionException.class,
+						() -> call.get(5, TimeUnit.SECONDS));
+				assertSame(timed.timeout, failure.getCause());
+			} finally {
+				source.cancellationGate.countDown();
+				source.cancelled.countDown();
+				source.release.countDown();
+				if (cancellation != null) {
+					cancellation.get(5, TimeUnit.SECONDS);
+				}
+				timed.close();
+			}
+			assertTrue(source.closeFinished.await(5, TimeUnit.SECONDS));
+			assertEquals(1, source.cancellationCalls.get());
+			assertEquals(1, source.closeCalls.get());
+			assertFalse(source.closedWhileActive);
+		}
+	}
+
+	@Test
+	void explicitCloseBeforeDeadlineCannotStrandActiveAggregate() throws Exception {
+		CooperativeAggregate source = new CooperativeAggregate();
+		try (QueryExecutionDeadline deadline = QueryExecutionDeadline.start(60_000);
+				ExecutorService executor = Executors.newSingleThreadExecutor()) {
+			DeadlineIteration timed = new DeadlineIteration(source, deadline);
+			Future<Boolean> call = executor.submit(timed::hasNext);
+			try {
+				assertTrue(source.entered.await(5, TimeUnit.SECONDS));
+				timed.close();
+				assertEquals(0, source.closeCalls.get());
+				timed.interrupt();
+				assertTrue(source.cancelled.await(2, TimeUnit.SECONDS),
+						"a deferred outer close must not hide cancellation from its still-active delegate");
+				assertEquals(0, source.closeCalls.get());
+				source.release.countDown();
+				ExecutionException failure = assertThrows(ExecutionException.class,
+						() -> call.get(5, TimeUnit.SECONDS));
+				assertSame(timed.timeout, failure.getCause());
+				assertTrue(source.closeFinished.await(5, TimeUnit.SECONDS));
+				assertEquals(1, source.closeCalls.get());
+				assertFalse(source.closedWhileActive);
+			} finally {
+				source.cancelled.countDown();
+				source.release.countDown();
+				timed.close();
+			}
+		}
+	}
+
+	@Test
+	void explicitCloseRequestsCancellationWithoutWaitingForDeadline() throws Exception {
+		CooperativeAggregate source = new CooperativeAggregate();
+		try (QueryExecutionDeadline deadline = QueryExecutionDeadline.start(60_000);
+				ExecutorService executor = Executors.newSingleThreadExecutor()) {
+			DeadlineIteration timed = new DeadlineIteration(source, deadline);
+			Future<Boolean> call = executor.submit(timed::hasNext);
+			try {
+				assertTrue(source.entered.await(5, TimeUnit.SECONDS));
+				timed.close();
+				assertTrue(source.cancelled.await(2, TimeUnit.SECONDS),
+						"explicit close must release in-memory work before its deadline expires");
+				assertEquals(0, source.closeCalls.get(), "signalling close retains active native ownership");
+				source.release.countDown();
+				assertFalse(call.get(5, TimeUnit.SECONDS));
+				assertTrue(source.closeFinished.await(5, TimeUnit.SECONDS));
+				assertEquals(1, source.cancellationCalls.get());
+				assertEquals(1, source.closeCalls.get());
+				assertFalse(source.closedWhileActive);
+			} finally {
+				source.cancelled.countDown();
+				source.release.countDown();
+				timed.close();
+			}
+		}
+	}
 
 	@Test
 	void deadlineCancellationReleasesCloseOnlyHasNext() throws Exception {
@@ -290,6 +434,68 @@ class TimeLimitIterationCancellationTest {
 			case NEXT -> iteration.next();
 			case REMOVE -> iteration.remove();
 			}
+		}
+	}
+
+	private static final class CooperativeAggregate implements CloseableIteration<Integer>, CooperativeCancellation {
+		private final CountDownLatch entered = new CountDownLatch(1);
+		private final CountDownLatch cancelled = new CountDownLatch(1);
+		private final CountDownLatch release = new CountDownLatch(1);
+		private final AtomicInteger cancellationCalls = new AtomicInteger();
+		private final AtomicInteger closeCalls = new AtomicInteger();
+		private final CountDownLatch closeFinished = new CountDownLatch(1);
+		private volatile boolean active;
+		private volatile boolean closedWhileActive;
+		private volatile boolean closedBeforeCancellation;
+		private CountDownLatch cancellationGate;
+
+		@Override
+		public boolean hasNext() {
+			active = true;
+			entered.countDown();
+			try {
+				assertTrue(cancelled.await(5, TimeUnit.SECONDS), "the aggregate only exits after cancellation");
+				assertTrue(release.await(5, TimeUnit.SECONDS), "the test must release the cancelled aggregate");
+				return false;
+			} catch (InterruptedException failure) {
+				Thread.currentThread().interrupt();
+				throw new AssertionError(failure);
+			} finally {
+				active = false;
+			}
+		}
+
+		@Override
+		public boolean requestCancellation() {
+			cancellationCalls.incrementAndGet();
+			cancelled.countDown();
+			if (cancellationGate != null) {
+				try {
+					assertTrue(cancellationGate.await(5, TimeUnit.SECONDS));
+				} catch (InterruptedException failure) {
+					Thread.currentThread().interrupt();
+					throw new AssertionError(failure);
+				}
+			}
+			return true;
+		}
+
+		@Override
+		public Integer next() {
+			throw new NoSuchElementException();
+		}
+
+		@Override
+		public void remove() {
+			throw new UnsupportedOperationException();
+		}
+
+		@Override
+		public void close() {
+			closedWhileActive |= active;
+			closedBeforeCancellation |= cancellationCalls.get() == 0;
+			closeCalls.incrementAndGet();
+			closeFinished.countDown();
 		}
 	}
 

@@ -39,6 +39,10 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 	private int activeCalls;
 	private boolean closeRequested;
 	private boolean timeoutCloseRequested;
+	private boolean timeoutCancellationStarted;
+	private boolean cooperativeCancellationStarted;
+	private boolean cooperativeCancellationCompleted;
+	private boolean cooperativeCancellationAccepted;
 	private boolean cooperativeTimeoutClose;
 	private boolean delegateCloseStarted;
 	private boolean delegateCloseCompleted;
@@ -216,10 +220,17 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 	@Override
 	protected void handleClose() {
 		boolean closeDelegate;
+		boolean signalCancellation;
 		QueryExecutionDeadline.Registration registration;
 		synchronized (lifecycleLock) {
 			closeRequested = true;
 			registration = deadlineRegistration;
+			signalCancellation = activeCalls != 0 && deferCloseDuringActiveCall;
+		}
+		if (signalCancellation) {
+			requestDelegateCancellation();
+		}
+		synchronized (lifecycleLock) {
 			closeDelegate = claimDelegateCloseIfIdle();
 		}
 		try {
@@ -366,16 +377,54 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 	}
 
 	private void requestCloseOnTimeout() {
-		isInterrupted.set(true);
-		boolean closeDelegate;
 		synchronized (lifecycleLock) {
+			if (timeoutCancellationStarted) {
+				return;
+			}
+			timeoutCancellationStarted = true;
+			// Reserve cooperative ownership before publishing interruption: an active caller or an explicit
+			// close can race the cancellation callback, but neither may close native state beneath that call.
+			cooperativeTimeoutClose = true;
 			closeRequested = true;
 			timeoutCloseRequested = true;
+			isInterrupted.set(true);
+		}
+		requestDelegateCancellation();
+		boolean closeDelegate;
+		synchronized (lifecycleLock) {
 			closeDelegate = claimDelegateCloseIfIdle();
 		}
 		if (closeDelegate) {
 			closeDelegateAsync();
 		}
+	}
+
+	/** The outer wrapper may already be closed while its native delegate is still active and owned by its caller. */
+	private boolean requestDelegateCancellation() {
+		synchronized (lifecycleLock) {
+			if (cooperativeCancellationStarted) {
+				if (cooperativeCancellationCompleted) {
+					cooperativeTimeoutClose = cooperativeCancellationAccepted;
+				}
+				return !cooperativeCancellationCompleted || cooperativeCancellationAccepted;
+			}
+			cooperativeCancellationStarted = true;
+			cooperativeTimeoutClose = true;
+		}
+		boolean accepted = false;
+		try {
+			accepted = wrappedIter instanceof CooperativeCancellation cancellation
+					&& cancellation.requestCancellation();
+		} catch (RuntimeException | Error failure) {
+			logger.warn("TimeLimitIteration cooperative cancellation failed: ", failure);
+		} finally {
+			synchronized (lifecycleLock) {
+				cooperativeCancellationCompleted = true;
+				cooperativeCancellationAccepted = accepted;
+				cooperativeTimeoutClose = accepted;
+			}
+		}
+		return accepted;
 	}
 
 	/**
@@ -452,12 +501,13 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 		isInterrupted.set(true);
 		boolean cancellationAccepted = false;
 		try {
-			cancellationAccepted = requestCancellation();
+			cancellationAccepted = requestDelegateCancellation();
 		} catch (RuntimeException e) {
 			logger.warn("TimeLimitIteration timed out and cooperative cancellation failed: ", e);
 		}
 		boolean closeDelegate = false;
 		synchronized (lifecycleLock) {
+			cancellationAccepted = !cooperativeCancellationCompleted || cooperativeCancellationAccepted;
 			cooperativeTimeoutClose = cancellationAccepted;
 			if (cancellationAccepted) {
 				closeRequested = true;

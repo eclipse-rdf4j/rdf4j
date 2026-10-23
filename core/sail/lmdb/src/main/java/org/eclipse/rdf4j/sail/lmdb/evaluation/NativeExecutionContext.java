@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.RUNTIME_INTERN_BASE;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -34,6 +35,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Value;
@@ -43,6 +45,8 @@ import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.model.RdfTermKey;
 
 /**
@@ -61,30 +65,108 @@ import org.eclipse.rdf4j.sail.lmdb.model.RdfTermKey;
  */
 @Experimental
 final class NativeExecutionContext implements AutoCloseable {
-	private static final WorkerContext NO_WORKER_CONTEXT = new WorkerContext(null);
+	private static final ThreadLocal<NativeExecutionContext[]> BORROWED_PRODUCER_OWNERS = new ThreadLocal<>();
+	private static final WorkerContext NO_WORKER_CONTEXT = new WorkerContext(null, null);
 	private static final QueryExecutionContext.Activation NO_WORKER_ACTIVATION = () -> {
 	};
 
 	/** Captures ownership before dispatch; capture holds no worker resources if submission is rejected. */
 	static WorkerContext captureWorkerContext() {
 		QueryExecutionContext.ReplayContext context = QueryExecutionContext.captureReplayContext();
-		if (context == null) {
+		NativeExecutionContext[] borrowed = BORROWED_PRODUCER_OWNERS.get();
+		if (context == null && borrowed == null) {
 			return NO_WORKER_CONTEXT;
 		}
-		context.checkActive();
-		return new WorkerContext(context);
+		if (context != null) {
+			context.checkActive();
+		}
+		return new WorkerContext(context, borrowed);
 	}
 
 	static final class WorkerContext {
 		private final QueryExecutionContext.ReplayContext context;
+		private final NativeExecutionContext[] borrowed;
 
-		private WorkerContext(QueryExecutionContext.ReplayContext context) {
+		private WorkerContext(QueryExecutionContext.ReplayContext context, NativeExecutionContext[] borrowed) {
 			this.context = context;
+			this.borrowed = borrowed;
 		}
 
 		/** Called inside the worker's existing failure and source-cleanup guards. */
 		QueryExecutionContext.Activation activate() {
-			return context == null ? NO_WORKER_ACTIVATION : context.activate();
+			ProducerScope producer = ProducerScope.enter(borrowed);
+			try {
+				QueryExecutionContext.Activation activation = context == null ? NO_WORKER_ACTIVATION
+						: context.activate();
+				if (producer == null) {
+					return activation;
+				}
+				return () -> {
+					Throwable failure = KernelRuntime.closeResource(activation, null);
+					failure = KernelRuntime.closeResource(producer, failure);
+					if (failure != null) {
+						NativeContextClosingIteration.throwFailure(failure);
+					}
+				};
+			} catch (RuntimeException | Error failure) {
+				KernelRuntime.closeResource(producer, failure);
+				throw failure;
+			}
+		}
+	}
+
+	/**
+	 * A cached producer is already owned by its cache. Its internal readers borrow that cache owner's immutable
+	 * dependency closure, otherwise an idle nested reader can prevent the very cleanup that must close it. A distinct
+	 * invocation or worker authority remains retained normally. External readers and active advances never borrow.
+	 */
+	ProducerScope borrowCachedProducer() {
+		return ProducerScope.enter(leaseOwners());
+	}
+
+	static final class ProducerScope implements AutoCloseable {
+		private final NativeExecutionContext[] previous;
+		private boolean closed;
+
+		private ProducerScope(NativeExecutionContext[] previous) {
+			this.previous = previous;
+		}
+
+		private static ProducerScope enter(NativeExecutionContext[] owners) {
+			if (owners == null || owners.length == 0) {
+				return null;
+			}
+			NativeExecutionContext[] previous = BORROWED_PRODUCER_OWNERS.get();
+			NativeExecutionContext[] installed = owners;
+			if (previous != null) {
+				ArrayList<NativeExecutionContext> merged = new ArrayList<>();
+				for (NativeExecutionContext owner : previous) {
+					merged.add(owner);
+				}
+				for (NativeExecutionContext owner : owners) {
+					if (!merged.contains(owner)) {
+						merged.add(owner);
+					}
+				}
+				if (merged.size() == previous.length) {
+					return null;
+				}
+				installed = merged.toArray(NativeExecutionContext[]::new);
+			}
+			BORROWED_PRODUCER_OWNERS.set(installed);
+			return new ProducerScope(previous);
+		}
+
+		@Override
+		public void close() {
+			if (!closed) {
+				closed = true;
+				if (previous == null) {
+					BORROWED_PRODUCER_OWNERS.remove();
+				} else {
+					BORROWED_PRODUCER_OWNERS.set(previous);
+				}
+			}
 		}
 	}
 
@@ -262,6 +344,10 @@ final class NativeExecutionContext implements AutoCloseable {
 
 	/** Owner of query-wide state; nested synthetic catalogs retain separate runtime-id maps but share this owner. */
 	private final NativeExecutionContext queryScopeOwner;
+	/** One terminal query signal; operator-local and worker tokens retain it as their parent. */
+	private final NativeCancellationToken cancellation;
+	/** Owned by the root evaluation and released only after the last retained consumer finishes. */
+	private final QueryExecutionDeadline.Registration deadlineRegistration;
 	/** Independent binding-frame ownership; condition projections still share the outer scalar and term authority. */
 	private final NativeExecutionContext queryFrameOwner;
 	/** Term-space owner; an invocation can replace its input/caches without replacing already bound native terms. */
@@ -275,6 +361,7 @@ final class NativeExecutionContext implements AutoCloseable {
 	private final Object runtimeValuesLock = new Object();
 	/** One admission budget across the separately owned runtime-ID spaces of nested native roots. */
 	private volatile NativeRuntimeValueTable.Budget runtimeValueBudget;
+	private final LmdbNativeQueryMemoryScope memoryScope = new LmdbNativeQueryMemoryScope();
 	/** Query-scoped representatives (notably NOW), shared by nested native catalogs of this evaluation. */
 	private final ConcurrentHashMap<RdfTermKey, Value> queryScopedValues = new ConcurrentHashMap<>();
 	/** Authoritative representatives for canonical store ids whose decoder would otherwise allocate a fresh Value. */
@@ -313,6 +400,8 @@ final class NativeExecutionContext implements AutoCloseable {
 	private boolean closeRequested;
 	/** Number of active consumers that may still evaluate against this context after an inner close request. */
 	private int leaseCount;
+	/** Immutable ownership graph, not retained claims: cached producers must never keep their own owners alive. */
+	private volatile NativeExecutionContext[] leaseOwners;
 
 	NativeExecutionContext() {
 		this(QueryExecutionPolicy.DEFAULT);
@@ -320,6 +409,9 @@ final class NativeExecutionContext implements AutoCloseable {
 
 	NativeExecutionContext(QueryExecutionPolicy policy) {
 		this.queryScopeOwner = this;
+		this.cancellation = new NativeCancellationToken();
+		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
+		this.deadlineRegistration = deadline == null ? null : deadline.onExpiration(cancellation::requestCancellation);
 		this.queryFrameOwner = this;
 		this.termOwner = this;
 		this.queryExecutionPolicy = policy;
@@ -328,10 +420,24 @@ final class NativeExecutionContext implements AutoCloseable {
 
 	NativeExecutionContext(NativeExecutionContext parent) {
 		this.queryScopeOwner = parent.queryScopeOwner;
+		this.cancellation = new NativeCancellationToken(parent.cancellation);
+		this.deadlineRegistration = null;
 		this.queryFrameOwner = parent.queryFrameOwner;
 		this.termOwner = this;
 		this.queryExecutionPolicy = parent.queryExecutionPolicy;
 		this.valueResolutionCacheEnabled = parent.valueResolutionCacheEnabled;
+	}
+
+	NativeCancellationToken cancellation() {
+		return cancellation;
+	}
+
+	LmdbNativeQueryMemoryScope memoryScope() {
+		return queryScopeOwner == this ? memoryScope : queryScopeOwner.memoryScope();
+	}
+
+	LmdbQueryMemoryManager.QueryLedger memoryLedger() {
+		return memoryScope().ledger(LmdbNativeHashJoin.queryMemory());
 	}
 
 	NativeExecutionContext(NativeExecutionContext parent, BindingSet projectedQueryBase) {
@@ -340,6 +446,8 @@ final class NativeExecutionContext implements AutoCloseable {
 
 	NativeExecutionContext(NativeExecutionContext parent, BindingSet input, boolean shareTermSpace) {
 		this.queryScopeOwner = parent.queryScopeOwner;
+		this.cancellation = new NativeCancellationToken(parent.cancellation);
+		this.deadlineRegistration = null;
 		this.queryFrameOwner = this;
 		this.termOwner = shareTermSpace ? parent.termOwner : this;
 		this.queryExecutionPolicy = parent.queryExecutionPolicy;
@@ -355,10 +463,18 @@ final class NativeExecutionContext implements AutoCloseable {
 		if (queryFrameOwner != this) {
 			return queryFrameOwner.forConditionBindings(scope);
 		}
-		return nativeState(new ConditionFrameKey(scope), () -> evaluationSource().forConditionBindings(scope));
+		return forConditionBindings(scope, evaluationSource());
 	}
 
-	private record ConditionFrameKey(ConditionBindingScope scope) {
+	/** A worker facade may share this frame/term owner while requiring its own dictionary and mutable preparation. */
+	NativeExecutionContext forConditionBindings(ConditionBindingScope scope, SyntheticValueSource source) {
+		if (scope.retainsAllBindings()) {
+			return this;
+		}
+		return nativeState(new ConditionFrameKey(scope, source), () -> source.forConditionBindings(scope));
+	}
+
+	private record ConditionFrameKey(ConditionBindingScope scope, SyntheticValueSource source) {
 	}
 
 	void initializeQueryBase(BindingSet bindings) {
@@ -605,6 +721,20 @@ final class NativeExecutionContext implements AutoCloseable {
 		}
 	}
 
+	/** A declined attempt relinquishes only the exact state it published, leaving ordinary and newer owners intact. */
+	void discardNativeState(Object key, Object expected) {
+		boolean removed;
+		synchronized (nativeStateLock) {
+			removed = nativeStates.remove(key, expected);
+		}
+		if (removed) {
+			Throwable failure = closeNativeState(expected);
+			if (failure != null) {
+				throw nativeStateFailure(failure);
+			}
+		}
+	}
+
 	@SuppressWarnings("unchecked")
 	private static <T> T awaitNativeState(NativeStateInitialization initialization) {
 		try {
@@ -706,7 +836,8 @@ final class NativeExecutionContext implements AutoCloseable {
 				}
 				table = runtimeValues;
 				if (table == null) {
-					runtimeValues = table = new NativeRuntimeValueTable(nextId, runtimeValueBudget());
+					runtimeValues = table = new NativeRuntimeValueTable(nextId, runtimeValueBudget(), cancellation,
+							this::authoritativeQueryScopedValue);
 				}
 			}
 		}
@@ -722,7 +853,7 @@ final class NativeExecutionContext implements AutoCloseable {
 			synchronized (runtimeValuesLock) {
 				budget = runtimeValueBudget;
 				if (budget == null) {
-					runtimeValueBudget = budget = NativeRuntimeValueTable.Budget.configured();
+					runtimeValueBudget = budget = NativeRuntimeValueTable.Budget.configured(memoryLedger());
 				}
 			}
 		}
@@ -862,17 +993,102 @@ final class NativeExecutionContext implements AutoCloseable {
 	}
 
 	/**
-	 * Retains this exact context while a wrapper may continue evaluating rows after an inner carrier requests close.
-	 * Leases are deliberately local to a context: a child context must not keep an unrelated parent context alive.
+	 * Retains this context and its actual scalar, entry-frame and term authorities while an accepted consumer may
+	 * continue evaluating after an inner carrier requests close. Unrelated parent contexts are not dependencies.
 	 */
 	Lease retainLease() {
+		return retainLease(false);
+	}
+
+	/**
+	 * Protects one advance by an already accepted consumer. A close request forbids new consumers, but an existing
+	 * reader lease may still need its cached producer. An idle producer must never retain its own state's owner.
+	 */
+	Lease retainActiveLease() {
+		return retainLease(true);
+	}
+
+	private Lease retainLease(boolean active) {
+		NativeExecutionContext[] owners = leaseOwners();
+		NativeExecutionContext[] borrowed = active ? null : BORROWED_PRODUCER_OWNERS.get();
+		if (borrowed != null) {
+			ArrayList<NativeExecutionContext> retained = new ArrayList<>();
+			for (NativeExecutionContext owner : owners) {
+				boolean internal = false;
+				for (NativeExecutionContext ancestor : borrowed) {
+					internal |= owner == ancestor;
+				}
+				if (!internal) {
+					retained.add(owner);
+				}
+			}
+			owners = retained.toArray(NativeExecutionContext[]::new);
+		}
+		int acquired = 0;
+		try {
+			for (NativeExecutionContext owner : owners) {
+				owner.retainLocalLease(active);
+				acquired++;
+			}
+			return new Lease(owners);
+		} catch (RuntimeException | Error failure) {
+			NativeContextClosingIteration.throwFailure(releaseLeases(owners, acquired, failure));
+			throw new AssertionError("unreachable");
+		}
+	}
+
+	private void retainLocalLease(boolean active) {
 		synchronized (this) {
-			if (isClosed() || closeRequested) {
+			if (isClosed() || closeRequested && (!active || leaseCount == 0)) {
 				throw new IllegalStateException("execution context is closed");
 			}
 			leaseCount++;
-			return new Lease(this);
 		}
+	}
+
+	private NativeExecutionContext[] leaseOwners() {
+		NativeExecutionContext[] cached = leaseOwners;
+		if (cached != null) {
+			return cached;
+		}
+		ArrayList<NativeExecutionContext> owners = new ArrayList<>();
+		IdentityHashMap<NativeExecutionContext, Boolean> seen = new IdentityHashMap<>();
+		owners.add(this);
+		seen.put(this, Boolean.TRUE);
+		for (int index = 0; index < owners.size(); index++) {
+			NativeExecutionContext owner = owners.get(index);
+			for (NativeExecutionContext dependency : new NativeExecutionContext[] {
+					owner.queryScopeOwner, owner.queryFrameOwner, owner.termOwner }) {
+				if (seen.put(dependency, Boolean.TRUE) == null) {
+					owners.add(dependency);
+				}
+			}
+		}
+		// Ancestors were created first. No monitor is held while another owner is acquired or released; closing
+		// claims in reverse order keeps every authority available during its dependent's cleanup.
+		owners.sort((left, right) -> Long.compare(left.executionId, right.executionId));
+		cached = owners.toArray(NativeExecutionContext[]::new);
+		leaseOwners = cached;
+		return cached;
+	}
+
+	private static Throwable releaseLeases(NativeExecutionContext[] owners, int acquired, Throwable failure) {
+		for (int index = acquired - 1; index >= 0; index--) {
+			NativeExecutionContext owner = owners[index];
+			Throwable cleanup = KernelRuntime.closeResource(owner::releaseLease, null);
+			if (failure == LmdbNativeProbeDeadlineExceeded.INSTANCE) {
+				// This private stackless signal is deliberately outside the code-generation package's dependencies.
+				Throwable real = LmdbNativeParallelKernelAggregate.realFailureInControlGraph(cleanup);
+				if (real != null) {
+					real.addSuppressed(failure);
+					failure = real;
+				}
+			} else if (cleanup != null) {
+				failure = KernelRuntime.closeResource(() -> NativeContextClosingIteration.throwFailure(cleanup),
+						failure);
+			}
+		}
+		return failure;
 	}
 
 	private void releaseLease() {
@@ -911,7 +1127,20 @@ final class NativeExecutionContext implements AutoCloseable {
 
 	/** Performs terminal cleanup while this context's monitor is held. */
 	private RuntimeException closeResourcesLocked() {
+		try (NativeExecutionPhaseEvent.Span phase = NativeExecutionPhaseEvent.start("cleanup", cancellation)) {
+			RuntimeException failure = closeResourcesUnmeasured();
+			if (failure == null) {
+				phase.complete();
+			}
+			return failure;
+		}
+	}
+
+	private RuntimeException closeResourcesUnmeasured() {
 		closed = true;
+		if (deadlineRegistration != null) {
+			deadlineRegistration.close();
+		}
 		RuntimeException failure = null;
 		Object[] states;
 		synchronized (nativeStateLock) {
@@ -944,11 +1173,20 @@ final class NativeExecutionContext implements AutoCloseable {
 				NativeRuntimeValueTable table = runtimeValues;
 				runtimeValues = null;
 				if (table != null) {
-					table.close();
+					try {
+						table.close();
+					} catch (RuntimeException cleanup) {
+						if (failure == null) {
+							failure = cleanup;
+						} else {
+							failure.addSuppressed(cleanup);
+						}
+					}
 				}
 			}
 		}
 		if (queryScopeOwner == this) {
+			memoryScope.close();
 			queryScopedValues.clear();
 			queryScopedStoreValuesById.clear();
 			hasQueryScopedStoreValues = false;
@@ -973,21 +1211,24 @@ final class NativeExecutionContext implements AutoCloseable {
 
 	/** One-shot ownership token for a context-bearing semantic wrapper. */
 	static final class Lease implements AutoCloseable {
-		private NativeExecutionContext context;
+		private NativeExecutionContext[] owners;
 
-		private Lease(NativeExecutionContext context) {
-			this.context = context;
+		private Lease(NativeExecutionContext[] owners) {
+			this.owners = owners;
 		}
 
 		@Override
 		public void close() {
-			NativeExecutionContext current;
+			NativeExecutionContext[] current;
 			synchronized (this) {
-				current = context;
-				context = null;
+				current = owners;
+				owners = null;
 			}
 			if (current != null) {
-				current.releaseLease();
+				Throwable failure = releaseLeases(current, current.length, null);
+				if (failure != null) {
+					NativeContextClosingIteration.throwFailure(failure);
+				}
 			}
 		}
 	}

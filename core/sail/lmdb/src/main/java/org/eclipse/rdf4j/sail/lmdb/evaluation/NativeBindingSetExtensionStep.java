@@ -12,30 +12,42 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
+import org.eclipse.rdf4j.query.algebra.MathExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
 /** Semantic native Extension over BindingSets after a Group has materialized authoritative RDF values. */
 @Experimental
-final class NativeBindingSetExtensionStep implements QueryEvaluationStep, LmdbNativePhysicalPlan {
+final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativePhysicalPlan {
 
 	private final QueryEvaluationStep arg;
 	private final Assignment[] assignments;
@@ -56,7 +68,8 @@ final class NativeBindingSetExtensionStep implements QueryEvaluationStep, LmdbNa
 			if (evaluator == null) {
 				return null;
 			}
-			assignments.add(new Assignment(element.getName(), evaluator));
+			assignments.add(new Assignment(element.getName(), evaluator,
+					physicalEvaluator(element.getExpr(), strategy, context)));
 		}
 		return assignments.isEmpty() ? arg
 				: new NativeBindingSetExtensionStep(arg, assignments.toArray(Assignment[]::new));
@@ -79,8 +92,43 @@ final class NativeBindingSetExtensionStep implements QueryEvaluationStep, LmdbNa
 
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
+		if (requiresPhysicalResults()) {
+			return NativeResultSteps.rdf(evaluateNative(bindings));
+		}
 		CloseableIteration<BindingSet> delegate = arg.evaluate(bindings);
 		return new ExtensionIteration(delegate, assignments, NativeExecutionContextCarrier.contextOf(delegate));
+	}
+
+	@Override
+	public boolean requiresPhysicalResults() {
+		return arg instanceof NativeResultStep nativeStep && nativeStep.requiresPhysicalResults();
+	}
+
+	@Override
+	public NativeResultCursor evaluateNative(BindingSet bindings) {
+		NativeResultCursor delegate = NativeResultSteps.open(arg, bindings);
+		return NativeResultSteps.map(delegate, source -> {
+			Map<String, Integer> indices = new LinkedHashMap<>();
+			for (int index = 0; index < source.schema().size(); index++) {
+				indices.put(source.schema().name(index), index);
+			}
+			for (Assignment assignment : assignments) {
+				indices.computeIfAbsent(assignment.name(), ignored -> indices.size());
+			}
+			NativeResultRow.Schema schema = new NativeResultRow.Schema(indices.keySet().toArray(String[]::new));
+			NativeResultCell[] cells = new NativeResultCell[schema.size()];
+			for (int index = 0; index < cells.length; index++) {
+				cells[index] = source.cell(schema.name(index));
+			}
+			NativeResultRow current = new NativeResultRow(schema, cells);
+			for (Assignment assignment : assignments) {
+				cells[indices.get(assignment.name())] = assignment.physical()
+						.evaluate(current,
+								delegate.executionContext());
+				current = new NativeResultRow(schema, cells);
+			}
+			return current;
+		});
 	}
 
 	@Override
@@ -95,7 +143,69 @@ final class NativeBindingSetExtensionStep implements QueryEvaluationStep, LmdbNa
 		return "NativeBindingSetExtension(assignments=" + assignments.length + ", arg=" + inner + ")";
 	}
 
-	private record Assignment(String name, NativeBindingSetValueEvaluator evaluator) {
+	private record Assignment(String name, NativeBindingSetValueEvaluator evaluator, PhysicalEvaluator physical) {
+	}
+
+	@FunctionalInterface
+	private interface PhysicalEvaluator {
+		NativeResultCell evaluate(NativeResultRow row, NativeExecutionContext execution);
+	}
+
+	private static PhysicalEvaluator physicalEvaluator(ValueExpr expression, LmdbNativeEvaluationStrategy strategy,
+			QueryEvaluationContext context) {
+		if (expression instanceof Var variable) {
+			return variable.hasValue() ? (row, execution) -> NativeResultCell.term(variable.getValue())
+					: (row, execution) -> row.cell(variable.getName());
+		}
+		if (expression instanceof ValueConstant constant) {
+			return (row, execution) -> NativeResultCell.term(constant.getValue());
+		}
+		ValueFactory factory = strategy.valueFactory();
+		if (expression instanceof FunctionCall function && FN.STRING_LENGTH.stringValue().equals(function.getURI())
+				&& function.getArgs().size() == 1) {
+			PhysicalEvaluator input = physicalEvaluator(function.getArgs().get(0), strategy, context);
+			return (row, execution) -> {
+				NativeResultCell cell = input.evaluate(row, execution);
+				if (cell.state() != NativeResultCell.State.BOUND) {
+					return NativeResultCell.error();
+				}
+				long length;
+				if (cell.kind() == NativeResultCell.Kind.LEXICAL_SUMMARY) {
+					length = cell.codePointLength();
+				} else if (cell.value() instanceof Literal literal && QueryEvaluationUtility.isStringLiteral(literal)) {
+					String label = literal.getLabel();
+					length = label.codePointCount(0, label.length());
+				} else {
+					return NativeResultCell.error();
+				}
+				return NativeResultCell.term(factory.createLiteral(Long.toString(length), CoreDatatype.XSD.INTEGER));
+			};
+		}
+		if (expression instanceof MathExpr math) {
+			PhysicalEvaluator left = physicalEvaluator(math.getLeftArg(), strategy, context);
+			PhysicalEvaluator right = physicalEvaluator(math.getRightArg(), strategy, context);
+			return (row, execution) -> {
+				NativeResultCell l = left.evaluate(row, execution), r = right.evaluate(row, execution);
+				if (l.state() != NativeResultCell.State.BOUND || r.state() != NativeResultCell.State.BOUND
+						|| !(l.value() instanceof Literal leftLiteral)
+						|| !(r.value() instanceof Literal rightLiteral)) {
+					return NativeResultCell.error();
+				}
+				try {
+					return NativeResultCell
+							.term(MathUtil.compute(leftLiteral, rightLiteral, math.getOperator(), factory));
+				} catch (ValueExprEvaluationException failure) {
+					return NativeResultCell.error();
+				}
+			};
+		}
+		NativeBindingSetValueEvaluator fallback = NativeBindingSetValueCompiler.compile(expression, strategy, context);
+		return (row, execution) -> {
+			NativeValueOutcome outcome = fallback.evaluate(row.toBindingSet(), execution);
+			return outcome.isBound() ? NativeResultCell.term(outcome.value())
+					: outcome.kind() == NativeValueOutcome.Kind.ERROR ? NativeResultCell.error()
+							: NativeResultCell.unbound();
+		};
 	}
 
 	private static final class ExtensionIteration

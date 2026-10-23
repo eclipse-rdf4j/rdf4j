@@ -47,11 +47,21 @@ final class NativeValuePositionAnalysis {
 
 	private final IdentityHashMap<QueryModelNode, Map<String, Integer>> scopes;
 	private final IdentityHashMap<Group, Map<String, Integer>> groupInputs;
+	private final NativeAggregateDemandAnalysis aggregateDemands;
+	private final boolean fullAggregateValues;
 
 	private NativeValuePositionAnalysis(IdentityHashMap<QueryModelNode, Map<String, Integer>> scopes,
-			IdentityHashMap<Group, Map<String, Integer>> groupInputs) {
+			IdentityHashMap<Group, Map<String, Integer>> groupInputs, NativeAggregateDemandAnalysis aggregateDemands) {
+		this(scopes, groupInputs, aggregateDemands, false);
+	}
+
+	private NativeValuePositionAnalysis(IdentityHashMap<QueryModelNode, Map<String, Integer>> scopes,
+			IdentityHashMap<Group, Map<String, Integer>> groupInputs, NativeAggregateDemandAnalysis aggregateDemands,
+			boolean fullAggregateValues) {
 		this.scopes = scopes;
 		this.groupInputs = groupInputs;
+		this.aggregateDemands = aggregateDemands;
+		this.fullAggregateValues = fullAggregateValues;
 	}
 
 	static NativeValuePositionAnalysis analyze(TupleExpr root) {
@@ -62,7 +72,21 @@ final class NativeValuePositionAnalysis {
 		collector.scopes.forEach((node, scope) -> scopes.put(node, frozen.computeIfAbsent(scope, Scope::freeze)));
 		IdentityHashMap<Group, Map<String, Integer>> inputs = new IdentityHashMap<>();
 		collector.groupInputs.forEach((node, scope) -> inputs.put(node, frozen.computeIfAbsent(scope, Scope::freeze)));
-		return new NativeValuePositionAnalysis(scopes, inputs);
+		return new NativeValuePositionAnalysis(scopes, inputs, NativeAggregateDemandAnalysis.analyze(root));
+	}
+
+	NativeAggregateResultDemand aggregateDemand(GroupElem element) {
+		return fullAggregateValues ? NativeAggregateResultDemand.FULL_VALUE : aggregateDemands.demand(element);
+	}
+
+	/** An immutable compilation environment: full RDF observation dominates every reachable lexical definition. */
+	NativeValuePositionAnalysis fullAggregateValues() {
+		return fullAggregateValues ? this
+				: new NativeValuePositionAnalysis(scopes, groupInputs, aggregateDemands, true);
+	}
+
+	boolean requiresFullAggregateValues() {
+		return fullAggregateValues;
 	}
 
 	Map<String, Integer> masksFor(TupleExpr node) {
@@ -103,7 +127,8 @@ final class NativeValuePositionAnalysis {
 		IdentityHashMap<QueryModelNode, Map<String, Integer>> copiedScopes = new IdentityHashMap<>();
 		IdentityHashMap<Group, Map<String, Integer>> copiedInputs = new IdentityHashMap<>();
 		copyScopes(original, copy, copiedScopes, copiedInputs);
-		return new NativeValuePositionAnalysis(copiedScopes, copiedInputs);
+		return new NativeValuePositionAnalysis(copiedScopes, copiedInputs,
+				aggregateDemands.copySubtree(original, copy), fullAggregateValues);
 	}
 
 	/**
@@ -123,7 +148,8 @@ final class NativeValuePositionAnalysis {
 				}
 			});
 		});
-		return new NativeValuePositionAnalysis(copiedScopes, new IdentityHashMap<>(groupInputs));
+		return new NativeValuePositionAnalysis(copiedScopes, new IdentityHashMap<>(groupInputs), aggregateDemands,
+				fullAggregateValues);
 	}
 
 	private void copyScopes(QueryModelNode original, QueryModelNode copy,

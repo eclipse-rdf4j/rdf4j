@@ -265,6 +265,7 @@ final class PathPlan implements SlotPlan {
 			// Zero is the row tier's occupied-but-unbound assignment-error marker, never an RDF path endpoint.
 			return EmptyCursor.INSTANCE;
 		}
+		NativeExecutionPhaseEvent.activateInput("scan", row.cancellation);
 		return new PathCursor(this, row, start, target, probe, memo, targets);
 	}
 

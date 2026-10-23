@@ -1514,6 +1514,7 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		BatchCursor open(RowState row, int capacity) throws IOException {
+			NativeExecutionPhaseEvent.activateInput("scan", row.cancellation);
 			Shape physical = adaptiveDirection ? withDirection(directionWithLowerRootCount(row)) : this;
 			if (adaptiveDirection && !physical.bySubject) {
 				ADAPTIVE_INCOMING_DIRECTIONS.incrementAndGet();

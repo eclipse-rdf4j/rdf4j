@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
  * Unsigned merge over the root domains of every fixed-predicate SOC or OSC plane. The cursor retains one primitive root
@@ -41,16 +42,20 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 	private static final class KeyPlaneRootCursor implements PlaneRootCursor {
 		private final NativeAdjacency.KeyRunCursor cursor;
 		private final LmdbAdjacencyOptimizationTelemetry telemetry;
+		private final NativeCancellationToken cancellation;
 
 		private KeyPlaneRootCursor(NativeAdjacency.KeyRunCursor cursor,
-				LmdbAdjacencyOptimizationTelemetry telemetry) {
+				LmdbAdjacencyOptimizationTelemetry telemetry, NativeCancellationToken cancellation) {
 			this.cursor = cursor;
 			this.telemetry = telemetry;
+			this.cancellation = cancellation;
 		}
 
 		@Override
 		public int fillRootCounts(long[] roots, long[] multiplicities, int maximum) {
+			cancellation.check();
 			int copied = cursor.fillRootCounts(roots, 0, multiplicities, 0, maximum);
+			cancellation.check();
 			if (telemetry != null) {
 				telemetry.rootsVisited(copied);
 				telemetry.rootIdsDecoded(copied);
@@ -69,6 +74,8 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 		private final NativeAdjacency.AdjacencyPageCursor pages;
 		private final LmdbNativeTermKindFilter filter;
 		private final LmdbAdjacencyOptimizationTelemetry telemetry;
+		private final NativeCancellationToken cancellation;
+		private int pollTick;
 		private int rowIndex;
 		private int rowCount;
 		private boolean pageReady;
@@ -78,14 +85,17 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 		private long bufferedMultiplicity;
 
 		private PagePlaneRootCursor(NativeAdjacency.AdjacencyPageCursor pages,
-				LmdbNativeTermKindFilter filter, LmdbAdjacencyOptimizationTelemetry telemetry) {
+				LmdbNativeTermKindFilter filter, LmdbAdjacencyOptimizationTelemetry telemetry,
+				NativeCancellationToken cancellation) {
 			this.pages = pages;
 			this.filter = filter;
 			this.telemetry = telemetry;
+			this.cancellation = cancellation;
 		}
 
 		@Override
 		public int fillRootCounts(long[] roots, long[] multiplicities, int maximum) {
+			cancellation.check();
 			int copied = 0;
 			while (copied < maximum) {
 				if (!buffered && !nextAcceptedRow()) {
@@ -116,6 +126,7 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 				return true;
 			}
 			while (true) {
+				cancellation.poll(pollTick++);
 				if (!pageReady || rowIndex == rowCount) {
 					if (!advancePage()) {
 						return false;
@@ -137,6 +148,7 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 
 		private boolean advancePage() {
 			while (pages.advance()) {
+				cancellation.check();
 				if (telemetry != null) {
 					telemetry.pageVisited();
 				}
@@ -163,6 +175,7 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 				pageReady = true;
 				return true;
 			}
+			cancellation.check();
 			return false;
 		}
 
@@ -216,6 +229,7 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 	}
 
 	private final NativeLmdbQuerySource.NativeProbe probe;
+	private final NativeCancellationToken cancellation;
 	private final Plane[] planes;
 	private final int[] heap;
 	private int heapSize;
@@ -223,12 +237,16 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 	private long root;
 	private long quadMultiplicity;
 	private boolean closed;
+	private int pollTick;
 
-	private LmdbAdjacencyRootDomainCursor(NativeLmdbQuerySource.NativeProbe probe, Plane[] planes) {
+	private LmdbAdjacencyRootDomainCursor(NativeLmdbQuerySource.NativeProbe probe, Plane[] planes,
+			NativeCancellationToken cancellation) {
 		this.probe = probe;
+		this.cancellation = cancellation;
 		this.planes = planes;
 		heap = new int[planes.length];
 		for (int i = 0; i < planes.length; i++) {
+			cancellation.poll(i);
 			if (advancePlane(i)) {
 				push(i);
 			}
@@ -236,23 +254,43 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 	}
 
 	static LmdbAdjacencyRootDomainCursor open(NativeLmdbQuerySource source, boolean bySubject) throws IOException {
-		return open(source, bySubject, false, 0L, false, 0L);
+		return open(source, bySubject, NativeCancellationToken.forSource(source));
+	}
+
+	static LmdbAdjacencyRootDomainCursor open(NativeLmdbQuerySource source, boolean bySubject,
+			NativeCancellationToken cancellation) throws IOException {
+		return open(source, bySubject, false, 0L, false, 0L, null, null, cancellation);
 	}
 
 	static LmdbAdjacencyRootDomainCursor open(NativeLmdbQuerySource source, boolean bySubject,
 			LmdbNativeTermKindFilter rootKindFilter, LmdbAdjacencyOptimizationTelemetry telemetry) throws IOException {
-		return open(source, bySubject, false, 0L, false, 0L, rootKindFilter, telemetry);
+		return open(source, bySubject, rootKindFilter, telemetry, NativeCancellationToken.forSource(source));
+	}
+
+	static LmdbAdjacencyRootDomainCursor open(NativeLmdbQuerySource source, boolean bySubject,
+			LmdbNativeTermKindFilter rootKindFilter, LmdbAdjacencyOptimizationTelemetry telemetry,
+			NativeCancellationToken cancellation) throws IOException {
+		return open(source, bySubject, false, 0L, false, 0L, rootKindFilter, telemetry, cancellation);
 	}
 
 	static LmdbAdjacencyRootDomainCursor open(NativeLmdbQuerySource source, boolean bySubject, boolean hasLowerBound,
 			long lowerBound, boolean hasUpperBound, long upperBound) throws IOException {
-		return open(source, bySubject, hasLowerBound, lowerBound, hasUpperBound, upperBound, null, null);
+		return open(source, bySubject, hasLowerBound, lowerBound, hasUpperBound, upperBound,
+				NativeCancellationToken.forSource(source));
+	}
+
+	static LmdbAdjacencyRootDomainCursor open(NativeLmdbQuerySource source, boolean bySubject, boolean hasLowerBound,
+			long lowerBound, boolean hasUpperBound, long upperBound, NativeCancellationToken cancellation)
+			throws IOException {
+		return open(source, bySubject, hasLowerBound, lowerBound, hasUpperBound, upperBound, null, null, cancellation);
 	}
 
 	private static LmdbAdjacencyRootDomainCursor open(NativeLmdbQuerySource source, boolean bySubject,
 			boolean hasLowerBound, long lowerBound, boolean hasUpperBound, long upperBound,
-			LmdbNativeTermKindFilter rootKindFilter, LmdbAdjacencyOptimizationTelemetry telemetry) throws IOException {
-		long[] predicates = predicateCatalog(source);
+			LmdbNativeTermKindFilter rootKindFilter, LmdbAdjacencyOptimizationTelemetry telemetry,
+			NativeCancellationToken cancellation) throws IOException {
+		cancellation.check();
+		long[] predicates = predicateCatalog(source, cancellation);
 		if (predicates == null) {
 			return null;
 		}
@@ -261,6 +299,7 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 		int count = 0;
 		try {
 			for (long predicate : predicates) {
+				cancellation.check();
 				if (telemetry != null) {
 					telemetry.planeVisited();
 				}
@@ -275,7 +314,7 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 				if (rootKindFilter != null && !hasLowerBound && !hasUpperBound) {
 					NativeAdjacency.AdjacencyPageCursor pages = adjacency.openPageCursor();
 					if (pages != null) {
-						cursor = new PagePlaneRootCursor(pages, rootKindFilter, telemetry);
+						cursor = new PagePlaneRootCursor(pages, rootKindFilter, telemetry, cancellation);
 					}
 				}
 				if (cursor == null) {
@@ -283,7 +322,7 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 					long to = hasUpperBound ? adjacency.lowerBoundKeyOrdinal(upperBound) : adjacency.keyCount();
 					NativeAdjacency.KeyRunCursor keyRuns = adjacency.openKeyRunCursor(from, to);
 					if (keyRuns != null) {
-						cursor = new KeyPlaneRootCursor(keyRuns, telemetry);
+						cursor = new KeyPlaneRootCursor(keyRuns, telemetry, cancellation);
 					}
 				}
 				if (cursor == null) {
@@ -297,19 +336,27 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 			if (telemetry != null) {
 				telemetry.mergeWidth(count);
 			}
-			return new LmdbAdjacencyRootDomainCursor(probe, Arrays.copyOf(opened, count));
+			return new LmdbAdjacencyRootDomainCursor(probe, Arrays.copyOf(opened, count), cancellation);
 		} catch (IOException | RuntimeException | Error failure) {
-			closePlanes(opened, count, failure);
-			try {
-				probe.close();
-			} catch (RuntimeException | Error closeFailure) {
-				failure.addSuppressed(closeFailure);
+			Throwable retained = failure;
+			for (int index = 0; index < count; index++) {
+				retained = KernelRuntime.closeResource(opened[index], retained);
+			}
+			retained = KernelRuntime.closeResource(probe, retained);
+			if (retained != failure) {
+				NativeContextClosingIteration.throwFailure(retained);
 			}
 			throw failure;
 		}
 	}
 
 	static long[] predicateCatalog(NativeLmdbQuerySource source) throws IOException {
+		return predicateCatalog(source, NativeCancellationToken.forSource(source));
+	}
+
+	static long[] predicateCatalog(NativeLmdbQuerySource source, NativeCancellationToken cancellation)
+			throws IOException {
+		cancellation.check();
 		LmdbPrefixRunPlan plan = source.prefixRunPlan(new int[] { TripleIndex.PRED_IDX }, UNKNOWN, UNKNOWN, UNKNOWN,
 				UNKNOWN);
 		if (plan == null || !plan.usesAdjacency()) {
@@ -322,16 +369,19 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 				return null;
 			}
 			while (cursor.next()) {
+				cancellation.poll(size);
 				if (size == predicates.length) {
 					predicates = Arrays.copyOf(predicates, size << 1);
 				}
 				predicates[size++] = cursor.prefixValue(TripleIndex.PRED_IDX);
 			}
 		}
+		cancellation.check();
 		return Arrays.copyOf(predicates, size);
 	}
 
 	boolean advance() {
+		cancellation.check();
 		if (heapSize == 0) {
 			return false;
 		}
@@ -339,6 +389,7 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 		quadMultiplicity = 0L;
 		activeSize = 0;
 		do {
+			cancellation.poll(pollTick++);
 			int plane = heap[0];
 			activeSize++;
 			quadMultiplicity = Math.addExact(quadMultiplicity, planes[plane].multiplicity);

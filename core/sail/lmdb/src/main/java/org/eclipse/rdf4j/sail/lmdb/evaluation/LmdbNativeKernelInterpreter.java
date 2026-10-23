@@ -230,7 +230,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	private KernelContext context;
 	private KernelHooks hooks;
 	private KernelHooks keyHooks;
-	/** Probe-deadline cancellation, or null for a normal run; polled by every data-proportional loop. */
+	/** Query cancellation and optional private probe deadline; polled by every data-proportional loop. */
 	private KernelCancellation cancel;
 	private int pollTick;
 
@@ -464,7 +464,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			int residual = emit.cols.length - emit.alignedCount;
 			if (residual > 0) {
 				dedup = new KernelRuntime.RowSet(residual,
-						kernel.requirements.semanticKeys ? keyHooks : keyHooks == hooks ? null : keyHooks);
+						16, kernel.requirements.semanticKeys ? keyHooks : keyHooks == hooks ? null : keyHooks,
+						null, KernelRuntime.cancellationPoll(cancel));
 			}
 			if (emit.alignedCount > 0) {
 				dal = new long[emit.alignedCount];
@@ -2716,7 +2717,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			Throwable failure = null;
 			try {
 				long[] buffer = scanBuffer(terms.scan);
-				KernelRuntime.LongHashSet seen = new KernelRuntime.LongHashSet();
+				KernelRuntime.LongHashSet seen = new KernelRuntime.LongHashSet(16, null, null,
+						KernelRuntime.cancellationPoll(cancel));
 				int n;
 				while ((n = cur.fill(buffer, KernelRuntime.SCAN_BATCH_ROWS)) > 0) {
 					KernelRuntime.checkCancelled(cancel);
@@ -4297,9 +4299,11 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		}
 		distinctExpected = context.distinctExpected;
 		if (aggregate.groupCols.length == 1) {
-			groups = new KernelRuntime.LongIntMap(16, keyHooks, aggregateMemory);
+			groups = new KernelRuntime.LongIntMap(16, keyHooks, aggregateMemory,
+					KernelRuntime.cancellationPoll(cancel));
 		} else if (aggregate.groupCols.length > 1) {
-			groupKeys = new KernelRuntime.RowSet(aggregate.groupCols.length, 16, keyHooks, aggregateMemory);
+			groupKeys = new KernelRuntime.RowSet(aggregate.groupCols.length, 16, keyHooks, aggregateMemory,
+					KernelRuntime.cancellationPoll(cancel));
 			groupScratch = newLongAggregateArray(aggregate.groupCols.length);
 		}
 		accCap = 16;
@@ -4748,7 +4752,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			if (agD[i] != null && agD[i][g] == null
 					&& !(output.kind == LmdbNativeKernelIr.AGG_COUNT_DISTINCT && output.orderedDomain >= 0
 							&& agO[i])) {
-				agD[i][g] = new KernelRuntime.LongHashSet(distinctExpected, keyHooks, aggregateMemory);
+				agD[i][g] = new KernelRuntime.LongHashSet(distinctExpected, keyHooks, aggregateMemory,
+						KernelRuntime.cancellationPoll(cancel));
 			}
 		}
 	}

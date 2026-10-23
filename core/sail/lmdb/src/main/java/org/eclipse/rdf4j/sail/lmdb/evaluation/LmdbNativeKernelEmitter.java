@@ -1756,10 +1756,10 @@ final class LmdbNativeKernelEmitter {
 				if (residual > 0) {
 					source.append("        dedup = new KernelRuntime.RowSet(")
 							.append(residual)
-							.append(", ")
+							.append(", 16, ")
 							.append(kernel.requirements.semanticKeys ? "keyHooks"
 									: "keyHooks == hooks ? null : keyHooks")
-							.append(");\n");
+							.append(", null, KernelRuntime.cancellationPoll(cancel));\n");
 				}
 				if (emit.alignedCount > 0) {
 					source.append("        dseen = false;\n");
@@ -1787,11 +1787,11 @@ final class LmdbNativeKernelEmitter {
 					}
 					if (aggregate.groupCols.length == 1) {
 						source.append(
-								"        groups = new KernelRuntime.LongIntMap(16, keyHooks, aggregateMemory);\n");
+								"        groups = new KernelRuntime.LongIntMap(16, keyHooks, aggregateMemory, KernelRuntime.cancellationPoll(cancel));\n");
 					} else if (aggregate.groupCols.length > 1) {
 						source.append("        groupKeys = new KernelRuntime.RowSet(")
 								.append(aggregate.groupCols.length)
-								.append(", 16, keyHooks, aggregateMemory);\n")
+								.append(", 16, keyHooks, aggregateMemory, KernelRuntime.cancellationPoll(cancel));\n")
 								.append("        groupScratch = newLongAggregateArray(")
 								.append(aggregate.groupCols.length)
 								.append(");\n");
@@ -3169,7 +3169,7 @@ final class LmdbNativeKernelEmitter {
 							.append("[g] == null) {\n")
 							.append("            agD")
 							.append(i)
-							.append("[g] = new KernelRuntime.LongHashSet(distinctExpected, keyHooks, aggregateMemory);\n")
+							.append("[g] = new KernelRuntime.LongHashSet(distinctExpected, keyHooks, aggregateMemory, KernelRuntime.cancellationPoll(cancel));\n")
 							.append("        }\n");
 				}
 			}
@@ -4783,13 +4783,10 @@ final class LmdbNativeKernelEmitter {
 			if (filters.isEmpty()) {
 				body.append(next(nextTemplate, arm));
 			} else {
-				body.append(arm).append("if (");
-				for (int i = 0; i < filters.size(); i++) {
-					body.append(i == 0 ? "" : " && ").append(scalarFilterCondition(filters.get(i)));
-				}
-				body.append(") {\n");
-				body.append(next(nextTemplate, arm + "    "));
-				body.append(arm).append("}\n");
+				// Residual predicates install their complete engine-slot input before invoking the callback. Reuse
+				// the ordinary node pipeline so null-extension keeps that protocol, order and short-circuit behavior.
+				String continuation = emitPipeline(filters, next(nextTemplate, ""), false);
+				body.append(arm).append(continuation).append("();\n");
 			}
 			body.append(indent).append("}\n");
 		}
@@ -9850,7 +9847,8 @@ final class LmdbNativeKernelEmitter {
 				emitScanBuffer(body, indent, buffer);
 				// The dedup set is local to this node's activation: the enumeration is a producer at one pipeline
 				// position, so a fresh set per entry is both correct and what keeps a correlated re-open honest.
-				body.append(indent).append("KernelRuntime.LongHashSet seen = new KernelRuntime.LongHashSet();\n");
+				body.append(indent)
+						.append("KernelRuntime.LongHashSet seen = new KernelRuntime.LongHashSet(16, null, null, KernelRuntime.cancellationPoll(cancel));\n");
 				body.append(indent)
 						.append("int n = cur.fill(")
 						.append(buffer)

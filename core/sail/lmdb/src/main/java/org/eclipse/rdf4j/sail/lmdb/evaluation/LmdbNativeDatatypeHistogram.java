@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
+import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 
 /**
@@ -52,7 +53,7 @@ import org.eclipse.rdf4j.sail.lmdb.ValueIds;
  * the shared pool with run-aligned boundaries and per-worker histograms merged at the end.
  */
 @Experimental
-final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
+final class LmdbNativeDatatypeHistogram implements NativeAggregateAlternative {
 	private static final int LITERAL_HEADER_BATCH_SIZE = 8_192;
 
 	static final AtomicLong PLANNED = new AtomicLong();
@@ -119,31 +120,61 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 	}
 
 	@Override
+	public LmdbNativeWork estimateWork(NativeLmdbQuerySource source) throws IOException {
+		return plan.usesAdjacency() ? NativeAggregateAlternative.rootSweep(source,
+				valueField == TripleIndex.SUBJ_IDX, pred) : LmdbNativeWork.UNKNOWN;
+	}
+
+	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
+		return evaluate(bindings, NativeCancellationToken.forSource(source));
+	}
+
+	@Override
+	public CloseableIteration<BindingSet> evaluate(BindingSet bindings, NativeCancellationToken owner) {
+		NativeCancellationToken cancellation = new NativeCancellationToken(owner);
+		cancellation.check();
 		if (!bindings.isEmpty()) {
 			return NativeExecutionContextCarrier.forEvaluation(genericStep().evaluate(bindings), source);
 		}
+		try (NativeExecutionPhaseEvent.Span scan = NativeExecutionPhaseEvent.startNested("scan", cancellation);
+				NativeExecutionPhaseEvent.Span expressions = NativeExecutionPhaseEvent.startNested("expressions",
+						cancellation)) {
+			CloseableIteration<BindingSet> result = evaluateUnmeasured(bindings, cancellation);
+			expressions.complete();
+			scan.complete();
+			return result;
+		}
+	}
+
+	private CloseableIteration<BindingSet> evaluateUnmeasured(BindingSet bindings,
+			NativeCancellationToken cancellation) {
 		LmdbAdjacencyOptimizationTelemetry telemetry = telemetry(LmdbAdjacencyOptimizationTelemetry.Grain.PLANE);
-		Map<IRI, long[]> histogram = tryDomainHistogram(telemetry);
+		Map<IRI, long[]> histogram = tryDomainHistogram(telemetry, cancellation);
+		cancellation.check();
 		if (histogram == null) {
 			telemetry = telemetry(LmdbAdjacencyOptimizationTelemetry.Grain.ROOT);
-			histogram = tryParallelHistogram(telemetry);
+			histogram = tryParallelHistogram(telemetry, cancellation);
 		}
 		if (histogram == null) {
 			telemetry = telemetry(LmdbAdjacencyOptimizationTelemetry.Grain.ROOT);
-			histogram = sequentialHistogram(telemetry);
+			histogram = sequentialHistogram(telemetry, cancellation);
 		}
+		cancellation.check();
 		if (histogram == null) {
 			return NativeExecutionContextCarrier.forEvaluation(genericStep().evaluate(bindings), source);
 		}
 		ArrayList<BindingSet> rows = new ArrayList<>(histogram.size());
+		int tick = 0;
 		for (Map.Entry<IRI, long[]> entry : histogram.entrySet()) {
+			cancellation.poll(tick++);
 			QueryBindingSet row = new QueryBindingSet(2);
 			row.addBinding(keyName, entry.getKey());
 			row.addBinding(countName,
 					SimpleValueFactory.getInstance().createLiteral(BigInteger.valueOf(entry.getValue()[0])));
 			rows.add(row);
 		}
+		cancellation.check();
 		RUNS.incrementAndGet();
 		if (telemetry != null) {
 			telemetry.publish(originalExpr);
@@ -166,7 +197,9 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 	}
 
 	/** Metadata-only incoming root scan shared with q9 and SOC/OSC domain intersection. */
-	private Map<IRI, long[]> tryDomainHistogram(LmdbAdjacencyOptimizationTelemetry telemetry) {
+	private Map<IRI, long[]> tryDomainHistogram(LmdbAdjacencyOptimizationTelemetry telemetry,
+			NativeCancellationToken cancellation) {
+		cancellation.check();
 		if (valueField != org.eclipse.rdf4j.sail.lmdb.TripleIndex.OBJ_IDX
 				|| subj != LmdbNativeAggregateCompiler.UNKNOWN
 				|| pred != LmdbNativeAggregateCompiler.UNKNOWN
@@ -180,6 +213,7 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 		try {
 			try (NativeLmdbQuerySource.NativeProbe probe = source.newProbe()) {
 				NativeLmdbQuerySource.DatatypeSummary summary = probe.nodeDomainDatatypeSummary(false, uniform -> {
+					cancellation.check();
 					BULK_LITERAL_HEADER_BATCHES.incrementAndGet();
 					if (telemetry != null) {
 						telemetry.literalHeaderBatch();
@@ -190,9 +224,10 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 				});
 				if (summary != null) {
 					Map<IRI, long[]> histogram = new HashMap<>();
-					DatatypeResolver resolver = new DatatypeResolver(source, telemetry);
+					DatatypeResolver resolver = new DatatypeResolver(source, telemetry, cancellation);
 					NativeLmdbQuerySource.DatatypeSummary.GroupCursor groups = summary.cursor();
 					while (groups.next()) {
+						cancellation.check();
 						if (telemetry != null) {
 							telemetry.rootMetadataRead();
 						}
@@ -213,10 +248,11 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 				NativeLmdbQuerySource.NodeDomainSynopsis synopsis = probe.nodeDomainSynopsis(false);
 				if (synopsis != null) {
 					Map<IRI, long[]> histogram = new HashMap<>();
-					DatatypeResolver resolver = new DatatypeResolver(source, telemetry);
+					DatatypeResolver resolver = new DatatypeResolver(source, telemetry, cancellation);
 					LiteralHeaderBatch literalHeaders = new LiteralHeaderBatch();
 					NativeLmdbQuerySource.NodeDomainSynopsis.RootCursor roots = synopsis.cursor();
 					while (roots.next()) {
+						cancellation.check();
 						if (telemetry != null) {
 							telemetry.rootIdDecoded();
 							telemetry.rootMetadataRead();
@@ -232,24 +268,27 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 					return histogram;
 				}
 			}
-			return tryAdjacencyPlaneHistogram(telemetry);
+			return tryAdjacencyPlaneHistogram(telemetry, cancellation);
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
 		}
 	}
 
-	private Map<IRI, long[]> tryAdjacencyPlaneHistogram(LmdbAdjacencyOptimizationTelemetry telemetry)
+	private Map<IRI, long[]> tryAdjacencyPlaneHistogram(LmdbAdjacencyOptimizationTelemetry telemetry,
+			NativeCancellationToken cancellation)
 			throws IOException {
-		long[] predicates = LmdbAdjacencyRootDomainCursor.predicateCatalog(source);
+		cancellation.check();
+		long[] predicates = LmdbAdjacencyRootDomainCursor.predicateCatalog(source, cancellation);
 		if (predicates == null) {
 			return null;
 		}
 		try (NativeLmdbQuerySource.NativeProbe probe = source.newProbe()) {
 			Map<IRI, long[]> histogram = new HashMap<>();
-			DatatypeResolver resolver = new DatatypeResolver(source, telemetry);
+			DatatypeResolver resolver = new DatatypeResolver(source, telemetry, cancellation);
 			LiteralHeaderBatch literalHeaders = new LiteralHeaderBatch();
 			long rootsVisited = 0L;
 			for (long predicate : predicates) {
+				cancellation.check();
 				if (telemetry != null) {
 					telemetry.planeVisited();
 				}
@@ -264,6 +303,7 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 								telemetry.trackPageHeaderFastPaths();
 							}
 							while (pages.advance()) {
+								cancellation.check();
 								boolean uniformRootKind = pages.uniformRowTermKind();
 								boolean uniformRootDatatype = pages.uniformRowLiteralDatatype();
 								if (telemetry != null) {
@@ -285,6 +325,7 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 							return null;
 						}
 						while (roots.advance()) {
+							cancellation.check();
 							long multiplicity = roots.runSize();
 							if (multiplicity > 0L) {
 								if (telemetry != null) {
@@ -313,6 +354,7 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 			Map<IRI, long[]> histogram,
 			NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor page, boolean uniformRootKind,
 			boolean uniformRootDatatype, LmdbAdjacencyOptimizationTelemetry telemetry) {
+		resolver.cancellation.check();
 		if (uniformRootKind) {
 			long representative = page.firstRow();
 			if (telemetry != null) {
@@ -341,6 +383,7 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 			long representative = 0L;
 			long literalMultiplicity = 0L;
 			for (int row = 0; row < page.rowCount(); row++) {
+				resolver.cancellation.poll(row);
 				long valueId = page.rowAt(row);
 				PAGE_ROOT_IDS_DECODED.incrementAndGet();
 				if (telemetry != null) {
@@ -369,6 +412,7 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 			return;
 		}
 		for (int row = 0; row < page.rowCount(); row++) {
+			resolver.cancellation.poll(row);
 			long valueId = page.rowAt(row);
 			PAGE_ROOT_IDS_DECODED.incrementAndGet();
 			if (telemetry != null) {
@@ -381,6 +425,7 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 
 	private void collectRoot(DatatypeResolver resolver, LiteralHeaderBatch literalHeaders,
 			Map<IRI, long[]> histogram, long valueId, long multiplicity) {
+		resolver.cancellation.check();
 		if (ValueIds.getIdType(valueId) == ValueIds.T_LITERAL) {
 			literalHeaders.add(valueId, multiplicity, resolver, histogram);
 			return;
@@ -393,6 +438,7 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 
 	private void collectReferencedLiterals(DatatypeResolver resolver, Map<IRI, long[]> histogram, long[] literalIds,
 			long[] multiplicities, long[] datatypeIds, int length) {
+		resolver.cancellation.check();
 		int populated = resolver.resolverSource.literalDatatypeIds(literalIds, 0, length, datatypeIds, 0);
 		if (populated != length) {
 			throw new QueryEvaluationException(
@@ -405,11 +451,13 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 		long uniformDatatype = datatypeIds[0];
 		boolean uniform = uniformDatatype >= 0L;
 		for (int i = 1; uniform && i < length; i++) {
+			resolver.cancellation.poll(i);
 			uniform = datatypeIds[i] == uniformDatatype;
 		}
 		if (uniform) {
 			long totalMultiplicity = 0L;
 			for (int i = 0; i < length; i++) {
+				resolver.cancellation.poll(i);
 				totalMultiplicity = Math.addExact(totalMultiplicity, multiplicities[i]);
 			}
 			IRI datatype = resolver.referencedDatatype(literalIds[0], uniformDatatype);
@@ -420,6 +468,7 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 			return;
 		}
 		for (int i = 0; i < length; i++) {
+			resolver.cancellation.poll(i);
 			IRI datatype = resolver.referencedDatatype(literalIds[i], datatypeIds[i]);
 			if (datatype != null) {
 				addMultiplicity(histogram, datatype, multiplicities[i]);
@@ -439,17 +488,21 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 	 */
 	private final class DatatypeResolver {
 		private final NativeLmdbQuerySource resolverSource;
+		private final NativeCancellationToken cancellation;
 		private final LmdbAdjacencyOptimizationTelemetry telemetry;
 		private final Map<Integer, IRI> inlinedDatatypes = new HashMap<>();
 		private final Map<Long, IRI> referencedDatatypes = new HashMap<>();
 
-		DatatypeResolver(NativeLmdbQuerySource resolverSource, LmdbAdjacencyOptimizationTelemetry telemetry) {
+		DatatypeResolver(NativeLmdbQuerySource resolverSource, LmdbAdjacencyOptimizationTelemetry telemetry,
+				NativeCancellationToken cancellation) {
 			this.resolverSource = resolverSource;
 			this.telemetry = telemetry;
+			this.cancellation = cancellation;
 		}
 
 		/** The datatype IRI of the literal id, or null when the id is not a literal. */
 		IRI datatypeOf(long id) {
+			cancellation.check();
 			if (id == 0L || id == NativeLmdbQuerySource.UNKNOWN_ID) {
 				return null;
 			}
@@ -483,6 +536,7 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 		}
 
 		private IRI referencedDatatype(long literalId, long datatypeId) {
+			cancellation.check();
 			if (datatypeId < 0L) {
 				// Header peek unsupported by this source: full materialization fallback.
 				Value value = resolverSource.lazyValue(literalId, positionMask);
@@ -504,7 +558,9 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 		}
 	}
 
-	private Map<IRI, long[]> sequentialHistogram(LmdbAdjacencyOptimizationTelemetry telemetry) {
+	private Map<IRI, long[]> sequentialHistogram(LmdbAdjacencyOptimizationTelemetry telemetry,
+			NativeCancellationToken cancellation) {
+		cancellation.check();
 		if (telemetry != null) {
 			telemetry.trackPayloadDecodes();
 		}
@@ -514,7 +570,7 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 				return null;
 			}
 			Map<IRI, long[]> histogram = new HashMap<>();
-			DatatypeResolver resolver = new DatatypeResolver(source, telemetry);
+			DatatypeResolver resolver = new DatatypeResolver(source, telemetry, cancellation);
 			LiteralHeaderBatch literalHeaders = new LiteralHeaderBatch();
 			collect(cursor, resolver, literalHeaders, histogram);
 			literalHeaders.flush(resolver, histogram);
@@ -529,7 +585,9 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 
 	private void collect(LmdbPrefixRunCursor cursor, DatatypeResolver resolver, LiteralHeaderBatch literalHeaders,
 			Map<IRI, long[]> histogram) throws IOException {
+		int tick = 0;
 		while (cursor.next()) {
+			resolver.cancellation.poll(tick++);
 			long valueId = cursor.prefixValue(valueField);
 			long multiplicity = cursor.runRowCount();
 			if (resolver.telemetry != null) {
@@ -546,10 +604,13 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 				addMultiplicity(histogram, datatype, multiplicity);
 			}
 		}
+		resolver.cancellation.check();
 	}
 
 	/** Parallel partitioned run counting with run-aligned boundaries, or null to fall back to sequential. */
-	private Map<IRI, long[]> tryParallelHistogram(LmdbAdjacencyOptimizationTelemetry telemetry) {
+	private Map<IRI, long[]> tryParallelHistogram(LmdbAdjacencyOptimizationTelemetry telemetry,
+			NativeCancellationToken cancellation) {
+		cancellation.check();
 		long threshold = Long.getLong(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY,
 				LmdbNativeParallelPrefixRuns.DEFAULT_PARALLEL_MIN_ESTIMATE);
 		if (threshold > 0) {
@@ -579,59 +640,82 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 				closeAll(sources);
 				return null;
 			}
+			List<Future<Map<IRI, long[]>>> futures = new ArrayList<>(workers);
+			NativeCancellationToken workerCancellation = new NativeCancellationToken(cancellation);
+			Throwable workerFailure = null;
 			try {
 				int ranges = splits.length + 1;
 				ConcurrentLinkedQueue<Integer> queue = new ConcurrentLinkedQueue<>();
 				for (int i = 0; i < ranges; i++) {
+					cancellation.poll(i);
 					queue.add(i);
 				}
-				List<Future<Map<IRI, long[]>>> futures = new ArrayList<>(workers);
+				var phaseIdentity = NativeExecutionPhaseEvent.captureIdentity(source);
 				for (int w = 0; w < workers; w++) {
 					NativeLmdbQuerySource workerSource = sources[w];
 					var replayContext = NativeExecutionContext.captureWorkerContext();
 					futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
-						try (var replayScope = replayContext.activate()) {
+						try (var replayScope = replayContext.activate();
+								NativeExecutionPhaseEvent.Span scan = NativeExecutionPhaseEvent.startDetached("scan",
+										phaseIdentity);
+								NativeExecutionPhaseEvent.Span expressions = NativeExecutionPhaseEvent.startDetached(
+										"expressions", phaseIdentity)) {
 							Map<IRI, long[]> local = new HashMap<>();
-							DatatypeResolver resolver = new DatatypeResolver(workerSource, null);
+							DatatypeResolver resolver = new DatatypeResolver(workerSource, null, workerCancellation);
 							LiteralHeaderBatch literalHeaders = new LiteralHeaderBatch();
 							Integer range;
 							while ((range = queue.poll()) != null) {
+								workerCancellation.check();
 								long[] lo = range == 0 ? null : splits[range - 1];
 								long[] hi = range == splits.length ? null : splits[range];
 								collectRange(workerSource, resolver, literalHeaders, lo, hi, local);
 							}
 							literalHeaders.flush(resolver, local);
+							workerCancellation.check();
+							expressions.complete();
+							scan.complete();
 							return local;
+						} catch (IOException | RuntimeException | Error failure) {
+							workerCancellation.requestCancellation();
+							throw failure;
 						}
 					}));
 				}
 				Map<IRI, long[]> merged = new HashMap<>();
+				int tick = 0;
 				for (Future<Map<IRI, long[]>> future : futures) {
-					for (Map.Entry<IRI, long[]> entry : future.get().entrySet()) {
+					for (Map.Entry<IRI, long[]> entry : NativeStructuralWorkers.await(future, workerCancellation)
+							.entrySet()) {
+						cancellation.poll(tick++);
 						merged.computeIfAbsent(entry.getKey(), ignored -> new long[1])[0] += entry.getValue()[0];
 					}
 				}
+				cancellation.check();
 				PARALLEL_RUNS.incrementAndGet();
 				if (telemetry != null) {
 					telemetry.source("PREFIX_RUNS_PARALLEL");
 					for (int i = 0; i < ranges; i++) {
+						cancellation.poll(i);
 						telemetry.morsel();
 					}
 				}
 				return merged;
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();
-				throw new QueryEvaluationException(e);
+				workerFailure = new QueryEvaluationException(e);
+				throw (QueryEvaluationException) workerFailure;
 			} catch (ExecutionException e) {
-				if (e.getCause() instanceof Error) {
-					throw (Error) e.getCause();
-				}
-				if (e.getCause() instanceof RuntimeException) {
-					throw (RuntimeException) e.getCause();
-				}
-				throw new QueryEvaluationException(e.getCause());
+				workerFailure = e.getCause() == null ? e : e.getCause();
+				NativeStructuralWorkers.rethrow(workerFailure);
+				throw new AssertionError("unreachable");
+			} catch (RuntimeException | Error failure) {
+				workerFailure = failure;
+				throw failure;
 			} finally {
-				closeAll(sources);
+				Throwable retained = NativeStructuralWorkers.drain(futures, sources, workerCancellation, workerFailure);
+				if (retained != workerFailure) {
+					NativeStructuralWorkers.rethrow(retained);
+				}
 			}
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
@@ -640,6 +724,7 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 
 	private void collectRange(NativeLmdbQuerySource workerSource, DatatypeResolver resolver,
 			LiteralHeaderBatch literalHeaders, long[] lo, long[] hi, Map<IRI, long[]> histogram) throws IOException {
+		resolver.cancellation.check();
 		try (LmdbPrefixRunCursor cursor = workerSource.prefixRuns(plan, subj, pred, obj,
 				LmdbNativeAggregateCompiler.UNKNOWN, true)) {
 			if (cursor == null) {
@@ -671,6 +756,7 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 		}
 
 		void flush(DatatypeResolver resolver, Map<IRI, long[]> histogram) {
+			resolver.cancellation.check();
 			if (size == 0) {
 				return;
 			}
