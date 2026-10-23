@@ -47,6 +47,8 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.Operation;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -77,11 +79,12 @@ import org.slf4j.LoggerFactory;
  * @see FederationEvaluationStrategy
  * @see WriteStrategy
  */
-public class FedXConnection extends AbstractSailConnection {
+public class FedXConnection extends AbstractSailConnection implements FederatedServiceResolverClient {
 
 	private static final Logger log = LoggerFactory.getLogger(FedXConnection.class);
 	protected final FedX federation;
 	protected final FederationContext federationContext;
+	private FederatedServiceResolver federatedServiceResolver;
 
 	/**
 	 * If set, contains the write strategy. Always access via {@link #getWriteStrategyInternal()}
@@ -92,6 +95,17 @@ public class FedXConnection extends AbstractSailConnection {
 		super(federation);
 		this.federation = federation;
 		this.federationContext = federationContext;
+	}
+
+	@Override
+	public void setFederatedServiceResolver(FederatedServiceResolver resolver) {
+		this.federatedServiceResolver = resolver;
+	}
+
+	@Override
+	public FederatedServiceResolver getFederatedServiceResolver() {
+		return federatedServiceResolver != null ? federatedServiceResolver
+				: federationContext.getFederatedServiceResolver();
 	}
 
 	@Override
@@ -107,6 +121,7 @@ public class FedXConnection extends AbstractSailConnection {
 		final TupleExpr originalQuery = query;
 
 		FederationEvaluationStrategy strategy = federationContext.createStrategy(dataset);
+		strategy.setFederatedServiceResolver(getFederatedServiceResolver());
 
 		long start = 0;
 		String queryString = getOriginalQueryString(bindings);

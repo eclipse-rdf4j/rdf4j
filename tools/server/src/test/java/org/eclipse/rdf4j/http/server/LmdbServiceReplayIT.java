@@ -58,7 +58,9 @@ import com.sun.net.httpserver.HttpServer;
 public class LmdbServiceReplayIT {
 
 	private static final long TRIPLE_GROWTH_MAP_SIZE = 8L * 1024L * 1024L;
-	private static final long TRIPLE_GROWTH_VALUE_MAP_SIZE = 128L * 1024L * 1024L;
+	// HTTP buffered writes initially reserve dictionary capacity for every term, before deduplication.
+	// Keep that conservative advisory demand below the 10% threshold in the TripleStore-only case.
+	private static final long TRIPLE_GROWTH_VALUE_MAP_SIZE = 2L * 1024L * 1024L * 1024L;
 	private static final long VALUE_GROWTH_MAP_SIZE = 32L * 1024L * 1024L;
 	private static final double GROWTH_THRESHOLD = 0.10d;
 	private static final int TRIPLE_GROWTH_INDEX_COUNT = 2;
@@ -74,27 +76,56 @@ public class LmdbServiceReplayIT {
 	private static final int TRIPLE_GROWTH_STATEMENT_COUNT = Math.toIntExact(
 			Math.floorDiv(TRIPLE_GROWTH_SOFT_WATERMARK_BYTES, MINIMUM_TRIPLE_INDEX_BYTES_PER_ROW) + 1);
 	private static final String REPOSITORY_ID = "lmdb-service-replay";
+	private static final String ALLOWED_ORIGINS_PROPERTY = "rdf4j.server.remoteResourceAllowedOrigins";
 	private static final IRI SUBJECT = Values.iri("urn:rdf4j:lmdb-service-replay:subject");
 	private static final IRI VALUE_PREDICATE = Values.iri("urn:rdf4j:lmdb-service-replay:value");
 	private static final IRI SERVICE_PREDICATE = Values.iri("urn:rdf4j:lmdb-service-replay:service");
 	private static final IRI GROWTH_PREDICATE = Values.iri("urn:rdf4j:lmdb-service-replay:growth");
 	private static TestServer server;
+	private static ServiceGate tripleServiceGate;
+	private static ServiceGate valueServiceGate;
+	private static String previousAllowedOrigins;
 
 	@BeforeAll
 	static void startServer() throws Exception {
-		server = new TestServer();
-		server.includeTestClassesInWebapp();
+		previousAllowedOrigins = System.getProperty(ALLOWED_ORIGINS_PROPERTY);
 		try {
+			tripleServiceGate = new ServiceGate();
+			valueServiceGate = new ServiceGate();
+			System.setProperty(ALLOWED_ORIGINS_PROPERTY,
+					tripleServiceGate.origin() + "," + valueServiceGate.origin());
+			server = new TestServer();
+			server.includeTestClassesInWebapp();
 			server.start();
 		} catch (Exception e) {
-			server.stop();
+			stopServer();
 			throw e;
 		}
 	}
 
 	@AfterAll
 	static void stopServer() throws Exception {
-		server.stop();
+		TestServer current = server;
+		server = null;
+		try {
+			if (current != null) {
+				current.stop();
+			}
+		} finally {
+			if (previousAllowedOrigins == null) {
+				System.clearProperty(ALLOWED_ORIGINS_PROPERTY);
+			} else {
+				System.setProperty(ALLOWED_ORIGINS_PROPERTY, previousAllowedOrigins);
+			}
+			if (tripleServiceGate != null) {
+				tripleServiceGate.close();
+				tripleServiceGate = null;
+			}
+			if (valueServiceGate != null) {
+				valueServiceGate.close();
+				valueServiceGate = null;
+			}
+		}
 	}
 
 	@Test
@@ -113,7 +144,8 @@ public class LmdbServiceReplayIT {
 		String repositoryId = REPOSITORY_ID + (tripleGrowth ? "-triples" : "-values");
 		ExecutorService queryExecutor = Executors.newSingleThreadExecutor();
 		ExecutorService writerExecutor = Executors.newSingleThreadExecutor();
-		try (ServiceGate serviceGate = new ServiceGate()) {
+		ServiceGate serviceGate = tripleGrowth ? tripleServiceGate : valueServiceGate;
+		try {
 			RemoteRepositoryManager manager = RemoteRepositoryManager.getInstance(TestServer.SERVER_URL);
 			HTTPRepository repositoryForCleanup = null;
 			try {
@@ -356,7 +388,11 @@ public class LmdbServiceReplayIT {
 		}
 
 		private String endpoint() {
-			return "http://127.0.0.1:" + httpServer.getAddress().getPort() + "/sparql";
+			return origin() + "/sparql";
+		}
+
+		private String origin() {
+			return "http://127.0.0.1:" + httpServer.getAddress().getPort();
 		}
 
 		private boolean awaitFirstRequest() throws InterruptedException {

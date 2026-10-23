@@ -189,7 +189,7 @@ public class RepositoryInterceptor extends ServerInterceptor {
 			conn.setQueryParseOptions(getQueryParseOptions(request));
 			conn.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);
 			conn.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_LANGUAGE_TAGS);
-			return conn;
+			return ServerServiceConnections.configure(conn);
 		} catch (RuntimeException failure) {
 			try {
 				conn.close();

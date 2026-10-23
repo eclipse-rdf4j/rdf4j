@@ -14,8 +14,11 @@ package org.eclipse.rdf4j.http.server;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.model.util.Values;
@@ -27,6 +30,8 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
+import com.sun.net.httpserver.HttpServer;
 
 class ServerOutboundResourceIT {
 
@@ -79,6 +84,40 @@ class ServerOutboundResourceIT {
 		}
 		try (RepositoryConnection connection = repository.getConnection()) {
 			assertThat(connection.hasStatement(Values.iri("urn:secret"), null, null, false)).isFalse();
+		}
+	}
+
+	@Test
+	void httpQueryCannotContactPrivateService() throws Exception {
+		AtomicInteger requests = new AtomicInteger();
+		HttpServer endpoint = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		endpoint.createContext("/sparql", exchange -> {
+			requests.incrementAndGet();
+			byte[] response = ("{\"head\":{\"vars\":[\"s\"]},\"results\":{\"bindings\":["
+					+ "{\"s\":{\"type\":\"uri\",\"value\":\"urn:private\"}}]}}")
+							.getBytes(StandardCharsets.UTF_8);
+			exchange.getResponseHeaders().set("Content-Type", "application/sparql-results+json");
+			exchange.sendResponseHeaders(200, response.length);
+			try (var output = exchange.getResponseBody()) {
+				output.write(response);
+			}
+		});
+		endpoint.start();
+		try {
+			Repository repository = new HTTPRepository(
+					Protocol.getRepositoryLocation(TestServer.SERVER_URL, TestServer.TEST_REPO_ID));
+			String query = "SELECT ?s WHERE { SERVICE <http://127.0.0.1:"
+					+ endpoint.getAddress().getPort() + "/sparql> { ?s ?p ?o } }";
+			try (RepositoryConnection connection = repository.getConnection()) {
+				assertThatThrownBy(() -> {
+					try (var result = connection.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
+						result.hasNext();
+					}
+				}).hasStackTraceContaining("SERVICE endpoint denied");
+			}
+			assertThat(requests).hasValue(0);
+		} finally {
+			endpoint.stop(0);
 		}
 	}
 }

@@ -19,13 +19,8 @@ import java.net.InetAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
-import java.net.UnknownHostException;
-import java.util.Arrays;
 import java.util.Date;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
-import java.util.Set;
 
 import org.apache.hc.client5.http.DnsResolver;
 import org.apache.hc.client5.http.classic.methods.HttpGet;
@@ -42,6 +37,7 @@ import org.apache.hc.core5.http.Header;
 import org.apache.hc.core5.http.HttpHeaders;
 import org.apache.hc.core5.http.HttpHost;
 import org.apache.hc.core5.util.Timeout;
+import org.eclipse.rdf4j.http.server.repository.ServerOutboundDestinationPolicy.Origin;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFLoaderSettings;
 import org.eclipse.rdf4j.repository.util.RemoteResourceOpener;
@@ -55,33 +51,21 @@ public final class ServerRemoteResourceOpener implements RemoteResourceOpener {
 	@Serial
 	private static final long serialVersionUID = 1L;
 
-	static final String ALLOWED_ORIGINS_PROPERTY = "rdf4j.server.remoteResourceAllowedOrigins";
+	static final String ALLOWED_ORIGINS_PROPERTY = ServerOutboundDestinationPolicy.ALLOWED_ORIGINS_PROPERTY;
 
 	static final ServerRemoteResourceOpener INSTANCE = new ServerRemoteResourceOpener(
-			System.getProperty(ALLOWED_ORIGINS_PROPERTY, ""));
+			ServerOutboundDestinationPolicy.INSTANCE);
 
 	private static final int MAX_REDIRECTS = 20;
 
-	private final Set<Origin> trustedOrigins;
+	private final ServerOutboundDestinationPolicy destinationPolicy;
 
 	ServerRemoteResourceOpener(String trustedOriginConfig) {
-		Set<Origin> origins = new HashSet<>();
-		for (String configuredOrigin : trustedOriginConfig.split(",")) {
-			if (!configuredOrigin.isBlank()) {
-				try {
-					URI parsed = new URI(configuredOrigin.trim());
-					String path = parsed.getRawPath();
-					if (parsed.getRawQuery() != null || parsed.getRawFragment() != null
-							|| path != null && !path.isEmpty() && !path.equals("/")) {
-						throw new IllegalArgumentException("Expected an HTTP(S) origin: " + configuredOrigin);
-					}
-					origins.add(origin(parsed));
-				} catch (URISyntaxException | IOException e) {
-					throw new IllegalArgumentException("Invalid trusted remote RDF origin: " + configuredOrigin, e);
-				}
-			}
-		}
-		this.trustedOrigins = Set.copyOf(origins);
+		this(new ServerOutboundDestinationPolicy(trustedOriginConfig));
+	}
+
+	private ServerRemoteResourceOpener(ServerOutboundDestinationPolicy destinationPolicy) {
+		this.destinationPolicy = destinationPolicy;
 	}
 
 	public static void configure(RepositoryConnection connection) {
@@ -96,7 +80,7 @@ public final class ServerRemoteResourceOpener implements RemoteResourceOpener {
 		int redirects = 0;
 		while (true) {
 			URI uri = toUri(current);
-			Origin requestedOrigin = origin(uri);
+			Origin requestedOrigin = ServerOutboundDestinationPolicy.origin(uri);
 			HttpResource response = openSingleHop(current, uri, requestedOrigin, accept, ifModifiedSince);
 			int code = response.getStatusCode();
 			if (isRedirect(code)) {
@@ -134,8 +118,7 @@ public final class ServerRemoteResourceOpener implements RemoteResourceOpener {
 
 	private HttpResource openSingleHop(URL url, URI uri, Origin origin, List<String> accept, long ifModifiedSince)
 			throws IOException {
-		boolean trusted = trustedOrigins.contains(origin);
-		DnsResolver dns = new PolicyDnsResolver(origin.host(), trusted);
+		DnsResolver dns = destinationPolicy.dnsResolver(origin);
 		var manager = PoolingHttpClientConnectionManagerBuilder.create()
 				.setDnsResolver(dns)
 				.setMaxConnTotal(1)
@@ -193,94 +176,8 @@ public final class ServerRemoteResourceOpener implements RemoteResourceOpener {
 		}
 	}
 
-	private static Origin origin(URI uri) throws IOException {
-		String scheme = uri.getScheme();
-		String host = uri.getHost();
-		if (scheme == null || host == null || uri.getRawUserInfo() != null || uri.getRawFragment() != null
-				|| !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) {
-			throw new IOException("Remote RDF resource denied: only credential-free HTTP(S) URLs are allowed");
-		}
-		int port = uri.getPort();
-		if (port == -1) {
-			port = scheme.equalsIgnoreCase("https") ? 443 : 80;
-		}
-		if (port < 1 || port > 65535) {
-			throw new IOException("Remote RDF resource denied: invalid port");
-		}
-		return new Origin(scheme.toLowerCase(Locale.ROOT), host.toLowerCase(Locale.ROOT), port);
-	}
-
-	private record Origin(String scheme, String host, int port) implements java.io.Serializable {
-
-		@Serial
-		private static final long serialVersionUID = 1L;
-	}
-
-	private static final class PolicyDnsResolver implements DnsResolver {
-
-		private final String expectedHost;
-
-		private final boolean trusted;
-
-		private PolicyDnsResolver(String expectedHost, boolean trusted) {
-			this.expectedHost = expectedHost;
-			this.trusted = trusted;
-		}
-
-		@Override
-		public InetAddress[] resolve(String host) throws UnknownHostException {
-			if (!expectedHost.equalsIgnoreCase(host)) {
-				throw new UnknownHostException("Remote RDF resource denied: unexpected DNS host");
-			}
-			InetAddress[] addresses = InetAddress.getAllByName(host);
-			if (addresses.length == 0 || !trusted && Arrays.stream(addresses).anyMatch(address -> !isPublic(address))) {
-				throw new UnknownHostException("Remote RDF resource denied: non-public destination");
-			}
-			return addresses;
-		}
-
-		@Override
-		public String resolveCanonicalHostname(String host) throws UnknownHostException {
-			if (!expectedHost.equalsIgnoreCase(host)) {
-				throw new UnknownHostException("Remote RDF resource denied: unexpected DNS host");
-			}
-			return host;
-		}
-	}
-
 	static boolean isPublic(InetAddress address) {
-		// Keep special-purpose ranges conservative; an administrator can explicitly trust a needed origin.
-		// https://www.iana.org/assignments/iana-ipv4-special-registry
-		// https://www.iana.org/assignments/iana-ipv6-special-registry
-		if (address.isAnyLocalAddress() || address.isLoopbackAddress() || address.isLinkLocalAddress()
-				|| address.isSiteLocalAddress() || address.isMulticastAddress()) {
-			return false;
-		}
-		byte[] bytes = address.getAddress();
-		if (bytes.length == 4) {
-			int a = Byte.toUnsignedInt(bytes[0]);
-			int b = Byte.toUnsignedInt(bytes[1]);
-			int c = Byte.toUnsignedInt(bytes[2]);
-			return a > 0 && a < 224
-					&& !(a == 100 && b >= 64 && b <= 127)
-					&& !(a == 169 && b == 254)
-					&& !(a == 192 && b == 0 && c == 0)
-					&& !(a == 192 && b == 0 && c == 2)
-					&& !(a == 192 && b == 88 && c == 99)
-					&& !(a == 198 && b >= 18 && b <= 19)
-					&& !(a == 198 && b == 51 && c == 100)
-					&& !(a == 203 && b == 0 && c == 113);
-		}
-		if (bytes.length == 16) {
-			int first = Byte.toUnsignedInt(bytes[0]);
-			int second = Byte.toUnsignedInt(bytes[1]);
-			return first >= 0x20 && first <= 0x3f
-					&& !(first == 0x20 && second == 0x01 && Byte.toUnsignedInt(bytes[2]) <= 0x01)
-					&& !(first == 0x20 && second == 0x01 && bytes[2] == 0x0d && (bytes[3] & 0xff) == 0xb8)
-					&& !(first == 0x20 && second == 0x02)
-					&& !(first == 0x3f && second == 0xff && (bytes[2] & 0xf0) == 0);
-		}
-		return false;
+		return ServerOutboundDestinationPolicy.isPublic(address);
 	}
 
 	private static final class HttpResource implements RemoteResource {
