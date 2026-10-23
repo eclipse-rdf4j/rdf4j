@@ -14,7 +14,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.FedXService;
@@ -24,7 +24,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.Service;
-import org.eclipse.rdf4j.repository.sparql.federation.CollectionIteration;
+import org.eclipse.rdf4j.query.impl.SpilledBindingSetIteration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -57,6 +57,8 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet>
 	protected Exception error = null;
 
 	private CountDownLatch latch = null;
+	private volatile ParallelServiceTask scheduledTask;
+	private boolean closing;
 
 	/**
 	 * @param service
@@ -77,15 +79,42 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet>
 	public void run() {
 
 		latch = new CountDownLatch(1);
+		ParallelServiceTask task = new ParallelServiceTask();
+		scheduledTask = task;
+		synchronized (this) {
+			if (closing) {
+				latch.countDown();
+				return;
+			}
+		}
 		ControlledWorkerScheduler<BindingSet> scheduler = federationContext.getManager().getUnionScheduler();
-		scheduler.schedule(new ParallelServiceTask());
+		scheduler.schedule(task);
+		boolean closeTask;
+		synchronized (this) {
+			closeTask = closing;
+		}
+		if (closeTask) {
+			task.cancel();
+		}
 	}
 
 	@Override
 	public void addResult(CloseableIteration<BindingSet> res) {
 
-		rightIter = res;
-		latch.countDown();
+		boolean closeResult;
+		synchronized (this) {
+			closeResult = closing;
+			if (!closeResult) {
+				rightIter = res;
+			}
+		}
+		try {
+			if (closeResult) {
+				res.close();
+			}
+		} finally {
+			latch.countDown();
+		}
 	}
 
 	@Override
@@ -123,7 +152,14 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet>
 			throw new QueryEvaluationException(error);
 		}
 
-		if (rightIter == null) {
+		CloseableIteration<BindingSet> current;
+		synchronized (this) {
+			if (closing) {
+				return null;
+			}
+			current = rightIter;
+		}
+		if (current == null) {
 			// block if not evaluated
 			try {
 				boolean completed = latch.await(getQueryInfo().getMaxRemainingTimeMS(), TimeUnit.MILLISECONDS);
@@ -135,6 +171,12 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet>
 				log.debug("Error while evaluating service expression. Thread got interrupted.");
 				error = e;
 			}
+			synchronized (this) {
+				if (closing) {
+					return null;
+				}
+				current = rightIter;
+			}
 		}
 
 		// check again for error
@@ -145,8 +187,13 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet>
 			throw new QueryEvaluationException(error);
 		}
 
-		if (rightIter.hasNext()) {
-			return rightIter.next();
+		if (current != null && current.hasNext()) {
+			synchronized (this) {
+				if (closing) {
+					return null;
+				}
+			}
+			return current.next();
 		}
 
 		return null;
@@ -154,7 +201,29 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet>
 
 	@Override
 	protected void handleClose() {
-
+		CloseableIteration<BindingSet> published;
+		synchronized (this) {
+			closing = true;
+			published = rightIter;
+			rightIter = null;
+		}
+		try {
+			ParallelServiceTask task = scheduledTask;
+			if (task != null) {
+				task.cancel();
+			}
+		} finally {
+			try {
+				if (published != null) {
+					published.close();
+				}
+			} finally {
+				CountDownLatch ready = latch;
+				if (ready != null) {
+					ready.countDown();
+				}
+			}
+		}
 	}
 
 	/**
@@ -163,16 +232,51 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet>
 	 * @author Andreas Schwarte
 	 */
 	private class ParallelServiceTask extends ParallelTaskBase<BindingSet> {
+		private final Object sourceLock = new Object();
+		private boolean closing;
+		private CloseableIteration<BindingSet> activeSource;
 
 		@Override
 		protected CloseableIteration<BindingSet> performTaskInternal() throws Exception {
-
-			// Note: in order two avoid deadlocks we consume the SERVICE result.
-			// This is basically required to avoid processing background tuple
-			// request (i.e. HTTP slots) in the correct order.
+			// Fully drain the SERVICE response before publishing it, releasing the remote HTTP slot in order.
 			Service service1 = service.getService();
-			try (CloseableIteration<BindingSet> evaluate = strategy.precompile(service1).evaluate(bindings)) {
-				return new CollectionIteration<>(Iterations.asList(evaluate));
+			CloseableIteration<BindingSet> evaluate = strategy.precompile(service1).evaluate(bindings);
+			boolean closeSource;
+			synchronized (sourceLock) {
+				closeSource = closing;
+				if (!closeSource) {
+					activeSource = evaluate;
+				}
+			}
+			if (closeSource) {
+				evaluate.close();
+				return new EmptyIteration<>();
+			}
+			try {
+				return SpilledBindingSetIteration.materialize(evaluate);
+			} finally {
+				synchronized (sourceLock) {
+					if (activeSource == evaluate) {
+						activeSource = null;
+					}
+				}
+			}
+		}
+
+		@Override
+		public void close() {
+			CloseableIteration<BindingSet> source;
+			synchronized (sourceLock) {
+				closing = true;
+				source = activeSource;
+				activeSource = null;
+			}
+			try {
+				if (source != null) {
+					source.close();
+				}
+			} finally {
+				super.close();
 			}
 		}
 

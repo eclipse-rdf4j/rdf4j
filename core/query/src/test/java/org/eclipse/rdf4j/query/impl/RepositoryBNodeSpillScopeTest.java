@@ -19,33 +19,55 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
-import java.util.Collections;
+import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.junit.jupiter.api.Test;
 
 /**
- * A spill serializes the same value again and again (a MapDB node is rewritten whenever it changes); the scope keeps
- * one entry per distinct negotiated origin, so its size follows the distinct values, not the number of writes.
+ * A spill serializes the same value again and again (a MapDB node is rewritten whenever it changes). Negotiated
+ * authority must survive replay without retaining one original object per distinct node.
  */
 class RepositoryBNodeSpillScopeTest {
 
 	@Test
-	void theSameOriginIsSpilledAsOneReferenceHoweverOftenItIsWritten() {
+	void uniqueNegotiatedNodesDoNotRetainPerNodeSpillMetadata() {
+		List<RepositoryBNode> nodes = new ArrayList<>();
+		for (int index = 0; index < 100_000; index++) {
+			nodes.add(RepositoryBNode.fromNegotiatedResult("wire-" + index, "raw-" + index, true));
+		}
+		System.gc();
+		long before = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+		try (var scope = new RemoteBNode.SpillScope()) {
+			for (RepositoryBNode node : nodes) {
+				scope.replace(node);
+			}
+			System.gc();
+			long retained = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory() - before;
+			assertThat(retained).isLessThan(8L * 1024 * 1024);
+			assertThat(nodes).hasSize(100_000);
+		}
+	}
+
+	@Test
+	void theSameOriginProducesEquivalentReferencesHoweverOftenItIsWritten() {
 		var scope = new RemoteBNode.SpillScope();
 		var node = RepositoryBNode.fromNegotiatedResult("wire", "raw", true);
 
 		Object first = scope.replace(node);
-		Set<Object> references = Collections.newSetFromMap(new IdentityHashMap<>());
+		Set<Object> references = new HashSet<>();
 		for (int write = 0; write < 10_000; write++) {
 			references.add(scope.replace(node));
 		}
 
 		assertThat(references).containsExactly(first);
-		assertThat(scope.resolve(first)).isSameAs(node);
+		RepositoryBNode restored = (RepositoryBNode) scope.resolve(first);
+		assertThat(restored).isEqualTo(node);
+		assertThat(restored.getRawID()).isEqualTo(node.getRawID());
+		assertThat(restored.isReference()).isEqualTo(node.isReference());
 	}
 
 	@Test
@@ -56,8 +78,11 @@ class RepositoryBNodeSpillScopeTest {
 
 		Object reference = scope.replace(original);
 
-		assertThat(scope.replace(copy)).isSameAs(reference);
-		assertThat(scope.resolve(scope.replace(copy))).isSameAs(original);
+		assertThat(scope.replace(copy)).isEqualTo(reference);
+		RepositoryBNode restored = (RepositoryBNode) scope.resolve(scope.replace(copy));
+		assertThat(restored).isEqualTo(original);
+		assertThat(restored.getRawID()).isEqualTo(original.getRawID());
+		assertThat(restored.isReference()).isEqualTo(original.isReference());
 	}
 
 	@Test
@@ -76,7 +101,7 @@ class RepositoryBNodeSpillScopeTest {
 		assertThat(references).hasSize(4);
 		for (var node : new RepositoryBNode[] { stored, transientCopy, otherRaw, otherWire }) {
 			RepositoryBNode resolved = (RepositoryBNode) scope.resolve(scope.replace(node));
-			assertThat(resolved).isSameAs(node);
+			assertThat(resolved).isEqualTo(node);
 			assertThat(resolved.isReference()).isEqualTo(node.isReference());
 			assertThat(resolved.getRawID()).isEqualTo(node.getRawID());
 		}
@@ -88,13 +113,13 @@ class RepositoryBNodeSpillScopeTest {
 		var node = RepositoryBNode.fromNegotiatedResult("wire", "raw", true);
 		Object reference = roundTrip(scope.replace(node));
 
-		assertThat(scope.resolve(reference)).isSameAs(node);
+		assertThat(scope.resolve(reference)).isEqualTo(node);
 
 		scope.close();
 		assertThatThrownBy(() -> scope.resolve(reference)).isInstanceOf(QueryEvaluationException.class)
 				.hasMessageContaining("unknown repository spill reference");
 		Object fresh = scope.replace(node);
-		assertThat(scope.resolve(fresh)).as("a closed scope starts over").isSameAs(node);
+		assertThat(scope.resolve(fresh)).as("a closed scope starts over").isEqualTo(node);
 	}
 
 	@Test

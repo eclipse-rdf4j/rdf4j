@@ -18,9 +18,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.IRI;
@@ -44,6 +42,7 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
+import org.eclipse.rdf4j.query.impl.SpilledBindingSetIteration;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLQueries;
 
 public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
@@ -171,8 +170,7 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 				CloseableIteration<BindingSet> checked = ExternalValuePreparation.checkReplayAfterCalls(results);
 				if (service.isSilent()) {
 					results = null;
-					var completed = Iterations.asList(checked);
-					return new CloseableIteratorIteration<>(completed.iterator());
+					return SpilledBindingSetIteration.materialize(checked);
 				}
 				results = null;
 				return checked;
@@ -182,7 +180,8 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 			}
 
 		} catch (RuntimeException e) {
-			if (QueryExecutionContext.isReplaySafepointFailure(e)) {
+			if (QueryExecutionContext.isReplaySafepointFailure(e)
+					|| e instanceof SpilledBindingSetIteration.SpoolFailure) {
 				throw e;
 			}
 			if (runtimeTelemetryEnabled) {

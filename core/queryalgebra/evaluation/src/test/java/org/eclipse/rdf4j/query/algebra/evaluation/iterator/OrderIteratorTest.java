@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.IOException;
+import java.io.ObjectOutputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
@@ -70,6 +71,52 @@ import org.junit.jupiter.api.Timeout;
  * @author james
  */
 public class OrderIteratorTest {
+	private static final AtomicLong SPILL_PROBE_BASELINE = new AtomicLong();
+	private static final AtomicLong SPILL_PROBE_RETAINED = new AtomicLong(-1);
+	private static final int SPILL_PROBE_LAST_ORDINAL = 99_999;
+
+	@Test
+	public void orderSpillDoesNotRetainEverySerializedRowHandle() {
+		List<BindingSet> rows = new ArrayList<>();
+		for (int ordinal = 0; ordinal <= SPILL_PROBE_LAST_ORDINAL + 1; ordinal++) {
+			ProbeBindingSet row = new ProbeBindingSet(ordinal);
+			row.addBinding("value", SimpleValueFactory.getInstance().createLiteral("value-" + ordinal));
+			rows.add(row);
+		}
+		System.gc();
+		SPILL_PROBE_BASELINE.set(usedHeap());
+		SPILL_PROBE_RETAINED.set(-1);
+		Comparator<BindingSet> byOrdinal = Comparator.comparingInt(row -> ((ProbeBindingSet) row).ordinal);
+		try (OrderIterator ordered = new OrderIterator(new IterationStub(rows.iterator()), byOrdinal,
+				Long.MAX_VALUE, false, SPILL_PROBE_LAST_ORDINAL + 1)) {
+			assertTrue(ordered.hasNext());
+		}
+		assertTrue(SPILL_PROBE_RETAINED.get() >= 0, "the final spill row must be serialized");
+		assertTrue(SPILL_PROBE_RETAINED.get() < 8L * 1024 * 1024,
+				"serialization retained " + SPILL_PROBE_RETAINED.get() + " bytes beyond the source rows");
+		assertEquals(SPILL_PROBE_LAST_ORDINAL + 2, rows.size());
+	}
+
+	private static long usedHeap() {
+		return Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+	}
+
+	private static final class ProbeBindingSet extends MapBindingSet {
+		private static final long serialVersionUID = 1L;
+		private final int ordinal;
+
+		private ProbeBindingSet(int ordinal) {
+			this.ordinal = ordinal;
+		}
+
+		private void writeObject(ObjectOutputStream output) throws IOException {
+			if (ordinal == SPILL_PROBE_LAST_ORDINAL) {
+				System.gc();
+				SPILL_PROBE_RETAINED.set(usedHeap() - SPILL_PROBE_BASELINE.get());
+			}
+			output.defaultWriteObject();
+		}
+	}
 
 	private static class IterationStub extends AbstractCloseableIteration<BindingSet> {
 

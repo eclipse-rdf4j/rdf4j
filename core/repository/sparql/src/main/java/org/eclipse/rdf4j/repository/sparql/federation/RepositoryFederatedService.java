@@ -24,10 +24,8 @@ import java.util.concurrent.Future;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
@@ -54,6 +52,7 @@ import org.eclipse.rdf4j.query.impl.BlankNodeReferences;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
+import org.eclipse.rdf4j.query.impl.SpilledBindingSetIteration;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLQueries;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -306,7 +305,8 @@ public class RepositoryFederatedService implements FederatedService {
 			return finishSilentResponse(service, owned);
 		} catch (RuntimeException failure) {
 			closeFailedResponse(result, useFreshConnection ? conn : null, failure);
-			if (service.isSilent() && !QueryExecutionContext.isReplaySafepointFailure(failure)) {
+			if (service.isSilent() && !QueryExecutionContext.isReplaySafepointFailure(failure)
+					&& !(failure instanceof SpilledBindingSetIteration.SpoolFailure)) {
 				return new SingletonIteration<>(original);
 			}
 			throw failure;
@@ -373,7 +373,7 @@ public class RepositoryFederatedService implements FederatedService {
 
 	private static CloseableIteration<BindingSet> finishSilentResponse(Service service,
 			CloseableIteration<BindingSet> result) {
-		return service.isSilent() ? new CloseableIteratorIteration<>(Iterations.asList(result).iterator()) : result;
+		return service.isSilent() ? SpilledBindingSetIteration.materialize(result) : result;
 	}
 
 	private static void closeFailedResponse(CloseableIteration<BindingSet> result, RepositoryConnection connection,

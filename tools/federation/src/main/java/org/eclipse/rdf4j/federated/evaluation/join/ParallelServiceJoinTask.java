@@ -13,13 +13,13 @@ package org.eclipse.rdf4j.federated.evaluation.join;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.federated.algebra.FedXService;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelExecutor;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTaskBase;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.repository.sparql.federation.CollectionIteration;
+import org.eclipse.rdf4j.query.impl.SpilledBindingSetIteration;
 
 /**
  * A task implementation representing the evaluation of a SERVICE which is to be evaluated using block input. See
@@ -33,6 +33,9 @@ public class ParallelServiceJoinTask extends ParallelTaskBase<BindingSet> {
 	protected final FedXService expr;
 	protected final List<BindingSet> bindings;
 	protected final ParallelExecutor<BindingSet> joinControl;
+	private final Object sourceLock = new Object();
+	private boolean closing;
+	private CloseableIteration<BindingSet> activeSource;
 
 	public ParallelServiceJoinTask(ParallelExecutor<BindingSet> joinControl, FederationEvaluationStrategy strategy,
 			FedXService expr, List<BindingSet> bindings) {
@@ -44,12 +47,44 @@ public class ParallelServiceJoinTask extends ParallelTaskBase<BindingSet> {
 
 	@Override
 	protected CloseableIteration<BindingSet> performTaskInternal() throws Exception {
+		// Fully drain the SERVICE response before publishing it, releasing the remote HTTP slot in order.
+		CloseableIteration<BindingSet> source = strategy.evaluateService(expr, bindings);
+		boolean closeSource;
+		synchronized (sourceLock) {
+			closeSource = closing;
+			if (!closeSource) {
+				activeSource = source;
+			}
+		}
+		if (closeSource) {
+			source.close();
+			return new EmptyIteration<>();
+		}
+		try {
+			return SpilledBindingSetIteration.materialize(source);
+		} finally {
+			synchronized (sourceLock) {
+				if (activeSource == source) {
+					activeSource = null;
+				}
+			}
+		}
+	}
 
-		// Note: in order two avoid deadlocks we consume the SERVICE result.
-		// This is basically required to avoid processing background tuple
-		// request (i.e. HTTP slots) in the correct order.
-		try (var iter = strategy.evaluateService(expr, bindings)) {
-			return new CollectionIteration<>(Iterations.asList(iter));
+	@Override
+	public void close() {
+		CloseableIteration<BindingSet> source;
+		synchronized (sourceLock) {
+			closing = true;
+			source = activeSource;
+			activeSource = null;
+		}
+		try {
+			if (source != null) {
+				source.close();
+			}
+		} finally {
+			super.close();
 		}
 	}
 
