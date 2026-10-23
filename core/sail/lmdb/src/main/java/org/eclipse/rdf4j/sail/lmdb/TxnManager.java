@@ -755,10 +755,10 @@ final class TxnManager {
 	}
 
 	private long acquireReadBarrier(QueryExecutionDeadline deadline) throws InterruptedException {
-		checkQueryDeadline(deadline);
 		if (deadline == null) {
 			return lockManager.readLock();
 		}
+		// The timed acquisition's budget is also its authoritative pre-admission deadline check.
 		long remainingMillis = deadline.remainingMillis();
 		if (remainingMillis <= 0L) {
 			throw queryInterrupted();

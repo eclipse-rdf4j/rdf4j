@@ -4215,9 +4215,6 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			gateHeld = true;
 			boolean capturedIdentity = false;
 			try {
-				if (deadline != null && deadline.remainingMillis() <= 0L) {
-					throw new QueryInterruptedException("Query evaluation took too long");
-				}
 				while (true) {
 					checkValueScopeDeadline(deadline);
 					captured = requested == null ? currentReadRevision(LmdbValue.UNKNOWN_ID) : requested;
