@@ -18,11 +18,13 @@ import static org.eclipse.rdf4j.model.util.Values.getValueFactory;
 import static org.eclipse.rdf4j.model.util.Values.iri;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.HttpResponse.response;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.net.ProtocolException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -53,6 +55,7 @@ import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFParseException;
+import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -166,6 +169,36 @@ public class RDFLoaderTest {
 						RDF.TYPE,
 						FOAF.PERSON, null));
 		verify(rdfHandler).endRDF();
+	}
+
+	@Test
+	void configuredOpenerClosesResponseAfterParseFailure() throws Exception {
+		ParserConfig config = new ParserConfig();
+		RemoteResourceOpener.RemoteResource resource = mock(RemoteResourceOpener.RemoteResource.class);
+		when(resource.getFinalUrl()).thenReturn(new URL("https://example.org/source.ttl"));
+		when(resource.getInputStream())
+				.thenReturn(new ByteArrayInputStream("not valid Turtle".getBytes(StandardCharsets.UTF_8)));
+		config.set(RDFLoaderSettings.REMOTE_RESOURCE_OPENER, (url, accept, since) -> resource);
+		RDFLoader loader = new RDFLoader(config, getValueFactory());
+
+		assertThatThrownBy(() -> loader.load(new URL("https://example.org/source.ttl"), null, RDFFormat.TURTLE,
+				mock(RDFHandler.class))).isInstanceOf(RDFParseException.class);
+		verify(resource).close();
+	}
+
+	@Test
+	void configuredOpenerClosesResponseAfterFormatDetectionFailure() throws Exception {
+		ParserConfig config = new ParserConfig();
+		RemoteResourceOpener.RemoteResource resource = mock(RemoteResourceOpener.RemoteResource.class);
+		when(resource.getFinalUrl()).thenReturn(new URL("https://example.org/source"));
+		when(resource.getContentType()).thenReturn("application/octet-stream");
+		when(resource.getInputStream()).thenReturn(InputStream.nullInputStream());
+		config.set(RDFLoaderSettings.REMOTE_RESOURCE_OPENER, (url, accept, since) -> resource);
+		RDFLoader loader = new RDFLoader(config, getValueFactory());
+
+		assertThatThrownBy(() -> loader.load(new URL("https://example.org/source"), null, null,
+				mock(RDFHandler.class))).isInstanceOf(UnsupportedRDFormatException.class);
+		verify(resource).close();
 	}
 
 	@Test
