@@ -17,7 +17,10 @@ An RDF4J Server HTTP client must not make the server query a loopback or private
 - [done] trace FedX snapshot resolver path
 - [done] fix snapshot resolver per connection
 - [done] rerun affected suites and formatting
-- [in_progress] review candidate before publication
+- [done] review candidate before publication (2026-10-23 04:12Z)
+- [done] publish stacked draft PR 6233 (2026-10-23 04:18Z)
+- [done] repair exact-head integration fixture (2026-10-23 05:31Z)
+- [in_progress] verify and push scoped follow-up
 
 ## Surprises & Discoveries
 
@@ -83,6 +86,10 @@ Revision note, 2026-10-23 03:56Z: Parent review found that a captured FedX graph
 Revision note, 2026-10-23 04:02Z: `TripleSourceBase` now passes the query strategy's resolver into `RemoteGraphSnapshot.evaluate`. The focused SPARQL-member Surefire execution passes 1/1; NativeStore and HTTPRepository-member Surefire executions skip with the existing `assumeSparqlEndpoint()` helper because neither creates this snapshot. Log: `.mvnf/workspaces/service-egress/logs/20261023T040046.433378Z-99005-41550b5f/verify.log`. Full affected suites and final formatting are pending.
 
 Revision note, 2026-10-23 04:11Z: Final affected verification is green: FedX module 600 tests, zero failures/errors, 53 skips (`.mvnf/workspaces/service-egress/logs/20261023T040231.468321Z-19391-b8c918c1/verify.log`); Server Spring 251/0/0 (`20261023T040730.062295Z-78305-45279395/verify.log`); live `ServerOutboundResourceIT` 3/0/0 (`20261023T040903.664632Z-97634-a1cdd860/verify.log`). Copyright check passed; non-quiet formatter `format-service-snapshot.log` ends in `BUILD SUCCESS`; `git diff --check` is clean. Publication remains held for parent candidate review.
+
+Revision note, 2026-10-23 05:08Z: Draft PR #6233 was published and attached at exact head `827a0b464cba82500e1ae948a93b2873f0360aaa`. The integration job failed two existing `LmdbServiceReplayIT` cases at the loopback SERVICE gate. Local focused Failsafe reproduced both failures before edits; `red-lmdb-service-ci-evidence.txt` preserves the report. The fixture requires explicit exact-origin trust for its own two ephemeral loopback SERVICE listeners; production denial remains the intended default.
+
+Revision note, 2026-10-23 05:31Z: The fixture now starts both loopback SERVICE listeners before the Server policy reads the exact allowed-origin property and restores the previous setting after the class. With this fixed, the triple-growth case exposed a pre-existing fixture sizing error: the HTTP buffered-write admission conservatively projects about 109 MiB of value-map demand for 30k statements before dictionary deduplication, exceeding the original 128 MiB map at its 10% threshold. `20261023T052347.795174Z-37128-3875d914/verify.log` preserves the unchanged assertion failure and growth metrics. A 2 GiB virtual value map keeps that advisory demand below the threshold without weakening the triple-only growth assertion. The exact-code full `LmdbServiceReplayIT` passed 2/2 in `.mvnf/workspaces/service-egress/logs/20261023T052948.706192Z-60732-cb932b25/verify.log`.
 
 ## Interfaces and Dependencies
 
