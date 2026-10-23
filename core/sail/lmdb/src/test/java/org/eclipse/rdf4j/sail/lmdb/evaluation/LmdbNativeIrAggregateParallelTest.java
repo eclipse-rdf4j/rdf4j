@@ -349,6 +349,31 @@ class LmdbNativeIrAggregateParallelTest {
 	}
 
 	@Test
+	void unprojectedWitnessInputsReachEachActualWorkerInBothVersions() {
+		for (String version : List.of("1.1", "1.2")) {
+			for (String body : List.of("?m <" + EX + "q2> ?probe",
+					"{ ?m <" + EX + "q2> ?probe } UNION { VALUES ?probe { -1 } }")) {
+				String query = "VERSION \"" + version + "\" SELECT (COUNT(?v) AS ?c) WHERE { ?s <" + EX
+						+ "p> ?m . ?m <" + EX + "q> ?v . FILTER EXISTS { SELECT ?probe WHERE { " + body
+						+ " FILTER(?probe = ?v) } } }";
+				System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+				assertThat(count(query, null)).as("the independent evaluator must preserve the witness inputs")
+						.isEqualTo(600L);
+				long workersBefore = NativeSubqueryPlan.WORKER_BINDINGS.get();
+				try {
+					assertAllExecutionRungs(query);
+				} catch (QueryEvaluationException failure) {
+					throw new AssertionError("The forced worker-local witness query failed:\n" + query + "\n"
+							+ explain(query), failure);
+				}
+				assertThat(NativeSubqueryPlan.WORKER_BINDINGS.get())
+						.as("both parallel rungs must bind worker-local lexical witness recipes")
+						.isGreaterThan(workersBefore);
+			}
+		}
+	}
+
+	@Test
 	void lateralLexicalWitnessesRebindGraphAndNullableEntryDomainsInEveryWorkerRung() {
 		long subqueriesBefore = NativeSubqueryPlan.WORKER_BINDINGS.get();
 		String query = "SELECT (COUNT(?v) AS ?c) WHERE { ?s <" + EX + "p> ?m . ?m <" + EX

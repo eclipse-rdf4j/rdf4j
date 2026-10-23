@@ -1969,7 +1969,7 @@ final class LmdbNativeParallelKernelAggregate {
 	 * capability/encounter-order decline returns to arbitration, while every cancellation, timeout, source failure, and
 	 * programming error reaches the caller after all workers have joined.
 	 */
-	private static List<BindingSet> recoverOrRethrow(Throwable problem) {
+	static List<BindingSet> recoverOrRethrow(Throwable problem) {
 		LmdbNativeJaninoCodegen.rethrowValidationFailure(problem);
 		// Control signals can carry a real cleanup failure in their suppressed chain. A normal worker failure may
 		// itself

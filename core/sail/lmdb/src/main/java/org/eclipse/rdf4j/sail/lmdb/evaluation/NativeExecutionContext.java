@@ -65,30 +65,108 @@ import org.eclipse.rdf4j.sail.lmdb.model.RdfTermKey;
  */
 @Experimental
 final class NativeExecutionContext implements AutoCloseable {
-	private static final WorkerContext NO_WORKER_CONTEXT = new WorkerContext(null);
+	private static final ThreadLocal<NativeExecutionContext[]> BORROWED_PRODUCER_OWNERS = new ThreadLocal<>();
+	private static final WorkerContext NO_WORKER_CONTEXT = new WorkerContext(null, null);
 	private static final QueryExecutionContext.Activation NO_WORKER_ACTIVATION = () -> {
 	};
 
 	/** Captures ownership before dispatch; capture holds no worker resources if submission is rejected. */
 	static WorkerContext captureWorkerContext() {
 		QueryExecutionContext.ReplayContext context = QueryExecutionContext.captureReplayContext();
-		if (context == null) {
+		NativeExecutionContext[] borrowed = BORROWED_PRODUCER_OWNERS.get();
+		if (context == null && borrowed == null) {
 			return NO_WORKER_CONTEXT;
 		}
-		context.checkActive();
-		return new WorkerContext(context);
+		if (context != null) {
+			context.checkActive();
+		}
+		return new WorkerContext(context, borrowed);
 	}
 
 	static final class WorkerContext {
 		private final QueryExecutionContext.ReplayContext context;
+		private final NativeExecutionContext[] borrowed;
 
-		private WorkerContext(QueryExecutionContext.ReplayContext context) {
+		private WorkerContext(QueryExecutionContext.ReplayContext context, NativeExecutionContext[] borrowed) {
 			this.context = context;
+			this.borrowed = borrowed;
 		}
 
 		/** Called inside the worker's existing failure and source-cleanup guards. */
 		QueryExecutionContext.Activation activate() {
-			return context == null ? NO_WORKER_ACTIVATION : context.activate();
+			ProducerScope producer = ProducerScope.enter(borrowed);
+			try {
+				QueryExecutionContext.Activation activation = context == null ? NO_WORKER_ACTIVATION
+						: context.activate();
+				if (producer == null) {
+					return activation;
+				}
+				return () -> {
+					Throwable failure = KernelRuntime.closeResource(activation, null);
+					failure = KernelRuntime.closeResource(producer, failure);
+					if (failure != null) {
+						NativeContextClosingIteration.throwFailure(failure);
+					}
+				};
+			} catch (RuntimeException | Error failure) {
+				KernelRuntime.closeResource(producer, failure);
+				throw failure;
+			}
+		}
+	}
+
+	/**
+	 * A cached producer is already owned by its cache. Its internal readers borrow that cache owner's immutable
+	 * dependency closure, otherwise an idle nested reader can prevent the very cleanup that must close it. A distinct
+	 * invocation or worker authority remains retained normally. External readers and active advances never borrow.
+	 */
+	ProducerScope borrowCachedProducer() {
+		return ProducerScope.enter(leaseOwners());
+	}
+
+	static final class ProducerScope implements AutoCloseable {
+		private final NativeExecutionContext[] previous;
+		private boolean closed;
+
+		private ProducerScope(NativeExecutionContext[] previous) {
+			this.previous = previous;
+		}
+
+		private static ProducerScope enter(NativeExecutionContext[] owners) {
+			if (owners == null || owners.length == 0) {
+				return null;
+			}
+			NativeExecutionContext[] previous = BORROWED_PRODUCER_OWNERS.get();
+			NativeExecutionContext[] installed = owners;
+			if (previous != null) {
+				ArrayList<NativeExecutionContext> merged = new ArrayList<>();
+				for (NativeExecutionContext owner : previous) {
+					merged.add(owner);
+				}
+				for (NativeExecutionContext owner : owners) {
+					if (!merged.contains(owner)) {
+						merged.add(owner);
+					}
+				}
+				if (merged.size() == previous.length) {
+					return null;
+				}
+				installed = merged.toArray(NativeExecutionContext[]::new);
+			}
+			BORROWED_PRODUCER_OWNERS.set(installed);
+			return new ProducerScope(previous);
+		}
+
+		@Override
+		public void close() {
+			if (!closed) {
+				closed = true;
+				if (previous == null) {
+					BORROWED_PRODUCER_OWNERS.remove();
+				} else {
+					BORROWED_PRODUCER_OWNERS.set(previous);
+				}
+			}
 		}
 	}
 
@@ -932,6 +1010,20 @@ final class NativeExecutionContext implements AutoCloseable {
 
 	private Lease retainLease(boolean active) {
 		NativeExecutionContext[] owners = leaseOwners();
+		NativeExecutionContext[] borrowed = active ? null : BORROWED_PRODUCER_OWNERS.get();
+		if (borrowed != null) {
+			ArrayList<NativeExecutionContext> retained = new ArrayList<>();
+			for (NativeExecutionContext owner : owners) {
+				boolean internal = false;
+				for (NativeExecutionContext ancestor : borrowed) {
+					internal |= owner == ancestor;
+				}
+				if (!internal) {
+					retained.add(owner);
+				}
+			}
+			owners = retained.toArray(NativeExecutionContext[]::new);
+		}
 		int acquired = 0;
 		try {
 			for (NativeExecutionContext owner : owners) {

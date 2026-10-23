@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ProjectionQueryEvaluationStep;
 import org.eclipse.rdf4j.query.explanation.QueryExplanationContext;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
  * Evaluation-scoped native lexical boundary. Ordinary subqueries and non-correlated variable-scope-changing graph
@@ -272,6 +273,18 @@ final class NativeSubqueryPlan implements SlotPlan {
 	}
 
 	private NativeLazyResultReplay evaluateOnce(RowState row, BindingSet input) {
+		NativeExecutionContext owner = executionContextOrNull(row);
+		NativeLazyResultReplay replay = null;
+		try (NativeExecutionContext.Lease opening = owner == null ? null : owner.retainActiveLease();
+				NativeExecutionContext.ProducerScope ignored = owner == null ? null : owner.borrowCachedProducer()) {
+			return replay = prepareReplay(row, input, owner);
+		} catch (RuntimeException | Error failure) {
+			KernelRuntime.closeResource(replay, failure);
+			throw failure;
+		}
+	}
+
+	private NativeLazyResultReplay prepareReplay(RowState row, BindingSet input, NativeExecutionContext owner) {
 		row.cancellation.check();
 		QueryEvaluationStep prepared = preparedStep(row);
 		BindingSet bodyInput = NativeEntryBindings.preserve(input, projection == null ? input
@@ -283,12 +296,15 @@ final class NativeSubqueryPlan implements SlotPlan {
 		NativeResultCursor scoped = new NativeResultCursor() {
 			@Override
 			public NativeResultRow next() {
-				return inLexicalScope(source, cancellation, () -> {
-					cancellation.check();
-					NativeResultRow next = delegate.next();
-					cancellation.check();
-					return next;
-				});
+				try (NativeExecutionContext.ProducerScope ignored = owner == null ? null
+						: owner.borrowCachedProducer()) {
+					return inLexicalScope(source, cancellation, () -> {
+						cancellation.check();
+						NativeResultRow next = delegate.next();
+						cancellation.check();
+						return next;
+					});
+				}
 			}
 
 			@Override
@@ -308,13 +324,16 @@ final class NativeSubqueryPlan implements SlotPlan {
 
 			@Override
 			public void close() {
-				inLexicalScope(source, cancellation, () -> {
-					delegate.close();
-					return null;
-				});
+				try (NativeExecutionContext.ProducerScope ignored = owner == null ? null
+						: owner.borrowCachedProducer()) {
+					inLexicalScope(source, cancellation, () -> {
+						delegate.close();
+						return null;
+					});
+				}
 			}
 		};
-		return new NativeLazyResultReplay(outNames, executionContextOrNull(row), cancellation, scoped);
+		return new NativeLazyResultReplay(outNames, owner, cancellation, scoped);
 	}
 
 	private QueryEvaluationStep preparedStep(RowState row) {

@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.CompareAll;
@@ -48,8 +49,10 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.helpers.SlowQueryContextHolder;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -102,12 +105,16 @@ class LmdbNativeLegacyScalarExpressionTest {
 	@Test
 	void repeatedScalarComparisonsPreserveUnforcedNativeSemantics() {
 		for (int round = 0; round < 128; round++) {
-			compareSubqueryOperatorsUseNativeScalarPlan();
+			compareSubqueryOperators(false);
 		}
 	}
 
 	@Test
 	void compareSubqueryOperatorsUseNativeScalarPlan() {
+		compareSubqueryOperators(true);
+	}
+
+	private void compareSubqueryOperators(boolean forceNestedLoop) {
 		long evaluationsBefore = NativeScalarSubqueryValueEvaluator.EVALUATIONS.get();
 		Extension extension = scalarSubqueryExtension();
 
@@ -130,9 +137,12 @@ class LmdbNativeLegacyScalarExpressionTest {
 							: traceScalarEvaluator(call.getArgument(0, ValueExpr.class)
 									.getSignature(), actual, scalarInvocations);
 				})) {
-			nativeRows = evaluate(nativeExpression, true);
+			nativeRows = evaluate(nativeExpression, true,
+					forceNestedLoop ? LmdbNativeAttemptMetrics.PATH_NESTED_LOOP : null);
 		}
 		long nativeEvaluations = NativeScalarSubqueryValueEvaluator.EVALUATIONS.get() - nativeEvaluationsBefore;
+		long totalEvaluations = NativeScalarSubqueryValueEvaluator.EVALUATIONS.get() - evaluationsBefore;
+		String nativeExecutionPath = nativeExpression.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH);
 		System.out.println("Native scalar invocation trace: " + scalarInvocations);
 		assertThat(nativeRows).containsExactlyInAnyOrderElementsOf(genericRows);
 		assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get())
@@ -141,27 +151,99 @@ class LmdbNativeLegacyScalarExpressionTest {
 		assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get())
 				.as("legacy scalar expressions must not force a generic root host")
 				.isEqualTo(hostedBefore);
-		assertThat(NativeScalarSubqueryValueEvaluator.EVALUATIONS.get() - evaluationsBefore)
-				.as(() -> "native scalar evaluator count must remain 3; generic delta=" + genericEvaluations
-						+ " native delta=" + nativeEvaluations
-						+ " invocations=" + scalarInvocations
-						+ " genericRows=" + genericRows + " nativeRows=" + nativeRows
-						+ "\ngeneric execution path="
-						+ genericExpression.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH)
-						+ " declines=" + genericExpression.getStringMetricActual(LmdbNativeExplain.STRATEGY_DECLINES)
-						+ " proposals="
-						+ genericExpression.getStringMetricActual(LmdbNativeExplain.STRATEGY_PROPOSAL_COSTS)
-						+ " adaptive="
-						+ genericExpression.getStringMetricActual(LmdbNativeExplain.ADAPTIVE_COST_DECISION)
-						+ "\nnative execution path="
-						+ nativeExpression.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH)
-						+ " declines=" + nativeExpression.getStringMetricActual(LmdbNativeExplain.STRATEGY_DECLINES)
-						+ " proposals="
-						+ nativeExpression.getStringMetricActual(LmdbNativeExplain.STRATEGY_PROPOSAL_COSTS)
-						+ " adaptive="
-						+ nativeExpression.getStringMetricActual(LmdbNativeExplain.ADAPTIVE_COST_DECISION))
-				.isEqualTo(3L);
 		assertThat(genericEvaluations).as("the generic oracle must not use native scalar evaluators").isZero();
+		if (forceNestedLoop) {
+			assertThat(totalEvaluations)
+					.as(() -> "forced direct native execution must evaluate each scalar once: " + scalarInvocations)
+					.isEqualTo(3L);
+			assertThat(nativeEvaluations).isEqualTo(3L);
+			assertThat(scalarInvocations).extracting(invocation -> invocation.operator)
+					.containsExactly("CompareAny (>)", "CompareAll (<)", "In");
+			assertThat(scalarInvocations).allSatisfy(invocation -> assertThat(invocation.probe).isNull());
+			if (nativeExecutionPath != null) {
+				assertThat(nativeExecutionPath)
+						.as("reported execution path for forced native evaluation")
+						.contains(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+			}
+		} else {
+			assertThat(nativeEvaluations)
+					.as(() -> "native evaluator metric must match captured invocation count: " + scalarInvocations)
+					.isEqualTo((long) scalarInvocations.size());
+			assertThat(totalEvaluations)
+					.as(() -> "unforced AUTO total must match captured invocation count: " + scalarInvocations)
+					.isEqualTo((long) scalarInvocations.size());
+			assertAutoScalarInvocationSequences(scalarInvocations);
+		}
+	}
+
+	private static void assertAutoScalarInvocationSequences(List<ScalarInvocation> invocations) {
+		List<String> expectedOperators = List.of("CompareAny (>)", "CompareAll (<)", "In");
+		List<List<ScalarInvocation>> owners = new ArrayList<>();
+		for (ScalarInvocation invocation : invocations) {
+			List<ScalarInvocation> owner = null;
+			for (List<ScalarInvocation> candidate : owners) {
+				ScalarInvocation first = candidate.get(0);
+				if (first.probe == invocation.probe && first.executionContext == invocation.executionContext) {
+					owner = candidate;
+					break;
+				}
+			}
+			if (owner == null) {
+				owner = new ArrayList<>();
+				owners.add(owner);
+			}
+			owner.add(invocation);
+		}
+
+		assertThat(owners).as("AUTO execution must have captured native scalar owners").isNotEmpty();
+		boolean successfulCompleteOwner = false;
+		for (List<ScalarInvocation> owner : owners) {
+			ScalarInvocation first = owner.get(0);
+			assertThat(owner)
+					.as(() -> "one ordered scalar prefix per probe/context owner: " + owner)
+					.hasSizeBetween(1, expectedOperators.size());
+			for (int index = 0; index < owner.size(); index++) {
+				ScalarInvocation invocation = owner.get(index);
+				assertThat(invocation.operator).isEqualTo(expectedOperators.get(index));
+				assertThat(invocation.trippedBefore)
+						.as("a scalar must not continue under an already-tripped probe: " + owner)
+						.isFalse();
+				if (invocation.failure != null) {
+					assertThat(invocation.probe)
+							.as("only a probe-owned cancellation may stop a scalar call: " + owner)
+							.isNotNull();
+					assertThat(invocation.failure)
+							.as("an AUTO probe may stop only through its cancellation/deadline control: " + owner)
+							.isInstanceOfAny(KernelCancelledException.class, LmdbNativeProbeDeadlineExceeded.class);
+				}
+				boolean terminal = invocation.failure != null || invocation.trippedAfter
+						|| invocation.clockExpiredAfter;
+				if (terminal) {
+					assertThat(index)
+							.as("a partial native attempt must be the final call for its probe/context owner: " + owner)
+							.isEqualTo(owner.size() - 1);
+				}
+			}
+			if (owner.size() == expectedOperators.size()
+					&& owner.stream()
+							.allMatch(invocation -> invocation.failure == null
+									&& !invocation.trippedAfter && !invocation.clockExpiredAfter
+									&& "returned".equals(invocation.termination))) {
+				successfulCompleteOwner = true;
+			}
+			if (owner.size() < expectedOperators.size()) {
+				ScalarInvocation last = owner.get(owner.size() - 1);
+				assertThat(first.probe)
+						.as("only a deadline-owned probe may stop before the complete scalar sequence: " + owner)
+						.isNotNull();
+				assertThat(last.failure != null || last.trippedAfter || last.clockExpiredAfter)
+						.as("a partial probe must terminate through its cancellation/deadline control: " + owner)
+						.isTrue();
+			}
+		}
+		assertThat(successfulCompleteOwner)
+				.as("AUTO must include at least one complete successful scalar owner")
+				.isTrue();
 	}
 
 	@Test
@@ -304,8 +386,12 @@ class LmdbNativeLegacyScalarExpressionTest {
 					return outcome;
 				} catch (RuntimeException | Error failure) {
 					invocation.termination = failure.getClass().getName();
+					invocation.failure = failure;
 					throw failure;
 				} finally {
+					invocation.exitNanoTime = System.nanoTime();
+					invocation.clockExpiredAfter = invocation.probe != null
+							&& ScalarInvocation.clockExpired(invocation.exitNanoTime, invocation.deadlineNanoTime);
 					invocation.trippedAfter = invocation.probe != null && invocation.probe.tripped();
 				}
 			}
@@ -319,20 +405,33 @@ class LmdbNativeLegacyScalarExpressionTest {
 		private final NativeExecutionContext executionContext;
 		private final String thread = Thread.currentThread().getName() + ":" + Thread.currentThread().threadId();
 		private final boolean trippedBefore = probe != null && probe.tripped();
+		private final long entryNanoTime;
+		private final boolean clockExpiredBefore;
+		private long exitNanoTime;
+		private boolean clockExpiredAfter;
 		private String outcome = "entered";
 		private String termination = "returned";
+		private Throwable failure;
 		private boolean trippedAfter;
 
 		private ScalarInvocation(String operator, NativeExecutionContext executionContext) {
 			this.operator = operator;
 			this.executionContext = executionContext;
+			entryNanoTime = System.nanoTime();
+			clockExpiredBefore = probe != null && clockExpired(entryNanoTime, deadlineNanoTime);
 		}
 
 		@Override
 		public String toString() {
 			return "{operator=" + operator + ", probe=" + identity(probe) + ", deadline=" + deadlineNanoTime
+					+ ", clock=" + entryNanoTime + ".." + exitNanoTime + ", clockExpired=" + clockExpiredBefore + "->"
+					+ clockExpiredAfter + ", exception=" + identity(failure) + ":" + failure
 					+ ", context=" + identity(executionContext) + ", thread=" + thread + ", tripped=" + trippedBefore
 					+ "->" + trippedAfter + ", outcome=" + outcome + ", termination=" + termination + "}";
+		}
+
+		private static boolean clockExpired(long now, long deadline) {
+			return now - deadline >= 0L;
 		}
 
 		private static String identity(Object value) {
@@ -376,7 +475,13 @@ class LmdbNativeLegacyScalarExpressionTest {
 	}
 
 	private List<String> evaluate(TupleExpr expression, boolean nativeEnabled) {
+		return evaluate(expression, nativeEnabled, null);
+	}
+
+	private List<String> evaluate(TupleExpr expression, boolean nativeEnabled, String forcedStrategy) {
 		String previous = System.getProperty(NATIVE_FLAG);
+		SlowQueryContextHolder.SlowQueryContext previousContext = SlowQueryContextHolder.set(
+				expression.getSignature(), Query.QueryType.TUPLE, forcedStrategy);
 		System.setProperty(NATIVE_FLAG, Boolean.toString(nativeEnabled));
 		try (NotifyingSailConnection connection = store.getConnection();
 				CloseableIteration<? extends BindingSet> rows = connection.evaluate(expression, null,
@@ -396,6 +501,7 @@ class LmdbNativeLegacyScalarExpressionTest {
 			} else {
 				System.setProperty(NATIVE_FLAG, previous);
 			}
+			SlowQueryContextHolder.restore(previousContext);
 		}
 	}
 }

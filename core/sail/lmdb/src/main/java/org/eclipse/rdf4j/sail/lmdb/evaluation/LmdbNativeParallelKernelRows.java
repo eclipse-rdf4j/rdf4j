@@ -408,7 +408,8 @@ final class LmdbNativeParallelKernelRows {
 			if (hashLedger != null) {
 				hashLedger.close();
 			}
-			return EmptyCursor.INSTANCE;
+			row.cancellation.check();
+			throw new AssertionError("published query cancellation did not throw");
 		}
 		if (first == null && failure.get() != null) {
 			abandon(sources, reservation, tasks, cancelled, interrupted);
@@ -427,9 +428,7 @@ final class LmdbNativeParallelKernelRows {
 				}
 				throw new QueryEvaluationException(problem);
 			}
-			if (Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
-				System.err.println("[ir-kernel-parallel] fallback: " + problem);
-			}
+			LmdbNativeParallelKernelAggregate.recoverOrRethrow(problem);
 			return null;
 		}
 		PARALLEL_RUNS.incrementAndGet();
@@ -501,7 +500,8 @@ final class LmdbNativeParallelKernelRows {
 			if (hashLedger != null) {
 				hashLedger.close();
 			}
-			return EmptyCursor.INSTANCE;
+			row.cancellation.check();
+			throw new AssertionError("published query cancellation did not throw");
 		}
 		if (failure.get() != null || totalRows > Integer.MAX_VALUE / Math.max(stride, 1)) {
 			if (failure.get() == null) {
@@ -517,9 +517,7 @@ final class LmdbNativeParallelKernelRows {
 			if (problem instanceof Error) {
 				throw (Error) problem;
 			}
-			if (Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
-				System.err.println("[ir-kernel-parallel] fallback: " + problem);
-			}
+			LmdbNativeParallelKernelAggregate.recoverOrRethrow(problem);
 			return null;
 		}
 		awaitTasks(tasks);
@@ -1053,20 +1051,20 @@ final class LmdbNativeParallelKernelRows {
 
 		@Override
 		public boolean next() throws IOException {
-			if (closed || row.cancellation.isCancellationRequested()) {
-				close();
+			if (closed) {
 				return false;
 			}
+			checkCancellation();
 			if (activeMark >= 0) {
 				row.rollback(activeMark);
 				activeMark = -1;
 			}
 			while (true) {
-				if (row.cancellation.isCancellationRequested()) {
-					close();
-					return false;
-				}
+				checkCancellation();
 				while (active != null && activeIndex < active.count) {
+					if ((activeIndex & 1023) == 0) {
+						checkCancellation();
+					}
 					int base = activeIndex * columnSlots.length;
 					activeIndex++;
 					if (distinct != null && !distinct.add(active.rows, base, base + columnSlots.length)) {
@@ -1133,6 +1131,16 @@ final class LmdbNativeParallelKernelRows {
 				active = page;
 				activeIndex = 0;
 				LmdbNativeKernelExecution.KERNEL_ROWS.addAndGet(page.count);
+			}
+		}
+
+		private void checkCancellation() throws IOException {
+			try {
+				row.cancellation.check();
+				LmdbNativeProbeDeadline.poll(0);
+			} catch (RuntimeException | Error problem) {
+				Throwable failure = KernelRuntime.closeResource(this, problem);
+				throwFailure(failure);
 			}
 		}
 

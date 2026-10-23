@@ -12,12 +12,17 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mockStatic;
 
 import java.io.File;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -26,6 +31,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -38,6 +44,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.Graph;
@@ -45,6 +52,7 @@ import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
@@ -72,6 +80,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Isolated;
+import org.mockito.MockedStatic;
 
 /**
  * Shared-corpus gate for the LMDB Janino engine. The renderer module owns query generation; this class consumes its
@@ -369,6 +378,27 @@ class LmdbNativeGeneratedQueryCoverageTest {
 	}
 
 	@Test
+	void nestedCachedMinusAndOptionalOperandsReleaseEveryDatasetReader() {
+		String graph = "GRAPH <http://graphs.example/g0> { ?s !(ex:pA|ex:pB) ?o . }";
+		String independent = "?u2 ex:pD ?v2 .";
+		List<String> bodies = List.of(
+				"{ ?s ex:pB ?v5 . MINUS { { { ?s ex:pA ?o . OPTIONAL { { { { { " + graph
+						+ " } } } UNION { " + independent + " } } } } } } }",
+				"?s ex:pB ?v5 . MINUS { ?s ex:pA ?o . OPTIONAL { { " + independent + " } UNION { "
+						+ graph + " } } }",
+				"?s ex:pB ?v5 . OPTIONAL { ?s ex:pA ?o . MINUS { { " + graph + " } UNION { "
+						+ independent + " } } }",
+				"{ ?s ex:pB ?v5 . FILTER EXISTS { ?s ex:pA ?m . MINUS { { " + graph + " } UNION { "
+						+ independent + " } } } } UNION { ?s ex:pC ?o . }");
+		for (String body : bodies) {
+			String query = "PREFIX ex: <http://ex/> SELECT ?s ?o WHERE { " + body + " }";
+			List<String> expected = genericRows(query, true);
+			assertThat(nativeRowsUntilClassified(query, true)).as("cached lexical cleanup for\n%s", query)
+					.containsExactlyElementsOf(expected);
+		}
+	}
+
+	@Test
 	void nestedUnionFallbackPreservesEveryOuterBinding() {
 		String[] properties = { LmdbNativeJaninoCodegen.ENABLED_PROPERTY,
 				LmdbNativeKernelInterpreter.ENABLED_PROPERTY, "rdf4j.lmdb.nativeBatch.enabled" };
@@ -559,6 +589,218 @@ class LmdbNativeGeneratedQueryCoverageTest {
 				System.setProperty(property, previous);
 			}
 		}
+	}
+
+	@Test
+	void generatedIndex4380KeepsOptionalUnionMultiplicityAcrossSelectedRoutes() throws Exception {
+		GeneratedQuery generated = generatedQueriesAt(4380).get(4380);
+		assertThat(generated).as("the canonical generated corpus must contain index 4380").isNotNull();
+		assertThat(generated.category()).isEqualTo("DeepNest50");
+		String query = generated.sparql();
+		List<String> expected = genericRows(query, true);
+		assertThat(expected).as("the unchanged canonical 16-subject seed and index-4380 query are admitted")
+				.hasSize(1048);
+		Map<String, Integer> expectedBag = rowBag(expected);
+
+		List<String> propertyNames = List.of(NATIVE_FLAG, LmdbNativeJaninoCodegen.ENABLED_PROPERTY,
+				LmdbNativeKernelInterpreter.ENABLED_PROPERTY, NativeBatch.ENABLED_PROPERTY,
+				LmdbNativeJaninoCodegen.SYNCHRONOUS_PROPERTY);
+		Map<String, String> previousProperties = new LinkedHashMap<>();
+		propertyNames.forEach(property -> previousProperties.put(property, System.getProperty(property)));
+		List<DiagnosticRoute> routes = List.of(
+				new DiagnosticRoute("AUTO", null, null, null, null),
+				new DiagnosticRoute("nestedLoop", LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, null, null, null),
+				new DiagnosticRoute("irKernel", LmdbNativeAttemptMetrics.PATH_IR_KERNEL, true, null, null),
+				new DiagnosticRoute("irKernelInterpreted", LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED,
+						false, true, null),
+				new DiagnosticRoute("batch", LmdbNativeAttemptMetrics.PATH_BATCH, false, false, true));
+		List<String> observations = new ArrayList<>();
+		List<String> failures = new ArrayList<>();
+		List<String> batchOutcomes = new ArrayList<>();
+		try {
+			for (DiagnosticRoute route : routes) {
+				previousProperties.forEach(LmdbNativeGeneratedQueryCoverageTest::restoreProperty);
+				System.setProperty(NATIVE_FLAG, "true");
+				if (route.janinoEnabled() != null) {
+					System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY,
+							Boolean.toString(route.janinoEnabled()));
+					if (route.janinoEnabled()) {
+						System.setProperty(LmdbNativeJaninoCodegen.SYNCHRONOUS_PROPERTY, "true");
+					}
+				}
+				if (route.interpreterEnabled() != null) {
+					System.setProperty(LmdbNativeKernelInterpreter.ENABLED_PROPERTY,
+							Boolean.toString(route.interpreterEnabled()));
+				}
+				if (route.batchEnabled() != null) {
+					System.setProperty(NativeBatch.ENABLED_PROPERTY, Boolean.toString(route.batchEnabled()));
+				}
+				resetKernelState();
+				try {
+					DiagnosticEvaluation evaluation = diagnosticRowsUntilClassified(query, true,
+							route.forcedStrategy());
+					Map<String, Integer> actualBag = rowBag(evaluation.rows());
+					String summary = route.name() + " requested="
+							+ (route.forcedStrategy() == null ? "AUTO" : route.forcedStrategy())
+							+ " paths=" + executionPaths(evaluation.telemetry())
+							+ " planned=" + evaluation.planned() + " opened=" + evaluation.opened()
+							+ " declined=" + evaluation.declined()
+							+ " compilations=" + evaluation.compilations()
+							+ " pendingCompiles=" + evaluation.pendingCompiles()
+							+ " rows=" + evaluation.rows().size()
+							+ " bagSha256=" + rowBagSha256(evaluation.rows());
+					observations.add(summary);
+					if ("batch".equals(route.name())) {
+						batchOutcomes.add("executed: " + summary);
+					}
+					if (!actualBag.equals(expectedBag)) {
+						failures.add(summary + "\n  genericOnly=" + rowBagDifference(expectedBag, actualBag)
+								+ "\n  nativeOnly=" + rowBagDifference(actualBag, expectedBag));
+					}
+				} catch (RuntimeException | AssertionError problem) {
+					String summary = route.name() + " requested="
+							+ (route.forcedStrategy() == null ? "AUTO" : route.forcedStrategy())
+							+ " ERROR=" + problem.getClass().getSimpleName() + ": " + problem.getMessage()
+							+ " planned=" + plannedKernels() + " opened=" + openedKernels()
+							+ " declined=" + declinedKernels();
+					if ("batch".equals(route.name())) {
+						assertThat(problem)
+								.as("the batch diagnostic may only record its current explicit unavailable-cursor result")
+								.isInstanceOf(QueryEvaluationException.class);
+						assertThat(problem).hasMessageContaining("was offered and declined ('cursor-unavailable')");
+						assertThat(plannedKernels()).as("an unavailable batch route must not open a kernel").isZero();
+						assertThat(openedKernels()).as("an unavailable batch route must not report an opened kernel")
+								.isZero();
+						String limitation = "CURRENT_LIMITATION batch requested=batch; cursor unavailable; "
+								+ "no semantic or structural incompatibility is inferred: " + summary;
+						observations.add(limitation);
+						batchOutcomes.add("unavailable: " + limitation);
+					} else {
+						observations.add(summary);
+						failures.add(summary);
+					}
+				}
+			}
+		} finally {
+			previousProperties.forEach(LmdbNativeGeneratedQueryCoverageTest::restoreProperty);
+		}
+
+		String diagnostic = "DeepNest50 generated index 4380\n"
+				+ "querySha256=" + sha256(query) + " genericRows=" + expected.size()
+				+ " genericBagSha256=" + rowBagSha256(expected) + "\n"
+				+ String.join("\n", observations) + "\n";
+		Files.writeString(Path.of("target", "deepnest50-index-4380-route-diagnostics.txt"), diagnostic);
+		System.out.println(diagnostic);
+		assertThat(observations).as("every selected execution route must produce a diagnostic outcome")
+				.hasSize(routes.size());
+		assertThat(batchOutcomes)
+				.as("batch must execute with exact parity or report its explicit unavailable-cursor boundary")
+				.hasSize(1);
+		assertThat(failures).as("every selected route must preserve the exact generic row bag\n%s", diagnostic)
+				.isEmpty();
+	}
+
+	@Test
+	void generatedIndex4380CapturesActualLexicalFrames() throws Exception {
+		GeneratedQuery generated = generatedQueriesAt(4380).get(4380);
+		assertThat(generated).as("the canonical generated corpus must contain index 4380").isNotNull();
+		String query = generated.sparql();
+		List<String> expected = genericRows(query, true);
+		assertThat(expected).as("the unchanged canonical seed is admitted").hasSize(1048);
+
+		List<String> frameObservations = Collections.synchronizedList(new ArrayList<>());
+		AtomicInteger frameCall = new AtomicInteger();
+		List<String> actualRows = new ArrayList<>();
+		String optimizedPlan;
+		String telemetry;
+		String evaluationFailure = null;
+		long planned;
+		long opened;
+		long declined;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(QueryLanguage.SPARQL, query);
+			prepared.setForcedLmdbExecutionStrategy(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+			prepared.setMaxExecutionTime(QUERY_TIMEOUT_SECONDS);
+			optimizedPlan = prepared.explain(Explanation.Level.Optimized).toString();
+			try (MockedStatic<NativeResultSteps> resultSteps = mockStatic(NativeResultSteps.class)) {
+				resultSteps.when(() -> NativeResultSteps.open(any(QueryEvaluationStep.class), any(BindingSet.class)))
+						.thenAnswer(invocation -> {
+							QueryEvaluationStep step = invocation.getArgument(0);
+							BindingSet input = invocation.getArgument(1);
+							NativeResultCursor cursor = (NativeResultCursor) invocation.callRealMethod();
+							NativeExecutionContext context = cursor.executionContext();
+							String contextIdentity;
+							String queryBase;
+							if (context == null) {
+								contextIdentity = "<none>";
+								queryBase = "<unavailable:no execution context>";
+							} else {
+								contextIdentity = context.getClass().getName() + "@"
+										+ Integer.toHexString(System.identityHashCode(context));
+								try {
+									queryBase = "initialized:" + describeBindings(context.queryBase());
+								} catch (IllegalStateException uninitialized) {
+									queryBase = "unavailable:" + uninitialized.getMessage();
+								}
+							}
+							frameObservations.add("call=" + frameCall.incrementAndGet()
+									+ " thread=" + Thread.currentThread().getName()
+									+ " step=" + step.getClass().getName() + "@"
+									+ Integer.toHexString(System.identityHashCode(step))
+									+ " input=" + describeBindings(input)
+									+ " executionContext=" + contextIdentity
+									+ " queryBase=" + queryBase);
+							return cursor;
+						});
+				resultSteps.when(() -> NativeResultSteps.map(any(NativeResultCursor.class), any()))
+						.thenCallRealMethod();
+				resultSteps.when(() -> NativeResultSteps.rdf(any(NativeResultCursor.class)))
+						.thenCallRealMethod();
+				try (TupleQueryResult tupleResult = prepared.evaluate()) {
+					while (tupleResult.hasNext()) {
+						BindingSet row = tupleResult.next();
+						List<String> bindings = new ArrayList<>();
+						for (String name : row.getBindingNames()) {
+							bindings.add(name + "=" + row.getValue(name));
+						}
+						Collections.sort(bindings);
+						actualRows.add(String.join("|", bindings));
+					}
+				} catch (RuntimeException failure) {
+					evaluationFailure = failure.getClass().getName() + ": " + failure.getMessage();
+				}
+			}
+			Collections.sort(actualRows);
+			planned = plannedKernels();
+			opened = openedKernels();
+			declined = declinedKernels();
+			telemetry = prepared.explain(Explanation.Level.Telemetry).toString();
+		}
+
+		List<String> optimizedFrameLines = optimizedPlan.lines()
+				.filter(line -> line.contains("frameInputs=") || line.contains("NativeSubquery("))
+				.toList();
+		String diagnostic = "DeepNest50 generated index 4380 lexical-frame trace\n"
+				+ "query=" + query + "\n"
+				+ "genericRows=" + expected.size() + " genericBagSha256=" + rowBagSha256(expected) + "\n"
+				+ "optimizedFrameLines=" + optimizedFrameLines + "\n"
+				+ "optimizedPlan:\n" + optimizedPlan + "\n"
+				+ "forcedStrategy=" + LmdbNativeAttemptMetrics.PATH_NESTED_LOOP
+				+ " planned=" + planned + " opened=" + opened + " declined=" + declined + "\n"
+				+ "evaluationFailure=" + evaluationFailure + "\n"
+				+ "actualRows=" + actualRows.size() + " actualBagSha256=" + rowBagSha256(actualRows) + "\n"
+				+ "frameCalls=" + frameObservations.size() + "\n"
+				+ "frameObservations:\n" + String.join("\n", frameObservations) + "\n"
+				+ "telemetryPaths=" + executionPaths(telemetry) + "\n"
+				+ "telemetry:\n" + telemetry + "\n";
+		Files.writeString(Path.of("target", "deepnest50-index-4380-lexical-frames.txt"), diagnostic);
+		System.out.println("DeepNest50 index 4380 lexical frames: " + optimizedFrameLines
+				+ "; observed NativeResultSteps.open calls=" + frameObservations.size()
+				+ "; nestedLoop planned/opened/declined=" + planned + "/" + opened + "/" + declined
+				+ "; generic/native rows=" + expected.size() + "/" + actualRows.size());
+		assertThat(evaluationFailure).as("the forced nestedLoop evaluation completes").isNull();
+		assertThat(rowBag(actualRows)).as("forced nestedLoop preserves the exact canonical result bag")
+				.isEqualTo(rowBag(expected));
 	}
 
 	@Test
@@ -1196,6 +1438,116 @@ class LmdbNativeGeneratedQueryCoverageTest {
 		return result;
 	}
 
+	private DiagnosticEvaluation diagnosticRowsUntilClassified(String query, boolean unordered,
+			String forcedStrategy) throws Exception {
+		DiagnosticEvaluation result = diagnosticRun(query, unordered, forcedStrategy);
+		for (int round = 1; round < KERNEL_WARMUP_RUNS && result.opened() == 0L
+				&& (result.planned() > 0L || result.declined() > 0L); round++) {
+			try {
+				assertThat(LmdbNativeJaninoCodegen.awaitCompilationsForTests(10, TimeUnit.SECONDS))
+						.as("scheduled Janino compilation completed for %s", forcedStrategy)
+						.isTrue();
+			} catch (InterruptedException interrupted) {
+				Thread.currentThread().interrupt();
+				throw new AssertionError("interrupted while waiting for Janino route diagnostics", interrupted);
+			}
+			result = diagnosticRun(query, unordered, forcedStrategy);
+		}
+		return result;
+	}
+
+	private DiagnosticEvaluation diagnosticRun(String query, boolean unordered, String forcedStrategy)
+			throws Exception {
+		List<String> rows = new ArrayList<>();
+		String telemetry;
+		long planned;
+		long opened;
+		long declined;
+		long compilations;
+		long pendingCompiles;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(QueryLanguage.SPARQL, query);
+			if (forcedStrategy != null) {
+				prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			prepared.setMaxExecutionTime(QUERY_TIMEOUT_SECONDS);
+			try (TupleQueryResult tupleResult = prepared.evaluate()) {
+				while (tupleResult.hasNext()) {
+					BindingSet row = tupleResult.next();
+					List<String> bindings = new ArrayList<>();
+					for (String name : row.getBindingNames()) {
+						bindings.add(name + "=" + row.getValue(name));
+					}
+					Collections.sort(bindings);
+					rows.add(String.join("|", bindings));
+				}
+			}
+			if (unordered) {
+				Collections.sort(rows);
+			}
+			planned = plannedKernels();
+			opened = openedKernels();
+			declined = declinedKernels();
+			compilations = LmdbNativeJaninoCodegen.COMPILATIONS.get();
+			pendingCompiles = LmdbNativeJaninoCodegen.PENDING_COMPILES.get();
+			telemetry = prepared.explain(Explanation.Level.Telemetry).toString();
+		}
+		return new DiagnosticEvaluation(rows, telemetry, planned, opened, declined, compilations, pendingCompiles);
+	}
+
+	private static String executionPaths(String telemetry) {
+		Set<String> paths = new LinkedHashSet<>();
+		Matcher matcher = Pattern.compile("nativeExecutionPath=([^,\\s)]+)").matcher(telemetry);
+		while (matcher.find()) {
+			paths.add(matcher.group(1));
+		}
+		return paths.toString();
+	}
+
+	private static Map<String, Integer> rowBag(List<String> rows) {
+		Map<String, Integer> bag = new TreeMap<>();
+		rows.forEach(row -> bag.merge(row, 1, Integer::sum));
+		return bag;
+	}
+
+	private static Map<String, Integer> rowBagDifference(Map<String, Integer> left, Map<String, Integer> right) {
+		Map<String, Integer> difference = new TreeMap<>();
+		left.forEach((row, count) -> {
+			int extra = count - right.getOrDefault(row, 0);
+			if (extra > 0) {
+				difference.put(row, extra);
+			}
+		});
+		return difference;
+	}
+
+	private static String rowBagSha256(List<String> rows) throws Exception {
+		return sha256(String.join("\n", rows) + "\n");
+	}
+
+	private static String describeBindings(BindingSet bindings) {
+		List<String> entries = new ArrayList<>();
+		for (String name : bindings.getBindingNames()) {
+			entries.add(name + "=" + bindings.getValue(name));
+		}
+		Collections.sort(entries);
+		return entries.toString();
+	}
+
+	private static String sha256(String value) throws Exception {
+		return HexFormat.of()
+				.formatHex(MessageDigest.getInstance("SHA-256")
+						.digest(value.getBytes(StandardCharsets.UTF_8)));
+	}
+
+	private static void restoreProperty(String property, String value) {
+		if (value == null) {
+			System.clearProperty(property);
+		} else {
+			System.setProperty(property, value);
+		}
+	}
+
 	private List<String> rows(String query, boolean unordered) {
 		return rows(query, unordered, null);
 	}
@@ -1403,6 +1755,14 @@ class LmdbNativeGeneratedQueryCoverageTest {
 		public String toString() {
 			return strategy + ":" + reason;
 		}
+	}
+
+	private record DiagnosticRoute(String name, String forcedStrategy, Boolean janinoEnabled,
+			Boolean interpreterEnabled, Boolean batchEnabled) {
+	}
+
+	private record DiagnosticEvaluation(List<String> rows, String telemetry, long planned, long opened,
+			long declined, long compilations, long pendingCompiles) {
 	}
 
 	record JaninoCorpusCase(int index, String category, String baselineReason) {

@@ -46,10 +46,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.MaterializedReplayJoi
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ScopedLeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ScopedLeftJoinIterator.GraphFrameMapping;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
-import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 public class JoinQueryEvaluationStep implements QueryEvaluationStep {
@@ -380,29 +378,7 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 	 * correlated; an injected binding of a projected name is equivalent to the compatible-mapping join afterwards.
 	 */
 	static boolean subqueryObservesInjectedBindings(TupleExpr subtree, Set<String> injectedNames) {
-		if (injectedNames.isEmpty()) {
-			return false;
-		}
-		boolean[] observes = { false };
-		subtree.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(false) {
-			@Override
-			public void meet(Projection projection) {
-				if (observes[0]) {
-					return;
-				}
-				if (projection.isSubquery()) {
-					Set<String> projected = projection.getBindingNames();
-					for (String name : VarNameCollector.process(projection.getArg())) {
-						if (injectedNames.contains(name) && !projected.contains(name)) {
-							observes[0] = true;
-							return;
-						}
-					}
-				}
-				super.meet(projection);
-			}
-		});
-		return observes[0];
+		return TupleExprs.subqueryObservesInjectedBindings(subtree, injectedNames);
 	}
 
 	private static boolean isOutOfScopeForLeftArgBindings(TupleExpr expr,

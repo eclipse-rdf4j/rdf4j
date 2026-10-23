@@ -89,8 +89,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ScopedLeftJoinIterato
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
@@ -1769,15 +1771,23 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		return visibleInputs.toArray(String[]::new);
 	}
 
+	private QueryAlgebraBindingAnalysis lexicalBindingAnalysis;
+
 	private SlotPlan compileTupleRoot(TupleExpr expr, boolean duplicateInsensitive) {
 		// The caller already selected this operand's lexical entry frame. Re-entering a semantic subquery for the
 		// operand itself would recurse into the same boundary; only descendant boundaries need new frames.
 		TupleExpr previous = lexicalCompileRoot;
+		QueryAlgebraBindingAnalysis previousAnalysis = lexicalBindingAnalysis;
 		lexicalCompileRoot = expr;
+		QueryAlgebraBindingAnalysis input = QueryAlgebraBindingAnalysis.withBindingValues(expr,
+				EmptyBindingSet.getInstance());
+		lexicalBindingAnalysis = QueryAlgebraBindingAnalysis.withInputContextAndPossibleInputs(expr,
+				input.rootContext(), inheritedFrameInputNames);
 		try {
 			return compileTuple(expr, duplicateInsensitive);
 		} finally {
 			lexicalCompileRoot = previous;
+			lexicalBindingAnalysis = previousAnalysis;
 		}
 	}
 
@@ -1845,7 +1855,12 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			TupleExpr rightArg = join.getRightArg();
 			boolean rightUsesGraph = GraphFrameMapping.forSubqueries(rightArg, leftArg).length > 0;
 			boolean leftUsesGraph = GraphFrameMapping.forSubqueries(leftArg, rightArg).length > 0;
-			if (!rightUsesGraph && !leftUsesGraph) {
+			boolean independentSubqueryRight = !rightUsesGraph && !leftUsesGraph
+					&& TupleExprs.subqueryObservesInjectedBindings(rightArg, leftArg.getBindingNames());
+			if (independentSubqueryRight && forceInteriorIslands) {
+				return island(join);
+			}
+			if (!rightUsesGraph && !leftUsesGraph && !independentSubqueryRight) {
 				SlotPlan optimizerExactValues = compileJoinWithOptimizerExactValues(join, duplicateInsensitive);
 				if (optimizerExactValues != null) {
 					return optimizerExactValues;
@@ -1871,13 +1886,19 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				requiredAggregateNames = withRequired(previousRequired, shared);
 				left = compileTupleOrIsland(leftArg, duplicateInsensitive);
 				requiredAggregateNames = withRequired(previousRequired, shared);
-				right = forceInteriorIslands ? islandPreferred(rightArg, duplicateInsensitive)
-						: compileTupleOrIsland(rightArg, duplicateInsensitive);
+				if (independentSubqueryRight) {
+					// The complete right operand receives the join-entry frame, exactly as the generic hash join.
+					// Its bounded lexical replay then joins output mappings without exposing the mutable left row.
+					right = compileNativeSubquery(rightArg);
+				} else {
+					right = forceInteriorIslands ? islandPreferred(rightArg, duplicateInsensitive)
+							: compileTupleOrIsland(rightArg, duplicateInsensitive);
+				}
 			} finally {
 				requiredAggregateNames = previousRequired;
 			}
 			if (left == null || right == null) {
-				return null;
+				return independentSubqueryRight ? island(join) : null;
 			}
 			if (islandsEnabled && right == EmptyPlan.INSTANCE && left != EmptyPlan.INSTANCE
 					&& !canDiscardWithoutEvaluation(leftArg)) {
@@ -1944,7 +1965,8 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			// right operand is the OPTIONAL condition relocated by ConjunctiveConstraintSplitterOptimizer, which
 			// must observe the left row), so the binding-injection contract is not consulted here.
 			TupleExpr rightArg = leftJoin.getRightArg();
-			boolean subqueryHashJoin = TupleExprs.containsSubquery(rightArg);
+			boolean subqueryHashJoin = TupleExprs.containsSubquery(rightArg)
+					|| TupleExprs.subqueryObservesInjectedBindings(rightArg, leftJoin.getLeftArg().getBindingNames());
 			boolean materializedReplay = !subqueryHashJoin
 					&& !QueryEvaluationUtility.usesMappingParameterizedEvaluation(rightArg)
 					&& !QueryEvaluationUtility.isRepeatable(rightArg);
@@ -2228,6 +2250,30 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 
 	private SlotPlan compileNativeSubquery(TupleExpr expr) {
 		LinkedHashSet<String> frameInputNames = new LinkedHashSet<>();
+		if (lexicalBindingAnalysis != null) {
+			// SELECT projects its output; its parent operator selects its invocation input. In particular an
+			// EXISTS witness forwards the condition's retained row, whereas an independent join does not.
+			Set<String> observed = new LinkedHashSet<>(VarNameCollector.process(expr));
+			expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				protected void meetNode(QueryModelNode node) {
+					if (node instanceof TupleExpr tuple) {
+						observed.addAll(tuple.getBindingNames());
+					}
+					if (node instanceof BindingSetAssignment values) {
+						observed.addAll(values.getPossibleBindingNames());
+					}
+					super.meetNode(node);
+				}
+			});
+			frameInputNames.addAll(lexicalBindingAnalysis.contextAt(expr).maybeBoundNames());
+			frameInputNames.retainAll(observed);
+			frameInputNames.retainAll(slots.keySet());
+			// LATERAL's original-domain preparation below owns its conditional direct-SELECT projection rule.
+			// Keep those inputs on that existing proof rather than treating them as ordinary inherited names.
+			frameInputNames.removeAll(lateralFrameInputNames);
+			frameInputNames.removeAll(inheritedLateralFrameInputNames);
+		}
 		if (!lateralFrameInputNames.isEmpty()) {
 			frameInputNames.addAll(Arrays.asList(lateralSubqueryFrameInputNames(expr, lateralFrameInputNames)));
 		}

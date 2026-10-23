@@ -4783,13 +4783,10 @@ final class LmdbNativeKernelEmitter {
 			if (filters.isEmpty()) {
 				body.append(next(nextTemplate, arm));
 			} else {
-				body.append(arm).append("if (");
-				for (int i = 0; i < filters.size(); i++) {
-					body.append(i == 0 ? "" : " && ").append(scalarFilterCondition(filters.get(i)));
-				}
-				body.append(") {\n");
-				body.append(next(nextTemplate, arm + "    "));
-				body.append(arm).append("}\n");
+				// Residual predicates install their complete engine-slot input before invoking the callback. Reuse
+				// the ordinary node pipeline so null-extension keeps that protocol, order and short-circuit behavior.
+				String continuation = emitPipeline(filters, next(nextTemplate, ""), false);
+				body.append(arm).append(continuation).append("();\n");
 			}
 			body.append(indent).append("}\n");
 		}

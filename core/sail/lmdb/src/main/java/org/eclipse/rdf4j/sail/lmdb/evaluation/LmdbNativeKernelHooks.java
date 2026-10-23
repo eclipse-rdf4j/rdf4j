@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
@@ -248,27 +249,51 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 
 	@Override
 	public boolean sameRdfTerm(long left, long right) {
-		return left == right || scratch.termAuthority() != null && scratch.termAuthority().sameRdfTerm(left, right);
+		if (left == right) {
+			return true;
+		}
+		NativeTermAuthority authority = scratch.termAuthority();
+		if (authority != null) {
+			return authority.sameRdfTerm(left, right);
+		}
+		if (!isBoundValue(left) || !isBoundValue(right) || source.hasCanonicalIds()) {
+			return false;
+		}
+		Value value = source.lazyValue(left);
+		return value != null && value.equals(source.lazyValue(right));
 	}
 
 	@Override
 	public long rdfTermHash(long id) {
-		return scratch.termAuthority().rdfTermHash(id);
+		NativeTermAuthority authority = scratch.termAuthority();
+		if (authority != null) {
+			return authority.rdfTermHash(id);
+		}
+		return !isBoundValue(id) || source.hasCanonicalIds() ? id : source.lazyValue(id).hashCode();
 	}
 
 	@Override
 	public boolean supportsCanonicalTermKeys() {
-		return scratch.termAuthority().supportsCanonicalTermKeys();
+		NativeTermAuthority authority = scratch.termAuthority();
+		return authority == null ? source.hasCanonicalIds() : authority.supportsCanonicalTermKeys();
 	}
 
 	@Override
 	public long canonicalTermKey(long id) {
-		return scratch.termAuthority().canonicalTermKey(id);
+		NativeTermAuthority authority = scratch.termAuthority();
+		if (authority != null) {
+			return authority.canonicalTermKey(id);
+		}
+		if (!source.hasCanonicalIds()) {
+			throw new UnsupportedOperationException("source does not prove canonical RDF term IDs");
+		}
+		return id;
 	}
 
 	@Override
 	public long termHashKey(long id) {
-		return scratch.termAuthority().termHashKey(id);
+		NativeTermAuthority authority = scratch.termAuthority();
+		return authority == null ? rdfTermHash(id) : authority.termHashKey(id);
 	}
 
 	@Override
@@ -280,7 +305,27 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 			return sourceId;
 		}
 		LmdbNativeKernelHooks other = (LmdbNativeKernelHooks) sourceHooks;
-		return scratch.termAuthority().importId(other.scratch.termAuthority(), sourceId);
+		if (!isBoundValue(sourceId)) {
+			return sourceId;
+		}
+		NativeTermAuthority target = scratch.termAuthority();
+		NativeTermAuthority origin = other.scratch.termAuthority();
+		if (target != null && origin != null) {
+			return target.importId(origin, sourceId);
+		}
+		Object space = source.idSpace();
+		if (target == null && origin == null && space != null && space == other.source.idSpace()) {
+			return sourceId;
+		}
+		Value value = origin == null ? other.source.lazyValue(sourceId) : origin.valueOf(sourceId);
+		if (target != null) {
+			return target.idOfOrIntern(value);
+		}
+		long imported = source.idOf(value);
+		if (!isBoundValue(imported)) {
+			throw new QueryEvaluationException("raw source cannot represent the imported RDF term");
+		}
+		return imported;
 	}
 
 	@Override
