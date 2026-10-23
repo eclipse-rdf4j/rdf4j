@@ -136,7 +136,13 @@ function loadRouter(options) {
         dispatch(type, event) { (documentListeners.get(type) || []).forEach((handler) => handler(event)); }
     };
     window.document = document;
-    const workbench = {};
+    // The router is loaded in isolation here; template.ts owns token extraction and form preparation.
+    const workbench = {
+        protectSubmittedForm() {},
+        csrfHeaders() {
+            return settings.csrfToken ? { 'X-RDF4J-CSRF-Token': settings.csrfToken } : {};
+        }
+    };
     /** FormData over the fake forms of these tests: their fields, then the submitter's name and value. */
     class FakeFormData {
         constructor(form, submitter) {
@@ -753,8 +759,8 @@ function submitEvent(form, submitter, options) {
     }, options || {});
 }
 
-function loadFormRouter() {
-    const harness = loadRouter();
+function loadFormRouter(options) {
+    const harness = loadRouter(options);
     const posts = [];
     harness.session.fetcher = (url, options) => {
         posts.push({ url, options });
@@ -820,8 +826,8 @@ test('forms the router leaves to the browser', () => {
     assert.equal(harness.posts.length, 0);
 });
 
-test('a POST form is sent with the page-model Accept header and the page it redirects to is shown', async () => {
-    const harness = loadFormRouter();
+test('a POST form is sent with the page-model Accept and CSRF headers and the page it redirects to is shown', async () => {
+    const harness = loadFormRouter({ csrfToken: 'session-token' });
     harness.window.goTo(base + 'clear');
     harness.session.url = base + 'clear';
     harness.start();
@@ -835,6 +841,7 @@ test('a POST form is sent with the page-model Accept header and the page it redi
     assert.equal(post.url, base + 'clear');
     assert.equal(post.options.method, 'POST');
     assert.equal(post.options.headers.Accept, 'application/vnd.rdf4j.workbench+ndjson');
+    assert.equal(post.options.headers['X-RDF4J-CSRF-Token'], 'session-token');
     assert.equal(post.options.credentials, 'same-origin');
     assert.equal(String(post.options.body), 'context=null&clear=Clear');
     assert.ok(post.options.signal, 'the request can be abandoned');
