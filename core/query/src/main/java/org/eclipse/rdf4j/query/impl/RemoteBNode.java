@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.query.impl;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.io.Serializable;
+import java.lang.ref.Reference;
 import java.lang.ref.ReferenceQueue;
 import java.lang.ref.WeakReference;
 import java.nio.ByteBuffer;
@@ -106,6 +107,8 @@ public final class RemoteBNode extends SimpleBNode {
 		private final List<Object> identities = new ArrayList<>();
 		private final AliasIndex aliases = new AliasIndex();
 		private final Registry registry = new Registry();
+		private final ReferenceQueue<RepositoryBNode> repositoryQueue = new ReferenceQueue<>();
+		private final Map<Object, WeakRepositoryNode> liveRepositoryNodes = new HashMap<>();
 		private Mac authenticator;
 
 		/** A local alias-index failure must not be treated as a remote SERVICE SILENT failure. */
@@ -117,8 +120,9 @@ public final class RemoteBNode extends SimpleBNode {
 			}
 		}
 
-		public Object replace(Object value) {
+		public synchronized Object replace(Object value) {
 			if (value instanceof RepositoryBNode repository) {
+				rememberLiveRepositoryNode(repository);
 				Tag tag = tag((byte) 2, -1, -1, repository.getID(), repository.getRawID(),
 						repository.isReference());
 				return new SpilledRepositoryNode(repository.getID(), repository.getRawID(),
@@ -142,14 +146,24 @@ public final class RemoteBNode extends SimpleBNode {
 			return value;
 		}
 
-		public Object resolve(Object value) {
+		public synchronized Object resolve(Object value) {
 			if (value instanceof SpilledRepositoryNode node) {
 				Tag expected = tag((byte) 2, -1, -1, node.alias(), node.rawID(), node.reference());
 				if (expected.high() != node.tagHigh() || expected.low() != node.tagLow()) {
 					throw new QueryEvaluationException(
 							"Unsupported blank-node identity: unknown repository spill reference");
 				}
-				return RepositoryBNode.fromNegotiatedResult(node.alias(), node.rawID(), node.reference());
+				expungeCollectedRepositoryNodes();
+				RepositoryLookup key = new RepositoryLookup(node.alias(), node.rawID(), node.reference());
+				WeakRepositoryNode reference = liveRepositoryNodes.get(key);
+				RepositoryBNode original = reference == null ? null : reference.get();
+				if (original != null) {
+					return original;
+				}
+				RepositoryBNode restored = RepositoryBNode.fromNegotiatedResult(node.alias(), node.rawID(),
+						node.reference());
+				rememberLiveRepositoryNode(restored);
+				return restored;
 			}
 			if (value instanceof SpilledNode node) {
 				Tag expected = tag((byte) 1, node.ownerID(), node.identityID(), node.alias(), node.remoteID(),
@@ -168,7 +182,7 @@ public final class RemoteBNode extends SimpleBNode {
 		}
 
 		@Override
-		public void close() {
+		public synchronized void close() {
 			try {
 				aliases.close();
 			} finally {
@@ -176,7 +190,92 @@ public final class RemoteBNode extends SimpleBNode {
 				owners.clear();
 				identityIDs.clear();
 				identities.clear();
+				liveRepositoryNodes.clear();
+				while (repositoryQueue.poll() != null) {
+					// Drain weak references from the previous spill generation.
+				}
 				authenticator = null;
+			}
+		}
+
+		private void rememberLiveRepositoryNode(RepositoryBNode node) {
+			expungeCollectedRepositoryNodes();
+			RepositoryLookup key = new RepositoryLookup(node.getID(), node.getRawID(), node.isReference());
+			WeakRepositoryNode reference = liveRepositoryNodes.get(key);
+			if (reference == null || reference.get() == null) {
+				WeakRepositoryNode weak = new WeakRepositoryNode(node, repositoryQueue);
+				liveRepositoryNodes.put(weak, weak);
+			}
+		}
+
+		private void expungeCollectedRepositoryNodes() {
+			Reference<? extends RepositoryBNode> collected;
+			while ((collected = repositoryQueue.poll()) != null) {
+				liveRepositoryNodes.remove(collected);
+			}
+		}
+
+		private static int repositoryHash(String wireID, String rawID, boolean reference) {
+			return 31 * (31 * wireID.hashCode() + rawID.hashCode()) + Boolean.hashCode(reference);
+		}
+
+		private record RepositoryLookup(String wireID, String rawID, boolean reference) {
+			private boolean matches(RepositoryBNode node) {
+				return wireID.equals(node.getID()) && rawID.equals(node.getRawID())
+						&& reference == node.isReference();
+			}
+
+			@Override
+			public int hashCode() {
+				return repositoryHash(wireID, rawID, reference);
+			}
+
+			@Override
+			public boolean equals(Object other) {
+				if (other instanceof RepositoryLookup lookup) {
+					return wireID.equals(lookup.wireID) && rawID.equals(lookup.rawID)
+							&& reference == lookup.reference;
+				}
+				if (other instanceof WeakRepositoryNode weak) {
+					RepositoryBNode node = weak.get();
+					return node != null && matches(node);
+				}
+				return false;
+			}
+		}
+
+		private static final class WeakRepositoryNode extends WeakReference<RepositoryBNode> {
+			private final int hash;
+
+			private WeakRepositoryNode(RepositoryBNode node, ReferenceQueue<RepositoryBNode> queue) {
+				super(node, queue);
+				hash = repositoryHash(node.getID(), node.getRawID(), node.isReference());
+			}
+
+			@Override
+			public int hashCode() {
+				return hash;
+			}
+
+			@Override
+			public boolean equals(Object other) {
+				if (this == other) {
+					return true;
+				}
+				RepositoryBNode node = get();
+				if (node == null) {
+					return false;
+				}
+				if (other instanceof RepositoryLookup lookup) {
+					return lookup.matches(node);
+				}
+				if (other instanceof WeakRepositoryNode weak) {
+					RepositoryBNode another = weak.get();
+					return another != null && node.getID().equals(another.getID())
+							&& node.getRawID().equals(another.getRawID())
+							&& node.isReference() == another.isReference();
+				}
+				return false;
 			}
 		}
 
