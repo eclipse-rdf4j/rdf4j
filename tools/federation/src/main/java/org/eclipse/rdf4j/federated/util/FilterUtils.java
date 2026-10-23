@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLTermRenderer;
 
 /**
  * Various utility functions to handle filter expressions.
@@ -155,12 +156,17 @@ public class FilterUtils {
 	}
 
 	protected static StringBuilder appendValue(StringBuilder sb, Value value) {
+		return SPARQLTermRenderer.appendValueTree(sb, value, "<<(", ")>>", FilterUtils::appendLeafValue);
+	}
 
+	private static void appendLeafValue(StringBuilder sb, Value value) {
 		if (value instanceof IRI) {
-			return appendURI(sb, (IRI) value);
+			appendURI(sb, (IRI) value);
+			return;
 		}
 		if (value instanceof Literal) {
-			return appendLiteral(sb, (Literal) value);
+			appendLiteral(sb, (Literal) value);
+			return;
 		}
 
 		// XXX check for other types ? BNode ?
@@ -168,23 +174,19 @@ public class FilterUtils {
 	}
 
 	protected static StringBuilder appendURI(StringBuilder sb, IRI uri) {
-		sb.append("<").append(uri.stringValue()).append(">");
-		return sb;
+		return SPARQLTermRenderer.appendIRIRef(sb, uri);
 	}
 
 	protected static StringBuilder appendLiteral(StringBuilder sb, Literal lit) {
 		sb.append('\'');
-		sb.append(lit.getLabel().replace("\"", "\\\""));
+		sb.append(SPARQLTermRenderer.escapeString(lit.getLabel()));
 		sb.append('\'');
 
 		if (lit.getLanguage().isPresent()) {
-			sb.append('@');
-			sb.append(lit.getLanguage().get());
-			sb.append(lit.getBaseDirection());
+			SPARQLTermRenderer.appendLanguageTag(sb, lit);
 		} else if (lit.getDatatype() != null) {
-			sb.append("^^<");
-			sb.append(lit.getDatatype().stringValue());
-			sb.append('>');
+			sb.append("^^");
+			SPARQLTermRenderer.appendIRIRef(sb, lit.getDatatype());
 		}
 		return sb;
 	}

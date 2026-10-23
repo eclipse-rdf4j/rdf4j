@@ -17,6 +17,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.util.Arrays;
 import java.util.Objects;
@@ -27,6 +28,7 @@ import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
+import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
 import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
@@ -59,7 +61,7 @@ import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.query.UpdateExecutionException;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
-import org.eclipse.rdf4j.query.parser.sparql.SPARQLQueries;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLTermRenderer;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
@@ -313,8 +315,8 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		if (contexts != null && isQuadMode() && contexts.length > 0) {
 			// this is an optimization for the case that we can use a GRAPH instead of a FROM.
 			if (contexts.length == 1 && isExposableGraphIri(contexts[0])) {
-				return "SELECT (COUNT(*) AS ?count) WHERE { GRAPH <" + contexts[0].stringValue()
-						+ "> { ?s ?p ?o}}";
+				return "SELECT (COUNT(*) AS ?count) WHERE { GRAPH " + iriRef((IRI) contexts[0])
+						+ " { ?s ?p ?o}}";
 			} else {
 				// If we had an default graph setting that is sesame/rdf4j specific
 				// we must drop it before sending it over the wire. Otherwise
@@ -322,8 +324,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 				// to make the matching dataset.
 				String graphs = Arrays.stream(contexts)
 						.filter(SPARQLConnection::isExposableGraphIri)
-						.map(Resource::stringValue)
-						.map(s -> "FROM <" + s + ">")
+						.map(resource -> "FROM " + iriRef((IRI) resource))
 						.collect(Collectors.joining(" "));
 				return "SELECT (COUNT(*) AS ?count) " + graphs + "WHERE { ?s ?p ?o}";
 			}
@@ -710,7 +711,8 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 					sparqlTransaction.append(clearMode).append(" DEFAULT ");
 					sparqlTransaction.append("; ");
 				} else if (context instanceof IRI) {
-					sparqlTransaction.append(clearMode).append(" GRAPH <").append(context.stringValue()).append("> ");
+					sparqlTransaction.append(clearMode).append(" GRAPH ");
+					appendGraphRef(sparqlTransaction, context).append(' ');
 					sparqlTransaction.append("; ");
 				} else {
 					throw new RepositoryException("SPARQL does not support named graphs identified by blank nodes.");
@@ -816,14 +818,8 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		if (contexts.length > 0) {
 			for (Resource context : contexts) {
 				if (context != null) {
-					String namedGraph = context.stringValue();
-					if (context instanceof BNode) {
-						// SPARQL does not allow blank nodes as named graph
-						// identifiers, so we need to skolemize
-						// the blank node id.
-						namedGraph = "urn:nodeid:" + context.stringValue();
-					}
-					qb.append("    GRAPH <").append(namedGraph).append("> { \n");
+					qb.append("    GRAPH ");
+					appendGraphRef(qb, context).append(" { \n");
 				}
 				createDataBody(qb, statements, true);
 				if (context != null) {
@@ -845,14 +841,8 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		if (contexts.length > 0) {
 			for (Resource context : contexts) {
 				if (context != null) {
-					String namedGraph = context.stringValue();
-					if (context instanceof BNode) {
-						// SPARQL does not allow blank nodes as named graph
-						// identifiers, so we need to skolemize
-						// the blank node id.
-						namedGraph = "urn:nodeid:" + context.stringValue();
-					}
-					qb.append("    GRAPH <").append(namedGraph).append("> { \n");
+					qb.append("    GRAPH ");
+					appendGraphRef(qb, context).append(" { \n");
 				}
 				createDataBody(qb, statements, true);
 				if (context != null) {
@@ -872,33 +862,13 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			final Resource context = st.getContext();
 			if (!ignoreContext) {
 				if (context != null) {
-					String namedGraph = context.stringValue();
-					if (context instanceof BNode) {
-						// SPARQL does not allow blank nodes as named graph
-						// identifiers, so we need to skolemize
-						// the blank node id.
-						namedGraph = "urn:nodeid:" + context.stringValue();
-					}
-					qb.append("    GRAPH <").append(namedGraph).append("> { \n");
+					qb.append("    GRAPH ");
+					appendGraphRef(qb, context).append(" { \n");
 				}
 			}
-			if (st.getSubject() instanceof BNode) {
-				qb.append("_:").append(st.getSubject().stringValue()).append(" ");
-			} else {
-				qb.append("<").append(st.getSubject().stringValue()).append("> ");
-			}
-
-			qb.append("<").append(st.getPredicate().stringValue()).append("> ");
-
-			if (st.getObject() instanceof Literal) {
-				Literal lit = (Literal) st.getObject();
-				appendLiteral(qb, lit);
-				qb.append(" ");
-			} else if (st.getObject() instanceof BNode) {
-				qb.append("_:").append(st.getObject().stringValue()).append(" ");
-			} else {
-				qb.append("<").append(st.getObject().stringValue()).append("> ");
-			}
+			appendTerm(qb, st.getSubject()).append(' ');
+			appendTerm(qb, st.getPredicate()).append(' ');
+			appendTerm(qb, st.getObject()).append(' ');
 			qb.append(". \n");
 
 			if (!ignoreContext && context != null) {
@@ -1001,14 +971,8 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		if (contexts.length > 0) {
 			for (Resource context : contexts) {
 				if (context != null) {
-					String namedGraph = context.stringValue();
-					if (context instanceof BNode) {
-						// SPARQL does not allow blank nodes as named graph
-						// identifiers, so we need to skolemize
-						// the blank node id.
-						namedGraph = "urn:nodeid:" + context.stringValue();
-					}
-					qb.append("    GRAPH <").append(namedGraph).append("> { \n");
+					qb.append("    GRAPH ");
+					appendGraphRef(qb, context).append(" { \n");
 				}
 				createBGP(qb, subject, predicate, object);
 				if (context instanceof IRI) {
@@ -1025,51 +989,76 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 
 	private void createBGP(StringBuilder qb, Resource subject, IRI predicate, Value object) {
 		if (subject != null) {
-			if (subject instanceof BNode) {
-				qb.append("_:").append(subject.stringValue()).append(" ");
-			} else {
-				qb.append("<").append(subject.stringValue()).append("> ");
-			}
+			appendTerm(qb, subject).append(' ');
 		} else {
 			qb.append("?subj");
 		}
 
 		if (predicate != null) {
-			qb.append("<").append(predicate.stringValue()).append("> ");
+			appendTerm(qb, predicate).append(' ');
 		} else {
 			qb.append("?pred");
 		}
 
 		if (object != null) {
-			if (object instanceof Literal) {
-				Literal lit = (Literal) object;
-				appendLiteral(qb, lit);
-				qb.append(" ");
-			} else if (object instanceof BNode) {
-				qb.append("_:").append(object.stringValue()).append(" ");
-			} else {
-				qb.append("<").append(object.stringValue()).append("> ");
-			}
+			appendTerm(qb, object).append(' ');
 		} else {
 			qb.append("?obj");
 		}
 		qb.append(". \n");
 	}
 
-	private void appendLiteral(StringBuilder qb, Literal lit) {
+	private static StringBuilder appendTerm(StringBuilder qb, Value value) {
+		return SPARQLTermRenderer.appendValueTree(qb, value, "<<(", ")>>", SPARQLConnection::appendLeafTerm);
+	}
+
+	private static void appendLeafTerm(StringBuilder qb, Value value) {
+		if (value instanceof IRI iri) {
+			appendUpdateIRI(qb, iri);
+			return;
+		}
+		if (value instanceof BNode node) {
+			SPARQLTermRenderer.appendBlankNodeLabel(qb, node);
+			return;
+		}
+		if (value instanceof Literal literal) {
+			appendLiteral(qb, literal);
+			return;
+		}
+		throw new RepositoryException("Unsupported RDF term in SPARQL update: " + value.getClass().getName());
+	}
+
+	private static void appendLiteral(StringBuilder qb, Literal lit) {
 		qb.append("\"");
-		qb.append(SPARQLQueries.escape(lit.getLabel()));
+		qb.append(SPARQLTermRenderer.escapeString(lit.getLabel()));
 		qb.append("\"");
 
 		if (Literals.isLanguageLiteral(lit)) {
-			qb.append("@");
-			qb.append(lit.getLanguage().get());
-			if (lit.getBaseDirection() != Literal.BaseDirection.NONE) {
-				qb.append(lit.getBaseDirection());
-			}
+			SPARQLTermRenderer.appendLanguageTag(qb, lit);
 		} else {
-			qb.append("^^<").append(lit.getDatatype().stringValue()).append(">");
+			qb.append("^^");
+			appendUpdateIRI(qb, lit.getDatatype());
 		}
+	}
+
+	private static StringBuilder appendUpdateIRI(StringBuilder qb, IRI iri) {
+		try {
+			new ParsedIRI(iri.stringValue());
+		} catch (URISyntaxException e) {
+			throw new IllegalArgumentException("Invalid SPARQL update IRI: " + iri.stringValue(), e);
+		}
+		return SPARQLTermRenderer.appendIRIRef(qb, iri);
+	}
+
+	private static String iriRef(IRI iri) {
+		return SPARQLTermRenderer.appendIRIRef(new StringBuilder(), iri).toString();
+	}
+
+	private static StringBuilder appendGraphRef(StringBuilder qb, Resource context) {
+		if (context instanceof IRI iri) {
+			return appendUpdateIRI(qb, iri);
+		}
+		throw new RepositoryException("SPARQL named graphs cannot use blank-node identity");
 	}
 
 	/**
