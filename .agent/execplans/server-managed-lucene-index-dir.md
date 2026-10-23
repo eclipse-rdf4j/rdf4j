@@ -15,8 +15,8 @@ A client permitted to write RDF4J Server repository configurations can choose a 
 - [done] implement validated runtime path override (2026-10-23 08:55Z)
 - [done] align repaired prerequisite (2026-10-23 09:19Z)
 - [done] verify nested reload and embedded behavior (2026-10-23 09:28Z)
-- [in_progress] document migration and review candidate
-- [todo] format and publish reviewed draft
+- [done] document migration and review candidate (2026-10-23 09:35Z)
+- [in_progress] publish reviewed stacked draft
 - [todo] monitor exact published CI head
 
 ## Surprises & Discoveries
@@ -31,7 +31,7 @@ A client permitted to write RDF4J Server repository configurations can choose a 
 
 ## Outcomes & Retrospective
 
-Not complete. The initial offline root clean install passed. The live 14-case Server regression suite was red on #6242 with nine security-path failures and five passing compatibility cases. The focused test was rerun on #6246's original head before production edits and failed as expected (Failsafe 1/1/0); `rebased-initial-evidence.txt` retains the report. After #6246 incorporated #6242's CI fixture repair, this unpublished branch was rebased onto its new head `2251a4188e`. The candidate passed all 14 live cases and the Lucene API (17), Lucene (66), Server Spring (251), and Server (122, one skipped) module selections on that head. The prerequisite merge changed test fixtures only, not Lucene production behavior.
+Not complete. The initial offline root clean install passed. The live 14-case Server regression suite was red on #6242 with nine security-path failures and five passing compatibility cases. The focused test was rerun on #6246's original head before production edits and failed as expected (Failsafe 1/1/0); `rebased-initial-evidence.txt` retains the report. After #6246 incorporated #6242's CI fixture repair, this unpublished branch was rebased onto its new head `2251a4188e`. The candidate passed all 14 live cases and the Lucene API (17), Lucene (66), Server Spring (251), and Server (122, one skipped) module selections on that head. The prerequisite merge changed test fixtures only, not Lucene production behavior. Copyright and formatter checks passed; parent independently reviewed and approved publication at `6162a26cba`.
 
 ## Context and Orientation
 
