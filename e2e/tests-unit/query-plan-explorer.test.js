@@ -1,7 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const explorer = require('../../tools/workbench/src/main/webapp/scripts/query-plan-explorer.js');
+const { workbenchScriptPath } = require('../../tools/workbench/src/test/frontend/classic/workbench-scripts.js');
+const explorer = require(workbenchScriptPath('query-plan-explorer.js'));
 
 function sampleTrace() {
     return {
