@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
@@ -57,6 +58,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
@@ -108,6 +110,7 @@ import org.eclipse.rdf4j.query.algebra.Namespace;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
@@ -150,7 +153,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
-import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.OrderByHint;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Now;
@@ -190,6 +193,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FeedbackWorkReporting
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.GroupIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.MultiProjectionIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.OrderIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ProjectionIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
@@ -338,6 +342,50 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		}
 	}
 
+	private QueryExecutionPolicy queryExecutionPolicy = QueryExecutionPolicy.DEFAULT;
+	private boolean queryExecutionPolicyBound;
+	private boolean queryPreparationStarted;
+
+	@Override
+	public QueryExecutionPolicy getQueryExecutionPolicy() {
+		return queryExecutionPolicy;
+	}
+
+	@Override
+	public synchronized void setQueryExecutionPolicy(QueryExecutionPolicy policy) {
+		Objects.requireNonNull(policy);
+		if ((queryExecutionPolicyBound || queryPreparationStarted) && queryExecutionPolicy != policy) {
+			throw new IllegalStateException("Query execution policy is already bound to this strategy");
+		}
+		queryExecutionPolicy = policy;
+		queryExecutionPolicyBound = true;
+	}
+
+	/** Shared preparation boundary for this strategy and backend subclasses. */
+	protected final TupleExpr prepareTupleExpr(TupleExpr expression) {
+		if (expression == null) {
+			throw new IllegalArgumentException("expr must not be null");
+		}
+		synchronized (this) {
+			queryPreparationStarted = true;
+		}
+		return PreparedValuesSnapshot.prepare(expression);
+	}
+
+	/** A preparation phase owns snapshots; a safety-only caller scope does not imply row capture. */
+	protected final <T> T withPreparedTupleExpr(TupleExpr expression,
+			java.util.function.Function<TupleExpr, T> action) {
+		if (expression == null) {
+			throw new IllegalArgumentException("expr must not be null");
+		}
+		synchronized (this) {
+			queryPreparationStarted = true;
+		}
+		return QueryEvaluationUtility.withPreparedQuerySafetySnapshot(expression, getQueryExecutionPolicy(),
+				PreparedValuesSnapshot::newPreparation,
+				action);
+	}
+
 	public DefaultEvaluationStrategy(TripleSource tripleSource, FederatedServiceResolver serviceResolver) {
 		this(tripleSource, null, serviceResolver);
 	}
@@ -413,12 +461,18 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	 */
 	@Override
 	public TupleExpr optimize(TupleExpr expr, EvaluationStatistics evaluationStatistics, BindingSet bindings) {
-		return optimizeWithBNodePreflight(expr, bindings, () -> {
+		return optimizeWithBNodePreflight(expr, bindings, () -> withPreparedTupleExpr(expr, prepared -> {
+			QueryEvaluationUtility.pinFunctions(prepared);
+			TupleExpr optimized = prepared;
 			for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
-				optimizer.optimize(expr, dataset, bindings);
+				optimized = QueryEvaluationUtility.withFreshPreparedQuerySafetySnapshot(optimized, optimizerRoot -> {
+					optimizer.optimize(optimizerRoot, dataset, bindings);
+					return optimizerRoot;
+				});
 			}
-			return expr;
-		});
+			return QueryEvaluationUtility.withFreshPreparedQuerySafetySnapshot(optimized,
+					optimizerRoot -> optimizerRoot);
+		}));
 	}
 
 	/** Reserves original identity roles before optimization, including a subclass's cached-plan lookup. */
@@ -426,6 +480,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	protected final TupleExpr optimizeWithBNodePreflight(TupleExpr originalExpression, BindingSet bindings,
 			Supplier<TupleExpr> optimization) {
 		LocalBNodeReferences.Analysis original = LocalBNodeReferences.analyze(originalExpression);
+		original.runtimeValues().forEach(blankNodes::reserve);
 		Set<String> references = blankNodes.getReferenceSnapshot(originalExpression, original.structure());
 		if (references == null) {
 			references = original.ids();
@@ -440,8 +495,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		blankNodes.reserve(bindings);
 
 		TupleExpr optimized = optimization.get();
-		blankNodes.rememberReferenceSnapshot(optimized, references, knownIds,
-				LocalBNodeReferences.analyze(optimized).structure());
+		LocalBNodeReferences.Analysis optimizedReferences = LocalBNodeReferences.analyze(optimized);
+		optimizedReferences.runtimeValues().forEach(blankNodes::reserve);
+		blankNodes.rememberReferenceSnapshot(optimized, references, knownIds, optimizedReferences.structure());
 		return optimized;
 	}
 
@@ -581,30 +637,65 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	@Override
 	public QueryEvaluationStep precompile(TupleExpr expr) {
-		QueryEvaluationContext context;
-		try (var ignored = blankNodes.activate()) {
-			context = new QueryEvaluationContext.Minimal(dataset, tripleSource.getValueFactory(),
-					tripleSource.getComparator());
-		}
-		if (expr instanceof QueryRoot && !hasUnknownBindingSetColumns(expr)) {
-			// Array layout preparation replaces Vars. Validate external mutations before this trusted rewrite,
-			// then carry the original fixed roles to the rewritten tree instead of upgrading inlined bindings.
-			LocalBNodeReferences.Analysis before = LocalBNodeReferences.analyze(expr);
-			Set<String> references = blankNodes.getReferenceSnapshot(expr, before.structure());
-			if (references == null) {
-				references = before.ids();
+		return precompileWithInitialContext(expr, this::precompile);
+	}
+
+	/** Backend preparation before the common trusted initial-context pipeline. */
+	protected void prepareTupleCompilation(TupleExpr expr) {
+	}
+
+	@FunctionalInterface
+	private interface TupleCompiler {
+		QueryEvaluationStep compile(TupleExpr expr, QueryEvaluationContext context);
+	}
+
+	/** Explicit backend opt-in; the interface default still calls the old public virtual entry. */
+	protected final QueryEvaluationStep precompileFinalTupleResultWithCommonSetup(TupleExpr expr) {
+		return precompileWithInitialContext(expr,
+				(prepared, context) -> precompileTupleEntry(prepared, context, false,
+						this::precompileFinalTupleResultExpr));
+	}
+
+	protected QueryEvaluationStep precompileFinalTupleResultExpr(TupleExpr expr, QueryEvaluationContext context) {
+		return precompileTupleExpr(expr, context);
+	}
+
+	private QueryEvaluationStep precompileWithInitialContext(TupleExpr expr, TupleCompiler compiler) {
+		prepareTupleCompilation(expr);
+		return withPreparedTupleExpr(expr, prepared -> {
+			QueryEvaluationContext context;
+			try (var ignored = blankNodes.activate()) {
+				context = new QueryEvaluationContext.Minimal(dataset, tripleSource.getValueFactory(),
+						tripleSource.getComparator());
 			}
-			Set<String> knownIds = blankNodes.getKnownIdentitySnapshot(expr, before.structure());
-			if (knownIds == null) {
-				knownIds = before.knownIds();
+			if (prepared instanceof QueryRoot && !hasUnknownBindingSetColumns(prepared)) {
+				// Carry fixed-reference provenance through the trusted array-layout rewrite.
+				LocalBNodeReferences.Analysis before = LocalBNodeReferences.analyze(prepared);
+				before.runtimeValues().forEach(blankNodes::reserve);
+				Set<String> references = blankNodes.getReferenceSnapshot(prepared, before.structure());
+				if (references == null) {
+					references = before.ids();
+				}
+				Set<String> knownIds = blankNodes.getKnownIdentitySnapshot(prepared, before.structure());
+				if (knownIds == null) {
+					knownIds = before.knownIds();
+				}
+				String[] allVariables = ArrayBindingBasedQueryEvaluationContext
+						.findAllVariablesUsedInQuery((QueryRoot) prepared);
+				blankNodes.rememberReferenceSnapshot(prepared, references, knownIds,
+						LocalBNodeReferences.analyze(prepared).structure());
+				context = createArrayBindingContext(context, allVariables);
 			}
-			String[] allVariables = ArrayBindingBasedQueryEvaluationContext
-					.findAllVariablesUsedInQuery((QueryRoot) expr);
-			blankNodes.rememberReferenceSnapshot(expr, references, knownIds,
-					LocalBNodeReferences.analyze(expr).structure());
-			context = new ArrayBindingBasedQueryEvaluationContext(context, allVariables, tripleSource.getComparator());
-		}
-		return precompile(expr, context);
+			return compiler.compile(prepared, context);
+		});
+	}
+
+	/**
+	 * Creates a backend-specific view of the trusted array layout. The variables have already been rewritten once and
+	 * their fixed-reference and known-identity snapshots retained; implementations must reuse this exact layout.
+	 */
+	protected QueryEvaluationContext createArrayBindingContext(QueryEvaluationContext context, String[] allVariables) {
+		return new ArrayBindingBasedQueryEvaluationContext(context, allVariables, tripleSource.getComparator());
 	}
 
 	private QueryEvaluationContext scalarContext() {
@@ -632,13 +723,44 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	@Override
 	public QueryEvaluationStep precompile(TupleExpr expr, QueryEvaluationContext context) {
+		return precompileTupleEntry(expr, context, false);
+	}
+
+	/** Enters the complete trusted setup while selecting the ordinary compiler for this operand only. */
+	protected final QueryEvaluationStep precompileGenericTupleExpr(TupleExpr expr, QueryEvaluationContext context) {
+		return precompileTupleEntry(expr, context, true);
+	}
+
+	/**
+	 * Trusted lazy ordinary operand compilation; shares an active root and otherwise suppresses subtree publication.
+	 */
+	protected final QueryEvaluationStep precompileGenericRuntimeSubtree(TupleExpr expr,
+			QueryEvaluationContext context) {
+		RuntimeFeedbackCompilation previous = runtimeFeedbackCompilation.get();
+		if (previous != null) {
+			return precompileGenericTupleExpr(expr, context);
+		}
+		runtimeFeedbackCompilation.set(new RuntimeFeedbackCompilation(evaluationStatistics, false));
+		try {
+			return precompileGenericTupleExpr(expr, context);
+		} finally {
+			runtimeFeedbackCompilation.remove();
+		}
+	}
+
+	private QueryEvaluationStep precompileTupleEntry(TupleExpr expr, QueryEvaluationContext context, boolean generic) {
+		return precompileTupleEntry(expr, context, generic, null);
+	}
+
+	private QueryEvaluationStep precompileTupleEntry(TupleExpr expr, QueryEvaluationContext context, boolean generic,
+			TupleCompiler compiler) {
 		int[] depth = compilationDepth.get();
 		depth[0]++;
 		try {
 			if (depth[0] == 1) {
 				reserveLocalValues(expr, context.getBlankNodeAllocationScope());
 			}
-			return precompileTuple(expr, context);
+			return withPreparedTupleExpr(expr, prepared -> precompileWithSafetySnapshot(prepared, context, generic, compiler));
 		} finally {
 			if (--depth[0] == 0) {
 				compilationDepth.remove();
@@ -655,6 +777,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			return;
 		}
 		LocalBNodeReferences.Analysis current = LocalBNodeReferences.analyze(expression);
+		current.runtimeValues().forEach(scope::reserve);
 		Set<String> originalReferences = blankNodes.getReferenceSnapshot(expression, current.structure());
 		if (originalReferences == null) {
 			originalReferences = current.ids();
@@ -682,7 +805,15 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		}
 	}
 
-	private QueryEvaluationStep precompileTuple(TupleExpr expr, QueryEvaluationContext context) {
+	private QueryEvaluationStep precompileWithSafetySnapshot(TupleExpr expr, QueryEvaluationContext context,
+			boolean generic, TupleCompiler compiler) {
+		try (var ignored = context.getBlankNodeAllocationScope().activate()) {
+			return precompileTuple(expr, context, generic, compiler);
+		}
+	}
+
+	private QueryEvaluationStep precompileTuple(TupleExpr expr, QueryEvaluationContext context, boolean generic,
+			TupleCompiler compiler) {
 		RuntimeFeedbackCompilation compilation = runtimeFeedbackCompilation.get();
 		boolean compilationRoot = compilation == null;
 		if (compilationRoot) {
@@ -701,9 +832,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 				}
 				QueryEvaluationContext planning = AdaptiveFilterEvaluationStep.planningContext(expr, context);
 				return AdaptiveFilterEvaluationStep.scope(
-						precompilePlanned(expr, planning, compilation, compilationRoot), planning);
+						precompilePlanned(expr, planning, compilation, compilationRoot, generic, compiler), planning);
 			}
-			return precompilePlanned(expr, context, compilation, compilationRoot);
+			return precompilePlanned(expr, context, compilation, compilationRoot, generic, compiler);
 		} finally {
 			if (compilationRoot) {
 				compilation.freeze();
@@ -713,12 +844,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	private QueryEvaluationStep precompilePlanned(TupleExpr expr, QueryEvaluationContext context,
-			RuntimeFeedbackCompilation compilation, boolean compilationRoot) {
-		QueryEvaluationStep prepared = AdaptiveFilterEvaluationStep.prepare(expr, this, context, evaluationStatistics,
-				() -> precompileStandard(expr, context, compilation));
-		if (prepared == null) {
-			prepared = precompileStandard(expr, context, compilation);
-		}
+			RuntimeFeedbackCompilation compilation, boolean compilationRoot, boolean generic, TupleCompiler compiler) {
+		QueryEvaluationStep prepared = compiler != null ? compiler.compile(expr, context)
+				: generic ? precompileGenericPlanned(expr, context) : precompileTupleExpr(expr, context);
 		QueryEvaluationStep tracked = AdaptiveFilterEvaluationStep.decorate(prepared,
 				preparedStepDecorator(expr, compilation, compilationRoot));
 		if (compilationRoot) {
@@ -735,6 +863,18 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		}
 		AdaptiveFilterEvaluationStep.recordPrepared(context, expr, tracked);
 		return tracked;
+	}
+
+	/** Backend hook after trusted identity, safety, origin and planning setup; tracking is applied by its caller. */
+	protected QueryEvaluationStep precompileTupleExpr(TupleExpr expr, QueryEvaluationContext context) {
+		return precompileGenericPlanned(expr, context);
+	}
+
+	private QueryEvaluationStep precompileGenericPlanned(TupleExpr expr, QueryEvaluationContext context) {
+		RuntimeFeedbackCompilation compilation = runtimeFeedbackCompilation.get();
+		QueryEvaluationStep prepared = AdaptiveFilterEvaluationStep.prepare(expr, this, context, evaluationStatistics,
+				() -> precompileStandard(expr, context, compilation));
+		return prepared == null ? precompileStandard(expr, context, compilation) : prepared;
 	}
 
 	private QueryEvaluationStep precompileStandard(TupleExpr expr, QueryEvaluationContext context,
@@ -874,7 +1014,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		if (preboundFeedbackIterator != null) {
 			return qes -> bindings -> {
 				try {
-					return preboundFeedbackIterator.bind(qes.evaluate(bindings));
+					return preboundFeedbackIterator.bind(qes.evaluate(bindings), bindings);
 				} catch (Throwable failure) {
 					if (publishRuntimeFeedback) {
 						compilation.publish(false);
@@ -884,7 +1024,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			};
 		}
 		NodeTelemetryAccumulator telemetry = new NodeTelemetryAccumulator(expr, telemetryNanoClock,
-				evaluationStatistics, timingEnabled, !runtimeFeedbackTarget.active());
+				evaluationStatistics, timingEnabled, !runtimeFeedbackTarget.active(), runtimeFeedbackTarget);
 		compilation.add(telemetry);
 		return qes -> bindings -> {
 			if (resultTelemetryEnabled) {
@@ -899,7 +1039,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 				long constructionNanos = timingEnabled ? telemetry.nanoTime() - openedAtNanos : 0L;
 				telemetry.opened(constructionNanos);
 				return new ResultSizeCountingIterator(result, expr, evaluationStatistics, runtimeFeedbackTarget,
-						publishRuntimeFeedback ? compilation : null, telemetry, openedAtNanos);
+						publishRuntimeFeedback ? compilation : null, telemetry, openedAtNanos, false, bindings);
 			} catch (Throwable failure) {
 				if (timingEnabled) {
 					telemetry.opened(telemetry.nanoTime() - openedAtNanos);
@@ -1187,12 +1327,108 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	protected QueryEvaluationStep prepare(Order node, QueryEvaluationContext context) throws QueryEvaluationException {
-		ValueComparator vcmp = new ValueComparator();
-		OrderComparator cmp = new OrderComparator(this, node, vcmp, context);
+		for (OrderElem orderElem : node.getElements()) {
+			if (orderElem.getExpr()instanceof FunctionCall functionCall) {
+				org.eclipse.rdf4j.query.algebra.evaluation.function.Function function = QueryEvaluationUtility
+						.resolveFunction(functionCall)
+						.orElse(null);
+				if (function instanceof OrderByHint orderByHint) {
+					throw new QueryEvaluationException(orderByHint.getUnsupportedOrderByMessage());
+				}
+			}
+		}
+
+		ValueComparator vcmp = new ValueComparator(getQueryExecutionPolicy());
+		vcmp.setStrict(getQueryEvaluationMode() == QueryEvaluationMode.STRICT);
 		boolean reduced = isReducedOrDistinct(node);
 		long limit = getLimit(node);
 		QueryEvaluationStep preparedArg = precompile(node.getArg(), context);
+
+		boolean stableKeys = node.getElements()
+				.stream()
+				.allMatch(element -> element.getExpr() instanceof Var
+						|| QueryEvaluationUtility.isRepeatable(element.getExpr()));
+		if (!stableKeys) {
+			// A non-stable ordering expression evaluated inside the comparator gives the same solution
+			// different keys during one sort, violating the comparator contract, and the comparator's
+			// error handling would swallow query-fatal errors. Instead, a stable ordering key is
+			// established once per solution occurrence BEFORE sorting and kept separately from query
+			// bindings, including during parallel comparison and disk spilling. A
+			// row-local expression error leaves the key absent (sorting as an unbound value); a
+			// query-fatal error propagates and fails the query.
+			// The parent must eliminate duplicates before applying its slice. Distinct solution
+			// occurrences can have different keys, so the sort cannot deduplicate or truncate them.
+			return prepareVolatileKeyOrder(node, context, vcmp, reduced ? Long.MAX_VALUE : limit, preparedArg);
+		}
+
+		OrderComparator cmp = new OrderComparator(this, node, vcmp, context);
 		return new OrderQueryEvaluationStep(node, cmp, limit, reduced, preparedArg, iterationCacheSyncThreshold);
+	}
+
+	private QueryEvaluationStep prepareVolatileKeyOrder(Order node, QueryEvaluationContext context,
+			ValueComparator vcmp, long limit, QueryEvaluationStep preparedArg) {
+
+		List<OrderElem> elements = node.getElements();
+		QueryValueEvaluationStep[] keySteps = new QueryValueEvaluationStep[elements.size()];
+		boolean[] ascending = new boolean[elements.size()];
+		for (int i = 0; i < elements.size(); i++) {
+			OrderElem element = elements.get(i);
+			ascending[i] = element.isAscending();
+			keySteps[i] = precompile(element.getExpr(), context);
+		}
+
+		// Break ties using only the original query bindings.
+		OrderComparator contentsComparator = new OrderComparator(this, new Order(), vcmp, context);
+		Comparator<BindingSet> comparator = (o1, o2) -> {
+			Value[] leftKeys = ((OrderKeyBindingSet) o1).keys;
+			Value[] rightKeys = ((OrderKeyBindingSet) o2).keys;
+			for (int i = 0; i < keySteps.length; i++) {
+				int compare = vcmp.compare(leftKeys[i], rightKeys[i]);
+				if (compare != 0) {
+					return ascending[i] ? compare : -compare;
+				}
+			}
+			return contentsComparator.compare(o1, o2);
+		};
+
+		QueryEvaluationStep decoratedArg = bindings -> new ConvertingIteration<>(preparedArg.evaluate(bindings)) {
+
+			@Override
+			protected BindingSet convert(BindingSet sourceRow) {
+				OrderKeyBindingSet withKeys = new OrderKeyBindingSet(sourceRow, keySteps.length);
+				for (int i = 0; i < keySteps.length; i++) {
+					try {
+						withKeys.keys[i] = keySteps[i].evaluate(sourceRow);
+					} catch (ValueExprEvaluationException e) {
+						// row-local: the key stays absent and sorts as an unbound value
+					}
+				}
+				return withKeys;
+			}
+		};
+		// Keys belong to individual solution occurrences. Leave duplicate elimination to the parent.
+		OrderQueryEvaluationStep orderStep = new OrderQueryEvaluationStep(node, comparator, limit, false,
+				decoratedArg, iterationCacheSyncThreshold);
+		return bindings -> new ConvertingIteration<>(orderStep.evaluate(bindings)) {
+
+			@Override
+			protected BindingSet convert(BindingSet decoratedRow) {
+				return new QueryBindingSet(decoratedRow);
+			}
+		};
+	}
+
+	/** Keeps per-occurrence sort keys serializable without introducing query-visible bindings. */
+	private static final class OrderKeyBindingSet extends QueryBindingSet {
+
+		private static final long serialVersionUID = 1L;
+
+		private final Value[] keys;
+
+		private OrderKeyBindingSet(BindingSet bindings, int keyCount) {
+			super(bindings);
+			keys = new Value[keyCount];
+		}
 	}
 
 	protected QueryEvaluationStep prepare(BindingSetAssignment node, QueryEvaluationContext context)
@@ -1273,7 +1509,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		};
 	}
 
-	private Function<Value, Value> valueCapturer() {
+	protected final Function<Value, Value> valueCapturer() {
 		if (!valueCapturerInitialized) {
 			synchronized (this) {
 				if (!valueCapturerInitialized) {
@@ -1541,6 +1777,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	public QueryValueEvaluationStep precompile(ValueExpr expr,
 			QueryEvaluationContext context)
 			throws QueryEvaluationException {
+		synchronized (this) {
+			queryPreparationStarted = true;
+		}
 		int[] depth = compilationDepth.get();
 		depth[0]++;
 		try {
@@ -1557,89 +1796,95 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	private QueryValueEvaluationStep precompileValue(ValueExpr expr, QueryEvaluationContext context) {
 		QueryValueEvaluationStep prepared;
-		if (expr instanceof Var) {
-			prepared = prepare((Var) expr, context);
-		} else if (expr instanceof ValueConstant) {
-			prepared = prepare((ValueConstant) expr, context);
-		} else if (expr instanceof BNodeGenerator) {
-			prepared = prepare((BNodeGenerator) expr, context);
-		} else if (expr instanceof Bound) {
-			prepared = prepare((Bound) expr, context);
-//			return new QueryValueEvaluationStep.Minimal(this, expr);
-		} else if (expr instanceof Str) {
-			prepared = prepare((Str) expr, context);
-		} else if (expr instanceof Label) {
-			prepared = prepare((Label) expr, context);
-		} else if (expr instanceof Lang) {
-			prepared = prepare((Lang) expr, context);
-		} else if (expr instanceof LangDir) {
-			prepared = prepare((LangDir) expr, context);
-		} else if (expr instanceof StrLangDir) {
-			prepared = prepare((StrLangDir) expr, context);
-		} else if (expr instanceof HasLang) {
-			prepared = prepare((HasLang) expr, context);
-		} else if (expr instanceof HasLangDir) {
-			prepared = prepare((HasLangDir) expr, context);
-		} else if (expr instanceof LangMatches) {
-			prepared = prepare((LangMatches) expr, context);
-		} else if (expr instanceof Datatype) {
-			prepared = prepare((Datatype) expr, context);
-		} else if (expr instanceof Namespace) {
-			prepared = prepare((Namespace) expr, context);
-		} else if (expr instanceof LocalName) {
-			prepared = prepare((LocalName) expr, context);
-		} else if (expr instanceof IsResource) {
-			prepared = prepare((IsResource) expr, context);
-		} else if (expr instanceof IsTriple) {
-			prepared = prepare((IsTriple) expr, context);
-		} else if (expr instanceof IsURI) {
-			prepared = prepare((IsURI) expr, context);
-		} else if (expr instanceof IsBNode) {
-			prepared = prepare((IsBNode) expr, context);
-		} else if (expr instanceof IsLiteral) {
-			prepared = prepare((IsLiteral) expr, context);
-		} else if (expr instanceof IsNumeric) {
-			prepared = prepare((IsNumeric) expr, context);
-		} else if (expr instanceof IRIFunction) {
-			prepared = prepare((IRIFunction) expr, context);
-		} else if (expr instanceof Regex) {
-			prepared = prepare((Regex) expr, context);
-		} else if (expr instanceof Coalesce) {
-			prepared = prepare((Coalesce) expr, context);
-		} else if (expr instanceof FunctionCall) {
-			prepared = prepare((FunctionCall) expr, context);
-		} else if (expr instanceof And) {
-			prepared = prepare((And) expr, context);
-		} else if (expr instanceof Or) {
-			prepared = prepare((Or) expr, context);
-		} else if (expr instanceof Not) {
-			prepared = prepare((Not) expr, context);
-		} else if (expr instanceof SameTerm) {
-			prepared = prepare((SameTerm) expr, context);
-		} else if (expr instanceof Compare) {
-			prepared = prepare((Compare) expr, context);
-		} else if (expr instanceof MathExpr) {
-			prepared = prepare((MathExpr) expr, context);
-		} else if (expr instanceof In) {
-			prepared = prepare((In) expr, context);
-		} else if (expr instanceof CompareAny) {
-			prepared = prepare((CompareAny) expr, context);
-		} else if (expr instanceof CompareAll) {
-			prepared = prepare((CompareAll) expr, context);
-		} else if (expr instanceof Exists) {
-			prepared = prepare((Exists) expr, context);
-		} else if (expr instanceof If) {
-			prepared = prepare((If) expr, context);
-		} else if (expr instanceof ListMemberOperator) {
-			prepared = prepare((ListMemberOperator) expr, context);
-		} else if (expr instanceof ValueExprTripleRef) {
-			prepared = prepare((ValueExprTripleRef) expr, context);
-		} else if (expr instanceof TripleComponent) {
-			prepared = prepare((TripleComponent) expr, context);
-		} else if (expr == null) {
-			throw new IllegalArgumentException("expr must not be null");
-		} else {
-			throw new QueryEvaluationException("Unsupported value expr type: " + expr.getClass());
+		try {
+			if (expr instanceof Var) {
+				prepared = prepare((Var) expr, context);
+			} else if (expr instanceof ValueConstant) {
+				prepared = prepare((ValueConstant) expr, context);
+			} else if (expr instanceof BNodeGenerator) {
+				prepared = prepare((BNodeGenerator) expr, context);
+			} else if (expr instanceof Bound) {
+				prepared = prepare((Bound) expr, context);
+//				return new QueryValueEvaluationStep.Minimal(this, expr);
+			} else if (expr instanceof Str) {
+				prepared = prepare((Str) expr, context);
+			} else if (expr instanceof Label) {
+				prepared = prepare((Label) expr, context);
+			} else if (expr instanceof Lang) {
+				prepared = prepare((Lang) expr, context);
+			} else if (expr instanceof LangDir) {
+				prepared = prepare((LangDir) expr, context);
+			} else if (expr instanceof StrLangDir) {
+				prepared = prepare((StrLangDir) expr, context);
+			} else if (expr instanceof HasLang) {
+				prepared = prepare((HasLang) expr, context);
+			} else if (expr instanceof HasLangDir) {
+				prepared = prepare((HasLangDir) expr, context);
+			} else if (expr instanceof LangMatches) {
+				prepared = prepare((LangMatches) expr, context);
+			} else if (expr instanceof Datatype) {
+				prepared = prepare((Datatype) expr, context);
+			} else if (expr instanceof Namespace) {
+				prepared = prepare((Namespace) expr, context);
+			} else if (expr instanceof LocalName) {
+				prepared = prepare((LocalName) expr, context);
+			} else if (expr instanceof IsResource) {
+				prepared = prepare((IsResource) expr, context);
+			} else if (expr instanceof IsTriple) {
+				prepared = prepare((IsTriple) expr, context);
+			} else if (expr instanceof IsURI) {
+				prepared = prepare((IsURI) expr, context);
+			} else if (expr instanceof IsBNode) {
+				prepared = prepare((IsBNode) expr, context);
+			} else if (expr instanceof IsLiteral) {
+				prepared = prepare((IsLiteral) expr, context);
+			} else if (expr instanceof IsNumeric) {
+				prepared = prepare((IsNumeric) expr, context);
+			} else if (expr instanceof IRIFunction) {
+				prepared = prepare((IRIFunction) expr, context);
+			} else if (expr instanceof Regex) {
+				prepared = prepare((Regex) expr, context);
+			} else if (expr instanceof Coalesce) {
+				prepared = prepare((Coalesce) expr, context);
+			} else if (expr instanceof FunctionCall) {
+				prepared = prepare((FunctionCall) expr, context);
+			} else if (expr instanceof And) {
+				prepared = prepare((And) expr, context);
+			} else if (expr instanceof Or) {
+				prepared = prepare((Or) expr, context);
+			} else if (expr instanceof Not) {
+				prepared = prepare((Not) expr, context);
+			} else if (expr instanceof SameTerm) {
+				prepared = prepare((SameTerm) expr, context);
+			} else if (expr instanceof Compare) {
+				prepared = prepare((Compare) expr, context);
+			} else if (expr instanceof MathExpr) {
+				prepared = prepare((MathExpr) expr, context);
+			} else if (expr instanceof In) {
+				prepared = prepare((In) expr, context);
+			} else if (expr instanceof CompareAny) {
+				prepared = prepare((CompareAny) expr, context);
+			} else if (expr instanceof CompareAll) {
+				prepared = prepare((CompareAll) expr, context);
+			} else if (expr instanceof Exists) {
+				prepared = prepare((Exists) expr, context);
+			} else if (expr instanceof If) {
+				prepared = prepare((If) expr, context);
+			} else if (expr instanceof ListMemberOperator) {
+				prepared = prepare((ListMemberOperator) expr, context);
+			} else if (expr instanceof ValueExprTripleRef) {
+				prepared = prepare((ValueExprTripleRef) expr, context);
+			} else if (expr instanceof TripleComponent) {
+				prepared = prepare((TripleComponent) expr, context);
+			} else if (expr == null) {
+				throw new IllegalArgumentException("expr must not be null");
+			} else {
+				throw new QueryEvaluationException("Unsupported value expr type: " + expr.getClass());
+			}
+		} catch (ValueExprEvaluationException e) {
+			// Keep compile-time expression errors deferred for lazy/error-handling parents; Fail must remain
+			// nonconstant.
+			prepared = new QueryValueEvaluationStep.Fail(e.getMessage());
 		}
 		return wrapValueExprTelemetry(expr, captureConstantValue(prepared, context));
 	}
@@ -1748,10 +1993,12 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			Predicate<BindingSet> hasValue = context.hasBinding(var.getName());
 			return bindings -> {
 				if (hasValue.test(bindings)) {
-					return getValue.apply(bindings);
-				} else {
-					throw new ValueExprEvaluationException();
+					Value boundValue = getValue.apply(bindings);
+					if (boundValue != null) {
+						return boundValue;
+					}
 				}
+				throw new ValueExprEvaluationException();
 			};
 		}
 
@@ -1958,7 +2205,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			this.compilation = compilation;
 		}
 
-		private RuntimeFeedbackCountingIterator bind(CloseableIteration<BindingSet> iterator) {
+		private RuntimeFeedbackCountingIterator bind(CloseableIteration<BindingSet> iterator, BindingSet bindings) {
 			if (active) {
 				throw new IllegalStateException("A compiled query node cannot have overlapping evaluations");
 			}
@@ -1968,7 +2215,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			cancelled = false;
 			failed = false;
 			active = true;
-			target.open();
+			target.open(bindings);
 			return this;
 		}
 
@@ -2310,14 +2557,14 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	public QueryValueEvaluationStep prepare(FunctionCall node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		var function = FunctionRegistry.getInstance()
-				.get(node.getURI())
+		org.eclipse.rdf4j.query.algebra.evaluation.function.Function function = QueryEvaluationUtility
+				.resolveFunction(node)
 				.orElseThrow(() -> new QueryEvaluationException("Unknown function '" + node.getURI() + "'"));
 
 		// the NOW function is a special case as it needs to keep a shared
 		// return
 		// value for the duration of the query.
-		if (function instanceof Now) {
+		if (function.getClass() == Now.class) {
 			return prepare((Now) function, context);
 		}
 
@@ -2410,7 +2657,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	 * If all input is constant normally the function call output will be constant as well.
 	 *
 	 * @param context  used to precompile arguments of the function
-	 * @param function that might be constant
+	 * @param function resolved function implementation that might be constant
 	 * @param args     that the function must evaluate
 	 * @param argSteps side effect this array is filled
 	 * @return if this function resolves to a constant value
@@ -2418,18 +2665,14 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	private boolean determineIfFunctionCallWillBeAConstant(QueryEvaluationContext context,
 			org.eclipse.rdf4j.query.algebra.evaluation.function.Function function,
 			List<ValueExpr> args, QueryValueEvaluationStep[] argSteps) {
-		boolean allConstant = true;
-		if (function.mustReturnDifferentResult()) {
-			allConstant = false;
-			for (int i = 0; i < args.size(); i++) {
-				argSteps[i] = precompile(args.get(i), context);
-			}
-		} else {
-			for (int i = 0; i < args.size(); i++) {
-				argSteps[i] = precompile(args.get(i), context);
-				if (!argSteps[i].isConstant()) {
-					allConstant = false;
-				}
+		// plan-level constant folding is stricter than within-execution repeatability: a prepared query can be
+		// executed repeatedly, so only functions immutable across executions may be folded into the plan
+		boolean allConstant = QueryEvaluationUtility.isSafeForPlanConstantFolding(function,
+				getQueryExecutionPolicy());
+		for (int i = 0; i < args.size(); i++) {
+			argSteps[i] = precompile(args.get(i), context);
+			if (!argSteps[i].isConstant()) {
+				allConstant = false;
 			}
 		}
 		return allConstant;
@@ -2495,6 +2738,46 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			} catch (QueryEvaluationException e) {
 				// no need to add as it would have been ignored anyway.
 			}
+		}
+
+		int size = compiledArgs.size();
+
+		if (size == 1) {
+			QueryValueEvaluationStep expr = compiledArgs.get(0);
+			return bindings -> {
+
+				try {
+					// return first result that does not produce an error on
+					// evaluation.
+					return expr.evaluate(bindings);
+
+				} catch (QueryEvaluationException ignored) {
+				}
+
+				throw new ValueExprEvaluationException(
+						"COALESCE arguments do not evaluate to a value: " + node.getSignature());
+			};
+		}
+
+		if (size == 2) {
+			QueryValueEvaluationStep expr = compiledArgs.get(0);
+			QueryValueEvaluationStep expr2 = compiledArgs.get(1);
+
+			return bindings -> {
+
+				try {
+					return expr.evaluate(bindings);
+				} catch (QueryEvaluationException ignored) {
+				}
+
+				try {
+					return expr2.evaluate(bindings);
+				} catch (QueryEvaluationException ignored) {
+				}
+
+				throw new ValueExprEvaluationException(
+						"COALESCE arguments do not evaluate to a value: " + node.getSignature());
+			};
 		}
 
 		return bindings -> {
@@ -3007,6 +3290,15 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 				RuntimeFeedbackTarget runtimeFeedbackTarget,
 				RuntimeFeedbackCompilation runtimeFeedbackCompilation,
 				NodeTelemetryAccumulator telemetry, long openedAtNanos, boolean publishTelemetryOnClose) {
+			this(iterator, queryModelNode, evaluationStatistics, runtimeFeedbackTarget, runtimeFeedbackCompilation,
+					telemetry, openedAtNanos, publishTelemetryOnClose, null);
+		}
+
+		private ResultSizeCountingIterator(CloseableIteration<BindingSet> iterator,
+				QueryModelNode queryModelNode, EvaluationStatistics evaluationStatistics,
+				RuntimeFeedbackTarget runtimeFeedbackTarget, RuntimeFeedbackCompilation runtimeFeedbackCompilation,
+				NodeTelemetryAccumulator telemetry, long openedAtNanos, boolean publishTelemetryOnClose,
+				BindingSet input) {
 			super(iterator);
 			this.iterator = iterator;
 			this.queryModelNode = queryModelNode;
@@ -3025,7 +3317,11 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 						queryModelNode.getJoinLeftBindingsConsumedActual()));
 				joinRightRowsBaseline = nonNegative(joinCount(queryModelNode, DEFERRED_JOIN_RIGHT_ROWS,
 						queryModelNode.getJoinRightBindingsConsumedActual()));
-				this.runtimeFeedbackTarget.open();
+				if (input == null) {
+					this.runtimeFeedbackTarget.open();
+				} else {
+					this.runtimeFeedbackTarget.open(input);
+				}
 			}
 		}
 

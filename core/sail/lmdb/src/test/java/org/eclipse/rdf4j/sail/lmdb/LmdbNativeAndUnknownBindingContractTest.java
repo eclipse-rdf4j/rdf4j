@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.spy;
@@ -65,6 +66,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.mockito.stubbing.Answer;
 
 /** Paired raw callback contracts: undeclared custom statement metadata versus owned native quantities. */
 class LmdbNativeAndUnknownBindingContractTest {
@@ -395,14 +397,22 @@ class LmdbNativeAndUnknownBindingContractTest {
 
 	static LmdbEstimatorRuntime unknownStatementProducer(LmdbEstimatorRuntime nativeRuntime) {
 		LmdbEstimatorRuntime custom = spy(nativeRuntime);
-		doAnswer(invocation -> {
+		Answer<?> sourceAwareAnswer = invocation -> {
 			TupleExpr expression = invocation.getArgument(0);
 			JoinFactorCostModel.CostContext context = invocation.getArgument(1);
-			return nativeRuntime.factorCost(expression, context)
-					.map(estimate -> expression instanceof StatementPattern
-							? estimate.withRowScope(JoinFactorCostModel.RowScope.UNKNOWN)
-							: estimate);
-		}).when(custom).factorCost(any(TupleExpr.class), any(JoinFactorCostModel.CostContext.class));
+			var estimate = invocation.getArguments().length == 3
+					? nativeRuntime.factorCost(expression, context,
+							(LmdbFilterReadContext) invocation.getArgument(2))
+					: nativeRuntime.factorCost(expression, context);
+			return estimate.map(value -> expression instanceof StatementPattern
+					? value.withRowScope(JoinFactorCostModel.RowScope.UNKNOWN)
+					: value);
+		};
+		doAnswer(sourceAwareAnswer).when(custom)
+				.factorCost(any(TupleExpr.class), any(JoinFactorCostModel.CostContext.class));
+		doAnswer(sourceAwareAnswer).when(custom)
+				.factorCost(any(TupleExpr.class),
+						any(JoinFactorCostModel.CostContext.class), nullable(LmdbFilterReadContext.class));
 		return custom;
 	}
 

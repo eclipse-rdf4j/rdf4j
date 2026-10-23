@@ -17,11 +17,14 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings.MutableCarrier;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
 
@@ -30,12 +33,31 @@ import org.eclipse.rdf4j.query.impl.SimpleBinding;
  * implementations differs from {@link MapBindingSet} in that it maps variable names to Value objects and that the
  * Binding objects are created lazily.
  */
-public class QueryBindingSet extends AbstractBindingSet implements MutableBindingSet {
+public class QueryBindingSet extends AbstractBindingSet implements MutableBindingSet, MutableCarrier {
 
 	private static final long serialVersionUID = -2010715346095527301L;
 
 	private final Map<String, Value> bindings;
 	BindingSetOrigin origin;
+	private GraphFrameBindings graphFrames;
+
+	@Override
+	@InternalUseOnly
+	public GraphFrameBindings getGraphFrameBindings() {
+		return graphFrames;
+	}
+
+	@Override
+	@InternalUseOnly
+	public void setGraphFrameBindings(GraphFrameBindings frames) {
+		graphFrames = frames == GraphFrameBindings.EMPTY ? null : frames;
+	}
+
+	private void forgetGraphFrame(String name) {
+		if (graphFrames != null) {
+			setGraphFrameBindings(graphFrames.without(name));
+		}
+	}
 
 	public QueryBindingSet() {
 		this(8);
@@ -49,12 +71,12 @@ public class QueryBindingSet extends AbstractBindingSet implements MutableBindin
 
 	public QueryBindingSet(BindingSet bindingSet) {
 		this(bindingSet.size());
-		copyValues(BindingSetOrigin.unwrap(bindingSet));
+		copyValues(bindingSet);
 		BindingSetOrigin.copy(bindingSet, this);
 	}
 
 	public void addAll(BindingSet bindingSet) {
-		copyValues(BindingSetOrigin.unwrap(bindingSet));
+		copyValues(bindingSet);
 		if (origin != null || BindingSetOrigin.tracked(bindingSet)) {
 			origin = BindingSetOrigin.overlay(BindingSetOrigin.of(this), BindingSetOrigin.of(bindingSet),
 					bindingSet.getBindingNames());
@@ -62,20 +84,21 @@ public class QueryBindingSet extends AbstractBindingSet implements MutableBindin
 	}
 
 	private void copyValues(BindingSet bindingSet) {
-		if (bindingSet instanceof QueryBindingSet) {
-			bindings.putAll(((QueryBindingSet) bindingSet).bindings);
+		GraphFrameBindings supplied = GraphFrameBindings.from(bindingSet);
+		if (graphFrames != null) {
+			bindingSet.getBindingNames().forEach(this::forgetGraphFrame);
+		}
+		BindingSet values = BindingSetOrigin.unwrap(bindingSet);
+		if (values instanceof QueryBindingSet query) {
+			bindings.putAll(query.bindings);
 		} else {
-			for (Binding binding : bindingSet) {
-				this.addBinding(binding);
+			for (Binding binding : values) {
+				addBinding(binding);
 			}
 		}
+		setGraphFrameBindings(GraphFrameBindings.from(this).merge(supplied));
 	}
 
-	/**
-	 * Adds a new binding to the binding set. The binding's name must not already be part of this binding set.
-	 *
-	 * @param binding The binding to add this this BindingSet.
-	 */
 	@Override
 	public void addBinding(Binding binding) {
 		addBinding(binding.getName(), binding.getValue());
@@ -98,11 +121,13 @@ public class QueryBindingSet extends AbstractBindingSet implements MutableBindin
 	}
 
 	public void setBinding(String name, Value value) {
+		forgetGraphFrame(name);
 		bindings.put(name, value);
 	}
 
 	@Override
 	public void removeBinding(String name) {
+		forgetGraphFrame(name);
 		bindings.remove(name);
 	}
 

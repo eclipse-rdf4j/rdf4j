@@ -25,6 +25,11 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleApplica
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
+import it.unimi.dsi.fastutil.ints.Int2ByteOpenHashMap;
+import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap;
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
+
 /**
  * Query-build-time packed rule program. Matches and substitutes immutable IDs and seeds alternatives directly in their
  * permanent semantic group.
@@ -67,12 +72,13 @@ final class PackedLogicalRuleProgram {
 	private int[] branchCodeValueIds;
 	private int[] rewriteScratch;
 	private int rewriteScratchSize;
-	private int[] renamedObjectIds;
+	private Int2ObjectOpenHashMap<GeneratedHelperNames> generatedHelperNamesByExpression;
 	private int[] appliedFactRevisions = new int[16];
 	private int[] firstMovableFilterByGroup = new int[16];
 	private int[] nextMovableFilterByExpression = new int[16];
 	private byte[] movableFilterRegistered = new byte[16];
 	private int[] firstFilterJoinConsumerByGroup = new int[16];
+	private byte[] filterJoinRegistered = new byte[16];
 	private int[] nextFilterJoinConsumerLink = new int[32];
 	private int[] filterJoinExpressionByLink = new int[32];
 	private byte[] filterJoinChildOrdinalByLink = new byte[32];
@@ -81,6 +87,8 @@ final class PackedLogicalRuleProgram {
 	private int finiteSymbolId;
 	private int finiteValueCount;
 	private boolean optionalRemoved;
+	// Shared only by structural analyses in one synchronous observer rewrite.
+	private OptionalPruningAnalysis optionalPruningAnalysis;
 	private boolean finiteFilterRewritten;
 	private int factorCount;
 	private int generatedBindingNameOrdinal;
@@ -288,13 +296,20 @@ final class PackedLogicalRuleProgram {
 				|| relations.executionDomainId(joinExpressionId) != 0) {
 			return;
 		}
+		ensureMovableFilterCapacity(joinExpressionId);
+		// Relation rows, including both child groups, have permanent identity. A fact revision can make a
+		// previously declined lift eligible, but it cannot create another subscription for the same JOIN slot.
+		boolean registered = filterJoinRegistered[joinExpressionId] != 0;
+		filterJoinRegistered[joinExpressionId] = 1;
 		for (int filteredOrdinal = 0; filteredOrdinal < 2; filteredOrdinal++) {
 			int filteredGroupId = relations.childGroupId(joinExpressionId, filteredOrdinal);
 			int siblingExpressionId = relations.childGroupId(joinExpressionId, 1 - filteredOrdinal);
 			ensureMovableFilterCapacity(filteredGroupId);
-			int linkId = appendFilterJoinConsumer(joinExpressionId, filteredOrdinal);
-			nextFilterJoinConsumerLink[linkId] = firstFilterJoinConsumerByGroup[filteredGroupId];
-			firstFilterJoinConsumerByGroup[filteredGroupId] = linkId;
+			if (!registered) {
+				int linkId = appendFilterJoinConsumer(joinExpressionId, filteredOrdinal);
+				nextFilterJoinConsumerLink[linkId] = firstFilterJoinConsumerByGroup[filteredGroupId];
+				firstFilterJoinConsumerByGroup[filteredGroupId] = linkId;
+			}
 			for (int filterExpressionId = firstMovableFilterByGroup[filteredGroupId]; filterExpressionId != 0; filterExpressionId = nextMovableFilterByExpression[filterExpressionId]) {
 				addSafeChildFilterJoinAlternative(joinExpressionId, filteredOrdinal, filterExpressionId,
 						siblingExpressionId);
@@ -375,6 +390,7 @@ final class PackedLogicalRuleProgram {
 		nextMovableFilterByExpression = Arrays.copyOf(nextMovableFilterByExpression, capacity);
 		movableFilterRegistered = Arrays.copyOf(movableFilterRegistered, capacity);
 		firstFilterJoinConsumerByGroup = Arrays.copyOf(firstFilterJoinConsumerByGroup, capacity);
+		filterJoinRegistered = Arrays.copyOf(filterJoinRegistered, capacity);
 	}
 
 	/** Attaches the predicate-range fact base derived during the explicit fact phase; null disables range rules. */
@@ -738,6 +754,17 @@ final class PackedLogicalRuleProgram {
 	}
 
 	private boolean safeCorrelatedMinusProbe(int expressionId) {
+		if (optionalPruningAnalysis == null) {
+			return safeCorrelatedMinusProbeUncached(expressionId);
+		}
+		RelationPruningFacts facts = optionalPruningAnalysis.relation(expressionId);
+		if (facts.repeatable == 0) {
+			facts.repeatable = (byte) (safeCorrelatedMinusProbeUncached(expressionId) ? 1 : 2);
+		}
+		return facts.repeatable == 1;
+	}
+
+	private boolean safeCorrelatedMinusProbeUncached(int expressionId) {
 		int operator = relations.operatorTag(expressionId);
 		return switch (operator) {
 		case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.BINDING_SET_ASSIGNMENT, PackedRelOp.SINGLETON_SET, PackedRelOp.EMPTY_SET, PackedRelOp.ZERO_LENGTH_PATH, PackedRelOp.ARBITRARY_LENGTH_PATH, PackedRelOp.TRIPLE_REF, PackedRelOp.REIFIED_TRIPLE_REF, PackedRelOp.ANNOTATION_TRIPLE_REF -> true;
@@ -876,6 +903,17 @@ final class PackedLogicalRuleProgram {
 	}
 
 	private boolean safeRepeatedScalar(int scalarId) {
+		if (optionalPruningAnalysis == null) {
+			return safeRepeatedScalarUncached(scalarId);
+		}
+		ScalarPruningFacts facts = optionalPruningAnalysis.scalar(scalarId);
+		if (facts.repeatable == 0) {
+			facts.repeatable = (byte) (safeRepeatedScalarUncached(scalarId) ? 1 : 2);
+		}
+		return facts.repeatable == 1;
+	}
+
+	private boolean safeRepeatedScalarUncached(int scalarId) {
 		if (scalarId == 0) {
 			return true;
 		}
@@ -972,13 +1010,7 @@ final class PackedLogicalRuleProgram {
 
 		int codeAssignmentId = bindingAssignment(branchCodeNameIds[0], branchCodeValueIds,
 				branchCodeValueCounts[0]);
-		int typeNameId = objects.intern("type");
-		// The new domain is local to this rewrite. Reusing any existing symbol can
-		// constrain the counted entity, code, or an enclosing correlated binding.
-		while (symbols.symbolId(typeNameId) != 0) {
-			typeNameId = objects.intern("type_" + ++generatedBindingNameOrdinal);
-		}
-		symbols.intern(typeNameId);
+		int typeNameId = generatedHelperNameId(groupExpressionId, GeneratedHelperRole.CODE_TYPE_TYPE_DOMAIN, 0);
 		int[] typeValues = { branchTypeValueIds[0], branchTypeValueIds[1] };
 		int typeAssignmentId = bindingAssignment(typeNameId, typeValues, typeValues.length);
 		int typePatternId = generalizedObjectPattern(branchTypePatternIds[0], typeNameId);
@@ -1476,9 +1508,8 @@ final class PackedLogicalRuleProgram {
 				|| !relationAssuresAll(eligibilityRightId, correlation)) {
 			return;
 		}
-		resetLocalRenames();
-		int leftId = anonymizeEligibility(eligibilityLeftId, correlation);
-		int rightId = anonymizeEligibility(eligibilityRightId, correlation);
+		int leftId = anonymizeEligibility(projectionExpressionId, eligibilityLeftId, correlation);
+		int rightId = anonymizeEligibility(projectionExpressionId, eligibilityRightId, correlation);
 		binary[0] = relations.groupId(leftId);
 		binary[1] = relations.groupId(rightId);
 		int eligibilityUnionId = canonicalRelation(PackedRelOp.UNION, 0, binary, 2, groupInputId);
@@ -1907,35 +1938,38 @@ final class PackedLogicalRuleProgram {
 		return true;
 	}
 
-	private int anonymizeEligibility(int expressionId, long[] preservedNames) {
+	private int anonymizeEligibility(int producerExpressionId, int expressionId, long[] preservedNames) {
 		int operator = relations.operatorTag(expressionId);
 		if (operator == PackedRelOp.STATEMENT_PATTERN) {
-			return anonymizeStatementPattern(expressionId, preservedNames);
+			return anonymizeStatementPattern(producerExpressionId, expressionId, preservedNames);
 		}
 		if (operator == PackedRelOp.SINGLETON_SET) {
 			return expressionId;
 		}
 		if (operator == PackedRelOp.FILTER) {
-			int childId = anonymizeEligibility(relations.childGroupId(expressionId, 0), preservedNames);
-			int conditionId = anonymizeScalar(relations.payloadId(expressionId), preservedNames);
+			int childId = anonymizeEligibility(producerExpressionId, relations.childGroupId(expressionId, 0),
+					preservedNames);
+			int conditionId = anonymizeScalar(producerExpressionId, relations.payloadId(expressionId), preservedNames);
 			unary[0] = relations.groupId(childId);
 			return canonicalRelation(PackedRelOp.FILTER, conditionId, unary, 1, expressionId);
 		}
-		int leftId = anonymizeEligibility(relations.childGroupId(expressionId, 0), preservedNames);
-		int rightId = anonymizeEligibility(relations.childGroupId(expressionId, 1), preservedNames);
+		int leftId = anonymizeEligibility(producerExpressionId, relations.childGroupId(expressionId, 0),
+				preservedNames);
+		int rightId = anonymizeEligibility(producerExpressionId, relations.childGroupId(expressionId, 1),
+				preservedNames);
 		binary[0] = relations.groupId(leftId);
 		binary[1] = relations.groupId(rightId);
 		return canonicalRelation(operator, relations.payloadId(expressionId), binary, 2, expressionId);
 	}
 
-	private int anonymizeStatementPattern(int expressionId, long[] preservedNames) {
+	private int anonymizeStatementPattern(int producerExpressionId, int expressionId, long[] preservedNames) {
 		int payloadId = relations.payloadId(expressionId);
 		int childCount = payloads.childCount(payloadId);
 		int start = reserveRewriteScratch(childCount);
 		boolean changed = false;
 		for (int ordinal = 0; ordinal < childCount; ordinal++) {
 			int termId = payloads.childGroupId(payloadId, ordinal);
-			int rewrittenTermId = anonymizeTerm(termId, preservedNames);
+			int rewrittenTermId = anonymizeTerm(producerExpressionId, termId, preservedNames);
 			rewriteScratch[start + ordinal] = rewrittenTermId;
 			changed |= termId != rewrittenTermId;
 		}
@@ -1949,13 +1983,13 @@ final class PackedLogicalRuleProgram {
 				expressionId) : expressionId;
 	}
 
-	private int anonymizeScalar(int scalarId, long[] preservedNames) {
+	private int anonymizeScalar(int producerExpressionId, int scalarId, long[] preservedNames) {
 		if (scalarId == 0) {
 			return 0;
 		}
 		if (scalars.operatorTag(scalarId) == PackedScalarOp.VARIABLE) {
 			int termId = scalars.payloadId(scalarId);
-			int rewrittenTermId = anonymizeTerm(termId, preservedNames);
+			int rewrittenTermId = anonymizeTerm(producerExpressionId, termId, preservedNames);
 			return termId == rewrittenTermId ? scalarId
 					: internScalarCopy(scalarId, rewrittenTermId, NO_CHILDREN, 0, 0);
 		}
@@ -1967,7 +2001,7 @@ final class PackedLogicalRuleProgram {
 		boolean changed = false;
 		for (int ordinal = 0; ordinal < childCount; ordinal++) {
 			int childId = scalars.childGroupId(scalarId, ordinal);
-			int rewrittenChildId = anonymizeScalar(childId, preservedNames);
+			int rewrittenChildId = anonymizeScalar(producerExpressionId, childId, preservedNames);
 			rewriteScratch[start + ordinal] = rewrittenChildId;
 			changed |= childId != rewrittenChildId;
 		}
@@ -1978,7 +2012,7 @@ final class PackedLogicalRuleProgram {
 		return result;
 	}
 
-	private int anonymizeTerm(int termId, long[] preservedNames) {
+	private int anonymizeTerm(int producerExpressionId, int termId, long[] preservedNames) {
 		if (termId == 0 || payloads.operatorTag(termId) != PackedPayloadOp.TERM
 				|| payloads.semanticScopeId(termId) != 0) {
 			return termId;
@@ -1987,7 +2021,8 @@ final class PackedLogicalRuleProgram {
 		if (containsObject(preservedNames, nameId)) {
 			return termId;
 		}
-		int renamedNameId = renamedObjectId(nameId);
+		int renamedNameId = generatedHelperNameId(producerExpressionId, GeneratedHelperRole.ELIGIBILITY_LOCAL_ALIAS,
+				nameId);
 		int before = payloads.size();
 		int result = payloads.internCanonical(PackedPayloadOp.TERM, renamedNameId, 0,
 				payloads.executionDomainId(termId) | PackedQuery.TERM_ANONYMOUS, NO_CHILDREN, 0, 0);
@@ -1997,25 +2032,49 @@ final class PackedLogicalRuleProgram {
 		return result;
 	}
 
-	private int renamedObjectId(int sourceNameId) {
+	/**
+	 * A helper belongs to its permanent source expression and rewrite role, independently of fact revisions. Only the
+	 * name is retained: every retry still checks eligibility and constructs its current alternative and proof.
+	 */
+	private int generatedHelperNameId(int producerExpressionId, GeneratedHelperRole role, int sourceNameId) {
+		if (generatedHelperNamesByExpression == null) {
+			generatedHelperNamesByExpression = new Int2ObjectOpenHashMap<>();
+		}
+		GeneratedHelperNames names = generatedHelperNamesByExpression.get(producerExpressionId);
+		if (names == null) {
+			names = new GeneratedHelperNames();
+			generatedHelperNamesByExpression.put(producerExpressionId, names);
+		}
 		int sourceSymbolId = symbols.symbolId(sourceNameId);
-		ensureRenameCapacity(sourceSymbolId);
-		int existing = renamedObjectIds[sourceSymbolId];
+		int existing = switch (role) {
+		case CODE_TYPE_TYPE_DOMAIN -> names.codeTypeTypeDomainNameId;
+		case ELIGIBILITY_LOCAL_ALIAS -> names.eligibilityLocalAliases == null ? 0
+				: names.eligibilityLocalAliases.get(sourceSymbolId);
+		};
 		if (existing != 0) {
 			return existing;
 		}
-		int attempt = 0;
-		while (true) {
-			String name = attempt == 0 ? "_anon_packed_" + sourceNameId
-					: "_anon_packed_" + sourceNameId + '_' + attempt;
-			int candidateId = objects.intern(name);
-			if (symbols.symbolId(candidateId) == 0) {
-				symbols.intern(candidateId);
-				renamedObjectIds[sourceSymbolId] = candidateId;
-				return candidateId;
-			}
-			attempt++;
+		String preferredName = switch (role) {
+		case CODE_TYPE_TYPE_DOMAIN -> "type";
+		case ELIGIBILITY_LOCAL_ALIAS -> "_anon_packed_" + sourceNameId;
+		};
+		int candidateId = objects.intern(preferredName);
+		// All source names are registered before saturation. A missing owner/role must get a fresh binding, while a
+		// retry returns the already owned name above even though it is now registered in the symbol table.
+		while (symbols.symbolId(candidateId) != 0) {
+			candidateId = objects.intern(preferredName + '_' + ++generatedBindingNameOrdinal);
 		}
+		symbols.intern(candidateId);
+		switch (role) {
+		case CODE_TYPE_TYPE_DOMAIN -> names.codeTypeTypeDomainNameId = candidateId;
+		case ELIGIBILITY_LOCAL_ALIAS -> {
+			if (names.eligibilityLocalAliases == null) {
+				names.eligibilityLocalAliases = new Int2IntOpenHashMap();
+			}
+			names.eligibilityLocalAliases.put(sourceSymbolId, candidateId);
+		}
+		}
+		return candidateId;
 	}
 
 	/**
@@ -2053,24 +2112,6 @@ final class PackedLogicalRuleProgram {
 			metadata.copyScalar(sourceScalarId, result);
 		}
 		return result;
-	}
-
-	private void resetLocalRenames() {
-		ensureRenameCapacity(symbols.size());
-		Arrays.fill(renamedObjectIds, 0);
-	}
-
-	private void ensureRenameCapacity(int symbolId) {
-		if (renamedObjectIds == null) {
-			renamedObjectIds = new int[16];
-		}
-		if (symbolId >= renamedObjectIds.length) {
-			int capacity = renamedObjectIds.length;
-			while (capacity <= symbolId) {
-				capacity <<= 1;
-			}
-			renamedObjectIds = Arrays.copyOf(renamedObjectIds, capacity);
-		}
 	}
 
 	private int reserveRewriteScratch(int count) {
@@ -3337,6 +3378,16 @@ final class PackedLogicalRuleProgram {
 	}
 
 	private void addUnusedOptionalAlternative(int observerExpressionId) {
+		OptionalPruningAnalysis previous = optionalPruningAnalysis;
+		optionalPruningAnalysis = new OptionalPruningAnalysis();
+		try {
+			addUnusedOptionalAlternativeInScope(observerExpressionId);
+		} finally {
+			optionalPruningAnalysis = previous;
+		}
+	}
+
+	private void addUnusedOptionalAlternativeInScope(int observerExpressionId) {
 		long[] live = new long[maskWordCount()];
 		int operator = relations.operatorTag(observerExpressionId);
 		if (operator == PackedRelOp.GROUP) {
@@ -3370,6 +3421,26 @@ final class PackedLogicalRuleProgram {
 	}
 
 	private int rewriteFiniteFilters(int expressionId) {
+		if (optionalPruningAnalysis == null) {
+			return rewriteFiniteFiltersUncached(expressionId);
+		}
+		RelationPruningFacts facts = optionalPruningAnalysis.relation(expressionId);
+		if (facts.finiteRewrite != null) {
+			finiteFilterRewritten |= facts.finiteRewrite.changed();
+			return facts.finiteRewrite.expressionId();
+		}
+		boolean previouslyRewritten = finiteFilterRewritten;
+		finiteFilterRewritten = false;
+		try {
+			int result = rewriteFiniteFiltersUncached(expressionId);
+			facts.finiteRewrite = new OptionalRewriteResult(result, finiteFilterRewritten);
+			return result;
+		} finally {
+			finiteFilterRewritten |= previouslyRewritten;
+		}
+	}
+
+	private int rewriteFiniteFiltersUncached(int expressionId) {
 		int operator = relations.operatorTag(expressionId);
 		if (operator == PackedRelOp.JOIN) {
 			int left = rewriteFiniteFilters(relations.childGroupId(expressionId, 0));
@@ -3407,6 +3478,17 @@ final class PackedLogicalRuleProgram {
 	}
 
 	private boolean containsExistsPredicate(int expressionId) {
+		if (optionalPruningAnalysis == null) {
+			return containsExistsPredicateUncached(expressionId);
+		}
+		RelationPruningFacts facts = optionalPruningAnalysis.relation(expressionId);
+		if (facts.containsExists == 0) {
+			facts.containsExists = (byte) (containsExistsPredicateUncached(expressionId) ? 1 : 2);
+		}
+		return facts.containsExists == 1;
+	}
+
+	private boolean containsExistsPredicateUncached(int expressionId) {
 		if (relations.operatorTag(expressionId) == PackedRelOp.FILTER
 				&& scalarContainsExists(relations.payloadId(expressionId))) {
 			return true;
@@ -3420,6 +3502,17 @@ final class PackedLogicalRuleProgram {
 	}
 
 	private boolean scalarContainsExists(int scalarId) {
+		if (optionalPruningAnalysis == null) {
+			return scalarContainsExistsUncached(scalarId);
+		}
+		ScalarPruningFacts facts = optionalPruningAnalysis.scalar(scalarId);
+		if (facts.containsExists == 0) {
+			facts.containsExists = (byte) (scalarContainsExistsUncached(scalarId) ? 1 : 2);
+		}
+		return facts.containsExists == 1;
+	}
+
+	private boolean scalarContainsExistsUncached(int scalarId) {
 		if (scalarId == 0) {
 			return false;
 		}
@@ -3435,11 +3528,41 @@ final class PackedLogicalRuleProgram {
 	}
 
 	private int pruneUnusedOptionalsWhenRepeatable(int expressionId, long[] live) {
-		// A volatile sibling or enclosing scalar can observe the number of rows an OPTIONAL produces.
-		return safeCorrelatedMinusProbe(expressionId) ? pruneUnusedOptionals(expressionId, live) : expressionId;
+		OptionalPruningAnalysis previous = optionalPruningAnalysis;
+		if (previous == null) {
+			optionalPruningAnalysis = new OptionalPruningAnalysis();
+		}
+		try {
+			// A volatile sibling or enclosing scalar can observe the number of rows an OPTIONAL produces.
+			return safeCorrelatedMinusProbe(expressionId) ? pruneUnusedOptionals(expressionId, live) : expressionId;
+		} finally {
+			optionalPruningAnalysis = previous;
+		}
 	}
 
 	private int pruneUnusedOptionals(int expressionId, long[] live) {
+		if (optionalPruningAnalysis == null) {
+			return pruneUnusedOptionalsUncached(expressionId, live);
+		}
+		RequiredMask key = new RequiredMask(expressionId, live);
+		OptionalRewriteResult cached = optionalPruningAnalysis.pruned.get(key);
+		if (cached != null) {
+			optionalRemoved |= cached.changed();
+			return cached.expressionId();
+		}
+		// Cache this subtree's contribution, independently of earlier siblings in the caller.
+		boolean previouslyRemoved = optionalRemoved;
+		optionalRemoved = false;
+		try {
+			int result = pruneUnusedOptionalsUncached(expressionId, live);
+			optionalPruningAnalysis.pruned.put(key, new OptionalRewriteResult(result, optionalRemoved));
+			return result;
+		} finally {
+			optionalRemoved |= previouslyRemoved;
+		}
+	}
+
+	private int pruneUnusedOptionalsUncached(int expressionId, long[] live) {
 		if ((metadata.relationFlags(expressionId) & PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE) != 0) {
 			return expressionId;
 		}
@@ -3820,6 +3943,22 @@ final class PackedLogicalRuleProgram {
 	}
 
 	private boolean relationAssuresSymbol(int expressionId, int symbolId) {
+		if (optionalPruningAnalysis == null) {
+			return relationAssuresSymbolUncached(expressionId, symbolId);
+		}
+		RelationPruningFacts facts = optionalPruningAnalysis.relation(expressionId);
+		if (facts.assuredSymbols == null) {
+			facts.assuredSymbols = new Int2ByteOpenHashMap();
+		}
+		byte result = facts.assuredSymbols.get(symbolId);
+		if (result == 0) {
+			result = (byte) (relationAssuresSymbolUncached(expressionId, symbolId) ? 1 : 2);
+			facts.assuredSymbols.put(symbolId, result);
+		}
+		return result == 1;
+	}
+
+	private boolean relationAssuresSymbolUncached(int expressionId, int symbolId) {
 		int operator = relations.operatorTag(expressionId);
 		return switch (operator) {
 		case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.ZERO_LENGTH_PATH, PackedRelOp.ARBITRARY_LENGTH_PATH, PackedRelOp.TRIPLE_REF, PackedRelOp.REIFIED_TRIPLE_REF, PackedRelOp.ANNOTATION_TRIPLE_REF -> relationOutputContains(
@@ -3915,6 +4054,22 @@ final class PackedLogicalRuleProgram {
 	}
 
 	private boolean containsBindingAssignmentFor(int expressionId, int symbolId) {
+		if (optionalPruningAnalysis == null) {
+			return containsBindingAssignmentForUncached(expressionId, symbolId);
+		}
+		RelationPruningFacts facts = optionalPruningAnalysis.relation(expressionId);
+		if (facts.assignmentSymbols == null) {
+			facts.assignmentSymbols = new Int2ByteOpenHashMap();
+		}
+		byte result = facts.assignmentSymbols.get(symbolId);
+		if (result == 0) {
+			result = (byte) (containsBindingAssignmentForUncached(expressionId, symbolId) ? 1 : 2);
+			facts.assignmentSymbols.put(symbolId, result);
+		}
+		return result == 1;
+	}
+
+	private boolean containsBindingAssignmentForUncached(int expressionId, int symbolId) {
 		if (relations.operatorTag(expressionId) == PackedRelOp.BINDING_SET_ASSIGNMENT
 				&& relationOutputContains(expressionId, symbolId)) {
 			return true;
@@ -3939,6 +4094,20 @@ final class PackedLogicalRuleProgram {
 	}
 
 	private void addRelationOutputs(int expressionId, long[] output) {
+		if (optionalPruningAnalysis == null) {
+			addRelationOutputsUncached(expressionId, output);
+			return;
+		}
+		RelationPruningFacts facts = optionalPruningAnalysis.relation(expressionId);
+		if (facts.outputs == null) {
+			long[] result = new long[maskWordCount()];
+			addRelationOutputsUncached(expressionId, result);
+			facts.outputs = result;
+		}
+		orInto(output, facts.outputs);
+	}
+
+	private void addRelationOutputsUncached(int expressionId, long[] output) {
 		int operator = relations.operatorTag(expressionId);
 		if (operator == PackedRelOp.DIFFERENCE) {
 			addRelationOutputs(relations.childGroupId(expressionId, 0), output);
@@ -4021,6 +4190,20 @@ final class PackedLogicalRuleProgram {
 	}
 
 	private void addScalarDependencies(int scalarId, long[] output) {
+		if (optionalPruningAnalysis == null) {
+			addScalarDependenciesUncached(scalarId, output);
+			return;
+		}
+		ScalarPruningFacts facts = optionalPruningAnalysis.scalar(scalarId);
+		if (facts.dependencies == null) {
+			long[] result = new long[maskWordCount()];
+			addScalarDependenciesUncached(scalarId, result);
+			facts.dependencies = result;
+		}
+		orInto(output, facts.dependencies);
+	}
+
+	private void addScalarDependenciesUncached(int scalarId, long[] output) {
 		if (scalarId == 0) {
 			return;
 		}
@@ -4066,6 +4249,21 @@ final class PackedLogicalRuleProgram {
 	 * (SERVICE, UNSUPPORTED), so callers that need a complete set can decline.
 	 */
 	private boolean addRelationReferencedNames(int expressionId, long[] output) {
+		if (optionalPruningAnalysis == null) {
+			return addRelationReferencedNamesUncached(expressionId, output);
+		}
+		RelationPruningFacts facts = optionalPruningAnalysis.relation(expressionId);
+		if (facts.referencedNames == null) {
+			long[] result = new long[maskWordCount()];
+			boolean complete = addRelationReferencedNamesUncached(expressionId, result);
+			facts.referencesComplete = complete;
+			facts.referencedNames = result;
+		}
+		orInto(output, facts.referencedNames);
+		return facts.referencesComplete;
+	}
+
+	private boolean addRelationReferencedNamesUncached(int expressionId, long[] output) {
 		boolean complete = addOwnReferencedNames(expressionId, output);
 		for (int ordinal = 0; ordinal < relations.childCount(expressionId); ordinal++) {
 			complete &= addRelationReferencedNames(relations.childGroupId(expressionId, ordinal), output);
@@ -4261,5 +4459,86 @@ final class PackedLogicalRuleProgram {
 		}
 		appliedFactRevisions[expressionId] = factRevision;
 		return true;
+	}
+
+	private enum GeneratedHelperRole {
+		CODE_TYPE_TYPE_DOMAIN,
+		ELIGIBILITY_LOCAL_ALIAS
+	}
+
+	/** Construction-only ownership: eligibility arms share aliases for the same original source symbol. */
+	private static final class GeneratedHelperNames {
+		int codeTypeTypeDomainNameId;
+		Int2IntOpenHashMap eligibilityLocalAliases;
+	}
+
+	/** Discarded at the end of one observer rewrite, before later fact revisions or new binding symbols. */
+	private static final class OptionalPruningAnalysis {
+		final Int2ObjectOpenHashMap<RelationPruningFacts> relations = new Int2ObjectOpenHashMap<>();
+		final Int2ObjectOpenHashMap<ScalarPruningFacts> scalars = new Int2ObjectOpenHashMap<>();
+		final Object2ObjectOpenHashMap<RequiredMask, OptionalRewriteResult> pruned = new Object2ObjectOpenHashMap<>();
+
+		RelationPruningFacts relation(int expressionId) {
+			RelationPruningFacts result = relations.get(expressionId);
+			if (result == null) {
+				result = new RelationPruningFacts();
+				relations.put(expressionId, result);
+			}
+			return result;
+		}
+
+		ScalarPruningFacts scalar(int scalarId) {
+			ScalarPruningFacts result = scalars.get(scalarId);
+			if (result == null) {
+				result = new ScalarPruningFacts();
+				scalars.put(scalarId, result);
+			}
+			return result;
+		}
+	}
+
+	// Boolean facts use 0 for uncomputed, 1 for true, and 2 for false.
+	private static final class RelationPruningFacts {
+		byte repeatable;
+		byte containsExists;
+		long[] outputs;
+		long[] referencedNames;
+		boolean referencesComplete;
+		Int2ByteOpenHashMap assuredSymbols;
+		Int2ByteOpenHashMap assignmentSymbols;
+		OptionalRewriteResult finiteRewrite;
+	}
+
+	private static final class ScalarPruningFacts {
+		byte repeatable;
+		byte containsExists;
+		long[] dependencies;
+	}
+
+	private record OptionalRewriteResult(int expressionId, boolean changed) {
+	}
+
+	/** Includes the complete required-binding mask, without retaining the caller's mutable scratch array. */
+	private static final class RequiredMask {
+		private final int expressionId;
+		private final long[] words;
+		private final int hashCode;
+
+		RequiredMask(int expressionId, long[] words) {
+			this.expressionId = expressionId;
+			this.words = words.clone();
+			this.hashCode = 31 * expressionId + Arrays.hashCode(this.words);
+		}
+
+		@Override
+		public int hashCode() {
+			return hashCode;
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			return other instanceof RequiredMask mask && expressionId == mask.expressionId
+					&& Arrays.equals(words, mask.words);
+		}
 	}
 }

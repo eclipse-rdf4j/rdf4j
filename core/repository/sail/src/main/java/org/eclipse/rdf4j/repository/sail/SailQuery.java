@@ -16,14 +16,20 @@ import java.util.concurrent.TimeUnit;
 import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.query.QueryOperationContext;
 import org.eclipse.rdf4j.query.QueryOperationDeadline;
+import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.AbstractParserQuery;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
+import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
+import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
+import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.features.SailResultValueExtractor;
+import org.eclipse.rdf4j.sail.helpers.SlowQueryContextHolder;
 
 /**
  * @author Arjohn Kampman
@@ -31,6 +37,7 @@ import org.eclipse.rdf4j.sail.features.SailResultValueExtractor;
 public abstract class SailQuery extends AbstractParserQuery {
 
 	private final SailRepositoryConnection con;
+	private String forcedLmdbExecutionStrategy;
 
 	protected SailQuery(ParsedQuery parsedQuery, SailRepositoryConnection con) {
 		super(parsedQuery);
@@ -39,6 +46,26 @@ public abstract class SailQuery extends AbstractParserQuery {
 
 	protected SailRepositoryConnection getConnection() {
 		return con;
+	}
+
+	/**
+	 * Requests that the underlying store use one specific, named query-execution strategy for this query, instead of
+	 * its own default (possibly adaptive) selection. This is honored only by store implementations that support named
+	 * execution strategies (currently the LMDB store); other stores ignore it. Pass {@code null}, or a blank string —
+	 * what the empty entry of a strategy dropdown submits — to restore default selection.
+	 */
+	@Experimental
+	public void setForcedLmdbExecutionStrategy(String strategyOrNull) {
+		this.forcedLmdbExecutionStrategy = strategyOrNull;
+	}
+
+	/**
+	 * The execution strategy requested via {@link #setForcedLmdbExecutionStrategy(String)}, or {@code null} when none
+	 * was requested.
+	 */
+	@Experimental
+	public String getForcedLmdbExecutionStrategy() {
+		return forcedLmdbExecutionStrategy;
 	}
 
 	protected BlankNodeAllocationScope createBlankNodeAllocationScope() {
@@ -73,12 +100,21 @@ public abstract class SailQuery extends AbstractParserQuery {
 			QueryOperationContext.throwIfDeadlineExpired();
 			int remainingSeconds = deadline == null ? timeout : deadline.remainingSeconds();
 			SailConnection sailCon = getConnection().getSailConnection();
-			Explanation explanation = sailCon.explain(level, tupleExpr, getActiveDataset(), getBindings(),
-					getIncludeInferred(), remainingSeconds);
-			if (level == Explanation.Level.Optimized) {
-				QueryOperationContext.throwIfDeadlineExpired();
+			String forcedStrategy = getForcedLmdbExecutionStrategy();
+			SlowQueryContextHolder.SlowQueryContext previous = forcedStrategy == null ? null
+					: SlowQueryContextHolder.set(getParsedQuery().getSourceString(), getQueryType(), forcedStrategy);
+			try {
+				Explanation explanation = sailCon.explain(level, tupleExpr, getActiveDataset(), getBindings(),
+						getIncludeInferred(), remainingSeconds);
+				if (level == Explanation.Level.Optimized) {
+					QueryOperationContext.throwIfDeadlineExpired();
+				}
+				return con.exposeValue(explanation, SailResultValueExtractor.EXPLANATIONS);
+			} finally {
+				if (forcedStrategy != null) {
+					SlowQueryContextHolder.restore(previous);
+				}
 			}
-			return con.exposeValue(explanation, SailResultValueExtractor.EXPLANATIONS);
 		}
 
 	}
@@ -95,5 +131,19 @@ public abstract class SailQuery extends AbstractParserQuery {
 			deadline = QueryOperationContext.getDeadline().orElse(null);
 		}
 		return deadline == null ? null : QueryOperationContext.open(deadline);
+	}
+
+	private Query.QueryType getQueryType() {
+		ParsedQuery parsedQuery = getParsedQuery();
+		if (parsedQuery instanceof ParsedBooleanQuery) {
+			return Query.QueryType.BOOLEAN;
+		}
+		if (parsedQuery instanceof ParsedGraphQuery) {
+			return Query.QueryType.GRAPH;
+		}
+		if (parsedQuery instanceof ParsedTupleQuery) {
+			return Query.QueryType.TUPLE;
+		}
+		throw new IllegalStateException("Unsupported parsed query type: " + parsedQuery.getClass().getName());
 	}
 }

@@ -12,15 +12,13 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
 
 final class LmdbEvaluationStrategyFactory extends DefaultEvaluationStrategyFactory {
 
@@ -29,16 +27,20 @@ final class LmdbEvaluationStrategyFactory extends DefaultEvaluationStrategyFacto
 	}
 
 	@Override
-	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
-			EvaluationStatistics evaluationStatistics) {
-		if (evaluationStatistics instanceof LmdbEvaluationStatistics lmdbStatistics) {
-			lmdbStatistics.bindExecutionSnapshot(LmdbEvaluationStatistics.executionSnapshotEpoch(tripleSource));
-		}
-		LmdbEvaluationStrategy strategy = new LmdbEvaluationStrategy(tripleSource, dataset,
-				getFederatedServiceResolver(), getQuerySolutionCacheThreshold(), evaluationStatistics,
-				isTrackResultSize());
+	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource source, EvaluationStatistics statistics) {
+		return createEvaluationStrategy(dataset, source, statistics, QueryExecutionPolicy.DEFAULT);
+	}
+
+	@Override
+	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource source,
+			EvaluationStatistics statistics, QueryExecutionPolicy policy) {
+		EvaluationStatistics effective = statistics == null ? new EvaluationStatistics() : statistics;
+		LmdbEvaluationStrategy.bindExecutionSnapshot(effective, source, dataset);
+		LmdbEvaluationStrategy strategy = new LmdbEvaluationStrategy(source, dataset,
+				getFederatedServiceResolver(), getQuerySolutionCacheThreshold(), effective, isTrackResultSize());
+		strategy.setQueryExecutionPolicy(policy);
 		QueryOptimizerPipeline pipeline = getOptimizerPipeline()
-				.orElseGet(() -> new LmdbQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics));
+				.orElseGet(() -> new LmdbQueryOptimizerPipeline(strategy, source, effective));
 		strategy.setOptimizerPipeline(pipeline);
 		strategy.setCollectionFactory(getCollectionFactorySupplier());
 		return strategy;

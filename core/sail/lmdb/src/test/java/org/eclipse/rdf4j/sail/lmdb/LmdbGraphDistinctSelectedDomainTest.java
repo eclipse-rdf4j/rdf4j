@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,6 +35,7 @@ import java.util.function.ToLongFunction;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -415,15 +417,62 @@ class LmdbGraphDistinctSelectedDomainTest {
 	}
 
 	@Test
-	void unsupportedStatementOrderRetainsOrdinaryFailureAndOrder(@TempDir File dataDir) throws Exception {
+	void nativePredicateOrderUsesOrdinaryGraphAndPreservesBagAndOrder(@TempDir File dataDir) throws Exception {
 		try (Fixture fixture = new Fixture(dataDir)) {
 			fixture.loadRepeatedNamedGraphs();
 			try (PreparedGraph prepared = new PreparedGraph(fixture, DISTINCT, Function.identity())) {
+				SailDatasetTripleTermSource source = new SailDatasetTripleTermSource(VF, prepared.dataset);
+				Comparator<Value> comparator = source.getComparator();
+				assertNotNull(comparator, "native ordered reads require the store comparator");
+				// The default profile does not advertise experimental orders. Establish the actual existing
+				// ordered API and posc capability directly; no policy or optimizer capability is fabricated.
+				try (CloseableIteration<? extends Statement> capability = source.getStatements(
+						StatementOrder.P, null, null, null, G1)) {
+					IndexReportingIterator metrics = assertInstanceOf(IndexReportingIterator.class, capability);
+					String indexName = metrics.getIndexName();
+					assertNotNull(indexName, "the ordered source must identify its actual access");
+					assertTrue(indexName.contains("posc"), "the fixture has a predicate-leading index");
+					assertTrue(capability.hasNext(), "the real ordered native source must open successfully");
+				}
+				prepared.pattern.setOrder(prepared.pattern.getPredicateVar());
+				assertEquals(StatementOrder.P, prepared.pattern.getStatementOrder());
+				assertEquals(prepared.pattern.getStatementOrder(), firstStatementPattern(prepared.expression.clone())
+						.getStatementOrder(), "ordinary lookup clone must preserve order");
+
+				Map<BindingSet, Integer> expectedBag = fixture.rows(fixture.memoryConnection, DISTINCT, null, null);
+				List<BindingSet> expectedOrder = new ArrayList<>(expectedBag.keySet());
+				expectedOrder.sort((left, right) -> comparator.compare(left.getValue("p"), right.getValue("p")));
+				List<BindingSet> actualOrder = new ArrayList<>();
+				Map<BindingSet, Integer> actualBag = new HashMap<>();
+				try (CloseableIteration<BindingSet> rows = prepared.step().evaluate(EmptyBindingSet.getInstance())) {
+					while (rows.hasNext()) {
+						BindingSet row = rows.next();
+						actualOrder.add(row);
+						Fixture.addRow(actualBag, row);
+					}
+				}
+				assertEquals(expectedBag, actualBag, "supported ordering must preserve the MemoryStore result bag");
+				// Every graph contains the same predicate set, so the first ordered body emits the complete
+				// DISTINCT domain. This oracle does not require GRAPH to globally sort arbitrary graph bodies.
+				assertEquals(expectedOrder, actualOrder);
+				assertFalse(LmdbDistinctCursorSkipSupport.ACCESS_MODE.equals(prepared.pattern.getStringMetricPlanned(
+						TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE)), "ordered GRAPH must retain ordinary access");
+				assertFalse("selected".equals(prepared.pattern.getStringMetricPlanned(GRAPH_SKIP_DECISION)));
+			}
+		}
+	}
+
+	@Test
+	void unsupportedStatementOrderRetainsOrdinaryFailureAndOrder(@TempDir File dataDir) throws Exception {
+		try (Fixture fixture = new Fixture(dataDir)) {
+			fixture.loadRepeatedNamedGraphs();
+			try (PreparedGraph prepared = new PreparedGraph(fixture, DISTINCT,
+					source -> new OpaqueSource(source, false))) {
 				prepared.pattern.setOrder(prepared.pattern.getPredicateVar());
 				QueryEvaluationException failure = assertThrows(QueryEvaluationException.class,
 						() -> prepared.rows(EmptyBindingSet.getInstance()));
 				assertInstanceOf(UnsupportedOperationException.class, failure.getCause(),
-						"native ordered retrieval is unsupported and must retain the ordinary failure");
+						"a source without ordered retrieval must retain the ordinary failure");
 				assertEquals(prepared.pattern.getStatementOrder(), firstStatementPattern(prepared.expression.clone())
 						.getStatementOrder(), "ordinary lookup clone must preserve order");
 				assertFalse(LmdbDistinctCursorSkipSupport.ACCESS_MODE.equals(prepared.pattern.getStringMetricPlanned(

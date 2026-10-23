@@ -64,6 +64,15 @@ class IndependentInputScopeTest {
 				assertFalse(legacy.isContextBindingOriginInherited());
 				assertEquals(StatementPattern.Scope.NAMED_CONTEXTS, legacy.getScope());
 				assertEquals("urn:legacy:graph", legacy.getContextVar().getValue().stringValue());
+				for (Var variable : legacy.getVarList()) {
+					assertEquals(0, variable.getGraphContextDepth(), "an absent legacy graph depth defaults to zero");
+					assertFalse(variable.hasApiInputOrigin(), "an absent legacy API origin defaults to false");
+					Var expected = Var.of(variable.getName(), variable.getValue(), variable.isAnonymous(),
+							variable.isConstant(), variable.isBNode());
+					assertEquals(expected.hashCode(), variable.hashCode(),
+							"restored Vars use the current hash algorithm");
+					assertEquals(expected, variable);
+				}
 			}
 		}
 	}

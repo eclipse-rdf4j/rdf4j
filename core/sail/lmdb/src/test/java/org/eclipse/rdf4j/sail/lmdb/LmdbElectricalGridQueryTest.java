@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
@@ -51,8 +52,14 @@ class LmdbElectricalGridQueryTest {
 		LmdbStore store = new LmdbStore(directory, new LmdbStoreConfig("spoc,ospc,psoc")
 				.setSketchEstimatorEnabled(estimatorEnabled)
 				.setSketchEstimatorMemoryBudgetBytes(4L * 1024L * 1024L));
+		if (estimatorEnabled) {
+			store.setExperimentalQueryOptimizations(true);
+		}
 		SailRepository repository = new SailRepository(store);
 		repository.init();
+		if (estimatorEnabled) {
+			assertSketchFixtureProfile(store);
+		}
 		try {
 			loadGrid(repository);
 			if (estimatorEnabled) {
@@ -117,5 +124,19 @@ class LmdbElectricalGridQueryTest {
 				  OPTIONAL { ?entity <http://example.com/theme/grid/feeds> ?substation2 . }
 				}
 				""";
+	}
+
+	private static void assertSketchFixtureProfile(LmdbStore store) {
+		try {
+			assertTrue(store.getQueryExecutionPolicy().experimentalQueryOptimizations());
+			assertNotNull(store.getBackingStore().getSketchBasedJoinEstimator());
+		} catch (AssertionError failure) {
+			try {
+				store.shutDown();
+			} catch (RuntimeException | Error closeFailure) {
+				failure.addSuppressed(closeFailure);
+			}
+			throw failure;
+		}
 	}
 }

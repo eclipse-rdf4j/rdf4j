@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
 
@@ -33,7 +35,9 @@ class LmdbEstimatorShutdownTest {
 				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF)
 				.setSketchEstimatorEnabled(true)
 				.setSketchEstimatorMemoryBudgetBytes(4L * 1024L * 1024L));
+		store.setExperimentalQueryOptimizations(true);
 		store.init();
+		assertSketchFixtureProfile(store);
 		try {
 			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
 			estimator.stop();
@@ -62,6 +66,20 @@ class LmdbEstimatorShutdownTest {
 
 		private boolean initialized() {
 			return isInitialized();
+		}
+	}
+
+	private static void assertSketchFixtureProfile(LmdbStore store) {
+		try {
+			assertTrue(store.getQueryExecutionPolicy().experimentalQueryOptimizations());
+			assertNotNull(store.getBackingStore().getSketchBasedJoinEstimator());
+		} catch (AssertionError failure) {
+			try {
+				store.shutDown();
+			} catch (RuntimeException | Error closeFailure) {
+				failure.addSuppressed(closeFailure);
+			}
+			throw failure;
 		}
 	}
 }

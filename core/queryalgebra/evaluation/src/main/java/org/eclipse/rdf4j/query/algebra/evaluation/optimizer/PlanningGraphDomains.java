@@ -16,11 +16,16 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.BiPredicate;
+import java.util.function.Function;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /** One shared, transient planning authority, copied by the existing query-model clone contract. */
@@ -44,6 +49,80 @@ public final class PlanningGraphDomains {
 			}
 			return text.toString();
 		}
+	}
+
+	public static boolean isPlanningMetadata(Object key) {
+		return key == KEY;
+	}
+
+	public static boolean canDetachMetadata(Object value, Predicate<Value> values) {
+		if (!(value instanceof Attachment attachment)) {
+			return false;
+		}
+		PlanningGraphDomain.Selector evidence = attachment.evidence().selector();
+		PlanningGraphDomain.Selector ambient = attachment.ambient().selector();
+		return (evidence == null || evidence.value() == null || values.test(evidence.value()))
+				&& (ambient == null || ambient.value() == null || values.test(ambient.value()));
+	}
+
+	/** Preserve both independent authority coordinates; never recapture DEFAULT from missing ancestry. */
+	public static boolean copyDetachedMetadata(Object value, QueryModelNode target,
+			Function<Value, Value> values) {
+		if (!(value instanceof Attachment attachment)) {
+			return false;
+		}
+		PlanningGraphDomain evidence = detachedDomain(attachment.evidence(), values);
+		PlanningGraphDomain ambient = detachedDomain(attachment.ambient(), values);
+		if (evidence == null || ambient == null) {
+			return false;
+		}
+		target.setQueryModelMetadata(KEY, new Attachment(evidence, ambient));
+		return true;
+	}
+
+	private static PlanningGraphDomain detachedDomain(PlanningGraphDomain domain,
+			Function<Value, Value> values) {
+		PlanningGraphDomain.Selector selector = domain.selector();
+		if (selector == null) {
+			return new PlanningGraphDomain(domain.kind(), null, domain.scopePath(), domain.variableScopeChange());
+		}
+		Value value = selector.value() == null ? null : values.apply(selector.value());
+		if (selector.value() != null && value == null) {
+			return null;
+		}
+		return new PlanningGraphDomain(domain.kind(), new PlanningGraphDomain.Selector(selector.name(), value,
+				selector.anonymous(), selector.constant(), selector.blankNode()), domain.scopePath(),
+				domain.variableScopeChange());
+	}
+
+	public static boolean accountDetachedMetadata(Object value,
+			RetainedMemoryAccount account,
+			BiPredicate<Value, RetainedMemoryAccount> values) {
+		if (!(value instanceof Attachment attachment)) {
+			return false;
+		}
+		if (!account.add(attachment, 32L)) {
+			return true;
+		}
+		return accountDomain(attachment.evidence(), account, values)
+				&& accountDomain(attachment.ambient(), account, values);
+	}
+
+	private static boolean accountDomain(PlanningGraphDomain domain,
+			RetainedMemoryAccount account,
+			BiPredicate<Value, RetainedMemoryAccount> values) {
+		if (!account.add(domain, 48L)) {
+			return true;
+		}
+		account.add(domain.scopePath(), 40L + 2L * domain.scopePath().length());
+		PlanningGraphDomain.Selector selector = domain.selector();
+		if (selector != null && account.add(selector, 48L)) {
+			if (selector.name() != null) {
+				account.add(selector.name(), 40L + 2L * selector.name().length());
+			}
+			return selector.value() == null || values.test(selector.value(), account);
+		}
+		return true;
 	}
 
 	private PlanningGraphDomains() {

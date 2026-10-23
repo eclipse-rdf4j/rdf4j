@@ -46,6 +46,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Order;
@@ -73,11 +74,13 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BatchCorrelatedJoinProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.MinusQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingAssignerOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ScalarEvaluationEffects;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.BindingScopeAnalysis;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
@@ -170,9 +173,11 @@ public class FilterIterator extends FilterIteration<BindingSet>
 
 		QueryEvaluationStep prepared = (bs) -> new FilterIterator(filter, arg.evaluate(argumentBindings.apply(bs)), ves,
 				strategy, retain, evaluationStatistics, feedbackMode, context.getBlankNodeAllocationScope());
-		return AdaptiveFilterEvaluationStep.filter(context, prepared, movable
+		QueryEvaluationStep generic = AdaptiveFilterEvaluationStep.filter(context, prepared, movable
 				? () -> automaticSpecialization(filter, strategy, context, evaluationStatistics)
 				: null);
+		QueryEvaluationStep batched = supplyBatchExistsFilter(filter, strategy, context, arg, generic);
+		return batched != null ? batched : generic;
 	}
 
 	private static QueryEvaluationStep automaticSpecialization(Filter filter, EvaluationStrategy strategy,
@@ -650,6 +655,74 @@ public class FilterIterator extends FilterIteration<BindingSet>
 			}
 		});
 		return contains[0];
+	}
+
+	/**
+	 * Batch-correlated seam for FILTER (NOT) EXISTS (accumulate–semijoin–probe, SEMI/ANTI modes): instead of
+	 * re-evaluating the EXISTS subquery once per source row, a capable store may accumulate the source stream, sweep
+	 * the subquery once bounded by the shared-variable key domain, and answer every row's verdict from the swept table.
+	 * Engages only when the subquery's decorrelation is an as-if rewrite: repeatable and binding-injection-safe. The
+	 * per-row evaluation this replaces can only see subquery variables through the source row, whose bindings come from
+	 * the source operand (the shared key variables, matched by the probe) or from the entry bindings — so entry
+	 * bindings that pre-bind a subquery-only variable keep the generic per-row filter.
+	 */
+	private static QueryEvaluationStep supplyBatchExistsFilter(Filter filter, EvaluationStrategy strategy,
+			QueryEvaluationContext context, QueryEvaluationStep arg, QueryEvaluationStep generic) {
+		if (filter.isRuntimeTelemetryEnabled() || strategy.isTrackResultSize() || strategy.isTrackTime()
+				|| !(strategy instanceof BatchCorrelatedJoinProvider.Host host)) {
+			return null;
+		}
+		ValueExpr conditionExpr = filter.getCondition();
+		BatchCorrelatedJoinProvider.Mode mode;
+		Exists exists;
+		if (conditionExpr instanceof Exists existsCondition) {
+			exists = existsCondition;
+			mode = BatchCorrelatedJoinProvider.Mode.SEMI;
+		} else if (conditionExpr instanceof Not not && not.getArg()instanceof Exists negatedExists) {
+			exists = negatedExists;
+			mode = BatchCorrelatedJoinProvider.Mode.ANTI;
+		} else {
+			return null;
+		}
+		BatchCorrelatedJoinProvider provider = host.batchCorrelatedJoinProvider();
+		if (provider == null) {
+			return null;
+		}
+		TupleExpr sub = exists.getSubQuery();
+		if (filter.isVariableScopeChange() || isPartOfSubQuery(filter)
+				|| containsVariableScopeChange(sub) || requiresPerProbeExistsSubstitution(sub)) {
+			return null;
+		}
+		Set<String> outerNames = filter.getArg().getBindingNames();
+		Set<String> subNames = sub.getBindingNames();
+		String[] shared = outerNames.stream().filter(subNames::contains).toArray(String[]::new);
+		if (shared.length < 1 || shared.length > 4
+				|| QueryEvaluationUtility.usesMappingParameterizedEvaluation(sub)
+				|| !QueryEvaluationUtility.isRepeatable(sub)
+				|| !QueryEvaluationUtility.permitsBindingInjection(sub, outerNames)) {
+			return null;
+		}
+		QueryEvaluationStep subRaw;
+		try {
+			subRaw = strategy.precompile(sub, context);
+		} catch (QueryEvaluationException e) {
+			return null;
+		}
+		if (!provider.supports(subRaw, shared, mode, false)) {
+			return null;
+		}
+		Set<String> guardNames = new LinkedHashSet<>(subNames);
+		guardNames.removeAll(outerNames);
+		return bs -> {
+			for (String name : guardNames) {
+				if (bs.hasBinding(name)) {
+					return generic.evaluate(bs);
+				}
+			}
+			return provider.tryBatchJoin(
+					new BatchCorrelatedJoinProvider.BatchCorrelationRequest(arg.evaluate(bs), bs, shared, mode, null),
+					subRaw);
+		};
 	}
 
 	private static QueryEvaluationStep supplyFilteredBindingSetAssignmentJoin(Filter filter,

@@ -4202,6 +4202,14 @@ module workbench {
                         ?hidden=${!inferEnabled} ?disabled=${!inferEnabled} />
                         <span>Include inferred statements</span></label>
                 </div>
+                <div id="lmdb-forced-strategy-field" class="workbench-disclosure__field" hidden>
+                    <label for="lmdb-forced-strategy">Forced execution strategy</label>
+                    <select id="lmdb-forced-strategy" name="lmdb-forced-strategy" disabled
+                        aria-describedby="lmdb-forced-strategy-help">
+                        <option value="" selected></option>
+                    </select>
+                    <p id="lmdb-forced-strategy-help" class="workbench-field__help">Pin one named LMDB execution strategy for this query. Leave empty to let the store choose. The query fails with an explanation when the strategy does not apply to it.</p>
+                </div>
                 <div class="workbench-disclosure__actions query-disclosure__actions"><button id="query-insert-prefixes"
                     class="workbench-action workbench-action--secondary" type="button"
                     title="Add a PREFIX line for every repository namespace the query does not declare yet"

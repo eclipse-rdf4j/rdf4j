@@ -514,7 +514,7 @@ class AdaptiveReplayIntegrationTest {
 			stores.triples.storeTriple(100_000, 7, 11, 9, true);
 			long oldMap = stores.values.replayMapSize();
 			stores.values.failNextAbortCleanup = true;
-			Value large = Values.literal("v".repeat(33 * 1024 * 1024));
+			Value large = oversizedDictionaryValue(stores.values);
 			LmdbTransactionRetryException retry = assertThrows(LmdbTransactionRetryException.class,
 					() -> stores.values.storeValue(large));
 			assertEquals("injected abort cleanup failure", retry.getSuppressed()[0].getMessage());
@@ -626,7 +626,7 @@ class AdaptiveReplayIntegrationTest {
 
 	@Test
 	void closingFailedDirectSinksReleasesOnlyTheirPrivatePoisonOwners() throws Exception {
-		FaultInjectingLmdbStore store = new FaultInjectingLmdbStore(directory, largeConfig());
+		FaultInjectingLmdbStore store = new FaultInjectingLmdbStore(directory, largeConfig().setBulkOperationSize(0));
 		store.init();
 		try {
 			SailSource source = store.getBackingStore().getExplicitSailSource();
@@ -643,7 +643,11 @@ class AdaptiveReplayIntegrationTest {
 					failed.approve(Values.iri("urn:abandoned-direct:" + cycle), Values.iri("urn:predicate"),
 							Values.literal("abandoned"), null);
 					store.triples.failNextCommit = true;
-					SailException failure = assertThrows(SailException.class, failed::flush);
+					SailException failure = assertThrows(SailException.class, failed::flush,
+							() -> "actual commit faults=" + store.triples.injectedCommitFailures + "; tracked="
+									+ store.triples.latestDecision.track + "; checkpoint="
+									+ store.triples.latestDecision.checkpoint
+									+ "; frozen=" + store.triples.latestDecision.frozenReplay);
 					assertNotNull(retryCause(failure));
 					privateOwner = store.lastCheckedOwner;
 					assertSame(retryCause(failure), retryCause(assertThrows(SailException.class,
@@ -667,7 +671,7 @@ class AdaptiveReplayIntegrationTest {
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
 	void anonymousPublicationAndPreparedOwnersRetireOnlyAtTheirFinalScope(boolean prepared) throws Exception {
-		FaultInjectingLmdbStore store = new FaultInjectingLmdbStore(directory, largeConfig());
+		FaultInjectingLmdbStore store = new FaultInjectingLmdbStore(directory, largeConfig().setBulkOperationSize(0));
 		store.init();
 		try {
 			SailSource source = store.getBackingStore().getExplicitSailSource();
@@ -678,7 +682,7 @@ class AdaptiveReplayIntegrationTest {
 					warm.flush();
 				}
 			}
-			Value large = Values.literal("v".repeat(33 * 1024 * 1024));
+			Value large = oversizedDictionaryValue(store.values);
 			Object owner;
 			try (SailClosable outerPrepared = prepared ? source.beginPreparedWrite() : () -> {
 			};
@@ -742,7 +746,7 @@ class AdaptiveReplayIntegrationTest {
 			CountDownLatch resume = new CountDownLatch(1);
 			store.triples.delayedStartEntered = entered;
 			store.triples.resumeDelayedStart = resume;
-			Value large = Values.literal("v".repeat(33 * 1024 * 1024));
+			Value large = oversizedDictionaryValue(store.values);
 			store.values.failStartupValue = large;
 			store.values.delayedStartEntered = entered;
 			store.values.resumeDelayedStartOnRollback = resume;
@@ -784,7 +788,7 @@ class AdaptiveReplayIntegrationTest {
 	void valueProactiveExhaustionDiscardsPrefixAndWholeRetryMakesActualProgress() throws Exception {
 		try (PairedStores stores = new PairedStores(directory, largeConfig())) {
 			stores.warm();
-			Value large = Values.literal("v".repeat(33 * 1024 * 1024));
+			Value large = oversizedDictionaryValue(stores.values);
 			stores.begin();
 			stores.triples.storeTriple(100_000, 7, 11, 9, true);
 			stores.triples.writeNamespaceSnapshot(Map.of("prefix", "urn:failed:"));
@@ -1330,6 +1334,12 @@ class AdaptiveReplayIntegrationTest {
 		assertFalse(decision.frozenReplay, "the non-transparent root wrapper must exercise legacy replay policy");
 		assertTrue(store.rootFinalizations.get() > 0,
 				"a successful repository transaction must invoke the captured root's real finalization callback");
+	}
+
+	private static Value oversizedDictionaryValue(ValueStore values) {
+		// Exact native reservation counts one overflow payload. Exceed the observed map itself instead of
+		// relying on the older twice-payload estimate for a fixed 33-MiB literal.
+		return Values.literal("v".repeat(Math.toIntExact(values.replayMapSize() + LmdbUtil.MIN_FREE_SPACE)));
 	}
 
 	private static LmdbStoreConfig largeConfig() {

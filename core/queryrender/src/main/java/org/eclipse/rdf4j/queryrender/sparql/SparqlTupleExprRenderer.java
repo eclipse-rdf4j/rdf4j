@@ -54,7 +54,6 @@ import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
-import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Regex;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
@@ -91,6 +90,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	private final Map<String, TripleRef> inlineTriples = new HashMap<>();
 
 	private int mIndent = 2;
+	private Projection mainProjection;
 
 	/**
 	 * {@inheritDoc}
@@ -102,6 +102,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 		mJoinBuffer = new StringBuffer();
 		mContexts.clear();
 		inlineTriples.clear();
+		mainProjection = null;
 	}
 
 	/**
@@ -109,6 +110,16 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	 */
 	@Override
 	public String render(final TupleExpr theExpr) throws Exception {
+		return render(theExpr, RenderUtils.getQueryProjection(theExpr));
+	}
+
+	/** A SELECT at the root of a graph-pattern fragment still denotes a nested query. */
+	String renderGraphPattern(TupleExpr expression) throws Exception {
+		return render(expression, null);
+	}
+
+	private String render(TupleExpr theExpr, Projection projection) throws Exception {
+		mainProjection = projection;
 		mContexts = ContextCollector.collectContexts(theExpr);
 		theExpr.visit(new AbstractQueryModelVisitor<Exception>() {
 			@Override
@@ -135,6 +146,77 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 			aBuilder.append(" ");
 		}
 		return aBuilder.toString();
+	}
+
+	@Override
+	public void meet(Projection projection) throws Exception {
+		if (appendScopedSelect(projection)) {
+			return;
+		}
+		Var context = projection.getVisibleProjectionContext();
+		if (projection.isSubquery() && context != null) {
+			mJoinBuffer.append(indent()).append("GRAPH ");
+			mJoinBuffer.append(context.hasValue() ? RenderUtils.toSPARQL(context.getValue()) : "?" + context.getName());
+			mJoinBuffer.append(" { { ").append(System.lineSeparator());
+			mIndent += 2;
+			appendIndented(new TupleExprIRRenderer().render(projection));
+			mIndent -= 2;
+			mJoinBuffer.append(indent()).append("} }").append(System.lineSeparator());
+		} else {
+			super.meet(projection);
+		}
+	}
+
+	private boolean appendScopedSelect(TupleExpr expression) throws Exception {
+		Projection projection = RenderUtils.getQueryProjection(expression);
+		if (projection == null || projection == mainProjection || !projection.isSubquery()) {
+			return false;
+		}
+		Var context = projection.getVisibleProjectionContext();
+		if (context != null) {
+			mJoinBuffer.append(indent()).append("GRAPH ");
+			mJoinBuffer.append(context.hasValue() ? RenderUtils.toSPARQL(context.getValue()) : "?" + context.getName());
+			mJoinBuffer.append(" {").append(System.lineSeparator());
+			mIndent += 2;
+		}
+		mJoinBuffer.append(indent()).append('{').append(System.lineSeparator());
+		mIndent += 2;
+		appendIndented(new TupleExprIRRenderer().render(expression));
+		mIndent -= 2;
+		mJoinBuffer.append(indent()).append('}').append(System.lineSeparator());
+		if (context != null) {
+			mIndent -= 2;
+			mJoinBuffer.append(indent()).append('}').append(System.lineSeparator());
+		}
+		return true;
+	}
+
+	@Override
+	public void meet(Slice slice) throws Exception {
+		if (!appendScopedSelect(slice)) {
+			super.meet(slice);
+		}
+	}
+
+	@Override
+	public void meet(Distinct distinct) throws Exception {
+		if (!appendScopedSelect(distinct)) {
+			super.meet(distinct);
+		}
+	}
+
+	@Override
+	public void meet(Reduced reduced) throws Exception {
+		if (!appendScopedSelect(reduced)) {
+			super.meet(reduced);
+		}
+	}
+
+	@Override
+	public void meet(Order order) throws Exception {
+		if (!appendScopedSelect(order)) {
+			super.meet(order);
+		}
 	}
 
 	/**
@@ -320,23 +402,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	private boolean isSubSelect(TupleExpr theExpr) {
-		TupleExpr expr = theExpr;
-
-		while (true) {
-			if (expr instanceof QueryRoot) {
-				expr = ((QueryRoot) expr).getArg();
-			} else if (expr instanceof Slice) {
-				expr = ((Slice) expr).getArg();
-			} else if (expr instanceof Order) {
-				expr = ((Order) expr).getArg();
-			} else if (expr instanceof Distinct) {
-				expr = ((Distinct) expr).getArg();
-			} else if (expr instanceof Reduced) {
-				expr = ((Reduced) expr).getArg();
-			} else {
-				return expr instanceof Projection;
-			}
-		}
+		return RenderUtils.getQueryProjection(theExpr) != null;
 	}
 
 	private String renderTupleQuery(TupleExpr theExpr) throws Exception {
@@ -388,7 +454,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 		aRenderer.mIndent = mIndent;
 		aRenderer.mContexts = new HashMap<>(mContexts);
 
-		return aRenderer.render(theExpr);
+		return aRenderer.renderGraphPattern(theExpr);
 	}
 
 	/**

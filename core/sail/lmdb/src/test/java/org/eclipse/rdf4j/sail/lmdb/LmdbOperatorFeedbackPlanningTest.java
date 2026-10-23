@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
@@ -147,9 +148,11 @@ class LmdbOperatorFeedbackPlanningTest {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
 				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF)
 				.setSketchEstimatorEnabled(true);
+		config.setExperimentalQueryOptimizations(true);
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
+		assertSketchFixtureProfile(store);
 
 		try {
 			loadSparseOptionalFanout(repository);
@@ -173,6 +176,7 @@ class LmdbOperatorFeedbackPlanningTest {
 		LmdbStore reopened = new LmdbStore(dataDir, config);
 		SailRepository reopenedRepository = new SailRepository(reopened);
 		reopenedRepository.init();
+		assertSketchFixtureProfile(reopened);
 		try {
 			LmdbPlannerAwait.awaitSketchesReady(reopened);
 			try (SailRepositoryConnection connection = reopenedRepository.getConnection()) {
@@ -573,6 +577,20 @@ class LmdbOperatorFeedbackPlanningTest {
 				}
 			}
 			connection.commit();
+		}
+	}
+
+	private static void assertSketchFixtureProfile(LmdbStore store) {
+		try {
+			assertTrue(store.getQueryExecutionPolicy().experimentalQueryOptimizations());
+			assertNotNull(store.getBackingStore().getSketchBasedJoinEstimator());
+		} catch (AssertionError failure) {
+			try {
+				store.shutDown();
+			} catch (RuntimeException | Error closeFailure) {
+				failure.addSuppressed(closeFailure);
+			}
+			throw failure;
 		}
 	}
 }

@@ -61,6 +61,7 @@ import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
@@ -114,14 +115,13 @@ class PackedInputFrameContractTest {
 	};
 
 	@Test
-	void mutableProviderUnderPureFilterRetainsItsOriginalScheduleAndOpenCount() {
+	void mutableProviderUnderPureFilterIsCapturedBeforeExecution() {
 		AtomicInteger opens = new AtomicInteger();
 		TupleExpr source = new Filter(new Join(countedMutableValues(opens, "1", "2", "3"), new SingletonSet()),
 				new Compare(Var.of("u"), new ValueConstant(VF.createLiteral("2")), Compare.CompareOp.NE));
 		List<String> expected = List.of("u=\"1\"", "u=\"3\"");
-		assertEquals(expected, evaluate(source, null, () -> opens.set(0)));
-		assertEquals(1, opens.get());
-		assertCountedMutableRoutes(source, expected, List.of(opens));
+		assertPreparedMutableEvaluation(source, expected, List.of(opens), List.of());
+		assertPreparedMutableRoutes(source, expected, List.of(opens));
 	}
 
 	@Test
@@ -150,7 +150,7 @@ class PackedInputFrameContractTest {
 	}
 
 	@Test
-	void pureFilterKeepsUnsafeSuffixExposureAtItsOriginalPrefixMultiplicity() {
+	void pureFilterKeepsPreparedSuffixRowsAtTheirOriginalPrefixMultiplicity() {
 		for (List<String> leftValues : List.of(List.of("reject"), List.of("keep"), List.of("keep", "keep"))) {
 			AtomicInteger leftOpens = new AtomicInteger();
 			AtomicInteger rightOpens = new AtomicInteger();
@@ -161,18 +161,13 @@ class PackedInputFrameContractTest {
 			TupleExpr source = new Join(left, right);
 			int multiplicity = leftValues.get(0).equals("keep") ? leftValues.size() : 0;
 			List<String> expected = Collections.nCopies(multiplicity, "u=\"keep\"|v=\"right\"");
-			assertEquals(expected, evaluate(source, null, () -> {
-				leftOpens.set(0);
-				rightOpens.set(0);
-			}));
-			assertEquals(1, leftOpens.get());
-			assertEquals(multiplicity, rightOpens.get());
-			assertCountedMutableRoutes(source, expected, List.of(leftOpens, rightOpens), List.of(1, multiplicity));
+			assertPreparedMutableEvaluation(source, expected, List.of(leftOpens, rightOpens), List.of());
+			assertPreparedMutableRoutes(source, expected, List.of(leftOpens, rightOpens));
 		}
 	}
 
 	@Test
-	void equalDistinctMutableOccurrencesRetainBothOriginalSourcesAndCounters() {
+	void equalDistinctMutableOccurrencesCaptureTheirOwnCallerSources() {
 		for (String wrapper : List.of("join", "extension", "union")) {
 			AtomicInteger first = new AtomicInteger();
 			AtomicInteger second = new AtomicInteger();
@@ -186,26 +181,20 @@ class PackedInputFrameContractTest {
 					: new Join(left, right);
 			List<String> expected = wrapper.equals("union") ? List.of("u=\"1\"", "u=\"1\"")
 					: List.of(wrapper.equals("extension") ? "copy=\"1\"|u=\"1\"" : "u=\"1\"");
-			assertEquals(expected, evaluate(source, null, () -> {
-				first.set(0);
-				second.set(0);
-			}));
-			assertEquals(1, first.get());
-			assertEquals(1, second.get());
-			assertCountedMutableRoutes(source, expected, List.of(first, second));
+			assertPreparedMutableEvaluation(source, expected, List.of(first, second), List.of());
+			assertPreparedMutableRoutes(source, expected, List.of(first, second));
 		}
 	}
 
 	@Test
-	void repeatedSameMutableSourceRetainsBothEvaluationOccurrences() {
+	void repeatedSameMutableSourceRetainsBothPreparedOccurrences() {
 		AtomicInteger opens = new AtomicInteger();
 		BindingSetAssignment assignment = countedMutableValues(opens, "1");
 		TupleExpr source = new Join(new Filter(assignment, new Bound(Var.of("u"))),
 				new Filter(assignment.clone(), new Bound(Var.of("u"))));
 		List<String> expected = List.of("u=\"1\"");
-		assertEquals(expected, evaluate(source, null, () -> opens.set(0)));
-		assertEquals(2, opens.get());
-		assertCountedMutableRoutes(source, expected, List.of(opens), List.of(2));
+		assertPreparedMutableEvaluation(source, expected, List.of(opens), List.of());
+		assertPreparedMutableRoutes(source, expected, List.of(opens));
 	}
 
 	@Test
@@ -226,21 +215,16 @@ class PackedInputFrameContractTest {
 			assertFalse(first.metrics().planCacheHit());
 			assertTrue(second.metrics().planCacheHit(), "occurrence structure remains reusable across callers");
 			List<String> expected = union ? List.of("u=\"1\"", "u=\"1\"") : List.of("u=\"1\"");
-			List<AtomicInteger> counters = List.of(previousLeft, previousRight, currentLeft, currentRight);
-			assertEquals(expected, evaluate(second.selectedPlan(), null,
-					() -> counters.forEach(counter -> counter.set(0))));
-			assertEquals(List.of(0, 0, 1, 1), counters.stream().map(AtomicInteger::get).toList());
-			assertEquals(expected, evaluate(first.selectedPlan(), null,
-					() -> counters.forEach(counter -> counter.set(0))));
-			assertEquals(List.of(1, 1, 0, 0), counters.stream().map(AtomicInteger::get).toList(),
-					"rebound cache materialization cannot mutate an already returned plan's source authority");
+			assertPreparedMutableEvaluation(second.selectedPlan(), expected,
+					List.of(currentLeft, currentRight), List.of(previousLeft, previousRight));
+			assertPreparedMutableEvaluation(first.selectedPlan(), expected,
+					List.of(previousLeft, previousRight), List.of(currentLeft, currentRight));
 			PackedPlanningResult reestimated = PackedCascadesPlanner.optimize(current, OptimizationGoal.root(), cache,
 					new PackedPlanCache.Context(1, 2, 3, 4, 5, 99, 7), COSTS);
 			assertFalse(reestimated.metrics().planCacheHit());
 			assertTrue(reestimated.metrics().queryTemplateCacheHit(), "cost-provider changes reuse the query template");
-			assertEquals(expected, evaluate(reestimated.selectedPlan(), null,
-					() -> counters.forEach(counter -> counter.set(0))));
-			assertEquals(List.of(0, 0, 1, 1), counters.stream().map(AtomicInteger::get).toList());
+			assertPreparedMutableEvaluation(reestimated.selectedPlan(), expected,
+					List.of(currentLeft, currentRight), List.of(previousLeft, previousRight));
 			List<Iterable<BindingSet>> originalRows = assignmentSources(current);
 			List<Iterable<BindingSet>> selectedRows = assignmentSources(second.selectedPlan());
 			assertEquals(2, selectedRows.size());
@@ -292,9 +276,9 @@ class PackedInputFrameContractTest {
 			BindingSetAssignment seed = new BindingSetAssignment();
 			seed.setDeclaredBindingNames(Set.of("seed"));
 			seed.setBindingSets(List.of(new ListBindingSet(List.of("seed"), VF.createLiteral("one"))));
-			Extension left = new Extension(new SingletonSet(),
+			Extension left = new Extension(seed,
 					new ExtensionElem(new FunctionCall(effect.getURI(), Var.of("seed")), "effect"));
-			TupleExpr source = new Join(seed, new Join(left, left.clone()));
+			TupleExpr source = new Join(left, left.clone());
 			PackedQuery encoded = PackedQueryCodec.encode(source);
 			List<Integer> wrapperOccurrences = new ArrayList<>();
 			for (int id = 1; id <= encoded.relationCount(); id++) {
@@ -312,6 +296,82 @@ class PackedInputFrameContractTest {
 		} finally {
 			FunctionRegistry.getInstance().remove(effect);
 		}
+	}
+
+	@Test
+	void volatileOperandsReceiveOuterInputsOnlyThroughExplicitLateral() {
+		AtomicInteger callbacks = new AtomicInteger();
+		Function effect = new Function() {
+			@Override
+			public String getURI() {
+				return "urn:test:packed-volatile-explicit-input";
+			}
+
+			@Override
+			public Value evaluate(ValueFactory factory, Value... arguments) {
+				callbacks.incrementAndGet();
+				return factory.createLiteral("fixed");
+			}
+
+			@Override
+			public boolean mustReturnDifferentResult() {
+				return true;
+			}
+		};
+		FunctionRegistry.getInstance().add(effect);
+		try {
+			for (boolean lateral : List.of(false, true)) {
+				BindingSetAssignment seed = new BindingSetAssignment();
+				seed.setDeclaredBindingNames(Set.of("seed"));
+				seed.setBindingSets(List.of(new ListBindingSet(List.of("seed"), VF.createLiteral("one"))));
+				Extension operand = new Extension(new SingletonSet(),
+						new ExtensionElem(new FunctionCall(effect.getURI(), Var.of("seed")), "effect"));
+				TupleExpr right = new Join(operand, operand.clone());
+				TupleExpr source = lateral ? new Lateral(seed, right) : new Join(seed, right);
+				List<String> expected = List.of(lateral ? "effect=\"fixed\"|seed=\"one\"" : "seed=\"one\"");
+				assertEquals(expected, evaluate(source, null, () -> callbacks.set(0)));
+				assertEquals(lateral ? 2 : 0, callbacks.get());
+				assertCountedMutableRoutes(source, expected, List.of(callbacks), List.of(lateral ? 2 : 0));
+			}
+		} finally {
+			FunctionRegistry.getInstance().remove(effect);
+		}
+	}
+
+	private static void assertPreparedMutableRoutes(TupleExpr source, List<String> expected,
+			List<AtomicInteger> callerSources) {
+		assertAll(countedRoutes(source).stream()
+				.map(route -> (Executable) () -> assertPreparedMutableEvaluation(route.get(), expected, callerSources,
+						List.of())));
+	}
+
+	/** Mutable VALUES are captured during entry preparation; execution must read only that prepared snapshot. */
+	private static void assertPreparedMutableEvaluation(TupleExpr source, List<String> expected,
+			List<AtomicInteger> callerSources, List<AtomicInteger> unrelatedSources) {
+		assertEquals(expected, evaluatePreparedMutable(source, callerSources, unrelatedSources));
+	}
+
+	private static List<String> evaluatePreparedMutable(TupleExpr source, List<AtomicInteger> callerSources,
+			List<AtomicInteger> unrelatedSources) {
+		callerSources.forEach(counter -> counter.set(0));
+		unrelatedSources.forEach(counter -> counter.set(0));
+		List<String> actual = evaluate(source, null, () -> {
+			for (AtomicInteger counter : callerSources) {
+				assertTrue(counter.get() > 0, "preparation must capture each actual caller source");
+			}
+			for (AtomicInteger counter : unrelatedSources) {
+				assertEquals(0, counter.get(), "preparation cannot borrow another caller's source");
+			}
+			callerSources.forEach(counter -> counter.set(0));
+			unrelatedSources.forEach(counter -> counter.set(0));
+		});
+		for (AtomicInteger counter : callerSources) {
+			assertEquals(0, counter.get(), "execution must not reopen the mutable caller source");
+		}
+		for (AtomicInteger counter : unrelatedSources) {
+			assertEquals(0, counter.get(), "execution must not borrow another caller's source");
+		}
+		return actual;
 	}
 
 	private static BindingSetAssignment countedMutableValues(AtomicInteger opens, String... values) {
@@ -343,8 +403,7 @@ class PackedInputFrameContractTest {
 		assertCountedMutableRoutes(source, expected, counters, counters.stream().map(counter -> 1).toList());
 	}
 
-	private static void assertCountedMutableRoutes(TupleExpr source, List<String> expected,
-			List<AtomicInteger> counters, List<Integer> expectedCounts) {
+	private static List<Supplier<TupleExpr>> countedRoutes(TupleExpr source) {
 		List<Supplier<TupleExpr>> routes = new ArrayList<>();
 		routes.add(() -> materialized(PackedQueryCodec.encode(source)));
 		routes.add(() -> materialized(PackedQueryCodec.encodeForPlanning(source)));
@@ -357,6 +416,12 @@ class PackedInputFrameContractTest {
 				.selectedPlan());
 		routes.add(() -> PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), cache, CACHE_CONTEXT, COSTS)
 				.selectedPlan());
+		return routes;
+	}
+
+	private static void assertCountedMutableRoutes(TupleExpr source, List<String> expected,
+			List<AtomicInteger> counters, List<Integer> expectedCounts) {
+		List<Supplier<TupleExpr>> routes = countedRoutes(source);
 		assertAll(routes.stream().map(route -> (Executable) () -> {
 			TupleExpr plan = route.get();
 			assertEquals(expected, evaluate(plan, null, () -> counters.forEach(counter -> counter.set(0))),
@@ -883,8 +948,11 @@ class PackedInputFrameContractTest {
 						? new ValueConstant(VF.createLiteral("fixed"))
 						: new FunctionCall(effect.getURI(), Var.of("u")), "nonce")),
 						values("later", "a", "b"));
-				int expectedExecutions = kind.equals("mutableRows") ? 1 : 3;
-				List<String> expected = evaluate(source, null, () -> executions.set(0));
+				boolean capturesRows = kind.equals("mutableRows");
+				int expectedExecutions = capturesRows ? 0 : 3;
+				List<String> expected = capturesRows
+						? evaluatePreparedMutable(source, List.of(executions), List.of())
+						: evaluate(source, null, () -> executions.set(0));
 				assertEquals(6, expected.size());
 				assertEquals(expectedExecutions, executions.get(), "the original algebra owns this evaluation count");
 				PackedCostModel preferRepeatedRight = new PackedCostModel() {
@@ -912,7 +980,9 @@ class PackedInputFrameContractTest {
 				for (OptimizationGoal goal : goals()) {
 					TupleExpr selected = PackedCascadesPlanner.optimize(source, goal, preferRepeatedRight)
 							.selectedPlan();
-					assertEquals(expected, evaluate(selected, null, () -> executions.set(0)),
+					assertEquals(expected, capturesRows
+							? evaluatePreparedMutable(selected, List.of(executions), List.of())
+							: evaluate(selected, null, () -> executions.set(0)),
 							() -> kind + "\n" + selected);
 					assertEquals(expectedExecutions, executions.get(),
 							() -> kind + " changed runtime exposure after a dependent reorder\n" + selected);
@@ -921,7 +991,9 @@ class PackedInputFrameContractTest {
 				for (int invocation = 0; invocation < 2; invocation++) {
 					TupleExpr selected = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), cache,
 							CACHE_CONTEXT, preferRepeatedRight).selectedPlan();
-					assertEquals(expected, evaluate(selected, null, () -> executions.set(0)),
+					assertEquals(expected, capturesRows
+							? evaluatePreparedMutable(selected, List.of(executions), List.of())
+							: evaluate(selected, null, () -> executions.set(0)),
 							() -> kind + "\n" + selected);
 					assertEquals(expectedExecutions, executions.get(), "cached execution retains the same exposure");
 				}

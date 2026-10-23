@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterValuesAnchorSupport;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.RowScope;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
@@ -62,6 +63,7 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 	private static final int MAX_EXACT_FILTER_ZERO_SCANNED_ROWS = 4_096;
 	private static final int MAX_EXACT_FILTER_DISTINCT_TERMS = 4_096;
 
+	private final LmdbLearnedFilterSelectivity learned;
 	private final ValueStore valueStore;
 	private final LmdbStatementPatternCardinalitySource cardinalities;
 	private final LmdbQuadSynopsisService synopsis;
@@ -102,6 +104,16 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 			LmdbOperatorFeedbackStats feedback, LmdbFiniteJoinSurfaceEstimator finiteJoinSurfaceEstimator,
 			ExactFiniteSurfaceProvider exactFiniteSurfaceProvider, LmdbStatisticsService statistics,
 			FrontierEstimatorMode statisticsMode) {
+		this(valueStore, cardinalities, synopsis, filters, feedback, finiteJoinSurfaceEstimator,
+				exactFiniteSurfaceProvider, statistics, statisticsMode, null);
+	}
+
+	LmdbStorageEstimatorEvidence(ValueStore valueStore, LmdbStatementPatternCardinalitySource cardinalities,
+			LmdbQuadSynopsisService synopsis, LmdbFilterSelectivityStats filters,
+			LmdbOperatorFeedbackStats feedback, LmdbFiniteJoinSurfaceEstimator finiteJoinSurfaceEstimator,
+			ExactFiniteSurfaceProvider exactFiniteSurfaceProvider, LmdbStatisticsService statistics,
+			FrontierEstimatorMode statisticsMode, LmdbLearnedFilterSelectivity learned) {
+		this.learned = learned;
 		this.valueStore = valueStore;
 		this.cardinalities = cardinalities;
 		this.synopsis = synopsis;
@@ -325,6 +337,25 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 				if (boundedZero.isPresent()) {
 					return boundedZero;
 				}
+			}
+		}
+		if (learned != null && context.evidencePolicy() != EstimateContext.EvidencePolicy.SNAPSHOT_ONLY) {
+			Filter synthetic = new Filter((TupleExpr) LmdbValueIdFilter.semanticClone(input), condition.clone());
+			// Retain the proved domains of every tuple input, including scalar subqueries.
+			PlanningGraphDomains.compose(synthetic);
+			LmdbFilterReadContext readContext = context.filterReadContext();
+			EvaluationStatistics.FilterPassEstimate estimate = readContext != null
+					&& readContext.family().ownerToken() == learned.outcomeOwnerToken()
+					&& readContext.allows(synthetic, context)
+					? learned.estimateQualified(valueStore, readContext.read().dataEpoch(), synthetic, readContext.read())
+					: null;
+			if (estimate == null) {
+				// Keep the original legacy namespace separate; a source-less key cannot address new read keys.
+				estimate = learned.estimateQualified(valueStore, context.snapshotVersion(), synthetic);
+			}
+			if (estimate != null && validPassRatio(estimate.getPassRatio())) {
+				return Optional.of(new FilterEvidence(estimate.getPassRatio(), estimate.getLower95PassRatio(),
+						estimate.getUpper95PassRatio(), estimate.getConfidenceScore(), false, estimate.getSource().name().toLowerCase()));
 			}
 		}
 		return finiteConstantFilterEvidence(pattern, condition, inputEstimate);

@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.DistinctBindingFeedback;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 
@@ -27,6 +28,11 @@ public interface RuntimeFeedbackTarget extends InvocationAggregateView {
 
 	/** Records one open against the immutable prediction vector captured during costing. */
 	void open();
+
+	/** Validates an actual opening frame once; existing targets keep their established open semantics. */
+	default void open(BindingSet input) {
+		open();
+	}
 
 	/** Records one open whose explicit costing event supplied a varying prediction. */
 	void open(RuntimeFeedbackContract.PredictionVector rawPrediction,

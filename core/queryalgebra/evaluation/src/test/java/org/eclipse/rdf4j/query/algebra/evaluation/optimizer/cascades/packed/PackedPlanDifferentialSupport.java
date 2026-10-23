@@ -116,7 +116,12 @@ final class PackedPlanDifferentialSupport {
 	 */
 	static TupleExpr assertPackedPlanPreservesResults(Model data, String query, PackedCostModel costs,
 			PackedPredicateRangeProvider provider, List<String> expected) {
-		TupleExpr original = parse(query);
+		return assertPackedPlanPreservesResults(data, parse(query), costs, provider, expected);
+	}
+
+	/** Plans an already parsed complete query without adding the shorthand fixture prefixes. */
+	static TupleExpr assertPackedPlanPreservesResults(Model data, TupleExpr original, PackedCostModel costs,
+			PackedPredicateRangeProvider provider, List<String> expected) {
 		List<String> reference = evaluate(data, original);
 		PackedQuery packed = PackedQueryCodec.encodeForPlanning(original.clone(), provider);
 		long generated = generatedRuleMask(packed);

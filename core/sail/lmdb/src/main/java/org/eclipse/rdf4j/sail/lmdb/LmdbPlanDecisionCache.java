@@ -33,6 +33,10 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.LongAdder;
 
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCacheMemory;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedProviderCacheIdentity;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedProviderIdentityBudget;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
 
 /**
  * Store-owned immutable query-plan decision cache.
@@ -178,7 +182,32 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 
 	record PlanFamilyKey(Object canonicalPackedIdentity, Object datasetIdentity, Object initialBindingSchema,
 			String requiredResultProperties, String inferenceMode, long optimizerFeatureGeneration,
-			long evaluationFeatureGeneration, String environmentClass) {
+			long evaluationFeatureGeneration, String environmentClass,
+			PackedProviderCacheIdentity providerCacheIdentity) implements PackedProviderCacheIdentity {
+
+		@Override
+		public boolean accountRetainedMemory(RetainedMemoryAccount account) {
+			if (!(providerCacheIdentity instanceof LmdbPipelinePlanCache.InputIdentity)) {
+				return providerCacheIdentity == null || providerCacheIdentity.accountRetainedMemory(account);
+			}
+			account = PackedCacheMemory.ownedAccount(account);
+			if (!account.add(this, 96L)) {
+				return true;
+			}
+			return providerCacheIdentity.accountRetainedMemory(account)
+					&& accountKeyObject(canonicalPackedIdentity, account) && accountKeyObject(datasetIdentity, account)
+					&& accountKeyObject(initialBindingSchema, account)
+					&& accountKeyObject(requiredResultProperties, account)
+					&& accountKeyObject(inferenceMode, account) && accountKeyObject(environmentClass, account);
+		}
+
+		PlanFamilyKey(Object canonicalPackedIdentity, Object datasetIdentity, Object initialBindingSchema,
+				String requiredResultProperties, String inferenceMode, long optimizerFeatureGeneration,
+				long evaluationFeatureGeneration, String environmentClass) {
+			this(canonicalPackedIdentity, datasetIdentity, initialBindingSchema, requiredResultProperties,
+					inferenceMode,
+					optimizerFeatureGeneration, evaluationFeatureGeneration, environmentClass, null);
+		}
 
 		PlanFamilyKey {
 			Objects.requireNonNull(canonicalPackedIdentity, "canonicalPackedIdentity");
@@ -190,7 +219,21 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		}
 	}
 
-	record ExactInvocationKey(PlanFamilyKey familyKey, Object completeSourceIdentity, Object semanticContext) {
+	record ExactInvocationKey(PlanFamilyKey familyKey, Object completeSourceIdentity, Object semanticContext)
+			implements PackedProviderCacheIdentity {
+		@Override
+		public boolean accountRetainedMemory(RetainedMemoryAccount account) {
+			if (!(familyKey.providerCacheIdentity() instanceof LmdbPipelinePlanCache.InputIdentity)) {
+				return familyKey.providerCacheIdentity() == null
+						|| familyKey.providerCacheIdentity().accountRetainedMemory(account);
+			}
+			account = PackedCacheMemory.ownedAccount(account);
+			if (!account.add(this, 40L)) {
+				return true;
+			}
+			return familyKey.accountRetainedMemory(account) && accountKeyObject(completeSourceIdentity, account)
+					&& accountKeyObject(semanticContext, account);
+		}
 
 		ExactInvocationKey {
 			Objects.requireNonNull(familyKey, "familyKey");
@@ -211,7 +254,37 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 			Object indexIdentity, boolean indexGenerationDependent,
 			long physicalCapabilityGeneration, long optimizerRuleGeneration, long packedRecipeGeneration,
 			long evaluationStrategyGeneration, String optimizerConfiguration, Object physicalProviderIdentity,
-			long dataRevision, boolean dataRevisionDependent) {
+			long dataRevision, boolean dataRevisionDependent, PackedProviderCacheIdentity providerCacheIdentity)
+			implements PackedProviderCacheIdentity {
+		@Override
+		public boolean accountRetainedMemory(RetainedMemoryAccount account) {
+			if (!(providerCacheIdentity instanceof LmdbPipelinePlanCache.InputIdentity)) {
+				return providerCacheIdentity == null || providerCacheIdentity.accountRetainedMemory(account);
+			}
+			account = PackedCacheMemory.ownedAccount(account);
+			if (!account.add(this, 152L)) {
+				return true;
+			}
+			return providerCacheIdentity.accountRetainedMemory(account)
+					&& accountKeyObject(datasetIdentity, account) && accountKeyObject(initialBindingSchema, account)
+					&& accountKeyObject(requiredResultProperties, account)
+					&& accountKeyObject(evaluationProperties, account)
+					&& accountKeyObject(indexIdentity, account) && accountKeyObject(optimizerConfiguration, account)
+					&& accountKeyObject(physicalProviderIdentity, account);
+		}
+
+		SemanticDependencies(Object datasetIdentity, Object initialBindingSchema,
+				String requiredResultProperties, String evaluationProperties, long indexGeneration,
+				Object indexIdentity, boolean indexGenerationDependent,
+				long physicalCapabilityGeneration, long optimizerRuleGeneration, long packedRecipeGeneration,
+				long evaluationStrategyGeneration, String optimizerConfiguration, Object physicalProviderIdentity,
+				long dataRevision, boolean dataRevisionDependent) {
+			this(datasetIdentity, initialBindingSchema, requiredResultProperties, evaluationProperties, indexGeneration,
+					indexIdentity, indexGenerationDependent, physicalCapabilityGeneration, optimizerRuleGeneration,
+					packedRecipeGeneration, evaluationStrategyGeneration, optimizerConfiguration,
+					physicalProviderIdentity,
+					dataRevision, dataRevisionDependent, null);
+		}
 
 		SemanticDependencies {
 			Objects.requireNonNull(datasetIdentity, "datasetIdentity");
@@ -253,6 +326,21 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 					evaluationStrategyGeneration, optimizerConfiguration, physicalProviderIdentity, 0L, false);
 		}
 
+		SemanticDependencies withProviderCacheIdentity(PackedProviderCacheIdentity identity) {
+			if (!Objects.equals(providerCacheIdentity, identity)) {
+				throw new IllegalArgumentException("cannot change authenticated provider applicability");
+			}
+			return providerCacheIdentity == identity ? this
+					: new SemanticDependencies(datasetIdentity,
+							initialBindingSchema, requiredResultProperties, evaluationProperties, indexGeneration,
+							indexIdentity,
+							indexGenerationDependent, physicalCapabilityGeneration, optimizerRuleGeneration,
+							packedRecipeGeneration,
+							evaluationStrategyGeneration, optimizerConfiguration, physicalProviderIdentity,
+							dataRevision,
+							dataRevisionDependent, identity);
+		}
+
 		SemanticDependencies withoutIndexGenerationDependency() {
 			return !indexGenerationDependent && indexGeneration == 0L
 					? this
@@ -260,7 +348,7 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 							evaluationProperties, 0L, null, false, physicalCapabilityGeneration,
 							optimizerRuleGeneration,
 							packedRecipeGeneration, evaluationStrategyGeneration, optimizerConfiguration,
-							physicalProviderIdentity, dataRevision, dataRevisionDependent);
+							physicalProviderIdentity, dataRevision, dataRevisionDependent, providerCacheIdentity);
 		}
 
 		SemanticDependencies withIndexGenerationDependency(long currentIndexGeneration, Object currentIndexIdentity) {
@@ -273,7 +361,7 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 									physicalCapabilityGeneration,
 									optimizerRuleGeneration, packedRecipeGeneration, evaluationStrategyGeneration,
 									optimizerConfiguration, physicalProviderIdentity, dataRevision,
-									dataRevisionDependent);
+									dataRevisionDependent, providerCacheIdentity);
 		}
 
 		SemanticDependencies withoutDataRevisionDependency() {
@@ -282,7 +370,8 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 					: new SemanticDependencies(datasetIdentity, initialBindingSchema, requiredResultProperties,
 							evaluationProperties, indexGeneration, indexIdentity, indexGenerationDependent,
 							physicalCapabilityGeneration, optimizerRuleGeneration, packedRecipeGeneration,
-							evaluationStrategyGeneration, optimizerConfiguration, physicalProviderIdentity, 0L, false);
+							evaluationStrategyGeneration, optimizerConfiguration, physicalProviderIdentity, 0L, false,
+							providerCacheIdentity);
 		}
 
 		SemanticDependencies withDataRevisionDependency(long currentDataRevision) {
@@ -292,12 +381,13 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 							evaluationProperties, indexGeneration, indexIdentity, indexGenerationDependent,
 							physicalCapabilityGeneration, optimizerRuleGeneration, packedRecipeGeneration,
 							evaluationStrategyGeneration, optimizerConfiguration, physicalProviderIdentity,
-							currentDataRevision, true);
+							currentDataRevision, true, providerCacheIdentity);
 		}
 
 		boolean matchesCurrent(SemanticDependencies current) {
 			Objects.requireNonNull(current, "current");
-			return Objects.equals(datasetIdentity, current.datasetIdentity)
+			return Objects.equals(providerCacheIdentity, current.providerCacheIdentity)
+					&& Objects.equals(datasetIdentity, current.datasetIdentity)
 					&& Objects.equals(initialBindingSchema, current.initialBindingSchema)
 					&& Objects.equals(requiredResultProperties, current.requiredResultProperties)
 					&& Objects.equals(evaluationProperties, current.evaluationProperties)
@@ -558,6 +648,14 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 	/** Store-safe work that opens its own current-evidence planning session when executed. */
 	interface DetachedRefreshWork {
 
+		default PackedProviderCacheIdentity cacheIdentity() {
+			return null;
+		}
+
+		default void accountCacheIdentity(FactorCostCacheKey.ProviderRetainedMemory memory) {
+			memory.account(cacheIdentity());
+		}
+
 		RefreshComputation execute();
 
 		long retainedBytes();
@@ -628,21 +726,32 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 
 		private final TupleExpr template;
 		private final long retainedBytes;
+		private final boolean automaticPlanningState;
 
-		private ExactTupleRecipe(TupleExpr template, long retainedBytes) {
-			this.template = LmdbValueIdFilter.semanticClone(Objects.requireNonNull(template, "template"));
+		private ExactTupleRecipe(TupleExpr template, long retainedBytes, PlanFamilyKey owner) {
+			// The complete-query pipeline is the automatic input/readiness owner. Existing explicit low-level
+			// publishers keep their declared retainedBytes/typed-provider contract and ordinary clone API.
+			automaticPlanningState = owner.providerCacheIdentity() instanceof LmdbPipelinePlanCache.InputIdentity;
+			this.template = automaticPlanningState
+					? LmdbCacheValueCopies.copy(Objects.requireNonNull(template, "template"), true)
+					: LmdbValueIdFilter.semanticClone(Objects.requireNonNull(template, "template"));
 			this.retainedBytes = retainedBytes;
 		}
 
 		@Override
 		public TupleExpr materialize() {
-			return LmdbValueIdFilter.semanticClone(template);
+			return automaticPlanningState ? LmdbCacheValueCopies.CODEC.cloneWithSemantics(template)
+					: LmdbValueIdFilter.semanticClone(template);
 		}
 
 		@Override
 		public long retainedBytes() {
 			FactorCostCacheKey.ProviderRetainedMemory memory = new FactorCostCacheKey.ProviderRetainedMemory();
-			memory.account(template);
+			if (automaticPlanningState) {
+				memory.accountCacheModels(template);
+			} else {
+				memory.account(template);
+			}
 			return saturatedAdd(retainedBytes, memory.bytes());
 		}
 	}
@@ -835,14 +944,20 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 
 	static final class PlanFamily {
 
+		private final PlanFamilyKey key;
 		private final AtomicReference<FamilyVersion> current;
 		private final ConcurrentHashMap<Long, AtomicBoolean> refreshClaims = new ConcurrentHashMap<>();
 		private final LongAdder requests = new LongAdder();
 		private final LongAdder admissions = new LongAdder();
 
 		private PlanFamily(PlanFamilyKey key, FamilyVersion version) {
+			this.key = key;
 			current = new AtomicReference<>(version);
 			admissions.increment();
+		}
+
+		PlanFamilyKey key() {
+			return key;
 		}
 
 		AtomicReference<FamilyVersion> current() {
@@ -1071,20 +1186,24 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 	private final AtomicLong globalEvidenceEpoch = new AtomicLong();
 	private final AtomicLong refreshTaskSequence = new AtomicLong();
 	private final AtomicBoolean closed = new AtomicBoolean();
+	private final PackedProviderIdentityBudget pendingProviderIdentities;
 
 	private final class PrioritizedRefreshTask implements Runnable, Comparable<PrioritizedRefreshTask> {
 
 		private final RefreshRequest request;
-		private final PlanFamily family;
+		private final PlanFamilyKey canonicalFamilyKey;
 		private final AtomicBoolean claim;
 		private final long expectedFamilyVersion;
 		private final long expectedCacheEpoch;
 		private final long sequence;
+		private final PackedProviderCacheIdentity retainedIdentity;
+		private final AtomicBoolean released = new AtomicBoolean();
 
-		private PrioritizedRefreshTask(RefreshRequest request, PlanFamily family, AtomicBoolean claim,
-				long expectedFamilyVersion, long expectedCacheEpoch) {
+		private PrioritizedRefreshTask(RefreshRequest request, PlanFamilyKey canonicalFamilyKey, AtomicBoolean claim,
+				long expectedFamilyVersion, long expectedCacheEpoch, PackedProviderCacheIdentity retainedIdentity) {
+			this.retainedIdentity = retainedIdentity;
 			this.request = request;
-			this.family = family;
+			this.canonicalFamilyKey = canonicalFamilyKey;
 			this.claim = claim;
 			this.expectedFamilyVersion = expectedFamilyVersion;
 			this.expectedCacheEpoch = expectedCacheEpoch;
@@ -1100,9 +1219,11 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		@Override
 		public void run() {
 			try {
-				if (closed.get() || families.get(request.familyKey()) != family) {
+				PlanFamily family = families.get(canonicalFamilyKey);
+				if (closed.get() || family == null) {
 					return;
 				}
+				// Versions are globally unique. An evicted/recreated equal key cannot revive an old task.
 				FamilyVersion current = family.current().get();
 				boolean variantPresent = current.version() == expectedFamilyVersion
 						&& globalEvidenceEpoch.get() == expectedCacheEpoch
@@ -1117,6 +1238,13 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 			} catch (RuntimeException refreshFailure) {
 				// Refresh is advisory. Its failure cannot affect the immutable serving champion.
 			} finally {
+				release();
+			}
+		}
+
+		private void release() {
+			if (released.compareAndSet(false, true)) {
+				pendingProviderIdentities.release(retainedIdentity);
 				claim.set(false);
 			}
 		}
@@ -1146,6 +1274,7 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		}
 		this.maximumFamilies = maximumFamilies;
 		this.maximumRetainedBytes = maximumRetainedBytes;
+		this.pendingProviderIdentities = new PackedProviderIdentityBudget(maximumRetainedBytes);
 		this.maximumVariants = maximumVariants;
 		this.maximumCanaryFraction = maximumCanaryFraction;
 		AtomicLong threadSequence = new AtomicLong();
@@ -1157,6 +1286,16 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		};
 		refreshExecutor = new ThreadPoolExecutor(refreshThreads, refreshThreads, 0L, TimeUnit.MILLISECONDS,
 				new PriorityBlockingQueue<>(), threadFactory);
+	}
+
+	boolean tryRetainTransientIdentity(PackedProviderCacheIdentity identity) {
+		synchronized (admissionLock) {
+			return identity == null || enabled() && pendingProviderIdentities.tryRetain(identity, retainedBytes.get());
+		}
+	}
+
+	void releaseTransientIdentity(PackedProviderCacheIdentity identity) {
+		pendingProviderIdentities.release(identity);
 	}
 
 	LookupDecision lookupExact(ExactInvocationKey key, LookupRequest request) {
@@ -1182,11 +1321,51 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 	}
 
 	boolean publishBuild(BuildPublication publication) {
+		// Canonicalize equal new provider keys before retaining aliases or replacing a family version. The map's
+		// original key remains an owner, and must share the one identity charged by the whole immutable portfolio.
+		synchronized (admissionLock) {
+			if (!Objects.equals(publication.familyKey().providerCacheIdentity(),
+					publication.semanticDependencies().providerCacheIdentity())) {
+				return false;
+			}
+			PlanFamily retained = families.get(publication.familyKey());
+			if (retained != null && publication.familyKey().providerCacheIdentity() != null) {
+				PlanFamilyKey key = retained.key();
+				publication = new BuildPublication(key, new ExactInvocationKey(key,
+						publication.exactInvocationKey().completeSourceIdentity(),
+						publication.exactInvocationKey().semanticContext()),
+						publication.semanticDependencies().withProviderCacheIdentity(key.providerCacheIdentity()),
+						publication.buildEvidence(), publication.currentEvidence(), publication.executableTemplate(),
+						publication.physicalFingerprint(), publication.estimatedCostInterval(),
+						publication.searchCertificate(),
+						publication.retainedBytes(), publication.optimizerGeneration(),
+						publication.detachedRefreshWork());
+			}
+			return publishBuildLocked(publication);
+		}
+	}
+
+	private boolean publishBuildLocked(BuildPublication publication) {
+		ExactTupleRecipe recipe = new ExactTupleRecipe(publication.executableTemplate(), publication.retainedBytes(),
+				publication.familyKey());
+		if (recipe.template == null) {
+			return false;
+		}
 		long refreshWorkBytes = publication.detachedRefreshWork() == null
 				? 0L
 				: publication.detachedRefreshWork().retainedBytes();
 		FactorCostCacheKey.ProviderRetainedMemory providerMemory = new FactorCostCacheKey.ProviderRetainedMemory();
-		providerMemory.account(publication.executableTemplate());
+		if (recipe.automaticPlanningState) {
+			providerMemory.accountCacheModels(recipe.template);
+		} else {
+			providerMemory.account(recipe.template);
+		}
+		providerMemory.account(publication.semanticDependencies());
+		providerMemory.account(publication.familyKey());
+		providerMemory.account(publication.exactInvocationKey());
+		if (publication.detachedRefreshWork() != null) {
+			publication.detachedRefreshWork().accountCacheIdentity(providerMemory);
+		}
 		long structuralPublicationBytes = saturatedAdd(publication.retainedBytes(), refreshWorkBytes);
 		// Saturation is not proof that an opt-in payload fits even a Long.MAX_VALUE cache budget.
 		if (providerMemory.bytes() > 0 && (providerMemory.bytes() == Long.MAX_VALUE
@@ -1218,7 +1397,7 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		long familyVersionId = familyVersionSequence.incrementAndGet();
 		long planVersionId = planVersionSequence.incrementAndGet();
 		PlanVersion champion = new PlanVersion(planVersionId,
-				new ExactTupleRecipe(publication.executableTemplate(), publication.retainedBytes()),
+				recipe,
 				publication.physicalFingerprint(), publication.estimatedCostInterval(), DeploymentRole.CHAMPION,
 				publication.buildEvidence().globalEpoch(), publication.optimizerGeneration(),
 				publication.detachedRefreshWork());
@@ -1248,7 +1427,8 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 			long previousBytes = existing == null ? 0L : existing.current().get().retainedBytes();
 			makeRoom(publication.familyKey(), publicationBytes, previousBytes);
 			if (families.size() >= maximumFamilies && existing == null
-					|| retainedBytes.get() - previousBytes > maximumRetainedBytes - publicationBytes) {
+					|| retainedBytes.get() - previousBytes > maximumRetainedBytes - pendingProviderIdentities.bytes()
+							- publicationBytes) {
 				return false;
 			}
 			if (existing == null) {
@@ -1289,12 +1469,28 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 			long familyVersionId = familyVersionSequence.incrementAndGet();
 			Map<ExactInvocationKey, ExactAlias> aliases = new LinkedHashMap<>(
 					reversionAliases(observed.exactAliases(), familyVersionId));
-			aliases.put(publication.exactInvocationKey(), new ExactAlias(familyVersionId,
+			ExactInvocationKey canonicalAlias = new ExactInvocationKey(family.key(),
+					publication.exactInvocationKey().completeSourceIdentity(),
+					publication.exactInvocationKey().semanticContext());
+			aliases.put(canonicalAlias, new ExactAlias(familyVersionId,
 					compatibleVariant.variantId(), compatibleVariant.champion().version()));
+			long aliasContainerGrowth = family.key().providerCacheIdentity() == null ? 0L
+					: 128L * (aliases.size() - observed.exactAliases().size());
+			long updatedBytes = withPortfolioProviderBytes(observed, observed.dispatcher().variants(), 0L,
+					aliasContainerGrowth, observed.semanticDependencies(), aliases);
+			if (updatedBytes < 0L || updatedBytes > maximumRetainedBytes) {
+				return false;
+			}
+			makeRoom(publication.familyKey(), updatedBytes, observed.retainedBytes());
+			if (retainedBytes.get() - observed.retainedBytes() > maximumRetainedBytes
+					- pendingProviderIdentities.bytes() - updatedBytes) {
+				return false;
+			}
 			FamilyVersion updated = new FamilyVersion(familyVersionId, observed.semanticValidity(),
 					observed.semanticDependencies(), observed.dispatcher(), observed.retainedStructuralCheckpoint(),
-					aliases, observed.publicationEvidenceEpoch(), observed.retainedBytes());
+					aliases, observed.publicationEvidenceEpoch(), updatedBytes);
 			if (family.current().compareAndSet(observed, updated)) {
+				retainedBytes.addAndGet(updatedBytes - observed.retainedBytes());
 				replaceAliases(observed, updated);
 				touch(publication.familyKey());
 				publications.incrementAndGet();
@@ -1339,8 +1535,13 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		DetachedRefreshWork candidateRefreshWork = publication.detachedRefreshWork() == null
 				? oldVariant.champion().detachedRefreshWork()
 				: publication.detachedRefreshWork();
+		ExactTupleRecipe recipe = new ExactTupleRecipe(publication.executableTemplate(), publication.retainedBytes(),
+				publication.familyKey());
+		if (recipe.template == null) {
+			return false;
+		}
 		PlanVersion candidate = new PlanVersion(planVersionSequence.incrementAndGet(),
-				new ExactTupleRecipe(publication.executableTemplate(), publication.retainedBytes()),
+				recipe,
 				publication.physicalFingerprint(), publication.estimatedCostInterval(),
 				DeploymentRole.CHALLENGER,
 				publication.buildEvidence().globalEpoch(), publication.optimizerGeneration(), candidateRefreshWork);
@@ -1385,10 +1586,6 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		variants.set(variants.indexOf(oldVariant), replacement);
 		long oldVariantBytes = variantRetainedBytes(oldVariant);
 		long replacementBytes = variantRetainedBytes(replacement);
-		long refreshedRetainedBytes = withPortfolioProviderBytes(observed, variants, oldVariantBytes, replacementBytes);
-		if (refreshedRetainedBytes < 0L || refreshedRetainedBytes > maximumRetainedBytes) {
-			return false;
-		}
 		long familyVersionId = familyVersionSequence.incrementAndGet();
 		Map<ExactInvocationKey, ExactAlias> aliases = new LinkedHashMap<>();
 		for (Map.Entry<ExactInvocationKey, ExactAlias> entry : observed.exactAliases().entrySet()) {
@@ -1406,6 +1603,11 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		refreshedDependencies = publication.dataRevisionDependent()
 				? refreshedDependencies.withDataRevisionDependency(publication.dataRevision())
 				: refreshedDependencies.withoutDataRevisionDependency();
+		long refreshedRetainedBytes = withPortfolioProviderBytes(observed, variants, oldVariantBytes,
+				replacementBytes, refreshedDependencies, aliases);
+		if (refreshedRetainedBytes < 0L || refreshedRetainedBytes > maximumRetainedBytes) {
+			return false;
+		}
 		FamilyVersion refreshed = new FamilyVersion(familyVersionId, SemanticValidity.VALID,
 				refreshedDependencies, new VariantDispatcher(variants),
 				observed.retainedStructuralCheckpoint(),
@@ -1417,7 +1619,8 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 				return false;
 			}
 			makeRoom(publication.familyKey(), refreshedRetainedBytes, observed.retainedBytes());
-			if (retainedBytes.get() - observed.retainedBytes() > maximumRetainedBytes - refreshedRetainedBytes
+			if (retainedBytes.get() - observed.retainedBytes() > maximumRetainedBytes
+					- pendingProviderIdentities.bytes() - refreshedRetainedBytes
 					|| !family.current().compareAndSet(observed, refreshed)) {
 				stalePublications.incrementAndGet();
 				return false;
@@ -1445,8 +1648,13 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		QualityState quality = publication.buildEvidence().sameQualityEvidence(publication.currentEvidence())
 				? QualityState.CONFIDENT
 				: QualityState.PROVISIONAL;
+		ExactTupleRecipe recipe = new ExactTupleRecipe(publication.executableTemplate(), publication.retainedBytes(),
+				publication.familyKey());
+		if (recipe.template == null) {
+			return false;
+		}
 		PlanVersion candidate = new PlanVersion(planVersionSequence.incrementAndGet(),
-				new ExactTupleRecipe(publication.executableTemplate(), publication.retainedBytes()),
+				recipe,
 				publication.physicalFingerprint(), publication.estimatedCostInterval(), DeploymentRole.CHAMPION,
 				publication.buildEvidence().globalEpoch(), publication.optimizerGeneration());
 		PlanVariant added = new PlanVariant(publication.variantId(), publication.applicabilityGuard(), candidate,
@@ -1490,7 +1698,8 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 				return false;
 			}
 			makeRoom(publication.familyKey(), updatedBytes, observed.retainedBytes());
-			if (retainedBytes.get() - observed.retainedBytes() > maximumRetainedBytes - updatedBytes
+			if (retainedBytes.get() - observed.retainedBytes() > maximumRetainedBytes
+					- pendingProviderIdentities.bytes() - updatedBytes
 					|| !family.current().compareAndSet(observed, updated)) {
 				stalePublications.incrementAndGet();
 				return false;
@@ -1523,7 +1732,11 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 			return RefreshSubmission.UNAVAILABLE;
 		}
 		long expectedCacheEpoch = globalEvidenceEpoch.get();
-		RefreshRequest request = new RefreshRequest(decision.familyKey(), decision.variantId(), 0.0d,
+		PlanFamilyKey familyKey = decision.familyKey();
+		long familyVersion = decision.familyVersion();
+		long variantId = decision.variantId();
+		SemanticDependencies dependencies = current.semanticDependencies();
+		RefreshRequest request = new RefreshRequest(familyKey, variantId, 0.0d,
 				Math.max(0.0d, current.dispatcher()
 						.variants()
 						.stream()
@@ -1533,24 +1746,26 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 						.runtimePosterior()
 						.expectedRegret()),
 				0.0d, Math.max(1.0d, decision.searchCertificate().deterministicWorkUnits()),
-				() -> executeDetachedRefresh(decision, current.semanticDependencies(), expectedCacheEpoch, work));
-		return submitRefreshRequest(request, family, decision.familyVersion(), expectedCacheEpoch);
+				() -> executeDetachedRefresh(familyKey, familyVersion, variantId, dependencies, expectedCacheEpoch,
+						work));
+		return submitRefreshRequest(request, family, familyVersion, expectedCacheEpoch,
+				dependencies.providerCacheIdentity() == null ? null : dependencies, work.cacheIdentity());
 	}
 
-	private void executeDetachedRefresh(UseAndRefresh decision, SemanticDependencies semanticDependencies,
-			long expectedCacheEpoch, DetachedRefreshWork work) {
+	private void executeDetachedRefresh(PlanFamilyKey familyKey, long familyVersion, long variantId,
+			SemanticDependencies semanticDependencies, long expectedCacheEpoch, DetachedRefreshWork work) {
 		RefreshComputation computation = Objects.requireNonNull(work.execute(), "detached refresh computation");
-		PlanFamily family = families.get(decision.familyKey());
+		PlanFamily family = families.get(familyKey);
 		if (!enabled() || family == null || globalEvidenceEpoch.get() != expectedCacheEpoch) {
 			return;
 		}
 		FamilyVersion current = family.current().get();
-		if (current.version() != decision.familyVersion()
+		if (current.version() != familyVersion
 				|| !current.semanticDependencies().equals(semanticDependencies)) {
 			return;
 		}
-		publishRefresh(new RefreshPublication(decision.familyKey(), decision.familyVersion(), semanticDependencies,
-				computation.buildEvidence(), computation.currentEvidence(), decision.variantId(),
+		publishRefresh(new RefreshPublication(familyKey, familyVersion, semanticDependencies,
+				computation.buildEvidence(), computation.currentEvidence(), variantId,
 				computation.executableTemplate(), computation.physicalFingerprint(),
 				computation.selectedCostInterval(), computation.recalibratedIncumbentCostInterval(),
 				computation.searchCertificate(), computation.stabilityEnvelope(), computation.retainedPlanBytes(),
@@ -1576,22 +1791,79 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 			return false;
 		}
 		return submitRefreshRequest(request, family, current.version(),
-				globalEvidenceEpoch.get()) == RefreshSubmission.SUBMITTED;
+				globalEvidenceEpoch.get(), null, null) == RefreshSubmission.SUBMITTED;
 	}
 
 	private RefreshSubmission submitRefreshRequest(RefreshRequest request, PlanFamily family,
-			long expectedFamilyVersion, long expectedCacheEpoch) {
+			long expectedFamilyVersion, long expectedCacheEpoch, PackedProviderCacheIdentity semanticIdentity,
+			PackedProviderCacheIdentity capturedWorkIdentity) {
 		AtomicBoolean claim = family.refreshClaim(request.variantId());
 		if (!claim.compareAndSet(false, true)) {
 			return RefreshSubmission.ALREADY_IN_FLIGHT;
 		}
+		PackedProviderCacheIdentity identity;
 		try {
-			refreshExecutor.execute(new PrioritizedRefreshTask(request, family, claim, expectedFamilyVersion,
-					expectedCacheEpoch));
+			identity = RefreshProviderIdentity.capture(
+					request.familyKey().providerCacheIdentity() == null ? null : request.familyKey(),
+					family.key().providerCacheIdentity() == null ? null : family.key(), semanticIdentity,
+					capturedWorkIdentity);
+			synchronized (admissionLock) {
+				if (!pendingProviderIdentities.tryRetain(identity, retainedBytes.get())) {
+					claim.set(false);
+					return RefreshSubmission.UNAVAILABLE;
+				}
+			}
+		} catch (RuntimeException | Error failure) {
+			claim.set(false);
+			throw failure;
+		}
+		PrioritizedRefreshTask task;
+		try {
+			task = new PrioritizedRefreshTask(request, family.key(), claim, expectedFamilyVersion,
+					expectedCacheEpoch, identity);
+		} catch (RuntimeException | Error failure) {
+			pendingProviderIdentities.release(identity);
+			claim.set(false);
+			throw failure;
+		}
+		try {
+			refreshExecutor.execute(task);
 			return RefreshSubmission.SUBMITTED;
 		} catch (RejectedExecutionException rejected) {
-			claim.set(false);
+			task.release();
 			return RefreshSubmission.UNAVAILABLE;
+		} catch (RuntimeException | Error failure) {
+			task.release();
+			throw failure;
+		}
+	}
+
+	/** Only the exact detached keys actually owned by this queued task; no live family or portfolio. */
+	private record RefreshProviderIdentity(PackedProviderCacheIdentity requestIdentity,
+			PackedProviderCacheIdentity canonicalIdentity, PackedProviderCacheIdentity semanticIdentity,
+			PackedProviderCacheIdentity workIdentity) implements PackedProviderCacheIdentity {
+
+		private static PackedProviderCacheIdentity capture(PackedProviderCacheIdentity requestIdentity,
+				PackedProviderCacheIdentity canonicalIdentity, PackedProviderCacheIdentity semanticIdentity,
+				PackedProviderCacheIdentity workIdentity) {
+			return requestIdentity == null && canonicalIdentity == null && semanticIdentity == null
+					&& workIdentity == null
+							? null
+							: new RefreshProviderIdentity(requestIdentity, canonicalIdentity, semanticIdentity,
+									workIdentity);
+		}
+
+		@Override
+		public boolean accountRetainedMemory(RetainedMemoryAccount account) {
+			if (!account.add(this, 48L)) {
+				return true;
+			}
+			return account(requestIdentity, account) && account(canonicalIdentity, account)
+					&& account(semanticIdentity, account) && account(workIdentity, account);
+		}
+
+		private static boolean account(PackedProviderCacheIdentity identity, RetainedMemoryAccount account) {
+			return identity == null || identity.accountRetainedMemory(account);
 		}
 	}
 
@@ -1693,7 +1965,11 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		if (!closed.compareAndSet(false, true)) {
 			return;
 		}
-		refreshExecutor.shutdownNow();
+		for (Runnable queued : refreshExecutor.shutdownNow()) {
+			if (queued instanceof LmdbPlanDecisionCache.PrioritizedRefreshTask task) {
+				task.release();
+			}
+		}
 		try {
 			refreshExecutor.awaitTermination(5L, TimeUnit.SECONDS);
 		} catch (InterruptedException interrupted) {
@@ -1862,7 +2138,8 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 	private void makeRoom(PlanFamilyKey protectedKey, long incomingBytes, long replacingBytes) {
 		while (!recency.isEmpty()
 				&& (families.size() >= maximumFamilies && !families.containsKey(protectedKey)
-						|| retainedBytes.get() - replacingBytes > maximumRetainedBytes - incomingBytes)) {
+						|| retainedBytes.get() - replacingBytes > maximumRetainedBytes
+								- pendingProviderIdentities.bytes() - incomingBytes)) {
 			PlanFamilyKey victim = null;
 			for (PlanFamilyKey candidate : recency.keySet()) {
 				if (!candidate.equals(protectedKey)) {
@@ -1993,6 +2270,16 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 	}
 
 	private void indexEvidence(PlanFamilyKey familyKey, EvidenceSnapshot evidence) {
+		synchronized (admissionLock) {
+			PlanFamily family = families.get(familyKey);
+			if (family == null) {
+				return;
+			}
+			indexRetainedEvidence(family.key(), evidence);
+		}
+	}
+
+	private void indexRetainedEvidence(PlanFamilyKey familyKey, EvidenceSnapshot evidence) {
 		for (EvidenceDependency dependency : evidence.dependencies()) {
 			reverseEvidence.compute(EvidenceRoutingKey.of(dependency), (ignored, current) -> {
 				Set<PlanFamilyKey> keys = current == null ? ConcurrentHashMap.newKeySet() : current;
@@ -2013,8 +2300,39 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		return List.copyOf(result.subList(0, Math.min(3, result.size())));
 	}
 
-	private static long portfolioProviderBytes(List<PlanVariant> variants) {
+	private static boolean accountKeyObject(Object value, RetainedMemoryAccount account) {
+		if (value == null) {
+			return true;
+		}
+		if (value instanceof PackedProviderCacheIdentity identity) {
+			return identity.accountRetainedMemory(account);
+		}
+		if (value instanceof String text) {
+			account.add(text, 40L + 2L * text.length());
+			return true;
+		}
+		if (value instanceof Number number && (number.getClass() == Long.class || number.getClass() == Integer.class
+				|| number.getClass() == Double.class)) {
+			account.add(number, 24L);
+			return true;
+		}
+		if (value instanceof Enum<?> || value instanceof Class<?>) {
+			return true;
+		}
+		if (value.getClass() == Object.class) {
+			account.add(value, 16L);
+			return true;
+		}
+		return false;
+	}
+
+	private static long portfolioProviderBytes(List<PlanVariant> variants, SemanticDependencies dependencies,
+			Map<ExactInvocationKey, ExactAlias> aliases) {
 		FactorCostCacheKey.ProviderRetainedMemory memory = new FactorCostCacheKey.ProviderRetainedMemory();
+		memory.account(dependencies);
+		for (ExactInvocationKey alias : aliases.keySet()) {
+			memory.account(alias);
+		}
 		for (PlanVariant variant : variants) {
 			accountProvider(variant.champion(), memory);
 			for (PlanVersion challenger : variant.challengers()) {
@@ -2029,15 +2347,29 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 
 	private static void accountProvider(PlanVersion plan, FactorCostCacheKey.ProviderRetainedMemory memory) {
 		if (plan.physicalRecipe()instanceof ExactTupleRecipe exact) {
-			memory.account(exact.template);
+			if (exact.automaticPlanningState) {
+				memory.accountCacheModels(exact.template);
+			} else {
+				memory.account(exact.template);
+			}
 		}
-		// Detached refresh work owns stripped PackedPlanRefreshWork sources, not execution descriptors.
+		if (plan.detachedRefreshWork() != null) {
+			plan.detachedRefreshWork().accountCacheIdentity(memory);
+		}
 	}
 
 	private static long withPortfolioProviderBytes(FamilyVersion observed, List<PlanVariant> variants,
 			long removedStructuralBytes, long addedStructuralBytes) {
-		long previous = portfolioProviderBytes(observed.dispatcher().variants());
-		long next = portfolioProviderBytes(variants);
+		return withPortfolioProviderBytes(observed, variants, removedStructuralBytes, addedStructuralBytes,
+				observed.semanticDependencies(), observed.exactAliases());
+	}
+
+	private static long withPortfolioProviderBytes(FamilyVersion observed, List<PlanVariant> variants,
+			long removedStructuralBytes, long addedStructuralBytes, SemanticDependencies nextDependencies,
+			Map<ExactInvocationKey, ExactAlias> nextAliases) {
+		long previous = portfolioProviderBytes(observed.dispatcher().variants(), observed.semanticDependencies(),
+				observed.exactAliases());
+		long next = portfolioProviderBytes(variants, nextDependencies, nextAliases);
 		long structuralBytes = observed.retainedBytes() - previous - removedStructuralBytes;
 		if (structuralBytes < 0L || next == Long.MAX_VALUE) {
 			return -1L;

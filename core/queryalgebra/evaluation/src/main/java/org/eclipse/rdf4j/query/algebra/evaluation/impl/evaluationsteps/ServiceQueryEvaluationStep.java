@@ -31,15 +31,19 @@ import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceIdentity;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLQueries;
 
@@ -70,6 +74,7 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 		boolean runtimeTelemetryEnabled = isRuntimeTelemetryEnabled(service);
 		BindingSet originalBindings = RemoteBNode.originalBindings(bindings);
+		BindingSet resultBindings = originalBindings;
 		Value endpoint = serviceRef.hasValue() ? serviceRef.getValue()
 				: bindings == null ? null : bindings.getValue(serviceRef.getName());
 		if (endpoint == null) {
@@ -82,6 +87,15 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 		}
 		try {
 			SPARQLQueries.initializeServiceReferences(service);
+			TupleExpr body = service.getServiceExpr();
+			QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(body,
+					originalBindings);
+			QueryAlgebraBindingAnalysis.OutputFacts outputs = analysis.outputFacts(body);
+			Set<String> visibleNames = SPARQLQueries.getLexicalBindingNames(service.getAskQueryString(),
+					outputs.possibleOutputsKnown() ? outputs.possibleOutputs() : service.getServiceVars());
+			resultBindings = restoreRuntimeBindings(originalBindings,
+					FederatedServiceIdentity.runtimeAssignedInputs(service, originalBindings, visibleNames, analysis));
+			BindingSet invocationBindings = resultBindings;
 			if (!(endpoint instanceof IRI)) {
 				throw new QueryEvaluationException("SERVICE endpoint must be an IRI bound at evaluation time");
 			}
@@ -96,11 +110,11 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 
 			// create a copy of the free variables, and remove those for which
 			// bindings are available (we can set them as constraints!)
-			Set<String> freeVars = new HashSet<>(service.getServiceVars());
-			freeVars.removeAll(bindings.getBindingNames());
+			Set<String> freeVars = new HashSet<>(visibleNames);
+			freeVars.removeAll(invocationBindings.getBindingNames());
 
-			bindings = prepareOutgoingBindings(service, bindings, receivingScope, referenceSupport, canonicalIDs);
-			freeVars.removeAll(bindings.getBindingNames());
+			bindings = prepareOutgoingBindings(service, invocationBindings, receivingScope, referenceSupport,
+					canonicalIDs);
 			if (runtimeTelemetryEnabled) {
 				addMetric(DeferredServiceTelemetry.BYTES_SENT, TelemetryMetricNames.REMOTE_BYTES_SENT_ACTUAL,
 						estimateRequestBytes(service, bindings, freeVars));
@@ -111,7 +125,7 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 			QueryExecutionContext.initializeExternalBindings(bindings);
 
 			// special case: no free variables => perform ASK query
-			if (freeVars.isEmpty()) {
+			if (outputs.possibleOutputsKnown() && freeVars.isEmpty()) {
 				if (runtimeTelemetryEnabled) {
 					addMetric(DeferredServiceTelemetry.ASK, TelemetryMetricNames.REMOTE_ASK_REQUEST_COUNT_ACTUAL,
 							1L);
@@ -129,7 +143,7 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 
 				// check if triples are available (with inserted bindings)
 				if (exists) {
-					return new SingletonIteration<>(RemoteBNode.originalBindings(bindings));
+					return new SingletonIteration<>(invocationBindings);
 				} else {
 					return EMPTY_ITERATION;
 				}
@@ -153,17 +167,17 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 				}
 				RemoteBNode.ResponseScope response = RemoteBNode.newResponseScope(allocation, localFactory,
 						receivingScope, canonicalIDs);
-				response.seedOriginalBindings(originalBindings);
+				response.seedOriginalBindings(invocationBindings);
 				results = new ConvertingIteration<BindingSet, BindingSet>(results) {
 					@Override
 					protected BindingSet convert(BindingSet row) {
-						return response.map(row, originalBindings);
+						return response.map(row, invocationBindings);
 					}
 				};
 				CloseableIteration<BindingSet> checked = ExternalValuePreparation.checkReplayAfterCalls(results);
 				if (service.isSilent()) {
-					var completed = Iterations.asList(checked);
 					results = null;
+					var completed = Iterations.asList(checked);
 					return new CloseableIteratorIteration<>(completed.iterator());
 				}
 				results = null;
@@ -186,7 +200,7 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 			}
 			// suppress exceptions if silent
 			if (service.isSilent()) {
-				return new SingletonIteration<>(originalBindings);
+				return new SingletonIteration<>(resultBindings);
 			} else {
 				throw e;
 			}
@@ -203,6 +217,12 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 		} else {
 			addLongMetric(service, metricName, delta);
 		}
+	}
+
+	private static BindingSet restoreRuntimeBindings(BindingSet originals, BindingSet runtimeInputs) {
+		QueryBindingSet restored = new QueryBindingSet(originals);
+		restored.addAll(runtimeInputs);
+		return restored;
 	}
 
 	/** Shared validation for scalar and vectored SERVICE inputs; lexical constants remain receiving-service owned. */

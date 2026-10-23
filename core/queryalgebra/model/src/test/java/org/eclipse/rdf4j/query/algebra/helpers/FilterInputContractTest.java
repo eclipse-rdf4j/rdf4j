@@ -48,6 +48,10 @@ class FilterInputContractTest {
 			Filter restored = (Filter) input.readObject();
 			assertThat(restored.getRequiredInputBindingNames()).isEmpty();
 			assertThat(restored).isEqualTo(new Filter(new SingletonSet(), new Bound(Var.of("input"))));
+			Var variable = (Var) ((Bound) restored.getCondition()).getArg();
+			assertThat(variable.getGraphContextDepth()).isZero();
+			assertThat(variable.hasApiInputOrigin()).isFalse();
+			assertThat(variable.hashCode()).isEqualTo(Var.of("input").hashCode());
 		}
 	}
 

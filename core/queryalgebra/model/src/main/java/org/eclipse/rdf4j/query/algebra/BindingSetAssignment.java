@@ -204,6 +204,19 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 	}
 
 	@Override
+	public boolean copyDetachedPlanningStateTo(QueryModelNode target, DetachedMetadataCopier metadata) {
+		if (!(target instanceof BindingSetAssignment copy) || !super.copyDetachedPlanningStateTo(target, metadata)) {
+			return false;
+		}
+		if (bindingNamesExplicit) {
+			copy.setDeclaredBindingNames(declaredBindingNames);
+		} else {
+			copy.setBindingNames(null);
+		}
+		return true;
+	}
+
+	@Override
 	public BindingSetAssignment clone() {
 		return (BindingSetAssignment) super.clone();
 	}

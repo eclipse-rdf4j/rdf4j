@@ -113,6 +113,14 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 		return context instanceof PlanningContext planning && planning.islandRoots.containsKey(filter);
 	}
 
+	/** Keeps allocation and query values while giving a detached algebra its own identity-indexed planning state. */
+	static QueryEvaluationContext detachedPlanningContext(TupleExpr root, QueryEvaluationContext context) {
+		while (context instanceof PlanningContext planning) {
+			context = planning.delegate;
+		}
+		return new PlanningContext(root, context);
+	}
+
 	/** Opts the selected ordinary binary operator into child rebinding without replacing its physical contract. */
 	public static QueryEvaluationStep binary(QueryEvaluationContext context, TupleExpr expression,
 			QueryEvaluationStep prepared,

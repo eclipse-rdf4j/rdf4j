@@ -44,11 +44,11 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
-import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
-import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
@@ -280,26 +280,17 @@ public class ConstantOptimizer implements QueryOptimizer {
 		public void meet(FunctionCall functionCall) {
 			super.meet(functionCall);
 
+			if (QueryEvaluationUtility.resolveFunction(functionCall)
+					.filter(function -> !QueryEvaluationUtility.isSafeForPlanConstantFolding(function,
+							strategy.getQueryExecutionPolicy()))
+					.isPresent()) {
+				return;
+			}
+
 			List<ValueExpr> args = functionCall.getArgs();
 
-			if (args.isEmpty()) {
-				/*
-				 * SPARQL has two types of zero-arg function. One are proper 'constant' functions like NOW() which
-				 * generate a single value for the entire query and which can be safely optimized to a constant. Other
-				 * functions, like RAND(), UUID() and STRUUID(), are a special case: they are expected to yield a new
-				 * value on every call, and can therefore not be replaced by a constant.
-				 */
-				if (!isConstantZeroArgFunction(functionCall)) {
-					return;
-				}
-			} else {
-				for (ValueExpr arg : args) {
-					if (!isConstant(arg)) {
-						return;
-					}
-				}
-				// Constant arguments do not make a volatile function constant (e.g. spif:invoke dispatching to RAND).
-				if (isVolatileFunction(functionCall)) {
+			for (ValueExpr arg : args) {
+				if (!isConstant(arg)) {
 					return;
 				}
 			}
@@ -310,7 +301,11 @@ public class ConstantOptimizer implements QueryOptimizer {
 			}
 
 			try {
-				Value value = evaluateWithKnownValues(functionCall);
+				QueryValueEvaluationStep prepared = strategy.precompile(resolveKnownValues(functionCall), context);
+				if (!prepared.isConstant()) {
+					return;
+				}
+				Value value = prepared.evaluate(EmptyBindingSet.getInstance());
 				functionCall.replaceWith(new ValueConstant(value));
 				bindingAnalysis.invalidate();
 			} catch (ValueExprEvaluationException e) {
@@ -320,37 +315,6 @@ public class ConstantOptimizer implements QueryOptimizer {
 			} catch (QueryEvaluationException e) {
 				logger.error("Query evaluation exception caught", e);
 			}
-		}
-
-		/**
-		 * Determines if the provided zero-arg function is a function that should return a constant value for the entire
-		 * query execution (e.g NOW()), or if it should generate a new value for every call (e.g. RAND()).
-		 *
-		 * @param functionCall a zero-arg function call.
-		 * @return <code>true<code> iff the provided function returns a constant value for the query execution, <code>false</code>
-		 *         otherwise.
-		 */
-		private boolean isConstantZeroArgFunction(FunctionCall functionCall) {
-			Function function = FunctionRegistry.getInstance()
-					.get(functionCall.getURI())
-					.orElseThrow(() -> new QueryEvaluationException(
-							"Unable to find function with the URI: " + functionCall.getURI()));
-
-			// we treat constant functions as the 'regular case' and make
-			// exceptions for specific SPARQL built-in functions that require
-			// different treatment.
-			return !function.mustReturnDifferentResult();
-		}
-
-		/**
-		 * Unlike {@link #isConstantZeroArgFunction(FunctionCall)}, an unregistered function is not an error here: its
-		 * evaluation below fails and is logged as before.
-		 */
-		private boolean isVolatileFunction(FunctionCall functionCall) {
-			return FunctionRegistry.getInstance()
-					.get(functionCall.getURI())
-					.map(Function::mustReturnDifferentResult)
-					.orElse(false);
 		}
 
 		@Override

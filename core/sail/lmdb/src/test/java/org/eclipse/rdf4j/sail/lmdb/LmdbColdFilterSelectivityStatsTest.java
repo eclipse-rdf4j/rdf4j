@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
@@ -72,6 +73,7 @@ class LmdbColdFilterSelectivityStatsTest {
 		LmdbStore store = initializedStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
+		assertSketchFixtureProfile((LmdbStore) repository.getSail());
 		try {
 			loadRows(repository, 64);
 			store.getBackingStore().getEvaluationStatistics().getCardinality(firstFilter(QUERY));
@@ -95,6 +97,7 @@ class LmdbColdFilterSelectivityStatsTest {
 		LmdbStore store = initializedStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
+		assertSketchFixtureProfile((LmdbStore) repository.getSail());
 		try {
 			loadRows(repository, 64);
 			store.getBackingStore().getEvaluationStatistics().getCardinality(firstFilter(QUERY));
@@ -110,8 +113,10 @@ class LmdbColdFilterSelectivityStatsTest {
 	void completeColdSynopsisSurvivesRestartAndIsExactInSnapshotOnlyMode(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = coldSnapshotOnlyConfig(256);
 		LmdbStore writer = new LmdbStore(dataDir, config);
+		writer.setExperimentalQueryOptimizations(true);
 		SailRepository repository = new SailRepository(writer);
 		repository.init();
+		assertSketchFixtureProfile((LmdbStore) repository.getSail());
 		try {
 			loadRows(repository, 64);
 			writer.getBackingStore().getSketchBasedJoinEstimator().rebuild();
@@ -122,7 +127,9 @@ class LmdbColdFilterSelectivityStatsTest {
 		}
 
 		LmdbStore reopened = new LmdbStore(dataDir, coldSnapshotOnlyConfig(256));
+		reopened.setExperimentalQueryOptimizations(true);
 		reopened.init();
+		assertSketchFixtureProfile(reopened);
 		try {
 			assertTrue(reopened.awaitSketchesReady(10, TimeUnit.SECONDS));
 			EvaluationStatistics.FilterPassEstimate estimate = reopened.getBackingStore()
@@ -148,6 +155,7 @@ class LmdbColdFilterSelectivityStatsTest {
 		LmdbStore store = initializedStore(dataDir, coldSnapshotOnlyConfig(64));
 		SailRepository repository = new SailRepository(store);
 		repository.init();
+		assertSketchFixtureProfile((LmdbStore) repository.getSail());
 		try {
 			loadRows(repository, 31);
 			rebuildAndPersist(store);
@@ -166,6 +174,7 @@ class LmdbColdFilterSelectivityStatsTest {
 		LmdbStore store = initializedStore(dataDir, coldSnapshotOnlyConfig(128));
 		SailRepository repository = new SailRepository(store);
 		repository.init();
+		assertSketchFixtureProfile((LmdbStore) repository.getSail());
 		try {
 			loadRows(repository, 300);
 			rebuildAndPersist(store);
@@ -184,6 +193,7 @@ class LmdbColdFilterSelectivityStatsTest {
 		LmdbStore store = initializedStore(dataDir, coldSnapshotOnlyConfig(256));
 		SailRepository repository = new SailRepository(store);
 		repository.init();
+		assertSketchFixtureProfile((LmdbStore) repository.getSail());
 		try {
 			loadRows(repository, 300);
 			rebuildAndPersist(store);
@@ -205,6 +215,7 @@ class LmdbColdFilterSelectivityStatsTest {
 		LmdbStore store = initializedStore(dataDir, coldSnapshotOnlyConfig(64));
 		SailRepository repository = new SailRepository(store);
 		repository.init();
+		assertSketchFixtureProfile((LmdbStore) repository.getSail());
 		try {
 			loadRows(repository, 64);
 			rebuildAndPersist(store);
@@ -230,6 +241,7 @@ class LmdbColdFilterSelectivityStatsTest {
 		LmdbStore store = initializedStore(dataDir, coldSnapshotOnlyConfig(256));
 		SailRepository repository = new SailRepository(store);
 		repository.init();
+		assertSketchFixtureProfile((LmdbStore) repository.getSail());
 		try {
 			loadRows(repository, 64);
 			rebuildAndPersist(store);
@@ -254,6 +266,7 @@ class LmdbColdFilterSelectivityStatsTest {
 		LmdbStore store = initializedStore(dataDir, coldSnapshotOnlyConfig(256));
 		SailRepository repository = new SailRepository(store);
 		repository.init();
+		assertSketchFixtureProfile((LmdbStore) repository.getSail());
 		try {
 			loadRows(repository, 64);
 			rebuildAndPersist(store);
@@ -275,6 +288,7 @@ class LmdbColdFilterSelectivityStatsTest {
 		LmdbStore writer = initializedStore(dataDir, coldSnapshotOnlyConfig(256));
 		SailRepository repository = new SailRepository(writer);
 		repository.init();
+		assertSketchFixtureProfile((LmdbStore) repository.getSail());
 		try {
 			loadRows(repository, 64);
 			writer.getBackingStore().getSketchBasedJoinEstimator().rebuild();
@@ -289,6 +303,7 @@ class LmdbColdFilterSelectivityStatsTest {
 
 		LmdbStore reopened = initializedStore(dataDir, coldSnapshotOnlyConfig(256));
 		reopened.init();
+		assertSketchFixtureProfile(reopened);
 		try {
 			assertTrue(reopened.awaitSketchesReady(10, TimeUnit.SECONDS));
 			assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.EXACT,
@@ -310,6 +325,7 @@ class LmdbColdFilterSelectivityStatsTest {
 		LmdbStore writer = initializedStore(dataDir, coldSnapshotOnlyConfig(64));
 		SailRepository repository = new SailRepository(writer);
 		repository.init();
+		assertSketchFixtureProfile((LmdbStore) repository.getSail());
 		try {
 			ValueFactory vf = repository.getValueFactory();
 			try (var connection = repository.getConnection()) {
@@ -327,6 +343,7 @@ class LmdbColdFilterSelectivityStatsTest {
 
 		LmdbStore reopened = initializedStore(dataDir, coldSnapshotOnlyConfig(64));
 		reopened.init();
+		assertSketchFixtureProfile(reopened);
 		try {
 			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.EXACT, estimate(reopened, query).getSource());
 			assertEquals(1.0d, estimate(reopened, query).getPassRatio(), 0.0d);
@@ -340,6 +357,7 @@ class LmdbColdFilterSelectivityStatsTest {
 		LmdbStore store = initializedStore(dataDir, coldSnapshotOnlyConfig(512));
 		SailRepository repository = new SailRepository(store);
 		repository.init();
+		assertSketchFixtureProfile((LmdbStore) repository.getSail());
 		try {
 			ValueFactory vf = repository.getValueFactory();
 			IRI numeric = vf.createIRI("urn:test:numeric");
@@ -445,7 +463,9 @@ class LmdbColdFilterSelectivityStatsTest {
 	}
 
 	private static LmdbStore initializedStore(File dataDir, LmdbStoreConfig config) {
-		return new LmdbStore(dataDir, config);
+		LmdbStore store = new LmdbStore(dataDir, config);
+		store.setExperimentalQueryOptimizations(true);
+		return store;
 	}
 
 	private static void rebuildAndPersist(LmdbStore store) {
@@ -498,5 +518,19 @@ class LmdbColdFilterSelectivityStatsTest {
 			}
 		});
 		return found[0];
+	}
+
+	private static void assertSketchFixtureProfile(LmdbStore store) {
+		try {
+			assertTrue(store.getQueryExecutionPolicy().experimentalQueryOptimizations());
+			assertNotNull(store.getBackingStore().getSketchBasedJoinEstimator());
+		} catch (AssertionError failure) {
+			try {
+				store.shutDown();
+			} catch (RuntimeException | Error closeFailure) {
+				failure.addSuppressed(closeFailure);
+			}
+			throw failure;
+		}
 	}
 }

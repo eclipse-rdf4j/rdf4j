@@ -67,6 +67,8 @@ final class LmdbPrefixEvidenceResolver {
 		}
 		TupleExpr prefixExpression = LmdbEstimatorExpressionSupport.join(factors);
 		EstimateContext prefixContext = rootContext.apply(prefixExpression)
+				.withFilterReadContext(context.filterReadContext() == null ? null
+						: context.filterReadContext().forExpression(prefixExpression))
 				.withEstimationTier(cost.getEstimationTier())
 				.withMetricsPreference(EstimateContext.MetricsPreference.NONE)
 				.withExactProbePermission(cost.getEstimationTier() != null

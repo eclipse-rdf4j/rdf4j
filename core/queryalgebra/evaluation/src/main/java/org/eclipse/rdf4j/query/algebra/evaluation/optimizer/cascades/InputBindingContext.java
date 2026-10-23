@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.function.BiPredicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.BNode;
@@ -31,6 +32,7 @@ import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
 
 /**
  * Canonical input bindings under which one memo group is optimized.
@@ -66,6 +68,62 @@ public final class InputBindingContext {
 		this.finiteDomains = trustedCanonicalFacts ? finiteDomains : canonicalDomains(finiteDomains);
 		this.hash = Objects.hash(this.present, this.invocationRows, this.assuredBindingNames, this.exactRelations,
 				this.finiteDomains);
+	}
+
+	/** Non-observing accounting of the actual immutable full-root input, not an equal newly captured stand-in. */
+	public boolean accountCacheMemory(
+			RetainedMemoryAccount account,
+			BiPredicate<Value, RetainedMemoryAccount> values) {
+		if (!account.add(this, 64L)) {
+			return true;
+		}
+		accountNames(assuredBindingNames, account);
+		account.add(exactRelations, 48L + 8L * exactRelations.size());
+		for (ExactRelation relation : exactRelations) {
+			if (!account.add(relation, 48L)) {
+				continue;
+			}
+			accountNames(relation.variables, account);
+			account.add(relation.identity, 40L + 2L * relation.identity.length());
+			account.add(relation.frequencies, 192L + 96L * relation.frequencies.size());
+			for (Map.Entry<List<Value>, Double> entry : relation.frequencies.entrySet()) {
+				account.add(entry.getKey(), 48L + 8L * entry.getKey().size());
+				account.add(entry.getValue(), 24L);
+				for (Value value : entry.getKey()) {
+					if (!values.test(value, account)) {
+						return false;
+					}
+				}
+			}
+		}
+		account.add(finiteDomains, 192L + 96L * finiteDomains.size());
+		for (Map.Entry<String, FiniteDomain> entry : finiteDomains.entrySet()) {
+			account.add(entry.getKey(), 40L + 2L * entry.getKey().length());
+			account.add(entry.getValue(), 24L);
+			if (!entry.getValue().fact.accountCacheMemory(account, values)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static void accountNames(Collection<String> names,
+			RetainedMemoryAccount account) {
+		account.add(names, 192L + 96L * names.size());
+		for (String name : names) {
+			account.add(name, 40L + 2L * name.length());
+		}
+	}
+
+	/**
+	 * Actual full-root input whose names are proved but whose optional value facts cannot be observed safely. This one
+	 * invocation grants no exact relation, finite value domain or source authority, and is never a cache key.
+	 */
+	public static InputBindingContext fromAssuredBindingNames(Collection<String> names) {
+		if (names == null || names.isEmpty()) {
+			return NONE;
+		}
+		return new InputBindingContext(true, 1.0d, canonicalNames(names), List.of(), Map.of());
 	}
 
 	public static InputBindingContext fromBindingSet(BindingSet bindings) {

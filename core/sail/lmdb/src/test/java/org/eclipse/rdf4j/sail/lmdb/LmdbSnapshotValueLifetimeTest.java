@@ -53,7 +53,6 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.InsertData;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -271,8 +270,10 @@ class LmdbSnapshotValueLifetimeTest {
 		List<Statement> statements = new ArrayList<>(count);
 		for (int i = 0; i < count; i++) {
 			String uniqueSuffix = suffix + ":" + i;
+			// The unique 512-byte literals guarantee growth. A short namespace keeps alternative IRI encoding
+			// probes from dominating this snapshot-lifetime fixture's bounded execution time.
 			statements.add(VF.createStatement(
-					VF.createIRI("urn:snapshot-lifetime:forced-reader:" + uniqueSuffix),
+					VF.createIRI("urn:g:" + uniqueSuffix),
 					predicate,
 					VF.createLiteral("h".repeat(512 - uniqueSuffix.length()) + uniqueSuffix)));
 		}
@@ -697,7 +698,7 @@ class LmdbSnapshotValueLifetimeTest {
 					Set<Object> unobservedGrowthViews = awaitResultGrowthViews(reader, unobservedResult);
 					awaitMapGrowthQuiescence(store, writer, beforeGrowth);
 
-					QueryEvaluationException observedFailure = assertThrows(QueryEvaluationException.class,
+					SailException observedFailure = assertThrows(SailException.class,
 							observed::hasNext,
 							"an observed result whose read grace expired must be cancelled before remapping");
 					LmdbSailStore.MapResizeConflictException observedConflict = findCause(observedFailure,

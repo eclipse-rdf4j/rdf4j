@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -58,6 +59,7 @@ import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbStatisticsService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.stubbing.Answer;
 
 /**
  * A statement pattern whose subject, predicate and object are all bound (constants, or bindings supplied by the prefix)
@@ -264,14 +266,17 @@ class LmdbPackedCostModelFullyBoundLookupTest {
 			when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
 			when(statistics.openCurrentView()).thenReturn(view);
 			when(view.ready()).thenReturn(true);
-			when(runtime.factorCost(any(BindingSetAssignment.class), any())).thenAnswer(invocation -> {
+			Answer<?> factorCostAnswer = invocation -> {
 				BindingSetAssignment assignment = invocation.getArgument(0);
 				double count = 0.0d;
 				for (BindingSet ignored : assignment.getBindingSets()) {
 					count++;
 				}
 				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(count, count));
-			});
+			};
+			when(runtime.factorCost(any(BindingSetAssignment.class), any())).thenAnswer(factorCostAnswer);
+			when(runtime.factorCost(any(BindingSetAssignment.class), any(), nullable(LmdbFilterReadContext.class)))
+					.thenAnswer(factorCostAnswer);
 			when(view.generationId()).thenReturn(23L);
 			when(view.baseEpoch()).thenReturn(11L);
 			when(view.coveredEpoch()).thenReturn(17L);

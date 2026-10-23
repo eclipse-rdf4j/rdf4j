@@ -15,6 +15,7 @@ import java.util.Arrays;
 
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.OwnedStringDiagnostic;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -26,6 +27,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceStateSu
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierEvidenceBundle;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDisposition;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /** Immutable selected physical expression DAG, detached from mutable memo search state. */
@@ -144,6 +146,60 @@ final class PackedPlanRecipe {
 		this.ruleProofMask = ruleProofMask;
 	}
 
+	boolean accountCacheStructure(RetainedMemoryAccount account) {
+		if (!account.add(this, 384L)) {
+			return true;
+		}
+		PackedCacheMemory.array(account, operatorTags);
+		PackedCacheMemory.array(account, payloadIds);
+		PackedCacheMemory.array(account, deliveredPropertyIds);
+		PackedCacheMemory.array(account, implementationForms);
+		PackedCacheMemory.array(account, sourcePhysicalExpressionIds);
+		PackedCacheMemory.array(account, sourceLogicalExpressionIds);
+		PackedCacheMemory.array(account, childStarts);
+		PackedCacheMemory.array(account, childCounts);
+		PackedCacheMemory.array(account, childRecipeIds);
+		PackedCacheMemory.array(account, physicalMetadataPresent);
+		PackedCacheMemory.array(account, outputRows);
+		PackedCacheMemory.array(account, workRows);
+		PackedCacheMemory.array(account, accessRows);
+		PackedCacheMemory.array(account, invocations);
+		PackedCacheMemory.array(account, lookupMasks);
+		PackedCacheMemory.array(account, missingLookupMasks);
+		PackedCacheMemory.array(account, indexPrefixLengths);
+		PackedCacheMemory.array(account, indexNameIds);
+		PackedCacheMemory.array(account, estimateSourceIds);
+		PackedCacheMemory.array(account, estimateFusionIds);
+		PackedCacheMemory.array(account, accessModeIds);
+		PackedCacheMemory.array(account, runtimeFeedbackContractIds);
+		PackedCacheMemory.array(account, plannedStringMetricStarts);
+		PackedCacheMemory.array(account, plannedStringMetricCounts);
+		PackedCacheMemory.array(account, plannedStringMetricNameIds);
+		PackedCacheMemory.array(account, plannedStringMetricValueIds);
+		PackedCacheMemory.array(account, plannedDoubleMetricStarts);
+		PackedCacheMemory.array(account, plannedDoubleMetricCounts);
+		PackedCacheMemory.array(account, plannedDoubleMetricNameIds);
+		PackedCacheMemory.array(account, plannedDoubleMetricValues);
+		PackedCacheMemory.array(account, dependentOwnerRecipeIds);
+		PackedCacheMemory.array(account, dependentSubqueryPayloadIds);
+		PackedCacheMemory.array(account, dependentRootRecipeIds);
+		PackedCacheMemory.array(account, frontierBundleOrdinals);
+		PackedCacheMemory.array(account, evidenceGuarantees);
+		PackedCacheMemory.array(account, evidenceDispositions);
+		PackedCacheMemory.array(account, costEventIds);
+		PackedCacheMemory.array(account, providerObjects);
+		for (Object value : providerObjects) {
+			if (!PackedCacheMemory.object(value, account, semanticsCodec)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	TupleExpr emitCachePlan(TupleExpr plan) {
+		return semanticsCodec.emitCachePlan(plan);
+	}
+
 	static PackedPlanRecipe extract(PackedMemo memo, int rootWinnerId) {
 		return new Extractor(memo, null, null).extract(rootWinnerId);
 	}
@@ -195,7 +251,7 @@ final class PackedPlanRecipe {
 	PhysicalIdentity portfolioIdentity(TupleExpr materializedPlan) {
 		try {
 			return physicalIdentity(materializedPlan);
-		} catch (PackedMemoInvariantException unsupportedSemanticIdentity) {
+		} catch (PackedMemoInvariantException | UnsupportedCascadesOperatorException unsupportedSemanticIdentity) {
 			/*
 			 * A custom RDF Value may be executable while deliberately unsupported by the canonical family codec. Such a
 			 * query is exact-cache-only. The portfolio still needs a local physical-form identity for its champion, but
@@ -267,6 +323,10 @@ final class PackedPlanRecipe {
 	}
 
 	private PhysicalIdentity semanticIdentity(TupleExpr materializedPlan) {
+		if (!semanticsCodec.supportsSemanticIdentity(materializedPlan)) {
+			throw new UnsupportedCascadesOperatorException(materializedPlan.getClass(),
+					"root.unavailableSemanticValueIdentity");
+		}
 		PhysicalIdentityBuilder identity = new PhysicalIdentityBuilder(0xbb67ae8584caa73bL);
 		PackedQueryCacheIdentity packedIdentity = PackedQueryCacheIdentity.createPlanIdentity(materializedPlan, null,
 				semanticsCodec);
@@ -490,10 +550,18 @@ final class PackedPlanRecipe {
 	}
 
 	String describeCostingDecisions() {
+		return costingDecisionsDiagnostic().get();
+	}
+
+	String describeCostingDecisionsJson() {
+		return costingDecisionsJsonDiagnostic().get();
+	}
+
+	OwnedStringDiagnostic costingDecisionsDiagnostic() {
 		if (decisionCertificate.decisionCount() == 0) {
-			return "<no costed decision certificate>";
+			return OwnedStringDiagnostic.builder().append("<no costed decision certificate>").build();
 		}
-		StringBuilder description = new StringBuilder();
+		OwnedStringDiagnostic.Builder description = OwnedStringDiagnostic.builder();
 		if (cacheValidationEvent.eventOrdinal() != 0) {
 			description.append("validationEvent=")
 					.append(cacheValidationEvent.eventOrdinal())
@@ -616,17 +684,17 @@ final class PackedPlanRecipe {
 						.append(" invocations=")
 						.append(costingTrace.invocations(eventId))
 						.append(" index=")
-						.append(costingTrace.indexName(eventId))
+						.append(String.valueOf(costingTrace.indexName(eventId)))
 						.append(" mode=")
-						.append(costingTrace.accessMode(eventId))
+						.append(String.valueOf(costingTrace.accessMode(eventId)))
 						.append(" source=")
-						.append(costingTrace.estimateSource(eventId))
+						.append(String.valueOf(costingTrace.estimateSource(eventId)))
 						.append(" fusion=")
-						.append(costingTrace.estimateFusion(eventId))
+						.append(String.valueOf(costingTrace.estimateFusion(eventId)))
 						.append(" providerInputSource=")
-						.append(costingTrace.providerInputEstimateSource(eventId))
+						.append(String.valueOf(costingTrace.providerInputEstimateSource(eventId)))
 						.append(" providerInputFusion=")
-						.append(costingTrace.providerInputEstimateFusion(eventId))
+						.append(String.valueOf(costingTrace.providerInputEstimateFusion(eventId)))
 						.append(" digest=")
 						.append(costingTrace.digest(eventId));
 				appendCostingMetric(description, costingTrace, eventId, "plannedLookupComponents");
@@ -636,11 +704,11 @@ final class PackedPlanRecipe {
 			}
 		}
 		appendFinalPolicy(description);
-		return description.toString();
+		return description.build();
 	}
 
-	String describeCostingDecisionsJson() {
-		StringBuilder json = new StringBuilder(1024);
+	OwnedStringDiagnostic costingDecisionsJsonDiagnostic() {
+		OwnedStringDiagnostic.Builder json = OwnedStringDiagnostic.builder();
 		json.append('{').append("\"schema\":2,\"rules\":[");
 		boolean first = true;
 		for (OptimizerRuleDescriptor descriptor : OptimizerRuleCatalog.descriptors()) {
@@ -732,7 +800,7 @@ final class PackedPlanRecipe {
 					.append(decisionCertificate.candidateTier(selectedCandidate));
 		}
 		return json.append("}}")
-				.toString();
+				.build();
 	}
 
 	String describeCostingTrace() {
@@ -814,6 +882,20 @@ final class PackedPlanRecipe {
 	}
 
 	private static void appendCostingMetric(StringBuilder description, PackedCostingTrace trace, int eventId,
+			String metricName) {
+		for (int ordinal = 0; ordinal < trace.stringMetricCount(eventId); ordinal++) {
+			if (metricName.equals(trace.stringMetricName(eventId, ordinal))) {
+				description.append(' ')
+						.append(metricName)
+						.append('=')
+						.append(trace.stringMetricValue(eventId, ordinal));
+				return;
+			}
+		}
+	}
+
+	private static void appendCostingMetric(OwnedStringDiagnostic.Builder description, PackedCostingTrace trace,
+			int eventId,
 			String metricName) {
 		for (int ordinal = 0; ordinal < trace.stringMetricCount(eventId); ordinal++) {
 			if (metricName.equals(trace.stringMetricName(eventId, ordinal))) {
@@ -1134,7 +1216,7 @@ final class PackedPlanRecipe {
 		}
 	}
 
-	private void appendRulesConsidered(StringBuilder description) {
+	private void appendRulesConsidered(OwnedStringDiagnostic.Builder description) {
 		if (!description.isEmpty()) {
 			description.append(System.lineSeparator());
 		}
@@ -1159,7 +1241,7 @@ final class PackedPlanRecipe {
 		description.append(']');
 	}
 
-	private void appendFrontierState(StringBuilder description, int candidate) {
+	private void appendFrontierState(OwnedStringDiagnostic.Builder description, int candidate) {
 		int stateOrdinal = decisionCertificate.candidateStateOrdinal(candidate);
 		description.append(" frontierState=").append(stateOrdinal);
 		if (stateOrdinal <= 0 || stateOrdinal > frontierEvidenceBundle.stateCount()) {
@@ -1182,7 +1264,7 @@ final class PackedPlanRecipe {
 				+ Long.toUnsignedString(frontierEvidenceBundle.digestLow(stateOrdinal), 16);
 	}
 
-	private void appendFinalPolicy(StringBuilder description) {
+	private void appendFinalPolicy(OwnedStringDiagnostic.Builder description) {
 		int selectedCandidate = selectedRootCandidate();
 		description.append(System.lineSeparator())
 				.append("finalPolicy=selectedEvent:")
@@ -1211,7 +1293,7 @@ final class PackedPlanRecipe {
 		return -1;
 	}
 
-	private void appendCostingEventStateJson(StringBuilder json, int eventId) {
+	private void appendCostingEventStateJson(OwnedStringDiagnostic.Builder json, int eventId) {
 		json.append(",\"eventState\":");
 		if (eventId <= 0 || eventId > costingTrace.eventCount()) {
 			json.append("null");
@@ -1277,6 +1359,15 @@ final class PackedPlanRecipe {
 			}
 		}
 		return null;
+	}
+
+	private static void appendNullableJsonString(OwnedStringDiagnostic.Builder json, Object value) {
+		// All actual callers pass final Strings or engine enums; no supplier/provider/model object is inspected.
+		json.jsonString(value == null ? null : String.valueOf(value));
+	}
+
+	private static void appendJsonString(OwnedStringDiagnostic.Builder json, String value) {
+		json.jsonString(value);
 	}
 
 	private static void appendNullableJsonString(StringBuilder json, Object value) {

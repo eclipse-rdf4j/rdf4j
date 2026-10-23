@@ -20,6 +20,7 @@ import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -170,6 +171,21 @@ public class LmdbTripleTerm extends AbstractTripleTerm implements LmdbValue {
 		}
 	}
 
+	@Experimental
+	@Override
+	public long retainedLexicalLength() {
+		if (!initialized) {
+			return -1L;
+		}
+		long subjectLength = retainedLexicalLength(subject);
+		long predicateLength = retainedLexicalLength(predicate);
+		long objectLength = retainedLexicalLength(object);
+		if (subjectLength < 0 || predicateLength < 0 || objectLength < 0) {
+			return -1L;
+		}
+		return subjectLength + predicateLength + objectLength;
+	}
+
 	@Override
 	public long getInternalID() {
 		return getInternalIdentity().id();
@@ -266,6 +282,11 @@ public class LmdbTripleTerm extends AbstractTripleTerm implements LmdbValue {
 		object = (Value) fields.get("object", null);
 		initialized = fields.get("initialized", false);
 		captureChildVersions();
+	}
+
+	private static long retainedLexicalLength(Value value) {
+		return value instanceof LmdbValue lmdbValue ? lmdbValue.retainedLexicalLength()
+				: value.stringValue().length();
 	}
 
 	@Override

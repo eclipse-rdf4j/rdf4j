@@ -19,6 +19,8 @@ import java.util.Base64;
 import java.util.Locale;
 import java.util.Objects;
 
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
+
 /** Stable identity of the raw Frontier transform and physical access kernel that produced one prediction. */
 final class FrontierLearningKey {
 
@@ -249,5 +251,17 @@ final class FrontierLearningKey {
 		byte[] bytes = new byte[length];
 		in.readFully(bytes);
 		return new String(bytes, StandardCharsets.UTF_8);
+	}
+
+	void accountCacheMemory(RetainedMemoryAccount account) {
+		if (!account.add(this, 88L)) {
+			return;
+		}
+		account.add(operatorFamily, 40L + 2L * operatorFamily.length());
+		account.add(rawTransform, 40L + 2L * rawTransform.length());
+		account.add(accessKernel, 40L + 2L * accessKernel.length());
+		account.add(indexName, 40L + 2L * indexName.length());
+		account.add(accessMode, 40L + 2L * accessMode.length());
+		account.add(externalForm, 40L + 2L * externalForm.length());
 	}
 }

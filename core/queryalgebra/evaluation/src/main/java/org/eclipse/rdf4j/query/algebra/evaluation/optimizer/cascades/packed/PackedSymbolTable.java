@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import java.util.Arrays;
 
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
+
 /** Dense canonical binding-symbol IDs keyed by canonical object-pool string IDs. */
 @PackedHotPath
 final class PackedSymbolTable {
@@ -89,4 +91,13 @@ final class PackedSymbolTable {
 		}
 		objectBySymbolId = Arrays.copyOf(objectBySymbolId, objectBySymbolId.length << 1);
 	}
+
+	void accountRetainedMemory(RetainedMemoryAccount account) {
+		if (!account.add(this, 80L)) {
+			return;
+		}
+		PackedCacheMemory.array(account, symbolByObjectId);
+		PackedCacheMemory.array(account, objectBySymbolId);
+	}
+
 }

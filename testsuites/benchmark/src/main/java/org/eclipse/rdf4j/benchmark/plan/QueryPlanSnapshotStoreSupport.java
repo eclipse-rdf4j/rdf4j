@@ -104,6 +104,7 @@ final class QueryPlanSnapshotStoreSupport {
 
 	static LmdbStoreConfig createLmdbStoreConfig(QueryPlanSnapshotCliOptions options) {
 		LmdbStoreConfig config = new LmdbStoreConfig(THEME_BENCHMARK_TRIPLE_INDEXES);
+		config.setDirectAdjacencyEnabled(options.directAdjacencyReadyTimeoutSeconds != null);
 		config.setForceSync(false);
 		config.setSketchEstimatorEvidenceMode(options.lmdbEvidenceMode);
 		config.setValueDBSize(1_073_741_824L); // 1 GiB

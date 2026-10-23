@@ -157,16 +157,18 @@ clean_stream() {
 extract_summary_table() {
 	awk '
 	function is_summary_header(line) {
-		return line ~ /^Benchmark([[:space:]]|$)/ && line ~ /Units[[:space:]]*$/
+		return line ~ /^Benchmark([[:space:]]|$)/ \
+			&& line ~ /\(themeName\)/ \
+			&& line ~ /\(z_queryIndex\)/ \
+			&& line ~ /[[:space:]]Mode[[:space:]]+Cnt[[:space:]]+Score/ \
+			&& line ~ /Units[[:space:]]*$/
 	}
 	function is_benchmark_result(line) {
 		return line ~ /^[^[:space:]]+[[:space:]]+/ \
 			&& line ~ /[[:space:]][-+]?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][-+]?[0-9]+)?([[:space:]]|$)/
 	}
 	in_table {
-		if ($0 ~ /^[[:space:]]*$/) {
-			exit
-		}
+		if ($0 ~ /^[[:space:]]*$/) { exit }
 		print
 		next
 	}
@@ -180,94 +182,77 @@ extract_summary_table() {
 		}
 		pending_header = ""
 	}
-	is_summary_header($0) {
-		pending_header = $0
-	}
+	is_summary_header($0) { pending_header = $0 }
 	' "$1"
 }
-
 synthesize_summary_table() {
 	awk '
-	BEGIN {
-		header = sprintf("%-37s %-15s %15s %5s %4s %10s %7s %s",
-			"Benchmark", "(themeName)", "(z_queryIndex)", "Mode", "Cnt", "Score", "Error", "Units")
+	function parameter(line, name, contents, count, pairs, i, prefix) {
+		contents = line
+		sub(/^# Parameters: \(/, "", contents)
+		sub(/\)$/, "", contents)
+		count = split(contents, pairs, /, /)
+		prefix = name " = "
+		for (i = 1; i <= count; i++) if (index(pairs[i], prefix) == 1) return substr(pairs[i], length(prefix) + 1)
+		return ""
 	}
 	function trim(value) {
 		sub(/^[[:space:]]+/, "", value)
 		sub(/[[:space:]]+$/, "", value)
 		return value
 	}
-	/^# Parameters: \(.*themeName = [A-Z_]+, z_queryIndex = [0-9]+\)$/ {
-		line = $0
-		sub(/^# Parameters: \(.*themeName = /, "", line)
-		sub(/\)$/, "", line)
-		split(line, parts, /, z_queryIndex = /)
-		theme = trim(parts[1])
-		query = trim(parts[2])
+	/^# Parameters: \(/ {
+		janino = parameter($0, "janinoEnabled")
+		theme = parameter($0, "themeName")
+		query = parameter($0, "z_queryIndex")
 		next
 	}
-	/^Result "org\.eclipse\.rdf4j\.sail\.lmdb\.benchmark\.ThemeQueryBenchmark\.executeQuery":$/ {
-		expect_score = 1
-		next
-	}
-	expect_score && $0 ~ /^[[:space:]]*[0-9.]+([[:space:]]+(±|\+\/-)(\([0-9.]+%\))?[[:space:]]+[0-9.]+)?[[:space:]]+ms\/op([[:space:]]+\[Average\])?$/ {
+	/^Result "org\.eclipse\.rdf4j\.sail\.lmdb\.benchmark\.ThemeQueryBenchmark\.executeQuery":$/ { expect_score = 1; next }
+	expect_score && $0 ~ /^[[:space:]]*[-+]?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][-+]?[0-9]+)?([[:space:]]+(±|\+\/-)(\([0-9.]+%\))?[[:space:]]+[-+]?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][-+]?[0-9]+)?)?[[:space:]]+ms\/op([[:space:]]+\[Average\])?$/ {
 		line = trim($0)
 		split(line, parts, /[[:space:]]+/)
-		rows[++count] = sprintf("%-37s %15s %15s %5s %4s %10s %7s %s",
-			"ThemeQueryBenchmark.executeQuery", theme, query, "avgt", "", parts[1], parts[3], "ms/op")
+		row_count++
+		row_janino[row_count] = janino
+		row_theme[row_count] = theme
+		row_query[row_count] = query
+		row_score[row_count] = parts[1]
+		row_error[row_count] = (parts[2] == "±" || parts[2] == "+/-") ? parts[3] : ""
+		if (janino != "") has_janino = 1
 		expect_score = 0
 	}
 	END {
-		if (count == 0) {
-			exit
-		}
-		print header
-		for (i = 1; i <= count; i++) {
-			print rows[i]
+		if (row_count == 0) exit
+		if (has_janino) {
+			print sprintf("%-37s %16s %-15s %15s %5s %4s %10s %7s %s", "Benchmark", "(janinoEnabled)", "(themeName)", "(z_queryIndex)", "Mode", "Cnt", "Score", "Error", "Units")
+			for (i=1;i<=row_count;i++) print sprintf("%-37s %16s %15s %15s %5s %4s %10s %7s %s", "ThemeQueryBenchmark.executeQuery", row_janino[i], row_theme[i], row_query[i], "avgt", "", row_score[i], row_error[i], "ms/op")
+		} else {
+			print sprintf("%-37s %-15s %15s %5s %4s %10s %7s %s", "Benchmark", "(themeName)", "(z_queryIndex)", "Mode", "Cnt", "Score", "Error", "Units")
+			for (i=1;i<=row_count;i++) print sprintf("%-37s %15s %15s %5s %4s %10s %7s %s", "ThemeQueryBenchmark.executeQuery", row_theme[i], row_query[i], "avgt", "", row_score[i], row_error[i], "ms/op")
 		}
 	}
 	' "$1"
 }
-
 remove_summary_table() {
 	awk '
 	function is_summary_header(line) {
-		return line ~ /^Benchmark([[:space:]]|$)/ && line ~ /Units[[:space:]]*$/
+		return line ~ /^Benchmark([[:space:]]|$)/ && line ~ /\(themeName\)/ && line ~ /\(z_queryIndex\)/ \
+			&& line ~ /[[:space:]]Mode[[:space:]]+Cnt[[:space:]]+Score/ && line ~ /Units[[:space:]]*$/
 	}
 	function is_benchmark_result(line) {
 		return line ~ /^[^[:space:]]+[[:space:]]+/ \
 			&& line ~ /[[:space:]][-+]?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][-+]?[0-9]+)?([[:space:]]|$)/
 	}
-	skipping_table {
-		if ($0 ~ /^[[:space:]]*$/) {
-			skipping_table = 0
-		}
-		next
-	}
+	skipping_table { if ($0 ~ /^[[:space:]]*$/) skipping_table = 0; next }
 	pending_header != "" {
-		if (is_benchmark_result($0)) {
-			pending_header = ""
-			skipping_table = 1
-			next
-		}
+		if (is_benchmark_result($0)) { pending_header = ""; skipping_table = 1; next }
 		print pending_header
 		pending_header = ""
 	}
-	is_summary_header($0) {
-		pending_header = $0
-		next
-	}
-	{
-		print
-	}
-	END {
-		if (pending_header != "") {
-			print pending_header
-		}
-	}
+	is_summary_header($0) { pending_header = $0; next }
+	{ print }
+	END { if (pending_header != "") print pending_header }
 	' "$1"
 }
-
 render_capture_markdown() {
 	local summary_file="$1"
 	local body_file="$2"

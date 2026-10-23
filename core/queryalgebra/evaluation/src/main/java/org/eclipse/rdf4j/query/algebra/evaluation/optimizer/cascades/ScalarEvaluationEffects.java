@@ -44,8 +44,8 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
-import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Now;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
@@ -99,7 +99,7 @@ public final class ScalarEvaluationEffects {
 			return Effect.VOLATILE;
 		}
 		if (expression instanceof FunctionCall function) {
-			return functionEffect(function.getURI(), function.getArgs());
+			return functionEffect(function);
 		}
 		if (expression instanceof Exists exists) {
 			return tupleEffect(exists.getSubQuery());
@@ -139,22 +139,28 @@ public final class ScalarEvaluationEffects {
 	}
 
 	/**
-	 * Functions are classified by the volatility contract they declare ({@link Function#mustReturnDifferentResult()}),
-	 * which is the same contract {@code ConstantOptimizer} and the evaluation strategy already trust. Any registered
-	 * function that does not declare volatility is REPEATABLE, regardless of the jar or package it lives in (GeoSPARQL,
-	 * SPIN and user functions included); an unregistered IRI cannot be evaluated at all and fails closed. A call
-	 * without arguments ({@code NOW()}) has no input its value could be repeatable for: it is a constant or reads
-	 * context such as a clock. {@code ConstantOptimizer} folds it once per query, so it is QUERY_STABLE, never
-	 * REPEATABLE, and is neither learned nor replayed from a cached plan across queries. A clock read on every call
+	 * Functions use the implementation pinned for the prepared call, or the registry for an unpinned call, and honor
+	 * the active query execution policy and explicit determinism declaration. Functions are classified by the
+	 * volatility contract they declare ({@link Function#mustReturnDifferentResult()}), which is the same contract
+	 * {@code ConstantOptimizer} and the evaluation strategy already trust. Any registered function that does not
+	 * declare volatility is REPEATABLE, regardless of the jar or package it lives in (GeoSPARQL, SPIN and user
+	 * functions included); an unregistered IRI cannot be evaluated at all and fails closed. A call without arguments
+	 * ({@code NOW()}) has no input its value could be repeatable for: it is a constant or reads context such as a
+	 * clock. {@code ConstantOptimizer} folds it once per query, so it is QUERY_STABLE, never REPEATABLE, and is neither
+	 * learned nor replayed from a cached plan across queries. A clock read on every call
 	 * ({@code spif:currentTimeMillis()}) declares volatility instead.
 	 */
-	private static Effect functionEffect(String iri, List<ValueExpr> args) {
-		Function function = FunctionRegistry.getInstance().get(iri).orElse(null);
+	private static Effect functionEffect(FunctionCall call) {
+		Function function = QueryEvaluationUtility.resolveFunction(call).orElse(null);
+		List<ValueExpr> args = call.getArgs();
 		if (function == null) {
 			return Effect.UNKNOWN;
 		}
-		if (function.mustReturnDifferentResult()) {
+		if (function.mustReturnDifferentResult() || function.getDeterminism() == Function.Determinism.VOLATILE) {
 			return Effect.VOLATILE;
+		}
+		if (!QueryEvaluationUtility.isRepeatable(function)) {
+			return Effect.UNKNOWN;
 		}
 		if (function instanceof Now || args.isEmpty()) {
 			return Effect.QUERY_STABLE;

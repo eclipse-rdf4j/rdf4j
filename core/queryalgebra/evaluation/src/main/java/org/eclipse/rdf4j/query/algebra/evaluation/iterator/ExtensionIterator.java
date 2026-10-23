@@ -56,7 +56,15 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 		for (ExtensionElem extElem : extension.getElements()) {
 			if (TupleExprs.isEvaluatedExtensionElement(extElem)) {
 				Set<String> producedNames = Set.of(extElem.getName());
-				QueryValueEvaluationStep prepared = strategy.precompile(extElem.getExpr(), context);
+				QueryValueEvaluationStep preparedStep;
+				try {
+					preparedStep = strategy.precompile(extElem.getExpr(), context);
+				} catch (ValueExprEvaluationException e) {
+					// Defer type errors raised while preparing a constant expression until each input row is
+					// processed, so the existing row-local extension error handling can leave the binding unset.
+					preparedStep = new QueryValueEvaluationStep.Fail(e.getMessage());
+				}
+				final QueryValueEvaluationStep prepared = preparedStep;
 				BiConsumer<Value, MutableBindingSet> setBinding = context.setBinding(extElem.getName());
 				Consumer<MutableBindingSet> removeBinding = context.removeBinding(extElem.getName());
 				consumer = andThen(consumer, targetBindings -> {

@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.base;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -26,6 +27,7 @@ import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -150,6 +152,42 @@ class SailDatasetImpl implements SailDataset, TreeOwnedDataset {
 		return lifetime.call(() -> type.isInstance(this) ? Optional.of(type.cast(this)) : derivedFrom.unwrap(type));
 	}
 
+	boolean hasStatementChanges() {
+		for (Changeset change : changes) {
+			if (change.isStatementCleared() || change.hasApproved() || change.hasDeprecated()) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	SailDataset getDerivedFrom() {
+		return derivedFrom;
+	}
+
+	@Override
+	public CloseableIteration<? extends Statement> getStatements(StatementOrder statementOrder, Resource subj, IRI pred,
+			Value obj, Resource... contexts) throws SailException {
+		return lifetime.open(() -> {
+			if (hasStatementChanges()) {
+				throw new SailException(
+						"Statement ordering is unavailable after the current transaction has pending changes");
+			}
+			return derivedFrom.getStatements(statementOrder, subj, pred, obj, contexts);
+		});
+	}
+
+	@Override
+	public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
+		return lifetime.call(() -> hasStatementChanges() ? Set.of()
+				: derivedFrom.getSupportedOrders(subj, pred, obj, contexts));
+	}
+
+	@Override
+	public Comparator<Value> getComparator() {
+		return lifetime.call(() -> hasStatementChanges() ? null : derivedFrom.getComparator());
+	}
+
 	@Override
 	public String getNamespace(String prefix) throws SailException {
 		return lifetime.call(() -> {
@@ -242,7 +280,7 @@ class SailDatasetImpl implements SailDataset, TreeOwnedDataset {
 					private final Set<Resource> seen = new HashSet<>();
 					private final Resource[] context = new Resource[1];
 					private boolean baseDone;
-					private int generation = oldest;
+					private int generation = changes.size() - 1;
 					private Iterator<Resource> added;
 
 					@Override
@@ -250,29 +288,28 @@ class SailDatasetImpl implements SailDataset, TreeOwnedDataset {
 						while (true) {
 							Resource candidate;
 							int source;
-							if (!baseDone) {
-								if (!backing.hasNext()) {
-									baseDone = true;
-									backing.close();
-									continue;
-								}
-								candidate = backing.next();
-								source = -1;
-							} else {
-								if (generation >= changes.size()) {
-									return null;
-								}
+							if (generation >= oldest) {
 								if (added == null) {
 									Set<Resource> contexts = changes.get(generation).getApprovedContexts();
 									added = contexts == null ? Set.<Resource>of().iterator() : contexts.iterator();
 								}
 								if (!added.hasNext()) {
-									generation++;
+									generation--;
 									added = null;
 									continue;
 								}
 								candidate = added.next();
 								source = generation;
+							} else {
+								if (baseDone || !backing.hasNext()) {
+									if (!baseDone) {
+										baseDone = true;
+										backing.close();
+									}
+									return null;
+								}
+								candidate = backing.next();
+								source = -1;
 							}
 							if (candidate != null && seen.add(candidate)) {
 								context[0] = candidate;
@@ -489,7 +526,7 @@ class SailDatasetImpl implements SailDataset, TreeOwnedDataset {
 			CloseableIteration<? extends TripleTerm> base = first == 0 ? derivedFrom.getTriples(subj, pred, obj)
 					: new EmptyIteration<>();
 			try {
-				return new Cursor<TripleTerm>() {
+				return new ReportingCursor<TripleTerm>(base) {
 					private final Set<TripleTerm> seen = new HashSet<>();
 					private int source = first == 0 ? -1 : first - 2;
 					private boolean baseDone;
@@ -586,6 +623,34 @@ class SailDatasetImpl implements SailDataset, TreeOwnedDataset {
 		return (subj == null || subj.equals(triple.getSubject()))
 				&& (pred == null || pred.equals(triple.getPredicate()))
 				&& (obj == null || obj.equals(triple.getObject()));
+	}
+
+	private abstract static class ReportingCursor<T> extends Cursor<T> implements IndexReportingIterator {
+		private final IndexReportingIterator reporter;
+
+		private ReportingCursor(CloseableIteration<?> base) {
+			reporter = base instanceof IndexReportingIterator index ? index : null;
+		}
+
+		@Override
+		public String getIndexName() {
+			return reporter == null ? null : reporter.getIndexName();
+		}
+
+		@Override
+		public long getSourceRowsScannedActual() {
+			return reporter == null ? -1 : reporter.getSourceRowsScannedActual();
+		}
+
+		@Override
+		public long getSourceRowsMatchedActual() {
+			return reporter == null ? -1 : reporter.getSourceRowsMatchedActual();
+		}
+
+		@Override
+		public long getSourceRowsFilteredActual() {
+			return reporter == null ? -1 : reporter.getSourceRowsFilteredActual();
+		}
 	}
 
 	/** One lookahead value, iterative advancement, and exact cursor cleanup on all exits. */

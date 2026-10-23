@@ -29,6 +29,7 @@ import java.util.Map;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.http.HttpStatus;
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.lang.FileFormat;
 import org.eclipse.rdf4j.common.lang.service.FileFormatServiceRegistry;
 import org.eclipse.rdf4j.common.webapp.util.HttpServerUtil;
@@ -220,6 +221,8 @@ public class DefaultQueryRequestHandler extends AbstractQueryRequestHandler {
 		// determine if inferred triples should be included in query evaluation
 		query.setIncludeInferred(getIncludeInferred(request));
 
+		applyForcedLmdbExecutionStrategy(request, query);
+
 		int maxExecutionTime = getMaxExecutionTime(request);
 		if (maxExecutionTime > 0) {
 			query.setMaxExecutionTime(maxExecutionTime);
@@ -243,6 +246,19 @@ public class DefaultQueryRequestHandler extends AbstractQueryRequestHandler {
 				query.setBinding(bindingName, bindingValue);
 			}
 		}
+	}
+
+	/**
+	 * Pins one named query-execution strategy for this query when the request asks for one. This is meaningful only for
+	 * a Sail that supports named execution strategies (today, LMDB); the setter lives on {@link SailQuery} rather than
+	 * the generic {@link Query} API, so a repository fronted by anything else simply never sees the request. An absent
+	 * parameter, a blank one (what a strategy dropdown's empty entry submits) and the {@code NOT_ACTIVATED} sentinel
+	 * all mean "leave the store's own selection alone" — see
+	 * {@link Protocol#isLmdbForcedExecutionStrategyUnset(String)}.
+	 */
+	@Experimental
+	protected void applyForcedLmdbExecutionStrategy(HttpServletRequest request, Query query) {
+		ProtocolUtil.applyForcedLmdbExecutionStrategy(request, query);
 	}
 
 	protected int getMaxExecutionTime(HttpServletRequest request) throws ClientHTTPException {

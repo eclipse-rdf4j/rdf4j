@@ -222,7 +222,7 @@ class LmdbLanguageTagVariantMergeStorageTest {
 
 	private void writeStoreProperties() throws IOException {
 		Properties properties = new Properties();
-		properties.setProperty(StoreProperties.VERSION_KEY, String.valueOf(LmdbStore.VERSION));
+		properties.setProperty(StoreProperties.VERSION_KEY, String.valueOf(LmdbStoreFormat.LEGACY_VERSION));
 		properties.setProperty(StoreProperties.INDEXES_KEY, "spoc,posc");
 		properties.setProperty(StoreProperties.TRIPLE_TERM_INDEXES_KEY, "spoc,cspo");
 		properties.setProperty(StoreProperties.LANGUAGE_TAG_KEY, StoreProperties.LANGUAGE_TAG_KEY_BYTE_EXACT);

@@ -88,6 +88,9 @@ import org.lwjgl.util.lmdb.MDBVal;
  */
 final class TxnManager {
 
+	record ReadTxnRegistration(Txn txn, long dataRevision, long initialVersion) {
+	}
+
 	/** Overall budget for a single readers-full retry sequence. */
 	private static final long READERS_FULL_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(5);
 	/** Overall budget for waiting until a read transaction becomes available. */
@@ -261,6 +264,46 @@ final class TxnManager {
 		return new ReaderReservation(resetOnWrite, acquireReaderPermit(false));
 	}
 
+	/** Reserves a complete family before acquiring any publication or native-operation barrier. */
+	ReaderReservation reserveReadTxnPinnedFamily(int count) throws IOException {
+		if (count <= 0) {
+			throw new IllegalArgumentException("pinned transaction family size must be positive: " + count);
+		}
+		if (count >= POOL_SIZE) {
+			throw new IOException("Pinned transaction family exceeds the ordinary reader capacity: " + count);
+		}
+		return new ReaderReservation(count, acquireReaderPermits(count, false, QueryExecutionDeadline.current()));
+	}
+
+	ReadTxnRegistration createReadTxnTrackedAtRevision(LongSupplier dataRevision) throws IOException {
+		try (ReaderReservation reservation = reserveReadTxn(true)) {
+			return reservation.startPinned(null,
+					txn -> new ReadTxnRegistration(txn, dataRevision.getAsLong(), txn.version()));
+		}
+	}
+
+	Txn createReadTxnPinned(LongSupplier dataRevision) throws IOException {
+		try (ReaderReservation reservation = reserveReadTxn(false)) {
+			return reservation.startPinned(dataRevision);
+		}
+	}
+
+	/** Additional ordinary readers available after preserving the requested foreground capacity. */
+	int availableReadTxnSlots(int maxReaders, int reservedSlots) {
+		if (maxReaders <= 0) {
+			throw new IllegalArgumentException("maxReaders must be positive: " + maxReaders);
+		}
+		if (reservedSlots < 0 || reservedSlots >= maxReaders) {
+			throw new IllegalArgumentException("reserved reader slots out of range: " + reservedSlots);
+		}
+		if (managerClosed) {
+			return 0;
+		}
+		int available = readerSlots.availablePermits();
+		int leased = POOL_SIZE - available - priorityReaderSlot.availablePermits();
+		return Math.max(0, Math.min(maxReaders - leased, available) - reservedSlots);
+	}
+
 	/** Opens a family of untracked readers pinned to one committed data revision. */
 	Txn[] createReadTxnPinnedFamily(int count, LongSupplier dataRevision) throws IOException {
 		if (count <= 0) {
@@ -385,10 +428,84 @@ final class TxnManager {
 	final class ReaderReservation implements AutoCloseable {
 		private final boolean resetOnWrite;
 		private Semaphore readerPermit;
+		private int remaining;
 
 		private ReaderReservation(boolean resetOnWrite, Semaphore readerPermit) {
 			this.resetOnWrite = resetOnWrite;
 			this.readerPermit = readerPermit;
+			this.remaining = 1;
+		}
+
+		private ReaderReservation(int count, Semaphore readerPermit) {
+			this.resetOnWrite = false;
+			this.readerPermit = readerPermit;
+			this.remaining = count;
+		}
+
+		Txn[] openPinnedFamily(LongSupplier dataRevision) throws IOException {
+			return openPinnedFamily(dataRevision, false);
+		}
+
+		/** Starts the complete pre-admitted family inside the caller's native read interval. */
+		Txn[] openPinnedFamilyUnderReadLock(LongSupplier dataRevision) throws IOException {
+			return openPinnedFamily(dataRevision, true);
+		}
+
+		private Txn[] openPinnedFamily(LongSupplier dataRevision, boolean underReadLock) throws IOException {
+			Semaphore permits;
+			int count;
+			synchronized (this) {
+				if (readerPermit == null || remaining == 0) {
+					throw new IllegalStateException("Reader reservation has already been consumed or closed");
+				}
+				permits = readerPermit;
+				count = remaining;
+				readerPermit = null;
+				remaining = 0;
+			}
+			QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
+			Txn[] transactions = new Txn[count];
+			int unassigned = count;
+			long readStamp = 0L;
+			boolean readLocked = false;
+			try {
+				if (!underReadLock) {
+					try {
+						readStamp = acquireReadBarrier(deadline);
+						readLocked = true;
+					} catch (InterruptedException interrupted) {
+						Thread.currentThread().interrupt();
+						throw new IOException("Interrupted while pinning a read transaction family", interrupted);
+					}
+				}
+				long revision = dataRevision.getAsLong();
+				for (int i = 0; i < count; i++) {
+					unassigned--;
+					Txn txn = createReadTxnInternal(false, permits, deadline, true);
+					transactions[i] = txn;
+					txn.setSnapshotRevision(revision);
+					checkQueryDeadline(deadline);
+				}
+				return transactions;
+			} catch (IOException | RuntimeException | Error failure) {
+				for (int i = transactions.length - 1; i >= 0; i--) {
+					if (transactions[i] != null) {
+						try {
+							transactions[i].close();
+						} catch (RuntimeException | Error cleanup) {
+							if (failure != cleanup) {
+								failure.addSuppressed(cleanup);
+							}
+						}
+					}
+				}
+				throw failure;
+			} finally {
+				if (readLocked) {
+					lockManager.unlockRead(readStamp);
+				}
+				permits.release(unassigned);
+			}
 		}
 
 		/**
@@ -406,7 +523,7 @@ final class TxnManager {
 
 		/** Captures caller-owned snapshot metadata before releasing the native-operation barrier. */
 		synchronized <T> T startPinned(LongSupplier dataRevision, Function<Txn, T> snapshotFactory) throws IOException {
-			if (readerPermit == null) {
+			if (readerPermit == null || remaining != 1) {
 				throw new IllegalStateException("Reader reservation has already been consumed or closed");
 			}
 			if (dataRevision != null && resetOnWrite) {
@@ -415,6 +532,7 @@ final class TxnManager {
 			QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
 			Semaphore permit = readerPermit;
 			readerPermit = null;
+			remaining = 0;
 			long readStamp;
 			try {
 				readStamp = acquireReadBarrier(deadline);
@@ -446,7 +564,7 @@ final class TxnManager {
 		/** Captures native and caller-owned snapshot metadata inside a caller's reader-start scope. */
 		synchronized <T> T startPinned(LongSupplier dataRevision, Function<Txn, T> snapshotFactory,
 				ReaderStartScopeFactory scopeFactory) throws IOException {
-			if (readerPermit == null) {
+			if (readerPermit == null || remaining != 1) {
 				throw new IllegalStateException("Reader reservation has already been consumed or closed");
 			}
 			if (dataRevision != null && resetOnWrite) {
@@ -455,6 +573,7 @@ final class TxnManager {
 			QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
 			Semaphore permit = readerPermit;
 			readerPermit = null;
+			remaining = 0;
 			long readStamp;
 			try {
 				readStamp = acquireReadBarrier(deadline);
@@ -476,12 +595,15 @@ final class TxnManager {
 		@Override
 		public void close() {
 			Semaphore permit;
+			int count;
 			synchronized (this) {
 				permit = readerPermit;
+				count = remaining;
 				readerPermit = null;
+				remaining = 0;
 			}
 			if (permit != null) {
-				releaseReaderPermit(permit);
+				permit.release(count);
 			}
 		}
 	}
@@ -1284,10 +1406,16 @@ final class TxnManager {
 		private final Pool valuePool = pools[POOL_ROTATION.getAndIncrement() & (CACHED_POOLS - 1)];
 
 		private volatile long version;
+		private volatile Object valueLookupScope = new Object();
+		private volatile ValueLookupScope dictionaryLookupScope;
 		private volatile long snapshotRevision = -1;
 		private volatile boolean snapshotInvalidated;
 		private volatile LmdbSailStore.MapResizeKind snapshotInvalidationKind;
 		private volatile boolean snapshotBound;
+
+		private record ValueLookupScope(Object readerView, Object dictionaryGeneration) {
+		}
+
 		private volatile boolean active = true;
 		/** Permanently finished: aborted or handed back to LMDB. */
 		private volatile boolean closed;
@@ -1324,7 +1452,41 @@ final class TxnManager {
 		}
 
 		long get() {
-			return viewOf == null ? txn : viewOf.txn;
+			return closed ? NULL : viewOf == null ? txn : viewOf.get();
+		}
+
+		boolean isReadOnly() {
+			return viewOf == null ? owned : viewOf.isReadOnly();
+		}
+
+		Object valueLookupScope() {
+			return viewOf == null ? valueLookupScope : viewOf.valueLookupScope();
+		}
+
+		Object valueLookupScope(Object dictionaryGeneration) {
+			if (viewOf != null) {
+				return viewOf.valueLookupScope(dictionaryGeneration);
+			}
+			Object view = valueLookupScope;
+			if (view == null || dictionaryGeneration == null) {
+				return null;
+			}
+			ValueLookupScope cached = dictionaryLookupScope;
+			if (cached == null || cached.readerView != view || cached.dictionaryGeneration != dictionaryGeneration) {
+				synchronized (this) {
+					view = valueLookupScope;
+					if (view == null) {
+						return null;
+					}
+					cached = dictionaryLookupScope;
+					if (cached == null || cached.readerView != view
+							|| cached.dictionaryGeneration != dictionaryGeneration) {
+						cached = new ValueLookupScope(view, dictionaryGeneration);
+						dictionaryLookupScope = cached;
+					}
+				}
+			}
+			return cached;
 		}
 
 		/** The native transaction ID captured at the last activation; meaningful while {@link #isNativeActive()}. */
@@ -1560,6 +1722,8 @@ final class TxnManager {
 					return;
 				}
 				permit = readerPermit;
+				valueLookupScope = null;
+				dictionaryLookupScope = null;
 				idleReaderReclaimer = null;
 				snapshotRevision = -1;
 				releasePermit = release();
@@ -1602,6 +1766,9 @@ final class TxnManager {
 			if (closed) {
 				return;
 			}
+			if (snapshotRevision >= 0) {
+				snapshotInvalidated = true;
+			}
 			if (active) {
 				if (!idle && !snapshotInvalidated) {
 					// idle readers stay reset; they are renewed lazily in reuse()
@@ -1633,6 +1800,9 @@ final class TxnManager {
 			this.snapshotBound = false;
 			this.snapshotInvalidated = false;
 			this.snapshotInvalidationKind = null;
+			this.valueLookupScope = new Object();
+			this.dictionaryLookupScope = null;
+			this.version++;
 			this.idle = false;
 			this.closed = false;
 			this.lease = leaseSequence.incrementAndGet();
@@ -1644,6 +1814,7 @@ final class TxnManager {
 				renewReadTxn(txn);
 				nativeTransactionId = mdb_txn_id(txn);
 				active = true;
+				valueLookupScope = new Object();
 			}
 		}
 
@@ -1657,6 +1828,8 @@ final class TxnManager {
 		 * the {@code open -> Txn} vs. {@code Txn -> open} lock-order inversion of the previous implementation.
 		 */
 		private void resetNative() {
+			valueLookupScope = null;
+			dictionaryLookupScope = null;
 			if (active) {
 				mdb_txn_reset(txn);
 				active = false;
@@ -1716,6 +1889,8 @@ final class TxnManager {
 			active = false;
 			idle = false;
 			closed = true;
+			valueLookupScope = null;
+			dictionaryLookupScope = null;
 			lease++;
 			snapshotRevision = -1;
 		}

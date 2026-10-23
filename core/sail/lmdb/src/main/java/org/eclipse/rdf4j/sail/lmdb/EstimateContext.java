@@ -34,7 +34,23 @@ record EstimateContext(BindingUniverse universe, BindingMask boundMask,
 		Optional<FiniteRelationEstimate> finiteBindings, BagEstimate prefixEstimate, double invocationCount,
 		EvidencePolicy evidencePolicy, JoinFactorCostModel.EstimationTier estimationTier,
 		QuadSnapshotIdentity snapshotIdentity, long snapshotVersion, long learnedRevision,
-		MetricsPreference metricsPreference, boolean exactProbePermitted, PlanningGraphDomain graphDomain) {
+		MetricsPreference metricsPreference, boolean exactProbePermitted, PlanningGraphDomain graphDomain,
+		LmdbFilterReadContext filterReadContext) {
+
+	EstimateContext(BindingUniverse universe, BindingMask boundMask,
+			Optional<FiniteRelationEstimate> finiteBindings, BagEstimate prefixEstimate, double invocationCount,
+			EvidencePolicy evidencePolicy, JoinFactorCostModel.EstimationTier estimationTier,
+			QuadSnapshotIdentity snapshotIdentity, long snapshotVersion, long learnedRevision,
+			MetricsPreference metricsPreference, boolean exactProbePermitted, PlanningGraphDomain graphDomain) {
+		this(universe, boundMask, finiteBindings, prefixEstimate, invocationCount, evidencePolicy, estimationTier,
+				snapshotIdentity, snapshotVersion, learnedRevision, metricsPreference, exactProbePermitted, graphDomain, null);
+	}
+
+	EstimateContext withFilterReadContext(LmdbFilterReadContext readContext) {
+		return new EstimateContext(universe, boundMask, finiteBindings, prefixEstimate, invocationCount, evidencePolicy,
+				estimationTier, snapshotIdentity, snapshotVersion, learnedRevision, metricsPreference,
+				exactProbePermitted, graphDomain, readContext);
+	}
 
 	enum EvidencePolicy {
 		SNAPSHOT_ONLY,
@@ -89,7 +105,7 @@ record EstimateContext(BindingUniverse universe, BindingMask boundMask,
 		return new EstimateContext(universe, boundMask, finiteBindings, prefixEstimate, invocationCount, evidencePolicy,
 				estimationTier, snapshotIdentity, snapshotVersion, learnedRevision, metricsPreference,
 				exactProbePermitted,
-				domain);
+				domain, filterReadContext);
 	}
 
 	Set<String> boundNames() {
@@ -165,7 +181,7 @@ record EstimateContext(BindingUniverse universe, BindingMask boundMask,
 			double invocations, EvidencePolicy policy, JoinFactorCostModel.EstimationTier tier,
 			MetricsPreference preference, boolean exactPermission) {
 		return new EstimateContext(universe, mask, bindings, prefix, invocations, policy, tier, snapshotIdentity,
-				snapshotVersion, learnedRevision, preference, exactPermission, graphDomain);
+				snapshotVersion, learnedRevision, preference, exactPermission, graphDomain, filterReadContext);
 	}
 
 	private static double finiteNonNegative(double value, double fallback) {

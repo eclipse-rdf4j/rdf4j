@@ -47,6 +47,8 @@ public class UnionTest extends AbstractComplianceTest {
 	}
 
 	private void testEmptyOptionalSubselect(RepositoryConnection conn) {
+		// A failed OPTIONAL is a LeftJoin with the unchanged initial solution, so ?var is unbound and
+		// the following BIND produces exactly one HIDDEN row.
 		String query = "PREFIX : <http://example.org/> "
 				+ "SELECT ?visibility WHERE {"
 				+ "OPTIONAL { SELECT ?var WHERE { :s a :MyType . BIND (:s as ?var ) .} } ."

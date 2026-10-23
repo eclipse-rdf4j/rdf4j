@@ -15,13 +15,16 @@ import java.io.Serializable;
 import java.lang.ref.ReferenceQueue;
 import java.lang.ref.WeakReference;
 import java.math.BigInteger;
+import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.BiConsumer;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.BNode;
@@ -45,9 +48,16 @@ public final class RemoteBNode extends SimpleBNode {
 	private static final long serialVersionUID = 1L;
 	private final transient Registry registry;
 	private final transient Object localOwner;
+	private final transient CacheSnapshot cacheSnapshot;
 
 	private RemoteBNode(String alias, Registry registry, Object localOwner, Provenance provenance) {
+		this(alias, registry, localOwner, provenance, null);
+	}
+
+	private RemoteBNode(String alias, Registry registry, Object localOwner, Provenance provenance,
+			CacheSnapshot cacheSnapshot) {
 		super(alias);
+		this.cacheSnapshot = cacheSnapshot;
 		this.registry = Objects.requireNonNull(registry);
 		this.localOwner = Objects.requireNonNull(localOwner);
 		registry.register(this, provenance);
@@ -76,6 +86,109 @@ public final class RemoteBNode extends SimpleBNode {
 						&& firstOrigin.identityScope() != null
 						&& firstOrigin.identityScope() == secondOrigin.identityScope()
 						&& firstOrigin.remoteID().equals(secondOrigin.remoteID());
+	}
+
+	/**
+	 * Captures bounded trusted authority for an optional private cache. Only an actual wrapper can mint this snapshot.
+	 * A label, a serialized provenance record, or a null canonical namespace grants no authority.
+	 */
+	@InternalUseOnly
+	public CacheSnapshot snapshotForCache() {
+		Provenance provenance = getProvenance();
+		if (provenance == null || !terminalToken(localOwner) || !terminalToken(provenance.identityScope())) {
+			return null;
+		}
+		return new CacheSnapshot(getID(), localOwner, provenance);
+	}
+
+	private static boolean terminalToken(Object token) {
+		// Exact Object has no outgoing fields. An arbitrary owner's retained graph is not auditable here.
+		return token == null || token.getClass() == Object.class;
+	}
+
+	/** Immutable, privately minted cache identity; deliberately neither a serializer nor a transport scope. */
+	@InternalUseOnly
+	public static final class CacheSnapshot {
+		private final String alias;
+		private final Object localOwner;
+		private final Provenance provenance;
+
+		private CacheSnapshot(String alias, Object localOwner, Provenance provenance) {
+			this.alias = alias;
+			this.localOwner = localOwner;
+			this.provenance = new Provenance(provenance.identityScope(), provenance.remoteID(),
+					provenance.canonicalResultID());
+		}
+
+		/** Each copy has its own registry; extending an emitted value cannot extend a retained cache graph. */
+		public RemoteBNode materialize() {
+			return new RemoteBNode(alias, new Registry(), localOwner,
+					new Provenance(provenance.identityScope(), provenance.remoteID(), provenance.canonicalResultID()),
+					this);
+		}
+
+		public void visitRetainedObjects(BiConsumer<Object, Long> account) {
+			account.accept(this, 40L);
+			account.accept(localOwner, 16L);
+			if (provenance.identityScope() != null) {
+				account.accept(provenance.identityScope(), 16L);
+			}
+			account.accept(provenance, 32L);
+			account.accept(alias, 40L + 2L * alias.length());
+			account.accept(provenance.remoteID(), 40L + 2L * provenance.remoteID().length());
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			if (this == other) {
+				return true;
+			}
+			if (!(other instanceof CacheSnapshot that) || !alias.equals(that.alias)) {
+				return false;
+			}
+			return localOwner == that.localOwner && sameProvenance(provenance, that.provenance)
+					|| provenance.canonicalResultID() && that.provenance.canonicalResultID()
+							&& provenance.identityScope() != null
+							&& provenance.identityScope() == that.provenance.identityScope()
+							&& provenance.remoteID().equals(that.provenance.remoteID());
+		}
+
+		@Override
+		public int hashCode() {
+			if (provenance.canonicalResultID() && provenance.identityScope() != null) {
+				// Preserve the existing canonical routing hash; exact snapshot equality still authenticates the alias.
+				return 31 * System.identityHashCode(provenance.identityScope()) + provenance.remoteID().hashCode();
+			}
+			return Objects.hash(System.identityHashCode(localOwner), alias,
+					System.identityHashCode(provenance.identityScope()), provenance.remoteID(),
+					provenance.canonicalResultID());
+		}
+	}
+
+	/** Accounts only an isolated cache copy minted above, never an arbitrary response registry. */
+	@InternalUseOnly
+	public boolean visitCacheRetainedObjects(BiConsumer<Object, Long> account) {
+		if (cacheSnapshot == null) {
+			return false;
+		}
+		synchronized (registry) {
+			if (registry.values.size() != 1) {
+				return false;
+			}
+			cacheSnapshot.visitRetainedObjects(account);
+			account.accept(this, 64L);
+			account.accept(registry, 32L);
+			account.accept(registry.expired, 64L);
+			// A fresh single-entry HashMap owns one default 16-slot table and one entry. Group these private
+			// implementation objects under the actual map identity; the registry is never shared with callers.
+			account.accept(registry.values, 48L + 24L + 16L * 8L + 48L);
+			for (Map.Entry<Key, Provenance> entry : registry.values.entrySet()) {
+				account.accept(entry.getKey(), 48L);
+				Provenance origin = entry.getValue();
+				account.accept(origin, 32L);
+			}
+			return true;
+		}
 	}
 
 	/**
@@ -300,11 +413,25 @@ public final class RemoteBNode extends SimpleBNode {
 
 	public static BindingSet toRemoteBindings(BindingSet bindings, Set<String> relevantNames, Object receivingScope,
 			boolean referenceSupport, boolean canonicalIDs) {
+		return toRemoteBindings(bindings, EmptyBindingSet.getInstance(), relevantNames, receivingScope,
+				referenceSupport, canonicalIDs);
+	}
+
+	/** Adds receiving-query terms without promoting them into the caller's original solution mapping. */
+	public static BindingSet toRemoteBindings(BindingSet bindings, BindingSet additionalBindings,
+			Set<String> relevantNames, Object receivingScope, boolean referenceSupport, boolean canonicalIDs) {
 		BindingSet original = originalBindings(bindings);
 		MapBindingSet source = new MapBindingSet(original.size());
-		MapBindingSet transported = new MapBindingSet(original.size());
+		MapBindingSet outgoing = new MapBindingSet(original.size() + additionalBindings.size());
 		for (Binding binding : original) {
 			source.addBinding(binding);
+			outgoing.addBinding(binding);
+		}
+		for (Binding binding : additionalBindings) {
+			outgoing.setBinding(binding.getName(), binding.getValue());
+		}
+		MapBindingSet transported = new MapBindingSet(outgoing.size());
+		for (Binding binding : outgoing) {
 			Value value = relevantNames.contains(binding.getName()) ? toRemoteValue(binding.getValue(),
 					receivingScope, referenceSupport, canonicalIDs) : binding.getValue();
 			transported.addBinding(binding.getName(), value);
@@ -398,43 +525,210 @@ public final class RemoteBNode extends SimpleBNode {
 
 	/** Only trusted value-copy boundaries call this with both the original and its semantic copy. */
 	public static Value preserveProvenance(Value original, Value captured) {
+		// No semantic copy means no alias can have been lost. In particular, do not walk an unchanged foreign triple
+		// tree just to prove that each of its children is still the same object.
+		if (original == captured && !(original instanceof RemoteBNode)) {
+			return captured;
+		}
 		if (original instanceof RemoteBNode remote) {
-			if (!(captured instanceof BNode) || !remote.getID().equals(((BNode) captured).getID())) {
-				throw new QueryEvaluationException("Unsupported blank-node identity: value copy changed its alias");
-			}
-			Provenance provenance = remote.getProvenance();
-			if (provenance == null) {
-				throw new QueryEvaluationException(
-						"Unsupported blank-node identity: remote provenance is no longer available");
-			}
-			if (captured == original || captured instanceof RemoteBNode copy && copy.registry == remote.registry
-					&& copy.localOwner == remote.localOwner && copy.getProvenance() == provenance) {
-				return captured;
-			}
-			return new RemoteBNode(((BNode) captured).getID(), remote.registry, remote.localOwner, provenance);
+			return preserveRemoteBNode(remote, captured);
 		}
 		if (original instanceof TripleTerm originalTriple && captured instanceof TripleTerm capturedTriple) {
-			Value subject = preserveProvenance(originalTriple.getSubject(), capturedTriple.getSubject());
-			Value object = preserveProvenance(originalTriple.getObject(), capturedTriple.getObject());
-			if (subject != capturedTriple.getSubject() || object != capturedTriple.getObject()) {
-				return SimpleValueFactory.getInstance()
-						.createTripleTerm((Resource) subject,
-								capturedTriple.getPredicate(), object);
-			}
+			return preserveTripleProvenance(originalTriple, capturedTriple);
 		}
-		if (containsRemoteIdentity(original) && !(captured instanceof TripleTerm)) {
+		if (!(captured instanceof TripleTerm) && containsRemoteIdentity(original)) {
 			throw new QueryEvaluationException("Unsupported blank-node identity: value copy lost nested provenance");
 		}
 		return captured;
 	}
 
+	private static Value preserveRemoteBNode(RemoteBNode remote, Value captured) {
+		if (!(captured instanceof BNode) || !remote.getID().equals(((BNode) captured).getID())) {
+			throw new QueryEvaluationException("Unsupported blank-node identity: value copy changed its alias");
+		}
+		Provenance provenance = remote.getProvenance();
+		if (provenance == null) {
+			throw new QueryEvaluationException(
+					"Unsupported blank-node identity: remote provenance is no longer available");
+		}
+		if (captured == remote || captured instanceof RemoteBNode copy && copy.registry == remote.registry
+				&& copy.localOwner == remote.localOwner && copy.getProvenance() == provenance) {
+			return captured;
+		}
+		return new RemoteBNode(((BNode) captured).getID(), remote.registry, remote.localOwner, provenance);
+	}
+
+	/** Preserves nested aliases without recursive calls or a second materialized copy of unchanged triples. */
+	private static Value preserveTripleProvenance(TripleTerm original, TripleTerm captured) {
+		if (original == captured) {
+			return captured;
+		}
+		Map<IdentityPair, Value> completed = new HashMap<>();
+		Set<IdentityPair> active = new HashSet<>();
+		ArrayDeque<PreservationFrame> pending = new ArrayDeque<>();
+		PreservationFrame root = new PreservationFrame(original, captured);
+		pending.push(root);
+		active.add(root.key);
+
+		while (!pending.isEmpty()) {
+			PreservationFrame frame = pending.peek();
+			Value known = completed.get(frame.key);
+			if (known != null) {
+				pending.pop();
+				active.remove(frame.key);
+				continue;
+			}
+
+			if (frame.original == frame.captured && !(frame.original instanceof RemoteBNode)) {
+				completed.put(frame.key, frame.captured);
+				pending.pop();
+				active.remove(frame.key);
+				continue;
+			}
+
+			if (frame.original instanceof RemoteBNode remote) {
+				completed.put(frame.key, preserveRemoteBNode(remote, frame.captured));
+				pending.pop();
+				active.remove(frame.key);
+				continue;
+			}
+
+			if (!(frame.original instanceof TripleTerm originalTriple)
+					|| !(frame.captured instanceof TripleTerm capturedTriple)) {
+				if (!(frame.captured instanceof TripleTerm) && containsRemoteIdentity(frame.original)) {
+					throw new QueryEvaluationException(
+							"Unsupported blank-node identity: value copy lost nested provenance");
+				}
+				completed.put(frame.key, frame.captured);
+				pending.pop();
+				active.remove(frame.key);
+				continue;
+			}
+
+			if (!frame.childrenLoaded) {
+				frame.originalSubject = originalTriple.getSubject();
+				frame.capturedSubject = capturedTriple.getSubject();
+				frame.originalObject = originalTriple.getObject();
+				frame.capturedObject = capturedTriple.getObject();
+				frame.subjectKey = new IdentityPair(frame.originalSubject, frame.capturedSubject);
+				frame.objectKey = new IdentityPair(frame.originalObject, frame.capturedObject);
+				frame.childrenLoaded = true;
+			}
+
+			if (frame.nextChild < 2) {
+				IdentityPair childKey = frame.nextChild == 0 ? frame.subjectKey : frame.objectKey;
+				Value originalChild = frame.nextChild == 0 ? frame.originalSubject : frame.originalObject;
+				Value capturedChild = frame.nextChild == 0 ? frame.capturedSubject : frame.capturedObject;
+				Value childResult = completed.get(childKey);
+				if (childResult != null) {
+					frame.setChildResult(frame.nextChild, childResult);
+					frame.nextChild++;
+					continue;
+				}
+				if (originalChild == capturedChild && !(originalChild instanceof RemoteBNode)) {
+					completed.put(childKey, capturedChild);
+					frame.setChildResult(frame.nextChild, capturedChild);
+					frame.nextChild++;
+					continue;
+				}
+				if (active.contains(childKey)) {
+					throw new QueryEvaluationException("Cyclic RDF value cannot preserve blank-node provenance");
+				}
+				active.add(childKey);
+				pending.push(new PreservationFrame(originalChild, capturedChild));
+				continue;
+			}
+
+			Value preserved = frame.preservedSubject != frame.capturedSubject
+					|| frame.preservedObject != frame.capturedObject
+							? SimpleValueFactory.getInstance()
+									.createTripleTerm((Resource) frame.preservedSubject,
+											capturedTriple.getPredicate(), frame.preservedObject)
+							: frame.captured;
+			completed.put(frame.key, preserved);
+			pending.pop();
+			active.remove(frame.key);
+		}
+
+		return completed.get(root.key);
+	}
+
+	private static final class PreservationFrame {
+		private final Value original;
+		private final Value captured;
+		private final IdentityPair key;
+		private Value originalSubject;
+		private Value capturedSubject;
+		private Value originalObject;
+		private Value capturedObject;
+		private Value preservedSubject;
+		private Value preservedObject;
+		private IdentityPair subjectKey;
+		private IdentityPair objectKey;
+		private int nextChild;
+		private boolean childrenLoaded;
+
+		private PreservationFrame(Value original, Value captured) {
+			this.original = original;
+			this.captured = captured;
+			key = new IdentityPair(original, captured);
+		}
+
+		private void setChildResult(int child, Value result) {
+			if (child == 0) {
+				preservedSubject = result;
+			} else {
+				preservedObject = result;
+			}
+		}
+	}
+
+	private static final class IdentityPair {
+		private final Value original;
+		private final Value captured;
+
+		private IdentityPair(Value original, Value captured) {
+			this.original = original;
+			this.captured = captured;
+		}
+
+		@Override
+		public int hashCode() {
+			return 31 * System.identityHashCode(original) + System.identityHashCode(captured);
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			return this == other || other instanceof IdentityPair pair
+					&& original == pair.original && captured == pair.captured;
+		}
+	}
+
 	/** Identifies imported aliases for serializers that promise reusable local repository handles. */
 	public static boolean containsRemoteIdentity(Value value) {
+		if (value == null) {
+			return false;
+		}
 		if (value instanceof RemoteBNode) {
 			return true;
 		}
-		return value instanceof TripleTerm triple && (containsRemoteIdentity(triple.getSubject())
-				|| containsRemoteIdentity(triple.getObject()));
+		if (!(value instanceof TripleTerm)) {
+			return false;
+		}
+		Set<Value> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+		ArrayDeque<Value> pending = new ArrayDeque<>();
+		pending.push(value);
+		while (!pending.isEmpty()) {
+			Value current = pending.pop();
+			if (current instanceof RemoteBNode) {
+				return true;
+			}
+			if (current instanceof TripleTerm triple && visited.add(current)) {
+				pending.push(triple.getSubject());
+				pending.push(triple.getObject());
+			}
+		}
+		return false;
 	}
 
 	private static final class Registry {

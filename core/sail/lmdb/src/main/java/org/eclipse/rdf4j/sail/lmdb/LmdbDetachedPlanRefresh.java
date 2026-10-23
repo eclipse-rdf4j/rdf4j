@@ -20,16 +20,20 @@ import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPlan;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPlanner;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCacheMemory;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCascadesPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanDecisionSummary;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanRefreshResult;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanRefreshWork;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedProviderCacheIdentity;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 
@@ -63,6 +67,7 @@ final class LmdbDetachedPlanRefresh implements LmdbPlanDecisionCache.DetachedRef
 	private final boolean preserveObservationOrder;
 	private final boolean runtimeTelemetry;
 	private final QueryEvaluationMode queryEvaluationMode;
+	private final boolean experimentalQueryOptimizations;
 	private final LmdbCascadesOptimizer.Mode mode;
 	private final long predicateRangeVersion;
 	private final LmdbPipelinePlanCache.PredicateRangeIdentity buildRangeIdentity;
@@ -70,6 +75,9 @@ final class LmdbDetachedPlanRefresh implements LmdbPlanDecisionCache.DetachedRef
 	private final LmdbPlanAssumptions assumptions;
 	private final long buildDataRevision;
 	private final long retainedBytes;
+	private final LmdbFilterReadContext.FamilyIdentity filterReadIdentity;
+	private final LmdbPipelinePlanCache.InputIdentity inputIdentity;
+	private final PackedProviderCacheIdentity retainedIdentity;
 
 	LmdbDetachedPlanRefresh(LmdbEstimatorRuntime runtime,
 			LmdbDetachedPlanningSnapshotProvider detachedPlanningSnapshots, PackedPlanRefreshWork packedWork,
@@ -79,6 +87,56 @@ final class LmdbDetachedPlanRefresh implements LmdbPlanDecisionCache.DetachedRef
 			LmdbCascadesOptimizer.Mode mode, long predicateRangeVersion,
 			LmdbPipelinePlanCache.PredicateRangeIdentity buildRangeIdentity, boolean predicateRangeProofsAllowed,
 			LmdbPlanAssumptions assumptions, long buildDataRevision) {
+		this(runtime, detachedPlanningSnapshots, packedWork, datasetIdentity, bindingIdentity, trackResultSize,
+				preserveObservationOrder, runtimeTelemetry, queryEvaluationMode, mode, predicateRangeVersion,
+				buildRangeIdentity, predicateRangeProofsAllowed, assumptions, buildDataRevision, false);
+	}
+
+	LmdbDetachedPlanRefresh(LmdbEstimatorRuntime runtime,
+			LmdbDetachedPlanningSnapshotProvider detachedPlanningSnapshots, PackedPlanRefreshWork packedWork,
+			LmdbPipelinePlanCache.DatasetIdentity datasetIdentity,
+			LmdbPipelinePlanCache.BindingIdentity bindingIdentity, boolean trackResultSize,
+			boolean preserveObservationOrder, boolean runtimeTelemetry, QueryEvaluationMode queryEvaluationMode,
+			LmdbCascadesOptimizer.Mode mode, long predicateRangeVersion,
+			LmdbPipelinePlanCache.PredicateRangeIdentity buildRangeIdentity, boolean predicateRangeProofsAllowed,
+			LmdbPlanAssumptions assumptions, long buildDataRevision, boolean experimentalQueryOptimizations) {
+		this(runtime, detachedPlanningSnapshots, packedWork, datasetIdentity, bindingIdentity, trackResultSize,
+				preserveObservationOrder, runtimeTelemetry, queryEvaluationMode, mode, predicateRangeVersion,
+				buildRangeIdentity, predicateRangeProofsAllowed, assumptions, buildDataRevision,
+				experimentalQueryOptimizations, null);
+	}
+
+	LmdbDetachedPlanRefresh(LmdbEstimatorRuntime runtime,
+			LmdbDetachedPlanningSnapshotProvider detachedPlanningSnapshots, PackedPlanRefreshWork packedWork,
+			LmdbPipelinePlanCache.DatasetIdentity datasetIdentity,
+			LmdbPipelinePlanCache.BindingIdentity bindingIdentity, boolean trackResultSize,
+			boolean preserveObservationOrder, boolean runtimeTelemetry, QueryEvaluationMode queryEvaluationMode,
+			LmdbCascadesOptimizer.Mode mode, long predicateRangeVersion,
+			LmdbPipelinePlanCache.PredicateRangeIdentity buildRangeIdentity, boolean predicateRangeProofsAllowed,
+			LmdbPlanAssumptions assumptions, long buildDataRevision, boolean experimentalQueryOptimizations,
+			LmdbFilterReadContext.FamilyIdentity filterReadIdentity) {
+		this(runtime, detachedPlanningSnapshots, packedWork, datasetIdentity, bindingIdentity, trackResultSize,
+				preserveObservationOrder, runtimeTelemetry, queryEvaluationMode, mode, predicateRangeVersion,
+				buildRangeIdentity, predicateRangeProofsAllowed, assumptions, buildDataRevision,
+				experimentalQueryOptimizations, filterReadIdentity, null);
+	}
+
+	LmdbDetachedPlanRefresh(LmdbEstimatorRuntime runtime,
+			LmdbDetachedPlanningSnapshotProvider detachedPlanningSnapshots, PackedPlanRefreshWork packedWork,
+			LmdbPipelinePlanCache.DatasetIdentity datasetIdentity,
+			LmdbPipelinePlanCache.BindingIdentity bindingIdentity, boolean trackResultSize,
+			boolean preserveObservationOrder, boolean runtimeTelemetry, QueryEvaluationMode queryEvaluationMode,
+			LmdbCascadesOptimizer.Mode mode, long predicateRangeVersion,
+			LmdbPipelinePlanCache.PredicateRangeIdentity buildRangeIdentity, boolean predicateRangeProofsAllowed,
+			LmdbPlanAssumptions assumptions, long buildDataRevision, boolean experimentalQueryOptimizations,
+			LmdbFilterReadContext.FamilyIdentity filterReadIdentity,
+			LmdbPipelinePlanCache.InputIdentity inputIdentity) {
+		this.inputIdentity = inputIdentity == null ? new LmdbPipelinePlanCache.InputIdentity(datasetIdentity,
+				bindingIdentity, buildRangeIdentity, "", filterReadIdentity, null) : inputIdentity;
+		this.retainedIdentity = new RetainedIdentity(this.inputIdentity, packedWork, buildRangeIdentity,
+				assumptions == null ? LmdbPlanAssumptions.NONE : assumptions);
+		this.filterReadIdentity = filterReadIdentity;
+		this.experimentalQueryOptimizations = experimentalQueryOptimizations;
 		this.runtime = Objects.requireNonNull(runtime, "runtime");
 		this.detachedPlanningSnapshots = Objects.requireNonNull(detachedPlanningSnapshots,
 				"detachedPlanningSnapshots");
@@ -122,16 +180,20 @@ final class LmdbDetachedPlanRefresh implements LmdbPlanDecisionCache.DetachedRef
 		boolean storeDefaults = datasetIdentity.usesStoreDefaults();
 		OptionalLong detachedSnapshotEpoch = OptionalLong.of(snapshotEpoch);
 		DefaultEvaluationStrategy evaluationStrategy = new DefaultEvaluationStrategy(tripleSource, dataset, null);
+		evaluationStrategy.setQueryExecutionPolicy(QueryExecutionPolicy.of(experimentalQueryOptimizations));
 		evaluationStrategy.setQueryEvaluationMode(queryEvaluationMode);
 		LmdbPackedCostModel costModel = new LmdbPackedCostModel(runtime, detachedSnapshotEpoch, storeDefaults,
-				tripleSource, evaluationStrategy, !preserveObservationOrder);
+				tripleSource, evaluationStrategy, !preserveObservationOrder,
+				filterReadIdentity == null ? null
+						: LmdbFilterReadContext.capture(runtime, tripleSource, dataset,
+								bindings, packedWork.preparedSource(), filterReadIdentity));
 		// A family planned without predicate-range proofs (dirty-txn planning) must refresh without them too:
 		// the refreshed plan is served back to the same family, and the packed cache context must stay coherent.
 		LmdbPackedPredicateRangeProvider rangeProvider = predicateRangeProofsAllowed
 				? new LmdbPackedPredicateRangeProvider(runtime)
 				: null;
 		PackedPlanCache.Context packedContext = LmdbCascadesOptimizer.cacheContext(dataset, bindings,
-				packedWork.optimizationGoal(), costModel, rangeProvider, runtime);
+				packedWork.optimizationGoal(), costModel, rangeProvider, runtime, experimentalQueryOptimizations);
 		PackedPlanRefreshResult refreshed;
 		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = runtime.beginScope()) {
 			refreshed = PackedCascadesPlanner.refresh(packedWork, runtime.cascadesPlanCache(), packedContext,
@@ -144,7 +206,8 @@ final class LmdbDetachedPlanRefresh implements LmdbPlanDecisionCache.DetachedRef
 				preserveObservationOrder);
 		TupleExpr executable = annotator.installDetachedPlan(refreshed.refreshedPlan().selectedPlan(), cascadesPlan,
 				mode, runtimeTelemetry);
-		LmdbQueryOptimizerPipeline.finalizeOrderAndLimit(executable, dataset, bindings);
+		executable = LmdbQueryOptimizerPipeline.finalizeOrderAndLimit(executable, dataset, bindings, tripleSource,
+				experimentalQueryOptimizations);
 		assumptions.annotate(executable);
 		LmdbEstimatorRuntime.PlanningRevisions currentRevisions = runtime.capturePlanningRevisions();
 		LmdbPipelinePlanCache.PredicateRangeIdentity currentRangeIdentity = LmdbPipelinePlanCache.PredicateRangeIdentity
@@ -169,7 +232,8 @@ final class LmdbDetachedPlanRefresh implements LmdbPlanDecisionCache.DetachedRef
 		LmdbDetachedPlanRefresh nextRefresh = new LmdbDetachedPlanRefresh(runtime, detachedPlanningSnapshots,
 				packedWork.forIncumbent(summary), datasetIdentity, bindingIdentity, trackResultSize,
 				preserveObservationOrder, runtimeTelemetry, queryEvaluationMode, mode, predicateRangeVersion,
-				currentRangeIdentity, predicateRangeProofsAllowed, assumptions, buildRevisions.dataRevision());
+				currentRangeIdentity, predicateRangeProofsAllowed, assumptions, buildRevisions.dataRevision(),
+				experimentalQueryOptimizations, filterReadIdentity, inputIdentity);
 		return new LmdbPlanDecisionCache.RefreshComputation(buildEvidence, currentEvidence, executable,
 				summary.physicalFingerprint(), selectedInterval, incumbentInterval,
 				LmdbPipelinePlanCache.certificate(summary, buildEvidence.globalEpoch()),
@@ -177,6 +241,31 @@ final class LmdbDetachedPlanRefresh implements LmdbPlanDecisionCache.DetachedRef
 				0L, predicateRangeDependent ? currentRangeIdentity : null, predicateRangeDependent,
 				committedSnapshotDependent ? buildRevisions.dataRevision() : 0L, committedSnapshotDependent,
 				nextRefresh);
+	}
+
+	@Override
+	public PackedProviderCacheIdentity cacheIdentity() {
+		return retainedIdentity;
+	}
+
+	@Override
+	public void accountCacheIdentity(FactorCostCacheKey.ProviderRetainedMemory memory) {
+		memory.account(retainedIdentity);
+	}
+
+	private record RetainedIdentity(LmdbPipelinePlanCache.InputIdentity input, PackedPlanRefreshWork work,
+			LmdbPipelinePlanCache.PredicateRangeIdentity ranges, LmdbPlanAssumptions assumptions)
+			implements PackedProviderCacheIdentity {
+		@Override
+		public boolean accountRetainedMemory(
+				RetainedMemoryAccount account) {
+			account = PackedCacheMemory.ownedAccount(account);
+			if (!account.add(this, 48L)) {
+				return true;
+			}
+			return input.accountRetainedMemory(account) && work.accountRetainedMemory(account)
+					&& ranges.accountRetainedMemory(account) && assumptions.accountCacheMemory(account);
+		}
 	}
 
 	@Override
@@ -225,13 +314,14 @@ final class LmdbDetachedPlanRefresh implements LmdbPlanDecisionCache.DetachedRef
 		return identity.toDataset();
 	}
 
-	private static BindingSet bindings(LmdbPipelinePlanCache.BindingIdentity identity) {
+	static BindingSet bindings(LmdbPipelinePlanCache.BindingIdentity identity) {
 		if (identity.values().isEmpty()) {
 			return null;
 		}
 		MapBindingSet bindings = new MapBindingSet(identity.values().size());
+		LmdbQueryValueIdentity.Materializer materializer = new LmdbQueryValueIdentity.Materializer();
 		for (LmdbPipelinePlanCache.BoundValue value : identity.values()) {
-			bindings.addBinding(value.name(), value.value());
+			bindings.addBinding(value.name(), materializer.of(value.identity()));
 		}
 		return bindings;
 	}

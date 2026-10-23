@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -168,9 +169,15 @@ class LmdbExactProbeCacheDataRevisionTest {
 	private static void assertExactProbeCacheFresh(File dataDir, LmdbStoreConfig config, boolean sketch) {
 		String first = "SELECT ?s WHERE { ?s <urn:p> ?o FILTER(?o = 5) }";
 		String second = "SELECT ?o ?s WHERE { ?s <urn:p> ?o FILTER(?o = 5) }";
+		if (sketch) {
+			config.setExperimentalQueryOptimizations(true);
+		}
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
 		repository.init();
 		LmdbStore store = (LmdbStore) repository.getSail();
+		if (sketch) {
+			assertSketchFixtureProfile(store);
+		}
 		try (RepositoryConnection connection = repository.getConnection()) {
 			connection.add(A, P, REPOSITORY_VF.createLiteral("5", XSD.INTEGER));
 			connection.add(B, P, REPOSITORY_VF.createLiteral("6", XSD.INTEGER));
@@ -305,5 +312,19 @@ class LmdbExactProbeCacheDataRevisionTest {
 	}
 
 	private record ProbeFixture(LmdbFilterSelectivityStats stats, TripleStore tripleStore) {
+	}
+
+	private static void assertSketchFixtureProfile(LmdbStore store) {
+		try {
+			assertTrue(store.getQueryExecutionPolicy().experimentalQueryOptimizations());
+			assertNotNull(store.getBackingStore().getSketchBasedJoinEstimator());
+		} catch (AssertionError failure) {
+			try {
+				store.shutDown();
+			} catch (RuntimeException | Error closeFailure) {
+				failure.addSuppressed(closeFailure);
+			}
+			throw failure;
+		}
 	}
 }

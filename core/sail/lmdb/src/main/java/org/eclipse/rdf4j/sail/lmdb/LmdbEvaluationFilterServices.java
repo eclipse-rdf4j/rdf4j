@@ -16,19 +16,24 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbFilterPassSelection.unknownFilterP
 
 import java.util.function.BooleanSupplier;
 
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.RuntimeFeedbackTarget;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider.QueryOptimizationScope;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
+import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 
 /** Filter estimation and runtime-target policy behind the statistics interface adapter. */
 final class LmdbEvaluationFilterServices {
 
+	private final LmdbLearnedFilterSelectivity learned;
+	private LmdbFilterOutcomeFeedbackDescriptor.ReadIdentity readIdentity;
 	private final LmdbEstimatorRuntime runtime;
 	private final LmdbFilterSelectivityStats filterStatistics;
 	private final SketchBasedJoinEstimator estimator;
@@ -36,14 +41,70 @@ final class LmdbEvaluationFilterServices {
 
 	LmdbEvaluationFilterServices(LmdbEstimatorRuntime runtime, LmdbFilterSelectivityStats filterStatistics,
 			SketchBasedJoinEstimator estimator, BooleanSupplier adaptiveEvidenceAllowedSupplier) {
+		this(runtime, filterStatistics, estimator, adaptiveEvidenceAllowedSupplier, null);
+	}
+
+	LmdbEvaluationFilterServices(LmdbEstimatorRuntime runtime, LmdbFilterSelectivityStats filterStatistics,
+			SketchBasedJoinEstimator estimator, BooleanSupplier adaptiveEvidenceAllowedSupplier,
+			LmdbLearnedFilterSelectivity learned) {
+		this.learned = learned;
+		if (learned != null) {
+			learned.bindOwner(runtime.valueStore(), runtime.physicalTripleStore());
+		}
 		this.runtime = runtime;
 		this.filterStatistics = filterStatistics;
 		this.estimator = estimator;
 		this.adaptiveEvidenceAllowedSupplier = adaptiveEvidenceAllowedSupplier;
 	}
 
+	void bindReadSource(TripleSource source, Dataset dataset) {
+		readIdentity = learned == null ? null
+				: LmdbFilterOutcomeFeedbackDescriptor.readIdentity(runtime, source, dataset);
+	}
+
+	LmdbFilterReadContext filterReadContext() {
+		return LmdbFilterReadContext.bound(runtime, readIdentity);
+	}
+
+	void prepareFilterOutcome(Filter filter, TripleSource source, Dataset dataset) {
+		bindReadSource(source, dataset);
+		if (!optionalOutcomeAllowed() || readIdentity == null || !LmdbPlanningGraphEvidence.allows(filter)
+				|| !LmdbReinvocablePositions.filterOutcomeRecordable(filter)) {
+			return;
+		}
+		LmdbFilterOutcomeFeedbackDescriptor descriptor = LmdbFilterOutcomeFeedbackDescriptor.captureSource(
+				learned.outcomeOwnerToken(), runtime, source, dataset, filter);
+		if (descriptor == null) {
+			return;
+		}
+		readIdentity = descriptor.read();
+		if (filter.getRuntimeFeedbackContract() != null) {
+			return;
+		}
+		long epoch = descriptor.epoch();
+		filter.setRuntimeFeedbackContract(new RuntimeFeedbackContract(descriptor,
+				RuntimeFeedbackContract.PredictionVector.UNKNOWN, RuntimeFeedbackContract.PredictionVector.UNKNOWN,
+				0.0d, 0.0d, 0.0d, Double.POSITIVE_INFINITY, RuntimeFeedbackContract.SemanticKind.FILTER,
+				RuntimeFeedbackContract.Algorithm.UNKNOWN, RuntimeFeedbackContract.Access.UNKNOWN,
+				0, epoch, epoch, 0L, RuntimeFeedbackContract.ADMIT_FILTER));
+		filter.setCostFeedbackTrackingEnabled(true);
+	}
+
+	private boolean optionalOutcomeAllowed() {
+		return learned != null && adaptiveEvidenceAllowed() && runtime.adaptiveEvidenceAllowed()
+				&& (estimator == null || estimator.adaptiveEvidenceAllowed());
+	}
+
+	private LmdbFilterOutcomeFeedbackDescriptor outcomeDescriptor(Filter filter) {
+		return optionalOutcomeAllowed() && readIdentity != null
+				&& readIdentity.dataEpoch() == runtime.snapshotVersion() && LmdbPlanningGraphEvidence.allows(filter)
+				&& LmdbReinvocablePositions.filterOutcomeRecordable(filter)
+				? LmdbFilterOutcomeFeedbackDescriptor.capture(learned.outcomeOwnerToken(), readIdentity.dataEpoch(),
+						readIdentity, filter) : null;
+	}
+
 	boolean supportsFilterSelectivityCosting() {
-		return filterStatistics != null;
+		return filterStatistics != null || learned != null;
 	}
 
 	double estimateFilterPassRatio(Filter filter) {
@@ -62,8 +123,15 @@ final class LmdbEvaluationFilterServices {
 		}
 		boolean adaptiveEvidenceAllowed = adaptiveEvidenceAllowed()
 				&& (estimator == null || estimator.adaptiveEvidenceAllowed());
-		return LmdbFilterPassSelection.bestAvailable(filterStatistics, filter, pattern, heuristic,
+		EvaluationStatistics.FilterPassEstimate best = LmdbFilterPassSelection.bestAvailable(filterStatistics, filter, pattern, heuristic,
 				adaptiveEvidenceAllowed);
+		return learned == null || !adaptiveEvidenceAllowed
+				|| runtime.frontierSettings().mode() == FrontierEstimatorMode.AUTHORITATIVE
+				? best : LmdbFilterPassSelection.prefer(best,
+				LmdbFilterPassSelection.prefer(
+						learned.estimateQualified(runtime.valueStore(), runtime.snapshotVersion(),
+								filter, readIdentity),
+						learned.estimateQualified(runtime.valueStore(), runtime.snapshotVersion(), filter)));
 	}
 
 	private EvaluationStatistics.FilterPassEstimate heuristicFilterPass(Filter filter) {
@@ -92,6 +160,18 @@ final class LmdbEvaluationFilterServices {
 	}
 
 	void recordFilterOutcome(Filter filter, EvaluationStatistics.FilterOutcomeObservation observation) {
+		RuntimeFeedbackContract contract = filter == null ? null : filter.getRuntimeFeedbackContract();
+		if (learned != null && adaptiveEvidenceAllowed() && runtime.adaptiveEvidenceAllowed()
+				&& (estimator == null || estimator.adaptiveEvidenceAllowed())
+				&& filter != null && LmdbPlanningGraphEvidence.allows(filter)
+				&& contract != null && contract.admits(RuntimeFeedbackContract.ADMIT_FILTER)
+				&& contract.dataEpoch() == runtime.snapshotVersion() && contract.catalogEpoch() == runtime.snapshotVersion()
+				&& contract.descriptor() instanceof LmdbRuntimeFeedbackDescriptor descriptor
+				&& observation != null && observation.completed() && observation.poisonReason().isEmpty()
+				&& LmdbReinvocablePositions.filterOutcomeRecordable(filter)) {
+			learned.recordQualified(runtime.valueStore(), runtime.snapshotVersion(), descriptor, filter, observation);
+		}
+
 		if (adaptiveEvidenceAllowed() && filterStatistics != null && LmdbPlanningGraphEvidence.allows(filter)
 				&& LmdbRuntimeFeedbackDescriptor.allowsFeedback(filter, RuntimeFeedbackContract.ADMIT_FILTER)
 				&& observation != null
@@ -113,9 +193,20 @@ final class LmdbEvaluationFilterServices {
 		}
 		LmdbFilterSelectivityStats.ResolvedFilterCells filterCells = node instanceof Filter filter
 				&& filterStatistics != null && contract.admits(RuntimeFeedbackContract.ADMIT_FILTER)
+				&& !(contract.descriptor() instanceof LmdbFilterOutcomeFeedbackDescriptor)
 						? filterStatistics.resolveRuntimeFeedbackTarget(filter)
 						: null;
-		RuntimeFeedbackTarget target = feedback.resolveRuntimeFeedbackTarget(contract, filterStatistics, filterCells);
+		LmdbLearnedFilterSelectivity.BoundOutcome learnedOutcome = null;
+		if (node instanceof Filter filter && contract.admits(RuntimeFeedbackContract.ADMIT_FILTER)) {
+			LmdbFilterOutcomeFeedbackDescriptor descriptor = outcomeDescriptor(filter);
+			if (descriptor != null && (!(contract.descriptor() instanceof LmdbFilterOutcomeFeedbackDescriptor existing)
+					|| existing.equals(descriptor))) {
+				learnedOutcome = learned.bindOutcome(runtime.valueStore(), runtime.physicalTripleStore(),
+						descriptor, this::optionalOutcomeAllowed);
+			}
+		}
+		RuntimeFeedbackTarget target = feedback.resolveRuntimeFeedbackTarget(contract, filterStatistics, filterCells,
+				learnedOutcome);
 		traceRuntimeTarget(node, contract, target);
 		if (!target.active() && filterStatistics != null) {
 			filterStatistics.releaseRuntimeFeedbackTarget(filterCells);

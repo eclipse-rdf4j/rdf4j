@@ -36,6 +36,7 @@ import java.util.function.Consumer;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -64,9 +65,9 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.DistinctBindingFeedback;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics.InvocationAggregateObservation;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics.SemiAntiOutcomeObservation;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.InvocationAggregateView;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.RuntimeFeedbackAccumulator;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.RuntimeFeedbackTarget;
@@ -76,8 +77,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoConfidenceMod
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoEvidence;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoLearnedEvidenceService;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoMemoFeedback;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorKey;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorKey.UnkeyableOperatorException;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorKey;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorLearningPolicy;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanCandidate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanRanking;
@@ -315,6 +316,34 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	synchronized RuntimeFeedbackTarget resolveRuntimeFeedbackTarget(RuntimeFeedbackContract contract,
 			LmdbFilterSelectivityStats filterStatistics,
 			LmdbFilterSelectivityStats.ResolvedFilterCells filterCells) {
+		return resolveRuntimeFeedbackTarget(contract, filterStatistics, filterCells, null);
+	}
+
+	synchronized RuntimeFeedbackTarget resolveRuntimeFeedbackTarget(RuntimeFeedbackContract contract,
+			LmdbFilterSelectivityStats filterStatistics,
+			LmdbFilterSelectivityStats.ResolvedFilterCells filterCells,
+			LmdbLearnedFilterSelectivity.BoundOutcome learnedOutcome) {
+		if (adaptiveEvidenceAllowed() && contract != null
+				&& contract.descriptor() instanceof LmdbFilterOutcomeFeedbackDescriptor) {
+			if (contract.admissionFlags() != RuntimeFeedbackContract.ADMIT_FILTER || learnedOutcome == null
+					|| contract.semanticKind() != RuntimeFeedbackContract.SemanticKind.FILTER
+					|| !contract.rawPrediction().equals(RuntimeFeedbackContract.PredictionVector.UNKNOWN)
+					|| !contract.appliedPrediction().equals(RuntimeFeedbackContract.PredictionVector.UNKNOWN)
+					|| !Double.isNaN(contract.rawLogicalCardinality())
+					|| !Double.isNaN(contract.appliedLogicalCardinality())
+					|| !contract.rawDependentPrediction()
+							.equals(RuntimeFeedbackContract.DependentPredictionVector.UNKNOWN)
+					|| !contract.appliedDependentPrediction()
+							.equals(RuntimeFeedbackContract.DependentPredictionVector.UNKNOWN)
+					|| contract.algorithm() != RuntimeFeedbackContract.Algorithm.UNKNOWN
+					|| contract.access() != RuntimeFeedbackContract.Access.UNKNOWN
+					|| contract.physicalImplementationId() != 0) {
+				return RuntimeFeedbackTarget.NO_OP;
+			}
+			return new RuntimeFeedbackAccumulator(contract, new BoundRuntimeFeedbackDestination(this, contract,
+					frontierLearning, null, planLifecycle, null, null, null, null, runtimeTargetGeneration,
+					learnedOutcome));
+		}
 		if (adaptiveEvidenceAllowed() && contract != null
 				&& contract.descriptor()instanceof LmdbPhysicalEventFeedbackDescriptor physical) {
 			// No logical/filter/lifecycle/exact destination exists for this descriptor type.
@@ -370,7 +399,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		}
 		BoundRuntimeFeedbackDestination destination = new BoundRuntimeFeedbackDestination(this, contract,
 				learningModel, learningCells, lifecycleStore, lifecycle, exactFact,
-				filterStatistics, filterCells, runtimeTargetGeneration);
+				filterStatistics, filterCells, runtimeTargetGeneration, learnedOutcome);
 		return new RuntimeFeedbackAccumulator(contract, destination);
 	}
 
@@ -543,6 +572,17 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 					+ " rootCompleted=" + observation.rootCompleted()
 					+ " exactLogical=" + observation.exactLogicalCardinality());
 		}
+		if (destination.learnedOutcome != null && destination.inputQualified
+				&& destination.inputOpens == observation.opens() && observation.rootCompleted()
+				&& observation.opens() > 0L && observation.exhaustedOpens() == observation.opens()
+				&& observation.earlySuccesses() == 0L && observation.partialCloses() == 0L
+				&& observation.cancellations() == 0L && observation.failures() == 0L) {
+			destination.learnedOutcome.record(observation.filterPassed(), observation.filterRejected());
+		}
+		if (destination.contract.descriptor() instanceof LmdbFilterOutcomeFeedbackDescriptor) {
+			// This channel owns no persistent operator/model/lifecycle/exact sidecar cells.
+			return;
+		}
 		long epoch = nextFeedbackEpoch();
 		boolean changed = destination.learningModel.observeResolved(
 				destination.learningCells, destination.contract, observation, epoch);
@@ -623,6 +663,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		private final LmdbFilterSelectivityStats filterStatistics;
 		private final LmdbFilterSelectivityStats.ResolvedFilterCells filterCells;
 		private final long generation;
+		private final LmdbLearnedFilterSelectivity.BoundOutcome learnedOutcome;
+		private boolean inputQualified = true;
+		private long inputOpens;
 		private boolean released;
 
 		private BoundRuntimeFeedbackDestination(LmdbOperatorFeedbackStats owner, RuntimeFeedbackContract contract,
@@ -630,6 +673,16 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 				PlanLifecycleStore lifecycleStore, PlanLifecycleStore.ResolvedEntry lifecycle,
 				ExactCardinalityCell exactFact, LmdbFilterSelectivityStats filterStatistics,
 				LmdbFilterSelectivityStats.ResolvedFilterCells filterCells, long generation) {
+			this(owner, contract, learningModel, learningCells, lifecycleStore, lifecycle, exactFact,
+					filterStatistics, filterCells, generation, null);
+		}
+
+		private BoundRuntimeFeedbackDestination(LmdbOperatorFeedbackStats owner, RuntimeFeedbackContract contract,
+				FrontierLearningModel learningModel, FrontierLearningModel.ResolvedCells learningCells,
+				PlanLifecycleStore lifecycleStore, PlanLifecycleStore.ResolvedEntry lifecycle,
+				ExactCardinalityCell exactFact, LmdbFilterSelectivityStats filterStatistics,
+				LmdbFilterSelectivityStats.ResolvedFilterCells filterCells, long generation,
+				LmdbLearnedFilterSelectivity.BoundOutcome learnedOutcome) {
 			this.owner = owner;
 			this.contract = contract;
 			this.learningModel = learningModel;
@@ -640,6 +693,17 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			this.filterStatistics = filterStatistics;
 			this.filterCells = filterCells;
 			this.generation = generation;
+			this.learnedOutcome = learnedOutcome;
+		}
+
+		@Override
+		public void open(BindingSet input) {
+			if (learnedOutcome != null) {
+				inputQualified &= learnedOutcome.acceptsInput(input);
+				if (inputOpens < Long.MAX_VALUE) {
+					inputOpens++;
+				}
+			}
 		}
 
 		@Override

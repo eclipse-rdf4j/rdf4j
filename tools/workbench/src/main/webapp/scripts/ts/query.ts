@@ -75,7 +75,7 @@ module workbench {
 
         type ExplainLevel = 'Unoptimized' | 'Optimized' | 'Executed' | 'Telemetry' | 'Timed';
         type ExplainFormat = 'text' | 'dot' | 'json';
-        type StaleReason = 'query' | 'level' | 'format';
+        type StaleReason = 'query' | 'level' | 'format' | 'strategy';
         type ExplanationView = 'text' | 'highlightedText' | 'jsonTree' | 'jsonRawFallback'
             | 'dotRendering' | 'dotReady' | 'dotRenderError';
         type PaneKey = 'primary' | 'compare';
@@ -89,9 +89,11 @@ module workbench {
             queryHash: string;
             level: ExplainLevel;
             requestedFormat: ExplainFormat;
+            forcedLmdbExecutionStrategy: string;
             responseFormat: 'text' | 'json' | 'dot';
             view: ExplanationView;
             rawContent: string;
+            strategyDecisions?: StrategyDecision[];
             displayContent: string;
             lineSeparator: string;
             plan?: queryExplanationHighlighter.QueryPlanNode;
@@ -99,6 +101,25 @@ module workbench {
             timedOut?: boolean;
             /** How long the explanation took, from sending the request to its response. */
             elapsedMs?: number;
+        }
+
+        interface StrategyDecision {
+            decisionPoint: string;
+            capturedAtMillis: number;
+            mode: string;
+            wouldSelect: string;
+            fallback?: string;
+            reason: string;
+            candidates: StrategyCandidate[];
+        }
+
+        interface StrategyCandidate {
+            strategy: string;
+            priority?: number;
+            canAttempt?: boolean;
+            decision: string;
+            declineReason?: string;
+            condition?: string;
         }
 
         interface RequestSignature {
@@ -109,6 +130,7 @@ module workbench {
             queryHash: string;
             level: ExplainLevel;
             format: ExplainFormat;
+            forcedLmdbExecutionStrategy: string;
             groupId?: number;
             /** When the request was sent (Date.now), for its running time. */
             startedAt?: number;
@@ -148,6 +170,7 @@ module workbench {
             compareQueryHash: string;
             explainLevel: ExplainLevel;
             explainFormat: ExplainFormat;
+            forcedLmdbExecutionStrategy: string;
         }
 
         interface QueryPageState {
@@ -166,6 +189,7 @@ module workbench {
             | { type: 'COMPARE_QUERY_CHANGED' }
             | { type: 'EXPLAIN_LEVEL_CHANGED' }
             | { type: 'EXPLAIN_FORMAT_CHANGED' }
+            | { type: 'FORCED_STRATEGY_CHANGED' }
             | { type: 'REQUEST_EXPLAIN'; signature: RequestSignature }
             | { type: 'SPINNER_DELAY_ELAPSED'; signature: RequestSignature }
             | { type: 'EXPLAIN_SUCCESS'; signature: RequestSignature; explanation: StableExplanation }
@@ -567,7 +591,8 @@ module workbench {
                 primaryQueryHash: '',
                 compareQueryHash: '',
                 explainLevel: 'Optimized',
-                explainFormat: 'text'
+                explainFormat: 'text',
+                forcedLmdbExecutionStrategy: ''
             };
         }
 
@@ -576,7 +601,8 @@ module workbench {
                 primaryQueryHash: buildQueryHash(getPaneRawQueryValue('primary')),
                 compareQueryHash: buildQueryHash(getPaneRawQueryValue('compare')),
                 explainLevel: getNormalizedExplainLevel(<string>$('#explain-level').val()),
-                explainFormat: getNormalizedExplainFormat(<string>$('#explain-format').val())
+                explainFormat: getNormalizedExplainFormat(<string>$('#explain-format').val()),
+                forcedLmdbExecutionStrategy: $('#lmdb-forced-strategy').prop('disabled') ? '' : <string>$('#lmdb-forced-strategy').val() || ''
             };
         }
 
@@ -595,6 +621,7 @@ module workbench {
                 queryHash: getPaneQueryHashFromInputs(paneKey, currentInputs),
                 level: currentInputs.explainLevel,
                 format: currentInputs.explainFormat,
+                forcedLmdbExecutionStrategy: currentInputs.forcedLmdbExecutionStrategy,
                 groupId: groupId,
                 startedAt: Date.now()
             };
@@ -642,9 +669,11 @@ module workbench {
                 queryHash: explanation.queryHash,
                 level: explanation.level,
                 requestedFormat: explanation.requestedFormat,
+                forcedLmdbExecutionStrategy: explanation.forcedLmdbExecutionStrategy,
                 responseFormat: explanation.responseFormat,
                 view: explanation.view,
                 rawContent: explanation.rawContent,
+                strategyDecisions: cloneStrategyDecisions(explanation.strategyDecisions),
                 displayContent: explanation.displayContent,
                 lineSeparator: explanation.lineSeparator,
                 plan: explanation.plan,
@@ -671,9 +700,11 @@ module workbench {
                 explanation.queryHash,
                 explanation.level,
                 explanation.requestedFormat,
+                explanation.forcedLmdbExecutionStrategy,
                 explanation.responseFormat,
                 explanation.view,
                 explanation.rawContent,
+                JSON.stringify(explanation.strategyDecisions || []),
                 explanation.lineSeparator,
                 getExplanationDisplayContent(explanation),
                 String(!!explanation.timedOut)
@@ -688,8 +719,10 @@ module workbench {
                 explanation.queryHash,
                 explanation.level,
                 explanation.requestedFormat,
+                explanation.forcedLmdbExecutionStrategy,
                 explanation.responseFormat,
                 explanation.rawContent,
+                JSON.stringify(explanation.strategyDecisions || []),
                 explanation.lineSeparator,
                 getExplanationDisplayContent(explanation)
             ].join('||');
@@ -725,6 +758,9 @@ module workbench {
             }
             if (explanation.requestedFormat !== inputs.explainFormat) {
                 staleReasons.push('format');
+            }
+            if (explanation.forcedLmdbExecutionStrategy !== inputs.forcedLmdbExecutionStrategy) {
+                staleReasons.push('strategy');
             }
             return staleReasons;
         }
@@ -795,6 +831,7 @@ module workbench {
                 && left.queryHash === right.queryHash
                 && left.level === right.level
                 && left.format === right.format
+                && left.forcedLmdbExecutionStrategy === right.forcedLmdbExecutionStrategy
                 && left.groupId === right.groupId;
         }
 
@@ -891,6 +928,7 @@ module workbench {
                     return restorePaneStateFromPrevious(paneState, paneKey, inputs, layout);
                 case 'EXPLAIN_LEVEL_CHANGED':
                 case 'EXPLAIN_FORMAT_CHANGED':
+                case 'FORCED_STRATEGY_CHANGED':
                     return restorePaneStateFromPrevious(paneState, paneKey, inputs, layout);
                 case 'DOT_RENDER_OK':
                     if (paneState.kind !== 'ready'
@@ -1191,6 +1229,7 @@ module workbench {
             content: string;
             format: string;
             error: string;
+            strategyDecisions?: StrategyDecision[];
             lineSeparator?: string;
             timedOut?: boolean;
         }
@@ -2261,6 +2300,69 @@ module workbench {
             restoreExplainButtonViewportTopIfNeeded(paneKey);
         }
 
+        function cloneStrategyDecisions(reports: StrategyDecision[]): StrategyDecision[] {
+            return Array.isArray(reports) ? JSON.parse(JSON.stringify(reports)) : undefined;
+        }
+
+        function createStrategyDecisionTables(reports: StrategyDecision[]): HTMLElement {
+            var surface = document.createElement('div');
+            surface.className = 'query-strategy-decisions';
+            (reports || []).forEach(function(report) {
+                var section = document.createElement('section');
+                var heading = document.createElement('h3');
+                heading.textContent = report.decisionPoint;
+                section.appendChild(heading);
+                var summary = document.createElement('p');
+                summary.className = 'query-strategy-decisions__selection';
+                var selected = report.wouldSelect || (report.mode === 'runtime dependent' ? 'Runtime dependent'
+                    : report.mode === 'no dispatch' ? 'No strategy required' : 'No eligible strategy');
+                summary.textContent = 'Would select now: ' + selected
+                    + ' (' + report.mode + ')' + (report.fallback ? '; fallback: ' + report.fallback : '');
+                section.appendChild(summary);
+                var reason = document.createElement('p');
+                reason.textContent = report.reason || '';
+                section.appendChild(reason);
+                var table = document.createElement('table');
+                var head = document.createElement('thead');
+                var headers = document.createElement('tr');
+                ['Priority', 'Strategy', 'Can attempt?', 'Decision', 'Reason'].forEach(function(label) {
+                    var cell = document.createElement('th');
+                    cell.setAttribute('scope', 'col');
+                    cell.textContent = label;
+                    headers.appendChild(cell);
+                });
+                head.appendChild(headers);
+                table.appendChild(head);
+                var body = document.createElement('tbody');
+                (report.candidates || []).forEach(function(candidate) {
+                    var row = document.createElement('tr');
+                    if (candidate.strategy === report.wouldSelect) row.className = 'query-strategy-decisions__selected';
+                    var eligibility = candidate.canAttempt === true ? 'Yes'
+                        : candidate.canAttempt === false ? 'No' : 'Runtime dependent';
+                    [candidate.priority == null ? '—' : String(candidate.priority), candidate.strategy, eligibility,
+                        candidate.decision, candidate.declineReason || candidate.condition || ''].forEach(function(value) {
+                        var cell = document.createElement('td');
+                        cell.textContent = value;
+                        row.appendChild(cell);
+                    });
+                    body.appendChild(row);
+                });
+                table.appendChild(body);
+                section.appendChild(table);
+                surface.appendChild(section);
+            });
+            return surface;
+        }
+
+        function renderStrategyDecisions(paneKey: PaneKey, explanation: StableExplanation) {
+            var pane = getPaneState(paneKey);
+            var surface = $('#' + pane.explanationId + '-strategies');
+            surface.empty();
+            if (explanation && explanation.strategyDecisions && explanation.strategyDecisions.length) {
+                surface.append(createStrategyDecisionTables(explanation.strategyDecisions));
+            }
+        }
+
         function getSharedHotspotSummary(): queryExplanationHighlighter.HotspotSummary {
             if (explanationHighlightMode !== 'hotspot') {
                 return null;
@@ -2590,6 +2692,9 @@ module workbench {
             var renderContentKey = getStableExplanationContentKey(paneDisplayExplanation)
                 + '||' + explanationHighlightMode + '||' + String(sharedMaximum)
                 + '||' + JSON.stringify(explanationHiddenProperties);
+            if (lastRenderedExplanationKeys[paneKey] !== renderContentKey || !paneDisplayExplanation) {
+                renderStrategyDecisions(paneKey, paneDisplayExplanation);
+            }
 
             $('#' + paneState.copyButtonId).prop('disabled', !paneDisplayExplanation);
             if (!rowVisible) {
@@ -3186,12 +3291,20 @@ module workbench {
             $('#explanation-timeout-help').text(getExplanationTimeoutHelp(queryTimeout));
         }
 
-        function serializeExplainFormData(queryValue: string, level: string, format: string, serverRequestId: string): string {
+        function serializeExplainFormData(
+            queryValue: string,
+            level: string,
+            format: string,
+            serverRequestId: string,
+            forcedLmdbExecutionStrategy?: string
+        ): string {
+            forcedLmdbExecutionStrategy = forcedLmdbExecutionStrategy || '';
             var serializedForm: any[] = <any[]>$('form[action="query"]').serializeArray();
             var transportFormat = getNormalizedExplainFormat(format) === 'text' ? 'json' : format;
             var seenAction = false;
             var seenExplain = false;
             var seenFormat = false;
+            var seenForcedLmdbExecutionStrategy = false;
             var seenInfer = false;
             var seenQuery = false;
             var seenExplainRequestId = false;
@@ -3205,6 +3318,9 @@ module workbench {
                 } else if (serializedForm[i].name === 'explain-format') {
                     serializedForm[i].value = transportFormat;
                     seenFormat = true;
+                } else if (serializedForm[i].name === 'lmdb-forced-strategy') {
+                    serializedForm[i].value = forcedLmdbExecutionStrategy;
+                    seenForcedLmdbExecutionStrategy = true;
                 } else if (serializedForm[i].name === 'infer') {
                     seenInfer = true;
                 } else if (serializedForm[i].name === 'query') {
@@ -3223,6 +3339,9 @@ module workbench {
             }
             if (!seenFormat) {
                 serializedForm.push({ name: 'explain-format', value: transportFormat });
+            }
+            if (!seenForcedLmdbExecutionStrategy) {
+                serializedForm.push({ name: 'lmdb-forced-strategy', value: forcedLmdbExecutionStrategy });
             }
             // An unchecked checkbox is not serialized: send its explicit false, but only for an enabled control (a
             // disabled one is turned off by policy and must not be sent at all).
@@ -3556,9 +3675,11 @@ module workbench {
                 queryHash: signature.queryHash,
                 level: signature.level,
                 requestedFormat: signature.format,
+                forcedLmdbExecutionStrategy: signature.forcedLmdbExecutionStrategy,
                 responseFormat: responseFormat,
                 view: explanationView,
                 rawContent: explanationText,
+                strategyDecisions: cloneStrategyDecisions(response.strategyDecisions),
                 displayContent: displayContent,
                 lineSeparator: lineSeparator,
                 plan: parsedPlan,
@@ -3592,7 +3713,8 @@ module workbench {
                     getPaneRawQueryValue('primary'),
                     signature.level,
                     signature.format,
-                    signature.serverRequestId
+                    signature.serverRequestId,
+                    signature.forcedLmdbExecutionStrategy
                 ),
                 error: function(jqXHR: JQueryXHR, textStatus: string, errorThrown: string) {
                     if (activePrimaryRequestSignature && signaturesMatch(activePrimaryRequestSignature, signature)) {
@@ -3721,8 +3843,14 @@ module workbench {
         }
 
         function handleQueryPageInputChange(
-            eventType: 'PRIMARY_QUERY_CHANGED' | 'COMPARE_QUERY_CHANGED' | 'EXPLAIN_LEVEL_CHANGED' | 'EXPLAIN_FORMAT_CHANGED'
+            eventType: 'PRIMARY_QUERY_CHANGED' | 'COMPARE_QUERY_CHANGED' | 'EXPLAIN_LEVEL_CHANGED'
+                | 'EXPLAIN_FORMAT_CHANGED' | 'FORCED_STRATEGY_CHANGED'
         ) {
+            // Editor initialization emits changes before the server response has been hydrated.
+            // Its initial content must remain in the DOM until initializeExplanationView reads it.
+            if (queryPageState && queryPageState.lifecycle === 'bootstrapping') {
+                return;
+            }
             if (activeComparePendingRequests > 0) {
                 cancelCompareExplain();
             }
@@ -3742,7 +3870,8 @@ module workbench {
             if (eventType === 'PRIMARY_QUERY_CHANGED'
                     || eventType === 'COMPARE_QUERY_CHANGED'
                     || eventType === 'EXPLAIN_LEVEL_CHANGED'
-                    || eventType === 'EXPLAIN_FORMAT_CHANGED') {
+                    || eventType === 'EXPLAIN_FORMAT_CHANGED'
+                    || eventType === 'FORCED_STRATEGY_CHANGED') {
                 handleQueryPageInputChange(<any>eventType);
             }
         }
@@ -3975,7 +4104,8 @@ module workbench {
                     getPaneRawQueryValue(signature.pane),
                     signature.level,
                     signature.format,
-                    signature.serverRequestId
+                    signature.serverRequestId,
+                    signature.forcedLmdbExecutionStrategy
                 ),
                 error: function(jqXHR: JQueryXHR, textStatus: string, errorThrown: string) {
                     if (activeCompareRequestSignatures[signature.pane]
@@ -4364,6 +4494,15 @@ module workbench {
 
         export function initializeExplanationView() {
             var initialExplanation = $('#query-explanation').text();
+            var initialStrategies: StrategyDecision[];
+            var serializedStrategies = $('#query-explanation').attr('data-strategy-decisions');
+            if (serializedStrategies) {
+                try {
+                    initialStrategies = cloneStrategyDecisions(JSON.parse(serializedStrategies));
+                } catch (parseError) {
+                    initialStrategies = undefined;
+                }
+            }
             var initialFormat = getNormalizedExplainFormat(
                 <string>$('#query-explanation').attr('data-format') || <string>$('#explain-format').val() || 'text'
             );
@@ -4376,9 +4515,11 @@ module workbench {
                     source: 'primary-explain',
                     queryHash: buildQueryHash(getPaneRawQueryValue('primary')),
                     level: getNormalizedExplainLevel(<string>$('#explain-level').val()),
-                    format: initialFormat
+                    format: initialFormat,
+                    forcedLmdbExecutionStrategy: $('#lmdb-forced-strategy').prop('disabled') ? '' : <string>$('#lmdb-forced-strategy').val() || ''
                 }, {
                     content: initialExplanation,
+                    strategyDecisions: initialStrategies,
                     format: initialFormat,
                     error: ''
                 }, initialFormat);
@@ -4659,6 +4800,79 @@ module workbench {
             updateCompareActionState();
         }
 
+        interface LmdbForceableStrategy {
+            name: string;
+            description: string;
+        }
+
+        var lmdbStrategyRequest: JQueryXHR = null;
+        var lmdbStrategyGeneration = 0;
+
+        /** Only the live page's selected repository may enable query forcing. */
+        export function loadLmdbForceableStrategies() {
+            var select = $('#lmdb-forced-strategy');
+            if (select.length === 0) {
+                return;
+            }
+            var field = $('#lmdb-forced-strategy-field');
+            var element = select.get(0);
+            var endpoint = queryEndpoint();
+            var generation = ++lmdbStrategyGeneration;
+            var preferred = <string>select.data('preferred-value') || <string>select.val() || '';
+            if (lmdbStrategyRequest) {
+                lmdbStrategyRequest.abort();
+                lmdbStrategyRequest = null;
+            }
+            function isCurrent(): boolean {
+                return generation === lmdbStrategyGeneration && endpoint === queryEndpoint()
+                    && document.getElementById('lmdb-forced-strategy') === element;
+            }
+            function clearSelection() {
+                select.empty().append($('<option></option>').attr('value', '')).val('').prop('disabled', true);
+                field.prop('hidden', true);
+            }
+            clearSelection();
+            lmdbStrategyRequest = $.ajax({
+                url: endpoint, type: 'GET', dataType: 'json', data: { action: 'lmdb-strategies' }
+            });
+            lmdbStrategyRequest.done(function(response: any) {
+                if (!isCurrent()) {
+                    return;
+                }
+                lmdbStrategyRequest = null;
+                var strategies: LmdbForceableStrategy[] = response.strategies || [];
+                if (!response.available || strategies.length === 0) {
+                    return;
+                }
+                $.each(strategies, function(index: number, strategy: LmdbForceableStrategy) {
+                    select.append($('<option></option>')
+                        .attr('value', strategy.name)
+                        .attr('title', strategy.description)
+                        .text(strategy.name));
+                });
+                var offered = strategies.some(function(strategy) { return strategy.name === preferred; });
+                select.val(offered ? preferred : '').prop('disabled', false);
+                field.prop('hidden', false);
+            }).fail(function() {
+                if (isCurrent()) {
+                    lmdbStrategyRequest = null;
+                    clearSelection();
+                }
+            });
+        }
+
+        export function initializeLmdbForcedStrategy() {
+            var select = $('#lmdb-forced-strategy');
+            if (select.length === 0) {
+                return;
+            }
+            var remembered = workbench.getCookie('lmdb-forced-strategy');
+            if (remembered) {
+                select.data('preferred-value', remembered);
+            }
+            loadLmdbForceableStrategies();
+        }
+
         /**
          * Mount the Query page in outlet (plan task M9.1): fill the editor from the URL, the session draft or the
          * cookies, set up the explanation and compare views, and bind the page's controls. Element handlers and
@@ -4820,6 +5034,7 @@ module workbench {
             setQueryValue($.trim(getQueryValue()));
             initializeExplanationView();
             initializeCompareUi();
+            initializeLmdbForcedStrategy();
             workbench.tabs.bind(<HTMLElement>outlet.querySelector('#query-output [role="tablist"]'));
             var queryOutput = outlet.querySelector('#query-output');
             var onResultSummary = function(event: any) {
@@ -4900,6 +5115,9 @@ module workbench {
             on('#explain-format', 'change', function() {
                 notifyQueryPageInputChange('EXPLAIN_FORMAT_CHANGED');
             });
+            on('#lmdb-forced-strategy', 'change', function() {
+                notifyQueryPageInputChange('FORCED_STRATEGY_CHANGED');
+            });
             on('#query-timeout', 'input change', syncExplanationTimeoutControls);
             on('#query-diff-modal', 'click', function(event) {
                 if (event.target && (<HTMLElement>event.target).id === 'query-diff-modal') {
@@ -4955,6 +5173,11 @@ module workbench {
          * route's dispose and the unit tests use it.
          */
         export function resetState(reason?: 'navigate' | 'pagehide') {
+            ++lmdbStrategyGeneration;
+            if (lmdbStrategyRequest) {
+                lmdbStrategyRequest.abort();
+                lmdbStrategyRequest = null;
+            }
             ['primary', 'compare'].forEach(function(controllerKey: ExplainRequestControllerKey) {
                 var uiState = getExplainRequestUiState(controllerKey);
                 clearTimeout(uiState.spinnerDelayTimeoutId);
@@ -5057,6 +5280,7 @@ module workbench {
             createFallbackRequestId: generateRequestId,
             createInitialQueryPageState: createInitialQueryPageState,
             createJsonScalarElement: createJsonScalarElement,
+            createStrategyDecisionTables: createStrategyDecisionTables,
             createJsonTreeNode: createJsonTreeNode,
             createReadyPaneState: createReadyPaneState,
             createRequestSignature: createRequestSignature,

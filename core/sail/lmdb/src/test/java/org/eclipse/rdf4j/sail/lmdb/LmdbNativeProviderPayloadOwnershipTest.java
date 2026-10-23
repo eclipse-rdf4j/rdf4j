@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -30,7 +31,9 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostTestSupport;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlannerLimits;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedProviderIdentityBudget;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -80,8 +83,11 @@ class LmdbNativeProviderPayloadOwnershipTest {
 		} finally {
 			measuring.close();
 		}
-		LmdbPipelinePlanCache exact = new LmdbPipelinePlanCache(8, 1, exactBytes);
-		LmdbPipelinePlanCache shortCache = new LmdbPipelinePlanCache(8, 1, exactBytes - 1);
+		// The same quota covers two successive owner phases. A flight is released before the final family
+		// is published; the capacity must fit the larger authentic phase, not only final resident bytes.
+		long exactCapacity = Math.max(flightIdentityBytes(source, context), exactBytes);
+		LmdbPipelinePlanCache exact = new LmdbPipelinePlanCache(8, 1, exactCapacity);
+		LmdbPipelinePlanCache shortCache = new LmdbPipelinePlanCache(8, 1, exactCapacity - 1);
 		try {
 			exact.getOrCompute(source, context, context::revision, () -> planned(source));
 			assertEquals(1, exact.entryCount());
@@ -94,6 +100,25 @@ class LmdbNativeProviderPayloadOwnershipTest {
 			exact.close();
 			shortCache.close();
 		}
+	}
+
+	private static long flightIdentityBytes(TupleExpr source, LmdbPipelinePlanCache.Context context) {
+		TupleExpr detached = LmdbCacheValueCopies.copy(source, false);
+		assertNotNull(detached);
+		PackedPlanCache.StructuralKey key = PackedPlanCache.structuralKey(detached, LmdbCacheValueCopies.CODEC);
+		assertNotNull(key);
+		var identity = context.withSource(key).inputIdentity();
+		var memory = new PackedProviderIdentityBudget(Long.MAX_VALUE);
+		assertTrue(memory.tryRetain(identity));
+		long bytes;
+		try {
+			bytes = memory.bytes();
+			assertTrue(bytes > 0L, "the actual flight key has a nonempty owned graph");
+		} finally {
+			memory.release(identity);
+		}
+		assertEquals(0L, memory.bytes(), "the independent measurement releases its exact owner");
+		return bytes;
 	}
 
 	@Test

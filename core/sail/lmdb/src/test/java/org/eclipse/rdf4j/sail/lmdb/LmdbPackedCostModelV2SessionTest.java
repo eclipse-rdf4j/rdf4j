@@ -22,6 +22,7 @@ import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.never;
@@ -82,6 +83,7 @@ import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsView;
 import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbStatisticsService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.stubbing.Answer;
 
 /** Complete mock queries below explicitly use the same DEFAULT domain as their supplied storage statistics. */
 class LmdbPackedCostModelV2SessionTest {
@@ -854,14 +856,17 @@ class LmdbPackedCostModelV2SessionTest {
 		when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
 		when(statistics.openCurrentView()).thenReturn(view);
 		when(view.ready()).thenReturn(true);
-		when(runtime.factorCost(any(BindingSetAssignment.class), any())).thenAnswer(invocation -> {
+		Answer<?> factorCostAnswer = invocation -> {
 			BindingSetAssignment assignment = invocation.getArgument(0);
 			double count = 0.0d;
 			for (BindingSet ignored : assignment.getBindingSets()) {
 				count++;
 			}
 			return Optional.of(new JoinFactorCostModel.FactorCostEstimate(count, count));
-		});
+		};
+		when(runtime.factorCost(any(BindingSetAssignment.class), any())).thenAnswer(factorCostAnswer);
+		when(runtime.factorCost(any(BindingSetAssignment.class), any(), nullable(LmdbFilterReadContext.class)))
+				.thenAnswer(factorCostAnswer);
 		var predicate = VF.createIRI("urn:test:sparse-finite-prefix:name");
 		when(valueStore.getId(predicate)).thenReturn(101L);
 		List<BindingSet> rows = new ArrayList<>();
@@ -951,14 +956,17 @@ class LmdbPackedCostModelV2SessionTest {
 		when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
 		when(statistics.openCurrentView()).thenReturn(view);
 		when(view.ready()).thenReturn(true);
-		when(runtime.factorCost(any(BindingSetAssignment.class), any())).thenAnswer(invocation -> {
+		Answer<?> factorCostAnswer = invocation -> {
 			BindingSetAssignment assignment = invocation.getArgument(0);
 			double count = 0.0d;
 			for (BindingSet ignored : assignment.getBindingSets()) {
 				count++;
 			}
 			return Optional.of(new JoinFactorCostModel.FactorCostEstimate(count, count));
-		});
+		};
+		when(runtime.factorCost(any(BindingSetAssignment.class), any())).thenAnswer(factorCostAnswer);
+		when(runtime.factorCost(any(BindingSetAssignment.class), any(), nullable(LmdbFilterReadContext.class)))
+				.thenAnswer(factorCostAnswer);
 		var predicate = VF.createIRI("urn:test:restricted-finite-prefix:name");
 		when(valueStore.getId(predicate)).thenReturn(101L);
 		List<BindingSet> rows = new ArrayList<>();

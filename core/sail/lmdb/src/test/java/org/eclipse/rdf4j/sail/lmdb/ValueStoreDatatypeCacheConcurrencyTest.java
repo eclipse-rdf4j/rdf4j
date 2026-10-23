@@ -12,10 +12,12 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -24,16 +26,19 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
-import org.junit.jupiter.api.Test;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class ValueStoreDatatypeCacheConcurrencyTest {
 
-	@Test
+	@ParameterizedTest
+	@ValueSource(ints = { LmdbStoreFormat.CURRENT_VERSION, LmdbStoreFormat.LEGACY_VERSION })
 	@Timeout(30)
-	void concurrentCollisionsNeverReturnAnotherDatatype(@TempDir File directory) throws Exception {
-		ValueStore store = new ValueStore(directory, new LmdbStoreConfig());
+	void concurrentCollisionsNeverReturnAnotherDatatype(int format, @TempDir File directory) throws Exception {
+		ValueStore store = openCacheProfile(directory, new LmdbStoreConfig(), format);
 		try {
 			DatatypePair pair = collidingDatatypes(store);
 			AtomicBoolean finished = new AtomicBoolean();
@@ -62,9 +67,10 @@ class ValueStoreDatatypeCacheConcurrencyTest {
 		}
 	}
 
-	@Test
-	void replacementKeepsDatatypeAndCoreDatatypeTogether(@TempDir File directory) throws Exception {
-		ValueStore store = new ValueStore(directory, new LmdbStoreConfig());
+	@ParameterizedTest
+	@ValueSource(ints = { LmdbStoreFormat.CURRENT_VERSION, LmdbStoreFormat.LEGACY_VERSION })
+	void replacementKeepsDatatypeAndCoreDatatypeTogether(int format, @TempDir File directory) throws Exception {
+		ValueStore store = openCacheProfile(directory, new LmdbStoreConfig(), format);
 		try {
 			DatatypePair pair = collidingDatatypes(store);
 			store.cacheDatatype(pair.coreId(), pair.core());
@@ -88,17 +94,20 @@ class ValueStoreDatatypeCacheConcurrencyTest {
 		}
 	}
 
-	@Test
+	@ParameterizedTest
+	@ValueSource(ints = { LmdbStoreFormat.CURRENT_VERSION, LmdbStoreFormat.LEGACY_VERSION })
 	@Timeout(30)
-	void materializedLiteralsRetainTheirDatatypeDuringReplacement(@TempDir File directory) throws Exception {
-		ValueStore store = new ValueStore(directory, new LmdbStoreConfig().setValueCacheSize(1)
-				.setInlineLiterals(false));
+	void materializedLiteralsRetainTheirDatatypeDuringReplacement(int format, @TempDir File directory)
+			throws Exception {
+		ValueStore store = openCacheProfile(directory, new LmdbStoreConfig().setValueCacheSize(1)
+				.setInlineLiterals(false), format);
 		try {
-			DatatypePair pair = collidingDatatypes(store);
+			DatatypePair initial = collidingDatatypes(store);
 			store.startTransaction(true);
-			long coreLiteralId = store.storeValue(store.createLiteral("42", pair.core()));
-			long customLiteralId = store.storeValue(store.createLiteral("custom", pair.custom()));
+			long coreLiteralId = store.storeValue(store.createLiteral("42", initial.core()));
+			long customLiteralId = store.storeValue(store.createLiteral("custom", initial.custom()));
 			store.commit();
+			DatatypePair pair = readDatatypes(store, initial.coreId(), initial.customId());
 			AtomicBoolean finished = new AtomicBoolean();
 			CountDownLatch started = new CountDownLatch(1);
 			try (var executor = Executors.newSingleThreadExecutor()) {
@@ -137,19 +146,62 @@ class ValueStoreDatatypeCacheConcurrencyTest {
 	}
 
 	private static DatatypePair collidingDatatypes(ValueStore store) throws Exception {
-		long coreId = store.getId(CoreDatatype.XSD.INT.getIri());
 		long customId;
 		store.startTransaction(true);
+		// Current dictionaries encode core literal tags without pre-seeding every datatype IRI.
+		long coreId = store.storeValue(store.createIRI(CoreDatatype.XSD.INT.getIri().stringValue()));
 		int ordinal = 0;
 		do {
 			customId = store.storeValue(store.createIRI("urn:datatype-cache:custom:" + ordinal++));
 		} while ((ValueIds.getValue(customId) & 1023) != (ValueIds.getValue(coreId) & 1023));
 		store.commit();
+		assertNotEquals(LmdbValue.UNKNOWN_ID, coreId);
+		assertNotEquals(coreId, customId);
+		assertEquals(ValueIds.T_URI, ValueIds.getIdType(coreId));
+		assertEquals(ValueIds.T_URI, ValueIds.getIdType(customId));
+		assertEquals(ValueIds.getValue(coreId) & 1023, ValueIds.getValue(customId) & 1023);
+		return readDatatypes(store, coreId, customId);
+	}
+
+	private static DatatypePair readDatatypes(ValueStore store, long coreId, long customId) throws IOException {
+		store.clearCaches();
+		assertEquals(coreId, store.getId(CoreDatatype.XSD.INT.getIri()));
 		LmdbIRI core = (LmdbIRI) store.getValue(coreId);
 		LmdbIRI custom = (LmdbIRI) store.getValue(customId);
+		store.cacheDatatype(coreId, core);
+		assertSame(core, store.cachedDatatype(coreId));
+		store.cacheDatatype(customId, custom);
+		assertSame(custom, store.cachedDatatype(customId));
 		assertEquals(CoreDatatype.XSD.INT.getIri(), core);
 		assertSame(CoreDatatype.NONE, CoreDatatype.from(custom));
 		return new DatatypePair(coreId, core, customId, custom);
+	}
+
+	private static ValueStore openCacheProfile(File directory, LmdbStoreConfig config, int format) throws IOException {
+		ValueStore store;
+		if (format == LmdbStoreFormat.CURRENT_VERSION) {
+			store = new ValueStore(directory, config);
+		} else {
+			assertEquals(LmdbStoreFormat.LEGACY_VERSION, format);
+			StoreProperties properties = new StoreProperties(directory);
+			properties.setVersion(Integer.toString(format));
+			store = new ValueStore(directory, properties, config);
+		}
+		try {
+			assertEquals(format, store.getFormat().getVersion());
+			assertEquals(format == LmdbStoreFormat.CURRENT_VERSION,
+					store.getFormat().usesCoreDatatypeLiteralReferences());
+			return store;
+		} catch (RuntimeException | Error initiating) {
+			try {
+				store.close();
+			} catch (IOException | RuntimeException | Error cleanup) {
+				if (cleanup != initiating) {
+					initiating.addSuppressed(cleanup);
+				}
+			}
+			throw initiating;
+		}
 	}
 
 	private record DatatypePair(long coreId, LmdbIRI core, long customId, LmdbIRI custom) {

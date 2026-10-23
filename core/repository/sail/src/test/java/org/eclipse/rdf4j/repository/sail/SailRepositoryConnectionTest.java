@@ -18,15 +18,23 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
-
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.GraphQuery;
@@ -39,6 +47,7 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -278,6 +287,88 @@ public class SailRepositoryConnectionTest {
 		while ((remaining = blockedUntil - System.nanoTime()) > 0) {
 			LockSupport.parkNanos(remaining);
 		}
+	}
+
+@Test
+	void iterableAddUsesSingleSailBulkInvocation() {
+		var valueFactory = SimpleValueFactory.getInstance();
+		var statements = List.of(
+				valueFactory.createStatement(valueFactory.createIRI("urn:subject:1"),
+						valueFactory.createIRI("urn:predicate"), valueFactory.createLiteral("first")),
+				valueFactory.createStatement(valueFactory.createIRI("urn:subject:2"),
+						valueFactory.createIRI("urn:predicate"), valueFactory.createLiteral("second")));
+
+		subject.add(statements);
+
+		assertThat(mockingDetails(sailConnection).getInvocations())
+				.filteredOn(invocation -> invocation.getMethod().getName().equals("addStatements"))
+				.hasSize(1);
+	}
+
+	@Test
+	void iterableAddRetainsProtectedScalarHookAndStatementContexts() {
+		var values = SimpleValueFactory.getInstance();
+		Resource firstContext = values.createIRI("urn:context:one");
+		Resource overrideContext = values.createIRI("urn:context:override");
+		Statement statement = values.createStatement(values.createIRI("urn:subject"),
+				values.createIRI("urn:predicate"), values.createLiteral("value"), firstContext);
+		List<List<Resource>> observedContexts = new ArrayList<>();
+		SailRepositoryConnection hooked = new SailRepositoryConnection(sailRepository, sailConnection) {
+			@Override
+			protected void addWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts) {
+				observedContexts.add(List.of(contexts));
+				super.addWithoutCommit(subject, predicate, object, contexts);
+			}
+		};
+		hooked.add(statement);
+		hooked.add(List.of(statement));
+		hooked.add(List.of(statement), overrideContext);
+		assertThat(observedContexts).containsExactly(List.of(firstContext), List.of(firstContext),
+				List.of(overrideContext));
+		assertThat(mockingDetails(sailConnection).getInvocations())
+				.filteredOn(invocation -> invocation.getMethod().getName().equals("addStatements"))
+				.isEmpty();
+	}
+
+	@Test
+	void iterableAddRetainsProtectedStatementHookAndConsumesInputOnce() {
+		var values = SimpleValueFactory.getInstance();
+		Statement first = values.createStatement(values.createIRI("urn:first"), values.createIRI("urn:p"),
+				values.createLiteral(1));
+		Statement second = values.createStatement(values.createIRI("urn:second"), values.createIRI("urn:p"),
+				values.createLiteral(2));
+		List<Statement> observed = new ArrayList<>();
+		SailRepositoryConnection hooked = new SailRepositoryConnection(sailRepository, sailConnection) {
+			@Override
+			protected void addWithoutCommit(Statement statement, Resource... contexts) {
+				observed.add(statement);
+				super.addWithoutCommit(statement, contexts);
+			}
+		};
+		AtomicInteger iterations = new AtomicInteger();
+		Iterable<Statement> input = () -> {
+			assertThat(iterations.incrementAndGet()).isEqualTo(1);
+			return List.of(first, second).iterator();
+		};
+		hooked.add(input);
+		assertThat(observed).containsExactly(first, second);
+	}
+
+	@Test
+	void iterableAddPropagatesProtectedHookFailureAndRollsBackLocalTransaction() {
+		var values = SimpleValueFactory.getInstance();
+		Statement statement = values.createStatement(values.createIRI("urn:subject"), values.createIRI("urn:p"),
+				values.createLiteral(1));
+		RepositoryException failure = new RepositoryException("extension rejected statement");
+		SailRepositoryConnection hooked = new SailRepositoryConnection(sailRepository, sailConnection) {
+			@Override
+			protected void addWithoutCommit(Statement statement, Resource... contexts) {
+				throw failure;
+			}
+		};
+		assertThatThrownBy(() -> hooked.add(List.of(statement))).isSameAs(failure);
+		verify(sailConnection).rollback();
+
 	}
 
 }

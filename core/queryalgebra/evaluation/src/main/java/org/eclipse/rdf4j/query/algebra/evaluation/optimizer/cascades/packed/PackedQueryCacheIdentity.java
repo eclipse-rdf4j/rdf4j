@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /** Collision-proof packed identity for alpha-equivalent, query-internal anonymous variables. */
@@ -94,6 +95,9 @@ final class PackedQueryCacheIdentity {
 
 	private static PackedQueryCacheIdentity encode(TupleExpr source, Map<String, Integer> canonicalNames,
 			PackedStatementPatternSemanticsCodec semanticsCodec) {
+		if (!semanticsCodec.supportsSemanticIdentity(source)) {
+			return null;
+		}
 		try {
 			PackedQuery query = PackedQueryCodec.encodeForCacheIdentity(source, canonicalNames, semanticsCodec);
 			return query.supportsCacheIdentity()
@@ -362,4 +366,21 @@ final class PackedQueryCacheIdentity {
 			return true;
 		}
 	}
+
+	PackedStatementPatternSemanticsCodec semanticsCodec() {
+		return query.semanticsCodec();
+	}
+
+	boolean accountRetainedMemory(RetainedMemoryAccount account) {
+		if (!account.add(this, 32L)) {
+			return true;
+		}
+		account.add(canonicalNames, 192L + 96L * canonicalNames.size());
+		for (Map.Entry<String, Integer> entry : canonicalNames.entrySet()) {
+			PackedCacheMemory.string(account, entry.getKey());
+			account.add(entry.getValue(), 24L);
+		}
+		return query.accountRetainedMemory(account);
+	}
+
 }

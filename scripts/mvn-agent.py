@@ -37,7 +37,7 @@ from maven_workspace import (  # noqa: E402
 )
 
 
-def _run_logged(
+def run_logged(
     command: list[str],
     repo_root: Path,
     log_path: Path,
@@ -68,6 +68,10 @@ def _run_logged(
             return_code = process.wait()
     return return_code, "" if output_parts is None else "".join(output_parts)
 
+
+
+# Preserve the helper name used by the other branch.
+_run_logged = run_logged
 
 def main() -> int:
     raw_arguments = sys.argv[1:]
@@ -111,7 +115,7 @@ def main() -> int:
         print(f"Workspace: {workspace_id} ({paths.root})")
         with registered_run(repo_root, workspace_id, sys.argv) as registration:
             validate_reused_workspace_trees(paths)
-            version_code, version_output = _run_logged(
+            version_code, version_output = run_logged(
                 maven_command + ["--version"],
                 repo_root,
                 paths.log_dir / "maven-version.log",
@@ -123,7 +127,9 @@ def main() -> int:
             validate_maven_version(version_output)
             prepare_reactor_tmp_directories(repo_root, paths)
             write_run_metadata(paths, runner="mvn-agent", command=sys.argv)
-            return_code, _ = _run_logged(build_command, repo_root, paths.log_dir / "maven.log", registration)
+            return_code, _ = run_logged(
+                build_command, repo_root, paths.log_dir / "maven.log", registration
+            )
             return return_code
     except MavenWorkspaceInterrupted as exc:
         print(f"[mvn-agent] Interrupted by signal {exc.signum}")

@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.model;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.InternedIRI;
@@ -27,9 +28,9 @@ public interface LmdbValue extends Value {
 
 	long UNKNOWN_ID = -1;
 
+	@Experimental
 	@FunctionalInterface
 	interface Resolver {
-
 		boolean resolve(long id, LmdbValue value);
 	}
 
@@ -115,7 +116,10 @@ public interface LmdbValue extends Value {
 		InternalIdentity own = getInternalIdentity();
 		InternalIdentity theirs = nativeValue.getInternalIdentity();
 		return own.id() != UNKNOWN_ID && theirs.id() != UNKNOWN_ID
-				&& own.revision().equals(theirs.revision()) ? own.id() == theirs.id() : null;
+				&& own.revision() != null && own.revision().equals(theirs.revision())
+						? own.id() == theirs.id() ? Boolean.TRUE
+								: own.revision().hasCanonicalIds() ? Boolean.FALSE : null
+						: null;
 	}
 
 	/**
@@ -134,6 +138,23 @@ public interface LmdbValue extends Value {
 	 * Initializes this value if it was a lazy value (ID-only value) before.
 	 */
 	void init();
+
+	/**
+	 * Initializes this value using the supplied resolver, sharing the caller's native read transaction.
+	 *
+	 * @param resolver resolves this value's internal ID into this value object
+	 */
+	@Experimental
+	default void init(Resolver resolver) {
+		init();
+	}
+
+	/** Lexical size without initializing a cold payload; negative means unresolved. */
+	@Experimental
+	@InternalUseOnly
+	default long retainedLexicalLength() {
+		return -1L;
+	}
 
 	/** Internal cold-export provenance; ordinary query models never acquire this ownership. */
 	@InternalUseOnly
@@ -156,14 +177,6 @@ public interface LmdbValue extends Value {
 	default void visitValueChildren(Consumer<Value> visitor) {
 	}
 
-	/**
-	 * Initializes this value using the supplied resolver.
-	 *
-	 * @param resolver resolves this value's internal ID into this value object
-	 */
-	default void init(Resolver resolver) {
-		init();
-	}
 
 	/**
 	 * Gets the revision of the value store that created this value. The value's internal ID is only valid when it's

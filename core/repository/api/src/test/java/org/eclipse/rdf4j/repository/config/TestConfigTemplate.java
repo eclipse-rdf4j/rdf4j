@@ -22,12 +22,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringReader;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -156,6 +158,40 @@ public class TestConfigTemplate {
 					assertEquals(expectedDefault, values.iterator().next().stringValue(),
 							() -> "Wrong rendered value for LMDB template property " + propertyName);
 				});
+	}
+
+	@Test
+	public final void lmdbTemplateDefaultsAllOptionalAcceleratorsToDisabled() throws Exception {
+		String templateText;
+		try (InputStream input = TestConfigTemplate.class.getResourceAsStream("lmdb.ttl")) {
+			assertTrue(input != null, "LMDB repository template must be on the test classpath");
+			templateText = new String(input.readAllBytes(), StandardCharsets.UTF_8);
+		}
+		String rendered = new ConfigTemplate(templateText).render(Map.of());
+		Model model = Rio.parse(new StringReader(rendered), "", RDFFormat.TURTLE);
+		IRI nativeEvaluationEnabled = Values.iri(
+				"http://rdf4j.org/config/sail/lmdb#nativeEvaluationEnabled");
+		Resource sailNode = model.filter(null, nativeEvaluationEnabled, null).subjects().iterator().next();
+
+		assertTrue(model.contains(sailNode, nativeEvaluationEnabled, Values.literal(false)));
+		assertTrue(model.contains(sailNode,
+				Values.iri("http://rdf4j.org/config/sail/lmdb#directAdjacencyEnabled"), Values.literal(false)));
+		assertTrue(model.contains(sailNode,
+				Values.iri("http://rdf4j.org/config/sail/lmdb#valueOverlayEnabled"), Values.literal(false)));
+
+		String optInRendered = new ConfigTemplate(templateText).render(Map.of(
+				"Native query evaluation enabled", "true",
+				"Direct adjacency index enabled", "true",
+				"Compressed value overlay enabled", "true"));
+		Model optInModel = Rio.parse(new StringReader(optInRendered), "", RDFFormat.TURTLE);
+		Resource optInSailNode = optInModel.filter(null, nativeEvaluationEnabled, null).subjects().iterator().next();
+
+		assertTrue(optInModel.contains(optInSailNode, nativeEvaluationEnabled, Values.literal(true)));
+		assertTrue(optInModel.contains(optInSailNode,
+				Values.iri("http://rdf4j.org/config/sail/lmdb#directAdjacencyEnabled"), Values.literal(true)));
+		assertTrue(optInModel.contains(optInSailNode,
+				Values.iri("http://rdf4j.org/config/sail/lmdb#valueOverlayEnabled"), Values.literal(true)));
+
 	}
 
 }

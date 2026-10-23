@@ -12,9 +12,11 @@
 package org.eclipse.rdf4j.query.algebra;
 
 import java.util.Collection;
-import java.util.Set;
 
 public class ReifiedTripleRef extends TripleRef {
+
+	// Preserve the serialized identity of the pre-metadata model class.
+	private static final long serialVersionUID = -8323267647636343329L;
 
 	private Var reifVar;
 
@@ -34,15 +36,6 @@ public class ReifiedTripleRef extends TripleRef {
 		assert reifVar != null : "reifier must not be null";
 		reifVar.setParentNode(this);
 		this.reifVar = reifVar;
-	}
-
-	@Override
-	public Set<String> getAssuredBindingNames() {
-		var bindingNames = super.getAssuredBindingNames();
-		if (reifVar != null) {
-			bindingNames.add(reifVar.getName());
-		}
-		return bindingNames;
 	}
 
 	@Override

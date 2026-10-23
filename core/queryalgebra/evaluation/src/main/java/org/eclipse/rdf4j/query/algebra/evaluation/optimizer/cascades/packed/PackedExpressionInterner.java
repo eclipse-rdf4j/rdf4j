@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import java.util.Arrays;
 
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
+
 /** Collision-safe, append-only logical-expression interner backed only by primitive arrays. */
 @PackedHotPath
 final class PackedExpressionInterner {
@@ -591,4 +593,25 @@ final class PackedExpressionInterner {
 	private static int maximumFill(int capacity) {
 		return Math.max(1, capacity * LOAD_NUMERATOR / LOAD_DENOMINATOR);
 	}
+
+	void accountRetainedMemory(RetainedMemoryAccount account) {
+		if (!account.add(this, 192L)) {
+			return;
+		}
+		PackedCacheMemory.array(account, operatorTags);
+		PackedCacheMemory.array(account, groupIds);
+		PackedCacheMemory.array(account, payloadIds);
+		PackedCacheMemory.array(account, semanticScopeIds);
+		PackedCacheMemory.array(account, executionDomainIds);
+		PackedCacheMemory.array(account, occurrenceIds);
+		PackedCacheMemory.array(account, graphDomainIds);
+		PackedCacheMemory.array(account, childZeroIds);
+		PackedCacheMemory.array(account, childOneIds);
+		PackedCacheMemory.array(account, extraChildStarts);
+		PackedCacheMemory.array(account, childCounts);
+		PackedCacheMemory.array(account, hashes);
+		PackedCacheMemory.array(account, extraChildren);
+		PackedCacheMemory.array(account, tableSlots);
+	}
+
 }

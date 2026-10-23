@@ -21,8 +21,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.stream.Stream;
 
-import org.assertj.core.groups.Tuple;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQuery;
@@ -34,6 +36,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
@@ -141,6 +145,87 @@ public class BindingScopeReviewRegressionTest {
 	}
 
 	@Test
+	public void zeroLengthPathDoesNotGuaranteeGraphVariable() throws Exception {
+		// The zero-length match binds ?g to the named graph it is evaluated in, so the filter keeps both rows; the
+		// binding analysis still must not treat ?g as guaranteed and drop the BOUND filter.
+		assertThat(query("<urn:G1> { <urn:a> <urn:p> <urn:b> }",
+				"SELECT ?o ?g { GRAPH ?g { <urn:a> <urn:p>* ?o } FILTER(BOUND(?g)) }"))
+						.containsExactlyInAnyOrder("{g=urn:G1, o=urn:a}", "{g=urn:G1, o=urn:b}");
+	}
+
+	@Test
+	public void optionalSubqueryLocalGraphNameDoesNotReceiveOuterValues() throws Exception {
+		assertThat(query("<urn:g1> { <urn:a> <urn:p> <urn:o> } <urn:g2> { <urn:b> <urn:p> <urn:o> }",
+				"SELECT ?g ?x { VALUES ?g { <urn:g1> } OPTIONAL { SELECT ?x { GRAPH ?g { ?x <urn:p> <urn:o> } } } }"))
+						.containsExactly("{g=urn:g1, x=urn:a}", "{g=urn:g1, x=urn:b}");
+	}
+
+	@Test
+	public void optionalSubqueryRenamedLocalGraphControl() throws Exception {
+		assertThat(query("<urn:g1> { <urn:a> <urn:p> <urn:o> } <urn:g2> { <urn:b> <urn:p> <urn:o> }",
+				"SELECT ?g ?x { VALUES ?g { <urn:g1> } OPTIONAL { SELECT ?x { GRAPH ?local { ?x <urn:p> <urn:o> } } } }"))
+						.containsExactly("{g=urn:g1, x=urn:a}", "{g=urn:g1, x=urn:b}");
+	}
+
+	@Test
+	public void optionalSubqueryKeepsItsInheritedActiveGraph() throws Exception {
+		assertThat(query("<urn:g1> { <urn:a> <urn:p> <urn:o> } <urn:g2> { <urn:b> <urn:p> <urn:o> }",
+				"SELECT ?g ?seed ?x { GRAPH ?g { ?seed <urn:p> <urn:o> OPTIONAL { SELECT ?x { ?x <urn:p> <urn:o> } } } }"))
+						.containsExactly("{g=urn:g1, seed=urn:a, x=urn:a}", "{g=urn:g2, seed=urn:b, x=urn:b}");
+	}
+
+	@Test
+	public void optionalSubquerySeparatesInheritedAndSameNamedLocalGraph() throws Exception {
+		assertThat(query("<urn:g1> { <urn:a> <urn:p> <urn:o> } <urn:g2> { <urn:b> <urn:p> <urn:o> }",
+				"SELECT ?g ?x ?y { GRAPH ?g { ?seed <urn:p> <urn:o> OPTIONAL { SELECT ?x ?y { "
+						+ "?x <urn:p> <urn:o> GRAPH ?g { ?y <urn:p> <urn:o> } } } } }"))
+								.containsExactly("{g=urn:g1, x=urn:a, y=urn:a}", "{g=urn:g1, x=urn:a, y=urn:b}",
+										"{g=urn:g2, x=urn:b, y=urn:a}", "{g=urn:g2, x=urn:b, y=urn:b}");
+	}
+
+	@ParameterizedTest(name = "{0}")
+	@MethodSource("localGraphCompositions")
+	public void optionalSubqueryLocalGraphKeepsExactBagAcrossComposition(String description, String body,
+			List<String> expected) throws Exception {
+		assertThat(query("<urn:g1> { <urn:a> <urn:p> <urn:o> } <urn:g2> { <urn:b> <urn:p> <urn:o> }",
+				"SELECT ?g ?x { VALUES ?g { <urn:g1> } OPTIONAL { SELECT ?x { " + body + " } } }"))
+						.containsExactlyElementsOf(expected);
+	}
+
+	static Stream<Arguments> localGraphCompositions() {
+		String graph = "GRAPH ?g { ?x <urn:p> <urn:o> }";
+		List<String> both = List.of("{g=urn:g1, x=urn:a}", "{g=urn:g1, x=urn:b}");
+		List<String> onlyB = List.of("{g=urn:g1, x=urn:b}");
+		return Stream.of(
+				Arguments.of("nested SELECT", "{ SELECT ?x { " + graph + " } }", both),
+				Arguments.of("UNION duplicates", "{ " + graph + " } UNION { " + graph + " }",
+						List.of(both.get(0), both.get(0), both.get(1), both.get(1))),
+				Arguments.of("MINUS", graph + " MINUS { VALUES ?x { <urn:a> } }", onlyB),
+				Arguments.of("FILTER", graph + " FILTER(?x != <urn:a>)", onlyB),
+				Arguments.of("EXISTS", "GRAPH ?g { ?x <urn:p> <urn:o> FILTER EXISTS { ?x <urn:p> <urn:o> } }", both),
+				Arguments.of("NOT EXISTS", "GRAPH ?g { ?x <urn:p> <urn:o> FILTER NOT EXISTS { ?x <urn:q> ?y } }", both),
+				Arguments.of("nested OPTIONAL", graph + " OPTIONAL { ?x <urn:q> ?y }", both),
+				Arguments.of("arbitrary path", "GRAPH ?g { ?x <urn:p>+ <urn:o> }", both),
+				Arguments.of("zero-or-one path", "GRAPH ?g { ?x <urn:p> <urn:o> . ?x <urn:p>? <urn:o> }", both),
+				Arguments.of("empty right fallback", graph + " FILTER(false)", List.of("{g=urn:g1}")));
+	}
+
+	@Test
+	public void optionalSubqueryProjectedLocalGraphStillJoinsByCompatibility() throws Exception {
+		assertThat(query("<urn:g1> { <urn:a> <urn:p> <urn:o> } <urn:g2> { <urn:b> <urn:p> <urn:o> }",
+				"SELECT ?g ?x { VALUES ?g { <urn:g1> } OPTIONAL { SELECT ?g ?x { GRAPH ?g { ?x <urn:p> <urn:o> } } } }"))
+						.containsExactly("{g=urn:g1, x=urn:a}");
+	}
+
+	@Test
+	public void optionalSubqueryLocalGraphPreservesDuplicateOuterSolutions() throws Exception {
+		assertThat(query("<urn:g1> { <urn:a> <urn:p> <urn:o> } <urn:g2> { <urn:b> <urn:p> <urn:o> }",
+				"SELECT ?g ?x { VALUES ?g { <urn:g1> <urn:g1> } OPTIONAL { SELECT ?x { GRAPH ?g { ?x <urn:p> <urn:o> } } } }"))
+						.containsExactly("{g=urn:g1, x=urn:a}", "{g=urn:g1, x=urn:a}", "{g=urn:g1, x=urn:b}",
+								"{g=urn:g1, x=urn:b}");
+	}
+
+	@Test
 	public void graphVariableIsBoundForZeroLengthAndPositivePathRows() throws Exception {
 		String data = "<urn:G1> { <urn:a> <urn:p> <urn:b> }";
 		assertThat(query(data, "SELECT ?o ?g { GRAPH ?g { <urn:a> <urn:p>* ?o } FILTER(BOUND(?g)) }"))
@@ -163,6 +248,109 @@ public class BindingScopeReviewRegressionTest {
 
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
+	public void inheritedGraphAndLocalShadowPreserveBagsAcrossNestedScopes(boolean experimental) throws Exception {
+		repository.shutDown();
+		MemoryStore store = new MemoryStore();
+		store.setExperimentalQueryOptimizations(experimental);
+		repository = new SailRepository(store);
+		repository.init();
+		String data = "<urn:g1> { <urn:a> <urn:p> <urn:o> } <urn:g2> { <urn:b> <urn:p> <urn:o> }";
+		String inherited = "?x <urn:p> <urn:o>";
+		String local = "GRAPH ?g { ?y <urn:p> <urn:o> }";
+		List<String> expected = List.of("{g=urn:g1, x=urn:a, y=urn:a}", "{g=urn:g1, x=urn:a, y=urn:b}",
+				"{g=urn:g2, x=urn:b, y=urn:a}", "{g=urn:g2, x=urn:b, y=urn:b}");
+		for (String body : List.of(inherited + " " + local,
+				"{ SELECT ?x { " + inherited + " } } " + local,
+				inherited + " OPTIONAL { SELECT ?y { " + local + " } }",
+				inherited + " LATERAL { SELECT ?y { " + local + " } }",
+				inherited + " " + local + " FILTER EXISTS { ?x <urn:p> <urn:o> }",
+				inherited + " " + local + " FILTER NOT EXISTS { ?x <urn:missing> ?z }",
+				inherited + " " + local + " MINUS { VALUES ?x { <urn:absent> } }",
+				"?x <urn:p>+ <urn:o> " + local,
+				inherited + " . ?x <urn:p>? <urn:o> " + local)) {
+			assertThat(query(data, "SELECT ?g ?x ?y { GRAPH ?g { ?seed <urn:p> <urn:o> OPTIONAL { "
+					+ "SELECT ?x ?y { " + body + " } } } }"))
+							.as("experimental=%s, body=%s", experimental, body)
+							.containsExactlyElementsOf(expected);
+		}
+	}
+
+	@Test
+	public void privateGraphParameterDoesNotCollideWithUserDeclaredVariables() throws Exception {
+		assertThat(query("<urn:g1> { <urn:a> <urn:p> <urn:o> } <urn:g2> { <urn:b> <urn:p> <urn:o> }",
+				"SELECT ?g ?x ?y ?_rdf4j_graph_context_0 { VALUES ?_rdf4j_graph_context_0 { <urn:user> } "
+						+ "GRAPH ?g { ?seed <urn:p> <urn:o> OPTIONAL { SELECT ?x ?y { ?x <urn:p> <urn:o> "
+						+ "GRAPH ?g { ?y <urn:p> <urn:o> } } } } }"))
+								.containsExactly(
+										"{_rdf4j_graph_context_0=urn:user, g=urn:g1, x=urn:a, y=urn:a}",
+										"{_rdf4j_graph_context_0=urn:user, g=urn:g1, x=urn:a, y=urn:b}",
+										"{_rdf4j_graph_context_0=urn:user, g=urn:g2, x=urn:b, y=urn:a}",
+										"{_rdf4j_graph_context_0=urn:user, g=urn:g2, x=urn:b, y=urn:b}");
+	}
+
+	@Test
+	public void privateGraphParameterDoesNotReceiveAnUnrelatedApiBinding() throws Exception {
+		assertThat(query("<urn:g1> { <urn:a> <urn:p> <urn:o> } <urn:g2> { <urn:b> <urn:p> <urn:o> }",
+				"SELECT ?g ?x ?y { GRAPH ?g { ?seed <urn:p> <urn:o> OPTIONAL { SELECT ?x ?y { "
+						+ "?x <urn:p> <urn:o> GRAPH ?g { ?y <urn:p> <urn:o> } } } } }",
+				Map.of("_rdf4j_graph_context_0", SimpleValueFactory.getInstance().createIRI("urn:g2"))))
+						.containsExactly("{g=urn:g1, x=urn:a, y=urn:a}", "{g=urn:g1, x=urn:a, y=urn:b}",
+								"{g=urn:g2, x=urn:b, y=urn:a}", "{g=urn:g2, x=urn:b, y=urn:b}");
+	}
+
+	@Test
+	public void sameTermRewritePreservesTheCallerGraphMetadata() throws Exception {
+		assertThat(query("<urn:g1> { <urn:a> <urn:p> <urn:o> } <urn:g2> { <urn:b> <urn:p> <urn:o> }",
+				"SELECT ?g ?h ?x ?y { GRAPH ?h { ?seed <urn:p> <urn:o> } GRAPH ?g { "
+						+ "?seed <urn:p> <urn:o> OPTIONAL { SELECT ?x ?y { ?x <urn:p> <urn:o> "
+						+ "GRAPH ?g { ?y <urn:p> <urn:o> } } } } FILTER(sameTerm(?h, ?g)) }"))
+								.containsExactly("{g=urn:g1, h=urn:g1, x=urn:a, y=urn:a}",
+										"{g=urn:g1, h=urn:g1, x=urn:a, y=urn:b}",
+										"{g=urn:g2, h=urn:g2, x=urn:b, y=urn:a}",
+										"{g=urn:g2, h=urn:g2, x=urn:b, y=urn:b}");
+	}
+
+	@Test
+	public void sameTermConstantAndApiBindingsSelectOnlyTheirCallerGraph() throws Exception {
+		String data = "<urn:g1> { <urn:a> <urn:p> <urn:o> } <urn:g2> { <urn:b> <urn:p> <urn:o> }";
+		String query = "SELECT ?g ?x ?y { GRAPH ?g { ?seed <urn:p> <urn:o> OPTIONAL { SELECT ?x ?y { "
+				+ "?x <urn:p> <urn:o> GRAPH ?g { ?y <urn:p> <urn:o> } } } } %s }";
+		assertThat(query(data, query.formatted("FILTER(sameTerm(?g, <urn:g1>))")))
+				.containsExactly("{g=urn:g1, x=urn:a, y=urn:a}", "{g=urn:g1, x=urn:a, y=urn:b}");
+		assertThat(query(data, query.formatted(""), Map.of("g", SimpleValueFactory.getInstance().createIRI("urn:g1"))))
+				.containsExactly("{g=urn:g1, x=urn:a, y=urn:a}");
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	public void ordinaryJoinSubqueriesKeepTheirInheritedGraphAcrossOperandOrders(boolean experimental)
+			throws Exception {
+		repository.shutDown();
+		MemoryStore store = new MemoryStore();
+		store.setExperimentalQueryOptimizations(experimental);
+		repository = new SailRepository(store);
+		repository.init();
+		String data = "<urn:g1> { <urn:a> <urn:p> <urn:o> } <urn:g2> { <urn:b> <urn:p> <urn:o> }";
+		for (String body : List.of("?x <urn:p> <urn:o>", "{ SELECT ?x { ?x <urn:p> <urn:o> } }")) {
+			for (boolean subqueryFirst : new boolean[] { false, true }) {
+				String subquery = "{ SELECT ?x { " + body + " } }";
+				String seed = "?seed <urn:p> <urn:o>";
+				String group = subqueryFirst ? subquery + " " + seed : seed + " " + subquery;
+				assertThat(query(data, "SELECT ?g ?x { GRAPH ?g { " + group + " } }"))
+						.as("experimental=%s, subqueryFirst=%s, body=%s", experimental, subqueryFirst, body)
+						.containsExactly("{g=urn:g1, x=urn:a}", "{g=urn:g2, x=urn:b}");
+				String mixed = "{ SELECT ?x ?y { " + body + " GRAPH ?g { ?y <urn:p> <urn:o> } } }";
+				group = subqueryFirst ? mixed + " " + seed : seed + " " + mixed;
+				assertThat(query(data, "SELECT ?g ?x ?y { GRAPH ?g { " + group + " } }"))
+						.as("shadow: experimental=%s, subqueryFirst=%s", experimental, subqueryFirst)
+						.containsExactly("{g=urn:g1, x=urn:a, y=urn:a}", "{g=urn:g1, x=urn:a, y=urn:b}",
+								"{g=urn:g2, x=urn:b, y=urn:a}", "{g=urn:g2, x=urn:b, y=urn:b}");
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
 	public void outerProjectionOmitsUnselectedApiBindingForDefaultAndNamedGraphPaths(boolean namedGraph)
 			throws Exception {
 		addPathChain(namedGraph);
@@ -179,6 +367,30 @@ public class BindingScopeReviewRegressionTest {
 								Values.iri("urn:a"), Values.iri("urn:b"), Values.iri("urn:b"), Values.iri("urn:c"),
 								Values.iri("urn:c"), Values.iri("urn:c"));
 				rows.forEach(row -> assertThat(row.getBindingNames()).containsExactly("o"));
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	public void siblingSelectsKeepTheirCallerGraphWhenBothProjectItsName(boolean experimental) throws Exception {
+		repository.shutDown();
+		MemoryStore store = new MemoryStore();
+		store.setExperimentalQueryOptimizations(experimental);
+		repository = new SailRepository(store);
+		repository.init();
+		String data = "<urn:g1> { <urn:a> <urn:p> <urn:o> } <urn:g2> { <urn:b> <urn:p> <urn:o> }";
+		for (boolean shadow : new boolean[] { false, true }) {
+			String first = "{ SELECT ?g ?x { ?x <urn:p> <urn:o> "
+					+ (shadow ? "GRAPH ?g { ?localX <urn:p> <urn:o> }" : "") + " } }";
+			String second = "{ SELECT ?g ?y { ?y <urn:p> <urn:o> "
+					+ (shadow ? "GRAPH ?g { ?localY <urn:p> <urn:o> }" : "") + " } }";
+			for (boolean reverse : new boolean[] { false, true }) {
+				String siblings = reverse ? second + " " + first : first + " " + second;
+				assertThat(query(data, "SELECT ?g ?x ?y { GRAPH ?g { ?seed <urn:p> <urn:o> { " + siblings
+						+ " } } }"))
+								.as("experimental=%s, shadow=%s, reverse=%s", experimental, shadow, reverse)
+								.containsExactly("{g=urn:g1, x=urn:a, y=urn:a}", "{g=urn:g2, x=urn:b, y=urn:b}");
 			}
 		}
 	}
@@ -330,12 +542,18 @@ public class BindingScopeReviewRegressionTest {
 	}
 
 	private List<String> query(String trig, String sparql) throws Exception {
+		return query(trig, sparql, Map.of());
+	}
+
+	private List<String> query(String trig, String sparql, Map<String, Value> input) throws Exception {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			if (!trig.isEmpty()) {
 				connection.add(new StringReader(trig), "http://ex/", RDFFormat.TRIG);
 			}
 			List<String> rows = new ArrayList<>();
-			try (TupleQueryResult result = connection.prepareTupleQuery(sparql).evaluate()) {
+			TupleQuery prepared = connection.prepareTupleQuery(sparql);
+			input.forEach(prepared::setBinding);
+			try (TupleQueryResult result = prepared.evaluate()) {
 				for (BindingSet bindings : result) {
 					Map<String, String> row = new TreeMap<>();
 					for (String name : bindings.getBindingNames()) {

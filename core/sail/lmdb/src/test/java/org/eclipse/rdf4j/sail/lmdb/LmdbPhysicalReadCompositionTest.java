@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
@@ -471,6 +472,10 @@ class LmdbPhysicalReadCompositionTest {
 	}
 
 	private static void seed(CapturingStore store, int explicitRows, int inferredRows) {
+		assertTrue(store.getQueryExecutionPolicy().experimentalQueryOptimizations(),
+				"fixture must explicitly select its experimental physical/sketch profile");
+		assertTrue(store.getBackingStore().getSketchBasedJoinEstimator() != null,
+				"the requested real sketch estimator must exist before the controlled seed");
 		store.getBackingStore().getSketchBasedJoinEstimator().stop();
 		try (LmdbStoreConnection connection = (LmdbStoreConnection) store.getConnection()) {
 			connection.begin(IsolationLevels.SNAPSHOT);
@@ -491,12 +496,19 @@ class LmdbPhysicalReadCompositionTest {
 		};
 
 		CapturingStore(File directory) {
-			super(directory, new LmdbStoreConfig("spoc,posc").setSketchEstimatorEnabled(true));
+			super(directory, createConfig());
+		}
+
+		private static LmdbStoreConfig createConfig() {
+			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+			config.setExperimentalQueryOptimizations(true);
+			config.setSketchEstimatorEnabled(true);
+			return config;
 		}
 
 		@Override
-		public synchronized EvaluationStrategyFactory getEvaluationStrategyFactory() {
-			return new CapturingFactory(super.getEvaluationStrategyFactory(), observer);
+		EvaluationStrategyFactory getConnectionEvaluationStrategyFactory() {
+			return new CapturingFactory(super.getConnectionEvaluationStrategyFactory(), observer);
 		}
 	}
 
@@ -527,6 +539,13 @@ class LmdbPhysicalReadCompositionTest {
 				EvaluationStatistics statistics) {
 			observer.accept(source);
 			return delegate.createEvaluationStrategy(dataset, source, statistics);
+		}
+
+		@Override
+		public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource source,
+				EvaluationStatistics statistics, QueryExecutionPolicy policy) {
+			observer.accept(source);
+			return delegate.createEvaluationStrategy(dataset, source, statistics, policy);
 		}
 
 		@Override

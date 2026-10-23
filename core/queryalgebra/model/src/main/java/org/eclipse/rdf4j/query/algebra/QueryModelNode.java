@@ -21,6 +21,7 @@ import java.util.function.Supplier;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
 
 /**
  * Main interface for all query model nodes.
@@ -413,6 +414,13 @@ public interface QueryModelNode extends Cloneable, Serializable {
 	}
 
 	@Experimental
+	default long incrementLongMetricActual(String metricName) {
+		long next = Math.max(0L, getLongMetricActual(metricName)) + 1L;
+		setLongMetricActual(metricName, next);
+		return next;
+	}
+
+	@Experimental
 	default Map<String, Double> getDoubleMetricsActual() {
 		return Collections.emptyMap();
 	}
@@ -439,6 +447,14 @@ public interface QueryModelNode extends Cloneable, Serializable {
 
 	@Experimental
 	default void setStringMetricActual(String metricName, String metricValue) {
+		// no-op
+	}
+
+	/**
+	 * Clears runtime measurements from an earlier evaluation while retaining estimates and planned metrics.
+	 */
+	@Experimental
+	default void clearMetricsActual() {
 		// no-op
 	}
 
@@ -531,6 +547,16 @@ public interface QueryModelNode extends Cloneable, Serializable {
 		// no-op
 	}
 
+	@Experimental
+	default boolean isExecutionSummaryEnabled() {
+		return false;
+	}
+
+	@Experimental
+	default void setExecutionSummaryEnabled(boolean executionSummaryEnabled) {
+		// no-op
+	}
+
 	/**
 	 * Returns transient optimizer metadata attached to this query model node for the supplied key.
 	 *
@@ -574,4 +600,34 @@ public interface QueryModelNode extends Cloneable, Serializable {
 		// no-op
 	}
 
+	/** Read-only preflight before an ordinary clone could hash an extension metadata key. */
+	@InternalUseOnly
+	default boolean canDetachPlanningState(java.util.function.BiPredicate<Object, Object> metadata) {
+		return false;
+	}
+
+	/** Internal cache boundary; ordinary clone and serialization retain their existing contracts. */
+	@InternalUseOnly
+	default boolean copyDetachedPlanningStateTo(QueryModelNode target, DetachedMetadataCopier metadata) {
+		return false;
+	}
+
+	@InternalUseOnly
+	default boolean accountDetachedPlanningState(
+			RetainedMemoryAccount account,
+			DetachedMetadataAccount metadata) {
+		return false;
+	}
+
+	@FunctionalInterface
+	interface DetachedMetadataCopier {
+		/** Return false for an unknown payload; the private optional copy is then discarded as a whole. */
+		boolean copy(Object key, Object value, QueryModelNode target);
+	}
+
+	@FunctionalInterface
+	interface DetachedMetadataAccount {
+		boolean account(Object key, Object value,
+				RetainedMemoryAccount account);
+	}
 }

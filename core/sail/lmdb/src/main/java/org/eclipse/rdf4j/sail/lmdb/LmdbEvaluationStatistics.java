@@ -18,6 +18,8 @@ import java.util.Set;
 import java.util.function.BooleanSupplier;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -27,6 +29,7 @@ import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.RuntimeFeedbackTarget;
@@ -124,13 +127,25 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 			PackedPlanCache cascadesPlanCache,
 			LmdbFrontierPlannerSettings frontierSettings, BooleanSupplier mayHaveInferred,
 			BooleanSupplier adaptiveEvidenceAllowedSupplier, LmdbStatisticsService statistics) {
+		this(valueStore, tripleStore, estimator, filters, feedback, cardinalities, cascadesPlanCache,
+				frontierSettings, mayHaveInferred, adaptiveEvidenceAllowedSupplier, statistics, null, QueryExecutionPolicy.DEFAULT);
+	}
+
+	LmdbEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
+			SketchBasedJoinEstimator estimator, LmdbFilterSelectivityStats filters,
+			LmdbOperatorFeedbackStats feedback, LmdbStatementPatternCardinalitySource cardinalities,
+			PackedPlanCache cascadesPlanCache,
+			LmdbFrontierPlannerSettings frontierSettings, BooleanSupplier mayHaveInferred,
+			BooleanSupplier adaptiveEvidenceAllowedSupplier, LmdbStatisticsService statistics,
+			LmdbLearnedFilterSelectivity learned, QueryExecutionPolicy policy) {
 		BooleanSupplier adaptiveEvidenceAllowed = adaptiveEvidenceAllowedSupplier == null ? () -> true
 				: adaptiveEvidenceAllowedSupplier;
+		LmdbLearnedFilterSelectivity qualifiedLearned = policy.experimentalQueryOptimizations() ? learned : null;
 		runtime = new LmdbEstimatorRuntime(valueStore, tripleStore,
 				estimator == null ? null : estimator.synopsisService(), filters, feedback, cardinalities,
 				cascadesPlanCache, frontierSettings, mayHaveInferred,
-				adaptiveEvidenceAllowed, statistics);
-		filterServices = new LmdbEvaluationFilterServices(runtime, filters, estimator, adaptiveEvidenceAllowed);
+				adaptiveEvidenceAllowed, statistics, qualifiedLearned);
+		filterServices = new LmdbEvaluationFilterServices(runtime, filters, estimator, adaptiveEvidenceAllowed, qualifiedLearned);
 	}
 
 	@Override
@@ -146,6 +161,16 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 	 */
 	void bindExecutionSnapshot(OptionalLong executionSnapshotEpoch) {
 		feedbackPublicationAllowed = executionSnapshotEpoch != null && executionSnapshotEpoch.isPresent();
+	}
+
+	void bindFilterReadSource(TripleSource source, Dataset dataset) {
+		filterServices.bindReadSource(source, dataset);
+	}
+
+	void prepareFilterOutcome(Filter filter, TripleSource source, Dataset dataset) {
+		if (feedbackPublicationAllowed) {
+			filterServices.prepareFilterOutcome(filter, source, dataset);
+		}
 	}
 
 	/** Returns whether runtime feedback observed through this instance is published into the learned state. */
@@ -168,12 +193,29 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 		if (expression instanceof AbstractQueryModelNode node && node.isCardinalitySet()) {
 			return node.getCardinality();
 		}
-		return expression == null ? 0.0d : runtime.estimate(expression).rows();
+		return expression == null ? 0.0d : runtime.estimate(expression, filterServices.filterReadContext()).rows();
 	}
 
 	@Override
 	protected CardinalityCalculator createCardinalityCalculator() {
 		return new LmdbCardinalityCalculator();
+	}
+
+	int fallbackAccessPrefixLength(StatementPattern pattern, Set<String> boundVars) {
+		if (pattern == null || runtime.physicalTripleStore() == null) {
+			return 0;
+		}
+		int mask = 0;
+		var vars = new Var[] { pattern.getSubjectVar(), pattern.getPredicateVar(),
+				pattern.getObjectVar(), pattern.getContextVar() };
+		for (int i = 0; i < vars.length; i++) {
+			var var = vars[i];
+			if (var != null && (var.hasValue() || boundVars != null && boundVars.contains(var.getName()))) {
+				mask |= 1 << i;
+			}
+		}
+		return runtime.physicalTripleStore().indexAccessPaths(mask).stream()
+				.mapToInt(TripleStore.IndexAccessPath::prefixLength).max().orElse(0);
 	}
 
 	@Override
@@ -219,11 +261,11 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 
 		@Override
 		protected double getCardinality(StatementPattern pattern) {
-			return runtime.estimate(pattern).rows();
+			return runtime.estimate(pattern, filterServices.filterReadContext()).rows();
 		}
 
 		private void setRuntimeCardinality(TupleExpr expression) {
-			cardinality = runtime.estimate(expression).rows();
+			cardinality = runtime.estimate(expression, filterServices.filterReadContext()).rows();
 			expression.setResultSizeEstimate(cardinality);
 		}
 	}
@@ -253,12 +295,12 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 	public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
 		CostContext context = CostContext.of(currentlyBoundVars == null ? Set.of() : currentlyBoundVars,
 				1.0d, 1.0d, false);
-		return runtime.factorCost(factor, context);
+		return runtime.factorCost(factor, context, filterServices.filterReadContext());
 	}
 
 	@Override
 	public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, CostContext context) {
-		return runtime.factorCost(factor, context);
+		return runtime.factorCost(factor, context, filterServices.filterReadContext());
 	}
 
 	@Override
@@ -284,7 +326,7 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 		TupleExpr expression = LmdbEstimatorExpressionSupport.join(orderedFactors);
 		return expression == null ? Optional.empty()
 				: Optional.of(LmdbStatisticsEstimateAdapter.from(
-						runtime.estimate(expression, boundVars, EstimationTier.STANDARD, false)));
+						runtime.estimate(expression, boundVars, EstimationTier.STANDARD, false, filterServices.filterReadContext())));
 	}
 
 	public Optional<StatisticsEstimate> filter(TupleExpr input, ValueExpr condition, StatisticsEstimate inputEstimate,
@@ -293,7 +335,7 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 			return Optional.empty();
 		}
 		return Optional.of(LmdbStatisticsEstimateAdapter.from(runtime.estimateFilter(input, condition,
-				inputEstimate.bag(), boundVars, EstimationTier.STANDARD, false)));
+				inputEstimate.bag(), boundVars, EstimationTier.STANDARD, false, filterServices.filterReadContext())));
 	}
 
 	@Override

@@ -232,11 +232,25 @@ public final class PackedCascadesPlanner {
 		if (cache == null || context == null) {
 			return optimize(tupleExpr, limits, exploreReorderings, costModel, rangeProvider, semanticsCodec);
 		}
+		TupleExpr executionSource = tupleExpr;
+		PackedStatementPatternSemanticsCodec executionCodec = semanticsCodec;
+		PackedStatementPatternSemanticsCodec cacheCodec = semanticsCodec.cacheOwnershipCodec();
+		if (cacheCodec.ownsCacheValues()) {
+			TupleExpr ownedInput = cacheCodec.prepareCacheSource(tupleExpr);
+			if (ownedInput == null) {
+				return optimize(executionSource, limits, exploreReorderings, costModel, rangeProvider, executionCodec);
+			}
+			tupleExpr = ownedInput;
+			semanticsCodec = cacheCodec;
+		}
 		long cacheStart = System.nanoTime();
 		// The plan identity is never null for codec-supported algebra (it keeps exact names when alpha-normalization
 		// is unsafe), so every cache hit is authenticated by the collision-proof packed identity, not by equals.
 		PackedQueryCacheIdentity sourceIdentity = PackedQueryCacheIdentity.createPlanIdentity(tupleExpr, rangeProvider,
 				semanticsCodec);
+		if (semanticsCodec.ownsCacheValues() && sourceIdentity == null) {
+			return optimize(executionSource, limits, exploreReorderings, costModel, rangeProvider, executionCodec);
+		}
 		PackedPlanCache.Fingerprint fingerprint = cache.fingerprint(tupleExpr, sourceIdentity);
 		PackedPlanCache.PlanEntry hit = cache.findPlan(fingerprint, context, tupleExpr, sourceIdentity, limits);
 		if (hit != null) {
@@ -251,6 +265,9 @@ public final class PackedCascadesPlanner {
 		PackedPlanCache.FlightClaim claim = cache.beginFlight(fingerprint, context, tupleExpr, sourceIdentity,
 				familyIdentity, limits);
 		for (int abandonedFlights = 0;; abandonedFlights++) {
+			if (claim == null) {
+				return optimize(executionSource, limits, exploreReorderings, costModel, rangeProvider, executionCodec);
+			}
 			if (claim.hit() != null) {
 				return familyIdentity == null
 						? cachedResult(claim.hit(), tupleExpr, System.nanoTime() - cacheStart)
@@ -271,7 +288,7 @@ public final class PackedCascadesPlanner {
 			// lets this thread take over ownership or pick up a plan published meanwhile; after a second abandoned
 			// flight, or while the owner is still blocked at the deadline, plan independently and publish nothing.
 			if (abandonedFlights >= 1) {
-				return optimize(tupleExpr, limits, exploreReorderings, costModel, rangeProvider);
+				return optimize(executionSource, limits, exploreReorderings, costModel, rangeProvider, executionCodec);
 			}
 			claim = cache.beginFlight(fingerprint, context, tupleExpr, sourceIdentity, familyIdentity, limits);
 		}
@@ -385,6 +402,11 @@ public final class PackedCascadesPlanner {
 						.setDoubleMetricPlanned("optimizer.planCacheValidationWorkUnits",
 								staleValidation.workUnits());
 			}
+			PackedPlanningResult emission = emitCacheResult(result, semanticsCodec);
+			if (emission == null) {
+				cache.decline(claim); // complete search result remains executable; unsupported retention is optional
+				return result;
+			}
 			PackedQuery cachedQuery = query.withoutOriginalBindingSets();
 			PackedPlanCache.QueryEntry publishedQuery = queryEntry == null
 					? new PackedPlanCache.QueryEntry(fingerprint, context, tupleExpr, sourceIdentity, cachedQuery)
@@ -400,11 +422,25 @@ public final class PackedCascadesPlanner {
 			} else {
 				cache.publishTransient(claim, publishedPlan, publishedQuery);
 			}
-			return result;
+			return emission;
 		} catch (RuntimeException | Error failure) {
 			cache.fail(claim, failure);
 			throw failure;
 		}
+	}
+
+	private static PackedPlanningResult emitCacheResult(PackedPlanningResult result,
+			PackedStatementPatternSemanticsCodec codec) {
+		TupleExpr emitted = codec.emitCachePlan(result.selectedPlan());
+		if (emitted == null) {
+			return null;
+		}
+		return emitted == result.selectedPlan() ? result
+				: new PackedPlanningResult(emitted,
+						result.outputRows(), result.totalCost(), result.metrics(), result.workLimitReached(),
+						result.deadlineReached(), result.ruleProofMask(), result.completionStatus(),
+						result.retainedBytes(),
+						result.decisionSummary());
 	}
 
 	private static boolean reusableWorkLimitedResult(PackedPlanningResult result, PackedPlannerLimits limits) {
@@ -454,7 +490,10 @@ public final class PackedCascadesPlanner {
 			long cacheNanos, long encodeNanos, long validationWorkUnits, boolean queryTemplateCacheHit) {
 		long materializationStart = System.nanoTime();
 		PackedQuery query = PackedQueryCodec.rebindOriginalBindingSets(entry.query(), source);
-		TupleExpr selectedPlan = PackedPlanMaterializer.materialize(query, entry.recipe());
+		TupleExpr selectedPlan = Objects.requireNonNull(entry.recipe()
+				.emitCachePlan(
+						PackedPlanMaterializer.materialize(query, entry.recipe())),
+				"admitted cache emission");
 		long materializationNanos = System.nanoTime() - materializationStart;
 		PlanningMetrics metrics = new PlanningMetrics(encodeNanos, 0L, 0L, materializationNanos, cacheNanos,
 				validationWorkUnits, 0, 0, 0, 0, true, queryTemplateCacheHit);
@@ -976,7 +1015,10 @@ public final class PackedCascadesPlanner {
 
 	private static PackedPlanningResult cachedResult(PackedPlanCache.PlanEntry entry, PackedQuery query,
 			long cacheNanos, boolean queryTemplateCacheHit, long materializationStart) {
-		TupleExpr selectedPlan = PackedPlanMaterializer.materialize(query, entry.recipe());
+		TupleExpr selectedPlan = Objects.requireNonNull(entry.recipe()
+				.emitCachePlan(
+						PackedPlanMaterializer.materialize(query, entry.recipe())),
+				"admitted cache emission");
 		long materializationNanos = System.nanoTime() - materializationStart;
 		PlanningMetrics metrics = new PlanningMetrics(0L, 0L, 0L, materializationNanos, cacheNanos, 0L, 0, 0, 0,
 				0, true, queryTemplateCacheHit);

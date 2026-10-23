@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MaterializeTupleExpr;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -519,6 +520,7 @@ public final class BindingScopeAnalysis {
 			}
 		}
 		BindingSetOrigin.copy(bindings, retained);
+		GraphFrameBindings.preserve(bindings, retained);
 		return retained.isEmpty() && !BindingSetOrigin.of(retained).hasParameters()
 				? EmptyBindingSet.getInstance()
 				: retained;

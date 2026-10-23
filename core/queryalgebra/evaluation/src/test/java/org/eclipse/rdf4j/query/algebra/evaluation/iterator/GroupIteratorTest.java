@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -34,12 +35,16 @@ import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreakerHandle;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.http.client.QueryPressureState;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
@@ -51,16 +56,24 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.Avg;
+import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupConcat;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.Max;
 import org.eclipse.rdf4j.query.algebra.Min;
+import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.Sample;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Sum;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -69,7 +82,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BatchCorrelatedJoinProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateCollector;
@@ -98,6 +113,35 @@ public class GroupIteratorTest {
 	private static final String BREAKER_WARN_FREE_MB = "rdf4j.query.breaker.warn.free.mb";
 	private static final String BREAKER_HIGH_FREE_MB = "rdf4j.query.breaker.high.free.mb";
 	private static final String BREAKER_CRITICAL_FREE_MB = "rdf4j.query.breaker.critical.free.mb";
+
+	private static final class BatchAwareEvaluationStrategy extends DefaultEvaluationStrategy
+			implements BatchCorrelatedJoinProvider.Host {
+		private final AtomicInteger batchJoinCalls = new AtomicInteger();
+		private final BatchCorrelatedJoinProvider provider = new BatchCorrelatedJoinProvider() {
+			@Override
+			public boolean supports(QueryEvaluationStep rightStep, String[] sharedVariables, Mode mode,
+					boolean hasCondition) {
+				return true;
+			}
+
+			@Override
+			public CloseableIteration<BindingSet> tryBatchJoin(BatchCorrelationRequest request,
+					QueryEvaluationStep rightStep) {
+				batchJoinCalls.incrementAndGet();
+				request.outer().close();
+				return QueryEvaluationStep.EMPTY_ITERATION;
+			}
+		};
+
+		private BatchAwareEvaluationStrategy() {
+			super(new EmptyTripleSource(), null);
+		}
+
+		@Override
+		public BatchCorrelatedJoinProvider batchCorrelatedJoinProvider() {
+			return provider;
+		}
+	}
 
 	@BeforeAll
 	public static void init() {
@@ -224,6 +268,120 @@ public class GroupIteratorTest {
 					.describedAs("GROUP_CONCAT on empty set should result in empty string")
 					.isEqualTo(VF.createLiteral(""));
 		}
+	}
+
+	@Test
+	public void precompilesNestedGroupArgumentsWithoutEvaluatingStatements() throws QueryEvaluationException {
+		AtomicInteger sourceCalls = new AtomicInteger();
+		EvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource() {
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
+					Resource... contexts) throws QueryEvaluationException {
+				sourceCalls.incrementAndGet();
+				throw new AssertionError("Optimized plan preparation must not read statements");
+			}
+		}, null);
+		Join nestedJoin = new Join(
+				new StatementPattern(Var.of("nestedLeftSubject"), Var.of("nestedLeftPredicate"),
+						Var.of("nestedLeftObject")),
+				new StatementPattern(Var.of("nestedRightSubject"), Var.of("nestedRightPredicate"),
+						Var.of("nestedRightObject")));
+		Group nestedGroup = new Group(nestedJoin);
+		Join outerJoin = new Join(
+				new StatementPattern(Var.of("outerSubject"), Var.of("outerPredicate"), Var.of("outerObject")),
+				nestedGroup);
+		Group outerGroup = new Group(outerJoin);
+
+		strategy.precompile(outerGroup, CONTEXT);
+
+		assertThat(outerJoin.getAlgorithmName()).isNotBlank();
+		assertThat(nestedJoin.getAlgorithmName()).isNotBlank();
+		assertThat(sourceCalls.get()).isZero();
+	}
+
+	@Test
+	public void recordsPlannedLeftJoinAndUpdatesForRuntimeFallback() throws QueryEvaluationException {
+		QueryBindingSet leftBindings = new QueryBindingSet();
+		leftBindings.addBinding("left", VF.createLiteral("left"));
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingSets(List.of(leftBindings));
+
+		StatementPattern right = new StatementPattern(Var.of("rightSubject"), Var.of("rightPredicate"),
+				Var.of("optional"));
+		LeftJoin leftJoin = new LeftJoin(left, right);
+		QueryEvaluationStep step = new DefaultEvaluationStrategy(new EmptyTripleSource(), null)
+				.precompile(leftJoin, CONTEXT);
+
+		assertThat(leftJoin.getAlgorithmName()).isEqualTo(LeftJoinIterator.class.getSimpleName());
+
+		QueryBindingSet parentBindings = new QueryBindingSet();
+		parentBindings.addBinding("optional", VF.createLiteral("provided"));
+		try (var ignored = step.evaluate(parentBindings)) {
+			assertThat(leftJoin.getAlgorithmName()).isEqualTo(BadlyDesignedLeftJoinIterator.class.getSimpleName());
+		}
+	}
+
+	@Test
+	public void recordsHashJoinForOptionalSubqueryDuringPreparation() throws QueryEvaluationException {
+		Projection optionalSubquery = new Projection(new SingletonSet());
+		optionalSubquery.setSubquery(true);
+		LeftJoin leftJoin = new LeftJoin(new SingletonSet(), optionalSubquery);
+
+		EVALUATOR.precompile(leftJoin, CONTEXT);
+
+		assertThat(leftJoin.getAlgorithmName()).isEqualTo(HashJoinIteration.class.getSimpleName());
+	}
+
+	@Test
+	public void recordsReplayJoinForVolatileOptionalDuringPreparation() throws QueryEvaluationException {
+		Extension volatileOptional = new Extension(new SingletonSet(),
+				new ExtensionElem(new BNodeGenerator(), "generated"));
+		LeftJoin leftJoin = new LeftJoin(new SingletonSet(), volatileOptional);
+
+		new DefaultEvaluationStrategy(new EmptyTripleSource(), null).precompile(leftJoin, CONTEXT);
+
+		assertThat(leftJoin.getAlgorithmName()).isEqualTo(MaterializedReplayJoinIterator.class.getSimpleName());
+	}
+
+	@Test
+	public void recordsBatchProviderForSupportedOptionalJoinDuringPreparation() throws QueryEvaluationException {
+		QueryBindingSet row = new QueryBindingSet();
+		row.addBinding("shared", VF.createLiteral("value"));
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingSets(List.of(row));
+		BindingSetAssignment right = new BindingSetAssignment();
+		right.setBindingSets(List.of(row));
+		LeftJoin leftJoin = new LeftJoin(left, right);
+
+		new BatchAwareEvaluationStrategy().precompile(leftJoin, CONTEXT);
+
+		assertThat(leftJoin.getAlgorithmName()).isEqualTo(BatchCorrelatedJoinProvider.class.getSimpleName());
+	}
+
+	@Test
+	public void recordsBatchRouteAfterRuntimeFallbackOnReusedStep() throws QueryEvaluationException {
+		QueryBindingSet leftRow = new QueryBindingSet();
+		leftRow.addBinding("shared", VF.createLiteral("shared"));
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingSets(List.of(leftRow));
+		BindingSetAssignment sharedRight = new BindingSetAssignment();
+		sharedRight.setBindingSets(List.of(leftRow));
+		Join right = new Join(sharedRight,
+				new StatementPattern(Var.of("optionalSubject"), Var.of("optionalPredicate"), Var.of("optional")));
+		LeftJoin leftJoin = new LeftJoin(left, right);
+		BatchAwareEvaluationStrategy strategy = new BatchAwareEvaluationStrategy();
+		QueryEvaluationStep step = strategy.precompile(leftJoin, CONTEXT);
+
+		assertThat(leftJoin.getAlgorithmName()).isEqualTo(BatchCorrelatedJoinProvider.class.getSimpleName());
+		QueryBindingSet guardedEntryBindings = new QueryBindingSet();
+		guardedEntryBindings.addBinding("optional", VF.createLiteral("pre-bound"));
+		try (var ignored = step.evaluate(guardedEntryBindings)) {
+			assertThat(leftJoin.getAlgorithmName()).isEqualTo(BadlyDesignedLeftJoinIterator.class.getSimpleName());
+		}
+		try (var ignored = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(leftJoin.getAlgorithmName()).isEqualTo(BatchCorrelatedJoinProvider.class.getSimpleName());
+		}
+		assertThat(strategy.batchJoinCalls.get()).isEqualTo(1);
 	}
 
 	@Test

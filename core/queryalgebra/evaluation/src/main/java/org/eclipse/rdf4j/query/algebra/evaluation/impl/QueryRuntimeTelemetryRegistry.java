@@ -34,6 +34,12 @@ public final class QueryRuntimeTelemetryRegistry {
 	private static final int MAX_PATTERN_KEYS = 1024;
 	private static final int EVICTION_CHECK_INTERVAL = 512;
 	private static final Object NORMALIZED_KEY_METADATA = new Object();
+
+	/** Cache-only copies let the existing prepare/keyFor entry recompute this derived key on the emitted tree. */
+	public static boolean isDerivedPlanningMetadata(Object key) {
+		return key == NORMALIZED_KEY_METADATA;
+	}
+
 	private static final ConcurrentHashMap<String, TelemetryAggregate> BY_PATTERN_KEY = new ConcurrentHashMap<>();
 	// Intentionally best-effort. MAX_PATTERN_KEYS is a soft ceiling, so occasional delayed checks are acceptable.
 	// Keeping this as a plain counter avoids adding extra contention to every telemetry record() call.

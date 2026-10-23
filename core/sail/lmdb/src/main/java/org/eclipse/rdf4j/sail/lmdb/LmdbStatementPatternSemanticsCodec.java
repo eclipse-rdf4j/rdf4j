@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedStatementPatternSemanticsCodec;
 
 /** Stateless transport of native raw-kind selection, independent of invocation graph or snapshot authority. */
@@ -20,6 +21,16 @@ final class LmdbStatementPatternSemanticsCodec implements PackedStatementPattern
 	static final LmdbStatementPatternSemanticsCodec INSTANCE = new LmdbStatementPatternSemanticsCodec();
 
 	private LmdbStatementPatternSemanticsCodec() {
+	}
+
+	@Override
+	public PackedStatementPatternSemanticsCodec cacheOwnershipCodec() {
+		return LmdbCacheValueCopies.CODEC;
+	}
+
+	@Override
+	public boolean supportsSemanticIdentity(TupleExpr source) {
+		return LmdbCacheValueCopies.semanticIdentityReady(source);
 	}
 
 	@Override

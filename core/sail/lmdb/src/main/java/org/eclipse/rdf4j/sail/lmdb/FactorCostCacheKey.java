@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedProviderCacheIdentity;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -107,6 +108,12 @@ final class FactorCostCacheKey {
 			return true;
 		}
 
+		void account(PackedProviderCacheIdentity identity) {
+			if (identity != null && !identity.accountRetainedMemory(this)) {
+				bytes = Long.MAX_VALUE;
+			}
+		}
+
 		void account(RuntimeFeedbackContract contract) {
 			if (contract != null && contract.descriptor().accountRetainedMemory(this)) {
 				add(contract, 160L);
@@ -125,6 +132,12 @@ final class FactorCostCacheKey {
 					super.meetNode(node);
 				}
 			});
+		}
+
+		void accountCacheModels(TupleExpr tree) {
+			if (!LmdbCacheValueCopies.account(tree, this)) {
+				bytes = Long.MAX_VALUE;
+			}
 		}
 
 		long bytes() {

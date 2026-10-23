@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -82,9 +83,9 @@ import org.junit.jupiter.params.provider.ValueSource;
  * must merge every group of colliding ids into one id, rewrite every statement that uses a losing id, and switch the
  * store to canonical keys - crash-safely.
  * <p>
- * The legacy fixture is written through the real LMDB write path with the merge disabled, in several sessions so the
- * value-id cache is cold whenever a case variant is added (which is how the legacy code created the second id). Every
- * statement also goes into a {@link MemoryStore}, the reference for all results.
+ * The immutable legacy fixture is produced by the pinned historical writer in three cold sessions. Its actual native
+ * IDs and owner fingerprints are captured by N-Triples spelling before any current migration. The unchanged operation
+ * lists also populate a {@link MemoryStore}, the independent reference for all results.
  */
 class LmdbLanguageTagVariantMergeTest {
 
@@ -195,28 +196,40 @@ class LmdbLanguageTagVariantMergeTest {
 	}
 
 	@Test
+	void startupPredicateDomainScanOwnsDeferredTripleTermChildrenBeforeMigration() throws Exception {
+		buildLegacyStore();
+		assertNull(loadStoreProperties(storeDir).getProperty(StoreProperties.PREDICATE_OBJECT_DOMAINS_VERSION_KEY),
+				"the authentic fixture requires a full predicate-domain rebuild on startup");
+		List<LmdbValue> coldInternalValues = Collections.synchronizedList(new ArrayList<>());
+		LmdbLanguageTagVariantMerge.disabledForTesting = true;
+		LmdbStore store = recordingInternalValues(coldInternalValues);
+		try {
+			store.init();
+			assertEquals(LanguageTagKeyMode.BYTE_EXACT, valueStore(store).languageTagKeyMode(),
+					"variant retirement is disabled so cleanup cannot conceal the startup export assertion");
+			for (LmdbValue value : coldInternalValues) {
+				assertTrue(value.getInternalIdentity().revision().getValueStore() == valueStore(store),
+						"the observed internal export must belong to this actual store");
+			}
+			assertEquals(0, coldInternalValues.size(),
+					() -> "startup predicate-domain bookkeeping exported cold native IDs "
+							+ coldInternalValues.stream().map(value -> value.getInternalIdentity().id())
+									.distinct().sorted().toList());
+		} finally {
+			try {
+				store.shutDown();
+			} finally {
+				LmdbLanguageTagVariantMerge.disabledForTesting = false;
+				Reference.reachabilityFence(coldInternalValues);
+			}
+		}
+	}
+
+	@Test
 	void rewriteBookkeepingDoesNotExportDeferredTripleTermChildren() throws Exception {
 		LegacyIds legacy = buildLegacyStore();
 		List<LmdbValue> coldInternalValues = Collections.synchronizedList(new ArrayList<>());
-		LmdbStore store = new LmdbStore(storeDir, config()) {
-			@Override
-			LmdbSailStore createBackingStore(File dataDir, StoreProperties properties, LmdbStoreConfig options,
-					boolean sketchEnabled) throws IOException {
-				return new LmdbSailStore(dataDir, properties, options, sketchEnabled,
-						(directory, state, settings) -> new ValueStore(directory, state, settings) {
-							@Override
-							<T extends Value> T protectExternalValue(T value) {
-								if (value instanceof LmdbValue nativeValue && !nativeValue.isInitialized()
-										&& !nativeValue.isExternallyOwned()) {
-									// Keep each actual export reachable through close: collection must not mask a
-									// deferred child whose ID is subsequently retired by the language merge.
-									coldInternalValues.add(nativeValue);
-								}
-								return super.protectExternalValue(value);
-							}
-						}, TripleStore::new);
-			}
-		};
+		LmdbStore store = recordingInternalValues(coldInternalValues);
 		try {
 			store.init();
 			assertEquals(LanguageTagKeyMode.CANONICAL, valueStore(store).languageTagKeyMode());
@@ -328,9 +341,13 @@ class LmdbLanguageTagVariantMergeTest {
 	void persistedSketchSynopsisIsRebuiltAfterTheMerge() throws Exception {
 		buildLegacyStore();
 		LmdbStoreConfig sketchConfig = config().setSketchEstimatorEnabled(true);
+		sketchConfig.setExperimentalQueryOptimizations(true);
 		LmdbLanguageTagVariantMerge.disabledForTesting = true;
 		LmdbStore legacy = open(sketchConfig);
 		try {
+			assertTrue(legacy.getQueryExecutionPolicy().experimentalQueryOptimizations(),
+					"fixture: the optional sketch service uses the supported experimental profile");
+			assertNotNull(legacy.getBackingStore().getSketchBasedJoinEstimator(), "fixture: actual sketch service");
 			assertTrue(legacy.getBackingStore().forceFlushSketchEstimator(), "fixture: sketch synopsis built");
 			legacy.getBackingStore().getSketchBasedJoinEstimator().persistIfDirty();
 		} finally {
@@ -444,56 +461,51 @@ class LmdbLanguageTagVariantMergeTest {
 	// ---------------------------------------------------------------------------------------------------------
 
 	/**
-	 * Writes the legacy store in three sessions (a restart before each so the value-id cache is cold) and the same
-	 * statements, in the same order, into the reference store.
+	 * Extracts the authentic historical three-session store before any current migration and writes the same
+	 * statements, in the same order, only into the independent reference store.
 	 */
 	private LegacyIds buildLegacyStore() throws Exception {
-		writeStoreProperties(storeDir, StoreProperties.LANGUAGE_TAG_KEY_BYTE_EXACT);
-		LmdbLanguageTagVariantMerge.disabledForTesting = true;
-		try {
-			for (List<Op> session : sessions()) {
-				load(session);
-			}
-			LmdbStore legacy = open();
-			try {
-				assertEquals(LanguageTagKeyMode.BYTE_EXACT, valueStore(legacy).languageTagKeyMode(),
-						"fixture: the merge is disabled while the legacy store is written");
-				try (RepositoryConnection lmdbConnection = new SailRepository(legacy).getConnection();
-						RepositoryConnection referenceConnection = reference.getConnection()) {
-					assertTrue(statements(lmdbConnection, true).size() > statements(referenceConnection, true)
-							.size(), "fixture: the legacy store must hold duplicate statements for case variants");
-				}
-				ValueStore valueStore = valueStore(legacy);
-				Map<String, Long> ids = new LinkedHashMap<>();
-				for (Value value : List.of(ABC_EN, ABC_UPPER, ABC_MIXED, XYZ_UPPER, XYZ_LOWER, LONG_EN, LONG_UPPER,
+		LmdbLanguageVariantFixture.Capture fixture = LmdbLanguageVariantFixture.extractAndAuthenticate(
+				storeDir.toPath(), List.of(ABC_EN, ABC_UPPER, ABC_MIXED, XYZ_UPPER, XYZ_LOWER, LONG_EN, LONG_UPPER,
 						RTL_UPPER, RTL_LOWER, tripleTerm(ABC_EN), tripleTerm(ABC_UPPER), tripleTerm(ABC_MIXED),
 						nested(ABC_EN), nested(ABC_UPPER), Q_LOWER, Q_UPPER, tripleTerm(Q_UPPER), W_LOWER, W_UPPER,
-						tripleTerm(W_UPPER), tripleTerm(W_LOWER))) {
-					valueStore.clearCaches();
-					long id = valueStore.getId(value);
-					assertNotEquals(-1L, id, "fixture: " + value + " must be stored");
-					ids.put(NTriplesUtil.toNTriplesString(value), id);
-				}
-				LegacyIds legacyIds = new LegacyIds(ids);
-				assertNotEquals(legacyIds.id(ABC_EN), legacyIds.id(ABC_UPPER), "fixture: colliding literal ids");
-				assertNotEquals(legacyIds.id(ABC_EN), legacyIds.id(ABC_MIXED), "fixture: three-way literal group");
-				assertNotEquals(legacyIds.id(XYZ_UPPER), legacyIds.id(XYZ_LOWER),
-						"fixture: upper-case spelling first");
-				assertNotEquals(legacyIds.id(LONG_EN), legacyIds.id(LONG_UPPER), "fixture: hash-path literal group");
-				assertNotEquals(legacyIds.id(RTL_UPPER), legacyIds.id(RTL_LOWER), "fixture: directional literal group");
-				assertNotEquals(legacyIds.id(tripleTerm(ABC_EN)), legacyIds.id(tripleTerm(ABC_UPPER)),
-						"fixture: triple terms over colliding literals");
-				assertNotEquals(legacyIds.id(nested(ABC_EN)), legacyIds.id(nested(ABC_UPPER)),
-						"fixture: nested triple terms over colliding literals");
-				assertTrue(legacyIds.id(tripleTerm(W_UPPER)) < legacyIds.id(tripleTerm(W_LOWER)),
-						"fixture: the triple term over the losing literal has the smaller id");
-				return legacyIds;
-			} finally {
-				legacy.shutDown();
+						tripleTerm(W_UPPER), tripleTerm(W_LOWER)));
+		int sessionIndex = 0;
+		for (List<Op> session : sessions()) {
+			List<String> recordedOperations = new ArrayList<>();
+			for (Op operation : session) {
+				Statement statement = operation.statement();
+				recordedOperations.add((operation.explicit() ? "E|" : "I|")
+						+ NTriplesUtil.toNTriplesString(statement.getSubject()) + " "
+						+ NTriplesUtil.toNTriplesString(statement.getPredicate()) + " "
+						+ NTriplesUtil.toNTriplesString(statement.getObject())
+						+ (statement.getContext() == null ? ""
+								: " " + NTriplesUtil.toNTriplesString(statement.getContext())));
 			}
-		} finally {
-			LmdbLanguageTagVariantMerge.disabledForTesting = false;
+			assertEquals(recordedOperations, fixture.sessionOperations().get(sessionIndex++),
+					"fixture: exact original session operation order and explicit/inferred planes");
+			add(reference.getSail(), session);
 		}
+		try (RepositoryConnection referenceConnection = reference.getConnection()) {
+			assertTrue(fixture.explicitRows() + fixture.inferredRows()
+					> statements(referenceConnection, true).size(),
+					"fixture: the legacy store must hold duplicate statements for case variants");
+		}
+		Map<String, Long> ids = fixture.idBySpelling();
+		LegacyIds legacyIds = new LegacyIds(ids);
+		assertNotEquals(legacyIds.id(ABC_EN), legacyIds.id(ABC_UPPER), "fixture: colliding literal ids");
+		assertNotEquals(legacyIds.id(ABC_EN), legacyIds.id(ABC_MIXED), "fixture: three-way literal group");
+		assertNotEquals(legacyIds.id(XYZ_UPPER), legacyIds.id(XYZ_LOWER),
+				"fixture: upper-case spelling first");
+		assertNotEquals(legacyIds.id(LONG_EN), legacyIds.id(LONG_UPPER), "fixture: hash-path literal group");
+		assertNotEquals(legacyIds.id(RTL_UPPER), legacyIds.id(RTL_LOWER), "fixture: directional literal group");
+		assertNotEquals(legacyIds.id(tripleTerm(ABC_EN)), legacyIds.id(tripleTerm(ABC_UPPER)),
+				"fixture: triple terms over colliding literals");
+		assertNotEquals(legacyIds.id(nested(ABC_EN)), legacyIds.id(nested(ABC_UPPER)),
+				"fixture: nested triple terms over colliding literals");
+		assertTrue(legacyIds.id(tripleTerm(W_UPPER)) < legacyIds.id(tripleTerm(W_LOWER)),
+				"fixture: the triple term over the losing literal has the smaller id");
+		return legacyIds;
 	}
 
 	private static List<List<Op>> sessions() {
@@ -678,6 +690,28 @@ class LmdbLanguageTagVariantMergeTest {
 	// Harness
 	// ---------------------------------------------------------------------------------------------------------
 
+	private LmdbStore recordingInternalValues(List<LmdbValue> coldInternalValues) {
+		return new LmdbStore(storeDir, config()) {
+			@Override
+			LmdbSailStore createBackingStore(File dataDir, StoreProperties properties, LmdbStoreConfig options,
+					boolean sketchEnabled) throws IOException {
+				return new LmdbSailStore(dataDir, properties, options, sketchEnabled,
+						(directory, state, settings) -> new ValueStore(directory, state, settings) {
+							@Override
+							<T extends Value> T protectExternalValue(T value) {
+								if (value instanceof LmdbValue nativeValue && !nativeValue.isInitialized()
+										&& !nativeValue.isExternallyOwned()) {
+									// Keep each actual export reachable through close: collection must not mask a
+									// deferred child whose ID is subsequently retired by the language merge.
+									coldInternalValues.add(nativeValue);
+								}
+								return super.protectExternalValue(value);
+							}
+						}, TripleStore::new);
+			}
+		};
+	}
+
 	private LmdbStore open() {
 		return open(config());
 	}
@@ -772,7 +806,7 @@ class LmdbLanguageTagVariantMergeTest {
 	private static void writeStoreProperties(File dir, String languageTagKey) throws IOException {
 		dir.mkdirs();
 		Properties properties = new Properties();
-		properties.setProperty(StoreProperties.VERSION_KEY, String.valueOf(LmdbStore.VERSION));
+		properties.setProperty(StoreProperties.VERSION_KEY, String.valueOf(LmdbStoreFormat.LEGACY_VERSION));
 		properties.setProperty(StoreProperties.INDEXES_KEY, "spoc,posc");
 		properties.setProperty(StoreProperties.TRIPLE_TERM_INDEXES_KEY, "spoc,cspo");
 		if (languageTagKey != null) {

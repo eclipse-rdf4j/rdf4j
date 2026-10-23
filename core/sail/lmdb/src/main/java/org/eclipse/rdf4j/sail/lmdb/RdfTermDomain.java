@@ -17,6 +17,7 @@ import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -99,6 +100,22 @@ final class RdfTermDomain {
 		this.mask = mask;
 		this.finiteValues = finiteValues;
 		this.integerRange = integerRange;
+	}
+
+	/** Cache-only ownership copy; exact mask/range semantics survive, but no caller model implementation does. */
+	RdfTermDomain detachedForCache(Function<Value, Value> copy) {
+		if (finiteValues == null) {
+			return this;
+		}
+		Set<Value> detached = new LinkedHashSet<>();
+		for (Value value : finiteValues) {
+			Value replacement = copy.apply(value);
+			if (replacement == null) {
+				return null;
+			}
+			detached.add(replacement);
+		}
+		return new RdfTermDomain(mask, Collections.unmodifiableSet(detached), integerRange);
 	}
 
 	record IntegerRange(long minInclusive, long maxInclusive) {

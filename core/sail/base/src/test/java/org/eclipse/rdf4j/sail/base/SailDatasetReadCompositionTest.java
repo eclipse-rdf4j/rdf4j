@@ -29,6 +29,7 @@ import java.util.function.BiFunction;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -257,8 +258,170 @@ class SailDatasetReadCompositionTest {
 		assertEquals(1, second.closeCount);
 	}
 
+	@Test
+	void sharedSnapshotBorrowersPreserveCompleteOccurrenceMultiplicity() {
+		Leaf explicit = new Leaf("E");
+		Leaf inferred = new Leaf("I");
+		try (SailDatasetSnapshot.DatasetPair pair = new SailDatasetSnapshot.DatasetPair(union(explicit, inferred),
+				new StubDataset());
+				SailDataset repeated = union(pair.borrow(true), pair.borrow(true))) {
+			assertEquals(List.of("E", "I", "E", "I"), requiredShape(repeated).occurrences());
+			assertEquals(0, explicit.closeCount + inferred.closeCount);
+			assertEquals(0, explicit.statementOpens + inferred.statementOpens);
+		}
+		assertEquals(1, explicit.closeCount);
+		assertEquals(1, inferred.closeCount);
+	}
+
+	@Test
+	void closedSharedSnapshotBorrowerCannotLendItsLiveSiblingCapability() {
+		Leaf leaf = new Leaf("E");
+		try (SailDatasetSnapshot.DatasetPair pair = new SailDatasetSnapshot.DatasetPair(leaf, new StubDataset());
+				SailDataset closed = pair.borrow(true);
+				SailDataset sibling = pair.borrow(true)) {
+			closed.close();
+			closed.abandonUnobserved();
+			assertThrows(IllegalStateException.class, () -> resolve(closed));
+			assertEquals(List.of("E"), requiredShape(sibling).occurrences());
+			assertEquals(0, leaf.closeCount);
+		}
+		assertEquals(1, leaf.closeCount);
+	}
+
+	@Test
+	void retiredSnapshotPairKeepsTheActualBorrowedCompositionUntilRelease() {
+		Leaf leaf = new Leaf("E");
+		try (SailDatasetSnapshot.DatasetPair pair = new SailDatasetSnapshot.DatasetPair(leaf, new StubDataset());
+				SailDataset borrower = pair.borrow(true)) {
+			pair.close();
+			assertEquals(0, leaf.closeCount);
+			assertEquals(List.of("E"), requiredShape(borrower).occurrences());
+			borrower.close();
+			borrower.abandonUnobserved();
+			assertEquals(1, leaf.closeCount);
+			assertThrows(IllegalStateException.class, () -> resolve(borrower));
+		}
+		assertEquals(1, leaf.closeCount);
+	}
+
+	@Test
+	void sharedSnapshotResolutionDefersFinalReleaseThroughTheCallback() {
+		Leaf first = new Leaf("E");
+		Leaf second = new Leaf("I");
+		try (SailDatasetSnapshot.DatasetPair pair = new SailDatasetSnapshot.DatasetPair(union(first, second),
+				new StubDataset());
+				SailDataset borrower = pair.borrow(true)) {
+			Optional<Shape> resolved = SailDatasetReadComposition.resolve(source(borrower), Shape.class,
+					(left, right) -> {
+						pair.close();
+						borrower.close();
+						assertEquals(0, first.closeCount + second.closeCount);
+						return combine(left, right);
+					});
+			assertEquals(List.of("E", "I"), requiredShape(resolved).occurrences());
+			assertEquals(1, first.closeCount);
+			assertEquals(1, second.closeCount);
+		}
+	}
+
+	@Test
+	void sharedSnapshotCursorKeepsThePhysicalOwnerAfterTheBorrowerCloses() {
+		CursorLeaf leaf = new CursorLeaf();
+		try (SailDatasetSnapshot.DatasetPair pair = new SailDatasetSnapshot.DatasetPair(leaf, new StubDataset());
+				SailDataset borrower = pair.borrow(true)) {
+			try (CloseableIteration<? extends Statement> cursor = borrower.getStatements(null, null, null)) {
+				assertTrue(cursor.hasNext());
+				pair.close();
+				borrower.close();
+				assertEquals(0, leaf.closeCount, "an open cursor still owns the shared physical reader");
+				assertTrue(cursor.hasNext());
+				assertThrows(IllegalStateException.class, () -> resolve(borrower));
+			}
+			assertEquals(1, leaf.closeCount);
+		}
+		assertEquals(1, leaf.closeCount);
+	}
+
+	@Test
+	void getDatasetsPreservesTransparentWrapperAndCompleteNestedUnion() {
+		Leaf first = new Leaf("E");
+		Leaf second = new Leaf("I");
+		Leaf third = new Leaf("third");
+		SailDataset transparent = new RetainedSailDataset(second);
+		SailDataset nested = union(first, union(transparent, third));
+		try (nested) {
+			assertEquals(List.of(first, second, third), datasets(nested, Shape.class));
+			assertEquals(0, first.statementOpens + second.statementOpens + third.statementOpens);
+		}
+	}
+
+	@Test
+	void getDatasetsDeclinesOpaqueTransformingWrapperAndIncompleteUnions() {
+		for (boolean opaqueFirst : new boolean[] { false, true }) {
+			Leaf known = new Leaf("E");
+			AtomicInteger statementCalls = new AtomicInteger();
+			SailDataset opaque = new DelegatingSailDataset(new Leaf("hidden")) {
+				@Override
+				public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
+						Resource... contexts) {
+					statementCalls.incrementAndGet();
+					return new EmptyIteration<>();
+				}
+			};
+			SailDataset union = opaqueFirst ? union(opaque, known) : union(known, opaque);
+			try (union) {
+				assertTrue(datasets(union, Shape.class).isEmpty());
+				assertEquals(0, statementCalls.get(), "capability discovery must not execute a transforming wrapper");
+			}
+		}
+	}
+
+	@Test
+	void getDatasetsDoesNotExposeAClosedOwnerWhileACursorRetainsItsDelegate() throws Exception {
+		CursorLeaf leaf = new CursorLeaf();
+		RetainedSailDataset retained = new RetainedSailDataset(leaf);
+		try (CloseableIteration<? extends Statement> cursor = retained.getStatements(null, null, null)) {
+			assertTrue(cursor.hasNext());
+			retained.close();
+			assertEquals(0, leaf.closeCount, "the open cursor still retains its dataset");
+			assertTrue(cursor.hasNext(), "closing the owner must not close its live cursor");
+			assertThrows(IllegalStateException.class, () -> datasets(retained, Shape.class),
+					"a closed owner must not publish its live delegate for new native work");
+		}
+		assertEquals(1, leaf.closeCount);
+	}
+
+	@Test
+	void getDatasetsPreservesRepeatedLeafOccurrences() {
+		Leaf explicit = new Leaf("E");
+		Leaf inferred = new Leaf("I");
+		try (SailDataset repeated = union(explicit, union(inferred, explicit))) {
+			assertEquals(List.of(explicit, inferred, explicit), datasets(repeated, Shape.class));
+		}
+	}
+
+	@Test
+	void getDatasetsDeclinesSourceSubclassWithChangedStatementSemantics() {
+		try (SailDataset leaf = new Leaf("E")) {
+			SailDatasetTripleTermSource altered = new SailDatasetTripleTermSource(
+					SimpleValueFactory.getInstance(), leaf) {
+				@Override
+				public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate,
+						Value object, Resource... contexts) {
+					return new EmptyIteration<>();
+				}
+			};
+			assertTrue(altered.getDatasets(Shape.class).isEmpty(),
+					"a transformed actual source cannot expose a native stream that bypasses it");
+		}
+	}
+
 	private static SailDataset union(SailDataset first, SailDataset second) {
 		return UnionSailDataset.getInstance(first, second);
+	}
+
+	private static <T> List<T> datasets(SailDataset dataset, Class<T> type) {
+		return new SailDatasetTripleTermSource(SimpleValueFactory.getInstance(), dataset).getDatasets(type);
 	}
 
 	private static TripleSource source(SailDataset dataset) {
@@ -351,6 +514,29 @@ class SailDatasetReadCompositionTest {
 				Resource... contexts) {
 			statementOpens++;
 			return super.getStatements(subject, predicate, object, contexts);
+		}
+	}
+
+	private static final class CursorLeaf extends StubDataset implements Shape {
+		private int closeCount;
+
+		@Override
+		public List<String> occurrences() {
+			return List.of("cursor");
+		}
+
+		@Override
+		public void close() {
+			closeCount++;
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
+				Resource... contexts) {
+			var vf = SimpleValueFactory.getInstance();
+			Statement statement = vf.createStatement(vf.createIRI("urn:composition:s"),
+					vf.createIRI("urn:composition:p"), vf.createLiteral("cursor"));
+			return new CloseableIteratorIteration<>(List.of(statement).iterator());
 		}
 	}
 

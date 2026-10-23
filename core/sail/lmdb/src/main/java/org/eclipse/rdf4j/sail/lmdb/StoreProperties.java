@@ -17,7 +17,9 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.channels.FileChannel;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
@@ -79,6 +81,44 @@ class StoreProperties {
 	protected final File propertiesFile;
 	private final StorePropertiesFileOps fileOps;
 
+	/**
+	 * The key recording which inlined-numeric id encoding NEW writes use. Absent = the legacy ZigZag scheme (all
+	 * pre-existing stores); {@link #NUMERIC_ID_ENCODING_ORDERED_V1} = value-ordered biased encoding. Ids are
+	 * self-describing by type bits, so both encodings coexist in one store — this property only gates writers.
+	 */
+	static final String NUMERIC_ID_ENCODING_KEY = "numeric-id-encoding";
+
+	static final String NUMERIC_ID_ENCODING_ORDERED_V1 = "ordered-v1";
+
+	/** Writer/read capability for non-inline literal references carrying a stable core-datatype tag in their ID. */
+	static final String LITERAL_REFERENCE_ENCODING_KEY = "literal-reference-encoding";
+
+	static final String LITERAL_REFERENCE_ENCODING_CORE_V1 = "core-v1";
+
+	/**
+	 * The key recording whether inlined literal ids were in use when the store was created. Unlike
+	 * {@link #NUMERIC_ID_ENCODING_KEY} this is not merely a writer gate: inlining changes how a value is IDENTIFIED, so
+	 * the two settings are not interchangeable within one store and reopening under the opposite one is refused. Absent
+	 * means a store written before this property existed; the caller must supply its original configuration. The opener
+	 * does not persist that unrecorded assumption.
+	 */
+	static final String INLINE_LITERALS_KEY = "inline-literals";
+
+	/**
+	 * The key recording how language tags are encoded for newly written literals. Absent means the historical
+	 * byte-preserving encoding used by existing stores.
+	 */
+	static final String CANONICAL_LANGUAGE_TAGS_KEY = "canonical-language-tags";
+
+	static final String CANONICAL_LANGUAGE_TAGS_LOWERCASE_V1 = "lowercase-v1";
+
+	/** Absent in existing stores: their .0/.00 dateTime literals must keep their dictionary identity. */
+	static final String DATE_TIME_ID_ENCODING_KEY = "date-time-id-encoding";
+
+	static final String DATE_TIME_ID_ENCODING_ZERO_FRACTION_V1 = "zero-fraction-v1";
+
+	private final Properties loadedProperties = new Properties();
+
 	protected String version;
 
 	protected String tripleIndexes;
@@ -89,7 +129,20 @@ class StoreProperties {
 	protected String languageTagKey;
 	protected String refCountsVersion;
 
+	protected String numericIdEncoding;
+
+	protected String literalReferenceEncoding;
+
+	protected String inlineLiterals;
+
+	protected String canonicalLanguageTags;
+
+	protected String dateTimeIdEncoding;
+
 	protected boolean loaded;
+
+	/** Both native environments were present during the locked, read-only startup preflight. */
+	private boolean nativeGenerationPresent;
 
 	protected boolean dirty;
 
@@ -121,12 +174,19 @@ class StoreProperties {
 				throw new IllegalStateException("Unable to load store properties from " + file, e);
 			}
 			version = properties.getProperty(VERSION_KEY);
+			loadedProperties.clear();
+			loadedProperties.putAll(properties);
 			tripleIndexes = properties.getProperty(INDEXES_KEY);
 			predicateObjectDomainsVersion = properties.getProperty(PREDICATE_OBJECT_DOMAINS_VERSION_KEY);
 			tripleTermIndexes = properties.getProperty(TRIPLE_TERM_INDEXES_KEY);
 			storeId = properties.getProperty(STORE_ID_KEY);
 			languageTagKey = properties.getProperty(LANGUAGE_TAG_KEY);
 			refCountsVersion = properties.getProperty(REF_COUNTS_VERSION_KEY);
+			numericIdEncoding = properties.getProperty(NUMERIC_ID_ENCODING_KEY);
+			literalReferenceEncoding = properties.getProperty(LITERAL_REFERENCE_ENCODING_KEY);
+			inlineLiterals = properties.getProperty(INLINE_LITERALS_KEY);
+			canonicalLanguageTags = properties.getProperty(CANONICAL_LANGUAGE_TAGS_KEY);
+			dateTimeIdEncoding = properties.getProperty(DATE_TIME_ID_ENCODING_KEY);
 			loaded = true;
 		});
 		return loaded;
@@ -163,6 +223,13 @@ class StoreProperties {
 
 	private byte[] encodeProperties() throws IOException {
 		Properties properties = new Properties();
+		properties.putAll(loadedProperties);
+		for (String key : new String[] { VERSION_KEY, INDEXES_KEY, TRIPLE_TERM_INDEXES_KEY,
+				PREDICATE_OBJECT_DOMAINS_VERSION_KEY, STORE_ID_KEY, LANGUAGE_TAG_KEY, REF_COUNTS_VERSION_KEY,
+				NUMERIC_ID_ENCODING_KEY, LITERAL_REFERENCE_ENCODING_KEY, INLINE_LITERALS_KEY,
+				CANONICAL_LANGUAGE_TAGS_KEY, DATE_TIME_ID_ENCODING_KEY }) {
+			properties.remove(key);
+		}
 		if (version != null) {
 			properties.setProperty(VERSION_KEY, version);
 		}
@@ -184,9 +251,37 @@ class StoreProperties {
 		if (refCountsVersion != null) {
 			properties.setProperty(REF_COUNTS_VERSION_KEY, refCountsVersion);
 		}
+		if (numericIdEncoding != null) {
+			properties.setProperty(NUMERIC_ID_ENCODING_KEY, numericIdEncoding);
+		}
+		if (literalReferenceEncoding != null) {
+			properties.setProperty(LITERAL_REFERENCE_ENCODING_KEY, literalReferenceEncoding);
+		}
+		if (inlineLiterals != null) {
+			properties.setProperty(INLINE_LITERALS_KEY, inlineLiterals);
+		}
+		if (canonicalLanguageTags != null) {
+			properties.setProperty(CANONICAL_LANGUAGE_TAGS_KEY, canonicalLanguageTags);
+		}
+		if (dateTimeIdEncoding != null) {
+			properties.setProperty(DATE_TIME_ID_ENCODING_KEY, dateTimeIdEncoding);
+		}
 		try (ByteArrayOutputStream output = new ByteArrayOutputStream(256)) {
 			properties.store(output, "LmdbStore meta-data");
 			return output.toByteArray();
+		}
+	}
+
+	static void forceParentDirectory(Path parent) throws IOException {
+		// Directory forcing improves durability where supported. Windows and providers that reject directory channels
+		// retain file-force semantics, without a portable guarantee that a new directory entry survives power loss.
+		if (System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).startsWith("windows")) {
+			return;
+		}
+		try (FileChannel channel = FileChannel.open(parent, StandardOpenOption.READ)) {
+			channel.force(true);
+		} catch (UnsupportedOperationException e) {
+			// Some filesystem providers do not expose directories as forceable channels.
 		}
 	}
 
@@ -194,13 +289,102 @@ class StoreProperties {
 		return loaded;
 	}
 
+	boolean hasNativeGeneration() {
+		return nativeGenerationPresent;
+	}
+
+	void setNativeGenerationPresent(boolean nativeGenerationPresent) {
+		this.nativeGenerationPresent = nativeGenerationPresent;
+	}
+
+	String getRawProperty(String key) {
+		return switch (key) {
+		case VERSION_KEY -> version;
+		case INDEXES_KEY -> tripleIndexes;
+		case TRIPLE_TERM_INDEXES_KEY -> tripleTermIndexes;
+		case PREDICATE_OBJECT_DOMAINS_VERSION_KEY -> predicateObjectDomainsVersion;
+		case STORE_ID_KEY -> storeId;
+		case LANGUAGE_TAG_KEY -> languageTagKey;
+		case REF_COUNTS_VERSION_KEY -> refCountsVersion;
+		case NUMERIC_ID_ENCODING_KEY -> numericIdEncoding;
+		case LITERAL_REFERENCE_ENCODING_KEY -> literalReferenceEncoding;
+		case INLINE_LITERALS_KEY -> inlineLiterals;
+		case CANONICAL_LANGUAGE_TAGS_KEY -> canonicalLanguageTags;
+		case DATE_TIME_ID_ENCODING_KEY -> dateTimeIdEncoding;
+		default -> loadedProperties.getProperty(key);
+		};
+	}
+
 	String getVersion() {
 		return version;
+	}
+
+	StoreProperties setDateTimeIdEncoding(String dateTimeIdEncoding) {
+		this.dirty = dirty || !Objects.equals(this.dateTimeIdEncoding, dateTimeIdEncoding);
+		this.dateTimeIdEncoding = dateTimeIdEncoding;
+		return this;
+	}
+
+	boolean usesZeroFractionDateTimeIds() {
+		if (dateTimeIdEncoding == null) {
+			return false;
+		}
+		if (DATE_TIME_ID_ENCODING_ZERO_FRACTION_V1.equals(dateTimeIdEncoding)) {
+			return true;
+		}
+		throw new IllegalStateException("Unsupported date-time-id-encoding: " + dateTimeIdEncoding);
 	}
 
 	StoreProperties setVersion(String version) {
 		this.dirty |= !Objects.equals(this.version, version);
 		this.version = version;
+		return this;
+	}
+
+	String getNumericIdEncoding() {
+		return numericIdEncoding;
+	}
+
+	StoreProperties setNumericIdEncoding(String numericIdEncoding) {
+		this.dirty = dirty || !Objects.equals(this.numericIdEncoding, numericIdEncoding);
+		this.numericIdEncoding = numericIdEncoding;
+		return this;
+	}
+
+	/** Whether NEW writes use the value-ordered inlined-numeric encoding. */
+	boolean usesOrderedNumericIds() {
+		return NUMERIC_ID_ENCODING_ORDERED_V1.equals(numericIdEncoding);
+	}
+
+	StoreProperties setLiteralReferenceEncoding(String literalReferenceEncoding) {
+		this.dirty = dirty || !Objects.equals(this.literalReferenceEncoding, literalReferenceEncoding);
+		this.literalReferenceEncoding = literalReferenceEncoding;
+		return this;
+	}
+
+	boolean usesCoreDatatypeLiteralReferences() {
+		return LITERAL_REFERENCE_ENCODING_CORE_V1.equals(literalReferenceEncoding);
+	}
+
+	/** The recorded inlining setting, or {@code null} for a store written before the property existed. */
+	Boolean getInlineLiterals() {
+		return inlineLiterals == null ? null : Boolean.valueOf(inlineLiterals);
+	}
+
+	StoreProperties setInlineLiterals(boolean enabled) {
+		String value = Boolean.toString(enabled);
+		this.dirty = dirty || !Objects.equals(this.inlineLiterals, value);
+		this.inlineLiterals = value;
+		return this;
+	}
+
+	boolean usesCanonicalLanguageTags() {
+		return CANONICAL_LANGUAGE_TAGS_LOWERCASE_V1.equals(canonicalLanguageTags);
+	}
+
+	StoreProperties setCanonicalLanguageTags(String canonicalLanguageTags) {
+		this.dirty = dirty || !Objects.equals(this.canonicalLanguageTags, canonicalLanguageTags);
+		this.canonicalLanguageTags = canonicalLanguageTags;
 		return this;
 	}
 

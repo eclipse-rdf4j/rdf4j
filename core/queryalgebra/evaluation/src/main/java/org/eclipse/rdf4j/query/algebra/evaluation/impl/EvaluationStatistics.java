@@ -897,6 +897,28 @@ public class EvaluationStatistics {
 		}
 	}
 
+	/** Copies terminal typed counters for observation only; never resolves or publishes a learning destination. */
+	static void publishRuntimeFeedbackTelemetry(QueryModelNode node, InvocationAggregateView observation) {
+		node.setCostFeedbackActualRows((long) Math.min(Long.MAX_VALUE, observation.actualRowsSum()));
+		double work = observation.actualWork(InvocationAggregateView.WORK_ROWS);
+		node.setCostFeedbackActualWorkRows(Double.isFinite(work) && work >= 0.0d
+				? work
+				: observation.actualRowsSum());
+		node.setCostFeedbackCloseCountActual(observation.opens());
+		node.setCostFeedbackCompletedActual(observation.opens() > 0L
+				&& observation.exhaustedOpens() == observation.opens() && observation.partialCloses() == 0L
+				&& observation.cancellations() == 0L && observation.failures() == 0L);
+		node.setDoubleMetricActual(RAW_PREDICTED_ROWS_SUM, observation.rawPredictedRowsSum());
+		node.setDoubleMetricActual(APPLIED_PREDICTED_ROWS_SUM, observation.appliedPredictedRowsSum());
+		node.setDoubleMetricActual(ACTUAL_ROWS_SUM, observation.actualRowsSum());
+		node.setLongMetricActual(OPEN_COUNT, observation.opens());
+		node.setLongMetricActual(EXHAUSTED_OPEN_COUNT, observation.exhaustedOpens());
+		node.setLongMetricActual(EARLY_SUCCESS_COUNT, observation.earlySuccesses());
+		node.setLongMetricActual(PARTIAL_CLOSE_COUNT, observation.partialCloses());
+		node.setLongMetricActual(FAILURE_COUNT, observation.failures());
+		node.setLongMetricActual(TelemetryMetricNames.EXHAUSTED_CLOSE_COUNT_ACTUAL, observation.exhaustedOpens());
+	}
+
 	/**
 	 * Returns whether the evaluation strategy should attach the lightweight learned-cost feedback iterator to this
 	 * node. Implementations should keep this predicate cheap; it is evaluated during query precompilation.

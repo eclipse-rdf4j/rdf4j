@@ -84,6 +84,8 @@ import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
+import org.eclipse.rdf4j.query.algebra.OwnedStringDiagnostic;
+import org.eclipse.rdf4j.query.algebra.OwnedStringDiagnosticProducer;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
@@ -142,11 +144,19 @@ final class PackedPlanMaterializer {
 		}
 		TupleExpr result = relation(query, recipe, recipe.rootRecipeId());
 		applyCacheValidation(recipe, result);
-		result.setStringMetricPlannedDeferred("optimizer.packedExplanation", recipe::describeCostingDecisions);
-		Supplier<String> explanationJson = recipe::describeCostingDecisionsJson;
+		result.setStringMetricPlannedDeferred("optimizer.packedExplanation", new PackedDiagnostic(recipe, false));
+		Supplier<String> explanationJson = new PackedDiagnostic(recipe, true);
 		result.setStringMetricPlannedDeferred("optimizer.packedExplanationJson", explanationJson);
 		result.setStringMetricPlannedDeferred("optimizer.cascadesTraceJson", explanationJson);
 		return result;
+	}
+
+	/** Ordinary execution retains the old O(1) deferred attachment; a cache copy freezes only pure data. */
+	private record PackedDiagnostic(PackedPlanRecipe recipe, boolean json) implements OwnedStringDiagnosticProducer {
+		@Override
+		public OwnedStringDiagnostic snapshot() {
+			return json ? recipe.costingDecisionsJsonDiagnostic() : recipe.costingDecisionsDiagnostic();
+		}
 	}
 
 	private static void applyCacheValidation(PackedPlanRecipe recipe, TupleExpr root) {
@@ -769,6 +779,9 @@ final class PackedPlanMaterializer {
 		int flags = query.payloadFlags(termId);
 		Var variable = Var.of(name, value, (flags & PackedQuery.TERM_ANONYMOUS) != 0,
 				(flags & PackedQuery.TERM_CONSTANT) != 0, (flags & PackedQuery.TERM_BNODE) != 0);
+		if ((flags & PackedQuery.TERM_API_INPUT_ORIGIN) != 0) {
+			variable = variable.withApiInputOrigin();
+		}
 		applyCommonMetadata(query, variable, query.termMetadataFlags(termId), query.termResultSizeEstimate(termId),
 				query.termCostEstimate(termId), query.termMetricSetId(termId));
 		return variable;

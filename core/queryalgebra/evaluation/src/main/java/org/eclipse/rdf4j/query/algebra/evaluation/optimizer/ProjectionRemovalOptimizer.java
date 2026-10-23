@@ -48,6 +48,10 @@ public class ProjectionRemovalOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Projection projection) throws RuntimeException {
 			super.meet(projection);
+			if (projection.getInheritedGraphParameter() != null) {
+				// The private active-graph input belongs to this SELECT boundary, even for an identity projection.
+				return;
+			}
 
 			if (!isIdentityProjection(projection)) {
 				return;

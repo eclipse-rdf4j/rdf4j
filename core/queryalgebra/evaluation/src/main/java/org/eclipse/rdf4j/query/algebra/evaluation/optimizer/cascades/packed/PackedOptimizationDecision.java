@@ -15,6 +15,7 @@ import java.util.Arrays;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
 
 /**
  * Immutable, materializable result of one packed optimization decision.
@@ -244,4 +245,23 @@ final class PackedOptimizationDecision {
 	private static long saturatedAdd(long left, long right) {
 		return right > Long.MAX_VALUE - left ? Long.MAX_VALUE : left + right;
 	}
+
+	boolean accountCacheStructure(RetainedMemoryAccount account) {
+		if (!account.add(this, 48L)) {
+			return true;
+		}
+		PackedCacheMemory.array(account, candidates);
+		for (Candidate candidate : candidates) {
+			account.add(candidate, 48L);
+			account.add(candidate.estimatedCost(), 40L);
+			account.add(candidate.physicalIdentity(), 32L);
+			PackedCacheMemory.string(account, candidate.physicalIdentity().canonicalForm());
+			if (!candidate.recipe().accountCacheStructure(account)) {
+				return false;
+			}
+		}
+		return (familyIdentity == null || familyIdentity.accountRetainedMemory(account))
+				&& (searchCheckpoint == null || searchCheckpoint.accountCacheStructure(account));
+	}
+
 }

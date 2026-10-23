@@ -158,7 +158,8 @@ class LmdbNonrepeatableBindingReplayTest {
 			if (sourceKind == SourceKind.SINGLE_USE) {
 				assertNotNull(outcome.failure, "an invalidated single-use input must fail instead of losing rows: "
 						+ outcome.rows);
-				assertTrue(hasMapResizeConflict(outcome.failure), "failure must identify native snapshot invalidation");
+				assertTrue(hasMapResizeConflict(outcome.failure),
+						"failure must identify native snapshot invalidation: " + outcome.failure);
 				assertEquals(1, rows.opens, "the consumed source must never be reopened");
 				assertEquals(before.replayAccepted(), after.replayAccepted());
 			} else {
@@ -262,6 +263,12 @@ class LmdbNonrepeatableBindingReplayTest {
 
 		private BarrierFunction(int barrierInvocation) {
 			this.barrierInvocation = barrierInvocation;
+		}
+
+		@Override
+		public Determinism getDeterminism() {
+			// The RDF result is always the input term; gates only observe the physical execution route.
+			return Determinism.DETERMINISTIC;
 		}
 
 		@Override

@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteAssumption;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteCertificate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteSafety;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
@@ -289,6 +290,54 @@ final class LmdbNullRejectingOptionalSupport {
 		Set<String> copiedBindings = optionalBindings.isEmpty() ? Set.of() : Set.copyOf(optionalBindings);
 		filter.setStringMetricPlanned(REWRITE_METRIC, rewriteMetric(source, copiedBindings));
 		filter.setQueryModelMetadata(OPTIONAL_BINDINGS_METADATA_KEY, copiedBindings);
+	}
+
+	static boolean isPlanningMetadata(Object key) {
+		return key == OPTIONAL_BINDINGS_METADATA_KEY;
+	}
+
+	static boolean canDetachMetadata(Object value) {
+		if (!(value instanceof Set<?> names)) {
+			return false;
+		}
+		for (Object name : names) {
+			if (!(name instanceof String)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	static boolean copyDetachedMetadata(Object value, QueryModelNode target) {
+		if (!(value instanceof Set<?> names)) {
+			return false;
+		}
+		Set<String> copy = new LinkedHashSet<>();
+		for (Object name : names) {
+			if (!(name instanceof String text)) {
+				return false;
+			}
+			copy.add(text);
+		}
+		target.setQueryModelMetadata(OPTIONAL_BINDINGS_METADATA_KEY, Set.copyOf(copy));
+		return true;
+	}
+
+	static boolean accountDetachedMetadata(Object value,
+			RetainedMemoryAccount account) {
+		if (!(value instanceof Set<?> names)) {
+			return false;
+		}
+		if (!account.add(names, 192L + 96L * names.size())) {
+			return true;
+		}
+		for (Object name : names) {
+			if (!(name instanceof String text)) {
+				return false;
+			}
+			account.add(text, 40L + 2L * text.length());
+		}
+		return true;
 	}
 
 	static boolean isRewrittenOptionalBinding(Filter filter, String bindingName) {

@@ -285,6 +285,7 @@ final class LmdbJoinPlanSupport {
 		return contains[0];
 	}
 
+
 	static boolean isValidPassRatio(double passRatio) {
 		return Double.isFinite(passRatio) && passRatio >= 0.0d && passRatio <= 1.0d;
 	}

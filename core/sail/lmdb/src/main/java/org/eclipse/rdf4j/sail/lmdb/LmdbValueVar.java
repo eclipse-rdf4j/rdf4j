@@ -32,6 +32,10 @@ final class LmdbValueVar extends Var {
 				lmdbValueResolved);
 		result.setBNode(var.isBNode());
 		result.setVariableScopeChange(var.isVariableScopeChange());
+		result.setGraphContextDepth(var.getGraphContextDepth());
+		if (var.hasApiInputOrigin()) {
+			result = (LmdbValueVar) result.withApiInputOrigin();
+		}
 		return result;
 	}
 
@@ -49,6 +53,11 @@ final class LmdbValueVar extends Var {
 				lmdbValue, lmdbValueResolved);
 		clone.setBNode(isBNode());
 		clone.setVariableScopeChange(isVariableScopeChange());
+		clone.setGraphContextDepth(getGraphContextDepth());
+		if (hasApiInputOrigin()) {
+			// This newly constructed copy is unmarked, so its provider-independent clone does not recurse.
+			return (LmdbValueVar) clone.withApiInputOrigin();
+		}
 		return clone;
 	}
 }

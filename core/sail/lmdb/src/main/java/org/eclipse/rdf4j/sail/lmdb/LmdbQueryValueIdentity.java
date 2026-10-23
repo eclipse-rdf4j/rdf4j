@@ -12,38 +12,76 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.IdentityHashMap;
+import java.util.Objects;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.InternedIRI;
+import org.eclipse.rdf4j.model.impl.BooleanLiteral;
+import org.eclipse.rdf4j.model.impl.CalendarLiteral;
+import org.eclipse.rdf4j.model.impl.DecimalLiteral;
+import org.eclipse.rdf4j.model.impl.IntegerLiteral;
+import org.eclipse.rdf4j.model.impl.NumericLiteral;
+import org.eclipse.rdf4j.model.impl.SimpleBNode;
+import org.eclipse.rdf4j.model.impl.SimpleIRI;
+import org.eclipse.rdf4j.model.impl.SimpleLiteral;
+import org.eclipse.rdf4j.model.impl.SimpleTripleTerm;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
-/** Immutable, store-local cache identity. RDF equality alone does not establish imported blank-node authority. */
+/** Exact detached cache input. No caller value, dictionary revision, source, or mutable remote registry survives. */
 final class LmdbQueryValueIdentity {
+	private enum Kind {
+		NULL,
+		IRI,
+		BNODE,
+		LITERAL,
+		REMOTE,
+		TRIPLE
+	}
 
-	private final Value value;
-	private final LmdbQueryValueIdentity[] terms;
+	private static final LmdbQueryValueIdentity NULL = new LmdbQueryValueIdentity(Kind.NULL, null, null,
+			Literal.BaseDirection.NONE, null, null);
+	private final Kind kind;
+	private final String lexical;
+	private final String language;
+	private final Literal.BaseDirection direction;
+	private final RemoteBNode.CacheSnapshot remote;
+	private final LmdbQueryValueIdentity[] children;
 	private final int hash;
 
-	private LmdbQueryValueIdentity(Value value, LmdbQueryValueIdentity[] terms) {
-		this.value = value;
-		this.terms = terms;
-		if (terms != null) {
-			hash = 31 * (31 * terms[0].hash + terms[1].hash) + terms[2].hash;
-		} else if (value instanceof RemoteBNode remote) {
-			RemoteBNode.Provenance origin = remote.getProvenance();
-			// A canonical hash is a routing hint only: exact equality also checks the public alias below.
-			hash = origin == null ? System.identityHashCode(remote)
-					: origin.canonicalResultID() && origin.identityScope() != null
-							? 31 * System.identityHashCode(origin.identityScope()) + origin.remoteID().hashCode()
-							: remote.getID().hashCode();
-		} else {
-			hash = value == null ? 0 : value.hashCode();
+	private LmdbQueryValueIdentity(Kind kind, String lexical, String language, Literal.BaseDirection direction,
+			RemoteBNode.CacheSnapshot remote, LmdbQueryValueIdentity[] children) {
+		this.kind = kind;
+		this.lexical = lexical;
+		this.language = language;
+		this.direction = direction;
+		this.remote = remote;
+		this.children = children;
+		int result = Objects.hash(kind, lexical, language, direction, remote);
+		if (children != null) {
+			for (LmdbQueryValueIdentity child : children) {
+				result = 31 * result + child.hash;
+			}
 		}
+		hash = result;
 	}
 
 	Value value() {
-		return value;
+		return new Materializer().of(this);
+	}
+
+	// Existing InputBindingContext and generic packed semantic renderers recurse through Triple RDF graphs.
+	// Refuse that optional fact/observer for the whole graph rather than applying an arbitrary depth threshold.
+	boolean supportsFlatSemanticObservation() {
+		return kind != Kind.TRIPLE;
 	}
 
 	@Override
@@ -59,95 +97,301 @@ final class LmdbQueryValueIdentity {
 		if (!(other instanceof LmdbQueryValueIdentity identity) || hash != identity.hash) {
 			return false;
 		}
-		if (terms == null && identity.terms == null) {
-			return sameLeaf(value, identity.value);
-		}
 		ArrayDeque<Pair> pending = new ArrayDeque<>();
-		IdentityHashMap<LmdbQueryValueIdentity, IdentityHashMap<LmdbQueryValueIdentity, Boolean>> visited = new IdentityHashMap<>();
+		IdentityHashMap<LmdbQueryValueIdentity, IdentityHashMap<LmdbQueryValueIdentity, Boolean>> compared = new IdentityHashMap<>();
 		pending.push(new Pair(this, identity));
 		while (!pending.isEmpty()) {
 			Pair pair = pending.pop();
-			LmdbQueryValueIdentity left = pair.left;
-			LmdbQueryValueIdentity right = pair.right;
+			LmdbQueryValueIdentity left = pair.left();
+			LmdbQueryValueIdentity right = pair.right();
 			if (left == right) {
 				continue;
 			}
-			if (left.hash != right.hash || (left.terms == null) != (right.terms == null)) {
+			if (left.hash != right.hash || left.kind != right.kind || !Objects.equals(left.lexical, right.lexical)
+					|| !Objects.equals(left.language, right.language) || left.direction != right.direction
+					|| !Objects.equals(left.remote, right.remote)) {
 				return false;
 			}
-			if (left.terms == null) {
-				if (!sameLeaf(left.value, right.value)) {
-					return false;
+			if (compared.computeIfAbsent(left, ignored -> new IdentityHashMap<>()).put(right, Boolean.TRUE) != null) {
+				continue;
+			}
+			if (left.children != null) {
+				for (int i = 0; i < left.children.length; i++) {
+					pending.push(new Pair(left.children[i], right.children[i]));
 				}
-				continue;
-			}
-			if (visited.computeIfAbsent(left, ignored -> new IdentityHashMap<>()).put(right, Boolean.TRUE) != null) {
-				continue;
-			}
-			for (int index = 0; index < 3; index++) {
-				pending.push(new Pair(left.terms[index], right.terms[index]));
 			}
 		}
 		return true;
 	}
 
-	private static boolean sameLeaf(Value first, Value second) {
-		if (first == second) {
-			return true;
+	boolean accountRetainedMemory(RetainedMemoryAccount account) {
+		ArrayDeque<LmdbQueryValueIdentity> pending = new ArrayDeque<>();
+		pending.push(this);
+		while (!pending.isEmpty()) {
+			LmdbQueryValueIdentity item = pending.pop();
+			if (!account.add(item, 64L)) {
+				continue;
+			}
+			string(account, item.lexical);
+			string(account, item.language);
+			if (item.remote != null) {
+				item.remote.visitRetainedObjects((object, bytes) -> account.add(object, bytes));
+			}
+			if (item.children != null) {
+				account.add(item.children, 24L + 8L * item.children.length);
+				for (LmdbQueryValueIdentity child : item.children) {
+					pending.push(child);
+				}
+			}
 		}
-		if (first instanceof RemoteBNode || second instanceof RemoteBNode) {
-			return first instanceof RemoteBNode left && second instanceof RemoteBNode right
-					&& left.getID().equals(right.getID()) && RemoteBNode.sameTrustedIdentity(left, right);
-		}
-		return first != null && first.equals(second);
+		return true;
 	}
 
-	/** One capture memo is shared by all values in an input, including repeated triple subterms. */
+	static void string(RetainedMemoryAccount account, String value) {
+		if (value != null) {
+			account.add(value, 40L + 2L * value.length());
+		}
+	}
+
+	/** Audits the actual private materialized graph, rather than charging a newly captured equal stand-in. */
+	static boolean accountModel(Value root, RetainedMemoryAccount account) {
+		if (root == null) {
+			return true;
+		}
+		ArrayDeque<Value> pending = new ArrayDeque<>();
+		pending.push(root);
+		IdentityHashMap<Value, Boolean> seen = new IdentityHashMap<>();
+		while (!pending.isEmpty()) {
+			Value value = pending.pop();
+			if (seen.put(value, Boolean.TRUE) != null) {
+				continue;
+			}
+			if (value instanceof RemoteBNode remote) {
+				if (!remote.visitCacheRetainedObjects((object, bytes) -> account.add(object, bytes))) {
+					return false;
+				}
+				continue;
+			}
+			Class<?> type = value.getClass();
+			if (!(value instanceof InternedIRI) && type != SimpleIRI.class && type != SimpleBNode.class
+					&& type != SimpleLiteral.class && type != SimpleTripleTerm.class) {
+				return false;
+			}
+			account.add(value, 64L);
+			if (value instanceof IRI iri) {
+				string(account, iri.stringValue());
+				if (iri instanceof InternedIRI interned) {
+					string(account, interned.getNamespace());
+					string(account, interned.getLocalName());
+				}
+			} else if (value instanceof SimpleBNode bnode) {
+				string(account, bnode.getID());
+			} else if (value instanceof Literal literal) {
+				string(account, literal.getLabel());
+				string(account, literal.getLanguage().orElse(null));
+				pending.push(literal.getDatatype());
+			} else if (value instanceof TripleTerm triple) {
+				pending.push(triple.getSubject());
+				pending.push(triple.getPredicate());
+				pending.push(triple.getObject());
+			}
+		}
+		return true;
+	}
+
+	private static boolean ordinary(Value value) {
+		Class<?> type = value.getClass();
+		return value instanceof InternedIRI || type == SimpleIRI.class || type == SimpleBNode.class
+				|| type == SimpleLiteral.class || type == BooleanLiteral.class || type == NumericLiteral.class
+				|| type == IntegerLiteral.class || type == DecimalLiteral.class || type == CalendarLiteral.class
+				|| type == SimpleTripleTerm.class;
+	}
+
+	/** One invocation-local DAG memo. Refusal is complete and is never substituted with an absent binding. */
 	static final class Capture {
 		private final IdentityHashMap<Value, LmdbQueryValueIdentity> captured = new IdentityHashMap<>();
+		private final boolean allowLoadedNative;
 
-		LmdbQueryValueIdentity of(Value value) {
-			LmdbQueryValueIdentity known = captured.get(value);
+		Capture() {
+			this(false);
+		}
+
+		Capture(boolean allowLoadedNative) {
+			this.allowLoadedNative = allowLoadedNative;
+		}
+
+		LmdbQueryValueIdentity of(Value root) {
+			if (root == null) {
+				return NULL;
+			}
+			LmdbQueryValueIdentity known = captured.get(root);
 			if (known != null) {
 				return known;
 			}
-			if (!(value instanceof TripleTerm)) {
-				return leaf(value);
-			}
+			IdentityHashMap<Value, Boolean> active = new IdentityHashMap<>();
 			ArrayDeque<Pending> pending = new ArrayDeque<>();
-			pending.push(new Pending(value, null));
+			pending.push(new Pending(root, null, 0L));
 			while (!pending.isEmpty()) {
-				Pending item = pending.pop();
-				if (captured.containsKey(item.value)) {
+				Pending frame = pending.pop();
+				Value value = frame.value();
+				if (captured.containsKey(value)) {
 					continue;
 				}
-				if (!(item.value instanceof TripleTerm triple)) {
-					leaf(item.value);
-				} else if (item.terms == null) {
-					Value[] terms = { triple.getSubject(), triple.getPredicate(), triple.getObject() };
-					pending.push(new Pending(item.value, terms));
-					for (Value term : terms) {
-						if (!captured.containsKey(term)) {
-							pending.push(new Pending(term, null));
+				if (frame.children() == null) {
+					if (active.put(value, Boolean.TRUE) != null) {
+						return null;
+					}
+					if (value instanceof RemoteBNode remote) {
+						RemoteBNode.CacheSnapshot snapshot = remote.snapshotForCache();
+						if (snapshot == null) {
+							return null;
+						}
+						captured.put(value, new LmdbQueryValueIdentity(Kind.REMOTE, null, null,
+								Literal.BaseDirection.NONE, snapshot, null));
+						active.remove(value);
+						continue;
+					}
+					Value[] children;
+					long version = 0L;
+					if (value instanceof LmdbValue nativeValue) {
+						// Public API-native values are capabilities, even when already loaded. A retained plan cannot
+						// reproduce their Java identity. Private prepared operands may copy only loaded, versioned
+						// data.
+						if (!allowLoadedNative || value instanceof TripleTerm || !nativeValue.isInitialized()) {
+							return null; // native nested semantic-version traversal is not a flat readiness witness
+						}
+						version = nativeValue.getSemanticVersion();
+						if (version == LmdbValue.UNKNOWN_ID) {
+							return null;
+						}
+						ArrayList<Value> loaded = new ArrayList<>();
+						nativeValue.visitValueChildren(child -> {
+							if (child != null) {
+								loaded.add(child);
+							}
+						});
+						children = loaded.toArray(Value[]::new);
+					} else {
+						if (!ordinary(value)) {
+							return null;
+						}
+						children = value instanceof TripleTerm triple
+								? new Value[] { triple.getSubject(), triple.getPredicate(), triple.getObject() }
+								: value instanceof Literal literal ? new Value[] { literal.getDatatype() }
+										: new Value[0];
+					}
+					pending.push(new Pending(value, children, version));
+					for (int i = children.length - 1; i >= 0; i--) {
+						Value child = children[i];
+						if (child == null || active.containsKey(child)) {
+							return null;
+						}
+						if (!captured.containsKey(child)) {
+							pending.push(new Pending(child, null, 0L));
 						}
 					}
 				} else {
-					captured.put(item.value, new LmdbQueryValueIdentity(item.value,
-							new LmdbQueryValueIdentity[] { captured.get(item.terms[0]), captured.get(item.terms[1]),
-									captured.get(item.terms[2]) }));
+					Value ready = value;
+					if (value instanceof LmdbValue nativeValue) {
+						ready = nativeValue.copyInitializedValue(child -> {
+							LmdbQueryValueIdentity identity = captured.get(child);
+							return identity == null ? null : identity.value();
+						});
+						if (ready == null || !ordinary(ready) || frame.version() != nativeValue.getSemanticVersion()) {
+							return null;
+						}
+					}
+					LmdbQueryValueIdentity identity;
+					if (ready instanceof TripleTerm triple) {
+						// Native copies contain fresh detached children; capture that copy, never public getters of
+						// the original native value. Ordinary children already share this invocation's memo.
+						LmdbQueryValueIdentity subject = child(value, ready, triple.getSubject());
+						LmdbQueryValueIdentity predicate = child(value, ready, triple.getPredicate());
+						LmdbQueryValueIdentity object = child(value, ready, triple.getObject());
+						if (subject == null || predicate == null || object == null) {
+							return null;
+						}
+						identity = new LmdbQueryValueIdentity(Kind.TRIPLE, null, null, Literal.BaseDirection.NONE,
+								null, new LmdbQueryValueIdentity[] { subject, predicate, object });
+					} else if (ready instanceof Literal literal) {
+						LmdbQueryValueIdentity datatype = child(value, ready, literal.getDatatype());
+						if (datatype == null) {
+							return null;
+						}
+						identity = new LmdbQueryValueIdentity(Kind.LITERAL, literal.getLabel(),
+								literal.getLanguage().orElse(null), literal.getBaseDirection(), null,
+								new LmdbQueryValueIdentity[] { datatype });
+					} else if (ready instanceof IRI iri) {
+						identity = new LmdbQueryValueIdentity(Kind.IRI, iri.stringValue(), null,
+								Literal.BaseDirection.NONE, null, null);
+					} else if (ready instanceof SimpleBNode bnode) {
+						identity = new LmdbQueryValueIdentity(Kind.BNODE, bnode.getID(), null,
+								Literal.BaseDirection.NONE, null, null);
+					} else {
+						return null;
+					}
+					captured.put(value, identity);
+					active.remove(value);
 				}
 			}
-			return captured.get(value);
+			return captured.get(root);
 		}
 
-		private LmdbQueryValueIdentity leaf(Value value) {
-			LmdbQueryValueIdentity identity = new LmdbQueryValueIdentity(value, null);
-			captured.put(value, identity);
-			return identity;
+		private LmdbQueryValueIdentity child(Value original, Value ready, Value child) {
+			return original == ready ? captured.get(child) : new Capture().of(child);
 		}
 	}
 
-	private record Pending(Value value, Value[] terms) {
+	/** One memo per emission/copy, so aliases within a copied RDF DAG remain shared without sharing requests. */
+	static final class Materializer {
+		private final IdentityHashMap<LmdbQueryValueIdentity, Value> values = new IdentityHashMap<>();
+
+		Value of(LmdbQueryValueIdentity root) {
+			if (root.kind == Kind.NULL) {
+				return null;
+			}
+			ArrayDeque<LmdbQueryValueIdentity> pending = new ArrayDeque<>();
+			pending.push(root);
+			while (!pending.isEmpty()) {
+				LmdbQueryValueIdentity item = pending.peek();
+				if (values.containsKey(item)) {
+					pending.pop();
+					continue;
+				}
+				boolean ready = true;
+				if (item.children != null) {
+					for (LmdbQueryValueIdentity child : item.children) {
+						if (!values.containsKey(child)) {
+							pending.push(child);
+							ready = false;
+						}
+					}
+				}
+				if (!ready) {
+					continue;
+				}
+				SimpleValueFactory factory = SimpleValueFactory.getInstance();
+				Value result = switch (item.kind) {
+				case NULL -> null;
+				case IRI -> factory.createIRI(item.lexical);
+				case BNODE -> factory.createBNode(item.lexical);
+				case REMOTE -> item.remote.materialize();
+				case LITERAL -> item.language == null
+						? factory.createLiteral(item.lexical, (IRI) values.get(item.children[0]))
+						: item.direction == Literal.BaseDirection.NONE
+								? factory.createLiteral(item.lexical, item.language)
+								: factory.createLiteral(item.lexical, item.language, item.direction);
+				case TRIPLE -> factory.createTripleTerm((Resource) values.get(item.children[0]),
+						(IRI) values.get(item.children[1]), values.get(item.children[2]));
+				};
+				values.put(item, result);
+				pending.pop();
+			}
+			return values.get(root);
+		}
+	}
+
+	private record Pending(Value value, Value[] children, long version) {
 	}
 
 	private record Pair(LmdbQueryValueIdentity left, LmdbQueryValueIdentity right) {

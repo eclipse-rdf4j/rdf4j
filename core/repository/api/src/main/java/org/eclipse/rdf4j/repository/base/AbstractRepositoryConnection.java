@@ -19,6 +19,7 @@ import java.net.URL;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.model.IRI;
@@ -390,9 +391,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 		boolean localTransaction = startLocalTransaction();
 
 		try {
-			for (Statement st : statements) {
-				addWithoutCommit(st, contexts);
-			}
+			addWithoutCommit(statements, contexts);
 
 			if (statements instanceof NamespaceAware) {
 				var newNamespaces = ((NamespaceAware) statements).getNamespaces();
@@ -531,6 +530,14 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 		}
 
 		addWithoutCommit(st.getSubject(), st.getPredicate(), st.getObject(), contexts);
+	}
+
+	@Experimental
+	protected void addWithoutCommit(Iterable<? extends Statement> statements, Resource... contexts)
+			throws RepositoryException {
+		for (Statement statement : statements) {
+			addWithoutCommit(statement, contexts);
+		}
 	}
 
 	protected abstract void addWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)

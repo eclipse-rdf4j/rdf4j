@@ -12,6 +12,7 @@
 
 package org.eclipse.rdf4j.sail.lmdb;
 
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
@@ -59,9 +60,11 @@ class LmdbSparsePrefixCostTest {
 		loadSparseBenchmarkDataWithSketchDisabled(dataDir);
 
 		LmdbStoreConfig storeConfig = sparseBenchmarkStoreConfig();
+		storeConfig.setExperimentalQueryOptimizations(true);
 		LmdbStore store = new LmdbStore(dataDir, storeConfig);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
+		assertSketchFixtureProfile(store);
 
 		try {
 			assertTrue(store.forceFlushSketchEstimator(), "Expected sketch estimator to rebuild before planning");
@@ -105,9 +108,11 @@ class LmdbSparsePrefixCostTest {
 		loadSparseBenchmarkDataWithSketchDisabled(dataDir);
 
 		LmdbStoreConfig storeConfig = sparseBenchmarkStoreConfig();
+		storeConfig.setExperimentalQueryOptimizations(true);
 		LmdbStore store = new LmdbStore(dataDir, storeConfig);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
+		assertSketchFixtureProfile(store);
 
 		try {
 			assertTrue(store.forceFlushSketchEstimator(), "Expected sketch estimator to rebuild before planning");
@@ -148,9 +153,11 @@ class LmdbSparsePrefixCostTest {
 		writeIncompatibleMetadata(dataDir.toPath().resolve("join-estimator.rjes").resolve("metadata.bin"));
 
 		LmdbStoreConfig storeConfig = sparseBenchmarkStoreConfig();
+		storeConfig.setExperimentalQueryOptimizations(true);
 		store = new LmdbStore(dataDir, storeConfig);
 		repository = new SailRepository(store);
 		repository.init();
+		assertSketchFixtureProfile(store);
 
 		try {
 			var estimator = store.getBackingStore().getSketchBasedJoinEstimator();
@@ -265,5 +272,19 @@ class LmdbSparsePrefixCostTest {
 		double actual = Math.max(1.0d, actualRows);
 		double planned = Math.max(1.0d, plannedRows);
 		return Math.max(actual / planned, planned / actual);
+	}
+
+	private static void assertSketchFixtureProfile(LmdbStore store) {
+		try {
+			assertTrue(store.getQueryExecutionPolicy().experimentalQueryOptimizations());
+			assertNotNull(store.getBackingStore().getSketchBasedJoinEstimator());
+		} catch (AssertionError failure) {
+			try {
+				store.shutDown();
+			} catch (RuntimeException | Error closeFailure) {
+				failure.addSuppressed(closeFailure);
+			}
+			throw failure;
+		}
 	}
 }

@@ -110,7 +110,9 @@ public abstract class FilterIteration<E> implements CloseableIteration<E> {
 					return;
 				}
 				try {
-					// The wrapped iterator may be closed after the availability check; do not probe it again here.
+					// Availability was established above. Do not ask again: an asynchronously closed wrapped
+					// iteration can legitimately change its answer between the two calls, while next() already
+					// supplies the authoritative NoSuchElementException for that race.
 					assert nextElement == null;
 
 					result = wrappedIter.next();

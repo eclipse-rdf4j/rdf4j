@@ -1,0 +1,686 @@
+{
+  "schema": 1,
+  "producer_commit": "a7b7cedd1c954dc55fa8265f7e6fc4d215fdb1aa",
+  "producer_source": {
+    "name": "LmdbA7LanguageVariantFixtureProducer.java.txt",
+    "sha256": "6033cf2cef7e740c8c139dfc3c26e7c33639fad5538621eb06646a15aa8dfad4"
+  },
+  "producer_lmdb_jar_sha256": "99e31060a43c662ec8022ebf7087f3be2609a1cbea39d5582e0160f20d45b3db",
+  "producer_classes": [
+    {
+      "name": "org/eclipse/rdf4j/sail/lmdb/LmdbLanguageVariantFixtureProducer$Op.class",
+      "sha256": "514a51c68920a2370be7e981b0e8714f5ecc90727946db39451610eda9e1626a",
+      "bytes": 1658
+    },
+    {
+      "name": "org/eclipse/rdf4j/sail/lmdb/LmdbLanguageVariantFixtureProducer.class",
+      "sha256": "bd79065e54212df3c022a9a8c0a9e7aa8635c2593606e53133cefba5790b8c8f",
+      "bytes": 24299
+    }
+  ],
+  "dependency_jars": [
+    {
+      "name": "rdf4j-sail-lmdb-6.2.0-SNAPSHOT.jar",
+      "sha256": "99e31060a43c662ec8022ebf7087f3be2609a1cbea39d5582e0160f20d45b3db",
+      "bytes": 591564
+    },
+    {
+      "name": "lwjgl-lmdb-3.3.6.jar",
+      "sha256": "e8cd76aaaaa2dba28e0080888dda59c4e832f37a6a6372e7ad979a7203ae58db",
+      "bytes": 37976
+    },
+    {
+      "name": "lwjgl-3.3.6.jar",
+      "sha256": "b00e2781b74cc829db9d39fb68746b25bb7b94ce61d46293457dbccddabd999c",
+      "bytes": 823245
+    },
+    {
+      "name": "lwjgl-lmdb-3.3.6-natives-linux.jar",
+      "sha256": "82ae4f0e143f66db80b90194e38b5cb421dfce65f4f3289223669950e5d4e235",
+      "bytes": 50895
+    },
+    {
+      "name": "lwjgl-lmdb-3.3.6-natives-linux-arm64.jar",
+      "sha256": "e9ae2b3b8448bfc84a192ed3a123e04f76216b1999716e4bd3a4891e8102a9d4",
+      "bytes": 53313
+    },
+    {
+      "name": "lwjgl-lmdb-3.3.6-natives-linux-ppc64le.jar",
+      "sha256": "38922392fae6ce06e20ebc5613f1a213d2fe3521f259a12df69792c4f028ef78",
+      "bytes": 63371
+    },
+    {
+      "name": "lwjgl-lmdb-3.3.6-natives-macos.jar",
+      "sha256": "c314ddbd7bcb7ad42b0930d2458a6ec72a3676fb4fb8f2f76b5a6d1708d94c56",
+      "bytes": 51298
+    },
+    {
+      "name": "lwjgl-lmdb-3.3.6-natives-macos-arm64.jar",
+      "sha256": "d8d1df2424435ed5291ab00d5363a54239e2a5608f48b6a0aebf1bc016eaaf41",
+      "bytes": 46849
+    },
+    {
+      "name": "lwjgl-lmdb-3.3.6-natives-windows.jar",
+      "sha256": "8475a1f035d8f955637ddc98ef00708e17529f1db37681ea63b6c17866335492",
+      "bytes": 115192
+    },
+    {
+      "name": "lwjgl-lmdb-3.3.6-natives-windows-arm64.jar",
+      "sha256": "1386714d56d20799430802b117a0603c38406424d69701fc00d82c91ae41a2a3",
+      "bytes": 103371
+    },
+    {
+      "name": "lwjgl-3.3.6-natives-linux.jar",
+      "sha256": "2f0e65d6985d602c0e5e5aab6576db113a9a378a36f8144ec93b77a4fde5876c",
+      "bytes": 121299
+    },
+    {
+      "name": "lwjgl-3.3.6-natives-linux-arm64.jar",
+      "sha256": "07643ee5e95635b710715b41900c2a05c3f08c74be9309ba0763e31431bfad3b",
+      "bytes": 117172
+    },
+    {
+      "name": "lwjgl-3.3.6-natives-linux-ppc64le.jar",
+      "sha256": "8c4fc27c9fe96855d023b3fad7ea8ef3217c073734b2858ed142219849438122",
+      "bytes": 127195
+    },
+    {
+      "name": "lwjgl-3.3.6-natives-macos.jar",
+      "sha256": "a818cba530f8a541ef30e2cc2b731c8de2d081d25e9901959ff2bcdbf2344e0f",
+      "bytes": 75211
+    },
+    {
+      "name": "lwjgl-3.3.6-natives-macos-arm64.jar",
+      "sha256": "e68652629a28f0262ca99a2132d370e3fbc70d9f10e11717afa3f2dbe85b64fc",
+      "bytes": 50369
+    },
+    {
+      "name": "lwjgl-3.3.6-natives-windows.jar",
+      "sha256": "a8d8edda34718bf70f68d14de1295b5bfc0f477a9607a3a9705d9e2d88538a8c",
+      "bytes": 168988
+    },
+    {
+      "name": "lwjgl-3.3.6-natives-windows-arm64.jar",
+      "sha256": "17c8b4fc3ded615acf6097120cc31eefe9b93082878d8851f6903a6304ae5562",
+      "bytes": 140009
+    },
+    {
+      "name": "rdf4j-sail-base-6.2.0-SNAPSHOT.jar",
+      "sha256": "fbfc1fd1ad9b0d9dead46e3d0d24d55c629171a0a0ac7a4f5b1125dcc27c45d6",
+      "bytes": 106401
+    },
+    {
+      "name": "rdf4j-sail-api-6.2.0-SNAPSHOT.jar",
+      "sha256": "17ccb80db080839d42e3223a36ec941113b2c267ba394213820d8198c1efd47e",
+      "bytes": 129848
+    },
+    {
+      "name": "rdf4j-common-transaction-6.2.0-SNAPSHOT.jar",
+      "sha256": "01b4b65b3a113b1f3fe52d26038d64f17cc087640fda150ee7282c90a414e4d0",
+      "bytes": 11040
+    },
+    {
+      "name": "rdf4j-common-order-6.2.0-SNAPSHOT.jar",
+      "sha256": "b26e176d14d4e371e65290a18d4a268aae73dcfe5f5a6802051e84c4046f5800",
+      "bytes": 4512
+    },
+    {
+      "name": "rdf4j-queryalgebra-evaluation-6.2.0-SNAPSHOT.jar",
+      "sha256": "ad2f94656170ae569b9c9fefe11796f9adbccae30f6a33f55ce3a4fa15f27cfd",
+      "bytes": 1039405
+    },
+    {
+      "name": "datasketches-java-9.0.0.jar",
+      "sha256": "da5ad11655341a90e6464bca40e5995e24441d446d6706ffe0d152251e2dff2d",
+      "bytes": 1072765
+    },
+    {
+      "name": "rdf4j-repository-sparql-6.2.0-SNAPSHOT.jar",
+      "sha256": "ad8b8c4c209745ab978af428491ba500294a83b31b65b1aa45ce9ce03e532ff5",
+      "bytes": 64478
+    },
+    {
+      "name": "rdf4j-queryparser-sparql-6.2.0-SNAPSHOT.jar",
+      "sha256": "b605d170769beac24a0cbd9ce3b6da08ef4365632a1ba1e6994666e6b0866d4e",
+      "bytes": 355994
+    },
+    {
+      "name": "rdf4j-rio-trig-6.2.0-SNAPSHOT.jar",
+      "sha256": "1d41bde8f54a33365ba59440808984d5965a4f4fba40a9ffbf70ad09c5eb070f",
+      "bytes": 9426
+    },
+    {
+      "name": "annotations-26.0.2.jar",
+      "sha256": "2037be378980d3ba9333e97955f3b2cde392aa124d04ca73ce2eee6657199297",
+      "bytes": 31170
+    },
+    {
+      "name": "rdf4j-queryresultio-sparqlxml-6.2.0-SNAPSHOT.jar",
+      "sha256": "66e398750bbb5f7c3c0aed9b58e12d99b4c8b382ca0bdbc15dc26db21536ae94",
+      "bytes": 28974
+    },
+    {
+      "name": "rdf4j-common-iterator-6.2.0-SNAPSHOT.jar",
+      "sha256": "2ee857843b2ded2e62dab6e4d059321a970233eaa82d968c0367286c6c5603a4",
+      "bytes": 51520
+    },
+    {
+      "name": "rdf4j-http-client-6.2.0-SNAPSHOT.jar",
+      "sha256": "e534e0fa868e44f1ec48a665f258689cba69180ed23a468babf28c231c1c6547",
+      "bytes": 114116
+    },
+    {
+      "name": "rdf4j-http-client-api-6.2.0-SNAPSHOT.jar",
+      "sha256": "e2fabc6abf5cfe6f18e48fd5ab95c5550bb0836eb4b4f4413761c160ddbc4770",
+      "bytes": 25700
+    },
+    {
+      "name": "rdf4j-http-client-jdk-6.2.0-SNAPSHOT.jar",
+      "sha256": "e626c5324a969eecc2985fc95e1ea0b82ae309880f7e762bc75cef77a67cacde",
+      "bytes": 11000
+    },
+    {
+      "name": "rdf4j-http-client-apache5-6.2.0-SNAPSHOT.jar",
+      "sha256": "357bbdb7356b83c44b303f76652f2fe8b4242c7fc317d18c8716d7c846b64d8b",
+      "bytes": 13295
+    },
+    {
+      "name": "httpclient5-5.6.3.jar",
+      "sha256": "80712ff129210d7c73d9fcc1195cbee5c3c34744965c7a05ea107b3648922f18",
+      "bytes": 1056844
+    },
+    {
+      "name": "httpcore5-5.4.3.jar",
+      "sha256": "18bfbbabb478dfb67f31aeaf428c387f3c3df654582e1309f708ee1f3086830a",
+      "bytes": 955121
+    },
+    {
+      "name": "httpcore5-h2-5.4.3.jar",
+      "sha256": "c7db7026b8e2dea39132b04a6069f6671e2858309b20a146ec5c7dd6ed73a0b6",
+      "bytes": 263675
+    },
+    {
+      "name": "rdf4j-queryresultio-binary-6.2.0-SNAPSHOT.jar",
+      "sha256": "30abe12244e51cb08e557b59a146129fc6647c6011c056a6904c1a9c635f01f6",
+      "bytes": 16645
+    },
+    {
+      "name": "rdf4j-collection-factory-api-6.2.0-SNAPSHOT.jar",
+      "sha256": "4f018979c4492921578ff9f3f580d5e82883cad2a915da38bffdc8242e03c2c3",
+      "bytes": 10673
+    },
+    {
+      "name": "commons-math3-3.6.1.jar",
+      "sha256": "1e56d7b058d28b65abd256b8458e3885b674c1d588fa43cd7d1cbb9c7ef2b308",
+      "bytes": 2213560
+    },
+    {
+      "name": "rdf4j-queryalgebra-model-6.2.0-SNAPSHOT.jar",
+      "sha256": "1fb40d9acd3cd39e82b4fdbea6fbddecc7b58278b699034ebeed7155567568ab",
+      "bytes": 231834
+    },
+    {
+      "name": "rdf4j-query-6.2.0-SNAPSHOT.jar",
+      "sha256": "fd0b16549cd08a82328a46aa3ce5d90c12f5a79393ba463301980ee165486d1a",
+      "bytes": 94410
+    },
+    {
+      "name": "rdf4j-rio-api-6.2.0-SNAPSHOT.jar",
+      "sha256": "5bd3c0dd96728745a589e8f35ff3aff48c87bd732ceddbe44ad223e8b31bfbd2",
+      "bytes": 142544
+    },
+    {
+      "name": "rdf4j-common-xml-6.2.0-SNAPSHOT.jar",
+      "sha256": "41191522e666e28b81c814c79548e8816f0ddb22d0a8365480cc924ab9bff259",
+      "bytes": 21397
+    },
+    {
+      "name": "commons-codec-1.22.0.jar",
+      "sha256": "d164fe79f262c32d9b18a0b5b2d317d1c27653d5e98fd2b998c24bf901c72ce4",
+      "bytes": 420480
+    },
+    {
+      "name": "hasmac-json-ld-0.10.2.jar",
+      "sha256": "8f348e8de3f1a3c9ea94bf43f02f170925644a095cc3395ca0f4dfd9c3abbef3",
+      "bytes": 316789
+    },
+    {
+      "name": "jsonld-java-0.13.6.jar",
+      "sha256": "ac158c23504fa76dc1a5f43436df2cb34b4b435b79b38c9b941d1c75e2efbe90",
+      "bytes": 3336943
+    },
+    {
+      "name": "jackson-annotations-2.22.jar",
+      "sha256": "21ddb598807d3a51a876704eb979d9296e1c6a6f47ab1826ff88c6d6a127a2d0",
+      "bytes": 84211
+    },
+    {
+      "name": "jackson-core-3.2.2.jar",
+      "sha256": "93d9090b8c505b2f942ad85dd5821e8c401bfbafafff11708a3fbe2ef9da18ca",
+      "bytes": 606047
+    },
+    {
+      "name": "jackson-databind-3.2.2.jar",
+      "sha256": "d27509f990d990fc779a01f3f612005ff6c67dc3bb0a720f5f4d9b2f5c713401",
+      "bytes": 1978326
+    },
+    {
+      "name": "commons-text-1.15.0.jar",
+      "sha256": "58d2da30f058512a1e7f914e39241deca4dff5c27a085b4ed2faa9e7208067f6",
+      "bytes": 264873
+    },
+    {
+      "name": "commons-lang3-3.20.0.jar",
+      "sha256": "69e5c9fa35da7a51a5fd2099dfe56a2d8d32cf233e2f6d770e796146440263f4",
+      "bytes": 713862
+    },
+    {
+      "name": "rdf4j-model-6.2.0-SNAPSHOT.jar",
+      "sha256": "eb75a319bf471656a3cec476259f8edf2cbe483cae20386fa4ee6b88e26664c2",
+      "bytes": 199983
+    },
+    {
+      "name": "rdf4j-model-api-6.2.0-SNAPSHOT.jar",
+      "sha256": "1ad276941f45ba12bca51408898e7832fc5dfb0b2383ab34977c3e91383853fb",
+      "bytes": 64539
+    },
+    {
+      "name": "rdf4j-common-annotation-6.2.0-SNAPSHOT.jar",
+      "sha256": "e764658ad1c11e89d67ee86913d8f13fc04ccd567393bd4e28ab9a544eb0ab8f",
+      "bytes": 3271
+    },
+    {
+      "name": "rdf4j-model-vocabulary-6.2.0-SNAPSHOT.jar",
+      "sha256": "4dfdc51145fd90e366650ffbce1dec30494f047dd283bcd92717a803efb41e18",
+      "bytes": 104313
+    },
+    {
+      "name": "rdf4j-common-exception-6.2.0-SNAPSHOT.jar",
+      "sha256": "df269b23352bf2d307622420d915b31298719d1b3b50fee98660fa782e5ac19a",
+      "bytes": 4329
+    },
+    {
+      "name": "rdf4j-common-text-6.2.0-SNAPSHOT.jar",
+      "sha256": "5b55841af480bce76183b3eeb73f783cb2a8c09774a6d3ff56f1039c7ec242f3",
+      "bytes": 4718
+    },
+    {
+      "name": "rdf4j-common-io-6.2.0-SNAPSHOT.jar",
+      "sha256": "2ad56278694a585f4233d3f59476a6a0666acf78b787ae6e880f4b8da78f2960",
+      "bytes": 44593
+    },
+    {
+      "name": "rdf4j-collection-factory-mapdb3-6.2.0-SNAPSHOT.jar",
+      "sha256": "e221fd083de80a8f2b4da4aaf267c714a09ba2a8e597d0d5a09119c8b4f0690f",
+      "bytes": 32670
+    },
+    {
+      "name": "mapdb-3.1.0.jar",
+      "sha256": "fc9c8193e3f49467593e3d5ac2b2e2394d11747212c04bf3da4c66f3ba7c93f0",
+      "bytes": 667431
+    },
+    {
+      "name": "kotlin-stdlib-1.9.25.jar",
+      "sha256": "f9cdcdbff1f5de85380ae526977e683726c2aa42db1ed6e6e50ae89e496e95fd",
+      "bytes": 1718956
+    },
+    {
+      "name": "eclipse-collections-api-10.4.0.jar",
+      "sha256": "29f93ff3d246f0bcdd5b7e5029c3bd8d2cb7752f5b83b5a701545a0499693491",
+      "bytes": 1413775
+    },
+    {
+      "name": "eclipse-collections-10.4.0.jar",
+      "sha256": "55d69834e1d2ab4712bcbb2093f18d7cc796f70ee366680491dad63d22a6b584",
+      "bytes": 10330135
+    },
+    {
+      "name": "eclipse-collections-forkjoin-10.4.0.jar",
+      "sha256": "668c8d9b7cd8bda7abcf1ecdc0c96b83340b49566d8279e1c8adafaecc4fbc28",
+      "bytes": 41663
+    },
+    {
+      "name": "elsa-3.0.0-M5.jar",
+      "sha256": "c84f01440b506ae1ce69ee4f69d887ce2009b9e86b696be1c50774ca1f2b359a",
+      "bytes": 119259
+    },
+    {
+      "name": "lz4-java-1.11.1.jar",
+      "sha256": "e5e31b195fcc7e9c5da4b191af3b0082ee616c13f61cbd79409ffa65e4dd5c47",
+      "bytes": 896992
+    },
+    {
+      "name": "slf4j-api-2.0.17.jar",
+      "sha256": "7b751d952061954d5abfed7181c1f645d336091b679891591d63329c622eb832",
+      "bytes": 69908
+    },
+    {
+      "name": "guava-33.6.0-jre.jar",
+      "sha256": "dc573e1fca4fd5454f4a5fd3d7da2df03002876a4175bafc14a95980dd7713b3",
+      "bytes": 3064793
+    },
+    {
+      "name": "failureaccess-1.0.3.jar",
+      "sha256": "cbfc3906b19b8f55dd7cfd6dfe0aa4532e834250d7f080bd8d211a3e246b59cb",
+      "bytes": 10763
+    },
+    {
+      "name": "listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar",
+      "sha256": "b372a037d4230aa57fbeffdef30fd6123f9c0c2db85d0aced00c91b974f33f99",
+      "bytes": 2199
+    },
+    {
+      "name": "jspecify-1.0.0.jar",
+      "sha256": "1fad6e6be7557781e4d33729d49ae1cdc8fdda6fe477bb0cc68ce351eafdfbab",
+      "bytes": 3819
+    },
+    {
+      "name": "rdf4j-sail-testsuite-6.2.0-SNAPSHOT.jar",
+      "sha256": "4acb684c25c04ccae0ad74fed4e13c4559cd081e111eb4e9a5e0e8f93223666b",
+      "bytes": 68159
+    },
+    {
+      "name": "rdf4j-repository-api-6.2.0-SNAPSHOT.jar",
+      "sha256": "c80f994078a36151ac0b0a9a067548148a040d7044618de90fcd7384bc240a6b",
+      "bytes": 87014
+    },
+    {
+      "name": "rdf4j-queryparser-api-6.2.0-SNAPSHOT.jar",
+      "sha256": "a446ac09f0a9ef275d4bec8b4106a1c17838f197afdffdbf8a596f6b41698a40",
+      "bytes": 25590
+    },
+    {
+      "name": "rdf4j-rio-ntriples-6.2.0-SNAPSHOT.jar",
+      "sha256": "2f2a3f1970d76fd74bbf29f5a598e1b0a432f4fbd01d8eb59da46512613a809e",
+      "bytes": 15996
+    },
+    {
+      "name": "junit-jupiter-api-6.1.1.jar",
+      "sha256": "b1ab925878a3c57c03baf5e71dfb89bd89a812cd244276daeee6e04522b52981",
+      "bytes": 312566
+    },
+    {
+      "name": "opentest4j-1.3.0.jar",
+      "sha256": "48e2df636cab6563ced64dcdff8abb2355627cb236ef0bf37598682ddf742f1b",
+      "bytes": 14304
+    },
+    {
+      "name": "junit-platform-commons-6.1.1.jar",
+      "sha256": "84ca17df1482392e0c91faa43fec54a7f8312e601fd6c96823fe99851e9d5be2",
+      "bytes": 175867
+    },
+    {
+      "name": "rdf4j-repository-testsuite-6.2.0-SNAPSHOT.jar",
+      "sha256": "d0671beb9e49f3366194da1de2244b872f9d225079eae290dc979ef3050ca256",
+      "bytes": 122946
+    },
+    {
+      "name": "rdf4j-queryresultio-api-6.2.0-SNAPSHOT.jar",
+      "sha256": "866927bbc27d4383858af7a8c5ff6bd59053165fb57e4903929cfb1117e40849",
+      "bytes": 36776
+    },
+    {
+      "name": "junit-platform-suite-engine-6.1.1.jar",
+      "sha256": "cc8e80d44a13e8734d1ef85bf87a7f8dc3182b24d772a001851f3c5be8f67c60",
+      "bytes": 45894
+    },
+    {
+      "name": "junit-platform-suite-api-6.1.1.jar",
+      "sha256": "510e8d733a364d820dd47cc4761b39f206b6577ab0a5f42e7a097adcd1727c86",
+      "bytes": 25916
+    },
+    {
+      "name": "junit-vintage-engine-6.1.1.jar",
+      "sha256": "647955f86cda7d5c8cbef9b43049a972eb483ba26c3122168eb72099ae52e122",
+      "bytes": 81490
+    },
+    {
+      "name": "junit-4.13.2.jar",
+      "sha256": "8e495b634469d64fb8acfa3495a065cbacc8a0fff55ce1e31007be4c16dc57d3",
+      "bytes": 384581
+    },
+    {
+      "name": "hamcrest-core-3.0.jar",
+      "sha256": "b78a3a81692f421cc01fc17ded9a45e9fb6f3949c712f8ec4d01da6b8c06bc6e",
+      "bytes": 2403
+    },
+    {
+      "name": "hamcrest-3.0.jar",
+      "sha256": "5d66b6a4a680755cb6ed7cb104fa7835ef644667586ff0737adeb977c39ecdbc",
+      "bytes": 126373
+    },
+    {
+      "name": "rdf4j-repository-sail-6.2.0-SNAPSHOT.jar",
+      "sha256": "c1bbf3f88b1e6f8b8777d538c76f75e9806615606e6ffa3f7028434bc46a0703",
+      "bytes": 61222
+    },
+    {
+      "name": "rdf4j-rio-turtle-6.2.0-SNAPSHOT.jar",
+      "sha256": "b635650a0670d03734eacd22c6d7ab7c686d3925f310071748244801c6c72383",
+      "bytes": 37725
+    },
+    {
+      "name": "rdf4j-repository-manager-6.2.0-SNAPSHOT.jar",
+      "sha256": "e80c6deb60435a7903f19fe8572e9f3468241831a8a401935a0f3d2b4c518fdd",
+      "bytes": 31545
+    },
+    {
+      "name": "rdf4j-repository-event-6.2.0-SNAPSHOT.jar",
+      "sha256": "f19fac09409db66c530c7644e8abf650b52bab44c12b19c9ec157f8912684764",
+      "bytes": 26170
+    },
+    {
+      "name": "rdf4j-repository-http-6.2.0-SNAPSHOT.jar",
+      "sha256": "72b967eeea4fa17046bc7de9b166083b31811c94c919bb949c3404333ee5ff78",
+      "bytes": 35270
+    },
+    {
+      "name": "rdf4j-rio-binary-6.2.0-SNAPSHOT.jar",
+      "sha256": "d191cc3265e76bd5b554210473752abcdf9840edf9c14bab36e2ba71a527c30d",
+      "bytes": 16506
+    },
+    {
+      "name": "rdf4j-http-protocol-6.2.0-SNAPSHOT.jar",
+      "sha256": "04db14f35554ffa9ab0bbd75f73b0c3726a0e0a1d857083422c40c5ee7af7c42",
+      "bytes": 34731
+    },
+    {
+      "name": "rdf4j-rio-nquads-6.2.0-SNAPSHOT.jar",
+      "sha256": "6b3fa293d6fbdddf8840102860b7cba6c121eefc8969ea3fda6a6ab9135f3b43",
+      "bytes": 7258
+    },
+    {
+      "name": "rdf4j-rio-datatypes-6.2.0-SNAPSHOT.jar",
+      "sha256": "87dca6520995a5ff986db44249470a104eee1101c9ee364d06b6e5455621f0de",
+      "bytes": 11645
+    },
+    {
+      "name": "rdf4j-rio-languages-6.2.0-SNAPSHOT.jar",
+      "sha256": "37038455e00780b07eb873edb0ff6587ea0300ab8c3adc97bcae657d2dd644cd",
+      "bytes": 5621
+    },
+    {
+      "name": "commons-io-2.22.0.jar",
+      "sha256": "2b9a7b1f726fb86216dbd2c8321eabe0221dbd5b1be81c18e1cb53811b104758",
+      "bytes": 609182
+    },
+    {
+      "name": "rdf4j-model-testsuite-6.2.0-SNAPSHOT.jar",
+      "sha256": "1e6fe971105149c66a362030387b2a2f4762d147cb6b67afb670edb4f736bd82",
+      "bytes": 11194
+    },
+    {
+      "name": "rdf4j-benchmark-common-6.2.0-SNAPSHOT.jar",
+      "sha256": "0c7cbf46091b2a73c86f3403733e78ce3a948efc6c169b938550f173a7001be1",
+      "bytes": 19871130
+    },
+    {
+      "name": "jackson-databind-2.22.0.jar",
+      "sha256": "3520a0351f294699e3e1b7a37c7a726afd81e1a89ae702ac7d47ff347fd2ecbf",
+      "bytes": 1703374
+    },
+    {
+      "name": "jackson-core-2.22.0.jar",
+      "sha256": "d2e8dd4df1e0f61b786ea06792f5bf4235d8278f158f3be6e997e955931c0c98",
+      "bytes": 594162
+    },
+    {
+      "name": "jmh-core-1.37.jar",
+      "sha256": "dc0eaf2bbf0036a70b60798c785d6e03a9daf06b68b8edb0f1ba9eb3421baeb3",
+      "bytes": 552986
+    },
+    {
+      "name": "jopt-simple-5.0.4.jar",
+      "sha256": "df26cc58f235f477db07f753ba5a3ab243ebe5789d9f89ecf68dd62ea9a66c28",
+      "bytes": 78146
+    },
+    {
+      "name": "jmh-generator-annprocess-1.37.jar",
+      "sha256": "6a5604b5b804e0daca1145df1077609321687734a8b49387e49f10557c186c77",
+      "bytes": 30881
+    },
+    {
+      "name": "junit-jupiter-params-6.1.1.jar",
+      "sha256": "b3179b78b9ec368579db717a0d9535efd0720c77a93ae5de0b61db721f2d16c8",
+      "bytes": 303147
+    },
+    {
+      "name": "apiguardian-api-1.1.2.jar",
+      "sha256": "b509448ac506d607319f182537f0b35d71007582ec741832a1f111e5b5b70b38",
+      "bytes": 6806
+    },
+    {
+      "name": "junit-pioneer-2.3.0.jar",
+      "sha256": "8b09db32c8cf5b2112a00262411ccd4ef6ca3bae695a0015ecad4def23dea9fd",
+      "bytes": 197537
+    },
+    {
+      "name": "rdf4j-queryrender-6.2.0-SNAPSHOT.jar",
+      "sha256": "1616033894c20c61d9e942a64fd31f878ea043b892b2beb86b7e790e6d14aa59",
+      "bytes": 357301
+    },
+    {
+      "name": "gson-2.13.2.jar",
+      "sha256": "dd0ce1b55a3ed2080cb70f9c655850cda86c206862310009dcb5e5c95265a5e0",
+      "bytes": 289901
+    },
+    {
+      "name": "error_prone_annotations-2.41.0.jar",
+      "sha256": "a56e782b5b50811ac204073a355a21d915a2107fce13ec711331ad036f660fcc",
+      "bytes": 20389
+    },
+    {
+      "name": "junit-platform-launcher-6.1.1.jar",
+      "sha256": "a5e12b743cf960df7be5c5a93428b0d9e2df76ca9282762f5ddc47c0d7170050",
+      "bytes": 252727
+    },
+    {
+      "name": "junit-platform-engine-6.1.1.jar",
+      "sha256": "3ae22ca7b990aa25ff566b224b31ec5a4087d9728c9bf879c44ec6e24a01db7c",
+      "bytes": 323944
+    },
+    {
+      "name": "junit-jupiter-engine-6.1.1.jar",
+      "sha256": "786c0dda79c0a952b3a388e69a29732ad031a1c84074a1768e2dbf0a19096371",
+      "bytes": 352589
+    },
+    {
+      "name": "assertj-core-3.27.7.jar",
+      "sha256": "c4a445426c3c2861666863b842cc4ec7bbb1c4226fefd370b6d2fe83d6c4ff0f",
+      "bytes": 1399383
+    },
+    {
+      "name": "byte-buddy-1.18.3.jar",
+      "sha256": "d78396e3c5bce3f2865c9186647481e5589d34cacc632484715b686108d17c66",
+      "bytes": 9223908
+    },
+    {
+      "name": "mockito-core-5.23.0.jar",
+      "sha256": "ae295bebd5d11fab97ab297815dc7617188b86003cbce3dfd5c0d5c3a6cc4a0c",
+      "bytes": 720687
+    },
+    {
+      "name": "byte-buddy-agent-1.17.7.jar",
+      "sha256": "a9ba887dca252ad61b7d5153294f34e6f3bdf4b2736b04373d13615a695fc0ff",
+      "bytes": 366248
+    },
+    {
+      "name": "objenesis-3.3.jar",
+      "sha256": "02dfd0b0439a5591e35b708ed2f5474eb0948f53abf74637e959b8e4ef69bfeb",
+      "bytes": 49423
+    },
+    {
+      "name": "mockito-junit-jupiter-5.23.0.jar",
+      "sha256": "65938526fdc311bb3a1c0015eb1c8a0be81515aa998f22b9f4e92f1b668e4f63",
+      "bytes": 9427
+    },
+    {
+      "name": "logback-classic-1.5.37.jar",
+      "sha256": "fd68ff5aa2760857ac5b7ad301e98bc6c18a74d60d7e016da1a608307c9eead7",
+      "bytes": 287123
+    },
+    {
+      "name": "logback-core-1.5.37.jar",
+      "sha256": "c142955d757d923c6c626296bd97be2e0db1cfd33adeadbf2e2927403391e0a1",
+      "bytes": 641094
+    }
+  ],
+  "compile_argv_sha256": "ef48a21c351655aa99e883e4f001243861f4fd32e613adfb4153129576e0b288",
+  "run_argv_sha256": "67e8caaea241887cab3f04e9ea18f3800083d413802202dfa332ec84482f7f72",
+  "actual_exit_code": 0,
+  "logical_procedure": "Three cold Sail sessions, unchanged operation order/planes; fourth cold old-only ID and owner-spelling capture; clean shutdown; native read-only fingerprints/counts.",
+  "reproduce": [
+    "Compile the retained producer using only this pinned LMDB JAR and listed dependencies.",
+    "Run org.eclipse.rdf4j.sail.lmdb.LmdbLanguageVariantFixtureProducer with one new output root.",
+    "Verify actual source/classes/runtime identity, all 21 distinct/order controls and native facts.",
+    "Package only the five allowlisted members using the retained packaging procedure."
+  ],
+  "native_facts": {
+    "native.triples.page.bytes": "16384",
+    "native.triples.txnid": "8",
+    "native.values.page.bytes": "16384",
+    "native.values.txnid": "10",
+    "physical.poscposc": "26",
+    "physical.poscposc-inf": "5",
+    "physical.spocspoc": "26",
+    "physical.spocspoc-inf": "5",
+    "platform.byte.order": "LITTLE_ENDIAN",
+    "platform.java.feature": "25",
+    "platform.os.arch": "aarch64",
+    "platform.pointer.bytes": "8"
+  },
+  "members": [
+    {
+      "name": "namespaces.dat",
+      "sha256": "43ecf474b481946bc08588acc6ae6578810392498ee200dd17aacd85dadb56f8",
+      "bytes": 4
+    },
+    {
+      "name": "store.properties",
+      "sha256": "6f56ba9a014c74ccd1541f7776eafa0fb27be4ca17676dd444cbcbb521ebb3d2",
+      "bytes": 175
+    },
+    {
+      "name": "triples/data.mdb",
+      "sha256": "74d7668a85c36cc3e950056d19bf8f00cdad0e60e528ff51e90709d5135902a0",
+      "bytes": 311296
+    },
+    {
+      "name": "values/data.mdb",
+      "sha256": "ae4957b146cc3054ed9a3e5d9dd39368c85d34cc02fde35d3463a104ef3e7114",
+      "bytes": 245760
+    },
+    {
+      "name": "fixture.properties",
+      "sha256": "9d66b8affad5985e6f50cca5942c9835c5d70a8441727f1608f9b404cf914ca2",
+      "bytes": 20457
+    }
+  ],
+  "archive": {
+    "name": "v2-a7-language-variants-three-sessions.zip",
+    "sha256": "5b34e969c8c3452aedb50d765937698ac17dd522c16622714ab38ac47323f25d",
+    "bytes": 10895
+  },
+  "exclusions": "No lock/cache/log/temporary files or absolute paths. No native key/ID/payload fabrication.",
+  "portability_boundary": "Observed native page/platform facts are recorded, not proof of every CI platform; retain existing supported little-endian 64-bit LMDB fixture assumptions and validate the affected class on supported CI before acceptance."
+}

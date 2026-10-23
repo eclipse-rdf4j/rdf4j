@@ -17,9 +17,12 @@ import java.util.List;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPlanningException;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
@@ -60,9 +63,54 @@ public interface PackedStatementPatternSemanticsCodec {
 	/** Called last, including for empty content, so pooled advisory term metadata cannot revive a restriction. */
 	void restore(StatementPattern target, Content content);
 
+	/** Optional cache-only audit of an actual owned model. Ordinary codecs grant no retained-model authority. */
+	default boolean accountCacheValue(Value value, RetainedMemoryAccount account) {
+		return value == null;
+	}
+
+	/** Optional cache-only audit of the actual retained source; never a newly cloned stand-in. */
+	default boolean accountCacheSource(TupleExpr ownedSource, RetainedMemoryAccount account) {
+		return false;
+	}
+
+	/** Cache-only ownership adapter. Existing codecs retain their exact source/clone/emission behavior. */
+	default PackedStatementPatternSemanticsCodec cacheOwnershipCodec() {
+		return this;
+	}
+
+	/** Only a complete owned codec participates in the additional cache-root ledger. */
+	default boolean ownsCacheValues() {
+		return false;
+	}
+
+	/** No optional cache admission may change the ordinary executable input on refusal. */
+	default TupleExpr prepareCacheSource(TupleExpr source) {
+		return source;
+	}
+
+	/** Every emitted plan gets a private mutable-value graph when a cache ownership adapter is active. */
+	default TupleExpr emitCachePlan(TupleExpr plan) {
+		return plan;
+	}
+
+	/** Backend audit for typed immutable payloads in a private cache recipe. */
+	default boolean accountCachePayload(Object value, RetainedMemoryAccount account) {
+		return false;
+	}
+
+	/** Optional semantic-key observer qualification; existing codecs retain their existing behavior. */
+	default boolean supportsSemanticIdentity(TupleExpr source) {
+		return true;
+	}
+
 	/** A provider may certify an intentional clone-to-base transition; unknown subclass erasure is declined. */
 	default boolean supportsCloneOccurrence(StatementPattern source, StatementPattern copy) {
 		return source.getClass() == copy.getClass();
+	}
+
+	/** Creates the standard packed-planning failure for an unsupported cache-owned operator. */
+	static CascadesPlanningException unsupportedOperator(Class<?> operatorType, String path) {
+		return new UnsupportedCascadesOperatorException(operatorType, path);
 	}
 
 	/** Captures before the single generic clone; each copied occurrence is authenticated before restoration. */
@@ -138,6 +186,12 @@ public interface PackedStatementPatternSemanticsCodec {
 
 		public long word(int index) {
 			return words[index];
+		}
+
+		void accountRetainedMemory(RetainedMemoryAccount account) {
+			if (account.add(this, 24L)) {
+				PackedCacheMemory.array(account, words);
+			}
 		}
 
 		@Override

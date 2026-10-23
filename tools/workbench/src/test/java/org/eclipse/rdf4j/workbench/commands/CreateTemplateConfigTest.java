@@ -81,6 +81,19 @@ class CreateTemplateConfigTest {
 	}
 
 	@Test
+	void lmdbTemplateExposesExperimentalQueryOptimizationsDisabledByDefault() throws IOException {
+		CreateTemplateConfig template = CreateTemplateConfig.load("lmdb");
+		CreateTemplateConfig.Field experimental = field(template, "Experimental Query Optimizations");
+
+		assertThat(experimental.getProperty()).isEqualTo("config:sail.experimentalQueryOptimizations");
+		assertThat(experimental.getControl()).isEqualTo(CreateTemplateConfig.FieldControl.RADIO);
+		assertThat(experimental.getValues()).containsExactly("false", "true");
+		assertThat(experimental.getDefaultValue()).isEqualTo("false");
+		assertThat(template.render(defaultTemplateValues(template)))
+				.contains("config:sail.experimentalQueryOptimizations false");
+	}
+
+	@Test
 	void lmdbTemplateRepositoryDefaultOmitsSketchEstimatorEnabled() throws IOException {
 		CreateTemplateConfig template = CreateTemplateConfig.load("lmdb");
 		Map<String, String> values = defaultTemplateValues(template);

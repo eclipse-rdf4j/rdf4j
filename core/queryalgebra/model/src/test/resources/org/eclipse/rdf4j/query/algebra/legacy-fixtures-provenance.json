@@ -1,0 +1,70 @@
+{
+  "acceptanceReceiptSha256": "202314d0aac01b9edd2d1e56d036362779c9c6e0f794c6e5e9e58b1a68b91555",
+  "baselineClosure": {
+    "compiledClasses": 170,
+    "dependencyJars": 40,
+    "productionSourceFiles": 127,
+    "shadowedClassCount": 0
+  },
+  "baselineSourceRevision": "e9e64906509d9ca83fe243e27db73645863e430b",
+  "description": "Authentic baseline Java serialization streams captured by one isolated CPU-only writer invocation.",
+  "fixtures": [
+    {
+      "bytes": 1609,
+      "file": "legacy-warmed-var.ser",
+      "rootClass": "org.eclipse.rdf4j.query.algebra.Var",
+      "sha256": "c1bd8183c03be4393057db4069338133d7c17d81a1c449fa453da7a195787e30"
+    },
+    {
+      "bytes": 3608,
+      "file": "legacy-projection-pre-metadata.ser",
+      "rootClass": "org.eclipse.rdf4j.query.algebra.Projection",
+      "sha256": "e75b417b0f23104c1ff93e3a6e861acbad2eb0357959c6c2777303a7e0e5452a"
+    },
+    {
+      "bytes": 3115,
+      "file": "legacy-reified-triple-ref.ser",
+      "rootClass": "org.eclipse.rdf4j.query.algebra.ReifiedTripleRef",
+      "sha256": "356ad7e6966c1b87ea15a9410fe5aee9be177cd0759123df536749ecf2ed3272"
+    },
+    {
+      "bytes": 1470,
+      "file": "legacy-singleton-index-unknown.ser",
+      "rootClass": "org.eclipse.rdf4j.query.algebra.SingletonSet",
+      "sha256": "c51f6f19abdf23a75fb2d218c4aba11a353e47bbc87e7266c8b740886b6b5eb8"
+    },
+    {
+      "bytes": 1646,
+      "file": "legacy-singleton-index-zero.ser",
+      "rootClass": "org.eclipse.rdf4j.query.algebra.SingletonSet",
+      "sha256": "b7f960697480e331e1847cc27eac63b10d8088307934db1ab0ea03e568f5f68e"
+    },
+    {
+      "bytes": 1646,
+      "file": "legacy-singleton-index-positive.ser",
+      "rootClass": "org.eclipse.rdf4j.query.algebra.SingletonSet",
+      "sha256": "483dfe9a24499b411952f123ffa45caf0995f7967b54a807906e82060de9fb27"
+    }
+  ],
+  "legacyValues": {
+    "serializedMetricMapPresence": {
+      "positive": true,
+      "unknown": false,
+      "zero": true
+    },
+    "singletonIndexLookupCountActual": {
+      "positive": 23,
+      "unknown": -1,
+      "zero": 0
+    },
+    "warmedVarHashCode": -1911317258
+  },
+  "schema": 1,
+  "selectedSerialVersionUIDs": {
+    "org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode": 3006199552086476178,
+    "org.eclipse.rdf4j.query.algebra.Projection": 7589194319867427666,
+    "org.eclipse.rdf4j.query.algebra.ReifiedTripleRef": -8323267647636343329,
+    "org.eclipse.rdf4j.query.algebra.Var": -2002917920842280721
+  },
+  "writerClass": "org.eclipse.rdf4j.query.algebra.LegacyModelSerializationFixtureWriter"
+}

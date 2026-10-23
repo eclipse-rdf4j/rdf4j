@@ -212,7 +212,13 @@ class LmdbLearnedSidecarJournalStampTest {
 				.setSketchEstimatorEnabled(sketchEnabled)
 				.setSketchEstimatorColdSynopsisCapacity(sketchEnabled ? 256 : 0);
 		LmdbStore store = new LmdbStore(dataDir, config);
+		if (sketchEnabled) {
+			store.setExperimentalQueryOptimizations(true);
+		}
 		store.init();
+		if (sketchEnabled) {
+			assertSketchFixtureProfile(store);
+		}
 		return store;
 	}
 
@@ -360,5 +366,19 @@ class LmdbLearnedSidecarJournalStampTest {
 		Field field = target.getClass().getDeclaredField(name);
 		field.setAccessible(true);
 		return type.cast(field.get(target));
+	}
+
+	private static void assertSketchFixtureProfile(LmdbStore store) {
+		try {
+			assertTrue(store.getQueryExecutionPolicy().experimentalQueryOptimizations());
+			assertNotNull(store.getBackingStore().getSketchBasedJoinEstimator());
+		} catch (AssertionError failure) {
+			try {
+				store.shutDown();
+			} catch (RuntimeException | Error closeFailure) {
+				failure.addSuppressed(closeFailure);
+			}
+			throw failure;
+		}
 	}
 }

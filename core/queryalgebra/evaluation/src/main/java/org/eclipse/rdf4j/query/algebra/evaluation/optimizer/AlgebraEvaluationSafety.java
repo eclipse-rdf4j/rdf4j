@@ -81,6 +81,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
@@ -261,8 +262,8 @@ final class AlgebraEvaluationSafety {
 		if (expressionClass == ValueConstant.class) {
 			return true;
 		}
-		if (expressionClass == FunctionCall.class) {
-			return isRepeatableFunctionCall((FunctionCall) expression, proof);
+		if (expression instanceof FunctionCall functionCall) {
+			return isRepeatableFunctionCall(functionCall, proof);
 		}
 		if (expressionClass == Exists.class) {
 			return proof.isRepeatable(((SubQueryValueOperator) expression).getSubQuery());
@@ -312,12 +313,19 @@ final class AlgebraEvaluationSafety {
 		if (uri == null) {
 			return false;
 		}
-		Function registeredFunction = FunctionRegistry.getInstance().get(uri).orElse(null);
-		// Only RDF4J's own function implementations are trusted to declare volatility correctly; custom registrations
-		// (including overrides of built-in URIs) may have side effects or state.
-		if (registeredFunction == null || registeredFunction.mustReturnDifferentResult()
-				|| !registeredFunction.getClass().getName().startsWith(BUILT_IN_FUNCTION_PACKAGE)) {
-			return false;
+		if (functionCall.getClass() != FunctionCall.class) {
+			// A pinned call resolves to the implementation captured when the query was prepared; the active safety
+			// snapshot classifies each pinned node once per optimizer pass.
+			if (!QueryEvaluationUtility.isRepeatable((QueryModelNode) functionCall)) {
+				return false;
+			}
+		} else {
+			// Built-in implementations are classified by class; custom registrations are repeatable only when they
+			// declare themselves deterministic.
+			Function registeredFunction = FunctionRegistry.getInstance().get(uri).orElse(null);
+			if (registeredFunction == null || !QueryEvaluationUtility.isRepeatable(registeredFunction)) {
+				return false;
+			}
 		}
 
 		List<ValueExpr> arguments = functionCall.getArgs();

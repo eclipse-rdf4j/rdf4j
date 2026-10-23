@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import java.util.Arrays;
 
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
+
 /** Collision-safe interner for the query-selected one-, two-, or multiword binding-mask kernel. */
 @PackedHotPath
 final class PackedMaskInterner {
@@ -334,4 +336,17 @@ final class PackedMaskInterner {
 	private static boolean containsWord(long container, long contained) {
 		return (container & contained) == contained;
 	}
+
+	void accountRetainedMemory(RetainedMemoryAccount account) {
+		if (!account.add(this, 80L)) {
+			return;
+		}
+		PackedCacheMemory.array(account, wordZero);
+		PackedCacheMemory.array(account, wordOne);
+		PackedCacheMemory.array(account, multiWords);
+		PackedCacheMemory.array(account, hashes);
+		PackedCacheMemory.array(account, tableSlots);
+		layout.accountRetainedMemory(account);
+	}
+
 }

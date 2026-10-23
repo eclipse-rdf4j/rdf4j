@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
 
 /** Immutable invocation-local RDF values corresponding to a {@link PackedParameterSchema}. */
 final class PackedParameterVector {
@@ -52,4 +53,18 @@ final class PackedParameterVector {
 		}
 		return values[ordinal];
 	}
+
+	boolean accountRetainedMemory(RetainedMemoryAccount account, PackedStatementPatternSemanticsCodec codec) {
+		if (!account.add(this, 24L)) {
+			return true;
+		}
+		PackedCacheMemory.array(account, values);
+		for (Value value : values) {
+			if (!codec.accountCacheValue(value, account)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 }

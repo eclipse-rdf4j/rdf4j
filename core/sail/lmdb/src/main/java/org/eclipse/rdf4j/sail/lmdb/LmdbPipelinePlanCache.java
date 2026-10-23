@@ -41,10 +41,13 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ScalarEvaluationEffects;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCacheMemory;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanDecisionSummary;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedProviderCacheIdentity;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedSearchCompletionStatus;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
@@ -123,13 +126,23 @@ final class LmdbPipelinePlanCache {
 			PlanComputer computer) {
 		Objects.requireNonNull(computer, "computer");
 		if (!enabled || source == null || context == null || currentRevision == null
-				|| !context.revision().equals(currentRevision.get()) || !hasReusableInputs(source)) {
+				|| !context.revision().equals(currentRevision.get()) || !context.retainable()
+				|| !hasReusableInputs(source)) {
 			return new Result(compute(computer).plan(), false);
 		}
 
-		PackedPlanCache.StructuralKey query = PackedPlanCache.structuralKey(source,
-				LmdbStatementPatternSemanticsCodec.INSTANCE);
+		PackedPlanCache.StructuralKey query = context.inputIdentity().source();
 		if (query == null) {
+			TupleExpr detachedSource = LmdbCacheValueCopies.copy(source, false);
+			query = detachedSource == null ? null
+					: PackedPlanCache.structuralKey(detachedSource,
+							LmdbCacheValueCopies.CODEC);
+		}
+		if (query == null) {
+			return new Result(compute(computer).plan(), false);
+		}
+		context = context.withSource(query);
+		if (!context.retainable()) {
 			return new Result(compute(computer).plan(), false);
 		}
 		long fingerprint = fingerprintStrategy.fingerprint(context, query);
@@ -161,12 +174,18 @@ final class LmdbPipelinePlanCache {
 			if (existing != null) {
 				waits.incrementAndGet();
 				shared = existing.result;
-			} else if (segment.flights.size() >= segment.capacity) {
+			} else if (segment.flights.size() >= segment.capacity
+					|| !decisionCache.tryRetainTransientIdentity(context.inputIdentity())) {
 				bypass = true;
 			} else {
 				misses.incrementAndGet();
-				owner = new Flight(key, FactorCostCacheKey.estimatedStructuralRetainedBytes(source));
-				segment.flights.put(key, owner);
+				try {
+					owner = new Flight(key, FactorCostCacheKey.estimatedStructuralRetainedBytes(source));
+					segment.flights.put(key, owner);
+				} catch (RuntimeException | Error failure) {
+					decisionCache.releaseTransientIdentity(context.inputIdentity());
+					throw failure;
+				}
 			}
 		}
 		if (bypass) {
@@ -182,7 +201,7 @@ final class LmdbPipelinePlanCache {
 				template = null;
 			}
 			if (template != null && context.revision().equals(currentRevision.get())) {
-				return new Result(template.clone(), true);
+				return new Result(LmdbCacheValueCopies.copy(template, true), true);
 			}
 			return new Result(compute(computer).plan(), false);
 		}
@@ -251,22 +270,30 @@ final class LmdbPipelinePlanCache {
 		if (!owned) {
 			throw new IllegalStateException("pipeline plan cache flight is no longer owned");
 		}
-		boolean retained = template != null && publishDecision(flight.key, template, entryBytes, computation);
-		// Waiters may retain a completed future after the separately charged family is retired or evicted.
-		TupleExpr flightTemplate = retained ? template : null;
-		if (flightTemplate != null && FactorCostCacheKey.retainsProviderPayload(flightTemplate)) {
-			flightTemplate = flightTemplate.clone();
-			FactorCostCacheKey.stripProviderPayload(flightTemplate);
+		try {
+			// The removed flight no longer owns a cache key. Final publication charges that same input graph.
+			decisionCache.releaseTransientIdentity(flight.key.context().inputIdentity());
+			boolean retained = template != null && publishDecision(flight.key, template, entryBytes, computation);
+			// Waiters may retain a completed future after the separately charged family is retired or evicted.
+			TupleExpr flightTemplate = retained ? template : null;
+			if (flightTemplate != null && FactorCostCacheKey.retainsProviderPayload(flightTemplate)) {
+				flightTemplate = LmdbCacheValueCopies.copy(flightTemplate, true);
+				FactorCostCacheKey.stripProviderPayload(flightTemplate);
+			}
+			flight.result.complete(flightTemplate);
+		} catch (RuntimeException | Error failure) {
+			flight.result.completeExceptionally(failure);
+			throw failure;
 		}
-		flight.result.complete(flightTemplate);
 	}
 
-	private static void abandon(Segment segment, Flight flight, Throwable failure) {
+	private void abandon(Segment segment, Flight flight, Throwable failure) {
 		boolean removed;
 		synchronized (segment) {
 			removed = segment.flights.remove(flight.key) == flight;
 		}
 		if (removed) {
+			decisionCache.releaseTransientIdentity(flight.key.context().inputIdentity());
 			flight.result.completeExceptionally(failure);
 		}
 	}
@@ -413,7 +440,7 @@ final class LmdbPipelinePlanCache {
 		Context context = key.context();
 		return new LmdbPlanDecisionCache.PlanFamilyKey(key.query(), context.dataset(), context.bindings(),
 				Boolean.toString(context.preserveObservationOrder()), context.queryEvaluationMode(), 0L, 0L,
-				context.configuration());
+				context.configuration(), context.inputIdentity());
 	}
 
 	private static LmdbPlanDecisionCache.ExactInvocationKey exactInvocationKey(CacheKey key) {
@@ -435,7 +462,7 @@ final class LmdbPipelinePlanCache {
 						+ context.runtimeTelemetry(),
 				0L, context.predicateRangeIdentity(), true, 0L, 0L, 0L, 0L, context.configuration(),
 				new PhysicalProviderIdentity(context.revision().predicateRangeVersion()),
-				context.revision().planningRevisions().dataRevision(), true);
+				context.revision().planningRevisions().dataRevision(), true, context.inputIdentity());
 	}
 
 	private static LmdbPlanDecisionCache.EvidenceSnapshot evidence(Context context) {
@@ -470,31 +497,7 @@ final class LmdbPipelinePlanCache {
 	}
 
 	private static TupleExpr detachedTemplate(TupleExpr plan) {
-		TupleExpr detached = plan.clone();
-		detached.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-			@Override
-			public void meet(BindingSetAssignment assignment) {
-				Iterable<BindingSet> bindingSets = assignment.getBindingSets();
-				if (bindingSets == null) {
-					return;
-				}
-				List<BindingSet> rows = new ArrayList<>();
-				for (BindingSet bindingSet : bindingSets) {
-					List<String> names = new ArrayList<>(bindingSet.getBindingNames());
-					names.sort(String::compareTo);
-					List<Value> values = new ArrayList<>(names.size());
-					for (String name : names) {
-						// UNDEF cells are null values (ListBindingSet reads null as unbound); List.copyOf would
-						// reject them, so keep the freshly built list and only seal it against mutation.
-						values.add(bindingSet.getValue(name));
-					}
-					rows.add(new ListBindingSet(List.copyOf(names), Collections.unmodifiableList(values)));
-				}
-				assignment.setBindingNames(Set.copyOf(assignment.getBindingNames()));
-				assignment.setBindingSets(List.copyOf(rows));
-			}
-		});
-		return detached;
+		return LmdbCacheValueCopies.copy(plan, true);
 	}
 
 	private static long mix64(long value) {
@@ -551,58 +554,135 @@ final class LmdbPipelinePlanCache {
 		}
 	}
 
-	private record PhysicalProviderIdentity(long predicateRangeVersion) {
+	private record PhysicalProviderIdentity(long predicateRangeVersion) implements PackedProviderCacheIdentity {
+		@Override
+		public boolean accountRetainedMemory(RetainedMemoryAccount account) {
+			account = PackedCacheMemory.ownedAccount(account);
+			account.add(this, 24L);
+			return true;
+		}
 	}
 
-	record DatasetIdentity(boolean present, Set<Resource> defaultRemoveGraphs, Resource defaultInsertGraph,
-			Set<Resource> defaultGraphs, Set<Resource> namedGraphs, boolean explicitRead, DatasetKey key) {
+	static final class DatasetIdentity implements PackedProviderCacheIdentity {
+		private final DatasetKey key;
 
-		static DatasetIdentity of(Dataset dataset) {
-			Set<Resource> remove = dataset == null ? Set.of() : immutable(dataset.getDefaultRemoveGraphResources());
-			Resource insert = dataset == null ? null : dataset.getDefaultInsertGraphResource();
-			Set<Resource> defaults = dataset == null ? Set.of() : immutable(dataset.getDefaultGraphResources());
-			Set<Resource> named = dataset == null ? Set.of() : immutable(dataset.getNamedGraphResources());
-			boolean explicit = dataset != null && dataset.isExplicitReadDataset();
-			LmdbQueryValueIdentity.Capture capture = new LmdbQueryValueIdentity.Capture();
-			DatasetKey key = new DatasetKey(dataset != null, explicit, entries(remove, capture), capture.of(insert),
-					entries(defaults, capture), entries(named, capture));
-			return new DatasetIdentity(dataset != null, remove, insert, defaults, named, explicit, key);
+		private DatasetIdentity(DatasetKey key) {
+			this.key = key;
 		}
 
-		/**
-		 * Keep the actual selectors, including the null default context, for detached reconstruction. Private exact
-		 * identity additionally checks imported provenance; raw Resource equality is insufficient for that purpose.
-		 */
-		private static Set<Resource> immutable(Set<Resource> values) {
-			return values == null || values.isEmpty()
-					? Set.of()
-					: Collections.unmodifiableSet(new LinkedHashSet<>(values));
+		static DatasetIdentity of(Dataset dataset) {
+			LmdbQueryValueIdentity.Capture capture = new LmdbQueryValueIdentity.Capture();
+			Map<LmdbQueryValueIdentity, Integer> remove = entries(dataset == null ? null
+					: dataset.getDefaultRemoveGraphResources(), capture);
+			Map<LmdbQueryValueIdentity, Integer> defaults = entries(dataset == null ? null
+					: dataset.getDefaultGraphResources(), capture);
+			Map<LmdbQueryValueIdentity, Integer> named = entries(dataset == null ? null
+					: dataset.getNamedGraphResources(), capture);
+			LmdbQueryValueIdentity insert = capture
+					.of(dataset == null ? null : dataset.getDefaultInsertGraphResource());
+			if (remove == null || defaults == null || named == null || insert == null) {
+				return null;
+			}
+			return new DatasetIdentity(new DatasetKey(dataset != null,
+					dataset != null && dataset.isExplicitReadDataset(), remove, insert, defaults, named));
 		}
 
 		private static Map<LmdbQueryValueIdentity, Integer> entries(Set<Resource> values,
 				LmdbQueryValueIdentity.Capture capture) {
 			Map<LmdbQueryValueIdentity, Integer> entries = new LinkedHashMap<>();
-			for (Resource value : values) {
-				entries.merge(capture.of(value), 1, Integer::sum);
+			if (values != null) {
+				// Capture BEFORE any hash/set operation on the supplied Resource.
+				for (Resource value : values) {
+					LmdbQueryValueIdentity identity = capture.of(value);
+					if (identity == null) {
+						return null;
+					}
+					entries.merge(identity, 1, Integer::sum);
+				}
 			}
 			return Map.copyOf(entries);
 		}
 
+		boolean supportsFlatSemanticObservation() {
+			if (!key.insert().supportsFlatSemanticObservation()) {
+				return false;
+			}
+			for (Map<LmdbQueryValueIdentity, Integer> entries : List.of(key.remove(), key.defaults(), key.named())) {
+				for (LmdbQueryValueIdentity value : entries.keySet()) {
+					if (!value.supportsFlatSemanticObservation()) {
+						return false;
+					}
+				}
+			}
+			return true;
+		}
+
+		boolean present() {
+			return key.present();
+		}
+
+		boolean explicitRead() {
+			return key.explicitRead();
+		}
+
+		Set<Resource> defaultRemoveGraphs() {
+			return resources(key.remove(), new LmdbQueryValueIdentity.Materializer());
+		}
+
+		Resource defaultInsertGraph() {
+			return (Resource) new LmdbQueryValueIdentity.Materializer().of(key.insert());
+		}
+
 		boolean usesStoreDefaults() {
-			return !explicitRead && defaultGraphs.isEmpty() && namedGraphs.isEmpty();
+			return !key.explicitRead() && key.defaults().isEmpty() && key.named().isEmpty();
+		}
+
+		Set<Resource> defaultGraphs() {
+			return resources(key.defaults(), new LmdbQueryValueIdentity.Materializer());
+		}
+
+		Set<Resource> namedGraphs() {
+			return resources(key.named(), new LmdbQueryValueIdentity.Materializer());
+		}
+
+		private static Set<Resource> resources(Map<LmdbQueryValueIdentity, Integer> values,
+				LmdbQueryValueIdentity.Materializer materializer) {
+			Set<Resource> result = new LinkedHashSet<>();
+			for (LmdbQueryValueIdentity identity : values.keySet()) {
+				result.add((Resource) materializer.of(identity));
+			}
+			return Collections.unmodifiableSet(result);
 		}
 
 		Dataset toDataset() {
-			if (!present) {
+			if (!key.present()) {
 				return null;
 			}
+			LmdbQueryValueIdentity.Materializer materializer = new LmdbQueryValueIdentity.Materializer();
 			SimpleDataset dataset = new SimpleDataset();
-			defaultRemoveGraphs.forEach(dataset::addDefaultRemoveGraph);
-			dataset.setDefaultInsertGraph(defaultInsertGraph);
-			defaultGraphs.forEach(dataset::addDefaultGraph);
-			namedGraphs.forEach(dataset::addNamedGraph);
-			dataset.setExplicitReadDataset(explicitRead);
+			resources(key.remove(), materializer).forEach(dataset::addDefaultRemoveGraph);
+			dataset.setDefaultInsertGraph((Resource) materializer.of(key.insert()));
+			resources(key.defaults(), materializer).forEach(dataset::addDefaultGraph);
+			resources(key.named(), materializer).forEach(dataset::addNamedGraph);
+			dataset.setExplicitReadDataset(key.explicitRead());
 			return dataset;
+		}
+
+		@Override
+		public boolean accountRetainedMemory(RetainedMemoryAccount account) {
+			account = PackedCacheMemory.ownedAccount(account);
+			if (!account.add(this, 24L)) {
+				return true;
+			}
+			account.add(key, 64L);
+			for (Map<LmdbQueryValueIdentity, Integer> entries : List.of(key.remove(), key.defaults(), key.named())) {
+				account.add(entries, 192L + 96L * entries.size());
+				for (Map.Entry<LmdbQueryValueIdentity, Integer> entry : entries.entrySet()) {
+					entry.getKey().accountRetainedMemory(account);
+					account.add(entry.getValue(), 24L);
+				}
+			}
+			return key.insert().accountRetainedMemory(account);
 		}
 
 		@Override
@@ -627,7 +707,7 @@ final class LmdbPipelinePlanCache {
 		}
 	}
 
-	record BindingIdentity(List<BoundValue> values) {
+	record BindingIdentity(List<BoundValue> values) implements PackedProviderCacheIdentity {
 
 		static BindingIdentity of(BindingSet bindings) {
 			if (bindings == null || bindings.isEmpty()) {
@@ -638,9 +718,36 @@ final class LmdbPipelinePlanCache {
 			List<BoundValue> values = new ArrayList<>(names.size());
 			LmdbQueryValueIdentity.Capture capture = new LmdbQueryValueIdentity.Capture();
 			for (String name : names) {
-				values.add(new BoundValue(name, capture.of(bindings.getValue(name))));
+				LmdbQueryValueIdentity identity = capture.of(bindings.getValue(name));
+				if (identity == null) {
+					return null;
+				}
+				values.add(new BoundValue(name, identity));
 			}
 			return new BindingIdentity(List.copyOf(values));
+		}
+
+		boolean supportsFlatSemanticObservation() {
+			for (BoundValue value : values) {
+				if (!value.identity().supportsFlatSemanticObservation()) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		public boolean accountRetainedMemory(RetainedMemoryAccount account) {
+			account = PackedCacheMemory.ownedAccount(account);
+			if (!account.add(this, 24L)) {
+				return true;
+			}
+			account.add(values, 48L + 8L * values.size());
+			for (BoundValue value : values) {
+				account.add(value, 32L);
+				LmdbQueryValueIdentity.string(account, value.name());
+				value.identity().accountRetainedMemory(account);
+			}
+			return true;
 		}
 
 		Value value(String name) {
@@ -664,7 +771,37 @@ final class LmdbPipelinePlanCache {
 		}
 	}
 
-	record PredicateRangeIdentity(List<PredicateRangeEntry> entries) {
+	record PredicateRangeIdentity(List<PredicateRangeEntry> entries) implements PackedProviderCacheIdentity {
+
+		@Override
+		public boolean accountRetainedMemory(RetainedMemoryAccount account) {
+			account = PackedCacheMemory.ownedAccount(account);
+			if (!account.add(this, 24L)) {
+				return true;
+			}
+			account.add(entries, 48L + 8L * entries.size());
+			for (PredicateRangeEntry entry : entries) {
+				account.add(entry, 32L);
+				if (!LmdbQueryValueIdentity.accountModel(entry.predicate(), account)) {
+					return false;
+				}
+				RdfTermDomain domain = entry.domain();
+				account.add(domain, 48L);
+				if (domain.integerRange().isPresent()) {
+					account.add(domain.integerRange().get(), 32L);
+				}
+				if (domain.isFinite()) {
+					Set<Value> finite = domain.finiteValues();
+					account.add(finite, 192L + 96L * finite.size());
+					for (Value value : finite) {
+						if (!LmdbQueryValueIdentity.accountModel(value, account)) {
+							return false;
+						}
+					}
+				}
+			}
+			return true;
+		}
 
 		PredicateRangeIdentity {
 			entries = List.copyOf(entries);
@@ -693,7 +830,11 @@ final class LmdbPipelinePlanCache {
 			});
 			List<PredicateRangeEntry> entries = new ArrayList<>(predicates.size());
 			for (IRI predicate : predicates.values()) {
-				entries.add(entry(predicate, runtime));
+				PredicateRangeEntry entry = entry(predicate, runtime);
+				if (entry == null) {
+					return null;
+				}
+				entries.add(entry);
 			}
 			return new PredicateRangeIdentity(entries);
 		}
@@ -703,14 +844,26 @@ final class LmdbPipelinePlanCache {
 			Objects.requireNonNull(runtime, "runtime");
 			List<PredicateRangeEntry> entries = new ArrayList<>(predicates.size());
 			for (IRI predicate : predicates) {
-				entries.add(entry(predicate, runtime));
+				PredicateRangeEntry entry = entry(predicate, runtime);
+				if (entry == null) {
+					return null;
+				}
+				entries.add(entry);
 			}
 			return new PredicateRangeIdentity(entries);
 		}
 
 		private static PredicateRangeEntry entry(IRI predicate, LmdbEstimatorRuntime runtime) {
 			RdfTermDomain domain = runtime.rdfTermDomain(predicate);
-			return new PredicateRangeEntry(predicate, domain == null ? RdfTermDomain.UNRESTRICTED : domain);
+			LmdbQueryValueIdentity.Capture capture = new LmdbQueryValueIdentity.Capture();
+			LmdbQueryValueIdentity.Materializer materializer = new LmdbQueryValueIdentity.Materializer();
+			RdfTermDomain detached = (domain == null ? RdfTermDomain.UNRESTRICTED : domain).detachedForCache(value -> {
+				LmdbQueryValueIdentity identity = capture.of(value);
+				return identity == null || !identity.supportsFlatSemanticObservation() ? null
+						: materializer.of(identity);
+			});
+			// Refusal is the whole optional identity, never an invented unrestricted proof or a partial entry list.
+			return detached == null ? null : new PredicateRangeEntry(predicate, detached);
 		}
 
 		List<IRI> predicates() {
@@ -718,10 +871,101 @@ final class LmdbPipelinePlanCache {
 		}
 	}
 
+	/** Stable exact graph owned by the request/family/work, shared with the existing provider memory ledger. */
+	record InputIdentity(DatasetIdentity dataset, BindingIdentity bindings, PredicateRangeIdentity ranges,
+			String configuration, LmdbFilterReadContext.FamilyIdentity filter,
+			PackedPlanCache.StructuralKey source) implements PackedProviderCacheIdentity {
+
+		// Retain range evidence for complete ownership accounting, but let hardDependencies decide whether
+		// a plan consumed it. An unconsumed range change is quality drift within the same plan family.
+		@Override
+		public boolean equals(Object other) {
+			return other == this || other instanceof InputIdentity identity
+					&& Objects.equals(dataset, identity.dataset)
+					&& Objects.equals(bindings, identity.bindings)
+					&& Objects.equals(configuration, identity.configuration)
+					&& Objects.equals(filter, identity.filter)
+					&& Objects.equals(source, identity.source);
+		}
+
+		@Override
+		public int hashCode() {
+			int hash = Objects.hashCode(dataset);
+			hash = 31 * hash + Objects.hashCode(bindings);
+			hash = 31 * hash + Objects.hashCode(configuration);
+			hash = 31 * hash + Objects.hashCode(filter);
+			return 31 * hash + Objects.hashCode(source);
+		}
+
+		@Override
+		public boolean accountRetainedMemory(RetainedMemoryAccount account) {
+			account = PackedCacheMemory.ownedAccount(account);
+			if (dataset == null || bindings == null || ranges == null) {
+				return false;
+			}
+			if (!account.add(this, 64L)) {
+				return true;
+			}
+			dataset.accountRetainedMemory(account);
+			bindings.accountRetainedMemory(account);
+			LmdbQueryValueIdentity.string(account, configuration);
+			if (!ranges.accountRetainedMemory(account)) {
+				return false;
+			}
+			return (filter == null || filter.accountRetainedMemory(account))
+					&& (source == null || source.accountRetainedMemory(account));
+		}
+	}
+
 	record Context(Revision revision, boolean executionSnapshotPresent, long executionSnapshotEpoch,
 			DatasetIdentity dataset, BindingIdentity bindings, PredicateRangeIdentity predicateRangeIdentity,
 			String configuration, boolean preserveObservationOrder, boolean trackResultSize, boolean trackTime,
-			String queryEvaluationMode, boolean runtimeTelemetry) {
+			String queryEvaluationMode, boolean runtimeTelemetry,
+			LmdbFilterReadContext.FamilyIdentity filterReadIdentity,
+			InputIdentity inputIdentity) {
+
+		Context {
+			inputIdentity = inputIdentity == null ? new InputIdentity(dataset, bindings, predicateRangeIdentity,
+					configuration, filterReadIdentity, null) : inputIdentity;
+		}
+
+		Context(Revision revision, boolean executionSnapshotPresent, long executionSnapshotEpoch,
+				DatasetIdentity dataset, BindingIdentity bindings, PredicateRangeIdentity predicateRangeIdentity,
+				String configuration, boolean preserveObservationOrder, boolean trackResultSize, boolean trackTime,
+				String queryEvaluationMode, boolean runtimeTelemetry,
+				LmdbFilterReadContext.FamilyIdentity filterReadIdentity) {
+			this(revision, executionSnapshotPresent, executionSnapshotEpoch, dataset, bindings, predicateRangeIdentity,
+					configuration, preserveObservationOrder, trackResultSize, trackTime, queryEvaluationMode,
+					runtimeTelemetry, filterReadIdentity, null);
+		}
+
+		Context withSource(PackedPlanCache.StructuralKey source) {
+			return new Context(revision, executionSnapshotPresent, executionSnapshotEpoch, dataset, bindings,
+					predicateRangeIdentity, configuration, preserveObservationOrder, trackResultSize, trackTime,
+					queryEvaluationMode, runtimeTelemetry, filterReadIdentity,
+					new InputIdentity(dataset, bindings, predicateRangeIdentity, configuration, filterReadIdentity,
+							source));
+		}
+
+		boolean retainable() {
+			if (dataset == null || bindings == null || predicateRangeIdentity == null
+					|| !dataset.supportsFlatSemanticObservation()
+					|| !bindings.supportsFlatSemanticObservation()) {
+				return false;
+			}
+			FactorCostCacheKey.ProviderRetainedMemory memory = new FactorCostCacheKey.ProviderRetainedMemory();
+			memory.account(inputIdentity);
+			return memory.bytes() != Long.MAX_VALUE;
+		}
+
+		Context(Revision revision, boolean executionSnapshotPresent, long executionSnapshotEpoch,
+				DatasetIdentity dataset, BindingIdentity bindings, PredicateRangeIdentity predicateRangeIdentity,
+				String configuration, boolean preserveObservationOrder, boolean trackResultSize, boolean trackTime,
+				String queryEvaluationMode, boolean runtimeTelemetry) {
+			this(revision, executionSnapshotPresent, executionSnapshotEpoch, dataset, bindings, predicateRangeIdentity,
+					configuration, preserveObservationOrder, trackResultSize, trackTime, queryEvaluationMode,
+					runtimeTelemetry, null);
+		}
 
 		Context(Revision revision, boolean executionSnapshotPresent, long executionSnapshotEpoch,
 				DatasetIdentity dataset, BindingIdentity bindings, String configuration,
@@ -739,7 +983,7 @@ final class LmdbPipelinePlanCache {
 			hash = mix64(hash ^ revision.planningRevisions().learnedEvidenceRevision());
 			hash = mix64(hash ^ revision.predicateRangeVersion());
 			hash = mix64(hash ^ executionSnapshotEpoch);
-			hash = mix64(hash ^ dataset.defaultGraphs().size() ^ Long.rotateLeft(dataset.namedGraphs().size(), 17));
+			hash = mix64(hash ^ dataset.key.defaults().size() ^ Long.rotateLeft(dataset.key.named().size(), 17));
 			hash = mix64(hash ^ bindings.values().size() ^ predicateRangeIdentity.hashCode()
 					^ configuration.hashCode());
 			return hash;
@@ -751,7 +995,18 @@ final class LmdbPipelinePlanCache {
 
 	private record SemanticContext(boolean executionSnapshotPresent, DatasetIdentity dataset,
 			BindingIdentity bindings, String configuration, boolean preserveObservationOrder, boolean trackResultSize,
-			boolean trackTime, String queryEvaluationMode, boolean runtimeTelemetry) {
+			boolean trackTime, String queryEvaluationMode, boolean runtimeTelemetry)
+			implements PackedProviderCacheIdentity {
+		@Override
+		public boolean accountRetainedMemory(RetainedMemoryAccount account) {
+			account = PackedCacheMemory.ownedAccount(account);
+			if (!account.add(this, 80L)) {
+				return true;
+			}
+			LmdbQueryValueIdentity.string(account, configuration);
+			LmdbQueryValueIdentity.string(account, queryEvaluationMode);
+			return dataset.accountRetainedMemory(account) && bindings.accountRetainedMemory(account);
+		}
 	}
 
 	private record CacheKey(long fingerprint, Context context, PackedPlanCache.StructuralKey query) {

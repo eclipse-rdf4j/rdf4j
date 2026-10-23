@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.BindingScopeAnalysis;
 
 /**
@@ -57,6 +58,12 @@ public final class SubSelectScopeBoundaryQueryEvaluationStep implements QueryEva
 		}
 		Set<String> innerNames = new HashSet<>(substitutedNames);
 		innerNames.addAll(BindingSetOrigin.of(bindings).requestNames());
+		// Evaluator-owned GRAPH parameters cross SELECT scopes independently of caller-input authority.
+		for (String name : bindings.getBindingNames()) {
+			if (GraphFrameBindings.isSupplied(bindings, name)) {
+				innerNames.add(name);
+			}
+		}
 		BindingSet inner = BindingScopeAnalysis.retain(bindings, innerNames);
 		return new ScopeJoinIteration(unit.evaluate(inner), bindings);
 	}

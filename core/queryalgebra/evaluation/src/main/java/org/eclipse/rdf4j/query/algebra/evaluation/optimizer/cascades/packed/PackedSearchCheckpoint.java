@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import java.util.Objects;
 
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
+
 /** Immutable detached state from which a private packed search may continue. */
 final class PackedSearchCheckpoint {
 
@@ -158,4 +160,21 @@ final class PackedSearchCheckpoint {
 	private static long saturatedAdd(long left, long right) {
 		return right > Long.MAX_VALUE - left ? Long.MAX_VALUE : left + right;
 	}
+
+	boolean accountCacheStructure(RetainedMemoryAccount account) {
+		if (!account.add(this, 160L)) {
+			return true;
+		}
+		PackedCacheMemory.array(account, phaseCursors);
+		PackedCacheMemory.array(account, retainedCandidateFingerprints);
+		PackedCacheMemory.array(account, continuationKeys);
+		PackedCacheMemory.array(account, openWorklist);
+		PackedCacheMemory.array(account, structuralPruningRecords);
+		PackedCacheMemory.array(account, costPruningRecords);
+		PackedCacheMemory.array(account, costPruningEvidenceGenerations);
+		PackedCacheMemory.array(account, costPruningMargins);
+		return familyIdentity.accountRetainedMemory(account)
+				&& continuationRecipe.accountCacheStructure(account);
+	}
+
 }

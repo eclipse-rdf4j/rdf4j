@@ -14,7 +14,6 @@ package org.eclipse.rdf4j.sail.memory;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.Collection;
-import java.util.List;
 
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.TestFactory;
@@ -22,15 +21,18 @@ import org.junit.jupiter.api.TestFactory;
 /** Focused run of the unchanged W3C SPARQL 1.1 sq03 compliance case. */
 public class MemorySPARQL11QueryComplianceSq03Test extends MemorySPARQL11QueryComplianceTest {
 
-	private static final String SQ03_NAME = "sq03 - Subquery within graph pattern, graph variable is not bound";
+	private static final String SQ03_TEST_URI = "http://www.w3.org/2009/sparql/docs/tests/data-sparql11/subquery/manifest#subquery03";
 
 	@Override
 	@TestFactory
 	public Collection<DynamicTest> tests() {
-		List<DynamicTest> selected = super.tests().stream()
-				.filter(test -> test.getDisplayName().endsWith(SQ03_NAME))
-				.toList();
+		Collection<DynamicTest> selected = super.tests();
 		assertEquals(1, selected.size(), "Expected exactly one W3C sq03 dynamic test");
 		return selected;
+	}
+
+	@Override
+	protected boolean shouldIncludeTestCase(String testURI) {
+		return SQ03_TEST_URI.equals(testURI);
 	}
 }

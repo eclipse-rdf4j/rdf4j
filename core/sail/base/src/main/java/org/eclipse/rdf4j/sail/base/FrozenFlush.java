@@ -94,6 +94,11 @@ interface FrozenFlush {
 		private final Set<SailSink> validationCarriers = Collections.newSetFromMap(new IdentityHashMap<>());
 		private final Map<SailSink, Set<PreparationOwner>> preparationOwners = new IdentityHashMap<>();
 		private final Set<FrozenFlush> discovered = Collections.newSetFromMap(new IdentityHashMap<>());
+		private final Map<Object, AttemptCleanup> attemptCleanups = new IdentityHashMap<>();
+
+		private record AttemptCleanup(Batch batch, SailClosable cleanup) {
+		}
+
 		// Native stores can retain this identity without retaining the graph, its branches, or its models.
 		private final Object owner = new Object();
 		private boolean staged;
@@ -115,6 +120,63 @@ interface FrozenFlush {
 
 		synchronized void terminal(Batch batch) {
 			terminals.add(batch);
+		}
+
+		synchronized void attemptCleanup(Object owner, SailClosable cleanup) {
+			attemptCleanup(null, owner, cleanup);
+		}
+
+		synchronized void attemptCleanup(Batch batch, Object owner, SailClosable cleanup) {
+			if (released) {
+				throw new IllegalStateException("The retained flush graph has been released");
+			}
+			attemptCleanups.putIfAbsent(owner, new AttemptCleanup(batch, cleanup));
+		}
+
+		void transferAttemptCleanup(Batch batch, Context requested) {
+			if (requested == this) {
+				return;
+			}
+			Map<Object, AttemptCleanup> moving = new IdentityHashMap<>();
+			synchronized (this) {
+				for (Map.Entry<Object, AttemptCleanup> entry : new IdentityHashMap<>(attemptCleanups).entrySet()) {
+					if (entry.getValue().batch() == batch) {
+						moving.put(entry.getKey(), entry.getValue());
+						attemptCleanups.remove(entry.getKey());
+					}
+				}
+			}
+			// A composite may replace the child's context before staging. Transfer only this batch's
+			// cleanup ownership, outside both graph monitors, leaving unrelated frozen work in its context.
+			for (Map.Entry<Object, AttemptCleanup> entry : moving.entrySet()) {
+				requested.attemptCleanup(batch, entry.getKey(), entry.getValue().cleanup());
+			}
+		}
+
+		private List<SailClosable> takeAttemptCleanups() {
+			synchronized (this) {
+				List<SailClosable> cleanup = new ArrayList<>(attemptCleanups.size());
+				for (AttemptCleanup attempt : attemptCleanups.values()) {
+					cleanup.add(attempt.cleanup());
+				}
+				attemptCleanups.clear();
+				return cleanup;
+			}
+		}
+
+		private static Throwable closeAttemptCleanups(List<SailClosable> cleanups, Throwable failure) {
+			for (SailClosable cleanup : cleanups) {
+				try {
+					cleanup.close();
+				} catch (RuntimeException | Error cleanupFailure) {
+					if (failure == null) {
+						failure = cleanupFailure;
+					} else if (failure != cleanupFailure) {
+						failure.addSuppressed(cleanupFailure);
+					}
+				}
+			}
+			return failure;
 		}
 
 		synchronized void forwarded(Batch batch) {
@@ -286,8 +348,24 @@ interface FrozenFlush {
 					validateReplayCoverage();
 					retained = List.copyOf(batches);
 				}
+				Throwable failure = null;
 				for (Batch batch : retained) {
-					batch.releaseAttemptCleanup();
+					try {
+						batch.releaseAttemptCleanup();
+					} catch (RuntimeException | Error cleanupFailure) {
+						if (failure == null) {
+							failure = cleanupFailure;
+						} else if (failure != cleanupFailure) {
+							failure.addSuppressed(cleanupFailure);
+						}
+					}
+				}
+				failure = closeAttemptCleanups(takeAttemptCleanups(), failure);
+				if (failure instanceof Error error) {
+					throw error;
+				}
+				if (failure instanceof RuntimeException runtime) {
+					throw runtime;
 				}
 			}
 		}
@@ -352,6 +430,7 @@ interface FrozenFlush {
 						}
 					}
 				}
+				failure = closeAttemptCleanups(takeAttemptCleanups(), failure);
 				if (failure instanceof Error error) {
 					throw error;
 				}

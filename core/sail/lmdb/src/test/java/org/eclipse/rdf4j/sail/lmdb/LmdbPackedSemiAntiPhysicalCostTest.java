@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -52,6 +53,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.mockito.stubbing.Answer;
 
 class LmdbPackedSemiAntiPhysicalCostTest {
 
@@ -234,12 +236,16 @@ class LmdbPackedSemiAntiPhysicalCostTest {
 				context = call.context();
 			}
 			LmdbEstimatorRuntime runtime = mock(LmdbEstimatorRuntime.class);
-			when(runtime.factorCost(any(TupleExpr.class), any(CostContext.class))).thenAnswer(invocation -> {
+			Answer<?> factorCostAnswer = invocation -> {
 				CostContext context = invocation.getArgument(1);
 				boolean correlated = context.getCurrentlyBoundVars().contains("node");
 				return Optional.of(new FactorCostEstimate(correlated ? boundWork : rightWork,
 						correlated ? boundRows : rightRows));
-			});
+			};
+			when(runtime.factorCost(any(TupleExpr.class), any(CostContext.class))).thenAnswer(factorCostAnswer);
+			when(runtime.factorCost(any(TupleExpr.class), any(CostContext.class),
+					nullable(LmdbFilterReadContext.class)))
+							.thenAnswer(factorCostAnswer);
 			model = new LmdbPackedCostModel(runtime);
 		}
 

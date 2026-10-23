@@ -1562,14 +1562,18 @@ class LmdbFilterSelectivityStats
 		}
 
 		if (!stratifiedDelivered) {
+			StatementOrder samplingOrder = completePopulation ? null : samplingOrder(candidate);
+			if (!completePopulation && samplingOrder == null) {
+				return null;
+			}
 			samples.clear();
 			eligibleRows[0] = 0;
 			scannedRows[0] = 0;
 			try {
 				for (boolean explicit : new boolean[] { true, false }) {
-					try (RecordIterator triples = tripleStore.getTriples(planningTxn, candidate.subjId,
-							candidate.predId,
-							candidate.objId, candidate.contextId, explicit)) {
+					try (RecordIterator triples = samplingOrder == null
+							? tripleStore.getTriples(planningTxn, candidate.subjId, candidate.predId, candidate.objId, candidate.contextId, explicit)
+							: tripleStore.getTriples(planningTxn, samplingOrder, candidate.subjId, candidate.predId, candidate.objId, candidate.contextId, explicit)) {
 						long[] row;
 						while (scannedRows[0] < effectiveScanBudget && !samplingDeadlineExceeded(deadlineNanos)
 								&& (row = triples.next()) != null) {
@@ -2009,6 +2013,60 @@ class LmdbFilterSelectivityStats
 			}
 		}
 		return true;
+	}
+
+	private StatementOrder samplingOrder(SamplingCandidate candidate) {
+		Set<String> filteredBindings = VarNameCollector.process(candidate.condition);
+		Set<StatementOrder> supportedOrders = tripleStore.getSupportedOrders(candidate.subjId, candidate.predId,
+				candidate.objId, candidate.contextId);
+		StatementOrder defaultOrder = firstVaryingOrder(
+				tripleStore.getIndexName(candidate.subjId, candidate.predId, candidate.objId, candidate.contextId),
+				candidate.pattern);
+		if (isOrderIndependentOfFilter(defaultOrder, candidate.pattern, filteredBindings)
+				&& supportedOrders.contains(defaultOrder)) {
+			return defaultOrder;
+		}
+		for (StatementOrder order : supportedOrders) {
+			if (isOrderIndependentOfFilter(order, candidate.pattern, filteredBindings)) {
+				return order;
+			}
+		}
+		return null;
+	}
+
+	private static StatementOrder firstVaryingOrder(String indexName, StatementPattern pattern) {
+		for (int i = 0; i < indexName.length(); i++) {
+			StatementOrder order = switch (indexName.charAt(i)) {
+			case 's' -> StatementOrder.S;
+			case 'p' -> StatementOrder.P;
+			case 'o' -> StatementOrder.O;
+			case 'c' -> StatementOrder.C;
+			default -> null;
+			};
+			Var var = patternVar(pattern, order);
+			if (var != null && !var.hasValue()) {
+				return order;
+			}
+		}
+		return null;
+	}
+
+	private static boolean isOrderIndependentOfFilter(StatementOrder order, StatementPattern pattern,
+			Set<String> filteredBindings) {
+		Var var = patternVar(pattern, order);
+		return var != null && !var.hasValue() && var.getName() != null && !filteredBindings.contains(var.getName());
+	}
+
+	private static Var patternVar(StatementPattern pattern, StatementOrder order) {
+		if (order == null) {
+			return null;
+		}
+		return switch (order) {
+		case S -> pattern.getSubjectVar();
+		case P -> pattern.getPredicateVar();
+		case O -> pattern.getObjectVar();
+		case C -> pattern.getContextVar();
+		};
 	}
 
 	private PatternFilterKey samplingKey(Filter filter, StatementPattern pattern) {

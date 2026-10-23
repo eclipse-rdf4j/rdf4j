@@ -21,6 +21,7 @@ import java.lang.invoke.VarHandle;
 import java.util.Objects;
 import java.util.function.Function;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -57,6 +58,7 @@ public class LmdbIRI implements LmdbResource, IRI {
 
 	private transient volatile InternalIdentity identity;
 	private transient volatile long semanticVersion;
+	private transient int cachedHash;
 
 	private volatile boolean initialized = false;
 	/** Guarded by this value's monitor; a copied payload is not published until its resolver returns. */
@@ -143,6 +145,7 @@ public class LmdbIRI implements LmdbResource, IRI {
 	private void payloadChanged() {
 		if (initialized) {
 			semanticVersion++;
+			cachedHash = 0;
 			identity = new InternalIdentity(UNKNOWN_ID, identity.revision());
 		}
 	}
@@ -164,6 +167,12 @@ public class LmdbIRI implements LmdbResource, IRI {
 		} else {
 			throw new SailException("Trying to initialize LmdbIRI from non-IRI value");
 		}
+	}
+
+	@Experimental
+	@Override
+	public long retainedLexicalLength() {
+		return iriString == null ? -1L : iriString.length();
 	}
 
 	@Override
@@ -234,6 +243,7 @@ public class LmdbIRI implements LmdbResource, IRI {
 		}
 	}
 
+	@Experimental
 	@Override
 	public void init(Resolver resolver) {
 		if (!initialized) {
@@ -306,6 +316,10 @@ public class LmdbIRI implements LmdbResource, IRI {
 
 	@Override
 	public int hashCode() {
+		int memoized = cachedHash;
+		if (memoized != 0) {
+			return memoized;
+		}
 		InternalIdentity captured = identity;
 		if (captured.id() != UNKNOWN_ID) {
 			int cachedHash = captured.revision().getStoredHash(captured.id());
@@ -316,6 +330,7 @@ public class LmdbIRI implements LmdbResource, IRI {
 
 		init();
 		int hash = iriString.hashCode();
+		cachedHash = hash;
 
 		if (captured.id() != UNKNOWN_ID) {
 			captured.revision().storeHash(captured.id(), hash);

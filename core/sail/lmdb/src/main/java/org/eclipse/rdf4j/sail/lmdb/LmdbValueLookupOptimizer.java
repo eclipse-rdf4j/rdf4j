@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -71,7 +72,7 @@ final class LmdbValueLookupOptimizer implements QueryOptimizer {
 				lookup = capture(value);
 				lookups.put(value, lookup);
 			}
-			if (statementInput && !lookup.lookupAttempted && lookup.nativeValue != null) {
+			if (statementInput && !lookup.lookupAttempted) {
 				lookup = resolve(lookup);
 				lookups.put(value, lookup);
 			}
@@ -161,6 +162,11 @@ final class LmdbValueLookupOptimizer implements QueryOptimizer {
 	}
 
 	private Lookup capture(Value value) {
+		// Native values and nested RDF values can carry an external cold capability. Scalar evaluation owns
+		// that original public object; only a statement consumer may prepare a private receiving-store operand.
+		if (value instanceof LmdbValue || value instanceof TripleTerm) {
+			return new Lookup(value, null, null, false, false);
+		}
 		try {
 			LmdbValue nativeValue = valueStore.getLmdbValue(value);
 			// Dictionary specialization is private state; the public RDF value must retain imported provenance.
@@ -174,11 +180,16 @@ final class LmdbValueLookupOptimizer implements QueryOptimizer {
 	private Lookup resolve(Lookup captured) {
 		LmdbValue lmdbValue = captured.nativeValue;
 		try {
+			if (lmdbValue == null) {
+				lmdbValue = valueStore.getLmdbValue(captured.value);
+			}
 			long id = valueStore.getId(lmdbValue);
 			LmdbValue knownValue = id == LmdbValue.UNKNOWN_ID ? null : lmdbValue;
 			return new Lookup(captured.value, lmdbValue, knownValue, true, true);
+		} catch (IllegalArgumentException unsupported) {
+			return new Lookup(captured.value, null, null, false, true);
 		} catch (IOException e) {
-			log.debug("Unable to resolve LMDB value id for {}", lmdbValue, e);
+			log.debug("Unable to resolve LMDB value id", e);
 			return new Lookup(captured.value, lmdbValue, null, false, true);
 		}
 	}

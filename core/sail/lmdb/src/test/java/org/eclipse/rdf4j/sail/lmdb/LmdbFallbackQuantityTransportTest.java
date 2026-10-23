@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.isA;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.when;
 
@@ -57,6 +58,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.mockito.stubbing.Answer;
 
 /** Explicit supplemental envelopes; primary regression gates use real native producers. */
 class LmdbFallbackQuantityTransportTest {
@@ -558,7 +560,7 @@ class LmdbFallbackQuantityTransportTest {
 
 	static void declare(Fixture fixture, RowScope scope, CostScope work, double rows, double workRows,
 			boolean partial) {
-		when(fixture.runtime.factorCost(isA(ArbitraryLengthPath.class), any())).thenAnswer(invocation -> {
+		Answer<?> factorCostAnswer = invocation -> {
 			JoinFactorCostModel.CostContext context = invocation.getArgument(1);
 			double priced = work == CostScope.TOTAL_FOR_CONTEXT ? context.getOuterPrefixRows() : 1.0d;
 			return Optional.of(new JoinFactorCostModel.FactorCostEstimate(workRows, rows, Map.of(), Map.of(
@@ -567,7 +569,10 @@ class LmdbFallbackQuantityTransportTest {
 					LmdbPropertyPathEstimator.PLANNED_PATH_STEP_LOOKUPS, 5.0d,
 					LmdbPropertyPathEstimator.PLANNED_PATH_EXPANSION_ITERATIONS, partial ? Double.NaN : 9.0d),
 					false, false, 0, 0, Double.NaN, work, true).withRowScope(scope));
-		});
+		};
+		when(fixture.runtime.factorCost(isA(ArbitraryLengthPath.class), any())).thenAnswer(factorCostAnswer);
+		when(fixture.runtime.factorCost(isA(ArbitraryLengthPath.class), any(), nullable(LmdbFilterReadContext.class)))
+				.thenAnswer(factorCostAnswer);
 	}
 
 	@Test

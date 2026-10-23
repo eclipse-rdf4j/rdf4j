@@ -14,12 +14,15 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.BiPredicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
@@ -30,6 +33,7 @@ import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
 
 /**
  * Optimization request for one memo group.
@@ -65,6 +69,44 @@ public record OptimizationGoal(PhysicalProperties requiredProperties, String sem
 		rowGoal = rowGoal == null ? RowGoal.ALL : rowGoal;
 		estimationTier = estimationTier == null ? JoinFactorCostModel.EstimationTier.STANDARD : estimationTier;
 		inputBindingContext = inputBindingContext == null ? InputBindingContext.NONE : inputBindingContext;
+	}
+
+	/** The constructor has already projected both property sets to their execution-only contracts. */
+	public boolean accountCacheMemory(
+			RetainedMemoryAccount account,
+			BiPredicate<Value, RetainedMemoryAccount> values) {
+		if (!account.add(this, 112L)) {
+			return true;
+		}
+		account.add(semanticScope, 40L + 2L * semanticScope.length());
+		account.add(costBound, 128L);
+		account.add(rowGoal, 48L);
+		accountProperties(requiredProperties, account);
+		account.add(excludedProperties, 192L + 96L * excludedProperties.size());
+		for (PhysicalProperties properties : excludedProperties) {
+			accountProperties(properties, account);
+		}
+		return inputBindingContext.accountCacheMemory(account, values);
+	}
+
+	private static void accountProperties(PhysicalProperties properties,
+			RetainedMemoryAccount account) {
+		if (!account.add(properties, 112L)) {
+			return;
+		}
+		for (Collection<String> names : List.of(properties.ordering(), properties.distinctVars(),
+				properties.boundVars(), properties.inputBoundVars())) {
+			account.add(names, 192L + 96L * names.size());
+			for (String name : names) {
+				account.add(name, 40L + 2L * name.length());
+			}
+		}
+		account.add(properties.accessPath(), 40L + 2L * properties.accessPath().length());
+		account.add(properties.graphContext(), 40L + 2L * properties.graphContext().length());
+		// Goal construction calls executionContract(): this interned profile contains only an endpoint-mode String.
+		account.add(properties.bindingProfile(), 112L);
+		String endpoint = properties.bindingProfile().endpointMode();
+		account.add(endpoint, 40L + 2L * endpoint.length());
 	}
 
 	public static OptimizationGoal exact(PhysicalProperties requiredProperties) {

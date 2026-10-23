@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.parser.sparql;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
@@ -21,6 +22,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -238,6 +240,29 @@ public class SPARQLQueries {
 		}
 		for (int i = 0; i < node.jjtGetNumChildren(); i++) {
 			collectGraphBindingEdits(node.jjtGetChild(i), bindings, names, assurance, edits);
+		}
+	}
+
+	/** Returns candidate binding names that occur as variables in the actual request syntax. */
+	@InternalUseOnly
+	public static Set<String> getLexicalBindingNames(String query, Set<String> candidateNames) {
+		Objects.requireNonNull(query);
+		Objects.requireNonNull(candidateNames);
+		try {
+			Set<String> names = new LinkedHashSet<>();
+			collectBoundNames(SyntaxTreeBuilder.parseQuery(query), candidateNames, names);
+			return Collections.unmodifiableSet(names);
+		} catch (ParseException | TokenMgrError failure) {
+			throw new MalformedQueryException(failure.getMessage(), failure);
+		}
+	}
+
+	private static void collectBoundNames(Node node, Set<String> candidateNames, Set<String> names) {
+		if (node instanceof ASTVar variable && candidateNames.contains(variable.getName())) {
+			names.add(variable.getName());
+		}
+		for (int i = 0; i < node.jjtGetNumChildren(); i++) {
+			collectBoundNames(node.jjtGetChild(i), candidateNames, names);
 		}
 	}
 

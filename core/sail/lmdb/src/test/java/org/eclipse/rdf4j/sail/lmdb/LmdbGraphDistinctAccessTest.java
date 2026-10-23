@@ -15,6 +15,7 @@ import static org.eclipse.rdf4j.sail.base.LmdbDatasetCompositionTestSupport.unio
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -598,9 +599,13 @@ class LmdbGraphDistinctAccessTest {
 					.setSketchEstimatorEnabled(sketches)
 					.setSketchEstimatorColdSynopsisCapacity(coldWitnesses)
 					.setFrontierEstimatorMode(FrontierEstimatorMode.OFF));
+			if (sketches) {
+				store.setExperimentalQueryOptimizations(true);
+			}
 			repository = new SailRepository(store);
 			repository.init();
 			if (sketches) {
+				assertSketchFixtureProfile(store);
 				store.getBackingStore().getSketchBasedJoinEstimator().stop();
 			}
 		}
@@ -662,6 +667,20 @@ class LmdbGraphDistinctAccessTest {
 		@Override
 		public void close() {
 			repository.shutDown();
+		}
+	}
+
+	private static void assertSketchFixtureProfile(LmdbStore store) {
+		try {
+			assertTrue(store.getQueryExecutionPolicy().experimentalQueryOptimizations());
+			assertNotNull(store.getBackingStore().getSketchBasedJoinEstimator());
+		} catch (AssertionError failure) {
+			try {
+				store.shutDown();
+			} catch (RuntimeException | Error closeFailure) {
+				failure.addSuppressed(closeFailure);
+			}
+			throw failure;
 		}
 	}
 }

@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -19,6 +20,10 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -202,5 +207,116 @@ public class ZeroLengthPathIterationTest {
 			assertTrue(iteration.hasNext());
 			assertEquals(RDF.VALUE, iteration.next().getValue(ZeroLengthPathIteration.ANON_PREDICATE_VAR));
 		}
+	}
+
+	@Test
+	void runtimeBoundEndpointsRequireMembershipInEachEnumeratedGraph() {
+		Resource subjectGraph = vf.createIRI("urn:subject-graph");
+		Resource objectGraph = vf.createIRI("urn:object-graph");
+		Resource unrelatedGraph = vf.createIRI("urn:unrelated-graph");
+		Model model = new LinkedHashModel();
+		model.add(RDF.ALT, RDF.TYPE, RDFS.CLASS, subjectGraph);
+		model.add(RDF.ALT, RDF.VALUE, RDFS.CLASS, subjectGraph);
+		model.add(RDF.BAG, RDF.TYPE, RDF.ALT, objectGraph);
+		model.add(RDF.BAG, RDF.TYPE, RDFS.CLASS, unrelatedGraph);
+		for (Value identity : List.of(RDF.ALT, RDF.TYPE, vf.createIRI("urn:absent-node"))) {
+			for (int boundEndpoints = 1; boundEndpoints <= 3; boundEndpoints++) {
+				for (Value graph : new Value[] { null, subjectGraph, objectGraph, unrelatedGraph }) {
+					MapBindingSet bindings = new MapBindingSet();
+					if ((boundEndpoints & 1) != 0) {
+						bindings.addBinding("x", identity);
+					}
+					if ((boundEndpoints & 2) != 0) {
+						bindings.addBinding("y", identity);
+					}
+					if (graph != null) {
+						bindings.addBinding("g", graph);
+					}
+					List<Value> graphs = new ArrayList<>();
+					try (ZeroLengthPathIteration iteration = new ZeroLengthPathIteration(
+							createEvaluationStrategy(model),
+							Var.of("x"), Var.of("y"), bindings.getValue("x"), bindings.getValue("y"), Var.of("g"),
+							bindings, new QueryEvaluationContext.Minimal(null))) {
+						while (iteration.hasNext()) {
+							BindingSet row = iteration.next();
+							assertEquals(identity, row.getValue("x"));
+							assertEquals(identity, row.getValue("y"));
+							assertEquals(Set.of("x", "y", "g"), row.getBindingNames());
+							graphs.add(row.getValue("g"));
+						}
+					}
+					Set<Value> expected = !identity.equals(RDF.ALT) || unrelatedGraph.equals(graph) ? Set.of()
+							: graph == null ? Set.of(subjectGraph, objectGraph) : Set.of(graph);
+					assertEquals(expected, new HashSet<>(graphs),
+							"A runtime endpoint must be a node of each returned graph: " + boundEndpoints);
+					assertEquals(expected.size(), graphs.size(), "Each graph/identity pair must be returned once");
+				}
+			}
+		}
+	}
+
+	@Test
+	void originalConstantEndpointsDoNotBecomeOutputBindingsDuringGraphEnumeration() {
+		Resource graph = vf.createIRI("urn:nonempty-graph");
+		Model model = new LinkedHashModel();
+		model.add(RDF.BAG, RDF.TYPE, RDFS.CLASS, graph);
+		for (int constantEndpoints = 1; constantEndpoints <= 3; constantEndpoints++) {
+			boolean subjectConstant = (constantEndpoints & 1) != 0;
+			boolean objectConstant = (constantEndpoints & 2) != 0;
+			Var subject = subjectConstant ? Var.of("constant-subject", RDF.ALT, true, true) : Var.of("x");
+			Var object = objectConstant ? Var.of("constant-object", RDF.ALT, true, true) : Var.of("y");
+			Set<String> expectedNames = new HashSet<>();
+			expectedNames.add("g");
+			if (!subjectConstant) {
+				expectedNames.add("x");
+			}
+			if (!objectConstant) {
+				expectedNames.add("y");
+			}
+			try (ZeroLengthPathIteration iteration = new ZeroLengthPathIteration(createEvaluationStrategy(model),
+					subject, object, subject.getValue(), object.getValue(), Var.of("g"), new MapBindingSet(),
+					new QueryEvaluationContext.Minimal(null))) {
+				assertTrue(iteration.hasNext());
+				BindingSet row = iteration.next();
+				assertEquals(expectedNames, row.getBindingNames());
+				assertEquals(graph, row.getValue("g"));
+				if (!subjectConstant) {
+					assertEquals(RDF.ALT, row.getValue("x"));
+				}
+				if (!objectConstant) {
+					assertEquals(RDF.ALT, row.getValue("y"));
+				}
+				assertFalse(iteration.hasNext());
+			}
+		}
+	}
+
+	@Test
+	void apiSubstitutedEndpointRemainsAQueryTermInEachEnumeratedGraph() {
+		Resource memberGraph = vf.createIRI("urn:member-graph");
+		Resource unrelatedGraph = vf.createIRI("urn:unrelated-graph");
+		Model model = new LinkedHashModel();
+		model.add(RDF.ALT, RDF.TYPE, RDFS.CLASS, memberGraph);
+		model.add(RDF.BAG, RDF.TYPE, RDFS.CLASS, unrelatedGraph);
+		MapBindingSet bindings = new MapBindingSet();
+		bindings.addBinding("x", RDF.ALT);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null) {
+			@Override
+			public Set<String> getSubstitutionBindingNames() {
+				return Set.of("x");
+			}
+		};
+		Set<Value> graphs = new HashSet<>();
+		try (ZeroLengthPathIteration iteration = new ZeroLengthPathIteration(createEvaluationStrategy(model),
+				Var.of("x"), Var.of("y"), RDF.ALT, null, Var.of("g"), bindings, context)) {
+			while (iteration.hasNext()) {
+				BindingSet row = iteration.next();
+				assertEquals(RDF.ALT, row.getValue("x"));
+				assertEquals(RDF.ALT, row.getValue("y"));
+				assertEquals(Set.of("x", "y", "g"), row.getBindingNames());
+				graphs.add(row.getValue("g"));
+			}
+		}
+		assertEquals(Set.of(memberGraph, unrelatedGraph), graphs);
 	}
 }

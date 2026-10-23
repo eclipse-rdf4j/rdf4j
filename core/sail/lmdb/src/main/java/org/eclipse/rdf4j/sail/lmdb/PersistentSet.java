@@ -68,19 +68,23 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 	}
 
 	public synchronized void clear() {
-		factory.abort();
+		boolean startedWriter = factory.writeTxn == 0;
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			// start a write transaction
-			E(mdb_txn_begin(factory.env, NULL, 0, factory.writeTxnPp));
-			factory.writeTxn = factory.writeTxnPp.get(0);
+			if (startedWriter) {
+				E(mdb_txn_begin(factory.env, NULL, 0, factory.writeTxnPp));
+				factory.writeTxn = factory.writeTxnPp.get(0);
+			}
 			// The cached size can describe an aborted writer or another wrapper for this named DB. Check the
 			// authoritative count while holding the native writer before making an empty DB dirty with mdb_drop.
 			MDBStat stat = MDBStat.malloc(stack);
 			E(mdb_stat(factory.writeTxn, dbi, stat));
-			if (stat.ms_entries() == 0) {
+			if (stat.ms_entries() == 0 && startedWriter) {
 				factory.abort();
 			} else {
-				E(mdb_drop(factory.writeTxn, dbi, false));
+				if (stat.ms_entries() != 0) {
+					E(mdb_drop(factory.writeTxn, dbi, false));
+				}
 				factory.commit();
 			}
 		} catch (Exception | Error failure) {

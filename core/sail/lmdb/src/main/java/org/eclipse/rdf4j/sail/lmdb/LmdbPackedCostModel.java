@@ -62,8 +62,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.Pack
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostSession;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanValidationRequest;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedQueryView;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedProviderCacheIdentity;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedQueryView.PrefixMaterialization;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedQueryView;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedRootCardinalityCertifier;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedStalePlanValidation;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedStalePlanValidator;
@@ -73,8 +74,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EstimateMath;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceStateSummary;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
-import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.ReadOnlyContext;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -114,6 +115,7 @@ final class LmdbPackedCostModel
 	private static final String TRANSITION_SOURCE = "lmdb-packed-transition";
 
 	private final LmdbEstimatorRuntime runtime;
+	private final LmdbFilterReadContext filterReadContext;
 	private final OptionalLong executionSnapshotEpoch;
 	private final boolean datasetUsesStoreDefaults;
 	private final SailDatasetTripleTermSource frontierStatementSource;
@@ -146,14 +148,27 @@ final class LmdbPackedCostModel
 			boolean datasetUsesStoreDefaults, SailDatasetTripleTermSource frontierStatementSource,
 			EvaluationStrategy evaluationStrategy, boolean frontierPlanningAllowed) {
 		this(runtime, executionSnapshotEpoch, datasetUsesStoreDefaults, frontierStatementSource, evaluationStrategy,
-				frontierPlanningAllowed, null, true, null);
+				frontierPlanningAllowed, null, true, null, null);
+	}
+
+	LmdbPackedCostModel(LmdbEstimatorRuntime runtime, OptionalLong executionSnapshotEpoch,
+			boolean datasetUsesStoreDefaults, SailDatasetTripleTermSource frontierStatementSource,
+			EvaluationStrategy evaluationStrategy, boolean frontierPlanningAllowed,
+			LmdbFilterReadContext filterReadContext) {
+		this(runtime, executionSnapshotEpoch, datasetUsesStoreDefaults, frontierStatementSource, evaluationStrategy,
+				frontierPlanningAllowed, null, true, null, filterReadContext);
+	}
+
+	PackedProviderCacheIdentity providerCacheIdentity() {
+		return filterReadContext == null ? null : filterReadContext.costIdentity();
 	}
 
 	private LmdbPackedCostModel(LmdbEstimatorRuntime runtime, OptionalLong executionSnapshotEpoch,
 			boolean datasetUsesStoreDefaults, SailDatasetTripleTermSource frontierStatementSource,
 			EvaluationStrategy evaluationStrategy, boolean frontierPlanningAllowed,
 			FrontierStatisticsView statisticsView, boolean unpinnedMappedStatisticsAllowed,
-			PackedQueryView planningQuery) {
+			PackedQueryView planningQuery, LmdbFilterReadContext filterReadContext) {
+		this.filterReadContext = filterReadContext;
 		this.runtime = runtime;
 		this.executionSnapshotEpoch = executionSnapshotEpoch == null ? OptionalLong.empty() : executionSnapshotEpoch;
 		this.datasetUsesStoreDefaults = datasetUsesStoreDefaults;
@@ -193,14 +208,14 @@ final class LmdbPackedCostModel
 			}
 			LmdbPackedCostModel scoped = new LmdbPackedCostModel(runtime, executionSnapshotEpoch,
 					datasetUsesStoreDefaults, frontierStatementSource, evaluationStrategy, frontierPlanningAllowed,
-					view, true, query);
+					view, true, query, filterReadContext);
 			scoped.mappedStatisticsCache.initializeLineageWorkBudget(statementPatternCount(query));
 			return new LmdbFrontierStatisticsCostSession(PackedCostSession.scalar(scoped, query), scoped, view, query,
 					runtime, datasetUsesStoreDefaults);
 		}
 		LmdbPackedCostModel conventional = new LmdbPackedCostModel(runtime, executionSnapshotEpoch,
 				datasetUsesStoreDefaults, frontierStatementSource, evaluationStrategy, frontierPlanningAllowed,
-				null, false, query);
+				null, false, query, filterReadContext);
 		if (runtime.frontierSettings().mode() != FrontierEstimatorMode.AUTHORITATIVE) {
 			return PackedCostSession.scalar(conventional, query);
 		}
@@ -322,7 +337,7 @@ final class LmdbPackedCostModel
 		if (!LmdbPlanningGraphEvidence.allows(selectedPlan)) {
 			return Double.NaN;
 		}
-		BagEstimate semantic = runtime.estimate(selectedPlan);
+		BagEstimate semantic = runtime.estimate(selectedPlan, filterReadContext);
 		return semantic.rows() == 0.0d ? 0.0d : Double.NaN;
 	}
 
@@ -2542,8 +2557,17 @@ final class LmdbPackedCostModel
 			/* A joined/cardinality surface with an explicit provenance has the right row scope and wins outright. */
 			return false;
 		}
+		Set<String> externalBoundNames = new LinkedHashSet<>();
+		for (int ordinal = 0; ordinal < prefixFactors.size(); ordinal++) {
+			if (ordinal != providerOrdinal) {
+				externalBoundNames.addAll(prefixFactors.get(ordinal).getBindingNames());
+			}
+		}
+		if (context.assuredBindingRelationId() != 0) {
+			externalBoundNames.addAll(query.materializeRelation(context.assuredBindingRelationId()).getBindingNames());
+		}
 		EvaluationStatistics.FilterPassEstimate estimate = runtime
-				.patternFilterPass(filter.getCondition(), provider)
+				.patternFilterPass(filter.getCondition(), provider, filterReadContext, externalBoundNames)
 				.orElse(null);
 		if (estimate == null) {
 			return false;
@@ -2725,7 +2749,7 @@ final class LmdbPackedCostModel
 
 	private boolean refineExactFilterIdentity(TupleExpr expression, PackedCostContext context,
 			PackedCostEstimate output) {
-		BagEstimate semantic = runtime.estimate(expression);
+		BagEstimate semantic = runtime.estimate(expression, filterReadContext);
 		double identityRatio;
 		if (exactFilterZero(semantic)) {
 			identityRatio = 0.0d;
@@ -2851,7 +2875,7 @@ final class LmdbPackedCostModel
 				JoinFactorCostModel.CostContext.forOptimization(boundNames, context.prefixRows(), Double.NaN,
 						connected, true, finiteBindings, prefixFactors)
 						.withPrefixFactorsDescribeCurrentRows(context.prefixRelationsDescribeRows())
-						.withUnrelatedPrefixRows(context.unrelatedPrefixRows()));
+						.withUnrelatedPrefixRows(context.unrelatedPrefixRows()), filterReadContext);
 		if (estimate.isEmpty()) {
 			return false;
 		}
@@ -2911,7 +2935,7 @@ final class LmdbPackedCostModel
 				boundNames, context.prefixRows(), Double.NaN, hasPrefix, true, finiteBindings, prefixFactors)
 				.withPrefixFactorsDescribeCurrentRows(context.prefixRelationsDescribeRows())
 				.withUnrelatedPrefixRows(context.unrelatedPrefixRows());
-		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = runtime.factorCost(expression, factorContext);
+		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = runtime.factorCost(expression, factorContext, filterReadContext);
 		if (estimate.isEmpty()) {
 			return false;
 		}
@@ -3001,7 +3025,7 @@ final class LmdbPackedCostModel
 			}
 			JoinFactorCostModel.FactorCostEstimate wrapperEstimate = wrapper == expression
 					? factorEstimate
-					: runtime.factorCost(wrapper, factorContext).orElse(null);
+					: runtime.factorCost(wrapper, factorContext, filterReadContext).orElse(null);
 			if (wrapperEstimate == null || !finiteNonNegative(wrapperEstimate.getOutputRows())) {
 				return;
 			}
@@ -3071,7 +3095,7 @@ final class LmdbPackedCostModel
 				assuredInputs, context.prefixRows(), Double.NaN, true, true, Map.of(), List.of())
 				.withPrefixFactorsDescribeCurrentRows(false)
 				.withUnrelatedPrefixRows(context.unrelatedPrefixRows());
-		JoinFactorCostModel.FactorCostEstimate estimate = runtime.factorCost(expression, physicalContext).orElse(null);
+		JoinFactorCostModel.FactorCostEstimate estimate = runtime.factorCost(expression, physicalContext, filterReadContext).orElse(null);
 		if (estimate == null || !finiteNonNegative(estimate.getWorkRows())
 				&& !finiteNonNegative(estimate.getOutputRows())) {
 			return null;
@@ -3181,7 +3205,7 @@ final class LmdbPackedCostModel
 				JoinFactorCostModel.CostContext.forOptimization(boundNames, context.prefixRows(), Double.NaN,
 						connected, true, finiteBindings, prefixFactors)
 						.withPrefixFactorsDescribeCurrentRows(context.prefixRelationsDescribeRows())
-						.withUnrelatedPrefixRows(context.unrelatedPrefixRows()));
+						.withUnrelatedPrefixRows(context.unrelatedPrefixRows()), filterReadContext);
 		if (estimate.isEmpty()) {
 			return false;
 		}
@@ -3499,7 +3523,7 @@ final class LmdbPackedCostModel
 				JoinFactorCostModel.CostContext.forOptimization(boundNames, context.prefixRows(),
 						Double.NaN, true, true, prefix.finiteBindingValues(), prefixFactors)
 						.withPrefixFactorsDescribeCurrentRows(context.prefixRelationsDescribeRows())
-						.withUnrelatedPrefixRows(context.unrelatedPrefixRows()));
+						.withUnrelatedPrefixRows(context.unrelatedPrefixRows()), filterReadContext);
 		if (estimate.isEmpty()) {
 			return false;
 		}
@@ -3635,7 +3659,7 @@ final class LmdbPackedCostModel
 		}
 		BagEstimate outer = null;
 		for (TupleExpr prefixFactor : prefixFactors) {
-			BagEstimate factor = runtime.estimate(prefixFactor);
+			BagEstimate factor = runtime.estimate(prefixFactor, filterReadContext);
 			if (!finiteNonNegative(factor.rows())) {
 				return Optional.empty();
 			}
@@ -3650,7 +3674,7 @@ final class LmdbPackedCostModel
 		if (outer == null || !(outer.rows() > 0.0d)) {
 			return Optional.empty();
 		}
-		BagEstimate right = runtime.estimate(rhs);
+		BagEstimate right = runtime.estimate(rhs, filterReadContext);
 		if (!finiteNonNegative(right.rows())) {
 			return Optional.empty();
 		}
@@ -3686,7 +3710,7 @@ final class LmdbPackedCostModel
 		Set<String> boundNames = bindingNames(boundBindingNames);
 		return runtime.factorCost(expression,
 				JoinFactorCostModel.CostContext.forOptimization(
-						boundNames, 1.0d, Double.NaN, true, true, Map.of(), List.of()));
+						boundNames, 1.0d, Double.NaN, true, true, Map.of(), List.of()), filterReadContext);
 	}
 
 	private static Set<String> bindingNames(String[] names) {

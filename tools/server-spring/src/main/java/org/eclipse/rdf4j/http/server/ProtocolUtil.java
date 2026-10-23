@@ -18,6 +18,7 @@ import java.util.Enumeration;
 import java.util.LinkedHashSet;
 import java.util.Optional;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.lang.FileFormat;
 import org.eclipse.rdf4j.common.lang.service.FileFormatServiceRegistry;
 import org.eclipse.rdf4j.common.webapp.util.HttpServerUtil;
@@ -28,6 +29,8 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.query.Query;
+import org.eclipse.rdf4j.repository.sail.SailQuery;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,6 +44,21 @@ import jakarta.servlet.http.HttpServletResponse;
  * @author Arjohn Kampman
  */
 public class ProtocolUtil {
+
+	/**
+	 * Applies the optional forced LMDB execution strategy to a query. Values that the protocol defines as unset are
+	 * ignored, as are repositories whose queries do not expose the Sail-specific setting.
+	 */
+	@Experimental
+	public static void applyForcedLmdbExecutionStrategy(HttpServletRequest request, Query query) {
+		String strategy = request.getParameter(Protocol.LMDB_FORCED_EXECUTION_STRATEGY_PARAM_NAME);
+		if (Protocol.isLmdbForcedExecutionStrategyUnset(strategy)) {
+			return;
+		}
+		if (query instanceof SailQuery sailQuery) {
+			sailQuery.setForcedLmdbExecutionStrategy(strategy);
+		}
+	}
 
 	public static Value parseValueParam(HttpServletRequest request, String paramName, ValueFactory vf)
 			throws ClientHTTPException {

@@ -123,9 +123,8 @@ class ScalarEvaluationEffectsTest {
 	}
 
 	/**
-	 * Registered functions are classified by the declared volatility contract
-	 * ({@link Function#mustReturnDifferentResult()}), not by the jar or package they live in: GeoSPARQL, SPIN and user
-	 * functions are REPEATABLE unless they declare otherwise, and their arguments' effects still propagate.
+	 * Explicit determinism and volatility declarations, rather than a function's package, establish repeatability.
+	 * Argument effects still propagate, and a freshness declaration dominates an explicit deterministic declaration.
 	 */
 	@Test
 	void registeredCustomFunctionsAreRepeatableUnlessTheyDeclareVolatility() {
@@ -177,6 +176,24 @@ class ScalarEvaluationEffectsTest {
 	}
 
 	@Test
+	void undeclaredCustomFunctionIsUnknownOutsideAnExecutionPolicy() {
+		Function unspecified = new DefaultFalseFunction("urn:test:unspecified") {
+			@Override
+			public Determinism getDeterminism() {
+				return Determinism.UNSPECIFIED;
+			}
+		};
+		FunctionRegistry.getInstance().add(unspecified);
+		try {
+			assertEquals(UNKNOWN, ScalarEvaluationEffects.effectOf(new FunctionCall(unspecified.getURI())));
+			assertEquals(UNKNOWN, ScalarEvaluationEffects.effectOf(
+					new FunctionCall(unspecified.getURI(), new Var("rowValue"))));
+		} finally {
+			FunctionRegistry.getInstance().remove(unspecified);
+		}
+	}
+
+	@Test
 	void missingDynamicAndForeignExpressionsFailClosed() {
 		assertEquals(UNKNOWN, ScalarEvaluationEffects.effectOf(new FunctionCall("urn:test:missing")));
 		assertEquals(UNKNOWN, ScalarEvaluationEffects.effectOf(
@@ -199,6 +216,11 @@ class ScalarEvaluationEffectsTest {
 		@Override
 		public String getURI() {
 			return uri;
+		}
+
+		@Override
+		public Determinism getDeterminism() {
+			return Determinism.DETERMINISTIC;
 		}
 
 		@Override

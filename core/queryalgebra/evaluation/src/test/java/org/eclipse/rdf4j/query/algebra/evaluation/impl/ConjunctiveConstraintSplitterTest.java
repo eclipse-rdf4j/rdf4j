@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -32,7 +33,12 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -42,6 +48,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConjunctiveConstraintSplitterOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OptionalConditionEvaluation;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.BindingScopeAnalysis;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
@@ -62,7 +71,39 @@ public class ConjunctiveConstraintSplitterTest extends QueryOptimizerTest {
 		assertOptionalConditionFrameWithUnsafeRight(true);
 	}
 
+	private enum OptionalRightContract {
+		DEFAULT_REPEATABLE,
+		VOLATILE_INDEPENDENT,
+		VOLATILE_LATERAL
+	}
+
+	@Test
+	public void defaultRepeatableOptionalMaySkipARejectedCompleteLeftCondition() throws Exception {
+		for (boolean mixed : List.of(false, true)) {
+			assertOptionalConditionFrame(mixed, OptionalRightContract.DEFAULT_REPEATABLE, false);
+		}
+	}
+
+	@Test
+	public void volatileIndependentOptionalUsesCompatibilityRatherThanOverwritingItsLeftInput() throws Exception {
+		for (boolean mixed : List.of(false, true)) {
+			assertOptionalConditionFrame(mixed, OptionalRightContract.VOLATILE_INDEPENDENT, false);
+		}
+	}
+
+	@Test
+	public void explicitUnsafeOptionalKeepsItsCompleteFrameInsideQueryRoot() throws Exception {
+		for (boolean mixed : List.of(false, true)) {
+			assertOptionalConditionFrame(mixed, OptionalRightContract.VOLATILE_LATERAL, true);
+		}
+	}
+
 	private void assertOptionalConditionFrameWithUnsafeRight(boolean mixed) throws Exception {
+		assertOptionalConditionFrame(mixed, OptionalRightContract.VOLATILE_LATERAL, false);
+	}
+
+	private void assertOptionalConditionFrame(boolean mixed, OptionalRightContract contract, boolean nested)
+			throws Exception {
 		SimpleValueFactory factory = SimpleValueFactory.getInstance();
 		IRI oldValue = factory.createIRI("urn:old");
 		IRI newValue = factory.createIRI("urn:new");
@@ -70,13 +111,20 @@ public class ConjunctiveConstraintSplitterTest extends QueryOptimizerTest {
 		Function effect = new Function() {
 			@Override
 			public String getURI() {
-				return "urn:test:optional-delayed-left-phase:" + mixed;
+				return "urn:test:optional-delayed-left-phase:" + mixed + ":" + contract;
 			}
 
 			@Override
 			public Value evaluate(ValueFactory valueFactory, Value... args) {
 				callbacks.incrementAndGet();
 				return valueFactory.createLiteral(true);
+			}
+
+			@Override
+			public Determinism getDeterminism() {
+				return contract == OptionalRightContract.DEFAULT_REPEATABLE
+						? Determinism.UNSPECIFIED
+						: Determinism.VOLATILE;
 			}
 		};
 		FunctionRegistry.getInstance().add(effect);
@@ -90,16 +138,40 @@ public class ConjunctiveConstraintSplitterTest extends QueryOptimizerTest {
 				rightRows.setBindingSets(List.of(new ListBindingSet(List.of("y"), factory.createLiteral(1)),
 						new ListBindingSet(List.of("y"), factory.createLiteral(2)),
 						new ListBindingSet(List.of("y"), factory.createLiteral(3))));
-				Extension right = new Extension(rightRows,
-						new ExtensionElem(new ValueConstant(newValue), "x"),
-						new ExtensionElem(new FunctionCall(effect.getURI(), Var.of("y")), "effect"));
+				TupleExpr right;
+				if (contract == OptionalRightContract.VOLATILE_LATERAL) {
+					// Export only y before the real per-y LATERAL evaluation; inherited x is not a lateral join key.
+					Projection parameters = new Projection(rightRows,
+							new ProjectionElemList(new ProjectionElem("y")), false);
+					right = new Lateral(parameters, new Extension(new SingletonSet(),
+							new ExtensionElem(new ValueConstant(newValue), "x"),
+							new ExtensionElem(new FunctionCall(effect.getURI(), Var.of("y")), "effect")));
+				} else {
+					right = new Extension(rightRows,
+							new ExtensionElem(new ValueConstant(newValue), "x"),
+							new ExtensionElem(new FunctionCall(effect.getURI(), Var.of("y")), "effect"));
+				}
 				SameTerm readsX = new SameTerm(Var.of("x"), new ValueConstant(
 						accepted == mixed ? newValue : oldValue));
 				LeftJoin original = new LeftJoin(left, right, mixed ? new And(readsX, new Bound(Var.of("y"))) : readsX);
+				assertThat(QueryEvaluationUtility.isRepeatable(effect, QueryExecutionPolicy.DEFAULT))
+						.isEqualTo(contract == OptionalRightContract.DEFAULT_REPEATABLE);
+				assertThat(QueryEvaluationUtility.usesMappingParameterizedEvaluation(right))
+						.isEqualTo(contract == OptionalRightContract.VOLATILE_LATERAL);
+				assertThat(BindingScopeAnalysis.isOutOfScopeForOptionalCorrelation(right)).isFalse();
+				assertThat(OptionalConditionEvaluation.usesLeftFrame(original)).isEqualTo(!mixed);
+				// This unprepared query is conservatively eligible only under the experimental profile;
+				// the real DEFAULT execution below verifies its callback behavior.
+				assertThat(OptionalConditionEvaluation.canPrefilter(original)).isFalse();
+				int expectedCallbacks = contract == OptionalRightContract.DEFAULT_REPEATABLE && !mixed && !accepted
+						? 0
+						: 3;
 				callbacks.set(0);
-				List<BindingSet> expected = evaluate(original.clone());
-				assertThat(callbacks).hasValue(3);
-				if (accepted) {
+				TupleExpr unoptimized = nested ? new QueryRoot(original.clone()) : original.clone();
+				List<BindingSet> expected = evaluate(unoptimized);
+				assertThat(callbacks).hasValue(expectedCallbacks);
+				boolean matches = accepted && contract != OptionalRightContract.VOLATILE_INDEPENDENT;
+				if (matches) {
 					assertThat(expected).hasSize(3).allSatisfy(row -> {
 						assertThat(row.getValue("x")).isEqualTo(newValue);
 						assertThat(row.hasBinding("y")).isTrue();
@@ -110,11 +182,20 @@ public class ConjunctiveConstraintSplitterTest extends QueryOptimizerTest {
 						assertThat(row.hasBinding("y")).isFalse();
 					});
 				}
-				TupleExpr optimized = original.clone();
+				List<BindingSet> exactBag = matches
+						? List.of(new ListBindingSet(List.of("x", "y", "effect"),
+								newValue, factory.createLiteral(1), factory.createLiteral(true)),
+								new ListBindingSet(List.of("x", "y", "effect"),
+										newValue, factory.createLiteral(2), factory.createLiteral(true)),
+								new ListBindingSet(List.of("x", "y", "effect"),
+										newValue, factory.createLiteral(3), factory.createLiteral(true)))
+						: List.of(new ListBindingSet(List.of("x"), oldValue));
+				assertThat(expected).containsExactlyInAnyOrderElementsOf(exactBag);
+				TupleExpr optimized = nested ? new QueryRoot(original.clone()) : original.clone();
 				getOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
 				callbacks.set(0);
 				assertThat(evaluate(optimized)).containsExactlyElementsOf(expected);
-				assertThat(callbacks).hasValue(3);
+				assertThat(callbacks).hasValue(expectedCallbacks);
 			}
 		} finally {
 			FunctionRegistry.getInstance().remove(effect);

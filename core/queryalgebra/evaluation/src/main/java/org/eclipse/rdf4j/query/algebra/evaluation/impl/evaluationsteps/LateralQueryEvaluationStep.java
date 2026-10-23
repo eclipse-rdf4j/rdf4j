@@ -104,10 +104,11 @@ public final class LateralQueryEvaluationStep implements QueryEvaluationStep {
 		TupleExpr scopedRight = rightArg.clone();
 		scopedRight.visit(new HiddenLateralBindingRenamer(lateralBindingNames));
 		disableRuntimeFeedback(scopedRight);
-		// The clone has no parent chain. Operators inside it (OPTIONAL, MINUS, sub-selects) discover which incoming
-		// names are LATERAL-substituted constants by walking up to the enclosing Lateral, so give the clone one.
-		new Lateral(new SingletonSet(), scopedRight, rightInputBindingNames);
-		return strategy.precompile(scopedRight, context);
+		// The clone is otherwise parentless, so scope-sensitive steps inside it cannot discover which input bindings
+		// the enclosing LATERAL deliberately exposes. Retain a lightweight model parent while precompiling the right
+		// subtree; projections within it remain their own scope boundaries and still hide renamed private variables.
+		Lateral scopedLateral = new Lateral(new SingletonSet(), scopedRight, rightInputBindingNames);
+		return strategy.precompile(scopedLateral.getRightArg(), context);
 	}
 
 	private static void disableRuntimeFeedback(TupleExpr expression) {
@@ -189,6 +190,13 @@ public final class LateralQueryEvaluationStep implements QueryEvaluationStep {
 
 		@Override
 		public void meet(Projection node) {
+			if (node.getProjectionContext() != null) {
+				node.getProjectionContext().visit(this);
+			}
+			String parameter = replacementName(node.getInheritedGraphParameter());
+			if (parameter != null) {
+				node.setInheritedGraphParameter(parameter);
+			}
 			Map<String, String> replacements = hiddenProjectionSourceBindings(node.getProjectionElemList());
 			visitProjectionArgument(node.getArg(), replacements);
 		}
@@ -216,6 +224,7 @@ public final class LateralQueryEvaluationStep implements QueryEvaluationStep {
 					Var replacement = Var.of(replacementName, var.getValue(), var.isAnonymous(), var.isConstant(),
 							var.isBNode());
 					replacement.setVariableScopeChange(var.isVariableScopeChange());
+					replacement.setGraphContextDepth(var.getGraphContextDepth());
 					var.replaceWith(replacement);
 				}
 			}

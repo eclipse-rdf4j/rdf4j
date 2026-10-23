@@ -16,6 +16,8 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.util.Objects;
 
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
+
 /** Versioned, physical-plan-independent identity of one canonical logical memo expression. */
 final class LogicalLearningKey {
 
@@ -159,5 +161,21 @@ final class LogicalLearningKey {
 	@Override
 	public String toString() {
 		return externalForm;
+	}
+
+	void accountCacheMemory(RetainedMemoryAccount account) {
+		if (!account.add(this, 112L)) {
+			return;
+		}
+		account.add(logicalOperator, 40L + 2L * logicalOperator.length());
+		account.add(canonicalExpressionDigest, 40L + 2L * canonicalExpressionDigest.length());
+		account.add(childGroupDigest, 40L + 2L * childGroupDigest.length());
+		account.add(predicateValuesDigest, 40L + 2L * predicateValuesDigest.length());
+		account.add(visibleVariables, 40L + 2L * visibleVariables.length());
+		account.add(requiredOuterVariables, 40L + 2L * requiredOuterVariables.length());
+		account.add(semantics, 40L + 2L * semantics.length());
+		account.add(datasetScope, 40L + 2L * datasetScope.length());
+		account.add(externalForm, 40L + 2L * externalForm.length());
+		account.add(digest, 40L + 2L * digest.length());
 	}
 }

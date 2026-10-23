@@ -43,6 +43,7 @@ final class QueryPlanSnapshotCliOptions {
 	boolean batchManifestPrevalidated;
 	boolean writeLmdbStoreManifest;
 	boolean factorizedVerification;
+	boolean planOnly;
 	boolean persist = true;
 	DiffMode diffMode = DiffMode.STRUCTURE;
 	ComparisonPair compareIndices;
@@ -66,6 +67,7 @@ final class QueryPlanSnapshotCliOptions {
 	Long batchHardTimeoutSeconds;
 	String lmdbEvidenceMode = LMDB_EVIDENCE_MODE_ADAPTIVE;
 	boolean lmdbEvidenceModeExplicit;
+	Integer directAdjacencyReadyTimeoutSeconds;
 	Integer executionRepeatMinRuns;
 	Integer executionRepeatMaxRuns;
 	Long executionRepeatSoftLimitMillis;
@@ -90,6 +92,7 @@ final class QueryPlanSnapshotCliOptions {
 		copy.batchManifestPrevalidated = batchManifestPrevalidated;
 		copy.writeLmdbStoreManifest = writeLmdbStoreManifest;
 		copy.factorizedVerification = factorizedVerification;
+		copy.planOnly = planOnly;
 		copy.persist = persist;
 		copy.diffMode = diffMode;
 		copy.compareIndices = compareIndices;
@@ -113,6 +116,7 @@ final class QueryPlanSnapshotCliOptions {
 		copy.batchHardTimeoutSeconds = batchHardTimeoutSeconds;
 		copy.lmdbEvidenceMode = lmdbEvidenceMode;
 		copy.lmdbEvidenceModeExplicit = lmdbEvidenceModeExplicit;
+		copy.directAdjacencyReadyTimeoutSeconds = directAdjacencyReadyTimeoutSeconds;
 		copy.executionRepeatMinRuns = executionRepeatMinRuns;
 		copy.executionRepeatMaxRuns = executionRepeatMaxRuns;
 		copy.executionRepeatSoftLimitMillis = executionRepeatSoftLimitMillis;
@@ -197,6 +201,9 @@ final class QueryPlanSnapshotCliOptions {
 			case "--batch-worker-status-file":
 				options.batchWorkerStatusFile = Path.of(requireValue(args, ++i, arg));
 				break;
+			case "--plan-only":
+				options.planOnly = true;
+				break;
 			case "--diff-mode":
 				options.diffMode = parseDiffMode(requireValue(args, ++i, arg), arg);
 				break;
@@ -258,6 +265,9 @@ final class QueryPlanSnapshotCliOptions {
 				break;
 			case "--query-timeout-seconds":
 				options.queryTimeoutSeconds = parseNonNegativeInteger(requireValue(args, ++i, arg), arg);
+				break;
+			case "--await-direct-adjacency-seconds":
+				options.directAdjacencyReadyTimeoutSeconds = parsePositiveInteger(requireValue(args, ++i, arg), arg);
 				break;
 			case "--execution-repeat-min-runs":
 				options.executionRepeatMinRuns = parsePositiveInteger(requireValue(args, ++i, arg), arg);
@@ -365,6 +375,13 @@ final class QueryPlanSnapshotCliOptions {
 		}
 
 		if (options.compareExisting) {
+			if (options.planOnly) {
+				throw new IllegalArgumentException("--plan-only is only supported in run mode.");
+			}
+			if (options.directAdjacencyReadyTimeoutSeconds != null) {
+				throw new IllegalArgumentException(
+						"--await-direct-adjacency-seconds is only supported in run mode.");
+			}
 			if (options.compareLatest) {
 				throw new IllegalArgumentException("Use either --compare-existing or --compare-latest, not both.");
 			}
@@ -395,6 +412,9 @@ final class QueryPlanSnapshotCliOptions {
 
 		if (options.emitCsv != null) {
 			throw new IllegalArgumentException("--emit-csv is only supported in --compare-existing mode.");
+		}
+		if (options.directAdjacencyReadyTimeoutSeconds != null && options.store == StoreType.MEMORY) {
+			throw new IllegalArgumentException("--await-direct-adjacency-seconds requires --store lmdb.");
 		}
 
 		if (options.runAllThemeQueries) {
@@ -693,6 +713,11 @@ final class QueryPlanSnapshotCliOptions {
 		output.println("  --query-timeout-seconds <int>=0      per-query max execution time (0 disables timeout)");
 		output.println(
 				"  --factorized-verification           compare exact algebraic bags without telemetry execution");
+		output.println(
+				"  --plan-only                         capture unoptimized/optimized plans without executing queries");
+		output.println("  --await-direct-adjacency-seconds <int>=1");
+		output.println(
+				"                                       enable LMDB adjacency and fail unless it becomes exact in time");
 		output.println("  --execution-repeat-min-runs <int>=1  minimum repeated verification runs");
 		output.println("  --execution-repeat-max-runs <int>=1  maximum repeated verification runs");
 		output.println("  --execution-repeat-soft-limit-millis <long>=1");

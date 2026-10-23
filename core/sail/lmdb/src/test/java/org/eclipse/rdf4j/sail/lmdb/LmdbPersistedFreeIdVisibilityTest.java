@@ -47,14 +47,18 @@ class LmdbPersistedFreeIdVisibilityTest {
 
 	@ParameterizedTest
 	@MethodSource("shapesAndInitialization")
-	void oldPairedLookupDoesNotBorrowReadyReplacementOfPersistedFreeId(Shape shape, boolean completed,
+	void oldPairedLookupDoesNotBorrowReadyReplacementOfPersistedFreeId(int format, Shape shape, boolean completed,
 			@TempDir Path directory) throws Exception {
 		File valuesDirectory = directory.resolve("values").toFile();
-		LmdbStoreConfig config = new LmdbStoreConfig().setInlineLiterals(false);
-		Value original = VF.createBNode("persisted-free-retired");
+		// This fixture explicitly exercises retirement and ID reuse, including legacy format 2.
+		LmdbStoreConfig config = new LmdbStoreConfig().setInlineLiterals(false)
+				.setLegacyReferenceCountRepairEnabled(true);
+		Value original = format == LmdbStoreFormat.LEGACY_VERSION
+				? VF.createBNode("persisted-free-retired")
+				: shape.value(false);
 		Value replacement = shape.value(true);
-		long retiredId = retireReadyValue(valuesDirectory, config, original, replacement);
-		CloseableValueStore valuesResource = new CloseableValueStore(new ValueStore(valuesDirectory, config));
+		long retiredId = retireReadyValue(valuesDirectory, config, format, original, replacement);
+		CloseableValueStore valuesResource = new CloseableValueStore(openValues(valuesDirectory, config, format));
 		ValueStore values = valuesResource.values();
 		try (valuesResource;
 				TripleStore triples = new TripleStore(directory.resolve("triples").toFile(), config, values);
@@ -72,7 +76,7 @@ class LmdbPersistedFreeIdVisibilityTest {
 			long replacementId = values.storeValue(replacement);
 			values.commit();
 			assertEquals(ValueIds.getValue(retiredId), ValueIds.getValue(replacementId),
-					"The ready-only writer must really reuse the persisted logical ID, including type retagging");
+					"The writer must reuse a persisted logical ID within the format's supported reference family");
 			if (shape == Shape.BNODE_VALUE) {
 				assertEquals(retiredId, replacementId, "Blank-node replacement must reuse the exact compound ID");
 			}
@@ -104,9 +108,10 @@ class LmdbPersistedFreeIdVisibilityTest {
 		}
 	}
 
-	private static long retireReadyValue(File directory, LmdbStoreConfig config, Value original, Value replacement)
+	private static long retireReadyValue(File directory, LmdbStoreConfig config, int format, Value original,
+			Value replacement)
 			throws IOException {
-		CloseableValueStore valuesResource = new CloseableValueStore(new ValueStore(directory, config));
+		CloseableValueStore valuesResource = new CloseableValueStore(openValues(directory, config, format));
 		ValueStore values = valuesResource.values();
 		try (valuesResource) {
 			values.startTransaction(true);
@@ -121,6 +126,10 @@ class LmdbPersistedFreeIdVisibilityTest {
 			assertEquals(LmdbValue.UNKNOWN_ID, values.getId(original));
 			return id;
 		}
+	}
+
+	private static ValueStore openValues(File directory, LmdbStoreConfig config, int format) throws IOException {
+		return new ValueStore(directory, new StoreProperties(directory).setVersion(Integer.toString(format)), config);
 	}
 
 	private record CloseableValueStore(ValueStore values) implements AutoCloseable {
@@ -143,8 +152,10 @@ class LmdbPersistedFreeIdVisibilityTest {
 	}
 
 	private static Stream<Arguments> shapesAndInitialization() {
-		return Stream.of(Shape.values())
-				.flatMap(shape -> Stream.of(Arguments.of(shape, false), Arguments.of(shape, true)));
+		return Stream.of(LmdbStoreFormat.LEGACY_VERSION, LmdbStoreFormat.CURRENT_VERSION)
+				.flatMap(format -> Stream.of(Shape.values())
+						.flatMap(shape -> Stream.of(Arguments.of(format, shape, false),
+								Arguments.of(format, shape, true))));
 	}
 
 	enum Shape {

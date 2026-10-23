@@ -18,6 +18,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.BiPredicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.BNode;
@@ -26,6 +27,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
 
 /**
  * A complete finite upper bound for one variable's possible RDF terms.
@@ -58,6 +60,25 @@ public final class FiniteDomainFact {
 		this.precision = Objects.requireNonNull(precision, "precision");
 		this.provenance = provenance == null ? "" : provenance;
 		this.hash = Objects.hash(this.valueIdentities, this.assuredBound, this.precision);
+	}
+
+	boolean accountCacheMemory(RetainedMemoryAccount account,
+			BiPredicate<Value, RetainedMemoryAccount> values) {
+		if (!account.add(this, 56L)) {
+			return true;
+		}
+		account.add(this.values, 48L + 8L * this.values.size());
+		account.add(valueIdentities, 48L + 8L * valueIdentities.size());
+		for (Value value : this.values) {
+			if (!values.test(value, account)) {
+				return false;
+			}
+		}
+		for (String identity : valueIdentities) {
+			account.add(identity, 40L + 2L * identity.length());
+		}
+		account.add(provenance, 40L + 2L * provenance.length());
+		return true;
 	}
 
 	public static FiniteDomainFact exact(Collection<? extends Value> values, boolean assuredBound,

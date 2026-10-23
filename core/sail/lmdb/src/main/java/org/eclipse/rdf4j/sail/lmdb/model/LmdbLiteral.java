@@ -16,17 +16,23 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.ObjectStreamException;
 import java.io.ObjectStreamField;
+import java.math.BigInteger;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+import javax.xml.datatype.XMLGregorianCalendar;
+
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractLiteral;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
+import org.eclipse.rdf4j.sail.lmdb.inlined.Values;
 
 public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 
@@ -74,6 +80,9 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 
 	private transient volatile InternalIdentity identity;
 	private transient volatile long semanticVersion;
+	private transient int cachedHash;
+	private transient XMLGregorianCalendar cachedCalendarValue;
+	private transient BigInteger cachedIntegerValue;
 	private transient volatile ChildVersion datatypeVersion;
 
 	private volatile boolean initialized = false;
@@ -218,6 +227,9 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	private void payloadChanged() {
 		if (initialized) {
 			semanticVersion++;
+			cachedHash = 0;
+			cachedCalendarValue = null;
+			cachedIntegerValue = null;
 			identity = new InternalIdentity(UNKNOWN_ID, identity.revision());
 		}
 	}
@@ -245,6 +257,12 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 		}
 	}
 
+	@Experimental
+	@Override
+	public long retainedLexicalLength() {
+		return label == null ? -1L : label.length();
+	}
+
 	@Override
 	public long getInternalID() {
 		return getInternalIdentity().id();
@@ -252,7 +270,10 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 
 	@Override
 	public IRI getDatatype() {
-		init();
+		if (initialized || encodedCoreDatatype() == null) {
+			init();
+		}
+		checkDatatypeVersion();
 		return externallyOwned ? identity.revision().protectExternalValue(datatype) : datatype;
 	}
 
@@ -278,6 +299,12 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 
 	@Override
 	public CoreDatatype getCoreDatatype() {
+		if (!initialized) {
+			CoreDatatype encoded = encodedCoreDatatype();
+			if (encoded != null) {
+				return encoded;
+			}
+		}
 		init();
 		checkDatatypeVersion();
 		if (!stableDatatype()) {
@@ -287,6 +314,25 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 			coreDatatype = CoreDatatype.from(datatype);
 		}
 		return coreDatatype;
+	}
+
+	private CoreDatatype encodedCoreDatatype() {
+		long internalID = getInternalID();
+		if (internalID == UNKNOWN_ID) {
+			return null;
+		}
+		CoreDatatype referenceDatatype = ValueIds.coreDatatypeOfCoreLiteral(internalID);
+		if (referenceDatatype != CoreDatatype.NONE) {
+			datatype = referenceDatatype.getIri();
+			coreDatatype = referenceDatatype;
+			return referenceDatatype;
+		}
+		CoreDatatype.XSD inlinedDatatype = Values.coreDatatypeOfInlined(internalID);
+		if (inlinedDatatype != null) {
+			datatype = inlinedDatatype.getIri();
+			coreDatatype = inlinedDatatype;
+		}
+		return inlinedDatatype;
 	}
 
 	public void setDatatype(IRI datatype) {
@@ -317,6 +363,26 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	public String getLabel() {
 		init();
 		return label;
+	}
+
+	@Override
+	public XMLGregorianCalendar calendarValue() {
+		XMLGregorianCalendar calendarValue = cachedCalendarValue;
+		if (calendarValue == null) {
+			calendarValue = super.calendarValue();
+			cachedCalendarValue = calendarValue;
+		}
+		return (XMLGregorianCalendar) calendarValue.clone();
+	}
+
+	@Override
+	public BigInteger integerValue() {
+		BigInteger integerValue = cachedIntegerValue;
+		if (integerValue == null) {
+			integerValue = super.integerValue();
+			cachedIntegerValue = integerValue;
+		}
+		return integerValue;
 	}
 
 	public void setLabel(String label) {
@@ -368,6 +434,7 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 		}
 	}
 
+	@Experimental
 	@Override
 	public void init(Resolver resolver) {
 		if (!initialized) {
@@ -403,13 +470,37 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 		}
 
 		init();
-		return super.equals(o);
+		boolean equal = super.equals(o);
+		if (equal && o instanceof LmdbLiteral other) {
+			InternalIdentity own = getInternalIdentity();
+			InternalIdentity theirs = other.getInternalIdentity();
+			if (own.revision() != null && own.revision().equals(theirs.revision())
+					&& getSemanticVersion() != UNKNOWN_ID && other.getSemanticVersion() != UNKNOWN_ID) {
+				if (own.id() == UNKNOWN_ID && theirs.id() != UNKNOWN_ID) {
+					synchronized (this) {
+						if (identity == own) {
+							identity = new InternalIdentity(theirs.id(), own.revision());
+						}
+					}
+				} else if (theirs.id() == UNKNOWN_ID && own.id() != UNKNOWN_ID) {
+					synchronized (other) {
+						if (other.identity == theirs) {
+							other.identity = new InternalIdentity(own.id(), theirs.revision());
+						}
+					}
+				}
+			}
+		}
+		return equal;
 	}
 
 	@Override
 	public int hashCode() {
 		InternalIdentity captured = getInternalIdentity();
 		boolean stable = getSemanticVersion() != UNKNOWN_ID;
+		if (stable && cachedHash != 0) {
+			return cachedHash;
+		}
 		if (stable && captured.id() != UNKNOWN_ID) {
 			int cachedHash = captured.revision().getStoredHash(captured.id());
 			if (cachedHash != 0) {
@@ -419,6 +510,9 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 
 		init();
 		int hash = super.hashCode();
+		if (stable) {
+			cachedHash = hash;
+		}
 		if (stable && captured.id() != UNKNOWN_ID) {
 			captured.revision().storeHash(captured.id(), hash);
 		}

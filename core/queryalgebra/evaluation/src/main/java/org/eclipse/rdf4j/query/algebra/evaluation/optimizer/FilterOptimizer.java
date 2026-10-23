@@ -46,6 +46,7 @@ import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ScalarEvaluationEffects;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
@@ -113,8 +114,11 @@ public class FilterOptimizer implements QueryOptimizer {
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		Objects.requireNonNull(tupleExpr, "tupleExpr must not be null");
-		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(tupleExpr, bindings);
-		optimizeScope(tupleExpr, analysis);
+		QueryEvaluationUtility.withQuerySafetySnapshot(tupleExpr, () -> {
+			QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(tupleExpr, bindings);
+			optimizeScope(tupleExpr, analysis);
+			return null;
+		});
 	}
 
 	/**

@@ -21,6 +21,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
@@ -46,6 +48,7 @@ import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceIdentity;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.BlankNodeReferences;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -58,6 +61,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sparql.SPARQLConnection;
 import org.eclipse.rdf4j.repository.sparql.query.InsertBindingSetCursor;
 import org.eclipse.rdf4j.repository.sparql.query.QueryStringUtil;
+import org.eclipse.rdf4j.repository.sparql.query.SPARQLQueryBindingSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -145,41 +149,11 @@ public class RepositoryFederatedService implements FederatedService {
 	}
 
 	/**
-	 * Helper iteration to evaluate a block of {@link BindingSet}s using the simple
-	 * {@link RepositoryFederatedService#select(Service, Set, BindingSet, String)} routine.
-	 *
-	 * @author Andreas Schwarte
-	 */
-	private class FallbackServiceIteration extends JoinExecutorBase<BindingSet> {
-
-		private final Service service;
-		private final List<BindingSet> allBindings;
-		private final String baseUri;
-
-		public FallbackServiceIteration(Service service,
-				List<BindingSet> allBindings, String baseUri) {
-			super(null, null, null);
-			this.service = service;
-			this.allBindings = allBindings;
-			this.baseUri = baseUri;
-			run();
-		}
-
-		@Override
-		protected void handleBindings() throws Exception {
-			Set<String> projectionVars = new HashSet<>(service.getServiceVars());
-			for (BindingSet b : allBindings) {
-				addResult(select(service, projectionVars, b, baseUri));
-			}
-		}
-	}
-
-	/**
 	 * Wrapper iteration which closes a {@link RepositoryConnection} upon {@link #close()}
 	 *
 	 * @author Andreas Schwarte
 	 */
-	private static class CloseConnectionIteration implements CloseableIteration<BindingSet> {
+	private static class CloseConnectionIteration extends AbstractCloseableIteration<BindingSet> {
 
 		private final CloseableIteration<BindingSet> delegate;
 		private final RepositoryConnection connection;
@@ -208,7 +182,7 @@ public class RepositoryFederatedService implements FederatedService {
 		}
 
 		@Override
-		public void close() throws QueryEvaluationException {
+		protected void handleClose() throws QueryEvaluationException {
 			try {
 				delegate.close();
 			} finally {
@@ -248,6 +222,12 @@ public class RepositoryFederatedService implements FederatedService {
 	public Object getBNodeIdentityScope() {
 		return bnodeIdentityScope;
 	}
+
+	/**
+	 * Whether the wrapped endpoint has been declared tolerant to partitioning one logical SERVICE Invocation into
+	 * several remote requests. See {@link #setPartitionToleranceDeclared(boolean)}.
+	 */
+	private boolean partitionToleranceDeclared = false;
 
 	/**
 	 * The number of bindings sent in a single subquery in {@link #evaluate(Service, CloseableIteration, String)} If
@@ -300,7 +280,7 @@ public class RepositoryFederatedService implements FederatedService {
 			BindingSet outgoing = FederatedServiceIdentity.prepareBindings(service, bindings, bnodeIdentityScope,
 					blankNodeReferencesSupported, canonicalBNodeIDsSupported);
 			BindingSet queryBindings = relevantBindings(service, outgoing);
-			BindingSet resultBindings = RemoteBNode.originalBindings(outgoing);
+			BindingSet resultBindings = original;
 			String queryString = service.getSelectQueryString(projectionVars);
 			conn = useFreshConnection ? freshConnection() : getConnection();
 			if (conn instanceof SPARQLConnection) {
@@ -319,10 +299,11 @@ public class RepositoryFederatedService implements FederatedService {
 			result = new InsertBindingSetCursor(result, resultBindings);
 			if (useFreshConnection) {
 				result = new CloseConnectionIteration(result, conn);
+				conn = null;
 			}
-			CloseableIteration<BindingSet> complete = finishSilentResponse(service, result);
+			CloseableIteration<BindingSet> owned = result;
 			result = null;
-			return complete;
+			return finishSilentResponse(service, owned);
 		} catch (RuntimeException failure) {
 			closeFailedResponse(result, useFreshConnection ? conn : null, failure);
 			if (service.isSilent() && !QueryExecutionContext.isReplaySafepointFailure(failure)) {
@@ -396,12 +377,14 @@ public class RepositoryFederatedService implements FederatedService {
 	}
 
 	private static void closeFailedResponse(CloseableIteration<BindingSet> result, RepositoryConnection connection,
-			RuntimeException failure) {
+			Throwable failure) {
 		if (result != null) {
 			try {
 				result.close();
-			} catch (RuntimeException closeFailure) {
-				failure.addSuppressed(closeFailure);
+			} catch (RuntimeException | Error closeFailure) {
+				if (closeFailure != failure) {
+					failure.addSuppressed(closeFailure);
+				}
 			}
 		}
 		closeQuietly(connection);
@@ -412,13 +395,17 @@ public class RepositoryFederatedService implements FederatedService {
 			CloseableIteration<BindingSet> bindings, String baseUri)
 			throws QueryEvaluationException {
 
-		if (boundJoinBlockSize > 0) {
+		// SPARQL defines a constant-IRI SERVICE as ONE logical Invocation producing one result multiset (or,
+		// for SILENT, one empty mapping on failure). Splitting the input bindings into blocks and sending one
+		// remote request per block partitions that Invocation: separate requests may observe different remote
+		// state, generate distinct fresh values (UUID/BNODE), and fail partially — outcomes no single
+		// Invocation can produce. Partitioned (batched) evaluation is therefore only used when the endpoint
+		// has been explicitly declared partition-tolerant; otherwise the input is either pushed down in one
+		// single request (when small enough) or the service pattern is evaluated once and joined locally.
+		if (partitionToleranceDeclared && boundJoinBlockSize > 0) {
 			return new BatchingServiceIteration(bindings, boundJoinBlockSize, service);
-		} else {
-			// if blocksize is 0 (i.e. disabled) the entire iteration is used as
-			// block
-			return evaluateInternal(service, bindings, service.getBaseURI());
 		}
+		return evaluateInternal(service, bindings, service.getBaseURI());
 	}
 
 	/**
@@ -453,6 +440,12 @@ public class RepositoryFederatedService implements FederatedService {
 				transported.add(FederatedServiceIdentity.prepareBindings(service, input, bnodeIdentityScope,
 						blankNodeReferencesSupported, canonicalBNodeIDsSupported));
 			}
+			// Preserve one logical invocation and subquery input scope, after validating every outgoing identity.
+			int singleRequestLimit = boundJoinBlockSize > 0 ? boundJoinBlockSize : Integer.MAX_VALUE;
+			if (!partitionToleranceDeclared && originals.size() > singleRequestLimit
+					|| TupleExprs.containsSubquery(service.getArg())) {
+				return evaluateOnceAndJoinLocally(service, originals, baseUri);
+			}
 			Set<String> projectionVars = new HashSet<>(service.getServiceVars());
 			Set<String> assuredInputNames = new HashSet<>(originals.get(0).getBindingNames());
 			for (BindingSet input : originals) {
@@ -465,8 +458,9 @@ public class RepositoryFederatedService implements FederatedService {
 			String rowIndexVar = getRowIndexVar(service, originals);
 			projectionVars.add(rowIndexVar);
 			String queryString = service.getSelectQueryString(projectionVars);
-			List<String> relevantNames = getRelevantBindingNames(transported,
+			Set<String> lexicalNames = SPARQLQueries.getLexicalBindingNames(service.getAskQueryString(),
 					FederatedServiceIdentity.relevantBindingNames(service));
+			List<String> relevantNames = getRelevantBindingNames(transported, lexicalNames);
 			if (!relevantNames.isEmpty()) {
 				// Validate each initial mapping's scope before serializing a combined VALUES request.
 				for (BindingSet input : transported) {
@@ -499,14 +493,15 @@ public class RepositoryFederatedService implements FederatedService {
 			}
 			if (useFreshConnection) {
 				result = new CloseConnectionIteration(result, conn);
+				conn = null;
 			}
-			CloseableIteration<BindingSet> complete = finishSilentResponse(service, result);
+			CloseableIteration<BindingSet> owned = result;
 			result = null;
-			return complete;
+			return finishSilentResponse(service, owned);
 		} catch (MalformedQueryException | UnsupportedOperationException failure) {
 			closeFailedResponse(result, useFreshConnection ? conn : null, failure);
 			try (var active = allocation.activate()) {
-				return evaluateInternalFallback(service, originals, baseUri);
+				return evaluateOnceAndJoinLocally(service, originals, baseUri);
 			}
 		} catch (RuntimeException failure) {
 			closeFailedResponse(result, useFreshConnection ? conn : null, failure);
@@ -518,47 +513,98 @@ public class RepositoryFederatedService implements FederatedService {
 	}
 
 	/**
-	 * Evaluate the service expression for the given lists of bindings using {@link FallbackServiceIteration}, i.e.
-	 * basically as a simple join without VALUES clause.
+	 * Evaluate the service expression as ONE logical Invocation of the original service pattern (no VALUES clause, no
+	 * per-binding requests) and join the remote solutions with the input bindings locally using compatible-mapping
+	 * merging. This is the conforming fallback whenever pushing the bindings down is not possible: partitioning the
+	 * Invocation into one remote request per input binding is never authorized by a fallback — separate requests may
+	 * observe different remote state, generate distinct fresh values, and fail partially. Successful SILENT results are
+	 * buffered by {@link #select(Service, Set, BindingSet, String)} before exposure; synchronous setup failures are
+	 * caught here and pass the input bindings through unchanged.
 	 *
 	 * @param service     the SERVICE
-	 * @param allBindings all bindings to be processed
+	 * @param allBindings all input bindings
 	 * @param baseUri     the base URI
 	 * @return resulting iteration
 	 */
-	private CloseableIteration<BindingSet> evaluateInternalFallback(Service service,
+	private CloseableIteration<BindingSet> evaluateOnceAndJoinLocally(Service service,
 			List<BindingSet> allBindings, String baseUri) {
 		BlankNodeAllocationScope allocation = BlankNodeAllocationScope.currentOrNew();
-		return new LookAheadIteration<>() {
-			private final Iterator<BindingSet> inputs = allBindings.iterator();
-			private CloseableIteration<BindingSet> response;
+		Set<String> projectionVars = new HashSet<>(service.getServiceVars());
+		CloseableIteration<BindingSet> remote;
+		try (var active = allocation.activate()) {
+			remote = select(service, projectionVars, EmptyBindingSet.getInstance(), baseUri);
+		} catch (RuntimeException e) {
+			if (!service.isSilent() || QueryExecutionContext.isReplaySafepointFailure(e)) {
+				throw e;
+			}
+			logger.debug("SILENT SERVICE invocation failed before result iteration; passing input mappings through: {}",
+					e.getMessage());
+			return new CollectionIteration<>(new ArrayList<>(allBindings));
+		}
+		RemoteBNode.ResponseScope response = RemoteBNode.newResponseScope(allocation,
+				SimpleValueFactory.getInstance(), bnodeIdentityScope, canonicalBNodeIDsSupported);
+		return new LocalServiceJoinIteration(remote, allBindings, response);
+	}
 
-			@Override
-			protected BindingSet getNextElement() {
-				while (true) {
-					if (response != null) {
-						if (response.hasNext()) {
-							return response.next();
-						}
-						response.close();
-						response = null;
-					}
-					if (!inputs.hasNext()) {
+	/**
+	 * Streams remote SERVICE solutions and merges each with every compatible input binding (SPARQL compatible-mapping
+	 * join). Preserves multiplicities on both sides.
+	 */
+	private static final class LocalServiceJoinIteration extends LookAheadIteration<BindingSet> {
+
+		private final CloseableIteration<BindingSet> remote;
+		private final List<BindingSet> inputBindings;
+		private final RemoteBNode.ResponseScope response;
+		private BindingSet currentRemote;
+		private Iterator<BindingSet> inputIterator;
+
+		private LocalServiceJoinIteration(CloseableIteration<BindingSet> remote, List<BindingSet> inputBindings,
+				RemoteBNode.ResponseScope response) {
+			this.remote = remote;
+			this.inputBindings = inputBindings;
+			this.response = response;
+		}
+
+		@Override
+		protected BindingSet getNextElement() {
+			while (true) {
+				if (currentRemote == null) {
+					if (!remote.hasNext()) {
 						return null;
 					}
-					try (var active = allocation.activate()) {
-						response = select(service, service.getServiceVars(), inputs.next(), baseUri);
+					currentRemote = remote.next();
+					inputIterator = inputBindings.iterator();
+				}
+				while (inputIterator.hasNext()) {
+					BindingSet input = inputIterator.next();
+					BindingSet merged = merge(input, response.map(currentRemote, input));
+					if (merged != null) {
+						return merged;
 					}
 				}
+				currentRemote = null;
+				inputIterator = null;
 			}
+		}
 
-			@Override
-			protected void handleClose() {
-				if (response != null) {
-					response.close();
+		private static BindingSet merge(BindingSet input, BindingSet remoteSolution) {
+			SPARQLQueryBindingSet merged = new SPARQLQueryBindingSet(input.size() + remoteSolution.size());
+			merged.addAll(input);
+			for (Binding binding : remoteSolution) {
+				Value existing = merged.getValue(binding.getName());
+				if (existing == null) {
+					merged.addBinding(binding);
+				} else if (!existing.equals(binding.getValue())) {
+					return null;
 				}
 			}
-		};
+			return merged;
+		}
+
+		@Override
+		protected void handleClose() {
+			remote.close();
+		}
 	}
 
 	/**
@@ -570,25 +616,45 @@ public class RepositoryFederatedService implements FederatedService {
 	 * @return the final String
 	 */
 	protected String insertValuesClause(String queryString, String valuesClause) {
-		StringBuilder sb = new StringBuilder(addRowIndexProjection(queryString, ROW_IDX_VAR));
+		return insertValuesClause(queryString, valuesClause, ROW_IDX_VAR);
+	}
+
+	/**
+	 * Insert the constructed VALUES clause in the beginning of the WHERE block. Also adds the given row-index
+	 * projection if it is not already present. This helper supports callers that need an explicit projection name;
+	 * runtime SERVICE rewriting uses {@link #insertValuesClause(String, String)} with its control variable already
+	 * projected.
+	 *
+	 * @param queryString  the SELECT query string from the SERVICE node
+	 * @param valuesClause the constructed VALUES clause
+	 * @param rowIdxVar    the synthetic row-index variable name used in the VALUES clause
+	 * @return the final String
+	 */
+	@Experimental
+	protected String insertValuesClause(String queryString, String valuesClause, String rowIdxVar) {
+		StringBuilder sb = new StringBuilder(addRowIndexProjection(queryString, rowIdxVar));
 		sb.insert(sb.indexOf("{") + 1, " " + valuesClause);
 		return sb.toString();
 	}
 
-	private String addRowIndexProjection(String queryString, String rowIndexVar) {
+	private String addRowIndexProjection(String queryString, String rowIdxVar) {
 		StringBuilder sb = new StringBuilder(queryString);
-		if (sb.indexOf(rowIndexVar) == -1) {
+		if (sb.indexOf(rowIdxVar) == -1) {
 			// Note: we also explicitly check on "SELECT *", however, this
 			// check is heuristics based. If the generated query is invalid
 			// after this, the fallback evaluation will jump in
 			// This currently does not cover things like "SELECT *"
 			if (sb.indexOf("SELECT * ") == -1) {
-				sb.insert(sb.indexOf("SELECT") + 6, " ?" + rowIndexVar);
+				sb.insert(sb.indexOf("SELECT") + 6, " ?" + rowIdxVar);
 			}
 		}
 		return sb.toString();
 	}
 
+	/**
+	 * Returns a synthetic row-index variable name that cannot collide with any user-visible variable in the service
+	 * algebra or any input binding.
+	 */
 	private String getRowIndexVar(Service service, List<BindingSet> inputs) {
 		Set<String> occupiedNames = new HashSet<>(service.getServiceVars());
 		service.getServiceExpr().visit(new AbstractQueryModelVisitor<RuntimeException>() {
@@ -636,6 +702,26 @@ public class RepositoryFederatedService implements FederatedService {
 	 */
 	public void setBoundJoinBlockSize(int boundJoinBlockSize) {
 		this.boundJoinBlockSize = boundJoinBlockSize;
+	}
+
+	@Experimental
+	public boolean isPartitionToleranceDeclared() {
+		return partitionToleranceDeclared;
+	}
+
+	/**
+	 * Declares whether the wrapped endpoint tolerates partitioning one logical SERVICE Invocation into several remote
+	 * requests with observationally equivalent outcomes. SPARQL defines a constant-IRI SERVICE as one Invocation
+	 * producing one result multiset; block-wise evaluation sends several requests, which is only equivalent when the
+	 * endpoint guarantees: stable results for the duration of the query, equivalent blank node and volatile-function
+	 * behavior across requests, all-or-nothing failure, and equivalent SILENT handling. This is an affirmative
+	 * capability declaration by the operator — a deterministic remote pattern alone does not establish it. Default:
+	 * {@code false}, in which case the input bindings are either pushed down in one single request or the service
+	 * pattern is evaluated once and joined locally.
+	 */
+	@Experimental
+	public void setPartitionToleranceDeclared(boolean partitionToleranceDeclared) {
+		this.partitionToleranceDeclared = partitionToleranceDeclared;
 	}
 
 	/**
@@ -730,11 +816,11 @@ public class RepositoryFederatedService implements FederatedService {
 	 * @return a string with the VALUES clause for the given set of relevant input bindings
 	 * @throws QueryEvaluationException
 	 */
-	private String buildVALUESClause(List<BindingSet> bindings, List<String> relevantBindingNames, String rowIndexVar)
+	private String buildVALUESClause(List<BindingSet> bindings, List<String> relevantBindingNames, String rowIdxVar)
 			throws QueryEvaluationException {
 
 		StringBuilder sb = new StringBuilder();
-		sb.append(" VALUES (?").append(rowIndexVar);
+		sb.append(" VALUES (?").append(rowIdxVar); // row index: see comment in evaluateInternal()
 
 		for (String bName : relevantBindingNames) {
 			sb.append(" ?").append(bName);

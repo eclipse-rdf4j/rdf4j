@@ -18,6 +18,7 @@ import java.util.Objects;
 
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
 
 /** Immutable owner of one query's canonical primitive relational and scalar rows. */
 @PackedHotPath
@@ -26,6 +27,7 @@ final class PackedQuery {
 	static final int TERM_ANONYMOUS = 1;
 	static final int TERM_CONSTANT = 1 << 1;
 	static final int TERM_BNODE = 1 << 2;
+	static final int TERM_API_INPUT_ORIGIN = 1 << 3;
 
 	private final int rootRelId;
 	private final PackedExpressionInterner relations;
@@ -820,4 +822,29 @@ final class PackedQuery {
 	Object rawObjectValue(int objectId) {
 		return objects.rawValue(objectId);
 	}
+
+	boolean accountRetainedMemory(RetainedMemoryAccount account) {
+		if (!account.add(this, 192L)) {
+			return true;
+		}
+		relations.accountRetainedMemory(account);
+		scalars.accountRetainedMemory(account);
+		payloads.accountRetainedMemory(account);
+		bindingSets.accountRetainedMemory(account);
+		symbols.accountRetainedMemory(account);
+		bindingFacts.accountRetainedMemory(account);
+		PackedCacheMemory.array(account, originalBindingSetRelations);
+		PackedCacheMemory.array(account, originalBindingSets);
+		for (Object rows : originalBindingSets) {
+			if (rows != null) {
+				return false;
+			}
+		}
+		PackedCacheMemory.string(account, semanticsSchema);
+		return parameterSchema.accountRetainedMemory(account)
+				&& parameterVector.accountRetainedMemory(account, semanticsCodec)
+				&& metadata.accountRetainedMemory(account, semanticsCodec)
+				&& objects.accountRetainedMemory(account, semanticsCodec);
+	}
+
 }

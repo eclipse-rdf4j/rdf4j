@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -209,8 +210,15 @@ class LmdbDataRevisionRestartTest {
 	}
 
 	private static SailRepository repository(File dataDir, LmdbStoreConfig config) {
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
+		LmdbStore store = new LmdbStore(dataDir, config);
+		if (Boolean.TRUE.equals(config.getSketchEstimatorEnabled())) {
+			store.setExperimentalQueryOptimizations(true);
+		}
+		SailRepository repository = new SailRepository(store);
 		repository.init();
+		if (Boolean.TRUE.equals(config.getSketchEstimatorEnabled())) {
+			assertSketchFixtureProfile(store);
+		}
 		return repository;
 	}
 
@@ -234,5 +242,19 @@ class LmdbDataRevisionRestartTest {
 
 	private static TupleExpr explain(RepositoryConnection connection, String query) {
 		return (TupleExpr) connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized).tupleExpr();
+	}
+
+	private static void assertSketchFixtureProfile(LmdbStore store) {
+		try {
+			assertTrue(store.getQueryExecutionPolicy().experimentalQueryOptimizations());
+			assertNotNull(store.getBackingStore().getSketchBasedJoinEstimator());
+		} catch (AssertionError failure) {
+			try {
+				store.shutDown();
+			} catch (RuntimeException | Error closeFailure) {
+				failure.addSuppressed(closeFailure);
+			}
+			throw failure;
+		}
 	}
 }

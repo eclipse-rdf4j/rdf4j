@@ -14,10 +14,15 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ProjectionIterator;
 
@@ -41,7 +46,7 @@ public final class ProjectionQueryEvaluationStep implements QueryEvaluationStep 
 		CloseableIteration<BindingSet> evaluate = null;
 
 		try {
-			evaluate = qes.evaluate(bindings);
+			evaluate = qes.evaluate(withInheritedGraphInput(projection, bindings, context));
 			return new ProjectionIterator(projection, evaluate, bindings, context, parameterSources);
 		} catch (Throwable t) {
 			if (evaluate != null) {
@@ -50,5 +55,25 @@ public final class ProjectionQueryEvaluationStep implements QueryEvaluationStep 
 			throw t;
 		}
 
+	}
+
+	/** Shared caller-to-private-parameter lowering for generic and native SELECT boundaries. */
+	@InternalUseOnly
+	public static BindingSet withInheritedGraphInput(Projection projection, BindingSet bindings,
+			QueryEvaluationContext context) {
+		String parameter = projection.getInheritedGraphParameter();
+		Var caller = projection.getProjectionContext();
+		if (parameter != null && caller != null) {
+			if (GraphFrameBindings.isSupplied(bindings, parameter)) {
+				return bindings;
+			}
+			Value graph = caller.hasValue() ? caller.getValue() : bindings.getValue(caller.getName());
+			if (graph != null || bindings.hasBinding(parameter)) {
+				MutableBindingSet scoped = GraphFrameBindings.preserve(bindings, context.createBindingSet(bindings));
+				scoped.removeBinding(parameter);
+				return graph == null ? scoped : GraphFrameBindings.supply(scoped, parameter, graph);
+			}
+		}
+		return bindings;
 	}
 }

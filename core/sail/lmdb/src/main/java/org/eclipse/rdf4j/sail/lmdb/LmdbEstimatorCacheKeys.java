@@ -36,7 +36,8 @@ record SemanticEstimateCacheKey(Object expression, Set<String> boundNames,
 		EstimateContext.EvidencePolicy evidencePolicy, PlanningGraphDomain graphDomain,
 		JoinFactorCostModel.EstimationTier estimationTier,
 		QuadSnapshotIdentity snapshotIdentity, long snapshotVersion, long learnedRevision,
-		EstimateContext.MetricsPreference metricsPreference, boolean exactProbePermitted) {
+		EstimateContext.MetricsPreference metricsPreference, boolean exactProbePermitted,
+		LmdbFilterReadContext filterReadContext) {
 
 	static SemanticEstimateCacheKey of(TupleExpr expression, EstimateContext context,
 			LmdbEstimatorOptimizationScope scope) {
@@ -54,7 +55,7 @@ record SemanticEstimateCacheKey(Object expression, Set<String> boundNames,
 				context.snapshotVersion(),
 				context.learnedRevision(),
 				context.metricsPreference(),
-				context.exactProbePermitted());
+				context.exactProbePermitted(), context.filterReadContext());
 	}
 }
 
@@ -69,7 +70,7 @@ record ExactAlternativeSurfaceCacheKey(Object factor, QuadSnapshotIdentity snaps
 
 record PrefixEstimateCacheKey(FiniteBranchRowsCacheKey factors, long rowsBits,
 		JoinFactorCostModel.EstimationTier estimationTier, QuadSnapshotIdentity snapshotIdentity,
-		long snapshotVersion, long learnedRevision) {
+		long snapshotVersion, long learnedRevision, LmdbFilterReadContext filterReadContext) {
 
 	static PrefixEstimateCacheKey of(List<TupleExpr> factors, double rows,
 			JoinFactorCostModel.EstimationTier estimationTier, EstimateContext estimateContext,
@@ -80,7 +81,7 @@ record PrefixEstimateCacheKey(FiniteBranchRowsCacheKey factors, long rowsBits,
 		return new PrefixEstimateCacheKey(FiniteBranchRowsCacheKey.of(factors, false, scope),
 				Double.doubleToLongBits(rows), tier,
 				estimateContext.snapshotIdentity(), estimateContext.snapshotVersion(),
-				estimateContext.learnedRevision());
+				estimateContext.learnedRevision(), estimateContext.filterReadContext());
 	}
 }
 
@@ -90,7 +91,7 @@ record ScopedFactorCostCacheKey(Object factor, Set<String> boundVars, long outer
 		boolean prefixFactorsDescribeCurrentRows,
 		Map<String, Set<Value>> finiteBindingValues, JoinFactorCostModel.EstimationTier estimationTier,
 		FiniteBranchRowsCacheKey prefixFactors,
-		QuadSnapshotIdentity snapshotIdentity, long snapshotVersion, long learnedRevision) {
+		QuadSnapshotIdentity snapshotIdentity, long snapshotVersion, long learnedRevision, LmdbFilterReadContext filterReadContext) {
 
 	static ScopedFactorCostCacheKey of(TupleExpr factor, JoinFactorCostModel.CostContext context,
 			EstimateContext estimateContext) {
@@ -115,7 +116,7 @@ record ScopedFactorCostCacheKey(Object factor, Set<String> boundVars, long outer
 				context.prefixFactorsDescribeCurrentRows(),
 				immutableFiniteBindingValues(context.getFiniteBindingValues()), tier, prefixFactors,
 				estimateContext.snapshotIdentity(), estimateContext.snapshotVersion(),
-				estimateContext.learnedRevision());
+				estimateContext.learnedRevision(), estimateContext.filterReadContext());
 	}
 
 	static Map<String, Set<Value>> immutableFiniteBindingValues(
@@ -139,7 +140,7 @@ record ScopedFactorCostCacheKey(Object factor, Set<String> boundVars, long outer
 				nestedIteratorInvocation, collectMetrics,
 				prefixFactorsDescribeCurrentRows,
 				immutableFiniteBindingValues(finiteBindingValues), estimationTier, prefixFactors,
-				snapshotIdentity, snapshotVersion, learnedRevision);
+				snapshotIdentity, snapshotVersion, learnedRevision, filterReadContext);
 	}
 }
 
@@ -200,7 +201,7 @@ record EstimationSessionContextKey(Object boundMask, Object finiteBindings,
 		double invocations,
 		Object evidencePolicy, Object graphDomain, Object estimationTier, Object snapshotIdentity,
 		long snapshotVersion,
-		boolean exactProbePermitted) {
+		boolean exactProbePermitted, LmdbFilterReadContext filterReadContext) {
 
 	static EstimationSessionContextKey from(EstimateContext context) {
 		return new EstimationSessionContextKey(context.boundMask(), context.finiteBindings(),
@@ -208,7 +209,7 @@ record EstimationSessionContextKey(Object boundMask, Object finiteBindings,
 				context.invocationCount(), context.evidencePolicy(), context.graphDomain(),
 				context.estimationTier(),
 				context.snapshotIdentity(),
-				context.snapshotVersion(), context.exactProbePermitted());
+				context.snapshotVersion(), context.exactProbePermitted(), context.filterReadContext());
 	}
 }
 

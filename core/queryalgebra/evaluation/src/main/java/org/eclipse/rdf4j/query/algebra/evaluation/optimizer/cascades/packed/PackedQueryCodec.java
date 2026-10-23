@@ -1572,6 +1572,9 @@ final class PackedQueryCodec {
 			if (variable.isBNode()) {
 				flags |= PackedQuery.TERM_BNODE;
 			}
+			if (variable.hasApiInputOrigin()) {
+				flags |= PackedQuery.TERM_API_INPUT_ORIGIN;
+			}
 			int nameId = objects.intern(cacheIdentityName(variable.getName()));
 			if (!variable.hasValue()) {
 				symbols.intern(nameId);

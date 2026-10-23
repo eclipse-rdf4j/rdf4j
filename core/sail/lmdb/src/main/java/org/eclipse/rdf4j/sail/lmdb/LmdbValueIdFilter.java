@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.And;
@@ -347,13 +348,13 @@ final class LmdbValueIdFilter {
 		IRI {
 			@Override
 			boolean accept(long id) {
-				return ValueIds.getIdType(id) == ValueIds.T_URI;
+				return ValueIds.termKind(id) == ValueIds.TERM_KIND_IRI;
 			}
 		},
 		BNODE {
 			@Override
 			boolean accept(long id) {
-				return ValueIds.getIdType(id) == ValueIds.T_BNODE;
+				return ValueIds.termKind(id) == ValueIds.TERM_KIND_BNODE;
 			}
 		},
 		LITERAL {
@@ -365,15 +366,21 @@ final class LmdbValueIdFilter {
 		RESOURCE {
 			@Override
 			boolean accept(long id) {
-				int type = ValueIds.getIdType(id);
-				return type == ValueIds.T_URI || type == ValueIds.T_BNODE;
+				int kind = ValueIds.termKind(id);
+				return kind == ValueIds.TERM_KIND_IRI || kind == ValueIds.TERM_KIND_BNODE;
 			}
 		},
 		NUMERIC {
 			@Override
 			boolean accept(long id) {
+				if (!isLiteralId(id)) {
+					return false;
+				}
 				int type = ValueIds.getIdType(id);
-				return type == ValueIds.T_LITERAL || type == ValueIds.T_DOUBLE || type == ValueIds.T_INTEGER
+				// A dictionary reference still needs the residual SPARQL numeric predicate. This is a
+				// conservative scan prefilter, including both legacy and tagged core literal references.
+				return ValueIds.isLiteralReference(id) || ValueIds.isOrderedInteger(id)
+						|| type == ValueIds.T_DOUBLE || type == ValueIds.T_INTEGER
 						|| type == ValueIds.T_DECIMAL || type == ValueIds.T_FLOAT || type == ValueIds.T_LONG
 						|| type == ValueIds.T_INT || type == ValueIds.T_SHORT || type == ValueIds.T_BYTE
 						|| type == ValueIds.T_POSITIVE_INTEGER || type == ValueIds.T_NEGATIVE_INTEGER
@@ -385,127 +392,127 @@ final class LmdbValueIdFilter {
 		XSD_DECIMAL {
 			@Override
 			boolean accept(long id) {
-				return acceptsLiteralOrInlinedDatatype(id, ValueIds.T_DECIMAL);
+				return acceptsLiteralDatatype(id, CoreDatatype.XSD.DECIMAL);
 			}
 		},
 		XSD_DOUBLE {
 			@Override
 			boolean accept(long id) {
-				return acceptsLiteralOrInlinedDatatype(id, ValueIds.T_DOUBLE);
+				return acceptsLiteralDatatype(id, CoreDatatype.XSD.DOUBLE);
 			}
 		},
 		XSD_FLOAT {
 			@Override
 			boolean accept(long id) {
-				return acceptsLiteralOrInlinedDatatype(id, ValueIds.T_FLOAT);
+				return acceptsLiteralDatatype(id, CoreDatatype.XSD.FLOAT);
 			}
 		},
 		XSD_INTEGER {
 			@Override
 			boolean accept(long id) {
-				return acceptsLiteralOrInlinedDatatype(id, ValueIds.T_INTEGER);
+				return acceptsLiteralDatatype(id, CoreDatatype.XSD.INTEGER);
 			}
 		},
 		XSD_LONG {
 			@Override
 			boolean accept(long id) {
-				return acceptsLiteralOrInlinedDatatype(id, ValueIds.T_LONG);
+				return acceptsLiteralDatatype(id, CoreDatatype.XSD.LONG);
 			}
 		},
 		XSD_INT {
 			@Override
 			boolean accept(long id) {
-				return acceptsLiteralOrInlinedDatatype(id, ValueIds.T_INT);
+				return acceptsLiteralDatatype(id, CoreDatatype.XSD.INT);
 			}
 		},
 		XSD_SHORT {
 			@Override
 			boolean accept(long id) {
-				return acceptsLiteralOrInlinedDatatype(id, ValueIds.T_SHORT);
+				return acceptsLiteralDatatype(id, CoreDatatype.XSD.SHORT);
 			}
 		},
 		XSD_BYTE {
 			@Override
 			boolean accept(long id) {
-				return acceptsLiteralOrInlinedDatatype(id, ValueIds.T_BYTE);
+				return acceptsLiteralDatatype(id, CoreDatatype.XSD.BYTE);
 			}
 		},
 		XSD_UNSIGNED_LONG {
 			@Override
 			boolean accept(long id) {
-				return acceptsLiteralOrInlinedDatatype(id, ValueIds.T_UNSIGNEDLONG);
+				return acceptsLiteralDatatype(id, CoreDatatype.XSD.UNSIGNED_LONG);
 			}
 		},
 		XSD_UNSIGNED_INT {
 			@Override
 			boolean accept(long id) {
-				return acceptsLiteralOrInlinedDatatype(id, ValueIds.T_UNSIGNEDINT);
+				return acceptsLiteralDatatype(id, CoreDatatype.XSD.UNSIGNED_INT);
 			}
 		},
 		XSD_UNSIGNED_SHORT {
 			@Override
 			boolean accept(long id) {
-				return acceptsLiteralOrInlinedDatatype(id, ValueIds.T_UNSIGNEDSHORT);
+				return acceptsLiteralDatatype(id, CoreDatatype.XSD.UNSIGNED_SHORT);
 			}
 		},
 		XSD_UNSIGNED_BYTE {
 			@Override
 			boolean accept(long id) {
-				return acceptsLiteralOrInlinedDatatype(id, ValueIds.T_UNSIGNEDBYTE);
+				return acceptsLiteralDatatype(id, CoreDatatype.XSD.UNSIGNED_BYTE);
 			}
 		},
 		XSD_POSITIVE_INTEGER {
 			@Override
 			boolean accept(long id) {
-				return acceptsLiteralOrInlinedDatatype(id, ValueIds.T_POSITIVE_INTEGER);
+				return acceptsLiteralDatatype(id, CoreDatatype.XSD.POSITIVE_INTEGER);
 			}
 		},
 		XSD_NEGATIVE_INTEGER {
 			@Override
 			boolean accept(long id) {
-				return acceptsLiteralOrInlinedDatatype(id, ValueIds.T_NEGATIVE_INTEGER);
+				return acceptsLiteralDatatype(id, CoreDatatype.XSD.NEGATIVE_INTEGER);
 			}
 		},
 		XSD_NON_NEGATIVE_INTEGER {
 			@Override
 			boolean accept(long id) {
-				return acceptsLiteralOrInlinedDatatype(id, ValueIds.T_NON_NEGATIVE_INTEGER);
+				return acceptsLiteralDatatype(id, CoreDatatype.XSD.NON_NEGATIVE_INTEGER);
 			}
 		},
 		XSD_NON_POSITIVE_INTEGER {
 			@Override
 			boolean accept(long id) {
-				return acceptsLiteralOrInlinedDatatype(id, ValueIds.T_NON_POSITIVE_INTEGER);
+				return acceptsLiteralDatatype(id, CoreDatatype.XSD.NON_POSITIVE_INTEGER);
 			}
 		},
 		XSD_STRING {
 			@Override
 			boolean accept(long id) {
-				return acceptsLiteralOrInlinedDatatype(id, ValueIds.T_SHORTSTRING);
+				return acceptsLiteralDatatype(id, CoreDatatype.XSD.STRING);
 			}
 		},
 		XSD_DATETIME {
 			@Override
 			boolean accept(long id) {
-				return acceptsLiteralOrInlinedDatatype(id, ValueIds.T_DATETIME);
+				return acceptsLiteralDatatype(id, CoreDatatype.XSD.DATETIME);
 			}
 		},
 		XSD_DATETIMESTAMP {
 			@Override
 			boolean accept(long id) {
-				return acceptsLiteralOrInlinedDatatype(id, ValueIds.T_DATETIMESTAMP);
+				return acceptsLiteralDatatype(id, CoreDatatype.XSD.DATETIMESTAMP);
 			}
 		},
 		XSD_DATE {
 			@Override
 			boolean accept(long id) {
-				return acceptsLiteralOrInlinedDatatype(id, ValueIds.T_DATE);
+				return acceptsLiteralDatatype(id, CoreDatatype.XSD.DATE);
 			}
 		},
 		XSD_BOOLEAN {
 			@Override
 			boolean accept(long id) {
-				return acceptsLiteralOrInlinedDatatype(id, ValueIds.T_BOOLEAN);
+				return acceptsLiteralDatatype(id, CoreDatatype.XSD.BOOLEAN);
 			}
 		},
 		/** Context component only: any named graph, never the default graph. Not a planner metric kind. */
@@ -635,12 +642,16 @@ final class LmdbValueIdFilter {
 	}
 
 	private static boolean isLiteralId(long id) {
-		int type = ValueIds.getIdType(id);
-		return type == ValueIds.T_LITERAL || ValueIds.isInlined(id);
+		return ValueIds.termKind(id) == ValueIds.TERM_KIND_LITERAL;
 	}
 
-	private static boolean acceptsLiteralOrInlinedDatatype(long id, int inlinedType) {
-		int type = ValueIds.getIdType(id);
-		return type == ValueIds.T_LITERAL || type == inlinedType;
+	private static boolean acceptsLiteralDatatype(long id, CoreDatatype datatype) {
+		if (!isLiteralId(id)) {
+			return false;
+		}
+		int tag = ValueIds.encodedCoreDatatypeTag(id);
+		// Untagged legacy/custom references require the retained RDF datatype predicate. Encoded tags
+		// cover core references and every inline representation, including ordered integer variants.
+		return tag == 0 || tag == ValueIds.coreDatatypeTag(datatype);
 	}
 }

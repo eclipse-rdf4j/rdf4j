@@ -685,8 +685,10 @@ class LmdbEstimateAuditHarnessTest {
 	@Test
 	void auditsEntireGeneratedCorpusAcrossNestedPieces(@TempDir File dataDir) throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, scalarAuditConfig());
+		store.setExperimentalQueryOptimizations(true);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
+		assertExperimentalFixtureProfile(store);
 		try {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				loadMixedAuditData(connection);
@@ -725,8 +727,10 @@ class LmdbEstimateAuditHarnessTest {
 	@Test
 	void scalarMixedDomainCartesianJoinRetainsComponentCardinality(@TempDir File dataDir) throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, scalarAuditConfig());
+		store.setExperimentalQueryOptimizations(true);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
+		assertExperimentalFixtureProfile(store);
 		try {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				loadMixedAuditData(connection);
@@ -808,8 +812,10 @@ class LmdbEstimateAuditHarnessTest {
 		}
 
 		LmdbStore store = new LmdbStore(dataDir, evidenceAuditConfig("snapshot-only"));
+		store.setExperimentalQueryOptimizations(true);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
+		assertExperimentalFixtureProfile(store);
 		try {
 			assertTrue(store.forceFlushSketchEstimator());
 			assertTrue(store.awaitSketchesReady(10, TimeUnit.SECONDS));
@@ -1617,8 +1623,10 @@ class LmdbEstimateAuditHarnessTest {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc")
 				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF)
 				.setSketchEstimatorEnabled(true));
+		store.setExperimentalQueryOptimizations(true);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
+		assertExperimentalFixtureProfile(store);
 		try {
 			loadAasBenchmarkData(repository);
 			BenchmarkJoinEstimatorSupport.prepareStableEstimatorForBenchmark(store);
@@ -1735,8 +1743,10 @@ class LmdbEstimateAuditHarnessTest {
 		}
 
 		LmdbStore builderStore = new LmdbStore(dataDir, evidenceAuditConfig(evidenceMode));
+		builderStore.setExperimentalQueryOptimizations(true);
 		SailRepository builder = new SailRepository(builderStore);
 		builder.init();
+		assertExperimentalFixtureProfile(builderStore);
 		try {
 			assertTrue(builderStore.forceFlushSketchEstimator(), "Expected full rebuild for " + evidenceMode);
 			assertTrue(builderStore.awaitSketchesReady(10, TimeUnit.SECONDS));
@@ -1745,8 +1755,10 @@ class LmdbEstimateAuditHarnessTest {
 		}
 
 		LmdbStore store = new LmdbStore(dataDir, evidenceAuditConfig(evidenceMode));
+		store.setExperimentalQueryOptimizations(true);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
+		assertExperimentalFixtureProfile(store);
 		assertTrue(store.awaitSketchesReady(10, TimeUnit.SECONDS));
 		return new EvidenceAuditRepository(repository, store);
 	}
@@ -2204,5 +2216,18 @@ class LmdbEstimateAuditHarnessTest {
 		case 3 -> "DX-300";
 		default -> "DX-301";
 		};
+	}
+
+	private static void assertExperimentalFixtureProfile(LmdbStore store) {
+		try {
+			assertTrue(store.getQueryExecutionPolicy().experimentalQueryOptimizations());
+		} catch (AssertionError failure) {
+			try {
+				store.shutDown();
+			} catch (RuntimeException | Error closeFailure) {
+				failure.addSuppressed(closeFailure);
+			}
+			throw failure;
+		}
 	}
 }

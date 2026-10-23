@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.when;
@@ -75,6 +76,7 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.stubbing.Answer;
 
 /** Contract tests separating physical binding authority from statistical population authority. */
 class LmdbPhysicalFallbackFrameAuthorityTest {
@@ -455,7 +457,7 @@ class LmdbPhysicalFallbackFrameAuthorityTest {
 			when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
 			when(statistics.openCurrentView()).thenReturn(view);
 			when(view.ready()).thenReturn(true);
-			when(runtime.factorCost(any(), any())).thenAnswer(invocation -> {
+			Answer<?> factorCostAnswer = invocation -> {
 				TupleExpr expression = invocation.getArgument(0);
 				JoinFactorCostModel.CostContext context = invocation.getArgument(1);
 				if (expression instanceof BindingSetAssignment finite) {
@@ -485,7 +487,10 @@ class LmdbPhysicalFallbackFrameAuthorityTest {
 				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(37.0d * invocations,
 						bound ? 11.0d * invocations : 101.0d, Map.of(), metrics,
 						false, false, 0, 0, Double.NaN, CostScope.TOTAL_FOR_CONTEXT, true));
-			});
+			};
+			when(runtime.factorCost(any(), any())).thenAnswer(factorCostAnswer);
+			when(runtime.factorCost(any(), any(), nullable(LmdbFilterReadContext.class)))
+					.thenAnswer(factorCostAnswer);
 			model = new LmdbPackedCostModel(runtime, OptionalLong.empty(), true);
 		}
 

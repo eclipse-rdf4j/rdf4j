@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
 
 /**
  * Complete collision-authenticated identity and invocation state for one normalized parameterized query family.
@@ -167,4 +168,21 @@ final class PackedQueryFamilyIdentity {
 		}
 		return concreteQuery;
 	}
+
+	boolean accountRetainedMemory(RetainedMemoryAccount account) {
+		if (!account.add(this, 64L)) {
+			return true;
+		}
+		PackedCacheMemory.array(account, canonicalPackedIdentity);
+		for (AuthenticationToken token : canonicalPackedIdentity) {
+			account.add(token, 32L);
+			PackedCacheMemory.string(account, token.text());
+		}
+		return parameterSchema.accountRetainedMemory(account)
+				&& parameterizedQueryTemplate.accountRetainedMemory(account)
+				&& (parameterVector == null || parameterVector.accountRetainedMemory(account,
+						parameterizedQueryTemplate.semanticsCodec()))
+				&& (concreteQuery == null || concreteQuery.accountRetainedMemory(account));
+	}
+
 }

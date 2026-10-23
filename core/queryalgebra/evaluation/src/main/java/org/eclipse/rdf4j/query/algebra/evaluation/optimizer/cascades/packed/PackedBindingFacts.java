@@ -13,11 +13,14 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import java.util.Arrays;
 
-/** Canonical output and scalar-dependency masks derived once from the immutable packed query. */
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
+
+/** Canonical primitive binding masks, independent of the query and invocation that derived them. */
 @PackedHotPath
 final class PackedBindingFacts {
 
-	private final PackedQuery query;
+	private final int symbolCount;
+	private final int scalarCount;
 	private final PackedMaskInterner masks;
 	private final PackedMaskLayout layout;
 	private final int[] relationOutputMaskIds;
@@ -37,7 +40,8 @@ final class PackedBindingFacts {
 	private int bindingValueCount;
 
 	PackedBindingFacts(PackedQuery query) {
-		this.query = query;
+		symbolCount = query.symbolCount();
+		scalarCount = query.scalarCount();
 		masks = new PackedMaskInterner(query.symbolCount(), query.relationCount() + query.scalarCount());
 		layout = masks.layout();
 		relationOutputMaskIds = new int[query.relationCount() + 1];
@@ -58,23 +62,38 @@ final class PackedBindingFacts {
 		}
 		allSymbolMaskId = masks.intern(scratch, 0);
 		clearScratch();
-		deriveScalarDependencies();
-		deriveScalarSchedulingFacts();
-		deriveRelationOutputs();
-		deriveRelationAssuredBindings();
+		deriveScalarDependencies(query);
+		deriveScalarSchedulingFacts(query);
+		deriveRelationOutputs(query);
+		deriveRelationAssuredBindings(query);
 		for (int id = 1; id <= query.relationCount(); id++) {
-			requiredInputMaskIds[id] = nameSetMask(query.relRequiredInputNames(id));
-			protectedInputMaskIds[id] = nameSetMask(query.relProtectedInputNames(id));
-			nullableInputMaskIds[id] = nameSetMask(query.relNullableInputNames(id));
-			independentOutputMaskIds[id] = nameSetMask(query.relIndependentOutputNames(id));
-			ordinaryWriteMaskIds[id] = nameSetMask(query.relOrdinaryWriteNames(id));
+			requiredInputMaskIds[id] = nameSetMask(query, query.relRequiredInputNames(id));
+			protectedInputMaskIds[id] = nameSetMask(query, query.relProtectedInputNames(id));
+			nullableInputMaskIds[id] = nameSetMask(query, query.relNullableInputNames(id));
+			independentOutputMaskIds[id] = nameSetMask(query, query.relIndependentOutputNames(id));
+			ordinaryWriteMaskIds[id] = nameSetMask(query, query.relOrdinaryWriteNames(id));
+		}
+		finishRelationMasks(query);
+	}
+
+	/** Converts the construction-only group tables after every derivation that reads them has completed. */
+	private void finishRelationMasks(PackedQuery query) {
+		int[] groupOutputMaskIds = relationOutputMaskIds.clone();
+		int[] groupAssuredMaskIds = relationAssuredMaskIds.clone();
+		for (int relationId = 1; relationId <= query.relationCount(); relationId++) {
+			int groupId = query.relGroup(relationId);
+			relationOutputMaskIds[relationId] = (query.relMetadataFlags(relationId)
+					& PackedNodeMetadataArena.UNKNOWN_OUTPUT_DOMAIN) != 0
+							? allSymbolMaskId
+							: groupOutputMaskIds[groupId];
+			relationAssuredMaskIds[relationId] = groupAssuredMaskIds[groupId];
 		}
 	}
 
-	private int nameSetMask(int payload) {
+	private int nameSetMask(PackedQuery query, int payload) {
 		clearScratch();
 		if (payload != 0) {
-			addNameSet(payload);
+			addNameSet(query, payload);
 		}
 		return masks.intern(scratch, 0);
 	}
@@ -103,10 +122,7 @@ final class PackedBindingFacts {
 		if (relationId <= 0 || relationId >= relationOutputMaskIds.length) {
 			throw new IndexOutOfBoundsException("unknown relation " + relationId);
 		}
-		if ((query.relMetadataFlags(relationId) & PackedNodeMetadataArena.UNKNOWN_OUTPUT_DOMAIN) != 0) {
-			return allSymbolMaskId;
-		}
-		return relationOutputMaskIds[query.relGroup(relationId)];
+		return relationOutputMaskIds[relationId];
 	}
 
 	int bindingValueCount() {
@@ -124,7 +140,7 @@ final class PackedBindingFacts {
 		if (relationId <= 0 || relationId >= relationAssuredMaskIds.length) {
 			throw new IndexOutOfBoundsException("unknown relation " + relationId);
 		}
-		return relationAssuredMaskIds[query.relGroup(relationId)];
+		return relationAssuredMaskIds[relationId];
 	}
 
 	int scalarEmbeddedReferenceMaskId(int scalarId) {
@@ -155,7 +171,7 @@ final class PackedBindingFacts {
 
 	int intersection(int leftMaskId, int rightMaskId) {
 		clearScratch();
-		for (int symbolId = 1; symbolId <= query.symbolCount(); symbolId++) {
+		for (int symbolId = 1; symbolId <= symbolCount; symbolId++) {
 			if (masks.containsSymbol(leftMaskId, symbolId) && masks.containsSymbol(rightMaskId, symbolId)) {
 				layout.set(scratch, 0, symbolId - 1);
 			}
@@ -179,20 +195,20 @@ final class PackedBindingFacts {
 	}
 
 	boolean scalarSafeToRelocate(int scalarId) {
-		if (scalarId <= 0 || scalarId > query.scalarCount()) {
+		if (scalarId <= 0 || scalarId > scalarCount) {
 			throw new IndexOutOfBoundsException("unknown scalar " + scalarId);
 		}
 		return isScalarSafeToRelocate(scalarId);
 	}
 
 	boolean scalarSafeWhenAssured(int scalarId) {
-		if (scalarId <= 0 || scalarId > query.scalarCount()) {
+		if (scalarId <= 0 || scalarId > scalarCount) {
 			throw new IndexOutOfBoundsException("unknown scalar " + scalarId);
 		}
 		return (scalarSafeWhenAssuredWords[scalarId >>> 6] & 1L << scalarId) != 0L;
 	}
 
-	private void deriveScalarDependencies() {
+	private void deriveScalarDependencies(PackedQuery query) {
 		for (int scalarId = 1; scalarId <= query.scalarCount(); scalarId++) {
 			clearScratch();
 			boolean childrenSafe = true;
@@ -202,12 +218,12 @@ final class PackedBindingFacts {
 				childrenSafe &= isScalarSafeToRelocate(childId);
 			}
 			switch (query.scalarOperator(scalarId)) {
-			case PackedScalarOp.VARIABLE -> addTerm(query.scalarPayload(scalarId));
+			case PackedScalarOp.VARIABLE -> addTerm(query, query.scalarPayload(scalarId));
 			default -> {
 			}
 			}
 			scalarDependencyMaskIds[scalarId] = masks.intern(scratch, 0);
-			if (childrenSafe && scalarOperatorSafeToRelocate(scalarId)) {
+			if (childrenSafe && scalarOperatorSafeToRelocate(query, scalarId)) {
 				scalarSafeToRelocateWords[scalarId >>> 6] |= 1L << scalarId;
 			}
 		}
@@ -217,7 +233,7 @@ final class PackedBindingFacts {
 		return (scalarSafeToRelocateWords[scalarId >>> 6] & (1L << scalarId)) != 0L;
 	}
 
-	private void deriveScalarSchedulingFacts() {
+	private void deriveScalarSchedulingFacts(PackedQuery query) {
 		for (int scalarId = 1; scalarId <= query.scalarCount(); scalarId++) {
 			clearScratch();
 			boolean childrenSafe = true;
@@ -232,7 +248,7 @@ final class PackedBindingFacts {
 				// Every subquery scalar carries its body's referenced names in the semantic-scope slot.
 				int referencedNames = query.scalarSemanticScope(scalarId);
 				if (referencedNames != 0) {
-					addNameSet(referencedNames);
+					addNameSet(query, referencedNames);
 				}
 			}
 			boolean safe;
@@ -240,9 +256,9 @@ final class PackedBindingFacts {
 				int payloadId = query.scalarPayload(scalarId);
 				safe = query.payloadOperator(payloadId) == PackedPayloadOp.SUBQUERY_VALUE
 						&& query.payloadChildCount(payloadId) == 1
-						&& safeEmbeddedSubquery(query.payloadChild(payloadId, 0));
+						&& safeEmbeddedSubquery(query, query.payloadChild(payloadId, 0));
 			} else {
-				safe = childrenSafe && scalarOperatorSafeToRelocate(scalarId);
+				safe = childrenSafe && scalarOperatorSafeToRelocate(query, scalarId);
 			}
 			scalarEmbeddedReferenceMaskIds[scalarId] = masks.intern(scratch, 0);
 			if (safe) {
@@ -251,7 +267,7 @@ final class PackedBindingFacts {
 		}
 	}
 
-	private boolean safeEmbeddedSubquery(int relationId) {
+	private boolean safeEmbeddedSubquery(PackedQuery query, int relationId) {
 		int operator = query.relOperator(relationId);
 		if ((query.relMetadataFlags(relationId) & PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE) != 0
 				&& operator != PackedRelOp.FILTER) {
@@ -259,16 +275,16 @@ final class PackedBindingFacts {
 		}
 		return switch (operator) {
 		case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.BINDING_SET_ASSIGNMENT, PackedRelOp.SINGLETON_SET, PackedRelOp.EMPTY_SET -> true;
-		case PackedRelOp.JOIN -> safeEmbeddedSubquery(query.relChild(relationId, 0))
-				&& safeEmbeddedSubquery(query.relChild(relationId, 1));
+		case PackedRelOp.JOIN -> safeEmbeddedSubquery(query, query.relChild(relationId, 0))
+				&& safeEmbeddedSubquery(query, query.relChild(relationId, 1));
 		case PackedRelOp.FILTER -> scalarSafeToRelocate(query.relPayload(relationId))
-				&& safeEmbeddedSubquery(query.relChild(relationId, 0));
-		case PackedRelOp.QUERY_ROOT -> safeEmbeddedSubquery(query.relChild(relationId, 0));
+				&& safeEmbeddedSubquery(query, query.relChild(relationId, 0));
+		case PackedRelOp.QUERY_ROOT -> safeEmbeddedSubquery(query, query.relChild(relationId, 0));
 		default -> false;
 		};
 	}
 
-	private boolean scalarOperatorSafeToRelocate(int scalarId) {
+	private boolean scalarOperatorSafeToRelocate(PackedQuery query, int scalarId) {
 		int operator = query.scalarOperator(scalarId);
 		return safeScalarOperator(operator)
 				|| operator == PackedScalarOp.FUNCTION_CALL
@@ -283,7 +299,7 @@ final class PackedBindingFacts {
 		};
 	}
 
-	private void deriveRelationOutputs() {
+	private void deriveRelationOutputs(PackedQuery query) {
 		for (int relationId = 1; relationId <= query.relationCount(); relationId++) {
 			int groupId = query.relGroup(relationId);
 			if ((derivedRelationGroupWords[groupId >>> 6] & (1L << groupId)) != 0L) {
@@ -294,7 +310,7 @@ final class PackedBindingFacts {
 			clearScratch();
 			int operator = query.relOperator(relationId);
 			if (operator == PackedRelOp.DIFFERENCE) {
-				addRelationChild(relationId, 0);
+				addRelationChild(query, relationId, 0);
 			} else if (operator != PackedRelOp.PROJECTION && operator != PackedRelOp.MULTI_PROJECTION
 					&& operator != PackedRelOp.GROUP && operator != PackedRelOp.BINDING_SET_ASSIGNMENT
 					&& operator != PackedRelOp.TUPLE_FUNCTION && operator != PackedRelOp.ZERO_LENGTH_PATH
@@ -302,22 +318,23 @@ final class PackedBindingFacts {
 					&& operator != PackedRelOp.REIFIED_TRIPLE_REF && operator != PackedRelOp.ANNOTATION_TRIPLE_REF
 					&& operator != PackedRelOp.STATEMENT_PATTERN) {
 				for (int ordinal = 0; ordinal < query.relChildCount(relationId); ordinal++) {
-					addRelationChild(relationId, ordinal);
+					addRelationChild(query, relationId, ordinal);
 				}
 			}
 			switch (operator) {
 			case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.ZERO_LENGTH_PATH, PackedRelOp.TRIPLE_REF, PackedRelOp.REIFIED_TRIPLE_REF, PackedRelOp.ANNOTATION_TRIPLE_REF -> addPayloadTerms(
+					query,
 					query.relPayload(relationId));
-			case PackedRelOp.ARBITRARY_LENGTH_PATH -> addPayloadTerms(query.relPayload(relationId));
-			case PackedRelOp.GRAPH -> addGraphName(query.relPayload(relationId));
-			case PackedRelOp.PROJECTION -> addProjectionList(
+			case PackedRelOp.ARBITRARY_LENGTH_PATH -> addPayloadTerms(query, query.relPayload(relationId));
+			case PackedRelOp.GRAPH -> addGraphName(query, query.relPayload(relationId));
+			case PackedRelOp.PROJECTION -> addProjectionList(query,
 					query.payloadPrimary(query.relPayload(relationId)));
-			case PackedRelOp.MULTI_PROJECTION -> addMultiProjection(query.relPayload(relationId));
-			case PackedRelOp.EXTENSION -> addExtensionNames(query.relPayload(relationId));
-			case PackedRelOp.GROUP -> addGroupNames(query.relPayload(relationId));
-			case PackedRelOp.BINDING_SET_ASSIGNMENT -> addNameSet(
+			case PackedRelOp.MULTI_PROJECTION -> addMultiProjection(query, query.relPayload(relationId));
+			case PackedRelOp.EXTENSION -> addExtensionNames(query, query.relPayload(relationId));
+			case PackedRelOp.GROUP -> addGroupNames(query, query.relPayload(relationId));
+			case PackedRelOp.BINDING_SET_ASSIGNMENT -> addNameSet(query,
 					query.payloadPrimary(query.relPayload(relationId)));
-			case PackedRelOp.TUPLE_FUNCTION -> addTupleFunctionResults(query.relPayload(relationId));
+			case PackedRelOp.TUPLE_FUNCTION -> addTupleFunctionResults(query, query.relPayload(relationId));
 			default -> {
 			}
 			}
@@ -328,7 +345,7 @@ final class PackedBindingFacts {
 		}
 	}
 
-	private void deriveRelationAssuredBindings() {
+	private void deriveRelationAssuredBindings(PackedQuery query) {
 		long[] derivedGroupWords = new long[(query.relationCount() >>> 6) + 1];
 		for (int relationId = 1; relationId <= query.relationCount(); relationId++) {
 			int groupId = query.relGroup(relationId);
@@ -338,28 +355,30 @@ final class PackedBindingFacts {
 			clearScratch();
 			switch (query.relOperator(relationId)) {
 			case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.ZERO_LENGTH_PATH, PackedRelOp.TRIPLE_REF, PackedRelOp.REIFIED_TRIPLE_REF, PackedRelOp.ANNOTATION_TRIPLE_REF -> addPayloadTerms(
+					query,
 					query.relPayload(relationId));
 			case PackedRelOp.ARBITRARY_LENGTH_PATH -> {
-				addAssuredChild(relationId, 0);
-				addPayloadTerms(query.relPayload(relationId));
+				addAssuredChild(query, relationId, 0);
+				addPayloadTerms(query, query.relPayload(relationId));
 			}
 			case PackedRelOp.GRAPH -> {
-				addAssuredChild(relationId, 0);
-				addGraphName(query.relPayload(relationId));
+				addAssuredChild(query, relationId, 0);
+				addGraphName(query, query.relPayload(relationId));
 			}
-			case PackedRelOp.BINDING_SET_ASSIGNMENT -> addNameSet(
+			case PackedRelOp.BINDING_SET_ASSIGNMENT -> addNameSet(query,
 					query.payloadSecondary(query.relPayload(relationId)));
 			case PackedRelOp.JOIN, PackedRelOp.LATERAL -> {
-				addAssuredChild(relationId, 0);
-				addAssuredChild(relationId, 1);
+				addAssuredChild(query, relationId, 0);
+				addAssuredChild(query, relationId, 1);
 			}
 			case PackedRelOp.LEFT_JOIN, PackedRelOp.DIFFERENCE, PackedRelOp.FILTER, PackedRelOp.SEMI_JOIN, PackedRelOp.ANTI_JOIN, PackedRelOp.QUERY_ROOT, PackedRelOp.DESCRIBE, PackedRelOp.SLICE, PackedRelOp.REDUCED, PackedRelOp.DISTINCT, PackedRelOp.MATERIALIZE, PackedRelOp.ORDER -> addAssuredChild(
+					query,
 					relationId, 0);
-			case PackedRelOp.EXTENSION -> addAssuredExtension(relationId);
-			case PackedRelOp.UNION, PackedRelOp.INTERSECTION -> addAssuredIntersection(relationId);
-			case PackedRelOp.PROJECTION -> addAssuredProjection(relationId);
-			case PackedRelOp.MULTI_PROJECTION -> addAssuredMultiProjection(relationId);
-			case PackedRelOp.GROUP -> addAssuredGroupKeys(relationId);
+			case PackedRelOp.EXTENSION -> addAssuredExtension(query, relationId);
+			case PackedRelOp.UNION, PackedRelOp.INTERSECTION -> addAssuredIntersection(query, relationId);
+			case PackedRelOp.PROJECTION -> addAssuredProjection(query, relationId);
+			case PackedRelOp.MULTI_PROJECTION -> addAssuredMultiProjection(query, relationId);
+			case PackedRelOp.GROUP -> addAssuredGroupKeys(query, relationId);
 			default -> {
 			}
 			}
@@ -368,23 +387,23 @@ final class PackedBindingFacts {
 		}
 	}
 
-	private void addAssuredChild(int relationId, int childOrdinal) {
+	private void addAssuredChild(PackedQuery query, int relationId, int childOrdinal) {
 		masks.orInto(relationAssuredMaskIds[query.relChild(relationId, childOrdinal)], scratch, 0);
 	}
 
-	private void addAssuredExtension(int relationId) {
-		addAssuredChild(relationId, 0);
+	private void addAssuredExtension(PackedQuery query, int relationId) {
+		addAssuredChild(query, relationId, 0);
 		int extensionPayloadId = query.relPayload(relationId);
 		for (int ordinal = 0; ordinal < query.payloadChildCount(extensionPayloadId); ordinal++) {
 			int elementId = query.payloadChild(extensionPayloadId, ordinal);
 			int expressionId = query.payloadSecondary(elementId);
-			if (extensionExpressionAssured(expressionId)) {
-				addNameObject(query.payloadPrimary(elementId));
+			if (extensionExpressionAssured(query, expressionId)) {
+				addNameObject(query, query.payloadPrimary(elementId));
 			}
 		}
 	}
 
-	private boolean extensionExpressionAssured(int expressionId) {
+	private boolean extensionExpressionAssured(PackedQuery query, int expressionId) {
 		int operator = query.scalarOperator(expressionId);
 		if (operator == PackedScalarOp.VALUE_CONSTANT) {
 			return true;
@@ -400,7 +419,7 @@ final class PackedBindingFacts {
 		return symbolId != 0 && layout.contains(scratch, 0, symbolId - 1);
 	}
 
-	private void addAssuredIntersection(int relationId) {
+	private void addAssuredIntersection(PackedQuery query, int relationId) {
 		int leftMaskId = relationAssuredMaskIds[query.relChild(relationId, 0)];
 		int rightMaskId = relationAssuredMaskIds[query.relChild(relationId, 1)];
 		for (int symbolId = 1; symbolId <= query.symbolCount(); symbolId++) {
@@ -410,7 +429,7 @@ final class PackedBindingFacts {
 		}
 	}
 
-	private void addAssuredProjection(int relationId) {
+	private void addAssuredProjection(PackedQuery query, int relationId) {
 		int childMaskId = relationAssuredMaskIds[query.relChild(relationId, 0)];
 		int listPayloadId = query.payloadPrimary(query.relPayload(relationId));
 		for (int ordinal = 0; ordinal < query.payloadChildCount(listPayloadId); ordinal++) {
@@ -422,11 +441,11 @@ final class PackedBindingFacts {
 			int targetNameId = query.payloadSecondary(elementId) == 0
 					? query.payloadPrimary(elementId)
 					: query.payloadSecondary(elementId);
-			addNameObject(targetNameId);
+			addNameObject(query, targetNameId);
 		}
 	}
 
-	private void addAssuredMultiProjection(int relationId) {
+	private void addAssuredMultiProjection(PackedQuery query, int relationId) {
 		int childMaskId = relationAssuredMaskIds[query.relChild(relationId, 0)];
 		int multiProjectionPayloadId = query.relPayload(relationId);
 		if (query.payloadChildCount(multiProjectionPayloadId) == 0) {
@@ -435,77 +454,77 @@ final class PackedBindingFacts {
 		int firstListId = query.payloadChild(multiProjectionPayloadId, 0);
 		for (int ordinal = 0; ordinal < query.payloadChildCount(firstListId); ordinal++) {
 			int elementId = query.payloadChild(firstListId, ordinal);
-			int targetNameId = projectionTargetNameId(elementId);
-			if (!projectionElementSourceAssured(elementId, childMaskId)) {
+			int targetNameId = projectionTargetNameId(query, elementId);
+			if (!projectionElementSourceAssured(query, elementId, childMaskId)) {
 				continue;
 			}
 			boolean assuredByEveryProjection = true;
 			for (int projection = 1; projection < query.payloadChildCount(multiProjectionPayloadId); projection++) {
 				int listId = query.payloadChild(multiProjectionPayloadId, projection);
-				if (!projectionListAssuresTarget(listId, targetNameId, childMaskId)) {
+				if (!projectionListAssuresTarget(query, listId, targetNameId, childMaskId)) {
 					assuredByEveryProjection = false;
 					break;
 				}
 			}
 			if (assuredByEveryProjection) {
-				addNameObject(targetNameId);
+				addNameObject(query, targetNameId);
 			}
 		}
 	}
 
-	private boolean projectionListAssuresTarget(int listId, int targetNameId, int childMaskId) {
+	private boolean projectionListAssuresTarget(PackedQuery query, int listId, int targetNameId, int childMaskId) {
 		for (int ordinal = 0; ordinal < query.payloadChildCount(listId); ordinal++) {
 			int elementId = query.payloadChild(listId, ordinal);
-			if (projectionTargetNameId(elementId) == targetNameId
-					&& projectionElementSourceAssured(elementId, childMaskId)) {
+			if (projectionTargetNameId(query, elementId) == targetNameId
+					&& projectionElementSourceAssured(query, elementId, childMaskId)) {
 				return true;
 			}
 		}
 		return false;
 	}
 
-	private boolean projectionElementSourceAssured(int elementId, int childMaskId) {
+	private boolean projectionElementSourceAssured(PackedQuery query, int elementId, int childMaskId) {
 		int sourceSymbolId = query.symbolIdForObject(query.payloadPrimary(elementId));
 		return masks.containsSymbol(childMaskId, sourceSymbolId);
 	}
 
-	private int projectionTargetNameId(int elementId) {
+	private int projectionTargetNameId(PackedQuery query, int elementId) {
 		return query.payloadSecondary(elementId) == 0
 				? query.payloadPrimary(elementId)
 				: query.payloadSecondary(elementId);
 	}
 
-	private void addAssuredGroupKeys(int relationId) {
+	private void addAssuredGroupKeys(PackedQuery query, int relationId) {
 		int childMaskId = relationAssuredMaskIds[query.relChild(relationId, 0)];
 		int groupNamesId = query.payloadPrimary(query.relPayload(relationId));
 		for (int ordinal = 0; ordinal < query.payloadChildCount(groupNamesId); ordinal++) {
 			int nameId = query.payloadChild(groupNamesId, ordinal);
 			int symbolId = query.symbolIdForObject(nameId);
 			if (masks.containsSymbol(childMaskId, symbolId)) {
-				addNameObject(nameId);
+				addNameObject(query, nameId);
 			}
 		}
 	}
 
-	private void addRelationChild(int relationId, int childOrdinal) {
+	private void addRelationChild(PackedQuery query, int relationId, int childOrdinal) {
 		int childGroupId = query.relChild(relationId, childOrdinal);
 		masks.orInto(relationOutputMaskIds[childGroupId], scratch, 0);
 	}
 
-	private void addPayloadTerms(int payloadId) {
+	private void addPayloadTerms(PackedQuery query, int payloadId) {
 		for (int ordinal = 0; ordinal < query.payloadChildCount(payloadId); ordinal++) {
-			addTerm(query.payloadChild(payloadId, ordinal));
+			addTerm(query, query.payloadChild(payloadId, ordinal));
 		}
 	}
 
-	private void addGraphName(int payloadId) {
+	private void addGraphName(PackedQuery query, int payloadId) {
 		int term = query.payloadChild(payloadId, 0);
 		if ((query.payloadFlags(term) & PackedQuery.TERM_CONSTANT) == 0) {
-			addNameObject(query.payloadPrimary(term));
+			addNameObject(query, query.payloadPrimary(term));
 		}
 	}
 
-	private void addTerm(int termId) {
+	private void addTerm(PackedQuery query, int termId) {
 		if (termId == 0 || query.payloadOperator(termId) != PackedPayloadOp.TERM) {
 			return;
 		}
@@ -515,53 +534,53 @@ final class PackedBindingFacts {
 		}
 	}
 
-	private void addProjectionList(int listPayloadId) {
+	private void addProjectionList(PackedQuery query, int listPayloadId) {
 		for (int ordinal = 0; ordinal < query.payloadChildCount(listPayloadId); ordinal++) {
 			int elementId = query.payloadChild(listPayloadId, ordinal);
 			int outputNameId = query.payloadSecondary(elementId) != 0
 					? query.payloadSecondary(elementId)
 					: query.payloadPrimary(elementId);
-			addNameObject(outputNameId);
+			addNameObject(query, outputNameId);
 		}
 	}
 
-	private void addMultiProjection(int payloadId) {
+	private void addMultiProjection(PackedQuery query, int payloadId) {
 		for (int ordinal = 0; ordinal < query.payloadChildCount(payloadId); ordinal++) {
-			addProjectionList(query.payloadChild(payloadId, ordinal));
+			addProjectionList(query, query.payloadChild(payloadId, ordinal));
 		}
 	}
 
-	private void addExtensionNames(int payloadId) {
+	private void addExtensionNames(PackedQuery query, int payloadId) {
 		for (int ordinal = 0; ordinal < query.payloadChildCount(payloadId); ordinal++) {
-			addNameObject(query.payloadPrimary(query.payloadChild(payloadId, ordinal)));
+			addNameObject(query, query.payloadPrimary(query.payloadChild(payloadId, ordinal)));
 		}
 	}
 
-	private void addGroupNames(int payloadId) {
-		addNameSet(query.payloadPrimary(payloadId));
+	private void addGroupNames(PackedQuery query, int payloadId) {
+		addNameSet(query, query.payloadPrimary(payloadId));
 		for (int ordinal = 0; ordinal < query.payloadChildCount(payloadId); ordinal++) {
-			addNameObject(query.payloadPrimary(query.payloadChild(payloadId, ordinal)));
+			addNameObject(query, query.payloadPrimary(query.payloadChild(payloadId, ordinal)));
 		}
 	}
 
-	private void addNameSet(int payloadId) {
+	private void addNameSet(PackedQuery query, int payloadId) {
 		if (payloadId == 0) {
 			return;
 		}
 		for (int ordinal = 0; ordinal < query.payloadChildCount(payloadId); ordinal++) {
-			addNameObject(query.payloadChild(payloadId, ordinal));
+			addNameObject(query, query.payloadChild(payloadId, ordinal));
 		}
 	}
 
-	private void addTupleFunctionResults(int payloadId) {
+	private void addTupleFunctionResults(PackedQuery query, int payloadId) {
 		int argumentCount = query.payloadSecondary(payloadId);
 		int resultCount = query.payloadFlags(payloadId);
 		for (int ordinal = 0; ordinal < resultCount; ordinal++) {
-			addTerm(query.payloadChild(payloadId, argumentCount + ordinal));
+			addTerm(query, query.payloadChild(payloadId, argumentCount + ordinal));
 		}
 	}
 
-	private void addNameObject(int objectId) {
+	private void addNameObject(PackedQuery query, int objectId) {
 		int symbolId = query.symbolIdForObject(objectId);
 		if (symbolId != 0) {
 			layout.set(scratch, 0, symbolId - 1);
@@ -571,4 +590,26 @@ final class PackedBindingFacts {
 	private void clearScratch() {
 		Arrays.fill(scratch, 0L);
 	}
+
+	void accountRetainedMemory(RetainedMemoryAccount account) {
+		if (!account.add(this, 160L)) {
+			return;
+		}
+		PackedCacheMemory.array(account, relationOutputMaskIds);
+		PackedCacheMemory.array(account, relationAssuredMaskIds);
+		PackedCacheMemory.array(account, requiredInputMaskIds);
+		PackedCacheMemory.array(account, protectedInputMaskIds);
+		PackedCacheMemory.array(account, nullableInputMaskIds);
+		PackedCacheMemory.array(account, independentOutputMaskIds);
+		PackedCacheMemory.array(account, ordinaryWriteMaskIds);
+		PackedCacheMemory.array(account, derivedRelationGroupWords);
+		PackedCacheMemory.array(account, scalarDependencyMaskIds);
+		PackedCacheMemory.array(account, scalarEmbeddedReferenceMaskIds);
+		PackedCacheMemory.array(account, scalarSafeToRelocateWords);
+		PackedCacheMemory.array(account, scalarSafeWhenAssuredWords);
+		PackedCacheMemory.array(account, scratch);
+		masks.accountRetainedMemory(account);
+		layout.accountRetainedMemory(account);
+	}
+
 }

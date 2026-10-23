@@ -69,6 +69,121 @@ class StreamingWritePreflightOwnershipTest {
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 
 	@Test
+	void capacityContextIncludesOnlyContributingSourcesInEitherOrder() {
+		for (boolean emptyFirst : List.of(false, true)) {
+			Object capacity = new Object();
+			Object owner = new Object();
+			RecordingParticipantSource empty = new RecordingParticipantSource(capacity, owner);
+			RecordingParticipantSource contributing = new RecordingParticipantSource(capacity, owner);
+			SailSourceBranch emptyBranch = branch(empty);
+			SailSourceBranch contributingBranch = branch(contributing);
+			add(contributingBranch, statement("contributing-plane"));
+			try (SailSource union = emptyFirst ? new UnionSailSource(emptyBranch, contributingBranch)
+					: new UnionSailSource(contributingBranch, emptyBranch)) {
+				union.prepare();
+				List<Set<SailSource>> contexts = new ArrayList<>(empty.contexts);
+				contexts.addAll(contributing.contexts);
+				assertThat(contexts).hasSize(1);
+				assertThat(contexts.get(0)).hasSize(1);
+				assertThat(contexts.get(0).iterator().next()).isSameAs(contributing);
+				assertThatThrownBy(() -> contexts.get(0).clear()).isInstanceOf(UnsupportedOperationException.class);
+			}
+		}
+	}
+
+	@Test
+	void capacityContextPreservesIdentityForEqualContributors() {
+		Object capacity = new Object();
+		Object owner = new Object();
+		RecordingParticipantSource first = new RecordingParticipantSource(capacity, owner);
+		RecordingParticipantSource second = new RecordingParticipantSource(capacity, owner);
+		SailSourceBranch firstBranch = branch(first);
+		SailSourceBranch secondBranch = branch(second);
+		add(firstBranch, statement("first-equal-contributor"));
+		add(secondBranch, statement("second-equal-contributor"));
+		try (SailSource union = new UnionSailSource(firstBranch, secondBranch)) {
+			union.prepare();
+			assertThat(first.contexts).hasSize(1);
+			Set<SailSource> context = first.contexts.get(0);
+			assertThat(context).hasSize(2);
+			assertThat(context.contains(first)).isTrue();
+			assertThat(context.contains(second)).isTrue();
+		}
+	}
+
+	@Test
+	void sameInputGenerationsRefreshAfterContributorIdentityChanges() {
+		Object capacity = new Object();
+		Object owner = new Object();
+		RecordingParticipantSource first = new RecordingParticipantSource(capacity, owner);
+		RecordingParticipantSource second = new RecordingParticipantSource(capacity, owner);
+		SwitchingPreflightSource switching = new SwitchingPreflightSource(first);
+		try (SailSourceBranch branch = branch(switching)) {
+			add(branch, statement("same-generation-new-contributor"));
+			branch.prepare();
+			assertThat(first.contexts).hasSize(1);
+			switching.current = second;
+			branch.prepare();
+			assertThat(second.contexts).hasSize(1);
+			assertThat(second.contexts.get(0).iterator().next()).isSameAs(second);
+		}
+	}
+
+	@Test
+	void originalSingleArgumentEstimatorOverrideStillReceivesInput() {
+		RecordingStreamingSource source = new RecordingStreamingSource();
+		try (SailSourceBranch branch = branch(source)) {
+			add(branch, statement("single-argument-estimator"));
+			branch.prepare();
+			assertThat(source.estimateCalls.get()).isEqualTo(1);
+			assertThat(source.estimatedRows.get()).isEqualTo(1);
+		}
+	}
+
+	private static final class RecordingParticipantSource extends RecordingStreamingSource {
+		private final List<Set<SailSource>> contexts = new ArrayList<>();
+
+		private RecordingParticipantSource(Object capacity, Object owner) {
+			super(capacity, owner);
+		}
+
+		@Override
+		public NumericWriteEstimate estimateWritePreflight(StatementInput input, Set<SailSource> contributors) {
+			contexts.add(contributors);
+			return super.estimateWritePreflight(input);
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			return other instanceof RecordingParticipantSource;
+		}
+
+		@Override
+		public int hashCode() {
+			return 1;
+		}
+	}
+
+	private static final class SwitchingPreflightSource extends DelegatingSailSource {
+		private SailSource current;
+
+		private SwitchingPreflightSource(SailSource initial) {
+			super(initial, true);
+			current = initial;
+		}
+
+		@Override
+		SailSource streamingDelegate() {
+			return current;
+		}
+
+		@Override
+		public boolean supportsStreamingWritePreflight() {
+			return true;
+		}
+	}
+
+	@Test
 	@Timeout(value = 15, unit = TimeUnit.SECONDS)
 	void parentCloseDuringRunningChildPublicationDoesNotWaitOnDescendantRelease() throws Exception {
 		RecordingStreamingSource terminal = new RecordingStreamingSource();
@@ -4840,9 +4955,19 @@ class StreamingWritePreflightOwnershipTest {
 		}
 	}
 
-	private static final class RecordingStreamingSource extends BackingSailSource {
-		private final Object preflightGroup = new Object();
-		private final Object sharedOwner = new Object();
+	private static class RecordingStreamingSource extends BackingSailSource {
+		private final Object preflightGroup;
+		private final Object sharedOwner;
+
+		private RecordingStreamingSource() {
+			this(new Object(), new Object());
+		}
+
+		private RecordingStreamingSource(Object capacity, Object owner) {
+			preflightGroup = capacity;
+			sharedOwner = owner;
+		}
+
 		private final Set<Statement> committed = ConcurrentHashMap.newKeySet();
 		private final AtomicInteger estimateCalls = new AtomicInteger();
 		private final AtomicInteger estimatedRows = new AtomicInteger();

@@ -50,6 +50,7 @@ import java.util.function.Predicate;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -1591,7 +1592,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 
 	private static LmdbStoreConfig samplingConfig(long maxMillis, boolean optimizerSamplingEnabled,
 			boolean backgroundSamplingEnabled, long backgroundMaxMillisPerCycle) {
-		return new LmdbStoreConfig("spoc,posc")
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
 				.setForceSync(true)
 				.setTripleDBSize(8L * 1024L * 1024L)
 				.setValueDBSize(16L * 1024L * 1024L)
@@ -1601,6 +1602,8 @@ class LmdbForegroundFilterSamplingEpochTest {
 				.setOptimizerSamplingMaxRows(ROW_COUNT)
 				.setBackgroundRawSamplingEnabled(backgroundSamplingEnabled)
 				.setBackgroundRawSamplingMaxMillisPerCycle(backgroundMaxMillisPerCycle);
+		config.setExperimentalQueryOptimizations(true);
+		return config;
 	}
 
 	private static SeededTerms seedMatchedRows(SailRepository repository, ProbeLmdbStore sail, int count)
@@ -1818,7 +1821,16 @@ class LmdbForegroundFilterSamplingEpochTest {
 		@Override
 		public RecordIterator getTriples(TxnManager.Txn txn, long subj, long pred, long obj, long context,
 				boolean explicit) throws IOException {
-			RecordIterator delegate = super.getTriples(txn, subj, pred, obj, context, explicit);
+			return observeRows(super.getTriples(txn, subj, pred, obj, context, explicit));
+		}
+
+		@Override
+		RecordIterator getTriples(TxnManager.Txn txn, StatementOrder order,
+				long subj, long pred, long obj, long context, boolean explicit) throws IOException {
+			return observeRows(super.getTriples(txn, order, subj, pred, obj, context, explicit));
+		}
+
+		private RecordIterator observeRows(RecordIterator delegate) {
 			return new RecordIterator() {
 				@Override
 				public long[] next() {

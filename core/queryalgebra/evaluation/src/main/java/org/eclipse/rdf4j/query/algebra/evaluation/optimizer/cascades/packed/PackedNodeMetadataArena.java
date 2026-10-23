@@ -15,6 +15,7 @@ import java.util.Arrays;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
 
 /** Immutable-key side columns for boundary metadata that is not expression identity. */
 @PackedHotPath
@@ -305,6 +306,38 @@ final class PackedNodeMetadataArena {
 
 	private static final class Columns {
 
+		private boolean accountRetainedMemory(RetainedMemoryAccount account,
+				PackedStatementPatternSemanticsCodec codec) {
+			if (!account.add(this, 184L)) {
+				return true;
+			}
+			PackedCacheMemory.array(account, present);
+			PackedCacheMemory.array(account, metricSetIds);
+			PackedCacheMemory.array(account, flags);
+			PackedCacheMemory.array(account, resultSizeEstimateBits);
+			PackedCacheMemory.array(account, costEstimateBits);
+			PackedCacheMemory.array(account, algorithmNameIds);
+			PackedCacheMemory.array(account, ruleMasks);
+			PackedCacheMemory.array(account, semanticFlags);
+			PackedCacheMemory.array(account, exactCoverIds);
+			PackedCacheMemory.array(account, inputContractsPresent);
+			PackedCacheMemory.array(account, requiredInputNames);
+			PackedCacheMemory.array(account, protectedInputNames);
+			PackedCacheMemory.array(account, nullableInputNames);
+			PackedCacheMemory.array(account, independentOutputNames);
+			PackedCacheMemory.array(account, ordinaryWriteNames);
+			PackedCacheMemory.array(account, replaySafety);
+			PackedCacheMemory.array(account, sourceFirst);
+			PackedCacheMemory.array(account, sourceLast);
+			PackedCacheMemory.array(account, graphDomains);
+			for (PlanningGraphDomain domain : graphDomains) {
+				if (!PackedCacheMemory.object(domain, account, codec)) {
+					return false;
+				}
+			}
+			return true;
+		}
+
 		private byte[] present;
 		private int[] metricSetIds;
 		private int[] flags;
@@ -509,5 +542,10 @@ final class PackedNodeMetadataArena {
 			sourceLast = Arrays.copyOf(sourceLast, capacity);
 			graphDomains = Arrays.copyOf(graphDomains, capacity);
 		}
+	}
+
+	boolean accountRetainedMemory(RetainedMemoryAccount account, PackedStatementPatternSemanticsCodec codec) {
+		return !account.add(this, 48L) || relations.accountRetainedMemory(account, codec)
+				&& scalars.accountRetainedMemory(account, codec) && terms.accountRetainedMemory(account, codec);
 	}
 }

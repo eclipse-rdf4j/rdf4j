@@ -15,6 +15,7 @@ import java.util.Objects;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
 import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbStatisticsService;
@@ -34,8 +35,21 @@ final class LmdbStoreEvaluationStatistics extends LmdbEvaluationStatistics
 			LmdbFrontierPlannerSettings frontierSettings, BooleanSupplier mayHaveInferred,
 			BooleanSupplier adaptiveEvidenceAllowedSupplier, LmdbStatisticsService statistics,
 			LmdbDetachedPlanningSnapshotProvider detachedPlanningSnapshots, Supplier<SailClosable> planningViewMask) {
+		this(valueStore, tripleStore, estimator, filters, feedback, cardinalities, cascadesPlanCache,
+				frontierSettings, mayHaveInferred, adaptiveEvidenceAllowedSupplier, statistics,
+				detachedPlanningSnapshots, planningViewMask, null, QueryExecutionPolicy.DEFAULT);
+	}
+
+	LmdbStoreEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
+			SketchBasedJoinEstimator estimator, LmdbFilterSelectivityStats filters,
+			LmdbOperatorFeedbackStats feedback, LmdbStatementPatternCardinalitySource cardinalities,
+			PackedPlanCache cascadesPlanCache,
+			LmdbFrontierPlannerSettings frontierSettings, BooleanSupplier mayHaveInferred,
+			BooleanSupplier adaptiveEvidenceAllowedSupplier, LmdbStatisticsService statistics,
+			LmdbDetachedPlanningSnapshotProvider detachedPlanningSnapshots, Supplier<SailClosable> planningViewMask,
+			LmdbLearnedFilterSelectivity learned, QueryExecutionPolicy policy) {
 		super(valueStore, tripleStore, estimator, filters, feedback, cardinalities, cascadesPlanCache,
-				frontierSettings, mayHaveInferred, adaptiveEvidenceAllowedSupplier, statistics);
+				frontierSettings, mayHaveInferred, adaptiveEvidenceAllowedSupplier, statistics, learned, policy);
 		this.detachedPlanningSnapshots = Objects.requireNonNull(detachedPlanningSnapshots,
 				"detachedPlanningSnapshots");
 		this.planningViewMask = Objects.requireNonNull(planningViewMask, "planningViewMask");

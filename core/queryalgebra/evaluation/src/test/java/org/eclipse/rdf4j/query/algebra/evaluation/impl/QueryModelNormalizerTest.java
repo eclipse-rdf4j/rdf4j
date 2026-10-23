@@ -140,9 +140,60 @@ public class QueryModelNormalizerTest extends QueryOptimizerTest {
 		assertThat(p.getArg()).isEqualTo(difference);
 	}
 
-	@Override
-	public QueryModelNormalizerOptimizer getOptimizer() {
-		return new QueryModelNormalizerOptimizer();
+	@Test
+	public void doesNotDistributeJoinOverUnionByCloningNonRepeatableSide() {
+		Union leftUnion = new Union(pattern("leftA"), pattern("leftB"));
+		TupleExpr volatileRight = volatileExtension("right");
+		Join leftUnionJoin = new Join(leftUnion, volatileRight);
+
+		assertJoinBoundaryPreserved(leftUnionJoin, leftUnion, volatileRight);
+
+		TupleExpr volatileLeft = volatileFilter("left");
+		Union rightUnion = new Union(pattern("rightA"), pattern("rightB"));
+		Join rightUnionJoin = new Join(volatileLeft, rightUnion);
+
+		assertJoinBoundaryPreserved(rightUnionJoin, volatileLeft, rightUnion);
+	}
+
+	@Test
+	public void doesNotReassociateJoinAcrossNonRepeatableLeftJoin() {
+		LeftJoin volatileLeft = new LeftJoin(pattern("optionalLeft"), pattern("optionalRight"),
+				new FunctionCall("urn:test:volatile:left-join"));
+		TupleExpr right = pattern("requiredRight");
+		Join leftJoinArg = new Join(volatileLeft, right);
+
+		assertJoinBoundaryPreserved(leftJoinArg, volatileLeft, right);
+
+		TupleExpr left = pattern("requiredLeft");
+		LeftJoin volatileRight = new LeftJoin(pattern("rightOptionalLeft"), pattern("rightOptionalRight"),
+				new FunctionCall("urn:test:volatile:right-left-join"));
+		Join rightJoinArg = new Join(left, volatileRight);
+
+		assertJoinBoundaryPreserved(rightJoinArg, left, volatileRight);
+	}
+
+	@Test
+	public void doesNotCollapseEqualNonRepeatableAndOperands() {
+		FunctionCall left = new FunctionCall("urn:test:volatile:and");
+		And condition = new And(left, left.clone());
+		Filter filter = new Filter(pattern("and"), condition);
+		QueryRoot root = new QueryRoot(filter);
+
+		subject.optimize(root, null, EmptyBindingSet.getInstance());
+
+		assertThat(filter.getCondition()).isSameAs(condition);
+	}
+
+	@Test
+	public void doesNotCollapseEqualNonRepeatableOrOperands() {
+		FunctionCall left = new FunctionCall("urn:test:volatile:or");
+		Or condition = new Or(left, left.clone());
+		Filter filter = new Filter(pattern("or"), condition);
+		QueryRoot root = new QueryRoot(filter);
+
+		subject.optimize(root, null, EmptyBindingSet.getInstance());
+
+		assertThat(filter.getCondition()).isSameAs(condition);
 	}
 
 	@Test
@@ -683,4 +734,33 @@ public class QueryModelNormalizerTest extends QueryOptimizerTest {
 			}
 		};
 	}
+
+	@Override
+	public QueryModelNormalizerOptimizer getOptimizer() {
+		return new QueryModelNormalizerOptimizer();
+	}
+
+	private void assertJoinBoundaryPreserved(Join join, TupleExpr expectedLeft, TupleExpr expectedRight) {
+		QueryRoot root = new QueryRoot(join);
+
+		subject.optimize(root, null, EmptyBindingSet.getInstance());
+
+		assertThat(root.getArg()).isSameAs(join);
+		assertThat(join.getLeftArg()).isSameAs(expectedLeft);
+		assertThat(join.getRightArg()).isSameAs(expectedRight);
+	}
+
+	private static Extension volatileExtension(String suffix) {
+		return new Extension(pattern(suffix),
+				new ExtensionElem(new FunctionCall("urn:test:volatile:extension:" + suffix), "generated" + suffix));
+	}
+
+	private static Filter volatileFilter(String suffix) {
+		return new Filter(pattern(suffix), new FunctionCall("urn:test:volatile:filter:" + suffix));
+	}
+
+	private static StatementPattern pattern(String suffix) {
+		return new StatementPattern(Var.of("s" + suffix), Var.of("p" + suffix), Var.of("o" + suffix));
+	}
+
 }

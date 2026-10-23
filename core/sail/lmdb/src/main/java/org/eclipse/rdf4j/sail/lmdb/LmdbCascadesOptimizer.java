@@ -25,6 +25,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
@@ -58,10 +59,13 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.InputBindin
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PlanningMetrics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCacheMemory;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCascadesPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanQualityAuditResult;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlannerLimits;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedProviderCacheIdentity;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -111,6 +115,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	private final boolean distinctCursorSkipAllowed;
 	private final SailDatasetTripleTermSource frontierStatementSource;
 	private final LmdbPackedPredicateRangeProvider rangeProvider;
+	private final LmdbFilterReadContext preparedFilterReadContext;
 
 	LmdbCascadesOptimizer(EvaluationStatistics statistics, boolean trackResultSize) {
 		this(statistics, trackResultSize, false, null, null);
@@ -122,7 +127,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 				tripleSource instanceof SailDatasetTripleTermSource source
 						? source.getSnapshotEpoch()
 						: OptionalLong.empty(),
-				tripleSource == null);
+				tripleSource == null, null);
 	}
 
 	/** Complete invocations supply their qualified execution stamp; absence never enables native proofs. */
@@ -130,12 +135,21 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			boolean preserveSerializableObservationOrder, EvaluationStrategy strategy, TripleSource tripleSource,
 			OptionalLong qualifiedExecutionSnapshotEpoch) {
 		this(statistics, trackResultSize, preserveSerializableObservationOrder, strategy, tripleSource,
-				qualifiedExecutionSnapshotEpoch, false);
+				qualifiedExecutionSnapshotEpoch, false, null);
+	}
+
+	LmdbCascadesOptimizer(EvaluationStatistics statistics, boolean trackResultSize,
+			boolean preserveSerializableObservationOrder, EvaluationStrategy strategy, TripleSource tripleSource,
+			OptionalLong qualifiedExecutionSnapshotEpoch, LmdbFilterReadContext preparedFilterReadContext) {
+		this(statistics, trackResultSize, preserveSerializableObservationOrder, strategy, tripleSource,
+				qualifiedExecutionSnapshotEpoch, false, preparedFilterReadContext);
 	}
 
 	private LmdbCascadesOptimizer(EvaluationStatistics statistics, boolean trackResultSize,
 			boolean preserveSerializableObservationOrder, EvaluationStrategy strategy, TripleSource tripleSource,
-			OptionalLong qualifiedExecutionSnapshotEpoch, boolean legacyDetachedPlanning) {
+			OptionalLong qualifiedExecutionSnapshotEpoch, boolean legacyDetachedPlanning,
+			LmdbFilterReadContext preparedFilterReadContext) {
+		this.preparedFilterReadContext = preparedFilterReadContext;
 		this.statistics = statistics;
 		this.trackResultSize = trackResultSize;
 		this.preserveSerializableObservationOrder = preserveSerializableObservationOrder;
@@ -160,6 +174,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	LmdbCascadesOptimizer(LmdbEstimatorRuntime runtime, boolean trackResultSize,
 			boolean preserveSerializableObservationOrder) {
 		this.statistics = null;
+		this.preparedFilterReadContext = null;
 		this.trackResultSize = trackResultSize;
 		this.preserveSerializableObservationOrder = preserveSerializableObservationOrder;
 		this.evaluationStrategy = null;
@@ -346,7 +361,8 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = beginQueryOptimizationScope()) {
 			annotateDistinctPhysicalRequirements(tupleExpr);
 			LmdbPackedCostModel costModel = new LmdbPackedCostModel(runtime, executionSnapshotEpoch, true,
-					frontierStatementSource, evaluationStrategy, !preserveSerializableObservationOrder);
+					frontierStatementSource, evaluationStrategy, !preserveSerializableObservationOrder,
+					preparedFilterReadContext);
 			long workLimit = request.searchMode() == OptimizationGoal.SearchMode.EXACT
 					? Long.MAX_VALUE
 					: request.taskBudget();
@@ -362,13 +378,21 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		LmdbPackedCostModel packedCostModel = runtime == null
 				? null
 				: new LmdbPackedCostModel(runtime, executionSnapshotEpoch, datasetUsesStoreDefaults(dataset),
-						frontierStatementSource, evaluationStrategy, !preserveSerializableObservationOrder);
+						frontierStatementSource, evaluationStrategy, !preserveSerializableObservationOrder,
+						preparedFilterReadContext != null ? preparedFilterReadContext
+								: LmdbFilterReadContext.capture(runtime, frontierStatementSource, dataset, bindings,
+										tupleExpr, null));
 		if (packedPlanCache == null) {
 			return planner.optimize(tupleExpr, goal, packedCostModel, rangeProvider);
 		}
-		return planner.optimize(tupleExpr, goal, packedPlanCache,
-				cacheContext(dataset, bindings, goal, packedCostModel),
-				packedCostModel, rangeProvider);
+		// An unavailable semantic observer uses the ordinary full search; it is never a hash0/empty cache key.
+		PackedPlanCache.Context context = LmdbCacheValueCopies.semanticIdentityReady(tupleExpr)
+				? cacheContext(dataset, bindings, goal, packedCostModel)
+				: null;
+		if (context == null) {
+			return planner.optimize(tupleExpr, goal, packedCostModel, rangeProvider);
+		}
+		return planner.optimize(tupleExpr, goal, packedPlanCache, context, packedCostModel, rangeProvider);
 	}
 
 	private OptimizationGoal configuredGoal(TupleExpr tupleExpr, BindingSet bindings, Mode mode) {
@@ -379,8 +403,9 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 						? PhysicalProperties.ObservationOrder.EXACT_SEQUENCE
 						: PhysicalProperties.ObservationOrder.ANY)
 				.build();
-		OptimizationGoal root = OptimizationGoal.root(tupleExpr, required)
-				.withInputBindingContext(InputBindingContext.fromBindingSet(bindings));
+		LmdbPipelinePlanCache.BindingIdentity complete = LmdbPipelinePlanCache.BindingIdentity.of(bindings);
+		InputBindingContext input = detachedRootInput(complete, initiallyBound);
+		OptimizationGoal root = OptimizationGoal.root(tupleExpr, required).withInputBindingContext(input);
 		return switch (mode) {
 		case EXACT -> root;
 		case AUTO -> new OptimizationGoal(root.requiredProperties(), root.semanticScope(), root.costPolicy(),
@@ -391,26 +416,67 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		};
 	}
 
+	/**
+	 * Full-root only. Nested value facts are declined because their existing generic identity renderer is recursive.
+	 */
+	static InputBindingContext detachedRootInput(LmdbPipelinePlanCache.BindingIdentity complete,
+			Set<String> actualAssuredNames) {
+		return complete != null && complete.supportsFlatSemanticObservation()
+				? InputBindingContext.fromBindingSet(LmdbDetachedPlanRefresh.bindings(complete))
+				: InputBindingContext.fromAssuredBindingNames(actualAssuredNames);
+	}
+
 	private PackedPlanCache.Context cacheContext(Dataset dataset, BindingSet bindings, OptimizationGoal goal,
 			LmdbPackedCostModel packedCostModel) {
-		return cacheContext(dataset, bindings, goal, packedCostModel, rangeProvider, runtime);
+		return cacheContext(dataset, bindings, goal, packedCostModel, rangeProvider, runtime,
+				evaluationStrategy != null
+						&& evaluationStrategy.getQueryExecutionPolicy().experimentalQueryOptimizations());
 	}
 
 	static PackedPlanCache.Context cacheContext(Dataset dataset, BindingSet bindings, OptimizationGoal goal,
 			LmdbPackedCostModel packedCostModel, LmdbPackedPredicateRangeProvider rangeProvider,
 			LmdbEstimatorRuntime runtime) {
+		return cacheContext(dataset, bindings, goal, packedCostModel, rangeProvider, runtime, false);
+	}
+
+	static PackedPlanCache.Context cacheContext(Dataset dataset, BindingSet bindings, OptimizationGoal goal,
+			LmdbPackedCostModel packedCostModel, LmdbPackedPredicateRangeProvider rangeProvider,
+			LmdbEstimatorRuntime runtime, boolean experimentalQueryOptimizations) {
+		LmdbPipelinePlanCache.DatasetIdentity completeDataset = LmdbPipelinePlanCache.DatasetIdentity.of(dataset);
+		LmdbPipelinePlanCache.BindingIdentity completeBindings = LmdbPipelinePlanCache.BindingIdentity.of(bindings);
+		if (completeDataset == null || completeBindings == null || !completeDataset.supportsFlatSemanticObservation()
+				|| !completeBindings.supportsFlatSemanticObservation()) {
+			return null;
+		}
 		long dataRevision = runtime == null ? 0L : runtime.snapshotVersion();
-		long datasetFingerprint = unsignedHash(LmdbPipelinePlanCache.DatasetIdentity.of(dataset));
+		long datasetFingerprint = unsignedHash(completeDataset);
 		long bindingShapeFingerprint = bindings == null ? 0L : unsignedHash(bindings.getBindingNames());
-		long parameterVariant = bindingFingerprint(bindings);
-		long goalFingerprint = goalFingerprint(goal);
+		long parameterVariant = bindingFingerprint(completeBindings);
+		long goalFingerprint = mixCacheHash(goalFingerprint(goal), experimentalQueryOptimizations ? 1L : 0L);
 		long providerVersion = packedCostModel == null ? 0L : packedCostModel.providerVersion();
 		long predicateRangeVersion = rangeProvider == null ? 0L : rangeProvider.predicateRangeVersion();
 		long leoRevision = runtime == null ? 0L : runtime.leoRevision();
 		long frontierRevision = runtime == null ? 0L : runtime.frontierPlanningRevision();
 		return new PackedPlanCache.Context(datasetFingerprint, bindingShapeFingerprint, parameterVariant,
 				goalFingerprint, 1L, providerVersion, dataRevision, predicateRangeVersion, leoRevision,
-				frontierRevision);
+				frontierRevision, new PackedInputIdentity(completeDataset, completeBindings,
+						packedCostModel == null ? null : packedCostModel.providerCacheIdentity()));
+	}
+
+	private record PackedInputIdentity(LmdbPipelinePlanCache.DatasetIdentity dataset,
+			LmdbPipelinePlanCache.BindingIdentity bindings,
+			PackedProviderCacheIdentity provider)
+			implements PackedProviderCacheIdentity {
+		@Override
+		public boolean accountRetainedMemory(
+				RetainedMemoryAccount account) {
+			account = PackedCacheMemory.ownedAccount(account);
+			if (!account.add(this, 40L)) {
+				return true;
+			}
+			return dataset.accountRetainedMemory(account) && bindings.accountRetainedMemory(account)
+					&& (provider == null || provider.accountRetainedMemory(account));
+		}
 	}
 
 	private static boolean datasetUsesStoreDefaults(Dataset dataset) {
@@ -436,12 +502,12 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		return value == null ? 0L : Integer.toUnsignedLong(value.hashCode());
 	}
 
-	private static long bindingFingerprint(BindingSet bindings) {
-		if (bindings == null || bindings.size() == 0) {
+	private static long bindingFingerprint(LmdbPipelinePlanCache.BindingIdentity bindings) {
+		if (bindings.values().isEmpty()) {
 			return 0L;
 		}
 		long hash = 0x243f6a8885a308d3L;
-		for (LmdbPipelinePlanCache.BoundValue value : LmdbPipelinePlanCache.BindingIdentity.of(bindings).values()) {
+		for (LmdbPipelinePlanCache.BoundValue value : bindings.values()) {
 			hash = mixCacheHash(hash, Integer.toUnsignedLong(value.name().hashCode()));
 			hash = mixCacheHash(hash, Integer.toUnsignedLong(value.identity().hashCode()));
 		}
@@ -680,7 +746,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			LmdbPredicateObjectDomainSource guaranteeSource, Set<String> consumedPredicates,
 			Set<String> anchoredBindingNames) {
 		org.eclipse.rdf4j.query.algebra.Var predicateVar = node.getPredicateVar();
-		if (predicateVar == null || !(predicateVar.getValue()instanceof org.eclipse.rdf4j.model.IRI predicate)) {
+		if (predicateVar == null || !(predicateVar.getValue()instanceof IRI predicate)) {
 			return;
 		}
 		RdfTermDomain guarantee = guaranteeSource.getKnownRdfTermDomain(predicate).orElse(RdfTermDomain.UNKNOWN);

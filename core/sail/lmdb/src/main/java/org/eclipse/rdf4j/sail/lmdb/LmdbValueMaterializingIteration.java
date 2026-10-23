@@ -16,16 +16,19 @@ import java.util.NoSuchElementException;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeProjectedBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet;
 
-final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<BindingSet> {
+final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<BindingSet>
+		implements CooperativeCancellation {
 
 	static final int INITIAL_BATCH_SIZE = 128;
 	static final int DEFAULT_MAX_BATCH_SIZE = 4096;
@@ -36,6 +39,10 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 
 	private final CloseableIteration<? extends BindingSet> source;
 	private final int maxBatchSize;
+	private final Object bufferLock = new Object();
+	private final Object sourceLock = new Object();
+	private volatile boolean cancellationRequested;
+	private volatile boolean sourceClosing;
 
 	private BindingSet[] buffer;
 
@@ -44,6 +51,7 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 	private ValueStoreRevision[] valueRevisions;
 	private ValueStoreRevision collectedValueRevision;
 	private boolean collectedMultipleValueRevisions;
+	private boolean collectedMultipleValueScopes;
 
 	private int[] valueOrder;
 	private int[] scratchValueOrder;
@@ -93,73 +101,152 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 
 	@Override
 	public boolean hasNext() {
-		if (isClosed()) {
-			return false;
+		synchronized (bufferLock) {
+			if (sourceClosing || isClosed() || closeIfCancelled()) {
+				return false;
+			}
+			if (bufferIndex < bufferSize) {
+				return true;
+			}
+			boolean hasNext = sourceHasNext();
+			if (stopTraversal()) {
+				return false;
+			}
+			if (!hasNext) {
+				close();
+			}
+			return hasNext;
 		}
-		if (bufferIndex < bufferSize) {
-			return true;
-		}
-
-		boolean hasNext = source.hasNext();
-		if (!hasNext) {
-			close();
-		}
-		return hasNext;
 	}
 
 	@Override
 	public BindingSet next() {
-		if (isClosed()) {
-			throw new NoSuchElementException("The iteration has been closed.");
+		synchronized (bufferLock) {
+			if (sourceClosing || isClosed() || closeIfCancelled()) {
+				throw new NoSuchElementException("The iteration has been closed.");
+			}
+			if (!firstReturned) {
+				BindingSet first = sourceNext();
+				if (stopTraversal()) {
+					throw new NoSuchElementException("The iteration has been cancelled.");
+				}
+				firstReturned = true;
+				materialize(first);
+				if (closeIfCancelled()) {
+					throw new NoSuchElementException("The iteration has been cancelled.");
+				}
+				return first;
+			}
+			if (bufferIndex >= bufferSize) {
+				if (!fillBuffer()) {
+					throw new NoSuchElementException();
+				}
+			}
+			if (closeIfCancelled() || bufferIndex >= bufferSize) {
+				throw new NoSuchElementException();
+			}
+			BindingSet result = buffer[bufferIndex];
+			buffer[bufferIndex++] = null;
+			return result;
 		}
-
-		if (!firstReturned) {
-			BindingSet first = source.next();
-			firstReturned = true;
-			materialize(first);
-			return first;
-		}
-
-		if (bufferIndex >= bufferSize) {
-			fillBuffer();
-		}
-		if (bufferIndex >= bufferSize) {
-			throw new NoSuchElementException();
-		}
-
-		BindingSet bindingSet = buffer[bufferIndex];
-		buffer[bufferIndex] = null;
-		bufferIndex++;
-		return bindingSet;
 	}
 
 	@Override
 	protected void handleClose() {
-		clearBuffer();
-		source.close();
+		sourceClosing = true;
+		try {
+			requestSourceCancellation();
+		} finally {
+			try {
+				// Readers hold bufferLock before sourceLock. Release sourceLock before waiting for the buffer:
+				// source closure may proceed during value materialization, but cannot invalidate active traversal.
+				synchronized (sourceLock) {
+					source.close();
+				}
+			} finally {
+				synchronized (bufferLock) {
+					clearBuffer();
+				}
+			}
+		}
+	}
+	@Override
+	public boolean requestCancellation() {
+		if (sourceClosing || isClosed()) {
+			return false;
+		}
+		cancellationRequested = true;
+		requestSourceCancellation();
+		return true;
 	}
 
-	private void fillBuffer() {
+	private void requestSourceCancellation() {
+		if (source instanceof CooperativeCancellation cancellation) {
+			cancellation.requestCancellation();
+		}
+	}
+
+	private boolean closeIfCancelled() {
+		if (cancellationRequested) {
+			close();
+			return true;
+		}
+		return false;
+	}
+
+	private boolean stopTraversal() {
+		return sourceClosing || closeIfCancelled();
+	}
+
+	private boolean sourceHasNext() {
+		synchronized (sourceLock) {
+			return !sourceClosing && !cancellationRequested && source.hasNext();
+		}
+	}
+
+	private BindingSet sourceNext() {
+		synchronized (sourceLock) {
+			if (sourceClosing || cancellationRequested) {
+				// The caller polls immediately after traversal and closes on the reader thread, outside sourceLock.
+				return null;
+			}
+			BindingSet next = source.next();
+			// Capturing native handles still traverses the live source; lexical initialization may outlive it.
+			if (next instanceof NativeProjectedBindingSet nativeRow) {
+				nativeRow.collectMaterializationValues(ignored -> {
+				});
+			}
+			return next;
+		}
+	}
+
+
+	private boolean fillBuffer() {
 		bufferIndex = 0;
 		bufferSize = 0;
-
 		ensureBufferCapacity(nextBufferCapacity);
-
-		while (bufferSize < nextBufferCapacity && source.hasNext()) {
-			buffer[bufferSize] = source.next();
-			bufferSize++;
+		while (bufferSize < nextBufferCapacity && sourceHasNext()) {
+			if (stopTraversal()) {
+				return false;
+			}
+			BindingSet next = sourceNext();
+			if (stopTraversal()) {
+				return false;
+			}
+			buffer[bufferSize++] = next;
 		}
-
+		if (stopTraversal()) {
+			return false;
+		}
 		if (bufferSize == 0) {
 			close();
-			return;
+			return false;
 		}
-
 		materializeBufferedValues();
-
 		if (bufferSize == nextBufferCapacity && nextBufferCapacity < maxBatchSize) {
 			nextBufferCapacity = Math.min(maxBatchSize, doubleCapacity(nextBufferCapacity));
 		}
+		return true;
 	}
 
 	private void materializeBufferedValues() {
@@ -171,6 +258,11 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 			initKnownIdValues();
 			initUnknownIdValues();
 			copyDeferredValues();
+			for (int i = 0; i < bufferSize; i++) {
+				if (buffer[i] instanceof NativeProjectedBindingSet nativeRow) {
+					nativeRow.detachAfterMaterialization();
+				}
+			}
 		} finally {
 			clearCollectedValues();
 			clearDeduplicationState();
@@ -219,12 +311,18 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 			LmdbValue initializedValue = values[deferredInitializedIndexes[i]];
 
 			synchronized (value) {
-				value.setFromInitializedValue(initializedValue);
+				if (!value.isInitialized()) {
+					value.setFromInitializedValue(initializedValue);
+				}
 			}
 		}
 	}
 
 	private void materialize(BindingSet bindingSet) {
+		if (bindingSet instanceof NativeProjectedBindingSet nativeRow) {
+			nativeRow.materializeAndDetach();
+			return;
+		}
 		for (Binding binding : bindingSet) {
 			Value value = binding.getValue();
 			if (value instanceof LmdbValue lmdbValue && !lmdbValue.isInitialized()) {
@@ -234,16 +332,19 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 	}
 
 	private void addValues(BindingSet bindingSet) {
-		MutableBindingSet mutableBindingSet = bindingSet instanceof MutableBindingSet
-				? (MutableBindingSet) bindingSet
+		if (bindingSet instanceof NativeProjectedBindingSet nativeRow) {
+			nativeRow.collectMaterializationValues(value -> addValue(value, null, null));
+			return;
+		}
+		MutableBindingSet mutable = bindingSet instanceof MutableBindingSet mutableBindingSet
+				? mutableBindingSet
 				: null;
 		for (Binding binding : bindingSet) {
-			addValue(binding, mutableBindingSet);
+			addValue(binding.getValue(), mutable, binding.getName());
 		}
 	}
 
-	private void addValue(Binding binding, MutableBindingSet mutableBindingSet) {
-		Value value = binding.getValue();
+	private void addValue(Value value, MutableBindingSet mutableBindingSet, String bindingName) {
 		if (!(value instanceof LmdbValue lmdbValue) || lmdbValue.isInitialized()) {
 			return;
 		}
@@ -261,7 +362,7 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 		}
 
 		if (mutableBindingSet != null) {
-			mutableBindingSet.setBinding(binding.getName(), values[cachedIndex]);
+			mutableBindingSet.setBinding(bindingName, values[cachedIndex]);
 		} else {
 			addDeferredValue(lmdbValue, cachedIndex);
 		}
@@ -278,7 +379,7 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 		}
 
 		if (usingValueIndexesById) {
-			if (sameRevision(valueIndexesRevision, revision)) {
+			if (sameValueScope(valueIndexesRevision, revision)) {
 				int cachedIndex = valueIndexesById.get(internalId);
 				if (cachedIndex != NO_INDEX) {
 					return cachedIndex;
@@ -294,7 +395,7 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 		}
 
 		for (int i = 0; i < valueCount; i++) {
-			if (valueIds[i] == internalId && sameRevision(valueRevisions[i], revision)) {
+			if (valueIds[i] == internalId && sameValueScope(valueRevisions[i], revision)) {
 				return i;
 			}
 		}
@@ -302,7 +403,7 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 		addMaterializationValue(lmdbValue, internalId, revision);
 
 		if (valueCount > SMALL_DEDUP_LIMIT) {
-			if (!collectedMultipleValueRevisions) {
+			if (!collectedMultipleValueScopes) {
 				buildValueIndexesById(collectedValueRevision);
 			} else {
 				buildScopedValueIndexes();
@@ -356,11 +457,11 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 	}
 
 	private Long2IntOpenHashMap scopedValueIndexMap(ValueStoreRevision revision) {
-		if (lastScopedValueIndexMap != null && sameRevision(lastScopedValueIndexRevision, revision)) {
+		if (lastScopedValueIndexMap != null && sameValueScope(lastScopedValueIndexRevision, revision)) {
 			return lastScopedValueIndexMap;
 		}
 		for (int i = 0; i < scopedValueIndexCount; i++) {
-			if (sameRevision(scopedValueIndexRevisions[i], revision)) {
+			if (sameValueScope(scopedValueIndexRevisions[i], revision)) {
 				lastScopedValueIndexRevision = scopedValueIndexRevisions[i];
 				lastScopedValueIndexMap = scopedValueIndexMaps[i];
 				return lastScopedValueIndexMap;
@@ -468,6 +569,10 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 			collectedValueRevision = revision;
 		} else if (!collectedMultipleValueRevisions && !sameRevision(collectedValueRevision, revision)) {
 			collectedMultipleValueRevisions = true;
+		}
+
+		if (!collectedMultipleValueScopes && !sameValueScope(collectedValueRevision, revision)) {
+			collectedMultipleValueScopes = true;
 		}
 
 		int index = valueCount;
@@ -605,6 +710,7 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 
 		collectedValueRevision = null;
 		collectedMultipleValueRevisions = false;
+		collectedMultipleValueScopes = false;
 	}
 
 	private void clearDeduplicationState() {
@@ -641,6 +747,14 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 		return left == right || left != null && left.equals(right);
 	}
 
+
+	private static boolean sameValueScope(ValueStoreRevision left, ValueStoreRevision right) {
+		return sameRevision(left, right) && cacheBank(left) == cacheBank(right);
+	}
+
+	private static int cacheBank(ValueStoreRevision revision) {
+		return ValuePosition.cacheBank(revision == null ? ValuePosition.NONE : revision.getPositionMask());
+	}
 	private static boolean canUseInternalId(ValueStoreRevision revision) {
 		return revision != null && revision.getValueStore() != null;
 	}

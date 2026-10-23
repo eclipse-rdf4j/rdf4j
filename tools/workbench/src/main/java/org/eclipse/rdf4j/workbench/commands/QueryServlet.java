@@ -41,6 +41,7 @@ import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryExplanationRequestContext;
 import org.eclipse.rdf4j.http.client.QueryRequestContext;
 import org.eclipse.rdf4j.http.client.QueryResponseHeartbeat;
+import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Namespace;
@@ -67,6 +68,7 @@ import org.eclipse.rdf4j.workbench.base.WorkbenchViewRegistry;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
+import org.eclipse.rdf4j.workbench.util.LmdbStrategies;
 import org.eclipse.rdf4j.workbench.util.QueryBatch;
 import org.eclipse.rdf4j.workbench.util.QueryEvaluator;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
@@ -119,6 +121,10 @@ public class QueryServlet extends TransformationServlet {
 	private static final String ACTION_EXPLAIN = "explain";
 
 	private static final String ACTION_CANCEL_EXPLAIN = "cancel-explain";
+	private static final String ACTION_LMDB_STRATEGIES = "lmdb-strategies";
+
+	/** Per-query request parameter pinning one named LMDB execution strategy; see {@code Protocol}. */
+	private static final String LMDB_FORCED_STRATEGY = "lmdb-forced-strategy";
 
 	private static final String ACTION_CANCEL_QUERY = "cancel-query";
 
@@ -200,11 +206,11 @@ public class QueryServlet extends TransformationServlet {
 
 	private String[] getCookieNames(boolean shouldWriteQueryCookie) {
 		if (shouldWriteQueryCookie) {
-			return new String[] { QUERY, REF, "owner", LIMIT, QUERY_LN, INFER, QUERY_TIMEOUT, "total_result_count",
-					"show-datatypes" };
+			return new String[] { QUERY, REF, "owner", LIMIT, QUERY_LN, INFER, QUERY_TIMEOUT, LMDB_FORCED_STRATEGY,
+					"total_result_count", "show-datatypes" };
 		}
-		return new String[] { REF, "owner", LIMIT, QUERY_LN, INFER, QUERY_TIMEOUT, "total_result_count",
-				"show-datatypes" };
+		return new String[] { REF, "owner", LIMIT, QUERY_LN, INFER, QUERY_TIMEOUT, LMDB_FORCED_STRATEGY,
+				"total_result_count", "show-datatypes" };
 	}
 
 	/**
@@ -297,6 +303,8 @@ public class QueryServlet extends TransformationServlet {
 		final String action = getRequestAction(req);
 		if (ACTION_GET.equals(action)) {
 			writeQueryTextResponse(req, resp);
+		} else if (ACTION_LMDB_STRATEGIES.equals(action)) {
+			writeLmdbForceableStrategies(resp);
 		} else if (ACTION_EXPLAIN.equals(action)) {
 			if (rejectDisabledExplainRequest(req, resp)) {
 				return;
@@ -645,6 +653,30 @@ public class QueryServlet extends TransformationServlet {
 		}
 	}
 
+	/** Serves the selected repository's available native strategies, excluding the presentation's empty choice. */
+	private void writeLmdbForceableStrategies(HttpServletResponse resp) throws IOException {
+		try {
+			var strategies = LmdbStrategies.list(repository);
+			writeStrategyJson(resp, HttpServletResponse.SC_OK,
+					new ForceableStrategiesResponse(!strategies.isEmpty(), strategies, null));
+		} catch (RDF4JException e) {
+			LOGGER.debug("LMDB forceable execution strategies are unavailable", e);
+			writeStrategyJson(resp, HttpServletResponse.SC_SERVICE_UNAVAILABLE,
+					new ForceableStrategiesResponse(false, null,
+							"Forced execution strategies are unavailable for the selected repository."));
+		}
+	}
+
+	private static void writeStrategyJson(HttpServletResponse resp, int status, Object value) throws IOException {
+		resp.setStatus(status);
+		resp.setHeader("Cache-Control", "no-store");
+		resp.setContentType("application/json");
+		mapper.writeValue(resp.getWriter(), value);
+	}
+
+	private record ForceableStrategiesResponse(boolean available, Object strategies, String error) {
+	}
+
 	private void writeQueryTextResponse(final WorkbenchRequest req, final HttpServletResponse resp)
 			throws IOException, RDF4JException, BadRequestException {
 		resp.setContentType("application/json");
@@ -859,6 +891,7 @@ public class QueryServlet extends TransformationServlet {
 		ObjectNode jsonObject = mapper.createObjectNode();
 		jsonObject.put("format", explainQueryResult.getFormat());
 		jsonObject.put("content", explainQueryResult.getContent());
+		jsonObject.set("strategyDecisions", mapper.valueToTree(explainQueryResult.getStrategyDecisions()));
 		jsonObject.put("lineSeparator", System.lineSeparator());
 		jsonObject.put("timedOut", explainQueryResult.isTimedOut());
 		writeExplainJsonResponse(resp, HttpServletResponse.SC_OK, jsonObject);

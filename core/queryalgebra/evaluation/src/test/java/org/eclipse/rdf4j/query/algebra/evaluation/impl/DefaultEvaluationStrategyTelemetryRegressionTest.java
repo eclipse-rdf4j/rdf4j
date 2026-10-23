@@ -126,8 +126,10 @@ class DefaultEvaluationStrategyTelemetryRegressionTest {
 			}
 		};
 		strategy.setTrackTime(true);
+		assignment = (BindingSetAssignment) strategy.prepareTupleExpr(assignment);
+		QueryEvaluationStep prepared = strategy.precompile(assignment);
 
-		try (CloseableIteration<BindingSet> results = strategy.precompile(assignment)
+		try (CloseableIteration<BindingSet> results = prepared
 				.evaluate(EmptyBindingSet.getInstance())) {
 			assertThat(results.hasNext()).isTrue();
 			assertThat(results.next().getValue("value").stringValue()).isEqualTo("result");
@@ -142,8 +144,10 @@ class DefaultEvaluationStrategyTelemetryRegressionTest {
 		BindingSetAssignment assignment = trackedAssignment();
 		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
 		strategy.setTrackResultSize(true);
+		assignment = (BindingSetAssignment) strategy.prepareTupleExpr(assignment);
+		QueryEvaluationStep prepared = strategy.precompile(assignment);
 
-		CloseableIteration<BindingSet> results = strategy.precompile(assignment)
+		CloseableIteration<BindingSet> results = prepared
 				.evaluate(EmptyBindingSet.getInstance());
 		assertThat(assignment.getResultSizeActual()).isZero();
 		assertThat(results.hasNext()).isTrue();
@@ -264,8 +268,10 @@ class DefaultEvaluationStrategyTelemetryRegressionTest {
 		};
 		setTelemetryNanoClock(strategy, clock);
 		strategy.setTrackTime(true);
+		assignment = (BindingSetAssignment) strategy.prepareTupleExpr(assignment);
+		QueryEvaluationStep prepared = strategy.precompile(assignment);
 
-		try (CloseableIteration<BindingSet> results = strategy.precompile(assignment)
+		try (CloseableIteration<BindingSet> results = prepared
 				.evaluate(EmptyBindingSet.getInstance())) {
 			for (int i = 0; i < invocationCount; i++) {
 				assertThat(results.hasNext()).isTrue();
@@ -507,9 +513,11 @@ class DefaultEvaluationStrategyTelemetryRegressionTest {
 	void abortedIterationMarksCancellationMetricOnNode() {
 		BindingSetAssignment assignment = trackedAssignment();
 		DefaultEvaluationStrategy strategy = failAfterFirstRowStrategy(assignment, true);
+		assignment = (BindingSetAssignment) strategy.prepareTupleExpr(assignment);
+		QueryEvaluationStep prepared = strategy.precompile(assignment);
 
 		boolean interrupted = false;
-		try (CloseableIteration<BindingSet> results = strategy.precompile(assignment)
+		try (CloseableIteration<BindingSet> results = prepared
 				.evaluate(EmptyBindingSet.getInstance())) {
 			assertThat(results.hasNext()).isTrue();
 			results.next();
@@ -530,8 +538,10 @@ class DefaultEvaluationStrategyTelemetryRegressionTest {
 	void cleanExhaustionLeavesAbortMetricsUnsetAndCountsExhaustedCloses() {
 		BindingSetAssignment assignment = trackedAssignment();
 		DefaultEvaluationStrategy strategy = failAfterFirstRowStrategy(assignment, false);
+		assignment = (BindingSetAssignment) strategy.prepareTupleExpr(assignment);
+		QueryEvaluationStep prepared = strategy.precompile(assignment);
 
-		try (CloseableIteration<BindingSet> results = strategy.precompile(assignment)
+		try (CloseableIteration<BindingSet> results = prepared
 				.evaluate(EmptyBindingSet.getInstance())) {
 			assertThat(results.hasNext()).isTrue();
 			results.next();
@@ -547,8 +557,10 @@ class DefaultEvaluationStrategyTelemetryRegressionTest {
 	void abortedIterationDoesNotCountAnExhaustedClose() {
 		BindingSetAssignment assignment = trackedAssignment();
 		DefaultEvaluationStrategy strategy = failAfterFirstRowStrategy(assignment, true);
+		assignment = (BindingSetAssignment) strategy.prepareTupleExpr(assignment);
+		QueryEvaluationStep prepared = strategy.precompile(assignment);
 
-		try (CloseableIteration<BindingSet> results = strategy.precompile(assignment)
+		try (CloseableIteration<BindingSet> results = prepared
 				.evaluate(EmptyBindingSet.getInstance())) {
 			assertThat(results.hasNext()).isTrue();
 			results.next();

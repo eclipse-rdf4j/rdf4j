@@ -17,6 +17,7 @@ import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.function.BiFunction;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -39,15 +40,20 @@ final class RetainedSailDataset extends DelegatingSailDataset
 	private final SailDataset compositionDelegate;
 
 	RetainedSailDataset(SailDataset delegate) {
-		super(Objects.requireNonNull(delegate, "delegate"));
-		compositionDelegate = delegate;
-		lifetime = new DatasetLifetime(abandon -> {
+		this(delegate, abandon -> {
 			if (abandon) {
 				delegate.abandonUnobserved();
 			} else {
 				delegate.close();
 			}
 		});
+	}
+
+	/** Retains the actual delegate while an existing shared owner supplies the final lease disposition. */
+	RetainedSailDataset(SailDataset delegate, Consumer<Boolean> release) {
+		super(Objects.requireNonNull(delegate, "delegate"));
+		compositionDelegate = delegate;
+		lifetime = new DatasetLifetime(Objects.requireNonNull(release, "release"));
 	}
 
 	@Override

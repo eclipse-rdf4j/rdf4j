@@ -54,6 +54,7 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
@@ -550,7 +551,7 @@ class LmdbGrowthLifecycleRegressionTest {
 		CountDownLatch closeEnvironmentEntered = new CountDownLatch(1);
 		AtomicInteger valueStoreCalls = new AtomicInteger();
 		AtomicBoolean blockFirstValue = new AtomicBoolean(true);
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setBulkOperationSize(0);
 		LmdbSailStore backing = new LmdbSailStore(dataDir.toFile(), new StoreProperties(dataDir.toFile()), config,
 				false,
 				(dir, properties, cfg) -> new BlockingValueStore(dir, properties, cfg, mutationEntered, releaseMutation,
@@ -639,7 +640,20 @@ class LmdbGrowthLifecycleRegressionTest {
 		}
 
 		@Override
-		public long storeValue(org.eclipse.rdf4j.model.Value value) throws IOException {
+		public long storeValue(Value value) throws IOException {
+			beforeNativeValueWrite();
+			return super.storeValue(value);
+		}
+
+		@Override
+		void storeValues(Value[] values, long[] ids, int count) throws IOException {
+			if (count > 0) {
+				beforeNativeValueWrite();
+			}
+			super.storeValues(values, ids, count);
+		}
+
+		private void beforeNativeValueWrite() throws IOException {
 			valueStoreCalls.incrementAndGet();
 			if (blockFirstValue.compareAndSet(true, false)) {
 				mutationEntered.countDown();
@@ -652,7 +666,6 @@ class LmdbGrowthLifecycleRegressionTest {
 					throw new IOException("interrupted while blocked in synchronous ValueStore write", e);
 				}
 			}
-			return super.storeValue(value);
 		}
 
 		@Override

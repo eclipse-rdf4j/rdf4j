@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
@@ -156,6 +157,23 @@ public class OrderLimitOptimizerTest extends QueryOptimizerTest {
 		assertSame(root, reduced.getParentNode());
 		assertSame(reduced, order.getParentNode());
 		assertSame(order, projection.getParentNode());
+	}
+
+	@Test
+	public void doesNotMoveOrderByRandAcrossDistinctProjectionBoundary() {
+		StatementPattern source = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		Order order = new Order(source, new OrderElem(new FunctionCall("RAND")));
+		Projection projection = new Projection(order,
+				new ProjectionElemList(new ProjectionElem("s")));
+		Distinct distinct = new Distinct(projection);
+		QueryRoot root = new QueryRoot(distinct);
+
+		getOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+
+		assertSame(distinct, root.getArg());
+		assertSame(projection, distinct.getArg());
+		assertSame(order, projection.getArg());
+		assertSame(source, order.getArg());
 	}
 
 	@Test

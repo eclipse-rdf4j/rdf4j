@@ -38,8 +38,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationSco
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedQueryView;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedQueryView.PrefixMaterialization;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedQueryView;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -53,6 +53,7 @@ final class LmdbEstimatorRuntime {
 
 	static final String OPERATOR_FEEDBACK_APPLY_PROPERTY = "rdf4j.optimizer.lmdb.operatorFeedbackApply";
 	private static final int MAX_EXACT_FILTER_DISTINCT_TERMS = 4_096;
+	private final LmdbLearnedFilterSelectivity learned;
 	private final LmdbEstimatorStorageAccess storageAccess;
 	private final LmdbQuadSynopsisService synopsis;
 	private final LmdbFilterSelectivityStats filters;
@@ -100,6 +101,17 @@ final class LmdbEstimatorRuntime {
 			LmdbFrontierPlannerSettings frontierSettings,
 			BooleanSupplier mayHaveInferred, BooleanSupplier adaptiveEvidenceAllowedSupplier,
 			LmdbStatisticsService statistics) {
+		this(valueStore, tripleStore, synopsis, filters, feedback, cardinalities, cascadesPlanCache, frontierSettings,
+				mayHaveInferred, adaptiveEvidenceAllowedSupplier, statistics, null);
+	}
+
+	LmdbEstimatorRuntime(ValueStore valueStore, TripleStore tripleStore, LmdbQuadSynopsisService synopsis,
+			LmdbFilterSelectivityStats filters, LmdbOperatorFeedbackStats feedback,
+			LmdbStatementPatternCardinalitySource cardinalities, PackedPlanCache cascadesPlanCache,
+			LmdbFrontierPlannerSettings frontierSettings,
+			BooleanSupplier mayHaveInferred, BooleanSupplier adaptiveEvidenceAllowedSupplier,
+			LmdbStatisticsService statistics, LmdbLearnedFilterSelectivity learned) {
+		this.learned = learned;
 		this.storageAccess = new LmdbEstimatorStorageAccess(valueStore, tripleStore, cardinalities, mayHaveInferred,
 				statistics, frontierSettings.mode());
 		this.synopsis = synopsis;
@@ -113,7 +125,7 @@ final class LmdbEstimatorRuntime {
 		this.finiteJoinSurfaceEstimator = new LmdbFiniteJoinSurfaceEstimator(valueStore, tripleStore, cardinalities);
 		LmdbStorageEstimatorEvidence evidence = new LmdbStorageEstimatorEvidence(valueStore, cardinalities, synopsis,
 				filters, feedback, finiteJoinSurfaceEstimator, this::exactCorrelatedSurface, statistics,
-				frontierSettings.mode());
+				frontierSettings.mode(), learned);
 		this.engine = new LmdbEstimationEngine(evidence, new EstimateEvidenceResolver());
 		this.factorCostAssembler = new LmdbFactorCostAssembler(engine, tripleStore);
 		this.prefixEvidence = new LmdbPrefixEvidenceResolver(engine, this::rootContext);
@@ -144,12 +156,21 @@ final class LmdbEstimatorRuntime {
 	}
 
 	BagEstimate estimate(TupleExpr expression) {
-		return estimate(expression, Set.of(), EstimationTier.STANDARD, false);
+		return estimate(expression, null);
+	}
+
+	BagEstimate estimate(TupleExpr expression, LmdbFilterReadContext readContext) {
+		return estimate(expression, Set.of(), EstimationTier.STANDARD, false, readContext);
 	}
 
 	BagEstimate estimate(TupleExpr expression, Set<String> boundNames, EstimationTier tier,
 			boolean exactProbePermitted) {
-		EstimateContext context = rootContext(expression)
+		return estimate(expression, boundNames, tier, exactProbePermitted, null);
+	}
+
+	BagEstimate estimate(TupleExpr expression, Set<String> boundNames, EstimationTier tier,
+			boolean exactProbePermitted, LmdbFilterReadContext readContext) {
+		EstimateContext context = rootContext(expression, readContext)
 				.withBoundNames(boundNames == null ? Set.of() : boundNames)
 				.withEstimationTier(tier)
 				.withExactProbePermission(exactProbePermitted);
@@ -158,11 +179,20 @@ final class LmdbEstimatorRuntime {
 
 	BagEstimate estimateFilter(TupleExpr input, ValueExpr condition, BagEstimate inputEstimate,
 			Set<String> boundNames, EstimationTier tier, boolean exactProbePermitted) {
-		EstimateContext context = rootContext(input)
+		return estimateFilter(input, condition, inputEstimate, boundNames, tier, exactProbePermitted, null);
+	}
+
+	BagEstimate estimateFilter(TupleExpr input, ValueExpr condition, BagEstimate inputEstimate,
+			Set<String> boundNames, EstimationTier tier, boolean exactProbePermitted, LmdbFilterReadContext readContext) {
+		EstimateContext context = rootContext(input, readContext)
 				.withBoundNames(boundNames == null ? Set.of() : boundNames)
 				.withEstimationTier(tier)
 				.withExactProbePermission(exactProbePermitted);
 		return engine.estimateFilter(input, condition, inputEstimate, context);
+	}
+
+	LmdbLearnedFilterSelectivity learnedFilters() {
+		return learned;
 	}
 
 	LmdbLearnedFilterEvidence learnedFilterEvidence(Filter filter) {
@@ -261,11 +291,16 @@ final class LmdbEstimatorRuntime {
 	}
 
 	Optional<FactorCostEstimate> factorCost(TupleExpr expression, CostContext costContext) {
+		return factorCost(expression, costContext, null);
+	}
+
+	Optional<FactorCostEstimate> factorCost(TupleExpr expression, CostContext costContext,
+			LmdbFilterReadContext readContext) {
 		if (expression == null) {
 			return Optional.empty();
 		}
 		CostContext cost = costContext == null ? CostContext.of(Set.of(), 1.0d, 1.0d, false) : costContext;
-		EstimateContext context = context(expression, cost);
+		EstimateContext context = context(expression, cost, readContext);
 		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
 		ScopedFactorCostCacheKey cacheKey = scope == null
 				? null
@@ -368,8 +403,9 @@ final class LmdbEstimatorRuntime {
 	long leoRevision() {
 		long revision = LmdbEstimatorRevisionSupport.mixRevision(
 				0x4c454f5f52455649L, feedback == null ? 0L : feedback.planningRevision());
-		return LmdbEstimatorRevisionSupport.mixRevision(revision,
-				filters == null ? 0L : filters.planningRevision()) & Long.MAX_VALUE;
+		revision = LmdbEstimatorRevisionSupport.mixRevision(revision,
+				filters == null ? 0L : filters.planningRevision());
+		return LmdbEstimatorRevisionSupport.mixRevision(revision, learned == null ? 0L : learned.planningRevision()) & Long.MAX_VALUE;
 	}
 
 	/**
@@ -554,13 +590,42 @@ final class LmdbEstimatorRuntime {
 
 	Optional<EvaluationStatistics.FilterPassEstimate> patternFilterPass(ValueExpr condition,
 			StatementPattern pattern) {
+		return patternFilterPass(condition, pattern, null);
+	}
+
+	Optional<EvaluationStatistics.FilterPassEstimate> patternFilterPass(ValueExpr condition,
+			StatementPattern pattern, LmdbFilterReadContext readContext) {
+		return patternFilterPass(condition, pattern, readContext, Set.of());
+	}
+
+	Optional<EvaluationStatistics.FilterPassEstimate> patternFilterPass(ValueExpr condition,
+			StatementPattern pattern, LmdbFilterReadContext readContext, Set<String> externalBoundNames) {
 		if (condition == null || !LmdbPlanningGraphEvidence.allows(pattern)) {
 			return Optional.empty();
 		}
 		Filter synthetic = new Filter(pattern.clone(), condition.clone());
 		PlanningGraphDomains.copy(pattern, synthetic);
-		BagEstimate input = estimate(pattern);
-		BagEstimate output = estimateFilter(pattern, condition, input, Set.of(), EstimationTier.STANDARD, false);
+		EstimateContext qualifiedContext = rootContext(synthetic, readContext).withBoundNames(externalBoundNames);
+		LmdbFilterReadContext effectiveRead = qualifiedContext.filterReadContext();
+		if (effectiveRead != null && !effectiveRead.allows(synthetic, qualifiedContext)) {
+			effectiveRead = effectiveRead.withoutOptionalLookup();
+		}
+		// Keep the historical scalar fallback intact while refusing an unconditioned new sample for an unknown
+		// conditional provider input. Refusal must also cover the inner estimate, before any heuristic relabeling.
+		BagEstimate input = estimate(pattern, effectiveRead);
+		BagEstimate output = estimateFilter(pattern, condition, input, Set.of(), EstimationTier.STANDARD, false, effectiveRead);
+		// Preserve qualified source provenance before scalar ratio fallback relabels it.
+		LmdbFilterReadContext qualifiedRead = qualifiedContext.filterReadContext();
+		if (frontierSettings.mode() != FrontierEstimatorMode.AUTHORITATIVE && adaptiveEvidenceAllowed()
+				&& learned != null && qualifiedRead != null
+				&& qualifiedRead.family().ownerToken() == learned.outcomeOwnerToken()
+				&& qualifiedRead.allows(synthetic, qualifiedContext)) {
+			EvaluationStatistics.FilterPassEstimate qualified = learned.estimateQualified(valueStore(),
+					qualifiedRead.read().dataEpoch(), synthetic, qualifiedRead.read());
+			if (qualified != null && !LmdbEstimateClassification.databaseExact(output)) {
+				return Optional.of(qualified);
+			}
+		}
 		double ratio = input.rows() <= 0.0d ? (output.rows() == 0.0d ? 1.0d : Double.NaN)
 				: output.rows() / input.rows();
 		boolean exactRatio = LmdbEstimateClassification.databaseExact(input)
@@ -583,15 +648,20 @@ final class LmdbEstimatorRuntime {
 				: Optional.of(best);
 	}
 
-	private EstimateContext context(TupleExpr expression, CostContext cost) {
+	private EstimateContext context(TupleExpr expression, CostContext cost, LmdbFilterReadContext readContext) {
 		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
-		return LmdbEstimateContextBuilder.forCost(expression, cost, rootContext(expression), prefixEvidence, scope);
+		return LmdbEstimateContextBuilder.forCost(expression, cost, rootContext(expression, readContext), prefixEvidence, scope);
 	}
 
 	private EstimateContext rootContext(TupleExpr expression) {
+		return rootContext(expression, null);
+	}
+
+	private EstimateContext rootContext(TupleExpr expression, LmdbFilterReadContext readContext) {
 		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
 		return LmdbEstimateContextBuilder.root(expression, synopsis, storageAccess.dataRevision(), snapshotVersion(),
-				leoRevision(), scope, adaptiveEvidenceAllowed());
+				leoRevision(), scope, adaptiveEvidenceAllowed())
+				.withFilterReadContext(readContext == null ? null : readContext.forExpression(expression));
 	}
 
 	boolean adaptiveEvidenceAllowed() {

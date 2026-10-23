@@ -18,6 +18,11 @@
 		</dependency>
 		<dependency>
 			<groupId>org.eclipse.rdf4j</groupId>
+			<artifactId>rdf4j-lmdb-bulk-load</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.eclipse.rdf4j</groupId>
 			<artifactId>rdf4j-runtime-osgi</artifactId>
 			<version>${project.version}</version>
 			<exclusions>

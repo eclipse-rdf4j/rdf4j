@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
 
 /** Canonical object side pool for immutable boundary values that cannot be represented as primitives. */
@@ -334,4 +335,20 @@ final class PackedObjectPool {
 	private static int maximumFill(int capacity) {
 		return Math.max(1, capacity * LOAD_NUMERATOR / LOAD_DENOMINATOR);
 	}
+
+	boolean accountRetainedMemory(RetainedMemoryAccount account, PackedStatementPatternSemanticsCodec codec) {
+		if (!account.add(this, 80L)) {
+			return true;
+		}
+		PackedCacheMemory.array(account, values);
+		PackedCacheMemory.array(account, hashCodes);
+		PackedCacheMemory.array(account, slots);
+		for (int i = 1; i <= size; i++) {
+			if (!PackedCacheMemory.object(values[i], account, codec)) {
+				return false;
+			}
+		}
+		return parameterVector.accountRetainedMemory(account, codec);
+	}
+
 }

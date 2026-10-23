@@ -401,8 +401,10 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	 * Maps the given ValueExpr to a Var for use as a component of a triple term construction.
 	 * <ul>
 	 * <li>If the supplied ValueExpr is a {@link Var}, the object itself is returned.</li>
-	 * <li>If it is a {@link ValueConstant}, a constant variable is created via
-	 * {@link TupleExprs#createConstVar(Value)}.</li>
+	 * <li>If it is a {@link ValueConstant}, a constant variable is created via {@link #constantVar(Value)}.</li>
+	 * <li>Otherwise, an anonymous variable is created and the expression is registered as an {@link ExtensionElem} on
+	 * the current graph pattern, so that the expression is evaluated at runtime and its result bound to the returned
+	 * var.</li>
 	 * </ul>
 	 *
 	 * @param expr the ValueExpr to map to a Var
@@ -414,9 +416,21 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			return (Var) expr;
 		} else if (expr instanceof ValueConstant) {
 			return constantVar(((ValueConstant) expr).getValue());
-		} else {
-			throw new IllegalArgumentException("Unexpected expression type: " + expr.getClass().getName());
+		} else if (expr == null) {
+			throw new IllegalArgumentException("expr is null");
 		}
+
+		Var var = createAnonVar();
+		Extension extension = new Extension();
+		extension.addElement(new ExtensionElem(expr, var.getName()));
+
+		TupleExpr arg = graphPattern.buildJoinFromRequiredTEs();
+		arg = graphPattern.buildOptionalTE(arg);
+		extension.setArg(arg);
+
+		graphPattern.clearRequiredTEs();
+		graphPattern.addRequiredTE(extension);
+		return var;
 	}
 
 	/**
@@ -560,6 +574,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		// Start with building the graph pattern
 		graphPattern = new GraphPattern(parentGP);
+		if (node.getSelect().isSubSelect()) {
+			graphPattern.enterSubquery();
+		}
 		try {
 			node.getWhereClause().jjtAccept(this, null);
 			TupleExpr tupleExpr = graphPattern.buildTupleExpr();
@@ -856,7 +873,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			// set context var at the level of the projection. This allows us
 			// to distinguish named graphs selected in the
 			// outer query from named graphs selected as part of the sub-select.
-			((Projection) result).setProjectionContext(graphPattern.getContextVar());
+			Var callerContext = graphPattern.getProjectionContext();
+			((Projection) result).setProjectionContext(callerContext == null ? null : callerContext.clone());
 		}
 
 		if (node.isDistinct()) {
@@ -2387,27 +2405,27 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public LangDir visit(ASTLangDirFunc node, Object data) throws VisitorException {
-		ValueExpr arg = mapValueExprToVar(node.jjtGetChild(0).jjtAccept(this, null));
+		ValueExpr arg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
 		return new LangDir(arg);
 	}
 
 	@Override
 	public StrLangDir visit(ASTStrLangDirFunc node, Object data) throws VisitorException {
-		ValueExpr lexicalFormArg = mapValueExprToVar(node.jjtGetChild(0).jjtAccept(this, null));
-		ValueExpr langArg = mapValueExprToVar(node.jjtGetChild(1).jjtAccept(this, null));
-		ValueExpr dirArg = mapValueExprToVar(node.jjtGetChild(2).jjtAccept(this, null));
+		ValueExpr lexicalFormArg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
+		ValueExpr langArg = castToValueExpr(node.jjtGetChild(1).jjtAccept(this, null));
+		ValueExpr dirArg = castToValueExpr(node.jjtGetChild(2).jjtAccept(this, null));
 		return new StrLangDir(lexicalFormArg, langArg, dirArg);
 	}
 
 	@Override
 	public HasLang visit(ASTHasLangFunc node, Object data) throws VisitorException {
-		ValueExpr arg = mapValueExprToVar(node.jjtGetChild(0).jjtAccept(this, null));
+		ValueExpr arg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
 		return new HasLang(arg);
 	}
 
 	@Override
 	public HasLangDir visit(ASTHasLangDirFunc node, Object data) throws VisitorException {
-		ValueExpr arg = mapValueExprToVar(node.jjtGetChild(0).jjtAccept(this, null));
+		ValueExpr arg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
 		return new HasLangDir(arg);
 	}
 

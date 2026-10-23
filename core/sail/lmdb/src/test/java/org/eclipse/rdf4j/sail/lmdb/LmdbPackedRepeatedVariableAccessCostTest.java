@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -56,6 +57,7 @@ import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsStatus;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsView;
 import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbStatisticsService;
 import org.junit.jupiter.api.Test;
+import org.mockito.stubbing.Answer;
 
 /** Logical equality selectivity does not change the population read by a native statement prefix cursor. */
 class LmdbPackedRepeatedVariableAccessCostTest {
@@ -295,14 +297,17 @@ class LmdbPackedRepeatedVariableAccessCostTest {
 						"posc", "test-native-prefix", covered == 0 ? "fullScan" : "prefixScan");
 				return null;
 			}).when(runtime).describePackedAccessPath(anyInt(), anyDouble(), anyDouble(), any(), any());
-			when(runtime.factorCost(any(BindingSetAssignment.class), any())).thenAnswer(invocation -> {
+			Answer<?> factorCostAnswer = invocation -> {
 				BindingSetAssignment assignment = invocation.getArgument(0);
 				long rows = 0;
 				for (BindingSet ignored : assignment.getBindingSets()) {
 					rows++;
 				}
 				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(rows, rows));
-			});
+			};
+			when(runtime.factorCost(any(BindingSetAssignment.class), any())).thenAnswer(factorCostAnswer);
+			when(runtime.factorCost(any(BindingSetAssignment.class), any(), nullable(LmdbFilterReadContext.class)))
+					.thenAnswer(factorCostAnswer);
 		}
 
 		PackedCostEstimate leaf(StatementPattern pattern) {

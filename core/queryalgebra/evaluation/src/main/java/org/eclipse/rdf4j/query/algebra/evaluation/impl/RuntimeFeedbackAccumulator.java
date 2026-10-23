@@ -15,6 +15,7 @@ import java.util.Arrays;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.DistinctBindingFeedback;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 
@@ -23,6 +24,10 @@ import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 public final class RuntimeFeedbackAccumulator implements RuntimeFeedbackTarget {
 
 	public interface Destination {
+		/** Optional destination-specific input qualification, never retained or called per row. */
+		default void open(BindingSet input) {
+		}
+
 		void publish(InvocationAggregateView observation);
 
 		void release();
@@ -90,6 +95,14 @@ public final class RuntimeFeedbackAccumulator implements RuntimeFeedbackTarget {
 	@Override
 	public RuntimeFeedbackContract contract() {
 		return contract;
+	}
+
+	@Override
+	public void open(BindingSet input) {
+		if (!published) {
+			destination.open(input);
+			open();
+		}
 	}
 
 	@Override

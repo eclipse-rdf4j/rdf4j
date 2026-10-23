@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.base;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -28,6 +29,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -51,6 +53,8 @@ class SailSourceReplayTransportTest {
 				assertSame(failure, assertThrows(RuntimeException.class,
 						() -> connection.evaluateInternal(new SingletonSet(), null, EmptyBindingSet.getInstance(),
 								false)));
+				verify(fixture.factory()).createEvaluationStrategy(any(), any(), any(),
+						eq(QueryExecutionPolicy.DEFAULT));
 				verify(fixture.dataset()).close();
 			}
 		}
@@ -65,6 +69,7 @@ class SailSourceReplayTransportTest {
 		try (SailSourceConnection connection = fixture.connection()) {
 			assertSame(failure, assertThrows(QueryEvaluationException.class,
 					() -> connection.evaluateInternal(new SingletonSet(), null, EmptyBindingSet.getInstance(), false)));
+			verify(fixture.factory()).createEvaluationStrategy(any(), any(), any(), eq(QueryExecutionPolicy.DEFAULT));
 			assertSame(cleanup, failure.getSuppressed()[0]);
 		}
 	}
@@ -77,6 +82,8 @@ class SailSourceReplayTransportTest {
 			assertSame(failure, assertThrows(SailException.class,
 					() -> connection.evaluateInternal(new SingletonSet(), null, EmptyBindingSet.getInstance(), false))
 							.getCause());
+			verify(fixture.factory()).createEvaluationStrategy(any(), any(), any(), eq(QueryExecutionPolicy.DEFAULT));
+
 		}
 	}
 
@@ -94,6 +101,7 @@ class SailSourceReplayTransportTest {
 		AbstractSail sail = mock(AbstractSail.class);
 		when(sail.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
 		when(sail.getDefaultIsolationLevel()).thenReturn(IsolationLevels.READ_COMMITTED);
+		when(sail.getQueryExecutionPolicy()).thenReturn(QueryExecutionPolicy.DEFAULT);
 		SnapshotSailStore store = mock(SnapshotSailStore.class);
 		SailSource source = mock(SailSource.class);
 		SailDataset dataset = mock(SailDataset.class);
@@ -104,8 +112,10 @@ class SailSourceReplayTransportTest {
 		when(strategy.precompile(any(TupleExpr.class))).thenReturn(bindings -> {
 			throw failure;
 		});
+		when(strategy.precompileFinalTupleResult(any(TupleExpr.class))).thenCallRealMethod();
 		EvaluationStrategyFactory factory = mock(EvaluationStrategyFactory.class);
-		when(factory.createEvaluationStrategy(any(), any(), any())).thenReturn(strategy);
+		when(factory.createEvaluationStrategy(any(), any(), any(), eq(QueryExecutionPolicy.DEFAULT)))
+				.thenReturn(strategy);
 		return new Fixture(new SailSourceConnection(sail, store, factory) {
 			@Override
 			protected void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
@@ -116,9 +126,9 @@ class SailSourceReplayTransportTest {
 			protected void removeStatementsInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
 					throws SailException {
 			}
-		}, dataset);
+		}, dataset, factory);
 	}
 
-	private record Fixture(SailSourceConnection connection, SailDataset dataset) {
+	private record Fixture(SailSourceConnection connection, SailDataset dataset, EvaluationStrategyFactory factory) {
 	}
 }

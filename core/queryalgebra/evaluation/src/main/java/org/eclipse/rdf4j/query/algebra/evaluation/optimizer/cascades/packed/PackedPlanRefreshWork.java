@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
@@ -29,7 +30,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
  * falls back to the cloned query when retained cache state is absent or unusable.
  */
 @Experimental
-public final class PackedPlanRefreshWork {
+public final class PackedPlanRefreshWork implements PackedProviderCacheIdentity {
 
 	private static final long OBJECT_BYTES = 256L;
 	private static final long NODE_BYTES = 96L;
@@ -63,6 +64,19 @@ public final class PackedPlanRefreshWork {
 		retainedBytes = estimateRetainedBytes(this.preparedSource);
 	}
 
+	@Override
+	public boolean accountRetainedMemory(RetainedMemoryAccount account) {
+		account = PackedCacheMemory.ownedAccount(account);
+		if (!account.add(this, 0L)) {
+			return true;
+		} // The existing retainedBytes() charges work and AST structure.
+		PackedCacheMemory.string(account, incumbentPhysicalFingerprint);
+		account.add(limits, 48L);
+		return semanticsCodec.accountCacheSource(preparedSource, account)
+				&& goal.accountCacheMemory(account, semanticsCodec::accountCacheValue)
+				&& structuralLocator.accountRetainedMemory(account);
+	}
+
 	public long retainedBytes() {
 		return retainedBytes;
 	}
@@ -73,7 +87,8 @@ public final class PackedPlanRefreshWork {
 				Objects.requireNonNull(incumbent, "incumbent").physicalFingerprint(), semanticsCodec);
 	}
 
-	TupleExpr preparedSource() {
+	/** Returns a fresh detached input for provider applicability capture under the caller's own read snapshot. */
+	public TupleExpr preparedSource() {
 		return semanticsCodec.cloneWithSemantics(preparedSource);
 	}
 

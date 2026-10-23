@@ -15,7 +15,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -27,17 +29,51 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ServiceQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
 
 class FederatedBlankNodeScopeTest {
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+
+	@Test
+	void parsedFixedServiceEndpointAndPredicateCarryConstantMetadata() {
+		TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT * WHERE { SERVICE SILENT <urn:service> { ?s <urn:p> ?o } }", null).getTupleExpr();
+		List<Service> services = new ArrayList<>();
+		List<StatementPattern> patterns = new ArrayList<>();
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Service service) {
+				services.add(service);
+				super.meet(service);
+			}
+
+			@Override
+			public void meet(StatementPattern pattern) {
+				patterns.add(pattern);
+				super.meet(pattern);
+			}
+		});
+		Var endpoint = services.getFirst().getServiceRef();
+		Var predicate = patterns.getFirst().getPredicateVar();
+		String metadata = "endpoint anonymous=" + endpoint.isAnonymous() + " constant=" + endpoint.isConstant()
+				+ "; predicate anonymous=" + predicate.isAnonymous() + " constant=" + predicate.isConstant();
+		System.out.println("PARSER_FLAGS: " + metadata);
+		assertTrue(endpoint.isAnonymous(), metadata);
+		assertTrue(endpoint.isConstant(), metadata);
+		assertTrue(predicate.isAnonymous(), metadata);
+		assertTrue(predicate.isConstant(), metadata);
+	}
 
 	@Test
 	void outgoingLocalIdentityFailsForRelevantBindingsRecursively() {
@@ -64,6 +100,27 @@ class FederatedBlankNodeScopeTest {
 	}
 
 	@Test
+	void silentPreflightIdentityFailureRetainsEndpointSemantics() {
+		for (EndpointKind endpointKind : EndpointKind.values()) {
+			assertSilentFailure(endpointKind, false, true);
+		}
+	}
+
+	@Test
+	void silentSelectFailureRetainsEndpointSemantics() {
+		for (EndpointKind endpointKind : EndpointKind.values()) {
+			assertSilentFailure(endpointKind, false, false);
+		}
+	}
+
+	@Test
+	void silentAskFailureRetainsEndpointSemantics() {
+		for (EndpointKind endpointKind : EndpointKind.values()) {
+			assertSilentFailure(endpointKind, true, false);
+		}
+	}
+
+	@Test
 	void responseBlankNodesAreApartFromLocalAndOtherResponses() {
 		var service = service(false);
 		var input = new MapBindingSet();
@@ -84,9 +141,94 @@ class FederatedBlankNodeScopeTest {
 	}
 
 	private static Service service(boolean silent) {
-		var pattern = new StatementPattern(Var.of("s"), Var.of("p", VF.createIRI("urn:p")), Var.of("o"));
-		return new Service(Var.of("endpoint", VF.createIRI("urn:service")), pattern, "?s <urn:p> ?o", Map.of(), null,
-				silent);
+		return service(silent, EndpointKind.CONSTANT, false);
+	}
+
+	private static Service service(boolean silent, EndpointKind endpointKind, boolean askOnly) {
+		Var endpoint = switch (endpointKind) {
+		case CONSTANT -> Var.of("endpoint", VF.createIRI("urn:service"), true, true);
+		case RUNTIME_ASSIGNED -> Var.of("endpoint", VF.createIRI("urn:service"), false, false);
+		case API_BOUND -> Var.of("endpoint");
+		};
+		if (askOnly) {
+			var pattern = new StatementPattern(Var.of("s", VF.createIRI("urn:s"), true, true),
+					Var.of("p", VF.createIRI("urn:p"), true, true),
+					Var.of("o", VF.createIRI("urn:o"), true, true));
+			return new Service(endpoint, pattern, "<urn:s> <urn:p> <urn:o>", Map.of(), null, silent);
+		}
+		var pattern = new StatementPattern(Var.of("s"), Var.of("p", VF.createIRI("urn:p"), true, true), Var.of("o"));
+		return new Service(endpoint, pattern, "?s <urn:p> ?o", Map.of(), null, silent);
+	}
+
+	private static void assertSilentFailure(EndpointKind endpointKind, boolean askOnly, boolean unsupportedBNode) {
+		Service service = service(true, endpointKind, askOnly);
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("caller", VF.createLiteral("original"));
+		if (endpointKind == EndpointKind.API_BOUND) {
+			input.addBinding("endpoint", VF.createIRI("urn:service"));
+		}
+		if (unsupportedBNode) {
+			input.addBinding("s", VF.createBNode("same"));
+		}
+		var remote = new FailingRemoteService();
+		var step = new ServiceQueryEvaluationStep(service, service.getServiceRef(), ignored -> remote);
+		MapBindingSet expected = new MapBindingSet();
+		for (var binding : input) {
+			expected.addBinding(binding);
+		}
+		if (endpointKind == EndpointKind.RUNTIME_ASSIGNED) {
+			expected.addBinding("endpoint", VF.createIRI("urn:service"));
+		}
+		try (var rows = step.evaluate(input)) {
+			assertEquals(expected, rows.next(),
+					endpointKind + " / ask=" + askOnly + " / preflight=" + unsupportedBNode);
+			assertFalse(rows.hasNext());
+		}
+		assertEquals(askOnly && !unsupportedBNode ? 1 : 0, remote.askCalls);
+		assertEquals(!askOnly && !unsupportedBNode ? 1 : 0, remote.selectCalls);
+	}
+
+	private enum EndpointKind {
+		CONSTANT,
+		RUNTIME_ASSIGNED,
+		API_BOUND
+	}
+
+	private static final class FailingRemoteService implements FederatedService {
+		private int askCalls;
+		private int selectCalls;
+
+		@Override
+		public boolean ask(Service service, BindingSet bindings, String baseURI) {
+			askCalls++;
+			throw new QueryEvaluationException("remote ASK failed");
+		}
+
+		@Override
+		public CloseableIteration<BindingSet> select(Service service, Set<String> vars, BindingSet bindings,
+				String baseURI) {
+			selectCalls++;
+			throw new QueryEvaluationException("remote SELECT failed");
+		}
+
+		@Override
+		public CloseableIteration<BindingSet> evaluate(Service service, CloseableIteration<BindingSet> bindings,
+				String baseURI) {
+			throw new UnsupportedOperationException();
+		}
+
+		@Override
+		public boolean isInitialized() {
+			return true;
+		}
+
+		@Override
+		public void initialize() {
+		}
+
+		@Override
+		public void shutdown() {
+		}
 	}
 
 	private static FederatedService response() {

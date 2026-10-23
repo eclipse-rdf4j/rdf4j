@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -32,6 +33,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.model.IRI;
@@ -45,7 +47,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /** Canonical shells and completed payload caches have independent publication and retention contracts. */
@@ -132,7 +136,9 @@ class LmdbCanonicalValueCacheTest {
 	@EnumSource(Shape.class)
 	void consecutiveSameTypeIdsUseConfiguredCacheCapacity(Shape shape) throws Exception {
 		store.close();
-		store = new CountingValueStore(directory.resolve("capacity-values"), 128);
+		store = new CountingValueStore(directory.resolve("capacity-values"), 128 * ValuePosition.CACHE_BANKS);
+		assertTrue(store.valueCacheCapacity(ValuePosition.NONE) >= 128,
+				"the historical capacity budget belongs to this bank; allocation rounds whole sets upward");
 		store.startTransaction(true);
 		long[] ids = new long[16];
 		for (int i = 0; i < ids.length; i++) {
@@ -170,7 +176,12 @@ class LmdbCanonicalValueCacheTest {
 		LmdbValue[] escaped = new LmdbValue[ids.length];
 		for (int i = 0; i < ids.length; i++) {
 			escaped[i] = store.getLazyValue(ids[i]);
-			assertSame(escaped[i], store.getLazyValue(ids[i]));
+			if (!ValueIds.isInlined(ids[i]) && store.valueCacheCapacity(ValuePosition.NONE) > 0) {
+				assertSame(escaped[i], store.getLazyValue(ids[i]));
+			} else {
+				assertNull(store.cachedValue(ids[i]), "inline IDs and empty position banks bypass the cache");
+				assertEquals(expected[i], store.getLazyValue(ids[i]));
+			}
 		}
 		for (int i = 0; i < ids.length; i++) {
 			assertEquals(expected[i], store.getValue(ids[i]), "Completed reads preserve every colliding association");
@@ -201,6 +212,36 @@ class LmdbCanonicalValueCacheTest {
 	}
 
 	@Test
+	void fourCanonicalWaysRetainEveryOccupantUntilFifthCollision() throws Exception {
+		store.close();
+		store = new CountingValueStore(directory.resolve("four-way-values"), 20);
+		assertEquals(4, store.valueCacheCapacity(ValuePosition.NONE));
+		Value[] expected = new Value[5];
+		long[] ids = new long[5];
+		store.startTransaction(true);
+		for (int i = 0; i < ids.length; i++) {
+			expected[i] = VF.createIRI("urn:canonical:four-way:" + i);
+			ids[i] = store.storeValue(expected[i]);
+		}
+		store.commit();
+		LmdbValue[] held = new LmdbValue[5];
+		for (int i = 0; i < 4; i++) {
+			held[i] = store.getLazyValue(ids[i]);
+		}
+		for (int i = 0; i < 4; i++) {
+			assertSame(held[i], store.getLazyValue(ids[i]), "all four occupants share the one actual set");
+		}
+		held[4] = store.getLazyValue(ids[4]);
+		assertSame(held[4], store.getLazyValue(ids[4]));
+		assertEquals(4, store.valueCacheCapacity(ValuePosition.NONE),
+				"the fifth collision cannot expand the actual four-way bank");
+		store.close();
+		for (int i = 0; i < held.length; i++) {
+			assertEquals(expected[i], held[i]);
+		}
+	}
+
+	@Test
 	void boundedCollisionsPreserveEscapedMeanings() throws Exception {
 		store.close();
 		store = new CountingValueStore(directory.resolve("colliding-values"), 1);
@@ -227,29 +268,68 @@ class LmdbCanonicalValueCacheTest {
 	}
 
 	@ParameterizedTest
-	@ValueSource(booleans = { false, true })
-	void abortedCanonicalShellCannotDecodeLaterReuse(boolean nested) throws Exception {
+	@MethodSource("abortedCanonicalShellProfiles")
+	void abortedCanonicalShellCannotDecodeLaterReuse(int format, boolean nested) throws Exception {
+		Path valuesDirectory = directory.resolve("aborted-shell-" + format + "-" + nested);
+		LmdbStoreConfig profileConfig = new LmdbStoreConfig().setValueCacheSize(32).setInlineLiterals(false);
+		StoreProperties properties = new StoreProperties(valuesDirectory.toFile());
+		if (format == LmdbStoreFormat.LEGACY_VERSION) {
+			properties.setVersion(Integer.toString(format));
+		} else {
+			LmdbStoreFormat.forNewStore(profileConfig).initializeProperties(properties);
+		}
 		Value expected = nested ? Shape.NESTED.value() : Shape.IRI.value();
-		store.startTransaction(true);
-		long id = store.storeValue(expected);
-		LmdbValue aborted = store.getLazyValue(id);
-		assertSame(aborted, store.getLazyValue(id));
-		store.rollback();
-		assertThrows(SailException.class, aborted::init);
-		// The running allocator retains its append high-water mark; reopen exercises actual reassignment of
-		// rolled-back appended IDs from the committed dictionary rather than assuming immediate in-process reuse.
-		store.close();
-		store = new CountingValueStore(directory.resolve("values"), 32);
+		long id;
+		LmdbValue aborted;
+		CountingValueStore initial = new CountingValueStore(valuesDirectory, profileConfig, properties);
+		try {
+			assertStoreFormat(initial, format);
+			initial.startTransaction(true);
+			id = initial.storeValue(expected);
+			aborted = initial.getLazyValue(id);
+			assertSame(aborted, initial.getLazyValue(id));
+			initial.rollback();
+			assertThrows(SailException.class, aborted::init);
+		} finally {
+			initial.close();
+		}
+		properties.save();
 		Value replacement = nested
 				? VF.createTripleTerm(SUBJECT, PREDICATE,
 						VF.createTripleTerm(SUBJECT, PREDICATE, VF.createLiteral("replacement", DATATYPE)))
 				: VF.createIRI("urn:canonical:replacement");
-		long replacementId = commitValue(replacement);
-		assertEquals(id, replacementId, "The actual aborted append must be reassigned");
-		LmdbValue newValue = store.getLazyValue(replacementId);
-		assertNotSame(aborted, newValue);
-		assertEquals(replacement, newValue);
-		assertThrows(SailException.class, aborted::init, "Later ID reuse must not revive the aborted association");
+		CountingValueStore reopened = new CountingValueStore(valuesDirectory, 32);
+		try {
+			assertStoreFormat(reopened, format);
+			reopened.startTransaction(true);
+			long replacementId = reopened.storeValue(replacement);
+			reopened.commit();
+			if (format == LmdbStoreFormat.LEGACY_VERSION) {
+				assertEquals(id, replacementId, "Format 2 rebuilds the aborted append from committed dictionary IDs");
+			} else {
+				assertTrue(ValueIds.getValue(replacementId) > ValueIds.getValue(id),
+						"Format 6 retains the aborted ordinal in its persisted next-ID high-water mark");
+			}
+			LmdbValue newValue = reopened.getLazyValue(replacementId);
+			assertNotSame(aborted, newValue);
+			assertEquals(replacement, newValue);
+			assertThrows(SailException.class, aborted::init, "Later ID reuse must not revive the aborted association");
+		} finally {
+			reopened.close();
+		}
+	}
+
+	private static Stream<Arguments> abortedCanonicalShellProfiles() {
+		return Stream.of(LmdbStoreFormat.LEGACY_VERSION, LmdbStoreFormat.CURRENT_VERSION)
+				.flatMap(format -> Stream.of(false, true).map(nested -> Arguments.of(format, nested)));
+	}
+
+	private static void assertStoreFormat(CountingValueStore values, int expectedVersion) {
+		assertEquals(expectedVersion, values.getFormat().getVersion());
+		assertEquals(expectedVersion == LmdbStoreFormat.LEGACY_VERSION, values.getFormat().isLegacy());
+		assertEquals(expectedVersion == LmdbStoreFormat.CURRENT_VERSION,
+				values.getFormat().usesCoreDatatypeLiteralReferences());
+		assertFalse(values.getFormat().inlinesLiterals());
 	}
 
 	@Test
@@ -350,6 +430,10 @@ class LmdbCanonicalValueCacheTest {
 
 		private CountingValueStore(Path path, int cacheSize, boolean inline) throws IOException {
 			super(path.toFile(), new LmdbStoreConfig().setValueCacheSize(cacheSize).setInlineLiterals(inline));
+		}
+
+		private CountingValueStore(Path path, LmdbStoreConfig config, StoreProperties properties) throws IOException {
+			super(path.toFile(), properties, config);
 		}
 
 		@Override

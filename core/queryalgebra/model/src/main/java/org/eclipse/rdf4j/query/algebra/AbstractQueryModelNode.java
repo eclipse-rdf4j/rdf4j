@@ -13,20 +13,24 @@ package org.eclipse.rdf4j.query.algebra;
 
 import java.io.IOException;
 import java.io.ObjectInputStream;
+import java.io.ObjectInputStream.GetField;
 import java.io.ObjectOutputStream;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreePrinter;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
@@ -80,7 +84,9 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	private long sourceRowsScannedActual = -1;
 	private long sourceRowsMatchedActual = -1;
 	private long sourceRowsFilteredActual = -1;
+	private long indexLookupCountActual = -1;
 	private boolean runtimeTelemetryEnabled;
+	private boolean executionSummaryEnabled;
 	private Map<String, Long> longMetricsActual = Collections.emptyMap();
 	private Map<String, Double> doubleMetricsActual = Collections.emptyMap();
 	private Map<String, String> stringMetricsActual = Collections.emptyMap();
@@ -182,6 +188,8 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 					: new HashMap<>(deferredStringMetricsPlanned);
 			clone.queryModelMetadata = queryModelMetadata.isEmpty() ? Collections.emptyMap()
 					: new HashMap<>(queryModelMetadata);
+			clone.indexLookupCountActual = indexLookupCountActual;
+			clone.executionSummaryEnabled = executionSummaryEnabled;
 			return clone;
 		} catch (CloneNotSupportedException e) {
 			throw new RuntimeException("Query model nodes are required to be cloneable", e);
@@ -193,8 +201,55 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 		output.defaultWriteObject();
 	}
 
+	@SuppressWarnings("unchecked")
 	private void readObject(ObjectInputStream input) throws IOException, ClassNotFoundException {
-		input.defaultReadObject();
+		GetField fields = input.readFields();
+		parent = (QueryModelNode) fields.get("parent", null);
+		isVariableScopeChange = fields.get("isVariableScopeChange", false);
+		independentInputScope = fields.get("independentInputScope", false);
+		resultSizeEstimate = fields.get("resultSizeEstimate", 0D);
+		resultSizeActual = fields.get("resultSizeActual", 0L);
+		costEstimate = fields.get("costEstimate", 0D);
+		costFeedbackTrackingEnabled = fields.get("costFeedbackTrackingEnabled", false);
+		costFeedbackExpectedRows = fields.get("costFeedbackExpectedRows", 0D);
+		costFeedbackExpectedWorkRows = fields.get("costFeedbackExpectedWorkRows", 0D);
+		costFeedbackActualRows = fields.get("costFeedbackActualRows", 0L);
+		costFeedbackActualWorkRows = fields.get("costFeedbackActualWorkRows", 0D);
+		costFeedbackReportQErrorThreshold = fields.get("costFeedbackReportQErrorThreshold", 0D);
+		costFeedbackCompletedActual = fields.get("costFeedbackCompletedActual", false);
+		costFeedbackCloseCountActual = fields.get("costFeedbackCloseCountActual", 0L);
+		costFeedbackLeftRowsWithMatchActual = fields.get("costFeedbackLeftRowsWithMatchActual", 0L);
+		costFeedbackEmptyRightProbeCountActual = fields.get("costFeedbackEmptyRightProbeCountActual", 0L);
+		costFeedbackMaxRightRowsPerLeftActual = fields.get("costFeedbackMaxRightRowsPerLeftActual", 0L);
+		totalTimeNanosActual = fields.get("totalTimeNanosActual", 0L);
+		hasNextCallCountActual = fields.get("hasNextCallCountActual", 0L);
+		hasNextTrueCountActual = fields.get("hasNextTrueCountActual", 0L);
+		hasNextTimeNanosActual = fields.get("hasNextTimeNanosActual", 0L);
+		nextCallCountActual = fields.get("nextCallCountActual", 0L);
+		nextTimeNanosActual = fields.get("nextTimeNanosActual", 0L);
+		joinRightIteratorsCreatedActual = fields.get("joinRightIteratorsCreatedActual", 0L);
+		joinLeftBindingsConsumedActual = fields.get("joinLeftBindingsConsumedActual", 0L);
+		joinRightBindingsConsumedActual = fields.get("joinRightBindingsConsumedActual", 0L);
+		sourceRowsScannedActual = fields.get("sourceRowsScannedActual", 0L);
+		sourceRowsMatchedActual = fields.get("sourceRowsMatchedActual", 0L);
+		sourceRowsFilteredActual = fields.get("sourceRowsFilteredActual", 0L);
+		runtimeTelemetryEnabled = fields.get("runtimeTelemetryEnabled", false);
+		executionSummaryEnabled = fields.get("executionSummaryEnabled", false);
+		longMetricsActual = (Map<String, Long>) fields.get("longMetricsActual", null);
+		doubleMetricsActual = (Map<String, Double>) fields.get("doubleMetricsActual", null);
+		stringMetricsActual = (Map<String, String>) fields.get("stringMetricsActual", null);
+		longMetricsPlanned = (Map<String, Long>) fields.get("longMetricsPlanned", null);
+		doubleMetricsPlanned = (Map<String, Double>) fields.get("doubleMetricsPlanned", null);
+		stringMetricsPlanned = (Map<String, String>) fields.get("stringMetricsPlanned", null);
+		cardinality = fields.get("cardinality", 0D);
+		if (fields.defaulted("indexLookupCountActual")) {
+			// Older streams kept this metric only in the actual-metric map; absence means unknown.
+			Long legacyIndexLookupCount = longMetricsActual == null ? null
+					: longMetricsActual.get(TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL);
+			indexLookupCountActual = legacyIndexLookupCount == null ? -1L : legacyIndexLookupCount;
+		} else {
+			indexLookupCountActual = fields.get("indexLookupCountActual", 0L);
+		}
 		deferredStringMetricsPlanned = Collections.emptyMap();
 		queryModelMetadata = Collections.emptyMap();
 	}
@@ -489,23 +544,47 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 
 	@Override
 	public Map<String, Long> getLongMetricsActual() {
+		if (indexLookupCountActual >= 0) {
+			if (longMetricsActual.isEmpty()) {
+				longMetricsActual = new HashMap<>(4);
+			}
+			longMetricsActual.put(TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL, indexLookupCountActual);
+		}
 		return longMetricsActual;
 	}
 
 	@Override
 	public long getLongMetricActual(String metricName) {
+		if (TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL.equals(metricName)) {
+			return indexLookupCountActual;
+		}
 		return longMetricsActual.getOrDefault(metricName, -1L);
 	}
 
 	@Override
 	public void setLongMetricActual(String metricName, long metricValue) {
-		if (metricName == null || !runtimeTelemetryEnabled && !TelemetryMetricNames.isOptimizerMetric(metricName)) {
+		if (!isActualMetricCollectionEnabled(metricName)) {
+			return;
+		}
+		if (TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL.equals(metricName)) {
+			indexLookupCountActual = metricValue;
 			return;
 		}
 		if (longMetricsActual.isEmpty()) {
 			longMetricsActual = new HashMap<>();
 		}
 		longMetricsActual.put(metricName, metricValue);
+	}
+
+	@Experimental
+	@Override
+	public long incrementLongMetricActual(String metricName) {
+		if (!isActualMetricCollectionEnabled(metricName)) {
+			return -1L;
+		}
+		long next = Math.max(0L, getLongMetricActual(metricName)) + 1L;
+		setLongMetricActual(metricName, next);
+		return next;
 	}
 
 	@Override
@@ -520,7 +599,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 
 	@Override
 	public void setDoubleMetricActual(String metricName, double metricValue) {
-		if (metricName == null || !runtimeTelemetryEnabled && !TelemetryMetricNames.isOptimizerMetric(metricName)) {
+		if (!isActualMetricCollectionEnabled(metricName)) {
 			return;
 		}
 		if (doubleMetricsActual.isEmpty()) {
@@ -541,13 +620,35 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 
 	@Override
 	public void setStringMetricActual(String metricName, String metricValue) {
-		if (metricName == null || !runtimeTelemetryEnabled && !TelemetryMetricNames.isOptimizerMetric(metricName)) {
+		if (!isActualMetricCollectionEnabled(metricName)) {
 			return;
 		}
 		if (stringMetricsActual.isEmpty()) {
 			stringMetricsActual = new HashMap<>();
 		}
 		stringMetricsActual.put(metricName, metricValue);
+	}
+
+	@Experimental
+	@Override
+	public void clearMetricsActual() {
+		resultSizeActual = -1L;
+		totalTimeNanosActual = -1L;
+		hasNextCallCountActual = -1L;
+		hasNextTrueCountActual = -1L;
+		hasNextTimeNanosActual = -1L;
+		nextCallCountActual = -1L;
+		nextTimeNanosActual = -1L;
+		joinRightIteratorsCreatedActual = -1L;
+		joinLeftBindingsConsumedActual = -1L;
+		joinRightBindingsConsumedActual = -1L;
+		sourceRowsScannedActual = -1L;
+		sourceRowsMatchedActual = -1L;
+		sourceRowsFilteredActual = -1L;
+		indexLookupCountActual = -1L;
+		longMetricsActual = Collections.emptyMap();
+		doubleMetricsActual = Collections.emptyMap();
+		stringMetricsActual = Collections.emptyMap();
 	}
 
 	@Override
@@ -740,6 +841,25 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 		this.runtimeTelemetryEnabled = runtimeTelemetryEnabled;
 	}
 
+	@Experimental
+	@Override
+	public boolean isExecutionSummaryEnabled() {
+		return executionSummaryEnabled;
+	}
+
+	@Experimental
+	@Override
+	public void setExecutionSummaryEnabled(boolean executionSummaryEnabled) {
+		this.executionSummaryEnabled = executionSummaryEnabled;
+	}
+
+	private boolean isActualMetricCollectionEnabled(String metricName) {
+		return metricName != null
+				&& (runtimeTelemetryEnabled
+						|| TelemetryMetricNames.isOptimizerMetric(metricName)
+						|| executionSummaryEnabled && TelemetryMetricNames.isExecutionSummaryMetric(metricName));
+	}
+
 	@Override
 	public Object getQueryModelMetadata(Object key) {
 		Objects.requireNonNull(key, "key");
@@ -775,6 +895,211 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	@Override
 	public void clearQueryModelMetadata() {
 		queryModelMetadata = Collections.emptyMap();
+	}
+
+	@Override
+	public synchronized boolean canDetachPlanningState(BiPredicate<Object, Object> metadata) {
+		// Invocation observations are not a fresh planning template, even if their payload is scalar-only.
+		if (!longMetricsActual.isEmpty() || !doubleMetricsActual.isEmpty() || !stringMetricsActual.isEmpty()
+				|| resultSizeActual >= 0
+				|| costFeedbackActualRows >= 0 || costFeedbackActualWorkRows >= 0
+				|| costFeedbackCompletedActual
+				|| costFeedbackCloseCountActual >= 0
+				|| costFeedbackLeftRowsWithMatchActual >= 0
+				|| costFeedbackEmptyRightProbeCountActual >= 0
+				|| costFeedbackMaxRightRowsPerLeftActual >= 0
+				|| totalTimeNanosActual >= 0
+				|| hasNextCallCountActual >= 0
+				|| hasNextTrueCountActual >= 0
+				|| hasNextTimeNanosActual >= 0
+				|| nextCallCountActual >= 0
+				|| nextTimeNanosActual >= 0
+				|| joinRightIteratorsCreatedActual >= 0
+				|| joinLeftBindingsConsumedActual >= 0
+				|| joinRightBindingsConsumedActual >= 0
+				|| sourceRowsScannedActual >= 0
+				|| sourceRowsMatchedActual >= 0
+				|| sourceRowsFilteredActual >= 0
+				|| indexLookupCountActual >= 0) {
+			return false;
+		}
+		for (DeferredStringMetric value : deferredStringMetricsPlanned.values()) {
+			synchronized (value) {
+				if (!value.resolved && !(value.producer instanceof OwnedStringDiagnostic)
+						&& !(value.producer instanceof OwnedStringDiagnosticProducer)) {
+					return false;
+				}
+			}
+		}
+		for (Map.Entry<Object, Object> entry : queryModelMetadata.entrySet()) {
+			if (!metadata.test(entry.getKey(), entry.getValue())) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	@Override
+	public synchronized boolean copyDetachedPlanningStateTo(QueryModelNode target, DetachedMetadataCopier metadata) {
+		if (!(target instanceof AbstractQueryModelNode copy)) {
+			return false;
+		}
+		// Invocation observations are not a fresh planning template, even if their payload is scalar-only.
+		if (!longMetricsActual.isEmpty() || !doubleMetricsActual.isEmpty() || !stringMetricsActual.isEmpty()
+				|| resultSizeActual >= 0
+				|| costFeedbackActualRows >= 0 || costFeedbackActualWorkRows >= 0
+				|| costFeedbackCompletedActual
+				|| costFeedbackCloseCountActual >= 0
+				|| costFeedbackLeftRowsWithMatchActual >= 0
+				|| costFeedbackEmptyRightProbeCountActual >= 0
+				|| costFeedbackMaxRightRowsPerLeftActual >= 0
+				|| totalTimeNanosActual >= 0
+				|| hasNextCallCountActual >= 0
+				|| hasNextTrueCountActual >= 0
+				|| hasNextTimeNanosActual >= 0
+				|| nextCallCountActual >= 0
+				|| nextTimeNanosActual >= 0
+				|| joinRightIteratorsCreatedActual >= 0
+				|| joinLeftBindingsConsumedActual >= 0
+				|| joinRightBindingsConsumedActual >= 0
+				|| sourceRowsScannedActual >= 0
+				|| sourceRowsMatchedActual >= 0
+				|| sourceRowsFilteredActual >= 0
+				|| indexLookupCountActual >= 0) {
+			return false;
+		}
+		copy.isVariableScopeChange = isVariableScopeChange;
+		copy.independentInputScope = independentInputScope;
+		copy.resultSizeEstimate = resultSizeEstimate;
+		copy.resultSizeActual = resultSizeActual;
+		copy.costEstimate = costEstimate;
+		copy.costFeedbackTrackingEnabled = costFeedbackTrackingEnabled;
+		copy.runtimeFeedbackContract = runtimeFeedbackContract;
+		copy.costFeedbackExpectedRows = costFeedbackExpectedRows;
+		copy.costFeedbackExpectedWorkRows = costFeedbackExpectedWorkRows;
+		copy.costFeedbackActualRows = costFeedbackActualRows;
+		copy.costFeedbackActualWorkRows = costFeedbackActualWorkRows;
+		copy.costFeedbackReportQErrorThreshold = costFeedbackReportQErrorThreshold;
+		copy.costFeedbackCompletedActual = costFeedbackCompletedActual;
+		copy.costFeedbackCloseCountActual = costFeedbackCloseCountActual;
+		copy.costFeedbackLeftRowsWithMatchActual = costFeedbackLeftRowsWithMatchActual;
+		copy.costFeedbackEmptyRightProbeCountActual = costFeedbackEmptyRightProbeCountActual;
+		copy.costFeedbackMaxRightRowsPerLeftActual = costFeedbackMaxRightRowsPerLeftActual;
+		copy.totalTimeNanosActual = totalTimeNanosActual;
+		copy.hasNextCallCountActual = hasNextCallCountActual;
+		copy.hasNextTrueCountActual = hasNextTrueCountActual;
+		copy.hasNextTimeNanosActual = hasNextTimeNanosActual;
+		copy.nextCallCountActual = nextCallCountActual;
+		copy.nextTimeNanosActual = nextTimeNanosActual;
+		copy.joinRightIteratorsCreatedActual = joinRightIteratorsCreatedActual;
+		copy.joinLeftBindingsConsumedActual = joinLeftBindingsConsumedActual;
+		copy.joinRightBindingsConsumedActual = joinRightBindingsConsumedActual;
+		copy.sourceRowsScannedActual = sourceRowsScannedActual;
+		copy.sourceRowsMatchedActual = sourceRowsMatchedActual;
+		copy.sourceRowsFilteredActual = sourceRowsFilteredActual;
+		copy.indexLookupCountActual = indexLookupCountActual;
+		copy.runtimeTelemetryEnabled = runtimeTelemetryEnabled;
+		copy.executionSummaryEnabled = executionSummaryEnabled;
+		Map<String, DeferredStringMetric> deferred = new HashMap<>();
+		Map<String, String> resolved = new HashMap<>(stringMetricsPlanned);
+		IdentityHashMap<DeferredStringMetric, DeferredStringMetric> aliases = new IdentityHashMap<>();
+		for (Map.Entry<String, DeferredStringMetric> entry : deferredStringMetricsPlanned.entrySet()) {
+			DeferredStringMetric original = entry.getValue();
+			synchronized (original) {
+				if (original.resolved) {
+					if (original.value != null) {
+						resolved.put(entry.getKey(), original.value);
+					}
+				} else {
+					DeferredStringMetric detached = aliases.get(original);
+					if (detached == null) {
+						OwnedStringDiagnostic diagnostic;
+						if (original.producer instanceof OwnedStringDiagnostic owned) {
+							diagnostic = owned;
+						} else if (original.producer instanceof OwnedStringDiagnosticProducer producer) {
+							// Only this explicit pure internal contract may freeze at the cache boundary.
+							// The copied wrapper retains the data, never the ordinary recipe-owning producer.
+							diagnostic = Objects.requireNonNull(producer.snapshot(), "owned diagnostic snapshot");
+						} else {
+							return false;
+						}
+						detached = new DeferredStringMetric(diagnostic);
+						aliases.put(original, detached);
+					}
+					deferred.put(entry.getKey(), detached);
+				}
+			}
+		}
+		copy.queryModelMetadata = Collections.emptyMap();
+		for (Map.Entry<Object, Object> entry : queryModelMetadata.entrySet()) {
+			if (!metadata.copy(entry.getKey(), entry.getValue(), copy)) {
+				return false;
+			}
+		}
+		copy.longMetricsPlanned = longMetricsPlanned.isEmpty() ? Collections.emptyMap()
+				: new HashMap<>(longMetricsPlanned);
+		copy.doubleMetricsPlanned = doubleMetricsPlanned.isEmpty() ? Collections.emptyMap()
+				: new HashMap<>(doubleMetricsPlanned);
+		copy.stringMetricsPlanned = resolved.isEmpty() ? Collections.emptyMap() : resolved;
+		copy.deferredStringMetricsPlanned = deferred.isEmpty() ? Collections.emptyMap() : deferred;
+		return true;
+	}
+
+	@Override
+	public synchronized boolean accountDetachedPlanningState(
+			RetainedMemoryAccount account,
+			DetachedMetadataAccount metadata) {
+		accountMap(longMetricsPlanned, account);
+		accountMap(doubleMetricsPlanned, account);
+		accountMap(stringMetricsPlanned, account);
+		accountMap(longMetricsActual, account);
+		accountMap(doubleMetricsActual, account);
+		accountMap(stringMetricsActual, account);
+		account.add(deferredStringMetricsPlanned, 192L + 96L * deferredStringMetricsPlanned.size());
+		for (Map.Entry<String, DeferredStringMetric> entry : deferredStringMetricsPlanned.entrySet()) {
+			accountString(entry.getKey(), account);
+			DeferredStringMetric value = entry.getValue();
+			if (!(value.producer instanceof OwnedStringDiagnostic diagnostic)) {
+				return false;
+			}
+			long characters = diagnostic.maximumRenderedCharacters();
+			if (characters > (Long.MAX_VALUE - 104L) / 2L) {
+				return false;
+			}
+			// Constant before/after lazy resolution: includes the wrapper and its maximum future memoized String.
+			account.add(value, 104L + 2L * characters);
+			if (!diagnostic.accountRetainedMemory(account)) {
+				return false;
+			}
+		}
+		account.add(queryModelMetadata, 192L + 96L * queryModelMetadata.size());
+		for (Map.Entry<Object, Object> entry : queryModelMetadata.entrySet()) {
+			if (!metadata.account(entry.getKey(), entry.getValue(), account)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static void accountMap(Map<String, ?> map,
+			RetainedMemoryAccount account) {
+		account.add(map, 192L + 96L * map.size());
+		for (Map.Entry<String, ?> entry : map.entrySet()) {
+			accountString(entry.getKey(), account);
+			Object value = entry.getValue();
+			if (value instanceof String text) {
+				accountString(text, account);
+			} else {
+				account.add(value, 24L);
+			} // only this class's Long/Double metric maps
+		}
+	}
+
+	private static void accountString(String value,
+			RetainedMemoryAccount account) {
+		if (value != null) {
+			account.add(value, 40L + 2L * value.length());
+		}
 	}
 
 	private static final class DeferredStringMetric {

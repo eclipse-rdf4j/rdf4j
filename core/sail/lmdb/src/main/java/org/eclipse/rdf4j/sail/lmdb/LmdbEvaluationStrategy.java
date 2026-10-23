@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -28,11 +29,25 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.GraphQuer
 
 public class LmdbEvaluationStrategy extends DefaultEvaluationStrategy {
 	private QueryOptimizerPipeline optimizerPipeline;
+	private final EvaluationStatistics filterOutcomeStatistics;
 
 	public LmdbEvaluationStrategy(TripleSource tripleSource, Dataset dataset, FederatedServiceResolver serviceResolver,
 			long iterationCacheSyncTreshold, EvaluationStatistics evaluationStatistics, boolean trackResultSize) {
 		super(tripleSource, dataset, serviceResolver, iterationCacheSyncTreshold, evaluationStatistics,
 				trackResultSize);
+		filterOutcomeStatistics = evaluationStatistics;
+	}
+
+	/** Binds backend statistics to the actual factory source before automatic planning is installed. */
+	public static void bindExecutionSnapshot(EvaluationStatistics statistics, TripleSource source) {
+		bindExecutionSnapshot(statistics, source, null);
+	}
+
+	public static void bindExecutionSnapshot(EvaluationStatistics statistics, TripleSource source, Dataset dataset) {
+		if (statistics instanceof LmdbEvaluationStatistics lmdbStatistics) {
+			lmdbStatistics.bindExecutionSnapshot(LmdbEvaluationStatistics.executionSnapshotEpoch(source));
+			lmdbStatistics.bindFilterReadSource(source, dataset);
+		}
 	}
 
 	@Override
@@ -53,9 +68,17 @@ public class LmdbEvaluationStrategy extends DefaultEvaluationStrategy {
 	}
 
 	@Override
-	public QueryEvaluationStep precompile(TupleExpr expr) {
+	protected void prepareTupleCompilation(TupleExpr expr) {
 		LmdbValueIdFilter.preserveEffectiveKinds(expr);
-		return super.precompile(expr);
+		super.prepareTupleCompilation(expr);
+	}
+
+	@Override
+	protected QueryEvaluationStep prepare(Filter filter, QueryEvaluationContext context) {
+		if (filterOutcomeStatistics instanceof LmdbEvaluationStatistics statistics) {
+			statistics.prepareFilterOutcome(filter, tripleSource, dataset);
+		}
+		return super.prepare(filter, context);
 	}
 
 	@Override

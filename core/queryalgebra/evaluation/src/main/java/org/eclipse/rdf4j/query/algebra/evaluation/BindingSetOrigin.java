@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
 
@@ -78,6 +79,10 @@ public final class BindingSetOrigin implements Serializable {
 	}
 
 	public static BindingSetOrigin of(BindingSet bindings) {
+		BindingSet graphDelegate = GraphFrameBindings.unwrap(bindings);
+		if (graphDelegate != bindings) {
+			return of(graphDelegate);
+		}
 		if (bindings instanceof Carrier carrier) {
 			return carrier.origin;
 		}
@@ -95,9 +100,7 @@ public final class BindingSetOrigin implements Serializable {
 
 	/** Only the real query-entry adapter may introduce request authority; existing origins are never promoted. */
 	public static BindingSet requestInput(BindingSet bindings) {
-		if (bindings.isEmpty() || bindings instanceof Carrier || bindings instanceof MutableCarrier
-				|| bindings instanceof QueryBindingSet query && query.origin != null
-				|| bindings instanceof ArrayBindingSet array && array.origin != null) {
+		if (bindings.isEmpty() || tracked(bindings)) {
 			return bindings;
 		}
 		return new Carrier(bindings, new BindingSetOrigin(bindings.getBindingNames(), Set.of()));
@@ -237,12 +240,21 @@ public final class BindingSetOrigin implements Serializable {
 	}
 
 	static boolean tracked(BindingSet bindings) {
+		BindingSet graphDelegate = GraphFrameBindings.unwrap(bindings);
+		if (graphDelegate != bindings) {
+			return tracked(graphDelegate);
+		}
 		return bindings instanceof Carrier || bindings instanceof MutableCarrier
 				|| bindings instanceof QueryBindingSet query && query.origin != null
 				|| bindings instanceof ArrayBindingSet array && array.origin != null;
 	}
 
 	public static void set(BindingSet bindings, BindingSetOrigin origin) {
+		BindingSet graphDelegate = GraphFrameBindings.unwrap(bindings);
+		if (graphDelegate != bindings) {
+			set(graphDelegate, origin);
+			return;
+		}
 		if (bindings instanceof MutableCarrier carrier) {
 			carrier.origin = origin == null ? UNKNOWN : origin;
 		} else if (bindings instanceof QueryBindingSet query) {
@@ -327,6 +339,18 @@ public final class BindingSetOrigin implements Serializable {
 		@Override
 		public BindingSet next() {
 			return mapper.apply(super.next());
+		}
+
+		@Override
+		public boolean supportsSeek() {
+			return !isClosed() && wrappedIter.supportsSeek();
+		}
+
+		@Override
+		public void seek(Value minValue, boolean minInclusive, Value maxValue, boolean maxInclusive) {
+			if (!isClosed()) {
+				wrappedIter.seek(minValue, minInclusive, maxValue, maxInclusive);
+			}
 		}
 	}
 

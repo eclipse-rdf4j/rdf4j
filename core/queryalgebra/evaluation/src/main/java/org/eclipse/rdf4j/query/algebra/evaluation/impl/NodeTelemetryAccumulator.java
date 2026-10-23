@@ -35,6 +35,7 @@ final class NodeTelemetryAccumulator {
 	private final EvaluationStatistics evaluationStatistics;
 	private final boolean timingEnabled;
 	private final boolean publishOperatorOutcome;
+	private final RuntimeFeedbackTarget runtimeFeedbackTarget;
 	private final SampledTiming hasNextTiming;
 	private final SampledTiming nextTiming;
 	private final SampledTiming expressionTiming;
@@ -64,6 +65,12 @@ final class NodeTelemetryAccumulator {
 
 	NodeTelemetryAccumulator(QueryModelNode node, LongSupplier nanoClock, EvaluationStatistics evaluationStatistics,
 			boolean timingEnabled, boolean publishOperatorOutcome) {
+		this(node, nanoClock, evaluationStatistics, timingEnabled, publishOperatorOutcome, RuntimeFeedbackTarget.NO_OP);
+	}
+
+	NodeTelemetryAccumulator(QueryModelNode node, LongSupplier nanoClock, EvaluationStatistics evaluationStatistics,
+			boolean timingEnabled, boolean publishOperatorOutcome, RuntimeFeedbackTarget runtimeFeedbackTarget) {
+		this.runtimeFeedbackTarget = runtimeFeedbackTarget;
 		this.node = node;
 		this.nanoClock = nanoClock;
 		this.evaluationStatistics = evaluationStatistics;
@@ -192,6 +199,9 @@ final class NodeTelemetryAccumulator {
 		}
 		publishTiming();
 		publishSourceRows();
+		if (runtimeFeedbackTarget.active()) {
+			EvaluationStatistics.publishRuntimeFeedbackTelemetry(node, runtimeFeedbackTarget);
+		}
 		if (publishOperatorOutcome && evaluationStatistics != null) {
 			evaluationStatistics.recordOperatorOutcome(node);
 		}

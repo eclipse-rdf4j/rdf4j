@@ -22,9 +22,11 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.lang.ref.Reference;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.HashSet;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.TreeSet;
@@ -46,6 +48,8 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Lifecycle of the persisted language-tag key policy ({@link StoreProperties#LANGUAGE_TAG_KEY}): new stores use the
@@ -70,6 +74,45 @@ class ValueStoreLanguageTagKeyMigrationTest {
 	void after() throws IOException {
 		LmdbLanguageTagVariantMerge.disabledForTesting = false;
 		if (valueStore != null) {
+			valueStore.close();
+			valueStore = null;
+		}
+	}
+
+	@Test
+	void protocolTwoMigrationRetainsPayloadIdsAndIsIdempotentAcrossReopen() throws IOException {
+		writeProperties(StoreProperties.LANGUAGE_TAG_KEY_BYTE_EXACT);
+		valueStore = openWithPersistedProperties();
+		Literal[] original = {
+				VF.createLiteral("protocol-two-short", "EN-GB"),
+				VF.createLiteral(LONG_LABEL, "EN-GB"),
+				VF.createLiteral("protocol-two-directed", "EN-GB", Literal.BaseDirection.RTL)
+		};
+		long[] ids = new long[original.length];
+		for (int i = 0; i < original.length; i++) {
+			ids[i] = store(original[i]);
+		}
+		valueStore.close();
+		valueStore = null;
+		writeProperties(null);
+		for (int reopen = 0; reopen < 2; reopen++) {
+			valueStore = openWithPersistedProperties();
+			assertEquals(LanguageTagKeyMode.CANONICAL, valueStore.languageTagKeyMode());
+			StoreProperties properties = loadProperties();
+			assertEquals("2", properties.getVersion());
+			assertEquals(StoreProperties.LANGUAGE_TAG_KEY_CANONICAL, properties.getLanguageTagKey());
+			assertTrue(!new File(dataDir, "lmdbrdf.ver").exists());
+			for (int i = 0; i < original.length; i++) {
+				valueStore.clearCaches();
+				Literal lower = VF.createLiteral(original[i].getLabel(), "en-gb", original[i].getBaseDirection());
+				assertEquals(ids[i], valueStore.getId(original[i]));
+				assertEquals(ids[i], valueStore.getId(lower));
+				assertEquals(ids[i], store(lower));
+				Literal loaded = (Literal) valueStore.getValue(ids[i]);
+				assertEquals(original[i].getLabel(), loaded.getLabel());
+				assertEquals(original[i].getLanguage(), loaded.getLanguage());
+				assertEquals(original[i].getBaseDirection(), loaded.getBaseDirection());
+			}
 			valueStore.close();
 			valueStore = null;
 		}
@@ -195,6 +238,8 @@ class ValueStoreLanguageTagKeyMigrationTest {
 		valueStore = openWithPersistedProperties();
 		long shortId = store(VF.createLiteral("abc", "EN"));
 		long longId = store(VF.createLiteral(LONG_LABEL, "EN-GB"));
+		LmdbStoreFormat actualLegacyFormat = valueStore.getFormat();
+		assertTrue(actualLegacyFormat.isLegacy(), "fixture: the dictionary was genuinely created as format 2");
 		valueStore.close();
 		valueStore = null;
 
@@ -203,7 +248,10 @@ class ValueStoreLanguageTagKeyMigrationTest {
 		assertTrue(new File(dataDir, StoreProperties.FILE_NAME).delete(), "fixture: remove store.properties");
 		StoreProperties properties = new StoreProperties(dataDir);
 		assertTrue(!properties.load(), "fixture: nothing to load");
-		valueStore = new ValueStore(new File(dataDir, "values"), properties, new LmdbStoreConfig());
+		// Missing policy metadata does not change the dictionary's authenticated native encoding. The SailStore
+		// likewise passes its resolved format independently of StoreProperties loading into this constructor.
+		valueStore = new ValueStore(new File(dataDir, "values"), properties, new LmdbStoreConfig(), false, null,
+				actualLegacyFormat, false);
 
 		assertEquals(LanguageTagKeyMode.CANONICAL, valueStore.languageTagKeyMode());
 		assertEquals(StoreProperties.LANGUAGE_TAG_KEY_CANONICAL, properties.getLanguageTagKey());
@@ -299,6 +347,49 @@ class ValueStoreLanguageTagKeyMigrationTest {
 				"LmdbStore persists the migrated policy");
 	}
 
+	@ParameterizedTest(name = "collectFirst={0}")
+	@ValueSource(booleans = { false, true })
+	void repeatedCanonicalReconciliationDoesNotReviveRetiredHashedCollisionOwner(boolean collectFirst)
+			throws IOException {
+		writeProperties(StoreProperties.LANGUAGE_TAG_KEY_CANONICAL);
+		StoreProperties properties = loadProperties();
+		valueStore = new ValueStore(new File(dataDir, "values"), properties,
+				new LmdbStoreConfig().setLegacyReferenceCountRepairEnabled(true));
+		assertTrue(valueStore.getFormat().isLegacy());
+		Literal[] literals = { VF.createLiteral("long literal prefix plumless", "EN"),
+				VF.createLiteral("long literal prefix buckeroo", "EN") };
+		long[] ids = { store(literals[0]), store(literals[1]) };
+		long datatype = valueStore.getId(literals[0].getDatatype());
+		byte[] first = ValueStoreRecordCodec.literalData(literals[0], datatype, false);
+		byte[] second = ValueStoreRecordCodec.literalData(literals[1], datatype, false);
+		assertEquals(ValueStoreRecordCodec.hash(first), ValueStoreRecordCodec.hash(second),
+				"real equal-length CRC32 collision exercises both native hash associations");
+		assertTrue(first.length > ValueStoreRecordCodec.MAX_INLINE_KEY_BYTES);
+		int collected = collectFirst ? 0 : 1;
+		Value retainedPayload = valueStore.getValue(ids[collected]);
+		assertEquals(literals[collected], retainedPayload);
+		valueStore.startTransaction(true);
+		valueStore.gcIds(Collections.singleton(ids[collected]), new HashSet<>());
+		valueStore.commit();
+		valueStore.clearCaches();
+		assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(literals[collected]), "real retirement precondition");
+		assertEquals(ids[1 - collected], valueStore.getId(literals[1 - collected]));
+		for (int reconcile = 0; reconcile < 2; reconcile++) {
+			valueStore.applyLanguageTagVariantMerge(valueStore.planLanguageTagVariantMerge());
+			valueStore.clearCaches();
+			assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(literals[collected]),
+					"reconciliation must not restore reverse mappings for retained retired payloads");
+			assertEquals(ids[1 - collected], valueStore.getId(literals[1 - collected]));
+		}
+		Literal rollback = VF.createLiteral("rollback language owner", "EN");
+		valueStore.startTransaction(true);
+		valueStore.storeValue(rollback);
+		valueStore.rollback();
+		valueStore.clearCaches();
+		assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(rollback));
+		Reference.reachabilityFence(retainedPayload);
+	}
+
 	// ---------------------------------------------------------------------------------------------------------
 	// Harness
 	// ---------------------------------------------------------------------------------------------------------
@@ -340,7 +431,7 @@ class ValueStoreLanguageTagKeyMigrationTest {
 				properties.load(in);
 			}
 		}
-		properties.setProperty(StoreProperties.VERSION_KEY, String.valueOf(LmdbStore.VERSION));
+		properties.setProperty(StoreProperties.VERSION_KEY, String.valueOf(LmdbStoreFormat.LEGACY_VERSION));
 		properties.setProperty(StoreProperties.INDEXES_KEY, "spoc,posc");
 		properties.setProperty(StoreProperties.TRIPLE_TERM_INDEXES_KEY, "spoc,cspo");
 		properties.remove(StoreProperties.LANGUAGE_TAG_KEY);
