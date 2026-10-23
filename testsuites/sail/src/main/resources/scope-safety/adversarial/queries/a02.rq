@@ -1,0 +1,5 @@
+# ?slot and ?never are declared but unbound; only ?slot receives a later binding.
+SELECT * WHERE {
+  { SELECT * WHERE { VALUES (?x ?slot ?never) { ("inner" UNDEF UNDEF) } } }
+  VALUES ?slot { "outer" }
+}

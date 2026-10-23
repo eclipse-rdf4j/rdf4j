@@ -1,0 +1,7 @@
+Timed out while retrieving explanation! Explanation may be incomplete!
+You can change the timeout by setting .setMaxExecutionTime(...) on your query.
+
+ProjectionElemList
+   ProjectionElem "a"
+   ProjectionElem "code<script>"
+   ProjectionElem "d"

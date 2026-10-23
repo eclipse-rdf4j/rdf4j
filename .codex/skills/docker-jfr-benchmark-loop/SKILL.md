@@ -1,6 +1,6 @@
 ---
 name: docker-jfr-benchmark-loop
-description: Run a repeatable RDF4J performance loop against one JMH benchmark in Docker with Linux Java 26 and JFR CPU-time profiling. Use when working in this repo on benchmark-guided performance changes, hotspot triage, JFR reading, CPU bottleneck analysis, or repeated baseline, fix, and rerun loops. Trigger on requests mentioning benchmark, profiling, JFR, hotspot, perf loop, CPU bottleneck, or Docker benchmark runs in RDF4J.
+description: Run a repeatable RDF4J performance loop against one JMH benchmark or a benchmark class main method in Docker with Linux Java 26 and JFR CPU-time profiling. Use when working in this repo on benchmark-guided performance changes, hotspot triage, JFR reading, CPU bottleneck analysis, or repeated baseline, fix, and rerun loops. Trigger on requests mentioning benchmark, profiling, JFR, hotspot, perf loop, CPU bottleneck, or Docker benchmark runs in RDF4J.
 ---
 
 # Docker JFR Benchmark Loop
@@ -27,6 +27,18 @@ Explicit selector plus params:
   --param samples=1000
 ```
 
+Invoke a benchmark class's own main method when that main owns the JMH configuration:
+
+```bash
+.codex/skills/docker-jfr-benchmark-loop/scripts/run-docker-jfr-loop.sh \
+  --module core/sail/lmdb \
+  --main-class org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark
+```
+
+Main-class mode launches the class from the packaged benchmark jar and attaches the Java 26/JFR options to that JVM.
+It does not select or invoke a JMH benchmark method itself. Use `--main-arg` for application arguments; JMH `--param`
+and raw JMH arguments are intentionally unavailable because the main method owns those choices.
+
 ## Repo-grounded defaults
 
 - The wrapper calls repo helper `scripts/run-single-benchmark-docker.sh`.
@@ -48,7 +60,8 @@ Explicit selector plus params:
 
 ## Core loop
 
-1. Pick one benchmark selector. Keep selector, params, Docker image, and profiling flags constant for the whole comparison.
+1. Pick one benchmark selector, or main-class mode when the class must own its JMH setup. Keep the entrypoint, params,
+   Docker image, and profiling flags constant for the whole comparison.
 2. Capture a baseline run with `scripts/run-docker-jfr-loop.sh`.
 3. Read the `.jfr` using [references/jfr-reading.md](references/jfr-reading.md).
 4. Choose one candidate fix with material CPU share. Prefer the fix most likely to move total runtime, not just local self time.

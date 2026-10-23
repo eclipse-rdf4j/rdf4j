@@ -1,0 +1,19 @@
+{
+  "producer_revision": "39650fd2a0324d06133578c1cee620e0e456a585",
+  "artifact_manifest": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/optimize/runtime/artifact-manifest.json",
+  "artifact_manifest_sha256": "5aa975386febb28c3a976823a04b2c96b4fc7988c6fc536c5a898f0fcd7be068",
+  "producer_source": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-implementation/LmdbTinyMapFixtureProducer.java",
+  "producer_source_sha256": "bbfe7619bb14b9db1cdc46bf3173e62d56070ef846e82039add5a68b8512e495",
+  "producer_class_sha256": "47db91230da890747e6091c31a3ebf65e8c2b859b934f8648a0a9ba3a1914d83",
+  "archives": [
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-implementation/v6-tiny-map-producer-20261004T151811Z/v6-tiny-map-inline-false.zip",
+      "sha256": "587bfd5e82b71675755e43f82e46f4e697097d65846215a878d2fb38e7fbe6e4"
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-implementation/v6-tiny-map-producer-20261004T151811Z/v6-tiny-map-inline-true.zip",
+      "sha256": "83f7bb339d5bac5a33953f828ccc013bce9c1f689928936cf53abc4751b56fae"
+    }
+  ],
+  "description": "Actual tiny-map v6 stores authored by frozen original optimize runtime39650fd through existing public config and connection APIs; no native fixture mutation or format relabel."
+}

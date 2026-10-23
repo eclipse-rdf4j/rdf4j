@@ -16,13 +16,22 @@ import static org.eclipse.rdf4j.http.protocol.Protocol.QUERY_PARAM_NAME;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.util.Map;
+import java.util.function.UnaryOperator;
 
 import org.eclipse.rdf4j.common.lang.FileFormat;
+import org.eclipse.rdf4j.http.client.BNodeOriginTransport;
+import org.eclipse.rdf4j.http.client.CancellableOperationCoordinator;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreakerHandle;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
+import org.eclipse.rdf4j.http.client.QueryRequestContext;
+import org.eclipse.rdf4j.http.client.QueryResponseHeartbeat;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.rio.RDFFormat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.servlet.View;
@@ -37,6 +46,48 @@ import jakarta.servlet.http.HttpServletResponse;
  * @author Arjohn Kampman
  */
 public abstract class QueryResultView implements View {
+
+	/** Configures the opt-in only for formats whose blank-node labels round-trip exactly. */
+	public static boolean negotiateBNodeOrigin(HttpServletRequest request, HttpServletResponse response,
+			Object format) {
+		boolean enabled = BNodeOriginTransport.VERSION.equals(request.getHeader(BNodeOriginTransport.HEADER))
+				&& (TupleQueryResultFormat.BINARY.equals(format) || RDFFormat.BINARY.equals(format));
+		if (enabled) {
+			response.setHeader(BNodeOriginTransport.HEADER, BNodeOriginTransport.VERSION);
+		}
+		return enabled;
+	}
+
+	public static UnaryOperator<Value> bNodeOriginMapper(RepositoryConnection connection, HttpServletRequest request,
+			HttpServletResponse response, Object format) {
+		return bNodeOriginMapper(connection == null ? null : connection.getValueFactory(), request, response, format);
+	}
+
+	/**
+	 * The encoder of a negotiated response, or null when the client did not opt in, the format cannot carry envelopes,
+	 * or no {@code factory} can say which blank nodes the repository stores. Without that authority the response is not
+	 * negotiated at all: claiming every stored node transient would be a wrong proof, not a safe one.
+	 */
+	public static UnaryOperator<Value> bNodeOriginMapper(ValueFactory factory, HttpServletRequest request,
+			HttpServletResponse response, Object format) {
+		if (factory == null) {
+			return null;
+		}
+		return negotiateBNodeOrigin(request, response, format) ? BNodeOriginTransport.encoder(factory) : null;
+	}
+
+	/**
+	 * The encoder for a view model: its {@link #CONNECTION_KEY connection}'s value factory, or the
+	 * {@link #VALUE_FACTORY_KEY value factory} a transaction supplies in place of a connection the view may close.
+	 */
+	@SuppressWarnings("rawtypes")
+	static UnaryOperator<Value> bNodeOriginMapper(Map model, HttpServletRequest request, HttpServletResponse response,
+			Object format) {
+		RepositoryConnection connection = (RepositoryConnection) model.get(CONNECTION_KEY);
+		ValueFactory factory = connection != null ? connection.getValueFactory()
+				: (ValueFactory) model.get(VALUE_FACTORY_KEY);
+		return bNodeOriginMapper(factory, request, response, format);
+	}
 
 	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
@@ -67,44 +118,158 @@ public abstract class QueryResultView implements View {
 	 */
 	public static final String CONNECTION_KEY = "connection";
 
+	/**
+	 * The repository's value factory, for blank-node origin negotiation, when the result's connection stays open after
+	 * rendering (a transaction) and so is not put under {@link #CONNECTION_KEY}.
+	 */
+	public static final String VALUE_FACTORY_KEY = "valueFactory";
+
 	public static final String HEADERS_ONLY = "headersOnly";
 
 	public static final String BREAKER_HANDLE_KEY = "breakerHandle";
+
+	public static final String CANCELLATION_COORDINATOR_KEY = "cancellationCoordinator";
+
+	public static final String CANCELLATION_HANDLE_KEY = "cancellationHandle";
+
+	/** The heartbeat that owns the response stream while the query is being rendered. */
+	public static final String RESPONSE_HEARTBEAT_KEY = "responseHeartbeat";
+
+	/** The writer constructed over {@link #RESPONSE_HEARTBEAT_KEY}'s stream before query evaluation starts. */
+	public static final String RESPONSE_WRITER_KEY = "responseWriter";
 
 	@SuppressWarnings("rawtypes")
 	@Override
 	public final void render(Map model, HttpServletRequest request, HttpServletResponse response) throws IOException {
 		RepositoryConnection conn = (RepositoryConnection) model.get(CONNECTION_KEY);
 		QueryCircuitBreakerHandle breakerHandle = (QueryCircuitBreakerHandle) model.get(BREAKER_HANDLE_KEY);
+		CancellableOperationCoordinator cancellationCoordinator = (CancellableOperationCoordinator) model
+				.get(CANCELLATION_COORDINATOR_KEY);
+		CancellableOperationCoordinator.Handle cancellationHandle = (CancellableOperationCoordinator.Handle) model
+				.get(CANCELLATION_HANDLE_KEY);
+		QueryResponseHeartbeat responseHeartbeat = (QueryResponseHeartbeat) model.get(RESPONSE_HEARTBEAT_KEY);
 		QueryExecutionContext.Activation activation = null;
+		boolean renderingCompleted = false;
+		Throwable renderingFailure = null;
 		try {
 			if (breakerHandle != null) {
 				breakerHandle.attachCurrentThread(conn);
 				activation = QueryExecutionContext.activate(breakerHandle);
 			}
-			renderInternal(model, request, response);
+			if (cancellationCoordinator == null || cancellationHandle == null) {
+				renderInternal(model, request, response);
+			} else {
+				cancellationCoordinator.execute(cancellationHandle, conn,
+						currentHandle -> QueryRequestContext.activate(currentHandle.getRequestId())::close,
+						() -> {
+							renderInternal(model, request, response);
+							return null;
+						});
+			}
+			renderingCompleted = true;
+		} catch (IOException | RuntimeException e) {
+			renderingFailure = e;
+			if (responseHeartbeat != null) {
+				responseHeartbeat.abort();
+			}
+			if (!isExplicitlyCancelled(model)) {
+				throw e;
+			}
+		} catch (Error e) {
+			renderingFailure = e;
+			if (responseHeartbeat != null) {
+				responseHeartbeat.abort();
+			}
+			throw e;
 		} finally {
 			try {
-				if (activation != null) {
-					activation.close();
+				if (responseHeartbeat != null) {
+					try {
+						cleanupResponseHeartbeat(responseHeartbeat, renderingCompleted);
+					} catch (IOException e) {
+						if (renderingFailure != null) {
+							renderingFailure.addSuppressed(e);
+						} else {
+							throw e;
+						}
+					}
 				}
 			} finally {
 				try {
-					if (conn != null) {
-						conn.close();
+					if (activation != null) {
+						activation.close();
 					}
 				} finally {
-					if (breakerHandle != null) {
-						QueryCircuitBreaker.getInstance().complete(breakerHandle);
+					try {
+						if (conn != null) {
+							conn.close();
+						}
+					} finally {
+						try {
+							if (breakerHandle != null) {
+								QueryCircuitBreaker.getInstance().complete(breakerHandle);
+							}
+						} finally {
+							if (cancellationCoordinator != null && cancellationHandle != null) {
+								cancellationCoordinator.complete(cancellationHandle);
+							}
+						}
 					}
 				}
 			}
 		}
 	}
 
+	private void cleanupResponseHeartbeat(QueryResponseHeartbeat heartbeat, boolean renderingCompleted)
+			throws IOException {
+		heartbeat.stop();
+		if (renderingCompleted || heartbeat.hasProbed() || heartbeat.hasPayload()) {
+			heartbeat.close();
+		}
+	}
+
 	@SuppressWarnings("rawtypes")
 	protected abstract void renderInternal(Map model, HttpServletRequest request, HttpServletResponse response)
 			throws IOException;
+
+	@SuppressWarnings("rawtypes")
+	protected boolean isExplicitlyCancelled(Map model) {
+		CancellableOperationCoordinator.Handle handle = (CancellableOperationCoordinator.Handle) model
+				.get(CANCELLATION_HANDLE_KEY);
+		return handle != null && !handle.isActive();
+	}
+
+	@SuppressWarnings("rawtypes")
+	protected QueryResponseHeartbeat getResponseHeartbeat(Map model) {
+		return (QueryResponseHeartbeat) model.get(RESPONSE_HEARTBEAT_KEY);
+	}
+
+	@SuppressWarnings("rawtypes")
+	protected boolean responseWasCommitted(Map model) {
+		QueryResponseHeartbeat heartbeat = getResponseHeartbeat(model);
+		return heartbeat != null && heartbeat.hasProbed();
+	}
+
+	@SuppressWarnings("rawtypes")
+	protected boolean responseWasCommitted(Map model, HttpServletResponse response) {
+		return response.isCommitted() || responseWasCommitted(model);
+	}
+
+	@SuppressWarnings("rawtypes")
+	protected void stopResponseHeartbeat(Map model) {
+		QueryResponseHeartbeat heartbeat = getResponseHeartbeat(model);
+		if (heartbeat != null) {
+			heartbeat.stop();
+		}
+	}
+
+	@SuppressWarnings("rawtypes")
+	protected void abortResponseHeartbeat(Map model) {
+		QueryResponseHeartbeat heartbeat = getResponseHeartbeat(model);
+		if (heartbeat != null) {
+			heartbeat.abort();
+		}
+	}
 
 	protected void setContentType(HttpServletResponse response, FileFormat fileFormat) throws IOException {
 		String mimeType = fileFormat.getDefaultMIMEType();

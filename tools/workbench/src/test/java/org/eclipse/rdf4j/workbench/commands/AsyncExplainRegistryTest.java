@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.workbench.commands;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -25,6 +26,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.http.client.AsyncExplainCoordinator;
+import org.eclipse.rdf4j.http.client.CancellableOperationCoordinator;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.junit.jupiter.api.Test;
 
@@ -52,7 +54,12 @@ class AsyncExplainRegistryTest {
 		AsyncExplainCoordinator.Handle handle = coordinator.register("req-2", () -> remoteCancelled.set(true));
 		ExecutorService executor = Executors.newSingleThreadExecutor();
 		CountDownLatch started = new CountDownLatch(1);
+		CountDownLatch connectionClosed = new CountDownLatch(1);
 		AtomicBoolean interrupted = new AtomicBoolean(false);
+		doAnswer(invocation -> {
+			connectionClosed.countDown();
+			return null;
+		}).when(connection).close();
 
 		try {
 			Future<?> future = executor.submit(() -> {
@@ -80,6 +87,7 @@ class AsyncExplainRegistryTest {
 			assertThat(interrupted.get()).isTrue();
 			assertThat(handle.isActive()).isFalse();
 			assertThat(remoteCancelled.get()).isTrue();
+			assertThat(connectionClosed.await(5, TimeUnit.SECONDS)).isTrue();
 			verify(connection).close();
 		} finally {
 			executor.shutdownNow();
@@ -87,7 +95,7 @@ class AsyncExplainRegistryTest {
 	}
 
 	@Test
-	void cancelSwallowsSecondaryFailuresAndShutdownCancelsActiveHandles() throws Exception {
+	void cancelReportsRemoteFailureAndShutdownCancelsActiveHandles() throws Exception {
 		AsyncExplainCoordinator coordinator = new AsyncExplainCoordinator();
 		RepositoryConnection connection = mock(RepositoryConnection.class);
 		doThrow(new RuntimeException("close")).when(connection).close();
@@ -116,7 +124,8 @@ class AsyncExplainRegistryTest {
 			});
 
 			assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
-			assertThat(coordinator.cancel("req-3")).isTrue();
+			assertThatThrownBy(() -> coordinator.cancel("req-3"))
+					.isInstanceOf(CancellableOperationCoordinator.CancellationException.class);
 			future.get(5, TimeUnit.SECONDS);
 			assertThat(handle.isActive()).isFalse();
 

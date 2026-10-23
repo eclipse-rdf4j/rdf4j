@@ -23,7 +23,9 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.ConcurrentModificationException;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -41,6 +43,7 @@ import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 
 /**
@@ -62,6 +65,7 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	private static final long serialVersionUID = -9162104133818983614L;
 
 	private static final Resource[] NULL_CTX = new Resource[] { null };
+	private static final int MIN_CANONICAL_REMOVAL_DEBT = 1024;
 
 	@SuppressWarnings("StaticNonFinalField")
 	static int LARGE_STATEMENT_SET_MIN_SIZE = 65536;
@@ -74,6 +78,8 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	private static final StripedCleaner cleaner = new StripedCleaner();
 
 	private Map<Statement, Statement> statements;
+	private transient Map<Value, Value> canonicalValues = new HashMap<>();
+	private transient int canonicalRemovalDebt;
 	private Set<Resource> addedContexts = null;
 	private Set<Namespace> namespaces = null;
 	private long statementVersion;
@@ -239,7 +245,7 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 		if (model == null) {
 			boolean added = false;
 			for (Resource context : contexts) {
-				Statement statement = SimpleValueFactory.getInstance().createStatement(subj, pred, obj, context);
+				Statement statement = canonicalStatement(subj, pred, obj, context);
 				initializeAddedContextsIfNeeded().add(context);
 				added = added | statements.put(statement, statement) == null;
 			}
@@ -268,9 +274,10 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 
 		if (model == null) {
 			if (contexts == null) {
-				boolean removed = statements
-						.remove(SimpleValueFactory.getInstance()
-								.createStatement(subj, pred, obj, (Resource) null)) != null;
+				Statement removedStatement = statements.remove(SimpleValueFactory.getInstance()
+						.createStatement(subj, pred, obj, (Resource) null));
+				boolean removed = removedStatement != null;
+				recordCanonicalRemoval(removedStatement);
 				if (removed) {
 					invalidateAddedContexts();
 				}
@@ -278,12 +285,16 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 				return removed;
 			}
 
-			boolean removed = false;
+			long removalDebt = 0L;
 			for (Resource context : contexts) {
-				removed = removed
-						| statements.remove(
-								SimpleValueFactory.getInstance().createStatement(subj, pred, obj, context)) != null;
+				Statement removedStatement = statements.remove(
+						SimpleValueFactory.getInstance().createStatement(subj, pred, obj, context));
+				if (removedStatement != null) {
+					removalDebt += canonicalRemovalWeight(removedStatement);
+				}
 			}
+			boolean removed = removalDebt > 0L;
+			recordCanonicalRemovalDebt(removalDebt);
 			if (removed) {
 				invalidateAddedContexts();
 			}
@@ -355,6 +366,8 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 		boolean mapBacked = model == null;
 		Iterator<Statement> iterator = mapBacked ? statements.values().iterator() : model.iterator();
 		return new Iterator<>() {
+			Statement lastReturned;
+
 			@Override
 			public boolean hasNext() {
 				return iterator.hasNext();
@@ -362,15 +375,17 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 
 			@Override
 			public Statement next() {
-				return iterator.next();
+				return lastReturned = iterator.next();
 			}
 
 			@Override
 			public void remove() {
 				iterator.remove();
 				if (mapBacked) {
+					recordCanonicalRemoval(lastReturned);
 					invalidateAddedContexts();
 				}
+				lastReturned = null;
 				markStatementsChanged();
 			}
 		};
@@ -396,6 +411,7 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	public boolean add(Statement statement) {
 		Objects.requireNonNull(statement);
 		if (model == null) {
+			statement = canonicalStatement(statement);
 			initializeAddedContextsIfNeeded().add(statement.getContext());
 			boolean changed = statements.put(statement, statement) == null;
 			markStatementsChangedIf(changed);
@@ -410,7 +426,9 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	public boolean remove(Object o) {
 		Objects.requireNonNull(o);
 		if (model == null) {
-			boolean removed = statements.remove(o) != null;
+			Statement removedStatement = statements.remove(o);
+			boolean removed = removedStatement != null;
+			recordCanonicalRemoval(removedStatement);
 			if (removed) {
 				invalidateAddedContexts();
 			}
@@ -438,6 +456,7 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 			boolean changed = false;
 			for (Statement statement : c) {
 				Objects.requireNonNull(statement);
+				statement = canonicalStatement(statement);
 				initializeAddedContextsIfNeeded().add(statement.getContext());
 				changed = changed | statements.put(statement, statement) == null;
 			}
@@ -452,7 +471,14 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	@Override
 	public boolean retainAll(Collection<?> c) {
 		if (model == null) {
+			long removalDebt = 0L;
+			for (Statement statement : statements.values()) {
+				if (!c.contains(statement)) {
+					removalDebt += canonicalRemovalWeight(statement);
+				}
+			}
 			boolean changed = statements.keySet().retainAll(c);
+			recordCanonicalRemovalDebt(removalDebt);
 			if (changed) {
 				invalidateAddedContexts();
 			}
@@ -468,9 +494,15 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	public boolean removeAll(Collection<?> c) {
 		if (model == null) {
 			boolean changed = false;
+			long removalDebt = 0L;
 			for (Object statement : new ArrayList<>(c)) {
-				changed = changed | statements.remove(statement) != null;
+				Statement removedStatement = statements.remove(statement);
+				if (removedStatement != null) {
+					changed = true;
+					removalDebt += canonicalRemovalWeight(removedStatement);
+				}
 			}
+			recordCanonicalRemovalDebt(removalDebt);
 			if (changed) {
 				invalidateAddedContexts();
 			}
@@ -485,6 +517,10 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	@Override
 	public void clear() {
 		if (model == null) {
+			if (canonicalValues != null) {
+				canonicalValues.clear();
+			}
+			canonicalRemovalDebt = 0;
 			if (!statements.isEmpty()) {
 				statements.clear();
 				invalidateAddedContexts();
@@ -666,8 +702,15 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 		if (model == null) {
 			iterator.remove();
 			Map<Statement, Statement> updatedStatements = new LinkedHashMap<>(statements);
-			updatedStatements.keySet().removeIf(statement -> matchesPattern(statement, subj, pred, obj, contexts));
+			long removalDebt = 0L;
+			for (Statement statement : statements.values()) {
+				if (matchesPattern(statement, subj, pred, obj, contexts)) {
+					updatedStatements.remove(statement);
+					removalDebt += canonicalRemovalWeight(statement);
+				}
+			}
 			statements = updatedStatements;
+			recordCanonicalRemovalDebt(removalDebt);
 			invalidateAddedContexts();
 			return;
 		}
@@ -774,7 +817,169 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 				namespaces.forEach(tempModel::setNamespace);
 			}
 			model = tempModel;
+			canonicalValues = null;
+			canonicalRemovalDebt = 0;
 		}
+	}
+
+	private Statement canonicalStatement(Statement statement) {
+		Resource subject = (Resource) canonicalValue(statement.getSubject());
+		IRI predicate = (IRI) canonicalValue(statement.getPredicate());
+		Value object = canonicalValue(statement.getObject());
+		Resource context = (Resource) canonicalValue(statement.getContext());
+		// Only the factory's concrete representation has a known structural key policy. Subclasses and other supplied
+		// implementations can override equality/hashCode, so replacing them could collapse distinct statement keys.
+		if (statement.getClass() != GenericStatement.class
+				|| subject == statement.getSubject() && predicate == statement.getPredicate()
+						&& object == statement.getObject() && context == statement.getContext()) {
+			return statement;
+		}
+		return SimpleValueFactory.getInstance().createStatement(subject, predicate, object, context);
+	}
+
+	private Statement canonicalStatement(Resource subject, IRI predicate, Value object, Resource context) {
+		return SimpleValueFactory.getInstance()
+				.createStatement(
+						(Resource) canonicalValue(subject),
+						(IRI) canonicalValue(predicate),
+						canonicalValue(object),
+						(Resource) canonicalValue(context));
+	}
+
+	private Value canonicalValue(Value value) {
+		if (value == null) {
+			return null;
+		}
+		if (value instanceof TripleTerm triple) {
+			return canonicalTriple(triple);
+		}
+		if (canonicalValues == null) {
+			canonicalValues = new HashMap<>();
+		}
+		Value existing = canonicalValues.putIfAbsent(value, value);
+		return existing == null ? value : existing;
+	}
+
+	/** Canonicalizes a term DAG without imposing structural hashing or equality on caller-supplied terms. */
+	private Value canonicalTriple(TripleTerm root) {
+		Map<TripleTerm, Value> resolved = new IdentityHashMap<>();
+		Set<TripleTerm> visiting = Collections.newSetFromMap(new IdentityHashMap<>());
+		Deque<CanonicalTerm> pending = new ArrayDeque<>();
+		pending.push(new CanonicalTerm(root));
+		visiting.add(root);
+		while (!pending.isEmpty()) {
+			CanonicalTerm frame = pending.peek();
+			if (frame.child < 3) {
+				Value child = frame.original[frame.child];
+				if (child instanceof TripleTerm nested) {
+					Value existing = resolved.get(nested);
+					if (existing != null) {
+						frame.canonical[frame.child++] = existing;
+					} else {
+						if (!visiting.add(nested)) {
+							throw new IllegalArgumentException("Cyclic triple term");
+						}
+						pending.push(new CanonicalTerm(nested));
+					}
+				} else {
+					frame.canonical[frame.child++] = canonicalValue(child);
+				}
+			} else {
+				Value canonical = frame.term;
+				if (frame.original[0] != frame.canonical[0] || frame.original[1] != frame.canonical[1]
+						|| frame.original[2] != frame.canonical[2]) {
+					canonical = SimpleValueFactory.getInstance()
+							.createTripleTerm((Resource) frame.canonical[0],
+									(IRI) frame.canonical[1], frame.canonical[2]);
+				}
+				resolved.put(frame.term, canonical);
+				visiting.remove(frame.term);
+				pending.pop();
+			}
+		}
+		return resolved.get(root);
+	}
+
+	private static final class CanonicalTerm {
+		private final TripleTerm term;
+		private final Value[] original;
+		private final Value[] canonical = new Value[3];
+		private int child;
+
+		private CanonicalTerm(TripleTerm term) {
+			this.term = term;
+			original = new Value[] { term.getSubject(), term.getPredicate(), term.getObject() };
+		}
+	}
+
+	private void recordCanonicalRemoval(Statement removedStatement) {
+		if (removedStatement != null) {
+			recordCanonicalRemovalDebt(canonicalRemovalWeight(removedStatement));
+		}
+	}
+
+	private void recordCanonicalRemovalDebt(long removedValues) {
+		if (removedValues <= 0L || canonicalValues == null) {
+			return;
+		}
+		if (statements.isEmpty()) {
+			canonicalValues.clear();
+			canonicalRemovalDebt = 0;
+			return;
+		}
+		long newDebt = (long) canonicalRemovalDebt + removedValues;
+		canonicalRemovalDebt = (int) Math.min(Integer.MAX_VALUE, newDebt);
+		int rebuildThreshold = Math.max(MIN_CANONICAL_REMOVAL_DEBT, canonicalValues.size() / 2);
+		if (canonicalRemovalDebt >= rebuildThreshold) {
+			rebuildCanonicalValues();
+		}
+	}
+
+	private long canonicalRemovalWeight(Statement statement) {
+		return canonicalRemovalWeight(statement.getSubject()) + canonicalRemovalWeight(statement.getPredicate())
+				+ canonicalRemovalWeight(statement.getObject()) + canonicalRemovalWeight(statement.getContext());
+	}
+
+	private long canonicalRemovalWeight(Value value) {
+		if (value == null) {
+			return 0L;
+		}
+		if (value instanceof TripleTerm triple) {
+			Set<Value> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+			Deque<Value> pending = new ArrayDeque<>();
+			pending.push(triple);
+			long weight = 0L;
+			while (!pending.isEmpty()) {
+				Value current = pending.pop();
+				if (!seen.add(current)) {
+					continue;
+				}
+				if (current instanceof TripleTerm term) {
+					pending.push(term.getSubject());
+					pending.push(term.getPredicate());
+					pending.push(term.getObject());
+				} else {
+					weight++;
+				}
+			}
+			return weight;
+		}
+		return 1L;
+	}
+
+	private void rebuildCanonicalValues() {
+		canonicalValues = new HashMap<>();
+		canonicalRemovalDebt = 0;
+		for (Statement statement : statements.values()) {
+			canonicalValue(statement.getSubject());
+			canonicalValue(statement.getPredicate());
+			canonicalValue(statement.getObject());
+			canonicalValue(statement.getContext());
+		}
+	}
+
+	int canonicalValueCacheSize() {
+		return canonicalValues == null ? 0 : canonicalValues.size();
 	}
 
 	static LinkedHashMap<Statement, Statement> borrowLargeStatementSet() {
@@ -881,6 +1086,12 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 
 	private void readObject(ObjectInputStream objectInputStream) throws IOException, ClassNotFoundException {
 		objectInputStream.defaultReadObject();
+		if (model == null) {
+			rebuildCanonicalValues();
+		} else {
+			canonicalValues = null;
+			canonicalRemovalDebt = 0;
+		}
 		initializeAddedContextsIfNeeded();
 	}
 

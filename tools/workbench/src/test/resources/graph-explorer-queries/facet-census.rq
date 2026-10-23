@@ -1,0 +1,5 @@
+SELECT ?p (COUNT(?o) AS ?n) WHERE { {
+ SELECT DISTINCT ?p ?o WHERE {
+ { VALUES ?s { <urn:ex:hub> } ?s ?p ?o . } UNION { GRAPH ?__graph { VALUES ?s { <urn:ex:hub> } ?s ?p ?o . } } FILTER(!isTRIPLE(?o))
+ } LIMIT 10001
+ } } GROUP BY ?p

@@ -4,7 +4,7 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-rio</artifactId>
-		<version>6.1.1-SNAPSHOT</version>
+		<version>6.2.0-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-rio-jsonld</artifactId>
 	<name>RDF4J: Rio - JSON-LD</name>
@@ -35,11 +35,18 @@
 		<dependency>
 			<groupId>no.hasmac</groupId>
 			<artifactId>hasmac-json-ld</artifactId>
+			<exclusions>
+				<!-- The explicit module provider below avoids the bundled, outdated JSON-P API. -->
+				<exclusion>
+					<groupId>org.glassfish</groupId>
+					<artifactId>jakarta.json</artifactId>
+				</exclusion>
+			</exclusions>
 		</dependency>
 		<dependency>
 			<groupId>jakarta.json</groupId>
 			<artifactId>jakarta.json-api</artifactId>
-			<version>2.0.1</version>
+			<version>2.0.2</version>
 		</dependency>
 		<dependency>
 			<groupId>org.glassfish</groupId>

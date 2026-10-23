@@ -1,0 +1,2 @@
+PREFIX : <urn:query-boundary:> PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT ?s (SUM(?v) AS ?total) (AVG(?v) AS ?avg) WHERE { ?s :p ?k . SERVICE <urn:query-boundary:remote> { ?k :q ?v } } GROUP BY ?s HAVING(SUM(?v) >= 20)

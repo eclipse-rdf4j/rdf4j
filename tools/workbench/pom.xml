@@ -4,12 +4,19 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-tools</artifactId>
-		<version>6.1.1-SNAPSHOT</version>
+		<version>6.2.0-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-http-workbench</artifactId>
 	<packaging>war</packaging>
 	<name>RDF4J: Workbench</name>
 	<description>Workbench to interact with RDF4J servers.</description>
+	<properties>
+		<!-- -DskipFrontend=true skips the npm install and build (Java-only loops); the WAR then lacks the compiled scripts. -->
+		<skipFrontend>false</skipFrontend>
+		<!-- A cold tree gets npm ci; a warm one an npm install that never writes package-lock.json (profile
+		     frontend-installed below): it syncs node_modules with a changed lock and is quick when nothing changed. -->
+		<skipFrontendInstall>${skipFrontend}</skipFrontendInstall>
+	</properties>
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
@@ -55,6 +62,86 @@
 			<scope>runtime</scope>
 		</dependency>
 		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>brotli4j</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-linux-aarch64</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-linux-armv7</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-linux-ppc64le</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-linux-riscv64</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-linux-s390x</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-linux-x86_64</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-osx-aarch64</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-osx-x86_64</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-windows-aarch64</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-windows-x86_64</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.github.luben</groupId>
+			<artifactId>zstd-jni</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-compress</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>commons-io</groupId>
+			<artifactId>commons-io</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.tukaani</groupId>
+			<artifactId>xz</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>${project.groupId}</groupId>
+			<artifactId>rdf4j-rio-api</artifactId>
+			<version>${project.version}</version>
+			<type>test-jar</type>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
 			<groupId>org.mockito</groupId>
 			<artifactId>mockito-core</artifactId>
 			<scope>test</scope>
@@ -86,12 +173,95 @@
 	<build>
 		<plugins>
 			<plugin>
+				<!-- Fills target/frontend (the WAR lists it as a web resource) with the files served as they are, also when
+				     -DskipFrontend=true: src/main/frontend/static (hand-written and vendored scripts, styles) and the classic
+				     TypeScript sources, which the compiled scripts' source maps load from /scripts/ts/. -->
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-resources-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>copy-frontend-static</id>
+						<goals>
+							<goal>copy-resources</goal>
+						</goals>
+						<phase>initialize</phase>
+						<configuration>
+							<outputDirectory>${project.build.directory}/frontend</outputDirectory>
+							<resources>
+								<resource>
+									<directory>${project.basedir}/src/main/frontend/static</directory>
+								</resource>
+								<resource>
+									<directory>${project.basedir}/src/main/frontend/classic</directory>
+									<targetPath>scripts/ts</targetPath>
+									<includes>
+										<include>*.ts</include>
+									</includes>
+								</resource>
+							</resources>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>com.github.eirslett</groupId>
+				<artifactId>frontend-maven-plugin</artifactId>
+				<configuration>
+					<environmentVariables>
+						<npm_config_cache>${settings.localRepository}/npm-cache</npm_config_cache>
+						<npm_config_update_notifier>false</npm_config_update_notifier>
+					</environmentVariables>
+				</configuration>
+				<executions>
+					<execution>
+						<id>install-node-and-npm</id>
+						<goals>
+							<goal>install-node-and-npm</goal>
+						</goals>
+						<phase>generate-resources</phase>
+						<configuration>
+							<skip>${skipFrontend}</skip>
+						</configuration>
+					</execution>
+					<execution>
+						<id>npm-ci</id>
+						<goals>
+							<goal>npm</goal>
+						</goals>
+						<phase>generate-resources</phase>
+						<configuration>
+							<arguments>ci --prefer-offline --no-audit --no-fund</arguments>
+							<skip>${skipFrontendInstall}</skip>
+						</configuration>
+					</execution>
+					<execution>
+						<id>npm-build</id>
+						<goals>
+							<goal>npm</goal>
+						</goals>
+						<phase>generate-resources</phase>
+						<configuration>
+							<arguments>run build</arguments>
+							<skip>${skipFrontend}</skip>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-war-plugin</artifactId>
+				<version>3.5.1</version>
 				<configuration>
 					<warName>rdf4j-workbench</warName>
 					<archiveClasses>true</archiveClasses>
 					<attachClasses>true</attachClasses>
+					<webResources>
+						<resource>
+							<!-- static scripts and styles, classic TypeScript sources, and the compiled classic scripts and graph
+							     explorer bundle produced by npm run build -->
+							<directory>${project.build.directory}/frontend</directory>
+						</resource>
+					</webResources>
 				</configuration>
 			</plugin>
 			<plugin>
@@ -100,10 +270,14 @@
 				<configuration>
 					<webApp>
 						<contextPath>/rdf4j-workbench</contextPath>
+						<resourceBases>
+							<resourceBase>${project.basedir}/src/main/webapp</resourceBase>
+							<resourceBase>${project.build.directory}/frontend</resourceBase>
+						</resourceBases>
 					</webApp>
 					<contextHandlers>
 						<contextHandler implementation="org.eclipse.jetty.maven.plugin.JettyWebAppContext">
-							<war>${project.basedir}/../server/target/rdf4j-server.war</war>
+							<war>${rdf4j.server.war}</war>
 							<contextPath>/rdf4j-server</contextPath>
 						</contextHandler>
 					</contextHandlers>
@@ -118,4 +292,31 @@
 			</plugin>
 		</plugins>
 	</build>
+	<profiles>
+		<profile>
+			<!-- A warm checkout already has node_modules: npm install brings it up to date instead of reinstalling it. -->
+			<id>frontend-installed</id>
+			<activation>
+				<file>
+					<exists>${basedir}/node_modules</exists>
+				</file>
+			</activation>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>com.github.eirslett</groupId>
+						<artifactId>frontend-maven-plugin</artifactId>
+						<executions>
+							<execution>
+								<id>npm-ci</id>
+								<configuration>
+									<arguments>install --no-save --prefer-offline --no-audit --no-fund</arguments>
+								</configuration>
+							</execution>
+						</executions>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
 </project>

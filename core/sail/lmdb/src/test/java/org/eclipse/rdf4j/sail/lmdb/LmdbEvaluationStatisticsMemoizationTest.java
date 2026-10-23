@@ -85,6 +85,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeEvaluationStrategyFactory;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 
@@ -734,8 +735,10 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	void samplesPatternLocalFilterPassRatioWhenLearnedStatsUnavailable() throws Exception {
 		File dataDir = Files.createTempDirectory("lmdb-eval-stats-sampled-filter").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingMaxMillis(100L);
+		config.setExperimentalQueryOptimizations(true);
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
 		try {
 			loadData(repository);
@@ -764,11 +767,54 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	@Test
+	void samplesPatternLocalFilterAcrossAnOrderIndependentOfTheFilteredVariable() throws Exception {
+		File dataDir = Files.createTempDirectory("lmdb-eval-stats-ordered-filter").toFile();
+		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setNativeEvaluationEnabled(true)
+				.setSketchEstimatorEnabled(true)
+				.setOptimizerSamplingMaxMillis(5_000L)
+				.setOptimizerSamplingMaxRows(16);
+		config.setExperimentalQueryOptimizations(true);
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
+		try {
+			loadInterleavedDateData(repository);
+
+			LmdbStore sail = (LmdbStore) repository.getSail();
+			LmdbSailStore backingStore = sail.getBackingStore();
+			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
+
+			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
+			Filter filter = firstFilter("""
+					SELECT * WHERE {
+						?s <urn:test:recordedOn> ?date .
+						FILTER(?date IN (
+							"2024-01-01"^^<http://www.w3.org/2001/XMLSchema#date>,
+							"2024-02-01"^^<http://www.w3.org/2001/XMLSchema#date>
+						))
+					}
+					""");
+
+			EvaluationStatistics.FilterPassEstimate estimate = statistics.estimateFilterPass(filter);
+
+			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, estimate.getSource());
+			assertTrue(estimate.getPassRatio() > 0.0d && estimate.getPassRatio() < 0.75d,
+					() -> "A bounded sample must not mistake the first object-ordered run for the population: "
+							+ estimate);
+			assertEquals(16L, estimate.getEvidenceCount());
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
 	void samplesZeroHitPatternLocalFilterPassRatioWhenLearnedStatsUnavailable() throws Exception {
 		File dataDir = Files.createTempDirectory("lmdb-eval-stats-zero-sampled-filter").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingMaxMillis(100L);
+		config.setExperimentalQueryOptimizations(true);
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
 		try {
 			loadNameData(repository, 300);
@@ -803,8 +849,10 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	void optimizerSamplingCanBeDisabledForUnlearnedFilters() throws Exception {
 		File dataDir = Files.createTempDirectory("lmdb-eval-stats-sampling-disabled").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingEnabled(false);
+		config.setExperimentalQueryOptimizations(true);
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
 		try {
 			loadData(repository);
@@ -831,9 +879,11 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	void optimizerVotesUnlearnedFilterForBackgroundSamplingWhenForegroundSamplingDisabled() throws Exception {
 		File dataDir = Files.createTempDirectory("lmdb-eval-stats-background-vote").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingEnabled(false)
 				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
+		config.setExperimentalQueryOptimizations(true);
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
 		try {
 			loadData(repository);
@@ -873,9 +923,11 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			throws Exception {
 		File dataDir = Files.createTempDirectory("lmdb-eval-stats-medical-background-vote").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingEnabled(false)
 				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
+		config.setExperimentalQueryOptimizations(true);
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
 		try {
 			loadMedicalEncounterData(repository);
@@ -963,10 +1015,12 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	void backgroundRawSamplingDisabledPreventsQueueingAndSampling() throws Exception {
 		File dataDir = Files.createTempDirectory("lmdb-eval-stats-background-disabled").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingEnabled(false)
 				.setBackgroundRawSamplingEnabled(false)
 				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
+		config.setExperimentalQueryOptimizations(true);
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
 		try {
 			loadData(repository);
@@ -996,9 +1050,11 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	void backgroundCycleSamplesQueuedFilterWhenForegroundSamplingDisabled() throws Exception {
 		File dataDir = Files.createTempDirectory("lmdb-eval-stats-background-cycle").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingEnabled(false)
 				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
+		config.setExperimentalQueryOptimizations(true);
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
 		try {
 			loadData(repository);
@@ -1035,9 +1091,11 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	void repeatedOptimizerNeedPromotesBackgroundSamplingRequestToFront() throws Exception {
 		File dataDir = Files.createTempDirectory("lmdb-eval-stats-background-promotion").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingEnabled(false)
 				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
+		config.setExperimentalQueryOptimizations(true);
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
 		try {
 			loadData(repository);
@@ -1208,7 +1266,11 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	private static LmdbStoreConfig sketchEnabledConfig() {
-		return new LmdbStoreConfig().setSketchEstimatorEnabled(true);
+		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setNativeEvaluationEnabled(true)
+				.setSketchEstimatorEnabled(true);
+		config.setExperimentalQueryOptimizations(true);
+		return config;
 	}
 
 	private static void rebuildSketchesAndAwaitLmdbOptimizer(LmdbStore sail, LmdbSailStore backingStore)
@@ -1216,17 +1278,17 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		backingStore.getSketchBasedJoinEstimator().rebuild();
 		assertTrue(sail.awaitSketchesReady(60, TimeUnit.SECONDS),
 				"Expected LMDB sketch estimator to be ready before planning with the LMDB optimizer");
-		if (!(sail.getEvaluationStrategyFactory() instanceof LmdbEvaluationStrategyFactory)) {
+		if (!(sail.getEvaluationStrategyFactory() instanceof LmdbNativeEvaluationStrategyFactory)) {
 			Thread.sleep(1000);
 		}
-		if (!(sail.getEvaluationStrategyFactory() instanceof LmdbEvaluationStrategyFactory)) {
+		if (!(sail.getEvaluationStrategyFactory() instanceof LmdbNativeEvaluationStrategyFactory)) {
 			Thread.sleep(10 * 1000);
 		}
-		if (!(sail.getEvaluationStrategyFactory() instanceof LmdbEvaluationStrategyFactory)) {
+		if (!(sail.getEvaluationStrategyFactory() instanceof LmdbNativeEvaluationStrategyFactory)) {
 			Thread.sleep(60 * 1000);
 		}
-		assertInstanceOf(LmdbEvaluationStrategyFactory.class, sail.getEvaluationStrategyFactory(),
-				"Expected ready sketches to select the LMDB optimizer pipeline");
+		assertInstanceOf(LmdbNativeEvaluationStrategyFactory.class, sail.getEvaluationStrategyFactory(),
+				"Expected automatic stores to keep the native evaluation strategy factory");
 	}
 
 	private static void assertOptimizedTupleNodeAnnotated(String plan, String nodeName) {
@@ -1292,6 +1354,20 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			for (int i = 0; i < count; i++) {
 				IRI subject = vf.createIRI("urn:test:sample-user:" + i);
 				connection.add(subject, name, vf.createLiteral("sample-" + i));
+			}
+			connection.commit();
+		}
+	}
+
+	private static void loadInterleavedDateData(SailRepository repository) {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI recordedOn = vf.createIRI("urn:test:recordedOn");
+		String[] dates = { "2024-01-01", "2024-04-01", "2024-07-01", "2024-10-01" };
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			for (int i = 0; i < 64; i++) {
+				IRI subject = vf.createIRI(String.format("urn:test:encounter:%03d", i));
+				connection.add(subject, recordedOn, vf.createLiteral(dates[i % dates.length], XMLSchema.DATE));
 			}
 			connection.commit();
 		}
@@ -1413,7 +1489,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			@Override
 			public void meet(Filter node) {
 				if (filters.isEmpty()
-						&& node.getArg()instanceof StatementPattern statementPattern
+						&& node.getArg() instanceof StatementPattern statementPattern
 						&& statementPattern.getPredicateVar() != null
 						&& recordedOn.equals(statementPattern.getPredicateVar().getValue())
 						&& VarNameCollector.process(node.getCondition()).contains("date")) {

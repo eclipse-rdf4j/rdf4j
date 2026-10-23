@@ -62,14 +62,14 @@ final class CreateTemplateConfig {
 		SELECT("select"),
 		RADIO("radio");
 
-		private final String xslValue;
+		private final String uiValue;
 
-		FieldControl(String xslValue) {
-			this.xslValue = xslValue;
+		FieldControl(String uiValue) {
+			this.uiValue = uiValue;
 		}
 
-		String getXslValue() {
-			return xslValue;
+		String getUiValue() {
+			return uiValue;
 		}
 
 		static FieldControl parse(String control) {

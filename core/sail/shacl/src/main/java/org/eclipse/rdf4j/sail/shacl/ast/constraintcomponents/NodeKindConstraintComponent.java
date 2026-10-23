@@ -41,25 +41,28 @@ public class NodeKindConstraintComponent extends AbstractSimpleConstraintCompone
 
 	@Override
 	String getSparqlFilterExpression(Variable<Value> variable, boolean negated) {
-		if (negated) {
-			return "(isIRI(" + variable.asSparqlVariable() + ") && <" + nodeKind.iri + "> IN ( <" + SHACL.IRI + ">, <"
-					+ SHACL.BLANK_NODE_OR_IRI + ">, <" + SHACL.IRI_OR_LITERAL + "> ) ) ||\n" +
-					"(isLiteral(" + variable.asSparqlVariable() + ") && <" + nodeKind.iri + "> IN ( <" + SHACL.LITERAL
-					+ ">, " +
-					"<" + SHACL.BLANK_NODE_OR_LITERAL + ">, <" + SHACL.IRI_OR_LITERAL + "> ) ) ||\n" +
-					"(isBlank(" + variable.asSparqlVariable() + ") && <" + nodeKind.iri + "> IN ( <" + SHACL.BLANK_NODE
-					+ ">, <"
-					+ SHACL.BLANK_NODE_OR_IRI + ">, <" + SHACL.BLANK_NODE_OR_LITERAL + "> ) )";
+		String v = variable.asSparqlVariable();
+
+		// nodeKind is fixed per-shape at parse time — resolve once here, in Java,
+		// instead of re-evaluating a 9-way IRI-membership check per validated value.
+		String positiveCheck;
+		if (nodeKind.iri.equals(SHACL.IRI)) {
+			positiveCheck = "isIRI(" + v + ")";
+		} else if (nodeKind.iri.equals(SHACL.LITERAL)) {
+			positiveCheck = "isLiteral(" + v + ")";
+		} else if (nodeKind.iri.equals(SHACL.BLANK_NODE)) {
+			positiveCheck = "isBlank(" + v + ")";
+		} else if (nodeKind.iri.equals(SHACL.BLANK_NODE_OR_IRI)) {
+			positiveCheck = "(isIRI(" + v + ") || isBlank(" + v + "))";
+		} else if (nodeKind.iri.equals(SHACL.BLANK_NODE_OR_LITERAL)) {
+			positiveCheck = "(isLiteral(" + v + ") || isBlank(" + v + "))";
+		} else if (nodeKind.iri.equals(SHACL.IRI_OR_LITERAL)) {
+			positiveCheck = "(isIRI(" + v + ") || isLiteral(" + v + "))";
 		} else {
-			return "!((isIRI(" + variable.asSparqlVariable() + ") && <" + nodeKind.iri + "> IN ( <" + SHACL.IRI + ">, <"
-					+ SHACL.BLANK_NODE_OR_IRI + ">, <" + SHACL.IRI_OR_LITERAL + "> ) ) ||\n" +
-					"(isLiteral(" + variable.asSparqlVariable() + ") && <" + nodeKind.iri + "> IN ( <" + SHACL.LITERAL
-					+ ">, " +
-					"<" + SHACL.BLANK_NODE_OR_LITERAL + ">, <" + SHACL.IRI_OR_LITERAL + "> ) ) ||\n" +
-					"(isBlank(" + variable.asSparqlVariable() + ") && <" + nodeKind.iri + "> IN ( <" + SHACL.BLANK_NODE
-					+ ">, <"
-					+ SHACL.BLANK_NODE_OR_IRI + ">, <" + SHACL.BLANK_NODE_OR_LITERAL + "> ) ))";
+			throw new IllegalStateException("Unknown sh:nodeKind: " + nodeKind.iri);
 		}
+
+		return negated ? positiveCheck : ("!" + positiveCheck);
 	}
 
 	@Override

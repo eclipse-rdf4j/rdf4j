@@ -17,6 +17,8 @@ For installation and usage instructions of the RDF4J Java libaries, see [Program
 
 ### Building from source
 
+Building RDF4J from source requires JDK 25 or newer and Maven 3.9.16 or newer.
+
 RDF4J is a multi-module [maven](https://maven.apache.org/index.html) project. It can be compiled, tested, and installed with the [usual maven lifecycle phases](https://maven.apache.org/guides/introduction/introduction-to-the-lifecycle.html) from the command line, for example:
 
 - `mvn verify` - compiles and runs all tests
@@ -58,3 +60,9 @@ These steps are explained in more detail in the [Contributor
 guidelines](https://github.com/eclipse/rdf4j/blob/main/CONTRIBUTING.md).
 
 You can find more detailed information about our development and release processes in the [Developer Workflow and Project Management](https://rdf4j.org/documentation/developer/) documentation.
+
+## Packed f-tree algebra update
+
+See the [packed factorized trees guide](docs/branch/optimize-lmdb/query-joins-and-factors.md#packed-factorized-trees)
+for the current implementation and boundaries. The [branch developer documentation index](docs/branch/optimize-lmdb/README.md)
+maps the wider `LMDB Native Query Engine and Adjacency Index` feature set.

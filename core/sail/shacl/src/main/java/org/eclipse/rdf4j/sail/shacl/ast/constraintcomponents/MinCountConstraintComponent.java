@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
+import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.AbstractBulkJoinPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BulkedExternalLeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
@@ -153,17 +154,17 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
-		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(scope,
+		var targetChain = getTargetChain();
+		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget(scope,
 				connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider);
+		Path path = targetChain.getPath().orElseThrow(IllegalStateException::new);
+
 		String query = effectiveTarget.getQuery(false);
 
 		if (minCount == 1) {
 			StatementMatcher.Variable value = StatementMatcher.Variable.VALUE;
-
-			String pathQuery = getTargetChain().getPath()
-					.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,
-							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of()))
-					.orElseThrow(IllegalStateException::new)
+			String pathQuery = path.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,
+					connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of())
 					.getFragment();
 
 			query += "\nFILTER(NOT EXISTS{\n" + pathQuery + "\n})";
@@ -175,11 +176,8 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 			for (int i = 0; i < minCount; i++) {
 				StatementMatcher.Variable value = stableRandomVariableProvider.next();
 				valueVariables.add(value);
-
-				String pathQuery = getTargetChain().getPath()
-						.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,
-								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of()))
-						.orElseThrow(IllegalStateException::new)
+				String pathQuery = path.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,
+						connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of())
 						.getFragment();
 
 				condition.append(pathQuery).append("\n");

@@ -245,6 +245,7 @@ public final class QueryPlanSnapshotCli {
 		QueryPlanSnapshotStoreSupport.ThemeDataLoadStatus themeDataLoadStatus = QueryPlanSnapshotStoreSupport
 				.ensureThemeDataLoaded(storeRuntime);
 		printThemeDataLoadStatus(themeDataLoadStatus);
+		awaitDirectAdjacencyIfRequested(options, storeRuntime);
 		BenchmarkQuery benchmarkQuery = resolveBenchmarkQuery(options);
 		String queryText = resolveQueryText(options, benchmarkQuery);
 		String querySource = benchmarkQuery == null ? "direct" : "theme-index";
@@ -261,7 +262,8 @@ public final class QueryPlanSnapshotCli {
 
 		QueryPlanSnapshot currentSnapshot;
 		Path snapshotPath = null;
-		QueryExecutionVerification executionVerification;
+		QueryExecutionVerification executionVerification = null;
+		long plannerStatsHitsBefore = directAdjacencyPlannerStatsHits(storeRuntime);
 		try (SailRepositoryConnection connection = storeRuntime.repository.getConnection()) {
 			if (options.persist) {
 				snapshotPath = capture.captureAndWrite(context,
@@ -274,16 +276,21 @@ public final class QueryPlanSnapshotCli {
 				output.println("Snapshot captured in-memory only (--persist=false).");
 			}
 			applySnapshotPlanDebugMetadata(currentSnapshot);
-			executionVerification = verifyRepeatedExecution(connection, queryText, options.queryTimeoutSeconds);
+			applyDirectAdjacencyDebugMetadata(currentSnapshot, storeRuntime, plannerStatsHitsBefore);
+			if (!options.planOnly) {
+				executionVerification = verifyRepeatedExecution(connection, queryText, options.queryTimeoutSeconds);
+			}
 		}
-		applyExecutionVerificationMetadata(currentSnapshot, executionVerification);
+		if (executionVerification != null) {
+			applyExecutionVerificationMetadata(currentSnapshot, executionVerification);
+		}
 		if (options.persist && snapshotPath != null) {
 			capture.writeSnapshot(snapshotPath, currentSnapshot);
 		}
 
 		printResultsSection(options, queryId, queryText);
 		printPrettyExplanations(currentSnapshot);
-		printExecutionVerification(executionVerification);
+		printExecutionVerification(executionVerification, options.planOnly);
 
 		if (options.compareLatest) {
 			compareWithLatest(outputDirectory, queryId, currentSnapshot, snapshotPath, capture, options.diffMode);
@@ -298,6 +305,7 @@ public final class QueryPlanSnapshotCli {
 		QueryPlanSnapshotStoreSupport.ThemeDataLoadStatus themeDataLoadStatus = QueryPlanSnapshotStoreSupport
 				.ensureThemeDataLoaded(storeRuntime);
 		printThemeDataLoadStatus(themeDataLoadStatus);
+		awaitDirectAdjacencyIfRequested(options, storeRuntime);
 		QueryPlanCapture capture = new QueryPlanCapture();
 		Theme[] selectedThemes = selectedBatchThemes(options);
 		List<BatchQueryTarget> batchTargets = buildBatchQueryTargets(options, selectedThemes);
@@ -324,7 +332,8 @@ public final class QueryPlanSnapshotCli {
 
 				QueryPlanSnapshot currentSnapshot;
 				Path snapshotPath = null;
-				QueryExecutionVerification executionVerification;
+				QueryExecutionVerification executionVerification = null;
+				long plannerStatsHitsBefore = directAdjacencyPlannerStatsHits(storeRuntime);
 				try (SailRepositoryConnection connection = storeRuntime.repository.getConnection()) {
 					if (options.persist) {
 						snapshotPath = capture.captureAndWrite(context,
@@ -337,10 +346,15 @@ public final class QueryPlanSnapshotCli {
 						output.println("Snapshot captured in-memory only (--persist=false).");
 					}
 					applySnapshotPlanDebugMetadata(currentSnapshot);
-					executionVerification = verifyRepeatedExecution(connection, queryText,
-							perQueryOptions.queryTimeoutSeconds);
+					applyDirectAdjacencyDebugMetadata(currentSnapshot, storeRuntime, plannerStatsHitsBefore);
+					if (!perQueryOptions.planOnly) {
+						executionVerification = verifyRepeatedExecution(connection, queryText,
+								perQueryOptions.queryTimeoutSeconds);
+					}
 				}
-				applyExecutionVerificationMetadata(currentSnapshot, executionVerification);
+				if (executionVerification != null) {
+					applyExecutionVerificationMetadata(currentSnapshot, executionVerification);
+				}
 				if (options.persist && snapshotPath != null) {
 					capture.writeSnapshot(snapshotPath, currentSnapshot);
 				}
@@ -353,7 +367,7 @@ public final class QueryPlanSnapshotCli {
 						+ benchmarkQuery.getName());
 				printResultsSection(perQueryOptions, queryId, queryText);
 				printPrettyExplanations(currentSnapshot);
-				printExecutionVerification(executionVerification);
+				printExecutionVerification(executionVerification, perQueryOptions.planOnly);
 
 				if (options.compareLatest) {
 					compareWithLatest(outputDirectory, queryId, currentSnapshot, snapshotPath, capture,
@@ -1886,18 +1900,42 @@ public final class QueryPlanSnapshotCli {
 				+ " bytes.");
 	}
 
+	private void awaitDirectAdjacencyIfRequested(QueryPlanSnapshotCliOptions options,
+			QueryPlanSnapshotStoreSupport.StoreRuntime storeRuntime) throws InterruptedException {
+		Integer timeoutSeconds = options.directAdjacencyReadyTimeoutSeconds;
+		if (timeoutSeconds == null) {
+			return;
+		}
+		if (storeRuntime.lmdbStore == null) {
+			throw new IllegalArgumentException("--await-direct-adjacency-seconds requires --store lmdb.");
+		}
+		storeRuntime.repository.init();
+		if (!storeRuntime.lmdbStore.awaitDirectAdjacencyReady(timeoutSeconds, TimeUnit.SECONDS)) {
+			throw new IllegalStateException(
+					"LMDB direct adjacency did not become exact for the current revision within "
+							+ timeoutSeconds + " seconds: "
+							+ storeRuntime.lmdbStore.getDirectAdjacencyReadinessDescription());
+		}
+		output.println("LMDB direct adjacency is exact for the current revision.");
+	}
+
 	private static QueryPlanCaptureContext createContext(QueryPlanSnapshotCliOptions options,
 			BenchmarkQuery benchmarkQuery,
 			String queryText, String querySource, String queryId, Path outputDirectory,
 			FeatureFlagCollector featureFlags) {
+		List<Explanation.Level> levels = options.planOnly
+				? List.of(Explanation.Level.Unoptimized, Explanation.Level.Optimized)
+				: List.of(Explanation.Level.Unoptimized, Explanation.Level.Optimized, Explanation.Level.Telemetry);
+		Set<Explanation.Level> irRenderedLevels = options.planOnly
+				? Set.of(Explanation.Level.Optimized)
+				: Set.of(Explanation.Level.Optimized, Explanation.Level.Telemetry);
 		QueryPlanCaptureContext.Builder contextBuilder = QueryPlanCaptureContext.builder()
 				.outputDirectory(outputDirectory)
 				.queryId(queryId)
 				.queryString(queryText)
 				.benchmark("QueryPlanSnapshotCli")
-				.levels(List.of(Explanation.Level.Unoptimized, Explanation.Level.Optimized,
-						Explanation.Level.Telemetry))
-				.irRenderedLevels(Set.of(Explanation.Level.Optimized, Explanation.Level.Telemetry))
+				.levels(levels)
+				.irRenderedLevels(irRenderedLevels)
 				.addMetadata("store", options.store.id)
 				.addMetadata("theme", options.theme.name())
 				.addMetadata("querySource", querySource)
@@ -1905,6 +1943,9 @@ public final class QueryPlanSnapshotCli {
 				.addMetadata(QueryPlanCapture.metadataFromSystemProperties())
 				.featureFlagCollector(featureFlags)
 				.tupleExprRenderer(QueryPlanSnapshotCli::renderTupleExprWithIr);
+		if (options.planOnly) {
+			contextBuilder.addMetadata("captureMode", "plan-only");
+		}
 		if (options.runName != null && !options.runName.isBlank()) {
 			contextBuilder.addMetadata("runName", options.runName);
 		}
@@ -1932,6 +1973,9 @@ public final class QueryPlanSnapshotCli {
 				.addValue("cli.runName",
 						options.runName == null || options.runName.isBlank() ? "<none>" : options.runName)
 				.addValue("cli.queryTimeoutSeconds", formatQueryTimeoutSeconds(options.queryTimeoutSeconds))
+				.addValue("cli.awaitDirectAdjacencySeconds",
+						options.directAdjacencyReadyTimeoutSeconds == null ? "<none>"
+								: options.directAdjacencyReadyTimeoutSeconds.toString())
 				.addValue("cli.executionRepeatMinRuns", Integer.toString(resolveExecutionRepeatMinRuns(options)))
 				.addValue("cli.executionRepeatMaxRuns", Integer.toString(resolveExecutionRepeatMaxRuns(options)))
 				.addValue("cli.executionRepeatSoftLimitMillis",
@@ -1962,6 +2006,9 @@ public final class QueryPlanSnapshotCli {
 						themeDataLoadStatus.lmdbFullyLoadedSizeBytes.toString());
 			}
 			featureFlags.addValue("lmdbData.reusedWithoutReload", Boolean.toString(themeDataLoadStatus.reusedLmdbData));
+			if (options.directAdjacencyReadyTimeoutSeconds != null) {
+				featureFlags.addValue("lmdbDirectAdjacency.readyAtCapture", "true");
+			}
 		}
 
 		QueryPlanCapture.registerConfiguredFeatureFlags(featureFlags);
@@ -2258,6 +2305,32 @@ public final class QueryPlanSnapshotCli {
 		metadata.put("planDeterminism.environmentFingerprintSha256",
 				buildEnvironmentFingerprint(metadata, featureFlagsFingerprint));
 
+		snapshot.setMetadata(metadata);
+	}
+
+	private static long directAdjacencyPlannerStatsHits(
+			QueryPlanSnapshotStoreSupport.StoreRuntime storeRuntime) {
+		if (storeRuntime.lmdbStore == null) {
+			return 0L;
+		}
+		storeRuntime.repository.init();
+		return storeRuntime.lmdbStore.getDirectAdjacencyPlannerStatsHitCount();
+	}
+
+	private static void applyDirectAdjacencyDebugMetadata(QueryPlanSnapshot snapshot,
+			QueryPlanSnapshotStoreSupport.StoreRuntime storeRuntime, long plannerStatsHitsBefore) {
+		if (snapshot == null || storeRuntime.lmdbStore == null) {
+			return;
+		}
+		long plannerStatsHitsAfter = storeRuntime.lmdbStore.getDirectAdjacencyPlannerStatsHitCount();
+		LinkedHashMap<String, String> metadata = new LinkedHashMap<>();
+		if (snapshot.getMetadata() != null) {
+			metadata.putAll(snapshot.getMetadata());
+		}
+		metadata.put("lmdbDirectAdjacency.plannerStatsHitsBefore", Long.toString(plannerStatsHitsBefore));
+		metadata.put("lmdbDirectAdjacency.plannerStatsHitsAfter", Long.toString(plannerStatsHitsAfter));
+		metadata.put("lmdbDirectAdjacency.plannerStatsHitsDelta",
+				Long.toString(Math.max(0L, plannerStatsHitsAfter - plannerStatsHitsBefore)));
 		snapshot.setMetadata(metadata);
 	}
 
@@ -2577,7 +2650,12 @@ public final class QueryPlanSnapshotCli {
 		return value;
 	}
 
-	private void printExecutionVerification(QueryExecutionVerification executionVerification) {
+	private void printExecutionVerification(QueryExecutionVerification executionVerification, boolean planOnly) {
+		if (planOnly) {
+			output.println();
+			output.println("Execution verification skipped (--plan-only).");
+			return;
+		}
 		output.println();
 		output.println("=== Execution Verification ===");
 		if (executionVerification.runs == 0) {

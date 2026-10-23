@@ -1,0 +1,3 @@
+Join (resultSizeActual=2, totalTimeActual=1.6s, selfTimeActual=100ms)
+   StatementPattern (resultSizeActual=1, totalTimeActual=24.0ms, selfTimeActual=24.0ms)
+   StatementPattern (resultSizeActual=1, totalTimeActual=1.5s, selfTimeActual=1.5s)

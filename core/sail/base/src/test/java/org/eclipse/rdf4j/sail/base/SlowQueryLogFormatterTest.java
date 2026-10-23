@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
-import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer.DatasetView;
 import org.junit.jupiter.api.Test;
 
 class SlowQueryLogFormatterTest {

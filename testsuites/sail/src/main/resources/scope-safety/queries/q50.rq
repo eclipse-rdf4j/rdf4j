@@ -1,0 +1,1 @@
+SELECT ?g ?s ?mark WHERE { GRAPH ?g { ?s <urn:mark> ?mark } }

@@ -16,19 +16,29 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.List;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.AggregateOperator;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 
@@ -39,10 +49,63 @@ import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
  */
 public class TupleExprs {
 
+	/** The direct-SELECT exemption used when preparing an RDF4J LATERAL caller scope. */
+	public static boolean preservesDirectSubSelectBindings(TupleExpr rightArg, Set<String> newInputNames) {
+		TupleExpr node = rightArg;
+		while (node instanceof Slice || node instanceof Order || node instanceof Distinct || node instanceof Reduced) {
+			node = ((UnaryTupleOperator) node).getArg();
+		}
+		return node instanceof Projection && !rightArg.getBindingNames().containsAll(newInputNames);
+	}
+
+	/** Projection source names, before any output alias, determine lexical LATERAL visibility. */
+	public static boolean projectsSourceName(ProjectionElemList elements, String name) {
+		return elements.getElements().stream().anyMatch(element -> element.getName().equals(name));
+	}
+
+	/**
+	 * Whether a local operand contains a GRAPH boundary and therefore must receive invocation input rather than a
+	 * sibling's produced bindings. Remote SERVICE bodies have their own scope and are not inspected.
+	 */
+	public static boolean containsGraphBoundary(TupleExpr expression) {
+		if (expression instanceof Graph) {
+			return true;
+		}
+		if (expression instanceof Service) {
+			return false;
+		}
+		for (TupleExpr child : getChildren(expression)) {
+			if (containsGraphBoundary(child)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Identifies operands whose own scope must not receive bindings produced by an ordinary join sibling. */
+	public static boolean requiresIndependentEvaluation(TupleExpr expression) {
+		// SERVICE is a parameterized remote call. Its endpoint input remains in the caller's evaluator frame.
+		return !(expression instanceof Service)
+				&& (isVariableScopeChange(expression) || containsSubquery(expression)
+						|| containsGraphBoundary(expression));
+	}
+
+	/**
+	 * Whether an Extension executes this element. Root aggregate expressions describe results already computed by a
+	 * Group and are skipped by the evaluator. This does not change the Extension's declared bindings or classify the
+	 * expression's repeatability.
+	 *
+	 * @param element an Extension element
+	 * @return whether the element is an executed assignment rather than an aggregate placeholder
+	 */
+	public static boolean isEvaluatedExtensionElement(ExtensionElem element) {
+		return !(element.getExpr() instanceof AggregateOperator);
+	}
+
 	/**
 	 * Verifies if the supplied {@link TupleExpr} contains a {@link Projection} with the subquery flag set to true
 	 * (default). If the supplied TupleExpr is a {@link Join} or contains a {@link Join}, projections inside that Join's
-	 * arguments will not be taken into account.
+	 * arguments will not be taken into account. Remote SERVICE bodies are evaluated separately and are not inspected.
 	 *
 	 * @param t a tuple expression.
 	 * @return <code>true</code> if the TupleExpr contains a subquery projection (outside of a Join), <code>false</code>
@@ -56,11 +119,9 @@ public class TupleExprs {
 		do {
 			if (n instanceof Projection && ((Projection) n).isSubquery()) {
 				return true;
-			} else if (n instanceof Join) {
+			} else if (!(n instanceof Join) && !(n instanceof Service)) {
 				// projections already inside a Join need not be
 				// taken into account
-				return false;
-			} else {
 				List<TupleExpr> children = getChildren(n);
 				if (!children.isEmpty()) {
 					if (queue == null) {
@@ -74,6 +135,64 @@ public class TupleExprs {
 
 		} while (n != null);
 
+		return false;
+	}
+
+	/**
+	 * Tests whether a tuple expression contains a result-set modifier that cannot safely receive bindings from a join
+	 * sibling. A slice is always sensitive to pushed bindings. DISTINCT and REDUCED are sensitive when their argument's
+	 * solution domain is heterogeneous or cannot be determined from the supplied binding analysis.
+	 *
+	 * <p>
+	 * The expression is analyzed with the supplied analysis's root input, excluding bindings from its containing join
+	 * sibling while retaining scopes and correlations inside the expression. Legacy {@link TupleExpr#getBindingNames()}
+	 * summaries do not prove that a name is bound in every solution and are deliberately not used here. Modifiers
+	 * inside a remote SERVICE body do not constrain local sibling input and are not inspected.
+	 *
+	 * @param tupleExpr the expression to inspect
+	 * @param analysis  invocation-local binding analysis rooted at its containing query expression
+	 * @return whether sibling binding pushdown must stop before this expression
+	 */
+	public static boolean containsResultSetModifier(TupleExpr tupleExpr,
+			QueryAlgebraBindingAnalysis analysis) {
+		return containsResultSetModifier(tupleExpr, analysis.rootContext());
+	}
+
+	/**
+	 * Tests whether an expression contains a result-set modifier that is unsafe for the supplied input frame.
+	 *
+	 * @param tupleExpr the expression to inspect
+	 * @param input     the input visible before evaluating the expression
+	 * @return whether sibling binding pushdown must stop before this expression
+	 */
+	public static boolean containsResultSetModifier(TupleExpr tupleExpr,
+			QueryAlgebraBindingAnalysis.ReadOnlyContext input) {
+		QueryAlgebraBindingAnalysis scopedAnalysis = QueryAlgebraBindingAnalysis
+				.withInputContextAndPossibleInputs(tupleExpr, input, Set.of());
+		Deque<TupleExpr> queue = new ArrayDeque<>();
+		queue.add(tupleExpr);
+		while (!queue.isEmpty()) {
+			TupleExpr current = queue.removeFirst();
+			if (current instanceof Service) {
+				// SERVICE evaluates its body at the remote endpoint. Its modifiers do not constrain local input.
+				continue;
+			}
+			if (current instanceof Slice) {
+				return true;
+			}
+			if (current instanceof Distinct || current instanceof Reduced) {
+				TupleExpr argument = ((UnaryTupleOperator) current).getArg();
+				QueryAlgebraBindingAnalysis.ReadOnlyContext modifierInput = scopedAnalysis.contextAt(current);
+				QueryAlgebraBindingAnalysis.ReadOnlyContext argumentInput = scopedAnalysis.childInput(current, argument,
+						modifierInput);
+				QueryAlgebraBindingAnalysis.OutputFacts facts = scopedAnalysis.outputFacts(argument, argumentInput);
+				if (!facts.possibleOutputsKnown() || !facts.guaranteedOutputsKnown()
+						|| !facts.possibleOutputs().equals(facts.guaranteedOutputs())) {
+					return true;
+				}
+			}
+			queue.addAll(getChildren(current));
+		}
 		return false;
 	}
 
@@ -166,8 +285,8 @@ public class TupleExprs {
 	}
 
 	/**
-	 * Creates an (anonymous) Var representing a constant value. The variable name will be derived from the actual value
-	 * to guarantee uniqueness.
+	 * Creates an (anonymous) Var representing a constant value using a legacy hash-derived name hint. Distinct values
+	 * may receive the same name; translators that combine constants must allocate unique names in their own scope.
 	 *
 	 * @param value
 	 * @return an (anonymous) Var representing a constant value.
@@ -177,6 +296,7 @@ public class TupleExprs {
 		return Var.of(varName, value, true, true);
 	}
 
+	/** Returns a stable hash-derived name hint, which is not guaranteed to be unique. */
 	public static String getConstVarName(Value value) {
 		if (value == null) {
 			throw new IllegalArgumentException("value can not be null");

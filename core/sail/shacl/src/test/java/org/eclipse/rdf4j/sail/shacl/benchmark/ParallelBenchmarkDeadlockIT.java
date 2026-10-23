@@ -79,7 +79,7 @@ public class ParallelBenchmarkDeadlockIT {
 						}
 						ThreadInfo[] threadInfos = threadMXBean.getThreadInfo(deadlockedIds, true, true);
 						for (ThreadInfo threadInfo : threadInfos) {
-							System.err.println(threadInfo);
+							printFullThreadInfo(threadInfo);
 						}
 					}
 				} catch (InterruptedException ignored) {
@@ -103,6 +103,24 @@ public class ParallelBenchmarkDeadlockIT {
 				finished.set(true);
 				t.printStackTrace(System.err);
 				System.exit(1);
+			}
+		}
+
+		private static void printFullThreadInfo(ThreadInfo threadInfo) {
+			if (threadInfo == null) {
+				return;
+			}
+			System.err.println("Thread \"" + threadInfo.getThreadName() + "\" id=" + threadInfo.getThreadId()
+					+ " state=" + threadInfo.getThreadState() + " lock=" + threadInfo.getLockInfo()
+					+ " lockOwner=" + threadInfo.getLockOwnerName() + " lockOwnerId=" + threadInfo.getLockOwnerId());
+			for (StackTraceElement frame : threadInfo.getStackTrace()) {
+				System.err.println("\tat " + frame);
+			}
+			for (var monitor : threadInfo.getLockedMonitors()) {
+				System.err.println("\tlocked monitor=" + monitor);
+			}
+			for (var synchronizer : threadInfo.getLockedSynchronizers()) {
+				System.err.println("\tlocked synchronizer=" + synchronizer);
 			}
 		}
 	}
