@@ -79,7 +79,7 @@ public class TxnManagerTest {
 				context = QueryExecutionContext.captureReplayContext();
 			}
 			deadline.close();
-			assertEquals(Long.MAX_VALUE, deadline.remainingNanos());
+			assertEquals(Long.MAX_VALUE, deadline.remainingMillis());
 			assertFalse(deadline.isExpired());
 			AtomicReference<Thread> readerThread = new AtomicReference<>();
 			CountDownLatch started = new CountDownLatch(1);
@@ -126,7 +126,7 @@ public class TxnManagerTest {
 			}
 			assertTrue(expired.await(5, TimeUnit.SECONDS));
 			deadline.close();
-			assertEquals(0L, deadline.remainingNanos());
+			assertEquals(0L, deadline.remainingMillis());
 			assertTrue(deadline.isExpired());
 			long writeStamp = fixture.manager.lockManager().writeLock();
 			try {

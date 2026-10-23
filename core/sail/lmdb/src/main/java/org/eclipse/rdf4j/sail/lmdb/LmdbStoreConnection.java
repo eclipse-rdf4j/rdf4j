@@ -1944,11 +1944,11 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 						if (deadline == null) {
 							readAttemptLock.wait();
 						} else {
-							long remaining = deadline.remainingNanos();
+							long remaining = deadline.remainingMillis();
 							if (remaining <= 0L) {
 								throw new QueryInterruptedException("Query evaluation took too long");
 							}
-							TimeUnit.NANOSECONDS.timedWait(readAttemptLock, remaining);
+							TimeUnit.MILLISECONDS.timedWait(readAttemptLock, remaining);
 						}
 					} catch (InterruptedException e) {
 						Thread.currentThread().interrupt();
@@ -2360,11 +2360,11 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 					if (waitDeadline == null) {
 						readAttemptLock.wait();
 					} else {
-						long remaining = waitDeadline.remainingNanos();
+						long remaining = waitDeadline.remainingMillis();
 						if (remaining <= 0L) {
 							throw new QueryInterruptedException("Query evaluation took too long");
 						}
-						TimeUnit.NANOSECONDS.timedWait(readAttemptLock, remaining);
+						TimeUnit.MILLISECONDS.timedWait(readAttemptLock, remaining);
 					}
 				} catch (InterruptedException e) {
 					Thread.currentThread().interrupt();
@@ -3006,11 +3006,11 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 						if (deadline == null) {
 							readAttemptLock.wait();
 						} else {
-							long remaining = deadline.remainingNanos();
+							long remaining = deadline.remainingMillis();
 							if (remaining <= 0L) {
 								throw new QueryInterruptedException("Query evaluation took too long");
 							}
-							TimeUnit.NANOSECONDS.timedWait(readAttemptLock, remaining);
+							TimeUnit.MILLISECONDS.timedWait(readAttemptLock, remaining);
 						}
 					} catch (InterruptedException e) {
 						Thread.currentThread().interrupt();
