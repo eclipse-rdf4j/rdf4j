@@ -45,15 +45,19 @@ const round = (value: number) => Math.round(value * 100) / 100;
 let lastEncoded: { graph: WorkspacePayload["graph"]; members: string } | null = null;
 
 /** The payload in the compact form, as JSON text. */
-export function encodeWorkspace(payload: WorkspacePayload): string {
+export function encodeWorkspace(payload: WorkspacePayload, options: { exactPositions?: boolean } = {}): string {
   const { graph, ...rest } = payload;
+  if (options.exactPositions) {
+    const head = JSON.stringify({ version: WORKSPACE_FORMAT, ...rest });
+    return `${head.slice(0, -1)},${encodeGraphMembers(graph, true)}}`;
+  }
   if (lastEncoded?.graph !== graph) lastEncoded = { graph, members: encodeGraphMembers(graph) };
   const head = JSON.stringify({ version: WORKSPACE_FORMAT, ...rest });
   return `${head.slice(0, -1)},${lastEncoded.members}}`;
 }
 
 /** The graph's members of the compact form (`"revision":…,"types":…`), without the braces. */
-function encodeGraphMembers(graph: WorkspacePayload["graph"]) {
+function encodeGraphMembers(graph: WorkspacePayload["graph"], exactPositions = false) {
   const types: Array<[string, string, (string | null)?]> = [];
   const typeIndex = new Map<string, number>();
   const nodeIndex = new Map<string, number>();
@@ -64,8 +68,8 @@ function encodeGraphMembers(graph: WorkspacePayload["graph"]) {
       node.kind === "iri" || derived !== node.id ? node.id : 0,
       node.label,
       KIND.indexOf(node.kind),
-      node.x === undefined ? null : round(node.x),
-      node.y === undefined ? null : round(node.y),
+      node.x === undefined ? null : exactPositions ? node.x : round(node.x),
+      node.y === undefined ? null : exactPositions ? node.y : round(node.y),
       node.pinned === undefined ? null : node.pinned ? 1 : 0,
       node.termValue === undefined ? null : node.kind === "iri" && node.termValue === node.id ? 0 : node.termValue,
       node.datatype ?? null,

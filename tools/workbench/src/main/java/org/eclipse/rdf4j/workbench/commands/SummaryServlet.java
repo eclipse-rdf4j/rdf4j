@@ -59,8 +59,8 @@ public class SummaryServlet extends TransformationServlet {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(SummaryServlet.class);
 
-	/** How long the Summary page waits for its counts (plan task M13.3), the same as Types and Graphs. */
-	static final long COUNT_BUDGET_MILLIS = BrowseList.COUNT_BUDGET_MILLIS;
+	/** How long the Summary page waits for its counts: five seconds. */
+	static final long COUNT_BUDGET_MILLIS = 5000;
 
 	private final long countBudgetMillis;
 
@@ -99,7 +99,7 @@ public class SummaryServlet extends TransformationServlet {
 
 	/**
 	 * The number of statements ({@code size}) and of named graphs ({@code contexts}), counted on their own connection
-	 * for at most two seconds. A count that did not finish is empty, and {@code counts-timed-out} is set. A count that
+	 * for at most five seconds. A count that did not finish is empty, and {@code counts-timed-out} is set. A count that
 	 * failed (for example on a repository that cannot be reached) is empty too, and {@code counts-failed} gives the
 	 * reason of the first failure, so the page can say why.
 	 */

@@ -287,7 +287,7 @@ public class QueryEvaluationUtility {
 		QueryModelPreparation preparation = preparationFactory.get();
 		try {
 			TupleExpr prepared = (TupleExpr) preparation.prepare(root);
-			ACTIVE_SAFETY_SNAPSHOT.set(new QuerySafetySnapshot(prepared, preparation, policy));
+			ACTIVE_SAFETY_SNAPSHOT.set(new QuerySafetySnapshot(preparation, policy));
 			return action.apply(prepared);
 		} finally {
 			if (previous == null) {
@@ -312,7 +312,7 @@ public class QueryEvaluationUtility {
 		QueryModelPreparation preparation = previous.valuesPreparation;
 		preparation.resetTraversal();
 		TupleExpr prepared = (TupleExpr) preparation.prepare(root);
-		ACTIVE_SAFETY_SNAPSHOT.set(new QuerySafetySnapshot(prepared, preparation, previous.policy));
+		ACTIVE_SAFETY_SNAPSHOT.set(new QuerySafetySnapshot(preparation, previous.policy));
 		try {
 			return action.apply(prepared);
 		} finally {
@@ -572,6 +572,7 @@ public class QueryEvaluationUtility {
 
 	@Experimental
 	public static final class QuerySafetySnapshot {
+		private static final NodeSafetySummary[] NO_CHILDREN = new NodeSafetySummary[0];
 		private final QueryModelPreparation valuesPreparation;
 		private final QueryExecutionPolicy policy;
 		private final Map<QueryModelNode, NodeSafetySummary> summaries = new IdentityHashMap<>();
@@ -583,6 +584,12 @@ public class QueryEvaluationUtility {
 		public QuerySafetySnapshot() {
 			valuesPreparation = null;
 			policy = activePolicy();
+		}
+
+		/** Prepared phases classify only requested safety facts; many optimizer passes never need them. */
+		private QuerySafetySnapshot(QueryModelPreparation valuesPreparation, QueryExecutionPolicy policy) {
+			this.valuesPreparation = valuesPreparation;
+			this.policy = Objects.requireNonNull(policy, "policy must not be null");
 		}
 
 		private QuerySafetySnapshot(QueryModelNode root, QueryModelPreparation valuesPreparation,
@@ -616,7 +623,7 @@ public class QueryEvaluationUtility {
 		private void retainAliasFacts(QueryModelNode original, QueryModelNode prepared) {
 			if (original != prepared) {
 				// A public read-only snapshot retains facts for the caller's root without retaining capture ownership.
-				summaries.put(original, summaries.get(prepared).forNode(original));
+				summaries.put(original, summaries.get(prepared));
 				childrenByNode.put(original, childrenByNode.getOrDefault(prepared, List.of()));
 			}
 		}
@@ -698,9 +705,13 @@ public class QueryEvaluationUtility {
 				childrenByNode.put(current, currentChildren);
 				NodeSafetySummary previous = summaries.get(current);
 				NodeSafetySummary updated = summarize(current, currentChildren);
-				summaries.put(current, updated);
-				if (updated.equals(previous) && (current != changedNode || alreadySummarized)) {
-					return;
+				if (updated.equals(previous)) {
+					// Preserve the generation identity used by captured ancestor name inputs.
+					if (current != changedNode || alreadySummarized) {
+						return;
+					}
+				} else {
+					summaries.put(current, updated);
 				}
 				changedChild = current;
 				current = current.getParentNode();
@@ -717,30 +728,20 @@ public class QueryEvaluationUtility {
 					|| unknownNodes.contains(node);
 			boolean containsLateral = node instanceof Lateral;
 			boolean containsExtension = node instanceof Extension;
-			NameSetNode referencedVariableNames = node instanceof Var variable && !variable.hasValue()
-					&& variable.getName() != null
-							? nameSets.add(null, variable.getName())
-							: null;
-			NameSetNode unsafeInjectionNames = null;
-			NameSetNode injectionTargets = null;
-			List<NodeSafetySummary> tupleChildren = new ArrayList<>();
+			NodeSafetySummary[] capturedChildren = children.isEmpty() ? NO_CHILDREN
+					: new NodeSafetySummary[children.size()];
 
-			for (QueryModelNode child : children) {
+			for (int i = 0; i < children.size(); i++) {
+				QueryModelNode child = children.get(i);
 				NodeSafetySummary childSummary = summaries.get(child);
+				capturedChildren[i] = childSummary;
 				repeatable &= childSummary.repeatable;
-				referencedVariableNames = nameSets.union(referencedVariableNames,
-						childSummary.referencedVariableNames);
 				if (!(node instanceof Service)) {
 					fatal |= childSummary.mayRaiseQueryFatalError;
 				}
 				mappingParameterized |= childSummary.mappingParameterized;
 				containsLateral |= childSummary.containsLateral;
 				containsExtension |= childSummary.containsExtension;
-				if (child instanceof TupleExpr) {
-					tupleChildren.add(childSummary);
-					unsafeInjectionNames = nameSets.union(unsafeInjectionNames, childSummary.unsafeInjectionNames);
-					injectionTargets = nameSets.union(injectionTargets, childSummary.injectionTargets);
-				}
 			}
 
 			if (node instanceof FunctionCall functionCall) {
@@ -758,27 +759,60 @@ public class QueryEvaluationUtility {
 				fatal = true;
 			}
 
-			boolean injectionShapeSafe = isBindingInjectionShape(node, tupleChildren);
-			NameSetNode assuredBindingNames = assuredBindingNames(node, tupleChildren);
-			if (node instanceof Filter filter) {
-				unsafeInjectionNames = nameSets.union(unsafeInjectionNames,
-						unsafeExpressionNames(filter.getCondition(), assuredFor(filter.getArg(), tupleChildren)));
-			} else if (node instanceof Extension extension) {
-				NameSetNode assuredByArg = assuredFor(extension.getArg(), tupleChildren);
-				for (ExtensionElem element : extension.getElements()) {
-					injectionTargets = nameSets.add(injectionTargets, element.getName());
-					unsafeInjectionNames = nameSets.union(unsafeInjectionNames,
-							unsafeExpressionNames(element.getExpr(), assuredByArg));
-				}
-			} else if (node instanceof LeftJoin leftJoin && leftJoin.hasCondition()) {
-				unsafeInjectionNames = nameSets.union(unsafeInjectionNames,
-						unsafeExpressionNames(leftJoin.getCondition(),
-								assuredFor(leftJoin.getLeftArg(), tupleChildren)));
-			}
+			return new NodeSafetySummary(repeatable, fatal, mappingParameterized, containsLateral,
+					containsExtension, isBindingInjectionShape(node, capturedChildren),
+					captureNameInputs(node, capturedChildren));
+		}
 
-			return new NodeSafetySummary(node, repeatable, fatal, mappingParameterized, containsLateral,
-					containsExtension, injectionShapeSafe, unsafeInjectionNames, injectionTargets,
-					assuredBindingNames, referencedVariableNames);
+		private NameFactInputs captureNameInputs(QueryModelNode node, NodeSafetySummary[] children) {
+			NameOperation operation = NameOperation.OTHER;
+			String localName = null;
+			Set<String> assuredNames = null;
+			NodeSafetySummary argument = null;
+			NodeSafetySummary condition = null;
+			ExtensionNameInput[] extensionElements = ExtensionNameInput.NONE;
+			if (node instanceof Var variable) {
+				operation = NameOperation.VARIABLE;
+				localName = variable.hasValue() ? null : variable.getName();
+			} else if (node instanceof StatementPattern || node instanceof BindingSetAssignment
+					|| node instanceof SingletonSet || node instanceof EmptySet) {
+				operation = NameOperation.LEAF;
+				assuredNames = Set.copyOf(((TupleExpr) node).getAssuredBindingNames());
+			} else if (node instanceof Join) {
+				operation = NameOperation.JOIN;
+			} else if (node instanceof Union) {
+				operation = NameOperation.UNION;
+			} else if (node instanceof Filter filter) {
+				operation = NameOperation.FILTER;
+				argument = summaries.get(filter.getArg());
+				condition = summaries.get(filter.getCondition());
+			} else if (node instanceof LeftJoin leftJoin) {
+				operation = NameOperation.LEFT_JOIN;
+				argument = summaries.get(leftJoin.getLeftArg());
+				condition = leftJoin.hasCondition() ? summaries.get(leftJoin.getCondition()) : null;
+			} else if (node instanceof Extension extension) {
+				operation = NameOperation.EXTENSION;
+				argument = summaries.get(extension.getArg());
+				extensionElements = new ExtensionNameInput[extension.getElements().size()];
+				for (int i = 0; i < extensionElements.length; i++) {
+					ExtensionElem element = extension.getElements().get(i);
+					extensionElements[i] = new ExtensionNameInput(element.getName(), summaries.get(element.getExpr()));
+				}
+			} else if (node instanceof ExtensionElem element) {
+				operation = NameOperation.EXTENSION_ELEMENT;
+				localName = element.getName();
+			}
+			boolean tupleExpression = node instanceof TupleExpr;
+			if (children.length == 0) {
+				if (!tupleExpression && localName == null && assuredNames == null) {
+					return NameFactInputs.EMPTY_VALUE;
+				}
+				if (operation == NameOperation.LEAF && assuredNames.isEmpty()) {
+					return NameFactInputs.EMPTY_TUPLE;
+				}
+			}
+			return new NameFactInputs(operation, tupleExpression, localName, assuredNames,
+					children, argument, condition, extensionElements);
 		}
 
 		private static List<QueryModelNode> childrenOf(QueryModelNode node) {
@@ -807,7 +841,7 @@ public class QueryEvaluationUtility {
 		}
 
 		private static boolean isBindingInjectionShape(QueryModelNode node,
-				List<NodeSafetySummary> tupleChildren) {
+				NodeSafetySummary[] children) {
 			if (!(node instanceof TupleExpr)) {
 				return true;
 			}
@@ -817,8 +851,8 @@ public class QueryEvaluationUtility {
 			}
 			if (node instanceof Join || node instanceof Union || node instanceof LeftJoin || node instanceof Filter
 					|| node instanceof Extension) {
-				for (NodeSafetySummary child : tupleChildren) {
-					if (!child.injectionShapeSafe) {
+				for (NodeSafetySummary child : children) {
+					if (child.nameInputs.tupleExpression && !child.injectionShapeSafe) {
 						return false;
 					}
 				}
@@ -827,55 +861,90 @@ public class QueryEvaluationUtility {
 			return false;
 		}
 
-		private NameSetNode assuredBindingNames(QueryModelNode node,
-				List<NodeSafetySummary> tupleChildren) {
-			if (node instanceof StatementPattern || node instanceof BindingSetAssignment || node instanceof SingletonSet
-					|| node instanceof EmptySet) {
-				return nameSets.from(((TupleExpr) node).getAssuredBindingNames());
+		/** Called with nameSets locked, including cached membership reads of its name-ID map. */
+		private BindingNameFacts nameFacts(NameFactInputs root) {
+			if (root.materialized != null) {
+				return root.materialized;
 			}
-			if (node instanceof Join) {
-				NameSetNode result = null;
-				for (NodeSafetySummary child : tupleChildren) {
-					result = nameSets.union(result, child.assuredBindingNames);
+			Deque<NameFactInputs> pending = new ArrayDeque<>();
+			pending.push(root);
+			while (!pending.isEmpty()) {
+				NameFactInputs current = pending.peek();
+				if (current.materialized != null) {
+					pending.pop();
+					continue;
 				}
-				return result;
-			}
-			if (node instanceof Union) {
-				if (tupleChildren.isEmpty()) {
-					return null;
+				boolean ready = true;
+				for (NodeSafetySummary child : current.children) {
+					if (child.nameInputs.materialized == null) {
+						pending.push(child.nameInputs);
+						ready = false;
+					}
 				}
-				NameSetNode result = tupleChildren.get(0).assuredBindingNames;
-				for (int i = 1; i < tupleChildren.size(); i++) {
-					result = nameSets.intersect(result, tupleChildren.get(i).assuredBindingNames);
+				if (current.argument != null && current.argument.nameInputs.materialized == null) {
+					pending.push(current.argument.nameInputs);
+					ready = false;
 				}
-				return result;
-			}
-			if (node instanceof LeftJoin || node instanceof Filter) {
-				return tupleChildren.isEmpty() ? null : tupleChildren.get(0).assuredBindingNames;
-			}
-			if (node instanceof Extension extension) {
-				NameSetNode result = tupleChildren.isEmpty() ? null : tupleChildren.get(0).assuredBindingNames;
-				for (ExtensionElem element : extension.getElements()) {
-					result = nameSets.remove(result, element.getName());
+				if (current.condition != null && current.condition.nameInputs.materialized == null) {
+					pending.push(current.condition.nameInputs);
+					ready = false;
 				}
-				return result;
+				for (ExtensionNameInput element : current.extensionElements) {
+					if (element.expression.nameInputs.materialized == null) {
+						pending.push(element.expression.nameInputs);
+						ready = false;
+					}
+				}
+				if (ready) {
+					current.materialized = summarizeNameFacts(current);
+					pending.pop();
+				}
 			}
-			return null;
+			return root.materialized;
 		}
 
-		private static NameSetNode assuredFor(TupleExpr child, List<NodeSafetySummary> tupleChildren) {
-			for (int i = 0; i < tupleChildren.size(); i++) {
-				// tupleChildren and direct TupleExpr children have the same order
-				// as the query model's child walk.
-				if (tupleChildren.get(i).node == child) {
-					return tupleChildren.get(i).assuredBindingNames;
+		private BindingNameFacts summarizeNameFacts(NameFactInputs inputs) {
+			NameSetNode referenced = inputs.operation == NameOperation.VARIABLE && inputs.localName != null
+					? nameSets.add(null, inputs.localName)
+					: null;
+			NameSetNode unsafe = null;
+			NameSetNode targets = null;
+			NameSetNode assured = inputs.assuredNames == null ? null : nameSets.from(inputs.assuredNames);
+			boolean firstTupleChild = true;
+			for (NodeSafetySummary child : inputs.children) {
+				BindingNameFacts facts = child.nameInputs.materialized;
+				referenced = nameSets.union(referenced, facts.referencedVariableNames);
+				if (child.nameInputs.tupleExpression) {
+					unsafe = nameSets.union(unsafe, facts.unsafeInjectionNames);
+					targets = nameSets.union(targets, facts.injectionTargets);
+					if (inputs.operation == NameOperation.JOIN) {
+						assured = nameSets.union(assured, facts.assuredBindingNames);
+					} else if (inputs.operation == NameOperation.UNION) {
+						assured = firstTupleChild ? facts.assuredBindingNames
+								: nameSets.intersect(assured, facts.assuredBindingNames);
+					}
+					firstTupleChild = false;
 				}
 			}
-			return null;
-		}
-
-		private NameSetNode unsafeExpressionNames(ValueExpr expression, NameSetNode assuredNames) {
-			return nameSets.difference(summaries.get(expression).referencedVariableNames, assuredNames);
+			NameSetNode assuredByArg = inputs.argument == null ? null
+					: inputs.argument.nameInputs.materialized.assuredBindingNames;
+			if (inputs.operation == NameOperation.FILTER || inputs.operation == NameOperation.LEFT_JOIN) {
+				assured = assuredByArg;
+			}
+			if (inputs.condition != null) {
+				unsafe = nameSets.union(unsafe, nameSets.difference(
+						inputs.condition.nameInputs.materialized.referencedVariableNames, assuredByArg));
+			}
+			if (inputs.operation == NameOperation.EXTENSION) {
+				assured = assuredByArg;
+				for (ExtensionNameInput element : inputs.extensionElements) {
+					assured = nameSets.remove(assured, element.target);
+					targets = nameSets.add(targets, element.target);
+					unsafe = nameSets.union(unsafe, nameSets.difference(
+							element.expression.nameInputs.materialized.referencedVariableNames, assuredByArg));
+				}
+			}
+			return new BindingNameFacts(unsafe, targets, assured, referenced);
 		}
 
 		public boolean isRepeatable(QueryModelNode node) {
@@ -896,10 +965,14 @@ public class QueryEvaluationUtility {
 		public boolean permitsBindingInjection(TupleExpr node, Set<String> injectedNames) {
 			node = (TupleExpr) ensureNode(node);
 			NodeSafetySummary summary = summaries.get(node);
-			if (!summary.injectionShapeSafe || nameSets.intersects(summary.unsafeInjectionNames, injectedNames)) {
+			if (!summary.injectionShapeSafe) {
 				return false;
 			}
-			return !nameSets.intersects(summary.injectionTargets, injectedNames);
+			synchronized (nameSets) {
+				BindingNameFacts facts = nameFacts(summary.nameInputs);
+				return !nameSets.intersects(facts.unsafeInjectionNames, injectedNames)
+						&& !nameSets.intersects(facts.injectionTargets, injectedNames);
+			}
 		}
 
 		public boolean containsLateral(QueryModelNode node) {
@@ -913,7 +986,9 @@ public class QueryEvaluationUtility {
 		}
 
 		long retainedNameFactStorageUnits() {
-			return nameSets.internedNodes.size() + nameSets.nameIds.size();
+			synchronized (nameSets) {
+				return nameSets.internedNodes.size() + nameSets.nameIds.size();
+			}
 		}
 	}
 
@@ -1132,40 +1207,137 @@ public class QueryEvaluationUtility {
 		}
 	}
 
+	private enum NameOperation {
+		OTHER,
+		VARIABLE,
+		LEAF,
+		JOIN,
+		UNION,
+		FILTER,
+		LEFT_JOIN,
+		EXTENSION,
+		EXTENSION_ELEMENT
+	}
+
+	private static final class ExtensionNameInput {
+		private static final ExtensionNameInput[] NONE = new ExtensionNameInput[0];
+		private final String target;
+		private final NodeSafetySummary expression;
+
+		private ExtensionNameInput(String target, NodeSafetySummary expression) {
+			this.target = Objects.requireNonNull(target, "name must not be null");
+			this.expression = Objects.requireNonNull(expression, "extension expression must be analyzed");
+		}
+	}
+
+	/** Immutable inputs freeze name semantics without eagerly constructing persistent sets. */
+	private static final class NameFactInputs {
+		private static final NameFactInputs EMPTY_VALUE = empty(false);
+		private static final NameFactInputs EMPTY_TUPLE = empty(true);
+		private final NameOperation operation;
+		private final boolean tupleExpression;
+		private final String localName;
+		private final Set<String> assuredNames;
+		private final NodeSafetySummary[] children;
+		private final NodeSafetySummary argument;
+		private final NodeSafetySummary condition;
+		private final ExtensionNameInput[] extensionElements;
+		// Accessed only with the owning snapshot's NameSetFactory monitor held.
+		private BindingNameFacts materialized;
+
+		private static NameFactInputs empty(boolean tupleExpression) {
+			NameFactInputs result = new NameFactInputs(tupleExpression ? NameOperation.LEAF : NameOperation.OTHER,
+					tupleExpression, null, tupleExpression ? Set.of() : null, QuerySafetySnapshot.NO_CHILDREN,
+					null, null, ExtensionNameInput.NONE);
+			result.materialized = BindingNameFacts.EMPTY;
+			return result;
+		}
+
+		private NameFactInputs(NameOperation operation, boolean tupleExpression, String localName,
+				Set<String> assuredNames, NodeSafetySummary[] children, NodeSafetySummary argument,
+				NodeSafetySummary condition, ExtensionNameInput[] extensionElements) {
+			this.operation = operation;
+			this.tupleExpression = tupleExpression;
+			this.localName = localName;
+			this.assuredNames = assuredNames;
+			this.children = children;
+			this.argument = argument;
+			this.condition = condition;
+			this.extensionElements = extensionElements;
+		}
+
+		private boolean sameInputs(NameFactInputs other) {
+			if (operation != other.operation || tupleExpression != other.tupleExpression
+					|| !Objects.equals(localName, other.localName) || !Objects.equals(assuredNames, other.assuredNames)
+					|| argument != other.argument || condition != other.condition
+					|| children.length != other.children.length
+					|| extensionElements.length != other.extensionElements.length) {
+				return false;
+			}
+			for (int i = 0; i < children.length; i++) {
+				if (children[i] != other.children[i]) {
+					return false;
+				}
+			}
+			for (int i = 0; i < extensionElements.length; i++) {
+				ExtensionNameInput element = extensionElements[i];
+				ExtensionNameInput otherElement = other.extensionElements[i];
+				if (!Objects.equals(element.target, otherElement.target)
+						|| element.expression != otherElement.expression) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		private int inputHashCode() {
+			int hash = Objects.hash(operation, tupleExpression, localName, assuredNames,
+					System.identityHashCode(argument), System.identityHashCode(condition));
+			for (NodeSafetySummary child : children) {
+				hash = 31 * hash + System.identityHashCode(child);
+			}
+			for (ExtensionNameInput element : extensionElements) {
+				hash = 31 * hash + Objects.hash(element.target, System.identityHashCode(element.expression));
+			}
+			return hash;
+		}
+	}
+
+	private static final class BindingNameFacts {
+		private static final BindingNameFacts EMPTY = new BindingNameFacts(null, null, null, null);
+		private final NameSetNode unsafeInjectionNames;
+		private final NameSetNode injectionTargets;
+		private final NameSetNode assuredBindingNames;
+		private final NameSetNode referencedVariableNames;
+
+		private BindingNameFacts(NameSetNode unsafeInjectionNames, NameSetNode injectionTargets,
+				NameSetNode assuredBindingNames, NameSetNode referencedVariableNames) {
+			this.unsafeInjectionNames = unsafeInjectionNames;
+			this.injectionTargets = injectionTargets;
+			this.assuredBindingNames = assuredBindingNames;
+			this.referencedVariableNames = referencedVariableNames;
+		}
+	}
+
 	private static final class NodeSafetySummary {
-		private final QueryModelNode node;
 		private final boolean repeatable;
 		private final boolean mayRaiseQueryFatalError;
 		private final boolean mappingParameterized;
 		private final boolean containsLateral;
 		private final boolean containsExtension;
 		private final boolean injectionShapeSafe;
-		private final NameSetNode unsafeInjectionNames;
-		private final NameSetNode injectionTargets;
-		private final NameSetNode assuredBindingNames;
-		private final NameSetNode referencedVariableNames;
+		private final NameFactInputs nameInputs;
 
-		private NodeSafetySummary(QueryModelNode node, boolean repeatable, boolean mayRaiseQueryFatalError,
+		private NodeSafetySummary(boolean repeatable, boolean mayRaiseQueryFatalError,
 				boolean mappingParameterized, boolean containsLateral, boolean containsExtension,
-				boolean injectionShapeSafe, NameSetNode unsafeInjectionNames, NameSetNode injectionTargets,
-				NameSetNode assuredBindingNames, NameSetNode referencedVariableNames) {
-			this.node = node;
+				boolean injectionShapeSafe, NameFactInputs nameInputs) {
 			this.repeatable = repeatable;
 			this.mayRaiseQueryFatalError = mayRaiseQueryFatalError;
 			this.mappingParameterized = mappingParameterized;
 			this.containsLateral = containsLateral;
 			this.containsExtension = containsExtension;
 			this.injectionShapeSafe = injectionShapeSafe;
-			this.unsafeInjectionNames = unsafeInjectionNames;
-			this.injectionTargets = injectionTargets;
-			this.assuredBindingNames = assuredBindingNames;
-			this.referencedVariableNames = referencedVariableNames;
-		}
-
-		private NodeSafetySummary forNode(QueryModelNode original) {
-			return new NodeSafetySummary(original, repeatable, mayRaiseQueryFatalError, mappingParameterized,
-					containsLateral, containsExtension, injectionShapeSafe, unsafeInjectionNames, injectionTargets,
-					assuredBindingNames, referencedVariableNames);
+			this.nameInputs = nameInputs;
 		}
 
 		@Override
@@ -1182,17 +1354,13 @@ public class QueryEvaluationUtility {
 					&& containsLateral == summary.containsLateral
 					&& containsExtension == summary.containsExtension
 					&& injectionShapeSafe == summary.injectionShapeSafe
-					&& unsafeInjectionNames == summary.unsafeInjectionNames
-					&& injectionTargets == summary.injectionTargets
-					&& assuredBindingNames == summary.assuredBindingNames
-					&& referencedVariableNames == summary.referencedVariableNames;
+					&& nameInputs.sameInputs(summary.nameInputs);
 		}
 
 		@Override
 		public int hashCode() {
 			return Objects.hash(repeatable, mayRaiseQueryFatalError, mappingParameterized, containsLateral,
-					containsExtension, injectionShapeSafe, unsafeInjectionNames, injectionTargets,
-					assuredBindingNames, referencedVariableNames);
+					containsExtension, injectionShapeSafe, nameInputs.inputHashCode());
 		}
 	}
 

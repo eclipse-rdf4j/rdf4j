@@ -249,8 +249,11 @@ public class QueryEvaluationUtilityTest {
 		QueryEvaluationUtility.QuerySafetySnapshot large = QueryEvaluationUtility.querySafetySnapshot(largeTree);
 
 		assertTrue(small.permitsBindingInjection(smallTree, Set.of("subject-0")));
+		assertTrue(large.permitsBindingInjection(largeTree, Set.of("subject-0")));
 		assertFalse(small.permitsBindingInjection(smallTree, Set.of("filter-0")));
+		assertFalse(large.permitsBindingInjection(largeTree, Set.of("filter-0")));
 		assertFalse(small.permitsBindingInjection(smallTree, Set.of("target-0")));
+		assertFalse(large.permitsBindingInjection(largeTree, Set.of("target-0")));
 		assertTrue(large.retainedNameFactStorageUnits() <= 3 * small.retainedNameFactStorageUnits(),
 				"doubling distinct fact names must not retain a copied fact set at every ancestor");
 	}
