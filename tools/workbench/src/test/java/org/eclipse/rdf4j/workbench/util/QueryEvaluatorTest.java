@@ -12,42 +12,68 @@
 package org.eclipse.rdf4j.workbench.util;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+
+import javax.xml.parsers.DocumentBuilderFactory;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryPressureState;
 import org.eclipse.rdf4j.http.protocol.LmdbForceableStrategy;
+import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.TripleTerm;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.StrategyDecision;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
+import org.eclipse.rdf4j.query.impl.GeneratedBNode;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
+import org.eclipse.rdf4j.query.impl.RepositoryBNode;
+import org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLWriter;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
@@ -57,10 +83,461 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import jakarta.servlet.http.HttpServletResponse;
 
 class QueryEvaluatorTest {
+	@Test
+	void stagedQueryRowsRespectDeploymentDiskBudget() throws Exception {
+		String key = "rdf4j.workbench.query.spool.maxBytes";
+		String previous = System.getProperty(key);
+		Set<Path> before = querySpoolPaths();
+		try {
+			System.setProperty(key, "32");
+			assertThatThrownBy(() -> {
+				try (QueryResultSpool spool = new QueryResultSpool()) {
+					spool.writeRow(SimpleValueFactory.getInstance().createIRI("urn:test:01234567890123456789"));
+					spool.finishWriting();
+				}
+			}).isInstanceOf(IOException.class).hasMessageContaining("budget");
+			assertThat(querySpoolPaths()).containsExactlyInAnyOrderElementsOf(before);
+		} finally {
+			if (previous == null) {
+				System.clearProperty(key);
+			} else {
+				System.setProperty(key, previous);
+			}
+		}
+	}
+
+	@Test
+	void stagedQueryDiskBudgetCountsConcurrentSpoolsAndReleasesAfterDeletion() throws Exception {
+		String key = "rdf4j.workbench.query.spool.maxBytes";
+		String previous = System.getProperty(key);
+		Set<Path> before = querySpoolPaths();
+		var iri = SimpleValueFactory.getInstance().createIRI("urn:test:aaaaaaaaaa");
+		try {
+			System.setProperty(key, "80");
+			try (QueryResultSpool first = new QueryResultSpool()) {
+				first.writeRow(iri);
+				first.finishWriting();
+				assertThatThrownBy(() -> {
+					try (QueryResultSpool second = new QueryResultSpool()) {
+						second.writeRow(iri);
+						second.finishWriting();
+					}
+				}).isInstanceOf(IOException.class).hasMessageContaining("budget");
+			}
+			try (QueryResultSpool later = new QueryResultSpool()) {
+				later.writeRow(iri);
+				later.finishWriting();
+				assertThat(later.readRow(1)).containsExactly(iri);
+			}
+			assertThat(querySpoolPaths()).containsExactlyInAnyOrderElementsOf(before);
+		} finally {
+			if (previous == null) {
+				System.clearProperty(key);
+			} else {
+				System.setProperty(key, previous);
+			}
+		}
+	}
+
+	@Test
+	void failedSpoolDeletionStillReleasesTheAggregateDiskReservation(@TempDir Path tempDirectory) throws Exception {
+		String budgetKey = "rdf4j.workbench.query.spool.maxBytes";
+		String previousBudget = System.getProperty(budgetKey);
+		String previousTemp = System.getProperty("java.io.tmpdir");
+		var iri = SimpleValueFactory.getInstance().createIRI("urn:test:aaaaaaaaaa");
+		try {
+			System.setProperty(budgetKey, "80");
+			System.setProperty("java.io.tmpdir", tempDirectory.toString());
+			QueryResultSpool first = new QueryResultSpool();
+			first.writeRow(iri);
+			first.finishWriting();
+			Path firstPath;
+			try (var files = Files.list(tempDirectory)) {
+				firstPath = files.findFirst().orElseThrow();
+			}
+			Files.delete(firstPath);
+			Files.createDirectory(firstPath);
+			Path blocker = Files.writeString(firstPath.resolve("keep"), "prevent deletion");
+			try {
+				assertThatThrownBy(first::close).isInstanceOf(IOException.class);
+			} finally {
+				Files.deleteIfExists(blocker);
+				Files.deleteIfExists(firstPath);
+			}
+			try (QueryResultSpool later = new QueryResultSpool()) {
+				later.writeRow(iri);
+				later.finishWriting();
+				assertThat(later.readRow(1)).containsExactly(iri);
+			}
+		} finally {
+			if (previousBudget == null) {
+				System.clearProperty(budgetKey);
+			} else {
+				System.setProperty(budgetKey, previousBudget);
+			}
+			if (previousTemp == null) {
+				System.clearProperty("java.io.tmpdir");
+			} else {
+				System.setProperty("java.io.tmpdir", previousTemp);
+			}
+		}
+	}
+
+	@Test
+	void unlimitedLegacyPageWritesParseableXmlWithTerminalTotal() throws Exception {
+		String queryText = "select * where { ?s ?p ?o }";
+		ByteArrayOutputStream output = new ByteArrayOutputStream();
+		TupleResultBuilder builder = new TupleResultBuilder(new WorkbenchTupleResultWriter(output),
+				SimpleValueFactory.getInstance());
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		RepositoryConnection con = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		TupleQuery query = mock(TupleQuery.class);
+		when(req.getParameter("queryLn")).thenReturn("SPARQL");
+		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(query);
+		when(con.getNamespaces()).thenReturn(emptyNamespaces());
+		when(query.evaluate()).thenReturn(new IteratingTupleQueryResult(List.of("s"),
+				List.of(binding("one"), binding("two"))));
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, output, con,
+				queryText, req, cookies, queryText);
+
+		DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+		factory.setNamespaceAware(true);
+		var document = factory.newDocumentBuilder().parse(new ByteArrayInputStream(output.toByteArray()));
+		assertThat(document.getElementsByTagNameNS("http://www.w3.org/2005/sparql-results#", "result").getLength())
+				.isEqualTo(2);
+		var metadata = document.getElementsByTagNameNS("https://rdf4j.org/schema/workbench#",
+				"total-result-count");
+		assertThat(metadata.getLength()).isEqualTo(1);
+		assertThat(metadata.item(0).getTextContent()).isEqualTo("2");
+		verify(cookies, never()).addTotalResultCountCookie(any(), any(), anyInt());
+	}
+
+	@Test
+	void spooledBlankNodesRemainUntrustedAndKeepLegacyXmlBytes() throws Exception {
+		var factory = SimpleValueFactory.getInstance();
+		BNode generated = GeneratedBNode.restore("generated-wire");
+		BNode remote = (BNode) RemoteBNode.newResponseScope(
+				new BlankNodeAllocationScope("remote-", ignored -> false), factory, new Object(), true)
+				.map(factory.createBNode("remote-id"));
+		BNode repository = RepositoryBNode.fromNegotiatedResult("repository-wire", "repository-raw", true);
+		Value[] original = { generated, remote, repository };
+		Value[] replayed;
+		try (QueryResultSpool spool = new QueryResultSpool()) {
+			spool.writeRow(original);
+			spool.finishWriting();
+			replayed = spool.readRow(original.length);
+		}
+
+		assertThat(replayed).extracting(value -> ((BNode) value).getID())
+				.containsExactly(generated.getID(), remote.getID(), repository.getID());
+		assertThat(legacyXmlRow(replayed)).isEqualTo(legacyXmlRow(original));
+		for (Value value : replayed) {
+			assertThatThrownBy(() -> WorkbenchValueEncoder.encode(value))
+					.isInstanceOf(IllegalArgumentException.class)
+					.hasMessageContaining("no reusable repository identity");
+		}
+	}
+
+	private static byte[] legacyXmlRow(Value[] values) throws Exception {
+		var output = new ByteArrayOutputStream();
+		var builder = new TupleResultBuilder(new SPARQLResultsXMLWriter(output), SimpleValueFactory.getInstance());
+		builder.start("generated", "remote", "repository");
+		builder.result((Object[]) values);
+		builder.end();
+		return output.toByteArray();
+	}
+
+	@Test
+	void shouldWriteKnownTotalTupleRowsBeforeReadingLaterRows() throws Exception {
+		String queryText = "select * where { ?s ?p ?o }";
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		RepositoryConnection con = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		TupleQuery query = mock(TupleQuery.class);
+		TupleQueryResult result = mock(TupleQueryResult.class);
+		AtomicBoolean firstWritten = new AtomicBoolean();
+		AtomicInteger readCount = new AtomicInteger();
+
+		when(req.getParameter("queryLn")).thenReturn("SPARQL");
+		when(req.getInt("know_total")).thenReturn(2);
+		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(query);
+		when(con.getNamespaces()).thenReturn(emptyNamespaces());
+		when(query.evaluate()).thenReturn(result);
+		when(result.getBindingNames()).thenReturn(List.of("s"));
+		when(result.hasNext()).thenReturn(true, true, false);
+		when(result.next()).thenAnswer(invocation -> {
+			if (readCount.incrementAndGet() == 2) {
+				assertThat(firstWritten.get()).as("first row was written before reading the second").isTrue();
+			}
+			return binding("row-" + readCount.get());
+		});
+		doAnswer(invocation -> {
+			firstWritten.set(true);
+			return null;
+		}).when(builder).result(any(Object[].class));
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), con,
+				queryText, req, cookies, null);
+
+		verify(query, times(1)).evaluate();
+		verify(builder, times(2)).result(org.mockito.ArgumentMatchers.any(Object[].class));
+	}
+
+	@Test
+	void shouldStreamUnlimitedLegacyTuplePageAndRetainTerminalTotal() throws Exception {
+		String queryText = "select * where { ?s ?p ?o }";
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		RepositoryConnection con = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		TupleQuery query = mock(TupleQuery.class);
+		TupleQueryResult result = mock(TupleQueryResult.class);
+		AtomicBoolean firstWritten = new AtomicBoolean();
+		AtomicInteger reads = new AtomicInteger();
+		Set<Path> before = querySpoolPaths();
+
+		when(req.getParameter("queryLn")).thenReturn("SPARQL");
+		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(query);
+		when(con.getNamespaces()).thenReturn(emptyNamespaces());
+		when(query.evaluate()).thenReturn(result);
+		when(result.getBindingNames()).thenReturn(List.of("s"));
+		when(result.hasNext()).thenReturn(true, true, false);
+		when(result.next()).thenAnswer(invocation -> {
+			if (reads.incrementAndGet() == 2) {
+				assertThat(firstWritten.get()).as("unlimited page emitted first row before reading second").isTrue();
+			}
+			return binding("row-" + reads.get());
+		});
+		doAnswer(invocation -> {
+			firstWritten.set(true);
+			return null;
+		}).when(builder).result(any(Object[].class));
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), con,
+				queryText, req, cookies, queryText);
+
+		verify(builder, times(2)).result(any(Object[].class));
+		verify(builder).metadata("total-result-count", 2);
+		verify(cookies, never()).addTotalResultCountCookie(any(), any(), anyInt());
+		assertThat(querySpoolPaths()).containsExactlyInAnyOrderElementsOf(before);
+	}
+
+	@Test
+	void shouldReplayOnlyUnknownTotalTupleWindowWithDeepRdfStarAndLargeLiterals() throws Exception {
+		String queryText = "select * where { ?s ?p ?o }";
+		var vf = SimpleValueFactory.getInstance();
+		Value nested = vf.createLiteral("leaf");
+		for (int depth = 0; depth < 2048; depth++) {
+			nested = vf.createTripleTerm(vf.createIRI("urn:subject"), vf.createIRI("urn:predicate"), nested);
+		}
+		var directed = vf.createLiteral("bonjour", "fr", Literal.BaseDirection.RTL);
+		var bNode = vf.createBNode("original-id");
+		var largeLiteral = vf.createLiteral("a".repeat(70_000));
+		MapBindingSet selected = new MapBindingSet();
+		selected.addBinding("nested", nested);
+		selected.addBinding("directed", directed);
+		selected.addBinding("bnode", bNode);
+		selected.addBinding("large", largeLiteral);
+		List<Object[]> rows = new ArrayList<>();
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		RepositoryConnection con = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		TupleQuery query = mock(TupleQuery.class);
+		doAnswer(invocation -> {
+			rows.add(invocation.getArguments());
+			return null;
+		}).when(builder).result(any(Object[].class));
+
+		when(req.getParameter("queryLn")).thenReturn("SPARQL");
+		when(req.getInt("offset")).thenReturn(1);
+		when(req.getInt("limit_query")).thenReturn(1);
+		when(req.getInt("know_total")).thenReturn(0);
+		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(query);
+		when(con.getNamespaces()).thenReturn(emptyNamespaces());
+		when(query.evaluate()).thenReturn(new IteratingTupleQueryResult(
+				List.of("nested", "directed", "bnode", "large"),
+				List.of(binding("before"), selected, binding("after"))));
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), con,
+				queryText, req, cookies, null);
+
+		verify(query, times(1)).evaluate();
+		verify(cookies).addTotalResultCountCookie(req, resp, 3);
+		assertThat(rows).hasSize(1);
+		Value actual = (Value) rows.get(0)[0];
+		for (int depth = 0; depth < 2048; depth++) {
+			assertThat(actual).isInstanceOf(TripleTerm.class);
+			actual = ((TripleTerm) actual).getObject();
+		}
+		assertThat(actual).isEqualTo(vf.createLiteral("leaf"));
+		assertThat(rows.get(0)[1]).isEqualTo(directed);
+		assertThat(rows.get(0)[2]).isEqualTo(bNode);
+		assertThat(rows.get(0)[3]).isEqualTo(largeLiteral);
+	}
+
+	@Test
+	void shouldNotApplyKnownTotalPageOffsetTwiceAfterQueryRewrite() throws Exception {
+		String queryText = "select * where { ?s ?p ?o }";
+		String pagedQueryText = queryText + "\nlimit 1\noffset 1";
+		List<Object[]> rows = new ArrayList<>();
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		RepositoryConnection con = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		TupleQuery original = mock(TupleQuery.class);
+		TupleQuery page = mock(TupleQuery.class);
+		doAnswer(invocation -> {
+			rows.add(invocation.getArguments());
+			return null;
+		}).when(builder).result(any(Object[].class));
+
+		when(req.getParameter("queryLn")).thenReturn("SPARQL");
+		when(req.getInt("offset")).thenReturn(1);
+		when(req.getInt("limit_query")).thenReturn(1);
+		when(req.getInt("know_total")).thenReturn(3);
+		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(original);
+		when(con.prepareQuery(QueryLanguage.SPARQL, pagedQueryText)).thenReturn(page);
+		when(con.getNamespaces()).thenReturn(emptyNamespaces());
+		when(page.evaluate()).thenReturn(new IteratingTupleQueryResult(List.of("s"), List.of(binding("second"))));
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), con,
+				queryText, req, cookies, null);
+
+		verify(original, never()).evaluate();
+		verify(page, times(1)).evaluate();
+		verify(cookies).addTotalResultCountCookie(req, resp, 3);
+		assertThat(rows).hasSize(1);
+		assertThat(rows.get(0)[0]).isEqualTo(SimpleValueFactory.getInstance().createLiteral("second"));
+	}
+
+	@Test
+	void shouldCountLargeUnknownTotalTupleStreamWhileRenderingOnlyWindow() throws Exception {
+		String queryText = "select * where { ?s ?p ?o }";
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		RepositoryConnection con = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		TupleQuery query = mock(TupleQuery.class);
+		TupleQueryResult result = mock(TupleQueryResult.class);
+		AtomicInteger consumed = new AtomicInteger();
+		when(req.getParameter("queryLn")).thenReturn("SPARQL");
+		when(req.getInt("limit_query")).thenReturn(1);
+		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(query);
+		when(con.getNamespaces()).thenReturn(emptyNamespaces());
+		when(query.evaluate()).thenReturn(result);
+		when(result.getBindingNames()).thenReturn(List.of("s"));
+		when(result.hasNext()).thenAnswer(invocation -> consumed.get() < 100_000);
+		when(result.next()).thenAnswer(invocation -> binding("row-" + consumed.incrementAndGet()));
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), con,
+				queryText, req, cookies, null);
+
+		assertThat(consumed.get()).isEqualTo(100_000);
+		verify(query, times(1)).evaluate();
+		verify(builder, times(1)).result(any(Object[].class));
+		verify(cookies).addTotalResultCountCookie(req, resp, 100_000);
+		verify(result).close();
+	}
+
+	@Test
+	void oversizedUnknownTotalPageFailsBeforeResponseAndReleasesDisk() throws Exception {
+		String key = "rdf4j.workbench.query.spool.maxBytes";
+		String previous = System.getProperty(key);
+		String queryText = "select * where { ?s ?p ?o }";
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		RepositoryConnection con = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		TupleQuery query = mock(TupleQuery.class);
+		TupleQueryResult result = mock(TupleQueryResult.class);
+		Set<Path> before = querySpoolPaths();
+		when(req.getParameter("queryLn")).thenReturn("SPARQL");
+		when(req.getInt("limit_query")).thenReturn(Integer.MAX_VALUE);
+		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(query);
+		when(con.getNamespaces()).thenReturn(emptyNamespaces());
+		when(query.evaluate()).thenReturn(result);
+		when(result.getBindingNames()).thenReturn(List.of("s"));
+		when(result.hasNext()).thenReturn(true, false);
+		when(result.next()).thenReturn(binding("an oversized first result row"));
+		try {
+			System.setProperty(key, "32");
+			assertThatThrownBy(() -> QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp,
+					new ByteArrayOutputStream(), con, queryText, req, cookies, queryText))
+							.isInstanceOf(org.eclipse.rdf4j.query.QueryEvaluationException.class)
+							.hasCauseInstanceOf(IOException.class)
+							.hasMessageContaining("stage Workbench tuple query results");
+			verify(result).close();
+			verify(builder, never()).start(any(String[].class));
+			verify(cookies, never()).addTotalResultCountCookie(any(), any(), anyInt());
+			assertThat(querySpoolPaths()).containsExactlyInAnyOrderElementsOf(before);
+		} finally {
+			if (previous == null) {
+				System.clearProperty(key);
+			} else {
+				System.setProperty(key, previous);
+			}
+		}
+	}
+
+	@Test
+	void shouldDeleteUnknownTotalTupleSpoolWhenWriterFails() throws Exception {
+		String queryText = "select * where { ?s ?p ?o }";
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		RepositoryConnection con = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		TupleQuery query = mock(TupleQuery.class);
+		TupleQueryResult result = mock(TupleQueryResult.class);
+		Set<Path> before = querySpoolPaths();
+		AtomicReference<Path> spoolPath = new AtomicReference<>();
+		when(req.getParameter("queryLn")).thenReturn("SPARQL");
+		when(req.getInt("limit_query")).thenReturn(1);
+		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(query);
+		when(con.getNamespaces()).thenReturn(emptyNamespaces());
+		when(query.evaluate()).thenReturn(result);
+		when(result.getBindingNames()).thenReturn(List.of("s"));
+		when(result.hasNext()).thenReturn(true, false);
+		when(result.next()).thenAnswer(invocation -> {
+			spoolPath.set(querySpoolPaths().stream().filter(path -> !before.contains(path)).findFirst().orElseThrow());
+			if (Files.getFileStore(spoolPath.get()).supportsFileAttributeView("posix")) {
+				assertThat(Files.getPosixFilePermissions(spoolPath.get()))
+						.containsExactlyInAnyOrder(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE);
+			}
+			return binding("one");
+		});
+		doThrow(new QueryResultHandlerException("writer failed")).when(builder).result(any(Object[].class));
+
+		assertThrows(QueryResultHandlerException.class,
+				() -> QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), con,
+						queryText, req, cookies, null));
+		assertThat(spoolPath.get()).isNotNull();
+		assertThat(Files.exists(spoolPath.get())).isFalse();
+		verify(result).close();
+	}
+
+	private static Set<Path> querySpoolPaths() throws Exception {
+		try (var files = Files.list(Path.of(System.getProperty("java.io.tmpdir")))) {
+			return files.filter(path -> path.getFileName().toString().startsWith("rdf4j-workbench-query-"))
+					.collect(java.util.stream.Collectors.toSet());
+		}
+	}
 
 	@Test
 	void returnsReportsFromTheSameExplanationForEveryFormat() throws Exception {
@@ -306,7 +783,15 @@ class QueryEvaluatorTest {
 		CookieHandler cookies = mock(CookieHandler.class);
 		TupleQuery tupleQuery = mock(TupleQuery.class);
 		AtomicBoolean closed = new AtomicBoolean();
+		Set<Path> before = querySpoolPaths();
+		AtomicReference<Path> spoolPath = new AtomicReference<>();
 		TupleQueryResult tupleQueryResult = new SwitchingTupleQueryResult(200, 64, closed, () -> {
+			try {
+				spoolPath.set(
+						querySpoolPaths().stream().filter(path -> !before.contains(path)).findFirst().orElseThrow());
+			} catch (Exception e) {
+				throw new AssertionError(e);
+			}
 			System.setProperty(BREAKER_WARN_FREE_MB, Integer.toString(Integer.MAX_VALUE));
 			System.setProperty(BREAKER_HIGH_FREE_MB, Integer.toString(Integer.MAX_VALUE));
 			System.setProperty(BREAKER_CRITICAL_FREE_MB, Integer.toString(Integer.MAX_VALUE));
@@ -317,7 +802,7 @@ class QueryEvaluatorTest {
 		when(req.isParameterPresent("infer")).thenReturn(false);
 		when(req.isParameterPresent("Accept")).thenReturn(false);
 		when(req.getInt("query-timeout")).thenReturn(0);
-		when(req.getInt("limit_query")).thenReturn(0);
+		when(req.getInt("limit_query")).thenReturn(1);
 		when(req.getInt("offset")).thenReturn(0);
 		when(req.getInt("know_total")).thenReturn(0);
 		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(tupleQuery);
@@ -332,6 +817,8 @@ class QueryEvaluatorTest {
 		});
 
 		assertTrue(closed.get());
+		assertThat(spoolPath.get()).isNotNull();
+		assertThat(Files.exists(spoolPath.get())).isFalse();
 		verify(tupleQuery).evaluate();
 	}
 
@@ -404,7 +891,7 @@ class QueryEvaluatorTest {
 				queryText, req, cookies, null);
 
 		verify(builder, times(2)).result(org.mockito.ArgumentMatchers.any(Object[].class));
-		verify(cookies).addTotalResultCountCookie(req, resp, 3);
+		verify(cookies, never()).addTotalResultCountCookie(any(), any(), anyInt());
 	}
 
 	@Test
@@ -435,7 +922,48 @@ class QueryEvaluatorTest {
 				queryText, req, cookies, null);
 
 		verify(builder, times(3)).result(org.mockito.ArgumentMatchers.any(Object[].class));
-		verify(cookies).addTotalResultCountCookie(req, resp, 3);
+		verify(cookies, never()).addTotalResultCountCookie(any(), any(), anyInt());
+	}
+
+	@Test
+	void shouldStreamUnlimitedTupleDownloadWithoutStagingLaterRows() throws Exception {
+		String queryText = "select * where { ?s ?p ?o }";
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		RepositoryConnection con = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		TupleQuery query = mock(TupleQuery.class);
+		TupleQueryResult result = mock(TupleQueryResult.class);
+		AtomicBoolean firstWritten = new AtomicBoolean();
+		AtomicInteger readCount = new AtomicInteger();
+		Set<Path> before = querySpoolPaths();
+
+		when(req.getParameter("queryLn")).thenReturn("SPARQL");
+		when(req.isParameterPresent("Accept")).thenReturn(true);
+		when(req.getParameter("Accept")).thenReturn("text/csv");
+		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(query);
+		when(con.getNamespaces()).thenReturn(emptyNamespaces());
+		when(query.evaluate()).thenReturn(result);
+		when(result.getBindingNames()).thenReturn(List.of("s"));
+		when(result.hasNext()).thenReturn(true, true, false);
+		when(result.next()).thenAnswer(invocation -> {
+			if (readCount.incrementAndGet() == 2) {
+				assertThat(firstWritten.get()).as("download emitted first row before reading second").isTrue();
+			}
+			return binding("row-" + readCount.get());
+		});
+		doAnswer(invocation -> {
+			firstWritten.set(true);
+			return null;
+		}).when(builder).result(any(Object[].class));
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), con,
+				queryText, req, cookies, null);
+
+		verify(builder, times(2)).result(any(Object[].class));
+		verify(cookies, never()).addTotalResultCountCookie(any(), any(), anyInt());
+		assertThat(querySpoolPaths()).containsExactlyInAnyOrderElementsOf(before);
 	}
 
 	@Test
@@ -468,7 +996,7 @@ class QueryEvaluatorTest {
 
 		verify(con).prepareQuery(QueryLanguage.SPARQL, queryText);
 		verify(builder, times(1)).result(org.mockito.ArgumentMatchers.any(Object[].class));
-		verify(cookies).addTotalResultCountCookie(req, resp, 2);
+		verify(cookies, never()).addTotalResultCountCookie(any(), any(), anyInt());
 	}
 
 	@Test

@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.workbench.util;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -23,11 +24,14 @@ import static org.mockito.Mockito.when;
 import java.io.ByteArrayOutputStream;
 import java.io.OutputStream;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -35,6 +39,7 @@ import org.eclipse.rdf4j.http.client.QueryRequestContext;
 import org.eclipse.rdf4j.http.client.QueryResponseHeartbeat;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.GraphQuery;
@@ -51,6 +56,185 @@ import org.junit.jupiter.api.Test;
 import jakarta.servlet.http.HttpServletResponse;
 
 class QueryEvaluatorCoverageTest {
+
+	@Test
+	void knownTotalGraphRowsIncludingDeepTripleTermsReachWriterBeforeLaterReads() throws Exception {
+		String queryText = "construct { ?s ?p ?o } where { ?s ?p ?o }";
+		var vf = SimpleValueFactory.getInstance();
+		var subject = vf.createIRI("urn:s");
+		var predicate = vf.createIRI("urn:p");
+		Value nested = vf.createLiteral("leaf");
+		for (int depth = 0; depth < 512; depth++) {
+			nested = vf.createTripleTerm(subject, predicate, nested);
+		}
+		Statement first = vf.createStatement(subject, predicate, nested, vf.createIRI("urn:context"));
+		Statement second = vf.createStatement(subject, predicate, vf.createLiteral("later"));
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		GraphQuery query = mock(GraphQuery.class);
+		GraphQueryResult result = mock(GraphQueryResult.class);
+		AtomicBoolean firstWritten = new AtomicBoolean();
+		AtomicInteger reads = new AtomicInteger();
+		AtomicReference<Object[]> firstRow = new AtomicReference<>();
+
+		when(request.getParameter("queryLn")).thenReturn("SPARQL");
+		when(request.getInt("know_total")).thenReturn(2);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(query);
+		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
+		when(query.evaluate()).thenReturn(result);
+		when(result.hasNext()).thenReturn(true, true, false);
+		when(result.next()).thenAnswer(invocation -> {
+			if (reads.incrementAndGet() == 2) {
+				assertThat(firstWritten.get()).as("first graph row was written before reading the second").isTrue();
+			}
+			return reads.get() == 1 ? first : second;
+		});
+		doAnswer(invocation -> {
+			if (firstRow.get() == null) {
+				firstRow.set(invocation.getArguments());
+				firstWritten.set(true);
+			}
+			return null;
+		}).when(builder).result(any(Object[].class));
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(), connection,
+				queryText, request, cookies, null);
+
+		verify(query, times(1)).evaluate();
+		verify(builder, times(2)).result(any(Object[].class));
+		assertThat(firstRow.get()[2]).isSameAs(nested);
+		assertThat(firstRow.get()[3]).isEqualTo(first.getContext());
+	}
+
+	@Test
+	void unknownTotalGraphWindowReplaysContextAndKeepsOriginalCount() throws Exception {
+		String queryText = "construct { ?s ?p ?o } where { ?s ?p ?o }";
+		var vf = SimpleValueFactory.getInstance();
+		Statement first = vf.createStatement(vf.createIRI("urn:one"), vf.createIRI("urn:p"),
+				vf.createLiteral("one"));
+		Statement second = vf.createStatement(vf.createBNode("same-id"), vf.createIRI("urn:p"),
+				vf.createTripleTerm(vf.createIRI("urn:nested"), vf.createIRI("urn:p"), vf.createLiteral("two")),
+				vf.createIRI("urn:context"));
+		Statement third = vf.createStatement(vf.createIRI("urn:three"), vf.createIRI("urn:p"),
+				vf.createLiteral("three"));
+		List<Object[]> rows = new ArrayList<>();
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		GraphQuery query = mock(GraphQuery.class);
+		doAnswer(invocation -> {
+			rows.add(invocation.getArguments());
+			return null;
+		}).when(builder).result(any(Object[].class));
+
+		when(request.getParameter("queryLn")).thenReturn("SPARQL");
+		when(request.getInt("offset")).thenReturn(1);
+		when(request.getInt("limit_query")).thenReturn(1);
+		when(request.getInt("know_total")).thenReturn(0);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(query);
+		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
+		when(query.evaluate()).thenReturn(new IteratingGraphQueryResult(Map.of(), List.of(first, second, third)));
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(), connection,
+				queryText, request, cookies, null);
+
+		verify(query, times(1)).evaluate();
+		verify(cookies).addTotalResultCountCookie(request, response, 3);
+		assertThat(rows).hasSize(1);
+		assertThat(rows.get(0)).containsExactly(second.getSubject(), second.getPredicate(), second.getObject(),
+				second.getContext());
+	}
+
+	@Test
+	void unlimitedTabularGraphDownloadWritesBeforeReadingLaterStatements() throws Exception {
+		String queryText = "construct { ?s ?p ?o } where { ?s ?p ?o }";
+		var vf = SimpleValueFactory.getInstance();
+		Statement first = vf.createStatement(vf.createIRI("urn:first"), vf.createIRI("urn:p"),
+				vf.createLiteral("first"));
+		Statement second = vf.createStatement(vf.createIRI("urn:second"), vf.createIRI("urn:p"),
+				vf.createLiteral("second"));
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		GraphQuery query = mock(GraphQuery.class);
+		GraphQueryResult result = mock(GraphQueryResult.class);
+		AtomicBoolean firstWritten = new AtomicBoolean();
+		AtomicInteger reads = new AtomicInteger();
+
+		when(request.getParameter("queryLn")).thenReturn("SPARQL");
+		when(request.isParameterPresent("Accept")).thenReturn(true);
+		when(request.getParameter("Accept")).thenReturn("text/csv");
+		when(connection.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(query);
+		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
+		when(query.evaluate()).thenReturn(result);
+		when(result.hasNext()).thenReturn(true, true, false);
+		when(result.next()).thenAnswer(invocation -> {
+			if (reads.incrementAndGet() == 2) {
+				assertThat(firstWritten.get()).as("download emitted first graph row before reading second").isTrue();
+			}
+			return reads.get() == 1 ? first : second;
+		});
+		doAnswer(invocation -> {
+			firstWritten.set(true);
+			return null;
+		}).when(builder).result(any(Object[].class));
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(), connection,
+				queryText, request, cookies, null);
+
+		verify(builder, times(2)).result(any(Object[].class));
+		verify(cookies, never()).addTotalResultCountCookie(any(), any(), org.mockito.ArgumentMatchers.anyInt());
+	}
+
+	@Test
+	void unlimitedLegacyGraphPageStreamsAndReportsItsTerminalTotal() throws Exception {
+		String queryText = "construct { ?s ?p ?o } where { ?s ?p ?o }";
+		var vf = SimpleValueFactory.getInstance();
+		Statement first = vf.createStatement(vf.createIRI("urn:first"), vf.createIRI("urn:p"),
+				vf.createLiteral("first"));
+		Statement second = vf.createStatement(vf.createIRI("urn:second"), vf.createIRI("urn:p"),
+				vf.createLiteral("second"));
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		GraphQuery query = mock(GraphQuery.class);
+		GraphQueryResult result = mock(GraphQueryResult.class);
+		AtomicBoolean firstWritten = new AtomicBoolean();
+		AtomicInteger reads = new AtomicInteger();
+
+		when(request.getParameter("queryLn")).thenReturn("SPARQL");
+		when(connection.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(query);
+		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
+		when(query.evaluate()).thenReturn(result);
+		when(result.hasNext()).thenReturn(true, true, false);
+		when(result.next()).thenAnswer(invocation -> {
+			if (reads.incrementAndGet() == 2) {
+				assertThat(firstWritten.get()).as("unlimited graph page emitted first row before reading second")
+						.isTrue();
+			}
+			return reads.get() == 1 ? first : second;
+		});
+		doAnswer(invocation -> {
+			firstWritten.set(true);
+			return null;
+		}).when(builder).result(any(Object[].class));
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(), connection,
+				queryText, request, cookies, queryText);
+
+		verify(builder, times(2)).result(any(Object[].class));
+		verify(builder).metadata("total-result-count", 2);
+		verify(cookies, never()).addTotalResultCountCookie(any(), any(), org.mockito.ArgumentMatchers.anyInt());
+	}
 
 	@Test
 	void extractExplainRequestDefaultsNullFormatAndParsesInferFlag() throws Exception {
@@ -152,7 +336,7 @@ class QueryEvaluatorCoverageTest {
 		verify(builder).result(statement.getSubject(), statement.getPredicate(), statement.getObject(),
 				statement.getContext());
 		verify(builder).end();
-		verify(cookies).addTotalResultCountCookie(request, response, 1);
+		verify(cookies, never()).addTotalResultCountCookie(any(), any(), org.mockito.ArgumentMatchers.anyInt());
 	}
 
 	@Test
