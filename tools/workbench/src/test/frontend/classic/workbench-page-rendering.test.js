@@ -2179,6 +2179,22 @@ test('the context bar uses server-provided user metadata and renders it as text'
     assert.equal(withDocument.workbench.views.contextBarState(context).user, '');
 });
 
+test('the menu shows the browser origin for a relative server display path', () => {
+    const workbench = loadWorkbench();
+    workbench.__testWindow.location = { origin: 'https://browser.example:9443' };
+    const runtime = fakeRuntime();
+    const context = {
+        basePath: '/workbench', repositoryId: 'NONE',
+        workbench: { menu: [], server: '/rdf4j-server' }
+    };
+    const template = workbench.views.pageTemplate({ viewId: 'server', vars: [], rows: [], metadata: {} },
+        context, runtime);
+    const values = collectTemplateText(template);
+
+    assert.ok(values.includes('browser.example:9443'), 'the menu names the browser-facing host and port');
+    assert.ok(!values.some((value) => value.includes('192.0.2.10')), 'the internal connector is not displayed');
+});
+
 function loadWorkbenchWithDocument() {
     const window = { atob: (value) => Buffer.from(value, 'base64').toString('binary') };
     const workbench = {};

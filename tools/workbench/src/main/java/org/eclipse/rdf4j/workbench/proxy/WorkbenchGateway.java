@@ -275,13 +275,7 @@ public class WorkbenchGateway extends AbstractServlet {
 			return;
 		}
 		if (server == null) {
-			// see if server url was still present in cookie, if so use that
-			// value as prefilled value in the form
-			String currentServer = this.cookies.getCookie(req, resp, SERVER_COOKIE);
-			if (currentServer == null) {
-				// otherwise use the default
-				currentServer = getDefaultServer(req);
-			}
+			String currentServer = displayServer(req, findServerSelection(req, resp).server);
 			if (isNativeHtmlPost(req)) {
 				writeServerPageModel(req, resp, new String[] { "server" }, new Object[] { currentServer });
 				return;
@@ -410,6 +404,7 @@ public class WorkbenchGateway extends AbstractServlet {
 				|| this.serverValidator.isValidServer(server))) {
 			return null;
 		}
+		req.setAttribute(WorkbenchPageProtocol.SERVER_DISPLAY_ATTRIBUTE, displayServer(req, server));
 
 		ConnectionState connection = connectionState(req);
 		ServerCredentials.Credentials credentials = connection == null ? null : connection.credentialsFor(server);
@@ -554,7 +549,8 @@ public class WorkbenchGateway extends AbstractServlet {
 
 	private boolean isSubmittedDefaultServer(String server, HttpServletRequest req) {
 		return getDefaultServerPath().startsWith("/")
-				&& (getDefaultServerPath().equals(server) || getDefaultServer(req).equals(server));
+				&& (getDefaultServerPath().equals(server)
+						|| getDefaultServerPath().equals(getSameOriginPath(req, server)));
 	}
 
 	private String normalizeServer(HttpServletRequest req, String server) {
@@ -582,6 +578,16 @@ public class WorkbenchGateway extends AbstractServlet {
 	 */
 	private String getDefaultServer(final HttpServletRequest req) {
 		return resolveServerPath(req, getDefaultServerPath());
+	}
+
+	private String displayServer(final HttpServletRequest req, final String server) {
+		if (!getDefaultServerPath().startsWith("/")) {
+			return server;
+		}
+		String sameOriginPath = getSameOriginPath(req, server);
+		return sameOriginPath != null && this.serverValidator.isValidServer(sameOriginPath)
+				? sameOriginPath
+				: server;
 	}
 
 	private String resolveServerPath(final HttpServletRequest req, final String server) {

@@ -1015,6 +1015,9 @@ namespace workbench {
 
         function hostAndPort(server: string): string {
             try {
+                if (server.startsWith('/')) {
+                    return new URL(server, window.location.origin).host;
+                }
                 return new URL(server).host || server;
             } catch (error) {
                 return server;
