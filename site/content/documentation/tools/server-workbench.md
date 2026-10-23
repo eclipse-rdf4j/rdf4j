@@ -95,6 +95,14 @@ These formats are automatic RDF input decoding, not additional HTTP content codi
 
 Decoder allocation is limited to 64 MiB by default. Set the Java system property `org.eclipse.rdf4j.rio.compression.maxDecoderMemoryKiB` to a positive KiB value to change that limit. The aggregate ZIP-and-TAR entry limit is 50,000 and can be configured with `org.eclipse.rdf4j.rio.loader.max_archive_entries`; the existing ZIP-specific limit remains in force as well.
 
+### Outbound RDF sources
+
+When an HTTP request to RDF4J Server executes SPARQL `LOAD`, or queries a `DatasetRepository` with `FROM` or `FROM NAMED`, Server fetches the referenced RDF source. By default, these requests can fetch only HTTP or HTTPS URLs whose resolved addresses are public. Local files, loopback, private and other special-purpose network addresses, URL userinfo, and redirects to disallowed targets are rejected. The same policy applies to transaction updates. Server connects directly without a proxy or ambient credentials; each redirect is checked before the next connection. Redirects honor `HttpURLConnection.getFollowRedirects()` and the `http.maxRedirects` Java system property, with a server-side ceiling of 20.
+
+An administrator can allow a needed private source by setting the Java system property `rdf4j.server.remoteResourceAllowedOrigins` to a comma-separated list of HTTP(S) origins, for example `-Drdf4j.server.remoteResourceAllowedOrigins=http://datasets.internal:8080,https://data.example.org`. An origin consists of a scheme, host, and optional port, with no path except an optional trailing slash, and no query, userinfo, or fragment. The scheme and port must match the requested URL or redirect target; an omitted port means the scheme's default. All addresses resolved for a trusted origin are allowed. Restart Server after changing the property.
+
+Existing HTTP clients that use `LOAD <file:...>` should upload the RDF content through the repository statements endpoint or move that load into an embedded application; trusted HTTP origins do not allow file URLs. This policy affects server-side `LOAD` and `DatasetRepository` URL fetches. Embedded RDF4J applications retain their existing URL-loading behavior. It does not govern SPARQL `SERVICE` endpoints, JSON-LD remote contexts, or other application-specific URL fetches. Public RDF sources can still provide very large or slow streams; deployments that accept untrusted queries should also apply network and resource limits outside this setting.
+
 ### Configuring RDF4J Workbench for UTF-8 Support
 
 #### UTF-8 in the Request URI (GET)

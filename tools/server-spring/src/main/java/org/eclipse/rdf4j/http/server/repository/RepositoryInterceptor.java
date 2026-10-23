@@ -185,6 +185,7 @@ public class RepositoryInterceptor extends ServerInterceptor {
 		}
 		RepositoryConnection conn = repo.getConnection();
 		try {
+			ServerRemoteResourceOpener.configure(conn);
 			conn.setQueryParseOptions(getQueryParseOptions(request));
 			conn.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);
 			conn.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_LANGUAGE_TAGS);
