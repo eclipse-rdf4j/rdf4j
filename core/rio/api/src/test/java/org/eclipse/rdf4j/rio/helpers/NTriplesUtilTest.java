@@ -130,7 +130,15 @@ public class NTriplesUtilTest {
 				"<<(<urn:1> <urn:2> \"\"@bg)>>",
 				"<<( urn:1 urn:2 \"\"@bg )>>",
 				"<<(<urn:1> <urn:2> \"\"^^<urn:type>)>>",
-				"<<( urn:1 urn:2 \"\"^^<urn:type> )>>"
+				"<<( urn:1 urn:2 \"\"^^<urn:type> )>>",
+				// directional language-tagged literals
+				"<<(<urn:1> <urn:2> \"value\"@en--rtl)>>",
+				"<<( urn:1 urn:2 \"value\"@en--rtl )>>",
+				"<<( <urn:1> <urn:2> <<( <urn:3> <urn:4> \"value\"@en-US--ltr )>> )>>",
+				"<<( urn:1 urn:2 <<( urn:3 urn:4 \"value\"@en-US--ltr )>> )>>",
+				// invalid: unknown base direction
+				"<<(<urn:1> <urn:2> \"value\"@en--up)>>",
+				null
 		};
 
 		for (int i = 0; i < triples.length; i += 2) {

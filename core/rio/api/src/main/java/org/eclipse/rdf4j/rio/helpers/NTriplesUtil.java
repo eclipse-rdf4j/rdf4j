@@ -49,7 +49,8 @@ public class NTriplesUtil {
 
 	private static final String ECHAR = "\\\\[tbnrf\"'\\\\]";
 	private static final String STRING_LITERAL_QUOTE = "\"(?:[^\"\\\\\n\r]|" + ECHAR + "|" + UCHAR + ")*+\"";
-	private static final String LANGTAG = "@[a-zA-Z]+(?:-[a-zA-Z0-9]+)*";
+	private static final String LANGTAG = "@[a-zA-Z]+(?:-[a-zA-Z0-9]+)*(?:" + Literal.LTR_SUFFIX + "|"
+			+ Literal.RTL_SUFFIX + ")?";
 	private static final String LITERAL = STRING_LITERAL_QUOTE + "(?:\\^\\^" + IRI + "|" + LANGTAG + ")?";
 
 	private static final String NUMBER = "^[-+]?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?";
