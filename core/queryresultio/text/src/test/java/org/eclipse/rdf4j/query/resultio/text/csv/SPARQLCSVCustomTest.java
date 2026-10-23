@@ -201,6 +201,49 @@ class SPARQLCSVCustomTest {
 	}
 
 	@Test
+	void blankRecordsRemainUnboundRowsForEveryRecordSeparator() throws Exception {
+		for (String separator : List.of("\n", "\r\n", "\r")) {
+			String csv = "value" + separator + separator + separator + "text" + separator + separator
+					+ separator;
+			QueryResultCollector parsed = new QueryResultCollector();
+			QueryResultIO.parseTuple(new ByteArrayInputStream(csv.getBytes(StandardCharsets.UTF_8)),
+					TupleQueryResultFormat.CSV, parsed, SimpleValueFactory.getInstance());
+			assertEquals(List.of("value"), parsed.getBindingNames());
+			assertEquals(5, parsed.getBindingSets().size(), "separator " + separator);
+			assertEquals(0, parsed.getBindingSets().get(0).size());
+			assertEquals(0, parsed.getBindingSets().get(1).size());
+			assertEquals("text", parsed.getBindingSets().get(2).getValue("value").stringValue());
+			assertEquals(0, parsed.getBindingSets().get(3).size());
+			assertEquals(0, parsed.getBindingSets().get(4).size());
+		}
+	}
+
+	@Test
+	void blankPhysicalLineInsideQuotedFieldIsNotAnotherRow() throws Exception {
+		for (String separator : List.of("\n", "\r\n", "\r")) {
+			String csv = "value" + separator + "\"alpha" + separator + separator + "omega\"" + separator;
+			QueryResultCollector parsed = new QueryResultCollector();
+			QueryResultIO.parseTuple(new ByteArrayInputStream(csv.getBytes(StandardCharsets.UTF_8)),
+					TupleQueryResultFormat.CSV, parsed, SimpleValueFactory.getInstance());
+			assertEquals(1, parsed.getBindingSets().size(), "separator " + separator);
+			assertEquals("alpha" + separator + separator + "omega",
+					parsed.getBindingSets().get(0).getValue("value").stringValue());
+		}
+	}
+
+	@Test
+	void oneTrailingRecordSeparatorDoesNotAddARow() throws Exception {
+		for (String separator : List.of("\n", "\r\n", "\r")) {
+			String csv = "value" + separator + "text" + separator;
+			QueryResultCollector parsed = new QueryResultCollector();
+			QueryResultIO.parseTuple(new ByteArrayInputStream(csv.getBytes(StandardCharsets.UTF_8)),
+					TupleQueryResultFormat.CSV, parsed, SimpleValueFactory.getInstance());
+			assertEquals(1, parsed.getBindingSets().size(), "separator " + separator);
+			assertEquals("text", parsed.getBindingSets().get(0).getValue("value").stringValue());
+		}
+	}
+
+	@Test
 	void recordSeparatorReaderReturnsBeforeNextChunkArrives() throws Exception {
 		boolean[] releaseNextChunk = { false };
 		Reader chunks = new Reader() {

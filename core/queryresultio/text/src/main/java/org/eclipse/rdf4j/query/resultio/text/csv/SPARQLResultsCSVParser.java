@@ -27,6 +27,8 @@ import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 
 import com.opencsv.CSVParser;
+import com.opencsv.CSVParserBuilder;
+import com.opencsv.CSVReader;
 import com.opencsv.bean.CsvToBeanBuilder;
 
 /**
@@ -48,19 +50,62 @@ public class SPARQLResultsCSVParser extends AbstractTupleQueryResultParser {
 			SPARQLResultsCSVMappingStrategy strategy = new SPARQLResultsCSVMappingStrategy(valueFactory);
 
 			List<BindingSet> bindingSets = new CsvToBeanBuilder<BindingSet>(
-					new CSVRecordSeparatorReader(new InputStreamReader(in, StandardCharsets.UTF_8)))
-							.withType(BindingSet.class)
-							.withEscapeChar(CSVParser.NULL_CHARACTER)
-							.withKeepCarriageReturn(true)
-							.withMappingStrategy(strategy)
-							.build()
-							.parse();
+					new BlankPreservingCSVReader(
+							new CSVRecordSeparatorReader(new InputStreamReader(in, StandardCharsets.UTF_8))))
+									.withType(BindingSet.class)
+									.withMappingStrategy(strategy)
+									.build()
+									.parse();
 			List<String> bindingNames = strategy.getBindingNames();
 			handler.startQueryResult(bindingNames);
 			for (BindingSet bs : bindingSets) {
 				handler.handleSolution(bs);
 			}
 			handler.endQueryResult();
+		}
+	}
+
+	/** OpenCSV's keep-CR line reader treats every empty physical line as end-of-input. */
+	static final class BlankPreservingCSVReader extends CSVReader {
+		BlankPreservingCSVReader(Reader source) {
+			super(source);
+			parser = new CSVParserBuilder().withEscapeChar(CSVParser.NULL_CHARACTER).build();
+			keepCR = true;
+		}
+
+		@Override
+		protected String getNextLine() throws IOException {
+			if (isClosed()) {
+				hasNext = false;
+				return null;
+			}
+			if (!linesSkipped) {
+				for (int i = 0; i < skipLines; i++) {
+					readPhysicalLine();
+					linesRead++;
+				}
+				linesSkipped = true;
+			}
+			String line = readPhysicalLine();
+			if (line == null) {
+				hasNext = false;
+				return null;
+			}
+			linesRead++;
+			return line;
+		}
+
+		private String readPhysicalLine() throws IOException {
+			StringBuilder line = new StringBuilder(128);
+			int c = br.read();
+			if (c == -1) {
+				return null;
+			}
+			while (c != -1 && c != '\n') {
+				line.append((char) c);
+				c = br.read();
+			}
+			return line.toString();
 		}
 	}
 
