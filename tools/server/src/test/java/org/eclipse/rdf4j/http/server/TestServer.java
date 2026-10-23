@@ -124,6 +124,30 @@ public class TestServer {
 				.invoke(serverManager, repositoryId);
 	}
 
+	void refreshManagedRepositories() throws ReflectiveOperationException {
+		Object dispatcherContext = webapp.getServletContext().getAttribute(DISPATCHER_CONTEXT_ATTRIBUTE);
+		Object serverManager = dispatcherContext.getClass()
+				.getMethod("getBean", String.class)
+				.invoke(dispatcherContext, "rdf4jRepositoryManager");
+		serverManager.getClass().getMethod("refresh").invoke(serverManager);
+	}
+
+	void recordSlowQuery(String repositoryId, String entry) throws ReflectiveOperationException {
+		Object dispatcherContext = webapp.getServletContext().getAttribute(DISPATCHER_CONTEXT_ATTRIBUTE);
+		Object serverManager = dispatcherContext.getClass()
+				.getMethod("getBean", String.class)
+				.invoke(dispatcherContext, "rdf4jRepositoryManager");
+		Object repository = serverManager.getClass()
+				.getMethod("getRepository", String.class)
+				.invoke(serverManager, repositoryId);
+		Object sail = repository.getClass().getMethod("getSail").invoke(repository);
+		ClassLoader webappLoader = webapp.getClassLoader();
+		Class<?> abstractSail = webappLoader.loadClass("org.eclipse.rdf4j.sail.helpers.AbstractSail");
+		webappLoader.loadClass("org.eclipse.rdf4j.sail.helpers.SlowQuerySupport")
+				.getMethod("log", abstractSail, String.class)
+				.invoke(null, sail, entry);
+	}
+
 	LongSupplier replayAcceptedCounter(String repositoryId) throws ReflectiveOperationException {
 		return growthCounter(repositoryId, "replayAcceptedCounter");
 	}
