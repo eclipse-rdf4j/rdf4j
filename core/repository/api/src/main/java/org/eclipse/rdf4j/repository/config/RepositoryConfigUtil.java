@@ -45,6 +45,7 @@ public class RepositoryConfigUtil {
 	 * @throws RepositoryConfigException if the model is invalid, ambiguous, or identifies another repository
 	 */
 	public static RepositoryConfig validateRepositoryConfig(Model model, String repositoryID) {
+		RepositoryConfigSecrets.rejectMarkers(model);
 		if (repositoryID == null || repositoryID.isEmpty()) {
 			throw new RepositoryConfigException("A repository ID is required to edit its configuration.");
 		}
@@ -71,6 +72,7 @@ public class RepositoryConfigUtil {
 	}
 
 	public static RepositoryConfig getRepositoryConfig(Model model, String repositoryID) {
+		RepositoryConfigSecrets.rejectMarkers(model);
 		Statement idStatement = getIDStatement(model, repositoryID);
 		if (idStatement == null) {
 			// No such config

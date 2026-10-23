@@ -10,26 +10,34 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.manager;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.HttpResponse.response;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.http.protocol.Protocol;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigSchema;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.Rio;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockserver.client.MockServerClient;
 import org.mockserver.junit.jupiter.MockServerExtension;
 import org.mockserver.matchers.Times;
+import org.mockserver.model.HttpRequest;
 import org.mockserver.model.MediaType;
 
 /**
@@ -42,6 +50,7 @@ public class RemoteRepositoryManagerTest extends RepositoryManagerTest {
 
 	@BeforeEach
 	public void setUp(MockServerClient client) {
+		client.reset();
 		subject = new RemoteRepositoryManager("http://localhost:" + client.getPort() + "/rdf4j-server");
 	}
 
@@ -99,7 +108,7 @@ public class RemoteRepositoryManagerTest extends RepositoryManagerTest {
 				request()
 						.withMethod("GET")
 						.withPath("/rdf4j-server/protocol"),
-				Times.once()
+				Times.exactly(2)
 		)
 				.respond(
 						response()
@@ -126,6 +135,10 @@ public class RemoteRepositoryManagerTest extends RepositoryManagerTest {
 								.withContentType(MediaType.parse(TupleQueryResultFormat.SPARQL.getDefaultMIMEType()))
 								.withBody(readFileToString("repository-list-response.srx"))
 				);
+
+		client.when(request().withMethod("GET").withPath("/rdf4j-server/repositories/mem-rdf/config"))
+				.respond(response().withContentType(MediaType.parse(RDFFormat.NTRIPLES.getDefaultMIMEType()))
+						.withBody("_:root <" + CONFIG.Rep.id + "> \"mem-rdf\" .\n"));
 
 		RepositoryConfig config = new RepositoryConfig("mem-rdf"); // this repo already exists
 
@@ -172,6 +185,75 @@ public class RemoteRepositoryManagerTest extends RepositoryManagerTest {
 						.withMethod("GET")
 						.withPath("/rdf4j-server/repositories/test/config")
 		);
+	}
+
+	@Test
+	public void testGetRepositoryConfigWithRedactedCredential(MockServerClient client) {
+		client.when(request().withMethod("GET").withPath("/rdf4j-server/protocol"), Times.once())
+				.respond(response().withBody(Protocol.VERSION));
+		client.when(request().withMethod("GET").withPath("/rdf4j-server/repositories/test/config"), Times.once())
+				.respond(response().withContentType(MediaType.parse(RDFFormat.NTRIPLES.getDefaultMIMEType()))
+						.withBody("_:node1 <" + CONFIG.Rep.id + "> \"test\" .\n"
+								+ "_:node1 <" + CONFIG.NAMESPACE + "lucene.elasticsearch.http.password> "
+								+ "\"REDACTED\"^^<" + CONFIG.NAMESPACE + "redactedSecret> .\n"));
+
+		RepositoryConfig config = subject.getRepositoryConfig("test");
+
+		Model exported = new LinkedHashModel();
+		config.export(exported);
+		assertThat(exported.filter(null,
+				SimpleValueFactory.getInstance().createIRI(CONFIG.NAMESPACE, "lucene.elasticsearch.http.password"),
+				null)).isEmpty();
+	}
+
+	@Test
+	public void readModifyUpdatePreservesRedactedCredentialOnUnchangedDestination(MockServerClient client)
+			throws Exception {
+		client.when(request().withMethod("GET").withPath("/rdf4j-server/protocol"))
+				.respond(response().withBody(Protocol.VERSION));
+		client.when(request().withMethod("GET").withPath("/rdf4j-server/repositories/mem-rdf/config"))
+				.respond(response().withContentType(MediaType.parse(RDFFormat.NTRIPLES.getDefaultMIMEType()))
+						.withBody("_:root <" + CONFIG.Rep.id + "> \"mem-rdf\" .\n"
+								+ "_:root <" + CONFIG.Rep.impl + "> _:impl .\n"
+								+ "_:impl <" + CONFIG.Rep.type + "> \"openrdf:HTTPRepository\" .\n"
+								+ "_:impl <" + CONFIG.Http.url
+								+ "> <https://trusted.example/repositories/r> .\n"
+								+ "_:impl <" + CONFIG.Http.password + "> \"REDACTED\"^^<"
+								+ CONFIG.NAMESPACE + "redactedSecret> .\n"));
+		client.when(request().withMethod("POST").withPath("/rdf4j-server/repositories/mem-rdf/config"))
+				.respond(response().withStatusCode(204)
+						.withHeader(Protocol.REPOSITORY_RESTART_HEADER, "done"));
+		client.when(request().withMethod("GET").withPath("/rdf4j-server/repositories"))
+				.respond(response().withContentType(MediaType.parse(TupleQueryResultFormat.SPARQL.getDefaultMIMEType()))
+						.withBody(readFileToString("repository-list-response.srx")));
+
+		RepositoryConfig config = subject.getRepositoryConfig("mem-rdf");
+		config.setTitle("edited title");
+		((RemoteRepositoryManager) subject).updateRepositoryConfig(config);
+
+		HttpRequest[] requests = client.retrieveRecordedRequests(
+				request().withMethod("POST").withPath("/rdf4j-server/repositories/mem-rdf/config"));
+		assertThat(requests).hasSize(1);
+		Model submitted = Rio.parse(new ByteArrayInputStream(requests[0].getBodyAsRawBytes()), RDFFormat.BINARY);
+		assertThat(submitted.filter(null, CONFIG.Http.password,
+				SimpleValueFactory.getInstance()
+						.createLiteral("REDACTED",
+								SimpleValueFactory.getInstance().createIRI(CONFIG.NAMESPACE, "redactedSecret"))))
+										.hasSize(1);
+	}
+
+	@Test
+	public void publicEditorModelRejectsUnredactedLegacyServerCredential(MockServerClient client) {
+		client.when(request().withMethod("GET").withPath("/rdf4j-server/protocol"), Times.once())
+				.respond(response().withBody(Protocol.VERSION));
+		client.when(request().withMethod("GET").withPath("/rdf4j-server/repositories/test/config"), Times.once())
+				.respond(response().withContentType(MediaType.parse(RDFFormat.NTRIPLES.getDefaultMIMEType()))
+						.withBody("_:node1 <" + CONFIG.Rep.id + "> \"test\" .\n"
+								+ "_:node1 <" + CONFIG.NAMESPACE + "lucene.elasticsearch.http.password> "
+								+ "\"legacy-private-password\" .\n"));
+
+		assertThrows(RepositoryException.class,
+				() -> ((RemoteRepositoryManager) subject).getPublicRepositoryConfigModel("test"));
 	}
 
 	@Test

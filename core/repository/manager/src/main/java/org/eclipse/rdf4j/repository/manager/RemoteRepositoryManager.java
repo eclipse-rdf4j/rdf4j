@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.http.client.RDF4JProtocolSession;
 import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
 import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
@@ -25,7 +26,10 @@ import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -34,6 +38,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
+import org.eclipse.rdf4j.repository.config.RepositoryConfigSecrets;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
@@ -186,6 +191,22 @@ public class RemoteRepositoryManager extends RepositoryManager {
 
 	@Override
 	public RepositoryConfig getRepositoryConfig(String id) throws RepositoryException {
+		return RepositoryConfigUtil.getRepositoryConfig(
+				RepositoryConfigSecrets.publicProjection(fetchRepositoryConfigModel(id)), id);
+	}
+
+	/** Returns the Server's public RDF view with credential values represented by typed markers. */
+	@InternalUseOnly
+	public Model getPublicRepositoryConfigModel(String id) throws RepositoryException {
+		Model model = fetchRepositoryConfigModel(id);
+		if (RepositoryConfigSecrets.containsPlainSecret(model)) {
+			throw new RepositoryException("The remote Server does not provide a redacted credential view. "
+					+ "Edit credentials on a Server that supports redacted repository configuration.");
+		}
+		return model;
+	}
+
+	private Model fetchRepositoryConfigModel(String id) throws RepositoryException {
 		Model model = getModelFactory().createEmptyModel();
 		try (RDF4JProtocolSession protocolSession = getSharedHttpClientSessionManager()
 				.createRDF4JProtocolSession(serverURL)) {
@@ -198,7 +219,23 @@ public class RemoteRepositoryManager extends RepositoryManager {
 		} catch (IOException | QueryEvaluationException | UnauthorizedException ue) {
 			throw new RepositoryException(ue);
 		}
-		return RepositoryConfigUtil.getRepositoryConfig(model, id);
+		return model;
+	}
+
+	/** Submits an edited public RDF view without turning its typed redaction markers into password strings. */
+	@InternalUseOnly
+	public void updateRepositoryConfigModel(String id, Model model, boolean restart) {
+		RepositoryConfigUtil.validateRepositoryConfig(RepositoryConfigSecrets.publicProjection(model), id);
+		if (!hasRepositoryConfig(id)) {
+			throw new RepositoryConfigException("Unknown repository: " + id);
+		}
+		try (RDF4JProtocolSession session = getSharedHttpClientSessionManager()
+				.createRDF4JProtocolSession(serverURL)) {
+			session.setUsernameAndPassword(username, password);
+			session.updateRepository(id, model, restart);
+		} catch (IOException e) {
+			throw new RepositoryException(e.getMessage(), e);
+		}
 	}
 
 	@Override
@@ -262,7 +299,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 						"Remote Server RDF4J Protocol version not compatible with this version of RDF4J");
 			} else {
 				if (hasRepositoryConfig(config.getID())) {
-					protocolSession.updateRepository(config);
+					protocolSession.updateRepository(config.getID(), preparePublicUpdateModel(config), false);
 				} else {
 					protocolSession.createRepository(config);
 				}
@@ -281,10 +318,19 @@ public class RemoteRepositoryManager extends RepositoryManager {
 		try (RDF4JProtocolSession session = getSharedHttpClientSessionManager()
 				.createRDF4JProtocolSession(serverURL)) {
 			session.setUsernameAndPassword(username, password);
-			session.updateRepository(config, true);
+			session.updateRepository(config.getID(), preparePublicUpdateModel(config), true);
 		} catch (IOException e) {
 			throw new RepositoryException(e.getMessage(), e);
 		}
+	}
+
+	private Model preparePublicUpdateModel(RepositoryConfig config) {
+		String baseURI = Protocol.getRepositoryLocation(serverURL, config.getID());
+		Resource context = SimpleValueFactory.getInstance().createIRI(baseURI + "#" + config.getID());
+		Model edited = new LinkedHashModel();
+		config.export(edited, context);
+		RepositoryConfigSecrets.carryForwardMarkers(fetchRepositoryConfigModel(config.getID()), edited, config.getID());
+		return edited;
 	}
 
 	@Override
