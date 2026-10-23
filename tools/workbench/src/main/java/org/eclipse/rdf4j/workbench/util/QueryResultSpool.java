@@ -25,6 +25,7 @@ import java.util.Deque;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -33,14 +34,18 @@ import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.impl.BNodeOrigins;
 import org.eclipse.rdf4j.query.impl.GeneratedBNode;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
+import org.eclipse.rdf4j.query.impl.RepositoryBNode;
 
 /**
- * Private, single-use disk staging for a query result whose total must be known before response output starts. The
+ * Request-private, single-use disk staging for a result whose total must be known before response output starts. The
  * format is deliberately local to this class: it keeps no dictionary of values or namespaces, so memory use does not
  * grow with the number of distinct results. Terms are encoded without Java object serialization.
  */
-final class QueryResultSpool implements AutoCloseable {
+@InternalUseOnly
+public final class QueryResultSpool implements AutoCloseable {
 	/** Aggregate disk allowance for active Workbench result windows, configurable at deployment startup. */
 	private static final String MAX_BYTES_PROPERTY = "rdf4j.workbench.query.spool.maxBytes";
 	private static final long DEFAULT_MAX_BYTES = 64L * 1024 * 1024;
@@ -53,16 +58,32 @@ final class QueryResultSpool implements AutoCloseable {
 	private static final int DATATYPE_LITERAL = 3;
 	private static final int LANGUAGE_LITERAL = 4;
 	private static final int TRIPLE_VALUE = 5;
+	private static final int PLAIN_BNODE_VALUE = 6;
+	private static final int REPOSITORY_BNODE_VALUE = 7;
 
 	private static final ValueFactory VALUE_FACTORY = SimpleValueFactory.getInstance();
 
 	private final Path path;
 	private final DataOutputStream output;
 	private final BudgetedOutputStream budgetedOutput;
+	private final boolean preserveRepositoryOrigins;
+	private final BNodeOrigins storedOrigins;
 	private DataInputStream input;
 	private long remaining;
+	private boolean closed;
 
 	QueryResultSpool() throws IOException {
+		this(false, null);
+	}
+
+	/** Stages Explore statements, preserving negotiated blank-node provenance and locally proven stored IDs. */
+	public static QueryResultSpool forExploreStatements(ValueFactory sourceFactory) throws IOException {
+		return new QueryResultSpool(true, new BNodeOrigins(sourceFactory));
+	}
+
+	private QueryResultSpool(boolean preserveRepositoryOrigins, BNodeOrigins storedOrigins) throws IOException {
+		this.preserveRepositoryOrigins = preserveRepositoryOrigins;
+		this.storedOrigins = storedOrigins;
 		long maxBytes = maxBytes();
 		path = Files.createTempFile(Path.of(System.getProperty("java.io.tmpdir")), "rdf4j-workbench-query-",
 				".spool");
@@ -88,20 +109,23 @@ final class QueryResultSpool implements AutoCloseable {
 		throw new IllegalArgumentException(MAX_BYTES_PROPERTY + " must be a positive byte count");
 	}
 
-	void writeRow(Value... values) throws IOException {
+	public synchronized void writeRow(Value... values) throws IOException {
+		ensureOpen();
 		output.writeByte(ROW);
 		for (Value value : values) {
 			writeValue(value);
 		}
 	}
 
-	void finishWriting() throws IOException {
+	public synchronized void finishWriting() throws IOException {
+		ensureOpen();
 		output.close();
 		remaining = Files.size(path);
 		input = new DataInputStream(new BufferedInputStream(Files.newInputStream(path)));
 	}
 
-	Value[] readRow(int columns) throws IOException {
+	public synchronized Value[] readRow(int columns) throws IOException {
+		ensureOpen();
 		if (remaining == 0) {
 			return null;
 		}
@@ -127,8 +151,15 @@ final class QueryResultSpool implements AutoCloseable {
 			if (value instanceof IRI iri) {
 				output.writeByte(IRI_VALUE);
 				writeString(iri.stringValue());
+			} else if (value instanceof RepositoryBNode bNode && preserveRepositoryOrigins) {
+				output.writeByte(REPOSITORY_BNODE_VALUE);
+				writeString(bNode.getID());
+				writeString(bNode.getRawID());
+				output.writeBoolean(bNode.isReference());
 			} else if (value instanceof BNode bNode) {
-				output.writeByte(BNODE_VALUE);
+				output.writeByte(preserveRepositoryOrigins && !(bNode instanceof RemoteBNode)
+						&& !(bNode instanceof GeneratedBNode) && storedOrigins.isReference(bNode) ? PLAIN_BNODE_VALUE
+								: BNODE_VALUE);
 				writeString(bNode.getID());
 			} else if (value instanceof Literal literal) {
 				if (literal.getLanguage().isPresent()) {
@@ -193,6 +224,16 @@ final class QueryResultSpool implements AutoCloseable {
 		// The legacy result writers serialize the wire ID only. A staged value must not acquire
 		// repository-reference authority merely because its ID matches a stored blank node.
 		case BNODE_VALUE -> GeneratedBNode.restore(readString());
+		case PLAIN_BNODE_VALUE -> VALUE_FACTORY.createBNode(readString());
+		case REPOSITORY_BNODE_VALUE -> {
+			String wireID = readString();
+			String rawID = readString();
+			int reference = readByte();
+			if (reference > 1) {
+				throw new IOException("Invalid Workbench query spool blank-node reference flag");
+			}
+			yield RepositoryBNode.fromNegotiatedResult(wireID, rawID, reference == 1);
+		}
 		case DATATYPE_LITERAL -> {
 			String label = readString();
 			yield VALUE_FACTORY.createLiteral(label, VALUE_FACTORY.createIRI(readString()));
@@ -249,7 +290,11 @@ final class QueryResultSpool implements AutoCloseable {
 	}
 
 	@Override
-	public void close() throws IOException {
+	public synchronized void close() throws IOException {
+		if (closed) {
+			return;
+		}
+		closed = true;
 		IOException failure = null;
 		try {
 			if (input != null) {
@@ -280,6 +325,12 @@ final class QueryResultSpool implements AutoCloseable {
 		}
 		if (failure != null) {
 			throw failure;
+		}
+	}
+
+	private void ensureOpen() throws IOException {
+		if (closed) {
+			throw new IOException("Workbench query spool has been closed");
 		}
 	}
 

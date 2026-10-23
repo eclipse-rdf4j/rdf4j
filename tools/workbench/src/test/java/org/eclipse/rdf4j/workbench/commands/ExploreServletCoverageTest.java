@@ -131,13 +131,16 @@ class ExploreServletCoverageTest {
 	}
 
 	@Test
-	void aKnownTotalIsKeptAndAZeroLimitShowsEverything() throws Exception {
+	void anUnlimitedPageReportsItsObservedTotalDespiteAStaleKnownTotal() throws Exception {
 		addIncomingLinks(HUB, 7);
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		CookieHandler cookies = mock(CookieHandler.class);
 
-		service(servlet(store, mock(CookieHandler.class)), request(HUB, 9, 3, 0), builder);
+		service(servlet(store, cookies), request(HUB, 9, 3, 0), builder);
 
-		verify(builder).metadata(ExploreServlet.TOTAL_RESULT_COUNT, 9L);
+		verify(builder).metadata(ExploreServlet.TOTAL_RESULT_COUNT, 7L);
+		verify(builder).terminalMetadata(ExploreServlet.TOTAL_RESULT_COUNT, 7L);
+		verify(cookies).addTotalResultCountCookie(any(), any(), eq(0));
 		assertThat(rows(builder)).hasSize(4);
 	}
 
