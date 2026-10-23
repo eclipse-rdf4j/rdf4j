@@ -1023,10 +1023,14 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private volatile boolean valueOverlayBuildAdmissionClosed;
 	private Object initialImportOverlayRebuildRequest;
 	private Object initialImportOverlayRebuildWorker;
+	/** One startup request may await already-scheduled term-index mutations before it captures a dictionary view. */
+	private boolean startupValueOverlayRequested;
 	private Object publiclyReleasedOverlayGeneration;
 	private ValueOverlayRegistry.Mutation compressedValueMutation;
 	private volatile ExecutorService valueOverlayWarmupExecutor;
 	private volatile CompletableFuture<Void> valueOverlayWarmupFuture;
+	/** Planned owner work is pending before the post-ready thread can schedule its first optional build. */
+	private volatile CompletableFuture<Void> valueOverlayStartupScheduling;
 
 	private record ValueOverlayWarmup(ExecutorService executor, CompletableFuture<Void> future) {
 	}
@@ -1373,7 +1377,36 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (!valueStoreInitializationComplete) {
 			throw new IllegalStateException("ValueStore startup initialization is incomplete");
 		}
-		warmConfiguredValueOverlay();
+		synchronized (valueOverlayBuildAdmission) {
+			if (valueOverlayMaintenanceDeferred || valueOverlayBuildAdmissionClosed) {
+				return;
+			}
+			startupValueOverlayRequested = true;
+		}
+		scheduleStartupValueOverlay();
+	}
+
+	private void scheduleStartupValueOverlay() {
+		synchronized (valueOverlayBuildAdmission) {
+			if (!startupValueOverlayRequested || valueOverlayMaintenanceDeferred || valueOverlayBuildAdmissionClosed
+					|| termIndexMaintenanceCancelled || env == 0) {
+				return;
+			}
+			synchronized (writerAdmission) {
+				if (termMaintenanceWriterActive || termIndexMaintenanceReady
+						&& termIndexMaintenanceFailure == null && !indexRebuildStatus().equals("IDLE")) {
+					return;
+				}
+			}
+			// Keep the request visible until the actual future or terminal configuration failure is installed.
+			warmConfiguredValueOverlay();
+			startupValueOverlayRequested = false;
+			valueOverlayBuildAdmission.notifyAll();
+		}
+	}
+
+	void setStartupValueOverlayScheduling(CompletableFuture<Void> scheduling) {
+		valueOverlayStartupScheduling = Objects.requireNonNull(scheduling);
 	}
 
 	private void beginStartupInitialization() throws IOException {
@@ -3767,6 +3800,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					return;
 				}
 				boolean waitForReaders = false;
+				boolean waitForNativeReaders = false;
 				boolean growMap = false;
 				boolean committed = false;
 				Set<String> publishTarget = null;
@@ -3801,9 +3835,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 								termIndexBuild = before.at(TermIndexBuild.CLEANUP, null);
 							}
 						} else {
-							waitForReaders = !cleanupTermIndexesBatch(before);
+							TermCleanupResult cleanup = cleanupTermIndexesBatch(before);
+							waitForReaders = cleanup == TermCleanupResult.GENERATION_READERS;
+							waitForNativeReaders = cleanup == TermCleanupResult.NATIVE_READERS;
 						}
-						if (waitForReaders || termIndexMaintenanceCancelled) {
+						if (waitForReaders || waitForNativeReaders || termIndexMaintenanceCancelled) {
 							rollback();
 						} else {
 							// Finish native ownership before waiting for readers. A reader may itself need a standalone
@@ -3852,7 +3888,16 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					observeTermIndexMaintenance("published");
 				}
 				if (before != null && before.phase() == TermIndexBuild.CLEANUP) {
-					observeTermIndexMaintenance(waitForReaders ? "cleanup-readers" : "cleanup-batch");
+					observeTermIndexMaintenance(
+							waitForReaders || waitForNativeReaders ? "cleanup-readers" : "cleanup-batch");
+				}
+				if (waitForNativeReaders && !termIndexMaintenanceCancelled) {
+					// A scoped Txn retires before its caller releases the read barrier. Its retirement notification
+					// can therefore arrive too early for tryWriteLock. Await the actual barrier outside writer
+					// admission instead of parking for a second retirement notification that may never occur.
+					var manager = txnManager.lockManager();
+					long stamp = manager.writeLock();
+					manager.unlockWrite(stamp);
 				}
 				if (waitForReaders && !termIndexMaintenanceCancelled) {
 					LockSupport.park(this);
@@ -3871,6 +3916,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			logger.warn("Triple-term index maintenance failed; committed indexes remain active", failure);
 		} finally {
 			signalTermIndexMaintenance();
+			scheduleStartupValueOverlay();
 		}
 	}
 
@@ -4003,18 +4049,24 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 	}
 
-	/** False means a historical query generation still owns a reader; no native tree is changed. */
-	private boolean cleanupTermIndexesBatch(TermIndexBuild build) throws IOException, InterruptedException {
+	private enum TermCleanupResult {
+		PROGRESSED,
+		GENERATION_READERS,
+		NATIVE_READERS
+	}
+
+	/** Distinguishes a pinned query generation from a read barrier whose unlock has no retirement notification. */
+	private TermCleanupResult cleanupTermIndexesBatch(TermIndexBuild build) throws IOException, InterruptedException {
 		var manager = txnManager.lockManager();
 		long stamp = manager.tryWriteLock();
 		if (stamp == 0L) {
-			return false;
+			return TermCleanupResult.NATIVE_READERS;
 		}
 		try {
 			List<TermQueryGeneration> generations = termIndexGenerations;
 			long cutoff = generations.get(generations.size() - 1).firstTransaction();
 			if (txnManager.hasActiveReadersBefore(cutoff)) {
-				return false;
+				return TermCleanupResult.GENERATION_READERS;
 			}
 			termIndexGenerations = List.of(generations.get(generations.size() - 1));
 		} finally {
@@ -4024,12 +4076,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			if (!build.target().contains(spec)) {
 				TripleIndex index = openTermMaintenanceIndex(spec, false);
 				if (index != null && deleteTermIndexBatch(index)) {
-					return true;
+					return TermCleanupResult.PROGRESSED;
 				}
 			}
 		}
 		termIndexBuild = null;
-		return true;
+		return TermCleanupResult.PROGRESSED;
 	}
 
 	private void growTermMaintenanceMap() throws IOException {
@@ -5750,6 +5802,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		synchronized (valueOverlayBuildAdmission) {
 			valueOverlayMaintenanceDeferred = true;
 			valueOverlayCaptureDeferred = true;
+			startupValueOverlayRequested = false;
 			initialImportOverlayRebuildRequest = null;
 			publiclyReleasedOverlayGeneration = null;
 			valueOverlayBuildAdmission.notifyAll();
@@ -5885,11 +5938,23 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 		long budget = unit.toNanos(timeout);
 		long started = System.nanoTime();
+		if (!valueOverlayEnabled) {
+			return false;
+		}
+		CompletableFuture<Void> scheduling = valueOverlayStartupScheduling;
+		if (scheduling != null) {
+			try {
+				scheduling.get(Math.max(0L, budget - (System.nanoTime() - started)), TimeUnit.NANOSECONDS);
+			} catch (TimeoutException | ExecutionException | CancellationException unavailable) {
+				return false;
+			}
+		}
 		while (true) {
 			CompletableFuture<Void> future;
 			boolean expired = false;
 			synchronized (valueOverlayBuildAdmission) {
-				if (initialImportOverlayRebuildRequest != null || initialImportOverlayRebuildWorker != null) {
+				if (startupValueOverlayRequested || initialImportOverlayRebuildRequest != null
+						|| initialImportOverlayRebuildWorker != null) {
 					long remaining = budget - (System.nanoTime() - started);
 					if (remaining > 0L) {
 						TimeUnit.NANOSECONDS.timedWait(valueOverlayBuildAdmission, remaining);
@@ -5906,7 +5971,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					// Refusal/failure uses LMDB; a requested successor is checked below within the same timeout.
 				}
 				synchronized (valueOverlayBuildAdmission) {
-					if ((initialImportOverlayRebuildRequest != null || initialImportOverlayRebuildWorker != null)
+					if ((startupValueOverlayRequested || initialImportOverlayRebuildRequest != null
+							|| initialImportOverlayRebuildWorker != null)
 							&& budget - (System.nanoTime() - started) > 0L) {
 						continue;
 					}
@@ -5928,9 +5994,14 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (!valueOverlayEnabled) {
 			return false;
 		}
+		CompletableFuture<Void> scheduling = valueOverlayStartupScheduling;
+		if (scheduling != null && !scheduling.isDone()) {
+			return true;
+		}
 		synchronized (valueOverlayBuildAdmission) {
 			CompletableFuture<Void> future = valueOverlayWarmupFuture;
 			if (valueOverlayBuildsInFlight != 0 || valueOverlayWarmupActive
+					|| startupValueOverlayRequested
 					|| initialImportOverlayRebuildRequest != null || initialImportOverlayRebuildWorker != null
 					|| future != null && !future.isDone()) {
 				return true;
@@ -14191,6 +14262,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		try {
 			synchronized (valueOverlayBuildAdmission) {
 				valueOverlayBuildAdmissionClosed = true;
+				startupValueOverlayRequested = false;
 				initialImportOverlayRebuildRequest = null;
 				publiclyReleasedOverlayGeneration = null;
 				valueOverlayBuildAdmission.notifyAll();

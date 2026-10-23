@@ -75,6 +75,45 @@ class ValueStoreAsyncOverlayWarmupTest {
 
 	@Test
 	@Timeout(30)
+	void automaticWarmupWaitsForAnAlreadyScheduledTermMutationBeforeCapturingItsView(@TempDir File dataDir)
+			throws Exception {
+		File dir = new File(dataDir, "values");
+		seed(dir);
+		System.setProperty(BUDGET_PROPERTY, "33554432");
+		CountDownLatch termWriter = new CountDownLatch(1);
+		CountDownLatch releaseTermWriter = new CountDownLatch(1);
+		var store = new ValueStore(dir, new LmdbStoreConfig().setValueOverlayEnabled(true)
+				.setTripleTermIndexes("spoc,cspo,posc"));
+		try {
+			store.setTermIndexMaintenanceObserver(phase -> {
+				if (phase.equals("dual-write-registered")) {
+					termWriter.countDown();
+					try {
+						assertTrue(releaseTermWriter.await(10, TimeUnit.SECONDS));
+					} catch (InterruptedException interrupted) {
+						Thread.currentThread().interrupt();
+					}
+				}
+			});
+			store.startIndexRebuildAfterStoreInitialization();
+			assertTrue(termWriter.await(10, TimeUnit.SECONDS));
+			store.startValueOverlayWarmupAfterStoreInitialization();
+			assertFalse(store.awaitValueOverlayReady(0, TimeUnit.SECONDS));
+			releaseTermWriter.countDown();
+			assertTrue(store.awaitIndexRebuild(10, TimeUnit.SECONDS), store.indexRebuildStatus());
+			assertTrue(store.awaitValueOverlayReady(10, TimeUnit.SECONDS),
+					() -> "automatic warmup must survive its scheduled term predecessor: "
+							+ store.compressedValueOverlayMaintenanceStats());
+			Value expected = SimpleValueFactory.getInstance().createIRI("https://example.org/items/0");
+			assertEquals(expected, store.getValue(store.getId(expected)));
+		} finally {
+			releaseTermWriter.countDown();
+			store.close();
+		}
+	}
+
+	@Test
+	@Timeout(30)
 	void automaticWarmupRunsOffTheConstructorThreadAndBecomesReadyAfterAwait(@TempDir File dataDir) throws Exception {
 		File dir = new File(dataDir, "values");
 		seed(dir);

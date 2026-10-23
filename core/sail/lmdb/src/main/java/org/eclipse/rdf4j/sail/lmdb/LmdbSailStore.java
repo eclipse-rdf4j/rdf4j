@@ -44,6 +44,7 @@ import java.util.UUID;
 import java.util.WeakHashMap;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
@@ -2788,6 +2789,8 @@ class LmdbSailStore implements SailStore {
 	private volatile Thread postReadyThread;
 	private volatile String postReadyStatus = "NOT_STARTED";
 	private final AtomicBoolean postReadyStarted = new AtomicBoolean();
+	private final CompletableFuture<Void> valueOverlayStartupScheduling = new CompletableFuture<>();
+	private final CompletableFuture<Void> adjacencyStartupScheduling = new CompletableFuture<>();
 	/** Advances on every committed store mutation; a component of the adaptive cost model's regime key. */
 	private final AtomicLong costModelDataGeneration = new AtomicLong();
 	/** Persistence and regime signals handed to the adaptive cost model through every query source. */
@@ -6494,6 +6497,10 @@ class LmdbSailStore implements SailStore {
 					() -> 0L);
 			postReadyInitialization = () -> initializePostReadyMaintenance(config, statsFactory,
 					directAdjacencyOptions.buildOnStart());
+			valueStore.setStartupValueOverlayScheduling(valueOverlayStartupScheduling);
+			if (directAdjacency != null && directAdjacencyOptions.buildOnStart()) {
+				directAdjacency.setStartupScheduling(adjacencyStartupScheduling);
+			}
 			logLmdbStats(Level.INFO, "on startup");
 		} catch (IOException | RuntimeException | Error failure) {
 			try {
@@ -6522,6 +6529,9 @@ class LmdbSailStore implements SailStore {
 			} catch (RuntimeException failure) {
 				postReadyStatus = "FAILED: " + failure.getMessage();
 				logger.warn("Optional LMDB post-ready maintenance failed; committed indexes remain available", failure);
+			} finally {
+				valueOverlayStartupScheduling.complete(null);
+				adjacencyStartupScheduling.complete(null);
 			}
 		});
 		postReadyThread = worker;
@@ -6541,10 +6551,18 @@ class LmdbSailStore implements SailStore {
 				recoverRetiredValueIds(tripleStore.getTxnManager().minPinnedSnapshotRevision(), false);
 				reclaimPersistedUnusedIdsAfterInitialization();
 			}
-			if (directAdjacency != null && buildAdjacency) {
-				directAdjacency.triggerBuild();
+			try {
+				if (directAdjacency != null && buildAdjacency) {
+					directAdjacency.triggerBuild();
+				}
+			} finally {
+				adjacencyStartupScheduling.complete(null);
 			}
-			valueStore.startValueOverlayWarmupAfterStoreInitialization();
+			try {
+				valueStore.startValueOverlayWarmupAfterStoreInitialization();
+			} finally {
+				valueOverlayStartupScheduling.complete(null);
+			}
 			if (sketchBasedJoinEstimator != null && !initialImportClosing) {
 				long generationBeforeLoad = costModelDataGeneration.get();
 				Path estimatorPath = new File(dataDir, JOIN_ESTIMATOR_FILE_NAME).toPath();
@@ -6589,6 +6607,8 @@ class LmdbSailStore implements SailStore {
 	private void awaitPostReadyInitializationForShutdown() {
 		Thread worker = postReadyThread;
 		if (worker == null || worker == Thread.currentThread()) {
+			valueOverlayStartupScheduling.complete(null);
+			adjacencyStartupScheduling.complete(null);
 			return;
 		}
 		worker.interrupt();

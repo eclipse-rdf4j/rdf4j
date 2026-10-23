@@ -140,13 +140,20 @@ class LmdbPostReadyAwaitTest {
 			System.setProperty("rdf4j.lmdb.valueOverlay.maxBytes", "33554432");
 			SailRepository seed = new SailRepository(new LmdbStore(directory.toFile(),
 					new LmdbStoreConfig().setInlineLiterals(false)));
-			seed.init();
-			try (var connection = seed.getConnection()) {
-				var values = SimpleValueFactory.getInstance();
-				connection.add(values.createIRI("urn:post-ready:subject"), values.createIRI("urn:post-ready:predicate"),
-						values.createLiteral("stored value"));
-			} finally {
-				seed.shutDown();
+			try {
+				try {
+					seed.init();
+					try (var connection = seed.getConnection()) {
+						var values = SimpleValueFactory.getInstance();
+						connection.add(values.createIRI("urn:post-ready:subject"),
+								values.createIRI("urn:post-ready:predicate"), values.createLiteral("stored value"));
+					}
+				} finally {
+					seed.shutDown();
+				}
+			} catch (Exception | Error failure) {
+				restoreBudget();
+				throw failure;
 			}
 			LmdbStoreConfig config = new LmdbStoreConfig().setInlineLiterals(false)
 					.setDirectAdjacencyEnabled(!overlay)
@@ -186,8 +193,20 @@ class LmdbPostReadyAwaitTest {
 				}
 			};
 			repository = new SailRepository(store);
-			repository.init();
-			assertTrue(entered.await(30, TimeUnit.SECONDS), "the actual post-ready scheduling phase must be held");
+			try {
+				repository.init();
+				assertTrue(entered.await(30, TimeUnit.SECONDS), "the actual post-ready scheduling phase must be held");
+			} catch (Exception | Error failure) {
+				release.countDown();
+				try {
+					repository.shutDown();
+				} catch (RuntimeException cleanup) {
+					failure.addSuppressed(cleanup);
+				} finally {
+					restoreBudget();
+				}
+				throw failure;
+			}
 		}
 
 		private boolean await(boolean overlay, long seconds) throws InterruptedException {
@@ -201,11 +220,15 @@ class LmdbPostReadyAwaitTest {
 			try {
 				repository.shutDown();
 			} finally {
-				if (previousBudget == null) {
-					System.clearProperty("rdf4j.lmdb.valueOverlay.maxBytes");
-				} else {
-					System.setProperty("rdf4j.lmdb.valueOverlay.maxBytes", previousBudget);
-				}
+				restoreBudget();
+			}
+		}
+
+		private void restoreBudget() {
+			if (previousBudget == null) {
+				System.clearProperty("rdf4j.lmdb.valueOverlay.maxBytes");
+			} else {
+				System.setProperty("rdf4j.lmdb.valueOverlay.maxBytes", previousBudget);
 			}
 		}
 	}

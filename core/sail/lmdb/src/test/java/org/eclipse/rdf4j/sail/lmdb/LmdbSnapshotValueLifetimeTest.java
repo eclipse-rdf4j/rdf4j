@@ -181,12 +181,15 @@ class LmdbSnapshotValueLifetimeTest {
 		store.init();
 		try {
 			LmdbGcTestMaintenance.awaitPostReady(store);
+			assertTrue(store.awaitIndexRebuild(10, TimeUnit.SECONDS),
+					"native index maintenance must finish before admission");
 			LmdbSailStore backingStore = store.getBackingStore();
 			TripleStore tripleStore = store.tripleStore;
 			ValueStore valueStore = store.valueStore;
 			int triplePermits = availableReaderPermits(tripleStore.getTxnManager());
 			int valuePermits = availableReaderPermits(valueStore.getTxnManager());
 			store.expectedTriplePermits = triplePermits;
+			store.expectedSnapshotThread = Thread.currentThread();
 			store.failNextSnapshotStart.set(true);
 			SailException failure = assertThrows(SailException.class,
 					() -> backingStore.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT_READ));
@@ -200,6 +203,7 @@ class LmdbSnapshotValueLifetimeTest {
 			assertEquals(valuePermits, availableReaderPermits(valueStore.getTxnManager()),
 					"failed ValueStore acquisition must return its reserved reader permit");
 		} finally {
+			store.expectedSnapshotThread = null;
 			store.shutDown();
 		}
 	}
@@ -484,6 +488,7 @@ class LmdbSnapshotValueLifetimeTest {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")
 				.setForceSync(true)
 				.setTripleDBSize(TRIPLE_STORE_GROWTH_MAP_SIZE)
+				.setValueDBSize(TRIPLE_STORE_GROWTH_MAP_SIZE)
 				.setMapGrowthThreshold(TRIPLE_STORE_GROWTH_THRESHOLD)
 				.setMapGrowthReadDrainTimeoutMillis(0)
 				.setAutoGrow(true));
@@ -493,8 +498,12 @@ class LmdbSnapshotValueLifetimeTest {
 
 		store.init();
 		try {
+			LmdbGcTestMaintenance.awaitPostReady(store);
+			assertTrue(store.awaitIndexRebuild(10, TimeUnit.SECONDS),
+					"native index maintenance must finish before growth");
 			TripleStore tripleStore = tripleStoreOf(store);
 			initialMapSize = mapSize(tripleStore);
+			long initialValueMapSize = mapSize(valueStoreOf(store));
 			MapGrowthMetrics.Snapshot before = store.getBackingStore().growthMetricsSnapshot();
 			try (ExecutorService writers = Executors.newSingleThreadExecutor();
 					SailConnection reader = store.getConnection()) {
@@ -541,6 +550,11 @@ class LmdbSnapshotValueLifetimeTest {
 				assertEquals(before.replayAccepted(),
 						store.getBackingStore().growthMetricsSnapshot().replayAccepted(),
 						"the writer-protected attempt must complete without read replay");
+				assertEquals(initialValueMapSize, mapSize(valueStoreOf(store)),
+						"the update-owner barrier fixture must isolate TripleStore pressure");
+				assertEquals(before.valueStoreResizes(),
+						store.getBackingStore().growthMetricsSnapshot().valueStoreResizes(),
+						"the update-owner barrier fixture must not resize ValueStore");
 				try (SailConnection committed = store.getConnection()) {
 					committed.begin(IsolationLevels.SNAPSHOT);
 					assertTrue(committed.hasStatement(subject, predicate, VF.createLiteral("published"), false),
@@ -2173,6 +2187,7 @@ class LmdbSnapshotValueLifetimeTest {
 	private static class FailingReadSnapshotStore extends LmdbStore {
 
 		private final AtomicBoolean failNextSnapshotStart = new AtomicBoolean();
+		private volatile Thread expectedSnapshotThread;
 		private TripleStore tripleStore;
 		private ValueStore valueStore;
 		private int expectedTriplePermits;
@@ -2192,7 +2207,8 @@ class LmdbSnapshotValueLifetimeTest {
 								return new ReadSnapshotReservation(getTxnManager().reserveReadTxn(false)) {
 									@Override
 									synchronized ReadSnapshot tryStart(Txn tripleTxn) throws IOException {
-										if (failNextSnapshotStart.compareAndSet(true, false)) {
+										if (Thread.currentThread() == expectedSnapshotThread
+												&& failNextSnapshotStart.compareAndSet(true, false)) {
 											try {
 												assertEquals(expectedTriplePermits - 1,
 														availableReaderPermits(tripleStore.getTxnManager()),

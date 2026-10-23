@@ -178,6 +178,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private final Object rebuildSubmissionLock = new Object();
 	private final AtomicBoolean rebuildPending = new AtomicBoolean();
 	private volatile Future<?> rebuildFuture;
+	private volatile CompletableFuture<Void> startupScheduling;
 	private final AtomicBoolean quiescentRebuildPending = new AtomicBoolean();
 	private final AtomicBoolean quiescentRebuildTaskScheduled = new AtomicBoolean();
 	private volatile boolean quiescentRebuildRetryAllowed;
@@ -307,7 +308,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	/** Factual in-memory work state; querying it never starts a build or opens a native reader. */
 	boolean hasPendingMaintenance() {
-		return maintenanceCanReachReadiness();
+		CompletableFuture<Void> scheduling = startupScheduling;
+		return scheduling != null && !scheduling.isDone() || maintenanceCanReachReadiness();
+	}
+
+	void setStartupScheduling(CompletableFuture<Void> scheduling) {
+		startupScheduling = Objects.requireNonNull(scheduling);
 	}
 
 	/** Monotone publish counter; a component of the adaptive cost model's regime key. */
@@ -2778,6 +2784,14 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 		long timeoutNanos = unit.toNanos(timeout);
 		long startedNanos = System.nanoTime();
+		CompletableFuture<Void> scheduling = startupScheduling;
+		if (scheduling != null) {
+			try {
+				scheduling.get(Math.max(0L, timeoutNanos - (System.nanoTime() - startedNanos)), TimeUnit.NANOSECONDS);
+			} catch (TimeoutException | ExecutionException | CancellationException unavailable) {
+				return false;
+			}
+		}
 		while (true) {
 			if (servesCurrentRevisionReady()) {
 				return true;
