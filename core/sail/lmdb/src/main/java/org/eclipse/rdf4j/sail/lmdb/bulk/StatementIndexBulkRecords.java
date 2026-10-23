@@ -342,8 +342,9 @@ final class StatementIndexBulkRecords implements AutoCloseable {
 			List<ExternalLongTupleSorter> tupleSorters, List<ExternalByteKeySorter> encodedSorters,
 			BulkCompression compression, BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler)
 			throws IOException {
-		try (DataInputStream input = BulkLz4.input(spool.path(), compression.codecFor(BulkArtifact.ID_QUADS),
-				scheduler)) {
+		try (DataInputStream input = BulkArtifactIntegrity.input(
+				BulkLz4.input(spool.path(), compression.codecFor(BulkArtifact.ID_QUADS), scheduler),
+				spool.path(), spool.contentDigest())) {
 			long expectedOrdinal = 0L;
 			long[] quad = new long[COMPONENT_COUNT];
 			while (true) {

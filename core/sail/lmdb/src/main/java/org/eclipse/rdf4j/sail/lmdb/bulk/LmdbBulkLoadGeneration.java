@@ -77,13 +77,24 @@ final class LmdbBulkLoadGeneration implements AutoCloseable {
 	}
 
 	static LmdbBulkLoadGeneration create(Path target, PromotionHook promotionHook) throws IOException {
+		return create(target, promotionHook, ignored -> {
+		});
+	}
+
+	@FunctionalInterface
+	interface RecoveryCheck {
+		void check(Path target) throws IOException;
+	}
+
+	static LmdbBulkLoadGeneration create(Path target, PromotionHook promotionHook, RecoveryCheck recoveryCheck)
+			throws IOException {
 		Path normalized = target.toAbsolutePath().normalize();
 		if (Files.isSymbolicLink(normalized)) {
 			throw new IOException("LMDB bulk-load target must not be a symbolic link: " + normalized);
 		}
 		TargetOwnership ownership = TargetOwnership.acquire(normalized);
 		try {
-			return create(normalized, promotionHook, ownership);
+			return create(normalized, promotionHook, ownership, recoveryCheck);
 		} catch (IOException | RuntimeException | Error failure) {
 			try {
 				ownership.close();
@@ -95,7 +106,7 @@ final class LmdbBulkLoadGeneration implements AutoCloseable {
 	}
 
 	private static LmdbBulkLoadGeneration create(Path normalized, PromotionHook promotionHook,
-			TargetOwnership ownership) throws IOException {
+			TargetOwnership ownership, RecoveryCheck recoveryCheck) throws IOException {
 		boolean targetCreated = createTargetDirectory(normalized);
 		Path lockFile = normalized.resolve(LOCK_FILE_NAME);
 		if (exists(lockFile)) {
@@ -108,6 +119,9 @@ final class LmdbBulkLoadGeneration implements AutoCloseable {
 			lock = acquireLock(normalized, lockChannel);
 			LmdbBulkLoadGeneration result = new LmdbBulkLoadGeneration(normalized, lockFile, lockChannel, lock,
 					ownership, targetCreated, promotionHook);
+			if (exists(result.manifest)) {
+				recoveryCheck.check(normalized);
+			}
 			result.openOrRecover();
 			return result;
 		} catch (IOException | RuntimeException | Error failure) {
