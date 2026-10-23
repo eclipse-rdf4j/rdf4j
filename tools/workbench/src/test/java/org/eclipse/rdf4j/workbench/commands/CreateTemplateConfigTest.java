@@ -25,6 +25,8 @@ import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class CreateTemplateConfigTest {
 
@@ -177,6 +179,23 @@ class CreateTemplateConfigTest {
 				.hasCauseInstanceOf(IOException.class)
 				.hasMessageContaining("Could not load config template");
 		assertThat(invokeList("discoverBuiltinTemplateTypes")).contains("memory", "native", "sparql");
+	}
+
+	@Test
+	void loadRejectsAbsolutePathToTurtleResourceOutsideTemplatePackage() {
+		assertThat(CreateTemplateConfig.class.getResource("/configFiles/memory.ttl")).isNotNull();
+		assertThatThrownBy(() -> CreateTemplateConfig.load("/configFiles/memory"))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("template type");
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "./memory", "../config/memory", "..\\memory", "%2FconfigFiles%2Fmemory",
+			"%2e%2e%2fconfigFiles%2fmemory" })
+	void loadRejectsPathLikeTemplateTypes(String type) {
+		assertThatThrownBy(() -> CreateTemplateConfig.load(type))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("template type");
 	}
 
 	@Test
