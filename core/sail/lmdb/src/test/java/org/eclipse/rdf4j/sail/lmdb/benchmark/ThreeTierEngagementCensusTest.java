@@ -253,14 +253,7 @@ class ThreeTierEngagementCensusTest {
 	 */
 	@Test
 	void nodePredicateCellsTakeTheirLedgeredRouteWithTheProjectionOn() {
-		Map<String, String> previous = new LinkedHashMap<>();
-		PROJECTION_PROPERTIES.forEach(property -> previous.put(property, System.getProperty(property)));
-		PROJECTION_PROPERTIES.forEach(property -> System.setProperty(property, "true"));
-		try {
-			census("FOAF, projection on", List.of(Dataset.FOAF), true);
-		} finally {
-			ThreeTierRegime.restore(previous);
-		}
+		census("FOAF, projection on", List.of(Dataset.FOAF), true);
 	}
 
 	@Test
@@ -272,6 +265,8 @@ class ThreeTierEngagementCensusTest {
 	private void census(String label, List<Dataset> datasets, boolean projectionOn) {
 		Map<String, String> previous = new LinkedHashMap<>();
 		CENSUS_PROPERTIES.forEach(property -> previous.put(property, System.getProperty(property)));
+		PROJECTION_PROPERTIES.forEach(property -> previous.put(property, System.getProperty(property)));
+		PROJECTION_PROPERTIES.forEach(property -> System.setProperty(property, Boolean.toString(projectionOn)));
 		System.setProperty(ThreeTierParityFixtures.FOAF_PEOPLE_PROPERTY, CENSUS_FOAF_PEOPLE);
 		System.setProperty(ThreeTierParityFixtures.CORRELATED_OUTER_ROWS_PROPERTY, CENSUS_CORRELATED_OUTER_ROWS);
 		System.setProperty(AdjacencyEngagementTestAccess.SCAN_AGGREGATES_PROPERTY, "true");

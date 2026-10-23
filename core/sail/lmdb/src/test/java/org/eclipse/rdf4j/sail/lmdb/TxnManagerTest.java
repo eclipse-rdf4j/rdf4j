@@ -36,6 +36,10 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_reader_list;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -82,7 +86,7 @@ public class TxnManagerTest {
 				context = QueryExecutionContext.captureReplayContext();
 			}
 			deadline.close();
-			assertEquals(Long.MAX_VALUE, deadline.remainingNanos());
+			assertEquals(Long.MAX_VALUE, deadline.remainingMillis());
 			assertFalse(deadline.isExpired());
 			AtomicReference<Thread> readerThread = new AtomicReference<>();
 			CountDownLatch started = new CountDownLatch(1);
@@ -129,7 +133,7 @@ public class TxnManagerTest {
 			}
 			assertTrue(expired.await(5, TimeUnit.SECONDS));
 			deadline.close();
-			assertEquals(0L, deadline.remainingNanos());
+			assertEquals(0L, deadline.remainingMillis());
 			assertTrue(deadline.isExpired());
 			long writeStamp = fixture.manager.lockManager().writeLock();
 			try {
@@ -890,6 +894,25 @@ public class TxnManagerTest {
 			}),
 					"Canceled barrier admission must return the only free ordinary permit");
 			fixture.hold(1);
+		}
+	}
+
+	@Test
+	void timedNativeReadBarrierUsesOnePreAdmissionDeadlineObservation(@TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET)) {
+			QueryExecutionDeadline deadline = mock(QueryExecutionDeadline.class);
+			when(deadline.remainingMillis()).thenReturn(TimeUnit.MINUTES.toMillis(1));
+
+			try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enterScopedContext(deadline)) {
+				long readStamp = fixture.manager.acquireReadBarrier();
+				try {
+					assertTrue(fixture.manager.lockManager().isReaderActive(),
+							"The timed barrier must hold a native read admission");
+				} finally {
+					fixture.manager.lockManager().unlockRead(readStamp);
+				}
+				verify(deadline, times(2)).remainingMillis();
+			}
 		}
 	}
 

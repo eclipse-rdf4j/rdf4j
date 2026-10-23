@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryParseOptions;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
@@ -35,6 +36,7 @@ import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -174,6 +176,7 @@ public class TupleExprIRRenderer {
 	 * for clarity and testability.
 	 */
 	public IrSelect toIRSelect(final TupleExpr tupleExpr) {
+		IrNode.checkInterrupted();
 		// Build raw IR (no transforms) via the converter
 		IrSelect ir = new TupleExprToIrConverter(this).toIRSelect(tupleExpr);
 		if (cfg.debugIR) {
@@ -219,6 +222,7 @@ public class TupleExprIRRenderer {
 	// ---------------- Rendering helpers (prefix-aware) ----------------
 	public String render(final IrSelect ir,
 			final DatasetView dataset, final boolean subselect) {
+		IrNode.checkInterrupted();
 		final StringBuilder out = new StringBuilder(256);
 		if (!subselect) {
 			printPrologueAndDataset(out, dataset);
@@ -229,34 +233,26 @@ public class TupleExprIRRenderer {
 	}
 
 	// Recursively apply the transformer pipeline to a select and any nested subselects.
-	private IrSelect transformIrRecursively(final IrSelect select) {
+	IrSelect transformIrRecursively(final IrSelect select) {
 		if (select == null) {
 			return null;
 		}
-		// First, transform the WHERE using standard pipeline
-		IrSelect top = IrTransforms.transformUsingChildren(select, this);
-		// Then, transform nested subselects via a child-mapping pass
-		IrNode mapped = top.transformChildren(child -> {
-			if (child instanceof IrBGP) {
-				// descend into BGP lines to replace IrSubSelects
-				IrBGP bgp = (IrBGP) child;
-				IrBGP nb = new IrBGP(!bgp.getLines().isEmpty() && bgp.isNewScope());
-				nb.setNewScope(bgp.isNewScope());
-				for (IrNode ln : bgp.getLines()) {
-					if (ln instanceof IrSubSelect) {
-						IrSubSelect ss = (IrSubSelect) ln;
-						IrSelect subSel = ss.getSelect();
-						IrSelect subTx = transformIrRecursively(subSel);
-						nb.add(new IrSubSelect(subTx, ss.isNewScope()));
-					} else {
-						nb.add(ln);
-					}
-				}
-				return nb;
-			}
-			return child;
-		});
-		return (IrSelect) mapped;
+		// Each nested SELECT owns its pipeline, including projection-dependent passes. Normalize children first:
+		// parent path passes can then recognize synthetic subselects representing optional property-path steps.
+		IrSelect nested = (IrSelect) select.transformChildren(this::transformNestedSelects);
+		return IrTransforms.transformUsingChildren(nested, this);
+	}
+
+	private IrNode transformNestedSelects(IrNode node) {
+		IrNode.checkInterrupted();
+		if (node instanceof IrSubSelect) {
+			IrSubSelect sub = (IrSubSelect) node;
+			return new IrSubSelect(transformIrRecursively(sub.getSelect()), sub.isNewScope());
+		}
+		if (node instanceof IrSelect) {
+			return transformIrRecursively((IrSelect) node);
+		}
+		return node.transformChildren(this::transformNestedSelects);
 	}
 
 	/** Backward-compatible: render as SELECT query (no dataset). */
@@ -271,6 +267,7 @@ public class TupleExprIRRenderer {
 
 	/** ASK query (top-level). */
 	public String renderAsk(final TupleExpr tupleExpr, final DatasetView dataset) {
+		IrNode.checkInterrupted();
 		// Build IR (including transforms) and then print only the WHERE block using the IR printer.
 		reset();
 		BNodeValidator.validate(tupleExpr, cfg);
@@ -290,6 +287,7 @@ public class TupleExprIRRenderer {
 
 	/** DESCRIBE query (top-level). */
 	public String renderDescribe(final TupleExpr tupleExpr, final DatasetView dataset) {
+		IrNode.checkInterrupted();
 		reset();
 		BNodeValidator.validate(tupleExpr, cfg);
 		rememberRepeatedAnonBNodes(tupleExpr);
@@ -322,6 +320,7 @@ public class TupleExprIRRenderer {
 
 	/** CONSTRUCT query (top-level). */
 	public String renderConstruct(final TupleExpr tupleExpr, final DatasetView dataset) {
+		IrNode.checkInterrupted();
 		reset();
 		BNodeValidator.validate(tupleExpr, cfg);
 		rememberRepeatedAnonBNodes(tupleExpr);
@@ -485,6 +484,7 @@ public class TupleExprIRRenderer {
 	private String renderSelectInternal(final TupleExpr tupleExpr,
 			final RenderMode mode,
 			final DatasetView dataset) {
+		IrNode.checkInterrupted();
 		reset();
 		BNodeValidator.validate(tupleExpr, cfg);
 		rememberRepeatedAnonBNodes(tupleExpr);
@@ -512,7 +512,7 @@ public class TupleExprIRRenderer {
 						+ "\n# Diff (original -> round-tripped)\n" + diffText(expected, actual);
 				throw new IllegalStateException(message);
 			}
-		} catch (IllegalStateException e) {
+		} catch (QueryInterruptedException | IllegalStateException e) {
 			throw e;
 		} catch (Exception e) {
 			log.error("Unexpected error while round-tripping TupleExpr. original={}, rendered={}",
@@ -565,6 +565,12 @@ public class TupleExprIRRenderer {
 			this.cfg = cfg == null ? new Config() : cfg;
 		}
 
+		@Override
+		protected void meetNode(QueryModelNode node) {
+			IrNode.checkInterrupted();
+			super.meetNode(node);
+		}
+
 		static void validate(TupleExpr expr, Config cfg) {
 			if (expr == null || cfg == null) {
 				return;
@@ -578,6 +584,7 @@ public class TupleExprIRRenderer {
 				return;
 			}
 			for (BindingSet bs : node.getBindingSets()) {
+				IrNode.checkInterrupted();
 				for (String name : bs.getBindingNames()) {
 					Value v = bs.getValue(name);
 					if (v != null) {
@@ -628,6 +635,12 @@ public class TupleExprIRRenderer {
 	private void rememberRepeatedAnonBNodes(TupleExpr tupleExpr) {
 		Map<String, Integer> counts = new LinkedHashMap<>();
 		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				IrNode.checkInterrupted();
+				super.meetNode(node);
+			}
+
 			@Override
 			public void meet(Var node) {
 				if (node.isAnonymous() && node.getName() != null && node.getName().startsWith(ANON_BNODE_PREFIX)) {

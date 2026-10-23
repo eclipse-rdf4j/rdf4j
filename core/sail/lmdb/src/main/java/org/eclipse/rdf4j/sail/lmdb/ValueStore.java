@@ -4141,7 +4141,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private static void checkValueScopeDeadline(QueryExecutionDeadline deadline) {
-		if (deadline != null && deadline.remainingNanos() <= 0L) {
+		if (deadline != null && deadline.remainingMillis() <= 0L) {
 			throw new QueryInterruptedException("Query evaluation took too long");
 		}
 	}
@@ -4151,7 +4151,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		try {
 			if (deadline == null) {
 				associationGate.lockInterruptibly();
-			} else if (!associationGate.tryLock(deadline.remainingNanos(), TimeUnit.NANOSECONDS)) {
+			} else if (!associationGate.tryLock(deadline.remainingMillis(), TimeUnit.MILLISECONDS)) {
 				throw new QueryInterruptedException("Query evaluation took too long");
 			}
 		} catch (InterruptedException failure) {
@@ -4332,9 +4332,6 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			gateHeld = true;
 			boolean capturedIdentity = false;
 			try {
-				if (deadline != null && deadline.remainingNanos() <= 0L) {
-					throw new QueryInterruptedException("Query evaluation took too long");
-				}
 				while (true) {
 					checkValueScopeDeadline(deadline);
 					captured = requested == null ? currentReadRevision(LmdbValue.UNKNOWN_ID) : requested;
@@ -10050,7 +10047,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 						new InterruptedException());
 			}
 			QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
-			if (deadline != null && deadline.remainingNanos() <= 0L) {
+			if (deadline != null && deadline.remainingMillis() <= 0L) {
 				throw new QueryInterruptedException("Query evaluation took too long");
 			}
 		}

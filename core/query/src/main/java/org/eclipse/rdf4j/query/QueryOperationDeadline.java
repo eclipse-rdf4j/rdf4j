@@ -19,7 +19,8 @@ import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 
 /**
- * An absolute deadline for a query operation, measured exclusively with a monotonic nanosecond clock.
+ * A query operation budget measured with a monotonic nanosecond clock, or a borrowed view of a shared execution
+ * deadline in epoch milliseconds. A borrowed view retains the shared deadline's clock and expiration state.
  */
 @InternalUseOnly
 public final class QueryOperationDeadline {
@@ -44,7 +45,8 @@ public final class QueryOperationDeadline {
 	private QueryOperationDeadline(QueryExecutionDeadline executionDeadline) {
 		this.startNanos = 0L;
 		this.timeoutNanos = 0L;
-		this.deadlineNanos = executionDeadline.deadlineNanos();
+		// A borrowed wall-clock deadline has no absolute timestamp in the monotonic clock domain.
+		this.deadlineNanos = 0L;
 		this.nanoTime = SYSTEM_NANO_TIME;
 		this.executionDeadline = executionDeadline;
 	}
@@ -83,10 +85,12 @@ public final class QueryOperationDeadline {
 	}
 
 	/**
-	 * Returns the remaining budget in nanoseconds, or zero once this deadline has expired.
+	 * Returns the remaining budget in nanoseconds, or zero once this deadline has expired. Millisecond execution
+	 * budgets beyond the nanosecond range saturate at {@link Long#MAX_VALUE}.
 	 */
 	public long remainingNanos() {
-		return executionDeadline == null ? remainingNanos(nanoTime.getAsLong()) : executionDeadline.remainingNanos();
+		return executionDeadline == null ? remainingNanos(nanoTime.getAsLong())
+				: TimeUnit.MILLISECONDS.toNanos(executionDeadline.remainingMillis());
 	}
 
 	private long remainingNanos(long now) {
@@ -101,7 +105,8 @@ public final class QueryOperationDeadline {
 	 * Returns the remaining budget rounded up to a whole millisecond.
 	 */
 	public long remainingMillis() {
-		return ceilConvert(remainingNanos(), TimeUnit.MILLISECONDS.toNanos(1));
+		return executionDeadline == null ? ceilConvert(remainingNanos(), TimeUnit.MILLISECONDS.toNanos(1))
+				: executionDeadline.remainingMillis();
 	}
 
 	/**
@@ -109,7 +114,8 @@ public final class QueryOperationDeadline {
 	 */
 	public int remainingSeconds() {
 		return (int) Math.min(Integer.MAX_VALUE,
-				ceilConvert(remainingNanos(), TimeUnit.SECONDS.toNanos(1)));
+				executionDeadline == null ? ceilConvert(remainingNanos(), TimeUnit.SECONDS.toNanos(1))
+						: ceilConvert(executionDeadline.remainingMillis(), TimeUnit.SECONDS.toMillis(1)));
 	}
 
 	/**
@@ -133,9 +139,15 @@ public final class QueryOperationDeadline {
 			long now = nanoTime.getAsLong();
 			return remainingNanos(now) <= other.remainingNanos(now) ? this : other;
 		}
+		long remainingMillis = remainingMillis();
+		long otherRemainingMillis = other.remainingMillis();
+		if (remainingMillis != otherRemainingMillis) {
+			return remainingMillis < otherRemainingMillis ? this : other;
+		}
 		return remainingNanos() <= other.remainingNanos() ? this : other;
 	}
 
+	/** Absolute timestamp for an owned monotonic budget; borrowed views return zero because no monotonic timestamp exists. */
 	long deadlineNanos() {
 		return deadlineNanos;
 	}

@@ -671,10 +671,10 @@ class TimeLimitIterationTest {
 	@Test
 	void aFailureBeforeTheTimeLimitIsReportedAsItself() {
 		CloseableIteration<String> source = new FailingWhenClosedIteration(new AtomicReference<>(), true);
-		TimeLimitIteration<String> limited = new ClosingTestTimeLimitIteration(source);
-
-		assertThatThrownBy(limited::hasNext).isInstanceOf(IllegalStateException.class)
-				.hasMessage("closed while computing the next element");
+		try (TimeLimitIteration<String> limited = new ClosingTestTimeLimitIteration(source)) {
+			assertThatThrownBy(limited::hasNext).isInstanceOf(IllegalStateException.class)
+					.hasMessage("closed while computing the next element");
+		}
 	}
 
 	@Test

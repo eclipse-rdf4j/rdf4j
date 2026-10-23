@@ -15,7 +15,6 @@ package org.eclipse.rdf4j.common.iteration;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Timer;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.slf4j.Logger;
@@ -65,7 +64,7 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 	protected TimeLimitIteration(CloseableIteration<? extends E> iter, QueryExecutionDeadline deadline) {
 		super(iter);
 		this.deadline = Objects.requireNonNull(deadline, "deadline");
-		this.timeLimitMillis = Math.max(1L, TimeUnit.NANOSECONDS.toMillis(deadline.remainingNanos()));
+		this.timeLimitMillis = Math.max(1L, deadline.remainingMillis());
 		deferCloseDuringActiveCall = true;
 		interruptTask = null;
 	}

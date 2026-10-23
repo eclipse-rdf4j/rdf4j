@@ -28,12 +28,29 @@ class QueryOperationDeadlineTest {
 		QueryExecutionDeadline execution = QueryExecutionDeadline.start(60_000L);
 		try {
 			QueryOperationDeadline budget = QueryOperationDeadline.from(execution);
-			assertThat(budget.deadlineNanos()).isEqualTo(execution.deadlineNanos());
+			assertThat(budget.isBackedBy(execution)).isTrue();
 			assertThat(budget.remainingNanos()).isPositive().isLessThanOrEqualTo(TimeUnit.MINUTES.toNanos(1));
 			execution.close();
 			assertThat(budget.remainingNanos()).isEqualTo(Long.MAX_VALUE);
+			assertThat(budget.remainingMillis()).isEqualTo(Long.MAX_VALUE);
+			assertThat(budget.remainingSeconds()).isEqualTo(Integer.MAX_VALUE);
 		} finally {
 			execution.close();
+		}
+	}
+
+	@Test
+	void borrowedExecutionBudgetPreservesMillisecondRangeAndEarliestSelection() {
+		AtomicLong nanoTime = new AtomicLong(100L);
+		QueryOperationDeadline owned = QueryOperationDeadline.after(Long.MAX_VALUE, TimeUnit.NANOSECONDS,
+				nanoTime::get);
+		try (QueryExecutionDeadline execution = QueryExecutionDeadline.start(Long.MAX_VALUE)) {
+			QueryOperationDeadline borrowed = QueryOperationDeadline.from(execution);
+			assertThat(borrowed.remainingMillis()).isGreaterThan(TimeUnit.NANOSECONDS.toMillis(Long.MAX_VALUE));
+			assertThat(borrowed.remainingNanos()).isEqualTo(Long.MAX_VALUE);
+			assertThat(borrowed.remainingSeconds()).isEqualTo(Integer.MAX_VALUE);
+			assertThat(owned.earliest(borrowed)).isSameAs(owned);
+			assertThat(borrowed.earliest(owned)).isSameAs(owned);
 		}
 	}
 
@@ -42,8 +59,7 @@ class QueryOperationDeadlineTest {
 		try (QueryExecutionDeadline execution = QueryExecutionDeadline.start(60_000L);
 				QueryExecutionDeadline.Scope ignored = execution.enter()) {
 			assertThat(QueryOperationContext.getDeadline()).isPresent();
-			assertThat(QueryOperationContext.getDeadline().orElseThrow().deadlineNanos())
-					.isEqualTo(execution.deadlineNanos());
+			assertThat(QueryOperationContext.getDeadline().orElseThrow().isBackedBy(execution)).isTrue();
 			QueryOperationContext.throwIfDeadlineExpired();
 		}
 		assertThat(QueryOperationContext.getDeadline()).isEmpty();

@@ -2392,6 +2392,29 @@ public class LmdbSailStoreTest {
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
 	void interruptedAsyncFlushCompletesOneConsistentCommitFate(boolean interruptCaller) throws Exception {
+		assertInterruptedAsyncFlushCommitFate(interruptCaller, false);
+	}
+
+	@Test
+	void failedInterruptionRendezvousReleasesNativeOwnerBeforeSinkClose() throws Exception {
+		AssertionError failure = assertThrows(AssertionError.class,
+				() -> assertInterruptedAsyncFlushCommitFate(true, true));
+		assertEquals("injected failure before releasing the native commit", failure.getMessage());
+		try (RepositoryConnection connection = repo.getConnection()) {
+			Statement first = F.createStatement(F.createIRI("urn:interrupted-commit:first"),
+					F.createIRI("urn:interrupted-commit:predicate"),
+					F.createIRI("urn:interrupted-commit:object:first"));
+			Statement later = F.createStatement(F.createIRI("urn:interrupted-commit:second"), first.getPredicate(),
+					F.createIRI("urn:interrupted-commit:object:second"));
+			assertTrue(connection.hasStatement(first, false));
+			connection.add(later);
+			assertTrue(connection.hasStatement(first, false));
+			assertTrue(connection.hasStatement(later, false));
+		}
+	}
+
+	private void assertInterruptedAsyncFlushCommitFate(boolean interruptCaller, boolean failBeforeRelease)
+			throws Exception {
 		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
 		LmdbSailStore backingStore = sail.getBackingStore();
 		backingStore.enableMultiThreading = true;
@@ -2409,9 +2432,7 @@ public class LmdbSailStoreTest {
 				nativeCommitThread.set(Thread.currentThread());
 				commitStarted.countDown();
 				try {
-					if (!allowCommit.await(1, TimeUnit.SECONDS)) {
-						throw new AssertionError("Timed out waiting to finish the interrupted commit");
-					}
+					allowCommit.await();
 				} catch (InterruptedException interrupted) {
 					Thread.currentThread().interrupt();
 					throw new AssertionError(interrupted);
@@ -2428,24 +2449,50 @@ public class LmdbSailStoreTest {
 					flushFailure.set(t);
 				}
 			});
-			assertTrue(commitStarted.await(1, TimeUnit.SECONDS));
-			assertNotSame(flusher, nativeCommitThread.get(),
-					"the interrupt targets the waiting caller, not the native commit owner");
-			if (interruptCaller) {
-				flusher.interrupt();
-			}
-			allowCommit.countDown();
-			flusher.join(2000);
-			assertFalse("interrupted flush must finish after its published commit resolves", flusher.isAlive());
-			if (interruptCaller) {
-				assertTrue("interrupted authoritative flush outcome: " + flushFailure.get(),
-						flushFailure.get() instanceof InterruptedSailException);
-			} else {
-				assertNull(flushFailure.get());
-			}
-			try (SailSink later = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
-				later.approveAll(Set.of(laterCommit));
-				later.flush();
+			try {
+				assertTrue(commitStarted.await(1, TimeUnit.SECONDS));
+				assertNotSame(flusher, nativeCommitThread.get(),
+						"the interrupt targets the waiting caller, not the native commit owner");
+				if (interruptCaller) {
+					flusher.interrupt();
+					// Interrupt delivery alone does not establish that awaitAsyncProgress handled cancellation: the
+					// admitted commit could otherwise finish first. Wait until the caller joins the still-blocked
+					// native owner from rollbackAsyncTransaction, preserving the authoritative commit outcome.
+					boolean joiningNativeOwner = false;
+					long limit = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+					while (!joiningNativeOwner && flusher.isAlive() && System.nanoTime() < limit) {
+						if (flusher.getState() == Thread.State.WAITING) {
+							for (StackTraceElement frame : flusher.getStackTrace()) {
+								joiningNativeOwner |= frame.getClassName().equals(LmdbSailStore.class.getName())
+										&& frame.getMethodName().equals("rollbackAsyncTransaction");
+							}
+						}
+						Thread.onSpinWait();
+					}
+					assertTrue("the caller must handle cancellation before releasing the native commit; failure="
+							+ flushFailure.get(), joiningNativeOwner);
+				}
+				if (failBeforeRelease) {
+					throw new AssertionError("injected failure before releasing the native commit");
+				}
+				allowCommit.countDown();
+				flusher.join(2000);
+				assertFalse("interrupted flush must finish after its published commit resolves", flusher.isAlive());
+				if (interruptCaller) {
+					assertTrue("interrupted authoritative flush outcome: " + flushFailure.get(),
+							flushFailure.get() instanceof InterruptedSailException);
+				} else {
+					assertNull(flushFailure.get());
+				}
+
+				try (SailSink later = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+					later.approveAll(Set.of(laterCommit));
+					later.flush();
+				}
+			} finally {
+				allowCommit.countDown();
+				flusher.join(2000);
+				assertFalse("the caller must settle before its sink can close", flusher.isAlive());
 			}
 		} finally {
 			allowCommit.countDown();

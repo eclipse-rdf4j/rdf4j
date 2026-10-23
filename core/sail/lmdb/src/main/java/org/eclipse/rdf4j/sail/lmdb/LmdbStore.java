@@ -590,7 +590,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			checkTransactionAdmissionDeadline(deadline);
 			if (deadline == null) {
 				txnLockManager.lockInterruptibly();
-			} else if (!txnLockManager.tryLock(deadline.remainingNanos(), TimeUnit.NANOSECONDS)) {
+			} else if (!txnLockManager.tryLock(deadline.remainingMillis(), TimeUnit.MILLISECONDS)) {
 				throw new QueryInterruptedException("Query evaluation took too long");
 			}
 			mutexAcquired = true;
@@ -631,7 +631,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		checkTransactionAdmissionDeadline(deadline);
 		if (deadline == null) {
 			locks.waitForActiveLocks();
-		} else if (!locks.waitForActiveLocks(deadline.remainingNanos(), TimeUnit.NANOSECONDS)) {
+		} else if (!locks.waitForActiveLocks(deadline.remainingMillis(), TimeUnit.MILLISECONDS)) {
 			throw new QueryInterruptedException("Query evaluation took too long");
 		}
 		checkTransactionAdmissionDeadline(deadline);

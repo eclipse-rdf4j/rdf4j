@@ -182,7 +182,8 @@ class LmdbWriterAuthorityTest {
 						assertTrue(coordinatorEntered.await(3, TimeUnit.SECONDS));
 						CountDownLatch deadlineReached = new CountDownLatch(1);
 						executor.schedule(deadlineReached::countDown,
-								Math.max(0, deadline.deadlineNanos() - System.nanoTime()), TimeUnit.NANOSECONDS);
+								Math.max(0, deadline.deadlineMillis() - System.currentTimeMillis()),
+								TimeUnit.MILLISECONDS);
 						assertTrue(deadlineReached.await(3, TimeUnit.SECONDS));
 						releaseCoordinator.countDown();
 						ExecutionException failure = assertThrows(ExecutionException.class,
