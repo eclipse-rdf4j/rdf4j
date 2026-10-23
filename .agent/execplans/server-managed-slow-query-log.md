@@ -13,8 +13,9 @@ An RDF4J Server client can submit a Sail repository configuration containing `sa
 - [done] trace nested runtime file resolution (2026-10-23 07:45Z)
 - [done] implement root-cause path confinement (2026-10-23 08:02Z)
 - [done] verify focused and module behavior (2026-10-23 08:09Z)
-- [in_progress] format review and publish draft
-- [todo] monitor exact published head
+- [done] format review and publish draft (2026-10-23 08:25Z)
+- [in_progress] merge repaired prerequisite and verify
+- [todo] republish and monitor exact head
 
 ## Surprises & Discoveries
 
@@ -65,6 +66,8 @@ Do not edit production before the first in-repository red Failsafe report and pe
 ## Artifacts and Notes
 
 The baseline log, red Failsafe report, green summaries, exact diff, and CI check inventory will be recorded here as they are produced.
+
+Stack repair note (2026-10-23): prerequisite #6242 published test-fixture commit `3711a44` after its first exact-head integration and browser checks exposed missing explicit trust for local test endpoints. Merge that commit without rewriting this published branch, rerun the focused slow-query and affected Server selections, and verify the new #6246 local/remote/PR head and checks. The slow-query production behavior is unchanged by the prerequisite fixture repair.
 
 ## Interfaces and Dependencies
 
