@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
@@ -61,6 +62,7 @@ class LmdbMaintenanceGrowthTest {
 		initial.init();
 		try (SailConnection connection = initial.getConnection()) {
 			connection.begin(IsolationLevels.SNAPSHOT);
+			connection.setNamespace("maintenance-growth", "urn:lmdb:maintenance-growth:");
 			connection.addStatement(subject, PREDICATE, nestedQuoted);
 			connection.commit();
 		} finally {
@@ -114,9 +116,13 @@ class LmdbMaintenanceGrowthTest {
 		assertTrue(reopened.valueStore().resized.get(), "startup retirement recovery must resize the native value map");
 		assertTrue(reopened.valueStore().mapSizeBytes() > VALUE_MAP_BYTES,
 				"the startup recovery must finish with a larger native value map");
+		try (SailConnection connection = reopened.getConnection()) {
+			assertEquals("urn:lmdb:maintenance-growth:", connection.getNamespace("maintenance-growth"),
+					"the existing namespace fixture must be present before startup retirement recovery");
+		}
 		assertAll(
-				() -> assertTrue(reopened.tripleStore().namespacePreflightReadBarrier.get(),
-						"namespace preflight must protect its native sizing snapshot from remapping"),
+				() -> assertNull(reopened.tripleStore().namespacePreflightReadBarrier.get(),
+						"existing native namespaces must not trigger a redundant startup sizing preflight"),
 				() -> assertTrue(reopened.valueStore().preflightReadBarrier.get(),
 						"retirement preflight must protect its native sizing snapshot from remapping"),
 				() -> assertTrue(reopened.valueStore().postResizeReadBarrier.get(),

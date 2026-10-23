@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFHandler;
+import org.eclipse.rdf4j.sail.lmdb.LmdbNativeBulkStore;
 
 final class LmdbBulkLoaderEngine {
 
@@ -73,11 +74,12 @@ final class LmdbBulkLoaderEngine {
 		// Own the target before opening resumable state, and retain it through failure and workspace cleanup.
 		// An existing workspace keeps the compression it recorded; this only chooses it for a new one.
 		try (LmdbBulkLoadGeneration generation = LmdbBulkLoadGeneration.create(loader.target(),
-				loader.publicationHook());
+				loader.publicationHook(), target -> BulkLoadWorkspace.requireCapacityPreparedPublication(target,
+						BulkLoadSettings.forInvocation(loader)));
 				BulkLoadWorkspace workspace = BulkLoadWorkspace.open(loader.target(), loader.temporaryDirectory(),
 						loader.progressListener(), loader.workers(), loader.queueBatches(),
 						loader.compressionFor(formats),
-						BulkLoadSettings.of(loader));
+						BulkLoadSettings.forInvocation(loader));
 				BulkTaskScheduler scheduler = new BulkTaskScheduler(loader.workers(), loader.memoryBudgetBytes(),
 						Math.max(3, loader.maxOpenFiles()))) {
 			try {
@@ -199,13 +201,26 @@ final class LmdbBulkLoaderEngine {
 				workspace.reclaimAfterNativeRecords();
 
 				workspace.startPhase(BulkLoadPhase.WRITE_GENERATION);
+				BulkLoadSettings recorded = workspace.recordedSettings();
+				BulkCapacityPolicy valueCapacity = recorded == null ? loader.valueCapacity() : recorded.valueCapacity();
+				BulkCapacityPolicy tripleCapacity = recorded == null ? loader.tripleCapacity()
+						: recorded.tripleCapacity();
 				NativeStoreWriter.WriteResult writeResult = NativeStoreWriter.write(generation.directory(),
 						loader.config(), loader.format(),
 						nativeValueRecords, statements, staged, loader.memoryBudgetBytes(), loader.maxOpenFiles(),
 						loader.writeTransactionRecords(), loader.writeTransactionBytes(), workspace.compression(),
-						loader.cancellationSignal(), scheduler);
+						loader.cancellationSignal(), scheduler, () -> {
+							workspace.completePhase(BulkLoadPhase.WRITE_GENERATION);
+							workspace.startPhase(BulkLoadPhase.VALIDATE_GENERATION);
+						}, valueCapacity, tripleCapacity, workspace.maximumCanonicalValueBytes());
+				checkCancelled(loader);
+				loader.preparedGenerationWriter().write(generation.directory(), writeResult.preparedConfig());
+				checkCancelled(loader);
+				LmdbNativeBulkStore.requirePreparedGeneration(generation.directory(),
+						writeResult.preparedConfig(), writeResult.validation());
+				workspace.recordPreparedCapacity(valueCapacity, tripleCapacity);
 				workspace.progress(writeResult.storedStatements(), 0L);
-				workspace.completePhase(BulkLoadPhase.WRITE_GENERATION);
+				workspace.completePhase(BulkLoadPhase.VALIDATE_GENERATION);
 
 				long storedStatements = writeResult.storedStatements();
 				long temporaryBytes = workspace.bytesWritten();
