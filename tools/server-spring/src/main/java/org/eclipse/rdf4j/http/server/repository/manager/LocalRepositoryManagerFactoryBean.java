@@ -53,7 +53,8 @@ public class LocalRepositoryManagerFactoryBean
 		Objects.requireNonNull(baseDir, "baseDir must be set");
 		LocalRepositoryManager manager = OpenTelemetrySettings.isEnabled() ? new TracingLocalRepositoryManager(baseDir)
 				: new LocalRepositoryManager(baseDir);
-		manager.setRepositoryConfigCustomizer(ServerManagedRepositoryConfigPolicy::configure);
+		manager.setRepositoryConfigCustomizer(config -> ServerManagedRepositoryConfigPolicy.configure(config,
+				manager.getRepositoryDir(config.getID())));
 		manager.setHttpClient(new ServerServiceHttpClient());
 		manager.init();
 		// only assign once fully initialized, so a failed init() never exposes a partially-initialized manager
