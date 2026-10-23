@@ -5370,9 +5370,8 @@ class TripleStore implements Closeable {
 		}
 		if (autoGrow && growthPolicy.requiresGrowth(mapSize, LmdbUtil.getNewSize(pageSize, writeTxn, 0L),
 				estimatedWriteBytes)) {
-			if (isFrozenReplay()) {
-				throw frozenCapacity(null);
-			}
+			// Soft pressure is advisory: an admitted frozen writer may finish within hard capacity while
+			// managed growth waits for other writing snapshots. Only hard pressure needs its retained replay.
 			requestMapGrowth(estimatedWriteBytes, false);
 		}
 		if (requiresResize(estimatedWriteBytes)) {
@@ -5708,7 +5707,7 @@ class TripleStore implements Closeable {
 	}
 
 	private void requestMapGrowth(long requiredBytes, boolean exhausted) throws IOException {
-		if (isFrozenReplay()) {
+		if (exhausted && isFrozenReplay()) {
 			throw frozenCapacity(null);
 		}
 		LmdbSailStore.MapGrowthRequestListener listener = mapGrowthRequestListener;

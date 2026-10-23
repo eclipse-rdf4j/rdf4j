@@ -1025,6 +1025,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private Object initialImportOverlayRebuildWorker;
 	/** One startup request may await already-scheduled term-index mutations before it captures a dictionary view. */
 	private boolean startupValueOverlayRequested;
+	private CompressedValueOverlay.Options startupValueOverlayOptions;
 	private Object publiclyReleasedOverlayGeneration;
 	private ValueOverlayRegistry.Mutation compressedValueMutation;
 	private volatile ExecutorService valueOverlayWarmupExecutor;
@@ -1377,10 +1378,16 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (!valueStoreInitializationComplete) {
 			throw new IllegalStateException("ValueStore startup initialization is incomplete");
 		}
+		CompressedValueOverlay.Options options = configuredValueOverlayWarmupOptions();
+		if (options == null) {
+			return;
+		}
 		synchronized (valueOverlayBuildAdmission) {
-			if (valueOverlayMaintenanceDeferred || valueOverlayBuildAdmissionClosed) {
+			if (valueOverlayMaintenanceDeferred || valueOverlayBuildAdmissionClosed
+					|| initialImportOverlayRebuildRequest != null || initialImportOverlayRebuildWorker != null) {
 				return;
 			}
+			startupValueOverlayOptions = options;
 			startupValueOverlayRequested = true;
 		}
 		scheduleStartupValueOverlay();
@@ -1392,16 +1399,24 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					|| termIndexMaintenanceCancelled || env == 0) {
 				return;
 			}
-			synchronized (writerAdmission) {
-				if (termMaintenanceWriterActive || termIndexMaintenanceReady
-						&& termIndexMaintenanceFailure == null && !indexRebuildStatus().equals("IDLE")) {
-					return;
-				}
+			if (hasPendingTermIndexMutation()) {
+				return;
 			}
 			// Keep the request visible until the actual future or terminal configuration failure is installed.
-			warmConfiguredValueOverlay();
-			startupValueOverlayRequested = false;
-			valueOverlayBuildAdmission.notifyAll();
+			try {
+				warmConfiguredValueOverlay(null, null, startupValueOverlayOptions);
+			} finally {
+				startupValueOverlayRequested = false;
+				startupValueOverlayOptions = null;
+				valueOverlayBuildAdmission.notifyAll();
+			}
+		}
+	}
+
+	private boolean hasPendingTermIndexMutation() {
+		synchronized (writerAdmission) {
+			return termIndexMaintenanceCancelled || termMaintenanceWriterActive || termIndexMaintenanceReady
+					&& termIndexMaintenanceFailure == null && !indexRebuildStatus().equals("IDLE");
 		}
 	}
 
@@ -3917,6 +3932,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		} finally {
 			signalTermIndexMaintenance();
 			scheduleStartupValueOverlay();
+			signalValueOverlayWriterCompleted();
 		}
 	}
 
@@ -5698,11 +5714,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	 * awaitValueOverlayReady(...) for a deterministic point after which the warm-up has definitely finished
 	 * (successfully, refused for capacity, or cancelled by a concurrent close/write).
 	 */
-	private ValueOverlayWarmup warmConfiguredValueOverlay() {
-		return warmConfiguredValueOverlay(null, null);
+	private ValueOverlayWarmup warmConfiguredValueOverlay(Object request, Object requestedGeneration) {
+		CompressedValueOverlay.Options options = configuredValueOverlayWarmupOptions();
+		return options == null ? null : warmConfiguredValueOverlay(request, requestedGeneration, options);
 	}
 
-	private ValueOverlayWarmup warmConfiguredValueOverlay(Object request, Object requestedGeneration) {
+	private CompressedValueOverlay.Options configuredValueOverlayWarmupOptions() {
 		valueOverlayWarmupFailure = null;
 		if (valueOverlayMaintenanceDeferred) {
 			return null;
@@ -5731,15 +5748,18 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			logger.warn("Ignoring negative rdf4j.lmdb.valueOverlay.maxBytes value '{}': using LMDB", budgetText);
 			return null;
 		}
-		CompressedValueOverlay.Options options;
 		try {
 			int reverseSlots = Integer.parseInt(System.getProperty("rdf4j.lmdb.valueOverlay.reverseSlots", "1048576"));
-			options = new CompressedValueOverlay.Options(budget, reverseSlots, 32, 64 << 10, 1 << 20, true, true);
+			return new CompressedValueOverlay.Options(budget, reverseSlots, 32, 64 << 10, 1 << 20, true, true);
 		} catch (IllegalArgumentException e) {
 			valueOverlayWarmupFailure = "Value overlay warm-up options invalid: " + e.getMessage();
 			logger.warn("Invalid compressed ValueStore overlay warm-up options; using LMDB", e);
 			return null;
 		}
+	}
+
+	private ValueOverlayWarmup warmConfiguredValueOverlay(Object request, Object requestedGeneration,
+			CompressedValueOverlay.Options options) {
 		synchronized (valueOverlayBuildAdmission) {
 			if (valueOverlayMaintenanceDeferred || valueOverlayBuildAdmissionClosed || env == 0
 					|| request != null && (initialImportOverlayRebuildRequest != request
@@ -5803,6 +5823,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			valueOverlayMaintenanceDeferred = true;
 			valueOverlayCaptureDeferred = true;
 			startupValueOverlayRequested = false;
+			startupValueOverlayOptions = null;
 			initialImportOverlayRebuildRequest = null;
 			publiclyReleasedOverlayGeneration = null;
 			valueOverlayBuildAdmission.notifyAll();
@@ -5869,7 +5890,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			request = initialImportOverlayRebuildRequest;
 			if (request == null || initialImportOverlayRebuildWorker != null || valueOverlayMaintenanceDeferred
 					|| valueOverlayBuildAdmissionClosed || env == 0 || valueLookupGeneration == null
-					|| valueLookupGeneration != publiclyReleasedOverlayGeneration) {
+					|| valueLookupGeneration != publiclyReleasedOverlayGeneration || hasPendingTermIndexMutation()) {
 				return;
 			}
 			generation = publiclyReleasedOverlayGeneration;
@@ -7099,7 +7120,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			long occupied = LmdbUtil.getNewSize(pageSize, txn, 0L);
 			boolean growthRecommended = growthPolicy.requiresGrowth(mapSize, occupied, requiredSize);
 			boolean capacityRequired = growthPolicy.hardCapacityRequired(mapSize, occupied, requiredSize);
-			if (isFrozenReplay() && (growthRecommended || capacityRequired)) {
+			// Soft pressure schedules the ordinary writer drain; a complete frozen input needs abort/replay
+			// only when allocation would violate hard capacity. Other writing snapshots remain pinned meanwhile.
+			if (isFrozenReplay() && capacityRequired) {
 				throw frozenCapacity(null);
 			}
 			if (growthRecommended && mapGrowthRequestListener != null) {
@@ -14263,6 +14286,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			synchronized (valueOverlayBuildAdmission) {
 				valueOverlayBuildAdmissionClosed = true;
 				startupValueOverlayRequested = false;
+				startupValueOverlayOptions = null;
 				initialImportOverlayRebuildRequest = null;
 				publiclyReleasedOverlayGeneration = null;
 				valueOverlayBuildAdmission.notifyAll();

@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -35,6 +36,8 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Isolated;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** The automatic startup value-overlay warm-up must not block Sail/ValueStore initialization. */
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
@@ -69,6 +72,66 @@ class ValueStoreAsyncOverlayWarmupTest {
 			}
 			store.commit();
 		} finally {
+			store.close();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	@Timeout(30)
+	void queuedStartupWarmupIsCanceledByImportDeferralOrClose(boolean initialImport, @TempDir File dataDir)
+			throws Exception {
+		File dir = new File(dataDir, "values");
+		seed(dir);
+		System.setProperty(BUDGET_PROPERTY, "33554432");
+		CountDownLatch termWriter = new CountDownLatch(1);
+		CountDownLatch releaseTermWriter = new CountDownLatch(1);
+		var store = new ValueStore(dir, new LmdbStoreConfig().setValueOverlayEnabled(true)
+				.setTripleTermIndexes("spoc,cspo,posc"));
+		try {
+			store.setTermIndexMaintenanceObserver(phase -> {
+				if (phase.equals("dual-write-registered")) {
+					termWriter.countDown();
+					try {
+						assertTrue(releaseTermWriter.await(10, TimeUnit.SECONDS));
+					} catch (InterruptedException interrupted) {
+						Thread.currentThread().interrupt();
+					}
+				}
+			});
+			store.startIndexRebuildAfterStoreInitialization();
+			assertTrue(termWriter.await(10, TimeUnit.SECONDS));
+			store.startValueOverlayWarmupAfterStoreInitialization();
+			assertTrue(store.hasPendingValueOverlayMaintenance());
+			if (initialImport) {
+				// Deferral must cancel a request without waiting for the held predecessor or opening a builder.
+				store.deferValueOverlayMaintenance();
+				store.resumeValueOverlayCapture();
+				store.rebuildValueOverlayAfterInitialImport();
+				assertFalse(store.awaitValueOverlayReady(0, TimeUnit.SECONDS));
+				releaseTermWriter.countDown();
+				assertTrue(store.awaitIndexRebuild(10, TimeUnit.SECONDS), store.indexRebuildStatus());
+				assertTrue(store.awaitValueOverlayReady(10, TimeUnit.SECONDS),
+						"the acknowledged import rebuild must resume after the earlier term mutation finishes");
+			} else {
+				CompletableFuture<Boolean> result = new CompletableFuture<>();
+				Thread waiter = Thread.ofPlatform().start(() -> {
+					try {
+						result.complete(store.awaitValueOverlayReady(20, TimeUnit.SECONDS));
+					} catch (Throwable failure) {
+						result.completeExceptionally(failure);
+					}
+				});
+				try {
+					store.close();
+					assertFalse(result.get(10, TimeUnit.SECONDS));
+				} finally {
+					waiter.interrupt();
+					waiter.join(TimeUnit.SECONDS.toMillis(10));
+				}
+			}
+		} finally {
+			releaseTermWriter.countDown();
 			store.close();
 		}
 	}
