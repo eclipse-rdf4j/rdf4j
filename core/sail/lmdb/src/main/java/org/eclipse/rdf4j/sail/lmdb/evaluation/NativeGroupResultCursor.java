@@ -26,6 +26,7 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 	private final NativeExecutionContext context;
 	private final NativeExecutionContext.Lease lease;
 	private final boolean closeContext;
+	private final boolean closeAggregateContext;
 	private final NativeExecutionPhaseEvent.InputOwner inputPhases;
 	private RowState row;
 	private RowCursor input;
@@ -33,11 +34,15 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 	private NativeResultCursor results;
 	private GroupKey currentKey;
 	private AggState currentState;
+	private KernelRuntime.AggregateMemory streamingMemory;
+	private KernelRuntime.AggregateMemory resultMemory;
+	private long resultBytes;
 	private AggregateDistinctChannels channels;
 	private boolean initialized, streaming, inputDone, pendingInput;
 	private boolean active, closeRequested, cleanupStarted, completed;
 	private int probeTicks;
 	private NativeExecutionPhaseEvent.Span phase;
+	private Throwable terminalFailure;
 
 	NativeGroupResultCursor(NativeGroupIteration iteration, NativeExecutionContext context, boolean closeContext) {
 		this(null, iteration, context, closeContext, null);
@@ -48,16 +53,24 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 		this(owner, iteration, context, closeContext, null);
 	}
 
-	private NativeGroupResultCursor(NativeGroupStep owner, NativeGroupIteration iteration,
+	NativeGroupResultCursor(NativeGroupStep owner, NativeGroupIteration iteration,
 			NativeExecutionContext context,
 			boolean closeContext, GroupingPlan fixedPlan) {
+		this(owner, iteration, context, closeContext, fixedPlan, fixedPlan == null);
+	}
+
+	NativeGroupResultCursor(NativeGroupStep owner, NativeGroupIteration iteration, NativeExecutionContext context,
+			boolean closeContext, GroupingPlan fixedPlan, boolean closeAggregateContext) {
 		this.owner = owner;
 		this.fixedPlan = fixedPlan;
 		this.iteration = iteration;
 		this.context = context;
 		this.closeContext = closeContext;
+		this.closeAggregateContext = closeAggregateContext;
 		this.lease = context == null || !closeContext ? null : context.retainLease();
-		this.inputPhases = fixedPlan == null ? NativeExecutionPhaseEvent.inputOwner(cancellation()) : null;
+		this.inputPhases = fixedPlan == null || closeAggregateContext
+				? NativeExecutionPhaseEvent.inputOwner(cancellation())
+				: null;
 	}
 
 	@Override
@@ -73,6 +86,9 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 	@Override
 	public NativeResultRow next() {
 		synchronized (this) {
+			if (terminalFailure != null) {
+				NativeContextClosingIteration.throwFailure(terminalFailure);
+			}
 			if (closeRequested) {
 				return null;
 			}
@@ -86,6 +102,10 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 		NativeExecutionContext.Lease activeLease = null;
 		try (NativeCancellationToken.Scope ignored = cancellation().enter();
 				NativeExecutionPhaseEvent.InputScope inputScope = inputPhases == null ? null : inputPhases.enter()) {
+			if (resultBytes != 0L) {
+				resultMemory.release(resultBytes);
+				resultBytes = 0L;
+			}
 			if (context != null && lease == null) {
 				activeLease = context.retainActiveLease();
 			}
@@ -128,6 +148,7 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 			failure = finishSelection(failure);
 		}
 		if (failure != null) {
+			retainTerminalFailure(failure);
 			NativeContextClosingIteration.throwFailure(failure);
 		}
 		return result;
@@ -149,8 +170,18 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 	}
 
 	static GroupingPlan orderedPlan(NativeGroupIteration iteration, RowState row) {
-		if (iteration.groupSlots.length == 0 || !allowsReorderedGrouping(iteration)
-				|| !canonicalStoredDomain(iteration)) {
+		if (iteration.groupSlots.length == 0 || !canonicalStoredDomain(iteration)) {
+			return null;
+		}
+		NativeAggregateDistinctPlan current = LmdbNativeOrderPlanner.aggregateInCurrentOrder(iteration.arg,
+				iteration.groupSlots, iteration.aggregates, row);
+		if (LmdbNativeOrderPlanner.completeGroupPrefix(current, iteration.groupSlots)
+				&& boundedMembership(current.channels)
+				&& NativeTypedGroupStore.supports(iteration.aggregates)) {
+			return new GroupingPlan(iteration.arg, current.channels, true,
+					LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS);
+		}
+		if (!allowsReorderedGrouping(iteration)) {
 			return null;
 		}
 		NativeAggregateDistinctPlan orderedDistinct = LmdbNativeOrderPlanner.aggregate(iteration.arg,
@@ -173,7 +204,7 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 
 	private void initialize() throws Exception {
 		initialized = true;
-		if (fixedPlan == null) {
+		if (fixedPlan == null || closeAggregateContext) {
 			phase = NativeExecutionPhaseEvent.startDetached("group", cancellation());
 		}
 		row = new RowState(iteration.source, iteration.layout, iteration.base, iteration.explainTarget,
@@ -194,6 +225,10 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 		channels = plan.channels();
 		streaming = seeded && plan.streaming();
 		if (streaming) {
+			streamingMemory = KernelRuntime.AggregateMemory
+					.forLedger(row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()));
+			streamingMemory.reserve(Math.addExact(512L, Math.multiplyExact(128L, iteration.aggregates.length)));
+			row.encounterOrderRequired |= !allowsReorderedGrouping(iteration);
 			input = row.aggregateInput(plan.input().open(row));
 			LmdbNativeExplain.recordExecutionPath(iteration.explainTarget, plan.tag());
 			return;
@@ -223,7 +258,7 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 		return source.hasCanonicalIds();
 	}
 
-	private static boolean allowsReorderedGrouping(NativeGroupIteration iteration) {
+	static boolean allowsReorderedGrouping(NativeGroupIteration iteration) {
 		for (AggregateSpec aggregate : iteration.aggregates) {
 			if (!aggregate.reducer.canReorderInput()) {
 				return false;
@@ -250,15 +285,14 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 			cancellation().check();
 			pendingInput = false;
 			if (currentKey != null && !iteration.sameKey(currentKey, row, iteration.groupSlots)) {
-				NativeResultRow result = iteration.toPhysicalRow(currentKey, currentState, true);
-				currentKey = null;
-				currentState = null;
+				NativeResultRow result = finishCurrentGroup();
 				pendingInput = true;
 				return result;
 			}
 			if (currentKey == null) {
 				currentKey = iteration.groupKey(row);
-				currentState = new AggState(iteration.aggregates, 0, iteration.aggContext, channels);
+				currentState = AggState.bounded(iteration.aggregates, 0, iteration.aggContext, channels,
+						cancellation(), row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()));
 			}
 			currentState.add(row, input instanceof FactorizedRowCursor factorized ? factorized.multiplicity() : 1L);
 		}
@@ -267,10 +301,57 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 		if (currentKey == null) {
 			return null;
 		}
-		NativeResultRow result = iteration.toPhysicalRow(currentKey, currentState, true);
-		currentKey = null;
+		return finishCurrentGroup();
+	}
+
+	private NativeResultRow finishCurrentGroup() {
+		AggState state = currentState;
+		GroupKey key = currentKey;
 		currentState = null;
-		return result;
+		currentKey = null;
+		Throwable failure = null;
+		try (NativeExecutionPhaseEvent.Span render = NativeExecutionPhaseEvent.start("render", cancellation())) {
+			NativeResultRow result = iteration.toPhysicalRow(key, state, true);
+			retainCurrentResult(result);
+			cancellation().check();
+			render.complete();
+			return result;
+		} catch (RuntimeException | Error problem) {
+			failure = problem;
+			throw problem;
+		} finally {
+			Throwable closed = KernelRuntime.closeResource(state::closeExternal, failure);
+			if (closed != failure) {
+				NativeContextClosingIteration.throwFailure(closed);
+			}
+		}
+	}
+
+	/** A streamed ordinary row takes ownership before its reducer is closed; advance/close retires that row. */
+	private void retainCurrentResult(NativeResultRow result) {
+		long bytes = 128L + 64L * result.schema().size();
+		for (int index = 0; index < result.schema().size(); index++) {
+			cancellation().poll(index);
+			NativeResultCell cell = result.cell(index);
+			if (cell.state() == NativeResultCell.State.BOUND && cell.kind() == NativeResultCell.Kind.RDF_TERM) {
+				long owned = AggContext.ownedValueBytes(cell.value());
+				bytes = Math.addExact(bytes, owned < 0L
+						? NativeRuntimeValueTable.retainedValueBytes(cell.value(), 0)
+						: owned);
+			}
+		}
+		if (resultMemory == null) {
+			resultMemory = KernelRuntime.AggregateMemory.forLedger(
+					row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()));
+		}
+		resultMemory.reserve(bytes);
+		resultBytes = bytes;
+	}
+
+	private synchronized void retainTerminalFailure(Throwable failure) {
+		if (terminalFailure == null) {
+			terminalFailure = failure;
+		}
 	}
 
 	@Override
@@ -297,12 +378,22 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 		if (cleanup) {
 			Throwable failure = finishSelection(cleanup(null));
 			if (failure != null) {
+				retainTerminalFailure(failure);
 				NativeContextClosingIteration.throwFailure(failure);
 			}
 		}
 	}
 
 	private Throwable cleanup(Throwable failure) {
+		failure = KernelRuntime.closeResource(resultMemory, failure);
+		resultMemory = null;
+		resultBytes = 0L;
+		if (currentState != null) {
+			failure = KernelRuntime.closeResource(currentState::closeExternal, failure);
+			currentState = null;
+		}
+		failure = KernelRuntime.closeResource(streamingMemory, failure);
+		streamingMemory = null;
 		failure = KernelRuntime.closeResource(results, failure);
 		failure = KernelRuntime.closeResource(input, failure);
 		failure = KernelRuntime.closeResource(table, failure);
@@ -310,7 +401,7 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 			failure = KernelRuntime.closeResource(alternative, failure);
 		}
 		alternatives.clear();
-		if (fixedPlan == null) {
+		if (closeAggregateContext) {
 			failure = KernelRuntime.closeResource(iteration.aggContext::close, failure);
 		}
 		if (row != null) {

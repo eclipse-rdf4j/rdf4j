@@ -389,6 +389,51 @@ final class LmdbNativeOrderPlanner {
 		return bestPlan.specialized() ? bestPlan : fallback;
 	}
 
+	/** Observes the producer's existing order without changing its tree, join order or scan request. */
+	static NativeAggregateDistinctPlan aggregateInCurrentOrder(SlotPlan input, int[] groups, AggregateSpec[] specs,
+			RowState row) {
+		NativeSlotOrder order = SlotPlan.encounterOrderReplaySafe(input) ? currentOrder(input, row)
+				: NativeSlotOrder.NONE;
+		return assess(new NativeOrderedPlan(input, order), groups, AggregateDistinctChannels.sequential(specs), row);
+	}
+
+	private static NativeSlotOrder currentOrder(SlotPlan input, RowState row) {
+		if (input instanceof PatternPlan pattern) {
+			// Default index metadata may describe an LMDB fallback rather than the cursor actually opened.
+			// Encounter-order execution can also select that fallback after an adjacency order was described.
+			// Only an explicit request binds this observation to the source's ordered-cursor contract.
+			if (pattern.statementOrder == null) {
+				return NativeSlotOrder.NONE;
+			}
+			return orderedPattern(pattern, pattern.statementOrder, row).order;
+		}
+		if (input instanceof FilterPlan filter) {
+			return currentOrder(filter.arg, row);
+		}
+		if (input instanceof ExtensionPlan extension) {
+			return currentOrder(extension.arg, row).withAliases(extension.copies);
+		}
+		if (input instanceof JoinPlan join) {
+			if (join.left instanceof SingletonPlan) {
+				return currentOrder(join.right, row);
+			}
+			if (join.right instanceof SingletonPlan) {
+				return currentOrder(join.left, row);
+			}
+			return currentOrder(join.left, row).withBarrier();
+		}
+		if (input instanceof LeftJoinPlan join) {
+			return currentOrder(join.left, row).withBarrier();
+		}
+		if (input instanceof MinusPlan minus) {
+			return currentOrder(minus.left, row);
+		}
+		if (input instanceof MultiJoinPlan multi && multi.children.length == 1 && multi.filters.length == 0) {
+			return currentOrder(multi.children[0], row);
+		}
+		return NativeSlotOrder.NONE;
+	}
+
 	private static NativeAggregateDistinctPlan assess(NativeOrderedPlan ordered, int[] groupSlots,
 			AggregateDistinctChannels base, RowState row) {
 		NativeDistinctChannelMode[] modes = Arrays.copyOf(base.modes, base.modes.length);

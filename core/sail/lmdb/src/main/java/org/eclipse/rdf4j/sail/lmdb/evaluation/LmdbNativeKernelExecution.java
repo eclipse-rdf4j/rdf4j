@@ -239,6 +239,42 @@ final class LmdbNativeKernelExecution {
 	static String aggregateRouteForExplanation(SlotPlan arg, RowState row, int[] groupSlots,
 			AggregateSpec[] aggregates, ValueExpr havingCondition, boolean interpreted, boolean strictCompare,
 			boolean allowFixedContexts, TupleExpr explainTarget) {
+		AggregateAdmission admission = aggregateAdmission(arg, row, groupSlots, aggregates, havingCondition,
+				interpreted, strictCompare, allowFixedContexts, explainTarget);
+		return admission == null ? null : admission.route();
+	}
+
+	/** Route and physical proof come from the very same lowering, including a compiled scan retry. */
+	record AggregateAdmission(String route, LmdbNativeKernelLowering.Lowered lowered) {
+		NativeAggregatePhysicalPlan physicalPlan(SlotPlan input, boolean parallel) {
+			// A single expanded adjacency or exact quad scan emits ordinary rows. A keys-only domain, PlanFactors,
+			// mixed pipeline or aggregate projection has a different grain and deliberately retains an unknown quote.
+			if (!(input instanceof PatternPlan) || lowered.kernel.pipeline.size() != 1
+					|| lowered.kernel.aggregateProjections != null
+					|| !(lowered.kernel.terminal instanceof LmdbNativeKernelIr.Aggregate aggregate)) {
+				return null;
+			}
+			LmdbNativeKernelIr.Node producer = lowered.kernel.pipeline.get(0);
+			if (!(producer instanceof LmdbNativeKernelIr.ScanQuad)
+					&& !(producer instanceof LmdbNativeKernelIr.EnumerateAdjKeys keys && keys.valueCol >= 0)) {
+				return null;
+			}
+			boolean orderedEvents = false;
+			if (parallel) {
+				for (int index = 0; index < aggregate.outputs.length; index++) {
+					orderedEvents |= aggregate.outputs[index].kind == LmdbNativeKernelIr.AGG_ROW_STATE
+							&& lowered.bindings.groupLayout.outs[index].spec.reducer.mergeLaw != NativeReducerCapabilities.MergeLaw.ELIGIBLE_SAMPLE;
+				}
+			}
+			return new NativeAggregatePhysicalPlan(input,
+					orderedEvents ? NativeAggregatePhysicalPlan.Retention.BOUNDED_EVENTS
+							: NativeAggregatePhysicalPlan.Retention.RETAINED_GROUPS);
+		}
+	}
+
+	static AggregateAdmission aggregateAdmission(SlotPlan arg, RowState row, int[] groupSlots,
+			AggregateSpec[] aggregates, ValueExpr havingCondition, boolean interpreted, boolean strictCompare,
+			boolean allowFixedContexts, TupleExpr explainTarget) {
 		LmdbNativeKernelIr.Having having = LmdbNativeKernelLowering.recognizeHaving(havingCondition, aggregates);
 		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerAggregate(arg, row, groupSlots,
 				aggregates, having, explainTarget, false, false, strictCompare, allowFixedContexts);
@@ -258,7 +294,7 @@ final class LmdbNativeKernelExecution {
 			recordAggregateLoweringAdmissionDecline(row, explainTarget, interpreted, false, true);
 			return null;
 		}
-		return aggregateRoute(interpreted, lowered.kernel.requirements);
+		return new AggregateAdmission(aggregateRoute(interpreted, lowered.kernel.requirements), lowered);
 	}
 
 	private static void recordAggregateLoweringAdmissionDecline(RowState row, TupleExpr explainTarget,

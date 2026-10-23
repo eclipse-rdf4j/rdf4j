@@ -20,6 +20,7 @@ import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.LongConsumer;
 import java.util.function.UnaryOperator;
 
 import org.eclipse.rdf4j.model.Value;
@@ -298,6 +299,12 @@ final class NativeExpressionDomain implements AutoCloseable {
 	private NativeExpressionDomain(NativeScalarPlan plan, Kind kind, NativeExpressionDomainPolicy.Mode mode,
 			LmdbQueryMemoryManager.QueryLedger ledger,
 			NativeCancellationToken cancellation, UnaryOperator<Value> representative) {
+		this(plan.dependencyMask(), kind, mode, ledger, cancellation, representative);
+	}
+
+	private NativeExpressionDomain(long dependencyMask, Kind kind, NativeExpressionDomainPolicy.Mode mode,
+			LmdbQueryMemoryManager.QueryLedger ledger,
+			NativeCancellationToken cancellation, UnaryOperator<Value> representative) {
 		this.kind = kind;
 		this.mode = mode;
 		this.cancellation = cancellation;
@@ -305,9 +312,9 @@ final class NativeExpressionDomain implements AutoCloseable {
 		this.maxBytes = NativeCountGroupStore.configuredMaxBytes();
 		this.admitted = memory.tryReserve(WORKSPACE_BYTES);
 		if (admitted) {
-			dependencies = new int[Long.bitCount(plan.dependencyMask())];
+			dependencies = new int[Long.bitCount(dependencyMask)];
 			int position = 0;
-			for (long reads = plan.dependencyMask(); reads != 0L; reads &= reads - 1L) {
+			for (long reads = dependencyMask; reads != 0L; reads &= reads - 1L) {
 				dependencies[position++] = Long.numberOfTrailingZeros(reads);
 			}
 			scratch = new long[dependencies.length];
@@ -316,6 +323,137 @@ final class NativeExpressionDomain implements AutoCloseable {
 			}
 			codec = new NativeSpillValueCodec(cancellation, representative, () -> LmdbNativeProbeDeadline.poll(0));
 		}
+	}
+
+	/** The same exact tuple arena/index can admit membership without inventing an expression or evaluating it. */
+	static final class Membership implements AutoCloseable {
+		private final NativeExpressionDomain store;
+		private long size;
+
+		Membership(int width, LmdbQueryMemoryManager.QueryLedger ledger, NativeCancellationToken cancellation) {
+			if (width < 0 || width > Long.SIZE) {
+				throw new IllegalArgumentException("Invalid exact tuple width");
+			}
+			long mask = width == Long.SIZE ? -1L : (1L << width) - 1L;
+			store = new NativeExpressionDomain(mask, Kind.ID, NativeExpressionDomainPolicy.Mode.HASHED, ledger,
+					cancellation, UnaryOperator.identity());
+			if (!store.admitted) {
+				store.close();
+				throw new KernelRuntime.AllocationDeniedException();
+			}
+		}
+
+		boolean add(long[] exactKey, long representativeId) {
+			boolean fresh = store.addMember(exactKey, representativeId);
+			if (fresh) {
+				size = Math.addExact(size, 1L);
+			}
+			return fresh;
+		}
+
+		long size() {
+			return size;
+		}
+
+		void forEachId(LongConsumer consumer) {
+			store.forEachMember(consumer);
+		}
+
+		@Override
+		public void close() {
+			store.close();
+		}
+	}
+
+	private synchronized boolean addMember(long[] exactKey, long representativeId) {
+		checkAvailable();
+		if (exactKey.length != scratch.length) {
+			throw new IllegalArgumentException("Exact tuple width differs from membership recipe");
+		}
+		try {
+			check();
+			long hash = seed;
+			for (int position = 0; position < scratch.length; position++) {
+				poll(position);
+				scratch[position] = exactKey[position];
+				hash = mix(hash ^ mix(exactKey[position]));
+			}
+			if ((payload == null ? findMemory(hash) : findDisk(hash)) != MISSING) {
+				check();
+				return false;
+			}
+			remember(hash, representativeId);
+			check();
+			return true;
+		} catch (Throwable failure) {
+			failMembership(failure);
+			throw new AssertionError("unreachable");
+		}
+	}
+
+	private synchronized void forEachMember(LongConsumer consumer) {
+		checkAvailable();
+		try {
+			if (payload == null) {
+				for (int slot = 0; slot < capacity; slot++) {
+					poll(slot);
+					if (occupied[slot]) {
+						consumer.accept((Long) outcomes[slot]);
+					}
+				}
+			} else {
+				for (long slot = 0L; slot < diskCapacity; slot++) {
+					poll((int) slot);
+					long offset = entry(index, slot);
+					if (offset != 0L) {
+						payload.seek(offset - 1L + Long.BYTES * (1L + scratch.length));
+						consumer.accept((Long) readOutcome());
+						readIo(Long.BYTES);
+					}
+				}
+			}
+			check();
+		} catch (Throwable failure) {
+			failMembership(failure);
+		}
+	}
+
+	private void checkAvailable() {
+		if (terminalFailure != null) {
+			NativeContextClosingIteration.throwFailure(terminalFailure);
+		}
+		if (closed) {
+			throw new IllegalStateException("Exact tuple domain is closed");
+		}
+	}
+
+	private void failMembership(Throwable failure) {
+		if (failure instanceof IOException io) {
+			failure = new UncheckedIOException("Exact membership spill failed", io);
+		}
+		terminalFailure = retainCleanup(failure, KernelRuntime.closeResource(this, null));
+		NativeContextClosingIteration.throwFailure(terminalFailure);
+	}
+
+	private void remember(long hash, Object outcome) throws IOException {
+		if (payload != null) {
+			appendDisk(hash, scratch, 0, outcome);
+			return;
+		}
+		long bytes = outcomeBytes(outcome);
+		if (bytes < 0L || !ensureCapacity() || bytes > maxBytes - WORKSPACE_BYTES - arenaBytes - payloadBytes
+				|| !memory.tryReserve(bytes)) {
+			spill();
+			appendDisk(hash, scratch, 0, outcome);
+			return;
+		}
+		payloadBytes += bytes;
+		int slot = memorySlot(hash);
+		System.arraycopy(scratch, 0, keys, slot * dependencies.length, dependencies.length);
+		hashes[slot] = hash;
+		outcomes[slot] = outcome;
+		occupied[slot] = true;
+		size++;
 	}
 
 	private synchronized Object evaluate(LmdbNativeSlotReader row, Object evaluator) {
@@ -350,23 +488,8 @@ final class NativeExpressionDomain implements AutoCloseable {
 			checkReader(row);
 			if (mode == NativeExpressionDomainPolicy.Mode.LAST_TUPLE) {
 				rememberLast(outcome);
-			} else if (payload != null) {
-				appendDisk(hash, scratch, 0, outcome);
 			} else {
-				long bytes = outcomeBytes(outcome);
-				if (bytes < 0L || !ensureCapacity() || bytes > maxBytes - WORKSPACE_BYTES - arenaBytes - payloadBytes
-						|| !memory.tryReserve(bytes)) {
-					spill();
-					appendDisk(hash, scratch, 0, outcome);
-				} else {
-					payloadBytes += bytes;
-					int slot = memorySlot(hash);
-					System.arraycopy(scratch, 0, keys, slot * dependencies.length, dependencies.length);
-					hashes[slot] = hash;
-					outcomes[slot] = outcome;
-					occupied[slot] = true;
-					size++;
-				}
+				remember(hash, outcome);
 			}
 			return outcome;
 		} catch (Throwable failure) {

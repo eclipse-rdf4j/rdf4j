@@ -56,6 +56,11 @@ final class NativeAggregateCostQuotes {
 	}
 
 	NativeAggregateCostQuotes(NativeGroupIteration owner, RowState row, StringBuilder sharedTelemetry) {
+		this(owner, row, sharedTelemetry, true);
+	}
+
+	NativeAggregateCostQuotes(NativeGroupIteration owner, RowState row, StringBuilder sharedTelemetry,
+			boolean publish) {
 		this.owner = owner;
 		this.row = row;
 		target = owner.explainTarget;
@@ -78,7 +83,7 @@ final class NativeAggregateCostQuotes {
 		retainedGroups = owner.groupSlots.length != 0 || distinct != 0 || fullConcat;
 		outputs = owner.groupSlots.length == 0 && owner.havingCondition == null ? 1D : Double.NaN;
 		recordBytes = 8L * (row.slots.length + (domain == null ? 0 : domain.dependencies.length) + 4L);
-		telemetry = target != null && target.isRuntimeTelemetryEnabled()
+		telemetry = publish && target != null && target.isRuntimeTelemetryEnabled()
 				? sharedTelemetry == null ? new StringBuilder("[") : sharedTelemetry
 				: null;
 	}
@@ -91,9 +96,12 @@ final class NativeAggregateCostQuotes {
 		offered.add(proposal);
 		registerSharedHeaderProof(proposal);
 		LmdbNativeCostEstimate legacy = proposal.adaptiveEstimate(-1D);
-		LmdbNativeCostEstimate physical = physical(proposal.tag, legacy);
+		NativeAggregatePhysicalPlan actual = proposal.aggregatePhysicalPlan();
+		proposal.observeAggregateOpening(NativeAggregateExecutionEvent.describe(owner, displayTag, actual));
+		LmdbNativeCostEstimate physical = physical(proposal.tag,
+				legacy == null ? proposal.directTimingEstimate() : legacy, actual);
 		LmdbNativeCostEstimate estimate = physical == null ? legacy : physical;
-		String representation = physicalRepresentation();
+		String representation = physicalRepresentation(actual);
 		if (representation != null) {
 			if (estimate == null) {
 				estimate = proposal.directTimingEstimate();
@@ -137,7 +145,7 @@ final class NativeAggregateCostQuotes {
 	}
 
 	/** The carrier is part of physical identity; a summary producer must not train a full RDF producer's model. */
-	private String physicalRepresentation() {
+	private String physicalRepresentation(NativeAggregatePhysicalPlan actual) {
 		boolean summaryInputs = SlotPlan.requiresPhysicalCells(owner.arg);
 		boolean summaryResults = false;
 		StringBuilder demands = new StringBuilder(";aggregateCells=");
@@ -148,7 +156,14 @@ final class NativeAggregateCostQuotes {
 			demands.append(aggregate.resultDemand);
 			summaryResults |= aggregate.resultDemand != NativeAggregateResultDemand.FULL_VALUE;
 		}
-		return summaryInputs || summaryResults ? demands.append(";physicalInputs=").append(summaryInputs).toString()
+		if (actual != null) {
+			demands.append(";inputGrain=ROWS;retention=")
+					.append(actual.retention())
+					.append(";producer=")
+					.append(NativeAggregatePhysicalPlan.inputProperties(actual.input()));
+		}
+		return summaryInputs || summaryResults || actual != null
+				? demands.append(";physicalInputs=").append(summaryInputs).toString()
 				: null;
 	}
 
@@ -251,24 +266,26 @@ final class NativeAggregateCostQuotes {
 	private record HeaderEnumeration(long predicate, boolean bySubject, long units) {
 	}
 
-	private LmdbNativeCostEstimate physical(String strategy, LmdbNativeCostEstimate legacy) {
+	LmdbNativeCostEstimate physical(String strategy, LmdbNativeCostEstimate legacy,
+			NativeAggregatePhysicalPlan actual) {
 		if (legacy == null) {
 			return null;
 		}
 		boolean dependency = NativeTermDomainPlan.PATH.equals(strategy) && domain != null;
 		boolean ordinary = LmdbNativeAttemptMetrics.PATH_NESTED_LOOP.equals(strategy) && ordinaryRows;
-		if (!dependency && !ordinary) {
+		if (!dependency && !ordinary && actual == null) {
 			// The quoted input is not proof of a compressed/parallel candidate's actual physical grain.
 			return null;
 		}
-		Input description = dependency ? dependencyInput : input;
+		Input description = actual != null ? describe(actual.input(), row, row.boundMask())
+				: dependency ? dependencyInput : input;
 		if (description == null) {
 			return null;
 		}
 		double rows = description.rows;
 		LmdbNativeCostVector.Builder total = LmdbNativeCostVector.builder().add(OPEN, 1D);
 		description.addTo(total);
-		double minimum = dependency && rows > 0D ? 1D : rows;
+		double minimum = dependency && rows > 0D ? 1D : description.lowRows;
 		if (dependency) {
 			// Cardinality of repeated dependency tuples is unknown before opening. Retain an explicit interval;
 			// prefix availability proves absence of sorting, not any particular compression ratio.
@@ -286,7 +303,33 @@ final class NativeAggregateCostQuotes {
 						multiply(2D + mergePasses, comparisons));
 			}
 		}
-		if (retainedGroups) {
+		boolean streaming = actual != null && actual.retention() == NativeAggregatePhysicalPlan.Retention.STREAMING;
+		boolean events = actual != null && actual.retention() == NativeAggregatePhysicalPlan.Retention.BOUNDED_EVENTS;
+		if (events) {
+			// The bounded typed store always sorts its membership events, even without an external run. Each row
+			// retains a group marker plus at most one eligible contribution per reducer. Eligibility and final group
+			// count remain unknown, so their intervals must not pretend that every value contributes or every row is
+			// a distinct group. The upper-bound working set includes the actual wider event schema.
+			double minimumEvents = description.lowRows;
+			double maximumEvents = multiply(description.highRows, owner.aggregates.length + 1D);
+			double minimumSort = sortComparisons(minimumEvents);
+			double maximumSort = sortComparisons(maximumEvents);
+			long eventWidth = 2L * owner.groupSlots.length + 5L;
+			int membershipWidth = 1;
+			for (AggregateSpec aggregate : owner.aggregates) {
+				if (aggregate.distinct && aggregate.rowSlots != null) {
+					membershipWidth = Math.max(membershipWidth, aggregate.rowSlots.length);
+				}
+			}
+			eventWidth += membershipWidth;
+			long arenaBytes = Math.max(4096L, NativeCountGroupStore.configuredMaxBytes() / 3L);
+			double runs = Math.max(1D, Math.ceil(multiply(maximumEvents, 8D * eventWidth) / arenaBytes));
+			double passes = Math.ceil(Math.log(runs) / Math.log(2D));
+			// Membership and encounter sorting precede the at-most-one-row-per-group output sort. Spill merge
+			// passes extend the ceiling; expected charges the conservative all-eligible, all-distinct row case.
+			double expected = add(multiply(2D, maximumSort), sortComparisons(rows));
+			total.add(SORT_N_LOG2_N, minimumSort, expected, multiply(1D + passes, expected));
+		} else if (retainedGroups && !streaming) {
 			double comparisons = multiply(rows, Math.log(Math.max(2D, rows)) / Math.log(2D));
 			long arenaBytes = Math.max(4096L, NativeCountGroupStore.configuredMaxBytes());
 			double runs = Math.max(1D, Math.ceil(multiply(rows, recordBytes) / arenaBytes));
@@ -295,10 +338,18 @@ final class NativeAggregateCostQuotes {
 			double passes = Math.ceil(Math.log(runs) / Math.log(2D));
 			total.add(SORT_N_LOG2_N, 0D, runs > 1D ? comparisons : 0D, multiply(1D + passes, comparisons));
 		}
-		total.add(GROUP_UPDATE, minimum, rows, rows);
+		total.add(GROUP_UPDATE, minimum, rows, description.highRows);
 		if (distinctChannels != 0) {
-			total.add(DISTINCT_UPDATE, 0D, multiply(rows, distinctChannels), multiply(rows, distinctChannels));
+			total.add(DISTINCT_UPDATE, 0D, multiply(rows, distinctChannels),
+					multiply(description.highRows, distinctChannels));
 		}
+		long valueReads = 0L;
+		for (AggregateSpec aggregate : owner.aggregates) {
+			if (aggregate.kind != AggKind.COUNT) {
+				valueReads++;
+			}
+		}
+		total.add(DECODED_ROW, 0D, multiply(rows, valueReads), multiply(description.highRows, valueReads));
 		if (Double.isFinite(outputs)) {
 			total.add(OUTPUT_MATERIALIZATION, outputs);
 		}
@@ -307,8 +358,15 @@ final class NativeAggregateCostQuotes {
 				dependency ? 1D : legacy.structuralUncertainty());
 	}
 
+	private static double sortComparisons(double rows) {
+		return rows <= 1D ? 0D : multiply(rows, Math.log(rows) / Math.log(2D));
+	}
+
 	/** Complete estimates for these row producers are derived recursively from their own cardinality contracts. */
-	private static Input describe(SlotPlan plan, RowState row, long boundMask) {
+	static Input describe(SlotPlan plan, RowState row, long boundMask) {
+		if (plan instanceof NativeSubqueryPlan subquery) {
+			return subquery.physicalInput();
+		}
 		if (plan instanceof PatternPlan pattern) {
 			double rows = pattern.estimateForBoundMask(boundMask, row.source);
 			return finite(rows) ? new Input(rows, rows, 1D, 0D, 0D) : null;
@@ -337,17 +395,39 @@ final class NativeAggregateCostQuotes {
 			}
 			return new Input(child.rows, child.scanned, child.seeks,
 					add(child.expressions, multiply(child.rows, extension.copies.length)),
-					add(child.decoded, multiply(child.rows, Long.bitCount(reads))));
+					add(child.decoded, multiply(child.rows, Long.bitCount(reads))), child.lowRows, child.highRows,
+					child.inherited);
 		}
 		return null;
 	}
 
-	private record Input(double rows, double scanned, double seeks, double expressions, double decoded) {
+	/** Group cardinality is a bound, not an invented distinct-key estimate. Inherited work belongs to one opener. */
+	record Input(double rows, double scanned, double seeks, double expressions, double decoded,
+			double lowRows, double highRows, LmdbNativeCostVector inherited) {
+		Input(double rows, double scanned, double seeks, double expressions, double decoded) {
+			this(rows, scanned, seeks, expressions, decoded, rows, rows, LmdbNativeCostVector.zero());
+		}
+
+		Input expressions(int count) {
+			return new Input(rows, scanned, seeks, add(expressions, multiply(rows, count)), decoded,
+					lowRows, highRows, inherited);
+		}
+
 		void addTo(LmdbNativeCostVector.Builder target) {
-			target.add(SCANNED_ROW, scanned)
+			double lowFraction = rows == 0D ? 0D : lowRows / rows;
+			double highFraction = rows == 0D ? 0D : highRows / rows;
+			target.add(inherited)
+					.add(SCANNED_ROW, scanned)
 					.add(INDEX_SEEK, seeks)
-					.add(INTERPRETED_ROW, expressions)
-					.add(DECODED_ROW, decoded);
+					.add(INTERPRETED_ROW, multiply(expressions, lowFraction), expressions,
+							multiply(expressions, highFraction))
+					.add(DECODED_ROW, multiply(decoded, lowFraction), decoded, multiply(decoded, highFraction));
+		}
+
+		LmdbNativeCostVector operations() {
+			LmdbNativeCostVector.Builder operations = LmdbNativeCostVector.builder();
+			addTo(operations);
+			return operations.build();
 		}
 	}
 

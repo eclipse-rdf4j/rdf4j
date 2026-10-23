@@ -87,12 +87,15 @@ final class NativePhysicalGroupArbitration {
 	private static void offerTyped(LmdbNativeStrategyArbiter<NativeResultCursor> arbiter,
 			NativeAggregateCostQuotes quotes, NativeGroupResultCursor.GroupingPlan plan, NativeGroupIteration iteration,
 			RowState row, NativeGroupResultCursor owner) throws IOException {
-		arbiter.offer(() -> quotes.attach(new LmdbNativeStrategyProposal<>(
-				() -> plan.open(iteration, owner.executionContext()),
-				plan.input().estimateWork(row, row.boundMask()), LmdbNativeWork.ZERO,
+		SlotPlan quotedInput = NativeAggregatePhysicalPlan.bindLexicalInputs(plan.input(), row);
+		NativeGroupResultCursor.GroupingPlan actual = quotedInput == null ? plan
+				: new NativeGroupResultCursor.GroupingPlan(quotedInput, plan.channels(), plan.streaming(), plan.tag());
+		arbiter.offer(() -> quotes.attach(new LmdbNativeStrategyProposal<NativeResultCursor>(
+				() -> actual.open(iteration, owner.executionContext()),
+				actual.input().estimateWork(row, row.boundMask()), LmdbNativeWork.ZERO,
 				iteration.groupSlots.length == 0 && iteration.havingCondition == null ? 1D : Double.NaN,
-				plan.tag(), () -> {
-				}, false)));
+				actual.tag(), () -> {
+				}, false).withAggregatePhysicalPlan(NativeAggregatePhysicalPlan.typed(actual, iteration))));
 	}
 
 	/** Mutable attempt state never belongs to the cached FULL compilation or its demand environment. */

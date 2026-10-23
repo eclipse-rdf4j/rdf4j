@@ -419,6 +419,18 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 				LmdbNativeAdaptiveArbitration.ProbeContext.disabled()).index();
 	}
 
+	/** Quotes an executable witness without opening, probing, training or pruning the original legal inventory. */
+	LmdbNativeStrategyProposal<T> quotedChoice() {
+		List<LmdbNativeStrategyProposal<T>> eligible = forcedTag == null ? candidates
+				: candidates.stream()
+						.filter(candidate -> forcedTag
+								.equals(LmdbNativeStrategyPreference.baseTag(candidate.tag)))
+						.toList();
+		int index = adaptiveModel == null ? rank(eligible, sliceRows)
+				: rankAdaptive(eligible, sliceRows, adaptiveModel);
+		return index < 0 ? null : eligible.get(index);
+	}
+
 	private static <T> int rankLegacy(List<LmdbNativeStrategyProposal<T>> candidates, double sliceRows) {
 		if (candidates.isEmpty()) {
 			return -1;

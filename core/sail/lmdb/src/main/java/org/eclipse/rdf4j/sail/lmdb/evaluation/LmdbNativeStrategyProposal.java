@@ -69,6 +69,8 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	private boolean opened;
 	private boolean closed;
 	private LmdbNativeCostEstimate physicalEstimate;
+	private NativeAggregatePhysicalPlan aggregatePhysicalPlan;
+	private NativeAggregateExecutionEvent.Descriptor aggregateExecution;
 	private IdentityHashMap<LmdbNativeStrategyProposal<?>, String> physicalDominators;
 	private LmdbNativeStrategyProposal<?> mappedOrigin;
 
@@ -89,6 +91,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 			}
 		}, work, startupWork, estRows, mappedTag, this::close, probeable);
 		result.physicalEstimate = physicalEstimate;
+		result.aggregatePhysicalPlan = aggregatePhysicalPlan;
 		result.mappedOrigin = this;
 		return result;
 	}
@@ -131,6 +134,29 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		}
 		physicalEstimate = Objects.requireNonNull(estimate);
 		return this;
+	}
+
+	LmdbNativeStrategyProposal<T> withAggregatePhysicalPlan(NativeAggregatePhysicalPlan plan) {
+		if (opened || closed || aggregatePhysicalPlan != null) {
+			throw new IllegalStateException("An aggregate physical plan belongs to one unopened proposal");
+		}
+		aggregatePhysicalPlan = Objects.requireNonNull(plan);
+		return this;
+	}
+
+	LmdbNativeStrategyProposal<T> withOptionalAggregatePhysicalPlan(NativeAggregatePhysicalPlan plan) {
+		return plan == null ? this : withAggregatePhysicalPlan(plan);
+	}
+
+	NativeAggregatePhysicalPlan aggregatePhysicalPlan() {
+		return aggregatePhysicalPlan;
+	}
+
+	void observeAggregateOpening(NativeAggregateExecutionEvent.Descriptor descriptor) {
+		if (opened || closed || aggregateExecution != null) {
+			throw new IllegalStateException("Aggregate opening attribution belongs to one unopened proposal");
+		}
+		aggregateExecution = descriptor;
 	}
 
 	LmdbNativeStrategyProposal(Opener<T> opener, double estCost, String tag) {
@@ -406,7 +432,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 			throw new IllegalStateException("strategy proposal already opened");
 		}
 		opened = true;
-		return opener.open();
+		return aggregateExecution == null ? opener.open() : aggregateExecution.open(opener);
 	}
 
 	/** Releases admission reserved while costing a proposal that the dispatcher did not select. */

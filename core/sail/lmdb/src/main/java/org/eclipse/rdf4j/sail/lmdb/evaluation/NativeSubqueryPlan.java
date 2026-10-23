@@ -68,6 +68,9 @@ final class NativeSubqueryPlan implements SlotPlan {
 	private final long producedMask;
 	private final WorkerFactory workerFactory;
 	private final BiFunction<Set<String>, NativeExecutionContext, QueryEvaluationStep> lateralStepFactory;
+	private final NativeAggregateCostQuotes.Input physicalInput;
+	private final NativePhysicalResultPlan physicalRecipe;
+	private final BindingSet physicalBindings;
 
 	NativeSubqueryPlan(QueryEvaluationStep step, int[] outSlots, String[] outNames, int[] frameInputSlots,
 			String[] frameInputNames) {
@@ -109,6 +112,9 @@ final class NativeSubqueryPlan implements SlotPlan {
 		this.context = context;
 		this.workerFactory = workerFactory;
 		this.lateralStepFactory = lateralStepFactory;
+		this.physicalInput = null;
+		this.physicalRecipe = null;
+		this.physicalBindings = null;
 		long mask = 0L;
 		for (int slot : outSlots) {
 			mask |= 1L << slot;
@@ -116,12 +122,72 @@ final class NativeSubqueryPlan implements SlotPlan {
 		this.producedMask = mask;
 	}
 
+	private NativeSubqueryPlan(NativeSubqueryPlan original, NativePhysicalResultPlan recipe, BindingSet bindings) {
+		step = recipe.step();
+		outSlots = original.outSlots;
+		outNames = original.outNames;
+		frameInputSlots = original.frameInputSlots;
+		frameInputNames = original.frameInputNames;
+		frameParameterNames = original.frameParameterNames;
+		privateGraphParameters = original.privateGraphParameters;
+		graphFrameInputs = original.graphFrameInputs;
+		projection = original.projection;
+		context = original.context;
+		producedMask = original.producedMask;
+		workerFactory = original.workerFactory;
+		lateralStepFactory = null;
+		physicalInput = recipe.input();
+		physicalRecipe = recipe;
+		physicalBindings = NativeEntryBindings.copyValues(bindings);
+	}
+
 	boolean workerBindable() {
-		return workerFactory != null;
+		return workerFactory != null && (physicalRecipe == null || physicalRecipe.rebindRecipe() != null);
 	}
 
 	boolean requiresPhysicalResults() {
 		return step instanceof NativeResultStep nativeStep && nativeStep.requiresPhysicalResults();
+	}
+
+	NativeAggregateCostQuotes.Input physicalInput() {
+		return physicalInput;
+	}
+
+	String physicalProperties() {
+		return physicalRecipe == null ? "AUTO" : physicalRecipe.physicalProperties();
+	}
+
+	NativeSubqueryPlan withPhysicalPlan(RowState row) {
+		if (physicalInput != null) {
+			return this;
+		}
+		// A parameter-dependent recipe needs a separate per-entry quote. Do not price it as one independent child.
+		if (frameInputSlots.length != 0 || privateGraphParameters.length != 0 || lateralStepFactory != null
+				|| !(step instanceof NativeResultStep nativeStep)) {
+			return null;
+		}
+		NativeExecutionContext execution = executionContextOrNull(row);
+		if (execution == null) {
+			return null;
+		}
+		BindingSet input = frameBindings(row, execution.queryBase());
+		BindingSet body = NativeEntryBindings.preserve(input, projection == null ? input
+				: ProjectionQueryEvaluationStep.withInheritedGraphInput(projection, input, context));
+		NativePhysicalResultPlan recipe = inLexicalScope(row.source, row.cancellation,
+				() -> nativeStep.physicalPlan(body));
+		return recipe == null ? null : boundPhysical(recipe, body);
+	}
+
+	private NativeSubqueryPlan boundPhysical(NativePhysicalResultPlan recipe, BindingSet bindings) {
+		return new NativeSubqueryPlan(this, recipe, bindings);
+	}
+
+	NativeSubqueryPlan rebindPhysicalPlan(NativeSubqueryPlan actual, NativeScalarPlan.WorkerContext worker) {
+		if (physicalRecipe == null) {
+			return null;
+		}
+		NativePhysicalResultPlan recipe = physicalRecipe.rebind(actual.step, worker, physicalBindings);
+		return recipe == null ? null : actual.boundPhysical(recipe, physicalBindings);
 	}
 
 	NativeSubqueryPlan forWorker(NativeScalarPlan.WorkerContext worker) {
@@ -130,9 +196,22 @@ final class NativeSubqueryPlan implements SlotPlan {
 			throw new IllegalStateException("native lexical boundary has no worker construction recipe");
 		}
 		WORKER_BINDINGS.incrementAndGet();
-		return new NativeSubqueryPlan(bound.step(), outSlots, outNames, frameInputSlots, frameInputNames,
+		NativeSubqueryPlan result = new NativeSubqueryPlan(bound.step(), outSlots, outNames, frameInputSlots,
+				frameInputNames,
 				frameParameterNames, privateGraphParameters, projection, bound.context(), workerFactory,
 				bound.lateralStepFactory());
+		if (physicalInput != null) {
+			NativePhysicalResultPlan recipe;
+			try (SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource
+					.attachEvaluation(worker.source())) {
+				recipe = physicalRecipe.rebind(bound.step(), worker, physicalBindings);
+			}
+			if (recipe == null) {
+				throw new LmdbNativeKernelPartitions.ParallelKernelDecline("quoted-child-worker-recipe-unavailable");
+			}
+			result = result.boundPhysical(recipe, physicalBindings);
+		}
+		return result;
 	}
 
 	@Override

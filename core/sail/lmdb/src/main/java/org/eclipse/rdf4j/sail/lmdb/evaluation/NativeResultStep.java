@@ -22,4 +22,9 @@ interface NativeResultStep extends QueryEvaluationStep {
 	default boolean requiresPhysicalResults() {
 		return false;
 	}
+
+	/** A concrete alternative, not an envelope over independently selected AUTO children. Unknown remains null. */
+	default NativePhysicalResultPlan physicalPlan(BindingSet bindings) {
+		return null;
+	}
 }

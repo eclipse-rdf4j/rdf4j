@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -27,7 +28,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /** Ordered, weighted authority references; text is materialized only when its full RDF result is requested. */
 final class NativeBoundedConcat implements AutoCloseable {
-	private static final int PAIRS = 32;
+	static final int PAIRS = 32;
 	private final AggContext context;
 	private final AggregateSpec spec;
 	private final NativeCancellationToken cancellation;
@@ -37,7 +38,6 @@ final class NativeBoundedConcat implements AutoCloseable {
 	private long segments, characters;
 	private boolean hasValue, closed, materialized;
 	private Path path;
-	private DataOutputStream output;
 
 	NativeBoundedConcat(AggContext context, AggregateSpec spec, NativeCancellationToken cancellation,
 			LmdbQueryMemoryManager.QueryLedger ledger) {
@@ -74,22 +74,11 @@ final class NativeBoundedConcat implements AutoCloseable {
 			if (nextLength > Integer.MAX_VALUE - 8L) {
 				throw new QueryEvaluationException("GROUP_CONCAT exceeds the JVM string length");
 			}
-			if (size == PAIRS && output == null) {
-				path = Files.createTempFile("rdf4j-lmdb-concat-", ".spill");
-				output = new DataOutputStream(new BufferedOutputStream(Files.newOutputStream(path), 1024));
-				for (int index = 0; index < size; index++) {
-					output.writeLong(ids[index]);
-					output.writeLong(weights[index]);
-				}
-				ids = weights = null;
+			if (size == PAIRS) {
+				flushPage();
 			}
-			if (output == null) {
-				ids[size] = id;
-				weights[size++] = copies;
-			} else {
-				output.writeLong(id);
-				output.writeLong(copies);
-			}
+			ids[size] = id;
+			weights[size++] = copies;
 			segments = Math.addExact(segments, 1L);
 			characters = nextLength;
 			hasValue = true;
@@ -100,6 +89,26 @@ final class NativeBoundedConcat implements AutoCloseable {
 		}
 	}
 
+	/** Retain the bounded page after spilling: idle groups own paths, never open descriptors. */
+	private void flushPage() throws IOException {
+		if (size == 0) {
+			return;
+		}
+		if (path == null) {
+			path = Files.createTempFile("rdf4j-lmdb-concat-", ".spill");
+		}
+		try (DataOutputStream output = new DataOutputStream(new BufferedOutputStream(
+				Files.newOutputStream(path, StandardOpenOption.WRITE, StandardOpenOption.APPEND), 1024))) {
+			for (int index = 0; index < size; index++) {
+				cancellation.poll(index);
+				LmdbNativeProbeDeadline.poll(index);
+				output.writeLong(ids[index]);
+				output.writeLong(weights[index]);
+			}
+		}
+		size = 0;
+	}
+
 	String materialize() {
 		if (closed) {
 			throw new IllegalStateException("Concatenation is closed");
@@ -108,10 +117,13 @@ final class NativeBoundedConcat implements AutoCloseable {
 		LmdbNativeProbeDeadline.poll(0);
 		materialized = true;
 		renderedValue = false;
+		// A UTF-16 builder and its immutable result can coexist. Reserve their worst-case payload before either
+		// allocation, including object/array headers. The receiving term/replay owner accounts subsequent retention.
+		long materializationBytes = Math.addExact(128L, Math.multiplyExact(4L, characters));
+		memory.reserve(materializationBytes);
 		try {
-			if (output != null) {
-				output.close();
-				output = null;
+			if (path != null) {
+				flushPage();
 			}
 			// The requested RDF value itself needs one complete JVM string. No running text survives its consumer.
 			StringBuilder result = new StringBuilder((int) characters);
@@ -134,6 +146,8 @@ final class NativeBoundedConcat implements AutoCloseable {
 			return result.toString();
 		} catch (IOException failure) {
 			throw new UncheckedIOException(failure);
+		} finally {
+			memory.release(materializationBytes);
 		}
 	}
 
@@ -164,14 +178,12 @@ final class NativeBoundedConcat implements AutoCloseable {
 			return;
 		}
 		closed = true;
-		Throwable failure = KernelRuntime.closeResource(output, null);
-		output = null;
-		failure = KernelRuntime.closeResource(() -> {
+		Throwable failure = KernelRuntime.closeResource(() -> {
 			if (path != null) {
 				Files.deleteIfExists(path);
 				path = null;
 			}
-		}, failure);
+		}, null);
 		ids = weights = null;
 		failure = KernelRuntime.closeResource(memory, failure);
 		if (failure != null) {

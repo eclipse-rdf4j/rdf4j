@@ -16,7 +16,6 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -153,17 +152,35 @@ final class NativeGroupTable implements AutoCloseable {
 				&& AggregateSpec.allCounts(aggregates) && !AggregateSpec.anyFullRowDistinct(aggregates)
 				&& !hasMonotonicDistinct(channels)
 				&& (groupSlots.length > 0 || java.util.Arrays.stream(aggregates).anyMatch(a -> a.distinct));
-		boolean typed = NativeCountGroupStore.enabled()
-				&& NativeTypedGroupStore.supports(aggregates)
-				&& (!AggregateSpec.allCounts(aggregates) || AggregateSpec.anyFullRowDistinct(aggregates))
-				&& (groupSlots.length > 0 || Arrays.stream(aggregates)
-						.anyMatch(a -> a.distinct
-								|| a.kind == AggKind.GROUP_CONCAT
-										&& a.resultDemand == NativeAggregateResultDemand.FULL_VALUE));
+		boolean typed = usesTypedEvents(groupSlots, aggregates);
 		NativeGroupTable table = new NativeGroupTable(groupSlots, aggregates, ctx, channels, mode, rowMetrics,
 				bounded || typed);
 		table.boundedAllowed = bounded;
 		table.typedAllowed = typed;
+		return table;
+	}
+
+	/** The same storage proof is used by construction and by candidate-owned physical costing. */
+	static boolean usesTypedEvents(int[] groupSlots, AggregateSpec[] aggregates) {
+		return NativeCountGroupStore.enabled()
+				&& NativeTypedGroupStore.supports(aggregates)
+				&& (!AggregateSpec.allCounts(aggregates) || AggregateSpec.anyFullRowDistinct(aggregates))
+				&& (groupSlots.length > 0 || Arrays.stream(aggregates)
+						.anyMatch(a -> a.distinct || a.kind == AggKind.GROUP_CONCAT
+								&& a.resultDemand == NativeAggregateResultDemand.FULL_VALUE));
+	}
+
+	/** A live ordered prefix may contain arbitrarily many secondary groups; it must never expose an unbounded map. */
+	static NativeGroupTable boundedPrefix(int[] groups, AggregateSpec[] aggregates, AggContext context, RowState row) {
+		if (!NativeTypedGroupStore.supports(aggregates)) {
+			throw new IllegalArgumentException("Ordered prefix has no bounded reducer encoding");
+		}
+		boolean counts = AggregateSpec.allCounts(aggregates) && !AggregateSpec.anyFullRowDistinct(aggregates)
+				&& row.keyAuthority() != null && row.keyAuthority().supportsCanonicalTermKeys();
+		NativeGroupTable table = new NativeGroupTable(groups, aggregates, context,
+				AggregateDistinctChannels.allHash(aggregates), Mode.TUPLE_STATES, false, true);
+		table.boundedAllowed = counts;
+		table.typedAllowed = !counts;
 		return table;
 	}
 
@@ -819,49 +836,14 @@ final class NativeGroupTable implements AutoCloseable {
 			return results;
 		}
 		initializeUnbounded();
-		switch (mode) {
-		case ZERO:
+		if (mode == Mode.ZERO) {
 			return List.of(it.toBindingSet(null, single, sawRow));
-		case SINGLE_SLOT: {
-			ArrayList<BindingSet> results = new ArrayList<>(longGroups.size);
-			long[] keys = longGroups.keys;
-			AggState[] states = longGroups.values;
-			for (int i = 0; i < states.length; i++) {
-				it.cancellation.poll(i);
-				LmdbNativeProbeDeadline.poll(i);
-				if (states[i] != null) {
-					results.add(it.toBindingSet(new GroupKey(new long[] { keys[i] }), states[i], true));
-				}
-			}
-			return results;
 		}
-		case TUPLE_COUNTS: {
-			ArrayList<BindingSet> results = new ArrayList<>(tuples.size);
-			for (int group = 0; group < tuples.size; group++) {
-				it.cancellation.poll(group);
-				LmdbNativeProbeDeadline.poll(group);
-				AggState state = new AggState(aggregates, 4, ctx, channels);
-				int offset = group * aggregates.length;
-				for (int i = 0; i < aggregates.length; i++) {
-					state.counts[i] = tupleCounts[offset + i];
-				}
-				results.add(it.toBindingSet(tuples.groupKey(group), state, true));
-			}
-			commitRowMetrics(metrics);
-			return results;
-		}
-		case TUPLE_STATES: {
-			ArrayList<BindingSet> results = new ArrayList<>(tuples.size);
-			for (int group = 0; group < tuples.size; group++) {
-				it.cancellation.poll(group);
-				LmdbNativeProbeDeadline.poll(group);
-				results.add(it.toBindingSet(tuples.groupKey(group), tupleStates[group], true));
-			}
-			commitRowMetrics(metrics);
-			return results;
-		}
-		}
-		throw new IllegalStateException("unreachable");
+		// Worker/factor states can remain in their original representation, but their final decoded output must
+		// obey the same payload and replay bound as direct-add spill tables. The physical cursor closes states only
+		// after their rows have been appended, so generated Values remain valid throughout that transfer.
+		commitRowMetrics(metrics);
+		return NativeReplayBindingList.copy(physicalResults(it), it, it.resultLedger());
 	}
 
 	private void commitRowMetrics(LmdbNativeAttemptMetrics metrics) {

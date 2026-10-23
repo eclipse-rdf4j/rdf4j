@@ -755,11 +755,10 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		}
 		if (states[groupId] == null) {
 			AggregateSpec[] specs = { groupLayout.outs[aggregateId].spec };
-			if (specs[0].reducer.mergeLaw == NativeReducerCapabilities.MergeLaw.ELIGIBLE_SAMPLE) {
-				memory.reserveOrThrow(512L, "kernel-sample-state-memory");
-			}
-			states[groupId] = new AggState(specs, distinctExpected, rowAggregateContext,
-					AggregateDistinctChannels.allHash(specs));
+			memory.reserveOrThrow(512L, "kernel-row-state-memory");
+			states[groupId] = AggState.bounded(specs, distinctExpected, rowAggregateContext,
+					AggregateDistinctChannels.allHash(specs), scratch.cancellation,
+					scratch.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()));
 		}
 		return states[groupId];
 	}
@@ -769,19 +768,14 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 			throw new IllegalArgumentException("Aggregate has no eligible-sample merge law");
 		}
 		AggState[] states = rowStates[aggregateId];
-		return groupId >= states.length || states[groupId] == null ? null : states[groupId].extremes[0];
+		return groupId >= states.length || states[groupId] == null ? null : states[groupId].extremeValue(0);
 	}
 
 	void installSample(int aggregateId, int groupId, Value value) {
 		if (sampleAt(aggregateId, groupId) != null || value == null) {
 			return;
 		}
-		long retained = AggContext.ownedValueBytes(value);
-		if (retained < 0L) {
-			throw new LmdbNativeKernelPartitions.ParallelKernelDecline("sample-value-memory");
-		}
-		memory.reserveOrThrow(retained, "kernel-sample-value-memory");
-		rowState(aggregateId, groupId).extremes[0] = value;
+		rowState(aggregateId, groupId).setExtremeValue(0, value);
 	}
 
 	Value rowAggregateResult(int aggregateId, int groupId) {
@@ -789,9 +783,8 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		AggState state = rowState(aggregateId, groupId);
 		return switch (state.specs[0].kind) {
 		case COUNT -> AggContext.integerLiteral(state.count(0));
-		case SAMPLE -> state.extremes[0];
-		case GROUP_CONCAT -> SimpleValueFactory.getInstance()
-				.createLiteral(state.concats[0] == null ? "" : state.concats[0].toString());
+		case SAMPLE -> state.extremeValue(0);
+		case GROUP_CONCAT -> SimpleValueFactory.getInstance().createLiteral(state.concatValue(0));
 		case CUSTOM -> {
 			if (empty) {
 				state.specs[0].custom.process(EmptyBindingSet.getInstance(), state.customPredicates[0],

@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 @Experimental
 final class FilteringIteration
@@ -491,6 +492,10 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		if (!requiresPhysicalResults()) {
 			return NativeResultSteps.open(ignored -> evaluate(bindings), bindings);
 		}
+		return evaluateNativeDirect(bindings);
+	}
+
+	private NativeResultCursor evaluateNativeDirect(BindingSet bindings) {
 		if (distinct || orderSlots.length != 0 || snapshotRows || hasOptionalOnlyBinding(bindings)) {
 			throw new IllegalStateException("An RDF mapping observer requires FULL_VALUE aggregate demand");
 		}
@@ -503,6 +508,77 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		return new NativeRowsResultCursor(this, evaluation, bindings, owner,
 				evaluation != source && evaluation instanceof SyntheticValueSource synthetic
 						&& !SyntheticValueSource.inheritedEvaluation(synthetic));
+	}
+
+	@Override
+	public NativePhysicalResultPlan physicalPlan(BindingSet bindings) {
+		if (distinct || orderSlots.length != 0 || offset != 0L || limit >= 0L || snapshotRows
+				|| hasOptionalOnlyBinding(bindings)) {
+			return null;
+		}
+		SyntheticValueSource planningSource = SyntheticValueSource.forInvocation(source, queryExecutionPolicy(),
+				bindings);
+		RowState acquiredRow = null;
+		Throwable failure = null;
+		try {
+			RowState row = new RowState(planningSource, layout, bindings);
+			acquiredRow = row;
+			if (!initializeRow(row, bindings, planningSource, layout)) {
+				return null;
+			}
+			SlotPlan input = NativeAggregatePhysicalPlan.bindLexicalInputs(arg, row);
+			NativeAggregateCostQuotes.Input quote = input == null ? null
+					: NativeAggregateCostQuotes.describe(input, row, row.boundMask());
+			if (quote == null) {
+				return null;
+			}
+			return physicalResult(input, quote.expressions(sourceSlots.length));
+		} catch (RuntimeException | Error problem) {
+			failure = problem;
+			throw problem;
+		} finally {
+			Throwable primary = failure;
+			if (acquiredRow != null) {
+				failure = KernelRuntime.closeResource(acquiredRow::closeDecodedInputs, failure);
+			}
+			failure = KernelRuntime.closeResource(planningSource.executionContext(), failure);
+			if (failure != primary) {
+				NativeContextClosingIteration.throwFailure(failure);
+			}
+		}
+	}
+
+	private NativePhysicalResultPlan physicalResult(SlotPlan input, NativeAggregateCostQuotes.Input quote) {
+		NativeRowsStep bound = new NativeRowsStep(source, input, layout, sourceSlots, targetNames, false,
+				orderSlots, orderAscending, 0L, -1L, strictCompare, strategy, originalExpr, context, Set.of(), null,
+				null);
+		NativeResultStep executable = new NativeResultStep() {
+			@Override
+			public NativeResultCursor evaluateNative(BindingSet bindings) {
+				return bound.evaluateNativeDirect(bindings);
+			}
+
+			@Override
+			public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
+				return NativeResultSteps.rdf(evaluateNative(bindings));
+			}
+
+			@Override
+			public boolean requiresPhysicalResults() {
+				return bound.requiresPhysicalResults();
+			}
+		};
+		return new NativePhysicalResultPlan(executable, quote,
+				!NativeWorkerPlanBinder.canBind(input) ? null : (prepared, worker, bindings) -> {
+					if (!(prepared instanceof NativeRowsStep actual) || !Arrays.equals(sourceSlots, actual.sourceSlots)
+							|| !Arrays.equals(targetNames, actual.targetNames) || actual.distinct
+							|| actual.orderSlots.length != 0 || actual.snapshotRows || actual.offset != 0L
+							|| actual.limit >= 0L) {
+						return null;
+					}
+					SlotPlan rebound = NativeAggregatePhysicalPlan.rebindInput(input, actual.arg, worker);
+					return rebound == null ? null : actual.physicalResult(rebound, quote);
+				}, "ROWS[" + NativeAggregatePhysicalPlan.inputProperties(input) + ']');
 	}
 
 	CloseableIteration<BindingSet> genericFallback(BindingSet bindings, NativeLmdbQuerySource evalSource,

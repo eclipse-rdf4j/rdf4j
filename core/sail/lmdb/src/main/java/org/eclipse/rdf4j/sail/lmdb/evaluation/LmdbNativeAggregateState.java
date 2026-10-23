@@ -722,6 +722,8 @@ final class AggState {
 	/** GROUP_CONCAT running concatenations; null per spec until its first value. */
 	StringBuilder[] concats;
 	NativeBoundedConcat[] externalConcats;
+	NativeBoundedDistinct[] boundedChannels, boundedRows;
+	NativeBoundedReducerValues boundedValues;
 	/** Physical lexical summaries retain neither concatenated text nor a fabricated RDF value. */
 	long[] concatLengths;
 	long[] concatItems;
@@ -739,6 +741,11 @@ final class AggState {
 
 	private AggState(AggregateSpec[] specs, int expectedDistinctSize, AggContext ctx,
 			AggregateDistinctChannels distinctChannels, boolean externalMembership) {
+		this(specs, expectedDistinctSize, ctx, distinctChannels, externalMembership, false);
+	}
+
+	private AggState(AggregateSpec[] specs, int expectedDistinctSize, AggContext ctx,
+			AggregateDistinctChannels distinctChannels, boolean externalMembership, boolean boundedMembership) {
 		this.specs = specs;
 		this.ctx = ctx;
 		this.counts = new long[specs.length];
@@ -750,7 +757,7 @@ final class AggState {
 		this.channelLastIds = channelCount == 0 ? NO_CHANNEL_IDS : new long[channelCount];
 		this.distinctSets = channelCount == 0 ? NO_DISTINCT_SETS : new LongHashSet[specs.length];
 		for (int channel = 0; channel < distinctChannels.channelCount(); channel++) {
-			if (distinctChannels.modes[channel] == NativeDistinctChannelMode.HASH) {
+			if (!boundedMembership && distinctChannels.modes[channel] == NativeDistinctChannelMode.HASH) {
 				channelSets[channel] = new LongHashSet(expectedDistinctSize, ctx.termAuthority);
 			}
 		}
@@ -770,7 +777,7 @@ final class AggState {
 				anyConcat = true;
 				anySummary |= specs[i].resultDemand == NativeAggregateResultDemand.LEXICAL_LENGTH;
 			}
-			if (!externalMembership && specs[i].distinct && specs[i].rowSlots != null) {
+			if (!externalMembership && !boundedMembership && specs[i].distinct && specs[i].rowSlots != null) {
 				if (rowDistinct == null) {
 					rowDistinct = new NativeDistinctTracker[specs.length];
 				}
@@ -816,14 +823,56 @@ final class AggState {
 	static AggState externalMembership(AggregateSpec[] specs, AggContext context,
 			NativeCancellationToken cancellation, LmdbQueryMemoryManager.QueryLedger ledger) {
 		AggState result = externalMembership(specs, context);
+		return boundedConcatenations(result, cancellation, ledger);
+	}
+
+	/** Sequential membership and variable-size reducer payloads share the same bounded/spillable ledger. */
+	static AggState bounded(AggregateSpec[] specs, int expectedDistinctSize, AggContext context,
+			AggregateDistinctChannels channels, NativeCancellationToken cancellation,
+			LmdbQueryMemoryManager.QueryLedger ledger) {
+		AggState result = new AggState(specs, 0, context, channels, false, true);
+		try {
+			for (int channel = 0; channel < channels.channelCount(); channel++) {
+				if (channels.modes[channel] == NativeDistinctChannelMode.HASH) {
+					if (result.boundedChannels == null) {
+						result.boundedChannels = new NativeBoundedDistinct[channels.channelCount()];
+					}
+					result.boundedChannels[channel] = new NativeBoundedDistinct(context, null, cancellation, ledger);
+				}
+			}
+			for (int index = 0; index < specs.length; index++) {
+				if (specs[index].distinct && specs[index].rowSlots != null) {
+					if (result.boundedRows == null) {
+						result.boundedRows = new NativeBoundedDistinct[specs.length];
+					}
+					result.boundedRows[index] = new NativeBoundedDistinct(context, specs[index].rowSlots,
+							cancellation, ledger);
+				}
+			}
+			return boundedConcatenations(result, cancellation, ledger);
+		} catch (Throwable failure) {
+			NativeContextClosingIteration.throwFailure(KernelRuntime.closeResource(result::closeExternal, failure));
+			throw new AssertionError("unreachable");
+		}
+	}
+
+	private static AggState boundedConcatenations(AggState result, NativeCancellationToken cancellation,
+			LmdbQueryMemoryManager.QueryLedger ledger) {
+		AggregateSpec[] specs = result.specs;
 		try {
 			for (int index = 0; index < specs.length; index++) {
+				AggKind kind = specs[index].kind;
+				if (kind != AggKind.COUNT && kind != AggKind.GROUP_CONCAT && kind != AggKind.CUSTOM
+						&& result.boundedValues == null) {
+					result.boundedValues = new NativeBoundedReducerValues(2 * specs.length, result.ctx, cancellation,
+							ledger);
+				}
 				if (specs[index].kind == AggKind.GROUP_CONCAT
 						&& specs[index].resultDemand == NativeAggregateResultDemand.FULL_VALUE) {
 					if (result.externalConcats == null) {
 						result.externalConcats = new NativeBoundedConcat[specs.length];
 					}
-					result.externalConcats[index] = new NativeBoundedConcat(context, specs[index], cancellation,
+					result.externalConcats[index] = new NativeBoundedConcat(result.ctx, specs[index], cancellation,
 							ledger);
 				}
 			}
@@ -836,6 +885,14 @@ final class AggState {
 
 	/** The external stream has already tested boundness and exact DISTINCT, retaining original encounter order. */
 	void addExternal(int index, long value, long weight) {
+		try {
+			addExternalValue(index, value, weight);
+		} finally {
+			releaseDecodedValues();
+		}
+	}
+
+	private void addExternalValue(int index, long value, long weight) {
 		if (weight <= 0L || specs[index].custom != null) {
 			throw new IllegalArgumentException("Invalid external reducer contribution");
 		}
@@ -857,8 +914,53 @@ final class AggState {
 				: concats == null || concats[index] == null ? "" : concats[index].toString();
 	}
 
+	Literal sumValue(int index) {
+		return boundedValues == null ? sums == null ? null : sums[index] : (Literal) boundedValues.get(index);
+	}
+
+	private void setSumValue(int index, Literal value) {
+		if (boundedValues == null) {
+			sums[index] = value;
+		} else {
+			boundedValues.set(index, value);
+		}
+	}
+
+	Value extremeValue(int index) {
+		return boundedValues == null ? extremes == null ? null : extremes[index]
+				: boundedValues.get(specs.length + index);
+	}
+
+	void setExtremeValue(int index, Value value) {
+		if (boundedValues == null) {
+			extremes[index] = value;
+		} else {
+			boundedValues.set(specs.length + index, value);
+		}
+	}
+
+	private void releaseDecodedValues() {
+		if (boundedValues != null) {
+			boundedValues.releaseDecoded();
+		}
+	}
+
 	void closeExternal() {
 		Throwable failure = null;
+		if (boundedChannels != null) {
+			for (NativeBoundedDistinct membership : boundedChannels) {
+				failure = KernelRuntime.closeResource(membership, failure);
+			}
+			boundedChannels = null;
+		}
+		if (boundedRows != null) {
+			for (NativeBoundedDistinct membership : boundedRows) {
+				failure = KernelRuntime.closeResource(membership, failure);
+			}
+			boundedRows = null;
+		}
+		failure = KernelRuntime.closeResource(boundedValues, failure);
+		boundedValues = null;
 		if (externalConcats != null) {
 			for (NativeBoundedConcat concat : externalConcats) {
 				failure = KernelRuntime.closeResource(concat, failure);
@@ -871,10 +973,16 @@ final class AggState {
 	}
 
 	void add(RowState row) {
-		for (int channel = 0; channel < distinctChannels.channelCount(); channel++)
-			prepareDistinctChannel(channel, row);
-		for (int i = 0; i < specs.length; i++)
-			addOne(i, row);
+		try {
+			for (int channel = 0; channel < distinctChannels.channelCount(); channel++) {
+				prepareDistinctChannel(channel, row);
+			}
+			for (int i = 0; i < specs.length; i++) {
+				addOne(i, row);
+			}
+		} finally {
+			releaseDecodedValues();
+		}
 	}
 
 	/**
@@ -910,7 +1018,9 @@ final class AggState {
 			return;
 		}
 		channelFresh[channel] = switch (distinctChannels.modes[channel]) {
-		case HASH -> channelSets[channel].add(value);
+		case HASH -> boundedChannels != null && boundedChannels[channel] != null
+				? boundedChannels[channel].add(value)
+				: channelSets[channel].add(value);
 		case MONOTONIC -> {
 			boolean fresh = !channelInitialized[channel]
 					|| !sameRdfTerm(channelLastIds[channel], value);
@@ -933,7 +1043,9 @@ final class AggState {
 			if (!specs[i].hasInput(row)) {
 				return;
 			}
-			if (!specs[i].distinct || rowDistinct[i].add(row.slots)) {
+			if (!specs[i].distinct || (boundedRows != null && boundedRows[i] != null
+					? boundedRows[i].add(row.slots)
+					: rowDistinct[i].add(row.slots))) {
 				counts[i]++;
 			}
 			return;
@@ -974,9 +1086,9 @@ final class AggState {
 			addExtreme(i, value, false);
 			break;
 		case SAMPLE:
-			if (extremes[i] == null) {
+			if (extremeValue(i) == null) {
 				// first eligible value of the group wins; materialization cost is once per group
-				extremes[i] = ctx.value(value, specs[i].positionMask);
+				setExtremeValue(i, ctx.value(value, specs[i].positionMask));
 			}
 			break;
 		case GROUP_CONCAT: {
@@ -986,6 +1098,10 @@ final class AggState {
 			}
 			if (ctx.encounterOrderChanging) {
 				throw EncounterOrderFallback.groupConcatOrder();
+			}
+			if (externalConcats != null && externalConcats[i] != null) {
+				externalConcats[i].add(value, 1L);
+				break;
 			}
 			Value concatValue = ctx.value(value, specs[i].positionMask);
 			if (concatValue != null) {
@@ -1014,7 +1130,7 @@ final class AggState {
 			typeErrors[i] = true;
 			return;
 		}
-		sums[i] = addNumeric(sums[i], literal);
+		setSumValue(i, addNumeric(sumValue(i), literal));
 	}
 
 	/**
@@ -1132,8 +1248,8 @@ final class AggState {
 			break;
 		case SAMPLE:
 			// any eligible value is a valid sample; weight is irrelevant
-			if (extremes[i] == null) {
-				extremes[i] = ctx.value(id, specs[i].positionMask);
+			if (extremeValue(i) == null) {
+				setExtremeValue(i, ctx.value(id, specs[i].positionMask));
 			}
 			break;
 		case GROUP_CONCAT:
@@ -1217,6 +1333,10 @@ final class AggState {
 		if (copies <= 0L) {
 			return;
 		}
+		if (externalConcats != null && externalConcats[index] != null) {
+			externalConcats[index].add(id, copies);
+			return;
+		}
 		Value value = ctx.value(id, specs[index].positionMask);
 		if (value == null) {
 			return;
@@ -1262,8 +1382,9 @@ final class AggState {
 		CoreDatatype.XSD coreDatatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
 		if (coreDatatype != null && coreDatatype.isNumericDatatype()) {
 			ctx.preserveFloatingEncounterOrder(literal);
-			Literal sum = sums[i] == null ? AggContext.INTEGER_ZERO : sums[i];
-			sums[i] = MathUtil.compute(sum, weightedTerm(literal, weight), MathExpr.MathOp.PLUS);
+			Literal current = sumValue(i);
+			Literal sum = current == null ? AggContext.INTEGER_ZERO : current;
+			setSumValue(i, MathUtil.compute(sum, weightedTerm(literal, weight), MathExpr.MathOp.PLUS));
 		} else {
 			typeErrors[i] = true;
 		}
@@ -1279,8 +1400,9 @@ final class AggState {
 			CoreDatatype.XSD coreDatatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
 			if (coreDatatype != null && coreDatatype.isNumericDatatype()) {
 				ctx.preserveFloatingEncounterOrder(literal);
-				Literal sum = sums[i] == null ? AggContext.INTEGER_ZERO : sums[i];
-				sums[i] = MathUtil.compute(sum, weightedTerm(literal, weight), MathExpr.MathOp.PLUS);
+				Literal current = sumValue(i);
+				Literal sum = current == null ? AggContext.INTEGER_ZERO : current;
+				setSumValue(i, MathUtil.compute(sum, weightedTerm(literal, weight), MathExpr.MathOp.PLUS));
 			} else {
 				typeErrors[i] = true;
 			}
@@ -1308,8 +1430,9 @@ final class AggState {
 			CoreDatatype.XSD coreDatatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
 			if (coreDatatype != null && coreDatatype.isNumericDatatype()) {
 				ctx.preserveFloatingEncounterOrder(literal);
-				Literal sum = sums[i] == null ? AggContext.INTEGER_ZERO : sums[i];
-				sums[i] = MathUtil.compute(sum, literal, MathExpr.MathOp.PLUS);
+				Literal current = sumValue(i);
+				Literal sum = current == null ? AggContext.INTEGER_ZERO : current;
+				setSumValue(i, MathUtil.compute(sum, literal, MathExpr.MathOp.PLUS));
 			} else {
 				typeErrors[i] = true;
 			}
@@ -1324,15 +1447,16 @@ final class AggState {
 			return;
 		}
 		Value v = ctx.value(id, specs[i].positionMask);
-		if (extremes[i] == null) {
-			extremes[i] = v;
+		Value current = extremeValue(i);
+		if (current == null) {
+			setExtremeValue(i, v);
 			extremeIds[i] = id;
 			return;
 		}
-		int cmp = ctx.comparator.compare(v, extremes[i]);
-		ctx.preserveExtremaRepresentative(v, extremes[i], cmp);
+		int cmp = ctx.comparator.compare(v, current);
+		ctx.preserveExtremaRepresentative(v, current, cmp);
 		if (min ? cmp < 0 : cmp > 0) {
-			extremes[i] = v;
+			setExtremeValue(i, v);
 			extremeIds[i] = id;
 		}
 	}
@@ -1340,7 +1464,8 @@ final class AggState {
 	long count(int index) {
 		int channel = distinctChannels.specChannels[index];
 		return channel >= 0 && distinctChannels.modes[channel] == NativeDistinctChannelMode.HASH
-				? channelSets[channel].size()
+				? boundedChannels != null && boundedChannels[channel] != null ? boundedChannels[channel].size()
+						: channelSets[channel].size()
 				: counts[index];
 	}
 
@@ -1364,10 +1489,15 @@ final class AggState {
 	private void finishDistinctValueAggregateUnmeasured(int index, NativeCancellationToken cancellation) {
 		cancellation.check();
 		LmdbNativeProbeDeadline.poll(0);
-		sums[index] = null;
+		setSumValue(index, null);
 		avgCounts[index] = 0L;
 		typeErrors[index] = false;
-		LongHashSet values = channelSets[distinctChannels.specChannels[index]];
+		int channel = distinctChannels.specChannels[index];
+		if (boundedChannels != null && boundedChannels[channel] != null) {
+			boundedChannels[channel].forEachId(value -> addDeferredDistinctValue(index, value));
+			return;
+		}
+		LongHashSet values = channelSets[channel];
 		if (values.containsEmptySentinel) {
 			addDeferredDistinctValue(index, LongHashSet.EMPTY);
 		}
@@ -1409,6 +1539,12 @@ final class AggState {
 	void mergeFrom(AggState other, NativeCancellationToken cancellation) {
 		cancellation.check();
 		LmdbNativeProbeDeadline.poll(0);
+		if (boundedChannels != null || boundedRows != null || other.boundedChannels != null
+				|| other.boundedRows != null) {
+			// These are online sequential membership owners. Parallel paths merge exact ordered events instead.
+			throw new LmdbNativeKernelPartitions.ParallelKernelDecline(
+					"bounded-sequential-membership-requires-event-merge");
+		}
 		for (int channel = 0; channel < channelSets.length; channel++) {
 			cancellation.poll(channel);
 			LmdbNativeProbeDeadline.poll(channel);
@@ -1445,8 +1581,8 @@ final class AggState {
 				mergeExtreme(i, other, false);
 				break;
 			case SAMPLE:
-				if (extremes[i] == null && other.extremes != null) {
-					extremes[i] = other.extremes[i];
+				if (extremeValue(i) == null && other.extremes != null) {
+					setExtremeValue(i, other.extremeValue(i));
 					extremeIds[i] = other.extremeIds[i];
 				}
 				break;
@@ -1469,7 +1605,7 @@ final class AggState {
 	}
 
 	private void mergeSum(int i, AggState other) {
-		Literal otherSum = other.sums == null ? null : other.sums[i];
+		Literal otherSum = other.sumValue(i);
 		if (otherSum != null) {
 			ctx.preserveFloatingEncounterOrder(otherSum);
 		}
@@ -1482,23 +1618,25 @@ final class AggState {
 		if (otherSum == null) {
 			return;
 		}
-		sums[i] = sums[i] == null ? otherSum : MathUtil.compute(sums[i], otherSum, MathExpr.MathOp.PLUS);
+		Literal current = sumValue(i);
+		setSumValue(i, current == null ? otherSum : MathUtil.compute(current, otherSum, MathExpr.MathOp.PLUS));
 	}
 
 	private void mergeExtreme(int i, AggState other, boolean min) {
-		Value otherExtreme = other.extremes == null ? null : other.extremes[i];
+		Value otherExtreme = other.extremeValue(i);
 		if (otherExtreme == null) {
 			return;
 		}
-		if (extremes[i] == null) {
-			extremes[i] = otherExtreme;
+		Value current = extremeValue(i);
+		if (current == null) {
+			setExtremeValue(i, otherExtreme);
 			extremeIds[i] = other.extremeIds[i];
 			return;
 		}
-		int cmp = ctx.comparator.compare(otherExtreme, extremes[i]);
-		ctx.preserveExtremaRepresentative(otherExtreme, extremes[i], cmp);
+		int cmp = ctx.comparator.compare(otherExtreme, current);
+		ctx.preserveExtremaRepresentative(otherExtreme, current, cmp);
 		if (min ? cmp < 0 : cmp > 0) {
-			extremes[i] = otherExtreme;
+			setExtremeValue(i, otherExtreme);
 			extremeIds[i] = other.extremeIds[i];
 		}
 	}

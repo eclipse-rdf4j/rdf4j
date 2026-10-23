@@ -49,6 +49,75 @@ final class NativeReplayBindingList extends AbstractList<BindingSet> implements 
 		BindingSet next() throws IOException;
 	}
 
+	/** Append while each source row/state is live; transfer only after the producer has closed successfully. */
+	static final class Builder implements AutoCloseable {
+		private final NativeGroupIteration owner;
+		private final LmdbQueryMemoryManager.QueryLedger ledger;
+		private NativeResultReplay replay;
+		private boolean finished;
+
+		Builder(NativeGroupIteration owner, LmdbQueryMemoryManager.QueryLedger ledger) {
+			this.owner = owner;
+			this.ledger = ledger;
+		}
+
+		void add(BindingSet row) {
+			add(NativeResultRow.fromBindingSet(owner.physicalSchema(), row));
+		}
+
+		void add(NativeResultRow row) {
+			if (finished) {
+				throw new IllegalStateException("Aggregate output collection is finished");
+			}
+			owner.cancellation.check();
+			LmdbNativeProbeDeadline.poll(0);
+			if (replay == null) {
+				NativeExecutionContext context = owner.source instanceof SyntheticValueSource synthetic
+						? synthetic.executionContext()
+						: null;
+				replay = new NativeResultReplay(row.schema(), context, owner.cancellation, ledger,
+						Math.max(8192L, NativeCountGroupStore.configuredMaxBytes()), false);
+			}
+			replay.append(row);
+		}
+
+		void drain(NativeResultCursor rows) {
+			try (rows) {
+				NativeResultRow row;
+				while ((row = rows.next()) != null) {
+					add(row);
+				}
+			}
+		}
+
+		List<BindingSet> finish() {
+			owner.cancellation.check();
+			LmdbNativeProbeDeadline.poll(0);
+			if (finished) {
+				throw new IllegalStateException("Aggregate output collection is finished");
+			}
+			finished = true;
+			if (replay == null) {
+				return List.of();
+			}
+			replay.finish();
+			NativeReplayBindingList result = new NativeReplayBindingList(replay, owner.cancellation);
+			owner.ownResultResource(result);
+			replay = null;
+			return result;
+		}
+
+		@Override
+		public void close() {
+			finished = true;
+			NativeResultReplay retained = replay;
+			replay = null;
+			if (retained != null) {
+				retained.close();
+			}
+		}
+	}
+
 	/** Drain while the renderer's kernel, hooks and value authority are still owned by its caller. */
 	static List<BindingSet> copy(BindingRows rows, NativeGroupIteration owner,
 			LmdbQueryMemoryManager.QueryLedger ledger) {

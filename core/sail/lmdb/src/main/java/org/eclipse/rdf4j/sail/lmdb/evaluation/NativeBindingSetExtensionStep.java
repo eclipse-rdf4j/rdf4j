@@ -69,7 +69,7 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 				return null;
 			}
 			assignments.add(new Assignment(element.getName(), evaluator,
-					physicalEvaluator(element.getExpr(), strategy, context)));
+					physicalEvaluator(element.getExpr(), strategy, context), physicalOperations(element.getExpr())));
 		}
 		return assignments.isEmpty() ? arg
 				: new NativeBindingSetExtensionStep(arg, assignments.toArray(Assignment[]::new));
@@ -88,6 +88,57 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 	private NativeBindingSetExtensionStep(QueryEvaluationStep arg, Assignment[] assignments) {
 		this.arg = arg;
 		this.assignments = assignments;
+	}
+
+	@Override
+	public NativePhysicalResultPlan physicalPlan(BindingSet bindings) {
+		int operations = 0;
+		for (Assignment assignment : assignments) {
+			if (assignment.operations() < 0) {
+				return null;
+			}
+			operations = Math.addExact(operations, assignment.operations());
+		}
+		NativePhysicalResultPlan child = arg instanceof NativeResultStep nativeStep
+				? nativeStep.physicalPlan(bindings)
+				: null;
+		return child == null ? null : physicalResult(child, operations);
+	}
+
+	private NativePhysicalResultPlan physicalResult(NativePhysicalResultPlan child, int operations) {
+		return new NativePhysicalResultPlan(new NativeBindingSetExtensionStep(child.step(), assignments),
+				child.input().expressions(operations),
+				child.rebindRecipe() == null ? null : (prepared, worker, bindings) -> {
+					if (!(prepared instanceof NativeBindingSetExtensionStep actual)
+							|| assignments.length != actual.assignments.length) {
+						return null;
+					}
+					for (int index = 0; index < assignments.length; index++) {
+						if (!assignments[index].name().equals(actual.assignments[index].name())
+								|| assignments[index].operations() != actual.assignments[index].operations()) {
+							return null;
+						}
+					}
+					NativePhysicalResultPlan rebound = child.rebind(actual.arg, worker, bindings);
+					return rebound == null ? null : actual.physicalResult(rebound, operations);
+				}, "EXTENSION[" + child.physicalProperties() + ']');
+	}
+
+	/** Only the physical evaluator's explicit, pure transfer rules have a compositional work contract. */
+	private static int physicalOperations(ValueExpr expression) {
+		if (expression instanceof Var || expression instanceof ValueConstant) {
+			return 1;
+		}
+		if (expression instanceof FunctionCall function && FN.STRING_LENGTH.stringValue().equals(function.getURI())
+				&& function.getArgs().size() == 1) {
+			int child = physicalOperations(function.getArgs().get(0));
+			return child < 0 ? -1 : Math.addExact(1, child);
+		}
+		if (expression instanceof MathExpr math) {
+			int left = physicalOperations(math.getLeftArg()), right = physicalOperations(math.getRightArg());
+			return left < 0 || right < 0 ? -1 : Math.addExact(1, Math.addExact(left, right));
+		}
+		return -1;
 	}
 
 	@Override
@@ -143,7 +194,8 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 		return "NativeBindingSetExtension(assignments=" + assignments.length + ", arg=" + inner + ")";
 	}
 
-	private record Assignment(String name, NativeBindingSetValueEvaluator evaluator, PhysicalEvaluator physical) {
+	private record Assignment(String name, NativeBindingSetValueEvaluator evaluator, PhysicalEvaluator physical,
+			int operations) {
 	}
 
 	@FunctionalInterface
