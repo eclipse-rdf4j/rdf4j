@@ -14,6 +14,9 @@ package org.eclipse.rdf4j.query.impl;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -22,6 +25,28 @@ import org.junit.jupiter.api.Test;
 
 class RemoteBNodeSpillAuthorityTest {
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+
+	@Test
+	void uniqueNodesDoNotRetainPerNodeSpillMetadata() {
+		BlankNodeAllocationScope allocation = new BlankNodeAllocationScope();
+		Object epoch = new Object();
+		List<BNode> nodes = new ArrayList<>();
+		for (int index = 0; index < 100_000; index++) {
+			nodes.add((BNode) RemoteBNode.newResponseScope(allocation, VF, epoch, false)
+					.map(VF.createBNode("remote-" + index)));
+		}
+		System.gc();
+		long before = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+		try (var spill = new RemoteBNode.SpillScope()) {
+			for (BNode node : nodes) {
+				spill.replace(node);
+			}
+			System.gc();
+			long retained = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory() - before;
+			assertThat(retained).isLessThan(8L * 1024 * 1024);
+			assertThat(nodes).hasSize(100_000);
+		}
+	}
 
 	@Test
 	void alreadyAuthoritativeCopiesAreReusedDirectlyAndRecursively() {
@@ -105,6 +130,33 @@ class RemoteBNodeSpillAuthorityTest {
 			assertThatThrownBy(() -> spill.replace(second))
 					.isInstanceOf(QueryEvaluationException.class)
 					.hasMessageContaining("blank-node identity");
+		}
+	}
+
+	@Test
+	void conflictingAuthorityIsRejectedAfterAliasIndexMovesToDisk() {
+		Object firstEpoch = new Object();
+		var firstAllocation = new BlankNodeAllocationScope("alias-", ignored -> false);
+		Object secondEpoch = new Object();
+		var secondAllocation = new BlankNodeAllocationScope("alias-", ignored -> false);
+		try (var spill = new RemoteBNode.SpillScope()) {
+			BNode first = null;
+			for (int index = 0; index < 4_100; index++) {
+				BNode node = (BNode) RemoteBNode.newResponseScope(firstAllocation, VF, firstEpoch, false)
+						.map(VF.createBNode("first-" + index));
+				if (first == null) {
+					first = node;
+				}
+				spill.replace(node);
+			}
+			Object reference = spill.replace(first);
+			assertThat(spill.replace(first)).isEqualTo(reference);
+			BNode conflicting = (BNode) RemoteBNode.newResponseScope(secondAllocation, VF, secondEpoch, false)
+					.map(VF.createBNode("second"));
+			assertThat(conflicting.getID()).isEqualTo(first.getID());
+			assertThatThrownBy(() -> spill.replace(conflicting))
+					.isInstanceOf(QueryEvaluationException.class)
+					.hasMessageContaining("conflicting execution spill authority");
 		}
 	}
 

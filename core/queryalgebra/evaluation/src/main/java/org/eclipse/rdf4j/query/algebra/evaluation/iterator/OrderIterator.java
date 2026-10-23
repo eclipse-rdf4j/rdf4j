@@ -477,6 +477,8 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 			}
 			try {
 				output.writeObject(e);
+				// A sorted run already owns its rows; the stream must not retain every prior object graph.
+				output.reset();
 				last = e;
 				size++;
 				return true;

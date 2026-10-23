@@ -103,7 +103,10 @@ class BNodeOriginsTest {
 		var preserved = RemoteBNode.preserveProvenance(original, copy);
 		assertThat(preserved).isEqualTo(original);
 		try (var spill = new RemoteBNode.SpillScope()) {
-			assertThat(spill.resolve(spill.replace(stored))).isSameAs(stored);
+			RepositoryBNode restored = (RepositoryBNode) spill.resolve(spill.replace(stored));
+			assertThat(restored).isEqualTo(stored);
+			assertThat(restored.getRawID()).isEqualTo(stored.getRawID());
+			assertThat(restored.isReference()).isTrue();
 		}
 		byte[] serialized;
 		try (var bytes = new ByteArrayOutputStream(); var output = new ObjectOutputStream(bytes)) {

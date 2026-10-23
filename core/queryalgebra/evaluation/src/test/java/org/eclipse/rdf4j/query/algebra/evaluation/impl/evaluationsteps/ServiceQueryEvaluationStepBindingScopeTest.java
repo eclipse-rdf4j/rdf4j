@@ -21,6 +21,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.lang.management.ManagementFactory;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -452,6 +453,81 @@ class ServiceQueryEvaluationStepBindingScopeTest {
 			assertThat(row.getValue("bodyVar")).isEqualTo(VF.createIRI("urn:body:subject"));
 			assertThat(result.hasNext()).isFalse();
 		}
+	}
+
+	@Test
+	void nonSilentSelectRemainsLazy() {
+		Service service = selectService(false);
+		AtomicInteger emitted = new AtomicInteger();
+		FederatedService remote = mock(FederatedService.class);
+		when(remote.select(eq(service), anySet(), any(BindingSet.class), eq(service.getBaseURI())))
+				.thenReturn(new AbstractCloseableIteration<>() {
+					@Override
+					public boolean hasNext() {
+						return emitted.get() == 0;
+					}
+
+					@Override
+					public BindingSet next() {
+						emitted.incrementAndGet();
+						return bindings("result", VF.createLiteral("one"));
+					}
+
+					@Override
+					protected void handleClose() {
+					}
+				});
+		ServiceQueryEvaluationStep step = step(service, remote, ENDPOINT);
+
+		try (CloseableIteration<BindingSet> result = step.evaluate(bindings("caller", VF.createLiteral("caller")))) {
+			assertThat(emitted).hasValue(0);
+			assertThat(result.hasNext()).isTrue();
+			assertThat(result.next().getValue("result")).isEqualTo(VF.createLiteral("one"));
+			assertThat(emitted).hasValue(1);
+		}
+	}
+
+	@Test
+	void silentSelectDoesNotRetainCompleteRemoteResultInHeap() {
+		Service service = selectService(true);
+		int rowCount = 96;
+		String payload = "x".repeat(1024 * 1024);
+		AtomicInteger emitted = new AtomicInteger();
+		FederatedService remote = mock(FederatedService.class);
+		when(remote.select(eq(service), anySet(), any(BindingSet.class), eq(service.getBaseURI())))
+				.thenReturn(new AbstractCloseableIteration<>() {
+					@Override
+					public boolean hasNext() {
+						return emitted.get() < rowCount;
+					}
+
+					@Override
+					public BindingSet next() {
+						return bindings("result", VF.createLiteral(payload + emitted.getAndIncrement()));
+					}
+
+					@Override
+					protected void handleClose() {
+					}
+				});
+		ServiceQueryEvaluationStep step = step(service, remote, ENDPOINT);
+		MapBindingSet caller = bindings("caller", VF.createLiteral("caller"));
+		long baseline = retainedHeapBytes();
+
+		try (CloseableIteration<BindingSet> result = step.evaluate(caller)) {
+			assertThat(emitted).hasValue(rowCount);
+			assertThat(retainedHeapBytes() - baseline).isLessThan(48L * 1024 * 1024);
+			for (int i = 0; i < rowCount; i++) {
+				assertThat(result.hasNext()).isTrue();
+				assertThat(result.next().getValue("result").stringValue()).endsWith(Integer.toString(i));
+			}
+			assertThat(result.hasNext()).isFalse();
+		}
+	}
+
+	private static long retainedHeapBytes() {
+		System.gc();
+		return ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed();
 	}
 
 	@Test
