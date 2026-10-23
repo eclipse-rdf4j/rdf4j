@@ -34,6 +34,7 @@ import static org.eclipse.rdf4j.http.protocol.Protocol.USING_GRAPH_PARAM_NAME;
 import static org.eclipse.rdf4j.http.protocol.Protocol.USING_NAMED_GRAPH_PARAM_NAME;
 
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
@@ -45,7 +46,6 @@ import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.common.lang.FileFormat;
 import org.eclipse.rdf4j.common.lang.service.FileFormatServiceRegistry;
 import org.eclipse.rdf4j.common.webapp.views.EmptySuccessView;
@@ -60,6 +60,7 @@ import org.eclipse.rdf4j.http.server.ClientHTTPException;
 import org.eclipse.rdf4j.http.server.HTTPException;
 import org.eclipse.rdf4j.http.server.ProtocolUtil;
 import org.eclipse.rdf4j.http.server.ServerHTTPException;
+import org.eclipse.rdf4j.http.server.ServerRequestBodyLimits;
 import org.eclipse.rdf4j.http.server.repository.BooleanQueryResultView;
 import org.eclipse.rdf4j.http.server.repository.ExplainQueryResultView;
 import org.eclipse.rdf4j.http.server.repository.GraphQueryResultView;
@@ -413,9 +414,9 @@ public class TransactionController extends AbstractController implements Disposa
 		final String contentType = request.getContentType();
 		if (contentType != null && contentType.contains(Protocol.SPARQL_QUERY_MIME_TYPE)) {
 			Charset charset = getCharset(request);
-			queryStr = IOUtils.toString(request.getInputStream(), charset);
+			queryStr = ServerRequestBodyLimits.readScalarText(new InputStreamReader(request.getInputStream(), charset));
 		} else {
-			queryStr = request.getParameter(QUERY_PARAM_NAME);
+			queryStr = ServerRequestBodyLimits.requireScalarText(request.getParameter(QUERY_PARAM_NAME));
 		}
 
 		if (request.getParameter(Protocol.CANCEL_EXPLAIN_PARAM_NAME) != null) {
@@ -719,14 +720,16 @@ public class TransactionController extends AbstractController implements Disposa
 		if (contentType != null && contentType.contains(Protocol.SPARQL_UPDATE_MIME_TYPE)) {
 			try {
 				Charset charset = getCharset(request);
-				sparqlUpdateString = IOUtils.toString(request.getInputStream(), charset);
+				sparqlUpdateString = ServerRequestBodyLimits
+						.readScalarText(new InputStreamReader(request.getInputStream(), charset));
 			} catch (IOException e) {
 				logger.warn("error reading sparql update string from request body", e);
 				throw new ClientHTTPException(SC_BAD_REQUEST,
 						"could not read SPARQL update string from body: " + e.getMessage());
 			}
 		} else {
-			sparqlUpdateString = request.getParameter(Protocol.UPDATE_PARAM_NAME);
+			sparqlUpdateString = ServerRequestBodyLimits
+					.requireScalarText(request.getParameter(Protocol.UPDATE_PARAM_NAME));
 		}
 
 		if (null == sparqlUpdateString) {

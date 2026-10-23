@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.http.server.ClientHTTPException;
 import org.eclipse.rdf4j.http.server.HTTPException;
 import org.eclipse.rdf4j.http.server.ProtocolUtil;
 import org.eclipse.rdf4j.http.server.ServerHTTPException;
+import org.eclipse.rdf4j.http.server.ServerRequestBodyLimits;
 import org.eclipse.rdf4j.http.server.repository.RepositoryInterceptor;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.ModelFactory;
@@ -32,6 +33,7 @@ import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
+import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFWriterFactory;
 import org.eclipse.rdf4j.rio.RDFWriterRegistry;
@@ -114,10 +116,10 @@ public class ConfigController extends AbstractController {
 		}
 		RepositoryConfig config;
 		try {
-			Model model = Rio.parse(request.getInputStream(), "",
-					Rio.getParserFormatForMIMEType(request.getContentType())
-							.orElseThrow(() -> new ClientHTTPException(HttpStatus.SC_BAD_REQUEST,
-									"unrecognized content type " + request.getContentType())));
+			RDFFormat format = Rio.getParserFormatForMIMEType(request.getContentType())
+					.orElseThrow(() -> new ClientHTTPException(HttpStatus.SC_BAD_REQUEST,
+							"unrecognized content type " + request.getContentType()));
+			Model model = Rio.parse(ServerRequestBodyLimits.readRepositoryConfig(request.getInputStream()), "", format);
 			config = RepositoryConfigUtil.validateRepositoryConfig(model, repId);
 		} catch (RDFParseException | RepositoryConfigException e) {
 			throw new ClientHTTPException(HttpStatus.SC_BAD_REQUEST, e.getMessage());
