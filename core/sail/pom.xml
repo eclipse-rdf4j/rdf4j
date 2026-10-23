@@ -24,6 +24,5 @@
 		<module>elasticsearch</module>
 		<module>elasticsearch-store</module>
 		<module>extensible-store</module>
-		<module>rdf-parser</module>
 	</modules>
 </project>

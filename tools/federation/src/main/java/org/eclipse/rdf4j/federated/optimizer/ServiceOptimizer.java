@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.rdfparser.RdfParseVocabulary;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 
 /**
@@ -74,6 +75,12 @@ public class ServiceOptimizer extends AbstractSimpleQueryModelVisitor<Optimizati
 	}
 
 	protected TupleExpr optimizeService(Service service) {
+		if (service.getServiceRef().hasValue()
+				&& RdfParseVocabulary.SERVICE.equals(service.getServiceRef().getValue().stringValue())) {
+			// The receiving parser owns its configuration and graph algebra. Do not turn its joins into
+			// federation operators or resolve its reserved IRI as the name of a federation member.
+			return new FedXService(service, queryInfo);
+		}
 
 		// An outer active graph belongs to this federation, never to the remote SERVICE dataset.
 		// Retain the SERVICE boundary when specializing the surrounding graph's physical plan.

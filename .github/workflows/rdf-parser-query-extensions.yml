@@ -4,7 +4,11 @@ on:
   pull_request:
     paths:
       - '.github/workflows/rdf-parser-query-extensions.yml'
-      - 'core/sail/rdf-parser/**'
+      - 'compliance/rdf-parser/**'
+      - 'core/sail/base/**'
+      - 'core/sail/lmdb/**'
+      - 'core/repository/sail/**'
+      - 'tools/federation/**'
       - 'core/rio/api/**'
       - 'core/rio/turtle/**'
       - 'core/rio/trig/**'
@@ -42,11 +46,11 @@ jobs:
           distribution: temurin
       - name: Build and verify module, Rio and evaluator
         shell: bash
-        run: bash core/sail/rdf-parser/verify.sh
+        run: bash compliance/rdf-parser/verify.sh
       - name: Measure current implementation with JMH
         if: github.event_name == 'workflow_dispatch' && inputs.benchmark
         shell: bash
-        run: bash core/sail/rdf-parser/benchmark.sh
+        run: bash compliance/rdf-parser/benchmark.sh
       - name: Retain verification results
         if: always()
         uses: actions/upload-artifact@v4
@@ -55,7 +59,8 @@ jobs:
           path: |
             maven-build.log
             logs/rdf-parser-integration/
-            core/sail/rdf-parser/target/surefire-reports/
+            compliance/rdf-parser/target/surefire-reports/
             core/rio/*/target/surefire-reports/
             core/queryalgebra/evaluation/target/surefire-reports/
-            core/sail/rdf-parser/target/benchmarks/
+            compliance/rdf-parser/target/benchmarks/
+            tools/federation/target/surefire-reports/

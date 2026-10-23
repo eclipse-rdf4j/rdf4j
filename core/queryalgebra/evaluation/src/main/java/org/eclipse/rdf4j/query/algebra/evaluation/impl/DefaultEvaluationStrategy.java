@@ -184,6 +184,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.GroupIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.MultiProjectionIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.OrderIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.rdfparser.RdfParseVocabulary;
+import org.eclipse.rdf4j.query.algebra.evaluation.rdfparser.RdfParserQuerySupport;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValueTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
@@ -419,6 +421,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	@Override
 	public FederatedService getService(String serviceUrl) throws QueryEvaluationException {
+		if (RdfParseVocabulary.SERVICE.equals(serviceUrl)) {
+			return RdfParserQuerySupport.service();
+		}
 		return serviceResolver.getService(serviceUrl);
 	}
 
@@ -440,6 +445,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	 */
 	@Override
 	public TupleExpr optimize(TupleExpr expr, EvaluationStatistics evaluationStatistics, BindingSet bindings) {
+		expr = RdfParserQuerySupport.rewriteOwned(expr, bindings);
 		LocalBNodeReferences.Analysis original = LocalBNodeReferences.analyze(expr);
 		original.runtimeValues().forEach(blankNodes::reserve);
 		Set<String> references = blankNodes.getReferenceSnapshot(expr, original.structure());
@@ -962,7 +968,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	protected QueryEvaluationStep prepare(Service service, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		Var serviceRef = service.getServiceRef();
-		return captureResultValues(new ServiceQueryEvaluationStep(service, serviceRef, serviceResolver, context,
+		return captureResultValues(new ServiceQueryEvaluationStep(service, serviceRef, this::getService, context,
 				tripleSource.getValueFactory()));
 	}
 
