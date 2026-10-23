@@ -13,12 +13,9 @@
 package org.eclipse.rdf4j.workbench.proxy;
 
 import java.io.ByteArrayOutputStream;
-import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.net.URL;
-import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
@@ -57,6 +54,7 @@ import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyResponse;
 import org.eclipse.rdf4j.workbench.util.BasicServletConfig;
 import org.eclipse.rdf4j.workbench.util.DynamicHttpRequest;
+import org.eclipse.rdf4j.workbench.util.LocalFileServerPath;
 import org.eclipse.rdf4j.workbench.util.ServerCredentials;
 import org.eclipse.rdf4j.workbench.util.ServerIdentity;
 import org.eclipse.rdf4j.workbench.util.ShaclValidationSummary;
@@ -421,10 +419,6 @@ public class WorkbenchServlet extends AbstractServlet {
 		return WorkbenchViewRegistry.viewIdForRoute(getRoutePath(request.getPathInfo())).orElse("server");
 	}
 
-	private File asLocalFile(final URL rdf) {
-		return new File(URLDecoder.decode(rdf.getFile(), StandardCharsets.UTF_8));
-	}
-
 	private void service(final String repoID, final HttpServletRequest req, final HttpServletResponse resp)
 			throws RepositoryConfigException, RepositoryException, ServletException, IOException {
 		LOGGER.info("Servicing repository: {}", repoID);
@@ -668,8 +662,8 @@ public class WorkbenchServlet extends AbstractServlet {
 
 	protected RepositoryManager createRepositoryManager(final String param) throws IOException, RepositoryException {
 		RepositoryManager manager;
-		if (param.startsWith("file:")) {
-			manager = new LocalRepositoryManager(asLocalFile(new URL(param)));
+		if (ServerValidator.hasScheme(param, "file")) {
+			manager = new LocalRepositoryManager(LocalFileServerPath.canonicalFile(param));
 		} else {
 			manager = new RemoteRepositoryManager(param);
 		}
