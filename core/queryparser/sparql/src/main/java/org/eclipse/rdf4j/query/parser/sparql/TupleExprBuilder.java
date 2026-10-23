@@ -38,9 +38,11 @@ import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.WINF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
@@ -110,6 +112,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.StrLangDir;
+import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Sum;
 import org.eclipse.rdf4j.query.algebra.TripleComponent;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
@@ -120,6 +123,9 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
+import org.eclipse.rdf4j.query.algebra.Window;
+import org.eclipse.rdf4j.query.algebra.WindowElem;
+import org.eclipse.rdf4j.query.algebra.WindowFunctionCall;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
@@ -743,6 +749,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		result.visit(groupFinder);
 		Group group = groupFinder.getGroup();
 		final boolean isExistingGroup = group != null;
+		Window window = null;
+		Set<String> windowVarNames = new HashSet<>();
 
 		List<String> aliasesInProjection = new ArrayList<>();
 		for (ASTProjectionElem projElemNode : node.getProjectionElemList()) {
@@ -779,6 +787,17 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				if (!collector.getOperators().isEmpty()) {
 					elem.setAggregateOperatorInExpression(true);
 					for (AggregateOperator operator : collector.getOperators()) {
+						// Aggregates are evaluated inside the Group, below the Window operator, so a window function
+						// nested in an aggregate could never see its window result.
+						WindowFunctionCollector nestedWindows = new WindowFunctionCollector();
+						operator.visit(nestedWindows);
+						if (!nestedWindows.getCalls().isEmpty()) {
+							throw new VisitorException("window function " + nestedWindows.getCalls().get(0).getURI()
+									+ " cannot be used inside an aggregate; window functions are evaluated after"
+									+ " grouping and may only take aggregates as input, not the other way round.");
+						}
+					}
+					for (AggregateOperator operator : collector.getOperators()) {
 						// Apply implicit grouping if necessary
 						if (group == null) {
 							group = new Group(orderClause != null ? orderClause.getArg() : result);
@@ -810,6 +829,25 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 					}
 				}
 
+				// Window functions (winf:...) are lowered into a Window operator evaluated over the complete
+				// solution sequence; the projection expression refers to the window result through an anonymous var.
+				WindowFunctionCollector windowCollector = new WindowFunctionCollector();
+				valueExpr.visit(windowCollector);
+				for (FunctionCall windowCall : windowCollector.getCalls()) {
+					if (window == null) {
+						window = new Window();
+					}
+					WindowFunctionCall operator = toWindowFunctionCall(windowCall);
+					Var anonVar = createAnonVar();
+					if (windowCall == valueExpr) {
+						valueExpr = anonVar;
+					} else {
+						windowCall.replaceWith(anonVar);
+					}
+					window.addElement(new WindowElem(anonVar.getName(), operator));
+					windowVarNames.add(anonVar.getName());
+				}
+
 				// SELECT expressions need to be captured as an extension, so that original and alias are
 				// available for the ORDER BY clause (which gets applied _before_ projection). See GH-4066
 				// and https://www.w3.org/TR/sparql11-query/#sparqlSolMod .
@@ -825,6 +863,20 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			}
 		}
 
+		if (window != null && group == null) {
+			// SELECT expression aliases are bound above the Window operator, so a window keyed on one would silently
+			// evaluate with that variable unbound; the GROUP BY branch below rejects the same case.
+			for (WindowElem windowElem : window.getElements()) {
+				for (String varName : VarNameCollector.process(windowElem.getOperator())) {
+					if (aliasesInProjection.contains(varName)) {
+						throw new VisitorException("variable '" + varName
+								+ "' in window function is a SELECT expression alias; window functions can only use"
+								+ " variables bound in the WHERE clause.");
+					}
+				}
+			}
+		}
+
 		verifyLateralProjectedAssignments(projElemList);
 
 		if (!extension.getElements().isEmpty()) {
@@ -833,14 +885,14 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				// sorting can work on the newly introduced variable. See SES-892 and SES-1809.
 				if (group != null && !isExistingGroup) {
 					// we introduced a new implicit group that is not part of the original ORDER BY clause.
-					extension.setArg(group);
+					extension.setArg(withWindow(window, group));
 				} else {
-					extension.setArg(orderClause.getArg());
+					extension.setArg(withWindow(window, orderClause.getArg()));
 				}
 				orderClause.setArg(extension);
 				result = orderClause;
 			} else {
-				extension.setArg(result);
+				extension.setArg(withWindow(window, result));
 				result = extension;
 			}
 		}
@@ -848,6 +900,19 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		result = new Projection(result, projElemList, node.isSubSelect());
 		if (group != null) {
 			Set<String> groupNames = group.getBindingNames();
+			if (window != null) {
+				// window functions are evaluated after grouping: their inputs must be group keys or aggregates
+				for (WindowElem windowElem : window.getElements()) {
+					for (String varName : VarNameCollector.process(windowElem.getOperator())) {
+						if (!groupNames.contains(varName)) {
+							throw new VisitorException("variable '" + varName
+									+ "' in window function not present in GROUP BY.");
+						}
+					}
+				}
+				groupNames = new LinkedHashSet<>(groupNames);
+				groupNames.addAll(windowVarNames);
+			}
 			List<ProjectionElem> elements = projElemList.getElements();
 
 			for (ProjectionElem elem : elements) {
@@ -884,6 +949,141 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		}
 
 		return result;
+	}
+
+	private static TupleExpr withWindow(Window window, TupleExpr arg) {
+		if (window == null) {
+			return arg;
+		}
+		window.setArg(arg);
+		return window;
+	}
+
+	private static final Set<String> WINDOW_MARKERS = Set.of("partitionBy", "orderBy", "asc", "desc", "rows",
+			"range");
+
+	private static boolean isWindowNamespace(FunctionCall call) {
+		return call.getURI() != null && call.getURI().startsWith(WINF.NAMESPACE);
+	}
+
+	private static String windowLocalName(FunctionCall call) {
+		return call.getURI().substring(WINF.NAMESPACE.length());
+	}
+
+	/**
+	 * Converts a {@code winf:} function call into a {@link WindowFunctionCall}: arguments that are
+	 * {@code winf:partitionBy(...)}, {@code winf:orderBy(...)}, {@code winf:rows(start, end)} or
+	 * {@code winf:range(start, end)} calls describe the window, all other arguments are the function's own arguments.
+	 */
+	private WindowFunctionCall toWindowFunctionCall(FunctionCall call) throws VisitorException {
+		WindowFunctionCall operator = new WindowFunctionCall(call.getURI());
+		boolean frameSeen = false;
+		for (ValueExpr arg : new ArrayList<>(call.getArgs())) {
+			if (arg instanceof FunctionCall marker && isWindowNamespace(marker)) {
+				String local = windowLocalName(marker);
+				switch (local) {
+				case "partitionBy":
+					for (ValueExpr expr : marker.getArgs()) {
+						operator.addPartitionBy(expr.clone());
+					}
+					break;
+				case "orderBy":
+					for (ValueExpr expr : marker.getArgs()) {
+						boolean ascending = true;
+						ValueExpr key = expr;
+						if (expr instanceof FunctionCall direction && isWindowNamespace(direction)) {
+							String directionName = windowLocalName(direction);
+							if ((directionName.equals("asc") || directionName.equals("desc"))
+									&& direction.getArgs().size() == 1) {
+								ascending = directionName.equals("asc");
+								key = direction.getArgs().get(0);
+							} else {
+								throw new VisitorException("invalid ordering expression in winf:orderBy: " + expr);
+							}
+						}
+						operator.addOrderBy(new OrderElem(key.clone(), ascending));
+					}
+					break;
+				case "rows":
+				case "range":
+					if (frameSeen) {
+						throw new VisitorException("only one frame specification is allowed per window function");
+					}
+					frameSeen = true;
+					if (marker.getArgs().size() != 2) {
+						throw new VisitorException("winf:" + local + " requires two frame bounds (start, end)");
+					}
+					operator.setFrame(local.equals("rows") ? WindowFunctionCall.FrameMode.ROWS
+							: WindowFunctionCall.FrameMode.RANGE, frameBound(marker.getArgs().get(0)),
+							frameBound(marker.getArgs().get(1)));
+					break;
+				case "asc":
+				case "desc":
+					throw new VisitorException("winf:" + local + " may only be used inside winf:orderBy");
+				default:
+					throw new VisitorException("window function " + marker.getURI()
+							+ " cannot be nested inside another window function");
+				}
+			} else {
+				operator.addArg(arg.clone());
+			}
+		}
+		return operator;
+	}
+
+	/** A frame bound: an integer offset (negative = preceding), or the strings "unbounded" / "current". */
+	private static Long frameBound(ValueExpr expr) throws VisitorException {
+		if (expr instanceof ValueConstant constant && constant.getValue() instanceof Literal literal) {
+			CoreDatatype datatype = literal.getCoreDatatype();
+			if (datatype.isXSDDatatype() && ((CoreDatatype.XSD) datatype).isIntegerDatatype()) {
+				if (!XMLDatatypeUtil.isValidValue(literal.getLabel(), datatype)) {
+					throw new VisitorException("invalid frame bound: " + literal);
+				}
+				try {
+					return literal.integerValue().longValueExact();
+				} catch (NumberFormatException | ArithmeticException e) {
+					throw new VisitorException("invalid frame bound: " + literal);
+				}
+			}
+			String label = literal.getLabel().trim().toLowerCase();
+			if (label.startsWith("unbounded")) {
+				return null;
+			}
+			if (label.startsWith("current")) {
+				return 0L;
+			}
+		}
+		throw new VisitorException("invalid window frame bound: " + expr
+				+ " (expected an integer offset, \"unbounded\" or \"current\")");
+	}
+
+	/** Collects window function calls ({@code winf:} calls other than the specification markers). */
+	static class WindowFunctionCollector extends AbstractQueryModelVisitor<VisitorException> {
+
+		private final List<FunctionCall> calls = new ArrayList<>();
+
+		public List<FunctionCall> getCalls() {
+			return calls;
+		}
+
+		@Override
+		protected void meetSubQueryValueOperator(SubQueryValueOperator node) {
+			// A graph pattern has its own expression positions. Nested SELECTs already lower their own windows.
+		}
+
+		@Override
+		public void meet(FunctionCall node) throws VisitorException {
+			if (isWindowNamespace(node)) {
+				String local = windowLocalName(node);
+				if (WINDOW_MARKERS.contains(local)) {
+					throw new VisitorException("winf:" + local + " may only be used inside a window function call");
+				}
+				calls.add(node);
+				// markers are consumed by toWindowFunctionCall; nested window functions are rejected there
+				return;
+			}
+			super.meet(node);
+		}
 	}
 
 	private ValueExpr cloneIfAggregate(ValueExpr valueExpr) {

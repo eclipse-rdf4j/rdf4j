@@ -30,7 +30,9 @@ import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -548,6 +550,24 @@ public class EvaluationStatistics {
 		@Override
 		public void meet(QueryRoot node) {
 			node.getArg().visit(this);
+		}
+
+		@Override
+		public void meetOther(QueryModelNode node) {
+			if (node instanceof TupleFunctionCall call) {
+				// a tuple function produces a handful of rows per input solution; unbound result variables make it
+				// less selective, unbound argument variables make it unevaluable until they are bound
+				double unboundArgs = 0;
+				for (ValueExpr arg : call.getArgs()) {
+					if (arg instanceof Var var && !var.hasValue()) {
+						unboundArgs++;
+					}
+				}
+				cardinality = getCardinality(VAR_CARDINALITY, call.getResultVars())
+						* Math.pow(UNBOUND_SERVICE_CARDINALITY, unboundArgs);
+			} else {
+				super.meetOther(node);
+			}
 		}
 
 		@Override
