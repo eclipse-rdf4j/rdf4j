@@ -110,7 +110,7 @@ public class RDFJSONParserSettings {
 
 	/**
 	 * Maximum aggregate temporary bytes held by concurrent RDF/JSON parsers while sorting graph names. Imports that
-	 * exceed this budget fail with an {@code IOException}. Defaults to 1 GiB.
+	 * exceed this budget fail as a parse error. Defaults to 1 GiB.
 	 */
 	public static final LongRioSetting MAX_CONTEXT_SPILL_BYTES = new LongRioSetting(
 			"org.eclipse.rdf4j.rio.rdfjson.max_context_spill_bytes", "RDF/JSON graph context temporary bytes",
