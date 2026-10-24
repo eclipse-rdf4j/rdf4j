@@ -530,6 +530,11 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	}
 
 	@Override
+	protected boolean cancelConnectionsOnShutdown() {
+		return true;
+	}
+
+	@Override
 	public boolean isWritable() {
 		return isWritable;
 	}

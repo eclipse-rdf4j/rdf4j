@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CancellationSignal;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
@@ -2869,6 +2870,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	 */
 	private <T> T executeObservedRead(ReadOperation<T> operation, ReplayableIteration<?> owner,
 			QueryExecutionDeadline deadline) throws SailException {
+		CancellationSignal lifecycleCancellation = CancellationSignal.current();
 		try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
 			throwIfDeadlineExpired(deadline);
 			synchronized (readAttemptLock) {
@@ -2897,6 +2899,9 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 						() -> observedWorkerScope(owner, deadline));
 				internalReadScopeDepth.set(oldDepth + 1);
 				result = operation.execute();
+				if (lifecycleCancellation.isCancelled()) {
+					throw new SailException("The LMDB read operation was cancelled");
+				}
 				for (LmdbSailStore.ReadViewLease readView : owner.readViews) {
 					readView.ensureNativeSnapshotsValid();
 				}
@@ -3228,6 +3233,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	}
 
 	private final class ReadExposureScope implements Runnable, Supplier<QueryExecutionContext.WorkerScope> {
+		private final CancellationSignal lifecycleCancellation = CancellationSignal.current();
 		private final long cancellationGeneration;
 		private final ReadExposureScope parent;
 		private final ReplayableIteration<?> observationOwner;
@@ -3366,8 +3372,15 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		}
 
 		private void ensureNativeSnapshotsValid() throws SailException {
+			checkLifecycleCancellation();
 			for (LmdbSailStore.ReadViewLease readView : readViews) {
 				readView.ensureNativeSnapshotsValid();
+			}
+		}
+
+		private void checkLifecycleCancellation() {
+			if (lifecycleCancellation.isCancelled()) {
+				throw new SailException("The LMDB read operation was cancelled");
 			}
 		}
 
@@ -3387,6 +3400,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	}
 
 	private final class CapturedReadContext implements QueryExecutionContext.WorkerScope {
+		private final CancellationSignal lifecycleCancellation = CancellationSignal.current();
 		private final long cancellationGeneration;
 		private final ValueResolutionScope valueScope;
 		private final ReplayableIteration<?> observationOwner;
@@ -3416,6 +3430,9 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 
 		@Override
 		public void checkActive() {
+			if (lifecycleCancellation.isCancelled()) {
+				throw new SailException("The dispatched LMDB read operation was cancelled");
+			}
 			// These lifecycle fields are volatile or immutable. Revalidation must not take the shared
 			// read-attempt monitor for every comparator callback or be deferred with growth checkpoints.
 			if (cancellationGeneration != readCancellationGeneration) {
