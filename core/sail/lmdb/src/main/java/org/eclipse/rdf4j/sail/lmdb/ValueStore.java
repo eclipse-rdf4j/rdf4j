@@ -2035,7 +2035,6 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			// Owning-store close has ended all public admission and readers before entering this private phase.
 			// The global growth coordinator is already shut down; no application continuation remains to certify.
 			growMapAfterReindexMapFullAfterQuiescence(resizeTarget, null, false, null);
-			bulkMapGrowthCount++;
 		}
 		writeTransaction((stack, txn) -> {
 			freeUnusedIdsAndValues(stack, txn, null, closeLivenessChecker);
@@ -4574,6 +4573,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			detachStableReadSnapshots(growthAttempt);
 			txnManager.deactivate();
 			try {
+				long previousMapSize = mapSize;
 				long newMapSize = growthPolicy.grownMapSize(mapSize, pageSize,
 						Math.max(requiredBytes, LmdbUtil.MIN_FREE_SPACE));
 				if (growthAttempt != null) {
@@ -4582,6 +4582,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				E(mdb_env_set_mapsize(env, newMapSize));
 				mapSize = newMapSize;
 				nativeMapGeneration++;
+				if (newMapSize > previousMapSize) {
+					bulkMapGrowthCount++;
+				}
 			} finally {
 				txnManager.activate();
 			}
@@ -7248,7 +7251,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					throw new LmdbNativeChunkFullException(LmdbSailStore.MapResizeKind.VALUE_STORE, null);
 				}
 				if (decision != null && !decision.track) {
-					growForTransactionRetry(requiredSize, null, decision);
+					growForTransactionRetry(requiredSize, null, decision, transaction);
 				}
 				LmdbSailStore.MapGrowthAttempt growthAttempt;
 				try {
@@ -7256,7 +7259,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					// An independent reservation waits for its own map-growth admission below.
 					growthAttempt = activeWriteTxn ? beginMapGrowthAttempt() : null;
 				} catch (LmdbTransactionRetryException unsafeContinuation) {
-					growForTransactionRetry(requiredSize, unsafeContinuation, decision);
+					growForTransactionRetry(requiredSize, unsafeContinuation, decision, transaction);
 					throw unsafeContinuation;
 				}
 				try (growthAttempt) {
@@ -7435,6 +7438,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		try {
 			readTransaction(env, (stack, txn) -> {
 				long requiredBytes = preparedValueReservation(stack, txn, footprint);
+				observePreparedValueReservationForTest(requiredBytes);
 				resizeForAllocation(txn, requiredBytes, activeWriteTxnCommitted);
 				return null;
 			});
@@ -7444,6 +7448,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				commitFreshValueTransaction(session);
 			}
 		}
+	}
+
+	/** Observes the computed batch footprint without changing its growth or writer-admission policy. */
+	void observePreparedValueReservationForTest(long requiredBytes) {
 	}
 
 	/** The same metadata and pending-reference budget completes native reservations and publication forecasts. */
@@ -7831,7 +7839,6 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					endTransaction(true, true);
 				}
 				growMapAfterReindexMapFullAfterQuiescence(requiredSize, attempt, activeWriter, transaction);
-				bulkMapGrowthCount++;
 			} finally {
 				if (releaseGrowthOwner) {
 					synchronized (writerAdmission) {
@@ -7847,10 +7854,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 	}
 
-	private void growForTransactionRetry(long requiredSize, Throwable cause, TxnReplayPolicy.Decision decision)
+	private void growForTransactionRetry(long requiredSize, Throwable cause, TxnReplayPolicy.Decision decision,
+			WriterTransaction transaction)
 			throws IOException {
 		if (autoGrow && decision != null && decision.frozenReplay) {
-			throw frozenCapacity(cause);
+			throw frozenCapacity(cause, decision);
 		}
 		if (decision != null && decision.checkpoint) {
 			throw new LmdbNativeChunkFullException(LmdbSailStore.MapResizeKind.VALUE_STORE, cause);
@@ -7858,11 +7866,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		LmdbTransactionRetryException retry = decision == null
 				? new LmdbTransactionRetryException("ValueStore", cause)
 				: decision.capacityFailure("ValueStore", cause);
-		long projectedBytes = writeTxn == 0 ? saturatedEstimateAdd(committedHighWaterBytes, requiredSize)
-				: LmdbUtil.getNewSize(pageSize, writeTxn, requiredSize);
+		long projectedBytes = retryProjectedBytes(transaction, requiredSize);
 		// No dictionary checkpoint may publish this transaction's prefix when its replay was omitted.
 		try {
-			endTransaction(false, false);
+			transaction.invoke(() -> endTransaction(false, false));
 		} catch (IOException | RuntimeException cleanupFailure) {
 			if (cleanupFailure != retry) {
 				retry.addSuppressed(cleanupFailure);
@@ -7870,27 +7877,42 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 		if (mapGrowthRequestListener != null) {
 			try {
-				mapGrowthRequestListener.request(LmdbSailStore.MapResizeKind.VALUE_STORE, projectedBytes, true);
+				transaction.invoke(() -> mapGrowthRequestListener.request(LmdbSailStore.MapResizeKind.VALUE_STORE,
+						projectedBytes, true));
 			} catch (IOException | RuntimeException growthFailure) {
 				retry.addSuppressed(growthFailure);
 			}
 			throw retry;
 		}
 		try {
-			try (LmdbSailStore.MapGrowthAttempt growthAttempt = beginMapGrowthAttempt()) {
-				if (growthAttempt != null) {
-					growthAttempt.requestQuiescence(LmdbSailStore.MapResizeKind.VALUE_STORE);
-				}
-				long additionalBytes = Math.max(LmdbUtil.MIN_FREE_SPACE,
-						projectedBytes - Math.min(projectedBytes, occupiedBytes()));
-				growMapForEstimatedWrite(additionalBytes, growthAttempt);
-			}
+			// Native MAP_FULL has already disproved a forecast based on the committed footprint. Reserve
+			// independent growth after this publication settles, waiting for any later writer outside the remap
+			// barrier. There is no surviving native continuation to borrow from a supplier at this point.
+			WriterPublication remaining = writerPublication;
+			WriterTransaction retained = remaining != null && remaining.transaction == transaction ? transaction : null;
+			growMapAfterReindexMapFullAfterQuiescence(projectedBytes, null, false, retained);
 		} catch (IOException | RuntimeException growthFailure) {
 			if (growthFailure != retry) {
 				retry.addSuppressed(growthFailure);
 			}
 		}
 		throw retry;
+	}
+
+	private long retryProjectedBytes(WriterTransaction transaction, long requiredSize) {
+		associationGate.lock();
+		try {
+			WriterPublication publication = writerPublication;
+			if (publication != null && publication.transaction == transaction && writeTxn != 0L
+					&& (publication.consumer == null || publication.consumer == Thread.currentThread())) {
+				return Math.max(mapSize, LmdbUtil.getNewSize(pageSize, writeTxn, requiredSize));
+			}
+			// Commit consumes its native pointer even on failure. Its capacity failure still requires real growth;
+			// neither a later writer's pointer nor a smaller committed footprint describes the failed transaction.
+			return saturatedEstimateAdd(mapSize, requiredSize);
+		} finally {
+			associationGate.unlock();
+		}
 	}
 
 	long replayMapSize() {
@@ -7970,6 +7992,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private void checkReplayFailure() throws IOException {
+		WriterTransaction requested = WriterTransaction.current();
+		if (requested != null && requested.replayDecision != null) {
+			requested.replayDecision.check();
+		}
 		TxnReplayPolicy.Decision decision = replayDecision;
 		if (decision != null) {
 			decision.check();
@@ -11279,18 +11305,19 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				if (!isWriteTransactionOwner()) {
 					return withWriterLookupContext((stack, txn) -> writeTransaction(transaction));
 				}
+				WriterTransaction writer = currentWriterTransaction();
+				TxnReplayPolicy.Decision decision = writer.replayDecision;
 				try (MemoryStack stack = MemoryStack.stackPush()) {
 					invalidateUntrustedCountMetadata(stack, writeTxn);
 					T result = transaction.exec(stack, writeTxn);
 					nativeMutation = true;
 					return result;
 				} catch (LmdbUtil.MapFullException mapFull) {
-					TxnReplayPolicy.Decision decision = replayDecision;
 					if (autoGrow && decision != null && decision.frozenReplay) {
 						throw frozenCapacity(mapFull);
 					}
 					if (autoGrow && decision != null && !decision.track) {
-						growForTransactionRetry(0L, mapFull, decision);
+						growForTransactionRetry(0L, mapFull, decision, writer);
 					}
 					throw mapFull;
 				}
@@ -13512,7 +13539,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				throw frozenCapacity(mapFull);
 			}
 			if (autoGrow && decision != null && !decision.track) {
-				growForTransactionRetry(0L, mapFull, decision);
+				growForTransactionRetry(0L, mapFull, decision, transaction);
 			}
 			throw mapFull;
 		} finally {
@@ -13856,15 +13883,18 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	public void commit() throws IOException {
 		long generationBefore = nativeCommitGeneration;
-		TxnReplayPolicy.Decision decision = replayDecision;
+		WriterTransaction requested = WriterTransaction.current();
+		WriterTransaction admitted = requested == null ? currentWriterTransaction() : requested;
+		WriterTransaction transaction = admitted == null ? new WriterTransaction() : admitted;
+		TxnReplayPolicy.Decision decision = transaction.replayDecision;
 		try {
-			endTransaction(true, false);
+			transaction.invoke(() -> endTransaction(true, false));
 		} catch (LmdbUtil.MapFullException mapFull) {
 			if (autoGrow && decision != null && decision.frozenReplay) {
 				throw frozenCapacity(mapFull, decision);
 			}
 			if (autoGrow && decision != null && !decision.track) {
-				growForTransactionRetry(0L, mapFull, decision);
+				growForTransactionRetry(0L, mapFull, decision, transaction);
 			}
 			throw mapFull;
 		} catch (IOException | RuntimeException | Error failure) {

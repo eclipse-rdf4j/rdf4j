@@ -432,6 +432,7 @@ class LmdbEstimatorPublicationAdmissionTest {
 		try {
 			store.init();
 			initialized = true;
+			awaitReadAdmissionFixtureSetup(store);
 			LmdbSailStore backingStore = store.getBackingStore();
 			estimator = backingStore.getSketchBasedJoinEstimator();
 			assertTrue(estimator != null, "The LMDB sketch estimator must be enabled for this regression");
@@ -867,6 +868,7 @@ class LmdbEstimatorPublicationAdmissionTest {
 	void realConnectionCallbackFailureRestoresReadResourcesAndAllowsLaterLookup(CallbackFailure kind,
 			@TempDir Path directory) throws Exception {
 		LmdbStore store = initializedStore(directory);
+		awaitReadAdmissionFixtureSetup(store);
 		LmdbSailStore backingStore = store.getBackingStore();
 		Object owner = new Object();
 		try (SailSource writeSource = backingStore.getExplicitSailSource(owner);
@@ -942,6 +944,7 @@ class LmdbEstimatorPublicationAdmissionTest {
 	@Test
 	void observedIterationFailureRestoresItsReadResourceContext(@TempDir Path directory) throws Exception {
 		LmdbStore store = initializedStore(directory);
+		awaitReadAdmissionFixtureSetup(store);
 		LmdbSailStore backingStore = store.getBackingStore();
 		Object owner = new Object();
 		try (SailSource writeSource = backingStore.getExplicitSailSource(owner);
@@ -989,6 +992,7 @@ class LmdbEstimatorPublicationAdmissionTest {
 	void capturedParentSurvivesEstimatorDelegateFailureAndSupportsLaterLookup(CallbackFailure kind,
 			@TempDir Path directory) throws Exception {
 		LmdbStore store = initializedStore(directory);
+		awaitReadAdmissionFixtureSetup(store);
 		LmdbSailStore backingStore = store.getBackingStore();
 		Object owner = new Object();
 		try (SailSource writeSource = backingStore.getExplicitSailSource(owner);
@@ -1189,6 +1193,12 @@ class LmdbEstimatorPublicationAdmissionTest {
 		LmdbStore store = new LmdbStore(directory.toFile(), new LmdbStoreConfig());
 		store.init();
 		return store;
+	}
+
+	private static void awaitReadAdmissionFixtureSetup(LmdbStore store) throws Exception {
+		LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
+		assertTrue(store.awaitIndexRebuild(30, TimeUnit.SECONDS),
+				"requested statement indexes must settle before read-slot baselines are captured");
 	}
 
 	private static SketchStatementSource emptyStatementSource() {

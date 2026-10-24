@@ -149,6 +149,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		LmdbStore reopened = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		reopened.init();
 		try {
+			LmdbGcTestMaintenance.awaitTrustedReclamationSetup(reopened);
 			LmdbSailStore backingStore = reopened.getBackingStore();
 			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
 			// stop() joins the refresher: unloaded-state assertions must not race its legitimate preload.
@@ -689,6 +690,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		store.init();
 		try {
+			LmdbGcTestMaintenance.awaitTrustedReclamationSetup(store);
 			LmdbSailStore backingStore = store.getBackingStore();
 			backingStore.enableMultiThreading = false;
 			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();

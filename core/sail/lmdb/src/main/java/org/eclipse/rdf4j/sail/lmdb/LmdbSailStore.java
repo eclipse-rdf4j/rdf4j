@@ -2807,6 +2807,22 @@ class LmdbSailStore implements SailStore {
 	private final LmdbLearnedFilterSelectivity learnedFilterSelectivity;
 	private final QueryExecutionPolicy queryExecutionPolicy;
 	private final LmdbStatementAccessArbiter.RuntimeEvidence statementAccessEvidence = new LmdbStatementAccessArbiter.RuntimeEvidence();
+	volatile NativeSourceObservationForTest nativeSourceObservationForTest;
+
+	interface NativeSourceObservationForTest extends AdjacencyAccessObserver {
+		void state(NativeSourceStateForTest state);
+	}
+
+	/** Only cached observations; no source, owner or native handle is retained by this diagnostic value. */
+	record NativeSourceStateForTest(StatementOrder order, long subject, long predicate, long object, long context,
+			long snapshotRevision, long pinnedTripleVersion, long tripleVersion, long tripleNativeTransactionId,
+			boolean tripleNativeActive, long valueVersion, long valueNativeTransactionId, boolean valueNativeActive,
+			long valueMapGeneration, boolean valueDetached, boolean adjacencyEligible, boolean adjacencyExact,
+			LmdbAdjacencyMetrics.FallbackReason adjacencyFallbackReason, long adjacencySnapshotRevision,
+			long adjacencyAppliedRevision, long tripleCommitGeneration,
+			long valueCommitGeneration, String postReadyStatus, String statementIndexStatus, String valueIndexStatus) {
+	}
+
 	private final LmdbStatementPatternCardinalitySource statementPatternCardinalitySource;
 	private final ScheduledExecutorService estimatorPersistExec = Executors.newSingleThreadScheduledExecutor(r -> {
 		Thread t = new Thread(r, "LmdbJoinEstimator-Persist");
@@ -5235,7 +5251,12 @@ class LmdbSailStore implements SailStore {
 
 	private void requestMapGrowthForCurrentWriter(MapResizeKind kind, long projectedUsedBytes, boolean exhausted)
 			throws IOException {
-		if (!ownsNativeWriter(kind, nativeWriterTransaction(kind))) {
+		WriterTransaction requested = WriterTransaction.current();
+		WriterTransaction transaction = requested == null ? nativeWriterTransaction(kind) : requested;
+		// A whole-transaction retry may request capacity after its own native commit was consumed. Its
+		// captured logical publication still owns that request; a later native writer cannot supply authority.
+		if (transaction == null || transaction != storeNativeTransaction
+				|| requested == null && !ownsNativeWriter(kind, transaction)) {
 			return;
 		}
 		Object owner = storeTransactionOwner;
@@ -8541,7 +8562,7 @@ class LmdbSailStore implements SailStore {
 
 		if (contexts.length == 0) {
 			RecordIterator records = source.statements(subjID, predID, objID, LmdbValue.UNKNOWN_ID,
-					(AdjacencyAccessObserver) null);
+					nativeSourceObservationForTest);
 			return semanticStatements(source,
 					new LmdbStatementIterator(records, valueStore, source.readView.valueSnapshot()), subj, pred, obj);
 		}
@@ -8563,7 +8584,7 @@ class LmdbSailStore implements SailStore {
 				}
 
 				RecordIterator records = source.statements(subjID, predID, objID, contextID,
-						(AdjacencyAccessObserver) null);
+						nativeSourceObservationForTest);
 				perContextIterList.add(new LmdbStatementIterator(records, valueStore, source.readView.valueSnapshot()));
 			}
 
@@ -13971,6 +13992,24 @@ class LmdbSailStore implements SailStore {
 			boolean releaseReadLock = true;
 			try {
 				assertNativeSourceOpen();
+				NativeSourceObservationForTest observation = nativeSourceObservationForTest;
+				if (observation != null) {
+					Txn valueTxn = readView.valueSnapshot().txnRef();
+					LmdbAdjacencyReadView view = adjacencyView;
+					LmdbAdjacencyPublishedState viewState = view == null ? null : view.state();
+					observation.state(new NativeSourceStateForTest(order, subj, pred, obj, context, snapshotRevision,
+							pinnedTxnVersion, txn.version(), txn.nativeTransactionId(), txn.isNativeActive(),
+							valueTxn.version(), valueTxn.nativeTransactionId(), valueTxn.isNativeActive(),
+							readView.valueSnapshot().nativeMapGeneration(),
+							readView.valueSnapshot().dictionaryDetached(),
+							adjacencyEligible, view != null && view.isExact(),
+							view == null ? null : view.fallbackReason(),
+							view == null ? -1L : view.snapshotRevision(),
+							viewState == null ? -1L : viewState.appliedRevision(),
+							tripleStore.getNativeCommitGeneration(),
+							valueStore.nativeCommitGeneration(), postReadyStatus, tripleStore.indexRebuildStatus(),
+							valueStore.indexRebuildStatus()));
+				}
 				if (!hasStatementsInSource()) {
 					return EmptyRecordIterator.INSTANCE;
 				}

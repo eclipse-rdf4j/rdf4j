@@ -5561,6 +5561,10 @@ class TripleStore implements Closeable {
 	}
 
 	private void checkReplayFailure() throws IOException {
+		WriterTransaction requested = WriterTransaction.current();
+		if (requested != null && requested.replayDecision != null) {
+			requested.replayDecision.check();
+		}
 		legacyWriterIndexFailure = null;
 		if (replayDecision != null) {
 			replayDecision.check();
@@ -5643,6 +5647,12 @@ class TripleStore implements Closeable {
 	}
 
 	private void markMutationFailure(Throwable failure) {
+		WriterTransaction requested = WriterTransaction.current();
+		if (writerTransaction == null || requested != null && requested != writerTransaction) {
+			// A failed precondition has no native owner to poison. A scoped old writer likewise cannot
+			// attach its failure to a later publication; consumed native handles retain their logical ticket.
+			return;
+		}
 		if (mutationFailure == null) {
 			mutationFailure = failure;
 		} else if (mutationFailure != failure) {

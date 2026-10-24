@@ -312,44 +312,55 @@ class LmdbDirectAdjacencyQueryTest {
 	@Test
 	void genericSailDatasetUnorderedStatementsUseSelectedAdjacencyWhenAvailable() throws IOException {
 		openStore(DirectAdjacencyMode.PREFER, DirectAdjacencyCoverage.SELECTED, List.of(P1));
+		RoutingObservation observation = new RoutingObservation();
+		backing.nativeSourceObservationForTest = observation;
 
-		try (CloseableDataset dataset = dataset()) {
-			LmdbAdjacencyMetrics.Snapshot before = direct.snapshotMetrics();
-			List<Statement> allContexts = collectStatements(dataset.dataset.getStatements(S1, P1, null));
-			LmdbAdjacencyMetrics.Snapshot afterAllContexts = direct.snapshotMetrics();
-			String allContextsDiagnostics = directAdjacencyDiagnostics(before, afterAllContexts);
-			assertThat(allContexts)
-					.as("selected-predicate statement access; " + allContextsDiagnostics)
-					.containsExactlyInAnyOrder(
-							F.createStatement(S1, P1, O1),
-							F.createStatement(S1, P1, O2, G1));
-			assertThat(afterAllContexts.lookupHits)
-					.as("selected-predicate lookup hit; " + allContextsDiagnostics)
-					.isGreaterThan(before.lookupHits);
-			long allContextsHits = direct.snapshotMetrics().lookupHits;
+		try {
+			try (CloseableDataset dataset = dataset()) {
+				List<String> queryCaptures = new ArrayList<>();
+				LmdbAdjacencyMetrics.Snapshot before = direct.snapshotMetrics();
+				List<Statement> allContexts = collectStatements(dataset.dataset.getStatements(S1, P1, null));
+				LmdbAdjacencyMetrics.Snapshot afterAllContexts = direct.snapshotMetrics();
+				String allContextsDiagnostics = routingDiagnostics(before, afterAllContexts, observation);
+				queryCaptures.add("allContexts=" + allContextsDiagnostics);
+				assertThat(allContexts)
+						.as("selected-predicate statement access; " + allContextsDiagnostics)
+						.containsExactlyInAnyOrder(
+								F.createStatement(S1, P1, O1),
+								F.createStatement(S1, P1, O2, G1));
+				assertThat(afterAllContexts.lookupHits)
+						.as("selected-predicate lookup hit; " + allContextsDiagnostics)
+						.isGreaterThan(before.lookupHits);
+				long allContextsHits = direct.snapshotMetrics().lookupHits;
 
-			LmdbAdjacencyMetrics.Snapshot beforeNamedContext = direct.snapshotMetrics();
-			List<Statement> namedContext = collectStatements(dataset.dataset.getStatements(S1, P1, null, G1));
-			LmdbAdjacencyMetrics.Snapshot afterNamedContext = direct.snapshotMetrics();
-			String namedContextDiagnostics = directAdjacencyDiagnostics(beforeNamedContext, afterNamedContext);
-			assertThat(namedContext)
-					.as("selected-predicate named-context access; " + namedContextDiagnostics)
-					.containsExactly(F.createStatement(S1, P1, O2, G1));
-			assertThat(afterNamedContext.lookupHits)
-					.as("selected-predicate named-context lookup hit; " + namedContextDiagnostics)
-					.isGreaterThan(allContextsHits);
-			long namedContextHits = direct.snapshotMetrics().lookupHits;
+				LmdbAdjacencyMetrics.Snapshot beforeNamedContext = direct.snapshotMetrics();
+				List<Statement> namedContext = collectStatements(dataset.dataset.getStatements(S1, P1, null, G1));
+				LmdbAdjacencyMetrics.Snapshot afterNamedContext = direct.snapshotMetrics();
+				String namedContextDiagnostics = routingDiagnostics(beforeNamedContext, afterNamedContext, observation);
+				queryCaptures.add("namedContext=" + namedContextDiagnostics);
+				assertThat(namedContext)
+						.as("selected-predicate named-context access; " + namedContextDiagnostics)
+						.containsExactly(F.createStatement(S1, P1, O2, G1));
+				assertThat(afterNamedContext.lookupHits)
+						.as("selected-predicate named-context lookup hit; " + namedContextDiagnostics)
+						.isGreaterThan(allContextsHits);
+				long namedContextHits = direct.snapshotMetrics().lookupHits;
 
-			LmdbAdjacencyMetrics.Snapshot beforeUncovered = direct.snapshotMetrics();
-			List<Statement> uncovered = collectStatements(dataset.dataset.getStatements(S1, P2, null));
-			LmdbAdjacencyMetrics.Snapshot afterUncovered = direct.snapshotMetrics();
-			String uncoveredDiagnostics = directAdjacencyDiagnostics(beforeUncovered, afterUncovered);
-			assertThat(uncovered)
-					.as("uncovered predicate fallback; " + uncoveredDiagnostics)
-					.containsExactly(F.createStatement(S1, P2, O1));
-			assertThat(afterUncovered.lookupHits)
-					.as("an uncovered predicate remains correct through LMDB fallback; " + uncoveredDiagnostics)
-					.isEqualTo(namedContextHits);
+				LmdbAdjacencyMetrics.Snapshot beforeUncovered = direct.snapshotMetrics();
+				List<Statement> uncovered = collectStatements(dataset.dataset.getStatements(S1, P2, null));
+				LmdbAdjacencyMetrics.Snapshot afterUncovered = direct.snapshotMetrics();
+				String uncoveredDiagnostics = routingDiagnostics(beforeUncovered, afterUncovered, observation);
+				queryCaptures.add("uncovered=" + uncoveredDiagnostics);
+				assertThat(uncovered)
+						.as("uncovered predicate fallback; " + uncoveredDiagnostics)
+						.containsExactly(F.createStatement(S1, P2, O1));
+				assertThat(afterUncovered.lookupHits)
+						.as("an uncovered predicate remains correct through LMDB fallback; " + uncoveredDiagnostics)
+						.isEqualTo(namedContextHits);
+				System.out.println("same-lookup generic Sail routing capture: " + queryCaptures);
+			}
+		} finally {
+			backing.nativeSourceObservationForTest = null;
 		}
 
 		assertThat(direct.snapshotMetrics().activeViews).isZero();
@@ -897,6 +908,11 @@ class LmdbDirectAdjacencyQueryTest {
 
 		List<long[]> rows(long subj, long pred, long obj, long context) throws IOException {
 			return collect(source.statements(subj, pred, obj, context));
+		}
+
+		List<long[]> rows(long subj, long pred, long obj, long context,
+				NativeLmdbQuerySource.AdjacencyAccessObserver observer) throws IOException {
+			return collect(source.statements(subj, pred, obj, context, observer));
 		}
 
 		List<long[]> rows(StatementOrder order, long subj, long pred, long obj, long context) throws IOException {
@@ -2809,7 +2825,7 @@ class LmdbDirectAdjacencyQueryTest {
 	}
 
 	@Test
-	void flaggedRootScanBulkDecodesSupernodeRun() throws IOException {
+	void flaggedRootScanBulkDecodesSupernodeRun() throws IOException, InterruptedException {
 		System.setProperty(LmdbDirectAdjacencyStore.ROOT_SCAN_PROPERTY, "true");
 		openPreferStore();
 		IRI widePredicate = F.createIRI("http://example.org/root-wide");
@@ -2821,18 +2837,117 @@ class LmdbDirectAdjacencyQueryTest {
 			}
 			connection.commit();
 		}
+		LmdbGcTestMaintenance.awaitTrustedReclamationSetup(sail);
+		// A ready direct-adjacency view does not prove all queued maintenance has settled: compaction can enqueue a
+		// quiescent reset after a manual build. Drain the finite preparation -> maintenance -> compaction ->
+		// maintenance
+		// chain before building the view that this test measures.
+		direct.awaitCommitCleanupForTest();
+		direct.awaitCompactionForTest();
+		direct.awaitAdaptiveAccelerationForTest();
 		assertThat(direct.buildNowForTest()).isTrue();
+		awaitDirectAdjacencyReady();
 
-		try (var dataset = dataset()) {
-			long predicate = dataset.idOf(widePredicate);
-			LmdbAdjacencyMetrics.Snapshot before = direct.snapshotMetrics();
-			List<long[]> rows = dataset.rows(-1, predicate, -1, -1);
-			LmdbAdjacencyMetrics.Snapshot after = direct.snapshotMetrics();
-			String diagnostics = directAdjacencyDiagnostics(before, after);
-			assertThat(rows).as("wide predicate root scan cardinality; " + diagnostics).hasSize(edgeCount);
-			assertThat(after.lookupHits)
-					.as("wide predicate root scan direct-adjacency hit; " + diagnostics)
-					.isGreaterThan(before.lookupHits);
+		RoutingObservation observation = new RoutingObservation();
+		backing.nativeSourceObservationForTest = observation;
+		try {
+			try (var dataset = dataset()) {
+				long predicate = dataset.idOf(widePredicate);
+				LmdbAdjacencyMetrics.Snapshot before = direct.snapshotMetrics();
+				List<long[]> rows = dataset.rows(-1, predicate, -1, -1, observation);
+				LmdbAdjacencyMetrics.Snapshot after = direct.snapshotMetrics();
+				String diagnostics = routingDiagnostics(before, after, observation);
+				assertThat(rows).as("wide predicate root scan cardinality; " + diagnostics).hasSize(edgeCount);
+				assertThat(after.lookupHits)
+						.as("wide predicate root scan direct-adjacency hit; " + diagnostics)
+						.isGreaterThan(before.lookupHits);
+				System.out.println("same-lookup rootbulk routing capture: " + diagnostics);
+			}
+		} finally {
+			backing.nativeSourceObservationForTest = null;
+		}
+	}
+
+	private String routingDiagnostics(LmdbAdjacencyMetrics.Snapshot before, LmdbAdjacencyMetrics.Snapshot after,
+			RoutingObservation observation) {
+		return directAdjacencyDiagnostics(before, after)
+				+ ", absoluteFallbacksBefore=" + absoluteFallbacks(before)
+				+ ", absoluteFallbacksAfter=" + absoluteFallbacks(after)
+				+ ", sameLookupObservation=" + observation;
+	}
+
+	private static EnumMap<FallbackReason, Long> absoluteFallbacks(LmdbAdjacencyMetrics.Snapshot snapshot) {
+		EnumMap<FallbackReason, Long> counts = new EnumMap<>(FallbackReason.class);
+		for (FallbackReason reason : FallbackReason.values()) {
+			counts.put(reason, snapshot.fallbacks(reason));
+		}
+		return counts;
+	}
+
+	private static final class RoutingObservation implements LmdbSailStore.NativeSourceObservationForTest {
+		private static final int MAX_EVENTS = 128;
+		private final List<LmdbSailStore.NativeSourceStateForTest> states = new ArrayList<>();
+		private final List<String> events = new ArrayList<>();
+		private long omittedEvents;
+
+		@Override
+		public void state(LmdbSailStore.NativeSourceStateForTest state) {
+			if (states.size() < MAX_EVENTS) {
+				states.add(state);
+			} else {
+				omittedEvents++;
+			}
+		}
+
+		@Override
+		public void access(boolean used, String reason, StatementOrder order, long subj, long pred, long obj,
+				long context) {
+			record("access", used + ":" + reason, order, subj, pred, obj, context);
+		}
+
+		@Override
+		public void candidate(String source, String reason, StatementOrder order, long subj, long pred, long obj,
+				long context) {
+			record("candidate", source + ":" + reason, order, subj, pred, obj, context);
+		}
+
+		@Override
+		public void selected(boolean adjacency, String reason, StatementOrder order, long subj, long pred, long obj,
+				long context) {
+			record("selected", adjacency + ":" + reason, order, subj, pred, obj, context);
+		}
+
+		@Override
+		public void outranked(String source, String reason, StatementOrder order, long subj, long pred, long obj,
+				long context) {
+			record("outranked", source + ":" + reason, order, subj, pred, obj, context);
+		}
+
+		@Override
+		public void ineligible(String reason, StatementOrder order, long subj, long pred, long obj, long context) {
+			record("ineligible", reason, order, subj, pred, obj, context);
+		}
+
+		@Override
+		public void measurement(boolean adjacency, long scannedRows, long matchedRows, long filteredRows,
+				boolean censored) {
+			record("measurement", adjacency + ":scanned=" + scannedRows + ":matched=" + matchedRows
+					+ ":filtered=" + filteredRows + ":censored=" + censored, null, -1L, -1L, -1L, -1L);
+		}
+
+		private void record(String kind, String result, StatementOrder order, long subj, long pred, long obj,
+				long context) {
+			if (events.size() < MAX_EVENTS) {
+				events.add(kind + "(" + result + ", order=" + order + ", ids=" + subj + "/" + pred + "/" + obj
+						+ "/" + context + ")");
+			} else {
+				omittedEvents++;
+			}
+		}
+
+		@Override
+		public String toString() {
+			return "states=" + states + ", events=" + events + ", omitted=" + omittedEvents;
 		}
 	}
 
