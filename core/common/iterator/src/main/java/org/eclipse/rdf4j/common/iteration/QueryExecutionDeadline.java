@@ -188,6 +188,19 @@ public final class QueryExecutionDeadline implements AutoCloseable {
 		return registration;
 	}
 
+	/**
+	 * Arms an interrupt of the calling thread at expiry, so an interruptible wait (a lock, semaphore or latch
+	 * acquisition) wakes when the query times out without reading a clock. Close the handle as soon as the wait
+	 * returns: after {@link ExpiryInterruption#disarm()} returns, this handle can no longer interrupt the thread.
+	 *
+	 * @return the armed handle
+	 */
+	public ExpiryInterruption interruptOnExpiry() {
+		ExpiryInterruption interruption = new ExpiryInterruption(Thread.currentThread());
+		interruption.arm(this);
+		return interruption;
+	}
+
 	@Override
 	public void close() {
 		if (closed.compareAndSet(false, true)) {
@@ -257,6 +270,60 @@ public final class QueryExecutionDeadline implements AutoCloseable {
 	/**
 	 * A removable deadline expiration listener.
 	 */
+	/** An interrupt of one waiting thread at expiry; see {@link #interruptOnExpiry()}. */
+	public static final class ExpiryInterruption implements AutoCloseable {
+
+		private final Thread thread;
+		/** Guarded by this handle's monitor, which delivery and disarming share. */
+		private boolean armed = true;
+		private boolean delivered;
+		private Registration registration;
+
+		private ExpiryInterruption(Thread thread) {
+			this.thread = thread;
+		}
+
+		private void arm(QueryExecutionDeadline deadline) {
+			// Runs the delivery inline when the deadline has already expired.
+			Registration armedRegistration = deadline.onExpiration(this::deliver);
+			synchronized (this) {
+				registration = armedRegistration;
+			}
+		}
+
+		private synchronized void deliver() {
+			if (armed) {
+				delivered = true;
+				thread.interrupt();
+			}
+		}
+
+		/**
+		 * Disarms the interrupt. After this returns, this handle can no longer interrupt the thread.
+		 *
+		 * @return whether this handle interrupted the thread, so the caller can clear that interrupt and report the
+		 *         timeout instead
+		 */
+		public boolean disarm() {
+			Registration armedRegistration;
+			boolean wasDelivered;
+			synchronized (this) {
+				armed = false;
+				wasDelivered = delivered;
+				armedRegistration = registration;
+			}
+			if (armedRegistration != null) {
+				armedRegistration.close();
+			}
+			return wasDelivered;
+		}
+
+		@Override
+		public void close() {
+			disarm();
+		}
+	}
+
 	public static final class Registration implements AutoCloseable {
 
 		private final QueryExecutionDeadline deadline;

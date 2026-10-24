@@ -21,8 +21,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -54,6 +56,76 @@ class QueryExecutionDeadlineTest {
 			// Listeners may run off the timer thread; await them causally rather than polling.
 			assertDoesNotThrow(() -> listener.get(10, TimeUnit.SECONDS), "the scheduled expiry runs listeners");
 		} finally {
+			deadline.close();
+		}
+	}
+
+	@Test
+	void expiryInterruptsOnlyTheArmedWaiter() throws Exception {
+		AtomicReference<Runnable> scheduledExpiry = new AtomicReference<>();
+		QueryExecutionDeadline deadline = QueryExecutionDeadline.start(60_000L, (expiry, deadlineMillis) -> {
+			scheduledExpiry.set(expiry);
+			return () -> {
+			};
+		});
+		CountDownLatch armed = new CountDownLatch(1);
+		CompletableFuture<Boolean> delivered = new CompletableFuture<>();
+		Thread waiter = new Thread(() -> {
+			QueryExecutionDeadline.ExpiryInterruption interruption = deadline.interruptOnExpiry();
+			try {
+				armed.countDown();
+				new Semaphore(0).acquire();
+				delivered.completeExceptionally(new AssertionError("the wait must not complete"));
+			} catch (InterruptedException expected) {
+				delivered.complete(interruption.disarm());
+			}
+		}, "deadline-armed-waiter");
+		waiter.start();
+		try {
+			assertTrue(armed.await(10, TimeUnit.SECONDS));
+			scheduledExpiry.get().run();
+			assertTrue(delivered.get(10, TimeUnit.SECONDS), "expiry must interrupt the armed waiter and report it");
+		} finally {
+			waiter.interrupt();
+			waiter.join(TimeUnit.SECONDS.toMillis(10));
+			deadline.close();
+		}
+	}
+
+	@Test
+	void disarmedInterruptionNeverReachesTheThread() {
+		AtomicReference<Runnable> scheduledExpiry = new AtomicReference<>();
+		QueryExecutionDeadline deadline = QueryExecutionDeadline.start(60_000L, (expiry, deadlineMillis) -> {
+			scheduledExpiry.set(expiry);
+			return () -> {
+			};
+		});
+		try {
+			QueryExecutionDeadline.ExpiryInterruption interruption = deadline.interruptOnExpiry();
+			assertFalse(interruption.disarm(), "nothing was delivered before disarming");
+			scheduledExpiry.get().run();
+			assertFalse(Thread.interrupted(), "a disarmed handle must never interrupt later work on the thread");
+		} finally {
+			Thread.interrupted();
+			deadline.close();
+		}
+	}
+
+	@Test
+	void armingAnExpiredDeadlineInterruptsImmediately() {
+		AtomicReference<Runnable> scheduledExpiry = new AtomicReference<>();
+		QueryExecutionDeadline deadline = QueryExecutionDeadline.start(60_000L, (expiry, deadlineMillis) -> {
+			scheduledExpiry.set(expiry);
+			return () -> {
+			};
+		});
+		try {
+			scheduledExpiry.get().run();
+			QueryExecutionDeadline.ExpiryInterruption interruption = deadline.interruptOnExpiry();
+			assertTrue(Thread.currentThread().isInterrupted(), "an expired deadline interrupts the arming thread");
+			assertTrue(interruption.disarm(), "the handle reports the interrupt it delivered");
+		} finally {
+			Thread.interrupted();
 			deadline.close();
 		}
 	}
