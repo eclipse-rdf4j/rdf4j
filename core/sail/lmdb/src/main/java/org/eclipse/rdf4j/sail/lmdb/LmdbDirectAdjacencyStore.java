@@ -4205,6 +4205,61 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	}
 
 	/**
+	 * Selects an existing streaming adjacency walk whose complete varying key order equals the generic statement index.
+	 * A leading StatementOrder alone is insufficient: every unbound suffix field must agree too. This is physical
+	 * compatibility, independent of costs and values; the ordinary arbiter still chooses the source.
+	 */
+	StatementOrder encounterOrder(String index, long subject, long predicate, long object, long context) {
+		// Retain the ordinary row/node/root specialization whenever its existing order already meets the demand.
+		StatementOrder ordinary = predicate > 0L
+				? subject <= 0L && object > 0L ? StatementOrder.O : StatementOrder.S
+				: StatementOrder.P;
+		String ordinaryIndex = ordinary == StatementOrder.S ? "spoc" : ordinary == StatementOrder.O ? "opsc" : "psoc";
+		if (sameVaryingOrder(ordinaryIndex, index, subject, predicate, object, context)) {
+			return ordinary;
+		}
+		if (sameVaryingOrder("spoc", index, subject, predicate, object, context)) {
+			return StatementOrder.S;
+		}
+		if (sameVaryingOrder("opsc", index, subject, predicate, object, context)) {
+			return StatementOrder.O;
+		}
+		return sameVaryingOrder("psoc", index, subject, predicate, object, context) ? StatementOrder.P : null;
+	}
+
+	/** Partial views may keep their ordinary row/probe/root fast path only with its existing full-order witness. */
+	boolean ordinaryPreservesEncounterOrder(LmdbAdjacencyReadView view, long subject, long predicate, long object,
+			long context, boolean explicit, String index) {
+		String direct = definiteDirectIndexName(view, null, subject, predicate, object, context, explicit);
+		return direct != null && direct.startsWith(DIRECT_INDEX_PREFIX)
+				&& sameVaryingOrder(direct.substring(DIRECT_INDEX_PREFIX.length()), index, subject, predicate, object,
+						context);
+	}
+
+	private static boolean sameVaryingOrder(String direct, String index, long subject, long predicate, long object,
+			long context) {
+		if (index == null || index.length() != 4 || direct.length() != 4) {
+			return false;
+		}
+		int directAt = 0;
+		int indexAt = 0;
+		while (true) {
+			while (directAt < 4 && fieldBound(direct.charAt(directAt), subject, predicate, object, context)) {
+				directAt++;
+			}
+			while (indexAt < 4 && fieldBound(index.charAt(indexAt), subject, predicate, object, context)) {
+				indexAt++;
+			}
+			if (directAt == 4 || indexAt == 4) {
+				return directAt == indexAt;
+			}
+			if (direct.charAt(directAt++) != index.charAt(indexAt++)) {
+				return false;
+			}
+		}
+	}
+
+	/**
 	 * Returns the order that is safe regardless of which arm the statement-access arbiter selects. A requested
 	 * {@link StatementOrder} promises only its leading varying field: the direct and LMDB arms may use different suffix
 	 * orders. For an unordered request, retain the common varying prefix of the two physical walks. {@code null} means

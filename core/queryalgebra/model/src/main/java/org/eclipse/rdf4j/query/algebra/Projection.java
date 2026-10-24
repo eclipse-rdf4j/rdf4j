@@ -21,6 +21,9 @@ import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
  */
 public class Projection extends UnaryTupleOperator {
 
+	// Preserve the serialized identity of the pre-metadata model class.
+	private static final long serialVersionUID = 7589194319867427666L;
+
 	/*-----------*
 	 * Variables *
 	 *-----------*/

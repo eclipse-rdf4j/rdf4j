@@ -99,6 +99,7 @@ import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
 final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler {
 	/** Every general-path compilation owns its frontier slots, including recursive and sibling paths. */
 	private int nextGeneralPathScope;
+	boolean finalTupleResult;
 
 	/**
 	 * LATERAL inputs visible while compiling the current right-hand subtree. A subquery can sit below transparent tuple
@@ -374,16 +375,17 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		// EXISTS correlated only on ?x — so preferring it can never capture a query it does not answer outright.
 		// COUNT(DISTINCT *) full-row hashing is serial-only exactly like computed-interned keys: the specialized
 		// strategies group by raw longs / weighted counts and cannot represent full-row distinctness.
+		SlotPlan physicalArg = LmdbNativeInteriorPlans.lexical(arg);
 		boolean serialOnlyAggregates = sawComputedValueCopy || AggregateSpec.anyFullRowDistinct(aggregates);
 		LmdbNativeExistsIntersection existsIntersection = serialOnlyAggregates ? null
-				: tryExistsIntersectionPlan(stepSource, arg, groupSlots, aggregates);
+				: tryExistsIntersectionPlan(stepSource, physicalArg, groupSlots, aggregates);
 		LmdbAdjacencyAggregatePlan adjacencyAggregate = (serialOnlyAggregates || existsIntersection != null) ? null
-				: LmdbAdjacencyAggregatePlan.tryCreate(arg, groupSlots, aggregates);
+				: LmdbAdjacencyAggregatePlan.tryCreate(physicalArg, groupSlots, aggregates);
 		PrefixRunGroupCandidate prefixRun = (serialOnlyAggregates || existsIntersection != null) ? null
-				: tryPrefixRunGroupPlan(stepSource, arg, groupSlots, aggregates, havingCondition);
+				: tryPrefixRunGroupPlan(stepSource, physicalArg, groupSlots, aggregates, havingCondition);
 		LmdbNativeTypeMatrix typeMatrix = !serialOnlyAggregates && prefixRun == null && existsIntersection == null
 				&& adjacencyAggregate == null && havingCondition == null
-						? tryTypeMatrixStep(stepSource, arg, groupSlots, aggregates, originalExpr)
+						? tryTypeMatrixStep(stepSource, physicalArg, groupSlots, aggregates, originalExpr)
 						: null;
 		layout.freeze(slotNames);
 		NativeGroupStep groupStep = new NativeGroupStep(stepSource, arg, layout, groupSlots, aggregates, strictCompare,
@@ -395,6 +397,16 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		groupStep.adjacencyAggregate = adjacencyAggregate;
 		groupStep.typeMatrix = typeMatrix;
 		groupStep.rootEvaluationScoped = rootEvaluationScoped;
+		boolean countInput = groupSlots.length == 0 && aggregates.length > 0 && !sawComputedValueCopy
+				&& pendingAggregateExpressions.isEmpty();
+		for (AggregateSpec aggregate : aggregates) {
+			countInput &= aggregate.kind == AggKind.COUNT
+					&& (aggregate.rowSlots == null || aggregate.isWildcardCount() && !aggregate.distinct);
+		}
+		if (countInput) {
+			groupStep.consumerRequest = LmdbNativeInteriorPlans.request(arg, stepSource, layout,
+					NativeTupleFacts.of(group.getArg()));
+		}
 		return groupStep;
 	}
 
@@ -627,6 +639,11 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				orderSlots, orderAscending, offset, limit, strictCompare, strategy, expr, context, optionalOnlyNames,
 				prefixPattern, prefixRunPlan);
 		rowsStep.rootEvaluationScoped = rootEvaluationScoped;
+		if (finalTupleResult && projection != null && orderElems.isEmpty() && limit < 0L && offset == 0L
+				&& !distinct && !reduced && pendingAggregateExpressions.isEmpty()) {
+			rowsStep.consumerRequest = LmdbNativeInteriorPlans.request(arg, stepSource, layout,
+					NativeTupleFacts.of(node));
+		}
 		if (!rootEvaluationScoped && projection == null
 				&& new java.util.HashSet<>(java.util.Arrays.asList(sourceNames)).containsAll(slotNames)) {
 			// A projection-less step prepared inside the generic evaluator is an algebra fragment, not a SELECT
@@ -1579,8 +1596,9 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	 * algebra put it.
 	 */
 	private SlotPlan joinWithIslandHoist(SlotPlan left, SlotPlan right) {
-		if (islandsEnabled && left instanceof JoinPlan && !(right instanceof GenericEvalPlan)) {
-			JoinPlan inner = (JoinPlan) left;
+		SlotPlan legacyLeft = LmdbNativeInteriorPlans.legacyShape(left);
+		if (islandsEnabled && legacyLeft instanceof JoinPlan && !(right instanceof GenericEvalPlan)) {
+			JoinPlan inner = (JoinPlan) legacyLeft;
 			GenericEvalPlan island = null;
 			SlotPlan core = null;
 			if (inner.right instanceof GenericEvalPlan) {
@@ -1590,25 +1608,40 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				island = (GenericEvalPlan) inner.left;
 				core = inner.right;
 			}
-			if (island != null && hoistableAcross(island, core.producedMask() | right.producedMask())) {
+			if (island != null && hoistableAcross(island,
+					LmdbNativeInteriorPlans.legacyDependencyMask(core, slots)
+							| LmdbNativeInteriorPlans.legacyDependencyMask(right, slots))) {
 				LmdbNativeAggregateCompiler.ISLAND_HOISTS.incrementAndGet();
-				return SlotPlan.join(SlotPlan.join(core, right), island);
+				return LmdbNativeInteriorPlans.legacy(SlotPlan.join(left, right), core, right, island);
 			}
 		}
-		return SlotPlan.join(left, right);
+		return LmdbNativeInteriorPlans.nativeJoin(left, right, (boundary, surroundingMask) -> {
+			Set<String> surroundingNames = new HashSet<>();
+			long remaining = surroundingMask;
+			while (remaining != 0L) {
+				int slot = Long.numberOfTrailingZeros(remaining);
+				remaining &= remaining - 1;
+				if (slot >= slotNames.size() || slotNames.get(slot) == null) {
+					return false;
+				}
+				surroundingNames.add(slotNames.get(slot));
+			}
+			return ((NativeSubqueryPlan) boundary).hoistableAcross(surroundingNames);
+		});
 	}
 
-	/** Whether the island's facts prove hoisting past operands binding the given slots is unobservable. */
+	/** Whether the island's facts prove hoisting past operands producing or reading the given slots is unobservable. */
 	private boolean hoistableAcross(GenericEvalPlan island, long surroundingMask) {
 		NativeTupleFacts facts = island.descriptor.facts();
-		if (facts == null || facts.mappingParameterized() || !facts.discardable()) {
+		if (surroundingMask < 0L || facts == null || facts.mappingParameterized() || !facts.discardable()) {
 			return false;
 		}
 		long remaining = surroundingMask & ~island.producedMask;
 		while (remaining != 0L) {
 			int slot = Long.numberOfTrailingZeros(remaining);
 			remaining &= remaining - 1;
-			if (slot < slotNames.size() && island.varNames.contains(slotNames.get(slot))) {
+			if (slot >= slotNames.size() || slotNames.get(slot) == null
+					|| island.varNames.contains(slotNames.get(slot))) {
 				return false;
 			}
 		}
@@ -2114,6 +2147,9 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	 * it. Unknown plan kinds contribute nothing.
 	 */
 	static long subqueryFrameInputMask(SlotPlan plan) {
+		if (LmdbNativeInteriorPlans.carrier(plan)) {
+			return LmdbNativeInteriorPlans.frameInputMask(plan);
+		}
 		if (plan instanceof NativeGraphPlan graph) {
 			return graph.frameInputMask();
 		}
@@ -2211,12 +2247,14 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				inheritedFrameInputNames, lateral);
 	}
 
-	private SlotPlan compileNativeSubquery(TupleExpr expr, String[] frameInputNames) {
-		return compileNativeSubquery(expr, frameInputNames, Set.of());
+	private SlotPlan compileNativeSubquery(TupleExpr original, String[] frameInputNames) {
+		return compileNativeSubquery(original, frameInputNames, Set.of());
 	}
 
-	private SlotPlan compileNativeSubquery(TupleExpr expr, String[] frameInputNames,
+	private SlotPlan compileNativeSubquery(TupleExpr sourceExpr, String[] frameInputNames,
 			Set<String> declaredLateralInputs) {
+		GenericSubplanDescriptor pinned = GenericSubplanDescriptor.create(sourceExpr, strategy);
+		TupleExpr expr = pinned.pinnedExpr();
 		LinkedHashSet<GraphFrameMapping> mappings = new LinkedHashSet<>(Arrays.asList(subqueryGraphFrames(expr)));
 		LinkedHashSet<String> privateParameters = new LinkedHashSet<>();
 		for (GraphFrameMapping frame : mappings) {
@@ -2248,8 +2286,10 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			}
 			nestedLateralFrameInputNames = Collections.unmodifiableSet(lateralInputs);
 		}
-		QueryEvaluationStep step = LmdbNativeAggregateCompiler.tryCompileSemanticSubquery(expr, context, strategy,
-				source, nestedFrameInputNames, nestedLateralFrameInputNames);
+		Set<String> bodyFrames = nestedFrameInputNames;
+		Set<String> bodyLateralFrames = nestedLateralFrameInputNames;
+		QueryEvaluationStep step = pinned.prepare(() -> LmdbNativeAggregateCompiler.tryCompileSemanticSubquery(expr,
+				context, strategy, source, bodyFrames, bodyLateralFrames));
 		if (step == null) {
 			return null;
 		}
@@ -2301,7 +2341,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		}
 		requiresExecutionContext = true;
 		return new NativeSubqueryPlan(step, outSlots, outNames, frameInputSlots, sourceNames, parameterNames,
-				privateParameters.toArray(String[]::new), boundary, context, scopedStep);
+				privateParameters.toArray(String[]::new), boundary, context, pinned.facts(), scopedStep);
 	}
 
 	private GraphFrameMapping[] subqueryGraphFrames(TupleExpr expr) {

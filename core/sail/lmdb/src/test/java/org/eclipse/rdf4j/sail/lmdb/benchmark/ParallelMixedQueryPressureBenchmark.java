@@ -25,7 +25,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.benchmark.common.BenchmarkResources;
@@ -36,6 +35,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -143,7 +143,7 @@ public class ParallelMixedQueryPressureBenchmark {
 			repository = null;
 		}
 		if (dataDir != null) {
-			FileUtils.deleteDirectory(dataDir);
+			LmdbTestUtil.deleteDir(dataDir);
 			dataDir = null;
 		}
 	}

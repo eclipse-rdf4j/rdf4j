@@ -257,6 +257,35 @@ public class LmdbNativeParallelPipelinesTest {
 		}
 	}
 
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	public void repeatedContextualParallelQueryPreservesHandComputedBag(boolean includeInferred) {
+		String previous = System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "false");
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			for (int subject = 0; subject < 4; subject++) {
+				String value = EX + "v" + subject + "-0";
+				String query = chain(" FILTER(STR(?value) = \"" + value + "\")");
+				SailTupleQuery retained = (SailTupleQuery) connection.prepareTupleQuery(query);
+				retained.setIncludeInferred(includeInferred);
+				retained.setForcedLmdbExecutionStrategy(LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES);
+				for (int opening = 0; opening < 3; opening++) {
+					long before = LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get();
+					List<BindingSet> actual = QueryResults.asList(retained.evaluate());
+					assertThat(actual).hasSize(1);
+					assertThat(actual.getFirst().getBindingNames()).containsExactlyInAnyOrder("subject", "value");
+					assertThat(actual.getFirst().getValue("subject").stringValue()).isEqualTo(EX + "s" + subject);
+					assertThat(actual.getFirst().getValue("value").stringValue()).isEqualTo(value);
+					assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get()).isEqualTo(before + 1L);
+					assertThat(availableParallelTaskCapacity())
+							.as("all configured worker capacity is available after the query closes")
+							.isEqualTo(LmdbNativeParallelPipelines.configuredMaxTasks());
+				}
+			}
+		} finally {
+			restoreProperty("rdf4j.lmdb.factorizedRows.enabled", previous);
+		}
+	}
+
 	@Test
 	public void contextualTermFilterRebindsInsideOrdinaryParallelAggregation() {
 		String query = aggregateChain(" FILTER(STR(?value) = \"http://example.com/v0-0\")");
@@ -1122,6 +1151,13 @@ public class LmdbNativeParallelPipelinesTest {
 
 		allRows(aggregateChain(), LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION);
 		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get()).isEqualTo(before + 2L);
+	}
+
+	private static int availableParallelTaskCapacity() {
+		try (LmdbNativeParallelPipelines.TaskReservation quote = LmdbNativeParallelPipelines
+				.quoteTasks(true, LmdbNativeParallelPipelines.MAX_POOL_TASKS)) {
+			return quote == null ? 0 : quote.grantedWorkers();
+		}
 	}
 
 	private String chain(String filter) {

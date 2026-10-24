@@ -43,7 +43,7 @@ final class BoundStatementPatternLeftJoinIteration extends LookAheadIteration<Bi
 				return null;
 			}
 			if (statementCount == 1) {
-				resultIteration = rightPrepared.evaluate(bindings);
+				resultIteration = rightPrepared.evaluate(leftStatementPattern.producedBindings(bindings));
 			} else {
 				resultIteration = JoinIterator.getInstance(leftStatementPattern, rightPrepared, bindings);
 			}

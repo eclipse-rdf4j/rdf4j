@@ -1868,7 +1868,7 @@ final class LmdbNativeChunkPipeline {
 
 		FilterStage(BatchStage upstream, NativeBooleanFilter filter, RowState row, long readMask) {
 			this.upstream = upstream;
-			this.filter = filter;
+			this.filter = NativeFilterLease.openInput(filter, row, upstream::close);
 			this.row = row;
 			this.readMask = readMask;
 		}
@@ -1881,6 +1881,9 @@ final class LmdbNativeChunkPipeline {
 			while (true) {
 				int rows = upstream.fill(out);
 				if (rows == 0) {
+					if (!row.cancellation.isCancellationRequested()) {
+						filter.inputExhausted();
+					}
 					return 0;
 				}
 				observedRows += out.selectedCount;
@@ -1902,6 +1905,7 @@ final class LmdbNativeChunkPipeline {
 				upstream.close();
 			} catch (RuntimeException | Error e) {
 				failure = e;
+				filter.incompleteInput();
 			}
 			try {
 				filter.close();

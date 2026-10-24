@@ -388,6 +388,7 @@ abstract class LmdbNativeAggregatePlannerBase {
 		if (filter == null || strategy.evaluationStatistics() == null) {
 			return delegate;
 		}
+		requiresExecutionContext = true;
 		return new RecordingNativeBooleanFilter(delegate, filter, strategy.evaluationStatistics(),
 				AdaptiveFilterMetadata.forFilter(nextAdaptiveFilterId++, filter));
 	}

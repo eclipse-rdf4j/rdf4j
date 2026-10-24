@@ -44,6 +44,23 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelTermKindProof;
 interface NativeBooleanFilter {
 	boolean accept(RowState row);
 
+	/** Bind feedback ownership once, at the opening of a physical filter input. */
+	default NativeBooleanFilter open(RowState row) {
+		return this;
+	}
+
+	/** Only the input owner may signal an actual natural input EOF. */
+	default void inputExhausted() {
+	}
+
+	/** A semantic fast path may account a decision without re-evaluating the predicate. */
+	default void recordDecision(boolean accepted) {
+	}
+
+	/** Input topology or a fast path has no exact per-filter coverage proof. */
+	default void incompleteInput() {
+	}
+
 	default void explainStrategies() {
 	}
 
@@ -197,49 +214,61 @@ final class RecordingNativeBooleanFilter implements NativeBooleanFilter {
 	final Filter filter;
 	final EvaluationStatistics statistics;
 	final AdaptiveFilterMetadata adaptive;
-	/** Cross-worker outcome handoff only; scalar accepts remain worker-confined primitives. */
+	final RecordingNativeBooleanFilter origin;
+	final Object outcomeIdentity;
+	final NativeFilterLease attempt;
+	// Compatibility diagnostics: all live counts now belong to per-open primitive invocations.
 	final AtomicLong passed = new AtomicLong();
 	final AtomicLong filtered = new AtomicLong();
-	private final RecordingNativeBooleanFilter outcomeTarget;
-	private long localPassed;
-	private long localFiltered;
 
 	RecordingNativeBooleanFilter(NativeBooleanFilter delegate, Filter filter, EvaluationStatistics statistics) {
-		this(delegate, filter, statistics, AdaptiveFilterMetadata.missing(), null);
+		this(delegate, filter, statistics, AdaptiveFilterMetadata.missing());
 	}
 
 	RecordingNativeBooleanFilter(NativeBooleanFilter delegate, Filter filter, EvaluationStatistics statistics,
 			AdaptiveFilterMetadata adaptive) {
-		this(delegate, filter, statistics, adaptive, null);
+		this(delegate, filter, statistics, adaptive, null, null);
 	}
 
-	private RecordingNativeBooleanFilter(NativeBooleanFilter delegate, Filter filter,
-			EvaluationStatistics statistics, AdaptiveFilterMetadata adaptive,
-			RecordingNativeBooleanFilter outcomeTarget) {
+	RecordingNativeBooleanFilter(NativeBooleanFilter delegate, Filter filter, EvaluationStatistics statistics,
+			AdaptiveFilterMetadata adaptive, RecordingNativeBooleanFilter origin, NativeFilterLease attempt) {
 		this.delegate = delegate;
 		this.filter = filter;
 		this.statistics = statistics;
 		this.adaptive = adaptive;
-		this.outcomeTarget = outcomeTarget;
+		this.origin = origin == null ? this : origin;
+		this.outcomeIdentity = this.origin == this ? new Object() : this.origin.outcomeIdentity;
+		this.attempt = attempt;
+	}
+
+	@Override
+	public NativeBooleanFilter open(RowState row) {
+		NativeBooleanFilter opened = delegate.open(row);
+		try {
+			return new NativeFilterLease.Invocation(this, opened, row);
+		} catch (RuntimeException | Error failure) {
+			try {
+				opened.close();
+			} catch (RuntimeException | Error cleanup) {
+				if (cleanup != failure) {
+					failure.addSuppressed(cleanup);
+				}
+			}
+			throw failure;
+		}
 	}
 
 	@Override
 	public boolean accept(RowState row) {
-		boolean accepted = delegate.accept(row);
-		if (accepted) {
-			localPassed++;
-		} else {
-			localFiltered++;
-		}
-		return accepted;
+		// Opaque physical owners retain execution, but cannot manufacture an input-EOF certificate.
+		row.noteUnqualifiedFilter(this);
+		return delegate.accept(row);
 	}
 
 	@Override
-	public int selectBatch(NativeBatch batch, int[] sel, int n, RowState scratch) {
-		int accepted = delegate.selectBatch(batch, sel, n, scratch);
-		localPassed += accepted;
-		localFiltered += n - accepted;
-		return accepted;
+	public int selectBatch(NativeBatch batch, int[] sel, int n, RowState row) {
+		row.noteUnqualifiedFilter(this);
+		return delegate.selectBatch(batch, sel, n, row);
 	}
 
 	@Override
@@ -248,8 +277,8 @@ final class RecordingNativeBooleanFilter implements NativeBooleanFilter {
 	}
 
 	@Override
-	public KernelTermKindProof pageProof(int[] argSlots) {
-		return delegate.pageProof(argSlots);
+	public KernelTermKindProof pageProof(int[] slots) {
+		return delegate.pageProof(slots);
 	}
 
 	@Override
@@ -264,52 +293,30 @@ final class RecordingNativeBooleanFilter implements NativeBooleanFilter {
 
 	@Override
 	public NativeBooleanFilter forkForParallelWorker() {
-		return forkForParallelWorker((RecordingNativeBooleanFilter) null);
+		NativeBooleanFilter fork = delegate.forkForParallelWorker();
+		return fork == null ? null
+				: new RecordingNativeBooleanFilter(new CloseOnceNativeBooleanFilter(fork), filter, statistics, adaptive,
+						origin, attempt);
 	}
 
 	NativeBooleanFilter forkForParallelWorker(RecordingNativeBooleanFilter target) {
-		NativeBooleanFilter workerDelegate = delegate.forkForParallelWorker();
-		return workerDelegate == null ? null
-				: new RecordingNativeBooleanFilter(workerDelegate, filter, statistics, adaptive, target);
+		return forkForParallelWorker();
 	}
 
 	@Override
 	public NativeBooleanFilter forkForParallelWorker(NativeScalarPlan.WorkerContext context) {
-		NativeBooleanFilter workerDelegate = delegate.forkForParallelWorker(context);
-		return workerDelegate == null ? null
-				: new RecordingNativeBooleanFilter(workerDelegate, filter, statistics, adaptive, this);
+		NativeBooleanFilter fork = delegate.forkForParallelWorker(context);
+		return fork == null ? null
+				: new RecordingNativeBooleanFilter(new CloseOnceNativeBooleanFilter(fork), filter, statistics, adaptive,
+						origin, attempt);
 	}
 
 	@Override
 	public void close() {
-		long passedCount = localPassed + passed.getAndSet(0L);
-		long filteredCount = localFiltered + filtered.getAndSet(0L);
-		localPassed = 0L;
-		localFiltered = 0L;
-		if (passedCount > 0L || filteredCount > 0L) {
-			if (outcomeTarget != null) {
-				outcomeTarget.mergeOutcomes(passedCount, filteredCount);
-			} else {
-				try {
-					statistics.recordFilterOutcome(filter, passedCount, filteredCount);
-				} catch (RuntimeException e) {
-					// Runtime optimizer feedback must never break query evaluation.
-				}
-			}
-		}
 		delegate.close();
 	}
 
-	private void mergeOutcomes(long passedCount, long filteredCount) {
-		passed.addAndGet(passedCount);
-		filtered.addAndGet(filteredCount);
-	}
-
 	void discardOutcomes() {
-		localPassed = 0L;
-		localFiltered = 0L;
-		passed.set(0L);
-		filtered.set(0L);
 	}
 }
 
@@ -385,9 +392,37 @@ final class NativeConstantFalseWhenUnboundFilter implements NativeBooleanFilter 
 final class CloseOnceNativeBooleanFilter implements NativeBooleanFilter {
 	private final NativeBooleanFilter delegate;
 	private boolean closed;
+	private final boolean borrowedOpening;
 
 	CloseOnceNativeBooleanFilter(NativeBooleanFilter delegate) {
+		this(delegate, false);
+	}
+
+	private CloseOnceNativeBooleanFilter(NativeBooleanFilter delegate, boolean borrowedOpening) {
 		this.delegate = delegate;
+		this.borrowedOpening = borrowedOpening;
+	}
+
+	@Override
+	public NativeBooleanFilter open(RowState row) {
+		NativeBooleanFilter opened = delegate.open(row);
+		// A fresh invocation owns its terminal aggregate. A reusable semantic delegate remains worker-owned.
+		return new CloseOnceNativeBooleanFilter(opened, opened == delegate);
+	}
+
+	@Override
+	public void inputExhausted() {
+		delegate.inputExhausted();
+	}
+
+	@Override
+	public void incompleteInput() {
+		delegate.incompleteInput();
+	}
+
+	@Override
+	public void recordDecision(boolean accepted) {
+		delegate.recordDecision(accepted);
 	}
 
 	@Override
@@ -443,7 +478,9 @@ final class CloseOnceNativeBooleanFilter implements NativeBooleanFilter {
 			return;
 		}
 		closed = true;
-		delegate.close();
+		if (!borrowedOpening) {
+			delegate.close();
+		}
 	}
 }
 

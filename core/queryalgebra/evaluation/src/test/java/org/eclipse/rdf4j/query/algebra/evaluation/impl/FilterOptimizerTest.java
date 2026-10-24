@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -25,6 +26,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -73,18 +75,25 @@ import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConjunctiveConstraintSplitterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceChecker;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -99,6 +108,31 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 	@Override
 	public FilterOptimizer getOptimizer() {
 		return new FilterOptimizer();
+	}
+
+	@Test
+	public void distributedUnionFiltersRetainPhysicalInputsWithoutCopyingGroupScope() {
+		var left = new StatementPattern(new Var("s"), new Var("p"), new Var("x"));
+		var right = left.clone();
+		var union = new Union(left, right);
+		Filter source = new Filter(union, new Compare(new Var("x"),
+				new ValueConstant(SimpleValueFactory.getInstance().createLiteral(1)), CompareOp.GT));
+		source.setRequiredInputBindingNames(Set.of("outer"));
+		source.setVariableScopeChange(true);
+		QueryRoot root = new QueryRoot(source);
+		new FilterOptimizer(null, false, false).optimize(root, null, EmptyBindingSet.getInstance());
+		List<Filter> filters = new ArrayList<>();
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter filter) {
+				filters.add(filter);
+				super.meet(filter);
+			}
+		});
+		assertThat(filters).hasSize(2).allSatisfy(filter -> {
+			assertThat(filter.getRequiredInputBindingNames()).containsExactly("outer");
+			assertThat(filter.isVariableScopeChange()).isFalse();
+		});
 	}
 
 	@Test
@@ -1082,6 +1116,38 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
+	public void distributesFilterOnlyIntoMinusLeftOperand() {
+		String expectedQuery = """
+				SELECT * WHERE {
+				  { VALUES (?x ?guard) { (1 true) } FILTER(?guard) }
+				  MINUS { VALUES ?x { 1 } }
+				}
+				""";
+		String query = """
+				SELECT * WHERE {
+				  { VALUES (?x ?guard) { (1 true) } MINUS { VALUES ?x { 1 } } }
+				  FILTER(?guard)
+				}
+				""";
+
+		testOptimizer(expectedQuery, query);
+	}
+
+	@Test
+	public void volatileExtensionStaysBeforeFilterRelocation() {
+		StatementPattern pattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+		Extension extension = new Extension(pattern, new ExtensionElem(new FunctionCall("UUID"), "token"));
+		Filter filter = new Filter(extension,
+				new Compare(new Var("o"), new ValueConstant(SimpleValueFactory.getInstance().createLiteral("value"))));
+		QueryRoot root = new QueryRoot(filter);
+
+		getOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+
+		Filter retained = assertInstanceOf(Filter.class, root.getArg());
+		assertInstanceOf(Extension.class, retained.getArg());
+	}
+
+	@Test
 	public void pushesFilterWhenFilteredPatternIsMoreSelectiveThanJoinEstimate() {
 		String expectedQuery = "SELECT * WHERE {{?branch <urn:name> ?branchName . FILTER(?branchName = \"Branch 0\") } ?copy <urn:locatedAt> ?branch }";
 		String query = "SELECT * WHERE {?branch <urn:name> ?branchName . ?copy <urn:locatedAt> ?branch . FILTER(?branchName = \"Branch 0\") }";
@@ -1214,6 +1280,99 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		assertThat(originalResults).containsExactly(expected);
 
 		assertFilterOptimizerPreservesResults(query, originalResults);
+	}
+
+	@Test
+	public void relocatedParametersKeepTheirBagAcrossHintsSpillAndOptional() throws Exception {
+		String query = "SELECT ?u ?v WHERE { VALUES ?u { <urn:u1> <urn:u1> <urn:u2> <urn:u3> } "
+				+ "VALUES ?v { <urn:u1> <urn:u2> } FILTER(?u != ?v) "
+				+ "FILTER EXISTS { ?v <urn:follows> ?u } }";
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI u1 = vf.createIRI("urn:u1");
+		IRI u2 = vf.createIRI("urn:u2");
+		IRI u3 = vf.createIRI("urn:u3");
+		IRI follows = vf.createIRI("urn:follows");
+		TripleSource source = statementListTripleSource(vf.createStatement(u1, follows, u2),
+				vf.createStatement(u2, follows, u1));
+		MapBindingSet first = new MapBindingSet();
+		first.addBinding("u", u1);
+		first.addBinding("v", u2);
+		MapBindingSet second = new MapBindingSet();
+		second.addBinding("u", u2);
+		second.addBinding("v", u1);
+		MapBindingSet unmatched = new MapBindingSet();
+		unmatched.addBinding("u", u3);
+		String previous = System.getProperty(HashJoinIteration.MAX_BUILD_ROWS_PROPERTY);
+		try {
+			System.setProperty(HashJoinIteration.MAX_BUILD_ROWS_PROPERTY, "0");
+			for (boolean optional : List.of(false, true)) {
+				for (String hint : List.of("ordinary", "hash-left", "hash-right", "merge")) {
+					TupleExpr optimized = parseTupleExpr(query);
+					new FilterOptimizer(null, true, false).optimize(optimized, null, EmptyBindingSet.getInstance());
+					Join join = findFirst(optimized, Join.class, ignored -> true);
+					assertThat((Filter) join.getRightArg())
+							.satisfies(filter -> assertThat(filter.getRequiredInputBindingNames()).contains("u"));
+					new ConjunctiveConstraintSplitterOptimizer().optimize(optimized, null,
+							EmptyBindingSet.getInstance());
+					new FilterOptimizer(null, true, false).optimize(optimized, null, EmptyBindingSet.getInstance());
+					new QueryJoinOptimizer(new EvaluationStatistics()).optimize(optimized, null,
+							EmptyBindingSet.getInstance());
+					join = findFirst(optimized, Join.class, ignored -> true);
+					join.setStringMetricPlanned("optimizer.joinAlgorithmHint", hint.startsWith("hash") ? "hash" : hint);
+					join.setStringMetricPlanned("optimizer.hashJoinBuildSide",
+							hint.endsWith("left") ? "left" : "right");
+					join.setMergeJoin(hint.equals("merge"));
+					LeftJoin leftJoin = null;
+					if (optional) {
+						leftJoin = new LeftJoin(join.getLeftArg(), join.getRightArg());
+						leftJoin.setStringMetricPlanned("optimizer.leftJoinAlgorithmHint", "memoized");
+						join.replaceWith(leftJoin);
+					}
+					DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+					QueryEvaluationStep prepared = strategy.precompile(optimized,
+							new QueryEvaluationContext.Minimal(null, vf, new ValueComparator()));
+					List<BindingSet> rows = new ArrayList<>();
+					try (CloseableIteration<BindingSet> iteration = prepared.evaluate(EmptyBindingSet.getInstance())) {
+						while (iteration.hasNext()) {
+							rows.add(iteration.next());
+						}
+					}
+					assertThat(rows).as("optional=%s, hint=%s", optional, hint)
+							.containsExactlyInAnyOrderElementsOf(
+									optional ? List.of(first, first, second, unmatched)
+											: List.of(first, first, second));
+					if (optional) {
+						assertThat(leftJoin.getAlgorithmName()).isNotEqualTo(HashJoinIteration.class.getSimpleName());
+					} else {
+						assertThat(join.getAlgorithmName()).isEqualTo(JoinIterator.class.getSimpleName());
+					}
+				}
+			}
+		} finally {
+			if (previous == null) {
+				System.clearProperty(HashJoinIteration.MAX_BUILD_ROWS_PROPERTY);
+			} else {
+				System.setProperty(HashJoinIteration.MAX_BUILD_ROWS_PROPERTY, previous);
+			}
+		}
+	}
+
+	@Test
+	public void nullableSiblingOverlapsDoNotAuthorizeNewParameterFrames() throws Exception {
+		String query = "SELECT ?u ?v WHERE { VALUES (?u ?v) { (1 UNDEF) (2 1) } "
+				+ "VALUES ?v { 1 2 } FILTER(?u != ?v) }";
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		List<BindingSet> expected = evaluateParsedQuery(query);
+		assertThat(expected).extracting(row -> List.of(row.getValue("u"), row.getValue("v")))
+				.containsExactlyInAnyOrder(
+						List.of(vf.createLiteral("1", XSD.INTEGER), vf.createLiteral("2", XSD.INTEGER)),
+						List.of(vf.createLiteral("2", XSD.INTEGER), vf.createLiteral("1", XSD.INTEGER)));
+		TupleExpr optimized = parseTupleExpr(query);
+		new FilterOptimizer(null, true, false).optimize(optimized, null, EmptyBindingSet.getInstance());
+		Filter retained = findFirst(optimized, Filter.class, ignored -> true);
+		assertThat(retained.getArg()).isInstanceOf(Join.class);
+		assertThat(retained.getRequiredInputBindingNames()).isEmpty();
+		assertThat(evaluate(optimized)).containsExactlyInAnyOrderElementsOf(expected);
 	}
 
 	@Test
@@ -1473,7 +1632,31 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
-	public void standardPipelineShowsInScopeFilterBeforeFilterInValuesAndPreservesResults() throws Exception {
+	public void standardPipelineKeepsOuterUnionOptionalInputSeparateFromNotExistsProbe() {
+		TupleExpr optimized = optimizeWithStandardPipeline(String.join("\n",
+				"PREFIX med: <http://example.com/theme/medical/>",
+				"SELECT (COUNT(DISTINCT ?patient) AS ?count) WHERE {",
+				"  { ?patient a med:Patient ; med:hasMedication ?med . }",
+				"  UNION",
+				"  { ?patient a med:Patient ; med:hasEncounter ?enc . ?enc med:hasObservation ?obs . }",
+				"  OPTIONAL { ?patient med:name ?optName . }",
+				"  FILTER(?optName != \"\")",
+				"  FILTER NOT EXISTS {",
+				"    ?patient med:hasMedication ?m2 . ?m2 med:code ?c .",
+				"    FILTER(?c = \"MED-1005\")",
+				"  }",
+				"}"));
+
+		Group group = findAll(optimized, Group.class).getFirst();
+
+		assertThat(group.getArg().getBindingNames())
+				.as("The aggregate input must remain the outer UNION/OPTIONAL stream, not the EXISTS probe")
+				.contains("patient", "optName")
+				.doesNotContain("m2", "c");
+	}
+
+	@Test
+	public void standardPipelineShowsInScopeFilterInsideJoinGroup() throws Exception {
 		String query = String.join("\n",
 				"PREFIX med: <http://example.com/theme/medical/>",
 				"PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>",
@@ -1527,21 +1710,8 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 				tripleSource,
 				new EvaluationStatistics());
 
-		List<QueryOptimizer> optimizers = new ArrayList<>();
 		for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
-			optimizers.add(optimizer);
-		}
-		int filterInValuesIndex = -1;
-		for (int i = 0; i < optimizers.size(); i++) {
-			if ("FilterInValuesOptimizer".equals(optimizers.get(i).getClass().getSimpleName())) {
-				filterInValuesIndex = i;
-				break;
-			}
-		}
-		assertThat(filterInValuesIndex).as("the standard pipeline has a FilterInValues stage").isGreaterThan(0);
-
-		for (int i = 0; i < filterInValuesIndex; i++) {
-			optimizers.get(i).optimize(root, null, EmptyBindingSet.getInstance());
+			optimizer.optimize(root, null, EmptyBindingSet.getInstance());
 		}
 
 		Filter inScopeInFilter = findFirst(root, Filter.class,
@@ -1552,8 +1722,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 				.toList();
 
 		assertThat(groupFilters)
-				.as("The in-scope IN filter should be in the aggregate Group input before FilterInValues. Plan:\n%s",
-						root)
+				.as("The in-scope IN filter should be pushed into the final join group")
 				.singleElement()
 				.satisfies(filter -> {
 					assertThat(filter).isSameAs(inScopeInFilter);
@@ -1564,9 +1733,6 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 							.isEqualTo("http://example.com/theme/medical/value");
 				});
 
-		for (int i = filterInValuesIndex; i < optimizers.size(); i++) {
-			optimizers.get(i).optimize(root, null, EmptyBindingSet.getInstance());
-		}
 		List<BindingSet> optimizedResults = evaluate(root, tripleSource);
 		assertThat(optimizedResults).containsExactlyInAnyOrderElementsOf(originalResults);
 		assertThat(optimizedResults).singleElement().satisfies(bindingSet -> {
@@ -2011,7 +2177,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		List<T> matches = new ArrayList<>();
 		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
-			protected void meetNode(org.eclipse.rdf4j.query.algebra.QueryModelNode node) throws RuntimeException {
+			protected void meetNode(QueryModelNode node) throws RuntimeException {
 				if (type.isInstance(node)) {
 					T candidate = type.cast(node);
 					if (predicate.test(candidate)) {
@@ -2028,7 +2194,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		List<T> matches = new ArrayList<>();
 		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
-			protected void meetNode(org.eclipse.rdf4j.query.algebra.QueryModelNode node) throws RuntimeException {
+			protected void meetNode(QueryModelNode node) throws RuntimeException {
 				if (type.isInstance(node)) {
 					matches.add(type.cast(node));
 				}
@@ -2047,6 +2213,158 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 			parent = parent.getParentNode();
 		}
 		return false;
+	}
+
+	/**
+	 * A registered deterministic custom function (GeoSPARQL, SPIN, user functions) must not pin its filter, nor the
+	 * cheap conjunct sharing its {@code And}, above the join: the conjunction is split and both parts are relocated
+	 * onto the statement patterns that bind their variables.
+	 */
+	@Test
+	public void customFunctionConjunctionIsSplitAndPushedOntoPatterns() {
+		Function custom = new Function() {
+			@Override
+			public String getURI() {
+				return "urn:test:filter-optimizer-custom";
+			}
+
+			@Override
+			public Determinism getDeterminism() {
+				return Determinism.DETERMINISTIC;
+			}
+
+			@Override
+			public Value evaluate(ValueFactory valueFactory, Value... args) {
+				return valueFactory.createLiteral(true);
+			}
+		};
+		FunctionRegistry.getInstance().add(custom);
+		try {
+			String query = "PREFIX ex: <http://example.org/> SELECT ?s WHERE { ?s ex:name ?n . ?s ex:type ?t . "
+					+ "?s ex:wkt ?wkt . "
+					+ "FILTER(STRSTARTS(?n, \"n1\") && <urn:test:filter-optimizer-custom>(?wkt)) }";
+			ParsedQuery parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+			QueryRoot root = new QueryRoot(parsed.getTupleExpr());
+			new FilterOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+			List<Filter> filters = new ArrayList<>();
+			root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(Filter node) {
+					filters.add(node);
+					super.meet(node);
+				}
+			});
+			assertEquals(2, filters.size(), "conjunction must be split into two filters:\n" + root);
+			for (Filter filter : filters) {
+				assertInstanceOf(StatementPattern.class, filter.getArg(),
+						"each conjunct must sit directly on the pattern binding its variable:\n" + root);
+			}
+		} finally {
+			FunctionRegistry.getInstance().remove(custom);
+		}
+	}
+
+	@Test
+	public void standardPipelineShowsInScopeFilterBeforeFilterInValuesAndPreservesResults() throws Exception {
+		String query = String.join("\n",
+				"PREFIX med: <http://example.com/theme/medical/>",
+				"PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>",
+				"SELECT (COUNT(DISTINCT ?patient) AS ?count) WHERE {",
+				"  VALUES ?limit { 55 }",
+				"  ?patient a med:Patient ; med:hasEncounter ?enc .",
+				"  ?enc med:hasObservation ?obs .",
+				"  ?obs med:value ?value .",
+				"  FILTER(?value IN (50, 60, 70))",
+				"  FILTER NOT EXISTS { ?enc med:hasCondition ?cond . }",
+				"}");
+
+		TupleExpr original = parseTupleExpr(query);
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		IRI patientType = valueFactory.createIRI("http://example.com/theme/medical/Patient");
+		IRI hasEncounter = valueFactory.createIRI("http://example.com/theme/medical/hasEncounter");
+		IRI hasObservation = valueFactory.createIRI("http://example.com/theme/medical/hasObservation");
+		IRI valuePredicate = valueFactory.createIRI("http://example.com/theme/medical/value");
+		IRI hasCondition = valueFactory.createIRI("http://example.com/theme/medical/hasCondition");
+		IRI patient1 = valueFactory.createIRI("urn:patient:1");
+		IRI patient2 = valueFactory.createIRI("urn:patient:2");
+		IRI patient3 = valueFactory.createIRI("urn:patient:3");
+		IRI encounter1 = valueFactory.createIRI("urn:encounter:1");
+		IRI encounter2 = valueFactory.createIRI("urn:encounter:2");
+		IRI encounter3 = valueFactory.createIRI("urn:encounter:3");
+		IRI observation1 = valueFactory.createIRI("urn:observation:1");
+		IRI observation2 = valueFactory.createIRI("urn:observation:2");
+		IRI observation3 = valueFactory.createIRI("urn:observation:3");
+		TripleSource tripleSource = statementListTripleSource(
+				valueFactory.createStatement(patient1, RDF.TYPE, patientType),
+				valueFactory.createStatement(patient1, hasEncounter, encounter1),
+				valueFactory.createStatement(encounter1, hasObservation, observation1),
+				valueFactory.createStatement(observation1, valuePredicate, valueFactory.createLiteral(50)),
+				valueFactory.createStatement(patient2, RDF.TYPE, patientType),
+				valueFactory.createStatement(patient2, hasEncounter, encounter2),
+				valueFactory.createStatement(encounter2, hasObservation, observation2),
+				valueFactory.createStatement(observation2, valuePredicate, valueFactory.createLiteral(90)),
+				valueFactory.createStatement(patient3, RDF.TYPE, patientType),
+				valueFactory.createStatement(patient3, hasEncounter, encounter3),
+				valueFactory.createStatement(encounter3, hasObservation, observation3),
+				valueFactory.createStatement(observation3, valuePredicate, valueFactory.createLiteral(60)),
+				valueFactory.createStatement(encounter3, hasCondition, valueFactory.createIRI("urn:condition:3")));
+		List<BindingSet> originalResults = evaluate(original.clone(), tripleSource);
+		assertThat(originalResults).singleElement().satisfies(bindingSet -> {
+			assertThat(bindingSet.getValue("count").stringValue()).isEqualTo("1");
+			assertThat(bindingSet.getBindingNames()).containsExactly("count");
+		});
+		QueryRoot root = new QueryRoot(original.clone());
+		StandardQueryOptimizerPipeline pipeline = new StandardQueryOptimizerPipeline(
+				new StrictEvaluationStrategy(tripleSource, null),
+				tripleSource,
+				new EvaluationStatistics());
+
+		List<QueryOptimizer> optimizers = new ArrayList<>();
+		for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
+			optimizers.add(optimizer);
+		}
+		int filterInValuesIndex = -1;
+		for (int i = 0; i < optimizers.size(); i++) {
+			if ("FilterInValuesOptimizer".equals(optimizers.get(i).getClass().getSimpleName())) {
+				filterInValuesIndex = i;
+				break;
+			}
+		}
+		assertThat(filterInValuesIndex).as("the standard pipeline has a FilterInValues stage").isGreaterThan(0);
+
+		for (int i = 0; i < filterInValuesIndex; i++) {
+			optimizers.get(i).optimize(root, null, EmptyBindingSet.getInstance());
+		}
+
+		Filter inScopeInFilter = findFirst(root, Filter.class,
+				filter -> filter.getCondition() instanceof ListMemberOperator);
+		Group group = findFirst(root, Group.class, ignored -> true);
+		List<Filter> groupFilters = findAll(group.getArg(), Filter.class).stream()
+				.filter(filter -> filter.getCondition() instanceof ListMemberOperator)
+				.toList();
+
+		assertThat(groupFilters)
+				.as("The in-scope IN filter should be in the aggregate Group input before FilterInValues. Plan:\n%s",
+						root)
+				.singleElement()
+				.satisfies(filter -> {
+					assertThat(filter).isSameAs(inScopeInFilter);
+					assertThat(hasAncestor(filter, Exists.class)).isFalse();
+					assertThat(filter.getCondition()).isInstanceOf(ListMemberOperator.class);
+					assertThat(filter.getArg()).isInstanceOf(StatementPattern.class);
+					assertThat(((StatementPattern) filter.getArg()).getPredicateVar().getValue().stringValue())
+							.isEqualTo("http://example.com/theme/medical/value");
+				});
+
+		for (int i = filterInValuesIndex; i < optimizers.size(); i++) {
+			optimizers.get(i).optimize(root, null, EmptyBindingSet.getInstance());
+		}
+		List<BindingSet> optimizedResults = evaluate(root, tripleSource);
+		assertThat(optimizedResults).containsExactlyInAnyOrderElementsOf(originalResults);
+		assertThat(optimizedResults).singleElement().satisfies(bindingSet -> {
+			assertThat(bindingSet.getValue("count").stringValue()).isEqualTo("1");
+			assertThat(bindingSet.getBindingNames()).containsExactly("count");
+		});
 	}
 
 	private void assertFilterBoundaryPreserved(TupleExpr boundary, String bindingName) {

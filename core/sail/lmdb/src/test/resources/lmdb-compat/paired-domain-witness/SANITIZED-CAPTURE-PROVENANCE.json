@@ -1,0 +1,126 @@
+{
+  "schema": "paired-domain-witness-authentic-closed-capture-v1",
+  "old_module_jar_sha256": "5f5cc13352db3d896220e15729b87ad29bc3c1021507a6120558de13dd7a5821",
+  "old_source_manifest_sha256": "17bd346f829e6d4eb9b4edf5403bbf0ba7374e121fe15c23f09facd6a32779ce",
+  "matching_runtime_receipt_sha256": "cf15d6a67ce949f42a2ae7ce32bcc7416f18a386f9a5820ad3da6790df640acc",
+  "payloads": [
+    {
+      "fixture": "append-inline-false",
+      "path": ".lmdb-bulk-prepared",
+      "sha256": "46b86c25a9c723bb756b751c1707f25ac4377392cc308df8ec4f2b0380a0ff79"
+    },
+    {
+      "fixture": "append-inline-false",
+      "path": "cost-model.lncm",
+      "sha256": "b5b4dcf3ada228d6e309821a070b9e06b2814b02e47936198b926e04de609ad4"
+    },
+    {
+      "fixture": "append-inline-false",
+      "path": "lmdbrdf.ver",
+      "sha256": "9b64369d444d5c9d856fe81bcea1044ba93697ec3c3c4600640f36ebfabffea9"
+    },
+    {
+      "fixture": "append-inline-false",
+      "path": "store.properties",
+      "sha256": "f5c735afa19664efefb4880ff840b0c40f0e10a4fe018c8db8221150e71a9f92"
+    },
+    {
+      "fixture": "append-inline-false",
+      "path": "triples/data.mdb",
+      "sha256": "17d93f2b9ad1f130fcd35520d0edc634c1982be735f5f0fedda34c452b997850"
+    },
+    {
+      "fixture": "append-inline-false",
+      "path": "values/data.mdb",
+      "sha256": "339a39987145bbba6e0b1ac8044ef0d3dbe822ece45393932755392e1297d290"
+    },
+    {
+      "fixture": "append-inline-true",
+      "path": ".lmdb-bulk-prepared",
+      "sha256": "9d55a8107927fd97d2b6e63623dd899c5182c161a59ca8735faf7a70b3294189"
+    },
+    {
+      "fixture": "append-inline-true",
+      "path": "cost-model.lncm",
+      "sha256": "8e3e11068c6a7d21e23fd231a56776ff9c1f0a00f157d99a889d7f5cb050bed5"
+    },
+    {
+      "fixture": "append-inline-true",
+      "path": "lmdbrdf.ver",
+      "sha256": "9b64369d444d5c9d856fe81bcea1044ba93697ec3c3c4600640f36ebfabffea9"
+    },
+    {
+      "fixture": "append-inline-true",
+      "path": "store.properties",
+      "sha256": "4d551ed01bd9e0f1c75c0607d12be4e10786093de1b1bb6a530530d7ac88ca08"
+    },
+    {
+      "fixture": "append-inline-true",
+      "path": "triples/data.mdb",
+      "sha256": "2ea7dd11f1ad9f36494f96d5f3d2759e3d44df8881f1c7fc8e23c292104b1fc2"
+    },
+    {
+      "fixture": "append-inline-true",
+      "path": "values/data.mdb",
+      "sha256": "aab299b2bb67da8effd3f55565fadaa84f8878d20b208299e9545bbea22354f3"
+    },
+    {
+      "fixture": "readonly-inline-false",
+      "path": ".lmdb-bulk-prepared",
+      "sha256": "9c2d650f76eb59acce236ad61c1b7023cd0dd49de8a7a33a2410f7c3b7fe5cda"
+    },
+    {
+      "fixture": "readonly-inline-false",
+      "path": "cost-model.lncm",
+      "sha256": "a8b11e28b0c264ffcb66bd0ef6e96e58a45131d43bba9c582d9225029377bdc9"
+    },
+    {
+      "fixture": "readonly-inline-false",
+      "path": "lmdbrdf.ver",
+      "sha256": "9b64369d444d5c9d856fe81bcea1044ba93697ec3c3c4600640f36ebfabffea9"
+    },
+    {
+      "fixture": "readonly-inline-false",
+      "path": "store.properties",
+      "sha256": "76fe6ca7a71960ed3e8b3bfb387e92defa30d442d6c9de828fd092ccb697e054"
+    },
+    {
+      "fixture": "readonly-inline-false",
+      "path": "triples/data.mdb",
+      "sha256": "1e3ce4d8ced4c9a9d1e970d8fb82ea995ccd78b13457a2c95f5eef6c59affa61"
+    },
+    {
+      "fixture": "readonly-inline-false",
+      "path": "values/data.mdb",
+      "sha256": "87920bf5d149628a1eb3c8c5f6d35bb570f2575bfcf5c532bb502ce5eee55900"
+    },
+    {
+      "fixture": "missing-after-failed-publication",
+      "path": "lmdbrdf.ver",
+      "sha256": "9b64369d444d5c9d856fe81bcea1044ba93697ec3c3c4600640f36ebfabffea9"
+    },
+    {
+      "fixture": "missing-after-failed-publication",
+      "path": "store.properties",
+      "sha256": "a98dd94d8a4cab3ba8d38cd88540017d3de43e9696b7fab0bc36a61d8611dca9"
+    },
+    {
+      "fixture": "missing-after-failed-publication",
+      "path": "triples/data.mdb",
+      "sha256": "1e3ce4d8ced4c9a9d1e970d8fb82ea995ccd78b13457a2c95f5eef6c59affa61"
+    },
+    {
+      "fixture": "missing-after-failed-publication",
+      "path": "values/data.mdb",
+      "sha256": "948893b8935c530def7ea4e4aaca9546601311c44d4eb188777348b2c89a9b49"
+    }
+  ],
+  "native_or_witness_edits": 0,
+  "old_module_compilations": 0,
+  "case_names": [
+    "append-inline-false",
+    "append-inline-true",
+    "missing-after-failed-publication",
+    "readonly-inline-false"
+  ]
+}

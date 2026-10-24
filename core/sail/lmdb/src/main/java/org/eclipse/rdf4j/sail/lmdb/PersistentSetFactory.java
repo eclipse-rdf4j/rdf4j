@@ -128,7 +128,7 @@ class PersistentSetFactory<T extends Serializable> {
 
 			int flags = MDB_NOTLS | MDB_NOSYNC | MDB_NOMETASYNC;
 
-			createdDbDir = Files.createTempDirectory(cacheDir.toPath(), "set");
+			createdDbDir = Files.createTempDirectory("rdf4j-lmdb-set-");
 			E(mdb_env_open(createdEnv, createdDbDir.toAbsolutePath().toString(), flags, 0664));
 			environmentLifecycle.afterOpen(createdEnv, createdDbDir);
 			int defaultDbi = openDatabase(createdEnv, null, MDB_CREATE);

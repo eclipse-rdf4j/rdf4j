@@ -39,6 +39,7 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.InternalIdentity;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -60,7 +61,7 @@ class ValueStoreIdCacheTest {
 			Thread writer = Thread.currentThread();
 			LmdbBNode value = new LmdbBNode(store.getRevision(), "racing-native-identity") {
 				@Override
-				public long getInternalID() {
+				public InternalIdentity getInternalIdentity() {
 					if (Thread.currentThread() != writer && firstRead.compareAndSet(true, false)) {
 						identityEntered.countDown();
 						try {
@@ -70,7 +71,7 @@ class ValueStoreIdCacheTest {
 							throw new AssertionError(interrupted);
 						}
 					}
-					return super.getInternalID();
+					return super.getInternalIdentity();
 				}
 			};
 			var lookup = reader.submit(() -> store.getId(value));
@@ -456,12 +457,29 @@ class ValueStoreIdCacheTest {
 				assertEquals(LmdbValue.UNKNOWN_ID, store.getId(VALUES.createIRI(namespace + "a")));
 				int initialProbes = store.alternativeProbes;
 				store.resetCounts();
-				assertEquals(LmdbValue.UNKNOWN_ID, store.getId(VALUES.createIRI(namespace + "b")));
-				assertEquals(0, store.namespaceProbes, "ordinary namespace lookup must reuse the exact prefix key");
-				assertTrue(store.alternativeProbes > 0);
-				assertTrue(store.alternativeProbes < initialProbes);
-				assertEquals(3, store.readTransactions,
-						"one before/fallback/after snapshot bracket covers all prefixes");
+				TxnManager manager = store.getTxnManager();
+				long ordinaryBefore = manager.ordinaryAdmissions();
+				long reservedBefore = manager.reservedAdmissions();
+				store.observeNamespaceRoute = true;
+				try {
+					assertEquals(LmdbValue.UNKNOWN_ID, store.getId(VALUES.createIRI(namespace + "b")));
+					assertEquals(0, store.namespaceProbes, "ordinary namespace lookup must reuse the exact prefix key");
+					assertTrue(store.alternativeProbes > 0);
+					assertTrue(store.alternativeProbes < initialProbes);
+					assertEquals(2, store.readTransactions,
+							"one physical fallback reader supplies the before token; one after-scope check remains");
+					assertEquals(2, manager.ordinaryAdmissions() - ordinaryBefore,
+							"the fallback and after validation must each acquire one actual ordinary read lease");
+					assertEquals(0, manager.reservedAdmissions() - reservedBefore,
+							"an uncontended namespace miss must not borrow the reserved reader");
+					assertEquals(1, store.observedScopeChecks, "only the after check calls the public scope entry");
+					assertEquals(store.alternativeProbes, store.alternativeProbesAtScopeCheck,
+							"the scope validation must follow every physical prefix probe");
+					assertEquals(1, store.alternativeProbeTransactions.size(),
+							"every fallback prefix probe must use the same already-admitted native reader");
+				} finally {
+					store.observeNamespaceRoute = false;
+				}
 			}
 		}
 	}
@@ -936,6 +954,10 @@ class ValueStoreIdCacheTest {
 		private int alternativeSeeks;
 		private Set<Long> watchedNamespaceHashes = Set.of();
 		private int watchedNamespaceProbes;
+		private boolean observeNamespaceRoute;
+		private int observedScopeChecks;
+		private int alternativeProbesAtScopeCheck;
+		private final Set<Long> alternativeProbeTransactions = new HashSet<>();
 		private int failAfterProbeType = -1;
 		private volatile boolean pauseAfterProbe;
 		private CountDownLatch probeCompleted;
@@ -964,6 +986,9 @@ class ValueStoreIdCacheTest {
 		@Override
 		int probeIriAlternative(long txn, MDBVal key, MDBVal value) {
 			alternativeProbes++;
+			if (observeNamespaceRoute) {
+				alternativeProbeTransactions.add(txn);
+			}
 			if (!watchedNamespaceHashes.isEmpty()) {
 				ByteBuffer encoded = key.mv_data();
 				if (encoded.hasRemaining() && encoded.get(encoded.position()) == ValueStoreRecordCodec.HASH_KEY
@@ -972,6 +997,15 @@ class ValueStoreIdCacheTest {
 				}
 			}
 			return super.probeIriAlternative(txn, key, value);
+		}
+
+		@Override
+		public Object valueLookupScope() throws IOException {
+			if (observeNamespaceRoute) {
+				observedScopeChecks++;
+				alternativeProbesAtScopeCheck = alternativeProbes;
+			}
+			return super.valueLookupScope();
 		}
 
 		@Override
@@ -1013,6 +1047,9 @@ class ValueStoreIdCacheTest {
 			alternativeProbes = 0;
 			alternativeSeeks = 0;
 			watchedNamespaceProbes = 0;
+			observedScopeChecks = 0;
+			alternativeProbesAtScopeCheck = 0;
+			alternativeProbeTransactions.clear();
 		}
 	}
 }

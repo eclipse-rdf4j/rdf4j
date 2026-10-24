@@ -551,7 +551,8 @@ public final class KernelRuntime {
 	public static boolean testDateCompare(long candidate, long constant, int op, boolean constantOnLeft,
 			boolean checkBound, KernelHooks hooks, int filterId) {
 		if (candidate == -1L) {
-			return !checkBound && hooks.testFilter(filterId, candidate, -1L, -1L);
+			return checkBound ? recordFilterDecision(hooks, filterId, false)
+					: hooks.testFilter(filterId, candidate, -1L, -1L);
 		}
 		if (ValueIds.getIdType(candidate) == ValueIds.T_DATE && ValueIds.getIdType(constant) == ValueIds.T_DATE) {
 			long candidatePayload = ValueIds.getValue(candidate);
@@ -563,10 +564,15 @@ public final class KernelRuntime {
 				if (constantOnLeft) {
 					comparison = -comparison;
 				}
-				return compareResult(comparison, op);
+				return recordFilterDecision(hooks, filterId, compareResult(comparison, op));
 			}
 		}
 		return hooks.testFilter(filterId, candidate, -1L, -1L);
+	}
+
+	private static boolean recordFilterDecision(KernelHooks hooks, int filterId, boolean accepted) {
+		hooks.recordFilterDecision(filterId, accepted);
+		return accepted;
 	}
 
 	private static int dateKey(long payload) {
@@ -583,14 +589,14 @@ public final class KernelRuntime {
 	public static boolean testOrderedCompare(long candidate, long constant, int op, boolean constantOnLeft,
 			KernelHooks hooks, int filterId) {
 		if (candidate == -1L) {
-			return false;
+			return recordFilterDecision(hooks, filterId, false);
 		}
 		if (ValueIds.isOrderedInteger(candidate) && ValueIds.isOrderedInteger(constant)) {
 			int comparison = ValueIds.compareOrderedIntegers(candidate, constant);
 			if (constantOnLeft) {
 				comparison = -comparison;
 			}
-			return compareResult(comparison, op);
+			return recordFilterDecision(hooks, filterId, compareResult(comparison, op));
 		}
 		return hooks.testFilter(filterId, candidate, -1L, -1L);
 	}

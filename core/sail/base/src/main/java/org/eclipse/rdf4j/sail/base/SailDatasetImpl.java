@@ -19,6 +19,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 
@@ -34,6 +35,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.sail.SailException;
 
 /** An ordered view of retained logical generations over one backing dataset. */
@@ -139,6 +141,15 @@ class SailDatasetImpl implements SailDataset, TreeOwnedDataset {
 			}
 			rethrow(failure);
 		}
+	}
+
+	/**
+	 * Resolves through the committed base dataset. A store-native view found this way sees the committed snapshot only,
+	 * never the uncommitted {@link Changeset} this dataset overlays on it.
+	 */
+	@Override
+	public <T> Optional<T> unwrap(Class<T> type) {
+		return lifetime.call(() -> type.isInstance(this) ? Optional.of(type.cast(this)) : derivedFrom.unwrap(type));
 	}
 
 	boolean hasStatementChanges() {
@@ -340,11 +351,18 @@ class SailDatasetImpl implements SailDataset, TreeOwnedDataset {
 
 	@Override
 	public long getStatementCount(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+		return getStatementCount((StatementPattern) null, subj, pred, obj, contexts);
+	}
+
+	@Override
+	public long getStatementCount(StatementPattern statementPattern, Resource subj, IRI pred, Value obj,
+			Resource... contexts) throws SailException {
 		return lifetime.call(() -> {
 			for (Changeset change : changes) {
 				if (change.isStatementCleared() || change.hasApproved() || change.hasDeprecated()) {
 					long count = 0L;
-					try (CloseableIteration<? extends Statement> cursor = statements(subj, pred, obj, contexts,
+					try (CloseableIteration<? extends Statement> cursor = statements(statementPattern, subj, pred, obj,
+							contexts,
 							changes.size())) {
 						while (cursor.hasNext()) {
 							cursor.next();
@@ -354,21 +372,33 @@ class SailDatasetImpl implements SailDataset, TreeOwnedDataset {
 					return count;
 				}
 			}
-			return derivedFrom.getStatementCount(subj, pred, obj, contexts);
+			return derivedFrom.getStatementCount(statementPattern, subj, pred, obj, contexts);
 		});
 	}
 
 	@Override
 	public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 			Resource... contexts) throws SailException {
-		return lifetime.open(() -> statements(subj, pred, obj, contexts, changes.size()));
+		return getStatements((StatementPattern) null, subj, pred, obj, contexts);
+	}
+
+	@Override
+	public CloseableIteration<? extends Statement> getStatements(StatementPattern statementPattern, Resource subj,
+			IRI pred, Value obj, Resource... contexts) throws SailException {
+		return lifetime.open(() -> statements(statementPattern, subj, pred, obj, contexts, changes.size()));
 	}
 
 	/** Base first, then each approval generation; later changes filter earlier candidates in a loop. */
 	private CloseableIteration<? extends Statement> statements(Resource subj, IRI pred, Value obj,
 			Resource[] contexts, int limit) {
+		return statements(null, subj, pred, obj, contexts, limit);
+	}
+
+	private CloseableIteration<? extends Statement> statements(StatementPattern statementPattern, Resource subj,
+			IRI pred, Value obj, Resource[] contexts, int limit) {
 		int first = firstStatementGeneration(limit);
-		CloseableIteration<? extends Statement> base = first == 0 ? derivedFrom.getStatements(subj, pred, obj, contexts)
+		CloseableIteration<? extends Statement> base = first == 0
+				? derivedFrom.getStatements(statementPattern, subj, pred, obj, contexts)
 				: new EmptyIteration<>();
 		try {
 			return new StatementCursor(base, first, limit, subj, pred, obj, contexts);
@@ -470,6 +500,21 @@ class SailDatasetImpl implements SailDataset, TreeOwnedDataset {
 		@Override
 		public long getSourceRowsFilteredActual() {
 			return reporter == null ? -1 : reporter.getSourceRowsFilteredActual();
+		}
+
+		@Override
+		public long getDistinctCursorSkipCountActual() {
+			return reporter == null ? -1 : reporter.getDistinctCursorSkipCountActual();
+		}
+
+		@Override
+		public long getDistinctCursorSkipSeekCountActual() {
+			return reporter == null ? -1 : reporter.getDistinctCursorSkipSeekCountActual();
+		}
+
+		@Override
+		public long getSkipAheadSeekCountActual() {
+			return reporter == null ? -1 : reporter.getSkipAheadSeekCountActual();
 		}
 	}
 

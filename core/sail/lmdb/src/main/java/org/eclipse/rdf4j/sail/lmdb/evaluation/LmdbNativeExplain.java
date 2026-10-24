@@ -195,6 +195,20 @@ final class LmdbNativeExplain {
 		}
 	}
 
+	/**
+	 * Adds a successfully completed count, including an observed zero, without replacing earlier completed counts.
+	 */
+	static void addCompletedRuntimeCount(TupleExpr expr, String metricName, long count) {
+		expr = logicalOrigin(expr);
+		if (expr == null || !expr.isRuntimeTelemetryEnabled()) {
+			return;
+		}
+		addRuntimeMetricNode(expr, metricName, count);
+		if (expr instanceof QueryRoot) {
+			addRuntimeMetricNode(((QueryRoot) expr).getArg(), metricName, count);
+		}
+	}
+
 	static void setRuntimeMetric(TupleExpr expr, String metricName, long value) {
 		expr = logicalOrigin(expr);
 		if (expr == null || !expr.isRuntimeTelemetryEnabled()) {
@@ -380,6 +394,9 @@ final class LmdbNativeExplain {
 		}
 		if (plan instanceof NativeGraphPlan graph) {
 			return graph.describe();
+		}
+		if (LmdbNativeInteriorPlans.carrier(plan)) {
+			return LmdbNativeInteriorPlans.describe(plan, slotNames, boundMask);
 		}
 		if (plan instanceof NativeSubqueryPlan subquery) {
 			return subquery.describe();

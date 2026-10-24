@@ -1,0 +1,212 @@
+{
+ "wp": "wp5-frontier-lifecycle",
+ "batch": "bR",
+ "worktree": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5",
+ "patchPath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/patches/wp5.patch",
+ "evidencePath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/initial-evidence.wp5.txt",
+ "findings": [
+  {
+   "id": "bR-C9d (critique missedFinding[4], 3.6.4 interaction)",
+   "status": "fixed",
+   "rootCause": "FrontierStatisticsGeneration.validateShard called shard.close() when a shard's header did not match the new manifest. A new generation maps every shard it shares with the live generation by RETAINING the live generation's SharedShard (retainSharedShard) instead of reopening the file. A rejected publication (for example a manifest whose baseEpoch/coveredEpoch/maximumTermId disagrees with a reused shard) therefore unmapped a shard that the live generation and every query lease on it still read. The live generation then threw IllegalStateException('Frontier statistics shard is closed') on every access, and the underlying MappedByteBuffer was cleaned, so an already obtained reader could touch unmapped memory.",
+   "change": "validateShard now only throws. The caller's existing catch calls sharedShard.release(failure), which drops only the new generation's reference and closes the mapping once no generation maps it any more, so a freshly opened shard is still closed on rejection and a shared one stays mapped for the live generation. Sound because SharedShard reference counting already owns the mapping lifecycle; the close in validateShard was a second, unconditional owner.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsGeneration.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/frontier/FrontierSharedShardValidationTest.java"
+   ],
+   "testsAdded": [
+    "FrontierSharedShardValidationTest#rejectedGenerationNeverClosesAShardTheLiveGenerationStillMaps",
+    "FrontierSharedShardValidationTest#rejectedGenerationStillReleasesTheShardItOpenedItself (guard)"
+   ],
+   "preFixEvidence": "Tests run: 2, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 1.765 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSharedShardValidationTest\norg.eclipse.rdf4j.sail.lmdb.frontier.FrontierSharedShardValidationTest.rejectedGenerationNeverClosesAShardTheLiveGenerationStillMaps -- Time elapsed: 0.662 s <<< FAILURE!\norg.opentest4j.AssertionFailedError: the rejected generation closed a shard mapping that the live generation's lease still reads ==> Unexpected exception thrown: java.lang.IllegalStateException: Frontier statistics shard is closed\nCaused by: java.lang.IllegalStateException: Frontier statistics shard is closed\n\tat org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsShard.ensureOpen(FrontierStatisticsShard.java:280)\n\tat org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsShard.column(FrontierStatisticsShard.java:189)\nReport: .mvnf/workspaces/wp5/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSharedShardValidationTest.txt (log .mvnf/workspaces/wp5/logs/20260928T100940.592097Z-33308-2d3e954f/)",
+   "postFixEvidence": "-------------------------------------------------------------------------------\nTest set: org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSharedShardValidationTest\n-------------------------------------------------------------------------------\nTests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.657 s -- in org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSharedShardValidationTest\nReport: .mvnf/workspaces/wp5/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSharedShardValidationTest.txt (log .mvnf/workspaces/wp5/logs/20260928T101218.920774Z-33985-2220004b/); module suite: Tests run: 2, Failures: 0 (log 20260928T101509.685044Z-34637-3aa0ffe4)"
+  },
+  {
+   "id": "3.6.5-bR (b4 follow-up: bound-key leaf product returned a NONE sampled point zero)",
+   "status": "fixed",
+   "rootCause": "FrontierOmniIndex.estimateBridge answers a join whose key component is bound on one side by the bound-key shortcut: the product of two leaf estimates (one leaf bound to the join key), marked decisive so the reverse orientation is never consulted. productEstimate always labelled the product fallbackReason NONE. When the bound leaf was a SAMPLED zero (no sampled row matched, interval [0, upper>0], confidence 0) the planner received a NONE point 0 with confidence 0, the exact defect b3 removed for sampled bridges (confirmed: correlated data, p7.p = p8.o gives point 0, upper 882,000, confidence 0.0 both from FrontierOmniIndex and from the planner-facing FrontierMappedStatistics). The same shortcut also turned a DECLINED leaf (FrontierLeafEstimate.unavailable: point 1, upper MAX, reachable since 3.6.6b budget declines) into a NONE product.",
+   "change": "New FrontierOmniIndex.leafProduct(left, right): a declined input propagates its typed fallback reason; a product whose point is 0 while its own upper is > 0 becomes a typed CONFIDENCE_TOO_WIDE unknown; exact zeros (upper 0, e.g. a complete cell or disjoint bound keys) and positive products are unchanged. Because both orientations compute the same product, the result is final: BridgeResult.symmetricUnknown (weak=false) and decisive() is now '!weak' (exact, strong or orientation-symmetric), which is identical to the old 'available && !weak' for every pre-existing construction (unavailable results carry weak=true). Downstream, FrontierMappedStatistics falls back to centers / Fast-AGMS (which since b4 types a zero median as unknown) and packed consumers to independence. This matches roadmap 4.3 (unknown is neither 1 nor 0). The declined-leaf branch has no dedicated failing test (it needs a budget-exhausted scan inside a bound-key probe, which no test seam exposes); it is the same invariant enforced by the same helper.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/frontier/FrontierOmniIndex.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/frontier/FrontierOmniBridgeOrientationTest.java"
+   ],
+   "testsAdded": [
+    "FrontierOmniBridgeOrientationTest#boundJoinKeyWithASampledZeroLeafIsATypedUnknownInsteadOfAPointZero (all role pairs involving the bound predicate component; omni and planner-facing mapped estimates; exact must stay inside any NONE interval)"
+   ],
+   "preFixEvidence": "Tests run: 7, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 8.630 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.frontier.FrontierOmniBridgeOrientationTest\norg.eclipse.rdf4j.sail.lmdb.frontier.FrontierOmniBridgeOrientationTest.boundJoinKeyWithASampledZeroLeafIsATypedUnknownInsteadOfAPointZero(Path) -- Time elapsed: 0.704 s <<< FAILURE!\na bound-key product whose bound leaf is a sampled zero is not evidence of an empty join:\n  omni 1->2 exact=0 FrontierJoinEstimate[pointRows=0.0, lowerRows=0.0, upperRows=882000.0, confidence=0.0, source=frontier-v2-omni-bridge, fallbackReason=NONE]\n  mapped 1->2 exact=0 FrontierJoinEstimate[pointRows=0.0, lowerRows=0.0, upperRows=882000.0, confidence=0.0, source=frontier-v2-omni-bridge, fallbackReason=NONE]\n  omni 2->1 exact=0 FrontierJoinEstimate[pointRows=0.0, lowerRows=0.0, upperRows=600000.0, confidence=0.0, source=frontier-v2-omni-bridge, fallbackReason=NONE]\n  mapped 2->1 exact=0 FrontierJoinEstimate[pointRows=0.0, lowerRows=0.0, upperRows=600000.0, confidence=0.0, source=frontier-v2-omni-bridge, fallbackReason=NONE] ==> expected: <true> but was: <false>\nReport: .mvnf/workspaces/wp5/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.frontier.FrontierOmniBridgeOrientationTest.txt (log .mvnf/workspaces/wp5/logs/20260928T100940.592097Z-33308-2d3e954f/)",
+   "postFixEvidence": "-------------------------------------------------------------------------------\nTest set: org.eclipse.rdf4j.sail.lmdb.frontier.FrontierOmniBridgeOrientationTest\n-------------------------------------------------------------------------------\nTests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 8.573 s -- in org.eclipse.rdf4j.sail.lmdb.frontier.FrontierOmniBridgeOrientationTest\nReport: .mvnf/workspaces/wp5/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.frontier.FrontierOmniBridgeOrientationTest.txt (log .mvnf/workspaces/wp5/logs/20260928T101218.920774Z-33985-2220004b/); module suite: FrontierStatisticsBuilderTest 53/53, FrontierOmniBridgeWorkBudgetTest 3/3, FrontierFastAgmsIntervalTest 3/3 green (log 20260928T101509.685044Z-34637-3aa0ffe4)"
+  },
+  {
+   "id": "critique[0] blocker 3.6.4 (GC deletes in-progress build outputs)",
+   "status": "fixed",
+   "rootCause": "Verified handled in b3.",
+   "change": "FrontierStatisticsManifestStore.retireSuperseded only considers files whose generation id is strictly below the current id; temporaries and CURRENT are never touched; collectGarbage is synchronized on the service monitor; the release hook only schedules GC on estimatorPersistExec. Guarded by LmdbStatisticsGenerationRetirementTest#inProgressBuildOutputsSurviveRetirementTriggeredByALeaseRelease and #retirementNeverTouchesTemporaryFilesOrNewerGenerations (6/6 green in bR suite).",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsManifestStore.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/frontier/LmdbStatisticsService.java"
+   ],
+   "postFixEvidence": "Covered by the bR module suite: [mvnf] Summary: tests=2239, failures=0, errors=1 (ENOSPC LmdbStoreMultiRepoTest, pre-existing), skipped=7 (log .mvnf/workspaces/wp5/logs/20260928T101509.685044Z-34637-3aa0ffe4/verify.log); per-class lines in initial-evidence.wp5.txt '## bR module suite'."
+  },
+  {
+   "id": "critique[1] major 3.6.5 (rule 5 degenerate witnesses)",
+   "status": "partially-fixed",
+   "rootCause": "Rule (5) handled in b3 as 'both points zero' (hidden-hub and mirrored-hub tests green); bR additionally closed the bound-key product zero (finding 3.6.5-bR).",
+   "change": "Selection keys on positive point before witnesses (FrontierOmniIndex.preferBridge). The explicit true-empty-join decision (typed unknown) is asserted by FrontierOmniBridgeOrientationTest#bothOrientationsWithoutAnyWitnessYieldATypedUnknownInsteadOfAPointZero.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/frontier/FrontierOmniIndex.java"
+   ],
+   "deferredReason": "The separate witness-accounting change (count positive-degree matched keys instead of min over EXACT_ZERO degrees) is NOT done: it changes the confidence of most sampled bridges and must be validated on the theme benchmark harness first; soundness does not depend on it."
+  },
+  {
+   "id": "critique[2] major 3.6.1 part (5) (page estimate stamped DATABASE_EXACT)",
+   "status": "fixed",
+   "rootCause": "Verified handled in b1 (resumed session).",
+   "change": "LmdbEstimatorStorageAccess.packedStatementPatternRows returns NaN when an AUTHORITATIVE Frontier declines, so finite_binding_probe never certifies a page estimate; asserted by LmdbColdFrontierStorageEvidenceTest#packedFiniteProbeDeclinesWhenFrontierDeclinesInsteadOfCertifyingPageEstimatesAsExact.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorStorageAccess.java"
+   ],
+   "postFixEvidence": "Covered by the bR module suite: [mvnf] Summary: tests=2239, failures=0, errors=1 (ENOSPC LmdbStoreMultiRepoTest, pre-existing), skipped=7 (log .mvnf/workspaces/wp5/logs/20260928T101509.685044Z-34637-3aa0ffe4/verify.log); per-class lines in initial-evidence.wp5.txt '## bR module suite'."
+  },
+  {
+   "id": "critique[3] major 3.6.6a (filter-pass and cursor-skip gates) + missedFindings[0..2]",
+   "status": "fixed",
+   "rootCause": "Verified handled in b1.",
+   "change": "LmdbEstimatorRuntime.patternFilterPass passes mode == AUTHORITATIVE; describePackedDistinctCursorSkip uses LmdbFrontierLeafAnswer.ready; SHADOW packed leaves asserted through LmdbPackedCostModel.estimateRows (LmdbColdFrontierStorageEvidenceTest 22/22 green).",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorRuntime.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorStorageAccess.java"
+   ],
+   "postFixEvidence": "Covered by the bR module suite: [mvnf] Summary: tests=2239, failures=0, errors=1 (ENOSPC LmdbStoreMultiRepoTest, pre-existing), skipped=7 (log .mvnf/workspaces/wp5/logs/20260928T101509.685044Z-34637-3aa0ffe4/verify.log); per-class lines in initial-evidence.wp5.txt '## bR module suite'."
+  },
+  {
+   "id": "critique[4] major 3.6.6b (budget with delta layers, nesting)",
+   "status": "partially-fixed",
+   "rootCause": "Soundness part verified handled in b3.",
+   "change": "Budget exhaustion declines (LaneEstimate.UNAVAILABLE), never truncates; with mutation layers mapped scans are never prefix-truncated; beginEstimate resets only at nesting depth 0 (FrontierOmniBridgeWorkBudgetTest 3/3 green).",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/frontier/FrontierOmniIndex.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsLease.java"
+   ],
+   "deferredReason": "Delta-aware CellSlice.restrictPrefixSampling and theme-harness validation of how often large bridges now fall back remain follow-ups."
+  },
+  {
+   "id": "critique[5] major 3.6.2 (debt trigger before build stalls deltas)",
+   "status": "fixed",
+   "rootCause": "Verified handled in b2.",
+   "change": "frontierBaseRefreshOverdue runs only after a successful delta publish; deltas keep publishing while a base rebuild is pending; LmdbFrontierRebuildSchedulingTest#deltaTierDebtRebuildsBaseWhileSmallCommitsContinue commits every 250 ms and bounds uncovered windows (6/6 green, 66.7 s).",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbSailStore.java"
+   ],
+   "postFixEvidence": "Covered by the bR module suite: [mvnf] Summary: tests=2239, failures=0, errors=1 (ENOSPC LmdbStoreMultiRepoTest, pre-existing), skipped=7 (log .mvnf/workspaces/wp5/logs/20260928T101509.685044Z-34637-3aa0ffe4/verify.log); per-class lines in initial-evidence.wp5.txt '## bR module suite'."
+  },
+  {
+   "id": "critique[6] minor 3.6.1 (double Frontier probe on the decision tier)",
+   "status": "deferred",
+   "rootCause": "exactCandidate re-probes estimateLeafCurrent in AUTHORITATIVE mode on the DECISION_EXACT tier only.",
+   "change": "No change.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbStorageEstimatorEvidence.java"
+   ],
+   "deferredReason": "Cost-only: the second probe is bounded by MAXIMUM_ESTIMATE_WORK (3.6.6b) and runs only when exactProbePermitted; both interleavings with a concurrent publication are harmless (exact wins, or storage summary only). A memo needs either a thread-local identity cache or an evidence-source API change; not justified without a profile."
+  },
+  {
+   "id": "critique[7] minor 3.6.1 (fallback reason in BagEstimate.source)",
+   "status": "refuted",
+   "rootCause": "The concern was that plan fingerprints or caches compare BagEstimate.source.",
+   "change": "No change. rg shows 'lmdb-storage-summary' is referenced only by LmdbFrontierLeafAnswer and its test (plus historical benchmark result files); no plan-cache key, fingerprint or equality uses estimate sources, so the suffix affects explain/metrics only.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbFrontierLeafAnswer.java"
+   ]
+  },
+  {
+   "id": "critique[8] minor 3.6.1 (exact tier reads a fresh txn)",
+   "status": "deferred",
+   "rootCause": "Under a declined AUTHORITATIVE Frontier the exact tier behaves exactly as OFF mode (REVIEW 3.10).",
+   "change": "No change in WP5.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbStorageEstimatorEvidence.java"
+   ],
+   "deferredReason": "Snapshot-pinned exact reads are wp8's (planningReadTxn landed there); no estimate-driven EmptySet rewrite exists in LMDB, so this is cost-only."
+  },
+  {
+   "id": "critique[9] minor 3.6.2 (SHARD_CORRUPT for dimension mismatch)",
+   "status": "fixed",
+   "rootCause": "Verified handled in b2.",
+   "change": "FrontierOmniDeltaBuilder throws a permanent MEMORY_PRESSURE FrontierStatisticsException (FrontierDeltaPermanentFailureTest#omniDimensionMismatchIsATypedPermanentFailure).",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/frontier/FrontierOmniDeltaBuilder.java"
+   ],
+   "postFixEvidence": "Covered by the bR module suite: [mvnf] Summary: tests=2239, failures=0, errors=1 (ENOSPC LmdbStoreMultiRepoTest, pre-existing), skipped=7 (log .mvnf/workspaces/wp5/logs/20260928T101509.685044Z-34637-3aa0ffe4/verify.log); per-class lines in initial-evidence.wp5.txt '## bR module suite'."
+  },
+  {
+   "id": "critique[10] minor 3.6.4 (GC on query thread)",
+   "status": "fixed",
+   "rootCause": "Verified handled in b3.",
+   "change": "FrontierStatisticsGeneration.onFullyReleased hook only schedules LmdbStatisticsService.collectGarbage on the retirement executor (estimatorPersistExec); GC is synchronized.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/frontier/LmdbStatisticsService.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsGeneration.java"
+   ],
+   "postFixEvidence": "Covered by the bR module suite: [mvnf] Summary: tests=2239, failures=0, errors=1 (ENOSPC LmdbStoreMultiRepoTest, pre-existing), skipped=7 (log .mvnf/workspaces/wp5/logs/20260928T101509.685044Z-34637-3aa0ffe4/verify.log); per-class lines in initial-evidence.wp5.txt '## bR module suite'."
+  },
+  {
+   "id": "critique[11] minor 3.6.7a (providerVersion ignores Frontier readiness) + missedFindings[3] (mapped/scalar flip)",
+   "status": "deferred",
+   "rootCause": "Plans built in the commit->record window or before a delta publication use scalar evidence and may stay cached.",
+   "change": "No change in WP5.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/frontier/LmdbStatisticsService.java"
+   ],
+   "deferredReason": "Plan-cache invalidation is wp3's ownership (LmdbPackedCostModel.providerVersion / plan caches); tail-aware views for the mapped/scalar flip need a design of their own."
+  }
+ ],
+ "suiteRuns": [
+  {
+   "selection": "bR pre-fix: FrontierSharedShardValidationTest + FrontierOmniBridgeOrientationTest",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp5 --threads 3 core/sail/lmdb --retain-logs -- '-Dtest=FrontierSharedShardValidationTest,FrontierOmniBridgeOrientationTest' -DskipITs -DtrimStackTrace=false",
+   "result": "tests=9, failures=2, errors=0, skipped=0 (log 20260928T100940.592097Z-33308-2d3e954f)",
+   "reds": [
+    "intended reproducers: rejectedGenerationNeverClosesAShardTheLiveGenerationStillMaps, boundJoinKeyWithASampledZeroLeafIsATypedUnknownInsteadOfAPointZero"
+   ]
+  },
+  {
+   "selection": "bR post-fix: same selection",
+   "command": "(same)",
+   "result": "tests=9, failures=0, errors=0, skipped=0 (log 20260928T101218.920774Z-33985-2220004b)",
+   "reds": []
+  },
+  {
+   "selection": "core/sail/lmdb full unit suite, final tree (b1+b2+b3+b4+bR); includes every WP5 test class (per-class lines in evidence file)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp5 --threads 3 core/sail/lmdb --retain-logs",
+   "result": "tests=2239, failures=0, errors=1, skipped=7, time=702.0s (log .mvnf/workspaces/wp5/logs/20260928T101509.685044Z-34637-3aa0ffe4/verify.log)",
+   "reds": [
+    "pre-existing (environmental): LmdbStoreMultiRepoTest.testRandomLoadManyRepositoriesInParallel -> RepositoryException: java.io.IOException: No space left on device (200 parallel LMDB stores, volume 98% full). Same red in every earlier wp5 suite (b2, b3, b4) and in the wt-wp1/wp3/wp6 suites that carry no WP5 change; the test does not touch Frontier code."
+   ]
+  },
+  {
+   "selection": "core/sail/lmdb integration tests: all *IT classes (failsafe), final tree",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp5 --threads 3 core/sail/lmdb --retain-logs -- -Dtest=NoSuchUnitTestSelected -Dsurefire.failIfNoSpecifiedTests=false '-Dit.test=*IT' -Dfailsafe.failIfNoSpecifiedTests=false",
+   "result": "tests=144, failures=0, errors=0, skipped=98, time=613.8s (log .mvnf/workspaces/wp5/logs/20260928T102829.419956Z-81293-6553058a/verify.log); skips are the ITs' own assumption/profile gates (e.g. LmdbThemeQueryRegressionIT 67/67, ThemeQueryBenchmarkSmokeIT 18/20)",
+   "reds": []
+  }
+ ],
+ "filesTouchedOutsideOwnership": [],
+ "newFlagsOrConfig": [
+  "None in bR. (Cumulative WP5: package-private constants only - LmdbSailStore FRONTIER_DELTA_TIER_REBUILD_FRACTION/FRONTIER_MAX_TRANSIENT_DELTA_FAILURES/FRONTIER_REBUILD_MAX_DEFERRAL_NANOS, FrontierOmniIndex MAXIMUM_ESTIMATE_WORK/MAXIMUM_BRIDGE_WORK/INITIAL_BRIDGE_PRIORITY_TIER, FrontierMappedStatistics FAST_AGMS_ERROR_DEVIATIONS; public LmdbStatisticsService.currentManifest() and open(..., Executor) overload.)"
+ ],
+ "crossWpNotes": [
+  "wp7/wp2 (cost model): bound-key Omni joins whose bound leaf is a sampled zero or declined are now typed CONFIDENCE_TOO_WIDE instead of a NONE point 0 with confidence 0; FrontierMappedStatistics then uses centers / Fast-AGMS and packed consumers independence.",
+  "wp3: providerVersion() still ignores Frontier readiness (critique issue[11]); cold/declined-window plans can stay cached.",
+  "wp8: the exact tier under a declined AUTHORITATIVE Frontier relies on wp8's planning read txn for snapshot identity (critique issue[8]); 3.6.7a's scalar-path residual needs the query snapshot epoch threaded into LmdbEstimatorRuntime.",
+  "Integrator: the LmdbStoreConfig/LmdbStoreSchema japicmp-compat hunks in wp5.patch were applied by the integrator and left untouched. The formatter was not run (mvnf passes -Dformatter.skip=true); four added comment/code lines over 120 columns were wrapped by hand in bR."
+ ],
+ "followUps": [
+  "3.6.5: witness accounting (count positive-degree matched keys as witnesses) so 'strong beats weak' becomes effective; validate on the theme harness.",
+  "3.6.6b: delta-aware CellSlice.restrictPrefixSampling; validate MAXIMUM_BRIDGE_WORK / INITIAL_BRIDGE_PRIORITY_TIER on the theme harness.",
+  "3.6.7a remains partially-fixed (scalar Current-API path unpinned until wp8 threads the snapshot epoch); 3.6.7c(B) quad-synopsis publication race remains deferred to the sketch-estimator retirement decision.",
+  "3.6.3 secondary: mapped/scalar flip between commit and delta publication (tail-aware views) - needs an owner (wp3 plan stability or a new WP5 item).",
+  "critique[6]: memoise the Frontier leaf answer between leafCandidates and exactCandidate if decision-tier planning shows it in profiles.",
+  "Disk: volume at 98%; LmdbStoreMultiRepoTest keeps failing with ENOSPC until space is freed.",
+  "LmdbFrontierRebuildSchedulingTest takes ~67 s; consider a slow-test tag."
+ ]
+}

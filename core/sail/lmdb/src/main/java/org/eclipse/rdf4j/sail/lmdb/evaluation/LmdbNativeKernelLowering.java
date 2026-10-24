@@ -324,6 +324,12 @@ final class LmdbNativeKernelLowering {
 			this.strictOrderCompare = strictOrderCompare;
 		}
 
+		Lowered withConsumerInput(LmdbNativeInteriorPlans.Selection input) {
+			return input == null ? this
+					: new Lowered(kernel, bindings.withConsumerInput(input), planBridgeReason,
+							strictOrderCompare);
+		}
+
 		Lowered withTelemetry(Kernel.TelemetryMode mode) {
 			Kernel variant = kernel.withTelemetry(mode);
 			return variant == kernel ? this : new Lowered(variant, bindings, planBridgeReason, strictOrderCompare);

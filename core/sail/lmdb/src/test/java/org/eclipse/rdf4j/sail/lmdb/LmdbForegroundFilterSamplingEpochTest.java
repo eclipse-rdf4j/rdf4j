@@ -46,20 +46,25 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
@@ -67,12 +72,15 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailClosable;
+import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.StreamingPreflightBranchFactory;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+import org.eclipse.rdf4j.sail.lmdb.sketch.PatternFilterSampleEstimate;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.MockedStatic;
@@ -92,6 +100,150 @@ class LmdbForegroundFilterSamplingEpochTest {
 			""";
 	private final ConcurrentCleaner revisionCleaner = new ConcurrentCleaner();
 
+	@ParameterizedTest
+	@ValueSource(ints = { 3, 32 })
+	void repeatedEquivalentLiveSamplesKeepThePublishedEvidenceRevision(int rowCount, @TempDir File directory)
+			throws Exception {
+		String previousMode = System.getProperty(LmdbFilterSelectivityStats.FILTER_SAMPLING_MODE_PROPERTY);
+		System.setProperty(LmdbFilterSelectivityStats.FILTER_SAMPLING_MODE_PROPERTY, "prefix");
+		ProbeLmdbStore sail = new ProbeLmdbStore(directory,
+				samplingConfig().setOptimizerSamplingMaxRows(8).setSketchEstimatorColdSynopsisCapacity(0),
+				new SamplingPause());
+		SailRepository repository = new SailRepository(sail);
+		repository.init();
+		try {
+			sail.getBackingStore().getSketchBasedJoinEstimator().stop();
+			seedMatchedRows(repository, sail, rowCount);
+			Filter filter = filter(FILTER_QUERY);
+			StatementPattern pattern = (StatementPattern) filter.getArg();
+			LmdbFilterSelectivityStats stats = sail.filterStats();
+			long beforeFirst = stats.planningRevision();
+			PatternFilterSampleEstimate first = stats.estimateLiveFilterPass(filter, pattern);
+			long published = stats.planningRevision();
+			assertEquals(1.0d, first.passRatio(), 0.0d);
+			assertEquals(rowCount == 3 ? 3 : 2, first.sampleSize(),
+					"a truncated eight-row prefix retains its existing quarter-weight evidence");
+			assertTrue(published > beforeFirst, "new sampled evidence must advance its publication revision");
+			for (int attempt = 0; attempt < 3; attempt++) {
+				Filter equivalent = filter.clone();
+				PatternFilterSampleEstimate repeated = stats.estimateLiveFilterPass(equivalent,
+						(StatementPattern) equivalent.getArg());
+				assertEquals(first.passRatio(), repeated.passRatio(), 0.0d);
+				assertEquals(first.sampleSize(), repeated.sampleSize());
+				assertEquals(published, stats.planningRevision(),
+						"republishing identical complete or truncated evidence must not invalidate its own plan");
+			}
+		} finally {
+			try {
+				repository.shutDown();
+			} finally {
+				if (previousMode == null) {
+					System.clearProperty(LmdbFilterSelectivityStats.FILTER_SAMPLING_MODE_PROPERTY);
+				} else {
+					System.setProperty(LmdbFilterSelectivityStats.FILTER_SAMPLING_MODE_PROPERTY, previousMode);
+				}
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void changedCompleteLiveSampleAdvancesThePublishedEvidenceRevision(boolean changedRatio, @TempDir File directory)
+			throws Exception {
+		ProbeLmdbStore sail = new ProbeLmdbStore(directory,
+				samplingConfig().setSketchEstimatorColdSynopsisCapacity(0), new SamplingPause());
+		SailRepository repository = new SailRepository(sail);
+		repository.init();
+		try {
+			sail.getBackingStore().getSketchBasedJoinEstimator().stop();
+			seedMatchedRows(repository, sail, 2);
+			Filter filter = filter(FILTER_QUERY);
+			StatementPattern pattern = (StatementPattern) filter.getArg();
+			LmdbFilterSelectivityStats stats = sail.filterStats();
+			PatternFilterSampleEstimate first = stats.estimateLiveFilterPass(filter, pattern);
+			assertEquals(1.0d, first.passRatio(), 0.0d);
+			assertEquals(2, first.sampleSize());
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.add(SimpleValueFactory.getInstance().createIRI("urn:test:unmatched"), NAME,
+						SimpleValueFactory.getInstance()
+								.createLiteral(changedRatio ? "excluded" : "matched-value-new"));
+			}
+			long beforeChanged = stats.planningRevision();
+			PatternFilterSampleEstimate changed = stats.estimateLiveFilterPass(filter, pattern);
+			assertEquals(changedRatio ? 2.0d / 3.0d : 1.0d, changed.passRatio(), 0.0d);
+			assertEquals(3, changed.sampleSize());
+			assertTrue(stats.planningRevision() > beforeChanged,
+					"a changed ratio or evidence population must still advance its publication revision");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 0, 1, 2, 3 })
+	void completeSmallPopulationIncludesBothPlanesRepeatedVariablesAndContexts(int variant, @TempDir File directory)
+			throws Exception {
+		SamplingPause pause = new SamplingPause();
+		ProbeLmdbStore sail = new ProbeLmdbStore(directory, samplingConfig(), pause);
+		SailRepository repository = new SailRepository(sail);
+		repository.init();
+		try {
+			SimpleValueFactory values = SimpleValueFactory.getInstance();
+			IRI firstContext = values.createIRI("urn:test:complete:g");
+			IRI secondContext = values.createIRI("urn:test:complete:h");
+			try (LmdbStoreConnection connection = (LmdbStoreConnection) sail.getConnection()) {
+				connection.begin(IsolationLevels.SNAPSHOT);
+				for (int i = 0; i < 80; i++) {
+					IRI subject = values.createIRI((i < 40 ? "urn:test:match:" : "urn:test:exclude:") + i);
+					IRI object = i < 64 ? subject : values.createIRI("urn:test:different:" + i);
+					IRI context = i % 3 == 0 ? firstContext : secondContext;
+					if (i % 2 == 0) {
+						connection.addStatement(subject, NAME, object, context);
+					} else {
+						connection.addInferredStatement(subject, NAME, object, context);
+					}
+				}
+				connection.commit();
+			}
+			int[] expectedSamples = { 80, 64, 22, 64 };
+			int[] expectedPassing = { 40, 40, 14, 40 };
+			// Exercise the sampler's native pattern contract directly. The SPARQL parser may represent a repeated
+			// variable with an extra equality Filter rather than a repeated name on the StatementPattern.
+			Var context = variant == 2 ? Var.of("g", firstContext) : variant == 3 ? new Var("g") : null;
+			StatementPattern pattern = new StatementPattern(
+					variant >= 2 ? StatementPattern.Scope.NAMED_CONTEXTS : StatementPattern.Scope.DEFAULT_CONTEXTS,
+					new Var("s"), Var.of("p", NAME), new Var(variant == 0 ? "o" : "s"), context);
+			Filter parsed = filter("SELECT * WHERE { ?s <urn:test:name> ?o"
+					+ " FILTER(STRSTARTS(STR(?s), \"urn:test:match:\")) }");
+			Filter filter = new Filter(pattern, parsed.getCondition().clone());
+			// The fixture owns this complete native query, including its explicit physical context constraints.
+			PlanningGraphDomains.capture(filter, PlanningGraphDomain.defaultGraph());
+			PatternFilterSampleEstimate estimate = sail.filterStats()
+					.estimateFilterPass(filter, pattern);
+			long predicateId = sail.valueStore().getId(NAME);
+			long contextId = variant == 2 ? sail.valueStore().getId(firstContext) : LmdbValue.UNKNOWN_ID;
+			double heuristicRows = sail.tripleStore()
+					.cardinality(LmdbValue.UNKNOWN_ID, predicateId,
+							LmdbValue.UNKNOWN_ID, contextId);
+			int adaptiveBudget = sail.filterStats()
+					.optimizerSamplingRowBudget(heuristicRows, heuristicRows * 0.45d,
+							1.0d);
+			String budgetEvidence = "heuristicRows=" + heuristicRows + ", adaptiveBudget=" + adaptiveBudget
+					+ ", completeAtAdaptiveKeyCap=" + sail.tripleStore()
+							.boundedExactCardinality(LmdbValue.UNKNOWN_ID,
+									predicateId, LmdbValue.UNKNOWN_ID, contextId, adaptiveBudget)
+					+ ", completeAtConfiguredKeyCap=" + sail.tripleStore()
+							.boundedExactCardinality(
+									LmdbValue.UNKNOWN_ID, predicateId, LmdbValue.UNKNOWN_ID, contextId, ROW_COUNT);
+			assertEquals(expectedSamples[variant], estimate.sampleSize(),
+					"the complete admitted population must include both planes and apply pattern constraints; "
+							+ budgetEvidence);
+			assertEquals((double) expectedPassing[variant] / expectedSamples[variant], estimate.passRatio(), 0.0d);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
 	@Test
 	void foregroundFilterSamplingMustResolveTermsFromTheTripleSnapshot() throws Exception {
 		Path dataDirectory = Files.createTempDirectory("lmdb-foreground-filter-snapshot");
@@ -99,7 +251,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 		ProbeLmdbStore sail = new ProbeLmdbStore(dataDirectory.toFile(), samplingConfig(), pause);
 		SailRepository repository = new SailRepository(sail);
 		ExecutorService sampler = Executors.newSingleThreadExecutor();
-		Future<SketchBasedJoinEstimator.PatternFilterSampleEstimate> estimateFuture = null;
+		Future<PatternFilterSampleEstimate> estimateFuture = null;
 		try {
 			repository.init();
 			SimpleValueFactory valueFactory = SimpleValueFactory.getInstance();
@@ -131,6 +283,14 @@ class LmdbForegroundFilterSamplingEpochTest {
 			StatementPattern pattern = (StatementPattern) filter.getArg();
 			LmdbFilterSelectivityStats stats = sail.filterStats();
 			assertNotNull(stats, "Sketch-enabled stores must provide the foreground filter sampler");
+			AtomicReference<LmdbSailStore.ReadView> samplingView = new AtomicReference<>();
+			stats.setSamplingViewSupplier(() -> {
+				LmdbSailStore.DatasetAdmission admission = sail.getBackingStore()
+						.beginDatasetAdmission(
+								IsolationLevels.SNAPSHOT_READ, null);
+				samplingView.set(admission.view());
+				return admission;
+			});
 			pause.arm();
 			estimateFuture = sampler.submit(() -> {
 				pause.registerSamplerThread();
@@ -159,16 +319,15 @@ class LmdbForegroundFilterSamplingEpochTest {
 				connection.commit();
 			}
 			if (pause.readSnapshotReserved()) {
-				assertEquals(sampledSubjectId, sail.valueStore().getId(sampledSubject),
+				assertEquals(sampledSubjectId,
+						sail.valueStore().getId(samplingView.get().valueSnapshot(), sampledSubject),
 						"The paired sampler snapshot must retain the subject mapping across deletion");
-				assertEquals(sampledNameId, sail.valueStore().getId(sampledName),
+				assertEquals(sampledNameId, sail.valueStore().getId(samplingView.get().valueSnapshot(), sampledName),
 						"The paired sampler snapshot must retain the literal mapping across deletion");
-			} else {
-				assertEquals(LmdbValue.UNKNOWN_ID, sail.valueStore().getId(sampledSubject),
-						"Without a paired sampler snapshot, committed deletion retires the subject mapping");
-				assertEquals(LmdbValue.UNKNOWN_ID, sail.valueStore().getId(sampledName),
-						"Without a paired sampler snapshot, committed deletion retires the literal mapping");
 			}
+			// The durable retirement watermark protects dictionary mappings until old statement readers finish.
+			// Current statement membership changes immediately; dictionary reclamation is checked after sample close.
+			assertAbsentFromFreshDataset(sail, sampledSubject, sampledName);
 			Reference.reachabilityFence(subjectRevisionWitness);
 			Reference.reachabilityFence(nameRevisionWitness);
 			subjectRevisionWitness = null;
@@ -210,7 +369,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 					+ ", currentRevisionId=" + currentRevisionId;
 
 			pause.release.countDown();
-			SketchBasedJoinEstimator.PatternFilterSampleEstimate estimate = estimateFuture.get(30,
+			PatternFilterSampleEstimate estimate = estimateFuture.get(30,
 					TimeUnit.SECONDS);
 			boolean pairedSnapshotRetained = pairedSnapshotReservedBeforeResume && pause.pairedLookupCount() == 2;
 			assertTrue(oldNumericMappingChanged || pairedSnapshotRetained,
@@ -330,7 +489,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 					true,
 					20_000L, ROW_COUNT, true);
 
-			SketchBasedJoinEstimator.PatternFilterSampleEstimate estimate = stats.estimateFilterPass(filter, pattern);
+			PatternFilterSampleEstimate estimate = stats.estimateFilterPass(filter, pattern);
 			assertEquals(-1.0d, estimate.passRatio(), 0.0d,
 					"A standalone statistics object without a paired-view provider cannot raw-sample native rows");
 			assertEquals(-1L, estimate.sampleSize(),
@@ -359,7 +518,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 		ProbeLmdbStore sail = new ProbeLmdbStore(dataDirectory.toFile(), samplingConfig(), pause);
 		SailRepository repository = new SailRepository(sail);
 		ExecutorService sampler = Executors.newSingleThreadExecutor();
-		Future<SketchBasedJoinEstimator.PatternFilterSampleEstimate> estimateFuture = null;
+		Future<PatternFilterSampleEstimate> estimateFuture = null;
 		try {
 			repository.init();
 			SeededTerms seeded = seedMatchedRows(repository, sail, ROW_COUNT);
@@ -395,7 +554,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 				connection.commit();
 			}
 			pause.release.countDown();
-			SketchBasedJoinEstimator.PatternFilterSampleEstimate oldEpochEstimate = estimateFuture.get(15,
+			PatternFilterSampleEstimate oldEpochEstimate = estimateFuture.get(15,
 					TimeUnit.SECONDS);
 			assertEquals(1.0d, oldEpochEstimate.passRatio(), 0.0d,
 					"The in-flight foreground sample correctly completes against its original admitted view");
@@ -408,7 +567,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 			freshStats.setSamplingViewSupplier(
 					() -> backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, null));
 			int beforeFreshAdmission = pause.readSnapshotReservationCount();
-			SketchBasedJoinEstimator.PatternFilterSampleEstimate freshEstimate = freshStats.estimateFilterPass(filter,
+			PatternFilterSampleEstimate freshEstimate = freshStats.estimateFilterPass(filter,
 					pattern);
 			int afterFreshAdmission = pause.readSnapshotReservationCount();
 			assertEquals(ROW_COUNT, freshEstimate.sampleSize(),
@@ -419,7 +578,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 					"The fresh root view contains 255 matching rows and one nonmatching replacement");
 
 			int beforeSameStatsEstimate = pause.readSnapshotReservationCount();
-			SketchBasedJoinEstimator.PatternFilterSampleEstimate sameStatsEstimate = stats.estimateFilterPass(filter,
+			PatternFilterSampleEstimate sameStatsEstimate = stats.estimateFilterPass(filter,
 					pattern);
 			int sameStatsAdmissionDelta = pause.readSnapshotReservationCount() - beforeSameStatsEstimate;
 			assertEquals(freshEstimate.passRatio(), sameStatsEstimate.passRatio(), 0.0d,
@@ -446,7 +605,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 		SailRepository repository = new SailRepository(sail);
 		ExecutorService sampler = Executors.newSingleThreadExecutor();
 		ExecutorService writer = Executors.newSingleThreadExecutor();
-		Future<SketchBasedJoinEstimator.PatternFilterSampleEstimate> estimateFuture = null;
+		Future<PatternFilterSampleEstimate> estimateFuture = null;
 		Future<Void> writerFuture = null;
 		CountDownLatch oldViewReady = new CountDownLatch(1);
 		CountDownLatch startEstimate = new CountDownLatch(1);
@@ -516,7 +675,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 					"Sampling after the reset must reuse the exact view admitted before the writer");
 
 			pause.release.countDown();
-			SketchBasedJoinEstimator.PatternFilterSampleEstimate oldViewEstimate = estimateFuture.get(15,
+			PatternFilterSampleEstimate oldViewEstimate = estimateFuture.get(15,
 					TimeUnit.SECONDS);
 			writerFuture.get(10, TimeUnit.SECONDS);
 			assertTrue(writerCommittedBeforeEstimate.get(),
@@ -533,7 +692,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 			freshStats.setSamplingViewSupplier(
 					() -> backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, null));
 			int beforeFreshAdmission = pause.readSnapshotReservationCount();
-			SketchBasedJoinEstimator.PatternFilterSampleEstimate freshEstimate = freshStats.estimateFilterPass(filter,
+			PatternFilterSampleEstimate freshEstimate = freshStats.estimateFilterPass(filter,
 					pattern);
 			assertEquals(1, pause.readSnapshotReservationCount() - beforeFreshAdmission,
 					"The independent current-data control must admit a new paired view");
@@ -544,7 +703,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 					"The current root contains 255 matching rows and one excluded replacement");
 
 			int beforeCurrentEstimate = pause.readSnapshotReservationCount();
-			SketchBasedJoinEstimator.PatternFilterSampleEstimate currentEstimate = stats.estimateFilterPass(filter,
+			PatternFilterSampleEstimate currentEstimate = stats.estimateFilterPass(filter,
 					pattern);
 			assertEquals(currentRatio, currentEstimate.passRatio(), 0.0d,
 					"An old-view result must not populate the shared cache for a current caller");
@@ -552,7 +711,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 					"The same statistics object must sample again using a fresh current view");
 
 			int beforeCachedCurrentEstimate = pause.readSnapshotReservationCount();
-			SketchBasedJoinEstimator.PatternFilterSampleEstimate cachedCurrentEstimate = stats.estimateFilterPass(
+			PatternFilterSampleEstimate cachedCurrentEstimate = stats.estimateFilterPass(
 					filter,
 					pattern);
 			assertEquals(currentRatio, cachedCurrentEstimate.passRatio(), 0.0d,
@@ -584,7 +743,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 		ProbeLmdbStore sail = new ProbeLmdbStore(dataDirectory.toFile(), samplingConfig(), pause);
 		SailRepository repository = new SailRepository(sail);
 		ExecutorService sampler = Executors.newSingleThreadExecutor();
-		Future<SketchBasedJoinEstimator.PatternFilterSampleEstimate> estimateFuture = null;
+		Future<PatternFilterSampleEstimate> estimateFuture = null;
 		CountDownLatch oldViewReady = new CountDownLatch(1);
 		CountDownLatch startEstimate = new CountDownLatch(1);
 		AtomicReference<LmdbSailStore.ReadView> outerView = new AtomicReference<>();
@@ -669,7 +828,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 						assertTrue(publicationOpen.get(),
 								"The publication remains open through old-view sampling");
 						pause.release.countDown();
-						SketchBasedJoinEstimator.PatternFilterSampleEstimate oldEstimate = estimateFuture.get(15,
+						PatternFilterSampleEstimate oldEstimate = estimateFuture.get(15,
 								TimeUnit.SECONDS);
 						assertEquals(1.0d, oldEstimate.passRatio(), 0.0d,
 								"The admitted old view still returns its coherent pre-mutation estimate");
@@ -695,7 +854,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 					() -> backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, null));
 			double currentRatio = (ROW_COUNT - 1.0d) / ROW_COUNT;
 			int beforeFreshAdmission = pause.readSnapshotReservationCount();
-			SketchBasedJoinEstimator.PatternFilterSampleEstimate freshEstimate = freshStats.estimateFilterPass(filter,
+			PatternFilterSampleEstimate freshEstimate = freshStats.estimateFilterPass(filter,
 					pattern);
 			assertEquals(currentRatio, freshEstimate.passRatio(), 0.0d,
 					"After publication closes, a fresh estimator sees the committed nonmatching replacement");
@@ -703,7 +862,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 					"The independent current-data control must admit a new paired view");
 
 			int beforeCurrentAdmission = pause.readSnapshotReservationCount();
-			SketchBasedJoinEstimator.PatternFilterSampleEstimate currentEstimate = stats.estimateFilterPass(filter,
+			PatternFilterSampleEstimate currentEstimate = stats.estimateFilterPass(filter,
 					pattern);
 			assertEquals(currentRatio, currentEstimate.passRatio(), 0.0d,
 					"The old-view result must not have replaced current-cache authority");
@@ -731,7 +890,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 		SailRepository repository = new SailRepository(sail);
 		ExecutorService sampler = Executors.newSingleThreadExecutor();
 		ExecutorService writer = Executors.newSingleThreadExecutor();
-		Future<SketchBasedJoinEstimator.PatternFilterSampleEstimate> estimateFuture = null;
+		Future<PatternFilterSampleEstimate> estimateFuture = null;
 		Future<Void> writerFuture = null;
 		boolean writerCommittedWhilePaused = false;
 		try {
@@ -788,15 +947,20 @@ class LmdbForegroundFilterSamplingEpochTest {
 				// Release the old read epoch before collecting the bounded writer completion below.
 				pause.release.countDown();
 			}
+			try {
+				assertTrue(writerCommittedWhilePaused,
+						"A public writer must commit while nested sampling holds its already-admitted paired view");
+				assertEquals(sampledSubjectId,
+						sail.valueStore().getId(samplingView.get().valueSnapshot(), sampledSubject),
+						"The old paired view keeps its subject mapping while the sample is paused");
+				assertEquals(sampledNameId, sail.valueStore().getId(samplingView.get().valueSnapshot(), sampledName),
+						"The old paired view keeps its literal mapping while the sample is paused");
+				assertAbsentFromFreshDataset(sail, sampledSubject, sampledName);
+			} finally {
+				pause.release.countDown();
+			}
 			writerFuture.get(10, TimeUnit.SECONDS);
-			assertTrue(writerCommittedWhilePaused,
-					"A public writer must commit while nested sampling holds its already-admitted paired view");
-			assertEquals(sampledSubjectId, sail.valueStore().getId(sampledSubject),
-					"The old paired view keeps its subject mapping while the sample is paused");
-			assertEquals(sampledNameId, sail.valueStore().getId(sampledName),
-					"The old paired view keeps its literal mapping while the sample is paused");
-			pause.release.countDown();
-			SketchBasedJoinEstimator.PatternFilterSampleEstimate estimate = estimateFuture.get(15, TimeUnit.SECONDS);
+			PatternFilterSampleEstimate estimate = estimateFuture.get(15, TimeUnit.SECONDS);
 			assertSame(outerView.get(), samplingView.get(),
 					"Nested sampling must reuse the active paired epoch rather than admit a newer root view");
 			assertEquals(2, pause.pairedLookupCount(),
@@ -807,6 +971,16 @@ class LmdbForegroundFilterSamplingEpochTest {
 					"The object resolves from the outer admitted epoch after a concurrent commit");
 			assertEquals(1.0d, estimate.passRatio(), 0.0d,
 					"The nested sampler sees the complete old epoch despite the public writer commit");
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.add(SimpleValueFactory.getInstance().createIRI("urn:test:after-nested-sample"), NAME,
+						SimpleValueFactory.getInstance().createLiteral("later-matched-value"));
+				connection.commit();
+			}
+			assertEquals(LmdbValue.UNKNOWN_ID, sail.valueStore().getId(sampledSubject),
+					"after the old sample closes, a later write must drain the deleted subject's retirement");
+			assertEquals(LmdbValue.UNKNOWN_ID, sail.valueStore().getId(sampledName),
+					"after the old sample closes, a later write must drain the deleted literal's retirement");
 		} finally {
 			pause.release.countDown();
 			if (estimateFuture != null && !estimateFuture.isDone()) {
@@ -842,7 +1016,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 			LmdbFilterSelectivityStats stats = sail.filterStats();
 			Filter filter = filter(FILTER_QUERY);
 			StatementPattern pattern = (StatementPattern) filter.getArg();
-			SketchBasedJoinEstimator.PatternFilterSampleEstimate foreground = stats.estimateFilterPass(filter,
+			PatternFilterSampleEstimate foreground = stats.estimateFilterPass(filter,
 					pattern);
 			assertEquals(-1.0d, foreground.passRatio(), 0.0d,
 					"Foreground optimizer sampling is disabled while background demand remains enabled");
@@ -893,7 +1067,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 			writerFuture.get(10, TimeUnit.SECONDS);
 			assertTrue(writerCommittedWhilePaused,
 					"An ordinary public writer must commit while background sampling holds its paired read view");
-			SketchBasedJoinEstimator.PatternFilterSampleEstimate afterReset = stats.estimateFilterPass(filter, pattern);
+			PatternFilterSampleEstimate afterReset = stats.estimateFilterPass(filter, pattern);
 			assertEquals(-1.0d, afterReset.passRatio(), 0.0d,
 					"The old background ratio must not populate cache after the replacement commit reset");
 			LmdbFilterSelectivityStats freshStats = new LmdbFilterSelectivityStats(
@@ -903,7 +1077,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 			freshStats.setSamplingViewSupplier(
 					() -> backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, null));
 			int beforeFreshAdmission = pause.readSnapshotReservationCount();
-			SketchBasedJoinEstimator.PatternFilterSampleEstimate freshEstimate = freshStats.estimateFilterPass(filter,
+			PatternFilterSampleEstimate freshEstimate = freshStats.estimateFilterPass(filter,
 					pattern);
 			assertEquals((ROW_COUNT - 1.0d) / ROW_COUNT, freshEstimate.passRatio(), 0.0d,
 					"A fresh current view observes the background writer's nonmatching replacement");
@@ -1033,7 +1207,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 					true, 20_000L, ROW_COUNT, false);
 			currentStats.setSamplingViewSupplier(
 					() -> backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, null));
-			SketchBasedJoinEstimator.PatternFilterSampleEstimate currentEstimate = currentStats.estimateFilterPass(
+			PatternFilterSampleEstimate currentEstimate = currentStats.estimateFilterPass(
 					replacementFilter, replacementPattern);
 			assertEquals(ROW_COUNT, currentEstimate.sampleSize(),
 					"The replacement predicate's current view contains all 256 rows");
@@ -1059,11 +1233,11 @@ class LmdbForegroundFilterSamplingEpochTest {
 		ProbeLmdbStore sail = new ProbeLmdbStore(dataDirectory.toFile(), samplingConfig(100L, true, false, 0L), pause);
 		SailRepository repository = new SailRepository(sail);
 		ExecutorService sampler = Executors.newSingleThreadExecutor();
-		Future<SketchBasedJoinEstimator.PatternFilterSampleEstimate> estimateFuture = null;
+		Future<PatternFilterSampleEstimate> estimateFuture = null;
 		SailClosable publication = null;
 		AtomicReference<QueryExecutionDeadline> callerDeadlineOwner = new AtomicReference<>();
 		boolean completedWithinBudget = false;
-		SketchBasedJoinEstimator.PatternFilterSampleEstimate earlyResult = null;
+		PatternFilterSampleEstimate earlyResult = null;
 		AtomicBoolean callerDeadlineSurvivedSampling = new AtomicBoolean();
 		AtomicBoolean deadlinePresentAtSupplier = new AtomicBoolean();
 		try {
@@ -1084,7 +1258,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 			publication = backing.beginPublication(new Object());
 			estimateFuture = sampler.submit(() -> {
 				try (QueryExecutionDeadline.Scope ignored = callerDeadline.enter()) {
-					SketchBasedJoinEstimator.PatternFilterSampleEstimate result = stats.estimateFilterPass(filter,
+					PatternFilterSampleEstimate result = stats.estimateFilterPass(filter,
 							pattern);
 					callerDeadlineSurvivedSampling.set(QueryExecutionDeadline.current() == callerDeadline
 							&& callerDeadline.remainingMillis() > 0L);
@@ -1117,7 +1291,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 				freshStats.setSamplingViewSupplier(
 						() -> backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, null));
 				int beforeFreshAdmission = pause.readSnapshotReservationCount();
-				SketchBasedJoinEstimator.PatternFilterSampleEstimate freshEstimate = freshStats.estimateFilterPass(
+				PatternFilterSampleEstimate freshEstimate = freshStats.estimateFilterPass(
 						filter,
 						pattern);
 				assertEquals(1.0d, freshEstimate.passRatio(), 0.0d,
@@ -1520,6 +1694,8 @@ class LmdbForegroundFilterSamplingEpochTest {
 
 	private static Filter filter(String query) {
 		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		// All callers own complete local name/replacement-name queries over their seeded default dataset.
+		PlanningGraphDomains.capture(parsed.getTupleExpr(), PlanningGraphDomain.defaultGraph());
 		Filter[] found = new Filter[1];
 		parsed.getTupleExpr().visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
@@ -1532,6 +1708,15 @@ class LmdbForegroundFilterSamplingEpochTest {
 		});
 		assertNotNull(found[0], "The test query must contain a local filter");
 		return found[0];
+	}
+
+	private static void assertAbsentFromFreshDataset(ProbeLmdbStore sail, IRI subject, Literal object) {
+		try (SailDataset current = sail.getBackingStore()
+				.getExplicitSailSource()
+				.dataset(IsolationLevels.SNAPSHOT_READ);
+				CloseableIteration<? extends Statement> rows = current.getStatements(subject, NAME, object)) {
+			assertFalse(rows.hasNext(), "a fresh paired statement snapshot must observe the committed deletion");
+		}
 	}
 
 	private static String valueString(LmdbValue value) {
@@ -1608,8 +1793,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 		}
 
 		private void pauseAfterRead(long[] row) {
-			// Estimator refresh and other readers share this TripleStore. Only the explicitly registered
-			// sampler may claim the pause or publish the row whose dictionary epoch the test observes.
+			// Other readers cannot claim the explicitly registered sampler's pause or publish its row.
 			if (!isSamplingThread() || !armed.compareAndSet(true, false)) {
 				return;
 			}
@@ -1684,6 +1868,16 @@ class LmdbForegroundFilterSamplingEpochTest {
 				ValueStore valueStore, SamplingPause pause) throws IOException, SailException {
 			super(dataDir, properties, config, valueStore);
 			this.pause = pause;
+		}
+
+		@Override
+		int sampleTriplesStratified(TxnManager.Txn txn, long subj, long pred, long obj, long context, boolean explicit,
+				int strata, int rowsPerStratum, Predicate<long[]> sink) throws IOException {
+			return super.sampleTriplesStratified(txn, subj, pred, obj, context, explicit, strata, rowsPerStratum,
+					row -> {
+						pause.pauseAfterRead(row);
+						return sink.test(row);
+					});
 		}
 
 		@Override

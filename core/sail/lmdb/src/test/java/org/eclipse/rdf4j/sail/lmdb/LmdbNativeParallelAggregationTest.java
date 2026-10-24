@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,10 +33,14 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
+import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess;
+import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
@@ -682,7 +687,7 @@ public class LmdbNativeParallelAggregationTest {
 	}
 
 	@Test
-	public void allPatternParallelCatastrophicCancellationFallsBackToOnePointZero() {
+	public void allPatternParallelCatastrophicCancellationPreservesGenericEncounterOrder() {
 		addCancellationSequence("parallelCancellationControl", vf -> new Literal[] { vf.createLiteral(10),
 				vf.createLiteral(-10), vf.createLiteral(1) });
 		addCancellationSequence("parallelCancellationFloating", vf -> new Literal[] { vf.createLiteral(1.0e16d),
@@ -690,7 +695,8 @@ public class LmdbNativeParallelAggregationTest {
 
 		String controlQuery = cancellationSequenceQuery("parallelCancellationControl");
 		long controlBefore = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
-		rows(controlQuery);
+		assertThat(rows(controlQuery)).containsExactly(
+				"[sum=" + repository.getValueFactory().createLiteral("1", CoreDatatype.XSD.INTEGER) + "]");
 		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
 				.as("the all-PatternPlan control must clear the parallel gate")
 				.isEqualTo(controlBefore + 1L);
@@ -707,8 +713,10 @@ public class LmdbNativeParallelAggregationTest {
 		assertThat(result).singleElement().satisfies(row -> {
 			Literal sum = (Literal) row.getValue("sum");
 			assertThat(sum.getCoreDatatype()).isEqualTo(CoreDatatype.XSD.DOUBLE);
-			assertThat(sum.getLabel()).isEqualTo("1.0");
-			assertThat(sum.doubleValue()).isEqualTo(1.0d);
+			// This unordered three-value multiset has two possible IEEE-754 fold results.
+			// Exact prefix-order behavior is checked separately through the actual GROUP fallback entry.
+			assertThat(sum.getLabel()).isIn("0.0", "1.0");
+			assertThat(sum.doubleValue()).isIn(0.0d, 1.0d);
 		});
 		List<String> actual = serializedRows(result);
 		assertThat(actual).isEqualTo(rowsWithProperty(PARALLEL_FLAG, "false", query));
@@ -717,6 +725,100 @@ public class LmdbNativeParallelAggregationTest {
 		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
 				.as("floating fallback must not claim a completed parallel run")
 				.isEqualTo(before.parallelRuns());
+	}
+
+	@Test
+	public void explicitFloatingFallbackPreservesDistinctPrefixOrder() throws Exception {
+		ValueFactory vf = repository.getValueFactory();
+		IRI predicate = vf.createIRI(EX, "orderedDistinctFallbackValue");
+		IRI graph = vf.createIRI(EX, "orderedDistinctFallbackGraph");
+		IRI[] nodes = { vf.createIRI(EX, "orderedDistinctFallback/0"),
+				vf.createIRI(EX, "orderedDistinctFallback/1"), vf.createIRI(EX, "orderedDistinctFallback/2") };
+		Literal[] values = { vf.createLiteral(1.0e16d), vf.createLiteral(-1.0e16d), vf.createLiteral(1.0d) };
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin();
+			for (int i = 0; i < nodes.length; i++) {
+				connection.add(nodes[i], predicate, values[i]);
+				connection.add(nodes[i], predicate, values[i], graph);
+			}
+			connection.commit();
+		}
+
+		LmdbStore store = (LmdbStore) repository.getSail();
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+			long predicateId = source.idOf(predicate, ValuePosition.PREDICATE);
+			long[] nodeIds = new long[nodes.length];
+			long[] valueIds = new long[values.length];
+			assertThat(predicateId).isNotEqualTo(-1L);
+			for (int i = 0; i < nodes.length; i++) {
+				nodeIds[i] = source.idOf(nodes[i], ValuePosition.SUBJECT);
+				valueIds[i] = source.idOf(values[i], ValuePosition.OBJECT);
+				assertThat(nodeIds[i]).isNotEqualTo(-1L);
+				assertThat(valueIds[i]).isNotEqualTo(-1L);
+			}
+			// This is the native physical prefix API, whose ValuesCursor consumes its array in order.
+			// It makes no SPARQL promise about textual VALUES order or order escaping a subquery.
+			// The real statement branch duplicates each RDF value across two contexts; DISTINCT must retain
+			// its first occurrence. Hand folds: (1e16 + -1e16) + 1 = 1; (1e16 + 1) + -1e16 = 0.
+			assertOrderedDistinctFloatingFallback(source, predicateId, nodeIds, valueIds, new int[] { 0, 1, 2 },
+					List.of(values[0], values[0], values[1], values[1], values[2], values[2]), "1.0", 1.0d);
+			assertOrderedDistinctFloatingFallback(source, predicateId, nodeIds, valueIds, new int[] { 0, 2, 1 },
+					List.of(values[0], values[0], values[2], values[2], values[1], values[1]), "0.0", 0.0d);
+		}
+	}
+
+	private void assertOrderedDistinctFloatingFallback(NativeLmdbQuerySource source, long predicateId, long[] nodeIds,
+			long[] valueIds, int[] prefixOrder, List<Literal> expectedInput, String expectedLabel, double expectedSum)
+			throws Exception {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("node", 0, "value", 1), null);
+		layout.patternPosition("node", ValuePosition.SUBJECT);
+		layout.patternPosition("value", ValuePosition.OBJECT);
+		layout.freeze(List.of("node", "value"));
+		ValuesRow[] prefix = new ValuesRow[prefixOrder.length];
+		for (int i = 0; i < prefix.length; i++) {
+			int entry = prefixOrder[i];
+			prefix[i] = new ValuesRow(new int[] { 0, 1 }, new long[] { nodeIds[entry], valueIds[entry] });
+		}
+		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(predicateId), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 2D);
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { SlotPlan.values(prefix), pattern },
+				new MaskedFilter[0]);
+		AggregateSpec[] aggregates = {
+				AggregateSpec.slot("count", 1, false, AggKind.COUNT),
+				AggregateSpec.slot("distinctCount", 1, true, AggKind.COUNT),
+				AggregateSpec.slot("sum", 1, true, AggKind.SUM).withPositionMask(ValuePosition.OBJECT)
+		};
+		SpeculativeCounters before = SpeculativeCounters.snapshot();
+		try (NativeGroupIteration iteration = new NativeGroupIteration(source, plan, layout, new int[0], aggregates,
+				false, EmptyBindingSet.getInstance(), null, null, false, null)) {
+			RowState speculativeRow = new RowState(source, layout, EmptyBindingSet.getInstance());
+			assertThat(iteration.initialize(speculativeRow)).isTrue();
+			List<Literal> input = new ArrayList<>();
+			try (RowCursor cursor = plan.open(speculativeRow)) {
+				while (cursor.next()) {
+					input.add((Literal) source.lazyValue(speculativeRow.slots[1], ValuePosition.OBJECT));
+				}
+			}
+			assertThat(input).as("complete ordered six-row input before DISTINCT")
+					.containsExactlyElementsOf(expectedInput);
+			// Invoke the same real fallback entry used after EncounterOrderFallback, with its fresh row/table.
+			// The physical plan and pinned source above remain unchanged; no optimizer or projection is substituted.
+			List<BindingSet> result = iteration.evaluateSequentialFallback(speculativeRow,
+					EncounterOrderFallback.Reason.FLOATING_SUM_OR_AVG);
+			assertThat(result).singleElement().satisfies(row -> {
+				assertThat(row.getBindingNames()).containsExactlyInAnyOrder("count", "distinctCount", "sum");
+				assertThat(((Literal) row.getValue("count")).longValue()).isEqualTo(6L);
+				assertThat(((Literal) row.getValue("distinctCount")).longValue()).isEqualTo(3L);
+				Literal sum = (Literal) row.getValue("sum");
+				assertThat(sum.getCoreDatatype()).isEqualTo(CoreDatatype.XSD.DOUBLE);
+				assertThat(sum.getLabel()).isEqualTo(expectedLabel);
+				assertThat(sum.doubleValue()).isEqualTo(expectedSum);
+			});
+		}
+		assertThat(SpeculativeCounters.snapshot())
+				.as("sequential fallback must publish no speculative strategy counters")
+				.isEqualTo(before);
 	}
 
 	@Test

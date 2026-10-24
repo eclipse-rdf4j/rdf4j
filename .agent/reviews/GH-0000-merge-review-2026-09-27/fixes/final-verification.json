@@ -1,0 +1,154 @@
+{
+ "reproTests": [
+  {
+   "testClass": "core/queryalgebra/evaluation: PhysicalOperatorReviewReproTest, QueryJoinCrossProductReviewReproTest, PackedRuleSemanticsReviewReproTest, PackedPlanCacheFlightReviewReproTest, CostModelInvariantReviewReproTest",
+   "result": "green: 7/0, 2/0, 13/0, 5/0, 4/0. Log wt-repro/.mvnf/workspaces/repro/logs/20260928T133310.068796Z-97890-b15b744d/verify.log (rerun after porting the I6/I7 fixes)"
+  },
+  {
+   "testClass": "PackedPlanningFailSafeReviewReproTest",
+   "result": "5 tests, 2 red, 3 green",
+   "reds": [
+    "singleFlightWaiterMustSeeTheSameFallbackableFailureAsTheOwner: repro-expectation-obsolete. The repro asserts that the waiter gets an IllegalStateException, which was the old LMDB catch-clause type. The wp3 design (designs/wp3-plan-caching.design.json) deliberately changed this: FlightClaim.await() returns null for a failed flight and the waiter plans again. LmdbCascadesOptimizer now falls back on any planner RuntimeException except cancellation. So the robust intent (the waiter's query must not fail) holds, and PackedPlanningFailSafeTest covers it green (waiter replans, two failing owners, deadline). This is not a SPARQL-semantics question.",
+    "unsupportedOperatorMustSurfaceAsAFallbackableFailure: repro-expectation-obsolete, for the same reason. It now throws UnsupportedCascadesOperatorException, a CascadesPlanningException, before any cost session opens. PackedPlanningFailSafeTest#unsupportedOperatorFailsFastBeforeAnyCostSessionOpens and LmdbCascadesPlanningFailSafeTest#unsupportedOperatorFallsBackToThePipelineTree are green."
+   ]
+  },
+  {
+   "testClass": "LeoLearningReviewReproTest",
+   "result": "12 tests, 1 red. Compile adaptation only: the diagnostic message uses logRatioVariance() because rowRatioMean() was removed by the log-space EWMA fix; assertions are unchanged.",
+   "reds": [
+    "rolloutLadderMustBeMonotone: partly fixed. The 'drops lifecycle enforcement' violation is gone and review finding 3.7.4 (fail-open parsing) is fixed. Three violations remain, all 'adjacent rungs have the same 4-flag signature'. SAFE_PLAN_RERANKING==EXPERIMENTAL_FULL is repro-expectation-obsolete: the wp6 design deliberately chose a monotone ladder, and 8 rungs over 6 flags cannot all differ. OBSERVE_ONLY==SHADOW_EXPLAIN and SAFE_PLAN_LIFECYCLE==SAFE_RULE_STEERING are still open. Those rungs differ only in explainEnabled()/ruleSteeringEnabled(), and no production code reads either. Rule steering and reranking are gated by the separate properties rdf4j.optimizer.lmdb.leoRuleSteering and leoPlanReranking. Not fixed: wiring the profile to them changes planning for users of those profiles, which is a product decision. Reported under openIssues."
+   ]
+  },
+  {
+   "testClass": "GeoFilterPlacementReviewReproTest",
+   "result": "green 4/0 (wt-repro/.mvnf/workspaces/repro/logs/20260928T133434.255159Z-98090-3362ea21/verify.log)"
+  },
+  {
+   "testClass": "OperatorContractReviewReproTest, StandardPipelineReviewReproTest (core/sail/memory)",
+   "result": "green 21/0 and 8/0 (wt-repro/.mvnf/workspaces/repro/logs/20260928T133357.687036Z-98013-7a63911a/verify.log)"
+  },
+  {
+   "testClass": "core/sail/lmdb: LmdbPlanCacheUpdateReviewReproTest, LmdbLogicalRewriteReviewReproTest, LmdbStorageEvidenceReviewReproTest, LmdbFrontierLifecycleReviewReproTest, LmdbPackedRuleSemanticsReviewReproTest, LmdbMinusAntiJoinReviewReproTest, frontier.FrontierEstimationReviewReproTest",
+   "result": "green: 13/0, 37/0, 2/0, 4/0 (175 s, no timeout), 31/0, 4/0, 5/0. Log wt-repro/.mvnf/workspaces/repro/logs/20260928T140319.939217Z-7897-2f33fbbe/verify.log (rerun after porting the fixes; the first run gave the same result)"
+  },
+  {
+   "testClass": "LmdbMergeIntegrationReviewReproTest",
+   "result": "5 tests, 1 red. Compile adaptation only: it calls repeatedVariableCardinality(..., mask, PLANNING_EXACT_SCAN_MAX_ROWS).rows() because the signature gained the 3.10 scan cap.",
+   "reds": [
+    "nestedOrdinaryPlannerReadStallsWherePriorityReadProceeds: repro-expectation-obsolete. It calls repeatedVariableCardinality directly from a thread that holds no query lease and has no pinned planning txn. wp8 deliberately routes planner reads through the query's pinned dataset txn, and when unpinned takes an ordinary lease so that a scan never occupies the single reserved slot. The review itself recommended pinning. The wp8 design explains that the repro 'asserts that an unrelated thread with no lease jumps the 127 ordinary waiters, which is not the bug'. The end-to-end repro in the same class (planning a repeated-variable query with one ordinary slot left) is green, and the ported LmdbPlannerReaderLeaseTest is green."
+   ]
+  },
+  {
+   "testClass": "LmdbRolledBackFeedbackReviewReproTest",
+   "result": "2 tests, 2 red; the underlying finding is fixed",
+   "reds": [
+    "rolledBackRowsMustNotBecomeLearnedOrExactEvidence and rolledBackRowsMustNotBecomeExactFilterFacts: repro-expectation-obsolete (the proxy is too strict). After rollback the estimates are the committed values (200 and 10 rows, not 700 and 510), so no rolled-back data is learned. The repro compares full estimate strings. Its baseline explain is served from the plan cache as USE_AND_REFRESH (reason outside-stability-envelope, planVersion 1), with estimates that predate the evidence from the committed runs. The later explain gets the refreshed planVersion 2. Scratch controls (since removed): no transaction at all gives the identical flip; an empty transaction with queries gives the identical flip; an uncommitted add without queries gives no flip. wp6-b2 records the same label-flip behaviour. The ported LmdbRolledBackFeedbackTest (learned-state revision plus row estimates against a converged baseline) is green. Evidence is in scratchpad/final-verify-scratch/."
+   ]
+  }
+ ],
+ "suiteRuns": [
+  {
+   "module": "core/queryalgebra/model",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace int --threads 3 --retain-logs core/queryalgebra/model (rerun post-fix in int2)",
+   "logPath": "wt-int/.mvnf/workspaces/int2/logs/20260928T134613.739945Z-99449-4c5e7d18/verify.log",
+   "result": "tests=88 failures=0 errors=0 skipped=1"
+  },
+  {
+   "module": "core/queryparser/sparql",
+   "command": "mvnf --workspace int2 --threads 3 --retain-logs core/queryparser/sparql",
+   "logPath": "wt-int/.mvnf/workspaces/int2/logs/20260928T134740.642598Z-99585-46c98c25/verify.log",
+   "result": "tests=122 failures=0 errors=0"
+  },
+  {
+   "module": "core/queryalgebra/evaluation",
+   "command": "mvnf --workspace int2 --threads 3 --retain-logs core/queryalgebra/evaluation (final, after I6/I7)",
+   "logPath": "wt-int/.mvnf/workspaces/int2/logs/20260928T133245.614022Z-97776-f02da6be/verify.log",
+   "result": "tests=2115 failures=0 errors=0. The first pass (int, 20260928T120301.395723Z-78679-1a7b5665) had 2110 tests and 1 failure.",
+   "reds": [
+    "OptimizerRuleCatalogTest.generatedDocumentationMatchesManifestAndResearchInputs, first pass only: environmental. It needs docs/query-optimizer/rewrite-and-optimization-catalog.md, which is untracked in the main checkout and was missing from the worktree. After symlinking docs/ into wt-int (like papers2): tests=8, failures=0 (int2/logs/20260928T120741.849913Z-79483-696a00a9). Green in the final full run."
+   ]
+  },
+  {
+   "module": "core/sail/base",
+   "command": "mvnf --workspace int2 --threads 3 --retain-logs core/sail/base",
+   "logPath": "wt-int/.mvnf/workspaces/int2/logs/20260928T134520.161803Z-99370-a138383e/verify.log",
+   "result": "tests=24 failures=0 errors=0"
+  },
+  {
+   "module": "core/sail/memory",
+   "command": "mvnf --workspace int2 --threads 3 --retain-logs core/sail/memory",
+   "logPath": "wt-int/.mvnf/workspaces/int2/logs/20260928T133549.373639Z-98218-6d6bb6d8/verify.log",
+   "result": "tests=879 failures=0 errors=0 skipped=3"
+  },
+  {
+   "module": "core/sail/nativerdf",
+   "command": "mvnf --workspace int2 --threads 3 --retain-logs core/sail/nativerdf",
+   "logPath": "wt-int/.mvnf/workspaces/int2/logs/20260928T133645.530146Z-98349-eeda0587/verify.log",
+   "result": "tests=738 failures=0 errors=0 skipped=2"
+  },
+  {
+   "module": "core/sail/shacl",
+   "command": "mvnf --workspace int2 --threads 3 --retain-logs core/sail/shacl",
+   "logPath": "wt-int/.mvnf/workspaces/int2/logs/20260928T133958.714084Z-98691-fe8951b5/verify.log",
+   "result": "tests=35303 failures=0 errors=0 skipped=2"
+  },
+  {
+   "module": "core/queryalgebra/geosparql",
+   "command": "mvnf --workspace int2 --threads 3 --retain-logs core/queryalgebra/geosparql",
+   "logPath": "wt-int/.mvnf/workspaces/int2/logs/20260928T134132.635454Z-99062-ee628e08/verify.log",
+   "result": "tests=49 failures=0 errors=0"
+  },
+  {
+   "module": "tools/federation",
+   "command": "mvnf --workspace int2 --threads 3 --retain-logs tools/federation",
+   "logPath": "wt-int/.mvnf/workspaces/int2/logs/20260928T134220.059405Z-99177-d17402be/verify.log",
+   "result": "tests=219 failures=0 errors=0 skipped=51"
+  },
+  {
+   "module": "core/sail/lmdb (unit)",
+   "command": "mvnf --workspace int --threads 3 --retain-logs core/sail/lmdb -- -DskipITs (final, after I6/I7)",
+   "logPath": "wt-int/.mvnf/workspaces/int/logs/20260928T133950.416114Z-98647-27da3bc0/verify.log",
+   "result": "tests=2558 failures=1 errors=1 skipped=7. The first pass (20260928T121817.684272Z-84154-2588c3df) had 7 failures and 1 error.",
+   "reds": [
+    "LmdbStoreMultiRepoTest.testRandomLoadManyRepositoriesInParallel: environmental. IOException 'No space left on device' from ValueStore.open is POSIX semaphore exhaustion; the test needs 400 semaphores.",
+    "LmdbRuntimeFeedbackTargetTest.preboundOpenCloseAndRootPublicationAllocateNoLearningObjects: flaky / order-dependent. The test is unchanged by every package. It fails only inside the full-suite JVM (class 258 of 267, forkCount=1), always with raw=196608 bytes (3 x 64 KiB); wp6 saw the same count. It is green in isolation three times, including with -XX:-DoEscapeAnalysis, and green after the wp6 feedback test classes. A full-suite JFR capture (scratch, reverted) reproduced the 196608 bytes but could not attribute them: a control with injected 3 x byte[65520] was not captured either. Root cause not found; listed under openIssues.",
+    "First pass only, LmdbExactProbeCacheDataRevisionTest (4 tests): integration-bug-fixed, in the test fixture. wp3's mock fixture stubbed TxnManager.createReadTxn, but wp8 routes probes through TripleStore.planningReadTxn(). Added the planningReadTxn stub. Isolated post-fix run: int/logs/20260928T123959.888696Z-87248-2032aa62, 47/0.",
+    "First pass only, LmdbColdFrontierStorageEvidenceTest.packedLeafWithUnresolvableConstantUsesLegacyRows: integration-bug-fixed, in the test fixture. wp5 stubbed estimateForPlanning(5 args), but after wp8 LmdbEstimatorStorageAccess calls estimateForPlanningQualified, where an unknown term is an exact zero. Moved the stubs and the never() verifications of three tests to the qualified route; this is stricter, not weaker.",
+    "First pass only, LmdbRolledBackFeedbackTest.rolledBackRowsMustNotBecomeExactFilterFacts: outdated-expectation-updated. The baseline explain was served USE_AND_REFRESH from the wp3 plan cache, with estimates older than the evidence from the committed runs. A scratch control showed the same Filter 100 -> 0 flip with no transaction at all. The baseline now waits with LmdbPlannerAwait.awaitDetachedPlanRefresh (condition-based, not a sleep), so only the rolled-back transaction can move the estimates. The learned-state revision assertion is unchanged."
+   ]
+  },
+  {
+   "module": "core/sail/lmdb (--it)",
+   "command": "mvnf --workspace int --threads 3 --retain-logs core/sail/lmdb --it -- -PskipUnitTests (final, after I6/I7)",
+   "logPath": "wt-int/.mvnf/workspaces/int/logs/20260928T135241.403753Z-3441-8cb7ac12/verify.log",
+   "result": "tests=144 failures=0 errors=0 skipped=98. The first pass (20260928T124114.506238Z-87375-fd40211c) had 2 failures; both reproduced deterministically in isolation (20260928T125220.130276Z-88649-bdcdb3d7).",
+   "reds": [
+    "First pass, LmdbSocialQ7OptimizedPlanIT.finiteAnchorsStayLocalAndSelfLoopProbesStayBound (plannedWorkRows 88.8K > 5000): integration-bug-fixed (I6). Integration fix I5 left Extension out of the MINUS probe allowlist. `MINUS { ?v :follows ?v }` parses as an alias BIND over the pattern, so it lost its bound anti-join probe and became a materialized-hash Difference that scans all 14.4K follows edges. A scratch experiment with the I5 planner gate disabled made q7 green. Fix: both mirrored allowlists (FilterIterator.isMinusProbeSelectionSafe, PackedLogicalRuleProgram.executorProbesMinusBodyBySelection) now accept an Extension that assigns no shared name and contains no EXISTS-style subquery. Routine A: tests failed first (int/logs/20260928T130907.629559Z-91894-3dd07b85, 2 red), then green (20260928T131239.291730Z-94383-701d6584, 107/0).",
+    "First pass, LmdbMedicalOptimizedQueryRegressionIT.medicalQ9CompleteStoreMaterializesAntiJoinAndCompletes (memoized-costing metric -1): integration-bug-fixed (I7), originating in wp2. wp2 had only ever seen this test time out. Bisect: wt-wp7 green (wp7/logs/20260928T131809.576594Z-95283-6c047b51); wt-wp2 red (wp2/logs/20260928T132042.515601Z-95940-fb837799). A scratch rule trace showed that the unused-OPTIONAL removal copies the MINUS into a second Difference group over the same body. For that copy, addNamesOutsideMinusBody walked into the original Difference and counted the body's own ?obs/?value as names used outside the MINUS. That made the MINUS->anti-join check (substitutionEquivalentMinusBody) decline, and the selected copy kept a raw Difference. Fix: a Difference whose right child is the same body group is treated like the MINUS under analysis. Routine A: tests failed first (20260928T132815.050456Z-97006-ca208ac5, expected <[9, 18]> but was <[9]>), then green (20260928T132935.292472Z-97268-c1e15013). The q9, q7 and LmdbMedicalQ9PlanStabilityIT ITs are green (20260928T133027.804438Z-97511-52290bac, 5/0)."
+   ]
+  },
+  {
+   "module": "compliance/sparql (--it, all tests of the module)",
+   "command": "mvnf --workspace int --threads 3 --retain-logs compliance/sparql --it (after I6/I7)",
+   "logPath": "wt-int/.mvnf/workspaces/int/logs/20260928T133245.613143Z-97769-8c449428/verify.log",
+   "result": "tests=2648 failures=0 errors=0 skipped=3. 0 failing ids across Lmdb/Memory/Native/FedX/ExtensibleStore SPARQL 1.1 and 1.2 query/update compliance, the W3C manifests and custom (aggregate) functions; the review's 54 pre-existing failures are all gone."
+  }
+ ],
+ "complianceFailingIds": [],
+ "codeChanges": [
+  "I6 (production), core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/iterator/FilterIterator.java: isMinusProbeSelectionSafe(TupleExpr, Set<String> shared) now also accepts an Extension whose elements assign none of the shared names and contain no SubQueryValueOperator, recursing into its argument.",
+  "I6 (production), core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedLogicalRuleProgram.java: executorProbesMinusBodyBySelection(expressionId, sharedNames) mirrors the executor through the new extensionIsProbeSelection (EXTENSION payload, no shared target, no subquery scalar).",
+  "I7 (production), same file: addNamesOutsideMinusBody takes a bodyGroupId and treats any DIFFERENCE whose right child is the analysed body group like the analysed MINUS (only its left side counts). This fixes lost MINUS->anti-join alternatives on rule-generated copies of a MINUS, such as the one made by unused-OPTIONAL removal (MEDICAL q9).",
+  "Tests: AssuredSharedMinusAntiJoinTest gained aliasExtensionOperandHonoursThePlannedStreamingProbe (red first) and extensionThatRebindsASharedNameUsesTheBoundedMinusOperator (guard). PackedCorrelatedMinusAlternativeTest gained minusOverAnAliasExtensionOfAProbeSafeOperandOffersTheAntiJoin (red first) and minusOverAnExtensionThatRebindsASharedNameKeepsItsDifference (guard). PackedMinusReferencedVariablesTest gained rewrittenCopyOfTheMinusKeepsTheCorrelatedAntiJoin (red first), and keepsDifferenceWhenBodyBindReadsSharedVariableAfterItIsBound is restored to the original wp2 expectation stillRewritesWhenBodyBindReadsSharedVariableAfterItIsBound, since the executor now probes BIND bodies.",
+  "Integration test-fixture fixes: LmdbExactProbeCacheDataRevisionTest stubs TripleStore.planningReadTxn(); LmdbColdFrontierStorageEvidenceTest stubs and verifies estimateForPlanningQualified (three tests); LmdbRolledBackFeedbackTest takes its baseline through LmdbPlannerAwait.awaitDetachedPlanRefresh (convergedPlannedEstimates helper).",
+  "Everything is staged in wt-int (git add -A -- core tools compliance testsuites). Evidence is appended to wt-int/initial-evidence.int.txt. The same fixes were ported to wt-repro and its repro classes re-run (main sources identical to wt-int).",
+  "Environment only, not staged: untracked symlinks docs/ (and papers2/) in wt-int and wt-repro, pointing to the main checkout. Scratch diagnostics were removed; copies are in scratchpad/final-verify-scratch/."
+ ],
+ "openIssues": [
+  "LmdbRuntimeFeedbackTargetTest.preboundOpenCloseAndRootPublicationAllocateNoLearningObjects is red only in the full core/sail/lmdb unit JVM, with a constant raw=196608 bytes (3 x 64 KiB). It is green in isolation, including without escape analysis. JFR could not attribute the allocation. Needs an allocation profiler that sees outside-TLAB arrays (e.g. async-profiler alloc mode) on the full-suite run, or a decision to isolate the test in its own fork.",
+  "LEO rollout profiles: explainEnabled() and ruleSteeringEnabled() have no production consumer. Rule steering and reranking are enabled only by rdf4j.optimizer.lmdb.leoRuleSteering / leoPlanReranking. So OBSERVE_ONLY behaves like SHADOW_EXPLAIN and SAFE_PLAN_LIFECYCLE like SAFE_RULE_STEERING, and scripts/leo-workload-* 'steering' runs do not steer. SAFE_PLAN_RERANKING == EXPERIMENTAL_FULL by design. Needs a product decision: either wire the profile to the features or drop the ladder notion. LeoLearningReviewReproTest#rolloutLadderMustBeMonotone stays red until then.",
+  "LmdbStoreMultiRepoTest#testRandomLoadManyRepositoriesInParallel cannot pass on this host until the leaked POSIX semaphores are cleared (reboot).",
+  "The plan-cache diagnostic showed repeated USE_AND_REFRESH (outside-stability-envelope) on consecutive explains of an unchanged FILTER query before it converged to USE. It does converge (LmdbPlannerAwait), but refresh churn after evidence publication may be worth a look.",
+  "GH issue number unknown (branch prefix GH-0000). Nothing was committed."
+ ]
+}

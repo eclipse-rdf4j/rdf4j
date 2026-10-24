@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
@@ -126,6 +127,17 @@ public class QueryModelNormalizerTest extends QueryOptimizerTest {
 		subject.meet(union);
 
 		assertThat(p.getArg()).isEqualTo(union);
+	}
+
+	@Test
+	public void testDoesNotNormalizeDifferenceWithTwoSingletons() {
+		Projection p = new Projection();
+		Difference difference = new Difference(new SingletonSet(), new SingletonSet());
+		p.setArg(difference);
+
+		subject.meet(difference);
+
+		assertThat(p.getArg()).isEqualTo(difference);
 	}
 
 	@Test

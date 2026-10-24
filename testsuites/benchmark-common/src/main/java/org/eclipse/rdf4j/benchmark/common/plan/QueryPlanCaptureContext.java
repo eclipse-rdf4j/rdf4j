@@ -12,7 +12,6 @@
 package org.eclipse.rdf4j.benchmark.common.plan;
 
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
@@ -105,8 +104,7 @@ public final class QueryPlanCaptureContext {
 
 	@Experimental
 	public static final class Builder {
-		private Path outputDirectory = Paths
-				.get(System.getProperty(OUTPUT_DIRECTORY_PROPERTY, QueryPlanCapture.DEFAULT_OUTPUT_DIRECTORY));
+		private Path outputDirectory = QueryPlanCapture.resolveOutputDirectory();
 		private String queryId = "query";
 		private String queryString;
 		private String benchmark;

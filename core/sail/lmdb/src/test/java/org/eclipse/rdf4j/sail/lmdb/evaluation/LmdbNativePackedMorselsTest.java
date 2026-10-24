@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -33,6 +34,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -212,8 +214,22 @@ class LmdbNativePackedMorselsTest {
 
 	@Test
 	void rangeAggregatePackedForcingIsRejectedButNormalDispatchMatchesGeneric() {
-		assertRangePlanIsPresent(RANGE_AGGREGATE_QUERY);
-		assertNamedGraphCase(RANGE_AGGREGATE_QUERY, "packedFtreeAggregate");
+		List<String> hand = canonical(rangeAggregateHand(repository.getValueFactory(), 0, 0));
+		assertEquals(hand, canonical(generic(RANGE_AGGREGATE_QUERY, null)), RANGE_AGGREGATE_QUERY);
+		assertEquals(hand, canonical(evaluate(RANGE_AGGREGATE_QUERY, null, null)), RANGE_AGGREGATE_QUERY);
+		QueryEvaluationException failure = assertThrows(QueryEvaluationException.class,
+				() -> evaluate(RANGE_AGGREGATE_QUERY, "packedFtreeAggregate", null));
+		assertEquals("LMDB execution strategy 'packedFtreeAggregate' could not be forced at GROUP BY dispatch: "
+				+ "it was never a candidate for this query's shape at this decision point"
+				+ " (its structural precondition was not met).", failure.getMessage());
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			String explanation = connection.prepareTupleQuery(PREFIX + RANGE_AGGREGATE_QUERY)
+					.explain(Explanation.Level.Optimized)
+					.toString();
+			assertTrue(explanation.contains("NativeGroup(arg=Empty"), explanation);
+			assertTrue(explanation.contains("packed-predicate-range-empty"), explanation);
+			assertTrue(explanation.contains("facts=emptyObjectDomain"), explanation);
+		}
 	}
 
 	@ParameterizedTest
@@ -322,6 +338,78 @@ class LmdbNativePackedMorselsTest {
 				"packedFtreeAggregate", null);
 		assertEquals(rows, LmdbNativePackedMorsels.ROW_RUNS.get());
 		assertEquals(aggregates, LmdbNativePackedMorsels.AGGREGATE_RUNS.get());
+	}
+
+	@Test
+	void nonemptyStraddlingRangeRetainsPhysicalRangeAndRejectsPackedAggregate(@TempDir File rangeDirectory)
+			throws Exception {
+		// Reuse the fixture's 128 roots and three q values in an independent store. The p ordinal straddles zero.
+		LmdbStore store = new LmdbStore(rangeDirectory, new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+				.setDirectAdjacencyMaxBytes(1L << 30));
+		SailRepository ranged = new SailRepository(store);
+		try {
+			ranged.init();
+			try (SailRepositoryConnection connection = ranged.getConnection()) {
+				ValueFactory vf = connection.getValueFactory();
+				connection.begin();
+				for (int i = 0; i < 128; i++) {
+					IRI subject = vf.createIRI(EX, "rangeS" + i);
+					connection.add(subject, RDF.TYPE, vf.createIRI(EX, "Root"));
+					connection.add(subject, vf.createIRI(EX, "p"), vf.createLiteral(i - 1));
+					for (int q = 11; q <= 13; q++) {
+						connection.add(subject, vf.createIRI(EX, "q"), vf.createLiteral(q));
+					}
+				}
+				connection.commit();
+			}
+			assertTrue(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS));
+			String query = "SELECT (COUNT(*) AS ?n) (SUM(?p) AS ?sp) WHERE { " + STAR + "FILTER(?p > 0) }";
+			// p=1..126 survives; each value has three q partners: 126*3 rows and (126*127/2)*3 sum.
+			List<String> hand = canonical(rangeAggregateHand(ranged.getValueFactory(), 378, 24003));
+			String previousNative = System.setProperty(NATIVE, "false");
+			try {
+				assertEquals(hand, canonical(evaluateRangeRepository(ranged, query, null)), query);
+			} finally {
+				if (previousNative == null) {
+					System.clearProperty(NATIVE);
+				} else {
+					System.setProperty(NATIVE, previousNative);
+				}
+			}
+			assertEquals(hand, canonical(evaluateRangeRepository(ranged, query, null)), query);
+			try (SailRepositoryConnection connection = ranged.getConnection()) {
+				String explanation = connection.prepareTupleQuery(PREFIX + query)
+						.explain(Explanation.Level.Optimized)
+						.toString();
+				assertTrue(explanation.contains("range="), explanation);
+			}
+			QueryEvaluationException failure = assertThrows(QueryEvaluationException.class,
+					() -> evaluateRangeRepository(ranged, query, "packedFtreeAggregate"));
+			assertEquals("LMDB execution strategy 'packedFtreeAggregate' could not be forced at GROUP BY dispatch: "
+					+ "it was offered and declined (its opener returned null).", failure.getMessage());
+		} finally {
+			ranged.shutDown();
+		}
+	}
+
+	private static List<BindingSet> rangeAggregateHand(ValueFactory vf, long count, long sum) {
+		QueryBindingSet row = new QueryBindingSet();
+		row.addBinding("n", vf.createLiteral(BigInteger.valueOf(count)));
+		row.addBinding("sp", vf.createLiteral(BigInteger.valueOf(sum)));
+		return List.of(row);
+	}
+
+	private static List<BindingSet> evaluateRangeRepository(SailRepository target, String query, String forced) {
+		try (SailRepositoryConnection connection = target.getConnection()) {
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(PREFIX + query);
+			if (forced != null) {
+				prepared.setForcedLmdbExecutionStrategy(forced);
+			}
+			return QueryResults.asList(prepared.evaluate());
+		}
 	}
 
 	private void assertSameBag(String query, String forced, Value subject) {

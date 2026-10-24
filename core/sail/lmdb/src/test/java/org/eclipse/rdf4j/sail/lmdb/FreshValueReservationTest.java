@@ -13,7 +13,10 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
@@ -117,11 +120,51 @@ class FreshValueReservationTest {
 
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
+	void transientCodecWithoutCoreReferencesCannotClaimAnEmptyFreshDictionary(boolean canonicalLanguages)
+			throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig().setAutoGrow(true).setInlineLiterals(false);
+		StoreProperties properties = new StoreProperties().setCanonicalLanguageTags(canonicalLanguages
+				? StoreProperties.CANONICAL_LANGUAGE_TAGS_LOWERCASE_V1
+				: null);
+		ValueStore store = new ValueStore(directory, properties, config);
+		try {
+			assertFalse(store.getFormat().usesCoreDatatypeLiteralReferences());
+			assertEquals(XSD.STRING, store.getValue(store.getId(XSD.STRING)),
+					"the codec bootstrap has real datatype owners before a session can be claimed");
+			assertFalse(store.canStartFreshValueSession());
+			assertNull(store.startFreshValueSessionIfEmpty());
+		} finally {
+			store.close();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void explicitLegacyDictionaryNeverClaimsAFormatSixFreshSession(boolean inline) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig().setAutoGrow(true).setInlineLiterals(inline);
+		StoreProperties properties = new StoreProperties()
+				.setVersion(Integer.toString(LmdbStoreFormat.LEGACY_VERSION));
+		ValueStore store = new ValueStore(directory, properties, config);
+		try {
+			assertTrue(store.getFormat().isLegacy());
+			assertFalse(store.canStartFreshValueSession());
+			assertNull(store.startFreshValueSessionIfEmpty());
+		} finally {
+			store.close();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
 	void reservationPersistsUtf8AndStorageBoundaryValues(boolean canonicalLanguages) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig().setAutoGrow(true)
 				.setValueDBSize(64L * 1024)
 				.setInlineLiterals(false);
-		StoreProperties properties = new StoreProperties().setCanonicalLanguageTags(canonicalLanguages
+		StoreProperties properties = new StoreProperties();
+		LmdbStoreFormat.forNewStore(config).initializeProperties(properties);
+		// This explicitly supplied, transient codec seam tests both language encodings. It must retain the
+		// current core-reference encoding so initialization does not populate ordinary datatype owners.
+		properties.setCanonicalLanguageTags(canonicalLanguages
 				? StoreProperties.CANONICAL_LANGUAGE_TAGS_LOWERCASE_V1
 				: null);
 		ValueStore store = new ValueStore(directory, properties, config);
@@ -148,6 +191,7 @@ class FreshValueReservationTest {
 			}
 			Value[] input = values.toArray(Value[]::new);
 			ValueStore.FreshValueSession session = store.startFreshValueSessionIfEmpty();
+			assertNotNull(session, "the boundary fixture must select the actual empty-dictionary fresh encoder");
 			store.reservePreparedValueClosureCapacity(session, input);
 			long reservedGrowth = store.getBulkMapGrowthCount();
 			long[] ids = persist(store, session, input);

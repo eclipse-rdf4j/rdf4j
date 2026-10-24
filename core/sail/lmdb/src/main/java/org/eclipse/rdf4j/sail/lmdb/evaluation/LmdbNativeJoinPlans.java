@@ -760,25 +760,36 @@ final class SuffixFilterCursor implements RowCursor {
 	final RowCursor arg;
 	final NativeBooleanFilter filter;
 	final RowState row;
+	boolean closed;
 
 	SuffixFilterCursor(RowCursor arg, NativeBooleanFilter filter, RowState row) {
 		this.arg = arg;
-		this.filter = filter;
+		this.filter = NativeFilterLease.openInput(filter, row, arg);
 		this.row = row;
 	}
 
 	@Override
 	public boolean next() throws IOException {
 		while (arg.next()) {
+			if (arg instanceof FactorizedRowCursor factorized && factorized.multiplicity() != 1L) {
+				filter.incompleteInput();
+			}
 			if (filter.accept(row)) {
 				return true;
 			}
+		}
+		if (!row.cancellation.isCancellationRequested()) {
+			filter.inputExhausted();
 		}
 		return false;
 	}
 
 	@Override
 	public void close() {
+		if (closed) {
+			return;
+		}
+		closed = true;
 		// mirror FilterCursor: the filter may hold lazily acquired native resources (an EXISTS witness's
 		// semijoin probe pins a dataset read stamp), and the cursor that ran it owns their release
 		Throwable failure = null;
@@ -786,6 +797,7 @@ final class SuffixFilterCursor implements RowCursor {
 			arg.close();
 		} catch (RuntimeException | Error problem) {
 			failure = problem;
+			filter.incompleteInput();
 		}
 		try {
 			filter.close();

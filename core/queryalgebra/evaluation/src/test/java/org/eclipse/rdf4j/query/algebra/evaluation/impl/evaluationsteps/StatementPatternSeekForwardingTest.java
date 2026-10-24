@@ -156,6 +156,18 @@ public class StatementPatternSeekForwardingTest {
 	}
 
 	@Test
+	public void closedProducedIterationDoesNotForwardSeek() {
+		RecordingTripleSource tripleSource = new RecordingTripleSource();
+		StatementPatternQueryEvaluationStep step = new StatementPatternQueryEvaluationStep(orderedPattern("s", "o"),
+				new QueryEvaluationContext.Minimal(null), tripleSource);
+		CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance());
+		iteration.close();
+		assertFalse(iteration.supportsSeek());
+		iteration.seek(VF.createIRI("http://example.com/s3"), true, null, true);
+		assertTrue(tripleSource.lastOrderedIteration.seekTargets.isEmpty());
+	}
+
+	@Test
 	public void sameVariablePatternDoesNotForward() {
 		RecordingTripleSource tripleSource = new RecordingTripleSource();
 		// ?s <p> ?s requires a filter wrapper with its own lookahead, which hides the seek capability

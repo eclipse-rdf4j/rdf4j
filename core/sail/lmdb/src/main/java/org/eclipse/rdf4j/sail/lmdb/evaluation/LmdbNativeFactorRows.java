@@ -307,7 +307,8 @@ final class LmdbNativeFactorRows {
 		SelectingFilter(LmdbNativeFactorCursor input, NativeBooleanFilter filter, RowState row, long reads,
 				long scalarDemand) {
 			this.input = input;
-			this.filter = filter;
+			this.filter = NativeFilterLease.openInput(filter, row, input);
+			this.filter.incompleteInput();
 			this.row = row;
 			this.reads = reads;
 			this.scalarDemand = scalarDemand;
@@ -576,7 +577,7 @@ final class LmdbNativeFactorRows {
 
 		Filter(LmdbNativeFactorCursor input, NativeBooleanFilter filter, RowState row) {
 			this.input = input;
-			this.filter = filter;
+			this.filter = NativeFilterLease.openInput(filter, row, input);
 			this.row = row;
 		}
 
@@ -590,8 +591,22 @@ final class LmdbNativeFactorRows {
 						close();
 						return false;
 					}
+					if (input.multiplicity() != 1L) {
+						filter.incompleteInput();
+					} else {
+						FactorEnvironment factors = input.factors();
+						for (long rest = factors.groupLeaders(); rest != 0L; rest &= rest - 1L) {
+							if (factors.count(Long.numberOfTrailingZeros(rest)) != 1L) {
+								filter.incompleteInput();
+								break;
+							}
+						}
+					}
 					if (filter.accept(row))
 						return true;
+				}
+				if (!row.cancellation.isCancellationRequested()) {
+					filter.inputExhausted();
 				}
 				close();
 				return false;
@@ -621,10 +636,24 @@ final class LmdbNativeFactorRows {
 			if (closed)
 				return;
 			closed = true;
+			Throwable failure = null;
 			try {
 				input.close();
-			} finally {
+			} catch (RuntimeException | Error problem) {
+				failure = problem;
+				filter.incompleteInput();
+			}
+			try {
 				filter.close();
+			} catch (RuntimeException | Error problem) {
+				if (failure == null) {
+					failure = problem;
+				} else if (failure != problem) {
+					failure.addSuppressed(problem);
+				}
+			}
+			if (failure != null) {
+				NativeContextClosingIteration.throwFailure(failure);
 			}
 		}
 	}

@@ -248,10 +248,16 @@ final class NativeRootPipeline {
 				}
 				boolean result = delegate.hasNext();
 				if (!result) {
+					if (lease != null) {
+						lease.exhausted();
+					}
 					close();
 				}
 				return result;
 			} catch (RuntimeException | Error e) {
+				if (lease != null) {
+					lease.failed();
+				}
 				try {
 					close();
 				} catch (RuntimeException | Error cleanup) {
@@ -274,6 +280,9 @@ final class NativeRootPipeline {
 				}
 				return delegate.next();
 			} catch (RuntimeException | Error e) {
+				if (lease != null) {
+					lease.failed();
+				}
 				try {
 					close();
 				} catch (RuntimeException | Error cleanup) {
@@ -366,6 +375,9 @@ final class NativeRootPipeline {
 				}
 				return next != null;
 			} catch (RuntimeException | Error e) {
+				if (lease != null) {
+					lease.failed();
+				}
 				try {
 					close();
 				} catch (RuntimeException | Error cleanup) {
@@ -478,6 +490,7 @@ final class NativeRootPipeline {
 		@Override
 		protected CloseableIteration<? extends BindingSet> createIteration() {
 			List<BindingSet> rows = new ArrayList<>();
+			Throwable primary = null;
 			try {
 				while (!cancellationRequested && source.hasNext()) {
 					rows.add(source.next());
@@ -487,12 +500,51 @@ final class NativeRootPipeline {
 				} else {
 					rows.clear();
 				}
-				return new CloseableIteratorIteration<>(rows.iterator());
+				return new CloseableIteratorIteration<BindingSet>(rows.iterator()) {
+					@Override
+					public boolean hasNext() {
+						boolean result = super.hasNext();
+						if (!result && !cancellationRequested && lease != null) {
+							lease.exhausted();
+						}
+						return result;
+					}
+				};
+			} catch (RuntimeException | Error problem) {
+				primary = problem;
+				if (lease != null) {
+					lease.failed();
+				}
+				throw problem;
 			} finally {
+				Throwable cleanup = null;
 				try {
 					releaseSource();
-				} finally {
-					releaseLease();
+				} catch (RuntimeException | Error problem) {
+					cleanup = problem;
+				}
+				try {
+					if (lease != null) {
+						lease.releaseRuntime();
+					}
+				} catch (RuntimeException | Error problem) {
+					if (cleanup == null) {
+						cleanup = problem;
+					} else if (cleanup != problem) {
+						cleanup.addSuppressed(problem);
+					}
+				}
+				if (cleanup != null) {
+					if (lease != null) {
+						lease.failed();
+					}
+					if (primary != null) {
+						if (primary != cleanup) {
+							primary.addSuppressed(cleanup);
+						}
+					} else {
+						NativeContextClosingIteration.throwFailure(cleanup);
+					}
 				}
 			}
 		}
@@ -514,14 +566,35 @@ final class NativeRootPipeline {
 		@Override
 		protected void handleClose() {
 			cancellationRequested = true;
+			Throwable failure = null;
 			try {
 				super.handleClose();
-			} finally {
-				try {
-					releaseSource();
-				} finally {
-					releaseLease();
+			} catch (RuntimeException | Error problem) {
+				failure = problem;
+			}
+			try {
+				releaseSource();
+			} catch (RuntimeException | Error problem) {
+				if (failure == null) {
+					failure = problem;
+				} else if (failure != problem) {
+					failure.addSuppressed(problem);
 				}
+			}
+			if (failure != null && lease != null) {
+				lease.failed();
+			}
+			try {
+				releaseLease();
+			} catch (RuntimeException | Error problem) {
+				if (failure == null) {
+					failure = problem;
+				} else if (failure != problem) {
+					failure.addSuppressed(problem);
+				}
+			}
+			if (failure != null) {
+				NativeContextClosingIteration.throwFailure(failure);
 			}
 		}
 
@@ -544,7 +617,14 @@ final class NativeRootPipeline {
 			CloseableIteration<BindingSet> current = source;
 			source = null;
 			if (current != null) {
-				current.close();
+				try {
+					current.close();
+				} catch (RuntimeException | Error failure) {
+					if (lease != null) {
+						lease.failed();
+					}
+					throw failure;
+				}
 			}
 		}
 

@@ -16,6 +16,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.ServerSocket;
 import java.net.URISyntaxException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.EnumSet;
 import java.util.Map;
 import java.util.Properties;
@@ -26,6 +28,7 @@ import org.eclipse.jetty.ee.webapp.WebAppClassLoading;
 import org.eclipse.jetty.ee11.webapp.WebAppContext;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
+import org.eclipse.rdf4j.common.platform.Platform;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
@@ -98,7 +101,7 @@ public class TestServer {
 		WebAppClassLoading.addProtectedClasses(jetty, "org.slf4j.", "ch.qos.logback.");
 		webapp.setContextPath(RDF4J_CONTEXT);
 		// warPath configured in pom.xml maven-war-plugin configuration
-		webapp.setWar("./target/rdf4j-server");
+		webapp.setWar(webappDir);
 		if (Boolean.getBoolean("rdf4j.testserver.logRequests")) {
 			webapp.addFilter(RequestDebugFilter.class, "/*", EnumSet.of(DispatcherType.REQUEST));
 		}
@@ -107,62 +110,8 @@ public class TestServer {
 		manager = RemoteRepositoryManager.getInstance(serverUrl);
 	}
 
-	void includeTestClassesInWebapp() throws URISyntaxException {
-		File testClasses = new File(TestServer.class.getProtectionDomain().getCodeSource().getLocation().toURI());
-		webapp.setExtraClasspath(testClasses.getAbsolutePath());
-	}
-
-	LongSupplier replayAcceptedCounter(String repositoryId) throws ReflectiveOperationException {
-		return growthCounter(repositoryId, "replayAcceptedCounter");
-	}
-
-	LongSupplier replayRequestedCounter(String repositoryId) throws ReflectiveOperationException {
-		return growthCounter(repositoryId, "replayRequestedCounter");
-	}
-
-	LongSupplier tripleStoreResizeCounter(String repositoryId) throws ReflectiveOperationException {
-		return growthCounter(repositoryId, "tripleStoreResizeCounter");
-	}
-
-	LongSupplier valueStoreResizeCounter(String repositoryId) throws ReflectiveOperationException {
-		return growthCounter(repositoryId, "valueStoreResizeCounter");
-	}
-
-	Supplier<String> growthMetricsSnapshot(String repositoryId) throws ReflectiveOperationException {
-		return growthSnapshot(repositoryId, "growthMetricsSnapshot");
-	}
-
-	private LongSupplier growthCounter(String repositoryId, String counterMethod) throws ReflectiveOperationException {
-		Object dispatcherContext = webapp.getServletContext().getAttribute(DISPATCHER_CONTEXT_ATTRIBUTE);
-		Object serverManager = dispatcherContext.getClass()
-				.getMethod("getBean", String.class)
-				.invoke(dispatcherContext, "rdf4jRepositoryManager");
-		Object repository = serverManager.getClass()
-				.getMethod("getRepository", String.class)
-				.invoke(serverManager, repositoryId);
-		// Public calls bridge the webapp classloader; the fixture reads diagnostics beside its LMDB classes.
-		Class<?> support = webapp.getClassLoader().loadClass("org.eclipse.rdf4j.sail.lmdb.LmdbGrowthTestSupport");
-		return (LongSupplier) support.getMethod(counterMethod, Object.class).invoke(null, repository);
-	}
-
-	@SuppressWarnings("unchecked")
-	private Supplier<String> growthSnapshot(String repositoryId, String snapshotMethod)
-			throws ReflectiveOperationException {
-		Object dispatcherContext = webapp.getServletContext().getAttribute(DISPATCHER_CONTEXT_ATTRIBUTE);
-		Object serverManager = dispatcherContext.getClass()
-				.getMethod("getBean", String.class)
-				.invoke(dispatcherContext, "rdf4jRepositoryManager");
-		Object repository = serverManager.getClass()
-				.getMethod("getRepository", String.class)
-				.invoke(serverManager, repositoryId);
-		Class<?> support = webapp.getClassLoader().loadClass("org.eclipse.rdf4j.sail.lmdb.LmdbGrowthTestSupport");
-		return (Supplier<String>) support.getMethod(snapshotMethod, Object.class).invoke(null, repository);
-	}
-
 	public void start() throws Exception {
-		File dataDir = new File(System.getProperty("user.dir") + "/target/datadir");
-		dataDir.mkdirs();
-		System.setProperty("org.eclipse.rdf4j.appdata.basedir", dataDir.getAbsolutePath());
+		ensureAppDataDirectory();
 
 		jetty.start();
 
@@ -206,6 +155,18 @@ public class TestServer {
 			logger.warn("Unable to inspect handler mappings", t);
 		}
 		createTestRepositories();
+	}
+
+	private static void ensureAppDataDirectory() throws IOException {
+		if (System.getProperty(Platform.APPDATA_BASEDIR_PROPERTY) != null) {
+			return;
+		}
+		Path dataDir = Path.of(
+				System.getProperty("rdf4j.test.tmpDirectory", System.getProperty("java.io.tmpdir")),
+				"rdf4j-http-server", "datadir")
+				.toAbsolutePath();
+		Files.createDirectories(dataDir);
+		System.setProperty(Platform.APPDATA_BASEDIR_PROPERTY, dataDir.toString());
 	}
 
 	public void stop() throws Exception {
@@ -323,5 +284,57 @@ public class TestServer {
 			}
 		}
 		throw new IOException("Unable to allocate random test port above " + MIN_TEST_PORT);
+	}
+
+	void includeTestClassesInWebapp() throws URISyntaxException {
+		File testClasses = new File(TestServer.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+		webapp.setExtraClasspath(testClasses.getAbsolutePath());
+	}
+
+	LongSupplier replayAcceptedCounter(String repositoryId) throws ReflectiveOperationException {
+		return growthCounter(repositoryId, "replayAcceptedCounter");
+	}
+
+	LongSupplier replayRequestedCounter(String repositoryId) throws ReflectiveOperationException {
+		return growthCounter(repositoryId, "replayRequestedCounter");
+	}
+
+	LongSupplier tripleStoreResizeCounter(String repositoryId) throws ReflectiveOperationException {
+		return growthCounter(repositoryId, "tripleStoreResizeCounter");
+	}
+
+	LongSupplier valueStoreResizeCounter(String repositoryId) throws ReflectiveOperationException {
+		return growthCounter(repositoryId, "valueStoreResizeCounter");
+	}
+
+	Supplier<String> growthMetricsSnapshot(String repositoryId) throws ReflectiveOperationException {
+		return growthSnapshot(repositoryId, "growthMetricsSnapshot");
+	}
+
+	private LongSupplier growthCounter(String repositoryId, String counterMethod) throws ReflectiveOperationException {
+		Object dispatcherContext = webapp.getServletContext().getAttribute(DISPATCHER_CONTEXT_ATTRIBUTE);
+		Object serverManager = dispatcherContext.getClass()
+				.getMethod("getBean", String.class)
+				.invoke(dispatcherContext, "rdf4jRepositoryManager");
+		Object repository = serverManager.getClass()
+				.getMethod("getRepository", String.class)
+				.invoke(serverManager, repositoryId);
+		// Public calls bridge the webapp classloader; the fixture reads diagnostics beside its LMDB classes.
+		Class<?> support = webapp.getClassLoader().loadClass("org.eclipse.rdf4j.sail.lmdb.LmdbGrowthTestSupport");
+		return (LongSupplier) support.getMethod(counterMethod, Object.class).invoke(null, repository);
+	}
+
+	@SuppressWarnings("unchecked")
+	private Supplier<String> growthSnapshot(String repositoryId, String snapshotMethod)
+			throws ReflectiveOperationException {
+		Object dispatcherContext = webapp.getServletContext().getAttribute(DISPATCHER_CONTEXT_ATTRIBUTE);
+		Object serverManager = dispatcherContext.getClass()
+				.getMethod("getBean", String.class)
+				.invoke(dispatcherContext, "rdf4jRepositoryManager");
+		Object repository = serverManager.getClass()
+				.getMethod("getRepository", String.class)
+				.invoke(serverManager, repositoryId);
+		Class<?> support = webapp.getClassLoader().loadClass("org.eclipse.rdf4j.sail.lmdb.LmdbGrowthTestSupport");
+		return (Supplier<String>) support.getMethod(snapshotMethod, Object.class).invoke(null, repository);
 	}
 }

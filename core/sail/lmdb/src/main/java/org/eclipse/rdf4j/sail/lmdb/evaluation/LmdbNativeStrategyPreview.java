@@ -85,7 +85,9 @@ final class LmdbNativeStrategyPreview {
 		if (!QueryExplanationContext.inspectOnce(plan)) {
 			return;
 		}
-		if (plan instanceof NativeGraphPlan graph) {
+		if (LmdbNativeInteriorPlans.carrier(plan)) {
+			LmdbNativeInteriorPlans.preview(plan);
+		} else if (plan instanceof NativeGraphPlan graph) {
 			graph.explainStrategies();
 		} else if (plan instanceof NativeSubqueryPlan subquery) {
 			subquery.explainStrategies();

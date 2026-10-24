@@ -1,0 +1,369 @@
+{
+ "wp": "wp3-plan-caching",
+ "batch": "bR",
+ "worktree": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3",
+ "patchPath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/patches/wp3.patch",
+ "evidencePath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/initial-evidence.wp3.txt",
+ "findings": [
+  {
+   "id": "3.9.2",
+   "status": "fixed",
+   "rootCause": "LmdbPipelinePlanCache.detachedTemplate() copied every BindingSetAssignment row as new ListBindingSet(List.copyOf(names), List.copyOf(values)); a VALUES ... UNDEF cell is a null value (ListBindingSet reads null as unbound) and List.copyOf rejects nulls, so every retainable LMDB plan containing VALUES with UNDEF threw NullPointerException in LmdbPipelinePlanCache$2.meet.",
+   "change": "Keep the freshly built ArrayList of values and seal it with Collections.unmodifiableList instead of List.copyOf; names/bindingNames stay List.copyOf/Set.copyOf (never null). Sound: the template row is a detached immutable copy with identical unbound semantics; PackedQueryCodec re-substitutes the caller's rows on a hit (e2e test asserts the warm run equals the cold run, UNDEF cells stay unbound and the plan is a pipelinePlanCacheHit).",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbPipelinePlanCache.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbPipelinePlanCacheUndefRowsTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbPlanningNullValueRegressionTest.java"
+   ],
+   "testsAdded": [
+    "LmdbPipelinePlanCacheUndefRowsTest#retainedTemplateKeepsUndefRows",
+    "LmdbPipelinePlanCacheUndefRowsTest#singleRowWithEveryCellUndefIsRetained",
+    "LmdbPlanningNullValueRegressionTest#valuesWithUndefRowsEvaluatesColdAndFromTheCache",
+    "LmdbPlanningNullValueRegressionTest#singleColumnValuesWithUndefRowEvaluatesTwice"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp3/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbPipelinePlanCacheUndefRowsTest.txt\nTests run: 2, Failures: 0, Errors: 2, Skipped: 0, Time elapsed: 0.061 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.LmdbPipelinePlanCacheUndefRowsTest\norg.eclipse.rdf4j.sail.lmdb.LmdbPipelinePlanCacheUndefRowsTest.singleRowWithEveryCellUndefIsRetained -- Time elapsed: 0.039 s <<< ERROR!\njava.lang.NullPointerException\n\tat java.base/java.util.Objects.requireNonNull(Objects.java:220)\n\tat java.base/java.util.ImmutableCollections$List12.<init>(ImmutableCollections.java:583)\n\tat java.base/java.util.List.of(List.java:1166)\n\tat java.base/java.util.ImmutableCollections.listCopy(ImmutableCollections.java:191)\n\tat java.base/java.util.List.copyOf(List.java:1191)\n(e2e: LmdbPlanningNullValueRegressionTest Tests run: 5, Failures: 0, Errors: 4)",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp3/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbPipelinePlanCacheUndefRowsTest.txt\nTests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.119 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbPipelinePlanCacheUndefRowsTest\nReport: .../org.eclipse.rdf4j.sail.lmdb.LmdbPlanningNullValueRegressionTest.txt\nTests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 7.300 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbPlanningNullValueRegressionTest\nCompliance (Failsafe, log .mvnf/workspaces/wp3/logs/20260928T005913.798423Z-54446-b098f007/verify.log):\n[INFO] Tests run: 176, Failures: 0, Errors: 0, Skipped: 0 -- in org.eclipse.rdf4j.sail.lmdb.LmdbSPARQL11QueryComplianceTest"
+  },
+  {
+   "id": "3.9.1",
+   "status": "fixed",
+   "rootCause": "LmdbPipelinePlanCache$DatasetIdentity.immutable used Set.copyOf, which rejects null elements; a null graph IRI is the documented way to name the store default graph in a Dataset (the SPARQL UPDATE compliance harness does addDefaultGraph(null)), and DatasetIdentity.of runs for every optimized query, so all such update WHERE clauses failed with NullPointerException at LmdbPipelinePlanCache.java:502.",
+   "change": "immutable() now returns Collections.unmodifiableSet(new LinkedHashSet<>(values)) (empty -> Set.of()). Equality stays content based, so the {null} default graph remains part of the identity and is distinct from a named graph and from an unrestricted dataset. Per the critique the {null} semantics are kept consistent with LmdbCascadesOptimizer.datasetUsesStoreDefaults and LmdbDetachedPlanRefresh (non-empty default graphs => restricted dataset, storeDefaults=false); this is documented in the javadoc and pinned e2e (queryWithNullDefaultGraphDatasetSeesOnlyTheNullContext asserts optimizer.datasetRestricted=true and that the restricted and unrestricted plans are never confused). Normalizing {null} to store defaults was not done: it is semantically a restriction to the null context, and the helper lives in wp1-owned LmdbCascadesOptimizer.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbPipelinePlanCache.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbPipelinePlanCacheDatasetIdentityTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbPlanningNullValueRegressionTest.java"
+   ],
+   "testsAdded": [
+    "LmdbPipelinePlanCacheDatasetIdentityTest#datasetWithNullDefaultGraphIsCacheable",
+    "LmdbPipelinePlanCacheDatasetIdentityTest#nullDefaultGraphIsDistinctFromNamedAndUnrestrictedDatasets",
+    "LmdbPipelinePlanCacheDatasetIdentityTest#nullInEveryGraphSetIsAccepted",
+    "LmdbPipelinePlanCacheDatasetIdentityTest#detachedRefreshDatasetRoundTripKeepsNullDefaultGraph",
+    "LmdbPlanningNullValueRegressionTest#updateWithNullDefaultGraphDatasetInsertsRows",
+    "LmdbPlanningNullValueRegressionTest#queryWithNullDefaultGraphDatasetSeesOnlyTheNullContext"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp3/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbPipelinePlanCacheDatasetIdentityTest.txt\nTests run: 4, Failures: 0, Errors: 4, Skipped: 0, Time elapsed: 0.044 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.LmdbPipelinePlanCacheDatasetIdentityTest\norg.eclipse.rdf4j.sail.lmdb.LmdbPipelinePlanCacheDatasetIdentityTest.nullDefaultGraphIsDistinctFromNamedAndUnrestrictedDatasets -- Time elapsed: 0.014 s <<< ERROR!\njava.lang.NullPointerException\n\tat java.base/java.util.Objects.requireNonNull(Objects.java:220)\n\tat java.base/java.util.ImmutableCollections$Set12.<init>(ImmutableCollections.java:1009)\n\tat java.base/java.util.Set.of(Set.java:702)\n\tat java.base/java.util.Set.copyOf(Set.java:734)\n\tat org.eclipse.rdf4j.sail.lmdb.LmdbPipelinePlanCache$DatasetIdentity.immutable(LmdbPipelinePlanCache.java:502)",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp3/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbPipelinePlanCacheDatasetIdentityTest.txt\nTests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.095 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbPipelinePlanCacheDatasetIdentityTest\n(first post-fix run had 1 error in the test itself: Set.of().contains(null) throws by JDK contract; assertion replaced, class rerun green)\nCompliance report: .mvnf/workspaces/wp3/build/org.eclipse.rdf4j/rdf4j-sparql-compliance/6.2.0-SNAPSHOT/failsafe-reports/org.eclipse.rdf4j.sail.lmdb.LmdbPARQL11UpdateComplianceTest.txt\nTests run: 90, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 7.805 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbPARQL11UpdateComplianceTest"
+  },
+  {
+   "id": "3.9.3",
+   "status": "fixed",
+   "rootCause": "PatternKeys.predicateKey(IRI predicate, Value object) dereferenced predicate.stringValue() whenever object != null, but FilterSelectivityKeys.patternKeyFor passes a null predicate for a variable predicate with a constant object (?s ?p <const>), reached from LmdbFilterPassSelection / LmdbFilterSelectivityStats on the LMDB planning path -> NullPointerException at PatternKeys.java:36.",
+   "change": "Null-safe prefix: key = (predicate == null ? \"\" : predicate.stringValue()) + \"\\u0000\" + object, still folded into the synthetic constant-object IRI. Keys for constant predicates are byte-identical to before (persisted learned cells keep matching, pinned by constantPredicateKeysStayByteIdentical); variable-predicate cells keep the constant object in their identity instead of collapsing onto PatternKey(null, mask) (design's recommended option; test variablePredicateCellDiffersFromConstantPredicateCell). Javadoc documents the nullable predicate.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/PatternKeys.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/PatternKeysVariablePredicateTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbPlanningNullValueRegressionTest.java"
+   ],
+   "testsAdded": [
+    "PatternKeysVariablePredicateTest#variablePredicateWithConstantObjectYieldsStableKey",
+    "PatternKeysVariablePredicateTest#variablePredicateCellDiffersFromConstantPredicateCell",
+    "PatternKeysVariablePredicateTest#constantPredicateKeysStayByteIdentical",
+    "PatternKeysVariablePredicateTest#fullyVariablePatternKeepsNullPredicate",
+    "LmdbPlanningNullValueRegressionTest#variablePredicateWithConstantObjectEvaluates"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp3/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKeysVariablePredicateTest.txt\nTests run: 4, Failures: 0, Errors: 2, Skipped: 0, Time elapsed: 0.053 s <<< FAILURE! -- in org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKeysVariablePredicateTest\norg.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKeysVariablePredicateTest.variablePredicateCellDiffersFromConstantPredicateCell -- Time elapsed: 0.003 s <<< ERROR!\njava.lang.NullPointerException: Cannot invoke \"org.eclipse.rdf4j.model.IRI.stringValue()\" because \"predicate\" is null\n\tat org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKeys.predicateKey(PatternKeys.java:36)\n\tat org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKeys.patternKeyFor(FilterSelectivityKeys.java:76)",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp3/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKeysVariablePredicateTest.txt\nTests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.081 s -- in org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKeysVariablePredicateTest\n(e2e LmdbPlanningNullValueRegressionTest: Tests run: 5, Failures: 0, Errors: 0; compliance LmdbSPARQL11QueryComplianceTest: Tests run: 176, Failures: 0, Errors: 0)"
+  },
+  {
+   "id": "3.3.1",
+   "status": "fixed",
+   "rootCause": "PackedPlanCache.sameSource() accepted a routing-hash candidate as the cached query as soon as snapshot.equals(candidate) was true, before consulting the collision-proof packed identity; the routing fingerprint hashes only class names/var names, and the model equals/hashCode of ArbitraryLengthPath ignored minLength and of GroupConcat ignored the separator. So ?s <p>* ?o and ?s <p>+ ?o (and GROUP_CONCAT ',' vs '|') authenticated as the same query and the cached PackedQuery (which does encode minLength/separator) was replayed -> wrong results. (Critique narrative correction adopted: the identity was non-null for these queries because the parser marks constant Vars anonymous; the ordering was the defect.)",
+   "change": "(A) Model: ArbitraryLengthPath.equals compares minLength and hashCode mixes Long.hashCode(minLength); GroupConcat.equals compares the separator with Objects.equals and hashCode mixes Objects.hashCode(separator). (B) Cache: PackedQueryCacheIdentity.create (nullable) removed; PackedCascadesPlanner.optimizeWithCache and the two-arg PackedPlanCache overloads use createPlanIdentity (non-null for codec-supported algebra, canonicalizes only provably safe anonymous names). sameSource now: mixed (one identity, one none) -> false; known identity mismatch -> false (the load-bearing gate, independent of any future lossy equals); then structural equals confirms; identity match without equals is reused only under the existing alpha-equivalence guard (no external bindings, parameterVariant 0); both-null identities fall back to equals alone (documented: only UNSUPPORTED-codec algebra, which materialization rejects). Family reuse across constants remains legitimate and re-materializes the requested constant (test familyReuseAcrossConstantsMaterializesTheRequestedConstant); the ordering is pinned by identityMismatchRejectsEqualLookingSource with non-null identities on both sides and a deliberately lossy equals under a forced fingerprint collision.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/queryalgebra/model/src/main/java/org/eclipse/rdf4j/query/algebra/ArbitraryLengthPath.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/queryalgebra/model/src/main/java/org/eclipse/rdf4j/query/algebra/GroupConcat.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCascadesPlanner.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQueryCacheIdentity.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCacheTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/queryalgebra/model/src/test/java/org/eclipse/rdf4j/query/algebra/ArbitraryLengthPathEqualityTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/queryalgebra/model/src/test/java/org/eclipse/rdf4j/query/algebra/GroupConcatEqualityTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCacheOperatorParameterIdentityTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbPackedPlanCacheOperatorParameterTest.java"
+   ],
+   "testsAdded": [
+    "ArbitraryLengthPathEqualityTest#minLengthParticipatesInEquality",
+    "ArbitraryLengthPathEqualityTest#sameMinLengthStaysEqual",
+    "GroupConcatEqualityTest#separatorParticipatesInEquality",
+    "GroupConcatEqualityTest#sameSeparatorStaysEqual",
+    "GroupConcatEqualityTest#distinctStillParticipatesInEquality",
+    "PackedPlanCacheOperatorParameterIdentityTest#starPathPlanIsNotServedForPlusPath",
+    "PackedPlanCacheOperatorParameterIdentityTest#plusPathPlanIsNotServedForStarPath",
+    "PackedPlanCacheOperatorParameterIdentityTest#groupConcatPlanIsNotServedForOtherSeparator",
+    "PackedPlanCacheOperatorParameterIdentityTest#familyReuseAcrossConstantsMaterializesTheRequestedConstant",
+    "PackedPlanCacheOperatorParameterIdentityTest#identityMismatchRejectsEqualLookingSource",
+    "PackedPlanCacheOperatorParameterIdentityTest#identityMatchStillReusesTheGenuinePlan",
+    "LmdbPackedPlanCacheOperatorParameterTest#packedPlanCacheMustNotServeStarPathPlanForPlusPath",
+    "LmdbPackedPlanCacheOperatorParameterTest#packedPlanCacheMustNotServePlusPathPlanForStarPath",
+    "LmdbPackedPlanCacheOperatorParameterTest#packedPlanCacheMustNotServeGroupConcatPlanWithOtherSeparator",
+    "LmdbPackedPlanCacheOperatorParameterTest#packedPlanCacheMustNotServeGroupConcatPlanWithOtherSeparatorReversed"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp3/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbPackedPlanCacheOperatorParameterTest.txt\nTests run: 4, Failures: 2, Errors: 0, Skipped: 0, Time elapsed: 5.083 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.LmdbPackedPlanCacheOperatorParameterTest\n...packedPlanCacheMustNotServeGroupConcatPlanWithOtherSeparator(File) <<< FAILURE!\norg.opentest4j.AssertionFailedError: GROUP_CONCAT with separator '|' returned 'x,y' ==> expected: <true> but was: <false>\n...packedPlanCacheMustNotServeStarPathPlanForPlusPath(File, File) <<< FAILURE!\nReport: .../rdf4j-queryalgebra-evaluation/.../PackedPlanCacheOperatorParameterIdentityTest.txt: Tests run: 5, Failures: 4\norg.opentest4j.AssertionFailedError: p* must not be served the cached p+ plan ==> expected: <false> but was: <true>\nReport: .../rdf4j-queryalgebra-model/.../ArbitraryLengthPathEqualityTest.txt: Tests run: 2, Failures: 1 (p* and p+ must not be equal ==> expected: not equal)\nReport: .../GroupConcatEqualityTest.txt: Tests run: 3, Failures: 1 (different separators must not be equal ==> expected: not equal)",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp3/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbPackedPlanCacheOperatorParameterTest.txt\nTests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.715 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbPackedPlanCacheOperatorParameterTest\nReport: .../rdf4j-queryalgebra-evaluation/.../PackedPlanCacheOperatorParameterIdentityTest.txt\nTests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.352 s -- in ...PackedPlanCacheOperatorParameterIdentityTest\n(first post-fix run 5 tests/2 failures were fixture errors: family reuse across constants legitimately re-materializes; tests now pin no exact-entry hit + materialized separator; rerun green)\nReport: .../rdf4j-queryalgebra-model/.../ArbitraryLengthPathEqualityTest.txt: Tests run: 2, Failures: 0, Errors: 0\nReport: .../GroupConcatEqualityTest.txt: Tests run: 3, Failures: 0, Errors: 0\nPackedPlanCacheTest (existing, evaluation suite): Tests run: 47, Failures: 0; LmdbPackedPlanCacheTest: Tests run: 12, Failures: 0"
+  },
+  {
+   "id": "3.3.5",
+   "status": "fixed",
+   "rootCause": "(a) PackedPlanCache.Flight.matches let a family waiter join a flight when PackedQueryFamilyIdentity.matches was true. That check compares only the parameter schema and a canonical identity computed WITHOUT range facts. PlanEntry.familyMatches additionally required hasSameCacheIdentity on the concrete query. Two invocations of one family can differ in the range facts the codec seeds for their constants (an out-of-range constant is proven empty). A waiter for an in-range constant therefore materialized the owner's EmptySet recipe over its own constant. (b) sameQueryContext ignored predicateRangeVersion. A query template encoded with a range provider was therefore served to providerless planning (LMDB dirty transactions, version 0), which produced an EmptySet proof for uncommitted rows.",
+   "change": "PackedQueryFamilyIdentity gains a rangeFactsSeeded flag that matches refuses to cross. New static sameConcreteInvocation(stored, candidate) = matches && the parameterized templates hasSameCacheIdentity. The templates are the concrete queries without invocation parameters or original binding sets, so seeded facts are compared and parameter values are not. PackedPlanCache.Flight.matches and PlanEntry.familyMatches both use sameConcreteInvocation. sameQueryContext also compares predicateRangeVersion. Identical invocations still share a flight, and fact-free families still hit across constants; both are pinned by tests. Verified in bR: the b2 post-fix run had never been observed, and it is green now.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQueryFamilyIdentity.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCacheFamilyFlightIsolationTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbPackedFamilyFlightIsolationTest.java"
+   ],
+   "testsAdded": [
+    "PackedPlanCacheFamilyFlightIsolationTest#sequentialFamilyHitDoesNotReuseEmptyProofForInRangeConstant",
+    "PackedPlanCacheFamilyFlightIsolationTest#sequentialFamilyHitWithoutRangeFactsStillReusesThePlan",
+    "PackedPlanCacheFamilyFlightIsolationTest#concurrentFamilyWaiterMustNotMaterializeOwnersEmptyProof",
+    "PackedPlanCacheFamilyFlightIsolationTest#concurrentFamilyWaiterMustNotMaterializeOwnersEmptyProofForConstantObject",
+    "PackedPlanCacheFamilyFlightIsolationTest#familyWaiterWithSameConstantStillSharesTheFlight",
+    "PackedPlanCacheFamilyFlightIsolationTest#queryTemplateWithRangeFactsMustNotServeProviderlessPlanning",
+    "PackedPlanCacheFamilyFlightIsolationTest#queryTemplateIsNotReusedAcrossPredicateRangeVersions",
+    "LmdbPackedFamilyFlightIsolationTest#concurrentFamilyPlanningMustNotShareEmptyProof",
+    "LmdbPackedFamilyFlightIsolationTest#uncommittedOverlayMustSeeOwnValueEqualTerm",
+    "LmdbPackedFamilyFlightIsolationTest#dirtyTransactionMustNotReuseCommittedRangeProof"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp3/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCacheFamilyFlightIsolationTest.txt (log .mvnf/workspaces/wp3/logs/20260928T052108.572843Z-27272-e8e69484/verify.log)\nTests run: 7, Failures: 4, Errors: 0, Skipped: 0, Time elapsed: 0.397 s <<< FAILURE! -- in org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCacheFamilyFlightIsolationTest\n...concurrentFamilyWaiterMustNotMaterializeOwnersEmptyProof -- <<< FAILURE!\norg.opentest4j.AssertionFailedError: waiter for in-range constant 7 materialized the owner's EmptySet proof (waiter-parked-on-owner-flight) ==> expected: <false> but was: <true>\n...queryTemplateWithRangeFactsMustNotServeProviderlessPlanning <<< FAILURE! a range-fact template must not be a template hit for providerless planning ==> expected: <false> but was: <true>\n...queryTemplateIsNotReusedAcrossPredicateRangeVersions <<< FAILURE! a context differing only in predicateRangeVersion must not find the template ==> expected: <null> but was: <...PackedPlanCache$QueryEntry@1d3ac898>",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp3/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCacheFamilyFlightIsolationTest.txt (log .mvnf/workspaces/wp3/logs/20260928T071146.155369Z-39501-73c3199a/verify.log, full evaluation suite)\nTests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.081 s -- in org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCacheFamilyFlightIsolationTest\nTests run: 47, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.264 s -- in org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCacheTest\nLMDB (log .mvnf/workspaces/wp3/logs/20260928T072152.064036Z-43479-eddb2b11/verify.log): Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.579 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbPackedFamilyFlightIsolationTest"
+  },
+  {
+   "id": "3.8.4",
+   "status": "fixed",
+   "rootCause": "PackedPlanCache.FlightClaim.await returned flight.result.join() with no timeout. A failed owner (Segment.fail completes the future exceptionally) therefore reached every waiter as a CompletionException. LmdbCascadesOptimizer.optimizeWithResult caught only IllegalStateException, so the owner's query fell back while each waiter's query failed. UnsupportedCascadesOperatorException (a CascadesPlanningException, not an IllegalStateException) was raised only by PackedPlanMaterializer after the complete search. LmdbPipelinePlanCache waiters called shared.join() after abandon() had completed the owner's future exceptionally.",
+   "change": "(1) FlightClaim.await returns null on CompletionException, CancellationException, ExecutionException or TimeoutException. The wait is bounded by the flight's planningLimits.deadlineNanos (getNow once the deadline has passed). An interrupt restores the interrupt flag and throws IllegalStateException. (2) PackedCascadesPlanner.optimizeWithCache loops. A cache hit returns the cached result and ownership plans. When await returns null the request re-enters beginFlight once, to take ownership or pick up a published plan. A second abandoned flight, or an owner still blocked at the deadline, leads to a cache-less optimize that publishes nothing, following the critique's 'at most twice' rule. (3) encodeSupportedForPlanning/requireSupported reject PackedRelOp.UNSUPPORTED at all four encode sites before any cost session opens. (4) LmdbCascadesOptimizer catches RuntimeException and unwraps CompletionException. It rethrows QueryInterruptedException and any failure seen while the thread is interrupted. Under -ea it asserts that the input tree still equals the pre-search clone. It logs WARN and counts fallbacks in cascadesFallbackCount(). (5) LmdbPipelinePlanCache waiters catch CompletionException/CancellationException from shared.join() and compute their own plan without publishing. bR added a coverage test for the critique's cancellation rule (planningFailureWhileInterruptedAbortsInsteadOfFallingBack). b2's catch already implements that rule, so the test was green on first run. It guards against the widened catch swallowing a cancellation.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCascadesPlanner.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbCascadesOptimizer.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbPipelinePlanCache.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanningFailSafeTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbCascadesPlanningFailSafeTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbPipelinePlanCacheFailedFlightTest.java"
+   ],
+   "testsAdded": [
+    "PackedPlanningFailSafeTest#failedOwnerFlightMakesWaiterReplanInsteadOfInheritingTheFailure",
+    "PackedPlanningFailSafeTest#waiterReplansAndSucceedsWhenTheOwnerFails",
+    "PackedPlanningFailSafeTest#waiterFallsBackToIndependentPlanningWhenTwoOwnersFail",
+    "PackedPlanningFailSafeTest#waiterWaitIsBoundedByPlanningDeadline",
+    "PackedPlanningFailSafeTest#unsupportedOperatorFailsFastBeforeAnyCostSessionOpens",
+    "PackedPlanningFailSafeTest#unsupportedOperatorSurfacesAsCascadesPlanningExceptionThroughTheFacade",
+    "LmdbCascadesPlanningFailSafeTest#unsupportedOperatorFallsBackToThePipelineTree",
+    "LmdbCascadesPlanningFailSafeTest#planningFailureWhileInterruptedAbortsInsteadOfFallingBack (bR)",
+    "LmdbPipelinePlanCacheFailedFlightTest#waiterComputesOwnPlanWhenOwnerFails"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp3/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanningFailSafeTest.txt\nTests run: 6, Failures: 2, Errors: 3, Skipped: 0, Time elapsed: 10.06 s <<< FAILURE! -- in ...PackedPlanningFailSafeTest\n...waiterFallsBackToIndependentPlanningWhenTwoOwnersFail <<< FAILURE! exactly one waiter took over ownership and met the second failure ==> expected: <1> but was: <2>\n...unsupportedOperatorFailsFastBeforeAnyCostSessionOpens <<< FAILURE! expected: <0> but was: <1>\n...waiterWaitIsBoundedByPlanningDeadline <<< ERROR! java.util.concurrent.TimeoutException\n...failedOwnerFlightMakesWaiterReplanInsteadOfInheritingTheFailure <<< ERROR! java.util.concurrent.CompletionException: ...PackedMemoInvariantException: memo invariant breached during planning\nLMDB: LmdbCascadesPlanningFailSafeTest Tests run: 1, Errors: 1 (UnsupportedCascadesOperatorException ... PackedPlanMaterializer.unsupportedBoundary:227); LmdbPipelinePlanCacheFailedFlightTest Tests run: 1, Errors: 1 (ExecutionException: CompletionException: IllegalArgumentException: owner planning failed)",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp3/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanningFailSafeTest.txt (log .mvnf/workspaces/wp3/logs/20260928T071146.155369Z-39501-73c3199a/verify.log)\nTests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.345 s -- in org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanningFailSafeTest\nLMDB (log .mvnf/workspaces/wp3/logs/20260928T072152.064036Z-43479-eddb2b11/verify.log):\nTests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.066 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbCascadesPlanningFailSafeTest\nTests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbPipelinePlanCacheFailedFlightTest\nCascades fallbacks logged in the whole 2351-test lmdb suite: 1 (the intentional unsupported-operator test)"
+  },
+  {
+   "id": "3.3.3",
+   "status": "fixed",
+   "rootCause": "LmdbEstimatorRuntime.snapshotVersion() = max(TripleStore.getDataRevision(), synopsis.snapshotVersion()). The data revision was an in-memory AtomicLong that restarted at 0 and incremented once per commit, while the synopsis version is persisted. After a restart with persisted synopsis version V, the cache data identity therefore stayed at V for the first V commits, and cached EmptySet proofs and anchored plans kept being served.",
+   "change": "TripleStore: dataRevision is now the LMDB transaction id of the committing write txn, captured before mdb_txn_commit frees the handle. At open it is seeded from a read txn's mdb_txn_id. publishDataRevision = max(current+1, txnId), so the revision is durable, monotonic across restarts and advances on every commit. It is still published AFTER txnManager.reset(). The critique suggested bumping it before the reset, but a planner that sees the new revision while pooled readers still show old data would then key old data under the new revision, persistently. The kept order leaves only the transient 3.5/3.10 window, which the before/after revision checks in the caches close. LmdbEstimatorRuntime.snapshotVersion() returns the data revision alone. frontierPlanningRevision() mixes in the synopsis version, so a synopsis publish still refreshes plans on the evidence side.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/TripleStore.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorRuntime.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbDataRevisionRestartTest.java"
+   ],
+   "testsAdded": [
+    "LmdbDataRevisionRestartTest#dataRevisionIsMonotonicAcrossReopen",
+    "LmdbDataRevisionRestartTest#snapshotVersionIgnoresSynopsisVersion",
+    "LmdbDataRevisionRestartTest#synopsisPublishMovesFrontierRevisionNotTheDataIdentity",
+    "LmdbDataRevisionRestartTest#packedCacheAfterRestartMustNotServeRangeEmptyProofAfterCommit",
+    "LmdbDataRevisionRestartTest#packedCacheWithoutRestartControl",
+    "LmdbDataRevisionRestartTest#pipelineAnchoredPlanReplansAfterFirstPostRestartCommit"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp3/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbDataRevisionRestartTest.txt (log .mvnf/workspaces/wp3/logs/20260928T052204.798982Z-27780-b0905703/verify.log)\nTests run: 6, Failures: 5, Errors: 0, Skipped: 0, Time elapsed: 2.932 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.LmdbDataRevisionRestartTest\n...snapshotVersionIgnoresSynopsisVersion <<< FAILURE! expected: <1> but was: <4>\n...dataRevisionIsMonotonicAcrossReopen(File) <<< FAILURE! the data revision must not restart below its persisted value: 3 -> 1\n...packedCacheAfterRestartMustNotServeRangeEmptyProofAfterCommit(File) <<< FAILURE! committed :c :p 7 must be visible (restart=true) ==> expected: <[urn:c]> but was: <[]>\n...pipelineAnchoredPlanReplansAfterFirstPostRestartCommit(File) <<< FAILURE! expected: <[urn:c]> but was: <[]>",
+   "postFixEvidence": "Log .mvnf/workspaces/wp3/logs/20260928T072152.064036Z-43479-eddb2b11/verify.log (full lmdb suite, bR):\n[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.662 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbDataRevisionRestartTest\n(first b2 post-fix observation, log .mvnf/workspaces/wp3/logs/20260928T055551.569976Z-55204-c75a1d03/verify.log, had 1 outdated expectation in pipelineAnchoredPlanReplansAfterFirstPostRestartCommit - explain after the replan legitimately serves the replacement with USE; updated in b3)"
+  },
+  {
+   "id": "3.3.4",
+   "status": "fixed",
+   "rootCause": "LmdbFilterSelectivityStats keyed both exact-probe caches (bounded zero proofs and COMPLETE stored-term enumerations) on currentSnapshotIdentity(). With the sketch estimator on, that identity is the sketch synopsis identity, which moves only when a background rebuild publishes. Otherwise it is the statement mutation stamp, which does not move while Frontier is OFF. reset() never cleared the caches. A pre-commit COMPLETE term set therefore became an exact VALUES anchor for later planning, and committed value-equal rows were lost.",
+   "change": "probeSnapshotIdentity() = SketchSnapshotIdentity(0, 0, tripleStore.getDataRevision()) keys both probe caches and snapshotStillCurrent. currentSnapshotIdentity() keeps its sidecar/synopsis role; the critique confirmed that all its other users are sidecar semantics. LmdbSnapshotProbeCache gained clear(), and reset() now clears both caches. bR simplification (Routine B): removed a try/catch(RuntimeException) -> null around getDataRevision(), a plain AtomicLong read that cannot throw. It would only have hidden errors as silently skipped caching. Pre-green and post-green come from the same classes. The critique asked for isExactBoundedFilterZero to re-probe after the data revision moves while the sketch identity stays unchanged: LmdbExactFilterProbeCacheTest#dataRevisionInvalidatesExactProbe (renamed from mutationVersionInvalidatesExactProbe) and LmdbExactProbeCacheDataRevisionTest#sketchIdentityChangeAloneDoesNotClearProbes cover that path, which LmdbStorageEstimatorEvidence.exactBoundedFilterZero uses.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbFilterSelectivityStats.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbSnapshotProbeCache.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbExactProbeCacheDataRevisionTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbExactFilterProbeCacheTest.java"
+   ],
+   "testsAdded": [
+    "LmdbExactProbeCacheDataRevisionTest#dataRevisionInvalidatesExactZeroProbe",
+    "LmdbExactProbeCacheDataRevisionTest#dataRevisionInvalidatesFiniteSupportProbe",
+    "LmdbExactProbeCacheDataRevisionTest#sketchIdentityChangeAloneDoesNotClearProbes",
+    "LmdbExactProbeCacheDataRevisionTest#resetClearsExactProbeCaches",
+    "LmdbExactProbeCacheDataRevisionTest#sketchKeyedExactProbeCacheMustNotServeStaleTermSetAfterCommit",
+    "LmdbExactProbeCacheDataRevisionTest#defaultExactProbeCacheMustNotServeStaleTermSetAfterCommit",
+    "LmdbExactFilterProbeCacheTest#dataRevisionInvalidatesExactProbe (renamed; outdated expectation)"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp3/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbExactProbeCacheDataRevisionTest.txt\nTests run: 6, Failures: 4, Errors: 0, Skipped: 0, Time elapsed: 3.403 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.LmdbExactProbeCacheDataRevisionTest\n...sketchIdentityChangeAloneDoesNotClearProbes(Path) <<< FAILURE! TooManyActualInvocations: tripleStore.getTriples(...)\n...dataRevisionInvalidatesExactZeroProbe(Path) <<< FAILURE! TooFewActualInvocations: tripleStore.getTriples(...)\n...sketchKeyedExactProbeCacheMustNotServeStaleTermSetAfterCommit(File) <<< FAILURE! a fresh query shape must not reuse a pre-commit COMPLETE stored-term set (sketch=true) ==> expected: <[urn:c, urn:a]> but was: <[urn:a]>",
+   "postFixEvidence": "Report dir .mvnf/workspaces/wp3/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports (log .mvnf/workspaces/wp3/logs/20260928T070733.228183Z-37543-5cb64cb3/verify.log, after the bR simplification)\nTests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.678 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbExactProbeCacheDataRevisionTest\nTests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.645 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbExactFilterProbeCacheTest\n(again green in the full lmdb suite, log .mvnf/workspaces/wp3/logs/20260928T072152.064036Z-43479-eddb2b11/verify.log)"
+  },
+  {
+   "id": "3.3.2",
+   "status": "fixed",
+   "rootCause": "The LMDB pipeline's request-bound rewrites embed committed-store facts before Cascades runs: LmdbFilterSimplifierOptimizer.exactStoredTermFilterAnchor replaces FILTER(?o = c) with a VALUES anchor enumerating the COMPLETE committed stored terms value-equal to c (true only for the planning data revision), and materializedSmallLiteralFilterAnchor drops/exactifies the filter on the strength of the predicate's object-domain guarantee (true only while that guarantee keeps its contents). LmdbPipelinePlanCache.publishDecision stripped the only hard identity (PredicateRangeIdentity) unless the PACKED summary declared PREDICATE_RANGE_DATA (a packed rule proof; pipeline rewrites never set it) and the data revision existed only in the soft EvidenceSnapshot, so LmdbPlanDecisionCache.lookupVersion answered UseAndRefresh('outside-stability-envelope') after any commit and served the anchored plan; LmdbDetachedPlanRefresh replanned the already-rewritten prepared source (anchor included) and its ensureSemanticsCurrent compared only predicateRangeVersion, a schema hash (encoding + exclusion config + flags) that no commit changes, so the refresh republished the stale anchor permanently. Two latent gaps found by the critique made a naive hard dependency unusable: (a) SemanticDependencies had one index dimension (indexGeneration/indexIdentity) so a contents-only tier could not coexist with a data-revision tier on lookup; (b) publishBuild refuses to replace a VALID family version and nothing marked HARD_INVALID on a mismatch (hardInvalid only via markEvidenceChanged, no production caller), so a hard mismatch would replan on every invocation forever.",
+   "change": "Roadmap 4.2 rewrite certificates, scoped to the caches. (1) New LmdbPlanAssumptions record (committedSnapshotDependent, guaranteePredicates) with dedicated planned metrics optimizer.planAssumption.committedSnapshot / optimizer.planAssumption.guaranteePredicate; LmdbFilterSimplifierOptimizer stamps the first exactly at the exact stored-term anchor (:455) and the second only where a guarantee decided the drop/expansion (consumedGuaranteePredicate mirrors canMaterializeSmallLiteralFilterAnchor/expandFiniteAnchor; the OPTIONAL safe-values shortcut with nothing to expand is not stamped), never derived from OPTIMIZER_GUARANTEE_ANCHOR_PREDICATE (critique minor). LmdbQueryOptimizerPipeline.computePlan collects the assumptions from the pre-Cascades tree (PackedPlanMaterializer does not carry source metrics), annotates the plan (optimizer.planAssumptions, explain-visible) and passes them into PlanComputation and LmdbDetachedPlanRefresh. (2) Two-tier hard dependencies (critique major #1): SemanticDependencies gains dataRevision/dataRevisionDependent next to indexGeneration/indexIdentity/indexGenerationDependent; the lookup side always supplies both (semanticDependencies(context) with dataRevision = planning data revision, dependent=true, identity = PredicateRangeIdentity); publishDecision narrows per assumptions via hardDependencies(): committedSnapshot -> keep the data-revision tier (any commit -> replan), guarantee-dependent (assumption or packed PREDICATE_RANGE_DATA) -> keep the identity tier (contents-only, indexGeneration 0L as before, commits that leave the guarantee unchanged still USE/USE_AND_REFRESH), neither -> both stripped (today's use-and-refresh). matchesCurrent compares only the declared tiers. RefreshComputation/RefreshPublication/publishRefresh mirror the fields so refreshed versions keep the hard dependency. (3) Publication after a mismatch (critique major #2): lookupVersion CASes the family version to hardInvalid (and re-points aliases) before returning replan('semantic-dependency-mismatch'), so publishBuild accepts the plan built for the current dependencies and the third run is a cache hit (asserted e2e: afterCommitPlan pipelinePlanCacheHit=true, USE). (4) LmdbDetachedPlanRefresh carries the assumptions, the build data revision and the build PredicateRangeIdentity; ensureAssumptionsCurrent refuses (before opening a planning snapshot, and again after planning) when committedSnapshotDependent && dataRevision != build revision or when a consumed guarantee's identity changed; predicateRangeDependent = packed summary || guarantee assumption; the refreshed FamilyVersion keeps the same hard tiers. (5) predicateRangeVersion is documented as the guarantee SCHEMA version (LmdbEstimatorStorageAccess, TripleStore.effectiveRdfTermDomainsVersion); guarantee CONTENTS are keyed through PredicateRangeIdentity (pipeline decision cache) and, for the packed cache, through Context.dataRevision (a contents change is a commit) plus b2's sameQueryContext predicateRangeVersion check. Commit-visibility vs revision-bump ordering (critique blocker for this batch): analysed and documented in LmdbPipelinePlanCache.getOrComputePlan -- the pipeline captures context.revision() before planning and publishes only if it equals the revision re-read after planning; the exact-probe caches (b2) and LmdbDetachedPlanRefresh bracket their reads the same way; with TripleStore publishing the revision only after the readers were reset (b2), a plan/probe can never be keyed under a revision newer than the data it enumerated, and the residual 'newer data under the captured revision' case is either caught by the re-check or keyed under a revision no later lookup uses. Deviation from the task wording, following the design: the detached refresh still starts from the prepared (rewritten) source; re-running the request-bound optimizers inside the detached refresh would require it to retain the pipeline/estimator/strategy it is contractually forbidden to retain and is a plan-quality item, not a correctness one, once a refresh cannot run on stale assumptions (detachedRefreshMustNotReplanFromStaleAnchoredPreparedSource is green: the refresh is refused and the synchronous replan re-runs the rewrites against current data). bR: removed the leftover debug report() helper, which printed every plan to stdout, from LmdbPlanCacheCommitInvalidationTest. The explain calls it wrapped are kept, so lookup behavior is unchanged. The class was green again afterwards (10/0/0, log .mvnf/workspaces/wp3/logs/20260928T070733.228183Z-37543-5cb64cb3/verify.log) and in the full lmdb suite (log .mvnf/workspaces/wp3/logs/20260928T072152.064036Z-43479-eddb2b11/verify.log).",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbPlanAssumptions.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbFilterSimplifierOptimizer.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbQueryOptimizerPipeline.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbPipelinePlanCache.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbDetachedPlanRefresh.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorStorageAccess.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/TripleStore.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbPlanCacheCommitInvalidationTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCacheHardDependencyTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbPipelinePlanCacheAssumptionTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbDetachedPlanRefreshAssumptionTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbPlanAssumptionsTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbDataRevisionRestartTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCacheTest.java"
+   ],
+   "testsAdded": [
+    "LmdbPlanCacheCommitInvalidationTest#exactStoredTermAnchorMustNotSurviveCommitThatAddsValueEqualTerm",
+    "LmdbPlanCacheCommitInvalidationTest#warmExactStoredTermAnchorMustNotSurviveCommit",
+    "LmdbPlanCacheCommitInvalidationTest#detachedRefreshMustNotReplanFromStaleAnchoredPreparedSource",
+    "LmdbPlanCacheCommitInvalidationTest#guaranteeFilterDropMustNotSurviveCommitThatBreaksGuarantee",
+    "LmdbPlanCacheCommitInvalidationTest#spocOnlyGuaranteeFilterDropMustNotSurviveCommit",
+    "LmdbPlanCacheCommitInvalidationTest#warmSpocOnlyGuaranteeFilterDropMustNotSurviveCommit",
+    "LmdbPlanCacheCommitInvalidationTest#guaranteeOnlyPlanIsReusedWhileTheGuaranteeHoldsAndReplansWhenItBreaks",
+    "LmdbPlanCacheCommitInvalidationTest#dataIndependentPlanStaysCachedAcrossCommits",
+    "LmdbPlanCacheCommitInvalidationTest#uncommittedOverlayMustSeeOwnValueEqualTerm",
+    "LmdbPlanCacheCommitInvalidationTest#snapshotTransactionMustNotUseAnchorsProbedFromNewerCommit",
+    "LmdbPlanDecisionCacheHardDependencyTest#hardDependencyMismatchAllowsReplacementBuild",
+    "LmdbPlanDecisionCacheHardDependencyTest#hardDependencyMismatchOnGenerationAllowsReplacementBuild",
+    "LmdbPlanDecisionCacheHardDependencyTest#matchingHardDependencyStillRefusesToReplaceAValidVersion",
+    "LmdbPlanDecisionCacheHardDependencyTest#refreshPublicationKeepsHardIndexDependency",
+    "LmdbPlanDecisionCacheHardDependencyTest#dataRevisionDependentVersionReplansAtAnotherRevisionAndIsReplaced",
+    "LmdbPlanDecisionCacheHardDependencyTest#versionWithoutDataRevisionDependencyIgnoresTheDataRevision",
+    "LmdbPlanDecisionCacheHardDependencyTest#refreshPublicationKeepsHardDataRevisionDependency",
+    "LmdbPipelinePlanCacheAssumptionTest#predicateRangeDependentPlanReplacementIsPublishedAfterIdentityChange",
+    "LmdbPipelinePlanCacheAssumptionTest#predicateRangeDependentPlanIsReusedAtANewDataRevisionWhenIdentityUnchanged",
+    "LmdbPipelinePlanCacheAssumptionTest#committedSnapshotDependentPlanReplansAfterDataRevisionChangeAndIsReplaced",
+    "LmdbPipelinePlanCacheAssumptionTest#committedSnapshotDependentPlanIsReusedAtTheSameDataRevision",
+    "LmdbPipelinePlanCacheAssumptionTest#guaranteeAssumptionReplansWhenThePredicateRangeIdentityChanges",
+    "LmdbPipelinePlanCacheAssumptionTest#guaranteeAssumptionIsReusedAtANewDataRevisionWhenIdentityUnchanged",
+    "LmdbPipelinePlanCacheAssumptionTest#dataIndependentPlanStillUsesAndRefreshesAcrossDataRevisions",
+    "LmdbDetachedPlanRefreshAssumptionTest#committedSnapshotDependentRefreshRefusesToRunAtAnotherDataRevision",
+    "LmdbDetachedPlanRefreshAssumptionTest#guaranteeDependentRefreshRefusesToRunWhenTheGuaranteeChanged",
+    "LmdbDetachedPlanRefreshAssumptionTest#guaranteeDependentRefreshWithUnchangedGuaranteeReachesThePlanningSnapshot",
+    "LmdbDetachedPlanRefreshAssumptionTest#refreshWithoutAssumptionsIgnoresTheDataRevision",
+    "LmdbPlanAssumptionsTest#unstampedTreeHasNoAssumptions",
+    "LmdbPlanAssumptionsTest#collectFindsCommittedSnapshotAndGuaranteeStamps",
+    "LmdbPlanAssumptionsTest#guaranteeOnlyAssumptionsAreNotCommittedSnapshotDependent",
+    "LmdbPlanAssumptionsTest#annotateStampsTheQueryRootAndItsObservableArg"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp3/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbPlanCacheCommitInvalidationTest.txt (log .mvnf/workspaces/wp3/logs/20260928T021007.781658Z-79033-4f2d7ccc/verify.log)\nTests run: 10, Failures: 6, Errors: 0, Skipped: 0, Time elapsed: 18.57 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.LmdbPlanCacheCommitInvalidationTest\n...exactStoredTermAnchorMustNotSurviveCommitThatAddsValueEqualTerm(File, File) <<< FAILURE!\norg.opentest4j.AssertionFailedError: a committed value-equal term must be visible to the re-run query ==> expected: <[urn:a, urn:c]> but was: <[urn:a]>\n...detachedRefreshMustNotReplanFromStaleAnchoredPreparedSource(File, File) <<< FAILURE! refreshed champion must not keep the pre-commit anchor ==> expected: <[urn:a, urn:c]> but was: <[urn:a]>\n...spocOnlyGuaranteeFilterDropMustNotSurviveCommit(File) <<< FAILURE! guarantee-based filter drop must not survive the guarantee-breaking commit ==> expected: <[urn:c, urn:a]> but was: <[urn:a]>\n...guaranteeOnlyPlanIsReusedWhileTheGuaranteeHoldsAndReplansWhenItBreaks(File) <<< FAILURE! a data-dependent rewrite must declare its plan assumptions ==> expected: not <null>\n(+ warmExactStoredTermAnchorMustNotSurviveCommit, warmSpocOnlyGuaranteeFilterDropMustNotSurviveCommit)\nReport: .../org.eclipse.rdf4j.sail.lmdb.LmdbPlanDecisionCacheHardDependencyTest.txt: Tests run: 4, Failures: 2\n...hardDependencyMismatchAllowsReplacementBuild <<< FAILURE! the plan built for the current hard dependencies must replace the stale version ==> expected: <true> but was: <false>\nReport: .../org.eclipse.rdf4j.sail.lmdb.LmdbPipelinePlanCacheAssumptionTest.txt: Tests run: 2, Failures: 1\n...predicateRangeDependentPlanReplacementIsPublishedAfterIdentityChange <<< FAILURE! expected: <2> but was: <3>",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp3/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbPlanCacheCommitInvalidationTest.txt (log .mvnf/workspaces/wp3/logs/20260928T055551.569976Z-55204-c75a1d03/verify.log)\nTests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 10.07 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbPlanCacheCommitInvalidationTest\nReport: .../org.eclipse.rdf4j.sail.lmdb.LmdbPlanDecisionCacheHardDependencyTest.txt\nTests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.009 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbPlanDecisionCacheHardDependencyTest\nReport: .../org.eclipse.rdf4j.sail.lmdb.LmdbPipelinePlanCacheAssumptionTest.txt\nTests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.015 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbPipelinePlanCacheAssumptionTest\nReport: .../org.eclipse.rdf4j.sail.lmdb.LmdbDetachedPlanRefreshAssumptionTest.txt\nTests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.045 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbDetachedPlanRefreshAssumptionTest\nReport: .../org.eclipse.rdf4j.sail.lmdb.LmdbPlanAssumptionsTest.txt\nTests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbPlanAssumptionsTest\n(the interrupted attempt's first post-fix run, scratchpad/b3-postfix-run1.log 04:24, was 15/16 with one flaky ERROR in snapshotTransactionMustNotUseAnchorsProbedFromNewerCommit: 'Frontier mutation journal no longer retains all mutations after sequence 3' raised by the SNAPSHOT reader's commit flush; green before and in this rerun)\nConfirmed again in the full lmdb module suite (log .mvnf/workspaces/wp3/logs/20260928T061456.474560Z-93832-7dc9fe53/verify.log): LmdbPlanCacheCommitInvalidationTest Tests run: 10, Failures: 0, Errors: 0; LmdbPlanDecisionCacheHardDependencyTest 7/0/0; LmdbPipelinePlanCacheAssumptionTest 7/0/0; LmdbDetachedPlanRefreshAssumptionTest 4/0/0; LmdbPlanAssumptionsTest 4/0/0; LmdbPlanDecisionCacheTest 23/0/0; LmdbPackedPredicateRangePlanningTest 14/0/0."
+  }
+ ],
+ "suiteRuns": [
+  {
+   "selection": "bR focused lmdb: classes edited in bR (Routine B pre/post same selection for probeSnapshotIdentity)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp3 --threads 3 core/sail/lmdb --retain-logs -- -DskipITs -Dtest=LmdbCascadesPlanningFailSafeTest,LmdbPlanCacheCommitInvalidationTest,LmdbExactProbeCacheDataRevisionTest,LmdbExactFilterProbeCacheTest",
+   "result": "tests=22, failures=0, errors=0, skipped=0",
+   "reds": []
+  },
+  {
+   "selection": "core/queryalgebra/evaluation unit suite (whole wp3 tree)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp3 --threads 3 core/queryalgebra/evaluation --retain-logs",
+   "result": "tests=1752, failures=4, errors=1, skipped=0 (all wp3 classes green)",
+   "reds": [
+    "MinusQueryEvaluationStepTest.spillFileIsRemovedWhenIterationIsExhausted / .spillFileIsRemovedWhenIterationIsClosedEarly: pre-existing/environmental (workspace mode only). The workspace-build-root profile redirects java.io.tmpdir after the JDK has cached the temp dir, so the test lists the wrong directory; this was proven with a scratch probe in b1. No MINUS code touched.",
+    "OptimizerRuleCatalogTest.generatedDocumentationMatchesManifestAndResearchInputs: pre-existing/environmental. NoSuchFile papers2/... because papers2 is untracked and exists only in the main checkout, not in this worktree (b1 triage).",
+    "PackedFrontierSubsetKernelContractTest.sparseLongBushyStateContinuesThroughLegalSingletonSuffix: flaky/load. 30 s preemptive timeout inside PackedJoinEnumerator.optimize (called directly, no wp3 code on the path); green on the class rerun (log .mvnf/workspaces/wp3/logs/20260928T083102.029050Z-90185-ce218d2a/verify.log).",
+    "PackedFrontierSubsetKernelContractTest.arbitraryWidthBushyDependentJoinContinuesRightRecipeUnderWholeLeftPrefix: pre-existing load-sensitive timeout (120 s preemptive; host load 50-90). It stayed red on the class rerun and on the isolated method rerun (log .mvnf/workspaces/wp3/logs/20260928T084655.410612Z-1330-3dfc07c2/verify.log). The test plans a pure 66-factor StatementPattern chain without a plan cache. The only wp3 code on its path is requireSupported, a single O(relationCount) scan. The same test times out in the wp2/wp4/wp6/wp9 worktrees on unchanged kernel code (104-113 s standalone there). It also failed in this workspace's first evaluation run and passed in 137.9 s (class time) in b1."
+   ]
+  },
+  {
+   "selection": "core/queryalgebra/model unit suite",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp3 --threads 3 core/queryalgebra/model --retain-logs",
+   "result": "tests=88, failures=0, errors=0, skipped=1",
+   "reds": []
+  },
+  {
+   "selection": "core/queryparser/sparql unit suite (critique: model equals change)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp3 --threads 3 core/queryparser/sparql --retain-logs",
+   "result": "tests=122, failures=0, errors=0, skipped=0",
+   "reds": []
+  },
+  {
+   "selection": "core/sail/lmdb unit suite (whole wp3 tree after bR edits)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp3 --threads 3 core/sail/lmdb --retain-logs",
+   "result": "tests=2236 (Maven 2351), failures=0, errors=2, skipped=7 (all wp3 classes green)",
+   "reds": [
+    "LmdbAASPropertyProjectionPlanningTest.propertyProjectionKeepsConnectedBoundedRequiredIsland: flaky/load. The 60 s @Timeout hit at load about 70; green in 28 s on rerun (log .mvnf/workspaces/wp3/logs/20260928T083457.814069Z-92225-4eb414ee/verify.log) and green in the b3 module suite.",
+    "LmdbStoreMultiRepoTest.testRandomLoadManyRepositoriesInParallel: pre-existing/environmental. ENOSPC opening 400 LMDB environments in parallel on the 98%-full volume; it failed identically in b1 before any TripleStore change.",
+    "The mvnf exit code is also affected by the pre-existing japicmp break on rdf4j-sail-lmdb (review section 1); that is not a test failure."
+   ]
+  },
+  {
+   "selection": "core/sail/lmdb integration tests (Failsafe, whole module)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp3 --threads 3 core/sail/lmdb --retain-logs -- -PskipUnitTests",
+   "result": "tests=144, failures=0, errors=4, skipped=98",
+   "reds": [
+    "LmdbPharmaQ2BoundJoinProductEstimateIT.pharmaQ2DoesNotStartFromBroadTargetsScan, LmdbSocialMediaOptimizedQueryRegressionIT.q9UncachedAutoPlanningKeepsFrontierCostSession, .q10BindsEveryCycleEdgeFromFiniteDomainsBeforeProbing, LmdbSocialQ7OptimizedPlanIT.finiteAnchorsStayLocalAndSelfLoopProbesStayBound: flaky/environmental ENOSPC (IOException: No space left on device). The rerun of the three classes is green: tests=5, failures=0, errors=0 (log .mvnf/workspaces/wp3/logs/20260928T083828.529474Z-94514-c7e22552/verify.log)."
+   ]
+  },
+  {
+   "selection": "compliance/sparql LmdbSPARQL11QueryComplianceTest (Failsafe)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp3 --threads 3 --it LmdbSPARQL11QueryComplianceTest --module compliance/sparql --retain-logs",
+   "result": "tests=176, failures=0, errors=0, skipped=0",
+   "reds": []
+  },
+  {
+   "selection": "compliance/sparql LmdbPARQL11UpdateComplianceTest (Failsafe)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp3 --threads 3 --it LmdbPARQL11UpdateComplianceTest --module compliance/sparql --retain-logs",
+   "result": "tests=90, failures=0, errors=0, skipped=0",
+   "reds": []
+  },
+  {
+   "selection": "compliance/sparql LmbdSPARQL12QueryComplianceTest (Failsafe)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp3 --threads 3 --it LmbdSPARQL12QueryComplianceTest --module compliance/sparql --retain-logs",
+   "result": "tests=66, failures=1, errors=0, skipped=0",
+   "reds": [
+    "tests()[6] LATERAL join with OPTIONAL: pre-existing and documented in REVIEW.md ('LATERAL/OPTIONAL (SPARQL 1.2 tests()[6], lateral()[2]) in all stores'); wp3 does not touch LATERAL evaluation."
+   ]
+  },
+  {
+   "selection": "compliance/sparql LmbdSPARQL12UpdateComplianceTest (Failsafe)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp3 --threads 3 --it LmbdSPARQL12UpdateComplianceTest --module compliance/sparql --retain-logs",
+   "result": "tests=3, failures=0, errors=0, skipped=0",
+   "reds": []
+  },
+  {
+   "selection": "compliance/sparql LmdbSPARQLComplianceTest (Failsafe)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp3 --threads 3 --it LmdbSPARQLComplianceTest --module compliance/sparql --retain-logs",
+   "result": "tests=169, failures=2, errors=0, skipped=0",
+   "reds": [
+    "lateral()[2] expected 3 but was 1: pre-existing in all stores, including memory and native (REVIEW.md baseline).",
+    "builtinFunction()[20]: pre-existing LMDB red documented in REVIEW.md ('LMDB builtinFunction()[20]'); wp3 touches no builtin function code."
+   ]
+  }
+ ],
+ "filesTouchedOutsideOwnership": [
+  "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbCascadesOptimizer.java (wp1-owned; 3.8.4 only: widened catch with cancellation rethrow, CompletionException unwrap, -ea tree-unchanged assertion, fallback counter, annotateCascadesFallback(TupleExpr, Throwable))",
+  "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbFilterSimplifierOptimizer.java (wp1-owned; 3.3.2 only: the two planAssumption metric stamps and the consumedGuaranteePredicate helper, which mirrors the existing decision logic. No rewrite logic changed.)"
+ ],
+ "crossWpNotes": [
+  "Critique reconciliation (every item checked against the code): [major 3.3.2 two-tier] handled: SemanticDependencies has dataRevision/dataRevisionDependent next to indexIdentity/indexGenerationDependent, and matchesCurrent compares only the declared tiers (LmdbPlanDecisionCache); tests LmdbPipelinePlanCacheAssumptionTest#guaranteeAssumptionIsReusedAtANewDataRevisionWhenIdentityUnchanged and LmdbPlanCacheCommitInvalidationTest#guaranteeOnlyPlanIsReusedWhileTheGuaranteeHoldsAndReplansWhenItBreaks. [major 3.3.2 publication] handled: lookupVersion hard-invalidates the version on a semantic mismatch, so publishBuild can replace it. It is reached only through lookupExact, whose key already pins every request-shaped dimension, so only store-state changes retire versions. Tests: LmdbPlanDecisionCacheHardDependencyTest#hardDependencyMismatchAllowsReplacementBuild, and e2e exactStoredTermAnchorMustNotSurviveCommitThatAddsValueEqualTerm asserts pipelinePlanCacheHit=true and USE after the replan. [minor 3.8.4 cancellation] handled in LmdbCascadesOptimizer, plus a new bR guard test. [minor 3.3.1 narrative/ordering] handled: identity mismatch rejects before equals (identityMismatchRejectsEqualLookingSource). [minor 3.3.2 stamps] handled: dedicated metrics only where the guarantee decided, collected pre-Cascades. [minor 3.3.3 ordering] addressed by deliberate deviation (see ordering note). [minor 3.9.1 {null}] documented as restricted-dataset semantics, consistent with datasetUsesStoreDefaults, and pinned e2e. [minor 3.8.4 loop-twice] handled: waiterFallsBackToIndependentPlanningWhenTwoOwnersFail. [minor 3.3.4 bounded-zero re-probe] handled: LmdbExactFilterProbeCacheTest#dataRevisionInvalidatesExactProbe. [missed findings] publication authority and two dimensions are the majors above; the ordering is documented; annotateCertifiedExactZero was verified to have no correctness consumer (see followUps).",
+  "wp1: every new LmdbFilterSimplifierOptimizer anchor or drop path that consumes committed stored terms or a predicate guarantee must call LmdbPlanAssumptions.stampCommittedSnapshot / stampGuaranteePredicate. Otherwise the pipeline decision cache uses and refreshes the plan across commits.",
+  "wp2/wp7: a packed proof that consumes an exact committed-data fact must declare a PackedPlanDecisionSummary semantic dependency that LmdbPipelinePlanCache.hardDependencies maps to the data-revision tier. PREDICATE_RANGE_DATA maps to the guarantee-identity tier.",
+  "wp7: PackedFrontierSubsetKernelContractTest#arbitraryWidthBushyDependentJoinContinuesRightRecipeUnderWholeLeftPrefix needs about 104-113 s of its 120 s preemptive budget and times out on a loaded host in every worktree. It needs a planner speedup or a budget review.",
+  "wp5: flaky IOException 'Frontier mutation journal no longer retains all mutations after sequence N' from TripleStore.readFrontierMutationsAfter (seen once in b3 in LmdbPlanCacheCommitInvalidationTest#snapshotTransactionMustNotUseAnchorsProbedFromNewerCommit; green in every run since).",
+  "3.3.3/3.5 ordering: TripleStore publishes the data revision AFTER txnManager.reset(), deliberately. Together with the before/after revision checks in LmdbPipelinePlanCache and LmdbDetachedPlanRefresh, this means old data can never be keyed under a new revision. Moving the bump before the reset (the critique's suggestion) would reintroduce persistent poisoning.",
+  "Integrator: core/sail/lmdb/.lwjgl/ (native libs extracted by the test runtime) is left untracked and excluded from wp3.patch. Earlier wp3 patches contained it as undiffable 'Binary files differ' hunks, which break git apply. Consider adding core/sail/lmdb/.lwjgl/ to .gitignore next to /tools/server/.lwjgl/.",
+  "LmdbDetachedPlanRefresh.java header URL was corrected from edl-v10 '/documents/' to '/org/documents/' (b3) because scripts/checkCopyrightPresent.sh rejects the old form; the year is unchanged."
+ ],
+ "followUps": [
+  "Plan quality (design's deferred option): start the detached refresh from the pre-rewrite source by re-running the request-bound optimizers inside LmdbDetachedPlanRefresh.",
+  "Store-side hook (for example on predicate-guarantee rebuild) that retires dependent plan families eagerly instead of on the first lookup.",
+  "Counter for hard-dependency replans (semantic-dependency-mismatch), so benchmarks can see how often FILTER-anchored shapes replan after commits. Also have benchmark harnesses assert LmdbCascadesOptimizer.cascadesFallbackCount() == 0; the whole bR lmdb suite logged exactly one fallback, the intentional one.",
+  "Not done (design additionalTests, 3.8.4): an LMDB e2e with two concurrent cold queries against a cost model forced to throw. It would need a new production fault-injection hook, which the rules do not allow. The behavior is covered in the evaluation module by PackedPlanningFailSafeTest#waiterReplansAndSucceedsWhenTheOwnerFails (injected failing cost model) and in LMDB by LmdbPipelinePlanCacheFailedFlightTest.",
+  "Verified missed finding (critique): annotateCertifiedExactZero stamps PLANNED_CARDINALITY_ROWS=0 on the plan root only. Its sole runtime consumer is JoinQueryEvaluationStep.RuntimeEstimate (a bound-statement-guard heuristic), with no short-circuit on a planned zero. A stale zero can therefore cost performance but never rows."
+ ],
+ "newFlagsOrConfig": []
+}

@@ -15,9 +15,16 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 import org.junit.jupiter.api.Test;
 
@@ -110,6 +117,120 @@ public class AbstractQueryModelNodeTest {
 		assertNull(metadata(clone, key));
 	}
 
+	@Test
+	public void deserializedQueryModelMetadataStartsEmptyAndRemainsCloneSafe() throws Exception {
+		StatementPattern original = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		Object key = new Object();
+		setMetadata(original, key, "transient-value");
+
+		StatementPattern deserialized;
+		try (ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+				ObjectOutputStream output = new ObjectOutputStream(bytes)) {
+			output.writeObject(original);
+			output.flush();
+			try (ObjectInputStream input = new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
+				deserialized = (StatementPattern) input.readObject();
+			}
+		}
+
+		assertNull(metadata(deserialized, key));
+		setMetadata(deserialized, key, "new-value");
+		assertEquals("new-value", metadata(deserialized.clone(), key));
+	}
+
+	@Test
+	public void deferredPlannedStringMetricResolvesOnceOnFirstAccess() throws Exception {
+		StatementPattern statementPattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		AtomicInteger calls = new AtomicInteger();
+		Supplier<String> value = () -> {
+			calls.incrementAndGet();
+			return "deferred-value";
+		};
+
+		setDeferredStringMetric(statementPattern, "optimizer.explanation", value);
+
+		assertEquals(0, calls.get());
+		assertEquals("deferred-value", statementPattern.getStringMetricPlanned("optimizer.explanation"));
+		assertEquals("deferred-value", statementPattern.getStringMetricPlanned("optimizer.explanation"));
+		assertEquals(1, calls.get());
+	}
+
+	@Test
+	public void deferredPlannedStringMetricsStayDeferredAcrossCloneAndCopy() throws Exception {
+		StatementPattern source = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		AtomicInteger calls = new AtomicInteger();
+		Supplier<String> value = () -> {
+			calls.incrementAndGet();
+			return "shared-value";
+		};
+		setDeferredStringMetric(source, "optimizer.explanationJson", value);
+		setDeferredStringMetric(source, "optimizer.traceJson", value);
+		StatementPattern clone = source.clone();
+		StatementPattern copy = new StatementPattern(Var.of("s2"), Var.of("p2"), Var.of("o2"));
+
+		copyPlannedMetrics(source, copy);
+
+		assertEquals(0, calls.get());
+		assertEquals("shared-value", clone.getStringMetricPlanned("optimizer.explanationJson"));
+		assertEquals("shared-value", copy.getStringMetricPlanned("optimizer.traceJson"));
+		assertEquals("shared-value", source.getStringMetricsPlanned().get("optimizer.explanationJson"));
+		assertEquals("shared-value", source.getStringMetricsPlanned().get("optimizer.traceJson"));
+		assertEquals(1, calls.get());
+	}
+
+	@Test
+	public void deferredPlannedStringMetricsResolveBeforeSerialization() throws Exception {
+		StatementPattern original = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		AtomicInteger calls = new AtomicInteger();
+		setDeferredStringMetric(original, "optimizer.explanation", () -> {
+			calls.incrementAndGet();
+			return "serialized-value";
+		});
+
+		StatementPattern deserialized;
+		try (ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+				ObjectOutputStream output = new ObjectOutputStream(bytes)) {
+			output.writeObject(original);
+			output.flush();
+			try (ObjectInputStream input = new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
+				deserialized = (StatementPattern) input.readObject();
+			}
+		}
+
+		assertEquals(1, calls.get());
+		assertEquals("serialized-value", deserialized.getStringMetricPlanned("optimizer.explanation"));
+	}
+
+	@Test
+	public void eagerPlannedStringMetricOverridesDeferredProducerWithoutInvokingIt() throws Exception {
+		StatementPattern statementPattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		AtomicInteger calls = new AtomicInteger();
+		setDeferredStringMetric(statementPattern, "optimizer.explanation", () -> {
+			calls.incrementAndGet();
+			return "deferred-value";
+		});
+
+		statementPattern.setStringMetricPlanned("optimizer.explanation", "eager-value");
+
+		assertEquals("eager-value", statementPattern.getStringMetricPlanned("optimizer.explanation"));
+		assertEquals(0, calls.get());
+	}
+
+	@Test
+	public void deferredPlannedStringMetricCanBeRemovedWithoutInvokingIt() throws Exception {
+		StatementPattern statementPattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		AtomicInteger calls = new AtomicInteger();
+		setDeferredStringMetric(statementPattern, "optimizer.explanation", () -> {
+			calls.incrementAndGet();
+			return "deferred-value";
+		});
+
+		removePlannedStringMetricsIf(statementPattern, "optimizer.explanation"::equals);
+
+		assertNull(statementPattern.getStringMetricPlanned("optimizer.explanation"));
+		assertEquals(0, calls.get());
+	}
+
 	private static Object metadata(QueryModelNode node, Object key) throws Exception {
 		Method method = QueryModelNode.class.getMethod("getQueryModelMetadata", Object.class);
 		return method.invoke(node, key);
@@ -128,5 +249,22 @@ public class AbstractQueryModelNodeTest {
 	private static void clearMetadata(QueryModelNode node) throws Exception {
 		Method method = QueryModelNode.class.getMethod("clearQueryModelMetadata");
 		method.invoke(node);
+	}
+
+	private static void setDeferredStringMetric(QueryModelNode node, String metricName, Supplier<String> value)
+			throws Exception {
+		Method method = QueryModelNode.class.getMethod("setStringMetricPlannedDeferred", String.class, Supplier.class);
+		method.invoke(node, metricName, value);
+	}
+
+	private static void copyPlannedMetrics(QueryModelNode source, QueryModelNode target) throws Exception {
+		Method method = QueryModelNode.class.getMethod("copyPlannedMetricsTo", QueryModelNode.class);
+		method.invoke(source, target);
+	}
+
+	private static void removePlannedStringMetricsIf(QueryModelNode node, Predicate<String> predicate)
+			throws Exception {
+		Method method = QueryModelNode.class.getMethod("removeStringMetricsPlannedIf", Predicate.class);
+		method.invoke(node, predicate);
 	}
 }

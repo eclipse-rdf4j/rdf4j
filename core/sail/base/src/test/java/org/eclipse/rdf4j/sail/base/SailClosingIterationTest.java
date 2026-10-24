@@ -12,13 +12,18 @@
 package org.eclipse.rdf4j.sail.base;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
+import org.eclipse.rdf4j.sail.SailException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 
 class SailClosingIterationTest {
 
@@ -53,8 +58,114 @@ class SailClosingIterationTest {
 		assertThat(reporting.getSourceRowsScannedActual()).isEqualTo(-1);
 		assertThat(reporting.getSourceRowsMatchedActual()).isEqualTo(-1);
 		assertThat(reporting.getSourceRowsFilteredActual()).isEqualTo(-1);
+		assertSkipMetrics(reporting, -1, -1, -1);
 
 		wrapped.close();
+		assertSkipMetrics(reporting, -1, -1, -1);
+	}
+
+	@Test
+	void preservesIndependentSkipMetricsAcrossNestedClose() {
+		List<Executable> cases = new ArrayList<>();
+		for (long[] metrics : new long[][] { { 0, 0, 0 }, { 7, 11, 13 }, { -1, 17, -1 }, { -1, -1, -1 } }) {
+			for (int terminal = 0; terminal < 3; terminal++) {
+				int mode = terminal;
+				cases.add(() -> assertNestedSkipMetrics(metrics[0], metrics[1], metrics[2], mode));
+			}
+		}
+		assertAll(cases);
+	}
+
+	private static void assertNestedSkipMetrics(long skips, long seeks, long skipAhead, int terminal) {
+		SkipReportingIteration source = new SkipReportingIteration(skips, seeks, skipAhead, terminal == 2);
+		CloseableIteration<String> inner = SailClosingIteration.makeClosable(source, () -> {
+		});
+		CloseableIteration<String> wrapped = SailClosingIteration.makeClosable(inner, () -> {
+		});
+		IndexReportingIterator reporting = (IndexReportingIterator) wrapped;
+
+		try (wrapped) {
+			assertSkipMetrics(reporting, skips, seeks, skipAhead);
+			assertThat(reporting.getSourceRowsScannedActual()).isEqualTo(-1);
+			assertThat(reporting.getSourceRowsMatchedActual()).isEqualTo(-1);
+			assertThat(reporting.getSourceRowsFilteredActual()).isEqualTo(-1);
+			if (terminal == 1) {
+				assertThat(wrapped.hasNext()).isTrue();
+				assertThat(wrapped.next()).isEqualTo("row");
+				assertThat(wrapped.hasNext()).isFalse();
+			} else if (terminal == 2) {
+				assertThatThrownBy(wrapped::close).isSameAs(source.closeFailure);
+			} else {
+				wrapped.close();
+			}
+			assertSkipMetrics(reporting, skips, seeks, skipAhead);
+			assertThat(reporting.getSourceRowsScannedActual()).isEqualTo(-1);
+			assertThat(reporting.getSourceRowsMatchedActual()).isEqualTo(-1);
+			assertThat(reporting.getSourceRowsFilteredActual()).isEqualTo(-1);
+		}
+		wrapped.close();
+		assertThat(source.closeCalls).isEqualTo(1);
+	}
+
+	private static void assertSkipMetrics(IndexReportingIterator reporter, long skips, long seeks, long skipAhead) {
+		assertThat(reporter.getDistinctCursorSkipCountActual()).isEqualTo(skips);
+		assertThat(reporter.getDistinctCursorSkipSeekCountActual()).isEqualTo(seeks);
+		assertThat(reporter.getSkipAheadSeekCountActual()).isEqualTo(skipAhead);
+	}
+
+	private static final class SkipReportingIteration implements CloseableIteration<String>, IndexReportingIterator {
+		private final long skips;
+		private final long seeks;
+		private final long skipAhead;
+		private final SailException closeFailure;
+		private boolean emitted;
+		private int closeCalls;
+
+		private SkipReportingIteration(long skips, long seeks, long skipAhead, boolean failClose) {
+			this.skips = skips;
+			this.seeks = seeks;
+			this.skipAhead = skipAhead;
+			this.closeFailure = failClose ? new SailException("skip reporting close failure") : null;
+		}
+
+		@Override
+		public boolean hasNext() {
+			return closeCalls == 0 && !emitted;
+		}
+
+		@Override
+		public String next() {
+			emitted = true;
+			return "row";
+		}
+
+		@Override
+		public void close() {
+			closeCalls++;
+			if (closeFailure != null) {
+				throw closeFailure;
+			}
+		}
+
+		@Override
+		public String getIndexName() {
+			return "posc";
+		}
+
+		@Override
+		public long getDistinctCursorSkipCountActual() {
+			return skips;
+		}
+
+		@Override
+		public long getDistinctCursorSkipSeekCountActual() {
+			return seeks;
+		}
+
+		@Override
+		public long getSkipAheadSeekCountActual() {
+			return skipAhead;
+		}
 	}
 
 	private static final class ReportingIteration implements CloseableIteration<String>, IndexReportingIterator {

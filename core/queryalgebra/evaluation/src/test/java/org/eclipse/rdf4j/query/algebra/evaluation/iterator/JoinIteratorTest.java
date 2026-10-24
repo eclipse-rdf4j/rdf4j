@@ -12,12 +12,14 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -30,14 +32,24 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
 
@@ -90,19 +102,64 @@ public class JoinIteratorTest {
 	}
 
 	@Test
+	public void testJoinDoesNotPrebindRightLocalBindOutput() {
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingSets(List.of(binding("c", "left")));
+
+		BindingSetAssignment rightSource = new BindingSetAssignment();
+		rightSource.setBindingSets(List.of(binding("a", "right")));
+		Extension rightBind = new Extension(rightSource, new ExtensionElem(new Var("a"), "c"));
+		ProjectionElemList elements = new ProjectionElemList();
+		elements.addElement(new ProjectionElem("a"));
+		elements.addElement(new ProjectionElem("c"));
+		Projection right = new Projection(rightBind, elements);
+		right.setSubquery(false);
+
+		Join join = new Join(left, right);
+		List<BindingSet> rows = Iterations.asList(evaluator.precompile(join).evaluate(EmptyBindingSet.getInstance()));
+
+		assertEquals(0, rows.size(),
+				"The left ?c must join-filter the independently produced BIND value, not be overwritten on the RHS");
+	}
+
+	@Test
+	public void closingProjectionOutputsStayIndependentThroughAliasesAndWrappers() {
+		for (boolean alias : List.of(false, true)) {
+			for (int wrapper = 0; wrapper < 4; wrapper++) {
+				BindingSetAssignment left = new BindingSetAssignment();
+				left.setBindingSets(List.of(binding("c", "left")));
+				BindingSetAssignment source = new BindingSetAssignment();
+				source.setBindingSets(List.of(binding("a", "right")));
+				Extension local = new Extension(source, new ExtensionElem(new Var("a"), "local"));
+				ProjectionElemList elements = new ProjectionElemList();
+				elements.addElement(alias ? new ProjectionElem("local", "c") : new ProjectionElem("c"));
+				if (!alias) {
+					local.addElement(new ExtensionElem(new Var("local"), "c"));
+				}
+				Projection projection = new Projection(local, elements);
+				projection.setSubquery(false);
+				TupleExpr right = switch (wrapper) {
+				case 1 -> new Filter(projection, new ValueConstant(vf.createLiteral(true)));
+				case 2 -> new Order(projection);
+				case 3 -> new Distinct(projection);
+				default -> projection;
+				};
+				Join join = new Join(left, right);
+				List<BindingSet> rows = Iterations.asList(evaluator.precompile(join)
+						.evaluate(EmptyBindingSet.getInstance()));
+				assertEquals(List.of(), rows, "closed local output: alias=" + alias + ", wrapper=" + wrapper);
+			}
+		}
+	}
+
+	@Test
 	public void testBoundStatementPatternJoinUsesGuardAlgorithm() {
 		CountingTripleSource tripleSource = new CountingTripleSource();
 		EvaluationStrategy evaluator = experimentalEvaluator(tripleSource);
 		BindingSetAssignment left = new BindingSetAssignment();
-		List<BindingSet> rows = new ArrayList<>();
-		for (int i = 0; i < 3; i++) {
-			QueryBindingSet row = new QueryBindingSet();
-			row.addBinding("s", tripleSource.statement.getSubject());
-			row.addBinding("p", tripleSource.statement.getPredicate());
-			row.addBinding("o", tripleSource.statement.getObject());
-			rows.add(row);
-		}
-		left.setBindingSets(rows);
+		left.setBindingSets(boundRows(tripleSource, 3));
+		left.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, 3.0d);
+		left.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, 3.0d);
 
 		Join join = new Join(left, new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")));
 		CloseableIteration<BindingSet> result = evaluator
@@ -111,6 +168,50 @@ public class JoinIteratorTest {
 
 		assertEquals("BoundStatementPatternJoinIteration", join.getAlgorithmName());
 		assertEquals(3, Iterations.asList(result).size());
+		assertEquals(1, tripleSource.countLookupCount);
+		assertEquals(0, tripleSource.statementLookupCount);
+	}
+
+	@Test
+	public void testBoundStatementPatternJoinSkipsGuardWhenLeftEstimateUnknown() {
+		CountingTripleSource tripleSource = new CountingTripleSource();
+		EvaluationStrategy evaluator = new StrictEvaluationStrategy(tripleSource, null);
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingSets(boundRows(tripleSource, 3));
+
+		Join join = new Join(left, new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")));
+		CloseableIteration<BindingSet> result = evaluator
+				.precompile(join)
+				.evaluate(EmptyBindingSet.getInstance());
+
+		assertEquals("JoinIterator", join.getAlgorithmName());
+		List<BindingSet> actual = Iterations.asList(result);
+		assertEquals(3, actual.size());
+		assertEquals(boundRows(tripleSource, 3), actual);
+		// Declining a join guard does not disable the statement step's fully bound count/cache path.
+		assertEquals(1, tripleSource.countLookupCount);
+		assertEquals(0, tripleSource.statementLookupCount);
+	}
+
+	@Test
+	public void testBoundStatementPatternJoinSkipsGuardWhenPlannedRowsOverBudget() {
+		CountingTripleSource tripleSource = new CountingTripleSource();
+		EvaluationStrategy evaluator = new StrictEvaluationStrategy(tripleSource, null);
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingSets(boundRows(tripleSource, 3));
+		left.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, 1_024.0d);
+		left.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, 3.0d);
+
+		Join join = new Join(left, new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")));
+		CloseableIteration<BindingSet> result = evaluator
+				.precompile(join)
+				.evaluate(EmptyBindingSet.getInstance());
+
+		assertEquals("JoinIterator", join.getAlgorithmName());
+		List<BindingSet> actual = Iterations.asList(result);
+		assertEquals(3, actual.size());
+		assertEquals(boundRows(tripleSource, 3), actual);
+		// Declining a join guard does not disable the statement step's fully bound count/cache path.
 		assertEquals(1, tripleSource.countLookupCount);
 		assertEquals(0, tripleSource.statementLookupCount);
 	}
@@ -160,6 +261,8 @@ public class JoinIteratorTest {
 			rows.add(row);
 		}
 		left.setBindingSets(rows);
+		left.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, 3.0d);
+		left.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, 3.0d);
 
 		Join guardChain = new Join(
 				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
@@ -191,6 +294,8 @@ public class JoinIteratorTest {
 
 		Filter filteredLeft = new Filter(left,
 				new Compare(Var.of("tag"), Var.of("drop", vf.createLiteral("drop")), Compare.CompareOp.NE));
+		filteredLeft.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, 1.0d);
+		filteredLeft.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, 1.0d);
 		Join guardChain = new Join(
 				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
 				new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")));
@@ -219,6 +324,8 @@ public class JoinIteratorTest {
 
 		Filter filteredLeft = new Filter(left,
 				new Compare(Var.of("tag"), Var.of("drop", vf.createLiteral("drop")), Compare.CompareOp.NE));
+		filteredLeft.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, 1.0d);
+		filteredLeft.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, 1.0d);
 		Join guardChain = new Join(
 				new StatementPattern(Var.of("s"),
 						Var.of("p", tripleSource.statement.getPredicate(), true, true), Var.of("o")),
@@ -256,6 +363,18 @@ public class JoinIteratorTest {
 		for (BindingSet row : rows) {
 			assertNotEqual(row.getValue("a"), row.getValue("b"));
 		}
+	}
+
+	private List<BindingSet> boundRows(CountingTripleSource tripleSource, int count) {
+		List<BindingSet> rows = new ArrayList<>();
+		for (int i = 0; i < count; i++) {
+			QueryBindingSet row = new QueryBindingSet();
+			row.addBinding("s", tripleSource.statement.getSubject());
+			row.addBinding("p", tripleSource.statement.getPredicate());
+			row.addBinding("o", tripleSource.statement.getObject());
+			rows.add(row);
+		}
+		return rows;
 	}
 
 	private void testBindingSetAssignmentJoin(int expectedSize, int n, BindingSet bindings)
@@ -335,10 +454,10 @@ public class JoinIteratorTest {
 						|| !candidate.getObject().equals(obj)) {
 					continue;
 				}
-				return new org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration<>(
+				return new CloseableIteratorIteration<>(
 						List.of(candidate).iterator());
 			}
-			return new org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration<>(
+			return new CloseableIteratorIteration<>(
 					List.<Statement>of().iterator());
 		}
 

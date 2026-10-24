@@ -46,7 +46,7 @@ public class UnionTest extends AbstractComplianceTest {
 		super(repo);
 	}
 
-	private void testEmptyUnion(RepositoryConnection conn) {
+	private void testEmptyOptionalSubselect(RepositoryConnection conn) {
 		// A failed OPTIONAL is a LeftJoin with the unchanged initial solution, so ?var is unbound and
 		// the following BIND produces exactly one HIDDEN row.
 		String query = "PREFIX : <http://example.org/> "
@@ -57,7 +57,8 @@ public class UnionTest extends AbstractComplianceTest {
 		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
 			assertNotNull(result);
 			assertTrue(result.hasNext());
-			assertEquals("HIDDEN", result.next().getValue("visibility").stringValue());
+			BindingSet row = result.next();
+			assertEquals("HIDDEN", row.getValue("visibility").stringValue());
 			assertFalse(result.hasNext());
 		}
 	}
@@ -162,7 +163,7 @@ public class UnionTest extends AbstractComplianceTest {
 	}
 
 	public Stream<DynamicTest> tests() {
-		return Stream.of(makeTest("EmptyUnion", this::testEmptyUnion),
+		return Stream.of(makeTest("EmptyOptionalSubselect", this::testEmptyOptionalSubselect),
 				makeTest("SameTermRepeatInUnion", this::testSameTermRepeatInUnion),
 				makeTest("SameTermRepeatInUnionAndOptional", this::testSameTermRepeatInUnionAndOptional));
 	}

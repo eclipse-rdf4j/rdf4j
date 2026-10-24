@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -70,6 +71,7 @@ class LmdbLegacySemanticStoreTest {
 	@BeforeEach
 	void openAuthenticAliases() throws Exception {
 		LmdbCompatibilityFixtures.extract("v2-610-language-aliases.zip", directory);
+		assertOriginalPhysicalAliases(directory, 8L);
 		// Complete only the independently known catalog descriptors to isolate semantic repair from admission TDD.
 		Properties descriptors = new Properties();
 		descriptors.setProperty("version", "2");
@@ -77,6 +79,7 @@ class LmdbLegacySemanticStoreTest {
 		descriptors.setProperty("triple-term-indexes", "spoc,cspo");
 		LmdbCompatibilityFixtures.save(directory, descriptors);
 		open(0);
+		assertInitialCanonicalAliasOwner();
 	}
 
 	@AfterEach
@@ -98,6 +101,7 @@ class LmdbLegacySemanticStoreTest {
 						.setNativeEvaluationEnabled(nativeEnabled)
 						.setDirectAdjacencyEnabled(adjacency)));
 		repository.init();
+		assertCanonicalKeyPolicy();
 	}
 
 	@ParameterizedTest
@@ -121,7 +125,7 @@ class LmdbLegacySemanticStoreTest {
 		repository.shutDown();
 		assertThat(LmdbCompatibilityFixtures.nativeTripleEntryCount(inferredDirectory, "spocspoc-inf"))
 				.as("Explicit approval must retire all inferred aliases even when the explicit row already exists")
-				.isEqualTo(2);
+				.isEqualTo(expectedInferredOnlyStatements().size());
 	}
 
 	@Test
@@ -138,20 +142,27 @@ class LmdbLegacySemanticStoreTest {
 			// The held inferred source must keep excluding the explicit alias visible in its own snapshot.
 			assertThat(QueryResults.asList(snapshot.getStatements(null, null, null))).hasSize(1);
 			try (var fresh = backing.getInferredSailSource().dataset(IsolationLevels.SNAPSHOT)) {
-				assertThat(QueryResults.asList(fresh.getStatements(null, null, null))).hasSize(2);
-				assertThat(fresh.getStatementCount(null, LABEL, UPPER, CONTEXT)).isEqualTo(2);
+				// Canonical migration discards an inferred copy when its rewritten explicit quad exists.
+				// Removing that explicit quad later cannot recreate a discarded physical inference.
+				assertThat(QueryResults.<Statement>asList(fresh.getStatements(null, null, null)))
+						.containsExactlyInAnyOrderElementsOf(expectedInferredOnlyStatements());
+				assertThat(fresh.getStatementCount(null, LABEL, UPPER, CONTEXT))
+						.isEqualTo(expectedInferredOnlyStatements().size());
 				assertThat(QueryResults.asList(fresh.getStatements(VALUES.createIRI("urn:legacy:subject"),
-						LABEL, LOWER, CONTEXT))).hasSize(1);
+						LABEL, LOWER, CONTEXT))).isEmpty();
 				assertThat(fresh.hasStatements(VALUES.createIRI("urn:legacy:subject"), LABEL, LOWER, CONTEXT))
-						.isTrue();
+						.isFalse();
 			}
 			assertThat(QueryResults.asList(writer.getStatements(null, null, null, true)))
-					.containsExactlyInAnyOrderElementsOf(expectedStatements());
+					.containsExactlyInAnyOrderElementsOf(expectedStatements().stream()
+							.filter(statement -> !statement.getSubject().equals(VALUES.createIRI("urn:legacy:subject")))
+							.toList());
 			writer.clear();
 			// All explicit dictionary aliases can retire while this inferred snapshot still probes their old IDs.
 			assertThat(QueryResults.asList(snapshot.getStatements(null, null, null))).hasSize(1);
 			try (var fresh = backing.getInferredSailSource().dataset(IsolationLevels.SNAPSHOT)) {
-				assertThat(QueryResults.asList(fresh.getStatements(null, null, null))).hasSize(4);
+				assertThat(QueryResults.<Statement>asList(fresh.getStatements(null, null, null)))
+						.containsExactlyInAnyOrderElementsOf(expectedInferredOnlyStatements());
 			}
 		}
 	}
@@ -160,6 +171,7 @@ class LmdbLegacySemanticStoreTest {
 		repository.shutDown();
 		Path inferredDirectory = directory.resolve("inferred-fixture");
 		LmdbCompatibilityFixtures.extract("v2-610-inferred-language-aliases.zip", inferredDirectory);
+		assertOriginalPhysicalAliases(inferredDirectory, 4L);
 		assertThat(LmdbCompatibilityFixtures.nativeTripleEntryCount(inferredDirectory, "spocspoc-inf"))
 				.isEqualTo(4);
 		// Independently known descriptors isolate this retirement regression from metadata admission.
@@ -173,6 +185,8 @@ class LmdbLegacySemanticStoreTest {
 						.setInlineLiterals(false)
 						.setBulkOperationSize(bulkSize)));
 		repository.init();
+		assertCanonicalKeyPolicy();
+		assertInitialCanonicalAliasOwner();
 		return inferredDirectory;
 	}
 
@@ -280,6 +294,34 @@ class LmdbLegacySemanticStoreTest {
 				VALUES.createStatement(VALUES.createIRI("urn:legacy:nested"), LABEL, nested, CONTEXT));
 	}
 
+	/** Immutable producer evidence, inspected before current-store startup can rewrite any ID or index. */
+	private static void assertOriginalPhysicalAliases(Path original, long explicitRows) throws Exception {
+		assertThat(LmdbCompatibilityFixtures.nativeTripleEntryCount(original, "spocspoc")).isEqualTo(explicitRows);
+		long lower = LmdbCompatibilityFixtures.findReferenceId(original, ValueIds.T_LITERAL,
+				"enlanguage value".getBytes(StandardCharsets.UTF_8));
+		long upper = LmdbCompatibilityFixtures.findReferenceId(original, ValueIds.T_LITERAL,
+				"ENlanguage value".getBytes(StandardCharsets.UTF_8));
+		assertThat(lower).isPositive();
+		assertThat(upper).isPositive().isNotEqualTo(lower);
+	}
+
+	private void assertCanonicalKeyPolicy() {
+		assertThat(((ValueStore) repository.getValueFactory()).languageTagKeyMode())
+				.isEqualTo(ValueStore.LanguageTagKeyMode.CANONICAL);
+	}
+
+	private void assertInitialCanonicalAliasOwner() throws Exception {
+		ValueStore values = (ValueStore) repository.getValueFactory();
+		long canonical = values.getId(LOWER);
+		assertThat(canonical).isPositive();
+		assertThat(values.getId(UPPER)).isEqualTo(canonical);
+	}
+
+	/** The released producer's only inferred quad not superseded by an equal canonical explicit quad. */
+	private List<Statement> expectedInferredOnlyStatements() {
+		return List.of(VALUES.createStatement(VALUES.createIRI("urn:legacy:upper"), LABEL, UPPER, CONTEXT));
+	}
+
 	static Stream<Arguments> requestedFeatures() {
 		return IntStream.range(0, 16)
 				.mapToObj(flags -> Arguments.of(
@@ -300,6 +342,7 @@ class LmdbLegacySemanticStoreTest {
 		config.setExperimentalQueryOptimizations(true);
 		repository = new SailRepository(new LmdbStore(directory.toFile(), config));
 		repository.init();
+		assertCanonicalKeyPolicy();
 		assertSemanticQueries();
 		try (var connection = repository.getConnection()) {
 			assertThat(connection.size()).isEqualTo(5);
@@ -322,6 +365,7 @@ class LmdbLegacySemanticStoreTest {
 		config.setExperimentalQueryOptimizations(true);
 		repository = new SailRepository(new LmdbStore(directory.toFile(), config));
 		repository.init();
+		assertCanonicalKeyPolicy();
 		var backing = ((LmdbStore) repository.getSail()).getBackingStore();
 		try (var dataset = backing.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT)) {
 			assertThat(dataset.getSupportedOrders(null, null, null)).isEmpty();
@@ -342,7 +386,9 @@ class LmdbLegacySemanticStoreTest {
 			upper = QueryResults.asList(connection.getStatements(VALUES.createIRI("urn:legacy:upper"), LABEL,
 					null, false)).getFirst().getObject();
 		}
-		assertThat(((LmdbValue) lower).getInternalID()).isNotEqualTo(((LmdbValue) upper).getInternalID());
+		assertThat(((ValueStore) repository.getValueFactory()).languageTagKeyMode())
+				.isEqualTo(ValueStore.LanguageTagKeyMode.CANONICAL);
+		assertThat(((LmdbValue) lower).getInternalID()).isEqualTo(((LmdbValue) upper).getInternalID());
 		List<Statement> statements = new ArrayList<>();
 		for (int index = 0; index < 20; index++) {
 			IRI owner = VALUES.createIRI("urn:legacy:batch-owner:" + index);
@@ -357,7 +403,7 @@ class LmdbLegacySemanticStoreTest {
 		repository.shutDown();
 		assertThat(LmdbCompatibilityFixtures.nativeTripleEntryCount(directory, "spocspoc"))
 				.as("each newly approved RDF quad has exactly one physical record")
-				.isEqualTo(28);
+				.isEqualTo(expectedStatements().size() + 20L);
 		open(128);
 	}
 
@@ -439,6 +485,7 @@ class LmdbLegacySemanticStoreTest {
 						.setBulkOperationSize(0)
 						.setSketchEstimatorEnabled(estimatorEnabled)));
 		repository.init();
+		assertCanonicalKeyPolicy();
 		LmdbSailStore backing = ((LmdbStore) repository.getSail()).getBackingStore();
 		ValueStore dictionary = (ValueStore) repository.getValueFactory();
 		assertThat(dictionary.getId(VALUES.createLiteral("language value", "eN"))).isNotEqualTo(LmdbValue.UNKNOWN_ID);
@@ -569,7 +616,8 @@ class LmdbLegacySemanticStoreTest {
 		var backing = ((LmdbStore) repository.getSail()).getBackingStore();
 		var source = inferred ? backing.getInferredSailSource() : backing.getExplicitSailSource();
 		try (var sink = source.sink(IsolationLevels.NONE)) {
-			// Both input sets fill the existing aligned batch; the second uses the other authentic physical ID.
+			// Both sets fill the real aligned batch. The source spellings had distinct IDs before the
+			// mandatory migration; the second batch must reuse their canonical surviving owner.
 			sink.approveAll(first, Set.of(CONTEXT));
 			sink.approveAll(second, Set.of(CONTEXT));
 			sink.flush();
@@ -578,7 +626,7 @@ class LmdbLegacySemanticStoreTest {
 		assertThat(LmdbCompatibilityFixtures.nativeTripleEntryCount(directory,
 				inferred ? "spocspoc-inf" : "spocspoc"))
 						.as("aligned inserts must update the same writer index used by the later alias batch")
-						.isEqualTo(inferred ? 128 : 136);
+						.isEqualTo(128L + (inferred ? 0L : expectedStatements().size()));
 		open(128, nativeEnabled, adjacency);
 		try (var connection = repository.getConnection()) {
 			for (int index = 0; index < 128; index++) {
@@ -666,8 +714,8 @@ class LmdbLegacySemanticStoreTest {
 			storeDirectory = directory;
 		}
 		assertThat(LmdbCompatibilityFixtures.nativeTripleEntryCount(storeDirectory, "spocspoc"))
-				.as("immutable fixture establishes the untouched explicit plane")
-				.isEqualTo(inferred ? 4 : 8);
+				.as("canonical migration preserves the fixture's independent explicit RDF quads")
+				.isEqualTo(inferred ? 4L : expectedStatements().size());
 		Value object = VALUES.createLiteral("language value", "eN");
 		if (nested) {
 			TripleTerm inner = VALUES.createTripleTerm(VALUES.createIRI("urn:legacy:inner"), LABEL, object);
@@ -676,6 +724,12 @@ class LmdbLegacySemanticStoreTest {
 		try (LmdbStoreConnection connection = (LmdbStoreConnection) repository.getSail().getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			if (inferred) {
+				if (nested) {
+					// The fixture's nested inferred copy was superseded by its canonical explicit quad.
+					// Establish a genuine inferred-only nested row so this remains a positive removal control.
+					assertThat(connection.addInferredStatement(VALUES.createIRI("urn:legacy:inferred-only-nested"),
+							LABEL, object, CONTEXT)).isTrue();
+				}
 				assertThat(connection.removeInferredStatement(null, LABEL, object, (Resource) null)).isFalse();
 				assertThat(connection.removeInferredStatement(null, LABEL, object, CONTEXT)).isTrue();
 			} else {
@@ -688,7 +742,8 @@ class LmdbLegacySemanticStoreTest {
 		assertThat(LmdbCompatibilityFixtures.nativeTripleEntryCount(storeDirectory,
 				inferred ? "spocspoc-inf" : "spocspoc"))
 						.as("remove every physical alias in the selected plane and context across bounded native chunks")
-						.isEqualTo(inferred ? nested ? 3 : 2 : nested ? 6 : 4);
+						.isEqualTo(inferred ? nested ? expectedInferredOnlyStatements().size() : 0L
+								: expectedStatements().size() - (nested ? 1L : 3L));
 		if (inferred) {
 			assertThat(LmdbCompatibilityFixtures.nativeTripleEntryCount(storeDirectory, "spocspoc")).isEqualTo(4);
 		}
@@ -697,7 +752,8 @@ class LmdbLegacySemanticStoreTest {
 	@Test
 	void addingAliasAfterColdReopenDoesNotAddLogicalOrPhysicalDuplicates() throws Exception {
 		repository.shutDown();
-		assertThat(LmdbCompatibilityFixtures.nativeTripleEntryCount(directory, "spocspoc")).isEqualTo(8);
+		assertThat(LmdbCompatibilityFixtures.nativeTripleEntryCount(directory, "spocspoc"))
+				.isEqualTo(expectedStatements().size());
 		open(0);
 		try (var connection = repository.getConnection()) {
 			connection.add(VALUES.createIRI("urn:legacy:subject"), LABEL,
@@ -705,7 +761,8 @@ class LmdbLegacySemanticStoreTest {
 			assertThat(connection.size()).isEqualTo(5);
 		}
 		repository.shutDown();
-		assertThat(LmdbCompatibilityFixtures.nativeTripleEntryCount(directory, "spocspoc")).isEqualTo(8);
+		assertThat(LmdbCompatibilityFixtures.nativeTripleEntryCount(directory, "spocspoc"))
+				.isEqualTo(expectedStatements().size());
 		open(2);
 		try (var connection = repository.getConnection()) {
 			connection.begin();

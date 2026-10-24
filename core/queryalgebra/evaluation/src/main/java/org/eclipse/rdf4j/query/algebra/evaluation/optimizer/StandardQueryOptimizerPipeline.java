@@ -109,7 +109,8 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				new QueryJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(), tripleSource,
 						strategy.getQueryExecutionPolicy()),
 				ITERATIVE_EVALUATION_OPTIMIZER,
-				new FilterOptimizer(evaluationStatistics, false, true, strategy),
+				// Localize filters after join ordering so placement cannot distort the selected factor order.
+				new FilterOptimizer(evaluationStatistics, false, false, strategy),
 				FILTER_IN_VALUES_OPTIMIZER,
 				new FilterOptimizer(evaluationStatistics, true, true, strategy),
 				ORDER_LIMIT_OPTIMIZER

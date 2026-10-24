@@ -340,6 +340,13 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		this.telemetry = kernel.telemetryMode == Kernel.TelemetryMode.FULL;
 	}
 
+	private boolean filterInputExhausted;
+
+	@Override
+	public boolean filterInputExhausted() {
+		return filterInputExhausted && LmdbNativeKernelIr.filterInputCompletionSupported(kernel);
+	}
+
 	private void poll() {
 		if ((++pollTick & 1023) == 0) {
 			KernelRuntime.checkCancelled(cancel);
@@ -373,6 +380,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		this.context = context;
 		this.aggregateMemory = KernelRuntime.AggregateMemory.forLedger(context.groupMemoryLedger());
 		this.ran = false;
+		this.filterInputExhausted = false;
 		this.outCount = 0;
 		this.outPos = 0;
 		this.pollTick = 0;
@@ -501,6 +509,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		if (!ran) {
 			ran = true;
 			root.run();
+			filterInputExhausted = aggregate != null || emitCutoffCap < 0 || emit.mods.orderKeys != null;
 			flush();
 		}
 		if (groupSink != null)
@@ -727,7 +736,13 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		KernelRuntime.checkCancelled(cancel);
 		int count = 0;
 		while (count < maximum) {
-			if (emitCutoffCap >= 0 && pullAccepted >= emitCutoffCap || !pullRows.next()) {
+			if (emitCutoffCap >= 0 && pullAccepted >= emitCutoffCap) {
+				pullDone = true;
+				pullRows.close();
+				break;
+			}
+			if (!pullRows.next()) {
+				filterInputExhausted = true;
 				pullDone = true;
 				pullRows.close();
 				break;

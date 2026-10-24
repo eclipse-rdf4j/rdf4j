@@ -36,6 +36,7 @@ import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.junit.jupiter.api.Timeout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -97,17 +98,20 @@ public class IsolationLevelTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void testNone() {
 		readPending(IsolationLevels.NONE);
 	}
 
 	@Test
+	@Timeout(10)
 	public void testReadUncommitted() {
 		rollbackTriple(IsolationLevels.READ_UNCOMMITTED);
 		readPending(IsolationLevels.READ_UNCOMMITTED);
 	}
 
 	@Test
+	@Timeout(10)
 	public void testReadCommitted() throws Exception {
 		readCommitted(IsolationLevels.READ_COMMITTED);
 		rollbackTriple(IsolationLevels.READ_COMMITTED);
@@ -115,6 +119,7 @@ public class IsolationLevelTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void testSnapshotRead() throws Exception {
 		if (isSupported(IsolationLevels.SNAPSHOT_READ)) {
 			snapshotRead(IsolationLevels.SNAPSHOT_READ);
@@ -127,6 +132,7 @@ public class IsolationLevelTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void testSnapshot() throws Exception {
 		if (isSupported(IsolationLevels.SNAPSHOT)) {
 			snapshot(IsolationLevels.SNAPSHOT);
@@ -141,6 +147,7 @@ public class IsolationLevelTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void testSerializable() throws Exception {
 
 		if (isSupported(IsolationLevels.SERIALIZABLE)) {

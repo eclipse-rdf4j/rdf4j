@@ -52,6 +52,7 @@ import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ZeroLengthPathIteration;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
@@ -207,6 +208,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 		@Override
 		public boolean test(BindingSet bs) {
+			bs = BindingSetOrigin.unwrap(bs);
 			if (bs.isEmpty()) {
 				return false;
 			}
@@ -241,6 +243,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 		if (directAccessForVariable != null) {
 			return (bs) -> {
+				bs = BindingSetOrigin.unwrap(bs);
 				if (bs.isEmpty()) {
 					return null;
 				} else if (bs instanceof ArrayBindingSet) {
@@ -297,6 +300,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 		@Override
 		public Value apply(BindingSet bs) {
+			bs = BindingSetOrigin.unwrap(bs);
 			if (bs.isEmpty()) {
 				return null;
 			}
@@ -407,13 +411,18 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 	@Override
 	public ArrayBindingSet createBindingSet(BindingSet bindings) {
+		BindingSet original = bindings;
+		bindings = BindingSetOrigin.unwrap(bindings);
+		ArrayBindingSet copy;
 		if (bindings instanceof ArrayBindingSet) {
-			return new ArrayBindingSet((ArrayBindingSet) bindings, allVariables, sortedBindingNamesCache);
+			copy = new ArrayBindingSet((ArrayBindingSet) bindings, allVariables, sortedBindingNamesCache);
 		} else if (bindings == EmptyBindingSet.getInstance()) {
-			return createBindingSet();
+			copy = createBindingSet();
 		} else {
-			return new ArrayBindingSet(bindings, allVariablesSet, allVariables, sortedBindingNamesCache);
+			copy = new ArrayBindingSet(bindings, allVariablesSet, allVariables, sortedBindingNamesCache);
 		}
+		BindingSetOrigin.copy(original, copy);
+		return copy;
 	}
 
 	private ArrayBindingSet.SortedBindingNamesCache createSortedBindingNamesCache() {

@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
@@ -102,8 +103,11 @@ public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 		} else {
 			joined = context.createBindingSet(left);
 		}
-		if (joined instanceof ArrayBindingSet && right instanceof ArrayBindingSet) {
-			((ArrayBindingSet) joined).addAll((ArrayBindingSet) right);
+		BindingSet unwrappedRight = BindingSetOrigin.unwrap(right);
+		if (joined instanceof ArrayBindingSet && unwrappedRight instanceof ArrayBindingSet) {
+			((ArrayBindingSet) joined).addAll((ArrayBindingSet) unwrappedRight);
+			BindingSetOrigin.set(joined, BindingSetOrigin.overlay(BindingSetOrigin.of(left), BindingSetOrigin.of(right),
+					right.getBindingNames()));
 			return joined;
 		}
 
@@ -112,6 +116,8 @@ public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 				joined.addBinding(binding);
 			}
 		}
+		BindingSetOrigin.set(joined, BindingSetOrigin.overlay(BindingSetOrigin.of(left), BindingSetOrigin.of(right),
+				right.getBindingNames()));
 		return joined;
 	}
 

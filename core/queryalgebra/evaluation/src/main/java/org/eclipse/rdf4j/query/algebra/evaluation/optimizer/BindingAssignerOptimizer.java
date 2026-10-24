@@ -13,14 +13,19 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Graph;
+import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
@@ -43,6 +48,23 @@ public class BindingAssignerOptimizer implements QueryOptimizer {
 			VarVisitor visitor = new VarVisitor(analysis);
 			tupleExpr.visit(visitor);
 			visitor.apply();
+		}
+	}
+
+	/**
+	 * Substitutes the supplied bindings into {@code tupleExpr} the way SPARQL's {@code substitute()} does for an EXISTS
+	 * body: a variable is replaced wherever it is in scope, but a sub-select only exposes the variables it projects.
+	 * Inside a nested {@link Projection} (or {@link MultiProjection}) only variables that are projected source names of
+	 * that projection, and of every enclosing projection, are replaced; every other variable of the sub-select is fresh
+	 * inside it and is left untouched. {@link #optimize}, which serves the query's external bindings, keeps treating
+	 * them as constants in the whole query.
+	 *
+	 * @param tupleExpr the expression to substitute into; it is modified in place
+	 * @param bindings  the bindings to substitute
+	 */
+	public static void substituteInScope(TupleExpr tupleExpr, BindingSet bindings) {
+		if (!bindings.isEmpty()) {
+			tupleExpr.visit(new ScopedVarVisitor(bindings));
 		}
 	}
 
@@ -134,6 +156,70 @@ public class BindingAssignerOptimizer implements QueryOptimizer {
 		}
 
 		private record Replacement(Var variable, Value value) {
+		}
+	}
+
+	/**
+	 * Runtime substitution narrows names at projections independently of the optimizer's external-binding proofs.
+	 */
+	private static final class ScopedVarVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+
+		private final BindingSet bindings;
+
+		/** The names that may be substituted at the current position, or {@code null} for all bound names. */
+		private Set<String> visible;
+
+		private ScopedVarVisitor(BindingSet bindings) {
+			super(true);
+			this.bindings = bindings;
+		}
+
+		@Override
+		public void meet(Var var) {
+			if (!var.hasValue() && (visible == null || visible.contains(var.getName()))
+					&& bindings.hasBinding(var.getName())) {
+				Value value = bindings.getValue(var.getName());
+				var.replaceWith(Var.of(var.getName(), value, var.isAnonymous(), var.isConstant()));
+			}
+		}
+
+		@Override
+		public void meet(Projection node) {
+			Set<String> names = new HashSet<>();
+			addSourceNames(names, node.getProjectionElemList());
+			meetScoped(node, names);
+		}
+
+		@Override
+		public void meet(MultiProjection node) {
+			Set<String> names = new HashSet<>();
+			for (ProjectionElemList projection : node.getProjections()) {
+				addSourceNames(names, projection);
+			}
+			meetScoped(node, names);
+		}
+
+		private void meetScoped(TupleExpr node, Set<String> sourceNames) {
+			Set<String> outer = visible;
+			if (outer != null) {
+				sourceNames.retainAll(outer);
+			}
+			if (sourceNames.isEmpty()) {
+				// nothing bound is visible inside the sub-select
+				return;
+			}
+			visible = sourceNames;
+			try {
+				node.visitChildren(this);
+			} finally {
+				visible = outer;
+			}
+		}
+
+		private static void addSourceNames(Set<String> names, ProjectionElemList projection) {
+			for (ProjectionElem element : projection.getElements()) {
+				names.add(element.getName());
+			}
 		}
 	}
 }

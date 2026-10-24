@@ -16,6 +16,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.Collections;
@@ -23,7 +25,9 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -44,6 +48,51 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 class ServiceJoinIteratorTelemetryTest {
+
+	@Test
+	void vectoredRemoteMetricsPublishOnlyThroughRootCloseCoordinator() throws Exception {
+		Service service = new Service(
+				Var.of("serviceRef", SimpleValueFactory.getInstance().createIRI("http://example.com/service")),
+				new SingletonSet(),
+				"{ VALUES ?x { 1 } }",
+				Collections.emptyMap(),
+				null,
+				false);
+		service.setRuntimeTelemetryEnabled(true);
+		AtomicReference<Runnable> rootPublisher = new AtomicReference<>();
+		service.setQueryModelMetadata(
+				"org.eclipse.rdf4j.query.algebra.evaluation.impl.rootCloseTelemetryRegistrar",
+				(Consumer<Runnable>) rootPublisher::set);
+
+		FederatedService federatedService = mock(FederatedService.class);
+		when(federatedService.preservesBNodeResultProvenance()).thenReturn(true);
+		when(federatedService.evaluate(eq(service), any(), eq(service.getBaseURI())))
+				.thenReturn(new CloseableIteratorIteration<>(List.of(EmptyBindingSet.getInstance()).iterator()));
+		FederatedServiceResolver resolver = mock(FederatedServiceResolver.class);
+		new ServiceQueryEvaluationStep(service, service.getServiceRef(), resolver);
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.getService("http://example.com/service")).thenReturn(federatedService);
+
+		try (ServiceJoinIterator iterator = new ServiceJoinIterator(
+				new CloseableIteratorIteration<>(List.of(EmptyBindingSet.getInstance()).iterator()),
+				service,
+				EmptyBindingSet.getInstance(),
+				strategy)) {
+			while (iterator.hasNext()) {
+				iterator.next();
+			}
+		}
+
+		verify(federatedService).evaluate(eq(service), any(), eq(service.getBaseURI()));
+		verify(strategy, never()).evaluate(eq(service), any(BindingSet.class));
+
+		assertThat(service.getLongMetricActual(TelemetryMetricNames.REMOTE_REQUEST_COUNT_ACTUAL))
+				.as("vectored SERVICE counters must remain execution-local before root close")
+				.isLessThanOrEqualTo(0L);
+		assertThat(rootPublisher.get()).isNotNull();
+		rootPublisher.get().run();
+		assertThat(service.getLongMetricActual(TelemetryMetricNames.REMOTE_REQUEST_COUNT_ACTUAL)).isEqualTo(1L);
+	}
 
 	@Test
 	void recordsLatencyQuantilesForFallbackRequests() throws Exception {

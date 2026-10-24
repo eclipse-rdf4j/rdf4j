@@ -148,7 +148,7 @@ final class LmdbNativeParallelAggregation {
 		// declare the genuinely front-loaded worker-start cost separately (gap-analysis C4): workers, snapshot
 		// sources and read transactions all exist before the first group can be produced, exactly as in the
 		// parallel row pipelines' proposal
-		return new LmdbNativeStrategyProposal<>(candidate::open, LmdbNativeWork.exact(estCost),
+		return new LmdbNativeStrategyProposal<>(filters -> candidate.open(filters), LmdbNativeWork.exact(estCost),
 				LmdbNativeWork.exact(LmdbNativeStrategyProposal.parallelStartupCost()), Double.NaN,
 				LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION, reservation::close);
 	}
@@ -293,6 +293,13 @@ final class LmdbNativeParallelAggregation {
 			this.reservation = reservation;
 			this.threads = threads;
 			this.sourceCount = sourceCount;
+		}
+
+		List<BindingSet> open(NativeFilterLease filters) {
+			MultiJoinPlan execution = filters.borrow(plan);
+			return LmdbNativeParallelAggregation.open(new AggregateCandidate(it.withArg(execution), execution,
+					parentMetrics, filters.borrow(derived), root, preflightAggregateSlots, partitions,
+					reservation, threads, sourceCount));
 		}
 
 		List<BindingSet> open() {

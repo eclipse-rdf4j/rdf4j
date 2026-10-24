@@ -47,6 +47,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_del;
+import static org.lwjgl.util.lmdb.LMDB.mdb_drop;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
@@ -69,7 +70,9 @@ import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.io.Serializable;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.IntBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
@@ -89,7 +92,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.OptionalDouble;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -97,6 +102,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -104,6 +110,8 @@ import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 import java.util.function.LongConsumer;
+import java.util.function.LongUnaryOperator;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
@@ -112,22 +120,31 @@ import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
+import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.base.SailSource;
+import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex.StatementFieldValueAccessor;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.Record;
 import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.RecordCacheIterator;
 import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.WriteRecordBatch;
+import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.CardinalityEstimate;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.IndexShape;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierMutation;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
@@ -136,6 +153,11 @@ import org.lwjgl.util.lmdb.MDBStat;
 import org.lwjgl.util.lmdb.MDBVal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
+import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.longs.LongArrayList;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 
 /**
  * LMDB-based indexed storage and retrieval of RDF statements. TripleStore stores statements in the form of four long
@@ -147,6 +169,11 @@ import org.slf4j.LoggerFactory;
 class TripleStore implements Closeable {
 	interface EnvironmentLifecycle {
 		void afterOpen(long env) throws IOException;
+
+		/** Makes replacement domain tables durable before their sidecar authority can be published. */
+		default void sync(long env) throws IOException {
+			E(mdb_env_sync(env, true));
+		}
 
 		void close(long env);
 	}
@@ -166,6 +193,41 @@ class TripleStore implements Closeable {
 	 * The default triple indexes.
 	 */
 	private static final String DEFAULT_TRIPLE_INDEXES = "spoc,posc";
+
+	// Aliases into TripleIndex so predicate-guarantee code keeps its established names.
+	static final int SUBJ_IDX = TripleIndex.SUBJ_IDX;
+	static final int PRED_IDX = TripleIndex.PRED_IDX;
+	static final int OBJ_IDX = TripleIndex.OBJ_IDX;
+	static final int CONTEXT_IDX = TripleIndex.CONTEXT_IDX;
+
+	private static final int REPEATED_SUBJ_PRED_PAIR = 1;
+	private static final int REPEATED_SUBJ_OBJ_PAIR = 1 << 1;
+	private static final int REPEATED_SUBJ_CONTEXT_PAIR = 1 << 2;
+	private static final int REPEATED_PRED_OBJ_PAIR = 1 << 3;
+	private static final int REPEATED_PRED_CONTEXT_PAIR = 1 << 4;
+	private static final int REPEATED_OBJ_CONTEXT_PAIR = 1 << 5;
+
+	static final int MAX_KEY_LENGTH = 4 * 9;
+
+	static final String PREDICATE_OBJECT_DOMAINS_DB = "predicate-object-domains";
+	static final String PREDICATE_OBJECT_DOMAIN_DEGRADATIONS_DB = "predicate-object-domain-degradations";
+	static final String FRONTIER_MUTATION_JOURNAL_DB = "frontier-statistics-mutation-journal";
+	private static final int FRONTIER_MUTATION_JOURNAL_VERSION = 1;
+	private static final int FRONTIER_MUTATION_JOURNAL_BYTES = Integer.BYTES * 2 + Long.BYTES * 5;
+	private static final long FRONTIER_MUTATION_JOURNAL_METADATA_MAGIC = 0x464d4a5354415445L;
+	private static final int FRONTIER_MUTATION_JOURNAL_METADATA_VERSION = 1;
+	private static final int FRONTIER_MUTATION_JOURNAL_METADATA_BYTES = Integer.BYTES * 2 + Long.BYTES * 5;
+	// Persisted metadata v1 contract. Changing this capacity requires a metadata-version migration.
+	private static final int FRONTIER_MUTATION_JOURNAL_CAPACITY = 16_384;
+	// v5: RdfTermDomain.Fact.CANONICAL_BOOLEAN appended (shifts the persisted datatype bits; forces a rebuild on open)
+	// v6: qualification covers all committed writers; incomplete historical v5 tables are rebuilt or withheld.
+	private static final String PREDICATE_OBJECT_DOMAINS_VERSION = "rdf-term-domain-v6";
+	private static final long PREDICATE_OBJECT_DOMAIN_ENCODING_MAGIC = 0x52444654444f4d31L;
+	private static final int PREDICATE_OBJECT_DOMAIN_BYTES = Long.BYTES * 4;
+	private static final int PREDICATE_OBJECT_DOMAIN_DEGRADATION_BYTES = Long.BYTES * 2;
+	private static final long PREDICATE_OBJECT_DOMAIN_REBUILD_REQUESTED = 1L;
+	private static final long NO_INTEGER_RANGE_MIN = Long.MAX_VALUE;
+	private static final long NO_INTEGER_RANGE_MAX = Long.MIN_VALUE;
 	static final int MAX_READERS = 256;
 	private static final boolean REUSE_ALIGNED_WRITE_CURSOR = true;
 	private static final long PREPARED_WRITE_BYTES_PER_INDEX_ENTRY = 256L;
@@ -420,6 +482,22 @@ class TripleStore implements Closeable {
 	private long replayProjectedUsedBytes;
 	private final int mainDbi;
 	private final int contextsDbi;
+	private final int predicateObjectDomainsDbi;
+	private final int predicateObjectDomainDegradationsDbi;
+	private final int frontierMutationJournalDbi;
+	private final boolean frontierMutationJournalEnabled;
+	private long frontierJournalSequence;
+	private long frontierJournalGapThroughSequence;
+	private long frontierJournalAcknowledgedThroughSequence;
+	private long frontierJournalRetainedMutationCount;
+	private boolean frontierJournalMetadataDirty;
+	private boolean frontierJournalDisabledMutationRecorded;
+	/**
+	 * Serialises independent Frontier acknowledgements against native map resizing. Replay aborts the writer before
+	 * growing the map, so an acknowledgement waiting on the native writer mutex can finish before the resizer takes
+	 * this gate. Every reopened writer reloads the persisted journal coordinates before replaying its mutations.
+	 */
+	private final Semaphore independentWriterGate = new Semaphore(1);
 	private final int namespacesDbi;
 	private int pageSize;
 	private final boolean autoGrow;
@@ -438,9 +516,10 @@ class TripleStore implements Closeable {
 	private boolean indexDatabaseCreated;
 	volatile Runnable beforePhysicalCommitForTest;
 	private final TxnManager txnManager;
+	/** The query's dataset transaction pinned for planner-time reads on this thread; see {@link #pinPlanningTxn}. */
+	private final ThreadLocal<PlanningPin> planningPin = new ThreadLocal<>();
 	private volatile LmdbSailStore.MapGrowthAttemptSupplier mapGrowthAttemptSupplier;
 	private volatile LmdbSailStore.MapGrowthRequestListener mapGrowthRequestListener;
-	private final LeadingFieldSortAlgorithm leadingFieldSortAlgorithm = LeadingFieldSortAlgorithm.LSD_RADIX;
 	private long[] explicitAlignedWriteCursors = new long[0];
 	private long[] inferredAlignedWriteCursors = new long[0];
 	private int[] leadingFieldScratchIndices = new int[0];
@@ -456,7 +535,36 @@ class TripleStore implements Closeable {
 	private final ThreadLocal<PreparedSortWorkspace> preparedSortWorkspace = ThreadLocal
 			.withInitial(PreparedSortWorkspace::new);
 	private final LmdbPageCardinalityEstimator pageEstimator;
+	// JVM-unique store identity for shared caches; identityHashCode collides across instances.
+	private static final AtomicLong INSTANCE_IDS = new AtomicLong();
+	private final long instanceId = INSTANCE_IDS.incrementAndGet();
 	private final AtomicLong dataRevision = new AtomicLong();
+	private final boolean predicateGuaranteeIndexEnabled;
+	private final boolean predicateGuaranteeIndexAutoRebuild;
+	private final Set<String> predicateGuaranteeExcludedPredicates;
+	private final String rdfTermDomainsVersion;
+	private volatile boolean predicateGuaranteeIndexReadable;
+	private long rdfTermDomainValueEnvironmentGeneration;
+	private boolean forceDomainQualificationSyncOnClose;
+	private volatile boolean domainQualificationSyncSucceeded;
+	private volatile Map<Long, RdfTermDomain> predicateObjectDomainCache = Map.of();
+	private final Long2ObjectOpenHashMap<RdfTermDomain> pendingRdfTermDomainCacheWrites = new Long2ObjectOpenHashMap<>();
+	private final LongOpenHashSet pendingRdfTermDomainCacheDeletes = new LongOpenHashSet();
+	private boolean pendingRdfTermDomainCacheClear;
+	/**
+	 * Set by the rebuild paths, whose recomputed guarantees may be STRONGER than the published ones and therefore must
+	 * not be visible before the data they were computed from is durable (see endTransaction).
+	 */
+	private boolean pendingRdfTermDomainCacheMayStrengthen;
+	/**
+	 * Test seam: runs right after a durable batch's {@code mdb_txn_commit}, i.e. at the first instant a new read
+	 * transaction can observe the committed rows. Tests use it to assert what the guarantee cache publishes at that
+	 * point. Never set in production.
+	 */
+	volatile Runnable durableCommitBarrierForTesting;
+
+	private final Long2ObjectOpenHashMap<PendingRdfTermDomain> pendingRdfTermDomains = new Long2ObjectOpenHashMap<>();
+	private final AtomicLong nativeCommitGeneration = new AtomicLong();
 	private final LmdbFanOutStats explicitFanOutStats = new LmdbFanOutStats();
 	private final LmdbFanOutStats inferredFanOutStats = new LmdbFanOutStats();
 	private final AtomicLong mappingGeneration = new AtomicLong();
@@ -497,7 +605,6 @@ class TripleStore implements Closeable {
 	private boolean captureDerivedMutations;
 	private boolean suppressDerivedMutations;
 
-	private final AtomicLong nativeCommitGeneration = new AtomicLong();
 	private TxnMutationJournal mutationJournal;
 	private Throwable mutationFailure;
 	/** An already-applied native mutation can rebuild a failed, discarded derived alias index. */
@@ -516,7 +623,8 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	private record DatabaseHandles(int mainDbi, int contextsDbi, int namespacesDbi, long ownedTransactionId) {
+	private record DatabaseHandles(int mainDbi, int contextsDbi, int namespacesDbi,
+			int predicateDomainsDbi, int predicateDegradationsDbi, int frontierJournalDbi, long ownedTransactionId) {
 	}
 
 	private record PageAndMapState(int pageSize, boolean empty) {
@@ -557,6 +665,11 @@ class TripleStore implements Closeable {
 		this.pageWalkingEstimatorEnabled = config.getPageCardinalityEstimator()
 				&& !Boolean.getBoolean(DISABLE_PAGE_WALKING_ESTIMATOR_PROPERTY);
 		this.valueStore = valueStore;
+		this.predicateGuaranteeIndexEnabled = config.getPredicateGuaranteeIndexEnabled();
+		this.predicateGuaranteeIndexAutoRebuild = config.getPredicateGuaranteeIndexAutoRebuild();
+		this.predicateGuaranteeExcludedPredicates = config.getPredicateGuaranteeExcludedPredicateSet();
+		this.rdfTermDomainsVersion = currentRdfTermDomainsVersion(predicateGuaranteeExcludedPredicates);
+		this.frontierMutationJournalEnabled = config.getFrontierEstimatorMode() != FrontierEstimatorMode.OFF;
 		// create directory if it not exists
 		this.dir.mkdirs();
 
@@ -567,8 +680,8 @@ class TripleStore implements Closeable {
 				env = pp.get(0);
 			}
 
-			// 1 for contexts, 48 for all possible triple indexes (24 explicit + 24 inferred), 1 for namespaces.
-			E(mdb_env_set_maxdbs(env, 1 + 96 + 1));
+			// Contexts, up to 96 native triple indexes, predicate-domain databases, Frontier journal and namespaces.
+			E(mdb_env_set_maxdbs(env, 1 + 96 + 2 + 1 + 1));
 			E(mdb_env_set_maxreaders(env, MAX_READERS));
 
 			// Open environment
@@ -586,6 +699,11 @@ class TripleStore implements Closeable {
 			// comparator state.
 			DatabaseHandles databaseHandles = writeTransaction(env, (stack, txn) -> {
 				validateNativeWriterTransaction(txn);
+				if (properties.rdfTermDomainQualifiedAtOpen
+						&& mdb_txn_id(txn) != Math.addExact(properties.rdfTermDomainTriplesTransactionAtOpen, 1L)) {
+					RdfTermDomainQualification.withdraw(properties, null);
+					throw new IOException("TripleStore changed after RDF domain qualification preflight");
+				}
 				cleanupAbandonedMutationJournals();
 				int mainDbi = openDatabaseWithTxn(txn, null, 0);
 				String name = "contexts";
@@ -606,7 +724,22 @@ class TripleStore implements Closeable {
 				} else {
 					E(namespaceResult);
 				}
-				return new DatabaseHandles(mainDbi, contextsDbi, ip.get(0),
+				int namespacesDbi = ip.get(0);
+				String[] auxiliaryNames = { PREDICATE_OBJECT_DOMAINS_DB, PREDICATE_OBJECT_DOMAIN_DEGRADATIONS_DB,
+						FRONTIER_MUTATION_JOURNAL_DB };
+				int[] auxiliary = new int[auxiliaryNames.length];
+				for (int i = 0; i < auxiliaryNames.length; i++) {
+					int result = mdb_dbi_open(txn, auxiliaryNames[i], 0, ip);
+					if (result == MDB_NOTFOUND) {
+						E(mdb_dbi_open(txn, auxiliaryNames[i], MDB_CREATE, ip));
+						created = true;
+					} else {
+						E(result);
+					}
+					auxiliary[i] = ip.get(0);
+				}
+				return new DatabaseHandles(mainDbi, contextsDbi, namespacesDbi, auxiliary[0], auxiliary[1],
+						auxiliary[2],
 						created ? mdb_txn_id(txn) : expectedNativeTransactionId);
 			});
 			if (expectedNativeTransactionId >= 0L) {
@@ -615,6 +748,9 @@ class TripleStore implements Closeable {
 			mainDbi = databaseHandles.mainDbi();
 			contextsDbi = databaseHandles.contextsDbi();
 			namespacesDbi = databaseHandles.namespacesDbi();
+			predicateObjectDomainsDbi = databaseHandles.predicateDomainsDbi();
+			predicateObjectDomainDegradationsDbi = databaseHandles.predicateDegradationsDbi();
+			frontierMutationJournalDbi = databaseHandles.frontierJournalDbi();
 
 			txnManager = new TxnManager(env, Mode.RESET, LmdbSailStore.MapResizeKind.TRIPLE_STORE);
 			pageEstimator = pageWalkingEstimatorEnabled ? new LmdbPageCardinalityEstimator(dataMdbFile, env, mainDbi)
@@ -647,7 +783,8 @@ class TripleStore implements Closeable {
 						}
 					}
 					initIndexes(effectiveIndexSpecs);
-					setupCommitWithoutNativeWrites = nativeIndexManifest && !indexDatabaseCreated;
+					setupCommitWithoutNativeWrites = nativeIndexManifest && !indexDatabaseCreated
+							&& !frontierJournalMetadataDirty && pendingRdfTermDomains.isEmpty();
 					rebuildIndexSelectionTable();
 					resetAlignedWriteCursorState();
 					if (!nativeIndexManifest) {
@@ -688,6 +825,8 @@ class TripleStore implements Closeable {
 			refreshCommittedHighWater();
 			replayPolicy = new TxnReplayPolicy(config.getMapGrowthThreshold());
 			valueEnvironmentGeneration = valueStore == null ? 0L : valueStore.environmentGeneration();
+			initializeRdfTermDomains();
+			dataRevision.set(lastCommittedTransactionId());
 			// Bulk metrics begin after opening/configuring the environment, as in the loader-only driver.
 			bulkMapGrowthCount = 0L;
 		} catch (IOException e) {
@@ -717,8 +856,1022 @@ class TripleStore implements Closeable {
 		return txnManager;
 	}
 
+	/** Releases a planning pin. Complete-query scopes require the owning thread and proper nesting order. */
+	interface PlanningReadPin extends AutoCloseable {
+
+		PlanningReadPin NONE = () -> {
+		};
+
+		@Override
+		void close();
+	}
+
+	private static final class PlanningPin {
+		final Txn txn;
+		final long lease;
+		int depth = 1;
+
+		PlanningPin(Txn txn, long lease) {
+			this.txn = txn;
+			this.lease = lease;
+		}
+	}
+
+	/**
+	 * Pins the calling thread's planner-time storage reads to {@code txn}, normally the query's own dataset lease,
+	 * until the returned pin is closed. While pinned, {@link #planningReadTxn()}, {@link #planningRead(Transaction)}
+	 * and {@link #planningScan(Transaction)} reuse that transaction instead of acquiring a nested reader lease from the
+	 * fixed pool, so a planning read can never wait on the pool while its own query holds a slot, and estimates read
+	 * the execution snapshot. Nested pins on the same thread keep the outermost transaction.
+	 *
+	 * <p>
+	 * Live tracked readers and membership-bound native snapshots can be pinned. A native snapshot keeps its admitted
+	 * data revision, exposed by {@link #planningDataRevision()}, while ordinary tracked readers renew on commit. A
+	 * detached reader without either contract, a {@code null}, or a foreign transaction is a no-op.
+	 * </p>
+	 */
+	PlanningReadPin pinPlanningTxn(Txn txn) {
+		if (txn == null || !txn.belongsTo(txnManager) || txn.isView()
+				|| !txn.isTracked() && txn.snapshotRevision() < 0L) {
+			return PlanningReadPin.NONE;
+		}
+		long lease = txn.leaseId();
+		if (!txn.isLive(lease)) {
+			return PlanningReadPin.NONE;
+		}
+		PlanningPin existing = planningPin.get();
+		if (existing != null) {
+			existing.depth++;
+			return () -> unpinPlanningTxn(existing);
+		}
+		PlanningPin pin = new PlanningPin(txn, lease);
+		planningPin.set(pin);
+		return () -> unpinPlanningTxn(pin);
+	}
+
+	private void unpinPlanningTxn(PlanningPin pin) {
+		if (planningPin.get() != pin) {
+			return;
+		}
+		if (--pin.depth <= 0) {
+			planningPin.remove();
+		}
+	}
+
+	/** A complete query invocation owns its exact dataset pair, independently of legacy borrowed nesting. */
+	PlanningReadPin pinQueryPlanningTxn(Txn txn) {
+		if (txn == null || !txn.belongsTo(txnManager) || txn.isView() || txn.snapshotRevision() < 0L) {
+			throw new IllegalArgumentException("A query planning transaction must belong to this TripleStore");
+		}
+		long lease = txn.leaseId();
+		txn.ensureSnapshotValid(lease);
+		return enterQueryPlanningPin(new PlanningPin(txn, lease));
+	}
+
+	/** Masks an outer query's authority while a live, unproved complete source is planned heuristically. */
+	PlanningReadPin maskQueryPlanningReads() {
+		return enterQueryPlanningPin(new PlanningPin(null, 0L));
+	}
+
+	private PlanningReadPin enterQueryPlanningPin(PlanningPin installed) {
+		PlanningPin previous = planningPin.get();
+		Thread owner = Thread.currentThread();
+		planningPin.set(installed);
+		return new PlanningReadPin() {
+			private boolean closed;
+
+			@Override
+			public void close() {
+				if (Thread.currentThread() != owner) {
+					throw new IllegalStateException("Query planning scopes must close on their owning thread");
+				}
+				if (closed) {
+					return;
+				}
+				if (planningPin.get() != installed) {
+					throw new IllegalStateException("Query planning scopes must close in nesting order");
+				}
+				closed = true;
+				if (previous == null) {
+					planningPin.remove();
+				} else {
+					planningPin.set(previous);
+				}
+			}
+		};
+	}
+
+	boolean ownsPlanningTxn(Txn txn) {
+		return txn != null && txn.belongsTo(txnManager) && !txn.isView()
+				&& txn.snapshotRevision() >= 0L && txn.isLive(txn.leaseId());
+	}
+
+	/**
+	 * The pinned transaction when it is still the lease that was pinned, otherwise {@code null}. A pin whose dataset
+	 * was closed (and whose transaction may already be recycled for another caller) is ignored, never used.
+	 */
+	private Txn livePinnedPlanningTxn() {
+		PlanningPin pin = planningPin.get();
+		return pin != null && pin.txn != null && pin.txn.isLive(pin.lease) ? pin.txn : null;
+	}
+
+	/** Whether planner-time reads on the calling thread currently reuse a live pinned transaction. */
+	boolean planningReadsPinned() {
+		return livePinnedPlanningTxn() != null;
+	}
+
+	/** Borrows the actual outermost live planning authority without retaining or renewing it. */
+	Txn borrowedPlanningTxn() {
+		Txn pinned = livePinnedPlanningTxn();
+		return pinned != null && pinned.belongsTo(txnManager) && pinned.snapshotRevision() >= 0L
+				&& pinned.isNativeActive() ? pinned : null;
+	}
+
+	/**
+	 * Transaction for a planner-time read whose cursors go through {@link #getTriples} (that is, through
+	 * {@link LmdbRecordIterator}, which takes the manager's read lock and re-validates the transaction version on every
+	 * step). Pinned: a non-owning view of the pinned transaction (closing it is a no-op, no permit). Unpinned: a fresh
+	 * ordinary lease, because a caller without a pin holds no dataset slot that could nest.
+	 *
+	 * <p>
+	 * Raw-handle reads (cursors opened directly on the handle, {@code mdb_stat}) must not use this method; they go
+	 * through {@link #planningRead(Transaction)} or {@link #planningScan(Transaction)}, which hold the read lock for
+	 * the whole callback so a concurrent commit cannot reset the transaction underneath an open cursor.
+	 * </p>
+	 */
+	Txn planningReadTxn() throws IOException {
+		Txn pinned = livePinnedPlanningTxn();
+		return pinned != null ? txnManager.planningView(pinned) : txnManager.createReadTxn();
+	}
+
+	/**
+	 * Runs a short, bounded planner-time callback on the pinned transaction under the read lock. Unpinned it falls back
+	 * to {@link TxnManager#doWithPriority(Transaction)}, the develop behaviour for nested estimator reads.
+	 */
+	<T> T planningRead(Transaction<T> callback) throws IOException {
+		Txn pinned = livePinnedPlanningTxn();
+		return pinned != null ? readOn(pinned, callback) : txnManager.doWithPriority(callback);
+	}
+
+	/**
+	 * Runs a longer (deadline- or row-bounded) planner-time scan on the pinned transaction under the read lock.
+	 * Unpinned it takes an ordinary lease via {@link TxnManager#doWith(Transaction)}: a background sampler must not
+	 * occupy the single reserved slot for a scan.
+	 */
+	<T> T planningScan(Transaction<T> callback) throws IOException {
+		Txn pinned = livePinnedPlanningTxn();
+		return pinned != null ? readOn(pinned, callback) : txnManager.doWith(callback);
+	}
+
+	/**
+	 * Runs a raw-handle callback on an explicitly supplied transaction under the read lock, with the same discipline as
+	 * {@link TxnManager#doWith(Transaction)}: a commit resets and renews every tracked reader under the write lock, so
+	 * the handle stays stable while the callback's cursors are open.
+	 */
+	<T> T planningRead(Txn txn, Transaction<T> callback) throws IOException {
+		return readOn(txn, callback);
+	}
+
+	private <T> T readOn(Txn txn, Transaction<T> callback) throws IOException {
+		if (txn.snapshotRevision() >= 0L) {
+			// Membership-bound native readers survive ordinary commits. Their owner monitor protects the raw
+			// cursor against retirement without holding the writer's renewal lock throughout a bounded scan.
+			synchronized (txn.nativeReadMonitor()) {
+				txn.ensureSnapshotValid(txn.lease());
+				try (MemoryStack stack = stackPush()) {
+					return callback.exec(stack, txn.get());
+				}
+			}
+		}
+		StampedLongAdderLockManager lockManager = txnManager.lockManager();
+		long readStamp;
+		try {
+			readStamp = lockManager.readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while acquiring the LMDB read lock for a planning read", e);
+		}
+		try (MemoryStack stack = stackPush()) {
+			return callback.exec(stack, txn.get());
+		} finally {
+			lockManager.unlockRead(readStamp);
+		}
+	}
+
+	/**
+	 * Revision of the committed statement data. It is the LMDB transaction id of the last write transaction that
+	 * committed statements, seeded at open from the environment's current snapshot id, so it is durable across restarts
+	 * and strictly increases with every commit: a plan or probe cache keyed on it can never mistake a post-restart
+	 * state for the pre-restart one. The value is published only after the committed data is readable (readers reset),
+	 * so a revision is never observed before the data it names.
+	 */
 	long getDataRevision() {
 		return dataRevision.get();
+	}
+
+	/**
+	 * The logical data revision of the pinned planning view, or the durable current revision when no view is pinned.
+	 */
+	long planningDataRevision() {
+		Txn pinned = livePinnedPlanningTxn();
+		return pinned != null && pinned.snapshotRevision() >= 0L ? pinned.snapshotRevision() : getDataRevision();
+	}
+
+	private long lastCommittedTransactionId() throws IOException {
+		try (Txn txn = txnManager.createReadTxn()) {
+			return mdb_txn_id(txn.get());
+		}
+	}
+
+	/**
+	 * Publishes the revision of the durable batch that just became readable. The committed transaction id is taken
+	 * before {@code mdb_txn_commit} frees the handle; it normally exceeds the previous revision on its own, and the
+	 * revision advances by at least one per commit regardless.
+	 */
+	private void publishDataRevision(long committedTxnId) {
+		dataRevision.updateAndGet(current -> Math.max(current + 1L, committedTxnId));
+	}
+
+	long instanceId() {
+		return instanceId;
+	}
+
+	private void initializeRdfTermDomains() throws IOException {
+		initializeRdfTermDomains(rdfTermDomainStartup(properties, predicateGuaranteeIndexEnabled,
+				predicateGuaranteeIndexAutoRebuild, valueStore != null && valueStore.getFormat().isLegacy(),
+				predicateGuaranteeExcludedPredicates));
+	}
+
+	private void initializeRdfTermDomains(RdfTermDomainStartup startup) throws IOException {
+		if (valueStore == null || startup == RdfTermDomainStartup.DISABLED) {
+			if (!predicateGuaranteeIndexEnabled) {
+				withholdRdfTermDomains(PREDICATE_OBJECT_DOMAINS_VERSION + "-disabled");
+			} else {
+				clearRdfTermDomainCache();
+			}
+			return;
+		}
+		if (startup == RdfTermDomainStartup.REBUILD_ALL) {
+			// Replacement tables may omit predicates covered by the old profile. Retire its qualifier before commit.
+			withholdRdfTermDomains(null);
+		}
+		try (ValueResolutionScope values = valueStore.openValueResolutionScope();
+				SailClosable exposure = values.activate()) {
+			String currentVersion = currentRdfTermDomainsVersion();
+			MapFullException firstCapacityFailure = null;
+			while (true) {
+				try {
+					if (startup == RdfTermDomainStartup.LOAD || startup == RdfTermDomainStartup.REBUILD_MARKED) {
+						if (startup == RdfTermDomainStartup.REBUILD_MARKED) {
+							rebuildMarkedRdfTermDomains();
+						}
+						loadRdfTermDomainCache();
+						rdfTermDomainValueEnvironmentGeneration = valueStore.environmentGeneration();
+						predicateGuaranteeIndexReadable = true;
+						return;
+					}
+					if (startup == RdfTermDomainStartup.UNREADABLE) {
+						// This opener may commit objects it cannot record. Withdraw the old durable authority first.
+						withholdRdfTermDomains(null);
+						return;
+					}
+					rebuildRdfTermDomains();
+					// The sidecar uses forced atomic publication, even when ordinary LMDB writes use MDB_NOSYNC.
+					environmentLifecycle.sync(env);
+					properties.setRdfTermDomainsVersion(currentVersion);
+					loadRdfTermDomainCache();
+					rdfTermDomainValueEnvironmentGeneration = valueStore.environmentGeneration();
+					predicateGuaranteeIndexReadable = true;
+					return;
+				} catch (MapFullException capacity) {
+					if (firstCapacityFailure == null) {
+						firstCapacityFailure = capacity;
+					} else if (firstCapacityFailure != capacity) {
+						firstCapacityFailure.addSuppressed(capacity);
+					}
+					if (!autoGrow) {
+						throw firstCapacityFailure;
+					}
+					try {
+						// Domain rebuilds are unjournaled. Retry the complete aborted rebuild, never its row journal.
+						replayPolicy.capacityFailure();
+						growMapForRdfTermDomainInitialization();
+					} catch (IOException | RuntimeException | Error growthFailure) {
+						firstCapacityFailure.addSuppressed(growthFailure);
+						throw firstCapacityFailure;
+					}
+				}
+			}
+		}
+	}
+
+	/** Grows only after a complete startup domain rebuild has aborted and released its writer and cursors. */
+	private void growMapForRdfTermDomainInitialization() throws IOException {
+		assert writeTxn == 0L;
+		var lockManager = txnManager.lockManager();
+		long stamp;
+		try {
+			stamp = lockManager.writeLock();
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while growing the TripleStore map for domain initialization",
+					interrupted);
+		}
+		try {
+			txnManager.deactivate();
+			Throwable growthFailure = null;
+			try (MemoryStack stack = stackPush()) {
+				MDBEnvInfo info = MDBEnvInfo.malloc(stack);
+				E(mdb_env_info(env, info));
+				long currentMapSize = info.me_mapsize();
+				long nextPageNo = info.me_last_pgno() == Long.MAX_VALUE ? Long.MAX_VALUE : info.me_last_pgno() + 1L;
+				long projectedFootprint = Math.max(saturatedMultiply(nextPageNo, pageSize), replayProjectedUsedBytes);
+				long grownMapSize = growthPolicy.grownMapSize(currentMapSize, pageSize, projectedFootprint);
+				E(setMapSize(grownMapSize));
+				E(mdb_env_info(env, info));
+				mapSize = info.me_mapsize();
+				if (mapSize <= currentMapSize) {
+					throw new IOException("LMDB map did not grow after startup domain capacity failure");
+				}
+			} catch (IOException | RuntimeException | Error failure) {
+				growthFailure = failure;
+				throw failure;
+			} finally {
+				try {
+					txnManager.activate();
+				} catch (IOException | RuntimeException | Error activationFailure) {
+					if (growthFailure == null) {
+						throw activationFailure;
+					}
+					growthFailure.addSuppressed(activationFailure);
+				}
+			}
+		} finally {
+			lockManager.unlockWrite(stamp);
+		}
+	}
+
+	/**
+	 * Semantic version of the predicate-object domain guarantees this store currently serves, covering the encoding
+	 * version, exclusion configuration, disabled state, and readability. Plan caches key on this value so that any
+	 * change in which guarantees exist invalidates cached plans. It is a schema version only: the contents of a
+	 * guarantee change with commits and are tracked per predicate through the cached domains
+	 * ({@link #getRdfTermDomain(long)}), which the plan caches capture as a predicate-range identity.
+	 */
+	String effectiveRdfTermDomainsVersion() {
+		if (!predicateGuaranteeIndexEnabled) {
+			return PREDICATE_OBJECT_DOMAINS_VERSION + "-disabled";
+		}
+		String version = currentRdfTermDomainsVersion();
+		return rdfTermDomainsReadable() ? version : version + "-unreadable";
+	}
+
+	private boolean rdfTermDomainsReadable() {
+		return predicateGuaranteeIndexReadable && valueStore != null
+				&& rdfTermDomainValueEnvironmentGeneration == valueStore.environmentGeneration()
+				&& currentRdfTermDomainsVersion().equals(properties.getRdfTermDomainsVersion());
+	}
+
+	private String currentRdfTermDomainsVersion() {
+		return rdfTermDomainsVersion;
+	}
+
+	private static String currentRdfTermDomainsVersion(Set<String> excludedPredicates) {
+		if (excludedPredicates.isEmpty()) {
+			return PREDICATE_OBJECT_DOMAINS_VERSION;
+		}
+		// Exact, order-independent identity: Set.hashCode can equate different excluded predicates.
+		StringBuilder version = new StringBuilder(PREDICATE_OBJECT_DOMAINS_VERSION).append("-exclude[");
+		excludedPredicates.stream()
+				.sorted()
+				.forEach(predicate -> version.append('-')
+						.append(predicate.length())
+						.append(':')
+						.append(predicate));
+		return version.append(']').toString();
+	}
+
+	/** The same startup policy drives the opener and its read-only prepared-admission probe. */
+	enum RdfTermDomainStartup {
+		DISABLED,
+		UNREADABLE,
+		LOAD,
+		REBUILD_MARKED,
+		REBUILD_ALL
+	}
+
+	static RdfTermDomainStartup rdfTermDomainStartup(StoreProperties properties, boolean enabled,
+			boolean autoRebuild, boolean legacyWriter, Set<String> excludedPredicates) {
+		return rdfTermDomainStartup(properties, enabled, autoRebuild, legacyWriter, excludedPredicates,
+				properties.rdfTermDomainQualifiedAtOpen);
+	}
+
+	static RdfTermDomainStartup rdfTermDomainStartup(StoreProperties properties, boolean enabled,
+			boolean autoRebuild, boolean legacyWriter, Set<String> excludedPredicates, boolean qualifiedAtOpen) {
+		if (!enabled) {
+			return RdfTermDomainStartup.DISABLED;
+		}
+		// A format-2 writer does not maintain this extension even when its schema marker is unchanged.
+		if (!legacyWriter && qualifiedAtOpen && currentRdfTermDomainsVersion(excludedPredicates)
+				.equals(properties.getRdfTermDomainsVersion())) {
+			return autoRebuild ? RdfTermDomainStartup.REBUILD_MARKED : RdfTermDomainStartup.LOAD;
+		}
+		if (!autoRebuild && (legacyWriter || properties.isLoaded())) {
+			return RdfTermDomainStartup.UNREADABLE;
+		}
+		return RdfTermDomainStartup.REBUILD_ALL;
+	}
+
+	private void loadRdfTermDomainCache() throws IOException {
+		predicateObjectDomainCache = readAllRdfTermDomains();
+	}
+
+	private Map<Long, RdfTermDomain> readAllRdfTermDomains() throws IOException {
+		return txnManager.doWith((stack, txn) -> {
+			PointerBuffer pp = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, predicateObjectDomainsDbi, pp));
+			long cursor = pp.get(0);
+			try {
+				Map<Long, RdfTermDomain> loaded = new HashMap<>();
+				MDBVal keyVal = MDBVal.malloc(stack);
+				MDBVal dataVal = MDBVal.malloc(stack);
+				int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_FIRST);
+				while (rc == MDB_SUCCESS) {
+					ByteBuffer keyData = keyVal.mv_data();
+					if (keyData != null) {
+						loaded.put(Varint.readUnsigned(keyData, keyData.position()), readRdfTermDomain(dataVal));
+					}
+					rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_NEXT);
+				}
+				if (rc != MDB_NOTFOUND) {
+					throw new IOException(mdb_strerror(rc));
+				}
+				return Map.copyOf(loaded);
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+		});
+	}
+
+	private void clearRdfTermDomainCache() {
+		predicateObjectDomainCache = Map.of();
+	}
+
+	/** No writer may outlive a formerly readable qualifier without durably withdrawing that authority. */
+	private void withholdRdfTermDomains(String durableVersion) {
+		predicateGuaranteeIndexReadable = false;
+		clearRdfTermDomainCache();
+		RdfTermDomainQualification.withdraw(properties, durableVersion);
+	}
+
+	private void rebuildRdfTermDomains() throws IOException {
+		boolean committed = false;
+		startTransaction();
+		try {
+			checkMutationResult(mdb_drop(writeTxn, predicateObjectDomainsDbi, false));
+			checkMutationResult(mdb_drop(writeTxn, predicateObjectDomainDegradationsDbi, false));
+			stageRdfTermDomainCacheClear();
+			if (valueStore != null) {
+				Map<Long, PendingRdfTermDomain> guarantees = new HashMap<>();
+				for (boolean explicit : new boolean[] { true, false }) {
+					try (RecordIterator triples = getTriplesSortedByPredicateObject(txnManager.createTxn(writeTxn),
+							explicit)) {
+						long previousPredicate = -1;
+						long previousObject = -1;
+						long[] quad;
+						while ((quad = triples.next()) != null) {
+							if (quad[PRED_IDX] == previousPredicate && quad[OBJ_IDX] == previousObject) {
+								continue;
+							}
+							previousPredicate = quad[PRED_IDX];
+							previousObject = quad[OBJ_IDX];
+							if (isPredicateGuaranteeExcluded(quad[PRED_IDX])) {
+								continue;
+							}
+							long predicateId = quad[PRED_IDX];
+							Value object = valueStore.getValue(quad[OBJ_IDX]);
+							RdfTermDomain observed = RdfTermDomain.classify(object);
+							PendingRdfTermDomain guarantee = guarantees.get(predicateId);
+							if (guarantee == null) {
+								guarantees.put(predicateId, PendingRdfTermDomain.of(observed));
+							} else {
+								guarantee.recordObserved(observed);
+							}
+						}
+					}
+				}
+				for (Map.Entry<Long, PendingRdfTermDomain> entry : guarantees.entrySet()) {
+					PendingRdfTermDomain guarantee = entry.getValue();
+					writeRdfTermDomain(entry.getKey(), guarantee.guarantee());
+					long candidateMask = degradationCandidateMask(guarantee.guarantee(), guarantee.observedMask());
+					if (candidateMask != 0L) {
+						try (MemoryStack stack = MemoryStack.stackPush()) {
+							writeRdfTermDomainDegradation(stack, predicateObjectDomainKey(stack,
+									entry.getKey()), candidateMask, 0L);
+						}
+					}
+				}
+			}
+			endTransaction(true);
+			committed = true;
+		} finally {
+			if (!committed) {
+				endTransaction(false);
+			}
+		}
+	}
+
+	private void rebuildMarkedRdfTermDomains() throws IOException {
+		boolean completed = false;
+		startTransaction();
+		try {
+			List<Long> predicateIds = getRdfTermDomainRebuilds();
+			if (predicateIds.isEmpty()) {
+				endTransaction(false);
+				completed = true;
+				return;
+			}
+			for (long predicateId : predicateIds) {
+				rebuildRdfTermDomain(predicateId);
+			}
+			endTransaction(true);
+			completed = true;
+		} finally {
+			if (!completed) {
+				endTransaction(false);
+			}
+		}
+	}
+
+	private List<Long> getRdfTermDomainRebuilds() throws IOException {
+		List<Long> predicateIds = new ArrayList<>();
+		visitRdfTermDomainRebuilds(writeTxn, predicateObjectDomainDegradationsDbi, predicateIds::add);
+		return predicateIds;
+	}
+
+	/** Stops at the first requested predicate; no native buffer or cursor escapes the caller's pinned read view. */
+	static boolean hasRdfTermDomainRebuilds(long transaction, int database) throws IOException {
+		return visitRdfTermDomainRebuilds(transaction, database, null);
+	}
+
+	private static boolean visitRdfTermDomainRebuilds(long transaction, int database, LongConsumer consumer)
+			throws IOException {
+		try (MemoryStack stack = stackPush()) {
+			PointerBuffer pp = stack.mallocPointer(1);
+			E(mdb_cursor_open(transaction, database, pp));
+			long cursor = pp.get(0);
+			try {
+				boolean found = false;
+				MDBVal keyVal = MDBVal.malloc(stack);
+				MDBVal dataVal = MDBVal.malloc(stack);
+				int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_FIRST);
+				while (rc == MDB_SUCCESS) {
+					RdfTermDomainDegradation degradation = readRdfTermDomainDegradation(dataVal);
+					if (degradation.rebuildRequested()) {
+						ByteBuffer keyData = keyVal.mv_data();
+						if (keyData != null) {
+							long predicateId = Varint.readUnsigned(keyData, keyData.position());
+							if (consumer == null) {
+								return true;
+							}
+							consumer.accept(predicateId);
+							found = true;
+						}
+					}
+					rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_NEXT);
+				}
+				if (rc != MDB_NOTFOUND) {
+					throw new IOException(mdb_strerror(rc));
+				}
+				return found;
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+		}
+	}
+
+	private void rebuildRdfTermDomain(long predicateId) throws IOException {
+		nativeMutation = true;
+		unjournaledMutation = true;
+		// a rebuilt guarantee may be stronger than the degraded one it replaces: publish it only after commit
+		pendingRdfTermDomainCacheMayStrengthen = true;
+		if (isPredicateGuaranteeExcluded(predicateId)) {
+			try (MemoryStack stack = MemoryStack.stackPush()) {
+				MDBVal keyVal = predicateObjectDomainKey(stack, predicateId);
+				deleteRdfTermDomain(predicateId, keyVal);
+				deleteRdfTermDomainDegradation(keyVal);
+			}
+			return;
+		}
+		PendingRdfTermDomain rebuilt = null;
+		for (boolean explicit : new boolean[] { true, false }) {
+			try (RecordIterator triples = getTriples(txnManager.createTxn(writeTxn), -1, predicateId, -1, -1,
+					explicit)) {
+				long[] quad;
+				while ((quad = triples.next()) != null) {
+					Value object = valueStore.getValue(quad[OBJ_IDX]);
+					RdfTermDomain observed = RdfTermDomain.classify(object);
+					if (rebuilt == null) {
+						rebuilt = PendingRdfTermDomain.of(observed);
+					} else {
+						rebuilt.recordObserved(observed);
+					}
+				}
+			}
+		}
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal keyVal = predicateObjectDomainKey(stack, predicateId);
+			if (rebuilt == null) {
+				deleteRdfTermDomain(predicateId, keyVal);
+				deleteRdfTermDomainDegradation(keyVal);
+			} else {
+				writeRdfTermDomain(stack, predicateId, keyVal, rebuilt.guarantee());
+				long candidateMask = degradationCandidateMask(rebuilt.guarantee(), rebuilt.observedMask());
+				if (candidateMask == 0L) {
+					deleteRdfTermDomainDegradation(keyVal);
+				} else {
+					writeRdfTermDomainDegradation(stack, keyVal, candidateMask, 0L);
+				}
+			}
+		}
+	}
+
+	private RecordIterator getTriplesSortedByPredicateObject(Txn txn, boolean explicit) throws IOException {
+		for (TripleIndex index : indexes) {
+			char[] fieldSeq = index.getFieldSeq();
+			if (fieldSeq[0] == 'p' && fieldSeq[1] == 'o') {
+				return getTriplesUsingIndex(txn, -1, -1, -1, -1, explicit, index, false);
+			}
+		}
+		return getTriples(txn, -1, -1, -1, -1, explicit);
+	}
+
+	void recordRdfTermDomain(long predicateId, Value object) throws IOException {
+		if (!predicateGuaranteeIndexEnabled || isPredicateGuaranteeExcluded(predicateId)) {
+			return;
+		}
+		RdfTermDomain observed = RdfTermDomain.classify(object);
+		PendingRdfTermDomain pending = pendingRdfTermDomains.get(predicateId);
+		if (pending == null) {
+			pendingRdfTermDomains.put(predicateId, PendingRdfTermDomain.of(observed));
+		} else {
+			pending.recordObserved(observed);
+		}
+	}
+
+	void recordPredicateObjectRemoval(long predicateId, Value object) throws IOException {
+		if (!predicateGuaranteeIndexEnabled || isPredicateGuaranteeExcluded(predicateId)) {
+			return;
+		}
+		RdfTermDomain removed = RdfTermDomain.classify(object);
+		long removedMask = removed.mask();
+		PendingRdfTermDomain pending = pendingRdfTermDomains.get(predicateId);
+		if (pending != null) {
+			pending.recordRemoval(removedMask);
+		}
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal keyVal = predicateObjectDomainKey(stack, predicateId);
+			MDBVal existingVal = MDBVal.malloc(stack);
+			int rc = mdb_get(writeTxn, predicateObjectDomainDegradationsDbi, keyVal, existingVal);
+			if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+				throw new IOException(mdb_strerror(rc));
+			}
+
+			RdfTermDomainDegradation degradation = rc == MDB_SUCCESS
+					? readRdfTermDomainDegradation(existingVal)
+					: new RdfTermDomainDegradation(0L, 0L);
+			boolean rebuildRequired = rangeRemovalRequiresRebuild(predicateId, removed);
+			if (!rebuildRequired && (degradation.candidateMask() == 0L
+					|| (degradation.candidateMask() & ~removedMask) == 0L
+					|| degradation.rebuildRequested())) {
+				return;
+			}
+			writeRdfTermDomainDegradation(stack, keyVal, degradation.candidateMask(),
+					degradation.flags() | PREDICATE_OBJECT_DOMAIN_REBUILD_REQUESTED);
+		}
+	}
+
+	private boolean rangeRemovalRequiresRebuild(long predicateId, RdfTermDomain removed) {
+		Optional<RdfTermDomain.IntegerRange> removedRange = removed.integerRange();
+		if (removedRange.isEmpty()) {
+			return false;
+		}
+		RdfTermDomain current = predicateObjectDomainCache.get(predicateId);
+		if (current == null) {
+			return false;
+		}
+		Optional<RdfTermDomain.IntegerRange> currentRange = current.integerRange();
+		return currentRange.isPresent()
+				&& currentRange.get().touchesEndpoint(removedRange.get().minInclusive());
+	}
+
+	RdfTermDomain getRdfTermDomain(long predicateId) throws IOException {
+		return getKnownRdfTermDomain(predicateId).orElse(RdfTermDomain.UNRESTRICTED);
+	}
+
+	Optional<RdfTermDomain> getKnownRdfTermDomain(long predicateId) throws IOException {
+		if (!predicateGuaranteeIndexEnabled || !rdfTermDomainsReadable()
+				|| isPredicateGuaranteeExcluded(predicateId)) {
+			return Optional.empty();
+		}
+		Txn pinned = livePinnedPlanningTxn();
+		return pinned != null && pinned.snapshotRevision() >= 0L
+				? getPersistedRdfTermDomain(predicateId)
+				: getCachedRdfTermDomain(predicateId);
+	}
+
+	Optional<RdfTermDomain> getCachedRdfTermDomain(long predicateId) {
+		return Optional.ofNullable(predicateObjectDomainCache.get(predicateId));
+	}
+
+	Optional<RdfTermDomain> getPersistedRdfTermDomain(long predicateId) throws IOException {
+		if (!predicateGuaranteeIndexEnabled || !rdfTermDomainsReadable()
+				|| isPredicateGuaranteeExcluded(predicateId)) {
+			return Optional.empty();
+		}
+		return planningRead((stack, txn) -> {
+			MDBVal keyVal = predicateObjectDomainKey(stack, predicateId);
+
+			MDBVal dataVal = MDBVal.malloc(stack);
+			int rc = mdb_get(txn, predicateObjectDomainsDbi, keyVal, dataVal);
+			if (rc == MDB_NOTFOUND) {
+				return Optional.empty();
+			}
+			if (rc != MDB_SUCCESS) {
+				throw new IOException(mdb_strerror(rc));
+			}
+			return Optional.of(readRdfTermDomain(dataVal));
+		});
+	}
+
+	private void flushPendingRdfTermDomains() throws IOException {
+		if (pendingRdfTermDomains.isEmpty()) {
+			return;
+		}
+		for (Long2ObjectMap.Entry<PendingRdfTermDomain> entry : pendingRdfTermDomains.long2ObjectEntrySet()) {
+			long predicateId = entry.getLongKey();
+			if (isPredicateGuaranteeExcluded(predicateId)) {
+				continue;
+			}
+			updateRdfTermDomain(predicateId, entry.getValue());
+		}
+		// Retain the logical aggregate until the authoritative commit: an aborted native writer may replay it.
+	}
+
+	private void updateRdfTermDomain(long predicateId, PendingRdfTermDomain pending)
+			throws IOException {
+		if (!predicateGuaranteeIndexEnabled || isPredicateGuaranteeExcluded(predicateId)) {
+			return;
+		}
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal keyVal = predicateObjectDomainKey(stack, predicateId);
+
+			MDBVal existingVal = MDBVal.malloc(stack);
+			int rc = mdb_get(writeTxn, predicateObjectDomainsDbi, keyVal, existingVal);
+			RdfTermDomain updated = pending.guarantee();
+			long candidateMask = degradationCandidateMask(updated, pending.observedMask());
+			boolean writeGuarantee = true;
+			if (rc == MDB_SUCCESS) {
+				RdfTermDomain existing = readRdfTermDomain(existingVal);
+				updated = existing.combine(pending.guarantee());
+				candidateMask = degradationCandidateMask(updated, existing.mask() | pending.observedMask());
+				writeGuarantee = !updated.equals(existing);
+				if (!writeGuarantee && candidateMask == 0L) {
+					return;
+				}
+			} else if (rc != MDB_NOTFOUND) {
+				throw new IOException(mdb_strerror(rc));
+			}
+
+			if (writeGuarantee) {
+				writeRdfTermDomain(stack, predicateId, keyVal, updated);
+			}
+			recordRdfTermDomainDegradation(stack, keyVal, candidateMask, pending.removedMask());
+		}
+	}
+
+	private void writeRdfTermDomain(long predicateId, RdfTermDomain guarantee)
+			throws IOException {
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal keyVal = predicateObjectDomainKey(stack, predicateId);
+			writeRdfTermDomain(stack, predicateId, keyVal, guarantee);
+		}
+	}
+
+	private void writeRdfTermDomain(MemoryStack stack, long predicateId, MDBVal keyVal, RdfTermDomain guarantee)
+			throws IOException {
+		MDBVal dataVal = MDBVal.malloc(stack);
+		ByteBuffer dataBuf = stack.malloc(PREDICATE_OBJECT_DOMAIN_BYTES);
+		dataBuf.putLong(PREDICATE_OBJECT_DOMAIN_ENCODING_MAGIC);
+		dataBuf.putLong(guarantee.mask());
+		Optional<RdfTermDomain.IntegerRange> integerRange = guarantee.integerRange();
+		dataBuf.putLong(integerRange.map(RdfTermDomain.IntegerRange::minInclusive).orElse(NO_INTEGER_RANGE_MIN));
+		dataBuf.putLong(integerRange.map(RdfTermDomain.IntegerRange::maxInclusive).orElse(NO_INTEGER_RANGE_MAX));
+		dataBuf.flip();
+		dataVal.mv_data(dataBuf);
+		checkMutationResult(mdb_put(writeTxn, predicateObjectDomainsDbi, keyVal, dataVal, 0));
+		stageRdfTermDomainCacheWrite(predicateId, guarantee);
+		nativeMutation = true;
+	}
+
+	private RdfTermDomain readRdfTermDomain(MDBVal dataVal) {
+		ByteBuffer data = dataVal.mv_data();
+		if (data == null || data.remaining() < PREDICATE_OBJECT_DOMAIN_BYTES) {
+			return RdfTermDomain.UNKNOWN;
+		}
+		if (data.getLong(data.position()) != PREDICATE_OBJECT_DOMAIN_ENCODING_MAGIC) {
+			return RdfTermDomain.UNKNOWN;
+		}
+		long mask = data.getLong(data.position() + Long.BYTES);
+		long min = data.getLong(data.position() + 2 * Long.BYTES);
+		long max = data.getLong(data.position() + 3 * Long.BYTES);
+		RdfTermDomain.IntegerRange integerRange = min == NO_INTEGER_RANGE_MIN && max == NO_INTEGER_RANGE_MAX
+				? null
+				: new RdfTermDomain.IntegerRange(min, max);
+		return RdfTermDomain.fromMask(mask, integerRange);
+	}
+
+	private void deleteRdfTermDomain(long predicateId, MDBVal keyVal) throws IOException {
+		int rc = mdb_del(writeTxn, predicateObjectDomainsDbi, keyVal, null);
+		if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+			throw new IOException(mdb_strerror(rc));
+		}
+		stageRdfTermDomainCacheDelete(predicateId);
+		nativeMutation = true;
+	}
+
+	private void stageRdfTermDomainCacheWrite(long predicateId, RdfTermDomain guarantee) {
+		pendingRdfTermDomainCacheDeletes.remove(predicateId);
+		pendingRdfTermDomainCacheWrites.put(predicateId, guarantee);
+	}
+
+	private void stageRdfTermDomainCacheDelete(long predicateId) {
+		pendingRdfTermDomainCacheWrites.remove(predicateId);
+		pendingRdfTermDomainCacheDeletes.add(predicateId);
+	}
+
+	private void stageRdfTermDomainCacheClear() {
+		nativeMutation = true;
+		unjournaledMutation = true;
+		pendingRdfTermDomainCacheClear = true;
+		pendingRdfTermDomainCacheMayStrengthen = true;
+		pendingRdfTermDomainCacheWrites.clear();
+		pendingRdfTermDomainCacheDeletes.clear();
+	}
+
+	private void applyPendingRdfTermDomainCacheUpdates() {
+		if (!pendingRdfTermDomainCacheClear && pendingRdfTermDomainCacheWrites.isEmpty()
+				&& pendingRdfTermDomainCacheDeletes.isEmpty()) {
+			return;
+		}
+		Map<Long, RdfTermDomain> updated = pendingRdfTermDomainCacheClear
+				? new HashMap<>()
+				: new HashMap<>(predicateObjectDomainCache);
+		for (long predicateId : pendingRdfTermDomainCacheDeletes) {
+			updated.remove(predicateId);
+		}
+		for (Long2ObjectMap.Entry<RdfTermDomain> entry : pendingRdfTermDomainCacheWrites.long2ObjectEntrySet()) {
+			updated.put(entry.getLongKey(), entry.getValue());
+		}
+		predicateObjectDomainCache = Map.copyOf(updated);
+	}
+
+	private void validateNativeWriterTransaction(long transaction) throws IOException {
+		if (expectedNativeTransactionId >= 0L
+				&& mdb_txn_id(transaction) != Math.addExact(expectedNativeTransactionId, 1L)) {
+			nativeOwnershipInvalidated = true;
+			throw new IOException("TripleStore observed an intervening native writer");
+		}
+	}
+
+	private void clearPendingRdfTermDomainCacheUpdates() {
+		pendingRdfTermDomainCacheClear = false;
+		pendingRdfTermDomainCacheMayStrengthen = false;
+		pendingRdfTermDomainCacheWrites.clear();
+		pendingRdfTermDomainCacheDeletes.clear();
+	}
+
+	private void recordRdfTermDomainDegradation(MemoryStack stack, MDBVal keyVal, long candidateMask, long removedMask)
+			throws IOException {
+		if (candidateMask == 0L) {
+			return;
+		}
+		MDBVal existingVal = MDBVal.malloc(stack);
+		int rc = mdb_get(writeTxn, predicateObjectDomainDegradationsDbi, keyVal, existingVal);
+		long mergedCandidateMask = candidateMask;
+		long flags = 0L;
+		if (rc == MDB_SUCCESS) {
+			RdfTermDomainDegradation existing = readRdfTermDomainDegradation(existingVal);
+			mergedCandidateMask |= existing.candidateMask();
+			flags = existing.flags();
+		} else if (rc != MDB_NOTFOUND) {
+			throw new IOException(mdb_strerror(rc));
+		}
+		if ((mergedCandidateMask & ~removedMask) != 0L && (mergedCandidateMask & removedMask) != 0L) {
+			flags |= PREDICATE_OBJECT_DOMAIN_REBUILD_REQUESTED;
+		}
+		writeRdfTermDomainDegradation(stack, keyVal, mergedCandidateMask, flags);
+	}
+
+	private void writeRdfTermDomainDegradation(MemoryStack stack, MDBVal keyVal, long candidateMask,
+			long flags)
+			throws IOException {
+		MDBVal dataVal = MDBVal.malloc(stack);
+		ByteBuffer dataBuf = stack.malloc(PREDICATE_OBJECT_DOMAIN_DEGRADATION_BYTES);
+		dataBuf.putLong(candidateMask);
+		dataBuf.putLong(flags);
+		dataBuf.flip();
+		dataVal.mv_data(dataBuf);
+		checkMutationResult(mdb_put(writeTxn, predicateObjectDomainDegradationsDbi, keyVal, dataVal, 0));
+		nativeMutation = true;
+	}
+
+	private void deleteRdfTermDomainDegradation(MDBVal keyVal) throws IOException {
+		int rc = mdb_del(writeTxn, predicateObjectDomainDegradationsDbi, keyVal, null);
+		if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+			throw new IOException(mdb_strerror(rc));
+		}
+	}
+
+	private static RdfTermDomainDegradation readRdfTermDomainDegradation(MDBVal dataVal) {
+		ByteBuffer data = dataVal.mv_data();
+		if (data == null || data.remaining() < Long.BYTES) {
+			return new RdfTermDomainDegradation(0L, 0L);
+		}
+		long candidateMask = data.getLong(data.position());
+		long flags = data.remaining() >= PREDICATE_OBJECT_DOMAIN_DEGRADATION_BYTES
+				? data.getLong(data.position() + Long.BYTES)
+				: 0L;
+		return new RdfTermDomainDegradation(candidateMask, flags);
+	}
+
+	private MDBVal predicateObjectDomainKey(MemoryStack stack, long predicateId) {
+		MDBVal keyVal = MDBVal.malloc(stack);
+		ByteBuffer keyBuf = stack.malloc(9);
+		Varint.writeUnsigned(keyBuf, predicateId);
+		keyBuf.flip();
+		keyVal.mv_data(keyBuf);
+		return keyVal;
+	}
+
+	private boolean isPredicateGuaranteeExcluded(long predicateId) throws IOException {
+		if (predicateGuaranteeExcludedPredicates.isEmpty()) {
+			return false;
+		}
+		if (valueStore == null) {
+			return false;
+		}
+		Value predicate = valueStore.getValue(predicateId);
+		return predicate != null && predicateGuaranteeExcludedPredicates.contains(predicate.stringValue());
+	}
+
+	private static long degradationCandidateMask(RdfTermDomain combined, long observedMask) {
+		long lostFacts = observedMask & ~combined.mask();
+		return lostFacts | combined.restoringDeleteCandidateMask();
+	}
+
+	private static final class PendingRdfTermDomain {
+		private RdfTermDomain guarantee;
+		private long observedMask;
+		private long removedMask;
+
+		private PendingRdfTermDomain(RdfTermDomain guarantee, long observedMask, long removedMask) {
+			this.guarantee = guarantee;
+			this.observedMask = observedMask;
+			this.removedMask = removedMask;
+		}
+
+		static PendingRdfTermDomain of(RdfTermDomain guarantee) {
+			return new PendingRdfTermDomain(guarantee, guarantee.mask(), 0L);
+		}
+
+		RdfTermDomain guarantee() {
+			return guarantee;
+		}
+
+		long observedMask() {
+			return observedMask;
+		}
+
+		long removedMask() {
+			return removedMask;
+		}
+
+		void recordObserved(RdfTermDomain observed) {
+			guarantee = guarantee.joinObserved(observed);
+			observedMask |= observed.mask();
+		}
+
+		void recordRemoval(long removedMask) {
+			this.removedMask |= removedMask;
+		}
+	}
+
+	private record RdfTermDomainDegradation(long candidateMask, long flags) {
+
+		boolean rebuildRequested() {
+			return (flags & PREDICATE_OBJECT_DOMAIN_REBUILD_REQUESTED) != 0L;
+		}
 	}
 
 	OptionalDouble meanFanOut(long predicate, boolean bySubject, boolean explicit) {
@@ -744,6 +1897,8 @@ class TripleStore implements Closeable {
 	long appendBulkIndex(String specification, BulkIndexTupleSource source, int maxTransactionRecords,
 			long maxTransactionBytes) throws IOException {
 		Objects.requireNonNull(source, "source");
+		// This boundary also covers a raw append following successful domain preparation on the same owner.
+		withholdRdfTermDomains(null);
 		int batchRecords = bulkBatchRecords(maxTransactionRecords, maxTransactionBytes, 128L);
 		TripleIndex index = indexes.stream()
 				.filter(candidate -> candidate.toString().equals(specification))
@@ -796,6 +1951,8 @@ class TripleStore implements Closeable {
 	long appendBulkEncodedIndex(String specification, ValueStore.BulkRecordSource source, int maxTransactionRecords,
 			long maxTransactionBytes) throws IOException {
 		Objects.requireNonNull(source, "source");
+		// This boundary also covers a raw append following successful domain preparation on the same owner.
+		withholdRdfTermDomains(null);
 		int batchRecords = bulkBatchRecords(maxTransactionRecords, maxTransactionBytes, 128L);
 		TripleIndex index = indexes.stream()
 				.filter(candidate -> candidate.toString().equals(specification))
@@ -1076,6 +2233,8 @@ class TripleStore implements Closeable {
 		} else {
 			expectedNativeTransactionId = lastTransactionId();
 		}
+		// An empty startup rebuild cannot endorse the raw streams that this owner is about to append.
+		withholdRdfTermDomains(null);
 	}
 
 	long validatedBulkTransactionId() throws IOException {
@@ -1095,8 +2254,37 @@ class TripleStore implements Closeable {
 		return nativeOwnershipInvalidated ? -1L : expectedNativeTransactionId;
 	}
 
+	String completeRdfTermDomainVersion() {
+		return predicateGuaranteeIndexEnabled && rdfTermDomainsReadable() && valueStore != null
+				&& !valueStore.getFormat().isLegacy() ? currentRdfTermDomainsVersion() : null;
+	}
+
+	void prepareDomainQualificationClose() {
+		forceDomainQualificationSyncOnClose = true;
+	}
+
+	boolean closedForDomainQualification() {
+		return env == 0L;
+	}
+
+	boolean domainQualificationSyncSucceeded() {
+		return domainQualificationSyncSucceeded;
+	}
+
 	boolean tracksNativeOwnership() {
 		return expectedNativeTransactionId >= 0L;
+	}
+
+	/** Completes domain metadata from all canonical bulk rows before final capacity and native identity binding. */
+	void prepareValidatedBulkRdfTermDomains() throws IOException {
+		trustedTransactionId();
+		if (writeTxn != 0L) {
+			throw new IOException("Cannot prepare predicate domains for an active bulk triple generation");
+		}
+		if (predicateGuaranteeIndexEnabled) {
+			// Automatic rebuild governs existing-store maintenance; a fresh writer must finish its own domains.
+			initializeRdfTermDomains(RdfTermDomainStartup.REBUILD_ALL);
+		}
 	}
 
 	void completeValidatedBulkGeneration(byte[] generation, long expectedStatements) throws IOException {
@@ -2370,28 +3558,36 @@ class TripleStore implements Closeable {
 		try {
 			endTransaction(false);
 		} catch (Throwable cleanupFailure) {
-			failure.addSuppressed(cleanupFailure);
+			if (failure != cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
 		}
 
 		if (pageEstimator != null) {
 			try {
 				pageEstimator.close();
 			} catch (Throwable cleanupFailure) {
-				failure.addSuppressed(cleanupFailure);
+				if (failure != cleanupFailure) {
+					failure.addSuppressed(cleanupFailure);
+				}
 			}
 		}
 		if (txnManager != null) {
 			try {
 				txnManager.close();
 			} catch (Throwable cleanupFailure) {
-				failure.addSuppressed(cleanupFailure);
+				if (failure != cleanupFailure) {
+					failure.addSuppressed(cleanupFailure);
+				}
 			}
 		}
 		if (env != 0) {
 			try {
 				environmentLifecycle.close(env);
 			} catch (Throwable cleanupFailure) {
-				failure.addSuppressed(cleanupFailure);
+				if (failure != cleanupFailure) {
+					failure.addSuppressed(cleanupFailure);
+				}
 			} finally {
 				env = 0;
 			}
@@ -2429,26 +3625,31 @@ class TripleStore implements Closeable {
 	 * return code, while the generation remains monotonic even when LMDB rejects an attempted size.
 	 */
 	private int setMapSize(long requestedMapSize) throws IOException {
-		while (true) {
-			long current = mappingGeneration.get();
-			if (current == Long.MAX_VALUE) {
-				throw new IOException("LMDB mapping generation exhausted");
-			}
-			if (mappingGeneration.compareAndSet(current, current + 1)) {
-				try (MemoryStack stack = stackPush()) {
-					MDBEnvInfo info = MDBEnvInfo.malloc(stack);
-					E(mdb_env_info(env, info));
-					long previousMapSize = info.me_mapsize();
-					int result = mdb_env_set_mapsize(env, requestedMapSize);
-					if (result == MDB_SUCCESS) {
+		acquireIndependentWriterGate();
+		try {
+			while (true) {
+				long current = mappingGeneration.get();
+				if (current == Long.MAX_VALUE) {
+					throw new IOException("LMDB mapping generation exhausted");
+				}
+				if (mappingGeneration.compareAndSet(current, current + 1)) {
+					try (MemoryStack stack = stackPush()) {
+						MDBEnvInfo info = MDBEnvInfo.malloc(stack);
 						E(mdb_env_info(env, info));
-						if (info.me_mapsize() > previousMapSize) {
-							bulkMapGrowthCount++;
+						long previousMapSize = info.me_mapsize();
+						int result = mdb_env_set_mapsize(env, requestedMapSize);
+						if (result == MDB_SUCCESS) {
+							E(mdb_env_info(env, info));
+							if (info.me_mapsize() > previousMapSize) {
+								bulkMapGrowthCount++;
+							}
 						}
+						return result;
 					}
-					return result;
 				}
 			}
+		} finally {
+			independentWriterGate.release();
 		}
 	}
 
@@ -2705,6 +3906,7 @@ class TripleStore implements Closeable {
 			if (env == 0) {
 				return;
 			}
+			LmdbStatementPatternCardinalitySource.evictStore(instanceId);
 
 			Throwable failure = null;
 			try {
@@ -2742,6 +3944,14 @@ class TripleStore implements Closeable {
 				} catch (Throwable closeFailure) {
 					logger.warn("Failed to close file for {} index", new String(index.getFieldSeq()));
 					failure = appendCloseFailure(failure, closeFailure);
+				}
+			}
+			if (forceDomainQualificationSyncOnClose) {
+				try {
+					environmentLifecycle.sync(environment);
+					domainQualificationSyncSucceeded = true;
+				} catch (Throwable syncFailure) {
+					failure = appendCloseFailure(failure, syncFailure);
 				}
 			}
 			try {
@@ -2823,9 +4033,170 @@ class TripleStore implements Closeable {
 
 	public RecordIterator getTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit)
 			throws IOException {
-		int mask = boundMask(subj, pred, obj, context);
-		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit,
-				bestIndexByBoundMask[mask], rangeSearchByBoundMask[mask]);
+		return getTriples(txn, subj, pred, obj, context, explicit, LmdbValueIdFilter.none());
+	}
+
+	TripleIndex createIndexForTesting(String fieldSeq) throws IOException {
+		return new TripleIndex(getIndexName(fieldSeq), fieldSeq, true, env, writeTxn);
+	}
+
+	TripleIndex getBestIndex(long subj, long pred, long obj, long context) {
+		return bestIndexByBoundMask[boundMask(subj, pred, obj, context)];
+	}
+
+	RecordIterator getAllTriplesUsingIndex(Txn txn, TripleIndex index, boolean explicit) throws IOException {
+		return getTriplesUsingIndex(txn, -1L, -1L, -1L, -1L, explicit, index, false);
+	}
+
+	public RecordIterator getTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit,
+			LmdbValueIdFilter idFilter) throws IOException {
+		TripleIndex index = statementEncounterIndex(subj, pred, obj, context);
+		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
+		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, doRangeSearch, idFilter);
+	}
+
+	/** The actual generic scan selector, including wildcard preference and configured-index tie order. */
+	private TripleIndex statementEncounterIndex(long subj, long pred, long obj, long context) {
+		return TripleIndex.getBestIndex(indexes, subj, pred, obj, context);
+	}
+
+	String statementEncounterIndexName(long subj, long pred, long obj, long context) {
+		return statementEncounterIndex(subj, pred, obj, context).toString();
+	}
+
+	long exactStatementCount(Txn txnRef, long subj, long pred, long obj, long context, boolean explicit)
+			throws IOException {
+		if (subj < 0 || pred < 0 || obj < 0 || context < 0) {
+			return -1L;
+		}
+		TripleIndex index = getBestIndex(subj, pred, obj, context);
+		if (index.getPatternScore(subj, pred, obj, context) < 4) {
+			return -1L;
+		}
+
+		StampedLongAdderLockManager lockManager = txnRef.lockManager();
+		long readStamp;
+		try {
+			readStamp = lockManager.readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while counting a fully bound LMDB statement", e);
+		}
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal keyVal = MDBVal.malloc(stack);
+			MDBVal dataVal = MDBVal.malloc(stack);
+			ByteBuffer keyBuf = stack.malloc(MAX_KEY_LENGTH);
+			index.toKey(keyBuf, subj, pred, obj, context);
+			keyBuf.flip();
+			keyVal.mv_data(keyBuf);
+
+			int rc = mdb_get(txnRef.get(), index.getDB(explicit), keyVal, dataVal);
+			if (rc == MDB_SUCCESS) {
+				return 1L;
+			}
+			if (rc == MDB_NOTFOUND) {
+				return 0L;
+			}
+			throw new IOException(mdb_strerror(rc));
+		} finally {
+			lockManager.unlockRead(readStamp);
+		}
+	}
+
+	Optional<RecordIterator> getTriplesWithDistinctCursorSkip(Txn txn, StatementPattern statementPattern, long subj,
+			long pred, long obj, long context, boolean explicit, LmdbValueIdFilter idFilter) throws IOException {
+		if (statementPattern == null || idFilter == null || !idFilter.isEmpty()) {
+			return Optional.empty();
+		}
+		Optional<LmdbDistinctCursorSkipSupport.Plan> plan = distinctCursorSkipPlan(statementPattern);
+		return plan.isEmpty()
+				? Optional.empty()
+				: getTriplesWithDistinctCursorSkip(txn, statementPattern, plan.orElseThrow(), subj, pred, obj, context,
+						explicit, idFilter);
+	}
+
+	private Optional<RecordIterator> getTriplesWithDistinctCursorSkip(Txn txn, StatementPattern statementPattern,
+			LmdbDistinctCursorSkipSupport.Plan plan, long subj, long pred, long obj, long context, boolean explicit,
+			LmdbValueIdFilter idFilter) throws IOException {
+		if (statementPattern == null || plan == null || idFilter == null || !idFilter.isEmpty()) {
+			return Optional.empty();
+		}
+		TripleIndex index = getIndex(plan.indexFieldSequence());
+		if (index == null) {
+			return Optional.empty();
+		}
+		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
+		// GRAPH ?g over all contexts drops default-graph rows above the scan. The row kept for a prefix must already
+		// be a named-graph row, or the prefix's named-graph rows are skipped together with a representative that
+		// evaluation then discards.
+		LmdbValueIdFilter scanFilter = context < 0
+				&& statementPattern.getScope() == StatementPattern.Scope.NAMED_CONTEXTS
+						? LmdbValueIdFilter.namedGraphsOnly()
+						: idFilter;
+		return Optional.of(new LmdbRecordIterator(index, doRangeSearch, subj, pred, obj, context, explicit, txn,
+				scanFilter, plan.prefixLength()));
+	}
+
+	Optional<LmdbDistinctCursorSkipSupport.Plan> distinctCursorSkipPlan(StatementPattern statementPattern) {
+		return LmdbDistinctCursorSkipSupport.choosePlan(statementPattern, indexAccessPaths(0));
+	}
+
+	Optional<LmdbDistinctCursorSkipSupport.Plan> distinctCursorSkipPlan(StatementPattern statementPattern,
+			Set<String> distinctVariables) {
+		return LmdbDistinctCursorSkipSupport.choosePlan(statementPattern, distinctVariables, indexAccessPaths(0));
+	}
+
+	OptionalLong boundedDistinctCursorSkipCardinality(StatementPattern statementPattern, long subj, long pred,
+			long obj, long context, int maximumPrefixes) throws IOException {
+		if (statementPattern == null || maximumPrefixes < 1) {
+			return OptionalLong.empty();
+		}
+		Optional<LmdbDistinctCursorSkipSupport.Plan> plan = distinctCursorSkipPlan(statementPattern);
+		return plan.isEmpty()
+				? OptionalLong.empty()
+				: boundedDistinctCursorSkipCardinality(statementPattern, plan.orElseThrow(), subj, pred, obj, context,
+						maximumPrefixes);
+	}
+
+	OptionalLong boundedDistinctCursorSkipCardinality(StatementPattern statementPattern,
+			Set<String> distinctVariables, long subj, long pred, long obj, long context, int maximumPrefixes)
+			throws IOException {
+		if (statementPattern == null || distinctVariables == null || distinctVariables.isEmpty()
+				|| maximumPrefixes < 1) {
+			return OptionalLong.empty();
+		}
+		Optional<LmdbDistinctCursorSkipSupport.Plan> plan = distinctCursorSkipPlan(statementPattern, distinctVariables);
+		return plan.isEmpty()
+				? OptionalLong.empty()
+				: boundedDistinctCursorSkipCardinality(statementPattern, plan.orElseThrow(), subj, pred, obj, context,
+						maximumPrefixes);
+	}
+
+	private OptionalLong boundedDistinctCursorSkipCardinality(StatementPattern statementPattern,
+			LmdbDistinctCursorSkipSupport.Plan plan, long subj, long pred, long obj, long context, int maximumPrefixes)
+			throws IOException {
+		if (statementPattern == null || maximumPrefixes < 1) {
+			return OptionalLong.empty();
+		}
+		long prefixes = 0L;
+		try (Txn txn = planningReadTxn()) {
+			for (int pass = 0; pass < 2; pass++) {
+				boolean explicit = pass == 0;
+				Optional<RecordIterator> records = getTriplesWithDistinctCursorSkip(txn, statementPattern, plan, subj,
+						pred, obj, context, explicit, LmdbValueIdFilter.none());
+				if (records.isEmpty()) {
+					return OptionalLong.empty();
+				}
+				try (RecordIterator iterator = records.orElseThrow()) {
+					while (iterator.next() != null) {
+						if (++prefixes > maximumPrefixes) {
+							return OptionalLong.empty();
+						}
+					}
+				}
+			}
+		}
+		return OptionalLong.of(prefixes);
 	}
 
 	RecordIterator getTriples(Txn txn, StatementOrder statementOrder, long subj, long pred, long obj,
@@ -3554,9 +4925,41 @@ class TripleStore implements Closeable {
 		});
 	}
 
+	/**
+	 * Number of explicit plus inferred statements in the committed store as reported by the main index's B-tree
+	 * metadata (O(1), no scan). Used to size learned-evidence decay relative to a commit's extent.
+	 */
+	long approximateStatementCount() throws IOException {
+		TripleIndex mainIndex = indexes.getFirst();
+		return txnManager.doWith((stack, txn) -> {
+			MDBStat stat = MDBStat.malloc(stack);
+			long count = 0L;
+			for (boolean explicit : new boolean[] { true, false }) {
+				E(mdb_stat(txn, mainIndex.getDB(explicit), stat));
+				count = saturatingAdd(count, stat.ms_entries());
+			}
+			return count;
+		});
+	}
+
 	private RecordIterator getTriplesUsingIndex(Txn txn, long subj, long pred, long obj, long context,
 			boolean explicit, TripleIndex index, boolean rangeSearch) throws IOException {
-		return new LmdbRecordIterator(index, rangeSearch, subj, pred, obj, context, explicit, txn, cursorPool);
+		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, rangeSearch,
+				LmdbValueIdFilter.none());
+	}
+
+	private RecordIterator getTriplesUsingIndex(Txn txn, long subj, long pred, long obj, long context,
+			boolean explicit, TripleIndex index, boolean rangeSearch, LmdbValueIdFilter idFilter) throws IOException {
+		return new LmdbRecordIterator(index, rangeSearch, subj, pred, obj, context, explicit, txn, idFilter);
+	}
+
+	private TripleIndex getIndex(String indexFieldSequence) {
+		for (TripleIndex index : indexes) {
+			if (indexFieldSequence.equals(new String(index.getFieldSeq()))) {
+				return index;
+			}
+		}
+		return null;
 	}
 
 	/**
@@ -3980,6 +5383,185 @@ class TripleStore implements Closeable {
 	}
 
 	/**
+	 * Stratified sample of rows matching the pattern: interpolates {@code strata} start keys across the pattern's key
+	 * range on the best index and scans up to {@code rowsPerStratum} rows from each stratum, bounded by the next
+	 * stratum's start so regions are never scanned twice. Rows are delivered round-robin across the strata so even a
+	 * deadline-truncated prefix has broad key-range coverage. Unlike a budget-capped index prefix, this removes the
+	 * systematic bias when the sampled variable correlates with index order. Key-space interpolation is still not
+	 * perfectly row-uniform under skewed key density. At most {@code strata * rowsPerStratum} owned ID rows are
+	 * retained; native cursors are closed before callbacks run, so callback suspension or term resolution cannot hold
+	 * the native reader's monitor against an ordinary writer commit. Early stopping limits delivery while the bounded
+	 * native collection may already have completed.
+	 *
+	 * @return the number of rows delivered to {@code sink}; the sink returns {@code false} to stop early.
+	 */
+	int sampleTriplesStratified(long subj, long pred, long obj, long context, boolean explicit,
+			int strata, int rowsPerStratum, Predicate<long[]> sink) throws IOException {
+		TripleIndex index = getBestIndex(subj, pred, obj, context);
+		if (index == null || strata < 1 || rowsPerStratum < 1) {
+			return 0;
+		}
+		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
+		List<long[]> rows = planningScan(
+				stratifiedSampleRows(index, subj, pred, obj, context, explicit, strata, rowsPerStratum, deadline));
+		return deliverStratifiedRows(rows, sink, deadline);
+	}
+
+	/**
+	 * {@link #sampleTriplesStratified(long, long, long, long, boolean, int, int, Predicate)} on an explicitly supplied
+	 * planning transaction (see {@link #planningReadTxn()}), so one lease serves several passes.
+	 */
+	int sampleTriplesStratified(Txn txn, long subj, long pred, long obj, long context, boolean explicit,
+			int strata, int rowsPerStratum, Predicate<long[]> sink) throws IOException {
+		TripleIndex index = getBestIndex(subj, pred, obj, context);
+		if (index == null || strata < 1 || rowsPerStratum < 1) {
+			return 0;
+		}
+		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
+		List<long[]> rows = planningRead(txn,
+				stratifiedSampleRows(index, subj, pred, obj, context, explicit, strata, rowsPerStratum, deadline));
+		return deliverStratifiedRows(rows, sink, deadline);
+	}
+
+	private static int deliverStratifiedRows(List<long[]> rows, Predicate<long[]> sink,
+			QueryExecutionDeadline deadline) {
+		int delivered = 0;
+		for (long[] row : rows) {
+			checkPlanningDeadline(deadline);
+			delivered++;
+			boolean more = sink.test(row);
+			checkPlanningDeadline(deadline);
+			if (!more) {
+				break;
+			}
+		}
+		return delivered;
+	}
+
+	private static void checkPlanningDeadline(QueryExecutionDeadline deadline) {
+		if (Thread.currentThread().isInterrupted() || deadline != null && deadline.isExpired()) {
+			throw new QueryInterruptedException("Query evaluation took too long");
+		}
+	}
+
+	private Transaction<List<long[]>> stratifiedSampleRows(TripleIndex index, long subj, long pred, long obj,
+			long context, boolean explicit, int strata, int rowsPerStratum, QueryExecutionDeadline deadline) {
+		return (stack, txn) -> {
+			checkPlanningDeadline(deadline);
+			// Own only the requested sample, never the population. Close every native cursor before a caller can
+			// decode terms, suspend, or throw: ordinary writer reset visits this reader's monitor too.
+			List<long[]> rows = new ArrayList<>(Math.multiplyExact(strata, rowsPerStratum));
+			MDBVal maxKey = MDBVal.malloc(stack);
+			ByteBuffer maxKeyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
+			maxKeyBuf.flip();
+			maxKey.mv_data(maxKeyBuf);
+
+			PointerBuffer pp = stack.mallocPointer(1);
+			MDBVal keyData = MDBVal.malloc(stack);
+			MDBVal valueData = MDBVal.malloc(stack);
+			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			MDBVal boundaryKey = MDBVal.malloc(stack);
+			ByteBuffer boundaryBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+
+			long[] minValues = new long[4];
+			long[] maxValues = new long[4];
+			long[] startValues = new long[4];
+			long[] quad = new long[4];
+			boolean matchValues = subj > 0 || pred > 0 || obj > 0 || context >= 0;
+			GroupMatcher matcher = matchValues ? index.createMatcher(subj, pred, obj, context) : null;
+			int dbi = index.getDB(explicit);
+			long[] cursors = new long[strata];
+			boolean[] exhausted = new boolean[strata];
+			try {
+				E(mdb_cursor_open(txn, dbi, pp));
+				cursors[0] = pp.get(0);
+
+				keyBuf.clear();
+				index.getMinKey(keyBuf, subj, pred, obj, context);
+				keyBuf.flip();
+				keyData.mv_data(keyBuf);
+				int rc = mdb_cursor_get(cursors[0], keyData, valueData, MDB_SET_RANGE);
+				if (rc != MDB_SUCCESS || mdb_cmp(txn, dbi, keyData, maxKey) >= 0) {
+					return rows;
+				}
+				Varint.readListUnsigned(keyData.mv_data(), minValues);
+
+				keyData.mv_data(maxKeyBuf);
+				rc = mdb_cursor_get(cursors[0], keyData, valueData, MDB_SET_RANGE);
+				rc = rc == MDB_SUCCESS
+						? mdb_cursor_get(cursors[0], keyData, valueData, MDB_PREV)
+						: mdb_cursor_get(cursors[0], keyData, valueData, MDB_LAST);
+				if (rc != MDB_SUCCESS) {
+					return rows;
+				}
+				Varint.readListUnsigned(keyData.mv_data(), maxValues);
+
+				for (int rowOrdinal = 0; rowOrdinal < rowsPerStratum; rowOrdinal++) {
+					boolean anyStratumAdvanced = false;
+					for (int stratum = 0; stratum < strata; stratum++) {
+						checkPlanningDeadline(deadline);
+						if (exhausted[stratum]) {
+							continue;
+						}
+						if (cursors[stratum] == 0L) {
+							pp.clear();
+							E(mdb_cursor_open(txn, dbi, pp));
+							cursors[stratum] = pp.get(0);
+						}
+
+						if (rowOrdinal == 0) {
+							keyBuf.clear();
+							if (stratum == 0) {
+								index.getMinKey(keyBuf, subj, pred, obj, context);
+							} else {
+								bucketStart((double) stratum / strata, minValues, maxValues, startValues);
+								Varint.writeListUnsigned(keyBuf, startValues);
+							}
+							keyBuf.flip();
+							keyData.mv_data(keyBuf);
+							rc = mdb_cursor_get(cursors[stratum], keyData, valueData, MDB_SET_RANGE);
+						} else {
+							rc = mdb_cursor_get(cursors[stratum], keyData, valueData, MDB_NEXT);
+						}
+
+						boolean lastStratum = stratum == strata - 1;
+						if (rc == MDB_SUCCESS && !lastStratum) {
+							bucketStart((double) (stratum + 1) / strata, minValues, maxValues, startValues);
+							boundaryBuf.clear();
+							Varint.writeListUnsigned(boundaryBuf, startValues);
+							boundaryBuf.flip();
+							boundaryKey.mv_data(boundaryBuf);
+						}
+						if (rc != MDB_SUCCESS || mdb_cmp(txn, dbi, keyData, maxKey) > 0
+								|| !lastStratum && mdb_cmp(txn, dbi, keyData, boundaryKey) >= 0) {
+							exhausted[stratum] = true;
+							continue;
+						}
+
+						anyStratumAdvanced = true;
+						if (matcher == null || matcher.matches(keyData.mv_data())) {
+							index.keyToQuad(keyData.mv_data(), quad);
+							rows.add(quad.clone());
+						}
+					}
+					if (!anyStratumAdvanced) {
+						break;
+					}
+				}
+			} finally {
+				for (long cursor : cursors) {
+					if (cursor != 0L) {
+						mdb_cursor_close(cursor);
+					}
+				}
+			}
+			checkPlanningDeadline(deadline);
+			return rows;
+		};
+	}
+
+	/**
 	 * Checks if any of <code>ids</code> is used and removes it from the collection.
 	 *
 	 * @param ids Collection with possibly removed IDs
@@ -4196,13 +5778,22 @@ class TripleStore implements Closeable {
 	 * </p>
 	 */
 	protected double cardinality(long subj, long pred, long obj, long context) throws IOException {
+		return cardinalityEstimate(subj, pred, obj, context).entries();
+	}
+
+	/**
+	 * Same estimator selection as {@link #cardinality(long, long, long, long)}, but keeps the page estimator's
+	 * exactness and hard bounds. The RDF4J 5.3.2 sampler carries no such evidence and is reported as unqualified.
+	 */
+	protected CardinalityEstimate cardinalityEstimate(long subj, long pred, long obj, long context)
+			throws IOException {
 		if (!pageWalkingEstimatorEnabled) {
-			return cardinalityUsingRdf4j532Estimator(subj, pred, obj, context);
+			return CardinalityEstimate.unqualified(cardinalityUsingRdf4j532Estimator(subj, pred, obj, context));
 		}
 
 		LmdbPageCardinalityEstimator estimator = pageEstimator;
 		if (estimator == null) {
-			return cardinalityUsingRdf4j532Estimator(subj, pred, obj, context);
+			return CardinalityEstimate.unqualified(cardinalityUsingRdf4j532Estimator(subj, pred, obj, context));
 		}
 
 		int bindingMask = LmdbPageCardinalityEstimator.bindingMask(subj, pred, obj, context);
@@ -4212,29 +5803,126 @@ class TripleStore implements Closeable {
 			CardinalityEstimate primary = cardinalityUsingPageEstimator(primaryIndexPosition, subj, pred, obj, context,
 					bindingMask);
 			if (!primary.secondaryEvidenceRecommended()) {
-				return primary.entries();
+				return primary;
 			}
 
 			int secondaryIndexPosition = estimator.secondaryIndex(bindingMask);
 			if (secondaryIndexPosition < 0) {
-				return primary.entries();
+				return primary;
 			}
 			TripleIndex secondaryIndex = indexes.get(secondaryIndexPosition);
 			try {
 				CardinalityEstimate secondary = cardinalityUsingPageEstimator(secondaryIndexPosition, subj, pred, obj,
 						context, bindingMask);
-				return LmdbPageCardinalityEstimator.combineIndexEstimates(primary, secondary).entries();
+				return LmdbPageCardinalityEstimator.combineIndexEstimates(primary, secondary);
 			} catch (IOException | RuntimeException secondaryFailure) {
 				logger.debug("Secondary page cardinality estimate failed for index {}; using primary index {}",
 						new String(secondaryIndex.getFieldSeq()), new String(primaryIndex.getFieldSeq()),
 						secondaryFailure);
-				return primary.entries();
+				return primary;
 			}
 		} catch (IOException | RuntimeException e) {
 			logger.warn("Page cardinality estimator failed for index {}, falling back to the RDF4J 5.3.2 sampler",
 					new String(primaryIndex.getFieldSeq()), e);
-			return cardinalityUsingRdf4j532Estimator(subj, pred, obj, context);
+			return CardinalityEstimate.unqualified(cardinalityUsingRdf4j532Estimator(subj, pred, obj, context));
 		}
+	}
+
+	/**
+	 * Planner-facing cardinality. It never counts matching rows exhaustively: with the page-walking estimator enabled
+	 * it uses the bounded page estimate, otherwise (or when that estimate fails) the RDF4J 5.3.2 cursor sampler. This
+	 * is the same estimator selection as {@link #cardinality(long, long, long, long)}.
+	 */
+	protected double planningCardinality(long subj, long pred, long obj, long context) throws IOException {
+		return planningCardinalityEstimate(subj, pred, obj, context).entries();
+	}
+
+	/**
+	 * Planner-facing cardinality that keeps the estimator's exactness and hard bounds so callers can label the estimate
+	 * honestly. It shares the never-exhaustive contract of {@link #planningCardinality(long, long, long, long)}.
+	 */
+	protected CardinalityEstimate planningCardinalityEstimate(long subj, long pred, long obj, long context)
+			throws IOException {
+		return cardinalityEstimate(subj, pred, obj, context);
+	}
+
+	/**
+	 * Counts the rows of the unrepeated pattern that also satisfy {@code repeatedComponentPairMask}, examining at most
+	 * {@code maxScannedRows} rows across both planes. When the scan completes the result is exact. When the cap is
+	 * reached the match ratio observed so far is extrapolated onto the planning estimate of the unrepeated pattern,
+	 * clamped to {@code [matches, unrepeated upper bound]}, and reported as non-exact: the unrepeated pattern is a
+	 * certified superset, so its hard upper bound is a hard upper bound for the repeated pattern as well.
+	 */
+	protected LmdbPlanningCardinality repeatedVariableCardinality(long subj, long pred, long obj, long context,
+			int repeatedComponentPairMask, long maxScannedRows) throws IOException {
+		if (repeatedComponentPairMask == 0) {
+			return LmdbPlanningCardinality.of(planningCardinalityEstimate(subj, pred, obj, context));
+		}
+		long scanned = 0L;
+		long matches = 0L;
+		boolean capped = false;
+		try (Txn txn = planningReadTxn()) {
+			planes: for (boolean explicit : new boolean[] { true, false }) {
+				try (RecordIterator records = getTriples(txn, subj, pred, obj, context, explicit)) {
+					long[] quad;
+					while ((quad = records.next()) != null) {
+						if (scanned >= maxScannedRows) {
+							capped = true;
+							break planes;
+						}
+						scanned++;
+						if (matchesRepeatedComponentPairs(quad, repeatedComponentPairMask)) {
+							matches++;
+						}
+					}
+				}
+			}
+		}
+		if (!capped) {
+			return LmdbPlanningCardinality.exact(matches, scanned);
+		}
+		CardinalityEstimate unrepeated = planningCardinalityEstimate(subj, pred, obj, context);
+		double unrepeatedRows = Math.max(scanned, unrepeated.entries());
+		double unrepeatedUpper = unrepeated.exact() ? unrepeated.entries()
+				: Math.max(unrepeatedRows, unrepeated.hardUpperBound());
+		double extrapolated = scanned == 0L ? matches : unrepeatedRows * ((double) matches / scanned);
+		double rows = Math.max(matches, Math.min(unrepeatedUpper, extrapolated));
+		return new LmdbPlanningCardinality(rows, false, matches, unrepeatedUpper, true, scanned);
+	}
+
+	static int repeatedComponentPairMask(int leftComponentIndex, int rightComponentIndex) {
+		if (leftComponentIndex == rightComponentIndex) {
+			return 0;
+		}
+		int left = Math.min(leftComponentIndex, rightComponentIndex);
+		int right = Math.max(leftComponentIndex, rightComponentIndex);
+		return switch (left) {
+		case SUBJ_IDX -> switch (right) {
+		case PRED_IDX -> REPEATED_SUBJ_PRED_PAIR;
+		case OBJ_IDX -> REPEATED_SUBJ_OBJ_PAIR;
+		case CONTEXT_IDX -> REPEATED_SUBJ_CONTEXT_PAIR;
+		default -> 0;
+		};
+		case PRED_IDX -> switch (right) {
+		case OBJ_IDX -> REPEATED_PRED_OBJ_PAIR;
+		case CONTEXT_IDX -> REPEATED_PRED_CONTEXT_PAIR;
+		default -> 0;
+		};
+		case OBJ_IDX -> right == CONTEXT_IDX ? REPEATED_OBJ_CONTEXT_PAIR : 0;
+		default -> 0;
+		};
+	}
+
+	private static boolean matchesRepeatedComponentPairs(long[] quad, int repeatedComponentPairMask) {
+		return ((repeatedComponentPairMask & REPEATED_SUBJ_PRED_PAIR) == 0 || quad[SUBJ_IDX] == quad[PRED_IDX])
+				&& ((repeatedComponentPairMask & REPEATED_SUBJ_OBJ_PAIR) == 0 || quad[SUBJ_IDX] == quad[OBJ_IDX])
+				&& ((repeatedComponentPairMask & REPEATED_SUBJ_CONTEXT_PAIR) == 0
+						|| quad[SUBJ_IDX] == quad[CONTEXT_IDX])
+				&& ((repeatedComponentPairMask & REPEATED_PRED_OBJ_PAIR) == 0 || quad[PRED_IDX] == quad[OBJ_IDX])
+				&& ((repeatedComponentPairMask & REPEATED_PRED_CONTEXT_PAIR) == 0
+						|| quad[PRED_IDX] == quad[CONTEXT_IDX])
+				&& ((repeatedComponentPairMask & REPEATED_OBJ_CONTEXT_PAIR) == 0
+						|| quad[OBJ_IDX] == quad[CONTEXT_IDX]);
 	}
 
 	private CardinalityEstimate cardinalityUsingPageEstimator(int indexPosition, long subj, long pred, long obj,
@@ -4249,8 +5937,8 @@ class TripleStore implements Closeable {
 		final String explicitDbName = index.getName(true);
 		final String inferredDbName = index.getName(false);
 
-		// Query optimization already holds the dataset's read transaction.
-		return txnManager.doWithPriority((stack, txn) -> {
+		// Query optimization already holds the dataset's read transaction: reuse it when pinned.
+		return planningRead((stack, txn) -> {
 			long generation = mappingGeneration.get();
 			try (LmdbPageCardinalityEstimator.ReadView view = estimator.readTransaction(txn, generation)) {
 				if (bindingMask == 0) {
@@ -4320,7 +6008,7 @@ class TripleStore implements Closeable {
 		int relevantParts = index.getPatternScore(subj, pred, obj, context);
 		if (relevantParts == 0) {
 			// it's worthless to use the index, just retrieve all entries in the db
-			return txnManager.doWithPriority((stack, txn) -> {
+			return planningRead((stack, txn) -> {
 				double cardinality = 0;
 				for (boolean explicit : new boolean[] { true, false }) {
 					int dbi = index.getDB(explicit);
@@ -4333,7 +6021,7 @@ class TripleStore implements Closeable {
 		}
 
 		// The legacy fallback runs under the same dataset transaction as the page estimator.
-		return txnManager.doWithPriority((stack, txn) -> {
+		return planningRead((stack, txn) -> {
 			final Statistics s = new Statistics();
 			MDBVal maxKey = MDBVal.malloc(stack);
 			ByteBuffer maxKeyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
@@ -4477,6 +6165,352 @@ class TripleStore implements Closeable {
 		});
 	}
 
+	/**
+	 * Counts matching explicit and inferred statements by iterating them. Only used where an exact count is required,
+	 * never as the page-estimator fallback (that is the RDF4J 5.3.2 sampler). This overload is unbounded and therefore
+	 * not suitable for planner-time use; planners must go through
+	 * {@link #exactCardinality(long, long, long, long, long)}.
+	 */
+	double exactCardinality(long subj, long pred, long obj, long context) throws IOException {
+		return exactCardinality(subj, pred, obj, context, Long.MAX_VALUE).orElseThrow();
+	}
+
+	/**
+	 * Counts matching explicit and inferred statements by iterating at most {@code maxScannedRows} of them. Returns an
+	 * empty result when the cap is reached, so callers can decline the exact fact instead of holding a read lease for a
+	 * full index scan.
+	 */
+	OptionalDouble exactCardinality(long subj, long pred, long obj, long context, long maxScannedRows)
+			throws IOException {
+		long cardinality = 0L;
+		try (Txn txn = planningReadTxn()) {
+			for (boolean explicit : new boolean[] { true, false }) {
+				try (RecordIterator triples = getTriples(txn, subj, pred, obj, context, explicit)) {
+					while (triples.next() != null) {
+						if (cardinality >= maxScannedRows) {
+							return OptionalDouble.empty();
+						}
+						cardinality++;
+					}
+				}
+			}
+		}
+		return OptionalDouble.of(cardinality);
+	}
+
+	/**
+	 * Exact match count over the best index range for the pattern, bounded by the number of keys examined rather than
+	 * the number of matches. A prefix-bound pattern with a residual component can be sampled as zero by the page
+	 * estimator while rows exist; this walk settles such a probe exactly whenever the range fits in
+	 * {@code maxScannedKeys}. Returns an empty result when the cap is reached so the caller keeps its sampled,
+	 * non-exact estimate.
+	 */
+	OptionalLong boundedExactCardinality(long subj, long pred, long obj, long context, long maxScannedKeys)
+			throws IOException {
+		TripleIndex index = getBestIndex(subj, pred, obj, context);
+		if (index == null || maxScannedKeys <= 0L) {
+			return OptionalLong.empty();
+		}
+		// Short and bounded like the page estimator: the query thread already holds its dataset lease.
+		return planningRead(boundedExactCardinalityScan(index, subj, pred, obj, context, maxScannedKeys,
+				QueryExecutionDeadline.current()));
+	}
+
+	/** The same bounded census on the exact admitted snapshot, without another reader admission. */
+	OptionalLong boundedExactCardinality(Txn txn, long subj, long pred, long obj, long context, long maxScannedKeys)
+			throws IOException {
+		TripleIndex index = getBestIndex(subj, pred, obj, context);
+		if (index == null || maxScannedKeys <= 0L) {
+			return OptionalLong.empty();
+		}
+		return planningRead(txn, boundedExactCardinalityScan(index, subj, pred, obj, context, maxScannedKeys,
+				QueryExecutionDeadline.current()));
+	}
+
+	private Transaction<OptionalLong> boundedExactCardinalityScan(TripleIndex index, long subj, long pred, long obj,
+			long context, long maxScannedKeys, QueryExecutionDeadline deadline) {
+		return (stack, txn) -> {
+			checkPlanningDeadline(deadline);
+			MDBVal maxKey = MDBVal.malloc(stack);
+			ByteBuffer maxKeyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
+			maxKeyBuf.flip();
+			maxKey.mv_data(maxKeyBuf);
+			MDBVal keyData = MDBVal.malloc(stack);
+			MDBVal valueData = MDBVal.malloc(stack);
+			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			PointerBuffer pp = stack.mallocPointer(1);
+			boolean matchValues = subj > 0 || pred > 0 || obj > 0 || context >= 0;
+			GroupMatcher matcher = matchValues ? index.createMatcher(subj, pred, obj, context) : null;
+			long scannedKeys = 0L;
+			long matches = 0L;
+			for (boolean explicit : new boolean[] { true, false }) {
+				checkPlanningDeadline(deadline);
+				int dbi = index.getDB(explicit);
+				pp.clear();
+				E(mdb_cursor_open(txn, dbi, pp));
+				long cursor = pp.get(0);
+				try {
+					keyBuf.clear();
+					index.getMinKey(keyBuf, subj, pred, obj, context);
+					keyBuf.flip();
+					keyData.mv_data(keyBuf);
+					int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+					while (rc == MDB_SUCCESS && mdb_cmp(txn, dbi, keyData, maxKey) <= 0) {
+						checkPlanningDeadline(deadline);
+						if (scannedKeys == maxScannedKeys) {
+							return OptionalLong.empty();
+						}
+						scannedKeys++;
+						if (matcher == null || matcher.matches(keyData.mv_data())) {
+							matches++;
+						}
+						rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+					}
+				} finally {
+					mdb_cursor_close(cursor);
+				}
+			}
+			checkPlanningDeadline(deadline);
+			return OptionalLong.of(matches);
+		};
+	}
+
+	void describePackedAccessPath(int lookupMask, double accessRows, double invocations, String estimateSource,
+			PackedCostEstimate output) {
+		long subj = boundMask(lookupMask, Component.S);
+		long pred = boundMask(lookupMask, Component.P);
+		long obj = boundMask(lookupMask, Component.O);
+		long context = boundMask(lookupMask, Component.C);
+		TripleIndex best = null;
+		int bestPrefixLength = -1;
+		for (TripleIndex index : indexes) {
+			int prefixLength = index.getPatternScore(subj, pred, obj, context);
+			if (prefixLength > bestPrefixLength) {
+				best = index;
+				bestPrefixLength = prefixLength;
+			}
+		}
+		if (best == null) {
+			output.setAccess(0, lookupMask, 0, accessRows, invocations, null, estimateSource, "fullScan");
+			return;
+		}
+		int prefixMask = 0;
+		char[] fieldSequence = best.getFieldSeq();
+		for (int ordinal = 0; ordinal < bestPrefixLength; ordinal++) {
+			prefixMask |= 1 << toEstimatorComponent(fieldSequence[ordinal]).ordinal();
+		}
+		int covered = lookupMask & prefixMask;
+		int missing = lookupMask & ~prefixMask;
+		String accessMode = physicalAccessMode(lookupMask, prefixMask, bestPrefixLength);
+		output.setAccess(covered, missing, bestPrefixLength, accessRows, invocations, new String(fieldSequence),
+				estimateSource, accessMode);
+	}
+
+	/** A native key is a quad; an estimated singleton does not make a partial key a point lookup. */
+	static String physicalAccessMode(int lookupMask, int prefixMask, int prefixLength) {
+		if (prefixLength == 0) {
+			return "fullScan";
+		}
+		return lookupMask == 0b1111 && prefixMask == 0b1111 ? "directLookup" : "prefixScan";
+	}
+
+	/**
+	 * The number of distinct contexts (the default graph included) that hold at least one statement, explicit or
+	 * inferred, in the planning snapshot: an upper bound on how many solutions a context-less statement pattern with a
+	 * fully bound subject, predicate and object can produce. One {@code mdb_stat} call.
+	 */
+	long planningContextCount() throws IOException {
+		return planningRead((stack, txn) -> {
+			MDBStat stat = MDBStat.malloc(stack);
+			E(mdb_stat(txn, contextsDbi, stat));
+			return stat.ms_entries();
+		});
+	}
+
+	IndexCostProfile indexCostProfile(String indexFieldSequence, boolean includeInferred) throws IOException {
+		TripleIndex index = getIndex(indexFieldSequence);
+		if (index == null) {
+			throw new IOException("Unknown LMDB triple index: " + indexFieldSequence);
+		}
+		// mdb_stat only: short, bounded, and taken once per planning session per index.
+		return planningRead((stack, txn) -> {
+			MDBStat explicit = MDBStat.malloc(stack);
+			mdb_stat(txn, index.getDB(true), explicit);
+			long entries = explicit.ms_entries();
+			long leafPages = explicit.ms_leaf_pages();
+			double randomSeekWork = indexSearchWork(explicit);
+			int databaseCount = 1;
+			if (includeInferred) {
+				MDBStat inferred = MDBStat.malloc(stack);
+				mdb_stat(txn, index.getDB(false), inferred);
+				entries = saturatingAdd(entries, inferred.ms_entries());
+				leafPages = saturatingAdd(leafPages, inferred.ms_leaf_pages());
+				randomSeekWork += indexSearchWork(inferred);
+				databaseCount++;
+			}
+			double sequentialWorkPerRow = entries == 0L
+					? 1.0d
+					: 1.0d + (double) leafPages / entries;
+			return new IndexCostProfile(sequentialWorkPerRow, randomSeekWork, databaseCount);
+		});
+	}
+
+	/** Physical metadata on the requested plane and retained transaction, never a logical GRAPH row certificate. */
+	record GraphRangeWork(LmdbGraphDistinctAccess.PhysicalRows raw,
+			LmdbGraphDistinctAccess.PhysicalRows matching, IndexCostProfile profile, boolean repeatsPerContext,
+			double terminalKeyUpper) {
+	}
+
+	record GraphContextWork(long namedContexts, long rawContexts, IndexCostProfile profile) {
+	}
+
+	GraphContextWork graphContextWork(Txn transaction) throws IOException {
+		return planningRead(transaction, (stack, handle) -> {
+			MDBStat stat = MDBStat.malloc(stack);
+			E(mdb_stat(handle, contextsDbi, stat));
+			MDBVal key = MDBVal.malloc(stack);
+			MDBVal value = MDBVal.malloc(stack);
+			ByteBuffer encoded = stack.malloc(1);
+			Varint.writeUnsigned(encoded, 0L);
+			key.mv_data(encoded.flip());
+			int result = mdb_get(handle, contextsDbi, key, value);
+			if (result != MDB_SUCCESS && result != MDB_NOTFOUND) {
+				E(result);
+			}
+			long total = stat.ms_entries();
+			return new GraphContextWork(total - (result == MDB_SUCCESS ? 1L : 0L), total,
+					planeIndexCostProfile(stat));
+		});
+	}
+
+	Optional<GraphRangeWork> graphRangeWork(Txn transaction, String indexName, boolean explicit,
+			long subject, long predicate, long object, long context, Set<Long> selectedContexts,
+			LmdbValueIdFilter filter, boolean ordinaryNamedUnion) throws IOException {
+		LmdbPageCardinalityEstimator estimator = pageEstimator;
+		TripleIndex index = getIndex(indexName);
+		if (estimator == null || index == null) {
+			return Optional.empty();
+		}
+		int bindingMask = (subject >= 0L ? 1 : 0) | (predicate >= 0L ? 2 : 0)
+				| (object >= 0L ? 4 : 0) | (context >= 0L ? 8 : 0);
+		IndexShape shape = estimator.indexShape(indexes.indexOf(index), bindingMask);
+		int rangeMask = shape.prefixComponentMask();
+		int ordinaryPrefix = rangeMask;
+		boolean repeat = ordinaryNamedUnion && (rangeMask & 8) == 0;
+		if (ordinaryNamedUnion && !repeat) {
+			rangeMask = 0;
+			for (char field : index.getFieldSeq()) {
+				if (field == 'c') {
+					break;
+				}
+				rangeMask |= 1 << toEstimatorComponent(field).ordinal();
+			}
+		}
+		int outerMask = rangeMask;
+		int rawResidualMask = ordinaryNamedUnion && !repeat ? ordinaryPrefix & ~outerMask : 0;
+		return planningRead(transaction, (stack, handle) -> {
+			QueryExecutionContext.checkpointReplaySafepoint();
+			ByteBuffer min = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			ByteBuffer max = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			index.getMinKey(min, (outerMask & 1) != 0 ? subject : -1L,
+					(outerMask & 2) != 0 ? predicate : -1L, (outerMask & 4) != 0 ? object : -1L,
+					(outerMask & 8) != 0 ? context : -1L);
+			index.getMaxKey(max, (outerMask & 1) != 0 ? subject : -1L,
+					(outerMask & 2) != 0 ? predicate : -1L, (outerMask & 4) != 0 ? object : -1L,
+					(outerMask & 8) != 0 ? context : -1L);
+			byte[] lower = toArray(min.flip());
+			byte[] upper = toArray(max.flip());
+			GroupMatcher rawMatcher = rawResidualMask == 0 ? null
+					: graphPhysicalMatcher(index,
+							(ordinaryPrefix & 1) != 0 ? subject : -1L,
+							(ordinaryPrefix & 2) != 0 ? predicate : -1L,
+							(ordinaryPrefix & 4) != 0 ? object : -1L, -1L,
+							LmdbValueIdFilter.namedGraphsOnly());
+			LmdbValueIdFilter selectedFilter = filter.inNamedDomain(selectedContexts);
+			GroupMatcher matching = graphPhysicalMatcher(index, subject, predicate, object,
+					ordinaryNamedUnion ? -1L : context, selectedFilter);
+			MDBStat stat = MDBStat.malloc(stack);
+			E(mdb_stat(handle, index.getDB(explicit), stat));
+			try (LmdbPageCardinalityEstimator.ReadView view = estimator.readTransaction(handle,
+					mappingGeneration.get())) {
+				String database = index.getName(explicit);
+				var raw = view.estimateEntriesWithQuality(database, lower, lower.length, upper, upper.length,
+						rawMatcher, Integer.bitCount(rawResidualMask));
+				QueryExecutionContext.checkpointReplaySafepoint();
+				var selected = view.estimateEntriesWithQuality(database, lower, lower.length, upper, upper.length,
+						matching, Integer.bitCount((bindingMask & ~outerMask)
+								| selectedFilter.requiredComponentMask()));
+				QueryExecutionContext.checkpointReplaySafepoint();
+				return Optional.of(new GraphRangeWork(graphPhysicalRows(raw), graphPhysicalRows(selected),
+						planeIndexCostProfile(stat), repeat, stat.ms_entries() == 0L ? 0.0d : 1.0d));
+			}
+		});
+	}
+
+	private static LmdbGraphDistinctAccess.PhysicalRows graphPhysicalRows(LmdbPageCardinalityEstimator.Estimate value) {
+		return new LmdbGraphDistinctAccess.PhysicalRows(value.entries(), value.hardLowerBound(),
+				value.hardUpperBound(), value.exact());
+	}
+
+	private static IndexCostProfile planeIndexCostProfile(MDBStat stat) {
+		return new IndexCostProfile(stat.ms_entries() == 0L ? 1.0d
+				: 1.0d + (double) stat.ms_leaf_pages() / stat.ms_entries(), indexSearchWork(stat), 1);
+	}
+
+	private static GroupMatcher graphPhysicalMatcher(TripleIndex index, long subject, long predicate,
+			long object, long context, LmdbValueIdFilter filter) {
+		return new GroupMatcher(new byte[4], new boolean[4]) {
+			@Override
+			public boolean matches(ByteBuffer key) {
+				long[] quad = new long[4];
+				index.keyToQuad(key.duplicate(), quad);
+				return (subject < 0L || subject == quad[SUBJ_IDX])
+						&& (predicate < 0L || predicate == quad[PRED_IDX])
+						&& (object < 0L || object == quad[OBJ_IDX])
+						&& (context < 0L || context == quad[CONTEXT_IDX])
+						&& filter.accept(quad[SUBJ_IDX], quad[PRED_IDX], quad[OBJ_IDX], quad[CONTEXT_IDX]);
+			}
+		};
+	}
+
+	/** Only an invocation-bound carrier may request selected-domain filtering before retaining a prefix. */
+	RecordIterator getTriplesWithGraphDistinctAccess(Txn transaction, LmdbDistinctCursorSkipSupport.Plan plan,
+			long subject, long predicate, long object, boolean explicit, LmdbValueIdFilter filter) throws IOException {
+		TripleIndex index = getIndex(plan.indexFieldSequence());
+		if (index == null) {
+			throw new IOException("The selected LMDB graph access index is unavailable");
+		}
+		return new LmdbRecordIterator(index, index.getPatternScore(subject, predicate, object, -1L) > 0,
+				subject, predicate, object, -1L, explicit, transaction, filter, plan.prefixLength());
+	}
+
+	private static double indexSearchWork(MDBStat stat) {
+		/*
+		 * Keep random and sequential access in the same page/row work unit. Sequential work already accounts for
+		 * amortized leaf-page visits and emitted rows; charging every in-page binary-search comparison as another row
+		 * made a cached LMDB seek appear roughly an order of magnitude more expensive than scanning and materializing a
+		 * row. A point lookup visits one page per B-tree level. Result decoding remains represented independently by
+		 * the result-row dimension in the physical objective.
+		 */
+		return Math.max(1, stat.ms_depth());
+	}
+
+	private static long saturatingAdd(long left, long right) {
+		long result = left + right;
+		return result < 0L || result < left ? Long.MAX_VALUE : result;
+	}
+
+	record IndexCostProfile(double sequentialWorkPerRow, double randomSeekWork, int databaseCount) {
+		IndexCostProfile {
+			if (!Double.isFinite(sequentialWorkPerRow) || sequentialWorkPerRow < 1.0d
+					|| !Double.isFinite(randomSeekWork) || randomSeekWork < 1.0d
+					|| databaseCount < 1) {
+				throw new IllegalArgumentException("Invalid LMDB index cost profile");
+			}
+		}
+	}
+
 	List<IndexAccessPath> indexAccessPaths(int boundComponentMask) {
 		long subj = boundMask(boundComponentMask, Component.S);
 		long pred = boundMask(boundComponentMask, Component.P);
@@ -4553,6 +6587,455 @@ class TripleStore implements Closeable {
 		} else {
 			return false;
 		}
+	}
+
+	private void recordFrontierMutation(boolean insertion, boolean explicit, long subject, long predicate, long object,
+			long context) throws IOException {
+		if (!frontierMutationJournalEnabled) {
+			recordDisabledFrontierMutation();
+		} else {
+			appendFrontierMutation(insertion, explicit, subject, predicate, object, context);
+		}
+	}
+
+	private void recordDisabledFrontierMutation() throws IOException {
+		if (frontierJournalDisabledMutationRecorded) {
+			return;
+		}
+		if (writeTxn == 0L) {
+			throw new IOException("Frontier mutation must be recorded in an active LMDB write transaction");
+		}
+		try {
+			frontierJournalSequence = Math.incrementExact(frontierJournalSequence);
+		} catch (ArithmeticException overflow) {
+			throw new IOException("Frontier mutation sequence exhausted", overflow);
+		}
+		checkMutationResult(mdb_drop(writeTxn, frontierMutationJournalDbi, false));
+		frontierJournalGapThroughSequence = frontierJournalSequence;
+		frontierJournalRetainedMutationCount = 0L;
+		frontierJournalMetadataDirty = true;
+		frontierJournalDisabledMutationRecorded = true;
+	}
+
+	private void appendFrontierMutation(boolean insertion, boolean explicit, long subject, long predicate, long object,
+			long context) throws IOException {
+		if (writeTxn == 0L || subject <= 0L || predicate <= 0L || object <= 0L || context < 0L) {
+			throw new IOException("Frontier mutation must be recorded in an active LMDB write transaction");
+		}
+		long sequence;
+		try {
+			sequence = Math.incrementExact(frontierJournalSequence);
+		} catch (ArithmeticException overflow) {
+			throw new IOException("Frontier mutation sequence exhausted", overflow);
+		}
+		long epoch = mdb_txn_id(writeTxn);
+		if (epoch <= 0L) {
+			throw new IOException("Frontier mutation write transaction has no durable epoch");
+		}
+		try (MemoryStack stack = stackPush()) {
+			MDBVal key = MDBVal.malloc(stack);
+			ByteBuffer keyBytes = stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
+			keyBytes.putLong(sequence).flip();
+			key.mv_data(keyBytes);
+			MDBVal value = MDBVal.malloc(stack);
+			ByteBuffer valueBytes = stack.malloc(FRONTIER_MUTATION_JOURNAL_BYTES).order(ByteOrder.BIG_ENDIAN);
+			int flags = (insertion ? 1 : 0) | (explicit ? 1 << 1 : 0);
+			valueBytes.putInt(FRONTIER_MUTATION_JOURNAL_VERSION);
+			valueBytes.putInt(flags);
+			valueBytes.putLong(epoch);
+			valueBytes.putLong(subject);
+			valueBytes.putLong(predicate);
+			valueBytes.putLong(object);
+			valueBytes.putLong(context);
+			valueBytes.flip();
+			value.mv_data(valueBytes);
+			int rc = mdb_put(writeTxn, frontierMutationJournalDbi, key, value, MDB_NOOVERWRITE);
+			checkMutationResult(rc);
+		}
+		frontierJournalSequence = sequence;
+		try {
+			frontierJournalRetainedMutationCount = Math.incrementExact(frontierJournalRetainedMutationCount);
+		} catch (ArithmeticException overflow) {
+			throw new IOException("Frontier mutation journal retained-row count overflow", overflow);
+		}
+		trimFrontierMutationJournalToCapacity();
+		frontierJournalMetadataDirty = true;
+	}
+
+	private FrontierMutationJournalState readFrontierMutationJournalState(MemoryStack stack, long txn)
+			throws IOException {
+		MDBVal metadataKey = MDBVal.malloc(stack);
+		ByteBuffer metadataKeyBytes = stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
+		metadataKeyBytes.putLong(0L).flip();
+		metadataKey.mv_data(metadataKeyBytes);
+		MDBVal metadataValue = MDBVal.malloc(stack);
+		int metadataRc = mdb_get(txn, frontierMutationJournalDbi, metadataKey, metadataValue);
+		if (metadataRc != MDB_SUCCESS && metadataRc != MDB_NOTFOUND) {
+			throw new IOException(mdb_strerror(metadataRc));
+		}
+		if (metadataRc == MDB_SUCCESS) {
+			ByteBuffer metadata = metadataValue.mv_data();
+			if (metadata == null) {
+				throw new IOException("Frontier mutation journal metadata is corrupt");
+			}
+			metadata = metadata.order(ByteOrder.BIG_ENDIAN);
+			int position = metadata.position();
+			if (metadata.remaining() == FRONTIER_MUTATION_JOURNAL_METADATA_BYTES
+					&& metadata.getLong(position) == FRONTIER_MUTATION_JOURNAL_METADATA_MAGIC) {
+				int version = metadata.getInt(position + Long.BYTES);
+				int reserved = metadata.getInt(position + Long.BYTES + Integer.BYTES);
+				long latest = metadata.getLong(position + Long.BYTES + Integer.BYTES * 2);
+				long gapThrough = metadata.getLong(position + Long.BYTES * 2 + Integer.BYTES * 2);
+				long acknowledgedThrough = metadata.getLong(position + Long.BYTES * 3 + Integer.BYTES * 2);
+				long retained = metadata.getLong(position + Long.BYTES * 4 + Integer.BYTES * 2);
+				if (version != FRONTIER_MUTATION_JOURNAL_METADATA_VERSION || reserved != 0
+						|| latest < 0L || gapThrough < 0L || acknowledgedThrough < 0L
+						|| gapThrough > latest || acknowledgedThrough > latest || retained < 0L
+						|| retained > FRONTIER_MUTATION_JOURNAL_CAPACITY
+						|| retained > latest - Math.max(gapThrough, acknowledgedThrough)) {
+					throw new IOException("Frontier mutation journal metadata is corrupt");
+				}
+				return new FrontierMutationJournalState(latest, gapThrough, acknowledgedThrough, retained, false);
+			}
+			if (metadata.remaining() != Long.BYTES) {
+				throw new IOException("Frontier mutation journal metadata is corrupt");
+			}
+		}
+
+		long latest = metadataRc == MDB_SUCCESS
+				? metadataValue.mv_data().order(ByteOrder.BIG_ENDIAN).getLong(metadataValue.mv_data().position())
+				: 0L;
+		PointerBuffer cursorPointer = stack.mallocPointer(1);
+		E(mdb_cursor_open(txn, frontierMutationJournalDbi, cursorPointer));
+		long cursor = cursorPointer.get(0);
+		MDBVal key = MDBVal.malloc(stack);
+		MDBVal value = MDBVal.malloc(stack);
+		try {
+			int rc = mdb_cursor_get(cursor, key, value, MDB_LAST);
+			if (rc == MDB_NOTFOUND) {
+				return new FrontierMutationJournalState(latest, 0L, 0L, 0L, true);
+			}
+			if (rc != MDB_SUCCESS) {
+				throw new IOException(mdb_strerror(rc));
+			}
+			ByteBuffer bytes = key.mv_data();
+			if (bytes == null || bytes.remaining() != Long.BYTES) {
+				throw new IOException("Frontier mutation journal key is corrupt");
+			}
+			long lastKey = bytes.order(ByteOrder.BIG_ENDIAN).getLong(bytes.position());
+			if (lastKey < 0L || latest < 0L) {
+				throw new IOException("Frontier mutation journal sequence is negative");
+			}
+			latest = Math.max(latest, lastKey);
+		} finally {
+			mdb_cursor_close(cursor);
+		}
+		MDBStat stat = MDBStat.malloc(stack);
+		E(mdb_stat(txn, frontierMutationJournalDbi, stat));
+		long retained = stat.ms_entries() - (metadataRc == MDB_SUCCESS ? 1L : 0L);
+		if (retained < 0L || retained > latest) {
+			throw new IOException("Legacy Frontier mutation journal metadata is corrupt");
+		}
+		return new FrontierMutationJournalState(latest, 0L, 0L, retained, true);
+	}
+
+	private long readFrontierJournalSequence(MemoryStack stack, long txn) throws IOException {
+		return readFrontierMutationJournalState(stack, txn).latestSequence();
+	}
+
+	long latestFrontierMutationSequence(Txn txn) throws IOException {
+		Objects.requireNonNull(txn, "txn");
+		long handle = txn.get();
+		if (handle == 0L) {
+			throw new IOException("Cannot read Frontier mutation sequence from a closed LMDB transaction");
+		}
+		try (MemoryStack stack = stackPush()) {
+			return readFrontierJournalSequence(stack, handle);
+		}
+	}
+
+	long latestFrontierMutationSequence() throws IOException {
+		return txnManager.doWith((stack, txn) -> readFrontierJournalSequence(stack, txn));
+	}
+
+	private void flushFrontierJournalMetadata() throws IOException {
+		if (!frontierJournalMetadataDirty) {
+			return;
+		}
+		try (MemoryStack stack = stackPush()) {
+			writeFrontierJournalMetadata(stack, writeTxn, new FrontierMutationJournalState(
+					frontierJournalSequence, frontierJournalGapThroughSequence,
+					frontierJournalAcknowledgedThroughSequence, frontierJournalRetainedMutationCount, false));
+		}
+		frontierJournalMetadataDirty = false;
+	}
+
+	private void writeFrontierJournalMetadata(MemoryStack stack, long txn, FrontierMutationJournalState state)
+			throws IOException {
+		validateFrontierJournalMetadata(state);
+		MDBVal key = MDBVal.malloc(stack);
+		ByteBuffer keyBytes = stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
+		keyBytes.putLong(0L).flip();
+		key.mv_data(keyBytes);
+		MDBVal value = MDBVal.malloc(stack);
+		ByteBuffer valueBytes = stack.malloc(FRONTIER_MUTATION_JOURNAL_METADATA_BYTES).order(ByteOrder.BIG_ENDIAN);
+		valueBytes.putLong(FRONTIER_MUTATION_JOURNAL_METADATA_MAGIC);
+		valueBytes.putInt(FRONTIER_MUTATION_JOURNAL_METADATA_VERSION);
+		valueBytes.putInt(0);
+		valueBytes.putLong(state.latestSequence());
+		valueBytes.putLong(state.gapThroughSequence());
+		valueBytes.putLong(state.acknowledgedThroughSequence());
+		valueBytes.putLong(state.retainedMutationCount());
+		valueBytes.flip();
+		value.mv_data(valueBytes);
+		int result = mdb_put(txn, frontierMutationJournalDbi, key, value, 0);
+		if (txn == writeTxn) {
+			checkMutationResult(result);
+			nativeMutation = true;
+		} else {
+			E(result);
+		}
+	}
+
+	private static void validateFrontierJournalMetadata(FrontierMutationJournalState state) throws IOException {
+		long unavailableThrough = Math.max(state.gapThroughSequence(), state.acknowledgedThroughSequence());
+		if (state.legacyMetadata()
+				|| state.latestSequence() < 0L || state.gapThroughSequence() < 0L
+				|| state.acknowledgedThroughSequence() < 0L || state.retainedMutationCount() < 0L
+				|| state.gapThroughSequence() > state.latestSequence()
+				|| state.acknowledgedThroughSequence() > state.latestSequence()
+				|| state.retainedMutationCount() > FRONTIER_MUTATION_JOURNAL_CAPACITY
+				|| state.retainedMutationCount() > state.latestSequence() - unavailableThrough) {
+			throw new IOException("Frontier mutation journal metadata is invalid");
+		}
+	}
+
+	private void trimFrontierMutationJournalToCapacity() throws IOException {
+		long overflow = frontierJournalRetainedMutationCount - FRONTIER_MUTATION_JOURNAL_CAPACITY;
+		if (overflow <= 0L) {
+			return;
+		}
+		long firstRetainedSequence = frontierJournalSequence - frontierJournalRetainedMutationCount + 1L;
+		long lastPrunedSequence = Math.addExact(firstRetainedSequence, overflow - 1L);
+		deleteFrontierMutationRows(writeTxn, firstRetainedSequence, lastPrunedSequence);
+		frontierJournalRetainedMutationCount -= overflow;
+		frontierJournalGapThroughSequence = Math.max(frontierJournalGapThroughSequence, lastPrunedSequence);
+	}
+
+	private FrontierMutationJournalState compactLegacyFrontierMutationJournalToCapacity(
+			long txn, FrontierMutationJournalState state) throws IOException {
+		if (!state.legacyMetadata() || state.retainedMutationCount() <= FRONTIER_MUTATION_JOURNAL_CAPACITY) {
+			return state;
+		}
+		long firstRetainedSequence = state.latestSequence() - FRONTIER_MUTATION_JOURNAL_CAPACITY + 1L;
+		ArrayList<byte[]> retainedRows = new ArrayList<>(FRONTIER_MUTATION_JOURNAL_CAPACITY);
+		try (MemoryStack stack = stackPush()) {
+			MDBVal key = MDBVal.malloc(stack);
+			MDBVal value = MDBVal.malloc(stack);
+			ByteBuffer keyBytes = stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
+			for (long sequence = firstRetainedSequence;; sequence++) {
+				keyBytes.clear();
+				keyBytes.putLong(sequence).flip();
+				key.mv_data(keyBytes);
+				int rc = mdb_get(txn, frontierMutationJournalDbi, key, value);
+				ByteBuffer row = value.mv_data();
+				if (rc != MDB_SUCCESS || row == null || row.remaining() != FRONTIER_MUTATION_JOURNAL_BYTES) {
+					throw new IOException("Legacy Frontier mutation journal retained range is corrupt");
+				}
+				byte[] copy = new byte[FRONTIER_MUTATION_JOURNAL_BYTES];
+				row.duplicate().get(copy);
+				retainedRows.add(copy);
+				if (sequence == state.latestSequence()) {
+					break;
+				}
+			}
+
+			E(mdb_drop(txn, frontierMutationJournalDbi, false));
+			for (int index = 0; index < retainedRows.size(); index++) {
+				stack.push();
+				try {
+					ByteBuffer retainedKeyBytes = stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
+					retainedKeyBytes.putLong(firstRetainedSequence + index).flip();
+					key.mv_data(retainedKeyBytes);
+					ByteBuffer retainedValueBytes = stack.malloc(FRONTIER_MUTATION_JOURNAL_BYTES);
+					retainedValueBytes.put(retainedRows.get(index)).flip();
+					value.mv_data(retainedValueBytes);
+					E(mdb_put(txn, frontierMutationJournalDbi, key, value, MDB_NOOVERWRITE));
+				} finally {
+					stack.pop();
+				}
+			}
+		}
+		return new FrontierMutationJournalState(
+				state.latestSequence(), Math.max(state.gapThroughSequence(), firstRetainedSequence - 1L),
+				state.acknowledgedThroughSequence(), FRONTIER_MUTATION_JOURNAL_CAPACITY, true);
+	}
+
+	private void deleteFrontierMutationRows(long txn, long firstSequence, long lastSequence) throws IOException {
+		if (firstSequence > lastSequence) {
+			return;
+		}
+		try (MemoryStack stack = stackPush()) {
+			MDBVal key = MDBVal.malloc(stack);
+			ByteBuffer keyBytes = stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
+			for (long sequence = firstSequence;; sequence++) {
+				keyBytes.clear();
+				keyBytes.putLong(sequence).flip();
+				key.mv_data(keyBytes);
+				int rc = mdb_del(txn, frontierMutationJournalDbi, key, null);
+				if (rc != MDB_SUCCESS) {
+					throw new IOException(rc == MDB_NOTFOUND
+							? "Frontier mutation journal retained range is corrupt"
+							: mdb_strerror(rc));
+				}
+				if (sequence == lastSequence) {
+					break;
+				}
+			}
+		}
+	}
+
+	FrontierMutationJournalState frontierMutationJournalState() throws IOException {
+		return txnManager.doWith(this::readFrontierMutationJournalState);
+	}
+
+	void acknowledgeFrontierMutationsThrough(long coveredSequence) throws IOException {
+		if (coveredSequence < 0L) {
+			throw new IllegalArgumentException("Frontier publication coverage cannot be negative");
+		}
+		FrontierMutationJournalState observed = frontierMutationJournalState();
+		if (coveredSequence > observed.latestSequence()) {
+			throw new IllegalArgumentException("Frontier publication cannot cover future mutations");
+		}
+		if (!observed.acknowledgementChangesState(coveredSequence)) {
+			return;
+		}
+		/*
+		 * LMDB admits exactly one write transaction at a time. Starting this independent writer before taking the
+		 * TxnManager write lock is intentional: a main store writer owns its LMDB transaction for the whole Sail
+		 * transaction and takes that lock only while committing, so reversing the order could deadlock. LMDB orders the
+		 * two writers; after this commit, the write lock plus reset invalidates every reusable tracked read snapshot.
+		 * The independent-writer gate keeps this transaction out of the window a two-phase commit opens between its
+		 * durable batches; it is released before the write lock is taken so the committer, which holds that lock while
+		 * waiting for the gate, can never be blocked by an acknowledgement that waits for the lock.
+		 */
+		acquireIndependentWriterGate();
+		try {
+			long ownedTransaction = writeTransaction(env, (stack, txn) -> {
+				validateNativeWriterTransaction(txn);
+				FrontierMutationJournalState state = readFrontierMutationJournalState(stack, txn);
+				if (coveredSequence > state.latestSequence()) {
+					throw new IllegalArgumentException("Frontier publication cannot cover future mutations");
+				}
+				if (!state.acknowledgementChangesState(coveredSequence)) {
+					return expectedNativeTransactionId;
+				}
+				state = compactLegacyFrontierMutationJournalToCapacity(txn, state);
+				long firstRetainedSequence = state.latestSequence() - state.retainedMutationCount() + 1L;
+				long lastPrunedSequence = Math.min(coveredSequence, state.latestSequence());
+				long pruned = lastPrunedSequence >= firstRetainedSequence
+						? lastPrunedSequence - firstRetainedSequence + 1L
+						: 0L;
+				deleteFrontierMutationRows(txn, firstRetainedSequence, lastPrunedSequence);
+				long gapThrough = state.gapThroughSequence() <= coveredSequence ? 0L : state.gapThroughSequence();
+				writeFrontierJournalMetadata(stack, txn, new FrontierMutationJournalState(
+						state.latestSequence(), gapThrough,
+						Math.max(state.acknowledgedThroughSequence(), coveredSequence),
+						state.retainedMutationCount() - pruned, false));
+				return expectedNativeTransactionId >= 0L ? mdb_txn_id(txn) : -1L;
+			});
+			if (expectedNativeTransactionId >= 0L) {
+				expectedNativeTransactionId = ownedTransaction;
+			}
+		} finally {
+			independentWriterGate.release();
+		}
+		resetReadersAfterIndependentWrite();
+	}
+
+	private void acquireIndependentWriterGate() throws IOException {
+		try {
+			independentWriterGate.acquire();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while waiting for an independent LMDB journal writer", e);
+		}
+	}
+
+	private void resetReadersAfterIndependentWrite() throws IOException {
+		var lockManager = txnManager.lockManager();
+		long stamp;
+		try {
+			stamp = lockManager.writeLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while publishing Frontier journal acknowledgement", e);
+		}
+		try {
+			txnManager.reset();
+		} finally {
+			lockManager.unlockWrite(stamp);
+		}
+	}
+
+	List<FrontierMutation> readFrontierMutationsAfter(long afterSequence, int limit) throws IOException {
+		if (afterSequence < 0L || limit < 1 || limit > 1_000_000) {
+			throw new IllegalArgumentException("Frontier journal cursor and bounded read limit are invalid");
+		}
+		if (afterSequence == Long.MAX_VALUE) {
+			return List.of();
+		}
+		return txnManager.doWith((stack, txn) -> {
+			FrontierMutationJournalState state = readFrontierMutationJournalState(stack, txn);
+			if (frontierMutationJournalEnabled
+					&& Math.max(state.gapThroughSequence(), state.acknowledgedThroughSequence()) > afterSequence) {
+				throw new IOException("Frontier mutation journal no longer retains all mutations after sequence "
+						+ afterSequence);
+			}
+			ArrayList<FrontierMutation> mutations = new ArrayList<>(Math.min(limit, 1024));
+			PointerBuffer cursorPointer = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, frontierMutationJournalDbi, cursorPointer));
+			long cursor = cursorPointer.get(0);
+			try {
+				MDBVal key = MDBVal.malloc(stack);
+				ByteBuffer keyBytes = stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
+				keyBytes.putLong(afterSequence + 1L).flip();
+				key.mv_data(keyBytes);
+				MDBVal value = MDBVal.malloc(stack);
+				int rc = mdb_cursor_get(cursor, key, value, MDB_SET_RANGE);
+				while (rc == MDB_SUCCESS && mutations.size() < limit) {
+					ByteBuffer currentKey = key.mv_data();
+					ByteBuffer currentValue = value.mv_data();
+					if (currentKey == null || currentKey.remaining() != Long.BYTES || currentValue == null
+							|| currentValue.remaining() != FRONTIER_MUTATION_JOURNAL_BYTES) {
+						throw new IOException("Frontier mutation journal row is corrupt");
+					}
+					long sequence = currentKey.order(ByteOrder.BIG_ENDIAN).getLong(currentKey.position());
+					ByteBuffer row = currentValue.order(ByteOrder.BIG_ENDIAN);
+					int position = row.position();
+					int version = row.getInt(position);
+					int flags = row.getInt(position + Integer.BYTES);
+					if (sequence <= afterSequence || version != FRONTIER_MUTATION_JOURNAL_VERSION
+							|| (flags & ~3) != 0) {
+						throw new IOException("Frontier mutation journal row identity is corrupt");
+					}
+					mutations.add(new FrontierMutation(sequence,
+							row.getLong(position + Integer.BYTES * 2),
+							(flags & 1) != 0, (flags & 1 << 1) != 0,
+							row.getLong(position + Integer.BYTES * 2 + Long.BYTES),
+							row.getLong(position + Integer.BYTES * 2 + Long.BYTES * 2),
+							row.getLong(position + Integer.BYTES * 2 + Long.BYTES * 3),
+							row.getLong(position + Integer.BYTES * 2 + Long.BYTES * 4)));
+					rc = mdb_cursor_get(cursor, key, value, MDB_NEXT);
+				}
+				if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+					throw new IOException(mdb_strerror(rc));
+				}
+				return List.copyOf(mutations);
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+		});
 	}
 
 	private static boolean matchesPattern(long[] quad, long subj, long pred, long obj, long context) {
@@ -5036,7 +7519,9 @@ class TripleStore implements Closeable {
 						@Override
 						public void remove(long subj, long pred, long obj, long context, boolean explicit)
 								throws IOException {
-							removeQuadDirect(subj, pred, obj, context, explicit);
+							if (removeQuadDirect(subj, pred, obj, context, explicit) && valueStore != null) {
+								recordPredicateObjectRemoval(pred, valueStore.getValue(obj));
+							}
 						}
 
 						@Override
@@ -5134,14 +7619,20 @@ class TripleStore implements Closeable {
 				writeTxn = 0L;
 				throw failure;
 			}
-		}
-	}
-
-	private void validateNativeWriterTransaction(long transaction) throws IOException {
-		if (expectedNativeTransactionId >= 0L
-				&& mdb_txn_id(transaction) != Math.addExact(expectedNativeTransactionId, 1L)) {
-			nativeOwnershipInvalidated = true;
-			throw new IOException("TripleStore observed an intervening native writer");
+			clearPendingRdfTermDomainCacheUpdates();
+			FrontierMutationJournalState persistedState = readFrontierMutationJournalState(stack, writeTxn);
+			FrontierMutationJournalState state = compactLegacyFrontierMutationJournalToCapacity(writeTxn,
+					persistedState);
+			frontierJournalSequence = state.latestSequence();
+			frontierJournalGapThroughSequence = state.gapThroughSequence();
+			frontierJournalAcknowledgedThroughSequence = state.acknowledgedThroughSequence();
+			frontierJournalRetainedMutationCount = state.retainedMutationCount();
+			frontierJournalMetadataDirty = state.legacyMetadata();
+			frontierJournalDisabledMutationRecorded = false;
+			trimFrontierMutationJournalToCapacity();
+			if (persistedState.retainedMutationCount() != frontierJournalRetainedMutationCount) {
+				frontierJournalMetadataDirty = true;
+			}
 		}
 	}
 
@@ -5294,14 +7785,32 @@ class TripleStore implements Closeable {
 		return new DerivedCommit(prepared, nextRevision);
 	}
 
+	private DerivedCommit prepareDerivedCommitForRevision(DerivedCommit previous, long nextRevision) {
+		if (previous == null) {
+			return prepareDerivedCommit(nextRevision);
+		}
+		if (previous.revision == nextRevision) {
+			return previous;
+		}
+		// A native commit retry owns another transaction ID. The old sealed delta cannot be relabeled.
+		DirectAdjacencyCommitListener.PreparedCommit owned = previous.prepared;
+		previous.prepared = null;
+		if (owned != null) {
+			directAdjacencyCommitListener.abort(owned);
+		}
+		return new DerivedCommit(directAdjacencyCommitListener.prepare(
+				LmdbDirectAdjacencyCommitDelta.SealedDirectDelta.overflowed(nextRevision), nextRevision), nextRevision);
+	}
+
 	/**
 	 * Every authoritative commit completes bookkeeping and retires pooled readers, even when derived publication fails.
 	 */
-	private void completeCommittedTransaction(DerivedCommit derived, boolean advanceDataRevision) throws IOException {
+	private void completeCommittedTransaction(DerivedCommit derived, boolean advanceDataRevision, long commitRevision)
+			throws IOException {
 		Throwable failure = null;
 		try {
 			if (advanceDataRevision && tripleMutation) {
-				publishDerivedCommit(derived, dataRevision.get() + 1L);
+				publishDerivedCommit(derived, commitRevision);
 			}
 		} catch (RuntimeException | Error derivedFailure) {
 			failure = derivedFailure;
@@ -5328,6 +7837,9 @@ class TripleStore implements Closeable {
 
 	private void publishDerivedCommit(DerivedCommit derived, long nextRevision) {
 		try {
+			if (derived != null && derived.revision != nextRevision) {
+				throw new IllegalStateException("Prepared adjacency revision differs from its authoritative commit");
+			}
 			if (derived != null && derived.prepared != null) {
 				LmdbDirectAdjacencyCommitDelta.SealedDirectDelta sealed = directAdjacencyCommitListener
 						.finalizeCommit(derived.prepared);
@@ -5554,7 +8066,13 @@ class TripleStore implements Closeable {
 
 	int storeGloballyOrderedFreshTriples(int[] quads, long[] valueIds, int count,
 			GlobalPreparedIndexOrdersTask orders, ExecutorService executor) throws IOException {
-		return writeLogicalAlignedBatch(new GlobalInput(quads, valueIds), count, true, null,
+		return storeGloballyOrderedFreshTriples(quads, valueIds, count, orders, executor, null);
+	}
+
+	int storeGloballyOrderedFreshTriples(int[] quads, long[] valueIds, int count,
+			GlobalPreparedIndexOrdersTask orders, ExecutorService executor, IntConsumer addedConsumer)
+			throws IOException {
+		return writeLogicalAlignedBatch(new GlobalInput(quads, valueIds), count, true, addedConsumer,
 				added -> storeGloballyOrderedFreshTriplesDirect(quads, valueIds, count, orders, executor, added));
 	}
 
@@ -5678,8 +8196,10 @@ class TripleStore implements Closeable {
 					incrementContext(stack, context);
 				}
 				if (foundImplicit) {
+					recordFrontierMutation(false, false, subj, pred, obj, context);
 					recordFanOutRemoved(subj, pred, obj, context, false);
 				}
+				recordFrontierMutation(true, explicit, subj, pred, obj, context);
 				recordFanOutAdded(subj, pred, obj, context, explicit);
 			}
 		}
@@ -5778,6 +8298,8 @@ class TripleStore implements Closeable {
 								int contextId = quads[quadOffset + 3];
 								long context = contextId < 0 ? 0 : valueIds[contextId];
 								contextIncrements.addToValue(context, 1);
+								recordFrontierMutation(true, true, valueIds[quads[quadOffset]],
+										valueIds[quads[quadOffset + 1]], valueIds[quads[quadOffset + 2]], context);
 								recordFanOutAdded(valueIds[quads[quadOffset]], valueIds[quads[quadOffset + 1]],
 										valueIds[quads[quadOffset + 2]], context, true);
 								addedCount++;
@@ -5920,9 +8442,13 @@ class TripleStore implements Closeable {
 						promotedFromImplicit[statementIndex] = removeResult == MDB_SUCCESS;
 					}
 					if (promotedFromImplicit != null && promotedFromImplicit[statementIndex]) {
+						recordFrontierMutation(false, false, subj[statementIndex], pred[statementIndex],
+								obj[statementIndex], context[statementIndex]);
 						recordFanOutRemoved(subj[statementIndex], pred[statementIndex], obj[statementIndex],
 								context[statementIndex], false);
 					}
+					recordFrontierMutation(true, explicit, subj[statementIndex], pred[statementIndex],
+							obj[statementIndex], context[statementIndex]);
 					recordFanOutAdded(subj[statementIndex], pred[statementIndex], obj[statementIndex],
 							context[statementIndex], explicit);
 					if (promotedFromImplicit == null || !promotedFromImplicit[statementIndex]) {
@@ -6094,10 +8620,6 @@ class TripleStore implements Closeable {
 				alignedWriteCursors[i] = 0;
 			}
 		}
-	}
-
-	enum LeadingFieldSortAlgorithm {
-		LSD_RADIX
 	}
 
 	private void logAddedStatements(int count) {
@@ -6385,6 +8907,168 @@ class TripleStore implements Closeable {
 		}
 	}
 
+	/** Notified after each durable batch of {@link #rewriteStatementIds}. */
+	@FunctionalInterface
+	interface StatementRewriteObserver {
+		void batchCommitted(long rewrittenStatements) throws IOException;
+	}
+
+	/**
+	 * Rewrites every statement - explicit and inferred, in every context - that mentions an id for which
+	 * {@code survivorOf} returns another id, to the statement with the returned ids, in batches of at most
+	 * {@code batchRows} statements per transaction. Rewritten statements go through {@link #storeTriple} and
+	 * {@link #removeTriples} with the same predicate-guarantee bookkeeping the sail performs, so context counts,
+	 * guarantees and the Frontier mutation journal stay consistent; duplicates collapse, and an inferred statement
+	 * whose rewrite exists as an explicit statement is dropped. Every batch inserts and deletes in one authoritative
+	 * commit, including after native map-growth replay. Running it again after an interruption rewrites what is left.
+	 * Guarantees marked for a rebuild by the removals are rebuilt at the end when automatic rebuilds are enabled.
+	 *
+	 * @return the number of statements rewritten
+	 */
+	long rewriteStatementIds(LongUnaryOperator survivorOf, int batchRows, StatementRewriteObserver observer)
+			throws IOException {
+		if (batchRows <= 0) {
+			throw new IllegalArgumentException("batchRows must be positive: " + batchRows);
+		}
+		long rewritten = 0;
+		// explicit first: an explicit insert removes the inferred copy, the inferred plane is scanned afterwards
+		for (boolean explicit : new boolean[] { true, false }) {
+			long[] rows = statementsMentioningReplacedIds(survivorOf, explicit);
+			int count = rows.length / 4;
+			for (int start = 0; start < count; start += batchRows) {
+				int end = Math.min(count, start + batchRows);
+				rewriteStatementBatch(rows, start, end, explicit, survivorOf);
+				rewritten += end - start;
+				observer.batchCommitted(rewritten);
+			}
+		}
+		if (rewritten > 0 && predicateGuaranteeIndexEnabled && predicateGuaranteeIndexAutoRebuild
+				&& rdfTermDomainsReadable()) {
+			// The final guarantee scan has the same internal ownership as each rewrite batch.
+			try (ValueResolutionScope values = valueStore == null ? null : valueStore.openValueResolutionScope();
+					SailClosable exposure = values == null ? null : values.activate()) {
+				rebuildMarkedRdfTermDomains();
+			}
+		}
+		return rewritten;
+	}
+
+	private long[] statementsMentioningReplacedIds(LongUnaryOperator survivorOf, boolean explicit)
+			throws IOException {
+		LongArrayList rows = new LongArrayList();
+		try (Txn txn = txnManager.createReadTxn();
+				RecordIterator records = getTriples(txn, -1, -1, -1, -1, explicit)) {
+			long[] quad;
+			while ((quad = records.next()) != null) {
+				if (survivorOf.applyAsLong(quad[SUBJ_IDX]) != quad[SUBJ_IDX]
+						|| survivorOf.applyAsLong(quad[PRED_IDX]) != quad[PRED_IDX]
+						|| survivorOf.applyAsLong(quad[OBJ_IDX]) != quad[OBJ_IDX]
+						|| survivorOf.applyAsLong(quad[CONTEXT_IDX]) != quad[CONTEXT_IDX]) {
+					rows.add(quad[SUBJ_IDX]);
+					rows.add(quad[PRED_IDX]);
+					rows.add(quad[OBJ_IDX]);
+					rows.add(quad[CONTEXT_IDX]);
+				}
+			}
+		}
+		return rows.toLongArray();
+	}
+
+	private void rewriteStatementBatch(long[] rows, int start, int end, boolean explicit, LongUnaryOperator survivorOf)
+			throws IOException {
+		// Term-domain bookkeeping owns its deferred children only for this maintenance operation. In particular,
+		// language migration may retire their original dictionary IDs after every statement batch has completed.
+		try (ValueResolutionScope values = valueStore == null ? null : valueStore.openValueResolutionScope();
+				SailClosable exposure = values == null ? null : values.activate()) {
+			rewriteStatementBatchWithOwnedValues(rows, start, end, explicit, survivorOf);
+		}
+	}
+
+	private void rewriteStatementBatchWithOwnedValues(long[] rows, int start, int end, boolean explicit,
+			LongUnaryOperator survivorOf) throws IOException {
+		boolean committed = false;
+		startTransaction();
+		try {
+			for (int i = start; i < end; i++) {
+				long subj = survivorOf.applyAsLong(rows[4 * i + SUBJ_IDX]);
+				long pred = survivorOf.applyAsLong(rows[4 * i + PRED_IDX]);
+				long obj = survivorOf.applyAsLong(rows[4 * i + OBJ_IDX]);
+				long context = survivorOf.applyAsLong(rows[4 * i + CONTEXT_IDX]);
+				if (!explicit && containsStatement(subj, pred, obj, context, true)) {
+					// an explicit statement supersedes its inferred copy
+					continue;
+				}
+				if (storeTriple(subj, pred, obj, context, explicit) && valueStore != null) {
+					recordRdfTermDomain(pred, valueStore.getValue(obj));
+				}
+			}
+			try {
+				for (int i = start; i < end; i++) {
+					removeTriplesByContext(rows[4 * i + SUBJ_IDX], rows[4 * i + PRED_IDX], rows[4 * i + OBJ_IDX],
+							rows[4 * i + CONTEXT_IDX], explicit, removed -> {
+								if (valueStore != null) {
+									try {
+										recordPredicateObjectRemoval(removed[PRED_IDX],
+												valueStore.getValue(removed[OBJ_IDX]));
+									} catch (IOException e) {
+										throw new UncheckedIOException(e);
+									}
+								}
+							});
+				}
+			} catch (UncheckedIOException e) {
+				throw e.getCause();
+			}
+			endTransaction(true);
+			committed = true;
+		} finally {
+			if (!committed) {
+				endTransaction(false);
+			}
+		}
+	}
+
+	private boolean containsStatement(long subj, long pred, long obj, long context, boolean explicit) {
+		TripleIndex mainIndex = indexes.getFirst();
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal keyVal = MDBVal.malloc(stack);
+			MDBVal dataVal = MDBVal.calloc(stack);
+			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			mainIndex.toKey(keyBuf, subj, pred, obj, context);
+			keyBuf.flip();
+			keyVal.mv_data(keyBuf);
+			return mdb_get(writeTxn, mainIndex.getDB(explicit), keyVal, dataVal) == MDB_SUCCESS;
+		}
+	}
+
+	/** Iterates the quads {@code [start, end)} of a flat {@code subject, predicate, object, context} array. */
+	private static final class StatementRowIterator implements RecordIterator {
+
+		private final long[] rows;
+		private final int end;
+		private int next;
+
+		StatementRowIterator(long[] rows, int start, int end) {
+			this.rows = rows;
+			this.next = start;
+			this.end = end;
+		}
+
+		@Override
+		public long[] next() {
+			if (next >= end) {
+				return null;
+			}
+			long[] quad = Arrays.copyOfRange(rows, 4 * next, 4 * next + 4);
+			next++;
+			return quad;
+		}
+
+		@Override
+		public void close() {
+		}
+	}
+
 	private boolean removeQuadDirect(long subj, long pred, long obj, long context, boolean explicit)
 			throws IOException {
 		try (MemoryStack stack = stackPush()) {
@@ -6408,7 +9092,31 @@ class TripleStore implements Closeable {
 				checkMutationResult(result);
 			}
 			decrementContext(stack, context);
+			recordFrontierMutation(false, explicit, subj, pred, obj, context);
 			return true;
+		}
+	}
+
+	/**
+	 * Reads the physical snapshot epoch and the latest Frontier mutation sequence of one fresh read snapshot as a
+	 * consistent pair. Both reads hold the TxnManager read lock, so a concurrent commit cannot deactivate (two-phase
+	 * auto-grow) or reset (every commit, every journal acknowledgement) the transaction underneath them.
+	 *
+	 * @return {@code {physicalSnapshotEpoch, latestFrontierMutationSequence}}
+	 */
+	long[] snapshotCoordinates() throws IOException {
+		var lockManager = txnManager.lockManager();
+		long readStamp;
+		try {
+			readStamp = lockManager.readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while reading the LMDB snapshot coordinates", e);
+		}
+		try (Txn txn = txnManager.createReadTxn()) {
+			return new long[] { mdb_txn_id(txn.get()), latestFrontierMutationSequence(txn) };
+		} finally {
+			lockManager.unlockRead(readStamp);
 		}
 	}
 
@@ -6482,6 +9190,7 @@ class TripleStore implements Closeable {
 			Throwable failure = null;
 			boolean committed = false;
 			DerivedCommit preparedDirect = null;
+			long commitRevision = -1L;
 			try {
 				if (commit && replayDecision != null) {
 					replayDecision.check();
@@ -6492,7 +9201,8 @@ class TripleStore implements Closeable {
 						throw new IOException("Cannot commit a TripleStore transaction after a failed mutation",
 								mutationFailure);
 					}
-					if (!commit || !nativeMutation) {
+					if (!commit
+							|| !nativeMutation && pendingRdfTermDomains.isEmpty() && !frontierJournalMetadataDirty) {
 						mdb_txn_abort(writeTxn);
 						writeTxn = 0;
 					} else {
@@ -6508,14 +9218,24 @@ class TripleStore implements Closeable {
 							int result;
 							try {
 								closeAlignedWriteCursors();
-								if (advanceDataRevision && tripleMutation && preparedDirect == null) {
-									preparedDirect = prepareDerivedCommit(dataRevision.get() + 1L);
+								flushPendingRdfTermDomains();
+								flushFrontierJournalMetadata();
+								// Incremental updates only weaken guarantees, so publish them before the rows become
+								// visible. Rebuilt stronger guarantees become visible only after the native commit.
+								boolean publishAfterCommit = pendingRdfTermDomainCacheMayStrengthen;
+								if (!publishAfterCommit) {
+									applyPendingRdfTermDomainCacheUpdates();
+								}
+								if (advanceDataRevision && tripleMutation) {
+									commitRevision = Math.max(dataRevision.get() + 1L, mdb_txn_id(writeTxn));
+									preparedDirect = prepareDerivedCommitForRevision(preparedDirect, commitRevision);
 								}
 								Runnable beforePhysicalCommit = beforePhysicalCommitForTest;
 								if (beforePhysicalCommit != null) {
 									beforePhysicalCommit.run();
 								}
 								long transaction = writeTxn;
+								long transactionId = mdb_txn_id(transaction);
 								replayProjectedUsedBytes = Math.max(replayProjectedUsedBytes,
 										LmdbUtil.getNewSize(pageSize, transaction, 0L));
 								writeTxn = 0;
@@ -6523,8 +9243,21 @@ class TripleStore implements Closeable {
 								if (result == MDB_SUCCESS) {
 									nativeCommitGeneration.incrementAndGet();
 									committed = true;
-									completeCommittedTransaction(preparedDirect, advanceDataRevision);
+									Runnable barrier = durableCommitBarrierForTesting;
+									if (barrier != null) {
+										barrier.run();
+									}
+									if (publishAfterCommit) {
+										applyPendingRdfTermDomainCacheUpdates();
+									}
+									completeCommittedTransaction(preparedDirect, advanceDataRevision, commitRevision);
 								}
+							} catch (MapFullException capacity) {
+								if (writeTxn != 0L) {
+									mdb_txn_abort(writeTxn);
+									writeTxn = 0L;
+								}
+								result = MDB_MAP_FULL;
 							} finally {
 								lockManager.unlockWrite(stamp);
 							}
@@ -6609,6 +9342,14 @@ class TripleStore implements Closeable {
 						}
 					}
 				}
+				pendingRdfTermDomains.clear();
+				clearPendingRdfTermDomainCacheUpdates();
+				frontierJournalSequence = 0L;
+				frontierJournalGapThroughSequence = 0L;
+				frontierJournalAcknowledgedThroughSequence = 0L;
+				frontierJournalRetainedMutationCount = 0L;
+				frontierJournalMetadataDirty = false;
+				frontierJournalDisabledMutationRecorded = false;
 			}
 			if (failure instanceof IOException io) {
 				throw io;
@@ -6619,6 +9360,25 @@ class TripleStore implements Closeable {
 			if (failure instanceof Error error) {
 				throw error;
 			}
+		}
+	}
+
+	record FrontierMutationJournalState(long latestSequence, long gapThroughSequence,
+			long acknowledgedThroughSequence, long retainedMutationCount, boolean legacyMetadata) {
+
+		long unavailableThroughSequence() {
+			return Math.max(gapThroughSequence, acknowledgedThroughSequence);
+		}
+
+		boolean requiresBaseRebuildAfter(long coveredSequence) {
+			return unavailableThroughSequence() > coveredSequence;
+		}
+
+		boolean acknowledgementChangesState(long coveredSequence) {
+			long firstRetainedSequence = latestSequence - retainedMutationCount + 1L;
+			return coveredSequence > acknowledgedThroughSequence
+					|| gapThroughSequence > 0L && gapThroughSequence <= coveredSequence
+					|| retainedMutationCount > 0L && firstRetainedSequence <= coveredSequence;
 		}
 	}
 

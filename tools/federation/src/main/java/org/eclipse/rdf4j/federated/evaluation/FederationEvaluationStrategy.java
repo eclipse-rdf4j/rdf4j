@@ -17,7 +17,6 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -152,6 +151,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ProjectionIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.HashJoinBindingContract;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.LocalBNodeReferences;
@@ -1125,17 +1125,13 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 
 		ControlledWorkerScheduler<BindingSet> joinScheduler = federationContext.getManager().getJoinScheduler();
 		QueryEvaluationStep[] independent = new QueryEvaluationStep[join.getNumberOfArguments()];
-		String[][] keys = new String[join.getNumberOfArguments()][];
-		Set<String> leftNames = new HashSet<>(join.getArg(0).getBindingNames());
+		HashJoinBindingContract[] contracts = new HashJoinBindingContract[join.getNumberOfArguments()];
 		for (int i = 1; i < independent.length; i++) {
 			TupleExpr right = join.getArg(i);
 			if (TupleExprs.requiresIndependentEvaluation(right)) {
 				independent[i] = precompile(right, context);
-				Set<String> shared = new HashSet<>(leftNames);
-				shared.retainAll(right.getBindingNames());
-				keys[i] = shared.toArray(String[]::new);
+				contracts[i] = HashJoinBindingContract.from(join.getArgs().subList(0, i), right);
 			}
-			leftNames.addAll(right.getBindingNames());
 		}
 		return bindings -> {
 			CloseableIteration<BindingSet> result = null;
@@ -1149,7 +1145,7 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 								join.getQueryInfo(), context);
 					} else {
 						CloseableIteration<BindingSet> left = result;
-						result = new HashJoinIteration(ignored -> left, independent[i], bindings, false, keys[i],
+						result = new HashJoinIteration(ignored -> left, independent[i], bindings, false, contracts[i],
 								context);
 					}
 				}
@@ -1245,48 +1241,69 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 		 */
 
 		if (TupleExprs.requiresIndependentEvaluation(leftJoin.getRightArg())) {
+			// The shared supplier retains invocation scope, origin-aware compatibility and the badly-designed gate.
 			return LeftJoinQueryEvaluationStep.supply(this, leftJoin, context);
-		} else {
-			// Check whether optional join is "well designed" as defined in section
-			// 4.2 of "Semantics and Complexity of SPARQL", 2006, Jorge Pérez et al.
-			VarNameCollector optionalVarCollector = new VarNameCollector();
-			leftJoin.getRightArg().visit(optionalVarCollector);
-			if (leftJoin.hasCondition()) {
-				leftJoin.getCondition().visit(optionalVarCollector);
-			}
-
-			Set<String> leftBindingNames = leftJoin.getLeftArg().getBindingNames();
-			Set<String> problemVars = retainAll(optionalVarCollector.getVarNames(), leftBindingNames);
-
-			QueryEvaluationStep leftPrepared = precompile(leftJoin.getLeftArg(), context);
-			// left join is "well designed"
-			ControlledWorkerScheduler<BindingSet> scheduler = federationContext.getManager().getLeftJoinScheduler();
-			return bindings -> {
-
-				if (problemVars.containsAll(bindings.getBindingNames())) {
-					var leftIter = leftPrepared.evaluate(bindings);
-					return executeLeftJoin(scheduler, leftIter, leftJoin, bindings, leftJoin.getQueryInfo(), context);
-				} else {
-					Set<String> problemVarsClone = new HashSet<>(problemVars);
-					problemVarsClone.retainAll(bindings.getBindingNames());
-					QueryEvaluationStep preCompiledRight = this.precompile(leftJoin.getRightArg(), context);
-					var joinCondition = Optional.ofNullable(leftJoin.getCondition())
-							.map(condition -> this.precompile(condition, context))
-							.orElse(null);
-					var rightEvaluationStep = LeftJoinQueryEvaluationStep.determineRightEvaluationStep(
-							leftJoin,
-							preCompiledRight,
-							joinCondition,
-							problemVars);
-					return new BadlyDesignedLeftJoinIterator(
-							FederationEvaluationStrategy.this,
-							leftJoin,
-							bindings,
-							problemVarsClone,
-							rightEvaluationStep);
-				}
-			};
 		}
+		// Check whether optional join is "well designed" as defined in section
+		// 4.2 of "Semantics and Complexity of SPARQL", 2006, Jorge Pérez et al. This gate must precede every
+		// independent or scheduled fast path: incoming problem variables change the required bottom-up evaluation.
+		VarNameCollector optionalVarCollector = new VarNameCollector();
+		leftJoin.getRightArg().visit(optionalVarCollector);
+		if (leftJoin.hasCondition()) {
+			leftJoin.getCondition().visit(optionalVarCollector);
+		}
+		Set<String> leftBindingNames = leftJoin.getLeftArg().getBindingNames();
+		Set<String> problemVars = retainAll(optionalVarCollector.getVarNames(), leftBindingNames);
+		QueryEvaluationStep leftPrepared = precompile(leftJoin.getLeftArg(), context);
+
+		ControlledWorkerScheduler<BindingSet> scheduler = federationContext.getManager().getLeftJoinScheduler();
+		return bindings -> {
+			if (isWellDesignedFor(problemVars, bindings)) {
+				var leftIter = leftPrepared.evaluate(bindings);
+				return executeLeftJoin(scheduler, leftIter, leftJoin, bindings, leftJoin.getQueryInfo(), context);
+			}
+			QueryEvaluationStep rightPrepared = precompile(leftJoin.getRightArg(), context);
+			QueryValueEvaluationStep joinCondition = leftJoin.hasCondition()
+					? precompile(leftJoin.getCondition(), context)
+					: null;
+			return evaluateBadlyDesignedLeftJoin(leftJoin, bindings, problemVars, leftPrepared, rightPrepared,
+					joinCondition);
+		};
+	}
+
+	private static boolean isWellDesignedFor(Set<String> problemVars, BindingSet bindings) {
+		for (String problemVar : problemVars) {
+			if (bindings.hasBinding(problemVar)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static CloseableIteration<BindingSet> evaluateBadlyDesignedLeftJoin(
+			FedXLeftJoin leftJoin,
+			BindingSet bindings,
+			Set<String> problemVars,
+			QueryEvaluationStep leftPrepared,
+			QueryEvaluationStep rightPrepared,
+			QueryValueEvaluationStep joinCondition) {
+		Set<String> activeProblemVars = new HashSet<>();
+		for (String problemVar : problemVars) {
+			if (bindings.hasBinding(problemVar)) {
+				activeProblemVars.add(problemVar);
+			}
+		}
+		QueryEvaluationStep rightEvaluationStep = LeftJoinQueryEvaluationStep.determineRightEvaluationStep(
+				leftJoin,
+				rightPrepared,
+				joinCondition,
+				activeProblemVars);
+		leftJoin.setAlgorithm(BadlyDesignedLeftJoinIterator.class.getSimpleName());
+		return new BadlyDesignedLeftJoinIterator(
+				leftPrepared,
+				bindings,
+				activeProblemVars,
+				rightEvaluationStep);
 	}
 
 	private Set<String> retainAll(Set<String> problemVars, Set<String> leftBindingNames) {

@@ -16,49 +16,70 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.MathExpr;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics.FilterPassEstimate;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
+import org.eclipse.rdf4j.sail.base.FilterLearningFullReadView;
+import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
+import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeEvaluationStrategy;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /**
- * End-to-end proof that the residual-filter selectivity wire is terminated.
+ * Verifies learned residual-filter feedback through the real repository query path.
  * <p>
- * {@code RecordingNativeBooleanFilter} measures how many rows an evaluated FILTER passes and rejects and reports them
- * to {@code LmdbEvaluationStatistics.recordFilterOutcome} when its cursor closes. Physical range and exact-value
- * pushdowns deliberately have no residual filter and no rejected-row stream, so this class disables range pushdown to
- * isolate the feedback wire it owns instead of fabricating a counterfactual denominator.
- * <p>
- * These tests execute a genuinely selective filter and assert that the observation now survives the query and shapes
- * the next plan's estimate. The sketch estimator is left at its default (off) throughout, which is the whole point.
+ * The numeric range queries whose selected plans use finite value anchors are verified separately as typed-plan and
+ * exact-result controls in {@link LmdbLearnedFilterResidualWiringTest}. This class uses arithmetic conditions that
+ * remain residual filters and therefore have an actual pass/reject stream to measure.
  */
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
 public class LmdbLearnedFilterSelectivityWiringTest {
 
 	private static final String EX = "http://example.com/";
 	private static final String RANGE_PUSHDOWN_PROPERTY = "rdf4j.lmdb.native.rangePushdown";
-	private static final String SELECTIVE_QUERY = "PREFIX ex: <" + EX + "> "
-			+ "SELECT ?s WHERE { ?s ex:value ?v . FILTER(?v < 20) }";
-	private static final String REVERSED_OPERAND_QUERY = "PREFIX ex: <" + EX + "> "
-			+ "SELECT ?s WHERE { ?s ex:value ?v . FILTER(20 > ?v) }";
-	private static final String INCLUSIVE_OPPOSITE_RANGE_QUERY = "PREFIX ex: <" + EX + "> "
-			+ "SELECT ?s WHERE { ?s ex:value ?v . FILTER(?v >= 980) }";
+	private static final String RESIDUAL_BELOW_QUERY = "PREFIX ex: <" + EX
+			+ "> SELECT ?s WHERE { ?s ex:value ?v . FILTER((?v + 1) < 21) }";
+	private static final String RESIDUAL_REVERSED_QUERY = "PREFIX ex: <" + EX
+			+ "> SELECT ?s WHERE { ?s ex:value ?v . FILTER(21 > (?v + 1)) }";
+	private static final String RESIDUAL_OPPOSITE_QUERY = "PREFIX ex: <" + EX
+			+ "> SELECT ?s WHERE { ?s ex:value ?v . FILTER((?v + 1) >= 981) }";
 
 	@TempDir
 	File dataDir;
@@ -72,13 +93,12 @@ public class LmdbLearnedFilterSelectivityWiringTest {
 		previousRangePushdown = System.setProperty(RANGE_PUSHDOWN_PROPERTY, "false");
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc");
 		config.setExperimentalQueryOptimizations(true);
+		config.setFrontierEstimatorMode(FrontierEstimatorMode.OFF);
 		store = new LmdbStore(dataDir, config);
 		repository = new SailRepository(store);
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
 			IRI value = vf.createIRI(EX, "value");
-			// 1000 subjects, of which only the 20 below the threshold survive the filter: a pass ratio of 0.02
-			// that the planner has no way to guess and every way to measure.
 			connection.begin();
 			for (int i = 0; i < 1000; i++) {
 				connection.add(vf.createIRI(EX, "s" + i), value, vf.createLiteral(i));
@@ -102,36 +122,109 @@ public class LmdbLearnedFilterSelectivityWiringTest {
 		}
 	}
 
-	@Test
-	public void executingASelectiveFilterTeachesTheStore() {
-		LmdbLearnedFilterSelectivity learned = store.getBackingStore().learnedFilterSelectivity();
-		assertThat(learned.size()).as("nothing learned before the query runs").isZero();
+	@ParameterizedTest(name = "{0}, trackResultSize={3}")
+	@MethodSource("repositoryResidualProfiles")
+	public void actualRepositoryResidualFilterTeachesItsNextPlan(String profile, String query, int firstSubject,
+			boolean trackResultSize) throws Exception {
+		boolean previousTrackResultSize = store.isTrackResultSize();
+		store.setTrackResultSize(trackResultSize);
+		try {
+			assertThat(store.isTrackResultSize()).as("the selected repository factory uses the requested profile")
+					.isEqualTo(trackResultSize);
+			LmdbLearnedFilterSelectivity learned = store.getBackingStore().learnedFilterSelectivity();
+			assertThat(learned.size()).as("a fresh store starts without learned observations").isZero();
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			assertThat(QueryResults.asList(connection.prepareTupleQuery(SELECTIVE_QUERY).evaluate()))
-					.as("fixture precondition: the filter really is selective")
-					.hasSize(20);
+			String initialPlannedSource;
+			Double initialPlannedRatio;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				SailTupleQuery queryExecution = connection.prepareTupleQuery(QueryLanguage.SPARQL, query, null);
+				TupleExpr actualRoot = queryExecution.getParsedQuery().getTupleExpr().clone();
+				assertThat(actualRoot).as("normal repository preparation retains its QueryRoot")
+						.isInstanceOf(QueryRoot.class);
+				TupleExpr initialPlan = (TupleExpr) queryExecution.explain(Explanation.Level.Optimized).tupleExpr();
+				Filter initialFilter = firstFilter(initialPlan);
+				assertArithmeticResidual(initialFilter);
+				initialPlannedSource = initialFilter
+						.getStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE);
+				initialPlannedRatio = initialFilter.getDoubleMetricsPlanned()
+						.get(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO);
+				assertThat(initialPlannedSource).as("the first actual plan records its estimate source").isNotBlank();
+				assertThat(initialPlannedRatio).as("the first actual plan records a bounded estimate")
+						.isNotNull()
+						.isFinite()
+						.isBetween(0.0d, 1.0d);
+				RuntimeFeedbackContract contract = initialFilter.getRuntimeFeedbackContract();
+				assertThat(contract).as("the actual residual filter retains its compiler-owned contract").isNotNull();
+				assertThat(contract.admissionFlags()).isEqualTo(RuntimeFeedbackContract.ADMIT_FILTER);
+				assertThat(contract.semanticKind()).isEqualTo(RuntimeFeedbackContract.SemanticKind.FILTER);
+				assertThat(learned.size())
+						.as("optimized explanation must not publish feedback before query evaluation")
+						.isZero();
+
+				List<String> actualSubjects = QueryResults.asList(queryExecution.evaluate())
+						.stream()
+						.map(bindingSet -> bindingSet.getValue("s").stringValue())
+						.sorted()
+						.toList();
+				assertThat(actualSubjects).as("the repository returns the complete residual-query subject bag")
+						.containsExactlyElementsOf(expectedSubjects(firstSubject));
+				assertThat(learned.size()).as("complete execution publishes residual-filter evidence").isPositive();
+			}
+
+			try (SailRepositoryConnection connection = repository.getConnection();
+					SailDataset dataset = FilterLearningFullReadView.open(store.getBackingStore(),
+							IsolationLevels.SNAPSHOT_READ)) {
+				SailTupleQuery nextQuery = connection.prepareTupleQuery(QueryLanguage.SPARQL, query, null);
+				TupleExpr nextRoot = nextQuery.getParsedQuery().getTupleExpr().clone();
+				assertThat(nextRoot).as("the following repository plan starts from a QueryRoot")
+						.isInstanceOf(QueryRoot.class);
+				EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+				SailDatasetTripleTermSource source = new SailDatasetTripleTermSource(store.getValueFactory(), dataset);
+				assertThat(source.getClass()).isEqualTo(SailDatasetTripleTermSource.class);
+				assertThat(source.getSnapshotEpoch()).as("the next estimate uses a pinned full-read source")
+						.isPresent();
+				EvaluationStrategy strategy = store.getConnectionEvaluationStrategyFactory()
+						.createEvaluationStrategy(
+								nextQuery.getActiveDataset(), source, statistics, store.getQueryExecutionPolicy());
+				assertThat(strategy).isInstanceOf(LmdbEvaluationStrategy.class)
+						.isNotInstanceOf(LmdbNativeEvaluationStrategy.class);
+				assertThat(strategy.getQueryExecutionPolicy().experimentalQueryOptimizations()).isTrue();
+				LmdbEvaluationStrategy lmdbStrategy = (LmdbEvaluationStrategy) strategy;
+				assertThat(lmdbStrategy.isTrackResultSize()).isEqualTo(trackResultSize);
+				TupleExpr nextPlan = strategy.optimize(nextRoot, statistics, nextQuery.getBindings());
+				Filter plannedFilter = firstFilter(nextPlan);
+				assertThat(plannedFilter).as("the fresh factory-bound QueryRoot plan retains the residual filter")
+						.isNotNull();
+
+				FilterPassEstimate estimate = statistics.estimateFilterPass(plannedFilter);
+				assertThat(estimate.getSource()).isIn(FilterPassEstimate.Source.LEARNED_FILTER,
+						FilterPassEstimate.Source.LEARNED_TEMPLATE, FilterPassEstimate.Source.LEARNED_PATTERN);
+				assertThat(estimate.getPassRatio()).isCloseTo(20.0d / 1000.0d, within(1.0e-12d));
+				assertThat(estimate.getEvidenceCount()).isEqualTo(1000L);
+
+				String pipelineCacheHit = nextPlan.getStringMetricPlanned("optimizer.pipelinePlanCacheHit");
+				assertThat(pipelineCacheHit).as("the next-plan cache route is explicit, not assumed")
+						.isIn("true", "false");
+				if ("true".equals(pipelineCacheHit)) {
+					assertThat(nextPlan.getStringMetricPlanned("optimizer.planCacheLookupOutcome"))
+							.isEqualTo("USE_AND_REFRESH");
+					assertThat(nextPlan.getStringMetricPlanned("optimizer.planCacheRefreshReason"))
+							.isEqualTo("outside-stability-envelope");
+					assertThat(nextPlan.getStringMetricPlanned("optimizer.planCacheQualityState"))
+							.isEqualTo("SUSPECT");
+					assertThat(nextPlan.getStringMetricPlanned("optimizer.planCacheStabilityEnvelopeResult"))
+							.isEqualTo("OUTSIDE");
+					assertThat(plannedFilter.getStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE))
+							.isEqualTo(initialPlannedSource);
+					assertThat(plannedFilter.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO))
+							.isEqualTo(initialPlannedRatio);
+				} else {
+					assertLearnedPlannedTelemetry(plannedFilter);
+				}
+			}
+		} finally {
+			store.setTrackResultSize(previousTrackResultSize);
 		}
-
-		assertThat(learned.size())
-				.as("the pass/reject counts the residual filter measured must now survive the query; before this "
-						+ "wiring they were reported to a sink that discarded them")
-				.isPositive();
-	}
-
-	@Test
-	public void theLearnedRatioReachesTheNextPlansEstimate() {
-		assertQueryTeachesRatio(SELECTIVE_QUERY, 20);
-	}
-
-	@Test
-	public void aReversedRangeOperandTeachesTheStore() {
-		assertQueryTeachesRatio(REVERSED_OPERAND_QUERY, 20);
-	}
-
-	@Test
-	public void anInclusiveOppositeRangeTeachesTheStore() {
-		assertQueryTeachesRatio(INCLUSIVE_OPPOSITE_RANGE_QUERY, 20);
 	}
 
 	@Test
@@ -148,28 +241,42 @@ public class LmdbLearnedFilterSelectivityWiringTest {
 				.isIn(FilterPassEstimate.Source.UNKNOWN, FilterPassEstimate.Source.HEURISTIC);
 	}
 
-	private void assertQueryTeachesRatio(String query, int expectedRows) {
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			assertThat(QueryResults.asList(connection.prepareTupleQuery(query).evaluate()))
-					.as("fixture precondition: the filter has the expected selectivity")
-					.hasSize(expectedRows);
-		}
+	private static Stream<Arguments> repositoryResidualProfiles() {
+		return Stream.of(
+				Arguments.of("arithmetic-below", RESIDUAL_BELOW_QUERY, 0, false),
+				Arguments.of("arithmetic-below", RESIDUAL_BELOW_QUERY, 0, true),
+				Arguments.of("reversed-arithmetic", RESIDUAL_REVERSED_QUERY, 0, false),
+				Arguments.of("reversed-arithmetic", RESIDUAL_REVERSED_QUERY, 0, true),
+				Arguments.of("arithmetic-opposite", RESIDUAL_OPPOSITE_QUERY, 980, false),
+				Arguments.of("arithmetic-opposite", RESIDUAL_OPPOSITE_QUERY, 980, true));
+	}
 
-		// A fresh parse of the same query: selectivity keys are derived structurally, so the estimate found here is
-		// the one a subsequent planning pass would see.
-		Filter filter = firstFilter(QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null).getTupleExpr());
-		assertThat(filter).as("fixture precondition: the query contains a Filter node").isNotNull();
+	private static void assertArithmeticResidual(Filter filter) {
+		assertThat(filter).as("the optimized repository plan retains a FILTER").isNotNull();
+		MathExpr math = firstMathExpr(filter.getCondition());
+		assertThat(math).as("the selected condition retains its arithmetic residual").isNotNull();
+		assertThat(math.getOperator()).isEqualTo(MathExpr.MathOp.PLUS);
+		assertThat(math.getLeftArg()).isInstanceOf(Var.class);
+		assertThat(((Var) math.getLeftArg()).getName()).isEqualTo("v");
+		assertThat(math.getRightArg()).isInstanceOf(ValueConstant.class);
+		Literal increment = (Literal) ((ValueConstant) math.getRightArg()).getValue();
+		assertThat(increment.getDatatype()).isEqualTo(XSD.INTEGER);
+		assertThat(increment.stringValue()).isEqualTo("1");
+	}
 
-		EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
-		FilterPassEstimate estimate = statistics.estimateFilterPass(filter);
+	private static void assertLearnedPlannedTelemetry(Filter filter) {
+		assertThat(filter.getStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE))
+				.isIn("learned_filter", "learned_template", "learned_pattern");
+		assertThat(filter.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO))
+				.isCloseTo(20.0d / 1000.0d, within(1.0e-12d));
+	}
 
-		assertThat(estimate.getSource())
-				.as("the estimate must come from what was observed, not from the heuristic fallback")
-				.isIn(FilterPassEstimate.Source.LEARNED_FILTER, FilterPassEstimate.Source.LEARNED_TEMPLATE,
-						FilterPassEstimate.Source.LEARNED_PATTERN);
-		assertThat(estimate.getPassRatio())
-				.as("the learned ratio must use the filter's actual pass and reject counts")
-				.isCloseTo((double) expectedRows / 1000.0d, within(1.0e-12d));
+	private static List<String> expectedSubjects(int firstSubject) {
+		List<String> expected = IntStream.range(firstSubject, firstSubject + 20)
+				.mapToObj(i -> EX + "s" + i)
+				.sorted()
+				.toList();
+		return new ArrayList<>(expected);
 	}
 
 	private static Filter firstFilter(TupleExpr expr) {
@@ -177,6 +284,20 @@ public class LmdbLearnedFilterSelectivityWiringTest {
 		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			public void meet(Filter node) {
+				if (found[0] == null) {
+					found[0] = node;
+				}
+				super.meet(node);
+			}
+		});
+		return found[0];
+	}
+
+	private static MathExpr firstMathExpr(ValueExpr expr) {
+		MathExpr[] found = new MathExpr[1];
+		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(MathExpr node) {
 				if (found[0] == null) {
 					found[0] = node;
 				}

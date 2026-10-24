@@ -24,10 +24,10 @@ tools/packed-algebra-checks/__pycache__/
 /core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/twmp*.txt
 /initial-evidence.txt
 /initial-evidence.*.txt
+/.mvnf/
 /scripts/initial-evidence.txt
 /final-suite-summary.txt
 /profiles/
-/.mvnf/
 **/.mvnf/
 /.verify.log
 /.initial-verify.log

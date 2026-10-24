@@ -1490,8 +1490,8 @@ class LmdbDirectAdjacencyQueryTest {
 					.isGreaterThan(hitsBeforePredicate);
 
 			assertThat(dataset.source.count(-1, -1, -1, -1)).isEqualTo(5);
-			assertThat(dataset.dataset.getStatementCount(null, null, null, G1)).isEqualTo(1);
-			assertThat(dataset.dataset.getStatementCount(null, P1, null, (Resource) null)).isEqualTo(2);
+			assertThat(dataset.dataset.getStatementCount((Resource) null, null, null, G1)).isEqualTo(1);
+			assertThat(dataset.dataset.getStatementCount((Resource) null, P1, null, (Resource) null)).isEqualTo(2);
 		}
 	}
 

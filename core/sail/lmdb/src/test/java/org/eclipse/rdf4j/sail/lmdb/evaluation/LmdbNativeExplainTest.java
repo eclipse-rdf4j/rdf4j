@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.List;
 import java.util.Map;
 
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.junit.jupiter.api.Test;
@@ -82,6 +83,79 @@ class LmdbNativeExplainTest {
 				.contains("  invocation[0]:")
 				.contains("    opens: 128")
 				.doesNotContain("invocation[1]:");
+	}
+
+	@Test
+	void completedRuntimeCountPublishesAnEmptyObservationThenAddsLaterCounts() {
+		SingletonSet target = new SingletonSet();
+		target.setRuntimeTelemetryEnabled(true);
+		String metric = "nativeOnePassPackedRegionsOpenedActual";
+
+		LmdbNativeExplain.addCompletedRuntimeCount(target, metric, 0L);
+
+		assertThat(target.getLongMetricActual(metric)).isEqualTo(0L);
+		LmdbNativeExplain.addCompletedRuntimeCount(target, metric, 2L);
+		LmdbNativeExplain.addCompletedRuntimeCount(target, metric, 3L);
+
+		assertThat(target.getLongMetricActual(metric)).isEqualTo(5L);
+	}
+
+	@Test
+	void completedRuntimeCountKeepsPositiveTotalAfterLaterEmptyObservation() {
+		SingletonSet target = new SingletonSet();
+		target.setRuntimeTelemetryEnabled(true);
+		String metric = "nativeOnePassPackedRegionsOpenedActual";
+
+		LmdbNativeExplain.addCompletedRuntimeCount(target, metric, 4L);
+		LmdbNativeExplain.addCompletedRuntimeCount(target, metric, 0L);
+
+		assertThat(target.getLongMetricActual(metric)).isEqualTo(4L);
+	}
+
+	@Test
+	void completedRuntimeCountUsesLogicalOriginAndQueryRootPropagation() {
+		QueryRoot logicalRoot = new QueryRoot(new SingletonSet());
+		logicalRoot.setRuntimeTelemetryEnabled(true);
+		logicalRoot.getArg().setRuntimeTelemetryEnabled(true);
+		SingletonSet physicalCopy = new SingletonSet();
+		LmdbNativeExplain.bindLogicalOrigin(physicalCopy, logicalRoot);
+		String metric = "nativeOnePassPackedRegionsOpenedActual";
+
+		LmdbNativeExplain.addCompletedRuntimeCount(physicalCopy, metric, 0L);
+		assertThat(logicalRoot.getLongMetricActual(metric)).isEqualTo(0L);
+		assertThat(logicalRoot.getArg().getLongMetricActual(metric)).isEqualTo(0L);
+		assertThat(physicalCopy.getLongMetricActual(metric)).isEqualTo(-1L);
+
+		LmdbNativeExplain.addCompletedRuntimeCount(physicalCopy, metric, 2L);
+		assertThat(logicalRoot.getLongMetricActual(metric)).isEqualTo(2L);
+		assertThat(logicalRoot.getArg().getLongMetricActual(metric)).isEqualTo(2L);
+		assertThat(physicalCopy.getLongMetricActual(metric)).isEqualTo(-1L);
+	}
+
+	@Test
+	void completedRuntimeCountDoesNotPublishWhenRuntimeTelemetryIsDisabled() {
+		SingletonSet target = new SingletonSet();
+		target.setRuntimeTelemetryEnabled(false);
+		String metric = "nativeOnePassPackedRegionsOpenedActual";
+
+		LmdbNativeExplain.addCompletedRuntimeCount(target, metric, 0L);
+		LmdbNativeExplain.addCompletedRuntimeCount(target, metric, 3L);
+
+		assertThat(target.getLongMetricActual(metric)).isEqualTo(-1L);
+	}
+
+	@Test
+	void ordinaryRuntimeMetricRetainsZeroDeltaNoOpSemantics() {
+		SingletonSet target = new SingletonSet();
+		target.setRuntimeTelemetryEnabled(true);
+		String metric = "nativeOnePassPackedRegionsOpenedActual";
+
+		LmdbNativeExplain.addRuntimeMetric(target, metric, 0L);
+		assertThat(target.getLongMetricActual(metric)).isEqualTo(-1L);
+		LmdbNativeExplain.addRuntimeMetric(target, metric, 2L);
+		LmdbNativeExplain.addRuntimeMetric(target, metric, 0L);
+
+		assertThat(target.getLongMetricActual(metric)).isEqualTo(2L);
 	}
 
 	@Test

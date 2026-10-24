@@ -54,6 +54,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
@@ -815,6 +816,100 @@ class AdaptiveFilterPlacementTest {
 		assertThat(consume(strategy.precompile(new QueryRoot(passingQuery())), EmptyBindingSet.getInstance()))
 				.hasSize(12);
 		assertThat(preparations.get()).as("declining an adapter must reuse its actual prepared fallback").isEqualTo(1);
+	}
+
+	@Test
+	void adaptiveRootPublishesItsMeasuredConditionPopulationAcrossInvocations() {
+		CountingSource source = passingSource(3, 3);
+		Filter filter = new Filter(new Join(type(), pattern(OBSERVATION, "item")),
+				new Compare(Var.of("item"), new ValueConstant(VF.createIRI("urn:item:0"))));
+		filter.setRuntimeTelemetryEnabled(true);
+		QueryEvaluationStep prepared = new DefaultEvaluationStrategy(source, null).precompile(new QueryRoot(filter));
+		assertThat(consume(prepared, EmptyBindingSet.getInstance())).hasSize(3);
+		assertThat(filter.getLongMetricActual("adaptiveFilterCohortsActual"))
+				.as("the measured population must come from the actual adaptive route")
+				.isPositive();
+		assertMeasuredPopulation(filter, 9, 3, 6);
+		assertThat(consume(prepared, EmptyBindingSet.getInstance())).hasSize(3);
+		assertMeasuredPopulation(filter, 18, 6, 12);
+		assertThat(source.closed.sum()).isEqualTo(source.opened.sum());
+	}
+
+	@Test
+	void adaptiveNonRootFilterReportsConditionInputsRatherThanDownstreamFanout() {
+		CountingSource source = passingSource(4, 3);
+		source.add(subject(0), CONDITION, VF.createIRI("urn:present"));
+		Filter filter = new Filter(type(), new Not(new Exists(pattern(CONDITION, "local"))));
+		filter.setRuntimeTelemetryEnabled(true);
+		Join query = new Join(filter, pattern(OBSERVATION, "item"));
+		query.setRuntimeTelemetryEnabled(true);
+		assertThat(evaluate(query, source)).hasSize(9);
+		assertMeasuredPopulation(filter, 4, 3, 1);
+		assertThat(source.closed.sum()).isEqualTo(source.opened.sum());
+	}
+
+	@Test
+	void adaptiveNestedConditionsRetainIndependentMeasuredPopulations() {
+		CountingSource source = passingSource(3, 2);
+		source.add(subject(0), CONDITION, VF.createIRI("urn:present"));
+		Filter inner = new Filter(type(), new Not(new Exists(pattern(CONDITION, "local"))));
+		Filter outer = new Filter(new Join(inner, pattern(OBSERVATION, "item")),
+				new Compare(Var.of("item"), new ValueConstant(VF.createIRI("urn:item:0"))));
+		inner.setRuntimeTelemetryEnabled(true);
+		outer.setRuntimeTelemetryEnabled(true);
+		assertThat(evaluate(outer, source)).hasSize(2);
+		assertMeasuredPopulation(inner, 3, 2, 1);
+		assertMeasuredPopulation(outer, 4, 2, 2);
+		assertThat(source.closed.sum()).isEqualTo(source.opened.sum());
+	}
+
+	@Test
+	void adaptivePrefetchMeasuresTestedInputsWithoutInventingConsumedOutput() {
+		CountingSource source = passingSource(4, 2);
+		Filter filter = new Filter(type(), new Not(new Exists(pattern(CONDITION, "local"))));
+		filter.setRuntimeTelemetryEnabled(true);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+		strategy.setTrackResultSize(true);
+		QueryEvaluationStep prepared = strategy.precompile(new QueryRoot(new Join(filter,
+				pattern(OBSERVATION, "item"))));
+		try (CloseableIteration<BindingSet> rows = prepared.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(rows.hasNext()).isTrue();
+			assertThat(rows.hasNext()).isTrue();
+			assertThat(filter.getResultSizeActual()).isEqualTo(1);
+		}
+		assertMeasuredPopulation(filter, 1, 1, 0);
+		assertThat(filter.getResultSizeActual()).isEqualTo(1);
+		assertThat(source.closed.sum()).isEqualTo(source.opened.sum());
+	}
+
+	@Test
+	void adaptiveUnexpectedPredicateFailurePublishesPartialWorkAndClosesSources() {
+		CountingSource source = passingSource(3, 2);
+		Filter filter = new Filter(new Join(type(), pattern(OBSERVATION, "item")),
+				new Compare(Var.of("item"), new ValueConstant(VF.createIRI("urn:item:0"))));
+		filter.setRuntimeTelemetryEnabled(true);
+		AtomicInteger evaluations = new AtomicInteger();
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null) {
+			@Override
+			public boolean isTrue(QueryValueEvaluationStep condition, BindingSet bindings) {
+				if (evaluations.incrementAndGet() == 2) {
+					throw new QueryEvaluationException("unexpected adaptive predicate failure");
+				}
+				return super.isTrue(condition, bindings);
+			}
+		};
+		QueryEvaluationStep prepared = strategy.precompile(new QueryRoot(filter));
+		assertThatThrownBy(() -> consume(prepared, EmptyBindingSet.getInstance()))
+				.isInstanceOf(QueryEvaluationException.class)
+				.hasMessage("unexpected adaptive predicate failure");
+		assertMeasuredPopulation(filter, 2, 1, 0);
+		assertThat(source.closed.sum()).isEqualTo(source.opened.sum());
+	}
+
+	private static void assertMeasuredPopulation(Filter filter, long scanned, long matched, long filtered) {
+		assertThat(filter.getSourceRowsScannedActual()).as("actual tested condition population").isEqualTo(scanned);
+		assertThat(filter.getSourceRowsMatchedActual()).as("actual accepted condition population").isEqualTo(matched);
+		assertThat(filter.getSourceRowsFilteredActual()).as("actual rejected condition population").isEqualTo(filtered);
 	}
 
 	private static CountingSource passingSource(int subjects, int fanout) {

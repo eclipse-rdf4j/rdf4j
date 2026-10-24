@@ -12,19 +12,29 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertTrue;
 
 import java.io.File;
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Focused test to prove that the ValueStore cache path is exercised by existing operations.
@@ -39,27 +49,248 @@ class ValueStoreCacheTest {
 			ValueFactory vf = store.getValueFactory();
 			// ValueFactory is actually the package-private ValueStore
 			ValueStore vs = (ValueStore) vf;
-
 			IRI iri = vf.createIRI("urn:example:foo");
 			long id = vs.getId(iri, true);
-
 			// On lazy retrieval, the cache should not be touched
 			LmdbValue v1 = vs.getLazyValue(id);
 			assertNotNull(v1);
 			LmdbValue cached1 = vs.cachedValue(id);
 			assertNull(cached1);
-
 			// After initializing the value, it should be cached
 			assertEquals(v1.stringValue(), "urn:example:foo");
 			LmdbValue cached2 = vs.cachedValue(id);
 			assertSame(v1, cached2);
-
 			// Direct cache hit
 			LmdbValue v2 = vs.cachedValue(id);
 			assertSame(v1, v2);
 		} finally {
 			store.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void predicateLazyLookupIsCachedSeparately(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir);
+		store.init();
+		try {
+			ValueStore vs = (ValueStore) store.getValueFactory();
+			long id = vs.getId(vs.createIRI("urn:example:predicate"), true);
+			assertNull(vs.cachedPredicate(id));
+			LmdbIRI first = vs.getLazyPredicate(id);
+			assertNotNull(first);
+			assertSame(first, vs.cachedPredicate(id));
+			assertSame(first, vs.getLazyPredicate(id));
+		} finally {
+			store.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void predicateCacheIsClearedWithValueCaches(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir);
+		store.init();
+		try {
+			ValueStore vs = (ValueStore) store.getValueFactory();
+			long id = vs.getId(vs.createIRI("urn:example:predicate"), true);
+			LmdbIRI predicate = vs.getLazyPredicate(id);
+			assertSame(predicate, vs.cachedPredicate(id));
+			vs.clearCaches();
+			assertNull(vs.cachedPredicate(id));
+		} finally {
+			store.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { LmdbStoreFormat.CURRENT_VERSION, LmdbStoreFormat.LEGACY_VERSION })
+	void predicateCacheUsesFixedArrayCollisionBehavior(int format, @TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig().setValueCacheSize(1);
+		ValueStore valueStore = openCacheProfile(dataDir, config, format);
+		try {
+			valueStore.startTransaction(true);
+			long firstId = valueStore.storeValue(valueStore.createIRI("urn:predicate-cache:first"));
+			long secondId = valueStore.storeValue(valueStore.createIRI("urn:predicate-cache:second"));
+			valueStore.commit();
+			assertEquals(ValueIds.T_URI, ValueIds.getIdType(firstId));
+			assertEquals(ValueIds.T_URI, ValueIds.getIdType(secondId));
+			assertTrue(firstId != secondId);
+			valueStore.clearCaches();
+			LmdbIRI first = (LmdbIRI) valueStore.getLazyValue(firstId);
+			LmdbIRI second = (LmdbIRI) valueStore.getLazyValue(secondId);
+			assertFalse(first.isInitialized());
+			assertFalse(second.isInitialized());
+			valueStore.cachePredicate(firstId, first);
+			valueStore.cachePredicate(secondId, second);
+			assertNull(valueStore.cachedPredicate(firstId));
+			assertSame(second, valueStore.cachedPredicate(secondId));
+			assertEquals("urn:predicate-cache:first", first.stringValue());
+			assertEquals("urn:predicate-cache:second", second.stringValue());
+		} finally {
+			valueStore.close();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void datatypeCacheIsClearedWithValueCaches(@TempDir File dataDir) throws Exception {
+		ValueStore valueStore = new ValueStore(dataDir, new LmdbStoreConfig());
+		try {
+			valueStore.startTransaction(true);
+			long id = valueStore.storeValue(valueStore.createIRI("urn:example:datatype"));
+			valueStore.commit();
+			valueStore.clearCaches();
+			LmdbIRI datatype = (LmdbIRI) valueStore.getValue(id);
+			assertEquals(ValueIds.T_URI, ValueIds.getIdType(id));
+			valueStore.cacheDatatype(id, datatype);
+			assertSame(datatype, valueStore.cachedDatatype(id));
+			assertSame(CoreDatatype.NONE, valueStore.cachedDatatypeCoreDatatype(id));
+			valueStore.clearCaches();
+			assertNull(valueStore.cachedDatatype(id));
+			assertNull(valueStore.cachedDatatypeCoreDatatype(id));
+		} finally {
+			valueStore.close();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void datatypeLookupIsCachedAcrossValueCacheCollisions(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig().setValueCacheSize(1).setInlineLiterals(false);
+		CountingValueStore valueStore = new CountingValueStore(dataDir, config);
+		try {
+			IRI datatype = valueStore.createIRI("urn:example:datatype");
+			Literal firstLiteral = valueStore.createLiteral("datatype cache literal one", datatype);
+			Literal secondLiteral = valueStore.createLiteral("datatype cache literal two", datatype);
+			valueStore.startTransaction(true);
+			long firstLiteralId = valueStore.storeValue(firstLiteral);
+			long secondLiteralId = valueStore.storeValue(secondLiteral);
+			valueStore.commit();
+			long datatypeId = valueStore.getId(datatype);
+			assertTrue(datatypeId > 0);
+			valueStore.clearCaches();
+			valueStore.clearReadCounts();
+			Literal firstDecoded = (Literal) valueStore.getValue(firstLiteralId);
+			Literal secondDecoded = (Literal) valueStore.getValue(secondLiteralId);
+			assertEquals(datatype, firstDecoded.getDatatype());
+			assertEquals(datatype, secondDecoded.getDatatype());
+			assertNull(valueStore.cachedValue(datatypeId));
+			assertEquals(1, valueStore.readCount(datatypeId));
+		} finally {
+			valueStore.close();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void datatypeLookupCachesCoreDatatypeAcrossValueCacheCollisions(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig().setValueCacheSize(1).setInlineLiterals(false);
+		CountingValueStore valueStore = new CountingValueStore(dataDir, config);
+		try {
+			Literal firstLiteral = valueStore.createLiteral("1", CoreDatatype.XSD.INT);
+			Literal secondLiteral = valueStore.createLiteral("2", CoreDatatype.XSD.INT);
+			valueStore.startTransaction(true);
+			long firstLiteralId = valueStore.storeValue(firstLiteral);
+			long secondLiteralId = valueStore.storeValue(secondLiteral);
+			valueStore.commit();
+			long datatypeId = valueStore.getId(CoreDatatype.XSD.INT.getIri());
+			assertTrue(datatypeId > 0);
+			valueStore.clearCaches();
+			valueStore.clearReadCounts();
+			Literal firstDecoded = (Literal) valueStore.getValue(firstLiteralId);
+			Literal secondDecoded = (Literal) valueStore.getValue(secondLiteralId);
+			assertEquals(CoreDatatype.XSD.INT.getIri(), firstDecoded.getDatatype());
+			assertSame(CoreDatatype.XSD.INT, firstDecoded.getCoreDatatype());
+			assertEquals(CoreDatatype.XSD.INT.getIri(), secondDecoded.getDatatype());
+			assertSame(CoreDatatype.XSD.INT, secondDecoded.getCoreDatatype());
+			assertSame(CoreDatatype.XSD.INT, valueStore.cachedDatatypeCoreDatatype(datatypeId));
+			assertNull(valueStore.cachedValue(datatypeId));
+			assertEquals(1, valueStore.readCount(datatypeId));
+		} finally {
+			valueStore.close();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void datatypeCacheRejectsChangedPayloadWithinTheSameRevision(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig().setValueCacheSize(1).setInlineLiterals(false);
+		CountingValueStore valueStore = new CountingValueStore(dataDir, config);
+		try {
+			IRI datatype = SimpleValueFactory.getInstance().createIRI("urn:datatype-cache:original");
+			valueStore.startTransaction(true);
+			long first = valueStore.storeValue(SimpleValueFactory.getInstance().createLiteral("first", datatype));
+			long second = valueStore.storeValue(SimpleValueFactory.getInstance().createLiteral("second", datatype));
+			valueStore.commit();
+			long datatypeId = valueStore.getId(datatype);
+			valueStore.clearCaches();
+			valueStore.clearReadCounts();
+			assertEquals(datatype, ((Literal) valueStore.getValue(first)).getDatatype());
+			LmdbIRI cached = valueStore.cachedDatatype(datatypeId);
+			assertNotNull("decoding must admit the datatype to its separate cache", cached);
+			cached.setNamespaceAndIri("urn:datatype-cache:", "mutated");
+			assertNull("mutable payload changes invalidate the cached semantic version",
+					valueStore.cachedDatatype(datatypeId));
+			Literal decoded = (Literal) valueStore.getValue(second);
+			assertEquals(datatype, decoded.getDatatype());
+			assertSame(decoded.getDatatype(), valueStore.cachedDatatype(datatypeId));
+			assertEquals("a changed payload requires exactly one authoritative reload", 2,
+					valueStore.readCount(datatypeId));
+		} finally {
+			valueStore.close();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	private static ValueStore openCacheProfile(File directory, LmdbStoreConfig config, int format) throws IOException {
+		ValueStore store;
+		if (format == LmdbStoreFormat.CURRENT_VERSION) {
+			store = new ValueStore(directory, config);
+		} else {
+			assertEquals(LmdbStoreFormat.LEGACY_VERSION, format);
+			StoreProperties properties = new StoreProperties(directory);
+			properties.setVersion(Integer.toString(format));
+			store = new ValueStore(directory, properties, config);
+		}
+		try {
+			assertEquals(format, store.getFormat().getVersion());
+			assertEquals(format == LmdbStoreFormat.CURRENT_VERSION,
+					store.getFormat().usesCoreDatatypeLiteralReferences());
+			return store;
+		} catch (RuntimeException | Error initiating) {
+			try {
+				store.close();
+			} catch (IOException | RuntimeException | Error cleanup) {
+				if (cleanup != initiating) {
+					initiating.addSuppressed(cleanup);
+				}
+			}
+			throw initiating;
+		}
+	}
+
+	private static final class CountingValueStore extends ValueStore {
+
+		private final Map<Long, Integer> readCounts = new HashMap<>();
+
+		private CountingValueStore(File dir, LmdbStoreConfig config) throws IOException {
+			super(dir, config);
+		}
+
+		@Override
+		protected byte[] getData(long id) throws IOException {
+			readCounts.merge(id, 1, Integer::sum);
+			return super.getData(id);
+		}
+
+		void clearReadCounts() {
+			readCounts.clear();
+		}
+
+		int readCount(long id) {
+			return readCounts.getOrDefault(id, 0);
 		}
 	}
 
@@ -74,9 +305,7 @@ class ValueStoreCacheTest {
 			LmdbValue resolved = (LmdbValue) literal;
 			long id = 123L;
 			resolved.setInternalID(id, valueStore.getRevision());
-
 			valueStore.cacheValue(id, resolved);
-
 			assertEquals(label.length(), resolved.stringValue().length());
 			if (valueStore.cachedValue(id) != null) {
 				throw new AssertionError("A 100 MiB lexical value must not enter the shared value cache");

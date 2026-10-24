@@ -110,10 +110,16 @@ final class NativeBindingSetProjectionStep implements QueryEvaluationStep, LmdbN
 			try {
 				boolean result = delegate.hasNext();
 				if (!result) {
+					if (lease != null) {
+						lease.exhausted();
+					}
 					close();
 				}
 				return result;
 			} catch (RuntimeException | Error e) {
+				if (lease != null) {
+					lease.failed();
+				}
 				try {
 					close();
 				} catch (RuntimeException | Error cleanup) {
@@ -133,6 +139,9 @@ final class NativeBindingSetProjectionStep implements QueryEvaluationStep, LmdbN
 			try {
 				return project(delegate.next(), parentBindings, sourceNames, targetNames, includeAllParentBindings);
 			} catch (RuntimeException | Error e) {
+				if (lease != null) {
+					lease.failed();
+				}
 				try {
 					close();
 				} catch (RuntimeException | Error cleanup) {

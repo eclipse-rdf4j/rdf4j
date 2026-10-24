@@ -20,7 +20,10 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -30,7 +33,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
@@ -38,9 +44,13 @@ import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.query.AbstractTupleQueryResultHandler;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -48,6 +58,8 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -55,19 +67,29 @@ import com.sun.net.httpserver.HttpServer;
 class LmdbQueryExecutionDeadlineTest {
 
 	private static final IRI SUBJECT = Values.iri("urn:rdf4j:query-deadline:subject");
+
 	private static final IRI VALUE_PREDICATE = Values.iri("urn:rdf4j:query-deadline:value");
+
 	private static final IRI SERVICE_PREDICATE = Values.iri("urn:rdf4j:query-deadline:service");
+
 	private static final IRI GROWTH_PREDICATE = Values.iri("urn:rdf4j:query-deadline:growth");
+
 	private static final int BEFORE_FIRST_RESULT_TIMEOUT_SECONDS = 1;
+
 	private static final int GROWTH_REPLAY_TIMEOUT_SECONDS = 15;
+
 	private static final long DEADLINE_MARGIN_MILLIS = 200;
+
 	private static final long GROWTH_MAP_SIZE = 64L * 1024L * 1024L;
+
 	private static final long TRIPLE_GROWTH_VALUE_MAP_SIZE = 256L * 1024L * 1024L;
+
 	private static final double GROWTH_THRESHOLD = 0.10d;
+
 	private static final int VALUE_STORE_GROWTH_BYTES = 16 * 1024 * 1024;
-	private static final String QUERY = "SELECT ?value ?remoteValue WHERE { "
-			+ "<" + SUBJECT + "> <" + VALUE_PREDICATE + "> ?value . "
-			+ "<" + SUBJECT + "> <" + SERVICE_PREDICATE + "> ?endpoint . "
+
+	private static final String QUERY = "SELECT ?value ?remoteValue WHERE { " + "<" + SUBJECT + "> <" + VALUE_PREDICATE
+			+ "> ?value . " + "<" + SUBJECT + "> <" + SERVICE_PREDICATE + "> ?endpoint . "
 			+ "SERVICE ?endpoint { <urn:rdf4j:query-deadline:remote> "
 			+ "<urn:rdf4j:query-deadline:remote-value> ?remoteValue } }";
 
@@ -98,9 +120,29 @@ class LmdbQueryExecutionDeadlineTest {
 	@Test
 	@Timeout(value = 30, unit = TimeUnit.SECONDS)
 	void standaloneTupleQueryReplaysAcrossGrowth(@TempDir Path dataDirectory) throws Exception {
+		assertStandaloneTupleQueryGrowthReplay(dataDirectory, null, false);
+	}
+
+	@ParameterizedTest
+	@EnumSource(ServiceCleanupFailure.class)
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void standaloneTupleQueryDoesNotReplayAfterServiceCleanupFailure(ServiceCleanupFailure failure,
+			@TempDir Path dataDirectory) throws Exception {
+		assertStandaloneTupleQueryGrowthReplay(dataDirectory, failure.create(), false);
+	}
+
+	@ParameterizedTest
+	@EnumSource(ServiceQueuedFailure.class)
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void standaloneTupleQueryDoesNotReplayAnIndependentQueuedServiceFailure(ServiceQueuedFailure failure,
+			@TempDir Path dataDirectory) throws Exception {
+		assertStandaloneTupleQueryGrowthReplay(dataDirectory, failure.create(), true);
+	}
+
+	private static void assertStandaloneTupleQueryGrowthReplay(Path dataDirectory, RuntimeException cleanupFailure,
+			boolean failBeforeReturn) throws Exception {
 		try (ServiceGate serviceGate = new ServiceGate()) {
-			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
-					.setForceSync(true)
+			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setForceSync(true)
 					.setTripleDBSize(GROWTH_MAP_SIZE)
 					.setValueDBSize(TRIPLE_GROWTH_VALUE_MAP_SIZE)
 					.setMapGrowthThreshold(GROWTH_THRESHOLD)
@@ -109,8 +151,15 @@ class LmdbQueryExecutionDeadlineTest {
 			LmdbStore store = new LmdbStore(dataDirectory.toFile(), config);
 			SailRepository repository = new SailRepository(store);
 			ExecutorService executor = Executors.newFixedThreadPool(2);
+			AtomicInteger cleanupCalls = new AtomicInteger();
+			AtomicInteger outwardRows = new AtomicInteger();
 			try {
 				repository.init();
+				if (cleanupFailure != null) {
+					FederatedServiceResolver delegate = store.getFederatedServiceResolver();
+					store.setFederatedServiceResolver(endpoint -> new FailingService(delegate.getService(endpoint),
+							cleanupFailure, cleanupCalls, failBeforeReturn));
+				}
 				LmdbSailStore backingStore = store.getBackingStore();
 				TripleStore tripleStore = tripleStoreOf(store);
 				long initialMapSize = mapSize(tripleStore);
@@ -119,7 +168,6 @@ class LmdbQueryExecutionDeadlineTest {
 					seed.add(SUBJECT, SERVICE_PREDICATE, Values.iri(serviceGate.endpoint()));
 				}
 				MapGrowthMetrics.Snapshot before = backingStore.growthMetricsSnapshot();
-
 				Future<List<String>> query = executor.submit(() -> {
 					try (RepositoryConnection reader = repository.getConnection()) {
 						TupleQuery tupleQuery = reader.prepareTupleQuery(QUERY);
@@ -127,13 +175,13 @@ class LmdbQueryExecutionDeadlineTest {
 							List<String> values = new ArrayList<>();
 							while (result.hasNext()) {
 								values.add(result.next().getValue("value").stringValue());
+								outwardRows.incrementAndGet();
 							}
 							return values;
 						}
 					}
 				});
-
-				assertThat(serviceGate.awaitFirstRequest()).isTrue();
+				assertThat(serviceGate.awaitFirstRequest(query)).isTrue();
 				Future<String> writer = executor.submit(() -> {
 					try (RepositoryConnection growthWriter = repository.getConnection()) {
 						growthWriter.begin();
@@ -150,14 +198,18 @@ class LmdbQueryExecutionDeadlineTest {
 				assertThat(mapSize(tripleStore) > initialMapSize)
 						.as("the write must grow the TripleStore map before replay completes")
 						.isTrue();
-				if (!serviceGate.awaitSecondRequest()) {
-					if (query.isDone()) {
-						query.get();
-					}
-					throw new AssertionError("the replay must make a second SERVICE request");
+				if (cleanupFailure != null) {
+					assertThatThrownBy(() -> query.get(10, TimeUnit.SECONDS)).isInstanceOf(ExecutionException.class)
+							.satisfies(failure -> assertThat(containsFailure(failure, cleanupFailure))
+									.as("the independent SERVICE failure must remain in the exception graph")
+									.isTrue());
+					assertThat(cleanupCalls).hasValue(1);
+					assertThat(outwardRows).hasValue(0);
+					assertThat(serviceGate.requestCount()).isEqualTo(1);
+					return;
 				}
+				assertThat(serviceGate.awaitSecondRequest(query)).isTrue();
 				serviceGate.releaseAllRequests();
-
 				assertThat(query.get(15, TimeUnit.SECONDS)).containsExactlyInAnyOrder("before", "after");
 				assertThat(serviceGate.requestCount()).isGreaterThanOrEqualTo(2);
 			} finally {
@@ -172,13 +224,13 @@ class LmdbQueryExecutionDeadlineTest {
 	@Test
 	@Timeout(value = 30, unit = TimeUnit.SECONDS)
 	void standaloneStatementResultReplaysAcrossGrowth(@TempDir Path dataDirectory) throws Exception {
-		LmdbStore store = new LmdbStore(dataDirectory.toFile(), new LmdbStoreConfig("spoc,posc")
-				.setForceSync(true)
-				.setTripleDBSize(GROWTH_MAP_SIZE)
-				.setValueDBSize(TRIPLE_GROWTH_VALUE_MAP_SIZE)
-				.setMapGrowthThreshold(GROWTH_THRESHOLD)
-				.setAutoGrow(true)
-				.setMapGrowthReadDrainTimeoutMillis(150));
+		LmdbStore store = new LmdbStore(dataDirectory.toFile(),
+				new LmdbStoreConfig("spoc,posc").setForceSync(true)
+						.setTripleDBSize(GROWTH_MAP_SIZE)
+						.setValueDBSize(TRIPLE_GROWTH_VALUE_MAP_SIZE)
+						.setMapGrowthThreshold(GROWTH_THRESHOLD)
+						.setAutoGrow(true)
+						.setMapGrowthReadDrainTimeoutMillis(150));
 		SailRepository repository = new SailRepository(store);
 		try {
 			repository.init();
@@ -188,7 +240,6 @@ class LmdbQueryExecutionDeadlineTest {
 			try (RepositoryConnection seed = repository.getConnection()) {
 				seed.add(SUBJECT, GROWTH_PREDICATE, Values.literal("before"));
 			}
-
 			try (RepositoryConnection reader = repository.getConnection();
 					RepositoryResult<Statement> statements = reader.getStatements(SUBJECT, GROWTH_PREDICATE, null,
 							false)) {
@@ -203,7 +254,6 @@ class LmdbQueryExecutionDeadlineTest {
 				assertThat(mapSize(tripleStore) > initialMapSize)
 						.as("the statement result must replay after actual TripleStore growth")
 						.isTrue();
-
 				List<String> values = new ArrayList<>();
 				while (statements.hasNext()) {
 					values.add(statements.next().getObject().stringValue());
@@ -224,8 +274,7 @@ class LmdbQueryExecutionDeadlineTest {
 	void standaloneTupleQueryKeepsOriginalResultsAcrossValueStoreOnlyGrowth(@TempDir Path dataDirectory)
 			throws Exception {
 		try (ServiceGate serviceGate = new ServiceGate()) {
-			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
-					.setForceSync(true)
+			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setForceSync(true)
 					.setTripleDBSize(GROWTH_MAP_SIZE)
 					.setValueDBSize(GROWTH_MAP_SIZE)
 					.setMapGrowthThreshold(GROWTH_THRESHOLD)
@@ -242,7 +291,6 @@ class LmdbQueryExecutionDeadlineTest {
 					seed.add(SUBJECT, SERVICE_PREDICATE, Values.iri(serviceGate.endpoint()));
 				}
 				MapGrowthMetrics.Snapshot before = backingStore.growthMetricsSnapshot();
-
 				Future<List<String>> query = executor.submit(() -> {
 					try (RepositoryConnection reader = repository.getConnection()) {
 						TupleQuery tupleQuery = reader.prepareTupleQuery(QUERY);
@@ -255,8 +303,7 @@ class LmdbQueryExecutionDeadlineTest {
 						}
 					}
 				});
-
-				assertThat(serviceGate.awaitFirstRequest()).isTrue();
+				assertThat(serviceGate.awaitFirstRequest(query)).isTrue();
 				String largeValue = "x".repeat(VALUE_STORE_GROWTH_BYTES);
 				Future<?> writer = executor.submit(() -> {
 					try (RepositoryConnection growthWriter = repository.getConnection()) {
@@ -279,7 +326,6 @@ class LmdbQueryExecutionDeadlineTest {
 				assertThat(afterGrowth.replayRequests()).isEqualTo(before.replayRequests());
 				assertThat(afterGrowth.replayAccepted()).isEqualTo(before.replayAccepted());
 				serviceGate.releaseAllRequests();
-
 				assertThat(query.get(15, TimeUnit.SECONDS)).containsExactly("before");
 				assertThat(serviceGate.requestCount()).isEqualTo(1);
 				MapGrowthMetrics.Snapshot afterQuery = backingStore.growthMetricsSnapshot();
@@ -298,8 +344,8 @@ class LmdbQueryExecutionDeadlineTest {
 	@Test
 	@Timeout(value = 10, unit = TimeUnit.SECONDS)
 	void resultReturningQueryTimesOutWhileWaitingForMapGrowthAdmission(@TempDir Path dataDirectory) throws Exception {
-		LmdbStore store = new LmdbStore(dataDirectory.toFile(), new LmdbStoreConfig("spoc,posc")
-				.setTripleDBSize(4096 * 10));
+		LmdbStore store = new LmdbStore(dataDirectory.toFile(),
+				new LmdbStoreConfig("spoc,posc").setTripleDBSize(4096 * 10));
 		SailRepository repository = new SailRepository(store);
 		ExecutorService executor = Executors.newSingleThreadExecutor();
 		CountDownLatch queryPrepared = new CountDownLatch(1);
@@ -311,7 +357,6 @@ class LmdbQueryExecutionDeadlineTest {
 			try (RepositoryConnection seed = repository.getConnection()) {
 				seed.add(SUBJECT, VALUE_PREDICATE, Values.literal("snapshot"));
 			}
-
 			Future<Void> query = executor.submit(() -> {
 				try (RepositoryConnection reader = repository.getConnection()) {
 					TupleQuery tupleQuery = reader.prepareTupleQuery(
@@ -330,15 +375,12 @@ class LmdbQueryExecutionDeadlineTest {
 					return null;
 				}
 			});
-
 			assertThat(queryPrepared.await(5, TimeUnit.SECONDS)).isTrue();
 			growthAttempt = store.getBackingStore().beginMapGrowthAttempt(new Object());
 			startEvaluation.countDown();
 			assertThat(evaluationStarted.await(5, TimeUnit.SECONDS)).isTrue();
-
 			long waitStartedAt = System.nanoTime();
-			assertThatThrownBy(() -> query.get(3, TimeUnit.SECONDS))
-					.isInstanceOf(ExecutionException.class)
+			assertThatThrownBy(() -> query.get(3, TimeUnit.SECONDS)).isInstanceOf(ExecutionException.class)
 					.hasRootCauseInstanceOf(QueryInterruptedException.class);
 			assertThat(System.nanoTime() - waitStartedAt).isLessThan(TimeUnit.SECONDS.toNanos(3));
 		} finally {
@@ -358,8 +400,7 @@ class LmdbQueryExecutionDeadlineTest {
 	private static void assertQueryTimesOut(Path dataDirectory, boolean handler, boolean growMaps, int timeoutSeconds)
 			throws Exception {
 		try (ServiceGate serviceGate = new ServiceGate()) {
-			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
-					.setForceSync(true)
+			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setForceSync(true)
 					.setTripleDBSize(GROWTH_MAP_SIZE)
 					.setValueDBSize(TRIPLE_GROWTH_VALUE_MAP_SIZE)
 					.setMapGrowthThreshold(GROWTH_THRESHOLD)
@@ -380,7 +421,6 @@ class LmdbQueryExecutionDeadlineTest {
 					seed.add(SUBJECT, SERVICE_PREDICATE, Values.iri(serviceGate.endpoint()));
 				}
 				MapGrowthMetrics.Snapshot before = backingStore.growthMetricsSnapshot();
-
 				CountDownLatch queryStarted = new CountDownLatch(1);
 				AtomicInteger outwardRows = new AtomicInteger();
 				Future<Integer> query = executor.submit(() -> {
@@ -394,6 +434,7 @@ class LmdbQueryExecutionDeadlineTest {
 						queryStarted.countDown();
 						if (handler) {
 							tupleQuery.evaluate(new AbstractTupleQueryResultHandler() {
+
 								@Override
 								public void handleSolution(BindingSet bindingSet) {
 									outwardRows.incrementAndGet();
@@ -410,9 +451,8 @@ class LmdbQueryExecutionDeadlineTest {
 						return outwardRows.get();
 					}
 				});
-
 				assertThat(queryStarted.await(5, TimeUnit.SECONDS)).isTrue();
-				assertThat(serviceGate.awaitFirstRequest()).isTrue();
+				assertThat(serviceGate.awaitFirstRequest(query)).isTrue();
 				if (growMaps) {
 					Future<String> writer = writerExecutor.submit(() -> {
 						try (RepositoryConnection growthWriter = repository.getConnection()) {
@@ -428,20 +468,13 @@ class LmdbQueryExecutionDeadlineTest {
 					String growthNamespace = writer.get(20, TimeUnit.SECONDS);
 					awaitTripleStoreGrowth(repository, backingStore, tripleStore, initialTripleMapSize,
 							growthNamespace);
-					if (!serviceGate.awaitSecondRequest()) {
-						if (query.isDone()) {
-							query.get();
-						}
-						throw new AssertionError("the replay must make a second SERVICE request");
-					}
+					assertThat(serviceGate.awaitSecondRequest(query)).isTrue();
 					assertThat(System.nanoTime() - evaluationStartedAt.get())
 							.isLessThan(TimeUnit.SECONDS.toNanos(timeoutSeconds));
 				}
-
 				awaitDeadline(evaluationStartedAt.get(), timeoutSeconds);
 				serviceGate.releaseAllRequests();
-				assertThatThrownBy(() -> query.get(10, TimeUnit.SECONDS))
-						.isInstanceOf(ExecutionException.class)
+				assertThatThrownBy(() -> query.get(10, TimeUnit.SECONDS)).isInstanceOf(ExecutionException.class)
 						.hasRootCauseInstanceOf(QueryInterruptedException.class);
 				assertThat(outwardRows).hasValue(0);
 				assertThat(serviceGate.requestCount()).isGreaterThanOrEqualTo(growMaps ? 2 : 1);
@@ -458,8 +491,7 @@ class LmdbQueryExecutionDeadlineTest {
 
 	private static void awaitDeadline(long startNanos, int timeoutSeconds) throws InterruptedException {
 		long remainingNanos = TimeUnit.SECONDS.toNanos(timeoutSeconds)
-				+ TimeUnit.MILLISECONDS.toNanos(DEADLINE_MARGIN_MILLIS)
-				- (System.nanoTime() - startNanos);
+				+ TimeUnit.MILLISECONDS.toNanos(DEADLINE_MARGIN_MILLIS) - (System.nanoTime() - startNanos);
 		if (remainingNanos > 0) {
 			new CountDownLatch(1).await(remainingNanos, TimeUnit.NANOSECONDS);
 		}
@@ -535,6 +567,140 @@ class LmdbQueryExecutionDeadlineTest {
 		return mapSizeField.getLong(tripleStore);
 	}
 
+	private static boolean containsFailure(Throwable failure, Throwable expected) {
+		Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+		List<Throwable> pending = new ArrayList<>();
+		pending.add(failure);
+		while (!pending.isEmpty()) {
+			Throwable current = pending.remove(pending.size() - 1);
+			if (current == expected) {
+				return true;
+			}
+			if (visited.add(current)) {
+				if (current.getCause() != null) {
+					pending.add(current.getCause());
+				}
+				Collections.addAll(pending, current.getSuppressed());
+			}
+		}
+		return false;
+	}
+
+	private enum ServiceCleanupFailure {
+
+		ORDINARY,
+		DIFFERENT_RESIZE;
+
+		RuntimeException create() {
+			return this == ORDINARY ? new IllegalStateException("independent SERVICE result close failure")
+					: new LmdbSailStore.MapResizeConflictException(LmdbSailStore.MapResizeKind.VALUE_STORE,
+							"independent dictionary resize during SERVICE result close");
+		}
+	}
+
+	private enum ServiceQueuedFailure {
+
+		DIFFERENT_TOKEN,
+		INTERRUPTED,
+		APPLICATION_WRAPPER;
+
+		RuntimeException create() {
+			LmdbSailStore.MapResizeConflictException independent = new LmdbSailStore.MapResizeConflictException(
+					LmdbSailStore.MapResizeKind.TRIPLE_STORE, "independent SERVICE replay request",
+					new LmdbSailStore.MapGrowthToken(Long.MAX_VALUE));
+			RuntimeException signal;
+			try (QueryExecutionContext.Activation ignored = QueryExecutionContext.activateReplaySafepoint(() -> {
+				throw independent;
+			})) {
+				try {
+					QueryExecutionContext.checkpointReplaySafepoint();
+					throw new AssertionError("the independent replay checkpoint must throw");
+				} catch (QueryExecutionContext.ReplaySafepointException failure) {
+					signal = failure;
+				}
+			}
+			return switch (this) {
+			case DIFFERENT_TOKEN ->
+				signal;
+			case INTERRUPTED ->
+				new QueryInterruptedException("independent SERVICE interruption", signal);
+			case APPLICATION_WRAPPER ->
+				new QueryEvaluationException("independent application wrapper", signal) {
+
+					private static final long serialVersionUID = 1L;
+				};
+			};
+		}
+	}
+
+	private static final class FailingService implements FederatedService {
+
+		private final FederatedService delegate;
+
+		private final RuntimeException cleanupFailure;
+
+		private final AtomicInteger cleanupCalls;
+
+		private final boolean failBeforeReturn;
+
+		private FailingService(FederatedService delegate, RuntimeException cleanupFailure, AtomicInteger cleanupCalls,
+				boolean failBeforeReturn) {
+			this.delegate = delegate;
+			this.cleanupFailure = cleanupFailure;
+			this.cleanupCalls = cleanupCalls;
+			this.failBeforeReturn = failBeforeReturn;
+		}
+
+		@Override
+		public boolean ask(Service service, BindingSet bindings, String baseUri) {
+			return delegate.ask(service, bindings, baseUri);
+		}
+
+		@Override
+		public CloseableIteration<BindingSet> select(Service service, Set<String> projectionVars, BindingSet bindings,
+				String baseUri) {
+			return failOnClose(delegate.select(service, projectionVars, bindings, baseUri));
+		}
+
+		@Override
+		public CloseableIteration<BindingSet> evaluate(Service service, CloseableIteration<BindingSet> bindings,
+				String baseUri) {
+			return failOnClose(delegate.evaluate(service, bindings, baseUri));
+		}
+
+		private CloseableIteration<BindingSet> failOnClose(CloseableIteration<BindingSet> result) {
+			if (failBeforeReturn) {
+				result.close();
+				cleanupCalls.incrementAndGet();
+				throw cleanupFailure;
+			}
+			return new IterationWrapper<>(result) {
+
+				@Override
+				protected void handleClose() {
+					super.handleClose();
+					cleanupCalls.incrementAndGet();
+					throw cleanupFailure;
+				}
+			};
+		}
+
+		@Override
+		public boolean isInitialized() {
+			return delegate.isInitialized();
+		}
+
+		@Override
+		public void initialize() {
+			delegate.initialize();
+		}
+
+		@Override
+		public void shutdown() {
+			delegate.shutdown();
+		}
+	}
+
 	private static final class ServiceGate implements AutoCloseable {
 
 		private static final byte[] RESULTS = ("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
@@ -544,11 +710,17 @@ class LmdbQueryExecutionDeadlineTest {
 				+ "</result></results></sparql>").getBytes(StandardCharsets.UTF_8);
 
 		private final CountDownLatch firstRequest = new CountDownLatch(1);
+
 		private final CountDownLatch secondRequest = new CountDownLatch(1);
+
 		private final CountDownLatch releaseFirst = new CountDownLatch(1);
+
 		private final CountDownLatch releaseSecond = new CountDownLatch(1);
+
 		private final AtomicInteger requestCount = new AtomicInteger();
+
 		private final ExecutorService executor = Executors.newCachedThreadPool();
+
 		private final HttpServer httpServer;
 
 		private ServiceGate() throws IOException {
@@ -562,12 +734,24 @@ class LmdbQueryExecutionDeadlineTest {
 			return "http://127.0.0.1:" + httpServer.getAddress().getPort() + "/sparql";
 		}
 
-		private boolean awaitFirstRequest() throws InterruptedException {
-			return firstRequest.await(10, TimeUnit.SECONDS);
+		private boolean awaitFirstRequest(Future<?> query) throws Exception {
+			boolean observed = firstRequest.await(10, TimeUnit.SECONDS);
+			if (!observed && query.isDone()) {
+				// Surface an early query/transport failure instead of hiding it behind the HTTP latch assertion.
+				Object outcome = query.get();
+				throw new AssertionError("Query completed before the first SERVICE request: " + outcome);
+			}
+			return observed;
 		}
 
-		private boolean awaitSecondRequest() throws InterruptedException {
-			return secondRequest.await(10, TimeUnit.SECONDS);
+		private boolean awaitSecondRequest(Future<?> query) throws Exception {
+			boolean observed = secondRequest.await(10, TimeUnit.SECONDS);
+			if (!observed && query.isDone()) {
+				// Surface a replay failure instead of hiding it behind the HTTP latch assertion.
+				Object outcome = query.get();
+				throw new AssertionError("Query completed before the second SERVICE request: " + outcome);
+			}
+			return observed;
 		}
 
 		private int requestCount() {
@@ -616,6 +800,14 @@ class LmdbQueryExecutionDeadlineTest {
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();
 			}
+		}
+
+		private boolean awaitFirstRequest() throws InterruptedException {
+			return firstRequest.await(10, TimeUnit.SECONDS);
+		}
+
+		private boolean awaitSecondRequest() throws InterruptedException {
+			return secondRequest.await(10, TimeUnit.SECONDS);
 		}
 	}
 }

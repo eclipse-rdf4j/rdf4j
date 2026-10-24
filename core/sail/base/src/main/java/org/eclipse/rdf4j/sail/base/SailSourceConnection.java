@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -38,6 +39,7 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
+import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -48,9 +50,13 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.query.QueryOperationContext;
+import org.eclipse.rdf4j.query.QueryOperationDeadline;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
@@ -248,6 +254,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	@Override
 	protected CloseableIteration<? extends BindingSet> evaluateInternal(TupleExpr tupleExpr,
 			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
+		QueryOperationContext.throwIfDeadlineExpired();
 		logger.trace("Incoming query model:\n{}", tupleExpr);
 
 		SlowQueryContextHolder.SlowQueryContext slowQueryContext = SlowQueryContextHolder.get();
@@ -265,6 +272,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			// Clone the tuple expression to allow for more aggressive optimizations
 			tupleExpr = tupleExpr.clone();
 		}
+		QueryOperationContext.throwIfDeadlineExpired();
 
 		if (!(tupleExpr instanceof QueryRoot)) {
 			// Add a dummy root node to the tuple expressions to allow the
@@ -274,6 +282,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			queryRoot.setExecutionSummaryEnabled(tupleExpr.isExecutionSummaryEnabled());
 			tupleExpr = queryRoot;
 		}
+		QueryOperationContext.throwIfDeadlineExpired();
 		boolean runtimeTelemetryEnabled = tupleExpr.isRuntimeTelemetryEnabled();
 		boolean executionSummaryEnabled = tupleExpr.isExecutionSummaryEnabled();
 
@@ -285,6 +294,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				// The interlock below closes the operator tree, and with it every cursor, before this dataset.
 				owned.cursorsCloseBeforeDataset();
 			}
+			QueryOperationContext.throwIfDeadlineExpired();
 
 			TripleSource tripleSource = new SailDatasetTripleTermSource(vf, rdfDataset);
 			EvaluationStrategy strategy = getEvaluationStrategy(dataset, tripleSource);
@@ -296,7 +306,10 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				strategy.setTrackTime(trackTime);
 			}
 
+			QueryOperationContext.throwIfDeadlineExpired();
 			tupleExpr = strategy.optimize(tupleExpr, store.getEvaluationStatistics(), bindings);
+			QueryOperationContext.throwIfDeadlineExpired();
+//			System.out.println(tupleExpr);
 			if (runtimeTelemetryEnabled) {
 				setRuntimeTelemetryEnabled(tupleExpr, true);
 			}
@@ -314,9 +327,13 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			}
 
 			logger.trace("Optimized query model:\n{}", tupleExpr);
-			QueryEvaluationStep qes = strategy.precompile(tupleExpr);
+			QueryOperationContext.throwIfDeadlineExpired();
+			QueryEvaluationStep qes = strategy.precompileFinalTupleResult(tupleExpr);
+			QueryOperationContext.throwIfDeadlineExpired();
+			// Request parameters remain metadata, independently of preview's no-execution behavior.
 			iteration = QueryExplanationContext.isPreview() ? new EmptyIteration<>()
-					: qes.evaluate(EmptyBindingSet.getInstance());
+					: qes.evaluate(BindingSetOrigin.optimizationInput(bindings));
+			QueryOperationContext.throwIfDeadlineExpired();
 			iteration = interlock(iteration, rdfDataset);
 			rdfDataset = null; // The iteration now owns the dataset, including any acquired source.
 			if (slowQueryLogInfo != null) {
@@ -324,7 +341,16 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 						new SlowQueryLogFormatter(), slowQueryStartMillis);
 			}
 			return iteration;
+		} catch (QueryInterruptedException e) {
+			closeFailedRead(e, iteration, rdfDataset);
+			throw e;
 		} catch (QueryEvaluationException e) {
+			if (QueryExecutionContext.isReplaySafepointFailure(e)) {
+				// Preserve the original typed control envelope for the read owner. Adding a generic SailException
+				// here would make it indistinguishable from a terminal recreation or cleanup failure.
+				closeFailedRead(e, iteration, rdfDataset);
+				throw e;
+			}
 			SailException failure = new SailException(e);
 			closeFailedRead(failure, iteration, rdfDataset);
 			throw failure;
@@ -337,49 +363,57 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	@Override
 	public Explanation explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset,
 			BindingSet bindings, boolean includeInferred, int timeoutSeconds) {
+		TupleExpr requestedTupleExpr = tupleExpr;
+		QueryRoot executionRoot = level == Explanation.Level.Unoptimized
+				? null
+				: tupleExpr instanceof QueryRoot queryRoot ? queryRoot : new QueryRoot(tupleExpr);
+		TupleExpr executionTupleExpr = executionRoot == null ? tupleExpr : executionRoot;
 		boolean queryTimedOut = false;
 		clearMetricsActual(tupleExpr);
 		TupleExpr explainedTupleExpr = tupleExpr;
 		setRuntimeTelemetryEnabled(tupleExpr, false);
 		setExecutionSummaryEnabled(tupleExpr, false);
 
-		try (var explanationContext = QueryExplanationContext.enter(level, bindings)) {
+		try (QueryOperationContext.Scope ignored = openQueryOperation(timeoutSeconds);
+				var explanationContext = QueryExplanationContext.enter(level, bindings)) {
+			QueryOperationContext.throwIfDeadlineExpired();
 
 			switch (level) {
 			case Telemetry:
-				setExecutionSummaryEnabled(tupleExpr, true);
-				setRuntimeTelemetryEnabled(tupleExpr, true);
+				setExecutionSummaryEnabled(executionTupleExpr, true);
+				setRuntimeTelemetryEnabled(executionTupleExpr, true);
 				this.trackResultSize = true;
 				this.cloneTupleExpression = false;
 
-				queryTimedOut = runQueryForExplain(tupleExpr, dataset, bindings, includeInferred, timeoutSeconds);
+				queryTimedOut = runQueryForExplain(executionTupleExpr, dataset, bindings, includeInferred);
 				break;
 
 			case Timed:
-				setExecutionSummaryEnabled(tupleExpr, true);
+				setExecutionSummaryEnabled(executionTupleExpr, true);
 				this.trackTime = true;
 				this.trackResultSize = true;
 				this.cloneTupleExpression = false;
 
-				queryTimedOut = runQueryForExplain(tupleExpr, dataset, bindings, includeInferred, timeoutSeconds);
+				queryTimedOut = runQueryForExplain(executionTupleExpr, dataset, bindings, includeInferred);
 				break;
 
 			case Executed:
-				setExecutionSummaryEnabled(tupleExpr, true);
+				setExecutionSummaryEnabled(executionTupleExpr, true);
 				this.trackResultSize = true;
 				this.cloneTupleExpression = false;
 
-				queryTimedOut = runQueryForExplain(tupleExpr, dataset, bindings, includeInferred, timeoutSeconds);
+				queryTimedOut = runQueryForExplain(executionTupleExpr, dataset, bindings, includeInferred);
 				break;
 
 			case Optimized:
 				// Native evaluators use this transient flag to retain plan-time diagnostics without paying to
 				// render them during ordinary query compilation. Optimized output still excludes runtime summaries.
-				setExecutionSummaryEnabled(tupleExpr, true);
+				setExecutionSummaryEnabled(executionTupleExpr, true);
 				this.cloneTupleExpression = false;
 
-				evaluate(tupleExpr, dataset, bindings, includeInferred).close();
-				setExecutionSummaryEnabled(tupleExpr, false);
+				evaluate(executionTupleExpr, dataset, bindings, includeInferred).close();
+				QueryOperationContext.throwIfDeadlineExpired();
+				setExecutionSummaryEnabled(executionTupleExpr, false);
 
 				break;
 
@@ -389,6 +423,12 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			default:
 				throw new UnsupportedOperationException("Unsupported query explanation level: " + level);
 
+			}
+			if (!queryTimedOut) {
+				QueryOperationContext.throwIfDeadlineExpired();
+			}
+			if (executionRoot != null && executionRoot != requestedTupleExpr) {
+				tupleExpr = executionRoot.getArg();
 			}
 
 			explainedTupleExpr = getTupleExprForExplanation(tupleExpr);
@@ -401,10 +441,17 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(explainedTupleExpr,
 					incomingBindings, level);
 			explainedTupleExpr.visit(converter);
+			if (!queryTimedOut) {
+				QueryOperationContext.throwIfDeadlineExpired();
+			}
 
 			return new ExplanationImpl(converter.getGenericPlanNode(), queryTimedOut, explainedTupleExpr);
 
 		} finally {
+			setRuntimeTelemetryEnabled(requestedTupleExpr, false);
+			setExecutionSummaryEnabled(requestedTupleExpr, false);
+			setRuntimeTelemetryEnabled(executionTupleExpr, false);
+			setExecutionSummaryEnabled(executionTupleExpr, false);
 			TupleExpr reportTarget = tupleExpr instanceof QueryRoot root ? root.getArg() : tupleExpr;
 			reportTarget.setQueryModelMetadata(StrategyDecision.METADATA_KEY, null);
 			setRuntimeTelemetryEnabled(tupleExpr, false);
@@ -445,58 +492,156 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	}
 
 	private boolean runQueryForExplain(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings,
-			boolean includeInferred, int timeoutSeconds) {
-
-		AtomicBoolean timedOut = new AtomicBoolean(false);
-
-		Thread currentThread = Thread.currentThread();
-
-		// selfInterruptOnTimeoutThread will interrupt the current thread after a set timeout to stop the query
-		// execution
-		Thread selfInterruptOnTimeoutThread = new Thread(() -> {
-			try {
-				TimeUnit.SECONDS.sleep(timeoutSeconds);
-				currentThread.interrupt();
-				timedOut.set(true);
-			} catch (InterruptedException ignored) {
-
-			}
-		});
-
-		try {
-			selfInterruptOnTimeoutThread.start();
-
+			boolean includeInferred) {
+		QueryOperationDeadline deadline = QueryOperationContext.getDeadline().orElse(null);
+		try (QueryDeadlineCloseTask closeTask = new QueryDeadlineCloseTask(deadline)) {
 			try (CloseableIteration<? extends BindingSet> evaluate = evaluate(tupleExpr,
 					dataset, bindings, includeInferred)) {
-				while (evaluate.hasNext()) {
-					if (Thread.interrupted()) {
+				closeTask.watch(evaluate);
+				while (true) {
+					QueryOperationContext.throwIfDeadlineExpired();
+					if (!evaluate.hasNext()) {
 						break;
 					}
+					QueryOperationContext.throwIfDeadlineExpired();
 					evaluate.next();
 				}
-			} catch (Exception e) {
-				if (e instanceof InterruptedException) {
-					Thread.currentThread().interrupt();
+				QueryOperationContext.throwIfDeadlineExpired();
+				return false;
+			} catch (RuntimeException e) {
+				if (closeTask.timedOut() || causedByQueryInterruption(e)) {
+					return true;
 				}
-				if (!timedOut.get()) {
-					throw e;
-				}
+				throw e;
 			}
+		}
+	}
 
-			return timedOut.get();
-
-		} finally {
-			selfInterruptOnTimeoutThread.interrupt();
-			try {
-				// make sure selfInterruptOnTimeoutThread finishes
-				selfInterruptOnTimeoutThread.join();
-			} catch (InterruptedException ignored) {
+	private static boolean causedByQueryInterruption(Throwable throwable) {
+		for (Throwable cause = throwable; cause != null; cause = cause.getCause()) {
+			if (cause instanceof QueryInterruptedException) {
+				return true;
 			}
+		}
+		return false;
+	}
 
-			// clear interrupted flag;
-			Thread.interrupted();
+	private static QueryOperationContext.Scope openQueryOperation(int timeoutSeconds) {
+		QueryOperationDeadline deadline;
+		if (timeoutSeconds > 0) {
+			deadline = QueryOperationDeadline.after(timeoutSeconds, java.util.concurrent.TimeUnit.SECONDS);
+		} else {
+			deadline = QueryOperationContext.getDeadline().orElse(null);
+		}
+		return deadline == null ? null : QueryOperationContext.open(deadline);
+	}
+
+	private static final class QueryDeadlineCloseTask implements AutoCloseable {
+		private final QueryOperationDeadline deadline;
+		private final QueryExecutionDeadline executionDeadline;
+		private final QueryExecutionDeadline.Registration deadlineRegistration;
+		private final AtomicReference<CloseableIteration<?>> iteration = new AtomicReference<>();
+		private final AtomicBoolean timedOut = new AtomicBoolean();
+		private final AtomicBoolean timeoutCloseStarted = new AtomicBoolean();
+		private final Thread thread;
+
+		private QueryDeadlineCloseTask(QueryOperationDeadline deadline) {
+			this.deadline = deadline;
+			executionDeadline = QueryExecutionDeadline.current();
+			if (executionDeadline != null && deadline != null && deadline.isBackedBy(executionDeadline)) {
+				thread = null;
+				deadlineRegistration = executionDeadline.onExpiration(this::expire);
+			} else if (deadline == null) {
+				thread = null;
+				deadlineRegistration = null;
+			} else {
+				// An earlier operation budget owns this explanation's watchdog. The ambient execution timer
+				// still belongs to its caller and must not become a second operator-close mechanism here.
+				deadlineRegistration = null;
+				thread = new Thread(this::awaitDeadline, "RDF4J query explanation deadline");
+				thread.setDaemon(true);
+				thread.start();
+			}
 		}
 
+		private void watch(CloseableIteration<?> iteration) {
+			this.iteration.set(iteration);
+			if (timedOut.get()) {
+				requestDeadlineClose(iteration);
+			}
+		}
+
+		private boolean timedOut() {
+			return timedOut.get();
+		}
+
+		private void awaitDeadline() {
+			while (!Thread.currentThread().isInterrupted()) {
+				long remainingNanos = deadline.remainingNanos();
+				if (remainingNanos == 0) {
+					expire();
+					return;
+				}
+				LockSupport.parkNanos(remainingNanos);
+			}
+		}
+
+		private void expire() {
+			timedOut.set(true);
+			CloseableIteration<?> activeIteration = iteration.get();
+			if (activeIteration != null) {
+				requestDeadlineClose(activeIteration);
+			}
+		}
+
+		private void requestDeadlineClose(CloseableIteration<?> activeIteration) {
+			if (!timeoutCloseStarted.compareAndSet(false, true)) {
+				return;
+			}
+			if (executionDeadline == null) {
+				closeAtDeadline(activeIteration);
+			} else {
+				// The shared deadline timer must remain free to expire other queries while cleanup completes.
+				Thread.startVirtualThread(() -> closeAtDeadline(activeIteration));
+			}
+		}
+
+		private void closeAtDeadline(CloseableIteration<?> activeIteration) {
+			try (QueryExecutionDeadline.Scope executionScope = QueryExecutionDeadline.enter(executionDeadline);
+					QueryOperationContext.Scope ignored = QueryOperationContext.open(deadline)) {
+				activeIteration.close();
+			} catch (RuntimeException e) {
+				logger.warn("Query deadline expired and the active iteration failed to close", e);
+			}
+		}
+
+		@Override
+		public void close() {
+			iteration.set(null);
+			if (deadlineRegistration != null) {
+				deadlineRegistration.close();
+			}
+			if (thread == null) {
+				return;
+			}
+			thread.interrupt();
+			boolean restoreInterrupt = Thread.interrupted();
+			long joinStarted = System.nanoTime();
+			long maximumJoinNanos = java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(100);
+			while (thread.isAlive() && System.nanoTime() - joinStarted < maximumJoinNanos) {
+				try {
+					thread.join(10);
+				} catch (InterruptedException e) {
+					restoreInterrupt = true;
+				}
+			}
+			if (thread.isAlive()) {
+				logger.debug("Query deadline close task did not terminate within its bounded join window");
+			}
+			if (restoreInterrupt) {
+				Thread.currentThread().interrupt();
+			}
+		}
 	}
 
 	private static void setRuntimeTelemetryEnabled(TupleExpr tupleExpr, boolean enabled) {
@@ -691,6 +836,13 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			Value obj, boolean includeInferred, Resource... contexts) throws SailException {
 		return readIteration(IncludeInferred.fromBoolean(includeInferred),
 				dataset -> dataset.getStatements(subj, pred, obj, contexts));
+	}
+
+	@Override
+	protected CloseableIteration<? extends Statement> getStatementsInternal(StatementPattern statementPattern,
+			Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts) throws SailException {
+		return readIteration(IncludeInferred.fromBoolean(includeInferred),
+				dataset -> dataset.getStatements(statementPattern, subj, pred, obj, contexts));
 	}
 
 	@Override

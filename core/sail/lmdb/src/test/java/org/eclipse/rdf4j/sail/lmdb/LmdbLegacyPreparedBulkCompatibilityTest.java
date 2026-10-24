@@ -38,6 +38,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
@@ -54,6 +55,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.lmdb.ValueStore.LanguageTagKeyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.io.TempDir;
@@ -94,6 +96,10 @@ class LmdbLegacyPreparedBulkCompatibilityTest {
 		LmdbStore initial = store(inline);
 		SailRepository repository = new SailRepository(initial);
 		repository.init();
+		String expectedDomainVersion = initial.getBackingStore().getTripleStore().effectiveRdfTermDomainsVersion();
+		assertThat(((ValueStore) initial.getValueFactory()).languageTagKeyMode())
+				.as("v2 keeps its physical format while applying the independent canonical language-key migration")
+				.isEqualTo(LanguageTagKeyMode.CANONICAL);
 		try (RepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
 			connection.setNamespace("legacyBulk", "urn:legacy-bulk:");
@@ -107,6 +113,22 @@ class LmdbLegacyPreparedBulkCompatibilityTest {
 		} finally {
 			repository.shutDown();
 		}
+
+		Properties initializedProperties = new Properties();
+		try (var metadataInput = Files.newInputStream(directory.resolve("store.properties"))) {
+			initializedProperties.load(metadataInput);
+		}
+		String initialStoreId = initializedProperties.getProperty(StoreProperties.STORE_ID_KEY);
+		assertThat(initialStoreId).as("current store startup publishes its durable owner identity").isNotBlank();
+		assertThat(UUID.fromString(initialStoreId).toString()).isEqualTo(initialStoreId);
+		Properties expectedProperties = new Properties();
+		expectedProperties.load(new ByteArrayInputStream(originalProperties));
+		expectedProperties.setProperty(StoreProperties.LANGUAGE_TAG_KEY,
+				StoreProperties.LANGUAGE_TAG_KEY_CANONICAL);
+		expectedProperties.setProperty(StoreProperties.STORE_ID_KEY, initialStoreId);
+		expectedProperties.setProperty(StoreProperties.PREDICATE_OBJECT_DOMAINS_VERSION_KEY, expectedDomainVersion);
+		assertThat(initializedProperties).as("only the three source-owned startup metadata fields are added")
+				.isEqualTo(expectedProperties);
 
 		List<Value> objects = objects();
 		Model payload = payload(objects);
@@ -225,8 +247,6 @@ class LmdbLegacyPreparedBulkCompatibilityTest {
 		} finally {
 			repository.shutDown();
 		}
-		Properties expectedProperties = new Properties();
-		expectedProperties.load(new ByteArrayInputStream(originalProperties));
 		Properties reopenedProperties = new Properties();
 		try (var metadataInput = Files.newInputStream(directory.resolve("store.properties"))) {
 			reopenedProperties.load(metadataInput);

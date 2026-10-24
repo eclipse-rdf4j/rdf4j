@@ -80,6 +80,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	private long activeBindingMask;
 	private int cachedSize = -1;
 	private int cachedHashCode;
+	BindingSetOrigin origin;
 	private GraphFrameBindings graphFrames;
 
 	@Override
@@ -153,6 +154,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 			this.activeBindingMask = calculateActiveBindingMask();
 		}
 		assert !this.empty || size() == 0;
+		BindingSetOrigin.copy(toCopy, this);
 
 	}
 
@@ -167,6 +169,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		this.sharedSortedBindingNamesCache = sharedSortedBindingNamesCache;
 		this.empty = toCopy.empty;
 		this.cachedSize = toCopy.cachedSize;
+		this.origin = toCopy.origin;
 		this.graphFrames = toCopy.graphFrames;
 		if (toCopy.bindingNames == names) {
 			this.bindingNamesSetCache = toCopy.bindingNamesSetCache;
@@ -386,6 +389,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	@Override
 	public boolean isCompatible(BindingSet other) {
+		other = BindingSetOrigin.unwrap(other);
 		if (isEmpty() || other.isEmpty()) {
 			return true;
 		}
@@ -559,6 +563,10 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 			}
 		}
 
+		if (origin != null || BindingSetOrigin.tracked(other)) {
+			origin = BindingSetOrigin.overlay(BindingSetOrigin.of(this), BindingSetOrigin.of(other),
+					other.getBindingNames());
+		}
 		setGraphFrameBindings(GraphFrameBindings.from(this).merge(supplied));
 		clearCache();
 		if (sharedSortedBindingNamesCache != null) {
@@ -613,6 +621,9 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	@Override
 	public boolean equals(Object other) {
+		if (other instanceof BindingSet bindings) {
+			other = BindingSetOrigin.unwrap(bindings);
+		}
 		if (other == null) {
 			return false;
 		}

@@ -152,11 +152,22 @@ final class LmdbPage {
 	}
 
 	LmdbNode node(int index) throws IOException {
+		LmdbNode node = new LmdbNode();
+		readNode(index, node);
+		return node;
+	}
+
+	/**
+	 * Decodes the node at {@code index} into a caller-owned, reusable {@link LmdbNode} with the same validation as
+	 * {@link #node(int)}.
+	 */
+	void readNode(int index, LmdbNode node) throws IOException {
 		int nodeOffset = nodeOffset(index);
 		int keySize = keySizeAt(nodeOffset);
 		int keyOffset = keyOffsetAt(nodeOffset);
 		if (isBranch()) {
-			return new LmdbNode(nodeOffset, keyOffset, keySize, -1, -1, 0, branchPgnoAt(nodeOffset));
+			node.set(nodeOffset, keyOffset, keySize, -1, -1, 0, branchPgnoAt(nodeOffset));
+			return;
 		}
 
 		int nodeFlags = nodeFlagsAt(nodeOffset);
@@ -168,7 +179,7 @@ final class LmdbPage {
 			throw new IOException("Node value exceeds page bounds on page " + expectedPgno + ": logicalSize="
 					+ valueSize + ", storedSize=" + storedValueSize);
 		}
-		return new LmdbNode(nodeOffset, keyOffset, keySize, valueOffset, valueSize, nodeFlags, -1);
+		node.set(nodeOffset, keyOffset, keySize, valueOffset, valueSize, nodeFlags, -1);
 	}
 
 	void copyKey(int index, byte[] destination) throws IOException {

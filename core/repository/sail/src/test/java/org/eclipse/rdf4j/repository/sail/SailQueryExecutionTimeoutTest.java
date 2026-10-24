@@ -253,14 +253,16 @@ class SailQueryExecutionTimeoutTest {
 	@Test
 	@Timeout(value = 10, unit = TimeUnit.SECONDS)
 	void tupleResultTimeoutIncludesSynchronousSailEvaluation() throws Exception {
-		EvaluationGate gate = blockEvaluation();
+		BlockingIteration iteration = new BlockingIteration();
+		EvaluationGate gate = blockEvaluation(iteration);
 		TupleQuery query = repositoryConnection.prepareTupleQuery("SELECT * WHERE { ?s ?p ?o }");
 		query.setMaxExecutionTime(MAX_EXECUTION_TIME_SECONDS);
 
-		TupleQueryResult result = evaluateAfterDeadline(query::evaluate, gate);
-		try (result) {
-			assertThatThrownBy(result::hasNext).isInstanceOf(QueryInterruptedException.class);
-		}
+		assertThatThrownBy(() -> evaluateAfterDeadline(query::evaluate, gate))
+				.hasRootCauseInstanceOf(QueryInterruptedException.class);
+		assertThat(iteration.closedLatch.await(2, TimeUnit.SECONDS)).isTrue();
+		assertThat(iteration.closed).isTrue();
+		assertThat(iteration.closeCalls.get()).isEqualTo(1);
 	}
 
 	@Test
@@ -291,13 +293,16 @@ class SailQueryExecutionTimeoutTest {
 	@Test
 	@Timeout(value = 10, unit = TimeUnit.SECONDS)
 	void graphResultTimeoutIncludesSynchronousSailEvaluation() throws Exception {
-		EvaluationGate gate = blockEvaluation();
+		BlockingIteration iteration = new BlockingIteration();
+		EvaluationGate gate = blockEvaluation(iteration);
 		GraphQuery query = repositoryConnection.prepareGraphQuery("CONSTRUCT WHERE { ?s ?p ?o }");
 		query.setMaxExecutionTime(MAX_EXECUTION_TIME_SECONDS);
 
-		try (var result = evaluateAfterDeadline(query::evaluate, gate)) {
-			assertThatThrownBy(result::hasNext).isInstanceOf(QueryInterruptedException.class);
-		}
+		assertThatThrownBy(() -> evaluateAfterDeadline(query::evaluate, gate))
+				.hasRootCauseInstanceOf(QueryInterruptedException.class);
+		assertThat(iteration.closedLatch.await(2, TimeUnit.SECONDS)).isTrue();
+		assertThat(iteration.closed).isTrue();
+		assertThat(iteration.closeCalls.get()).isEqualTo(1);
 	}
 
 	@Test
@@ -581,6 +586,18 @@ class SailQueryExecutionTimeoutTest {
 				throw new AssertionError("test did not release the blocked Sail evaluation");
 			}
 			return new EmptyIteration<>();
+		});
+		return gate;
+	}
+
+	private EvaluationGate blockEvaluation(BlockingIteration iteration) throws Exception {
+		EvaluationGate gate = new EvaluationGate();
+		when(sailConnection.evaluate(any(), any(), any(), anyBoolean())).thenAnswer(invocation -> {
+			gate.entered.countDown();
+			if (!gate.release.await(8, TimeUnit.SECONDS)) {
+				throw new AssertionError("test did not release the blocked Sail evaluation");
+			}
+			return iteration;
 		});
 		return gate;
 	}

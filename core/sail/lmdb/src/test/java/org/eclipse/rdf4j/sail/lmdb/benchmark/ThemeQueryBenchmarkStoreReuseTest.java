@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Properties;
@@ -75,10 +76,52 @@ class ThemeQueryBenchmarkStoreReuseTest {
 			runTrial(benchmark);
 		}
 		assertEquals(1, loads[0], "opening and closing a complete dataset must not regenerate it");
-		assertTrue(
-				Files.size(directory.resolve("values/data.mdb")) > Long
-						.parseLong(readMetadata(directory).getProperty("values.data.mdb.size.bytes")),
-				"the fixture must exercise legitimate value-file growth beyond the completed-load snapshot");
+		assertFixtureBag(directory);
+	}
+
+	@ParameterizedTest
+	@CsvSource({
+			"triples.data.mdb.size.bytes, triples/data.mdb",
+			"values.data.mdb.size.bytes, values/data.mdb"
+	})
+	void completedStoreAcceptsAnAllocationAboveItsRecordedMinimum(String property, String relativePath,
+			@TempDir Path directory) throws Exception {
+		int[] loads = { 0 };
+		ThemeQueryBenchmark benchmark = fixtureBenchmark(directory, loads);
+		runTrial(benchmark);
+		Path dataFile = directory.resolve(relativePath);
+		long actualAllocation = Files.size(dataFile);
+		Properties metadata = readMetadata(directory);
+		long initializedMinimum = Long.parseLong(metadata.getProperty(property));
+		assertTrue(initializedMinimum > 0);
+		assertTrue(actualAllocation >= initializedMinimum);
+		long lowerMinimum = actualAllocation - 1;
+		assertTrue(lowerMinimum > 0);
+		// Keep every independently captured dataset identity field; only the conservative size floor changes.
+		metadata.setProperty(property, Long.toString(lowerMinimum));
+		try (var output = Files.newOutputStream(directory.resolve(METADATA_FILE))) {
+			metadata.store(output, "A conservative allocation minimum for the same completed dataset");
+		}
+		assertEquals(metadata, readMetadata(directory));
+		assertEquals(actualAllocation, Files.size(dataFile), "the fixture must not alter the native data file");
+		assertTrue(actualAllocation > lowerMinimum);
+		for (int trial = 1; trial < 3; trial++) {
+			runTrial(benchmark);
+		}
+		assertEquals(1, loads[0], "a larger allocation with the same complete dataset identity must be reused");
+		assertTrue(Files.size(dataFile) > lowerMinimum);
+		assertFixtureBag(directory);
+	}
+
+	private static void assertFixtureBag(Path directory) {
+		withFixtureConnection(directory, connection -> {
+			assertEquals(128, connection.size());
+			for (int statement = 0; statement < 128; statement++) {
+				assertTrue(connection.hasStatement(Values.iri("urn:subject:" + statement),
+						Values.iri("urn:predicate"), Values.literal("fixture-value-" + statement), false,
+						Values.iri("urn:graph:" + statement % 2)));
+			}
+		});
 	}
 
 	@Test
@@ -266,6 +309,105 @@ class ThemeQueryBenchmarkStoreReuseTest {
 		int[] loads = { 0 };
 		runTrial(fixtureBenchmark(directory, loads));
 		assertEquals(1, loads[0]);
+	}
+
+	@Test
+	void completedMetadataIsPublishedOnlyAfterSuccessfulTrialShutdown(@TempDir Path directory) throws Exception {
+		int[] loads = { 0 };
+		ThemeQueryBenchmark benchmark = fixtureBenchmark(directory, loads);
+		try {
+			benchmark.setup();
+			assertEquals(1, loads[0]);
+			assertFalse(Files.exists(directory.resolve(METADATA_FILE)),
+					"a live trial has not yet completed its owned maintenance and shutdown");
+		} finally {
+			benchmark.tearDown();
+		}
+		assertTrue(Files.isRegularFile(directory.resolve(METADATA_FILE)));
+		runTrial(benchmark);
+		assertEquals(1, loads[0], "the final closed dataset must be reusable without another load");
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "direct", "overlay" })
+	void failedReadinessValidationCannotPublishCompletedMetadata(String feature, @TempDir Path directory)
+			throws Exception {
+		String timeout = "direct".equals(feature)
+				? ThemeQueryBenchmark.WAIT_FOR_DIRECT_ADJACENCY_TIMEOUT_SECONDS_PROPERTY
+				: ThemeQueryBenchmark.WAIT_FOR_VALUE_OVERLAY_TIMEOUT_SECONDS_PROPERTY;
+		String previousTimeout = System.getProperty(timeout);
+		System.setProperty(ThemeQueryBenchmark.WAIT_FOR_DIRECT_ADJACENCY_PROPERTY,
+				Boolean.toString("direct".equals(feature)));
+		System.setProperty(ThemeQueryBenchmark.WAIT_FOR_VALUE_OVERLAY_PROPERTY,
+				Boolean.toString("overlay".equals(feature)));
+		System.setProperty(timeout, "-1");
+		int[] loads = { 0 };
+		ThemeQueryBenchmark benchmark = fixtureBenchmark(directory, loads);
+		try {
+			IllegalArgumentException failure = assertThrows(IllegalArgumentException.class, benchmark::setup);
+			assertEquals("timeout must be non-negative", failure.getMessage());
+			assertEquals(1, loads[0]);
+			assertFalse(Files.exists(directory.resolve(METADATA_FILE)),
+					"failed readiness validation must not publish a newly loaded completed dataset");
+		} finally {
+			restoreProperty(timeout, previousTimeout);
+			benchmark.tearDown();
+		}
+		withFixtureConnection(directory, connection -> assertEquals(128, connection.size()));
+		runTrial(fixtureBenchmark(directory, loads));
+		assertEquals(2, loads[0], "an unpublished load must be rebuilt before it is reused");
+	}
+
+	@Test
+	void failedCompletedMetadataPublicationLeavesTheStoreClosedAndUnpublished(@TempDir Path directory)
+			throws Exception {
+		int[] loads = { 0 };
+		ThemeQueryBenchmark benchmark = fixtureBenchmark(directory, loads);
+		Path blockedTemporary = directory.resolve(METADATA_FILE + ".tmp");
+		boolean blocked = false;
+		try {
+			benchmark.setup();
+			Files.createDirectory(blockedTemporary);
+			blocked = true;
+			UncheckedIOException failure = assertThrows(UncheckedIOException.class, benchmark::tearDown);
+			assertTrue(failure.getCause() instanceof IOException);
+			assertFalse(Files.exists(directory.resolve(METADATA_FILE)));
+			withFixtureConnection(directory, connection -> assertEquals(128, connection.size()));
+		} finally {
+			try {
+				if (blocked) {
+					Files.delete(blockedTemporary);
+				}
+			} finally {
+				benchmark.tearDown();
+			}
+		}
+		runTrial(fixtureBenchmark(directory, loads));
+		assertEquals(2, loads[0]);
+	}
+
+	@Test
+	void sameCardinalityObjectReplacementRegeneratesStore(@TempDir Path directory) throws Exception {
+		int[] loads = { 0 };
+		ThemeQueryBenchmark benchmark = fixtureBenchmark(directory, loads);
+		runTrial(benchmark);
+		withFixtureConnection(directory, connection -> {
+			var subject = Values.iri("urn:subject:0");
+			var predicate = Values.iri("urn:predicate");
+			var graph = Values.iri("urn:graph:0");
+			connection.begin();
+			connection.remove(subject, predicate, Values.literal("fixture-value-0"), graph);
+			connection.remove(Values.iri("urn:subject:1"), predicate, Values.literal("fixture-value-1"),
+					Values.iri("urn:graph:1"));
+			connection.add(subject, predicate, Values.literal("fixture-value-1"), graph);
+			connection.add(Values.iri("urn:subject:1"), predicate, Values.literal("fixture-value-0"),
+					Values.iri("urn:graph:1"));
+			connection.commit();
+			assertEquals(128, connection.size());
+			assertTrue(connection.hasStatement(subject, predicate, Values.literal("fixture-value-1"), false, graph));
+		});
+		runTrial(benchmark);
+		assertEquals(2, loads[0], "a physical RDF mutation must still invalidate the completed dataset");
 	}
 
 	private static void runTrial(ThemeQueryBenchmark benchmark) throws IOException {

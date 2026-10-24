@@ -34,7 +34,17 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		T open() throws IOException;
 	}
 
+	@FunctionalInterface
+	interface AttemptOpener<T> {
+		T open(NativeFilterLease filters) throws IOException;
+	}
+
 	final Opener<T> opener;
+	private final AttemptOpener<T> attemptOpener;
+	private NativeFilterLease filterAttempt;
+	private boolean ownsFilterAttempt;
+	private NativeFilterLease filterParent;
+
 	/**
 	 * Work paid before the first row can be emitted — a parallel group's worker startup, a hash join's build sweep.
 	 * Zero for strategies that stream from the first probe.
@@ -99,10 +109,42 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	private LmdbNativeStrategyProposal(Opener<T> opener, LmdbNativeWork work, LmdbNativeWork startupWork,
 			double estRows, double estCost, String tag, Runnable releaseIfUnused, boolean probeable) {
 		this.opener = opener;
+		this.attemptOpener = null;
 		this.work = work;
 		this.startupWork = startupWork == null ? LmdbNativeWork.ZERO : startupWork;
 		this.estRows = estRows;
 		this.estCost = estCost;
+		this.tag = tag;
+		this.probeable = probeable;
+		this.releaseIfUnused = releaseIfUnused;
+	}
+
+	LmdbNativeStrategyProposal(AttemptOpener<T> opener, double estCost, String tag) {
+		this(opener, LmdbNativeWork.exact(estCost), tag, () -> {
+		});
+	}
+
+	LmdbNativeStrategyProposal(AttemptOpener<T> opener, double estCost, String tag, Runnable releaseIfUnused) {
+		this(opener, LmdbNativeWork.exact(estCost), tag, releaseIfUnused);
+	}
+
+	LmdbNativeStrategyProposal(AttemptOpener<T> opener, LmdbNativeWork work, String tag, Runnable releaseIfUnused) {
+		this(opener, work, LmdbNativeWork.ZERO, Double.NaN, tag, releaseIfUnused, true);
+	}
+
+	LmdbNativeStrategyProposal(AttemptOpener<T> opener, LmdbNativeWork work, LmdbNativeWork startupWork,
+			double estRows, String tag, Runnable releaseIfUnused) {
+		this(opener, work, startupWork, estRows, tag, releaseIfUnused, true);
+	}
+
+	LmdbNativeStrategyProposal(AttemptOpener<T> opener, LmdbNativeWork work, LmdbNativeWork startupWork,
+			double estRows, String tag, Runnable releaseIfUnused, boolean probeable) {
+		this.opener = null;
+		this.attemptOpener = opener;
+		this.work = work;
+		this.startupWork = startupWork == null ? LmdbNativeWork.ZERO : startupWork;
+		this.estRows = estRows;
+		this.estCost = work.known() ? work.high() : Double.POSITIVE_INFINITY;
 		this.tag = tag;
 		this.probeable = probeable;
 		this.releaseIfUnused = releaseIfUnused;
@@ -321,6 +363,27 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	}
 
 	synchronized T open() throws IOException {
+		return openObserved(null);
+	}
+
+	synchronized T openObserved(LmdbNativeCostObservation observation) throws IOException {
+		if (closed || opened) {
+			throw new IllegalStateException("strategy proposal already opened or closed");
+		}
+		if (attemptOpener == null) {
+			return openInFilterAttempt(null);
+		}
+		NativeFilterLease filters = new NativeFilterLease(filterParent);
+		filterAttempt = filters;
+		ownsFilterAttempt = true;
+		if (observation != null) {
+			observation.bindFilterAttempt(filters);
+		}
+		return openInFilterAttempt(filters);
+	}
+
+	/** An adapter forwards its existing attempt; it does not allocate or own a second lease. */
+	synchronized T openInFilterAttempt(NativeFilterLease filters) throws IOException {
 		if (closed) {
 			throw new IllegalStateException("strategy proposal already closed");
 		}
@@ -328,10 +391,32 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 			throw new IllegalStateException("strategy proposal already opened");
 		}
 		opened = true;
-		return opener.open();
+		if (filterAttempt == null) {
+			filterAttempt = filters;
+		}
+		return attemptOpener == null ? opener.open() : attemptOpener.open(filters);
 	}
 
-	/** Releases admission reserved while costing a proposal that the dispatcher did not select. */
+	synchronized LmdbNativeStrategyProposal<T> filterParent(NativeFilterLease parent) {
+		if (opened || closed) {
+			throw new IllegalStateException("native filter parent must be bound before opening");
+		}
+		filterParent = parent;
+		return this;
+	}
+
+	synchronized NativeFilterLease filterAttempt() {
+		return filterAttempt;
+	}
+
+	void selected() {
+		NativeFilterLease filters = filterAttempt();
+		if (filters != null) {
+			filters.selected();
+		}
+	}
+
+	/** Unselected opens are discarded only after their cursor/materializer cleanup; old openers retain old behavior. */
 	@Override
 	public synchronized void close() {
 		if (closed) {
@@ -340,6 +425,9 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		closed = true;
 		if (!opened) {
 			releaseIfUnused.run();
+		}
+		if (ownsFilterAttempt && filterAttempt != null && !filterAttempt.isSelected()) {
+			filterAttempt.discard();
 		}
 	}
 

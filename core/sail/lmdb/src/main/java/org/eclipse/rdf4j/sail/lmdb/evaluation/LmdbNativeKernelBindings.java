@@ -323,6 +323,7 @@ final class LmdbNativeKernelBindings {
 		final int[] outputSlots;
 		final int[] inputSlots;
 		final boolean factorProjection;
+		final LmdbNativeInteriorPlans.Selection consumerInput;
 		/** No speculative pull across SERVICE, volatile expressions, or unknown semantic boundaries. */
 		final boolean batchSafe;
 
@@ -335,6 +336,13 @@ final class LmdbNativeKernelBindings {
 		}
 
 		PlanRequest(SlotPlan plan, int[] outputSlots, int[] inputSlots, boolean factorProjection) {
+			this(plan, outputSlots, inputSlots, factorProjection, null);
+		}
+
+		private PlanRequest(SlotPlan plan, int[] outputSlots, int[] inputSlots, boolean factorProjection,
+				LmdbNativeInteriorPlans.Selection consumerInput) {
+			this.consumerInput = consumerInput;
+			plan = consumerInput == null ? LmdbNativeInteriorPlans.lexical(plan) : plan;
 			this.batchSafe = SlotPlan.encounterOrderReplaySafe(plan);
 			this.factorProjection = factorProjection && batchSafe;
 			this.plan = plan;
@@ -628,6 +636,27 @@ final class LmdbNativeKernelBindings {
 	}
 
 	/** Attaches the physical column map independently of the emitted row's slot map. */
+	LmdbNativeKernelBindings withConsumerInput(LmdbNativeInteriorPlans.Selection input) {
+		if (input == null) {
+			return this;
+		}
+		PlanRequest[] requests = planRequests.clone();
+		for (int i = 0; i < requests.length; i++) {
+			PlanRequest request = requests[i];
+			if (input.observes(request.plan)) {
+				requests[i] = new PlanRequest(request.plan, request.outputSlots, request.inputSlots,
+						request.factorProjection, input);
+			}
+		}
+		LmdbNativeKernelBindings copy = new LmdbNativeKernelBindings(adjacencies, constants, entrySlotIds,
+				keyDomains, filterHooks, bindHooks, columnEngineSlots, residualFilters, scanSites, requests,
+				groupLayout, hooksRequired, distinctExpected, kernelResiduals, nodePredicateRequests, dynamicRequests,
+				wildcardRequests, kernelColumnEngineSlots);
+		copy.nodeDomainIntersectionRequests = nodeDomainIntersectionRequests;
+		copy.typeMatrixRequests = typeMatrixRequests;
+		return copy;
+	}
+
 	LmdbNativeKernelBindings withKernelColumns(int[] kernelColumns) {
 		LmdbNativeKernelBindings copy = new LmdbNativeKernelBindings(adjacencies, constants, entrySlotIds,
 				keyDomains, filterHooks, bindHooks, columnEngineSlots, residualFilters, scanSites, planRequests,
@@ -823,11 +852,7 @@ final class LmdbNativeKernelBindings {
 			try {
 				view.close();
 			} catch (RuntimeException | Error problem) {
-				if (failure == null) {
-					failure = problem;
-				} else if (failure != problem) {
-					failure.addSuppressed(problem);
-				}
+				failure = LmdbNativeParallelKernelAggregate.addCloseFailure(failure, problem);
 			}
 		}
 		return failure;
@@ -1061,11 +1086,18 @@ final class LmdbNativeKernelBindings {
 			scratch.recomputeBoundMask();
 			boolean nested = LmdbNativeEvaluationStrategy.enterKernelSubplan();
 			try {
+				if (request.consumerInput != null) {
+					request.consumerInput.validate(scratch, request.plan);
+				}
 				RowCursor producer = weighted
 						? request.plan.openProjected(scratch, request.outputSlots)
 						: null;
-				if (producer == null)
-					producer = request.plan.open(scratch);
+				if (producer == null) {
+					producer = request.consumerInput == null ? request.plan.open(scratch)
+							: request.consumerInput.open(scratch, request.plan);
+				} else if (request.consumerInput != null) {
+					producer = request.consumerInput.observed(scratch, request.plan, producer);
+				}
 				active = new BoundCursor(producer, scratch, request.outputSlots, this);
 				return active;
 			} catch (java.io.IOException problem) {

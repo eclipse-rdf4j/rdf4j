@@ -37,6 +37,10 @@ set JAVA=%JAVA_HOME%\bin\java
 
 :javaHomeEnd
 
+set VECTOR_OPT=
+"%JAVA%" --list-modules 2>NUL | findstr /B /C:"jdk.incubator.vector@" >NUL
+IF NOT ERRORLEVEL 1 set VECTOR_OPT=--add-modules=jdk.incubator.vector
+
 :checkJdk14
 "%JAVA%" -version 2>&1 | findstr "1.4" >NUL
 IF ERRORLEVEL 1 goto checkJdk15
@@ -48,13 +52,13 @@ goto end
 IF ERRORLEVEL 1 goto java6
 rem use java.ext.dirs hack
 rem echo Using java.ext.dirs to set classpath
-"%JAVA%" -Djava.ext.dirs="%LIB_DIR%" org.eclipse.rdf4j.console.Console %CMD_LINE_ARGS%
+"%JAVA%" %VECTOR_OPT% -Djava.ext.dirs="%LIB_DIR%" org.eclipse.rdf4j.console.Console %CMD_LINE_ARGS%
 goto end
 
 :java6
 rem use java 6 wildcard feature
 rem echo Using wildcard to set classpath
-"%JAVA%" -cp "%LIB_DIR%\*" org.eclipse.rdf4j.console.Console %CMD_LINE_ARGS%
+"%JAVA%" %VECTOR_OPT% -cp "%LIB_DIR%\*" org.eclipse.rdf4j.console.Console %CMD_LINE_ARGS%
 goto end
 
 :end

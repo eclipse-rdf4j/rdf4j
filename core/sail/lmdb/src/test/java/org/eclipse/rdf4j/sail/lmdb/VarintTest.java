@@ -13,19 +13,21 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.SplittableRandom;
 
 import org.junit.jupiter.api.Test;
+import org.lwjgl.system.MemoryStack;
+import org.lwjgl.system.MemoryUtil;
 
 public class VarintTest {
 
-	long[] values = new long[] {
-			240, 2287, 67823, 16777215, 4294967295L, 1099511627775L, 281474976710655L, 72057594037927935L,
-			72057594037927935L + 1
-	};
+	long[] values = new long[] { 240, 2287, 67823, 16777215, 4294967295L, 1099511627775L, 281474976710655L,
+			72057594037927935L, 72057594037927935L + 1 };
 
 	@Test
 	public void testVarint() {
@@ -47,7 +49,6 @@ public class VarintTest {
 		bb.flip();
 		assertEquals("Encoding should use " + (2) + " bytes", 2, bb.remaining());
 		assertEquals("Encoded and decoded value should be equal", values[1], Varint.readUnsigned(bb));
-
 	}
 
 	@Test
@@ -57,7 +58,6 @@ public class VarintTest {
 		Varint.writeUnsigned(bb, 67823);
 		bb.flip();
 		assertEquals("Encoded and decoded value should be equal", 67823, Varint.readUnsigned(bb));
-
 	}
 
 	@Test
@@ -67,7 +67,6 @@ public class VarintTest {
 		Varint.writeUnsigned(bb, 67824);
 		bb.flip();
 		assertEquals("Encoded and decoded value should be equal", 67824, Varint.readUnsigned(bb));
-
 	}
 
 	@Test
@@ -77,7 +76,6 @@ public class VarintTest {
 		Varint.writeUnsigned(bb, 4299999999L);
 		bb.flip();
 		assertEquals("Encoded and decoded value should be equal", 4299999999L, Varint.readUnsigned(bb));
-
 	}
 
 	@Test
@@ -94,21 +92,18 @@ public class VarintTest {
 				throw e;
 			}
 		}
-
 		for (long i = 99999999; i < 999999999999999L; i += 10000000) {
 			try {
 				ByteBuffer bb = ByteBuffer.allocate(9).order(ByteOrder.nativeOrder());
 				bb.clear();
 				Varint.writeUnsigned(bb, i);
 				bb.flip();
-
 				assertEquals("Encoded and decoded value should be equal", i, Varint.readUnsigned(bb));
 			} catch (Exception e) {
 				System.err.println("Failed for i=" + i);
 				throw e;
 			}
 		}
-
 		for (long i = Long.MAX_VALUE; i > Long.MAX_VALUE - 999999L; i -= 1) {
 			ByteBuffer bb = ByteBuffer.allocate(9).order(ByteOrder.nativeOrder());
 			bb.clear();
@@ -121,7 +116,6 @@ public class VarintTest {
 				throw e;
 			}
 		}
-
 	}
 
 	@Test
@@ -142,13 +136,55 @@ public class VarintTest {
 	@Test
 	public void testVarintReadUnsignedAtPositionThreeByteEncoding() {
 		long value = 3000L;
-		ByteBuffer bb = ByteBuffer.allocate(Varint.calcLengthUnsigned(value))
-				.order(ByteOrder.nativeOrder());
+		ByteBuffer bb = ByteBuffer.allocate(Varint.calcLengthUnsigned(value)).order(ByteOrder.nativeOrder());
 		Varint.writeUnsigned(bb, value);
 		bb.flip();
 		assertEquals("Expected three byte encoding", 3, bb.remaining());
 		long decoded = Varint.readUnsigned(bb, 0);
 		assertEquals("Encoded and decoded value using positional read should match", value, decoded);
+	}
+
+	@Test
+	public void testByteArrayUnsignedMatchesByteBufferEncoding() {
+		long[] values = { 0, 1, 240, 241, 2287, 2288, 67823, 67824, 4299999999L, Long.MAX_VALUE };
+		for (long value : values) {
+			ByteBuffer bb = ByteBuffer.allocate(Varint.calcLengthUnsigned(value)).order(ByteOrder.nativeOrder());
+			byte[] bytes = new byte[Varint.calcLengthUnsigned(value)];
+			Varint.writeUnsigned(bb, value);
+			int offset = Varint.writeUnsigned(bytes, 0, value);
+			assertEquals("Byte array offset should match encoded length", bytes.length, offset);
+			assertArrayEquals("Byte array encoding should match ByteBuffer encoding for " + value, bb.array(), bytes);
+			assertEquals("Byte array decoded value should match", value, Varint.readUnsigned(bytes, 0));
+		}
+	}
+
+	@Test
+	public void nativeQuadDecoderPreservesEveryWidthAndIndexOrder() {
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			long[] widthRepresentatives = { 240L, 241L, 2288L, 67824L, 1L << 24, 1L << 32, 1L << 40, 1L << 48,
+					1L << 56 };
+			int[] indexMap = { 2, 0, 3, 1 };
+			for (long representative : widthRepresentatives) {
+				long[] encoded = { representative, 241L, 2288L, 67824L };
+				int encodedBytes = 0;
+				for (long value : encoded) {
+					encodedBytes += Varint.calcLengthUnsigned(value);
+				}
+				ByteBuffer nativeKey = stack.malloc(encodedBytes);
+				for (long value : encoded) {
+					Varint.writeUnsigned(nativeKey, value);
+				}
+				nativeKey.flip();
+				long[] actual = new long[4];
+				Varint.readQuadUnsigned(MemoryUtil.memAddress(nativeKey), nativeKey.remaining(), indexMap, actual);
+				assertArrayEquals(new long[] { 241L, 67824L, representative, 2288L }, actual);
+				if (Varint.calcLengthUnsigned(representative) == 9) {
+					assertThrows(BufferUnderflowException.class,
+							() -> Varint.readQuadUnsigned(MemoryUtil.memAddress(nativeKey), nativeKey.remaining() - 1,
+									indexMap, new long[4]));
+				}
+			}
+		}
 	}
 
 	@Test
@@ -164,15 +200,13 @@ public class VarintTest {
 					Varint.writeUnsigned(encoded, value);
 					assertEquals("Unexpected encoded length for " + value, encodedLength,
 							encoded.position() - alignment);
-
 					encoded.position(alignment);
 					ByteBuffer reference = encoded.duplicate().order(encoded.order());
 					long address = LmdbUtil.directBufferAddress(encoded);
 					long expected = Varint.readUnsigned(reference);
 					String message = "length=" + encodedLength + ", alignment=" + alignment + ", sample=" + sample;
 					assertEquals(message, expected, Varint.readUnsigned(address));
-					assertEquals(message, expected,
-							Varint.readUnsigned(address, LmdbUtil.getByte(address) & 0xFF));
+					assertEquals(message, expected, Varint.readUnsigned(address, LmdbUtil.getByte(address) & 0xFF));
 				}
 			}
 		}
@@ -212,7 +246,6 @@ public class VarintTest {
 		default:
 			throw new IllegalArgumentException("Encoded length must be in [1,9]: " + encodedLength);
 		}
-
 		if (sample == 0) {
 			return lowerBound;
 		}

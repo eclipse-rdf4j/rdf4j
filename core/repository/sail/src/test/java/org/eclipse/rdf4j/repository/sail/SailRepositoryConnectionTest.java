@@ -26,19 +26,26 @@ import static org.mockito.Mockito.when;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.LockSupport;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.GraphQuery;
+import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.Query;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryParseOptions;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -138,6 +145,63 @@ public class SailRepositoryConnectionTest {
 	}
 
 	@Test
+	public void tupleQueryMaxExecutionTimeIncludesSailEvaluation() {
+		stubSlowEvaluation(1_100);
+
+		TupleQuery query = subject.prepareTupleQuery("SELECT * WHERE { ?s ?p ?o }");
+		query.setMaxExecutionTime(1);
+
+		assertThatThrownBy(query::evaluate)
+				.isInstanceOf(QueryInterruptedException.class)
+				.hasMessage("Query evaluation took too long");
+	}
+
+	@Test
+	public void tupleQueryCarriesRemainingExecutionTimeIntoResultIteration() {
+		when(sailConnection.evaluate(any(), any(), any(), anyBoolean())).thenAnswer(invocation -> {
+			parkForMillis(700);
+			return delayedEmptyIteration(400);
+		});
+
+		TupleQuery query = subject.prepareTupleQuery("SELECT * WHERE { ?s ?p ?o }");
+		query.setMaxExecutionTime(1);
+
+		try (TupleQueryResult result = query.evaluate()) {
+			assertThatThrownBy(result::hasNext)
+					.isInstanceOf(QueryInterruptedException.class)
+					.hasMessage("Query evaluation took too long");
+		}
+	}
+
+	@Test
+	public void booleanQueryMaxExecutionTimeIncludesSailEvaluation() {
+		stubSlowEvaluation(1_100);
+
+		BooleanQuery query = subject.prepareBooleanQuery("ASK WHERE { ?s ?p ?o }");
+		query.setMaxExecutionTime(1);
+
+		assertThatThrownBy(query::evaluate)
+				.isInstanceOf(QueryInterruptedException.class)
+				.hasMessage("Query evaluation took too long");
+	}
+
+	@Test
+	public void graphQueryMaxExecutionTimeIncludesSailEvaluation() {
+		stubSlowEvaluation(1_100);
+
+		GraphQuery query = subject.prepareGraphQuery("CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }");
+		query.setMaxExecutionTime(1);
+
+		assertThatThrownBy(() -> {
+			try (GraphQueryResult ignored = query.evaluate()) {
+				// The timeout is expected before a result can be returned.
+			}
+		})
+				.isInstanceOf(QueryInterruptedException.class)
+				.hasMessage("Query evaluation took too long");
+	}
+
+	@Test
 	public void testPrepareGraphQuery_not_bypassed() {
 		Optional<TupleExpr> response = Optional.empty();
 		when(sailConnection.prepareQuery(any(), eq(Query.QueryType.GRAPH), any(), any())).thenReturn(response);
@@ -205,6 +269,45 @@ public class SailRepositoryConnectionTest {
 
 		verify(sailConnection).explain(eq(Explanation.Level.Unoptimized), any(QueryRoot.class), any(), any(),
 				anyBoolean(), anyInt());
+	}
+
+	private void stubSlowEvaluation(long delayMillis) {
+		when(sailConnection.evaluate(any(), any(), any(), anyBoolean())).thenAnswer(invocation -> {
+			parkForMillis(delayMillis);
+			return new EmptyIteration<>();
+		});
+	}
+
+	private static CloseableIteration<BindingSet> delayedEmptyIteration(long delayMillis) {
+		return new CloseableIteration<>() {
+			@Override
+			public boolean hasNext() {
+				parkForMillis(delayMillis);
+				return false;
+			}
+
+			@Override
+			public BindingSet next() {
+				throw new IllegalStateException("The empty iteration has no next element");
+			}
+
+			@Override
+			public void remove() {
+				throw new IllegalStateException("The empty iteration has no element to remove");
+			}
+
+			@Override
+			public void close() {
+			}
+		};
+	}
+
+	private static void parkForMillis(long delayMillis) {
+		long blockedUntil = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(delayMillis);
+		long remaining;
+		while ((remaining = blockedUntil - System.nanoTime()) > 0) {
+			LockSupport.parkNanos(remaining);
+		}
 	}
 
 	@Test
@@ -286,6 +389,7 @@ public class SailRepositoryConnectionTest {
 		};
 		assertThatThrownBy(() -> hooked.add(List.of(statement))).isSameAs(failure);
 		verify(sailConnection).rollback();
+
 	}
 
 }

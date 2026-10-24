@@ -142,4 +142,62 @@ public final class ValueStoreRecordCodec {
 		buffer.put(label);
 		return data;
 	}
+
+	/** Canonicalizes only the ASCII language range; the owner payload is never normalized here. */
+	static byte[] canonicalLanguageKey(byte[] data) {
+		long range = languageTagRange(ByteBuffer.wrap(data));
+		if (range < 0) {
+			return data;
+		}
+		int start = (int) (range >>> 32);
+		int end = (int) range;
+		int i = start;
+		while (i < end && !isAsciiUpperCase(data[i])) {
+			i++;
+		}
+		if (i == end) {
+			return data;
+		}
+		byte[] key = data.clone();
+		for (; i < end; i++) {
+			if (isAsciiUpperCase(key[i])) {
+				key[i] = (byte) (key[i] + ('a' - 'A'));
+			}
+		}
+		return key;
+	}
+
+	static long languageTagRange(ByteBuffer data) {
+		int position = data.position();
+		int length = data.remaining();
+		if (length < 3 || data.get(position) != LITERAL_VALUE) {
+			return -1L;
+		}
+		int pos = 1 + Varint.firstToLength(data.get(position + 1));
+		if (pos >= length) {
+			return -1L;
+		}
+		int directionAndLangLength = data.get(position + pos) & 0xFF;
+		pos++;
+		int langLength;
+		if (directionAndLangLength >> 6 == 3) {
+			// extended header: a varint with the language tag length follows
+			if (pos >= length) {
+				return -1L;
+			}
+			langLength = (int) Varint.readUnsigned(data, position + pos);
+			pos += Varint.firstToLength(data.get(position + pos));
+		} else {
+			langLength = directionAndLangLength & 0x3F;
+		}
+		if (langLength <= 0 || pos + langLength > length) {
+			return -1L;
+		}
+		return ((long) pos << 32) | (pos + langLength);
+	}
+
+	private static boolean isAsciiUpperCase(byte b) {
+		return b >= 'A' && b <= 'Z';
+	}
+
 }

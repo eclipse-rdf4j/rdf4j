@@ -71,6 +71,7 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 	private final List<LmdbNativeStrategyProposal<T>> candidates = new ArrayList<>(4);
 	private final double sliceRows;
 	private final LmdbNativeAdaptiveCostModel adaptiveModel;
+	private NativeFilterLease filterParent;
 	private final LmdbNativeProbeConfig probeConfig = LmdbNativeProbeConfig.system();
 	private final LmdbNativeHedgeConfig hedgeConfig = LmdbNativeHedgeConfig.system();
 	private final LmdbNativeQueryProbeBudget probeBudget = new LmdbNativeQueryProbeBudget();
@@ -108,8 +109,8 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 	/** Production arbiter whose corrections are scoped to the source's LMDB id space. */
 	static <T> LmdbNativeStrategyArbiter<T> forExpr(TupleExpr explainTarget, NativeLmdbQuerySource source) {
 		return source == null ? forExpr(explainTarget)
-				: new LmdbNativeStrategyArbiter<>(explainTarget, -1D,
-						LmdbNativeAdaptiveCostModel.forSource(source));
+				: new LmdbNativeStrategyArbiter<T>(explainTarget, -1D,
+						LmdbNativeAdaptiveCostModel.forSource(source)).filterParent(source);
 	}
 
 	/**
@@ -126,8 +127,21 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 	static <T> LmdbNativeStrategyArbiter<T> forSlice(TupleExpr explainTarget, double sliceRows,
 			NativeLmdbQuerySource source) {
 		return source == null ? forSlice(explainTarget, sliceRows)
-				: new LmdbNativeStrategyArbiter<>(explainTarget, sliceRows,
-						LmdbNativeAdaptiveCostModel.forSource(source));
+				: new LmdbNativeStrategyArbiter<T>(explainTarget, sliceRows,
+						LmdbNativeAdaptiveCostModel.forSource(source)).filterParent(source);
+	}
+
+	LmdbNativeStrategyArbiter<T> filterParent(NativeFilterLease parent) {
+		if (!candidates.isEmpty()) {
+			throw new IllegalStateException("native filter parent must precede proposal registration");
+		}
+		filterParent = parent;
+		return this;
+	}
+
+	private LmdbNativeStrategyArbiter<T> filterParent(NativeLmdbQuerySource source) {
+		filterParent = source instanceof SyntheticValueSource synthetic ? synthetic.filterParent() : null;
+		return this;
 	}
 
 	/** Test seam: an arbiter over an explicit adaptive model (probe-execution specifications). */
@@ -143,7 +157,7 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 	LmdbNativeStrategyArbiter<T> offer(Proposer<T> proposer) throws IOException {
 		LmdbNativeStrategyProposal<T> proposal = proposer.propose();
 		if (proposal != null) {
-			candidates.add(proposal);
+			candidates.add(proposal.filterParent(filterParent));
 		}
 		return this;
 	}
@@ -528,7 +542,8 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 				continue;
 			}
 			LmdbNativeAdaptiveArbitration.Candidate<T> candidate = new LmdbNativeAdaptiveArbitration.Candidate<>(
-					estimate, LmdbNativeStrategyPreference.rank(proposal.tag), ignored -> proposal.open(),
+					estimate, LmdbNativeStrategyPreference.rank(proposal.tag),
+					observation -> proposal.openObserved(observation),
 					proposal.probeable);
 			converted.add(new AdaptiveCandidate<>(i, candidate));
 			priced.add(new LmdbNativeAdaptiveArbitration.Priced<>(candidate, captured.predictions().get(i)));
@@ -905,97 +920,124 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		long startedNanos = System.nanoTime();
 		LmdbNativeHedgeSupport.ShadowContext shadowForTask = shadow;
 		LmdbNativeParallelPipelines.TaskReservation reservationForTask = taskReservation;
+		NativeExecutionContext.WorkerTasks backupTasks = new NativeExecutionContext.WorkerTasks(1);
+		SyntheticValueSource filterScope = shadowForTask.shadowRow.evaluationScope();
+		if (filterScope != null) {
+			NativeExecutionContext owner = filterScope.executionContext();
+			owner.registerFilterWorkers(backupTasks);
+			owner.nativeState(backupObservation, () -> (AutoCloseable) backupObservation::discardUnselectedFilters);
+		}
 		Runnable backupTask = () -> {
-			LmdbNativeSafetyLedger.Reservation guardReservation = null;
-			long launchMillis = 0L;
-			try (var replayScope = replayContext.activate()) {
-				while (go.getCount() > 0 && race.state() == LmdbNativeHedgeRace.State.PRIMARY_ONLY) {
-					if (go.await(50L, java.util.concurrent.TimeUnit.MILLISECONDS)) {
-						break;
+			try (var worker = backupTasks.enter(() -> {
+			}, backupObservation::filterCleanupFailed)) {
+				LmdbNativeSafetyLedger.Reservation guardReservation = null;
+				long launchMillis = 0L;
+				try (var replayScope = replayContext.activate()) {
+					while (go.getCount() > 0 && race.state() == LmdbNativeHedgeRace.State.PRIMARY_ONLY) {
+						if (go.await(50L, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+							break;
+						}
 					}
-				}
-				if (race.state() != LmdbNativeHedgeRace.State.HEDGE_STARTING) {
-					backupObservation.cancelled(null);
-					return;
-				}
-				// Fire predicate, evaluated on the pool thread. Deliberately NO conditional-remaining veto: the
-				// trigger sits at high99 x margin, so at fire time the winner's own posterior is already falsified —
-				// and a falsified lognormal's thin tail predicts imminent completion forever, vetoing exactly the
-				// rescues that matter. The trigger placement encodes the decision; only the ledger gates here (an
-				// armed-but-unfired guard costs nothing, the possibly-wasted backup is priced at fire time).
-				guardReservation = ledger.tryReserve(LmdbNativeHedgePolicy
-						.guardReservationNanos(plan.backupPrediction().high95Nanos(), probeConfig, hedgeConfig));
-				if (guardReservation == null) {
-					race.poolRejected();
-					backupObservation.cancelled(null);
-					return;
-				}
-				if (!race.backupLaunched()) {
-					backupObservation.cancelled(null);
-					guardReservation.refund();
-					guardReservation = null;
-					return;
-				}
-				launchMillis = adaptiveModel.store().nowMillis();
-				try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(backupDeadline)) {
-					logSelected(explainTarget, decisionId, forcedDecisionPoint, backupTag, "guard backup",
-							"watchdog fired");
-					T produced = hedgeSupport.produceBackup(shadowForTask, backupTag, backupObservation);
-					long backupElapsed = chargeNanos(elapsedNanosSince(launchMillis));
-					if (produced == null) {
-						backupObservation.declined();
+					if (race.state() != LmdbNativeHedgeRace.State.HEDGE_STARTING) {
+						backupObservation.cancelled(null);
+						return;
+					}
+					// Fire predicate, evaluated on the pool thread. Deliberately NO conditional-remaining veto: the
+					// trigger sits at high99 x margin, so at fire time the winner's own posterior is already falsified
+					// —
+					// and a falsified lognormal's thin tail predicts imminent completion forever, vetoing exactly the
+					// rescues that matter. The trigger placement encodes the decision; only the ledger gates here (an
+					// armed-but-unfired guard costs nothing, the possibly-wasted backup is priced at fire time).
+					guardReservation = ledger.tryReserve(LmdbNativeHedgePolicy
+							.guardReservationNanos(plan.backupPrediction().high95Nanos(), probeConfig, hedgeConfig));
+					if (guardReservation == null) {
+						race.poolRejected();
+						backupObservation.cancelled(null);
+						return;
+					}
+					if (!race.backupLaunched()) {
+						backupObservation.cancelled(null);
 						guardReservation.refund();
 						guardReservation = null;
-						race.backupFailed(new IllegalStateException("guard backup declined on the shadow row"));
-					} else if (race.tryCommit(LmdbNativeHedgeRace.Arm.BACKUP)) {
-						backupObservation.markContended(hedgeConfig.evidenceWeight());
-						backupObservation.exhausted();
-						backupValue.set(produced);
-						// the winning rescue's runtime is useful work: charge only interference + cancel bound
-						guardReservation.commit((long) (2.0 * hedgeConfig.interferenceFraction() * backupElapsed)
-								+ probeConfig.cancelBoundNanos());
-						guardReservation = null;
-					} else {
-						backupObservation.cancelled(null);
-						hedgeSupport.discard(produced);
-						// the whole backup was waste (the primary won): charge it with interference
-						guardReservation.commit(
-								(long) (backupElapsed * (1.0 + 2.0 * hedgeConfig.interferenceFraction())));
-						guardReservation = null;
+						return;
 					}
-				}
-			} catch (KernelQueryCancelledException cancelled) {
-				backupObservation.cancelled(cancelled);
-				race.backupFailed(cancelled);
-			} catch (LmdbNativeProbeDeadlineExceeded
-					| org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException tripped) {
-				backupObservation.cancelled(tripped);
-			} catch (Throwable failure) {
-				backupObservation.failed(failure);
-				race.backupFailed(failure);
-			} finally {
-				try {
-					if (guardReservation != null) {
-						guardReservation.close();
+					launchMillis = adaptiveModel.store().nowMillis();
+					try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(backupDeadline)) {
+						logSelected(explainTarget, decisionId, forcedDecisionPoint, backupTag, "guard backup",
+								"watchdog fired");
+						T produced = hedgeSupport.produceBackup(shadowForTask, backupTag, backupObservation);
+						long backupElapsed = chargeNanos(elapsedNanosSince(launchMillis));
+						if (produced == null) {
+							backupObservation.declined();
+							guardReservation.refund();
+							guardReservation = null;
+							race.backupFailed(new IllegalStateException("guard backup declined on the shadow row"));
+						} else if (race.tryCommit(LmdbNativeHedgeRace.Arm.BACKUP)) {
+							backupObservation.markContended(hedgeConfig.evidenceWeight());
+							backupObservation.exhausted();
+							backupValue.set(produced);
+							// the winning rescue's runtime is useful work: charge only interference + cancel bound
+							guardReservation.commit((long) (2.0 * hedgeConfig.interferenceFraction() * backupElapsed)
+									+ probeConfig.cancelBoundNanos());
+							guardReservation = null;
+						} else {
+							backupObservation.cancelled(null);
+							hedgeSupport.discard(produced);
+							// the whole backup was waste (the primary won): charge it with interference
+							guardReservation.commit(
+									(long) (backupElapsed * (1.0 + 2.0 * hedgeConfig.interferenceFraction())));
+							guardReservation = null;
+						}
 					}
+				} catch (KernelQueryCancelledException cancelled) {
+					backupObservation.cancelled(cancelled);
+					race.backupFailed(cancelled);
+				} catch (LmdbNativeProbeDeadlineExceeded
+						| org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException tripped) {
+					backupObservation.cancelled(tripped);
+				} catch (Throwable failure) {
+					backupObservation.failed(failure);
+					race.backupFailed(failure);
 				} finally {
-					try {
-						shadowForTask.close();
-					} finally {
-						reservationForTask.close();
-						LmdbNativeHedgePermits.release(hedgeConfig);
-						backupSettled.countDown();
-						race.backupExited();
+					Throwable cleanup = closeHedgeResources(guardReservation, shadowForTask, reservationForTask);
+					if (cleanup != null) {
+						backupObservation.filterCleanupFailed(cleanup);
+						backupTasks.recordOwnedCleanupFailure(cleanup);
+						race.backupFailed(cleanup);
+					}
+					if (race.state() != LmdbNativeHedgeRace.State.COMMITTED_BACKUP) {
+						try {
+							backupObservation.discardUnselectedFilters();
+						} catch (RuntimeException | Error problem) {
+							backupObservation.filterCleanupFailed(problem);
+							backupTasks.recordOwnedCleanupFailure(problem);
+						}
 					}
 				}
+			} finally {
+				Throwable cleanup = backupTasks.cleanupFailure();
+				if (cleanup != null) {
+					backupObservation.filterCleanupFailed(cleanup);
+				}
+				backupSettled.countDown();
+				race.backupExited();
 			}
 		};
 		try {
 			LmdbNativeParallelPipelines.pool().submit(backupTask);
 		} catch (java.util.concurrent.RejectedExecutionException saturated) {
-			shadow.close();
-			taskReservation.close();
-			LmdbNativeHedgePermits.release(hedgeConfig);
+			Throwable cleanup = null;
+			try {
+				cleanup = closeHedgeResources(null, shadow, taskReservation);
+				if (cleanup != null) {
+					NativeContextClosingIteration.throwFailure(cleanup);
+				}
+			} catch (RuntimeException | Error problem) {
+				cleanup = problem;
+				throw problem;
+			} finally {
+				backupTasks.countDown(cleanup);
+			}
 			return executeGuardedDegraded(plan, winnerIndex);
 		}
 		race.armWatchdog(plan.triggerNanos(), go::countDown, LmdbNativeHedgeWatchdog.shared());
@@ -1225,59 +1267,91 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 				adaptiveModel, LmdbNativeCostObservation.Role.HEDGE_BACKUP);
 		LmdbNativeHedgeSupport.ShadowContext shadowForTask = shadow;
 		LmdbNativeParallelPipelines.TaskReservation reservationForTask = taskReservation;
+		NativeExecutionContext.WorkerTasks backupTasks = new NativeExecutionContext.WorkerTasks(1);
+		SyntheticValueSource filterScope = shadowForTask.shadowRow.evaluationScope();
+		if (filterScope != null) {
+			NativeExecutionContext owner = filterScope.executionContext();
+			owner.registerFilterWorkers(backupTasks);
+			owner.nativeState(backupObservation, () -> (AutoCloseable) backupObservation::discardUnselectedFilters);
+		}
 		Runnable backupTask = () -> {
-			try (var replayScope = replayContext.activate()) {
-				while (go.getCount() > 0 && race.state() == LmdbNativeHedgeRace.State.PRIMARY_ONLY) {
-					if (go.await(50L, java.util.concurrent.TimeUnit.MILLISECONDS)) {
-						break;
+			try (var worker = backupTasks.enter(() -> {
+			}, backupObservation::filterCleanupFailed)) {
+				try (var replayScope = replayContext.activate()) {
+					while (go.getCount() > 0 && race.state() == LmdbNativeHedgeRace.State.PRIMARY_ONLY) {
+						if (go.await(50L, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+							break;
+						}
 					}
-				}
-				if (!race.backupLaunched()) {
-					backupObservation.cancelled(null);
-					return;
-				}
-				try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(backupDeadline)) {
-					logSelected(explainTarget, decisionId, forcedDecisionPoint, fallbackTag, "hedge backup",
-							"hedge launched");
-					T produced = hedgeSupport.produceBackup(shadowForTask, fallbackTag, backupObservation);
-					if (produced == null) {
-						backupObservation.declined();
-						race.backupFailed(new IllegalStateException("hedge backup declined on the shadow row"));
-					} else if (race.tryCommit(LmdbNativeHedgeRace.Arm.BACKUP)) {
-						backupObservation.markContended(hedgeConfig.evidenceWeight());
-						backupObservation.exhausted();
-						backupValue.set(produced);
-					} else {
+					if (!race.backupLaunched()) {
 						backupObservation.cancelled(null);
-						hedgeSupport.discard(produced);
+						return;
+					}
+					try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(backupDeadline)) {
+						logSelected(explainTarget, decisionId, forcedDecisionPoint, fallbackTag, "hedge backup",
+								"hedge launched");
+						T produced = hedgeSupport.produceBackup(shadowForTask, fallbackTag, backupObservation);
+						if (produced == null) {
+							backupObservation.declined();
+							race.backupFailed(new IllegalStateException("hedge backup declined on the shadow row"));
+						} else if (race.tryCommit(LmdbNativeHedgeRace.Arm.BACKUP)) {
+							backupObservation.markContended(hedgeConfig.evidenceWeight());
+							backupObservation.exhausted();
+							backupValue.set(produced);
+						} else {
+							backupObservation.cancelled(null);
+							hedgeSupport.discard(produced);
+						}
+					}
+				} catch (KernelQueryCancelledException cancelled) {
+					backupObservation.cancelled(cancelled);
+					race.backupFailed(cancelled);
+				} catch (LmdbNativeProbeDeadlineExceeded
+						| org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException tripped) {
+					backupObservation.cancelled(tripped); // the race's loser trip: no timing evidence
+				} catch (Throwable failure) {
+					backupObservation.failed(failure);
+					race.backupFailed(failure);
+				} finally {
+					Throwable cleanup = closeHedgeResources(null, shadowForTask, reservationForTask);
+					if (cleanup != null) {
+						backupObservation.filterCleanupFailed(cleanup);
+						backupTasks.recordOwnedCleanupFailure(cleanup);
+						race.backupFailed(cleanup);
+					}
+					if (race.state() != LmdbNativeHedgeRace.State.COMMITTED_BACKUP) {
+						try {
+							backupObservation.discardUnselectedFilters();
+						} catch (RuntimeException | Error problem) {
+							backupObservation.filterCleanupFailed(problem);
+							backupTasks.recordOwnedCleanupFailure(problem);
+						}
 					}
 				}
-			} catch (KernelQueryCancelledException cancelled) {
-				backupObservation.cancelled(cancelled);
-				race.backupFailed(cancelled);
-			} catch (LmdbNativeProbeDeadlineExceeded
-					| org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException tripped) {
-				backupObservation.cancelled(tripped); // the race's loser trip: no timing evidence
-			} catch (Throwable failure) {
-				backupObservation.failed(failure);
-				race.backupFailed(failure);
 			} finally {
-				try {
-					shadowForTask.close();
-				} finally {
-					reservationForTask.close();
-					LmdbNativeHedgePermits.release(hedgeConfig);
-					backupSettled.countDown();
-					race.backupExited();
+				Throwable cleanup = backupTasks.cleanupFailure();
+				if (cleanup != null) {
+					backupObservation.filterCleanupFailed(cleanup);
 				}
+				backupSettled.countDown();
+				race.backupExited();
 			}
 		};
 		try {
 			LmdbNativeParallelPipelines.pool().submit(backupTask);
 		} catch (java.util.concurrent.RejectedExecutionException saturated) {
-			shadow.close();
-			taskReservation.close();
-			LmdbNativeHedgePermits.release(hedgeConfig);
+			Throwable cleanup = null;
+			try {
+				cleanup = closeHedgeResources(null, shadow, taskReservation);
+				if (cleanup != null) {
+					NativeContextClosingIteration.throwFailure(cleanup);
+				}
+			} catch (RuntimeException | Error problem) {
+				cleanup = problem;
+				throw problem;
+			} finally {
+				backupTasks.countDown(cleanup);
+			}
 			return executeProbe(probe, trialIndex);
 		}
 		long delay = plan.launchDelayNanos();
@@ -1330,6 +1404,7 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 					winningTag = trial.tag;
 					winningWork = trial.work.known() ? trial.work.high() : Double.NaN;
 					candidates.remove(trialIndex);
+					trial.selected();
 					releaseLosers(trial, "probe-trial-lost");
 					candidates.clear();
 					trial.close();
@@ -1402,6 +1477,35 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		candidates.remove(trialIndex);
 		trial.close();
 		return null;
+	}
+
+	private Throwable closeHedgeResources(LmdbNativeSafetyLedger.Reservation guard,
+			LmdbNativeHedgeSupport.ShadowContext shadow,
+			LmdbNativeParallelPipelines.TaskReservation reservation) {
+		Throwable failure = null;
+		try {
+			if (guard != null) {
+				guard.close();
+			}
+		} catch (RuntimeException | Error problem) {
+			failure = problem;
+		}
+		try {
+			shadow.close();
+		} catch (RuntimeException | Error problem) {
+			failure = appendFailure(failure, problem);
+		}
+		try {
+			reservation.close();
+		} catch (RuntimeException | Error problem) {
+			failure = appendFailure(failure, problem);
+		}
+		try {
+			LmdbNativeHedgePermits.release(hedgeConfig);
+		} catch (RuntimeException | Error problem) {
+			failure = appendFailure(failure, problem);
+		}
+		return failure;
 	}
 
 	/** Strategy costs use millisecond measurements; deadline scopes retain their independent monotonic clock. */
@@ -1497,6 +1601,11 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 				} catch (InterruptedException interrupted) {
 					Thread.currentThread().interrupt();
 					break;
+				}
+				Throwable cleanupFailure = backupObservation.filterCleanupFailure();
+				if (cleanupFailure != null) {
+					backupObservation.discardUnselectedFilters();
+					NativeContextClosingIteration.throwFailure(cleanupFailure);
 				}
 				T produced = backupValue.get();
 				if (produced == null) {
@@ -1677,12 +1786,13 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 	private static <T> LmdbNativeStrategySelection<T> openLegacy(LmdbNativeStrategyProposal<T> proposal)
 			throws IOException {
 		T value = proposal.open();
-		return value == null ? null : new LmdbNativeStrategySelection<>(value, null);
+		return value == null ? null : new LmdbNativeStrategySelection<>(value, null, proposal.filterAttempt());
 	}
 
 	/** A failed cleanup must neither strand the remaining reservations nor publish a half-cleaned result. */
 	private void releaseAfterOpen(LmdbNativeStrategyProposal<T> winner, String reason, T value,
 			LmdbNativeCostObservation observation) {
+		winner.selected();
 		Throwable failure = null;
 		try {
 			releaseLosers(winner, reason);
@@ -1705,6 +1815,10 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 				}
 			}
 			discardUnpublished(value, failure);
+			NativeFilterLease filters = winner.filterAttempt();
+			if (filters != null) {
+				filters.abort(failure);
+			}
 			throwCleanup(failure);
 		}
 	}

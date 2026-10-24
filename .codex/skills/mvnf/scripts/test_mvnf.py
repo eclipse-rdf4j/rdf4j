@@ -456,6 +456,7 @@ class MvnfWorkspaceTest(unittest.TestCase):
             ("-Drdf4j.test.tmpRoot=/tmp/hijack",),
             ("-Drdf4j.test.tmpDirectory=/tmp/hijack",),
             ("-Djava.io.tmpdir=/tmp/hijack",),
+            ("-Drdf4j.test.tmpdirArgLine=",),
             ("-Dformatter.skip", "false"),
             ("--define=maven.repo.local=/tmp/hijack",),
             ("--define", "rdf4j.build.root=/tmp/hijack"),

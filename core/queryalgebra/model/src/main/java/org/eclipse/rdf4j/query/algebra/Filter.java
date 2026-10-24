@@ -36,6 +36,7 @@ public class Filter extends UnaryTupleOperator {
 	 *-----------*/
 
 	private ValueExpr condition;
+	private Set<String> requiredInputBindingNames = Set.of();
 
 	private ConditionBindingScope conditionBindingScope = ConditionBindingScope.AUTO;
 
@@ -63,6 +64,21 @@ public class Filter extends UnaryTupleOperator {
 		assert condition != null : "condition must not be null";
 		condition.setParentNode(this);
 		this.condition = condition;
+	}
+
+	/**
+	 * Inputs promised by a relocation proof. They are physical parameters, not outputs of the argument. Logical
+	 * equality stays unchanged; executable-plan identities must retain these facts or decline that physical format. The
+	 * immutable set is retained by cloning and serialization.
+	 */
+	@InternalUseOnly
+	public Set<String> getRequiredInputBindingNames() {
+		return requiredInputBindingNames == null ? Set.of() : requiredInputBindingNames;
+	}
+
+	@InternalUseOnly
+	public void setRequiredInputBindingNames(Set<String> names) {
+		requiredInputBindingNames = Set.copyOf(names);
 	}
 
 	/** The bindings visible to this condition, independently of the tuple expression's input scope. */

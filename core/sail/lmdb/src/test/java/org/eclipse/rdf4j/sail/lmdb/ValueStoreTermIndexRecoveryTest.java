@@ -401,17 +401,40 @@ class ValueStoreTermIndexRecoveryTest {
 	@Timeout(value = 90, unit = TimeUnit.SECONDS)
 	void failedTermIndexInitializationClosesPartialEnvironment(@TempDir Path storeDir) throws Exception {
 		Path valueDirectory = storeDir.resolve("values");
+		assertFalse(Files.exists(valueDirectory),
+				"the fixture must resolve its new dictionary profile before native bytes exist");
+		LmdbStoreConfig config = legacyConfig();
+		StoreProperties properties = new StoreProperties(valueDirectory.toFile());
+		LmdbStoreFormat format = LmdbStoreFormat.forNewStore(config);
+		format.initializeProperties(properties);
 		FailingInitializationValueStore.environmentCloseCount.set(0);
 		IOException failure = assertThrows(IOException.class,
-				() -> new FailingInitializationValueStore(valueDirectory.toFile(),
+				() -> new FailingInitializationValueStore(valueDirectory.toFile(), properties,
 						legacyConfig().setTripleTermIndexes(
-								"spoc,cspo,opsc,ocps,ocsp,opcs,ospc,oscp,csop,cpso,cpos,cosp,pcso")));
+								"spoc,cspo,opsc,ocps,ocsp,opcs,ospc,oscp,csop,cpso,cpos,cosp,pcso"),
+						format));
 		assertEquals("At most 12 triple-term indexes can be active", failure.getMessage());
 		assertEquals(1, FailingInitializationValueStore.environmentCloseCount.get(),
 				"constructor failure must close the environment after manifest and writer acquisition");
+		assertFalse(Files.exists(valueDirectory.resolve(StoreProperties.FILE_NAME)),
+				"failed initialization must not publish standalone dictionary capabilities");
 
-		ValueStore reopened = new ValueStore(valueDirectory.toFile(), legacyConfig());
-		reopened.close();
+		IOException standaloneFailure = assertThrows(IOException.class,
+				() -> new ValueStore(valueDirectory.toFile(), config));
+		assertEquals("Missing store.properties in a nonempty ValueStore dictionary directory: " + valueDirectory,
+				standaloneFailure.getMessage());
+		assertFalse(Files.exists(valueDirectory.resolve(StoreProperties.FILE_NAME)),
+				"a rejected standalone open must not publish capabilities for retained native bytes");
+
+		ValueStore reopened = new ValueStore(valueDirectory.toFile(), properties, config, false, null, format, false);
+		try {
+			// The owner retains its pre-open profile across failure and publishes it only after successful retry.
+			properties.save();
+		} finally {
+			reopened.close();
+		}
+		ValueStore coldReopened = new ValueStore(valueDirectory.toFile(), config);
+		coldReopened.close();
 	}
 
 	@Test
@@ -438,12 +461,18 @@ class ValueStoreTermIndexRecoveryTest {
 	void finalManifestCommitMapFullKeepsOldGenerationAuthoritative(@TempDir Path storeDir) throws Exception {
 		Seed first = seedStore(storeDir, legacyConfig().setTripleTermIndexes(DROP_RETRY_OLD_INDEXES), 8);
 		Path valueDirectory = storeDir.resolve("values");
+		StoreProperties properties = new StoreProperties(storeDir.toFile());
+		assertTrue(properties.load(), "the seeded Sail owner must supply its persisted dictionary capabilities");
+		LmdbStoreConfig replacementConfig = legacyConfig().setTripleTermIndexes(DROP_RETRY_NEW_INDEXES);
+		LmdbStoreFormat format = LmdbStoreFormat.resolve(storeDir.toFile(), properties, replacementConfig);
 		FinalManifestCommitMapFullValueStore.resetFailure();
 		IOException failure = assertThrows(IOException.class,
-				() -> new FinalManifestCommitMapFullValueStore(valueDirectory.toFile(),
-						legacyConfig().setTripleTermIndexes(DROP_RETRY_NEW_INDEXES)));
+				() -> new FinalManifestCommitMapFullValueStore(valueDirectory.toFile(), properties,
+						replacementConfig, format));
 		assertTrue(FinalManifestCommitMapFullValueStore.injectedMapFull.get(),
 				"the test must fail the authority transaction after a successful index drop");
+		assertTrue(containsCause(failure, LmdbUtil.MapFullException.class),
+				"the failed authority commit must preserve the injected native MAP_FULL cause: " + failure);
 		assertEquals(1, FinalManifestCommitMapFullValueStore.environmentCloseCount.get(),
 				"the failed constructor must close its environment before recovery opens the old generation");
 
@@ -922,8 +951,9 @@ class ValueStoreTermIndexRecoveryTest {
 
 		private static final AtomicInteger environmentCloseCount = new AtomicInteger();
 
-		private FailingInitializationValueStore(File dir, LmdbStoreConfig config) throws IOException {
-			super(dir, config);
+		private FailingInitializationValueStore(File dir, StoreProperties properties, LmdbStoreConfig config,
+				LmdbStoreFormat format) throws IOException {
+			super(dir, properties, config, false, null, format, false);
 		}
 
 		@Override
@@ -971,8 +1001,9 @@ class ValueStoreTermIndexRecoveryTest {
 		private static final AtomicBoolean injectedMapFull = new AtomicBoolean();
 		private static final AtomicInteger environmentCloseCount = new AtomicInteger();
 
-		private FinalManifestCommitMapFullValueStore(File dir, LmdbStoreConfig config) throws IOException {
-			super(dir, config);
+		private FinalManifestCommitMapFullValueStore(File dir, StoreProperties properties, LmdbStoreConfig config,
+				LmdbStoreFormat format) throws IOException {
+			super(dir, properties, config, false, null, format, false);
 		}
 
 		private static void resetFailure() {

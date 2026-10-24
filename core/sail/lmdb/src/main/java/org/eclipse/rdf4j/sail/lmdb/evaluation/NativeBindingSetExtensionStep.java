@@ -122,10 +122,16 @@ final class NativeBindingSetExtensionStep implements QueryEvaluationStep, LmdbNa
 			try {
 				boolean result = delegate.hasNext();
 				if (!result) {
+					if (lease != null) {
+						lease.exhausted();
+					}
 					close();
 				}
 				return result;
 			} catch (RuntimeException | Error e) {
+				if (lease != null) {
+					lease.failed();
+				}
 				try {
 					close();
 				} catch (RuntimeException | Error cleanup) {
@@ -158,6 +164,9 @@ final class NativeBindingSetExtensionStep implements QueryEvaluationStep, LmdbNa
 				}
 				return result;
 			} catch (RuntimeException | Error e) {
+				if (lease != null) {
+					lease.failed();
+				}
 				try {
 					close();
 				} catch (RuntimeException | Error cleanup) {

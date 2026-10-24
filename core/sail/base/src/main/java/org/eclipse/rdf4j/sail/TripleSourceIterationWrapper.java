@@ -155,6 +155,24 @@ public class TripleSourceIterationWrapper<T> implements CloseableIteration<T>, I
 		return reporter == null ? -1 : reporter.getSourceRowsFilteredActual();
 	}
 
+	@Override
+	public long getDistinctCursorSkipCountActual() {
+		IndexReportingIterator reporter = indexReporter();
+		return reporter == null ? -1 : reporter.getDistinctCursorSkipCountActual();
+	}
+
+	@Override
+	public long getDistinctCursorSkipSeekCountActual() {
+		IndexReportingIterator reporter = indexReporter();
+		return reporter == null ? -1 : reporter.getDistinctCursorSkipSeekCountActual();
+	}
+
+	@Override
+	public long getSkipAheadSeekCountActual() {
+		IndexReportingIterator reporter = indexReporter();
+		return reporter == null ? -1 : reporter.getSkipAheadSeekCountActual();
+	}
+
 	private IndexReportingIterator indexReporter() {
 		return delegate instanceof IndexReportingIterator ? (IndexReportingIterator) delegate : null;
 	}

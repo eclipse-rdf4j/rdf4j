@@ -101,9 +101,14 @@ class ValueStorePositionCacheTest {
 			assertEquals(first.getValueStoreRevision(), second.getValueStoreRevision());
 			assertEquals(3, first.getValueStoreRevision().getPositionMask());
 			LmdbValue[] values = { second, first };
-			store.readTransactionCount = 0;
+			TxnManager manager = store.getTxnManager();
+			long ordinaryBefore = manager.ordinaryAdmissions();
+			long reservedBefore = manager.reservedAdmissions();
 			first.getValueStoreRevision().resolveValues(values, new int[] { 1, 0 }, 2);
-			assertEquals(1, store.readTransactionCount, "mixed banks must share one dictionary transaction");
+			assertEquals(1, manager.ordinaryAdmissions() - ordinaryBefore,
+					"mixed banks must share one dictionary transaction");
+			assertEquals(0, manager.reservedAdmissions() - reservedBefore,
+					"the batch must not borrow the reserved reader slot");
 			assertTrue(first.isInitialized());
 			assertTrue(second.isInitialized());
 			assertSame(first, cached(store, id, 1));
@@ -129,14 +134,19 @@ class ValueStorePositionCacheTest {
 			MapBindingSet second = row(subject);
 			MapBindingSet third = row(object);
 			List<BindingSet> rows = List.of(first, second, third);
-			store.readTransactionCount = 0;
+			TxnManager manager = store.getTxnManager();
+			long ordinaryBefore = manager.ordinaryAdmissions();
+			long reservedBefore = manager.reservedAdmissions();
 			try (var iteration = new LmdbValueMaterializingIteration(
 					new CloseableIteratorIteration<>(rows.iterator()), 8)) {
 				assertSame(first, iteration.next());
 				assertSame(second, iteration.next());
 				assertSame(third, iteration.next());
 			}
-			assertEquals(1, store.readTransactionCount, "bank-aware deduplication must preserve batching");
+			assertEquals(1, manager.ordinaryAdmissions() - ordinaryBefore,
+					"bank-aware deduplication must preserve batching");
+			assertEquals(0, manager.reservedAdmissions() - reservedBefore,
+					"the batch must not borrow the reserved reader slot");
 			assertTrue(subject.isInitialized());
 			assertTrue(object.isInitialized());
 			assertSame(subject, cached(store, id, 1));

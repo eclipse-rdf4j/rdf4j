@@ -1,0 +1,166 @@
+{
+ "wp": "wp1-lmdb-logical-rewrites",
+ "batch": "bR",
+ "worktree": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1",
+ "patchPath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/patches/wp1.patch",
+ "evidencePath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/initial-evidence.wp1.txt",
+ "findings": [
+  {
+   "id": "critique-reconciliation",
+   "status": "fixed",
+   "rootCause": "Reconciliation of every critique item against the code in the worktree. Blockers: none in the critique. MAJOR 3.1.4 (mixed sameTerm/= disjunction lost rows under the TERM classification): handled in b2. LmdbJoinPlanSupport.containsSameTerm and LmdbFilterSimplifierOptimizer.requiresTermIdentityFilter keep the sameTerm condition next to the value-expanded superset anchor. Guarded by LmdbFiniteAnchorEqualityTest#mixedSameTermAndEqualityDisjunctionKeepsOnlyValueEqualRow and #mixedSameTermAndEqualityDisjunctionKeepsEveryValueEqualDatatype, which is exactly the critique's suggested `sameTerm(?o,7) || ?o = 8` over \"8\"^^int and \"8\"^^integer. MAJOR 3.1.1 (sub-SELECT rule regressed the spec-correct BOUND->FALSE fold): handled in b1. OuterScopeBindings.OuterScope has a third set possibleInScope; LmdbBoundSimplifierOptimizer blocks the FALSE fold only on possibleInScope, and a sub-SELECT/MINUS boundary makes outer names leak-only. Guarded by LmdbCorrelatedScopeRewriteTest#boundOfOuterNameInsideSubSelectIsFalseBySpec, #...WithinExistsIsFalseBySpec, #boundOfOuterNameInsideMinusIsFalseBySpec and LmdbBoundSimplifierOptimizerTest#stillFolds*. MAJOR 3.1.6 (legacy stores with duplicate ids for case variants, Option A vs B): handled in b3. Option B keeps the canonical lower-cased data->id key and preserves the first spelling as the payload. A legacy store is migrated on open in one write transaction; if two ids already denote one term it stays byte-exact and a warning names export/re-import, so a subset is never returned silently. Guarded by ValueStoreLanguageTagKeyMigrationTest#legacyStoreWithCollidingVariantsStaysByteExact. The critique's full merge migration was NOT implemented (follow-up). MINOR 3.5: b2 publishes weakenings before mdb_txn_commit and uses a pendingRdfTermDomainCacheMayStrengthen flag rather than unconditional pre-commit publication plus a comment. Re-verified this batch: the flag is set only by rebuildRdfTermDomain(long)/stageRdfTermDomainCacheClear, which are reachable only from initializeRdfTermDomains at open, so every runtime commit publishes before commit (sound). The critique's 'failed commit does not throw from the cache path' test was not added: applyPendingRdfTermDomainCacheUpdates is pure heap work and a deterministic mdb_txn_commit failure needs disk-full injection. MINOR 3.1.1 rule (c)/LATERAL: done in b1 (Join/LeftJoin only; Difference leak-only; Union contributes nothing; Lateral.getRightInputBindingNames used for possible, and left assured is intersected with it for assured). MINOR 3.1.1 scope-changed control: LmdbBoundSimplifierOptimizerTest#leavesScopeChangedFilterOnOptionalRightSideUntouched exists. Checked this batch that FilterMerger.canMerge (LmdbFilterSimplifierOptimizer:327-329) refuses to merge when either filter is scope-changing. The control runs on both the LMDB pipeline and the DefaultEvaluationStrategyFactory oracle (FilterOptimizer is wp9's). MINOR 3.1.4 disjunction repros: ported as sameTermIntegerDisjunctionIsNotValueEquality / sameTermBooleanDisjunctionIsNotValueEquality, which were green before the fix. They are controls, not Hit Proof; Hit Proof comes from the OPTIONAL variants and the algebra-level tests, as the critique asked. MINOR 3.1.5 upgrade behaviour: both auto-rebuild settings are tested in b2 (LmdbPredicateObjectDomainIndexTest#booleanGuaranteeUpgradeRebuildsCanonicalBooleanFact / #booleanGuaranteeUpgradeWithAutoRebuildDisabledClearsGuaranteesAndKeepsFilter). missedFindings: (1) W3C lang-3 over LMDB: there is no LMDB SPARQL10QueryComplianceTest subclass in this repo; LmdbLanguageTagTermIdentityTest#plainPatternWithCaseVariantTagWarm/ColdStore covers the same shape on both pipelines. (2) LmdbLiteral.equals id comparison with duplicate ids: this now only affects legacy byte-exact stores (documented follow-up). Design additional tests that were missing: added three controls this batch (see change). Repro methods c4_*, c6_*, c7_* and oracle_sameTermInsideExistsSeesOuterBinding belong to candidates outside 3.1/3.5 (refuted hoist finding, LmdbSetSemanticsOptimizer, LmdbOptionalNormalFormOptimizer, and the wp9 SameTermFilterOptimizer oracle blind spot), so they were not ported.",
+   "change": "Test-only additions. LmdbFiniteAnchorEqualityTest gains an uncommittedScenario harness, mirroring the repro's inTransaction: commit, warm the plan, then query inside an open transaction with added rows. It also gains three controls from the design (3.1.4 'uncommitted-transaction variant unchanged') and from the repro controls: controlEqualityIntegerFamilyWithNonCanonicalCommittedRow (repro c5_integerFamilyNonCanonicalCommitted), controlEqualityIntegerWithUncommittedNonCanonicalRow (repro c5_integerAnchorWithUncommittedNonCanonicalRow) and sameTermIntegerWithUncommittedValueEqualRow. All three pass, so no production change was needed. Style pass over the cumulative diff: rewrapped the 8 added lines longer than 120 columns (javadoc in ValueStore/StoreProperties, two test statements). No debug prints, TODOs, commented-out code, wildcard imports or inline fully-qualified names among the added lines. All 8 new files carry the exact 2026 header plus '// Some portions generated by Claude'. The remaining long lines and unused imports in touched files (PackedLogicalRuleProgram, LmdbFilterSimplifierOptimizer:94, TripleStore:169/236, ValueStore SimpleIRI import) predate this work package (git blame / HEAD).",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbFiniteAnchorEqualityTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/ValueStore.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/StoreProperties.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/RdfTermDomainClassificationTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/ValueStoreLanguageTagKeyMigrationTest.java"
+   ],
+   "testsAdded": [
+    "LmdbFiniteAnchorEqualityTest#controlEqualityIntegerFamilyWithNonCanonicalCommittedRow",
+    "LmdbFiniteAnchorEqualityTest#controlEqualityIntegerWithUncommittedNonCanonicalRow",
+    "LmdbFiniteAnchorEqualityTest#sameTermIntegerWithUncommittedValueEqualRow"
+   ],
+   "postFixEvidence": "Report: .mvnf/workspaces/wp1/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbFiniteAnchorEqualityTest.txt (log .mvnf/workspaces/wp1/logs/20260928T082917.417431Z-89063-16149acf/verify.log)\nTests run: 21, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 7.382 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbFiniteAnchorEqualityTest"
+  },
+  {
+   "id": "3.1.1",
+   "status": "fixed",
+   "rootCause": "See wp1-b1: BOUND folding decided from the filter argument plus root incoming names while the visitor descends into EXISTS bodies / LATERAL right args.",
+   "change": "Unchanged in bR (b1 fix: OuterScopeBindings + LmdbBoundSimplifierOptimizer). Re-verified in the final-tree suites.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/OuterScopeBindings.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbBoundSimplifierOptimizer.java"
+   ],
+   "postFixEvidence": "core/sail/lmdb suite (log .mvnf/workspaces/wp1/logs/20260928T083313.141067Z-91394-657f2ebb/verify.log):\nTests run: 24, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.560 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbCorrelatedScopeRewriteTest\nTests run: 15, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.008 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbBoundSimplifierOptimizerTest\ncore/queryalgebra/evaluation suite (log .mvnf/workspaces/wp1/logs/20260928T090305.553634Z-23210-9b021eea/verify.log):\nTests run: 19, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OuterScopeBindingsTest"
+  },
+  {
+   "id": "3.1.3",
+   "status": "fixed",
+   "rootCause": "See wp1-b1: the null-rejecting OPTIONAL rewrite's witness guard only knew root incoming names.",
+   "change": "Unchanged in bR (b1: FilterMerger passes OuterScopeBindings.possible() to LmdbNullRejectingOptionalSupport.rewrite).",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbFilterSimplifierOptimizer.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbNullRejectingOptionalSupport.java"
+   ],
+   "postFixEvidence": "core/sail/lmdb suite (log .mvnf/workspaces/wp1/logs/20260928T083313.141067Z-91394-657f2ebb/verify.log):\nTests run: 24, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.560 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbCorrelatedScopeRewriteTest\nTests run: 74, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.069 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbFilterSimplifierOptimizerTest"
+  },
+  {
+   "id": "3.1.2",
+   "status": "fixed",
+   "rootCause": "See wp1-b1: makeOptionalBindingMandatory accepted a possibly-unbound or outer-substituted binding.",
+   "change": "Unchanged in bR (b1: requires getAssuredBindingNames of the right arg and absence from the outer-visible set).",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbFilterSimplifierOptimizer.java"
+   ],
+   "postFixEvidence": "core/sail/lmdb suite (log .mvnf/workspaces/wp1/logs/20260928T083313.141067Z-91394-657f2ebb/verify.log):\nTests run: 24, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.560 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbCorrelatedScopeRewriteTest\nTests run: 74, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.069 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbFilterSimplifierOptimizerTest"
+  },
+  {
+   "id": "3.1.4",
+   "status": "fixed",
+   "rootCause": "See wp1-b2: SameTerm anchors were value-expanded and the sameTerm condition dropped.",
+   "change": "Unchanged in bR (b2: the sameTerm condition is retained whenever a guarantee-only anchor value is present). The new uncommitted-overlay sameTerm control passes.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbFilterSimplifierOptimizer.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbJoinPlanSupport.java"
+   ],
+   "postFixEvidence": "core/sail/lmdb suite (log .mvnf/workspaces/wp1/logs/20260928T083313.141067Z-91394-657f2ebb/verify.log):\nTests run: 21, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.972 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbFiniteAnchorEqualityTest\nTests run: 74, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.069 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbFilterSimplifierOptimizerTest"
+  },
+  {
+   "id": "3.1.5",
+   "status": "fixed",
+   "rootCause": "See wp1-b2: boolean anchors were expanded to {true,1}/{false,0} with no canonicity proof.",
+   "change": "Unchanged in bR (b2: Fact.CANONICAL_BOOLEAN, rdf-term-domain-v5, packed UNIVERSAL_CANONICAL_BOOLEAN guard).",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/RdfTermDomain.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/TripleStore.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbPackedPredicateRangeProvider.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedLogicalRuleProgram.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPredicateRange.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPredicateRangeArena.java"
+   ],
+   "postFixEvidence": "core/sail/lmdb suite (log .mvnf/workspaces/wp1/logs/20260928T083313.141067Z-91394-657f2ebb/verify.log):\nTests run: 18, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.010 s -- in org.eclipse.rdf4j.sail.lmdb.RdfTermDomainClassificationTest\nTests run: 19, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.376 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbPredicateObjectDomainIndexTest\ncore/queryalgebra/evaluation suite (log .mvnf/workspaces/wp1/logs/20260928T090305.553634Z-23210-9b021eea/verify.log):\nTests run: 44, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.048 s -- in org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPredicateRangePlanningTest"
+  },
+  {
+   "id": "3.5",
+   "status": "fixed",
+   "rootCause": "See wp1-b2: the guarantee cache was published after mdb_txn_commit, so a reader could plan newer rows under an older, stronger guarantee.",
+   "change": "Unchanged in bR (b2: weakening updates are published before commit; rebuild batches, which can only occur at open, publish after commit). Re-reviewed this batch: runtime guarantee updates are joinObserved/deletes only, so each is monotone weakening. A first-time write for a predicate with no rows yet is vacuously true for older snapshots. The resize path (updateFromCache) also publishes before each commit.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/TripleStore.java"
+   ],
+   "postFixEvidence": "core/sail/lmdb suite (log .mvnf/workspaces/wp1/logs/20260928T083313.141067Z-91394-657f2ebb/verify.log):\nTests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.050 s -- in org.eclipse.rdf4j.sail.lmdb.TripleStoreGuaranteePublicationTest"
+  },
+  {
+   "id": "3.1.6",
+   "status": "partially-fixed",
+   "rootCause": "See wp1-b3: the data->id dictionary key was byte-exact while valueIDCache matched with case-insensitive Literal.equals.",
+   "change": "Unchanged in bR apart from javadoc rewrapping (b3: canonical language-tag key, idempotent legacy migration, persisted policy). Fixed for new stores and for legacy stores without colliding case variants. Legacy stores that already hold two ids for one term stay byte-exact, with a warning and the old cache-dependent behaviour; the critique's merge migration is deferred.",
+   "deferredReason": "A merge migration must rewrite every triple of the losing id across all indexes plus refcounts and hash sidecars. That is a separate storage migration; the store is kept byte-exact rather than returning a silent subset.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/ValueStore.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/StoreProperties.java"
+   ],
+   "postFixEvidence": "core/sail/lmdb suite (log .mvnf/workspaces/wp1/logs/20260928T083313.141067Z-91394-657f2ebb/verify.log):\nTests run: 13, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.281 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbLanguageTagTermIdentityTest\nTests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.336 s -- in org.eclipse.rdf4j.sail.lmdb.ValueStoreLanguageTagIdentityTest\nTests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.632 s -- in org.eclipse.rdf4j.sail.lmdb.ValueStoreLanguageTagKeyMigrationTest\nTests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.362 s -- in org.eclipse.rdf4j.sail.lmdb.StorePropertiesTest\nTests run: 32, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.164 s -- in org.eclipse.rdf4j.sail.lmdb.ValueStoreTest"
+  }
+ ],
+ "suiteRuns": [
+  {
+   "selection": "LmdbFiniteAnchorEqualityTest (core/sail/lmdb), with the 3 new bR controls",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp1 --threads 3 LmdbFiniteAnchorEqualityTest --module core/sail/lmdb --retain-logs",
+   "result": "tests=21, failures=0, errors=0, skipped=0",
+   "reds": []
+  },
+  {
+   "selection": "core/sail/lmdb full unit suite, final tree. Includes every WP1 test class: LmdbBoundSimplifierOptimizerTest 15, LmdbCorrelatedScopeRewriteTest 24, LmdbFilterSimplifierOptimizerTest 74, LmdbFiniteAnchorEqualityTest 21, LmdbLanguageTagTermIdentityTest 13, LmdbPredicateObjectDomainIndexTest 19, RdfTermDomainClassificationTest 18, StorePropertiesTest 8, TripleStoreGuaranteePublicationTest 2, ValueStoreLanguageTagIdentityTest 11, ValueStoreLanguageTagKeyMigrationTest 9, ValueStoreTest 32, LmdbOptimizerPipelineTest 46, LmdbFilterSimplifierBoundaryTest 13, all green",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp1 --threads 3 core/sail/lmdb --retain-logs",
+   "result": "tests=2285 (Maven 2400), failures=0, errors=2, skipped=7",
+   "reds": [
+    "LmdbStoreConnectionTest.testInferredStatementCount(IsolationLevel)[4]: flaky (environmental). RepositoryException: java.io.IOException: No space left on device in SailRepository.init during setUp. The isolated rerun was green: tests=456, failures=0, errors=0 (log .mvnf/workspaces/wp1/logs/20260928T091059.560289Z-25220-66eea37d/verify.log)",
+    "LmdbStoreMultiRepoTest#testRandomLoadManyRepositoriesInParallel: pre-existing (environmental). ENOSPC from LmdbUtil.E while 200 LMDB environments open in parallel, before any query runs. The isolated rerun failed the same way in 4.2 s (log .mvnf/workspaces/wp1/logs/20260928T091234.335916Z-25679-42c22950/verify.log). wp1-b1, wp1-b3, wp2-b2, wp3-b3 and wp5-b1 reported the same error. The volume has 173Gi free; the likely exhausted resource is the macOS POSIX semaphore table (kern.posix.sem.max=10000, about 8 other surefire JVMs running)"
+   ]
+  },
+  {
+   "selection": "core/queryalgebra/evaluation full unit suite, final tree (OuterScopeBindingsTest 19/19, PackedPredicateRangePlanningTest 44/44)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp1 --threads 3 core/queryalgebra/evaluation --retain-logs",
+   "result": "tests=1750, failures=3, errors=1, skipped=0 (same red set as the b1 and b2 runs)",
+   "reds": [
+    "MinusQueryEvaluationStepTest.spillFileIsRemovedWhenIterationIsClosedEarly / spillFileIsRemovedWhenIterationIsExhausted: pre-existing (environment). The workspace runner overrides java.io.tmpdir while the spill file uses the JDK's cached tmpdir. The same reds appeared in b1 before any packed or MINUS change; wp1 does not touch MINUS evaluation",
+    "OptimizerRuleCatalogTest.generatedDocumentationMatchesManifestAndResearchInputs: pre-existing (environment). NoSuchFileException for papers2/, which is untracked in the main checkout and absent from worktrees",
+    "PackedFrontierSubsetKernelContractTest#arbitraryWidthBushyDependentJoinContinuesRightRecipeUnderWholeLeftPrefix: environmental CPU contention, not caused by wp1. assertTimeoutPreemptively(120 s) on a 66-factor synthetic chain. It timed out in the suite and in 3 isolated reruns (loadavg 22-32 while other work packages' JVMs ran); b1 had its isolated rerun green at 113 s, before any packed change. Hit proof that wp1 code is not executed: a JaCoCo run of the method (log .mvnf/workspaces/wp1/logs/20260928T093109.092949Z-48220-670dc8d7/verify.log, analysis in scratchpad/wp1-bR-staged/jacoco/kernel-hits.txt) shows PackedPredicateRangeArena, PackedPredicateRange and OuterScopeBindings never executed, and PackedLogicalRuleProgram.expandAnchorValue has 0 covered instructions. Those are the only wp1 edits in this module. Needs a rerun on an idle host"
+   ]
+  },
+  {
+   "selection": "core/sail/lmdb integration tests (Failsafe, all 20 IT classes)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp1 --threads 3 core/sail/lmdb --retain-logs -- -PskipUnitTests",
+   "result": "tests=144, failures=0, errors=0, skipped=98 (skips are the ITs' own assumption/data gates, e.g. LmdbThemeQueryRegressionIT 67 skipped)",
+   "reds": []
+  }
+ ],
+ "filesTouchedOutsideOwnership": [
+  "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedLogicalRuleProgram.java (wp2, from b2: 6-line CANONICAL_BOOLEAN guard in expandAnchorValue)",
+  "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPredicateRange.java (wp2, from b2: UNIVERSAL_CANONICAL_BOOLEAN constant)",
+  "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPredicateRangeArena.java (wp2, from b2: universal-bit field widened from 4 to 5 bits, in-memory only)",
+  "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPredicateRangePlanningTest.java (wp2, from b2: two tests)"
+ ],
+ "newFlagsOrConfig": [
+  "TripleStore.PREDICATE_OBJECT_DOMAINS_VERSION rdf-term-domain-v4 -> v5 (b2; existing stores rebuild guarantees on open, or clear them when predicateGuaranteeIndexAutoRebuild=false)",
+  "store.properties key language-tag-key = canonical | byte-exact (b3; if absent, a migration scan runs on open)",
+  "TripleStore.durableCommitBarrierForTesting (b2; package-private volatile test seam, null in production)",
+  "No kill switches. bR added no flags"
+ ],
+ "crossWpNotes": [
+  "Shared OuterScopeBindings (public, core/queryalgebra/evaluation): possible()/possibleInScope() may only block a rewrite, assured() may enable one. wp9 (SameTermFilterOptimizer EXISTS blind spot, repro oracle_sameTermInsideExistsSeesOuterBinding, not ported here) and wp5 can reuse it.",
+  "wp4/wp5 (3.4.3): once sub-SELECT outer-binding leakage is fixed, the three sub-SELECT/MINUS controls in LmdbCorrelatedScopeRewriteTest can also assert the oracle, and OuterScopeBindings can make sub-SELECTs hard barriers for possible().",
+  "wp2: packed anchors should adopt LmdbJoinPlanSupport.containsSameTerm's rule (sameTerm anywhere means retain the filter). The minimal packed edits from b2 are listed under filesTouchedOutsideOwnership.",
+  "wp6: FiniteDomainFact / FiniteRelationEstimate still compare language tags case-sensitively (cost-only).",
+  "Integrator: formatter not run. Unused imports and long lines that remain in touched files are pre-existing. The LmdbStoreConfig/LmdbStoreSchema japicmp-compat edits are the integrator's and were left untouched."
+ ],
+ "followUps": [
+  "Optional merge migration for legacy LMDB stores holding duplicate ids for case variants of a language-tagged literal (3.1.6 critique major, deferred).",
+  "Rerun PackedFrontierSubsetKernelContractTest#arbitraryWidthBushyDependentJoinContinuesRightRecipeUnderWholeLeftPrefix and LmdbStoreMultiRepoTest on an idle host.",
+  "Optional 3.5 hardening: a disk-full-injection test showing a failed mdb_txn_commit leaves the heap guarantee cache weaker than disk without throwing.",
+  "Optional: a concurrency IT (writer commits non-canonical rows while readers plan FILTER(?o=5)) as a guard for 3.5; the deterministic barrier test covers the ordering."
+ ]
+}
