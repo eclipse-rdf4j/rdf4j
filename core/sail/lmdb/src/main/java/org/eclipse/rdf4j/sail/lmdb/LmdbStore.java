@@ -535,6 +535,12 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	}
 
 	@Override
+	protected boolean tracksResultPulls() {
+		// LMDB result pulls read native snapshots that connection close retires.
+		return true;
+	}
+
+	@Override
 	public boolean isWritable() {
 		return isWritable;
 	}

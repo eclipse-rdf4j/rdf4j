@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.common.iteration.CancellationSignal;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
+import org.eclipse.rdf4j.sail.SailException;
 
 /**
  * An iteration extension that keeps a reference to the AbstractSailConnection from which it originates and signals when
@@ -41,6 +42,8 @@ class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T> impl
 	private volatile Thread puller;
 	/** Nested pulls of this result on its pulling thread; touched only by that thread. */
 	private int pullDepth;
+	/** Whether pulls publish their thread for the close drain and shutdown interrupt; fixed by the Sail. */
+	private final boolean tracked;
 
 	/**
 	 * Creates a new memory-store specific iteration object.
@@ -52,6 +55,7 @@ class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T> impl
 		super(iter);
 		this.connection = connection;
 		this.lineage = connection.resultLineage();
+		this.tracked = connection.tracksResultPulls;
 	}
 
 	/** Composes once per distinct pulling workload, never per row. */
@@ -76,6 +80,13 @@ class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T> impl
 	 */
 	private CancellationSignal beginPull() {
 		CancellationSignal effective = pullSignal();
+		if (!tracked) {
+			// No ordered accesses: an untracked pull only stops once its creating workload is cancelled.
+			if (effective.isCancelled()) {
+				throw new SailException("The workload that created this result is shutting down");
+			}
+			return CancellationSignal.swapCurrent(effective);
+		}
 		if (pullDepth++ == 0) {
 			puller = Thread.currentThread();
 		}
@@ -90,7 +101,9 @@ class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T> impl
 
 	private void endPull(CancellationSignal previous) {
 		CancellationSignal.restoreCurrent(previous);
-		releasePuller();
+		if (tracked) {
+			releasePuller();
+		}
 	}
 
 	private void releasePuller() {

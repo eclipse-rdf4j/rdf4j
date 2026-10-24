@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.CALLS_REAL_METHODS;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.withSettings;
 
@@ -37,6 +38,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
+import org.eclipse.rdf4j.common.iteration.CancellationSignal;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.sail.SailException;
@@ -95,8 +97,33 @@ class AbstractSailConnectionIterationCleanupTest {
 	}
 
 	@Test
+	void untrackedResultStopsAtItsNextPullOnceItsCreatingWorkloadIsCancelled() {
+		AbstractSailConnection connection = newConnection(false);
+		CancellationSignal creator = new CancellationSignal();
+		CountingIteration delegate = new CountingIteration();
+		CancellationSignal previous = CancellationSignal.swapCurrent(creator);
+		CloseableIteration<Integer> iteration;
+		try {
+			iteration = connection.registerIteration(delegate);
+		} finally {
+			CancellationSignal.restoreCurrent(previous);
+		}
+		try {
+			creator.cancel();
+			assertThatThrownBy(iteration::hasNext).isInstanceOf(SailException.class)
+					.hasMessage("The workload that created this result is shutting down");
+			assertThat(CancellationSignal.current()).as("a rejected pull restores the caller's signal")
+					.isSameAs(CancellationSignal.NONE);
+		} finally {
+			iteration.close();
+			connection.close();
+		}
+		assertThat(delegate.closes.get()).as("cleanup after cancellation still closes the delegate once").isOne();
+	}
+
+	@Test
 	void closeInterruptsAndDrainsAnInFlightResultPullBeforeTeardown() throws Exception {
-		AbstractSailConnection connection = newConnection();
+		AbstractSailConnection connection = newConnection(true);
 		AtomicBoolean teardownStarted = new AtomicBoolean();
 		AtomicBoolean teardownStartedBeforePullReturned = new AtomicBoolean();
 		doAnswer(invocation -> {
@@ -308,8 +335,13 @@ class AbstractSailConnectionIterationCleanupTest {
 	}
 
 	private static AbstractSailConnection newConnection() {
+		return newConnection(false);
+	}
+
+	private static AbstractSailConnection newConnection(boolean tracksResultPulls) {
 		AbstractSail sail = mock(AbstractSail.class,
 				withSettings().useConstructor().defaultAnswer(CALLS_REAL_METHODS));
+		doReturn(tracksResultPulls).when(sail).tracksResultPulls();
 		return mock(AbstractSailConnection.class, withSettings().useConstructor(sail)
 				.defaultAnswer(CALLS_REAL_METHODS));
 	}

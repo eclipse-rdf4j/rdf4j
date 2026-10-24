@@ -111,6 +111,8 @@ public abstract class AbstractSailConnection implements SailConnection {
 	private ExternalWorkload activeExternalWorkloads;
 	/** The Sail initialization lifetime this connection was admitted under; cancelled once its shutdown begins. */
 	private final CancellationSignal sailLifetime;
+	/** See {@link AbstractSail#tracksResultPulls()}. */
+	final boolean tracksResultPulls;
 	private final CancellationSignal cancellation;
 	private Thread closingThread;
 	private boolean closeDrained;
@@ -187,6 +189,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	public AbstractSailConnection(AbstractSail sailBase) {
 		this.sailBase = sailBase;
 		sailLifetime = sailBase.shutdownSignal();
+		tracksResultPulls = sailBase.tracksResultPulls();
 		cancellation = new CancellationSignal(sailLifetime);
 		txnActive = false;
 		if (debugEnabled) {

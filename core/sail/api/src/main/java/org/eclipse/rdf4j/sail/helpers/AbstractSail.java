@@ -342,6 +342,16 @@ public abstract class AbstractSail implements Sail {
 	}
 
 	/**
+	 * Whether connections track every result pull, so that close drains in-flight pulls before {@code closeInternal}
+	 * and shutdown interrupts the pulling thread. Tracking needs ordered memory accesses on every pull, which stalls
+	 * memory-bound scans, so it is reserved for stores whose result pulls use native resources that close releases.
+	 * Results of other stores still stop at their next pull once the creating workload is cancelled.
+	 */
+	protected boolean tracksResultPulls() {
+		return false;
+	}
+
+	/**
 	 * Do store-specific operations to ensure proper shutdown of the store.
 	 */
 	protected abstract void shutDownInternal() throws SailException;
