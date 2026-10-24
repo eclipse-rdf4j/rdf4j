@@ -840,6 +840,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 		boolean writerCommittedWhilePaused = false;
 		try {
 			repository.init();
+			awaitSamplingInitialization(sail);
 			SeededTerms seeded = seedMatchedRows(repository, sail, ROW_COUNT);
 			LmdbSailStore backing = sail.getBackingStore();
 			LmdbFilterSelectivityStats stats = sail.filterStats();

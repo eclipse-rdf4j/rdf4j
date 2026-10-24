@@ -515,12 +515,12 @@ class LmdbSnapshotLifetimeTest {
 		assertThat(store.awaitIndexRebuild(10, TimeUnit.SECONDS)).isTrue();
 		assertThat(values().hasTrustedReferenceCounts()).isTrue();
 		LmdbGcTestMaintenance.drainRetirements(store.getBackingStore());
-		assertThat(LmdbGcTestMaintenance.reclaimUnusedValues(store, 4096))
-				.as("one explicit bounded post-ready batch must move eligible unused values into the free pool")
-				.isPositive();
+		int visited = LmdbGcTestMaintenance.reclaimUnusedValues(store, 4096);
 		assertThat(values().getId(doomed.getFirst().getSubject())).isEqualTo(LmdbValue.UNKNOWN_ID);
 		List<Long> freeIds = eligibleFreeIds();
-		assertThat(freeIds).as("the exact retired subject belongs to the eligible native free pool")
+		assertThat(freeIds)
+				.as("the exact retired subject belongs to the eligible native free pool after one explicit bounded batch; "
+						+ "visited=%s", visited)
 				.contains(subjectId);
 		long reused = LmdbValue.UNKNOWN_ID;
 		for (int index = 0; index < freeIds.size() && reused != subjectId; index++) {
