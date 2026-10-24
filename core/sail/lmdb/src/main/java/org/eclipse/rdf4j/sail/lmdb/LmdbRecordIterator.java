@@ -78,6 +78,12 @@ class LmdbRecordIterator implements RecordIterator {
 	private boolean upperExclusive;
 
 	private final long[] quad;
+	private final long[] originalQuad;
+	private final LmdbValueIdFilter idFilter;
+	private final int distinctPrefixLength;
+	private long distinctCursorSkipCountActual;
+	private long distinctCursorSkipSeekCountActual;
+	private long skipAheadSeekCountActual;
 	private long matchSubj;
 	private long matchPred;
 	private long matchObj;
@@ -150,6 +156,35 @@ class LmdbRecordIterator implements RecordIterator {
 	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
 			long context, boolean explicit, Txn txnRef, TripleStore.CursorPool cursorPool, boolean retainOnClose,
 			LmdbKeyRange range, ValueStore.ReadSnapshot readSnapshot) throws IOException {
+		this(index, rangeSearch, subj, pred, obj, context, explicit, txnRef, cursorPool, retainOnClose, range,
+				readSnapshot, LmdbValueIdFilter.none(), 0);
+	}
+
+	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
+			long context, boolean explicit, Txn txnRef, LmdbValueIdFilter idFilter) throws IOException {
+		this(index, rangeSearch, subj, pred, obj, context, explicit, txnRef, idFilter, 0);
+	}
+
+	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
+			long context, boolean explicit, Txn txnRef, LmdbValueIdFilter idFilter, int distinctPrefixLength)
+			throws IOException {
+		this(index, rangeSearch, subj, pred, obj, context, explicit, txnRef, idFilter, distinctPrefixLength, null);
+	}
+
+	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
+			long context, boolean explicit, Txn txnRef, LmdbValueIdFilter idFilter, int distinctPrefixLength,
+			ValueStore.ReadSnapshot readSnapshot) throws IOException {
+		this(index, rangeSearch, subj, pred, obj, context, explicit, txnRef, null, false, null, readSnapshot,
+				idFilter, distinctPrefixLength);
+	}
+
+	private LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
+			long context, boolean explicit, Txn txnRef, TripleStore.CursorPool cursorPool, boolean retainOnClose,
+			LmdbKeyRange range, ValueStore.ReadSnapshot readSnapshot, LmdbValueIdFilter idFilter,
+			int distinctPrefixLength) throws IOException {
+		this.idFilter = idFilter == null ? LmdbValueIdFilter.none() : idFilter;
+		this.distinctPrefixLength = Math.max(0, distinctPrefixLength);
+		this.originalQuad = new long[] { subj, pred, obj, context };
 		this.retainOnClose = retainOnClose;
 		this.matchSubj = subj > 0 ? subj : -1;
 		this.matchPred = pred > 0 ? pred : -1;
@@ -171,7 +206,7 @@ class LmdbRecordIterator implements RecordIterator {
 		MDBVal key = null;
 		MDBVal value = null;
 		try {
-			synchronized (txnRef) {
+			synchronized (txnRef.nativeReadMonitor()) {
 				txnRef.ensureSnapshotValid();
 				if (readSnapshot != null) {
 					readSnapshot.ensureValid();
@@ -235,8 +270,12 @@ class LmdbRecordIterator implements RecordIterator {
 					int rc = mdb_get(txn, dbi, keyData, valueData);
 					if (rc == MDB_SUCCESS) {
 						sourceRowsScannedActual++;
-						sourceRowsMatchedActual++;
-						exactKeyFound = true;
+						if (this.idFilter.accept(quad[0], quad[1], quad[2], quad[3])) {
+							sourceRowsMatchedActual++;
+							exactKeyFound = true;
+						} else {
+							sourceRowsFilteredActual++;
+						}
 					} else if (rc != MDB_NOTFOUND) {
 						E(rc);
 					}
@@ -257,7 +296,7 @@ class LmdbRecordIterator implements RecordIterator {
 				}
 			}
 		} catch (IOException | RuntimeException | Error failure) {
-			synchronized (txnRef) {
+			synchronized (txnRef.nativeReadMonitor()) {
 				if (cursor != 0) {
 					mdb_cursor_close(cursor);
 				}
@@ -292,7 +331,7 @@ class LmdbRecordIterator implements RecordIterator {
 	}
 
 	void resumeAfter(long[] lastQuad) {
-		synchronized (txnRef) {
+		synchronized (txnRef.nativeReadMonitor()) {
 			if (fetchNext || closed) {
 				throw new IllegalStateException("A bounded scan must set its continuation before reading");
 			}
@@ -309,7 +348,6 @@ class LmdbRecordIterator implements RecordIterator {
 
 	@Override
 	public long[] next() {
-
 		long readStamp;
 		try {
 			readStamp = txnLockManager.readLock();
@@ -317,7 +355,19 @@ class LmdbRecordIterator implements RecordIterator {
 			throw new SailException(e);
 		}
 		try {
-			synchronized (txnRef) {
+			return nextWithTxnReadLockHeld();
+		} catch (SailException failure) {
+			closeInternalUnderCurrentReadLock();
+			throw failure;
+		} finally {
+			txnLockManager.unlockRead(readStamp);
+		}
+	}
+
+	@Override
+	public long[] nextWithTxnReadLockHeld() {
+		try {
+			synchronized (txnRef.nativeReadMonitor()) {
 				if (closed) {
 					log.debug("Calling next() on an LmdbRecordIterator that is already closed, returning null");
 					return null;
@@ -360,7 +410,7 @@ class LmdbRecordIterator implements RecordIterator {
 				}
 
 				if (fetchNext) {
-					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+					lastResult = fetchNextCursorPosition();
 					fetchNext = false;
 				} else {
 					if (minKeyBuf != null) {
@@ -392,6 +442,11 @@ class LmdbRecordIterator implements RecordIterator {
 								continue;
 							}
 							resumeExclusive = null;
+							if (!idFilter.accept(quad[0], quad[1], quad[2], quad[3])) {
+								sourceRowsFilteredActual++;
+								lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+								continue;
+							}
 							sourceRowsMatchedActual++;
 							consecutiveFiltered = 0;
 							// fetch next value
@@ -404,7 +459,8 @@ class LmdbRecordIterator implements RecordIterator {
 							lastResult = MDB_NOTFOUND;
 						} else {
 							// value doesn't match search key/mask, fetch next value
-							lastResult = advancePastFiltered(keyAddress);
+							lastResult = distinctPrefixLength > 0 ? fetchNextFilteredCursorPosition()
+									: advancePastFiltered(keyAddress);
 						}
 					}
 				}
@@ -417,13 +473,14 @@ class LmdbRecordIterator implements RecordIterator {
 		} catch (IOException e) {
 			closeInternalUnderCurrentReadLock();
 			throw new SailException(e);
-		} finally {
-			txnLockManager.unlockRead(readStamp);
 		}
 	}
 
 	@Override
 	public int fill(long[] buffer, int maxRows) {
+		if (maxRows <= 0) {
+			return 0;
+		}
 
 		long readStamp;
 		try {
@@ -432,7 +489,7 @@ class LmdbRecordIterator implements RecordIterator {
 			throw new SailException(e);
 		}
 		try {
-			synchronized (txnRef) {
+			synchronized (txnRef.nativeReadMonitor()) {
 				if (closed) {
 					return 0;
 				}
@@ -478,7 +535,7 @@ class LmdbRecordIterator implements RecordIterator {
 				}
 
 				if (fetchNext) {
-					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+					lastResult = fetchNextCursorPosition();
 					fetchNext = false;
 				} else if (minKeyBuf != null) {
 					// set cursor to min key
@@ -507,6 +564,11 @@ class LmdbRecordIterator implements RecordIterator {
 							continue;
 						}
 						resumeExclusive = null;
+						if (!idFilter.accept(quad[0], quad[1], quad[2], quad[3])) {
+							sourceRowsFilteredActual++;
+							lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+							continue;
+						}
 						sourceRowsMatchedActual++;
 						consecutiveFiltered = 0;
 						System.arraycopy(quad, 0, buffer, rows * 4, 4);
@@ -515,13 +577,14 @@ class LmdbRecordIterator implements RecordIterator {
 							fetchNext = true;
 							return rows;
 						}
-						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+						lastResult = fetchNextCursorPosition();
 					} else {
 						sourceRowsFilteredActual++;
 						if (matchStatus == TripleIndex.KEY_OUT_OF_RANGE) {
 							break;
 						}
-						lastResult = advancePastFiltered(keyAddress);
+						lastResult = distinctPrefixLength > 0 ? fetchNextFilteredCursorPosition()
+								: advancePastFiltered(keyAddress);
 					}
 				}
 				closeInternalUnderCurrentReadLock();
@@ -557,7 +620,7 @@ class LmdbRecordIterator implements RecordIterator {
 	 */
 	@Override
 	public boolean seekForward(long subj, long pred, long obj, long context) {
-		synchronized (txnRef) {
+		synchronized (txnRef.nativeReadMonitor()) {
 			if (closed || exactKeySearch) {
 				return false;
 			}
@@ -670,7 +733,7 @@ class LmdbRecordIterator implements RecordIterator {
 			throw new SailException(e);
 		}
 		try {
-			synchronized (txnRef) {
+			synchronized (txnRef.nativeReadMonitor()) {
 				if (disposed) {
 					return;
 				}
@@ -699,7 +762,7 @@ class LmdbRecordIterator implements RecordIterator {
 			throw new SailException(e);
 		}
 		try {
-			synchronized (txnRef) {
+			synchronized (txnRef.nativeReadMonitor()) {
 				validateSnapshot();
 				if (disposed) {
 					throw new SailException("Iterator has been disposed");
@@ -708,6 +771,10 @@ class LmdbRecordIterator implements RecordIterator {
 				this.matchPred = pred > 0 ? pred : -1;
 				this.matchObj = obj > 0 ? obj : -1;
 				this.matchContext = context >= 0 ? context : -1;
+				originalQuad[0] = subj;
+				originalQuad[1] = pred;
+				originalQuad[2] = obj;
+				originalQuad[3] = context;
 				quad[0] = subj;
 				quad[1] = pred;
 				quad[2] = obj;
@@ -771,8 +838,12 @@ class LmdbRecordIterator implements RecordIterator {
 					int rc = mdb_get(txn, dbi, keyData, valueData);
 					if (rc == MDB_SUCCESS) {
 						sourceRowsScannedActual++;
-						sourceRowsMatchedActual++;
-						exactKeyFound = true;
+						if (idFilter.accept(quad[0], quad[1], quad[2], quad[3])) {
+							sourceRowsMatchedActual++;
+							exactKeyFound = true;
+						} else {
+							sourceRowsFilteredActual++;
+						}
 					} else if (rc != MDB_NOTFOUND) {
 						E(rc);
 					}
@@ -816,7 +887,7 @@ class LmdbRecordIterator implements RecordIterator {
 			}
 		}
 		try {
-			synchronized (txnRef) {
+			synchronized (txnRef.nativeReadMonitor()) {
 				if (!closed) {
 					try {
 						if (!retainOnClose) {
@@ -858,4 +929,75 @@ class LmdbRecordIterator implements RecordIterator {
 	public long getSourceRowsFilteredActual() {
 		return sourceRowsFilteredActual;
 	}
+
+	private int fetchNextCursorPosition() {
+		if (distinctPrefixLength > 0) {
+			distinctCursorSkipCountActual++;
+			if (minKeyBuf == null) {
+				minKeyBuf = txnRef.takeKeyBuffer();
+			}
+			if (!LmdbDistinctCursorSkipSupport.writeSuccessorKey(minKeyBuf, index, quad, originalQuad,
+					distinctPrefixLength)) {
+				return MDB_NOTFOUND;
+			}
+			keyData.mv_data(minKeyBuf);
+			distinctCursorSkipSeekCountActual++;
+			return mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+		}
+		return mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+	}
+
+	private int fetchNextFilteredCursorPosition() {
+		if (distinctPrefixLength > 0) {
+			index.keyToQuad(keyData.mv_data(), quad);
+			int suffixComparison = LmdbDistinctCursorSkipSupport.compareFixedSuffixAfterPrefix(index.getFieldSeq(),
+					quad, originalQuad, distinctPrefixLength);
+			if (suffixComparison != 0) {
+				if (minKeyBuf == null) {
+					minKeyBuf = txnRef.takeKeyBuffer();
+				}
+				boolean hasSeekKey;
+				if (suffixComparison < 0) {
+					hasSeekKey = LmdbDistinctCursorSkipSupport.writeCurrentPrefixLowerBoundKey(minKeyBuf, index,
+							quad, originalQuad, distinctPrefixLength);
+				} else {
+					hasSeekKey = LmdbDistinctCursorSkipSupport.writeSuccessorKey(minKeyBuf, index, quad,
+							originalQuad, distinctPrefixLength);
+				}
+				if (!hasSeekKey) {
+					return MDB_NOTFOUND;
+				}
+				keyData.mv_data(minKeyBuf);
+				distinctCursorSkipSeekCountActual++;
+				return mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+			}
+		}
+		return mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+	}
+
+	@Override
+	public long getDistinctCursorSkipCountActual() {
+		if (distinctPrefixLength <= 0) {
+			return -1;
+		}
+		return Math.max(distinctCursorSkipCountActual, Math.max(0L, sourceRowsMatchedActual - 1L));
+	}
+
+	@Override
+	public long getDistinctCursorSkipSeekCountActual() {
+		if (distinctPrefixLength <= 0) {
+			return -1;
+		}
+		return Math.max(distinctCursorSkipSeekCountActual, Math.max(0L, sourceRowsMatchedActual - 1L));
+	}
+
+	@Override
+	public boolean skipTo(long subject, long predicate, long object, long context) {
+		boolean advanced = seekForward(subject, predicate, object, context);
+		if (advanced) {
+			skipAheadSeekCountActual++;
+		}
+		return advanced;
+	}
+
 }

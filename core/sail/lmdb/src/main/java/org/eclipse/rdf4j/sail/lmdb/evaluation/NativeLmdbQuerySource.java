@@ -209,10 +209,11 @@ public interface NativeLmdbQuerySource {
 	}
 
 	/**
-	 * Opens a scan preserving the ordinary candidate-capable encounter order exposed by
-	 * {@link #statements(long, long, long, long, AdjacencyAccessObserver)}. Order-sensitive native attempts use this to
-	 * replay the same row order as generic evaluation after speculation declines. This is not a source mandate:
-	 * implementations may still select adjacency or LMDB, but must not substitute a different physical index order.
+	 * Opens a scan preserving the complete encounter order of the same source's ordinary generic statement access.
+	 * Order-sensitive native attempts use this to replay that row order after speculation declines. Implementations may
+	 * still select adjacency or LMDB, provided their complete varying key order agrees with generic access; a shared
+	 * leading field is insufficient. Sources whose ordinary native and generic accesses already share one order may use
+	 * this default. Sources that arbitrate different physical orders must implement the constraint.
 	 */
 	default RecordIterator statementsInEncounterOrder(long subj, long pred, long obj, long context,
 			AdjacencyAccessObserver observer) throws IOException {

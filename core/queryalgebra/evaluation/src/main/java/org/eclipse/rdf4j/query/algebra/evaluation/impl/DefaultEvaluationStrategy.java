@@ -16,18 +16,22 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLongArray;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.LongSupplier;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
@@ -55,6 +59,7 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
@@ -107,6 +112,8 @@ import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
@@ -131,6 +138,8 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
+import org.eclipse.rdf4j.query.algebra.evaluation.DistinctBindingFeedback;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.NativeTripleTermSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
@@ -164,6 +173,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.RegexValu
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ServiceQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.SliceQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.StatementPatternQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.SubSelectScopeBoundaryQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.UnionQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ZeroLengthPathEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.AndValueEvaluationStep;
@@ -179,11 +189,15 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.Va
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.ValueExprTripleTermComponentEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.DescribeIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ExtensionIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FeedbackWorkReportingIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.GroupIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.MultiProjectionIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.OrderIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ProjectionIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.BindingScopeAnalysis;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValueTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
@@ -192,8 +206,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.XMLDatatypeMathUtil;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.LocalBNodeReferences;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -213,6 +229,10 @@ import org.eclipse.rdf4j.query.impl.RemoteBNode;
  * @author Andreas Schwarte
  */
 public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedServiceResolverClient {
+	private static final String ROOT_CLOSE_TELEMETRY_REGISTRAR_METADATA = "org.eclipse.rdf4j.query.algebra.evaluation.impl.rootCloseTelemetryRegistrar";
+	private static final String DEFERRED_JOIN_COUNTERS_METADATA = "org.eclipse.rdf4j.query.algebra.evaluation.impl.deferredJoinCounters";
+	private static final int DEFERRED_JOIN_LEFT_ROWS = 1;
+	private static final int DEFERRED_JOIN_RIGHT_ROWS = 2;
 
 	protected final TripleSource tripleSource;
 
@@ -242,6 +262,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	private final TupleFunctionRegistry tupleFuncRegistry;
 	private final EvaluationStatistics evaluationStatistics;
+	private final ThreadLocal<RuntimeFeedbackCompilation> runtimeFeedbackCompilation = new ThreadLocal<>();
+	private LongSupplier telemetryNanoClock = System::nanoTime;
 
 	private QueryEvaluationMode queryEvaluationMode;
 
@@ -399,7 +421,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		this.serviceResolver = serviceResolver;
 		this.iterationCacheSyncThreshold = iterationCacheSyncTreshold;
 		this.evaluationStatistics = evaluationStatistics == null ? new EvaluationStatistics() : evaluationStatistics;
-		this.pipeline = new org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline(this,
+		this.pipeline = new StandardQueryOptimizerPipeline(this,
 				tripleSource, this.evaluationStatistics);
 		this.trackResultSize = trackResultSize;
 		this.tupleFuncRegistry = tupleFunctionRegistry;
@@ -439,21 +461,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	 */
 	@Override
 	public TupleExpr optimize(TupleExpr expr, EvaluationStatistics evaluationStatistics, BindingSet bindings) {
-		LocalBNodeReferences.Analysis original = LocalBNodeReferences.analyze(expr);
-		original.runtimeValues().forEach(blankNodes::reserve);
-		Set<String> references = blankNodes.getReferenceSnapshot(expr, original.structure());
-		if (references == null) {
-			references = original.ids();
-		}
-		Set<String> knownIds = blankNodes.getKnownIdentitySnapshot(expr, original.structure());
-		if (knownIds == null) {
-			knownIds = original.knownIds();
-		}
-		references.forEach(blankNodes::reserve);
-		knownIds.forEach(blankNodes::reserveKnownID);
-		blankNodes.reserve(dataset);
-		blankNodes.reserve(bindings);
-		TupleExpr result = withPreparedTupleExpr(expr, prepared -> {
+		return optimizeWithBNodePreflight(expr, bindings, () -> withPreparedTupleExpr(expr, prepared -> {
 			QueryEvaluationUtility.pinFunctions(prepared);
 			TupleExpr optimized = prepared;
 			for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
@@ -464,11 +472,33 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			}
 			return QueryEvaluationUtility.withFreshPreparedQuerySafetySnapshot(optimized,
 					optimizerRoot -> optimizerRoot);
-		});
-		LocalBNodeReferences.Analysis optimized = LocalBNodeReferences.analyze(result);
-		optimized.runtimeValues().forEach(blankNodes::reserve);
-		blankNodes.rememberReferenceSnapshot(result, references, knownIds, optimized.structure());
-		return result;
+		}));
+	}
+
+	/** Reserves original identity roles before optimization, including a subclass's cached-plan lookup. */
+	@InternalUseOnly
+	protected final TupleExpr optimizeWithBNodePreflight(TupleExpr originalExpression, BindingSet bindings,
+			Supplier<TupleExpr> optimization) {
+		LocalBNodeReferences.Analysis original = LocalBNodeReferences.analyze(originalExpression);
+		original.runtimeValues().forEach(blankNodes::reserve);
+		Set<String> references = blankNodes.getReferenceSnapshot(originalExpression, original.structure());
+		if (references == null) {
+			references = original.ids();
+		}
+		Set<String> knownIds = blankNodes.getKnownIdentitySnapshot(originalExpression, original.structure());
+		if (knownIds == null) {
+			knownIds = original.knownIds();
+		}
+		references.forEach(blankNodes::reserve);
+		knownIds.forEach(blankNodes::reserveKnownID);
+		blankNodes.reserve(dataset);
+		blankNodes.reserve(bindings);
+
+		TupleExpr optimized = optimization.get();
+		LocalBNodeReferences.Analysis optimizedReferences = LocalBNodeReferences.analyze(optimized);
+		optimizedReferences.runtimeValues().forEach(blankNodes::reserve);
+		blankNodes.rememberReferenceSnapshot(optimized, references, knownIds, optimizedReferences.structure());
+		return optimized;
 	}
 
 	@Deprecated(forRemoval = true) // this method is still in use and I think that there is quite a lot of work left
@@ -476,6 +506,32 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	@Override
 	public CloseableIteration<BindingSet> evaluate(TupleExpr expr, BindingSet bindings)
 			throws QueryEvaluationException {
+		RuntimeFeedbackCompilation previousCompilation = runtimeFeedbackCompilation.get();
+		if (previousCompilation == null && expr instanceof QueryRoot root) {
+			// A QueryRoot is the explicit boundary of an ordinary query execution. Compile its argument once with
+			// typed feedback resolution enabled; runtime subtree recompilations deliberately take the no-op path
+			// below and therefore cannot publish an independently rooted observation.
+			this.sharedValueOfNow = null;
+			return precompile(root.getArg()).evaluate(bindings);
+		}
+		boolean installNoOpCompilation = previousCompilation == null || previousCompilation.resolvesTargets();
+		if (installNoOpCompilation) {
+			runtimeFeedbackCompilation.set(new RuntimeFeedbackCompilation(evaluationStatistics, false));
+		}
+		try {
+			return evaluateRuntimeCompiled(expr, bindings);
+		} finally {
+			if (installNoOpCompilation) {
+				if (previousCompilation == null) {
+					runtimeFeedbackCompilation.remove();
+				} else {
+					runtimeFeedbackCompilation.set(previousCompilation);
+				}
+			}
+		}
+	}
+
+	private CloseableIteration<BindingSet> evaluateRuntimeCompiled(TupleExpr expr, BindingSet bindings) {
 
 		CloseableIteration<BindingSet> result = null;
 		try {
@@ -556,15 +612,19 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 				throw new QueryEvaluationException("Unsupported tuple expr type: " + expr.getClass());
 			}
 
-			if (trackTime) {
+			boolean costFeedbackTracking = false;
+			if (trackResultSize || costFeedbackTracking) {
+				// set resultsSizeActual to at least be 0 so we can track iterations that don't produce anything
+				initializeResultAndCostFeedbackCounters(expr, costFeedbackTracking);
+				NodeTelemetryAccumulator telemetry = new NodeTelemetryAccumulator(expr, telemetryNanoClock,
+						evaluationStatistics, trackTime || telemetryActive(expr), true);
+				long openedAt = trackTime || telemetryActive(expr) ? telemetry.nanoTime() : 0L;
+				telemetry.opened(0L);
+				result = new ResultSizeCountingIterator(result, expr, evaluationStatistics, RuntimeFeedbackTarget.NO_OP,
+						null, telemetry, openedAt, true);
+			} else if (trackTime) {
 				initializeTimeTelemetry(expr);
 				result = new TimedIterator(result, expr);
-			}
-
-			if (trackResultSize) {
-				// set resultsSizeActual to at least be 0 so we can track iterations that don't procude anything
-				expr.setResultSizeActual(Math.max(0, expr.getResultSizeActual()));
-				result = new ResultSizeCountingIterator(result, expr);
 			}
 			return result;
 		} catch (Throwable t) {
@@ -577,6 +637,31 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	@Override
 	public QueryEvaluationStep precompile(TupleExpr expr) {
+		return precompileWithInitialContext(expr, this::precompile);
+	}
+
+	/** Backend preparation before the common trusted initial-context pipeline. */
+	protected void prepareTupleCompilation(TupleExpr expr) {
+	}
+
+	@FunctionalInterface
+	private interface TupleCompiler {
+		QueryEvaluationStep compile(TupleExpr expr, QueryEvaluationContext context);
+	}
+
+	/** Explicit backend opt-in; the interface default still calls the old public virtual entry. */
+	protected final QueryEvaluationStep precompileFinalTupleResultWithCommonSetup(TupleExpr expr) {
+		return precompileWithInitialContext(expr,
+				(prepared, context) -> precompileTupleEntry(prepared, context, false,
+						this::precompileFinalTupleResultExpr));
+	}
+
+	protected QueryEvaluationStep precompileFinalTupleResultExpr(TupleExpr expr, QueryEvaluationContext context) {
+		return precompileTupleExpr(expr, context);
+	}
+
+	private QueryEvaluationStep precompileWithInitialContext(TupleExpr expr, TupleCompiler compiler) {
+		prepareTupleCompilation(expr);
 		return withPreparedTupleExpr(expr, prepared -> {
 			QueryEvaluationContext context;
 			try (var ignored = blankNodes.activate()) {
@@ -601,7 +686,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 						LocalBNodeReferences.analyze(prepared).structure());
 				context = createArrayBindingContext(context, allVariables);
 			}
-			return precompile(prepared, context);
+			return compiler.compile(prepared, context);
 		});
 	}
 
@@ -632,6 +717,11 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	@Override
+	public QueryValueEvaluationStep precompile(ValueExpr expr) {
+		return precompile(expr, scalarContext());
+	}
+
+	@Override
 	public QueryEvaluationStep precompile(TupleExpr expr, QueryEvaluationContext context) {
 		return precompileTupleEntry(expr, context, false);
 	}
@@ -641,14 +731,37 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		return precompileTupleEntry(expr, context, true);
 	}
 
+	/**
+	 * Trusted lazy ordinary operand compilation; shares an active root and otherwise suppresses subtree publication.
+	 */
+	protected final QueryEvaluationStep precompileGenericRuntimeSubtree(TupleExpr expr,
+			QueryEvaluationContext context) {
+		RuntimeFeedbackCompilation previous = runtimeFeedbackCompilation.get();
+		if (previous != null) {
+			return precompileGenericTupleExpr(expr, context);
+		}
+		runtimeFeedbackCompilation.set(new RuntimeFeedbackCompilation(evaluationStatistics, false));
+		try {
+			return precompileGenericTupleExpr(expr, context);
+		} finally {
+			runtimeFeedbackCompilation.remove();
+		}
+	}
+
 	private QueryEvaluationStep precompileTupleEntry(TupleExpr expr, QueryEvaluationContext context, boolean generic) {
+		return precompileTupleEntry(expr, context, generic, null);
+	}
+
+	private QueryEvaluationStep precompileTupleEntry(TupleExpr expr, QueryEvaluationContext context, boolean generic,
+			TupleCompiler compiler) {
 		int[] depth = compilationDepth.get();
 		depth[0]++;
 		try {
 			if (depth[0] == 1) {
 				reserveLocalValues(expr, context.getBlankNodeAllocationScope());
 			}
-			return withPreparedTupleExpr(expr, prepared -> precompileWithSafetySnapshot(prepared, context, generic));
+			return withPreparedTupleExpr(expr,
+					prepared -> precompileWithSafetySnapshot(prepared, context, generic, compiler));
 		} finally {
 			if (--depth[0] == 0) {
 				compilationDepth.remove();
@@ -678,118 +791,339 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		current.knownIds().forEach(scope::reserveKnownID);
 	}
 
-	private QueryEvaluationStep precompileWithSafetySnapshot(TupleExpr expr, QueryEvaluationContext context,
-			boolean generic) {
-		try (var ignored = context.getBlankNodeAllocationScope().activate()) {
-			return precompileInAllocationScope(expr, context, generic);
-		}
-	}
-
-	private QueryEvaluationStep precompileInAllocationScope(TupleExpr expr, QueryEvaluationContext context,
-			boolean generic) {
-		if (!AdaptiveFilterEvaluationStep.isPlanningContext(context)) {
-			var capturer = valueCapturer();
-			if (capturer != null) {
-				context = new ValueCapturingQueryEvaluationContext(context, capturer);
+	@Override
+	public QueryEvaluationStep precompileRuntimeSubtree(TupleExpr expr, QueryEvaluationContext context) {
+		RuntimeFeedbackCompilation previousCompilation = runtimeFeedbackCompilation.get();
+		runtimeFeedbackCompilation.set(new RuntimeFeedbackCompilation(evaluationStatistics, false));
+		try {
+			return precompile(expr, context);
+		} finally {
+			if (previousCompilation == null) {
+				runtimeFeedbackCompilation.remove();
+			} else {
+				runtimeFeedbackCompilation.set(previousCompilation);
 			}
-			QueryEvaluationContext planning = AdaptiveFilterEvaluationStep.planningContext(expr, context);
-			return AdaptiveFilterEvaluationStep.scope(precompilePlanned(expr, planning, generic), planning);
 		}
-		return precompilePlanned(expr, context, generic);
 	}
 
-	private QueryEvaluationStep precompilePlanned(TupleExpr expr, QueryEvaluationContext context, boolean generic) {
-		QueryEvaluationStep prepared = generic ? precompileGenericPlanned(expr, context)
-				: precompileTupleExpr(expr, context);
-		QueryEvaluationStep tracked = trackPreparedStep(expr, prepared);
+	private QueryEvaluationStep precompileWithSafetySnapshot(TupleExpr expr, QueryEvaluationContext context,
+			boolean generic, TupleCompiler compiler) {
+		try (var ignored = context.getBlankNodeAllocationScope().activate()) {
+			return precompileTuple(expr, context, generic, compiler);
+		}
+	}
+
+	private QueryEvaluationStep precompileTuple(TupleExpr expr, QueryEvaluationContext context, boolean generic,
+			TupleCompiler compiler) {
+		RuntimeFeedbackCompilation compilation = runtimeFeedbackCompilation.get();
+		boolean compilationRoot = compilation == null;
+		if (compilationRoot) {
+			compilation = new RuntimeFeedbackCompilation(evaluationStatistics, true);
+			runtimeFeedbackCompilation.set(compilation);
+		}
+		try {
+			if (expr == null) {
+				throw new IllegalArgumentException("expr must not be null");
+			}
+			if (!AdaptiveFilterEvaluationStep.isPlanningContext(context)) {
+				context = new OriginQueryEvaluationContext(context);
+				var capturer = valueCapturer();
+				if (capturer != null) {
+					context = new ValueCapturingQueryEvaluationContext(context, capturer);
+				}
+				QueryEvaluationContext planning = AdaptiveFilterEvaluationStep.planningContext(expr, context);
+				return AdaptiveFilterEvaluationStep.scope(
+						precompilePlanned(expr, planning, compilation, compilationRoot, generic, compiler), planning);
+			}
+			return precompilePlanned(expr, context, compilation, compilationRoot, generic, compiler);
+		} finally {
+			if (compilationRoot) {
+				compilation.freeze();
+				runtimeFeedbackCompilation.remove();
+			}
+		}
+	}
+
+	private QueryEvaluationStep precompilePlanned(TupleExpr expr, QueryEvaluationContext context,
+			RuntimeFeedbackCompilation compilation, boolean compilationRoot, boolean generic, TupleCompiler compiler) {
+		QueryEvaluationStep prepared = compiler != null ? compiler.compile(expr, context)
+				: generic ? precompileGenericPlanned(expr, context) : precompileTupleExpr(expr, context);
+		QueryEvaluationStep tracked = AdaptiveFilterEvaluationStep.decorate(prepared,
+				preparedStepDecorator(expr, compilation, compilationRoot));
+		if (compilationRoot) {
+			QueryEvaluationStep entry = tracked;
+			boolean requestEntry = !BindingScopeAnalysis.isPartOfSubQuery(expr)
+					&& (expr.getParentNode() == null || expr instanceof QueryRoot
+							|| expr.getParentNode() instanceof QueryRoot);
+			if (entry instanceof BindingSetOrigin.InputAware inputAware) {
+				inputAware.configureInputOrigin(requestEntry);
+			} else {
+				tracked = bindings -> entry.evaluate(requestEntry ? BindingSetOrigin.requestInput(bindings)
+						: BindingSetOrigin.with(bindings, BindingSetOrigin.of(bindings)));
+			}
+		}
 		AdaptiveFilterEvaluationStep.recordPrepared(context, expr, tracked);
 		return tracked;
 	}
 
-	/**
-	 * Backend compilation entry after value snapshots, identity reservations, allocation activation, constant capture,
-	 * and the planning context have been established. Returning the ordinary implementation preserves generic child
-	 * recursion and instrumentation; callers must enter through {@link #precompile(TupleExpr, QueryEvaluationContext)}.
-	 */
+	/** Backend hook after trusted identity, safety, origin and planning setup; tracking is applied by its caller. */
 	protected QueryEvaluationStep precompileTupleExpr(TupleExpr expr, QueryEvaluationContext context) {
 		return precompileGenericPlanned(expr, context);
 	}
 
 	private QueryEvaluationStep precompileGenericPlanned(TupleExpr expr, QueryEvaluationContext context) {
+		RuntimeFeedbackCompilation compilation = runtimeFeedbackCompilation.get();
 		QueryEvaluationStep prepared = AdaptiveFilterEvaluationStep.prepare(expr, this, context, evaluationStatistics,
-				() -> precompileStandard(expr, context));
-		if (prepared == null) {
-			prepared = precompileStandard(expr, context);
-		}
-		return prepared;
+				() -> precompileStandard(expr, context, compilation));
+		return prepared == null ? precompileStandard(expr, context, compilation) : prepared;
 	}
 
-	private QueryEvaluationStep precompileStandard(TupleExpr expr, QueryEvaluationContext context) {
+	private QueryEvaluationStep precompileStandard(TupleExpr expr, QueryEvaluationContext context,
+			RuntimeFeedbackCompilation compilation) {
 		QueryEvaluationStep ret;
-
-		if (expr instanceof StatementPattern) {
-			ret = prepare((StatementPattern) expr, context);
-		} else if (expr instanceof UnaryTupleOperator) {
-			ret = prepare((UnaryTupleOperator) expr, context);
-		} else if (expr instanceof BinaryTupleOperator) {
-			ret = prepare((BinaryTupleOperator) expr, context);
-		} else if (expr instanceof SingletonSet) {
-			ret = prepare((SingletonSet) expr, context);
-		} else if (expr instanceof EmptySet) {
-			ret = prepare((EmptySet) expr, context);
-		} else if (expr instanceof ZeroLengthPath) {
-			ret = prepare((ZeroLengthPath) expr, context);
-		} else if (expr instanceof ArbitraryLengthPath) {
-			ret = prepare((ArbitraryLengthPath) expr, context);
-		} else if (expr instanceof BindingSetAssignment) {
-			ret = prepare((BindingSetAssignment) expr, context);
-		} else if (expr instanceof TripleRef) {
-			ret = prepare((TripleRef) expr, context);
-		} else if (expr instanceof TupleFunctionCall) {
-			ret = prepare((TupleFunctionCall) expr, context);
-		} else {
-			throw new QueryEvaluationException("Unsupported tuple expr type: " + expr.getClass());
+		Object previousRegistrar = null;
+		boolean installRegistrar = expr != null && (trackResultSize || trackTime || expr.isRuntimeTelemetryEnabled()
+				|| shouldTrackCostFeedback(expr));
+		if (installRegistrar) {
+			previousRegistrar = expr.getQueryModelMetadata(ROOT_CLOSE_TELEMETRY_REGISTRAR_METADATA);
+			expr.setQueryModelMetadata(ROOT_CLOSE_TELEMETRY_REGISTRAR_METADATA,
+					compilation.publisherRegistrar());
+		}
+		try {
+			if (expr instanceof StatementPattern) {
+				ret = prepare((StatementPattern) expr, context);
+			} else if (expr instanceof UnaryTupleOperator) {
+				ret = prepare((UnaryTupleOperator) expr, context);
+			} else if (expr instanceof BinaryTupleOperator) {
+				ret = prepare((BinaryTupleOperator) expr, context);
+			} else if (expr instanceof SingletonSet) {
+				ret = prepare((SingletonSet) expr, context);
+			} else if (expr instanceof EmptySet) {
+				ret = prepare((EmptySet) expr, context);
+			} else if (expr instanceof ZeroLengthPath) {
+				ret = prepare((ZeroLengthPath) expr, context);
+			} else if (expr instanceof ArbitraryLengthPath) {
+				ret = prepare((ArbitraryLengthPath) expr, context);
+			} else if (expr instanceof BindingSetAssignment) {
+				ret = prepare((BindingSetAssignment) expr, context);
+			} else if (expr instanceof TripleRef) {
+				ret = prepare((TripleRef) expr, context);
+			} else if (expr instanceof TupleFunctionCall) {
+				ret = prepare((TupleFunctionCall) expr, context);
+			} else if (expr == null) {
+				throw new IllegalArgumentException("expr must not be null");
+			} else {
+				throw new QueryEvaluationException("Unsupported tuple expr type: " + expr.getClass());
+			}
+		} finally {
+			if (installRegistrar) {
+				expr.setQueryModelMetadata(ROOT_CLOSE_TELEMETRY_REGISTRAR_METADATA, previousRegistrar);
+			}
 		}
 
 		QueryEvaluationStep prepared = ret == null ? QueryEvaluationStep.minimal(this, expr) : ret;
+		if (expr instanceof ZeroLengthPath || expr instanceof ArbitraryLengthPath || expr instanceof TripleRef
+				|| expr instanceof TupleFunctionCall) {
+			QueryEvaluationStep producer = prepared;
+			Set<String> produced = Set.copyOf(expr.getBindingNames());
+			List<Var> variables;
+			if (expr instanceof ZeroLengthPath path) {
+				variables = path.getVarList();
+			} else if (expr instanceof ArbitraryLengthPath path) {
+				variables = path.getContextVar() == null ? List.of(path.getSubjectVar(), path.getObjectVar())
+						: List.of(path.getSubjectVar(), path.getObjectVar(), path.getContextVar());
+			} else if (expr instanceof TripleRef reference) {
+				variables = reference.getVarList();
+			} else {
+				variables = ((TupleFunctionCall) expr).getResultVars();
+			}
+			prepared = bindings -> {
+				BindingSet input = BindingSetOrigin.materializeParameters(bindings, variables, context);
+				return BindingSetOrigin.produced(producer.evaluate(input), produced, input);
+			};
+		}
 		AdaptiveFilterEvaluationStep.recordPrepared(context, expr, prepared);
 		return prepared;
 	}
 
 	/** Applies the ordinary instrumentation contract to evaluator-specific physical adapters. */
-	public QueryEvaluationStep trackPreparedStep(TupleExpr expr, QueryEvaluationStep ret) {
-		if (ret != null) {
-			if (!trackTime && !trackResultSize) {
-				return ret;
-			}
-			return AdaptiveFilterEvaluationStep.decorate(ret, prepared -> {
-				QueryEvaluationStep tracked = prepared;
-				if (trackTime) {
-					tracked = trackTime(expr, tracked);
-				}
-				if (trackResultSize) {
-					tracked = trackResultSize(expr, tracked);
-				}
-				return tracked;
-			});
-		}
-		throw new IllegalArgumentException("prepared step must not be null");
+	public QueryEvaluationStep trackPreparedStep(TupleExpr expr, QueryEvaluationStep step) {
+		Objects.requireNonNull(step, "prepared step must not be null");
+		return AdaptiveFilterEvaluationStep.decorate(step, preparedStepDecorator(expr));
 	}
 
-	private QueryEvaluationStep trackResultSize(TupleExpr expr, QueryEvaluationStep qes) {
-		return bindings -> {
-			expr.setResultSizeActual(Math.max(0, expr.getResultSizeActual()));
-			if (expr.isRuntimeTelemetryEnabled()) {
+	/** Captures instrumentation while preparing a physical adapter, including adapters rebound during evaluation. */
+	public Function<QueryEvaluationStep, QueryEvaluationStep> preparedStepDecorator(TupleExpr expr) {
+		RuntimeFeedbackCompilation compilation = runtimeFeedbackCompilation.get();
+		boolean standalone = compilation == null;
+		if (standalone) {
+			compilation = new RuntimeFeedbackCompilation(evaluationStatistics, false);
+		}
+		Function<QueryEvaluationStep, QueryEvaluationStep> decorator = preparedStepDecorator(expr, compilation,
+				standalone);
+		if (standalone) {
+			compilation.freeze();
+		}
+		return decorator;
+	}
+
+	private Function<QueryEvaluationStep, QueryEvaluationStep> preparedStepDecorator(TupleExpr expr,
+			RuntimeFeedbackCompilation compilation, boolean compilationRoot) {
+		if (trackResultSize || trackTime || expr.isRuntimeTelemetryEnabled()) {
+			QueryRuntimeTelemetryRegistry.prepare(expr);
+		}
+		RuntimeFeedbackTarget target = RuntimeFeedbackTarget.NO_OP;
+		if (shouldTrackCostFeedback(expr) && compilation.resolvesTargets()) {
+			target = evaluationStatistics.resolveRuntimeFeedbackTarget(expr, expr.getRuntimeFeedbackContract());
+			if (target == null) {
+				target = RuntimeFeedbackTarget.NO_OP;
+			}
+			if (target.active()) {
+				compilation.add(target);
+			}
+		}
+		Function<QueryEvaluationStep, QueryEvaluationStep> instrumentation;
+		if (trackResultSize || target.active() || expr.isRuntimeTelemetryEnabled()) {
+			instrumentation = resultSizeDecorator(expr, target, compilation, compilationRoot);
+		} else if (trackTime) {
+			instrumentation = timeDecorator(expr, compilation, compilationRoot);
+		} else if (compilationRoot && compilation.hasPublishableData()) {
+			instrumentation = step -> trackRuntimeFeedbackRoot(step, compilation);
+		} else {
+			instrumentation = Function.identity();
+		}
+		Function<QueryEvaluationStep, QueryEvaluationStep> decorator = instrumentation;
+		if (BindingScopeAnalysis.isNestedSubSelectRoot(expr)) {
+			Set<String> substitutedNames = BindingScopeAnalysis.lateralSubstitutedNames(expr);
+			decorator = step -> instrumentation.apply(new SubSelectScopeBoundaryQueryEvaluationStep(step,
+					substitutedNames));
+		}
+		return decorator;
+	}
+
+	private Function<QueryEvaluationStep, QueryEvaluationStep> resultSizeDecorator(TupleExpr expr,
+			RuntimeFeedbackTarget runtimeFeedbackTarget, RuntimeFeedbackCompilation compilation,
+			boolean publishRuntimeFeedback) {
+		boolean resultTelemetryEnabled = trackResultSize;
+		boolean runtimeTelemetryEnabled = expr.isRuntimeTelemetryEnabled();
+		boolean timingEnabled = trackTime || runtimeTelemetryEnabled;
+		RuntimeFeedbackCountingIterator preboundFeedbackIterator = runtimeFeedbackTarget.active()
+				&& !resultTelemetryEnabled && !runtimeTelemetryEnabled
+						? new RuntimeFeedbackCountingIterator(runtimeFeedbackTarget,
+								publishRuntimeFeedback ? compilation : null)
+						: null;
+		if (preboundFeedbackIterator != null) {
+			return qes -> bindings -> {
+				try {
+					return preboundFeedbackIterator.bind(qes.evaluate(bindings), bindings);
+				} catch (Throwable failure) {
+					if (publishRuntimeFeedback) {
+						compilation.publish(false);
+					}
+					throw failure;
+				}
+			};
+		}
+		NodeTelemetryAccumulator telemetry = new NodeTelemetryAccumulator(expr, telemetryNanoClock,
+				evaluationStatistics, timingEnabled, !runtimeFeedbackTarget.active(), runtimeFeedbackTarget);
+		compilation.add(telemetry);
+		return qes -> bindings -> {
+			if (resultTelemetryEnabled) {
+				initializeResultAndCostFeedbackCounters(expr, runtimeFeedbackTarget.active());
+			}
+			if (runtimeTelemetryEnabled) {
 				initializeRuntimeTelemetry(expr);
 			}
-			return new ResultSizeCountingIterator(qes.evaluate(bindings), expr);
+			long openedAtNanos = timingEnabled ? telemetry.nanoTime() : 0L;
+			try {
+				CloseableIteration<BindingSet> result = qes.evaluate(bindings);
+				long constructionNanos = timingEnabled ? telemetry.nanoTime() - openedAtNanos : 0L;
+				telemetry.opened(constructionNanos);
+				return new ResultSizeCountingIterator(result, expr, evaluationStatistics, runtimeFeedbackTarget,
+						publishRuntimeFeedback ? compilation : null, telemetry, openedAtNanos, false, bindings);
+			} catch (Throwable failure) {
+				if (timingEnabled) {
+					telemetry.opened(telemetry.nanoTime() - openedAtNanos);
+				}
+				telemetry.aborted();
+				if (publishRuntimeFeedback) {
+					compilation.publish(false);
+				}
+				throw failure;
+			}
 		};
 	}
 
-	private QueryEvaluationStep trackTime(TupleExpr expr, QueryEvaluationStep qes) {
+	private QueryEvaluationStep trackRuntimeFeedbackRoot(QueryEvaluationStep qes,
+			RuntimeFeedbackCompilation compilation) {
+		RuntimeFeedbackRootIterator preboundRootIterator = new RuntimeFeedbackRootIterator(compilation);
 		return bindings -> {
+			try {
+				return preboundRootIterator.bind(qes.evaluate(bindings));
+			} catch (Throwable failure) {
+				compilation.publish(false);
+				throw failure;
+			}
+		};
+	}
+
+	private boolean shouldTrackCostFeedback(QueryModelNode node) {
+		return evaluationStatistics != null && evaluationStatistics.shouldTrackCostFeedback(node);
+	}
+
+	private static void initializeResultAndCostFeedbackCounters(QueryModelNode queryModelNode,
+			boolean costFeedbackTracking) {
+		queryModelNode.setResultSizeActual(Math.max(0, queryModelNode.getResultSizeActual()));
+		if (!costFeedbackTracking) {
+			return;
+		}
+		queryModelNode.setCostFeedbackActualRows(0L);
+		queryModelNode.setCostFeedbackActualWorkRows(-1.0d);
+		queryModelNode.setCostFeedbackCompletedActual(false);
+		queryModelNode.setCostFeedbackCloseCountActual(Math.max(0L, queryModelNode.getCostFeedbackCloseCountActual()));
+		queryModelNode.setCostFeedbackLeftRowsWithMatchActual(
+				Math.max(0L, queryModelNode.getCostFeedbackLeftRowsWithMatchActual()));
+		queryModelNode.setCostFeedbackEmptyRightProbeCountActual(
+				Math.max(0L, queryModelNode.getCostFeedbackEmptyRightProbeCountActual()));
+		queryModelNode.setCostFeedbackMaxRightRowsPerLeftActual(
+				Math.max(0L, queryModelNode.getCostFeedbackMaxRightRowsPerLeftActual()));
+		queryModelNode
+				.setJoinRightIteratorsCreatedActual(Math.max(0, queryModelNode.getJoinRightIteratorsCreatedActual()));
+		queryModelNode
+				.setJoinLeftBindingsConsumedActual(Math.max(0, queryModelNode.getJoinLeftBindingsConsumedActual()));
+		queryModelNode
+				.setJoinRightBindingsConsumedActual(Math.max(0, queryModelNode.getJoinRightBindingsConsumedActual()));
+		queryModelNode.setSourceRowsScannedActual(Math.max(0, queryModelNode.getSourceRowsScannedActual()));
+		queryModelNode.setSourceRowsMatchedActual(Math.max(0, queryModelNode.getSourceRowsMatchedActual()));
+		queryModelNode.setSourceRowsFilteredActual(Math.max(0, queryModelNode.getSourceRowsFilteredActual()));
+	}
+
+	private Function<QueryEvaluationStep, QueryEvaluationStep> timeDecorator(TupleExpr expr,
+			RuntimeFeedbackCompilation compilation, boolean publishRuntimeFeedback) {
+		NodeTelemetryAccumulator telemetry = new NodeTelemetryAccumulator(expr, telemetryNanoClock,
+				evaluationStatistics, true, true);
+		compilation.add(telemetry);
+		return qes -> bindings -> {
 			initializeTimeTelemetry(expr);
-			return new TimedIterator(qes.evaluate(bindings), expr);
+			long started = telemetry.nanoTime();
+			CloseableIteration<BindingSet> iteration = null;
+			try {
+				iteration = qes.evaluate(bindings);
+				long elapsed = telemetry.nanoTime() - started;
+				telemetry.opened(elapsed);
+				return new TimedIterator(iteration, telemetry, started,
+						publishRuntimeFeedback ? compilation : null);
+			} catch (Throwable t) {
+				telemetry.opened(telemetry.nanoTime() - started);
+				telemetry.aborted();
+				if (iteration != null) {
+					iteration.close();
+				}
+				if (publishRuntimeFeedback) {
+					compilation.publish(false);
+				}
+				throw t;
+			}
 		};
 	}
 
@@ -850,8 +1184,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		final Var objVar = alp.getObjectVar();
 		final Var contextVar = alp.getContextVar();
 		final long minLength = alp.getMinLength();
+		QueryEvaluationContext pathContext = new DynamicBindingQueryEvaluationContext(context);
 		return bindings -> new PathIteration(DefaultEvaluationStrategy.this, scope, subjectVar, pathExpression, objVar,
-				contextVar, minLength, bindings, context);
+				contextVar, minLength, bindings, alp, null, pathContext);
 	}
 
 	protected QueryEvaluationStep prepare(ZeroLengthPath zlp, QueryEvaluationContext context)
@@ -863,8 +1198,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		QueryValueEvaluationStep subPrep = precompile(subjectVar, context);
 		QueryValueEvaluationStep objPrep = precompile(objVar, context);
 
-		return new ZeroLengthPathEvaluationStep(subjectVar, objVar, contextVar, subPrep, objPrep, this, context,
-				zlp.getScope());
+		return new ZeroLengthPathEvaluationStep(zlp, subjectVar, objVar, contextVar, subPrep, objPrep, this, context);
 	}
 
 	protected QueryEvaluationStep prepare(Difference node, QueryEvaluationContext context)
@@ -875,7 +1209,10 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(Group node, QueryEvaluationContext context) throws QueryEvaluationException {
 		QueryEvaluationStep arguments = precompile(node.getArg(), context);
-		return bindings -> new GroupIterator(DefaultEvaluationStrategy.this, node, bindings, context, arguments);
+		Set<String> produced = Set.copyOf(node.getBindingNames());
+		return bindings -> BindingSetOrigin.produced(
+				new GroupIterator(DefaultEvaluationStrategy.this, node, bindings, context, arguments), produced,
+				bindings);
 	}
 
 	protected QueryEvaluationStep prepare(Intersection node, QueryEvaluationContext context)
@@ -900,12 +1237,14 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(MultiProjection node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		QueryEvaluationStep arg = precompile(node.getArg(), context);
+		Set<String> parameterSources = ProjectionIterator.parameterSources(node.getArg(), node.getProjections());
+		QueryEvaluationStep arg = precompile(node.getArg(),
+				projectionSubstitutionContext(context, node.getProjections()));
 		return bindings -> {
 			CloseableIteration<BindingSet> evaluate = null;
 			try {
 				evaluate = arg.evaluate(bindings);
-				return new MultiProjectionIterator(node, evaluate, bindings);
+				return new MultiProjectionIterator(node, evaluate, bindings, parameterSources);
 			} catch (Throwable t) {
 				if (evaluate != null) {
 					evaluate.close();
@@ -917,8 +1256,25 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(Projection node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		QueryEvaluationStep temp = precompile(node.getArg(), context);
+		QueryEvaluationStep temp = precompile(node.getArg(),
+				projectionSubstitutionContext(context, List.of(node.getProjectionElemList())));
 		return new ProjectionQueryEvaluationStep(node, temp, context);
+	}
+
+	private static QueryEvaluationContext projectionSubstitutionContext(QueryEvaluationContext context,
+			List<ProjectionElemList> projections) {
+		if (context.getSubstitutionBindingNames().isEmpty()) {
+			return context;
+		}
+		Set<String> visible = new HashSet<>();
+		for (ProjectionElemList projection : projections) {
+			for (ProjectionElem element : projection.getElements()) {
+				visible.add(element.getName());
+			}
+		}
+		visible.retainAll(context.getSubstitutionBindingNames());
+		return visible.equals(context.getSubstitutionBindingNames()) ? context
+				: new BindingSubstitutionQueryEvaluationContext(context, visible);
 	}
 
 	protected QueryEvaluationStep prepare(QueryRoot node, QueryEvaluationContext context)
@@ -1214,7 +1570,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			try {
 				evaluate = child.evaluate(bindings);
 				DistinctIteration<BindingSet> distinct = new DistinctIteration<>(evaluate, cf.createSetOfBindingSets());
-				return new AbstractCloseableIteration<>() {
+				return BindingSetOrigin.produced(new AbstractCloseableIteration<>() {
 					@Override
 					public boolean hasNext() {
 						if (isClosed()) {
@@ -1286,7 +1642,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 							}
 						}
 					}
-				};
+				}, TupleExprs.declaredOutputBindingNames(node.getArg(), TupleExpr::getBindingNames));
 			} catch (RuntimeException | Error failure) {
 				if (evaluate != null) {
 					try {
@@ -1312,7 +1668,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	protected QueryEvaluationStep prepare(Reduced node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		QueryEvaluationStep arg = precompile(node.getArg(), context);
-		return bindings -> new ReducedIteration<>(arg.evaluate(bindings));
+		return bindings -> BindingSetOrigin.produced(new ReducedIteration<>(arg.evaluate(bindings)),
+				TupleExprs.declaredOutputBindingNames(node.getArg(), TupleExpr::getBindingNames));
 	}
 
 	protected QueryEvaluationStep prepare(TupleFunctionCall expr, QueryEvaluationContext context)
@@ -1579,30 +1936,33 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		if (prepared == null || !expr.isRuntimeTelemetryEnabled()) {
 			return prepared;
 		}
+		RuntimeFeedbackCompilation compilation = runtimeFeedbackCompilation.get();
+		NodeTelemetryAccumulator telemetry = compilation == null
+				? new NodeTelemetryAccumulator(expr, telemetryNanoClock, evaluationStatistics, true, false)
+				: compilation.telemetryFor(expr, telemetryNanoClock, evaluationStatistics);
 		return new QueryValueEvaluationStep() {
 			@Override
 			public Value evaluate(BindingSet bindings) {
-				long started = System.nanoTime();
-				incrementLongMetric(expr, TelemetryMetricNames.EXPR_EVAL_COUNT_ACTUAL);
+				long started = telemetry.startExpression();
+				QueryEvaluationUtility.Result outcome = null;
+				boolean nullValue = false;
+				boolean error = false;
 				try {
 					Value value = prepared.evaluate(bindings);
 					if (value == null) {
-						incrementLongMetric(expr, TelemetryMetricNames.EXPR_NULL_COUNT_ACTUAL);
+						nullValue = true;
 					} else {
-						QueryEvaluationUtility.Result ebv = QueryEvaluationUtility.getEffectiveBooleanValue(value);
-						if (ebv == QueryEvaluationUtility.Result._true) {
-							incrementLongMetric(expr, TelemetryMetricNames.EXPR_TRUE_COUNT_ACTUAL);
-						} else if (ebv == QueryEvaluationUtility.Result._false) {
-							incrementLongMetric(expr, TelemetryMetricNames.EXPR_FALSE_COUNT_ACTUAL);
-						}
+						outcome = QueryEvaluationUtility.getEffectiveBooleanValue(value);
 					}
 					return value;
 				} catch (RuntimeException e) {
-					incrementLongMetric(expr, TelemetryMetricNames.EXPR_ERROR_COUNT_ACTUAL);
+					error = true;
 					throw e;
 				} finally {
-					addDoubleMetric(expr, TelemetryMetricNames.EXPR_EVAL_TIME_NANOS_ACTUAL,
-							System.nanoTime() - started);
+					telemetry.finishExpression(started, outcome, nullValue, error);
+					if (compilation == null) {
+						telemetry.publish();
+					}
 				}
 			}
 
@@ -1773,6 +2133,386 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	protected QueryValueEvaluationStep prepare(IRIFunction node, QueryEvaluationContext context) {
 		QueryValueEvaluationStep arg = precompile(node.getArg(), context);
 		return QueryValueEvaluationStepSupplier.prepareIriFunction(node, arg, tripleSource.getValueFactory());
+	}
+
+	/**
+	 * Runtime path expansion introduces private binding names after an array-backed query context has fixed its slots.
+	 * Keep query-lifetime services from that context, while using the interface's name-based binding operations so
+	 * those private names remain readable and writable.
+	 */
+	private static final class DynamicBindingQueryEvaluationContext implements QueryEvaluationContext {
+		private final QueryEvaluationContext delegate;
+
+		private DynamicBindingQueryEvaluationContext(QueryEvaluationContext delegate) {
+			this.delegate = Objects.requireNonNull(delegate);
+		}
+
+		@Override
+		public ActiveGraph getActiveGraph() {
+			return delegate.getActiveGraph();
+		}
+
+		@Override
+		public Set<String> getSubstitutionBindingNames() {
+			return delegate.getSubstitutionBindingNames();
+		}
+
+		@Override
+		public boolean hasEnclosingProjection() {
+			return delegate.hasEnclosingProjection();
+		}
+
+		@Override
+		public Value captureConstant(Value value, Function<Value, Value> capturer) {
+			return delegate.captureConstant(value, capturer);
+		}
+
+		@Override
+		public Comparator<Value> getComparator() {
+			return delegate.getComparator();
+		}
+
+		@Override
+		public Literal getNow() {
+			return delegate.getNow();
+		}
+
+		@Override
+		public Dataset getDataset() {
+			return delegate.getDataset();
+		}
+
+		@Override
+		public BNode getOrCreateBNode(String nodeLabel, BindingSet bindings, ValueFactory valueFactory) {
+			return delegate.getOrCreateBNode(nodeLabel, bindings, valueFactory);
+		}
+	}
+
+	/** Ordinary learned feedback path: direct primitive counters only, with no query-node access after precompile. */
+	private static final class RuntimeFeedbackCountingIterator
+			implements CloseableIteration<BindingSet>, IndexReportingIterator, FeedbackWorkReportingIterator {
+		private CloseableIteration<BindingSet> iterator;
+		private final RuntimeFeedbackTarget target;
+		private final RuntimeFeedbackCompilation compilation;
+		private long rowsProduced;
+		private boolean sawTerminalFalse;
+		private boolean cancelled;
+		private boolean failed;
+		private boolean active;
+
+		private RuntimeFeedbackCountingIterator(RuntimeFeedbackTarget target,
+				RuntimeFeedbackCompilation compilation) {
+			this.target = target;
+			this.compilation = compilation;
+		}
+
+		private RuntimeFeedbackCountingIterator bind(CloseableIteration<BindingSet> iterator, BindingSet bindings) {
+			if (active) {
+				throw new IllegalStateException("A compiled query node cannot have overlapping evaluations");
+			}
+			this.iterator = Objects.requireNonNull(iterator);
+			rowsProduced = 0L;
+			sawTerminalFalse = false;
+			cancelled = false;
+			failed = false;
+			active = true;
+			target.open(bindings);
+			return this;
+		}
+
+		@Override
+		public boolean hasNext() throws QueryEvaluationException {
+			if (!active) {
+				return false;
+			}
+			try {
+				boolean present = iterator.hasNext();
+				if (!present) {
+					sawTerminalFalse = true;
+					close();
+				}
+				return present;
+			} catch (Throwable failure) {
+				markAborted(failure);
+				throw failure;
+			}
+		}
+
+		@Override
+		public BindingSet next() throws QueryEvaluationException {
+			if (!active) {
+				throw new NoSuchElementException("The iteration has been closed.");
+			}
+			try {
+				BindingSet next = iterator.next();
+				rowsProduced++;
+				return next;
+			} catch (Throwable failure) {
+				markAborted(failure);
+				throw failure;
+			}
+		}
+
+		@Override
+		public void remove() {
+			if (!active) {
+				throw new IllegalStateException("The iteration has been closed.");
+			}
+			iterator.remove();
+		}
+
+		@Override
+		public void close() throws QueryEvaluationException {
+			if (!active) {
+				return;
+			}
+			QueryEvaluationException closeFailure = null;
+			try {
+				iterator.close();
+			} catch (QueryEvaluationException failure) {
+				closeFailure = failure;
+				markAborted(failure);
+			}
+			FeedbackWorkReportingIterator work = workReporter();
+			long sourceRows = work == null ? indexSourceRows(iterator) : work.feedbackSourceRows();
+			long randomSeeks = work == null ? -1L : work.feedbackRandomSeeks();
+			long expressionEvaluations = work == null ? -1L : work.feedbackExpressionEvaluations();
+			long hashBuildRows = work == null ? -1L : work.feedbackHashBuildRows();
+			long hashProbeRows = work == null ? -1L : work.feedbackHashProbeRows();
+			long pathExpansions = work == null ? -1L : work.feedbackPathExpansions();
+			long remoteCalls = work == null ? -1L : work.feedbackRemoteCalls();
+			long peakMemoryRows = work == null ? -1L : work.feedbackPeakMemoryRows();
+			double actualWorkRows = maxNonNegative(rowsProduced, sourceRows, -1L, hashBuildRows, hashProbeRows,
+					pathExpansions, expressionEvaluations, remoteCalls);
+			EvaluationStatistics.TerminationClassification termination = failed
+					? EvaluationStatistics.TerminationClassification.FAILED
+					: cancelled ? EvaluationStatistics.TerminationClassification.CANCELLED
+							: sawTerminalFalse ? EvaluationStatistics.TerminationClassification.EXHAUSTED
+									: EvaluationStatistics.TerminationClassification.PARTIAL;
+			target.close(rowsProduced, actualWorkRows, sourceRows, randomSeeks, expressionEvaluations,
+					hashBuildRows, hashProbeRows, pathExpansions, remoteCalls, peakMemoryRows, termination);
+			if (work != null) {
+				target.recordActualPhysicalImplementation(work.feedbackPhysicalImplementationId());
+				target.recordFilter(work.feedbackFilterPassed(), work.feedbackFilterRejected());
+				target.recordSemiAnti(work.feedbackSemiAntiHits(), work.feedbackSemiAntiMisses(),
+						work.feedbackFirstMatchWork(), work.feedbackExhaustionWork(), work.feedbackCacheHits(),
+						work.feedbackCacheMisses(), work.feedbackCacheEvictions(),
+						work.feedbackDistinctBindingFeedback());
+				target.recordMaterialization(work.feedbackMaterializationBuilds(),
+						work.feedbackMaterializationLookups(), work.feedbackMaterializationBuildWork(),
+						work.feedbackMaterializationLookupWork());
+			}
+			if (compilation != null) {
+				compilation.publish(termination == EvaluationStatistics.TerminationClassification.EXHAUSTED);
+			}
+			active = false;
+			if (closeFailure != null) {
+				throw closeFailure;
+			}
+		}
+
+		private void markAborted(Throwable failure) {
+			if (failure instanceof QueryInterruptedException) {
+				cancelled = true;
+			} else {
+				failed = true;
+			}
+		}
+
+		private FeedbackWorkReportingIterator workReporter() {
+			return iterator instanceof FeedbackWorkReportingIterator work ? work : null;
+		}
+
+		private static long indexSourceRows(CloseableIteration<BindingSet> iteration) {
+			return iteration instanceof IndexReportingIterator index ? index.getSourceRowsScannedActual() : -1L;
+		}
+
+		private static double maxNonNegative(long first, long second, long third, long fourth, long fifth,
+				long sixth, long seventh, long eighth) {
+			long maximum = Math.max(0L, first);
+			maximum = second < 0L ? maximum : Math.max(maximum, second);
+			maximum = third < 0L ? maximum : Math.max(maximum, third);
+			maximum = fourth < 0L ? maximum : Math.max(maximum, fourth);
+			maximum = fifth < 0L ? maximum : Math.max(maximum, fifth);
+			maximum = sixth < 0L ? maximum : Math.max(maximum, sixth);
+			maximum = seventh < 0L ? maximum : Math.max(maximum, seventh);
+			return eighth < 0L ? maximum : Math.max(maximum, eighth);
+		}
+
+		@Override
+		public String getIndexName() {
+			return iterator instanceof IndexReportingIterator index ? index.getIndexName() : "";
+		}
+
+		@Override
+		public long getSourceRowsScannedActual() {
+			return iterator instanceof IndexReportingIterator index ? index.getSourceRowsScannedActual() : -1L;
+		}
+
+		@Override
+		public long getSourceRowsMatchedActual() {
+			return iterator instanceof IndexReportingIterator index ? index.getSourceRowsMatchedActual() : -1L;
+		}
+
+		@Override
+		public long getSourceRowsFilteredActual() {
+			return iterator instanceof IndexReportingIterator index ? index.getSourceRowsFilteredActual() : -1L;
+		}
+
+		@Override
+		public long getDistinctCursorSkipCountActual() {
+			return iterator instanceof IndexReportingIterator index ? index.getDistinctCursorSkipCountActual() : -1L;
+		}
+
+		@Override
+		public long getDistinctCursorSkipSeekCountActual() {
+			return iterator instanceof IndexReportingIterator index ? index.getDistinctCursorSkipSeekCountActual()
+					: -1L;
+		}
+
+		@Override
+		public long feedbackSourceRows() {
+			FeedbackWorkReportingIterator work = workReporter();
+			return work == null ? getSourceRowsScannedActual() : work.feedbackSourceRows();
+		}
+
+		@Override
+		public long feedbackRandomSeeks() {
+			FeedbackWorkReportingIterator work = workReporter();
+			return work == null ? -1L : work.feedbackRandomSeeks();
+		}
+
+		@Override
+		public long feedbackExpressionEvaluations() {
+			FeedbackWorkReportingIterator work = workReporter();
+			return work == null ? -1L : work.feedbackExpressionEvaluations();
+		}
+
+		@Override
+		public long feedbackHashBuildRows() {
+			FeedbackWorkReportingIterator work = workReporter();
+			return work == null ? -1L : work.feedbackHashBuildRows();
+		}
+
+		@Override
+		public long feedbackHashProbeRows() {
+			FeedbackWorkReportingIterator work = workReporter();
+			return work == null ? -1L : work.feedbackHashProbeRows();
+		}
+
+		@Override
+		public long feedbackPathExpansions() {
+			FeedbackWorkReportingIterator work = workReporter();
+			return work == null ? -1L : work.feedbackPathExpansions();
+		}
+
+		@Override
+		public long feedbackRemoteCalls() {
+			FeedbackWorkReportingIterator work = workReporter();
+			return work == null ? -1L : work.feedbackRemoteCalls();
+		}
+
+		@Override
+		public long feedbackPeakMemoryRows() {
+			FeedbackWorkReportingIterator work = workReporter();
+			return work == null ? -1L : work.feedbackPeakMemoryRows();
+		}
+
+		@Override
+		public long feedbackCacheHits() {
+			FeedbackWorkReportingIterator work = workReporter();
+			return work == null ? -1L : work.feedbackCacheHits();
+		}
+
+		@Override
+		public long feedbackCacheMisses() {
+			FeedbackWorkReportingIterator work = workReporter();
+			return work == null ? -1L : work.feedbackCacheMisses();
+		}
+
+		@Override
+		public long feedbackCacheEvictions() {
+			FeedbackWorkReportingIterator work = workReporter();
+			return work == null ? -1L : work.feedbackCacheEvictions();
+		}
+
+		@Override
+		public long feedbackDistinctBindingExposure() {
+			FeedbackWorkReportingIterator work = workReporter();
+			return work == null ? -1L : work.feedbackDistinctBindingExposure();
+		}
+
+		@Override
+		public DistinctBindingFeedback feedbackDistinctBindingFeedback() {
+			FeedbackWorkReportingIterator work = workReporter();
+			return work == null ? DistinctBindingFeedback.unavailable() : work.feedbackDistinctBindingFeedback();
+		}
+
+		@Override
+		public long feedbackMaterializationBuilds() {
+			FeedbackWorkReportingIterator work = workReporter();
+			return work == null ? -1L : work.feedbackMaterializationBuilds();
+		}
+
+		@Override
+		public long feedbackMaterializationLookups() {
+			FeedbackWorkReportingIterator work = workReporter();
+			return work == null ? -1L : work.feedbackMaterializationLookups();
+		}
+
+		@Override
+		public long feedbackMaterializationBuildWork() {
+			FeedbackWorkReportingIterator work = workReporter();
+			return work == null ? -1L : work.feedbackMaterializationBuildWork();
+		}
+
+		@Override
+		public long feedbackMaterializationLookupWork() {
+			FeedbackWorkReportingIterator work = workReporter();
+			return work == null ? -1L : work.feedbackMaterializationLookupWork();
+		}
+
+		@Override
+		public long feedbackFilterPassed() {
+			FeedbackWorkReportingIterator work = workReporter();
+			return work == null ? -1L : work.feedbackFilterPassed();
+		}
+
+		@Override
+		public long feedbackFilterRejected() {
+			FeedbackWorkReportingIterator work = workReporter();
+			return work == null ? -1L : work.feedbackFilterRejected();
+		}
+
+		@Override
+		public long feedbackSemiAntiHits() {
+			FeedbackWorkReportingIterator work = workReporter();
+			return work == null ? -1L : work.feedbackSemiAntiHits();
+		}
+
+		@Override
+		public long feedbackSemiAntiMisses() {
+			FeedbackWorkReportingIterator work = workReporter();
+			return work == null ? -1L : work.feedbackSemiAntiMisses();
+		}
+
+		@Override
+		public long feedbackFirstMatchWork() {
+			FeedbackWorkReportingIterator work = workReporter();
+			return work == null ? -1L : work.feedbackFirstMatchWork();
+		}
+
+		@Override
+		public long feedbackExhaustionWork() {
+			FeedbackWorkReportingIterator work = workReporter();
+			return work == null ? -1L : work.feedbackExhaustionWork();
+		}
+
+		@Override
+		public int feedbackPhysicalImplementationId() {
+			FeedbackWorkReportingIterator work = workReporter();
+			return work == null ? 0 : work.feedbackPhysicalImplementationId();
+		}
 	}
 
 	/**
@@ -1951,15 +2691,20 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	private QueryValueEvaluationStep prepare(And node, QueryEvaluationContext context) throws QueryEvaluationException {
 		QueryValueEvaluationStep leftStep = precompileOrFail(node.getLeftArg(), context);
 		QueryValueEvaluationStep rightStep = precompileOrFail(node.getRightArg(), context);
-
-		return AndValueEvaluationStep.supply(leftStep, rightStep, node);
+		Runnable shortCircuitRecorder = shortCircuitRecorder(node);
+		return shortCircuitRecorder == null
+				? AndValueEvaluationStep.supply(leftStep, rightStep, node)
+				: AndValueEvaluationStep.supply(leftStep, rightStep, shortCircuitRecorder);
 	}
 
 	protected QueryValueEvaluationStep prepare(Or node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		QueryValueEvaluationStep leftArg = precompileOrFail(node.getLeftArg(), context);
 		QueryValueEvaluationStep rightArg = precompileOrFail(node.getRightArg(), context);
-		return new OrValueEvaluationStep(leftArg, rightArg, node);
+		Runnable shortCircuitRecorder = shortCircuitRecorder(node);
+		return shortCircuitRecorder == null
+				? new OrValueEvaluationStep(leftArg, rightArg, node)
+				: new OrValueEvaluationStep(leftArg, rightArg, shortCircuitRecorder);
 	}
 
 	protected QueryValueEvaluationStep prepare(Not node, QueryEvaluationContext context) {
@@ -2122,7 +2867,18 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		// only the selected branch is evaluated, so an error in the other branch must not surface
 		QueryValueEvaluationStep result = precompileOrFail(node.getResult(), context);
 		QueryValueEvaluationStep alternative = precompileOrFail(node.getAlternative(), context);
-		return new IfValueEvaluationStep(result, condition, alternative, node);
+		Runnable shortCircuitRecorder = shortCircuitRecorder(node);
+		return shortCircuitRecorder == null
+				? new IfValueEvaluationStep(result, condition, alternative, node)
+				: new IfValueEvaluationStep(result, condition, alternative, shortCircuitRecorder);
+	}
+
+	private Runnable shortCircuitRecorder(QueryModelNode node) {
+		RuntimeFeedbackCompilation compilation = runtimeFeedbackCompilation.get();
+		if (!telemetryActive(node) || compilation == null) {
+			return null;
+		}
+		return compilation.telemetryFor(node, telemetryNanoClock, evaluationStatistics)::shortCircuit;
 	}
 
 	/**
@@ -2185,62 +2941,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			}
 		}
 
-		Set<String> pathVariables = new HashSet<>();
-		subQuery.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
-			@Override
-			public void meet(Exists nested) {
-				// A nested invocation captures its own binding domain, including bindings produced by this body.
-			}
-
-			@Override
-			public void meet(ZeroLengthPath path) {
-				addEndpoint(path.getSubjectVar());
-				addEndpoint(path.getObjectVar());
-			}
-
-			@Override
-			public void meet(ArbitraryLengthPath path) {
-				addEndpoint(path.getSubjectVar());
-				addEndpoint(path.getObjectVar());
-				super.meet(path);
-			}
-
-			@Override
-			public void meetOther(QueryModelNode node) {
-				if (node instanceof ZeroLengthPath path) {
-					meet(path);
-				} else if (node instanceof ArbitraryLengthPath path) {
-					meet(path);
-				} else {
-					super.meetOther(node);
-				}
-			}
-
-			private void addEndpoint(Var endpoint) {
-				if (!endpoint.isConstant()) {
-					pathVariables.add(endpoint.getName());
-				}
-			}
-		});
-		if (pathVariables.isEmpty()) {
-			return new ExistsQueryValueEvaluationStep(precompile(subQuery, context));
-		}
-
-		Set<String> referencedNames = Set.copyOf(pathVariables);
-		var variants = new ConcurrentHashMap<Set<String>, QueryEvaluationStep>();
-		return new ExistsQueryValueEvaluationStep(bindings -> {
-			Set<String> domain = new HashSet<>();
-			for (String name : referencedNames) {
-				if (bindings.getValue(name) != null) {
-					domain.add(name);
-				}
-			}
-			// Cache prepared code by domain, never values. Each variant has immutable substitution provenance, so
-			// concurrent/lazy invocations cannot change another invocation's interpretation of its path endpoints.
-			QueryEvaluationStep variant = variants.computeIfAbsent(Set.copyOf(domain),
-					names -> precompile(subQuery, new BindingSubstitutionQueryEvaluationContext(context, names)));
-			return variant.evaluate(bindings);
-		});
+		return new ExistsQueryValueEvaluationStep(
+				FilterIterator.existsProbeFunction(subQuery, precompile(subQuery, context), this, context));
 	}
 
 	@Override
@@ -2326,10 +3028,10 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	protected QueryEvaluationStep prepare(TripleRef ref, QueryEvaluationContext context) {
 		// Naive implementation that walks over all statements matching (x rdf:type rdf:Statement)
 		// and filter those that do not match the bindings for subject, predicate and object vars (if bound)
-		final org.eclipse.rdf4j.query.algebra.Var subjVar = ref.getSubjectVar();
-		final org.eclipse.rdf4j.query.algebra.Var predVar = ref.getPredicateVar();
-		final org.eclipse.rdf4j.query.algebra.Var objVar = ref.getObjectVar();
-		final org.eclipse.rdf4j.query.algebra.Var extVar = ref.getExprVar();
+		final Var subjVar = ref.getSubjectVar();
+		final Var predVar = ref.getPredicateVar();
+		final Var objVar = ref.getObjectVar();
+		final Var extVar = ref.getExprVar();
 		// whether the TripleSouce support access to TripleTerms
 		final boolean nativeTripleTermSupport = tripleSource instanceof NativeTripleTermSource;
 		if (nativeTripleTermSupport) {
@@ -2338,6 +3040,197 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 					context);
 		} else {
 			return new EncodedTripleTermQueryEvaluationStep(subjVar, predVar, objVar, extVar, tripleSource, context);
+		}
+	}
+
+	private static final class RuntimeFeedbackCompilation {
+		private final EvaluationStatistics statistics;
+		private final boolean resolveTargets;
+		private final List<RuntimeFeedbackTarget> mutableTargets = new ArrayList<>();
+		private final List<NodeTelemetryAccumulator> mutableTelemetry = new ArrayList<>();
+		private final List<Runnable> mutablePublishers = new ArrayList<>();
+		private final IdentityHashMap<QueryModelNode, NodeTelemetryAccumulator> telemetryByNode = new IdentityHashMap<>();
+		private final Consumer<Runnable> publisherRegistrar = this::addPublisher;
+		private RuntimeFeedbackTarget[] targets;
+		private NodeTelemetryAccumulator[] telemetry;
+		private Runnable[] publishers;
+		private boolean published;
+
+		private RuntimeFeedbackCompilation(EvaluationStatistics statistics, boolean resolveTargets) {
+			this.statistics = statistics;
+			this.resolveTargets = resolveTargets;
+		}
+
+		private boolean resolvesTargets() {
+			return resolveTargets;
+		}
+
+		private void add(RuntimeFeedbackTarget target) {
+			if (targets != null) {
+				throw new IllegalStateException("runtime feedback compilation is already frozen");
+			}
+			mutableTargets.add(target);
+		}
+
+		private void add(NodeTelemetryAccumulator accumulator) {
+			if (telemetry != null) {
+				throw new IllegalStateException("runtime telemetry compilation is already frozen");
+			}
+			mutableTelemetry.add(accumulator);
+		}
+
+		private void addPublisher(Runnable publisher) {
+			if (publishers != null) {
+				throw new IllegalStateException("runtime telemetry compilation is already frozen");
+			}
+			mutablePublishers.add(Objects.requireNonNull(publisher));
+		}
+
+		private Consumer<Runnable> publisherRegistrar() {
+			return publisherRegistrar;
+		}
+
+		private NodeTelemetryAccumulator telemetryFor(QueryModelNode node, LongSupplier nanoClock,
+				EvaluationStatistics evaluationStatistics) {
+			NodeTelemetryAccumulator accumulator = telemetryByNode.get(node);
+			if (accumulator == null) {
+				accumulator = new NodeTelemetryAccumulator(node, nanoClock, evaluationStatistics, true, false);
+				telemetryByNode.put(node, accumulator);
+				add(accumulator);
+			}
+			return accumulator;
+		}
+
+		private boolean hasTargets() {
+			return targets == null ? !mutableTargets.isEmpty() : targets.length > 0;
+		}
+
+		private boolean hasPublishableData() {
+			return hasTargets()
+					|| (telemetry == null ? !mutableTelemetry.isEmpty() : telemetry.length > 0)
+					|| (publishers == null ? !mutablePublishers.isEmpty() : publishers.length > 0);
+		}
+
+		private void freeze() {
+			if (targets == null) {
+				targets = mutableTargets.toArray(RuntimeFeedbackTarget[]::new);
+				mutableTargets.clear();
+			}
+			if (telemetry == null) {
+				telemetry = mutableTelemetry.toArray(NodeTelemetryAccumulator[]::new);
+				mutableTelemetry.clear();
+			}
+			if (publishers == null) {
+				publishers = mutablePublishers.toArray(Runnable[]::new);
+				mutablePublishers.clear();
+			}
+		}
+
+		private void publish(boolean rootCompleted) {
+			if (published) {
+				return;
+			}
+			published = true;
+			freeze();
+			for (Runnable publisher : publishers) {
+				publisher.run();
+			}
+			for (NodeTelemetryAccumulator accumulator : telemetry) {
+				accumulator.publish();
+			}
+			if (statistics != null) {
+				statistics.publishRuntimeFeedbackTargets(targets, targets.length, rootCompleted);
+			}
+		}
+	}
+
+	private static final class RuntimeFeedbackRootIterator implements CloseableIteration<BindingSet> {
+		private final RuntimeFeedbackCompilation compilation;
+		private CloseableIteration<BindingSet> delegate;
+		private boolean exhausted;
+		private boolean failed;
+		private boolean active;
+
+		private RuntimeFeedbackRootIterator(RuntimeFeedbackCompilation compilation) {
+			this.compilation = compilation;
+		}
+
+		private RuntimeFeedbackRootIterator bind(CloseableIteration<BindingSet> delegate) {
+			if (active) {
+				throw new IllegalStateException("A compiled query root cannot have overlapping evaluations");
+			}
+			this.delegate = Objects.requireNonNull(delegate);
+			exhausted = false;
+			failed = false;
+			active = true;
+			return this;
+		}
+
+		@Override
+		public boolean hasNext() {
+			if (!active) {
+				return false;
+			}
+			if (Thread.currentThread().isInterrupted()) {
+				close();
+				return false;
+			}
+			try {
+				boolean present = delegate.hasNext();
+				if (!present) {
+					exhausted = true;
+					close();
+				}
+				return present;
+			} catch (Throwable failure) {
+				failed = true;
+				throw failure;
+			}
+		}
+
+		@Override
+		public BindingSet next() {
+			if (!active) {
+				throw new NoSuchElementException("The iteration has been closed.");
+			}
+			if (Thread.currentThread().isInterrupted()) {
+				close();
+				throw new NoSuchElementException("The iteration has been interrupted.");
+			}
+			try {
+				return delegate.next();
+			} catch (NoSuchElementException exhaustedIteration) {
+				exhausted = true;
+				close();
+				throw exhaustedIteration;
+			} catch (Throwable failure) {
+				failed = true;
+				throw failure;
+			}
+		}
+
+		@Override
+		public void remove() {
+			if (!active) {
+				throw new IllegalStateException("The iteration has been closed.");
+			}
+			delegate.remove();
+		}
+
+		@Override
+		public void close() throws QueryEvaluationException {
+			if (!active) {
+				return;
+			}
+			try {
+				delegate.close();
+			} catch (QueryEvaluationException failure) {
+				failed = true;
+				throw failure;
+			} finally {
+				active = false;
+				compilation.publish(exhausted && !failed);
+			}
 		}
 	}
 
@@ -2350,97 +3243,283 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 		CloseableIteration<BindingSet> iterator;
 		QueryModelNode queryModelNode;
+		EvaluationStatistics evaluationStatistics;
 		boolean telemetryEnabled;
+		boolean costFeedbackTracking;
+		RuntimeFeedbackTarget runtimeFeedbackTarget;
+		RuntimeFeedbackCompilation runtimeFeedbackCompilation;
+		NodeTelemetryAccumulator telemetry;
+		boolean publishTelemetryOnClose;
+		boolean exhausted;
+		boolean sawTerminalFalse;
 		long openedAtNanos;
 		boolean firstRowSeen;
+		long rowsProduced;
+		boolean cancelled;
+		boolean failed;
+		long sourceRowsBaseline = -1L;
+		long randomSeeksBaseline = -1L;
+		long expressionEvaluationsBaseline = -1L;
+		long hashBuildRowsBaseline = -1L;
+		long hashProbeRowsBaseline = -1L;
+		long pathExpansionsBaseline = -1L;
+		long remoteCallsBaseline = -1L;
+		long joinLeftRowsBaseline = -1L;
+		long joinRightRowsBaseline = -1L;
 
 		public ResultSizeCountingIterator(CloseableIteration<BindingSet> iterator,
-				QueryModelNode queryModelNode) {
+				QueryModelNode queryModelNode, EvaluationStatistics evaluationStatistics,
+				boolean costFeedbackTracking) {
+			this(iterator, queryModelNode, evaluationStatistics, RuntimeFeedbackTarget.NO_OP, null,
+					new NodeTelemetryAccumulator(queryModelNode, System::nanoTime, evaluationStatistics,
+							telemetryActive(queryModelNode), true),
+					telemetryActive(queryModelNode) ? System.nanoTime() : 0L, true);
+			telemetry.opened(0L);
+		}
+
+		public ResultSizeCountingIterator(CloseableIteration<BindingSet> iterator,
+				QueryModelNode queryModelNode, EvaluationStatistics evaluationStatistics,
+				RuntimeFeedbackTarget runtimeFeedbackTarget,
+				RuntimeFeedbackCompilation runtimeFeedbackCompilation,
+				NodeTelemetryAccumulator telemetry, long openedAtNanos) {
+			this(iterator, queryModelNode, evaluationStatistics, runtimeFeedbackTarget, runtimeFeedbackCompilation,
+					telemetry, openedAtNanos, false);
+		}
+
+		private ResultSizeCountingIterator(CloseableIteration<BindingSet> iterator,
+				QueryModelNode queryModelNode, EvaluationStatistics evaluationStatistics,
+				RuntimeFeedbackTarget runtimeFeedbackTarget,
+				RuntimeFeedbackCompilation runtimeFeedbackCompilation,
+				NodeTelemetryAccumulator telemetry, long openedAtNanos, boolean publishTelemetryOnClose) {
+			this(iterator, queryModelNode, evaluationStatistics, runtimeFeedbackTarget, runtimeFeedbackCompilation,
+					telemetry, openedAtNanos, publishTelemetryOnClose, null);
+		}
+
+		private ResultSizeCountingIterator(CloseableIteration<BindingSet> iterator,
+				QueryModelNode queryModelNode, EvaluationStatistics evaluationStatistics,
+				RuntimeFeedbackTarget runtimeFeedbackTarget, RuntimeFeedbackCompilation runtimeFeedbackCompilation,
+				NodeTelemetryAccumulator telemetry, long openedAtNanos, boolean publishTelemetryOnClose,
+				BindingSet input) {
 			super(iterator);
 			this.iterator = iterator;
 			this.queryModelNode = queryModelNode;
+			this.evaluationStatistics = evaluationStatistics;
 			this.telemetryEnabled = telemetryActive(queryModelNode);
-			this.openedAtNanos = System.nanoTime();
-			if (telemetryEnabled) {
-				incrementLongMetric(queryModelNode, TelemetryMetricNames.OPEN_COUNT_ACTUAL);
+			this.runtimeFeedbackTarget = runtimeFeedbackTarget == null
+					? RuntimeFeedbackTarget.NO_OP
+					: runtimeFeedbackTarget;
+			this.runtimeFeedbackCompilation = runtimeFeedbackCompilation;
+			this.telemetry = telemetry;
+			this.publishTelemetryOnClose = publishTelemetryOnClose;
+			this.costFeedbackTracking = this.runtimeFeedbackTarget.active();
+			this.openedAtNanos = openedAtNanos;
+			if (costFeedbackTracking) {
+				joinLeftRowsBaseline = nonNegative(joinCount(queryModelNode, DEFERRED_JOIN_LEFT_ROWS,
+						queryModelNode.getJoinLeftBindingsConsumedActual()));
+				joinRightRowsBaseline = nonNegative(joinCount(queryModelNode, DEFERRED_JOIN_RIGHT_ROWS,
+						queryModelNode.getJoinRightBindingsConsumedActual()));
+				if (input == null) {
+					this.runtimeFeedbackTarget.open();
+				} else {
+					this.runtimeFeedbackTarget.open(input);
+				}
 			}
 		}
 
 		@Override
 		public boolean hasNext() throws QueryEvaluationException {
 			boolean hasNext = false;
-			long started = System.nanoTime();
+			long started = telemetry.startHasNext();
 			try {
 				hasNext = iterator.hasNext();
-				return hasNext;
-			} finally {
-				if (telemetryEnabled) {
-					long elapsed = System.nanoTime() - started;
-					queryModelNode.setHasNextCallCountActual(queryModelNode.getHasNextCallCountActual() + 1);
-					queryModelNode.setHasNextTimeNanosActual(queryModelNode.getHasNextTimeNanosActual() + elapsed);
-					if (hasNext) {
-						queryModelNode.setHasNextTrueCountActual(queryModelNode.getHasNextTrueCountActual() + 1);
+				if (!hasNext) {
+					sawTerminalFalse = true;
+					if (costFeedbackTracking) {
+						exhausted = true;
 					}
 				}
+				return hasNext;
+			} catch (Throwable t) {
+				markAborted(t);
+				throw t;
+			} finally {
+				telemetry.finishHasNext(started, hasNext);
 			}
 		}
 
 		@Override
 		public BindingSet next() throws QueryEvaluationException {
-			long started = System.nanoTime();
-			queryModelNode.setResultSizeActual(queryModelNode.getResultSizeActual() + 1);
+			long started = telemetry.startNext();
 			try {
-				return iterator.next();
+				BindingSet next = iterator.next();
+				rowsProduced++;
+				long firstRowElapsed = !firstRowSeen && telemetryEnabled
+						? Math.max(0L, telemetry.nanoTime() - openedAtNanos)
+						: 0L;
+				telemetry.rowProduced(firstRowElapsed);
+				firstRowSeen = true;
+				return next;
+			} catch (Throwable t) {
+				markAborted(t);
+				throw t;
 			} finally {
-				if (telemetryEnabled) {
-					long elapsed = System.nanoTime() - started;
-					queryModelNode.setNextCallCountActual(queryModelNode.getNextCallCountActual() + 1);
-					queryModelNode.setNextTimeNanosActual(queryModelNode.getNextTimeNanosActual() + elapsed);
-					queryModelNode.setLongMetricActual(TelemetryMetricNames.OUTPUT_ROWS_ACTUAL,
-							Math.max(0, queryModelNode.getResultSizeActual()));
-					if (!firstRowSeen) {
-						firstRowSeen = true;
-						queryModelNode.setLongMetricActual(TelemetryMetricNames.FIRST_ROW_TIME_NANOS_ACTUAL,
-								Math.max(0L, System.nanoTime() - openedAtNanos));
-					}
-				}
+				telemetry.finishNext(started);
 			}
 		}
 
 		@Override
 		protected void handleClose() throws QueryEvaluationException {
+			QueryEvaluationException closeFailure = null;
 			try {
-				if (telemetryEnabled && iterator instanceof IndexReportingIterator sourceMetrics) {
-					queryModelNode.setSourceRowsScannedActual(Math.max(0, queryModelNode.getSourceRowsScannedActual()));
-					queryModelNode.setSourceRowsMatchedActual(Math.max(0, queryModelNode.getSourceRowsMatchedActual()));
-					queryModelNode
-							.setSourceRowsFilteredActual(Math.max(0, queryModelNode.getSourceRowsFilteredActual()));
-
+				super.handleClose();
+			} catch (QueryEvaluationException e) {
+				closeFailure = e;
+			}
+			try {
+				if (closeFailure != null) {
+					markAborted(closeFailure);
+				}
+				if (iterator instanceof IndexReportingIterator sourceMetrics) {
 					long sourceRowsScanned = sourceMetrics.getSourceRowsScannedActual();
-					if (sourceRowsScanned >= 0) {
-						queryModelNode.setSourceRowsScannedActual(
-								queryModelNode.getSourceRowsScannedActual() + sourceRowsScanned);
-					}
 					long sourceRowsMatched = sourceMetrics.getSourceRowsMatchedActual();
-					if (sourceRowsMatched >= 0) {
-						queryModelNode.setSourceRowsMatchedActual(
-								queryModelNode.getSourceRowsMatchedActual() + sourceRowsMatched);
-					}
 					long sourceRowsFiltered = sourceMetrics.getSourceRowsFilteredActual();
-					if (sourceRowsFiltered >= 0) {
-						queryModelNode.setSourceRowsFilteredActual(
-								queryModelNode.getSourceRowsFilteredActual() + sourceRowsFiltered);
+					telemetry.addSourceRows(sourceRowsScanned, sourceRowsMatched, sourceRowsFiltered);
+					telemetry.addDistinctCursorSkips(sourceMetrics.getDistinctCursorSkipCountActual(),
+							sourceMetrics.getDistinctCursorSkipSeekCountActual());
+				}
+				if (costFeedbackTracking) {
+					FeedbackWorkReportingIterator work = iterator instanceof FeedbackWorkReportingIterator reporting
+							? reporting
+							: null;
+					long sourceRows = work == null ? indexSourceRows(iterator) : work.feedbackSourceRows();
+					long randomSeeks = work == null ? -1L : work.feedbackRandomSeeks();
+					long expressionEvaluations = work == null ? -1L : work.feedbackExpressionEvaluations();
+					long hashBuildRows = work == null ? -1L : work.feedbackHashBuildRows();
+					long hashProbeRows = work == null ? -1L : work.feedbackHashProbeRows();
+					long pathExpansions = work == null ? -1L : work.feedbackPathExpansions();
+					long remoteCalls = work == null ? -1L : work.feedbackRemoteCalls();
+					long peakMemoryRows = work == null ? -1L : work.feedbackPeakMemoryRows();
+					long joinLeftRows = actualDelta(joinCount(queryModelNode, DEFERRED_JOIN_LEFT_ROWS,
+							queryModelNode.getJoinLeftBindingsConsumedActual()), joinLeftRowsBaseline);
+					long joinRightRows = actualDelta(joinCount(queryModelNode, DEFERRED_JOIN_RIGHT_ROWS,
+							queryModelNode.getJoinRightBindingsConsumedActual()), joinRightRowsBaseline);
+					double actualWorkRows = maxNonNegative(rowsProduced, sourceRows,
+							saturatingSum(joinLeftRows, joinRightRows), hashBuildRows, hashProbeRows,
+							pathExpansions, expressionEvaluations, remoteCalls);
+					EvaluationStatistics.TerminationClassification termination = failed
+							? EvaluationStatistics.TerminationClassification.FAILED
+							: cancelled ? EvaluationStatistics.TerminationClassification.CANCELLED
+									: sawTerminalFalse ? EvaluationStatistics.TerminationClassification.EXHAUSTED
+											: EvaluationStatistics.TerminationClassification.PARTIAL;
+					runtimeFeedbackTarget.close(rowsProduced, actualWorkRows,
+							sourceRows, randomSeeks, expressionEvaluations, hashBuildRows, hashProbeRows,
+							pathExpansions, remoteCalls, peakMemoryRows, termination);
+					if (work != null) {
+						runtimeFeedbackTarget.recordActualPhysicalImplementation(
+								work.feedbackPhysicalImplementationId());
+						runtimeFeedbackTarget.recordFilter(
+								work.feedbackFilterPassed(), work.feedbackFilterRejected());
+						runtimeFeedbackTarget.recordSemiAnti(
+								work.feedbackSemiAntiHits(), work.feedbackSemiAntiMisses(),
+								work.feedbackFirstMatchWork(), work.feedbackExhaustionWork(),
+								work.feedbackCacheHits(), work.feedbackCacheMisses(),
+								work.feedbackCacheEvictions(), work.feedbackDistinctBindingFeedback());
+						runtimeFeedbackTarget.recordMaterialization(work.feedbackMaterializationBuilds(),
+								work.feedbackMaterializationLookups(), work.feedbackMaterializationBuildWork(),
+								work.feedbackMaterializationLookupWork());
 					}
 				}
-				if (telemetryEnabled) {
-					incrementLongMetric(queryModelNode, TelemetryMetricNames.CLOSE_COUNT_ACTUAL);
-					queryModelNode.setLongMetricActual(TelemetryMetricNames.LAST_ROW_TIME_NANOS_ACTUAL,
-							Math.max(0L, System.nanoTime() - openedAtNanos));
-					QueryRuntimeTelemetryRegistry.record(queryModelNode);
+				long openToCloseNanos = telemetryEnabled
+						? Math.max(0L, telemetry.nanoTime() - openedAtNanos)
+						: 0L;
+				telemetry.closed(sawTerminalFalse, openToCloseNanos);
+				if (publishTelemetryOnClose) {
+					telemetry.publish();
+				}
+				if (runtimeFeedbackCompilation != null) {
+					runtimeFeedbackCompilation.publish(sawTerminalFalse && !failed && !cancelled);
 				}
 			} finally {
-				super.handleClose();
+				if (closeFailure != null) {
+					throw closeFailure;
+				}
 			}
+		}
+
+		/*
+		 * A throw out of hasNext()/next() (timeout, cancellation, evaluation error) leaves the cumulative counters
+		 * indistinguishable from genuine exhaustion, so the abort is flagged explicitly for feedback readers.
+		 */
+		private void markAborted(Throwable t) {
+			if (t instanceof QueryInterruptedException) {
+				cancelled = true;
+			} else {
+				failed = true;
+			}
+			if (t instanceof QueryInterruptedException) {
+				telemetry.cancelled();
+			} else {
+				telemetry.aborted();
+			}
+		}
+
+		private static long indexSourceRows(CloseableIteration<BindingSet> iteration) {
+			return iteration instanceof IndexReportingIterator metrics ? metrics.getSourceRowsScannedActual() : -1L;
+		}
+
+		private static long actualMetric(QueryModelNode node, String primary, String fallback) {
+			long value = primary == null ? -1L : node.getLongMetricActual(primary);
+			long fallbackValue = fallback == null ? -1L : node.getLongMetricActual(fallback);
+			return Math.max(value, fallbackValue);
+		}
+
+		private static long nonNegative(long value) {
+			return value < 0L ? 0L : value;
+		}
+
+		private static long actualDelta(long current, long baseline) {
+			if (current < 0L) {
+				return -1L;
+			}
+			return Math.max(0L, current - Math.max(0L, baseline));
+		}
+
+		private static long joinCount(QueryModelNode node, int counterIndex, long publishedCount) {
+			Object deferred = node.getQueryModelMetadata(DEFERRED_JOIN_COUNTERS_METADATA);
+			if (counterIndex < 0) {
+				return publishedCount;
+			}
+			long local;
+			if (deferred instanceof AtomicLongArray counters && counterIndex < counters.length()) {
+				local = Math.max(0L, counters.get(counterIndex));
+			} else if (deferred instanceof long[] counters && counterIndex < counters.length) {
+				local = Math.max(0L, counters[counterIndex]);
+			} else {
+				return publishedCount;
+			}
+			long published = Math.max(0L, publishedCount);
+			return published > Long.MAX_VALUE - local ? Long.MAX_VALUE : published + local;
+		}
+
+		private static long saturatingSum(long left, long right) {
+			if (left < 0L && right < 0L) {
+				return -1L;
+			}
+			left = Math.max(0L, left);
+			right = Math.max(0L, right);
+			return left > Long.MAX_VALUE - right ? Long.MAX_VALUE : left + right;
+		}
+
+		private static double maxNonNegative(long first, long second, long third, long fourth, long fifth,
+				long sixth, long seventh, long eighth) {
+			long maximum = Math.max(0L, first);
+			maximum = second < 0L ? maximum : Math.max(maximum, second);
+			maximum = third < 0L ? maximum : Math.max(maximum, third);
+			maximum = fourth < 0L ? maximum : Math.max(maximum, fourth);
+			maximum = fifth < 0L ? maximum : Math.max(maximum, fifth);
+			maximum = sixth < 0L ? maximum : Math.max(maximum, sixth);
+			maximum = seventh < 0L ? maximum : Math.max(maximum, seventh);
+			return eighth < 0L ? maximum : Math.max(maximum, eighth);
 		}
 
 		@Override
@@ -2467,6 +3546,18 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			return metrics == null ? -1 : metrics.getSourceRowsFilteredActual();
 		}
 
+		@Override
+		public long getDistinctCursorSkipCountActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getDistinctCursorSkipCountActual();
+		}
+
+		@Override
+		public long getDistinctCursorSkipSeekCountActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getDistinctCursorSkipSeekCountActual();
+		}
+
 		private IndexReportingIterator indexReporter() {
 			return iterator instanceof IndexReportingIterator ? (IndexReportingIterator) iterator : null;
 		}
@@ -2478,90 +3569,110 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	 */
 	private static class TimedIterator extends IterationWrapper<BindingSet> {
 
-		CloseableIteration<BindingSet> iterator;
-		QueryModelNode queryModelNode;
-		long elapsedNanos;
-		long openedAtNanos;
-		boolean firstRowSeen;
+		private final CloseableIteration<BindingSet> iterator;
+		private final NodeTelemetryAccumulator telemetry;
+		private final long openedAtNanos;
+		private final RuntimeFeedbackCompilation compilation;
+		private final boolean publishTelemetryOnClose;
+		private boolean firstRowSeen;
+		private boolean exhausted;
+		private boolean failed;
+		private boolean cancelled;
 
 		public TimedIterator(CloseableIteration<BindingSet> iterator,
 				QueryModelNode queryModelNode) {
+			this(iterator, queryModelNode, 0L);
+		}
+
+		public TimedIterator(CloseableIteration<BindingSet> iterator,
+				QueryModelNode queryModelNode, long initialElapsedNanos) {
+			this(iterator,
+					new NodeTelemetryAccumulator(queryModelNode, System::nanoTime, null, true, false),
+					System.nanoTime() - Math.max(0L, initialElapsedNanos), null, true);
+			telemetry.opened(initialElapsedNanos);
+		}
+
+		private TimedIterator(CloseableIteration<BindingSet> iterator,
+				NodeTelemetryAccumulator telemetry, long openedAtNanos,
+				RuntimeFeedbackCompilation compilation) {
+			this(iterator, telemetry, openedAtNanos, compilation, false);
+		}
+
+		private TimedIterator(CloseableIteration<BindingSet> iterator,
+				NodeTelemetryAccumulator telemetry, long openedAtNanos,
+				RuntimeFeedbackCompilation compilation, boolean publishTelemetryOnClose) {
 			super(iterator);
 			this.iterator = iterator;
-			this.queryModelNode = queryModelNode;
-			this.openedAtNanos = System.nanoTime();
-			if (telemetryActive(queryModelNode)) {
-				incrementLongMetric(queryModelNode, TelemetryMetricNames.OPEN_COUNT_ACTUAL);
-			}
+			this.telemetry = telemetry;
+			this.openedAtNanos = openedAtNanos;
+			this.compilation = compilation;
+			this.publishTelemetryOnClose = publishTelemetryOnClose;
 		}
 
 		@Override
 		public BindingSet next() throws QueryEvaluationException {
-			long started = System.nanoTime();
+			long started = telemetry.startNext();
 			try {
-				return iterator.next();
-			} finally {
-				long elapsed = System.nanoTime() - started;
-				elapsedNanos += elapsed;
-				queryModelNode.setNextCallCountActual(queryModelNode.getNextCallCountActual() + 1);
-				queryModelNode.setNextTimeNanosActual(queryModelNode.getNextTimeNanosActual() + elapsed);
-				if (!firstRowSeen && telemetryActive(queryModelNode)) {
+				BindingSet result = iterator.next();
+				if (!firstRowSeen) {
 					firstRowSeen = true;
-					long firstRowElapsedNanos = Math.max(0L, System.nanoTime() - openedAtNanos);
-					queryModelNode.setLongMetricActual(TelemetryMetricNames.FIRST_ROW_TIME_NANOS_ACTUAL,
-							firstRowElapsedNanos);
+					telemetry.firstRowObserved(telemetry.nanoTime() - openedAtNanos);
 				}
+				return result;
+			} catch (Throwable failure) {
+				markFailure(failure);
+				throw failure;
+			} finally {
+				telemetry.finishNext(started);
 			}
 		}
 
 		@Override
 		public boolean hasNext() throws QueryEvaluationException {
 			boolean hasNext = false;
-			long started = System.nanoTime();
+			long started = telemetry.startHasNext();
 			try {
 				hasNext = super.hasNext();
-				return hasNext;
-			} finally {
-				long elapsed = System.nanoTime() - started;
-				elapsedNanos += elapsed;
-				queryModelNode.setHasNextCallCountActual(queryModelNode.getHasNextCallCountActual() + 1);
-				queryModelNode.setHasNextTimeNanosActual(queryModelNode.getHasNextTimeNanosActual() + elapsed);
-				if (hasNext) {
-					queryModelNode.setHasNextTrueCountActual(queryModelNode.getHasNextTrueCountActual() + 1);
+				if (!hasNext) {
+					exhausted = true;
 				}
+				return hasNext;
+			} catch (Throwable failure) {
+				markFailure(failure);
+				throw failure;
+			} finally {
+				telemetry.finishHasNext(started, hasNext);
 			}
 		}
 
 		@Override
 		protected void handleClose() throws QueryEvaluationException {
 			try {
-				long totalTimeNanosActual = queryModelNode.getTotalTimeNanosActual();
-				queryModelNode.setTotalTimeNanosActual(totalTimeNanosActual + elapsedNanos);
-				if (telemetryActive(queryModelNode)) {
-					incrementLongMetric(queryModelNode, TelemetryMetricNames.CLOSE_COUNT_ACTUAL);
-					queryModelNode.setLongMetricActual(TelemetryMetricNames.LAST_ROW_TIME_NANOS_ACTUAL,
-							Math.max(0L, System.nanoTime() - openedAtNanos));
-				}
+				telemetry.closed(exhausted, telemetry.nanoTime() - openedAtNanos);
 				if (iterator instanceof IndexReportingIterator sourceMetrics) {
 					long sourceRowsScanned = sourceMetrics.getSourceRowsScannedActual();
-					if (sourceRowsScanned >= 0) {
-						queryModelNode.setSourceRowsScannedActual(
-								queryModelNode.getSourceRowsScannedActual() + sourceRowsScanned);
-					}
 					long sourceRowsMatched = sourceMetrics.getSourceRowsMatchedActual();
-					if (sourceRowsMatched >= 0) {
-						queryModelNode.setSourceRowsMatchedActual(
-								queryModelNode.getSourceRowsMatchedActual() + sourceRowsMatched);
-					}
 					long sourceRowsFiltered = sourceMetrics.getSourceRowsFilteredActual();
-					if (sourceRowsFiltered >= 0) {
-						queryModelNode.setSourceRowsFilteredActual(
-								queryModelNode.getSourceRowsFilteredActual() + sourceRowsFiltered);
-					}
+					telemetry.addSourceRows(sourceRowsScanned, sourceRowsMatched, sourceRowsFiltered);
+				}
+				if (publishTelemetryOnClose) {
+					telemetry.publish();
+				}
+				if (compilation != null) {
+					compilation.publish(exhausted && !failed && !cancelled);
 				}
 			} finally {
 				super.handleClose();
+			}
+		}
 
+		private void markFailure(Throwable failure) {
+			if (failure instanceof QueryInterruptedException) {
+				cancelled = true;
+				telemetry.cancelled();
+			} else {
+				failed = true;
+				telemetry.aborted();
 			}
 		}
 	}
@@ -2584,6 +3695,10 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	@Override
 	public boolean isTrackTime() {
 		return trackTime;
+	}
+
+	void setTelemetryNanoClockForTesting(LongSupplier telemetryNanoClock) {
+		this.telemetryNanoClock = Objects.requireNonNull(telemetryNanoClock);
 	}
 
 	/**

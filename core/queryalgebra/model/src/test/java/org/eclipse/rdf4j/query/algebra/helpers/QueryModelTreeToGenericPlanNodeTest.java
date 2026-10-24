@@ -39,6 +39,7 @@ import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -102,6 +103,49 @@ public class QueryModelTreeToGenericPlanNodeTest {
 
 		assertThat(root).isNotNull();
 		assertUnsetTelemetryRecursively(root);
+	}
+
+	@Test
+	public void converterIncludesLegacyEstimatesWithoutPlannerUsage() {
+		Join tupleExpr = new Join(
+				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
+				new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")));
+		tupleExpr.setCostEstimate(12.0);
+		tupleExpr.setResultSizeEstimate(34.0);
+
+		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(tupleExpr, null,
+				Explanation.Level.Optimized);
+		tupleExpr.visit(converter);
+		GenericPlanNode root = converter.getGenericPlanNode();
+
+		assertThat(root.getCostEstimate()).isEqualTo(12.0d);
+		assertThat(root.getResultSizeEstimate()).isEqualTo(34.0d);
+		assertThat(root.toString()).contains("costEstimate=12", "resultSizeEstimate=34");
+	}
+
+	@Test
+	public void printerRendersOnlyPlannerUsedCardinalityAndCost() {
+		Join tupleExpr = new Join(
+				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
+				new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")));
+		tupleExpr.setCostEstimate(12.0);
+		tupleExpr.setResultSizeEstimate(34.0);
+		tupleExpr.setStringMetricPlanned("plannedEstimateUsage", "join_order_candidate");
+		tupleExpr.setStringMetricPlanned("plannedEstimateDecisionId", "join-order:abc123");
+		tupleExpr.setStringMetricPlanned("plannedCostShape", "vector");
+		tupleExpr.setDoubleMetricPlanned("plannedCardinalityRows", 34.0);
+		tupleExpr.setDoubleMetricPlanned("plannedCostWorkRows", 12.0);
+		tupleExpr.setDoubleMetricPlanned("plannedObjectiveScore", 13.0);
+
+		String actual = QueryModelTreePrinter.printTree(tupleExpr);
+
+		assertThat(actual).doesNotContain("costEstimate=", "resultSizeEstimate=");
+		assertThat(actual).contains("plannedEstimateUsage=join_order_candidate");
+		assertThat(actual).contains("plannedEstimateDecisionId=join-order:abc123");
+		assertThat(actual).contains("plannedCardinalityRows=34");
+		assertThat(actual).contains("plannedCostShape=vector");
+		assertThat(actual).contains("plannedCostWorkRows=12");
+		assertThat(actual).contains("plannedObjectiveScore=13");
 	}
 
 	@Test
@@ -208,6 +252,24 @@ public class QueryModelTreeToGenericPlanNodeTest {
 		assertThat(root.getStringMetricsActual()).isNull();
 		assertThat(statementPattern(root, 0).getPlans().get(0).getStringMetricsActual())
 				.containsEntry("bindingState", "unbound");
+		assertThat(statementPattern(root, 1).getPlans().get(0).getStringMetricsActual())
+				.containsEntry("bindingState", "bound");
+		assertThat(statementPattern(root, 1).getPlans().get(1).getStringMetricsActual())
+				.containsEntry("bindingState", "unbound");
+	}
+
+	@Test
+	public void annotatesBoundStatementPatternJoinRightSideVarsAsBound() {
+		Join tupleExpr = new Join(
+				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
+				new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")));
+		tupleExpr.setAlgorithm("BoundStatementPatternJoinIteration");
+
+		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(tupleExpr);
+		tupleExpr.visit(converter);
+		GenericPlanNode root = converter.getGenericPlanNode();
+
+		assertThat(root.getStringMetricsActual()).isNull();
 		assertThat(statementPattern(root, 1).getPlans().get(0).getStringMetricsActual())
 				.containsEntry("bindingState", "bound");
 		assertThat(statementPattern(root, 1).getPlans().get(1).getStringMetricsActual())
@@ -518,8 +580,8 @@ public class QueryModelTreeToGenericPlanNodeTest {
 		assertThat(telemetry.getSourceRowsScannedActual()).isEqualTo(13L);
 		assertThat(rightSubjectVar(telemetry).getStringMetricsActual())
 				.containsEntry(TelemetryMetricNames.BINDING_STATE, "bound");
-		assertThat(telemetry.toString()).contains("sampleCountActual=");
-		assertThat(telemetry.toString()).contains("varianceActual=");
+		assertThat(telemetry.toString()).doesNotContain("sampleCountActual=");
+		assertThat(telemetry.toString()).doesNotContain("varianceActual=");
 	}
 
 	@Test
@@ -530,6 +592,7 @@ public class QueryModelTreeToGenericPlanNodeTest {
 		join.setRuntimeTelemetryEnabled(true);
 		join.setSourceRowsScannedActual(99);
 		join.setLongMetricActual("optimizer.candidateCount", 3L);
+		join.setLongMetricActual(TelemetryMetricNames.EXHAUSTED_CLOSE_COUNT_ACTUAL, 1L);
 		join.setDoubleMetricActual("optimizer.score", 12.5);
 		join.setStringMetricActual("optimizer.strategy", "greedy");
 		join.setStringMetricActual("optimizer.thresholds", "DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT=8");
@@ -541,7 +604,9 @@ public class QueryModelTreeToGenericPlanNodeTest {
 
 		GenericPlanNode root = converter.getGenericPlanNode();
 		assertThat(root.getSourceRowsScannedActual()).isNull();
-		assertThat(root.getLongMetricsActual()).containsEntry("optimizer.candidateCount", 3L);
+		assertThat(root.getLongMetricsActual())
+				.containsEntry("optimizer.candidateCount", 3L)
+				.doesNotContainKey(TelemetryMetricNames.EXHAUSTED_CLOSE_COUNT_ACTUAL);
 		assertThat(root.getDoubleMetricsActual()).containsEntry("optimizer.score", 12.5);
 		assertThat(root.getStringMetricsActual())
 				.containsEntry("optimizer.strategy", "greedy")
@@ -566,38 +631,77 @@ public class QueryModelTreeToGenericPlanNodeTest {
 		return statementPattern(join, 1).getPlans().get(0);
 	}
 
-	private static GenericPlanNode explain(TupleExpr tupleExpr) {
-		return explain(tupleExpr, Set.of());
+	// REINFORCE: planner-estimate usage recorded on a nested node (not the root) keeps estimate-stability metrics
+	// enabled for the whole plan at telemetry level, and estimates are copied for every node regardless of usage
+	@Test
+	public void plannerUsageOnNestedNodeKeepsEstimateStabilityMetricsAtTelemetryLevel() {
+		Join join = joinWithTelemetry();
+		join.getRightArg()
+				.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE, "join_order_candidate");
+
+		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(join, null,
+				Explanation.Level.Telemetry);
+		join.visit(converter);
+		GenericPlanNode root = converter.getGenericPlanNode();
+
+		// both children carry a positive estimate and a positive actual, so two q-error samples are expected
+		assertThat(root.getPlans()).hasSize(2);
+		assertThat(root.getPlans().get(0).getResultSizeEstimate()).isEqualTo(2.0d);
+		assertThat(root.getPlans().get(1).getResultSizeEstimate()).isEqualTo(8.0d);
+		assertThat(root.toString()).contains("sampleCountActual=2", "varianceActual=", "stddevActual=",
+				"confidenceScoreActual=");
 	}
 
-	private static GenericPlanNode explain(TupleExpr tupleExpr, Set<String> incomingBindingNames) {
-		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(tupleExpr,
-				incomingBindingNames);
-		tupleExpr.visit(converter);
-		return converter.getGenericPlanNode();
+	// REINFORCE: planner-estimate usage recorded only on the QueryRoot wrapper is honoured as well
+	@Test
+	public void plannerUsageOnQueryRootWrapperKeepsEstimateStabilityMetrics() {
+		Join join = joinWithTelemetry();
+		QueryRoot wrapper = new QueryRoot(join);
+		wrapper.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE, "join_order_candidate");
+
+		GenericPlanNode root = new QueryModelTreeToGenericPlanNode(wrapper, null, Explanation.Level.Telemetry)
+				.getGenericPlanNode();
+
+		assertThat(root.toString()).contains("sampleCountActual=2");
+
+		Join untouched = joinWithTelemetry();
+		GenericPlanNode untouchedRoot = new QueryModelTreeToGenericPlanNode(new QueryRoot(untouched), null,
+				Explanation.Level.Telemetry).getGenericPlanNode();
+		assertThat(untouchedRoot.toString()).doesNotContain("sampleCountActual=");
 	}
 
-	private static BindingSetAssignment bindingSetAssignment(BindingSet... bindingSets) {
-		BindingSetAssignment assignment = new BindingSetAssignment();
-		assignment.setBindingSets(List.of(bindingSets));
-		return assignment;
+	// REINFORCE: the explain-recomputed usage marker does not count as planner usage
+	@Test
+	public void explainRecomputedUsageDoesNotEnableEstimateStabilityMetrics() {
+		Join join = joinWithTelemetry();
+		join.getRightArg()
+				.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE,
+						TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_EXPLAIN_RECOMPUTED);
+		join.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE, "");
+
+		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(join, null,
+				Explanation.Level.Telemetry);
+		join.visit(converter);
+		GenericPlanNode root = converter.getGenericPlanNode();
+
+		assertThat(root.toString()).doesNotContain("sampleCountActual=", "varianceActual=");
 	}
 
-	private static BindingSet bindingSet(String name) {
-		MapBindingSet bindingSet = new MapBindingSet(1);
-		bindingSet.addBinding(name, SimpleValueFactory.getInstance().createIRI("urn:" + name));
-		return bindingSet;
-	}
+	// REINFORCE: a model node whose estimates were never set (-1) is reported as unknown, not as -1
+	@Test
+	public void unsetModelEstimatesRemainUnknownInPlanNode() {
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		Join join = new Join(pattern, new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")));
 
-	private static StatementPattern pattern(String subject, String predicate, String object) {
-		return new StatementPattern(Var.of(subject), Var.of(predicate), Var.of(object));
-	}
+		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(join, null,
+				Explanation.Level.Optimized);
+		join.visit(converter);
+		GenericPlanNode root = converter.getGenericPlanNode();
 
-	private static void assertBindingState(GenericPlanNode root, String name, String state) {
-		GenericPlanNode variable = findFirstPlan(root,
-				node -> node.getType().startsWith("Var") && node.getType().contains("name=" + name));
-		assertThat(variable).isNotNull();
-		assertThat(variable.getStringMetricActual(TelemetryMetricNames.BINDING_STATE)).isEqualTo(state);
+		assertThat(root.getCostEstimate()).isNull();
+		assertThat(root.getResultSizeEstimate()).isNull();
+		assertThat(root.getPlans().get(0).getCostEstimate()).isNull();
+		assertThat(root.toString()).doesNotContain("costEstimate=", "resultSizeEstimate=");
 	}
 
 	private static GenericPlanNode convertWithLevel(Explanation.Level level) {
@@ -704,5 +808,39 @@ public class QueryModelTreeToGenericPlanNodeTest {
 				assertUnsetTelemetryRecursively(child);
 			}
 		}
+	}
+
+	private static GenericPlanNode explain(TupleExpr tupleExpr) {
+		return explain(tupleExpr, Set.of());
+	}
+
+	private static GenericPlanNode explain(TupleExpr tupleExpr, Set<String> incomingBindingNames) {
+		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(tupleExpr,
+				incomingBindingNames);
+		tupleExpr.visit(converter);
+		return converter.getGenericPlanNode();
+	}
+
+	private static BindingSetAssignment bindingSetAssignment(BindingSet... bindingSets) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(List.of(bindingSets));
+		return assignment;
+	}
+
+	private static BindingSet bindingSet(String name) {
+		MapBindingSet bindingSet = new MapBindingSet(1);
+		bindingSet.addBinding(name, SimpleValueFactory.getInstance().createIRI("urn:" + name));
+		return bindingSet;
+	}
+
+	private static StatementPattern pattern(String subject, String predicate, String object) {
+		return new StatementPattern(Var.of(subject), Var.of(predicate), Var.of(object));
+	}
+
+	private static void assertBindingState(GenericPlanNode root, String name, String state) {
+		GenericPlanNode variable = findFirstPlan(root,
+				node -> node.getType().startsWith("Var") && node.getType().contains("name=" + name));
+		assertThat(variable).isNotNull();
+		assertThat(variable.getStringMetricActual(TelemetryMetricNames.BINDING_STATE)).isEqualTo(state);
 	}
 }

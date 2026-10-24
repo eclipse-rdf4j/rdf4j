@@ -35,6 +35,10 @@ JVM_ARGS=(
   "-Dlogging.config=${LOGGING_CONFIG}"
 )
 
+if "${JAVA_CMD}" --list-modules 2>/dev/null | grep -q '^jdk\.incubator\.vector@'; then
+  JVM_ARGS+=("--add-modules=jdk.incubator.vector")
+fi
+
 if [[ -n "${RDF4J_JAVA_OPTS:-}" ]]; then
   # shellcheck disable=SC2206
   EXTRA_OPTS=(${RDF4J_JAVA_OPTS})

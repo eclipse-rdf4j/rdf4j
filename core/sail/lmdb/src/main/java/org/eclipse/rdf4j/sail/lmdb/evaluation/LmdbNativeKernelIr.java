@@ -373,6 +373,43 @@ final class LmdbNativeKernelIr {
 	}
 
 	/**
+	 * Input completion can certify hook inputs only in a fully draining relational pipeline. Witness, cached-plan,
+	 * factor, hash, path and nested branch kernels retain execution but require their own per-input proof.
+	 */
+	static boolean filterInputCompletionSupported(Kernel kernel) {
+		if (!(kernel.terminal instanceof Emit || kernel.terminal instanceof Aggregate)) {
+			return false;
+		}
+		for (Node node : kernel.pipeline) {
+			if (node instanceof EnumeratePredicates predicates
+					&& predicates.demand != LmdbWildcardPhysicalDemand.Demand.PAYLOAD
+					|| node instanceof EnumerateWildcard enumeration
+							&& enumeration.demand != LmdbWildcardPhysicalDemand.Demand.PAYLOAD
+					|| node instanceof SipDomainWildcard domain
+							&& domain.demand != LmdbWildcardPhysicalDemand.Demand.PAYLOAD
+					|| node instanceof SipKeyWildcard key
+							&& key.demand != LmdbWildcardPhysicalDemand.Demand.PAYLOAD) {
+				return false;
+			}
+			if (!(node instanceof EnumerateAdjKeys || node instanceof ScanQuad
+					|| node instanceof EnumerateTerms || node instanceof EnumerateDomain
+					|| node instanceof EnumerateNodeDomainIntersection || node instanceof EnumerateEntry
+					|| node instanceof SipDomainProbe || node instanceof SipKeyProbe
+					|| node instanceof SipDomainWildcard || node instanceof SipKeyWildcard
+					|| node instanceof Probe || node instanceof EnumeratePredicates
+					|| node instanceof EnumerateWildcard || node instanceof ProbeVariable || node instanceof ProbeClose
+					|| node instanceof Intersect || node instanceof FilterResidual || node instanceof FilterCompareId
+					|| node instanceof FilterEntryCompatible || node instanceof FilterInConstants
+					|| node instanceof FilterRangeUnsigned || node instanceof FilterDateCompare
+					|| node instanceof FilterFragmentCompare || node instanceof FilterValue
+					|| node instanceof BindAlias || node instanceof BindHook)) {
+				return false;
+			}
+		}
+		return kernel.aggregateProjections == null && kernel.factorCountGuards == null;
+	}
+
+	/**
 	 * Complete hash-state layout, shared by both execution tiers. Scratch widths are maxima: sibling regions may
 	 * rebuild the same table ID with different widths, but must never resize scratch inside a row loop.
 	 */

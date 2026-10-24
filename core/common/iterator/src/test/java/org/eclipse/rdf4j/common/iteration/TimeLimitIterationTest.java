@@ -17,6 +17,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -28,16 +30,148 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
 
-/**
- * When the time limit fires, {@link TimeLimitIteration} closes the wrapped iteration from the timer thread, while the
- * evaluating thread may still be inside it. Whatever the closed iteration then throws is a consequence of the time
- * limit, and is reported as the time limit.
- */
+@Execution(ExecutionMode.SAME_THREAD)
 class TimeLimitIterationTest {
+
+	@Test
+	void closingLastIterationStopsTimerThread() throws InterruptedException {
+		TimeLimitIteration<Object> iteration = timedIteration(TimeUnit.DAYS.toMillis(1));
+		Thread timerThread = findTimerThread();
+
+		assertNotNull(timerThread);
+		iteration.close();
+		timerThread.join(TimeUnit.SECONDS.toMillis(1));
+
+		assertFalse(timerThread.isAlive());
+	}
+
+	@Test
+	void closingOneOfTwoIterationsKeepsTimerUntilLastClose() throws InterruptedException {
+		TimeLimitIteration<Object> first = timedIteration(TimeUnit.DAYS.toMillis(1));
+		TimeLimitIteration<Object> second = timedIteration(TimeUnit.DAYS.toMillis(1));
+		Thread timerThread = findTimerThread();
+
+		assertNotNull(timerThread);
+		first.close();
+		assertTrue(timerThread.isAlive());
+
+		second.close();
+		timerThread.join(TimeUnit.SECONDS.toMillis(1));
+		assertFalse(timerThread.isAlive());
+	}
+
+	@Test
+	void deadlineStillFiresAfterTimerRecreation() throws InterruptedException {
+		TimeLimitIteration<Object> first = timedIteration(TimeUnit.DAYS.toMillis(1));
+		Thread firstTimerThread = findTimerThread();
+
+		assertNotNull(firstTimerThread);
+		first.close();
+		firstTimerThread.join(TimeUnit.SECONDS.toMillis(1));
+		assertFalse(firstTimerThread.isAlive());
+
+		CloseTrackingIteration delegate = new CloseTrackingIteration();
+		TimeLimitIteration<Object> second = timedIteration(delegate, TimeUnit.MILLISECONDS.toMillis(100));
+		Thread secondTimerThread = findTimerThread();
+
+		assertNotNull(secondTimerThread);
+		assertNotSame(firstTimerThread, secondTimerThread);
+		assertTrue(delegate.closed.await(2, TimeUnit.SECONDS));
+		secondTimerThread.join(TimeUnit.SECONDS.toMillis(1));
+		assertFalse(secondTimerThread.isAlive());
+		assertEquals(1, delegate.closeCount.get());
+		second.close();
+	}
+
+	@Test
+	void timeoutReleasesOnlyItsOwnSchedulerLease() throws InterruptedException {
+		TimeLimitIteration<Object> guard = timedIteration(TimeUnit.DAYS.toMillis(1));
+		Thread timerThread = findTimerThread();
+
+		try {
+			CloseTrackingIteration delegate = new CloseTrackingIteration();
+			timedIteration(delegate, TimeUnit.MILLISECONDS.toMillis(100));
+
+			assertNotNull(timerThread);
+			assertTrue(delegate.closed.await(2, TimeUnit.SECONDS));
+			awaitTimerWaitingOrStopped(timerThread);
+			assertTrue(timerThread.isAlive());
+			assertEquals(1, delegate.closeCount.get());
+		} finally {
+			guard.close();
+		}
+
+		timerThread.join(TimeUnit.SECONDS.toMillis(1));
+		assertFalse(timerThread.isAlive());
+	}
+
+	private static TimeLimitIteration<Object> timedIteration(long timeLimitMillis) {
+		return timedIteration(new EmptyIteration<>(), timeLimitMillis);
+	}
+
+	private static TimeLimitIteration<Object> timedIteration(CloseableIteration<Object> delegate,
+			long timeLimitMillis) {
+		return new TimeLimitIteration<>(delegate, timeLimitMillis) {
+
+			@Override
+			protected void throwInterruptedException() {
+				throw new AssertionError("unexpected timeout");
+			}
+		};
+	}
+
+	private static Thread findTimerThread() {
+		return Thread.getAllStackTraces()
+				.keySet()
+				.stream()
+				.filter(Thread::isAlive)
+				.filter(thread -> thread.getName().equals("TimeLimitIteration"))
+				.findFirst()
+				.orElse(null);
+	}
+
+	private static void awaitTimerWaitingOrStopped(Thread timerThread) {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+		while (timerThread.isAlive()
+				&& timerThread.getState() != Thread.State.TIMED_WAITING
+				&& System.nanoTime() < deadline) {
+			Thread.onSpinWait();
+		}
+	}
+
+	private static final class CloseTrackingIteration implements CloseableIteration<Object> {
+
+		private final CountDownLatch closed = new CountDownLatch(1);
+		private final AtomicInteger closeCount = new AtomicInteger();
+
+		@Override
+		public void close() {
+			closeCount.incrementAndGet();
+			closed.countDown();
+		}
+
+		@Override
+		public boolean hasNext() {
+			return false;
+		}
+
+		@Override
+		public Object next() {
+			throw new NoSuchElementException();
+		}
+
+		@Override
+		public void remove() {
+			throw new IllegalStateException();
+		}
+	}
 
 	private static final long FUTURE_TIMEOUT_SECONDS = 5L;
 	private static final long BLOCKING_OPERATION_TIMEOUT_SECONDS = 30L;
@@ -536,10 +670,10 @@ class TimeLimitIterationTest {
 	@Test
 	void aFailureBeforeTheTimeLimitIsReportedAsItself() {
 		CloseableIteration<String> source = new FailingWhenClosedIteration(new AtomicReference<>(), true);
-		TimeLimitIteration<String> limited = new ClosingTestTimeLimitIteration(source);
-
-		assertThatThrownBy(limited::hasNext).isInstanceOf(IllegalStateException.class)
-				.hasMessage("closed while computing the next element");
+		try (TimeLimitIteration<String> limited = new ClosingTestTimeLimitIteration(source)) {
+			assertThatThrownBy(limited::hasNext).isInstanceOf(IllegalStateException.class)
+					.hasMessage("closed while computing the next element");
+		}
 	}
 
 	@Test
@@ -644,4 +778,5 @@ class TimeLimitIterationTest {
 			// nothing to release
 		}
 	}
+
 }

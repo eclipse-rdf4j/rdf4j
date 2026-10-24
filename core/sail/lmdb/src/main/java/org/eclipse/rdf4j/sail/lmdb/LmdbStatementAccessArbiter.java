@@ -282,6 +282,10 @@ final class LmdbStatementAccessArbiter {
 		private boolean exhausted;
 		private AdjacencyAccessObserver observer;
 		private boolean adjacency;
+		private String closedIndexName = "";
+		private long closedScanned = -1L;
+		private long closedMatched = -1L;
+		private long closedFiltered = -1L;
 
 		private MeasuredRecordIterator() {
 		}
@@ -306,6 +310,10 @@ final class LmdbStatementAccessArbiter {
 			this.exhausted = false;
 			this.observer = observer;
 			this.adjacency = adjacency;
+			this.closedIndexName = "";
+			this.closedScanned = -1L;
+			this.closedMatched = -1L;
+			this.closedFiltered = -1L;
 		}
 
 		@Override
@@ -360,22 +368,22 @@ final class LmdbStatementAccessArbiter {
 
 		@Override
 		public String getIndexName() {
-			return delegate == null ? "" : delegate.getIndexName();
+			return delegate == null ? closedIndexName : delegate.getIndexName();
 		}
 
 		@Override
 		public long getSourceRowsScannedActual() {
-			return delegate == null ? -1L : delegate.getSourceRowsScannedActual();
+			return delegate == null ? closedScanned : delegate.getSourceRowsScannedActual();
 		}
 
 		@Override
 		public long getSourceRowsMatchedActual() {
-			return delegate == null ? -1L : delegate.getSourceRowsMatchedActual();
+			return delegate == null ? closedMatched : delegate.getSourceRowsMatchedActual();
 		}
 
 		@Override
 		public long getSourceRowsFilteredActual() {
-			return delegate == null ? -1L : delegate.getSourceRowsFilteredActual();
+			return delegate == null ? closedFiltered : delegate.getSourceRowsFilteredActual();
 		}
 
 		@Override
@@ -385,34 +393,92 @@ final class LmdbStatementAccessArbiter {
 			if (owned == null) {
 				return;
 			}
-			long scanned = owned.getSourceRowsScannedActual();
-			long matched = owned.getSourceRowsMatchedActual();
-			long filtered = owned.getSourceRowsFilteredActual();
-			long started = System.nanoTime();
+			AdjacencyAccessObserver completedObserver = observer;
+			observer = null;
+			Throwable failure = null;
+			long scanned = -1L;
+			long matched = -1L;
+			long filtered = -1L;
 			try {
-				owned.close();
-			} finally {
-				activeNanos += System.nanoTime() - started;
-				long actualScanned = scanned >= 0L ? scanned : rows;
-				long actualMatched = matched >= 0L ? matched : rows;
-				long actualFiltered = filtered >= 0L ? filtered : Math.max(0L, actualScanned - actualMatched);
-				if (exhausted) {
-					// Calibrate the same work units used by choose(). Actual scan counts remain telemetry: using
-					// them here would penalize a selective index whenever the shared cardinality estimate is high,
-					// while an iterator without scan telemetry would be calibrated against the estimate instead.
-					double calibrationWork = Double.isFinite(estimatedWork) && estimatedWork > 0D
-							? Math.max(1D, estimatedWork)
-							: Math.max(1L, actualScanned);
-					evidence.completed(regime, variantKey, activeNanos, calibrationWork);
-				} else {
-					evidence.censored(regime, variantKey);
+				try {
+					closedIndexName = owned.getIndexName();
+				} catch (RuntimeException | Error metadataFailure) {
+					failure = retainCloseFailure(failure, metadataFailure);
 				}
-				AdjacencyAccessObserver completedObserver = observer;
-				observer = null;
-				if (completedObserver != null) {
-					completedObserver.measurement(adjacency, actualScanned, actualMatched, actualFiltered, !exhausted);
+				try {
+					scanned = owned.getSourceRowsScannedActual();
+					closedScanned = scanned;
+				} catch (RuntimeException | Error metadataFailure) {
+					failure = retainCloseFailure(failure, metadataFailure);
+				}
+				try {
+					matched = owned.getSourceRowsMatchedActual();
+					closedMatched = matched;
+				} catch (RuntimeException | Error metadataFailure) {
+					failure = retainCloseFailure(failure, metadataFailure);
+				}
+				try {
+					filtered = owned.getSourceRowsFilteredActual();
+					closedFiltered = filtered;
+				} catch (RuntimeException | Error metadataFailure) {
+					failure = retainCloseFailure(failure, metadataFailure);
+				}
+			} finally {
+				// Metadata is optional reporting; its failure cannot abandon the delegate this call owns.
+				long started = System.nanoTime();
+				try {
+					owned.close();
+				} catch (RuntimeException | Error closeFailure) {
+					failure = retainCloseFailure(failure, closeFailure);
+				} finally {
+					activeNanos += System.nanoTime() - started;
 				}
 			}
+			long actualScanned = scanned >= 0L ? scanned : rows;
+			long actualMatched = matched >= 0L ? matched : rows;
+			long actualFiltered = filtered >= 0L ? filtered : Math.max(0L, actualScanned - actualMatched);
+			try {
+				try {
+					if (exhausted) {
+						// Calibrate the same work units used by choose(). Actual scan counts remain telemetry: using
+						// them here would penalize a selective index whenever the shared cardinality estimate is high,
+						// while an iterator without scan telemetry would be calibrated against the estimate instead.
+						double calibrationWork = Double.isFinite(estimatedWork) && estimatedWork > 0D
+								? Math.max(1D, estimatedWork)
+								: Math.max(1L, actualScanned);
+						evidence.completed(regime, variantKey, activeNanos, calibrationWork);
+					} else {
+						evidence.censored(regime, variantKey);
+					}
+				} catch (RuntimeException | Error evidenceFailure) {
+					failure = retainCloseFailure(failure, evidenceFailure);
+				}
+			} finally {
+				if (completedObserver != null) {
+					try {
+						completedObserver.measurement(adjacency, actualScanned, actualMatched, actualFiltered,
+								!exhausted);
+					} catch (RuntimeException | Error observerFailure) {
+						failure = retainCloseFailure(failure, observerFailure);
+					}
+				}
+			}
+			if (failure instanceof RuntimeException exception) {
+				throw exception;
+			}
+			if (failure instanceof Error error) {
+				throw error;
+			}
+		}
+
+		private static Throwable retainCloseFailure(Throwable primary, Throwable next) {
+			if (primary == null) {
+				return next;
+			}
+			if (primary != next) {
+				primary.addSuppressed(next);
+			}
+			return primary;
 		}
 	}
 }

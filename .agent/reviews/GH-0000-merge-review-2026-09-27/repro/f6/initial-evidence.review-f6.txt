@@ -1,0 +1,52 @@
+Routine C (review spike, no production changes). Workspace review-f6, snapshot 1255539738.
+
+== .mvnf/workspaces/review-f6/logs/20260927T005302.143793Z-55554-91386a39/verify.log
+[review-f6] disjoint-heavy-hitters plane=1 shared=1x70 worstQ=8.623238849035848 excluded=0 collapsed=0
+[review-f6] hidden-hub exact=160000 forward=FrontierJoinEstimate[pointRows=0.0, lowerRows=0.0, upperRows=8.0032E8, confidence=0.0, source=frontier-v2-omni-bridge, fallbackReason=NONE] reverse=FrontierJoinEstimate[pointRows=164859.81308411216, lowerRows=0.0, upperRows=8.0032E8, confidence=0.0, source=frontier-v2-omni-bridge, fallbackReason=NONE]
+[review-f6] disjoint-heavy-hitters plane=3 shared=3x40 worstQ=5.357442365066886 excluded=0 collapsed=0
+[review-f6] disjoint-heavy-hitters plane=3 shared=60x4 worstQ=2.747737875920352 excluded=0 collapsed=0
+[ERROR] Tests run: 4, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 5.784 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.frontier.FrontierEstimationReviewReproTest
+[ERROR] org.eclipse.rdf4j.sail.lmdb.frontier.FrontierEstimationReviewReproTest.hiddenHubBridgeIsNotEstimatedAsEmpty(Path) -- Time elapsed: 2.027 s <<< FAILURE!
+[ERROR]   FrontierEstimationReviewReproTest.hiddenHubBridgeIsNotEstimatedAsEmpty:64 p7.o = p8.s forward estimate must stay within q-error 16 of exact=160000 but was FrontierJoinEstimate[pointRows=0.0, lowerRows=0.0, upperRows=8.0032E8, confidence=0.0, source=frontier-v2-omni-bridge, fallbackReason=NONE] (reverse orientation gives FrontierJoinEstimate[pointRows=164859.81308411216, lowerRows=0.0, upperRows=8.0032E8, confidence=0.0, source=frontier-v2-omni-bridge, fallbackReason=NONE]) ==> expected: <true> but was: <false>
+
+== .mvnf/workspaces/review-f6/logs/20260927T005406.771297Z-68806-19675289/verify.log
+[review-f6] AUTHORITATIVE/no-generation candidates=[] exact=false
+[review-f6] OFF candidates=[STORAGE_SUMMARY:250000.0] exact=true | SHADOW candidates=[] exact=false
+[ERROR] Tests run: 2, Failures: 2, Errors: 0, Skipped: 0, Time elapsed: 0.519 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.LmdbStorageEvidenceReviewReproTest
+[ERROR] org.eclipse.rdf4j.sail.lmdb.LmdbStorageEvidenceReviewReproTest.authoritativeWithoutGenerationStillOffersCheapStorageEvidence -- Time elapsed: 0.484 s <<< FAILURE!
+[ERROR] org.eclipse.rdf4j.sail.lmdb.LmdbStorageEvidenceReviewReproTest.shadowModeKeepsTheSameStorageEvidenceAsOffMode -- Time elapsed: 0.013 s <<< FAILURE!
+[ERROR]   LmdbStorageEvidenceReviewReproTest.authoritativeWithoutGenerationStillOffersCheapStorageEvidence:108 with no Frontier generation, the 250000.0-row storage count must remain available instead of leaving the planner with no evidence ==> expected: <true> but was: <false>
+[ERROR]   LmdbStorageEvidenceReviewReproTest.shadowModeKeepsTheSameStorageEvidenceAsOffMode:82 SHADOW must not remove planner evidence that OFF mode provides ==> expected: <[STORAGE_SUMMARY:250000.0]> but was: <[]>
+
+== .mvnf/workspaces/review-f6/logs/20260927T005458.876630Z-69305-b1ac5d83/verify.log
+[review-f6] delta-envelope batches=2 stalled=true recoveredAfterWritesStopped=false final covered=4000 latest=8000 fallback=CONFIDENCE_TOO_WIDE lastFailure=Frontier signed-delta publication exceeds its persistent envelope leaf(grow)=FrontierLeafEstimate[pointRows=8000.0, lowerRows=8000.0, upperRows=8000.0, confidence=1.0, source=frontier-v2-base-plus-memory-tail, fallbackReason=NONE]
+  batch=0 latest=4000 covered=4000 gen=7 baseEpoch=6 disk={EXACT_AND_LINEAR=27618, DELTAS_AND_MANIFESTS=707110, LEAF_WITNESSES=4784, ADAPTIVE_REFINEMENTS=0, JOIN_SAMPLES=16384} manifests=2 lastFailure=
+  batch=1 latest=8000 covered=4000 gen=7 baseEpoch=6 disk={EXACT_AND_LINEAR=27618, DELTAS_AND_MANIFESTS=707110, LEAF_WITNESSES=4784, ADAPTIVE_REFINEMENTS=0, JOIN_SAMPLES=16384} manifests=2 lastFailure=Frontier signed-delta publication exceeds its persistent envelope
+[review-f6] after 12 single-statement commits: manifests=13 shardFiles=150 directoryBytes=252933 liveGenerationBytes=79171
+[review-f6] starvation commits=48 bigSequence=20000 covered=0 fallback=CONFIDENCE_TOO_WIDE lagMillis=12229 phase=IDLE leaf(big, exact=20000)=FrontierLeafEstimate[pointRows=1.0, lowerRows=0.0, upperRows=1.7976931348623157E308, confidence=0.0, source=frontier-v2-unavailable, fallbackReason=CONFIDENCE_TOO_WIDE]
+[ERROR] Tests run: 3, Failures: 3, Errors: 0, Skipped: 0, Time elapsed: 68.53 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.LmdbFrontierLifecycleReviewReproTest
+[ERROR] org.eclipse.rdf4j.sail.lmdb.LmdbFrontierLifecycleReviewReproTest.exhaustedDeltaEnvelopeEscalatesToABaseRebuild(Path) -- Time elapsed: 38.86 s <<< FAILURE!
+[ERROR] org.eclipse.rdf4j.sail.lmdb.LmdbFrontierLifecycleReviewReproTest.supersededManifestsAreRetired(Path) -- Time elapsed: 15.77 s <<< FAILURE!
+[ERROR] org.eclipse.rdf4j.sail.lmdb.LmdbFrontierLifecycleReviewReproTest.steadySmallCommitsDoNotStarveARequiredBaseRebuild(Path) -- Time elapsed: 13.89 s <<< FAILURE!
+[ERROR]   LmdbFrontierLifecycleReviewReproTest.exhaustedDeltaEnvelopeEscalatesToABaseRebuild:139 after writes stop, Frontier must catch up (base rebuild) instead of retrying a delta that can never fit; lastFailure=Frontier signed-delta publication exceeds its persistent envelope ==> expected: <true> but was: <false>
+[ERROR]   LmdbFrontierLifecycleReviewReproTest.steadySmallCommitsDoNotStarveARequiredBaseRebuild:87 a 20k-statement transaction must be covered within 12 s even under 4 commits/s; covered=0 < 20000, leaf estimate for the 20k-row predicate stayed FrontierLeafEstimate[pointRows=1.0, lowerRows=0.0, upperRows=1.7976931348623157E308, confidence=0.0, source=frontier-v2-unavailable, fallbackReason=CONFIDENCE_TOO_WIDE] ==> expected: <true> but was: <false>
+[ERROR]   LmdbFrontierLifecycleReviewReproTest.supersededManifestsAreRetired:172 superseded Frontier manifests must be retired; found 13 manifests, 150 shard files, 252933 bytes on disk for a live generation of 79171 bytes ==> expected: <true> but was: <false>
+
+== .mvnf/workspaces/review-f6/logs/20260927T005743.487317Z-70497-0788d4cc/verify.log
+[review-f6] default-budget growth batches=7 stalled=true covered=96000 latest=112000
+  batch=0 statements=16000 covered=16000 deltaBytes=6255192 baseEpoch=6 lastFailure=
+  batch=1 statements=32000 covered=32000 deltaBytes=10874719 baseEpoch=6 lastFailure=
+  batch=2 statements=48000 covered=48000 deltaBytes=17145875 baseEpoch=6 lastFailure=
+  batch=3 statements=64000 covered=64000 deltaBytes=18167020 baseEpoch=6 lastFailure=
+  batch=4 statements=80000 covered=80000 deltaBytes=24438559 baseEpoch=6 lastFailure=
+  batch=5 statements=96000 covered=96000 deltaBytes=29080271 baseEpoch=6 lastFailure=
+  batch=6 statements=112000 covered=96000 deltaBytes=29080271 baseEpoch=6 lastFailure=Frontier signed-delta publication exceeds its persistent envelope
+[ERROR] Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 48.23 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.LmdbFrontierLifecycleReviewReproTest
+[ERROR] org.eclipse.rdf4j.sail.lmdb.LmdbFrontierLifecycleReviewReproTest.defaultBudgetInsertOnlyGrowthKeepsFrontierCurrent(Path) -- Time elapsed: 48.22 s <<< FAILURE!
+[ERROR]   LmdbFrontierLifecycleReviewReproTest.defaultBudgetInsertOnlyGrowthKeepsFrontierCurrent:190 default-budget Frontier stalled permanently after 112000 inserted statements: Frontier signed-delta publication exceeds its persistent envelope ==> expected: <true> but was: <false>
+
+== .mvnf/workspaces/review-f6/logs/20260927T005931.332863Z-71482-27a1565b/verify.log
+[review-f6] single estimateJoin best-of-3 millis=123.138916 exact=626000 estimate=FrontierJoinEstimate[pointRows=632032.7553700446, lowerRows=516365.53722508287, upperRows=744540.8388072927, confidence=0.8646647167633873, source=frontier-v2-omni-center, fallbackReason=NONE]
+[ERROR] Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 2.347 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.frontier.FrontierEstimationReviewReproTest
+[ERROR] org.eclipse.rdf4j.sail.lmdb.frontier.FrontierEstimationReviewReproTest.singleJoinEstimateHasBoundedPlanningWork(Path) -- Time elapsed: 2.336 s <<< FAILURE!
+[ERROR]   FrontierEstimationReviewReproTest.singleJoinEstimateHasBoundedPlanningWork:192 one two-pattern join estimate took 123.138916 ms; the planner issues many of these per query ==> expected: <true> but was: <false>

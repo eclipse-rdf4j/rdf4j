@@ -1,0 +1,407 @@
+{
+  "wp": "wp5-frontier-lifecycle",
+  "summary": "All seven 3.6 items were traced to concrete code. Items 1 and 6a share one root cause: LmdbStorageEstimatorEvidence gates B-tree/exact storage evidence on the *existence* of the statistics service (`statistics == null` at :162, `statistics != null` at :269, `mappedStatisticsOwnPlanning()` at :311) instead of on whether Frontier actually answered in AUTHORITATIVE mode, so any typed Frontier fallback (NO_GENERATION, CONFIDENCE_TOO_WIDE, GENERATION_TOO_STALE, MEMORY_PRESSURE) leaves the resolver with zero candidates and `heuristic(1.0)`; SHADOW mode removes the same evidence. The fix is a single \"Frontier answered authoritatively\" predicate plus the roadmap 4.3 fallback chain (Frontier -> bounded page/B-tree estimate -> exact count only in the decision tier -> total-rows ceiling), extracted into a small helper because the class sits at 697/700 lines. Items 2 and 3 are scheduler-policy defects in LmdbSailStore: deterministic delta failures (persistent-envelope MEMORY_PRESSURE, Omni dimension IOException) are mapped to RETRY forever (:1254-1263) and RETRY returns before the base rebuild (:1169-1172); the quiet period is a debounce with no deadline that every commit resets (:1137, :1436-1439). Fixes: typed permanent-failure classification with bounded retries and a delta-tier insertion-debt trigger that folds deltas into a new base before the envelope is hit; a maximum-deferral deadline for the quiet period. Item 4 needs a reference-count-aware retirement GC in LmdbStatisticsService/FrontierStatisticsManifestStore that keeps current + predecessor. Item 5 is an orientation-selection bug in FrontierOmniIndex.estimateJoin (:246-259) that accepts a weak zero-witness forward bridge; item 6b is the absence of any per-estimate work bound on bridge scans (leaves and paths already have one). Item 7's stale-generation window is confirmed by code reading and gets a precise acquire() guard; the AGMS bound and quad-synopsis races could not be reproduced and get a small guard / deferral respectively.",
+  "findings": [
+    {
+      "id": "3.6.1",
+      "title": "Cold start / stale Frontier -> 1-row leaf estimates (unknown collapses to 1)",
+      "status": "confirmed-by-repro",
+      "severity": "S2",
+      "size": "medium",
+      "recommendation": "fix-now",
+      "recommendationReason": "Confirmed by repro and e2e (datagovbe >60 s); every other lifecycle failure in 3.6 degrades into this 1-row state, so fixing it caps the blast radius of 3.6.2/3.6.3/3.6.7a. The fix is a precise gate change plus the roadmap 4.3 fallback chain; no optimisation is disabled.",
+      "rootCause": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbStorageEstimatorEvidence.java:147-165 `statementCandidates`: the Frontier SYNOPSIS candidate is added only when `statisticsMode == AUTHORITATIVE && estimate.fallbackReason() == NONE && valid(point)` (:151-158), but the STORAGE_SUMMARY candidate is gated by `cardinalities != null && statistics == null` (:162) \u2014 i.e. on the *existence* of the service, not on whether it answered. `exactCandidate` (:268-270) likewise returns empty whenever `statistics != null`. With Frontier AUTHORITATIVE and NO_GENERATION (cold start), GENERATION_TOO_STALE, CONFIDENCE_TOO_WIDE (tail cleared after a >16 384-mutation txn, LmdbStatisticsService.installMutationTail/appendMutationTail :488-556) or MEMORY_PRESSURE, `leafCandidates` returns `[]`. EstimateEvidenceResolver.resolve (:36-45) then returns `BagEstimate.heuristic(1.0, \"no-current-evidence\")` with interval [0, MAX] and confidence 0. Packed path reaches the same code: LmdbPackedCostModel.estimateRows (:212-220) -> `mappedLeafEstimate` is null when not READY -> `legacyEstimateRows` (:223-241) -> because `runtime.statisticsService() != null` it calls `runtime.conventionalStatementPatternRows(pattern)` (LmdbEstimatorRuntime :437-440) -> `estimate()` -> LmdbEstimationEngine.resolvedLeaf (:463-466) -> same resolver -> 1.0. LmdbEstimatorStorageAccess.packedStatementPatternRows (:92-109) also returns `Double.NaN` in AUTHORITATIVE whenever `fallbackReason != NONE` instead of `legacyPackedRows` (finite-probe path LmdbPackedCostModel:3592-3600). The B-tree page estimator (TripleStore.cardinality/planningCardinality :1754-1803, bounded, cached per dataRevision in LmdbStatementPatternCardinalitySource.estimateIds :267-286) is available the whole time and is exactly the roadmap's 'B-tree range count' tier.",
+      "fix": "Introduce one predicate and one fallback chain, implemented once and used by both pipelines. (1) New package-private helper `LmdbFrontierLeafAnswer` (new file, needed because LmdbStorageEstimatorEvidence is at 697 lines against LmdbEstimatorArchitectureTest.MAX_IMPLEMENTATION_LINES=700; add it to ROOT_IMPLEMENTATIONS): `static boolean answered(FrontierEstimatorMode mode, FrontierLeafEstimate e)` = `mode == AUTHORITATIVE && e != null && e.fallbackReason() == NONE && valid(e.pointRows())`. (2) LmdbStorageEstimatorEvidence.statementCandidates: compute `FrontierLeafEstimate frontier = frontierProbe == null ? null : statistics.estimateLeafCurrent(frontierProbe)` once; `boolean frontierAnswered = LmdbFrontierLeafAnswer.answered(statisticsMode, frontier)`; add the SYNOPSIS candidate when answered (unchanged); change the storage gate at :162 to `cardinalities != null && !frontierAnswered` so the bounded page estimate is a STORAGE_SUMMARY candidate (source `lmdb-storage-summary`, confidence 0.55, interval [rows/2, 2\u00b7rows]) whenever Frontier did not answer; append the fallback reason to the source string (e.g. `lmdb-storage-summary/frontier-NO_GENERATION`) so explain output shows why. (3) Pessimistic ceiling (roadmap 4.3 last tier): if `cardinalities != null && !frontierAnswered` and the summary itself is invalid (-1/NaN), add a HEURISTIC candidate with rows = `cardinalities.estimateForPlanning(new StatementPattern(?s ?p ?o))` (total rows, cached per dataRevision), lower 0, upper = same, confidence 0.0, source `lmdb-unknown-ceiling`; a StatementPattern leaf therefore never resolves to 1 row when storage exists. (4) `exactCandidate` (:268-270): replace `|| statistics != null` with `|| frontierLeafAnswered(pattern)` (helper that re-probes `estimateLeafCurrent`; cheap \u2014 tail overlay or generation lookup; optionally memoise per EstimateContext). The exact tier stays behind `resolveForDecision`'s `exactProbePermitted && tier.allowsExactEstimates()` (EstimateEvidenceResolver :47-58), so no new unbounded `TripleStore.exactCardinality` scans (:2105-2117) are introduced on the STANDARD tier. (5) LmdbEstimatorStorageAccess.packedStatementPatternRows (:100-104): in AUTHORITATIVE return `legacyPackedRows(...)` when `estimate.fallbackReason() != NONE` (and when `probe == null`, which means an unresolvable constant \u2192 legacy returns exact 0) instead of NaN. Soundness: storage evidence is only consulted when Frontier explicitly declined, so every existing 'Frontier answered => never touch LMDB cardinalities' contract is preserved (verified: LmdbEstimatorStorageAccessV2Test, LmdbFrontierV2EstimatorEvidenceTest, LmdbFrontierPlanningIntegrationTest all await READY or mock fallbackReason NONE).",
+      "files": [
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbStorageEstimatorEvidence.java",
+          "lines": "147-165, 232-236 (frontierProbe), 268-278",
+          "change": "Probe Frontier once, compute `frontierAnswered`; gate STORAGE_SUMMARY on `!frontierAnswered`; add total-rows ceiling candidate; gate exactCandidate on frontier-not-answered instead of `statistics != null`."
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbFrontierLeafAnswer.java",
+          "lines": "new file",
+          "change": "Static predicate `answered(mode, estimate)` + `valid(double)`; keeps LmdbStorageEstimatorEvidence under the 700-line architecture limit. Needs the exact copyright header + agent signature."
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorStorageAccess.java",
+          "lines": "92-109",
+          "change": "AUTHORITATIVE + fallbackReason != NONE (or probe == null) -> `legacyPackedRows` instead of `Double.NaN`."
+        },
+        {
+          "path": "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorArchitectureTest.java",
+          "lines": "33-41",
+          "change": "Add `LmdbFrontierLeafAnswer.java` to ROOT_IMPLEMENTATIONS."
+        }
+      ],
+      "reproTestMethods": [
+        "LmdbStorageEvidenceReviewReproTest#authoritativeWithoutGenerationStillOffersCheapStorageEvidence -> port to core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/ (same package; may be merged into LmdbStorageEstimatorEvidencePolicyTest)"
+      ],
+      "additionalTests": [
+        "LmdbStorageEstimatorEvidencePolicyTest: parameterised over fallbackReason in {NO_GENERATION, GENERATION_TOO_STALE, CONFIDENCE_TOO_WIDE, MEMORY_PRESSURE}: STORAGE_SUMMARY candidate present with the 250 000 storage rows; exactCandidate present when tier/permission allow.",
+        "LmdbStorageEstimatorEvidencePolicyTest: when Frontier answers NONE, `cardinalities.estimateForPlanning/estimateExact` are never invoked (guards the existing 'no LMDB sampling when READY' contract).",
+        "LmdbStorageEstimatorEvidencePolicyTest: summary returns -1 and Frontier unavailable -> HEURISTIC `lmdb-unknown-ceiling` with total rows, never 1.0.",
+        "LmdbEstimatorStorageAccessV2Test: AUTHORITATIVE + `frontier-v2-unavailable` -> legacy planning rows (64.0), not NaN; probe==null -> legacy value.",
+        "EstimateEvidenceResolverTest: STORAGE_SUMMARY candidate wins over the no-evidence heuristic (interval and confidence propagate).",
+        "End-to-end (LmdbFrontierStoreLifecycleTest, cold phase): AUTHORITATIVE store, load 5 000 rows of :p, hold the rebuild off by opening a write connection (`storeTxnStarted` defers the base rebuild at LmdbSailStore:1174), explain `?s :p ?o . ?s :q ?x` and assert the leaf row metric is within 2x of 5 000, not 1."
+      ],
+      "existingTestsAtRisk": [
+        "LmdbStorageEstimatorEvidencePolicyTest#shadowLeafObservesMappedStatisticsWithoutContributingPlannerEvidence \u2014 passes `cardinalities == null`, so still empty; keep as is.",
+        "LmdbEstimatorStorageAccessV2Test#packedLeafUsesMappedStatisticsWithoutLmdbCardinalitySampling and LmdbFrontierV2EstimatorEvidenceTest#mappedLeafAndProjectedDistinctReplaceLmdbPrefixEnumeration \u2014 Frontier answers NONE so storage is still never consulted; no change expected.",
+        "LmdbEstimatorArchitectureTest#estimatorImplementationsStaySmallAndNeverReferenceFacades \u2014 LmdbStorageEstimatorEvidence is at 697/700 lines; the helper extraction is mandatory, and the new file must be listed in ROOT_IMPLEMENTATIONS and must not reference LmdbEstimationEngine/LmdbEstimatorRuntime (evidenceStoresNeverPointBackToEngineOrRuntime).",
+        "LmdbThemeQueryRegressionIT / QueryBenchmarkTest plan fingerprints recorded during cold phases may change (they await READY via LmdbPlannerAwait.awaitLmdbOptimizerPipeline -> rebuildFrontierStatistics, so warm expectations are unaffected)."
+      ],
+      "risk": "Low-medium. Re-enables bounded LMDB page-estimate reads during Frontier-unavailable phases only; those reads take nested ordinary reader slots (see \u00a73.10, wp8) \u2014 the exact tier remains behind exactProbePermitted so no new full scans. Plans built cold now differ from plans built warm; verify the packed plan cache replans when Frontier becomes READY (LmdbPackedCostModel.validateStalePlan already returns replan 'frontier-statistics-unavailable', but `providerVersion()` :182-189 mixes mode, not READY state \u2014 see cross-WP touchpoints)."
+    },
+    {
+      "id": "3.6.6a",
+      "title": "SHADOW mode changes planning evidence (drops storage-summary, exact and filter evidence)",
+      "status": "confirmed-by-repro",
+      "severity": "S3",
+      "size": "small",
+      "recommendation": "fix-now",
+      "recommendationReason": "Same gate defect as 3.6.1 and lands as part of the same helper; SHADOW is documented as observation-only, so removing planner evidence violates its contract.",
+      "rootCause": "LmdbStorageEstimatorEvidence: `frontierProbe()` (:232-236) returns a probe for any mode != OFF, so SHADOW calls `estimateLeafCurrent` (observation, correct) but never adds a candidate (mode != AUTHORITATIVE, :151); yet the STORAGE_SUMMARY gate `statistics == null` (:162) and the exact gate `statistics != null` (:269) are mode-blind, so SHADOW removes both. Additionally `mappedStatisticsOwnPlanning()` (:311-313) is `statistics != null && statisticsMode != OFF`, so in SHADOW `filterEvidence` (:281-308) is routed to `mappedFilters.estimate` and the exact bounded-zero probe path is skipped \u2014 SHADOW also changes filter evidence. Repro: OFF -> [STORAGE_SUMMARY:250000]+exact, SHADOW -> [] no exact.",
+      "fix": "Define `private boolean authoritative()` = `statistics != null && statisticsMode == AUTHORITATIVE` and use it in the three gates: (a) :162 `cardinalities != null && !frontierAnswered` (frontierAnswered is already false in SHADOW because `LmdbFrontierLeafAnswer.answered` requires AUTHORITATIVE); (b) :269 exact gate via the same predicate; (c) :311 `mappedStatisticsOwnPlanning()` -> `authoritative()`. Keep the SHADOW observation call (`estimateLeafCurrent`) so telemetry is unchanged. Result: SHADOW evidence == OFF evidence for leaves, exact and filters, plus observation.",
+      "files": [
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbStorageEstimatorEvidence.java",
+          "lines": "162, 269, 311-313",
+          "change": "Replace service-existence gates with the authoritative/frontierAnswered predicate; `mappedStatisticsOwnPlanning()` requires AUTHORITATIVE."
+        }
+      ],
+      "reproTestMethods": [
+        "LmdbStorageEvidenceReviewReproTest#shadowModeKeepsTheSameStorageEvidenceAsOffMode -> core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/"
+      ],
+      "additionalTests": [
+        "LmdbStorageEstimatorEvidencePolicyTest: SHADOW `filterEvidence(pattern, cond)` equals OFF `filterEvidence` for the same mocked `filters` (mappedFilters not consulted) and `statistics.estimateLeafCurrent` is still invoked once (observation retained).",
+        "LmdbStorageEstimatorEvidencePolicyTest: SHADOW `joinEvidence` remains empty (unchanged contract)."
+      ],
+      "existingTestsAtRisk": [
+        "LmdbStorageEstimatorEvidencePolicyTest#shadowLeafObservesMappedStatisticsWithoutContributingPlannerEvidence \u2014 still green (cardinalities null).",
+        "LmdbEstimatorStorageAccessV2Test#shadowPackedLeafObservesMappedStatisticsWithoutChangingTheLegacyEstimate \u2014 already asserts legacy rows in SHADOW; unchanged."
+      ],
+      "risk": "Low."
+    },
+    {
+      "id": "3.6.2",
+      "title": "Delta publication stalls forever at the delta envelope; failures map to RETRY and never escalate to a base rebuild; -Xmx drift causes permanent dimension mismatch",
+      "status": "confirmed-by-repro",
+      "severity": "S2",
+      "size": "medium",
+      "recommendation": "fix-now",
+      "recommendationReason": "Confirmed at both 16 MiB and the 512 MiB default (stalls after 112 000 inserted statements, restart does not recover). A store that stops publishing degrades to CONFIDENCE_TOO_WIDE -> GENERATION_TOO_STALE and, without 3.6.1, to 1-row plans permanently.",
+      "rootCause": "(a) LmdbSailStore.refreshFrontierStatisticsDelta (:1203-1264): `catch (FrontierStatisticsException)` (:1254-1259) escalates only `CONFIDENCE_TOO_WIDE`; every other typed failure, including `MEMORY_PRESSURE` from FrontierStatisticsDeltaBuilder.validateDiskBudget (:247-261, \"exceeds its persistent envelope\") and `catch (IOException)` (:1260-1263), returns RETRY. runScheduledFrontierRebuild (:1157-1200) returns on RETRY (:1169-1172) *before* the base-rebuild branch, and the `finally` reschedules (:1191-1199) every `estimatorPersistDelayMillis` (1 s) \u2014 the identical, deterministic failure repeats forever. (b) The envelope is structural: FrontierStatisticsBuildConfig.forDiskBudget (:73-94) sets `delta = disk - disk/8 - disk/4 - disk/4 - 5\u00b7disk/16 = disk/16` (32 MiB at the 512 MiB default); FrontierStatisticsDeltaCompactor merges layer families but retains every mutation (~300 B/mutation observed), so the delta tier grows monotonically with inserts since the last base and the envelope is a hard ceiling on mutations-since-base. Nothing triggers a base rebuild before the ceiling (only `deleteDebt >= 0.10` at :1248 and 'transaction exceeds the bounded batch' at :1235). (c) Budget drift: LmdbStoreConfig.FRONTIER_HEAP_BUDGET_BYTES = `Runtime.getRuntime().maxMemory() / 4` (:83); FrontierStatisticsBuildConfig.forBudgets (:100-160) halves `cellCount` (the Omni width) under heap pressure (:147-152); FrontierOmniDeltaBuilder.build (:64-69) throws a plain `IOException` when the base layout's width/depth/lanes differ from the *current* config \u2014 deterministic, caught as IOException -> RETRY forever after a JVM restart with a different -Xmx. (d) Meanwhile the in-memory tail is cleared once uncovered mutations exceed MAXIMUM_IN_MEMORY_MUTATIONS=16 384 (LmdbSailStore.appendCurrentFrontierMutationTail :1303-1331), so leaves fall to CONFIDENCE_TOO_WIDE and, after `maximumLagMillis` (60 s), GENERATION_TOO_STALE.",
+      "fix": "Three independent parts. (1) Typed permanence: add `boolean permanent` to FrontierStatisticsException (new ctor + `requiresBaseRebuild()`), set it in FrontierStatisticsDeltaBuilder.validateDiskBudget (:257-259), the layer-limit throw (:204-206), the dimension-overflow throw (:225-227), and convert FrontierOmniDeltaBuilder's dimension mismatch (:64-69) from `IOException` to `FrontierStatisticsException(SHARD_CORRUPT, permanent=true)`. In LmdbSailStore.refreshFrontierStatisticsDelta replace the catch logic with `classifyDeltaFailure(Throwable)` (static, unit-testable): permanent or CONFIDENCE_TOO_WIDE -> BASE_REBUILD_REQUIRED; otherwise RETRY but bounded: keep `consecutiveDeltaRetries`/`lastDeltaRetryCoveredSequence` fields, and after FRONTIER_MAX_DELTA_RETRIES (8) consecutive RETRYs for the same covered sequence escalate to BASE_REBUILD_REQUIRED and log once at WARN (transient heap-governor refusals and I/O errors therefore cannot pin the store either). Reset the counter on COMPLETE or a successful publish. (2) Insertion-debt trigger (roadmap 'staleness-aware deltas'): in refreshFrontierStatisticsDelta, before building and after a successful publish, if `service.status().diskBytesByTier().get(DELTAS_AND_MANIFESTS) >= FRONTIER_DELTA_TIER_REBUILD_FRACTION (0.75) * statisticsBuildConfig.deltaAndManifestBudgetBytes()` -> return BASE_REBUILD_REQUIRED (mirrors the existing deleteDebt trigger at :1248). Base rebuilds fold all deltas into a fresh base so the envelope failure becomes exceptional instead of the steady state; this is what makes `defaultBudgetInsertOnlyGrowthKeepsFrontierCurrent` pass without ever hitting the exception path. (3) Dimension check at open: in LmdbSailStore init (:432-451) after `LmdbStatisticsService.open`, if `status.availability()==READY` and the current manifest's `width()/depth()/designLaneCount()/auditLaneCount()` differ from `statisticsBuildConfig.cellCount()/omniDepth()/designLaneCount()/auditLaneCount()`, set a `frontierDimensionRebuildRequired` flag that `refreshFrontierStatisticsDelta` treats like `service.rebuildRequired()` (BASE_REBUILD_REQUIRED at :1209) and `requestFrontierRebuild()`; clear it after a successful base rebuild. Preferred longer-term: derive the delta config from the manifest (`FrontierStatisticsBuildConfig.withOmniDimensions(width, depth)`) when the heap governor admits it, so a restart with less heap does not force a rebuild \u2014 optional follow-up.",
+      "files": [
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbSailStore.java",
+          "lines": "1157-1200, 1203-1264, 432-451",
+          "change": "`classifyDeltaFailure` with permanent/CONFIDENCE_TOO_WIDE -> BASE_REBUILD_REQUIRED, bounded consecutive RETRYs; delta-tier debt trigger; dimension mismatch flag at open; RETRY must not short-circuit when a rebuild is already required."
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsException.java",
+          "lines": "whole",
+          "change": "Add `permanent` flag + `requiresBaseRebuild()`; keep existing ctors (default false)."
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsDeltaBuilder.java",
+          "lines": "204-206, 225-227, 247-261",
+          "change": "Mark envelope/layer-limit/overflow failures permanent."
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/frontier/FrontierOmniDeltaBuilder.java",
+          "lines": "64-69",
+          "change": "Throw permanent FrontierStatisticsException(SHARD_CORRUPT) instead of IOException on dimension mismatch."
+        }
+      ],
+      "reproTestMethods": [
+        "LmdbFrontierLifecycleReviewReproTest#exhaustedDeltaEnvelopeEscalatesToABaseRebuild -> core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/ (39 s; consider @Tag(\"slow\") / slowTestsOnly profile)",
+        "LmdbFrontierLifecycleReviewReproTest#defaultBudgetInsertOnlyGrowthKeepsFrontierCurrent -> same package (48 s; slow profile)"
+      ],
+      "additionalTests": [
+        "LmdbSailStore-level unit test of `classifyDeltaFailure`: permanent MEMORY_PRESSURE -> BASE_REBUILD_REQUIRED; transient IOException -> RETRY x8 then BASE_REBUILD_REQUIRED; CONFIDENCE_TOO_WIDE -> BASE_REBUILD_REQUIRED.",
+        "FrontierStatisticsBuilderTest/DeltaBuilder: exceeding `deltaAndManifestBudgetBytes` throws FrontierStatisticsException with `requiresBaseRebuild()==true`; Omni dimension mismatch throws the typed permanent exception.",
+        "Lifecycle test with a 16 MiB budget (1 MiB delta envelope): repeated 2 000-statement commits -> `baseEpoch` advances (debt trigger fired) and `lastFailure` stays empty; covered sequence keeps up.",
+        "Lifecycle restart test: build with `setFrontierHeapBudgetBytes(512 MiB)`, reopen with a heap budget that halves `cellCount` (compare `FrontierStatisticsBuildConfig.forBudgets` outputs to choose values), commit one row -> a base rebuild is published (baseEpoch advances) instead of a permanent RETRY."
+      ],
+      "existingTestsAtRisk": [
+        "LmdbFrontierStoreLifecycleTest#committedMutationPublishesSignedDeltaWithoutRebuildingBase \u2014 asserts baseEpoch unchanged after one small commit; the 0.75 debt trigger must not fire for a single tiny delta at 32 MiB (envelope 2 MiB; observed one 4 000-row delta \u2248 0.7 MB at 16 MiB) \u2014 keep the fraction \u22650.75 and test with 32 MiB.",
+        "LmdbFrontierStoreLifecycleTest#deletionDebtAtRebuildThresholdPublishesFreshBase \u2014 unchanged semantics; re-run.",
+        "FrontierStatisticsBuilderTest#rollingCompactionKeepsLongMutationHistoryQueryableWithoutSnapshotReplay, #compactedOmniLayerMayExceedOneRawJournalBatch \u2014 exercise the delta builder directly; exception type remains an IOException subclass, so only tests asserting the exact class/message of the envelope failure would change."
+      ],
+      "risk": "Medium. Base rebuilds are now triggered proactively (more background CPU/IO under heavy insert load, bounded to once per ~envelope of inserts). Escalation after transient failures could rebuild unnecessarily during real I/O trouble; the 8-retry bound and WARN log keep this visible."
+    },
+    {
+      "id": "3.6.3",
+      "title": "Base rebuild starvation: quiet period is reset by every commit with no deadline",
+      "status": "confirmed-by-repro",
+      "severity": "S2",
+      "size": "small",
+      "recommendation": "fix-now",
+      "recommendationReason": "Confirmed: covered sequence stays 0 for 12 s under 4 commits/s while the 20 000-row predicate is estimated as 1 row. A steady trickle of writes is a normal production workload.",
+      "rootCause": "LmdbSailStore.flush commit path (:2358-2367) calls `requestFrontierRebuild()` on every commit, which sets `frontierRebuildRequestedNanos = System.nanoTime()` (:1136-1139). runScheduledFrontierRebuild (:1174-1177) only starts a base rebuild when `frontierRebuildQuietPeriodElapsed()` (:1436-1439: \u2265 estimatorPersistDelayMillis = 1 000 ms since the *last* request) and no write txn is active; otherwise RETRY. The `finally` block (:1185-1187) also forces retry whenever the request timestamp moved during the run. With \u22651 commit/s the debounce never expires \u2014 there is no upper bound on deferral. Because the 20 k-statement transaction exceeded MAXIMUM_IN_MEMORY_MUTATIONS the tail was cleared (:1303-1331) and `completeTransactionPrefix` returned empty (:1333-1343 -> BASE_REBUILD_REQUIRED), so the only path to coverage is the starved base rebuild; leaves stay CONFIDENCE_TOO_WIDE (LmdbStatisticsService.currentFallbackReason :884-895) -> 1 row. Secondary (plausible, code-read): LmdbPackedCostModel.mappedStatisticsReady (:407-414) requires `status.fallbackReason()==NONE`, which is false between any commit and its delta publication even when the in-memory tail fully covers the commit, so the packed session flips mapped/scalar every commit for ~1 s.",
+      "fix": "Turn the debounce into debounce-with-deadline. Add `volatile long frontierBaseRebuildPendingSinceNanos` (0 when none). Set it (if 0) whenever runScheduledFrontierRebuild determines a base rebuild is required (after `refreshFrontierStatisticsDelta` returns BASE_REBUILD_REQUIRED, or `service.rebuildRequired()`); clear it after `rebuildFrontierStatisticsV2()` returns true. Replace the gate at :1174 with `!(frontierRebuildQuietPeriodElapsed() || baseRebuildDeferralExceeded()) || storeTxnStarted.get()` where `baseRebuildDeferralExceeded()` = `pendingSince != 0 && now - pendingSince >= FRONTIER_REBUILD_MAX_DEFERRAL_NANOS` (5 s). Extract the policy into a tiny package-private `FrontierRebuildSchedulePolicy.shouldStartBaseRebuild(now, lastRequest, pendingSince, quietNanos, maxDeferralNanos)` for unit testing. The snapshot-based rebuild is safe while commits continue (LMDB MVCC; later mutations are covered by deltas), so the deadline changes only *when* the rebuild starts. Keep the `storeTxnStarted` guard unchanged (see open question). For the mapped/scalar flip (secondary): expose `LmdbStatisticsService.currentEstimatesAvailable()` = `currentFallbackReason()==NONE || hasCompleteMutationTail()` and let `mappedStatisticsReady()` use it \u2014 but the view path (`openCurrentView`) does not apply the tail, so this must be paired with tail-aware views; recommend deferring that part to a follow-up (it is a plan-stability improvement, not a correctness fix).",
+      "files": [
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbSailStore.java",
+          "lines": "1136-1139, 1157-1200 (esp. 1174-1177), 1351-1434 (clear pendingSince on success), 1436-1439",
+          "change": "Add pending-since timestamp, deadline check, policy helper; clear on successful base rebuild."
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/FrontierRebuildSchedulePolicy.java",
+          "lines": "new file",
+          "change": "Pure function for quiet-period-or-deadline decision (unit-tested)."
+        }
+      ],
+      "reproTestMethods": [
+        "LmdbFrontierLifecycleReviewReproTest#steadySmallCommitsDoNotStarveARequiredBaseRebuild -> core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/ (14 s)"
+      ],
+      "additionalTests": [
+        "FrontierRebuildSchedulePolicyTest: within quiet period and under deadline -> defer; quiet elapsed -> start; deadline exceeded while requests keep arriving -> start; pendingSince==0 -> only quiet period applies.",
+        "Lifecycle test: a burst of 5 commits within 300 ms followed by silence publishes one delta/base (debounce still batches) \u2014 guards against regressing to rebuild-per-commit.",
+        "Lifecycle test variant of the repro with a 5 s deadline asserting coverage within 8 s."
+      ],
+      "existingTestsAtRisk": [
+        "LmdbFrontierStoreLifecycleTest#* (10 s awaits) \u2014 unaffected; rebuilds still happen after 1 s of quiet.",
+        "LmdbFrontierStoreLifecycleTest#metadataOnlyCommitDoesNotRepublishEquivalentFrontierGeneration \u2014 unchanged (explicit rebuild path)."
+      ],
+      "risk": "Low. Under sustained writes a base rebuild now runs at most once per deadline window while a rebuild is required; the debounce still coalesces bursts."
+    },
+    {
+      "id": "3.6.4",
+      "title": "Superseded manifests and shards are never deleted (unbounded disk growth)",
+      "status": "confirmed-by-repro",
+      "severity": "S3",
+      "size": "medium",
+      "recommendation": "fix-now",
+      "recommendationReason": "Every delta publication leaves a manifest plus 6+ shard files behind (12 commits -> 13 manifests, 150 shards, 3.2x live bytes); with 3.6.2's proactive base rebuilds the growth rate would increase, so GC should land with or before it.",
+      "rootCause": "LmdbStatisticsService.publish (:84-125) opens the new generation, calls FrontierStatisticsManifestStore.publish (:58-88: writes `manifest-<gen>.fs2m`, `switchCurrent`) and only `old.release()`s the previous generation (unmap). FrontierStatisticsDeltaBuilder writes 3 scalar + 3 Omni shard files per delta (plus compaction outputs); FrontierStatisticsDeltaCompactor.compact deletes only files whose `ownerGenerationId == generationId` of the *current* build (:collectUnpublished), so layers merged away that were owned by earlier generations remain. FrontierStatisticsBuilder base rebuilds leave the entire previous base. The only deleters are recovery paths (`discardGeneration` :138-168, `resetOwnedArtifacts` :174) and `cleanupTemporaryArtifacts` (temporaries only). Shards are shared across generations by fileName (delta manifests carry the base's descriptors with `ownerGenerationId` set, :192-197 of the delta builder), so deletion must be by live-file-set difference, not by owner.",
+      "fix": "Reference-count-aware retirement GC. (1) FrontierStatisticsManifestStore: add `synchronized void retireSuperseded(Set<Long> retainedGenerationIds, Set<String> liveFileNames)`: list the directory; delete every published `MANIFEST_FILE` whose generation is not retained and every published `SHARD_FILE` whose name is not in `liveFileNames` (never `.tmp`, never CURRENT); `forceDirectory`. (2) LmdbStatisticsService: retention policy = current manifest + its direct predecessor (`previousGenerationId`), because `rollback()` (:141-162) and `recoverInvalidGeneration` (:741-795) load the predecessor. Maintain `List<FrontierStatisticsGeneration> retired` (generations replaced by publish/rollback that may still be leased). Add `FrontierStatisticsGeneration.onFullyReleased(Runnable)` invoked in `release()` when the count hits 0 (:283-291). In `publish` after `installGeneration`: push `old` to `retired`, register the hook, then call `collectGarbage()`. `collectGarbage()` (synchronized): liveFiles = files(current) \u222a files(load(current.previous) if exists) \u222a files(g) for every g in `retired` with refcount > 0; retainedGens = {current, current.previous} \u222a {g.generationId : g retired and still referenced}; call `retireSuperseded`. The hook simply schedules `collectGarbage()` (may run on the releasing thread; it is I/O light). (3) Startup: in `loadPublishedGeneration` after a successful `installGeneration` (:719-725) call `collectGarbage()` (nothing is leased yet) so directories bloated by the current code are cleaned on first open. (4) `discardGeneration`/`resetOwnedArtifacts` unchanged. Deleting only unmapped files keeps Windows semantics safe; on POSIX lingering readers would be fine anyway.",
+      "files": [
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsManifestStore.java",
+          "lines": "after 174 (new method), reuse deleteOwnedPaths patterns 180-222",
+          "change": "Add `retireSuperseded(retainedGenerationIds, liveFileNames)` and a `listPublishedGenerationIds()` helper."
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/frontier/LmdbStatisticsService.java",
+          "lines": "84-125 (publish), 141-162 (rollback), 683-735 (loadPublishedGeneration), new collectGarbage()",
+          "change": "Track retired generations, compute live set, invoke GC after publish/rollback/startup and when a retired generation is fully released."
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsGeneration.java",
+          "lines": "283-291, field",
+          "change": "Add `onFullyReleased(Runnable)` hook fired when references reach 0."
+        }
+      ],
+      "reproTestMethods": [
+        "LmdbFrontierLifecycleReviewReproTest#supersededManifestsAreRetired -> core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/ (asserts \u22643 manifests after 12 commits; with current+predecessor retention expect 2, or 3 while a retired generation is still leased)"
+      ],
+      "additionalTests": [
+        "LmdbStatisticsServiceTest: publish gen1 (base), gen2 (delta), gen3 (delta) -> manifest-1 and gen1-owned shards not referenced by gen2/gen3 are deleted; base shards referenced by gen3 remain; `rollback()` from gen3 to gen2 still works.",
+        "LmdbStatisticsServiceTest: hold a lease/view on gen1 across two publishes -> gen1 files persist; close lease -> files deleted (hook path).",
+        "LmdbStatisticsServiceTest: startup sweep on a directory containing 5 stale manifests removes all but current+predecessor and their shards; CURRENT unchanged; reopen still READY.",
+        "LmdbStatisticsServiceTest: GC never deletes `.tmp` files or files of the predecessor; `recoverInvalidGeneration` after GC still rolls back to the predecessor."
+      ],
+      "existingTestsAtRisk": [
+        "LmdbStatisticsServiceTest#publishingIsAtomicAndOldLeasesSurviveReplacementAndRollback, #rollbackAcceptsPredecessorWithOptionalShardFailure, #startupRollsBackCleansAndRequiresRebuildWhenCurrentShardIsCorrupt, #optionalShardFailureKeepsCurrentGenerationReadyAfterRestart \u2014 depend on the predecessor being present: retention of current+predecessor keeps them green; verify none publishes three generations and then rolls back twice.",
+        "FrontierStatisticsBuilderTest#queryViewPinsOneMappedGenerationAcrossPublication \u2014 an old lease must keep its files: refcount-gated GC covers this.",
+        "FrontierStatisticsBuilderTest#publishedMutationLayerKeepsOmniEvidenceQueryableAcrossRestart, #rollingCompactionKeepsLongMutationHistoryQueryableWithoutSnapshotReplay, #allConsumedAgmsProjectionsSurviveBothPlanesReopenAndCompaction \u2014 reopen directories after many publishes; the live set is computed from the current manifest so referenced shards survive.",
+        "LmdbFrontierStoreLifecycleTest#corruptFrontierManifestIsRemovedRebuiltAndThenReused \u2014 corrupts the *current* manifest, recovery loads the predecessor (retained)."
+      ],
+      "risk": "Medium. Deleting the wrong file breaks a READY generation; mitigated by computing the live set from manifests (not owners) and by refcount gating. Retention depth is a policy choice (open question)."
+    },
+    {
+      "id": "3.6.5",
+      "title": "Omni bridge returns a weak zero-witness forward estimate instead of trying the reverse orientation",
+      "status": "confirmed-by-repro",
+      "severity": "S2",
+      "size": "medium",
+      "recommendation": "fix-now",
+      "recommendationReason": "Confirmed: exact 160 000 estimated as 0 (conf 0) while the reverse orientation gives 164 860. A point 0 with fallbackReason NONE is treated as knowledge by every consumer (LmdbPackedCostModel costs pointRows regardless of confidence), producing catastrophic plans on hub-shaped data.",
+      "rootCause": "FrontierOmniIndex.estimateJoin (:246-259): the forward `estimateBridge`/`estimateCompositeBridge` result is returned whenever `fallbackReason() == NONE`; the reverse orientation is evaluated only when forward is *unavailable*. `sampledJoinEstimate` (:1331-1359) returns weak ensembles (`quality.isWeak` -> `point, lower 0, upper productBound, confidence\u22480`) with fallbackReason NONE, so a forward bridge whose sampled lanes never hit the hub (8 hub rows among 20 000 on the sampled side: every lane point 0, sharedWitnesses 0, `FrontierSamplingQuality.confidence()`==0) is 'available' with point 0. FrontierMappedStatistics.estimateJoin (:455-478) prefers `centers` only when they are available; when `centers.estimateJoin` is unavailable it returns the weak omni zero (:476-478). Existing contract test `sparseSingletonBridgeDoesNotTreatMissingWitnessAsAuthoritativeZero` already states that a sampled zero must yield to calibrated evidence \u2014 the orientation choice violates it when centers are absent.",
+      "fix": "In FrontierOmniIndex.estimateJoin (both branches): compute `forward`; if `forward` is exact (confidence 1.0 / `exactBridgeEstimate`) return it; otherwise compute `reverse` (transposed pairs for the composite case) and select deterministically with a private `preferBridge(a, b)`: (1) available beats unavailable; (2) exact beats sampled; (3) strong (not weak) beats weak \u2014 expose weakness by returning a small private record `BridgeResult(FrontierJoinEstimate estimate, long sharedWitnesses, boolean weak)` from `sampledJoinEstimate`/`estimateBridge`; (4) among two weak results prefer more `sharedWitnesses`, then higher confidence, then the positive point over a zero point; (5) if both are weak with zero witnesses (no information in either direction) return `FrontierJoinEstimate.unavailable(CONFIDENCE_TOO_WIDE)` \u2014 a typed unknown \u2014 instead of a NONE zero. Consumers already handle typed unavailability: LmdbStorageEstimatorEvidence.joinEvidence (:241-266) returns empty and the packed cost model falls back to its independence/transition estimate (`mappedJoin == null` :313-314). Add the same precise guard in FrontierMappedStatistics.estimateJoin (:476-478): when the omni estimate is non-exact with `pointRows()==0 && confidence()==0` and no center estimate exists, return CONFIDENCE_TOO_WIDE. Work doubles only in the weak case and is bounded by 3.6.6b's budget shared across both orientations.",
+      "files": [
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/frontier/FrontierOmniIndex.java",
+          "lines": "246-259, 712-783, 797-909, 1331-1359",
+          "change": "Evaluate both orientations unless forward is exact; deterministic quality-ordered selection; typed unavailable when both are zero-witness weak; carry witness/weak flags out of sampledJoinEstimate."
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/frontier/FrontierMappedStatistics.java",
+          "lines": "455-478",
+          "change": "Never return a weak zero-point omni bridge as NONE when centers are unavailable."
+        }
+      ],
+      "reproTestMethods": [
+        "FrontierEstimationReviewReproTest#hiddenHubBridgeIsNotEstimatedAsEmpty -> core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/frontier/ (keep the disjoint-heavy-hitter methods as passing regression guards)"
+      ],
+      "additionalTests": [
+        "Mirror of the hidden-hub test with sides swapped (hub reachable only from the reverse of the reverse) -> same q-error bound.",
+        "Both orientations weak with zero witnesses -> `fallbackReason()==CONFIDENCE_TOO_WIDE`, never `pointRows()==0 && fallbackReason()==NONE` unless exact.",
+        "Forward strong -> reverse not evaluated (assert via `Scratch.candidateRowsVisited()` unchanged vs single-orientation baseline) to keep the cheap path cheap.",
+        "FrontierMappedStatistics unit: omni weak zero + centers unavailable -> typed unavailable; omni weak zero + centers available -> centers (existing behaviour)."
+      ],
+      "existingTestsAtRisk": [
+        "FrontierStatisticsBuilderTest#sparseSingletonBridgeDoesNotTreatMissingWitnessAsAuthoritativeZero, #exactHeavyPredicateCountOutranksMissingOmniWitness \u2014 should remain green (centers/exact paths precede); re-run.",
+        "FrontierStatisticsBuilderTest#mappedOmniBridgeEstimatesContextQualifiedManyToManyJoin, #mappedJoinEnsembleCoversAllSixteenStatementRolePairs, #mappedOmniBridgeUsesExactCompositeSharedKey, #mappedOmniIntervalsCoverEveryBoundMaskAndStatementPlane \u2014 orientation selection may change the returned interval; expectations that pinned the forward result need review.",
+        "LmdbPackedCostModelV2SessionTest#mappedV2SemiAntiFallsBackForZeroConfidenceJoin, #mappedV2PackedTransitionUsesCompositeOmniBridge \u2014 mocks may return zero-confidence NONE estimates; if they rely on a weak zero being *accepted*, update to the typed fallback."
+      ],
+      "risk": "Medium. Estimates for hub-shaped joins change materially (0 -> ~exact), which flips plans; typed unavailability for double-weak cases hands the join to the independence estimate (roadmap 4.3/4.4 preferred over a false zero). Cost side (pointRows used regardless of confidence, LmdbPackedCostModel:748-749, 1444-1451) remains a \u00a73.8 item."
+    },
+    {
+      "id": "3.6.6b",
+      "title": "Unbounded per-estimate planning work in Omni bridge estimation (123 ms for one 2-pattern join)",
+      "status": "confirmed-by-repro",
+      "severity": "S3",
+      "size": "medium",
+      "recommendation": "fix-now",
+      "recommendationReason": "Confirmed 123 ms per estimate on a 100 k-row synthetic store; the packed planner issues many join estimates per query and 3.6.5 adds a second orientation in the weak case, so a work bound is required to keep planning time bounded. Leaves and paths already have bounds; bridges are the gap.",
+      "rootCause": "FrontierOmniIndex.estimateBridge (:797-909) and estimateCompositeBridge (:712-783) scan the sampled side with `scanLane(plane, lane, sampled, consumer, scratch)` (:1038-1041 -> `maximumCandidateRows = Integer.MAX_VALUE`), collecting up to MAXIMUM_JOIN_KEYS=4 096 keys per lane (:23), then issue one `estimateSingleLaneDetailed` (:1118-1135) per key per plane, each a full `scanLane` over the candidate cell (up to `witnessCeilingPerCell`=8 192 rows) \u2014 worst case lanes(4)\u00b7planes(2)\u00b74 096\u00b78 192 \u2248 2.7e8 row visits per estimate. `Scratch.recordCandidateRows` (:1436-1440) accumulates `candidateRowsVisited` but nothing reads it (no callers of `candidateRowsVisited()` in the package). By contrast `estimatePlane` (:985-1037) scans leaves progressively by priority tier (INITIAL_LEAF_PRIORITY_TIER=64, doubling while weak) and path programs enforce MAXIMUM_PATH_WORK=262 144 (:405, :444). The cost model's `initializeLineageWorkBudget` (LmdbPackedCostModel:3778-3788) bounds the *number* of lineage estimates, not work per estimate.",
+      "fix": "(1) Per-estimate budget in `Scratch`: add `long remainingCandidateRows`; `beginEstimate(long budget)` called at the top of `estimateJoin`/`estimateSubgraph` (and `estimateLeaf` for symmetry) with MAXIMUM_BRIDGE_WORK = 262 144 (same order as MAXIMUM_PATH_WORK); `recordCandidateRows` decrements; `scanLane(..., maximumCandidateRows)` uses `min(requested, remaining)` and, when `remaining == 0`, returns the current progressive (weak) LaneEstimate instead of scanning further. (2) Progressive sampled-side scan in both bridges: start at INITIAL_BRIDGE_PRIORITY_TIER (256 rows) per lane and double while `sampledJoinEstimate`'s quality is weak and budget remains \u2014 the key map then holds \u2264 tier keys, which bounds degree probes; `restrictPrefixSampling` already yields the correct inclusion probability for prefix samples (:1093-1096). (3) Degree probes: `estimateSingleLaneDetailed(probe, lane, scratch, DEGREE_PROBE_ROWS=1 024)` using the existing progressive `scanLane` semantics (note `progressive` requires `deltaIndex.isEmpty()` at :1093; when deltas are present fall back to the budget cap only). (4) The budget is shared by both orientations from 3.6.5 so the total per estimate stays bounded. (5) Expose `Scratch.candidateRowsVisited()` through FrontierStatisticsView/Lease for tests (package-private). Accuracy: when cheap, scans still reach exact/complete cells as today (the tier grows until strong); only pathological sizes are truncated into wider intervals.",
+      "files": [
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/frontier/FrontierOmniIndex.java",
+          "lines": "22-31 (constants), 246-259, 712-783, 797-909, 1038-1116 (scanLane), 1118-1135, 1397-1445 (Scratch)",
+          "change": "Add per-estimate work budget to Scratch, progressive bridge scanning with doubling tiers, bounded degree probes, early return when budget is exhausted."
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsLease.java",
+          "lines": "29 (scratch creation)",
+          "change": "Call `scratch.beginEstimate(...)` per estimate entry (or do it inside FrontierOmniIndex entry points)."
+        }
+      ],
+      "reproTestMethods": [
+        "FrontierEstimationReviewReproTest#singleJoinEstimateHasBoundedPlanningWork -> core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/frontier/ ; port with a deterministic assertion on `candidateRowsVisited() <= MAXIMUM_BRIDGE_WORK` in addition to (or instead of) the 50 ms wall-clock check, which is machine-dependent"
+      ],
+      "additionalTests": [
+        "FrontierOmniIndexTest: budget exhaustion returns a non-exact estimate with interval covering the exact value and confidence < strong; never throws.",
+        "FrontierStatisticsBuilderTest bridge accuracy guards (existing q-error bounds) rerun with the budget to prove no accuracy regression on the small synthetic stores.",
+        "Both-orientation case (3.6.5) stays within one budget: `candidateRowsVisited() <= MAXIMUM_BRIDGE_WORK`."
+      ],
+      "existingTestsAtRisk": [
+        "FrontierStatisticsBuilderTest#mappedOmniBridgeEstimatesContextQualifiedManyToManyJoin, #mappedJoinEnsembleCoversAllSixteenStatementRolePairs, #mappedOmniIntervalsCoverEveryBoundMaskAndStatementPlane, #mappedOmniBridgeUsesExactCompositeSharedKey \u2014 intervals may widen if the budget truncates; size the initial tier/budget so these small stores are still scanned completely.",
+        "FrontierOmniIndexTest#joinQualityWidensDispersedLaneEnsemblesInsteadOfCountingAvailableReplicas \u2014 unaffected (pure quality math).",
+        "FrontierOmniQueryBenchmark (benchmark-only)."
+      ],
+      "risk": "Medium. Trades worst-case accuracy for bounded latency; the progressive doubling keeps today's accuracy whenever it is cheap. Constants should be validated against the LMDB theme benchmark harness."
+    },
+    {
+      "id": "3.6.7a",
+      "title": "Stale-generation window between LMDB commit and recordStoreCommit lets new snapshots read stale exact counts as authoritative",
+      "status": "confirmed-by-code-reading",
+      "severity": "S3",
+      "size": "small",
+      "recommendation": "fix-now",
+      "recommendationReason": "Mechanism is unambiguous in the code and the guard is tiny and precise; the full sequence-keyed fix belongs to wp8's txn plumbing.",
+      "rootCause": "LmdbSailStore.flush (:2320-2367): `tripleStore.commit()` (:2334, or via the async worker) makes epoch E+1 visible before `statisticsService.recordStoreCommit(E+1, seq')` runs at :2360-2362 (and `appendCurrentFrontierMutationTail` at :2363). A reader opening a snapshot in that window calls LmdbStatisticsService.acquire(E+1) (:183-197): the staleness test is `snapshotEpoch > coveredEpoch && (latestStoreSequence < 0 || latestStoreSequence > coveredSequence)`; `latestStoreSequence` still equals `coveredSequence`, so the condition is false and a READY lease on the generation that lacks the new rows is returned with fallbackReason NONE. `estimateLeaf(E+1, \u2026)` (:275-277) fails the `snapshotEpoch == latestStoreEpoch` tail check and also lands in `acquire`. The same window exists for metadata-only epoch advances (`acknowledgeFrontierCoverage` :692-700 records after the ack write txn). Not reproduced by a test (timing window), but the code path is deterministic.",
+      "fix": "Precise guard in `acquire(long snapshotEpoch)`: if `latestStoreEpoch >= 0 && snapshotEpoch > latestStoreEpoch` (the service has been told about at least one commit and this snapshot is newer than anything it knows) return `FrontierStatisticsLease.unavailable(CONFIDENCE_TOO_WIDE)`; with 3.6.1 the planner falls back to storage evidence for the microsecond window instead of stale exact counts. The `latestStoreEpoch >= 0` condition keeps the many FrontierStatisticsBuilderTest/repro tests that call `service.estimateJoin(snapshot.snapshotEpoch(), \u2026)` without `recordStoreCommit` valid; production always records at open (LmdbSailStore:443). Full fix (cross-WP, wp8): key `acquire`/`openView` on the journal sequence read inside the same read txn (`TripleStore.latestFrontierMutationSequence(Txn)` :2431 already exists) so coverage checks stop depending on recordStoreCommit ordering.",
+      "files": [
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/frontier/LmdbStatisticsService.java",
+          "lines": "183-197",
+          "change": "Add `latestStoreEpoch >= 0 && snapshotEpoch > latestStoreEpoch -> CONFIDENCE_TOO_WIDE` before the existing staleness test."
+        }
+      ],
+      "reproTestMethods": [],
+      "additionalTests": [
+        "LmdbStatisticsServiceTest: publish (covered epoch 5, seq 10), `recordStoreCommit(5,10,\u2026)`; `acquire(6)` -> not ready (CONFIDENCE_TOO_WIDE); after `recordStoreCommit(6,12,\u2026)` + `installMutationTail` -> `estimateLeaf(6, probe)` uses the tail overlay; `acquire(5)` still READY.",
+        "LmdbStatisticsServiceTest: with `latestStoreEpoch == -1` (never recorded) `acquire(any epoch within [baseEpoch, coveredEpoch])` unchanged (builder-test compatibility)."
+      ],
+      "existingTestsAtRisk": [
+        "LmdbStatisticsServiceTest#metadataOnlyEpochAdvanceKeepsCompleteRemainingMutationTailQueryable, #metadataOnlySnapshotAdvanceGuardsItsCoordinates \u2014 they record epochs explicitly; verify ordering in the tests matches the guard.",
+        "FrontierStatisticsBuilderTest#queryViewPinsOneMappedGenerationAcrossPublication and all `estimateJoin(snapshot.snapshotEpoch(), \u2026)` callers \u2014 protected by the `latestStoreEpoch >= 0` condition."
+      ],
+      "risk": "Low."
+    },
+    {
+      "id": "3.6.7b",
+      "title": "Fast-AGMS 'upper' is not a bound (all-zero lanes -> point 0, upper 1, confidence 0.86)",
+      "status": "could-not-confirm",
+      "severity": "S3",
+      "size": "small",
+      "recommendation": "fix-now",
+      "recommendationReason": "The repro `rareSharedKeysExplicitPlaneAgmsFallbackKeepsExactInsideInterval` passed (worstQ 8.6, none excluded) and the fallback is reachable only for EXPLICIT-plane predicate-only probes, so the dangerous case was not reproduced; but the zero-lane arithmetic is verifiably wrong and a one-line typed guard removes it without touching the healthy path.",
+      "rootCause": "FrontierMappedStatistics.estimateJoin AGMS branch (:496-524): `lanes[lane] = max(0, dot)`; `point = median`; `upper = min(productBound, 4\u00b7max(point, laneUpper) + 1)`; confidence `1 - exp(-lanes/2)` \u2248 0.86 for 4 lanes. When every lane's signed dot product is \u2264 0 (noise-dominated regime) the result is `[0, 1]` with 0.86 confidence and fallbackReason NONE \u2014 an interval that excludes any positive true size while claiming confidence. The shape check `agmsShape(probe)` (predicate in the heavy list of every probed plane) is why BOTH_PLANES probes on stores without inferred rows never reach it.",
+      "fix": "Guard: if `laneUpper <= 0.0` (no lane observed positive mass) return `FrontierJoinEstimate.unavailable(CONFIDENCE_TOO_WIDE)` (typed unknown; consumers fall back to independence). Optionally make the upper a real bound: AGMS median-of-lanes error is bounded by `c\u00b7sqrt(F2(L)\u00b7F2(R)/width)`; compute the second moments from the same `agmsCounter` sums (sum of squares per lane) and set `upper = min(productBound, point + 4\u00b7sqrt(F2L\u00b7F2R/width))`, `lower = max(0, point \u2212 same)`, confidence scaled by `min(1, point / error)`. The second part is medium-sized and should be validated with the repro's disjoint-heavy-hitter datasets before landing.",
+      "files": [
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/frontier/FrontierMappedStatistics.java",
+          "lines": "510-524",
+          "change": "Typed unavailable when no lane has positive mass; optional F2-based error bound."
+        }
+      ],
+      "reproTestMethods": [
+        "FrontierEstimationReviewReproTest#rareSharedKeysExplicitPlaneAgmsFallbackKeepsExactInsideInterval (currently passing; port as a regression guard to core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/frontier/)"
+      ],
+      "additionalTests": [
+        "FrontierMappedStatistics unit test with a synthetic generation whose AGMS shards produce all-zero dot products -> fallbackReason CONFIDENCE_TOO_WIDE, never `[0,1]` with confidence 0.86."
+      ],
+      "existingTestsAtRisk": [
+        "FrontierStatisticsBuilderTest#mappedFastAgmsEstimatesHeavyPredicateRoleJoin, #signedMutationDeltaKeepsFastAgmsJoinQueryable \u2014 positive-mass cases; unaffected by the zero guard."
+      ],
+      "risk": "Low for the guard; medium for the F2 bound (may widen intervals the cost model currently treats as tight)."
+    },
+    {
+      "id": "3.6.7c",
+      "title": "Quad-synopsis publish races / optimistic reads on mutable arrays (sketch estimator, off by default)",
+      "status": "could-not-confirm",
+      "severity": "S3",
+      "size": "medium",
+      "recommendation": "defer",
+      "recommendationReason": "Only reachable with the legacy sketch estimator enabled (`sketchEstimatorEnabled=true`, off by default); the reviewer marked it plausible and did not reproduce it. Frontier V2 is the sole production estimator, so this should be handled with the sketch-estimator retirement decision rather than patched now.",
+      "rootCause": "Reviewer notes point at LmdbQuadSynopsisService (:362-372: adds between the staleness check and publish are dropped and `rebuildRequested` is cleared) and BoundedQuadSynopsis (:43-50 optimistic read probes mutable arrays; :93-105) plus PrimitiveBottomK.projectionSample (:59-70 AIOOBE before validate()). Not verified in this pass (out of the default code path; not in the repro set).",
+      "fix": "If retained: perform the staleness check and the publication under one lock (or CAS on `mutationVersion`) and re-run the check after publish; make optimistic reads copy-on-read or validate array bounds before probing. If the sketch estimator is being retired (japicmp already forces restoring its config setters as deprecated no-ops), remove the service instead.",
+      "files": [
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/estimation/LmdbQuadSynopsisService.java",
+          "lines": "~362-372",
+          "change": "Atomic staleness-check + publish (if retained)."
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/estimation/BoundedQuadSynopsis.java",
+          "lines": "~43-50, ~93-105",
+          "change": "Validate before probing mutable arrays (if retained)."
+        }
+      ],
+      "reproTestMethods": [],
+      "additionalTests": [
+        "If retained: concurrent add/publish stress test asserting no dropped adds and no exceptions with `sketchEstimatorEnabled=true`."
+      ],
+      "existingTestsAtRisk": [],
+      "risk": "Low (off by default)."
+    }
+  ],
+  "implementationOrder": [
+    "3.6.6a",
+    "3.6.1",
+    "3.6.2",
+    "3.6.3",
+    "3.6.4",
+    "3.6.5",
+    "3.6.6b",
+    "3.6.7a",
+    "3.6.7b",
+    "3.6.7c"
+  ],
+  "sharedInfrastructure": "Three small shared pieces. (1) `LmdbFrontierLeafAnswer` (new, core/sail/lmdb/.../lmdb/): the single predicate \"Frontier answered authoritatively for this probe\" (mode == AUTHORITATIVE && fallbackReason == NONE && finite point) and the roadmap 4.3 fallback chain Frontier -> bounded page/B-tree estimate (STORAGE_SUMMARY) -> exact count only in the decision tier -> total-rows ceiling, implemented once in LmdbStorageEstimatorEvidence and reused by the packed path via LmdbEstimatorRuntime.conventionalStatementPatternRows and by LmdbEstimatorStorageAccess.packedStatementPatternRows; it also decides SHADOW behaviour. wp6 (LEO) should use the same predicate when deciding whether feedback targets mapped or scalar evidence, and \u00a73.8 cost-model work should read the same fallback reason to apply quantile costing. (2) `FrontierStatisticsException.permanent`/`requiresBaseRebuild()` + `LmdbSailStore.classifyDeltaFailure` + `FrontierRebuildSchedulePolicy`: typed failure classification and debounce-with-deadline scheduling for the whole Frontier lifecycle; any future publication path (compaction, dimension migration) should throw typed permanent failures rather than IOException. (3) `FrontierOmniIndex.Scratch` per-estimate work budget (`beginEstimate`, `remainingCandidateRows`) shared by leaf, bridge (both orientations), star and path estimators \u2014 the cost model's lineage work budget bounds estimate *count*; this bounds work *per estimate*.",
+  "crossWpTouchpoints": [
+    "wp8 (reader pool / estimator txn plumbing): 3.6.1 re-enables `LmdbStatementPatternCardinalitySource.estimateForPlanning/estimateExact` during Frontier-unavailable phases; these take nested ordinary LMDB read slots (TripleStore.cardinality page estimator; `exactCardinality` :2105-2117 is a full scan). \u00a73.10 asks to pass the query's pinned dataset txn into estimators and to cap `exactCardinality`/`repeatedVariableCardinality`; the exact tier stays behind `exactProbePermitted` here, but the cap should land with or before 3.6.1 to avoid cold-phase stalls under concurrency.",
+    "wp8: full fix for 3.6.7a \u2014 keying `LmdbStatisticsService.acquire/openView` on the journal sequence read inside the query's own read txn (`TripleStore.latestFrontierMutationSequence(Txn)` :2431) instead of `recordStoreCommit` bookkeeping \u2014 is txn plumbing owned by wp8; only the precise `acquire` guard is designed here.",
+    "wp6 (LEO): 3.6.7a's stale window also makes feedback learn against a stale generation (reviewer note 3); 3.6.3's mapped/scalar flip per commit changes which LEO session (LmdbMappedFrontierLearningSession vs scalar) records feedback; the proposed `currentEstimatesAvailable()` (tail-aware readiness) would change LEO's evidence classification \u2014 deferred and flagged, not designed.",
+    "\u00a73.8 cost model (wp7): 3.6.5 removes false-zero bridges, but LmdbPackedCostModel still costs with `pointRows` regardless of confidence (:748-749, :1444-1451) and `certifyRootRows` treats semantic 0 as exact (:257-260); roadmap 4.4 quantile costing (point^c\u00b7upper^(1-c)) is the consumer-side half of the same problem and must not be duplicated here.",
+    "\u00a73.3 plan caches (wp3): plans built during a cold phase now use STORAGE_SUMMARY evidence; `LmdbPackedCostModel.providerVersion()` (:182-189) mixes mode/dataset flags but not Frontier READY state, and `validateStalePlan` (:172-180) replans with reason 'frontier-statistics-unavailable' \u2014 verify that PackedPlanCache invalidates cold-planned entries once Frontier becomes READY, otherwise 3.6.1 makes cold plans stickier. Also `LmdbStorageEstimatorEvidence` candidate freshness/`snapshotVersion` is the 3.3.3 restart-version bug's input.",
+    "LmdbEstimatorArchitectureTest (repo-wide guard, not a WP): LmdbStorageEstimatorEvidence is at 697/700 lines; the new helper must be added to ROOT_IMPLEMENTATIONS and must not reference LmdbEstimationEngine/LmdbEstimatorRuntime; new files need the exact copyright header and agent signature.",
+    "\u00a71 japicmp / sketch estimator retirement: 3.6.7c is only reachable with the legacy sketch estimator; whoever restores the deprecated `LmdbStoreConfig.setSketchEstimator*` no-ops should decide whether LmdbQuadSynopsisService stays at all.",
+    "Benchmarks/ITs: QueryBenchmarkTest and LmdbThemeQueryRegressionIT await READY through LmdbPlannerAwait.awaitLmdbOptimizerPipeline (which calls `rebuildFrontierStatistics()`), so warm expectations are unaffected; cold-phase plan fingerprints (if any are recorded) will change after 3.6.1."
+  ],
+  "openQuestions": [
+    "3.6.3: is it safe to start a base rebuild while `storeTxnStarted` is true (write txn open)? The rebuild reads an LMDB MVCC snapshot and `acknowledgeFrontierMutationsThrough` uses the independent-writer gate designed for this, but the guard exists at :1174 and `rebuildFrontierStatistics()` throws at :638 when a write txn is active; the design keeps the guard and applies the deadline only to the quiet period. A long-running writer can still starve the rebuild.",
+    "3.6.4: retention depth \u2014 current + direct predecessor (required by `rollback()`/recovery) is proposed; should more history be kept for forensic/rollback purposes, and should the startup sweep be opt-in for the first release?",
+    "3.6.2: the delta-tier rebuild fraction (0.75 of `deltaAndManifestBudgetBytes`) and the transient-retry bound (8) are constants; should either be exposed in LmdbStoreConfig? Also whether to derive delta-build dimensions from the manifest (avoiding a rebuild on -Xmx change) or simply rebuild.",
+    "3.6.1: should STORAGE_SUMMARY evidence used while Frontier is unavailable be stamped so plan caches replan when READY (depends on the \u00a73.3 fix design)?",
+    "3.6.6b: budget/tier constants (262 144 candidate rows, 256-row initial bridge tier, 1 024-row degree probes) need validation on the LMDB theme benchmark harness before landing; a `-Dfrontier.bridge.work` system property for experiments only (not a behaviour flag) may be acceptable.",
+    "Where to place the slow reproducers (39-48 s each): module unit suite under the `slowTestsOnly` profile vs Failsafe IT; the repo's no-red-baseline policy requires them to be green before merge either way."
+  ]
+}

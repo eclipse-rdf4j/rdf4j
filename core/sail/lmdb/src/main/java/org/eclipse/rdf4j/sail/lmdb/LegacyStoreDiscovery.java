@@ -136,7 +136,8 @@ final class LegacyStoreDiscovery {
 					int termSpocDatabase = termIndexes.contains("spoc")
 							? valuesDatabases.get(TripleIndex.nativeDatabaseName("term-spoc", true))
 							: -1;
-					validateLegacyDictionary(stack, valuesTxn, valuesMain, valuesDatabases);
+					validateLegacyDictionary(stack, valuesTxn, valuesMain, valuesDatabases,
+							!StoreProperties.LANGUAGE_TAG_KEY_BYTE_EXACT.equals(properties.getLanguageTagKey()));
 					validateContexts(stack, triplesTxn, triplesDatabases.get("contexts"), valuesTxn, valuesMain,
 							termCspoDatabase);
 					validateStatementIndexes(stack, triplesTxn, triplesDatabases, statementIndexes, valuesTxn,
@@ -164,6 +165,37 @@ final class LegacyStoreDiscovery {
 		}
 	}
 
+	/** Validates an existing generation before properties, UUIDs or backing-store startup can write. */
+	static void validateNativeFormatFence(File directory, LmdbStoreFormat format) throws IOException {
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			long environment = openReadOnlyEnvironment(stack, new File(directory, "values"));
+			try {
+				ValueStore.validateMetadataBeforeStartupWrites(environment, format);
+			} finally {
+				mdb_env_close(environment);
+			}
+		}
+	}
+
+	private static boolean isLegacyGeneration(File directory, StoreProperties properties) throws IOException {
+		if (!properties.isLoaded()) {
+			if (new File(directory, "lmdbrdf.ver").exists()) {
+				throw new IOException("Missing store.properties for a fenced LmdbStore");
+			}
+			return true;
+		}
+		String version = properties.getVersion();
+		if (version == null) {
+			return false;
+		}
+		try {
+			return Integer.parseInt(version) == LmdbStoreFormat.LEGACY_VERSION;
+		} catch (NumberFormatException ignored) {
+			// LmdbStoreFormat performs the authoritative version diagnostic before any writable environment is opened.
+			return false;
+		}
+	}
+
 	/**
 	 * Checks the fixed current-format schema without walking a dictionary, index, namespace snapshot or DB catalog. The
 	 * caller must separately establish native CLEAN transaction authority before using this as admission evidence.
@@ -182,6 +214,10 @@ final class LegacyStoreDiscovery {
 		openKnownDatabase(stack, valuesTxn, ValueStore.TERM_INDEX_MANIFEST_DATABASE, valueDatabases, true);
 		openKnownDatabase(stack, triplesTxn, "contexts", tripleDatabases, true);
 		openKnownDatabase(stack, triplesTxn, TripleStore.NAMESPACE_DATABASE_NAME, tripleDatabases, true);
+		openKnownDatabase(stack, triplesTxn, TripleStore.PREDICATE_OBJECT_DOMAINS_DB, tripleDatabases, true);
+		openKnownDatabase(stack, triplesTxn, TripleStore.PREDICATE_OBJECT_DOMAIN_DEGRADATIONS_DB, tripleDatabases,
+				true);
+		openKnownDatabase(stack, triplesTxn, TripleStore.FRONTIER_MUTATION_JOURNAL_DB, tripleDatabases, true);
 		// Every legal permutation is probed, including absent indexes, so incomplete pairs and staged term indexes
 		// force ordinary recovery. This fixed work is independent of the number of dictionary or statement entries.
 		for (String spec : INDEX_SPECS) {
@@ -308,25 +344,6 @@ final class LegacyStoreDiscovery {
 				throw new IOException("Missing or malformed current LMDB metadata");
 			}
 			return copy(value.mv_data());
-		}
-	}
-
-	private static boolean isLegacyGeneration(File directory, StoreProperties properties) throws IOException {
-		if (!properties.isLoaded()) {
-			if (new File(directory, "lmdbrdf.ver").exists()) {
-				throw new IOException("Missing store.properties for a fenced LmdbStore");
-			}
-			return true;
-		}
-		String version = properties.getVersion();
-		if (version == null) {
-			return false;
-		}
-		try {
-			return Integer.parseInt(version) == LmdbStoreFormat.LEGACY_VERSION;
-		} catch (NumberFormatException ignored) {
-			// LmdbStoreFormat performs the authoritative version diagnostic before any writable environment is opened.
-			return false;
 		}
 	}
 
@@ -463,6 +480,16 @@ final class LegacyStoreDiscovery {
 		for (String spec : statementIndexes) {
 			expectedTriples.add(TripleIndex.nativeDatabaseName(spec, true));
 			expectedTriples.add(TripleIndex.nativeDatabaseName(spec, false));
+		}
+		// Accept only owned auxiliary tables that are present; older generations may omit them.
+		if (tripleDatabases.containsKey(TripleStore.PREDICATE_OBJECT_DOMAINS_DB)) {
+			expectedTriples.add(TripleStore.PREDICATE_OBJECT_DOMAINS_DB);
+		}
+		if (tripleDatabases.containsKey(TripleStore.PREDICATE_OBJECT_DOMAIN_DEGRADATIONS_DB)) {
+			expectedTriples.add(TripleStore.PREDICATE_OBJECT_DOMAIN_DEGRADATIONS_DB);
+		}
+		if (tripleDatabases.containsKey(TripleStore.FRONTIER_MUTATION_JOURNAL_DB)) {
+			expectedTriples.add(TripleStore.FRONTIER_MUTATION_JOURNAL_DB);
 		}
 		if (!tripleDatabases.keySet().equals(expectedTriples)) {
 			Set<String> unknown = new TreeSet<>(tripleDatabases.keySet());
@@ -828,7 +855,7 @@ final class LegacyStoreDiscovery {
 	}
 
 	private static void validateLegacyDictionary(MemoryStack stack, long transaction, int mainDatabase,
-			Map<String, Integer> namedDatabases) throws IOException {
+			Map<String, Integer> namedDatabases, boolean canonicalLanguageKeys) throws IOException {
 		PointerBuffer cursorHandle = stack.mallocPointer(1);
 		E(mdb_cursor_open(transaction, mainDatabase, cursorHandle));
 		long cursor = cursorHandle.get(0);
@@ -845,7 +872,8 @@ final class LegacyStoreDiscovery {
 						throw new IOException("Unrecognized named database in values environment: " + name);
 					}
 				} else {
-					validateDictionaryEntry(stack, transaction, mainDatabase, encodedKey, copy(value.mv_data()));
+					validateDictionaryEntry(stack, transaction, mainDatabase, encodedKey, copy(value.mv_data()),
+							canonicalLanguageKeys);
 				}
 				rc = mdb_cursor_get(cursor, key, value, MDB_NEXT);
 			}
@@ -858,30 +886,35 @@ final class LegacyStoreDiscovery {
 	}
 
 	private static void validateDictionaryEntry(MemoryStack stack, long transaction, int mainDatabase, byte[] key,
-			byte[] value) throws IOException {
+			byte[] value, boolean canonicalLanguageKeys) throws IOException {
 		if (key.length == 0) {
 			throw new IOException("Empty key in ValueStore main database");
 		}
 		int type = Byte.toUnsignedInt(key[0]);
 		switch (type) {
 		case URI_VALUE, LITERAL_VALUE, BNODE_VALUE, NAMESPACE_VALUE -> validateReverseEntry(stack, transaction,
-				mainDatabase, key, value);
+				mainDatabase, key, value, canonicalLanguageKeys);
 		case ID_KEY -> validateIdEntry(stack, transaction, mainDatabase, key, value);
-		case HASH_KEY -> validateHashEntry(stack, transaction, mainDatabase, key, value);
-		case HASH_ID_KEY -> validateHashIdEntry(stack, transaction, mainDatabase, key, value);
+		case HASH_KEY -> validateHashEntry(stack, transaction, mainDatabase, key, value, canonicalLanguageKeys);
+		case HASH_ID_KEY -> validateHashIdEntry(stack, transaction, mainDatabase, key, value, canonicalLanguageKeys);
 		case NEXT_ID_KEY -> throw new IOException("Format-6 allocation metadata is present in a legacy ValueStore");
 		default -> throw new IOException("Unrecognized record in ValueStore main database");
 		}
 	}
 
 	private static void validateReverseEntry(MemoryStack stack, long transaction, int mainDatabase, byte[] key,
-			byte[] value) throws IOException {
+			byte[] value, boolean canonicalLanguageKeys) throws IOException {
 		if (key.length > MAX_SHORT_VALUE_KEY) {
 			throw new IOException("Long ValueStore values must use hashed reverse keys");
 		}
 		long id = decodeIdValue(value);
 		byte[] owner = getValue(transaction, mainDatabase, encodeId(id));
-		if (owner == null || !Arrays.equals(owner, key)) {
+		if (owner == null) {
+			throw new IOException("ValueStore reverse mapping has no matching owner record");
+		}
+		validateOwnerPayload(stack, transaction, mainDatabase, id, owner, false);
+		if (!Arrays.equals(owner, key) && (!canonicalLanguageKeys
+				|| !Arrays.equals(ValueStoreRecordCodec.canonicalLanguageKey(owner), key))) {
 			throw new IOException("ValueStore reverse mapping has no matching owner record");
 		}
 		validateOwnerPayload(stack, transaction, mainDatabase, id, owner, true);
@@ -894,7 +927,7 @@ final class LegacyStoreDiscovery {
 	}
 
 	private static void validateHashEntry(MemoryStack stack, long transaction, int mainDatabase, byte[] key,
-			byte[] value) throws IOException {
+			byte[] value, boolean canonicalLanguageKeys) throws IOException {
 		ByteBuffer encoded = ByteBuffer.wrap(key);
 		encoded.get();
 		long expectedHash = readCanonicalUnsigned(encoded);
@@ -903,14 +936,19 @@ final class LegacyStoreDiscovery {
 		}
 		long id = decodeIdValue(value);
 		byte[] owner = getValue(transaction, mainDatabase, encodeId(id));
-		if (owner == null || owner.length <= MAX_SHORT_VALUE_KEY || hash(owner) != expectedHash) {
+		if (owner == null || owner.length <= MAX_SHORT_VALUE_KEY) {
+			throw new IOException("ValueStore hash mapping has no matching owner record");
+		}
+		validateOwnerPayload(stack, transaction, mainDatabase, id, owner, false);
+		if (hash(owner) != expectedHash && (!canonicalLanguageKeys
+				|| hash(ValueStoreRecordCodec.canonicalLanguageKey(owner)) != expectedHash)) {
 			throw new IOException("ValueStore hash mapping has no matching owner record");
 		}
 		validateOwnerPayload(stack, transaction, mainDatabase, id, owner, true);
 	}
 
 	private static void validateHashIdEntry(MemoryStack stack, long transaction, int mainDatabase, byte[] key,
-			byte[] value) throws IOException {
+			byte[] value, boolean canonicalLanguageKeys) throws IOException {
 		ByteBuffer encoded = ByteBuffer.wrap(key);
 		encoded.get();
 		long expectedHash = readCanonicalUnsigned(encoded);
@@ -922,7 +960,12 @@ final class LegacyStoreDiscovery {
 			throw new IOException("Malformed ValueStore collision key");
 		}
 		byte[] owner = getValue(transaction, mainDatabase, encodeId(id));
-		if (owner == null || owner.length <= MAX_SHORT_VALUE_KEY || hash(owner) != expectedHash) {
+		if (owner == null || owner.length <= MAX_SHORT_VALUE_KEY) {
+			throw new IOException("ValueStore collision key has no matching owner record");
+		}
+		validateOwnerPayload(stack, transaction, mainDatabase, id, owner, false);
+		if (hash(owner) != expectedHash && (!canonicalLanguageKeys
+				|| hash(ValueStoreRecordCodec.canonicalLanguageKey(owner)) != expectedHash)) {
 			throw new IOException("ValueStore collision key has no matching owner record");
 		}
 		validateOwnerPayload(stack, transaction, mainDatabase, id, owner, true);
@@ -1003,7 +1046,21 @@ final class LegacyStoreDiscovery {
 		return dependency;
 	}
 
+	/**
+	 * Dictionary records are policy-validated before any statement/term graph can be accepted. Follow either exact
+	 * physical association here; explicit byte-exact dictionaries cannot contain the canonical-only association because
+	 * validateReverseEntry/validateHashEntry/validateHashIdEntry reject it before discovery completes.
+	 */
 	private static boolean isLiveOwner(MemoryStack stack, long transaction, int mainDatabase, long id, byte[] data)
+			throws IOException {
+		if (ownsReverseKey(stack, transaction, mainDatabase, id, data)) {
+			return true;
+		}
+		byte[] canonical = ValueStoreRecordCodec.canonicalLanguageKey(data);
+		return canonical != data && ownsReverseKey(stack, transaction, mainDatabase, id, canonical);
+	}
+
+	private static boolean ownsReverseKey(MemoryStack stack, long transaction, int mainDatabase, long id, byte[] data)
 			throws IOException {
 		stack.push();
 		try {

@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Difference;
@@ -117,6 +118,9 @@ public final class QueryAlgebraBindingAnalysis {
 	private final Map<QueryModelNode, Long> scopeIdentities = new IdentityHashMap<>();
 	private final Map<OutputKey, OutputFacts> outputCache = new HashMap<>();
 	private final Map<OutputKey, Boolean> resultSetModifierCache = new HashMap<>();
+	private final Map<TupleExpr, Set<String>> requiredInputCache = new IdentityHashMap<>();
+	private final TupleExprs.DeclaredOutputBindings declaredBindingNames = new TupleExprs.DeclaredOutputBindings(
+			TupleExpr::getBindingNames);
 	private final Map<ChildInputKey, ReadOnlyContext> childInputCache = new HashMap<>();
 	private final Map<OutputKey, ReadOnlyContext> leftJoinInputCache = new HashMap<>();
 	private final AtomicLong nextScopeIdentity = new AtomicLong(1);
@@ -207,6 +211,57 @@ public final class QueryAlgebraBindingAnalysis {
 
 	public ReadOnlyContext rootContext() {
 		return rootContext;
+	}
+
+	/**
+	 * Semantic frame of an OPTIONAL condition, including the actual input exclusions of its operands. Complete known
+	 * observations supplied by the left frame retain that frame's values; every other condition uses the matched frame.
+	 * Whether the left-frame condition may run early is a separate effect/repetition proof. This also describes
+	 * prospective residuals on an OPTIONAL that does not yet carry a condition.
+	 */
+	public ReadOnlyContext leftJoinConditionContext(LeftJoin leftJoin) {
+		return leftJoinConditionContext(leftJoin, contextAt(leftJoin));
+	}
+
+	/** Complete phase and matched-frame proof for a prospective residual, before mutating the OPTIONAL. */
+	public ReadOnlyContext leftJoinConditionContext(LeftJoin leftJoin, ValueExpr condition) {
+		return leftJoinConditionContext(leftJoin, contextAt(leftJoin), condition);
+	}
+
+	public boolean leftJoinConditionUsesLeftFrame(LeftJoin leftJoin) {
+		return leftJoinConditionUsesLeftFrame(leftJoin, leftJoin.getCondition());
+	}
+
+	/** The same phase proof for a prospective replacement condition, before mutating the OPTIONAL. */
+	public boolean leftJoinConditionUsesLeftFrame(LeftJoin leftJoin, ValueExpr condition) {
+		ReadOnlyContext input = leftJoinInput(leftJoin, contextAt(leftJoin));
+		return conditionUsesLeftFrame(condition, withOutput(input, outputFacts(leftJoin.getLeftArg(), input)));
+	}
+
+	private boolean conditionUsesLeftFrame(ValueExpr condition, ReadOnlyContext leftFrame) {
+		if (condition == null) {
+			return false;
+		}
+		TupleExprs.ConditionBindingDomain observed = TupleExprs.conditionBindingDomain(condition);
+		return observed.known() && leftFrame.bindingDomainKnown()
+				&& leftFrame.guaranteedNames().containsAll(observed.names());
+	}
+
+	private ReadOnlyContext leftJoinConditionContext(LeftJoin leftJoin, ReadOnlyContext input) {
+		return leftJoinConditionContext(leftJoin, input, leftJoin.getCondition());
+	}
+
+	private ReadOnlyContext leftJoinConditionContext(LeftJoin leftJoin, ReadOnlyContext input, ValueExpr condition) {
+		ReadOnlyContext optionalInput = leftJoinInput(leftJoin, input);
+		OutputFacts left = outputFacts(leftJoin.getLeftArg(), optionalInput);
+		ReadOnlyContext leftFrame = withOutput(optionalInput, left);
+		if (conditionUsesLeftFrame(condition, leftFrame)) {
+			return leftFrame;
+		}
+		ReadOnlyContext rightInput = childInput(leftJoin, leftJoin.getRightArg(), input);
+		OutputFacts right = outputFacts(leftJoin.getRightArg(), rightInput);
+		return withOutput(optionalInput,
+				matchedLeftJoinFacts(left, right, optionalInput, rightInput.equals(leftFrame)));
 	}
 
 	/** Returns a read-only frame at the node's actual evaluator position. */
@@ -418,12 +473,72 @@ public final class QueryAlgebraBindingAnalysis {
 		resultSetModifierCache.clear();
 		childInputCache.clear();
 		leftJoinInputCache.clear();
+		requiredInputCache.clear();
+		declaredBindingNames.clear();
 		scopeIdentities.clear();
 	}
 
 	/** Creates a local mutable owner; consumers must export an immutable snapshot before sharing it. */
 	MutableScope mutableScope(ReadOnlyContext initial) {
 		return new MutableScope(initial);
+	}
+
+	/**
+	 * Physical parameters not supplied inside this tuple subtree. Internal ordinary joins may supply a right operand's
+	 * parameters from proved left outputs; MINUS and independent scope edges cannot. Identity keys keep logically equal
+	 * filters with different physical parameter contracts separate within this invocation.
+	 */
+	public Set<String> requiredInputBindingNames(TupleExpr expression) {
+		Set<String> cached = requiredInputCache.get(expression);
+		if (cached != null) {
+			return cached;
+		}
+		Set<String> required = new HashSet<>();
+		if (expression instanceof Filter filter) {
+			required.addAll(requiredInputBindingNames(filter.getArg()));
+			Set<String> conditionInputs = new HashSet<>(filter.getRequiredInputBindingNames());
+			if (!conditionInputs.isEmpty()) {
+				OutputFacts argument = outputFacts(filter.getArg(), rootContext);
+				if (argument.guaranteedOutputsKnown()) {
+					conditionInputs.removeAll(argument.guaranteedOutputs());
+				}
+				required.addAll(conditionInputs);
+			}
+		} else if (expression instanceof Join || expression instanceof LeftJoin || expression instanceof Lateral) {
+			BinaryTupleOperator binary = (BinaryTupleOperator) expression;
+			required.addAll(requiredInputBindingNames(binary.getLeftArg()));
+			Set<String> right = new HashSet<>(requiredInputBindingNames(binary.getRightArg()));
+			if (!right.isEmpty() && canReceiveSiblingBindings(binary.getRightArg(),
+					binary.getLeftArg().getBindingNames(), rootContext)) {
+				OutputFacts left = outputFacts(binary.getLeftArg(), rootContext);
+				if (left.guaranteedOutputsKnown()) {
+					Set<String> supplied = new HashSet<>(left.guaranteedOutputs());
+					if (expression instanceof Lateral lateral) {
+						supplied.retainAll(lateral.getRightInputBindingNames());
+					}
+					right.removeAll(supplied);
+				}
+			}
+			required.addAll(right);
+		} else {
+			for (TupleExpr child : TupleExprs.getChildren(expression)) {
+				required.addAll(requiredInputBindingNames(child));
+			}
+		}
+		Set<String> result = Set.copyOf(required);
+		requiredInputCache.put(expression, result);
+		return result;
+	}
+
+	/** Shared output-name derivation for this immutable analysis generation. */
+	public TupleExprs.DeclaredOutputBindings declaredOutputBindingNames() {
+		return declaredBindingNames;
+	}
+
+	/** The shared actual-input classification used by relocation, binding flow, and physical preparation. */
+	public boolean canReceiveSiblingBindings(TupleExpr expression, Set<String> siblingNames, ReadOnlyContext input) {
+		return !(expression instanceof Service) && !isOutOfScopeForLeftBindings(expression, input)
+				&& !TupleExprs.requiresIndependentProjectionInput(expression, siblingNames);
 	}
 
 	private ReadOnlyContext withOutput(ReadOnlyContext input, OutputFacts facts) {
@@ -558,6 +673,11 @@ public final class QueryAlgebraBindingAnalysis {
 		if (parent instanceof LeftJoin leftJoin) {
 			ReadOnlyContext leftJoinInput = leftJoinInput(leftJoin, input);
 			if (child == leftJoin.getRightArg()) {
+				if (!requiredInputBindingNames(leftJoin.getRightArg()).isEmpty()
+						&& canReceiveSiblingBindings(leftJoin.getRightArg(), leftJoin.getLeftArg().getBindingNames(),
+								input)) {
+					return withOutput(leftJoinInput, outputFacts(leftJoin.getLeftArg(), leftJoinInput));
+				}
 				if (TupleExprs.containsSubquery(leftJoin.getRightArg())) {
 					// ScopedLeftJoinIterator withholds the left row, but forwards the OPTIONAL's entry input.
 					return input.withScopeIdentity(nextScopeId(leftJoin.getRightArg()));
@@ -572,16 +692,7 @@ public final class QueryAlgebraBindingAnalysis {
 				return leftJoinInput;
 			}
 			if (child == leftJoin.getCondition()) {
-				OutputFacts left = outputFacts(leftJoin.getLeftArg(), leftJoinInput);
-				ReadOnlyContext leftFrame = withOutput(leftJoinInput, left);
-				Set<String> conditionNames = VarNameCollector.process(leftJoin.getCondition());
-				if (leftJoin.getAssuredBindingNames().containsAll(conditionNames)) {
-					return leftFrame;
-				}
-				OutputFacts right = outputFacts(leftJoin.getRightArg(),
-						childInput(leftJoin, leftJoin.getRightArg(), input));
-				// The evaluator withholds the same inherited names from the condition as from the optional operands.
-				return withOutput(leftJoinInput, matchedLeftJoinFacts(left, right, leftJoinInput));
+				return leftJoinConditionContext(leftJoin, input);
 			}
 			return input;
 		}
@@ -652,10 +763,21 @@ public final class QueryAlgebraBindingAnalysis {
 	 * OPTIONAL left row) are hidden from the condition.
 	 */
 	private ReadOnlyContext scopedFilterConditionInput(Filter filter, ReadOnlyContext conditionInput) {
+		return scopedFilterConditionInput(filter, filter.getArg(), conditionInput);
+	}
+
+	/** The semantic condition frame for a prospective gate, without changing the candidate's parent links. */
+	public ReadOnlyContext filterConditionContext(Filter filter, TupleExpr argument, ReadOnlyContext input) {
+		return scopedFilterConditionInput(filter, argument, withOutput(input, outputFacts(argument, input)));
+	}
+
+	private ReadOnlyContext scopedFilterConditionInput(Filter filter, TupleExpr argument,
+			ReadOnlyContext conditionInput) {
 		if (bindingAssignment && filter.getConditionBindingScope().isAuto()) {
 			return conditionInput;
 		}
-		ConditionBindingScope scope = FilterBindingScope.resolve(filter);
+		ConditionBindingScope scope = FilterBindingScope.forGate(filter, argument,
+				TupleExprs.isVariableScopeChange(filter), declaredBindingNames);
 		if (scope.retainsAllBindings()) {
 			return conditionInput;
 		}
@@ -670,6 +792,10 @@ public final class QueryAlgebraBindingAnalysis {
 
 	private ReadOnlyContext joinRightInput(Join join, ReadOnlyContext input) {
 		TupleExpr right = join.getRightArg();
+		if (!requiredInputBindingNames(right).isEmpty()
+				&& canReceiveSiblingBindings(right, join.getLeftArg().getBindingNames(), input)) {
+			return withOutput(input, outputFacts(join.getLeftArg(), input));
+		}
 		String algorithm = join.getAlgorithmName();
 		if (algorithm == null || algorithm.isEmpty()) {
 			// Direct SERVICE joins are prepared before the merge candidate flag is considered.
@@ -682,7 +808,8 @@ public final class QueryAlgebraBindingAnalysis {
 			}
 			// Classify from the frame before this join's left side is evaluated. Modifier analysis roots itself at the
 			// right subtree, so its inherited input is preserved while parent links outside that subtree are ignored.
-			if (!isOutOfScopeForLeftBindings(right, input)) {
+			if (right instanceof Service || !isOutOfScopeForLeftBindings(right, input)
+					&& !TupleExprs.requiresIndependentProjectionInput(right, join.getLeftArg().getBindingNames())) {
 				return withOutput(input, outputFacts(join.getLeftArg(), input));
 			}
 			return input;
@@ -705,7 +832,8 @@ public final class QueryAlgebraBindingAnalysis {
 	 * The OPTIONAL condition is evaluated only for compatible merged rows. Its context therefore includes guaranteed
 	 * outputs from both sides, unlike the OPTIONAL result context, which must also account for unmatched left rows.
 	 */
-	private OutputFacts matchedLeftJoinFacts(OutputFacts left, OutputFacts right, ReadOnlyContext input) {
+	private OutputFacts matchedLeftJoinFacts(OutputFacts left, OutputFacts right, ReadOnlyContext input,
+			boolean rightConsumesLeftFrame) {
 		if (!left.possibleOutputsKnown || !right.possibleOutputsKnown || !left.canProduceRows
 				|| !right.canProduceRows) {
 			return OutputFacts.unknown(input);
@@ -713,11 +841,31 @@ public final class QueryAlgebraBindingAnalysis {
 		Set<String> possible = union(left.possibleOutputs, right.possibleOutputs);
 		Set<String> guaranteed = union(left.guaranteedOutputs, right.guaranteedOutputs);
 		Set<String> overwritten = union(left.overwrittenInputNames, right.overwrittenInputNames);
+		Map<String, Value> fixed = joinFixedValues(left, right, guaranteed);
+		Map<String, Set<ValueKind>> kinds = joinKinds(left, right, guaranteed);
+		if (rightConsumesLeftFrame) {
+			// A dependent RHS row transform owns its assignments. Independent relations still merge by
+			// compatibility, so an alias or projection in that separate frame cannot claim overwrite authority.
+			guaranteed.removeAll(right.overwrittenInputNames);
+			guaranteed.addAll(right.guaranteedOutputs);
+			for (String name : right.overwrittenInputNames) {
+				fixed.remove(name);
+				kinds.remove(name);
+				if (right.guaranteedOutputs.contains(name)) {
+					if (right.fixedValues.containsKey(name)) {
+						fixed.put(name, right.fixedValues.get(name));
+					}
+					if (right.valueKinds.containsKey(name)) {
+						kinds.put(name, right.valueKinds.get(name));
+					}
+				}
+			}
+		}
 		Set<String> retained = new HashSet<>(input.maybeBoundNames);
 		retained.removeAll(possible);
 		retained.removeAll(overwritten);
-		return OutputFacts.known(possible, guaranteed, joinFixedValues(left, right, guaranteed),
-				joinKinds(left, right, guaranteed), input, true, retained).withOverwrittenInputs(overwritten);
+		return OutputFacts.known(possible, guaranteed, fixed,
+				kinds, input, true, retained).withOverwrittenInputs(overwritten);
 	}
 
 	/**
@@ -980,7 +1128,8 @@ public final class QueryAlgebraBindingAnalysis {
 			if (!child.possibleOutputsKnown) {
 				return OutputFacts.unknown(input);
 			}
-			return project(child, projection.getProjectionElemList(), input, includesParentBindings(projection));
+			return project(child, projection.getProjectionElemList(), input,
+					TupleExprs.projectionIncludesParentBindings(projection));
 		}
 		if (expression instanceof MultiProjection multiProjection) {
 			return multiProjectionFacts(multiProjection, input);
@@ -1405,17 +1554,6 @@ public final class QueryAlgebraBindingAnalysis {
 			}
 		}
 		return projected.withOverwrittenInputs(overwritten);
-	}
-
-	private boolean includesParentBindings(Projection projection) {
-		QueryModelNode ancestor = projection.getParentNode();
-		while (ancestor != null) {
-			if (ancestor instanceof Projection || ancestor instanceof MultiProjection) {
-				return true;
-			}
-			ancestor = ancestor.getParentNode();
-		}
-		return false;
 	}
 
 	private OutputFacts multiProjectionFacts(MultiProjection projection, ReadOnlyContext input) {

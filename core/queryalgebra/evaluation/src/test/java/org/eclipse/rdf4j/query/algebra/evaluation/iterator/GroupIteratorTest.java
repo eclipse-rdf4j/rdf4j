@@ -329,7 +329,7 @@ public class GroupIteratorTest {
 
 		EVALUATOR.precompile(leftJoin, CONTEXT);
 
-		assertThat(leftJoin.getAlgorithmName()).isEqualTo(ScopedLeftJoinIterator.class.getSimpleName());
+		assertThat(leftJoin.getAlgorithmName()).isEqualTo(HashJoinIteration.class.getSimpleName());
 	}
 
 	@Test

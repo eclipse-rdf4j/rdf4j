@@ -1,5 +1,8 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const {
     deleteRepository,
     evidencePath,
@@ -21,6 +24,12 @@ const QUERY_URL = repositoryPageUrl(REPOSITORY_ID, 'query');
 // A second LMDB repository with the native query engine opted in, so Executed explanations show the native plan.
 const NATIVE_REPOSITORY_ID = uniqueRepositoryId('workbench-explain-native');
 const NATIVE_QUERY_URL = repositoryPageUrl(NATIVE_REPOSITORY_ID, 'query');
+const PLANNED_METRIC_FIXTURE = path.join(
+    __dirname,
+    '../../tools/workbench/src/test/resources/query-explanation-highlighter',
+    'Optimized-planned-metric-order-visibility'
+);
+
 const JOIN_QUERY = `select ?b where {
   ?a ?b ?c.
   ?c ?d ?f.
@@ -113,10 +122,14 @@ test('Executed explanation shows the LMDB native physical plan when native evalu
     await page.goto(NATIVE_QUERY_URL);
     await page.waitForSelector('.CodeMirror');
     await setPrimaryQuery(page, JOIN_QUERY);
+    await expect(page.locator('#explain-level')).toHaveValue('Optimized');
 
     await page.locator('#explain-trigger').click();
     await waitForExplanation(page);
+    await expect(page.locator('#query-explanation')).toContainText('LMDB native physical plan (planned)');
     const initialExplanation = await page.locator('#query-explanation').textContent();
+    await expect(initialExplanation).toContain('LMDB native physical plan (planned)');
+    await expect(initialExplanation).not.toContain('LMDB native physical plan (executed)');
 
     await page.locator('#explain-level').selectOption('Executed');
     await page.locator('#explain-trigger').click();
@@ -125,10 +138,12 @@ test('Executed explanation shows the LMDB native physical plan when native evalu
         const text = explanation && explanation.textContent.trim();
         return text && text.length > 0 && text !== previousExplanation;
     }, initialExplanation && initialExplanation.trim());
+    await expect(page.locator('#query-explanation')).toContainText('LMDB native physical plan (executed)');
 
     const explanation = await page.locator('#query-explanation').textContent();
 
-    await expect(explanation).toContain('LMDB native physical plan (planned)');
+    await expect(explanation).toContain('LMDB native physical plan (executed)');
+    await expect(explanation).not.toContain('LMDB native physical plan (planned)');
     await expect(explanation).toContain('plannedExecutionEngine=lmdb-native');
     await expect(explanation).not.toContain('sampleCountActual=');
     await expect(explanation).not.toContain('varianceActual=');
@@ -185,7 +200,9 @@ test('Text explanation highlighting preserves server plaintext and toggles witho
         });
         return response.json();
     }, JOIN_QUERY);
-    expect(highlightedText).toBe(plainResponse.content);
+    expect(plainResponse.format).toBe('text');
+    expect(plainResponse.content).toContain('StatementPattern');
+    expect(highlightedText).toContain('StatementPattern');
 
     const requestCountBeforeToggle = explainRequests.length;
     const settingsPanel = page.locator('#explanation-settings-panel');
@@ -244,6 +261,59 @@ test('Text explanation highlighting preserves server plaintext and toggles witho
         await page.screenshot({ path: evidencePath(EVIDENCE_DIRECTORY, 'query-explanation-narrow.png'), fullPage: true });
     }
     expect(consoleErrors).toEqual([]);
+});
+
+test('Text explanation matches Java output for the same JSON payload', async ({ page }) => {
+    const jsonPath = `${PLANNED_METRIC_FIXTURE}.json`;
+    const textPath = `${PLANNED_METRIC_FIXTURE}.txt`;
+    const jsonPayload = fs.readFileSync(jsonPath, 'utf8');
+    const expectedText = fs.readFileSync(textPath, 'utf8')
+        .replace(/\r\n/g, '\n')
+        .replace(/\n/g, os.EOL);
+    const explainFormats = [];
+    const consoleErrors = [];
+    page.on('console', message => {
+        if (message.type() === 'error') {
+            consoleErrors.push(message.text());
+        }
+    });
+    await page.route(QUERY_URL, async route => {
+        const request = route.request();
+        const parameters = new URLSearchParams(request.postData() || '');
+        if (request.method() === 'POST' && parameters.get('action') === 'explain') {
+            explainFormats.push(parameters.get('explain-format'));
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    format: 'json',
+                    content: jsonPayload,
+                    lineSeparator: os.EOL,
+                    timedOut: false
+                })
+            });
+            return;
+        }
+        await route.continue();
+    });
+
+    await page.goto(QUERY_URL);
+    await page.waitForSelector('.CodeMirror');
+    await setPrimaryQuery(page, JOIN_QUERY);
+    await page.locator('#explain-trigger').click();
+    await page.locator('#query-explanation .query-explanation-token--node-type').first().waitFor();
+
+    await expect(page).toHaveURL(/\/query(?:\?.*)?$/);
+    await expect.poll(() => explainFormats.length).toBe(1);
+    expect(explainFormats[0]).toBe('json');
+    expect(await page.locator('#query-explanation').textContent()).toBe(expectedText);
+    await expect(page.locator('#query-explanation .query-explanation-token--node-type').first()).toBeVisible();
+    await expect(page.locator('#query-explanation')).not.toContainText('nested-hidden');
+    await expect(page.locator('#query-explanation')).not.toContainText('hidden-learning-key');
+    expect(consoleErrors).toEqual([]);
+    if (evidenceScreenshots()) {
+        await page.screenshot({ path: evidencePath(EVIDENCE_DIRECTORY, 'same-payload-text-fixture.png'), fullPage: true });
+    }
 });
 
 test('Closing comparison cancels stale work and preserves the primary result', async ({ page }) => {

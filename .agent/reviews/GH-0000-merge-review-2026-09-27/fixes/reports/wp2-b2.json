@@ -1,0 +1,201 @@
+{
+ "wp": "wp2-packed-rules",
+ "batch": "b2",
+ "worktree": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp2",
+ "patchPath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/patches/wp2.patch",
+ "evidencePath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp2/initial-evidence.wp2.txt",
+ "findings": [
+  {
+   "id": "3.2.3",
+   "status": "fixed",
+   "rootCause": "PackedDomainFacts.widen ORed kindBits and languageBits (0|x = x) and intersect ANDed them (kind AND == 0 -> STATE_EMPTY, language AND silently 0) although in this encoding 0 means 'unknown' (PackedPredicateRange.reset zeroes everything; every verdict fires on non-zero bits). VALUES-seeded facts (PackedQueryCodec.seedBindingSetAssignmentFact) set kinds only, and LmdbPackedPredicateRangeProvider emits kinds=LITERAL with languageBits=0 when the RdfTermDomain has neither language fact, so widening `{ VALUES ?o {\"a\"@en} } UNION { ?s :p ?o }` (or two stored predicates) against a LANGUAGE_WITHOUT range produced a proof that every row is a language-free literal: langMatchesVerdict -> EmptySet for langMatches(lang(?o),'*'), languageVerdict -> tautology for lang(?o)='' (filter dropped). Audit item (4) of the design additionally found one unguarded consumer: the IS_NUMERIC rangeVerdict returned ALWAYS_FALSE whenever (kindBits & KIND_LITERAL) == 0, which under the corrected join becomes reachable with kindBits == 0 (unknown), proving `{ ?s :p ?o } UNION { ?s :r ?o } FILTER(isNumeric(?o))` empty when :r's kinds are unknown.",
+   "change": "PackedDomainFacts: new static joinBits/meetBits helpers with the documented 0 = unknown/top convention; widen uses joinBits for kinds and languages (a non-literal side contributes the other side's language bits vacuously via literalLanguageBits); intersect uses meetBits, proves EMPTY only from two known disjoint kind sets, and treats known disjoint language classes as 'no literal admitted' (EMPTY when kinds == LITERAL, else drops KIND_LITERAL and leaves languages unknown). New PackedDomainFacts.describeFiniteValueSet derives kinds, LANGUAGE_WITH/WITHOUT and XSD datatype bits (unknown as soon as a language-free literal carries a non-XSD datatype) from an enumerated value set; PackedQueryCodec.seedBindingSetAssignmentFact uses it so VALUES facts stay precise (the datatypeVerdict tautology now additionally requires languageBits == LANGUAGE_WITHOUT, since datatype bits describe language-free literals only). Resumed-session addition: the IS_NUMERIC verdict in PackedLogicalRuleProgram.rangeVerdict now requires kinds != 0 before refuting (all other consumers - datatypeVerdict, languageVerdict, langMatchesVerdict, kindVerdict, valuePossiblyEqualsRange, expandAnchorValue, codec rangeAdmitsTerm - were audited and already guard kinds != 0 or test for a specific non-zero bit). Sound because every operation only loses proofs derived from unknown bits; store-provided LANGUAGE_WITHOUT proofs (PackedPredicateRangePlanningTest#languageAbsent*) are unchanged and still green.",
+   "files": [
+    "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDomainFacts.java",
+    "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQueryCodec.java",
+    "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedLogicalRuleProgram.java",
+    "core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDomainFactLatticeTest.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbUnionLanguageFactsTest.java"
+   ],
+   "testsAdded": [
+    "PackedDomainFactLatticeTest#widenKnownLanguageWithUnknownLanguageIsUnknown",
+    "PackedDomainFactLatticeTest#widenKnownKindsWithUnknownKindsIsUnknown",
+    "PackedDomainFactLatticeTest#widenDisjointKnownLanguagesIsTheirUnion",
+    "PackedDomainFactLatticeTest#widenIgnoresVacuousLanguageOfNonLiteralSide",
+    "PackedDomainFactLatticeTest#intersectUnknownKindsWithKnownKindsKeepsTheKnownSide",
+    "PackedDomainFactLatticeTest#intersectUnknownLanguageWithKnownLanguageKeepsTheKnownSide",
+    "PackedDomainFactLatticeTest#intersectDisjointLanguagesOfLiteralOnlyRangesIsEmpty",
+    "PackedDomainFactLatticeTest#intersectDisjointLanguagesDropsOnlyTheLiteralKind",
+    "PackedDomainFactLatticeTest#intersectDisjointKnownKindsIsEmpty",
+    "PackedDomainFactLatticeTest#unionWithLanguageTaggedValuesDoesNotProveWildcardLangMatchesFalse",
+    "PackedDomainFactLatticeTest#unionWithLanguageTaggedValuesDoesNotProveEmptyLangTautological",
+    "PackedDomainFactLatticeTest#subSelectUnionWithLanguageTaggedValuesDoesNotProveWildcardLangMatchesFalse",
+    "PackedDomainFactLatticeTest#subSelectUnionWithLanguageTaggedValuesDoesNotProveEmptyLangTautological",
+    "PackedDomainFactLatticeTest#unionOfLanguageFreeAndUnknownLanguageStoredRangesDoesNotProveWildcardLangMatchesFalse",
+    "PackedDomainFactLatticeTest#unionWithUnknownKindsDoesNotProveIsNumericFalse",
+    "PackedDomainFactLatticeTest#knownNonLiteralKindsStillProveIsNumericFalse",
+    "PackedDomainFactLatticeTest#languageTaggedValuesProveWildcardLangMatchesTautological",
+    "PackedDomainFactLatticeTest#mixedLanguageValuesProveNothingAboutLang",
+    "PackedDomainFactLatticeTest#languageFreeValuesProveEmptyLangTautological",
+    "PackedDomainFactLatticeTest#xsdTypedValuesProveTheirDatatype",
+    "PackedDomainFactLatticeTest#customDatatypeInValuesLeavesDatatypesUnknown",
+    "PackedDomainFactLatticeTest#languageTaggedValuesKeepDatatypesOfLanguageFreeLiterals",
+    "PackedDomainFactLatticeTest#languageTaggedValuesDoNotProveTheirOwnDatatypeTautological",
+    "PackedDomainFactLatticeTest#iriOnlyValuesProveLangAlwaysErrors",
+    "LmdbUnionLanguageFactsTest#subSelectUnionLangEmptyFilter",
+    "LmdbUnionLanguageFactsTest#subSelectUnionLangMatchesStar",
+    "LmdbUnionLanguageFactsTest#directUnionLangMatchesStar",
+    "LmdbUnionLanguageFactsTest#directUnionLangEmptyFilter",
+    "LmdbUnionLanguageFactsTest#directUnionMixedValuesLangMatchesStar",
+    "LmdbUnionLanguageFactsTest#unionOfTwoStoredPredicatesWithDifferentLanguageProofs"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedDomainFactLatticeTest.txt\nTests run: 21, Failures: 15, Errors: 0, Skipped: 0, Time elapsed: 0.122 s <<< FAILURE!\nunionWithLanguageTaggedValuesDoesNotProveWildcardLangMatchesFalse: no contradiction or tautology may be proven for SELECT ?o WHERE { { VALUES ?o { \"a\"@en } } UNION { ?s :p ?o } FILTER(langMatches(lang(?o), \"*\")) } (generatedRuleMask=0x400) ==> expected: <0> but was: <1024>\nunionWithLanguageTaggedValuesDoesNotProveEmptyLangTautological: (generatedRuleMask=0x800) ==> expected: <0> but was: <2048>\nwidenKnownLanguageWithUnknownLanguageIsUnknown: a branch of unknown language must not be reported as language-free ==> expected: <0> but was: <2>\nintersectUnknownKindsWithKnownKindsKeepsTheKnownSide: unknown kinds intersected with known kinds must not prove emptiness ==> expected: not equal but was: <3>\nReport: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbUnionLanguageFactsTest.txt\nTests run: 6, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 1.584 s <<< FAILURE!\nsubSelectUnionLangMatchesStar(File): expected: <[o=\"a\"@en]> but was: <[]>\n-- audit item 4 (resumed session), same report path, PackedDomainFactLatticeTest:\nTests run: 24, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.353 s <<< FAILURE!\nunionWithUnknownKindsDoesNotProveIsNumericFalse: no contradiction or tautology may be proven for SELECT ?o WHERE { { ?s :p ?o } UNION { ?s :r ?o } FILTER(isNumeric(?o)) } (generatedRuleMask=0x400) ==> expected: <0> but was: <1024>",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedDomainFactLatticeTest.txt\nTests run: 24, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.350 s -- in org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedDomainFactLatticeTest\n(run 20260928T055359.092648Z-54421-88352201, after the IS_NUMERIC guard; the lattice/VALUES fix alone was green at 22/22 in run 20260928T013219)\nReport: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbUnionLanguageFactsTest.txt\nTests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.283 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbUnionLanguageFactsTest\n(re-confirmed 6/6 in the isolated LMDB run 20260928T060531.885797Z-89015-9ff3c47f after the guard)"
+  },
+  {
+   "id": "3.2.4c",
+   "status": "fixed",
+   "rootCause": "PackedQueryCodec's fact/rule fixpoint called deriveGroupFacts for every relation id, including alternatives that logical rules appended to existing memo groups, and deriveGroupFacts wrote into relations.groupId(relationId) where PackedDomainFacts.put strengthens by intersection. The finite-anchor alternative JOIN(VALUES ?o {anchor}, input) of a FILTER(?o = 1) group therefore replaced the FILTER group's copyAll(child) fact by the anchor's finite set; the enclosing JOIN with `?t :w ?o` intersected {1} with the stored {1.0} by object id -> STATE_EMPTY -> addEmptyDomainJoinAlternative emitted EmptySet for the whole join, and a sibling datatype FILTER's rangeVerdict read the poisoned range. The intersection is only sound under the memo invariant that all group members are equivalent, which any rule bug (3.2.4a/b) violates; PackedBindingFacts already derives from the first member only.",
+   "change": "PackedQueryCodec.deriveGroupFacts returns immediately unless relations.groupId(relationId) == relationId (the seed expression that opened the group; PackedExpressionInterner.internCanonical assigns size+1 as the group id, so alternatives added via internLogicalIfSameGroup are never their own group). Alternatives consume facts (their children are seeds of their own groups) but never produce them; documented on deriveGroupFacts and in the PackedDomainFacts class javadoc. Per the critique (minor 3.2.4c), the one sound narrowing that used to leak in through the FINITE_FILTER_VALUES alternative is re-derived seed-side: the FILTER case now calls PackedLogicalRuleProgram.deriveFilterDomainFacts, which intersects the child fact with the filter's finite constants when collectFiniteDomain accepts the condition (EQUALITY_COMPARISON / LIST_MEMBER / OR of those on one variable) and every constant is term-identity exact (IRI, bnode, xsd:string; language-tagged literals are deliberately excluded here because their value-equality class can hold several terms). Unbound rows are dropped by such filters in every mode, so the fact 'unbound or in the finite set' holds for the group. Consequence: an unsound alternative can only mis-plan itself, never siblings or parents; disjoint-join emptiness proofs for string/IRI IN-lists are preserved (PackedSeedOnlyDomainFactsTest#termIdentitySafeFilterConstantsStillProveDisjointJoinEmpty).",
+   "files": [
+    "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQueryCodec.java",
+    "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedLogicalRuleProgram.java",
+    "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDomainFacts.java",
+    "core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedSeedOnlyDomainFactsTest.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbFiniteAnchorValueEqualityTest.java"
+   ],
+   "testsAdded": [
+    "PackedSeedOnlyDomainFactsTest#anchorAlternativeDoesNotProveEnclosingJoinEmpty",
+    "PackedSeedOnlyDomainFactsTest#anchorAlternativeDoesNotProveEnclosingJoinEmptyThroughNestedGroup",
+    "PackedSeedOnlyDomainFactsTest#anchorAlternativeDoesNotPoisonSiblingFilterVerdict",
+    "PackedSeedOnlyDomainFactsTest#termIdentitySafeFilterConstantsStillProveDisjointJoinEmpty",
+    "PackedSeedOnlyDomainFactsTest#termIdentitySafeFilterConstantsKeepOverlappingJoin",
+    "PackedSeedOnlyDomainFactsTest#numericFilterConstantsDoNotNarrowSeedFacts",
+    "LmdbFiniteAnchorValueEqualityTest#anchorFactsDoNotPoisonEnclosingJoinDomain",
+    "LmdbFiniteAnchorValueEqualityTest#anchorFactsDoNotPoisonEnclosingJoinDomainThroughNestedGroup",
+    "LmdbFiniteAnchorValueEqualityTest#finiteFallbackFromValuesDoesNotPoisonSiblingJoin"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedSeedOnlyDomainFactsTest.txt (overwritten by the post-fix run; snippet from the retained verify log .mvnf/workspaces/wp2/logs/20260928T013530.651192Z-68182-8ff5393f/verify.log)\n[ERROR] Tests run: 6, Failures: 2, Errors: 0, Skipped: 0, Time elapsed: 0.347 s <<< FAILURE! -- in ...PackedSeedOnlyDomainFactsTest\nanchorAlternativeDoesNotProveEnclosingJoinEmptyThroughNestedGroup: expected: <[]> but was: <[4]>\nanchorAlternativeDoesNotPoisonSiblingFilterVerdict: the datatype filter must see the seed's {integer, decimal} range, not the anchor's {integer} ==> expected: <[]> but was: <[3]>\n(the two-child anchorAlternativeDoesNotProveEnclosingJoinEmpty variant was landed together with 3.2.4c before its own red could be captured separately; the nested-group variant is the same mechanism)",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedSeedOnlyDomainFactsTest.txt\nTests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.269 s -- in org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedSeedOnlyDomainFactsTest\n(6/6 again inside the evaluation module suite run 20260928T060135.029003Z-72994-c7b88e54)"
+  },
+  {
+   "id": "3.2.4a",
+   "status": "fixed",
+   "rootCause": "PackedLogicalRuleProgram.expandAnchorValue's finite-domain fallback replaced FILTER(?o = c) by JOIN(VALUES ?o {expanded}, input) - a term-identity join - but selected the stored terms with stored.equals(value), i.e. RDF term identity. With a finite stored domain {\"1\"^^integer, \"01\"^^integer, \"1.0\"^^decimal, 2} and FILTER(?o = 1) only \"1\"^^integer was anchored and the two value-equal rows were lost (LmdbPackedPredicateRangeProvider emits finite domains when RdfTermDomain.isFinite(), so reachable e2e). The same fallback is reached by VALUES-seeded finite facts arriving through a sibling JOIN or UNION widening.",
+   "change": "New expandFiniteAnchorValue selects stored finite values by SPARQL value equality exactly as the filter decides it: each stored term is compared with QueryEvaluationUtility.compare(stored, constant, EQ, strict) in both strict and extended mode; included iff both are _true; the whole expansion is refused (-1) when the modes disagree (calendar/duration promotion, per the critique the refuse branch is required, covered by durationConstantWhoseEqualityDependsOnComparisonModeIsNeitherAnchoredNorProvedEmpty and dateTimeConstantAgainstFiniteDateDomainPreservesResults), on illegalArgument, or on a thrown comparison error; _false/incompatible terms are excluded because the filter drops those rows in every mode (false or type error). Because every exclusion is definite, an expansion that admits no stored term is now a proof that the constant matches no row (EmptySet), replacing the old `count == expandedCount ? -1` tail; this is the same finite-fact completeness exposure as existing PREDICATE_RANGE_EMPTY proofs (wp3 note). Language-tag case variants (\"a\"@en vs \"a\"@EN) are both anchored.",
+   "files": [
+    "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedLogicalRuleProgram.java",
+    "core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedFiniteAnchorValueEqualityTest.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbFiniteAnchorValueEqualityTest.java"
+   ],
+   "testsAdded": [
+    "PackedFiniteAnchorValueEqualityTest#finiteFallbackAnchorKeepsEveryValueEqualStoredTerm",
+    "PackedFiniteAnchorValueEqualityTest#finiteFallbackAnchorForDecimalConstantKeepsEveryValueEqualStoredTerm",
+    "PackedFiniteAnchorValueEqualityTest#anchorInsideJoinKeepsValueEqualTermsForTheSibling",
+    "PackedFiniteAnchorValueEqualityTest#anchorInsideNestedGroupKeepsValueEqualTermsForTheSibling",
+    "PackedFiniteAnchorValueEqualityTest#anchorKeepsValueEqualTermsForSiblingDatatypeFilter",
+    "PackedFiniteAnchorValueEqualityTest#constantValueEqualToNoStoredTermProvesEmptyOnlyWhenEveryComparisonIsDefinite",
+    "PackedFiniteAnchorValueEqualityTest#incompatibleStringConstantAgainstNumericDomainProvesEmpty",
+    "PackedFiniteAnchorValueEqualityTest#durationConstantWhoseEqualityDependsOnComparisonModeIsNeitherAnchoredNorProvedEmpty",
+    "PackedFiniteAnchorValueEqualityTest#dateTimeConstantAgainstFiniteDateDomainPreservesResults",
+    "PackedFiniteAnchorValueEqualityTest#anchorDoesNotProveSiblingJoinEmpty",
+    "PackedFiniteAnchorValueEqualityTest#languageTagCaseVariantsAreBothAnchored",
+    "LmdbFiniteAnchorValueEqualityTest#finiteRangeAnchorKeepsValueEqualNonCanonicalTerms",
+    "LmdbFiniteAnchorValueEqualityTest#finiteRangeAnchorForDecimalConstantKeepsValueEqualTerms",
+    "LmdbFiniteAnchorValueEqualityTest#finiteRangeAnchorDoesNotPoisonSiblingFilterVerdict",
+    "LmdbFiniteAnchorValueEqualityTest#finiteFallbackFromValuesAnchorsEveryValueEqualConstant",
+    "LmdbFiniteAnchorValueEqualityTest#constantValueEqualToNoStoredTermYieldsNoRows"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedFiniteAnchorValueEqualityTest.txt\nTests run: 10, Failures: 5, Errors: 1, Skipped: 0, Time elapsed: 0.488 s <<< FAILURE!\nfiniteFallbackAnchorKeepsEveryValueEqualStoredTerm: expected: <[s=urn:t:s1, s=urn:t:s2, s=urn:t:s3]> but was: <[s=urn:t:s1]>\nfiniteFallbackAnchorForDecimalConstantKeepsEveryValueEqualStoredTerm: expected: <[s=urn:t:s1, s=urn:t:s2, s=urn:t:s3]> but was: <[s=urn:t:s3]>\nanchorKeepsValueEqualTermsForSiblingDatatypeFilter: expected: <[s=urn:t:s3]> but was: <[]>\nconstantValueEqualToNoStoredTermProvesEmptyOnlyWhenEveryComparisonIsDefinite: 3 is definitely unequal to each of 1, 01, 1.0 and 2, so the filter is a proven contradiction ==> expected: <true> but was: <false>\nlanguageTagCaseVariantsAreBothAnchored: java.lang.IllegalArgumentException: duplicate element: \"a\"@en\nReport: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbFiniteAnchorValueEqualityTest.txt (guards; already green: Tests run: 8, Failures: 0, Errors: 0, Skipped: 0)",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedFiniteAnchorValueEqualityTest.txt\nTests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.380 s -- in org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedFiniteAnchorValueEqualityTest\nReport: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbFiniteAnchorValueEqualityTest.txt\nTests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.456 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbFiniteAnchorValueEqualityTest\n(8/8 re-confirmed in isolated LMDB run 20260928T060531.885797Z-89015-9ff3c47f)"
+  },
+  {
+   "id": "3.2.4b",
+   "status": "fixed",
+   "rootCause": "PackedLogicalRuleProgram.addFiniteCodeTypeAlternative rewrites the code/type UNION under COUNT(DISTINCT) into JOIN(JOIN(VALUES code, VALUES type), JOIN(?e a ?type, ?e :code ?c)), dropping the FILTER(?c = ?t || ?c = 3) and matching ?c against the collected codes by term identity; appendBranchCodeValue only checked `instanceof Value`, so a stored \"1.0\"^^xsd:decimal that value-equals the integer code 1 in the FILTER was not matched by the join and the entity was lost (count 1 instead of 2). The finite-filter rule guards exactly this through finiteDomainTermIdentitySafe (string/langString only); the code/type rule never did. PackedRewriteBindingSafetyTest#finiteTypeDomainPreservesNumericValueEquality used xsd:int on both sides and so only exercised term-equal numerics.",
+   "change": "Extracted static termIdentitySafe(Object) (IRI, bnode, xsd:string or rdf:langString literal) and used it both in finiteDomainTermIdentitySafe and, per the critique, inside appendBranchCodeValue so that both branch offsets and the disjunction literal are covered: any numeric, boolean or temporal code constant declines the FINITE_CODE_TYPE_VALUES rewrite. String, IRI and language-tagged codes keep the rewrite (PackedCodeTypeTermIdentityTest#stringCodesKeepTheRewrite etc., PackedRewriteBindingSafetyTest#finiteTypeDomainUsesFreshBindingNames unchanged). Strengthened PackedRewriteBindingSafetyTest#finiteTypeDomainPreservesNumericValueEquality to xsd:integer codes against a stored \"1.0\"^^xsd:decimal so it now requires the guard.",
+   "files": [
+    "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedLogicalRuleProgram.java",
+    "core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCodeTypeTermIdentityTest.java",
+    "core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedRewriteBindingSafetyTest.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbCodeTypeTermIdentityTest.java"
+   ],
+   "testsAdded": [
+    "PackedCodeTypeTermIdentityTest#codeTypeRewriteWithoutScopeFlagsKeepsValueEqualCodes",
+    "PackedCodeTypeTermIdentityTest#codeTypeRewriteKeepsValueEqualCodesWithParserScopeFlags",
+    "PackedCodeTypeTermIdentityTest#stringCodesKeepTheRewrite",
+    "PackedCodeTypeTermIdentityTest#iriCodesKeepTheRewrite",
+    "PackedCodeTypeTermIdentityTest#languageTaggedCodesKeepTheRewrite",
+    "PackedCodeTypeTermIdentityTest#integerCodesDeclineTheRewrite",
+    "PackedCodeTypeTermIdentityTest#decimalCodesDeclineTheRewrite",
+    "PackedCodeTypeTermIdentityTest#booleanAndDateCodesDeclineTheRewrite",
+    "PackedCodeTypeTermIdentityTest#mixedCodesDeclineTheRewrite",
+    "PackedRewriteBindingSafetyTest#finiteTypeDomainPreservesNumericValueEquality (strengthened)",
+    "LmdbCodeTypeTermIdentityTest#numericCodesKeepValueEqualStoredTerms",
+    "LmdbCodeTypeTermIdentityTest#mixedDatatypeNumericCodesKeepValueEqualStoredTerms",
+    "LmdbCodeTypeTermIdentityTest#stringCodesStillCountEveryMatchingEntity"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCodeTypeTermIdentityTest.txt (cleared before capture; snippet from retained verify log .mvnf/workspaces/wp2/logs/20260928T020321.492490Z-76668-545dcc0f/verify.log)\n[ERROR] Tests run: 9, Failures: 5, Errors: 0, Skipped: 0, Time elapsed: 0.623 s <<< FAILURE! -- in ...PackedCodeTypeTermIdentityTest\nintegerCodesDeclineTheRewrite: expected: <false> but was: <true>\ndecimalCodesDeclineTheRewrite: expected: <false> but was: <true>\nbooleanAndDateCodesDeclineTheRewrite: expected: <false> but was: <true>\nmixedCodesDeclineTheRewrite: one numeric literal among string codes suffices ==> expected: <false> but was: <true>\ncodeTypeRewriteWithoutScopeFlagsKeepsValueEqualCodes: expected: <[n=\"2\"^^<http://www.w3.org/2001/XMLSchema#integer>]> but was: <[n=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>]>\nReport: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedRewriteBindingSafetyTest.txt\nTests run: 8, Failures: 1, Errors: 0, Skipped: 0 <<< FAILURE!\nfiniteTypeDomainPreservesNumericValueEquality: expected: <[1]> but was: <[0]>\nReport: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbCodeTypeTermIdentityTest.txt (guard; already green: parser scope flags keep the rule off: Tests run: 3, Failures: 0, Errors: 0)",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCodeTypeTermIdentityTest.txt (snippet from retained verify log .mvnf/workspaces/wp2/logs/20260928T021112.396008Z-79406-c0cde783/verify.log)\n[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.058 s -- in ...PackedCodeTypeTermIdentityTest\nReport: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedRewriteBindingSafetyTest.txt\nTests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.780 s -- in ...PackedRewriteBindingSafetyTest\nReport: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbCodeTypeTermIdentityTest.txt\nTests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.736 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbCodeTypeTermIdentityTest\n(both evaluation classes 9/9 and 8/8 again in suite run 20260928T060135; LMDB class 3/3 again in isolated run 20260928T060531)"
+  }
+ ],
+ "suiteRuns": [
+  {
+   "selection": "PackedDomainFactLatticeTest (core/queryalgebra/evaluation) - pre/post the IS_NUMERIC guard",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp2 --threads 3 PackedDomainFactLatticeTest --module core/queryalgebra/evaluation --retain-logs",
+   "result": "pre: tests=24, failures=1 (unionWithUnknownKindsDoesNotProveIsNumericFalse); post (run 20260928T055359.092648Z-54421-88352201): tests=24, failures=0, errors=0, skipped=0",
+   "reds": []
+  },
+  {
+   "selection": "core/queryalgebra/evaluation full unit suite, final tree (run 20260928T060135.029003Z-72994-c7b88e54; reports .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/; summary snapshot scratchpad/wp2-b2-suite-evaluation-evidence-run2.txt; an earlier run 20260928T021112 of the tree without the IS_NUMERIC guard gave 1802/3/1 with the identical four reds)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp2 --threads 3 core/queryalgebra/evaluation --retain-logs",
+   "result": "tests=1804, failures=3, errors=1, skipped=0 (193.8 s); every packed-planner class green incl. PackedPredicateRangePlanningTest 42/42, PackedGroupGraphSafetyTest 14/14, PackedSearchTest 93/93, PackedPlanCacheTest 47/47, PackedQueryCodecTest 20/20, PackedCorrelatedMinusAlternativeTest 19/19 and all six new b1/b2 classes",
+   "reds": [
+    "OptimizerRuleCatalogTest#generatedDocumentationMatchesManifestAndResearchInputs: pre-existing/environmental - NoSuchFileException wt-wp2/papers2/papers/docs/sparql_query_rewrite_catalog.md; papers2 exists only as an untracked directory in the main checkout, so every fresh worktree lacks it; no planner code involved (same red in b1 and in wp1/wp3/wp5 reports).",
+    "MinusQueryEvaluationStepTest#spillFileIsRemovedWhenIterationIsClosedEarly / #spillFileIsRemovedWhenIterationIsExhausted: pre-existing/environmental - the tests count spill files under java.io.tmpdir while the wp2 workspace runner redirects test temp data under .mvnf/workspaces/wp2/tmp/<run-id>, so the executor's spill dir and the test's lookup dir diverge; executor-only test untouched by this planner diff (same red in b1).",
+    "PackedFrontierSubsetKernelContractTest#arbitraryWidthBushyDependentJoinContinuesRightRecipeUnderWholeLeftPrefix: flaky/load - JUnit preemptive timeout at 120000 ms; re-run twice in isolation in this session (runs 20260928T052013 and 20260928T055843, both 120.1 s timeouts) at load averages 26-94 with 44+ JVMs from other WP suites; wp7 measured ~113 s on unchanged kernel code and wp1 got it green in isolation on an idle host; the test exercises the frontier subset kernel, which no b1/b2 hunk touches (all edits are in PackedDomainFacts, PackedQueryCodec fact derivation/VALUES seeding and PLRP rules). Recommend raising the budget or trimming the fixture (wp7 follow-up)."
+   ]
+  },
+  {
+   "selection": "core/sail/lmdb full unit suite, tree without the IS_NUMERIC guard (run 20260928T052318.631890Z-28373-00da802a; summary snapshot scratchpad/wp2-b2-suite-lmdb-evidence-run2.txt). The interrupted attempt's earlier run 20260928T021602 was truncated by a fork SIGTERM (exit 143) and is superseded.",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp2 --threads 3 core/sail/lmdb --retain-logs",
+   "result": "tests=2317 (log) / 2202 (report files), failures=2, errors=41, skipped=7 (1502.7 s); every LMDB planner/optimizer class green incl. LmdbOptimizerPipelineTest, LmdbDistinctCursorSkipOverlayTest 8/8 (the 04:16 run's overlay failure did not recur), all five new b1/b2 LMDB classes",
+   "reds": [
+    "LmdbEstimateAuditHarnessTest (40 errors) and LmdbMappingAnchorTest (2 failures: mapReservationCanExceedByteBufferCapacity, readTransactionPreservesConfiguredMainDatabaseComparator): environmental - every one is java.io.IOException: No space left on device / LMDB rc 28 while the 7.3 TiB volume sat at 97-98% with several other WP suites writing; both classes re-run green in isolation on the final tree (see next row: 43/43 and 18/18).",
+    "LmdbStoreMultiRepoTest#testRandomLoadManyRepositoriesInParallel: pre-existing/environmental - ENOSPC from LmdbStore.initializeInternal while 200 stores open in parallel on the 98%-full volume, before any query is planned; identical failure in wp1/wp3/wp5/wp8 worktrees and in wp8's two isolated reruns; reproduced again in this session's isolated run."
+   ]
+  },
+  {
+   "selection": "core/sail/lmdb isolated classes on the final tree: LmdbEstimateAuditHarnessTest, LmdbMappingAnchorTest, LmdbStoreMultiRepoTest, LmdbUnionLanguageFactsTest, LmdbFiniteAnchorValueEqualityTest, LmdbCodeTypeTermIdentityTest, LmdbOptimizerPipelineTest (run 20260928T060531.885797Z-89015-9ff3c47f; summary scratchpad/wp2-b2-lmdb-isolated-evidence.txt)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp2 --threads 3 core/sail/lmdb --retain-logs -- -Dtest=LmdbEstimateAuditHarnessTest,LmdbMappingAnchorTest,LmdbStoreMultiRepoTest,LmdbUnionLanguageFactsTest,LmdbFiniteAnchorValueEqualityTest,LmdbCodeTypeTermIdentityTest,LmdbOptimizerPipelineTest -Dsurefire.failIfNoSpecifiedTests=false",
+   "result": "tests=125, failures=0, errors=1, skipped=0 (306.0 s): LmdbEstimateAuditHarnessTest 43/43, LmdbMappingAnchorTest 18/18, LmdbOptimizerPipelineTest 46/46, LmdbUnionLanguageFactsTest 6/6, LmdbFiniteAnchorValueEqualityTest 8/8, LmdbCodeTypeTermIdentityTest 3/3",
+   "reds": [
+    "LmdbStoreMultiRepoTest#testRandomLoadManyRepositoriesInParallel: environmental ENOSPC again (66 s, 200 parallel stores, volume at 98%); untouched by this diff."
+   ]
+  },
+  {
+   "selection": "PackedFrontierSubsetKernelContractTest#arbitraryWidthBushyDependentJoinContinuesRightRecipeUnderWholeLeftPrefix isolated (twice)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp2 --threads 3 'PackedFrontierSubsetKernelContractTest#arbitraryWidthBushyDependentJoinContinuesRightRecipeUnderWholeLeftPrefix' --module core/queryalgebra/evaluation --retain-logs",
+   "result": "tests=1, failures=1 both times (execution timed out after 120000 ms; 120.1 s elapsed) at load average 26 and 78",
+   "reds": [
+    "flaky/load-induced (see evaluation suite triage); not closed with a green in this session because the host never dropped below load 26 while other WPs ran"
+   ]
+  }
+ ],
+ "filesTouchedOutsideOwnership": [],
+ "newFlagsOrConfig": [],
+ "crossWpNotes": [
+  "wp3 (PackedPlanCache / PackedQueryCacheIdentity): domain facts are now seed-only and VALUES facts carry language/datatype bits; PREDICATE_RANGE_EMPTY can now also arise from the finite fallback (definite non-match of every stored term) and from the seed-side FILTER fact intersected with a sibling range - all inherit the finite-fact completeness exposure wp3 tracks (uncommitted/committed drift). Bump whatever rule-program/fact version participates in the cache identity.",
+  "wp1/storage: LmdbPackedPredicateRangeProvider still emits kinds=LITERAL with languageBits=0 when the RdfTermDomain has neither language fact; that is now interpreted correctly as unknown by the lattice, but a provider-side LANGUAGE fact would restore the lost langMatches proofs. c4LanguageTagCaseFiniteFilter (language-tag case at storage level) remains wp1's.",
+  "wp7 (cost model): typed anchors over finite numeric domains now expand to every value-equal stored term (superset), and the FINITE_CODE_TYPE_VALUES rewrite is declined for numeric/boolean/temporal codes - theme queries with numeric code domains lose that rewrite (correctness-first); the FILTER group no longer inherits an alternative's narrowed domain for costing, only the seed-side term-identity-exact finite set.",
+  "LMDB plan-shape ITs (LmdbThemeQueryRegressionIT, LmdbMedicalOptimizedQueryRegressionIT and the b1-listed q9 ITs) were not run in this batch; re-baseline rather than weaken any guard if a numeric-code or numeric-anchor plan changed.",
+  "Convention now documented in PackedDomainFacts: 0 kind/language/datatype bits = unknown (top). Every new consumer must test `bits != 0 &&` before refuting; the IS_NUMERIC verdict was the one site that did not."
+ ],
+ "followUps": [
+  "Close the PackedFrontierSubsetKernelContractTest#arbitraryWidth... triage with a green on an idle host, or raise its 120 s budget / trim the fixture (wp7 already recommends this).",
+  "Confirm the two environmental evaluation reds (untracked papers2 docs, spill-file tmpdir under workspace redirection) and LmdbStoreMultiRepoTest ENOSPC are green on the main checkout / an idle host.",
+  "Optional precision: expand numeric codes in the code/type rule through expandIntegerAnchorValue when the :code range proves UNIVERSAL_CANONICAL_INTEGER (design's optional follow-up); and admit language-tagged constants in deriveFilterDomainFacts once language-tag case normalisation is guaranteed by the store (wp1).",
+  "Consider a LANGUAGE_WITH/WITHOUT fact in RdfTermDomain so provider ranges stop emitting languageBits=0 for literal domains.",
+  "Run the LMDB theme/medical *RegressionIT suites against this tree and record plan changes for numeric-anchor / numeric-code queries."
+ ]
+}

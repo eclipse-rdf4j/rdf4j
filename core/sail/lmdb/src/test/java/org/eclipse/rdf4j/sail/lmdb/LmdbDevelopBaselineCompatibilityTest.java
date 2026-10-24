@@ -17,28 +17,31 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -47,12 +50,15 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
@@ -65,6 +71,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 class LmdbDevelopBaselineCompatibilityTest {
 
 	private static final String BASELINE_COMMIT = "a7b7cedd1c954dc55fa8265f7e6fc4d215fdb1aa";
+	private static final int NOISY_OUTPUT_BYTES = 2 * 1024 * 1024;
 	private static final String UNVERSIONED_PROPERTIES_BEHAVIOR = "The pinned writer initializes StoreProperties "
 			+ "with version 2, then ValueStore.initTermIndexes writes the configured default indexes and "
 			+ "TripleStore.init writes the same triple-index value again, resetting dirty=false before save; "
@@ -85,7 +92,8 @@ class LmdbDevelopBaselineCompatibilityTest {
 	private static final IRI INFERRED_PREDICATE = VF.createIRI("urn:compat:inferred");
 	private static final IRI CURRENT_PREDICATE = VF.createIRI("urn:compat:current-write");
 	private static final IRI REUSED_PREDICATE = VF.createIRI("urn:compat:reused-id");
-	private static final IRI GC_PREDICATE = VF.createIRI("urn:compat:gc-id");
+	// Keep the GC row's subject and predicate live through the existing seed row; only its object may retire.
+	private static final IRI GC_PREDICATE = REUSED_PREDICATE;
 	private static final Resource REUSED_SUBJECT = VF.createIRI("urn:compat:reused-subject");
 	private static final Resource EXPLICIT_SUBJECT = VF.createIRI("urn:compat:explicit-subject");
 	private static final Resource INFERRED_SUBJECT = VF.createIRI("urn:compat:inferred-subject");
@@ -96,6 +104,57 @@ class LmdbDevelopBaselineCompatibilityTest {
 	private static final Literal CURRENT_VALUE = VF.createLiteral("written-by-current");
 	private static final IRI OLD_AFTER_CLEAR_PREDICATE = VF.createIRI("urn:compat:old-after-clear");
 	private static final Literal OLD_AFTER_CLEAR_VALUE = VF.createLiteral("written-by-old-after-clear");
+
+	@ParameterizedTest(name = "inlineLiterals={0}")
+	@ValueSource(booleans = { true, false })
+	@EnabledIfSystemProperty(named = BASELINE_CLASSPATH_PROPERTY, matches = ".+")
+	void actualDevelopWriterKeepsColdOwnersAcrossMutationAndClear(boolean inlineLiterals) throws Exception {
+		Path fixtureRoot = Path.of(System.getProperty(FIXTURE_ROOT_PROPERTY));
+		Files.createDirectories(fixtureRoot);
+		Path storeDirectory = fixtureRoot.resolve(inlineLiterals ? "all-old-inline-true" : "all-old-inline-false");
+		Files.createDirectories(storeDirectory);
+		Path metadataFile = fixtureRoot
+				.resolve(inlineLiterals ? "all-old-inline-true.properties" : "all-old-inline-false.properties");
+
+		runBaselineProcess("create-versioned", storeDirectory, metadataFile, inlineLiterals);
+		Properties metadata = loadProperties(metadataFile);
+		assertEquals(BASELINE_COMMIT, metadata.getProperty("baseline.commit"));
+		assertEquals(Boolean.toString(inlineLiterals), metadata.getProperty("inline.literals"));
+		assertEquals(STORE_VERSION, metadata.getProperty("store.version"));
+		assertStoreBytesMatchSnapshot(storeDirectory, metadata);
+		runBaselineProcess("write-current-branch", storeDirectory, metadataFile, inlineLiterals);
+
+		runBaselineProcess("mutate", storeDirectory, metadataFile, inlineLiterals);
+		runBaselineProcess("clear-write-current-branch", storeDirectory, metadataFile, inlineLiterals);
+		runBaselineProcess("rewrite-after-clear", storeDirectory, metadataFile, inlineLiterals);
+		runBaselineProcess("verify-current-branch", storeDirectory, metadataFile, inlineLiterals);
+
+		SailRepository repository = openRepository(storeDirectory, inlineLiterals);
+		try (RepositoryConnection connection = repository.getConnection()) {
+			assertTrue(hasPattern(connection, null, CURRENT_PREDICATE, CURRENT_VALUE, false));
+			assertTrue(hasPattern(connection, null, OLD_AFTER_CLEAR_PREDICATE, OLD_AFTER_CLEAR_VALUE, false));
+			assertBranchLiteralsReadable(connection);
+			assertPatternAndPreparedQuery(connection, OLD_AFTER_CLEAR_PREDICATE, OLD_AFTER_CLEAR_VALUE);
+			assertNamespace(connection);
+		} finally {
+			repository.shutDown();
+		}
+		assertStoreProperties(storeDirectory);
+	}
+
+	@Test
+	@EnabledIfSystemProperty(named = BASELINE_CLASSPATH_PROPERTY, matches = ".+")
+	void baselineProcessDrainsLargeOutputBeforeDeadline() throws Exception {
+		Path fixtureRoot = Path.of(System.getProperty(FIXTURE_ROOT_PROPERTY));
+		Files.createDirectories(fixtureRoot);
+		Path storeDirectory = fixtureRoot.resolve("noisy-output");
+		Files.createDirectories(storeDirectory);
+		Path metadataFile = fixtureRoot.resolve("noisy-output.properties");
+
+		Path outputFile = runBaselineProcess("noisy-output", storeDirectory, metadataFile, false, 15, TimeUnit.SECONDS);
+		assertEquals(NOISY_OUTPUT_BYTES, Files.size(outputFile),
+				"The pinned child output must be fully drained before its deadline");
+	}
 
 	@ParameterizedTest(name = "inlineLiterals={0}")
 	@ValueSource(booleans = { true, false })
@@ -119,6 +178,8 @@ class LmdbDevelopBaselineCompatibilityTest {
 		assertEquals("true", metadata.getProperty("initial.store-properties.present"));
 		assertStoreBytesMatchSnapshot(storeDirectory, metadata);
 		assertBaselinePropertiesSnapshot(storeDirectory, metadata);
+		Properties baselineProperties = loadProperties(storeDirectory.resolve(StoreProperties.FILE_NAME));
+		assertLegacyVersionTwoProperties(baselineProperties);
 		assertStoreProperties(storeDirectory);
 		long oldValueId = Long.parseLong(metadata.getProperty("old.gc.id"));
 
@@ -141,6 +202,15 @@ class LmdbDevelopBaselineCompatibilityTest {
 		} finally {
 			repository.shutDown();
 		}
+
+		Properties firstCurrentProperties = loadProperties(storeDirectory.resolve(StoreProperties.FILE_NAME));
+		String currentStoreId = firstCurrentProperties.getProperty(StoreProperties.STORE_ID_KEY);
+		assertNotNull(currentStoreId, "The current owner must persist its durable store identity");
+		UUID parsedStoreId = UUID.fromString(currentStoreId);
+		assertEquals(currentStoreId, parsedStoreId.toString(), "The durable store identity must be a canonical UUID");
+		Properties expectedCurrentProperties = expectedPostMigrationProperties(baselineProperties, parsedStoreId);
+		assertEquals(expectedCurrentProperties, firstCurrentProperties,
+				"The first current owner may add only the language policy, predicate-domain schema, and its UUID");
 
 		runBaselineProcess("mutate", storeDirectory, fixtureMetadata, inlineLiterals);
 		metadata = loadProperties(fixtureMetadata);
@@ -166,6 +236,10 @@ class LmdbDevelopBaselineCompatibilityTest {
 		repository = openRepository(storeDirectory, inlineLiterals);
 		try (RepositoryConnection connection = repository.getConnection()) {
 			connection.clear();
+			assertTrue(valueStore(repository).getFormat().isLegacy(),
+					"clear must retain the pinned version-2 dictionary format");
+			assertFalse(valueStore(repository).canStartFreshValueSession(),
+					"version-2 writes must retain the ordinary dictionary allocator after clear");
 			connection.begin();
 			connection.setNamespace("compat", "urn:compat:");
 			connection.add(VF.createIRI("urn:compat:current-subject"), CURRENT_PREDICATE, CURRENT_VALUE);
@@ -174,6 +248,8 @@ class LmdbDevelopBaselineCompatibilityTest {
 				connection.add(currentBranchSubject(index), currentBranchPredicate(index), branchLiterals.get(index));
 			}
 			connection.commit();
+			assertFalse(((LmdbStore) repository.getSail()).getBackingStore().hasActiveFreshValueSession(),
+					"the completed post-clear write must not have selected the format-6 fresh encoder");
 		} finally {
 			repository.shutDown();
 		}
@@ -191,8 +267,434 @@ class LmdbDevelopBaselineCompatibilityTest {
 			repository.shutDown();
 		}
 		assertStoreProperties(storeDirectory);
-		metadata = loadProperties(fixtureMetadata);
-		assertBaselinePropertiesSnapshot(storeDirectory, metadata);
+		assertEquals(expectedCurrentProperties, loadProperties(storeDirectory.resolve(StoreProperties.FILE_NAME)),
+				"Pinned version-2 rewrites must preserve the exact current logical metadata map and owner UUID");
+	}
+
+	@Test
+	@EnabledIfSystemProperty(named = BASELINE_CLASSPATH_PROPERTY, matches = ".+")
+	void originalVersionTwoLanguageSpellingIsColdReusableAfterCurrentMigration() throws Exception {
+		Path root = Path.of(System.getProperty(FIXTURE_ROOT_PROPERTY));
+		Files.createDirectories(root);
+		Path directory = root.resolve("language-policy-v2");
+		Files.createDirectories(directory);
+		Path metadataFile = root.resolve("language-policy-v2.properties");
+		runBaselineProcess("create-language-policy", directory, metadataFile, false);
+		Properties metadata = loadProperties(metadataFile);
+		assertEquals(BASELINE_COMMIT, metadata.getProperty("baseline.commit"));
+		SailRepository repository = openRepository(directory, false);
+		try {
+			ValueStore values = valueStore(repository);
+			assertEquals(ValueStore.LanguageTagKeyMode.CANONICAL, values.languageTagKeyMode());
+			for (int i = 0; i < languagePolicyLiterals().size(); i++) {
+				Literal original = languagePolicyLiterals().get(i);
+				long id = Long.parseLong(metadata.getProperty("language.id." + i));
+				values.clearCaches();
+				assertEquals(id, values.getId(original));
+				assertEquals(id,
+						values.getId(VF.createLiteral(original.getLabel(), "en-gb", original.getBaseDirection())));
+				Literal decoded = (Literal) values.getValue(id);
+				assertEquals(original.getLanguage(), decoded.getLanguage());
+				assertEquals(original.getBaseDirection(), decoded.getBaseDirection());
+			}
+		} finally {
+			repository.shutDown();
+		}
+		assertEquals("2", loadProperties(directory.resolve("store.properties")).getProperty("version"));
+		assertFalse(Files.exists(directory.resolve("lmdbrdf.ver")));
+		// This process is the pinned old implementation. It must cold lookup and then mutate the original spelling.
+		runBaselineProcess("reuse-language-policy", directory, metadataFile, false);
+		repository = openRepository(directory, false);
+		try (RepositoryConnection connection = repository.getConnection()) {
+			for (int i = 0; i < languagePolicyLiterals().size(); i++) {
+				Literal original = languagePolicyLiterals().get(i);
+				long id = Long.parseLong(metadata.getProperty("language.id." + i));
+				assertEquals(id, valueId(repository, original));
+				assertTrue(connection.hasStatement(VF.createIRI("urn:compat:old-language-reuse:" + i),
+						CURRENT_PREDICATE, original, false));
+				assertEquals(original.getLanguage(), ((Literal) valueStore(repository).getValue(id)).getLanguage());
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@ParameterizedTest(name = "bulk={0}, literal={1}")
+	@CsvSource({ "0,0", "0,1", "0,2", "128,0", "128,1", "128,2" })
+	@EnabledIfSystemProperty(named = BASELINE_CLASSPATH_PROPERTY, matches = ".+")
+	void currentVersionTwoOwnerSpellingRemainsColdReusableByOriginalWriter(int bulkSize, int literalIndex)
+			throws Exception {
+		Path root = Path.of(System.getProperty(FIXTURE_ROOT_PROPERTY));
+		Files.createDirectories(root);
+		Path directory = root.resolve("current-language-" + bulkSize + '-' + literalIndex);
+		Files.createDirectories(directory);
+		Path metadataFile = root.resolve(directory.getFileName() + ".properties");
+		runBaselineProcess("empty-versioned", directory, metadataFile, false);
+		Properties metadata = loadProperties(metadataFile);
+		assertEquals(BASELINE_COMMIT, metadata.getProperty("baseline.commit"));
+		Literal original = currentOwnerLanguageLiterals().get(literalIndex);
+		Model expected = currentOwnerLanguageRows(original);
+		LmdbStoreConfig config = new LmdbStoreConfig(TRIPLE_INDEXES)
+				.setTripleTermIndexes(TRIPLE_TERM_INDEXES)
+				.setInlineLiterals(false)
+				.setBulkOperationSize(bulkSize);
+		LmdbStore current = new LmdbStore(directory.toFile(), config);
+		SailRepository repository = new SailRepository(current);
+		repository.init();
+		long id;
+		try (RepositoryConnection connection = repository.getConnection()) {
+			ValueStore values = valueStore(repository);
+			assertTrue(values.getFormat().isLegacy(), "authentic v2 must retain its physical format");
+			assertEquals(ValueStore.LanguageTagKeyMode.CANONICAL, values.languageTagKeyMode());
+			connection.begin();
+			if (bulkSize == 0) {
+				for (Statement row : expected) {
+					connection.add(row);
+				}
+			} else {
+				connection.add(expected);
+			}
+			connection.commit();
+			id = values.getId(original);
+			assertTrue(id > 0);
+			byte[] record = ValueStoreRecordCodec.literalData(original, values.getId(original.getDatatype()), false);
+			assertEquals(literalIndex == 1, record.length > ValueStoreRecordCodec.MAX_INLINE_KEY_BYTES,
+					"controls must exercise genuine short and hashed owner encodings");
+			values.clearCaches();
+			assertEquals(id, values.getId(original));
+			assertEquals(original.getLanguage(), ((Literal) values.getValue(id)).getLanguage());
+			assertEquals(original.getBaseDirection(), ((Literal) values.getValue(id)).getBaseDirection());
+			assertEquals(expected, allStatements(connection));
+		} finally {
+			repository.shutDown();
+		}
+		metadata.setProperty("current.language.id", Long.toString(id));
+		try (var output = Files.newOutputStream(metadataFile)) {
+			metadata.store(output, "Authentic old v2 plus current owner-spelling control");
+		}
+		assertEquals(STORE_VERSION, loadProperties(directory.resolve("store.properties")).getProperty("version"));
+		assertFalse(Files.exists(directory.resolve("lmdbrdf.ver")));
+		runBaselineProcess("reuse-current-language-" + literalIndex, directory, metadataFile, false);
+		repository = openRepository(directory, false);
+		try (RepositoryConnection connection = repository.getConnection()) {
+			ValueStore values = valueStore(repository);
+			values.clearCaches();
+			assertEquals(id, values.getId(original));
+			assertEquals(original.getLanguage(), ((Literal) values.getValue(id)).getLanguage());
+			assertEquals(original.getBaseDirection(), ((Literal) values.getValue(id)).getBaseDirection());
+			expected.add(VF.createIRI("urn:compat:old-current-language-reuse"), CURRENT_PREDICATE, original);
+			assertEquals(expected, allStatements(connection));
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@ParameterizedTest(name = "literal={0}")
+	@ValueSource(ints = { 0, 1 })
+	@EnabledIfSystemProperty(named = BASELINE_CLASSPATH_PROPERTY, matches = ".+")
+	void actualOldWriterNewVariantIsReconciledAfterCanonicalCurrentClose(int literalIndex) throws Exception {
+		Path root = Path.of(System.getProperty(FIXTURE_ROOT_PROPERTY));
+		Files.createDirectories(root);
+		Path directory = root.resolve("old-new-language-variant-" + literalIndex);
+		Files.createDirectories(directory);
+		Path metadataFile = root.resolve(directory.getFileName() + ".properties");
+		runBaselineProcess("empty-versioned", directory, metadataFile, false);
+		Literal original = currentOwnerLanguageLiterals().get(literalIndex);
+		Literal variant = VF.createLiteral(original.getLabel(), literalIndex == 0 ? "eN" : "eN-gB");
+		Model expected = currentOwnerLanguageRows(original);
+		SailRepository repository = openRepository(directory, false);
+		long owner;
+		try (RepositoryConnection connection = repository.getConnection()) {
+			connection.begin();
+			connection.add(expected);
+			connection.commit();
+			owner = valueId(repository, original);
+			assertEquals(expected, allStatements(connection));
+		} finally {
+			repository.shutDown();
+		}
+		assertEquals(StoreProperties.LANGUAGE_TAG_KEY_CANONICAL,
+				loadProperties(directory.resolve("store.properties")).getProperty(StoreProperties.LANGUAGE_TAG_KEY));
+		Properties metadata = loadProperties(metadataFile);
+		metadata.setProperty("current.language.id", Long.toString(owner));
+		try (var output = Files.newOutputStream(metadataFile)) {
+			metadata.store(output, "Actual old writer introduces a new language variant after canonical close");
+		}
+		runBaselineProcess("add-current-language-variant-" + literalIndex, directory, metadataFile, false);
+		metadata = loadProperties(metadataFile);
+		long alternate = Long.parseLong(metadata.getProperty("old.variant.id"));
+		assertTrue(alternate != owner, "actual old writer must really create a distinct byte-exact owner");
+		assertEquals(StoreProperties.LANGUAGE_TAG_KEY_CANONICAL,
+				loadProperties(directory.resolve("store.properties")).getProperty(StoreProperties.LANGUAGE_TAG_KEY),
+				"old writer leaves the current canonical marker present; it is not proof of physical uniqueness");
+		expected.add(VF.createIRI("urn:compat:old-current-language-variant"), CURRENT_PREDICATE, variant);
+		for (int reopen = 0; reopen < 2; reopen++) {
+			repository = openRepository(directory, false);
+			try (RepositoryConnection connection = repository.getConnection()) {
+				ValueStore values = valueStore(repository);
+				values.clearCaches();
+				assertEquals(owner, values.getId(original));
+				values.clearCaches();
+				assertEquals(owner, values.getId(variant), "current lookup must resolve the actual old variant");
+				assertEquals(original.getLanguage(), ((Literal) values.getValue(owner)).getLanguage());
+				assertEquals(expected, allStatements(connection), "all original and old-written rows must survive");
+				assertEquals(List.of("s=<urn:compat:old-current-language-variant>"),
+						rowsForOldVariant(connection, original),
+						"rewritten original-spelling query reaches the old row");
+			} finally {
+				repository.shutDown();
+			}
+		}
+	}
+
+	private static List<String> rowsForOldVariant(RepositoryConnection connection, Literal original) {
+		List<String> rows = new ArrayList<>();
+		TupleQuery query = connection.prepareTupleQuery("SELECT ?s WHERE { ?s <urn:compat:current-write> ?v "
+				+ "FILTER(?s = <urn:compat:old-current-language-variant>) }");
+		query.setBinding("v", original);
+		try (TupleQueryResult result = query.evaluate()) {
+			while (result.hasNext()) {
+				rows.add("s=<" + result.next().getValue("s").stringValue() + ">");
+			}
+		}
+		assertTrue(hasPattern(connection, VF.createIRI("urn:compat:old-current-language-variant"),
+				CURRENT_PREDICATE, original, false));
+		return rows;
+	}
+
+	@ParameterizedTest(name = "literal={0}")
+	@ValueSource(ints = { 0, 1, 2 })
+	@EnabledIfSystemProperty(named = BASELINE_CLASSPATH_PROPERTY, matches = ".+")
+	void oldWriterCanCollectCurrentLanguageOwnerWithoutLeavingDanglingReverseKeys(int literalIndex) throws Exception {
+		Path root = Path.of(System.getProperty(FIXTURE_ROOT_PROPERTY));
+		Files.createDirectories(root);
+		Path directory = root.resolve("old-collects-current-language-" + literalIndex);
+		Files.createDirectories(directory);
+		Path metadataFile = root.resolve(directory.getFileName() + ".properties");
+		runBaselineProcess("empty-versioned", directory, metadataFile, false);
+		Literal literal = currentOwnerLanguageLiterals().get(literalIndex);
+		Model expected = currentOwnerLanguageRows(literal);
+		SailRepository repository = openRepository(directory, false);
+		long owner;
+		String ownerPayloadHash;
+		try (RepositoryConnection connection = repository.getConnection()) {
+			assertTrue(valueStore(repository).getFormat().isLegacy());
+			connection.begin();
+			connection.add(expected);
+			connection.commit();
+			ValueStore values = valueStore(repository);
+			owner = valueId(repository, literal);
+			assertFalse(ValueIds.isInlined(owner), "the control requires an actual stored dictionary owner");
+			byte[] payload = values.getData(owner);
+			assertNotNull(payload);
+			assertTrue(payload.length > 0);
+			ownerPayloadHash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(payload));
+			assertEquals(NTriplesUtil.toNTriplesString(literal), NTriplesUtil.toNTriplesString(values.getValue(owner)),
+					"the captured physical owner retains the exact supplied language spelling and direction");
+			assertEquals(expected, allStatements(connection));
+		} finally {
+			repository.shutDown();
+		}
+		Properties metadata = loadProperties(metadataFile);
+		metadata.setProperty("current.gc.language.id", Long.toString(owner));
+		metadata.setProperty("current.gc.language.payload.sha256", ownerPayloadHash);
+		try (var output = Files.newOutputStream(metadataFile)) {
+			metadata.store(output, "Actual current owner identity before the pinned writer retires it");
+		}
+		runBaselineProcess("collect-current-language-owner-" + literalIndex, directory, metadataFile, false);
+		metadata = loadProperties(metadataFile);
+		assertEquals("true", metadata.getProperty("old.gc.language.forward.absent"),
+				"the pinned writer must really reclaim the captured physical owner before current reopen");
+		assertEquals(ownerPayloadHash, metadata.getProperty("old.gc.language.before.payload.sha256"));
+		for (int reopen = 0; reopen < 2; reopen++) {
+			repository = openRepository(directory, false);
+			try (RepositoryConnection connection = repository.getConnection()) {
+				assertTrue(allStatements(connection).isEmpty());
+				ValueStore values = valueStore(repository);
+				values.clearCaches();
+				assertEquals(LmdbValue.UNKNOWN_ID, values.getId(literal),
+						"a collected owner must not re-enter lookup through an extra reverse association");
+				assertNull(values.getData(owner), "no new writer recreated the retired owner");
+			} finally {
+				repository.shutDown();
+			}
+		}
+	}
+
+	@ParameterizedTest(name = "literal={0}")
+	@ValueSource(ints = { 0, 1 })
+	@EnabledIfSystemProperty(named = BASELINE_CLASSPATH_PROPERTY, matches = ".+")
+	void canonicalOnlyOwnerAndOldSameSpellingOwnerWaitForTheActualSailMerge(int literalIndex) throws Exception {
+		Path root = Path.of(System.getProperty(FIXTURE_ROOT_PROPERTY));
+		Files.createDirectories(root);
+		Path directory = root.resolve("canonical-only-same-spelling-" + literalIndex);
+		Files.createDirectories(directory);
+		Path metadataFile = root.resolve(directory.getFileName() + ".properties");
+		runBaselineProcess("empty-versioned", directory, metadataFile, false);
+		Literal original = currentOwnerLanguageLiterals().get(literalIndex);
+		Model expected = currentOwnerLanguageRows(original);
+		SailRepository repository = openRepository(directory, false);
+		long canonicalOwner;
+		byte[] payload;
+		try (RepositoryConnection connection = repository.getConnection()) {
+			connection.begin();
+			connection.add(expected);
+			connection.commit();
+			canonicalOwner = valueId(repository, original);
+			payload = valueStore(repository).getData(canonicalOwner);
+			assertEquals(expected, allStatements(connection));
+		} finally {
+			repository.shutDown();
+		}
+		// Only this historical-input fixture converts the captured association. No owner, payload or hash is guessed.
+		LegacyRawReverseFixture.canonicalOnly(directory.resolve("values"), canonicalOwner, payload);
+		Properties metadata = loadProperties(metadataFile);
+		metadata.setProperty("current.language.id", Long.toString(canonicalOwner));
+		try (var output = Files.newOutputStream(metadataFile)) {
+			metadata.store(output, "Captured canonical-only owner");
+		}
+		runBaselineProcess("duplicate-current-canonical-only-language-" + literalIndex, directory, metadataFile, false);
+		metadata = loadProperties(metadataFile);
+		long rawOwner = Long.parseLong(metadata.getProperty("old.variant.id"));
+		LegacyRawReverseFixture.assertCanonicalAndRawOwners(directory.resolve("values"), canonicalOwner, rawOwner,
+				payload);
+		StoreProperties properties = new StoreProperties(directory.toFile());
+		assertTrue(properties.load());
+		assertEquals(StoreProperties.LANGUAGE_TAG_KEY_CANONICAL, properties.getLanguageTagKey());
+		ValueStore bare = new ValueStore(directory.resolve("values").toFile(), properties,
+				new LmdbStoreConfig(TRIPLE_INDEXES).setTripleTermIndexes(TRIPLE_TERM_INDEXES).setInlineLiterals(false));
+		try {
+			assertTrue(bare.getFormat().isLegacy());
+			assertTrue(Arrays.equals(payload, bare.getData(canonicalOwner)));
+			assertTrue(Arrays.equals(payload, bare.getData(rawOwner)));
+		} finally {
+			bare.close();
+		}
+		LegacyRawReverseFixture.assertCanonicalAndRawOwners(directory.resolve("values"), canonicalOwner, rawOwner,
+				payload);
+		long survivor = Math.min(canonicalOwner, rawOwner); // LanguageTagVariantMergePlan's existing survivor rule.
+		repository = openRepository(directory, false);
+		try (RepositoryConnection connection = repository.getConnection()) {
+			assertEquals(expected, allStatements(connection), "all128 real rows survive the triple-aware merge");
+			assertEquals(survivor, valueId(repository, original));
+			assertTrue(Arrays.equals(payload, valueStore(repository).getData(survivor)));
+		} finally {
+			repository.shutDown();
+		}
+		// Expected baseline compatibility control; canonical-alias absence has separate physical tests. Still unrun.
+		LegacyRawReverseFixture.assertRawOwner(directory.resolve("values"), survivor, payload);
+		metadata = loadProperties(metadataFile);
+		metadata.setProperty("current.language.id", Long.toString(survivor));
+		try (var output = Files.newOutputStream(metadataFile)) {
+			metadata.store(output, "Actual merge survivor");
+		}
+		runBaselineProcess("reuse-current-language-" + literalIndex, directory, metadataFile, false);
+		expected.add(VF.createIRI("urn:compat:old-current-language-reuse"), CURRENT_PREDICATE, original);
+		repository = openRepository(directory, false);
+		try (RepositoryConnection connection = repository.getConnection()) {
+			assertEquals(expected, allStatements(connection));
+			assertEquals(survivor, valueId(repository, original));
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@ParameterizedTest(name = "literal={0}")
+	@ValueSource(ints = { 0, 1 })
+	@EnabledIfSystemProperty(named = BASELINE_CLASSPATH_PROPERTY, matches = ".+")
+	void collectingOldRawVariantCannotDeleteAnotherLiveCanonicalOwner(int literalIndex) throws Exception {
+		Path root = Path.of(System.getProperty(FIXTURE_ROOT_PROPERTY));
+		Files.createDirectories(root);
+		Path directory = root.resolve("collect-old-language-variant-" + literalIndex);
+		Files.createDirectories(directory);
+		Path metadataFile = root.resolve(directory.getFileName() + ".properties");
+		runBaselineProcess("empty-versioned", directory, metadataFile, false);
+		Literal lower = collectibleLanguageLiteral(literalIndex, false);
+		Model expected = currentOwnerLanguageRows(lower);
+		SailRepository repository = openRepository(directory, false);
+		long owner;
+		try (RepositoryConnection connection = repository.getConnection()) {
+			connection.begin();
+			connection.add(expected);
+			connection.commit();
+			owner = valueId(repository, lower);
+			assertEquals(expected, allStatements(connection));
+		} finally {
+			repository.shutDown();
+		}
+		Properties metadata = loadProperties(metadataFile);
+		metadata.setProperty("gc.language.owner.id", Long.toString(owner));
+		try (var output = Files.newOutputStream(metadataFile)) {
+			metadata.store(output, "Independent live canonical owner and collectible raw variant");
+		}
+		runBaselineProcess("create-collectible-language-" + literalIndex, directory, metadataFile, false);
+		metadata = loadProperties(metadataFile);
+		long collectible = Long.parseLong(metadata.getProperty("gc.language.collectible.id"));
+		assertTrue(collectible != owner, "the real old writer allocated a distinct unreferenced owner");
+		StoreProperties properties = new StoreProperties(directory.toFile());
+		assertTrue(properties.load());
+		assertEquals(StoreProperties.LANGUAGE_TAG_KEY_CANONICAL, properties.getLanguageTagKey());
+		// Use the actual dictionary GC API before Sail's startup variant reconciliation. A's real128 RDF rows
+		// remain untouched; the old process created B only through storeValue, so no statement can refer to B.
+		ValueStore values = new ValueStore(directory.resolve("values").toFile(), properties,
+				new LmdbStoreConfig(TRIPLE_INDEXES).setTripleTermIndexes(TRIPLE_TERM_INDEXES)
+						.setInlineLiterals(false)
+						.setLegacyReferenceCountRepairEnabled(true));
+		try {
+			assertTrue(values.getFormat().isLegacy());
+			values.startTransaction(true);
+			values.gcIds(List.of(collectible), new ArrayList<>());
+			values.commit();
+			values.clearCaches();
+			assertEquals(owner, values.getId(lower), "collecting B must not delete A's canonical reverse key");
+			Literal decoded = (Literal) values.getValue(owner);
+			assertEquals(lower.getLanguage(), decoded.getLanguage());
+		} finally {
+			values.close();
+		}
+		repository = openRepository(directory, false);
+		try (RepositoryConnection connection = repository.getConnection()) {
+			assertEquals(owner, valueId(repository, lower));
+			assertEquals(expected, allStatements(connection));
+		} finally {
+			repository.shutDown();
+		}
+		runBaselineProcess("verify-collected-language-" + literalIndex, directory, metadataFile, false);
+	}
+
+	private static Literal collectibleLanguageLiteral(int index, boolean upper) {
+		Literal original = currentOwnerLanguageLiterals().get(index);
+		return VF.createLiteral(original.getLabel(), index == 0 ? (upper ? "EN" : "en")
+				: (upper ? "EN-GB" : "en-gb"));
+	}
+
+	private static List<Literal> currentOwnerLanguageLiterals() {
+		return List.of(VF.createLiteral("s", "EN"), VF.createLiteral("é".repeat(300), "EN-GB"),
+				VF.createLiteral("d", "EN", Literal.BaseDirection.RTL));
+	}
+
+	private static Model currentOwnerLanguageRows(Literal literal) {
+		Model rows = new LinkedHashModel();
+		for (int i = 0; i < 128; i++) {
+			rows.add(VF.createIRI("urn:compat:current-language-row:" + i), CURRENT_PREDICATE, literal);
+		}
+		return rows;
+	}
+
+	private static Model allStatements(RepositoryConnection connection) {
+		Model rows = new LinkedHashModel();
+		try (var statements = connection.getStatements(null, null, null, false)) {
+			while (statements.hasNext()) {
+				rows.add(statements.next());
+			}
+		}
+		return rows;
+	}
+
+	private static List<Literal> languagePolicyLiterals() {
+		return List.of(VF.createLiteral("mixed-case-short", "EN-GB"),
+				VF.createLiteral("é".repeat(300), "EN-GB"),
+				VF.createLiteral("mixed-case-directed", "EN-GB", Literal.BaseDirection.RTL));
 	}
 
 	@Test
@@ -335,49 +837,78 @@ class LmdbDevelopBaselineCompatibilityTest {
 		return hashes;
 	}
 
-	private static void runBaselineProcess(String phase, Path storeDirectory, Path metadataFile,
+	private static Path runBaselineProcess(String phase, Path storeDirectory, Path metadataFile,
 			boolean inlineLiterals) throws Exception {
-		String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
-		Process process = new ProcessBuilder(java, "-ea", "-cp", System.getProperty(BASELINE_CLASSPATH_PROPERTY),
-				BASELINE_PROCESS, phase, storeDirectory.toString(), metadataFile.toString(),
-				Boolean.toString(inlineLiterals)).redirectErrorStream(true).start();
-		boolean exited = process.waitFor(5, TimeUnit.MINUTES);
-		if (!exited) {
-			process.destroyForcibly();
-		}
-		ByteArrayOutputStream output = new ByteArrayOutputStream();
-		try (InputStream stream = process.getInputStream()) {
-			stream.transferTo(output);
-		}
-		assertTrue(exited, "Pinned baseline process did not exit: phase=" + phase
-				+ ", inlineLiterals=" + inlineLiterals);
+		return runBaselineProcess(phase, storeDirectory, metadataFile, inlineLiterals, 5, TimeUnit.MINUTES);
+	}
+
+	private static Path runBaselineProcess(String phase, Path storeDirectory, Path metadataFile,
+			boolean inlineLiterals, long timeout, TimeUnit unit) throws Exception {
+		Path outputFile = createBaselineOutputFile(metadataFile, phase);
+		Process process = startBaselineProcess(phase, storeDirectory, metadataFile, inlineLiterals, outputFile);
+		boolean exited = waitForBaselineProcess(process, timeout, unit);
+		String outputSummary = baselineOutputSummary(outputFile);
+		assertTrue(exited, "Pinned baseline process did not exit before its deadline: phase=" + phase
+				+ ", inlineLiterals=" + inlineLiterals + ", " + outputSummary);
 		assertEquals(0, process.exitValue(), "Pinned baseline process failed: phase=" + phase
-				+ ", inlineLiterals=" + inlineLiterals + ":\n"
-				+ output.toString(StandardCharsets.UTF_8));
+				+ ", inlineLiterals=" + inlineLiterals + ", " + outputSummary);
+		return outputFile;
 	}
 
 	private static void runBaselineProcessExpectingFailure(String phase, Path storeDirectory, Path metadataFile,
 			boolean inlineLiterals, String expectedError) throws Exception {
-		String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
-		Process process = new ProcessBuilder(java, "-ea", "-cp", System.getProperty(BASELINE_CLASSPATH_PROPERTY),
-				BASELINE_PROCESS, phase, storeDirectory.toString(), metadataFile.toString(),
-				Boolean.toString(inlineLiterals)).redirectErrorStream(true).start();
-		boolean exited = process.waitFor(5, TimeUnit.MINUTES);
-		if (!exited) {
-			process.destroyForcibly();
-		}
-		ByteArrayOutputStream output = new ByteArrayOutputStream();
-		try (InputStream stream = process.getInputStream()) {
-			stream.transferTo(output);
-		}
-		String processOutput = output.toString(StandardCharsets.UTF_8);
-		assertTrue(exited, "Pinned baseline rejection probe did not exit: phase=" + phase
-				+ ", inlineLiterals=" + inlineLiterals);
+		Path outputFile = createBaselineOutputFile(metadataFile, phase);
+		Process process = startBaselineProcess(phase, storeDirectory, metadataFile, inlineLiterals, outputFile);
+		boolean exited = waitForBaselineProcess(process, 5, TimeUnit.MINUTES);
+		String outputSummary = baselineOutputSummary(outputFile);
+		String processOutput = Files.readString(outputFile, StandardCharsets.UTF_8);
+		assertTrue(exited, "Pinned baseline rejection probe did not exit before its deadline: phase=" + phase
+				+ ", inlineLiterals=" + inlineLiterals + ", " + outputSummary);
 		assertTrue(process.exitValue() != 0,
 				"Pinned baseline reader unexpectedly accepted current format 6: phase=" + phase
-						+ ", inlineLiterals=" + inlineLiterals);
+						+ ", inlineLiterals=" + inlineLiterals + ", " + outputSummary);
 		assertTrue(processOutput.contains(expectedError), "Unexpected pinned-reader rejection: phase=" + phase
-				+ ", inlineLiterals=" + inlineLiterals + ":\n" + processOutput);
+				+ ", inlineLiterals=" + inlineLiterals + ", " + outputSummary);
+	}
+
+	private static Process startBaselineProcess(String phase, Path storeDirectory, Path metadataFile,
+			boolean inlineLiterals, Path outputFile) throws IOException {
+		String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+		return new ProcessBuilder(java, "-ea", "-cp", System.getProperty(BASELINE_CLASSPATH_PROPERTY),
+				BASELINE_PROCESS, phase, storeDirectory.toString(), metadataFile.toString(),
+				Boolean.toString(inlineLiterals)).redirectErrorStream(true).redirectOutput(outputFile.toFile()).start();
+	}
+
+	private static Path createBaselineOutputFile(Path metadataFile, String phase) throws IOException {
+		Path parent = metadataFile.toAbsolutePath().getParent();
+		String safePhase = phase.replaceAll("[^A-Za-z0-9._-]", "_");
+		return Files.createTempFile(parent, "baseline-" + safePhase + "-", ".log");
+	}
+
+	private static boolean waitForBaselineProcess(Process process, long timeout, TimeUnit unit) throws Exception {
+		try {
+			boolean exited = process.waitFor(timeout, unit);
+			if (!exited) {
+				process.destroyForcibly();
+				process.waitFor();
+			}
+			return exited;
+		} catch (InterruptedException interruption) {
+			if (process.isAlive()) {
+				process.destroyForcibly();
+				try {
+					process.waitFor();
+				} catch (InterruptedException cleanupInterruption) {
+					interruption.addSuppressed(cleanupInterruption);
+				}
+			}
+			Thread.currentThread().interrupt();
+			throw interruption;
+		}
+	}
+
+	private static String baselineOutputSummary(Path outputFile) throws Exception {
+		return "childOutputBytes=" + Files.size(outputFile) + ", childOutputSha256=" + sha256(outputFile);
 	}
 
 	private static void assertFixtureReadable(RepositoryConnection connection) throws Exception {
@@ -431,6 +962,21 @@ class LmdbDevelopBaselineCompatibilityTest {
 
 	private static ValueStore valueStore(SailRepository repository) {
 		return (ValueStore) ((LmdbStore) repository.getSail()).getValueFactory();
+	}
+
+	private static void assertLegacyVersionTwoProperties(Properties properties) {
+		assertEquals(Set.of(StoreProperties.VERSION_KEY, StoreProperties.INDEXES_KEY,
+				StoreProperties.TRIPLE_TERM_INDEXES_KEY), properties.stringPropertyNames(),
+				"The pinned version-2 writer stores only its version and index metadata");
+	}
+
+	private static Properties expectedPostMigrationProperties(Properties baselineProperties, UUID currentStoreId) {
+		Properties expected = new Properties();
+		expected.putAll(baselineProperties);
+		expected.setProperty(StoreProperties.LANGUAGE_TAG_KEY, StoreProperties.LANGUAGE_TAG_KEY_CANONICAL);
+		expected.setProperty(StoreProperties.PREDICATE_OBJECT_DOMAINS_VERSION_KEY, "rdf-term-domain-v5");
+		expected.setProperty(StoreProperties.STORE_ID_KEY, currentStoreId.toString());
+		return expected;
 	}
 
 	private static void assertStoreProperties(Path storeDirectory) throws Exception {
@@ -583,7 +1129,237 @@ class LmdbDevelopBaselineCompatibilityTest {
 			Path storeDirectory = Path.of(arguments[1]);
 			Path metadataFile = Path.of(arguments[2]);
 			boolean inlineLiterals = Boolean.parseBoolean(arguments[3]);
-			if ("create".equals(phase)) {
+			if ("noisy-output".equals(phase)) {
+				byte[] block = new byte[8192];
+				Arrays.fill(block, (byte) 'x');
+				for (int written = 0; written < NOISY_OUTPUT_BYTES; written += block.length) {
+					System.out.write(block);
+				}
+				System.out.flush();
+			} else if ("create-language-policy".equals(phase)) {
+				SailRepository repository = openRepository(storeDirectory, inlineLiterals,
+						VERSIONED_CREATE_TRIPLE_INDEXES);
+				Properties metadata = new Properties();
+				metadata.setProperty("baseline.commit", BASELINE_COMMIT);
+				try (RepositoryConnection connection = repository.getConnection()) {
+					connection.begin();
+					for (int i = 0; i < languagePolicyLiterals().size(); i++) {
+						connection.add(VF.createIRI("urn:compat:old-language:" + i), CURRENT_PREDICATE,
+								languagePolicyLiterals().get(i));
+					}
+					connection.commit();
+					for (int i = 0; i < languagePolicyLiterals().size(); i++) {
+						metadata.setProperty("language.id." + i,
+								Long.toString(valueId(repository, languagePolicyLiterals().get(i))));
+					}
+				} finally {
+					repository.shutDown();
+				}
+				try (var output = Files.newOutputStream(metadataFile)) {
+					metadata.store(output, "Actual pinned baseline language identity fixture");
+				}
+			} else if ("reuse-language-policy".equals(phase)) {
+				Properties metadata = loadProperties(metadataFile);
+				SailRepository repository = openRepository(storeDirectory, inlineLiterals);
+				try (RepositoryConnection connection = repository.getConnection()) {
+					ValueStore values = valueStore(repository);
+					for (int i = 0; i < languagePolicyLiterals().size(); i++) {
+						values.clearCaches();
+						assertEquals(Long.parseLong(metadata.getProperty("language.id." + i)),
+								values.getId(languagePolicyLiterals().get(i)),
+								"old reader cold lookup of original spelling");
+					}
+					connection.begin();
+					for (int i = 0; i < languagePolicyLiterals().size(); i++) {
+						connection.add(VF.createIRI("urn:compat:old-language-reuse:" + i), CURRENT_PREDICATE,
+								languagePolicyLiterals().get(i));
+					}
+					connection.commit();
+					for (int i = 0; i < languagePolicyLiterals().size(); i++) {
+						values.clearCaches();
+						assertEquals(Long.parseLong(metadata.getProperty("language.id." + i)),
+								values.getId(languagePolicyLiterals().get(i)),
+								"old writer reuses migrated original owner");
+					}
+				} finally {
+					repository.shutDown();
+				}
+			} else if (phase.startsWith("reuse-current-language-")) {
+				int literalIndex = Integer.parseInt(phase.substring("reuse-current-language-".length()));
+				Literal original = currentOwnerLanguageLiterals().get(literalIndex);
+				Properties metadata = loadProperties(metadataFile);
+				long id = Long.parseLong(metadata.getProperty("current.language.id"));
+				SailRepository repository = openRepository(storeDirectory, inlineLiterals);
+				try (RepositoryConnection connection = repository.getConnection()) {
+					ValueStore values = valueStore(repository);
+					values.clearCaches();
+					assertEquals(id, values.getId(original), "old reader cold lookup of current owner spelling");
+					assertEquals(currentOwnerLanguageRows(original), allStatements(connection));
+					connection.begin();
+					connection.add(VF.createIRI("urn:compat:old-current-language-reuse"), CURRENT_PREDICATE, original);
+					connection.commit();
+					values.clearCaches();
+					assertEquals(id, values.getId(original), "old writer must reuse the current owner");
+					Literal decoded = (Literal) values.getValue(id);
+					assertEquals(original.getLanguage(), decoded.getLanguage());
+					assertEquals(original.getBaseDirection(), decoded.getBaseDirection());
+				} finally {
+					repository.shutDown();
+				}
+			} else if (phase.startsWith("add-current-language-variant-")) {
+				int literalIndex = Integer.parseInt(phase.substring("add-current-language-variant-".length()));
+				Literal original = currentOwnerLanguageLiterals().get(literalIndex);
+				Literal variant = VF.createLiteral(original.getLabel(), literalIndex == 0 ? "eN" : "eN-gB");
+				Properties metadata = loadProperties(metadataFile);
+				SailRepository repository = openRepository(storeDirectory, inlineLiterals);
+				try (RepositoryConnection connection = repository.getConnection()) {
+					assertEquals(currentOwnerLanguageRows(original), allStatements(connection));
+					connection.begin();
+					connection.add(VF.createIRI("urn:compat:old-current-language-variant"), CURRENT_PREDICATE, variant);
+					connection.commit();
+					ValueStore values = valueStore(repository);
+					values.clearCaches();
+					long alternate = values.getId(variant);
+					assertTrue(alternate > 0);
+					assertTrue(alternate != Long.parseLong(metadata.getProperty("current.language.id")));
+					metadata.setProperty("old.variant.id", Long.toString(alternate));
+				} finally {
+					repository.shutDown();
+				}
+				try (var output = Files.newOutputStream(metadataFile)) {
+					metadata.store(output, "Distinct language owner written by authentic pinned old process");
+				}
+			} else if (phase.startsWith("duplicate-current-canonical-only-language-")) {
+				int index = Integer.parseInt(phase.substring("duplicate-current-canonical-only-language-".length()));
+				Literal original = currentOwnerLanguageLiterals().get(index);
+				Properties metadata = loadProperties(metadataFile);
+				long canonicalOwner = Long.parseLong(metadata.getProperty("current.language.id"));
+				SailRepository repository = openRepository(storeDirectory, inlineLiterals);
+				try (RepositoryConnection connection = repository.getConnection()) {
+					assertEquals(currentOwnerLanguageRows(original), allStatements(connection));
+					ValueStore values = valueStore(repository);
+					values.clearCaches();
+					assertEquals(-1L, values.getId(original),
+							"the old lookup cannot see the historical canonical-only key");
+					values.startTransaction(true);
+					long rawOwner = values.storeValue(original);
+					values.commit();
+					assertTrue(rawOwner > 0 && rawOwner != canonicalOwner);
+					assertTrue(Arrays.equals(values.getData(canonicalOwner), values.getData(rawOwner)),
+							"the real old writer allocated the SAME exact original spelling, not a different case variant");
+					assertEquals(currentOwnerLanguageRows(original), allStatements(connection));
+					metadata.setProperty("old.variant.id", Long.toString(rawOwner));
+				} finally {
+					repository.shutDown();
+				}
+				try (var output = Files.newOutputStream(metadataFile)) {
+					metadata.store(output, "Authentic old raw owner beside a valid canonical-only owner");
+				}
+			} else if (phase.startsWith("create-collectible-language-")) {
+				int index = Integer.parseInt(phase.substring("create-collectible-language-".length()));
+				Literal lower = collectibleLanguageLiteral(index, false);
+				Literal upper = collectibleLanguageLiteral(index, true);
+				Properties metadata = loadProperties(metadataFile);
+				long owner = Long.parseLong(metadata.getProperty("gc.language.owner.id"));
+				SailRepository repository = openRepository(storeDirectory, inlineLiterals);
+				try (RepositoryConnection connection = repository.getConnection()) {
+					assertEquals(currentOwnerLanguageRows(lower), allStatements(connection));
+					ValueStore values = valueStore(repository);
+					values.clearCaches();
+					assertEquals(owner, values.getId(lower));
+					// Force the old writer to query the distinct raw language spelling, not its case-insensitive value
+					// cache.
+					values.clearCaches();
+					values.startTransaction(true);
+					long collectible = values.storeValue(upper);
+					values.commit();
+					assertTrue(collectible > 0 && collectible != owner);
+					values.clearCaches();
+					assertEquals(collectible, values.getId(upper));
+					assertEquals(currentOwnerLanguageRows(lower), allStatements(connection),
+							"the collectible dictionary owner was never inserted as an RDF statement");
+					metadata.setProperty("gc.language.collectible.id", Long.toString(collectible));
+				} finally {
+					repository.shutDown();
+				}
+				try (var output = Files.newOutputStream(metadataFile)) {
+					metadata.store(output, "Actual old writer unreferenced raw language owner");
+				}
+			} else if (phase.startsWith("collect-current-language-owner-")) {
+				int index = Integer.parseInt(phase.substring("collect-current-language-owner-".length()));
+				Literal literal = currentOwnerLanguageLiterals().get(index);
+				Properties metadata = loadProperties(metadataFile);
+				long owner = Long.parseLong(metadata.getProperty("current.gc.language.id"));
+				SailRepository repository = openRepository(storeDirectory, inlineLiterals);
+				try {
+					try (RepositoryConnection connection = repository.getConnection()) {
+						assertEquals(currentOwnerLanguageRows(literal), allStatements(connection));
+						ValueStore values = valueStore(repository);
+						values.clearCaches();
+						assertEquals(owner, values.getId(literal),
+								"the real old cold lookup reaches the captured owner");
+						assertEquals(NTriplesUtil.toNTriplesString(literal),
+								NTriplesUtil.toNTriplesString(values.getValue(owner)));
+						byte[] payload = values.getData(owner);
+						assertNotNull(payload);
+						String payloadHash = HexFormat.of()
+								.formatHex(MessageDigest.getInstance("SHA-256").digest(payload));
+						assertEquals(metadata.getProperty("current.gc.language.payload.sha256"), payloadHash,
+								"the old process observes the same actual owner bytes before reclamation");
+						metadata.setProperty("old.gc.language.before.payload.sha256", payloadHash);
+						connection.begin();
+						connection.remove((Resource) null, CURRENT_PREDICATE, literal);
+						connection.commit();
+						assertTrue(allStatements(connection).isEmpty());
+					}
+					ValueStore values = valueStore(repository);
+					ValueStoreRevision priorRevision = values.getRevision();
+					values.startTransaction(true);
+					List<Long> dependencies = new ArrayList<>();
+					values.gcIds(List.of(owner), dependencies);
+					values.gcIds(dependencies, new ArrayList<>());
+					values.commit();
+					// Use the same actual pinned-revision reclamation protocol as mutateBaselineFixture; no ID is
+					// forged.
+					values.unusedRevisionIds.add(priorRevision.getRevisionId());
+					values.forceEvictionOfValues();
+					values.startTransaction(true);
+					values.commit();
+					values.clearCaches();
+					assertEquals(-1L, values.getId(literal), "the old writer removed its raw lookup association");
+					assertNull(values.getData(owner),
+							"the captured native owner record is actually absent after old GC");
+					metadata.setProperty("old.gc.language.forward.absent", "true");
+				} finally {
+					repository.shutDown();
+				}
+				try (var output = Files.newOutputStream(metadataFile)) {
+					metadata.store(output, "Pinned writer retired the authenticated current-created language owner");
+				}
+			} else if (phase.startsWith("verify-collected-language-")) {
+				int index = Integer.parseInt(phase.substring("verify-collected-language-".length()));
+				Literal lower = collectibleLanguageLiteral(index, false);
+				Literal upper = collectibleLanguageLiteral(index, true);
+				Properties metadata = loadProperties(metadataFile);
+				long owner = Long.parseLong(metadata.getProperty("gc.language.owner.id"));
+				SailRepository repository = openRepository(storeDirectory, inlineLiterals);
+				try (RepositoryConnection connection = repository.getConnection()) {
+					ValueStore values = valueStore(repository);
+					values.clearCaches();
+					assertEquals(owner, values.getId(lower), "the original cold owner remains live");
+					assertEquals(currentOwnerLanguageRows(lower), allStatements(connection));
+					values.clearCaches();
+					assertEquals(-1L, values.getId(upper), "the real old raw-only owner must have been retired");
+				} finally {
+					repository.shutDown();
+				}
+			} else if ("write-current-branch".equals(phase)) {
+				writeCurrentBranch(storeDirectory, inlineLiterals);
+			} else if ("clear-write-current-branch".equals(phase)) {
+				clearWriteCurrentBranch(storeDirectory, inlineLiterals);
+			} else if ("verify-current-branch".equals(phase)) {
+				verifyCurrentBranch(storeDirectory, metadataFile, inlineLiterals);
+			} else if ("create".equals(phase)) {
 				createBaselineFixture(storeDirectory, metadataFile, inlineLiterals, TRIPLE_INDEXES);
 			} else if ("create-versioned".equals(phase)) {
 				createBaselineFixture(storeDirectory, metadataFile, inlineLiterals, VERSIONED_CREATE_TRIPLE_INDEXES);
@@ -604,6 +1380,63 @@ class LmdbDevelopBaselineCompatibilityTest {
 				throw new AssertionError("Pinned v2 reader unexpectedly opened current format 6");
 			} else {
 				throw new IllegalArgumentException("Unknown baseline process phase: " + phase);
+			}
+		}
+
+		private static void writeCurrentBranch(Path storeDirectory, boolean inlineLiterals) throws Exception {
+			SailRepository repository = openRepository(storeDirectory, inlineLiterals);
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.begin();
+				connection.add(VF.createIRI("urn:compat:current-subject"), CURRENT_PREDICATE, CURRENT_VALUE);
+				List<Literal> literals = currentBranchLiterals();
+				for (int index = 0; index < literals.size(); index++) {
+					connection.add(currentBranchSubject(index), currentBranchPredicate(index), literals.get(index));
+				}
+				connection.commit();
+			} finally {
+				repository.shutDown();
+			}
+		}
+
+		private static void clearWriteCurrentBranch(Path storeDirectory, boolean inlineLiterals) throws Exception {
+			SailRepository repository = openRepository(storeDirectory, inlineLiterals);
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.clear();
+				connection.begin();
+				connection.setNamespace("compat", "urn:compat:");
+				connection.add(VF.createIRI("urn:compat:current-subject"), CURRENT_PREDICATE, CURRENT_VALUE);
+				List<Literal> literals = currentBranchLiterals();
+				for (int index = 0; index < literals.size(); index++) {
+					connection.add(currentBranchSubject(index), currentBranchPredicate(index), literals.get(index));
+				}
+				connection.commit();
+				assertBranchLiteralsReadable(connection);
+			} finally {
+				repository.shutDown();
+			}
+		}
+
+		private static void verifyCurrentBranch(Path storeDirectory, Path metadataFile, boolean inlineLiterals)
+				throws Exception {
+			Properties metadata = loadProperties(metadataFile);
+			SailRepository repository = openRepository(storeDirectory, inlineLiterals);
+			try (RepositoryConnection connection = repository.getConnection()) {
+				ValueStore values = valueStore(repository);
+				List<Literal> literals = currentBranchLiterals();
+				for (int index = 0; index < literals.size(); index++) {
+					Literal expected = literals.get(index);
+					values.clearCaches();
+					long actualId = values.getId(expected);
+					assertEquals(Long.parseLong(metadata.getProperty("all-old.branch.id." + index)), actualId,
+							"pinned writer cold lookup keeps current-branch id " + index);
+					Value decoded = values.getValue(actualId);
+					assertEquals(metadata.getProperty("all-old.branch.spelling." + index),
+							NTriplesUtil.toNTriplesString(decoded),
+							"pinned writer cold lookup keeps spelling " + index);
+					assertEquals(expected, decoded, "pinned writer cold lookup keeps value " + index);
+				}
+			} finally {
+				repository.shutDown();
 			}
 		}
 
@@ -657,7 +1490,7 @@ class LmdbDevelopBaselineCompatibilityTest {
 							VF.createLiteral("preseeded reuse subject and predicate"));
 					connection.add(VF.createIRI("urn:compat:triple-subject"),
 							VF.createIRI("urn:compat:nested-triple"), nestedTripleTerm());
-					connection.add(VF.createIRI("urn:compat:gc-subject"), GC_PREDICATE, GC_OLD_VALUE);
+					connection.add(REUSED_SUBJECT, GC_PREDICATE, GC_OLD_VALUE);
 					connection.commit();
 					assertPatternAndPreparedQuery(connection, literalPredicate(0), literals.get(0));
 				}
@@ -703,6 +1536,8 @@ class LmdbDevelopBaselineCompatibilityTest {
 			long oldId = Long.parseLong(metadata.getProperty("old.gc.id"));
 			SailRepository repository = openRepository(storeDirectory, inlineLiterals);
 			try {
+				ValueStore valueStore = valueStore(repository);
+				ValueStoreRevision priorRevision;
 				try (RepositoryConnection connection = repository.getConnection()) {
 					assertFixtureReadable(connection);
 					assertBranchLiteralsReadable(connection);
@@ -722,17 +1557,19 @@ class LmdbDevelopBaselineCompatibilityTest {
 					}
 					connection.commit();
 					assertBranchLiteralsReadable(connection);
+					assertTrue(hasPattern(connection, REUSED_SUBJECT, REUSED_PREDICATE,
+							VF.createLiteral("preseeded reuse subject and predicate"), false));
+					assertTrue(hasPattern(connection, REUSED_SUBJECT, GC_PREDICATE, GC_OLD_VALUE, false));
 					connection.begin();
-					connection.remove(VF.createIRI("urn:compat:gc-subject"), GC_PREDICATE, GC_OLD_VALUE);
+					connection.remove(REUSED_SUBJECT, GC_PREDICATE, GC_OLD_VALUE);
+					priorRevision = valueStore.getRevision();
 					connection.commit();
+					assertTrue(hasPattern(connection, REUSED_SUBJECT, REUSED_PREDICATE,
+							VF.createLiteral("preseeded reuse subject and predicate"), false),
+							"the seeded subject and predicate must remain live after the GC row is removed");
 				}
-				ValueStore valueStore = valueStore(repository);
-				ValueStoreRevision priorRevision = valueStore.getRevision();
-				valueStore.startTransaction(true);
-				List<Long> nextIds = new ArrayList<>();
-				valueStore.gcIds(List.of(oldId), nextIds);
-				valueStore.gcIds(nextIds, new ArrayList<>());
-				valueStore.commit();
+				assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(GC_OLD_VALUE),
+						"The normal Sail commit must retire the removed value association");
 				valueStore.unusedRevisionIds.add(priorRevision.getRevisionId());
 				valueStore.forceEvictionOfValues();
 				valueStore.startTransaction(true);
@@ -790,6 +1627,16 @@ class LmdbDevelopBaselineCompatibilityTest {
 					connection.commit();
 					assertBranchLiteralsReadable(connection);
 					assertPatternAndPreparedQuery(connection, OLD_AFTER_CLEAR_PREDICATE, OLD_AFTER_CLEAR_VALUE);
+					ValueStore values = valueStore(repository);
+					for (int index = 0; index < branchLiterals.size(); index++) {
+						Literal literal = branchLiterals.get(index);
+						values.clearCaches();
+						long id = values.getId(literal);
+						assertTrue(id != -1L, "the pinned writer stores rewritten current-branch literal " + index);
+						metadata.setProperty("all-old.branch.id." + index, Long.toString(id));
+						metadata.setProperty("all-old.branch.spelling." + index,
+								NTriplesUtil.toNTriplesString(literal));
+					}
 				}
 			} finally {
 				repository.shutDown();

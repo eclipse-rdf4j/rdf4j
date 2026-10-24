@@ -106,8 +106,9 @@ class LmdbReplayContextAdmissionTest {
 
 			LmdbSailStore backingStore = store.getBackingStore();
 			MapGrowthMetrics.Snapshot before = backingStore.growthMetricsSnapshot();
-			String queryString = "SELECT ?value WHERE { ?subject <" + QUERY_PREDICATE.stringValue()
-					+ "> ?value . FILTER(<" + functionIri + ">(?value)) }";
+			// The selected BIND observes each runtime row while the callback captures that row's admitted read.
+			String queryString = "SELECT ?value ?observed WHERE { ?subject <" + QUERY_PREDICATE.stringValue()
+					+ "> ?value . BIND(<" + functionIri + ">(?value) AS ?observed) }";
 			queryFuture = queryExecutor.submit(() -> {
 				Throwable queryFailure = null;
 				try (RepositoryConnection reader = repository.getConnection()) {
@@ -120,9 +121,10 @@ class LmdbReplayContextAdmissionTest {
 						}
 						BindingSet first = results.next();
 						assertNotNull(first.getValue("value"));
+						assertEquals(VF.createLiteral(true), first.getValue("observed"));
 						function.firstQueryResultObserved.countDown();
 						while (results.hasNext()) {
-							results.next();
+							assertEquals(VF.createLiteral(true), results.next().getValue("observed"));
 						}
 					} catch (Throwable failure) {
 						queryFailure = failure;
@@ -312,6 +314,11 @@ class LmdbReplayContextAdmissionTest {
 		@Override
 		public String getURI() {
 			return functionIri;
+		}
+
+		@Override
+		public boolean mustReturnDifferentResult() {
+			return true;
 		}
 
 		@Override

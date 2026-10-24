@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
@@ -104,6 +105,27 @@ class ObservingSailDataset extends DelegatingSailDataset {
 	}
 
 	@Override
+	public CloseableIteration<? extends Statement> getStatements(StatementPattern statementPattern, Resource subj,
+			IRI pred, Value obj, Resource... contexts) throws SailException {
+		observer.observe(subj, pred, obj, contexts);
+		return super.getStatements(statementPattern, subj, pred, obj, contexts);
+	}
+
+	@Override
+	public long getStatementCount(StatementPattern statementPattern, Resource subj, IRI pred, Value obj,
+			Resource... contexts) throws SailException {
+		observer.observe(subj, pred, obj, contexts);
+		return super.getStatementCount(statementPattern, subj, pred, obj, contexts);
+	}
+
+	@Override
+	public CloseableIteration<? extends Statement> getStatements(StatementOrder statementOrder, Resource subj, IRI pred,
+			Value obj, Resource... contexts) throws SailException {
+		observer.observe(subj, pred, obj, contexts);
+		return super.getStatements(statementOrder, subj, pred, obj, contexts);
+	}
+
+	@Override
 	public long getStatementCount(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		observer.observe(subj, pred, obj, contexts);
 		return super.getStatementCount(subj, pred, obj, contexts);
@@ -113,13 +135,6 @@ class ObservingSailDataset extends DelegatingSailDataset {
 	public boolean hasStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		observer.observe(subj, pred, obj, contexts);
 		return super.hasStatements(subj, pred, obj, contexts);
-	}
-
-	@Override
-	public CloseableIteration<? extends Statement> getStatements(StatementOrder statementOrder, Resource subj, IRI pred,
-			Value obj, Resource... contexts) throws SailException {
-		observer.observe(subj, pred, obj, contexts);
-		return super.getStatements(statementOrder, subj, pred, obj, contexts);
 	}
 
 }

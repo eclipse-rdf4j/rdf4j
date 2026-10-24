@@ -17,11 +17,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Properties;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -35,8 +38,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Genuine frozen language aliases retain their original bytes while both dispatch paths follow RDF equality. Expected
- * rows are independently seeded into MemoryStore; agreement between two LMDB paths is insufficient.
+ * Genuine frozen language aliases retain the surviving owner's original bytes after canonical merging. Expected rows
+ * are independently seeded into MemoryStore; agreement between two LMDB paths is insufficient.
  */
 public class LmdbLegacyLanguageTagStoreTest {
 
@@ -56,6 +59,11 @@ public class LmdbLegacyLanguageTagStoreTest {
 	}
 
 	private void openLegacyStore() throws IOException {
+		extractLegacyStore();
+		openExtractedLegacyStore();
+	}
+
+	private void extractLegacyStore() throws IOException {
 		LmdbCompatibilityFixtures.extract("v2-610-language-aliases.zip", dataDir.toPath());
 		// Independently known native catalog descriptors isolate semantic equality from admission behavior.
 		File propertiesFile = new File(dataDir, "store.properties");
@@ -66,6 +74,9 @@ public class LmdbLegacyLanguageTagStoreTest {
 		try (FileOutputStream out = new FileOutputStream(propertiesFile)) {
 			properties.store(out, null);
 		}
+	}
+
+	private void openExtractedLegacyStore() {
 		repository = new SailRepository(new LmdbStore(dataDir,
 				new LmdbStoreConfig("spoc,posc,ospc").setTripleTermIndexes("spoc,cspo")
 						.setNativeEvaluationEnabled(true)));
@@ -111,18 +122,66 @@ public class LmdbLegacyLanguageTagStoreTest {
 
 	@Test
 	public void legacyStoreKeepsLanguageTagBytes() throws IOException {
-		openLegacyStore();
+		extractLegacyStore();
+		assertThat(LmdbCompatibilityFixtures.properties(dataDir.toPath(), "store.properties").getProperty("version"))
+				.isEqualTo("2");
+		assertThat(LmdbCompatibilityFixtures.nativeTripleEntryCount(dataDir.toPath(), "spocspoc")).isEqualTo(8L);
+		long lowerId = LmdbCompatibilityFixtures.findReferenceId(dataDir.toPath(), ValueIds.T_LITERAL,
+				"enlanguage value".getBytes(StandardCharsets.UTF_8));
+		long upperId = LmdbCompatibilityFixtures.findReferenceId(dataDir.toPath(), ValueIds.T_LITERAL,
+				"ENlanguage value".getBytes(StandardCharsets.UTF_8));
+		assertThat(lowerId).isPositive();
+		assertThat(upperId).isGreaterThan(lowerId);
+		byte[] lowerPayload = LmdbCompatibilityFixtures.nativeGet(dataDir.toPath(), null,
+				LmdbCompatibilityFixtures.idKey(lowerId));
+		byte[] upperPayload = LmdbCompatibilityFixtures.nativeGet(dataDir.toPath(), null,
+				LmdbCompatibilityFixtures.idKey(upperId));
+		// Inspect the genuine old owners before current startup can merge equal language literals.
+		assertThat(List.of(storedLanguage(lowerPayload), storedLanguage(upperPayload)).stream().sorted().toList())
+				.containsExactly("EN", "en");
+
+		openExtractedLegacyStore();
+		ValueStore values = (ValueStore) repository.getValueFactory();
+		assertThat(values.getFormat().getVersion()).isEqualTo(LmdbStoreFormat.LEGACY_VERSION);
+		assertThat(values.getFormat().isLegacy()).isTrue();
+		assertThat(values.getFormat().usesCanonicalLanguageTags()).isFalse();
+		assertThat(values.languageTagKeyMode()).isEqualTo(ValueStore.LanguageTagKeyMode.CANONICAL);
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			IRI label = vf.createIRI(EX, "label");
-			List<String> languages = QueryResults.asList(conn.getStatements(null, label, null))
-					.stream()
+			List<Statement> statements = QueryResults.asList(conn.getStatements(null, label, null));
+			assertThat(statements).hasSize(2);
+			assertThat(statements.stream().map(Statement::getSubject).toList())
+					.containsExactlyInAnyOrder(vf.createIRI(EX, "lower"), vf.createIRI(EX, "upper"));
+			List<String> languages = statements.stream()
 					.map(st -> ((Literal) st.getObject()).getLanguage().orElseThrow())
 					.sorted()
 					.toList();
-			// byte-preserving legacy encoding: the store must NOT have lowercased "EN" on write
-			assertThat(languages).containsExactly("EN", "en");
+			// Canonical merging keeps the smallest authentic owner ID and its byte-preserved lower-case payload.
+			assertThat(languages).containsExactly("en", "en");
+			for (Statement statement : statements) {
+				assertThat(values.getId(statement.getObject())).isEqualTo(lowerId);
+				assertThat(((Literal) statement.getObject()).getLabel()).isEqualTo("language value");
+			}
+			assertThat(values.getId(vf.createLiteral("language value", "en"))).isEqualTo(lowerId);
+			assertThat(values.getId(vf.createLiteral("language value", "EN"))).isEqualTo(lowerId);
+			assertThat(((Literal) values.getValue(lowerId)).getLanguage()).contains("en");
+			assertThat(values.getValue(upperId)).isNull();
 		}
+		repository.shutDown();
+		repository = null;
+		assertThat(LmdbCompatibilityFixtures.nativeGet(dataDir.toPath(), null,
+				LmdbCompatibilityFixtures.idKey(lowerId))).containsExactly(lowerPayload);
+		assertThat(LmdbCompatibilityFixtures.nativeGet(dataDir.toPath(), null,
+				LmdbCompatibilityFixtures.idKey(upperId))).isNull();
+	}
+
+	private static String storedLanguage(byte[] data) {
+		assertThat(data).isNotNull();
+		long range = ValueStoreRecordCodec.languageTagRange(ByteBuffer.wrap(data));
+		assertThat(range).isNotNegative();
+		int start = (int) (range >>> 32);
+		return new String(data, start, (int) range - start, StandardCharsets.UTF_8);
 	}
 
 	@Test

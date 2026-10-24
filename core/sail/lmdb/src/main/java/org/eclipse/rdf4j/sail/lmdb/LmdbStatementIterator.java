@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
  */
 class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implements IndexReportingIterator {
 
+	private static final long EMPTY_CACHE_ID = Long.MIN_VALUE;
 	/**
 	 * Number of times the same advisory minimum bound must be hinted before an actual cursor seek is issued. Short lags
 	 * are cheaper to resolve by plain iteration; this mirrors the skip-scan threshold in {@link LmdbRecordIterator}.
@@ -47,6 +48,18 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 	private final ValueStore valueStore;
 	private final ValueStore.ReadSnapshot readSnapshot;
 	private Statement nextElement;
+	private long previousSubjectID = EMPTY_CACHE_ID;
+	private Resource previousSubject;
+	private long previousSubjectVersion;
+	private long previousPredicateID = EMPTY_CACHE_ID;
+	private IRI previousPredicate;
+	private long previousPredicateVersion;
+	private long previousObjectID = EMPTY_CACHE_ID;
+	private Value previousObject;
+	private long previousObjectVersion;
+	private long previousContextID = EMPTY_CACHE_ID;
+	private Resource previousContext;
+	private long previousContextVersion;
 	private long cachedId1 = Long.MIN_VALUE;
 	private long cachedId2 = Long.MIN_VALUE;
 	private long cachedId3 = Long.MIN_VALUE;
@@ -190,12 +203,45 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 		return LmdbValue.UNKNOWN_ID;
 	}
 
+	public LmdbStatementIterator(RecordIterator recordIt, ValueStore valueStore,
+			long subjectID, Resource subject, long predicateID, IRI predicate, long objectID, Value object,
+			long contextID, Resource context) {
+		this(recordIt, valueStore);
+		if (subject != null) {
+			previousSubjectID = subjectID;
+			previousSubject = subject;
+			previousSubjectVersion = semanticVersion(subject);
+		}
+		if (predicate != null) {
+			previousPredicateID = predicateID;
+			previousPredicate = predicate;
+			previousPredicateVersion = semanticVersion(predicate);
+		}
+		if (object != null) {
+			previousObjectID = objectID;
+			previousObject = object;
+			previousObjectVersion = semanticVersion(object);
+		}
+		if (contextID == 0 || context != null) {
+			previousContextID = contextID;
+			previousContext = context;
+			previousContextVersion = semanticVersion(context);
+		}
+	}
+
 	/*---------*
 	 * Methods *
 	 *---------*/
 
 	public Statement getNextElement() throws SailException {
 		try {
+			if (readSnapshot != null) {
+				if (readSnapshot.valueStore() != valueStore) {
+					throw new IllegalArgumentException("Read snapshot belongs to a different ValueStore");
+				}
+				// The one-row cache cannot outlive an unpaired snapshot's borrowed lazy-value capability either.
+				readSnapshot.ensureValid();
+			}
 			long[] quad = recordIt.next();
 			if (quad == null) {
 				return null;
@@ -214,36 +260,77 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 			}
 
 			if (readSnapshot != null && readSnapshot.hasStableIds()) {
-				if (readSnapshot.valueStore() != valueStore) {
-					throw new IllegalArgumentException("Read snapshot belongs to a different ValueStore");
-				}
 				// A lazy shell publishes nothing native, so the snapshot's validity is checked without its reader
 				// monitor. Statement values are plain shells of the snapshot's revision: shared through the
 				// dictionary cache, and recognised by the snapshot's value preparer as already proven statement
 				// values, so binding and join probes allocate nothing per row.
-				readSnapshot.ensureValid();
 				return lazyStatement(quad, readSnapshot.revision(), ValueResolutionScope.activeExposure(valueStore));
 			}
 
 			long subjID = quad[TripleIndex.SUBJ_IDX];
-			Resource subj = (Resource) getLazyValue(subjID);
+			Resource subj = getSubject(subjID);
 
 			long predID = quad[TripleIndex.PRED_IDX];
-			IRI pred = (IRI) getLazyValue(predID);
+			IRI pred = getPredicate(predID);
 
 			long objID = quad[TripleIndex.OBJ_IDX];
-			Value obj = getLazyValue(objID);
+			Value obj = getObject(objID);
 
-			Resource context = null;
 			long contextID = quad[TripleIndex.CONTEXT_IDX];
-			if (contextID != 0) {
-				context = (Resource) getLazyValue(contextID);
-			}
+			Resource context = getContext(contextID);
 
 			return valueStore.createStatement(subj, pred, obj, context);
 		} catch (IOException e) {
 			throw causeIOException(e);
 		}
+	}
+
+	private Resource getSubject(long subjectID) throws IOException {
+		if (subjectID == previousSubjectID && semanticVersion(previousSubject) == previousSubjectVersion) {
+			return previousSubject;
+		}
+		Resource subject = (Resource) getLazyValue(subjectID);
+		previousSubjectID = subjectID;
+		previousSubject = subject;
+		previousSubjectVersion = semanticVersion(subject);
+		return subject;
+	}
+
+	private IRI getPredicate(long predicateID) throws IOException {
+		if (predicateID == previousPredicateID && semanticVersion(previousPredicate) == previousPredicateVersion) {
+			return previousPredicate;
+		}
+		IRI predicate = readSnapshot == null ? valueStore.getLazyPredicate(predicateID)
+				: (IRI) getLazyValue(predicateID);
+		previousPredicateID = predicateID;
+		previousPredicate = predicate;
+		previousPredicateVersion = semanticVersion(predicate);
+		return predicate;
+	}
+
+	private Value getObject(long objectID) throws IOException {
+		if (objectID == previousObjectID && semanticVersion(previousObject) == previousObjectVersion) {
+			return previousObject;
+		}
+		Value object = getLazyValue(objectID);
+		previousObjectID = objectID;
+		previousObject = object;
+		previousObjectVersion = semanticVersion(object);
+		return object;
+	}
+
+	private Resource getContext(long contextID) throws IOException {
+		if (contextID == previousContextID && semanticVersion(previousContext) == previousContextVersion) {
+			return previousContext;
+		}
+		Resource context = null;
+		if (contextID != 0) {
+			context = (Resource) getLazyValue(contextID);
+		}
+		previousContextID = contextID;
+		previousContext = context;
+		previousContextVersion = semanticVersion(context);
+		return context;
 	}
 
 	/**
@@ -348,6 +435,14 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 	 * @return The next element, or null if there are no more results.
 	 */
 	private Statement lookAhead() {
+		if (nextElement != null && readSnapshot != null) {
+			// Prefetch owns a row, not the independently borrowed dictionary capability needed to serve it.
+			try {
+				readSnapshot.ensureValid();
+			} catch (IOException failure) {
+				throw causeIOException(failure);
+			}
+		}
 		if (nextElement == null) {
 			nextElement = getNextElement();
 
@@ -464,4 +559,15 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 	public long getSourceRowsFilteredActual() {
 		return recordIt.getSourceRowsFilteredActual();
 	}
+
+	@Override
+	public long getDistinctCursorSkipCountActual() {
+		return recordIt.getDistinctCursorSkipCountActual();
+	}
+
+	@Override
+	public long getDistinctCursorSkipSeekCountActual() {
+		return recordIt.getDistinctCursorSkipSeekCountActual();
+	}
+
 }

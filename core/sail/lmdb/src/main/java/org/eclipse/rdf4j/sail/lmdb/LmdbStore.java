@@ -32,6 +32,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
+import org.apache.commons.lang3.time.StopWatch;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.mapdb.MapDb3CollectionFactory;
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -43,6 +44,7 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
@@ -52,7 +54,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValueTripleSource;
 import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.sail.InterruptedSailException;
@@ -65,6 +66,9 @@ import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
 import org.eclipse.rdf4j.sail.helpers.DirectoryLockManager;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeEvaluationStrategyFactory;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsStatus;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchFootprint;
 import org.lwjgl.util.lmdb.MDBStat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -154,6 +158,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 	private EvaluationStrategyFactory explicitEvalStratFactory;
 
+	private LmdbEvaluationStrategyFactory lmdbEvalStratFactory;
 	private LmdbNativeEvaluationStrategyFactory nativeEvalStratFactory;
 
 	private DefaultEvaluationStrategyFactory defaultEvalStratFactory;
@@ -355,6 +360,9 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		if (resolver != null && explicitEvalStratFactory instanceof FederatedServiceResolverClient) {
 			((FederatedServiceResolverClient) explicitEvalStratFactory).setFederatedServiceResolver(resolver);
 		}
+		if (resolver != null && lmdbEvalStratFactory != null) {
+			lmdbEvalStratFactory.setFederatedServiceResolver(resolver);
+		}
 		if (resolver != null && nativeEvalStratFactory != null) {
 			nativeEvalStratFactory.setFederatedServiceResolver(resolver);
 		}
@@ -406,8 +414,6 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		try {
 			StoreProperties properties = new StoreProperties(dataDir);
 			properties.load();
-			// Diagnose unsupported persisted capabilities before optimization metadata is considered. This pure
-			// validation does not open either native environment or reinterpret mutable native index manifests.
 			LmdbStoreFormat loadedFormat = properties.isLoaded()
 					? LmdbStoreFormat.resolve(dataDir, properties, config)
 					: null;
@@ -417,12 +423,22 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 				LegacyStoreDiscovery.discover(dataDir, properties);
 			}
 			format = loadedFormat != null ? loadedFormat : LmdbStoreFormat.resolve(dataDir, properties, config);
+			if (properties.hasNativeGeneration()) {
+				LegacyStoreDiscovery.validateNativeFormatFence(dataDir, format);
+			}
 			if (!properties.isLoaded() && !properties.hasNativeGeneration()) {
 				format.initializeProperties(properties);
 				writeCoreLiteralReferenceMarker(dataDir.toPath());
 			} else if (properties.getVersion() == null) {
 				properties.setVersion(Integer.toString(format.getVersion()));
 			}
+			try {
+				properties.getOrCreateStoreId();
+			} catch (IllegalStateException e) {
+				logger.warn("Frontier OmniSketch is unavailable because the LMDB store identity is invalid", e);
+			}
+			// The durable UUID must exist before a Frontier service can publish a generation that refers to it.
+			properties.save();
 
 			boolean useSketchBasedJoinEstimator = shouldUseSketchBasedJoinEstimator();
 			backingStore = createBackingStore(dataDir, properties, config, useSketchBasedJoinEstimator);
@@ -639,6 +655,10 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		return disabledIsolationLockManager.isActiveLock();
 	}
 
+	synchronized boolean usesDefaultAutomaticOptimizerPipeline() {
+		return explicitEvalStratFactory == null && automaticOptimizerPipeline == null;
+	}
+
 	SailStore getSailStore() {
 		return store;
 	}
@@ -698,6 +718,42 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	public boolean awaitSketchesReady(long timeout, TimeUnit unit) throws InterruptedException {
 		SketchBasedJoinEstimator estimator = getSketchBasedJoinEstimator();
 		return estimator != null && estimator.awaitReady(timeout, unit);
+	}
+
+	/**
+	 * Forces committed LMDB state through to the sketch-based join estimator.
+	 *
+	 * @return {@code true} when the estimator is enabled and ready after the forced flush
+	 */
+	public boolean forceFlushSketchEstimator() {
+		LmdbSailStore backingStore = this.backingStore;
+		return backingStore != null && backingStore.forceFlushSketchEstimator();
+	}
+
+	/**
+	 * Builds and atomically publishes a snapshot-bound Frontier base generation.
+	 *
+	 * @return the resulting persistent Frontier availability status
+	 * @throws SailException when the store is not initialized or a write transaction is active
+	 */
+	public FrontierStatisticsStatus rebuildFrontierStatistics() {
+		LmdbSailStore backingStore = this.backingStore;
+		if (backingStore == null) {
+			throw new SailException("LMDB store is not initialized");
+		}
+		StopWatch started = StopWatch.createStarted();
+		try {
+			return backingStore.rebuildFrontierStatistics();
+
+		} finally {
+			System.out.println(started.getTime(TimeUnit.MILLISECONDS) + " ms to rebuild Frontier statistics");
+		}
+	}
+
+	/** Returns exact primitive and serialized footprint diagnostics for the current cold filter synopsis. */
+	public Optional<SketchFootprint> getColdFilterSynopsisFootprint() {
+		LmdbSailStore backingStore = this.backingStore;
+		return backingStore == null ? Optional.empty() : backingStore.getColdFilterSynopsisFootprint();
 	}
 
 	/**
@@ -792,17 +848,23 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			return false;
 		}
 
-		Boolean sketchEstimatorEnabled = config.getSketchEstimatorEnabled();
-		if (sketchEstimatorEnabled != null) {
-			return sketchEstimatorEnabled;
-		}
-
-		return false;
+		return Boolean.TRUE.equals(config.getSketchEstimatorEnabled());
 	}
 
 	private SketchBasedJoinEstimator getSketchBasedJoinEstimator() {
 		LmdbSailStore backingStore = this.backingStore;
 		return backingStore == null ? null : backingStore.getSketchBasedJoinEstimator();
+	}
+
+	private LmdbEvaluationStrategyFactory getAutomaticLmdbEvaluationStrategyFactory() {
+		QueryOptimizerPipeline optimizerPipeline = getAutomaticOptimizerPipeline();
+		if (lmdbEvalStratFactory == null) {
+			lmdbEvalStratFactory = new LmdbEvaluationStrategyFactory(getFederatedServiceResolver());
+		}
+		if (optimizerPipeline != null) {
+			lmdbEvalStratFactory.setOptimizerPipeline(optimizerPipeline);
+		}
+		return lmdbEvalStratFactory;
 	}
 
 	private EvaluationStrategyFactory getAutomaticEvaluationStrategyFactory() {
@@ -815,7 +877,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			factory = nativeEvalStratFactory;
 		} else {
 			if (defaultEvalStratFactory == null) {
-				defaultEvalStratFactory = new LmdbDefaultEvaluationStrategyFactory(getFederatedServiceResolver());
+				defaultEvalStratFactory = getAutomaticLmdbEvaluationStrategyFactory();
 			}
 			factory = defaultEvalStratFactory;
 		}
@@ -870,6 +932,9 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			if (explicitEvalStratFactory != null) {
 				explicitEvalStratFactory.setOptimizerPipeline(pipeline);
 			}
+			if (lmdbEvalStratFactory != null) {
+				lmdbEvalStratFactory.setOptimizerPipeline(pipeline);
+			}
 			if (nativeEvalStratFactory != null) {
 				nativeEvalStratFactory.setOptimizerPipeline(pipeline);
 			}
@@ -886,12 +951,24 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		@Override
 		public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
 				EvaluationStatistics evaluationStatistics) {
+			return createEvaluationStrategy(dataset, tripleSource, evaluationStatistics, getQueryExecutionPolicy());
+		}
+
+		@Override
+		public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
+				EvaluationStatistics evaluationStatistics, QueryExecutionPolicy policy) {
+			// Every connection-level query passes through here, whichever strategy factory the user configured, so
+			// this is where the per-query statistics learn whether they read a committed snapshot and may publish
+			// feedback. The scope fails closed until bound.
+			if (evaluationStatistics instanceof LmdbEvaluationStatistics lmdbStatistics) {
+				lmdbStatistics.bindExecutionSnapshot(LmdbEvaluationStatistics.executionSnapshotEpoch(tripleSource));
+			}
 			EvaluationStrategyFactory selected = getEvaluationStrategyFactory();
 			// The final built-in native factory owns its internal value boundary and needs the paired dataset source.
-			TripleSource exposed = selected == defaultEvalStratFactory
+			TripleSource exposed = selected == lmdbEvalStratFactory || selected == defaultEvalStratFactory
 					|| selected instanceof LmdbNativeEvaluationStrategyFactory ? tripleSource
 							: ExternalValueTripleSource.wrap(tripleSource, LmdbStoreConnection::protectValueTree);
-			return selected.createEvaluationStrategy(dataset, exposed, evaluationStatistics);
+			return selected.createEvaluationStrategy(dataset, exposed, evaluationStatistics, policy);
 		}
 
 		@Override

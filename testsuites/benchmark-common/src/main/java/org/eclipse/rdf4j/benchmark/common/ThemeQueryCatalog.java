@@ -498,7 +498,7 @@ public final class ThemeQueryCatalog {
 //								"  }",
 								"}",
 								"ORDER BY ?root ?followed ?post"),
-						1L),
+						1_141_596_126L),
 				query("Social: union-heavy denormalized users and posts view",
 						socialPrefix + String.join("\n",
 								"SELECT DISTINCT * WHERE {",
@@ -525,7 +525,7 @@ public final class ThemeQueryCatalog {
 								"    OPTIONAL { ?optFollower social:name ?optFollowerName . }",
 								"  }",
 								"}"),
-						1L)));
+						2_455_460_386L)));
 
 		String libraryPrefix = String.join("\n",
 				"PREFIX lib: <http://example.com/theme/library/>",
@@ -599,9 +599,7 @@ public final class ThemeQueryCatalog {
 				query("Library: member loan counts",
 						libraryPrefix + String.join("\n",
 								"SELECT ?member (COUNT(DISTINCT ?loan) AS ?loanCount) WHERE {",
-								"  { ?loan a lib:Loan ; lib:borrowedBy ?member . }",
-								"  UNION",
-								"  { ?member a lib:Member . }",
+								"  ?loan a lib:Loan ; lib:borrowedBy ?member .",
 								"  OPTIONAL {",
 								"    ?loan lib:loanedCopy ?copy .",
 								"    BIND(?copy AS ?optCopy)",
@@ -692,7 +690,7 @@ public final class ThemeQueryCatalog {
 								"  }",
 								"}",
 								"ORDER BY ?root ?member ?copy"),
-						1L),
+						20235L),
 				query("Library: union-heavy denormalized catalog and loans view",
 						libraryPrefix + String.join("\n",
 								"SELECT DISTINCT * WHERE {",
@@ -720,7 +718,7 @@ public final class ThemeQueryCatalog {
 								"    OPTIONAL { ?optAuthor lib:name ?optAuthorName . }",
 								"  }",
 								"}"),
-						1L)));
+						305_676_168_120L)));
 
 		String engineeringPrefix = String.join("\n",
 				"PREFIX eng: <http://example.com/theme/engineering/>",
@@ -869,7 +867,7 @@ public final class ThemeQueryCatalog {
 								"  }",
 								"}",
 								"ORDER BY ?root ?component ?test"),
-						1L),
+						1557L),
 				query("Engineering: union-heavy denormalized components and requirements view",
 						engineeringPrefix + String.join("\n",
 								"SELECT DISTINCT * WHERE {",
@@ -1045,7 +1043,7 @@ public final class ThemeQueryCatalog {
 								"    }",
 								"  }",
 								"}"),
-						1L),
+						22_853_301_733_957L),
 				query("Connected: union-heavy denormalized node neighborhood view",
 						connectedPrefix + String.join("\n",
 								"SELECT * WHERE {",
@@ -1068,7 +1066,7 @@ public final class ThemeQueryCatalog {
 								"  }",
 								"  FILTER(?optNodeWeight != 0 || !BOUND(?optNodeWeight))",
 								"}"),
-						1L)));
+						5_397_929_193L)));
 
 		String trainPrefix = String.join("\n",
 				"PREFIX train: <http://example.com/theme/train/>",
@@ -1225,7 +1223,7 @@ public final class ThemeQueryCatalog {
 								"    OPTIONAL { ?track train:trackType ?trackType . }",
 								"  }",
 								"}"),
-						1L),
+						569390L),
 				query("Train: union-heavy denormalized network and service view",
 						trainPrefix + String.join("\n",
 								"SELECT * WHERE {",
@@ -1408,7 +1406,7 @@ public final class ThemeQueryCatalog {
 								"    }",
 								"  }",
 								"}"),
-						1L),
+						1884596L),
 				query("Grid: union-heavy denormalized substation asset view",
 						gridPrefix + String.join("\n",
 								"SELECT * WHERE {",
@@ -1647,7 +1645,7 @@ public final class ThemeQueryCatalog {
 								"    }",
 								"  }",
 								"}"),
-						1L),
+						46761L),
 				query("Pharma: union-heavy denormalized trial and drug view",
 						pharmaPrefix + String.join("\n",
 								"SELECT * WHERE {",
@@ -1681,6 +1679,7 @@ public final class ThemeQueryCatalog {
 								"}"),
 						25710L)));
 
+		QUERIES.put(Theme.SPARSE, SparseThemeQueries.queries());
 		String adaptiveFilterPrefix = String.join("\n",
 				"PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>",
 				"");
@@ -2066,7 +2065,7 @@ public final class ThemeQueryCatalog {
 								"}",
 								"GROUP BY ?p",
 								"ORDER BY DESC(?statements) ?p"),
-						116L),
+						134L),
 				query("Analytics: distinct subjects per class",
 						analyticsPrefix + String.join("\n",
 								"SELECT ?type (COUNT(DISTINCT ?instance) AS ?instances) WHERE {",
@@ -2074,7 +2073,7 @@ public final class ThemeQueryCatalog {
 								"}",
 								"GROUP BY ?type",
 								"ORDER BY DESC(?instances) ?type"),
-						54L),
+						63L),
 				query("Analytics: distinct objects per predicate",
 						analyticsPrefix + String.join("\n",
 								"SELECT ?p (COUNT(DISTINCT ?o) AS ?distinctObjects) WHERE {",
@@ -2082,7 +2081,7 @@ public final class ThemeQueryCatalog {
 								"}",
 								"GROUP BY ?p",
 								"ORDER BY DESC(?distinctObjects) ?p"),
-						116L),
+						134L),
 				query("Analytics: literal datatype histogram",
 						analyticsPrefix + String.join("\n",
 								"SELECT ?datatype (COUNT(*) AS ?literals) WHERE {",
@@ -2105,7 +2104,7 @@ public final class ThemeQueryCatalog {
 								"}",
 								"GROUP BY ?outDegree",
 								"ORDER BY ?outDegree"),
-						24L),
+						28L),
 				query("Analytics: class predicate usage matrix",
 						analyticsPrefix + String.join("\n",
 								"SELECT ?type ?p (COUNT(*) AS ?statements) WHERE {",
@@ -2115,7 +2114,7 @@ public final class ThemeQueryCatalog {
 								"}",
 								"GROUP BY ?type ?p",
 								"ORDER BY DESC(?statements) ?type ?p"),
-						141L),
+						164L),
 				query("Analytics: class linkage matrix",
 						analyticsPrefix + String.join("\n",
 								"SELECT ?sourceType ?targetType (COUNT(*) AS ?links) WHERE {",
@@ -2126,7 +2125,7 @@ public final class ThemeQueryCatalog {
 								"}",
 								"GROUP BY ?sourceType ?targetType",
 								"ORDER BY DESC(?links) ?sourceType ?targetType"),
-						56L),
+						65L),
 				query("Analytics: high in-degree objects",
 						analyticsPrefix + String.join("\n",
 								"SELECT ?object (COUNT(?s) AS ?inDegree) WHERE {",
@@ -2136,7 +2135,7 @@ public final class ThemeQueryCatalog {
 								"GROUP BY ?object",
 								"HAVING(COUNT(?s) >= 1000)",
 								"ORDER BY DESC(?inDegree) ?object"),
-						114L),
+						123L),
 				query("Analytics: subjects that are also objects",
 						analyticsPrefix + String.join("\n",
 								"SELECT (COUNT(DISTINCT ?node) AS ?count) WHERE {",
@@ -2152,7 +2151,7 @@ public final class ThemeQueryCatalog {
 								"}",
 								"GROUP BY ?p",
 								"ORDER BY DESC(?statements) ?p"),
-						116L),
+						134L),
 				query("Analytics: namespace statement share",
 						analyticsPrefix + String.join("\n",
 								"SELECT ?ns (COUNT(*) AS ?statements) (COUNT(DISTINCT ?p) AS ?predicates) WHERE {",
@@ -2161,7 +2160,7 @@ public final class ThemeQueryCatalog {
 								"}",
 								"GROUP BY ?ns",
 								"ORDER BY DESC(?statements) ?ns"),
-						12L)));
+						13L)));
 
 		QUERIES.put(Theme.EXPLORATION, List.of(
 				query("Exploration: global dataset census",
@@ -2203,7 +2202,7 @@ public final class ThemeQueryCatalog {
 								GROUP BY ?g
 								ORDER BY DESC(?quads)
 								""",
-						11L),
+						12L),
 				query("Exploration: predicate inventory and value kinds",
 						"""
 										SELECT
@@ -2224,7 +2223,7 @@ public final class ThemeQueryCatalog {
 								GROUP BY ?p
 								ORDER BY DESC(?quads)
 								""",
-						116L),
+						134L),
 				query("Exploration: graph-predicate matrix",
 						"""
 										SELECT
@@ -2244,7 +2243,7 @@ public final class ThemeQueryCatalog {
 								GROUP BY ?g ?p
 								ORDER BY ?g DESC(?quads)
 								""",
-						126L),
+						145L),
 				query("Exploration: class inventory",
 						"""
 										PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
@@ -2271,7 +2270,7 @@ public final class ThemeQueryCatalog {
 								GROUP BY ?class ?classKind
 								ORDER BY DESC(?instances)
 								""",
-						54L),
+						63L),
 				query("Exploration: literal datatype language and lexical size",
 						"""
 										SELECT
@@ -2295,7 +2294,7 @@ public final class ThemeQueryCatalog {
 								GROUP BY ?p ?datatype ?language
 								ORDER BY DESC(?literalQuads)
 								""",
-						61L),
+						68L),
 				query("Exploration: properties by class with coverage",
 						"""
 										PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
@@ -2357,7 +2356,7 @@ public final class ThemeQueryCatalog {
 								}
 								ORDER BY DESC(?classInstances) ?class DESC(?coverage) DESC(?propertyQuads)
 								""",
-						141L),
+						164L),
 				query("Exploration: object classes by predicate",
 						"""
 								PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
@@ -2389,7 +2388,7 @@ public final class ThemeQueryCatalog {
 								GROUP BY ?p ?objectClass
 								ORDER BY ?p DESC(?objects) DESC(?linkQuads)
 								""",
-						56L),
+						67L),
 				query("Exploration: forward and inverse cardinality by predicate",
 						"""
 								SELECT
@@ -2431,7 +2430,7 @@ public final class ThemeQueryCatalog {
 								GROUP BY ?direction ?p
 								ORDER BY ?direction DESC(?nodes)
 								""",
-						232L),
+						268L),
 				query("Exploration: predicate co-occurrence",
 						"""
 								SELECT ?p1 ?p2 (COUNT(*) AS ?subjectsWithBoth)
@@ -2457,7 +2456,7 @@ public final class ThemeQueryCatalog {
 								GROUP BY ?p1 ?p2
 								ORDER BY DESC(?subjectsWithBoth)
 								""",
-						408L),
+						453L),
 				query("Exploration: recurring structural signatures",
 						"""
 								SELECT ?shape (COUNT(*) AS ?subjects) (SAMPLE(?s) AS ?exampleSubject)
@@ -2570,7 +2569,7 @@ public final class ThemeQueryCatalog {
 								GROUP BY ?direction ?degree
 								ORDER BY ?direction ?degree
 								""",
-						363L)));
+						372L)));
 
 		registerExpectedCountBindingValues();
 		validateQueries();
@@ -2667,6 +2666,9 @@ public final class ThemeQueryCatalog {
 				7396, 6, -1, 59629, 5, 47, -1, 6, -1, 0, 0, -1, -1));
 		EXPECTED_COUNT_BINDING_VALUES.put(Theme.PHARMA, expectedCountBindingValues(
 				18, -1, -1, -1, 4972, 32, -1, 2885, -1, 13, -1, -1, -1));
+		EXPECTED_COUNT_BINDING_VALUES.put(Theme.SPARSE, expectedCountBindingValues(
+				240000, 20400, 583422360, 159781560, 5736000, 72000, 152000, 480000, 3000, 67350840,
+				321720, 6971897202L, 3720000));
 		EXPECTED_COUNT_BINDING_VALUES.put(Theme.ADAPTIVE_FILTER_PLACEMENT, expectedCountBindingValues(
 				-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1));
 		EXPECTED_COUNT_BINDING_VALUES.put(Theme.REAL_ESTATE, expectedCountBindingValues(
@@ -2674,7 +2676,7 @@ public final class ThemeQueryCatalog {
 		EXPECTED_COUNT_BINDING_VALUES.put(Theme.DATA_TRANSFORMATION, expectedCountBindingValues(
 				7500, 50000, 50000, 25000, 40230, 16092, 24138, 16091, 9505, 37632, 50000, 50000, 18705));
 		EXPECTED_COUNT_BINDING_VALUES.put(Theme.ANALYTICS, expectedCountBindingValues(
-				54, 116, -1, -1, -1, -1, -1, -1, -1, -1, 2364850, -1, -1));
+				63, 134, -1, -1, -1, -1, -1, -1, -1, -1, 2673850, -1, -1));
 		EXPECTED_COUNT_BINDING_VALUES.put(Theme.EXPLORATION, expectedCountBindingValues(
 				-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1));
 	}

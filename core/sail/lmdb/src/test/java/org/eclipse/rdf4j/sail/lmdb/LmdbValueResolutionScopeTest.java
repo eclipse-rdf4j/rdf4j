@@ -67,36 +67,6 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 class LmdbValueResolutionScopeTest {
 
-	@ParameterizedTest
-	@ValueSource(booleans = { false, true })
-	void scopedLookupsPreserveEveryPositionBank(boolean reverse, @TempDir File dataDir) throws Exception {
-		try (HookValueStore store = new HookValueStore(dataDir)) {
-			long id = commitValue(store, SimpleValueFactory.getInstance().createBNode("all-position-banks"));
-			try (ValueResolutionScope scope = store.openValueResolutionScope();
-					SailClosable activation = scope.activate()) {
-				int[] masks = { ValuePosition.NONE, ValuePosition.SUBJECT | ValuePosition.OBJECT,
-						ValuePosition.PREDICATE, ValuePosition.OBJECT, ValuePosition.CONTEXT };
-				for (int index = 0; index < masks.length; index++) {
-					int mask = masks[reverse ? masks.length - 1 - index : index];
-					LmdbValue value = store.getLazyValue(id, mask);
-					assertFalse(value.isInitialized());
-					ValueStoreRevision.Lazy epoch = (ValueStoreRevision.Lazy) value.getValueStoreRevision();
-					for (int requested = 0; requested <= ValuePosition.ALL; requested++) {
-						var positioned = new ValueStoreRevision.Lazy(epoch, requested);
-						var scoped = scope.revision(positioned);
-						assertEquals(requested, scoped.getPositionMask());
-						assertSame(scoped, scope.revision(positioned));
-					}
-					assertEquals(mask, value.getValueStoreRevision().getPositionMask(),
-							"logical scope admission must preserve the materializer's RDF role");
-					value.init();
-					assertEquals("all-position-banks", value.stringValue());
-					assertSame(value, store.cachedValue(id, mask));
-				}
-			}
-		}
-	}
-
 	@Test
 	void committedPendingParentCannotServeReleasedPredecessorChildren(@TempDir File dataDir) throws Exception {
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
@@ -219,10 +189,10 @@ class LmdbValueResolutionScopeTest {
 				reader.begin(IsolationLevels.SNAPSHOT);
 			}
 			int count = 0;
-			try (CloseableIteration<? extends BindingSet> rows = reader.evaluate(QueryParserUtil.parseTupleQuery(
-					QueryLanguage.SPARQL,
-					"SELECT ?s (STR(?o) AS ?label) WHERE { ?s <urn:rows:predicate> ?o }", null).getTupleExpr(),
-					null, EmptyBindingSet.getInstance(), false)) {
+			try (CloseableIteration<? extends BindingSet> rows = reader.evaluate(QueryParserUtil
+					.parseTupleQuery(QueryLanguage.SPARQL,
+							"SELECT ?s (STR(?o) AS ?label) WHERE { ?s <urn:rows:predicate> ?o }", null)
+					.getTupleExpr(), null, EmptyBindingSet.getInstance(), false)) {
 				while (rows.hasNext()) {
 					BindingSet row = rows.next();
 					assertTrue(row.getValue("label").stringValue().startsWith("row-dictionary-"));
@@ -251,10 +221,10 @@ class LmdbValueResolutionScopeTest {
 		try (HookValueStore store = new HookValueStore(dataDir);
 				ValueResolutionScope scope = store.openValueResolutionScope()) {
 			SimpleValueFactory vf = SimpleValueFactory.getInstance();
-			long id = commitValue(store, vf.createTripleTerm(vf.createIRI("urn:cold:subject"),
-					vf.createIRI("urn:cold:predicate"), vf.createTripleTerm(vf.createBNode("cold-child"),
-							vf.createIRI("urn:cold:inner"),
-							vf.createLiteral("cold-label", vf.createIRI("urn:cold:type")))));
+			long id = commitValue(store,
+					vf.createTripleTerm(vf.createIRI("urn:cold:subject"), vf.createIRI("urn:cold:predicate"),
+							vf.createTripleTerm(vf.createBNode("cold-child"), vf.createIRI("urn:cold:inner"),
+									vf.createLiteral("cold-label", vf.createIRI("urn:cold:type")))));
 			LmdbValue parent;
 			try (SailClosable activation = scope.activate()) {
 				parent = store.getLazyValue(id);
@@ -280,10 +250,10 @@ class LmdbValueResolutionScopeTest {
 			HookValueStore store = new HookValueStore(dataDir);
 			try (ValueResolutionScope creator = store.openValueResolutionScope();
 					ValueResolutionScope worker = store.openValueResolutionScope()) {
-				long id = commitValue(store, vf.createTripleTerm(vf.createIRI("urn:ambient:subject"),
-						vf.createIRI("urn:ambient:predicate"), vf.createTripleTerm(vf.createBNode("ambient-child"),
-								vf.createIRI("urn:ambient:inner"),
-								vf.createLiteral("ambient-label", vf.createIRI("urn:ambient:type")))));
+				long id = commitValue(store,
+						vf.createTripleTerm(vf.createIRI("urn:ambient:subject"), vf.createIRI("urn:ambient:predicate"),
+								vf.createTripleTerm(vf.createBNode("ambient-child"), vf.createIRI("urn:ambient:inner"),
+										vf.createLiteral("ambient-label", vf.createIRI("urn:ambient:type")))));
 				LmdbValue parent;
 				try (SailClosable activation = creator.activate()) {
 					parent = store.getLazyValue(id);
@@ -452,9 +422,7 @@ class LmdbValueResolutionScopeTest {
 						((LmdbValue) ((TripleTerm) parent).getObject()).getValueStoreRevision());
 			}
 			assertSame(parent, lazyLookup ? store.getLazyValue(id) : store.getValue(id),
-					"cold escape must preserve the already initialized canonical composite; lazyLookup=" + lazyLookup
-							+ ", version=" + parent.getSemanticVersion()
-							+ ", lexicalLength=" + parent.retainedLexicalLength());
+					"cold escape must preserve the already initialized canonical composite");
 			store.close();
 			assertEquals(expected, parent,
 					"all descendants of a naked cached composite must remain usable after store shutdown");
@@ -511,9 +479,7 @@ class LmdbValueResolutionScopeTest {
 				insideNative.countDown();
 				await(releaseNative);
 			};
-			Future<?> getter = workers.submit(() -> {
-				held.init();
-			});
+			Future<?> getter = workers.submit(() -> held.init());
 			Future<?> writer = null;
 			try {
 				assertTrue(insideNative.await(10, TimeUnit.SECONDS), "the reserved short fallback must enter decode");
@@ -576,9 +542,7 @@ class LmdbValueResolutionScopeTest {
 			};
 			List<Future<?>> getters = new ArrayList<>();
 			for (LmdbValue value : values) {
-				getters.add(workers.submit(() -> {
-					value.init();
-				}));
+				getters.add(workers.submit(() -> value.init()));
 			}
 			assertTrue(insideNative.await(10, TimeUnit.SECONDS));
 			Future<?> admission = workers.submit(() -> {
@@ -671,9 +635,7 @@ class LmdbValueResolutionScopeTest {
 			};
 			List<Future<?>> getters = new ArrayList<>();
 			for (LmdbValue value : values) {
-				getters.add(workers.submit(() -> {
-					value.init();
-				}));
+				getters.add(workers.submit(() -> value.init()));
 			}
 			Future<?> reservation = null;
 			try {
@@ -769,8 +731,8 @@ class LmdbValueResolutionScopeTest {
 		} finally {
 			repository.shutDown();
 		}
-		assertEquals("nested-egress-label", ((Literal) ((TripleTerm) ((TripleTerm) escaped.getObject()).getObject())
-				.getObject()).getLabel());
+		assertEquals("nested-egress-label",
+				((Literal) ((TripleTerm) ((TripleTerm) escaped.getObject()).getObject()).getObject()).getLabel());
 	}
 
 	private static ObservedStore seedNestedStore(File directory) {
@@ -833,7 +795,6 @@ class LmdbValueResolutionScopeTest {
 		} finally {
 			store.shutDown();
 		}
-
 		store.init();
 		try (SailConnection reader = store.getConnection()) {
 			reader.begin(IsolationLevels.SNAPSHOT);
@@ -1059,9 +1020,7 @@ class LmdbValueResolutionScopeTest {
 					await(releaseNative);
 				}
 			};
-			Future<?> getter = workers.submit(() -> {
-				admitted.init();
-			});
+			Future<?> getter = workers.submit(() -> admitted.init());
 			assertTrue(insideNative.await(10, TimeUnit.SECONDS));
 			Future<?> close = workers.submit(scope::close);
 			try {
@@ -1132,8 +1091,7 @@ class LmdbValueResolutionScopeTest {
 			seed.begin(IsolationLevels.SNAPSHOT);
 			seed.addStatement(vf.createIRI("urn:old-result:subject"), vf.createIRI("urn:old-result:predicate"),
 					vf.createTripleTerm(vf.createIRI("urn:old-result:inner"),
-							vf.createIRI("urn:old-result:inner-predicate"),
-							vf.createBNode("old-result-child")));
+							vf.createIRI("urn:old-result:inner-predicate"), vf.createBNode("old-result-child")));
 			seed.commit();
 		} finally {
 			store.shutDown();
@@ -1223,30 +1181,37 @@ class LmdbValueResolutionScopeTest {
 
 	@FunctionalInterface
 	private interface ReadHook {
+
 		void read(long id) throws IOException;
 	}
 
 	private static final class HookValueStore extends ValueStore implements AutoCloseable {
+
 		private volatile boolean failScopeOpen;
+
 		private volatile Runnable beforeCommit;
+
 		private final AtomicReference<ValueResolutionScope> lastOpenedScope = new AtomicReference<>();
+
 		private final AtomicReference<ValueResolutionScope> lastRetainedScope = new AtomicReference<>();
+
 		private final AtomicInteger retainedDecodes = new AtomicInteger();
+
 		private final AtomicInteger retainedAdmissions = new AtomicInteger();
+
 		private final Set<TxnManager.Txn> retainedReaders = ConcurrentHashMap.newKeySet();
+
 		private volatile Runnable afterTransaction = () -> {
 		};
+
 		private volatile ReadHook hook = id -> {
 		};
+
 		private volatile ReadHook nativeHook = id -> {
 		};
 
 		private HookValueStore(File directory) throws IOException {
 			super(directory, new LmdbStoreConfig().setInlineLiterals(false));
-		}
-
-		private HookValueStore(File directory, StoreProperties properties, LmdbStoreConfig config) throws IOException {
-			super(directory, properties, config);
 		}
 
 		@Override
@@ -1302,6 +1267,10 @@ class LmdbValueResolutionScopeTest {
 				completed.run();
 			}
 		}
+
+		private HookValueStore(File directory, StoreProperties properties, LmdbStoreConfig config) throws IOException {
+			super(directory, properties, config);
+		}
 	}
 
 	private static int ordinaryCapacity(TxnManager manager) throws ReflectiveOperationException {
@@ -1316,6 +1285,7 @@ class LmdbValueResolutionScopeTest {
 	}
 
 	private static final class ObservedStore extends LmdbStore {
+
 		private HookValueStore values;
 
 		private ObservedStore(File dataDir) {
@@ -1329,6 +1299,36 @@ class LmdbValueResolutionScopeTest {
 					(valueDir, valueProperties, valueConfig) -> values = new HookValueStore(valueDir, valueProperties,
 							valueConfig),
 					TripleStore::new);
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void scopedLookupsPreserveEveryPositionBank(boolean reverse, @TempDir File dataDir) throws Exception {
+		try (HookValueStore store = new HookValueStore(dataDir)) {
+			long id = commitValue(store, SimpleValueFactory.getInstance().createBNode("all-position-banks"));
+			try (ValueResolutionScope scope = store.openValueResolutionScope();
+					SailClosable activation = scope.activate()) {
+				int[] masks = { ValuePosition.NONE, ValuePosition.SUBJECT | ValuePosition.OBJECT,
+						ValuePosition.PREDICATE, ValuePosition.OBJECT, ValuePosition.CONTEXT };
+				for (int index = 0; index < masks.length; index++) {
+					int mask = masks[reverse ? masks.length - 1 - index : index];
+					LmdbValue value = store.getLazyValue(id, mask);
+					assertFalse(value.isInitialized());
+					ValueStoreRevision.Lazy epoch = (ValueStoreRevision.Lazy) value.getValueStoreRevision();
+					for (int requested = 0; requested <= ValuePosition.ALL; requested++) {
+						var positioned = new ValueStoreRevision.Lazy(epoch, requested);
+						var scoped = scope.revision(positioned);
+						assertEquals(requested, scoped.getPositionMask());
+						assertSame(scoped, scope.revision(positioned));
+					}
+					assertEquals(mask, value.getValueStoreRevision().getPositionMask(),
+							"logical scope admission must preserve the materializer's RDF role");
+					value.init();
+					assertEquals("all-position-banks", value.stringValue());
+					assertSame(value, store.cachedValue(id, mask));
+				}
+			}
 		}
 	}
 }

@@ -36,7 +36,7 @@ class BenchmarkJoinEstimatorSupportPersistentStoreTest {
 	private static final int DEFAULT_PREDICATE_BUCKET_COUNT = 64;
 	private static final int DEFAULT_CONTEXT_BUCKET_COUNT = 16;
 	private static final int DEFAULT_SKETCH_NOMINAL_ENTRIES = 64;
-	private static final String ESTIMATOR_PROPERTY_PREFIX = "org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.";
+	private static final String ESTIMATOR_PROPERTY_PREFIX = "org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.";
 	private static final String NOMINAL_ENTRIES_PROPERTY = ESTIMATOR_PROPERTY_PREFIX + "nominalEntries";
 	private static final String SUBJECT_BUCKET_COUNT_PROPERTY = ESTIMATOR_PROPERTY_PREFIX + "subjectBucketCount";
 	private static final String PREDICATE_BUCKET_COUNT_PROPERTY = ESTIMATOR_PROPERTY_PREFIX + "predicateBucketCount";

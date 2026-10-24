@@ -16,6 +16,7 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -49,6 +50,29 @@ final class RowState implements LmdbNativeSlotReader {
 	final ExactValuesRuntimeMetrics exactValuesMetrics;
 	/** One outcome-only cancellation signal shared by every row, cursor, kernel, and worker in this evaluation. */
 	final NativeCancellationToken cancellation;
+	private IdentityHashMap<RecordingNativeBooleanFilter, Boolean> unqualifiedFilters;
+
+	void noteUnqualifiedFilter(RecordingNativeBooleanFilter filter) {
+		SyntheticValueSource scope = evaluationScope();
+		if (scope == null) {
+			return;
+		}
+		if (unqualifiedFilters == null) {
+			unqualifiedFilters = new IdentityHashMap<>();
+		}
+		if (unqualifiedFilters.put(filter, Boolean.TRUE) == null) {
+			NativeExecutionContext context = scope.executionContext().filterOutcomeOwner();
+			if (filter.attempt != null) {
+				filter.attempt.unqualified(filter, context);
+			} else {
+				NativeFilterLease.Outcome outcome = context.openFilterOutcome(filter);
+				if (outcome != null) {
+					outcome.terminal(0L, 0L, false);
+				}
+			}
+		}
+	}
+
 	final int[] trailSlots;
 	final long[] trailOldValues;
 	LmdbNativeRuntimePlan.Invocation runtimePlan;

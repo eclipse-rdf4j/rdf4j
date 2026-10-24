@@ -13,10 +13,12 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 
@@ -29,17 +31,23 @@ final class LmdbDefaultEvaluationStrategyFactory extends DefaultEvaluationStrate
 	}
 
 	@Override
-	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
-			EvaluationStatistics evaluationStatistics) {
-		EvaluationStatistics effectiveStatistics = evaluationStatistics == null ? new EvaluationStatistics()
-				: evaluationStatistics;
-		EvaluationStrategy strategy = super.createEvaluationStrategy(dataset, tripleSource, effectiveStatistics);
-		if (getOptimizerPipeline().isEmpty()) {
-			QueryOptimizerPipeline pipeline = effectiveStatistics.supportsJoinEstimation()
-					? new LmdbQueryOptimizerPipeline(strategy, tripleSource, effectiveStatistics)
-					: new LmdbStandardQueryOptimizerPipeline(strategy, tripleSource, effectiveStatistics);
-			strategy.setOptimizerPipeline(pipeline);
-		}
+	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource source,
+			EvaluationStatistics statistics) {
+		return createEvaluationStrategy(dataset, source, statistics, QueryExecutionPolicy.DEFAULT);
+	}
+
+	@Override
+	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource source,
+			EvaluationStatistics statistics, QueryExecutionPolicy policy) {
+		EvaluationStatistics effective = statistics == null ? new EvaluationStatistics() : statistics;
+		LmdbEvaluationStrategy.bindExecutionSnapshot(effective, source);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, dataset,
+				getFederatedServiceResolver(),
+				getQuerySolutionCacheThreshold(), effective, isTrackResultSize());
+		strategy.setQueryExecutionPolicy(policy);
+		strategy.setOptimizerPipeline(getOptimizerPipeline()
+				.orElseGet(() -> new LmdbQueryOptimizerPipeline(strategy, source, effective)));
+		strategy.setCollectionFactory(getCollectionFactorySupplier());
 		return strategy;
 	}
 }

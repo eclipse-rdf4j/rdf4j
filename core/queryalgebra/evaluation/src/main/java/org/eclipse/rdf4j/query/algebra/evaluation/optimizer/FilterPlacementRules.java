@@ -20,6 +20,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 
+import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
@@ -47,7 +48,10 @@ import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
  */
 final class FilterPlacementRules {
 
-	/** A source condition, its group boundary and its immutable runtime visibility contract. */
+	/**
+	 * A filter's condition summarized once: its direct reads, complete structural observation domain, and scope flag.
+	 * Planning consults these for every candidate site of every filter.
+	 */
 	static final class Condition {
 		private final Filter filter;
 		private final ValueExpr expression;
@@ -102,7 +106,7 @@ final class FilterPlacementRules {
 	/** Rules for the real filter at its current position in the analysed tree. */
 	FilterPlacementRules(Filter filter, QueryAlgebraBindingAnalysis analysis) {
 		this(new Condition(filter), filter.getArg(), conditionVisibility(filter, analysis).frame(), analysis,
-				TupleExpr::getBindingNames);
+				analysis.declaredOutputBindingNames());
 	}
 
 	/**
@@ -155,6 +159,60 @@ final class FilterPlacementRules {
 		return scopedGroup;
 	}
 
+	/**
+	 * A permanent placement either preserves the independent input frame, including proved absence/UNDEF states, or
+	 * records genuine required sibling parameters. The latter contract must survive physical algorithm selection.
+	 */
+	StaticPlacement staticPlacementIntoJoinChild(BinaryTupleOperator join, TupleExpr candidate, TupleExpr sibling,
+			boolean siblingRunsAfterCandidate) {
+		QueryAlgebraBindingAnalysis.ReadOnlyContext incoming = analysis.contextAt(join);
+		QueryAlgebraBindingAnalysis.OutputFacts own = analysis.outputFacts(candidate, incoming);
+		QueryAlgebraBindingAnalysis.OutputFacts siblingFacts = analysis.outputFacts(sibling, incoming);
+		if (!own.possibleOutputsKnown() || !own.guaranteedOutputsKnown()
+				|| !siblingFacts.possibleOutputsKnown() || !siblingFacts.guaranteedOutputsKnown()) {
+			return null;
+		}
+		Set<String> required = new HashSet<>();
+		for (String name : dependencyNames()) {
+			boolean enclosing = incoming.guaranteedNames().contains(name);
+			if (own.possibleOutputs().contains(name) || enclosing) {
+				if (!own.guaranteedOutputs().contains(name) && !enclosing
+						&& siblingFacts.possibleOutputs().contains(name)) {
+					return null;
+				}
+			} else if (!siblingRunsAfterCandidate && join instanceof Join && !condition.scopeChange
+					&& siblingFacts.guaranteedOutputs().contains(name)
+					&& analysis.canReceiveSiblingBindings(candidate, sibling.getBindingNames(), incoming)) {
+				required.add(name);
+			} else {
+				return null;
+			}
+		}
+		if (required.isEmpty()) {
+			return canMoveIntoJoinChild(candidate, sibling, siblingRunsAfterCandidate)
+					? new StaticPlacement(Set.of())
+					: null;
+		}
+		for (String name : stableNames()) {
+			// This contract certifies guaranteed parameters. A sibling's nullable observation needs a richer proof
+			// than the target also producing that name; retain the original gate until that flow is certified.
+			if (siblingFacts.possibleOutputs().contains(name)
+					&& !siblingFacts.guaranteedOutputs().contains(name)
+					&& !incoming.guaranteedNames().contains(name)) {
+				return null;
+			}
+		}
+		QueryAlgebraBindingAnalysis.ReadOnlyContext parameterized = incoming.withOutput(siblingFacts);
+		return analysis.bindingsStableAt(stableNames(), filterContext, parameterized,
+				outputFactsVisibleToFilter(candidate, parameterized), null)
+						? new StaticPlacement(Set.copyOf(required))
+						: null;
+	}
+
+	record StaticPlacement(Set<String> requiredInputs) {
+	}
+
+	/** Physical placement may use the selected operator's proven, preserved sibling input frame. */
 	boolean canMoveIntoJoinChild(TupleExpr candidate, TupleExpr sibling,
 			boolean siblingRunsAfterCandidate) {
 		QueryAlgebraBindingAnalysis.ReadOnlyContext candidateInput = condition.scopeChange
@@ -269,7 +327,7 @@ final class FilterPlacementRules {
 
 	/** The actual projection used by FilterIterator, including implicit VALUES correlation in EXISTS. */
 	static ConditionVisibility conditionVisibility(Filter filter, QueryAlgebraBindingAnalysis analysis) {
-		return conditionVisibility(filter, analysis, TupleExpr::getBindingNames);
+		return conditionVisibility(filter, analysis, analysis.declaredOutputBindingNames());
 	}
 
 	/** {@link #conditionVisibility(Filter, QueryAlgebraBindingAnalysis)} with memoizable binding names. */
@@ -292,6 +350,7 @@ final class FilterPlacementRules {
 		boolean retainAll = condition.retainsAllBindings(gateArgument, gateArgument, bindingNames);
 		Set<String> retained = condition.retainedBindingNames(gateArgument, bindingNames);
 		QueryAlgebraBindingAnalysis.ReadOnlyContext frame = input.withOutput(retainAll ? facts : facts.only(retained));
+
 		return new ConditionVisibility(input, frame, retained, retainAll);
 	}
 

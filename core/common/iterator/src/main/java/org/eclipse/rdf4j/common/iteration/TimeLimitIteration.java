@@ -25,7 +25,7 @@ import org.slf4j.LoggerFactory;
  */
 public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 
-	private static final Timer timer = new Timer("TimeLimitIteration", true);
+	private static final InterruptScheduler interruptScheduler = new InterruptScheduler();
 
 	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
@@ -34,6 +34,7 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 	private final boolean deferCloseDuringActiveCall;
 
 	private final AtomicBoolean isInterrupted = new AtomicBoolean(false);
+	protected final long timeLimitMillis;
 	private final Object lifecycleLock = new Object();
 	private QueryExecutionDeadline.Registration deadlineRegistration;
 	private int activeCalls;
@@ -47,21 +48,23 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 	private boolean delegateCloseFailureReported;
 	private boolean closeHandled;
 
-	protected TimeLimitIteration(CloseableIteration<? extends E> iter, long timeLimit) {
+	protected TimeLimitIteration(CloseableIteration<? extends E> iter, long timeLimitMillis) {
 		super(iter);
 
-		assert timeLimit > 0 : "time limit must be a positive number, is: " + timeLimit;
+		assert timeLimitMillis > 0 : "time limit must be a positive number, is: " + timeLimitMillis;
 
 		deadline = null;
 		deferCloseDuringActiveCall = false;
-		interruptTask = new InterruptTask<>(this);
+		interruptTask = new InterruptTask<>(this, interruptScheduler::release);
 
-		timer.schedule(interruptTask, timeLimit);
+		interruptScheduler.schedule(interruptTask, timeLimitMillis);
+		this.timeLimitMillis = timeLimitMillis;
 	}
 
 	protected TimeLimitIteration(CloseableIteration<? extends E> iter, QueryExecutionDeadline deadline) {
 		super(iter);
 		this.deadline = Objects.requireNonNull(deadline, "deadline");
+		this.timeLimitMillis = Math.max(1L, deadline.remainingMillis());
 		deferCloseDuringActiveCall = true;
 		interruptTask = null;
 	}
@@ -480,6 +483,35 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 				Thread.currentThread().interrupt();
 			}
 			logger.warn("TimeLimitIteration timed out and failed to close successfully: ", e);
+		}
+	}
+
+	private static final class InterruptScheduler {
+
+		private Timer timer;
+		private int leases;
+
+		private synchronized void schedule(InterruptTask<?> interruptTask, long timeLimit) {
+			if (timer == null) {
+				timer = new Timer("TimeLimitIteration", true);
+			}
+
+			leases++;
+			try {
+				timer.schedule(interruptTask, timeLimit);
+			} catch (RuntimeException | Error e) {
+				interruptTask.cancel();
+				throw e;
+			}
+		}
+
+		private synchronized void release() {
+			assert leases > 0 : "scheduler lease released more than once";
+			leases--;
+			if (leases == 0) {
+				timer.cancel();
+				timer = null;
+			}
 		}
 	}
 }

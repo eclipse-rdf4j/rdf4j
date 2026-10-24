@@ -55,6 +55,9 @@ import org.junit.jupiter.api.Test;
  */
 public class TupleExprUnionPathScopeShapeTest {
 
+	private static final String TEST_OUTPUT_DIRECTORY_PROPERTY = "rdf4j.test.outputDirectory";
+	private static final Path SUREFIRE_DIR = Paths.get(
+			System.getProperty(TEST_OUTPUT_DIRECTORY_PROPERTY, "target"), "surefire-reports");
 	private static final String PFX = "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n" +
 			"PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n" +
 			"PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n" +
@@ -177,7 +180,7 @@ public class TupleExprUnionPathScopeShapeTest {
 
 	private static void dumpAlgebra(String testLabel, TupleExpr te) {
 		try {
-			Path dir = Paths.get("core", "queryrender", "target", "surefire-reports");
+			Path dir = SUREFIRE_DIR;
 			Files.createDirectories(dir);
 			String fileName = TupleExprUnionPathScopeShapeTest.class.getName() + "#" + testLabel + "_TupleExpr.txt";
 			Path file = dir.resolve(fileName);

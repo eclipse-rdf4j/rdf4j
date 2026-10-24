@@ -611,7 +611,8 @@ final class LmdbNativePackedMorsels {
 			this.sources = sources;
 			this.reservation = reservation;
 			outputMemory = memory;
-			execution = new LmdbNativeMorselExecutor<>(sources.length, queuePages, parent.cancellation);
+			execution = new LmdbNativeMorselExecutor<>(sources.length, queuePages, parent.cancellation,
+					parent.evaluationScope() == null ? null : parent.evaluationScope().executionContext());
 			contexts = new AggContext[sources.length];
 			tables = new NativeGroupTable[sources.length];
 			if (aggregate == null) {

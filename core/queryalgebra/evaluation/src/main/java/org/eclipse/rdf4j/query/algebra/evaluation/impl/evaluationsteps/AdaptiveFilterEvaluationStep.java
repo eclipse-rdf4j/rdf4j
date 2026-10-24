@@ -47,6 +47,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -107,6 +108,11 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 		return context instanceof PlanningContext;
 	}
 
+	/** A proven movable filter keeps the ordinary gate contract unless a planner selected a specialized operator. */
+	public static boolean hasMovableFilter(QueryEvaluationContext context, Filter filter) {
+		return context instanceof PlanningContext planning && planning.islandRoots.containsKey(filter);
+	}
+
 	/** Keeps allocation and query values while giving a detached algebra its own identity-indexed planning state. */
 	static QueryEvaluationContext detachedPlanningContext(TupleExpr root, QueryEvaluationContext context) {
 		while (context instanceof PlanningContext planning) {
@@ -135,8 +141,14 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 
 	/** Opts only the normal FilterIterator condition/frame contract into movable gates. */
 	public static QueryEvaluationStep filter(QueryEvaluationContext context, QueryEvaluationStep prepared) {
+		return filter(context, prepared, null);
+	}
+
+	/** Defers automatic specialization until final physical admission has either selected or declined movable gates. */
+	public static QueryEvaluationStep filter(QueryEvaluationContext context, QueryEvaluationStep prepared,
+			Supplier<QueryEvaluationStep> declinedFallback) {
 		return context instanceof PlanningContext planning && !planning.filters.isEmpty()
-				? new PhysicalOperator(Kind.FILTER, prepared, null)
+				? new PhysicalOperator(Kind.FILTER, prepared, null, null, declinedFallback)
 				: prepared;
 	}
 
@@ -153,7 +165,8 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 			Function<QueryEvaluationStep, QueryEvaluationStep> decorator) {
 		if (step instanceof PhysicalOperator physical) {
 			return new PhysicalOperator(physical.kind, decorator.apply(physical.step), physical.rebind == null ? null
-					: (left, right) -> decorator.apply(physical.rebind.apply(left, right)), physical.untrackedRebind);
+					: (left, right) -> decorator.apply(physical.rebind.apply(left, right)), physical.untrackedRebind,
+					physical.declinedFallback == null ? null : () -> decorator.apply(physical.declined()));
 		}
 		return decorator.apply(step);
 	}
@@ -174,19 +187,40 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 		private final QueryEvaluationStep step;
 		private final BiFunction<QueryEvaluationStep, QueryEvaluationStep, QueryEvaluationStep> rebind;
 		private final BiFunction<QueryEvaluationStep, QueryEvaluationStep, QueryEvaluationStep> untrackedRebind;
+		private final Supplier<QueryEvaluationStep> declinedFallback;
+		private QueryEvaluationStep resolvedFallback;
 
 		PhysicalOperator(Kind kind, QueryEvaluationStep step,
 				BiFunction<QueryEvaluationStep, QueryEvaluationStep, QueryEvaluationStep> rebind) {
-			this(kind, step, rebind, rebind);
+			this(kind, step, rebind, rebind, null);
 		}
 
 		PhysicalOperator(Kind kind, QueryEvaluationStep step,
 				BiFunction<QueryEvaluationStep, QueryEvaluationStep, QueryEvaluationStep> rebind,
 				BiFunction<QueryEvaluationStep, QueryEvaluationStep, QueryEvaluationStep> untrackedRebind) {
+			this(kind, step, rebind, untrackedRebind, null);
+		}
+
+		PhysicalOperator(Kind kind, QueryEvaluationStep step,
+				BiFunction<QueryEvaluationStep, QueryEvaluationStep, QueryEvaluationStep> rebind,
+				BiFunction<QueryEvaluationStep, QueryEvaluationStep, QueryEvaluationStep> untrackedRebind,
+				Supplier<QueryEvaluationStep> declinedFallback) {
 			this.kind = kind;
 			this.step = step;
 			this.rebind = rebind;
 			this.untrackedRebind = untrackedRebind;
+			this.declinedFallback = declinedFallback;
+		}
+
+		private QueryEvaluationStep declined() {
+			if (declinedFallback == null) {
+				return this;
+			}
+			if (resolvedFallback == null) {
+				QueryEvaluationStep specialized = declinedFallback.get();
+				resolvedFallback = specialized == null ? step : specialized;
+			}
+			return resolvedFallback;
 		}
 
 		@Override
@@ -251,7 +285,7 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 			}
 		}
 		if (positions.isEmpty()) {
-			return standard;
+			return declinedStandard(expression, standard, planning);
 		}
 		Set<TupleExpr> gateSites = Collections.newSetFromMap(new IdentityHashMap<>());
 		for (PlacementSource placements : positions.values()) {
@@ -284,7 +318,7 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 				}
 			}
 			if (positions.isEmpty()) {
-				return standard;
+				return declinedStandard(expression, standard, planning);
 			}
 		}
 		Compiler compiler;
@@ -292,7 +326,7 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 			compiler = new Compiler(strategy, planning, statistics, expression, anchor, positions, members);
 		} catch (QueryEvaluationException unavailableCondition) {
 			// Standard FILTER preparation already preserves its compilation-error-to-empty behavior.
-			return standard;
+			return declinedStandard(expression, standard, planning);
 		}
 		Node body = compiler.compile(expression);
 		planning.compiledRegion = true;
@@ -309,7 +343,33 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 			return operator.rebind.apply(strategy.precompile(union.getLeftArg(), context),
 					strategy.precompile(union.getRightArg(), context));
 		}
-		return standard == null ? strategy.precompile(expression, context) : standard;
+		return standard == null ? strategy.precompile(expression, context)
+				: declinedStandard(expression, standard, planning);
+	}
+
+	/**
+	 * Resolves fallback factories during preparation, while value capture, telemetry and feedback scopes are active.
+	 */
+	private static QueryEvaluationStep declinedStandard(TupleExpr expression, QueryEvaluationStep standard,
+			PlanningContext planning) {
+		if (!(standard instanceof PhysicalOperator operator)) {
+			return standard;
+		}
+		if (operator.kind == Kind.FILTER) {
+			return operator.declined();
+		}
+		if (operator.rebind != null && expression instanceof BinaryTupleOperator binary) {
+			QueryEvaluationStep left = planning.physicalSteps.get(binary.getLeftArg());
+			QueryEvaluationStep right = planning.physicalSteps.get(binary.getRightArg());
+			if (left != null && right != null) {
+				QueryEvaluationStep fallbackLeft = declinedStandard(binary.getLeftArg(), left, planning);
+				QueryEvaluationStep fallbackRight = declinedStandard(binary.getRightArg(), right, planning);
+				if (fallbackLeft != left || fallbackRight != right) {
+					return operator.rebind.apply(fallbackLeft, fallbackRight);
+				}
+			}
+		}
+		return standard;
 	}
 
 	@Override
@@ -566,8 +626,9 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 			if (rebuilt && expression != regionRoot
 					&& !(expression instanceof Filter filter && positions.containsKey(filter))) {
 				Node untracked = raw;
-				raw = (bindings, execution) -> strategy
-						.trackPreparedStep(expression, input -> untracked.open(input, execution))
+				Function<QueryEvaluationStep, QueryEvaluationStep> tracking = strategy
+						.preparedStepDecorator(expression);
+				raw = (bindings, execution) -> tracking.apply(input -> untracked.open(input, execution))
 						.evaluate(bindings);
 			}
 			if (expression instanceof Filter filter && positions.containsKey(filter) && expression != regionRoot

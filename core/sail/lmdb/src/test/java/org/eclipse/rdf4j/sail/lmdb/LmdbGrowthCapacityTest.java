@@ -39,9 +39,11 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
@@ -69,6 +71,49 @@ class LmdbGrowthCapacityTest {
 		assertTrue(LmdbStoreConnection.isMapResizeConflict(resizeConflict));
 		assertFalse(LmdbStoreConnection.isMapResizeConflict(replaySignal),
 				"transparent replay must not discard a failure to release the abandoned result");
+	}
+
+	@Test
+	void cooperativeReplayRequiresItsAcceptedEpisodeAndTransparentEnvelope() {
+		LmdbSailStore.MapGrowthToken owner = new LmdbSailStore.MapGrowthToken(1L);
+		LmdbSailStore.MapGrowthToken other = new LmdbSailStore.MapGrowthToken(2L);
+		LmdbSailStore.MapResizeKind kind = LmdbSailStore.MapResizeKind.TRIPLE_STORE;
+		RuntimeException owned = replaySignal(new LmdbSailStore.MapResizeConflictException(kind,
+				"owned replay", owner));
+		RuntimeException independent = replaySignal(new LmdbSailStore.MapResizeConflictException(kind,
+				"independent replay", other));
+
+		assertTrue(LmdbStoreConnection.isMapResizeConflict(owned, owner, kind));
+		assertTrue(LmdbStoreConnection.isMapResizeConflict(new QueryEvaluationException(owned), owner, kind));
+		assertFalse(LmdbStoreConnection.isMapResizeConflict(independent, owner, kind));
+		assertFalse(LmdbStoreConnection.isMapResizeConflict(new QueryEvaluationException(independent), owner, kind));
+		assertFalse(LmdbStoreConnection.isMapResizeConflict(owned, owner,
+				LmdbSailStore.MapResizeKind.VALUE_STORE));
+		assertFalse(LmdbStoreConnection.isMapResizeConflict(owned, null, kind));
+		assertFalse(LmdbStoreConnection.isMapResizeConflict(new SailException(new QueryEvaluationException(owned)),
+				owner, kind), "a terminal Sail wrapper must not gain replay authority from its nested signal");
+		assertFalse(LmdbStoreConnection.isMapResizeConflict(new RuntimeException(owned), owner, kind),
+				"an untyped application wrapper must not be inferred to be transparent");
+		assertFalse(LmdbStoreConnection.isMapResizeConflict(new QueryInterruptedException("interrupted", owned),
+				owner, kind));
+		assertFalse(LmdbStoreConnection.isMapResizeConflict(new QueryEvaluationException("application", owned) {
+			private static final long serialVersionUID = 1L;
+		}, owner, kind));
+		RuntimeException cleanupFailure = new QueryEvaluationException(owned);
+		cleanupFailure.addSuppressed(new IllegalStateException("independent close failure"));
+		assertFalse(LmdbStoreConnection.isMapResizeConflict(cleanupFailure, owner, kind));
+		assertTrue(LmdbStoreConnection.isMapResizeConflict(new LmdbSailStore.MapResizeConflictException(kind,
+				"native snapshot invalidation"), owner, kind));
+	}
+
+	private static RuntimeException replaySignal(LmdbSailStore.MapResizeConflictException conflict) {
+		return assertThrows(QueryExecutionContext.ReplaySafepointException.class, () -> {
+			try (QueryExecutionContext.Activation ignored = QueryExecutionContext.activateReplaySafepoint(() -> {
+				throw conflict;
+			})) {
+				QueryExecutionContext.checkpointReplaySafepoint();
+			}
+		});
 	}
 
 	@Test

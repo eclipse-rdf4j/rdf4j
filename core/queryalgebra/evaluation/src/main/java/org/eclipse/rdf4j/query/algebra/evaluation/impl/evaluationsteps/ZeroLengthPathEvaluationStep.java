@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
@@ -33,6 +34,7 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
 public final class ZeroLengthPathEvaluationStep implements QueryEvaluationStep {
+	private final ZeroLengthPath node;
 	private final Var subjectVar;
 	private final Var objVar;
 	private final Var contextVar;
@@ -45,13 +47,26 @@ public final class ZeroLengthPathEvaluationStep implements QueryEvaluationStep {
 
 	public ZeroLengthPathEvaluationStep(Var subjectVar, Var objVar, Var contextVar, QueryValueEvaluationStep subPrep,
 			QueryValueEvaluationStep objPrep, EvaluationStrategy strategy, QueryEvaluationContext context) {
-		this(subjectVar, objVar, contextVar, subPrep, objPrep, strategy, context,
-				contextVar == null ? Scope.DEFAULT_CONTEXTS : Scope.NAMED_CONTEXTS);
+		this(null, subjectVar, objVar, contextVar, subPrep, objPrep, strategy, context);
+	}
+
+	public ZeroLengthPathEvaluationStep(ZeroLengthPath node, Var subjectVar, Var objVar, Var contextVar,
+			QueryValueEvaluationStep subPrep, QueryValueEvaluationStep objPrep, EvaluationStrategy strategy,
+			QueryEvaluationContext context) {
+		this(node, subjectVar, objVar, contextVar, subPrep, objPrep, strategy, context,
+				node == null ? contextVar == null ? Scope.DEFAULT_CONTEXTS : Scope.NAMED_CONTEXTS : node.getScope());
 	}
 
 	public ZeroLengthPathEvaluationStep(Var subjectVar, Var objVar, Var contextVar, QueryValueEvaluationStep subPrep,
 			QueryValueEvaluationStep objPrep, EvaluationStrategy strategy, QueryEvaluationContext context,
 			Scope scope) {
+		this(null, subjectVar, objVar, contextVar, subPrep, objPrep, strategy, context, scope);
+	}
+
+	private ZeroLengthPathEvaluationStep(ZeroLengthPath node, Var subjectVar, Var objVar, Var contextVar,
+			QueryValueEvaluationStep subPrep, QueryValueEvaluationStep objPrep, EvaluationStrategy strategy,
+			QueryEvaluationContext context, Scope scope) {
+		this.node = node;
 		this.subjectVar = subjectVar;
 		this.objVar = objVar;
 		this.contextVar = contextVar;
@@ -178,6 +193,7 @@ public final class ZeroLengthPathEvaluationStep implements QueryEvaluationStep {
 
 	protected ZeroLengthPathIteration getZeroLengthPathIterator(final BindingSet bindings, final Var subjectVar,
 			final Var objVar, final Var contextVar, Value subj, Value obj, QueryEvaluationContext context) {
-		return new ZeroLengthPathIteration(strategy, subjectVar, objVar, subj, obj, contextVar, bindings, context);
+		return new ZeroLengthPathIteration(strategy, node, subjectVar, objVar, subj, obj, contextVar, bindings,
+				context);
 	}
 }

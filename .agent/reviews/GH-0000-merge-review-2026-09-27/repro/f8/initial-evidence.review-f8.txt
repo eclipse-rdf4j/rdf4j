@@ -1,0 +1,5 @@
+Evidence:
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py --workspace review-f8 {StandardPipelineReviewReproTest,GeoFilterPlacementReviewReproTest,LmdbMergeIntegrationReviewReproTest}
+Reports: .mvnf/workspaces/review-f8/build/org.eclipse.rdf4j/rdf4j-queryalgebra-geosparql/6.2.0-SNAPSHOT/surefire-reports/TEST-org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.GeoFilterPlacementReviewReproTest.xml, .mvnf/workspaces/review-f8/build/org.eclipse.rdf4j/rdf4j-queryalgebra-geosparql/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.GeoFilterPlacementReviewReproTest.txt, .mvnf/workspaces/review-f8/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/TEST-org.eclipse.rdf4j.sail.lmdb.LmdbMergeIntegrationReviewReproTest.xml, +3 more
+Summary: tests=17, failures=11, errors=0, skipped=0, time=17.637s
+Failure: org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.GeoFilterPlacementReviewReproTest.cheapConjunctNextToGeoFilterIsPushedReversed: failure: develop pushes the STRSTARTS conjunct onto the name pattern; filter args were [Filter, Join] ==> expected: <true> but was: <false>

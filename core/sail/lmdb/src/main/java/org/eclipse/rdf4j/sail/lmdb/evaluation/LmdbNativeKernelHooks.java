@@ -140,6 +140,8 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		this.comparator = new ValueComparator(evaluationScope == null ? QueryExecutionPolicy.DEFAULT
 				: evaluationScope.queryExecutionPolicy);
 		this.memory = new HookMemory(liveRow.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()));
+		this.filters = new LmdbNativeKernelBindings.FilterHook[filterHooks.length];
+		this.residuals = new MaskedFilter[bindings.kernelResiduals.length];
 		try {
 			this.memory.reserveOrThrow(fixedMemoryBytes(liveRow, bindings, filterHooks, bindHooks),
 					"kernel-hook-memory");
@@ -158,7 +160,16 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 			System.arraycopy(liveRow.slots, 0, scratch.slots, 0, liveRow.slots.length);
 			this.scratch.recomputeBoundMask();
 			this.codec = liveRow.source.nativeValueCodec();
-			this.filters = filterHooks;
+			for (int i = 0; i < filterHooks.length; i++) {
+				var hook = filterHooks[i];
+				NativeBooleanFilter opened = hook.source.filter.open(scratch);
+				// Page-level proofs may bypass testFilter; their physical coverage is not this recorder's coverage.
+				if (hook.source.filter.pageProof(hook.argSlots) != null) {
+					opened.incompleteInput();
+				}
+				this.filters[i] = new LmdbNativeKernelBindings.FilterHook(new MaskedFilter(opened,
+						hook.source.mask, hook.source.adaptive, hook.source.plannedDepth), hook.argSlots);
+			}
 			this.binds = bindHooks;
 			this.bindInputs = new long[binds.length][];
 			this.bindPrevious = new long[binds.length][];
@@ -166,7 +177,11 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 				bindInputs[i] = new long[binds[i].argSlots.length];
 				bindPrevious[i] = new long[binds[i].argSlots.length];
 			}
-			this.residuals = bindings.kernelResiduals;
+			for (int i = 0; i < residuals.length; i++) {
+				MaskedFilter residual = bindings.kernelResiduals[i];
+				this.residuals[i] = new MaskedFilter(residual.filter.open(scratch), residual.mask,
+						residual.adaptive, residual.plannedDepth);
+			}
 			this.groupLayout = bindings.groupLayout;
 			this.columnSlots = bindings.kernelColumnEngineSlots;
 			this.outputSlots = bindings.columnEngineSlots;
@@ -225,7 +240,35 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 				this.fragmentFastBindings = null;
 			}
 		} catch (RuntimeException | Error problem) {
-			this.memory.close();
+			for (var hook : filters) {
+				if (hook != null) {
+					try {
+						hook.source.filter.close();
+					} catch (RuntimeException | Error cleanup) {
+						if (cleanup != problem) {
+							problem.addSuppressed(cleanup);
+						}
+					}
+				}
+			}
+			for (MaskedFilter residual : residuals) {
+				if (residual != null) {
+					try {
+						residual.filter.close();
+					} catch (RuntimeException | Error cleanup) {
+						if (cleanup != problem) {
+							problem.addSuppressed(cleanup);
+						}
+					}
+				}
+			}
+			try {
+				this.memory.close();
+			} catch (RuntimeException | Error cleanup) {
+				if (cleanup != problem) {
+					problem.addSuppressed(cleanup);
+				}
+			}
 			throw problem;
 		}
 	}
@@ -273,6 +316,11 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	}
 
 	@Override
+	public void recordFilterDecision(int filterId, boolean accepted) {
+		filters[filterId].source.filter.recordDecision(accepted);
+	}
+
+	@Override
 	public boolean testFilter(int filterId, long a0, long a1, long a2) {
 		if (fragmentFastPaths != null) {
 			LongPredicateFragment fragment = fragmentFastPaths[filterId];
@@ -283,6 +331,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 					if (status != PredicateStatus.TRUE) {
 						FragmentTelemetry.PHYSICAL_REJECTIONS.increment();
 					}
+					filters[filterId].source.filter.recordDecision(status == PredicateStatus.TRUE);
 					return status == PredicateStatus.TRUE;
 				}
 				FragmentTelemetry.ESCAPES.increment();
@@ -859,9 +908,16 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	 * 2026-08-05). Filter close is reuse-tolerant by convention (closed filters lazily re-acquire).
 	 */
 	void closeFilters() {
+		closeFilters(false);
+	}
+
+	void closeFilters(boolean inputExhausted) {
 		Throwable failure = null;
 		for (LmdbNativeKernelBindings.FilterHook hook : filters) {
 			try {
+				if (inputExhausted) {
+					hook.source.filter.inputExhausted();
+				}
 				hook.source.filter.close();
 			} catch (RuntimeException | Error problem) {
 				if (failure == null) {
@@ -873,6 +929,9 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		}
 		for (MaskedFilter residual : residuals) {
 			try {
+				if (inputExhausted) {
+					residual.filter.inputExhausted();
+				}
 				residual.filter.close();
 			} catch (RuntimeException | Error problem) {
 				if (failure == null) {

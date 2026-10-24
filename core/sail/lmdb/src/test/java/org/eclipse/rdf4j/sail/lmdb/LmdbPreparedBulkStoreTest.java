@@ -56,6 +56,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.lmdb.bulk.BulkCapacityPolicy;
 import org.eclipse.rdf4j.sail.lmdb.bulk.LmdbBulkLoader;
+import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -72,6 +73,65 @@ class LmdbPreparedBulkStoreTest {
 
 	@TempDir
 	Path directory;
+
+	@Test
+	void preparedNativeOwnershipIncludesFrontierMetadataWriters() throws Exception {
+		Path target = directory.resolve("prepared-frontier-ownership");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF);
+		load(target, config, "<urn:loaded> <urn:p> <urn:object> .\n");
+		LmdbStore store = new LmdbStore(target.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		try {
+			repository.init();
+			TripleStore triples = store.getBackingStore().getTripleStore();
+			long openedTransaction = triples.trustedTransactionId();
+			var values = SimpleValueFactory.getInstance();
+			try (var connection = repository.getConnection()) {
+				connection.add(values.createIRI("urn:ordinary"), values.createIRI("urn:p"), values.createLiteral(1));
+			}
+			ValueStore dictionary = (ValueStore) store.getBackingStore().getValueFactory();
+			long predicateId = dictionary.getId(values.createIRI("urn:p"));
+			RdfTermDomain domain = triples.getKnownRdfTermDomain(predicateId).orElseThrow();
+			assertFalse(domain.has(RdfTermDomain.Fact.CANONICAL_INTEGER),
+					"a canonical integer appended later must not exclude the bulk-loaded IRI object");
+			assertTrue(domain.has(RdfTermDomain.Fact.IRI),
+					"predicate guarantees must retain the possible kind of the bulk-loaded IRI object");
+			long beforeAcknowledgement = triples.trustedTransactionId();
+			assertTrue(beforeAcknowledgement > openedTransaction);
+			long sequence = triples.frontierMutationJournalState().latestSequence();
+			triples.acknowledgeFrontierMutationsThrough(sequence);
+			assertTrue(triples.trustedTransactionId() > beforeAcknowledgement,
+					"the independent Frontier commit must remain an owned native transaction");
+			try (var connection = repository.getConnection()) {
+				connection.add(values.createIRI("urn:after-ack"), values.createIRI("urn:p"), values.createLiteral(2));
+				assertEquals(3L, connection.size());
+			}
+		} finally {
+			repository.shutDown();
+		}
+		for (String table : List.of(TripleStore.PREDICATE_OBJECT_DOMAINS_DB,
+				TripleStore.PREDICATE_OBJECT_DOMAIN_DEGRADATIONS_DB, TripleStore.FRONTIER_MUTATION_JOURNAL_DB)) {
+			assertTrue(entryCount(target.resolve("triples"), table) >= 0L, "owned auxiliary schema must exist");
+		}
+		assertPreparedOpening(target, config, 3L);
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "", "<urn:s> <urn:p> \"value\"@EN .\n" })
+	void validatedBulkGenerationRecordsCanonicalLanguagePolicy(String input) throws Exception {
+		Path target = directory.resolve("canonical-language-policy");
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		load(target, config, input);
+		StoreProperties prepared = new StoreProperties(target.toFile());
+		assertTrue(prepared.load());
+		assertEquals(StoreProperties.LANGUAGE_TAG_KEY_CANONICAL, prepared.getLanguageTagKey(),
+				"validated canonical bulk streams must publish their completed language-key policy");
+		Map<Long, Long> counts = referenceCounts(target);
+		assertPreparedOpening(target, config, input.isEmpty() ? 0L : 1L);
+		assertEquals(counts, referenceCounts(target),
+				"the first prepared opener must preserve the certified component reference counts");
+	}
 
 	@Test
 	void completesSmallMapPreparationBeforePublication() throws Exception {

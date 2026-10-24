@@ -111,6 +111,63 @@ class StatementPatternRemoteBNodeTest {
 		}
 	}
 
+	@ParameterizedTest
+	@MethodSource("ordinaryRepresentativePaths")
+	void ordinaryTermsKeepTheirProducerUnlessAlreadyBound(boolean preparer, boolean arrayContext,
+			boolean nested, InputMode mode) {
+		Value supplied = VF.createLiteral("abc", "EN");
+		Value stored = VF.createLiteral("abc", "en");
+		if (nested) {
+			supplied = VF.createTripleTerm(VF.createIRI("urn:inner"), PREDICATE, supplied);
+			stored = VF.createTripleTerm(VF.createIRI("urn:inner"), PREDICATE, stored);
+		}
+		Value queryValue = supplied;
+		Value storedValue = stored;
+		Statement statement = VF.createStatement(VF.createIRI("urn:s"), PREDICATE, storedValue);
+		TripleSource source = new TripleSource() {
+			@Override
+			public ValueFactory getValueFactory() {
+				return VF;
+			}
+
+			@Override
+			public Function<Value, Value> getValuePreparer() {
+				return preparer ? StatementPatternRemoteBNodeTest::copy : null;
+			}
+
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(Resource s, IRI p, Value o,
+					Resource... contexts) {
+				assertEquals(queryValue, o, "lookup equality remains valid across literal representatives");
+				return new SingletonIteration<>(statement);
+			}
+		};
+		Var node = mode == InputMode.BOUND ? Var.of("node") : Var.of("node", queryValue);
+		var pattern = new StatementPattern(Var.of("s"), Var.of("p", PREDICATE, true, true), node);
+		var bindings = new MapBindingSet();
+		if (mode != InputMode.INLINED_EMPTY) {
+			bindings.addBinding("node", queryValue);
+		}
+		var strategy = new DefaultEvaluationStrategy(source, null);
+		var prepared = arrayContext ? strategy.precompile(new QueryRoot(pattern))
+				: strategy.precompile(pattern, new QueryEvaluationContext.Minimal(null));
+		try (var rows = prepared.evaluate(bindings)) {
+			assertTrue(rows.hasNext());
+			Value result = rows.next().getValue("node");
+			assertEquals(mode == InputMode.INLINED_EMPTY ? storedValue.toString() : queryValue.toString(),
+					result.toString(), "output spelling follows the statement or actual supplied input binding");
+			assertFalse(rows.hasNext());
+		}
+	}
+
+	private static Stream<Arguments> ordinaryRepresentativePaths() {
+		return Stream.of(false, true)
+				.flatMap(preparer -> Stream.of(false, true)
+						.flatMap(array -> Stream.of(false, true)
+								.flatMap(nested -> Stream.of(InputMode.values())
+										.map(mode -> Arguments.of(preparer, array, nested, mode)))));
+	}
+
 	private static Stream<Arguments> normalizationPaths() {
 		return Stream.of(Position.values())
 				.flatMap(position -> Stream.of(false, true)

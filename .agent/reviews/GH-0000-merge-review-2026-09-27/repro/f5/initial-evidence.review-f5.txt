@@ -1,0 +1,19 @@
+Evidence:
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py --workspace review-f5 --threads 4 PhysicalOperatorReviewReproTest --module core/queryalgebra/evaluation
+Reports: .mvnf/workspaces/review-f5/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/TEST-org.eclipse.rdf4j.query.algebra.evaluation.impl.PhysicalOperatorReviewReproTest.xml, .mvnf/workspaces/review-f5/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.impl.PhysicalOperatorReviewReproTest.txt
+Summary: tests=7, failures=3, errors=0, skipped=0, time=0.229s
+Failure: org.eclipse.rdf4j.query.algebra.evaluation.impl.PhysicalOperatorReviewReproTest.hashJoinClosesLeftWhenRightEvaluationFails: failure: [left input must be closed when opening the right input fails] Expecting AtomicBoolean(false) to have value: true but did not.
+Evidence:
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py --workspace review-f5 --threads 4 OperatorContractReviewReproTest --module core/sail/memory
+Reports: .mvnf/workspaces/review-f5/build/org.eclipse.rdf4j/rdf4j-sail-memory/6.2.0-SNAPSHOT/surefire-reports/TEST-org.eclipse.rdf4j.sail.memory.OperatorContractReviewReproTest.xml, .mvnf/workspaces/review-f5/build/org.eclipse.rdf4j/rdf4j-sail-memory/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.memory.OperatorContractReviewReproTest.txt
+Summary: tests=17, failures=6, errors=0, skipped=0, time=0.487s
+Failure: org.eclipse.rdf4j.sail.memory.OperatorContractReviewReproTest.existsOverAggregateSubSelectDoesNotSubstituteNonProjectedVariable(boolean)[1]: failure: Expecting actual: [] to contain exactly (and in same order): ["{s=urn:ex:a}"] but could not find the following elements: ["{s=urn:ex:a}"]
+Evidence:
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py --workspace review-f5 --threads 4 OperatorContractReviewReproTest --module core/sail/memory
+Reports: .mvnf/workspaces/review-f5/build/org.eclipse.rdf4j/rdf4j-sail-memory/6.2.0-SNAPSHOT/surefire-reports/TEST-org.eclipse.rdf4j.sail.memory.OperatorContractReviewReproTest.xml, .mvnf/workspaces/review-f5/build/org.eclipse.rdf4j/rdf4j-sail-memory/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.memory.OperatorContractReviewReproTest.txt
+Summary: tests=21, failures=10, errors=0, skipped=0, time=0.787s
+Failure: org.eclipse.rdf4j.sail.memory.OperatorContractReviewReproTest.optionalOverLimitedSubSelectIsEvaluatedIndependently(String)[3]: failure: Expecting actual: ["{s=urn:ex:a, t=urn:ex:d, x=2}"] to contain exactly (and in same order): ["{s=urn:ex:a, x=2}"] but some elements were not found: ["{s=urn:...
+Evidence:
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py --workspace review-f5 --threads 4 LmdbMinusAntiJoinReviewReproTest --module core/sail/lmdb
+Reports: .mvnf/workspaces/review-f5/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/TEST-org.eclipse.rdf4j.sail.lmdb.LmdbMinusAntiJoinReviewReproTest.xml, .mvnf/workspaces/review-f5/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbMinusAntiJoinReviewReproTest.txt
+Summary: tests=4, failures=0, errors=0, skipped=0, time=1.616s

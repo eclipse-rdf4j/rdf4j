@@ -169,6 +169,7 @@ public final class LmdbNativeBulkStore implements AutoCloseable {
 	public void completeGeneration(ValidatedBulkGeneration validation, BulkCapacityPolicy valueCapacity,
 			BulkCapacityPolicy tripleCapacity, long maximumCanonicalBytes, int maximumTermDepth) throws IOException {
 		validation.requireDirectory(directory);
+		tripleStore.prepareValidatedBulkRdfTermDomains();
 		try {
 			long additionalStatements = tripleCapacity.additionalItems(validation.statements());
 			valueStore.reserveBulkCompletionCapacity(valueCapacity.additionalItems(valueStore.bulkStoredValueCount()),

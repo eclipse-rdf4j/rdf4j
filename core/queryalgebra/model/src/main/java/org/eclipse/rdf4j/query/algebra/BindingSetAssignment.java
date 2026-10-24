@@ -134,6 +134,11 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 		boolean firstRow = true;
 		if (source != null) {
 			for (BindingSet set : source) {
+				if (set == null) {
+					guaranteedNames.clear();
+					firstRow = false;
+					continue;
+				}
 				Set<String> rowNames = set.getBindingNames();
 				allNames.addAll(rowNames);
 				Set<String> actualRowNames = new LinkedHashSet<>();
@@ -158,8 +163,8 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 		} else {
 			bindingNames = allNames;
 		}
-		if (firstRow && bindingNamesExplicit) {
-			guaranteedNames.addAll(bindingNames);
+		if (bindingNamesExplicit) {
+			guaranteedNames.retainAll(declaredBindingNames);
 		}
 		assuredBindingNames = guaranteedNames;
 		if (source == null) {
@@ -202,6 +207,19 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 	@Override
 	public int hashCode() {
 		return Objects.hash(bindingNamesExplicit, bindingNamesExplicit ? declaredBindingNames : null, bindingSets);
+	}
+
+	@Override
+	public boolean copyDetachedPlanningStateTo(QueryModelNode target, DetachedMetadataCopier metadata) {
+		if (!(target instanceof BindingSetAssignment copy) || !super.copyDetachedPlanningStateTo(target, metadata)) {
+			return false;
+		}
+		if (bindingNamesExplicit) {
+			copy.setDeclaredBindingNames(declaredBindingNames);
+		} else {
+			copy.setBindingNames(null);
+		}
+		return true;
 	}
 
 	@Override

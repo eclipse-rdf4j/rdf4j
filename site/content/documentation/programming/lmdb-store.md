@@ -112,8 +112,15 @@ config.setForceSync(true);
 config.setAutoGrow(false);
 // persist value hash codes across restarts, disabled by default
 config.setValueHashCacheEnabled(true);
-// enable optional query optimizations and sketch-based join estimation, both disabled by default
+// disable the predicate guarantee index, enabled by default
+config.setPredicateGuaranteeIndexEnabled(false);
+// disable automatic predicate guarantee rebuilds on startup, enabled by default
+config.setPredicateGuaranteeIndexAutoRebuild(false);
+// exclude selected predicates from predicate guarantee tracking
+config.setPredicateGuaranteeExcludedPredicates("http://example.com/vocab/volatilePredicate");
+// enable optional query optimizations, disabled by default
 config.setExperimentalQueryOptimizations(true);
+// enable sketch-based join estimation, disabled by default
 config.setSketchEstimatorEnabled(true);
 // set maximum size of value db to 1 GiB
 
@@ -165,6 +172,35 @@ When enabled, LMDB writes a `hashes.dat.integrity` sidecar on clean shutdown and
 next startup if that integrity metadata validates. Invalid or stale hash cache files are discarded automatically and
 the store falls back to recomputing hashes lazily.
 
+### Predicate guarantee index
+
+The predicate guarantee index is enabled by default. It records, per predicate, whether all known object values have
+the same RDF term domain, for example only IRIs or only literals. The LMDB query planner can use that guarantee to
+avoid work for statement patterns whose object position is known to be incompatible with the predicate's object
+domain.
+
+The index is maintained during normal writes and is rebuilt on startup when the stored index metadata is missing,
+stale, or uses different exclusion settings. Automatic startup rebuilds are enabled by default. Disabling automatic
+rebuilds keeps startup predictable for large stores, but LMDB will only use the predicate guarantee index if the
+stored metadata is current. If the metadata is stale and rebuilds are disabled, the store ignores the index until it
+is rebuilt by starting with automatic rebuilds enabled again.
+
+Predicate guarantees are stored in LMDB for persistence and also loaded into an in-memory copy when the store starts.
+Query planning reads the in-memory copy rather than relying on the operating system to keep the LMDB mmap pages hot.
+Every committed guarantee write updates both the persisted record and the in-memory copy together, so the planner does
+not observe a heap/disk mismatch during normal operation.
+
+Use `LmdbStoreConfig.setPredicateGuaranteeIndexEnabled(false)` to disable the feature completely. When disabled,
+LMDB neither records new predicate guarantees nor reads existing ones.
+
+Use `LmdbStoreConfig.setPredicateGuaranteeIndexAutoRebuild(false)` to keep the feature available while preventing
+startup from rebuilding missing or stale guarantee data.
+
+Use `LmdbStoreConfig.setPredicateGuaranteeExcludedPredicates(...)` to skip selected predicates. The value is a comma
+or whitespace separated list of predicate IRIs. IRIs may be written either as plain strings or wrapped in angle
+brackets. Excluded predicates are not recorded, are not used for planning, and changing the exclusion list changes
+the metadata version so that automatic rebuilds refresh the remaining guarantees.
+
 Sketch-based join estimation is disabled by default. To enable it, set
 both `LmdbStoreConfig.setExperimentalQueryOptimizations(true)` and
 `LmdbStoreConfig.setSketchEstimatorEnabled(true)` when creating the store. Repository configuration files can enable it
@@ -178,6 +214,11 @@ with both `http://rdf4j.org/config/sail/lmdb#sketchEstimatorEnabled` and
 [] lmdb:sketchEstimatorEnabled true ;
    config:sail.experimentalQueryOptimizations true .
 ```
+
+The legacy per-column subject, predicate, object and context sketch bucket-count accessors are deprecated compatibility
+no-ops: getters return `-1`, and setters do not change the Frontier synopsis. The synopsis sizes itself from the configured
+sketch-estimator memory budget. The context-pair sketch toggle is also deprecated; its getter remains `false` and its setter
+is a no-op. These retired per-column settings do not control estimate memory.
 
 ## Store formats and returning to an older release
 

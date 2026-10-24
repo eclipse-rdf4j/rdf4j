@@ -17,6 +17,7 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
@@ -46,6 +47,8 @@ import org.eclipse.rdf4j.query.explanation.QueryExplanationContext;
 final class NativeSubqueryPlan implements SlotPlan {
 
 	private final QueryEvaluationStep step;
+	private final NativeSubqueryPlan memoIdentity;
+	private final NativeFilterLease filterAttempt;
 	private final int[] outSlots;
 	private final String[] outNames;
 	private final int[] frameInputSlots;
@@ -56,6 +59,7 @@ final class NativeSubqueryPlan implements SlotPlan {
 	private final Projection projection;
 	private final QueryEvaluationContext context;
 	private final long producedMask;
+	private final NativeTupleFacts movementFacts;
 	private final BiFunction<Set<String>, NativeExecutionContext, QueryEvaluationStep> lateralStepFactory;
 
 	NativeSubqueryPlan(QueryEvaluationStep step, int[] outSlots, String[] outNames, int[] frameInputSlots,
@@ -72,9 +76,19 @@ final class NativeSubqueryPlan implements SlotPlan {
 
 	NativeSubqueryPlan(QueryEvaluationStep step, int[] outSlots, String[] outNames, int[] frameInputSlots,
 			String[] frameInputNames, String[] frameParameterNames, String[] privateGraphParameters,
-			Projection projection, QueryEvaluationContext context,
+			Projection projection, QueryEvaluationContext context, NativeTupleFacts movementFacts) {
+		this(step, outSlots, outNames, frameInputSlots, frameInputNames, frameParameterNames, privateGraphParameters,
+				projection, context, movementFacts, null);
+	}
+
+	NativeSubqueryPlan(QueryEvaluationStep step, int[] outSlots, String[] outNames, int[] frameInputSlots,
+			String[] frameInputNames, String[] frameParameterNames, String[] privateGraphParameters,
+			Projection projection, QueryEvaluationContext context, NativeTupleFacts movementFacts,
 			BiFunction<Set<String>, NativeExecutionContext, QueryEvaluationStep> lateralStepFactory) {
+		this.movementFacts = movementFacts;
 		this.step = step;
+		this.memoIdentity = this;
+		this.filterAttempt = null;
 		this.outSlots = outSlots;
 		this.outNames = outNames;
 		this.frameInputSlots = frameInputSlots;
@@ -96,6 +110,28 @@ final class NativeSubqueryPlan implements SlotPlan {
 		this.producedMask = mask;
 	}
 
+	private NativeSubqueryPlan(NativeSubqueryPlan source, NativeFilterLease filters) {
+		this.step = source.step;
+		this.memoIdentity = source.memoIdentity;
+		this.filterAttempt = filters;
+		this.outSlots = source.outSlots;
+		this.outNames = source.outNames;
+		this.frameInputSlots = source.frameInputSlots;
+		this.frameInputNames = source.frameInputNames;
+		this.frameParameterNames = source.frameParameterNames;
+		this.privateGraphParameters = source.privateGraphParameters;
+		this.graphFrameInputs = source.graphFrameInputs;
+		this.projection = source.projection;
+		this.context = source.context;
+		this.producedMask = source.producedMask;
+		this.movementFacts = source.movementFacts;
+		this.lateralStepFactory = source.lateralStepFactory;
+	}
+
+	NativeSubqueryPlan withFilterAttempt(NativeFilterLease filters) {
+		return new NativeSubqueryPlan(this, filters);
+	}
+
 	@Override
 	public long producedMask() {
 		return producedMask;
@@ -108,6 +144,14 @@ final class NativeSubqueryPlan implements SlotPlan {
 			mask |= 1L << slot;
 		}
 		return mask;
+	}
+
+	boolean hoistableAcross(Set<String> surroundingNames) {
+		return movementFacts != null && movementFacts.scopeChange() && movementFacts.repeatable()
+				&& !movementFacts.mappingParameterized() && movementFacts.discardable()
+				&& frameInputSlots.length == 0 && privateGraphParameters.length == 0
+				&& Collections.disjoint(movementFacts.observedNames(), surroundingNames)
+				&& Collections.disjoint(movementFacts.producedNames(), surroundingNames);
 	}
 
 	String describe() {
@@ -127,10 +171,15 @@ final class NativeSubqueryPlan implements SlotPlan {
 
 	@Override
 	public RowCursor open(RowState row) throws IOException {
+		return open(row, filterAttempt);
+	}
+
+	RowCursor open(RowState row, NativeFilterLease filters) throws IOException {
 		NativeSubqueryState state;
 		if (frameInputSlots.length == 0) {
 			NativeExecutionContext execution = executionContext(row);
-			state = execution.nativeState(this, () -> evaluateOnce(row, frameBindings(row, execution.queryBase())));
+			state = execution.nativeState(memoIdentity,
+					() -> evaluateOnce(row, frameBindings(row, execution.queryBase())));
 		} else {
 			// The boundary's solutions depend on the entry base and the frame values only, so one evaluation per
 			// distinct frame serves every outer row that carries it (a per-row open with a repeating GRAPH frame).
@@ -150,9 +199,13 @@ final class NativeSubqueryPlan implements SlotPlan {
 						frameIds[i] = row.slots[frameInputSlots[i]];
 					}
 				}
-				state = execution.nativeState(new FrameKey(this, frameIds, suppliedGraphs),
+				state = execution.nativeState(new FrameKey(memoIdentity, frameIds, suppliedGraphs),
 						() -> evaluateOnce(row, frameBindings(row, row.base)));
 			}
+		}
+		NativeFilterLease receiving = filters == null ? NativeFilterLease.parentOf(row) : filters;
+		if (receiving != null && state.outcomes != null) {
+			receiving.include(state.outcomes, executionContext(row));
 		}
 		return new NativeSubqueryCursor(this, row, state.rows.iterator());
 	}
@@ -217,13 +270,16 @@ final class NativeSubqueryPlan implements SlotPlan {
 		if (lateralStepFactory != null) {
 			NativeExecutionContext execution = executionContext(row);
 			Set<String> originalDomain = Set.copyOf(row.base.getBindingNames());
-			prepared = execution.nativeState(new ScopedStepKey(this, originalDomain),
+			prepared = execution.nativeState(new ScopedStepKey(memoIdentity, originalDomain),
 					() -> lateralStepFactory.apply(originalDomain, execution));
 		}
 		BindingSet bodyInput = projection == null ? input
 				: ProjectionQueryEvaluationStep.withInheritedGraphInput(projection, input, context);
 		bodyInput = NativeEntryBindings.preserve(input, bodyInput);
-		try (SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(row.source);
+		NativeExecutionContext execution = executionContextOrNull(row);
+		// The existing framed raw-source path remains executable without manufacturing an evaluation owner.
+		NativeFilterLease capture = execution == null ? null : NativeFilterLease.capture(execution);
+		try (SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(row.source, capture);
 				CloseableIteration<BindingSet> iteration = prepared.evaluate(bodyInput)) {
 			while (!row.cancellation.isCancellationRequested() && iteration.hasNext()) {
 				// Native projected rows may be lazy and may refer to a child-owned execution context. Resolve every
@@ -234,8 +290,14 @@ final class NativeSubqueryPlan implements SlotPlan {
 					&& iteration instanceof CooperativeCancellation cancellation) {
 				cancellation.requestCancellation();
 			}
+		} catch (RuntimeException | Error failure) {
+			if (capture != null) {
+				capture.abort(failure);
+			}
+			throw failure;
 		}
-		return new NativeSubqueryState(List.copyOf(rows));
+		return new NativeSubqueryState(List.copyOf(rows),
+				capture == null ? null : capture.freeze(!row.cancellation.isCancellationRequested()));
 	}
 
 	/** Preparation depends on the original domain, while result replay separately depends on frame values. */
@@ -258,7 +320,7 @@ final class NativeSubqueryPlan implements SlotPlan {
 		return ((SyntheticValueSource) row.source).internComputedValue(value, row.positionMask(targetSlot));
 	}
 
-	private record NativeSubqueryState(List<BindingSet> rows) {
+	private record NativeSubqueryState(List<BindingSet> rows, NativeFilterLease.Frozen outcomes) {
 	}
 
 	private static final class NativeSubqueryCursor implements RowCursor {

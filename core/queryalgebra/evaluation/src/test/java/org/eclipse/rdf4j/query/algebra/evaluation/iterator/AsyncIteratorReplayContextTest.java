@@ -19,7 +19,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -36,6 +39,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -43,8 +47,13 @@ import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.common.iteration.TimeLimitIteration;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class AsyncIteratorReplayContextTest {
 	@Test
@@ -283,6 +292,93 @@ class AsyncIteratorReplayContextTest {
 		} finally {
 			executor.shutdownNow();
 		}
+	}
+
+	@ParameterizedTest
+	@MethodSource("workerFailureTransports")
+	void everyAsyncVariantPreservesItsWorkersFailureProtocol(String variant, String failureKind) {
+		RuntimeException signal = assertThrows(QueryExecutionContext.ReplaySafepointException.class, () -> {
+			try (QueryExecutionContext.Activation ignored = QueryExecutionContext.activateReplaySafepoint(() -> {
+				throw new IllegalStateException("owned cooperative checkpoint");
+			})) {
+				QueryExecutionContext.checkpointReplaySafepoint();
+			}
+		});
+		Throwable failure = switch (failureKind) {
+		case "cooperative-direct" -> signal;
+		case "cooperative-qee" -> new QueryEvaluationException(signal);
+		case "interrupted" -> new QueryInterruptedException("independent interruption", signal);
+		case "application-qee" -> new QueryEvaluationException("application wrapper", signal) {
+			private static final long serialVersionUID = 1L;
+		};
+		case "ordinary-runtime" -> new IllegalStateException("ordinary worker failure");
+		case "error" -> new AssertionError("worker error");
+		default -> throw new IllegalArgumentException(failureKind);
+		};
+		CloseableIteration<BindingSet> source = new AbstractCloseableIteration<>() {
+			private boolean first = true;
+
+			@Override
+			public boolean hasNext() {
+				if (first) {
+					return true;
+				}
+				if (failure instanceof RuntimeException runtimeException) {
+					throw runtimeException;
+				}
+				throw (Error) failure;
+			}
+
+			@Override
+			public BindingSet next() {
+				first = false;
+				return new MapBindingSet();
+			}
+
+			@Override
+			protected void handleClose() {
+			}
+		};
+		CloseableIteration<BindingSet> made = switch (variant) {
+		case "buffer" -> new AsyncIteratorBuffer(source);
+		case "direct" -> new AsyncIteratorDirect(source);
+		case "read-ahead" -> new AsyncIteratorReadAhead(source);
+		default -> throw new IllegalArgumentException(variant);
+		};
+		try (CloseableIteration<BindingSet> iteration = made) {
+			assertTrue(iteration.hasNext());
+			iteration.next();
+			Throwable observed = assertThrows(Throwable.class, iteration::hasNext);
+			if (failureKind.startsWith("cooperative-")) {
+				// ForkJoinTask may recreate an exact QEE around the original on its reporting thread.
+				// Only the exact framework envelope is transparent to the replay-owner protocol.
+				Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+				while (observed != failure && observed != null
+						&& observed.getClass() == QueryEvaluationException.class) {
+					assertTrue(visited.add(observed), "transport envelope must be acyclic");
+					assertEquals(0, observed.getSuppressed().length, "cleanup is not transparent transport");
+					observed = observed.getCause();
+				}
+				assertSame(failure, observed, "owned cooperative failure survives only exact QEE transport");
+			} else {
+				// An interrupted or application wrapper keeps its semantics. A same-class ForkJoin copy is
+				// observed as that wrapper; it is never peeled to authenticate its cooperative cause.
+				assertEquals(failure.getClass(), observed.getClass(), "semantic failure envelope must remain visible");
+				assertEquals(0, observed.getSuppressed().length);
+				if (observed != failure) {
+					assertEquals("buffer", variant, "only the ForkJoin reporting route recreates worker failures");
+					assertSame(failure, observed.getCause(), "ForkJoin copy retains the exact original failure");
+				}
+			}
+		}
+	}
+
+	private static Stream<Arguments> workerFailureTransports() {
+		return Stream.of("buffer", "direct", "read-ahead")
+				.flatMap(variant -> Stream.of(
+						"cooperative-direct", "cooperative-qee", "interrupted", "application-qee", "ordinary-runtime",
+						"error")
+						.map(kind -> Arguments.of(variant, kind)));
 	}
 
 	@Test

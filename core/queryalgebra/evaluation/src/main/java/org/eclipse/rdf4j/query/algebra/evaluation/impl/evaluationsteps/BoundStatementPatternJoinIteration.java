@@ -58,9 +58,9 @@ final class BoundStatementPatternJoinIteration extends LookAheadIteration<Bindin
 				continue;
 			}
 			if (statementCount > 0) {
-				repeatedBindings = leftBindings;
+				repeatedBindings = rightStatementPattern.producedBindings(leftBindings);
 				remainingRepeats = statementCount - 1;
-				return leftBindings;
+				return repeatedBindings;
 			}
 		}
 	}

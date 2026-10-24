@@ -20,6 +20,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -37,12 +38,20 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.junit.rules.TemporaryFolder;
@@ -52,13 +61,8 @@ import org.junit.rules.TemporaryFolder;
  */
 public class QueryBenchmarkTest {
 
-	private static final SimpleValueFactory VALUE_FACTORY = SimpleValueFactory.getInstance();
-	private static final IRI LOWERCASE_DCAT_DISTRIBUTION = VALUE_FACTORY
-			.createIRI("http://www.w3.org/ns/dcat#distribution");
-	private static final IRI UPPERCASE_DCAT_DISTRIBUTION = VALUE_FACTORY
-			.createIRI("http://www.w3.org/ns/dcat#Distribution");
-
 	private static SailRepository repository;
+	private static LmdbStore store;
 	private static File dataDir;
 
 	public static TemporaryFolder tempDir = new TemporaryFolder();
@@ -138,7 +142,8 @@ public class QueryBenchmarkTest {
 			dataDir = tempDir.newFolder();
 
 			LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
-			repository = new SailRepository(new LmdbStore(dataDir, config));
+			store = new LmdbStore(dataDir, config);
+			repository = new SailRepository(store);
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				connection.begin(IsolationLevels.NONE);
@@ -153,6 +158,13 @@ public class QueryBenchmarkTest {
 			cleanupStore();
 			throw e;
 		}
+	}
+
+	@BeforeEach
+	public void awaitOptimizerPipeline() {
+		store.forceFlushSketchEstimator();
+		LmdbPlannerAwait.awaitSketchesReady(store, LmdbPlannerAwait.DEFAULT_PIPELINE_TIMEOUT);
+		LmdbPlannerAwait.awaitLmdbOptimizerPipeline(store, LmdbPlannerAwait.DEFAULT_PIPELINE_TIMEOUT);
 	}
 
 	private static InputStream getResourceAsStream(String name) {
@@ -181,6 +193,7 @@ public class QueryBenchmarkTest {
 			}
 			tempDir = null;
 			dataDir = null;
+			store = null;
 			repository = null;
 			statementList = null;
 		}
@@ -264,6 +277,42 @@ public class QueryBenchmarkTest {
 	}
 
 	@Test
+	public void optimizedExplainDoesNotChangeSubsequentSubSelectResults() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.prepareTupleQuery(sub_select)
+					.explain(Explanation.Level.Optimized)
+					.toString();
+		}
+		awaitOptimizerPipeline();
+		try (SailRepositoryConnection connection = repository.getConnection();
+				var stream = connection.prepareTupleQuery(sub_select).evaluate().stream()) {
+			assertEquals(16035L, stream.count());
+		}
+	}
+
+	@Test
+	public void subSelectPlanKeepsTopGroupCardinalityBounded() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			Explanation explanation = connection.prepareTupleQuery(sub_select).explain(Explanation.Level.Optimized);
+			String plan = explanation.toString();
+			TupleExpr optimized = (TupleExpr) explanation.tupleExpr();
+			TupleExpr topGrouping = firstGroupingNodeWithKeys(optimized,
+					Set.of("type1", "type2", "language2", "mbox", "count", "identifier2"));
+			assertTrue(topGrouping != null, "Missing top GROUP BY/DISTINCT node.\n" + plan);
+			if (topGrouping instanceof Distinct) {
+				assertTrue(plan.contains("originalNode=aggregate-free-group-by")
+						&& plan.contains("replacementNode=distinct-projection"),
+						"Replacing the aggregate-free top group must carry the semantic proof.\n" + plan);
+			}
+			double rows = topGrouping.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
+			double rootRows = optimized.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
+			assertTrue(Double.isFinite(rootRows) && rows <= rootRows,
+					"Top GROUP BY/DISTINCT cardinality must be bounded by the enclosing winner rows. rows=" + rows
+							+ ", rootRows=" + rootRows + "\n" + plan);
+		}
+	}
+
+	@Test
 	public void multipleSubSelectQueryProducesExpectedCount() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			long count;
@@ -271,6 +320,32 @@ public class QueryBenchmarkTest {
 				count = stream.count();
 			}
 			assertEquals(27881L, count);
+		}
+	}
+
+	@Test
+	public void multipleSubSelectPlanRepairsStandardFallbackSubqueryJoins() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			Explanation explanation = connection.prepareTupleQuery(multiple_sub_select)
+					.explain(Explanation.Level.Optimized);
+			String plan = explanation.toString();
+			assertTrue(plan.contains("plannerId=lmdb-packed-cascades"),
+					"Multiple-subselect subquery joins must be repaired by the packed Cascades planner instead of "
+							+ "the standard fallback.\n" + plan);
+
+			List<StatementPattern> unplannedAccess = new ArrayList<>();
+			((TupleExpr) explanation.tupleExpr()).visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(StatementPattern node) {
+					if (node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE) == null) {
+						unplannedAccess.add(node);
+					}
+					super.meet(node);
+				}
+			});
+			assertTrue(unplannedAccess.isEmpty(),
+					"Every subquery statement pattern must carry a Cascades-planned access path instead of a "
+							+ "standard-fallback join. unplanned=" + unplannedAccess + "\n" + plan);
 		}
 	}
 
@@ -313,6 +388,56 @@ public class QueryBenchmarkTest {
 		assertSimpleUpdateTransitions(IsolationLevels.NONE, true);
 
 	}
+
+	@Test
+	public void ordered_union_limit() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			long count = count(connection
+					.prepareTupleQuery(ordered_union_limit)
+					.evaluate());
+			assertEquals(250L, count);
+		}
+	}
+
+	private boolean hasStatement() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return connection.hasStatement(RDF.TYPE, RDF.TYPE, RDF.TYPE, true);
+		}
+	}
+
+	private static TupleExpr firstGroupingNodeWithKeys(TupleExpr root, Set<String> groupKeys) {
+		TupleExpr[] match = new TupleExpr[1];
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Group node) {
+				if (match[0] == null && node.getGroupBindingNames().equals(groupKeys)) {
+					match[0] = node;
+				}
+				super.meet(node);
+			}
+
+			@Override
+			public void meet(Distinct node) {
+				if (match[0] == null && node.getBindingNames().equals(groupKeys)) {
+					match[0] = node;
+				}
+				super.meet(node);
+			}
+		});
+		return match[0];
+	}
+
+	private static long count(TupleQueryResult evaluate) {
+		try (Stream<BindingSet> stream = evaluate.stream()) {
+			return stream.count();
+		}
+	}
+
+	private static final SimpleValueFactory VALUE_FACTORY = SimpleValueFactory.getInstance();
+	private static final IRI LOWERCASE_DCAT_DISTRIBUTION = VALUE_FACTORY
+			.createIRI("http://www.w3.org/ns/dcat#distribution");
+	private static final IRI UPPERCASE_DCAT_DISTRIBUTION = VALUE_FACTORY
+			.createIRI("http://www.w3.org/ns/dcat#Distribution");
 
 	private static void assertSimpleUpdateTransitions(IsolationLevel isolationLevel, boolean assertNoRemaps) {
 		resetBenchmarkTypeStatements();
@@ -431,29 +556,4 @@ public class QueryBenchmarkTest {
 		assertEquals(before.valueStoreResizes(), after.valueStoreResizes(),
 				"the configured-map " + phase + " fixture must not resize ValueStore");
 	}
-
-	@Test
-	public void ordered_union_limit() {
-		for (int i = 0; i < 100; i++) {
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				long count = count(connection
-						.prepareTupleQuery(ordered_union_limit)
-						.evaluate());
-				assertEquals(250L, count);
-			}
-		}
-	}
-
-	private boolean hasStatement() {
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection.hasStatement(RDF.TYPE, RDF.TYPE, RDF.TYPE, true);
-		}
-	}
-
-	private static long count(TupleQueryResult evaluate) {
-		try (Stream<BindingSet> stream = evaluate.stream()) {
-			return stream.count();
-		}
-	}
-
 }

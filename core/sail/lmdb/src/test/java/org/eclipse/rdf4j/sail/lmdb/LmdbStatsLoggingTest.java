@@ -12,13 +12,35 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
+import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabaseWithTxn;
+import static org.lwjgl.system.MemoryStack.stackPush;
+import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
+import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
+import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
+import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
+import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_close;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxdbs;
+import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.zip.CRC32;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Literal;
@@ -29,6 +51,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.base.SailSink;
+import org.eclipse.rdf4j.sail.lmdb.LmdbStore.LmdbDatabaseStats;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore.LmdbStats;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
@@ -39,6 +62,9 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.lwjgl.PointerBuffer;
+import org.lwjgl.system.MemoryStack;
+import org.lwjgl.util.lmdb.MDBVal;
 import org.slf4j.LoggerFactory;
 
 import ch.qos.logback.classic.Level;
@@ -75,35 +101,59 @@ class LmdbStatsLoggingTest {
 	}
 
 	@Test
-	void logsStatsAtInfoOnStartupAndShutdown() {
+	void logsStatsAtInfoOnStartupAndShutdown() throws IOException {
 		logger.setLevel(Level.INFO);
 		LmdbStore store = new LmdbStore(dataDir, config());
 		store.init();
 		LmdbStats committed;
+		RefCountSnapshot committedRefCounts;
 		try {
 			assertThat(snapshots(Level.INFO)).containsExactly(store.getLmdbStats());
-			assertThat(events(Level.INFO).getFirst().getFormattedMessage()).contains("startup", dataDir.toString());
+			assertThat(statsEvents(Level.INFO).getFirst().getFormattedMessage()).contains("startup",
+					dataDir.toString());
 			try (NotifyingSailConnection connection = store.getConnection()) {
 				connection.begin();
 				connection.addStatement(RDF.TYPE, RDF.TYPE, RDF.PROPERTY, RDFS.RESOURCE);
 				connection.commit();
 			}
 			committed = store.getLmdbStats();
+			committedRefCounts = readRefCountSnapshot(store.getBackingStore().valueStore());
+			assertThat(committedRefCounts.marker()).isNull();
+			assertThat(committed.valueDatabases().get("ref_counts").entries())
+					.isEqualTo((long) committedRefCounts.counts().size());
 			assertThat(snapshots(Level.INFO)).hasSize(1);
 		} finally {
 			store.shutDown();
 		}
 		assertThat(snapshots(Level.INFO)).hasSize(2).last().isEqualTo(committed);
-		assertThat(events(Level.INFO).getLast().getFormattedMessage()).contains("shutdown", dataDir.toString());
+		assertThat(statsEvents(Level.INFO).getLast().getFormattedMessage()).contains("shutdown", dataDir.toString());
 		assertThat(snapshots(Level.TRACE)).isEmpty();
+
+		// Shutdown logging precedes the final clean integrity marker. Prove independently that close added
+		// only that metadata record, preserving every actual reference-count key and payload.
+		RefCountSnapshot closed = readClosedRefCountSnapshot(new File(dataDir, "values"));
+		assertThat(closed.counts()).isEqualTo(committedRefCounts.counts());
+		assertRefCountMarker(closed, true);
+		Map<String, LmdbDatabaseStats> expectedValues = new LinkedHashMap<>(committed.valueDatabases());
+		LmdbDatabaseStats refCounts = expectedValues.get("ref_counts");
+		expectedValues.put("ref_counts", new LmdbDatabaseStats(refCounts.pageSize(), refCounts.depth(),
+				refCounts.branchPages(), refCounts.leafPages(), refCounts.overflowPages(),
+				closed.counts().size() + 1L));
 
 		appender.list.clear();
 		store.init();
+		LmdbStats reopened;
 		try {
-			assertThat(snapshots(Level.INFO)).containsExactly(committed);
+			reopened = store.getLmdbStats();
+			assertThat(reopened).isEqualTo(new LmdbStats(expectedValues, committed.tripleDatabases()));
+			assertThat(snapshots(Level.INFO)).containsExactly(reopened);
+			RefCountSnapshot reopenedRefCounts = readRefCountSnapshot(store.getBackingStore().valueStore());
+			assertThat(reopenedRefCounts.counts()).isEqualTo(committedRefCounts.counts());
+			assertRefCountMarker(reopenedRefCounts, false);
 		} finally {
 			store.shutDown();
 		}
+		assertThat(snapshots(Level.INFO)).hasSize(2).last().isEqualTo(reopened);
 	}
 
 	@ParameterizedTest
@@ -224,7 +274,7 @@ class LmdbStatsLoggingTest {
 		try (store; SailSink sink = store.getExplicitSailSource().sink(IsolationLevels.NONE)) {
 			sink.approve(RDF.TYPE, RDF.TYPE, RDF.PROPERTY, RDFS.RESOURCE);
 			sink.flush();
-			assertThat(events(Level.WARN)).hasSize(2).allSatisfy(event -> {
+			assertThat(statsFailureWarnings()).hasSize(2).allSatisfy(event -> {
 				assertThat(event.getFormattedMessage()).contains("Unable to read native LMDB statistics");
 				assertThat(event.getThrowableProxy().getMessage()).isEqualTo("Stats unavailable for test");
 			});
@@ -232,7 +282,7 @@ class LmdbStatsLoggingTest {
 			assertThat(store.getLmdbStats().tripleDatabases().get("contexts").entries()).isEqualTo(1);
 			store.failStats = true;
 		}
-		assertThat(events(Level.WARN)).hasSize(3);
+		assertThat(statsFailureWarnings()).hasSize(3);
 	}
 
 	@ParameterizedTest
@@ -304,6 +354,83 @@ class LmdbStatsLoggingTest {
 		}
 	}
 
+	private record RefCountSnapshot(Map<String, String> counts, byte[] marker, long nativeTransactionId) {
+	}
+
+	private static RefCountSnapshot readRefCountSnapshot(ValueStore values) throws IOException {
+		try (TxnManager.Txn txn = values.getTxnManager().createReadTxnUntracked()) {
+			return readRefCountSnapshot(txn.get());
+		}
+	}
+
+	private static RefCountSnapshot readClosedRefCountSnapshot(File directory) throws IOException {
+		long env;
+		try (MemoryStack stack = stackPush()) {
+			PointerBuffer pointer = stack.mallocPointer(1);
+			E(mdb_env_create(pointer));
+			env = pointer.get(0);
+		}
+		try {
+			E(mdb_env_set_maxdbs(env, 18));
+			E(mdb_env_open(env, directory.getAbsolutePath(), MDB_RDONLY | MDB_NOTLS, 0664));
+			return LmdbUtil.readTransaction(env, (stack, txn) -> readRefCountSnapshot(txn));
+		} finally {
+			mdb_env_close(env);
+		}
+	}
+
+	private static RefCountSnapshot readRefCountSnapshot(long txn) throws IOException {
+		try (MemoryStack stack = stackPush()) {
+			Map<String, String> counts = new HashMap<>();
+			byte[] marker = null;
+			PointerBuffer pointer = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, openDatabaseWithTxn(txn, "ref_counts", 0), pointer));
+			long cursor = pointer.get(0);
+			try {
+				MDBVal key = MDBVal.calloc(stack);
+				MDBVal value = MDBVal.calloc(stack);
+				for (int rc = E(mdb_cursor_get(cursor, key, value, MDB_FIRST)); rc == MDB_SUCCESS; rc = E(
+						mdb_cursor_get(cursor, key, value, MDB_NEXT))) {
+					byte[] keyBytes = nativeBytes(key);
+					byte[] valueBytes = nativeBytes(value);
+					if (keyBytes.length == 1 && keyBytes[0] == 0) {
+						marker = valueBytes;
+					} else {
+						counts.put(HexFormat.of().formatHex(keyBytes), HexFormat.of().formatHex(valueBytes));
+					}
+				}
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+			return new RefCountSnapshot(Map.copyOf(counts), marker, mdb_txn_id(txn));
+		}
+	}
+
+	private static byte[] nativeBytes(MDBVal value) {
+		ByteBuffer data = value.mv_data().duplicate();
+		byte[] bytes = new byte[data.remaining()];
+		data.get(bytes);
+		return bytes;
+	}
+
+	private static void assertRefCountMarker(RefCountSnapshot snapshot, boolean clean) {
+		byte[] marker = snapshot.marker();
+		assertThat(marker).isNotNull().hasSize(18);
+		ByteBuffer fields = ByteBuffer.wrap(marker);
+		assertThat(fields.getInt()).isEqualTo(0x52434654);
+		assertThat(fields.get()).isEqualTo((byte) 1);
+		assertThat(fields.get()).isEqualTo(clean ? (byte) 1 : (byte) 0);
+		long qualifiedTransaction = fields.getLong();
+		if (clean) {
+			assertThat(qualifiedTransaction).isEqualTo(snapshot.nativeTransactionId());
+		} else {
+			assertThat(qualifiedTransaction).isPositive().isLessThanOrEqualTo(snapshot.nativeTransactionId());
+		}
+		CRC32 checksum = new CRC32();
+		checksum.update(marker, 0, marker.length - Integer.BYTES);
+		assertThat(Integer.toUnsignedLong(fields.getInt())).isEqualTo(checksum.getValue());
+	}
+
 	private void assertWriteSnapshots(LmdbStats before, LmdbStats after) {
 		List<LmdbStats> snapshots = snapshots(Level.TRACE);
 		assertThat(snapshots).isNotEmpty();
@@ -314,6 +441,20 @@ class LmdbStatsLoggingTest {
 
 	private List<ILoggingEvent> events(Level level) {
 		return appender.list.stream().filter(event -> event.getLevel().equals(level)).toList();
+	}
+
+	/** Events that carry an LMDB statistics snapshot; the store logs other lifecycle messages at the same levels. */
+	private List<ILoggingEvent> statsEvents(Level level) {
+		return events(level).stream()
+				.filter(event -> event.getArgumentArray() != null
+						&& Arrays.stream(event.getArgumentArray()).anyMatch(LmdbStats.class::isInstance))
+				.toList();
+	}
+
+	private List<ILoggingEvent> statsFailureWarnings() {
+		return events(Level.WARN).stream()
+				.filter(event -> event.getFormattedMessage().contains("Unable to read native LMDB statistics"))
+				.toList();
 	}
 
 	private List<LmdbStats> snapshots(Level level) {

@@ -24,6 +24,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
 import java.util.Set;
@@ -150,15 +151,43 @@ final class LmdbNativePackedFtree {
 
 	static LmdbNativeStrategyProposal<NativeUnorderedInput> proposeRows(SlotPlan input, RowState row,
 			int[] retainedSlots, boolean distinct, TupleExpr explainTarget) {
+		if (input instanceof PatternPlan pattern) {
+			if (!enabled() || row.encounterOrderRequired) {
+				return null;
+			}
+			if (row.source instanceof SyntheticValueSource values
+					&& values.anySynthetic(pattern.s.lookup(row.slots), pattern.p.lookup(row.slots),
+							pattern.o.lookup(row.slots), pattern.c.lookup(row.slots))) {
+				return null;
+			}
+			MultiJoinPlan single = specializeEntry(
+					new MultiJoinPlan(new SlotPlan[] { pattern }, new MaskedFilter[0]), row);
+			if (single == null) {
+				return null;
+			}
+			// The fragment may publish nullable columns belonging to its surrounding generic owner.
+			// They remain UNKNOWN in the row; only produced or already-bound columns demand physical values.
+			long available = pattern.producedMask() | row.boundMask();
+			int[] physicalRetained = new int[retainedSlots.length];
+			int count = 0;
+			for (int slot : retainedSlots) {
+				Objects.checkIndex(slot, row.slots.length);
+				if ((available & (1L << slot)) != 0L) {
+					physicalRetained[count++] = slot;
+				}
+			}
+			return proposeRows(single, row, Arrays.copyOf(physicalRetained, count), distinct, explainTarget);
+		}
 		if (input instanceof MultiJoinPlan multi && !LmdbNativeFactorAlgebra.candidate(input))
 			return proposeRows(multi, row, retainedSlots, distinct, explainTarget);
 		if (!LmdbNativeFactorAlgebra.candidate(input))
 			return null;
-		return new LmdbNativeStrategyProposal<>(() -> {
-			FactorizedRowCursor rows = LmdbNativePackedMorsels.tryRows(input, row, retainedSlots, distinct,
+		return new LmdbNativeStrategyProposal<>(filters -> {
+			SlotPlan execution = filters.borrow(input);
+			FactorizedRowCursor rows = LmdbNativePackedMorsels.tryRows(execution, row, retainedSlots, distinct,
 					explainTarget);
 			if (rows == null)
-				rows = LmdbNativeFactorProjections.openRows(input, row, retainedSlots, !distinct);
+				rows = LmdbNativeFactorProjections.openRows(execution, row, retainedSlots, !distinct);
 			if (row.runtimePlan != null)
 				row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_PACKED_FTREE, new SlotPlan[] { input });
 			LmdbNativeExplain.recordExecutionPath(explainTarget, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE);
@@ -211,11 +240,12 @@ final class LmdbNativePackedFtree {
 			return null;
 		}
 		LmdbNativeWork work = plan.estimateRowWork(row.source);
-		return new LmdbNativeStrategyProposal<>(() -> {
-			FactorizedRowCursor cursor = LmdbNativePackedMorsels.tryRows(multiJoin, row, retainedSlots, distinct,
+		return new LmdbNativeStrategyProposal<>(filters -> {
+			MultiJoinPlan execution = filters.borrow(multiJoin);
+			FactorizedRowCursor cursor = LmdbNativePackedMorsels.tryRows(execution, row, retainedSlots, distinct,
 					explainTarget);
 			if (cursor == null)
-				cursor = PackedRowCursor.open(plan, row);
+				cursor = PackedRowCursor.open(plan.borrow(filters), row);
 			if (cursor == null) {
 				LmdbNativeAttemptMetrics.recordDecline(explainTarget, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE,
 						"adjacency-unavailable");
@@ -460,7 +490,9 @@ final class LmdbNativePackedFtree {
 				return null;
 			}
 		}
-		NativeFilterLease parallelLease = new NativeFilterLease();
+		NativeFilterLease parallelLease = new NativeFilterLease(owner.filterAttempt == null
+				? NativeFilterLease.parentOf(row)
+				: owner.filterAttempt);
 		try {
 			List<BindingSet> parallel = LmdbNativePackedMorsels.tryAggregate(parallelLease.borrow(multiJoin), row,
 					groupSlots, aggregates, owner, explainTarget);
@@ -1423,6 +1455,10 @@ final class LmdbNativePackedFtree {
 			this.bySlot = Map.copyOf(map);
 		}
 
+		Plan borrow(NativeFilterLease filters) {
+			return Planner.rebindForWorker(this, filters.borrow(sourcePlan));
+		}
+
 		LmdbNativeWork estimateWork(NativeLmdbQuerySource source) {
 			double physical = physicalValueEstimate(source);
 			if (!Double.isFinite(physical)) {
@@ -1661,38 +1697,25 @@ final class LmdbNativePackedFtree {
 			Set<Integer> variables = new HashSet<>();
 			Map<Integer, Long> fixedBindings = new HashMap<>();
 			for (PatternPlan pattern : patterns) {
-				if (!collectFixed(pattern.s, fixedBindings) || !collectFixed(pattern.p, fixedBindings)
-						|| !collectFixed(pattern.o, fixedBindings) || !collectFixed(pattern.c, fixedBindings)) {
+				if (!collectPatternTerms(pattern, fixedBindings)) {
 					return null;
 				}
 				int sSlot = variableSlot(pattern.s);
 				int oSlot = variableSlot(pattern.o);
 				if (sSlot >= 0 && oSlot >= 0) {
-					if (sSlot == oSlot) {
-						return null;
-					}
 					variables.add(sSlot);
 					variables.add(oSlot);
 					edgesByPair.computeIfAbsent(pairKey(sSlot, oSlot), ignored -> new ArrayList<>())
 							.add(new EdgePlan(pattern, sSlot, oSlot, true));
 				} else if (sSlot >= 0) {
-					if (!pattern.o.isConstant()) {
-						return null;
-					}
 					variables.add(sSlot);
 					unary.computeIfAbsent(sSlot, ignored -> new ArrayList<>())
 							.add(new UnaryPlan(pattern, sSlot, pattern.o.constant, true));
 				} else if (oSlot >= 0) {
-					if (!pattern.s.isConstant()) {
-						return null;
-					}
 					variables.add(oSlot);
 					unary.computeIfAbsent(oSlot, ignored -> new ArrayList<>())
 							.add(new UnaryPlan(pattern, oSlot, pattern.s.constant, false));
 				} else {
-					if (!pattern.s.isConstant() || !pattern.o.isConstant()) {
-						return null;
-					}
 					constants.add(new ConstantPattern(pattern, pattern.s.constant, pattern.o.constant));
 				}
 			}
@@ -1898,6 +1921,44 @@ final class LmdbNativePackedFtree {
 			return seed == null ? null
 					: new RootSeed(seed.pattern, seed.variableIsKey, seed.bySubjectForVariableKey,
 							seed.bySubjectForConstantKey, seed.constantNeighbor);
+		}
+
+		/**
+		 * Metadata-free single-pattern shape qualification. Cost choice and source/runtime binding still occur at the
+		 * actual open; this method never consults estimates, indexes, adjacency or a probe. At least one subject/object
+		 * variable must remain outside both the entry bindings and every earlier operand's possible writes.
+		 */
+		static boolean singlePatternShape(PatternPlan pattern, RowState row, long earlierWrites) {
+			if (row.layout.slotNames().length > Long.SIZE || !admissiblePattern(pattern)) {
+				return false;
+			}
+			Map<Integer, Long> fixed = new HashMap<>();
+			if (!collectPatternTerms(pattern, fixed)) {
+				return false;
+			}
+			for (Map.Entry<Integer, Long> entry : fixed.entrySet()) {
+				long bound = row.slots[entry.getKey()];
+				if (bound != UNKNOWN && bound != entry.getValue()) {
+					return false;
+				}
+			}
+			int subject = variableSlot(pattern.s);
+			int object = variableSlot(pattern.o);
+			long variables = (subject < 0 ? 0L : 1L << subject) | (object < 0 ? 0L : 1L << object);
+			long possiblyBound = row.boundMask() | earlierWrites;
+			return (variables & row.boundMask()) == 0L && (variables & ~possiblyBound) != 0L;
+		}
+
+		/** Primitive endpoint/fixed-binding grammar shared by qualification and actual planning. */
+		private static boolean collectPatternTerms(PatternPlan pattern, Map<Integer, Long> fixed) {
+			if (!collectFixed(pattern.s, fixed) || !collectFixed(pattern.p, fixed)
+					|| !collectFixed(pattern.o, fixed) || !collectFixed(pattern.c, fixed)) {
+				return false;
+			}
+			int subject = variableSlot(pattern.s);
+			int object = variableSlot(pattern.o);
+			return !(subject >= 0 && subject == object)
+					&& (subject >= 0 || pattern.s.isConstant()) && (object >= 0 || pattern.o.isConstant());
 		}
 
 		private static boolean admissiblePattern(PatternPlan pattern) {

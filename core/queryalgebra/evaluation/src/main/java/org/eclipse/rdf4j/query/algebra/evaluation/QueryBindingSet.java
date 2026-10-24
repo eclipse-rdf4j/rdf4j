@@ -38,6 +38,7 @@ public class QueryBindingSet extends AbstractBindingSet implements MutableBindin
 	private static final long serialVersionUID = -2010715346095527301L;
 
 	private final Map<String, Value> bindings;
+	BindingSetOrigin origin;
 	private GraphFrameBindings graphFrames;
 
 	@Override
@@ -70,29 +71,34 @@ public class QueryBindingSet extends AbstractBindingSet implements MutableBindin
 
 	public QueryBindingSet(BindingSet bindingSet) {
 		this(bindingSet.size());
-		addAll(bindingSet);
+		copyValues(bindingSet);
+		BindingSetOrigin.copy(bindingSet, this);
 	}
 
 	public void addAll(BindingSet bindingSet) {
+		copyValues(bindingSet);
+		if (origin != null || BindingSetOrigin.tracked(bindingSet)) {
+			origin = BindingSetOrigin.overlay(BindingSetOrigin.of(this), BindingSetOrigin.of(bindingSet),
+					bindingSet.getBindingNames());
+		}
+	}
+
+	private void copyValues(BindingSet bindingSet) {
 		GraphFrameBindings supplied = GraphFrameBindings.from(bindingSet);
 		if (graphFrames != null) {
 			bindingSet.getBindingNames().forEach(this::forgetGraphFrame);
 		}
-		if (bindingSet instanceof QueryBindingSet) {
-			bindings.putAll(((QueryBindingSet) bindingSet).bindings);
+		BindingSet values = BindingSetOrigin.unwrap(bindingSet);
+		if (values instanceof QueryBindingSet query) {
+			bindings.putAll(query.bindings);
 		} else {
-			for (Binding binding : bindingSet) {
-				this.addBinding(binding);
+			for (Binding binding : values) {
+				addBinding(binding);
 			}
 		}
 		setGraphFrameBindings(GraphFrameBindings.from(this).merge(supplied));
 	}
 
-	/**
-	 * Adds a new binding to the binding set. The binding's name must not already be part of this binding set.
-	 *
-	 * @param binding The binding to add this this BindingSet.
-	 */
 	@Override
 	public void addBinding(Binding binding) {
 		addBinding(binding.getName(), binding.getValue());
@@ -171,6 +177,9 @@ public class QueryBindingSet extends AbstractBindingSet implements MutableBindin
 
 	@Override
 	public boolean equals(Object other) {
+		if (other instanceof BindingSet bindingSet) {
+			other = BindingSetOrigin.unwrap(bindingSet);
+		}
 		if (other instanceof QueryBindingSet) {
 			return bindings.equals(((QueryBindingSet) other).bindings);
 		} else {

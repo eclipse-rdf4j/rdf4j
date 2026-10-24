@@ -476,7 +476,9 @@ final class LmdbNativeKernelPartitions {
 			if (fork == null) {
 				closeForkedHooks(forked, new ParallelKernelDecline("filter-fork-unavailable"));
 			}
-			forked[i] = new FilterHook(new MaskedFilter(fork, source.mask, source.adaptive, source.plannedDepth),
+			forked[i] = new FilterHook(
+					new MaskedFilter(new CloseOnceNativeBooleanFilter(fork), source.mask, source.adaptive,
+							source.plannedDepth),
 					hooks[i].argSlots);
 		}
 		return forked;
@@ -490,6 +492,9 @@ final class LmdbNativeKernelPartitions {
 			if (forked[i] == null) {
 				closeForkedHooks(forked, new ParallelKernelDecline("filter-worker-bind-unavailable"));
 			}
+			FilterHook rebound = forked[i];
+			forked[i] = new FilterHook(new MaskedFilter(new CloseOnceNativeBooleanFilter(rebound.source.filter),
+					rebound.source.mask, rebound.source.adaptive, rebound.source.plannedDepth), rebound.argSlots);
 		}
 		return forked;
 	}
@@ -525,7 +530,7 @@ final class LmdbNativeKernelPartitions {
 			if (fork == null) {
 				closeForked(forked, new ParallelKernelDecline("filter-fork-unavailable"));
 			}
-			forked[i] = fork;
+			forked[i] = new CloseOnceNativeBooleanFilter(fork);
 		}
 		return forked;
 	}
@@ -539,7 +544,7 @@ final class LmdbNativeKernelPartitions {
 			if (fork == null) {
 				closeForked(forked, new ParallelKernelDecline("filter-worker-bind-unavailable"));
 			}
-			forked[i] = fork;
+			forked[i] = new CloseOnceNativeBooleanFilter(fork);
 		}
 		return forked;
 	}
@@ -550,37 +555,45 @@ final class LmdbNativeKernelPartitions {
 	 * wedges the dataset close exactly like the sequential route's {@code LmdbNativeKernelHooks.closeFilters}.
 	 */
 	static void closeForkedHooks(FilterHook[] forked, RuntimeException primary) {
-		RuntimeException failure = primary;
+		Throwable failure = primary;
 		for (FilterHook hook : forked) {
 			if (hook == null) {
 				continue;
 			}
 			try {
 				hook.source.filter.close();
-			} catch (RuntimeException problem) {
-				failure = suppress(failure, problem);
+			} catch (RuntimeException | Error problem) {
+				if (failure == null) {
+					failure = problem;
+				} else if (failure != problem) {
+					failure.addSuppressed(problem);
+				}
 			}
 		}
 		if (failure != null) {
-			throw failure;
+			NativeContextClosingIteration.throwFailure(failure);
 		}
 	}
 
 	/** Residual twin of {@link #closeForkedHooks}. */
 	static void closeForked(NativeBooleanFilter[] forked, RuntimeException primary) {
-		RuntimeException failure = primary;
+		Throwable failure = primary;
 		for (NativeBooleanFilter filter : forked) {
 			if (filter == null) {
 				continue;
 			}
 			try {
 				filter.close();
-			} catch (RuntimeException problem) {
-				failure = suppress(failure, problem);
+			} catch (RuntimeException | Error problem) {
+				if (failure == null) {
+					failure = problem;
+				} else if (failure != problem) {
+					failure.addSuppressed(problem);
+				}
 			}
 		}
 		if (failure != null) {
-			throw failure;
+			NativeContextClosingIteration.throwFailure(failure);
 		}
 	}
 

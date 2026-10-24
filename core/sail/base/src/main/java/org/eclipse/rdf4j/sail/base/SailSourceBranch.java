@@ -21,6 +21,7 @@ import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -994,7 +995,20 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 			throws SailException {
 		// The caller owns the base until the entire reader graph has been constructed successfully.
 		AtomicBoolean adoptedBase = new AtomicBoolean();
-		SailDataset derivedFrom = new DelegatingSailDataset(base) {
+		final class AdoptedDataset extends DelegatingSailDataset implements SailDatasetReadComposition.Transparent {
+			AdoptedDataset() {
+				super(base);
+			}
+
+			@Override
+			public <T> Optional<T> resolveReadComposition(Class<T> leafCapability,
+					BiFunction<T, T, Optional<T>> unionCombiner) {
+				if (!adoptedBase.get()) {
+					throw new IllegalStateException("The dataset has not been adopted");
+				}
+				return SailDatasetReadComposition.resolveDataset(base, leafCapability, unionCombiner);
+			}
+
 			@Override
 			public void close() {
 				if (adoptedBase.get() && lease == null) {
@@ -1008,12 +1022,35 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 					super.abandonUnobserved();
 				}
 			}
-		};
-		class SnapshotObserver extends DelegatingSailDataset {
+		}
+		SailDataset derivedFrom = new AdoptedDataset();
+		final class SnapshotObserver extends DelegatingSailDataset implements SailDatasetReadComposition.Transparent {
 			private boolean borrowed;
+			private final SailDataset compositionDelegate;
 
 			SnapshotObserver(SailDataset derivedFrom) {
 				super(derivedFrom);
+				compositionDelegate = derivedFrom;
+			}
+
+			@Override
+			public <T> Optional<T> resolveReadComposition(Class<T> leafCapability,
+					BiFunction<T, T, Optional<T>> unionCombiner) {
+				SailDataset delegate;
+				semaphore.lock();
+				try {
+					if (closed.get() || lease != null && (!borrowed || observerSnapshots.get(this) != lease
+							|| lease.borrowers <= 0 || lease.closed)) {
+						throw new IllegalStateException("The dataset observer is closed");
+					}
+					// Retirement alone does not invalidate a generation still held by this live borrower.
+					delegate = compositionDelegate;
+				} finally {
+					semaphore.unlock();
+				}
+				// RetainedSailDataset holds the observer alive; no arbitrary/native callback runs under the branch
+				// lock.
+				return SailDatasetReadComposition.resolveDataset(delegate, leafCapability, unionCombiner);
 			}
 
 			void register() {

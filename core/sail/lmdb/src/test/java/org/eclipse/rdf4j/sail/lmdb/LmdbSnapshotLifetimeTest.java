@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -438,7 +439,7 @@ class LmdbSnapshotLifetimeTest {
 			assertThatThrownBy(() -> held.getStatements(null, null, null)).isInstanceOf(SailException.class);
 			assertThatThrownBy(held::getNamespaces).isInstanceOf(SailException.class);
 			try (var fresh = snapshot()) {
-				assertThat(fresh.getStatementCount(null, PREDICATE, null, CONTEXT)).isEqualTo(inserted + 1);
+				assertThat(fresh.getStatementCount((Resource) null, PREDICATE, null, CONTEXT)).isEqualTo(inserted + 1);
 			}
 		}
 	}

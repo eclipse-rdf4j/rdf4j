@@ -95,7 +95,7 @@ final class LmdbWildcardPredicateBatch {
 		LmdbNativeWork work = estimatePhysicalWork(shape, row);
 		double rows = LmdbNativeWork.rowsOut(shape.prefix, row, row.boundMask());
 		String strategy = shape.demand == Demand.PAYLOAD ? STRATEGY : REDUCED_STRATEGY;
-		return new LmdbNativeStrategyProposal<>(() -> shape.open(row, capacity), work,
+		return new LmdbNativeStrategyProposal<>(filters -> shape.borrow(filters).open(row, capacity), work,
 				LmdbNativeWork.ZERO, rows, strategy, () -> {
 				});
 	}
@@ -1465,6 +1465,17 @@ final class LmdbWildcardPredicateBatch {
 			this.scanAll = scanAll;
 			this.filters = filters;
 			this.demand = demand;
+		}
+
+		Shape borrow(NativeFilterLease lease) {
+			MaskedFilter[] owned = new MaskedFilter[filters.length];
+			for (int i = 0; i < owned.length; i++) {
+				MaskedFilter filter = filters[i];
+				owned[i] = new MaskedFilter(lease.borrow(filter.filter), filter.mask, filter.adaptive,
+						filter.plannedDepth);
+			}
+			return new Shape(lease.borrow(prefix), wildcard, nodeSlot, predicateSlot, bySubject, adaptiveDirection,
+					scanAll, owned, demand);
 		}
 
 		static Shape match(MultiJoinPlan join, RowState row, LmdbWildcardPhysicalDemand physicalDemand) {

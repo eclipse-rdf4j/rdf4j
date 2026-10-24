@@ -311,7 +311,7 @@ final class FilterCursor implements FactorizedRowCursor {
 
 	FilterCursor(RowCursor arg, NativeBooleanFilter filter, RowState row) {
 		this.arg = arg;
-		this.filter = filter;
+		this.filter = NativeFilterLease.openInput(filter, row, arg);
 		this.row = row;
 	}
 
@@ -319,9 +319,16 @@ final class FilterCursor implements FactorizedRowCursor {
 	public boolean next() throws IOException {
 		while (arg.next()) {
 			LmdbNativeProbeDeadline.poll(++probePollTick);
+			// A physical factor invocation is not a logical input row when its multiplicity is non-unit.
+			if (arg instanceof FactorizedRowCursor factorized && factorized.multiplicity() != 1L) {
+				filter.incompleteInput();
+			}
 			if (filter.accept(row)) {
 				return true;
 			}
+		}
+		if (!row.cancellation.isCancellationRequested()) {
+			filter.inputExhausted();
 		}
 		return false;
 	}
@@ -337,6 +344,7 @@ final class FilterCursor implements FactorizedRowCursor {
 			arg.close();
 		} catch (RuntimeException | Error problem) {
 			failure = problem;
+			filter.incompleteInput();
 		}
 		try {
 			filter.close();

@@ -56,6 +56,11 @@ public final class FilterSelectivityKeys {
 	private record OriginPatternsCache(QueryModelNode arg, Set<StatementPattern> patterns) {
 	}
 
+	/** These three entries are derived caches; a detached tree's ordinary readers recompute from its own nodes. */
+	public static boolean isDerivedPlanningMetadata(Object key) {
+		return key == FILTER_ORIGIN_PATTERNS_KEY || key == FILTER_CONDITION_VARS_KEY || key == PATTERN_LOCAL_ROLES_KEY;
+	}
+
 	private FilterSelectivityKeys() {
 	}
 

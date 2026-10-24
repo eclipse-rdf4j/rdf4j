@@ -1,0 +1,149 @@
+{
+ "wp": "wp9-standard-pipeline",
+ "batch": "b1",
+ "worktree": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp9",
+ "patchPath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/patches/wp9.patch",
+ "evidencePath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp9/initial-evidence.wp9.txt",
+ "findings": [
+  {
+   "id": "3.11.2 / 3.2.5 (standard)",
+   "status": "fixed",
+   "rootCause": "FilterOptimizer.FilterRelocator granted itself permission from *possible* binding names: meet(Join) descended into an operand when `operand.getBindingNames().containsAll(filterVars)`, meet(LeftJoin) pushed into the left argument on the left arg's possible names, and meet(Extension) never checked whether an ExtensionElem (re)assigns a filter variable. For `?s :p ?y OPTIONAL{?s :q ?x} ?s :r ?x FILTER(?x=?y)` the filter landed on the LeftJoin, so rows whose OPTIONAL left ?x unbound errored and were dropped although `?s :r ?x` binds ?x before the filter in the original plan; the same defect pushed `FILTER(sameTerm(?x,:v))` onto a `VALUES ?x {UNDEF :w}` BSA. On LMDB the mis-placed Filter-over-LeftJoin was then amplified by the null-rejecting OPTIONAL rewrite into an inner join.",
+   "change": "New shared helper BindingScopeAnalysis.canPushInto(variables, target, sibling) (roadmap 4.1: possible names may only block) = target possible \u2287 vars AND for each var: assured in target OR not possible in sibling. FilterRelocator.meet(Join) uses it for both operands, meet(LeftJoin) for the left argument; meet(Extension) additionally requires that no ExtensionElem names a filter variable (ExtensionIterator overwrites unconditionally). Sound because the filter outcome depends only on its variables and each of them is either forced equal by join compatibility (assured) or cannot be changed by the sibling (absent). Strictly fewer pushes, only in the unsound cases; the positive shapes (filter onto an assuring SP, filter into a LeftJoin whose sibling cannot bind the var) are still pushed and are pinned by tests. QueryPlanRetrievalTest expectations were updated: its plan pushed `FILTER(?c != ?d)` into the right join operand where ?d is only possibly bound (from an inner OPTIONAL) while the left SP `?a rdf:type ?d` assures it \u2014 the old expected plan was exactly the unsound placement, the new plan keeps the filter above the join (outdated-expectation update, not a weakening).",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp9/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/FilterOptimizer.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp9/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/BindingScopeAnalysis.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp9/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/FilterPlacementSoundnessTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp9/core/sail/memory/src/test/java/org/eclipse/rdf4j/sail/memory/FilterRelocationSoundnessTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp9/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbFilterRelocationSoundnessTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp9/core/sail/memory/src/test/java/org/eclipse/rdf4j/sail/memory/QueryPlanRetrievalTest.java"
+   ],
+   "testsAdded": [
+    "FilterPlacementSoundnessTest#keepsFilterAboveJoinWhenOptionalVariableIsAlsoBoundBySibling",
+    "FilterPlacementSoundnessTest#keepsFilterAboveOuterLeftJoinWhenStackedOptionalsBindTheSameVariable",
+    "FilterPlacementSoundnessTest#pushesFilterOntoPatternNotOntoValuesWithUndefColumn",
+    "FilterPlacementSoundnessTest#stillPushesFilterIntoOperandThatAssuresAllVariables",
+    "FilterPlacementSoundnessTest#stillPushesFilterIntoLeftJoinWhenSiblingCannotBindTheVariable",
+    "FilterPlacementSoundnessTest#doesNotPushFilterBelowExtensionThatOverwritesFilterVariable",
+    "FilterRelocationSoundnessTest#filterIsNotPushedOntoLeftJoinWhenSiblingBindsTheOptionalVariable",
+    "FilterRelocationSoundnessTest#filterIsNotPushedIntoOuterLeftJoinWhenBothOptionalsBindTheVariable",
+    "FilterRelocationSoundnessTest#sameTermFilterIsNotPushedOntoValuesWithUndefColumn",
+    "FilterRelocationSoundnessTest#sameTermFilterIsNotPushedOntoTwoColumnValuesWithUndef",
+    "FilterRelocationSoundnessTest#filterOnAssuredVariableStillFiltersCorrectly",
+    "FilterRelocationSoundnessTest#filterOnOptionalOnlyVariableStillFiltersCorrectly",
+    "LmdbFilterRelocationSoundnessTest#filterIsNotPushedOntoLeftJoinWhenSiblingBindsTheOptionalVariable",
+    "LmdbFilterRelocationSoundnessTest#filterIsNotPushedOntoLeftJoinWhenSiblingBindsTheOptionalVariableWideJoin",
+    "LmdbFilterRelocationSoundnessTest#filterIsNotPushedIntoOuterLeftJoinWhenBothOptionalsBindTheVariable",
+    "LmdbFilterRelocationSoundnessTest#filterOnOptionalOnlyVariableStillFiltersCorrectly"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp9/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.impl.FilterPlacementSoundnessTest.txt\nSummary: tests=6, failures=4, errors=0, skipped=0, time=0.172s\nFailure: FilterPlacementSoundnessTest.keepsFilterAboveJoinWhenOptionalVariableIsAlsoBoundBySibling: failure: FilterOptimizer changed results ...\nReport: .../rdf4j-sail-memory/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.memory.FilterRelocationSoundnessTest.txt\nSummary: tests=6, failures=4, errors=0, skipped=0, time=0.287s\nFailure: FilterRelocationSoundnessTest.filterIsNotPushedIntoOuterLeftJoinWhenBothOptionalsBindTheVariable: expected: <[s=http://ex/s1 x=http://ex/v, s=http://ex/s2 x=http://ex/v]> but was: <[s=http://ex/s2 x=http://ex/v]>\nReport: .../rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbFilterRelocationSoundnessTest.txt\nSummary: tests=4, failures=3, errors=0, skipped=0, time=2.017s\nFailure: LmdbFilterRelocationSoundnessTest.filterIsNotPushedOntoLeftJoinWhenSiblingBindsTheOptionalVariableWideJoin: expected: <[s=http://ex/s1 x=http://ex/v y=http://ex/v]> but was: <[]>",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp9/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.impl.FilterPlacementSoundnessTest.txt\nSummary: tests=6, failures=0, errors=0, skipped=0, time=0.169s\nReport: .../rdf4j-sail-memory/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.memory.FilterRelocationSoundnessTest.txt\nSummary: tests=6, failures=0, errors=0, skipped=0, time=0.567s\nReport: .../rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbFilterRelocationSoundnessTest.txt\nSummary: tests=4, failures=0, errors=0, skipped=0, time=3.336s\nRe-verified after resume (verify logs 20260928T003708/20260928T004250/20260928T005204): Tests run: 6, Failures: 0 -- FilterPlacementSoundnessTest; Tests run: 6, Failures: 0 -- FilterRelocationSoundnessTest; Tests run: 4, Failures: 0 -- LmdbFilterRelocationSoundnessTest; QueryPlanRetrievalTest Tests run: 28, Failures: 0, Errors: 0, Skipped: 2"
+  },
+  {
+   "id": "3.11.1",
+   "status": "fixed",
+   "rootCause": "QueryModelNormalizerOptimizer.canPushAssignmentThroughScopedExtension rewrote Join(BSA, Extension[scope](A)) into Extension[scope](Join(BSA, A)) after checking only that A *possibly* binds the pushed names (`extension.getArg().getBindingNames().containsAll(...)`) and that isPlainJoinAlgebra admits any non-scoped Filter whose condition is not directly a SubQueryValueOperator. After the push the group is evaluated as bound probes, so a Filter inside A observing boundness of the pushed variable (`!BOUND(?x)`, `NOT EXISTS {... ?x ...}`) sees ?x bound from the VALUES row where the original scope-isolated evaluation saw it unbound (`VALUES ?x {UNDEF}` inside GRAPH). The review's proposed whole-arg assured check is neither sufficient (Join(Filter(!BOUND(?x),SP1),SP2(?x)) assures ?x at the top but not under the Filter) nor necessary (a filter-free group with unassured ?x is pushable).",
+   "change": "isPlainJoinAlgebra now threads the pushed names and, for every Filter, requires BindingScopeAnalysis.filterDependsOnlyOnAssured(filter, pushedNames): VarNameCollector(condition) \u2229 pushedNames \u2286 assured(filter.arg) (VarNameCollector descends into EXISTS bodies). When it holds every row reaching the filter already carries the name and join compatibility forces it to equal the VALUES value, so bound and unbound evaluation agree; otherwise the push is declined. The existing possible-name precondition is kept as a blocker. The positive shape (`VALUES ?x {..} { ?x :p ?o FILTER NOT EXISTS {..} BIND(..) }`, ?x assured by the SP) still pushes and is pinned by a test. LMDB negative shapes need `VALUES ... UNDEF` inside the group, which currently NPEs in LmdbPipelinePlanCache (review 3.9, plan-cache WP), so on LMDB only the positive shape is covered end-to-end; the negative shapes are covered on MemoryStore and at algebra level (both pipelines run the same normalizer).",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp9/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/QueryModelNormalizerOptimizer.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp9/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/BindingScopeAnalysis.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp9/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/QueryModelNormalizerScopedBindPushTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp9/core/sail/memory/src/test/java/org/eclipse/rdf4j/sail/memory/ScopedBindValuesPushSoundnessTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp9/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbScopedBindValuesPushSoundnessTest.java"
+   ],
+   "testsAdded": [
+    "QueryModelNormalizerScopedBindPushTest#declinesPushWhenInnerFilterObservesNotBoundOfUnassuredPushedVariable",
+    "QueryModelNormalizerScopedBindPushTest#declinesPushWhenInnerFilterObservesNotExistsOverUnassuredPushedVariable",
+    "QueryModelNormalizerScopedBindPushTest#declinesPushWhenNestedFilterOverUnassuredOperandObservesPushedVariable",
+    "QueryModelNormalizerScopedBindPushTest#pushesValuesWhenInnerFilterArgumentAssuresThePushedVariable",
+    "QueryModelNormalizerScopedBindPushTest#pushesValuesWhenNoInnerFilterMentionsThePushedVariable",
+    "ScopedBindValuesPushSoundnessTest#valuesIsNotPushedThroughScopedBindWhenInnerFilterObservesNotBound",
+    "ScopedBindValuesPushSoundnessTest#valuesIsNotPushedThroughScopedBindWhenInnerFilterObservesNotExists",
+    "ScopedBindValuesPushSoundnessTest#valuesIsNotPushedThroughScopedBindWhoseExpressionMentionsTheVariable",
+    "ScopedBindValuesPushSoundnessTest#valuesPushedThroughScopedBindWhenInnerPatternAssuresTheVariableKeepsResults",
+    "LmdbScopedBindValuesPushSoundnessTest#valuesPushedThroughScopedBindWhenInnerPatternAssuresTheVariableKeepsResults"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp9/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryModelNormalizerScopedBindPushTest.txt\nSummary: tests=5, failures=3, errors=0, skipped=0, time=0.086s\nFailure: QueryModelNormalizerScopedBindPushTest.declinesPushWhenNestedFilterOverUnassuredOperandObservesPushedVariable: push must be declined although the group as a whole assures ?x ...\nReport: .../rdf4j-sail-memory/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.memory.ScopedBindValuesPushSoundnessTest.txt\nSummary: tests=4, failures=2, errors=0, skipped=0, time=0.795s\nFailure: ScopedBindValuesPushSoundnessTest.valuesIsNotPushedThroughScopedBindWhenInnerFilterObservesNotBound: expected: <[x=http://ex/a s=http://ex/s1 one=\"1\"^^xsd:integer, x=http://ex/b ...]> but was: <[]>\nReport: .../rdf4j-sail-lmdb/.../org.eclipse.rdf4j.sail.lmdb.LmdbScopedBindValuesPushSoundnessTest.txt\nSummary: tests=3, failures=0, errors=2 (NullPointerException in LmdbPipelinePlanCache for VALUES UNDEF, pre-existing 3.9; those two methods were moved to MemoryStore/algebra coverage)",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp9/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryModelNormalizerScopedBindPushTest.txt\nSummary: tests=5, failures=0, errors=0, skipped=0, time=0.217s\nReport: .../rdf4j-sail-memory/.../org.eclipse.rdf4j.sail.memory.ScopedBindValuesPushSoundnessTest.txt\nSummary: tests=4, failures=0, errors=0, skipped=0, time=0.412s\nReport: .../rdf4j-sail-lmdb/.../org.eclipse.rdf4j.sail.lmdb.LmdbScopedBindValuesPushSoundnessTest.txt\nSummary: tests=1, failures=0, errors=0, skipped=0, time=0.949s\nRe-verified after resume (verify logs 20260928T003830/20260928T004410/20260928T005449): Tests run: 5, Failures: 0 -- QueryModelNormalizerScopedBindPushTest; Tests run: 4, Failures: 0 -- ScopedBindValuesPushSoundnessTest; Tests run: 1, Failures: 0 -- LmdbScopedBindValuesPushSoundnessTest"
+  },
+  {
+   "id": "3.11.4 / 3.4.6",
+   "status": "fixed",
+   "rootCause": "SameTermFilterOptimizer decided from the filter argument alone: (a) the 'unbound variable -> EmptySet' shortcut used `filterArg.getBindingNames()`, so `FILTER EXISTS { ?s :q ?o FILTER(sameTerm(?x,:v1)) }` with an outer ?x (substituted per probe) and the LATERAL right-arg variant became Exists(EmptySet); (b) the critique's counterexample: when the outer variable is also bound inside the body it is assured by filterArg and renameVar could rename the OUTER variable away (`sameTerm(?o,?x)` -> body `?s :q ?o . ?s :r ?o` + Extension(x := ?o)), whose ExtensionIterator overwrites the substituted outer value in streaming/memoized probes -> spurious EXISTS true / wrong NOT EXISTS (mode dependent: materialized probes were correct); (c) branch regression: the VALUES guard used bsa.getAssuredBindingNames(), which on this branch drops names that are UNDEF in any row, so `VALUES ?y {UNDEF :w} ... FILTER(sameTerm(?x,?y))` renamed ?y although BSA rows cannot be renamed.",
+   "change": "New BindingScopeAnalysis.outerVisibleNames(node): ancestor walk that collects, at every enclosing SubQueryValueOperator boundary, the names visible to the tuple operator containing the sub-query (for a Filter: its argument's names, so body-only variables are not mistaken for correlated ones despite Filter.getBindingNames() adding the EXISTS names), plus Lateral left-arg names when the node is inside a Lateral right arg. SameTermFilterOptimizer: (a) the EmptySet shortcut treats filterArg possible \u222a outerVisible as possibly bound; (b) for two-variable sameTerm, an outer-visible variable is never renamed away: the inner one is renamed INTO the outer one, and when both are outer-visible the filter is kept (bindVar with a constant stays as is: the filter is retained and the SP keeps the substituted binding); (c) the VALUES guard uses bsa.getBindingNames() (possible names only block). Tests check results differentially against StrictEvaluationStrategy on the unoptimized algebra under default, streaming-correlated, memoized-correlated and materialized-hash EXISTS hints, plus MemoryStore and LMDB end-to-end.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp9/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/SameTermFilterOptimizer.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp9/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/BindingScopeAnalysis.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp9/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/SameTermFilterOptimizerScopeTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp9/core/sail/memory/src/test/java/org/eclipse/rdf4j/sail/memory/SameTermExistsScopeTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp9/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbSameTermExistsScopeTest.java"
+   ],
+   "testsAdded": [
+    "SameTermFilterOptimizerScopeTest#filterInsideExistsOnOuterVariableIsKept",
+    "SameTermFilterOptimizerScopeTest#filterInsideNotExistsOnOuterVariableIsKept",
+    "SameTermFilterOptimizerScopeTest#filterInsideLateralRightArgumentOnLeftVariableIsKept",
+    "SameTermFilterOptimizerScopeTest#filterInsideNestedScopedGroupInExistsIsKept",
+    "SameTermFilterOptimizerScopeTest#variableSharedWithOuterScopeInsideExistsKeepsResults",
+    "SameTermFilterOptimizerScopeTest#correlatedVariableIsNotRenamedAwayInsideExists",
+    "SameTermFilterOptimizerScopeTest#correlatedVariableIsNotRenamedAwayInsideExistsMirroredOperands",
+    "SameTermFilterOptimizerScopeTest#correlatedVariableIsNotRenamedAwayInsideNotExists",
+    "SameTermFilterOptimizerScopeTest#sameTermBetweenTwoCorrelatedVariablesInsideExistsIsKept",
+    "SameTermFilterOptimizerScopeTest#correlatedVariableIsNotRenamedAwayInsideLateralRightArgument",
+    "SameTermFilterOptimizerScopeTest#innerVariableIsRenamedIntoCorrelatedVariableInsideExists",
+    "SameTermFilterOptimizerScopeTest#variableBoundNowhereStillBecomesEmptySet",
+    "SameTermFilterOptimizerScopeTest#renamingIsDeclinedWhenValuesPossiblyBindsTheRenamedVariable",
+    "SameTermFilterOptimizerScopeTest#renamingStillHappensWhenNoValuesBindsTheRenamedVariable",
+    "SameTermExistsScopeTest (13 methods: EXISTS/NOT EXISTS/LATERAL/nested-group outer variable, shared variable not inlined, bound-nowhere EmptySet, VALUES UNDEF rename declined, correlated rename x5, positive rename guard)",
+    "LmdbSameTermExistsScopeTest (10 methods: same shapes on LmdbStore)"
+   ],
+   "preFixEvidence": "Original shortcut: .mvnf/workspaces/wp9/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.impl.SameTermFilterOptimizerScopeTest.txt Summary: tests=8, failures=6 (filterInsideNestedScopedGroupInExistsIsKept: SameTermFilterOptimizer changed results ... Filter Exists EmptySet ...); .../org.eclipse.rdf4j.sail.memory.SameTermExistsScopeTest.txt Summary: tests=7, failures=5 (sameTermOnOuterVariableInsideNestedGroupInExistsKeepsMatchingRow: expected <[s=http://ex/s1]> but was <[]>); .../org.eclipse.rdf4j.sail.lmdb.LmdbSameTermExistsScopeTest.txt Summary: tests=4, failures=3 (sameTermOnOuterVariableInsideLateralKeepsMatchingRow: expected <[s=http://ex/s1 o=http://ex/o1]> but was <[]>).\nCritique renameVar item (after the shortcut fix): SameTermFilterOptimizerScopeTest Summary: tests=14, failures=5 (correlatedVariableIsNotRenamedAwayInsideExists: SameTermFilterOptimizer changed results ... Filter Exists Extension Join ...; correlatedVariableIsNotRenamedAwayInsideLateralRightArgument: the LATERAL-visible ?x must not be renamed away); SameTermExistsScopeTest Summary: tests=13, failures=3 (sameTermBetweenInnerAndOuterVariableInsideExistsIsNotRenamedAway: expected <[]> but was <[s=http://ex/s1]>; ...InsideNotExists...: expected <[s=http://ex/s1]> but was <[]>; sameTermBetweenTwoOuterVariablesInsideExistsIsKept: expected <[s=http://ex/s1]> but was <[s=http://ex/s1, s=http://ex/s2]>); LmdbSameTermExistsScopeTest Summary: tests=10, failures=3 (same three).",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp9/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.impl.SameTermFilterOptimizerScopeTest.txt\nTests run: 14, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.582 s -- in org.eclipse.rdf4j.query.algebra.evaluation.impl.SameTermFilterOptimizerScopeTest\nReport: .../rdf4j-sail-memory/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.memory.SameTermExistsScopeTest.txt\nTests run: 13, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.368 s -- in org.eclipse.rdf4j.sail.memory.SameTermExistsScopeTest\nReport: .../rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbSameTermExistsScopeTest.txt\nTests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.972 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbSameTermExistsScopeTest"
+  }
+ ],
+ "suiteRuns": [
+  {
+   "selection": "core/queryalgebra/evaluation unit suite (post-fix)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp9 --threads 3 core/queryalgebra/evaluation --retain-logs",
+   "result": "tests=1754, failures=3, errors=1, skipped=0",
+   "reds": [
+    "MinusQueryEvaluationStepTest#spillFileIsRemovedWhenIterationIsExhausted / #spillFileIsRemovedWhenIterationIsClosedEarly: pre-existing/environmental (MinusQueryEvaluationStep untouched by this batch; identical failures in the wp4 worktree suite run on the same machine, wp4-b1-suites.log; test lists java.io.tmpdir for rdf4j-minus-*.spill and found none). A standalone rerun was queued (wp9-b1-rerun.log) but had not started when the structured output was forced.",
+    "OptimizerRuleCatalogTest#generatedDocumentationMatchesManifestAndResearchInputs: environmental - NoSuchFileException for papers2/papers/docs/sparql_query_rewrite_catalog.md; papers2/ is untracked in the main checkout (git status: ?? papers2/) so no detached worktree has it; identical in wp4.",
+    "PackedFrontierSubsetKernelContractTest#arbitraryWidthBushyDependentJoinContinuesRightRecipeUnderWholeLeftPrefix: 120 s preemptive timeout inside PackedWinnerTable.firstContinuation; the test drives PackedJoinEnumerator directly and never runs FilterOptimizer/SameTermFilterOptimizer/QueryModelNormalizerOptimizer; identical timeout in the concurrently running wp4 suite (two -T 3 suites on one machine) -> flaky-under-load / pre-existing; standalone rerun queued (wp9-b1-rerun.log), not yet executed at handoff."
+   ]
+  },
+  {
+   "selection": "core/sail/memory unit suite (post-fix)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp9 --threads 3 core/sail/memory --retain-logs",
+   "result": "tests=821, failures=0, errors=0, skipped=3",
+   "reds": []
+  },
+  {
+   "selection": "core/sail/lmdb unit suite (post-fix)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp9 --threads 3 core/sail/lmdb --retain-logs",
+   "result": "NOT COMPLETED - run in progress (log .mvnf/workspaces/wp9/logs/20260928T011248.890347Z-61440-a19d0400/verify.log, 85 report files written so far) when the harness forced the structured output; no Surefire summary seen. All three LMDB batch classes (LmdbFilterRelocationSoundnessTest 4/0, LmdbScopedBindValuesPushSoundnessTest 1/0, LmdbSameTermExistsScopeTest 10/0) and LmdbOptimizerPipelineTest (46/0) were green standalone.",
+   "reds": [
+    "unknown - suite still running at handoff; integrator should read the log above"
+   ]
+  },
+  {
+   "selection": "related classes standalone (post-fix): SameTermFilterOptimizerTest, FilterOptimizerTest, QueryModelNormalizerTest (core/queryalgebra/evaluation); QueryPlanRetrievalTest (core/sail/memory); LmdbOptimizerPipelineTest (core/sail/lmdb)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp9 --threads 3 <Class> --module <module> --retain-logs",
+   "result": "SameTermFilterOptimizerTest tests=3/0; FilterOptimizerTest tests=30/0; QueryModelNormalizerTest tests=7/0; QueryPlanRetrievalTest tests=28, failures=0, skipped=2; LmdbOptimizerPipelineTest tests=46/0",
+   "reds": []
+  }
+ ],
+ "filesTouchedOutsideOwnership": [],
+ "newFlagsOrConfig": [],
+ "crossWpNotes": [
+  "BindingScopeAnalysis (core/queryalgebra/evaluation optimizer package, @InternalUseOnly) now offers canPushInto, filterDependsOnlyOnAssured and outerVisibleNames for wp1 (LmdbBoundSimplifierOptimizer BOUND(?x)->false inside EXISTS has the same blind spot; LmdbFilterSimplifierOptimizer.makeOptionalBindingMandatory / LmdbNullRejectingOptionalSupport use right-arg possible names) and wp2 (PackedFilterRules:90-92 should mirror canPushInto bit-for-bit with an intersection mask rule; PackedLogicalRuleProgram MINUS->NOT EXISTS guard and addScalarDependencies).",
+  "3.11.2 removes the trigger for the LMDB null-rejecting OPTIONAL amplifier (Filter directly over LeftJoin) for the unsound shape without touching wp1 code; LmdbFilterRelocationSoundnessTest asserts results, not plan shape, because two placers (FilterOptimizer then the packed lattice) are involved on LMDB.",
+  "Critique correction adopted: on LMDB FilterOptimizer runs before the cascades planner (LmdbQueryOptimizerPipeline:259 vs :116-117), so the design's 'FilterOptimizer runs after join ordering in both pipelines' statement is false for LMDB; it does not affect the fix.",
+  "QueryPlanRetrievalTest (core/sail/memory) expectations changed: the previously asserted plan pushed FILTER(?c != ?d) into a join operand where ?d is only possibly bound; integrator should expect other explain-plan baselines (LMDB theme/estimate-audit suites) to keep such a filter at the Join instead of on a LeftJoin factor.",
+  "LMDB `VALUES ... UNDEF` still NPEs in LmdbPipelinePlanCache (review 3.9, plan-cache owner); until fixed, the 3.11.1 negative shapes cannot be run end-to-end on LmdbStore (covered on MemoryStore and at algebra level)."
+ ],
+ "followUps": [
+  "3.11.6 mode sweep / NoREC grammar: add `?s :p ?x FILTER EXISTS { ?s :q ?o . ?s :r ?x FILTER(sameTerm(?o,?x)) }` and its mirror as seeds (the algebra test already runs them under streaming-correlated, memoized-correlated and materialized-hash hints).",
+  "Remaining wp9 batches: 3.2.5 (packed) PackedFilterRules mask rule, 3.11.3 ScalarEvaluationEffects denylist, 3.9 builtinFunction()[20] (LmdbValueLookupOptimizer identity memo + plan-cache NOW() reuse per critique), 3.9 custom-aggregate DISTINCT triage (identify the four failing method names first, per critique), 3.11.6 differential run.",
+  "Formatter not run (integrator runs it); a few pre-existing-style long query-string literals (>120 cols) remain in the new tests."
+ ]
+}

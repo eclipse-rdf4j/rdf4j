@@ -155,6 +155,21 @@ public class UnionIteration<E> extends LookAheadIteration<E> implements IndexRep
 		return aggregateMetric(IndexReportingIterator::getSourceRowsFilteredActual);
 	}
 
+	@Override
+	public long getDistinctCursorSkipCountActual() {
+		return aggregateMetric(IndexReportingIterator::getDistinctCursorSkipCountActual);
+	}
+
+	@Override
+	public long getDistinctCursorSkipSeekCountActual() {
+		return aggregateMetric(IndexReportingIterator::getDistinctCursorSkipSeekCountActual);
+	}
+
+	@Override
+	public long getSkipAheadSeekCountActual() {
+		return aggregateMetric(IndexReportingIterator::getSkipAheadSeekCountActual);
+	}
+
 	private long aggregateMetric(ToLongFunction<IndexReportingIterator> metricSupplier) {
 		long total = 0L;
 		boolean found = false;

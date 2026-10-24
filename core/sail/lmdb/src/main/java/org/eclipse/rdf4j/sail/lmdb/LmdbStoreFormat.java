@@ -73,6 +73,27 @@ public final class LmdbStoreFormat {
 			requireEmptyDirectory(directory);
 			return forNewStore(config);
 		}
+		LmdbStoreFormat format = resolveDictionaryCapabilities(properties, config);
+		File marker = new File(directory, LmdbStore.CORE_LITERAL_REFERENCE_MARKER_FILE);
+		if (format.isLegacy()) {
+			if (marker.exists()) {
+				throw new SailException("Compatibility marker is inconsistent with LmdbStore format 2");
+			}
+			return format;
+		}
+		try {
+			if (!marker.isFile()
+					|| !LmdbStore.CORE_LITERAL_REFERENCE_MARKER.equals(Files.readString(marker.toPath()))) {
+				throw new SailException("Writer capabilities and LmdbStore compatibility marker do not agree");
+			}
+		} catch (IOException exception) {
+			throw new SailException("Unable to read LmdbStore compatibility marker", exception);
+		}
+		return format;
+	}
+
+	/** Validates the same persisted writer identity before a standalone dictionary opens its native catalog. */
+	static LmdbStoreFormat resolveDictionaryCapabilities(StoreProperties properties, LmdbStoreConfig config) {
 		String encodedVersion = properties.getVersion();
 		int version;
 		try {
@@ -100,7 +121,6 @@ public final class LmdbStoreFormat {
 			throw new SailException("This store was created with literal inlining " + inline
 					+ " and must be opened with its original setting.");
 		}
-		File marker = new File(directory, LmdbStore.CORE_LITERAL_REFERENCE_MARKER_FILE);
 		if (version == LEGACY_VERSION) {
 			for (String key : new String[] { StoreProperties.NUMERIC_ID_ENCODING_KEY,
 					StoreProperties.LITERAL_REFERENCE_ENCODING_KEY, StoreProperties.CANONICAL_LANGUAGE_TAGS_KEY,
@@ -109,9 +129,6 @@ public final class LmdbStoreFormat {
 					throw new SailException("Capability " + key + " is inconsistent with LmdbStore format 2");
 				}
 			}
-			if (marker.exists()) {
-				throw new SailException("Compatibility marker is inconsistent with LmdbStore format 2");
-			}
 			// Historical writers did not record this setting. The caller supplies its original configuration;
 			// persisting an assumption would mislabel stores created with inlining disabled.
 			return new LmdbStoreFormat(LEGACY_VERSION, config.getInlineLiterals(), false, false, false, false);
@@ -119,14 +136,6 @@ public final class LmdbStoreFormat {
 		if (inline == null || !properties.usesCoreDatatypeLiteralReferences()
 				|| !properties.usesCanonicalLanguageTags() || !properties.usesZeroFractionDateTimeIds()) {
 			throw new SailException("Incomplete writer capabilities for LmdbStore format 6");
-		}
-		try {
-			if (!marker.isFile()
-					|| !LmdbStore.CORE_LITERAL_REFERENCE_MARKER.equals(Files.readString(marker.toPath()))) {
-				throw new SailException("Writer capabilities and LmdbStore compatibility marker do not agree");
-			}
-		} catch (IOException exception) {
-			throw new SailException("Unable to read LmdbStore compatibility marker", exception);
 		}
 		return fromProperties(properties, config);
 	}

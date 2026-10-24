@@ -15,32 +15,50 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
+import java.util.HashSet;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
+import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Graph;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.Intersection;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
+import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
+import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 /**
  * Utility methods for {@link TupleExpr} objects.
@@ -64,11 +82,12 @@ public class TupleExprs {
 	}
 
 	/**
-	 * Whether a local operand contains a GRAPH boundary and therefore must receive invocation input rather than a
-	 * sibling's produced bindings. Remote SERVICE bodies have their own scope and are not inspected.
+	 * Whether a local operand contains a GRAPH boundary, including persistent input authority retained by a physical
+	 * lowering, and therefore must receive invocation input rather than a sibling's produced bindings. Remote SERVICE
+	 * bodies have their own scope and are not inspected.
 	 */
 	public static boolean containsGraphBoundary(TupleExpr expression) {
-		if (expression instanceof Graph) {
+		if (expression instanceof Graph || expression.isIndependentInputScope()) {
 			return true;
 		}
 		if (expression instanceof Service) {
@@ -100,6 +119,370 @@ public class TupleExprs {
 	 */
 	public static boolean isEvaluatedExtensionElement(ExtensionElem element) {
 		return !(element.getExpr() instanceof AggregateOperator);
+	}
+
+	/**
+	 * The projection evaluator preserves the complete incoming row only below another projection. A projection with no
+	 * such ancestor emits a new result frame, regardless of the parser's subquery flag.
+	 */
+	public static boolean projectionIncludesParentBindings(Projection projection) {
+		return hasEnclosingProjection(projection, false);
+	}
+
+	/** Shared live or detached projection provenance, independent of the evaluation-context implementation. */
+	public static boolean hasEnclosingProjection(QueryModelNode node, boolean detachedEnclosingProjection) {
+		if (detachedEnclosingProjection) {
+			return true;
+		}
+		for (QueryModelNode ancestor = node.getParentNode(); ancestor != null; ancestor = ancestor
+				.getParentNode()) {
+			if (ancestor instanceof Projection || ancestor instanceof MultiProjection) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Whether a closing projection locally produces a sibling's binding. Such a result is a separate relation: its
+	 * produced values must be checked by join compatibility after evaluation, rather than overwrite a sibling row.
+	 * Ordinary Extension row transforms have no closing projection and retain their sequential assignment contract.
+	 * Aliases map source production to exported targets; transparent tuple wrappers preserve that provenance. An opaque
+	 * source below a closing projection cannot prove that parameterizing the projection is safe.
+	 */
+	public static boolean requiresIndependentProjectionInput(TupleExpr expression, Set<String> siblingNames) {
+		return requiresIndependentProjectionInput(expression, siblingNames, false);
+	}
+
+	/** The same output-frame proof when an enclosing projection was detached for evaluation. */
+	public static boolean requiresIndependentProjectionInput(TupleExpr expression, Set<String> siblingNames,
+			boolean detachedEnclosingProjection) {
+		if (siblingNames.isEmpty()) {
+			return false;
+		}
+		return independentlyProducedProjectionBindingNames(expression, detachedEnclosingProjection).stream()
+				.anyMatch(siblingNames::contains);
+	}
+
+	/** Locally produced closing-projection outputs, with aliases and transparent wrappers preserved. */
+	public static Set<String> independentlyProducedProjectionBindingNames(TupleExpr expression) {
+		return independentlyProducedProjectionBindingNames(expression, false);
+	}
+
+	private static Set<String> independentlyProducedProjectionBindingNames(TupleExpr expression,
+			boolean detachedEnclosingProjection) {
+		if (expression instanceof Projection projection && !hasEnclosingProjection(projection,
+				detachedEnclosingProjection)) {
+			Set<String> local = locallyProducedNames(projection.getArg());
+			Set<String> result = new HashSet<>();
+			for (ProjectionElem element : projection.getProjectionElemList().getElements()) {
+				String target = element.getProjectionAlias().orElse(element.getName());
+				if (local == null || local.contains(element.getName())) {
+					result.add(target);
+				}
+			}
+			return Set.copyOf(result);
+		}
+		if (expression instanceof Service || expression instanceof SubQueryValueOperator) {
+			return Set.of();
+		}
+		Set<String> result = new HashSet<>();
+		for (TupleExpr child : getChildren(expression)) {
+			result.addAll(independentlyProducedProjectionBindingNames(child, detachedEnclosingProjection));
+		}
+		return Set.copyOf(result);
+	}
+
+	/** Returns declared local production without inspecting VALUES rows; null denotes opaque provenance. */
+	private static Set<String> locallyProducedNames(TupleExpr expression) {
+		if (!expression.getClass().getPackageName().equals(TupleExpr.class.getPackageName())) {
+			return null;
+		}
+		if (expression instanceof SingletonSet || expression instanceof EmptySet) {
+			return Set.of();
+		}
+		if (expression instanceof BindingSetAssignment assignment) {
+			return assignment.hasRepeatableBindingSets() ? assignment.getPossibleBindingNames() : null;
+		}
+		if (expression instanceof Projection projection) {
+			return projectedLocalNames(locallyProducedNames(projection.getArg()), projection.getProjectionElemList());
+		}
+		if (expression instanceof MultiProjection projection) {
+			Set<String> child = locallyProducedNames(projection.getArg());
+			if (child == null) {
+				return null;
+			}
+			Set<String> names = new HashSet<>();
+			for (ProjectionElemList elements : projection.getProjections()) {
+				names.addAll(projectedLocalNames(child, elements));
+			}
+			return names;
+		}
+		if (expression instanceof Extension extension) {
+			Set<String> child = locallyProducedNames(extension.getArg());
+			if (child == null) {
+				return null;
+			}
+			Set<String> names = new HashSet<>(child);
+			for (ExtensionElem element : extension.getElements()) {
+				if (isEvaluatedExtensionElement(element)) {
+					names.add(element.getName());
+				}
+			}
+			return names;
+		}
+		if (expression instanceof Difference difference) {
+			return locallyProducedNames(difference.getLeftArg());
+		}
+		if (expression instanceof Group) {
+			return expression.getBindingNames();
+		}
+		if (expression instanceof UnaryTupleOperator unary) {
+			return locallyProducedNames(unary.getArg());
+		}
+		if (expression instanceof BinaryTupleOperator binary) {
+			Set<String> left = locallyProducedNames(binary.getLeftArg());
+			Set<String> right = locallyProducedNames(binary.getRightArg());
+			if (left == null || right == null) {
+				return null;
+			}
+			Set<String> names = new HashSet<>(left);
+			names.addAll(right);
+			return names;
+		}
+		return expression.getBindingNames();
+	}
+
+	private static Set<String> projectedLocalNames(Set<String> child, ProjectionElemList elements) {
+		if (child == null) {
+			return null;
+		}
+		Set<String> result = new HashSet<>();
+		for (ProjectionElem element : elements.getElements()) {
+			if (child.contains(element.getName())) {
+				result.add(element.getProjectionAlias().orElse(element.getName()));
+			}
+		}
+		return result;
+	}
+
+	/** The declared LATERAL parameters still visible through every intervening projection source list. */
+	public static Set<String> lateralSubstitutedNames(QueryModelNode node) {
+		Set<String> substituted = new LinkedHashSet<>();
+		Set<String> visible = null;
+		QueryModelNode child = node;
+		for (QueryModelNode parent = node.getParentNode(); parent != null; parent = parent.getParentNode()) {
+			if (parent instanceof Lateral lateral && lateral.getRightArg() == child) {
+				for (String name : lateral.getRightInputBindingNames()) {
+					if (visible == null || visible.contains(name)) {
+						substituted.add(name);
+					}
+				}
+			} else if (parent instanceof Projection projection) {
+				Set<String> sources = projectionSources(projection.getProjectionElemList());
+				if (visible == null) {
+					visible = sources;
+				} else {
+					visible.retainAll(sources);
+				}
+			} else if (parent instanceof MultiProjection projection) {
+				Set<String> sources = new HashSet<>();
+				for (ProjectionElemList elements : projection.getProjections()) {
+					sources.addAll(projectionSources(elements));
+				}
+				if (visible == null) {
+					visible = sources;
+				} else {
+					visible.retainAll(sources);
+				}
+			}
+			child = parent;
+		}
+		return Set.copyOf(substituted);
+	}
+
+	private static Set<String> projectionSources(ProjectionElemList elements) {
+		Set<String> result = new HashSet<>();
+		for (ProjectionElem element : elements.getElements()) {
+			result.add(element.getName());
+		}
+		return result;
+	}
+
+	/**
+	 * The whitelist used by a real or prospective FILTER condition. Direct condition reads of a non-scope-changing
+	 * filter remain visible, including request parameters; implicit columns of an inner VALUES relation do not acquire
+	 * sibling bindings. EXISTS bodies and binding-assignment substitution retain their real input frame separately.
+	 */
+	public static Set<String> filterConditionBindingNames(ValueExpr condition, boolean scopeChange,
+			TupleExpr argument, Function<TupleExpr, Set<String>> bindingNames) {
+		Set<String> retained = new LinkedHashSet<>(declaredOutputBindingNames(argument, bindingNames));
+		retained.addAll(bindingNames instanceof DeclaredOutputBindings memo
+				? memo.lateralSubstitutions(argument)
+				: lateralSubstitutedNames(argument));
+		if (!scopeChange) {
+			retained.addAll(VarNameCollector.process(condition));
+		}
+		return Set.copyOf(retained);
+	}
+
+	/**
+	 * Declared tuple outputs, excluding scalar subquery locals that legacy Filter#getBindingNames also reports. These
+	 * are names, not a proof of actual row production or assurance; opaque tuple operators retain their own contract.
+	 */
+	public static Set<String> declaredOutputBindingNames(TupleExpr expression,
+			Function<TupleExpr, Set<String>> bindingNames) {
+		if (bindingNames instanceof DeclaredOutputBindings memo) {
+			return memo.apply(expression);
+		}
+		return declaredOutputBindingNames(expression,
+				child -> declaredOutputBindingNames(child, bindingNames), bindingNames);
+	}
+
+	/** Invocation-local memo of this same derivation; clear it after structural or header rewrites. */
+	public static final class DeclaredOutputBindings implements Function<TupleExpr, Set<String>> {
+		private final Function<TupleExpr, Set<String>> leafNames;
+		private final Map<TupleExpr, Set<String>> names = new IdentityHashMap<>();
+		private final Map<TupleExpr, Set<String>> substitutions = new IdentityHashMap<>();
+		private final Map<TupleExpr, Boolean> subqueries = new IdentityHashMap<>();
+
+		public DeclaredOutputBindings(Function<TupleExpr, Set<String>> leafNames) {
+			this.leafNames = leafNames;
+		}
+
+		@Override
+		public Set<String> apply(TupleExpr expression) {
+			Set<String> found = names.get(expression);
+			if (found == null) {
+				found = Set.copyOf(declaredOutputBindingNames(expression, this, leafNames));
+				names.put(expression, found);
+			}
+			return found;
+		}
+
+		public void clear() {
+			names.clear();
+			substitutions.clear();
+			subqueries.clear();
+		}
+
+		public Set<String> lateralSubstitutions(TupleExpr expression) {
+			return substitutions.computeIfAbsent(expression, TupleExprs::lateralSubstitutedNames);
+		}
+
+		public boolean isPartOfSubQuery(TupleExpr expression) {
+			return subqueries.computeIfAbsent(expression, TupleExprs::isPartOfSubQuery);
+		}
+	}
+
+	private static Set<String> declaredOutputBindingNames(TupleExpr expression,
+			Function<TupleExpr, Set<String>> childNames, Function<TupleExpr, Set<String>> leafNames) {
+		if (!expression.getClass().getPackageName().equals(TupleExpr.class.getPackageName())) {
+			return leafNames.apply(expression);
+		}
+		if (expression instanceof Filter filter) {
+			return childNames.apply(filter.getArg());
+		}
+		if (expression instanceof Extension extension) {
+			Set<String> names = new HashSet<>(childNames.apply(extension.getArg()));
+			for (ExtensionElem element : extension.getElements()) {
+				names.add(element.getName());
+			}
+			return Set.copyOf(names);
+		}
+		if (expression instanceof Projection || expression instanceof MultiProjection || expression instanceof Group) {
+			return leafNames.apply(expression);
+		}
+		if (expression instanceof Difference difference) {
+			return childNames.apply(difference.getLeftArg());
+		}
+		if (expression instanceof UnaryTupleOperator unary) {
+			return childNames.apply(unary.getArg());
+		}
+		if (expression instanceof BinaryTupleOperator binary) {
+			Set<String> names = new HashSet<>(childNames.apply(binary.getLeftArg()));
+			Set<String> right = childNames.apply(binary.getRightArg());
+			if (expression instanceof Intersection) {
+				names.retainAll(right);
+			} else {
+				names.addAll(right);
+			}
+			return Set.copyOf(names);
+		}
+		return leafNames.apply(expression);
+	}
+
+	/** Complete standard-algebra observations, including names stored outside Var nodes. Opaque inputs stay unknown. */
+	public record ConditionBindingDomain(Set<String> names, boolean known) {
+	}
+
+	public static ConditionBindingDomain conditionBindingDomain(ValueExpr condition) {
+		return bindingObservationDomain(condition);
+	}
+
+	public static ConditionBindingDomain tupleBindingObservationDomain(TupleExpr expression) {
+		return bindingObservationDomain(expression);
+	}
+
+	private static ConditionBindingDomain bindingObservationDomain(QueryModelNode expression) {
+		Set<String> names = new HashSet<>();
+		boolean[] known = { true };
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node instanceof Var var && !var.hasValue() && var.getName() != null) {
+					names.add(var.getName());
+				} else if (node instanceof BindingSetAssignment assignment) {
+					names.addAll(assignment.getDeclaredBindingNames());
+					known[0] &= assignment.getBindingSets() == null || assignment.hasRepeatableBindingSets();
+				} else if (node instanceof ProjectionElem element) {
+					names.add(element.getName());
+					element.getProjectionAlias().ifPresent(names::add);
+				} else if (node instanceof ExtensionElem element) {
+					names.add(element.getName());
+				} else if (node instanceof Group group) {
+					names.addAll(group.getGroupBindingNames());
+				}
+				super.meetNode(node);
+			}
+
+			@Override
+			public void meetOther(QueryModelNode node) {
+				known[0] = false;
+				super.meetOther(node);
+			}
+		});
+		return new ConditionBindingDomain(Set.copyOf(names), known[0]);
+	}
+
+	/** Identity is safe only when a complete observation domain fits the already derived condition frame. */
+	public static boolean conditionFrameContainsAllObservations(ConditionBindingDomain observed,
+			Set<String> retainedNames) {
+		return observed.known() && retainedNames.containsAll(observed.names());
+	}
+
+	public static boolean isPartOfSubQuery(QueryModelNode node) {
+		for (QueryModelNode current = node; current != null; current = current.getParentNode()) {
+			if (current instanceof SubQueryValueOperator) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	public static boolean containsSubQueryValueOperator(ValueExpr condition) {
+		boolean[] found = { false };
+		condition.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node instanceof SubQueryValueOperator) {
+					found[0] = true;
+				} else if (!found[0]) {
+					super.meetNode(node);
+				}
+			}
+		});
+		return found[0];
 	}
 
 	/**

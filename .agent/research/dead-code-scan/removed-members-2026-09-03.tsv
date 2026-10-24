@@ -1,0 +1,667 @@
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel	estimateFilterCost(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinOrderPlanner$FilterConstraint;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$CostContext;)Ljava/util/Optional;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$CostContext	forOptimization([Ljava/lang/String;JDDZZLjava/util/Map;Ljava/util/List;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$CostContext;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$EstimationTier	isDecisionDriven()Z	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$FactorCostEstimate	getCostScope()Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostScope;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinOrderPlanner$JoinOrderPlan	trustedImmutable(Ljava/util/List;DDLjava/util/List;Ljava/util/Map;Ljava/util/Map;Ljava/util/List;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinOrderPlanner$JoinOrderPlan;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinOrderPlanner$JoinOrderPlan	withAdditionalSummaryStringMetrics(Ljava/util/Map;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinOrderPlanner$JoinOrderPlan;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinOrderPlanner$PlanStep	trustedImmutable(Ljava/util/Set;DDDLjava/util/Map;Ljava/util/Map;Ljava/util/List;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinOrderPlanner$PlanStep;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingMask	of([J)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingMask;	static
+DEAD-CTOR	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingProfile	<init>(Ljava/util/Map;Ljava/util/Map;Ljava/util/Map;Ljava/util/Set;Ljava/util/Map;Ljava/lang/String;)V	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingProfile	fromEstimate(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/StatisticsEstimate;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingProfile;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingProfile	statisticalFacts()Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingProfile;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingProfile	satisfies(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingProfile;)Z	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingProfile	withAdditionalFiniteDomains(Ljava/util/Map;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingProfile;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingProfile	toBagEstimate(DDDDLjava/lang/String;Ljava/util/Map;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/BagEstimate;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingUniverse	validationOverlay()Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingUniverse;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingUniverse	matches(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingMask;Ljava/util/Collection;)Z	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CardinalityEstimate	bounded(DDDLjava/lang/String;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CardinalityEstimate;	public static
+DEAD-CTOR	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CascadesPlan	<init>(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationSearchStatus;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PlanProvenance;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PlanningMetrics;)V	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CascadesPlanProvenanceAnnotator	sanitize(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;)V	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CascadesPlanner	optimize(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache$Context;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CascadesPlan;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostScope	forInputContext(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostScope;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector	from(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$EstimateVector;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector	from(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector	cardinalityEstimate(Ljava/lang/String;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CardinalityEstimate;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector	withRows(D)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector	withWorkRows(D)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector	withPageWalkRows(D)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector	withMemoryRows(D)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector	withOutputEstimate(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector	forEarlyStop(J)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector	qError()D	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector	feedbackConfidence()D	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector	robust()Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector	dominates(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector;)Z	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector	exceeds(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector;)Z	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateSnapshot	withRuleCost(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateSnapshot;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateSnapshot	withDoubleMetrics(Ljava/util/Map;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateSnapshot;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateSnapshot	objectiveScore()D	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector	fromFactorVector(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$EstimateVector;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector	union(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector;Ljava/lang/String;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector	join(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector;DLjava/lang/String;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector	withWorkRows(DLjava/lang/String;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector	withMetric(Ljava/lang/String;D)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector;	public
+WRITEONLY-FIELD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector	ZERO Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector;	public static final
+WRITEONLY-FIELD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector	ONE Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector;	public static final
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/FiniteDomainFact	valueSet()Ljava/util/Set;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/FiniteDomainFact	provenance()Ljava/lang/String;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/FiniteDomainFact	asUpperBound(Ljava/lang/String;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/FiniteDomainFact;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/FiniteDomainFact	withAssuredBound(ZLjava/lang/String;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/FiniteDomainFact;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/FiniteRelationContract	from(Lorg/eclipse/rdf4j/query/algebra/BindingSetAssignment;)Ljava/util/Optional;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/FiniteRelationContract	variables()Ljava/util/List;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/FiniteRelationContract	rows()Ljava/util/List;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/FiniteRelationContract	rowCount()I	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext	fromProfile(DLjava/util/Collection;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingProfile;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext;	static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext	isNone()Z	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext	invocationRows()D	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext	withoutInvocationCardinality()Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext	assuredBindingNames()Ljava/util/Set;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext	finiteBindingValues(Ljava/util/Collection;)Ljava/util/Map;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext	distinctBindings(Ljava/util/Collection;)Ljava/util/OptionalDouble;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext	restrictToConnected(Ljava/util/Collection;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext$ExactRelation	identity()Ljava/lang/String;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext$FiniteDomain	stronger(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext$FiniteDomain;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext$FiniteDomain;	
+DEAD-CTOR	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/MaterializeTupleExpr	<init>()V	public
+DEAD-CTOR	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal	<init>(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties;Ljava/lang/String;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal$CostPolicy;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector;Ljava/util/Set;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal$SearchMode;JI)V	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal	forRoot(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties;Lorg/eclipse/rdf4j/query/algebra/TupleExpr;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal	forGroupCostBound(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal	withRowGoalPreservingSemanticScope(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal$RowGoal;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal	withoutRowGoal()Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal	withResultRowLimit(JZ)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal	withEarlyStopAllowed(Z)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal	withSemanticScope(Ljava/lang/String;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal	withEstimationTier(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$EstimationTier;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal	withCostPolicy(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal$CostPolicy;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal	normalized(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingUniverse;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal	excludes(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties;)Z	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal	expired()Z	public
+DEAD-CONST	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal	SET_SEMANTICS Ljava/lang/String;	public static final
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal$RowGoal	hasFiniteLimit()Z	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationSearchStatus	of(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationCompleteness;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationSearchStatus;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationSearchStatus	withCompleteness(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationCompleteness;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationSearchStatus;	
+DEAD-CTOR	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties	<init>(Ljava/util/List;Ljava/util/Set;Ljava/lang/String;Ljava/util/Set;Ljava/util/Set;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties$Materialization;Ljava/lang/String;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties$DuplicateBehavior;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties$ObservationOrder;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties$InputConsumption;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingProfile;)V	public
+DEAD-CTOR	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties	<init>(Ljava/util/List;Ljava/util/Set;Ljava/lang/String;Ljava/util/Set;Ljava/util/Set;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties$Materialization;Ljava/lang/String;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties$DuplicateBehavior;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties$ObservationOrder;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingProfile;)V	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties	missingRequirements(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingUniverse;)Ljava/util/List;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties	withAccessPath(Ljava/lang/String;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties	withDistinctVars(Ljava/util/Set;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties	withBoundVars(Ljava/util/Set;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties	withInputBoundVars(Ljava/util/Set;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties	materialized()Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties	withDuplicateBehavior(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties$DuplicateBehavior;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties	withObservationOrder(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties$ObservationOrder;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties	withInputConsumption(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties$InputConsumption;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties	withAppliedFiniteRelations(Ljava/util/Set;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties	withBindingProfile(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingProfile;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties	restrictOutputTo(Ljava/util/Set;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties	restrictOutputTo(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingMask;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingUniverse;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PlanProvenance	withRejectedAlternatives(Ljava/util/List;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PlanProvenance;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PlanProvenance	withInputs(Ljava/util/List;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PlanProvenance;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PlanProvenance	withProofs(Ljava/util/List;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PlanProvenance;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PlanProvenance	withApproximation(ZLjava/lang/String;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PlanProvenance;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PlanningMetrics	totalNanos()J	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/QErrorInterval	scale(DLjava/lang/String;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/QErrorInterval;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/QErrorInterval	merge(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/QErrorInterval;Ljava/lang/String;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/QErrorInterval;	public
+WRITEONLY-FIELD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/QErrorInterval	UNKNOWN Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/QErrorInterval;	public static final
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RdfStatisticsProvider	union(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/StatisticsEstimate;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/StatisticsEstimate;)Ljava/util/Optional;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RdfStatisticsProvider	leftJoin(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/StatisticsEstimate;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/StatisticsEstimate;Ljava/util/Set;)Ljava/util/Optional;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RdfStatisticsProvider	minus(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/StatisticsEstimate;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/StatisticsEstimate;Ljava/util/Set;)Ljava/util/Optional;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RdfStatisticsProvider	distinct(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/StatisticsEstimate;Ljava/util/Set;)Ljava/util/Optional;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RdfStatisticsProvider	joinFrequencyInnerProduct(Lorg/eclipse/rdf4j/query/algebra/StatementPattern;Lorg/eclipse/rdf4j/query/algebra/StatementPattern;Ljava/lang/String;Ljava/util/Set;)Ljava/util/Optional;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RdfStatisticsProvider	bridgePath(Ljava/util/List;Ljava/lang/String;Ljava/util/Set;)Ljava/util/Optional;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RdfStatisticsProvider	characteristicSetStar(Ljava/util/List;Ljava/util/Set;)Ljava/util/Optional;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RdfStatisticsProvider	shapeTypeAware(Lorg/eclipse/rdf4j/query/algebra/StatementPattern;Ljava/util/Set;Ljava/util/Set;)Ljava/util/Optional;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RdfStatisticsProvider	propertyPathNodePairs(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;Ljava/util/Set;)Ljava/util/Optional;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RdfStatisticsProvider	refineForDecision(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RdfStatisticsProvider$EstimationDecision;)Ljava/util/Optional;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RdfStatisticsProvider	feedbackCorrection(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/StatisticsEstimate;)Ljava/util/Optional;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RdfStatisticsProvider	from(Lorg/eclipse/rdf4j/query/algebra/evaluation/impl/EvaluationStatistics;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RdfStatisticsProvider;	public static
+WRITEONLY-FIELD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RdfStatisticsProvider	EMPTY Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RdfStatisticsProvider;	public static final
+DEAD-CTOR	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RdfStatisticsProvider$EstimationDecision	<init>(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;Ljava/util/Set;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/StatisticsEstimate;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector;Ljava/lang/String;)V	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RdfStatisticsProvider$EvaluationStatisticsAdapter	statementPattern(Lorg/eclipse/rdf4j/query/algebra/StatementPattern;Ljava/util/Set;)Ljava/util/Optional;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RdfStatisticsProvider$EvaluationStatisticsAdapter	characteristicSetStar(Ljava/util/List;Ljava/util/Set;)Ljava/util/Optional;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RdfStatisticsProvider$EvaluationStatisticsAdapter	propertyPathNodePairs(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;Ljava/util/Set;)Ljava/util/Optional;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RdfStatisticsProvider$EvaluationStatisticsAdapter	feedbackCorrection(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/StatisticsEstimate;)Ljava/util/Optional;	public
+DEAD-CTOR	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RejectedAlternative	<init>(ILjava/lang/String;Ljava/lang/String;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector;)V	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RewriteSafety$Builder	preservedVisibleVars(Z)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RewriteSafety$Builder;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RewriteSafety$Builder	preservedErrors(Z)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RewriteSafety$Builder;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RewriteSafety$Builder	preservedGraphScope(Z)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RewriteSafety$Builder;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RuleApplicabilityResult	reset()V	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RuleApplicabilityResult	setRejected(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RuleApplicabilityResult$Status;IIJ)V	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RuleApplicabilityResult	reasonId()I	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RuleApplicabilityResult	affectedFactMask()J	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/StatisticsEstimate	exact(DLjava/lang/String;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/StatisticsEstimate;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/StatisticsEstimate	withMetric(Ljava/lang/String;D)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/StatisticsEstimate;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedBindingFlowArena	proofSetId(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedBindingFlowArena	firstConsumerId(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedBindingFlowArena	nextConsumerId(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedBindingFlowArena	consumerExpressionId(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedBindingFlowArena	consumerKind(I)B	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCandidateArena	deliveredPropertyId(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCandidateArena	evidenceStateId(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCandidateArena	parentCandidateId(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCandidateArena	implementationId(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCandidateArena	objectiveScore(I)D	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCascadesPlanner	compute(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQuery;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedSearchBudget;ZLorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCostSession;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCostModel;JJZI)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCascadesPlanner$Computation;	private static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedContinuationKeyArena	evidenceStateId(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedContinuationKeyArena	retainedBytes()J	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCostContext	reset(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedEvidenceContext;)V	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCostDimensionRegistry	dimensions()Ljava/util/List;	static
+DEAD-CONST	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCostDimensionRegistry	SCHEMA_EPOCH I	static final
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCostEstimate	copyPhysicalCostFrom(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCostEstimate;)V	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCostEstimate	setCostEventTelemetry(ILjava/lang/String;JDJJ)V	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCostVectorArena	setBuilderUnknown(I)V	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCostVectorArena	size()I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCostVectorArena	retainedBytes()J	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCostVectorArena	requiredBytesForCapacity(I)J	static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCostingReplay$Result	eventOutputRows(I)D	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCostingTrace	withoutDetachedEvidence()Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCostingTrace;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDecisionCertificate	candidateContinuationLogicalCell(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDecisionCertificate	candidateContinuationDeliveredProperty(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDecisionCertificate	candidateContinuationRequiredInput(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDecisionCertificate	candidateContinuationSemanticScope(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDecisionCertificate	candidateContinuationCorrelationScope(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDecisionCertificate	candidateContinuationBindingShape(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDecisionCertificate	candidateContinuationOrderIdentity(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDecisionCertificate	candidateContinuationEvidenceLineage(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDecisionCertificate	candidateContinuationEvidenceDisposition(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDecisionCertificate	candidateContinuationEvidenceGuarantee(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDecisionCertificate	withoutDetachedEvidence()Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDecisionCertificate;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedIncumbentSearch	propagateChangedInputs(II)I	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedIntSequenceInterner	size()I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedJoinEnumerator	offerCanonicalCorrelatedPredicate(II)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedJoinEnumerator	emitScheduledFilterOrder(II[II)I	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedJoinEnumerator	emitScheduledFilterOrder(II[IID)I	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedJoinEnumerator	offerScheduledFilter(II[I[DI)I	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedJoinEnumerator	offerScheduledFilter(II[I[DIIJ)I	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedJoinEnumerator	emitSelectedOrder(I[IZJ)I	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedJoinEnumerator	refinePhysicalJoinCandidate(I[IIDDDDDIIDLorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCostEstimate;)D	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedJoinEnumerator	populateDenseCandidatePrefix([II[I[I[I[D[I[D)I	private static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedJoinEnumerator	populateDenseCandidatePrefix([II[I[I[I[D[I[DI)I	private static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedJoinEnumerator	populateSparsePrefix([ILorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedLongSubsetTable;I[I)I	private static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedJoinEnumerator	optimizeGreedy(I[I)I	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedJoinEnumerator	factorWork(DLorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCostEstimate;)D	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedJoinEnumerator$DenseJoinStates	append(IIIIDDDIIIIII)I	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedJoinEnumerator$DenseJoinStates	append(IIIIDDDIIIIIIII)I	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedJoinEnumerator$WideJoinStates	addSingleton(IIIDDI)I	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedJoinEnumerator$WideJoinStates	addContextualSingleton(IIIDDDIIII)I	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedJoinEnumerator$WideJoinStates	appendWithExactContinuationIdentity(IIIIIDDDIIII)I	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedJoinEnumerator$WideJoinStates	append(IIIIIDDDIIIII)I	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedJoinEnumerator$WideJoinStates	appendContextual(IIIIIDDDIIIIIII)I	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedJoinEnumerator$WideJoinStates	findEquivalent(IIIIIIDDDI)I	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedJoinEnumerator$WideJoinStates	findEquivalentWithExactContinuationIdentity(IIIIIIDDDII)I	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedJoinEnumerator$WideJoinStates	findEquivalentContextual(IIIIDDDI)I	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedJoinHypergraph	edgeLeftNodeSet(ILorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedNodeSetArena;)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedJoinHypergraph	edgeRightNodeSet(ILorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedNodeSetArena;)I	
+DEAD-CTOR	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedLongSubsetTable	<init>(ILorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedSearchBudget;)V	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedLongSubsetTable	offer(JDDIIIJ)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedLongSubsetTable	offerHashed(JJDDIIIJ)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedLongSubsetTable	offerHashed(JJDDDIIIJ)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedLongSubsetTable	findEquivalentRetained(JIIIIDDDII)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedLongSubsetTable	preferenceRank(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedMaskInterner	size()I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedMemo	internMask([JI)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedMemo	propertySatisfies(II)Z	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedMemo	winnerWorkRows(I)D	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedMemo	physicalMetadataHasContextualOutputRows(I)Z	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedMemo	physicalMetadataHasComponentOutputRows(I)Z	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedMemo	planQualityCandidateFingerprint(I)J	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedMemo	planQualityCandidateCost(I)D	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedMemo	planQualityComparisonCost(I)D	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedMemo	extractPlanRecipe(ILorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDependentPlans;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanRecipe;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedMemo	firstPhysicalExpression(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedMemo	nextPhysicalExpression(I)I	
+DEAD-CTOR	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedNodeMetadataArena	<init>()V	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedNodeMetadataArena	offerRelationExactCover(II)V	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedNodeSetArena	wordCount()I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedNodeSetArena	size()I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedNodeSetArena	retainedBytes()J	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedOptimizationDecision	candidateDiversityKey(I)J	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedOptimizationDecision	championRecipe()Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanRecipe;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedOptimizerRule	descriptorId()I	public abstract
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedOptimizerRule	evaluate(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedRuleContext;ILorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RuleApplicabilityResult;)V	public abstract
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedParameterSchema	slot(I)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedParameterSchema$Slot;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedParetoFrontierArena	retainedBytes()J	
+WRITEONLY-FIELD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPhysicalPropertyInterner	anyId I	private final
+DEAD-CTOR	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache	<init>(I)V	public
+DEAD-CTOR	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache	<init>(IIJLorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache$FingerprintStrategy;)V	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache	findPlan(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache$Fingerprint;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache$Context;Lorg/eclipse/rdf4j/query/algebra/TupleExpr;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQueryCacheIdentity;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache$PlanEntry;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache	findQuery(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache$Fingerprint;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache$Context;Lorg/eclipse/rdf4j/query/algebra/TupleExpr;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache$QueryEntry;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache	beginFlight(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache$Fingerprint;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache$Context;Lorg/eclipse/rdf4j/query/algebra/TupleExpr;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQueryCacheIdentity;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache$FlightClaim;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache$Context	structuralPlanHash()J	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanRecipe	sourcePhysicalExpressionId(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanRecipe	evidenceGuarantee(I)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/EvidenceGuarantee;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanRecipe	evidenceDisposition(I)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/FrontierStateDisposition;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPredicateRangeArena	size()I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPredicateRangeArena	descriptionObjectId(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQuery	withParameterVector(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedParameterVector;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQuery;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQuery	relValueId(II)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQuery	valueCount()I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQuery	valueProducer(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQuery	valueVariableId(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQuery	valueMergeKind(I)B	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQuery	valueMergeInputCount(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQuery	valueMergeInput(II)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQuery	valueIsPossible(I)Z	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQuery	valueIsAssured(I)Z	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQuery	valueIsConditional(I)Z	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQuery	valueMayBeUnbound(I)Z	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQuery	valueMayError(I)Z	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQuery	valueCrossesOptionalBarrier(I)Z	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQuery	mayPropagateAssuredValueFact(II)Z	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQueryCodec$Builder	sortBindingPairs(II)V	private
+WRITEONLY-FIELD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQueryCodec$Builder	normalizeFiniteFilters Z	private final
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQueryView	annotatedWork(I)D	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQueryView	outputBindingCount(I)I	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQueryView	symbolCount()I	public
+DEAD-CTOR	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedRuleContext	<init>(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQuery;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedMemo;)V	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedRuleState	generation(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedSearchBudget	limits()Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlannerLimits;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedSearchBudget	markUnsupportedSemantics()V	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedSearchCheckpoint	parameterizedQueryTemplate()Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQuery;	
+WRITEONLY-FIELD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedSearchCheckpoint	searchSpaceGeneration J	private final
+WRITEONLY-FIELD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedSearchCheckpoint	evidenceGeneration J	private final
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedWinnerTable	appendWinner(JIIIIIIIIDDD[III)I	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/BagEstimate	withSketchRelations(Ljava/util/Map;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/BagEstimate;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/BagEstimate	hasBindingEvidence()Z	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/EstimateMath	innerJoinRows(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/BagEstimate;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/BagEstimate;Ljava/util/Set;)D	private static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/EstimateMath	unionVariables(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/BagEstimate;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/BagEstimate;)Ljava/util/Map;	private static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/EstimateMath	unionFiniteRelations(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/BagEstimate;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/BagEstimate;)Ljava/util/Map;	private static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/EstimateMath	singleVariableOverlapDistinct(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/BagEstimate;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/BagEstimate;Ljava/util/Set;)Ljava/util/OptionalDouble;	private static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/EstimateMath	multiplyRows(DD)D	private static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/EstimateMath	estimatedCoveredDistinct(DD)D	private static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/EstimateMath	joinedVariables(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/BagEstimate;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/BagEstimate;DDDLjava/util/Set;Z)Ljava/util/Map;	private static
+DEAD-CTOR	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/EvidenceProfile	<init>(DDDDLjava/lang/String;Ljava/util/Map;Ljava/util/Map;Ljava/util/Map;Ljava/util/Map;)V	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/EvidenceProfile	finiteRelation(Ljava/util/Set;)Ljava/util/Optional;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/EvidenceProfile	withVariables(Ljava/util/Map;Ljava/lang/String;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/EvidenceProfile;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/FiniteRelationEstimate	retainIfVariablesRemain(Ljava/util/Collection;)Ljava/util/Optional;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/FrontierExactPayloadSnapshot	snapshotStoreIdHigh()J	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/FrontierExactPayloadSnapshot	snapshotStoreIdLow()J	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/FrontierExactPayloadSnapshot	snapshotEpoch()J	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/FrontierExactPayloadSnapshot	laneFamily()Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/FrontierLaneFamily;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/FrontierExactPayloadSnapshot	laneIndex()I	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/FrontierExactPayloadSnapshot	seedVersion()I	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/FrontierExactPayloadSnapshot	width()I	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/FrontierExactPayloadSnapshot	stratumCount()I	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/FrontierExactPayloadSnapshot	wordCount()I	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/FrontierMemoryReservation	purpose()Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/FrontierMemoryPurpose;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/FrontierStateKey	boundMaskWordCount()I	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/FrontierStateKey	boundMaskWord(I)J	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/FrontierStateKey	snapshotStoreId()J	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/FrontierStateKey	laneRole()I	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/ProductDistributionSketch	join(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/DistributionSketch;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/DistributionSketch;D)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/DistributionSketch;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/ProductDistributionSketch	factors()Ljava/util/List;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/ProductDistributionSketch	delegatedInnerProduct(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/DistributionSketch;)Ljava/util/OptionalDouble;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/ProductDistributionSketch	productInnerProduct(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/ProductDistributionSketch;)Ljava/util/OptionalDouble;	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/SketchEvidence	of(Ljava/util/Set;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/DistributionSketch;DDLorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/EvidenceQuality;Ljava/lang/String;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/SketchEvidence;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/VariableEstimate	withNullableRows(D)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/VariableEstimate;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/VariableEstimate	plus(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/VariableEstimate;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/VariableEstimate;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoBindingShape	from(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingUniverse;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoBindingShape;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoEstimateDiff	hasLearning()Z	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoLearnedEvidenceService	empty()Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoLearnedEvidenceService;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoLearnedEvidenceService	rolloutProfile()Ljava/lang/String;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoMemoFeedback	explainSummary()Ljava/lang/String;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoMemoFeedback	merge(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoMemoFeedback;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoMemoFeedback;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoOperatorKey$Canonicalizer	varKey(Lorg/eclipse/rdf4j/query/algebra/Var;)Ljava/lang/String;	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoPlanRanking	explainSummary()Ljava/lang/String;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoRolloutProfile	ruleSteeringEnabled()Z	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoSurfaceKey	fanout(JLjava/lang/String;JJ)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoSurfaceKey;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoSurfaceProvider	empty()Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoSurfaceProvider;	public static
+DEAD-CTOR	org/eclipse/rdf4j/sail/lmdb/BoundJoinProductEstimate	<init>(DDDDLjava/lang/String;Z)V	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/CensoredObservationBounds	upper(D)Lorg/eclipse/rdf4j/sail/lmdb/CensoredObservationBounds;	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/ColdFilterSynopsis	capacity()I	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/ColdFilterSynopsis	rankAt(I)J	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/ColdFilterSynopsis	tieBreakAt(I)J	
+DEAD-CTOR	org/eclipse/rdf4j/sail/lmdb/DerivedStateBuildProgress	<init>(J)V	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/ExactAlternativeSurfaceCacheKey	of(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;Lorg/eclipse/rdf4j/sail/lmdb/EstimateContext;)Lorg/eclipse/rdf4j/sail/lmdb/ExactAlternativeSurfaceCacheKey;	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/FiniteBranchFactorSurfaceCacheKey	of(Ljava/util/List;Lorg/eclipse/rdf4j/query/algebra/TupleExpr;Ljava/lang/String;Z)Lorg/eclipse/rdf4j/sail/lmdb/FiniteBranchFactorSurfaceCacheKey;	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/FiniteBranchSurfaceCacheKey	of(Ljava/util/List;Ljava/lang/String;Z)Lorg/eclipse/rdf4j/sail/lmdb/FiniteBranchSurfaceCacheKey;	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/FiniteDerivedPrefixCacheKey	of(Ljava/util/List;Ljava/util/Map;)Lorg/eclipse/rdf4j/sail/lmdb/FiniteDerivedPrefixCacheKey;	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/FiniteDerivedSurfaceCacheKey	of(Ljava/util/List;Lorg/eclipse/rdf4j/query/algebra/TupleExpr;Ljava/util/Map;)Lorg/eclipse/rdf4j/sail/lmdb/FiniteDerivedSurfaceCacheKey;	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/FrontierLearningModel	observePhysicalCensored(Lorg/eclipse/rdf4j/sail/lmdb/LogicalLearningKey;Lorg/eclipse/rdf4j/sail/lmdb/PhysicalResidualKey;Lorg/eclipse/rdf4j/sail/lmdb/LearningApplicability;Lorg/eclipse/rdf4j/sail/lmdb/FrontierCostDimension;Lorg/eclipse/rdf4j/sail/lmdb/CensoredObservationBounds;)V	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/FrontierLearningModel	observeAbsolute(Ljava/util/LinkedHashMap;Ljava/lang/Object;Lorg/eclipse/rdf4j/sail/lmdb/FrontierCostDimension;DJ)V	private
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/FrontierLearningModel	revision()J	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/FrontierLearningModel$DimensionCounts	merge(Lorg/eclipse/rdf4j/sail/lmdb/FrontierCostDimension;Lorg/eclipse/rdf4j/sail/lmdb/FrontierLearningModel$DimensionCounts;)V	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/FrontierLearningModel$DimensionCounts	subtract(Lorg/eclipse/rdf4j/sail/lmdb/FrontierCostDimension;Lorg/eclipse/rdf4j/sail/lmdb/FrontierLearningModel$DimensionCounts;)V	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/FrontierPrimitiveCorrelationRelation	tuples()[J	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/FrontierPrimitiveCorrelationRelation	multiplicities()[D	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LearningApplicability	bindingShapeFingerprint()J	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LearningFeatureEnvelope	writeTo(Ljava/io/DataOutputStream;)V	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LearningFeatureEnvelope	readFrom(Ljava/io/DataInputStream;)Lorg/eclipse/rdf4j/sail/lmdb/LearningFeatureEnvelope;	static
+DEAD-CTOR	org/eclipse/rdf4j/sail/lmdb/LmdbCascadesOptimizer	<init>(Lorg/eclipse/rdf4j/query/algebra/evaluation/impl/EvaluationStatistics;ZZ)V	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbDistinctCursorSkipSupport	writeSuccessorKey(Ljava/nio/ByteBuffer;Lorg/eclipse/rdf4j/sail/lmdb/TripleIndex;[JI)Z	static
+DEAD-CTOR	org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorRuntime	<init>(Lorg/eclipse/rdf4j/sail/lmdb/ValueStore;Lorg/eclipse/rdf4j/sail/lmdb/TripleStore;Lorg/eclipse/rdf4j/sail/lmdb/estimation/LmdbQuadSynopsisService;Lorg/eclipse/rdf4j/sail/lmdb/LmdbFilterSelectivityStats;Lorg/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats;Lorg/eclipse/rdf4j/sail/lmdb/LmdbStatementPatternCardinalitySource;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache;Lorg/eclipse/rdf4j/sail/lmdb/frontier/LmdbFrontierSynopsisService;Lorg/eclipse/rdf4j/sail/lmdb/config/FrontierEstimatorMode;JIDDLjava/util/function/BooleanSupplier;)V	
+DEAD-CTOR	org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorRuntime	<init>(Lorg/eclipse/rdf4j/sail/lmdb/ValueStore;Lorg/eclipse/rdf4j/sail/lmdb/TripleStore;Lorg/eclipse/rdf4j/sail/lmdb/estimation/LmdbQuadSynopsisService;Lorg/eclipse/rdf4j/sail/lmdb/LmdbFilterSelectivityStats;Lorg/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats;Lorg/eclipse/rdf4j/sail/lmdb/LmdbStatementPatternCardinalitySource;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache;Lorg/eclipse/rdf4j/sail/lmdb/frontier/LmdbFrontierSynopsisService;Lorg/eclipse/rdf4j/sail/lmdb/config/FrontierEstimatorMode;JJIDDLjava/util/function/BooleanSupplier;)V	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorRuntime	estimate(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$CostContext;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/BagEstimate;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorRuntime	operatorMultiplierFeedback(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;DD)Lorg/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats$OperatorEstimate;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorRuntime	operatorFeedbackRevision()J	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorRuntime	learnedEvidenceRevision()J	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorRuntime	describePackedAccessPath(IDDLorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCostEstimate;)V	
+DEAD-CTOR	org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorStorageAccess	<init>(Lorg/eclipse/rdf4j/sail/lmdb/ValueStore;Lorg/eclipse/rdf4j/sail/lmdb/TripleStore;Lorg/eclipse/rdf4j/sail/lmdb/LmdbStatementPatternCardinalitySource;Ljava/util/function/BooleanSupplier;)V	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEvaluationStatistics	estimateFilterCost(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinOrderPlanner$FilterConstraint;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$CostContext;)Ljava/util/Optional;	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEvaluationStatistics	joinFrequencyInnerProduct(Lorg/eclipse/rdf4j/query/algebra/StatementPattern;Lorg/eclipse/rdf4j/query/algebra/StatementPattern;Ljava/lang/String;Ljava/util/Set;)Ljava/util/Optional;	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEvaluationStatistics	bridgePath(Ljava/util/List;Ljava/lang/String;Ljava/util/Set;)Ljava/util/Optional;	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEvaluationStatistics	characteristicSetStar(Ljava/util/List;Ljava/util/Set;)Ljava/util/Optional;	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEvaluationStatistics	shapeTypeAware(Lorg/eclipse/rdf4j/query/algebra/StatementPattern;Ljava/util/Set;Ljava/util/Set;)Ljava/util/Optional;	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEvaluationStatistics	propertyPathNodePairs(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;Ljava/util/Set;)Ljava/util/Optional;	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEvaluationStatistics	refineForDecision(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RdfStatisticsProvider$EstimationDecision;)Ljava/util/Optional;	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEvaluationStatistics	feedbackCorrection(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/StatisticsEstimate;)Ljava/util/Optional;	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEvaluationStatistics	observe(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;Z)V	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEvaluationStatistics	observePlanCandidate(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoPlanCandidate;ZLjava/lang/String;)V	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEvaluationStatistics	planRankingAdvice(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;)Ljava/util/Optional;	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEvaluationStatistics	debugEvidence(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;)Ljava/lang/String;	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEvaluationStatistics	explainEstimateDiff(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;)Ljava/lang/String;	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEvaluationStatistics	memoFeedback(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingUniverse;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingShape;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoMemoFeedback;	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEvaluationStatistics	evidence(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoSurfaceKey;)Ljava/util/Optional;	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEvaluationStatistics	shouldApplyPlanRanking(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoPlanRanking;Ljava/lang/String;)Z	public
+DEAD-CTOR	org/eclipse/rdf4j/sail/lmdb/LmdbFiniteSurfaceCache	<init>(Lorg/eclipse/rdf4j/sail/lmdb/LmdbFiniteJoinSurfaceEstimator;Lorg/eclipse/rdf4j/sail/lmdb/LmdbEstimatorOptimizationScope;)V	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbFrontierPackedCostSession	multiplyKnown(DDD)D	private static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbFrontierPackedCostSession	leafState([Lorg/eclipse/rdf4j/sail/lmdb/LmdbFrontierPackedCostSession$LeafState;I)Lorg/eclipse/rdf4j/sail/lmdb/LmdbFrontierPackedCostSession$LeafState;	private static
+WRITEONLY-FIELD	org/eclipse/rdf4j/sail/lmdb/LmdbFrontierPackedCostSession	sessionReservation Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/FrontierMemoryReservation;	private
+DEAD-CTOR	org/eclipse/rdf4j/sail/lmdb/LmdbFrontierPackedCostSession$EmissionBuffer	<init>(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/FrontierStateArena;Lorg/eclipse/rdf4j/sail/lmdb/LmdbFrontierPackedCostSession$EmissionScratchPool;I)V	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbFrontierPackedCostSession$EmissionBuffer	add([JID)V	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbFrontierPackedCostSession$EmissionScratchPool	storageBytes()J	private
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbFrontierPackedCostSession$PrimitiveCorrelationKeyTable	width()I	private
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbFrontierPlannerSettings	planCacheMaximumVariants()I	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbFrontierPlannerSettings	planCacheRefreshThreads()I	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbFrontierPlannerSettings	planCacheMaximumCanaryFraction()D	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbFrontierProbeFactory	probe(Lorg/eclipse/rdf4j/sail/lmdb/ValueStore;Lorg/eclipse/rdf4j/model/Value;Lorg/eclipse/rdf4j/model/Value;Lorg/eclipse/rdf4j/model/Value;Lorg/eclipse/rdf4j/model/Value;I)Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierLeafProbe;	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbFrontierProbeFactory	joinProgram(Lorg/eclipse/rdf4j/sail/lmdb/ValueStore;Ljava/util/List;I)Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierJoinProgram;	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbFrontierSnapshotSource$MatchBatch	containsMatch(JJJJLorg/eclipse/rdf4j/sail/lmdb/LmdbFrontierSnapshotSource$RawQuadPredicate;)Z	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbHeuristicFilterPassCache	misses()J	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbHeuristicFilterPassCache	waits()J	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbHeuristicFilterPassCache	evictions()J	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbJoinPlanSupport	isBoundLookupPattern(Lorg/eclipse/rdf4j/query/algebra/StatementPattern;Ljava/util/Set;)Z	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbLeoFeedbackStore	path()Ljava/nio/file/Path;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbLeoSurfaceStats	copyFrom(Lorg/eclipse/rdf4j/sail/lmdb/LmdbLeoSurfaceStats;)V	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbLeoSurfaceStats$FanoutKey	readFrom(Ljava/io/DataInputStream;)Lorg/eclipse/rdf4j/sail/lmdb/LmdbLeoSurfaceStats$FanoutKey;	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats	frontierDimensionEstimate(Lorg/eclipse/rdf4j/sail/lmdb/FrontierLearningKey;Lorg/eclipse/rdf4j/sail/lmdb/FrontierCostDimension;D)Lorg/eclipse/rdf4j/sail/lmdb/FrontierLearningModel$DimensionEstimate;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats	physicalDimensionEstimate(Lorg/eclipse/rdf4j/sail/lmdb/LogicalLearningKey;Lorg/eclipse/rdf4j/sail/lmdb/PhysicalResidualKey;Lorg/eclipse/rdf4j/sail/lmdb/LearningApplicability;Lorg/eclipse/rdf4j/sail/lmdb/FrontierCostDimension;D)Lorg/eclipse/rdf4j/sail/lmdb/FrontierLearningModel$DimensionEstimate;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats	frontierPosterior(Lorg/eclipse/rdf4j/sail/lmdb/FrontierLearningKey;Lorg/eclipse/rdf4j/sail/lmdb/FrontierCostDimension;)Lorg/eclipse/rdf4j/sail/lmdb/FrontierLearningModel$PosteriorSnapshot;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats	multiplierEstimate(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;DD)Lorg/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats$OperatorEstimate;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats	size()I	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats	estimateFanout(JLorg/eclipse/rdf4j/sail/lmdb/LmdbLeoSurfaceStats$BoundPosition;J)Ljava/util/Optional;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats	recordPredicateFanout(JJJ)V	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats	shouldRecordFanoutObservation(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;)Z	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats	rolloutProfile()Ljava/lang/String;	public
+DEAD-CONST	org/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats	LEGACY_PERSIST_VERSION I	private static final
+DEAD-CONST	org/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats	FRONTIER_PERSIST_VERSION I	private static final
+DEAD-CONST	org/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats	RAW_TRANSACTION_STAMP_PERSIST_VERSION I	private static final
+DEAD-CONST	org/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats	TYPED_SEMI_ANTI_DISTINCT_PERSIST_VERSION I	private static final
+DEAD-CONST	org/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats	LEARNED_REPORT_Q_ERROR_THRESHOLD D	static final
+DEAD-CONST	org/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats	COST_EVENT_INVOCATIONS Ljava/lang/String;	private static final
+DEAD-CTOR	org/eclipse/rdf4j/sail/lmdb/LmdbPackedCostModel	<init>(Lorg/eclipse/rdf4j/sail/lmdb/LmdbEstimatorRuntime;Ljava/util/OptionalLong;ZLorg/eclipse/rdf4j/sail/base/SailDatasetTripleTermSource;)V	
+DEAD-CTOR	org/eclipse/rdf4j/sail/lmdb/LmdbPipelinePlanCache	<init>(J)V	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbPipelinePlanCache	misses()J	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbPipelinePlanCache	evictions()J	
+DEAD-CTOR	org/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache	<init>(IJI)V	
+DEAD-CTOR	org/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache	<init>(IJII)V	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache$PlanFamily	key()Lorg/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache$PlanFamilyKey;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbPlannerServices	from(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel;Lorg/eclipse/rdf4j/query/algebra/evaluation/impl/EvaluationStatistics;)Ljava/util/Optional;	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbPlannerServices	canEstimateStatementPatternRows()Z	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbPlannerServices	estimateStatementPatternRows(Lorg/eclipse/rdf4j/query/algebra/StatementPattern;Ljava/util/Set;)D	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbPlannerServices	estimatePatternLocalFilterPass(Lorg/eclipse/rdf4j/query/algebra/ValueExpr;Lorg/eclipse/rdf4j/query/algebra/StatementPattern;Ljava/util/Set;)Ljava/util/Optional;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbPlannerServices	estimatePropertyPath(Lorg/eclipse/rdf4j/query/algebra/ArbitraryLengthPath;Ljava/util/Set;)Ljava/util/Optional;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbPlannerServices	estimatePropertyPath(Lorg/eclipse/rdf4j/query/algebra/ZeroLengthPath;Ljava/util/Set;)Ljava/util/Optional;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbPlannerServices	estimateSubjectStar(Ljava/util/List;Ljava/util/Set;)Ljava/util/Optional;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbPlannerServices	estimateBoundJoinProduct(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;Lorg/eclipse/rdf4j/query/algebra/TupleExpr;D)Lorg/eclipse/rdf4j/sail/lmdb/BoundJoinProductEstimate;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbPlannerServices	estimateOptionalBridgeProduct(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;Lorg/eclipse/rdf4j/query/algebra/TupleExpr;D)Lorg/eclipse/rdf4j/sail/lmdb/OptionalBridgeProductEstimate;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbPlannerServices	estimateBoundJoinSurfaceRows(Ljava/util/List;Ljava/lang/String;)D	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbPlannerServices	estimateBoundJoinSurfaceRows(Ljava/util/List;Lorg/eclipse/rdf4j/query/algebra/TupleExpr;Ljava/lang/String;)D	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbPlannerServices	supportsOperatorFeedbackTracking(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;)Z	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbPlannerServices	estimateOperatorFeedback(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;DDDDLjava/lang/String;)Lorg/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats$OperatorEstimate;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbPlannerServices	planRankingAdvice(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;)Ljava/util/Optional;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbPlannerServices	learnedOptimizerDebugEvidence(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;)Ljava/lang/String;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbPlannerServices	learnedOptimizerExplainDiff(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;)Ljava/lang/String;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbPlannerServices	optimizationScopedFactorFingerprint(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;)Ljava/lang/Object;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbPlannerServices	hasOptimizationScopedPlannerCache()Z	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbPlannerServices	planTemplateCache()Lorg/eclipse/rdf4j/sail/lmdb/PlanTemplateCache;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbPlannerServices	statisticsSnapshotVersion()J	
+DEAD-CTOR	org/eclipse/rdf4j/sail/lmdb/LmdbRuntimeFeedbackDescriptor	<init>(Lorg/eclipse/rdf4j/sail/lmdb/FrontierLearningKey;Lorg/eclipse/rdf4j/sail/lmdb/FrontierLearningKey;Lorg/eclipse/rdf4j/sail/lmdb/LogicalLearningKey;Lorg/eclipse/rdf4j/sail/lmdb/LearningApplicability;Lorg/eclipse/rdf4j/sail/lmdb/PhysicalResidualKey;Lorg/eclipse/rdf4j/sail/lmdb/LmdbRuntimeFeedbackDescriptor$LogicalGroupOrigin;)V	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbStatementIterator	getSkipAheadSeekCountActual()J	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/PrefixEstimateCacheKey	of(Ljava/util/List;DLorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$EstimationTier;Lorg/eclipse/rdf4j/sail/lmdb/EstimateContext;)Lorg/eclipse/rdf4j/sail/lmdb/PrefixEstimateCacheKey;	static
+DEAD-CTOR	org/eclipse/rdf4j/sail/lmdb/RdfTermDomain	<init>(JLjava/util/Set;)V	private
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/RdfTermDomain	joinObservedMasks(JJ)J	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/SemanticEstimateCacheKey	of(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;Lorg/eclipse/rdf4j/sail/lmdb/EstimateContext;)Lorg/eclipse/rdf4j/sail/lmdb/SemanticEstimateCacheKey;	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/TripleStore	recordRdfTermDomainDegradation(Lorg/lwjgl/system/MemoryStack;Lorg/lwjgl/util/lmdb/MDBVal;J)V	private
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/estimation/BoundedQuadSynopsis	snapshotVersion()J	public
+DEAD-CTOR	org/eclipse/rdf4j/sail/lmdb/estimation/LmdbQuadSynopsisService	<init>(Lorg/eclipse/rdf4j/sail/lmdb/sketch/SketchStatementSource;JIJJLorg/eclipse/rdf4j/sail/lmdb/DerivedStateBuildExecutor;Ljava/util/function/LongSupplier;)V	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/estimation/PrimitiveCountMin	seed()J	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/estimation/PrimitiveSpaceSaving	error(J)J	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/estimation/PrimitiveSpaceSaving	keyAt(I)J	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/estimation/PrimitiveSpaceSaving	countAt(I)J	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/estimation/QuadSnapshotIdentity	sameStore(Lorg/eclipse/rdf4j/sail/lmdb/estimation/QuadSnapshotIdentity;)Z	public
+DEAD-CONST	org/eclipse/rdf4j/sail/lmdb/estimation/QuadSynopsisBudget	DEFAULT_BYTES J	public static final
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/estimation/QuadValueHash	defaultContext()J	public static
+DEAD-CTOR	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierCenterBuilder	<init>(Ljava/nio/file/Path;JJ[JLorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierProjectedDistinctAccumulator;Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsBuildConfig;Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierFileOps;)V	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierCenterBuilder	estimatedHeapBytes(Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsBuildConfig;)J	static
+WRITEONLY-FIELD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierCenterBuilder	config Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsBuildConfig;	private final
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierCountMinMatrix	allocatedBytes()J	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierHeavyKeyTracker	allocatedBytes()J	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierHeavyPredicateAccumulator	precision()I	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierHeavyPredicateAccumulator	registerCount()I	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierHeavyPredicateAccumulator	allocatedBytes()J	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierHeavyPredicateAccumulator	estimate(Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsShard$ColumnReader;JI)D	static
+WRITEONLY-FIELD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierHeavyPredicateAccumulator	plane I	private final
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierOmniBuilder	estimatedHeapBytes(Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsBuildConfig;)J	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierOmniExternalSorter	openSpool(Ljava/nio/file/Path;)Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierOmniExternalSorter$EventOutput;	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierOmniExternalSorter	sort(Ljava/nio/file/Path;JJJLorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierOmniExternalSorter$EventSink;)V	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierOmniExternalSorter$Collector	records()J	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierOmniExternalSorter$EventOutput	records()J	
+WRITEONLY-FIELD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierOmniExternalSorter$RunCursor	run I	private final
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierOmniIndex	matchesProbe(Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierOmniIndex$Domain;JLorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierLeafProbe;)Z	private static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierOmniIndex$ParticleBuffer	scaleWeights(D)V	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierOmniIndex$TupleBuffer	component(II)J	private
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierQueryIndex	candidateRangeRows(Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierLeafSelector;)J	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierQueryIndex	identity()Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierManifestIdentity;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierQueryIndex	descriptor()Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierPayloadDescriptor;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierQueryIndexLease	candidateRangeRows(Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierLeafSelector;)J	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierQueryIndexLease	laneDiagnostics(Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierLeafSelector;)Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierQueryIndexLaneDiagnostics;	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierQueryIndexLease	reverseLaneDiagnostics(Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierLeafSelector;)Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierQueryIndexLaneDiagnostics;	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierQueryIndexLease	visitLeafOnce(Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierLeafSelector;JLorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierQueryIndexRowSink;Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierQueryIndexRowSink;)Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierQueryIndexLeafScan;	public
+WRITEONLY-FIELD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierQueryIndexLease	requiredSnapshotEpoch J	private final
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierQueryIndexView	countMatches(Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierLeafSelector;)J	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierQueryIndexView	visitMatches(Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierLeafSelector;Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierQueryIndexRowSink;)J	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierSnapshotInvalidatedException	expectedEpoch()J	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierSnapshotInvalidatedException	actualEpoch()J	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierSnapshotInvalidatedException	expectedVersion()J	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierSnapshotInvalidatedException	actualVersion()J	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsDeltaCompactor	compact(Ljava/nio/file/Path;Ljava/util/List;JJJILorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsHeapGovernor;)Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsDeltaCompactor$Result;	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsHash	rowPriorityAndComponentHashes(IJJJJ[JI)J	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsHash	bothRowPrioritiesFromConditioningKey(J[JI)V	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsHash	omniPriorities16FromRowPriority(J[JI)V	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsHash	centerPriorities(JII[JI)V	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsHash	centerEdgePriority(IIIJJJJ)J	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsHash	centerEdgePrioritiesFromRowPriority(JIII[JI)V	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsHash	omniBuckets(IIJIII[II)V	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsHash	omniBuckets4(IIJI[II)V	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsHash	omniBuckets8(IIJI[II)V	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsHash	omniBuckets16(IIJI[II)V	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsHash	joinBuckets(JIII[II)V	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsHash	joinSigns(JII[JI)V	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsHeapGovernor	queryReserveBytes()J	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsHeapGovernor	safetyMarginBytes()J	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsHeapGovernor$Lease	purpose()Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsMemoryPurpose;	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsShard$ColumnReader	columnId()I	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsShard$ColumnReader	minimumValue()J	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierTemporaryDiskReservation	limitBytes()J	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/LmdbFrontierSynopsisService	open(Ljava/nio/file/Path;Lorg/eclipse/rdf4j/sail/lmdb/config/FrontierEstimatorMode;Ljava/util/UUID;JIILorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierSnapshotSourceFactory;)Lorg/eclipse/rdf4j/sail/lmdb/frontier/LmdbFrontierSynopsisService;	public static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/LmdbStatisticsService	open(Ljava/nio/file/Path;Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierFileOps;Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsHeapGovernor;JJLjava/time/Clock;)Lorg/eclipse/rdf4j/sail/lmdb/frontier/LmdbStatisticsService;	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/LmdbStatisticsService	recordStoreCommit(JJ)V	public
+DEAD-CTOR	org/eclipse/rdf4j/sail/lmdb/sketch/PropertyPathEstimate	<init>(DDDDLjava/lang/String;)V	public
+DEAD-CTOR	org/eclipse/rdf4j/sail/lmdb/sketch/SketchBasedJoinEstimator	<init>(Lorg/eclipse/rdf4j/sail/lmdb/sketch/SketchStatementSource;IJJ)V	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/sketch/SketchBasedJoinEstimator	getSketchStrategy()Lorg/eclipse/rdf4j/sail/lmdb/sketch/SketchBasedJoinEstimator$SketchStrategy;	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/sketch/SketchBasedJoinEstimator$SketchStrategy	configValue()Ljava/lang/String;	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/sketch/SketchSnapshotIdentity	sameStore(Lorg/eclipse/rdf4j/sail/lmdb/sketch/SketchSnapshotIdentity;)Z	public
+DEAD-CLASS	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedOptimizerRule	-	abstract
+DEAD-CLASS	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoBindingShape	-	public final
+DEAD-CLASS	org/eclipse/rdf4j/sail/lmdb/FiniteBranchFactorSurfaceCacheKey	-	final
+DEAD-CLASS	org/eclipse/rdf4j/sail/lmdb/FiniteBranchSurfaceCacheKey	-	final
+DEAD-CTOR	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$FilterCostEstimate	<init>(DDD)V	public
+DEAD-CTOR	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingProfile	<init>(Ljava/util/Map;Ljava/util/Map;Ljava/util/Map;Ljava/util/Map;Ljava/util/Set;Ljava/util/Map;Ljava/lang/String;)V	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingProfile	satisfiesEvidenceProfile(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/EvidenceProfile;)Z	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingProfile	restrictTo(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingMask;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingUniverse;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingProfile;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CascadesPlanner	optimize(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache$Context;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCostModel;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CascadesPlan;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateSnapshot	costOnlyEstimate()Z	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector	exact(DLjava/lang/String;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector	toCostVector()Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector	plus(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector;Ljava/lang/String;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector	withRows(DLjava/lang/String;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector	safeSum(DDD)D	private static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/FiniteDomainFact	assuredBound()Z	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext	isPresent()Z	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext	restrictTo(Ljava/util/Collection;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext	intersection(Ljava/util/List;Ljava/util/List;)Ljava/util/List;	private static
+WRITEONLY-FIELD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext	withoutInvocationCardinality Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext;	private final
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext$ExactRelation	canonical(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/FiniteRelationEstimate;)Ljava/util/Optional;	static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext$ExactRelation	values(Ljava/lang/String;)Ljava/util/Set;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext$ExactRelation	distinctRows(Ljava/util/Collection;)D	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext$FiniteDomain	of(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/FiniteDomainFact;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext$FiniteDomain;	static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext$FiniteDomain	values()Ljava/util/List;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext$FiniteDomain	precision()Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/FiniteDomainFact$Precision;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal	withRowGoal(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal$RowGoal;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal	excludes(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingUniverse;)Z	public
+WRITEONLY-FIELD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationSearchStatus	COMPLETE Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationSearchStatus;	public static final
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties	orderingName(Ljava/lang/String;)Ljava/lang/String;	private static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties	restrictNames(Ljava/util/Set;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingMask;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingUniverse;)Ljava/util/Set;	private static
+DEAD-CTOR	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RejectedAlternative	<init>(ILjava/lang/String;Ljava/lang/String;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties;Ljava/util/List;)V	public
+WRITEONLY-FIELD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RuleApplicabilityResult	reasonId I	private
+WRITEONLY-FIELD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RuleApplicabilityResult	affectedFactMask J	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/StatisticsEstimate	heuristic(DLjava/lang/String;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/StatisticsEstimate;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedBindingFlowArena	size()I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedBindingFlowArena	producerExpressionId(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedBindingFlowArena	checkConsumerId(I)V	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDetachedDecisionState	candidateContinuationLogicalCell(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDetachedDecisionState	candidateContinuationDeliveredProperty(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDetachedDecisionState	candidateContinuationRequiredInput(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDetachedDecisionState	candidateContinuationSemanticScope(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDetachedDecisionState	candidateContinuationCorrelationScope(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDetachedDecisionState	candidateContinuationBindingShape(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDetachedDecisionState	candidateContinuationOrderIdentity(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDetachedDecisionState	candidateContinuationEvidenceLineage(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDetachedDecisionState	candidateContinuationEvidenceDisposition(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDetachedDecisionState	candidateContinuationEvidenceGuarantee(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedJoinEnumerator	factorCostIsInclusive(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCostEstimate;)Z	private static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedLongSubsetTable	findEquivalentRetained(JIIIIDDDIII)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedNodeMetadataArena$Columns	offerExactCover(II)V	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPathFactIndex	crossesOptionalBarrier(I)Z	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPathFactIndex	mayPropagateAssuredFact(II)Z	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanRecipe	extract(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedMemo;ILorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDependentPlans;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanRecipe;	static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQuery$BindingFlowState	pathFacts(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQuery;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPathFactIndex;	private
+WRITEONLY-FIELD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedSearchBudget	limits Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlannerLimits;	private final
+WRITEONLY-FIELD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedSearchCheckpoint	parameterizedQueryTemplate Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQuery;	private final
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/EstimateMath	bindsAll(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/BagEstimate;Ljava/util/Collection;)Z	private static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/EstimateMath	normalizedFrequencies(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/BagEstimate;Ljava/util/List;)Ljava/util/Optional;	private static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/EstimateMath	mergeFrequencies(Ljava/util/Map;Ljava/util/Map;)V	private static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/EstimateMath	unionVariable(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/VariableEstimate;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/VariableEstimate;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/VariableEstimate;	private static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/EstimateMath	tupleDistinct(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/BagEstimate;Ljava/util/Set;)D	private static
+WRITEONLY-FIELD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/FrontierMemoryReservation	purpose Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/FrontierMemoryPurpose;	private final
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/ProductDistributionSketch	innerProduct(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/DistributionSketch;)Ljava/util/OptionalDouble;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoEvidence	explainSummary()Ljava/lang/String;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoLearnedEvidenceService	explainEstimateDiff(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;)Ljava/lang/String;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoLearnedEvidenceService	shouldApplyPlanRanking(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoPlanRanking;Ljava/lang/String;)Z	public
+WRITEONLY-FIELD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoLearnedEvidenceService	EMPTY Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoLearnedEvidenceService;	public static final
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoPlanRanking	costWinnerCandidateId()Ljava/lang/String;	public
+WRITEONLY-FIELD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoRolloutProfile	ruleSteeringEnabled Z	private final
+WRITEONLY-FIELD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoSurfaceProvider	EMPTY Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoSurfaceProvider;	public static final
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/FiniteBranchRowsCacheKey	of(Ljava/util/List;)Lorg/eclipse/rdf4j/sail/lmdb/FiniteBranchRowsCacheKey;	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/FrontierLearningModel	physicalEstimate(Lorg/eclipse/rdf4j/sail/lmdb/LogicalLearningKey;Lorg/eclipse/rdf4j/sail/lmdb/PhysicalResidualKey;Lorg/eclipse/rdf4j/sail/lmdb/LearningApplicability;Lorg/eclipse/rdf4j/sail/lmdb/FrontierCostDimension;D)Lorg/eclipse/rdf4j/sail/lmdb/FrontierLearningModel$DimensionEstimate;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/FrontierLearningModel$MutableStatistics	merge(Lorg/eclipse/rdf4j/sail/lmdb/FrontierLearningModel$MutableStatistics;)V	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/FrontierLearningModel$MutableStatistics	subtract(Lorg/eclipse/rdf4j/sail/lmdb/FrontierLearningModel$MutableStatistics;)V	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorRuntime	feedbackCorrection(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/BagEstimate;)Ljava/util/Optional;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorRuntime	optimizationScopedFactorFingerprint(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;)Ljava/lang/Object;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorRuntime	statementPatternRows(Lorg/eclipse/rdf4j/query/algebra/StatementPattern;Ljava/util/Set;)D	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorRuntime	propertyPath(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;Ljava/util/Set;)Ljava/util/Optional;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorRuntime	subjectStar(Ljava/util/List;Ljava/util/Set;)Ljava/util/Optional;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorRuntime	optionalBridgeProduct(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;Lorg/eclipse/rdf4j/query/algebra/TupleExpr;D)Lorg/eclipse/rdf4j/sail/lmdb/OptionalBridgeProductEstimate;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorRuntime	boundJoinSurfaceRows(Ljava/util/List;Lorg/eclipse/rdf4j/query/algebra/TupleExpr;Ljava/lang/String;)D	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEvaluationStatistics	starMultiPredicateScan(Ljava/util/List;Ljava/util/Set;)Ljava/util/Optional;	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEvaluationStatistics	positive(DD)D	private static
+WRITEONLY-FIELD	org/eclipse/rdf4j/sail/lmdb/LmdbFrontierPlannerSettings	planCacheMaximumVariants I	private final
+WRITEONLY-FIELD	org/eclipse/rdf4j/sail/lmdb/LmdbFrontierPlannerSettings	planCacheRefreshThreads I	private final
+WRITEONLY-FIELD	org/eclipse/rdf4j/sail/lmdb/LmdbFrontierPlannerSettings	planCacheMaximumCanaryFraction D	private final
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbFrontierProbeFactory	joinLineageProgram(Lorg/eclipse/rdf4j/sail/lmdb/ValueStore;Ljava/util/List;I)Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierJoinProgram;	private static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbJoinPlanSupport	isBoundVar(Lorg/eclipse/rdf4j/query/algebra/Var;Ljava/util/Set;)Z	private static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbJoinPlanSupport	hasConstantValue(Lorg/eclipse/rdf4j/query/algebra/Var;)Z	private static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats	shouldApplyPlanRanking(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoPlanRanking;Ljava/lang/String;)Z	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats	explainEstimateDiff(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;)Ljava/lang/String;	public
+WRITEONLY-FIELD	org/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache$PlanFamily	key Lorg/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache$PlanFamilyKey;	private final
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbPlannerServices	debugEvidence(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;)Ljava/lang/String;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbRecordIterator	getSkipAheadSeekCountActual()J	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/RecordIterator	getSkipAheadSeekCountActual()J	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/estimation/PrimitiveSpaceSaving	checkSlot(I)V	private
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierHeavyObjectAccumulator	allocatedBytes()J	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierOmniExternalSorter	createRuns(Ljava/nio/file/Path;JILjava/nio/file/Path;Ljava/util/List;J)V	private static
+WRITEONLY-FIELD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierQueryIndex	identity Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierManifestIdentity;	private final
+WRITEONLY-FIELD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierQueryIndex	descriptor Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierPayloadDescriptor;	private final
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierQueryIndexView	countMatches(Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierLeafSelector;III)J	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierQueryIndexView	visitMatches(Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierLeafSelector;IIILorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierQueryIndexRowSink;)J	
+WRITEONLY-FIELD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierSnapshotInvalidatedException	expectedEpoch J	private final
+WRITEONLY-FIELD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierSnapshotInvalidatedException	actualEpoch J	private final
+WRITEONLY-FIELD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierSnapshotInvalidatedException	expectedVersion J	private final
+WRITEONLY-FIELD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierSnapshotInvalidatedException	actualVersion J	private final
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsHash	omniPriorities8FromRowPriority(J[JI)V	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsHash	omniBucketsFromSequence(JIII[II)V	static
+WRITEONLY-FIELD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsHeapGovernor	queryReserveBytes J	private final
+WRITEONLY-FIELD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsHeapGovernor	safetyMarginBytes J	private final
+WRITEONLY-FIELD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsShard$ColumnReader	minimumValue J	private final
+DEAD-CLASS	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedRuleContext	-	final
+DEAD-CTOR	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$FilterCostEstimate	<init>(DDDLjava/util/Map;Ljava/util/Map;Z)V	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingUniverse	restrictStableSet(Ljava/util/Set;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingMask;)Ljava/util/Set;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingUniverse	restrictBindingProfile(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingProfile;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingMask;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingProfile;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector	optimisticObjectiveScore()D	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector	mergeSource(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector;Ljava/lang/String;)Ljava/lang/String;	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector	mergeMetrics(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector;)Ljava/util/Map;	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector	weightedMean(DDDD)D	private static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/FiniteDomainFact	precision()Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/FiniteDomainFact$Precision;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext	canonicalValues(Ljava/util/Collection;)Ljava/util/List;	private static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext$ExactRelation	variables()Ljava/util/List;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext$ExactRelation	projectTo(Ljava/util/Set;)Ljava/util/Optional;	
+DEAD-CTOR	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext$FiniteDomain	<init>(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/FiniteDomainFact;)V	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties	satisfies(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingUniverse;)Z	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedBindingFlowArena	variableId(I)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQuery$BindingFlowState	arena(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQuery;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedBindingFlowArena;	private
+WRITEONLY-FIELD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQuery$BindingFlowState	pathFacts Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPathFactIndex;	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQueryFamilyIdentity	parameterizedQueryTemplate()Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQuery;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/EstimateMath	overlapDistinctRows(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/DistributionSketch;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/DistributionSketch;)Ljava/util/OptionalDouble;	private static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/EstimateMath	clampRows(DDD)D	private static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/EstimateMath	productDistinct(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/BagEstimate;Ljava/util/Collection;)D	private static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/ProductDistributionSketch	scalarInnerProduct(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/DistributionSketch;)Ljava/util/OptionalDouble;	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoOperatorLearningPolicy	appliesToPlanning()Z	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoRolloutProfile	explainEnabled()Z	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/FiniteBranchRowsCacheKey	of(Ljava/util/List;Z)Lorg/eclipse/rdf4j/sail/lmdb/FiniteBranchRowsCacheKey;	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorOptimizationScope	estimatorFingerprint(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;)Ljava/lang/Object;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorRuntime	boundJoinProduct(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;Lorg/eclipse/rdf4j/query/algebra/TupleExpr;D)Lorg/eclipse/rdf4j/sail/lmdb/BoundJoinProductEstimate;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorRuntime	boundJoinSurfaceRows(Ljava/util/List;Ljava/lang/String;)D	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEvaluationStatistics	learningPolicy(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoOperatorLearningPolicy;	public
+DEAD-CONST	org/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats	LEO_PLAN_RERANKING_MIN_CONFIDENCE_PROPERTY Ljava/lang/String;	private static final
+DEAD-CONST	org/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats	LEO_PLAN_RERANKING_MIN_IMPROVEMENT_PROPERTY Ljava/lang/String;	private static final
+DEAD-CTOR	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierOmniExternalSorter$EventInput	<init>(Ljava/nio/file/Path;)V	private
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierOmniExternalSorter$EventInput	read(Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierOmniExternalSorter$EventBuffer;I)Z	private
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsHash	omniPriorities4FromRowPriority(J[JI)V	static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingProfile	restrictTo(Ljava/util/Set;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingProfile;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingUniverse	contains(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingMask;Ljava/lang/String;)Z	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingUniverse	maskOfStableSet(Ljava/util/Set;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingMask;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingUniverse	bindingProfileFactMask(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingProfile;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingMask;	
+WRITEONLY-FIELD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingUniverse	restrictedStableSets Ljava/util/Map;	private final
+WRITEONLY-FIELD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingUniverse	restrictedBindingProfiles Ljava/util/Map;	private final
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector	finiteWeight(D)D	private static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/InputBindingContext$ExactRelation	project(Ljava/util/List;Ljava/util/Map;Ljava/util/List;)Ljava/util/Map;	private static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/PhysicalProperties	containsAll(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingUniverse;Ljava/util/Set;Ljava/util/Set;)Z	private static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedBindingFlowArena	build(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQuery;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedBindingFlowArena;	static
+DEAD-CTOR	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPathFactIndex	<init>(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedBindingFlowArena;)V	
+DEAD-FIELD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQuery$BindingFlowState	arena Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedBindingFlowArena;	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/EstimateMath	finiteNonNegative(Ljava/util/OptionalDouble;)Ljava/util/OptionalDouble;	private static
+WRITEONLY-FIELD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoOperatorLearningPolicy	appliesToPlanning Z	private final
+WRITEONLY-FIELD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoRolloutProfile	explainEnabled Z	private final
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/FactorCostCacheKey	estimatorFingerprint(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;)Ljava/lang/Object;	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorExpressionSupport	sharedBindingNames(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;Lorg/eclipse/rdf4j/query/algebra/TupleExpr;)Ljava/util/Set;	static
+WRITEONLY-FIELD	org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorOptimizationScope	estimatorFingerprints Ljava/util/Map;	private final
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorRuntime	positive(DD)D	private static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats	learningPolicy(Lorg/eclipse/rdf4j/query/algebra/TupleExpr;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoOperatorLearningPolicy;	public
+DEAD-CLASS	org/eclipse/rdf4j/sail/lmdb/FactorCostCacheKey$EstimatorFingerprint	-	final
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingProfile	factMask(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingUniverse;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingMask;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingProfile	factsWithin(Ljava/util/Set;)Z	private
+WRITEONLY-FIELD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingUniverse	bindingProfileFactMasks Ljava/util/Map;	private final
+WRITEONLY-FIELD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingUniverse	stableSetMasks Ljava/util/Map;	private final
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingProfile	addRelationNames(Ljava/util/Set;Ljava/util/Set;)V	private static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/BindingProfile	relationKeysWithin(Ljava/util/Set;Ljava/util/Set;)Z	private static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQuery	bindingValueCount()I	

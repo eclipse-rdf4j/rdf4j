@@ -1,0 +1,132 @@
+{
+ "wp": "wp6-leo-feedback",
+ "batch": "b2",
+ "worktree": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp6",
+ "patchPath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/patches/wp6.patch",
+ "evidencePath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp6/initial-evidence.wp6.txt",
+ "findings": [
+  {
+   "id": "3.7.2",
+   "status": "fixed",
+   "rootCause": "LeoOperatorKey.Canonicalizer: (a) join surfaces beyond the exhaustive budget (>=7 factors, factorial>720) and non-permutable surfaces fingerprinted every factor with a FRESH ordinal table, so variable linkage between factors was lost (connected 7-chain == triangle x chain Cartesian product == star); (b) the winning permutation's / union ordering's ordinals were never adopted by the parent, so Filter/LeftJoin conditions were keyed against an empty table (FILTER(?a=?b) == FILTER(?a=?c)); (c) every UnaryTupleOperator was fingerprinted as CLASSNAME|arg=child, dropping Projection lists, BIND expressions, GROUP keys/aggregates, ORDER elements, LIMIT/OFFSET, SERVICE ref/silent (DISTINCT ?s == DISTINCT ?s ?o at the LMDB persisted key, which drops outputMask); TripleRef and TupleFunctionCall (neither unary nor binary) collapsed to their class name; (d) VALUES tables beyond 32 rows/512 cells were keyed by 32-bit String.hashCode ('Aa'/'BB' collide) and row order changed the hash; (e) separators (| ; , = ( )) inside IRIs/literal labels/bnode ids/function names could forge structure.",
+   "change": "Fingerprint is now an exact serialisation under ONE shared variable-ordinal table for the whole tree: Canonicalizer.child()/adopt() explore join permutations and union orders on copies seeded with the parent's ordinals and replay the winner into the parent, so enclosing conditions and operators see the same ordinals (design (b)); the >720 fallback is a linked connectivity-first deterministic ordering fingerprinted by one shared canonicalizer (isomorphic inputs in other orders may miss, non-isomorphic surfaces can never collide) (design (a)); parameter-bearing branches for Projection/MultiProjection (sorted src->tgt varKeys + subquery flag), Extension (sorted name=expr), Group (sorted keys + aggregates incl. DISTINCT), Order (expr+direction), Slice (offset/limit), Service (ref+silent), TripleRef (s/p/o/expr varKeys; critique major) and TupleFunctionCall (design (c)); large VALUES tables keyed by a SHA-256-derived 128-bit digest of the SORTED rows plus rowCount/cellCount (row-order independent, content sensitive) (design (d)); structural separators escaped inside user-controlled text (critique minor) so equal strings imply isomorphic trees modulo the deliberate constant abstraction. Exhaustive path for <=6 factors and the SP/JOIN string formats are unchanged (LeoOperatorKeyTest 11/11 green incl. canonicalJoinSurfaceMatchesExhaustiveReference). Persistence: the LMDB sidecars carrying keys derived from these fingerprints were already bumped in b1 of this same uncommitted tree (LmdbOperatorFeedbackStats PERSIST_VERSION 23->24, LmdbLeoFeedbackStore VERSION 6->7), so old (possibly collided) entries are dropped once; no second bump is needed because both changes ship together. Critique minor on abstractedSignature: no change needed - OperatorKey.equals/hashCode exclude abstractedSignature and LearnedOperatorCounts persists generalizedSignatures itself (writeTo/readFrom ~4318/4372), so key identity does not change across restart.",
+   "files": [
+    "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/leo/LeoOperatorKey.java"
+   ],
+   "testsAdded": [
+    "LeoOperatorKeyCollisionTest#sevenFactorConnectedChainAndCartesianTriangleTimesChainMustNotShareAKey",
+    "LeoOperatorKeyCollisionTest#sevenFactorJoinKeysAreDeterministicAndDistinguishEveryNonIsomorphicShape",
+    "LeoOperatorKeyCollisionTest#sevenFactorJoinKeyIsIndependentOfTheInputOrderForARenamedTree",
+    "LeoOperatorKeyCollisionTest#filterConditionVariablesMustStayLinkedToTheFilteredJoin",
+    "LeoOperatorKeyCollisionTest#filterOverUnionMustDistinguishConditionsOnDifferentBranchVariables",
+    "LeoOperatorKeyCollisionTest#leftJoinConditionReferencingLeftVersusRightVariablesMustDiffer",
+    "LeoOperatorKeyCollisionTest#distinctOverDifferentProjectionsMustNotShareAStructuralFingerprint",
+    "LeoOperatorKeyCollisionTest#projectionAliasesAreOrderIndependentButRenameSensitive",
+    "LeoOperatorKeyCollisionTest#extensionExpressionsArePartOfTheKey",
+    "LeoOperatorKeyCollisionTest#groupKeysAndAggregatesArePartOfTheKey",
+    "LeoOperatorKeyCollisionTest#sliceBoundsArePartOfTheKey",
+    "LeoOperatorKeyCollisionTest#orderDirectionAndExpressionArePartOfTheKey",
+    "LeoOperatorKeyCollisionTest#tripleRefVariablesMustStayLinkedToTheJoin",
+    "LeoOperatorKeyCollisionTest#largeValuesTablesWithDifferentRowsMustNotCollide",
+    "LeoOperatorKeyCollisionTest#largeValuesTablesAreRowOrderIndependentButRowSensitive",
+    "LeoOperatorKeyCollisionTest#separatorCharactersInsideConstantsCannotForgeStructure"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp6/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorKeyCollisionTest.txt (log .mvnf/workspaces/wp6/logs/20260928T012338.556822Z-64641-e8a26d11/verify.log)\nTests run: 16, Failures: 13, Errors: 0, Skipped: 0, Time elapsed: 0.095 s <<< FAILURE! -- in org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorKeyCollisionTest\n...sevenFactorConnectedChainAndCartesianTriangleTimesChainMustNotShareAKey <<< FAILURE! a connected chain and a Cartesian product must not share learned feedback; fingerprint=JOIN|factors=SP|patternScope=DEFAULT_CONTEXTS|s=v0|p=const:iri:urn:p|o=v1|c=<null>;SP|...s=v0...\n...sliceBoundsArePartOfTheKey <<< FAILURE! LIMIT 10 and LIMIT 20 must differ ==> expected: not equal but was: <SLICE|arg=SP|patternScope=DEFAULT_CONTEXTS|s=v0|p=const:iri:urn:p|o=v1|c=<null>>\n...largeValuesTablesAreRowOrderIndependentButRowSensitive <<< FAILURE! expected: <BSA|arity=1|columns=v0|rows=hash=e46ffeab|rowCount=40|cellCount=40> but was: <BSA|arity=1|columns=v0|rows=hash=13757147|...>\n...sevenFactorJoinKeysAreDeterministicAndDistinguishEveryNonIsomorphicShape <<< FAILURE! chain and star are not isomorphic and must not share a key\n...groupKeysAndAggregatesArePartOfTheKey <<< FAILURE! GROUP BY ?s and GROUP BY ?s ?o have different output cardinalities\n...orderDirectionAndExpressionArePartOfTheKey <<< FAILURE! ASC and DESC must differ\n...distinctOverDifferentProjectionsMustNotShareAStructuralFingerprint <<< FAILURE! DISTINCT ?s and DISTINCT ?s ?o have different multipliers but share the LMDB learning key\n...separatorCharactersInsideConstantsCannotForgeStructure <<< FAILURE!\n...filterOverUnionMustDistinguishConditionsOnDifferentBranchVariables <<< FAILURE!\n...largeValuesTablesWithDifferentRowsMustNotCollide <<< FAILURE! key=BSA|arity=1|columns=v0|rows=hash=b211c8b8|rowCount=41|cellCount=41\n...projectionAliasesAreOrderIndependentButRenameSensitive / extensionExpressionsArePartOfTheKey / filterConditionVariablesMustStayLinkedToTheFilteredJoin <<< FAILURE!",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp6/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorKeyCollisionTest.txt (log .mvnf/workspaces/wp6/logs/20260928T012944.247183Z-66352-3f97e290/verify.log)\nTests run: 16, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.112 s -- in org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorKeyCollisionTest\nFinal evaluation-module suite on the final tree (LeoOperatorKey.java last edited 01:29Z, run 02:20Z; log .mvnf/workspaces/wp6/logs/20260928T022047.929998Z-82884-2b94892b/verify.log):\nTests run: 16, Failures: 0, Errors: 0, Skipped: 0 -- in ...leo.LeoOperatorKeyCollisionTest\nTests run: 11, Failures: 0, Errors: 0, Skipped: 0 -- in ...leo.LeoOperatorKeyTest\nRe-run on the resumed tree (log .mvnf/workspaces/wp6/logs/20260928T062647.014390Z-28076-fd4d3cfc/verify.log):\nTests run: 16, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.379 s -- in org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorKeyCollisionTest"
+  },
+  {
+   "id": "3.7.1",
+   "status": "fixed",
+   "rootCause": "A query inside a transaction with pending writes reads through the changeset overlay (SailDatasetImpl / UnionSailDataset -> SailDataset.getSnapshotEpoch() empty). The planner already treats that absence as 'not a committed snapshot' (LmdbCascadesOptimizer committedSnapshotOnly, pipeline cache keyed on isPresent()), but the FEEDBACK side never looked at it: LmdbEvaluationStatistics forwarded every publication channel (resolve/publish runtime feedback targets, recordOperatorOutcome x2 incl. the completed-tree pass, recordSemiAntiOutcome, recordFilterOutcome x2 reached by FilteredBindingSetAssignmentJoinIteration) to LmdbOperatorFeedbackStats/LmdbFilterSelectivityStats, which stamped exact facts and multipliers with the COMMITTED statementMutationStamp / dataRevision. Rows that were later rolled back therefore became persisted database_exact facts (rows=700 source=frontier-v2-exact-fact for 200 committed rows) and trained store-wide models.",
+   "change": "Per-query feedback publication scope on LmdbEvaluationStatistics (instantiated per query by LmdbSailStore.getEvaluationStatistics()): `bindExecutionSnapshot(OptionalLong)` sets `feedbackPublicationAllowed = epoch.isPresent()`; the scope FAILS CLOSED until bound (critique major #2: user-configured strategy factories never construct LmdbEvaluationStrategy). All seven channels are gated on the flag: shouldTrackCostFeedback, resolveRuntimeFeedbackTarget (NO_OP), publishRuntimeFeedbackTargets, recordOperatorOutcome x2 (the base InvocationAggregateView overload delegates into these), recordSemiAntiOutcome, recordFilterOutcome x2 (critique major #1: the fused VALUES-join filter channel). Binding sites: LmdbStore.AdaptiveEvaluationStrategyFactory.createEvaluationStrategy (the factory every LmdbStoreConnection is built with, so it covers explicit user factories), LmdbEvaluationStrategyFactory.createEvaluationStrategy, and LmdbQueryOptimizerPipeline's constructor (pipeline-only instances incl. the serializable path). Planning/estimation is untouched. Diagnostics: LmdbCascadesOptimizer sets planned metric plannedFeedbackPublication=suppressed:uncommitted-snapshot on the installed root when the triple source has no epoch; LmdbQueryOptimizerPipeline re-annotates pipeline-cache hits so explain keeps the verdict. Sound because a write-free transaction keeps a present epoch (SailDatasetImpl is layered only when the changeset is non-empty) - proven by writeFreeTransactionStillPublishesFeedback, which runs with includeInferred=true (UnionSailDataset path; critique minor #4: it returns empty only if the two branch epochs differ, i.e. a commit landed between the two dataset opens - fail-closed, one query). Design item (5) (defense in depth in LmdbMappedFrontierLearningSession.contract) was not implemented: the statistics choke point already gates every channel and the mapped session is only reached through them. Critique minor #3: no observer-effect claim is made. Resume (2026-09-28): the core/sail/lmdb module suite interrupted at the previous handoff (its forked VM died at the usage-limit cutoff after 892 tests) was re-run to completion on the current tree; all 3.7.1 classes and the eight updated related classes are green and every remaining red is environmental (disk exhaustion) or a flaky allocation probe outside the gated class, each re-run green in isolation.",
+   "files": [
+    "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbEvaluationStatistics.java",
+    "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbEvaluationStrategyFactory.java",
+    "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbStore.java",
+    "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbQueryOptimizerPipeline.java",
+    "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbCascadesOptimizer.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStatsTest.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbSemiAntiFeedbackSurfaceTest.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbPackedPlanCacheTest.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbSketchAwareFilterPlacementIT.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbFilterReinvocableLearningTest.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbLearnedFilterSurfaceTest.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbLearnedSidecarJournalStampTest.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackPlanningTest.java"
+   ],
+   "testsAdded": [
+    "LmdbRolledBackFeedbackTest#rolledBackRowsMustNotBecomeLearnedOrExactEvidence",
+    "LmdbRolledBackFeedbackTest#rolledBackRowsMustNotBecomeExactFilterFacts",
+    "LmdbRolledBackFeedbackTest#rolledBackRowsMustNotTrainValuesJoinFilterCells",
+    "LmdbRolledBackFeedbackTest#rolledBackRowsMustNotTrainSemiAntiSurfaces",
+    "LmdbRolledBackFeedbackTest#writeFreeTransactionStillPublishesFeedback",
+    "LmdbRolledBackFeedbackTest#learningResumesAfterTheTransactionCommits",
+    "LmdbRolledBackFeedbackTest#explainReportsSuppressedPublicationOnlyForUncommittedSnapshots",
+    "LmdbFeedbackPublicationScopeTest#unboundStatisticsMustNotPublishFeedback",
+    "LmdbFeedbackPublicationScopeTest#statisticsBoundToAnUncommittedOverlayMustNotPublishFeedback",
+    "LmdbFeedbackPublicationScopeTest#statisticsBoundToACommittedSnapshotPublishFeedback",
+    "LmdbFeedbackPublicationScopeTest#rebindingToACommittedSnapshotReopensPublication"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp6/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbRolledBackFeedbackTest.txt (log .mvnf/workspaces/wp6/logs/20260928T014427.064977Z-70791-da49ec6f/verify.log)\nTests run: 7, Failures: 5, Errors: 0, Skipped: 0, Time elapsed: 7.241 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.LmdbRolledBackFeedbackTest\n...rolledBackRowsMustNotTrainSemiAntiSurfaces: rolled-back NOT EXISTS executions must not advance the learned-state revision ==> expected: <3525025189377246819> but was: <6463619675495824954>\n...rolledBackRowsMustNotBecomeExactFilterFacts: rolled-back executions must not advance the learned-state revision ==> expected: <1261936391796657790> but was: <8579869739997162554>\n...rolledBackRowsMustNotTrainValuesJoinFilterCells: rolled-back VALUES-join filter outcomes must not advance the learned-state revision\n...explainReportsSuppressedPublicationOnlyForUncommittedSnapshots: expected: <suppressed:uncommitted-snapshot> but was: <null>\n...rolledBackRowsMustNotBecomeLearnedOrExactEvidence: rolled-back executions must not advance the learned-state revision\n(earlier run 20260928T014122.788165Z-70009-a26347ed, estimate observable: expected 'StatementPattern rows=200.0 source=frontier-v2-exact ... guarantee=scalar_fallback' but was 'StatementPattern rows=700.0 source=frontier-v2-exact-fact leo=exact-fact guarantee=database_exact')\nReport: .../surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbFeedbackPublicationScopeTest.txt (log .mvnf/workspaces/wp6/logs/20260928T014547.183419Z-71175-59d526c0/verify.log)\nTests run: 1, Failures: 1, Errors: 0, Skipped: 0 <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.LmdbFeedbackPublicationScopeTest\n...unboundStatisticsMustNotPublishFeedback: an unbound statistics instance must not compile runtime feedback targets ==> expected: <false> but was: <true>",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp6/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbRolledBackFeedbackTest.txt (log .mvnf/workspaces/wp6/logs/20260928T021655.968564Z-81691-b599a03b/verify.log, run after the last production edit at 02:12Z)\nTests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 18.22 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbRolledBackFeedbackTest\nLmdbFeedbackPublicationScopeTest (log .mvnf/workspaces/wp6/logs/20260928T015006.664779Z-72617-4729dcc0/verify.log):\n[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.694 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbFeedbackPublicationScopeTest\nNote: the four leak tests compare per-operator row estimates (assertSameRowEstimates) rather than full estimate strings because two consecutive explains on unchanged committed data already flip the label frontier-v2-exact -> frontier-v2-exact-fact for the same 200 rows (plan-cache freshness); the leak itself was 700 vs 200 rows and the learned-state revision assertion fired first pre-fix.\nModule suite on the resumed tree (log .mvnf/workspaces/wp6/logs/20260928T062814.090449Z-29186-05ca45d4/verify.log):\n[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 13.43 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbRolledBackFeedbackTest\n[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.070 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbFeedbackPublicationScopeTest\n[INFO] Tests run: 93, Failures: 0, Errors: 0, Skipped: 0 -- in ...LmdbOperatorFeedbackStatsTest\n[INFO] Tests run: 8, Failures: 0 -- in ...LmdbSemiAntiFeedbackSurfaceTest; 12/0 LmdbPackedPlanCacheTest; 3/0 LmdbFilterReinvocableLearningTest; 10/0 LmdbLearnedFilterSurfaceTest; 6/0 LmdbLearnedSidecarJournalStampTest; 7/0 (3 skipped) LmdbOperatorFeedbackPlanningTest; 13/0 LmdbFrontierStoreLifecycleTest"
+  }
+ ],
+ "suiteRuns": [
+  {
+   "selection": "core/queryalgebra/evaluation (module unit suite, final tree for this module: LeoOperatorKey.java last edited 01:29Z)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp6 --threads 3 core/queryalgebra/evaluation --retain-logs",
+   "result": "tests=1770, failures=3, errors=1, skipped=0 (log .mvnf/workspaces/wp6/logs/20260928T022047.929998Z-82884-2b94892b/verify.log; LeoOperatorKeyCollisionTest 16/0, LeoOperatorKeyTest 11/0, all Leo* classes green)",
+   "reds": [
+    "MinusQueryEvaluationStepTest.spillFileIsRemovedWhenIterationIsExhausted / spillFileIsRemovedWhenIterationIsClosedEarly: pre-existing (environment/runner): java.io.tmpdir override by the workspace pom vs JDK TempFileHelper cached value; identical red in the b1 runs before any b2 edit; wp6 touches no MINUS/spill code.",
+    "OptimizerRuleCatalogTest.generatedDocumentationMatchesManifestAndResearchInputs: pre-existing (environment): NoSuchFile <worktree>/papers2/papers/docs/sparql_query_rewrite_catalog.md - research checkout absent from the worktree; red in every run in this worktree.",
+    "PackedFrontierSubsetKernelContractTest.arbitraryWidthBushyDependentJoinContinuesRightRecipeUnderWholeLeftPrefix: flaky under load (assertTimeoutPreemptively 120 s around an exhaustive 66-factor planner proof; passed on identical planner code on 2026-09-27 23:08; host load average 15-111 during these runs). Neither the test nor PackedCascadesPlanner references LeoOperatorKey; LeoOperatorKey.from is not called in the packed kernel search."
+   ]
+  },
+  {
+   "selection": "core/sail/lmdb (module unit suite, resumed tree incl. the in-progress later-batch b3 edits, which compile and whose tests are green)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp6 --threads 3 core/sail/lmdb --retain-logs",
+   "result": "tests=2195 (mvnf summary; same 210 classes as the b1 run plus the 5 new b2/b3 classes), failures=1, errors=20, skipped=7 (log .mvnf/workspaces/wp6/logs/20260928T062814.090449Z-29186-05ca45d4/verify.log, 2213 s)",
+   "reds": [
+    "LmdbStoreMultiRepoTest.testRandomLoadManyRepositoriesInParallel: pre-existing (environment): RepositoryException: java.io.IOException: No space left on device (host volume 98% used, several WP suites running concurrently); same error in every lmdb run in this worktree incl. b1; no learned-feedback code involved.",
+    "LmdbEstimateAuditHarnessTest (19 methods): environment (transient disk exhaustion): all 19 were RepositoryException: java.io.IOException: No space left on device; re-run in isolation on the same tree -> Tests run: 43, Failures: 0, Errors: 0 (log .mvnf/workspaces/wp6/logs/20260928T071120.549143Z-39164-4359026d/verify.log).",
+    "LmdbRuntimeFeedbackTargetTest.preboundOpenCloseAndRootPublicationAllocateNoLearningObjects: flaky (thread-allocation probe saw raw=196608 bytes over 4096 publications at load average ~85): the test drives LmdbOperatorFeedbackStats directly, never LmdbEvaluationStatistics where the 3.7.1 gate lives, and was green in b1; re-run in isolation on the same tree -> Tests run: 12, Failures: 0, Errors: 0 (log .mvnf/workspaces/wp6/logs/20260928T070819.806126Z-37907-ead7d895/verify.log)."
+   ]
+  },
+  {
+   "selection": "LeoOperatorKeyCollisionTest / LmdbRolledBackFeedbackTest / LmdbFeedbackPublicationScopeTest (pre- and post-fix class runs, see evidence file)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp6 --threads 3 <Class> --retain-logs",
+   "result": "pre-fix: 16/13 fail, 7/5 fail, 1/1 fail; post-fix: 16/0, 7/0, 4/0 (tests/failures)",
+   "reds": []
+  },
+  {
+   "selection": "Related existing classes updated for the fail-closed publication scope: LmdbOperatorFeedbackStatsTest, LmdbSemiAntiFeedbackSurfaceTest, LmdbPackedPlanCacheTest, LmdbSketchAwareFilterPlacementIT (interrupted attempt) + LmdbFilterReinvocableLearningTest, LmdbLearnedFilterSurfaceTest, LmdbLearnedSidecarJournalStampTest, LmdbOperatorFeedbackPlanningTest (this resume)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp6 --threads 3 core/sail/lmdb --retain-logs",
+   "result": "all green in the resumed module run: LmdbOperatorFeedbackStatsTest 93/0, LmdbSemiAntiFeedbackSurfaceTest 8/0, LmdbPackedPlanCacheTest 12/0, LmdbFilterReinvocableLearningTest 3/0, LmdbLearnedFilterSurfaceTest 10/0, LmdbLearnedSidecarJournalStampTest 6/0, LmdbOperatorFeedbackPlanningTest 7/0 (3 skipped); LmdbSketchAwareFilterPlacementIT is a Failsafe IT not run by the unit suite",
+   "reds": []
+  },
+  {
+   "selection": "LeoOperatorKeyCollisionTest (3.7.2 re-run on the resumed tree)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp6 --threads 3 LeoOperatorKeyCollisionTest --retain-logs",
+   "result": "tests=16, failures=0, errors=0, skipped=0",
+   "reds": []
+  }
+ ],
+ "filesTouchedOutsideOwnership": [],
+ "newFlagsOrConfig": [
+  "No new flags. Behaviour change: LMDB runtime feedback (exact facts, learned multipliers, filter cells, semi/anti surfaces, plan lifecycle) is published only by queries that read a committed snapshot; queries inside a transaction with pending writes still plan normally but do not teach, and explain shows plannedFeedbackPublication=suppressed:uncommitted-snapshot on the root. LeoOperatorKey fingerprints of >=7-factor joins, filters over joins/unions, parameterised unary operators, TripleRef/TupleFunctionCall and large VALUES tables changed (existing sidecars are already dropped once by the b1 version bumps PERSIST_VERSION 24 / LmdbLeoFeedbackStore VERSION 7)."
+ ],
+ "crossWpNotes": [
+  "An LmdbEvaluationStatistics instance obtained directly from LmdbSailStore.getEvaluationStatistics() (tests, tooling, benchmarks) no longer publishes feedback unless bindExecutionSnapshot(OptionalLong.of(...)) is called - the eight LMDB test classes listed were updated; any other WP test that replays observations through a bare store statistics instance needs the same one-line bind.",
+  "Queries executed inside explicit transactions with pending writes (e.g. theme/benchmark harnesses that load and query in one transaction before commit) no longer contribute LEO evidence until they commit - intended; the write-free transaction path is unaffected.",
+  "3.7.2 fingerprint changes also alter FilterSurfaceKey / SemiAntiSurfaceKey / LmdbMappedFrontierLearningSession keys derived from LeoOperatorKey; they relearn once under the b1 version bumps.",
+  "The design's optional defense-in-depth (LmdbMappedFrontierLearningSession.contract omitting EXACT_FACT_ELIGIBLE/ADMIT_LIFECYCLE for uncommitted snapshots) was not implemented; if wp5 wants a second guard at the learning-session level it can thread LmdbPackedCostModel.executionSnapshotEpoch.isPresent() through LmdbFrontierStatisticsCostSession.",
+  "The worktree also contains in-progress wp6 b3 edits (3.7.5 stamp regression / post-commit failure isolation / proportional mutation decay: LmdbSailStore, TripleStore, LmdbFilterSelectivityStats, LmdbLeoSurfaceStats, LmdbOperatorFeedbackStats + 3 new tests); they were kept untouched, compile, and their tests are green in the module run above, but b3 owns their evidence and report."
+ ],
+ "followUps": [
+  "Watch for LMDB tests that learn from queries executed inside explicit transactions with pending writes (design named LmdbFrontierStoreLifecycleTest / theme ITs); if one asserts learning from such a query, it is an outdated expectation under the committed-only rule.",
+  "Optional (design 3.7.2 (e)): persist a 128-bit digest of the (now longer) structuralFingerprint in OperatorKey.writeTo to bound sidecar size.",
+  "Re-run PackedFrontierSubsetKernelContractTest on an idle host to close its flaky-timeout triage with a green.",
+  "LmdbSketchAwareFilterPlacementIT (updated with the committed-snapshot bind) is a Failsafe IT and was not run in this batch; run `mvnf --workspace wp6 --it LmdbSketchAwareFilterPlacementIT --module core/sail/lmdb` when integrating.",
+  "Host disk is at 98% with concurrent WP suites; LMDB suites intermittently hit 'No space left on device' (MultiRepo, EstimateAuditHarness) - free space before the integrator's final lmdb run."
+ ]
+}

@@ -559,6 +559,10 @@ final class LmdbNativeKernelEmitter {
 					.append("        ")
 					.append(firstMethod)
 					.append("();\n")
+					.append(!kernel.resumable && (kernel.terminal instanceof Aggregate
+							|| kernel.terminal.mods.limit < 0 || kernel.terminal.mods.orderKeys != null)
+									? "        filterInputExhausted = true;\n"
+									: "")
 					.append("    }\n\n");
 
 			if (flatRootExists == null) {
@@ -1271,7 +1275,11 @@ final class LmdbNativeKernelEmitter {
 						.append(layout[1])
 						.append("];\n");
 			}
-			source.append("    private boolean closed;\n");
+			source.append("    private boolean closed;\n")
+					.append("    private boolean filterInputExhausted;\n")
+					.append("    public boolean filterInputExhausted() { return filterInputExhausted && ")
+					.append(LmdbNativeKernelIr.filterInputCompletionSupported(kernel))
+					.append("; }\n");
 
 			if (flatRootExistsShape != null) {
 				source.append("    private boolean ran;\n")
@@ -1509,7 +1517,8 @@ final class LmdbNativeKernelEmitter {
 			source.append(
 					"        aggregateMemory = KernelRuntime.AggregateMemory.forLedger(context.groupMemoryLedger());\n")
 					.append("        aggregateArrayBytes = 0L;\n")
-					.append("        ran = false;\n");
+					.append("        ran = false;\n")
+					.append("        filterInputExhausted = false;\n");
 			if (flatRootExistsShape == null) {
 				source.append("        outCount = 0;\n")
 						.append("        outPos = 0;\n");
@@ -2187,6 +2196,7 @@ final class LmdbNativeKernelEmitter {
 						.append("        run();\n")
 						.append("        if (!full) {\n")
 						.append("            done = true;\n")
+						.append("            filterInputExhausted = true;\n")
 						.append("        }\n")
 						.append("        return sinkRows;\n")
 						.append("    }\n\n");

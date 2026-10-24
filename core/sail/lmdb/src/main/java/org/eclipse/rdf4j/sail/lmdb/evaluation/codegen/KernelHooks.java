@@ -90,6 +90,13 @@ public interface KernelHooks {
 	boolean testFilter(int filterId, long a0, long a1, long a2);
 
 	/**
+	 * Records an already-decided predicate without re-evaluating it. This is per-input counting only; EOF,
+	 * selected-attempt ownership and all-cleanup completion remain separate terminal gates.
+	 */
+	default void recordFilterDecision(int filterId, boolean accepted) {
+	}
+
+	/**
 	 * Resolves one canonical fragment escape site: the compiled fragment could not decide, so the engine's exact tier
 	 * evaluates the site's bound fallback over the raw argument ids and returns the final filter-site decision (error
 	 * folded to reject, exactly like {@link #testFilter}). {@code canonicalSite} indexes the fragment binding table

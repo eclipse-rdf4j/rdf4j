@@ -132,6 +132,31 @@ class FilterPlacementAnalyzerTest {
 	}
 
 	@Test
+	void reusableConditionFrameDoesNotAuthorizeLaterReadsOfAnUnobservedAncestorBinding() {
+		BindingSetAssignment right = values("y", 2);
+		Filter filter = new Filter(new Join(values("x", 1), right), new Bound(Var.of("x")));
+		Slice island = new Slice(filter, 0, -1);
+		Join parent = new Join(values("outer", 3), island);
+		parent.setAlgorithm("JoinIterator");
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(new QueryRoot(parent),
+				EmptyBindingSet.getInstance());
+		Envelope envelope = new FilterPlacementAnalyzer(island, analysis).analyze(filter);
+		FilterPlacementAnalyzer.Site rightSite = envelope.singletonAlternatives()
+				.stream()
+				.flatMap(alternative -> alternative.cut().stream())
+				.filter(site -> site.argument() == right)
+				.findFirst()
+				.orElseThrow();
+		assertThat(analysis.contextAt(island).guaranteedNames()).contains("outer");
+		assertThat(
+				analysis.bindingFactsStableAt(Set.of("outer"), analysis.contextAt(island), rightSite.conditionFrame(),
+						Set.of(), Set.of()))
+								.as("a later condition must not inherit authority from an earlier copy-elision proof")
+								.isFalse();
+		assertThat(rightSite.conditionFrame().guaranteedNames()).containsExactlyInAnyOrder("x", "y");
+	}
+
+	@Test
 	void supportedSubtreeAnalysisPreservesInheritedBindingFacts() {
 		Filter filter = new Filter(new Join(values("x", 1), values("y", 2)), new Bound(Var.of("x")));
 		Slice island = new Slice(filter, 0, -1);
@@ -326,6 +351,19 @@ class FilterPlacementAnalyzerTest {
 		assertThatThrownBy(structure::analyzeAll).isInstanceOf(IllegalStateException.class);
 		assertThat(opaque.argument).isSameAs(filter);
 		assertThat(filter.getParentNode()).isSameAs(opaque);
+	}
+
+	@Test
+	void changingPhysicalFilterParametersInvalidatesPlacementProofs() {
+		Filter filter = new Filter(new Join(values("x", 1), values("y", 2)), new Bound(Var.of("x")));
+		QueryRoot root = new QueryRoot(filter);
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(root,
+				EmptyBindingSet.getInstance());
+		FilterPlacementAnalyzer analyzer = new FilterPlacementAnalyzer(filter, analysis);
+		assertThat(analyzer.isCurrent()).isTrue();
+		filter.setRequiredInputBindingNames(Set.of("x"));
+		assertThat(analyzer.isCurrent()).isFalse();
+		assertThatThrownBy(analyzer::analyzeAll).isInstanceOf(IllegalStateException.class);
 	}
 
 	@Test
@@ -738,6 +776,45 @@ class FilterPlacementAnalyzerTest {
 		assertThat(singletonSites(envelope)).containsExactly(right, join);
 		assertThat(evaluate(root.clone())).isEmpty();
 		assertEveryPlacementPreservesBag(root, filter, envelope);
+	}
+
+	@Test
+	void implicitValuesNamesStayLocalThroughNestedFilterArguments() {
+		Filter nested = new Filter(values("y", 3, 4), new Exists(values("x", 2)));
+		Filter filter = new Filter(nested, new If(new Bound(Var.of("y")),
+				new Not(new Exists(values("x", 2))), new ValueConstant(VF.createLiteral(false))));
+		QueryRoot root = new QueryRoot(new Join(values("x", 1, 1, 2), filter));
+		Envelope envelope = analyzer(root).analyze(filter);
+		assertThat(envelope.originalSite().conditionFrame().maybeBoundNames()).containsExactly("y");
+		assertThat(evaluate(root.clone())).isEmpty();
+		assertEveryPlacementPreservesBag(root, filter, envelope);
+	}
+
+	@Test
+	void declaredRequestInputsAuthorizePlacementsInsideAnInheritedIsland() {
+		Filter filter = new Filter(new Join(values("x", 1), values("y", 2)), new Bound(Var.of("api")));
+		Slice island = new Slice(filter, 0, -1);
+		QueryRoot root = new QueryRoot(island);
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(root,
+				new ListBindingSet(List.of("api"), VF.createLiteral(3)));
+		Envelope envelope = new FilterPlacementAnalyzer(island, analysis).analyze(filter);
+		assertThat(envelope.singletonAlternatives()).hasSizeGreaterThan(1);
+		assertThat(envelope.singletonAlternatives()).allSatisfy(alternative -> alternative.cut()
+				.forEach(site -> assertThat(site.conditionFrame().guaranteedNames()).contains("api")));
+	}
+
+	@Test
+	void outsideAlgorithmChangesInvalidateInheritedFrameProofs() {
+		Filter filter = new Filter(new Join(values("x", 1), values("y", 2)), new Bound(Var.of("x")));
+		Slice island = new Slice(filter, 0, -1);
+		Join enclosing = new Join(values("outer", 3), island);
+		enclosing.setAlgorithm("JoinIterator");
+		QueryRoot root = new QueryRoot(enclosing);
+		Envelope envelope = new FilterPlacementAnalyzer(island,
+				QueryAlgebraBindingAnalysis.withBindingValues(root, EmptyBindingSet.getInstance())).analyze(filter);
+		assertThat(envelope.isCurrent()).isTrue();
+		enclosing.setAlgorithm("HashJoinIteration");
+		assertThat(envelope.isCurrent()).isFalse();
 	}
 
 	@Test

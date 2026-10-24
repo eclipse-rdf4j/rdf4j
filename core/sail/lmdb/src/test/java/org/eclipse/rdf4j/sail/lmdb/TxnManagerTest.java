@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
+import static org.lwjgl.system.MemoryUtil.memUTF8;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOMETASYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
@@ -31,6 +32,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_env_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxreaders;
+import static org.lwjgl.util.lmdb.LMDB.mdb_reader_list;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
@@ -69,6 +71,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
+import org.lwjgl.util.lmdb.MDBMsgFunc;
 
 public class TxnManagerTest {
 
@@ -414,6 +417,139 @@ public class TxnManagerTest {
 				untrackedTxn.close();
 			}
 			mdb_env_close(env);
+		}
+	}
+
+	@Test
+	public void untrackedDeactivationAdvancesVersionBeforeReactivation(@TempDir Path dataDir) throws Exception {
+		long env = openEnv(dataDir, 2);
+		TxnManager.Txn untrackedTxn = null;
+
+		try {
+			TxnManager txnManager = new TxnManager(env, TxnManager.Mode.RESET);
+			untrackedTxn = txnManager.createReadTxnUntracked();
+			long version = untrackedTxn.version();
+
+			txnManager.deactivate();
+			try {
+				assertEquals(version + 1, untrackedTxn.version(),
+						"Deactivation must invalidate a pinned reader even if reactivation later fails");
+			} finally {
+				txnManager.activate();
+			}
+			assertEquals(version + 1, untrackedTxn.version(),
+					"Reactivation must not advance the same invalidation generation twice");
+		} finally {
+			if (untrackedTxn != null) {
+				untrackedTxn.close();
+			}
+			mdb_env_close(env);
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 0, 1, 2 })
+	void deactivationReleasesNativeSnapshotExactlyOnce(int readerKind, @TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET,
+				LmdbSailStore.MapResizeKind.TRIPLE_STORE);
+				TxnManager.Txn reader = readerKind == 0 ? fixture.manager.createReadTxn()
+						: fixture.manager.createReadTxnUntracked()) {
+			boolean bound = readerKind == 2;
+			if (bound) {
+				reader.setSnapshotRevision(17L);
+			}
+			long version = reader.version();
+			assertTrue(reader.isNativeActive());
+			assertEquals(1, activeNativeReaderCount(fixture.env));
+			fixture.manager.deactivate();
+			assertFalse(reader.isNativeActive(), "deactivation must reset the active native transaction immediately");
+			assertEquals(0, activeNativeReaderCount(fixture.env),
+					"the native reader table must expose no active snapshot");
+			assertEquals(version + 1L, reader.version(), "losing the native snapshot advances its version once");
+			fixture.manager.deactivate();
+			assertEquals(version + 1L, reader.version(), "repeated deactivation cannot lose the same snapshot twice");
+			if (bound) {
+				assertEquals(-1L, reader.snapshotRevision());
+				LmdbSailStore.MapResizeConflictException failure = assertThrows(
+						LmdbSailStore.MapResizeConflictException.class, reader::ensureSnapshotValid);
+				assertEquals(LmdbSailStore.MapResizeKind.TRIPLE_STORE, failure.kind());
+			}
+			fixture.manager.activate();
+			fixture.manager.activate();
+			assertEquals(version + 1L, reader.version(), "activation cannot advance the same invalidation again");
+			assertEquals(!bound, reader.isNativeActive(), "an invalidated membership snapshot cannot be reactivated");
+			assertEquals(bound ? 0 : 1, activeNativeReaderCount(fixture.env));
+			if (bound) {
+				assertThrows(LmdbSailStore.MapResizeConflictException.class, reader::ensureSnapshotValid);
+			} else {
+				reader.ensureSnapshotValid();
+				fixture.manager.deactivate();
+				assertEquals(version + 2L, reader.version(), "a newly activated snapshot has its own loss generation");
+				assertFalse(reader.isNativeActive());
+				assertEquals(0, activeNativeReaderCount(fixture.env));
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void idleReaderStaysResetUntilReuseAfterDeactivation(boolean bound, @TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET)) {
+			TxnManager.Txn pooled = fixture.manager.createReadTxnUntracked();
+			if (bound) {
+				pooled.setSnapshotRevision(17L);
+			}
+			long version = pooled.version();
+			long lease = pooled.lease();
+			pooled.close();
+			assertTrue(pooled.isIdle());
+			fixture.manager.deactivate();
+			assertFalse(pooled.isNativeActive(),
+					"an idle pooled handle must release its native snapshot for map resize");
+			assertEquals(0, activeNativeReaderCount(fixture.env));
+			fixture.manager.deactivate();
+			fixture.manager.activate();
+			fixture.manager.activate();
+			assertEquals(version + 1L, pooled.version());
+			assertFalse(pooled.isNativeActive(),
+					"activation leaves idle readers reset until another owner borrows them");
+			try (TxnManager.Txn reused = fixture.manager.createReadTxn()) {
+				assertSame(pooled, reused);
+				assertNotEquals(lease, reused.lease());
+				assertEquals(version + 1L, reused.version());
+				assertEquals(-1L, reused.snapshotRevision());
+				reused.ensureSnapshotValid();
+				assertTrue(reused.isNativeActive());
+				assertEquals(1, activeNativeReaderCount(fixture.env));
+			}
+		}
+	}
+
+	@Test
+	void failedReactivationKeepsReaderResetAndLossVersionStable(@TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET);
+				TxnManager.Txn reader = fixture.manager.createReadTxnUntracked()) {
+			long version = reader.version();
+			fixture.manager.deactivate();
+			try (QueryExecutionDeadline deadline = QueryExecutionDeadline.start(1L)) {
+				CountDownLatch expired = new CountDownLatch(1);
+				try (QueryExecutionDeadline.Registration registration = deadline.onExpiration(expired::countDown)) {
+					assertTrue(expired.await(5L, TimeUnit.SECONDS));
+					try (QueryExecutionDeadline.Scope ignored = deadline.enter()) {
+						assertThrows(QueryInterruptedException.class, fixture.manager::activate,
+								"renewal must encounter the expired deadline instead of retaining the old active snapshot");
+					}
+				}
+			}
+			assertFalse(reader.isNativeActive());
+			assertEquals(0, activeNativeReaderCount(fixture.env));
+			assertEquals(version + 1L, reader.version());
+			fixture.manager.deactivate();
+			fixture.manager.activate();
+			assertTrue(reader.isNativeActive(), "a later successful renewal must recover the same owned reader");
+			assertEquals(1, activeNativeReaderCount(fixture.env));
+			assertEquals(version + 1L, reader.version(),
+					"failed and successful renewal must not double-advance version");
 		}
 	}
 
@@ -921,8 +1057,13 @@ public class TxnManagerTest {
 		private boolean managerClosed;
 
 		private ReaderFixture(Path dataDir, TxnManager.Mode mode) throws IOException {
+			this(dataDir, mode, null);
+		}
+
+		private ReaderFixture(Path dataDir, TxnManager.Mode mode, LmdbSailStore.MapResizeKind resizeKind)
+				throws IOException {
 			env = openEnv(dataDir, TxnManager.POOL_SIZE);
-			manager = new TxnManager(env, mode);
+			manager = new TxnManager(env, mode, resizeKind);
 		}
 
 		private void hold(int count) throws IOException {
@@ -1127,5 +1268,20 @@ public class TxnManagerTest {
 			E(mdb_txn_begin(env, NULL, MDB_RDONLY, pp));
 			return pp.get(0);
 		}
+	}
+
+	/** LMDB reports an inactive reserved reader slot with '-' in its transaction-ID column. */
+	private static int activeNativeReaderCount(long env) throws IOException {
+		AtomicInteger active = new AtomicInteger();
+		try (MemoryStack stack = stackPush(); MDBMsgFunc callback = MDBMsgFunc.create((message, ignored) -> {
+			String[] columns = memUTF8(message).trim().split("\\s+");
+			if (columns.length == 3 && columns[2].chars().allMatch(Character::isDigit)) {
+				active.incrementAndGet();
+			}
+			return 0;
+		})) {
+			E(mdb_reader_list(env, callback, stack.mallocPointer(1).address()));
+		}
+		return active.get();
 	}
 }

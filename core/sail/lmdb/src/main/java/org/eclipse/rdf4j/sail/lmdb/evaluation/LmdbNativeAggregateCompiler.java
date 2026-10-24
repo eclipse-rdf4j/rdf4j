@@ -228,7 +228,17 @@ final class LmdbNativeAggregateCompiler {
 	 */
 	static CompileOutcome compileRoot(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
-		CompileResult result = compile(expr, context, strategy, source, true);
+		return compileRoot(expr, context, strategy, source, false);
+	}
+
+	static CompileOutcome compileFinalTupleResult(TupleExpr expr, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
+		return compileRoot(expr, context, strategy, source, true);
+	}
+
+	private static CompileOutcome compileRoot(TupleExpr expr, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, boolean finalTupleResult) {
+		CompileResult result = compile(expr, context, strategy, source, true, Set.of(), Set.of(), finalTupleResult);
 		if (result.step == null) {
 			if (result.capacityExceeded) {
 				return CompileOutcome.capacity();
@@ -290,14 +300,22 @@ final class LmdbNativeAggregateCompiler {
 	private static CompileResult compile(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, boolean rootEvaluation,
 			Set<String> inheritedFrameInputNames, Set<String> inheritedLateralFrameInputNames) {
+		return compile(expr, context, strategy, source, rootEvaluation, inheritedFrameInputNames,
+				inheritedLateralFrameInputNames, false);
+	}
+
+	private static CompileResult compile(TupleExpr expr, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, boolean rootEvaluation,
+			Set<String> inheritedFrameInputNames, Set<String> inheritedLateralFrameInputNames,
+			boolean finalTupleResult) {
 		NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(expr, context.getDataset(), strategy);
 		CompileResult result = strategy.withValuePositions(physical.positions(),
 				() -> compilePhysical(physical.expression(), context, strategy, source, rootEvaluation,
-						inheritedFrameInputNames, inheritedLateralFrameInputNames));
+						inheritedFrameInputNames, inheritedLateralFrameInputNames, finalTupleResult));
 		if (result.step != null && !physical.guardedSelectors().isEmpty()) {
 			QueryEvaluationStep guarded = new NativeGraphAliasGuardStep(result.step, physical.guardedSelectors(),
 					() -> compile(expr, context, strategy, source, rootEvaluation, inheritedFrameInputNames,
-							inheritedLateralFrameInputNames).step);
+							inheritedLateralFrameInputNames, finalTupleResult).step);
 			return new CompileResult(guarded, result.kind, result.capacityExceeded, result.sawIsland);
 		}
 		return result;
@@ -305,11 +323,13 @@ final class LmdbNativeAggregateCompiler {
 
 	private static CompileResult compilePhysical(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, boolean rootEvaluation,
-			Set<String> inheritedFrameInputNames, Set<String> inheritedLateralFrameInputNames) {
+			Set<String> inheritedFrameInputNames, Set<String> inheritedLateralFrameInputNames,
+			boolean finalTupleResult) {
 		LmdbNativeAggregatePlanner compiler = new LmdbNativeAggregatePlanner(context, strategy, source);
 		// Root-host compiles (one evaluate() = one query evaluation) may prepare generic bridges per evaluation;
 		// interior compiles must not — their steps evaluate once per outer input mapping (M-A1a).
 		compiler.rootEvaluationScoped = rootEvaluation;
+		compiler.finalTupleResult = finalTupleResult;
 		compiler.inheritedFrameInputNames = inheritedFrameInputNames;
 		compiler.inheritedLateralFrameInputNames = inheritedLateralFrameInputNames;
 		QueryEvaluationStep step = null;

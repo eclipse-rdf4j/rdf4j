@@ -1,0 +1,244 @@
+{
+  "wp": "wp8-reader-pool-and-exactness",
+  "summary": "Both 3.10 findings are confirmed by code reading and map cleanly onto the repro tests. (1) Reader-pool starvation: develop's TxnManager (GH-5970) admits at most 127 ordinary read leases plus one reserved slot with a 30 s admission timeout; every default SPARQL evaluation already holds two ordinary leases (UnionSailSource opens an explicit and an inferred LmdbSailDataset, each createReadTxn), and branch-added planner code then takes further ordinary leases on the same thread (TripleStore.repeatedVariableCardinality/exactCardinality/sampleTriplesStratified/boundedDistinctCursorSkipCardinality/indexCostProfile, LmdbFiniteJoinSurfaceEstimator 131/173/369, LmdbFilterSelectivityStats 685/777/1342). The root cause is that planner-time storage reads are not bound to the query's own snapshot lease; the fix is a pinned planning read lease: the pipeline hands the dataset's Txn into the estimator optimization scope and every planner-time read goes through TripleStore.planningReadTxn()/planningRead(), which reuses the pinned txn (no permit) and only falls back to a fresh lease when no pin exists; the 369 self-deadlock disappears because nested reads share the pin. A second, independently landable part caps the unbounded exact scans (repeatedVariableCardinality, exactCardinality) so no planner read is ever both unbounded and lease-holding. (2) Sampled finite probes labelled DATABASE_EXACT: since the merge, TripleStore.planningCardinality delegates to develop's bounded page estimator and throws away its CardinalityEstimate.exact/hard-bound fields; LmdbPackedCostModel:386-388 nevertheless stamps every finite_binding_probe row as DATABASE_EXACT, so a sampled 0 becomes EXACT_ZERO (evidenceSummary -> EvidenceStateSummary.exact), certifies root rows, classifies memo states as exact-extensional, marks prefixes provably empty (EstimateContext:145) and excludes the operator from LEO learning. The fix carries exactness and hard bounds from the estimator through LmdbStatementPatternCardinalitySource and LmdbEstimatorStorageAccess into FiniteLookupEstimate, labels DATABASE_EXACT only when every probe was exact, otherwise CERTIFIED_BOUND_ONLY/SCALAR_FALLBACK with bound metrics, and escalates non-exact zeros to a key-bounded exact probe on the pinned txn (roadmap 4.3 fallback chain).",
+  "findings": [
+    {
+      "id": "3.10.1",
+      "title": "Planner-time nested ordinary read leases starve on develop's fixed LMDB reader pool (pinned planning read lease)",
+      "status": "confirmed-by-code-reading",
+      "severity": "S2 (merge-integration; 30-60 s stalls per query under >=63 concurrent includeInferred queries, then silently lost estimates)",
+      "rootCause": "Pool: core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/TxnManager.java L82-100 (POOL_SIZE=128, readerSlots=Semaphore(127), priorityReaderSlot=Semaphore(1), READER_ADMISSION_TIMEOUT_NANOS=30 s), L318-337 acquireReaderPermit throws IOException after 30 s; only doWithPriority (L224-226) may use the reserved slot and its javadoc requires the callback to not acquire another read txn. Leases held by a query: core/sail/base/.../SailSourceConnection.java L265-280 evaluateInternal -> branch(IncludeInferred) L1155-1187 -> UnionSailSource(inferred, explicit) for includeInferred=true -> UnionSailSource.dataset L83-90 opens two datasets -> LmdbSailStore.java L3286-3300 LmdbSailDataset ctor createReadTxn() (tracked) => two ordinary permits per default query, held through optimize() (L280) and evaluation. Nested ordinary acquisitions during planning on the same thread (all branch-added): TripleStore.java L1810 repeatedVariableCardinality (createReadTxn, unbounded scan) <- LmdbStatementPatternCardinalitySource.java L298 estimateRepeatedIds <- L233 estimateForPlanning(repeatedMask) <- LmdbEstimatorStorageAccess.java L110-114 legacyPackedRows <- LmdbPackedCostModel.java L240 statementPatternRows / L3598 finiteProbeRows; TripleStore.java L2106 exactCardinality (doWith = ordinary createReadTxnInternal(true,false), unbounded) <- LmdbStatementPatternCardinalitySource L99 estimateExact <- LmdbStorageEstimatorEvidence.java L272 exactCandidate; TripleStore.java L1506 sampleTriplesStratified (doWith) <- LmdbFilterSelectivityStats.java L1301 <- L1259 sampleFilterPassRatio <- L610 estimateLiveFilterPass (foreground planning); on IOException the fallback at L1342 takes ANOTHER ordinary createReadTxn (second 30 s wait) before returning null; TripleStore.java L1419 boundedDistinctCursorSkipCardinality (createReadTxn) <- LmdbStatementPatternCardinalitySource L144-146 <- LmdbEstimatorStorageAccess L160; TripleStore.java L2157 indexCostProfile (doWith) <- LmdbPhysicalCostObjective.java L79 loadProfile (per-session cache only; first use per query is a nested ordinary lease \u2014 not listed by the review); LmdbFiniteJoinSurfaceEstimator.java L131 estimateAlternative, L173 estimateConnected, L369 estimate (createReadTxn); L369 nests: inside its txn it calls exactSeedIndex (L379) / surfaceCardinality (L403) -> planningCardinality(ids, scanBudget) L606-618 -> cardinalities.estimateIdsForPlanning -> TripleStore.planningCardinality L1801 -> cardinality L1754 -> cardinalityUsingPageEstimator L1874 doWithPriority (or legacy sampler L1944/L1957 doWithPriority). Converting L369 to doWithPriority would make the nested doWithPriority wait on the single reserved permit held by the same thread -> 30 s self-deadlock (confirmed). LmdbFilterSelectivityStats.java L685 exactBoundedFilterZero, L777 exactMatchingDistinctValues also createReadTxn. All these callers swallow the IOException (LmdbStatementPatternCardinalitySource returns -1/OptionalDouble.empty; LmdbFiniteJoinSurfaceEstimator returns Optional.empty; sampleFilterPassRatio returns null), so after the timeout the estimate is silently lost. develop's own nested estimator sites were moved to doWithPriority (TripleStore L1874/L1944/L1957) and develop's filter sampler has exactly one ordinary site (develop LmdbFilterSelectivityStats L538); the branch added the rest.",
+      "fix": "Bind every planner-time storage read to the query's own snapshot lease instead of acquiring new leases (roadmap 4.2 snapshot binding + 4.6 fail-safe): (a) TripleStore gets a pinned planning lease: `AutoCloseable pinPlanningTxn(Txn pinned)` (ThreadLocal<Txn> in TripleStore, depth-counted; cleared on close) plus two accessors used by ALL planner-time reads: `Txn planningReadTxn()` returns a non-owning view of the pinned txn when present (close() is a no-op; keep the real Txn object so LmdbRecordIterator still gets version()/lockManager()/valuePool \u2014 do not wrap via createTxn(long)), otherwise `txnManager.createReadTxn()` (the thread holds no dataset lease in that case, so an ordinary permit is correct and cannot nest); `<T> T planningRead(Transaction<T>)` runs the callback on `pinned.get()` under `lockManager.readLock()` exactly like TxnManager.doWith does, else falls back to the existing `doWithPriority` (short, bounded, non-nesting callbacks only). (b) Convert the TripleStore sites: cardinalityUsingPageEstimator L1874 and the legacy sampler L1944/L1957 -> planningRead (pinned first, priority fallback = current develop behaviour); sampleTriplesStratified, repeatedVariableCardinality, exactCardinality, boundedDistinctCursorSkipCardinality, indexCostProfile -> take an explicit `Txn` parameter and let callers obtain it from planningReadTxn() (explicit passing; no policy inside). (c) Convert the estimator sites: LmdbFiniteJoinSurfaceEstimator L131/L173/L369 and LmdbFilterSelectivityStats L685/L777/L1342 replace `tripleStore.getTxnManager().createReadTxn()` with `tripleStore.planningReadTxn()`; sampleFilterPassRatio opens one txn at the top and passes it to sampleTriplesStratified and the prefix fallback (removes the double 30 s wait). With a pin present the nested planningCardinality inside L369 reuses the same txn, so no permit is taken at any depth and the self-deadlock is structurally impossible. (d) Establish the pin per query: LmdbEstimatorRuntime.beginScope(Txn pinned) stores the txn in LmdbEstimatorOptimizationScope and calls tripleStore.pinPlanningTxn for the outermost scope (closeScope unpins); LmdbQueryOptimizerPipeline.optimize/computePlan opens the scope for the whole pipeline (so non-cascades optimizers that call LmdbEvaluationFilterServices/filter stats are covered) and LmdbCascadesOptimizer.beginQueryOptimizationScope just nests; LmdbDetachedPlanRefresh passes its LmdbDetachedPlanningSnapshot dataset's txn the same way. (e) Reaching the dataset Txn from the pipeline: LMDB-internal `interface LmdbPinnedReadTxnSource { Optional<Txn> pinnedReadTxn(); }` implemented by LmdbSailDataset (returns txn unless closed). The pipeline only has a SailDatasetTripleTermSource, whose dataset may be an LmdbSailDataset, a UnionSailDataset (inferred+explicit) or a SailDatasetImpl/DelegatingSailDataset wrapper; add to sail-base `SailDataset` a capability lookup `default <T> Optional<T> unwrap(Class<T> type)` (self if instance, else empty), overridden in UnionSailDataset (dataset1 then dataset2), DelegatingSailDataset (delegate) and SailDatasetImpl (derivedFrom), plus `SailDatasetTripleTermSource.unwrapDataset(Class<T>)`. This mirrors the getSnapshotEpoch() plumbing this branch already added to sail-base. For the union case pin the explicit dataset's txn (either sees both explicit and inferred DBs). Alternative if sail-base must not change: tag Txn with its owner thread and creation sequence in TxnManager and let TripleStore.pinPlanningTxn default to `txnManager.newestTxnHeldByCurrentThread()` \u2014 implicit and picks the wrong snapshot when a thread holds an unrelated untracked txn, so only as a fallback option. (f) Fail-safe: planningReadTxn/planningRead never throw for a missing pin; if the pinned txn was closed concurrently (LmdbSailDataset.close from another thread) fall back to the unpinned path. Why sound: the pinned txn is the execution dataset's tracked txn; LMDB read txns are single-threaded and planning runs on the query thread before evaluation opens iterators; TxnManager.reset()/deactivate() run under the write lock while every planning read holds the read lock (same discipline as doWith and LmdbRecordIterator), so a concurrent commit cannot reset the handle mid-read. Estimates now read the execution snapshot (the review's stated bonus).",
+      "files": [
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/TripleStore.java",
+          "lines": "~390 (after getTxnManager): add pinPlanningTxn/planningReadTxn/planningRead; 1419 boundedDistinctCursorSkipCardinality; 1506 sampleTriplesStratified; 1810 repeatedVariableCardinality; 1874, 1944, 1957 cardinalityUsingPageEstimator/legacy sampler; 2106 exactCardinality; 2157 indexCostProfile",
+          "change": "Add the pinned planning lease API; make the five planner-time read methods take an explicit Txn (or route through planningRead for the page estimator/legacy sampler); remove direct createReadTxn/doWith from planner paths"
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbFiniteJoinSurfaceEstimator.java",
+          "lines": "131, 173, 369",
+          "change": "Replace tripleStore.getTxnManager().createReadTxn() with tripleStore.planningReadTxn()"
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbFilterSelectivityStats.java",
+          "lines": "685, 777, 1259-1360 (sampleFilterPassRatio incl. 1301 and 1342)",
+          "change": "Use planningReadTxn(); open one txn per sampleFilterPassRatio call and pass it to sampleTriplesStratified and the prefix fallback"
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbStatementPatternCardinalitySource.java",
+          "lines": "96-100, 140-150, 296-300",
+          "change": "Obtain Txn via tripleStore.planningReadTxn() and pass it to exactCardinality/repeatedVariableCardinality/boundedDistinctCursorSkipCardinality"
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorStorageAccess.java",
+          "lines": "85-90",
+          "change": "indexCostProfile passes a planning txn"
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorRuntime.java",
+          "lines": "367-380 beginScope, 520-526 closeScope",
+          "change": "beginScope(Txn pinned) pins/unpins on the TripleStore for the outermost scope; store pinned txn in LmdbEstimatorOptimizationScope"
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorOptimizationScope.java",
+          "lines": "class fields",
+          "change": "Add `final Txn pinnedReadTxn` (nullable)"
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbEvaluationStatistics.java",
+          "lines": "222-225 beginQueryOptimizationScope",
+          "change": "Add overload beginQueryOptimizationScope(Txn pinned) delegating to runtime.beginScope(pinned)"
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbQueryOptimizerPipeline.java",
+          "lines": "110-122 optimize, 124-155 computePlan",
+          "change": "Resolve the pinned txn from tripleSource (SailDatasetTripleTermSource.unwrapDataset(LmdbPinnedReadTxnSource.class)) and open the estimator scope around the whole pipeline run"
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbCascadesOptimizer.java",
+          "lines": "433-437 beginQueryOptimizationScope",
+          "change": "Pass the pinned txn resolved from frontierStatementSource when opening the scope (nests inside the pipeline scope)"
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbDetachedPlanRefresh.java",
+          "lines": "90-130",
+          "change": "Pin the detached snapshot's dataset txn for the refresh planning run"
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbSailStore.java",
+          "lines": "3272-3300 LmdbSailDataset",
+          "change": "Implement LmdbPinnedReadTxnSource (new package-private interface file) returning txn unless closed"
+        },
+        {
+          "path": "core/sail/base/src/main/java/org/eclipse/rdf4j/sail/base/SailDataset.java",
+          "lines": "near getSnapshotEpoch (L47)",
+          "change": "Add `default <T> Optional<T> unwrap(Class<T> type)`"
+        },
+        {
+          "path": "core/sail/base/src/main/java/org/eclipse/rdf4j/sail/base/UnionSailDataset.java",
+          "lines": "62-72",
+          "change": "Override unwrap: dataset1 then dataset2"
+        },
+        {
+          "path": "core/sail/base/src/main/java/org/eclipse/rdf4j/sail/base/DelegatingSailDataset.java",
+          "lines": "58-60",
+          "change": "Override unwrap: delegate"
+        },
+        {
+          "path": "core/sail/base/src/main/java/org/eclipse/rdf4j/sail/base/SailDatasetImpl.java",
+          "lines": "getSnapshotEpoch override",
+          "change": "Override unwrap: derivedFrom"
+        },
+        {
+          "path": "core/sail/base/src/main/java/org/eclipse/rdf4j/sail/base/SailDatasetTripleTermSource.java",
+          "lines": "57-61",
+          "change": "Add `<T> Optional<T> unwrapDataset(Class<T>)`"
+        }
+      ],
+      "size": "large",
+      "risk": "Medium. Concurrency-adjacent (lease accounting) but strictly reduces permit usage; the main hazards are (1) a stale pin (ThreadLocal not cleared) making a later query on the same thread read a closed txn \u2014 mitigated by depth-counted pin/unpin in try/finally and a closed-check fallback; (2) planning now reads the pinned snapshot: for tracked query datasets this is what execution sees anyway; for the untracked detached-refresh snapshot estimates stop seeing rows committed after the snapshot (intended per LmdbDetachedPlanningSnapshot.snapshotEpoch but a behaviour change for wp5/3.3 caches); (3) sail-base API addition (default method, source-compatible). No public LMDB API change; japicmp unaffected except the new default method on SailDataset (additive).",
+      "recommendation": "fix-now",
+      "recommendationReason": "Merge-induced S2 that turns every planner estimate into a 30-60 s stall under realistic concurrency and then silently degrades plans; the design removes the nesting rather than widening the reserved slot, and it is a prerequisite for making estimates snapshot-consistent (roadmap 4.2).",
+      "reproTestMethods": [
+        "LmdbMergeIntegrationReviewReproTest#repeatedVarQueryWithOnlyDatasetSlotsFree -> port to core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbPlannerReaderLeaseTest (end-to-end; holds POOL_SIZE-3 leases, expects the query to finish < 8 s)",
+        "LmdbMergeIntegrationReviewReproTest#filterQueryPlanningStallsWithOnlyDatasetSlotsFree -> same class (covers sampleTriplesStratified + prefix fallback double wait)",
+        "LmdbMergeIntegrationReviewReproTest#controlPlainQueryWithOnlyDatasetSlotsFree -> same class (control; also exercises indexCostProfile nested doWith \u2014 if it is red today that confirms the extra site)",
+        "LmdbMergeIntegrationReviewReproTest#nestedOrdinaryPlannerReadStallsWherePriorityReadProceeds -> port to same class but model the nesting explicitly: hold POOL_SIZE-1 leases, pin one of them via tripleStore.pinPlanningTxn(held.get(0)) on the estimator thread, then assert repeatedVariableCardinality and cardinality both complete < 5 s. As written (no pin) the test asserts that an unrelated thread with no lease jumps the 127 ordinary waiters, which is not the bug and would require unbounded work on the reserved slot; keep the reviewer's variant only as a documented characterisation of develop behaviour"
+      ],
+      "additionalTests": [
+        "Nested self-deadlock: with a pin present and BOTH readerSlots and priorityReaderSlot exhausted by other holders, LmdbFiniteJoinSurfaceEstimator.estimate(prefix, factor, VALUES) (the L369 path that calls planningCardinality inside its txn) completes and returns a non-empty estimate",
+        "Pin lifetime: after LmdbQueryOptimizerPipeline.optimize returns, TripleStore has no pinned txn on the thread; a subsequent direct TripleStore.planningReadTxn() acquires an ordinary permit (assert readerSlots.availablePermits() drop via a package-private TxnManager accessor)",
+        "Unpinned background sampler: LmdbFilterSelectivityStats background sampleFilterPassRatio (refresh thread) never touches the priority slot (assert priorityReaderSlot permits unchanged) and takes exactly one ordinary permit for both stratified and prefix passes",
+        "Union dataset pin resolution: includeInferred=true query resolves the explicit LmdbSailDataset txn through UnionSailDataset.unwrap; explicit-only and SERIALIZABLE (SailDatasetImpl overlay) resolve too; a non-LMDB TripleSource yields no pin and planning still works",
+        "Snapshot consistency: detached refresh pinned on an untracked snapshot does not observe rows committed after the snapshot was opened (documents the behaviour change)",
+        "Closed-pin fallback: closing the dataset from another thread while pinned makes planningReadTxn fall back to a fresh lease instead of using txn handle 0",
+        "TxnManagerTest and CardinalityTest#cardinalityCompletesWithAllOrdinaryReadersHeld remain green (unpinned priority fallback preserved)"
+      ],
+      "existingTestsAtRisk": [
+        "LmdbExactFilterProbeCacheTest (mocks TripleStore and getTxnManager at L115-118): once LmdbFilterSelectivityStats calls tripleStore.planningReadTxn(), the Mockito mock returns null -> NPE; stub planningReadTxn() to return txnManager.createReadTxn()",
+        "LmdbStatementPatternCardinalitySourceTest and LmdbCorrelatedFiniteSurfaceEstimatorTest (Mockito TripleStore): if exactCardinality/repeatedVariableCardinality/planningCardinality signatures gain a Txn parameter the when(...) stubs must be updated to the new signatures (anyLong()/any(Txn.class))",
+        "CardinalityTest#cardinalityCompletesWithAllOrdinaryReadersHeld: unchanged semantics (no pin -> priority fallback); re-run to confirm",
+        "TxnManagerTest#createReadTxnBlocksWhenPoolIsExhausted: unchanged",
+        "Any LmdbSailStoreTest/TripleStoreTest that calls tripleStore.indexCostProfile/exactCardinality directly: adapt to the Txn-taking overloads or keep thin no-arg convenience overloads that acquire via planningReadTxn()"
+      ]
+    },
+    {
+      "id": "3.10.1b",
+      "title": "Cap the unbounded planner scans (repeatedVariableCardinality, exactCardinality) so no planning read is both unbounded and lease-holding",
+      "status": "confirmed-by-code-reading",
+      "severity": "S2 companion (latency + lease hold time; also blocks the reserved slot whenever the priority fallback is used)",
+      "rootCause": "TripleStore.java L1806-1823 repeatedVariableCardinality iterates every row of the unrepeated pattern on both planes (for `?s :p ?s` that is all :p rows) and TripleStore.java L2105-2118 exactCardinality iterates all matching rows; both are called at planning time (LmdbStatementPatternCardinalitySource.java L99-100 estimateExact, L298 estimateRepeatedIds; reached from LmdbEstimatorStorageAccess.legacyPackedRows L110-114 for the packed cost model and LmdbStorageEstimatorEvidence.exactCandidate L272 for the engine when frontier statistics are OFF). The only budget is the query-wide SHARED_*_CACHE keyed by dataRevision. The review explicitly asks to cap them; without a cap the lease fix in 3.10.1 still lets one planning call hold the pinned snapshot (or, unpinned, the reserved slot) for a full-index scan.",
+      "fix": "Add row caps with an honest fallback (roadmap 4.3: never collapse unknown to 1 or 0): `repeatedVariableCardinality(Txn, s,p,o,c, mask, long maxScannedRows)` returns a PlanningCardinality record (rows, exact, lowerRows, upperRows): when the scan completes under the cap -> exact count; when the cap is hit -> rows = matches/scanned x planningCardinalityEstimate(unrepeated).entries, clamped to [matches, unrepeatedUpperBound], exact=false, lower=matches, upper=unrepeated hard upper bound (the unrepeated pattern is a certified superset). `exactCardinality(Txn, s,p,o,c, long maxScannedRows)` returns OptionalDouble.empty() when the cap is exceeded; LmdbStatementPatternCardinalitySource.estimateExact then returns -1 (its existing 'unavailable' contract) so LmdbStorageEstimatorEvidence.exactCandidate declines and the engine uses its estimated candidates. Cap constant: reuse LmdbFiniteJoinSurfaceEstimator.MAX_SCANNED_ROWS (4096) as PLANNING_EXACT_SCAN_ROWS in TripleStore, or LmdbStoreConfig.OPTIMIZER_SAMPLING_MAX_ROWS if a config knob is preferred; cache extrapolated results in SHARED_CARDINALITY_CACHE with the exact flag so the cost model can label them (see 3.10.2).",
+      "files": [
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/TripleStore.java",
+          "lines": "1806-1823 repeatedVariableCardinality, 2105-2118 exactCardinality",
+          "change": "Add maxScannedRows parameters and PlanningCardinality/OptionalDouble results with extrapolated non-exact fallback"
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbStatementPatternCardinalitySource.java",
+          "lines": "56-107 estimateExact, 290-309 estimateRepeatedIds, cache value types",
+          "change": "Pass caps, propagate exact flag into the shared cache value, return -1 on OptionalDouble.empty()"
+        }
+      ],
+      "size": "small",
+      "risk": "Low-medium: plan shape may change for repeated-variable patterns over very large predicates (estimate becomes an index-order-biased extrapolation instead of an exact count) \u2014 acceptable because it is labelled non-exact and bounded above by the unrepeated cardinality; exactCandidate becomes unavailable for patterns with >4096 rows, which only affects frontier-OFF stores.",
+      "recommendation": "fix-now",
+      "recommendationReason": "Explicitly requested by the review and required so the lease fix does not simply move an unbounded scan onto the pinned snapshot; small and independently landable after 3.10.2 introduces the exactness-carrying result type.",
+      "reproTestMethods": [
+        "LmdbMergeIntegrationReviewReproTest#repeatedVarQueryWithOnlyDatasetSlotsFree (indirectly: the repeated-variable estimate is the nested read; after 3.10.1 it must also finish quickly on large :p)"
+      ],
+      "additionalTests": [
+        "TripleStore-level: 10_000 :p rows of which 5_000 are self-loops, cap 1_000 -> result non-exact, rows in [matches, unrepeated upper bound], scan stops at the cap (assert via a counting RecordIterator or elapsed rows)",
+        "Same data with cap >= 10_000 -> exact result equals the full count",
+        "exactCardinality with cap exceeded -> OptionalDouble.empty(); LmdbStatementPatternCardinalitySource.estimateExact returns -1 and LmdbStorageEstimatorEvidence.exactCandidate returns Optional.empty()",
+        "Shared cache stores the exact flag: a capped (non-exact) result is not later served as exact"
+      ],
+      "existingTestsAtRisk": [
+        "LmdbStatementPatternCardinalitySourceTest (stubs planningCardinality/exactCardinality) \u2014 update stubs to the new signatures",
+        "LmdbStorageEstimatorEvidencePolicyTest \u2014 if it relies on exactCandidate over >4096-row patterns, expectation changes to 'unavailable'",
+        "CardinalityTest \u2014 unaffected (uses cardinality, not the capped methods)"
+      ]
+    },
+    {
+      "id": "3.10.2",
+      "title": "Sampled finite_binding_probe cardinalities stamped DATABASE_EXACT (sampled 0 -> EXACT_ZERO; excluded from learning)",
+      "status": "confirmed-by-code-reading",
+      "severity": "S3 as filed; effectively S2 because a sampled zero becomes an exact emptiness certificate that certifies root rows, marks prefixes provably empty and freezes learning",
+      "rootCause": "LmdbPackedCostModel.java L292-294 finiteLookupEstimate -> L3506-3520 per distinct VALUES row finiteProbeRows -> L3592-3600 runtime.packedStatementPatternRows -> LmdbEstimatorStorageAccess.java L92-108: frontier AUTHORITATIVE returns statistics.estimateLeafCurrent(probe).pointRows() (a calibrated interval, FrontierLeafEstimate has no exactness), otherwise L110-114 legacyPackedRows -> LmdbStatementPatternCardinalitySource.estimateForPlanning L221-236 -> estimateIds(planning=true) L262-283 -> TripleStore.planningCardinality L1801 -> cardinality L1754-1799 -> cardinalityUsingPageEstimator L1861-1906 which returns CardinalityEstimate.entries() and discards `exact`, `hardLowerBound`, `hardUpperBound` (estimate/LmdbPageCardinalityEstimator.java L125-138; exact is false whenever the range was sampled, see LmdbBtreeRangeCounter L264/L358 result.exact = exhaustive). Pre-merge (git 4354ff137b^1 TripleStore L1645-1656) planningCardinality used HEAD's exhaustive page walk, so the label was true then; develop's GH-6006 bounded estimator made it false (merge origin). Nevertheless LmdbPackedCostModel.java L386-392 does `output.setEstimateFusion(\"finite_binding_probe\"); output.setEvidenceGuarantee(EvidenceGuarantee.DATABASE_EXACT)` unconditionally (while the sibling exact-surface routes at L2352/L2376 correctly gate on SurfaceEstimate.exact()). Consequences: LmdbFrontierStatisticsCostSession.java L367-371 evidenceSummary -> EvidenceStateSummary.exact(pointRows) -> for 0 rows EXACT_ZERO (EvidenceStateSummary L153-163); PackedCascadesPlanner.java L719-724 certifiedRootRows returns the sampled point as certified; PackedEvidenceStateRegistry L43-45 and PackedMemo L1091-1119 classify the state EXACT_EXTENSIONAL (continuation dedup drops provenance); EstimateContext.java L138-147 treats an EXACT_ZERO prefix as provably empty; LmdbPackedCostModel L1420 skips mapped-join refinement for DATABASE_EXACT inputs; LmdbMappedFrontierLearningSession.java L162 skips all LEO corrections for DATABASE_EXACT outputs and L440-441 sets RuntimeFeedbackContract.DATABASE_EXACT so FrontierLearningModel.java L173 and L186 never learn from the operator. The engine-side finite lookup (LmdbEstimationEngine L388-457, LmdbEstimateClassification L27-33) is NOT affected: it derives exactness from BagEstimate.confidence()==1.0.",
+      "fix": "Carry exactness and hard bounds from the estimator to the label instead of asserting it at the cost model (roadmap 4.3 fallback chain; same pattern as SurfaceEstimate.exact): (1) TripleStore: add `CardinalityEstimate planningCardinalityEstimate(s,p,o,c)` returning the page estimator's CardinalityEstimate (bindingMask==0 -> exact totals; legacy sampler -> CardinalityEstimate.unqualified; combine* already propagates exact=first&&second and hard bounds); keep `planningCardinality` as `.entries()` wrapper for existing callers. (2) LmdbStatementPatternCardinalitySource: `PlanningCardinality estimateForPlanningQualified(subj,pred,obj,ctx,repeatedMask)` returning record (rows, exact, lowerRows, upperRows); repeatedMask!=0 uses the capped repeatedVariableCardinality from 3.10.1b; cache the record in SHARED_CARDINALITY_CACHE (value type Double -> record). (3) LmdbEstimatorStorageAccess.packedStatementPatternRowsQualified: frontier route -> (pointRows, exact=false, lowerRows, upperRows, confidence); legacy route -> the record. (4) LmdbPackedCostModel.finiteLookupEstimate: aggregate exact = AND over distinct probes, lower = sum(lower x frequency), upper = sum(upper x frequency); extend FiniteLookupEstimate (L3758) with exact/lowerRows/upperRows; at L386-392 set DATABASE_EXACT only when exact, otherwise CERTIFIED_BOUND_ONLY when hard bounds are finite (evidenceSummary L393-395 -> EvidenceStateSummary.certifiedBounds; a zero point yields zeroStatus UNRESOLVED, never EXACT_ZERO) else SCALAR_FALLBACK, and always publish plannedFrontierLowerRows/plannedFrontierUpperRows (already consumed by evidenceSummary via boundedMetric) plus a plannedFiniteProbeExact 0/1 metric for explain output. (5) Zero escalation (unknown != 0): when a probe's estimate is non-exact and entries==0 (or hardLowerBound==0 with hardUpperBound>0), run `TripleStore.boundedExactCardinality(Txn, s,p,o,c, maxScannedKeys)` \u2014 a raw-cursor walk over the best index range on the pinned planning txn that counts matcher hits and stops after maxScannedKeys keys examined (bounded in keys, not matches; reuse the cursor code shape of sampleTriplesStratified/cardinalityUsingSamplingEstimator) -> OptionalLong; a present result replaces the probe as exact (0 becomes a legitimate EXACT_ZERO, >0 removes the false zero); an absent result keeps the sampled value and the non-exact label. Finite probes are prefix-bound by construction (a VALUES row binds at least one component), so on spoc/posc/ospc-style index sets the walk is tiny; key cap e.g. 8192. Put the escalation in LmdbStatementPatternCardinalitySource.estimateForPlanningQualified (not in TripleStore.planningCardinality, whose contract is 'never exhaustive'), so the unqualified planningCardinality API keeps develop's semantics.",
+      "files": [
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/TripleStore.java",
+          "lines": "1754-1806 cardinality/planningCardinality, 1861-1906 cardinalityUsingPageEstimator; new boundedExactCardinality near 2105",
+          "change": "Expose CardinalityEstimate from planning path; add key-bounded exact probe"
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbStatementPatternCardinalitySource.java",
+          "lines": "221-236, 262-283, cache key/value types 40-55",
+          "change": "Qualified planning estimate record, zero escalation, cache exact flag"
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorStorageAccess.java",
+          "lines": "92-114",
+          "change": "packedStatementPatternRowsQualified returning rows+exact+bounds from both frontier and legacy routes"
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorRuntime.java",
+          "lines": "432-435",
+          "change": "Expose the qualified variant"
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbPackedCostModel.java",
+          "lines": "386-392 label, 3462-3540 finiteLookupEstimate, 3592-3600 finiteProbeRows, 3758 FiniteLookupEstimate",
+          "change": "Aggregate exactness/bounds per probe; label DATABASE_EXACT only when exact, else CERTIFIED_BOUND_ONLY/SCALAR_FALLBACK with bound metrics"
+        }
+      ],
+      "size": "medium",
+      "risk": "Low-medium: for small stores the page estimator is exhaustive (exact=true) so nothing changes; for sampled probes the guarantee downgrades, which can change plan choice where the planner previously trusted a false exact zero (that is the intended correction) and re-enables LEO learning for those operators (wp6 interaction). Explain output for finite_binding_probe rows changes guarantee text when sampled. Mockito-based tests stubbing planningCardinality need new stubs.",
+      "recommendation": "fix-now",
+      "recommendationReason": "A sampled zero currently becomes a database-exact emptiness proof that certifies root rows and marks prefixes provably empty; correcting the label is small, local, and unblocks 3.10.1b's non-exact extrapolations from being mislabelled as exact.",
+      "reproTestMethods": [
+        "LmdbMergeIntegrationReviewReproTest#planningCardinalityOnSkewedData -> port to core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbPlanningCardinalityExactnessTest, reshaped: the reviewer's assertion (planning>0 for every non-empty pattern) is stronger than a bounded estimator can promise for non-prefix patterns (e.g. object-only on spoc,posc over 150k rows), so assert instead that for every pattern the qualified estimate is either exact or carries hardUpperBound>0 (a sampled zero never claims emptiness), and that for all prefix-bound patterns in the list ({hub,big}, {s7,big}, {-,r,target}, {-,big,o7}, {s7,-,-}, {hub,-,-}, {-,tiny}) the zero escalation yields the exact count (planning==exact). Keep the reviewer's printout as diagnostics"
+      ],
+      "additionalTests": [
+        "LmdbPackedCostModel: VALUES-driven finite probe over a store where the page estimator returns a non-exact 0 for one row (use a TripleStore subclass/mocked planningCardinalityEstimate returning CardinalityEstimate(0,false,0,50,...)) -> estimateFusion finite_binding_probe, evidenceGuarantee != DATABASE_EXACT, plannedFrontierUpperRows>0; LmdbFrontierStatisticsCostSession.evidenceSummary zeroStatus != EXACT_ZERO",
+        "Same setup with exact probes (small store) -> DATABASE_EXACT preserved (guards the existing exact behaviour)",
+        "Zero escalation: prefix-bound probe with sampled 0 but 1 real row -> escalated exact 1; sampled 0 with 0 real rows -> DATABASE_EXACT/EXACT_ZERO; non-prefix probe exceeding the key cap -> sampled value kept, non-exact",
+        "LmdbMappedFrontierLearningSession: a non-exact finite probe output is no longer short-circuited at L162 and the emitted RuntimeFeedbackContract lacks the DATABASE_EXACT flag; an exact one still carries it",
+        "PackedCascadesPlanner.certifiedRootRows: root evidence from a sampled finite probe is not used as a certificate",
+        "Repeated-variable finite probe after 3.10.1b cap -> non-exact label flows through (exact flag from PlanningCardinality)"
+      ],
+      "existingTestsAtRisk": [
+        "LmdbStatementPatternCardinalitySourceTest L66-72, L84-93, L123-133, L146-162: stubs tripleStore.planningCardinality(...) \u2014 once estimateIds calls planningCardinalityEstimate the stubs return null -> update to stub planningCardinalityEstimate with CardinalityEstimate.exact(...) (and verify() the new method)",
+        "LmdbCorrelatedFiniteSurfaceEstimatorTest L54, L80, L113: same stub migration",
+        "LmdbIndependentFiniteAnchorJoinPlanningTest L164, LmdbFiniteValuesJoinSurfacePlanningTest L335/L369/L1016, LmdbEstimationEngineTest L350/L408: assert only the source string 'lmdb-finite-binding-lookup' -> unaffected; re-run to confirm plan shapes did not flip on sampled probes",
+        "LmdbPackedCostModelAnnotatedFilterTest L53/L70 (exact filter surfaces) and LmdbMappedOperatorLearningContextTest L85 (exact fact) \u2014 different routes, unaffected",
+        "Explain/telemetry golden tests that print `guarantee=database_exact` for finite probes over sampled ranges would change to certified_bound_only \u2014 grep test resources for 'finite_binding_probe' before landing (only benchmark result markdowns found under src/test/java/.../benchmark/theme-query-benchmark-results, not assertions)"
+      ]
+    }
+  ],
+  "implementationOrder": [
+    "3.10.2",
+    "3.10.1b",
+    "3.10.1"
+  ],
+  "crossWpTouchpoints": [
+    "core/sail/base SailDataset/UnionSailDataset/DelegatingSailDataset/SailDatasetImpl/SailDatasetTripleTermSource: the `unwrap` capability lookup is a public sail-base API addition mirroring getSnapshotEpoch(); 3.3 plan caching (snapshot-keyed certificates) and wp5 frontier lifecycle also plumb snapshot identity through SailDatasetTripleTermSource/LmdbCascadesOptimizer.executionSnapshotEpoch \u2014 coordinate so both use the same dataset handle",
+    "LmdbDetachedPlanRefresh / LmdbDetachedPlanningSnapshot (wp5/3.3 territory): pinning the untracked detached snapshot changes detached-refresh estimates from 'latest committed data' to 'the snapshot the refresh was opened on' (consistent with snapshotEpoch, but a behaviour change wp5 must accept)",
+    "LmdbMappedFrontierLearningSession L162/L440 and FrontierLearningModel L173/L186 (wp6 LEO): 3.10.2 stops feeding DATABASE_EXACT for sampled finite probes, which re-enables LEO corrections and learning for those operators; no change to wp6 code, but wp6's exact-fact handling (3.7) must not re-stamp them exact",
+    "LmdbEstimatorOptimizationScope / LmdbEstimatorRuntime.beginScope: shared query-scope infrastructure also touched by 4.1 binding/scope analysis work; the pinned txn field is additive",
+    "TripleStore.cardinality()/cardinalityUsingPageEstimator (develop code, GH-5970/GH-6006): converting doWithPriority to pinned-first/priority-fallback keeps develop semantics when unpinned; upstream-merge friction if develop changes these again",
+    "LmdbPhysicalCostObjective.indexCostProfile nested ordinary doWith is an additional starvation site not listed in the review; owned here but the objective is constructed in LmdbMappedFrontierLearningSession (wp6 file) \u2014 only the TripleStore side changes",
+    "Explain/telemetry strings for finite_binding_probe rows (guarantee text) may be asserted by wp2 packed-planner golden tests after their fixes land"
+  ],
+  "openQuestions": [
+    "Should the sail-base `unwrap` capability be accepted, or must the LMDB module stay self-contained (then use the TxnManager owner-thread fallback, which is implicit and can pick an unrelated untracked txn)?",
+    "Cap values: reuse LmdbFiniteJoinSurfaceEstimator.MAX_SCANNED_ROWS (4096) for the exact-scan caps and 8192 keys for the zero-escalation walk, or expose them on LmdbStoreConfig?",
+    "Guarantee for sampled page-estimator probes: CERTIFIED_BOUND_ONLY (hard bounds are proven) vs MEASURE_UNBIASED (needs a confidence; page estimator only exposes relativeStandardError). Design recommends CERTIFIED_BOUND_ONLY; confirm with the cost-model owners since it affects PackedEvidenceStateRegistry classification and hash-join exact-joint checks (LmdbHashJoinCosting L55)",
+    "Whether the control repro (controlPlainQueryWithOnlyDatasetSlotsFree) is currently red: if so, the LmdbPhysicalCostObjective.indexCostProfile nested doWith is the cause and confirms the extra site; the evidence file only reports aggregate failures",
+    "Is the union-dataset case (two LmdbSailDatasets per query) itself worth reducing to one lease (a UnionSailDataset over one txn)? Out of scope here but it halves lease pressure and would be a develop-facing change"
+  ],
+  "sharedInfrastructure": "Pinned planning read lease: TripleStore.pinPlanningTxn/planningReadTxn/planningRead plus LmdbEstimatorOptimizationScope.pinnedReadTxn and the LmdbPinnedReadTxnSource dataset interface. Every planner-time storage read in core/sail/lmdb (cardinality sources, finite surface estimator, filter selectivity stats, index cost profiles, future 4.3 bounded exact probes and 4.2 certificate re-validation) should acquire its transaction through it so estimates read the execution snapshot and never take nested leases. Also the PlanningCardinality/CardinalityEstimate exactness-carrying result type (rows, exact, lowerRows, upperRows) that 3.10.1b and 3.10.2 both use and that wp2/wp6 can consume for 4.3 interval estimates."
+}

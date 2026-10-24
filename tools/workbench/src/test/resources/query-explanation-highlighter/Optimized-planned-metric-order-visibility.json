@@ -1,0 +1,55 @@
+{
+  "type": "Join",
+  "longMetricsPlanned": {
+    "plannedWorkRows": 9
+  },
+  "doubleMetricsPlanned": {
+    "plannedCostWorkRows": 4.0
+  },
+  "stringMetricsPlanned": {
+    "plannerId": "planned-planner",
+    "customRootMetric": "kept",
+    "plannedCostShape": "vector",
+    "plannedEstimateUsage": "join_order_candidate",
+    "plannedCardinalityShape": "range",
+    "plannedEstimateDecisionId": "decision-id",
+    "plannedIndexName": "spoc",
+    "plannedIndexAccessMode": "scan",
+    "plannedLookupComponents": "sp",
+    "plannedMissingLookupComponents": "o",
+    "plannedBoundVars": "s,p",
+    "plannerAlgorithm": "algorithm",
+    "plannerPath": "path",
+    "plannedEstimateSource": "source"
+  },
+  "plans": [
+    {
+      "type": "StatementPattern",
+      "longMetricsPlanned": {
+        "plannedAccessRows": 7
+      },
+      "doubleMetricsPlanned": {
+        "plannedCardinalityRows": 5.0
+      },
+      "stringMetricsPlanned": {
+        "plannedEstimateUsage": "explain_recomputed",
+        "plannedEstimateDecisionId": "nested-hidden",
+        "plannedCardinalityShape": "nested-hidden",
+        "optimizer.frontierLearningKey": "hidden-learning-key",
+        "customNested": "kept"
+      },
+      "plans": [
+        {
+          "type": "Filter",
+          "longMetricsPlanned": {
+            "plannedWorkRows": 11
+          },
+          "stringMetricsPlanned": {
+            "plannedEstimateSource": "deep-hidden",
+            "customDeep": "kept"
+          }
+        }
+      ]
+    }
+  ]
+}

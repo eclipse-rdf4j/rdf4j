@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
@@ -39,10 +40,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterEvaluationStep;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.helpers.SlowQueryContextHolder;
+import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationStrategy;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPartitionedDistinctIteration;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStableOrderPlanner;
 
@@ -53,7 +54,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbStableOrderPlanner;
 @SuppressWarnings("deprecation")
 @Experimental
 @InternalUseOnly
-public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
+public final class LmdbNativeEvaluationStrategy extends LmdbEvaluationStrategy
 		implements org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BatchCorrelatedJoinProvider.Host {
 
 	private final NativeLmdbQuerySource nativeSource;
@@ -149,6 +150,7 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 			EvaluationStatistics evaluationStatistics, boolean trackResultSize, boolean nativeEnabled) {
 		super(tripleSource, dataset, serviceResolver, iterationCacheSyncTreshold, evaluationStatistics,
 				trackResultSize);
+		setQueryEvaluationMode(QueryEvaluationMode.STRICT);
 		NativeLmdbQuerySource extracted = extractNativeSource(tripleSource);
 		// legacy stores without canonical language tags can hold two ids for one RDF term, so every id-keyed
 		// native path could diverge from the generic engine there — decline them entirely
@@ -346,9 +348,29 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	}
 
 	@Override
+	public synchronized void setQueryExecutionPolicy(QueryExecutionPolicy policy) {
+		super.setQueryExecutionPolicy(policy);
+		LmdbNativeEvaluationStrategy view = genericOnlyView;
+		if (view != null) {
+			view.setQueryExecutionPolicy(policy);
+		}
+	}
+
+	@Override
 	protected QueryEvaluationContext createArrayBindingContext(QueryEvaluationContext context, String[] allVariables) {
 		return new LmdbQueryEvaluationContext(super.createArrayBindingContext(context, allVariables),
 				new QueryWideVarLayout(allVariables));
+	}
+
+	@Override
+	public QueryEvaluationStep precompileFinalTupleResult(TupleExpr expr) {
+		return precompileFinalTupleResultWithCommonSetup(expr);
+	}
+
+	@Override
+	protected QueryEvaluationStep precompileFinalTupleResultExpr(TupleExpr expr, QueryEvaluationContext context) {
+		NativeValuePositionAnalysis positions = selectValuePositions(expr);
+		return withValuePositions(positions, () -> precompileWithPreparedValues(expr, context, true));
 	}
 
 	@Override
@@ -358,9 +380,14 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	}
 
 	private QueryEvaluationStep precompileWithPreparedValues(TupleExpr expr, QueryEvaluationContext context) {
+		return precompileWithPreparedValues(expr, context, false);
+	}
+
+	private QueryEvaluationStep precompileWithPreparedValues(TupleExpr expr, QueryEvaluationContext context,
+			boolean finalTupleResult) {
 		if (nativeEnabled && nativeSource != null) {
 			if (expr instanceof QueryRoot) {
-				return compileHostedPlan(expr, context);
+				return compileHostedPlan(expr, context, finalTupleResult);
 			}
 			if (nativeSource.hasStatementsInSource()) {
 				QueryEvaluationStep aggregateStep = LmdbNativeAggregateCompiler.tryCompile(expr, context, this,
@@ -384,14 +411,17 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	 * is today's generic compilation, whose per-child recursion re-enters this strategy's {@code precompile} and keeps
 	 * claiming interior native fragments exactly as before.
 	 */
-	private QueryEvaluationStep compileHostedPlan(TupleExpr expr, QueryEvaluationContext context) {
+	private QueryEvaluationStep compileHostedPlan(TupleExpr expr, QueryEvaluationContext context,
+			boolean finalTupleResult) {
 		LmdbNativeAggregateCompiler.CompileOutcome outcome;
 		if (forceRootGeneric) {
 			outcome = LmdbNativeAggregateCompiler.CompileOutcome.unsupported("forceRootGeneric");
 		} else if (!nativeSource.hasStatementsInSource()) {
 			outcome = LmdbNativeAggregateCompiler.CompileOutcome.unsupported("known-empty-source");
 		} else {
-			outcome = LmdbNativeAggregateCompiler.compileRoot(expr, context, this, nativeSource);
+			outcome = finalTupleResult
+					? LmdbNativeAggregateCompiler.compileFinalTupleResult(expr, context, this, nativeSource)
+					: LmdbNativeAggregateCompiler.compileRoot(expr, context, this, nativeSource);
 		}
 		if (outcome.isSupported()) {
 			return outcome.step();
@@ -490,7 +520,7 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 
 	QueryEvaluationStep genericPrecompile(TupleExpr expr, QueryEvaluationContext context) {
 		if (AdaptiveFilterEvaluationStep.isPlanningContext(context)) {
-			return super.precompileTupleExpr(expr, context);
+			return super.precompileGenericRuntimeSubtree(expr, context);
 		}
 		// Runtime bridges may supply a fresh structural view. Re-enter reservation, capture and planning setup while
 		// selecting the ordinary compiler for this operand; its children can still claim native fragments.

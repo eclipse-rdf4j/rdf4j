@@ -61,6 +61,7 @@ final class NativeContextClosingIteration
 				: SyntheticValueSource.attachEvaluation(evaluationSource)) {
 			hasNext = delegate.hasNext();
 		} catch (Throwable failure) {
+			context.filterFailure();
 			Throwable cleanupFailure = closeResources();
 			if (cleanupFailure != null && cleanupFailure != failure) {
 				failure.addSuppressed(cleanupFailure);
@@ -69,6 +70,9 @@ final class NativeContextClosingIteration
 			return false;
 		}
 		if (!hasNext) {
+			if (closeContext) {
+				context.filterRootExhausted();
+			}
 			close();
 		}
 		return hasNext;
@@ -80,6 +84,7 @@ final class NativeContextClosingIteration
 				: SyntheticValueSource.attachEvaluation(evaluationSource)) {
 			return delegate.next();
 		} catch (Throwable failure) {
+			context.filterFailure();
 			Throwable cleanupFailure = closeResources();
 			if (cleanupFailure != null && cleanupFailure != failure) {
 				failure.addSuppressed(cleanupFailure);
@@ -102,7 +107,11 @@ final class NativeContextClosingIteration
 		if (closed || !(delegate instanceof CooperativeCancellation cancellation)) {
 			return false;
 		}
-		return cancellation.requestCancellation();
+		boolean requested = cancellation.requestCancellation();
+		if (requested) {
+			context.filterFailure();
+		}
+		return requested;
 	}
 
 	@Override
@@ -128,6 +137,7 @@ final class NativeContextClosingIteration
 				: SyntheticValueSource.attachEvaluation(evaluationSource)) {
 			delegate.close();
 		} catch (Throwable cleanup) {
+			context.filterFailure();
 			failure = cleanup;
 		}
 		if (closeContext) {
@@ -211,6 +221,9 @@ interface NativeExecutionContextCarrier {
 			failure = cleanup;
 		}
 		if (lease != null) {
+			if (failure != null) {
+				lease.failed();
+			}
 			try {
 				lease.close();
 			} catch (Throwable cleanup) {

@@ -28,9 +28,11 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
@@ -51,6 +53,16 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 	public static final String ANON_OBJECT_VAR = "zero_length_internal_end";
 
 	public static final String ANON_SEQUENCE_VAR = "zero_length_internal_seq";
+
+	public static final String ZERO_LENGTH_CANDIDATE_ROWS_ACTUAL = "optimizer.zeroLengthPathCandidateRowsActual";
+
+	public static final String ZERO_LENGTH_RETURNED_ROWS_ACTUAL = "optimizer.zeroLengthPathReturnedRowsActual";
+
+	public static final String ZERO_LENGTH_DISCARDED_ROWS_ACTUAL = "optimizer.zeroLengthPathDiscardedRowsActual";
+
+	public static final String ZERO_LENGTH_DUPLICATE_ROWS_ACTUAL = "optimizer.zeroLengthPathDuplicateRowsActual";
+
+	public static final String ZERO_LENGTH_INCOMPATIBLE_ROWS_ACTUAL = "optimizer.zeroLengthPathIncompatibleRowsActual";
 
 	private QueryBindingSet result;
 
@@ -99,8 +111,29 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 	private final QueryEvaluationContext scanContext;
 	private static final String SCAN_CONTEXT_VAR = "zero_length_internal_context";
 
+	private final QueryModelNode pathNode;
+
+	private final boolean runtimeTelemetryEnabled;
+
+	private long candidateRowsActual;
+
+	private long returnedRowsActual;
+
+	private long discardedRowsActual;
+
+	private long duplicateRowsActual;
+
+	private long incompatibleRowsActual;
+
+	private boolean telemetryRecorded;
+
 	public ZeroLengthPathIteration(EvaluationStrategy evaluationStrategyImpl, Var subjectVar, Var objVar, Value subj,
 			Value obj, Var contextVar, BindingSet bindings, QueryEvaluationContext context) {
+		this(evaluationStrategyImpl, null, subjectVar, objVar, subj, obj, contextVar, bindings, context);
+	}
+
+	public ZeroLengthPathIteration(EvaluationStrategy evaluationStrategyImpl, ZeroLengthPath node, Var subjectVar,
+			Var objVar, Value subj, Value obj, Var contextVar, BindingSet bindings, QueryEvaluationContext context) {
 		this.evaluationStrategy = evaluationStrategyImpl;
 		this.context = context;
 		this.result = new QueryBindingSet(bindings);
@@ -178,6 +211,8 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 			setContext = null;
 		}
 		this.cf = evaluationStrategy.getCollectionFactory().get();
+		this.pathNode = node;
+		this.runtimeTelemetryEnabled = node != null;
 	}
 
 	@Override
@@ -217,6 +252,7 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 
 			while (iter.hasNext()) {
 				BindingSet bs = iter.next();
+				candidateRowsActual++;
 
 				boolean isSubjOrObj = bs.getValue(internalSequence).stringValue().equals("subject");
 				String endpointVarName = isSubjOrObj ? internalSubject : internalObject;
@@ -235,27 +271,36 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 					MutableBindingSet next = context.createBindingSet(bindings);
 					if (!subjectConstant && !addCompatibleBinding(next, subjectVarName, v, setSubject)
 							|| !objectConstant && !addCompatibleBinding(next, objectVarName, v, setObject)) {
+						incompatibleRowsActual++;
+						discardedRowsActual++;
 						continue;
 					}
 					if (setContext != null) {
 						Value context = bs.getValue(SCAN_CONTEXT_VAR);
 						if (context != null) {
 							if (!addCompatibleBinding(next, contextVarName, context, setContext)) {
+								incompatibleRowsActual++;
+								discardedRowsActual++;
 								continue;
 							}
 						}
 					}
+					returnedRowsActual++;
 					return next;
+				} else {
+					duplicateRowsActual++;
+					discardedRowsActual++;
 				}
 			}
 			iter.close();
 
-			// if we're done, throw away the cached list of values to avoid hogging
-			// resources
+			// if we're done, throw away the cached list of values to avoid hogging resources
 			reportedValues = null;
+			recordRuntimeTelemetry();
 			reportedGraphValues = null;
 			return null;
 		} else {
+			candidateRowsActual++;
 			Value identity = subj != null ? subj : obj;
 			if (result != null) {
 				boolean apiInputOrigin = subj != null && obj != null
@@ -271,12 +316,19 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 				// value on the Var. Only original query constants have no solution binding to produce.
 				if (!subjectConstant && !addCompatibleBinding(result, subjectVarName, identity, setSubject)
 						|| !objectConstant && !addCompatibleBinding(result, objectVarName, identity, setObject)) {
+					incompatibleRowsActual++;
 					result = null;
 				}
 			}
 
 			QueryBindingSet next = result;
 			result = null;
+			if (next != null) {
+				returnedRowsActual++;
+			} else {
+				discardedRowsActual++;
+				recordRuntimeTelemetry();
+			}
 			return next;
 		}
 	}
@@ -357,7 +409,28 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 				}
 			}
 			throw failure;
+		} finally {
+			recordRuntimeTelemetry();
 		}
 		cf.close();
+	}
+
+	private void recordRuntimeTelemetry() {
+		if (!runtimeTelemetryEnabled || telemetryRecorded) {
+			return;
+		}
+		telemetryRecorded = true;
+		addLongMetric(ZERO_LENGTH_CANDIDATE_ROWS_ACTUAL, candidateRowsActual);
+		addLongMetric(ZERO_LENGTH_RETURNED_ROWS_ACTUAL, returnedRowsActual);
+		addLongMetric(ZERO_LENGTH_DISCARDED_ROWS_ACTUAL, discardedRowsActual);
+		addLongMetric(ZERO_LENGTH_DUPLICATE_ROWS_ACTUAL, duplicateRowsActual);
+		addLongMetric(ZERO_LENGTH_INCOMPATIBLE_ROWS_ACTUAL, incompatibleRowsActual);
+	}
+
+	private void addLongMetric(String metricName, long delta) {
+		if (delta > 0L) {
+			pathNode.setLongMetricActual(metricName,
+					Math.max(0L, pathNode.getLongMetricActual(metricName)) + delta);
+		}
 	}
 }

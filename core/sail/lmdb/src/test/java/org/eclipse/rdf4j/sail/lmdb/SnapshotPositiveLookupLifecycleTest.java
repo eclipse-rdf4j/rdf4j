@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -35,6 +36,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
@@ -60,104 +62,56 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
-/** Optional positive lookup reuse must preserve native lifetime and caller callback boundaries. */
+/**
+ * Optional positive lookup reuse must preserve native lifetime and caller callback boundaries.
+ */
 @Timeout(30)
 class SnapshotPositiveLookupLifecycleTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+
 	private static final IRI SUBJECT = VF.createIRI("urn:snapshot-lookup-lifecycle:subject");
+
 	private static final IRI PREDICATE = VF.createIRI("urn:snapshot-lookup-lifecycle:predicate");
+
 	private static final IRI OBJECT = VF.createIRI("urn:snapshot-lookup-lifecycle:object");
+
 	private static final Set<String> PAYLOAD_GETTERS = Set.of("getNamespace", "getLocalName", "getID", "getLabel",
 			"getDatatype", "getLanguage", "getBaseDirection", "getCoreDatatype", "getSubject", "getPredicate",
 			"getObject", "stringValue", "getType", "isTripleTerm");
 
-	@Test
-	void captureDeepSharedTreeWithoutRecursion(@TempDir Path directory) throws Exception {
-		try (Fixture fixture = new Fixture(directory, 3); DirectView view = new DirectView(fixture.values)) {
-			Value input = VF.createLiteral("leaf", "en", Literal.BaseDirection.RTL);
-			int depth = 10_000;
-			for (int level = 0; level < depth; level++) {
-				input = VF.createTripleTerm(SUBJECT, SUBJECT, input);
-			}
-			Value captured = fixture.values.valueCapturer(view.snapshot).apply(input);
-			for (int level = 0; level < depth; level++) {
-				TripleTerm triple = (TripleTerm) captured;
-				assertSame(triple.getSubject(), triple.getPredicate(), "one shared input has one captured owner");
-				captured = triple.getObject();
-			}
-			Literal leaf = (Literal) captured;
-			assertEquals("leaf", leaf.getLabel());
-			assertEquals("en", leaf.getLanguage().orElseThrow());
-			assertEquals(Literal.BaseDirection.RTL, leaf.getBaseDirection());
+	@ParameterizedTest
+	@CsvSource({ "TRIPLE_STORE,false", "TRIPLE_STORE,true", "VALUE_STORE,false", "VALUE_STORE,true" })
+	void retiredPreparationRetainsAuthoritativeResizeKind(LmdbSailStore.MapResizeKind kind, boolean capture,
+			@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, 3);
+				DirectView view = new DirectView(fixture.values)) {
+			Function<Value, Value> preparation = capture ? fixture.values.valueCapturer(view.snapshot)
+					: fixture.values.valuePreparer(view.snapshot);
+			view.snapshot.retireForMapResize(kind);
+			LmdbSailStore.MapResizeConflictException failure = assertThrows(
+					LmdbSailStore.MapResizeConflictException.class, () -> preparation.apply(OBJECT));
+			assertEquals(kind, failure.kind(), "closed preparation must preserve the authoritative invalidation");
+			assertNull(failure.replayToken(), "forced retirement must not invent an accepted cooperative replay");
 		}
 	}
 
-	@Test
-	void captureSnapshotsInitializedNativeCompositeWithMutableForeignChild(@TempDir Path directory) throws Exception {
-		try (Fixture fixture = new Fixture(directory, 3); DirectView view = new DirectView(fixture.values)) {
-			MutableCaptureIRI mutableObject = new MutableCaptureIRI("before");
-			TripleTerm nativeComposite = fixture.values.createTripleTerm(SUBJECT, PREDICATE, mutableObject);
-			LmdbValue nativeValue = assertInstanceOf(LmdbValue.class, nativeComposite);
-			assertTrue(nativeValue.isInitialized());
-			assertEquals(LmdbValue.UNKNOWN_ID, nativeValue.getSemanticVersion(),
-					"A mutable foreign child makes the native composite unstable");
-
-			TripleTerm captured = (TripleTerm) fixture.values.valueCapturer(view.snapshot).apply(nativeComposite);
-			assertNotSame(nativeComposite, captured, "An unstable native composite needs a semantic snapshot");
-			assertEquals("urn:mutable-capture:before", captured.getObject().stringValue());
-
-			mutableObject.changeLocalName("after");
-			assertEquals("urn:mutable-capture:after", nativeComposite.getObject().stringValue());
-			assertEquals("urn:mutable-capture:before", captured.getObject().stringValue(),
-					"A captured composite must not retain a mutable foreign child");
-		}
-	}
-
-	@Test
-	void captureRejectsCycleBeforeCreatingPreparedPayload(@TempDir Path directory) throws Exception {
-		try (Fixture fixture = new Fixture(directory, 3); DirectView view = new DirectView(fixture.values)) {
-			TripleTerm cycle = new AbstractTripleTerm() {
-				@Override
-				public Resource getSubject() {
-					return SUBJECT;
-				}
-
-				@Override
-				public IRI getPredicate() {
-					return PREDICATE;
-				}
-
-				@Override
-				public Value getObject() {
-					return this;
-				}
-			};
-			assertThrows(IllegalArgumentException.class,
-					() -> fixture.values.valueCapturer(view.snapshot).apply(cycle));
-		}
-	}
-
-	@Test
-	void foreignPreparedChildrenAcquireCurrentPreparationOwner(@TempDir Path directory) throws Exception {
-		try (Fixture fixture = new Fixture(directory, 3)) {
-			Value foreign;
-			try (DirectView first = new DirectView(fixture.values)) {
-				foreign = fixture.values.valueCapturer(first.snapshot)
-						.apply(VF.createTripleTerm(SUBJECT, SUBJECT, VF.createLiteral("typed", OBJECT)));
-			}
-			try (DirectView second = new DirectView(fixture.values)) {
-				var capturer = (OwnedValueCapturer) fixture.values.valueCapturer(second.snapshot);
-				TripleTerm captured = (TripleTerm) capturer.apply(foreign);
-				assertTrue(capturer.owns(captured));
-				assertTrue(capturer.owns(captured.getSubject()));
-				assertTrue(capturer.owns(captured.getPredicate()));
-				assertTrue(capturer.owns(captured.getObject()));
-				assertTrue(capturer.owns(((Literal) captured.getObject()).getDatatype()));
-				assertSame(captured.getSubject(), captured.getPredicate());
-			}
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void ordinaryClosedPreparationDoesNotInventResizeConflict(boolean capture, @TempDir Path directory)
+			throws Exception {
+		try (Fixture fixture = new Fixture(directory, 3);
+				DirectView view = new DirectView(fixture.values)) {
+			Function<Value, Value> preparation = capture ? fixture.values.valueCapturer(view.snapshot)
+					: fixture.values.valuePreparer(view.snapshot);
+			view.snapshot.close();
+			SailException failure = assertThrows(SailException.class, () -> preparation.apply(OBJECT));
+			assertFalse(failure instanceof LmdbSailStore.MapResizeConflictException);
+			assertInstanceOf(IOException.class, failure.getCause());
 		}
 	}
 
@@ -183,7 +137,6 @@ class SnapshotPositiveLookupLifecycleTest {
 				TrackedIRI input = new TrackedIRI(OBJECT, snapshot);
 				assertWarm(store.values, snapshot, input, originalId);
 				int capturesBeforeGrowth = input.captureCalls.get();
-
 				removeStatement(store);
 				assertTrue(store.getBackingStore().hasRetiredValueIds(),
 						"The actual old TripleStore horizon must protect the removed dictionary association");
@@ -200,7 +153,6 @@ class SnapshotPositiveLookupLifecycleTest {
 				assertTrue(input.captureCalls.get() > firstDetachedCapture,
 						"The detached view must not learn a new memo from its advancing fallback reader");
 				assertOldStatement(reader, input, originalId);
-
 				commitStatement(store, SUBJECT, OBJECT);
 				assertTrue(store.getBackingStore().hasRetiredValueIds());
 				assertOldStatement(reader, input, originalId);
@@ -242,8 +194,7 @@ class SnapshotPositiveLookupLifecycleTest {
 				growDictionary(store, originalMap);
 				assertTrue(store.values.mapSizeBytes() > originalMap);
 				LmdbSailStore.MapResizeConflictException conflict = assertThrows(
-						LmdbSailStore.MapResizeConflictException.class,
-						() -> store.values.getId(view.snapshot, input));
+						LmdbSailStore.MapResizeConflictException.class, () -> store.values.getId(view.snapshot, input));
 				assertEquals(LmdbSailStore.MapResizeKind.VALUE_STORE, conflict.kind());
 			}
 		} finally {
@@ -434,8 +385,8 @@ class SnapshotPositiveLookupLifecycleTest {
 					LmdbValue lazyPredicate = payloadTrap(store.values.getLazyValue(snapshot, predicateId), snapshot);
 					children.add(lazySubject);
 					children.add(lazyPredicate);
-					TripleTerm inner = store.values.createTripleTerm((Resource) lazySubject,
-							(IRI) lazyPredicate, input);
+					TripleTerm inner = store.values.createTripleTerm((Resource) lazySubject, (IRI) lazyPredicate,
+							input);
 					input = store.values.createTripleTerm((Resource) lazySubject, (IRI) lazyPredicate, inner);
 				}
 				assertEquals(LmdbValue.UNKNOWN_ID, assertInstanceOf(LmdbValue.class, input).getInternalIdentity().id());
@@ -526,16 +477,23 @@ class SnapshotPositiveLookupLifecycleTest {
 	}
 
 	enum MixedShape {
+
 		LITERAL,
 		NESTED_TERM
 	}
 
 	private static final class TrackedIRI extends AbstractIRI {
+
 		private final IRI delegate;
+
 		private final ValueStore.ReadSnapshot snapshot;
+
 		private final AtomicInteger captureCalls = new AtomicInteger();
+
 		private final AtomicInteger validationCalls = new AtomicInteger();
+
 		private volatile Runnable onCapture;
+
 		private volatile Runnable onValidation;
 
 		private TrackedIRI(IRI delegate, ValueStore.ReadSnapshot snapshot) {
@@ -578,36 +536,15 @@ class SnapshotPositiveLookupLifecycleTest {
 		}
 	}
 
-	private static final class MutableCaptureIRI extends AbstractIRI {
-		private volatile String localName;
-
-		private MutableCaptureIRI(String localName) {
-			this.localName = localName;
-		}
-
-		@Override
-		public String getNamespace() {
-			return "urn:mutable-capture:";
-		}
-
-		@Override
-		public String getLocalName() {
-			return localName;
-		}
-
-		private void changeLocalName(String localName) {
-			this.localName = localName;
-		}
-	}
-
 	private static final class Fixture implements AutoCloseable {
+
 		private final ValueStore values;
 
 		private Fixture(Path directory, int capacity) throws IOException {
-			values = new ValueStore(directory.resolve("values").toFile(), new LmdbStoreConfig()
-					.setValueDBSize(64L * 1024L * 1024L)
-					.setInlineLiterals(false)
-					.setValueIDCacheSize(capacity));
+			values = new ValueStore(directory.resolve("values").toFile(),
+					new LmdbStoreConfig().setValueDBSize(64L * 1024L * 1024L)
+							.setInlineLiterals(false)
+							.setValueIDCacheSize(capacity));
 		}
 
 		private long store(Value value) throws IOException {
@@ -635,7 +572,9 @@ class SnapshotPositiveLookupLifecycleTest {
 	}
 
 	private static final class DirectView implements AutoCloseable {
+
 		private final ValueStore.ReadSnapshotReservation reservation;
+
 		private final ValueStore.ReadSnapshot snapshot;
 
 		private DirectView(ValueStore values) throws IOException {
@@ -659,6 +598,7 @@ class SnapshotPositiveLookupLifecycleTest {
 	}
 
 	private static final class InspectingValueStore extends ValueStore {
+
 		private volatile ReadSnapshot lastPairedSnapshot;
 
 		private InspectingValueStore(File directory, StoreProperties properties, LmdbStoreConfig config)
@@ -669,6 +609,7 @@ class SnapshotPositiveLookupLifecycleTest {
 		@Override
 		ReadSnapshotReservation reserveReadSnapshot() throws IOException {
 			return new ReadSnapshotReservation(getTxnManager().reserveReadTxn(false)) {
+
 				@Override
 				synchronized ReadSnapshot tryStart(Txn tripleTxn) throws IOException {
 					ReadSnapshot snapshot = super.tryStart(tripleTxn);
@@ -682,17 +623,20 @@ class SnapshotPositiveLookupLifecycleTest {
 	}
 
 	private static final class InspectingStore extends LmdbStore {
+
 		private InspectingValueStore values;
+
 		private TripleStore triples;
 
 		private InspectingStore(File directory) {
-			super(directory, new LmdbStoreConfig("spoc,posc").setForceSync(true)
-					.setInlineLiterals(false)
-					.setValueIDCacheSize(3)
-					.setTripleDBSize(64L * 1024L * 1024L)
-					.setValueDBSize(1024L * 1024L)
-					.setMapGrowthReadDrainTimeoutMillis(100)
-					.setAutoGrow(true));
+			super(directory,
+					new LmdbStoreConfig("spoc,posc").setForceSync(true)
+							.setInlineLiterals(false)
+							.setValueIDCacheSize(3)
+							.setTripleDBSize(64L * 1024L * 1024L)
+							.setValueDBSize(1024L * 1024L)
+							.setMapGrowthReadDrainTimeoutMillis(100)
+							.setAutoGrow(true));
 		}
 
 		@Override
@@ -706,6 +650,118 @@ class SnapshotPositiveLookupLifecycleTest {
 						triples = new TripleStore(tripleDirectory, tripleProperties, tripleConfig, valueStore);
 						return triples;
 					});
+		}
+	}
+
+	@Test
+	void captureDeepSharedTreeWithoutRecursion(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, 3);
+				DirectView view = new DirectView(fixture.values)) {
+			Value input = VF.createLiteral("leaf", "en", Literal.BaseDirection.RTL);
+			int depth = 10_000;
+			for (int level = 0; level < depth; level++) {
+				input = VF.createTripleTerm(SUBJECT, SUBJECT, input);
+			}
+			Value captured = fixture.values.valueCapturer(view.snapshot).apply(input);
+			for (int level = 0; level < depth; level++) {
+				TripleTerm triple = (TripleTerm) captured;
+				assertSame(triple.getSubject(), triple.getPredicate(), "one shared input has one captured owner");
+				captured = triple.getObject();
+			}
+			Literal leaf = (Literal) captured;
+			assertEquals("leaf", leaf.getLabel());
+			assertEquals("en", leaf.getLanguage().orElseThrow());
+			assertEquals(Literal.BaseDirection.RTL, leaf.getBaseDirection());
+		}
+	}
+
+	@Test
+	void captureSnapshotsInitializedNativeCompositeWithMutableForeignChild(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, 3);
+				DirectView view = new DirectView(fixture.values)) {
+			MutableCaptureIRI mutableObject = new MutableCaptureIRI("before");
+			TripleTerm nativeComposite = fixture.values.createTripleTerm(SUBJECT, PREDICATE, mutableObject);
+			LmdbValue nativeValue = assertInstanceOf(LmdbValue.class, nativeComposite);
+			assertTrue(nativeValue.isInitialized());
+			assertEquals(LmdbValue.UNKNOWN_ID, nativeValue.getSemanticVersion(),
+					"A mutable foreign child makes the native composite unstable");
+			TripleTerm captured = (TripleTerm) fixture.values.valueCapturer(view.snapshot).apply(nativeComposite);
+			assertNotSame(nativeComposite, captured, "An unstable native composite needs a semantic snapshot");
+			assertEquals("urn:mutable-capture:before", captured.getObject().stringValue());
+			mutableObject.changeLocalName("after");
+			assertEquals("urn:mutable-capture:after", nativeComposite.getObject().stringValue());
+			assertEquals("urn:mutable-capture:before", captured.getObject().stringValue(),
+					"A captured composite must not retain a mutable foreign child");
+		}
+	}
+
+	@Test
+	void captureRejectsCycleBeforeCreatingPreparedPayload(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, 3);
+				DirectView view = new DirectView(fixture.values)) {
+			TripleTerm cycle = new AbstractTripleTerm() {
+
+				@Override
+				public Resource getSubject() {
+					return SUBJECT;
+				}
+
+				@Override
+				public IRI getPredicate() {
+					return PREDICATE;
+				}
+
+				@Override
+				public Value getObject() {
+					return this;
+				}
+			};
+			assertThrows(IllegalArgumentException.class,
+					() -> fixture.values.valueCapturer(view.snapshot).apply(cycle));
+		}
+	}
+
+	@Test
+	void foreignPreparedChildrenAcquireCurrentPreparationOwner(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, 3)) {
+			Value foreign;
+			try (DirectView first = new DirectView(fixture.values)) {
+				foreign = fixture.values.valueCapturer(first.snapshot)
+						.apply(VF.createTripleTerm(SUBJECT, SUBJECT, VF.createLiteral("typed", OBJECT)));
+			}
+			try (DirectView second = new DirectView(fixture.values)) {
+				var capturer = (OwnedValueCapturer) fixture.values.valueCapturer(second.snapshot);
+				TripleTerm captured = (TripleTerm) capturer.apply(foreign);
+				assertTrue(capturer.owns(captured));
+				assertTrue(capturer.owns(captured.getSubject()));
+				assertTrue(capturer.owns(captured.getPredicate()));
+				assertTrue(capturer.owns(captured.getObject()));
+				assertTrue(capturer.owns(((Literal) captured.getObject()).getDatatype()));
+				assertSame(captured.getSubject(), captured.getPredicate());
+			}
+		}
+	}
+
+	private static final class MutableCaptureIRI extends AbstractIRI {
+
+		private volatile String localName;
+
+		private MutableCaptureIRI(String localName) {
+			this.localName = localName;
+		}
+
+		@Override
+		public String getNamespace() {
+			return "urn:mutable-capture:";
+		}
+
+		@Override
+		public String getLocalName() {
+			return localName;
+		}
+
+		private void changeLocalName(String localName) {
+			this.localName = localName;
 		}
 	}
 }

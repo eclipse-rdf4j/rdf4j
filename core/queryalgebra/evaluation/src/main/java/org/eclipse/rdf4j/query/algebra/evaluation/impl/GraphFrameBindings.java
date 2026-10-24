@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
 
 /**
  * Immutable provenance of private active-graph inputs supplied by enclosing evaluation frames. Names alone cannot
@@ -52,7 +53,14 @@ public final class GraphFrameBindings implements Serializable {
 		if (bindings instanceof Carrier carrier && carrier.getGraphFrameBindings() != null) {
 			return carrier.getGraphFrameBindings();
 		}
-		return EMPTY;
+		BindingSet originDelegate = BindingSetOrigin.unwrap(bindings);
+		return originDelegate == bindings ? EMPTY : from(originDelegate);
+	}
+
+	/** Unwraps only this metadata view; values and both provenance domains remain owned by the delegate. */
+	@InternalUseOnly
+	public static BindingSet unwrap(BindingSet bindings) {
+		return bindings instanceof SuppliedBindings supplied ? supplied.delegate : bindings;
 	}
 
 	public static boolean isSupplied(BindingSet bindings, String parameter) {

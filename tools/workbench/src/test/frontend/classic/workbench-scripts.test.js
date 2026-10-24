@@ -73,3 +73,11 @@ test('a missing compiled script names the npm build that produces it', () => {
         fs.rmSync(empty, { recursive: true, force: true });
     }
 });
+
+test('query plan explorer resolves its maintained static CommonJS module', () => {
+    const expected = path.join(workbenchRoot, 'src', 'main', 'frontend', 'static', 'scripts', 'query-plan-explorer.js');
+    assert.equal(workbenchScriptPath('scripts/query-plan-explorer.js'), expected);
+    const explorer = require(workbenchScriptPath('query-plan-explorer.js'));
+    assert.equal(typeof explorer.createViewModel, 'function');
+    assert.equal(typeof explorer.normalizeTrace, 'function');
+});

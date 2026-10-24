@@ -69,6 +69,10 @@ def run_logged(
     return return_code, "" if output_parts is None else "".join(output_parts)
 
 
+
+# Preserve the helper name used by the other branch.
+_run_logged = run_logged
+
 def main() -> int:
     raw_arguments = sys.argv[1:]
     if "--" not in raw_arguments:

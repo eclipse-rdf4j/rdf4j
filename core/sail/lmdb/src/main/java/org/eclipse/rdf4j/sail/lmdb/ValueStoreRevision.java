@@ -77,6 +77,7 @@ public interface ValueStoreRevision {
 			return valueStore;
 		}
 
+		@Override
 		public boolean resolveValue(long id, LmdbValue value) {
 			return valueStore != null && valueStore.resolveValue(id, value);
 		}
@@ -156,16 +157,6 @@ public interface ValueStoreRevision {
 			return positionMask;
 		}
 
-		@Experimental
-		@Override
-		public void resolveValues(LmdbValue[] values, int[] order, int count) {
-			if (valueStore != null) {
-				valueStore.resolveValues(revision, this, values, order, count);
-			} else {
-				resolveValuesOneByOne(values, order, count);
-			}
-		}
-
 		Lazy epoch() {
 			return retainedEpoch == null ? this : retainedEpoch;
 		}
@@ -236,6 +227,16 @@ public interface ValueStoreRevision {
 				return true;
 			}
 			return false;
+		}
+
+		@Experimental
+		@Override
+		public void resolveValues(LmdbValue[] values, int[] order, int count) {
+			if (valueStore != null) {
+				valueStore.resolveValues(this, revision, values, order, count);
+			} else {
+				resolveValuesOneByOne(values, order, count);
+			}
 		}
 
 		@Override

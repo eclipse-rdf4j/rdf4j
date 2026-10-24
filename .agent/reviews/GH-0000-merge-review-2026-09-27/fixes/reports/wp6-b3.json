@@ -1,0 +1,123 @@
+{
+ "wp": "wp6-leo-feedback",
+ "batch": "b3",
+ "worktree": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp6",
+ "patchPath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/patches/wp6.patch",
+ "evidencePath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp6/initial-evidence.wp6.txt",
+ "findings": [
+  {
+   "id": "3.7.5(b)",
+   "status": "fixed",
+   "rootCause": "LmdbSailStore.LmdbSailSink.flush() ran the advisory learned-state hooks (filterSelectivityStats.recordStoreMutation, operatorFeedbackStats.recordStoreMutation, statisticsService.recordStoreCommit, appendCurrentFrontierMutationTail) inside the same try as the durable tripleStore/valueStore commit. Its RuntimeException/IOException catches call rollback(), discardEstimatorUpdatesIfTouched() and running.set(false). A hook failure after the commit was durable therefore reported a failed commit that had persisted (so a retry duplicates the write), discarded the estimator deltas of a durable commit and stopped the store. Both stats classes' advanceAppliedStatementMutationStamp THREW IllegalArgumentException when the live stamp regressed (store rebuilt, restored or journal reset), which made that path reachable.",
+   "change": "flush() now calls maintainLearnedStateAfterCommit() right after storeTxnStarted.set(false). That method never throws, so the rollback/running=false catches can only be reached by the commit itself. Each hook is wrapped separately and degrades toward 'no evidence' rather than stale evidence, per critique major #3: a filter or operator hook failure logs WARN and reset()s that service; a failure to read the committed coordinates resets both services and requests a Frontier rebuild; a Frontier bookkeeping failure logs WARN and still requests the rebuild; persistence scheduling keeps its own catch. A stamp regression is no longer fatal: advanceAppliedStatementMutationStamp in both stats classes reset()s the learned state, adopts the live stamp and WARNs once. Negative stamps still throw. LmdbOperatorFeedbackStats.reset() now also clears exactCardinalityFacts, so a regression cannot resurrect a database_exact fact minted at a coordinate that no longer exists (found by LmdbOperatorFeedbackStatsTest#exactCardinalityFactFollowsTheLiveStatementMutationStamp). The two existing assertThrows-on-regression tests named in critique major #2 were rewritten to assert reset plus adopted stamp; the negative-stamp assertThrows was kept. The integration test uses a Mockito spy seam, as critique minor #4 requires, because a sidecar cannot push the applied stamp ahead. Removing running.set(false) and rollback() from post-commit failures is the intended behaviour change.",
+   "files": [
+    "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbSailStore.java",
+    "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats.java",
+    "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbFilterSelectivityStats.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbPostCommitLearnedStateFailureTest.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbMutationStampRegressionTest.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbFilterSelectivityStatsEvidencePolicyTest.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStatsTest.java"
+   ],
+   "testsAdded": [
+    "LmdbPostCommitLearnedStateFailureTest#failingOperatorFeedbackHookMustNotRollBackOrFailTheDurableCommit",
+    "LmdbPostCommitLearnedStateFailureTest#failingFilterSelectivityHookMustNotRollBackOrFailTheDurableCommit",
+    "LmdbMutationStampRegressionTest#operatorFeedbackStatsResetAndAdoptARegressedStamp",
+    "LmdbMutationStampRegressionTest#filterSelectivityStatsResetAndAdoptARegressedStamp",
+    "LmdbFilterSelectivityStatsEvidencePolicyTest#statementMutationStampCannotBeNegativeAndFollowsARegressedStore (rewritten from the throw-on-regression expectation)"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp6/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbPostCommitLearnedStateFailureTest.txt (log .mvnf/workspaces/wp6/logs/20260928T054751.861673Z-52632-a8c5d590/verify.log)\nTests run: 2, Failures: 2, Errors: 0, Skipped: 0, Time elapsed: 2.066 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.LmdbPostCommitLearnedStateFailureTest\n...failingOperatorFeedbackHookMustNotRollBackOrFailTheDurableCommit(Path) <<< FAILURE! a failure in advisory post-commit learned-state maintenance must not fail the durable commit ==> Unexpected exception thrown: java.lang.IllegalStateException: injected post-commit learned-state failure\nReport: .../surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbMutationStampRegressionTest.txt (log 20260928T054502.946202Z-51390-fb139075)\nTests run: 2, Failures: 2, Errors: 0, Skipped: 0, Time elapsed: 0.844 s <<< FAILURE!\n...operatorFeedbackStatsResetAndAdoptARegressedStamp <<< FAILURE! Unexpected exception thrown: java.lang.IllegalArgumentException: Statement mutation stamp cannot move backwards: 41 < 42\n...filterSelectivityStatsResetAndAdoptARegressedStamp <<< FAILURE! ... Statement mutation stamp cannot move backwards: 4 < 5",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp6/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbPostCommitLearnedStateFailureTest.txt (log 20260928T055649.269878Z-55575-d2d70a8a)\nTests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.981 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbPostCommitLearnedStateFailureTest\nLmdbMutationStampRegressionTest (log 20260928T055452.591023Z-54767-4288d5b4): Tests run: 2, Failures: 0, Errors: 0, Skipped: 0\nFinal b3 lmdb module suite (log .mvnf/workspaces/wp6/logs/20260928T075025.049148Z-32601-1aaae68b/verify.log):\n[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.128 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbPostCommitLearnedStateFailureTest\n[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.020 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbMutationStampRegressionTest\n[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.440 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbFilterSelectivityStatsEvidencePolicyTest\n[INFO] Tests run: 93, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.569 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbOperatorFeedbackStatsTest\n[INFO] Tests run: 33, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 40.71 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbSailStoreTest"
+  },
+  {
+   "id": "3.7.5(a)",
+   "status": "fixed",
+   "rootCause": "LmdbOperatorFeedbackStats.recordStoreMutation applied the same decay to every mutating commit, whatever its size: frontierLearning.decay(0.5), a flat /2 of every touched fanout surface (FanoutAccumulator.decayForMutation), and a feedbackEpoch advance of CONFIDENCE_DECAY_HALF_LIFE_EPOCHS/2 = 2048. A trickle of 1-statement commits therefore erased learned state: after 20 commits on a 1e6-statement store the frontier kept 2.8e-14 of its learned shift, the fanout surface kept 1 of 8 samples, and confidence had aged 40960 epochs. FanoutAccumulator.decayForMutation also rebuilt its confidence model from scratch, throwing away the learned corrections and q-errors. A second defect was found while completing the fix: the sink's estimator-failure recovery (recoverEstimatorAfterFailure) cleared the transaction's touched predicates and mutation count although the statements still commit. The commit then under-reported its extent (1 instead of 2) and skipped decaying the predicates written before the failure.",
+   "change": "Decay is now proportional to the fraction of the committed store that the commit mutated (roadmap 4.5). The sink counts the statements it really approves or deprecates (addStatement, the flushPendingApproves/approveAllBulk/approveAll batches, and per-quad removal) in mutatedStatementsInTransaction. It does not use the frontier-journal stamp delta, following critique major #1: that delta advances once per transaction in OFF mode and is skipped under recordCache. The denominator is the committed statement count from TripleStore.approximateStatementCount(), which reads O(1) mdb_stat entries of the main index (explicit + inferred). The pair is passed as the new MutationExtent to recordStoreMutation. The per-commit factor is max(floor, 1 - 2*fraction), where floor is the existing rdf4j.optimizer.lmdb.frontierMutationDecay.factor (default 0.5), so a commit that rewrites a quarter or more of the store still gets exactly today's halving. The epoch advance is round(min(1, 2*fraction) * 2048), with a minimum of 1. An UNKNOWN extent (the count cannot be read), an empty-store deletion (fraction 1) and the kill switch rdf4j.optimizer.lmdb.mutationDecay.proportional=false all fall back to the flat decay. That kill switch is the one proposed in the design; the area already uses frontierMutationDecay flags, and the default is the fixed behaviour. The surface decay takes the same factor: it scales sampleCount and confidence and preserves the learned mean fanout and the confidence-model calibration. Bulk loads are still a full rewrite: a 2000-statement load into an empty store in FrontierEstimatorMode.OFF reports extent (2000, 2000), which covers the critique's semantic-regression risk. recoverEstimatorAfterFailure no longer clears the store-mutation tracking. The tracking is cleared once per commit at the end of maintainLearnedStateAfterCommit, even when operator feedback is disabled, and on rollback/discard/close as before.",
+   "files": [
+    "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats.java",
+    "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbLeoSurfaceStats.java",
+    "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbSailStore.java",
+    "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/TripleStore.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbProportionalMutationDecayTest.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbCommitMutationExtentTest.java"
+   ],
+   "testsAdded": [
+    "LmdbProportionalMutationDecayTest#trickleCommitsMustNotEraseTheFrontierModel",
+    "LmdbProportionalMutationDecayTest#trickleCommitsMustNotAgeLearnedConfidenceByHalfAHalfLifeEach",
+    "LmdbProportionalMutationDecayTest#trickleCommitsMustNotEraseFanoutSurfaceEvidence",
+    "LmdbProportionalMutationDecayTest#bulkRewriteStillDecaysByTheConfiguredFloor",
+    "LmdbProportionalMutationDecayTest#emptyingTheStoreDecaysFully",
+    "LmdbProportionalMutationDecayTest#unknownExtentFallsBackToFlatDecay",
+    "LmdbProportionalMutationDecayTest#killSwitchRestoresFlatDecayForTrickleCommits",
+    "LmdbCommitMutationExtentTest#commitReportsMutatedStatementsAndTheCommittedStoreSize",
+    "LmdbCommitMutationExtentTest#largeTransactionWithTheFrontierEstimatorOffCountsEveryStatement",
+    "LmdbCommitMutationExtentTest#joinEstimatorFailureInsideTheTransactionMustNotShrinkTheCommitExtent"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp6/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbProportionalMutationDecayTest.txt (log .mvnf/workspaces/wp6/logs/20260928T061030.506894Z-91873-98f169e3/verify.log)\nTests run: 7, Failures: 3, Errors: 0, Skipped: 0, Time elapsed: 0.346 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.LmdbProportionalMutationDecayTest\n...trickleCommitsMustNotEraseFanoutSurfaceEvidence: 20 one-statement commits must keep the fanout sample count nearly intact, kept 1 of 8\n...trickleCommitsMustNotEraseTheFrontierModel: 20 one-statement commits on a 1000000-statement store must keep >= 90% of the learned shift, kept 2.762440075001312E-14 (before=403.00000000000017, after=100.00000000000837)\n...trickleCommitsMustNotAgeLearnedConfidenceByHalfAHalfLifeEach: 20 one-statement commits must age learned confidence by less than ONE bulk rewrite does (2048 epochs), aged 40960\nReport: .../surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbCommitMutationExtentTest.txt (log .mvnf/workspaces/wp6/logs/20260928T072930.588024Z-46373-497d5e0f/verify.log)\nTests run: 3, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 2.482 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.LmdbCommitMutationExtentTest\n...joinEstimatorFailureInsideTheTransactionMustNotShrinkTheCommitExtent(Path) <<< FAILURE! both committed statements count, including the one written before the estimator failure ==> expected: <MutationExtent[mutatedStatements=2, totalStatements=2]> but was: <MutationExtent[mutatedStatements=1, totalStatements=2]>",
+   "postFixEvidence": "LmdbCommitMutationExtentTest (log .mvnf/workspaces/wp6/logs/20260928T073207.826355Z-47325-e3b9edec/verify.log):\n[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.126 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbCommitMutationExtentTest\nReport: .mvnf/workspaces/wp6/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbProportionalMutationDecayTest.txt (log 20260928T073428.575890Z-48816-1c29f5a5)\nTests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.484 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbProportionalMutationDecayTest\nFinal b3 lmdb module suite (log 20260928T075025.049148Z-32601-1aaae68b):\n[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.018 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbCommitMutationExtentTest\n[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.069 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbProportionalMutationDecayTest\n[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.019 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbLeoSurfaceStatsTest\n[INFO] Tests run: 13, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 23.89 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbFrontierStoreLifecycleTest"
+  },
+  {
+   "id": "3.7.5(c)",
+   "status": "deferred",
+   "deferredReason": "Documented with evidence instead of fixed, because the kernel change is execution-operator code owned by wp4 (JoinQueryEvaluationStep, BoundStatementPattern*JoinIteration). No wp4 design, critique or report addresses it. The part of the finding that concerns LEO ('the feedback trains the wrong kernel') is refuted by the code: see rootCause. What remains is a performance observer effect on tracked executions, and the planner-side mitigation the design proposed is inapplicable because the planner never names a guard kernel.",
+   "rootCause": "Confirmed mechanism: JoinQueryEvaluationStep folds join.isCostFeedbackTrackingEnabled()/isRuntimeTelemetryEnabled()/trackResultSize/trackTime into runtimeTelemetryTrackingActive, and every bound-statement guard branch requires it to be false. PackedPlanMaterializer enables cost-feedback tracking on every node with a finite contract prediction, so tracked executions always run JoinIterator. The claim that this corrupts learning does not hold. The packed planner prices one DEPENDENT_ITERATION kernel (PackedPhysicalJoinCosting.stampImplementation -> 'dependent-iteration'; local cost = resultRows, with the right operand evaluated per left row). The guard kernels are an executor-local count-only shortcut that the planner does not model. A tracked execution therefore runs exactly the iterating kernel the plan was costed on, and its right-operand rows are real. A telemetry-capable guard kernel would never evaluate the right operand (critique minor #5). LmdbOperatorFeedbackStats.joinAlgorithmDrifted already maps planned 'dependent-iteration' to one family containing JoinIterator and all three guard kernels, so no physical evidence is mixed or discarded. The design's proposed LMDB mitigation ('planned guard family, ran JoinIterator = drift') cannot trigger because no planned metric ever names a guard kernel. The switch is result-neutral, including duplicate statements across contexts (critique semantic-regression test). The remaining cost is latency: tracked queries forgo the count-only shortcut.",
+   "change": "No production behaviour change. JoinGuardKernelTrackingTest was added to the evaluation module to pin the evidence. For all three guard shapes (right bound SP, left bound SP, guard chain) it shows that (1) the untracked plan selects the guard kernel while cost-feedback tracking and trackResultSize select JoinIterator, (2) both return the identical multiset, with (s p o) stored in two named graphs, and (3) only the tracked kernel evaluates the right operand and reports its rows (right resultSizeActual = 6), which matches what dependent-iteration is priced on. A comment at LmdbOperatorFeedbackStats.DEPENDENT_ITERATION_ALGORITHMS records why guard kernels and JoinIterator form one drift family and points to the test. The first run of the new class failed on a wrong test assumption about statement-lookup counts ('expected: <3> but was: <1>': the statement step's direct-lookup cache serves repeated identical fully bound lookups). The assertion was corrected to '> 0'; this was not a production defect.",
+   "files": [
+    "core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/evaluationsteps/JoinGuardKernelTrackingTest.java",
+    "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats.java"
+   ],
+   "testsAdded": [
+    "JoinGuardKernelTrackingTest#rightBoundStatementGuardIsDeclinedUnderCostFeedbackTrackingWithoutChangingResults",
+    "JoinGuardKernelTrackingTest#leftBoundStatementGuardIsDeclinedUnderCostFeedbackTrackingWithoutChangingResults",
+    "JoinGuardKernelTrackingTest#guardChainIsDeclinedUnderCostFeedbackTrackingWithoutChangingResults"
+   ],
+   "postFixEvidence": "Report: .mvnf/workspaces/wp6/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.JoinGuardKernelTrackingTest.txt (log .mvnf/workspaces/wp6/logs/20260928T074151.284210Z-68127-4f5bd22e/verify.log)\nTests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.535 s -- in org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.JoinGuardKernelTrackingTest\nEvaluation module suite (log 20260928T074501.931837Z-69585-37ba2fb8): [INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.011 s -- in ...JoinGuardKernelTrackingTest; JoinIteratorTest 10/0; JoinMetricsTrackingTest 17/0"
+  }
+ ],
+ "suiteRuns": [
+  {
+   "selection": "core/queryalgebra/evaluation (module unit suite, final tree)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp6 --threads 3 core/queryalgebra/evaluation --retain-logs",
+   "result": "tests=1773, failures=3, errors=1, skipped=0 (log .mvnf/workspaces/wp6/logs/20260928T074501.931837Z-69585-37ba2fb8/verify.log). All Leo* classes and JoinGuardKernelTrackingTest are green.",
+   "reds": [
+    "MinusQueryEvaluationStepTest.spillFileIsRemovedWhenIterationIsExhausted / spillFileIsRemovedWhenIterationIsClosedEarly: pre-existing (environment/runner). The workspace pom's java.io.tmpdir override differs from the JDK TempFileHelper's cached tmpdir. The same red appeared in b1 and b2 before any b3 edit, and b3 changes no evaluation-module production code.",
+    "OptimizerRuleCatalogTest.generatedDocumentationMatchesManifestAndResearchInputs: pre-existing (environment). The papers2 research checkout is absent from the worktree; red in every run.",
+    "PackedFrontierSubsetKernelContractTest.arbitraryWidthBushyDependentJoinContinuesRightRecipeUnderWholeLeftPrefix: flaky under load (120 s assertTimeoutPreemptively at load average ~100-190). It was red in b1 and b2 on identical planner code, and b3 touches no planner code."
+   ]
+  },
+  {
+   "selection": "core/sail/lmdb (module unit suite, final tree)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp6 --threads 3 core/sail/lmdb --retain-logs",
+   "result": "tests=2198, failures=1, errors=1, skipped=7 (log .mvnf/workspaces/wp6/logs/20260928T075025.049148Z-32601-1aaae68b/verify.log). All b1/b2/b3 classes are green, including LmdbSailStoreTest 33/0 and LmdbEstimateAuditHarnessTest 43/0.",
+   "reds": [
+    "LmdbStoreMultiRepoTest.testRandomLoadManyRepositoriesInParallel: pre-existing (environment). 'java.io.IOException: No space left on device' (host volume at 98%); identical in every lmdb run of this worktree since b1.",
+    "LmdbRuntimeFeedbackTargetTest.preboundOpenCloseAndRootPublicationAllocateNoLearningObjects: flaky thread-allocation probe (raw=196608 bytes at load average ~130-190, the same byte count as in b2). The test drives the publication path, which b3 does not touch. Re-run in isolation: Tests run: 12, Failures: 0, Errors: 0 (log .mvnf/workspaces/wp6/logs/20260928T082358.079748Z-85825-72ea60bb/verify.log)."
+   ]
+  },
+  {
+   "selection": "Pre/post-fix class runs for b3",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp6 --threads 3 <Class> --module <module> --retain-logs",
+   "result": "LmdbPostCommitLearnedStateFailureTest 2/2 -> 2/0; LmdbMutationStampRegressionTest 2/2 -> 2/0; LmdbProportionalMutationDecayTest 7/3 -> 7/0; LmdbCommitMutationExtentTest 3/1 -> 3/0; JoinGuardKernelTrackingTest 3/0 (documentation test); LmdbRuntimeFeedbackTargetTest isolation re-run 12/0 (tests/failures)",
+   "reds": []
+  }
+ ],
+ "filesTouchedOutsideOwnership": [],
+ "newFlagsOrConfig": [
+  "New kill switch rdf4j.optimizer.lmdb.mutationDecay.proportional (default true). Setting it to false restores the flat per-commit decay (frontier x floor, surfaces x floor, +2048 epochs) for benchmark A/B.",
+  "Existing rdf4j.optimizer.lmdb.frontierMutationDecay.factor (default 0.5) is now the FLOOR of the proportional decay. It applies in full to commits that mutate >= (1-floor)/2 of the store, to commits of unknown extent, and to every commit when the kill switch is off.",
+  "Behaviour change: failures in post-commit learned-state maintenance no longer fail, roll back or stop the store (running stays true). They WARN and reset the affected learned service. A statement-mutation stamp regression resets and adopts the live stamp instead of throwing IllegalArgumentException. LmdbOperatorFeedbackStats.reset() now also drops exact cardinality facts."
+ ],
+ "crossWpNotes": [
+  "wp4 (execution operators): the 3.7.5(c) kernel change is theirs if wanted. A telemetry-capable guard kernel must credit the counted statements to the right child's resultSizeActual/costFeedbackActualRows and join right-row counters, keep the statementCount<0 fallback, and keep JoinGuardKernelTrackingTest's multiset assertions green. Once guard kernels run under tracking, the planner still prices one dependent-iteration kernel, so learned physical work would describe the cheaper count-only kernel. wp7 would then need a guard-aware cost or the drift family split.",
+  "wp5 (frontier lifecycle): LmdbSailStore.flush now runs statisticsService.recordStoreCommit/appendCurrentFrontierMutationTail in a non-fatal block after the durable commit and always requests a Frontier rebuild, even when that bookkeeping failed. Whether the frontier view should also be marked stale immediately (critique major #3, raw note item 3) is wp5's call; no statistics-service API was changed here.",
+  "wp3 (plan caches): the post-commit block is the same place where plan-cache invalidation hooks would go; any hook added there must follow the never-throw contract of maintainLearnedStateAfterCommit.",
+  "TripleStore gained a package-private approximateStatementCount() (mdb_stat entries of the main index, explicit + inferred)."
+ ],
+ "followUps": [
+  "Benchmark A/B of proportional vs flat mutation decay (kill switch) on write-heavy theme workloads; trajectories under trickle writes are expected to change, with LEO retaining evidence.",
+  "The unchanged LmdbSketchAwareFilterPlacementIT (Failsafe) was not run in this batch; run mvnf --workspace wp6 --it LmdbSketchAwareFilterPlacementIT --module core/sail/lmdb at integration.",
+  "Free host disk (98% used) before the final integration run; LmdbStoreMultiRepoTest is red only for lack of space.",
+  "Re-run PackedFrontierSubsetKernelContractTest and LmdbRuntimeFeedbackTargetTest on an idle host to close their flaky triage."
+ ]
+}

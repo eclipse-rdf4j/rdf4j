@@ -1,0 +1,177 @@
+{
+ "wp": "wp1-lmdb-logical-rewrites",
+ "batch": "b1",
+ "worktree": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1",
+ "patchPath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/patches/wp1.patch",
+ "evidencePath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/initial-evidence.wp1.txt",
+ "findings": [
+  {
+   "id": "3.1.1",
+   "status": "fixed",
+   "rootCause": "LmdbBoundSimplifierOptimizer.meet(Filter) proved BOUND(?x) from filter.getArg().get(Assured)BindingNames() plus the root BindingSet names only, while its AbstractQueryModelVisitor descends into EXISTS/NOT EXISTS bodies (meetSubQueryValueOperator) and LATERAL right args where the outer row is substituted at evaluation time; a correlated name absent from the body's own patterns was folded to FALSE and the Filter replaced by EmptySet (EXISTS -> empty, NOT EXISTS -> spurious rows, LATERAL right arg -> empty).",
+   "change": "Introduced the shared correlation-aware scope analysis OuterScopeBindings.of(node, incomingNames) (roadmap 4.1) in core/queryalgebra/evaluation: it walks the parent chain at rewrite time (robust to in-place rewrites) and returns OuterScope(possible, possibleInScope, assured). Frames: EXISTS/SubQueryValueOperator body -> owning Filter arg / LeftJoin both args / Extension arg row (assured from the row the expression is evaluated on); LATERAL right arg -> left row restricted by Lateral.getRightInputBindingNames (assured = left assured \u2229 right-input names); Join/LeftJoin right arg -> left names possible-in-scope only; MINUS right side -> executor-leak possible only (not in scope); sub-SELECT Projection/MultiProjection -> frames further out become leak-only and unassured; SERVICE/property paths block assurance; a scope-changing FILTER outside a subquery is never handed assured outer names (mirrors FilterIterator.filterScopeBindingNames); incoming bindings are assured at the root. LmdbBoundSimplifierOptimizer now unions outerScope.assured() into the assured set (BOUND -> TRUE only when the substitution is guaranteed) and outerScope.possibleInScope() into the possible set (BOUND -> FALSE only when the name is nowhere in scope). Sound: assured names may only enable, possible names may only block. Deviations from the design, all following the critique: (1) a third set possibleInScope so the sub-SELECT / MINUS barrier keeps today's spec-correct BOUND->FALSE fold instead of regressing to the executor's 3.4.3 leak (critique major); (2) rule (c) restricted to Join/LeftJoin, Difference leak-only, Union contributes nothing (critique minor); (3) LATERAL uses getRightInputBindingNames (critique minor).",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/OuterScopeBindings.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbBoundSimplifierOptimizer.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/OuterScopeBindingsTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbBoundSimplifierOptimizerTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbCorrelatedScopeRewriteTest.java"
+   ],
+   "testsAdded": [
+    "LmdbCorrelatedScopeRewriteTest#boundInsideExistsSeesOuterBinding",
+    "LmdbCorrelatedScopeRewriteTest#boundInsideExistsSeesOuterBindingColdStore",
+    "LmdbCorrelatedScopeRewriteTest#notBoundInsideNotExistsSeesOuterBinding",
+    "LmdbCorrelatedScopeRewriteTest#boundInsideLateralSeesLeftBinding",
+    "LmdbCorrelatedScopeRewriteTest#boundInsideExistsSeesOuterOptionalBindingOnlyWhenMatched",
+    "LmdbCorrelatedScopeRewriteTest#boundOfIncomingBindingInsideExists",
+    "LmdbCorrelatedScopeRewriteTest#boundInsideNestedOptionalGroupIsFalseBySpec",
+    "LmdbCorrelatedScopeRewriteTest#boundOfOuterNameInsideSubSelectIsFalseBySpec",
+    "LmdbCorrelatedScopeRewriteTest#boundOfOuterNameInsideSubSelectWithinExistsIsFalseBySpec",
+    "LmdbCorrelatedScopeRewriteTest#boundOfOuterNameInsideMinusIsFalseBySpec",
+    "LmdbCorrelatedScopeRewriteTest#boundOfUnknownNameInsideExistsIsStillFalse",
+    "LmdbBoundSimplifierOptimizerTest#foldsBoundOfOuterAssuredNameInsideExistsToTrue",
+    "LmdbBoundSimplifierOptimizerTest#foldsNegatedBoundOfOuterAssuredNameInsideNotExistsToEmptyBody",
+    "LmdbBoundSimplifierOptimizerTest#foldsBoundOfLateralLeftNameInsideRightArgumentToTrue",
+    "LmdbBoundSimplifierOptimizerTest#keepsBoundOfOuterOptionalNameInsideExists",
+    "LmdbBoundSimplifierOptimizerTest#stillFoldsBoundOfOuterNameInsideSubSelectWithinExistsToFalse",
+    "LmdbBoundSimplifierOptimizerTest#stillFoldsBoundOfOuterNameInsideSubSelectBelowJoinToFalse",
+    "LmdbBoundSimplifierOptimizerTest#stillFoldsBoundOfOuterNameInsideMinusRightArgumentToFalse",
+    "LmdbBoundSimplifierOptimizerTest#leavesScopeChangedFilterOnOptionalRightSideUntouched",
+    "LmdbBoundSimplifierOptimizerTest#keepsBoundOfJoinLeftNameInsideRightArgument",
+    "LmdbBoundSimplifierOptimizerTest#stillFoldsBoundOfUnknownNameInsideExistsToFalse",
+    "LmdbBoundSimplifierOptimizerTest#foldsBoundOfIncomingBindingNameToTrue",
+    "OuterScopeBindingsTest (19 methods, one per frame kind: EXISTS owner Filter/LeftJoin condition/Extension, LATERAL right (restricted and default), Join/LeftJoin/Difference/Union right, sub-SELECT boundary, nested frames, scope-changing filters, root incoming)"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp1/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbCorrelatedScopeRewriteTest.txt\nTests run: 21, Failures: 16, Errors: 0, Skipped: 0, Time elapsed: 2.923 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.LmdbCorrelatedScopeRewriteTest\norg.eclipse.rdf4j.sail.lmdb.LmdbCorrelatedScopeRewriteTest.boundInsideExistsSeesOuterBinding -- Time elapsed: 0.080 s <<< FAILURE!\nLMDB pipeline vs SPARQL spec  expected=[s=<http://example.org/s1>]  lmdb=[]  oracle=[s=<http://example.org/s1>]\norg.eclipse.rdf4j.sail.lmdb.LmdbCorrelatedScopeRewriteTest.notBoundInsideNotExistsSeesOuterBinding -- Time elapsed: 0.090 s <<< FAILURE!\nLMDB pipeline vs SPARQL spec  expected=[s=<http://example.org/s1>]  lmdb=[]  oracle=[s=<http://example.org/s1>]\norg.eclipse.rdf4j.sail.lmdb.LmdbCorrelatedScopeRewriteTest.boundInsideLateralSeesLeftBinding -- Time elapsed: 0.074 s <<< FAILURE!\nLMDB pipeline vs SPARQL spec  expected=[o=<http://example.org/o1>|s=<http://example.org/s1>]  lmdb=[]\norg.eclipse.rdf4j.sail.lmdb.LmdbCorrelatedScopeRewriteTest.boundInsideExistsSeesOuterOptionalBindingOnlyWhenMatched -- Time elapsed: 0.100 s <<< FAILURE!\norg.eclipse.rdf4j.sail.lmdb.LmdbCorrelatedScopeRewriteTest.boundInsideExistsSeesOuterBindingColdStore -- Time elapsed: 0.084 s <<< FAILURE!\n(mvnf log .mvnf/workspaces/wp1/logs/20260927T204547.115367Z-26099-04cca62b/verify.log; 16 of 21 red = every non-control method of the three findings)",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp1/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbCorrelatedScopeRewriteTest.txt\nTests run: 24, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.580 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbCorrelatedScopeRewriteTest\n  PASS boundInsideExistsSeesOuterBinding (time=0.087)\n  PASS boundInsideExistsSeesOuterBindingColdStore (time=0.098)\n  PASS notBoundInsideNotExistsSeesOuterBinding (time=0.086)\n  PASS boundInsideLateralSeesLeftBinding (time=0.091)\n  PASS boundInsideExistsSeesOuterOptionalBindingOnlyWhenMatched (time=0.115)\n  PASS boundOfIncomingBindingInsideExists (time=0.121)\n  PASS boundInsideNestedOptionalGroupIsFalseBySpec (time=0.075)\n  PASS boundOfOuterNameInsideSubSelectIsFalseBySpec (time=0.078)\n  PASS boundOfOuterNameInsideSubSelectWithinExistsIsFalseBySpec (time=0.088)\n  PASS boundOfOuterNameInsideMinusIsFalseBySpec (time=0.08)\n  PASS boundOfUnknownNameInsideExistsIsStillFalse (time=0.083)\n(mvnf log .mvnf/workspaces/wp1/logs/20260928T002658.600494Z-10984-566586c2/verify.log; LmdbBoundSimplifierOptimizerTest 15/15 green, OuterScopeBindingsTest 19/19 green)"
+  },
+  {
+   "id": "3.1.3",
+   "status": "fixed",
+   "rootCause": "LmdbFilterSimplifierOptimizer.optimize derived incomingBindingNames from the root BindingSet only and FilterMerger.meet(Filter) passed that set to LmdbNullRejectingOptionalSupport.rewrite, whose sole correlation guard (selectUnboundWitness) only rejected witnesses in that set. Inside an EXISTS / NOT EXISTS body or a LATERAL right arg the witness ?w of FILTER(?w = :c) over OPTIONAL { ?x :b ?w } is substituted from the outer row, so it is not unbound on unmatched OPTIONAL rows; the rewrite still turned the LeftJoin into a Join and the body then required a triple that does not exist (EXISTS -> false, NOT EXISTS -> spurious row, LATERAL -> empty).",
+   "change": "FilterMerger.meet(Filter) computes OuterScopeBindings.of(filter, incomingBindingNames).possible() once per Filter (after the in-place child-filter merge, before any rewrite) and passes it to LmdbNullRejectingOptionalSupport.rewrite instead of the root incoming set. The parameter was renamed incomingBindings -> outerVisibleBindings throughout LmdbNullRejectingOptionalSupport with javadoc stating the witness must be unbound in the enclosing evaluation context. The block-only direction uses the full possible() set (including executor leaks across sub-SELECT/MINUS), which is the conservative choice: any name an ancestor may substitute disqualifies the witness and the OPTIONAL survives. Uncorrelated witnesses (design control) are still rewritten as before.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbFilterSimplifierOptimizer.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbNullRejectingOptionalSupport.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbFilterSimplifierOptimizerTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbCorrelatedScopeRewriteTest.java"
+   ],
+   "testsAdded": [
+    "LmdbCorrelatedScopeRewriteTest#nullRejectingOptionalInsideExistsWithCorrelatedWitness",
+    "LmdbCorrelatedScopeRewriteTest#nullRejectingOptionalInsideExistsWithCorrelatedWitnessColdStore",
+    "LmdbCorrelatedScopeRewriteTest#nullRejectingOptionalInsideNotExistsWithCorrelatedWitness",
+    "LmdbCorrelatedScopeRewriteTest#nullRejectingOptionalInsideLateralWithCorrelatedWitness",
+    "LmdbCorrelatedScopeRewriteTest#nullRejectingOptionalInsideExistsWithUncorrelatedWitnessStillCorrect",
+    "LmdbCorrelatedScopeRewriteTest#nullRejectingOptionalWitnessBoundByIncomingBinding",
+    "LmdbFilterSimplifierOptimizerTest#keepsNullRejectingOptionalInsideExistsWhenWitnessIsBoundByOuterRow",
+    "LmdbFilterSimplifierOptimizerTest#keepsNullRejectingOptionalInsideNotExistsWhenWitnessIsBoundByOuterRow",
+    "LmdbFilterSimplifierOptimizerTest#keepsNullRejectingOptionalInsideLateralWhenWitnessIsBoundByLeftRow",
+    "LmdbFilterSimplifierOptimizerTest#keepsNullRejectingOptionalInsideJoinRightArgumentWhenWitnessIsBoundByLeftRow",
+    "LmdbFilterSimplifierOptimizerTest#rewritesNullRejectingOptionalInsideExistsWhenWitnessIsNotOuterVisible"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp1/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbCorrelatedScopeRewriteTest.txt\nTests run: 21, Failures: 16, Errors: 0, Skipped: 0, Time elapsed: 2.923 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.LmdbCorrelatedScopeRewriteTest\norg.eclipse.rdf4j.sail.lmdb.LmdbCorrelatedScopeRewriteTest.nullRejectingOptionalInsideExistsWithCorrelatedWitness -- Time elapsed: 0.120 s <<< FAILURE!\nLMDB pipeline vs SPARQL spec  expected=[s=<http://example.org/s1>]  lmdb=[]  oracle=[s=<http://example.org/s1>]\norg.eclipse.rdf4j.sail.lmdb.LmdbCorrelatedScopeRewriteTest.nullRejectingOptionalInsideNotExistsWithCorrelatedWitness -- Time elapsed: 0.117 s <<< FAILURE!\nLMDB pipeline vs SPARQL spec  expected=[]  lmdb=[s=<http://example.org/s1>]  oracle=[]\norg.eclipse.rdf4j.sail.lmdb.LmdbCorrelatedScopeRewriteTest.nullRejectingOptionalInsideLateralWithCorrelatedWitness -- Time elapsed: 0.128 s <<< FAILURE!\nLMDB pipeline vs SPARQL spec  expected=[s=<http://example.org/s1>|x=<http://example.org/x1>]  lmdb=[]\norg.eclipse.rdf4j.sail.lmdb.LmdbCorrelatedScopeRewriteTest.nullRejectingOptionalInsideExistsWithCorrelatedWitnessColdStore -- Time elapsed: 0.094 s <<< FAILURE!\n(mvnf log .mvnf/workspaces/wp1/logs/20260927T204547.115367Z-26099-04cca62b/verify.log)",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp1/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbCorrelatedScopeRewriteTest.txt\nTests run: 24, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.580 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbCorrelatedScopeRewriteTest\n  PASS nullRejectingOptionalInsideExistsWithCorrelatedWitness (time=0.093)\n  PASS nullRejectingOptionalInsideExistsWithCorrelatedWitnessColdStore (time=0.139)\n  PASS nullRejectingOptionalInsideNotExistsWithCorrelatedWitness (time=0.134)\n  PASS nullRejectingOptionalInsideLateralWithCorrelatedWitness (time=0.091)\n  PASS nullRejectingOptionalInsideExistsWithUncorrelatedWitnessStillCorrect (time=0.127)\n  PASS nullRejectingOptionalWitnessBoundByIncomingBinding (time=0.079)\n(mvnf log .mvnf/workspaces/wp1/logs/20260928T002658.600494Z-10984-566586c2/verify.log; LmdbFilterSimplifierOptimizerTest 69/69 green)"
+  },
+  {
+   "id": "3.1.2",
+   "status": "fixed",
+   "rootCause": "LmdbFilterSimplifierOptimizer.makeOptionalBindingMandatory accepted Filter(LeftJoin(L,R), ?w = c) -> Join(L, Join(VALUES{w=c}, R)) whenever R's POSSIBLE binding names contained ?w and it received no outer/incoming names at all. When R may leave ?w unbound (nested scope group with an inner OPTIONAL, sub-SELECT not assuring ?w, UNION binding ?w in one branch) the VALUES anchor binds ?w=c on rows where the OPTIONAL had left it unbound, the retained filter passes, and a spurious row appears; when ?w is substituted from an enclosing EXISTS row (reached because barrierFreeSubtree makes the null-rejecting rule decline on the scope-changed group) the filter is a test on the outer value that an unmatched OPTIONAL row passes, so the rewrite dropped a valid row.",
+   "change": "makeOptionalBindingMandatory now requires the binding to be ASSURED by leftJoin.getRightArg() (getAssuredBindingNames, so nested groups / sub-SELECTs / one-branch UNIONs decline while all-branch UNIONs and StatementPatterns still rewrite) and not contained in the outer-visible set; the set is threaded from FilterMerger.meet(Filter) (the same OuterScopeBindings.possible() computed for 3.1.3) through rewriteSmallLiteralFilterAnchors and makeUnboundRejectingOptionalsMandatory. The guard sits before both the scoped-fanout hoist and the plain Join branches. Soundness: with ?w assured by R and not bound outside, every LeftJoin row either matched R (then the filter keeps it iff ?w=c, identical to the inner join) or is unmatched (then ?w is unbound, the filter rejects it, and the inner join produces nothing). Alias (directExtensionSourceAnchor) and hoist logic unchanged.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbFilterSimplifierOptimizer.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbFilterSimplifierOptimizerTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbCorrelatedScopeRewriteTest.java"
+   ],
+   "testsAdded": [
+    "LmdbCorrelatedScopeRewriteTest#mandatoryOptionalAnchorWithSubselectRhs",
+    "LmdbCorrelatedScopeRewriteTest#mandatoryOptionalAnchorWithNestedGroupRhs",
+    "LmdbCorrelatedScopeRewriteTest#mandatoryOptionalAnchorWithUnionRhsBindingOnlyOneBranch",
+    "LmdbCorrelatedScopeRewriteTest#mandatoryOptionalAnchorInsideExistsWithCorrelatedWitness",
+    "LmdbCorrelatedScopeRewriteTest#controlMandatoryOptionalAnchorMatchingRow",
+    "LmdbCorrelatedScopeRewriteTest#controlMandatoryOptionalAnchorAssuredRhs",
+    "LmdbCorrelatedScopeRewriteTest#mandatoryOptionalAnchorWithIncomingBindingOnOptionalName",
+    "LmdbFilterSimplifierOptimizerTest#keepsOptionalWhenMandatoryAnchorBindingIsNotAssuredByNestedGroupRhs",
+    "LmdbFilterSimplifierOptimizerTest#keepsOptionalWhenMandatoryAnchorBindingIsNotAssuredBySubSelectRhs",
+    "LmdbFilterSimplifierOptimizerTest#keepsOptionalWhenMandatoryAnchorBindingIsBoundByOnlyOneUnionBranch",
+    "LmdbFilterSimplifierOptimizerTest#rewritesMandatoryAnchorWhenEveryUnionBranchAssuresTheBinding",
+    "LmdbFilterSimplifierOptimizerTest#keepsOptionalWhenMandatoryAnchorBindingIsPreboundByIncomingBindings",
+    "LmdbFilterSimplifierOptimizerTest#keepsOptionalWhenMandatoryAnchorBindingIsBoundByEnclosingExistsRow"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp1/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbCorrelatedScopeRewriteTest.txt\nTests run: 21, Failures: 16, Errors: 0, Skipped: 0, Time elapsed: 2.923 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.LmdbCorrelatedScopeRewriteTest\norg.eclipse.rdf4j.sail.lmdb.LmdbCorrelatedScopeRewriteTest.mandatoryOptionalAnchorWithSubselectRhs -- Time elapsed: 0.132 s <<< FAILURE!\nLMDB pipeline vs SPARQL spec  expected=[]  lmdb=[o=<http://example.org/o1>|s=<http://example.org/s1>|w=<http://example.org/c>]\norg.eclipse.rdf4j.sail.lmdb.LmdbCorrelatedScopeRewriteTest.mandatoryOptionalAnchorWithNestedGroupRhs -- Time elapsed: 0.942 s <<< FAILURE!\nLMDB pipeline vs SPARQL spec  expected=[]  lmdb=[o=<http://example.org/o1>|s=<http://example.org/s1>|w=<http://example.org/c>|x=<http://example.org/x1>]\norg.eclipse.rdf4j.sail.lmdb.LmdbCorrelatedScopeRewriteTest.mandatoryOptionalAnchorWithUnionRhsBindingOnlyOneBranch -- Time elapsed: 0.095 s <<< FAILURE!\norg.eclipse.rdf4j.sail.lmdb.LmdbCorrelatedScopeRewriteTest.mandatoryOptionalAnchorInsideExistsWithCorrelatedWitness -- Time elapsed: 0.100 s <<< FAILURE!\nLMDB pipeline vs SPARQL spec  expected=[s=<http://example.org/s1>]  lmdb=[]  oracle=[s=<http://example.org/s1>]\n(mvnf log .mvnf/workspaces/wp1/logs/20260927T204547.115367Z-26099-04cca62b/verify.log)",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp1/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbCorrelatedScopeRewriteTest.txt\nTests run: 24, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.580 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbCorrelatedScopeRewriteTest\n  PASS mandatoryOptionalAnchorWithSubselectRhs (time=0.117)\n  PASS mandatoryOptionalAnchorWithNestedGroupRhs (time=1.231)\n  PASS mandatoryOptionalAnchorWithUnionRhsBindingOnlyOneBranch (time=0.115)\n  PASS mandatoryOptionalAnchorInsideExistsWithCorrelatedWitness (time=0.096)\n  PASS controlMandatoryOptionalAnchorMatchingRow (time=0.101)\n  PASS controlMandatoryOptionalAnchorAssuredRhs (time=0.115)\n  PASS mandatoryOptionalAnchorWithIncomingBindingOnOptionalName (time=0.092)\n(mvnf log .mvnf/workspaces/wp1/logs/20260928T002658.600494Z-10984-566586c2/verify.log; LmdbFilterSimplifierOptimizerTest 69/69 green)"
+  }
+ ],
+ "suiteRuns": [
+  {
+   "selection": "LmdbCorrelatedScopeRewriteTest (core/sail/lmdb) pre-fix, first attempt 2026-09-27",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp1 --threads 3 LmdbCorrelatedScopeRewriteTest --module core/sail/lmdb --retain-logs",
+   "result": "tests=21, failures=16, errors=0, skipped=0",
+   "reds": [
+    "all 16 reds are the intended reproducers of 3.1.1 / 3.1.3 / 3.1.2 (EXISTS, NOT EXISTS, LATERAL, cold-store, sub-SELECT/nested-group/one-branch-UNION rhs, incoming-binding variants); the 5 greens are spec controls (nested OPTIONAL group, unknown name, matching row, assured rhs, uncorrelated witness) \u2014 mvnf log .mvnf/workspaces/wp1/logs/20260927T204547.115367Z-26099-04cca62b/verify.log"
+   ]
+  },
+  {
+   "selection": "LmdbCorrelatedScopeRewriteTest (core/sail/lmdb) post-fix, refreshed 2026-09-28 after the critique-driven sub-SELECT/MINUS controls were added",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp1 --threads 3 LmdbCorrelatedScopeRewriteTest --module core/sail/lmdb --retain-logs",
+   "result": "tests=24, failures=0, errors=0, skipped=0",
+   "reds": []
+  },
+  {
+   "selection": "OuterScopeBindingsTest (core/queryalgebra/evaluation)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp1 --threads 3 OuterScopeBindingsTest --module core/queryalgebra/evaluation --retain-logs",
+   "result": "tests=19, failures=0, errors=0, skipped=0",
+   "reds": []
+  },
+  {
+   "selection": "LmdbBoundSimplifierOptimizerTest (core/sail/lmdb)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp1 --threads 3 LmdbBoundSimplifierOptimizerTest --module core/sail/lmdb --retain-logs",
+   "result": "first run tests=15, failures=1 -> after test update tests=15, failures=0, errors=0, skipped=0",
+   "reds": [
+    "keepsBoundOfOuterNameInsideSubSelectBody: outdated-expectation-updated \u2014 it encoded the first-iteration design (sub-SELECT body keeps BOUND(?x) of an outer name) that the critique's major issue rejected; the shipped helper treats a sub-SELECT as an in-scope barrier so the spec-correct BOUND->FALSE fold is kept (e2e control boundOfOuterNameInsideSubSelectWithinExistsIsFalseBySpec expects []). Renamed to stillFoldsBoundOfOuterNameInsideSubSelectWithinExistsToFalse asserting Projection(EmptySet); the interrupted attempt had updated the join-side twin but missed this one."
+   ]
+  },
+  {
+   "selection": "LmdbFilterSimplifierOptimizerTest (core/sail/lmdb)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp1 --threads 3 LmdbFilterSimplifierOptimizerTest --module core/sail/lmdb --retain-logs",
+   "result": "tests=69, failures=0, errors=0, skipped=0",
+   "reds": []
+  },
+  {
+   "selection": "LmdbOptimizerPipelineTest, LmdbFilterSimplifierBoundaryTest, LmdbTemporalFiniteFilterCostingTest (core/sail/lmdb; the other classes referencing the edited optimizers)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp1 --threads 3 <Class> --module core/sail/lmdb --retain-logs (one run per class)",
+   "result": "tests=46/13/5, failures=0, errors=0, skipped=0",
+   "reds": []
+  },
+  {
+   "selection": "core/sail/lmdb full unit suite",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp1 --threads 3 core/sail/lmdb --retain-logs",
+   "result": "Maven total tests=2332, failures=0, errors=1, skipped=7 (mvnf XML-file summary: tests=2217, failures=0, errors=1, skipped=7; 2026-09-27 baseline run had 2326 = 2332 minus the 6 tests added since)",
+   "reds": [
+    "LmdbStoreMultiRepoTest.testRandomLoadManyRepositoriesInParallel: pre-existing (environment) \u2014 java.io.IOException: No space left on device thrown in repository.init() -> LmdbStore.initializeInternal -> PersistentSetFactory.<init> -> LmdbUtil.E while opening 200 LMDB environments in parallel on the 97%-full volume, before any query is planned (the test's only query has no FILTER/OPTIONAL/BOUND); the identical ENOSPC error is in the wt-wp3, wt-wp5 and wt-wp6 workspace reports for the same test. The 2026-09-27 run additionally had LmdbPropertyPathEstimateTest (6E), LmdbStatsLoggingTest (11E) ENOSPC and LmdbDistinctCursorSkipOverlayTest#contextClearPreservesRepresentativesInOtherContexts (1F) inside the same disk-full window; all three classes are green in this run and the overlay class was also green when rerun alone (8/8)."
+   ]
+  },
+  {
+   "selection": "core/queryalgebra/evaluation full unit suite",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp1 --threads 3 core/queryalgebra/evaluation --retain-logs",
+   "result": "tests=1748, failures=3, errors=1, skipped=0 (identical red set to the 2026-09-27 run of this worktree and to wp6's run; the module's only production change in this worktree is the new OuterScopeBindings class, referenced by nothing in the module)",
+   "reds": [
+    "MinusQueryEvaluationStepTest.spillFileIsRemovedWhenIterationIsClosedEarly and .spillFileIsRemovedWhenIterationIsExhausted: pre-existing (environment/runner) \u2014 'Expected size: 1 but was: 0'; the test lists System.getProperty(java.io.tmpdir) while the spill file is created under the JDK TempFileHelper's cached tmpdir, and the workspace runner overrides java.io.tmpdir (same conclusion in wp6-b1.json); no evaluation-module production code is changed by this batch.",
+    "OptimizerRuleCatalogTest.generatedDocumentationMatchesManifestAndResearchInputs: pre-existing (environment) \u2014 NoSuchFileException <worktree>/papers2/papers/docs/sparql_query_rewrite_catalog.md; papers2/ is untracked in the main checkout (git status '?? papers2/') so it is absent from every worktree.",
+    "PackedFrontierSubsetKernelContractTest.arbitraryWidthBushyDependentJoinContinuesRightRecipeUnderWholeLeftPrefix: flaky \u2014 'execution timed out after 120000 ms' (assertTimeoutPreemptively) while 4 other Maven builds ran on the machine; rerun once in isolation: green in 113.173 s (mvnf log .mvnf/workspaces/wp1/logs/20260928T011443.417085Z-62100-55889109/verify.log). Unrelated to this batch (packed planner kernel, wp2 area)."
+   ]
+  }
+ ],
+ "filesTouchedOutsideOwnership": [],
+ "newFlagsOrConfig": [],
+ "crossWpNotes": [
+  "Shared infrastructure landed as public org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OuterScopeBindings (core/queryalgebra/evaluation), additive API. wp9 can consume it for SameTermFilterOptimizer's EXISTS blind spot (3.11.4/3.4.6) and FilterRelocator possible-name pushes (3.2.5/3.11.2); wp5 for LeftJoin/EXISTS scope decisions. Rule of use: possible()/possibleInScope() may only BLOCK a rewrite, assured() may ENABLE one.",
+  "wp4/wp5 (execution, finding 3.4.3): the standard executor still pushes the outer row into sub-SELECTs, so the three sub-SELECT/MINUS spec controls in LmdbCorrelatedScopeRewriteTest (boundOfOuterNameInsideSubSelectIsFalseBySpec, ...WithinExistsIsFalseBySpec, boundOfOuterNameInsideMinusIsFalseBySpec) assert the LMDB pipeline only (checkLmdbOnly). Once 3.4.3 is fixed they should assert the DefaultEvaluationStrategyFactory oracle too, and OuterScopeBindings.possible() can stop propagating leaked names across sub-SELECT boundaries.",
+  "Design deviations (critique-driven, see finding 3.1.1 change): OuterScope carries three sets (possible, possibleInScope, assured) instead of two; Join/LeftJoin-only correlation rule; MINUS leak-only; LATERAL restricted by getRightInputBindingNames.",
+  "Integrator: formatter was not run (per batch rules); the two LmdbStoreConfig/LmdbStoreSchema japicmp-compat edits in the tree are the integrator's and were left untouched. mvnf reports BUILD FAILURE for core/sail/lmdb verify runs even when Surefire is fully green because japicmp (runs after Surefire) fails for rdf4j-sail-lmdb \u2014 pre-existing (review \u00a71, commit d13767b49c)."
+ ],
+ "followUps": [
+  "Natural additional consumers of OuterScopeBindings with no behaviour change proposed in this batch: LmdbFilterHoistOptimizer.bindsNewConditionVar, LmdbSetSemanticsOptimizer, LmdbOptionalNormalFormOptimizer.",
+  "The dual-store oracle harness in LmdbCorrelatedScopeRewriteTest (LMDB pipeline vs LmdbStore+DefaultEvaluationStrategyFactory vs hand-computed bag, with cold-reopen and incoming-binding variants) could be lifted into a reusable test base class for the remaining wp1 batches (roadmap 4.8 differential testing).",
+  "OuterScopeBindings treats SERVICE and property paths as assurance barriers only; if a rewrite ever needs possible names inside a SERVICE body, revisit."
+ ]
+}

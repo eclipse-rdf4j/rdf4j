@@ -84,6 +84,24 @@ public class DualUnionIteration<E> implements CloseableIteration<E>, IndexReport
 				indexReporter2 == null ? -1 : indexReporter2.getSourceRowsFilteredActual());
 	}
 
+	@Override
+	public long getDistinctCursorSkipCountActual() {
+		return aggregateMetric(indexReporter1 == null ? -1 : indexReporter1.getDistinctCursorSkipCountActual(),
+				indexReporter2 == null ? -1 : indexReporter2.getDistinctCursorSkipCountActual());
+	}
+
+	@Override
+	public long getDistinctCursorSkipSeekCountActual() {
+		return aggregateMetric(indexReporter1 == null ? -1 : indexReporter1.getDistinctCursorSkipSeekCountActual(),
+				indexReporter2 == null ? -1 : indexReporter2.getDistinctCursorSkipSeekCountActual());
+	}
+
+	@Override
+	public long getSkipAheadSeekCountActual() {
+		return aggregateMetric(indexReporter1 == null ? -1 : indexReporter1.getSkipAheadSeekCountActual(),
+				indexReporter2 == null ? -1 : indexReporter2.getSkipAheadSeekCountActual());
+	}
+
 	private static long aggregateMetric(long first, long second) {
 		if (first < 0) {
 			return second < 0 ? -1 : second;
