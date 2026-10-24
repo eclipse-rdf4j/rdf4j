@@ -27,13 +27,11 @@ import org.eclipse.rdf4j.sail.SailException;
 class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T> implements IndexReportingIterator {
 
 	private final AbstractSailConnection connection;
-	/** The admitted workload signal at creation; a transferred pull must still observe its cancellation. */
+	/**
+	 * The admitted workload signal at creation, read on every pull, so a transferred result still stops once the
+	 * workload that created it is cancelled. Reading it is a plain opaque load; nothing is installed per pull.
+	 */
 	private final CancellationSignal lineage;
-	/** Single immutable reference, so a result handed between threads never observes a torn composition. */
-	private PullSignal pullSignal;
-
-	private record PullSignal(CancellationSignal ambient, CancellationSignal effective) {
-	}
 
 	/**
 	 * The thread inside a pull of this result. Published before the pull checks whether its connection is open, and
@@ -58,49 +56,30 @@ class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T> impl
 		this.tracked = connection.tracksResultPulls;
 	}
 
-	/** Composes once per distinct pulling workload, never per row. */
-	private CancellationSignal pullSignal() {
-		CancellationSignal ambient = CancellationSignal.current();
-		if (ambient == CancellationSignal.NONE || ambient == lineage) {
-			return lineage;
-		}
-		PullSignal cached = pullSignal;
-		if (cached == null || cached.ambient() != ambient) {
-			cached = new PullSignal(ambient, CancellationSignal.combine(lineage, ambient));
-			pullSignal = cached;
-		}
-		return cached.effective();
-	}
-
 	/**
-	 * Publishes this thread as the puller, admits the pull and installs its signal. Runs per row, so it takes neither a
-	 * monitor nor an atomic update: the connection finds pullers through its registered results.
-	 *
-	 * @return the signal to restore in {@link #endPull(CancellationSignal)}
+	 * Admits one pull. Runs per row, so it takes neither a monitor nor an atomic update. A tracked pull also publishes
+	 * its thread, through which the connection drains and interrupts it.
 	 */
-	private CancellationSignal beginPull() {
-		CancellationSignal effective = pullSignal();
+	private void beginPull() {
 		if (!tracked) {
 			// No ordered accesses: an untracked pull only stops once its creating workload is cancelled.
-			if (effective.isCancelled()) {
+			if (lineage.isCancelled()) {
 				throw new SailException("The workload that created this result is shutting down");
 			}
-			return CancellationSignal.swapCurrent(effective);
+			return;
 		}
 		if (pullDepth++ == 0) {
 			puller = Thread.currentThread();
 		}
 		try {
-			connection.admitResultPull(effective);
+			connection.admitResultPull(lineage);
 		} catch (RuntimeException | Error failure) {
 			releasePuller();
 			throw failure;
 		}
-		return CancellationSignal.swapCurrent(effective);
 	}
 
-	private void endPull(CancellationSignal previous) {
-		CancellationSignal.restoreCurrent(previous);
+	private void endPull() {
 		if (tracked) {
 			releasePuller();
 		}
@@ -134,7 +113,7 @@ class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T> impl
 		if (isClosed()) {
 			return false;
 		}
-		CancellationSignal previous = beginPull();
+		beginPull();
 		try {
 			if (super.hasNext()) {
 				return true;
@@ -143,7 +122,7 @@ class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T> impl
 			close();
 			return false;
 		} finally {
-			endPull(previous);
+			endPull();
 		}
 	}
 
@@ -152,11 +131,11 @@ class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T> impl
 		if (isClosed()) {
 			return super.next();
 		}
-		CancellationSignal previous = beginPull();
+		beginPull();
 		try {
 			return super.next();
 		} finally {
-			endPull(previous);
+			endPull();
 		}
 	}
 
@@ -166,11 +145,11 @@ class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T> impl
 			super.remove();
 			return;
 		}
-		CancellationSignal previous = beginPull();
+		beginPull();
 		try {
 			super.remove();
 		} finally {
-			endPull(previous);
+			endPull();
 		}
 	}
 
