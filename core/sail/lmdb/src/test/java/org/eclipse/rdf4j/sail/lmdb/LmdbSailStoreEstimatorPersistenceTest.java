@@ -180,6 +180,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		store.init();
 		try {
+			LmdbTestUtil.awaitPostReadyInitialization(store, 10, TimeUnit.SECONDS);
 			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
 			estimator.stop();
 			estimator.rebuild();
@@ -329,6 +330,8 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		store.init();
 		try {
+			LmdbGcTestMaintenance.awaitPostReady(store);
+			assertTrue(store.awaitIndexRebuild(30, TimeUnit.SECONDS));
 			LmdbSailStore backingStore = store.getBackingStore();
 			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
 
@@ -489,6 +492,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		store.init();
 		try {
+			LmdbTestUtil.awaitPostReadyInitialization(store, 10, TimeUnit.SECONDS);
 			LmdbSailStore backingStore = store.getBackingStore();
 			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
 			estimator.stop();
@@ -521,6 +525,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		store.init();
 		try {
+			LmdbTestUtil.awaitPostReadyInitialization(store, 10, TimeUnit.SECONDS);
 			LmdbSailStore backingStore = store.getBackingStore();
 			backingStore.enableMultiThreading = false;
 			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
@@ -555,6 +560,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		store.init();
 		try {
+			LmdbTestUtil.awaitPostReadyInitialization(store, 10, TimeUnit.SECONDS);
 			LmdbSailStore backingStore = store.getBackingStore();
 			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
 			estimator.stop();
@@ -586,6 +592,8 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc").setBulkOperationSize(1));
 		store.init();
 		try {
+			LmdbGcTestMaintenance.awaitPostReady(store);
+			assertTrue(store.awaitIndexRebuild(30, TimeUnit.SECONDS));
 			LmdbSailStore backingStore = store.getBackingStore();
 			backingStore.enableMultiThreading = false;
 			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
@@ -634,6 +642,8 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		store.init();
 		try {
+			LmdbGcTestMaintenance.awaitPostReady(store);
+			assertTrue(store.awaitIndexRebuild(30, TimeUnit.SECONDS));
 			LmdbSailStore backingStore = store.getBackingStore();
 			backingStore.enableMultiThreading = false;
 			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
@@ -748,6 +758,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 		try {
+			LmdbTestUtil.awaitPostReadyInitialization(store, 10, TimeUnit.SECONDS);
 			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
 			estimator.stop();
 			estimator.setRebuildAllowedSupplier(() -> false);
@@ -800,6 +811,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 									LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 									store.init();
 									try {
+										LmdbTestUtil.awaitPostReadyInitialization(store, 10, TimeUnit.SECONDS);
 										LmdbSailStore backingStore = store.getBackingStore();
 										backingStore.enableMultiThreading = false;
 										try (NotifyingSailConnection conn = store.getConnection()) {

@@ -1798,7 +1798,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			OperationReadAttempt attempt = new OperationReadAttempt(isolationLevel);
 			try {
 				attempt.lease = lmdbStore.getBackingStore()
-						.registerReadAttempt(attempt, attempt.observer,
+						.registerOperationReadAttempt(attempt, attempt.observer,
 								isActive() ? transactionAdmissionLease : null);
 			} catch (RuntimeException | Error failure) {
 				if (attempt.ownsValueScope) {

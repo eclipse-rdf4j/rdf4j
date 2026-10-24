@@ -154,6 +154,7 @@ class LmdbFrozenReplayTest {
 		store.addSailChangedListener(event -> notifications.incrementAndGet());
 		try {
 			repository.init();
+			awaitStartupMaintenance(store);
 			store.probe.reset();
 			LmdbSailStore backing = store.getBackingStore();
 			try (SailRepositoryConnection writer = repository.getConnection();
@@ -1250,6 +1251,7 @@ class LmdbFrozenReplayTest {
 
 		try {
 			repository.init();
+			awaitStartupMaintenance(store);
 			store.getBackingStore().enableMultiThreading = false;
 			store.probe.reset();
 			store.probe.valueCommitCapacityFailureBudget.set(1);
@@ -4968,6 +4970,21 @@ class LmdbFrozenReplayTest {
 		assertFailedAbortAfterAppliedPrefixPreventsRetry(directory, true);
 	}
 
+	private static void awaitStartupMaintenance(CountingLmdbStore store) throws Exception {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+		while (true) {
+			String status = store.getBackingStore().postReadyMaintenanceStatus();
+			if ("READY".equals(status)) {
+				break;
+			}
+			assertFalse(status.startsWith("FAILED") || "CANCELLED".equals(status), status);
+			assertTrue(System.nanoTime() < deadline, "startup maintenance did not finish: " + status);
+			Thread.yield();
+		}
+		assertTrue(store.awaitIndexRebuild(10, TimeUnit.SECONDS),
+				"initial index maintenance must finish before application capacity faults are armed");
+	}
+
 	private static LmdbStoreConfig smallMapConfig() {
 		return new LmdbStoreConfig("spoc,posc")
 				.setTripleDBSize(8L * 1024 * 1024)
@@ -5043,6 +5060,8 @@ class LmdbFrozenReplayTest {
 
 	private static final class CountingValueStore extends ValueStore {
 		private final RetryProbe probe;
+		private volatile TxnReplayPolicy.Decision applicationReplayDecision;
+		private volatile boolean frozenApplicationWriter;
 
 		private CountingValueStore(File directory, StoreProperties properties, LmdbStoreConfig config, RetryProbe probe)
 				throws IOException {
@@ -5071,6 +5090,30 @@ class LmdbFrozenReplayTest {
 				probe.firstValueWriterMap.compareAndSet(-1L, mapSizeBytes());
 			}
 			super.startTransaction(resize);
+			TxnReplayPolicy.Decision decision = applicationReplayDecision;
+			// Derived-index maintenance starts its own private writer and must not consume an application fault.
+			frozenApplicationWriter = decision != null && decision.frozenReplay;
+		}
+
+		@Override
+		void setReplayDecision(TxnReplayPolicy.Decision decision) {
+			super.setReplayDecision(decision);
+			applicationReplayDecision = decision;
+		}
+
+		@Override
+		void clearReplayDecision(TxnReplayPolicy.Decision decision) {
+			super.clearReplayDecision(decision);
+			if (applicationReplayDecision == decision && (decision == null || !decision.failed())) {
+				applicationReplayDecision = null;
+			}
+		}
+
+		@Override
+		public void rollback() throws IOException {
+			frozenApplicationWriter = false;
+			applicationReplayDecision = null;
+			super.rollback();
 		}
 
 		@Override
@@ -5106,7 +5149,9 @@ class LmdbFrozenReplayTest {
 
 		@Override
 		int commitWriteTransaction(long transaction) {
-			if (probe == null) {
+			boolean applicationWriter = frozenApplicationWriter;
+			frozenApplicationWriter = false;
+			if (probe == null || !applicationWriter) {
 				return super.commitWriteTransaction(transaction);
 			}
 			int remainingFailures = probe.valueCommitCapacityFailureBudget

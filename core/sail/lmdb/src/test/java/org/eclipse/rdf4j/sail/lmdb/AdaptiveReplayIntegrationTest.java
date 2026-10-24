@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -50,6 +51,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
@@ -713,7 +715,13 @@ class AdaptiveReplayIntegrationTest {
 			assertDoesNotThrow(() -> store.getBackingStore().checkWriterTransaction(owner),
 					"Internally created owners must be retired when their complete logical scope ends");
 			assertEquals(64, count(store.triples, true));
-			assertEquals(Map.of(), store.triples.readNamespaceSnapshot());
+			assertNull(store.triples.readNamespaceSnapshot(),
+					"aborting the first namespace publication must preserve absent native namespace authority");
+			try (SailDataset committed = source.dataset(IsolationLevels.READ_COMMITTED);
+					CloseableIteration<? extends Namespace> namespaces = committed.getNamespaces()) {
+				assertFalse(namespaces.hasNext(), "the aborted namespace update must leave the logical view empty");
+				assertNull(committed.getNamespace("scope"));
+			}
 			try (SailSink retried = source.sink(IsolationLevels.NONE)) {
 				retried.approve(Values.iri("urn:scope-prefix"), Values.iri("urn:predicate"),
 						Values.literal("prefix"), null);

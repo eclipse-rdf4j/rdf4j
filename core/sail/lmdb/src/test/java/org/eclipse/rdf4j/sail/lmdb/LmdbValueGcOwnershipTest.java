@@ -24,6 +24,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_env;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
@@ -413,7 +414,8 @@ class LmdbValueGcOwnershipTest {
 
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
-	void legacyCloseDrainsUnusedTermsAndPreservesLiveDependencies(boolean inlining) throws Exception {
+	void legacyCloseRetainsUnusedTermsForPostReadyCleanupAndPreservesLiveDependencies(boolean inlining)
+			throws Exception {
 		writeLegacyProperties();
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 		IRI predicate = vf.createIRI("urn:ownership:predicate");
@@ -422,8 +424,7 @@ class LmdbValueGcOwnershipTest {
 		TripleTerm removed = vf.createTripleTerm(vf.createIRI("urn:ownership:removed"), predicate, inner);
 		TripleTerm retained = vf.createTripleTerm(vf.createIRI("urn:ownership:retained"), predicate, component);
 		LmdbStoreConfig config = config().setInlineLiterals(inlining).setValueEvictionInterval(60_000L);
-		LmdbStore store = new LmdbStore(directory.toFile(), config);
-		store.init();
+		LmdbStore store = openLegacyWithVerifiedCounts(config);
 		long retainedId;
 		long componentId;
 		try {
@@ -446,12 +447,15 @@ class LmdbValueGcOwnershipTest {
 			store.shutDown();
 		}
 		assertThat(unusedIdCount())
-				.as("the develop reader drains unused IDs before opening its canonical triple-term indexes")
-				.isZero();
+				.as("close retains durable unused work for the next bounded maintenance publication")
+				.isPositive();
 		store = new LmdbStore(directory.toFile(), config);
 		store.init();
 		try {
+			LmdbGcTestMaintenance.awaitPostReady(store);
 			ValueStore values = (ValueStore) store.getValueFactory();
+			assertThat(unusedIdCount(values)).as("the bounded post-ready batch must consume this finite fixture")
+					.isZero();
 			assertThat(values.getId(retained)).isEqualTo(retainedId);
 			assertThat(values.getValue(retainedId)).isEqualTo(retained);
 			assertThat(values.getId(component)).isEqualTo(componentId);
@@ -529,15 +533,43 @@ class LmdbValueGcOwnershipTest {
 
 	@ParameterizedTest
 	@ValueSource(strings = { "gc_meta", "ref_counts" })
-	void unknownOwnedMetadataSchemaRejectsBeforeWriting(String database) throws Exception {
+	void unknownGcSchemaRejectsWhileUnknownCountCertificateDefersWithoutWriting(String database) throws Exception {
 		writeLegacyProperties();
 		LmdbStore store = new LmdbStore(directory.toFile(), config());
 		store.init();
 		store.shutDown();
 		writeFutureSchema(database);
 		byte[] before = Files.readAllBytes(directory.resolve("values/data.mdb"));
-		assertThatThrownBy(new LmdbStore(directory.toFile(), config())::init).isInstanceOf(SailException.class);
-		assertThat(Files.readAllBytes(directory.resolve("values/data.mdb"))).isEqualTo(before);
+		if (database.equals("ref_counts")) {
+			byte[] certificate = LmdbCompatibilityFixtures.nativeGet(directory, "ref_counts", new byte[] { 0 });
+			LmdbStore conservative = new LmdbStore(directory.toFile(), config());
+			try {
+				conservative.init();
+				assertThat(conservative.getStartupStatus().exactReferenceCounts()).isFalse();
+				assertThat(conservative.getStartupStatus().referenceCountVerificationPending()).isTrue();
+			} finally {
+				conservative.shutDown();
+			}
+			assertThat(LmdbCompatibilityFixtures.nativeGet(directory, "ref_counts", new byte[] { 0 }))
+					.as("ordinary open and close preserve the unrecognized count-certificate payload")
+					.isEqualTo(certificate);
+		} else {
+			assertThatThrownBy(new LmdbStore(directory.toFile(), config())::init).isInstanceOf(SailException.class);
+			assertThat(Files.readAllBytes(directory.resolve("values/data.mdb"))).isEqualTo(before);
+		}
+		if (database.equals("ref_counts")) {
+			before = Files.readAllBytes(directory.resolve("values/data.mdb"));
+			LmdbStore.verifyStoreOffline(directory.toFile(), config());
+			assertThat(Files.readAllBytes(directory.resolve("values/data.mdb"))).isEqualTo(before);
+			LmdbStore.reconstructReferenceCountsOffline(directory.toFile(), config());
+			LmdbStore verified = new LmdbStore(directory.toFile(), config());
+			try {
+				verified.init();
+				assertThat(verified.getStartupStatus().exactReferenceCounts()).isTrue();
+			} finally {
+				verified.shutDown();
+			}
+		}
 	}
 
 	@Test
@@ -545,10 +577,9 @@ class LmdbValueGcOwnershipTest {
 		writeLegacyProperties();
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		IRI predicate = values.createIRI("urn:checkpoint-gc:p");
-		LmdbStore store = new LmdbStore(directory.toFile(), config().setValueDBSize(24_576L)
+		LmdbStore store = openLegacyWithVerifiedCounts(config().setValueDBSize(24_576L)
 				.setValueEvictionInterval(60_000L)
 				.setBulkOperationSize(0));
-		store.init();
 		try (NotifyingSailConnection connection = store.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			for (int index = 0; index < 1025; index++) {
@@ -582,18 +613,18 @@ class LmdbValueGcOwnershipTest {
 	}
 
 	@Test
-	void legacyCloseReservesMapGrowthBeforeReclaimingUnusedTerms() throws Exception {
+	void postReadyLegacyReclamationReservesMapGrowthAndPreservesLiveTerms() throws Exception {
 		writeLegacyProperties();
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 		IRI predicate = vf.createIRI("urn:ownership:predicate");
-		LmdbStore store = new LmdbStore(directory.toFile(), config().setValueDBSize(24_576L)
+		LmdbStore store = openLegacyWithVerifiedCounts(config().setValueDBSize(24_576L)
 				.setValueEvictionInterval(60_000L));
-		store.init();
 		ValueStore values = (ValueStore) store.getValueFactory();
 		Literal retained = vf.createLiteral("retained during close-time growth");
 		TripleTerm retainedTerm = vf.createTripleTerm(vf.createIRI("urn:ownership:retained-inner"), predicate,
 				retained);
 		long growthBeforeClose;
+		long capacityBeforeCleanup;
 		long retainedId;
 		IRI fillerPredicate = vf.createIRI("urn:ownership:capacity-filler");
 		String fillerPayload = "x".repeat(16_384);
@@ -638,31 +669,82 @@ class LmdbValueGcOwnershipTest {
 			assertThat(nativeMapSize(values)).as("the reservation must require growth of the original live map")
 					.isEqualTo(initialCapacity);
 			growthBeforeClose = values.getBulkMapGrowthCount();
+			capacityBeforeCleanup = nativeMapSize(values);
 		} finally {
 			store.shutDown();
 		}
-		assertThat(unusedIdCount()).isZero();
-		assertThat(values.getBulkMapGrowthCount()).as("this fixture must force remapping during close reclamation")
-				.isGreaterThan(growthBeforeClose);
-		LmdbStore reopened = new LmdbStore(directory.toFile(), config());
+		assertThat(unusedIdCount()).as("close preserves the durable unused backlog").isPositive();
+		assertThat(values.getBulkMapGrowthCount()).as("close does not drain or resize the unused backlog")
+				.isEqualTo(growthBeforeClose);
+		AtomicReference<Runnable> startMaintenance = new AtomicReference<>();
+		LmdbStore reopened = new LmdbStore(directory.toFile(), config().setValueDBSize(capacityBeforeCleanup)) {
+			@Override
+			LmdbSailStore createBackingStore(File dataDir, StoreProperties properties, LmdbStoreConfig options,
+					boolean sketches) throws IOException {
+				return new LmdbSailStore(dataDir, properties, options, sketches) {
+					@Override
+					void startBackgroundMaintenanceAfterInitialization() {
+						startMaintenance.set(super::startBackgroundMaintenanceAfterInitialization);
+					}
+				};
+			}
+		};
 		reopened.init();
-		try (NotifyingSailConnection connection = reopened.getConnection();
-				var statements = connection.getStatements(null, predicate, retainedTerm, false)) {
-			assertThat(statements.hasNext()).isTrue();
-			assertThat(statements.next().getObject()).isEqualTo(retainedTerm);
-			assertThat(((ValueStore) reopened.getValueFactory()).getId(retainedTerm, false)).isEqualTo(retainedId);
-			assertThat(connection.size()).isEqualTo(1L + fillerCount);
-			for (int index = 0; index < fillerCount; index++) {
-				try (var filler = connection.getStatements(vf.createIRI("urn:ownership:capacity-row:" + index),
-						fillerPredicate, vf.createLiteral(fillerPayload + index), false)) {
-					assertThat(filler.hasNext()).as("committed capacity row %d survives reclamation and reopen", index)
-							.isTrue();
-					assertThat(filler.next().getObject()).isEqualTo(vf.createLiteral(fillerPayload + index));
-					assertThat(filler.hasNext()).isFalse();
+		try {
+			ValueStore reopenedValues = (ValueStore) reopened.getValueFactory();
+			long mapBeforeMaintenance = nativeMapSize(reopenedValues);
+			assertThat(mapBeforeMaintenance).as("close retains the native map capacity until maintenance starts")
+					.isEqualTo(capacityBeforeCleanup);
+			long growthBeforeMaintenance = reopenedValues.getBulkMapGrowthCount();
+			long resizeTargetBeforeMaintenance = reopenedValues.persistedUnusedReclamationResizeTarget();
+			assertThat(resizeTargetBeforeMaintenance).isPositive();
+			startMaintenance.get().run();
+			LmdbGcTestMaintenance.awaitPostReady(reopened);
+			assertThat(nativeMapSize(reopenedValues)).as("bounded post-ready reclamation must grow its live map")
+					.isGreaterThan(mapBeforeMaintenance);
+			assertThat(nativeMapSize(reopenedValues)).as("the admitted map satisfies the reclamation reservation")
+					.isGreaterThanOrEqualTo(resizeTargetBeforeMaintenance);
+			assertThat(reopenedValues.getBulkMapGrowthCount()).isGreaterThan(growthBeforeMaintenance);
+			assertThat(unusedIdCount(reopenedValues)).isZero();
+			try (NotifyingSailConnection connection = reopened.getConnection();
+					var statements = connection.getStatements(null, predicate, retainedTerm, false)) {
+				assertThat(statements.hasNext()).isTrue();
+				assertThat(statements.next().getObject()).isEqualTo(retainedTerm);
+				assertThat(((ValueStore) reopened.getValueFactory()).getId(retainedTerm, false)).isEqualTo(retainedId);
+				assertThat(connection.size()).isEqualTo(1L + fillerCount);
+				for (int index = 0; index < fillerCount; index++) {
+					try (var filler = connection.getStatements(vf.createIRI("urn:ownership:capacity-row:" + index),
+							fillerPredicate, vf.createLiteral(fillerPayload + index), false)) {
+						assertThat(filler.hasNext())
+								.as("committed capacity row %d survives reclamation and reopen", index)
+								.isTrue();
+						assertThat(filler.next().getObject()).isEqualTo(vf.createLiteral(fillerPayload + index));
+						assertThat(filler.hasNext()).isFalse();
+					}
 				}
 			}
 		} finally {
 			reopened.shutDown();
+		}
+	}
+
+	private LmdbStore openLegacyWithVerifiedCounts(LmdbStoreConfig options) throws IOException {
+		LmdbStore initial = new LmdbStore(directory.toFile(), options);
+		try {
+			initial.init();
+		} finally {
+			initial.shutDown();
+		}
+		LmdbStore.reconstructReferenceCountsOffline(directory.toFile(), options);
+		LmdbStore verified = new LmdbStore(directory.toFile(), options);
+		try {
+			verified.init();
+			assertThat(verified.getStartupStatus().exactReferenceCounts()).isTrue();
+			LmdbGcTestMaintenance.awaitPostReady(verified);
+			return verified;
+		} catch (RuntimeException | Error failure) {
+			verified.shutDown();
+			throw failure;
 		}
 	}
 
@@ -980,7 +1062,7 @@ class LmdbValueGcOwnershipTest {
 	}
 
 	private static LmdbStoreConfig config() {
-		return new LmdbStoreConfig("spoc,posc").setTripleTermIndexes("spoc,cspo")
+		return new LmdbStoreConfig("spoc,posc,ospc").setTripleTermIndexes("spoc,cspo")
 				.setLegacyReferenceCountRepairEnabled(true)
 				.setSketchEstimatorEnabled(false)
 				.setAutoGrow(true);
