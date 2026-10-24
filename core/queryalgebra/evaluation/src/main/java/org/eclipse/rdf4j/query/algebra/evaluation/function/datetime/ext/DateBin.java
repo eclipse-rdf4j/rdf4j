@@ -45,14 +45,15 @@ public class DateBin extends DateTimeFunction {
 		DurationSupport.Duration stride = DurationSupport.parse(this, args[0]);
 		Temporal t = DateTimeSupport.parse(this, args[1]);
 		LocalDateTime origin = args.length == 3 ? DateTimeSupport.parse(this, args[2]).local() : DEFAULT_ORIGIN;
-		if (stride.isZero() || (stride.hasMonths() && stride.nanos() != 0)) {
+		if (stride.isZero() || stride.months() < 0 || stride.nanos() < 0
+				|| (stride.hasMonths() && stride.nanos() != 0)) {
 			throw new ValueExprEvaluationException(
 					"stride for " + getURI() + " must be either a positive month-based or a time-based duration");
 		}
 		LocalDateTime local = t.local();
 		LocalDateTime binned;
 		if (stride.hasMonths()) {
-			long months = Math.abs(stride.months());
+			long months = stride.months();
 			long elapsed = ((long) local.getYear() - origin.getYear()) * 12
 					+ local.getMonthValue() - origin.getMonthValue();
 			long bin = Math.floorDiv(elapsed, months);
@@ -61,7 +62,7 @@ public class DateBin extends DateTimeFunction {
 				binned = origin.plusMonths((bin - 1) * months);
 			}
 		} else {
-			long nanos = Math.abs(stride.nanos());
+			long nanos = stride.nanos();
 			Duration elapsed = Duration.between(origin, local);
 			long elapsedNanos;
 			try {

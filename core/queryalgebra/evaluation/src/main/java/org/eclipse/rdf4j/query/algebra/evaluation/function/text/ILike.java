@@ -44,6 +44,12 @@ public class ILike extends TextFunction {
 			}
 			escape = escapeCodePoints[0];
 		}
+		for (int p = 0; p < pattern.length; p++) {
+			if (pattern[p] == escape && ++p == pattern.length) {
+				throw new ValueExprEvaluationException(
+						"pattern for " + getURI() + " must not end with the escape character");
+			}
+		}
 		return BooleanLiteral.valueOf(matches(text, pattern, escape));
 	}
 
