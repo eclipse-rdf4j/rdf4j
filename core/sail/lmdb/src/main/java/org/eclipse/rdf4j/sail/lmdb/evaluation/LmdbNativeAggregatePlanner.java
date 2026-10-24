@@ -85,6 +85,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingSetQueryEvaluation
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.LateralQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.MinusQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.TupleFunctionGroupQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ScopedLeftJoinIterator.GraphFrameMapping;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -1712,6 +1713,13 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	 * null and fall back to the existing island path unchanged.
 	 */
 	private SlotPlan compileLateral(org.eclipse.rdf4j.query.algebra.Lateral lateral, boolean duplicateInsensitive) {
+		if (lateral.getRightArg() instanceof Join join
+				&& TupleFunctionGroupQueryEvaluationStep.isTupleFunctionGroup(join)) {
+			// A tuple-only group chooses its next call from each row's actual argument bindings. Native joins have
+			// a fixed operand order, so retain the entire LATERAL as one generic island, including input filtering,
+			// rather than compiling calls separately and losing the row-dependent scheduler.
+			return null;
+		}
 		if (!nativeLateralEnabled() || !lateralVisibilityExact(lateral, java.util.Set.of())) {
 			// the empty available-set here checks only the left-right contract; enclosing-scope collisions were
 			// already vetted by containsUnsafeScopeChange (a violation set islandScopeChanges, which islands this
