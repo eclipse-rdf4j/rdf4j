@@ -27,12 +27,13 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMetrics.FallbackReason;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Gate A milestone A2: the node-predicate projection ships enabled for outgoing nodes, and a store that cannot fit the
- * projection comes up healthy without it.
+ * Gate A milestone A2: the node-predicate projection ships enabled for outgoing and incoming nodes, and a store that
+ * cannot fit the projection comes up healthy without it.
  * <p>
  * The two directions are deliberately separate tests rather than one parameterised one, because they fail for different
  * reasons and a reviewer reading a failure needs to know which of the two switches is broken. The build-time switch is
@@ -43,6 +44,12 @@ class LmdbNodePredicateSwitchTest {
 
 	private TripleStore tripleStore;
 	private LmdbDirectAdjacencyStore store;
+	private String previousServingProperty;
+
+	@BeforeEach
+	void rememberServingProperty() {
+		previousServingProperty = System.getProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY);
+	}
 
 	private static long uri(long payload) {
 		return ValueIds.createId(ValueIds.T_URI, payload);
@@ -56,7 +63,11 @@ class LmdbNodePredicateSwitchTest {
 
 	@AfterEach
 	void tearDown() throws Exception {
-		System.clearProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY);
+		if (previousServingProperty == null) {
+			System.clearProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY);
+		} else {
+			System.setProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY, previousServingProperty);
+		}
 		if (store != null) {
 			store.close();
 		}
@@ -72,9 +83,10 @@ class LmdbNodePredicateSwitchTest {
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		UnaryOperator<String> properties = name -> construction != null
-				&& LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY.equals(name)
-						? String.valueOf(construction)
-						: null;
+				&& (LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY.equals(name)
+						|| LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_INCOMING_PROPERTY.equals(name))
+								? String.valueOf(construction)
+								: null;
 		LmdbDirectAdjacencyOptions options = LmdbDirectAdjacencyOptions.resolve(config, 8L << 30, properties, 4);
 		if (serving == null) {
 			System.clearProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY);
@@ -94,8 +106,12 @@ class LmdbNodePredicateSwitchTest {
 	}
 
 	private List<long[]> rowsFor(long subject) throws IOException {
+		return rowsFor(subject, -1);
+	}
+
+	private List<long[]> rowsFor(long subject, long object) throws IOException {
 		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
-			RecordIterator it = store.tryOpen(view, null, subject, -1, -1, -1, true);
+			RecordIterator it = store.tryOpen(view, null, subject, -1, object, -1, true);
 			if (it == null) {
 				return null;
 			}
@@ -114,8 +130,7 @@ class LmdbNodePredicateSwitchTest {
 	}
 
 	/**
-	 * The shipped default builds and serves the outgoing projection. Incoming remains a separate opt-in because its
-	 * object domain includes referenced literals and costs materially more memory.
+	 * The shipped default builds and serves both directions, including the incoming object domain.
 	 */
 	@Test
 	void constructionAndServingDefaultOn(@TempDir File dataDir) throws Exception {
@@ -124,7 +139,7 @@ class LmdbNodePredicateSwitchTest {
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER);
 		LmdbDirectAdjacencyOptions defaults = LmdbDirectAdjacencyOptions.resolve(config, 8L << 30, name -> null, 4);
 		assertThat(defaults.nodePredicateProjectionEnabled()).isTrue();
-		assertThat(defaults.nodePredicateProjectionIncomingEnabled()).isFalse();
+		assertThat(defaults.nodePredicateProjectionIncomingEnabled()).isTrue();
 
 		open(dataDir, null, null);
 
@@ -135,10 +150,12 @@ class LmdbNodePredicateSwitchTest {
 		LmdbInMemoryAdjacencyIndex base = store.publishedStateForTest().base();
 		assertThat(base.nodePredicateIndexOrNull()).isNotNull();
 		assertThat(base.supportsPredicateEnumeration(LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT)).isTrue();
+		assertThat(base.supportsPredicateEnumeration(LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT)).isTrue();
 		assertThat(store.nodePredicateServingEnabled()).isTrue();
 
 		long before = store.snapshotMetrics().fallbacks(FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE);
-		assertThat(rowsFor(S1)).as("the default projection serves bound-node predicate enumeration").hasSize(2);
+		assertThat(rowsFor(S1)).as("the default projection serves outgoing predicate enumeration").hasSize(2);
+		assertThat(rowsFor(-1, O1)).as("the default projection serves incoming predicate enumeration").hasSize(3);
 		assertThat(store.snapshotMetrics().fallbacks(FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE))
 				.isEqualTo(before);
 	}
@@ -189,7 +206,10 @@ class LmdbNodePredicateSwitchTest {
 				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER);
 		LmdbDirectAdjacencyOptions outgoingOnly = LmdbDirectAdjacencyOptions.resolve(config, 8L << 30,
-				name -> LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY.equals(name) ? "true" : null, 4);
+				name -> LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY.equals(name) ? "true"
+						: LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_INCOMING_PROPERTY.equals(name) ? "false"
+								: null,
+				4);
 		assertThat(outgoingOnly.nodePredicateProjectionEnabled()).isTrue();
 		assertThat(outgoingOnly.nodePredicateProjectionIncomingEnabled()).isFalse();
 
