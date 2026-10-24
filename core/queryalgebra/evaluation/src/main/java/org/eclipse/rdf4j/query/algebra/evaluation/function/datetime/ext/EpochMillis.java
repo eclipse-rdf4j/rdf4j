@@ -32,7 +32,11 @@ public class EpochMillis extends DateTimeFunction {
 	@Override
 	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		FunctionArgs.arity(this, args, 1);
-		return DateTimeSupport.integerLiteral(valueFactory,
-				DayOfWeek.dateOf(this, args[0]).toInstant().toEpochMilli());
+		try {
+			return DateTimeSupport.integerLiteral(valueFactory,
+					DayOfWeek.dateOf(this, args[0]).toInstant().toEpochMilli());
+		} catch (ArithmeticException e) {
+			throw new ValueExprEvaluationException("Value out of range for " + getURI() + ": " + args[0], e);
+		}
 	}
 }

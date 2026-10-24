@@ -24,6 +24,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.support.FunctionArgs;
  */
 abstract class AbstractPadFunction extends StringFunction {
 
+	/** Longest result (in code points), as for strf:repeat; larger targets are an evaluation error. */
+	static final int MAX_RESULT_LENGTH = 1 << 26;
+
 	@Override
 	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		FunctionArgs.arity(this, args, 2, 3);
@@ -34,6 +37,10 @@ abstract class AbstractPadFunction extends StringFunction {
 		int length = FunctionArgs.codePointLength(s);
 		if (target <= 0) {
 			return FunctionArgs.sameKind("", source, valueFactory);
+		}
+		if (target > MAX_RESULT_LENGTH) {
+			throw new ValueExprEvaluationException("Result of " + getURI() + " is too large: " + target
+					+ " code points");
 		}
 		if (length == target) {
 			return source;

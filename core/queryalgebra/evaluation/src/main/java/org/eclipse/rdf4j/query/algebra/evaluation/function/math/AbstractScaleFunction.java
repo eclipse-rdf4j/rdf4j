@@ -29,11 +29,19 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.support.FunctionArgs.
  */
 abstract class AbstractScaleFunction extends MathFunction {
 
+	/** Largest magnitude of the number of decimal places; beyond it BigDecimal scaling overflows or explodes. */
+	static final int MAX_SCALE = 1000;
+
 	@Override
 	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		FunctionArgs.arity(this, args, 1, 2);
 		Literal literal = FunctionArgs.numericLiteral(this, args[0]);
 		int scale = args.length == 2 ? FunctionArgs.toInt(this, args[1]) : 0;
+		if (scale > MAX_SCALE || scale < -MAX_SCALE) {
+			throw new ValueExprEvaluationException(
+					"Number of decimal places for " + getURI() + " must be between -" + MAX_SCALE + " and " + MAX_SCALE
+							+ ", got " + scale);
+		}
 		NumericKind kind = FunctionArgs.numericKind(literal);
 		switch (kind) {
 		case INTEGER:
@@ -61,9 +69,14 @@ abstract class AbstractScaleFunction extends MathFunction {
 	}
 
 	private BigDecimal adjust(BigDecimal value, int scale) {
-		BigDecimal scaled = value.setScale(scale, roundingMode(value));
-		// keep the lexical form canonical: no trailing zeros introduced by negative scales
-		return scale < 0 ? scaled.setScale(0, RoundingMode.UNNECESSARY) : scaled;
+		try {
+			BigDecimal scaled = value.setScale(scale, roundingMode(value));
+			// keep the lexical form canonical: no trailing zeros introduced by negative scales
+			return scale < 0 ? scaled.setScale(0, RoundingMode.UNNECESSARY) : scaled;
+		} catch (ArithmeticException e) {
+			throw new ValueExprEvaluationException("Cannot scale " + value + " to " + scale + " decimal places for "
+					+ getURI(), e);
+		}
 	}
 
 	protected abstract RoundingMode roundingMode(BigDecimal value);

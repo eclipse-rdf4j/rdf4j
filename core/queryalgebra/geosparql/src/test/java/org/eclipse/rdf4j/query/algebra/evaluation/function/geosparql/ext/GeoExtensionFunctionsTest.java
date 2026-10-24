@@ -129,4 +129,13 @@ class GeoExtensionFunctionsTest {
 			assertThat(FunctionRegistry.getInstance().get(GEOX.NAMESPACE + name)).as(name).isPresent();
 		}
 	}
+
+	@Test
+	void illTypedIntegerCrsIsAnEvaluationError() {
+		Literal badCode = VF.createLiteral("4326a", CoreDatatype.XSD.INTEGER);
+		assertThatThrownBy(() -> new Transform().evaluate(VF, wkt("POINT (1 2)"), badCode))
+				.isInstanceOf(ValueExprEvaluationException.class);
+		assertThatThrownBy(() -> new MakePoint().evaluate(VF, VF.createLiteral(1), VF.createLiteral(2), badCode))
+				.isInstanceOf(ValueExprEvaluationException.class);
+	}
 }

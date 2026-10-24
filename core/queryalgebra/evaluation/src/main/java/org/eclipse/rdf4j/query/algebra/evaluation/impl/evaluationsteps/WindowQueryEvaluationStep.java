@@ -47,6 +47,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 /**
  * Evaluates a {@link Window} operator: the argument is materialised, every distinct window specification (partition and
@@ -144,8 +145,56 @@ public final class WindowQueryEvaluationStep implements QueryEvaluationStep {
 				specs.add(spec);
 			}
 			validate(kind, call);
-			spec.computations.add(new Computation(kind, call, precompile(call.getArgs(), strategy, context),
-					context.setBinding(element.getName())));
+			Computation computation = new Computation(kind, call, precompile(call.getArgs(), strategy, context),
+					context.setBinding(element.getName()));
+			switch (kind) {
+			case NTILE:
+				checkConstantIntegerArgument(computation, 0, "number of buckets", true);
+				break;
+			case LAG:
+			case LEAD:
+				checkConstantIntegerArgument(computation, 1, "offset", false);
+				break;
+			case NTH_VALUE:
+				checkConstantIntegerArgument(computation, 1, "position", true);
+				break;
+			default:
+				break;
+			}
+			spec.computations.add(computation);
+		}
+	}
+
+	/**
+	 * A constant integer argument (bucket count, offset, position) is checked once up front, so that an ill-typed query
+	 * fails with a clear message. Data-dependent arguments are checked per row instead, see {@link #integerArgument}.
+	 */
+	private static void checkConstantIntegerArgument(Computation computation, int argIndex, String what,
+			boolean positive) {
+		if (argIndex >= computation.argSteps.length || !computation.argSteps[argIndex].isConstant()) {
+			return;
+		}
+		String uri = computation.call.getURI();
+		Value value;
+		try {
+			value = computation.argSteps[argIndex].evaluate(EmptyBindingSet.getInstance());
+		} catch (ValueExprEvaluationException e) {
+			throw new QueryEvaluationException(what + " for " + uri + " must be an integer", e);
+		}
+		Literal literal = numeric(value);
+		if (literal == null || !((CoreDatatype.XSD) literal.getCoreDatatype()).isIntegerDatatype()) {
+			throw new QueryEvaluationException(what + " for " + uri + " must be an integer, got " + value);
+		}
+		long integer;
+		try {
+			integer = literal.integerValue().longValueExact();
+		} catch (NumberFormatException | ArithmeticException e) {
+			throw new QueryEvaluationException(
+					what + " for " + uri + " must be an integer in long range, got " + value, e);
+		}
+		if (positive ? integer <= 0 : integer < 0) {
+			throw new QueryEvaluationException(
+					what + " for " + uri + (positive ? " must be positive" : " must not be negative"));
 		}
 	}
 
@@ -386,7 +435,10 @@ public final class WindowQueryEvaluationStep implements QueryEvaluationStep {
 			return;
 		case NTILE:
 			for (int pos = pStart; pos < pEnd; pos++) {
-				long buckets = requirePositiveInteger(computation, rows.get(order[pos]), 0, "number of buckets");
+				Long buckets = integerArgument(computation, rows.get(order[pos]), 0, true);
+				if (buckets == null) {
+					continue;
+				}
 				long i = pos - pStart;
 				long base = m / buckets;
 				long remainder = m % buckets;
@@ -398,12 +450,15 @@ public final class WindowQueryEvaluationStep implements QueryEvaluationStep {
 		case LEAD:
 			for (int pos = pStart; pos < pEnd; pos++) {
 				BindingSet row = rows.get(order[pos]);
-				long offset = computation.argSteps.length > 1 ? requireNonNegativeInteger(computation, row, 1, "offset")
-						: 1;
+				Long offset = computation.argSteps.length > 1 ? integerArgument(computation, row, 1, false)
+						: Long.valueOf(1);
+				if (offset == null) {
+					continue;
+				}
 				int available = kind == Kind.LAG ? pos - pStart : pEnd - pos - 1;
 				Value value;
 				if (offset <= available) {
-					int target = kind == Kind.LAG ? pos - (int) offset : pos + (int) offset;
+					int target = kind == Kind.LAG ? pos - offset.intValue() : pos + offset.intValue();
 					value = eval(computation.argSteps[0], rows.get(order[target]));
 				} else {
 					value = computation.argSteps.length > 2 ? eval(computation.argSteps[2], row) : null;
@@ -458,8 +513,8 @@ public final class WindowQueryEvaluationStep implements QueryEvaluationStep {
 				result = fs < fe ? values[fe - 1] : null;
 				break;
 			case NTH_VALUE: {
-				long nth = requirePositiveInteger(computation, rows.get(order[pos]), 1, "position");
-				result = nth <= fe - fs ? values[fs + (int) nth - 1] : null;
+				Long nth = integerArgument(computation, rows.get(order[pos]), 1, true);
+				result = nth != null && nth <= fe - fs ? values[fs + nth.intValue() - 1] : null;
 				break;
 			}
 			case MIN:
@@ -659,35 +714,28 @@ public final class WindowQueryEvaluationStep implements QueryEvaluationStep {
 		}
 	}
 
-	private long requirePositiveInteger(Computation computation, BindingSet row, int argIndex, String what) {
-		long value = requireInteger(computation, row, argIndex, what);
-		if (value <= 0) {
-			throw new QueryEvaluationException(what + " for " + computation.call.getURI() + " must be positive");
-		}
-		return value;
-	}
-
-	private long requireNonNegativeInteger(Computation computation, BindingSet row, int argIndex, String what) {
-		long value = requireInteger(computation, row, argIndex, what);
-		if (value < 0) {
-			throw new QueryEvaluationException(what + " for " + computation.call.getURI() + " must not be negative");
-		}
-		return value;
-	}
-
-	private long requireInteger(Computation computation, BindingSet row, int argIndex, String what) {
+	/**
+	 * The integer argument at {@code argIndex} evaluated for {@code row}, or null when it is unbound, not an integer,
+	 * outside the long range or (when {@code positive}) not positive, or otherwise negative. As for any SPARQL
+	 * expression such a per-row error only leaves this row's window value unbound; constant arguments were already
+	 * validated at precompile time by {@link #checkConstantIntegerArgument}.
+	 */
+	private Long integerArgument(Computation computation, BindingSet row, int argIndex, boolean positive) {
 		Value value = eval(computation.argSteps[argIndex], row);
 		Literal literal = numeric(value);
 		if (literal == null || !((CoreDatatype.XSD) literal.getCoreDatatype()).isIntegerDatatype()) {
-			throw new QueryEvaluationException(what + " for " + computation.call.getURI()
-					+ " must be an integer, got " + value);
+			return null;
 		}
+		long integer;
 		try {
-			return literal.integerValue().longValueExact();
+			integer = literal.integerValue().longValueExact();
 		} catch (NumberFormatException | ArithmeticException e) {
-			throw new QueryEvaluationException(what + " for " + computation.call.getURI()
-					+ " must be an integer in long range, got " + value, e);
+			return null;
 		}
+		if (positive ? integer <= 0 : integer < 0) {
+			return null;
+		}
+		return integer;
 	}
 
 	private Literal integer(long value) {

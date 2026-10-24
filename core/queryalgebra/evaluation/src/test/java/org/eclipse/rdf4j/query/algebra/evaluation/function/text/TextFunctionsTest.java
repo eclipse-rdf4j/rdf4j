@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.TEXTF;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.junit.jupiter.api.Test;
@@ -124,5 +125,24 @@ class TextFunctionsTest {
 				"soundex", "metaphone", "trigramSimilarity", "ilike", "tokenize", "ngrams" }) {
 			assertThat(FunctionRegistry.getInstance().get(TEXTF.NAMESPACE + name)).as(name).isPresent();
 		}
+	}
+
+	@Test
+	void damerauLevenshteinRejectsOversizedInputsInsteadOfExhaustingMemory() {
+		Literal a = str("a".repeat(40_000));
+		Literal b = str("b".repeat(40_000));
+		assertThatThrownBy(() -> new DamerauLevenshtein().evaluate(VF, a, b))
+				.isInstanceOf(ValueExprEvaluationException.class);
+		// realistic sizes still work
+		assertThat(new DamerauLevenshtein().evaluate(VF, str("x".repeat(1000)), str("y".repeat(1000))).intValue())
+				.isEqualTo(1000);
+	}
+
+	@Test
+	void distancesUseXsdInteger() {
+		assertThat(new Levenshtein().evaluate(VF, str("kitten"), str("sitting")).getDatatype())
+				.isEqualTo(XSD.INTEGER);
+		assertThat(new DamerauLevenshtein().evaluate(VF, str("ca"), str("abc")).getDatatype())
+				.isEqualTo(XSD.INTEGER);
 	}
 }

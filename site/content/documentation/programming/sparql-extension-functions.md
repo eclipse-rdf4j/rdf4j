@@ -54,7 +54,7 @@ Unary: `agg:median`, `mode`, `countIf(condition)`, `boolAnd`, `boolOr`, `first`,
 
 ## Window functions
 
-Window functions are written as ordinary function calls in `SELECT` expressions, with the window specification passed as marker arguments: `winf:partitionBy(...)`, `winf:orderBy(...)` (keys optionally wrapped in `winf:asc(...)`/`winf:desc(...)`) and an optional frame `winf:rows(start, end)` or `winf:range(start, end)` whose bounds are integer row offsets (negative = preceding), `"unbounded"` or `"current"`.
+Window functions are written as ordinary function calls in `SELECT` expressions, with the window specification passed as marker arguments: `winf:partitionBy(...)`, `winf:orderBy(...)` (keys optionally wrapped in `winf:asc(...)`/`winf:desc(...)`) and an optional frame `winf:rows(start, end)` or `winf:range(start, end)` whose bounds are integer row offsets (negative = preceding), `"unbounded"` (also `"unbounded preceding"` for the start and `"unbounded following"` for the end) or `"current"`/`"current row"`; `winf:range` only supports the unbounded and current-row bounds. A window function anywhere else (`BIND`, `FILTER`, `HAVING`, `GROUP BY`, `ORDER BY`, `EXISTS`, or nested inside another window function or its specification) is a syntax error. A per-row integer argument (`ntile` bucket count, `lag`/`lead` offset, `nthValue` position) that is unbound or not a valid integer for some solution leaves the window value of that solution unbound.
 
     PREFIX winf: <http://rdf4j.org/function/window#>
     SELECT ?employee ?salary
@@ -81,15 +81,15 @@ Arrays are `rdf:JSON` arrays. RDF terms are stored losslessly: strings, numbers 
 
 Functions that produce several rows are invoked as *magic properties*: the arguments are the subject (a single term or an RDF collection), the results the object:
 
-    ?array arrf:unnest ?element .                 # one solution per element
-    ?array arrf:unnestWithOrdinality (?element ?index) .
+    ?array arrf:unnest ?element .                 # one solution per element (per member value of an object)
+    ?array arrf:unnestWithOrdinality (?element ?index) .   # 1-based index; (?value ?key) for an object
     (1 10 2) arrf:generateSeries (?n) .
     (?text ",") strf:split (?part) .
     (?text "[0-9]+") strf:regexpExtractAll (?match) .
     ?text textf:tokenize ?token .
     (?text 3) textf:ngrams (?gram) .
 
-The RDF4J query optimizer rewrites such patterns into tuple function calls evaluated once per solution of the surrounding group; argument variables must be bound by that group (or by the enclosing query). Window functions cannot be nested inside aggregates (`SUM(winf:rowNumber())` is rejected), while aggregates inside window functions are allowed. A set-returning function does not read data, so a `GRAPH` clause around it follows the usual SPARQL semantics without restricting the function: `GRAPH <g> { ... }` returns the same rows as the bare pattern, and `GRAPH ?g { ... }` evaluates the call once per named graph in the store with `?g` bound to that graph (no rows when the store has no named graphs).
+The RDF4J query optimizer rewrites such patterns into tuple function calls evaluated once per solution of the surrounding group; argument variables must be bound by that group (or by the enclosing query). A solution that leaves an argument unbound, or binds it to a value the function rejects, contributes no rows (as with an evaluation error in `FILTER`); it does not abort the query. Window functions cannot be nested inside aggregates (`SUM(winf:rowNumber())` is rejected), while aggregates inside window functions are allowed. A set-returning function does not read data, so a `GRAPH` clause around it follows the usual SPARQL semantics without restricting the function: `GRAPH <g> { ... }` returns the same rows as the bare pattern, and `GRAPH ?g { ... }` evaluates the call once per named graph in the store with `?g` bound to that graph (no rows when the store has no named graphs).
 
 ## Geospatial functions
 

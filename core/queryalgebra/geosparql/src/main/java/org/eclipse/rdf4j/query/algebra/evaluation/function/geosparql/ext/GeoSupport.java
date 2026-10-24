@@ -117,7 +117,12 @@ public final class GeoSupport {
 		if (arg instanceof Literal literal) {
 			CoreDatatype datatype = literal.getCoreDatatype();
 			if (datatype.isXSDDatatype() && ((CoreDatatype.XSD) datatype).isIntegerDatatype()) {
-				return EPSG_PREFIX + literal.integerValue();
+				try {
+					return EPSG_PREFIX + literal.integerValue();
+				} catch (NumberFormatException e) {
+					throw new ValueExprEvaluationException(
+							"Invalid CRS argument for " + function.getURI() + ": " + arg, e);
+				}
 			}
 			String label = literal.getLabel().trim();
 			if (label.regionMatches(true, 0, "EPSG:", 0, 5)) {

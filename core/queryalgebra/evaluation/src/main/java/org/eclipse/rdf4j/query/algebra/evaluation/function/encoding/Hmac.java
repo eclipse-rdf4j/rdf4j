@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.function.encoding;
 
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
+import java.util.Locale;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -55,7 +56,7 @@ public class Hmac extends EncodingFunction {
 	}
 
 	private String algorithm(String name) {
-		switch (name.trim().toLowerCase().replace("-", "")) {
+		switch (name.trim().toLowerCase(Locale.ROOT).replace("-", "")) {
 		case "md5":
 			return "HmacMD5";
 		case "sha1":

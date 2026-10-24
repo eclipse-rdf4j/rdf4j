@@ -97,10 +97,14 @@ class ArrayAndTupleFunctionsTest {
 		assertThat(rows(new UnnestTupleFunction(), json("[1,\"a\",null,{\"@id\":\"urn:x\"},[2]]"))).containsExactly(
 				List.of(integer(1)), List.of(VF.createLiteral("a")), List.of(VF.createIRI("urn:x")),
 				List.of(json("[2]")));
-		assertThat(rows(new UnnestTupleFunction(), json("{\"k\":1,\"m\":\"v\"}"))).containsExactly(
-				List.of(VF.createLiteral("k"), integer(1)), List.of(VF.createLiteral("m"), VF.createLiteral("v")));
+		// a tuple function has a fixed number of result columns: unnest always yields one column, so for an object it
+		// yields the member values; the (value, key) pairs come from unnestWithOrdinality
+		assertThat(rows(new UnnestTupleFunction(), json("{\"k\":1,\"m\":\"v\",\"n\":null}"))).containsExactly(
+				List.of(integer(1)), List.of(VF.createLiteral("v")));
 		assertThat(rows(new UnnestWithOrdinalityTupleFunction(), json("[\"a\",\"b\"]"))).containsExactly(
 				List.of(VF.createLiteral("a"), integer(1)), List.of(VF.createLiteral("b"), integer(2)));
+		assertThat(rows(new UnnestWithOrdinalityTupleFunction(), json("{\"k\":1,\"m\":\"v\"}"))).containsExactly(
+				List.of(integer(1), VF.createLiteral("k")), List.of(VF.createLiteral("v"), VF.createLiteral("m")));
 		assertThat(rows(new SplitTupleFunction(), VF.createLiteral("a,b"), VF.createLiteral(",")))
 				.containsExactly(List.of(VF.createLiteral("a")), List.of(VF.createLiteral("b")));
 		assertThat(rows(new SplitTupleFunction(), null, VF.createLiteral(","))).isEmpty();

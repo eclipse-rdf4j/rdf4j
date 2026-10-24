@@ -87,4 +87,26 @@ class JsonSupportTest {
 				.isTrue();
 		assertThat(JsonSupport.jsonEquals(JsonSupport.parse("{\"a\":1}"), JsonSupport.parse("{\"a\":2}"))).isFalse();
 	}
+
+	@Test
+	void malformedRdfJsonLiteralIsAnEvaluationError() {
+		Literal bad = VF.createLiteral("{oops", CoreDatatype.RDF.JSON);
+		assertThatThrownBy(() -> JsonSupport.toJson(bad)).isInstanceOf(ValueExprEvaluationException.class);
+		assertThatThrownBy(() -> new JsonArray().evaluate(VF, VF.createLiteral("a"), bad))
+				.isInstanceOf(ValueExprEvaluationException.class);
+		assertThatThrownBy(() -> JsonSupport.toJsonArray(List.of(bad)))
+				.isInstanceOf(ValueExprEvaluationException.class);
+	}
+
+	@Test
+	void deeplyNestedJsonIsRejectedInsteadOfOverflowingTheStack() {
+		int depth = 200_000;
+		String arrays = "[".repeat(depth) + "]".repeat(depth);
+		assertThatThrownBy(() -> JsonSupport.parse(arrays)).isInstanceOf(IllegalArgumentException.class);
+		String objects = "{\"a\":".repeat(depth) + "1" + "}".repeat(depth);
+		assertThatThrownBy(() -> JsonSupport.parse(objects)).isInstanceOf(IllegalArgumentException.class);
+		// moderate nesting is still fine
+		assertThat(JsonSupport.write(JsonSupport.parse("[".repeat(100) + "]".repeat(100))))
+				.isEqualTo("[".repeat(100) + "]".repeat(100));
+	}
 }

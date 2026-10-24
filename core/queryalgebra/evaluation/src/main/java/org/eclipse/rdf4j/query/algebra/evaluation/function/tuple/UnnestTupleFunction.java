@@ -25,8 +25,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.support.FunctionArgs;
 
 /**
  * arrf:unnest: expands an {@code rdf:JSON} array into one solution per element ({@code ?array arrf:unnest ?element});
- * for a JSON object it yields {@code (?key ?value)} pairs. Elements are mapped back to RDF terms as described in
- * {@link JsonSupport}; JSON {@code null} elements are skipped.
+ * for a JSON object it yields one solution per member value (use {@code arrf:unnestWithOrdinality} to also obtain the
+ * member keys). A tuple function always produces the same number of result columns, so the shape of the result never
+ * depends on the data. Elements are mapped back to RDF terms as described in {@link JsonSupport}; JSON {@code null}
+ * elements are skipped.
  */
 public class UnnestTupleFunction extends AbstractTupleFunction {
 
@@ -48,9 +50,9 @@ public class UnnestTupleFunction extends AbstractTupleFunction {
 				}
 			}
 		} else if (json instanceof Map) {
-			for (Map.Entry<String, Object> entry : ((Map<String, Object>) json).entrySet()) {
-				if (entry.getValue() != JsonSupport.NULL) {
-					rows.add(List.of(vf.createLiteral(entry.getKey()), JsonSupport.toValue(entry.getValue(), vf)));
+			for (Object value : ((Map<String, Object>) json).values()) {
+				if (value != JsonSupport.NULL) {
+					rows.add(List.of(JsonSupport.toValue(value, vf)));
 				}
 			}
 		} else {

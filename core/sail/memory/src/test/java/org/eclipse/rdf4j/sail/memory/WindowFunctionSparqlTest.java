@@ -20,6 +20,7 @@ import java.util.List;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQueryResult;
@@ -176,13 +177,37 @@ public class WindowFunctionSparqlTest {
 
 	@Test
 	void misuseIsReported() {
-		// outside SELECT expressions the placeholder function raises an evaluation error, which SPARQL BIND turns
-		// into an unbound variable: the FILTER then removes every solution
-		assertThat(query("SELECT ?x WHERE { ?p ex:salary ?s BIND(winf:rowNumber() AS ?x) FILTER(?x > 0) }")).isEmpty();
+		// outside SELECT expressions a window function is a syntax error rather than a silently unbound variable
+		assertThatThrownBy(
+				() -> query("SELECT ?x WHERE { ?p ex:salary ?s BIND(winf:rowNumber() AS ?x) FILTER(?x > 0) }"))
+						.isInstanceOf(MalformedQueryException.class);
+		assertThatThrownBy(() -> query("SELECT ?x WHERE { ?p ex:salary ?s FILTER(winf:rowNumber() > 0) }"))
+				.isInstanceOf(MalformedQueryException.class);
+		assertThatThrownBy(() -> query("SELECT (winf:sum(?s, winf:partitionBy(winf:rowNumber())) AS ?t)"
+				+ " WHERE { ?p ex:salary ?s }")).isInstanceOf(MalformedQueryException.class);
+		assertThatThrownBy(() -> query("SELECT (winf:sum(?s, winf:orderBy(?s), winf:rows(\"current\","
+				+ " \"unbounded preceding\")) AS ?t) WHERE { ?p ex:salary ?s }"))
+						.isInstanceOf(MalformedQueryException.class);
 		assertThatThrownBy(() -> query("SELECT (winf:ntile(0, winf:orderBy(?s)) AS ?t) WHERE { ?p ex:salary ?s }"))
 				.isInstanceOf(QueryEvaluationException.class);
 		assertThatThrownBy(() -> query(
 				"SELECT (winf:sum(?s, winf:orderBy(?s), winf:range(-1, 0)) AS ?t) WHERE { ?p ex:salary ?s }"))
 						.isInstanceOf(QueryEvaluationException.class);
+	}
+
+	@Test
+	void dataDependentIntegerArgumentsLeaveOnlyThatRowUnbound() {
+		// a per-row offset that is unbound or not an integer is an evaluation error for that row only
+		List<BindingSet> rows = query("SELECT ?x (winf:lag(?x, ?off, winf:orderBy(?x)) AS ?prev)"
+				+ " (winf:ntile(?n, winf:orderBy(?x)) AS ?tile)"
+				+ " (winf:nthValue(?x, ?n, winf:orderBy(?x), winf:rows(\"unbounded\", \"unbounded\")) AS ?nth)"
+				+ " WHERE { VALUES (?x ?off ?n) { (1 1 2) (2 UNDEF UNDEF) (3 \"a\" 1.5) (4 2 2) } } ORDER BY ?x");
+		assertThat(column(rows, "x")).containsExactly("1", "2", "3", "4");
+		assertThat(column(rows, "prev")).containsExactly(null, null, null, "2");
+		assertThat(column(rows, "tile")).containsExactly("1", null, null, "2");
+		assertThat(column(rows, "nth")).containsExactly("2", null, null, "2");
+		// constant arguments are still validated up front
+		assertThatThrownBy(() -> query("SELECT (winf:lag(?x, -1, winf:orderBy(?x)) AS ?p) WHERE { VALUES ?x {1 2} }"))
+				.isInstanceOf(QueryEvaluationException.class);
 	}
 }

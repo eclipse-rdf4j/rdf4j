@@ -15,11 +15,13 @@ import java.time.DateTimeException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoField;
 import java.time.temporal.TemporalAccessor;
+import java.time.temporal.TemporalQueries;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -76,7 +78,16 @@ public class ParseDate extends DateTimeFunction {
 				time = LocalTime.of(hour, minute, second, nano);
 			}
 			Kind kind = hasDate && hasTime ? Kind.DATE_TIME : hasDate ? Kind.DATE : Kind.TIME;
-			return DateTimeSupport.toLiteral(valueFactory, kind, LocalDateTime.of(date, time), offset);
+			LocalDateTime local = LocalDateTime.of(date, time);
+			if (offset == null) {
+				// zone ids (pattern letters VV, z, zzzz, ...) do not populate OFFSET_SECONDS; resolve the offset that
+				// zone has at the parsed local date/time
+				ZoneId zone = parsed.query(TemporalQueries.zone());
+				if (zone != null) {
+					offset = zone.getRules().getOffset(local);
+				}
+			}
+			return DateTimeSupport.toLiteral(valueFactory, kind, local, offset);
 		} catch (DateTimeException e) {
 			throw new ValueExprEvaluationException("Cannot parse '" + text + "' with pattern " + args[1], e);
 		}

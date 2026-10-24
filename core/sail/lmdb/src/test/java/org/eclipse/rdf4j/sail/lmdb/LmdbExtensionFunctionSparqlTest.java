@@ -113,4 +113,13 @@ public class LmdbExtensionFunctionSparqlTest {
 		assertThat(column(rows, "rank")).containsExactly("3", "2", "1");
 		assertThat(column(rows, "deptTotal")).containsExactly("40", "40", "50");
 	}
+
+	@Test
+	void unboundOrIllTypedMagicPropertyArgumentsYieldNoRows() {
+		List<BindingSet> rows = query(
+				"SELECT ?x ?y WHERE { VALUES ?x {1 UNDEF \"a\"} (?x 2) arrf:generateSeries ?y } ORDER BY ?x ?y");
+		assertThat(column(rows, "y")).containsExactly("1", "2");
+		rows = query("SELECT ?s ?tag WHERE { ?s ex:dept ?d OPTIONAL { ?s ex:missing ?m } (?m \",\") strf:split ?tag }");
+		assertThat(rows).isEmpty();
+	}
 }

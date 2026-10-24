@@ -23,6 +23,7 @@ import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.IsoFields;
 import java.time.temporal.TemporalUnit;
+import java.util.Locale;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Literal;
@@ -307,7 +308,7 @@ public final class DateTimeSupport {
 
 	/** Resolves a unit name ({@code "day"}, {@code "days"}, {@code "Hour"}, ...) to a {@link ChronoUnit}. */
 	public static TemporalUnit unit(Function function, Value arg) {
-		String name = FunctionArgs.lexical(function, arg).trim().toLowerCase();
+		String name = FunctionArgs.lexical(function, arg).trim().toLowerCase(Locale.ROOT);
 		// "ms" is the millisecond abbreviation, not the plural of "m" (minute)
 		if (name.endsWith("s") && !name.equals("s") && !name.equals("ms")) {
 			name = name.substring(0, name.length() - 1);

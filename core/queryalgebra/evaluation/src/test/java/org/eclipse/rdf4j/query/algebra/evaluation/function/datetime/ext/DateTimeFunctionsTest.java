@@ -16,6 +16,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.time.temporal.ChronoUnit;
+import java.util.Locale;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -220,5 +222,39 @@ class DateTimeFunctionsTest {
 				"makeDate", "age", "atTimeZone" }) {
 			assertThat(FunctionRegistry.getInstance().get(DTF.NAMESPACE + name)).as(name).isPresent();
 		}
+	}
+
+	@Test
+	void parseDateAttachesTheOffsetOfAParsedZoneId() {
+		assertThat(new ParseDate().evaluate(VF, str("2024-06-01 12:00 Europe/Oslo"), str("yyyy-MM-dd HH:mm VV")))
+				.isEqualTo(dt("2024-06-01T12:00:00+02:00"));
+		assertThat(new ParseDate().evaluate(VF, str("2024-01-01 12:00 Europe/Oslo"), str("yyyy-MM-dd HH:mm VV")))
+				.isEqualTo(dt("2024-01-01T12:00:00+01:00"));
+		assertThat(new ParseDate().evaluate(VF, str("2024-01-01 12:00 UTC"), str("yyyy-MM-dd HH:mm z"),
+				str("en"))).isEqualTo(dt("2024-01-01T12:00:00Z"));
+	}
+
+	@Test
+	void unitNamesDoNotDependOnTheDefaultLocale() {
+		Locale previous = Locale.getDefault();
+		Locale.setDefault(Locale.forLanguageTag("tr-TR"));
+		try {
+			assertThat(DateTimeSupport.unit(new DateDiff(), str("MINUTE"))).isEqualTo(ChronoUnit.MINUTES);
+			assertThat(DateTimeSupport.unit(new DateDiff(), str("MILLISECONDS"))).isEqualTo(ChronoUnit.MILLIS);
+			assertThat(new DateDiff().evaluate(VF, str("MINUTE"), dt("2024-01-01T00:00:00"),
+					dt("2024-01-01T00:05:00"))).isEqualTo(integer(5));
+		} finally {
+			Locale.setDefault(previous);
+		}
+	}
+
+	@Test
+	void temporalOverflowIsAnEvaluationError() {
+		assertThatThrownBy(() -> new DateDiff().evaluate(VF, str("nanosecond"), dt("1700-01-01T00:00:00"),
+				dt("2024-01-01T00:00:00"))).isInstanceOf(ValueExprEvaluationException.class);
+		assertThatThrownBy(() -> new DateAdd().evaluate(VF, dt("2024-01-01T00:00:00"), dur("P1000000000Y")))
+				.isInstanceOf(ValueExprEvaluationException.class);
+		assertThatThrownBy(() -> new EpochMillis().evaluate(VF, dt("300000000-01-01T00:00:00Z")))
+				.isInstanceOf(ValueExprEvaluationException.class);
 	}
 }

@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.function.tuple;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
@@ -24,8 +25,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.json.JsonSupport;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.support.FunctionArgs;
 
 /**
- * arrf:unnestWithOrdinality: like {@code arrf:unnest} for arrays but yields {@code (?element ?index)} pairs with a
- * 1-based {@code xsd:integer} index: {@code ?array arrf:unnestWithOrdinality (?element ?index)}.
+ * arrf:unnestWithOrdinality: expands an {@code rdf:JSON} array into {@code (?element ?index)} solutions with a 1-based
+ * index ({@code ?array arrf:unnestWithOrdinality (?element ?index)}); for a JSON object it yields {@code (?value ?key)}
+ * pairs, the key taking the place of the index. JSON {@code null} elements are skipped.
  */
 public class UnnestWithOrdinalityTupleFunction extends AbstractTupleFunction {
 
@@ -39,8 +41,17 @@ public class UnnestWithOrdinalityTupleFunction extends AbstractTupleFunction {
 	protected CloseableIteration<? extends List<? extends Value>> rows(ValueFactory vf, Value[] args) {
 		FunctionArgs.arity(self, args, 1);
 		Object json = JsonSupport.parseArgument(self, args[0]);
+		if (json instanceof Map) {
+			List<List<Value>> rows = new ArrayList<>();
+			for (Map.Entry<String, Object> entry : ((Map<String, Object>) json).entrySet()) {
+				if (entry.getValue() != JsonSupport.NULL) {
+					rows.add(List.of(JsonSupport.toValue(entry.getValue(), vf), vf.createLiteral(entry.getKey())));
+				}
+			}
+			return rowsOf(rows);
+		}
 		if (!(json instanceof List)) {
-			throw new ValueExprEvaluationException(getURI() + " requires a JSON array, got " + args[0]);
+			throw new ValueExprEvaluationException(getURI() + " requires a JSON array or object, got " + args[0]);
 		}
 		List<Object> elements = (List<Object>) json;
 		List<List<Value>> rows = new ArrayList<>(elements.size());

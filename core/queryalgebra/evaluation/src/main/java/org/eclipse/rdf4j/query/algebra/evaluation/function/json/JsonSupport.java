@@ -17,6 +17,7 @@ import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -133,8 +134,12 @@ public final class JsonSupport {
 	}
 
 	private static final class Parser {
+		/** Deepest allowed array/object nesting; the recursive descent uses two stack frames per level. */
+		static final int MAX_DEPTH = 512;
+
 		private final String s;
 		private int pos;
+		private int depth;
 
 		Parser(String s) {
 			this.s = s;
@@ -192,7 +197,22 @@ public final class JsonSupport {
 			pos += word.length();
 		}
 
+		private void enter() {
+			if (++depth > MAX_DEPTH) {
+				throw error("JSON nested deeper than " + MAX_DEPTH + " levels");
+			}
+		}
+
 		private Map<String, Object> readObject() {
+			enter();
+			try {
+				return readObjectBody();
+			} finally {
+				depth--;
+			}
+		}
+
+		private Map<String, Object> readObjectBody() {
 			pos++; // {
 			Map<String, Object> map = new LinkedHashMap<>();
 			skipWhitespace();
@@ -227,6 +247,15 @@ public final class JsonSupport {
 		}
 
 		private List<Object> readArray() {
+			enter();
+			try {
+				return readArrayBody();
+			} finally {
+				depth--;
+			}
+		}
+
+		private List<Object> readArrayBody() {
 			pos++; // [
 			List<Object> list = new ArrayList<>();
 			skipWhitespace();
@@ -483,7 +512,12 @@ public final class JsonSupport {
 				return literal.getLabel();
 			}
 			if (datatype == CoreDatatype.RDF.JSON) {
-				return parseCached(literal.getLabel());
+				try {
+					return parseCached(literal.getLabel());
+				} catch (IllegalArgumentException e) {
+					// a malformed stored rdf:JSON literal is an evaluation error for this solution, not a query abort
+					throw new ValueExprEvaluationException("Invalid rdf:JSON literal: " + e.getMessage(), e);
+				}
 			}
 			if (datatype == CoreDatatype.XSD.BOOLEAN
 					&& (literal.getLabel().equals("true") || literal.getLabel().equals("false"))) {
@@ -603,7 +637,7 @@ public final class JsonSupport {
 			if (language instanceof String lang && type == null) {
 				Object direction = object.get("@direction");
 				if (direction instanceof String dir) {
-					return vf.createLiteral(label, lang, Literal.BaseDirection.valueOf(dir.toUpperCase()));
+					return vf.createLiteral(label, lang, Literal.BaseDirection.valueOf(dir.toUpperCase(Locale.ROOT)));
 				}
 				if (object.size() == 2) {
 					return vf.createLiteral(label, lang);

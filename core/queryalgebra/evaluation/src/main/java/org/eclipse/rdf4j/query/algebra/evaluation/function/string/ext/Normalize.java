@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.function.string.ext;
 
 import java.text.Normalizer;
+import java.util.Locale;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -42,7 +43,7 @@ public class Normalize extends StringFunction {
 		}
 		Normalizer.Form normalizerForm;
 		try {
-			normalizerForm = Normalizer.Form.valueOf(form.toUpperCase());
+			normalizerForm = Normalizer.Form.valueOf(form.toUpperCase(Locale.ROOT));
 		} catch (IllegalArgumentException e) {
 			throw new ValueExprEvaluationException("Unsupported normalization form for " + getURI() + ": " + form);
 		}

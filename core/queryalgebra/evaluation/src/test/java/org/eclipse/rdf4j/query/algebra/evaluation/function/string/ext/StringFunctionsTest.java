@@ -14,11 +14,14 @@ package org.eclipse.rdf4j.query.algebra.evaluation.function.string.ext;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.math.BigInteger;
+
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.STRF;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.junit.jupiter.api.Test;
@@ -162,5 +165,26 @@ class StringFunctionsTest {
 				"chr", "normalize", "regexpExtract", "regexpExtractAll" }) {
 			assertThat(FunctionRegistry.getInstance().get(STRF.NAMESPACE + name)).as(name).isPresent();
 		}
+	}
+
+	@Test
+	void padRejectsHugeWidthsAsAnEvaluationError() {
+		for (int width : new int[] { Integer.MAX_VALUE, 1_500_000_000, 1_000_000_000, (1 << 26) + 1 }) {
+			Literal n = VF.createLiteral(BigInteger.valueOf(width));
+			assertThatThrownBy(() -> new LPad().evaluate(VF, str("x"), n)).as("lpad " + width)
+					.isInstanceOf(ValueExprEvaluationException.class);
+			assertThatThrownBy(() -> new RPad().evaluate(VF, str("x"), n, str("ab"))).as("rpad " + width)
+					.isInstanceOf(ValueExprEvaluationException.class);
+		}
+	}
+
+	@Test
+	void integerResultsUseXsdInteger() {
+		assertThat(new Ascii().evaluate(VF, str("A")).getDatatype()).isEqualTo(XSD.INTEGER);
+		assertThat(new Ascii().evaluate(VF, str("")).getDatatype()).isEqualTo(XSD.INTEGER);
+		assertThat(new Position().evaluate(VF, str("b"), str("abc")).getDatatype()).isEqualTo(XSD.INTEGER);
+		assertThat(new Position().evaluate(VF, str("z"), str("abc")).getDatatype()).isEqualTo(XSD.INTEGER);
+		assertThat(new LastIndexOf().evaluate(VF, str("banana"), str("a")).getDatatype()).isEqualTo(XSD.INTEGER);
+		assertThat(new LastIndexOf().evaluate(VF, str("banana"), str("x")).getDatatype()).isEqualTo(XSD.INTEGER);
 	}
 }

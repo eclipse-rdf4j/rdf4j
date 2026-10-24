@@ -178,4 +178,24 @@ class MathFunctionsTest {
 		}
 		assertThat(new XPathSqrt().getURI()).isEqualTo("http://www.w3.org/2005/xpath-functions/math#sqrt");
 	}
+
+	@Test
+	void roundAndTruncRejectExtremeScales() {
+		for (int scale : new int[] { Integer.MAX_VALUE, Integer.MIN_VALUE, 2_000_000_000, -2_000_000_000,
+				100_000_000 }) {
+			Literal n = VF.createLiteral(BigInteger.valueOf(scale));
+			assertThatThrownBy(() -> new Round().evaluate(VF, lit("1.5", CoreDatatype.XSD.DECIMAL), n))
+					.as("round " + scale)
+					.isInstanceOf(ValueExprEvaluationException.class);
+			assertThatThrownBy(() -> new Trunc().evaluate(VF, lit("5", CoreDatatype.XSD.INTEGER), n))
+					.as("trunc " + scale)
+					.isInstanceOf(ValueExprEvaluationException.class);
+			assertThatThrownBy(() -> new Round().evaluate(VF, lit("1.5", CoreDatatype.XSD.DOUBLE), n))
+					.as("round double " + scale)
+					.isInstanceOf(ValueExprEvaluationException.class);
+		}
+		assertThat(
+				new Round().evaluate(VF, lit("1.5", CoreDatatype.XSD.DECIMAL), VF.createLiteral(BigInteger.valueOf(50)))
+						.decimalValue()).isEqualByComparingTo(new BigDecimal("1.5"));
+	}
 }

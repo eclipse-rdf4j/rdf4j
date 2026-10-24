@@ -194,10 +194,65 @@ class WindowFunctionParserTest {
 	}
 
 	@Test
-	void windowFunctionOutsideSelectStaysAPlainFunctionCall() {
-		TupleExpr expr = parse("SELECT ?a WHERE { ?x ex:s ?s BIND(winf:rowNumber() AS ?a) }");
-		assertThat(windows(expr)).isEmpty();
-		assertThat(functionCalls(expr)).hasSize(1);
+	void windowFunctionOutsideSelectExpressionsIsRejected() {
+		for (String query : List.of("SELECT ?a WHERE { ?x ex:s ?s BIND(winf:rowNumber() AS ?a) }",
+				"SELECT ?x WHERE { ?x ex:s ?s FILTER(winf:rowNumber() > 0) }",
+				"SELECT ?x WHERE { ?x ex:s ?s } ORDER BY winf:rank(winf:orderBy(?s))",
+				"SELECT ?x (COUNT(?s) AS ?c) WHERE { ?x ex:s ?s } GROUP BY ?x HAVING (winf:rowNumber() > 1)",
+				"SELECT ?k WHERE { ?x ex:s ?s } GROUP BY (winf:rowNumber() AS ?k)",
+				"SELECT ?x WHERE { ?x ex:s ?s FILTER EXISTS { ?x ex:t ?t FILTER(winf:rowNumber() > 0) } }",
+				"SELECT ?x WHERE { ?x ex:s ?s FILTER(winf:partitionBy(?s)) }")) {
+			assertThatThrownBy(() -> parse(query)).as(query).isInstanceOf(MalformedQueryException.class);
+		}
+	}
+
+	@Test
+	void windowFunctionInUpdateWhereClauseIsRejected() {
+		SPARQLParser parser = new SPARQLParser();
+		assertThatThrownBy(() -> parser.parseUpdate(PREFIX
+				+ "DELETE { ?x ex:s ?s } WHERE { ?x ex:s ?s FILTER(winf:rowNumber() > 0) }", null))
+						.isInstanceOf(MalformedQueryException.class);
+		assertThatThrownBy(() -> parser.parseUpdate(PREFIX
+				+ "INSERT { ?x ex:n ?n } WHERE { ?x ex:s ?s BIND(winf:rowNumber() AS ?n) }", null))
+						.isInstanceOf(MalformedQueryException.class);
+		// a window function in a nested SELECT of an update is fine
+		parser.parseUpdate(PREFIX + "INSERT { ?x ex:n ?n } WHERE { { SELECT ?x (winf:rowNumber(winf:orderBy(?s))"
+				+ " AS ?n) WHERE { ?x ex:s ?s } } }", null);
+	}
+
+	@Test
+	void nestedWindowFunctionsInsideSpecificationsAreRejected() {
+		for (String select : List.of("(winf:sum(?s, winf:partitionBy(winf:rowNumber())) AS ?a)",
+				"(winf:sum(?s, winf:partitionBy(winf:desc(?s))) AS ?a)",
+				"(winf:rank(winf:orderBy(winf:rowNumber() + 0)) AS ?a)",
+				"(winf:rank(winf:orderBy(STR(winf:rowNumber()))) AS ?a)",
+				"(winf:sum(winf:rowNumber() * 1, winf:orderBy(?s)) AS ?a)",
+				"(winf:lag(?s, winf:rowNumber(), winf:orderBy(?s)) AS ?a)")) {
+			assertThatThrownBy(() -> parse("SELECT " + select + " WHERE { ?x ex:s ?s }")).as(select)
+					.isInstanceOf(MalformedQueryException.class);
+		}
+	}
+
+	@Test
+	void frameBoundDirectionsMustMatchTheirPosition() {
+		for (String frame : List.of("\"current\", \"unbounded preceding\"", "\"unbounded following\", \"current\"",
+				"\"unbounded following\", \"unbounded following\"", "\"unbounded preceding\", \"unbounded preceding\"",
+				"1, -1", "\"current row\", -1", "1, \"current row\"", "\"unbound\", 0", "0, \"currently\"")) {
+			assertThatThrownBy(() -> parse("SELECT (winf:sum(?s, winf:orderBy(?s), winf:rows(" + frame
+					+ ")) AS ?a) WHERE { ?x ex:s ?s }")).as(frame).isInstanceOf(MalformedQueryException.class);
+		}
+		TupleExpr expr = parse("SELECT (winf:sum(?s, winf:orderBy(?s), winf:rows(\"unbounded preceding\","
+				+ " \"unbounded following\")) AS ?a) (winf:sum(?s, winf:orderBy(?s), winf:rows(\"current row\","
+				+ " \"unbounded following\")) AS ?b) (winf:sum(?s, winf:orderBy(?s), winf:rows(-1, \"CURRENT ROW\"))"
+				+ " AS ?c) WHERE { ?x ex:s ?s }");
+		List<WindowFunctionCall> calls = new ArrayList<>();
+		windows(expr).get(0).getElements().forEach(e -> calls.add(e.getOperator()));
+		assertThat(calls.get(0).getFrameStart()).isNull();
+		assertThat(calls.get(0).getFrameEnd()).isNull();
+		assertThat(calls.get(1).getFrameStart()).isEqualTo(0L);
+		assertThat(calls.get(1).getFrameEnd()).isNull();
+		assertThat(calls.get(2).getFrameStart()).isEqualTo(-1L);
+		assertThat(calls.get(2).getFrameEnd()).isEqualTo(0L);
 	}
 
 	@Test
