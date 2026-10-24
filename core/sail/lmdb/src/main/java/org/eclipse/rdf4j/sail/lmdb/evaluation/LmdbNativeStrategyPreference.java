@@ -212,6 +212,19 @@ final class LmdbNativeStrategyPreference {
 	}
 
 	/**
+	 * Complete page/root-domain algorithms: their applicability is a structural proof that the whole answer reduces to
+	 * bounded metadata work, so they keep their cold prior in the normal dispatch frontier even while their per-feature
+	 * physical quote (DISTINCT-domain storage, cross-group membership) remains explicitly unknown. Physical quotes and
+	 * completed runtime evidence of other arms can still select past them.
+	 */
+	static boolean completeDomainAlgorithmFamily(String family) {
+		return LmdbNativeCensusAggregate.PATH.equals(family)
+				|| LmdbNativeAttemptMetrics.PATH_RUN_COUNT_HISTOGRAM.equals(family)
+				|| LmdbNativeAttemptMetrics.PATH_DATATYPE_HISTOGRAM.equals(family)
+				|| LmdbNativeAttemptMetrics.PATH_PREDICATE_PLANE_GROUPS.equals(family);
+	}
+
+	/**
 	 * Families the arbiter must eventually execute rather than starve behind measured rivals. This includes the
 	 * engine's own IR tiers and the bounded specialist matrix whose applicability is expressed by whether a proposal
 	 * was offered for the current shape. A must-try arm bypasses the probe value gate because a starved arm can never

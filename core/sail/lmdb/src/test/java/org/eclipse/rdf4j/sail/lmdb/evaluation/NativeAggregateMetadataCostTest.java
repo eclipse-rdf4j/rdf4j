@@ -334,8 +334,13 @@ class NativeAggregateMetadataCostTest {
 				() -> "the FULL event control must execute its requested IR family: " + concatTelemetry);
 		JsonNode concatQuote = candidate(quotes(concatTelemetry),
 				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED);
-		assertTrue(concatQuote.path("total").path("SORT_N_LOG2_N").path("high").asDouble() > 0D,
-				"FULL event retention remains a positive external-sort control");
+		assertFalse(concatQuote.path("physicalFeaturesKnown").asBoolean(),
+				() -> "FULL GROUP_CONCAT copy work is unproved, so its quote stays explicitly unpriced: "
+						+ concatQuote);
+		assertTrue(concatQuote.path("missingWorkProof").asString().contains("GROUP_CONCAT"),
+				() -> "the unpriced quote names its missing copy-work proof: " + concatQuote);
+		assertTrue(concatQuote.path("partialEstimate").path("SORT_N_LOG2_N").path("high").asDouble() > 0D,
+				"FULL event retention remains a positive external-sort control in the partial estimate");
 	}
 
 	@Test

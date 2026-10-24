@@ -123,7 +123,11 @@ class NativeStrategyDecisionDiagnosticsTest {
 				() -> assertThat(phase(events(output), "OBSERVATION")).singleElement().satisfies(event -> {
 					assertThat(event.getString("status")).isEqualTo("EXHAUSTED");
 					assertThat(event.getBoolean("trainingEligible")).isTrue();
-					assertThat(event.getBoolean("trainingAccepted")).isTrue();
+					// The fixture drains without reporting one physical counter: its direct timing is retained,
+					// but estimated feature totals never train the machine coefficients as measured work.
+					assertThat(event.getBoolean("trainingAccepted")).isFalse();
+					assertThat(event.getString("trainingReason"))
+							.contains("neither measured nor independently owned");
 					assertThat(event.getLong("quoteMillis")).isEqualTo(selected.getLong("quoteMillis"));
 					assertThat(event.getLong("exactCompletedCount")).isZero();
 				}));

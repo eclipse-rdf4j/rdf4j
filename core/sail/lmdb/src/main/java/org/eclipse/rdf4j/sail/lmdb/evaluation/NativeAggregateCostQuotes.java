@@ -132,8 +132,11 @@ final class NativeAggregateCostQuotes {
 		LmdbNativeCostEstimate legacy = proposal.adaptiveEstimate(-1D);
 		NativeAggregatePhysicalPlan actual = proposal.aggregatePhysicalPlan();
 		proposal.observeAggregateOpening(NativeAggregateExecutionEvent.describe(owner, displayTag, actual));
+		// A proposal whose static work is unknown quotes a direct-timing placeholder whose only missing proof is
+		// the absence of a physical work quote. The physical quote built here is that quote, so the placeholder's
+		// reason is not a refusal to conserve; a genuine legacy refusal (mapped origin, declined producer) is.
 		PhysicalQuote quoted = physicalQuote(proposal.tag,
-				legacy == null ? proposal.directTimingEstimate() : legacy, actual);
+				legacy == null ? proposal.directTimingEstimate() : legacy, actual, legacy == null);
 		LmdbNativeCostEstimate physical = quoted == null ? null : quoted.estimate();
 		if (quoted != null && quoted.coldAnchor() != null) {
 			proposal.withColdAnchor(quoted.coldAnchor());
@@ -334,7 +337,7 @@ final class NativeAggregateCostQuotes {
 
 	LmdbNativeCostEstimate physical(String strategy, LmdbNativeCostEstimate legacy,
 			NativeAggregatePhysicalPlan actual) {
-		PhysicalQuote quote = physicalQuote(strategy, legacy, actual);
+		PhysicalQuote quote = physicalQuote(strategy, legacy, actual, false);
 		return quote == null ? null : quote.estimate();
 	}
 
@@ -342,7 +345,7 @@ final class NativeAggregateCostQuotes {
 	}
 
 	private PhysicalQuote physicalQuote(String strategy, LmdbNativeCostEstimate legacy,
-			NativeAggregatePhysicalPlan actual) {
+			NativeAggregatePhysicalPlan actual, boolean legacyIsDirectTimingPlaceholder) {
 		if (legacy == null) {
 			return null;
 		}
@@ -461,7 +464,7 @@ final class NativeAggregateCostQuotes {
 			}
 		}
 		evidence = withoutOwnedTotals(evidence, changed);
-		if (!legacy.workEvidence().isComplete()) {
+		if (!legacyIsDirectTimingPlaceholder && !legacy.workEvidence().isComplete()) {
 			evidence = evidence.withMissingProof(legacy.workEvidence().missingProof());
 		}
 		if (actual != null && actual.retention() == null) {

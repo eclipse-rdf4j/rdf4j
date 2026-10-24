@@ -260,7 +260,12 @@ final class LmdbNativeAdaptiveArbitration {
 
 	private static boolean normalEligible(Priced<?> candidate) {
 		return candidate.candidate.estimate.workEvidence().isComplete() || candidate.candidate.coldAnchor() != null
-				|| candidate.prediction.exactCompletedCount() > 0L;
+				|| candidate.prediction.exactCompletedCount() > 0L
+				// A complete page/root-domain algorithm was offered only because the whole answer reduces to bounded
+				// metadata work; that structural applicability is its resource proof while its DISTINCT-domain or
+				// cross-group feature quote remains explicitly unknown.
+				|| LmdbNativeStrategyPreference
+						.completeDomainAlgorithmFamily(candidate.candidate.estimate.variantKey().strategyFamily());
 	}
 
 	/** Unknown feature prices never acquire numerical authority from a physical cold-start witness. */

@@ -2890,7 +2890,12 @@ class NativePhysicalGroupingCostTest {
 		for (boolean nativeCursor : List.of(true, false)) {
 			try (Fixture fixture = fixture()) {
 				SingletonSet target = telemetryTarget();
-				NativeGroupStep original = step(fixture, lexicalLengthSpecs(), target,
+				// A LEXICAL_LENGTH summary is consumed only through the typed native channel; an RDF result boundary
+				// never exposes it as a term. The RDF iteration variant therefore selects an RDF-term distinct recipe
+				// of the same ordered-distinct-groups family.
+				AggregateSpec[] specs = nativeCursor ? lexicalLengthSpecs()
+						: new AggregateSpec[] { AggregateSpec.slot("count", 1, true, AggKind.COUNT) };
+				NativeGroupStep original = step(fixture, specs, target,
 						LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS);
 				NativePhysicalResultPlan selected = original.physicalPlan(EmptyBindingSet.getInstance());
 				assertNotNull(selected);
@@ -4325,10 +4330,15 @@ class NativePhysicalGroupingCostTest {
 			assertTrue(workerCounts.stream().anyMatch(count -> count >= 2L),
 					() -> "the explained aggregate must report at least two started workers: " + workerCounts);
 			for (JsonNode quote : parallelQuotes) {
-				assertTrue(quote.path("physicalFeaturesKnown").asBoolean(),
-						() -> "the offered parallel FULL_VALUE event producer must expose its physical quote: "
-								+ quote);
-				assertTrue(quote.path("total").path("SORT_N_LOG2_N").path("expected").asDouble() > 0D,
+				// FULL GROUP_CONCAT appends every lexical value into its output; that additional copy work has no
+				// proved same-recipe bound here, so the quote stays explicitly unpriced instead of certifying an
+				// identical work vector for every separator. Its partial estimate still carries the bounded
+				// membership/encounter sort of the event-retaining parallel producer.
+				assertFalse(quote.path("physicalFeaturesKnown").asBoolean(),
+						() -> "unproved FULL text materialization must not be certified as a complete quote: " + quote);
+				assertTrue(quote.path("missingWorkProof").asString().contains("GROUP_CONCAT"),
+						() -> "the unpriced quote names its missing FULL GROUP_CONCAT copy-work proof: " + quote);
+				assertTrue(quote.path("partialEstimate").path("SORT_N_LOG2_N").path("expected").asDouble() > 0D,
 						() -> "the event-retaining parallel full result must price its membership/encounter sorting: "
 								+ quote);
 			}

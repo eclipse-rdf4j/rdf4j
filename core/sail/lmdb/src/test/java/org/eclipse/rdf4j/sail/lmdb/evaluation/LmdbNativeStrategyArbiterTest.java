@@ -1252,7 +1252,10 @@ public class LmdbNativeStrategyArbiterTest {
 	/**
 	 * Gap-analysis G8, second half: one unpriceable candidate must not force the whole set back to pure structural
 	 * ranking — the priced candidates keep their static interval evidence, so the statically absurd highest-preference
-	 * candidate still loses.
+	 * candidate still loses. Since the owned-work correction (source180) an arm without a complete physical work quote,
+	 * cold anchor or completed execution is no longer an ordinary normal choice while a viable complete alternative
+	 * remains: it stays in the legal inventory as bounded exploration and last fallback, so the complete, statically
+	 * sane nestedLoop wins.
 	 */
 	@Test
 	public void mixedProposalSetRetainsStaticIntervalEvidence() {
@@ -1265,9 +1268,33 @@ public class LmdbNativeStrategyArbiterTest {
 
 		assertThat(adaptiveWinner(candidates))
 				.as("an unpriceable candidate falls back to interval ranking, not preference-only ranking: the "
-						+ "statically absurd irAggregate may not win; the unpriceable candidate (never dominated) "
-						+ "ranks by preference among the survivors")
-				.isEqualTo(LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION);
+						+ "statically absurd irAggregate may not win; the unpriceable candidate is not a normal choice "
+						+ "while the complete nestedLoop remains viable")
+				.isEqualTo(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+	}
+
+	/**
+	 * Complete page/root-domain algorithms are offered only when the whole answer reduces to bounded metadata work.
+	 * That structural applicability keeps their cold prior in the normal frontier even while their DISTINCT-domain or
+	 * cross-group feature quote is explicitly unknown; a non-domain arm with unknown work is not rescued the same way.
+	 */
+	@Test
+	public void completeDomainAlgorithmKeepsItsColdPriorWithoutAFeatureQuote() {
+		System.setProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY, "true");
+
+		List<LmdbNativeStrategyProposal<String>> candidates = List.of(
+				proposal(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, 1_000D),
+				proposal(LmdbNativeCensusAggregate.PATH, LmdbNativeWork.UNKNOWN));
+		assertThat(adaptiveWinner(candidates))
+				.as("the census reduction keeps its cold prior ahead of a complete priced row scan even without a quote")
+				.isEqualTo(LmdbNativeCensusAggregate.PATH);
+
+		List<LmdbNativeStrategyProposal<String>> nonDomain = List.of(
+				proposal(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, 1_000D),
+				proposal(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, LmdbNativeWork.UNKNOWN));
+		assertThat(adaptiveWinner(nonDomain))
+				.as("an ordinary arm without any work quote remains a fallback behind the complete rival")
+				.isEqualTo(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
 	}
 
 	/**
