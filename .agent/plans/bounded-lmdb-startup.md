@@ -5,7 +5,7 @@ This ExecPlan follows root `PLANS.md` and is a living document. Keep Progress, S
 ## Purpose / Big Picture
 
 
-An existing LMDB repository must become ready for normal reads and writes without walking its statements, dictionary, garbage-collection queues, or obsolete index trees. Foreground startup, measured from store construction through repository initialization, must perform at most 1,000 logical native reads. The performance target is readiness within ten seconds for a billion-statement repository; that target remains unverified until the agent measures an actual user-provided, closed consistent copy. The implementation must provide a reproducible acceptance runner and truthful counters instead of manufacturing a billion-statement fixture or extrapolating timing from a smaller store.
+An existing LMDB repository must become ready for normal reads and writes without walking its statements, dictionary, garbage-collection queues, or obsolete index trees. Foreground startup, measured from store construction through repository initialization, must perform at most 1,000 logical native reads. The performance target is readiness within ten seconds for a billion-statement repository; that target remains unverified until the user runs the timing on their actual closed, consistent repository after this verification work is complete. The implementation must provide a reproducible acceptance runner and truthful counters instead of manufacturing a billion-statement fixture or extrapolating timing from a smaller store.
 
 After a normal JVM crash, the repository must establish quickly whether component reference counts are exact. A missing proof must allow conservative reads and writes while retaining all values and suspending reclamation and identifier reuse. Requested index layout changes must build in the background while the committed indexes continue serving correct results. Exhaustive validation and repair become explicit maintenance operations, never an implicit startup fallback.
 
@@ -56,13 +56,17 @@ After a normal JVM crash, the repository must establish quickly whether componen
 - [x] Run focused and class replay gates.
 - [x] Verify default LMDB Failsafe gate.
 - [x] Review controlled replay fixture candidate.
-- [in_progress] Verify new-head CI and default module.
+- [x] Add fail-at-end to CI Maven commands.
+- [x] Update acceptance and CI docs.
+- [x] Revalidate partitions and Maven arguments.
+- [in_progress] Audit and publish scoped changes.
+- [ ] Watch exact-head Actions until terminal.
+- [ ] Run retained 14.6M acceptance copy.
 - [x] (2026-10-24) Verify focused regression and estimator suites.
 - [x] (2026-10-24) Resolve remap restart versus maintenance admission.
 - [x] (2026-10-24) Resolve reader horizons without foreground writes.
 - [x] (2026-10-24) Publish follow-up lifecycle and horizon repairs.
-- [ ] Measure supplied-store startup acceptance evidence.
-- [ ] Format and audit final cohesive changes.
+- [x] Format and audit final cohesive changes.
 
 Exactly one entry is `in_progress`. Other implementation work may proceed in parallel under separate file ownership; update this progress list when an integrated milestone completes.
 
@@ -72,7 +76,7 @@ The v2 Failsafe trace exposed a test setup race. Native sizing measured a 835,58
 
 The corrected original method passes focused (1/1), the complete 13-test isolation class (13/13), and all default LMDB Failsafe tests (160 tests, zero failures/errors, 105 skipped). Its trace shows writer-only deltas: Triple resizes 2→3, Value resizes 0→1, and accepted replays 0→1; full trace and reports are in `logs/bounded-startup-unobserved-replay-controlled-hard-green/`. Comparing the new 1,434-entry Java manifest to the earlier full-module run shows 1,433 unchanged Java files; only this Failsafe source changed. Therefore the previous 9,933-test Surefire result (zero failures/errors, 35 skipped) remains applicable to production and every unit-test source, but no fresh combined full-module command has been run after this fixture-only change.
 
-The separate construction-overlap spike is archived in `logs/bounded-startup-constructed-replay-first-exposure-red/`; it failed only its source-construction-count premise before result assertions, and its independent fitting writer demanded a stronger contract than the original growth-causing publication. It was removed from executable sources and is not production-defect evidence. The prior published full-module row mismatch and v2 growth-premise red remain retained as historical pre-correction evidence. Hosted-CI completion and acceptance remain pending; continue exact-head checks and measure the supplied-store startup acceptance evidence.
+The separate construction-overlap spike is archived in `logs/bounded-startup-constructed-replay-first-exposure-red/`; it failed only its source-construction-count premise before result assertions, and its independent fitting writer demanded a stronger contract than the original growth-causing publication. It was removed from executable sources and is not production-defect evidence. The prior published full-module row mismatch and v2 growth-premise red remain retained as historical pre-correction evidence. Hosted-CI completion and acceptance remain pending; continue exact-head checks and run the retained 14.6M acceptance copy after correctness is established. The user will run the billion-statement timing after this verification work is complete; no repository path is needed for this task.
 
 The smallest mutation-poison gate reproduces two errors in six instances (`logs/bounded-startup-logical-mutation-poison-red/`): the unchanged disabled-growth control cannot begin its next writer after an unowned illegal aligned call, and the scoped ALIGNED continuation of failed A poisons B's otherwise valid commit. VALUE, SCALAR, NAMESPACE, and REMOVE continuation modes preserve the original retry and pass. Limit mutation-failure recording using the retained logical writer identity, never `writeTxn != 0`: reject no-owner calls and explicitly foreign tickets while preserving errors after an owned native handle has been consumed.
 
@@ -267,6 +271,8 @@ Checkpoint 3 ran 99 tests with four failures, three errors and one opt-in skip. 
 
 ## Decision Log
 
+The prior hosted build on `db0899be0358854b0398d713f815b2c722d5129a` reported two LMDB fixture failures: `LmdbForegroundFilterSamplingEpochTest#backgroundSamplingDoesNotHoldWriterAdmissionWhilePaused` did not enter its paired sampling supplier, and `LmdbSnapshotLifetimeTest#durableRetirementSurvivesCloseAndReopenThenAllowsIdReuse` observed zero from its explicit batch. These are old-head CI results, not outcomes for the current published SHA. Source ordering showed the sampler test could capture the factory instance before post-ready publication; its fixture now awaits post-ready and requested index completion in the exact failing method. The first wait edit landed in a neighboring method; `logs/startup-ci/0ca95f15a00a3b31733d90c33d0746330b81ab5a/local-repro/fixture-fix/sampling-focused/scope-attribution.txt` marks that green as invalid hit proof. The corrected focused test and class pass at the current `0ca95f15` checkout (1 and 21 tests; `logs/startup-ci/0ca95f15a00a3b31733d90c33d0746330b81ab5a/local-repro/final-snapshot-repair/sampling-focused/` and `sampling-class/`). An isolated Linux reproduction on matching test and production source hashes showed format 6's exact retired subject was already in the native free pool before the explicit batch: `unused_ids=0->0`, `free_ids=8->8`, `subjectAlreadyFree=true`, and no reclamation phase; format 2 passed. The fixture now always runs the explicit bounded batch and retains the UNKNOWN lookup, exact subject membership in the eligible native free pool, exact same-ID reuse, replacement value and backing-row checks. It no longer requires the batch to make positive progress when the durable subject is already free; its visited count is retained only in the free-pool assertion context. The Linux focused selection passes 2/0/0/0; matching macOS focused and full-class selections pass 2/0/0/0 and 40/0/0/0. The sampler focused and full-class selections pass 1/0/0/0 and 21/0/0/0. The frozen randomized 61-test combination passes 61/0/0/0 (`logs/startup-ci/0ca95f15a00a3b31733d90c33d0746330b81ab5a/local-repro/final-snapshot-repair/`); Linux forensic red and green reports remain under `linux-snapshot-diagnostics/`. No production code changed. Full LMDB/Failsafe and terminal current-head CI outcomes remain separate checks.
+
 - Decision: Expose an optional exact predicate-plane count without a native-scan fallback, reusing the existing direct count's snapshot, feature, coverage and explicit/inferred eligibility. Wire ordinary, sibling, composite and synthetic sources; composite overflow or any unknown component remains unknown. Consume only exact zero for pattern pruning. Rationale: the ordinary and constant-filter causal tests each fail before this change (`logs/bounded-startup-predicate-empty-proof-red/`); generic `count` could perform dataset-sized native work during planning. Date/Author: 2026-10-24, Codex.
 
 - Decision: Preserve a reserved read view's terminal invalidation across stale operation-epoch retirement, checking both before abandoning it and after its owner closes. Rationale: a failed replay budget belongs to the caller's result and cannot be erased by READ_COMMITTED freshness; native resource retirement remains outside the coordinator lock. Date/Author: 2026-10-24, Codex.
@@ -290,7 +296,7 @@ Decision: Before a conservative format-2 owner mutation skips count deltas, remo
 
 Decision: Requested index layout changes build in the background. Use canonical inactive permutation names, atomic dual writes, short read batches, membership rechecks in the staging writer, durable progress and atomic manifest publication. Rationale: existing indexes can remain authoritative without a long pinned snapshot or a second recovery journal. Date/author: 2026-10-23, user-approved.
 
-Decision: Do not generate a billion-statement fixture. Supply an acceptance runner with constructor-to-ready timing, foreground logical-read categories, count trust, pending maintenance, and separately measured first-query latency. The agent will run it against an actual user-provided, closed consistent copy when its path is available; the billion-statement result remains unverified until measured. Date/author: 2026-10-23, user-approved.
+Decision: Do not generate a billion-statement fixture. Supply an acceptance runner with constructor-to-ready timing, foreground logical-read categories, count trust, pending maintenance, and separately measured first-query latency. The user will run it against their actual closed, consistent billion-statement repository after this verification work; no result is claimed until that timing is reported. Date/author: 2026-10-23, user-approved; clarified by user on 2026-10-24.
 
 Decision: Keep Maven and formatting serialized across workers. Initial mandatory root offline clean install already succeeded in this conversation. Rationale: the checkout and its `.m2_repo` are shared and tests must resolve the current installed artifacts. Date/author: 2026-10-23, coordinator.
 
@@ -361,7 +367,7 @@ Acceptance exercises deleted continuation keys, delete-between-copy phases, inse
 
 Expose startup/count trust and index-maintenance status from `LmdbStore` with an await API matching existing lifecycle conventions. Instrument foreground logical reads by category with a measurement scope whose lifetime covers construction through repository readiness, including database-open/stat/metadata reads. Keep diagnostics observational; exceeding test/acceptance limits must identify the operation and phase rather than silently bypassing validation.
 
-Add a reproducible runner and documentation under `scripts/` and appropriate LMDB test/benchmark sources. It accepts an existing supplied store/copy and configuration, reports constructor-to-ready milliseconds and each read category, exact count authority, pending index maintenance, and first-query time separately. It must never build a billion-statement dataset. The agent will run the provided command against an actual user-provided, closed consistent copy when the path is available. Local theme-fixture results must name the actual 14.6M statement scale.
+Add a reproducible runner and documentation under `scripts/` and appropriate LMDB test/benchmark sources. It accepts an existing supplied store/copy and configuration, reports constructor-to-ready milliseconds and each read category, exact count authority, pending index maintenance, and first-query time separately. It must never build a billion-statement dataset. The user will run the provided command against their actual closed, consistent billion-statement repository after this verification work. Local theme-fixture results must name the actual 14.6M statement scale.
 
 ### Milestone 5: Verify and deliver
 
@@ -400,7 +406,7 @@ Startup tests impose at most 1,000 foreground logical native reads over construc
 
 Concurrent reindex tests prove results and writes remain correct on old committed indexes through building, interruption and failure, then the new layout becomes visible atomically. Holding an old snapshot must remain safe through publication and cleanup. Stage copies must not alter component counts. A background failure is visible in status and does not invalidate the active layout.
 
-The acceptance runner reports real local cardinality, constructor-to-ready milliseconds, per-category reads and total, count trust and pending work, with first query measured separately. The billion-statement timing is unverified until the agent measures an actual user-provided, closed consistent copy; no local result is labeled as that measurement.
+The acceptance runner reports real local cardinality, constructor-to-ready milliseconds, per-category reads and total, count trust and pending work, with first query measured separately. The billion-statement timing remains unverified until the user reports a measurement from their actual closed, consistent repository; no local result is labeled as that measurement.
 
 ## Idempotence and Recovery
 

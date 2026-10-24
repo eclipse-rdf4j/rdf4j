@@ -25,13 +25,13 @@ jobs:
           distribution: 'temurin'
           cache: maven
       - name: Check formatting
-        run: mvn -B -Pformatting spotless:check
+        run: mvn -B -Pformatting spotless:check --fail-at-end
       - name: Check SPARQL AST patches
         run: python3 scripts/manage-sparql-ast.py --check --online
       - name: Quick compile
-        run: mvn -B --quiet -T 2C compile -DskipTests -Pquick
+        run: mvn -B --quiet -T 2C compile --fail-at-end -DskipTests -Pquick
       - name: Download all other dependencies
-        run: mvn -B --quiet -T 2C dependency:go-offline
+        run: mvn -B --quiet -T 2C dependency:go-offline --fail-at-end
       - name: Verify Maven test partition behavior
         run: python3 scripts/ci/verify_pr_verify_partitions.py --no-offline
 
@@ -49,7 +49,7 @@ jobs:
           distribution: 'temurin'
           cache: maven
       - name: Compile (mvn clean install)
-        run: mvn -B clean install -DskipTests -DskipITs
+        run: mvn -B clean install --fail-at-end -DskipTests -DskipITs
 
 
   build:
@@ -74,10 +74,10 @@ jobs:
           distribution: 'temurin'
           cache: maven
       - name: Build
-        run: mvn --quiet clean && mvn -B --quiet -T 2C install -Pquick
+        run: mvn --quiet clean --fail-at-end && mvn -B --quiet -T 2C install --fail-at-end -Pquick
       - name: Test
         id: test
-        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B test -DskipITs -PskipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
+        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B test --fail-at-end -DskipITs -PskipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Preserve LMDB JVM crash diagnostics
         if: ${{ failure() && steps.test.outcome == 'failure' }}
         shell: bash
@@ -160,9 +160,9 @@ jobs:
           distribution: 'temurin'
           cache: maven
       - name: Build
-        run: mvn --quiet clean && mvn -B --quiet -T 2C install -Pquick
+        run: mvn --quiet clean --fail-at-end && mvn -B --quiet -T 2C install --fail-at-end -Pquick
       - name: Verify
-        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B verify -PskipUnitTests,skipSlowTests,-formatting -Dmaven.javadoc.skip -Denforcer.skip -Danimal.sniffer.skip
+        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B verify --fail-at-end -PskipUnitTests,skipSlowTests,-formatting -Dmaven.javadoc.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Publish Test Report
         if: failure()
         uses: ScalableCapital/action-surefire-report@v2.0.5
@@ -188,9 +188,9 @@ jobs:
           distribution: 'temurin'
           cache: maven
       - name: Build
-        run: mvn --quiet clean && mvn -B --quiet -T 2C install -Pquick
+        run: mvn --quiet clean --fail-at-end && mvn -B --quiet -T 2C install --fail-at-end -Pquick
       - name: Verify
-        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B verify -PslowTestsOnly,-skipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
+        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B verify --fail-at-end -PslowTestsOnly,-skipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Publish Test Report
         if: failure()
         uses: ScalableCapital/action-surefire-report@v2.0.5
@@ -212,9 +212,9 @@ jobs:
           distribution: 'temurin'
           cache: maven
       - name: Run install
-        run: mvn --quiet clean && mvn -B --quiet -T 2C install -Pquick
+        run: mvn --quiet clean --fail-at-end && mvn -B --quiet -T 2C install --fail-at-end -Pquick
       - name: Package assembly
-        run: mvn package -Passembly -DskipTests
+        run: mvn package --fail-at-end -Passembly -DskipTests
 
 
   e2e:
