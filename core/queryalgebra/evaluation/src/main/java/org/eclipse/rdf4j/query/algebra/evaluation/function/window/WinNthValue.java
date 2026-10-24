@@ -20,6 +20,6 @@ public class WinNthValue extends WindowFunctionPlaceholder {
 
 	@Override
 	public String getURI() {
-		return WINF.NTH_VALUE.stringValue();
+		return WINF.nthValue.stringValue();
 	}
 }

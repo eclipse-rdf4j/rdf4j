@@ -26,7 +26,7 @@ public class NgramsTupleFunction extends AbstractTupleFunction {
 
 	@Override
 	public String getURI() {
-		return TEXTF.NGRAMS.stringValue();
+		return TEXTF.ngrams.stringValue();
 	}
 
 	@Override

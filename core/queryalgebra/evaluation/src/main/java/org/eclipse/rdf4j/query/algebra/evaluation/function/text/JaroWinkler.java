@@ -26,7 +26,7 @@ public class JaroWinkler extends TextFunction {
 
 	@Override
 	public String getURI() {
-		return TEXTF.JARO_WINKLER.stringValue();
+		return TEXTF.jaroWinkler.stringValue();
 	}
 
 	@Override

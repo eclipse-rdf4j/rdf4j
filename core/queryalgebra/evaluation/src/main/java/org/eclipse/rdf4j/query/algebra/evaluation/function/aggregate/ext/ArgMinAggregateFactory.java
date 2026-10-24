@@ -22,7 +22,7 @@ public class ArgMinAggregateFactory extends AbstractNAryAggregateFactory {
 
 	@Override
 	public String getIri() {
-		return AGGF.ARG_MIN.stringValue();
+		return AGGF.argMin.stringValue();
 	}
 
 	@Override

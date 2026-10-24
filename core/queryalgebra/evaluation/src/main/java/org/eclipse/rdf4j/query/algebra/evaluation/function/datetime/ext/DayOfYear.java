@@ -25,7 +25,7 @@ public class DayOfYear extends DateTimeFunction {
 
 	@Override
 	public String getURI() {
-		return DTF.DAY_OF_YEAR.stringValue();
+		return DTF.dayOfYear.stringValue();
 	}
 
 	@Override

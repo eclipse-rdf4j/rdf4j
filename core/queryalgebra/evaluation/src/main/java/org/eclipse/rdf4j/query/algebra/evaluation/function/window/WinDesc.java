@@ -20,6 +20,6 @@ public class WinDesc extends WindowFunctionPlaceholder {
 
 	@Override
 	public String getURI() {
-		return WINF.DESC.stringValue();
+		return WINF.desc.stringValue();
 	}
 }

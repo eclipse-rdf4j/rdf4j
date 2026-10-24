@@ -26,7 +26,7 @@ public class InitCap extends StringFunction {
 
 	@Override
 	public String getURI() {
-		return STRF.INIT_CAP.stringValue();
+		return STRF.initCap.stringValue();
 	}
 
 	@Override

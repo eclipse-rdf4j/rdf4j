@@ -28,7 +28,7 @@ public class JsonQuery extends JsonFunction {
 
 	@Override
 	public String getURI() {
-		return JSONF.JSON_QUERY.stringValue();
+		return JSONF.jsonQuery.stringValue();
 	}
 
 	@Override

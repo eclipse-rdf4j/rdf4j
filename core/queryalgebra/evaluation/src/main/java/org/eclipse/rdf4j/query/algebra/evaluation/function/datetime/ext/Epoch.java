@@ -26,7 +26,7 @@ public class Epoch extends DateTimeFunction {
 
 	@Override
 	public String getURI() {
-		return DTF.EPOCH.stringValue();
+		return DTF.epoch.stringValue();
 	}
 
 	@Override

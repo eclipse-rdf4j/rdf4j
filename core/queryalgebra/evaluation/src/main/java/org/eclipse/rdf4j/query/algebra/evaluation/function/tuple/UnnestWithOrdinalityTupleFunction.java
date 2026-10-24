@@ -33,7 +33,7 @@ public class UnnestWithOrdinalityTupleFunction extends AbstractTupleFunction {
 
 	@Override
 	public String getURI() {
-		return ARRAYF.UNNEST_WITH_ORDINALITY.stringValue();
+		return ARRAYF.unnestWithOrdinality.stringValue();
 	}
 
 	@Override

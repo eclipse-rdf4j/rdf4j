@@ -33,7 +33,7 @@ public class DateAdd extends DateTimeFunction {
 
 	@Override
 	public String getURI() {
-		return DTF.DATE_ADD.stringValue();
+		return DTF.dateAdd.stringValue();
 	}
 
 	@Override

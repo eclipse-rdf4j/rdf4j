@@ -25,7 +25,7 @@ public class Trim extends StringFunction {
 
 	@Override
 	public String getURI() {
-		return STRF.TRIM.stringValue();
+		return STRF.trim.stringValue();
 	}
 
 	@Override

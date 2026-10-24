@@ -20,6 +20,6 @@ public class WinLag extends WindowFunctionPlaceholder {
 
 	@Override
 	public String getURI() {
-		return WINF.LAG.stringValue();
+		return WINF.lag.stringValue();
 	}
 }

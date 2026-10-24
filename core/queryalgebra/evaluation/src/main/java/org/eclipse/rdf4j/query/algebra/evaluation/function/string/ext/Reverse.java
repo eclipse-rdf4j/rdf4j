@@ -25,7 +25,7 @@ public class Reverse extends StringFunction {
 
 	@Override
 	public String getURI() {
-		return STRF.REVERSE.stringValue();
+		return STRF.reverse.stringValue();
 	}
 
 	@Override

@@ -20,6 +20,6 @@ public class WinSum extends WindowFunctionPlaceholder {
 
 	@Override
 	public String getURI() {
-		return WINF.SUM.stringValue();
+		return WINF.sum.stringValue();
 	}
 }

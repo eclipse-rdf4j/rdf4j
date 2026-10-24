@@ -26,7 +26,7 @@ public class EpochMillis extends DateTimeFunction {
 
 	@Override
 	public String getURI() {
-		return DTF.EPOCH_MILLIS.stringValue();
+		return DTF.epochMillis.stringValue();
 	}
 
 	@Override

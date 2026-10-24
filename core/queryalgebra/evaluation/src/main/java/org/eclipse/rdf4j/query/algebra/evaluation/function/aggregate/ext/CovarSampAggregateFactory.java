@@ -23,7 +23,7 @@ public class CovarSampAggregateFactory extends AbstractNAryAggregateFactory {
 
 	@Override
 	public String getIri() {
-		return AGGF.COVAR_SAMP.stringValue();
+		return AGGF.covarSamp.stringValue();
 	}
 
 	@Override

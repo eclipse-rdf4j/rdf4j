@@ -28,7 +28,7 @@ public class ILike extends TextFunction {
 
 	@Override
 	public String getURI() {
-		return TEXTF.ILIKE.stringValue();
+		return TEXTF.ilike.stringValue();
 	}
 
 	@Override

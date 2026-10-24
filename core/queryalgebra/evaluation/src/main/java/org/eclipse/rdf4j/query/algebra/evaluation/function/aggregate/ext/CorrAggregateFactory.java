@@ -23,7 +23,7 @@ public class CorrAggregateFactory extends AbstractNAryAggregateFactory {
 
 	@Override
 	public String getIri() {
-		return AGGF.CORR.stringValue();
+		return AGGF.corr.stringValue();
 	}
 
 	@Override

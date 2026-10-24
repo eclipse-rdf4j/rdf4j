@@ -22,7 +22,7 @@ public class BitNot extends BitwiseFunction {
 
 	@Override
 	public String getURI() {
-		return BITF.BIT_NOT.stringValue();
+		return BITF.bitNot.stringValue();
 	}
 
 	@Override

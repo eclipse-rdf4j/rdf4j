@@ -25,7 +25,7 @@ public class Chr extends StringFunction {
 
 	@Override
 	public String getURI() {
-		return STRF.CHR.stringValue();
+		return STRF.chr.stringValue();
 	}
 
 	@Override

@@ -22,7 +22,7 @@ public class BitOr extends BitwiseFunction {
 
 	@Override
 	public String getURI() {
-		return BITF.BIT_OR.stringValue();
+		return BITF.bitOr.stringValue();
 	}
 
 	@Override

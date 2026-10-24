@@ -26,7 +26,7 @@ public class Length extends GeoExtensionFunction {
 
 	@Override
 	public String getURI() {
-		return GEOX.LENGTH.stringValue();
+		return GEOX.length.stringValue();
 	}
 
 	@Override

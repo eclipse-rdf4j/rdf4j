@@ -20,6 +20,6 @@ public class WinNtile extends WindowFunctionPlaceholder {
 
 	@Override
 	public String getURI() {
-		return WINF.NTILE.stringValue();
+		return WINF.ntile.stringValue();
 	}
 }

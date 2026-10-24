@@ -25,7 +25,7 @@ public class Round extends AbstractScaleFunction {
 
 	@Override
 	public String getURI() {
-		return MATHF.ROUND.stringValue();
+		return MATHF.round.stringValue();
 	}
 
 	@Override

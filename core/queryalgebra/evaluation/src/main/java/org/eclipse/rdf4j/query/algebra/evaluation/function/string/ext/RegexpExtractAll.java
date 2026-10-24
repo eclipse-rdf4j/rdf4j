@@ -35,7 +35,7 @@ public class RegexpExtractAll extends StringFunction {
 
 	@Override
 	public String getURI() {
-		return STRF.REGEXP_EXTRACT_ALL.stringValue();
+		return STRF.regexpExtractAll.stringValue();
 	}
 
 	@Override

@@ -31,7 +31,7 @@ public class DateDiff extends DateTimeFunction {
 
 	@Override
 	public String getURI() {
-		return DTF.DATE_DIFF.stringValue();
+		return DTF.dateDiff.stringValue();
 	}
 
 	@Override

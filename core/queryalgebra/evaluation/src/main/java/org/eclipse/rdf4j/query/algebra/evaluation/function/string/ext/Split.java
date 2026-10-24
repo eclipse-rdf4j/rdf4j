@@ -33,7 +33,7 @@ public class Split extends StringFunction {
 
 	@Override
 	public String getURI() {
-		return STRF.SPLIT.stringValue();
+		return STRF.split.stringValue();
 	}
 
 	@Override

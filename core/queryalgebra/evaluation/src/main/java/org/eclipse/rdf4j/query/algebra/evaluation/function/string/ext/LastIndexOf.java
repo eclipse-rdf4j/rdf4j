@@ -29,7 +29,7 @@ public class LastIndexOf extends StringFunction {
 
 	@Override
 	public String getURI() {
-		return STRF.LAST_INDEX_OF.stringValue();
+		return STRF.lastIndexOf.stringValue();
 	}
 
 	@Override

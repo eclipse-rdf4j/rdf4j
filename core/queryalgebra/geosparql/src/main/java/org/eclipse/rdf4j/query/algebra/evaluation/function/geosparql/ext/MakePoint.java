@@ -27,7 +27,7 @@ public class MakePoint extends GeoExtensionFunction {
 
 	@Override
 	public String getURI() {
-		return GEOX.MAKE_POINT.stringValue();
+		return GEOX.makePoint.stringValue();
 	}
 
 	@Override

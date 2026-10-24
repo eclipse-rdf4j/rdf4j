@@ -31,7 +31,7 @@ public class Ngrams extends TextFunction {
 
 	@Override
 	public String getURI() {
-		return TEXTF.NGRAMS.stringValue();
+		return TEXTF.ngrams.stringValue();
 	}
 
 	@Override

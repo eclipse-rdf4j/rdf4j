@@ -22,7 +22,7 @@ public class ArgMaxAggregateFactory extends AbstractNAryAggregateFactory {
 
 	@Override
 	public String getIri() {
-		return AGGF.ARG_MAX.stringValue();
+		return AGGF.argMax.stringValue();
 	}
 
 	@Override

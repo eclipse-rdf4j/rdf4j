@@ -27,7 +27,7 @@ public class SplitPart extends StringFunction {
 
 	@Override
 	public String getURI() {
-		return STRF.SPLIT_PART.stringValue();
+		return STRF.splitPart.stringValue();
 	}
 
 	@Override

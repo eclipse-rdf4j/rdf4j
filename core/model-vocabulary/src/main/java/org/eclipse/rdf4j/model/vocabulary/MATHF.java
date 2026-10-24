@@ -46,73 +46,73 @@ public final class MATHF {
 	public static final String XPATH_MATH_NAMESPACE = "http://www.w3.org/2005/xpath-functions/math#";
 
 	/** http://rdf4j.org/function/math#sqrt */
-	public static final IRI SQRT = create("sqrt");
+	public static final IRI sqrt = create("sqrt");
 
 	/** http://rdf4j.org/function/math#cbrt */
-	public static final IRI CBRT = create("cbrt");
+	public static final IRI cbrt = create("cbrt");
 
 	/** http://rdf4j.org/function/math#pow */
-	public static final IRI POW = create("pow");
+	public static final IRI pow = create("pow");
 
 	/** http://rdf4j.org/function/math#exp */
-	public static final IRI EXP = create("exp");
+	public static final IRI exp = create("exp");
 
 	/** http://rdf4j.org/function/math#ln */
-	public static final IRI LN = create("ln");
+	public static final IRI ln = create("ln");
 
 	/** http://rdf4j.org/function/math#log10 */
-	public static final IRI LOG10 = create("log10");
+	public static final IRI log10 = create("log10");
 
 	/** http://rdf4j.org/function/math#log2 */
-	public static final IRI LOG2 = create("log2");
+	public static final IRI log2 = create("log2");
 
 	/** http://rdf4j.org/function/math#sin */
-	public static final IRI SIN = create("sin");
+	public static final IRI sin = create("sin");
 
 	/** http://rdf4j.org/function/math#cos */
-	public static final IRI COS = create("cos");
+	public static final IRI cos = create("cos");
 
 	/** http://rdf4j.org/function/math#tan */
-	public static final IRI TAN = create("tan");
+	public static final IRI tan = create("tan");
 
 	/** http://rdf4j.org/function/math#asin */
-	public static final IRI ASIN = create("asin");
+	public static final IRI asin = create("asin");
 
 	/** http://rdf4j.org/function/math#acos */
-	public static final IRI ACOS = create("acos");
+	public static final IRI acos = create("acos");
 
 	/** http://rdf4j.org/function/math#atan */
-	public static final IRI ATAN = create("atan");
+	public static final IRI atan = create("atan");
 
 	/** http://rdf4j.org/function/math#atan2 */
-	public static final IRI ATAN2 = create("atan2");
+	public static final IRI atan2 = create("atan2");
 
 	/** http://rdf4j.org/function/math#hypot */
-	public static final IRI HYPOT = create("hypot");
+	public static final IRI hypot = create("hypot");
 
 	/** http://rdf4j.org/function/math#sign */
-	public static final IRI SIGN = create("sign");
+	public static final IRI sign = create("sign");
 
 	/** http://rdf4j.org/function/math#trunc */
-	public static final IRI TRUNC = create("trunc");
+	public static final IRI trunc = create("trunc");
 
 	/** http://rdf4j.org/function/math#round */
-	public static final IRI ROUND = create("round");
+	public static final IRI round = create("round");
 
 	/** http://rdf4j.org/function/math#mod */
-	public static final IRI MOD = create("mod");
+	public static final IRI mod = create("mod");
 
 	/** http://rdf4j.org/function/math#greatest */
-	public static final IRI GREATEST = create("greatest");
+	public static final IRI greatest = create("greatest");
 
 	/** http://rdf4j.org/function/math#least */
-	public static final IRI LEAST = create("least");
+	public static final IRI least = create("least");
 
 	/** http://rdf4j.org/function/math#pi */
-	public static final IRI PI = create("pi");
+	public static final IRI pi = create("pi");
 
 	/** http://rdf4j.org/function/math#decimalFormat */
-	public static final IRI DECIMAL_FORMAT = create("decimalFormat");
+	public static final IRI decimalFormat = create("decimalFormat");
 
 	private static IRI create(String localName) {
 		return Vocabularies.createIRI(NAMESPACE, localName);

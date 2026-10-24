@@ -20,6 +20,6 @@ public class WinOrderBy extends WindowFunctionPlaceholder {
 
 	@Override
 	public String getURI() {
-		return WINF.ORDER_BY.stringValue();
+		return WINF.orderBy.stringValue();
 	}
 }

@@ -40,55 +40,55 @@ public final class DTF {
 	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	/** http://rdf4j.org/function/datetime#dateTrunc */
-	public static final IRI DATE_TRUNC = create("dateTrunc");
+	public static final IRI dateTrunc = create("dateTrunc");
 
 	/** http://rdf4j.org/function/datetime#dateBin */
-	public static final IRI DATE_BIN = create("dateBin");
+	public static final IRI dateBin = create("dateBin");
 
 	/** http://rdf4j.org/function/datetime#dateDiff */
-	public static final IRI DATE_DIFF = create("dateDiff");
+	public static final IRI dateDiff = create("dateDiff");
 
 	/** http://rdf4j.org/function/datetime#dateAdd */
-	public static final IRI DATE_ADD = create("dateAdd");
+	public static final IRI dateAdd = create("dateAdd");
 
 	/** http://rdf4j.org/function/datetime#dayOfWeek */
-	public static final IRI DAY_OF_WEEK = create("dayOfWeek");
+	public static final IRI dayOfWeek = create("dayOfWeek");
 
 	/** http://rdf4j.org/function/datetime#dayOfYear */
-	public static final IRI DAY_OF_YEAR = create("dayOfYear");
+	public static final IRI dayOfYear = create("dayOfYear");
 
 	/** http://rdf4j.org/function/datetime#week */
-	public static final IRI WEEK = create("week");
+	public static final IRI week = create("week");
 
 	/** http://rdf4j.org/function/datetime#quarter */
-	public static final IRI QUARTER = create("quarter");
+	public static final IRI quarter = create("quarter");
 
 	/** http://rdf4j.org/function/datetime#epoch */
-	public static final IRI EPOCH = create("epoch");
+	public static final IRI epoch = create("epoch");
 
 	/** http://rdf4j.org/function/datetime#epochMillis */
-	public static final IRI EPOCH_MILLIS = create("epochMillis");
+	public static final IRI epochMillis = create("epochMillis");
 
 	/** http://rdf4j.org/function/datetime#fromUnixtime */
-	public static final IRI FROM_UNIXTIME = create("fromUnixtime");
+	public static final IRI fromUnixtime = create("fromUnixtime");
 
 	/** http://rdf4j.org/function/datetime#fromEpochMillis */
-	public static final IRI FROM_EPOCH_MILLIS = create("fromEpochMillis");
+	public static final IRI fromEpochMillis = create("fromEpochMillis");
 
 	/** http://rdf4j.org/function/datetime#dateFormat */
-	public static final IRI DATE_FORMAT = create("dateFormat");
+	public static final IRI dateFormat = create("dateFormat");
 
 	/** http://rdf4j.org/function/datetime#parseDate */
-	public static final IRI PARSE_DATE = create("parseDate");
+	public static final IRI parseDate = create("parseDate");
 
 	/** http://rdf4j.org/function/datetime#makeDate */
-	public static final IRI MAKE_DATE = create("makeDate");
+	public static final IRI makeDate = create("makeDate");
 
 	/** http://rdf4j.org/function/datetime#age */
-	public static final IRI AGE = create("age");
+	public static final IRI age = create("age");
 
 	/** http://rdf4j.org/function/datetime#atTimeZone */
-	public static final IRI AT_TIME_ZONE = create("atTimeZone");
+	public static final IRI atTimeZone = create("atTimeZone");
 
 	private static IRI create(String localName) {
 		return Vocabularies.createIRI(NAMESPACE, localName);

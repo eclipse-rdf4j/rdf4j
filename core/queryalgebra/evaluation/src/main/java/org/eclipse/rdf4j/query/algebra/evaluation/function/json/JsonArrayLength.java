@@ -29,7 +29,7 @@ public class JsonArrayLength extends JsonFunction {
 
 	@Override
 	public String getURI() {
-		return JSONF.JSON_ARRAY_LENGTH.stringValue();
+		return JSONF.jsonArrayLength.stringValue();
 	}
 
 	@Override

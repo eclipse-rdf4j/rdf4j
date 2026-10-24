@@ -22,7 +22,7 @@ public class BitShiftRight extends BitwiseFunction {
 
 	@Override
 	public String getURI() {
-		return BITF.BIT_SHIFT_RIGHT.stringValue();
+		return BITF.bitShiftRight.stringValue();
 	}
 
 	@Override

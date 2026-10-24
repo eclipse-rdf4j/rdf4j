@@ -20,7 +20,7 @@ public class Sin extends UnaryDoubleFunction {
 
 	@Override
 	public String getURI() {
-		return MATHF.SIN.stringValue();
+		return MATHF.sin.stringValue();
 	}
 
 	@Override

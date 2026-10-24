@@ -35,7 +35,7 @@ public class DateTrunc extends DateTimeFunction {
 
 	@Override
 	public String getURI() {
-		return DTF.DATE_TRUNC.stringValue();
+		return DTF.dateTrunc.stringValue();
 	}
 
 	@Override

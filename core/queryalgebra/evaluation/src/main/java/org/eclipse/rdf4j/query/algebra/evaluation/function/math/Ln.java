@@ -21,7 +21,7 @@ public class Ln extends UnaryDoubleFunction {
 
 	@Override
 	public String getURI() {
-		return MATHF.LN.stringValue();
+		return MATHF.ln.stringValue();
 	}
 
 	@Override

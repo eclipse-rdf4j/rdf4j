@@ -40,25 +40,25 @@ public final class ENCF {
 	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	/** http://rdf4j.org/function/encoding#base64Encode */
-	public static final IRI BASE64_ENCODE = create("base64Encode");
+	public static final IRI base64Encode = create("base64Encode");
 
 	/** http://rdf4j.org/function/encoding#base64Decode */
-	public static final IRI BASE64_DECODE = create("base64Decode");
+	public static final IRI base64Decode = create("base64Decode");
 
 	/** http://rdf4j.org/function/encoding#toHex */
-	public static final IRI TO_HEX = create("toHex");
+	public static final IRI toHex = create("toHex");
 
 	/** http://rdf4j.org/function/encoding#fromHex */
-	public static final IRI FROM_HEX = create("fromHex");
+	public static final IRI fromHex = create("fromHex");
 
 	/** http://rdf4j.org/function/encoding#crc32 */
-	public static final IRI CRC32 = create("crc32");
+	public static final IRI crc32 = create("crc32");
 
 	/** http://rdf4j.org/function/encoding#xxhash64 */
-	public static final IRI XXHASH64 = create("xxhash64");
+	public static final IRI xxhash64 = create("xxhash64");
 
 	/** http://rdf4j.org/function/encoding#hmac */
-	public static final IRI HMAC = create("hmac");
+	public static final IRI hmac = create("hmac");
 
 	private static IRI create(String localName) {
 		return Vocabularies.createIRI(NAMESPACE, localName);

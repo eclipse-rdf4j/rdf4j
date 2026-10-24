@@ -20,6 +20,6 @@ public class WinPartitionBy extends WindowFunctionPlaceholder {
 
 	@Override
 	public String getURI() {
-		return WINF.PARTITION_BY.stringValue();
+		return WINF.partitionBy.stringValue();
 	}
 }

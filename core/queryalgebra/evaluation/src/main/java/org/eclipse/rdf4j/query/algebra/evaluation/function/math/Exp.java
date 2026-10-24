@@ -21,7 +21,7 @@ public class Exp extends UnaryDoubleFunction {
 
 	@Override
 	public String getURI() {
-		return MATHF.EXP.stringValue();
+		return MATHF.exp.stringValue();
 	}
 
 	@Override

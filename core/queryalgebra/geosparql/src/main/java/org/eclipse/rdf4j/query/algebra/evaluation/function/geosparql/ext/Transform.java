@@ -27,7 +27,7 @@ public class Transform extends GeoExtensionFunction {
 
 	@Override
 	public String getURI() {
-		return GEOX.TRANSFORM.stringValue();
+		return GEOX.transform.stringValue();
 	}
 
 	@Override

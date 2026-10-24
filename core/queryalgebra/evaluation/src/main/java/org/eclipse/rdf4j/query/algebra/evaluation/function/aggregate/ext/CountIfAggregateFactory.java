@@ -29,7 +29,7 @@ public class CountIfAggregateFactory extends AbstractUnaryAggregateFactory {
 
 	@Override
 	public String getIri() {
-		return AGGF.COUNT_IF.stringValue();
+		return AGGF.countIf.stringValue();
 	}
 
 	@Override

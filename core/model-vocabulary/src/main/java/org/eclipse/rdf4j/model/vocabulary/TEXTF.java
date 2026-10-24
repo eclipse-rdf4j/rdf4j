@@ -40,34 +40,34 @@ public final class TEXTF {
 	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	/** http://rdf4j.org/function/text#levenshtein */
-	public static final IRI LEVENSHTEIN = create("levenshtein");
+	public static final IRI levenshtein = create("levenshtein");
 
 	/** http://rdf4j.org/function/text#damerauLevenshtein */
-	public static final IRI DAMERAU_LEVENSHTEIN = create("damerauLevenshtein");
+	public static final IRI damerauLevenshtein = create("damerauLevenshtein");
 
 	/** http://rdf4j.org/function/text#jaroSimilarity */
-	public static final IRI JARO_SIMILARITY = create("jaroSimilarity");
+	public static final IRI jaroSimilarity = create("jaroSimilarity");
 
 	/** http://rdf4j.org/function/text#jaroWinkler */
-	public static final IRI JARO_WINKLER = create("jaroWinkler");
+	public static final IRI jaroWinkler = create("jaroWinkler");
 
 	/** http://rdf4j.org/function/text#soundex */
-	public static final IRI SOUNDEX = create("soundex");
+	public static final IRI soundex = create("soundex");
 
 	/** http://rdf4j.org/function/text#metaphone */
-	public static final IRI METAPHONE = create("metaphone");
+	public static final IRI metaphone = create("metaphone");
 
 	/** http://rdf4j.org/function/text#trigramSimilarity */
-	public static final IRI TRIGRAM_SIMILARITY = create("trigramSimilarity");
+	public static final IRI trigramSimilarity = create("trigramSimilarity");
 
 	/** http://rdf4j.org/function/text#ilike */
-	public static final IRI ILIKE = create("ilike");
+	public static final IRI ilike = create("ilike");
 
 	/** http://rdf4j.org/function/text#tokenize */
-	public static final IRI TOKENIZE = create("tokenize");
+	public static final IRI tokenize = create("tokenize");
 
 	/** http://rdf4j.org/function/text#ngrams */
-	public static final IRI NGRAMS = create("ngrams");
+	public static final IRI ngrams = create("ngrams");
 
 	private static IRI create(String localName) {
 		return Vocabularies.createIRI(NAMESPACE, localName);

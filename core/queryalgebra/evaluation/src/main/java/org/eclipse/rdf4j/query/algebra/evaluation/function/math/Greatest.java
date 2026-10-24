@@ -20,7 +20,7 @@ public class Greatest extends AbstractExtremumFunction {
 
 	@Override
 	public String getURI() {
-		return MATHF.GREATEST.stringValue();
+		return MATHF.greatest.stringValue();
 	}
 
 	@Override

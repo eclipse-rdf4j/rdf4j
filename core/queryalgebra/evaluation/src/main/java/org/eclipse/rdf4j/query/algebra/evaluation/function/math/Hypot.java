@@ -21,7 +21,7 @@ public class Hypot extends BinaryDoubleFunction {
 
 	@Override
 	public String getURI() {
-		return MATHF.HYPOT.stringValue();
+		return MATHF.hypot.stringValue();
 	}
 
 	@Override

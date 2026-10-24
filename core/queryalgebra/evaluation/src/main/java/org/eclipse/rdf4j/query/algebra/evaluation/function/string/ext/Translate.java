@@ -27,7 +27,7 @@ public class Translate extends StringFunction {
 
 	@Override
 	public String getURI() {
-		return STRF.TRANSLATE.stringValue();
+		return STRF.translate.stringValue();
 	}
 
 	@Override

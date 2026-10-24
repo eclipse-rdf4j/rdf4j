@@ -20,6 +20,6 @@ public class WinCount extends WindowFunctionPlaceholder {
 
 	@Override
 	public String getURI() {
-		return WINF.COUNT.stringValue();
+		return WINF.count.stringValue();
 	}
 }

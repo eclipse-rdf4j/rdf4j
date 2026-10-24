@@ -29,7 +29,7 @@ public class ArrayAggAggregateFactory extends AbstractUnaryAggregateFactory {
 
 	@Override
 	public String getIri() {
-		return AGGF.ARRAY_AGG.stringValue();
+		return AGGF.arrayAgg.stringValue();
 	}
 
 	@Override

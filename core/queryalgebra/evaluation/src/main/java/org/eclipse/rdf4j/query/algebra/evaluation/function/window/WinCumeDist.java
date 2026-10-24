@@ -20,6 +20,6 @@ public class WinCumeDist extends WindowFunctionPlaceholder {
 
 	@Override
 	public String getURI() {
-		return WINF.CUME_DIST.stringValue();
+		return WINF.cumeDist.stringValue();
 	}
 }

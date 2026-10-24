@@ -26,7 +26,7 @@ public class JsonSet extends JsonFunction {
 
 	@Override
 	public String getURI() {
-		return JSONF.JSON_SET.stringValue();
+		return JSONF.jsonSet.stringValue();
 	}
 
 	@Override

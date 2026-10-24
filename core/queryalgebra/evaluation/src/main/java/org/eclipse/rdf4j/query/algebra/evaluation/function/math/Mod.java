@@ -31,7 +31,7 @@ public class Mod extends MathFunction {
 
 	@Override
 	public String getURI() {
-		return MATHF.MOD.stringValue();
+		return MATHF.mod.stringValue();
 	}
 
 	@Override

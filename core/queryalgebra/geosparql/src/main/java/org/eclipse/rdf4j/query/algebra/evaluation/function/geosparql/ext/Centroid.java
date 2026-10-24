@@ -24,7 +24,7 @@ public class Centroid extends GeoExtensionFunction {
 
 	@Override
 	public String getURI() {
-		return GEOX.CENTROID.stringValue();
+		return GEOX.centroid.stringValue();
 	}
 
 	@Override

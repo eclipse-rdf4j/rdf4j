@@ -21,7 +21,7 @@ public class Atan2 extends BinaryDoubleFunction {
 
 	@Override
 	public String getURI() {
-		return MATHF.ATAN2.stringValue();
+		return MATHF.atan2.stringValue();
 	}
 
 	@Override

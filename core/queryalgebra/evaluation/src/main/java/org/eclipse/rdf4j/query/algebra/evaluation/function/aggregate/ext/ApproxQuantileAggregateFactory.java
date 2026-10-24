@@ -34,7 +34,7 @@ public class ApproxQuantileAggregateFactory extends AbstractNAryAggregateFactory
 
 	@Override
 	public String getIri() {
-		return AGGF.APPROX_QUANTILE.stringValue();
+		return AGGF.approxQuantile.stringValue();
 	}
 
 	@Override

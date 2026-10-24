@@ -20,6 +20,6 @@ public class WinMax extends WindowFunctionPlaceholder {
 
 	@Override
 	public String getURI() {
-		return WINF.MAX.stringValue();
+		return WINF.max.stringValue();
 	}
 }

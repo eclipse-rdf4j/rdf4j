@@ -20,7 +20,7 @@ public class Least extends AbstractExtremumFunction {
 
 	@Override
 	public String getURI() {
-		return MATHF.LEAST.stringValue();
+		return MATHF.least.stringValue();
 	}
 
 	@Override

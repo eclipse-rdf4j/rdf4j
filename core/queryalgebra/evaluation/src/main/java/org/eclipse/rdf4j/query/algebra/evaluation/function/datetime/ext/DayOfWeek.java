@@ -25,7 +25,7 @@ public class DayOfWeek extends DateTimeFunction {
 
 	@Override
 	public String getURI() {
-		return DTF.DAY_OF_WEEK.stringValue();
+		return DTF.dayOfWeek.stringValue();
 	}
 
 	@Override

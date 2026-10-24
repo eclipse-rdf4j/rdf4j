@@ -25,7 +25,7 @@ public class Quarter extends DateTimeFunction {
 
 	@Override
 	public String getURI() {
-		return DTF.QUARTER.stringValue();
+		return DTF.quarter.stringValue();
 	}
 
 	@Override

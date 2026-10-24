@@ -30,7 +30,7 @@ public class TrigramSimilarity extends TextFunction {
 
 	@Override
 	public String getURI() {
-		return TEXTF.TRIGRAM_SIMILARITY.stringValue();
+		return TEXTF.trigramSimilarity.stringValue();
 	}
 
 	@Override

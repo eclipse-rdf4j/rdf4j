@@ -21,7 +21,7 @@ public class LPad extends AbstractPadFunction {
 
 	@Override
 	public String getURI() {
-		return STRF.LPAD.stringValue();
+		return STRF.lpad.stringValue();
 	}
 
 	@Override

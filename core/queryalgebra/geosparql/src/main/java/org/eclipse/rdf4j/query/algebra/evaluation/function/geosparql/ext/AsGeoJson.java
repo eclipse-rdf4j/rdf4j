@@ -36,7 +36,7 @@ public class AsGeoJson extends GeoExtensionFunction {
 
 	@Override
 	public String getURI() {
-		return GEOX.AS_GEO_JSON.stringValue();
+		return GEOX.asGeoJSON.stringValue();
 	}
 
 	@Override

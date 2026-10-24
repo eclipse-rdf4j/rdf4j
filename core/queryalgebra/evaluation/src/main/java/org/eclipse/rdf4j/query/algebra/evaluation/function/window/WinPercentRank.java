@@ -20,6 +20,6 @@ public class WinPercentRank extends WindowFunctionPlaceholder {
 
 	@Override
 	public String getURI() {
-		return WINF.PERCENT_RANK.stringValue();
+		return WINF.percentRank.stringValue();
 	}
 }

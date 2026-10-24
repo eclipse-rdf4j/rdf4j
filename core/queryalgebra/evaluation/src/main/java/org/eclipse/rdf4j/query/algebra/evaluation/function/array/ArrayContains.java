@@ -30,7 +30,7 @@ public class ArrayContains extends ArrayFunction {
 
 	@Override
 	public String getURI() {
-		return ARRAYF.ARRAY_CONTAINS.stringValue();
+		return ARRAYF.arrayContains.stringValue();
 	}
 
 	@Override

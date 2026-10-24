@@ -28,7 +28,7 @@ public class Base64Decode extends EncodingFunction {
 
 	@Override
 	public String getURI() {
-		return ENCF.BASE64_DECODE.stringValue();
+		return ENCF.base64Decode.stringValue();
 	}
 
 	@Override

@@ -20,7 +20,7 @@ public class Tan extends UnaryDoubleFunction {
 
 	@Override
 	public String getURI() {
-		return MATHF.TAN.stringValue();
+		return MATHF.tan.stringValue();
 	}
 
 	@Override

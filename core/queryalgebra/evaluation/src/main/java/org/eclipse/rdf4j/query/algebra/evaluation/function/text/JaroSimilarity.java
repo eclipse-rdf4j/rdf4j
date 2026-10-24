@@ -26,7 +26,7 @@ public class JaroSimilarity extends TextFunction {
 
 	@Override
 	public String getURI() {
-		return TEXTF.JARO_SIMILARITY.stringValue();
+		return TEXTF.jaroSimilarity.stringValue();
 	}
 
 	@Override

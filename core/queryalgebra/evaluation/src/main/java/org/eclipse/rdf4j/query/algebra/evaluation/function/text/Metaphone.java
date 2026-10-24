@@ -30,7 +30,7 @@ public class Metaphone extends TextFunction {
 
 	@Override
 	public String getURI() {
-		return TEXTF.METAPHONE.stringValue();
+		return TEXTF.metaphone.stringValue();
 	}
 
 	@Override

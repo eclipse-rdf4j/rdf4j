@@ -28,7 +28,7 @@ public class Ascii extends StringFunction {
 
 	@Override
 	public String getURI() {
-		return STRF.ASCII.stringValue();
+		return STRF.ascii.stringValue();
 	}
 
 	@Override

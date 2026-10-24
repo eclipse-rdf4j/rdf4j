@@ -20,6 +20,6 @@ public class WinRowNumber extends WindowFunctionPlaceholder {
 
 	@Override
 	public String getURI() {
-		return WINF.ROW_NUMBER.stringValue();
+		return WINF.rowNumber.stringValue();
 	}
 }

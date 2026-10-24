@@ -20,6 +20,6 @@ public class WinAvg extends WindowFunctionPlaceholder {
 
 	@Override
 	public String getURI() {
-		return WINF.AVG.stringValue();
+		return WINF.avg.stringValue();
 	}
 }

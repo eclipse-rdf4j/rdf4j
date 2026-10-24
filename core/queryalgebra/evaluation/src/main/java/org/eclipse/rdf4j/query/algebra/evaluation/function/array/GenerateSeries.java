@@ -42,7 +42,7 @@ public class GenerateSeries extends ArrayFunction {
 
 	@Override
 	public String getURI() {
-		return ARRAYF.GENERATE_SERIES.stringValue();
+		return ARRAYF.generateSeries.stringValue();
 	}
 
 	@Override

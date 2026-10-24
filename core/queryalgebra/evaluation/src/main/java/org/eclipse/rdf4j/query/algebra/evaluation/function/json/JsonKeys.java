@@ -29,7 +29,7 @@ public class JsonKeys extends JsonFunction {
 
 	@Override
 	public String getURI() {
-		return JSONF.JSON_KEYS.stringValue();
+		return JSONF.jsonKeys.stringValue();
 	}
 
 	@Override

@@ -20,6 +20,6 @@ public class WinRank extends WindowFunctionPlaceholder {
 
 	@Override
 	public String getURI() {
-		return WINF.RANK.stringValue();
+		return WINF.rank.stringValue();
 	}
 }

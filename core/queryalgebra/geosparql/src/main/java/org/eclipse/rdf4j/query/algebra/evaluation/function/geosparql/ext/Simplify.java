@@ -27,7 +27,7 @@ public class Simplify extends GeoExtensionFunction {
 
 	@Override
 	public String getURI() {
-		return GEOX.SIMPLIFY.stringValue();
+		return GEOX.simplify.stringValue();
 	}
 
 	@Override

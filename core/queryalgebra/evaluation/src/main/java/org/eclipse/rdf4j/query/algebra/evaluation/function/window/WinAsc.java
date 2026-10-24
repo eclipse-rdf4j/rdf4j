@@ -20,6 +20,6 @@ public class WinAsc extends WindowFunctionPlaceholder {
 
 	@Override
 	public String getURI() {
-		return WINF.ASC.stringValue();
+		return WINF.asc.stringValue();
 	}
 }

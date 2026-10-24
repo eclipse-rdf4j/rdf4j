@@ -1056,24 +1056,24 @@ public class TupleExprToIrConverter {
 			expression.addArg(substituteBindings(argument, aggregates));
 		}
 		if (!call.getPartitionBy().isEmpty()) {
-			FunctionCall partition = new FunctionCall(WINF.PARTITION_BY.stringValue());
+			FunctionCall partition = new FunctionCall(WINF.partitionBy.stringValue());
 			for (ValueExpr key : call.getPartitionBy()) {
 				partition.addArg(substituteBindings(key, aggregates));
 			}
 			expression.addArg(partition);
 		}
 		if (!call.getOrderBy().isEmpty()) {
-			FunctionCall order = new FunctionCall(WINF.ORDER_BY.stringValue());
+			FunctionCall order = new FunctionCall(WINF.orderBy.stringValue());
 			for (OrderElem key : call.getOrderBy()) {
-				order.addArg(new FunctionCall((key.isAscending() ? WINF.ASC : WINF.DESC).stringValue(),
+				order.addArg(new FunctionCall((key.isAscending() ? WINF.asc : WINF.desc).stringValue(),
 						substituteBindings(key.getExpr(), aggregates)));
 			}
 			expression.addArg(order);
 		}
 		if (call.hasExplicitFrame()) {
 			expression.addArg(new FunctionCall((call.getFrameMode() == WindowFunctionCall.FrameMode.ROWS
-					? WINF.ROWS
-					: WINF.RANGE).stringValue(), frameBoundExpression(call.getFrameStart()),
+					? WINF.rows
+					: WINF.range).stringValue(), frameBoundExpression(call.getFrameStart()),
 					frameBoundExpression(call.getFrameEnd())));
 		}
 		return expression;

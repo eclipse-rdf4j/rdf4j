@@ -37,7 +37,7 @@ public class DecimalFormat extends MathFunction {
 
 	@Override
 	public String getURI() {
-		return MATHF.DECIMAL_FORMAT.stringValue();
+		return MATHF.decimalFormat.stringValue();
 	}
 
 	@Override

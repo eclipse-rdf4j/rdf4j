@@ -34,7 +34,7 @@ public class UnnestTupleFunction extends AbstractTupleFunction {
 
 	@Override
 	public String getURI() {
-		return ARRAYF.UNNEST.stringValue();
+		return ARRAYF.unnest.stringValue();
 	}
 
 	@Override

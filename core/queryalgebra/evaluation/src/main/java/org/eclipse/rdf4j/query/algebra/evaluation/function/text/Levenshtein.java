@@ -28,7 +28,7 @@ public class Levenshtein extends TextFunction {
 
 	@Override
 	public String getURI() {
-		return TEXTF.LEVENSHTEIN.stringValue();
+		return TEXTF.levenshtein.stringValue();
 	}
 
 	@Override

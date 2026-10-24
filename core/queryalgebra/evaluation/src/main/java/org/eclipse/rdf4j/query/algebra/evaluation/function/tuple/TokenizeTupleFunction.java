@@ -27,7 +27,7 @@ public class TokenizeTupleFunction extends AbstractTupleFunction {
 
 	@Override
 	public String getURI() {
-		return TEXTF.TOKENIZE.stringValue();
+		return TEXTF.tokenize.stringValue();
 	}
 
 	@Override

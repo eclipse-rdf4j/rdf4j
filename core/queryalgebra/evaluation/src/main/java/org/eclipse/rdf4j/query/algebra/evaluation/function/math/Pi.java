@@ -28,7 +28,7 @@ public class Pi extends MathFunction {
 
 	@Override
 	public String getURI() {
-		return MATHF.PI.stringValue();
+		return MATHF.pi.stringValue();
 	}
 
 	@Override

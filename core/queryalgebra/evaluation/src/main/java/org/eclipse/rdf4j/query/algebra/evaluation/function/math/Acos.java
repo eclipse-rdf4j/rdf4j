@@ -21,7 +21,7 @@ public class Acos extends UnaryDoubleFunction {
 
 	@Override
 	public String getURI() {
-		return MATHF.ACOS.stringValue();
+		return MATHF.acos.stringValue();
 	}
 
 	@Override

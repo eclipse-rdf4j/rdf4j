@@ -30,7 +30,7 @@ public class Normalize extends StringFunction {
 
 	@Override
 	public String getURI() {
-		return STRF.NORMALIZE.stringValue();
+		return STRF.normalize.stringValue();
 	}
 
 	@Override

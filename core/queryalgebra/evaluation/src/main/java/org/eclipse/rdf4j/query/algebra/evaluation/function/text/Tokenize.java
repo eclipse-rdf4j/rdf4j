@@ -31,7 +31,7 @@ public class Tokenize extends TextFunction {
 
 	@Override
 	public String getURI() {
-		return TEXTF.TOKENIZE.stringValue();
+		return TEXTF.tokenize.stringValue();
 	}
 
 	@Override

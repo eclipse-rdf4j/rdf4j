@@ -27,7 +27,7 @@ public class MedianAggregateFactory extends AbstractUnaryAggregateFactory {
 
 	@Override
 	public String getIri() {
-		return AGGF.MEDIAN.stringValue();
+		return AGGF.median.stringValue();
 	}
 
 	@Override

@@ -29,7 +29,7 @@ public class MakeDate extends DateTimeFunction {
 
 	@Override
 	public String getURI() {
-		return DTF.MAKE_DATE.stringValue();
+		return DTF.makeDate.stringValue();
 	}
 
 	@Override

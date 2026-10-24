@@ -28,7 +28,7 @@ public class ClosestPoint extends GeoExtensionFunction {
 
 	@Override
 	public String getURI() {
-		return GEOX.CLOSEST_POINT.stringValue();
+		return GEOX.closestPoint.stringValue();
 	}
 
 	@Override

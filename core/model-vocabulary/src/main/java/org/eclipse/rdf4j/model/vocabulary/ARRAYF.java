@@ -40,19 +40,19 @@ public final class ARRAYF {
 	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	/** http://rdf4j.org/function/array#arrayContains */
-	public static final IRI ARRAY_CONTAINS = create("arrayContains");
+	public static final IRI arrayContains = create("arrayContains");
 
 	/** http://rdf4j.org/function/array#arrayLength */
-	public static final IRI ARRAY_LENGTH = create("arrayLength");
+	public static final IRI arrayLength = create("arrayLength");
 
 	/** http://rdf4j.org/function/array#unnest */
-	public static final IRI UNNEST = create("unnest");
+	public static final IRI unnest = create("unnest");
 
 	/** http://rdf4j.org/function/array#unnestWithOrdinality */
-	public static final IRI UNNEST_WITH_ORDINALITY = create("unnestWithOrdinality");
+	public static final IRI unnestWithOrdinality = create("unnestWithOrdinality");
 
 	/** http://rdf4j.org/function/array#generateSeries */
-	public static final IRI GENERATE_SERIES = create("generateSeries");
+	public static final IRI generateSeries = create("generateSeries");
 
 	private static IRI create(String localName) {
 		return Vocabularies.createIRI(NAMESPACE, localName);

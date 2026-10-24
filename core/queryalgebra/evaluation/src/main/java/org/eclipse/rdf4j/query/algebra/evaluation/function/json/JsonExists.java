@@ -27,7 +27,7 @@ public class JsonExists extends JsonFunction {
 
 	@Override
 	public String getURI() {
-		return JSONF.JSON_EXISTS.stringValue();
+		return JSONF.jsonExists.stringValue();
 	}
 
 	@Override

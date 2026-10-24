@@ -40,67 +40,67 @@ public final class STRF {
 	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	/** http://rdf4j.org/function/string#trim */
-	public static final IRI TRIM = create("trim");
+	public static final IRI trim = create("trim");
 
 	/** http://rdf4j.org/function/string#ltrim */
-	public static final IRI LTRIM = create("ltrim");
+	public static final IRI ltrim = create("ltrim");
 
 	/** http://rdf4j.org/function/string#rtrim */
-	public static final IRI RTRIM = create("rtrim");
+	public static final IRI rtrim = create("rtrim");
 
 	/** http://rdf4j.org/function/string#lpad */
-	public static final IRI LPAD = create("lpad");
+	public static final IRI lpad = create("lpad");
 
 	/** http://rdf4j.org/function/string#rpad */
-	public static final IRI RPAD = create("rpad");
+	public static final IRI rpad = create("rpad");
 
 	/** http://rdf4j.org/function/string#repeat */
-	public static final IRI REPEAT = create("repeat");
+	public static final IRI repeat = create("repeat");
 
 	/** http://rdf4j.org/function/string#reverse */
-	public static final IRI REVERSE = create("reverse");
+	public static final IRI reverse = create("reverse");
 
 	/** http://rdf4j.org/function/string#left */
-	public static final IRI LEFT = create("left");
+	public static final IRI left = create("left");
 
 	/** http://rdf4j.org/function/string#right */
-	public static final IRI RIGHT = create("right");
+	public static final IRI right = create("right");
 
 	/** http://rdf4j.org/function/string#position */
-	public static final IRI POSITION = create("position");
+	public static final IRI position = create("position");
 
 	/** http://rdf4j.org/function/string#lastIndexOf */
-	public static final IRI LAST_INDEX_OF = create("lastIndexOf");
+	public static final IRI lastIndexOf = create("lastIndexOf");
 
 	/** http://rdf4j.org/function/string#splitPart */
-	public static final IRI SPLIT_PART = create("splitPart");
+	public static final IRI splitPart = create("splitPart");
 
 	/** http://rdf4j.org/function/string#split */
-	public static final IRI SPLIT = create("split");
+	public static final IRI split = create("split");
 
 	/** http://rdf4j.org/function/string#concatWs */
-	public static final IRI CONCAT_WS = create("concatWs");
+	public static final IRI concatWs = create("concatWs");
 
 	/** http://rdf4j.org/function/string#translate */
-	public static final IRI TRANSLATE = create("translate");
+	public static final IRI translate = create("translate");
 
 	/** http://rdf4j.org/function/string#initCap */
-	public static final IRI INIT_CAP = create("initCap");
+	public static final IRI initCap = create("initCap");
 
 	/** http://rdf4j.org/function/string#ascii */
-	public static final IRI ASCII = create("ascii");
+	public static final IRI ascii = create("ascii");
 
 	/** http://rdf4j.org/function/string#chr */
-	public static final IRI CHR = create("chr");
+	public static final IRI chr = create("chr");
 
 	/** http://rdf4j.org/function/string#normalize */
-	public static final IRI NORMALIZE = create("normalize");
+	public static final IRI normalize = create("normalize");
 
 	/** http://rdf4j.org/function/string#regexpExtract */
-	public static final IRI REGEXP_EXTRACT = create("regexpExtract");
+	public static final IRI regexpExtract = create("regexpExtract");
 
 	/** http://rdf4j.org/function/string#regexpExtractAll */
-	public static final IRI REGEXP_EXTRACT_ALL = create("regexpExtractAll");
+	public static final IRI regexpExtractAll = create("regexpExtractAll");
 
 	private static IRI create(String localName) {
 		return Vocabularies.createIRI(NAMESPACE, localName);

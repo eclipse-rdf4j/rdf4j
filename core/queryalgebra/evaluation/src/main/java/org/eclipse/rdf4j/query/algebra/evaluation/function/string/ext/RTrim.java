@@ -25,7 +25,7 @@ public class RTrim extends StringFunction {
 
 	@Override
 	public String getURI() {
-		return STRF.RTRIM.stringValue();
+		return STRF.rtrim.stringValue();
 	}
 
 	@Override

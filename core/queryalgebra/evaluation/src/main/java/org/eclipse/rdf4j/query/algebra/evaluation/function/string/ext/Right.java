@@ -27,7 +27,7 @@ public class Right extends StringFunction {
 
 	@Override
 	public String getURI() {
-		return STRF.RIGHT.stringValue();
+		return STRF.right.stringValue();
 	}
 
 	@Override

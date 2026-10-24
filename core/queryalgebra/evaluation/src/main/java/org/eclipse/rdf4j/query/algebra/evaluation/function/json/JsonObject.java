@@ -30,7 +30,7 @@ public class JsonObject extends JsonFunction {
 
 	@Override
 	public String getURI() {
-		return JSONF.JSON_OBJECT.stringValue();
+		return JSONF.jsonObject.stringValue();
 	}
 
 	@Override

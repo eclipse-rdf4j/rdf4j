@@ -21,7 +21,7 @@ public class Log10 extends UnaryDoubleFunction {
 
 	@Override
 	public String getURI() {
-		return MATHF.LOG10.stringValue();
+		return MATHF.log10.stringValue();
 	}
 
 	@Override

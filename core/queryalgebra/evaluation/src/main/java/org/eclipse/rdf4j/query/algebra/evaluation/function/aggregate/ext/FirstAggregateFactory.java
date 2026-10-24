@@ -24,7 +24,7 @@ public class FirstAggregateFactory extends AbstractUnaryAggregateFactory {
 
 	@Override
 	public String getIri() {
-		return AGGF.FIRST.stringValue();
+		return AGGF.first.stringValue();
 	}
 
 	@Override

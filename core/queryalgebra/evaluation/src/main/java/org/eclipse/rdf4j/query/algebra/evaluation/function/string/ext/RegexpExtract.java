@@ -30,7 +30,7 @@ public class RegexpExtract extends StringFunction {
 
 	@Override
 	public String getURI() {
-		return STRF.REGEXP_EXTRACT.stringValue();
+		return STRF.regexpExtract.stringValue();
 	}
 
 	@Override

@@ -40,28 +40,28 @@ public final class GEOX {
 	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	/** http://rdf4j.org/function/geo#area */
-	public static final IRI AREA = create("area");
+	public static final IRI area = create("area");
 
 	/** http://rdf4j.org/function/geo#length */
-	public static final IRI LENGTH = create("length");
+	public static final IRI length = create("length");
 
 	/** http://rdf4j.org/function/geo#centroid */
-	public static final IRI CENTROID = create("centroid");
+	public static final IRI centroid = create("centroid");
 
 	/** http://rdf4j.org/function/geo#transform */
-	public static final IRI TRANSFORM = create("transform");
+	public static final IRI transform = create("transform");
 
 	/** http://rdf4j.org/function/geo#simplify */
-	public static final IRI SIMPLIFY = create("simplify");
+	public static final IRI simplify = create("simplify");
 
 	/** http://rdf4j.org/function/geo#makePoint */
-	public static final IRI MAKE_POINT = create("makePoint");
+	public static final IRI makePoint = create("makePoint");
 
 	/** http://rdf4j.org/function/geo#asGeoJSON */
-	public static final IRI AS_GEO_JSON = create("asGeoJSON");
+	public static final IRI asGeoJSON = create("asGeoJSON");
 
 	/** http://rdf4j.org/function/geo#closestPoint */
-	public static final IRI CLOSEST_POINT = create("closestPoint");
+	public static final IRI closestPoint = create("closestPoint");
 
 	private static IRI create(String localName) {
 		return Vocabularies.createIRI(NAMESPACE, localName);

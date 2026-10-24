@@ -36,7 +36,7 @@ public class DamerauLevenshtein extends TextFunction {
 
 	@Override
 	public String getURI() {
-		return TEXTF.DAMERAU_LEVENSHTEIN.stringValue();
+		return TEXTF.damerauLevenshtein.stringValue();
 	}
 
 	@Override

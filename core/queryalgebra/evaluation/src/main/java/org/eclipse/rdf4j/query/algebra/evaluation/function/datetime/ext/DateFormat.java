@@ -39,7 +39,7 @@ public class DateFormat extends DateTimeFunction {
 
 	@Override
 	public String getURI() {
-		return DTF.DATE_FORMAT.stringValue();
+		return DTF.dateFormat.stringValue();
 	}
 
 	@Override

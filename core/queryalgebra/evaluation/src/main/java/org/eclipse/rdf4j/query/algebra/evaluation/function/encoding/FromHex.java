@@ -26,7 +26,7 @@ public class FromHex extends EncodingFunction {
 
 	@Override
 	public String getURI() {
-		return ENCF.FROM_HEX.stringValue();
+		return ENCF.fromHex.stringValue();
 	}
 
 	@Override

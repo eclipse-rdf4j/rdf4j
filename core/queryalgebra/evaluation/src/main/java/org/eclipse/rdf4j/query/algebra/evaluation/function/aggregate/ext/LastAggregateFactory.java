@@ -23,7 +23,7 @@ public class LastAggregateFactory extends AbstractUnaryAggregateFactory {
 
 	@Override
 	public String getIri() {
-		return AGGF.LAST.stringValue();
+		return AGGF.last.stringValue();
 	}
 
 	@Override

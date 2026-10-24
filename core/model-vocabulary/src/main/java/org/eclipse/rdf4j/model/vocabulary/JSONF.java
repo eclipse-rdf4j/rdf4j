@@ -40,28 +40,28 @@ public final class JSONF {
 	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	/** http://rdf4j.org/function/json#jsonValue */
-	public static final IRI JSON_VALUE = create("jsonValue");
+	public static final IRI jsonValue = create("jsonValue");
 
 	/** http://rdf4j.org/function/json#jsonQuery */
-	public static final IRI JSON_QUERY = create("jsonQuery");
+	public static final IRI jsonQuery = create("jsonQuery");
 
 	/** http://rdf4j.org/function/json#jsonExists */
-	public static final IRI JSON_EXISTS = create("jsonExists");
+	public static final IRI jsonExists = create("jsonExists");
 
 	/** http://rdf4j.org/function/json#jsonKeys */
-	public static final IRI JSON_KEYS = create("jsonKeys");
+	public static final IRI jsonKeys = create("jsonKeys");
 
 	/** http://rdf4j.org/function/json#jsonArrayLength */
-	public static final IRI JSON_ARRAY_LENGTH = create("jsonArrayLength");
+	public static final IRI jsonArrayLength = create("jsonArrayLength");
 
 	/** http://rdf4j.org/function/json#jsonObject */
-	public static final IRI JSON_OBJECT = create("jsonObject");
+	public static final IRI jsonObject = create("jsonObject");
 
 	/** http://rdf4j.org/function/json#jsonArray */
-	public static final IRI JSON_ARRAY = create("jsonArray");
+	public static final IRI jsonArray = create("jsonArray");
 
 	/** http://rdf4j.org/function/json#jsonSet */
-	public static final IRI JSON_SET = create("jsonSet");
+	public static final IRI jsonSet = create("jsonSet");
 
 	private static IRI create(String localName) {
 		return Vocabularies.createIRI(NAMESPACE, localName);

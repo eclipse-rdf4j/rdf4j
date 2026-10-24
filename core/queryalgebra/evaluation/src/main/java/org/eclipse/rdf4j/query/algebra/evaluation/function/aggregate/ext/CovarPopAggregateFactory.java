@@ -22,7 +22,7 @@ public class CovarPopAggregateFactory extends AbstractNAryAggregateFactory {
 
 	@Override
 	public String getIri() {
-		return AGGF.COVAR_POP.stringValue();
+		return AGGF.covarPop.stringValue();
 	}
 
 	@Override

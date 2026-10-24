@@ -33,7 +33,7 @@ public class AtTimeZone extends DateTimeFunction {
 
 	@Override
 	public String getURI() {
-		return DTF.AT_TIME_ZONE.stringValue();
+		return DTF.atTimeZone.stringValue();
 	}
 
 	@Override

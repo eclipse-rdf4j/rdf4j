@@ -28,7 +28,7 @@ public class JsonArray extends JsonFunction {
 
 	@Override
 	public String getURI() {
-		return JSONF.JSON_ARRAY.stringValue();
+		return JSONF.jsonArray.stringValue();
 	}
 
 	@Override

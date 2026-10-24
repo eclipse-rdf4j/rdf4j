@@ -26,7 +26,7 @@ public class ModeAggregateFactory extends AbstractUnaryAggregateFactory {
 
 	@Override
 	public String getIri() {
-		return AGGF.MODE.stringValue();
+		return AGGF.mode.stringValue();
 	}
 
 	@Override

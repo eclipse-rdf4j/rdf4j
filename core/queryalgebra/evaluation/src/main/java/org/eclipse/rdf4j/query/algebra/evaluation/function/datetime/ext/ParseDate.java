@@ -40,7 +40,7 @@ public class ParseDate extends DateTimeFunction {
 
 	@Override
 	public String getURI() {
-		return DTF.PARSE_DATE.stringValue();
+		return DTF.parseDate.stringValue();
 	}
 
 	@Override

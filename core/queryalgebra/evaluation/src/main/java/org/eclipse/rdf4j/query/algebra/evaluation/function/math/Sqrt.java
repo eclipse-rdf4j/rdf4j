@@ -20,7 +20,7 @@ public class Sqrt extends UnaryDoubleFunction {
 
 	@Override
 	public String getURI() {
-		return MATHF.SQRT.stringValue();
+		return MATHF.sqrt.stringValue();
 	}
 
 	@Override

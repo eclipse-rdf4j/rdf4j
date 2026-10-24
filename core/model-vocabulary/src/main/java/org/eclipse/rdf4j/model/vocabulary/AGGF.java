@@ -40,70 +40,70 @@ public final class AGGF {
 	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	/** http://rdf4j.org/aggregate#stdev */
-	public static final IRI STDEV = create("stdev");
+	public static final IRI stdev = create("stdev");
 
 	/** http://rdf4j.org/aggregate#stdev_population */
-	public static final IRI STDEV_POPULATION = create("stdev_population");
+	public static final IRI stdev_population = create("stdev_population");
 
 	/** http://rdf4j.org/aggregate#variance */
-	public static final IRI VARIANCE = create("variance");
+	public static final IRI variance = create("variance");
 
 	/** http://rdf4j.org/aggregate#variance_population */
-	public static final IRI VARIANCE_POPULATION = create("variance_population");
+	public static final IRI variance_population = create("variance_population");
 
 	/** http://rdf4j.org/aggregate#median */
-	public static final IRI MEDIAN = create("median");
+	public static final IRI median = create("median");
 
 	/** http://rdf4j.org/aggregate#mode */
-	public static final IRI MODE = create("mode");
+	public static final IRI mode = create("mode");
 
 	/** http://rdf4j.org/aggregate#percentileCont */
-	public static final IRI PERCENTILE_CONT = create("percentileCont");
+	public static final IRI percentileCont = create("percentileCont");
 
 	/** http://rdf4j.org/aggregate#percentileDisc */
-	public static final IRI PERCENTILE_DISC = create("percentileDisc");
+	public static final IRI percentileDisc = create("percentileDisc");
 
 	/** http://rdf4j.org/aggregate#corr */
-	public static final IRI CORR = create("corr");
+	public static final IRI corr = create("corr");
 
 	/** http://rdf4j.org/aggregate#covarPop */
-	public static final IRI COVAR_POP = create("covarPop");
+	public static final IRI covarPop = create("covarPop");
 
 	/** http://rdf4j.org/aggregate#covarSamp */
-	public static final IRI COVAR_SAMP = create("covarSamp");
+	public static final IRI covarSamp = create("covarSamp");
 
 	/** http://rdf4j.org/aggregate#countIf */
-	public static final IRI COUNT_IF = create("countIf");
+	public static final IRI countIf = create("countIf");
 
 	/** http://rdf4j.org/aggregate#boolAnd */
-	public static final IRI BOOL_AND = create("boolAnd");
+	public static final IRI boolAnd = create("boolAnd");
 
 	/** http://rdf4j.org/aggregate#boolOr */
-	public static final IRI BOOL_OR = create("boolOr");
+	public static final IRI boolOr = create("boolOr");
 
 	/** http://rdf4j.org/aggregate#first */
-	public static final IRI FIRST = create("first");
+	public static final IRI first = create("first");
 
 	/** http://rdf4j.org/aggregate#last */
-	public static final IRI LAST = create("last");
+	public static final IRI last = create("last");
 
 	/** http://rdf4j.org/aggregate#argMin */
-	public static final IRI ARG_MIN = create("argMin");
+	public static final IRI argMin = create("argMin");
 
 	/** http://rdf4j.org/aggregate#argMax */
-	public static final IRI ARG_MAX = create("argMax");
+	public static final IRI argMax = create("argMax");
 
 	/** http://rdf4j.org/aggregate#approxCountDistinct */
-	public static final IRI APPROX_COUNT_DISTINCT = create("approxCountDistinct");
+	public static final IRI approxCountDistinct = create("approxCountDistinct");
 
 	/** http://rdf4j.org/aggregate#approxQuantile */
-	public static final IRI APPROX_QUANTILE = create("approxQuantile");
+	public static final IRI approxQuantile = create("approxQuantile");
 
 	/** http://rdf4j.org/aggregate#histogram */
-	public static final IRI HISTOGRAM = create("histogram");
+	public static final IRI histogram = create("histogram");
 
 	/** http://rdf4j.org/aggregate#arrayAgg */
-	public static final IRI ARRAY_AGG = create("arrayAgg");
+	public static final IRI arrayAgg = create("arrayAgg");
 
 	private static IRI create(String localName) {
 		return Vocabularies.createIRI(NAMESPACE, localName);

@@ -30,7 +30,7 @@ public class Position extends StringFunction {
 
 	@Override
 	public String getURI() {
-		return STRF.POSITION.stringValue();
+		return STRF.position.stringValue();
 	}
 
 	@Override

@@ -29,7 +29,7 @@ public class RegexpExtractAllTupleFunction extends AbstractTupleFunction {
 
 	@Override
 	public String getURI() {
-		return STRF.REGEXP_EXTRACT_ALL.stringValue();
+		return STRF.regexpExtractAll.stringValue();
 	}
 
 	@Override

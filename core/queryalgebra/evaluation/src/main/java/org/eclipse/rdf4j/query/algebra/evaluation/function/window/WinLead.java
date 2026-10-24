@@ -20,6 +20,6 @@ public class WinLead extends WindowFunctionPlaceholder {
 
 	@Override
 	public String getURI() {
-		return WINF.LEAD.stringValue();
+		return WINF.lead.stringValue();
 	}
 }

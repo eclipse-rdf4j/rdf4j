@@ -30,7 +30,7 @@ public class NullIf implements Function {
 
 	@Override
 	public String getURI() {
-		return MISCF.NULL_IF.stringValue();
+		return MISCF.nullIf.stringValue();
 	}
 
 	@Override

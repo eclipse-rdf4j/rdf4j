@@ -40,7 +40,7 @@ public final class MISCF {
 	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	/** http://rdf4j.org/function/misc#nullIf */
-	public static final IRI NULL_IF = create("nullIf");
+	public static final IRI nullIf = create("nullIf");
 
 	private static IRI create(String localName) {
 		return Vocabularies.createIRI(NAMESPACE, localName);

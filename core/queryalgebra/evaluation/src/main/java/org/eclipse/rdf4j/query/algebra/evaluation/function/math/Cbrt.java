@@ -20,7 +20,7 @@ public class Cbrt extends UnaryDoubleFunction {
 
 	@Override
 	public String getURI() {
-		return MATHF.CBRT.stringValue();
+		return MATHF.cbrt.stringValue();
 	}
 
 	@Override

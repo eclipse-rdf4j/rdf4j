@@ -20,6 +20,6 @@ public class WinLastValue extends WindowFunctionPlaceholder {
 
 	@Override
 	public String getURI() {
-		return WINF.LAST_VALUE.stringValue();
+		return WINF.lastValue.stringValue();
 	}
 }

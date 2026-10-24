@@ -26,7 +26,7 @@ public class Area extends GeoExtensionFunction {
 
 	@Override
 	public String getURI() {
-		return GEOX.AREA.stringValue();
+		return GEOX.area.stringValue();
 	}
 
 	@Override

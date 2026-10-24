@@ -33,7 +33,7 @@ public class Sign extends MathFunction {
 
 	@Override
 	public String getURI() {
-		return MATHF.SIGN.stringValue();
+		return MATHF.sign.stringValue();
 	}
 
 	@Override

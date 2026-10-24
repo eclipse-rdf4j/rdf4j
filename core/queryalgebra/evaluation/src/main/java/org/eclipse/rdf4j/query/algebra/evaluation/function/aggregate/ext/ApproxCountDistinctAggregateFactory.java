@@ -28,7 +28,7 @@ public class ApproxCountDistinctAggregateFactory extends AbstractUnaryAggregateF
 
 	@Override
 	public String getIri() {
-		return AGGF.APPROX_COUNT_DISTINCT.stringValue();
+		return AGGF.approxCountDistinct.stringValue();
 	}
 
 	@Override

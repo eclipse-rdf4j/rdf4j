@@ -36,7 +36,7 @@ public class Age extends DateTimeFunction {
 
 	@Override
 	public String getURI() {
-		return DTF.AGE.stringValue();
+		return DTF.age.stringValue();
 	}
 
 	@Override

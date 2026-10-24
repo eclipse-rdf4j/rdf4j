@@ -23,7 +23,7 @@ public class Trunc extends AbstractScaleFunction {
 
 	@Override
 	public String getURI() {
-		return MATHF.TRUNC.stringValue();
+		return MATHF.trunc.stringValue();
 	}
 
 	@Override

@@ -26,7 +26,7 @@ public class BoolAndAggregateFactory extends AbstractUnaryAggregateFactory {
 
 	@Override
 	public String getIri() {
-		return AGGF.BOOL_AND.stringValue();
+		return AGGF.boolAnd.stringValue();
 	}
 
 	@Override

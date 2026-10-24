@@ -21,7 +21,7 @@ public class Atan extends UnaryDoubleFunction {
 
 	@Override
 	public String getURI() {
-		return MATHF.ATAN.stringValue();
+		return MATHF.atan.stringValue();
 	}
 
 	@Override

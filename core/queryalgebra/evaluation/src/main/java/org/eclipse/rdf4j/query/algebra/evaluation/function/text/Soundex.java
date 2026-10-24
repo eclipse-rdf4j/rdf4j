@@ -28,7 +28,7 @@ public class Soundex extends TextFunction {
 
 	@Override
 	public String getURI() {
-		return TEXTF.SOUNDEX.stringValue();
+		return TEXTF.soundex.stringValue();
 	}
 
 	@Override

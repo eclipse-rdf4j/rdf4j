@@ -23,7 +23,7 @@ public class PercentileDiscAggregateFactory extends AbstractNAryAggregateFactory
 
 	@Override
 	public String getIri() {
-		return AGGF.PERCENTILE_DISC.stringValue();
+		return AGGF.percentileDisc.stringValue();
 	}
 
 	@Override

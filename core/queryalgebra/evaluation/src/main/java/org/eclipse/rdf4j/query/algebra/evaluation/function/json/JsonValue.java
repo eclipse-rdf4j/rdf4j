@@ -31,7 +31,7 @@ public class JsonValue extends JsonFunction {
 
 	@Override
 	public String getURI() {
-		return JSONF.JSON_VALUE.stringValue();
+		return JSONF.jsonValue.stringValue();
 	}
 
 	@Override

@@ -40,25 +40,25 @@ public final class BITF {
 	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	/** http://rdf4j.org/function/bitwise#bitAnd */
-	public static final IRI BIT_AND = create("bitAnd");
+	public static final IRI bitAnd = create("bitAnd");
 
 	/** http://rdf4j.org/function/bitwise#bitOr */
-	public static final IRI BIT_OR = create("bitOr");
+	public static final IRI bitOr = create("bitOr");
 
 	/** http://rdf4j.org/function/bitwise#bitXor */
-	public static final IRI BIT_XOR = create("bitXor");
+	public static final IRI bitXor = create("bitXor");
 
 	/** http://rdf4j.org/function/bitwise#bitNot */
-	public static final IRI BIT_NOT = create("bitNot");
+	public static final IRI bitNot = create("bitNot");
 
 	/** http://rdf4j.org/function/bitwise#bitCount */
-	public static final IRI BIT_COUNT = create("bitCount");
+	public static final IRI bitCount = create("bitCount");
 
 	/** http://rdf4j.org/function/bitwise#bitShiftLeft */
-	public static final IRI BIT_SHIFT_LEFT = create("bitShiftLeft");
+	public static final IRI bitShiftLeft = create("bitShiftLeft");
 
 	/** http://rdf4j.org/function/bitwise#bitShiftRight */
-	public static final IRI BIT_SHIFT_RIGHT = create("bitShiftRight");
+	public static final IRI bitShiftRight = create("bitShiftRight");
 
 	private static IRI create(String localName) {
 		return Vocabularies.createIRI(NAMESPACE, localName);

@@ -27,7 +27,7 @@ public class Week extends DateTimeFunction {
 
 	@Override
 	public String getURI() {
-		return DTF.WEEK.stringValue();
+		return DTF.week.stringValue();
 	}
 
 	@Override

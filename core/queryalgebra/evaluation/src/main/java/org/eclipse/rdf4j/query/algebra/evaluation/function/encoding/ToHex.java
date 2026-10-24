@@ -28,7 +28,7 @@ public class ToHex extends EncodingFunction {
 
 	@Override
 	public String getURI() {
-		return ENCF.TO_HEX.stringValue();
+		return ENCF.toHex.stringValue();
 	}
 
 	@Override

@@ -58,7 +58,7 @@ public class VarNameNormalizerTest {
 	@Test
 	void keepsGenuineWindowOutputNames() {
 		Window window = new Window(new SingletonSet());
-		window.addElement(new WindowElem("_anon_visible", new WindowFunctionCall(WINF.ROW_NUMBER.stringValue())));
+		window.addElement(new WindowElem("_anon_visible", new WindowFunctionCall(WINF.rowNumber.stringValue())));
 		Extension expression = new Extension(window);
 		expression.addElement(new ExtensionElem(Var.of("_anon_visible"), "output"));
 		String normalized = VarNameNormalizer.normalizeModelVariables(expression);

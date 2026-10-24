@@ -40,70 +40,70 @@ public final class WINF {
 	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	/** http://rdf4j.org/function/window#rowNumber */
-	public static final IRI ROW_NUMBER = create("rowNumber");
+	public static final IRI rowNumber = create("rowNumber");
 
 	/** http://rdf4j.org/function/window#rank */
-	public static final IRI RANK = create("rank");
+	public static final IRI rank = create("rank");
 
 	/** http://rdf4j.org/function/window#denseRank */
-	public static final IRI DENSE_RANK = create("denseRank");
+	public static final IRI denseRank = create("denseRank");
 
 	/** http://rdf4j.org/function/window#ntile */
-	public static final IRI NTILE = create("ntile");
+	public static final IRI ntile = create("ntile");
 
 	/** http://rdf4j.org/function/window#lag */
-	public static final IRI LAG = create("lag");
+	public static final IRI lag = create("lag");
 
 	/** http://rdf4j.org/function/window#lead */
-	public static final IRI LEAD = create("lead");
+	public static final IRI lead = create("lead");
 
 	/** http://rdf4j.org/function/window#firstValue */
-	public static final IRI FIRST_VALUE = create("firstValue");
+	public static final IRI firstValue = create("firstValue");
 
 	/** http://rdf4j.org/function/window#lastValue */
-	public static final IRI LAST_VALUE = create("lastValue");
+	public static final IRI lastValue = create("lastValue");
 
 	/** http://rdf4j.org/function/window#nthValue */
-	public static final IRI NTH_VALUE = create("nthValue");
+	public static final IRI nthValue = create("nthValue");
 
 	/** http://rdf4j.org/function/window#percentRank */
-	public static final IRI PERCENT_RANK = create("percentRank");
+	public static final IRI percentRank = create("percentRank");
 
 	/** http://rdf4j.org/function/window#cumeDist */
-	public static final IRI CUME_DIST = create("cumeDist");
+	public static final IRI cumeDist = create("cumeDist");
 
 	/** http://rdf4j.org/function/window#sum */
-	public static final IRI SUM = create("sum");
+	public static final IRI sum = create("sum");
 
 	/** http://rdf4j.org/function/window#avg */
-	public static final IRI AVG = create("avg");
+	public static final IRI avg = create("avg");
 
 	/** http://rdf4j.org/function/window#count */
-	public static final IRI COUNT = create("count");
+	public static final IRI count = create("count");
 
 	/** http://rdf4j.org/function/window#min */
-	public static final IRI MIN = create("min");
+	public static final IRI min = create("min");
 
 	/** http://rdf4j.org/function/window#max */
-	public static final IRI MAX = create("max");
+	public static final IRI max = create("max");
 
 	/** http://rdf4j.org/function/window#partitionBy */
-	public static final IRI PARTITION_BY = create("partitionBy");
+	public static final IRI partitionBy = create("partitionBy");
 
 	/** http://rdf4j.org/function/window#orderBy */
-	public static final IRI ORDER_BY = create("orderBy");
+	public static final IRI orderBy = create("orderBy");
 
 	/** http://rdf4j.org/function/window#asc */
-	public static final IRI ASC = create("asc");
+	public static final IRI asc = create("asc");
 
 	/** http://rdf4j.org/function/window#desc */
-	public static final IRI DESC = create("desc");
+	public static final IRI desc = create("desc");
 
 	/** http://rdf4j.org/function/window#rows */
-	public static final IRI ROWS = create("rows");
+	public static final IRI rows = create("rows");
 
 	/** http://rdf4j.org/function/window#range */
-	public static final IRI RANGE = create("range");
+	public static final IRI range = create("range");
 
 	private static IRI create(String localName) {
 		return Vocabularies.createIRI(NAMESPACE, localName);

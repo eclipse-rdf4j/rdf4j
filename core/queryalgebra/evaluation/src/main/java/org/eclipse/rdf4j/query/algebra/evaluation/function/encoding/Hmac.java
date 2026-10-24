@@ -35,7 +35,7 @@ public class Hmac extends EncodingFunction {
 
 	@Override
 	public String getURI() {
-		return ENCF.HMAC.stringValue();
+		return ENCF.hmac.stringValue();
 	}
 
 	@Override

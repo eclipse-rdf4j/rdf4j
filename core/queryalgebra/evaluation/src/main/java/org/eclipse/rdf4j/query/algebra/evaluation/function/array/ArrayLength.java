@@ -31,7 +31,7 @@ public class ArrayLength extends ArrayFunction {
 
 	@Override
 	public String getURI() {
-		return ARRAYF.ARRAY_LENGTH.stringValue();
+		return ARRAYF.arrayLength.stringValue();
 	}
 
 	@Override

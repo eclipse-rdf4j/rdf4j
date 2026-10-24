@@ -36,7 +36,7 @@ public class DateBin extends DateTimeFunction {
 
 	@Override
 	public String getURI() {
-		return DTF.DATE_BIN.stringValue();
+		return DTF.dateBin.stringValue();
 	}
 
 	@Override

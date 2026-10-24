@@ -29,7 +29,7 @@ public class SplitTupleFunction extends AbstractTupleFunction {
 
 	@Override
 	public String getURI() {
-		return STRF.SPLIT.stringValue();
+		return STRF.split.stringValue();
 	}
 
 	@Override

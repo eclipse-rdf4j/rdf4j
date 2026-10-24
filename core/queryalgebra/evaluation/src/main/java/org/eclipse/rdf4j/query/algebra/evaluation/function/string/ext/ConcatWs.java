@@ -28,7 +28,7 @@ public class ConcatWs extends StringFunction {
 
 	@Override
 	public String getURI() {
-		return STRF.CONCAT_WS.stringValue();
+		return STRF.concatWs.stringValue();
 	}
 
 	@Override

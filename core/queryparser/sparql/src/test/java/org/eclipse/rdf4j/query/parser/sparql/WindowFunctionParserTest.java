@@ -75,7 +75,7 @@ class WindowFunctionParserTest {
 		Window window = windows.get(0);
 		assertThat(window.getElements()).hasSize(1);
 		WindowFunctionCall call = window.getElements().get(0).getOperator();
-		assertThat(call.getURI()).isEqualTo(WINF.RANK.stringValue());
+		assertThat(call.getURI()).isEqualTo(WINF.rank.stringValue());
 		assertThat(call.getArgs()).isEmpty();
 		assertThat(call.getPartitionBy()).hasSize(1);
 		assertThat(((Var) call.getPartitionBy().get(0)).getName()).isEqualTo("d");
@@ -121,7 +121,7 @@ class WindowFunctionParserTest {
 		assertThat(windows).hasSize(1);
 		assertThat(windows.get(0).getElements()).hasSize(2);
 		WindowFunctionCall lag = windows.get(0).getElements().get(1).getOperator();
-		assertThat(lag.getURI()).isEqualTo(WINF.LAG.stringValue());
+		assertThat(lag.getURI()).isEqualTo(WINF.lag.stringValue());
 		assertThat(lag.getArgs()).hasSize(3);
 		assertThat(lag.getOrderBy()).hasSize(1);
 		assertThat(lag.hasExplicitFrame()).isFalse();

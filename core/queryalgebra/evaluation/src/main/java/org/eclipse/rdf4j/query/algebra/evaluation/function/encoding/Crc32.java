@@ -28,7 +28,7 @@ public class Crc32 extends EncodingFunction {
 
 	@Override
 	public String getURI() {
-		return ENCF.CRC32.stringValue();
+		return ENCF.crc32.stringValue();
 	}
 
 	@Override

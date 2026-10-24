@@ -27,7 +27,7 @@ public class GenerateSeriesTupleFunction extends AbstractTupleFunction {
 
 	@Override
 	public String getURI() {
-		return ARRAYF.GENERATE_SERIES.stringValue();
+		return ARRAYF.generateSeries.stringValue();
 	}
 
 	@Override

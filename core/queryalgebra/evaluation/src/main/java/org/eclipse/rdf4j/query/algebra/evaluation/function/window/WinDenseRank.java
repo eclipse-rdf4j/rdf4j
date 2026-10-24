@@ -20,6 +20,6 @@ public class WinDenseRank extends WindowFunctionPlaceholder {
 
 	@Override
 	public String getURI() {
-		return WINF.DENSE_RANK.stringValue();
+		return WINF.denseRank.stringValue();
 	}
 }

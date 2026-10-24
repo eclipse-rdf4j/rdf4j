@@ -21,7 +21,7 @@ public class RPad extends AbstractPadFunction {
 
 	@Override
 	public String getURI() {
-		return STRF.RPAD.stringValue();
+		return STRF.rpad.stringValue();
 	}
 
 	@Override

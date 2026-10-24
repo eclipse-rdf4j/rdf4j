@@ -28,7 +28,7 @@ public class Repeat extends StringFunction {
 
 	@Override
 	public String getURI() {
-		return STRF.REPEAT.stringValue();
+		return STRF.repeat.stringValue();
 	}
 
 	@Override

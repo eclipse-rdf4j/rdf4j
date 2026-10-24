@@ -20,6 +20,6 @@ public class WinMin extends WindowFunctionPlaceholder {
 
 	@Override
 	public String getURI() {
-		return WINF.MIN.stringValue();
+		return WINF.min.stringValue();
 	}
 }

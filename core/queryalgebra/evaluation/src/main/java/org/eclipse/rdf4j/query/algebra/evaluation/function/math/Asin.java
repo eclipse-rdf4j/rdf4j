@@ -21,7 +21,7 @@ public class Asin extends UnaryDoubleFunction {
 
 	@Override
 	public String getURI() {
-		return MATHF.ASIN.stringValue();
+		return MATHF.asin.stringValue();
 	}
 
 	@Override

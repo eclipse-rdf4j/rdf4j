@@ -20,6 +20,6 @@ public class WinRange extends WindowFunctionPlaceholder {
 
 	@Override
 	public String getURI() {
-		return WINF.RANGE.stringValue();
+		return WINF.range.stringValue();
 	}
 }

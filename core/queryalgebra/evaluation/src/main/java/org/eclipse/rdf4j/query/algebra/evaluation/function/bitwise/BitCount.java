@@ -24,7 +24,7 @@ public class BitCount extends BitwiseFunction {
 
 	@Override
 	public String getURI() {
-		return BITF.BIT_COUNT.stringValue();
+		return BITF.bitCount.stringValue();
 	}
 
 	@Override

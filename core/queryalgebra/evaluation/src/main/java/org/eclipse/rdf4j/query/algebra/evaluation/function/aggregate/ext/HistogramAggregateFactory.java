@@ -34,7 +34,7 @@ public class HistogramAggregateFactory extends AbstractUnaryAggregateFactory {
 
 	@Override
 	public String getIri() {
-		return AGGF.HISTOGRAM.stringValue();
+		return AGGF.histogram.stringValue();
 	}
 
 	@Override

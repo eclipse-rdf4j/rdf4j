@@ -35,7 +35,7 @@ public class FromUnixtime extends DateTimeFunction {
 
 	@Override
 	public String getURI() {
-		return DTF.FROM_UNIXTIME.stringValue();
+		return DTF.fromUnixtime.stringValue();
 	}
 
 	@Override

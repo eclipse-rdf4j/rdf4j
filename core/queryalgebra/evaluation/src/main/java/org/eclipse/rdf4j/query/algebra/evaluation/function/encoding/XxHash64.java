@@ -34,7 +34,7 @@ public class XxHash64 extends EncodingFunction {
 
 	@Override
 	public String getURI() {
-		return ENCF.XXHASH64.stringValue();
+		return ENCF.xxhash64.stringValue();
 	}
 
 	@Override

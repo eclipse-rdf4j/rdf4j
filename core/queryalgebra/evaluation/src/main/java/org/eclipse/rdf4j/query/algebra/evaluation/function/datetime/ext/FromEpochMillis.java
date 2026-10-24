@@ -27,7 +27,7 @@ public class FromEpochMillis extends DateTimeFunction {
 
 	@Override
 	public String getURI() {
-		return DTF.FROM_EPOCH_MILLIS.stringValue();
+		return DTF.fromEpochMillis.stringValue();
 	}
 
 	@Override

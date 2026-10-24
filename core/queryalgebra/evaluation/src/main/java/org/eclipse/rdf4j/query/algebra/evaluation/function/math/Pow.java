@@ -28,7 +28,7 @@ public class Pow extends BinaryDoubleFunction {
 
 	@Override
 	public String getURI() {
-		return MATHF.POW.stringValue();
+		return MATHF.pow.stringValue();
 	}
 
 	@Override

@@ -20,7 +20,7 @@ public class Cos extends UnaryDoubleFunction {
 
 	@Override
 	public String getURI() {
-		return MATHF.COS.stringValue();
+		return MATHF.cos.stringValue();
 	}
 
 	@Override
