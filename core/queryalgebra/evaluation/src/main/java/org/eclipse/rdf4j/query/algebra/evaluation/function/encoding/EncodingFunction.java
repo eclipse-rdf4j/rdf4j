@@ -47,7 +47,8 @@ public abstract class EncodingFunction implements Function {
 			}
 			if (datatype == CoreDatatype.XSD.BASE64BINARY) {
 				try {
-					return Base64.getMimeDecoder().decode(literal.getLabel());
+					// the XSD lexical space allows whitespace between the groups, but no other foreign characters
+					return Base64.getDecoder().decode(stripWhitespace(literal.getLabel()));
 				} catch (IllegalArgumentException e) {
 					throw new ValueExprEvaluationException("Invalid base64Binary literal for " + getURI(), e);
 				}
@@ -72,6 +73,23 @@ public abstract class EncodingFunction implements Function {
 			bytes[i / 2] = (byte) ((high << 4) | low);
 		}
 		return bytes;
+	}
+
+	/** Removes every whitespace character (Base64 text may be wrapped or grouped). */
+	protected static String stripWhitespace(String s) {
+		StringBuilder sb = null;
+		for (int i = 0; i < s.length(); i++) {
+			char c = s.charAt(i);
+			if (Character.isWhitespace(c)) {
+				if (sb == null) {
+					sb = new StringBuilder(s.length());
+					sb.append(s, 0, i);
+				}
+			} else if (sb != null) {
+				sb.append(c);
+			}
+		}
+		return sb == null ? s : sb.toString();
 	}
 
 	protected static String toHex(byte[] bytes) {

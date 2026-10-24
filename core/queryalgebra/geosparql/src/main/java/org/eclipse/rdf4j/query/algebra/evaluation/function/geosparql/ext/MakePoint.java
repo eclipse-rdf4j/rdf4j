@@ -35,6 +35,10 @@ public class MakePoint extends GeoExtensionFunction {
 		arity(args, 2, 3);
 		double x = FunctionArgs.toDouble(this, args[0]);
 		double y = FunctionArgs.toDouble(this, args[1]);
+		if (!Double.isFinite(x) || !Double.isFinite(y)) {
+			throw new ValueExprEvaluationException(
+					"Coordinates for " + getURI() + " must be finite numbers, got " + args[0] + ", " + args[1]);
+		}
 		String crs = args.length == 3 ? GeoSupport.crs(this, args[2]) : GeoSupport.CRS84;
 		return GeoSupport.toLiteral(valueFactory, GeoSupport.factory().createPoint(new Coordinate(x, y)), crs);
 	}
