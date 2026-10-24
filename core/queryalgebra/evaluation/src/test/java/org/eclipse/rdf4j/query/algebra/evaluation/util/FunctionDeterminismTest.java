@@ -22,12 +22,14 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
@@ -134,6 +136,12 @@ public class FunctionDeterminismTest {
 		Now now = new Now();
 		assertThat(QueryEvaluationUtility.isRepeatable(now)).isTrue();
 		assertThat(QueryEvaluationUtility.isSafeForPlanConstantFolding(now)).isFalse();
+
+		FunctionCall nowCall = new FunctionCall("NOW");
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(nowCall,
+				QueryExecutionPolicy.DEFAULT);
+		assertThat(snapshot.isRepeatable(nowCall)).isTrue();
+		assertThat(snapshot.isRepeatableAcrossExecutions(nowCall)).isFalse();
 	}
 
 	@ParameterizedTest
@@ -142,6 +150,12 @@ public class FunctionDeterminismTest {
 		MD5 md5 = new MD5();
 		assertThat(QueryEvaluationUtility.isRepeatable(md5)).isTrue();
 		assertThat(QueryEvaluationUtility.isSafeForPlanConstantFolding(md5)).isTrue();
+
+		FunctionCall md5Call = new FunctionCall(md5.getURI(),
+				new ValueConstant(SimpleValueFactory.getInstance().createLiteral("input")));
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(md5Call,
+				QueryExecutionPolicy.DEFAULT);
+		assertThat(snapshot.isRepeatableAcrossExecutions(md5Call)).isTrue();
 	}
 
 	private static void optimize(QueryEvaluationMode mode, QueryRoot query) {

@@ -958,9 +958,10 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		LmdbSailStore cacheOwner = resultCacheOwner(explanationCapture);
 		if (cacheOwner != null && (RdfParserQuerySupport.isParserQuery(tupleExpr, bindings)
 				|| !QueryEvaluationUtility.querySafetySnapshot(tupleExpr, lmdbStore.getQueryExecutionPolicy())
-						.isRepeatable(tupleExpr))) {
-			// Parser syntax allocates new blank nodes. Shared safety analysis also excludes non-repeatable
-			// operators, including SERVICE endpoints whose local parser URL is only known during evaluation.
+						.isRepeatableAcrossExecutions(tupleExpr))) {
+			// Parser syntax allocates new blank nodes. Shared safety analysis also excludes results that are not
+			// stable across query executions, including SERVICE endpoints whose local parser URL is known only at
+			// runtime.
 			cacheOwner = null;
 		}
 		LmdbQueryResultCache.Key cacheKey = null;
