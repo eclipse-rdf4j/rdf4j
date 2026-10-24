@@ -114,11 +114,12 @@ class DateFormatParseEdgeCaseTest {
 		assertEvaluationError("day 32", () -> parseDate.evaluate(VF, str("2024-02-32"), str("yyyy-MM-dd")));
 		assertEvaluationError("month 13", () -> parseDate.evaluate(VF, str("2024-13-01"), str("yyyy-MM-dd")));
 		assertEvaluationError("minute 60", () -> parseDate.evaluate(VF, str("10:60"), str("HH:mm")));
-		// pins current behaviour: the formatter uses java.time's SMART resolver, which clamps a day beyond the end
-		// of the month to the last valid day instead of rejecting it, and resolves 24:00 to midnight
-		assertThat(parseDate.evaluate(VF, str("2024-02-30"), str("yyyy-MM-dd"))).isEqualTo(date("2024-02-29"));
-		assertThat(parseDate.evaluate(VF, str("2023-02-29"), str("yyyy-MM-dd"))).isEqualTo(date("2023-02-28"));
-		assertThat(parseDate.evaluate(VF, str("24:00"), str("HH:mm"))).isEqualTo(time("00:00:00"));
+		// the parser uses java.time's STRICT resolver: a day beyond the end of the month and the hour 24 are rejected
+		// instead of being clamped to the last valid day or resolved to midnight
+		assertEvaluationError("30 February", () -> parseDate.evaluate(VF, str("2024-02-30"), str("yyyy-MM-dd")));
+		assertEvaluationError("29 February in a non-leap year",
+				() -> parseDate.evaluate(VF, str("2023-02-29"), str("yyyy-MM-dd")));
+		assertEvaluationError("24:00", () -> parseDate.evaluate(VF, str("24:00"), str("HH:mm")));
 	}
 
 	@Test

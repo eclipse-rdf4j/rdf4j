@@ -55,8 +55,8 @@ import org.junit.jupiter.api.function.Executable;
  * <p>
  * Magic properties are plain statement patterns with RDF collections until the evaluation-time optimizer rewrites them,
  * so for them the round trip compares the statement pattern predicates. The {@code geox:} functions are not on this
- * module's classpath and are only rendered, not evaluated. Custom aggregates ({@code agg:}) are left out because
- * neither renderer supports {@code AggregateFunctionCall} yet (see the note in the family list).
+ * module's classpath and are only rendered, not evaluated. Custom aggregates ({@code agg:}) are rendered and re-parsed
+ * but not evaluated here; {@link CustomAggregateRenderingTest} covers their rendering in depth.
  */
 class ExtensionFunctionRenderRoundTripTest {
 
@@ -81,9 +81,7 @@ class ExtensionFunctionRenderRoundTripTest {
 			family("mathf", "SELECT ?x (mathf:round(mathf:sqrt(?x), 1) AS ?r)" + VALUES, true),
 			family("strf", "SELECT ?x (strf:reverse(?s) AS ?r)" + VALUES, true),
 			family("dtf", "SELECT ?x (dtf:dayOfYear(\"2024-03-05\"^^xsd:date) AS ?r)" + VALUES, true),
-			// agg: custom aggregates (AggregateFunctionCall) are not rendered by either renderer: the IR renderer
-			// emits "/* unsupported aggregate */" and the legacy renderer emits "?x bind(?x as ?r)." — both
-			// unparseable — so the aggregate family is deliberately absent until the renderers support it.
+			family("agg", "SELECT (agg:median(?x) AS ?r)" + VALUES, false),
 			family("winf", "SELECT ?x (winf:rank(winf:orderBy(winf:desc(?x))) AS ?r)" + VALUES, true),
 			family("textf", "SELECT ?x (textf:levenshtein(?s, \"abc\") AS ?r)" + VALUES, true),
 			family("jsonf", "SELECT ?x (jsonf:jsonValue('{\"k\":1}', \"$.k\") AS ?r)" + VALUES, true),

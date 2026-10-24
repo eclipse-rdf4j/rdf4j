@@ -237,9 +237,7 @@ public class ExtensionAggregateEdgeCaseSparqlTest {
 		assertThat(rows).hasSize(1);
 		assertThat(str(rows.get(0), "dept")).endsWith("eng");
 		assertThat(str(rows.get(0), "m")).isEqualTo("70");
-		// the aggregate is compared rather than used bare: a *bare* aggregate as the whole HAVING condition is not
-		// replaced by its group variable in TupleExprBuilder.processHavingClause (shared parser code, affects
-		// SAMPLE(...) alike) and filters every group out
+		// the compared form; the *bare* form HAVING (agg:boolAnd(?active)) is covered by HavingRootAggregateSparqlTest
 		rows = query("SELECT ?dept WHERE { ?e ex:dept ?dept OPTIONAL { ?e ex:active ?active } }"
 				+ " GROUP BY ?dept HAVING (agg:boolAnd(?active) = true)");
 		assertThat(column(rows, "dept")).containsExactly("http://example.org/eng");
