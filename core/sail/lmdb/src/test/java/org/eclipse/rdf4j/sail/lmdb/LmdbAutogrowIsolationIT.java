@@ -37,8 +37,10 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -100,12 +102,31 @@ class LmdbAutogrowIsolationIT {
 		LmdbStore store = new LmdbStore(dataDir.toFile(), autoGrowConfigWithoutDirectAdjacency());
 		SailRepository repository = new SailRepository(store);
 		repository.init();
+		List<String> replayObservations = new CopyOnWriteArrayList<>();
+		AtomicReference<String> phase = new AtomicReference<>("seed");
+		store.getBackingStore().nativeSourceObservationForTest = new LmdbSailStore.NativeSourceObservationForTest() {
+			@Override
+			public void state(LmdbSailStore.NativeSourceStateForTest state) {
+				replayObservations.add(phase.get() + " source=" + state);
+			}
+
+			@Override
+			public void access(boolean adjacency, String reason, StatementOrder order,
+					long subject, long predicate, long object, long context) {
+			}
+		};
 		try {
+			LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
+			assertThat(store.awaitIndexRebuild(30, TimeUnit.SECONDS))
+					.as("requested layouts must finish before this test measures native hard-capacity demand")
+					.isTrue();
 			seed(repository, 2);
 			LmdbSailStore backing = store.getBackingStore();
+			awaitOpenGrowthAdmission(backing);
 			MapStats tripleBefore = readMapStats(backing.getTripleStore().getTxnManager());
 			MapStats valueBefore = readMapStats(((ValueStore) backing.getValueFactory()).getTxnManager());
 			LmdbMapGrowthCapture growth = new LmdbMapGrowthCapture(backing);
+			replayObservations.add("measured maps triple=" + tripleBefore + " value=" + valueBefore);
 			// Each real payload exceeds its measured native map capacity, independently of host page size.
 			String namespace = "urn:lmdb-autogrow:namespace:"
 					+ "n".repeat(Math.toIntExact(Math.addExact(tripleBefore.mapSize(), tripleBefore.pageSize())));
@@ -118,33 +139,58 @@ class LmdbAutogrowIsolationIT {
 			try (SailRepositoryConnection reader = repository.getConnection();
 					SailRepositoryConnection writer = repository.getConnection()) {
 				reader.begin(IsolationLevels.READ_COMMITTED);
+				phase.set("open-original");
+				replayObservations.add("before original=" + growth.snapshot());
 				try (RepositoryResult<Statement> rows = reader.getStatements(null, PREDICATE, null, false)) {
+					MapGrowthMetrics.Snapshot writerBefore = growth.snapshot();
+					replayObservations.add("after original=" + writerBefore);
+					replayObservations.add("capacity after original triple=" + backing.getTripleStore().mapSizeBytes()
+							+ " value=" + ((ValueStore) backing.getValueFactory()).mapSizeBytes());
+					assertThat(backing.getTripleStore().mapSizeBytes()).isEqualTo(tripleBefore.mapSize());
+					assertThat(((ValueStore) backing.getValueFactory()).mapSizeBytes())
+							.isEqualTo(valueBefore.mapSize());
+					phase.set("writer");
 					writer.begin(IsolationLevels.READ_COMMITTED);
 					writer.add(added);
 					writer.setNamespace("growth", namespace);
 					writer.commit();
+					replayObservations.add("after writer=" + growth.snapshot());
 					assertThat(writer.hasStatement(added, false))
 							.as("the acknowledged replacement row is committed before the old result is replayed")
 							.isTrue();
 					assertThat(writer.getNamespace("growth")).isEqualTo(namespace);
-					assertThat(growth.tripleResizes()).isPositive();
-					assertThat(growth.valueResizes()).isPositive();
+					assertThat(growth.tripleResizes())
+							.as("the writer must cause TripleStore growth; %s", replayObservations)
+							.isPositive();
+					assertThat(growth.valueResizes())
+							.as("the writer must cause ValueStore growth; %s", replayObservations)
+							.isPositive();
+					MapGrowthMetrics.Snapshot writerAfter = growth.snapshot();
+					assertThat(writerAfter.tripleStoreResizes()).isGreaterThan(writerBefore.tripleStoreResizes());
+					assertThat(writerAfter.valueStoreResizes()).isGreaterThan(writerBefore.valueStoreResizes());
+					assertThat(writerAfter.replayAccepted())
+							.as("writer A must invalidate and replay the already constructed original statement source")
+							.isGreaterThan(writerBefore.replayAccepted());
 					assertMapCapacityIncreased("triple", tripleBefore,
 							readMapStats(backing.getTripleStore().getTxnManager()));
 					assertMapCapacityIncreased("value", valueBefore,
 							readMapStats(((ValueStore) backing.getValueFactory()).getTxnManager()));
 					Set<Statement> actual = new HashSet<>();
+					phase.set("first-exposure");
 					while (rows.hasNext()) {
 						assertKnownAndUnique(expected, actual, rows.next());
 					}
 					assertThat(actual)
-							.as("only an unobserved result may restart into the complete replacement snapshot")
+							.as("only an unobserved result may restart into the complete replacement snapshot; %s",
+									replayObservations)
 							.containsExactlyInAnyOrderElementsOf(expected);
 					assertThat(reader.getNamespace("growth")).isEqualTo(namespace);
 				}
 				reader.commit();
 			}
 		} finally {
+			System.out.println("UNOBSERVED-RC-REPLAY " + replayObservations);
+			store.getBackingStore().nativeSourceObservationForTest = null;
 			repository.shutDown();
 		}
 	}
