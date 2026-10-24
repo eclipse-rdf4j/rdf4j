@@ -13707,7 +13707,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		var lockManager = txnManager.lockManager();
 		long stamp = 0;
 		try {
-			endTransaction(true, false);
+			// The caller has already ended its publication. A later writer may now own the environment;
+			// resetting committed readers must never consume that writer's native transaction.
 			stamp = lockManager.writeLock();
 			txnManager.reset();
 		} catch (InterruptedException e) {

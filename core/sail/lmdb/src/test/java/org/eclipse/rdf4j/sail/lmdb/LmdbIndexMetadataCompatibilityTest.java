@@ -146,6 +146,7 @@ class LmdbIndexMetadataCompatibilityTest {
 				try (var rows = connection.getStatements(null, null, null, true)) {
 					assertEquals(expected, QueryResults.asSet(rows));
 				}
+				assertTrue(store.awaitIndexRebuild(20, TimeUnit.SECONDS), store.getStartupStatus().toString());
 			} finally {
 				repository.shutDown();
 			}

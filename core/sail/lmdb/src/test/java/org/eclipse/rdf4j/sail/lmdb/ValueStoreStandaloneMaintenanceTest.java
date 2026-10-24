@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -45,6 +46,74 @@ import org.lwjgl.system.MemoryStack;
 class ValueStoreStandaloneMaintenanceTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void readerResetAfterCommitDoesNotConsumeTheNextTermWriter(boolean failAfterNativeCommit,
+			@TempDir Path directory) throws Exception {
+		StoreProperties properties = new StoreProperties(directory.toFile());
+		Value term = VF.createTripleTerm(VF.createIRI("urn:reset:subject"), VF.createIRI("urn:reset:predicate"),
+				VF.createLiteral("owned term"));
+		try (RendezvousValueStore seed = new RendezvousValueStore(directory.resolve("values").toFile(), properties,
+				config("spoc,cspo"))) {
+			seed.startTransaction(true);
+			seed.storeValue(term);
+			seed.commit();
+		}
+		AtomicBoolean arm = new AtomicBoolean();
+		CountDownLatch termWriter = new CountDownLatch(1);
+		CountDownLatch releaseTermWriter = new CountDownLatch(1);
+		AtomicReference<Long> generationBeforeReset = new AtomicReference<>();
+		IOException injected = new IOException("injected after the foreground native publication");
+		Value foreground = VF.createLiteral("committed foreground", VF.createIRI("urn:reset:datatype"));
+		long foregroundId;
+		try (RendezvousValueStore store = new RendezvousValueStore(directory.resolve("values").toFile(), properties,
+				config("spoc,cspo,posc")) {
+			@Override
+			void endTransaction(boolean commit, boolean autoGrow) throws IOException {
+				super.endTransaction(commit, autoGrow);
+				if (commit && !autoGrow && arm.compareAndSet(true, false)) {
+					startIndexRebuildAfterStoreInitialization();
+					await(termWriter);
+					if (failAfterNativeCommit) {
+						throw injected;
+					}
+				}
+			}
+		}) {
+			store.setTermIndexMaintenanceObserver(phase -> {
+				if (phase.equals("dual-write-registered")) {
+					generationBeforeReset.set(store.nativeCommitGeneration());
+					termWriter.countDown();
+					await(releaseTermWriter);
+				}
+			});
+			store.startTransaction(true);
+			foregroundId = store.storeValue(foreground);
+			arm.set(true);
+			try {
+				if (failAfterNativeCommit) {
+					assertSame(injected, assertThrows(IOException.class, store::commit));
+				} else {
+					store.commit();
+				}
+				assertEquals(generationBeforeReset.get().longValue(), store.nativeCommitGeneration(),
+						"resetting the completed writer's readers must not consume the held TERM publication");
+				assertEquals(foreground, store.getValue(foregroundId));
+			} finally {
+				releaseTermWriter.countDown();
+			}
+			assertTrue(store.awaitIndexRebuild(10L, TimeUnit.SECONDS), store.indexRebuildStatus());
+			assertTrue(store.hasTrustedReferenceCounts());
+			assertEquals(term, store.getValue(store.getId(term)));
+		}
+		try (RendezvousValueStore reopened = new RendezvousValueStore(directory.resolve("values").toFile(), properties,
+				config("spoc,cspo,posc"))) {
+			assertEquals(foreground, reopened.getValue(foregroundId));
+			assertEquals(term, reopened.getValue(reopened.getId(term)));
+			assertTrue(reopened.hasTrustedReferenceCounts());
+		}
+	}
 
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
