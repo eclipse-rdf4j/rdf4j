@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -115,11 +116,15 @@ class LmdbRdfTermDomainStartupCapacityTest {
 			assertEquals(probe.initialNativeGeneration + 1,
 					reopened.getBackingStore().getTripleStore().getNativeCommitGeneration());
 			assertCanonicalDomain(reopened, seed.predicateId());
+			assertAuthority(readProperties(directory),
+					reopened.getBackingStore().getTripleStore().completeRdfTermDomainVersion(),
+					seed.fullRebuild() ? null : seed.qualification());
 			assertRowsAndIds(reopened, seed.predicateId(), seed.objectId());
 		} finally {
 			reopened.shutDown();
 		}
 		assertEquals(1, probe.closeCalls.get());
+		assertClosedQualification(directory);
 		assertColdReopen(directory, seed.predicateId(), seed.objectId());
 	}
 
@@ -237,7 +242,8 @@ class LmdbRdfTermDomainStartupCapacityTest {
 	private record NativeState(long mapBytes, long lastTransactionId, DomainRecord domain) {
 	}
 
-	private record Seed(long predicateId, long objectId, NativeState nativeState, String domainVersion) {
+	private record Seed(long predicateId, long objectId, NativeState nativeState, String domainVersion,
+			String qualification, boolean fullRebuild, Path directory) {
 	}
 
 	private static final class Probe implements TripleStore.EnvironmentLifecycle {
@@ -284,8 +290,9 @@ class LmdbRdfTermDomainStartupCapacityTest {
 			}
 		}
 
-		private void beforeDomainAdmission(TripleStore store) throws IOException {
+		private void beforeDomainAdmission(TripleStore store, StoreProperties properties) throws IOException {
 			domainAdmissions.incrementAndGet();
+			assertStartupAuthority(properties, seed);
 			NativeState committed = readCommittedState(store.env, seed.predicateId());
 			if (stateBeforeDomain == null) {
 				assertArrayEquals(seed.nativeState().domain().bytes(), committed.domain().bytes(),
@@ -310,7 +317,7 @@ class LmdbRdfTermDomainStartupCapacityTest {
 			assertNotNull(stateBeforeDomain, "a domain commit must follow observed domain admission");
 			assertEquals(initialNativeGeneration, store.getNativeCommitGeneration(),
 					"an aborted attempt cannot advance the native commit generation");
-			assertEquals(seed.domainVersion(), properties.getRdfTermDomainsVersion());
+			assertStartupAuthority(properties, seed);
 			assertCommittedSeed(readCommittedState(store.env, seed.predicateId()), seed, stateBeforeDomain);
 			assertNoStrongerHeapDomain(store, seed.predicateId());
 			assertTrue(readDomainRecord(transaction, seed.predicateId()).canonical(),
@@ -326,8 +333,7 @@ class LmdbRdfTermDomainStartupCapacityTest {
 			assertTrue(committed.domain().canonical(),
 					"successful native commit must make the stronger domain durable");
 			assertNoStrongerHeapDomain(store, seed.predicateId());
-			assertEquals(seed.domainVersion(), properties.getRdfTermDomainsVersion(),
-					"a full schema marker is not published before complete rebuild return");
+			assertStartupAuthority(properties, seed);
 		}
 	}
 
@@ -337,12 +343,18 @@ class LmdbRdfTermDomainStartupCapacityTest {
 			LmdbSailStore createBackingStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
 					boolean estimatorEnabled) throws IOException, SailException {
 				return new LmdbSailStore(dataDir, properties, config, estimatorEnabled,
-						(valueDir, valueProperties, valueConfig) -> new ValueStore(valueDir, valueProperties,
-								// Keep dictionary startup at its established seed policy; this control targets triple
-								// growth.
-								probe.mode == Mode.UNREPRESENTABLE_GROWTH
-										? LmdbRdfTermDomainStartupCapacityTest.config(SEED_MAP_BYTES)
-										: valueConfig),
+						(valueDir, valueProperties, valueConfig) -> {
+							// The paired writer must durably retire mismatched authority before dictionary startup.
+							assertStartupAuthority(valueProperties, probe.seed);
+							assertEquals(!probe.seed.fullRebuild(), valueProperties.rdfTermDomainQualifiedAtOpen);
+							return new ValueStore(valueDir, valueProperties,
+									// Keep dictionary startup at its established seed policy; this control targets
+									// triple
+									// growth.
+									probe.mode == Mode.UNREPRESENTABLE_GROWTH
+											? LmdbRdfTermDomainStartupCapacityTest.config(SEED_MAP_BYTES)
+											: valueConfig);
+						},
 						(tripleDir, tripleProperties, tripleConfig, values) -> new TripleStore(tripleDir,
 								tripleProperties, tripleConfig, values, probe) {
 							private boolean domainTransaction;
@@ -353,7 +365,7 @@ class LmdbRdfTermDomainStartupCapacityTest {
 								// assigned for each real admission, including earlier index setup (observe=false).
 								domainTransaction = decision.observe;
 								if (domainTransaction) {
-									probe.beforeDomainAdmission(this);
+									probe.beforeDomainAdmission(this, tripleProperties);
 									durableCommitBarrierForTesting = () -> probe.afterNativeBeforeHeap(this,
 											tripleProperties);
 								}
@@ -436,13 +448,14 @@ class LmdbRdfTermDomainStartupCapacityTest {
 		} finally {
 			store.shutDown();
 		}
-		StoreProperties properties = new StoreProperties(directory.toFile());
-		assertTrue(properties.load());
+		StoreProperties properties = assertClosedQualification(directory);
+		String qualification = properties.getRdfTermDomainQualification();
 		if (fullRebuild) {
 			properties.setRdfTermDomainsVersion("stale");
 			properties.save();
 		}
-		return new Seed(predicateId, objectId, state, properties.getRdfTermDomainsVersion());
+		return new Seed(predicateId, objectId, state, properties.getRdfTermDomainsVersion(), qualification, fullRebuild,
+				directory);
 	}
 
 	private static NativeState readCommittedState(long env, long predicateId) {
@@ -487,6 +500,8 @@ class LmdbRdfTermDomainStartupCapacityTest {
 	}
 
 	private static void assertNoStrongerHeapDomain(TripleStore store, long predicateId) {
+		assertNull(store.completeRdfTermDomainVersion(),
+				"startup must not serve complete authority before the native and heap rebuild returns");
 		assertFalse(store.getCachedRdfTermDomain(predicateId)
 				.map(domain -> domain.has(RdfTermDomain.Fact.CANONICAL_INTEGER))
 				.orElse(false),
@@ -509,9 +524,43 @@ class LmdbRdfTermDomainStartupCapacityTest {
 		assertEquals(probe.stateBeforeDomain.mapBytes(), probe.stateBeforeClose.mapBytes(),
 				"failure before successful growth must retain the measured native map size at close");
 		assertCommittedSeed(probe.stateBeforeClose, seed, probe.stateBeforeDomain);
+		assertStartupAuthority(readProperties(directory), seed);
+	}
+
+	private static StoreProperties readProperties(Path directory) {
 		StoreProperties properties = new StoreProperties(directory.toFile());
 		assertTrue(properties.load());
-		assertEquals(seed.domainVersion(), properties.getRdfTermDomainsVersion());
+		return properties;
+	}
+
+	private static void assertStartupAuthority(StoreProperties properties, Seed seed) {
+		// A full rebuild withdraws both fields before the first native startup writer. A qualified marked rebuild
+		// retains its exact previous closed witness; it can renew that witness only after successful owner close.
+		String version = seed.fullRebuild() ? null : seed.domainVersion();
+		String qualification = seed.fullRebuild() ? null : seed.qualification();
+		assertAuthority(properties, version, qualification);
+		assertAuthority(readProperties(seed.directory()), version, qualification);
+	}
+
+	private static void assertAuthority(StoreProperties properties, String version, String qualification) {
+		assertEquals(version, properties.getRdfTermDomainsVersion(), "exact profile at this startup phase");
+		assertEquals(qualification, properties.getRdfTermDomainQualification(),
+				"only a successful complete-owner close may renew the paired witness");
+	}
+
+	private static StoreProperties assertClosedQualification(Path directory) throws IOException {
+		StoreProperties properties = readProperties(directory);
+		RdfTermDomainQualification.Witness witness = RdfTermDomainQualification
+				.decode(properties.getRdfTermDomainQualification());
+		assertNotNull(witness, "successful complete-owner close must publish a readable paired witness");
+		assertEquals(properties.getRdfTermDomainsVersion(), witness.version());
+		PreparedBulkStore.Snapshot nativeState = PreparedBulkStore.captureDomainQualification(directory, properties,
+				config(SEED_MAP_BYTES));
+		assertEquals(nativeState.values().transactionId(), witness.valuesTransaction());
+		assertEquals(nativeState.triples().transactionId(), witness.triplesTransaction());
+		assertEquals(nativeState.values().generation(), witness.generation());
+		assertEquals(nativeState.triples().generation(), witness.generation());
+		return properties;
 	}
 
 	private static void assertDirectSuppressed(Throwable primary, Throwable expected) {
@@ -559,6 +608,7 @@ class LmdbRdfTermDomainStartupCapacityTest {
 
 	private static void assertCanonicalDomain(LmdbStore store, long predicateId) throws IOException {
 		TripleStore triples = store.getBackingStore().getTripleStore();
+		assertNotNull(triples.completeRdfTermDomainVersion(), "successful startup must serve complete authority");
 		RdfTermDomain domain = triples.getKnownRdfTermDomain(predicateId).orElseThrow();
 		assertTrue(domain.has(RdfTermDomain.Fact.CANONICAL_INTEGER));
 		assertEquals(domain, triples.getPersistedRdfTermDomain(predicateId).orElseThrow());
@@ -584,5 +634,6 @@ class LmdbRdfTermDomainStartupCapacityTest {
 		} finally {
 			store.shutDown();
 		}
+		assertClosedQualification(directory);
 	}
 }

@@ -58,6 +58,7 @@ class LmdbLegacyPredicateDomainFreshnessTest {
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 	private static final String FIXTURE_RESOURCE = "/lmdb-compat/legacy-predicate-domain-freshness-v2.zip";
 	private static final String SCHEMA = "rdf-term-domain-v5";
+	private static final String CURRENT_SCHEMA = "rdf-term-domain-v6";
 	private static final List<String> PROFILE_FILES = List.of("namespaces.dat", "store.properties",
 			"triples/data.mdb", "values/data.mdb");
 	private static final Set<String> COPIED = Set.of("namespaces.dat", "store.properties", "triples/data.mdb",
@@ -185,10 +186,10 @@ class LmdbLegacyPredicateDomainFreshnessTest {
 					assertFalse(actual.isUnknown());
 					assertTrue(admits(actual, stored),
 							"rebuilt proof must admit its actual authoritative main-index term");
-					assertEquals(SCHEMA, triples.effectiveRdfTermDomainsVersion());
+					assertEquals(CURRENT_SCHEMA, triples.effectiveRdfTermDomainsVersion());
 				} else {
 					assertTrue(domain.isEmpty(), "a legacy writer does not maintain this extension's facts");
-					assertEquals(SCHEMA + "-unreadable", triples.effectiveRdfTermDomainsVersion());
+					assertEquals(CURRENT_SCHEMA + "-unreadable", triples.effectiveRdfTermDomainsVersion());
 				}
 				assertEquals(List.of(subject), actualSubjects, "the exact original bound query retains its whole bag");
 			} finally {
@@ -196,6 +197,47 @@ class LmdbLegacyPredicateDomainFreshnessTest {
 			}
 		} finally {
 			authenticate(original, inline);
+		}
+	}
+
+	@ParameterizedTest(name = "current legacy schema, inline={0}")
+	@ValueSource(booleans = { true, false })
+	void legacyWriterRemainsUnqualifiedAfterARealCurrentSchemaRebuild(boolean inline, @TempDir Path temporaryRoot)
+			throws Exception {
+		// The first real current opener creates the current derived schema on this unchanged format-2 dictionary.
+		verifyLegacy(inline, true, temporaryRoot);
+		Path copy = temporaryRoot.resolve("observations").resolve("owned-inline-" + inline + "-auto-true");
+		StoreProperties completed = new StoreProperties(copy.toFile());
+		assertTrue(completed.load());
+		assertEquals(CURRENT_SCHEMA, completed.getRdfTermDomainsVersion());
+		int index = inline ? 10 : 11;
+		IRI predicate = VF.createIRI("urn:compat:current-literal:" + index);
+		IRI subject = VF.createIRI("urn:compat:current-literal-subject:" + index);
+		Literal expected = VF.createLiteral(inline ? "2001-02-02-14:00" : "0002-01-01", XSD.DATE);
+		for (boolean rebuild : new boolean[] { false, true }) {
+			LmdbStoreConfig config = new LmdbStoreConfig().setTripleIndexes("spoc,posc")
+					.setTripleTermIndexes("spoc,cspo")
+					.setInlineLiterals(inline)
+					.setPredicateGuaranteeIndexAutoRebuild(rebuild);
+			LmdbStore store = new LmdbStore(copy.toFile(), config);
+			SailRepository repository = new SailRepository(store);
+			repository.init();
+			try (RepositoryConnection connection = repository.getConnection()) {
+				assertEquals(LmdbStoreFormat.LEGACY_VERSION, store.getFormat().getVersion());
+				assertTrue(connection.hasStatement(subject, predicate, expected, false));
+				Optional<RdfTermDomain> domain = known(store, predicate);
+				if (rebuild) {
+					assertTrue(admits(domain.orElseThrow(), expected));
+					assertEquals(CURRENT_SCHEMA,
+							store.getBackingStore().getTripleStore().effectiveRdfTermDomainsVersion());
+				} else {
+					assertTrue(domain.isEmpty(), "an equal current schema cannot qualify a legacy writer");
+					assertEquals(CURRENT_SCHEMA + "-unreadable",
+							store.getBackingStore().getTripleStore().effectiveRdfTermDomainsVersion());
+				}
+			} finally {
+				repository.shutDown();
+			}
 		}
 	}
 

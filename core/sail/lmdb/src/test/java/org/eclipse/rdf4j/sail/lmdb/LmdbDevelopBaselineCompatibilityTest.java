@@ -974,7 +974,7 @@ class LmdbDevelopBaselineCompatibilityTest {
 		Properties expected = new Properties();
 		expected.putAll(baselineProperties);
 		expected.setProperty(StoreProperties.LANGUAGE_TAG_KEY, StoreProperties.LANGUAGE_TAG_KEY_CANONICAL);
-		expected.setProperty(StoreProperties.PREDICATE_OBJECT_DOMAINS_VERSION_KEY, "rdf-term-domain-v5");
+		expected.setProperty(StoreProperties.PREDICATE_OBJECT_DOMAINS_VERSION_KEY, "rdf-term-domain-v6");
 		expected.setProperty(StoreProperties.STORE_ID_KEY, currentStoreId.toString());
 		return expected;
 	}

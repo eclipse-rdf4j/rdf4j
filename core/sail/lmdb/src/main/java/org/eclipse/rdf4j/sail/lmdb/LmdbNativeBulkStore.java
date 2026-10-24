@@ -82,6 +82,12 @@ public final class LmdbNativeBulkStore implements AutoCloseable {
 			openedValues = new ValueStore(new File(root, "values"), properties, config, true, null, format, true);
 			openedTriples = new TripleStore(new File(root, "triples"), properties, config, openedValues);
 			openedNamespaces = new NamespaceStore(root, openedTriples);
+			openedValues.beginBulkOwnership();
+			openedTriples.beginBulkOwnership();
+			if (properties.getTripleIndexes() == null || properties.getTripleIndexes().isBlank()) {
+				properties.setTripleIndexes(DEFAULT_TRIPLE_INDEXES);
+			}
+			properties.save();
 		} catch (Throwable failure) {
 			closeAfterConstructorFailure(openedTriples, openedValues, openedNamespaces, failure);
 			throw failure;
@@ -89,12 +95,6 @@ public final class LmdbNativeBulkStore implements AutoCloseable {
 		namespaceStore = openedNamespaces;
 		valueStore = openedValues;
 		tripleStore = openedTriples;
-		valueStore.beginBulkOwnership();
-		tripleStore.beginBulkOwnership();
-		if (properties.getTripleIndexes() == null || properties.getTripleIndexes().isBlank()) {
-			properties.setTripleIndexes(DEFAULT_TRIPLE_INDEXES);
-		}
-		properties.save();
 	}
 
 	public void appendValueRecords(ValueStore.BulkRecordSource source, int maxTransactionRecords,
@@ -217,21 +217,47 @@ public final class LmdbNativeBulkStore implements AutoCloseable {
 			return;
 		}
 		closed = true;
-		IOException failure = null;
+		Throwable failure = null;
+		if (tripleStore.completeRdfTermDomainVersion() != null
+				&& tripleStore.trustedClosedTransactionId() >= 0L && valueStore.trustedClosedTransactionId() >= 0L) {
+			tripleStore.prepareDomainQualificationClose();
+			valueStore.prepareDomainQualificationClose();
+		}
 		try {
 			tripleStore.close();
-		} catch (IOException e) {
-			failure = e;
+		} catch (Throwable closeFailure) {
+			failure = closeFailure;
 		}
 		try {
 			valueStore.close();
-		} catch (IOException e) {
-			failure = append(failure, e);
+		} catch (Throwable closeFailure) {
+			failure = append(failure, closeFailure);
 		}
-		namespaceStore.close();
-		properties.save();
+		try {
+			namespaceStore.close();
+		} catch (Throwable closeFailure) {
+			failure = append(failure, closeFailure);
+		}
+		try {
+			if (failure == null) {
+				RdfTermDomainQualification.publishClosed(directory, properties, config, valueStore, tripleStore);
+			} else {
+				RdfTermDomainQualification.withdraw(properties, null);
+			}
+		} catch (Throwable qualificationFailure) {
+			failure = append(failure, qualificationFailure);
+		}
+		if (failure instanceof IOException ioFailure) {
+			throw ioFailure;
+		}
+		if (failure instanceof RuntimeException runtimeFailure) {
+			throw runtimeFailure;
+		}
+		if (failure instanceof Error error) {
+			throw error;
+		}
 		if (failure != null) {
-			throw failure;
+			throw new IOException(failure);
 		}
 	}
 
@@ -242,25 +268,37 @@ public final class LmdbNativeBulkStore implements AutoCloseable {
 				triples.close();
 			}
 		} catch (Throwable closeFailure) {
-			failure.addSuppressed(closeFailure);
+			if (failure != closeFailure) {
+				failure.addSuppressed(closeFailure);
+			}
 		}
 		try {
 			if (values != null) {
 				values.close();
 			}
 		} catch (Throwable closeFailure) {
-			failure.addSuppressed(closeFailure);
+			if (failure != closeFailure) {
+				failure.addSuppressed(closeFailure);
+			}
 		}
 		if (namespaces != null) {
-			namespaces.close();
+			try {
+				namespaces.close();
+			} catch (Throwable closeFailure) {
+				if (failure != closeFailure) {
+					failure.addSuppressed(closeFailure);
+				}
+			}
 		}
 	}
 
-	private static IOException append(IOException existing, IOException added) {
+	private static Throwable append(Throwable existing, Throwable added) {
 		if (existing == null) {
 			return added;
 		}
-		existing.addSuppressed(added);
+		if (existing != added) {
+			existing.addSuppressed(added);
+		}
 		return existing;
 	}
 }

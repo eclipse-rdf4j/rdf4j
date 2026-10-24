@@ -847,6 +847,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	 * in the store directory and are loaded when the store is initialized.
 	 */
 	private final StoreProperties properties;
+	private boolean forceDomainQualificationSyncOnClose;
+	private volatile boolean domainQualificationSyncSucceeded;
 	private final LmdbStoreFormat format;
 	private final boolean deferPersistedUnusedRecovery;
 
@@ -2744,6 +2746,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	private void open(boolean deferAuxiliaryDatabases, boolean replacingNativeGeneration) throws IOException {
 		valueStoreInitializationComplete = false;
+		forceDomainQualificationSyncOnClose = false;
+		domainQualificationSyncSucceeded = false;
 		refCountIntegrityEstablished = false;
 		refCountRecoveryInProgress = false;
 		legacyStructuredRefCountMarker = false;
@@ -2794,6 +2798,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		RefCountMarkerStatus markerStatus;
 		try {
 			markerStatus = inspectRefCountMarkerBeforeStartupWrites(env, format, newNativeGeneration);
+			if (properties.rdfTermDomainQualifiedAtOpen
+					&& markerStatus.nativeTransactionId() != properties.rdfTermDomainValuesTransactionAtOpen) {
+				RdfTermDomainQualification.withdraw(properties, null);
+				throw new IOException("ValueStore changed after RDF domain qualification preflight");
+			}
 		} catch (IOException | RuntimeException | Error failure) {
 			mdb_env_close(env);
 			env = 0L;
@@ -14382,6 +14391,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				if (closeInProgress) {
 					throw new IOException("Cannot clear ValueStore during shutdown");
 				}
+				// Retire paired authority before an explicit native generation replacement can reset transaction IDs.
+				RdfTermDomainQualification.withdraw(properties, null);
 				if (!closeUnderMonitor()) {
 					continue;
 				}
@@ -14441,6 +14452,22 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	/** The paired store supplies only its last owned native triple commit, after its writers have drained. */
 	void prepareCleanClose(long tripleTransactionId) {
 		closingTripleTransactionId = tripleTransactionId;
+	}
+
+	void prepareDomainQualificationClose() {
+		forceDomainQualificationSyncOnClose = true;
+	}
+
+	boolean closedForDomainQualification() {
+		return env == 0L;
+	}
+
+	boolean domainQualificationSyncSucceeded() {
+		return domainQualificationSyncSucceeded;
+	}
+
+	void syncForDomainQualification(long environment) throws IOException {
+		E(mdb_env_sync(environment, true));
 	}
 
 	void invalidateCleanCloseAfterUnknownTripleWriter() {
@@ -14653,6 +14680,14 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			try (TxnManager.CloseBarrier ignored = txnManager.acquireCloseBarrier()) {
 				if (nativeQuiesced && env != 0) {
 					long environment = env;
+					if (forceDomainQualificationSyncOnClose) {
+						try {
+							syncForDomainQualification(environment);
+							domainQualificationSyncSucceeded = true;
+						} catch (Throwable syncFailure) {
+							failure = appendFailure(failure, syncFailure);
+						}
+					}
 					try {
 						closeEnvironment(environment);
 					} catch (Throwable closeFailure) {

@@ -170,6 +170,11 @@ class TripleStore implements Closeable {
 	interface EnvironmentLifecycle {
 		void afterOpen(long env) throws IOException;
 
+		/** Makes replacement domain tables durable before their sidecar authority can be published. */
+		default void sync(long env) throws IOException {
+			E(mdb_env_sync(env, true));
+		}
+
 		void close(long env);
 	}
 
@@ -215,7 +220,8 @@ class TripleStore implements Closeable {
 	// Persisted metadata v1 contract. Changing this capacity requires a metadata-version migration.
 	private static final int FRONTIER_MUTATION_JOURNAL_CAPACITY = 16_384;
 	// v5: RdfTermDomain.Fact.CANONICAL_BOOLEAN appended (shifts the persisted datatype bits; forces a rebuild on open)
-	private static final String PREDICATE_OBJECT_DOMAINS_VERSION = "rdf-term-domain-v5";
+	// v6: qualification covers all committed writers; incomplete historical v5 tables are rebuilt or withheld.
+	private static final String PREDICATE_OBJECT_DOMAINS_VERSION = "rdf-term-domain-v6";
 	private static final long PREDICATE_OBJECT_DOMAIN_ENCODING_MAGIC = 0x52444654444f4d31L;
 	private static final int PREDICATE_OBJECT_DOMAIN_BYTES = Long.BYTES * 4;
 	private static final int PREDICATE_OBJECT_DOMAIN_DEGRADATION_BYTES = Long.BYTES * 2;
@@ -536,7 +542,11 @@ class TripleStore implements Closeable {
 	private final boolean predicateGuaranteeIndexEnabled;
 	private final boolean predicateGuaranteeIndexAutoRebuild;
 	private final Set<String> predicateGuaranteeExcludedPredicates;
+	private final String rdfTermDomainsVersion;
 	private volatile boolean predicateGuaranteeIndexReadable;
+	private long rdfTermDomainValueEnvironmentGeneration;
+	private boolean forceDomainQualificationSyncOnClose;
+	private volatile boolean domainQualificationSyncSucceeded;
 	private volatile Map<Long, RdfTermDomain> predicateObjectDomainCache = Map.of();
 	private final Long2ObjectOpenHashMap<RdfTermDomain> pendingRdfTermDomainCacheWrites = new Long2ObjectOpenHashMap<>();
 	private final LongOpenHashSet pendingRdfTermDomainCacheDeletes = new LongOpenHashSet();
@@ -658,6 +668,7 @@ class TripleStore implements Closeable {
 		this.predicateGuaranteeIndexEnabled = config.getPredicateGuaranteeIndexEnabled();
 		this.predicateGuaranteeIndexAutoRebuild = config.getPredicateGuaranteeIndexAutoRebuild();
 		this.predicateGuaranteeExcludedPredicates = config.getPredicateGuaranteeExcludedPredicateSet();
+		this.rdfTermDomainsVersion = currentRdfTermDomainsVersion(predicateGuaranteeExcludedPredicates);
 		this.frontierMutationJournalEnabled = config.getFrontierEstimatorMode() != FrontierEstimatorMode.OFF;
 		// create directory if it not exists
 		this.dir.mkdirs();
@@ -688,6 +699,11 @@ class TripleStore implements Closeable {
 			// comparator state.
 			DatabaseHandles databaseHandles = writeTransaction(env, (stack, txn) -> {
 				validateNativeWriterTransaction(txn);
+				if (properties.rdfTermDomainQualifiedAtOpen
+						&& mdb_txn_id(txn) != Math.addExact(properties.rdfTermDomainTriplesTransactionAtOpen, 1L)) {
+					RdfTermDomainQualification.withdraw(properties, null);
+					throw new IOException("TripleStore changed after RDF domain qualification preflight");
+				}
 				cleanupAbandonedMutationJournals();
 				int mainDbi = openDatabaseWithTxn(txn, null, 0);
 				String name = "contexts";
@@ -1089,10 +1105,15 @@ class TripleStore implements Closeable {
 	private void initializeRdfTermDomains(RdfTermDomainStartup startup) throws IOException {
 		if (valueStore == null || startup == RdfTermDomainStartup.DISABLED) {
 			if (!predicateGuaranteeIndexEnabled) {
-				properties.setRdfTermDomainsVersion(PREDICATE_OBJECT_DOMAINS_VERSION + "-disabled");
+				withholdRdfTermDomains(PREDICATE_OBJECT_DOMAINS_VERSION + "-disabled");
+			} else {
+				clearRdfTermDomainCache();
 			}
-			clearRdfTermDomainCache();
 			return;
+		}
+		if (startup == RdfTermDomainStartup.REBUILD_ALL) {
+			// Replacement tables may omit predicates covered by the old profile. Retire its qualifier before commit.
+			withholdRdfTermDomains(null);
 		}
 		try (ValueResolutionScope values = valueStore.openValueResolutionScope();
 				SailClosable exposure = values.activate()) {
@@ -1105,16 +1126,21 @@ class TripleStore implements Closeable {
 							rebuildMarkedRdfTermDomains();
 						}
 						loadRdfTermDomainCache();
+						rdfTermDomainValueEnvironmentGeneration = valueStore.environmentGeneration();
 						predicateGuaranteeIndexReadable = true;
 						return;
 					}
 					if (startup == RdfTermDomainStartup.UNREADABLE) {
-						clearRdfTermDomainCache();
+						// This opener may commit objects it cannot record. Withdraw the old durable authority first.
+						withholdRdfTermDomains(null);
 						return;
 					}
 					rebuildRdfTermDomains();
+					// The sidecar uses forced atomic publication, even when ordinary LMDB writes use MDB_NOSYNC.
+					environmentLifecycle.sync(env);
 					properties.setRdfTermDomainsVersion(currentVersion);
 					loadRdfTermDomainCache();
+					rdfTermDomainValueEnvironmentGeneration = valueStore.environmentGeneration();
 					predicateGuaranteeIndexReadable = true;
 					return;
 				} catch (MapFullException capacity) {
@@ -1197,18 +1223,32 @@ class TripleStore implements Closeable {
 			return PREDICATE_OBJECT_DOMAINS_VERSION + "-disabled";
 		}
 		String version = currentRdfTermDomainsVersion();
-		return predicateGuaranteeIndexReadable ? version : version + "-unreadable";
+		return rdfTermDomainsReadable() ? version : version + "-unreadable";
+	}
+
+	private boolean rdfTermDomainsReadable() {
+		return predicateGuaranteeIndexReadable && valueStore != null
+				&& rdfTermDomainValueEnvironmentGeneration == valueStore.environmentGeneration()
+				&& currentRdfTermDomainsVersion().equals(properties.getRdfTermDomainsVersion());
 	}
 
 	private String currentRdfTermDomainsVersion() {
-		return currentRdfTermDomainsVersion(predicateGuaranteeExcludedPredicates);
+		return rdfTermDomainsVersion;
 	}
 
 	private static String currentRdfTermDomainsVersion(Set<String> excludedPredicates) {
 		if (excludedPredicates.isEmpty()) {
 			return PREDICATE_OBJECT_DOMAINS_VERSION;
 		}
-		return PREDICATE_OBJECT_DOMAINS_VERSION + "-exclude-" + Integer.toHexString(excludedPredicates.hashCode());
+		// Exact, order-independent identity: Set.hashCode can equate different excluded predicates.
+		StringBuilder version = new StringBuilder(PREDICATE_OBJECT_DOMAINS_VERSION).append("-exclude[");
+		excludedPredicates.stream()
+				.sorted()
+				.forEach(predicate -> version.append('-')
+						.append(predicate.length())
+						.append(':')
+						.append(predicate));
+		return version.append(']').toString();
 	}
 
 	/** The same startup policy drives the opener and its read-only prepared-admission probe. */
@@ -1222,11 +1262,17 @@ class TripleStore implements Closeable {
 
 	static RdfTermDomainStartup rdfTermDomainStartup(StoreProperties properties, boolean enabled,
 			boolean autoRebuild, boolean legacyWriter, Set<String> excludedPredicates) {
+		return rdfTermDomainStartup(properties, enabled, autoRebuild, legacyWriter, excludedPredicates,
+				properties.rdfTermDomainQualifiedAtOpen);
+	}
+
+	static RdfTermDomainStartup rdfTermDomainStartup(StoreProperties properties, boolean enabled,
+			boolean autoRebuild, boolean legacyWriter, Set<String> excludedPredicates, boolean qualifiedAtOpen) {
 		if (!enabled) {
 			return RdfTermDomainStartup.DISABLED;
 		}
 		// A format-2 writer does not maintain this extension even when its schema marker is unchanged.
-		if (!legacyWriter && currentRdfTermDomainsVersion(excludedPredicates)
+		if (!legacyWriter && qualifiedAtOpen && currentRdfTermDomainsVersion(excludedPredicates)
 				.equals(properties.getRdfTermDomainsVersion())) {
 			return autoRebuild ? RdfTermDomainStartup.REBUILD_MARKED : RdfTermDomainStartup.LOAD;
 		}
@@ -1269,6 +1315,13 @@ class TripleStore implements Closeable {
 
 	private void clearRdfTermDomainCache() {
 		predicateObjectDomainCache = Map.of();
+	}
+
+	/** No writer may outlive a formerly readable qualifier without durably withdrawing that authority. */
+	private void withholdRdfTermDomains(String durableVersion) {
+		predicateGuaranteeIndexReadable = false;
+		clearRdfTermDomainCache();
+		RdfTermDomainQualification.withdraw(properties, durableVersion);
 	}
 
 	private void rebuildRdfTermDomains() throws IOException {
@@ -1517,7 +1570,7 @@ class TripleStore implements Closeable {
 	}
 
 	Optional<RdfTermDomain> getKnownRdfTermDomain(long predicateId) throws IOException {
-		if (!predicateGuaranteeIndexEnabled || !predicateGuaranteeIndexReadable
+		if (!predicateGuaranteeIndexEnabled || !rdfTermDomainsReadable()
 				|| isPredicateGuaranteeExcluded(predicateId)) {
 			return Optional.empty();
 		}
@@ -1532,7 +1585,7 @@ class TripleStore implements Closeable {
 	}
 
 	Optional<RdfTermDomain> getPersistedRdfTermDomain(long predicateId) throws IOException {
-		if (!predicateGuaranteeIndexEnabled || !predicateGuaranteeIndexReadable
+		if (!predicateGuaranteeIndexEnabled || !rdfTermDomainsReadable()
 				|| isPredicateGuaranteeExcluded(predicateId)) {
 			return Optional.empty();
 		}
@@ -1844,6 +1897,8 @@ class TripleStore implements Closeable {
 	long appendBulkIndex(String specification, BulkIndexTupleSource source, int maxTransactionRecords,
 			long maxTransactionBytes) throws IOException {
 		Objects.requireNonNull(source, "source");
+		// This boundary also covers a raw append following successful domain preparation on the same owner.
+		withholdRdfTermDomains(null);
 		int batchRecords = bulkBatchRecords(maxTransactionRecords, maxTransactionBytes, 128L);
 		TripleIndex index = indexes.stream()
 				.filter(candidate -> candidate.toString().equals(specification))
@@ -1896,6 +1951,8 @@ class TripleStore implements Closeable {
 	long appendBulkEncodedIndex(String specification, ValueStore.BulkRecordSource source, int maxTransactionRecords,
 			long maxTransactionBytes) throws IOException {
 		Objects.requireNonNull(source, "source");
+		// This boundary also covers a raw append following successful domain preparation on the same owner.
+		withholdRdfTermDomains(null);
 		int batchRecords = bulkBatchRecords(maxTransactionRecords, maxTransactionBytes, 128L);
 		TripleIndex index = indexes.stream()
 				.filter(candidate -> candidate.toString().equals(specification))
@@ -2176,6 +2233,8 @@ class TripleStore implements Closeable {
 		} else {
 			expectedNativeTransactionId = lastTransactionId();
 		}
+		// An empty startup rebuild cannot endorse the raw streams that this owner is about to append.
+		withholdRdfTermDomains(null);
 	}
 
 	long validatedBulkTransactionId() throws IOException {
@@ -2193,6 +2252,23 @@ class TripleStore implements Closeable {
 
 	long trustedClosedTransactionId() {
 		return nativeOwnershipInvalidated ? -1L : expectedNativeTransactionId;
+	}
+
+	String completeRdfTermDomainVersion() {
+		return predicateGuaranteeIndexEnabled && rdfTermDomainsReadable() && valueStore != null
+				&& !valueStore.getFormat().isLegacy() ? currentRdfTermDomainsVersion() : null;
+	}
+
+	void prepareDomainQualificationClose() {
+		forceDomainQualificationSyncOnClose = true;
+	}
+
+	boolean closedForDomainQualification() {
+		return env == 0L;
+	}
+
+	boolean domainQualificationSyncSucceeded() {
+		return domainQualificationSyncSucceeded;
 	}
 
 	boolean tracksNativeOwnership() {
@@ -3868,6 +3944,14 @@ class TripleStore implements Closeable {
 				} catch (Throwable closeFailure) {
 					logger.warn("Failed to close file for {} index", new String(index.getFieldSeq()));
 					failure = appendCloseFailure(failure, closeFailure);
+				}
+			}
+			if (forceDomainQualificationSyncOnClose) {
+				try {
+					environmentLifecycle.sync(environment);
+					domainQualificationSyncSucceeded = true;
+				} catch (Throwable syncFailure) {
+					failure = appendCloseFailure(failure, syncFailure);
 				}
 			}
 			try {
@@ -8859,7 +8943,7 @@ class TripleStore implements Closeable {
 			}
 		}
 		if (rewritten > 0 && predicateGuaranteeIndexEnabled && predicateGuaranteeIndexAutoRebuild
-				&& predicateGuaranteeIndexReadable) {
+				&& rdfTermDomainsReadable()) {
 			// The final guarantee scan has the same internal ownership as each rewrite batch.
 			try (ValueResolutionScope values = valueStore == null ? null : valueStore.openValueResolutionScope();
 					SailClosable exposure = values == null ? null : values.activate()) {

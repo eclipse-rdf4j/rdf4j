@@ -40,6 +40,7 @@ class StoreProperties {
 	 */
 	static final String INDEXES_KEY = "triple-indexes";
 	static final String PREDICATE_OBJECT_DOMAINS_VERSION_KEY = "predicate-object-domains-version";
+	static final String RDF_TERM_DOMAIN_QUALIFICATION_KEY = "rdf-term-domain-qualification";
 	static final String STORE_ID_KEY = "store-id";
 
 	/**
@@ -124,6 +125,10 @@ class StoreProperties {
 	protected String tripleIndexes;
 
 	protected String predicateObjectDomainsVersion;
+	private String rdfTermDomainQualification;
+	boolean rdfTermDomainQualifiedAtOpen;
+	long rdfTermDomainValuesTransactionAtOpen = -1L;
+	long rdfTermDomainTriplesTransactionAtOpen = -1L;
 	protected String tripleTermIndexes;
 	protected String storeId;
 	protected String languageTagKey;
@@ -182,6 +187,10 @@ class StoreProperties {
 			loadedProperties.putAll(properties);
 			tripleIndexes = properties.getProperty(INDEXES_KEY);
 			predicateObjectDomainsVersion = properties.getProperty(PREDICATE_OBJECT_DOMAINS_VERSION_KEY);
+			rdfTermDomainQualification = properties.getProperty(RDF_TERM_DOMAIN_QUALIFICATION_KEY);
+			rdfTermDomainQualifiedAtOpen = false;
+			rdfTermDomainValuesTransactionAtOpen = -1L;
+			rdfTermDomainTriplesTransactionAtOpen = -1L;
 			tripleTermIndexes = properties.getProperty(TRIPLE_TERM_INDEXES_KEY);
 			storeId = properties.getProperty(STORE_ID_KEY);
 			languageTagKey = properties.getProperty(LANGUAGE_TAG_KEY);
@@ -229,7 +238,8 @@ class StoreProperties {
 		Properties properties = new Properties();
 		properties.putAll(loadedProperties);
 		for (String key : new String[] { VERSION_KEY, INDEXES_KEY, TRIPLE_TERM_INDEXES_KEY,
-				PREDICATE_OBJECT_DOMAINS_VERSION_KEY, STORE_ID_KEY, LANGUAGE_TAG_KEY, REF_COUNTS_VERSION_KEY,
+				PREDICATE_OBJECT_DOMAINS_VERSION_KEY, RDF_TERM_DOMAIN_QUALIFICATION_KEY, STORE_ID_KEY, LANGUAGE_TAG_KEY,
+				REF_COUNTS_VERSION_KEY,
 				NUMERIC_ID_ENCODING_KEY, LITERAL_REFERENCE_ENCODING_KEY, INLINE_LITERALS_KEY,
 				CANONICAL_LANGUAGE_TAGS_KEY, DATE_TIME_ID_ENCODING_KEY }) {
 			properties.remove(key);
@@ -242,6 +252,9 @@ class StoreProperties {
 		}
 		if (predicateObjectDomainsVersion != null) {
 			properties.setProperty(PREDICATE_OBJECT_DOMAINS_VERSION_KEY, predicateObjectDomainsVersion);
+		}
+		if (rdfTermDomainQualification != null) {
+			properties.setProperty(RDF_TERM_DOMAIN_QUALIFICATION_KEY, rdfTermDomainQualification);
 		}
 		if (tripleTermIndexes != null) {
 			properties.setProperty(TRIPLE_TERM_INDEXES_KEY, tripleTermIndexes);
@@ -307,6 +320,7 @@ class StoreProperties {
 		case INDEXES_KEY -> tripleIndexes;
 		case TRIPLE_TERM_INDEXES_KEY -> tripleTermIndexes;
 		case PREDICATE_OBJECT_DOMAINS_VERSION_KEY -> predicateObjectDomainsVersion;
+		case RDF_TERM_DOMAIN_QUALIFICATION_KEY -> rdfTermDomainQualification;
 		case STORE_ID_KEY -> storeId;
 		case LANGUAGE_TAG_KEY -> languageTagKey;
 		case REF_COUNTS_VERSION_KEY -> refCountsVersion;
@@ -414,6 +428,15 @@ class StoreProperties {
 
 	String getRdfTermDomainsVersion() {
 		return predicateObjectDomainsVersion;
+	}
+
+	String getRdfTermDomainQualification() {
+		return rdfTermDomainQualification;
+	}
+
+	void setRdfTermDomainQualification(String qualification) {
+		dirty |= !Objects.equals(rdfTermDomainQualification, qualification);
+		rdfTermDomainQualification = qualification;
 	}
 
 	StoreProperties setRdfTermDomainsVersion(String predicateObjectDomainsVersion) {

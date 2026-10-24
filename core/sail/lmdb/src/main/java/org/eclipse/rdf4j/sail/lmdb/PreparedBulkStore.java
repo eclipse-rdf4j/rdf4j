@@ -186,6 +186,7 @@ final class PreparedBulkStore {
 	}
 
 	static Snapshot read(Path directory, StoreProperties properties, LmdbStoreConfig config) {
+		properties.rdfTermDomainQualifiedAtOpen = false;
 		Snapshot sealed = readSealed(directory, properties, config);
 		return sealed != null ? sealed : readCurrent(directory, properties, config);
 	}
@@ -230,6 +231,7 @@ final class PreparedBulkStore {
 				return null;
 			}
 			Captured captured = capture(directory, properties, config);
+			RdfTermDomainQualification.observe(properties, captured.snapshot);
 			Snapshot actual = captured.snapshot;
 			if (captured.pendingDomainMaintenance || !expected.equals(actual)) {
 				return null;
@@ -253,6 +255,7 @@ final class PreparedBulkStore {
 		}
 		try {
 			Captured captured = capture(directory, properties, config);
+			RdfTermDomainQualification.observe(properties, captured.snapshot);
 			Snapshot snapshot = captured.snapshot;
 			if (captured.pendingDomainMaintenance
 					|| (!captured.tripleTransactionBound && !snapshot.values.generation.isEmpty())
@@ -262,11 +265,13 @@ final class PreparedBulkStore {
 			admit(properties, snapshot);
 			return snapshot;
 		} catch (IOException | RuntimeException invalid) {
+			properties.rdfTermDomainQualifiedAtOpen = false;
 			return null;
 		}
 	}
 
 	private static void admit(StoreProperties properties, Snapshot snapshot) {
+		RdfTermDomainQualification.observe(properties, snapshot);
 		properties.setNativeGenerationPresent(true);
 		properties.verifiedValueTransactionId = snapshot.values.transactionId;
 		properties.verifiedTripleTransactionId = snapshot.triples.transactionId;
@@ -335,6 +340,11 @@ final class PreparedBulkStore {
 		}
 	}
 
+	static Snapshot captureDomainQualification(Path directory, StoreProperties properties, LmdbStoreConfig config)
+			throws IOException {
+		return capture(directory, properties, config).snapshot;
+	}
+
 	private static Captured capture(Path directory, StoreProperties properties, LmdbStoreConfig config)
 			throws IOException {
 		long valuesEnv = 0L;
@@ -379,7 +389,8 @@ final class PreparedBulkStore {
 			TripleStore.RdfTermDomainStartup domainStartup = TripleStore.rdfTermDomainStartup(properties,
 					config.getPredicateGuaranteeIndexEnabled(), config.getPredicateGuaranteeIndexAutoRebuild(),
 					LmdbStoreFormat.resolveDictionaryCapabilities(properties, config).isLegacy(),
-					config.getPredicateGuaranteeExcludedPredicateSet());
+					config.getPredicateGuaranteeExcludedPredicateSet(),
+					RdfTermDomainQualification.matches(properties, snapshot));
 			boolean pendingDomainMaintenance = domainStartup == TripleStore.RdfTermDomainStartup.REBUILD_ALL
 					|| domainStartup == TripleStore.RdfTermDomainStartup.REBUILD_MARKED
 							&& TripleStore.hasRdfTermDomainRebuilds(triplesTxn,

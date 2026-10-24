@@ -2662,6 +2662,10 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private final File dataDir;
+	private final StoreProperties domainQualificationProperties;
+	private final LmdbStoreConfig domainQualificationConfig;
+	private boolean domainQualificationOwnerReady;
+	private final AtomicBoolean domainQualificationCloseStarted = new AtomicBoolean();
 	private final MapGrowthMetrics mapGrowthMetrics = new MapGrowthMetrics();
 	private final MapGrowthCoordinator mapGrowthCoordinator;
 	private final boolean autoGrow;
@@ -2852,6 +2856,9 @@ class LmdbSailStore implements SailStore {
 	private volatile boolean frontierDimensionRebuildRequired;
 	private int consecutiveTransientDeltaFailures;
 	private long transientDeltaFailureCoveredSequence = -1L;
+	/** Shutdown admission and successful shutdown completion have separate lifetimes. */
+	private final ReentrantLock closeLock = new ReentrantLock();
+	private boolean closeComplete;
 	private volatile boolean closing;
 	private final long backgroundRawSamplingMaxMillisPerCycle;
 	private final boolean adaptiveEvidenceAllowed;
@@ -6540,6 +6547,8 @@ class LmdbSailStore implements SailStore {
 				? new LmdbLearnedFilterSelectivity()
 				: null;
 		this.dataDir = dataDir;
+		this.domainQualificationProperties = properties;
+		this.domainQualificationConfig = config;
 		this.autoGrow = config.getAutoGrow();
 		this.mapGrowthCoordinator = new MapGrowthCoordinator(config.getMapGrowthReadDrainTimeoutMillis());
 		this.bulkOperationSize = config.getBulkOperationSize();
@@ -6561,6 +6570,7 @@ class LmdbSailStore implements SailStore {
 					? new SketchBasedJoinEstimator(new GuardedEstimatorStatementSource(), sketchEstimatorConfig(config),
 							derivedStateBuildExecutor)
 					: null;
+			RdfTermDomainQualification.beginPairedWriter(dataDir.toPath(), properties, config);
 			var valueStore = valueStoreFactory == null
 					? new ValueStore(new File(dataDir, "values"), properties, config, false,
 							duringValueOverlayWarmupScanForTest, format, true)
@@ -6732,6 +6742,7 @@ class LmdbSailStore implements SailStore {
 			}
 			valueStore.startValueOverlayWarmupAfterStoreInitialization();
 			logLmdbStats(Level.INFO, "on startup");
+			domainQualificationOwnerReady = true;
 		} catch (IOException | RuntimeException | Error failure) {
 			try {
 				close();
@@ -8214,6 +8225,24 @@ class LmdbSailStore implements SailStore {
 				|| sinkStoreAccessLock.isHeldByCurrentThread() || publicationContext.get() != null) {
 			throw new SailException("An active LMDB native/publication owner cannot close its own store");
 		}
+		if (closeLock.isHeldByCurrentThread()) {
+			throw new SailException("An active LMDB shutdown owner cannot close its own store");
+		}
+		closeLock.lock();
+		try {
+			if (closeComplete) {
+				return;
+			}
+			closeResources();
+			closeComplete = true;
+		} finally {
+			closeLock.unlock();
+		}
+	}
+
+	private void closeResources() throws SailException {
+		boolean publishDomainQualification = domainQualificationOwnerReady
+				&& domainQualificationCloseStarted.compareAndSet(false, true);
 		closing = true;
 		synchronized (frontierStatisticsMonitor) {
 			frontierStatisticsMonitor.notifyAll();
@@ -8252,26 +8281,40 @@ class LmdbSailStore implements SailStore {
 		// already closed, and admitted publication/native owners have completed before we acquire it.
 		sinkStoreAccessLock.lock();
 		try {
-			if (valueStore != null && tripleStore != null) {
+			boolean nativePairOpen = valueStore != null && tripleStore != null
+					&& valueStore.isNativeEnvironmentOpen() && tripleStore.isNativeEnvironmentOpen();
+			if (nativePairOpen) {
 				failure = attemptClose(failure, () -> logLmdbStats(Level.INFO, "on shutdown"));
 			}
 			if (namespaceStore != null) {
 				failure = attemptClose(failure, namespaceStore::close);
 			}
-			if (failure == null && valueStore != null && tripleStore != null && tripleStore.tracksNativeOwnership()) {
-				try {
-					valueStore.prepareCleanClose(tripleStore.trustedTransactionId());
-				} catch (IOException unknownWriter) {
-					valueStore.invalidateCleanCloseAfterUnknownTripleWriter();
-					logger.warn("Cannot certify clean native state before close", unknownWriter);
-				}
+			if (failure == null && nativePairOpen && tripleStore.tracksNativeOwnership()) {
+				failure = attemptClose(failure, () -> {
+					try {
+						valueStore.prepareCleanClose(tripleStore.trustedTransactionId());
+					} catch (IOException unknownWriter) {
+						valueStore.invalidateCleanCloseAfterUnknownTripleWriter();
+						logger.warn("Cannot certify clean native state before close", unknownWriter);
+					}
+				});
+			}
+			if (nativePairOpen && domainQualificationOwnerReady) {
+				failure = attemptClose(failure, () -> {
+					if (tripleStore.completeRdfTermDomainVersion() != null
+							&& tripleStore.trustedClosedTransactionId() >= 0L
+							&& valueStore.trustedClosedTransactionId() >= 0L) {
+						tripleStore.prepareDomainQualificationClose();
+						valueStore.prepareDomainQualificationClose();
+					}
+				});
 			}
 			if (tripleStore != null) {
 				failure = attemptClose(failure, () -> tripleStore.getTxnManager().close());
 			}
 			if (valueStore != null) {
 				failure = attemptClose(failure, valueStore::closeReadTransactions);
-				if (!storeTxnStarted.get()) {
+				if (nativePairOpen && !storeTxnStarted.get()) {
 					failure = attemptClose(failure,
 							() -> valueStore.reclaimLegacyUnusedIdsAtClose(tripleStore::filterUsedIdsAtClose));
 				}
@@ -8289,6 +8332,9 @@ class LmdbSailStore implements SailStore {
 			sinkStoreAccessLock.unlock();
 		}
 
+		if (failure == null && publishDomainQualification) {
+			failure = attemptClose(failure, this::publishRdfTermDomainQualification);
+		}
 		if (failure != null) {
 			logger.warn("Failed to close store", failure);
 			if (failure instanceof SailException sailException) {
@@ -8305,6 +8351,12 @@ class LmdbSailStore implements SailStore {
 			}
 			throw new SailException(failure);
 		}
+	}
+
+	/** Runs only after successful complete-owner shutdown; a failed publication cannot escape as authority. */
+	void publishRdfTermDomainQualification() throws IOException {
+		RdfTermDomainQualification.publishClosed(dataDir.toPath(), domainQualificationProperties,
+				domainQualificationConfig, valueStore, tripleStore);
 	}
 
 	private void awaitNativePublicationForShutdown() {
