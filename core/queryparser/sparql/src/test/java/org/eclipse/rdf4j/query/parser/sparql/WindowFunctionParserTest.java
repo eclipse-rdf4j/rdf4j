@@ -267,4 +267,27 @@ class WindowFunctionParserTest {
 		assertThat(clone.getElements().get(0).getOperator().getParentNode()).isSameAs(clone.getElements().get(0));
 		assertThat(clone.getSignature()).isEqualTo(window.getSignature());
 	}
+
+	// 20000 triples in a template or pattern build a Join chain deeper than the Java stack allows for a recursive
+	// visitor; the parser's whole-tree passes must therefore walk the algebra iteratively
+	private static String twentyThousandTriples() {
+		StringBuilder triples = new StringBuilder();
+		for (int i = 0; i < 20000; i++) {
+			triples.append(" [] ex:p \"").append(i).append("\" .\n");
+		}
+		return triples.toString();
+	}
+
+	@Test
+	void parserPassesSurviveVeryLargeUpdates() {
+		new SPARQLParser().parseUpdate(
+				PREFIX + "DELETE { ?s ?p ?o } INSERT {\n" + twentyThousandTriples() + "} WHERE { ?s ?p ?o }", null);
+	}
+
+	@Test
+	void parserPassesSurviveVeryLargeSelectQueries() {
+		new SPARQLParser().parseQuery(PREFIX + "SELECT * WHERE {\n" + twentyThousandTriples() + "}", null);
+		new SPARQLParser().parseQuery(PREFIX + "SELECT (COUNT(*) AS ?c) WHERE {\n" + twentyThousandTriples()
+				+ "} ORDER BY STABLE_INDEX(?c)", null);
+	}
 }

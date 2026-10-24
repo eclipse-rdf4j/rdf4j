@@ -30,6 +30,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.BNode;
@@ -583,39 +584,68 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	 * so such calls are rejected as a syntax error.
 	 */
 	static void rejectStrayWindowFunctions(QueryModelNode node) throws VisitorException {
-		if (node == null) {
+		FunctionCall call = findWindowFunctionCall(node);
+		if (call == null) {
 			return;
 		}
-		node.visit(new AbstractQueryModelVisitor<VisitorException>() {
-			@Override
-			public void meet(FunctionCall call) throws VisitorException {
-				if (isWindowNamespace(call)) {
-					String local = windowLocalName(call);
-					if (WINDOW_MARKERS.contains(local)) {
-						throw new VisitorException(
-								"winf:" + local + " may only be used inside a window function call");
-					}
-					throw new VisitorException("window function " + call.getURI()
-							+ " may only be used in a SELECT expression; it is not allowed in BIND, FILTER, HAVING,"
-							+ " GROUP BY, ORDER BY, EXISTS or inside another window function");
-				}
-				super.meet(call);
-			}
-		});
+		String local = windowLocalName(call);
+		if (WINDOW_MARKERS.contains(local)) {
+			throw new VisitorException("winf:" + local + " may only be used inside a window function call");
+		}
+		throw new VisitorException("window function " + call.getURI()
+				+ " may only be used in a SELECT expression; it is not allowed in BIND, FILTER, HAVING,"
+				+ " GROUP BY, ORDER BY, EXISTS or inside another window function");
 	}
 
 	/** Rejects a window function call nested anywhere inside {@code expr}, an operand of another window function. */
 	private static void rejectNestedWindowFunctions(ValueExpr expr, String where) throws VisitorException {
-		expr.visit(new AbstractQueryModelVisitor<VisitorException>() {
-			@Override
-			public void meet(FunctionCall call) throws VisitorException {
-				if (isWindowNamespace(call)) {
-					throw new VisitorException(
-							"window function " + call.getURI() + " cannot be nested inside " + where);
-				}
-				super.meet(call);
+		FunctionCall call = findWindowFunctionCall(expr);
+		if (call != null) {
+			throw new VisitorException("window function " + call.getURI() + " cannot be nested inside " + where);
+		}
+	}
+
+	/** The first {@code winf:} function call below {@code root} in visitor preorder, or null. */
+	private static FunctionCall findWindowFunctionCall(QueryModelNode root) {
+		FunctionCall[] found = new FunctionCall[1];
+		walkPreorder(root, node -> {
+			if (found[0] == null && node instanceof FunctionCall call && isWindowNamespace(call)) {
+				found[0] = call;
 			}
+			return found[0] == null;
 		});
+		return found[0];
+	}
+
+	/**
+	 * Visits {@code root} and its descendants in visitor preorder without a Java call frame per level: large templates
+	 * and patterns nest one {@link Join} per triple, deeper than the stack allows for a recursive
+	 * {@link AbstractQueryModelVisitor}. {@code visit} returns false to skip a node's descendants.
+	 */
+	static void walkPreorder(QueryModelNode root, Predicate<QueryModelNode> visit) {
+		if (root == null) {
+			return;
+		}
+		List<QueryModelNode> children = new ArrayList<>();
+		AbstractQueryModelVisitor<RuntimeException> childCollector = new AbstractQueryModelVisitor<>() {
+			@Override
+			protected void meetNode(QueryModelNode child) {
+				children.add(child);
+			}
+		};
+		Deque<QueryModelNode> pending = new ArrayDeque<>();
+		pending.push(root);
+		while (!pending.isEmpty()) {
+			QueryModelNode node = pending.pop();
+			if (!visit.test(node)) {
+				continue;
+			}
+			children.clear();
+			node.visitChildren(childCollector);
+			for (int i = children.size() - 1; i >= 0; i--) {
+				pending.push(children.get(i));
+			}
+		}
 	}
 
 	@Override
@@ -791,9 +821,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		ProjectionElemList projElemList = new ProjectionElemList();
 
-		GroupFinder groupFinder = new GroupFinder();
-		result.visit(groupFinder);
-		Group group = groupFinder.getGroup();
+		Group group = findGroup(result);
 		final boolean isExistingGroup = group != null;
 		Window window = null;
 		Set<String> windowVarNames = new HashSet<>();
@@ -1221,25 +1249,24 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		return false;
 	}
 
-	private static class GroupFinder extends AbstractQueryModelVisitor<VisitorException> {
-
-		private Group group;
-
-		@Override
-		public void meet(Projection projection) {
-			// stop tree traversal on finding a projection: we do not wish to
-			// find
-			// the group in a sub-select.
-		}
-
-		@Override
-		public void meet(Group group) {
-			this.group = group;
-		}
-
-		public Group getGroup() {
-			return group;
-		}
+	/**
+	 * The {@link Group} of this query level (the last one in preorder, as before), ignoring any group inside a
+	 * sub-select.
+	 */
+	private static Group findGroup(TupleExpr result) {
+		Group[] found = new Group[1];
+		walkPreorder(result, node -> {
+			if (node instanceof Projection) {
+				// we do not wish to find the group in a sub-select
+				return false;
+			}
+			if (node instanceof Group group) {
+				found[0] = group;
+				return false;
+			}
+			return true;
+		});
+		return found[0];
 	}
 
 	@Override
