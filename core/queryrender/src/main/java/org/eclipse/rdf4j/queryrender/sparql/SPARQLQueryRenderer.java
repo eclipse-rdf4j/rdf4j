@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.Window;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.DatasetUtils;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
@@ -79,7 +80,7 @@ public class SPARQLQueryRenderer implements QueryRenderer {
 				}
 			});
 		}
-		return render(query);
+		return renderQuery(query, options);
 	}
 
 	/**
@@ -87,7 +88,23 @@ public class SPARQLQueryRenderer implements QueryRenderer {
 	 */
 	@Override
 	public String render(final ParsedQuery theQuery) throws Exception {
+		return renderQuery(theQuery, QueryParseOptions.DEFAULT);
+	}
+
+	private String renderQuery(ParsedQuery theQuery, QueryParseOptions options) throws Exception {
 		DatasetUtils.requireRepresentableReadDataset(theQuery.getDataset());
+		if (theQuery instanceof ParsedTupleQuery && containsWindow(theQuery.getTupleExpr())) {
+			// Window calls must remain SELECT expressions; the legacy visitor emits extensions as WHERE BINDs.
+			TupleExprIRRenderer.Config config = new TupleExprIRRenderer.Config();
+			config.parseOptions = options;
+			TupleExprIRRenderer.DatasetView dataset = null;
+			if (theQuery.getDataset() != null) {
+				dataset = new TupleExprIRRenderer.DatasetView();
+				theQuery.getDataset().getDefaultGraphs().forEach(dataset::addDefault);
+				theQuery.getDataset().getNamedGraphs().forEach(dataset::addNamed);
+			}
+			return new TupleExprIRRenderer(config).render(theQuery.getTupleExpr(), dataset);
+		}
 		mRenderer.reset();
 
 		TupleExpr tupleExpr = theQuery.getTupleExpr();
@@ -230,5 +247,16 @@ public class SPARQLQueryRenderer implements QueryRenderer {
 		}
 
 		return aQuery.toString();
+	}
+
+	private static boolean containsWindow(TupleExpr expression) {
+		boolean[] found = { false };
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Window window) {
+				found[0] = true;
+			}
+		});
+		return found[0];
 	}
 }

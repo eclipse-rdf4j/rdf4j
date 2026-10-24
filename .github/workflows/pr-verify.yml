@@ -76,7 +76,7 @@ jobs:
       - name: Build
         run: mvn --quiet clean && mvn -B --quiet -T 2C install -Pquick
       - name: Test
-        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B test -DskipITs -PskipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
+        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B --fail-at-end test -DskipITs -PskipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Publish Test Report
         if: failure()
         uses: ScalableCapital/action-surefire-report@v2.0.5
@@ -106,7 +106,7 @@ jobs:
       - name: Build
         run: mvn --quiet clean && mvn -B --quiet -T 2C install -Pquick
       - name: Verify
-        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B verify -PskipUnitTests,skipSlowTests,-formatting -Dmaven.javadoc.skip -Denforcer.skip -Danimal.sniffer.skip
+        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B --fail-at-end verify -PskipUnitTests,skipSlowTests,-formatting -Dmaven.javadoc.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Publish Test Report
         if: failure()
         uses: ScalableCapital/action-surefire-report@v2.0.5
@@ -134,7 +134,7 @@ jobs:
       - name: Build
         run: mvn --quiet clean && mvn -B --quiet -T 2C install -Pquick
       - name: Verify
-        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B verify -PslowTestsOnly,-skipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
+        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B --fail-at-end verify -PslowTestsOnly,-skipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Publish Test Report
         if: failure()
         uses: ScalableCapital/action-surefire-report@v2.0.5
