@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -660,6 +661,11 @@ public class QueryEvaluationUtility {
 				}
 
 				@Override
+				public void meet(Graph graph) {
+					meetNode(graph);
+				}
+
+				@Override
 				public void meetOther(QueryModelNode node) {
 					unknownNodes.add(node);
 					super.meetOther(node);
@@ -713,8 +719,10 @@ public class QueryEvaluationUtility {
 		private NodeSafetySummary summarize(QueryModelNode node, List<QueryModelNode> children) {
 			boolean repeatable = !(node instanceof BNodeGenerator || node instanceof AggregateFunctionCall
 					|| node instanceof Sample || node instanceof Service);
+			boolean repeatableAcrossExecutions = repeatable;
 			boolean fatal = node instanceof Service service && !service.isSilent();
-			boolean mappingParameterized = node instanceof ZeroLengthPath || node instanceof ArbitraryLengthPath
+			boolean mappingParameterized = node instanceof Graph || node instanceof ZeroLengthPath
+					|| node instanceof ArbitraryLengthPath
 					|| node instanceof Service || node instanceof Lateral || node instanceof TripleRef
 					|| unknownNodes.contains(node);
 			boolean containsLateral = node instanceof Lateral;
@@ -727,6 +735,7 @@ public class QueryEvaluationUtility {
 				NodeSafetySummary childSummary = summaries.get(child);
 				capturedChildren[i] = childSummary;
 				repeatable &= childSummary.repeatable;
+				repeatableAcrossExecutions &= childSummary.repeatableAcrossExecutions;
 				if (!(node instanceof Service)) {
 					fatal |= childSummary.mayRaiseQueryFatalError;
 				}
@@ -744,13 +753,17 @@ public class QueryEvaluationUtility {
 								? resolveFunction(functionCall).orElse(null)
 								: null;
 				repeatable &= function != null && QueryEvaluationUtility.isRepeatable(function, policy);
+				repeatableAcrossExecutions &= function != null
+						&& QueryEvaluationUtility.isSafeForPlanConstantFolding(function, policy);
 			}
 			if (node instanceof TupleExpr && unknownNodes.contains(node)) {
 				repeatable = false;
+				repeatableAcrossExecutions = false;
 				fatal = true;
 			}
 
-			return new NodeSafetySummary(repeatable, fatal, mappingParameterized, containsLateral,
+			return new NodeSafetySummary(repeatable, repeatableAcrossExecutions, fatal, mappingParameterized,
+					containsLateral,
 					containsExtension, isBindingInjectionShape(node, capturedChildren),
 					captureNameInputs(node, capturedChildren));
 		}
@@ -941,6 +954,16 @@ public class QueryEvaluationUtility {
 		public boolean isRepeatable(QueryModelNode node) {
 			node = ensureNode(node);
 			return summaries.get(node).repeatable;
+		}
+
+		/**
+		 * Returns whether evaluating this subtree in a later query execution with the same inputs is guaranteed to
+		 * produce the same result. This is stricter than within-execution repeatability: query-constant functions such
+		 * as {@code NOW()} are repeatable inside one execution but change across executions.
+		 */
+		public boolean isRepeatableAcrossExecutions(QueryModelNode node) {
+			node = ensureNode(node);
+			return summaries.get(node).repeatableAcrossExecutions;
 		}
 
 		public boolean mayRaiseQueryFatalError(QueryModelNode node) {
@@ -1312,6 +1335,7 @@ public class QueryEvaluationUtility {
 
 	private static final class NodeSafetySummary {
 		private final boolean repeatable;
+		private final boolean repeatableAcrossExecutions;
 		private final boolean mayRaiseQueryFatalError;
 		private final boolean mappingParameterized;
 		private final boolean containsLateral;
@@ -1319,10 +1343,12 @@ public class QueryEvaluationUtility {
 		private final boolean injectionShapeSafe;
 		private final NameFactInputs nameInputs;
 
-		private NodeSafetySummary(boolean repeatable, boolean mayRaiseQueryFatalError,
+		private NodeSafetySummary(boolean repeatable, boolean repeatableAcrossExecutions,
+				boolean mayRaiseQueryFatalError,
 				boolean mappingParameterized, boolean containsLateral, boolean containsExtension,
 				boolean injectionShapeSafe, NameFactInputs nameInputs) {
 			this.repeatable = repeatable;
+			this.repeatableAcrossExecutions = repeatableAcrossExecutions;
 			this.mayRaiseQueryFatalError = mayRaiseQueryFatalError;
 			this.mappingParameterized = mappingParameterized;
 			this.containsLateral = containsLateral;
@@ -1340,6 +1366,7 @@ public class QueryEvaluationUtility {
 				return false;
 			}
 			return repeatable == summary.repeatable
+					&& repeatableAcrossExecutions == summary.repeatableAcrossExecutions
 					&& mayRaiseQueryFatalError == summary.mayRaiseQueryFatalError
 					&& mappingParameterized == summary.mappingParameterized
 					&& containsLateral == summary.containsLateral
@@ -1350,7 +1377,8 @@ public class QueryEvaluationUtility {
 
 		@Override
 		public int hashCode() {
-			return Objects.hash(repeatable, mayRaiseQueryFatalError, mappingParameterized, containsLateral,
+			return Objects.hash(repeatable, repeatableAcrossExecutions, mayRaiseQueryFatalError, mappingParameterized,
+					containsLateral,
 					containsExtension, injectionShapeSafe, nameInputs.inputHashCode());
 		}
 	}

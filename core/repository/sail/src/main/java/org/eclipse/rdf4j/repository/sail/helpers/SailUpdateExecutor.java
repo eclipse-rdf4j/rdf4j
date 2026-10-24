@@ -61,6 +61,7 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLUpdateDataBlockParser;
 import org.eclipse.rdf4j.query.parser.sparql.UpdateRequestPreflight;
+import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailUpdate;
 import org.eclipse.rdf4j.repository.util.RDFLoader;
 import org.eclipse.rdf4j.rio.ParserConfig;
@@ -518,7 +519,9 @@ public class SailUpdateExecutor {
 		ConvertingIteration<BindingSet, BindingSet> result = null;
 		boolean allGood = false;
 		try {
-			sourceBindings1 = con.evaluate(whereClause, uc.getDataset(), uc.getBindingSet(), uc.isIncludeInferred());
+			sourceBindings1 = con.evaluate(
+					SailRepositoryConnection.prepareQueryAlgebra(whereClause, uc.getBindingSet()),
+					uc.getDataset(), uc.getBindingSet(), uc.isIncludeInferred());
 
 			if (maxExecutionTime > 0) {
 				sourceBindings2 = new TimeLimitIteration<BindingSet>(sourceBindings1,

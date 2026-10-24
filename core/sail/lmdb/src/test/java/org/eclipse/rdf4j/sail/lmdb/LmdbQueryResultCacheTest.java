@@ -90,6 +90,18 @@ class LmdbQueryResultCacheTest {
 	}
 
 	@Test
+	void queryScopedNowIsNotCachedAcrossExecutions() {
+		String query = "SELECT (NOW() AS ?now) WHERE { ?s ?p ?o } LIMIT 1";
+		List<Value> first = values(query, "now");
+		List<Value> second = values(query, "now");
+
+		assertThat(first).hasSize(1);
+		assertThat(second).hasSize(1);
+		assertThat(stats().stores()).as("NOW is scoped to one query execution").isZero();
+		assertThat(stats().hits()).as("NOW is scoped to one query execution").isZero();
+	}
+
+	@Test
 	void everyKindOfCommittedWriteInvalidatesTheEntry() {
 		evaluate(TYPE_COUNTS, true);
 

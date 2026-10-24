@@ -59,6 +59,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.rdfparser.RdfParserQuerySupport;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreeToGenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -265,6 +266,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			// Clone the tuple expression to allow for more aggressive optimizations
 			tupleExpr = tupleExpr.clone();
 		}
+		tupleExpr = RdfParserQuerySupport.rewriteOwned(tupleExpr, bindings);
 
 		if (!(tupleExpr instanceof QueryRoot)) {
 			// Add a dummy root node to the tuple expressions to allow the
@@ -337,6 +339,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	@Override
 	public Explanation explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset,
 			BindingSet bindings, boolean includeInferred, int timeoutSeconds) {
+		tupleExpr = RdfParserQuerySupport.rewrite(tupleExpr, bindings);
 		boolean queryTimedOut = false;
 		clearMetricsActual(tupleExpr);
 		TupleExpr explainedTupleExpr = tupleExpr;

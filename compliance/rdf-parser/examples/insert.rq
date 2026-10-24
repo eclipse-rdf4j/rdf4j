@@ -1,0 +1,3 @@
+PREFIX parse: <http://rdf4j.org/function/parse#>
+INSERT { GRAPH <urn:candidates> { ?s ?p ?o } }
+WHERE { (?document "text/turtle") parse:triples (?s ?p ?o) }

@@ -48,7 +48,8 @@ public class SailBooleanQuery extends SailQuery implements BooleanQuery {
 
 		try {
 			ParsedBooleanQuery parsedBooleanQuery = getParsedQuery();
-			TupleExpr tupleExpr = parsedBooleanQuery.getTupleExpr();
+			TupleExpr tupleExpr = SailRepositoryConnection.prepareQueryAlgebra(parsedBooleanQuery.getTupleExpr(),
+					getBindings());
 			Dataset dataset = getDataset();
 			if (dataset == null) {
 				// No external dataset specified, use query's own dataset (if any)
