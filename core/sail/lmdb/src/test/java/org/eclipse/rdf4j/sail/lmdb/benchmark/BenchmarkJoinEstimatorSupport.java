@@ -180,6 +180,12 @@ public final class BenchmarkJoinEstimatorSupport {
 	}
 
 	static SketchBasedJoinEstimator resolveEstimator(LmdbStore store) throws IOException {
+		try {
+			LmdbTestUtil.awaitPostReadyInitialization(store, ROBUST_READY_TIMEOUT_NANOS, TimeUnit.NANOSECONDS);
+		} catch (InterruptedException failure) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while waiting for benchmark estimator initialization", failure);
+		}
 		SketchBasedJoinEstimator estimator = tryResolveEstimator(store);
 		if (estimator == null) {
 			throw new IOException("LMDB sketch-based join estimator is not available");
@@ -399,13 +405,16 @@ public final class BenchmarkJoinEstimatorSupport {
 	}
 
 	private static Method reflectMethod(Class<?> owner, String methodName, Class<?>... parameterTypes) {
-		try {
-			Method method = owner.getDeclaredMethod(methodName, parameterTypes);
-			method.setAccessible(true);
-			return method;
-		} catch (NoSuchMethodException e) {
-			throw new ExceptionInInitializerError(e);
+		for (Class<?> current = owner; current != null; current = current.getSuperclass()) {
+			try {
+				Method method = current.getDeclaredMethod(methodName, parameterTypes);
+				method.setAccessible(true);
+				return method;
+			} catch (NoSuchMethodException inherited) {
+				// Test stores may specialize the owner while retaining the same declared maintenance methods.
+			}
 		}
+		throw new ExceptionInInitializerError(new NoSuchMethodException(owner.getName() + "." + methodName));
 	}
 
 	private static Object invoke(Method method, Object target, Object... args) throws IOException {

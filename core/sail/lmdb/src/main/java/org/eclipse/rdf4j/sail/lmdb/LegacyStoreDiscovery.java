@@ -174,6 +174,7 @@ final class LegacyStoreDiscovery {
 					}
 				}
 				validateDescriptors(properties, statementIndexes, termIndexes, legacy, statementManifest, termManifest);
+				properties.statementIndexCleanupPending = !statementIndexes.containsAll(physicalStatementIndexes);
 				properties.verifiedValueTransactionId = mdb_txn_id(valuesTxn);
 				properties.verifiedTripleTransactionId = mdb_txn_id(triplesTxn);
 			} finally {
@@ -301,6 +302,7 @@ final class LegacyStoreDiscovery {
 			// existing native-manifest reconciliation and a subsequent properties save.
 			validateDescriptors(properties, activeStatements, activeTerms, false, true, true);
 		}
+		properties.statementIndexCleanupPending = !activeStatements.containsAll(statementIndexes);
 	}
 
 	private static void openKnownDatabase(MemoryStack stack, long transaction, String name,

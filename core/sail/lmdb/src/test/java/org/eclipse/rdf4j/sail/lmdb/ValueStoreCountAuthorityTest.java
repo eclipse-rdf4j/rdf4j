@@ -46,6 +46,7 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.util.lmdb.LMDB;
@@ -56,6 +57,46 @@ class ValueStoreCountAuthorityTest {
 
 	@TempDir
 	Path directory;
+
+	@ParameterizedTest
+	@CsvSource({ "false,0", "false,1", "false,1024", "true,0", "true,1", "true,1024" })
+	void unusedRevisionBoundaryKeepsOpaqueHintPayloads(boolean legacy, int payloadBytes) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig().setInlineLiterals(false);
+		if (legacy) {
+			LmdbCompatibilityFixtures.extract("v2-610-default.zip", directory);
+		} else {
+			LmdbStore created = new LmdbStore(directory.toFile(), config);
+			created.init();
+			created.shutDown();
+		}
+		StoreProperties properties = new StoreProperties(directory.toFile());
+		assertTrue(properties.load());
+		LegacyStoreDiscovery.discover(directory.toFile(), properties);
+		var value = SimpleValueFactory.getInstance().createBNode("opaque-unused-payload");
+		ValueStore initial = new ValueStore(directory.resolve("values").toFile(), properties, config);
+		long id;
+		try {
+			initial.startTransaction(true);
+			id = initial.storeValue(value);
+			initial.commit();
+		} finally {
+			initial.close();
+		}
+		ByteBuffer key = ByteBuffer.allocate(32);
+		Varint.writeUnsigned(key, 101L);
+		key.put(LmdbCompatibilityFixtures.idKey(id));
+		byte[] encoded = Arrays.copyOf(key.array(), key.position());
+		byte[] payload = new byte[payloadBytes];
+		Arrays.fill(payload, (byte) 0xa5);
+		LmdbCompatibilityFixtures.nativePut(directory, "unused_ids", encoded, payload);
+		ValueStore reopened = new ValueStore(directory.resolve("values").toFile(), properties, config);
+		try {
+			assertEquals(value, reopened.getValue(id), "an opaque retirement hint cannot replace its live owner");
+			assertEquals(id, reopened.getId(value));
+		} finally {
+			reopened.close();
+		}
+	}
 
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
@@ -140,7 +181,7 @@ class ValueStoreCountAuthorityTest {
 	}
 
 	@ParameterizedTest
-	@ValueSource(strings = { "TRUNCATED", "TRAILING", "NONCANONICAL", "WRONG_TYPE", "OVERFLOW", "PAYLOAD" })
+	@ValueSource(strings = { "TRUNCATED", "TRAILING", "NONCANONICAL", "WRONG_TYPE", "OVERFLOW", "INLINE" })
 	void revisionBoundaryRejectsMalformedUnusedTailWithoutMutation(String corruption) throws Exception {
 		try (ClosingValueStore store = new ClosingValueStore(directory.resolve("values").toFile(),
 				new LmdbStoreConfig())) {
@@ -156,13 +197,14 @@ class ValueStoreCountAuthorityTest {
 		}
 		if (!corruption.equals("TRUNCATED")) {
 			bytes.put(corruption.equals("WRONG_TYPE") ? (byte) 6 : ValueStoreRecordCodec.ID_KEY);
-			Varint.writeUnsigned(bytes, ValueIds.createId(ValueIds.T_BNODE, 1L));
+			Varint.writeUnsigned(bytes, ValueIds.createId(corruption.equals("INLINE") ? ValueIds.T_INTEGER
+					: ValueIds.T_BNODE, 1L));
 		}
 		if (corruption.equals("TRAILING")) {
 			bytes.put((byte) 0);
 		}
 		byte[] key = Arrays.copyOf(bytes.array(), bytes.position());
-		byte[] payload = corruption.equals("PAYLOAD") ? new byte[] { 1 } : new byte[0];
+		byte[] payload = new byte[0];
 		LmdbCompatibilityFixtures.nativePut(directory, "unused_ids", key, payload);
 		long before = LmdbCompatibilityFixtures.nativeTransactionId(directory);
 		IOException failure = assertThrows(IOException.class, () -> {

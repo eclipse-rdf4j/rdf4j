@@ -87,12 +87,14 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.OptionalDouble;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -229,6 +231,8 @@ class TripleStore implements Closeable {
 	private volatile String indexRebuildState = "IDLE";
 	private volatile boolean indexRebuildClosing;
 	private volatile Thread indexRebuildThread;
+	private volatile CompletableFuture<Void> indexRebuildCompletion = CompletableFuture.completedFuture(null);
+	private boolean indexRebuildRestartRequested;
 	private boolean indexBuildWaitingReaders;
 	private final Object indexRebuildMonitor = new Object();
 	private volatile IndexRebuildWriter indexRebuildWriter = IndexRebuildWork::run;
@@ -2586,6 +2590,9 @@ class TripleStore implements Closeable {
 		} else if (!active.equals(requested) || encoded[0] != null) {
 			indexBuild = new StatementIndexBuild(StatementIndexBuild.Phase.RESET, active, requested, true,
 					new byte[0], authority);
+		} else if (properties.statementIndexCleanupPending) {
+			indexBuild = new StatementIndexBuild(StatementIndexBuild.Phase.CLEANUP, active, active, true,
+					new byte[0], authority);
 		}
 		if (indexBuild != null) {
 			indexRebuildState = "PENDING";
@@ -2599,15 +2606,41 @@ class TripleStore implements Closeable {
 	/** The owner opens this readiness gate only after normal reader/writer admission has been installed. */
 	void startBackgroundIndexRebuild() {
 		synchronized (indexRebuildMonitor) {
-			if (indexRebuildClosing || indexBuild == null || indexRebuildThread != null) {
+			if (indexRebuildClosing || indexBuild == null) {
 				return;
 			}
-			indexRebuildThread = Thread.ofVirtual().name("LmdbStatementIndexRebuild").unstarted(this::runIndexRebuild);
+			if (!indexRebuildCompletion.isDone()) {
+				if (indexRebuildState.startsWith("FAILED")) {
+					indexRebuildRestartRequested = true;
+					indexRebuildState = "PENDING";
+				}
+				return;
+			}
+			indexRebuildState = "PENDING";
+			indexRebuildRestartRequested = false;
+			CompletableFuture<Void> completion = new CompletableFuture<>();
+			indexRebuildCompletion = completion;
+			indexRebuildThread = Thread.ofVirtual().name("LmdbStatementIndexRebuild").unstarted(() -> {
+				try {
+					runIndexRebuild();
+				} finally {
+					synchronized (indexRebuildMonitor) {
+						completion.complete(null);
+						if (indexRebuildRestartRequested) {
+							startBackgroundIndexRebuild();
+						}
+						indexRebuildMonitor.notifyAll();
+					}
+				}
+			});
 			indexRebuildThread.start();
 		}
 	}
 
 	String indexRebuildStatus() {
+		if (indexBuild == null && !indexRebuildCompletion.isDone() && !indexRebuildState.startsWith("FAILED")) {
+			return "FINISHING";
+		}
 		return indexRebuildState;
 	}
 
@@ -2615,14 +2648,15 @@ class TripleStore implements Closeable {
 		long remaining = unit.toNanos(timeout);
 		long started = System.nanoTime();
 		synchronized (indexRebuildMonitor) {
-			while (indexBuild != null && !indexRebuildState.startsWith("FAILED") && !indexRebuildClosing) {
+			while ((indexBuild != null || !indexRebuildCompletion.isDone())
+					&& !indexRebuildState.startsWith("FAILED") && !indexRebuildClosing) {
 				if (remaining <= 0) {
 					return false;
 				}
 				TimeUnit.NANOSECONDS.timedWait(indexRebuildMonitor, remaining);
 				remaining = unit.toNanos(timeout) - (System.nanoTime() - started);
 			}
-			return indexBuild == null;
+			return indexBuild == null && indexRebuildCompletion.isDone() && !indexRebuildState.startsWith("FAILED");
 		}
 	}
 
@@ -2630,6 +2664,10 @@ class TripleStore implements Closeable {
 		try {
 			while (!indexRebuildClosing && indexBuild != null) {
 				StatementIndexBuild before = indexBuild;
+				if (before.phase() == StatementIndexBuild.Phase.CLEANUP
+						&& !before.target().equals(indexSpecifications(indexes))) {
+					indexRebuildWriter.execute(() -> reconcileCommittedIndexGeneration(before.target()));
+				}
 				indexRebuildState = before.phase().name();
 				long[][] batch = new long[INDEX_REBUILD_BATCH_SIZE][4];
 				ByteBuffer continuation = ByteBuffer.allocateDirect(TripleIndex.MAX_KEY_LENGTH);
@@ -2658,10 +2696,13 @@ class TripleStore implements Closeable {
 			if (!indexRebuildClosing) {
 				indexRebuildState = "FAILED: interrupted";
 			}
-		} catch (IOException | RuntimeException failure) {
+		} catch (IOException | RuntimeException | Error failure) {
 			if (!indexRebuildClosing) {
 				indexRebuildState = "FAILED: " + failure.getMessage();
 				logger.warn("Statement index rebuild failed; committed indexes remain available", failure);
+			}
+			if (failure instanceof Error fatal) {
+				throw fatal;
 			}
 		} finally {
 			synchronized (indexRebuildMonitor) {
@@ -2676,6 +2717,10 @@ class TripleStore implements Closeable {
 
 	/** Instrumentation boundary after each fully committed maintenance transaction. */
 	protected void afterIndexRebuildBatch() throws IOException {
+	}
+
+	/** Instrumentation boundary after durable manifest commit and before query-generation publication. */
+	protected void afterIndexManifestCommitBeforePublication() throws IOException {
 	}
 
 	private void rebuildIndexBatch(StatementIndexBuild before, long[][] batch, int count, byte[] lastKey)
@@ -3005,6 +3050,64 @@ class TripleStore implements Closeable {
 
 	private boolean publishIndexGeneration;
 
+	private static Set<String> indexSpecifications(List<TripleIndex> generation) {
+		Set<String> specifications = new LinkedHashSet<>();
+		for (TripleIndex index : generation) {
+			specifications.add(index.toString());
+		}
+		return specifications;
+	}
+
+	private void reconcileCommittedIndexGeneration(Set<String> target) throws IOException {
+		var manager = txnManager.lockManager();
+		long stamp;
+		try {
+			stamp = manager.writeLock();
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while reconciling the committed statement generation", interrupted);
+		}
+		try {
+			long firstNewReader = readTransaction(env, (stack, txn) -> {
+				byte[] encoded = readNamespaceDatabaseValue(stack, txn, INDEX_SPECS_KEY);
+				if (encoded == null || !TripleIndex.parseIndexSpecList(new String(encoded, StandardCharsets.UTF_8))
+						.equals(target)) {
+					throw new IOException("Committed statement manifest changed before query publication");
+				}
+				try {
+					// Readers admitted during the failed publication chose the old generation at this transaction.
+					return Math.addExact(mdb_txn_id(txn), 1L);
+				} catch (ArithmeticException overflow) {
+					throw new IOException("Statement query generation transaction ID overflow", overflow);
+				}
+			});
+			publishCommittedIndexGeneration(target, firstNewReader);
+			txnManager.reset();
+		} finally {
+			manager.unlockWrite(stamp);
+		}
+	}
+
+	/** Called under the reader admission barrier, after the corresponding native manifest is authoritative. */
+	private void publishCommittedIndexGeneration(Set<String> target, long firstNewReader) {
+		List<TripleIndex> next = new ArrayList<>();
+		for (String spec : TripleIndex.orderIndexSpecs(target)) {
+			next.add(Objects.requireNonNull(indexHandles.get(spec), "Missing committed statement index " + spec));
+		}
+		IndexGeneration generation = new IndexGeneration(next);
+		indexCutoverTransactionId = firstNewReader;
+		previousQueryGeneration = queryGeneration;
+		indexes = generation.indexes;
+		queryGeneration = generation;
+		bestIndexByBoundMask = generation.best;
+		rangeSearchByBoundMask = generation.range;
+		stagingIndexes = List.of();
+		resetAlignedWriteCursorState();
+		if (pageEstimator != null) {
+			pageEstimator.configureIndexes(indexes.stream().map(TripleIndex::toString).toList());
+		}
+	}
+
 	private boolean commitReindexTransaction(boolean publish) throws IOException {
 		publishIndexGeneration = publish;
 		try {
@@ -3036,28 +3139,17 @@ class TripleStore implements Closeable {
 					expectedNativeTransactionId = ownedTransaction;
 				}
 				nativeCommitGeneration.incrementAndGet();
-				if (publishIndexGeneration) {
-					List<TripleIndex> next = new ArrayList<>();
-					for (String spec : TripleIndex.orderIndexSpecs(indexBuild.target())) {
-						next.add(indexHandles.get(spec));
+				try {
+					if (publishIndexGeneration) {
+						afterIndexManifestCommitBeforePublication();
+						publishCommittedIndexGeneration(indexBuild.target(), committedTransactionId);
 					}
-					indexCutoverTransactionId = committedTransactionId;
-					previousQueryGeneration = queryGeneration;
-					IndexGeneration generation = new IndexGeneration(next);
-					indexes = generation.indexes;
-					queryGeneration = generation;
-					bestIndexByBoundMask = generation.best;
-					rangeSearchByBoundMask = generation.range;
-					stagingIndexes = List.of();
-					resetAlignedWriteCursorState();
-					if (pageEstimator != null) {
-						pageEstimator.configureIndexes(indexes.stream().map(TripleIndex::toString).toList());
-					}
+				} finally {
+					nativeMutation = false;
+					tripleMutation = false;
+					unjournaledMutation = false;
+					txnManager.reset();
 				}
-				nativeMutation = false;
-				tripleMutation = false;
-				unjournaledMutation = false;
-				txnManager.reset();
 			}
 		} finally {
 			lockManager.unlockWrite(stamp);

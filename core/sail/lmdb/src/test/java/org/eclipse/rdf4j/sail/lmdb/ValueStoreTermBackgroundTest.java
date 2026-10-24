@@ -14,13 +14,18 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -29,14 +34,19 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+import org.eclipse.rdf4j.sail.lmdb.util.IndexKeyWriters;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Timeout(value = 60, unit = TimeUnit.SECONDS)
 class ValueStoreTermBackgroundTest {
@@ -44,6 +54,204 @@ class ValueStoreTermBackgroundTest {
 	private static final String TARGET = "spoc,cspo,posc,opsc";
 	@TempDir
 	Path directory;
+
+	@Test
+	void terminalCleanupAcceptsACoalescedSuccessorRequest() throws Exception {
+		StoreProperties properties = new StoreProperties(directory.toFile());
+		seed(properties, 30);
+		CountDownLatch finishing = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		AtomicBoolean first = new AtomicBoolean(true);
+		try (ClosingValueStore store = open(properties, TARGET)) {
+			assertFalse(store.awaitIndexRebuild(0L, TimeUnit.NANOSECONDS),
+					"registered layout work remains pending before owner scheduling");
+			store.setTermIndexMaintenanceObserver(phase -> {
+				if (phase.equals("cleanup-batch") && store.indexRebuildStatus().equals("FINISHING")
+						&& first.compareAndSet(true, false)) {
+					finishing.countDown();
+					await(release);
+				}
+			});
+			store.startIndexRebuildAfterStoreInitialization();
+			try {
+				assertTrue(finishing.await(10L, TimeUnit.SECONDS));
+				store.requestTermIndexRebuild("spoc,cspo,psoc");
+				store.requestTermIndexRebuild("spoc,cspo,psoc");
+				assertFalse(store.awaitIndexRebuild(0L, TimeUnit.NANOSECONDS));
+				release.countDown();
+				assertTrue(store.awaitIndexRebuild(20L, TimeUnit.SECONDS));
+				assertEquals(Set.of("spoc", "cspo", "psoc"),
+						TripleIndex.parseIndexSpecList(properties.getTripleTermIndexes()));
+				assertEquals(30, termCount(store));
+			} finally {
+				release.countDown();
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void failedTermJobRestartsOnlyAfterAnExplicitRequest(boolean fatal) throws Exception {
+		StoreProperties properties = new StoreProperties(directory.toFile());
+		seed(properties, 30);
+		AtomicInteger reads = new AtomicInteger();
+		AtomicReference<Thread> failedWorker = new AtomicReference<>();
+		AtomicReference<Throwable> uncaught = new AtomicReference<>();
+		AssertionError fatalFailure = new AssertionError("controlled fatal term-copy failure");
+		try (ClosingValueStore store = open(properties, TARGET)) {
+			store.setTermIndexMaintenanceObserver(phase -> {
+				if (phase.equals("copy-read") && reads.getAndIncrement() == 0) {
+					failedWorker.set(Thread.currentThread());
+					Thread.currentThread().setUncaughtExceptionHandler((thread, failure) -> uncaught.set(failure));
+					if (fatal) {
+						throw fatalFailure;
+					}
+					throw new IllegalStateException("controlled single term-copy failure");
+				}
+			});
+			store.startIndexRebuildAfterStoreInitialization();
+			assertThrows(IOException.class, () -> store.awaitIndexRebuild(10L, TimeUnit.SECONDS));
+			failedWorker.get().join(TimeUnit.SECONDS.toMillis(10L));
+			assertFalse(failedWorker.get().isAlive());
+			if (fatal) {
+				assertSame(fatalFailure, uncaught.get(),
+						"fatal errors must be rethrown after publishing terminal state");
+			}
+			assertEquals(1, reads.get(), "a failed worker must not retry itself");
+			assertTrue(store.indexRebuildStatus().startsWith("FAILED"));
+			store.requestTermIndexRebuild(TARGET);
+			assertTrue(store.awaitIndexRebuild(20L, TimeUnit.SECONDS));
+			assertEquals(30, termCount(store));
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 0, 1, 2, 3, 4, 5 })
+	void explicitRetryReconcilesDurableTermManifestBeforeCleanupOrNewRequest(int variant) throws Exception {
+		StoreProperties properties = new StoreProperties(directory.toFile());
+		seed(properties, 30);
+		try (ClosingValueStore initial = open(properties, "spoc,cspo,posc")) {
+			initial.startIndexRebuildAfterStoreInitialization();
+			assertTrue(initial.awaitIndexRebuild(20L, TimeUnit.SECONDS));
+		}
+		AtomicInteger failures = new AtomicInteger();
+		CountDownLatch retryPublished = new CountDownLatch(1);
+		AtomicReference<Set<String>> authorityAtFirstRetryMutation = new AtomicReference<>();
+		String requested = variant < 2 ? "spoc,cspo,ospc" : variant < 4 ? "spoc,cspo,psoc" : "spoc,cspo,posc";
+		try (ClosingValueStore store = open(properties, "spoc,cspo,ospc");
+				var old = store.getTxnManager().createReadTxnUntracked()) {
+			long predicate = store.getId(VF.createIRI("urn:term-background:predicate"));
+			assertEquals(30, countTermsForPredicate(store, old, predicate));
+			store.setTermIndexMaintenanceObserver(phase -> {
+				if (phase.equals("before-publication") && failures.getAndIncrement() == 0) {
+					Thread.currentThread().setUncaughtExceptionHandler((thread, failure) -> {
+					});
+					if ((variant & 1) != 0) {
+						throw new AssertionError("controlled fatal post-term-manifest failure");
+					}
+					throw new UncheckedIOException(new IOException("controlled post-term-manifest failure"));
+				}
+				if (failures.get() > 0 && (phase.startsWith("cleanup-") || phase.equals("dual-write-registered"))) {
+					authorityAtFirstRetryMutation.compareAndSet(null,
+							TripleIndex.parseIndexSpecList(properties.getTripleTermIndexes()));
+					retryPublished.countDown();
+				}
+			});
+			store.startIndexRebuildAfterStoreInitialization();
+			assertThrows(IOException.class, () -> store.awaitIndexRebuild(10L, TimeUnit.SECONDS));
+			assertEquals(1, failures.get(), "durable publication failure must not restart itself");
+			try (var gap = store.getTxnManager().createReadTxnUntracked()) {
+				assertEquals(30, countTermsForPredicate(store, gap, predicate));
+				store.requestTermIndexRebuild(requested);
+				assertTrue(retryPublished.await(10L, TimeUnit.SECONDS),
+						"retry must publish the native authority and retain its older query readers");
+				assertFalse(authorityAtFirstRetryMutation.get().contains("posc"),
+						"the durable target must become query authority before any retirement attempt");
+				assertFalse(store.awaitIndexRebuild(0L, TimeUnit.NANOSECONDS));
+				assertEquals(30, countTermsForPredicate(store, old, predicate));
+				assertEquals(30, countTermsForPredicate(store, gap, predicate));
+			}
+			old.close();
+			assertTrue(store.awaitIndexRebuild(20L, TimeUnit.SECONDS), store.indexRebuildStatus());
+			assertEquals(TripleIndex.parseIndexSpecList(requested),
+					TripleIndex.parseIndexSpecList(properties.getTripleTermIndexes()));
+			assertEquals(30, termCount(store));
+			try (var current = store.getTxnManager().createReadTxn()) {
+				assertEquals(30, countTermsForPredicate(store, current, predicate));
+			}
+		}
+	}
+
+	private static int countTermsForPredicate(ValueStore store, TxnManager.Txn reader, long predicate)
+			throws IOException {
+		int count = 0;
+		try (RecordIterator records = store.getTripleTerms(reader, -1, predicate, -1)) {
+			while (records.next() != null) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void inactiveTermTreesRemainPendingBeforeOwnerScheduling(boolean legacy) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setInlineLiterals(false)
+				.setTripleTermIndexes("spoc,cspo");
+		if (legacy) {
+			LmdbCompatibilityFixtures.extract("v2-610-explicit-terms.zip", directory);
+		}
+		LmdbStore owner = new LmdbStore(directory.toFile(), config);
+		SailRepository repository = new SailRepository(owner);
+		try {
+			repository.init();
+			try (var connection = repository.getConnection()) {
+				connection.add(VF.createIRI("urn:inactive-term:s"), VF.createIRI("urn:inactive-term:p"),
+						VF.createTripleTerm(VF.createIRI("urn:inactive-term:inner"),
+								VF.createIRI("urn:inactive-term:p"), VF.createLiteral("owned value")));
+			}
+		} finally {
+			repository.shutDown();
+		}
+		StoreProperties properties = new StoreProperties(directory.toFile());
+		assertTrue(properties.load());
+		LegacyStoreDiscovery.discover(directory.toFile(), properties);
+		long[] quad;
+		int expectedTerms;
+		config.setTripleTermIndexes("spoc,cspo,posc");
+		try (ClosingValueStore store = new ClosingValueStore(directory.resolve("values").toFile(), properties,
+				config)) {
+			store.startIndexRebuildAfterStoreInitialization();
+			assertTrue(store.awaitIndexRebuild(20L, TimeUnit.SECONDS));
+			expectedTerms = termCount(store);
+			try (RecordIterator terms = store.getTripleTerms(-1, -1, -1)) {
+				quad = terms.next().clone();
+			}
+		}
+		config.setTripleTermIndexes("spoc,cspo");
+		try (ClosingValueStore store = new ClosingValueStore(directory.resolve("values").toFile(), properties,
+				config)) {
+			store.startIndexRebuildAfterStoreInitialization();
+			assertTrue(store.awaitIndexRebuild(20L, TimeUnit.SECONDS));
+		}
+		ByteBuffer key = ByteBuffer.allocate(TripleIndex.MAX_KEY_LENGTH);
+		IndexKeyWriters.forFieldSeq("posc").write(key, quad[0], quad[1], quad[2], quad[3], false);
+		String obsolete = TripleIndex.nativeDatabaseName("term-posc", true);
+		LmdbCompatibilityFixtures.nativePut(directory, obsolete, Arrays.copyOf(key.array(), key.position()),
+				new byte[0]);
+		assertEquals(null, LmdbCompatibilityFixtures.nativeGet(directory, ValueStore.TERM_INDEX_MANIFEST_DATABASE,
+				TermIndexBuild.KEY), "the fixture must have no build descriptor supplying the pending obligation");
+		try (ClosingValueStore store = new ClosingValueStore(directory.resolve("values").toFile(), properties,
+				config)) {
+			assertEquals(Set.of("spoc", "cspo"), TripleIndex.parseIndexSpecList(properties.getTripleTermIndexes()));
+			assertFalse(store.awaitIndexRebuild(0L, TimeUnit.NANOSECONDS),
+					"inactive physical term trees remain pending even when active and requested layouts match");
+			store.startIndexRebuildAfterStoreInitialization();
+			assertTrue(store.awaitIndexRebuild(20L, TimeUnit.SECONDS));
+			assertEquals(expectedTerms, termCount(store));
+		}
+		assertEquals(0L, LmdbCompatibilityFixtures.nativeValueEntryCount(directory, obsolete));
+	}
 
 	@Test
 	void closeCancelsCleanupWaitingForAHeldTermReader() throws Exception {

@@ -706,8 +706,12 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	}
 
 	public boolean awaitSketchesReady(long timeout, TimeUnit unit) throws InterruptedException {
-		SketchBasedJoinEstimator estimator = getSketchBasedJoinEstimator();
-		return estimator != null && estimator.awaitReady(timeout, unit);
+		Objects.requireNonNull(unit, "unit");
+		if (timeout < 0L) {
+			throw new IllegalArgumentException("timeout must be non-negative");
+		}
+		LmdbSailStore current = backingStore;
+		return current != null && current.awaitSketchesReady(timeout, unit);
 	}
 
 	/** Bounded authority and maintenance information; obtaining it never walks native records. */
@@ -732,7 +736,9 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 					current.valueStore().hasDeferredValueMaintenance(),
 					current.getTripleStore().indexRebuildStatus(), current.valueStore().indexRebuildStatus(),
 					current.postReadyMaintenanceStatus(), current.valueStore().hasPendingValueOverlayMaintenance()
-							|| adjacency != null && adjacency.hasPendingMaintenance());
+							|| adjacency != null && adjacency.hasPendingMaintenance()
+							|| current.getSketchBasedJoinEstimator() != null
+									&& current.getSketchBasedJoinEstimator().hasPendingBackgroundRefresh());
 		} catch (IOException failure) {
 			throw new SailException("Could not inspect bounded value-maintenance metadata", failure);
 		}

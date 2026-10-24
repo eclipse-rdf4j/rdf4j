@@ -330,6 +330,18 @@ class LmdbSnapshotValueLifetimeTest {
 		return namespace;
 	}
 
+	private static String addTripleStoreHardGrowthDemand(SailConnection writer, TripleStore tripleStore)
+			throws Exception {
+		long mapSize = tripleStore.mapSizeBytes();
+		int namespaceDemand = Math.toIntExact(mapSize);
+		assertTrue(new MapGrowthPolicy(TRIPLE_STORE_GROWTH_THRESHOLD).hardCapacityRequired(mapSize,
+				tripleStore.occupiedBytes(), namespaceDemand),
+				"the namespace must require hard capacity before its native publication can finish");
+		String namespace = "urn:snapshot-lifetime:hard-growth-demand:" + "n".repeat(namespaceDemand);
+		writer.setNamespace("growth-demand", namespace);
+		return namespace;
+	}
+
 	private void awaitTripleStoreGrowth(LmdbStore store, TripleStore tripleStore, long initialMapSize,
 			String namespace) throws Exception {
 		try (SailConnection barrier = store.getConnection()) {
@@ -869,6 +881,7 @@ class LmdbSnapshotValueLifetimeTest {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")
 				.setForceSync(true)
 				.setTripleDBSize(TRIPLE_STORE_GROWTH_MAP_SIZE)
+				.setValueDBSize(128L * 1024L * 1024L)
 				.setMapGrowthThreshold(TRIPLE_STORE_GROWTH_THRESHOLD)
 				.setMapGrowthReadDrainTimeoutMillis(3_000)
 				.setAutoGrow(true));
@@ -920,7 +933,7 @@ class LmdbSnapshotValueLifetimeTest {
 					Future<String> writer = writers.submit(() -> {
 						try (SailConnection connection = store.getConnection()) {
 							connection.begin(IsolationLevels.SNAPSHOT);
-							String namespace = addTripleStoreGrowthDemand(connection, initialMapSize);
+							String namespace = addTripleStoreHardGrowthDemand(connection, tripleStore);
 							for (int i = 0; i < 25_000; i++) {
 								connection.addStatement(
 										VF.createIRI("urn:snapshot-lifetime:mixed-observation:growth:" + i),
@@ -951,6 +964,9 @@ class LmdbSnapshotValueLifetimeTest {
 					awaitTripleStoreGrowth(store, tripleStore, initialMapSize, namespace);
 					assertTrue(mapSize(tripleStore) > initialMapSize,
 							"the writer must grow the map while the sibling result remains unobserved");
+					assertEquals(beforeGrowth.valueStoreResizes(),
+							store.getBackingStore().growthMetricsSnapshot().valueStoreResizes(),
+							"the complete input must fit the other environment without dictionary growth");
 					for (Object oldView : oldViews) {
 						assertTrue((boolean) privateField(oldView, "closed"),
 								"all original RC result views must close before the replacement generation is published");
@@ -993,6 +1009,7 @@ class LmdbSnapshotValueLifetimeTest {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")
 				.setForceSync(true)
 				.setTripleDBSize(TRIPLE_STORE_GROWTH_MAP_SIZE)
+				.setValueDBSize(128L * 1024L * 1024L)
 				.setMapGrowthThreshold(TRIPLE_STORE_GROWTH_THRESHOLD)
 				.setMapGrowthReadDrainTimeoutMillis(30_000)
 				.setAutoGrow(true));
@@ -1025,7 +1042,7 @@ class LmdbSnapshotValueLifetimeTest {
 					Future<String> writer = writers.submit(() -> {
 						try (SailConnection connection = store.getConnection()) {
 							connection.begin(IsolationLevels.SNAPSHOT);
-							String namespace = addTripleStoreGrowthDemand(connection, initialMapSize);
+							String namespace = addTripleStoreHardGrowthDemand(connection, tripleStore);
 							for (int i = 0; i < 25_000; i++) {
 								connection.addStatement(
 										VF.createIRI("urn:snapshot-lifetime:grace:growth:" + i), growthPredicate,
@@ -1070,6 +1087,9 @@ class LmdbSnapshotValueLifetimeTest {
 					reader.rollback();
 					String namespace = writer.get(10, TimeUnit.SECONDS);
 					awaitTripleStoreGrowth(store, tripleStore, initialMapSize, namespace);
+					assertEquals(beforeGrowth.valueStoreResizes(),
+							store.getBackingStore().growthMetricsSnapshot().valueStoreResizes(),
+							"the complete input must fit the other environment without dictionary growth");
 					try (SailConnection committed = store.getConnection()) {
 						committed.begin(IsolationLevels.SNAPSHOT);
 						assertEquals(namespace, committed.getNamespace("growth-demand"));

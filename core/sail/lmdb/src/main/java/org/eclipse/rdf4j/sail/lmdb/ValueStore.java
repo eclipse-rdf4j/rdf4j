@@ -968,6 +968,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private final RetiredValueIdStore retiredIdStore = new RetiredValueIdStore();
 	/** Marker observation captured before any startup database creation or writer transaction. */
 	private RefCountMarkerStatus startupMarkerStatus;
+	/** Captured before bootstrap creates named databases; an empty native catalog has no layout to import. */
+	private boolean startupMainDatabaseEmpty;
 	private boolean auxiliaryDatabasesInitialized;
 	/** True only after a complete live-owner count establishment or a valid clean-close marker. */
 	private boolean refCountIntegrityEstablished;
@@ -1095,6 +1097,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private volatile Set<String> requestedTermIndexSpecs;
 	private boolean termIndexManifestInitialized;
 	private volatile Thread termIndexMaintenanceThread;
+	private volatile CompletableFuture<Void> termIndexMaintenanceCompletion = CompletableFuture.completedFuture(null);
 	private volatile boolean termIndexMaintenanceReady;
 	private volatile boolean termIndexMaintenanceCancelled;
 	private volatile Throwable termIndexMaintenanceFailure;
@@ -1415,8 +1418,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	private boolean hasPendingTermIndexMutation() {
 		synchronized (writerAdmission) {
-			return termIndexMaintenanceCancelled || termMaintenanceWriterActive || termIndexMaintenanceReady
-					&& termIndexMaintenanceFailure == null && !indexRebuildStatus().equals("IDLE");
+			return termIndexMaintenanceCancelled || termMaintenanceWriterActive
+					|| !termIndexMaintenanceCompletion.isDone()
+					|| termIndexMaintenanceReady
+							&& termIndexMaintenanceFailure == null && !indexRebuildStatus().equals("IDLE");
 		}
 	}
 
@@ -1503,7 +1508,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				}
 				long id = readCanonicalUnusedUnsigned(bytes);
 				int type = ValueIds.getIdType(id);
-				if (bytes.hasRemaining() || value.mv_size() != 0L || id <= 0L || ValueIds.isInlined(id)
+				// Historical unused_ids writers stored opaque hint payloads. Revision authority comes only from
+				// the complete canonical key; neither reclamation nor owner verification interprets its value.
+				if (bytes.hasRemaining() || id <= 0L || ValueIds.isInlined(id)
 						|| type < ValueIds.T_PTR || type > ValueIds.T_CORE_LITERAL
 						|| type == ValueIds.T_CORE_LITERAL && !coreDatatypeLiteralReferences) {
 					throw new IllegalArgumentException("invalid complete persisted unused key");
@@ -2981,6 +2988,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			E(mdb_stat(txn, dbi, stat));
 			return new InitialMapState(stat.ms_psize(), stat.ms_entries() == 0L);
 		});
+		startupMainDatabaseEmpty = initial.empty();
 		pageSize = initial.pageSize();
 		long configMapSize = Math.max(6L * pageSize, LmdbUtil.pageAlignedCapacity(mapSize, pageSize));
 		try (MemoryStack stack = stackPush()) {
@@ -3388,7 +3396,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				// is
 				// stale, missing, or was lost after a rename.
 				effectiveTermIndexSpecs = nativeTermIndexSpecs;
-			} else if ((properties.isLoaded() || properties.hasNativeGeneration()) && !freshBulkGeneration) {
+			} else if ((properties.isLoaded() || properties.hasNativeGeneration()) && !freshBulkGeneration
+					&& !startupMainDatabaseEmpty) {
 				// Import the legacy sidecar on first native-manifest migration.
 				effectiveTermIndexSpecs = getTripleTermIndexSpecs();
 			} else {
@@ -3398,6 +3407,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			}
 			if (effectiveTermIndexSpecs.size() > MAX_TERM_INDEXES) {
 				throw new IOException("At most " + MAX_TERM_INDEXES + " triple-term indexes can be active");
+			}
+			if (!effectiveTermIndexSpecs.containsAll(TripleIndex.parseIndexSpecList(DEFAULT_TRIPLE_TERM_INDEXES))) {
+				throw new IOException("Committed triple-term index layout requires spoc and cspo indexes");
 			}
 
 			initTripleTermIndexes(effectiveTermIndexSpecs);
@@ -3709,13 +3721,26 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private void startTermIndexMaintenanceWorker() {
 		synchronized (termIndexMaintenanceMonitor) {
 			if (!termIndexMaintenanceReady || termIndexMaintenanceCancelled || env == 0L
-					|| termIndexMaintenanceThread != null && termIndexMaintenanceThread.isAlive()
+					|| termIndexMaintenanceFailure != null || !termIndexMaintenanceCompletion.isDone()
 					|| termIndexBuild == null && (requestedTermIndexSpecs == null
 							|| requestedTermIndexSpecs.equals(activeTermIndexSpecs()))) {
 				return;
 			}
-			Thread worker = new Thread(this::runTermIndexMaintenance, "rdf4j-lmdb-term-index-maintenance");
+			CompletableFuture<Void> completion = new CompletableFuture<>();
+			Thread worker = new Thread(() -> {
+				try {
+					runTermIndexMaintenance();
+				} finally {
+					completion.complete(null);
+					// A request may arrive after the old loop observed completion but before this terminal handoff.
+					startTermIndexMaintenanceWorker();
+					signalTermIndexMaintenance();
+					scheduleStartupValueOverlay();
+					signalValueOverlayWriterCompleted();
+				}
+			}, "rdf4j-lmdb-term-index-maintenance");
 			worker.setDaemon(true);
+			termIndexMaintenanceCompletion = completion;
 			termIndexMaintenanceThread = worker;
 			worker.start();
 		}
@@ -3729,7 +3754,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		TermIndexBuild build = termIndexBuild;
 		if (build == null
 				&& (requestedTermIndexSpecs == null || requestedTermIndexSpecs.equals(activeTermIndexSpecs()))) {
-			return "IDLE";
+			return termIndexMaintenanceCompletion.isDone() ? "IDLE" : "FINISHING";
 		}
 		if (!termIndexMaintenanceReady) {
 			return "QUEUED";
@@ -3799,9 +3824,15 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		try {
 			while (!termIndexMaintenanceCancelled) {
 				TermIndexBuild before = termIndexBuild;
+				if (before != null && before.phase() == TermIndexBuild.CLEANUP
+						&& !before.target().equals(activeTermIndexSpecs())) {
+					// A failed post-commit publication leaves the durable target authoritative. Reconcile it before
+					// retiring a tree or deriving the source of a newer request from the old in-memory layout.
+					publishTermQueryGeneration(before.target(), lastTrustedNativeTransactionId, environmentGeneration);
+				}
 				Set<String> desired = requestedTermIndexSpecs;
 				boolean changedRequest = desired != null && (before == null ? !desired.equals(activeTermIndexSpecs())
-						: !desired.equals(before.target()));
+						: before.phase() != TermIndexBuild.CLEANUP && !desired.equals(before.target()));
 				if (before == null && !changedRequest) {
 					return;
 				}
@@ -3929,10 +3960,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		} catch (IOException | RuntimeException | Error failure) {
 			termIndexMaintenanceFailure = failure;
 			logger.warn("Triple-term index maintenance failed; committed indexes remain active", failure);
-		} finally {
-			signalTermIndexMaintenance();
-			scheduleStartupValueOverlay();
-			signalValueOverlayWriterCompleted();
+			if (failure instanceof Error fatal) {
+				throw fatal;
+			}
 		}
 	}
 

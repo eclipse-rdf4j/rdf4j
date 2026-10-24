@@ -18,6 +18,7 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbCompatibilityFixtures.properties;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbCompatibilityFixtures.save;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbCompatibilityFixtures.snapshot;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.lwjgl.system.MemoryUtil.NULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
@@ -195,6 +196,92 @@ class LmdbLegacyIndexDiscoveryTest {
 				.flatMap(legacy -> Stream.of(" ", "~", "future-index", "\u0001low",
 						"\u001flow", "\u007fhigh", "\u00ffhigh", "a\u0001suffix")
 						.map(name -> Arguments.of(legacy, name)));
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void missingRequiredTermOwnerTreeRejectsWithoutRecreatingIt(boolean legacy) throws Exception {
+		if (legacy) {
+			extract("v2-610-explicit-terms.zip", directory);
+		} else {
+			SailRepository repository = new SailRepository(new LmdbStore(directory.toFile(),
+					new LmdbStoreConfig().setInlineLiterals(false)));
+			try {
+				repository.init();
+				try (var connection = repository.getConnection()) {
+					var values = SimpleValueFactory.getInstance();
+					var predicate = values.createIRI("urn:missing-owner:predicate");
+					var inner = values.createTripleTerm(values.createIRI("urn:missing-owner:inner"), predicate,
+							values.createLiteral("owned value"));
+					connection.add(values.createIRI("urn:missing-owner:subject"), predicate,
+							values.createTripleTerm(values.createIRI("urn:missing-owner:outer"), predicate, inner));
+				}
+			} finally {
+				repository.shutDown();
+			}
+		}
+		dropNamedDatabase(directory.resolve("values"), TripleIndex.nativeDatabaseName("term-cspo", true));
+		assertInitializationRejectedWithoutMutation();
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void metadataOnlyTornCatalogDoesNotBecomeAFreshDictionary(boolean legacy) throws Exception {
+		if (legacy) {
+			extract("v2-empty-inline-false.zip", directory);
+		} else {
+			LmdbStore store = new LmdbStore(directory.toFile(), new LmdbStoreConfig().setInlineLiterals(false));
+			store.init();
+			store.shutDown();
+		}
+		for (byte[] key : readNativeKeys(directory.resolve("values"), null)) {
+			if (Byte.toUnsignedInt(key[0]) >= 0x20) {
+				String name = new String(key, StandardCharsets.US_ASCII);
+				if (!name.equals("gc_meta")) {
+					dropNamedDatabase(directory.resolve("values"), name);
+				}
+			} else {
+				nativePut(directory, null, key, null);
+			}
+		}
+		createNamedDatabase(directory.resolve("values"), "gc_meta");
+		assertInitializationRejectedWithoutMutation();
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void capturedInactiveStatementTreesStayPendingBeforeScheduling(boolean legacy) throws Exception {
+		if (legacy) {
+			extract("v2-610-default.zip", directory);
+		}
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setInlineLiterals(false);
+		SailRepository repository = new SailRepository(new LmdbStore(directory.toFile(), config));
+		try {
+			repository.init();
+			try (var connection = repository.getConnection()) {
+				var values = SimpleValueFactory.getInstance();
+				connection.add(values.createIRI("urn:inactive:s"), values.createIRI("urn:inactive:p"),
+						values.createLiteral("still committed"));
+			}
+		} finally {
+			repository.shutDown();
+		}
+		putNamespaceMetadata(TripleStore.INDEX_SPECS_KEY, "spoc".getBytes(StandardCharsets.UTF_8));
+		StoreProperties properties = new StoreProperties(directory.toFile());
+		assertThat(properties.load()).isTrue();
+		LegacyStoreDiscovery.discover(directory.toFile(), properties);
+		try (TripleStore store = new TripleStore(directory.resolve("triples").toFile(), properties,
+				new LmdbStoreConfig("spoc").setInlineLiterals(false), null)) {
+			assertThat(store.explicitIndexEntryCounts()).containsOnlyKeys("spoc");
+			long expected = store.explicitIndexEntryCounts().get("spoc");
+			assertFalse(store.awaitIndexRebuild(0L, TimeUnit.NANOSECONDS),
+					"captured inactive physical trees remain registered cleanup before the worker starts");
+			store.startBackgroundIndexRebuild();
+			assertThat(store.awaitIndexRebuild(10L, TimeUnit.SECONDS)).isTrue();
+			assertThat(store.explicitIndexEntryCounts().get("spoc")).isEqualTo(expected);
+		}
+		assertThat(LmdbCompatibilityFixtures.nativeTripleEntryCount(directory,
+				TripleIndex.nativeDatabaseName("posc", true))).isZero();
 	}
 
 	@ParameterizedTest

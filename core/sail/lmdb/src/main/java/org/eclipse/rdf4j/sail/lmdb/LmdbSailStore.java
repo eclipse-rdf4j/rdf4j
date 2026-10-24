@@ -2789,6 +2789,7 @@ class LmdbSailStore implements SailStore {
 	private volatile Thread postReadyThread;
 	private volatile String postReadyStatus = "NOT_STARTED";
 	private final AtomicBoolean postReadyStarted = new AtomicBoolean();
+	private final CompletableFuture<Void> postReadyInitializationCompletion = new CompletableFuture<>();
 	private final CompletableFuture<Void> valueOverlayStartupScheduling = new CompletableFuture<>();
 	private final CompletableFuture<Void> adjacencyStartupScheduling = new CompletableFuture<>();
 	/** Advances on every committed store mutation; a component of the adaptive cost model's regime key. */
@@ -6532,6 +6533,7 @@ class LmdbSailStore implements SailStore {
 			} finally {
 				valueOverlayStartupScheduling.complete(null);
 				adjacencyStartupScheduling.complete(null);
+				postReadyInitializationCompletion.complete(null);
 			}
 		});
 		postReadyThread = worker;
@@ -6573,14 +6575,33 @@ class LmdbSailStore implements SailStore {
 				loaded.setSamplingViewSupplier(() -> beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, null));
 				sketchBasedJoinEstimator.setRebuildAllowedSupplier(() -> !storeTxnStarted.get());
 				sketchBasedJoinEstimator.configurePersistence(estimatorPath, snapshotExists);
-				if (!snapshotExists || costModelDataGeneration.get() != generationBeforeLoad) {
+				beforeSketchProviderPublicationForTest();
+				boolean discarded = false;
+				while (true) {
+					sinkStoreAccessLock.lock();
+					try {
+						if (initialImportClosing) {
+							return;
+						}
+						// Native commits use this same lock. Publish an unchanged loaded generation, or an already
+						// invalidated empty provider. Commits during unpublished cleanup cannot make it stale again.
+						if (discarded || snapshotExists && costModelDataGeneration.get() == generationBeforeLoad) {
+							sketchBasedJoinEstimator.setLearnedStatsProvider(loaded);
+							sketchBasedJoinEstimator.setPatternFilterSamplingEstimator(loaded);
+							sketchBasedJoinEstimator
+									.setPatternCardinalityProvider(statementPatternCardinalitySource::estimate);
+							filterSelectivityStats = loaded;
+							break;
+						}
+					} finally {
+						sinkStoreAccessLock.unlock();
+					}
+					// Discard may persist dirty buffers or await incremental work. It owns no published provider
+					// yet, so this potentially unbounded cleanup must stay outside the native commit fence.
 					sketchBasedJoinEstimator.discardAndMarkForRebuild();
 					loaded.recordStoreMutation();
+					discarded = true;
 				}
-				sketchBasedJoinEstimator.setLearnedStatsProvider(loaded);
-				sketchBasedJoinEstimator.setPatternFilterSamplingEstimator(loaded);
-				sketchBasedJoinEstimator.setPatternCardinalityProvider(statementPatternCardinalitySource::estimate);
-				filterSelectivityStats = loaded;
 				if (!initialImportClosing) {
 					sketchBasedJoinEstimator.startBackgroundRefresh(3);
 					startBackgroundFilterSampling();
@@ -6593,6 +6614,32 @@ class LmdbSailStore implements SailStore {
 
 	String postReadyMaintenanceStatus() {
 		return postReadyStatus;
+	}
+
+	boolean awaitSketchesReady(long timeout, TimeUnit unit) throws InterruptedException {
+		if (sketchBasedJoinEstimator == null) {
+			return false;
+		}
+		long started = System.nanoTime();
+		long budget = unit.toNanos(timeout);
+		try {
+			postReadyInitializationCompletion.get(budget, TimeUnit.NANOSECONDS);
+		} catch (ExecutionException | TimeoutException incomplete) {
+			return false;
+		}
+		if (initialImportClosing || !postReadyStatus.equals("READY")) {
+			return false;
+		}
+		long remaining = Math.max(0L, budget - (System.nanoTime() - started));
+		return sketchBasedJoinEstimator.awaitReady(remaining, TimeUnit.NANOSECONDS);
+	}
+
+	/** Observational interleaving seam; no optional state has been published at this point. */
+	void beforeSketchProviderPublicationForTest() {
+	}
+
+	/** Observational interleaving seam for an actual refresh read. */
+	void beforeSketchRefreshReadForTest() {
 	}
 
 	/** The public static maintenance entry point owns the directory and exposes no concurrent connections. */
@@ -6609,6 +6656,7 @@ class LmdbSailStore implements SailStore {
 		if (worker == null || worker == Thread.currentThread()) {
 			valueOverlayStartupScheduling.complete(null);
 			adjacencyStartupScheduling.complete(null);
+			postReadyInitializationCompletion.complete(null);
 			return;
 		}
 		worker.interrupt();
@@ -6649,6 +6697,9 @@ class LmdbSailStore implements SailStore {
 				Resource... contexts) {
 			boolean refreshThread = SketchBasedJoinEstimator.REFRESH_THREAD_NAME
 					.equals(Thread.currentThread().getName());
+			if (refreshThread) {
+				beforeSketchRefreshReadForTest();
+			}
 			boolean borrowedReadView = activeReadView.get() != null;
 			ReadResourceContext resourceContext = activeReadResourceContext.get();
 			List<ReadViewLease> resourceViews = resourceContext == null ? List.of() : resourceContext.readViews();
@@ -7818,6 +7869,7 @@ class LmdbSailStore implements SailStore {
 
 	/** Publishes optional branch-derived state only after the TripleStore proves the native commit. */
 	private void finishCommittedDerivedState() {
+		assert sinkStoreAccessLock.isHeldByCurrentThread();
 		Throwable failure = null;
 		try {
 			costModelDataGeneration.incrementAndGet();

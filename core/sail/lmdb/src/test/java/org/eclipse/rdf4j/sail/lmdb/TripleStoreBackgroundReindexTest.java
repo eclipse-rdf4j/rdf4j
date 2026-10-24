@@ -56,6 +56,153 @@ import org.mockito.MockedStatic;
 
 class TripleStoreBackgroundReindexTest {
 	@Test
+	void awaitIncludesFinalNativeCommitAndTerminalCallback(@TempDir Path directory) throws Exception {
+		seed(directory, 20);
+		CountDownLatch committing = new CountDownLatch(1);
+		CountDownLatch releaseCommit = new CountDownLatch(1);
+		CountDownLatch terminal = new CountDownLatch(1);
+		CountDownLatch releaseTerminal = new CountDownLatch(1);
+		AtomicInteger cleanupCommits = new AtomicInteger();
+		try (TripleStore store = new TripleStore(directory.toFile(), config("posc"), null) {
+			@Override
+			boolean commitReindexTransaction() throws IOException {
+				if (Thread.currentThread().getName().equals("LmdbStatementIndexRebuild")
+						&& Set.of("CLEANUP", "FINISHING").contains(indexRebuildStatus())) {
+					cleanupCommits.incrementAndGet();
+					committing.countDown();
+					awaitUninterruptibly(releaseCommit);
+				}
+				return super.commitReindexTransaction();
+			}
+
+			@Override
+			protected void afterIndexRebuildBatch() {
+				if (Set.of("CLEANUP", "FINISHING").contains(indexRebuildStatus())) {
+					terminal.countDown();
+					awaitUninterruptibly(releaseTerminal);
+				}
+			}
+		}) {
+			try {
+				assertFalse(store.awaitIndexRebuild(0L, TimeUnit.NANOSECONDS), "known work must precede scheduling");
+				store.startBackgroundIndexRebuild();
+				await(committing);
+				store.startBackgroundIndexRebuild();
+				assertFalse(store.awaitIndexRebuild(0L, TimeUnit.NANOSECONDS),
+						"descriptor removal cannot complete the job before the final native commit");
+				releaseCommit.countDown();
+				await(terminal);
+				assertFalse(store.awaitIndexRebuild(0L, TimeUnit.NANOSECONDS),
+						"the terminal callback is part of the admitted job");
+				releaseTerminal.countDown();
+				assertTrue(store.awaitIndexRebuild(10L, TimeUnit.SECONDS));
+				assertEquals(1, cleanupCommits.get(), "repeated scheduling must coalesce into one cleanup writer");
+			} finally {
+				releaseCommit.countDown();
+				releaseTerminal.countDown();
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void explicitStartCanRetryAFailedWorkerWithoutAutomaticRetry(boolean fatal, @TempDir Path directory)
+			throws Exception {
+		seed(directory, 20);
+		AtomicInteger failures = new AtomicInteger();
+		try (TripleStore store = new TripleStore(directory.toFile(), config("posc"), null) {
+			@Override
+			protected void afterIndexRebuildRead(long[][] batch, int count) throws IOException {
+				if (failures.getAndIncrement() == 0) {
+					if (fatal) {
+						throw new AssertionError("controlled fatal source-read failure");
+					}
+					throw new IOException("controlled single source-read failure");
+				}
+			}
+		}) {
+			store.startBackgroundIndexRebuild();
+			assertFalse(store.awaitIndexRebuild(10L, TimeUnit.SECONDS));
+			assertTrue(store.indexRebuildStatus().startsWith("FAILED"));
+			assertEquals(1, failures.get(), "terminal failure must not spin another attempt");
+			store.startBackgroundIndexRebuild();
+			assertTrue(store.awaitIndexRebuild(10L, TimeUnit.SECONDS),
+					"an explicit scheduling request must be able to retry retained work");
+			assertEquals(20L, store.explicitIndexEntryCounts().get("posc"));
+		}
+	}
+
+	private static void awaitUninterruptibly(CountDownLatch latch) {
+		boolean interrupted = false;
+		while (true) {
+			try {
+				latch.await();
+				break;
+			} catch (InterruptedException cancellation) {
+				interrupted = true;
+			}
+		}
+		if (interrupted) {
+			Thread.currentThread().interrupt();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void explicitRetryPublishesDurableManifestBeforeRetiringOldReaders(boolean fatal, @TempDir Path directory)
+			throws Exception {
+		seed(directory, 20);
+		AtomicInteger failures = new AtomicInteger();
+		CountDownLatch retryPublished = new CountDownLatch(1);
+		try (TripleStore store = new TripleStore(directory.toFile(), config("posc"), null) {
+			@Override
+			protected void afterIndexManifestCommitBeforePublication() throws IOException {
+				if (failures.getAndIncrement() == 0) {
+					Thread.currentThread().setUncaughtExceptionHandler((thread, failure) -> {
+					});
+					if (fatal) {
+						throw new AssertionError("controlled fatal post-manifest failure");
+					}
+					throw new IOException("controlled post-manifest failure");
+				}
+			}
+
+			@Override
+			protected void afterIndexRebuildBatch() {
+				if (failures.get() > 0) {
+					retryPublished.countDown();
+				}
+			}
+		}; Txn old = store.getTxnManager().createReadTxnUntracked()) {
+			assertEquals(20, store.countTriples(old, -1, 2, -1, -1, true));
+			store.startBackgroundIndexRebuild();
+			assertFalse(store.awaitIndexRebuild(10L, TimeUnit.SECONDS));
+			assertTrue(store.indexRebuildStatus().startsWith("FAILED"));
+			assertEquals(1, failures.get(), "durable publication failure must not restart itself");
+			try (Txn gap = store.getTxnManager().createReadTxnUntracked()) {
+				assertEquals("spoc", store.getIndexName(gap, -1, 2, -1, -1));
+				assertEquals(20, store.countTriples(gap, -1, 2, -1, -1, true));
+				store.startBackgroundIndexRebuild();
+				await(retryPublished);
+				assertFalse(store.awaitIndexRebuild(0L, TimeUnit.NANOSECONDS),
+						"retry must retain the old generation until its readers retire");
+				assertEquals("spoc", store.getIndexName(old, -1, 2, -1, -1));
+				assertEquals("spoc", store.getIndexName(gap, -1, 2, -1, -1),
+						"readers admitted in the committed-manifest publication gap keep their generation");
+				assertEquals(20, store.countTriples(old, -1, 2, -1, -1, true));
+				assertEquals(20, store.countTriples(gap, -1, 2, -1, -1, true));
+			}
+			old.close();
+			assertTrue(store.awaitIndexRebuild(10L, TimeUnit.SECONDS), store.indexRebuildStatus());
+			assertEquals(Set.of("posc"), store.explicitIndexEntryCounts().keySet());
+			try (Txn current = store.getTxnManager().createReadTxn()) {
+				assertEquals("posc", store.getIndexName(current, -1, 2, -1, -1));
+				assertEquals(20, store.countTriples(current, -1, 2, -1, -1, true));
+			}
+		}
+	}
+
+	@Test
 	void constructionRetainsCommittedIndexesUntilBackgroundMaintenanceStarts(@TempDir Path directory) throws Exception {
 		try (TripleStore initial = new TripleStore(directory.toFile(), config("spoc"), null)) {
 			initial.startTransaction();
