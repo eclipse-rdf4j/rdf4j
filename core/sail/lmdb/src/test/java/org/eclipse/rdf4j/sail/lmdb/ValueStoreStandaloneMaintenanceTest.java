@@ -48,6 +48,403 @@ class ValueStoreStandaloneMaintenanceTest {
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 
 	@ParameterizedTest
+	@ValueSource(strings = { "REQUEST", "CONTINUATION" })
+	void independentCapacityReservationCannotBorrowApplicationCallbacks(String callback, @TempDir Path directory)
+			throws Exception {
+		StoreProperties properties = new StoreProperties(directory.toFile());
+		Value value = VF.createIRI("urn:callback:owned-writer");
+		AtomicInteger foreignCallbacks = new AtomicInteger();
+		CompletableFuture<Boolean> reserved = new CompletableFuture<>();
+		try (RendezvousValueStore values = new RendezvousValueStore(directory.resolve("values").toFile(), properties,
+				config("spoc,cspo"))) {
+			values.startTransaction(true);
+			WriterTransaction transaction = values.currentWriterTransaction();
+			long id = values.storeValue(value);
+			long beforeGeneration = values.nativeCommitGeneration();
+			long beforeMap = values.mapSizeBytes();
+			if (callback.equals("REQUEST")) {
+				values.setMapGrowthRequestListener((kind, projected, exhausted) -> {
+					foreignCallbacks.incrementAndGet();
+					throw new IOException("An independent reservation borrowed the application growth listener");
+				});
+			} else {
+				values.setMapGrowthAttemptSupplier(() -> {
+					foreignCallbacks.incrementAndGet();
+					throw new IOException("An independent reservation borrowed the application continuation");
+				});
+			}
+			Thread reservation = Thread.ofPlatform().name("independent-application-map-reservation").unstarted(() -> {
+				try {
+					values.reserveWriteCapacity(beforeMap + 4096L);
+					reserved.complete(true);
+				} catch (Throwable failure) {
+					reserved.completeExceptionally(failure);
+				}
+			});
+			reservation.start();
+			try {
+				long limit = System.nanoTime() + TimeUnit.SECONDS.toNanos(10L);
+				boolean waiting = false;
+				while (!reserved.isDone() && !waiting && System.nanoTime() < limit) {
+					for (StackTraceElement frame : reservation.getStackTrace()) {
+						waiting |= reservation.getState() == Thread.State.WAITING
+								&& frame.getClassName().equals(ValueStore.class.getName())
+								&& frame.getMethodName().equals("resizeMapInternal");
+					}
+					Thread.onSpinWait();
+				}
+				assertTrue(reserved.isDone() || waiting, "the reservation must reach its actual capacity admission");
+				assertEquals(0, foreignCallbacks.get(),
+						"an independent read reservation must not borrow application growth callbacks");
+				assertFalse(reserved.isDone(), "independent growth must wait for the application writer");
+				assertEquals(beforeGeneration, values.nativeCommitGeneration());
+				assertEquals(id, values.getId(value));
+				values.commit();
+				assertTrue(reserved.get(10L, TimeUnit.SECONDS));
+				assertTrue(values.mapSizeBytes() > beforeMap);
+				assertEquals(0, foreignCallbacks.get());
+				assertEquals(value, values.getValue(id));
+				assertTrue(values.hasTrustedReferenceCounts());
+			} finally {
+				values.rollback(transaction);
+				reservation.interrupt();
+				reservation.join(10_000L);
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "posc", "opsc" })
+	void termCopyReaderExcludesConcurrentMapRemapping(String addedIndex, @TempDir Path directory) throws Exception {
+		StoreProperties properties = new StoreProperties(directory.toFile());
+		Value nested = VF.createTripleTerm(VF.createIRI("urn:copy:inner"), VF.createIRI("urn:copy:predicate"),
+				VF.createLiteral("nested copy value"));
+		Value term = VF.createTripleTerm(VF.createIRI("urn:copy:outer"), VF.createIRI("urn:copy:predicate"), nested);
+		long id;
+		try (RendezvousValueStore seed = new RendezvousValueStore(directory.resolve("values").toFile(), properties,
+				config("spoc,cspo"))) {
+			seed.startTransaction(true);
+			seed.storeValue(term);
+			seed.commit();
+			id = seed.getId(term);
+		}
+		CountDownLatch copyOpened = new CountDownLatch(1);
+		CountDownLatch releaseCopy = new CountDownLatch(1);
+		AtomicBoolean firstCopy = new AtomicBoolean(true);
+		try (RendezvousValueStore values = new RendezvousValueStore(directory.resolve("values").toFile(), properties,
+				config("spoc,cspo," + addedIndex))) {
+			values.setTermIndexMaintenanceObserver(phase -> {
+				if (phase.equals("copy-read-open") && firstCopy.compareAndSet(true, false)) {
+					copyOpened.countDown();
+					await(releaseCopy);
+				}
+			});
+			values.startIndexRebuildAfterStoreInitialization();
+			try {
+				assertTrue(copyOpened.await(10L, TimeUnit.SECONDS), "the actual TERM copy cursor must be open");
+				var manager = values.getTxnManager().lockManager();
+				long stamp = manager.tryWriteLock();
+				try {
+					assertEquals(0L, stamp, "an open TERM copy reader must exclude native map remapping");
+				} finally {
+					if (stamp != 0L) {
+						manager.unlockWrite(stamp);
+					}
+				}
+			} finally {
+				releaseCopy.countDown();
+			}
+			assertTrue(values.awaitIndexRebuild(10L, TimeUnit.SECONDS), values.indexRebuildStatus());
+			long beforeMap = values.mapSizeBytes();
+			values.reserveWriteCapacity(beforeMap + 4096L);
+			assertTrue(values.mapSizeBytes() > beforeMap, "a completed copy must release its remap barrier");
+			assertEquals(id, values.getId(term));
+			assertEquals(term, values.getValue(id));
+			assertEquals(nested, values.getValue(values.getId(nested)));
+			assertTrue(values.hasTrustedReferenceCounts());
+		}
+	}
+
+	@Test
+	void readOnlyCapacityReservationCannotCheckpointTheHeldTermWriter(@TempDir Path directory) throws Exception {
+		StoreProperties properties = new StoreProperties(directory.toFile());
+		Value term = VF.createTripleTerm(VF.createIRI("urn:reserve:subject"), VF.createIRI("urn:reserve:predicate"),
+				VF.createLiteral("held maintenance value"));
+		try (RendezvousValueStore seed = new RendezvousValueStore(directory.resolve("values").toFile(), properties,
+				config("spoc,cspo"))) {
+			seed.startTransaction(true);
+			seed.storeValue(term);
+			seed.commit();
+		}
+		CountDownLatch termAdmitted = new CountDownLatch(1);
+		CountDownLatch releaseTerm = new CountDownLatch(1);
+		CountDownLatch releaseReservation = new CountDownLatch(1);
+		CompletableFuture<Boolean> reserved = new CompletableFuture<>();
+		AtomicBoolean termReleased = new AtomicBoolean();
+		AtomicBoolean consumedForeignWriter = new AtomicBoolean();
+		try (RendezvousValueStore values = new RendezvousValueStore(directory.resolve("values").toFile(), properties,
+				config("spoc,cspo,posc"))) {
+			values.setTermIndexMaintenanceObserver(phase -> {
+				if (phase.equals("dual-write-registered")) {
+					termAdmitted.countDown();
+					await(releaseTerm);
+					if (consumedForeignWriter.get()) {
+						// Stop before this owner next touches native state if the reservation consumed it.
+						throw new IllegalStateException("Read-only reservation consumed the held TERM writer");
+					}
+				}
+			});
+			values.startIndexRebuildAfterStoreInitialization();
+			await(termAdmitted);
+			long beforeGeneration = values.nativeCommitGeneration();
+			long beforeMap = values.mapSizeBytes();
+			Thread reservation = Thread.ofPlatform().name("read-only-map-reservation").unstarted(() -> {
+				WriterTransaction replacement = null;
+				try {
+					values.reserveWriteCapacity(beforeMap + 4096L);
+					if (!termReleased.get() && values.nativeCommitGeneration() != beforeGeneration) {
+						consumedForeignWriter.set(true);
+						replacement = values.currentWriterTransaction();
+					}
+					reserved.complete(true);
+					await(releaseReservation);
+				} catch (Throwable failure) {
+					reserved.completeExceptionally(failure);
+				} finally {
+					if (replacement != null) {
+						try {
+							values.rollback(replacement);
+						} catch (IOException failure) {
+							reserved.completeExceptionally(failure);
+						}
+					}
+				}
+			});
+			reservation.start();
+			try {
+				long limit = System.nanoTime() + TimeUnit.SECONDS.toNanos(10L);
+				boolean waiting = false;
+				while (!reserved.isDone() && !waiting && System.nanoTime() < limit) {
+					for (StackTraceElement frame : reservation.getStackTrace()) {
+						waiting |= reservation.getState() == Thread.State.WAITING
+								&& frame.getClassName().equals(ValueStore.class.getName())
+								&& frame.getMethodName().equals("resizeMapInternal");
+					}
+					Thread.onSpinWait();
+				}
+				assertTrue(reserved.isDone() || waiting, "the reservation must reach its actual capacity admission");
+				assertEquals(beforeGeneration, values.nativeCommitGeneration(),
+						"a read-only capacity reservation must not publish the held TERM writer");
+				assertFalse(reserved.isDone(), "capacity admission must wait for the foreign publication");
+				termReleased.set(true);
+				releaseTerm.countDown();
+				assertTrue(reserved.get(10L, TimeUnit.SECONDS));
+				assertTrue(values.mapSizeBytes() > beforeMap);
+			} finally {
+				releaseReservation.countDown();
+				if (consumedForeignWriter.get()) {
+					reservation.join(10_000L);
+				}
+				termReleased.set(true);
+				releaseTerm.countDown();
+				reservation.join(10_000L);
+			}
+			assertTrue(values.awaitIndexRebuild(10L, TimeUnit.SECONDS));
+			assertEquals(term, values.getValue(values.getId(term)));
+			assertTrue(values.hasTrustedReferenceCounts());
+		}
+	}
+
+	@Test
+	void releasedTermGrowthCannotConsumeANewStandaloneWriter(@TempDir Path directory) throws Exception {
+		StoreProperties properties = new StoreProperties(directory.toFile());
+		Value term = VF.createTripleTerm(VF.createIRI("urn:growth:subject"), VF.createIRI("urn:growth:predicate"),
+				VF.createLiteral("committed before maintenance growth"));
+		try (RendezvousValueStore seed = new RendezvousValueStore(directory.resolve("values").toFile(), properties,
+				config("spoc,cspo").setValueDBSize(1024L * 1024L))) {
+			seed.startTransaction(true);
+			seed.storeValue(term);
+			seed.commit();
+		}
+		CountDownLatch growthRequested = new CountDownLatch(1);
+		CountDownLatch releaseGrowth = new CountDownLatch(1);
+		CountDownLatch releaseAfterGrowth = new CountDownLatch(1);
+		CompletableFuture<Boolean> grown = new CompletableFuture<>();
+		AtomicReference<Thread> maintenance = new AtomicReference<>();
+		AtomicBoolean arm = new AtomicBoolean(true);
+		try (RendezvousValueStore values = new RendezvousValueStore(directory.resolve("values").toFile(), properties,
+				config("spoc,cspo,posc").setValueDBSize(1024L * 1024L))) {
+			// Fill the actual reopened map to its native reservation boundary, after startup's own bootstrap.
+			int maximumFillers = Math.toIntExact(values.mapSizeBytes() / (64L * 1024L));
+			for (int filler = 0; filler < maximumFillers
+					&& !values.requiresResizeForEstimatedWrite(LmdbUtil.MIN_FREE_SPACE); filler++) {
+				values.startTransaction(true);
+				values.storeValue(VF.createLiteral(filler + ":" + "f".repeat(64 * 1024)));
+				values.commit();
+			}
+			assertTrue(values.requiresResizeForEstimatedWrite(LmdbUtil.MIN_FREE_SPACE),
+					"the committed native map must require the real TERM reservation");
+			values.setTermIndexMaintenanceObserver(phase -> {
+				if (phase.equals("before-map-growth") && arm.compareAndSet(true, false)) {
+					maintenance.set(Thread.currentThread());
+					growthRequested.countDown();
+					await(releaseGrowth);
+				} else if (phase.equals("map-grown") && !grown.isDone()) {
+					grown.complete(true);
+					await(releaseAfterGrowth);
+				}
+			});
+			values.startIndexRebuildAfterStoreInitialization();
+			await(growthRequested);
+			WriterTransaction standalone = new WriterTransaction();
+			values.startTransaction(true, standalone);
+			Value own = VF.createIRI("urn:growth:standalone-uncommitted");
+			try {
+				long ownId = values.storeValue(own);
+				long beforeMap = values.mapSizeBytes();
+				releaseGrowth.countDown();
+				long limit = System.nanoTime() + TimeUnit.SECONDS.toNanos(10L);
+				boolean waitingForOwner = false;
+				while (!grown.isDone() && !waitingForOwner && System.nanoTime() < limit) {
+					Thread worker = maintenance.get();
+					for (StackTraceElement frame : worker.getStackTrace()) {
+						waitingForOwner |= worker.getState() == Thread.State.WAITING
+								&& (frame.getMethodName().equals("growMapAfterReindexMapFullAfterQuiescence")
+										|| frame.getMethodName().equals("claimTermMaintenanceWriter")
+										|| frame.getMethodName().equals("growMapForEstimatedWrite"));
+					}
+					Thread.onSpinWait();
+				}
+				assertTrue(grown.isDone() || waitingForOwner, "maintenance must reach actual growth admission");
+				assertEquals(ownId, values.getId(VF.createIRI(own.stringValue())),
+						"post-release TERM growth must preserve the newly admitted standalone writer");
+				assertFalse(grown.isDone(), "maintenance must wait outside the native barrier for that writer");
+				values.commit();
+				assertTrue(grown.get(10L, TimeUnit.SECONDS));
+				assertTrue(values.mapSizeBytes() > beforeMap, "the maintenance resize must really grow the map");
+				releaseAfterGrowth.countDown();
+				assertTrue(values.awaitIndexRebuild(10L, TimeUnit.SECONDS));
+				assertEquals(ownId, values.getId(VF.createIRI(own.stringValue())));
+				assertEquals(term, values.getValue(values.getId(term)));
+				assertTrue(values.hasTrustedReferenceCounts());
+			} finally {
+				releaseGrowth.countDown();
+				releaseAfterGrowth.countDown();
+				values.rollback(standalone);
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void waitingFrozenWriterCannotChangeTermCheckpointPolicy(boolean failedDecision, @TempDir Path directory)
+			throws Exception {
+		StoreProperties properties = new StoreProperties(directory.toFile());
+		Value term = VF.createTripleTerm(VF.createIRI("urn:policy:subject"), VF.createIRI("urn:policy:predicate"),
+				VF.createLiteral("committed term"));
+		try (RendezvousValueStore seed = new RendezvousValueStore(directory.resolve("values").toFile(), properties,
+				config("spoc,cspo"))) {
+			seed.startTransaction(true);
+			seed.storeValue(term);
+			seed.commit();
+		}
+		CountDownLatch termAdmitted = new CountDownLatch(1);
+		CountDownLatch growTerm = new CountDownLatch(1);
+		CountDownLatch releaseTerm = new CountDownLatch(1);
+		CountDownLatch applicationTripleStarted = new CountDownLatch(1);
+		CompletableFuture<Boolean> termGrown = new CompletableFuture<>();
+		AtomicReference<Throwable> growthFailure = new AtomicReference<>();
+		CompletableFuture<Throwable> applicationFailure = new CompletableFuture<>();
+		AtomicReference<TxnReplayPolicy.Decision> pendingDecision = new AtomicReference<>();
+		try (RendezvousValueStore values = new RendezvousValueStore(directory.resolve("values").toFile(), properties,
+				config("spoc,cspo,posc"));
+				TripleStore triples = new TripleStore(directory.resolve("triples").toFile(), properties,
+						new LmdbStoreConfig("spoc,posc"), values)) {
+			values.setTermIndexMaintenanceObserver(phase -> {
+				if (!phase.equals("dual-write-registered")) {
+					return;
+				}
+				long beforeMap = values.mapSizeBytes();
+				long beforeGeneration = values.nativeCommitGeneration();
+				termAdmitted.countDown();
+				await(growTerm);
+				try {
+					values.reserveWriteCapacity(beforeMap + 4096L);
+					termGrown.complete(values.mapSizeBytes() > beforeMap
+							&& values.nativeCommitGeneration() > beforeGeneration);
+				} catch (Throwable failure) {
+					growthFailure.set(failure);
+					termGrown.complete(false);
+				}
+				await(releaseTerm);
+				if (growthFailure.get() != null) {
+					throw new IllegalStateException("The waiting writer changed TERM checkpoint policy",
+							growthFailure.get());
+				}
+			});
+			values.startIndexRebuildAfterStoreInitialization();
+			await(termAdmitted);
+			Thread application = Thread.ofPlatform().name("waiting-frozen-writer").unstarted(() -> {
+				WriterTransaction ticket = new WriterTransaction();
+				Throwable failed = null;
+				try {
+					TxnReplayPolicy.Decision decision = triples.prepareReplayDecision().forFrozenReplay();
+					pendingDecision.set(decision);
+					triples.startTransaction(decision, ticket);
+					applicationTripleStarted.countDown();
+					values.startTransaction(true, ticket);
+				} catch (Throwable failure) {
+					failed = failure;
+				} finally {
+					try {
+						values.rollback(ticket);
+						triples.rollback(ticket);
+					} catch (Throwable cleanup) {
+						if (failed == null) {
+							failed = cleanup;
+						} else {
+							failed.addSuppressed(cleanup);
+						}
+					}
+					applicationFailure.complete(failed);
+				}
+			});
+			application.start();
+			try {
+				await(applicationTripleStarted);
+				long limit = System.nanoTime() + TimeUnit.SECONDS.toNanos(10L);
+				boolean waiting = false;
+				while (!waiting && System.nanoTime() < limit) {
+					for (StackTraceElement frame : application.getStackTrace()) {
+						waiting |= application.getState() == Thread.State.WAITING
+								&& frame.getClassName().equals(ValueStore.class.getName())
+								&& frame.getMethodName().equals("startTransaction");
+					}
+					Thread.onSpinWait();
+				}
+				assertTrue(waiting, "the frozen application must not yet own the dictionary environment");
+				if (failedDecision) {
+					pendingDecision.get().capacityFailure("the unadmitted application", null);
+				}
+				growTerm.countDown();
+				assertTrue(termGrown.get(10L, TimeUnit.SECONDS),
+						() -> "an unadmitted frozen writer must not prevent the real TERM resize checkpoint: "
+								+ growthFailure.get());
+				application.interrupt();
+				assertTrue(applicationFailure.get(10L, TimeUnit.SECONDS) instanceof IOException);
+			} finally {
+				application.interrupt();
+				application.join(10_000L);
+				growTerm.countDown();
+				releaseTerm.countDown();
+			}
+			assertTrue(values.awaitIndexRebuild(10L, TimeUnit.SECONDS));
+			assertTrue(values.hasTrustedReferenceCounts());
+			assertEquals(term, values.getValue(values.getId(term)));
+		}
+	}
+
+	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
 	void readerResetAfterCommitDoesNotConsumeTheNextTermWriter(boolean failAfterNativeCommit,
 			@TempDir Path directory) throws Exception {

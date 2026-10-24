@@ -15,7 +15,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
 import java.time.Duration;
+import java.util.concurrent.TimeUnit;
 
 /** Explicitly drives bounded publications in tests whose contract requires completing their entire finite backlog. */
 final class LmdbGcTestMaintenance {
@@ -33,6 +35,14 @@ final class LmdbGcTestMaintenance {
 				Thread.yield();
 			}
 		});
+	}
+
+	static ValueStore awaitTrustedReclamationSetup(LmdbStore store) throws IOException, InterruptedException {
+		awaitPostReady(store);
+		ValueStore values = store.getBackingStore().valueStore();
+		assertTrue(store.awaitIndexRebuild(30L, TimeUnit.SECONDS), store.getStartupStatus().toString());
+		assertTrue(values.hasTrustedReferenceCounts(), "GC setup requires exact reference counts");
+		return values;
 	}
 
 	static void drainRetirements(LmdbSailStore store) {

@@ -495,6 +495,7 @@ class TripleStore implements Closeable {
 
 	long env;
 	long writeTxn;
+	private volatile WriterTransaction writerTransaction;
 	/** Retains the writer's allocation after a failed native commit has consumed its transaction handle. */
 	private long replayProjectedUsedBytes;
 	private final int mainDbi;
@@ -7200,6 +7201,8 @@ class TripleStore implements Closeable {
 			throw new IllegalStateException(
 					"A failed TripleStore transaction must be completed before starting another");
 		}
+		// Bind before setup/native begin can fail; the other environment may still reject this writer.
+		writerTransaction = WriterTransaction.admitted();
 		mutationFailure = null;
 		legacyWriterIndexFailure = null;
 		nativeMutation = false;
@@ -7208,7 +7211,7 @@ class TripleStore implements Closeable {
 		mutationJournal = null;
 		replayDecision = decision;
 		if (valueStore != null) {
-			valueStore.setReplayDecision(decision);
+			valueStore.setReplayDecision(decision, writerTransaction);
 		}
 		postCommitDerivedFailure = null;
 		if (directAdjacencyCommitDelta != null && !directAdjacencyCommitDelta.begun()) {
@@ -7216,6 +7219,14 @@ class TripleStore implements Closeable {
 		}
 		beginNativeWriteTransaction();
 		replayProjectedUsedBytes = LmdbUtil.getNewSize(pageSize, writeTxn, 0L);
+	}
+
+	void startTransaction(TxnReplayPolicy.Decision decision, WriterTransaction transaction) throws IOException {
+		transaction.invoke(() -> startTransaction(decision));
+	}
+
+	WriterTransaction currentWriterTransaction() {
+		return writerTransaction;
 	}
 
 	private void refreshCommittedHighWater() throws IOException {
@@ -7231,6 +7242,11 @@ class TripleStore implements Closeable {
 	}
 
 	private void endTransaction(boolean commit, boolean advanceDataRevision) throws IOException {
+		WriterTransaction requested = WriterTransaction.current();
+		if (requested != null && writerTransaction != requested) {
+			return;
+		}
+		WriterTransaction transaction = writerTransaction;
 		if (writeTxn != 0 || mutationJournal != null || mutationFailure != null || replayDecision != null) {
 			Throwable failure = null;
 			boolean committed = false;
@@ -7343,9 +7359,13 @@ class TripleStore implements Closeable {
 				unjournaledMutation = false;
 				if (!commit || committed || !(failure instanceof LmdbTransactionRetryException)) {
 					if (valueStore != null) {
-						valueStore.clearReplayDecision(replayDecision);
+						valueStore.clearReplayDecision(replayDecision, transaction);
 					}
 					replayDecision = null;
+				}
+				if (replayDecision == null) {
+					// A consumed native handle can still own failed replay state until its recovery rollback.
+					writerTransaction = null;
 				}
 				if (journal != null) {
 					try {
@@ -7409,5 +7429,11 @@ class TripleStore implements Closeable {
 
 	public void rollback() throws IOException {
 		endTransaction(false);
+	}
+
+	void rollback(WriterTransaction transaction) throws IOException {
+		if (transaction != null) {
+			transaction.invoke(this::rollback);
+		}
 	}
 }

@@ -3930,6 +3930,8 @@ class LmdbSailStore implements SailStore {
 	private int writerOwnerReferences;
 	private final ConcurrentHashMap<Thread, PreparedWriteContext> preparedWriteContexts = new ConcurrentHashMap<>();
 	private volatile Object storeTransactionOwner;
+	/** Each native environment binds this ticket independently, including partial starts and delegated cleanup. */
+	private volatile WriterTransaction storeNativeTransaction;
 	private volatile Thread storeTransactionThread;
 	private volatile Thread tripleStoreOwnerThread;
 	private final Object asyncProgress = new Object();
@@ -3960,13 +3962,15 @@ class LmdbSailStore implements SailStore {
 		private final Object owner = storeTransactionOwner;
 		private final long generation = storeTxnGeneration;
 		private final MapResizeKind kind;
+		private final WriterTransaction transaction;
 		private volatile QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
 		private MapGrowthAttempt attempt;
 		private Throwable failure;
 		private boolean finished;
 
-		private NativeGrowthRequest(MapResizeKind kind) {
+		private NativeGrowthRequest(MapResizeKind kind, WriterTransaction transaction) {
 			this.kind = kind;
+			this.transaction = transaction;
 		}
 	}
 
@@ -4876,9 +4880,13 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private MapGrowthAttempt beginMapGrowthAttemptForCurrentWriter(MapResizeKind kind) throws IOException {
+		WriterTransaction transaction = nativeWriterTransaction(kind);
+		if (!ownsNativeWriter(kind, transaction)) {
+			return null;
+		}
 		mapGrowthMetrics.recordEmergencyAttempt();
 		try {
-			MapGrowthAttempt attempt = suspendNativeWriterForGrowth(kind);
+			MapGrowthAttempt attempt = suspendNativeWriterForGrowth(kind, transaction);
 			attempt.reportEmergencyOutcome = true;
 			return attempt;
 		} catch (IOException | RuntimeException | Error failure) {
@@ -4887,7 +4895,21 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
-	private MapGrowthAttempt suspendNativeWriterForGrowth(MapResizeKind kind) throws IOException {
+	private WriterTransaction nativeWriterTransaction(MapResizeKind kind) {
+		return kind == MapResizeKind.VALUE_STORE ? valueStore.currentWriterTransaction()
+				: tripleStore.currentWriterTransaction();
+	}
+
+	private boolean ownsNativeWriter(MapResizeKind kind, WriterTransaction transaction) {
+		return transaction != null && transaction == storeNativeTransaction
+				&& transaction == nativeWriterTransaction(kind);
+	}
+
+	private MapGrowthAttempt suspendNativeWriterForGrowth(MapResizeKind kind, WriterTransaction transaction)
+			throws IOException {
+		if (!ownsNativeWriter(kind, transaction)) {
+			throw new LmdbTransactionRetryException("the native growth request lost its admitted writer", null);
+		}
 		Object owner = storeTransactionOwner;
 		if (owner == null) {
 			owner = currentWriterOwner();
@@ -4896,7 +4918,7 @@ class LmdbSailStore implements SailStore {
 			owner = Thread.currentThread();
 		}
 		if (multiThreadingActive && Thread.currentThread() != storeTransactionThread) {
-			return awaitNativeGrowthGrant(kind);
+			return awaitNativeGrowthGrant(kind, transaction);
 		}
 		// Reject standalone maintenance before trying to drain a TripleStore writer that may already have
 		// completed. Only a certified live native continuation can own an asynchronous prefix here.
@@ -4919,7 +4941,8 @@ class LmdbSailStore implements SailStore {
 	private void certifyNativeContinuation(Object owner, MapResizeKind kind) throws IOException {
 		PublicationContext publication = publicationContext.get();
 		boolean finalizer = publication != null && publication.owner == owner && publicationFinalizing;
-		if (owner != storeTransactionOwner || Thread.currentThread() != storeTransactionThread
+		if (!ownsNativeWriter(kind, storeNativeTransaction)
+				|| owner != storeTransactionOwner || Thread.currentThread() != storeTransactionThread
 				|| !sinkStoreAccessLock.isHeldByCurrentThread()
 				|| (!SailWriteContinuation.isPresent() && !finalizer)
 				|| kind == MapResizeKind.VALUE_STORE && !valueStore.isSafeAllocationResize()
@@ -4930,8 +4953,9 @@ class LmdbSailStore implements SailStore {
 		mapGrowthCoordinator.certifyEmergency(owner);
 	}
 
-	private MapGrowthAttempt awaitNativeGrowthGrant(MapResizeKind kind) throws IOException {
-		NativeGrowthRequest request = new NativeGrowthRequest(kind);
+	private MapGrowthAttempt awaitNativeGrowthGrant(MapResizeKind kind, WriterTransaction transaction)
+			throws IOException {
+		NativeGrowthRequest request = new NativeGrowthRequest(kind, transaction);
 		try (QueryExecutionDeadline.Registration expiration = signalAsyncOnExpiration(request.deadline);
 				AsyncMonitorWaiter waiter = new AsyncMonitorWaiter()) {
 			synchronized (asyncProgress) {
@@ -5056,7 +5080,8 @@ class LmdbSailStore implements SailStore {
 			if (request.deadline != null && request.deadline.isExpired()) {
 				throw new QueryInterruptedException("Query evaluation took too long");
 			}
-			if (request.owner != storeTransactionOwner || request.generation != storeTxnGeneration) {
+			if (request.owner != storeTransactionOwner || request.generation != storeTxnGeneration
+					|| !ownsNativeWriter(request.kind, request.transaction)) {
 				throw new LmdbTransactionRetryException("the suspended native write belongs to an obsolete generation",
 						null);
 			}
@@ -5206,6 +5231,9 @@ class LmdbSailStore implements SailStore {
 
 	private void requestMapGrowthForCurrentWriter(MapResizeKind kind, long projectedUsedBytes, boolean exhausted)
 			throws IOException {
+		if (!ownsNativeWriter(kind, nativeWriterTransaction(kind))) {
+			return;
+		}
 		Object owner = storeTransactionOwner;
 		if (owner == null) {
 			owner = currentWriterOwner();
@@ -6081,7 +6109,7 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private void markDictionaryCheckpointPending() {
-		if (storeTxnStarted.get()) {
+		if (storeTxnStarted.get() && ownsNativeWriter(MapResizeKind.VALUE_STORE, storeNativeTransaction)) {
 			pendingDictionaryCheckpointThread = Thread.currentThread();
 			pendingDictionaryCheckpointGeneration = storeTxnGeneration;
 		}
@@ -6338,6 +6366,8 @@ class LmdbSailStore implements SailStore {
 	volatile Runnable afterPlannerStatsOpenCheckForTest;
 	/** Test-only worker hook: runs immediately before an asynchronously queued operation executes. */
 	volatile Runnable beforeAsyncOperationForTest;
+	/** Test-only worker hook: runs after native completion before deciding whether to serve the next generation. */
+	volatile Runnable afterAsyncTransactionForTest;
 	/** Test-only worker hook: runs after an asynchronous failure has been published and the worker has stopped. */
 	volatile Consumer<Throwable> afterAsyncFailureForTest;
 
@@ -6920,7 +6950,7 @@ class LmdbSailStore implements SailStore {
 		try {
 			Throwable failure = null;
 			try {
-				valueStore.rollback();
+				valueStore.rollback(storeNativeTransaction);
 			} catch (Throwable cleanupFailure) {
 				failure = cleanupFailure;
 			}
@@ -6932,7 +6962,7 @@ class LmdbSailStore implements SailStore {
 								asyncRollbackException);
 					}
 				} else {
-					tripleStore.rollback();
+					tripleStore.rollback(storeNativeTransaction);
 				}
 			} catch (Throwable cleanupFailure) {
 				failure = retainRollbackFailure(failure, cleanupFailure);
@@ -6975,6 +7005,7 @@ class LmdbSailStore implements SailStore {
 			storeTxnStarted.set(false);
 			mapGrowthCoordinator.retireProjectedWriter(storeTransactionOwner, storeTxnGeneration);
 			storeTransactionOwner = null;
+			storeNativeTransaction = null;
 			namespaceTransactionOwner = null;
 			storeReplayDecision = null;
 			multiThreadingActive = false;
@@ -7164,6 +7195,7 @@ class LmdbSailStore implements SailStore {
 					storeTxnStarted.set(false);
 					mapGrowthCoordinator.retireProjectedWriter(storeTransactionOwner, storeTxnGeneration);
 					storeTransactionOwner = null;
+					storeNativeTransaction = null;
 					markPublicationChanged();
 					estimatorTouchedSinceStoreTxnStart.set(false);
 					if (filterSelectivityStats != null) {
@@ -7278,6 +7310,7 @@ class LmdbSailStore implements SailStore {
 						storeTxnStarted.set(false);
 						mapGrowthCoordinator.retireProjectedWriter(storeTransactionOwner, storeTxnGeneration);
 						storeTransactionOwner = null;
+						storeNativeTransaction = null;
 						multiThreadingActive = false;
 						estimatorTouchedSinceStoreTxnStart.set(false);
 						clearDictionaryCheckpointPending(transactionGeneration);
@@ -7455,8 +7488,9 @@ class LmdbSailStore implements SailStore {
 			if (batch == null || batch.isEmpty()) {
 				return;
 			}
+			WriterTransaction transaction = new WriterTransaction();
 			try {
-				valueStore.startTransaction(true);
+				valueStore.startTransaction(true, transaction);
 				Set<Long> roots = new HashSet<>(batch.ids);
 				Set<Long> frontier = new HashSet<>();
 				Set<Long> unresolved = new HashSet<>();
@@ -7468,10 +7502,10 @@ class LmdbSailStore implements SailStore {
 				// frontier in the same native commit; never retain the complete durable backlog on heap.
 				valueStore.recordRetiredIds(frontier,
 						Math.min(maxRevisionInclusive, tripleStore.getDataRevision()));
-				valueStore.commit();
+				transaction.invoke(valueStore::commit);
 			} catch (IOException | RuntimeException | Error failure) {
 				try {
-					valueStore.rollback();
+					valueStore.rollback(transaction);
 				} catch (IOException | RuntimeException | Error cleanup) {
 					if (cleanup != failure) {
 						failure.addSuppressed(cleanup);
@@ -7512,10 +7546,15 @@ class LmdbSailStore implements SailStore {
 				awaitGrowthEnd(token, QueryExecutionDeadline.current());
 			}
 		}
+		beforePostReadyReclamationForTest();
 		try (SailClosable publication = beginPublicationScope(owner)) {
 			valueStore.reclaimPersistedUnusedIdsBatch(maximum);
 		}
 		finishMaintenanceGrowth(owner, MapResizeKind.VALUE_STORE, initialMapSize);
+	}
+
+	/** Inert hook immediately before the post-ready reclamation publication scope. */
+	void beforePostReadyReclamationForTest() {
 	}
 
 	/** Admits namespace import as complete startup work, with rollback before any capacity retry. */
@@ -7759,14 +7798,15 @@ class LmdbSailStore implements SailStore {
 			try (SailClosable publication = beginPublicationScope(owner)) {
 				try {
 					if (recoverBufferedRetirements && !unusedIds.isEmpty()) {
+						WriterTransaction transaction = new WriterTransaction();
 						try {
-							valueStore.startTransaction(true);
+							valueStore.startTransaction(true, transaction);
 							valueStore.recordRetiredIds(unusedIds, 0);
-							valueStore.commit();
+							transaction.invoke(valueStore::commit);
 							unusedIds.clear();
 						} catch (IOException | RuntimeException | Error failure) {
 							try {
-								valueStore.rollback();
+								valueStore.rollback(transaction);
 							} catch (IOException | RuntimeException | Error cleanup) {
 								if (cleanup != failure) {
 									failure.addSuppressed(cleanup);
@@ -10356,6 +10396,9 @@ class LmdbSailStore implements SailStore {
 				flushRequested = false;
 				if (storeTxnStarted.compareAndSet(false, true)) {
 					storeTransactionOwner = owner;
+					WriterTransaction nativeTransaction = storeNativeTransaction == null ? new WriterTransaction()
+							: storeNativeTransaction;
+					storeNativeTransaction = nativeTransaction;
 					storeTxnDirty.set(false);
 					resetBulkOperationCapacity();
 					dictionaryCommitSucceeded = false;
@@ -10395,10 +10438,17 @@ class LmdbSailStore implements SailStore {
 								workerRequired = true;
 								tripleStoreException = null;
 								tripleStoreExecutor.submit(() -> {
+									WriterTransaction asyncNativeTransaction = null;
 									try {
 										while (running.get()) {
 											{
-												tripleStore.startTransaction(storeReplayDecision);
+												// A running worker may be reused after its original generation
+												// completed.
+												// Admission publishes a distinct ticket before nextTransactionAsync
+												// becomes true.
+												asyncNativeTransaction = storeNativeTransaction;
+												tripleStore.startTransaction(storeReplayDecision,
+														asyncNativeTransaction);
 												tripleStoreOwnerThread = Thread.currentThread();
 												while (true) {
 													Operation queued = awaitAsyncOperation();
@@ -10430,7 +10480,7 @@ class LmdbSailStore implements SailStore {
 																signalAsyncProgress();
 															} else if (op == ROLLBACK_TRANSACTION) {
 																try {
-																	tripleStore.rollback();
+																	tripleStore.rollback(asyncNativeTransaction);
 																} catch (IOException | RuntimeException
 																		| Error rollbackFailure) {
 																	// Recovery may succeed, but the caller must still
@@ -10452,7 +10502,7 @@ class LmdbSailStore implements SailStore {
 														if (!running.get()) {
 															logger.warn(
 																	"LmdbSailStore was closed while active transaction was waiting for the next operation. Forcing a rollback!");
-															tripleStore.rollback();
+															tripleStore.rollback(asyncNativeTransaction);
 															asyncTransactionFinished = true;
 															break;
 														} else if (Thread.interrupted()) {
@@ -10466,6 +10516,10 @@ class LmdbSailStore implements SailStore {
 											}
 											// Admission uses this monitor too: continue an admitted generation or let
 											// its producer submit a new task on the same dedicated native owner.
+											Runnable afterTransaction = afterAsyncTransactionForTest;
+											if (afterTransaction != null) {
+												afterTransaction.run();
+											}
 											synchronized (storeTxnStarted) {
 												if (!nextTransactionAsync) {
 													running.set(false);
@@ -10477,7 +10531,7 @@ class LmdbSailStore implements SailStore {
 										recordWriterCapacityFailure(storeTransactionOwner, e);
 										tripleStoreException = e;
 										try {
-											tripleStore.rollback();
+											tripleStore.rollback(asyncNativeTransaction);
 										} catch (Throwable rollbackFailure) {
 											asyncRollbackException = retainRollbackFailure(asyncRollbackException,
 													rollbackFailure);
@@ -10504,9 +10558,9 @@ class LmdbSailStore implements SailStore {
 								workerSubmitted = true;
 							}
 						} else {
-							tripleStore.startTransaction(storeReplayDecision);
+							tripleStore.startTransaction(storeReplayDecision, nativeTransaction);
 						}
-						valueStore.startTransaction(true);
+						valueStore.startTransaction(true, nativeTransaction);
 					} catch (Exception | Error e) {
 						if (workerRequired && !workerSubmitted) {
 							// There is no worker to consume a rollback request when executor submission itself failed.
@@ -10540,7 +10594,14 @@ class LmdbSailStore implements SailStore {
 				} else if (frozenReplayPublication(writerOwner())) {
 					storeReplayDecision = storeReplayDecision.forFrozenReplay();
 				}
-				valueStore.setReplayDecision(storeReplayDecision);
+				if (storeNativeTransaction == null) {
+					storeNativeTransaction = new WriterTransaction();
+				}
+				try {
+					valueStore.setReplayDecision(storeReplayDecision, storeNativeTransaction);
+				} catch (IOException failure) {
+					throw new SailException(failure);
+				}
 			}
 			try {
 				storeReplayDecision.check();

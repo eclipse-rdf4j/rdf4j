@@ -1054,11 +1054,13 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	private static final class WriterPublication {
 		private final Thread owner;
+		private final WriterTransaction transaction;
 		private volatile Thread consumer;
 		private volatile boolean failedCleanup;
 
-		private WriterPublication(Thread owner) {
+		private WriterPublication(Thread owner, WriterTransaction transaction) {
 			this.owner = owner;
+			this.transaction = transaction;
 		}
 	}
 
@@ -2032,7 +2034,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (resizeTarget > 0L) {
 			// Owning-store close has ended all public admission and readers before entering this private phase.
 			// The global growth coordinator is already shut down; no application continuation remains to certify.
-			growMapAfterReindexMapFullAfterQuiescence(resizeTarget, null, false);
+			growMapAfterReindexMapFullAfterQuiescence(resizeTarget, null, false, null);
 			bulkMapGrowthCount++;
 		}
 		writeTransaction((stack, txn) -> {
@@ -2099,23 +2101,31 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (requiredBytes == 0L) {
 			return 0;
 		}
-		startTransaction(false, DictionaryTransactionPurpose.BOUNDED_RECLAMATION);
+		WriterTransaction transaction = new WriterTransaction();
 		try {
-			if (!isValueReclamationEnabled() || lazyRevisions.hasProtectedValues()
-					|| growthPolicy.hardCapacityRequired(mapSize, LmdbUtil.getNewSize(pageSize, writeTxn, 0L),
-							requiredBytes)) {
-				rollback();
+			transaction.invoke(() -> startTransaction(false, DictionaryTransactionPurpose.BOUNDED_RECLAMATION));
+			boolean enabled = isValueReclamationEnabled();
+			boolean protectedValues = enabled && lazyRevisions.hasProtectedValues();
+			long occupied = enabled && !protectedValues ? LmdbUtil.getNewSize(pageSize, writeTxn, 0L) : -1L;
+			boolean capacityRequired = enabled && !protectedValues
+					&& growthPolicy.hardCapacityRequired(mapSize, occupied, requiredBytes);
+			String phase = !enabled ? "disabled"
+					: protectedValues ? "protected" : capacityRequired ? "capacity" : "admitted";
+			observeBoundedUnusedReclamationForTest(phase, requiredBytes, occupied, mapSize, -1);
+			if (!enabled || protectedValues || capacityRequired) {
+				rollback(transaction);
 				return 0;
 			}
 			int visited;
 			try (MemoryStack stack = stackPush()) {
 				visited = freeUnusedIdsAndValues(stack, writeTxn, null, valueIdLivenessChecker, maxVisitedRecords);
 			}
-			commit();
+			observeBoundedUnusedReclamationForTest("visited", requiredBytes, occupied, mapSize, visited);
+			transaction.invoke(this::commit);
 			return visited;
 		} catch (IOException | RuntimeException | Error failure) {
 			try {
-				rollback();
+				rollback(transaction);
 			} catch (IOException | RuntimeException | Error cleanup) {
 				if (cleanup != failure) {
 					failure.addSuppressed(cleanup);
@@ -2123,6 +2133,16 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			}
 			throw failure;
 		}
+	}
+
+	/** Inert observation of existing maintenance decisions; negative sizes/visits were not evaluated. */
+	void observeBoundedUnusedReclamationForTest(String phase, long requiredBytes, long occupiedBytes, long mapBytes,
+			int visited) {
+	}
+
+	/** Read-only protection counts for tests that observe an already-made protected decision. */
+	ValueProtectionSnapshot protectionSnapshotForTest() {
+		return lazyRevisions.protectionSnapshotForTest();
 	}
 
 	private long reservePersistedUnusedCapacity(MemoryStack stack, long txn, long entries) throws IOException {
@@ -3860,10 +3880,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				long publishEnvironment = environmentGeneration;
 				List<TripleIndex> priorTargets = termWriteIndexes;
 				Set<String> priorOpened = Set.copyOf(openedTermIndexes.keySet());
+				long reservation = Math.max(LmdbUtil.MIN_FREE_SPACE,
+						(long) TERM_INDEX_REBUILD_BATCH_SIZE * TERM_INDEX_REBUILD_BYTES_PER_RECORD
+								* Math.max(1, desired == null ? 1 : desired.size()));
 				try {
-					long reservation = Math.max(LmdbUtil.MIN_FREE_SPACE,
-							(long) TERM_INDEX_REBUILD_BATCH_SIZE * TERM_INDEX_REBUILD_BYTES_PER_RECORD
-									* Math.max(1, desired == null ? 1 : desired.size()));
 					if (requiresResizeForEstimatedWrite(reservation)) {
 						growMap = true;
 					} else {
@@ -3938,7 +3958,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				if (growMap) {
 					// Capacity quiescence can itself await readers or an owning-store publisher. Neither resource
 					// may be awaited while standalone creation is excluded by maintenance writer admission.
-					growTermMaintenanceMap();
+					observeTermIndexMaintenance("before-map-growth");
+					if (growTermMaintenanceMap(reservation)) {
+						observeTermIndexMaintenance("map-grown");
+					}
 					continue;
 				}
 				if (committed) {
@@ -4148,13 +4171,15 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		return TermCleanupResult.PROGRESSED;
 	}
 
-	private void growTermMaintenanceMap() throws IOException {
+	private boolean growTermMaintenanceMap(long reservation) throws IOException {
 		LmdbSailStore.MapGrowthAttempt attempt = beginMapGrowthAttempt();
 		try (attempt) {
 			if (attempt != null) {
 				attempt.requestQuiescence(LmdbSailStore.MapResizeKind.VALUE_STORE);
 			}
-			growMapAfterReindexMapFullAfterQuiescence(LmdbUtil.MIN_FREE_SPACE, attempt, false);
+			// Admission was released before quiescence. A new writer may now own the dictionary; the existing
+			// growth gate leaves it intact, and the next TERM admission waits for its complete publication.
+			return growMapForEstimatedWrite(reservation, attempt);
 		}
 	}
 
@@ -4396,12 +4421,15 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private ReindexBatch readReindexBatch(TripleIndex sourceIndex, byte[] afterSourceKey) throws IOException {
-		return LmdbUtil.readTransaction(env, (stack, txn) -> {
+		// Native key buffers remain mapped until this bounded batch has been decoded. Keep the manager's native
+		// read barrier through the complete copy so a concurrent capacity reservation cannot remap those buffers.
+		return txnManager.doWithFreshPriority((stack, txn) -> {
 			long cursor = 0;
 			try {
 				PointerBuffer pointer = stack.mallocPointer(1);
 				E(mdb_cursor_open(txn, sourceIndex.getDB(true), pointer));
 				cursor = pointer.get(0);
+				observeTermIndexMaintenance("copy-read-open");
 
 				MDBVal key = MDBVal.calloc(stack);
 				MDBVal value = MDBVal.calloc(stack);
@@ -4468,6 +4496,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private void growMapAfterReindexMapFull(long requiredBytes) throws IOException {
+		WriterTransaction transaction = currentWriterTransaction();
 		if (isFrozenReplay()) {
 			throw frozenCapacity(null);
 		}
@@ -4476,40 +4505,70 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			if (growthAttempt != null) {
 				growthAttempt.requestQuiescence(LmdbSailStore.MapResizeKind.VALUE_STORE);
 			}
-			growMapAfterReindexMapFullAfterQuiescence(requiredBytes, growthAttempt);
+			growMapAfterReindexMapFullAfterQuiescence(requiredBytes, growthAttempt, true, transaction);
 		}
 	}
 
 	private void growMapAfterReindexMapFullAfterQuiescence(long requiredBytes,
-			LmdbSailStore.MapGrowthAttempt growthAttempt) throws IOException {
-		growMapAfterReindexMapFullAfterQuiescence(requiredBytes, growthAttempt, true);
-	}
-
-	private void growMapAfterReindexMapFullAfterQuiescence(long requiredBytes,
-			LmdbSailStore.MapGrowthAttempt growthAttempt, boolean restartWriter) throws IOException {
-		endTransaction(false, false);
+			LmdbSailStore.MapGrowthAttempt growthAttempt, boolean restartWriter, WriterTransaction transaction)
+			throws IOException {
 		if (!autoGrow) {
 			throw new IOException("LMDB map is full while rebuilding triple-term indexes");
 		}
+		// The caller carries its admitted identity across quiescence. Never discover authority from whatever
+		// publication happens to be current after that wait, and retain admission across native replacement.
 		var lockManager = txnManager.lockManager();
 		boolean readLocked = readContext.get().hasReadLock;
 		if (readLocked) {
 			lockManager.unlockRead(StampedLongAdderLockManager.READ_LOCK_STAMP);
 		}
+		boolean releaseGrowthOwner = false;
+		try {
+			releaseGrowthOwner = retainNativeMapGrowthOwner(transaction);
+			if (transaction != null) {
+				transaction.invoke(() -> endTransaction(false, false));
+			}
+			growMapAfterReindexMapFullAdmitted(requiredBytes, growthAttempt);
+			if (restartWriter) {
+				startTransaction(false, transaction);
+			}
+		} finally {
+			if (readLocked) {
+				// Restore the enclosing reader scope even when cancellation interrupted its admission wait.
+				boolean interrupted = Thread.interrupted();
+				try {
+					while (true) {
+						try {
+							lockManager.readLock();
+							break;
+						} catch (InterruptedException cancellation) {
+							interrupted = true;
+						}
+					}
+				} finally {
+					if (interrupted) {
+						Thread.currentThread().interrupt();
+					}
+				}
+			}
+			if (releaseGrowthOwner) {
+				synchronized (writerAdmission) {
+					nativeMapGrowthOwner = null;
+					writerAdmission.notifyAll();
+				}
+			}
+		}
+	}
+
+	private void growMapAfterReindexMapFullAdmitted(long requiredBytes,
+			LmdbSailStore.MapGrowthAttempt growthAttempt) throws IOException {
+		var lockManager = txnManager.lockManager();
 		long stamp = 0;
 		try {
 			stamp = lockManager.writeLock();
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			throw new IOException(e);
-		} finally {
-			if (stamp == 0 && readLocked) {
-				try {
-					lockManager.readLock();
-				} catch (InterruptedException e) {
-					Thread.currentThread().interrupt();
-				}
-			}
 		}
 		try {
 			detachStableReadSnapshots(growthAttempt);
@@ -4523,28 +4582,18 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				E(mdb_env_set_mapsize(env, newMapSize));
 				mapSize = newMapSize;
 				nativeMapGeneration++;
-				if (restartWriter) {
-					startTransaction(false);
-				}
 			} finally {
 				txnManager.activate();
 			}
 		} finally {
 			lockManager.unlockWrite(stamp);
-			if (readLocked) {
-				try {
-					lockManager.readLock();
-				} catch (InterruptedException e) {
-					Thread.currentThread().interrupt();
-					throw new IOException(e);
-				}
-			}
 		}
 	}
 
 	private void checkpointTermIndexWriter() throws IOException {
+		WriterTransaction transaction = currentWriterTransaction();
 		endTransaction(true, true);
-		startTransaction(false);
+		startTransaction(false, transaction);
 	}
 
 	private record ReindexBatch(long[] quads, int recordCount, byte[] lastSourceKey, boolean lastBatch) {
@@ -5282,6 +5331,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 	}
 
+	record ValueProtectionSnapshot(long readerReservations, long legacyEpochs) {
+	}
+
 	/** One deterministic owner of an epoch horizon; models hold descriptors rather than these reservations. */
 	static final class EpochReservation implements SailClosable {
 		private ValueEpoch epoch;
@@ -5400,6 +5452,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		boolean hasProtectedValues() {
 			synchronized (unusedRevisionIds) {
 				return protectedReservations != 0L || legacyEpochs != 0L;
+			}
+		}
+
+		ValueProtectionSnapshot protectionSnapshotForTest() {
+			synchronized (unusedRevisionIds) {
+				return new ValueProtectionSnapshot(protectedReservations, legacyEpochs);
 			}
 		}
 
@@ -7152,6 +7210,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	private void resizeMapInternal(long txn, long requiredSize) throws IOException {
 		if (autoGrow) {
+			WriterPublication publication = writerPublication;
+			boolean activeWriteTxn = writeTxn != 0L && txn == writeTxn && publication != null;
+			WriterTransaction transaction = activeWriteTxn ? publication.transaction : null;
+			TxnReplayPolicy.Decision decision = activeWriteTxn ? replayDecision : null;
 			if (coreDatatypeLiteralReferences && !deferNextIdPersistence) {
 				// Every normal/core-datatype writer persists the next-id counter in the same commit. Include that key
 				// before
@@ -7170,19 +7232,18 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			boolean capacityRequired = growthPolicy.hardCapacityRequired(mapSize, occupied, requiredSize);
 			// Soft pressure schedules the ordinary writer drain; a complete frozen input needs abort/replay
 			// only when allocation would violate hard capacity. Other writing snapshots remain pinned meanwhile.
-			if (isFrozenReplay() && capacityRequired) {
+			if (decision != null && decision.frozenReplay && capacityRequired) {
 				throw frozenCapacity(null);
 			}
-			if (growthRecommended && mapGrowthRequestListener != null) {
+			if (activeWriteTxn && growthRecommended && mapGrowthRequestListener != null) {
 				mapGrowthRequestListener.request(LmdbSailStore.MapResizeKind.VALUE_STORE,
 						saturatedEstimateAdd(occupied, requiredSize), false);
 			}
 			if (capacityRequired) {
-				if (mapGrowthRequestListener != null) {
+				if (activeWriteTxn && mapGrowthRequestListener != null) {
 					mapGrowthRequestListener.request(LmdbSailStore.MapResizeKind.VALUE_STORE,
 							saturatedEstimateAdd(occupied, requiredSize), true);
 				}
-				TxnReplayPolicy.Decision decision = replayDecision;
 				if (decision != null && decision.checkpoint) {
 					throw new LmdbNativeChunkFullException(LmdbSailStore.MapResizeKind.VALUE_STORE, null);
 				}
@@ -7191,7 +7252,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				}
 				LmdbSailStore.MapGrowthAttempt growthAttempt;
 				try {
-					growthAttempt = beginMapGrowthAttempt();
+					// Only this supplied native writer may suspend or project the application's continuation.
+					// An independent reservation waits for its own map-growth admission below.
+					growthAttempt = activeWriteTxn ? beginMapGrowthAttempt() : null;
 				} catch (LmdbTransactionRetryException unsafeContinuation) {
 					growForTransactionRetry(requiredSize, unsafeContinuation, decision);
 					throw unsafeContinuation;
@@ -7206,8 +7269,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 						requiredSize = growthAttempt.projectedUsedBytes(LmdbSailStore.MapResizeKind.VALUE_STORE,
 								requiredSize);
 					}
-					boolean activeWriteTxn = writeTxn != 0;
-					boolean releaseGrowthOwner = retainNativeMapGrowthOwner();
+					if (!activeWriteTxn) {
+						// This is a committed read snapshot, even if a different writer currently owns the environment.
+						growMapAfterReindexMapFullAfterQuiescence(requiredSize, growthAttempt, false, null);
+						return;
+					}
+					boolean releaseGrowthOwner = retainNativeMapGrowthOwner(transaction);
 					try {
 						if (activeWriteTxn) {
 							// LMDB requires the active writer transaction to be committed before changing the map size.
@@ -7234,7 +7301,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 						try {
 							if (activeWriteTxn) {
-								endTransaction(true, true);
+								transaction.invoke(() -> endTransaction(true, true));
 							}
 							detachStableReadSnapshots(growthAttempt);
 							txnManager.deactivate();
@@ -7270,7 +7337,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 						if (activeWriteTxn) {
 							// A replacement writer may wait for native admission. Growth ownership excludes foreign
 							// creation/maintenance without retaining the exclusive remap barrier through that wait.
-							startTransaction(false);
+							startTransaction(false, transaction);
 						}
 					} finally {
 						if (releaseGrowthOwner) {
@@ -7297,6 +7364,43 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			}
 			nativeMapGrowthOwner = current;
 			return true;
+		}
+	}
+
+	private boolean retainNativeMapGrowthOwner(WriterTransaction transaction) throws IOException {
+		synchronized (writerAdmission) {
+			Thread current = Thread.currentThread();
+			if (transaction == null) {
+				// An independent reader has no publication to consume. Wait without its reader/remap barrier;
+				// the real writer must be able to commit and settle before we reserve native growth admission.
+				while (writerPublication != null || writeTxn != 0L
+						|| writerStartsInFlight != 0 && writerStartOwner != current
+						|| standaloneWritersInFlight > standaloneWriterAdmissions.get()
+						|| termMaintenanceWriterActive && termIndexMaintenanceThread != current
+						|| nativeMapGrowthOwner != null && nativeMapGrowthOwner != current) {
+					if (env == 0L || shuttingDown && !Thread.holdsLock(this)) {
+						throw new IOException("ValueStore is closed");
+					}
+					try {
+						writerAdmission.wait();
+					} catch (InterruptedException cancellation) {
+						Thread.currentThread().interrupt();
+						throw new IOException("Interrupted while awaiting ValueStore map-growth admission",
+								cancellation);
+					}
+				}
+			}
+			if (nativeMapGrowthOwner == current) {
+				return false;
+			}
+			WriterPublication publication = writerPublication;
+			if ((publication == null ? transaction != null : publication.transaction != transaction)
+					|| writerStartsInFlight != 0 && writerStartOwner != current
+					|| standaloneWritersInFlight > standaloneWriterAdmissions.get()
+					|| termMaintenanceWriterActive && termIndexMaintenanceThread != current) {
+				throw new IOException("ValueStore resize no longer owns its admitted writer transaction");
+			}
+			return retainNativeMapGrowthOwner();
 		}
 	}
 
@@ -7712,20 +7816,29 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	}
 
-	private void resizeMapTo(long requiredSize, boolean[] activeWriteTxnCommitted) throws IOException {
+	private void resizeMapTo(long requiredSize, boolean[] activeWriteTxnCommitted, WriterTransaction transaction)
+			throws IOException {
 		long before = nativeCommitGeneration;
-		boolean activeWriter = writeTxn != 0;
+		WriterPublication publication = writerPublication;
+		boolean activeWriter = writeTxn != 0 && publication != null && publication.transaction == transaction;
 		try (LmdbSailStore.MapGrowthAttempt attempt = beginMapGrowthAttempt()) {
 			if (attempt != null) {
 				attempt.requestQuiescence(LmdbSailStore.MapResizeKind.VALUE_STORE);
 			}
-			if (activeWriter) {
-				endTransaction(true, true);
-			}
-			growMapAfterReindexMapFullAfterQuiescence(requiredSize, attempt, false);
-			bulkMapGrowthCount++;
-			if (activeWriter) {
-				startTransaction(false);
+			boolean releaseGrowthOwner = retainNativeMapGrowthOwner(transaction);
+			try {
+				if (activeWriter) {
+					endTransaction(true, true);
+				}
+				growMapAfterReindexMapFullAfterQuiescence(requiredSize, attempt, activeWriter, transaction);
+				bulkMapGrowthCount++;
+			} finally {
+				if (releaseGrowthOwner) {
+					synchronized (writerAdmission) {
+						nativeMapGrowthOwner = null;
+						writerAdmission.notifyAll();
+					}
+				}
 			}
 		} finally {
 			if (activeWriteTxnCommitted != null && nativeCommitGeneration != before) {
@@ -7768,7 +7881,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				if (growthAttempt != null) {
 					growthAttempt.requestQuiescence(LmdbSailStore.MapResizeKind.VALUE_STORE);
 				}
-				growMapAfterReindexMapFullAfterQuiescence(projectedBytes, growthAttempt, false);
+				long additionalBytes = Math.max(LmdbUtil.MIN_FREE_SPACE,
+						projectedBytes - Math.min(projectedBytes, occupiedBytes()));
+				growMapForEstimatedWrite(additionalBytes, growthAttempt);
 			}
 		} catch (IOException | RuntimeException growthFailure) {
 			if (growthFailure != retry) {
@@ -7817,12 +7932,40 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	void setReplayDecision(TxnReplayPolicy.Decision decision) {
-		replayDecision = decision;
+		WriterTransaction requested = WriterTransaction.current();
+		if (requested != null) {
+			requested.replayDecision = decision;
+		} else {
+			replayDecision = decision;
+		}
+	}
+
+	void setReplayDecision(TxnReplayPolicy.Decision decision, WriterTransaction transaction) throws IOException {
+		transaction.invoke(() -> setReplayDecision(decision));
 	}
 
 	void clearReplayDecision(TxnReplayPolicy.Decision decision) {
-		if (replayDecision == decision && (decision == null || !decision.failed())) {
-			replayDecision = null;
+		WriterTransaction requested = WriterTransaction.current();
+		if (decision != null && decision.failed()) {
+			return;
+		}
+		if (requested != null && requested.replayDecision == decision) {
+			requested.replayDecision = null;
+		}
+		synchronized (writerAdmission) {
+			WriterPublication publication = writerPublication;
+			if (replayDecision == decision && (publication == null || requested == null
+					|| publication.transaction == requested)) {
+				replayDecision = null;
+			}
+		}
+	}
+
+	void clearReplayDecision(TxnReplayPolicy.Decision decision, WriterTransaction transaction) throws IOException {
+		if (transaction == null) {
+			clearReplayDecision(decision);
+		} else {
+			transaction.invoke(() -> clearReplayDecision(decision));
 		}
 	}
 
@@ -8027,6 +8170,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	long occupiedBytes() throws IOException {
 		long stamp = txnManager.acquireMetadataReadBarrier();
 		try (MemoryStack stack = stackPush()) {
+			beforeMapMetadataReadForTest();
 			MDBEnvInfo info = MDBEnvInfo.calloc(stack);
 			E(mdb_env_info(env, info));
 			long nextPageNo = info.me_last_pgno() == Long.MAX_VALUE ? Long.MAX_VALUE : info.me_last_pgno() + 1L;
@@ -8034,6 +8178,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		} finally {
 			txnManager.releaseMetadataReadBarrier(stamp);
 		}
+	}
+
+	/** Inert observation inside the native metadata barrier, immediately before reading the environment. */
+	void beforeMapMetadataReadForTest() {
 	}
 
 	boolean growMapForEstimatedWrite(long estimatedWriteBytes, LmdbSailStore.MapGrowthAttempt growthAttempt)
@@ -8054,7 +8202,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			if (env == 0L || shuttingDown) {
 				throw new IOException("ValueStore is closed");
 			}
-			if (writeTxn != 0L) {
+			if (writeTxn != 0L || writerPublication != null) {
 				return false;
 			}
 			nativeMapGrowthOwner = Thread.currentThread();
@@ -8071,7 +8219,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	private boolean growMapForEstimatedWriteAdmitted(long estimatedWriteBytes,
 			LmdbSailStore.MapGrowthAttempt growthAttempt) throws IOException {
-		if (!autoGrow || writeTxn != 0) {
+		if (!autoGrow || writeTxn != 0 || writerPublication != null) {
 			return false;
 		}
 		StampedLongAdderLockManager lockManager = txnManager.lockManager();
@@ -8083,7 +8231,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			throw new IOException("Interrupted while preparing the ValueStore map for a buffered write", e);
 		}
 		try {
-			if (writeTxn != 0 || !requiresResizeForEstimatedWrite(estimatedWriteBytes)) {
+			if (writeTxn != 0 || writerPublication != null || !requiresResizeForEstimatedWrite(estimatedWriteBytes)) {
 				return false;
 			}
 			detachStableReadSnapshots(growthAttempt);
@@ -13268,8 +13416,27 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		startTransaction(resize, DictionaryTransactionPurpose.OWNER_MUTATION);
 	}
 
+	void startTransaction(boolean resize, WriterTransaction transaction) throws IOException {
+		if (transaction == null) {
+			startTransaction(resize);
+		} else {
+			transaction.invoke(() -> startTransaction(resize));
+		}
+	}
+
+	WriterTransaction currentWriterTransaction() {
+		WriterPublication publication = writerPublication;
+		return publication == null ? null : publication.transaction;
+	}
+
 	private void startTransaction(boolean resize, DictionaryTransactionPurpose purpose) throws IOException {
-		checkReplayFailure();
+		WriterTransaction transaction = WriterTransaction.admitted();
+		if (WriterTransaction.current() == null) {
+			transaction.replayDecision = purpose == DictionaryTransactionPurpose.DERIVED_INDEX ? null : replayDecision;
+		}
+		if (transaction.replayDecision != null) {
+			transaction.replayDecision.check();
+		}
 		synchronized (writerAdmission) {
 			while (termMaintenanceWriterActive && Thread.currentThread() != termIndexMaintenanceThread
 					|| standaloneWritersInFlight != 0
@@ -13305,7 +13472,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			synchronized (writerAdmission) {
 				writeTxn = pp.get(0);
 				writeTxnOwner = Thread.currentThread();
-				writerPublication = new WriterPublication(Thread.currentThread());
+				writerPublication = new WriterPublication(Thread.currentThread(), transaction);
+				replayDecision = transaction.replayDecision;
 				writerFirstAppendedId = nextId;
 				writerReusedIds.clear();
 			}
@@ -13339,7 +13507,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				}
 			}
 		} catch (LmdbUtil.MapFullException mapFull) {
-			TxnReplayPolicy.Decision decision = replayDecision;
+			TxnReplayPolicy.Decision decision = transaction.replayDecision;
 			if (autoGrow && decision != null && decision.frozenReplay) {
 				throw frozenCapacity(mapFull);
 			}
@@ -13365,13 +13533,21 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	 * Closes the snapshot and the DB iterator if any was opened in the current transaction
 	 */
 	void endTransaction(boolean commit, boolean autoGrow) throws IOException {
+		WriterPublication publication = writerPublication;
+		WriterTransaction requested = WriterTransaction.current();
+		if (requested != null && (publication == null || publication.transaction != requested)) {
+			return;
+		}
+		endTransaction(publication, commit, autoGrow);
+	}
+
+	private void endTransaction(WriterPublication publication, boolean commit, boolean autoGrow) throws IOException {
 		if (commit && autoGrow && isFrozenReplay()) {
 			throw new IOException("ValueStore checkpoints are disabled during frozen statement replay");
 		}
 		if (commit) {
 			checkReplayFailure();
 		}
-		WriterPublication publication = writerPublication;
 		if (publication == null) {
 			return;
 		}
@@ -13408,6 +13584,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		} finally {
 			synchronized (writerAdmission) {
 				if (publicationComplete && writerPublication == publication) {
+					replayDecision = null;
 					writerPublication = null;
 					if (!shuttingDown) {
 						// Only settled publication opens the global ready-value proof again, atomically with
@@ -13417,7 +13594,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				}
 				writerAdmission.notifyAll();
 			}
-			if (!(commit && autoGrow)) {
+			if (!(commit && autoGrow) && (publicationComplete || terminalFailure != null)) {
 				closeLegacyValueIndex(terminalFailure);
 			}
 		}
@@ -14110,10 +14287,25 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	public void rollback() throws IOException {
+		WriterPublication publication = writerPublication;
+		WriterTransaction requested = WriterTransaction.current();
+		if (requested != null && (publication == null || publication.transaction != requested)) {
+			return;
+		}
 		try {
 			endTransaction(false, false);
 		} finally {
-			replayDecision = null;
+			synchronized (writerAdmission) {
+				if (writerPublication == publication || writerPublication == null) {
+					replayDecision = null;
+				}
+			}
+		}
+	}
+
+	void rollback(WriterTransaction transaction) throws IOException {
+		if (transaction != null) {
+			transaction.invoke(this::rollback);
 		}
 	}
 

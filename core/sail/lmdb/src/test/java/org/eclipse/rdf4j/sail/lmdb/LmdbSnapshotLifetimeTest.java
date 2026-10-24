@@ -84,14 +84,7 @@ class LmdbSnapshotLifetimeTest {
 			LmdbCompatibilityFixtures.extract("v6-tiny-map-inline-" + inline + ".zip", directory);
 		}
 		// These cases explicitly exercise retirement and ID reuse for legacy-format stores.
-		store = new LmdbStore(directory.toFile(), new LmdbStoreConfig("spoc,posc,ospc")
-				.setTripleTermIndexes("spoc,cspo")
-				.setInlineLiterals(inline)
-				.setLegacyReferenceCountRepairEnabled(true)
-				.setTripleDBSize(tripleMapSize)
-				.setValueDBSize(8L * 1024 * 1024)
-				.setForceSync(true)
-				.setMapGrowthReadDrainTimeoutMillis(0));
+		store = new LmdbStore(directory.toFile(), config(inline, tripleMapSize));
 		store.init();
 		assertThat(values().getFormat().getVersion()).isEqualTo(format);
 		try (var connection = store.getConnection()) {
@@ -100,6 +93,36 @@ class LmdbSnapshotLifetimeTest {
 					VALUES.createLiteral("keeper"), CONTEXT);
 			connection.commit();
 		}
+	}
+
+	private void openWithTrustedRetirementCounts(int format, boolean inline) throws Exception {
+		open(format, inline);
+		if (format == LmdbStoreFormat.LEGACY_VERSION) {
+			LmdbStoreConfig config = config(inline, 64L * 1024 * 1024);
+			assertThat(values().hasTrustedReferenceCounts())
+					.as("an imported legacy store must start without an unearned exact-count claim")
+					.isFalse();
+			store.shutDown();
+			LmdbStore.reconstructReferenceCountsOffline(directory.toFile(), config);
+			store = new LmdbStore(directory.toFile(), config);
+			store.init();
+		}
+		LmdbGcTestMaintenance.awaitPostReady(store);
+		assertThat(store.awaitIndexRebuild(10, TimeUnit.SECONDS)).isTrue();
+		assertThat(values().hasTrustedReferenceCounts())
+				.as("retirement tests require exact counts after any closed-directory legacy reconstruction")
+				.isTrue();
+	}
+
+	private static LmdbStoreConfig config(boolean inline, long tripleMapSize) {
+		return new LmdbStoreConfig("spoc,posc,ospc")
+				.setTripleTermIndexes("spoc,cspo")
+				.setInlineLiterals(inline)
+				.setLegacyReferenceCountRepairEnabled(true)
+				.setTripleDBSize(tripleMapSize)
+				.setValueDBSize(8L * 1024 * 1024)
+				.setForceSync(true)
+				.setMapGrowthReadDrainTimeoutMillis(0);
 	}
 
 	private ValueStore values() {
@@ -251,7 +274,7 @@ class LmdbSnapshotLifetimeTest {
 	@ParameterizedTest
 	@CsvSource({ "2,false", "2,true", "6,false", "6,true" })
 	void ordinaryCommitsPreserveHeldRowsAndFreshBoundValueResolution(int format, boolean inline) throws Exception {
-		open(format, inline);
+		openWithTrustedRetirementCounts(format, inline);
 		List<Statement> doomed = doomedStatements();
 		add(doomed);
 		try (var snapshot = snapshot()) {
@@ -268,6 +291,7 @@ class LmdbSnapshotLifetimeTest {
 		}
 		add(List.of(VALUES.createStatement(VALUES.createIRI("urn:lifetime:drain"), PREDICATE,
 				VALUES.createLiteral("drain retirement"))));
+		LmdbGcTestMaintenance.drainRetirements(store.getBackingStore());
 		for (Statement statement : doomed) {
 			assertThat(values().getId(statement.getSubject())).isEqualTo(LmdbValue.UNKNOWN_ID);
 			assertThat(values().getId(statement.getObject())).isEqualTo(LmdbValue.UNKNOWN_ID);
@@ -446,7 +470,7 @@ class LmdbSnapshotLifetimeTest {
 	@ParameterizedTest
 	@CsvSource({ "2,false", "6,false" })
 	void oldestReaderAndSupersedingHintsPreserveLaterSnapshots(int format, boolean inline) throws Exception {
-		open(format, inline);
+		openWithTrustedRetirementCounts(format, inline);
 		List<Statement> doomed = doomedStatements();
 		add(doomed);
 		try (var oldest = snapshot()) {
@@ -463,6 +487,7 @@ class LmdbSnapshotLifetimeTest {
 		}
 		add(List.of(VALUES.createStatement(VALUES.createIRI("urn:lifetime:drain-later"), PREDICATE,
 				VALUES.createLiteral("drain later reader"))));
+		LmdbGcTestMaintenance.drainRetirements(store.getBackingStore());
 		for (Statement statement : doomed) {
 			assertThat(values().getId(statement.getSubject())).isEqualTo(LmdbValue.UNKNOWN_ID);
 			assertThat(values().getId(statement.getObject())).isEqualTo(LmdbValue.UNKNOWN_ID);
@@ -472,7 +497,7 @@ class LmdbSnapshotLifetimeTest {
 	@ParameterizedTest
 	@CsvSource({ "2,false", "6,false" })
 	void durableRetirementSurvivesCloseAndReopenThenAllowsIdReuse(int format, boolean inline) throws Exception {
-		open(format, inline);
+		openWithTrustedRetirementCounts(format, inline);
 		List<Statement> doomed = doomedStatements();
 		add(doomed);
 		long subjectId = values().getId(doomed.getFirst().getSubject());
@@ -486,6 +511,10 @@ class LmdbSnapshotLifetimeTest {
 		assertThat(LmdbCompatibilityFixtures.nativeGet(directory, "gc_meta", new byte[] { 3 }))
 				.isEqualTo(format == 6 ? new byte[] { 6 } : null);
 		open(format, inline);
+		LmdbGcTestMaintenance.awaitPostReady(store);
+		assertThat(store.awaitIndexRebuild(10, TimeUnit.SECONDS)).isTrue();
+		assertThat(values().hasTrustedReferenceCounts()).isTrue();
+		LmdbGcTestMaintenance.drainRetirements(store.getBackingStore());
 		assertThat(values().getId(doomed.getFirst().getSubject())).isEqualTo(LmdbValue.UNKNOWN_ID);
 		List<Long> freeIds = eligibleFreeIds();
 		assertThat(freeIds).as("the exact retired subject belongs to the eligible native free pool")

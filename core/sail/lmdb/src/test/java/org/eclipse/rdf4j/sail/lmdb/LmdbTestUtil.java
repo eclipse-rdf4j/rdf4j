@@ -29,10 +29,11 @@ public final class LmdbTestUtil {
 	/** Waits for deferred owner initialization before tests explicitly replace or persist optional components. */
 	public static void awaitPostReadyInitialization(LmdbStore store, long timeout, TimeUnit unit)
 			throws IOException, InterruptedException {
+		LmdbSailStore backingStore = store.getBackingStore();
 		long started = System.nanoTime();
 		long budget = unit.toNanos(timeout);
 		while (true) {
-			String status = store.getStartupStatus().auxiliaryMaintenance();
+			String status = backingStore.postReadyMaintenanceStatus();
 			if (status.equals("READY")) {
 				return;
 			}
