@@ -1925,8 +1925,12 @@ class LmdbSailStore implements SailStore {
 			}
 			if (stale != null) {
 				try (ReadView retirement = stale) {
+					// Freshness may replace a valid operation snapshot, but must not erase a terminal replay failure.
+					retirement.growthLease.ensureNotInvalidated();
 					retirement.abandonUnobserved();
 				}
+				// Retirement unregisters the lease under our lock. Preserve an invalidation that raced with close.
+				stale.growthLease.ensureNotInvalidated();
 			}
 			return reserved;
 		}

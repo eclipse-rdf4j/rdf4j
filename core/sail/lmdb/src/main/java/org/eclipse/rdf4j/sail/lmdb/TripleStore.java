@@ -7432,8 +7432,8 @@ class TripleStore implements Closeable {
 	}
 
 	void rollback(WriterTransaction transaction) throws IOException {
-		if (transaction != null) {
-			transaction.invoke(this::rollback);
-		}
+		// Preserve virtual logical cleanup without granting authority over another native writer.
+		WriterTransaction cleanup = transaction == null ? new WriterTransaction() : transaction;
+		cleanup.invoke(this::rollback);
 	}
 }

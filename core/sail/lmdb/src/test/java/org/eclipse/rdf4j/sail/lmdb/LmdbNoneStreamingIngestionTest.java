@@ -3422,6 +3422,7 @@ class LmdbNoneStreamingIngestionTest {
 			throws Exception {
 		LmdbStoreConfig config = replayGrowthConfig(2);
 		ObservingLmdbStore sail = new ObservingLmdbStore(dataDir.toFile(), config);
+		sail.setDefaultIsolationLevel(IsolationLevels.READ_COMMITTED);
 		SailRepository repository = new SailRepository(sail);
 		repository.init();
 		try {
@@ -3438,7 +3439,7 @@ class LmdbNoneStreamingIngestionTest {
 			LmdbSailStore backing = sail.getBackingStore();
 			MapGrowthMetrics.Snapshot before = backing.growthMetricsSnapshot();
 			try (RepositoryConnection reader = repository.getConnection()) {
-				reader.begin(IsolationLevels.READ_COMMITTED);
+				reader.begin(IsolationLevels.SNAPSHOT);
 				try (RepositoryResult<Statement> result = reader.getStatements(null, null, null, false)) {
 					expected.addAll(publishReplayGrowth(repository, "single",
 							replayGrowthNamespaceBytes(sail.triples.get())));
@@ -3455,6 +3456,13 @@ class LmdbNoneStreamingIngestionTest {
 						Statement later = statement("replay-later", 0);
 						barrier.add(later);
 						barrier.commit();
+						Set<Statement> committedRows = new HashSet<>(expected);
+						committedRows.add(later);
+						List<Statement> readCommittedRows = readReadCommittedAutoCommitStatements(repository);
+						assertEquals(committedRows, new HashSet<>(readCommittedRows),
+								"a later READ_COMMITTED auto-commit operation must admit the published barrier row");
+						assertEquals(committedRows.size(), readCommittedRows.size(),
+								"the operation-scoped result must contain each published row exactly once");
 						List<Statement> actual = readRepositoryResult(result);
 						assertEquals(expected.size(), actual.size(),
 								"the reserved result must include every prior row once");
@@ -3477,6 +3485,7 @@ class LmdbNoneStreamingIngestionTest {
 			throws Exception {
 		LmdbStoreConfig config = replayGrowthConfig(3);
 		ObservingLmdbStore sail = new ObservingLmdbStore(dataDir.toFile(), config);
+		sail.setDefaultIsolationLevel(IsolationLevels.READ_COMMITTED);
 		SailRepository repository = new SailRepository(sail);
 		repository.init();
 		try {
@@ -3496,7 +3505,7 @@ class LmdbNoneStreamingIngestionTest {
 			Set<Statement> expected = new HashSet<>();
 			expected.add(seed);
 			try (RepositoryConnection reader = repository.getConnection()) {
-				reader.begin(IsolationLevels.READ_COMMITTED);
+				reader.begin(IsolationLevels.SNAPSHOT);
 				try (RepositoryResult<Statement> result = reader.getStatements(null, null, null, false)) {
 					expected.addAll(publishReplayGrowth(repository, "first",
 							replayGrowthNamespaceBytes(triples)));
@@ -3535,6 +3544,13 @@ class LmdbNoneStreamingIngestionTest {
 						Statement later = statement("multi-growth-later", 0);
 						secondBarrier.add(later);
 						secondBarrier.commit();
+						Set<Statement> committedRows = new HashSet<>(expected);
+						committedRows.add(later);
+						List<Statement> readCommittedRows = readReadCommittedAutoCommitStatements(repository);
+						assertEquals(committedRows, new HashSet<>(readCommittedRows),
+								"a later READ_COMMITTED auto-commit operation must admit the published barrier row");
+						assertEquals(committedRows.size(), readCommittedRows.size(),
+								"the operation-scoped result must contain each published row exactly once");
 						List<Statement> actual = readRepositoryResult(result);
 						assertEquals(expected.size(), actual.size(),
 								"the second reservation must include exactly the two completed writer batches");
@@ -6061,6 +6077,19 @@ class LmdbNoneStreamingIngestionTest {
 			statements.add(result.next());
 		}
 		return statements;
+	}
+
+	private static List<Statement> readReadCommittedAutoCommitStatements(SailRepository repository) throws Exception {
+		try (RepositoryConnection operation = repository.getConnection()) {
+			operation.setIsolationLevel(IsolationLevels.READ_COMMITTED);
+			assertFalse(operation.isActive(), "the READ_COMMITTED operation must remain in auto-commit mode");
+			List<Statement> statements;
+			try (RepositoryResult<Statement> result = operation.getStatements(null, null, null, false)) {
+				statements = readRepositoryResult(result);
+			}
+			assertFalse(operation.isActive(), "the operation-scoped read must not leave an explicit transaction");
+			return statements;
+		}
 	}
 
 	private static LmdbStoreConfig smallMaps() {

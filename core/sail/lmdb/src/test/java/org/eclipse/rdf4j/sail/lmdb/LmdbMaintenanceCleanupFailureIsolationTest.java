@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -25,12 +26,17 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -146,6 +152,73 @@ class LmdbMaintenanceCleanupFailureIsolationTest {
 		}
 	}
 
+	@Test
+	@Timeout(value = 45, unit = TimeUnit.SECONDS)
+	void readOnlySailRollbackDispatchesBothNullTicketRollbacksWithoutCancellingForeignWriter(
+			@TempDir Path directory) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setForceSync(true);
+		NullTicketRollbackStore store = new NullTicketRollbackStore(directory.toFile(), config);
+		store.init();
+		HeldStandaloneValueWriter foreignWriter = null;
+		try {
+			ValueStore values = LmdbGcTestMaintenance.awaitTrustedReclamationSetup(store);
+			Value value = VF.createIRI("urn:cleanup-failure:null-ticket-foreign-writer");
+			foreignWriter = new HeldStandaloneValueWriter(values, value);
+			foreignWriter.start();
+			foreignWriter.awaitMapping();
+			assertSame(foreignWriter.transaction(), values.currentWriterTransaction(),
+					"the real standalone writer must own the ValueStore publication before Sail rollback");
+			long generationBeforeRollback = values.nativeCommitGeneration();
+			store.armNullTicketRollback();
+
+			try (SailConnection readOnly = store.getConnection()) {
+				readOnly.begin(IsolationLevels.SNAPSHOT);
+				assertTrue(readOnly.isActive(), "the Sail connection must hold a read-only logical transaction");
+				SailException failure = assertThrows(SailException.class, readOnly::rollback,
+						"both virtual store rollback entry points must report their injected cleanup failures");
+				store.disarmNullTicketRollback();
+				assertSame(store.valueRollbackFailure(), failure.getCause(),
+						"the ValueStore rollback failure must remain the primary cause");
+				assertEquals(1, store.valueRollbackFailure().getSuppressed().length,
+						"the TripleStore rollback failure must be retained as suppressed cleanup");
+				assertSame(store.tripleRollbackFailure(), store.valueRollbackFailure().getSuppressed()[0]);
+				assertEquals(1, store.valueRollbackCalls(), "the public ValueStore rollback override must be invoked");
+				assertEquals(1, store.tripleRollbackCalls(),
+						"the public TripleStore rollback override must be invoked");
+				assertNotNull(store.valueRollbackTicket(),
+						"ValueStore rollback must run with an explicit cleanup ticket");
+				assertNotNull(store.tripleRollbackTicket(),
+						"TripleStore rollback must run with an explicit cleanup ticket");
+				assertNotEquals(foreignWriter.transaction(), store.valueRollbackTicket(),
+						"the null-native rollback must use a ticket that is not the foreign writer's ticket");
+				assertNotEquals(foreignWriter.transaction(), store.tripleRollbackTicket(),
+						"the TripleStore rollback must not borrow the foreign writer's ticket");
+				assertSame(foreignWriter.transaction(), values.currentWriterTransaction(),
+						"read-only Sail rollback must leave the foreign logical writer publication intact before resume");
+				assertEquals(generationBeforeRollback, values.nativeCommitGeneration(),
+						"rollback must not commit or abort the foreign native writer before it resumes");
+				assertFalse(foreignWriter.committed(), "the foreign writer must still be held before resume");
+			} finally {
+				store.disarmNullTicketRollback();
+			}
+
+			long committedId = foreignWriter.resumeAndAwait();
+			assertEquals(foreignWriter.assignedId(), committedId);
+			assertEquals(committedId, values.getId(value), "the foreign mapping must survive and become committed");
+			assertEquals(value, values.getValue(committedId),
+					"the committed mapping must resolve to its original value");
+			assertEquals(generationBeforeRollback + 1L, values.nativeCommitGeneration(),
+					"only the resumed foreign writer may advance the native commit generation");
+			assertTrue(values.hasTrustedReferenceCounts(), "the trusted count proof must survive the rollback attempt");
+		} finally {
+			store.disarmNullTicketRollback();
+			if (foreignWriter != null) {
+				foreignWriter.releaseAndJoin();
+			}
+			store.shutDown();
+		}
+	}
+
 	private static long seedDurableRetirement(ValueStore values, Value orphan) throws IOException {
 		values.startTransaction(true);
 		long id = values.storeValue(orphan);
@@ -228,6 +301,89 @@ class LmdbMaintenanceCleanupFailureIsolationTest {
 				return armedFailure.getAndSet(null);
 			}
 			return null;
+		}
+	}
+
+	private static final class NullTicketRollbackStore extends LmdbStore {
+
+		private final IOException valueRollbackFailure = new IOException(
+				"injected ValueStore null-ticket rollback failure");
+		private final IOException tripleRollbackFailure = new IOException(
+				"injected TripleStore null-ticket rollback failure");
+		private final AtomicBoolean observeNullTicketRollback = new AtomicBoolean();
+		private final AtomicInteger valueRollbackCalls = new AtomicInteger();
+		private final AtomicInteger tripleRollbackCalls = new AtomicInteger();
+		private final AtomicReference<WriterTransaction> valueRollbackTicket = new AtomicReference<>();
+		private final AtomicReference<WriterTransaction> tripleRollbackTicket = new AtomicReference<>();
+
+		private NullTicketRollbackStore(File directory, LmdbStoreConfig config) {
+			super(directory, config);
+		}
+
+		@Override
+		LmdbSailStore createBackingStore(File directory, StoreProperties properties, LmdbStoreConfig config,
+				boolean sketches) throws IOException, SailException {
+			return new LmdbSailStore(directory, properties, config, sketches,
+					(valueDirectory, valueProperties, valueConfig) -> new ValueStore(valueDirectory, valueProperties,
+							valueConfig) {
+						@Override
+						public void rollback() throws IOException {
+							if (!observeNullTicketRollback.get()) {
+								super.rollback();
+								return;
+							}
+							valueRollbackCalls.incrementAndGet();
+							valueRollbackTicket.set(WriterTransaction.current());
+							super.rollback();
+							throw valueRollbackFailure;
+						}
+					},
+					(tripleDirectory, tripleProperties, tripleConfig, values) -> new TripleStore(tripleDirectory,
+							tripleProperties, tripleConfig, values) {
+						@Override
+						public void rollback() throws IOException {
+							if (!observeNullTicketRollback.get()) {
+								super.rollback();
+								return;
+							}
+							tripleRollbackCalls.incrementAndGet();
+							tripleRollbackTicket.set(WriterTransaction.current());
+							super.rollback();
+							throw tripleRollbackFailure;
+						}
+					});
+		}
+
+		private void armNullTicketRollback() {
+			assertTrue(observeNullTicketRollback.compareAndSet(false, true));
+		}
+
+		private void disarmNullTicketRollback() {
+			observeNullTicketRollback.set(false);
+		}
+
+		private IOException valueRollbackFailure() {
+			return valueRollbackFailure;
+		}
+
+		private IOException tripleRollbackFailure() {
+			return tripleRollbackFailure;
+		}
+
+		private int valueRollbackCalls() {
+			return valueRollbackCalls.get();
+		}
+
+		private int tripleRollbackCalls() {
+			return tripleRollbackCalls.get();
+		}
+
+		private WriterTransaction valueRollbackTicket() {
+			return valueRollbackTicket.get();
+		}
+
+		private WriterTransaction tripleRollbackTicket() {
+			return tripleRollbackTicket.get();
 		}
 	}
 
@@ -343,6 +499,108 @@ class LmdbMaintenanceCleanupFailureIsolationTest {
 
 		private void releaseForeign() {
 			resume.countDown();
+		}
+	}
+
+	private static final class HeldStandaloneValueWriter {
+
+		private final ValueStore values;
+		private final Value value;
+		private final WriterTransaction transaction = new WriterTransaction();
+		private final CountDownLatch mappingReady = new CountDownLatch(1);
+		private final CountDownLatch resume = new CountDownLatch(1);
+		private final CompletableFuture<Long> committedId = new CompletableFuture<>();
+		private final AtomicReference<Throwable> workerFailure = new AtomicReference<>();
+		private final AtomicLong assignedId = new AtomicLong(LmdbValue.UNKNOWN_ID);
+		private final Thread worker;
+
+		private HeldStandaloneValueWriter(ValueStore values, Value value) {
+			this.values = values;
+			this.value = value;
+			worker = Thread.ofPlatform().name("held-null-ticket-value-writer").unstarted(() -> {
+				try {
+					values.startTransaction(true, transaction);
+					assignedId.set(values.storeValue(value));
+					mappingReady.countDown();
+					if (!resume.await(10L, TimeUnit.SECONDS)) {
+						throw new AssertionError("foreign standalone writer was not released after logical rollback");
+					}
+					assertEquals(assignedId.get(), values.getId(value),
+							"the writer must still see its uncommitted mapping after the other rollback");
+					values.commit();
+					committedId.complete(assignedId.get());
+				} catch (Throwable failure) {
+					workerFailure.set(failure);
+					committedId.completeExceptionally(failure);
+				} finally {
+					mappingReady.countDown();
+					try {
+						values.rollback(transaction);
+					} catch (Throwable cleanupFailure) {
+						Throwable failure = workerFailure.get();
+						if (failure == null) {
+							workerFailure.set(cleanupFailure);
+						} else if (cleanupFailure != failure) {
+							failure.addSuppressed(cleanupFailure);
+						}
+					}
+				}
+			});
+		}
+
+		private void start() {
+			worker.start();
+		}
+
+		private void awaitMapping() throws Exception {
+			assertTrue(mappingReady.await(10L, TimeUnit.SECONDS),
+					"foreign writer must publish its uncommitted mapping");
+			rethrowWorkerFailure();
+			assertNotEquals(LmdbValue.UNKNOWN_ID, assignedId.get());
+		}
+
+		private WriterTransaction transaction() {
+			return transaction;
+		}
+
+		private long assignedId() {
+			return assignedId.get();
+		}
+
+		private boolean committed() {
+			return committedId.isDone();
+		}
+
+		private long resumeAndAwait() throws Exception {
+			resume.countDown();
+			try {
+				long id = committedId.get(10L, TimeUnit.SECONDS);
+				worker.join(TimeUnit.SECONDS.toMillis(10L));
+				assertFalse(worker.isAlive(), "foreign writer must terminate after commit");
+				rethrowWorkerFailure();
+				return id;
+			} catch (ExecutionException e) {
+				throw new AssertionError("foreign standalone writer failed", e.getCause());
+			}
+		}
+
+		private void releaseAndJoin() throws InterruptedException {
+			resume.countDown();
+			worker.join(TimeUnit.SECONDS.toMillis(10L));
+			if (worker.isAlive()) {
+				worker.interrupt();
+				worker.join(TimeUnit.SECONDS.toMillis(2L));
+			}
+		}
+
+		private void rethrowWorkerFailure() throws Exception {
+			Throwable failure = workerFailure.get();
+			if (failure instanceof Exception exception) {
+				throw exception;
+			}
+			if (failure instanceof Error error) {
+				throw error;
+			}
 		}
 	}
 }

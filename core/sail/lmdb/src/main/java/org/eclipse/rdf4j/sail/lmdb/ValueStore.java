@@ -14304,9 +14304,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	void rollback(WriterTransaction transaction) throws IOException {
-		if (transaction != null) {
-			transaction.invoke(this::rollback);
-		}
+		// Preserve virtual logical cleanup without granting authority over another native writer.
+		WriterTransaction cleanup = transaction == null ? new WriterTransaction() : transaction;
+		cleanup.invoke(this::rollback);
 	}
 
 	private void refreshCommittedHighWater() throws IOException {
