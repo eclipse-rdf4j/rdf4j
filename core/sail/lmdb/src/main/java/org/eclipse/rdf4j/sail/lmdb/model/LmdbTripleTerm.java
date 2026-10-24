@@ -273,6 +273,21 @@ public class LmdbTripleTerm extends AbstractTripleTerm implements LmdbValue {
 	}
 
 	@Override
+	protected boolean hasStructuralEquals() {
+		return false;
+	}
+
+	@Override
+	protected boolean hasStructuralHashCode() {
+		return false;
+	}
+
+	@Override
+	protected boolean hasStructuralStringValue() {
+		return getClass() == LmdbTripleTerm.class;
+	}
+
+	@Override
 	public int hashCode() {
 		InternalIdentity captured = getInternalIdentity();
 		boolean stable = getSemanticVersion() != UNKNOWN_ID;
