@@ -364,6 +364,18 @@ export function removeGraphNodes(graph: Graph, nodeIds: Set<string>): Graph {
   };
 }
 
+/**
+ * Named groups with only the nodes of `present` (removeGraphNodes also takes the values and classes only removed nodes
+ * used, so the removed ids alone are not enough). A group left with none of its nodes goes; one that had none stays.
+ */
+export function groupsInGraph<T extends { nodeIds: string[] }>(groups: readonly T[], present: ReadonlySet<string>): T[] {
+  return groups.flatMap((group) => {
+    const nodeIds = [...new Set(group.nodeIds)].filter((nodeId) => present.has(nodeId));
+    if (nodeIds.length === group.nodeIds.length) return [group];
+    return nodeIds.length ? [{ ...group, nodeIds }] : [];
+  });
+}
+
 export function shortestPathInGraph(graph: Graph, starts: string[], goal: string) {
   const startSet = new Set(starts);
   if (startSet.has(goal)) return { nodeIds: new Set([goal]), edgeIds: new Set<string>() };

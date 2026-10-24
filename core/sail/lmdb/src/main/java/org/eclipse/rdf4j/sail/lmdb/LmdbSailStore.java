@@ -1218,11 +1218,11 @@ class LmdbSailStore implements SailStore {
 			if (deadline == null) {
 				return coordinationRemaining;
 			}
-			long queryRemaining = deadline.remainingNanos();
-			if (queryRemaining <= 0L) {
+			long queryRemainingMillis = deadline.remainingMillis();
+			if (queryRemainingMillis <= 0L) {
 				throw queryInterrupted();
 			}
-			return Math.min(coordinationRemaining, queryRemaining);
+			return Math.min(coordinationRemaining, TimeUnit.MILLISECONDS.toNanos(queryRemainingMillis));
 		}
 
 		private boolean awaitChange(QueryExecutionDeadline deadline, long coordinationDeadlineNanos)
@@ -2613,6 +2613,9 @@ class LmdbSailStore implements SailStore {
 	private final ThreadLocal<Runnable> replayRetirementOwner = new ThreadLocal<>();
 
 	private final TripleStore tripleStore;
+
+	/** Results of tuple queries whose caller asked for caching, valid until the next committed write. */
+	private final LmdbQueryResultCache queryResultCache = new LmdbQueryResultCache();
 
 	private final ValueStore valueStore;
 	private ValueStore.FreshValueSession freshValueSession;
@@ -4952,12 +4955,12 @@ class LmdbSailStore implements SailStore {
 		if (deadline != null && deadline.isExpired()) {
 			throw new QueryInterruptedException("Query evaluation took too long");
 		}
-		long remaining = deadline == null ? Long.MAX_VALUE : deadline.remainingNanos();
-		if (remaining <= 0L) {
+		long remainingMillis = deadline == null ? Long.MAX_VALUE : deadline.remainingMillis();
+		if (remainingMillis <= 0L) {
 			throw new QueryInterruptedException("Query evaluation took too long");
 		}
 		try {
-			asyncCallerProgress.await(observed, remaining);
+			asyncCallerProgress.await(observed, TimeUnit.MILLISECONDS.toNanos(remainingMillis));
 		} catch (InterruptedException interrupted) {
 			Thread.currentThread().interrupt();
 			throw new IOException("Interrupted while waiting for the native LMDB writer", interrupted);
@@ -4973,11 +4976,11 @@ class LmdbSailStore implements SailStore {
 			throw new QueryInterruptedException("Query evaluation took too long");
 		}
 		try {
-			long remaining = cancellable && deadline != null ? deadline.remainingNanos() : Long.MAX_VALUE;
-			if (remaining == Long.MAX_VALUE) {
+			long remainingMillis = cancellable && deadline != null ? deadline.remainingMillis() : Long.MAX_VALUE;
+			if (remainingMillis == Long.MAX_VALUE) {
 				asyncProgress.wait();
-			} else if (remaining > 0L) {
-				TimeUnit.NANOSECONDS.timedWait(asyncProgress, remaining);
+			} else if (remainingMillis > 0L) {
+				TimeUnit.MILLISECONDS.timedWait(asyncProgress, remainingMillis);
 			} else {
 				throw new QueryInterruptedException("Query evaluation took too long");
 			}
@@ -5069,7 +5072,7 @@ class LmdbSailStore implements SailStore {
 		if (original == null) {
 			return caller;
 		}
-		return caller == null || original.remainingNanos() <= caller.remainingNanos() ? original : caller;
+		return caller == null || original.remainingMillis() <= caller.remainingMillis() ? original : caller;
 	}
 
 	private void awaitAsyncProgress(BooleanSupplier finished) throws IOException {
@@ -5823,7 +5826,7 @@ class LmdbSailStore implements SailStore {
 						if (deadline == null) {
 							publicationCompleted.await();
 						} else {
-							publicationCompleted.awaitNanos(deadline.remainingNanos());
+							publicationCompleted.await(deadline.remainingMillis(), TimeUnit.MILLISECONDS);
 						}
 					} catch (InterruptedException e) {
 						Thread.currentThread().interrupt();
@@ -5936,7 +5939,7 @@ class LmdbSailStore implements SailStore {
 							if (deadline == null) {
 								writerOwnerMonitor.wait();
 							} else {
-								TimeUnit.NANOSECONDS.timedWait(writerOwnerMonitor, deadline.remainingNanos());
+								TimeUnit.MILLISECONDS.timedWait(writerOwnerMonitor, deadline.remainingMillis());
 							}
 						} catch (InterruptedException e) {
 							Thread.currentThread().interrupt();
@@ -6094,7 +6097,7 @@ class LmdbSailStore implements SailStore {
 						if (deadline == null) {
 							publicationCompleted.await();
 						} else {
-							publicationCompleted.awaitNanos(deadline.remainingNanos());
+							publicationCompleted.await(deadline.remainingMillis(), TimeUnit.MILLISECONDS);
 						}
 					} catch (InterruptedException e) {
 						Thread.currentThread().interrupt();
@@ -6409,12 +6412,23 @@ class LmdbSailStore implements SailStore {
 			tripleStore.setMapGrowthAttemptSupplier(
 					() -> beginMapGrowthAttemptForCurrentWriter(MapResizeKind.TRIPLE_STORE));
 			tripleStore.setMapGrowthRequestListener(this::requestMapGrowthForCurrentWriter);
-			namespaceStore = recoverNamespaceStore();
+			if (properties.preparedBulkStore != null
+					&& tripleStore.trustedTransactionId() != properties.verifiedTripleTransactionId) {
+				throw new IOException("Clean native triple generation changed during startup");
+			}
+			namespaceStore = properties.preparedBulkStore == null ? recoverNamespaceStore()
+					: new NamespaceStore(dataDir, tripleStore);
 			publishedNamespaces = namespaceStore.snapshot();
 			statementPatternCardinalitySource = new LmdbStatementPatternCardinalitySource(valueStore, tripleStore);
 			mayHaveInferred = tripleStore.hasTriples(false);
-			completeStartupValueReclamation(false);
-			recoverRetiredValueIds();
+			if (properties.preparedBulkStore == null || properties.preparedBulkStore.pendingUnused()) {
+				completeStartupValueReclamation(false);
+			} else {
+				valueStore.completePreparedStoreInitialization(tripleStore::filterUsedIds);
+			}
+			if (properties.preparedBulkStore == null || properties.preparedBulkStore.pendingRetired()) {
+				recoverRetiredValueIds();
+			}
 			LmdbDirectAdjacencyOptions directAdjacencyOptions = LmdbDirectAdjacencyOptions.resolve(config);
 			directAdjacency = directAdjacencyOptions.mode() != DirectAdjacencyMode.DISABLED
 					? new LmdbDirectAdjacencyStore(tripleStore, valueStore, storeTxnStarted, storeTxnDirty,
@@ -6430,7 +6444,10 @@ class LmdbSailStore implements SailStore {
 			}
 			preparedImportBudget = new AlignedWriteBudget(calculatePreparedImportStatementLimit(
 					Runtime.getRuntime().maxMemory(), tripleStore.secondaryIndexCount()));
-			completeStartupValueReclamation(true);
+			if (properties.preparedBulkStore == null || properties.preparedBulkStore.pendingUnused()
+					|| properties.preparedBulkStore.pendingRetired()) {
+				completeStartupValueReclamation(true);
+			}
 			LmdbDirectAdjacencyStore adjacencyForContext = directAdjacency;
 			costModelContext = new LmdbNativeCostModelContext(
 					dataDir.toPath(),
@@ -7377,6 +7394,7 @@ class LmdbSailStore implements SailStore {
 
 	/** Recovers durable value-ID retirement intents only after opening the authoritative TripleStore. */
 	private void completeStartupValueReclamation(boolean afterRetirementRecovery) throws IOException {
+		LmdbStartupDiagnostics.observe(LmdbStartupDiagnostics.Operation.VALUE_RECLAMATION);
 		long initialMapSize = mapSizeBytesWithNativeReadBarrier(MapResizeKind.VALUE_STORE);
 		while (true) {
 			Object owner = new Object();
@@ -7500,6 +7518,7 @@ class LmdbSailStore implements SailStore {
 
 	private void recoverRetiredValueIds(long maxRevisionInclusive, boolean recoverBufferedRetirements)
 			throws IOException {
+		LmdbStartupDiagnostics.observe(LmdbStartupDiagnostics.Operation.RETIREMENT_RECOVERY);
 		long initialMapSize = mapSizeBytesWithNativeReadBarrier(MapResizeKind.VALUE_STORE);
 		while (true) {
 			Object owner = new Object();
@@ -7717,6 +7736,15 @@ class LmdbSailStore implements SailStore {
 		return directAdjacency;
 	}
 
+	LmdbQueryResultCache queryResultCache() {
+		return queryResultCache;
+	}
+
+	/** The revision of the last committed write, published after the LMDB commit and before it returns. */
+	long dataRevision() {
+		return tripleStore.getDataRevision();
+	}
+
 	/** Package-private for tests and readiness diagnostics (see LmdbStore.awaitValueOverlayReady). */
 	ValueStore valueStore() {
 		return valueStore;
@@ -7737,6 +7765,7 @@ class LmdbSailStore implements SailStore {
 		}
 		initialImportClosing = true;
 		Throwable failure = null;
+		failure = attemptClose(failure, queryResultCache::clear);
 		failure = attemptClose(failure, () -> NativeLmdbQuerySource.releaseCostModel(valueStore));
 		failure = attemptClose(failure, mapGrowthCoordinator::shutdown);
 		failure = attemptClose(failure, this::awaitReplayRetirements);
@@ -7765,6 +7794,14 @@ class LmdbSailStore implements SailStore {
 			}
 			if (namespaceStore != null) {
 				failure = attemptClose(failure, namespaceStore::close);
+			}
+			if (failure == null && valueStore != null && tripleStore != null && tripleStore.tracksNativeOwnership()) {
+				try {
+					valueStore.prepareCleanClose(tripleStore.trustedTransactionId());
+				} catch (IOException unknownWriter) {
+					valueStore.invalidateCleanCloseAfterUnknownTripleWriter();
+					logger.warn("Cannot certify clean native state before close", unknownWriter);
+				}
 			}
 			if (tripleStore != null) {
 				failure = attemptClose(failure, () -> tripleStore.getTxnManager().close());

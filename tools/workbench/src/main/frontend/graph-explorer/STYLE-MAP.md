@@ -1,6 +1,6 @@
 # Graph explorer style map
 
-How the explorer's stylesheet (`graph-explorer.css`, built to `styles/graph-explorer.css`) relates to the Workbench
+How the explorer's stylesheets (`graph-explorer.css` and component CSS imports, built to `styles/graph-explorer.css`) relate to the Workbench
 design system (`src/main/frontend/static/styles/workbench-refresh.css`). `scripts/css-inventory.mjs --print` lists the
 current class inventory; `src/test/frontend/graph-explorer/css-inventory.test.mjs` enforces the rules below.
 
@@ -11,7 +11,7 @@ current class inventory; `src/test/frontend/graph-explorer/css-inventory.test.mj
 2. No element-level rules (`*`, `html`, `body`, `button`, ...), no `@import`, no web fonts: the island inherits the
    Workbench typography (`--workbench-font`, `--workbench-code-font`, system stacks).
 3. Controls are Workbench components, not look-alikes. A class name the TSX uses is either a `workbench-*` class
-   (styled by the Workbench) or defined in `graph-explorer.css`.
+   (styled by the Workbench) or defined in an imported explorer stylesheet.
 4. Rules for the explorer's chrome are rooted at `.graph-explorer #graph-explorer-app` (the island's `<main>`). The
    Workbench styles every `<button>`, `<p>`, heading and input on the page surface with element rules (for example
    `body.workbench-body .workbench-page-surface button`, specificity 0-2-2; `p:not(.workbench-field__help)`, 0-3-2),

@@ -36,6 +36,147 @@ class LmdbPagedCsfParallelBaseBuilderTest {
 	private static final long UNCOVERED_PREDICATE = ValueIds.createId(ValueIds.T_URI, 4);
 
 	@Test
+	void rawRangesInsideRowsKeepNodeProjectionAndAdjacencyConsistent() throws IOException {
+		for (int workers : new int[] { 1, 4 }) {
+			LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1L << 30);
+			try (FragmentedFamily family = new FragmentedFamily();
+					LmdbInMemoryAdjacencyIndex index = LmdbPagedCsfBaseBuilder.build(family,
+							LmdbAdjacencyCoverage.full(), account, 1L << 20, 1L << 16, workers, null,
+							LmdbNodePredicateOptions.ALL_PLANES)) {
+				index.retain();
+				LmdbAdjacencyPublishedState state = new LmdbAdjacencyPublishedState(1, index, 7, Long.MAX_VALUE,
+						LmdbAdjacencyPublishedState.AdjacencyServingState.ROW_EXACT);
+				AtomicInteger inconsistencies = new AtomicInteger();
+				try (LmdbAdjacencyReadView view = LmdbAdjacencyReadView.exact(7, state, null)) {
+					for (int plane = 0; plane < LmdbAdjacencyPlane.PLANE_COUNT; plane++) {
+						try (LmdbNodePredicateRowCursor predicates = new LmdbNodePredicateRowCursor(view, plane,
+								FragmentedScanner.ROW, message -> inconsistencies.incrementAndGet())) {
+							assertThat(predicates.advance()).isTrue();
+							assertThat(predicates.predicate()).isEqualTo(PREDICATE);
+							assertThat(predicates.advance()).isFalse();
+						}
+						long run = index.findRun(FragmentedScanner.ROW, plane, PREDICATE);
+						assertThat(run).isPositive();
+						assertThat(LmdbAdjacencyRunCodec.edgeCount(index.arenaCatalog(), run)).isEqualTo(3);
+						assertThat(
+								LmdbAdjacencyRunCodec.contextAt(index.arenaCatalog(), index.contextCatalog(), run, 1))
+										.isEqualTo(FragmentedScanner.CONTEXT);
+					}
+					assertThat(inconsistencies).hasValue(0);
+					assertThat(index.statementCount()).isEqualTo(10);
+					assertThat(index.incidenceCount()).isEqualTo(20);
+				}
+			}
+			assertThat(account.totalChargedBytes()).isZero();
+		}
+	}
+
+	private static final class FragmentedFamily implements AdjacencySourceFamily {
+		private final FragmentedScanner[] scanners = { new FragmentedScanner(), new FragmentedScanner(),
+				new FragmentedScanner(), new FragmentedScanner() };
+
+		@Override
+		public AdjacencySourceScanner primary() {
+			return scanners[0];
+		}
+
+		@Override
+		public AdjacencySourceScanner scanner(int plane) {
+			return scanners[plane];
+		}
+
+		@Override
+		public int activeStreamCount() {
+			return scanners.length;
+		}
+
+		@Override
+		public long snapshotRevision() {
+			return 7;
+		}
+
+		@Override
+		public void cancel() {
+		}
+
+		@Override
+		public void close() {
+		}
+	}
+
+	private static final class FragmentedScanner implements AdjacencySourceScanner {
+		private static final long ROW = 2_932_299_266L;
+		private static final long CONTEXT = ValueIds.createId(ValueIds.T_URI, 5);
+
+		@Override
+		public void scanPredicates(PredicateConsumer consumer) {
+			consumer.predicate(PREDICATE);
+		}
+
+		@Override
+		public void scanContexts(ContextConsumer consumer) {
+			consumer.context(CONTEXT);
+		}
+
+		@Override
+		public ScanRange[] planRanges(int plane, LmdbAdjacencyCoverage coverage, long[] sortedPredicates,
+				int targetRanges) {
+			String fields = (plane & 1) == 0 ? "spoc" : "posc";
+			byte[] boundary = { 1 };
+			return new ScanRange[] { ScanRange.ordinary(new LmdbKeyRange(null, boundary, fields)),
+					new ScanRange(new LmdbKeyRange(boundary, null, fields), true, PREDICATE, ROW) };
+		}
+
+		@Override
+		public void scanRange(int plane, LmdbAdjacencyCoverage coverage, ScanRange range, GroupConsumer consumer) {
+			if (range.startsWithContinuation()) {
+				consumer.begin(ROW, PREDICATE, plane);
+				consumer.pair(OBJECT, CONTEXT);
+				consumer.pair(OBJECT + 128, 0);
+				consumer.end();
+				emit(ROW + 128, plane, consumer);
+			} else {
+				emit(ROW - 128, plane, consumer);
+				emit(ROW, plane, consumer);
+			}
+		}
+
+		private static void emit(long row, int plane, GroupConsumer consumer) {
+			consumer.begin(row, PREDICATE, plane);
+			consumer.pair(OBJECT, 0);
+			consumer.end();
+		}
+
+		@Override
+		public void scanOutgoing(boolean explicit, GroupConsumer consumer) {
+			throw new AssertionError("the builder must replay the planned source ranges");
+		}
+
+		@Override
+		public void scanIncoming(boolean explicit, GroupConsumer consumer) {
+			throw new AssertionError("the builder must replay the planned source ranges");
+		}
+
+		@Override
+		public long snapshotRevision() {
+			return 7;
+		}
+
+		@Override
+		public long snapshotId() {
+			return 11;
+		}
+
+		@Override
+		public void ensureSnapshotValid() {
+		}
+
+		@Override
+		public void close() {
+		}
+	}
+
+	@Test
 	void requestedWorkersActuallyOverlap() throws IOException {
 		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1L << 30);
 		try (OverlapFamily family = new OverlapFamily();

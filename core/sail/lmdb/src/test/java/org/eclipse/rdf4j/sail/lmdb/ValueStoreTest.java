@@ -49,6 +49,10 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
+import static org.mockito.Mockito.atMost;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.io.File;
 import java.io.IOException;
@@ -157,6 +161,23 @@ public class ValueStoreTest {
 
 	private LmdbStoreConfig hashCacheEnabledConfig() {
 		return new LmdbStoreConfig().setValueHashCacheEnabled(true);
+	}
+
+	@Test
+	public void withDataUsesOneDeadlineObservationAfterAssociationAdmission() throws Exception {
+		valueStore.startTransaction(true);
+		long id = valueStore.storeValue(Values.iri("urn:test:deadline-observation"));
+		valueStore.commit();
+
+		QueryExecutionDeadline deadline = mock(QueryExecutionDeadline.class);
+		when(deadline.remainingMillis()).thenReturn(TimeUnit.MINUTES.toMillis(1));
+
+		try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enterScopedContext(deadline)) {
+			assertTrue(valueStore.withData(id, (address, length) -> length > 0L));
+			// This path requires 13 reads: permit checks 2, timed barrier 2, association gate 2, capture 1,
+			// native begin/renew 2, transaction creation 2, and scoped start 2. Keep the assertion as an upper bound.
+			verify(deadline, atMost(13)).remainingMillis();
+		}
 	}
 
 	@Test

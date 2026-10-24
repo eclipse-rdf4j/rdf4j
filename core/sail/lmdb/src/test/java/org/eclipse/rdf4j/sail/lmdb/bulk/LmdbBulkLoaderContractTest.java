@@ -1191,10 +1191,8 @@ class LmdbBulkLoaderContractTest {
 		assertThat(result.parsedStatements()).isEqualTo(2_050);
 		assertThat(snapshots)
 				.extracting(ProgressSnapshot::phase)
-				.contains(BulkLoadPhase.STAGE_INPUTS, BulkLoadPhase.PUBLISH_AND_CLEAN);
-		assertThat(snapshots)
-				.extracting(ProgressSnapshot::phase)
-				.doesNotContain(BulkLoadPhase.VALIDATE_GENERATION);
+				.containsSubsequence(BulkLoadPhase.STAGE_INPUTS, BulkLoadPhase.WRITE_GENERATION,
+						BulkLoadPhase.VALIDATE_GENERATION, BulkLoadPhase.PUBLISH_AND_CLEAN);
 		assertThat(snapshots)
 				.anyMatch(snapshot -> snapshot.phase() == BulkLoadPhase.STAGE_INPUTS
 						&& snapshot.currentOperationsPerSecond() > 0.0);

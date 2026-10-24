@@ -23,14 +23,17 @@ import java.lang.foreign.ValueLayout;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -67,6 +70,7 @@ final class ExternalByteKeySorter implements AutoCloseable {
 	private byte[] transferBuffer;
 	// Insertion-ordered so merge groups stay deterministic; hashed so adoption, removal and membership stay O(1).
 	private final Set<Path> runs = new LinkedHashSet<>();
+	private final Map<Path, String> runDigests = new ConcurrentHashMap<>();
 	private final List<PendingSpill> pendingSpills = new ArrayList<>();
 	private BulkTaskScheduler.ResourceLease producerLease;
 	private BulkTaskScheduler.ResourceScope producerClaim;
@@ -354,15 +358,17 @@ final class ExternalByteKeySorter implements AutoCloseable {
 			}
 			if (mergeRuns.isEmpty()) {
 				Files.createFile(output);
+				runDigests.put(output, BulkArtifactIntegrity.finish(BulkArtifactIntegrity.newDigest()));
 			} else if (mergeRuns.size() == 1) {
 				Files.move(mergeRuns.getFirst(), output, StandardCopyOption.REPLACE_EXISTING);
+				runDigests.put(output, runDigests.remove(mergeRuns.getFirst()));
 			} else {
 				mergeGroup(mergeRuns, output, codec);
 				deleteRuns(mergeRuns);
 			}
 			runs.clear();
 			finished = true;
-			return new SortedRecordFile(output, recordCount, codec);
+			return new SortedRecordFile(output, recordCount, codec, runDigests.remove(output));
 		} catch (IOException | RuntimeException | Error failure) {
 			try {
 				Files.deleteIfExists(output);
@@ -457,7 +463,8 @@ final class ExternalByteKeySorter implements AutoCloseable {
 		}
 		sortOrder(0, bufferedRecords - 1);
 		Path run = Files.createTempFile(directory, prefix + "-run-", ".bin");
-		try (DataOutputStream output = BulkLz4.output(run, codec, scheduler, spillObserver)) {
+		MessageDigest digest = BulkArtifactIntegrity.newDigest();
+		try (DataOutputStream output = BulkLz4.output(run, codec, scheduler, spillObserver, digest)) {
 			for (int position = 0; position < bufferedRecords; position++) {
 				writeBufferedRecord(output, order[position]);
 			}
@@ -465,6 +472,7 @@ final class ExternalByteKeySorter implements AutoCloseable {
 			Files.deleteIfExists(run);
 			throw failure;
 		}
+		runDigests.put(run, BulkArtifactIntegrity.finish(digest));
 		runs.add(run);
 		bufferedRecords = 0;
 		bufferedDataBytes = 0;
@@ -537,7 +545,9 @@ final class ExternalByteKeySorter implements AutoCloseable {
 		try {
 			Future<Path> future = scheduler.submitOrRunInline(lease, () -> {
 				try {
-					snapshot.write(output, codec, spillObserver, scheduler);
+					MessageDigest digest = BulkArtifactIntegrity.newDigest();
+					snapshot.write(output, codec, spillObserver, scheduler, digest);
+					runDigests.put(output, BulkArtifactIntegrity.finish(digest));
 					return output;
 				} catch (IOException | RuntimeException | Error failure) {
 					try {
@@ -652,7 +662,8 @@ final class ExternalByteKeySorter implements AutoCloseable {
 	private void writeSingleRecordRun(byte[] key, byte[] value) throws IOException {
 		awaitAllSpills();
 		Path run = Files.createTempFile(directory, prefix + "-run-", ".bin");
-		try (DataOutputStream output = BulkLz4.output(run, codec, scheduler)) {
+		MessageDigest digest = BulkArtifactIntegrity.newDigest();
+		try (DataOutputStream output = BulkLz4.output(run, codec, scheduler, digest)) {
 			output.writeInt(key.length);
 			output.writeInt(value.length);
 			output.write(key);
@@ -661,6 +672,7 @@ final class ExternalByteKeySorter implements AutoCloseable {
 			Files.deleteIfExists(run);
 			throw failure;
 		}
+		runDigests.put(run, BulkArtifactIntegrity.finish(digest));
 		runs.add(run);
 	}
 
@@ -809,9 +821,10 @@ final class ExternalByteKeySorter implements AutoCloseable {
 	private void mergeGroupWithReservedDescriptors(List<Path> group, Path outputPath, BulkCodec codec)
 			throws IOException {
 		RunCursor[] cursors = new RunCursor[group.size()];
-		try (DataOutputStream output = BulkLz4.output(outputPath, codec, scheduler)) {
+		MessageDigest digest = BulkArtifactIntegrity.newDigest();
+		try (DataOutputStream output = BulkLz4.output(outputPath, codec, scheduler, digest)) {
 			for (int i = 0; i < group.size(); i++) {
-				cursors[i] = new RunCursor(group.get(i), codec, scheduler);
+				cursors[i] = new RunCursor(group.get(i), codec, scheduler, runDigests.get(group.get(i)));
 				cursors[i].advance();
 			}
 			LoserTree tree = new LoserTree(cursors);
@@ -828,6 +841,7 @@ final class ExternalByteKeySorter implements AutoCloseable {
 		} finally {
 			closeCursors(cursors);
 		}
+		runDigests.put(outputPath, BulkArtifactIntegrity.finish(digest));
 	}
 
 	private static void writeRecord(DataOutputStream output, Record record) throws IOException {
@@ -949,6 +963,7 @@ final class ExternalByteKeySorter implements AutoCloseable {
 			try {
 				runFileDeleter.delete(path);
 				runs.remove(path);
+				runDigests.remove(path);
 			} catch (IOException e) {
 				if (failure == null) {
 					failure = e;
@@ -978,7 +993,8 @@ final class ExternalByteKeySorter implements AutoCloseable {
 	}
 
 	private interface SpillSnapshot extends AutoCloseable {
-		void write(Path output, BulkCodec codec, Runnable spillObserver, BulkTaskScheduler scheduler)
+		void write(Path output, BulkCodec codec, Runnable spillObserver, BulkTaskScheduler scheduler,
+				MessageDigest digest)
 				throws IOException;
 
 		@Override
@@ -1001,13 +1017,14 @@ final class ExternalByteKeySorter implements AutoCloseable {
 		}
 
 		@Override
-		public void write(Path outputPath, BulkCodec codec, Runnable spillObserver, BulkTaskScheduler scheduler)
+		public void write(Path outputPath, BulkCodec codec, Runnable spillObserver, BulkTaskScheduler scheduler,
+				MessageDigest digest)
 				throws IOException {
 			for (int record = 0; record < order.length; record++) {
 				order[record] = record;
 			}
 			sortOrder(0, order.length - 1);
-			try (DataOutputStream output = BulkLz4.output(outputPath, codec, scheduler, spillObserver)) {
+			try (DataOutputStream output = BulkLz4.output(outputPath, codec, scheduler, spillObserver, digest)) {
 				for (int position = 0; position < order.length; position++) {
 					int record = order[position];
 					int keyLength = keyLengths[record];
@@ -1091,7 +1108,13 @@ final class ExternalByteKeySorter implements AutoCloseable {
 		}
 
 		private RunCursor(Path path, BulkCodec codec, BulkTaskScheduler scheduler) throws IOException {
-			input = BulkLz4.input(path, codec, scheduler);
+			this(path, codec, scheduler, null);
+		}
+
+		private RunCursor(Path path, BulkCodec codec, BulkTaskScheduler scheduler, String contentDigest)
+				throws IOException {
+			DataInputStream decoded = BulkLz4.input(path, codec, scheduler);
+			input = contentDigest == null ? decoded : BulkArtifactIntegrity.input(decoded, path, contentDigest);
 		}
 
 		private boolean advance() throws IOException {
@@ -1185,19 +1208,26 @@ final class ExternalByteKeySorter implements AutoCloseable {
 		private final Path path;
 		private final long records;
 		private final BulkCodec codec;
+		private final String contentDigest;
 
-		private SortedRecordFile(Path path, long records, BulkCodec codec) {
+		private SortedRecordFile(Path path, long records, BulkCodec codec, String contentDigest) {
 			this.path = path;
 			this.records = records;
 			this.codec = codec;
+			this.contentDigest = contentDigest;
 		}
 
 		static SortedRecordFile restore(Path path, long records, long bytes, BulkCodec codec)
 				throws IOException {
+			return restore(path, records, bytes, codec, null);
+		}
+
+		static SortedRecordFile restore(Path path, long records, long bytes, BulkCodec codec, String contentDigest)
+				throws IOException {
 			if (records < 0L || bytes < 0L || !Files.isRegularFile(path) || Files.size(path) != bytes) {
 				throw new IOException("Sorted byte-record metadata mismatch for " + path);
 			}
-			return new SortedRecordFile(path, records, codec);
+			return new SortedRecordFile(path, records, codec, contentDigest);
 		}
 
 		Path path() {
@@ -1206,6 +1236,10 @@ final class ExternalByteKeySorter implements AutoCloseable {
 
 		long records() {
 			return records;
+		}
+
+		String contentDigest() {
+			return contentDigest;
 		}
 
 		/**
@@ -1217,9 +1251,14 @@ final class ExternalByteKeySorter implements AutoCloseable {
 		}
 
 		void forEach(RecordConsumer consumer) throws IOException {
-			try (RunCursor cursor = new RunCursor(path, codec)) {
+			try (RunCursor cursor = new RunCursor(path, codec, null, contentDigest)) {
+				long count = 0L;
 				while (cursor.advance()) {
 					consumer.accept(cursor.current.key, cursor.current.value);
+					count++;
+				}
+				if (count != records) {
+					throw new IOException("Sorted byte-record integrity count mismatch for " + path);
 				}
 			}
 		}

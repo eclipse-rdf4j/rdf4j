@@ -67,15 +67,17 @@ namespace workbench {
             if (resultCount) {
                 resultCount.textContent = '';
             }
-            if (rvalue) {
-                if (summary && resourceValue && resultCount) {
-                    summary.removeAttribute('hidden');
+            var disposed = false;
+            // The row range of the page, and its total once it is known: a long page says "of …" until the
+            // separate count answers.
+            function describeRange(countState?: string) {
+                if (!rvalue || !resultCount) {
+                    return;
                 }
                 var limit = workbench.paging.getLimit(explore);
-
-                // Modify title to reflect total_result_count cookie
                 var total_result_count = workbench.paging.getTotalResultCount();
                 var have_total_count = (total_result_count > 0);
+                var has_more = workbench.paging.resultHasMore();
                 var offset = limit == 0 ? 0 : workbench.paging.getOffset();
                 var first = offset + 1;
                 var last = limit == 0 ? total_result_count : offset + limit;
@@ -84,19 +86,67 @@ namespace workbench {
                 // Truncate range if close to end.
                 last = have_total_count ? Math.min(total_result_count, last) : last;
                 var range = 'Rows ' + first + '–' + last;
+                var title = '';
                 if (empty_page) {
                     range = have_total_count ? 'Rows 0 of ' + total_result_count : 'No rows';
                 }
                 else if (have_total_count) {
                     range = range + ' of ' + total_result_count;
                 }
-                if (resultCount) {
-                    resultCount.textContent = range;
+                else if (has_more) {
+                    range = range + ' of …';
+                    title = countState === 'timed-out' ? 'Counting took longer than five minutes'
+                        : countState === 'failed' ? 'No count is available' : 'Counting…';
+                }
+                resultCount.textContent = range;
+                (resultCount as HTMLElement).title = title;
+            }
+
+            // Ask for the total of a page that stopped before the end, and show it in place when it arrives.
+            function loadTotal() {
+                var app: any = (workbench as any).app;
+                if (!app || typeof app.loadModel !== 'function' || typeof window.fetch !== 'function') {
+                    return;
+                }
+                var url = new URL(window.location.href);
+                url.searchParams.set('counts', 'true');
+                app.loadModel(window.fetch.bind(window), url.toString()).then(function(answer: any) {
+                    if (answer && answer.rowStore && typeof answer.rowStore.dispose === 'function') {
+                        answer.rowStore.dispose();
+                    }
+                    if (disposed) {
+                        return;
+                    }
+                    var metadata = (answer && answer.metadata) || {};
+                    var total = Number(metadata['total-result-count']);
+                    var input = outlet.querySelector('#workbench-total-result-count') as HTMLInputElement;
+                    if (input && Number.isSafeInteger(total) && total >= 0) {
+                        input.value = String(total);
+                        workbench.paging.correctButtons(explore);
+                        describeRange();
+                    } else {
+                        describeRange(String(metadata['counts-timed-out']) === 'true' ? 'timed-out' : 'failed');
+                    }
+                }, function() {
+                    if (!disposed) {
+                        describeRange('failed');
+                    }
+                });
+            }
+
+            if (rvalue) {
+                if (summary && resourceValue && resultCount) {
+                    summary.removeAttribute('hidden');
+                }
+                describeRange();
+                if (workbench.paging.resultHasMore()) {
+                    loadTotal();
                 }
             }
             workbench.paging.setShowDataTypesCheckboxAndSetChangeEvent(outlet);
             syncExplorePaginationVisibility();
             return function() {
+                disposed = true;
                 page.find("input[name='show-datatypes']").off('.wbRoute');
                 page.find(limit_id).off('.wbRoute');
             };
