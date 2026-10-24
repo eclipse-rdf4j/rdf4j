@@ -4986,7 +4986,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private static void checkValueScopeDeadline(QueryExecutionDeadline deadline) {
-		if (deadline != null && deadline.remainingMillis() <= 0L) {
+		if (deadline != null && deadline.isExpired()) {
 			throw new QueryInterruptedException("Query evaluation took too long");
 		}
 	}
@@ -10989,7 +10989,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 						new InterruptedException());
 			}
 			QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
-			if (deadline != null && deadline.remainingMillis() <= 0L) {
+			if (deadline != null && deadline.isExpired()) {
 				throw new QueryInterruptedException("Query evaluation took too long");
 			}
 		}

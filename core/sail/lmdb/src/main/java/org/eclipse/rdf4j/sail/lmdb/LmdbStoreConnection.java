@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CancellationSignal;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -3629,7 +3630,8 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		}
 	}
 
-	private final class ReplayableIteration<T> extends AbstractCloseableIteration<T> {
+	private final class ReplayableIteration<T> extends AbstractCloseableIteration<T>
+			implements CooperativeCancellation {
 		private final ValueResolutionScope valueScope;
 		private final SailResultValueExtractor<T> rawExtractor;
 		private final boolean queryResult;
@@ -3744,6 +3746,14 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				throw queryResult ? new QueryEvaluationException("Unable to update an LMDB iteration", failure)
 						: failure;
 			}
+		}
+
+		@Override
+		public boolean requestCancellation() {
+			// Query timeouts push cancellation down; forward it to the current, possibly replayed, delegate.
+			CloseableIteration<? extends T> current = delegate;
+			return !isClosed() && current instanceof CooperativeCancellation cancellation
+					&& cancellation.requestCancellation();
 		}
 
 		private boolean hasFinishedAttemptDelegate() {
