@@ -170,7 +170,7 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 	}
 
 	static GroupingPlan orderedPlan(NativeGroupIteration iteration, RowState row) {
-		if (iteration.groupSlots.length == 0 || !canonicalStoredDomain(iteration)) {
+		if (iteration.groupSlots.length == 0 || !canonicalStoredDomain(iteration.source)) {
 			return null;
 		}
 		NativeAggregateDistinctPlan current = LmdbNativeOrderPlanner.aggregateInCurrentOrder(iteration.arg,
@@ -250,8 +250,7 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 		LmdbNativeExplain.recordExecutionPath(iteration.explainTarget, plan.tag());
 	}
 
-	private static boolean canonicalStoredDomain(NativeGroupIteration iteration) {
-		NativeLmdbQuerySource source = iteration.source;
+	static boolean canonicalStoredDomain(NativeLmdbQuerySource source) {
 		while (source instanceof SyntheticValueSource synthetic) {
 			source = synthetic.delegate;
 		}
@@ -267,7 +266,7 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 		return true;
 	}
 
-	private static boolean boundedMembership(AggregateDistinctChannels channels) {
+	static boolean boundedMembership(AggregateDistinctChannels channels) {
 		for (NativeDistinctChannelMode mode : channels.modes) {
 			if (mode == NativeDistinctChannelMode.HASH) {
 				return false;

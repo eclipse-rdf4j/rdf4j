@@ -15,11 +15,72 @@ import java.io.IOException;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 
 /** A complete aggregate algorithm whose quote describes its own physical grain, never logical expansion. */
 interface NativeAggregateAlternative extends QueryEvaluationStep {
 	LmdbNativeWork estimateWork(NativeLmdbQuerySource source) throws IOException;
+
+	/** Optional exact recipe whose quote and opener describe the same bound evaluation. */
+	default Prepared prepare(RowState row) throws IOException {
+		return null;
+	}
+
+	interface Prepared extends NativeAggregatePhysicalPlan.Producer {
+		LmdbNativeWork estimateWork();
+
+		/** Null keeps physical storage/cost unknown without discarding the exact executable recipe. */
+		NativeAggregatePhysicalPlan.Retention retention();
+
+		/** A capability decline returns null before publication, without executing a different algorithm. */
+		CloseableIteration<BindingSet> evaluate(BindingSet bindings, NativeCancellationToken owner);
+	}
+
+	@FunctionalInterface
+	interface ExactOpener {
+		CloseableIteration<BindingSet> open(BindingSet bindings, NativeCancellationToken owner);
+	}
+
+	/** Exact execution does not imply a complete physical cost or bounded-retention proof. */
+	static Prepared unpriced(RowState row, LmdbNativeWork work, TupleExpr target, String tag, ExactOpener opener) {
+		long evaluationId = row.cancellation.evaluationId();
+		return new Prepared() {
+			@Override
+			public LmdbNativeWork estimateWork() {
+				return work;
+			}
+
+			@Override
+			public NativeAggregatePhysicalPlan.Retention retention() {
+				return null;
+			}
+
+			@Override
+			public NativeAggregatePhysicalPlan.Work quote(RowState row) {
+				return null;
+			}
+
+			@Override
+			public String properties() {
+				return "EXACT_NATIVE[physicalFeatures=UNKNOWN]";
+			}
+
+			@Override
+			public CloseableIteration<BindingSet> evaluate(BindingSet bindings, NativeCancellationToken owner) {
+				owner.check();
+				if (!bindings.isEmpty() || owner.evaluationId() != evaluationId) {
+					return decline(target, tag, "native lexical invocation changed");
+				}
+				return opener.open(bindings, owner);
+			}
+		};
+	}
+
+	static CloseableIteration<BindingSet> decline(TupleExpr target, String tag, String reason) {
+		LmdbNativeAttemptMetrics.recordDecline(target, tag, reason);
+		return null;
+	}
 
 	/** Accepted structural work belongs to the active Group evaluation, including local cancellation. */
 	CloseableIteration<BindingSet> evaluate(BindingSet bindings, NativeCancellationToken owner);

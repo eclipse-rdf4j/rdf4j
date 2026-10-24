@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.when;
@@ -32,6 +33,7 @@ class LmdbNativeGroupArbitrationFallbackTest {
 	void allDeclinedStrategiesRestartExactAggregation() throws Exception {
 		try (MockedConstruction<LmdbNativeStrategyArbiter> ignored = mockConstruction(
 				LmdbNativeStrategyArbiter.class, (arbiter, context) -> {
+					when(arbiter.diagnostics(any(), anyLong(), anyString())).thenReturn(arbiter);
 					when(arbiter.estimateWith(any())).thenReturn(arbiter);
 					when(arbiter.probeHarness(any())).thenReturn(arbiter);
 					when(arbiter.hedgeSupport(any())).thenReturn(arbiter);

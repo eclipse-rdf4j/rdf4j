@@ -272,7 +272,8 @@ final class LmdbNativeParallelKernelAggregate {
 				.partitionableRootProducer(lowered.kernel.pipeline);
 		LmdbNativeProducerSchedule producerSchedule = rootProducer == null ? null
 				: lowered.kernel.producerSchedules.forNode(rootProducer);
-		boolean pageProducer = producerSchedule != null && producerSchedule.aggregate;
+		boolean pageProducer = producerSchedule != null && producerSchedule.aggregate
+				&& producerSchedule.layout.additivePageWeights();
 		boolean requireContexts = producerSchedule != null
 				&& (producerSchedule.contextObserved || producerSchedule.layout.contextMatch() != null
 						|| producerSchedule.layout.excludeDefault());

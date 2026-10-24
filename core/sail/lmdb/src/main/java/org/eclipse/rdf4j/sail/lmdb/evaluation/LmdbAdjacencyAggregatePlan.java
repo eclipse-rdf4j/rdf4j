@@ -27,14 +27,16 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
  * Internal request and streaming evaluator for single-statement COUNT aggregates over directional adjacency planes. The
  * fixed-predicate path owns only cursor state. Variable-predicate paths retain one primitive cursor head per active
  * predicate and never retain statement or distinct endpoint sets.
  */
-final class LmdbAdjacencyAggregatePlan {
+final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Producer {
 
 	private static final String ENABLED_PROPERTY = "rdf4j.lmdb.directAdjacency.scanAggregates.enabled";
 	private static final int STAR = -1;
@@ -166,6 +168,17 @@ final class LmdbAdjacencyAggregatePlan {
 		if (!handles(row)) {
 			return LmdbNativeWork.UNKNOWN;
 		}
+		NativeAggregatePhysicalPlan.Work physical = quote(row);
+		if (physical != null) {
+			LmdbNativeCostVector operations = physical.input().operations().plus(physical.extra());
+			double low = 0D, high = 0D;
+			for (LmdbNativeCostVector.Feature feature : LmdbNativeCostVector.Feature.values()) {
+				low = boundedAdd(low, operations.low(feature));
+				high = boundedAdd(high, operations.high(feature));
+			}
+			// This is a physical-operation bound, never a completed runtime or a statement-row estimate.
+			return LmdbNativeWork.between(low, high);
+		}
 		if (predicate == UNKNOWN) {
 			try {
 				Counts counts = completeNodeDomainCounts(row.source, row.cancellation);
@@ -219,6 +232,160 @@ final class LmdbAdjacencyAggregatePlan {
 			lookups++;
 		}
 		return LmdbNativeWork.exact(lookups + channels.length);
+	}
+
+	@Override
+	public String properties() {
+		return "ADJACENCY_COUNT[fixedPredicate=" + (predicate != UNKNOWN) + ",groupField=" + groupField
+				+ ",rootHeap=" + (predicate == UNKNOWN) + ",channels="
+				+ Arrays.toString(Arrays.stream(channels)
+						.map(channel -> channel.field + ":" + channel.distinct)
+						.toArray(String[]::new))
+				+ ']';
+	}
+
+	@Override
+	public NativeAggregatePhysicalPlan.KeyProperties keyProperties() {
+		return new NativeAggregatePhysicalPlan.KeyProperties(groupSlot < 0
+				? LmdbNativePhysicalVariantKey.GroupingMode.NONE
+				: LmdbNativePhysicalVariantKey.GroupingMode.STREAMING_GROUPS, false);
+	}
+
+	@Override
+	public NativeAggregatePhysicalPlan.Work quote(RowState row) {
+		row.cancellation.check();
+		if (!handles(row) || subject != UNKNOWN || object != UNKNOWN || acceptedContexts != null
+				|| namedContextsOnly || pattern.range != null) {
+			return null;
+		}
+		NativeLmdbQuerySource backing = row.source;
+		while (backing instanceof SyntheticValueSource synthetic) {
+			backing = synthetic.delegate;
+		}
+		if (!backing.hasCanonicalIds()) {
+			return null;
+		}
+		try {
+			if (predicate != UNKNOWN) {
+				if (groupSlot < 0 && reducesCompleteVisiblePlaneFromMetadata(row, predicate)) {
+					return metadataWork(channels.length, 0D);
+				}
+				if (groupField == TripleIndex.SUBJ_IDX || groupField == TripleIndex.OBJ_IDX) {
+					int opposite = groupField == TripleIndex.SUBJ_IDX ? TripleIndex.OBJ_IDX : TripleIndex.SUBJ_IDX;
+					LmdbPrefixRunPlan plan = row.source.prefixRunPlan(new int[] { groupField }, UNKNOWN,
+							predicate, UNKNOWN, UNKNOWN);
+					OptionalLong roots = row.source.adjacencyKeyDomainCardinality(predicate,
+							groupField == TripleIndex.SUBJ_IDX);
+					if (!needsDistinct(opposite) && plan != null && plan.usesAdjacency() && roots.isPresent()) {
+						double count = roots.getAsLong();
+						return new NativeAggregatePhysicalPlan.Work(
+								new NativeAggregateCostQuotes.Input(count, count, 1D, 0D, 0D),
+								LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION, count));
+					}
+				}
+				return null;
+			}
+			Counts nodeMetadata = completeNodeDomainCounts(row.source, row.cancellation);
+			if (nodeMetadata != null) {
+				return metadataWork(channels.length, 0D);
+			}
+			LmdbPrefixRunPlan catalog = row.source.prefixRunPlan(new int[] { TripleIndex.PRED_IDX }, UNKNOWN,
+					UNKNOWN, UNKNOWN, UNKNOWN);
+			if (catalog == null || !catalog.usesAdjacency() || catalog.prefixLength() != 1
+					|| !Arrays.equals(catalog.prefixFields(), new int[] { TripleIndex.PRED_IDX })
+					|| groupField == TripleIndex.SUBJ_IDX || groupField == TripleIndex.OBJ_IDX) {
+				return null;
+			}
+			try (NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
+					NativeLmdbQuerySource.WildcardAdjacency planes = probe.wildcardAdjacency(true)) {
+				if (planes == null) {
+					return null;
+				}
+				double visits = 0D, minimumUpdates = 0D, largestSubjects = 0D, largestObjects = 0D;
+				int visiblePlanes = 0;
+				for (int ordinal = 0; ordinal < planes.predicateCount(); ordinal++) {
+					row.cancellation.check();
+					OptionalLong outgoingRoots = row.source.adjacencyKeyDomainCardinality(planes.predicateAt(ordinal),
+							true);
+					if (outgoingRoots.isEmpty()) {
+						return null;
+					}
+					long planeRoots = outgoingRoots.getAsLong();
+					if (planeRoots == 0L) {
+						continue;
+					}
+					visiblePlanes++;
+					long planePredicate = planes.predicateAt(ordinal);
+					for (int endpoint : new int[] { TripleIndex.SUBJ_IDX, TripleIndex.OBJ_IDX }) {
+						if (!needsDistinct(endpoint)) {
+							continue;
+						}
+						LmdbPrefixRunPlan rootPlan = row.source.prefixRunPlan(new int[] { endpoint }, UNKNOWN,
+								planePredicate, UNKNOWN, UNKNOWN);
+						OptionalLong count = row.source.adjacencyKeyDomainCardinality(planePredicate,
+								endpoint == TripleIndex.SUBJ_IDX);
+						if (rootPlan == null || !rootPlan.usesAdjacency() || count.isEmpty()) {
+							return null;
+						}
+						if (groupField == TripleIndex.PRED_IDX) {
+							// Each plane's exact domain count is a header lookup, not an endpoint enumeration.
+							continue;
+						}
+						visits = boundedAdd(visits, count.getAsLong());
+						if (endpoint == TripleIndex.SUBJ_IDX) {
+							largestSubjects = Math.max(largestSubjects, count.getAsLong());
+						} else {
+							largestObjects = Math.max(largestObjects, count.getAsLong());
+						}
+					}
+				}
+				if (visits == 0D) {
+					return metadataWork(1D + visiblePlanes * (1D + channels.length),
+							groupSlot < 0 ? 0D : visiblePlanes);
+				}
+				minimumUpdates = boundedAdd(largestSubjects, largestObjects);
+				double comparisons = visits * Math.ceil(Math.log(Math.max(2, visiblePlanes)) / Math.log(2D));
+				LmdbNativeCostVector heap = LmdbNativeCostVector.bounds(
+						LmdbNativeCostVector.Feature.SORT_N_LOG2_N, 0D,
+						Math.min(Double.MAX_VALUE, comparisons),
+						Math.min(Double.MAX_VALUE, 2D * comparisons));
+				return new NativeAggregatePhysicalPlan.Work(new NativeAggregateCostQuotes.Input(visits, visits,
+						1D + visiblePlanes * (1D + channels.length), 0D, 0D, minimumUpdates, visits,
+						LmdbNativeCostVector.zero()), heap);
+			}
+		} catch (IOException failure) {
+			throw new QueryEvaluationException(failure);
+		}
+	}
+
+	@Override
+	public NativeAggregatePhysicalPlan.ColdAnchor coldAnchor(RowState row,
+			NativeAggregatePhysicalPlan.Work quotedWork) {
+		if (quotedWork == null) {
+			return null;
+		}
+		row.cancellation.check();
+		// quote() only succeeds for complete canonical visible domains, exact metadata or an admitted ordered
+		// root/header producer. In particular it rejects scoped/ranged inputs and grouped opposite-endpoint DISTINCT
+		// that would need a retained membership set. Reuse those exact facts; do not inspect a later revision or infer
+		// them from the strategy label, a STREAMING tag, or an unrelated scalar work estimate.
+		return new NativeAggregatePhysicalPlan.ColdAnchor(
+				"complete visible predicate/endpoint domains and run headers answer the admitted COUNT channels "
+						+ "without reconstructing their statement payload mappings",
+				"ledger-owned catalog and cursor heads retain at most one root per visible plane and count channel; "
+						+ "no input-cardinality membership set is built; global output is one mapping and grouped "
+						+ "generated output uses ledger-bounded replay");
+	}
+
+	private static NativeAggregatePhysicalPlan.Work metadataWork(double lookups, double groups) {
+		return new NativeAggregatePhysicalPlan.Work(new NativeAggregateCostQuotes.Input(groups, 0D,
+				lookups, 0D, 0D),
+				groups == 0D ? LmdbNativeCostVector.zero()
+						: LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION, groups));
+	}
+
+	private static double boundedAdd(double left, double right) {
+		return Math.min(Double.MAX_VALUE, left + right);
 	}
 
 	/**
@@ -334,48 +501,50 @@ final class LmdbAdjacencyAggregatePlan {
 		if (runPlan == null || !runPlan.usesAdjacency()) {
 			return null;
 		}
-		ArrayList<BindingSet> groups = groupField == rootField || groupField == neighborField
-				? new ArrayList<>()
-				: null;
-		long rows = 0L;
-		long distinctNeighbors = 0L;
-		try (LmdbPrefixRunCursor cursor = owner.source.prefixRuns(runPlan, UNKNOWN, fixedPredicate, UNKNOWN, UNKNOWN,
-				true)) {
-			if (cursor == null) {
-				return null;
-			}
-			long[] seek = fixedNeighbor == UNKNOWN ? new long[] { fixedRoot }
-					: new long[] { fixedRoot, fixedNeighbor };
-			if (cursor.seekTo(seek)) {
-				while (cursor.next()) {
-					long root = cursor.prefixValue(rootField);
-					long neighbor = cursor.prefixValue(neighborField);
-					if (root != fixedRoot || fixedNeighbor != UNKNOWN && neighbor != fixedNeighbor) {
-						break;
-					}
-					long runRows = cursor.runRowCount();
-					rows = Math.addExact(rows, runRows);
-					distinctNeighbors++;
-					if (groups != null && groupField == neighborField) {
-						groups.add(binding(owner, neighbor, new Counts(runRows, 1L, 1L, 1L)));
+		try (NativeReplayBindingList.Builder groups = groupField == rootField || groupField == neighborField
+				? owner.collectResults()
+				: null) {
+			long rows = 0L;
+			long distinctNeighbors = 0L;
+			try (LmdbPrefixRunCursor cursor = owner.source.prefixRuns(runPlan, UNKNOWN, fixedPredicate, UNKNOWN,
+					UNKNOWN,
+					true)) {
+				if (cursor == null) {
+					return null;
+				}
+				long[] seek = fixedNeighbor == UNKNOWN ? new long[] { fixedRoot }
+						: new long[] { fixedRoot, fixedNeighbor };
+				if (cursor.seekTo(seek)) {
+					while (cursor.next()) {
+						long root = cursor.prefixValue(rootField);
+						long neighbor = cursor.prefixValue(neighborField);
+						if (root != fixedRoot || fixedNeighbor != UNKNOWN && neighbor != fixedNeighbor) {
+							break;
+						}
+						long runRows = cursor.runRowCount();
+						rows = Math.addExact(rows, runRows);
+						distinctNeighbors++;
+						if (groups != null && groupField == neighborField) {
+							groups.add(binding(owner, neighbor, new Counts(runRows, 1L, 1L, 1L)));
+						}
 					}
 				}
 			}
-		}
-		Counts counts = outgoing
-				? new Counts(rows, rows > 0L ? 1L : 0L, rows > 0L ? 1L : 0L, distinctNeighbors)
-				: new Counts(rows, distinctNeighbors, rows > 0L ? 1L : 0L, rows > 0L ? 1L : 0L);
-		if (groups != null) {
-			if (groupField == rootField && rows > 0L) {
-				groups.add(binding(owner, fixedRoot, counts));
+			Counts counts = outgoing
+					? new Counts(rows, rows > 0L ? 1L : 0L, rows > 0L ? 1L : 0L, distinctNeighbors)
+					: new Counts(rows, distinctNeighbors, rows > 0L ? 1L : 0L, rows > 0L ? 1L : 0L);
+			if (groups != null) {
+				if (groupField == rootField && rows > 0L) {
+					groups.add(binding(owner, fixedRoot, counts));
+				}
+				return groups.finish();
 			}
-			return groups;
+			if (groupSlot >= 0 && rows == 0L) {
+				return List.of();
+			}
+			long groupId = groupSlot < 0 ? UNKNOWN : groupConstant != UNKNOWN ? groupConstant : fixedPredicate;
+			return List.of(binding(owner, groupId, counts));
 		}
-		if (groupSlot >= 0 && rows == 0L) {
-			return List.of();
-		}
-		long groupId = groupSlot < 0 ? UNKNOWN : groupConstant != UNKNOWN ? groupConstant : fixedPredicate;
-		return List.of(binding(owner, groupId, counts));
 	}
 
 	private List<BindingSet> groupedDirectional(NativeGroupIteration owner, long fixedPredicate, boolean outgoing)
@@ -405,9 +574,9 @@ final class LmdbAdjacencyAggregatePlan {
 		if (runPlan == null || !runPlan.usesAdjacency()) {
 			return null;
 		}
-		ArrayList<BindingSet> results = new ArrayList<>();
-		try (LmdbPrefixRunCursor cursor = owner.source.prefixRuns(runPlan, UNKNOWN, fixedPredicate, UNKNOWN, UNKNOWN,
-				true)) {
+		try (NativeReplayBindingList.Builder results = owner.collectResults();
+				LmdbPrefixRunCursor cursor = owner.source.prefixRuns(runPlan, UNKNOWN, fixedPredicate, UNKNOWN, UNKNOWN,
+						true)) {
 			if (cursor == null) {
 				return null;
 			}
@@ -438,8 +607,8 @@ final class LmdbAdjacencyAggregatePlan {
 				results.add(binding(owner, currentRoot,
 						groupCounts(rows, currentRoot, fixedPredicate, distinctNeighbors)));
 			}
+			return results.finish();
 		}
-		return results;
 	}
 
 	private Counts groupCounts(long rows, long root, long fixedPredicate, long distinctNeighbors) {
@@ -454,38 +623,40 @@ final class LmdbAdjacencyAggregatePlan {
 			return groupSlot >= 0 && !metadata.hasInput() ? List.of()
 					: List.of(binding(owner, groupConstant, metadata));
 		}
-		PredicateCatalog catalog = PredicateCatalog.open(owner.source);
-		if (catalog == null) {
-			return null;
-		}
-		if (groupField == TripleIndex.PRED_IDX) {
-			ArrayList<BindingSet> results = new ArrayList<>(catalog.size);
-			for (int i = 0; i < catalog.size; i++) {
-				Counts counts = subject == UNKNOWN && object == UNKNOWN && acceptedContexts == null
-						&& !namedContextsOnly && pattern.range == null
-								? planeCounts(owner.source, catalog.predicates[i], catalog.rowCounts[i])
-								: matchingPlaneCounts(owner.source, catalog.predicates[i]);
-				if (counts == null) {
-					return null;
-				}
-				if (counts.rows > 0L) {
-					results.add(binding(owner, catalog.predicates[i], counts));
+		try (PredicateCatalog catalog = PredicateCatalog.open(owner)) {
+			if (catalog == null) {
+				return null;
+			}
+			if (groupField == TripleIndex.PRED_IDX) {
+				try (NativeReplayBindingList.Builder results = owner.collectResults()) {
+					for (int i = 0; i < catalog.size; i++) {
+						Counts counts = subject == UNKNOWN && object == UNKNOWN && acceptedContexts == null
+								&& !namedContextsOnly && pattern.range == null
+										? planeCounts(owner.source, catalog.predicates[i], catalog.rowCounts[i])
+										: matchingPlaneCounts(owner.source, catalog.predicates[i]);
+						if (counts == null) {
+							return null;
+						}
+						if (counts.rows > 0L) {
+							results.add(binding(owner, catalog.predicates[i], counts));
+						}
+					}
+					return results.finish();
 				}
 			}
-			return results;
-		}
-		if (groupField == TripleIndex.SUBJ_IDX || groupField == TripleIndex.OBJ_IDX) {
-			if (subject != UNKNOWN || object != UNKNOWN) {
-				return groupedVariablePredicateWithFixedEndpoint(owner, catalog);
+			if (groupField == TripleIndex.SUBJ_IDX || groupField == TripleIndex.OBJ_IDX) {
+				if (subject != UNKNOWN || object != UNKNOWN) {
+					return groupedVariablePredicateWithFixedEndpoint(owner, catalog);
+				}
+				return groupedVariablePredicate(owner, catalog, groupField == TripleIndex.SUBJ_IDX);
 			}
-			return groupedVariablePredicate(owner, catalog, groupField == TripleIndex.SUBJ_IDX);
+			Counts counts = variablePredicateGlobalCounts(owner.source, catalog);
+			if (counts == null) {
+				return null;
+			}
+			return groupSlot >= 0 && !counts.hasInput() ? List.of()
+					: List.of(binding(owner, groupConstant, counts));
 		}
-		Counts counts = variablePredicateGlobalCounts(owner.source, catalog);
-		if (counts == null) {
-			return null;
-		}
-		return groupSlot >= 0 && !counts.hasInput() ? List.of()
-				: List.of(binding(owner, groupConstant, counts));
 	}
 
 	/** Complete visible root domains answer only unrestricted endpoint DISTINCT, never a filtered graph or fiber. */
@@ -578,12 +749,12 @@ final class LmdbAdjacencyAggregatePlan {
 			boolean outgoing) throws IOException {
 		int rootField = outgoing ? TripleIndex.SUBJ_IDX : TripleIndex.OBJ_IDX;
 		int neighborField = outgoing ? TripleIndex.OBJ_IDX : TripleIndex.SUBJ_IDX;
-		try (CursorMerge merge = CursorMerge.open(owner.source, catalog, rootField, neighborField, acceptedContexts,
-				namedContextsOnly, UNKNOWN, UNKNOWN)) {
+		try (NativeReplayBindingList.Builder results = owner.collectResults();
+				CursorMerge merge = CursorMerge.open(owner.source, catalog, rootField, neighborField, acceptedContexts,
+						namedContextsOnly, UNKNOWN, UNKNOWN)) {
 			if (merge == null) {
 				return null;
 			}
-			ArrayList<BindingSet> results = new ArrayList<>();
 			long currentRoot = UNKNOWN;
 			long rows = 0L;
 			long distinctNeighbors = 0L;
@@ -610,7 +781,7 @@ final class LmdbAdjacencyAggregatePlan {
 						: new Counts(rows, distinctNeighbors, distinctPredicates, 1L);
 				results.add(binding(owner, currentRoot, counts));
 			}
-			return results;
+			return results.finish();
 		}
 	}
 
@@ -631,12 +802,12 @@ final class LmdbAdjacencyAggregatePlan {
 		long fixedNeighbor = outgoing ? object : subject;
 		int rootField = outgoing ? TripleIndex.SUBJ_IDX : TripleIndex.OBJ_IDX;
 		int neighborField = outgoing ? TripleIndex.OBJ_IDX : TripleIndex.SUBJ_IDX;
-		try (CursorMerge merge = CursorMerge.open(owner.source, catalog, rootField, neighborField, acceptedContexts,
-				namedContextsOnly, fixedRoot, fixedNeighbor)) {
+		try (NativeReplayBindingList.Builder results = owner.collectResults();
+				CursorMerge merge = CursorMerge.open(owner.source, catalog, rootField, neighborField, acceptedContexts,
+						namedContextsOnly, fixedRoot, fixedNeighbor)) {
 			if (merge == null) {
 				return null;
 			}
-			ArrayList<BindingSet> results = new ArrayList<>();
 			while (merge.hasNext()) {
 				long neighbor = merge.neighbor();
 				long rows = merge.rows();
@@ -644,7 +815,7 @@ final class LmdbAdjacencyAggregatePlan {
 						new Counts(rows, 1L, merge.predicatesAtKey(), 1L)));
 				merge.advance();
 			}
-			return results;
+			return results.finish();
 		}
 	}
 
@@ -967,35 +1138,93 @@ final class LmdbAdjacencyAggregatePlan {
 		}
 	}
 
-	private static final class PredicateCatalog {
+	private static final class PredicateCatalog implements AutoCloseable {
 		long[] predicates = new long[16];
 		long[] rowCounts = new long[16];
 		long totalRows;
 		int size;
+		private final LmdbQueryMemoryManager.QueryLedger ledger;
+		private final LmdbQueryMemoryManager.Reservation reservation;
+		private boolean closed;
 
-		static PredicateCatalog open(NativeLmdbQuerySource source) throws IOException {
+		private PredicateCatalog(LmdbQueryMemoryManager.QueryLedger ledger,
+				LmdbQueryMemoryManager.Reservation reservation) {
+			this.ledger = ledger;
+			this.reservation = reservation;
+		}
+
+		static PredicateCatalog open(NativeGroupIteration owner) throws IOException {
+			NativeLmdbQuerySource source = owner.source;
 			LmdbPrefixRunPlan plan = source.prefixRunPlan(new int[] { TripleIndex.PRED_IDX }, UNKNOWN, UNKNOWN,
 					UNKNOWN, UNKNOWN);
 			if (plan == null || !plan.usesAdjacency()) {
 				return null;
 			}
-			PredicateCatalog catalog = new PredicateCatalog();
-			try (LmdbPrefixRunCursor cursor = source.prefixRuns(plan, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, true)) {
-				if (cursor == null) {
-					return null;
-				}
-				while (cursor.next()) {
-					if (catalog.size == catalog.predicates.length) {
-						catalog.predicates = Arrays.copyOf(catalog.predicates, catalog.size << 1);
-						catalog.rowCounts = Arrays.copyOf(catalog.rowCounts, catalog.size << 1);
+			LmdbQueryMemoryManager.QueryLedger ledger = owner.resultLedger();
+			LmdbQueryMemoryManager.Reservation reservation = ledger.reserve(catalogBytes(16), null);
+			if (reservation == null) {
+				return null;
+			}
+			PredicateCatalog catalog;
+			try {
+				catalog = new PredicateCatalog(ledger, reservation);
+			} catch (RuntimeException | Error failure) {
+				reservation.close();
+				throw failure;
+			}
+			boolean complete = false;
+			try {
+				try (LmdbPrefixRunCursor cursor = source.prefixRuns(plan, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, true)) {
+					if (cursor == null) {
+						return null;
 					}
-					catalog.predicates[catalog.size] = cursor.prefixValue(TripleIndex.PRED_IDX);
-					catalog.rowCounts[catalog.size] = cursor.runRowCount();
-					catalog.totalRows = Math.addExact(catalog.totalRows, catalog.rowCounts[catalog.size]);
-					catalog.size++;
+					while (cursor.next()) {
+						if (catalog.size == catalog.predicates.length) {
+							if (catalog.size > Integer.MAX_VALUE / 2 || !catalog.grow(catalog.size * 2)) {
+								return null;
+							}
+						}
+						catalog.predicates[catalog.size] = cursor.prefixValue(TripleIndex.PRED_IDX);
+						catalog.rowCounts[catalog.size] = cursor.runRowCount();
+						catalog.totalRows = Math.addExact(catalog.totalRows, catalog.rowCounts[catalog.size]);
+						catalog.size++;
+					}
+				}
+				complete = true;
+				return catalog;
+			} finally {
+				if (!complete) {
+					catalog.close();
 				}
 			}
-			return catalog;
+		}
+
+		private boolean grow(int capacity) {
+			long oldBytes = reservation.bytes();
+			// Both old arrays remain live until both replacement copies have succeeded.
+			if (!reservation.tryGrow(catalogBytes(capacity))) {
+				return false;
+			}
+			long[] nextPredicates = Arrays.copyOf(predicates, capacity);
+			long[] nextCounts = Arrays.copyOf(rowCounts, capacity);
+			predicates = nextPredicates;
+			rowCounts = nextCounts;
+			reservation.release(oldBytes);
+			return true;
+		}
+
+		private static long catalogBytes(int capacity) {
+			return Math.addExact(128L, Math.multiplyExact(2L * Long.BYTES, capacity));
+		}
+
+		@Override
+		public void close() {
+			if (!closed) {
+				closed = true;
+				predicates = null;
+				rowCounts = null;
+				reservation.close();
+			}
 		}
 	}
 
@@ -1013,6 +1242,8 @@ final class LmdbAdjacencyAggregatePlan {
 		private final int neighborField;
 		private final long fixedRoot;
 		private final long fixedNeighbor;
+		private final LmdbQueryMemoryManager.Reservation reservation;
+		private boolean closed;
 		private int heapSize;
 		private long root;
 		private long neighbor;
@@ -1021,7 +1252,7 @@ final class LmdbAdjacencyAggregatePlan {
 		private long predicatesAtKey;
 
 		private CursorMerge(int size, boolean nested, int rootField, int neighborField, long fixedRoot,
-				long fixedNeighbor) {
+				long fixedNeighbor, LmdbQueryMemoryManager.Reservation reservation) {
 			LmdbPrefixRunPlan.recordMergeWidth(size);
 			this.cursors = new LmdbPrefixRunCursor[size];
 			this.predicates = new long[size];
@@ -1036,13 +1267,26 @@ final class LmdbAdjacencyAggregatePlan {
 			this.neighborField = neighborField;
 			this.fixedRoot = fixedRoot;
 			this.fixedNeighbor = fixedNeighbor;
+			this.reservation = reservation;
 		}
 
 		static CursorMerge open(NativeLmdbQuerySource source, PredicateCatalog catalog, int rootField,
 				int neighborField, long[] acceptedContexts, boolean namedContextsOnly, long fixedRoot,
 				long fixedNeighbor) throws IOException {
-			CursorMerge merge = new CursorMerge(catalog.size, neighborField >= 0, rootField, neighborField, fixedRoot,
-					fixedNeighbor);
+			// Five primitive long heads, one int heap and one cursor-reference array, including container headers.
+			long bytes = Math.addExact(384L, Math.multiplyExact(56L, catalog.size));
+			LmdbQueryMemoryManager.Reservation reservation = catalog.ledger.reserve(bytes, null);
+			if (reservation == null) {
+				return null;
+			}
+			CursorMerge merge;
+			try {
+				merge = new CursorMerge(catalog.size, neighborField >= 0, rootField, neighborField, fixedRoot,
+						fixedNeighbor, reservation);
+			} catch (RuntimeException | Error failure) {
+				reservation.close();
+				throw failure;
+			}
 			try {
 				for (int i = 0; i < catalog.size; i++) {
 					long predicate = catalog.predicates[i];
@@ -1077,10 +1321,9 @@ final class LmdbAdjacencyAggregatePlan {
 				merge.prepare();
 				return merge;
 			} catch (IOException | RuntimeException | Error failure) {
-				try {
-					merge.close();
-				} catch (RuntimeException | Error cleanup) {
-					failure.addSuppressed(cleanup);
+				Throwable retained = KernelRuntime.closeResource(merge, failure);
+				if (retained != failure) {
+					KernelRuntime.rethrowCloseFailure(retained);
 				}
 				throw failure;
 			}
@@ -1207,6 +1450,10 @@ final class LmdbAdjacencyAggregatePlan {
 
 		@Override
 		public void close() {
+			if (closed) {
+				return;
+			}
+			closed = true;
 			Throwable failure = null;
 			for (LmdbPrefixRunCursor cursor : cursors) {
 				if (cursor == null) {
@@ -1222,12 +1469,8 @@ final class LmdbAdjacencyAggregatePlan {
 					}
 				}
 			}
-			if (failure instanceof Error error) {
-				throw error;
-			}
-			if (failure != null) {
-				throw (RuntimeException) failure;
-			}
+			failure = KernelRuntime.closeResource(reservation, failure);
+			KernelRuntime.rethrowCloseFailure(failure);
 		}
 	}
 }

@@ -20,6 +20,7 @@ import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.function.LongConsumer;
 import java.util.function.UnaryOperator;
 
@@ -42,8 +43,21 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
  */
 final class NativeExpressionDomain implements AutoCloseable {
 
-	static final AtomicLong EVALUATIONS = new AtomicLong();
-	static final AtomicLong HITS = new AtomicLong();
+	/** Diagnostic-only aggregate; {@link #get()} is exact once concurrent writers have drained. */
+	static final class DiagnosticCounter {
+		private final LongAdder count = new LongAdder();
+
+		void increment() {
+			count.increment();
+		}
+
+		long get() {
+			return count.sum();
+		}
+	}
+
+	static final DiagnosticCounter EVALUATIONS = new DiagnosticCounter();
+	static final DiagnosticCounter HITS = new DiagnosticCounter();
 	static final AtomicLong SPILL_FILES_CREATED = new AtomicLong();
 	static final AtomicLong SPILL_FILES_DELETED = new AtomicLong();
 	static final AtomicLong IO_READ_OPERATIONS = new AtomicLong();
@@ -137,15 +151,17 @@ final class NativeExpressionDomain implements AutoCloseable {
 		return compute(row, kind, evaluator);
 	}
 
-	private static void checkReader(LmdbNativeSlotReader row) {
+	/** Shared admission and publication guard for native expression callbacks, including semantic row copies. */
+	static void checkReader(LmdbNativeSlotReader row) {
 		NativeCancellationToken cancellation = row.expressionCancellation();
 		if (cancellation != null) {
 			cancellation.check();
 		}
+		LmdbNativeProbeDeadline.poll(0);
 	}
 
 	private static Object compute(LmdbNativeSlotReader row, Kind kind, Object evaluator) {
-		EVALUATIONS.incrementAndGet();
+		EVALUATIONS.increment();
 		Object result = switch (kind) {
 		case TRUTH -> ((LmdbNativeTruthEvaluator) evaluator).eval(row);
 		case ID -> ((LmdbNativeIdEvaluator) evaluator).eval(row);
@@ -153,7 +169,6 @@ final class NativeExpressionDomain implements AutoCloseable {
 		};
 		// Refusing optional storage does not authorize publishing a result after cancellation or attempt expiry.
 		checkReader(row);
-		LmdbNativeProbeDeadline.poll(0);
 		return result;
 	}
 
@@ -478,7 +493,7 @@ final class NativeExpressionDomain implements AutoCloseable {
 			if (found != MISSING) {
 				check();
 				checkReader(row);
-				HITS.incrementAndGet();
+				HITS.increment();
 				hits++;
 				return found;
 			}

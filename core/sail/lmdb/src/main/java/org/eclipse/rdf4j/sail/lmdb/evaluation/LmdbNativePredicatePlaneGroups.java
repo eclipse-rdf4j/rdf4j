@@ -14,15 +14,10 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 
 import java.io.IOException;
-import java.math.BigInteger;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -30,13 +25,13 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency.PlaneBatch;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
  * Plane-grain grouping for a deterministic predicate classifier. One authoritative predicate-plane row supplies its
@@ -104,6 +99,27 @@ final class LmdbNativePredicatePlaneGroups implements NativeAggregateAlternative
 		PLANNED.incrementAndGet();
 	}
 
+	private LmdbNativePredicatePlaneGroups(LmdbNativePredicatePlaneGroups original, NativeLmdbQuerySource source) {
+		this.source = source;
+		predicatePositionMask = original.predicatePositionMask;
+		plan = original.plan;
+		groupBindingName = original.groupBindingName;
+		channels = original.channels;
+		classifier = original.classifier;
+		strategy = original.strategy;
+		valuePositions = original.valuePositions;
+		originalExpr = original.originalExpr;
+		context = original.context;
+	}
+
+	@Override
+	public Prepared prepare(RowState row) throws IOException {
+		LmdbNativePredicatePlaneGroups bound = new LmdbNativePredicatePlaneGroups(this, row.source);
+		return NativeAggregateAlternative.unpriced(row, bound.estimateWork(row.source), originalExpr,
+				LmdbNativeAttemptMetrics.PATH_PREDICATE_PLANE_GROUPS,
+				(bindings, owner) -> bound.evaluate(bindings, owner, true));
+	}
+
 	@Override
 	public LmdbNativeWork estimateWork(NativeLmdbQuerySource source) throws IOException {
 		if (!plan.usesAdjacency()) {
@@ -123,15 +139,21 @@ final class LmdbNativePredicatePlaneGroups implements NativeAggregateAlternative
 
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings, NativeCancellationToken owner) {
+		return evaluate(bindings, owner, false);
+	}
+
+	private CloseableIteration<BindingSet> evaluate(BindingSet bindings, NativeCancellationToken owner, boolean exact) {
 		NativeCancellationToken cancellation = new NativeCancellationToken(owner);
 		cancellation.check();
 		if (!bindings.isEmpty()) {
-			return NativeExecutionContextCarrier.forEvaluation(genericStep().evaluate(bindings), source);
+			return exact ? NativeAggregateAlternative.decline(originalExpr,
+					LmdbNativeAttemptMetrics.PATH_PREDICATE_PLANE_GROUPS, "native predicate-plane input is correlated")
+					: NativeExecutionContextCarrier.forEvaluation(genericStep().evaluate(bindings), source);
 		}
 		try (NativeExecutionPhaseEvent.Span scan = NativeExecutionPhaseEvent.startNested("scan", cancellation);
 				NativeExecutionPhaseEvent.Span expressions = NativeExecutionPhaseEvent.startNested("expressions",
 						cancellation)) {
-			CloseableIteration<BindingSet> result = evaluateUnmeasured(bindings, cancellation);
+			CloseableIteration<BindingSet> result = evaluateUnmeasured(bindings, cancellation, exact);
 			expressions.complete();
 			scan.complete();
 			return result;
@@ -139,67 +161,87 @@ final class LmdbNativePredicatePlaneGroups implements NativeAggregateAlternative
 	}
 
 	private CloseableIteration<BindingSet> evaluateUnmeasured(BindingSet bindings,
-			NativeCancellationToken cancellation) {
+			NativeCancellationToken cancellation, boolean exact) {
 		LmdbAdjacencyOptimizationTelemetry telemetry = LmdbAdjacencyOptimizationTelemetry.create(originalExpr,
 				LmdbAdjacencyOptimizationTelemetry.Grain.PLANE,
 				LmdbAdjacencyOptimizationTelemetry.Direction.BOTH);
 		if (telemetry != null) {
 			telemetry.trackPayloadDecodes();
 		}
-		Map<Literal, GroupState> groups;
+		NativeStructuralCounts groups;
 		try {
 			groups = collectGroups(telemetry, cancellation);
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
 		}
-		cancellation.check();
 		if (groups == null) {
-			return NativeExecutionContextCarrier.forEvaluation(genericStep().evaluate(bindings), source);
+			cancellation.check();
+			return exact ? NativeAggregateAlternative.decline(originalExpr,
+					LmdbNativeAttemptMetrics.PATH_PREDICATE_PLANE_GROUPS,
+					"native predicate-plane prefix cursor unavailable")
+					: NativeExecutionContextCarrier.forEvaluation(genericStep().evaluate(bindings), source);
 		}
-		ArrayList<BindingSet> rows = new ArrayList<>(groups.size());
-		int tick = 0;
-		for (GroupState group : groups.values()) {
-			cancellation.poll(tick++);
-			QueryBindingSet row = new QueryBindingSet(channels.length + 1);
-			row.addBinding(groupBindingName, group.key);
-			for (int i = 0; i < channels.length; i++) {
-				cancellation.poll(i);
-				row.addBinding(channels[i].bindingName(),
-						SimpleValueFactory.getInstance().createLiteral(BigInteger.valueOf(group.counts[i])));
+		try {
+			cancellation.check();
+			String[] names = new String[channels.length];
+			for (int index = 0; index < names.length; index++) {
+				names[index] = channels[index].bindingName();
 			}
-			rows.add(row);
+			NativeResultCursor rows = groups.results(groupBindingName, names);
+			cancellation.check();
+			RUNS.incrementAndGet();
+			if (telemetry != null) {
+				telemetry.publish(originalExpr);
+			}
+			LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_PREDICATE_PLANE_GROUPS);
+			return NativeResultSteps.rdf(rows);
+		} catch (Throwable failure) {
+			NativeContextClosingIteration.throwFailure(KernelRuntime.closeResource(groups, failure));
+			throw new AssertionError("unreachable");
 		}
-		cancellation.check();
-		RUNS.incrementAndGet();
-		if (telemetry != null) {
-			telemetry.publish(originalExpr);
-		}
-		LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_PREDICATE_PLANE_GROUPS);
-		return NativeExecutionContextCarrier.forEvaluation(new CloseableIteratorIteration<>(rows.iterator()), source);
 	}
 
-	private Map<Literal, GroupState> collectGroups(LmdbAdjacencyOptimizationTelemetry telemetry,
+	private NativeStructuralCounts collectGroups(LmdbAdjacencyOptimizationTelemetry telemetry,
 			NativeCancellationToken cancellation) throws IOException {
 		cancellation.check();
-		PlaneBatch batch = new PlaneBatch(PLANE_BATCH_CAPACITY);
-		Map<Literal, GroupState> groups = new LinkedHashMap<>();
-		try (LmdbPrefixRunCursor cursor = source.prefixRuns(plan, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, true)) {
-			if (cursor == null) {
-				return null;
-			}
-			while (fill(cursor, batch, cancellation)) {
-				if (telemetry != null) {
-					telemetry.planesVisited(batch.size());
-					telemetry.planeMetadataReads(batch.size());
+		NativeStructuralCounts groups = new NativeStructuralCounts(source, cancellation, channels.length, false);
+		boolean transferred = false;
+		Throwable primary = null;
+		try {
+			try (KernelRuntime.AggregateMemory workspace = KernelRuntime.AggregateMemory.forLedger(groups.ledger());
+					LmdbPrefixRunCursor cursor = source.prefixRuns(plan, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, true)) {
+				if (cursor == null) {
+					return null;
 				}
-				consume(batch, groups, cancellation);
+				workspace.reserve(1024L + 4L * (16L + PLANE_BATCH_CAPACITY * Long.BYTES)
+						+ 16L + (long) channels.length * Long.BYTES);
+				PlaneBatch batch = new PlaneBatch(PLANE_BATCH_CAPACITY);
+				long[] contributions = new long[channels.length];
+				while (fill(cursor, batch, cancellation)) {
+					if (telemetry != null) {
+						telemetry.planesVisited(batch.size());
+						telemetry.planeMetadataReads(batch.size());
+					}
+					consume(batch, groups, contributions, cancellation);
+				}
+			}
+			cancellation.check();
+			if (telemetry != null) {
+				telemetry.source("PREDICATE_PLANE_METADATA");
+			}
+			transferred = true;
+			return groups;
+		} catch (IOException | RuntimeException | Error failure) {
+			primary = failure;
+			throw failure;
+		} finally {
+			if (!transferred) {
+				Throwable failure = KernelRuntime.closeResource(groups, primary);
+				if (failure != primary) {
+					NativeContextClosingIteration.throwFailure(failure);
+				}
 			}
 		}
-		cancellation.check();
-		if (telemetry != null) {
-			telemetry.source("PREDICATE_PLANE_METADATA");
-		}
-		return groups;
 	}
 
 	private static boolean fill(LmdbPrefixRunCursor cursor, PlaneBatch batch, NativeCancellationToken cancellation)
@@ -218,7 +260,8 @@ final class LmdbNativePredicatePlaneGroups implements NativeAggregateAlternative
 		return false;
 	}
 
-	private void consume(PlaneBatch batch, Map<Literal, GroupState> groups, NativeCancellationToken cancellation) {
+	private void consume(PlaneBatch batch, NativeStructuralCounts groups, long[] contributions,
+			NativeCancellationToken cancellation) {
 		long[] predicates = batch.predicates();
 		long[] quadCounts = batch.quadCounts();
 		for (int lane = 0; lane < batch.size(); lane++) {
@@ -230,16 +273,11 @@ final class LmdbNativePredicatePlaneGroups implements NativeAggregateAlternative
 						"statement predicate id did not resolve to an IRI: " + predicates[lane]);
 			}
 			Literal key = classifier.classify((IRI) value);
-			GroupState group = groups.get(key);
-			if (group == null) {
-				group = new GroupState(key, channels.length);
-				groups.put(key, group);
-			}
 			for (int channel = 0; channel < channels.length; channel++) {
 				cancellation.poll(channel);
-				long contribution = channels[channel].kind() == ChannelKind.ROWS ? quadCounts[lane] : 1L;
-				group.counts[channel] = Math.addExact(group.counts[channel], contribution);
+				contributions[channel] = channels[channel].kind() == ChannelKind.ROWS ? quadCounts[lane] : 1L;
 			}
+			groups.add(key, contributions);
 		}
 	}
 
@@ -251,13 +289,4 @@ final class LmdbNativePredicatePlaneGroups implements NativeAggregateAlternative
 		return genericStep;
 	}
 
-	private static final class GroupState {
-		final Literal key;
-		final long[] counts;
-
-		GroupState(Literal key, int channelCount) {
-			this.key = key;
-			this.counts = new long[channelCount];
-		}
-	}
 }

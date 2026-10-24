@@ -916,6 +916,10 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		KernelProjectionCursor open() {
 			clearPageFacts();
 			var layout = schedule.layout;
+			int[] inputs = schedule.savedColumns[LmdbNativeProducerSchedule.INPUT];
+			for (int index = 0; index < inputs.length; index++) {
+				saved[LmdbNativeProducerSchedule.INPUT][index] = v[inputs[index]];
+			}
 			if (reusableSource()) {
 				if (owner == null) {
 					owner = KernelProjectionCursor.Owner.open(context.groupMemoryLedger(), schedule.retainedColumns());
@@ -924,11 +928,13 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 					}
 				}
 				cursor = owner.activate(source(owner), this, schedule.outputMask, schedule.programMask(),
+						layout.deliveryGrain(), layout.neighborCol() < 0,
 						schedule.contextObserved, layout.contextMatch() != null,
 						layout.contextMatch() == null ? -1L : read(layout.contextMatch()), layout.excludeDefault(),
 						cancel);
 			} else {
 				cursor = KernelProjectionCursor.open(source(), this, schedule.outputMask, schedule.programMask(),
+						layout.deliveryGrain(), layout.neighborCol() < 0,
 						schedule.contextObserved, layout.contextMatch() != null,
 						layout.contextMatch() == null ? -1L : read(layout.contextMatch()), layout.excludeDefault(),
 						cancel, context.groupMemoryLedger(), schedule.retainedColumns());
@@ -1028,7 +1034,9 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				}
 				break;
 			case LmdbNativeProducerSchedule.FIBER:
-				v[layout.neighborCol()] = physical.neighborId();
+				if (layout.neighborCol() >= 0) {
+					v[layout.neighborCol()] = physical.neighborId();
+				}
 				break;
 			case LmdbNativeProducerSchedule.QUAD:
 				if (layout.contextCol() >= 0) {
@@ -1065,9 +1073,12 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		}
 
 		@Override
-		public boolean acceptsPage(AdjacencyPageCursor page) {
+		public boolean acceptsPage(long predicate, AdjacencyPageCursor page) {
 			// A downstream continuation may have overwritten input registers before physical advancement resumes.
 			restore(LmdbNativeProducerSchedule.PLANE);
+			if (schedule.layout.predicateCol() >= 0) {
+				v[schedule.layout.predicateCol()] = predicate;
+			}
 			clearPageFacts();
 			proofPage = page;
 			try {

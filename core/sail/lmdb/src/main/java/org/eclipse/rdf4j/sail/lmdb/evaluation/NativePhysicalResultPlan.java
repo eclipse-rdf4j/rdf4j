@@ -16,7 +16,13 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 
 /** A complete executable lexical child witness. Its opener, demand and physical quote travel together. */
 record NativePhysicalResultPlan(QueryEvaluationStep step, NativeAggregateCostQuotes.Input input,
-		RebindRecipe rebindRecipe, String physicalProperties) {
+		RebindRecipe rebindRecipe, String physicalProperties, NativePhysicalOutputEvidence outputEvidence) {
+	NativePhysicalResultPlan {
+		if (outputEvidence != null && !outputEvidence.quotedInput().equals(input)) {
+			throw new IllegalArgumentException("Physical output evidence belongs to a different quote");
+		}
+	}
+
 	@FunctionalInterface
 	interface RebindRecipe {
 		NativePhysicalResultPlan bind(QueryEvaluationStep prepared, NativeScalarPlan.WorkerContext worker,
@@ -24,18 +30,25 @@ record NativePhysicalResultPlan(QueryEvaluationStep step, NativeAggregateCostQuo
 	}
 
 	NativePhysicalResultPlan(QueryEvaluationStep step, NativeAggregateCostQuotes.Input input) {
-		this(step, input, null, "UNKNOWN");
+		this(step, input, null, "UNKNOWN", null);
 	}
 
 	NativePhysicalResultPlan(QueryEvaluationStep step, NativeAggregateCostQuotes.Input input,
 			RebindRecipe rebindRecipe) {
-		this(step, input, rebindRecipe, "UNKNOWN");
+		this(step, input, rebindRecipe, "UNKNOWN", null);
+	}
+
+	NativePhysicalResultPlan(QueryEvaluationStep step, NativeAggregateCostQuotes.Input input,
+			RebindRecipe rebindRecipe, String physicalProperties) {
+		this(step, input, rebindRecipe, physicalProperties, null);
 	}
 
 	NativePhysicalResultPlan rebind(QueryEvaluationStep prepared, NativeScalarPlan.WorkerContext worker,
 			BindingSet bindings) {
 		NativePhysicalResultPlan rebound = rebindRecipe == null ? null : rebindRecipe.bind(prepared, worker, bindings);
 		// A worker may bind mutable state, but cannot silently substitute a newly ranked physical child.
-		return rebound != null && physicalProperties.equals(rebound.physicalProperties) ? rebound : null;
+		return rebound != null && physicalProperties.equals(rebound.physicalProperties)
+				&& (outputEvidence == null ? rebound.outputEvidence == null
+						: outputEvidence.sameReceipt(rebound.outputEvidence)) ? rebound : null;
 	}
 }

@@ -79,6 +79,10 @@ final class NativeValuePositionAnalysis {
 		return fullAggregateValues ? NativeAggregateResultDemand.FULL_VALUE : aggregateDemands.demand(element);
 	}
 
+	Object aggregateDefinition(GroupElem element) {
+		return aggregateDemands.definition(element);
+	}
+
 	/** An immutable compilation environment: full RDF observation dominates every reachable lexical definition. */
 	NativeValuePositionAnalysis fullAggregateValues() {
 		return fullAggregateValues ? this

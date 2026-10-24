@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.times;
@@ -46,6 +47,157 @@ import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
 
 class NativeExpressionDomainFailureTest {
+
+	@Test
+	void anExpiredProbeIsRejectedBeforeComputedCopyCallbacksButKeepsCheapCopies() throws Exception {
+		try (var fixture = new NativeRowTermDomainExecutionTest.Fixture("input", "result")) {
+			ValueFactoryForTests values = new ValueFactoryForTests();
+			AtomicInteger semanticCalls = new AtomicInteger();
+			CopyBinding semantic = CopyBinding.semanticValue(1, bindings -> {
+				semanticCalls.incrementAndGet();
+				return NativeValueOutcome.bound(values.semantic);
+			}, true);
+			AtomicInteger decodedCalls = new AtomicInteger();
+			CopyBinding decoded = CopyBinding.computedValue(1,
+					new LmdbNativeCompiledValue(0L, row -> {
+						decodedCalls.incrementAndGet();
+						return LmdbNativeValueCodec.fromValue(values.decoded);
+					}), true);
+			long inlineId = fixture.source.internComputedValue(values.inline);
+			AtomicInteger inlineCalls = new AtomicInteger();
+			CopyBinding inline = CopyBinding.computed(1,
+					new LmdbNativeCompiledInlineId(0L, true, row -> {
+						inlineCalls.incrementAndGet();
+						return inlineId;
+					}));
+			LmdbNativeProbeDeadline semanticDeadline = LmdbNativeProbeDeadline.trippableOnly();
+			LmdbNativeProbeDeadline decodedDeadline = LmdbNativeProbeDeadline.trippableOnly();
+			LmdbNativeProbeDeadline inlineDeadline = LmdbNativeProbeDeadline.trippableOnly();
+			semanticDeadline.trip();
+			decodedDeadline.trip();
+			inlineDeadline.trip();
+			RowState semanticRow = fixture.row();
+			RowState decodedRow = fixture.row();
+			RowState inlineRow = fixture.row();
+			long semanticBytesBefore = runtimeValueBytes(semanticRow);
+			Throwable semanticFailure = evaluateCopyUnderProbe(semantic, semanticRow, semanticDeadline);
+			long semanticBytesAfter = runtimeValueBytes(semanticRow);
+			long decodedBytesBefore = runtimeValueBytes(decodedRow);
+			Throwable decodedFailure = evaluateCopyUnderProbe(decoded, decodedRow, decodedDeadline);
+			long decodedBytesAfter = runtimeValueBytes(decodedRow);
+			long inlineBytesBefore = runtimeValueBytes(inlineRow);
+			Throwable inlineFailure = evaluateCopyUnderProbe(inline, inlineRow, inlineDeadline);
+			long inlineBytesAfter = runtimeValueBytes(inlineRow);
+
+			RowState cheapRow = fixture.row();
+			long slotId = fixture.source.internComputedValue(values.slot);
+			assertThat(cheapRow.bind(0, slotId)).isTrue();
+			LmdbNativeProbeDeadline cheapDeadline = LmdbNativeProbeDeadline.trippableOnly();
+			cheapDeadline.trip();
+			long slotResult;
+			long constantResult;
+			try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(cheapDeadline)) {
+				slotResult = CopyBinding.slot(1, 0).value(cheapRow);
+				constantResult = CopyBinding.constant(1, slotId).value(cheapRow);
+			}
+
+			assertAll(
+					() -> assertThat(semanticFailure).isSameAs(LmdbNativeProbeDeadlineExceeded.INSTANCE),
+					() -> assertThat(semanticCalls).hasValue(0),
+					() -> assertThat(semanticRow.boundMask() & (1L << 1)).isZero(),
+					() -> assertThat(semanticBytesAfter).isEqualTo(semanticBytesBefore),
+					() -> assertThat(decodedFailure).isSameAs(LmdbNativeProbeDeadlineExceeded.INSTANCE),
+					() -> assertThat(decodedCalls).hasValue(0),
+					() -> assertThat(decodedRow.boundMask() & (1L << 1)).isZero(),
+					() -> assertThat(decodedBytesAfter).isEqualTo(decodedBytesBefore),
+					() -> assertThat(inlineFailure).isSameAs(LmdbNativeProbeDeadlineExceeded.INSTANCE),
+					() -> assertThat(inlineCalls).hasValue(0),
+					() -> assertThat(inlineRow.boundMask() & (1L << 1)).isZero(),
+					() -> assertThat(inlineBytesAfter).isEqualTo(inlineBytesBefore),
+					() -> assertThat(cheapRow.cancellation.cancellationPublished()).isFalse(),
+					() -> assertThat(slotResult).isEqualTo(slotId),
+					() -> assertThat(constantResult).isEqualTo(slotId));
+		}
+	}
+
+	@Test
+	void aProbeTrippedDuringCopyCallbacksCannotPublishTheirValues() throws Exception {
+		try (var fixture = new NativeRowTermDomainExecutionTest.Fixture("input", "result")) {
+			ValueFactoryForTests values = new ValueFactoryForTests();
+			AtomicInteger semanticCalls = new AtomicInteger();
+			AtomicInteger decodedCalls = new AtomicInteger();
+			AtomicInteger inlineCalls = new AtomicInteger();
+			LmdbNativeProbeDeadline semanticDeadline = LmdbNativeProbeDeadline.trippableOnly();
+			LmdbNativeProbeDeadline decodedDeadline = LmdbNativeProbeDeadline.trippableOnly();
+			LmdbNativeProbeDeadline inlineDeadline = LmdbNativeProbeDeadline.trippableOnly();
+			CopyBinding semantic = CopyBinding.semanticValue(1, bindings -> {
+				semanticCalls.incrementAndGet();
+				semanticDeadline.trip();
+				return NativeValueOutcome.bound(values.semantic);
+			}, true);
+			CopyBinding decoded = CopyBinding.computedValue(1,
+					new LmdbNativeCompiledValue(0L, row -> {
+						decodedCalls.incrementAndGet();
+						decodedDeadline.trip();
+						return LmdbNativeValueCodec.fromValue(values.decoded);
+					}), true);
+			long inlineId = fixture.source.internComputedValue(values.inline);
+			CopyBinding inline = CopyBinding.computed(1,
+					new LmdbNativeCompiledInlineId(0L, true, row -> {
+						inlineCalls.incrementAndGet();
+						inlineDeadline.trip();
+						return inlineId;
+					}));
+			RowState semanticRow = fixture.row();
+			RowState decodedRow = fixture.row();
+			RowState inlineRow = fixture.row();
+			long semanticBytesBefore = runtimeValueBytes(semanticRow);
+			Throwable semanticFailure = evaluateCopyUnderProbe(semantic, semanticRow, semanticDeadline);
+			long semanticBytesAfter = runtimeValueBytes(semanticRow);
+			long decodedBytesBefore = runtimeValueBytes(decodedRow);
+			Throwable decodedFailure = evaluateCopyUnderProbe(decoded, decodedRow, decodedDeadline);
+			long decodedBytesAfter = runtimeValueBytes(decodedRow);
+			long inlineBytesBefore = runtimeValueBytes(inlineRow);
+			Throwable inlineFailure = evaluateCopyUnderProbe(inline, inlineRow, inlineDeadline);
+			long inlineBytesAfter = runtimeValueBytes(inlineRow);
+
+			assertAll(
+					() -> assertThat(semanticFailure).isSameAs(LmdbNativeProbeDeadlineExceeded.INSTANCE),
+					() -> assertThat(semanticCalls).hasValue(1),
+					() -> assertThat(semanticRow.boundMask() & (1L << 1)).isZero(),
+					() -> assertThat(semanticBytesAfter).isEqualTo(semanticBytesBefore),
+					() -> assertThat(decodedFailure).isSameAs(LmdbNativeProbeDeadlineExceeded.INSTANCE),
+					() -> assertThat(decodedCalls).hasValue(1),
+					() -> assertThat(decodedRow.boundMask() & (1L << 1)).isZero(),
+					() -> assertThat(decodedBytesAfter).isEqualTo(decodedBytesBefore),
+					() -> assertThat(inlineFailure).isSameAs(LmdbNativeProbeDeadlineExceeded.INSTANCE),
+					() -> assertThat(inlineCalls).hasValue(1),
+					() -> assertThat(inlineRow.boundMask() & (1L << 1)).isZero(),
+					() -> assertThat(inlineBytesAfter).isEqualTo(inlineBytesBefore),
+					() -> assertThat(fixture.source.synthetic(inlineId)).isTrue(),
+					() -> assertThat(semanticRow.cancellation.cancellationPublished()).isFalse(),
+					() -> assertThat(decodedRow.cancellation.cancellationPublished()).isFalse(),
+					() -> assertThat(inlineRow.cancellation.cancellationPublished()).isFalse());
+		}
+	}
+
+	private static Throwable evaluateCopyUnderProbe(CopyBinding copy, RowState row,
+			LmdbNativeProbeDeadline deadline) {
+		try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(deadline)) {
+			return catchThrowable(() -> ExtensionCursor.bindCopies(new CopyBinding[] { copy }, row));
+		}
+	}
+
+	private static long runtimeValueBytes(RowState row) {
+		return ((SyntheticValueSource) row.source).executionContext().runtimeValueAccountedBytes();
+	}
+
+	private static final class ValueFactoryForTests {
+		final Value semantic = SimpleValueFactory.getInstance().createLiteral("semantic-α😀");
+		final Value decoded = SimpleValueFactory.getInstance().createLiteral("decoded-β😀");
+		final Value inline = SimpleValueFactory.getInstance().createLiteral("inline-γ😀");
+		final Value slot = SimpleValueFactory.getInstance().createLiteral("slot-δ😀");
+	}
 
 	@Test
 	void primitiveTypePredicatesResolveRuntimeTermsThroughTheirAuthority() throws Exception {

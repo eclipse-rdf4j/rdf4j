@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
@@ -36,6 +37,8 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class NativeBoundedReducerTest {
 	@Test
@@ -204,6 +207,72 @@ class NativeBoundedReducerTest {
 			restore(NativeCountGroupStore.MAX_BYTES_PROPERTY, previousBudget);
 		}
 		assertEquals(0L, memory.usedBytes(), "outer close must release retained COUNT replay state");
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 64, 65 })
+	void boundedPrefixCountsRemainExactAcrossThePrimitiveChannelBoundary(int channelCount) {
+		String previousBudget = System.getProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);
+		LmdbQueryMemoryManager previousManager = LmdbNativeHashJoin.queryMemoryOverride;
+		LmdbQueryMemoryManager memory = LmdbQueryMemoryManager.createForTesting(4L << 20, 4L << 20);
+		System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, "16384");
+		LmdbNativeHashJoin.queryMemoryOverride = memory;
+		NativeLmdbQuerySource dictionary = source();
+		when(dictionary.hasCanonicalIds()).thenReturn(true);
+		when(dictionary.idOf(any(Value.class))).thenReturn(NativeLmdbQuerySource.UNKNOWN_ID);
+		SyntheticValueSource source = SyntheticValueSource.forEvaluation(dictionary);
+		NativeSlotLayout layout = layout();
+		AggregateSpec[] specs = IntStream.range(0, channelCount)
+				.mapToObj(index -> AggregateSpec.star("count" + index))
+				.toArray(AggregateSpec[]::new);
+		NativeGroupIteration iteration = new NativeGroupIteration(source, SlotPlan.empty(), layout, new int[] { 0 },
+				specs, true, EmptyBindingSet.getInstance(), null, null, false, null);
+		Value groupValue = SimpleValueFactory.getInstance().createIRI("urn:bounded-prefix:one-group");
+		assertEquals(NativeLmdbQuerySource.UNKNOWN_ID,
+				dictionary.idOf(SimpleValueFactory.getInstance().createLiteral(1L)));
+		assertEquals(NativeLmdbQuerySource.UNKNOWN_ID, dictionary.idOf(groupValue));
+		RowState input = row(source);
+		assertTrue(input.keyAuthority().supportsCanonicalTermKeys(),
+				"the 64/65-channel fixture must be admitted to the canonical COUNT path");
+		try (NativeGroupTable table = NativeGroupTable.boundedPrefix(new int[] { 0 }, specs, iteration.aggContext,
+				input)) {
+			long groupId = source.executionContext().internGeneratedKey(groupValue);
+			assertTrue(input.bind(0, groupId));
+			table.add(input, 3L);
+
+			List<BindingSet> results = table.results(iteration, LmdbNativeAttemptMetrics.direct());
+			assertEquals(1, results.size(), "one admitted group must produce one bounded result row");
+			BindingSet result = results.getFirst();
+			assertEquals(groupValue, result.getValue("group"));
+			for (int index = 0; index < channelCount; index++) {
+				assertEquals(BigInteger.valueOf(3L), ((Literal) result.getValue("count" + index)).integerValue(),
+						"weighted COUNT channel " + index + " must remain exact");
+			}
+			assertTrue(memory.usedBytes() > 0L,
+					"the live bounded prefix result must retain an explicit query-ledger owner");
+			assertTrue(memory.usedBytes() <= memory.perQueryMaxBytes(),
+					"bounded prefix state and retained rows must share the query ledger");
+		} finally {
+			try {
+				input.closeDecodedInputs();
+			} finally {
+				try {
+					iteration.aggContext.close();
+				} finally {
+					try {
+						iteration.close();
+					} finally {
+						try {
+							source.executionContext().close();
+						} finally {
+							LmdbNativeHashJoin.queryMemoryOverride = previousManager;
+							restore(NativeCountGroupStore.MAX_BYTES_PROPERTY, previousBudget);
+						}
+					}
+				}
+			}
+		}
+		assertEquals(0L, memory.usedBytes(), "closing the prefix result must release every query-ledger claim");
 	}
 
 	@Test

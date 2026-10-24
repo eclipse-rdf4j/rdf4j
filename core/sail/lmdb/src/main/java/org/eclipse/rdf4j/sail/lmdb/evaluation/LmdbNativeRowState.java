@@ -1260,16 +1260,22 @@ final class CopyBinding {
 		return semanticValue != null ? semanticKeyReadMask : requiredMask();
 	}
 
+	NativeScalarPlan scalarPlan() {
+		return computed != null ? computed.scalarPlan() : computedValue != null ? computedValue.scalarPlan() : null;
+	}
+
 	static CopyBinding termCheckedConstant(int targetSlot, long constant) {
 		return new CopyBinding(targetSlot, constant, true);
 	}
 
 	long value(RowState row) {
 		if (semanticValue != null) {
+			NativeExpressionDomain.checkReader(row);
 			NativeExecutionContext executionContext = row.source instanceof SyntheticValueSource synthetic
 					? synthetic.executionContext()
 					: null;
 			NativeValueOutcome outcome = semanticValue.evaluate(row.view, executionContext);
+			NativeExpressionDomain.checkReader(row);
 			if (!outcome.isBound() || !(row.source instanceof SyntheticValueSource)) {
 				return UNKNOWN;
 			}

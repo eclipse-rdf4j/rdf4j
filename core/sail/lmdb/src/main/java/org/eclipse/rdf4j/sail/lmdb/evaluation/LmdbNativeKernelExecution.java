@@ -20,6 +20,8 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -217,6 +219,14 @@ final class LmdbNativeKernelExecution {
 		return aggregateRoute(interpreted, requirements.wildcardViews > 0);
 	}
 
+	private static String parallelAggregateRoute(boolean interpreted, LmdbNativeKernelIr.Requirements requirements) {
+		return requirements.typeMatrices > 0
+				? interpreted ? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL_INTERPRETED
+						: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL
+				: interpreted ? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED
+						: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL;
+	}
+
 	/**
 	 * Resolves the route that the aggregate lowering will actually expose to execution and explanation. Strategy
 	 * previews run before a kernel is opened, so they cannot reuse the route recorded by the bind boundary. Keeping the
@@ -245,10 +255,10 @@ final class LmdbNativeKernelExecution {
 	}
 
 	/** Route and physical proof come from the very same lowering, including a compiled scan retry. */
-	record AggregateAdmission(String route, LmdbNativeKernelLowering.Lowered lowered) {
-		NativeAggregatePhysicalPlan physicalPlan(SlotPlan input, boolean parallel) {
-			// A single expanded adjacency or exact quad scan emits ordinary rows. A keys-only domain, PlanFactors,
-			// mixed pipeline or aggregate projection has a different grain and deliberately retains an unknown quote.
+	record AggregateAdmission(String route, LmdbNativeKernelLowering.Lowered lowered, boolean interpreted) {
+		NativeAggregatePhysicalPlan physicalPlan(SlotPlan input, RowState row, boolean parallel) {
+			// The actual lowered producer, including its projection schedule, owns its physical grain. Mixed
+			// pipelines and independent PlanFactors still need a separate compositional proof.
 			if (!(input instanceof PatternPlan) || lowered.kernel.pipeline.size() != 1
 					|| lowered.kernel.aggregateProjections != null
 					|| !(lowered.kernel.terminal instanceof LmdbNativeKernelIr.Aggregate aggregate)) {
@@ -256,7 +266,8 @@ final class LmdbNativeKernelExecution {
 			}
 			LmdbNativeKernelIr.Node producer = lowered.kernel.pipeline.get(0);
 			if (!(producer instanceof LmdbNativeKernelIr.ScanQuad)
-					&& !(producer instanceof LmdbNativeKernelIr.EnumerateAdjKeys keys && keys.valueCol >= 0)) {
+					&& !(producer instanceof LmdbNativeKernelIr.EnumerateAdjKeys)
+					&& !(producer instanceof LmdbNativeKernelIr.EnumerateWildcard)) {
 				return null;
 			}
 			boolean orderedEvents = false;
@@ -266,9 +277,36 @@ final class LmdbNativeKernelExecution {
 							&& lowered.bindings.groupLayout.outs[index].spec.reducer.mergeLaw != NativeReducerCapabilities.MergeLaw.ELIGIBLE_SAMPLE;
 				}
 			}
-			return new NativeAggregatePhysicalPlan(input,
-					orderedEvents ? NativeAggregatePhysicalPlan.Retention.BOUNDED_EVENTS
-							: NativeAggregatePhysicalPlan.Retention.RETAINED_GROUPS);
+			boolean streaming = !parallel
+					&& lowered.kernel.aggregateStateMode == LmdbNativeKernelIr.Kernel.AggregateStateMode.STREAMING_GROUPS;
+			NativeTermAuthority authority = row.keyAuthority();
+			boolean canonicalKeys = authority == null ? row.source.hasCanonicalIds()
+					: authority.supportsCanonicalTermKeys();
+			// Parallel DISTINCT channels move into hook-owned primitive sets, disabling KernelGroupSink in the
+			// worker variant. Its retained partial/merge maps cannot spill membership either. Only the serial
+			// boundedGroups kernel opens the shared spillable count-group sink.
+			NativeAggregatePhysicalPlan.Retention storage = orderedEvents
+					? NativeAggregatePhysicalPlan.Retention.BOUNDED_EVENTS
+					: streaming ? NativeAggregatePhysicalPlan.Retention.STREAMING
+							: !parallel && lowered.kernel.boundedGroups && canonicalKeys
+									? NativeAggregatePhysicalPlan.Retention.RETAINED_GROUPS
+									: NativeAggregatePhysicalPlan.Retention.RESIDENT_STATE;
+			boolean hashing = !orderedEvents && aggregate.groupCols.length > 0 && !streaming;
+			for (int index = 0; !hashing && !orderedEvents && index < aggregate.outputs.length; index++) {
+				LmdbNativeKernelIr.AggregateOutput output = aggregate.outputs[index];
+				hashing = output.isDistinctKind() && (parallel
+						|| lowered.kernel.aggregateDistinctModes[index] == LmdbNativeKernelIr.Kernel.AggregateDistinctMode.HASH)
+						|| output.kind == LmdbNativeKernelIr.AGG_ROW_STATE
+								&& lowered.bindings.groupLayout.outs[index].spec.distinct;
+			}
+			LmdbNativePhysicalVariantKey.GroupingMode grouping = aggregate.groupCols.length == 0
+					? LmdbNativePhysicalVariantKey.GroupingMode.NONE
+					: streaming || orderedEvents ? LmdbNativePhysicalVariantKey.GroupingMode.STREAMING_GROUPS
+							: LmdbNativePhysicalVariantKey.GroupingMode.HASHED;
+			NativeAggregatePhysicalPlan.KeyProperties keyProperties = new NativeAggregatePhysicalPlan.KeyProperties(
+					grouping, hashing);
+			return new NativeAggregatePhysicalPlan(input, storage,
+					new NativeAggregateKernelInput(input, lowered, interpreted, parallel, storage, keyProperties));
 		}
 	}
 
@@ -294,7 +332,7 @@ final class LmdbNativeKernelExecution {
 			recordAggregateLoweringAdmissionDecline(row, explainTarget, interpreted, false, true);
 			return null;
 		}
-		return new AggregateAdmission(aggregateRoute(interpreted, lowered.kernel.requirements), lowered);
+		return new AggregateAdmission(aggregateRoute(interpreted, lowered.kernel.requirements), lowered, interpreted);
 	}
 
 	private static void recordAggregateLoweringAdmissionDecline(RowState row, TupleExpr explainTarget,
@@ -381,22 +419,58 @@ final class LmdbNativeKernelExecution {
 	 * compiled proposal is offered again on the next dispatch. Positional {@link KernelTier#AUTO} callers retain the
 	 * original warm-up behavior because they do not publish arm-specific cost evidence.
 	 */
-	private static java.util.function.Function<LmdbNativeKernelIr.Kernel, JaninoKernel> workerKernelFactory(
+	private static WorkerKernelFactory workerKernelFactory(
 			KernelTier requestedTier, boolean interpretedExecution, long observedRows,
-			java.util.function.Function<LmdbNativeKernelIr.Kernel, JaninoKernel> interpreterTier) {
-		if (interpretedExecution) {
-			return interpreterTier;
+			Function<LmdbNativeKernelIr.Kernel, JaninoKernel> interpreterTier, String route) {
+		return new WorkerKernelFactory(requestedTier, interpretedExecution, observedRows, interpreterTier, route);
+	}
+
+	/** The exact worker lookup result remains owned by this invocation, even if compilation finishes later. */
+	private static final class WorkerKernelFactory implements Function<LmdbNativeKernelIr.Kernel, JaninoKernel> {
+		private final KernelTier requestedTier;
+		private final boolean interpretedExecution;
+		private final long observedRows;
+		private final Function<LmdbNativeKernelIr.Kernel, JaninoKernel> interpreterTier;
+		private final String route;
+		private final AtomicReference<String> declineReason = new AtomicReference<>();
+
+		private WorkerKernelFactory(KernelTier requestedTier, boolean interpretedExecution, long observedRows,
+				Function<LmdbNativeKernelIr.Kernel, JaninoKernel> interpreterTier, String route) {
+			this.requestedTier = requestedTier;
+			this.interpretedExecution = interpretedExecution;
+			this.observedRows = observedRows;
+			this.interpreterTier = interpreterTier;
+			this.route = route;
 		}
-		return variant -> {
-			JaninoKernel compiled = LmdbNativeJaninoCodegen.kernel(variant.shapeKey(), variant.className(),
-					() -> LmdbNativeKernelEmitter.emit(variant), observedRows);
-			if (compiled != null) {
-				return compiled;
+
+		@Override
+		public JaninoKernel apply(LmdbNativeKernelIr.Kernel variant) {
+			if (interpretedExecution) {
+				return interpreterTier.apply(variant);
 			}
-			return requestedTier == KernelTier.AUTO && LmdbNativeKernelInterpreter.warmupEnabled()
-					? interpreterTier.apply(variant)
-					: null;
-		};
+			LmdbNativeJaninoCodegen.KernelAttempt attempt = LmdbNativeJaninoCodegen.kernelAttempt(variant.shapeKey(),
+					variant.className(), () -> LmdbNativeKernelEmitter.emit(variant), observedRows, route);
+			JaninoKernel kernel = attempt.kernel();
+			if (kernel == null && requestedTier == KernelTier.AUTO && LmdbNativeKernelInterpreter.warmupEnabled()) {
+				kernel = interpreterTier.apply(variant);
+			}
+			if (kernel == null) {
+				declineReason.compareAndSet(null, attempt.declineReason());
+			}
+			return kernel;
+		}
+
+		private void publishDecline(TupleExpr target, LmdbNativeRuntimePlan.Invocation runtimePlan) {
+			String reason = declineReason.get();
+			if (route != null && reason != null) {
+				// The shared parallel engine can only report its generic unavailable-worker reason. Replace it with
+				// this attempt's precise gate after its actual null result; do not inspect a later cache state.
+				LmdbNativeAttemptMetrics.recordDecline(target, route, reason);
+				if (runtimePlan != null) {
+					runtimePlan.janinoDeclined(reason);
+				}
+			}
+		}
 	}
 
 	private static List<BindingSet> tryEvaluateAggregate(SlotPlan arg, RowState row,
@@ -484,8 +558,13 @@ final class LmdbNativeKernelExecution {
 			} else {
 				long opens = SHAPE_OPENS.increment(shapeKey);
 				observedRows = opens * ROWS_PER_OPEN_ESTIMATE;
-				kernel = LmdbNativeJaninoCodegen.kernel(shapeKey, lowered.kernel.className(),
-						() -> LmdbNativeKernelEmitter.emit(lowered.kernel), observedRows);
+				String compileRoute = parallelExecution == ParallelExecution.REQUIRE
+						? parallelAggregateRoute(false, lowered.kernel.requirements)
+						: aggregateRoute(false, lowered.kernel.requirements);
+				LmdbNativeJaninoCodegen.KernelAttempt compileAttempt = LmdbNativeJaninoCodegen.kernelAttempt(shapeKey,
+						lowered.kernel.className(), () -> LmdbNativeKernelEmitter.emit(lowered.kernel), observedRows,
+						compileRoute);
+				kernel = compileAttempt.kernel();
 				if (kernel == null && requestedTier == KernelTier.AUTO
 						&& LmdbNativeKernelInterpreter.warmupEnabled()) {
 					// M5 warm-up tier: serve the interpreter while the compile is below threshold, pending, or
@@ -495,11 +574,10 @@ final class LmdbNativeKernelExecution {
 				}
 				if (kernel == null) {
 					if (row.runtimePlan != null) {
-						row.runtimePlan.janinoDeclined(LmdbNativeJaninoCodegen.declineReason(shapeKey,
-								observedRows, "irAggregate"));
+						row.runtimePlan.janinoDeclined(compileAttempt.declineReason());
 					}
-					LmdbNativeAttemptMetrics.recordDecline(explainTarget, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
-							"below-threshold-or-pending");
+					LmdbNativeAttemptMetrics.recordDecline(explainTarget, compileRoute,
+							compileAttempt.declineReason());
 					return null;
 				}
 			}
@@ -590,31 +668,22 @@ final class LmdbNativeKernelExecution {
 			}
 			// The parallel rung may request a worker kernel VARIANT (HAVING and output mods stripped); every requested
 			// shape compiles through the same cache under its own shape key, so the sequential shape stays untouched.
+			String parallelRoute = parallelAggregateRoute(interpretedExecution, lowered.kernel.requirements);
+			WorkerKernelFactory workers = parallelExecution == ParallelExecution.DISABLE ? null
+					: workerKernelFactory(requestedTier, interpretedExecution,
+							observedRowsForVariants,
+							variant -> variant.terminal instanceof LmdbNativeKernelIr.Emit
+									? LmdbNativeKernelInterpreter.forRows(variant)
+									: LmdbNativeKernelInterpreter.forAggregate(variant),
+							parallelRoute);
 			parallelAttempt = parallelExecution != ParallelExecution.DISABLE;
 			List<BindingSet> parallel = parallelExecution == ParallelExecution.DISABLE ? null
 					: LmdbNativeParallelKernelAggregate.tryEvaluate(lowered, views, variableViews,
 							nodeDomainIntersections, typeMatrices, domains, arg, row,
 							emitter, explainTarget,
-							workerKernelFactory(requestedTier, interpretedExecution, observedRowsForVariants,
-									variant -> variant.terminal instanceof LmdbNativeKernelIr.Emit
-											? LmdbNativeKernelInterpreter.forRows(variant)
-											: LmdbNativeKernelInterpreter.forAggregate(variant)),
-							lowered.kernel.requirements.typeMatrices > 0
-									? interpretedExecution
-											? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL_INTERPRETED
-											: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL
-									: interpretedExecution
-											? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED
-											: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL);
+							workers, parallelRoute);
 			parallelAttempt = false;
 			if (parallel != null) {
-				String parallelRoute = lowered.kernel.requirements.typeMatrices > 0
-						? interpretedExecution
-								? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL_INTERPRETED
-								: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL
-						: interpretedExecution
-								? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED
-								: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL;
 				AGG_OPENED.incrementAndGet();
 				AGG_ROWS.addAndGet(parallel.size());
 				LmdbNativeExplain.recordExecutionPath(explainTarget, parallelRoute);
@@ -626,6 +695,9 @@ final class LmdbNativeKernelExecution {
 					row.runtimePlan.activate(parallelRoute, actualOrder);
 				}
 				return retainedResults = parallel;
+			}
+			if (parallelExecution != ParallelExecution.DISABLE) {
+				workers.publishDecline(explainTarget, row.runtimePlan);
 			}
 			if (parallelExecution == ParallelExecution.REQUIRE) {
 				return null;
@@ -1269,8 +1341,13 @@ final class LmdbNativeKernelExecution {
 			} else {
 				long opens = SHAPE_OPENS.increment(shapeKey);
 				observedRows = opens * ROWS_PER_OPEN_ESTIMATE;
-				kernel = LmdbNativeJaninoCodegen.kernel(shapeKey, lowered.kernel.className(),
-						() -> LmdbNativeKernelEmitter.emit(lowered.kernel), observedRows);
+				String compileRoute = parallelExecution == ParallelExecution.REQUIRE
+						? parallelRowRoute(false, distinctSlots != null)
+						: rowRoute(false, distinctSlots != null, lowered.kernel.requirements.wildcardViews > 0);
+				LmdbNativeJaninoCodegen.KernelAttempt compileAttempt = LmdbNativeJaninoCodegen.kernelAttempt(shapeKey,
+						lowered.kernel.className(), () -> LmdbNativeKernelEmitter.emit(lowered.kernel), observedRows,
+						compileRoute);
+				kernel = compileAttempt.kernel();
 				if (kernel == null && requestedTier == KernelTier.AUTO
 						&& LmdbNativeKernelInterpreter.warmupEnabled()) {
 					// M5 warm-up tier: serve the interpreter while the compile is below threshold, pending, or
@@ -1283,11 +1360,10 @@ final class LmdbNativeKernelExecution {
 						return null;
 					}
 					if (row.runtimePlan != null) {
-						row.runtimePlan.janinoDeclined(
-								LmdbNativeJaninoCodegen.declineReason(shapeKey, observedRows, "irKernel"));
+						row.runtimePlan.janinoDeclined(compileAttempt.declineReason());
 					}
-					LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
-							"below-threshold-or-pending");
+					LmdbNativeAttemptMetrics.recordDecline(originalExpr, compileRoute,
+							compileAttempt.declineReason());
 					return null;
 				}
 			}
@@ -1385,7 +1461,7 @@ final class LmdbNativeKernelExecution {
 					: LmdbNativeParallelKernelRows.tryOpen(lowered, views, variableViews, domains, arg, row,
 							originalExpr,
 							workerKernelFactory(requestedTier, interpretedVariants, observedRowsForVariants,
-									LmdbNativeKernelInterpreter::forRows));
+									LmdbNativeKernelInterpreter::forRows, null));
 			parallelAttempt = false;
 			if (parallel != null) {
 				String parallelRoute = parallelRowRoute(interpretedVariants, distinctSlots != null);

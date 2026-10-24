@@ -3791,6 +3791,16 @@ final class LmdbNativeKernelEmitter {
 					.append(" != null) return ppCursor")
 					.append(id)
 					.append(";\n");
+			int[] inputColumns = schedule.savedColumns[LmdbNativeProducerSchedule.INPUT];
+			for (int index = 0; index < inputColumns.length; index++) {
+				source.append("        ppSaved")
+						.append(id)
+						.append("_0[")
+						.append(index)
+						.append("] = v")
+						.append(inputColumns[index])
+						.append(";\n");
+			}
 			for (int proof = 0; proof < proofs.size(); proof++) {
 				source.append("        ppFact")
 						.append(id)
@@ -3854,11 +3864,13 @@ final class LmdbNativeKernelEmitter {
 			}
 			source.append("                        break;\n")
 					.append("                    case KernelProjectionCursor.FIBER:\n")
-					.append("                        if (physical == null) return false;\n")
-					.append("                        v")
-					.append(schedule.layout.neighborCol())
-					.append(" = physical.neighborId();\n")
-					.append("                        break;\n")
+					.append("                        if (physical == null) return false;\n");
+			if (schedule.layout.neighborCol() >= 0) {
+				source.append("                        v")
+						.append(schedule.layout.neighborCol())
+						.append(" = physical.neighborId();\n");
+			}
+			source.append("                        break;\n")
 					.append("                    case KernelProjectionCursor.QUAD:\n")
 					.append("                        if (physical == null) return false;\n");
 			if (schedule.layout.contextCol() >= 0) {
@@ -3951,9 +3963,14 @@ final class LmdbNativeKernelEmitter {
 			}
 			if (!proofs.isEmpty()) {
 				source.append("\n                @Override\n")
-						.append("                public boolean acceptsPage(NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor page) {\n")
-						.append("                    restore(KernelProjectionCursor.PLANE);\n")
-						.append("                    ppPage")
+						.append("                public boolean acceptsPage(long predicate, NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor page) {\n")
+						.append("                    restore(KernelProjectionCursor.PLANE);\n");
+				if (schedule.layout.predicateCol() >= 0) {
+					source.append("                    v")
+							.append(schedule.layout.predicateCol())
+							.append(" = predicate;\n");
+				}
+				source.append("                    ppPage")
 						.append(id)
 						.append(" = page;\n")
 						.append("                    try {\n");
@@ -4012,6 +4029,10 @@ final class LmdbNativeKernelEmitter {
 			source.append(schedule.outputMask)
 					.append(", ")
 					.append(schedule.programMask())
+					.append(", ")
+					.append(schedule.layout.deliveryGrain())
+					.append(", ")
+					.append(schedule.layout.neighborCol() < 0)
 					.append(", ")
 					.append(schedule.contextObserved)
 					.append(", ")

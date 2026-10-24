@@ -25,10 +25,16 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.CALLS_REAL_METHODS;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.management.ManagementFactory;
@@ -40,10 +46,12 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -53,29 +61,50 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.zip.CRC32C;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupConcat;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.QueryExplanationContext;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -99,6 +128,15 @@ class NativePhysicalGroupingCostTest {
 	private static final String AGGREGATE_EVENT = "org.eclipse.rdf4j.lmdb.NativeAggregateExecution";
 	private static final String NATIVE_QUERY_ENGINE_ENABLED = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String PHYSICAL_COST_EX = "http://example.com/physical-cost/";
+	private static final String PRICING_GC = "PREFIX dblp: <https://dblp.org/rdf/schema#> "
+			+ "SELECT (SUM(STRLEN(?cat)) AS ?sum) { { SELECT (GROUP_CONCAT(?o; SEPARATOR=\" \") AS ?cat) "
+			+ "{ ?s dblp:signatureDblpName ?o } GROUP BY ?s } }";
+	private static final String PRICING_OBJECTS = "SELECT (COUNT(DISTINCT ?o) AS ?count) WHERE { ?s ?p ?o }";
+	private static final String PRICING_BLANKS = "SELECT (COUNT(?s) AS ?count) WHERE { ?s ?p ?o FILTER ISBLANK(?s) }";
+	private static final String PRICING_LOW_GROUPS = "PREFIX dblp: <https://dblp.org/rdf/schema#> "
+			+ "SELECT ?object (COUNT(?subject) AS ?count) { ?subject dblp:hasSignature ?object } "
+			+ "GROUP BY ?object ORDER BY DESC(?count) LIMIT 10";
+	private static final String STRATEGY_EVENT = "org.eclipse.rdf4j.lmdb.NativeStrategyDecision";
 	private static final int INPUT_ROWS = 201;
 	private static final int PARTITIONED_ROWS = 128;
 	private static final int SUMMARY_GROUPS = 32;
@@ -169,6 +207,220 @@ class NativePhysicalGroupingCostTest {
 			quoteRow.closeDecodedInputs();
 			iteration.close();
 		}
+	}
+
+	@Test
+	void typedOrderedSummaryQuoteOwnsItsReducedBoundedProducer() throws Exception {
+		try (Fixture fixture = fixture()) {
+			Map<String, Long> expected = fullUnicodeGroupLengths(fixture);
+			SingletonSet target = telemetryTarget();
+			try (NativeGroupIteration iteration = iteration(fixture, target, lexicalLengthSpecs(), null)) {
+				RowState row = seededEmptyRow(fixture.source, fixture.layout);
+				try {
+					assertTrue(iteration.initialize(row));
+					NativeGroupResultCursor.GroupingPlan ordered = NativeGroupResultCursor.orderedPlan(iteration, row);
+					assertNotNull(ordered, "the real ordered producer establishes a complete group prefix");
+					assertEquals(NativeDistinctChannelMode.MONOTONIC, ordered.channels().modes[0]);
+					assertEquals(expected,
+							summaryGroupLengths(ordered.open(iteration, fixture.source.executionContext())),
+							"the actual typed recipe must preserve the independent FULL Unicode result first");
+					fixture.reads.set(0);
+					AtomicInteger opens = new AtomicInteger();
+					LmdbNativeStrategyProposal<NativeResultCursor> proposal = new LmdbNativeStrategyProposal<>(() -> {
+						opens.incrementAndGet();
+						return ordered.open(iteration, fixture.source.executionContext());
+					}, ordered.input().estimateWork(row, row.boundMask()), ordered.tag(), () -> {
+					});
+					proposal.withAggregatePhysicalPlan(NativeAggregatePhysicalPlan.typed(ordered, iteration));
+					NativeAggregateCostQuotes quotes = new NativeAggregateCostQuotes(iteration, row);
+					LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(
+							new LmdbNativeMachineCostModel(),
+							new LmdbNativeStoreCostModel(), new LmdbNativeAdaptiveCostModel.Configuration(true, true));
+					try (LmdbNativeStrategyArbiter<NativeResultCursor> arbiter = LmdbNativeStrategyArbiter
+							.<NativeResultCursor>forModel(target, -1D, model)
+							.estimateWith(quotes::attach)) {
+						arbiter.offer(() -> proposal);
+						JsonNode quote = candidate(JsonMapper.builder()
+								.build()
+								.readTree(target.getStringMetricActual(NativeAggregateCostQuotes.METRIC)),
+								ordered.tag());
+						assertTrue(hasFiniteKnownPhysicalQuote(quote),
+								"the admitted input already has finite physical work");
+						assertEquals(0, fixture.reads.get(), "quoting must not execute or materialize the child");
+						assertEquals(0, opens.get());
+						assertEquals(0L, model.predict(proposal.adaptiveEstimate(-1D)).exactCompletedCount());
+						assertFalse(model.predict(proposal.adaptiveEstimate(-1D)).uniformlyPriceable(),
+								"a physical witness does not supply numerical machine coefficients");
+						assertAll("the same executable ordered-summary proposal owns both resource proofs",
+								() -> assertNotNull(proposal.aggregatePhysicalPlan().producer()),
+								() -> assertNotNull(proposal.coldAnchor()));
+						try (LmdbNativeStrategySelection<NativeResultCursor> selected = arbiter
+								.selectWithObservation()) {
+							assertNotNull(selected);
+							assertEquals(expected, summaryGroupLengths(selected.value()));
+							selected.exhausted();
+						}
+						assertEquals(1, opens.get(), "the offered immutable recipe is opened exactly once");
+					}
+				} finally {
+					row.closeDecodedInputs();
+				}
+			}
+		}
+	}
+
+	@Test
+	void typedFullTextObserverCannotBorrowItsSummarySiblingsColdAnchor() throws Exception {
+		try (Fixture fixture = fixture()) {
+			AggregateSpec[] specs = { lexicalLengthSpecs()[0], AggregateSpec.groupConcat("text", 1, true, "|") };
+			SlotPlan input = fixture.plan.withOrder(StatementOrder.S, "spoc");
+			try (NativeGroupIteration iteration = typedProofIteration(fixture, input, specs)) {
+				RowState row = seededEmptyRow(fixture.source, fixture.layout);
+				try {
+					assertTrue(iteration.initialize(row));
+					NativeGroupResultCursor.GroupingPlan ordered = NativeGroupResultCursor.orderedPlan(iteration, row);
+					assertNotNull(ordered, "the FULL observer still has a genuine contiguous opened group order");
+					assertTrue(ordered.streaming(), "streaming alone cannot certify bounded text retention");
+					assertEquals(NativeAggregateResultDemand.FULL_VALUE, specs[1].resultDemand);
+					try (var proposal = typedProofProposal(fixture, iteration, row, ordered)) {
+						assertNull(proposal.coldAnchor(),
+								"one FULL text observer invalidates the complete retained-state proof");
+					}
+				} finally {
+					row.closeDecodedInputs();
+				}
+			}
+		}
+	}
+
+	@Test
+	void typedHashMembershipCannotBorrowItsMonotonicSiblingsColdAnchor() throws Exception {
+		try (Fixture fixture = fixture()) {
+			AggregateSpec[] specs = { lexicalLengthSpecs()[0], AggregateSpec.slot("keys", 0, true, AggKind.COUNT) };
+			try (NativeGroupIteration iteration = typedProofIteration(fixture, fixture.plan, specs)) {
+				RowState row = seededEmptyRow(fixture.source, fixture.layout);
+				try {
+					assertTrue(iteration.initialize(row));
+					NativeGroupResultCursor.GroupingPlan ordered = NativeGroupResultCursor.orderedPlan(iteration, row);
+					assertNotNull(ordered);
+					assertEquals(2, ordered.channels().channelCount());
+					assertEquals(NativeDistinctChannelMode.MONOTONIC, ordered.channels().modes[0]);
+					NativeDistinctChannelMode[] modes = ordered.channels().modes.clone();
+					modes[1] = NativeDistinctChannelMode.HASH;
+					// This legal explicit recipe retains a hash channel even though its sibling uses ordered
+					// membership.
+					NativeGroupResultCursor.GroupingPlan mixed = new NativeGroupResultCursor.GroupingPlan(
+							ordered.input(),
+							ordered.channels().withModes(modes), true, ordered.tag());
+					assertEquals(fullUnicodeGroupLengths(fixture),
+							summaryGroupLengths(mixed.open(iteration, fixture.source.executionContext())));
+					try (var proposal = typedProofProposal(fixture, iteration, row, mixed)) {
+						assertNull(proposal.coldAnchor(),
+								"every actual membership channel must carry the bounded proof");
+					}
+				} finally {
+					row.closeDecodedInputs();
+				}
+			}
+		}
+	}
+
+	@Test
+	void typedSummaryWithoutAnOpenedPrefixCannotAcquireAnOrderedColdAnchor() throws Exception {
+		try (Fixture fixture = implicitOrderMismatchFixture(2, 4, false);
+				NativeGroupIteration iteration = iteration(fixture, null, lexicalLengthSpecs(), null)) {
+			RowState row = seededEmptyRow(fixture.source, fixture.layout);
+			try {
+				assertTrue(iteration.initialize(row));
+				row.encounterOrderRequired = true;
+				assertNull(fixture.plan.statementOrder);
+				List<Long> opened = new ArrayList<>();
+				try (RowCursor cursor = fixture.plan.open(row)) {
+					while (row.advance(cursor)) {
+						opened.add(row.slots[0]);
+					}
+				}
+				assertEquals(List.of(100L, 101L, 100L, 101L, 100L, 101L, 100L, 101L), opened);
+				assertNull(NativeGroupResultCursor.orderedPlan(iteration, row),
+						"an index name cannot establish order for this actual interleaved cursor");
+				try (var proposal = typedProofProposal(fixture, iteration, row,
+						NativeGroupResultCursor.tablePlan(iteration))) {
+					assertNull(proposal.coldAnchor(),
+							"the legal table recipe does not inherit an absent ordered witness");
+				}
+			} finally {
+				row.closeDecodedInputs();
+			}
+		}
+	}
+
+	@Test
+	void typedOpaqueReducerCannotAcquireItsSummarySiblingsColdAnchor() throws Exception {
+		try (Fixture fixture = fixture()) {
+			AggregateSpec opaque = AggregateSpec.custom("opaque", mock(NativeCustomAggregate.class));
+			AggregateSpec[] specs = { lexicalLengthSpecs()[0], opaque };
+			try (NativeGroupIteration iteration = typedProofIteration(fixture, fixture.plan, specs)) {
+				RowState row = seededEmptyRow(fixture.source, fixture.layout);
+				try {
+					assertTrue(iteration.initialize(row));
+					assertEquals(NativeReducerCapabilities.SpillEncoding.OPAQUE, opaque.reducer.spillEncoding);
+					assertFalse(NativeTypedGroupStore.supports(specs));
+					assertNull(NativeGroupResultCursor.orderedPlan(iteration, row));
+					try (var proposal = typedProofProposal(fixture, iteration, row,
+							NativeGroupResultCursor.tablePlan(iteration))) {
+						assertNull(proposal.coldAnchor(), "opaque callback metadata supplies no retained-state law");
+					}
+				} finally {
+					row.closeDecodedInputs();
+				}
+			}
+		}
+	}
+
+	private static NativeGroupIteration typedProofIteration(Fixture fixture, SlotPlan input, AggregateSpec[] specs) {
+		return new NativeGroupIteration(fixture.source, input, fixture.layout, new int[] { 0 }, specs, false,
+				EmptyBindingSet.getInstance(), null, null, false, null);
+	}
+
+	private static LmdbNativeStrategyProposal<NativeResultCursor> typedProofProposal(Fixture fixture,
+			NativeGroupIteration iteration, RowState row, NativeGroupResultCursor.GroupingPlan plan) {
+		LmdbNativeStrategyProposal<NativeResultCursor> proposal = new LmdbNativeStrategyProposal<>(
+				() -> plan.open(iteration, fixture.source.executionContext()),
+				plan.input().estimateWork(row, row.boundMask()),
+				plan.tag(), () -> {
+				});
+		proposal.withAggregatePhysicalPlan(NativeAggregatePhysicalPlan.typed(plan, iteration));
+		return new NativeAggregateCostQuotes(iteration, row, null, false).attach(proposal);
+	}
+
+	private static Map<String, Long> fullUnicodeGroupLengths(Fixture fixture) throws Exception {
+		AggregateSpec[] full = { AggregateSpec.groupConcat("length", 1, true, "|") };
+		Map<String, Long> result = new HashMap<>();
+		try (NativeGroupIteration iteration = iteration(fixture, null, full, null);
+				NativeResultCursor rows = NativeGroupResultCursor.tablePlan(iteration)
+						.open(iteration, fixture.source.executionContext())) {
+			NativeResultRow row;
+			while ((row = rows.next()) != null) {
+				assertEquals(NativeResultCell.Kind.RDF_TERM, row.cell("length").kind());
+				String text = row.cell("length").value().stringValue();
+				assertEquals("\ud83d\ude00\u03bb|x", text, "FULL retains the independent Unicode lexical identity");
+				result.put(row.cell("group").value().stringValue(), (long) text.codePointCount(0, text.length()));
+			}
+		}
+		assertEquals(FIXTURE_GROUPS, result.size());
+		return result;
+	}
+
+	private static Map<String, Long> summaryGroupLengths(NativeResultCursor rows) {
+		Map<String, Long> result = new HashMap<>();
+		try (rows) {
+			NativeResultRow row;
+			while ((row = rows.next()) != null) {
+				assertEquals(NativeResultCell.Kind.LEXICAL_SUMMARY, row.cell("length").kind());
+				result.put(row.cell("group").value().stringValue(), row.cell("length").codePointLength());
+			}
+		}
+		return result;
 	}
 
 	@Test
@@ -683,6 +935,16 @@ class NativePhysicalGroupingCostTest {
 			List<String> outerGroups = new ArrayList<>();
 			List<String> lexicalGroups = new ArrayList<>();
 			collectGroupQuotes(plan, false, outerGroups, lexicalGroups);
+			Path treeEvidence = directory.resolve("composed-lexical-telemetry-plan.txt");
+			Path targetEvidence = directory.resolve("composed-lexical-telemetry-quote-targets.json");
+			List<Map<String, Object>> targets = new ArrayList<>();
+			collectGroupQuoteTargets(plan, false, "root", targets);
+			Files.writeString(treeEvidence, plan.toString());
+			Files.writeString(targetEvidence, JsonMapper.builder()
+					.build()
+					.writeValueAsString(
+							Map.of("explanationLevel", "Telemetry", "groupTargets", targets)));
+			System.out.println("Composed lexical Telemetry evidence: " + treeEvidence + ", " + targetEvidence);
 			assertEquals(1, outerGroups.size(), "the query has one zero-key outer Group quote");
 			assertEquals(1, lexicalGroups.size(), "the lexical subquery has one independently scoped Group quote");
 			JsonNode outerQuote = candidate(JsonMapper.builder().build().readTree(outerGroups.get(0)),
@@ -2104,6 +2366,1736 @@ class NativePhysicalGroupingCostTest {
 	}
 
 	@Test
+	void selectedDistinctSummaryClosesThroughAliasesAndStrlenForOuterSum() throws Exception {
+		assertSelectedSummaryClosesForOuterSum(true, 2);
+	}
+
+	@Test
+	void selectedBagSummaryClosesThroughDirectStrlenForOuterSum() throws Exception {
+		assertSelectedSummaryClosesForOuterSum(false, 0);
+	}
+
+	@Test
+	void selectedProjectionAndExtensionSummaryClosesForOuterSum() throws Exception {
+		assertSelectedSummaryClosesForOuterSum(true, -1);
+	}
+
+	@Test
+	void selectedSummaryOffersItsOwnBoundedOuterSumProposal() throws Exception {
+		assertSelectedSummaryClosesForOuterSum(true, 2, true);
+	}
+
+	private static void assertSelectedSummaryClosesForOuterSum(boolean distinct, int aliases) throws Exception {
+		assertSelectedSummaryClosesForOuterSum(distinct, aliases, false);
+	}
+
+	private static void assertSelectedSummaryClosesForOuterSum(boolean distinct, int aliases, boolean offeredProposal)
+			throws Exception {
+		try (Fixture fixture = fixture()) {
+			fixture.source.executionContext().initializeQueryBase(EmptyBindingSet.getInstance());
+			NativeSlotLayout layout = new NativeSlotLayout(Map.of("group", 0, "value", 1, "summary", 2,
+					"alias", 3, "forwarded", 4, "numeric", 5), null);
+			layout.freeze(List.of("group", "value", "summary", "alias", "forwarded", "numeric"));
+			RowState row = seededEmptyRow(fixture.source, layout);
+			try {
+				AggregateSpec[] childSpecs = { AggregateSpec.groupConcat("length", 1, distinct, "|")
+						.withResultDemand(NativeAggregateResultDemand.LEXICAL_LENGTH) };
+				NativeGroupStep child = step(fixture, childSpecs, null,
+						LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS);
+				QueryEvaluationStep physicalChild = child;
+				if (aliases < 0) {
+					LmdbNativeEvaluationStrategy strategy = mock(LmdbNativeEvaluationStrategy.class);
+					when(strategy.valueFactory()).thenReturn(SimpleValueFactory.getInstance());
+					physicalChild = NativeBindingSetExtensionStep.tryCreate(child,
+							new Extension(new SingletonSet(), new ExtensionElem(new Var("length"), "renamed")),
+							null, strategy, new QueryEvaluationContext.Minimal((Dataset) null));
+					assertNotNull(physicalChild, "the lexical alias uses the actual semantic extension");
+					physicalChild = new NativeBindingSetProjectionStep(physicalChild,
+							new Projection(new SingletonSet(), new ProjectionElemList(
+									new ProjectionElem("group"), new ProjectionElem("renamed", "length"))));
+				}
+				NativeSubqueryPlan lexical = new NativeSubqueryPlan(physicalChild, new int[] { 0, 2 },
+						new String[] { "group", "length" }, new int[0], new String[0]);
+				NativeSubqueryPlan selected = lexical.withPhysicalPlan(row);
+				assertNotNull(selected, "the actual reduced child must be legal before testing its transfer");
+				assertTrue(selected.requiresPhysicalResults(),
+						"this is the demanded summary variant, not a FULL sibling");
+				assertNotNull(selected.physicalInput(), "the exact selected child carries its own quote");
+				assertEquals(0, fixture.reads.get(), "quoting must not open or advance the selected child");
+				SlotPlan input = selected;
+				for (int alias = 0; alias < aliases; alias++) {
+					input = new ExtensionPlan(input, new CopyBinding[] { CopyBinding.slot(3 + alias, 2 + alias) });
+				}
+				String consumed = aliases <= 0 ? "summary" : aliases == 1 ? "alias" : "forwarded";
+				NativeScalarPlan scalar = NativeScalarPlan.create(
+						new FunctionCall(FN.STRING_LENGTH.stringValue(), new Var(consumed)),
+						layout::slot, NativeScalarPlan.ResultKind.VALUE, false, 0L, false, false);
+				assertNotNull(scalar, "the genuine typed-aware STRLEN has a frozen native scalar recipe");
+				LmdbNativeCompiledValue length = scalar.bindValue(
+						new NativeScalarPlan.WorkerContext(fixture.source, mock(LmdbNativeValueCodec.class), null));
+				assertNotNull(length, "STRLEN consumes the physical summary before the primitive boundary");
+				SlotPlan transfer = new ExtensionPlan(input,
+						new CopyBinding[] { CopyBinding.computedValue(5, length, true) });
+				int count = 0;
+				long sum = 0L;
+				try (RowCursor cursor = transfer.open(row)) {
+					while (row.advance(cursor)) {
+						assertEquals(NativeResultCell.Kind.LEXICAL_SUMMARY, row.summaryCell(2).kind());
+						assertThrows(IllegalStateException.class, () -> row.id(2),
+								"the source summary never becomes an RDF ID");
+						assertNull(row.summaryCell(5), "STRLEN's result is a genuine RDF numeric lane");
+						sum += ((Literal) row.view.getValue("numeric")).longValue();
+						count++;
+					}
+				}
+				assertEquals(FIXTURE_GROUPS, count, "each completed child group contributes one outer row");
+				assertEquals(distinct ? 400L : 403L, sum, "Unicode, separators and bag membership remain exact");
+				AggregateSpec[] outer = { AggregateSpec.slot("total", 5, false, AggKind.SUM) };
+				if (offeredProposal) {
+					assertBoundedOuterSummaryProposal(fixture, layout, row, transfer, outer, sum);
+					return;
+				}
+				assertNotNull(LmdbNativeKernelLowering.lowerAggregate(transfer, row, new int[0], outer, null),
+						"the selected bounded summary consumed by STRLEN must offer a closed primitive outer SUM input");
+			} finally {
+				row.closeDecodedInputs();
+			}
+		}
+	}
+
+	private static void assertBoundedOuterSummaryProposal(Fixture fixture, NativeSlotLayout layout, RowState row,
+			SlotPlan transfer, AggregateSpec[] outer, long expected) throws Exception {
+		SingletonSet target = telemetryTarget();
+		fixture.reads.set(0);
+		try (NativeGroupIteration iteration = new NativeGroupIteration(fixture.source, transfer, layout, new int[0],
+				outer, false, EmptyBindingSet.getInstance(), null, null, false, false, null, null, 0L, null, null,
+				null, target, null)) {
+			assertTrue(iteration.initialize(row), "the real fixed-state outer SUM is admitted");
+			NativeGroupResultCursor.GroupingPlan table = NativeGroupResultCursor.tablePlan(iteration);
+			AtomicInteger opens = new AtomicInteger();
+			LmdbNativeStrategyProposal<NativeResultCursor> proposal = new LmdbNativeStrategyProposal<NativeResultCursor>(
+					() -> {
+						opens.incrementAndGet();
+						return table.open(iteration, fixture.source.executionContext());
+					}, transfer.estimateWork(row, row.boundMask()), table.tag(), () -> {
+					}).withAggregatePhysicalPlan(NativeAggregatePhysicalPlan.typed(table, iteration));
+			NativeAggregateCostQuotes quotes = new NativeAggregateCostQuotes(iteration, row);
+			LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(),
+					new LmdbNativeStoreCostModel(), new LmdbNativeAdaptiveCostModel.Configuration(true, true));
+			try (LmdbNativeStrategyArbiter<NativeResultCursor> arbiter = LmdbNativeStrategyArbiter
+					.<NativeResultCursor>forModel(target, -1D, model)
+					.estimateWith(quotes::attach)) {
+				arbiter.offer(() -> proposal);
+				JsonNode quote = candidate(JsonMapper.builder()
+						.build()
+						.readTree(target.getStringMetricActual(NativeAggregateCostQuotes.METRIC)), table.tag());
+				assertTrue(hasFiniteKnownPhysicalQuote(quote),
+						"the offered outer proposal prices this exact selected child and scalar transfer");
+				assertEquals(0, fixture.reads.get(), "the outer quote never advances its selected child");
+				assertEquals(0, opens.get());
+				assertEquals(0L, model.predict(proposal.adaptiveEstimate(-1D)).exactCompletedCount());
+				assertFalse(model.predict(proposal.adaptiveEstimate(-1D)).uniformlyPriceable(),
+						"a bounded executable witness supplies no fabricated timing coefficients");
+				assertAll("this actual outer recipe owns its reduction, fixed reducer and bounded output proof",
+						() -> assertNotNull(proposal.aggregatePhysicalPlan().producer()),
+						() -> assertNotNull(proposal.coldAnchor()));
+				try (LmdbNativeStrategySelection<NativeResultCursor> chosen = arbiter.selectWithObservation()) {
+					assertNotNull(chosen);
+					NativeResultRow result = chosen.value().next();
+					assertNotNull(result, "global SUM publishes its single exact result only after child EOF");
+					assertEquals(expected, ((Literal) result.cell("total").value()).longValue());
+					assertNull(chosen.value().next());
+					chosen.exhausted();
+				}
+				assertEquals(1, opens.get(), "the offered selected outer recipe opens exactly once");
+			}
+		}
+	}
+
+	@Test
+	void selectedInputPatternRejectsSemanticChangesAndRetainsWorkerClone() throws Exception {
+		try (Fixture fixture = fixture()) {
+			PatternPlan selected = fixture.plan;
+			NativeScalarPlan.WorkerContext worker = NativeScalarPlan.WorkerContext.forSource(fixture.source, null);
+			PatternPlan clone = new PatternPlan(selected.s, selected.p, selected.o, selected.c, selected.contexts,
+					selected.namedContextScope, selected.statementOrder, selected.indexName, selected.range,
+					selected.staticEstimate);
+			assertNotNull(NativeAggregatePhysicalPlan.rebindInput(selected, clone, worker),
+					"fresh worker-local instances of the exact immutable pattern recipe remain legal");
+			List<PatternPlan> changed = List.of(
+					new PatternPlan(selected.s, Term.constant(10L), selected.o, selected.c, selected.contexts,
+							selected.namedContextScope, selected.staticEstimate),
+					new PatternPlan(selected.s, selected.p, selected.s, selected.c, selected.contexts,
+							selected.namedContextScope, selected.staticEstimate),
+					new PatternPlan(selected.s, selected.p, selected.o, Term.constant(22L), selected.contexts,
+							selected.namedContextScope, selected.staticEstimate),
+					new PatternPlan(selected.s, selected.p, selected.o, selected.c, selected.contexts,
+							!selected.namedContextScope, selected.staticEstimate));
+			assertAll(changed.stream()
+					.<Executable>map(actual -> () -> assertNull(
+							NativeAggregatePhysicalPlan.rebindInput(selected, actual, worker),
+							"a changed predicate, repeated variable, context or visibility is a different input recipe")));
+			assertEquals(0, fixture.reads.get(), "all correspondence checks precede input opening");
+		}
+	}
+
+	@Test
+	void selectedInputExtensionRejectsSemanticChangesAndRetainsWorkerClone() throws Exception {
+		try (Fixture fixture = fixture()) {
+			NativeScalarPlan.WorkerContext worker = NativeScalarPlan.WorkerContext.forSource(fixture.source, null);
+			ExtensionPlan selected = new ExtensionPlan(fixture.plan, new CopyBinding[] { CopyBinding.slot(2, 1) });
+			ExtensionPlan clone = new ExtensionPlan(fixture.plan, new CopyBinding[] { CopyBinding.slot(2, 1) });
+			assertNotNull(NativeAggregatePhysicalPlan.rebindInput(selected, clone, worker),
+					"fresh worker-local copy descriptors of the same assignment remain legal");
+			assertAll(
+					() -> assertNull(NativeAggregatePhysicalPlan.rebindInput(selected,
+							new ExtensionPlan(fixture.plan, new CopyBinding[] { CopyBinding.slot(2, 0) }), worker),
+							"a different dependency is not the selected alias recipe"),
+					() -> assertNull(NativeAggregatePhysicalPlan.rebindInput(selected,
+							new ExtensionPlan(fixture.plan, new CopyBinding[] { CopyBinding.constant(2, 200L) }),
+							worker),
+							"an equal assignment count does not prove equal scalar semantics"));
+			assertEquals(0, fixture.reads.get(), "a mismatched selected copy never opens its input");
+		}
+	}
+
+	@Test
+	void closedTransferRejectsLiveUnquotedAndOpaqueSummaryObservers() throws Exception {
+		try (Fixture fixture = fixture()) {
+			fixture.source.executionContext().initializeQueryBase(EmptyBindingSet.getInstance());
+			RowState row = seededEmptyRow(fixture.source, fixture.layout);
+			try {
+				NativeSubqueryPlan selected = quotedGroupChild(fixture,
+						LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS, row);
+				assertNotNull(selected);
+				assertNull(LmdbNativeKernelLowering.lowerAggregate(selected, row, new int[0],
+						new AggregateSpec[] { AggregateSpec.groupConcat("full", 2, false, "|") }, null),
+						"a live summary is never silently projected as an absent/full RDF binding");
+				SlotPlan opaque = new ExtensionPlan(selected, new CopyBinding[] {
+						CopyBinding.computedValue(1, new LmdbNativeCompiledValue(1L << 2,
+								ignored -> LmdbNativeValueCodec
+										.fromValue(SimpleValueFactory.getInstance().createLiteral(1))),
+								true) });
+				assertNull(LmdbNativeKernelLowering.lowerAggregate(opaque, row, new int[0],
+						new AggregateSpec[] { AggregateSpec.slot("total", 1, false, AggKind.SUM) }, null),
+						"an opaque callback has no closed summary-to-RDF transfer proof");
+				NativeSubqueryPlan unquoted = new NativeSubqueryPlan(step(fixture, lexicalLengthSpecs(), null, null),
+						new int[] { 0, 2 }, new String[] { "group", "length" }, new int[0], new String[0]);
+				assertNull(LmdbNativeKernelLowering.lowerAggregate(unquoted, row, new int[0],
+						new AggregateSpec[] { AggregateSpec.slot("total", 2, false, AggKind.SUM) }, null),
+						"an AUTO child without a selected receipt cannot borrow its sibling's output proof");
+				assertEquals(0, fixture.reads.get(), "all rejected observers decline before any child opening");
+			} finally {
+				row.closeDecodedInputs();
+			}
+		}
+	}
+
+	@Test
+	void parsedNestedAliasesRetainTheSelectedClosedOutputReceipt() throws Exception {
+		try (Fixture fixture = fixture()) {
+			LmdbNativeValueCodec codec = mock(LmdbNativeValueCodec.class);
+			when(fixture.source.delegate.nativeValueCodec()).thenReturn(codec);
+			TupleExpr query = new SPARQLParser().parseQuery(
+					"SELECT (SUM(STRLEN(?forwarded)) AS ?total) WHERE { "
+							+ "{ SELECT (?cat AS ?renamed) WHERE { { SELECT ?group "
+							+ "(GROUP_CONCAT(?value; SEPARATOR=\"|\") AS ?cat) WHERE { "
+							+ "VALUES (?group ?value) { (<urn:one> \"😀λ\") (<urn:one> \"x\") } "
+							+ "} GROUP BY ?group } } } BIND(?renamed AS ?forwarded) }",
+					null)
+					.getTupleExpr();
+			List<Group> groups = new ArrayList<>();
+			query.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(Group group) {
+					groups.add(group);
+					super.meet(group);
+				}
+			});
+			assertEquals(2, groups.size());
+			NativeValuePositionAnalysis positions = NativeValuePositionAnalysis.analyze(query);
+			assertEquals(NativeAggregateResultDemand.LEXICAL_LENGTH,
+					positions.aggregateDemand(groups.getLast().getGroupElements().getFirst()));
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+					new NativeWorkerTripleSource(fixture.source, SimpleValueFactory.getInstance()), null, null, 0,
+					new EvaluationStatistics(), false);
+			QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+			QueryEvaluationStep compiled = strategy.withValuePositions(positions,
+					() -> LmdbNativeAggregateCompiler.tryCompile(groups.getFirst(), context, strategy, fixture.source));
+			assertTrue(compiled instanceof NativeGroupStep, "the real parsed outer group compiles natively");
+			NativeGroupStep outer = (NativeGroupStep) compiled;
+			SyntheticValueSource evaluation;
+			try (SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(fixture.source)) {
+				evaluation = ((SyntheticValueSource) outer.source).forInvocation(EmptyBindingSet.getInstance());
+			}
+			evaluation.executionContext().initializeQueryBase(EmptyBindingSet.getInstance());
+			RowState row = seededEmptyRow(evaluation, outer.layout);
+			try {
+				SlotPlan selected = NativeAggregatePhysicalPlan.bindLexicalInputs(outer.arg, row);
+				assertNotNull(selected, "the parsed alias chain binds one actual executable lexical child");
+				assertNotNull(NativeAggregateCostQuotes.describe(selected, row, row.boundMask()),
+						"the exact selected lexical input has its own finite physical work description");
+				long demanded = 1L << outer.aggregates[0].slot;
+				assertNotNull(NativeLogicalResultTransferPlan.close(selected, row, demanded),
+						() -> "the parsed alias/STRLEN chain must retain closed output evidence: "
+								+ selectedOutputEvidence(selected));
+				assertEquals(0, fixture.reads.get(), "proving a quote never opens its child");
+			} finally {
+				row.closeDecodedInputs();
+				evaluation.executionContext().close();
+			}
+		}
+	}
+
+	private static String selectedOutputEvidence(SlotPlan plan) {
+		if (plan instanceof NativeSubqueryPlan lexical) {
+			return "lexical=" + lexical.describe() + ", columns=" + lexical.outputColumns();
+		}
+		if (plan instanceof ExtensionPlan extension) {
+			List<String> assignments = new ArrayList<>();
+			for (CopyBinding copy : extension.copies) {
+				assignments.add("target=" + copy.targetSlot + ", source=" + copy.sourceSlot + ", scalar="
+						+ copy.scalarPlan() + ", semantic=" + (copy.semanticValue != null));
+			}
+			return "extension=" + assignments + ", " + selectedOutputEvidence(extension.arg);
+		}
+		return plan.getClass().getSimpleName();
+	}
+
+	@Test
+	void quotedRowProjectionKeepsSummaryDefinitionAndValidatesWorkerRecipe() throws Exception {
+		try (Fixture fixture = fixture()) {
+			fixture.source.executionContext().initializeQueryBase(EmptyBindingSet.getInstance());
+			NativeSubqueryPlan.WorkerFactory factory = worker -> new NativeSubqueryPlan.BoundExecution(
+					step(new Fixture((SyntheticValueSource) worker.source(), fixture.layout, fixture.plan,
+							new AtomicInteger()), lexicalLengthSpecs(), null, null),
+					null, null);
+			NativeSubqueryPlan lexical = new NativeSubqueryPlan(step(fixture, lexicalLengthSpecs(), null, null),
+					new int[] { 0, 2 }, new String[] { "group", "length" }, new int[0], new String[0], new String[0],
+					new String[0], null, null, factory);
+			NativePhysicalResultPlan selected = rowProjection(fixture, lexical, new int[] { 2 }, false)
+					.physicalPlan(EmptyBindingSet.getInstance());
+			assertNotNull(selected);
+			assertNotNull(selected.outputEvidence(),
+					"the actual row-projection boundary forwards its selected receipt");
+			assertEquals(NativeResultCell.Kind.LEXICAL_SUMMARY, selected.outputEvidence().column("alias").kind());
+			NativeSubqueryPlan prepared = new NativeSubqueryPlan(step(fixture, lexicalLengthSpecs(), null, null),
+					new int[] { 0, 2 }, new String[] { "group", "length" }, new int[0], new String[0], new String[0],
+					new String[0], null, null, factory);
+			NativeScalarPlan.WorkerContext worker = NativeScalarPlan.WorkerContext.forSource(fixture.source, null);
+			NativePhysicalResultPlan rebound = selected.rebind(rowProjection(fixture, prepared, new int[] { 2 }, false),
+					worker, EmptyBindingSet.getInstance());
+			assertNotNull(rebound, "fresh worker-local preparation of the same row recipe remains legal");
+			assertSame(selected.outputEvidence(), rebound.outputEvidence(),
+					"worker preparation preserves the exact selected receipt and lexical-definition identities");
+			assertAll(
+					() -> assertNull(selected.rebind(rowProjection(fixture, prepared, new int[] { 1 }, false), worker,
+							EmptyBindingSet.getInstance()),
+							"a different projected lane is not the selected definition"),
+					() -> assertNull(selected.rebind(rowProjection(fixture, prepared, new int[] { 2 }, true), worker,
+							EmptyBindingSet.getInstance()), "comparison mode is part of the accepted row recipe"));
+			QueryBindingSet changedEntry = new QueryBindingSet();
+			changedEntry.addBinding("outer", SimpleValueFactory.getInstance().createLiteral("different entry"));
+			assertNull(selected.rebind(rowProjection(fixture, prepared, new int[] { 2 }, false), worker, changedEntry),
+					"a different entry frame cannot borrow the original selected quote");
+			assertEquals(0, fixture.reads.get(), "receipt and recipe checks do not execute either child");
+		}
+	}
+
+	@Test
+	void quotedOrdinaryRowProjectionRetainsIndependentRdfEvidence() throws Exception {
+		try (Fixture fixture = fixture()) {
+			NativeRowsStep original = rowProjection(fixture, fixture.plan, new int[] { 0 }, false);
+			NativePhysicalResultPlan selected = original.physicalPlan(EmptyBindingSet.getInstance());
+			assertNotNull(selected);
+			assertNotNull(selected.outputEvidence());
+			assertEquals(NativeResultCell.Kind.RDF_TERM, selected.outputEvidence().column("alias").kind());
+			assertNull(selected.outputEvidence().anchor(), "ordinary RDF rows do not borrow a summary cold anchor");
+			NativePhysicalResultPlan rebound = selected.rebind(
+					rowProjection(fixture, fixture.plan, new int[] { 0 }, false),
+					NativeScalarPlan.WorkerContext.forSource(fixture.source, null), EmptyBindingSet.getInstance());
+			assertNotNull(rebound);
+			assertSame(selected.outputEvidence(), rebound.outputEvidence());
+			assertEquals(0, fixture.reads.get());
+		}
+	}
+
+	@Test
+	void selectedPreviewReplaysItsFrozenQuoteOnceWithoutSourceCalls() throws Exception {
+		try (Fixture fixture = fixture();
+				QueryExplanationContext preview = QueryExplanationContext
+						.enter(Explanation.Level.Optimized)) {
+			SingletonSet target = telemetryTarget();
+			NativeGroupStep original = step(fixture, lexicalLengthSpecs(), target,
+					LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS);
+			NativePhysicalResultPlan selected = original.physicalPlan(EmptyBindingSet.getInstance());
+			assertNotNull(selected);
+			assertNull(target.getStringMetricActual(NativeAggregateCostQuotes.METRIC),
+					"a child quote captures diagnostics without publishing them as another execution");
+			clearInvocations(fixture.source.delegate);
+			LmdbNativeStrategyPreview.inspect(selected.step());
+			LmdbNativeStrategyPreview.inspect(selected.step());
+			LmdbNativeStrategyPreview.inspect(original);
+			JsonNode inventory = JsonMapper.builder()
+					.build()
+					.readTree(target.getStringMetricActual(NativeAggregateCostQuotes.METRIC));
+			assertTrue(hasFiniteKnownPhysicalQuote(candidate(inventory,
+					LmdbNativeAttemptMetrics.PATH_NESTED_LOOP)));
+			assertTrue(hasFiniteKnownPhysicalQuote(candidate(inventory,
+					LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS)));
+			assertEquals(1, preview.decisions().size(),
+					"the selected wrapper and original semantic definition share inspectOnce identity");
+			assertEquals(LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS,
+					preview.decisions().getFirst().wouldSelect(), "preview reports the recipe already selected");
+			assertFalse(preview.decisions()
+					.getFirst()
+					.candidates()
+					.stream()
+					.filter(candidate -> LmdbNativeAttemptMetrics.PATH_NESTED_LOOP.equals(candidate.strategy()))
+					.findFirst()
+					.orElseThrow()
+					.canAttempt(), "captured forcing also remains part of preview eligibility");
+			assertEquals(0, fixture.reads.get());
+			verifyNoInteractions(fixture.source.delegate);
+		}
+	}
+
+	@Test
+	void driverNormalizedConcatRetainsItsParsedSelectedReceipt() throws Exception {
+		for (String text : List.of(PRICING_GC, PRICING_GC.replace("?o } GROUP", "?o. } GROUP"))) {
+			try (Fixture fixture = fixture()) {
+				Value predicate = SimpleValueFactory.getInstance()
+						.createIRI("https://dblp.org/rdf/schema#signatureDblpName");
+				when(fixture.source.delegate.idOf(any(Value.class)))
+						.thenAnswer(
+								call -> predicate.equals(call.getArgument(0)) ? 9L : NativeLmdbQuerySource.UNKNOWN_ID);
+				when(fixture.source.delegate.idOf(any(Value.class), anyInt()))
+						.thenAnswer(
+								call -> predicate.equals(call.getArgument(0)) ? 9L : NativeLmdbQuerySource.UNKNOWN_ID);
+				when(fixture.source.delegate.estimate(anyLong(), anyLong(), anyLong(), anyLong()))
+						.thenReturn((double) INPUT_ROWS);
+				when(fixture.source.delegate.nativeValueCodec()).thenReturn(mock(LmdbNativeValueCodec.class));
+				TupleExpr parsed = new SPARQLParser().parseQuery(text, null).getTupleExpr();
+				List<Group> groups = new ArrayList<>();
+				parsed.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+					@Override
+					public void meet(Group group) {
+						groups.add(group);
+						super.meet(group);
+					}
+				});
+				assertEquals(2, groups.size(), "both grammar spellings contain the actual nested aggregate boundary");
+				NativeValuePositionAnalysis positions = NativeValuePositionAnalysis.analyze(parsed);
+				GroupElem definition = groups.getLast().getGroupElements().getFirst();
+				assertEquals(NativeAggregateResultDemand.LEXICAL_LENGTH, positions.aggregateDemand(definition));
+				assertNotNull(positions.aggregateDefinition(definition));
+				LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+						new NativeWorkerTripleSource(fixture.source, SimpleValueFactory.getInstance()), null, null, 0,
+						new EvaluationStatistics(), false);
+				QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+				QueryEvaluationStep compiled = strategy.withValuePositions(positions,
+						() -> LmdbNativeAggregateCompiler.tryCompile(groups.getFirst(), context, strategy,
+								fixture.source));
+				assertTrue(compiled instanceof NativeGroupStep, "the exact parsed outer SUM must be admitted");
+				NativeGroupStep outer = (NativeGroupStep) compiled;
+				SyntheticValueSource evaluation;
+				try (SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource
+						.attachEvaluation(fixture.source)) {
+					evaluation = ((SyntheticValueSource) outer.source).forInvocation(EmptyBindingSet.getInstance());
+				}
+				evaluation.executionContext().initializeQueryBase(EmptyBindingSet.getInstance());
+				RowState row = seededEmptyRow(evaluation, outer.layout);
+				try {
+					SlotPlan selected = NativeAggregatePhysicalPlan.bindLexicalInputs(outer.arg, row);
+					assertNotNull(selected);
+					NativeLogicalResultTransferPlan closed = NativeLogicalResultTransferPlan.close(selected, row,
+							1L << outer.aggregates[0].slot);
+					assertNotNull(closed, "driver dot normalization preserves the selected summary/STRLEN receipt");
+					assertNotNull(NativeAggregateCostQuotes.describe(selected, row, row.boundMask()));
+					assertEquals(0, fixture.reads.get(), "the proof does not advance a source cursor");
+					long count = 0L;
+					long total = 0L;
+					try (RowCursor cursor = closed.open(row)) {
+						while (cursor.next()) {
+							assertNull(row.summaryCell(outer.aggregates[0].slot),
+									"STRLEN has consumed the summary into a genuine RDF term lane");
+							Literal length = (Literal) row.source.lazyValue(row.slots[outer.aggregates[0].slot]);
+							assertEquals(XMLSchema.INTEGER, length.getDatatype());
+							total += length.longValue();
+							count++;
+						}
+					}
+					assertEquals(FIXTURE_GROUPS, count);
+					assertEquals(403L, total,
+							"the actual Unicode bag and separator lengths precede costing assertions");
+					assertEquals(INPUT_ROWS, fixture.reads.get());
+					assertEquals(evaluation.executionContext().cancellation().evaluationId(),
+							row.cancellation.evaluationId(),
+							"local operator cancellation retains the query evaluation");
+					assertEquals(evaluation.executionContext().cancellation().ownerThreadId(),
+							row.cancellation.ownerThreadId());
+					assertSame(evaluation.idSpace(), row.source.idSpace(),
+							"this transfer retains its exact term authority");
+					assertTrue(row.source instanceof SyntheticValueSource);
+					assertSame(evaluation.executionContext().memoryScope(),
+							((SyntheticValueSource) row.source).executionContext().memoryScope());
+					assertSame(evaluation.executionContext().memoryLedger(),
+							((SyntheticValueSource) row.source).executionContext().memoryLedger());
+					assertTrue(closed.evidence().validFor(row.source),
+							"the receipt validates the same available snapshot authority");
+					assertTrue(closed.evidence()
+							.columns()
+							.values()
+							.stream()
+							.anyMatch(column -> column.definition() == positions.aggregateDefinition(definition)),
+							"the parsed aggregate definition belongs to the same selected output receipt");
+					SingletonSet target = telemetryTarget();
+					try (NativeGroupIteration iteration = new NativeGroupIteration(evaluation, selected, outer.layout,
+							new int[0], outer.aggregates, false, EmptyBindingSet.getInstance(), null, null, false,
+							target)) {
+						assertTrue(iteration.initialize(row));
+						NativeGroupResultCursor.GroupingPlan table = NativeGroupResultCursor.tablePlan(iteration);
+						NativeAggregatePhysicalPlan physical = NativeAggregatePhysicalPlan.typed(table, iteration);
+						LmdbNativeStrategyProposal<NativeResultCursor> proposal = new LmdbNativeStrategyProposal<NativeResultCursor>(
+								() -> table.open(iteration, evaluation.executionContext()),
+								selected.estimateWork(row, row.boundMask()), table.tag(), () -> {
+								}).withAggregatePhysicalPlan(physical);
+						new NativeAggregateCostQuotes(iteration, row).attach(proposal);
+						JsonNode quote = candidate(JsonMapper.builder()
+								.build()
+								.readTree(target.getStringMetricActual(NativeAggregateCostQuotes.METRIC)), table.tag());
+						assertTrue(hasFiniteKnownPhysicalQuote(quote),
+								"the actual parsed closed outer offer stays finite");
+						assertNotNull(physical.producer());
+						assertNotNull(proposal.coldAnchor());
+						assertEquals(INPUT_ROWS, fixture.reads.get(),
+								"the offered proof does not reopen its exact child");
+					}
+					assertFalse(evaluation.executionContext().cancellation().isCancellationRequested(),
+							"completed child cleanup must not cancel the query owner");
+					evaluation.executionContext().cancellation().requestCancellation();
+					assertTrue(row.cancellation.isCancellationRequested(),
+							"query cancellation reaches the local operator token");
+					assertThrows(KernelQueryCancelledException.class, row.cancellation::check);
+				} finally {
+					row.closeDecodedInputs();
+					evaluation.executionContext().close();
+				}
+			}
+		}
+	}
+
+	@Test
+	void selectedTelemetryPublishesFrozenQuotesOnlyAtActualOpening() throws Exception {
+		for (boolean nativeCursor : List.of(true, false)) {
+			try (Fixture fixture = fixture()) {
+				SingletonSet target = telemetryTarget();
+				NativeGroupStep original = step(fixture, lexicalLengthSpecs(), target,
+						LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS);
+				NativePhysicalResultPlan selected = original.physicalPlan(EmptyBindingSet.getInstance());
+				assertNotNull(selected);
+				assertNotNull(selected.outputEvidence());
+				assertEquals(0, fixture.reads.get());
+				assertNull(target.getStringMetricActual(NativeAggregateCostQuotes.METRIC),
+						"capturing the selected recipe must not publish another execution");
+				long count = 0L;
+				if (nativeCursor) {
+					try (NativeResultCursor cursor = ((NativeResultStep) selected.step())
+							.evaluateNative(EmptyBindingSet.getInstance())) {
+						while (cursor.next() != null) {
+							count++;
+						}
+					}
+				} else {
+					try (CloseableIteration<BindingSet> cursor = selected.step()
+							.evaluate(EmptyBindingSet.getInstance())) {
+						while (cursor.hasNext()) {
+							cursor.next();
+							count++;
+						}
+					}
+				}
+				assertEquals(FIXTURE_GROUPS, count,
+						"the selected recipe genuinely completes before metadata assertions");
+				assertEquals(INPUT_ROWS, fixture.reads.get(), "publication must not re-open or re-rank the child");
+				String inventory = target.getStringMetricActual(NativeAggregateCostQuotes.METRIC);
+				assertNotNull(inventory, "actual Telemetry opening must publish this same frozen quote catalog");
+				JsonNode quotes = JsonMapper.builder().build().readTree(inventory);
+				assertTrue(hasFiniteKnownPhysicalQuote(candidate(quotes,
+						LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS)));
+			}
+		}
+	}
+
+	@Test
+	void fullConcatCopyWorkAndGroupedOutputDoNotDisappearFromPhysicalQuotes() throws Exception {
+		List<LmdbNativeCostEstimate> fullEstimates = new ArrayList<>();
+		List<JsonNode> fullQuotes = new ArrayList<>();
+		List<Long> materializedCharacters = new ArrayList<>();
+		List<Executable> outputCoverage = new ArrayList<>();
+		for (AggregateSpec spec : List.of(AggregateSpec.groupConcat("text", 1, false, "|"),
+				AggregateSpec.groupConcat("text", 1, false, "🧩".repeat(1024)),
+				AggregateSpec.slot("minimum", 1, false, AggKind.MIN), lexicalLengthSpecs()[0])) {
+			try (Fixture fixture = fixture()) {
+				SingletonSet target = telemetryTarget();
+				PatternPlan selectedInput = fixture.plan.withOrder(StatementOrder.S, "spoc");
+				try (NativeGroupIteration iteration = new NativeGroupIteration(fixture.source, selectedInput,
+						fixture.layout, new int[] { 0 }, new AggregateSpec[] { spec }, false,
+						EmptyBindingSet.getInstance(), null, null, false, target)) {
+					RowState row = seededEmptyRow(fixture.source, fixture.layout);
+					try {
+						assertTrue(iteration.initialize(row));
+						NativeAggregateDistinctPlan current = LmdbNativeOrderPlanner.aggregateInCurrentOrder(
+								selectedInput,
+								new int[] { 0 }, new AggregateSpec[] { spec }, row);
+						assertTrue(LmdbNativeOrderPlanner.completeGroupPrefix(current, new int[] { 0 }),
+								"FULL encounter order is an explicit actual source promise, never an optimization reorder");
+						NativeGroupResultCursor.GroupingPlan plan = NativeGroupResultCursor.orderedPlan(iteration, row);
+						assertNotNull(plan, "the fixture admits a real complete group-prefix recipe");
+						LmdbNativeStrategyProposal<NativeResultCursor> proposal = new LmdbNativeStrategyProposal<>(
+								() -> plan.open(iteration, fixture.source.executionContext()),
+								plan.input().estimateWork(row, row.boundMask()), plan.tag(), () -> {
+								});
+						proposal.withAggregatePhysicalPlan(NativeAggregatePhysicalPlan.typed(plan, iteration));
+						new NativeAggregateCostQuotes(iteration, row).attach(proposal);
+						JsonNode quote = candidate(JsonMapper.builder()
+								.build()
+								.readTree(target.getStringMetricActual(NativeAggregateCostQuotes.METRIC)), plan.tag());
+						assertNotNull(quote);
+						assertEquals(0, fixture.reads.get(), "quoting the recipe does not sample lexical values");
+						long count = 0L;
+						long characters = 0L;
+						try (NativeResultCursor cursor = proposal.open()) {
+							NativeResultRow result;
+							while ((result = cursor.next()) != null) {
+								NativeResultCell cell = result.cell(spec.name);
+								assertNotNull(cell);
+								if (spec.kind == AggKind.GROUP_CONCAT
+										&& spec.resultDemand == NativeAggregateResultDemand.FULL_VALUE) {
+									characters += ((Literal) cell.value()).getLabel().length();
+								}
+								count++;
+							}
+						}
+						assertEquals(FIXTURE_GROUPS, count,
+								"nonempty grouped output is an actual completed fixture fact");
+						assertEquals(INPUT_ROWS, fixture.reads.get());
+						long actualGroups = count;
+						outputCoverage.add(() -> assertTrue(!hasFiniteKnownPhysicalQuote(quote)
+								|| quote.path("total")
+										.path("OUTPUT_MATERIALIZATION")
+										.path("high")
+										.asDouble() >= actualGroups,
+								() -> "the actual " + spec.kind + "/" + spec.resultDemand
+										+ " recipe must bound its nonempty output adapters instead of reporting zero: "
+										+ quote));
+						if (spec.kind == AggKind.GROUP_CONCAT
+								&& spec.resultDemand == NativeAggregateResultDemand.FULL_VALUE) {
+							fullEstimates.add(proposal.adaptiveEstimate(-1D));
+							fullQuotes.add(quote);
+							materializedCharacters.add(characters);
+						}
+					} finally {
+						row.closeDecodedInputs();
+					}
+				}
+			}
+		}
+		assertTrue(materializedCharacters.get(1) > materializedCharacters.get(0),
+				"only the immutable separator changes; the real larger recipe appends/copies more output characters");
+		outputCoverage.add(() -> assertFalse(hasFiniteKnownPhysicalQuote(fullQuotes.get(0))
+				&& hasFiniteKnownPhysicalQuote(fullQuotes.get(1))
+				&& fullEstimates.get(0).total().equals(fullEstimates.get(1).total()),
+				"shared input decoding is unchanged, but extra FULL concatenation/copy work cannot be both known and identical; "
+						+ "valid same-recipe bounds may price it, otherwise its additional work stays explicitly unpriced"));
+		assertAll("candidate-owned materialization and grouped output coverage", outputCoverage);
+	}
+
+	@Test
+	void realAggregatePreludeRetainsActualPricingAndOpeningMatrix(@TempDir Path directory) throws Exception {
+		KernelExecutionTestAccess.resetCostCalibration();
+		SailRepository repository = repositoryWithPricingData(directory.resolve("store"));
+		try {
+			Map<String, String> queries = new LinkedHashMap<>();
+			queries.put("gc", PRICING_GC);
+			queries.put("objects", PRICING_OBJECTS);
+			queries.put("blanks", PRICING_BLANKS);
+			queries.put("low-groups", PRICING_LOW_GROUPS);
+			Map<String, List<String>> expected = new HashMap<>();
+			for (var entry : queries.entrySet()) {
+				expected.put(entry.getKey(), canonical(evaluateRepository(repository, entry.getValue(), false, null)));
+				assertFalse(expected.get(entry.getKey()).isEmpty(), "each semantic control is nonempty before pricing");
+			}
+			String values = " { ?s <https://dblp.org/rdf/schema#signatureDblpName> ?o }";
+			List<String> prelude = List.of("SELECT (COUNT(?o) AS ?result)" + values,
+					"SELECT (MIN(?o) AS ?result)" + values, "SELECT (MAX(?o) AS ?result)" + values,
+					"SELECT (SUM(?o) AS ?result) { ?s <https://dblp.org/rdf/schema#numberOfCreators> ?o }");
+			List<List<String>> preludeBags = new ArrayList<>();
+			for (String query : prelude) {
+				preludeBags.add(canonical(evaluateRepository(repository, query, false, null)));
+			}
+			long samplesBefore = LmdbNativeMachineCostModel.jvmWide().snapshot().sampleCount();
+			Path prefixRecording = directory.resolve("real-prefix.jfr");
+			try (Recording recording = new Recording()) {
+				recording.enable(STRATEGY_EVENT).withThreshold(Duration.ZERO);
+				recording.start();
+				for (int index = 0; index < 40; index++) {
+					assertEquals(preludeBags.get(index % prelude.size()),
+							canonical(evaluateRepository(repository, prelude.get(index % prelude.size()), true, null)),
+							"every prelude query must complete its actual generic bag, without fabricated timings");
+				}
+				recording.stop();
+				recording.dump(prefixRecording);
+			}
+			List<jdk.jfr.consumer.RecordedEvent> prefixEvents = RecordingFile.readAllEvents(prefixRecording)
+					.stream()
+					.filter(event -> STRATEGY_EVENT.equals(event.getEventType().getName()))
+					.toList();
+			long samplesAfter = LmdbNativeMachineCostModel.jvmWide().snapshot().sampleCount();
+			assertTrue(
+					prefixEvents.stream()
+							.anyMatch(event -> "EXHAUSTED".equals(event.getString("observationCompletion"))),
+					"fixture preflight: real direct completions are retained independently of feature-training coverage");
+			List<Executable> contracts = new ArrayList<>();
+			for (var entry : queries.entrySet()) {
+				LmdbNativeMachineCostModel.Snapshot machine = LmdbNativeMachineCostModel.jvmWide().snapshot();
+				Path recordingPath = directory.resolve(entry.getKey() + "-actual.jfr");
+				List<BindingSet> actual;
+				GenericPlanNode plan;
+				try (Recording recording = new Recording()) {
+					recording.enable(STRATEGY_EVENT).withThreshold(Duration.ZERO);
+					recording.enable(AGGREGATE_EVENT).withThreshold(Duration.ZERO);
+					recording.start();
+					actual = evaluateRepository(repository, entry.getValue(), true, null);
+					plan = explainRepository(repository, entry.getValue(), null);
+					recording.stop();
+					recording.dump(recordingPath);
+				}
+				assertEquals(expected.get(entry.getKey()), canonical(actual),
+						"actual AUTO preserves " + entry.getKey());
+				List<jdk.jfr.consumer.RecordedEvent> events = RecordingFile.readAllEvents(recordingPath);
+				List<Map<String, Object>> decisions = new ArrayList<>();
+				for (var event : events) {
+					if (STRATEGY_EVENT.equals(event.getEventType().getName())) {
+						Map<String, Object> decision = new HashMap<>();
+						for (String field : List.of("evaluationId", "boundaryId", "decisionId", "rankingRound",
+								"phase", "strategy", "offered", "status", "variant", "regime", "epoch", "priceBasis",
+								"effectiveEvidence", "exactCompletedCount", "evidenceSource", "learnedDominanceAllowed",
+								"expectedNanos", "low99Nanos", "high99Nanos", "latentLow99Nanos", "latentHigh99Nanos",
+								"selectionReason", "compilationCacheState", "trainingAccepted",
+								"observationCompletion")) {
+							decision.put(field, event.getValue(field));
+						}
+						decisions.add(decision);
+					}
+				}
+				Map<String, Long> coverage = new HashMap<>();
+				for (LmdbNativeCostVector.Feature feature : LmdbNativeCostVector.Feature.values()) {
+					coverage.put(feature.name(), machine.featureEvidence(feature));
+				}
+				List<String> inventories = new ArrayList<>();
+				collectAggregateQuotes(plan, inventories);
+				Map<String, Object> evidence = new HashMap<>();
+				evidence.put("query", entry.getValue());
+				evidence.put("preludeCompletedQueries", 40);
+				evidence.put("machineSamplesBeforePrelude", samplesBefore);
+				evidence.put("machineSamplesAfterPrelude", samplesAfter);
+				evidence.put("preOpenFeatureEvidence", coverage);
+				evidence.put("actualRankedPredictions", decisions);
+				evidence.put("aggregateOpenings", aggregateOpeningEvidence(recordingPath));
+				evidence.put("physicalInventories", inventories);
+				evidence.put("actualBag", canonical(actual));
+				evidence.put("scopeBoundary",
+						"plain result and Telemetry are separate real invocations; IDs remain separate");
+				Path evidencePath = directory.resolve(entry.getKey() + "-pricing-opening.json");
+				Files.writeString(evidencePath, JsonMapper.builder().build().writeValueAsString(evidence));
+				Files.writeString(directory.resolve(entry.getKey() + "-plan.txt"), plan.toString());
+				System.out.println("Real-prefix matrix evidence: " + evidencePath);
+				contracts.add(() -> assertTrue(decisions.stream()
+						.anyMatch(row -> "CANDIDATE".equals(row.get("phase"))
+								&& Boolean.TRUE.equals(row.get("offered"))),
+						"actual offered quote inventory for " + entry.getKey()));
+				contracts.add(() -> assertFalse(aggregateOpeningEvidence(recordingPath).isEmpty(),
+						"actual opened recipe evidence for " + entry.getKey()));
+				contracts.add(() -> assertFalse(inventories.isEmpty(),
+						"actual physical quote metadata for " + entry.getKey()));
+				if (PRICING_OBJECTS.equals(entry.getValue())) {
+					JsonNode inventory = JsonMapper.builder().build().readTree(inventories.getFirst());
+					JsonNode wildcard = candidate(inventory,
+							LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD_INTERPRETED);
+					assertNotNull(wildcard,
+							"the actual object-domain reproduction offers its wildcard payload producer");
+					List<Map<String, Object>> unmeasured = decisions.stream()
+							.filter(row -> "CANDIDATE".equals(row.get("phase"))
+									&& Boolean.TRUE.equals(row.get("offered"))
+									&& LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD_INTERPRETED
+											.equals(row.get("strategy"))
+									&& ((Number) row.get("exactCompletedCount")).longValue() == 0L)
+							.toList();
+					assertFalse(unmeasured.isEmpty(),
+							"the first actual object execution has no exact completed timing");
+					contracts.add(() -> assertTrue(hasFiniteKnownPhysicalQuote(wildcard)
+							|| unmeasured.stream().noneMatch(row -> "FEATURE_POSTERIOR".equals(row.get("priceBasis"))),
+							() -> "the real wildcard producer's refused physical quote cannot become a complete feature price "
+									+ "through legacy work; a new valid same-recipe physical proof may price it: "
+									+ unmeasured));
+				}
+			}
+			assertAll("real-prefix actual proposal/pricing/opening matrix", contracts);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private static SailRepository repositoryWithPricingData(Path directory) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,sopc,psoc,posc,ospc,opsc")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
+				.setValueOverlayEnabled(true)
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+				.setDirectAdjacencyMaxBytes(1L << 30)
+				.setSketchEstimatorEnabled(false)
+				.setSketchEstimatorContextPairSketchesEnabled(false);
+		LmdbStore store = new LmdbStore(directory.toFile(), config);
+		store.setExperimentalQueryOptimizations(true);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			var factory = connection.getValueFactory();
+			var names = factory.createIRI("https://dblp.org/rdf/schema#signatureDblpName");
+			var numbers = factory.createIRI("https://dblp.org/rdf/schema#numberOfCreators");
+			var signatures = factory.createIRI("https://dblp.org/rdf/schema#hasSignature");
+			var type = factory.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+			connection.begin();
+			for (int group = 0; group < 64; group++) {
+				Resource subject = group % 4 == 0 ? factory.createBNode("pricing-" + group)
+						: factory.createIRI(PHYSICAL_COST_EX, "pricing-" + group);
+				connection.add(subject, names, factory.createLiteral("lambda-λ-" + group));
+				connection.add(subject, names, factory.createLiteral("emoji-😀-" + group));
+				connection.add(subject, names, factory.createLiteral("plain-" + group));
+				connection.add(subject, numbers, factory.createLiteral(group % 8 + 1));
+				connection.add(subject, type, factory.createIRI(PHYSICAL_COST_EX, "type-" + group % 4));
+			}
+			for (int key = 0; key < 12; key++) {
+				for (int member = 0; member <= key; member++) {
+					connection.add(factory.createIRI(PHYSICAL_COST_EX, "member-" + key + '-' + member), signatures,
+							factory.createIRI(PHYSICAL_COST_EX, "signature-" + key));
+				}
+			}
+			connection.commit();
+			assertEquals(398L, connection.size(),
+					"fixture preflight: exact stored graph has no duplicate statement loss");
+		}
+		assertTrue(store.awaitDirectAdjacencyReady(30, TimeUnit.SECONDS),
+				"fixture preflight: retained adjacency is ready");
+		assertTrue(store.awaitValueOverlayReady(30, TimeUnit.SECONDS),
+				"fixture preflight: retained value authority is ready");
+		return repository;
+	}
+
+	@Test
+	void commonInventoryRetainsAnExplicitUnpricedPreparedRecipe() throws Exception {
+		try (Fixture fixture = fixture()) {
+			SingletonSet target = telemetryTarget();
+			try (NativeGroupIteration iteration = iteration(fixture, target,
+					new AggregateSpec[] { AggregateSpec.slot("count", 1, false, AggKind.COUNT) }, null)) {
+				RowState row = seededEmptyRow(fixture.source, fixture.layout);
+				try {
+					assertTrue(iteration.initialize(row));
+					AtomicInteger opens = new AtomicInteger();
+					NativeAggregateAlternative.Prepared prepared = NativeAggregateAlternative.unpriced(row,
+							fixture.plan.estimateWork(row, row.boundMask()), target, "preparedUnknown",
+							(bindings, owner) -> {
+								opens.incrementAndGet();
+								return null;
+							});
+					assertNull(prepared.retention(), "this is explicit unknown storage, not an absent producer");
+					assertNull(prepared.quote(row));
+					NativeAggregateAlternative alternative = mock(NativeAggregateAlternative.class);
+					when(alternative.prepare(row)).thenReturn(prepared);
+					iteration.alternatives = List.of(new NativeGroupStep.Alternative(alternative, "preparedUnknown"));
+					AtomicReference<LmdbNativeStrategyProposal<List<BindingSet>>> captured = new AtomicReference<>();
+					iteration.offerCandidates(row, LmdbNativeAttemptMetrics.direct(), fixture.plan,
+							new LmdbNativeCandidateOffers<>() {
+								@Override
+								LmdbNativeCandidateOffers<List<BindingSet>> offer(
+										LmdbNativeStrategyArbiter.Proposer<List<BindingSet>> proposer)
+										throws IOException {
+									LmdbNativeStrategyProposal<List<BindingSet>> proposal = proposer.propose();
+									if (proposal != null) {
+										if ("preparedUnknown".equals(proposal.tag)) {
+											captured.set(proposal);
+										} else {
+											proposal.close();
+										}
+									}
+									return this;
+								}
+
+								@Override
+								LmdbNativeCandidateOffers<List<BindingSet>> terminalFallback(
+										LmdbNativeStrategyArbiter.Proposer<List<BindingSet>> proposer) {
+									return this;
+								}
+							});
+					assertNotNull(captured.get(), "the legal prepared algorithm remains in the common inventory");
+					assertEquals(0, opens.get());
+					assertEquals(0, fixture.reads.get());
+					try (var proposal = captured.get()) {
+						assertNotNull(proposal.aggregatePhysicalPlan(),
+								"common offer construction must retain explicit producer refusal before CostQuotes.attach");
+						assertSame(prepared, proposal.aggregatePhysicalPlan().producer());
+						assertNull(proposal.aggregatePhysicalPlan().retention(), "unknown storage must remain unknown");
+					}
+				} finally {
+					row.closeDecodedInputs();
+				}
+			}
+		}
+	}
+
+	@Test
+	void explicitProducerRefusalCannotAcquireFeatureAuthorityFromLegacyWork(@TempDir Path directory) throws Exception {
+		KernelExecutionTestAccess.resetCostCalibration();
+		SailRepository repository = repositoryWithPricingData(directory.resolve("store"));
+		try {
+			completePricingPrelude(repository);
+			try (var dataset = NativeQuerySourceAccess.openExplicitDataset((LmdbStore) repository.getSail());
+					Fixture fixture = fixture()) {
+				LmdbNativeAdaptiveCostModel model = LmdbNativeAdaptiveCostModel
+						.forSource((NativeLmdbQuerySource) dataset);
+				SingletonSet target = telemetryTarget();
+				try (NativeGroupIteration iteration = new NativeGroupIteration(fixture.source, fixture.plan,
+						fixture.layout, new int[0], new AggregateSpec[] { AggregateSpec.star("count") }, false,
+						EmptyBindingSet.getInstance(), null, null, false, target)) {
+					RowState row = seededEmptyRow(fixture.source, fixture.layout);
+					try {
+						assertTrue(iteration.initialize(row));
+						NativeAggregateCostQuotes.Input input = NativeAggregateCostQuotes.describe(fixture.plan, row,
+								row.boundMask());
+						assertNotNull(input,
+								"ordinary input facts are retained even when compressed producer grain is unproved");
+						assertEquals(INPUT_ROWS, input.rows());
+						NativeGroupResultCursor.GroupingPlan table = NativeGroupResultCursor.tablePlan(iteration);
+						LmdbNativeStrategyProposal<NativeResultCursor> complete = new LmdbNativeStrategyProposal<>(
+								() -> table.open(iteration, fixture.source.executionContext()),
+								fixture.plan.estimateWork(row, row.boundMask()),
+								LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, () -> {
+								});
+						complete.withAggregatePhysicalPlan(NativeAggregatePhysicalPlan.typed(table, iteration));
+						new NativeAggregateCostQuotes(iteration, row).attach(complete);
+						LmdbNativeCostEstimate completeEstimate = complete.adaptiveEstimate(-1D);
+						assertNotNull(completeEstimate);
+						assertFalse(completeEstimate.total().isZero());
+						try (NativeResultCursor cursor = complete.open()) {
+							assertEquals(INPUT_ROWS, ((Literal) cursor.next().cell("count").value()).longValue());
+							assertNull(cursor.next());
+						}
+						assertEquals(INPUT_ROWS, fixture.reads.get(),
+								"the independently complete row recipe genuinely drains");
+						LmdbNativeStrategyProposal<String> independentlyComplete = new LmdbNativeStrategyProposal<>(
+								() -> "complete", fixture.plan.estimateWork(row, row.boundMask()), "independentLegacy",
+								() -> {
+								});
+						independentlyComplete.withPhysicalEstimate(completeEstimate);
+						assertNull(independentlyComplete.aggregatePhysicalPlan(),
+								"structured producer absence alone is not refusal");
+						assertSame(completeEstimate, independentlyComplete.adaptiveEstimate(-1D));
+						assertTrue(independentlyComplete.adaptiveEstimate(-1D).workEvidence().isComplete(),
+								"independently complete legacy work remains eligible even without supported timing coefficients");
+						LmdbNativeMachineCostModel.Prediction support = LmdbNativeMachineCostModel.jvmWide()
+								.predict(completeEstimate.total());
+						if (support.adaptiveReady()
+								&& !completeEstimate.total().hasUnsupportedFeatures(support.supportedFeatureMask())) {
+							assertEquals(LmdbNativeCostPrediction.PriceBasis.FEATURE_POSTERIOR,
+									model.predict(independentlyComplete.adaptiveEstimate(-1D)).priceBasis(),
+									"independently complete legacy work may use genuinely supported feature prices");
+						}
+						LmdbNativeStrategyProposal<String> refused = new LmdbNativeStrategyProposal<>(() -> "legal",
+								fixture.plan.estimateWork(row, row.boundMask()),
+								LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, () -> {
+								});
+						refused.withAggregatePhysicalPlan(new NativeAggregatePhysicalPlan(fixture.plan,
+								NativeAggregatePhysicalPlan.Retention.RETAINED_GROUPS, refusingProducer()));
+						new NativeAggregateCostQuotes(iteration, row).attach(refused);
+						JsonNode quote = candidate(JsonMapper.builder()
+								.build()
+								.readTree(target.getStringMetricActual(NativeAggregateCostQuotes.METRIC)), refused.tag);
+						assertNotNull(quote);
+						assertFalse(hasFiniteKnownPhysicalQuote(quote),
+								"the explicit producer really refused its complete physical quote");
+						LmdbNativeCostEstimate afterAttach = refused.adaptiveEstimate(-1D);
+						LmdbNativeCostPrediction prediction = model.predict(afterAttach == null
+								? refused.directTimingEstimate()
+								: afterAttach);
+						assertNotEquals(LmdbNativeCostPrediction.PriceBasis.FEATURE_POSTERIOR, prediction.priceBasis(),
+								"attach plus adaptiveEstimate must not relabel the scalar compatibility work as a complete producer proof");
+						assertFalse(prediction.learnedDominanceAllowed());
+					} finally {
+						row.closeDecodedInputs();
+					}
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private static NativeAggregatePhysicalPlan.Producer refusingProducer() {
+		return new NativeAggregatePhysicalPlan.Producer() {
+			@Override
+			public NativeAggregatePhysicalPlan.Work quote(RowState row) {
+				return null;
+			}
+
+			@Override
+			public String properties() {
+				return "EXACT_NATIVE[physicalFeatures=UNKNOWN]";
+			}
+		};
+	}
+
+	@Test
+	void unmeasuredIncompleteArmNeedsAProbeOrPriorViableDecline(@TempDir Path directory) {
+		List<Executable> cases = new ArrayList<>();
+		for (boolean swapped : List.of(false, true)) {
+			for (boolean reverse : List.of(false, true)) {
+				for (boolean decline : List.of(false, true)) {
+					String safe = swapped ? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED
+							: LmdbNativeAttemptMetrics.PATH_NESTED_LOOP;
+					String unknown = swapped ? LmdbNativeAttemptMetrics.PATH_NESTED_LOOP
+							: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED;
+					Path path = directory.resolve("swapped-" + swapped + "-reverse-" + reverse + "-decline-" + decline);
+					cases.add(() -> assertIncompleteNormalChoice(path, safe, unknown, reverse, decline));
+				}
+			}
+		}
+		assertAll("normal safety depends on executable proof and actual decline, not family labels or offer order",
+				cases);
+	}
+
+	private static void assertIncompleteNormalChoice(Path directory, String safeTag, String unknownTag,
+			boolean reverse, boolean decline) throws Exception {
+		KernelExecutionTestAccess.resetCostCalibration();
+		SailRepository repository = repositoryWithPricingData(directory.resolve("store"));
+		try {
+			completePricingPrelude(repository);
+			try (var dataset = NativeQuerySourceAccess.openExplicitDataset((LmdbStore) repository.getSail());
+					Fixture fixture = fixture()) {
+				LmdbNativeAdaptiveCostModel model = LmdbNativeAdaptiveCostModel
+						.forSource((NativeLmdbQuerySource) dataset);
+				PatternPlan input = fixture.plan.withOrder(StatementOrder.S, "spoc");
+				SingletonSet target = telemetryTarget();
+				try (NativeGroupIteration iteration = new NativeGroupIteration(fixture.source, input, fixture.layout,
+						new int[] { 0 }, lexicalLengthSpecs(), false, EmptyBindingSet.getInstance(), null, null, false,
+						target)) {
+					RowState row = seededEmptyRow(fixture.source, fixture.layout);
+					try {
+						assertTrue(iteration.initialize(row));
+						NativeGroupResultCursor.GroupingPlan bounded = NativeGroupResultCursor.orderedPlan(iteration,
+								row);
+						assertNotNull(bounded);
+						NativeAggregatePhysicalPlan actual = NativeAggregatePhysicalPlan.typed(bounded, iteration);
+						assertNotNull(actual.producer());
+						NativeAggregatePhysicalPlan.Work work = actual.producer().quote(row);
+						assertNotNull(work);
+						assertNotNull(actual.producer().coldAnchor(row, work),
+								"the normal control is an actual resource-proved recipe");
+						AtomicBoolean safeDeclined = new AtomicBoolean();
+						AtomicInteger unboundedUnknown = new AtomicInteger();
+						AtomicInteger boundedUnknown = new AtomicInteger();
+						AtomicInteger safeOpens = new AtomicInteger();
+						LmdbNativeStrategyProposal<String> safe = new LmdbNativeStrategyProposal<>(() -> {
+							safeOpens.incrementAndGet();
+							if (decline) {
+								safeDeclined.set(true);
+								return null;
+							}
+							int groups = 0;
+							try (NativeResultCursor cursor = bounded.open(iteration,
+									fixture.source.executionContext())) {
+								while (cursor.next() != null) {
+									groups++;
+								}
+							}
+							assertEquals(FIXTURE_GROUPS, groups);
+							return "bounded-complete";
+						}, input.estimateWork(row, row.boundMask()), safeTag, () -> {
+						});
+						safe.withAggregatePhysicalPlan(actual);
+						LmdbNativeStrategyProposal<String> unknown = new LmdbNativeStrategyProposal<>(() -> {
+							LmdbNativeProbeDeadline probe = LmdbNativeProbeDeadline.currentOrNull();
+							if (probe != null) {
+								assertNotEquals(Long.MAX_VALUE, probe.deadlineNanoTime(),
+										"exploration uses an actual admitted finite deadline");
+								boundedUnknown.incrementAndGet();
+								throw LmdbNativeProbeDeadline.capacityExhausted();
+							}
+							if (!safeDeclined.get()) {
+								unboundedUnknown.incrementAndGet();
+							}
+							return "last-fallback";
+						}, LmdbNativeWork.UNKNOWN, unknownTag, () -> {
+						});
+						unknown.withAggregatePhysicalPlan(new NativeAggregatePhysicalPlan(input,
+								NativeAggregatePhysicalPlan.Retention.RETAINED_GROUPS, refusingProducer()));
+						assertNull(unknown.aggregatePhysicalPlan().producer().quote(row),
+								"the unknown opener has an explicit refused producer proof");
+						NativeAggregateCostQuotes quotes = new NativeAggregateCostQuotes(iteration, row);
+						quotes.attach(safe);
+						quotes.attach(unknown);
+						assertNotNull(safe.coldAnchor());
+						LmdbNativeCostEstimate estimate = unknown.adaptiveEstimate(-1D);
+						LmdbNativeCostPrediction prior = model
+								.predict(estimate == null ? unknown.directTimingEstimate() : estimate);
+						assertEquals(LmdbNativeCostPrediction.PriceBasis.DIRECT_POSTERIOR, prior.priceBasis(),
+								"fixture preflight: the real prefix supplies an inherited direct prior, not an ordinal-only cold set");
+						assertEquals(0L, prior.exactCompletedCount());
+						assertFalse(prior.learnedDominanceAllowed(),
+								"an inherited direct prior is not this arm's completed evidence");
+						try (LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter
+								.<String>forModel(target, -1D, model)
+								.probeHarness(LmdbNativeProbeHarness.blocking())) {
+							arbiter.offer(() -> reverse ? unknown : safe);
+							arbiter.offer(() -> reverse ? safe : unknown);
+							try (LmdbNativeStrategySelection<String> selected = arbiter.selectWithObservation()) {
+								assertNotNull(selected);
+								selected.cancelled(null); // Counterfactual policy fixture never contributes a synthetic
+															// completion.
+							}
+						}
+						assertEquals(0, unboundedUnknown.get(),
+								"an explicitly incomplete unmeasured arm cannot run normally before viable decline");
+						assertTrue(safeOpens.get() > 0,
+								"the real viable recipe must be tried before the last unbounded fallback");
+						if (decline) {
+							assertTrue(safeDeclined.get());
+						} else {
+							assertEquals(INPUT_ROWS, fixture.reads.get());
+						}
+						assertFalse(fixture.source.executionContext().cancellation().isCancellationRequested());
+					} finally {
+						row.closeDecodedInputs();
+					}
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private static void completePricingPrelude(SailRepository repository) {
+		String values = " { ?s <https://dblp.org/rdf/schema#signatureDblpName> ?o }";
+		List<String> queries = List.of("SELECT (COUNT(?o) AS ?result)" + values,
+				"SELECT (MIN(?o) AS ?result)" + values, "SELECT (MAX(?o) AS ?result)" + values,
+				"SELECT (SUM(?o) AS ?result) { ?s <https://dblp.org/rdf/schema#numberOfCreators> ?o }");
+		List<List<String>> expected = new ArrayList<>();
+		for (String query : queries) {
+			expected.add(canonical(evaluateRepository(repository, query, false, null)));
+		}
+		long before = LmdbNativeMachineCostModel.jvmWide().snapshot().sampleCount();
+		for (int index = 0; index < 40; index++) {
+			assertEquals(expected.get(index % queries.size()),
+					canonical(evaluateRepository(repository, queries.get(index % queries.size()), true, null)),
+					"the actual prelude completes exact bags; no synthetic timings are inserted");
+		}
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset((LmdbStore) repository.getSail())) {
+			assertTrue(
+					LmdbNativeAdaptiveCostModel.forSource((NativeLmdbQuerySource) dataset)
+							.store()
+							.latestObserved()
+							.size() > 0,
+					"fixture preflight: actual complete queries retain direct timings; feature readiness needs its own coverage proof");
+		}
+	}
+
+	@Test
+	void completedUnpricedRecipeKeepsDirectTimingWithoutPartialFeatureTraining() throws Exception {
+		List<Executable> outcomes = new ArrayList<>();
+		for (boolean refused : List.of(true, false)) {
+			try (Fixture fixture = fixture()) {
+				LmdbNativeMachineCostModel machine = new LmdbNativeMachineCostModel();
+				LmdbNativeStoreCostModel store = new LmdbNativeStoreCostModel();
+				LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(machine, store,
+						new LmdbNativeAdaptiveCostModel.Configuration(true, true));
+				SingletonSet target = telemetryTarget();
+				try (NativeGroupIteration iteration = new NativeGroupIteration(fixture.source, fixture.plan,
+						fixture.layout, new int[0], new AggregateSpec[] { AggregateSpec.star("count") }, false,
+						EmptyBindingSet.getInstance(), null, null, false, target)) {
+					RowState row = seededEmptyRow(fixture.source, fixture.layout);
+					try {
+						assertTrue(iteration.initialize(row));
+						NativeGroupResultCursor.GroupingPlan table = NativeGroupResultCursor.tablePlan(iteration);
+						LmdbNativeStrategyProposal<NativeResultCursor> proposal = new LmdbNativeStrategyProposal<>(
+								() -> table.open(iteration, fixture.source.executionContext()),
+								fixture.plan.estimateWork(row, row.boundMask()), LmdbNativeWork.ZERO, 1D,
+								LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, () -> {
+								}, false);
+						proposal.withAggregatePhysicalPlan(refused
+								? new NativeAggregatePhysicalPlan(fixture.plan,
+										NativeAggregatePhysicalPlan.Retention.STREAMING,
+										refusingProducer())
+								: NativeAggregatePhysicalPlan.typed(table, iteration));
+						new NativeAggregateCostQuotes(iteration, row).attach(proposal);
+						LmdbNativeCostEstimate estimate = proposal.adaptiveEstimate(-1D);
+						if (estimate == null) {
+							estimate = proposal.directTimingEstimate();
+						}
+						LmdbNativeCostEstimate selectedEstimate = estimate;
+						LmdbNativeCostObservation.Snapshot observation;
+						try (LmdbNativeStrategyArbiter<NativeResultCursor> arbiter = LmdbNativeStrategyArbiter
+								.forModel(target, -1D, model)) {
+							arbiter.offer(() -> proposal);
+							try (LmdbNativeStrategySelection<NativeResultCursor> selected = arbiter
+									.selectWithObservation();
+									NativeResultCursor cursor = selected.value()) {
+								NativeResultRow result = cursor.next();
+								assertNotNull(result);
+								assertEquals(INPUT_ROWS, ((Literal) result.cell("count").value()).longValue());
+								assertNull(cursor.next(), "only true input EOF certifies this direct completion");
+								assertEquals(INPUT_ROWS, fixture.reads.get());
+								assertNotNull(selected.observation());
+								selected.observation().firstOutput();
+								if (!refused) {
+									for (LmdbNativeCostVector.Feature feature : LmdbNativeCostVector.Feature.values()) {
+										selected.observation().add(feature, 0L);
+									}
+									selected.observation().add(LmdbNativeCostVector.Feature.OPEN, 1L);
+									selected.observation().add(LmdbNativeCostVector.Feature.INDEX_SEEK, 1L);
+									selected.observation()
+											.add(LmdbNativeCostVector.Feature.SCANNED_ROW, fixture.reads.get());
+									selected.observation().add(LmdbNativeCostVector.Feature.GROUP_UPDATE, INPUT_ROWS);
+								}
+								selected.observation().add(LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION, 1L);
+								selected.exhausted();
+								observation = selected.observation().snapshot();
+							}
+						}
+						assertEquals(LmdbNativeCostObservation.Completion.EXHAUSTED, observation.completion());
+						assertEquals(1L, model.predict(selectedEstimate).exactCompletedCount(),
+								"the legal actual full drain retains exact direct timing even when feature work is incomplete");
+						assertTrue(model.predict(selectedEstimate).latestObservedNanos() > 0L,
+								"a real completed timing was recorded; no elapsed value is prescribed");
+						long expectedSamples = refused ? 0L : 1L;
+						long actualSamples = machine.snapshot().sampleCount();
+						long actualRatios = store.featureEvidenceCount(selectedEstimate.variantKey());
+						outcomes.add(() -> assertAll(
+								"feature completeness remains separate from direct completion; refused=" + refused,
+								() -> assertEquals(expectedSamples, actualSamples,
+										"partial output counters must not train unproved input/reducer work"),
+								() -> assertEquals(expectedSamples, actualRatios,
+										"unreported components must not become exact feature-ratio evidence"),
+								() -> assertEquals(!refused, observation.trainingResult().trained(),
+										"training status distinguishes direct-only completion from complete feature evidence")));
+					} finally {
+						row.closeDecodedInputs();
+					}
+				}
+			}
+		}
+		assertAll("actual refused and independently complete drain controls", outcomes);
+	}
+
+	@Test
+	void measuredZeroWorkIsNotReplacedByAnUnreportedEstimate() throws Exception {
+		try (Fixture fixture = fixture()) {
+			AtomicInteger opens = new AtomicInteger();
+			Answer<RecordIterator> empty = call -> {
+				opens.incrementAndGet();
+				return new RecordIterator() {
+					@Override
+					public long[] next() {
+						return null;
+					}
+
+					@Override
+					public void close() {
+					}
+				};
+			};
+			doAnswer(empty).when(fixture.source.delegate).statements(anyLong(), anyLong(), anyLong(), anyLong());
+			doAnswer(empty).when(fixture.source.delegate)
+					.statements(any(StatementOrder.class), anyLong(), anyLong(), anyLong(), anyLong());
+			LmdbNativeMachineCostModel machine = new LmdbNativeMachineCostModel();
+			LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(machine, new LmdbNativeStoreCostModel(),
+					new LmdbNativeAdaptiveCostModel.Configuration(true, true));
+			LmdbNativeCostVector startup = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.OPEN, 1D);
+			LmdbNativeCostVector estimated = LmdbNativeCostVector.builder()
+					.add(startup)
+					.add(LmdbNativeCostVector.Feature.SCANNED_ROW, 0D, INPUT_ROWS, INPUT_ROWS)
+					.add(LmdbNativeCostVector.Feature.GROUP_UPDATE, 0D, INPUT_ROWS, INPUT_ROWS)
+					.add(LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION, 1D)
+					.build();
+			LmdbNativeCostEstimate estimate = new LmdbNativeCostEstimate(
+					LmdbNativePhysicalVariantKey.builder("emptyStoredCount").build(), startup, estimated, 1D, 1D);
+			try (NativeGroupIteration iteration = new NativeGroupIteration(fixture.source, fixture.plan, fixture.layout,
+					new int[0], new AggregateSpec[] { AggregateSpec.star("count") }, false,
+					EmptyBindingSet.getInstance(), null, null, false, (TupleExpr) null);
+					LmdbNativeCostObservation observation = new LmdbNativeCostObservation(estimate, model)) {
+				try (NativeResultCursor cursor = NativeGroupResultCursor.tablePlan(iteration)
+						.open(iteration, fixture.source.executionContext())) {
+					assertEquals(0L, ((Literal) cursor.next().cell("count").value()).longValue());
+					assertNull(cursor.next());
+				}
+				assertEquals(1, opens.get(), "the empty stored producer genuinely opened and reached EOF");
+				assertEquals(0, fixture.reads.get(), "no source tuple or group update occurred");
+				for (LmdbNativeCostVector.Feature feature : LmdbNativeCostVector.Feature.values()) {
+					observation.add(feature, 0L);
+				}
+				observation.add(LmdbNativeCostVector.Feature.OPEN, 1L);
+				observation.add(LmdbNativeCostVector.Feature.INDEX_SEEK, opens.get());
+				observation.add(LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION, 1L);
+				observation.firstOutput();
+				observation.exhausted();
+				LmdbNativeCostObservation.Snapshot actual = observation.snapshot();
+				assertEquals(LmdbNativeCostObservation.Completion.EXHAUSTED, actual.completion());
+				assertEquals(1L, model.predict(estimate).exactCompletedCount());
+				assertAll("an explicitly measured zero differs from a counter which was never reported",
+						() -> assertEquals(0D,
+								actual.actualFeatures().expected(LmdbNativeCostVector.Feature.SCANNED_ROW)),
+						() -> assertEquals(0D,
+								actual.actualFeatures().expected(LmdbNativeCostVector.Feature.GROUP_UPDATE)),
+						() -> assertTrue(actual.trainingResult().trained(),
+								"independently complete measured work may train"),
+						() -> assertEquals(1L, machine.snapshot().sampleCount()));
+			}
+		}
+	}
+
+	@Test
+	void fullChildMaterializationRefusalSurvivesAnAliasedOuterCount() throws Exception {
+		try (Fixture fixture = fixture()) {
+			fixture.source.executionContext().initializeQueryBase(EmptyBindingSet.getInstance());
+			PatternPlan input = fixture.plan.withOrder(StatementOrder.S, "spoc");
+			Fixture ordered = new Fixture(fixture.source, fixture.layout, input, fixture.reads);
+			NativeGroupStep child = step(ordered,
+					new AggregateSpec[] { AggregateSpec.groupConcat("text", 1, false, "|") },
+					telemetryTarget(), LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS);
+			RowState row = seededEmptyRow(fixture.source, fixture.layout);
+			try {
+				NativeSubqueryPlan selected = new NativeSubqueryPlan(child, new int[] { 0, 2 },
+						new String[] { "group", "text" }, new int[0], new String[0]).withPhysicalPlan(row);
+				assertNotNull(selected, "the exact FULL lexical child has a selected executable recipe");
+				assertFalse(selected.requiresPhysicalResults(),
+						"the fixture observes genuine RDF strings, not a summary rewrite");
+				assertNotNull(selected.physicalInput());
+				SlotPlan alias = new ExtensionPlan(selected, new CopyBinding[] { CopyBinding.slot(1, 2) });
+				SingletonSet target = telemetryTarget();
+				try (NativeGroupIteration outer = new NativeGroupIteration(fixture.source, alias, fixture.layout,
+						new int[0], new AggregateSpec[] { AggregateSpec.slot("count", 1, false, AggKind.COUNT) }, false,
+						EmptyBindingSet.getInstance(), null, null, false, target)) {
+					assertTrue(outer.initialize(row));
+					NativeGroupResultCursor.GroupingPlan table = NativeGroupResultCursor.tablePlan(outer);
+					LmdbNativeStrategyProposal<NativeResultCursor> proposal = new LmdbNativeStrategyProposal<>(
+							() -> table.open(outer, fixture.source.executionContext()),
+							alias.estimateWork(row, row.boundMask()),
+							table.tag(), () -> {
+							});
+					proposal.withAggregatePhysicalPlan(NativeAggregatePhysicalPlan.typed(table, outer));
+					new NativeAggregateCostQuotes(outer, row).attach(proposal);
+					JsonNode quote = candidate(JsonMapper.builder()
+							.build()
+							.readTree(target.getStringMetricActual(NativeAggregateCostQuotes.METRIC)), table.tag());
+					assertNotNull(quote);
+					assertEquals(0, fixture.reads.get());
+					long groups = 0L;
+					long codePoints = 0L;
+					try (RowCursor cursor = alias.open(row)) {
+						while (row.advance(cursor)) {
+							assertNull(row.summaryCell(1));
+							Literal text = (Literal) row.view.getValue("value");
+							String label = text.getLabel();
+							if (row.view.getValue("group").stringValue().equals("100")) {
+								assertEquals(FIRST_GROUP_DUPLICATED, label);
+							}
+							codePoints += label.codePointCount(0, label.length());
+							groups++;
+						}
+					}
+					assertEquals(FIXTURE_GROUPS, groups,
+							"the FULL concat really materializes every lexical child mapping");
+					assertEquals(403L, codePoints);
+					assertEquals(INPUT_ROWS, fixture.reads.get());
+					try (NativeResultCursor cursor = proposal.open()) {
+						assertEquals(FIXTURE_GROUPS, ((Literal) cursor.next().cell("count").value()).longValue());
+						assertNull(cursor.next());
+					}
+					assertEquals(INPUT_ROWS, fixture.reads.get(),
+							"the same selected opener replays its already completed child");
+					assertFalse(hasFiniteKnownPhysicalQuote(quote),
+							"child Input.inherited, lexical projection, alias and outer COUNT must preserve unproved extra FULL materialization work");
+				}
+			} finally {
+				row.closeDecodedInputs();
+			}
+		}
+	}
+
+	@Test
+	void legacyV1TimingSurvivesWithoutQualifyingItsResidualEpoch(@TempDir Path directory)
+			throws Exception {
+		LmdbNativeCostModelContext context = new LmdbNativeCostModelContext(directory,
+				UUID.fromString("9fb9ddba-6322-498d-9da1-dd485041eb86"), () -> 1L, () -> "ACTIVE", () -> 1L, () -> 1L);
+		LmdbNativeMachineCostModel machine = new LmdbNativeMachineCostModel();
+		LmdbNativeStoreCostModel store = LmdbNativeStoreCostModel.create(context);
+		LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(machine, store,
+				new LmdbNativeAdaptiveCostModel.Configuration(true, true));
+		LmdbNativeCostEstimate estimate = null;
+		try (Fixture fixture = fixture()) {
+			for (int execution = 0; execution < 40; execution++) {
+				fixture.reads.set(0);
+				try (NativeGroupIteration iteration = new NativeGroupIteration(fixture.source, fixture.plan,
+						fixture.layout,
+						new int[0], new AggregateSpec[] { AggregateSpec.star("count") }, false,
+						EmptyBindingSet.getInstance(), null, null, false, (TupleExpr) null)) {
+					RowState row = seededEmptyRow(fixture.source, fixture.layout);
+					try {
+						assertTrue(iteration.initialize(row));
+						NativeGroupResultCursor.GroupingPlan table = NativeGroupResultCursor.tablePlan(iteration);
+						LmdbNativeStrategyProposal<NativeResultCursor> proposal = new LmdbNativeStrategyProposal<>(
+								() -> table.open(iteration, fixture.source.executionContext()),
+								fixture.plan.estimateWork(row, row.boundMask()),
+								LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, () -> {
+								});
+						proposal.withAggregatePhysicalPlan(NativeAggregatePhysicalPlan.typed(table, iteration));
+						new NativeAggregateCostQuotes(iteration, row).attach(proposal);
+						estimate = proposal.adaptiveEstimate(-1D);
+						assertNotNull(estimate);
+						assertTrue(estimate.workEvidence().isComplete());
+						try (LmdbNativeCostObservation observation = new LmdbNativeCostObservation(estimate, model)) {
+							try (NativeResultCursor cursor = proposal.open()) {
+								assertEquals(INPUT_ROWS, ((Literal) cursor.next().cell("count").value()).longValue());
+								observation.firstOutput();
+								assertNull(cursor.next());
+							}
+							assertEquals(INPUT_ROWS, fixture.reads.get());
+							for (LmdbNativeCostVector.Feature feature : LmdbNativeCostVector.Feature.values()) {
+								observation.add(feature, 0L);
+							}
+							observation.add(LmdbNativeCostVector.Feature.OPEN, 1L);
+							observation.add(LmdbNativeCostVector.Feature.INDEX_SEEK, 1L);
+							observation.add(LmdbNativeCostVector.Feature.SCANNED_ROW, INPUT_ROWS);
+							observation.add(LmdbNativeCostVector.Feature.GROUP_UPDATE, INPUT_ROWS);
+							observation.add(LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION, 1L);
+							observation.exhausted();
+							assertTrue(observation.snapshot().trainingResult().trained(),
+									"the historical fixture contains real complete measured executions, not injected timings");
+						}
+					} finally {
+						row.closeDecodedInputs();
+					}
+				}
+			}
+		}
+		assertEquals(40L, machine.snapshot().sampleCount());
+		LmdbNativeRegimeKey regime = model.currentRegime();
+		LmdbNativeCostPosteriorStore.ExactKey direct = LmdbNativeCostPosteriorStore.ExactKey.of(regime,
+				LmdbNativeCostPosteriorStore.Lane.DIRECT, estimate.variantKey());
+		LmdbNativeCostPosteriorStore.ExactKey residual = LmdbNativeCostPosteriorStore.ExactKey.of(regime,
+				LmdbNativeCostPosteriorStore.Lane.RESIDUAL, estimate.variantKey());
+		assertTrue(store.posteriors()
+				.read(direct, store.regimeTracker().epoch(), store.nowMillis())
+				.exact().completedCount > 0L);
+		assertTrue(
+				store.posteriors()
+						.read(residual, store.regimeTracker().epoch(), store.nowMillis())
+						.exact().completedCount > 0L,
+				"fixture preflight: genuine measured readiness must have produced both historical lanes");
+		store.persistence().persistIfDue(true);
+		Path sidecar = directory.resolve(LmdbNativeCostModelPersistence.FILE_NAME);
+		assertTrue(Files.isRegularFile(sidecar));
+		byte[] original = Files.readAllBytes(sidecar);
+		Files.write(directory.resolve("current-written-sidecar.lncm"), original);
+		byte[] legacy = legacyV1WriterReceipt(original);
+		Files.write(directory.resolve("legacy-v1-writer-receipt.lncm"), legacy);
+		Files.write(sidecar, legacy);
+		LmdbNativeStoreCostModel restored = LmdbNativeStoreCostModel.create(context);
+		assertTrue(
+				restored.posteriors()
+						.read(direct, restored.regimeTracker().epoch(), restored.nowMillis())
+						.exact().completedCount > 0L,
+				"genuine old direct completed timings remain a separate usable channel");
+		assertEquals(0L, restored.featureEvidenceCount(estimate.variantKey()),
+				"feature-ratio samples are not persisted");
+		assertFalse(
+				restored.posteriors()
+						.read(residual, restored.regimeTracker().epoch(), restored.nowMillis())
+						.anyEvidence(),
+				"legacy-v1 residuals have no owned-work qualification epoch, even when the old writer was this process; "
+						+ "new work provenance preserves direct timing without granting that new residual authority");
+	}
+
+	/**
+	 * The supported legacy-v1 writer receipt, preserving the compatible payload and every genuine timing sample. Before
+	 * a new qualification epoch is implemented these bytes are correctly identical to the current writer. Identity is
+	 * not a transformation into an older generation: snapshot180's retained v1 bytes are the anchor. After the writer
+	 * gains qualification this helper continues emitting the known-compatible v1 receipt.
+	 */
+	private static byte[] legacyV1WriterReceipt(byte[] saved) throws IOException {
+		ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+		try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(saved, 0, saved.length - Long.BYTES));
+				DataOutputStream output = new DataOutputStream(bytes)) {
+			output.writeInt(input.readInt());
+			assertEquals(1, input.readInt(), "this regression uses the supported v1 payload codec");
+			output.writeInt(1);
+			output.writeUTF(input.readUTF());
+			output.writeUTF(input.readUTF());
+			input.readInt();
+			output.writeInt(1);
+			output.write(input.readAllBytes());
+		}
+		CRC32C crc = new CRC32C();
+		byte[] body = bytes.toByteArray();
+		crc.update(body, 0, body.length);
+		try (DataOutputStream output = new DataOutputStream(bytes)) {
+			output.writeLong(crc.getValue());
+		}
+		return bytes.toByteArray();
+	}
+
+	@Test
+	void unreportedEstimatedZeroNeedsItsOwnMeasuredOrOwnedAbsenceProof() throws Exception {
+		List<Executable> outcomes = new ArrayList<>();
+		for (String mode : List.of("unreported", "measured", "owned")) {
+			try (Fixture fixture = fixture()) {
+				LmdbNativeMachineCostModel machine = new LmdbNativeMachineCostModel();
+				LmdbNativeStoreCostModel store = new LmdbNativeStoreCostModel();
+				LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(machine, store,
+						new LmdbNativeAdaptiveCostModel.Configuration(true, true));
+				try (NativeGroupIteration iteration = new NativeGroupIteration(fixture.source, fixture.plan,
+						fixture.layout,
+						new int[0], new AggregateSpec[] { AggregateSpec.star("count") }, false,
+						EmptyBindingSet.getInstance(), null, null, false, (TupleExpr) null)) {
+					RowState row = seededEmptyRow(fixture.source, fixture.layout);
+					try {
+						assertTrue(iteration.initialize(row));
+						NativeGroupResultCursor.GroupingPlan table = NativeGroupResultCursor.tablePlan(iteration);
+						LmdbNativeStrategyProposal<NativeResultCursor> proposal = new LmdbNativeStrategyProposal<>(
+								() -> table.open(iteration, fixture.source.executionContext()),
+								fixture.plan.estimateWork(row, row.boundMask()),
+								LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, () -> {
+								});
+						proposal.withAggregatePhysicalPlan(NativeAggregatePhysicalPlan.typed(table, iteration));
+						new NativeAggregateCostQuotes(iteration, row).attach(proposal);
+						LmdbNativeCostEstimate estimate = proposal.adaptiveEstimate(-1D)
+								.withWorkEvidence("owned".equals(mode)
+										? NativePhysicalWorkEvidence.complete(
+												NativePhysicalWorkEvidence.ExactFacts.empty(),
+												NativePhysicalWorkEvidence.ExactFacts
+														.of(LmdbNativeCostVector.Feature.DECODED_ROW, 0D))
+										: NativePhysicalWorkEvidence.complete());
+						assertTrue(estimate.workEvidence().isComplete(),
+								"operation-schema completeness is a distinct fact");
+						assertEquals(0D, estimate.total().high(LmdbNativeCostVector.Feature.DECODED_ROW));
+						LmdbNativeCostObservation.Snapshot observed;
+						try (LmdbNativeCostObservation observation = new LmdbNativeCostObservation(estimate, model)) {
+							try (NativeResultCursor cursor = proposal.open()) {
+								assertEquals(INPUT_ROWS, ((Literal) cursor.next().cell("count").value()).longValue());
+								observation.firstOutput();
+								assertNull(cursor.next());
+							}
+							assertEquals(INPUT_ROWS, fixture.reads.get(),
+									"the standalone COUNT actually drains its stored producer");
+							for (LmdbNativeCostVector.Feature feature : LmdbNativeCostVector.Feature.values()) {
+								if (feature != LmdbNativeCostVector.Feature.DECODED_ROW || "measured".equals(mode)) {
+									observation.add(feature, 0L);
+								}
+							}
+							observation.add(LmdbNativeCostVector.Feature.OPEN, 1L);
+							observation.add(LmdbNativeCostVector.Feature.INDEX_SEEK, 1L);
+							observation.add(LmdbNativeCostVector.Feature.SCANNED_ROW, INPUT_ROWS);
+							observation.add(LmdbNativeCostVector.Feature.GROUP_UPDATE, INPUT_ROWS);
+							observation.add(LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION, 1L);
+							observation.exhausted();
+							observed = observation.snapshot();
+						}
+						assertEquals(LmdbNativeCostObservation.Completion.EXHAUSTED, observed.completion());
+						assertEquals(1L, model.predict(estimate).exactCompletedCount(),
+								"direct completion survives every coverage state");
+						long expected = "unreported".equals(mode) ? 0L : 1L;
+						long samples = machine.snapshot().sampleCount();
+						long ratios = store.featureEvidenceCount(estimate.variantKey());
+						outcomes.add(() -> assertAll("zero presence mode=" + mode,
+								() -> assertEquals(expected, samples,
+										"an estimated zero cannot certify an unreported absence"),
+								() -> assertEquals(expected, ratios),
+								() -> assertEquals(expected != 0L, observed.trainingResult().trained())));
+					} finally {
+						row.closeDecodedInputs();
+					}
+				}
+			}
+		}
+		assertAll("actual COUNT completion with unreported, measured and owned zero", outcomes);
+	}
+
+	private static NativeRowsStep rowProjection(Fixture fixture, SlotPlan input, int[] slots, boolean strict) {
+		return new NativeRowsStep(fixture.source, input, fixture.layout, slots, new String[] { "alias" }, false,
+				new int[0], new boolean[0], 0L, -1L, strict, mock(LmdbNativeEvaluationStrategy.class), null, null,
+				Set.of(), null, null);
+	}
+
+	@Test
+	void selectedSummaryRecipeRejectsChangedSeparatorBeforeWorkerOpen() throws Exception {
+		assertSelectedSummaryRecipeRejects(AggregateSpec.groupConcat("length", 1, true, "\ud83e\udded"));
+	}
+
+	@Test
+	void selectedSummaryRecipeRejectsChangedOutputDefinitionBeforeWorkerOpen() throws Exception {
+		assertSelectedSummaryRecipeRejects(AggregateSpec.groupConcat("other", 1, true, "|"));
+	}
+
+	private static void assertSelectedSummaryRecipeRejects(AggregateSpec replacement) throws Exception {
+		try (Fixture fixture = fixture()) {
+			NativeGroupStep original = step(fixture, lexicalLengthSpecs(), null,
+					LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS);
+			NativePhysicalResultPlan selected = original.physicalPlan(EmptyBindingSet.getInstance());
+			assertNotNull(selected, "the original selected LEXICAL_LENGTH recipe must be legal");
+			assertEquals(0, fixture.reads.get(), "quote and rebind checks precede child opening");
+			NativeGroupStep changed = step(fixture,
+					new AggregateSpec[] { replacement.withResultDemand(NativeAggregateResultDemand.LEXICAL_LENGTH) },
+					null, LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+			assertNull(selected.rebind(changed, NativeScalarPlan.WorkerContext.forSource(fixture.source, null),
+					EmptyBindingSet.getInstance()),
+					"a changed lexical output definition cannot borrow the selected child's quote or summary witness");
+			assertEquals(0, fixture.reads.get(), "rejected rebind never opens either child");
+		}
+	}
+
+	@Test
+	void selectedSummaryRecipeRejectsAnotherEvaluationBeforeWorkerOpen() throws Exception {
+		try (Fixture original = fixture(); Fixture unrelated = fixture()) {
+			NativePhysicalResultPlan selected = step(original, lexicalLengthSpecs(), null,
+					LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS)
+							.physicalPlan(EmptyBindingSet.getInstance());
+			assertNotNull(selected);
+			NativeGroupStep other = step(unrelated, lexicalLengthSpecs(), null,
+					LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+			assertNull(selected.rebind(other, NativeScalarPlan.WorkerContext.forSource(unrelated.source, null),
+					EmptyBindingSet.getInstance()),
+					"a different query/source authority cannot borrow the original selected output witness");
+			assertEquals(0, original.reads.get());
+			assertEquals(0, unrelated.reads.get());
+		}
+	}
+
+	@Test
+	void selectedExtensionRecipeRejectsChangedAliasSourceWithEqualWork() throws Exception {
+		try (Fixture fixture = fixture()) {
+			NativeGroupStep child = step(fixture, lexicalLengthSpecs(), null,
+					LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS);
+			LmdbNativeEvaluationStrategy strategy = mock(LmdbNativeEvaluationStrategy.class);
+			when(strategy.valueFactory()).thenReturn(SimpleValueFactory.getInstance());
+			QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+			QueryEvaluationStep original = NativeBindingSetExtensionStep.tryCreate(child,
+					new Extension(new SingletonSet(), new ExtensionElem(new Var("length"), "alias")),
+					null, strategy, context);
+			QueryEvaluationStep changed = NativeBindingSetExtensionStep.tryCreate(child,
+					new Extension(new SingletonSet(), new ExtensionElem(
+							new ValueConstant(SimpleValueFactory.getInstance().createLiteral("replacement")), "alias")),
+					null, strategy, context);
+			assertNotNull(original);
+			assertNotNull(changed);
+			NativePhysicalResultPlan selected = ((NativeResultStep) original)
+					.physicalPlan(EmptyBindingSet.getInstance());
+			assertNotNull(selected);
+			assertNull(selected.rebind(changed, NativeScalarPlan.WorkerContext.forSource(fixture.source, null),
+					EmptyBindingSet.getInstance()),
+					"equal assignment counts do not prove the same summary definition/transfer recipe");
+			assertEquals(0, fixture.reads.get(), "a mismatched alias declines before opening its child");
+		}
+	}
+
+	@Test
+	void sameShapeRewritesCannotBorrowSummaryDemandFromAnotherDefinition() {
+		TupleExpr query = summaryDefinitionQuery();
+		NativeValuePositionAnalysis analysis = NativeValuePositionAnalysis.analyze(query);
+		GroupElem original = summaryDefinitionGroup(query).getGroupElements().getFirst();
+		assertEquals(NativeAggregateResultDemand.LEXICAL_LENGTH, analysis.aggregateDemand(original));
+		TupleExpr clone = query.clone();
+		assertEquals(NativeAggregateResultDemand.LEXICAL_LENGTH,
+				analysis.copySubtree(query, clone)
+						.aggregateDemand(summaryDefinitionGroup(clone).getGroupElements().getFirst()),
+				"an actual clone retains the original definition's demand");
+		List<Executable> checks = new ArrayList<>();
+		for (String change : List.of("argument", "separator", "output")) {
+			checks.add(() -> {
+				TupleExpr rewritten = query.clone();
+				GroupElem definition = summaryDefinitionGroup(rewritten).getGroupElements().getFirst();
+				GroupConcat concat = (GroupConcat) definition.getOperator();
+				if (change.equals("argument")) {
+					concat.setArg(new Var("differentInput"));
+				} else if (change.equals("separator")) {
+					concat.setSeparator(
+							new ValueConstant(SimpleValueFactory.getInstance().createLiteral("\ud83e\udded")));
+				} else {
+					definition.setName("differentOutput");
+				}
+				assertEquals(NativeAggregateResultDemand.FULL_VALUE,
+						analysis.copySubtree(query, rewritten).aggregateDemand(definition),
+						"same-shaped changed " + change + " has no proved lexical-definition correspondence");
+			});
+		}
+		assertAll(checks);
+	}
+
+	@Test
+	void selectedSummaryRecipeKeepsClonedDefinitionButRejectsSameNamedShadow() throws Exception {
+		try (Fixture fixture = fixture()) {
+			TupleExpr query = summaryDefinitionQuery();
+			NativeValuePositionAnalysis analysis = NativeValuePositionAnalysis.analyze(query);
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+					new NativeWorkerTripleSource(fixture.source, SimpleValueFactory.getInstance()), null, null, 0,
+					new EvaluationStatistics(), false);
+			QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+			QueryEvaluationStep original = strategy.withValuePositions(analysis,
+					() -> LmdbNativeAggregateCompiler.tryCompile(summaryDefinitionGroup(query), context,
+							strategy, fixture.source));
+			assertTrue(original instanceof NativeResultStep, "the actual analyzed summary group must compile natively");
+			NativePhysicalResultPlan selected;
+			try (SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(fixture.source)) {
+				selected = ((NativeResultStep) original).physicalPlan(EmptyBindingSet.getInstance());
+			}
+			assertNotNull(selected, "the actual lexical definition must offer a selected physical recipe");
+			TupleExpr clone = query.clone();
+			QueryEvaluationStep copied = strategy.withValuePositions(analysis.copySubtree(query, clone),
+					() -> LmdbNativeAggregateCompiler.tryCompile(summaryDefinitionGroup(clone), context,
+							strategy, fixture.source));
+			assertNotNull(copied);
+			NativeScalarPlan.WorkerContext worker = NativeScalarPlan.WorkerContext.forSource(fixture.source, context);
+			assertNotNull(selected.rebind(copied, worker, EmptyBindingSet.getInstance()),
+					"fresh mutable preparation of the same proved definition remains a legal rebind");
+			TupleExpr shadow = summaryDefinitionQuery();
+			QueryEvaluationStep independent = strategy.withValuePositions(NativeValuePositionAnalysis.analyze(shadow),
+					() -> LmdbNativeAggregateCompiler.tryCompile(summaryDefinitionGroup(shadow), context,
+							strategy, fixture.source));
+			assertNotNull(independent);
+			assertNull(selected.rebind(independent, worker, EmptyBindingSet.getInstance()),
+					"same variable spelling and physical work do not identify an independent shadowed definition");
+		}
+	}
+
+	private static TupleExpr summaryDefinitionQuery() {
+		return new SPARQLParser().parseQuery("SELECT (STRLEN(?length) AS ?n) WHERE { "
+				+ "{ SELECT ?group (GROUP_CONCAT(?value; SEPARATOR=\"|\") AS ?length) WHERE { "
+				+ "VALUES (?group ?value) { (<urn:one> \"a\") (<urn:one> \"b\") } } GROUP BY ?group } }", null)
+				.getTupleExpr();
+	}
+
+	private static Group summaryDefinitionGroup(TupleExpr query) {
+		List<Group> groups = new ArrayList<>();
+		query.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Group group) {
+				groups.add(group);
+				super.meet(group);
+			}
+		});
+		assertEquals(1, groups.size());
+		return groups.getFirst();
+	}
+
+	@Test
 	void aCorrelatedLexicalBoundaryDoesNotClaimAnIndependentPhysicalQuote() throws Exception {
 		try (Fixture fixture = fixture()) {
 			fixture.source.executionContext().initializeQueryBase(EmptyBindingSet.getInstance());
@@ -3089,6 +5081,25 @@ class NativePhysicalGroupingCostTest {
 		if (node.getPlans() != null) {
 			for (GenericPlanNode child : node.getPlans()) {
 				collectGroupQuotes(child, scoped, outerGroups, lexicalGroups);
+			}
+		}
+	}
+
+	private static void collectGroupQuoteTargets(GenericPlanNode node, boolean insideNewScope, String path,
+			List<Map<String, Object>> targets) {
+		boolean scoped = insideNewScope || Boolean.TRUE.equals(node.isNewScope());
+		if (node.getType() != null && node.getType().startsWith("Group")) {
+			Map<String, Object> target = new HashMap<>();
+			target.put("path", path);
+			target.put("type", node.getType());
+			target.put("insideNewScope", scoped);
+			target.put("executionPath", node.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH));
+			target.put("quoteInventory", node.getStringMetricActual(NativeAggregateCostQuotes.METRIC));
+			targets.add(target);
+		}
+		if (node.getPlans() != null) {
+			for (int index = 0; index < node.getPlans().size(); index++) {
+				collectGroupQuoteTargets(node.getPlans().get(index), scoped, path + "/" + index, targets);
 			}
 		}
 	}

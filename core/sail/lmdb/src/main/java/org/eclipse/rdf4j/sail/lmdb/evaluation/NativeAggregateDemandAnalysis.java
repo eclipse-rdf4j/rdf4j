@@ -17,6 +17,7 @@ import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.query.algebra.AbstractAggregateOperator;
@@ -55,9 +56,12 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
  */
 final class NativeAggregateDemandAnalysis {
 
-	private final IdentityHashMap<GroupElem, NativeAggregateResultDemand> demands;
+	private record Evidence(NativeAggregateResultDemand demand, Object definition) {
+	}
 
-	private NativeAggregateDemandAnalysis(IdentityHashMap<GroupElem, NativeAggregateResultDemand> demands) {
+	private final IdentityHashMap<GroupElem, Evidence> demands;
+
+	private NativeAggregateDemandAnalysis(IdentityHashMap<GroupElem, Evidence> demands) {
 		this.demands = demands;
 	}
 
@@ -65,21 +69,28 @@ final class NativeAggregateDemandAnalysis {
 		Builder builder = new Builder();
 		builder.observeAll(builder.tuple(root, Map.of()), Builder.FULL);
 		builder.propagate();
-		IdentityHashMap<GroupElem, NativeAggregateResultDemand> demands = new IdentityHashMap<>();
-		builder.aggregates.forEach((element, definition) -> demands.put(element,
+		IdentityHashMap<GroupElem, Evidence> demands = new IdentityHashMap<>();
+		builder.aggregates.forEach((element, definition) -> demands.put(element, new Evidence(
 				definition.demand == Builder.LENGTH && element.getOperator() instanceof GroupConcat
 						? NativeAggregateResultDemand.LEXICAL_LENGTH
-						: NativeAggregateResultDemand.FULL_VALUE));
+						: NativeAggregateResultDemand.FULL_VALUE,
+				new Object())));
 		return new NativeAggregateDemandAnalysis(demands);
 	}
 
 	NativeAggregateResultDemand demand(GroupElem element) {
-		return demands.getOrDefault(element, NativeAggregateResultDemand.FULL_VALUE);
+		Evidence evidence = demands.get(element);
+		return evidence == null ? NativeAggregateResultDemand.FULL_VALUE : evidence.demand();
+	}
+
+	Object definition(GroupElem element) {
+		Evidence evidence = demands.get(element);
+		return evidence == null ? null : evidence.definition();
 	}
 
 	NativeAggregateDemandAnalysis copySubtree(QueryModelNode original, QueryModelNode copy) {
-		IdentityHashMap<GroupElem, NativeAggregateResultDemand> result = new IdentityHashMap<>();
-		if (!copy(original, copy, result)) {
+		IdentityHashMap<GroupElem, Evidence> result = new IdentityHashMap<>();
+		if (!original.equals(copy) || !copy(original, copy, result)) {
 			// A rewritten rather than cloned tree has no proved definition correspondence.
 			result.clear();
 		}
@@ -87,9 +98,19 @@ final class NativeAggregateDemandAnalysis {
 	}
 
 	private boolean copy(QueryModelNode original, QueryModelNode target,
-			IdentityHashMap<GroupElem, NativeAggregateResultDemand> result) {
+			IdentityHashMap<GroupElem, Evidence> result) {
 		if (original.getClass() != target.getClass()) {
 			return false;
+		}
+		if (original instanceof GroupConcat concat && target instanceof GroupConcat copiedConcat) {
+			// GroupConcat's model equality and normal child visitor omit its separator. It remains part of the
+			// aggregate definition, including any nested semantic structure, before a clone can inherit demand.
+			ValueExpr separator = concat.getSeparator();
+			ValueExpr copiedSeparator = copiedConcat.getSeparator();
+			if (!Objects.equals(separator, copiedSeparator)
+					|| separator != null && !copy(separator, copiedSeparator, result)) {
+				return false;
+			}
 		}
 		if (original instanceof GroupElem element && target instanceof GroupElem copied
 				&& demands.containsKey(element)) {

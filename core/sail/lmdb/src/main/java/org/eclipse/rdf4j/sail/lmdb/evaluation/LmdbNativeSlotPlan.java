@@ -24,6 +24,9 @@ interface SlotPlan {
 
 	/** Whether a native physical cell must remain in its typed lane until a scalar consumer has run. */
 	static boolean requiresPhysicalCells(SlotPlan plan) {
+		if (plan instanceof NativeLogicalResultTransferPlan) {
+			return false;
+		}
 		if (plan instanceof NativeSubqueryPlan subquery) {
 			return subquery.requiresPhysicalResults();
 		}

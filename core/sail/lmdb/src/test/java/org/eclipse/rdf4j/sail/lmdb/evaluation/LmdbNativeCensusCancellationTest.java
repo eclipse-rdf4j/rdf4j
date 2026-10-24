@@ -12,8 +12,11 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -61,18 +64,44 @@ class LmdbNativeCensusCancellationTest {
 		var strategy = mock(LmdbNativeEvaluationStrategy.class);
 		var quoteProbe = mock(NativeProbe.class);
 		var probe = mock(NativeProbe.class);
+		var quoteWildcard = mock(WildcardAdjacency.class);
 		var wildcard = mock(WildcardAdjacency.class);
+		var quoteView = mock(NativeAdjacency.class);
 		var view = mock(NativeAdjacency.class);
+		var quotePages = mock(AdjacencyPageCursor.class);
 		var coverage = mock(AdjacencyPageCursor.class);
 		var pages = mock(AdjacencyPageCursor.class);
 		long predicate = ValueIds.createId(ValueIds.T_URI, 1);
+		long namedContext = ValueIds.createId(ValueIds.T_URI, 2);
 		when(dictionary.newProbe()).thenReturn(quoteProbe, probe);
+		when(quoteProbe.wildcardAdjacency(true)).thenReturn(quoteWildcard);
+		when(quoteWildcard.predicateCount()).thenReturn(1);
+		when(quoteWildcard.predicateAt(0)).thenReturn(predicate);
+		when(quoteWildcard.keyCount()).thenReturn(1L);
+		when(quoteProbe.adjacency(predicate, true)).thenReturn(quoteView);
+		when(quoteView.openPageCursor()).thenReturn(quotePages);
+		when(quotePages.advance()).thenReturn(true, false);
+		when(quotePages.hasCommonContext()).thenReturn(true);
+		when(quotePages.commonContext()).thenReturn(namedContext);
+		when(quotePages.rowCount()).thenReturn(1);
+		when(quotePages.quadCount()).thenReturn(1L);
+		when(quotePages.uniformRowTermKind()).thenReturn(true);
+		when(quotePages.uniformNeighborTermKind()).thenReturn(true);
+		doAnswer(invocation -> {
+			quoteView.close();
+			return null;
+		}).when(quoteProbe).close();
 		when(probe.wildcardAdjacency(true)).thenReturn(wildcard);
 		when(wildcard.predicateCount()).thenReturn(1);
 		when(wildcard.predicateAt(0)).thenReturn(predicate);
 		when(wildcard.keyCount()).thenReturn(1L);
 		when(probe.adjacency(predicate, true)).thenReturn(view);
 		when(view.openPageCursor()).thenReturn(coverage, pages);
+		when(coverage.advance()).thenReturn(true, false);
+		when(coverage.hasCommonContext()).thenReturn(true);
+		when(coverage.commonContext()).thenReturn(namedContext);
+		when(coverage.rowCount()).thenReturn(1);
+		when(coverage.quadCount()).thenReturn(1L);
 		AtomicInteger advances = new AtomicInteger();
 		when(pages.advance()).thenAnswer(call -> {
 			if (advances.getAndIncrement() != 0) {
@@ -99,9 +128,41 @@ class LmdbNativeCensusCancellationTest {
 		var executor = Executors.newSingleThreadExecutor();
 		var worker = executor.submit(owner::evaluateAll);
 		try {
-			assertThat(entered.await(5, TimeUnit.SECONDS)).as("actual census reduction must be active").isTrue();
+			boolean reductionActive = entered.await(5, TimeUnit.SECONDS);
+			String workerOutcome = "still running when the active-reduction latch timed out";
+			if (!reductionActive && worker.isDone()) {
+				try {
+					workerOutcome = "returned before entering the reduction: " + worker.get();
+				} catch (ExecutionException failure) {
+					workerOutcome = "failed before entering the reduction: " + failure.getCause();
+				}
+			}
+			assertThat(reductionActive)
+					.as("actual census reduction must be active; worker outcome: %s", workerOutcome)
+					.isTrue();
+			assertThat(quoteProbe).isNotSameAs(probe);
+			assertThat(quoteWildcard).isNotSameAs(wildcard);
+			assertThat(quoteView).isNotSameAs(view);
+			assertThat(quotePages).isNotSameAs(coverage).isNotSameAs(pages);
+			verify(quoteWildcard, atLeastOnce()).predicateCount();
+			verify(quoteWildcard).predicateAt(0);
+			verify(quoteWildcard).bind(0);
+			verify(quoteWildcard).keyCount();
+			verify(quoteProbe).adjacency(predicate, true);
+			verify(quoteView).openPageCursor();
+			verify(quotePages, times(2)).advance();
 			verify(quoteProbe).close();
+			verify(quoteWildcard).close();
+			verify(quoteView).close();
+			verify(quotePages).close();
+			verify(quotePages).hasCommonContext();
+			verify(quotePages).commonContext();
+			verify(quotePages).quadCount();
+			verify(coverage, times(2)).advance();
 			verify(coverage).close();
+			verify(coverage).hasCommonContext();
+			verify(coverage).commonContext();
+			verify(coverage).quadCount();
 			assertThat(owner.requestCancellation()).isTrue();
 			release.countDown();
 			ExecutionException failure = Assertions.assertThrows(ExecutionException.class,
@@ -210,7 +271,9 @@ class LmdbNativeCensusCancellationTest {
 			assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
 			assertThat(((CooperativeCancellation) iteration).requestCancellation()).isTrue();
 			release.countDown();
-			assertThat(worker.get(5, TimeUnit.SECONDS)).isFalse();
+			ExecutionException failure = Assertions.assertThrows(ExecutionException.class,
+					() -> worker.get(5, TimeUnit.SECONDS));
+			assertThat(failure.getCause()).isSameAs(KernelQueryCancelledException.INSTANCE);
 			verify(pages).close();
 			verify(wildcard).close();
 			verify(probe).close();

@@ -781,7 +781,9 @@ final class LmdbNativeOrderPlanner {
 	}
 
 	private static NativeOrderedPlan bestPattern(PatternPlan pattern, int[] requested, RowState row) {
-		NativeOrderedPlan best = orderedPattern(pattern, pattern.statementOrder, row);
+		// A fallback index name does not describe the cursor that an unrequested runtime scan actually opens.
+		NativeOrderedPlan best = pattern.statementOrder == null ? new NativeOrderedPlan(pattern, NativeSlotOrder.NONE)
+				: orderedPattern(pattern, pattern.statementOrder, row);
 		int bestPrefix = best.order.exactPrefixLength(requested, best.plan.producedMask());
 		long tried = 0L;
 		for (int slot : requested) {

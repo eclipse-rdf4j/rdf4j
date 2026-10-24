@@ -205,6 +205,13 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 		return create(pages, runs, pageAccept, cancellation, BATCH_SIZE, ledger);
 	}
 
+	/** Complete-root witnesses cannot be certified by an independently publishable page fragment. */
+	public static KernelAdjacencyCursor openRoots(NativeLmdbQuerySource.WildcardAdjacency adjacency,
+			KernelCancellation cancellation) {
+		NativeAdjacency.KeyRunCursor runs = adjacency.openKeyRunCursor();
+		return runs == null ? null : create(null, runs, null, cancellation, BATCH_SIZE, null);
+	}
+
 	private static KernelAdjacencyCursor create(AdjacencyPageCursor pages, NativeAdjacency.KeyRunCursor runs,
 			Predicate<AdjacencyPageCursor> pageAccept, KernelCancellation cancellation, int bufferCapacity,
 			LmdbQueryMemoryManager.QueryLedger ledger) {
@@ -549,6 +556,68 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 		return rootQuads;
 	}
 
+	/** Finds the first visible source mapping without requiring later contexts or invoking a scalar callback. */
+	public boolean hasAcceptedRootQuad(boolean match, long wantedContext, boolean excludeDefault) {
+		checkRoot();
+		if (rootQuads == 0L) {
+			return false;
+		}
+		if (!match && !excludeDefault || hasCommonContext()) {
+			return acceptedRootQuadCount(match, wantedContext, excludeDefault) > 0L;
+		}
+		for (long offset = 0L; offset < rootQuads; offset++) {
+			checkCancelled();
+			copyRootContexts(offset, 1);
+			long value = contexts[0];
+			if ((!match || value == wantedContext) && (!excludeDefault || value != 0L)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Counts this fragment only when an accepted consumer actually needs its complete logical weight. */
+	public long acceptedRootQuadCount(boolean match, long wantedContext, boolean excludeDefault) {
+		ensureOpen();
+		if (!rootReady) {
+			throw new IllegalStateException("advanceRoot must succeed before testing a visible witness");
+		}
+		if (!match && !excludeDefault) {
+			return rootQuads;
+		}
+		if (hasCommonContext()) {
+			long value = commonContext();
+			return (!match || value == wantedContext) && (!excludeDefault || value != 0L) ? rootQuads : 0L;
+		}
+		long accepted = 0L;
+		for (long offset = 0L; offset < rootQuads;) {
+			checkCancelled();
+			int requested = (int) Math.min(bufferCapacity, rootQuads - offset);
+			int copied = copyRootContexts(offset, requested);
+			for (int index = 0; index < copied; index++) {
+				long value = contexts[index];
+				if ((!match || value == wantedContext) && (!excludeDefault || value != 0L)) {
+					accepted = Math.addExact(accepted, 1L);
+				}
+			}
+			offset += copied;
+		}
+		return accepted;
+	}
+
+	private int copyRootContexts(long offset, int requested) {
+		int copied = pages == null ? runs.copyContexts(offset, requested, contexts, 0)
+				: pages.copyRowQuads(pageRow, Math.toIntExact(offset), requested, contextNeighbors, contexts);
+		if (copied <= 0 || copied > requested) {
+			throw new UnsupportedOperationException("exact visible root contexts are unavailable");
+		}
+		contextValuesCopied = Math.addExact(contextValuesCopied, copied);
+		if (pages != null) {
+			neighborValuesCopied = Math.addExact(neighborValuesCopied, copied);
+		}
+		return copied;
+	}
+
 	/** Returns the page-known fiber count, or the exact count after a run has been fully consumed. */
 	public long rootFiberCount() {
 		checkRoot();
@@ -605,6 +674,7 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 			if (copied < 0 || copied > requested) {
 				throw new IllegalStateException("page context cursor returned an invalid copied count: " + copied);
 			}
+			neighborValuesCopied = Math.addExact(neighborValuesCopied, copied);
 			if (copied == requested) {
 				for (int i = 0; i < copied; i++) {
 					if (contextNeighbors[i] != neighbor) {

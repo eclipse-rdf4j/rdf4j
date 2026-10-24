@@ -13,12 +13,18 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalLong;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -26,12 +32,14 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
+import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.ParallelSource;
 import org.junit.jupiter.api.Test;
 
@@ -127,6 +135,135 @@ class CompositeNativeLmdbQuerySourceOrderTest {
 				new OrderedSource(idSpace, "", new long[0][])));
 
 		assertThat(source.indexName(StatementOrder.O, -1, -1, -1, -1)).isEmpty();
+	}
+
+	@Test
+	void compositeAdjacencyKeyCardinalityCountsTheDistinctUnionAcrossMembers() throws IOException {
+		Object idSpace = new Object();
+		KeyDomainSource left = new KeyDomainSource(idSpace, new long[][] { { 1, 7, 10, 0 } });
+		KeyDomainSource right = new KeyDomainSource(idSpace, new long[][] { { 1, 7, 11, 0 } });
+		NativeLmdbQuerySource overlappingSubjects = CompositeNativeLmdbQuerySource.combine(List.of(left, right));
+
+		assertAll("per-member exact counts do not become an exact count for their overlapping union",
+				() -> assertThat(rows(overlappingSubjects)).containsExactly("1:7:10:0", "1:7:11:0"),
+				() -> assertCardinalityWhenKnown(overlappingSubjects, true, 1L),
+				() -> assertCardinalityWhenKnown(overlappingSubjects, false, 2L));
+
+		KeyDomainSource sameObjectLeft = new KeyDomainSource(idSpace, new long[][] { { 1, 7, 10, 0 } });
+		KeyDomainSource sameObjectRight = new KeyDomainSource(idSpace, new long[][] { { 2, 7, 10, 0 } });
+		NativeLmdbQuerySource overlappingObjects = CompositeNativeLmdbQuerySource.combine(
+				List.of(sameObjectLeft, sameObjectRight));
+		assertAll("subject and object domains overlap independently",
+				() -> assertThat(rows(overlappingObjects)).containsExactly("1:7:10:0", "2:7:10:0"),
+				() -> assertCardinalityWhenKnown(overlappingObjects, true, 2L),
+				() -> assertCardinalityWhenKnown(overlappingObjects, false, 1L));
+
+		NativeLmdbQuerySource noMatchingPredicate = CompositeNativeLmdbQuerySource.combine(List.of(
+				new KeyDomainSource(idSpace, new long[][] { { 4, 8, 14, 0 } }),
+				new KeyDomainSource(idSpace, new long[][] { { 5, 9, 15, 0 } })));
+		NativeLmdbQuerySource onePositivePredicateDomain = CompositeNativeLmdbQuerySource.combine(List.of(
+				new KeyDomainSource(idSpace, new long[][] { { 6, 7, 16, 0 } }),
+				new KeyDomainSource(idSpace, new long[][] { { 7, 8, 17, 0 } })));
+		assertAll("unrelated active predicates contribute a known empty domain",
+				() -> assertThat(rows(noMatchingPredicate)).containsExactly("4:8:14:0", "5:9:15:0"),
+				() -> assertThat(noMatchingPredicate.adjacencyKeyDomainCardinality(7L, true))
+						.isEqualTo(OptionalLong.of(0L)),
+				() -> assertThat(noMatchingPredicate.adjacencyKeyDomainCardinality(7L, false))
+						.isEqualTo(OptionalLong.of(0L)),
+				() -> assertThat(rows(onePositivePredicateDomain)).containsExactly("6:7:16:0", "7:8:17:0"),
+				() -> assertThat(onePositivePredicateDomain.adjacencyKeyDomainCardinality(7L, true))
+						.isEqualTo(OptionalLong.of(1L)),
+				() -> assertThat(onePositivePredicateDomain.adjacencyKeyDomainCardinality(7L, false))
+						.isEqualTo(OptionalLong.of(1L)));
+	}
+
+	@Test
+	void nestedAndSingleActiveCompositesRetainExactKeyUnionCardinality() throws IOException {
+		Object idSpace = new Object();
+		NativeLmdbQuerySource nested = CompositeNativeLmdbQuerySource.combine(List.of(
+				CompositeNativeLmdbQuerySource.combine(List.of(
+						new KeyDomainSource(idSpace, new long[][] { { 1, 7, 10, 0 } }),
+						new KeyDomainSource(idSpace, new long[][] { { 1, 7, 11, 0 } }))),
+				new KeyDomainSource(idSpace, new long[][] { { 1, 7, 12, 0 } })));
+		NativeLmdbQuerySource disjoint = CompositeNativeLmdbQuerySource.combine(List.of(
+				new KeyDomainSource(idSpace, new long[][] { { 1, 7, 10, 0 } }),
+				new KeyDomainSource(idSpace, new long[][] { { 2, 7, 11, 0 } })));
+		NativeLmdbQuerySource oneActive = CompositeNativeLmdbQuerySource.combine(List.of(
+				new KeyDomainSource(idSpace, new long[][] { { 3, 7, 12, 0 } }),
+				new KeyDomainSource(idSpace, new long[0][])));
+
+		assertAll("nested overlap, disjoint members, and an empty member keep their exact union sizes",
+				() -> assertThat(rows(nested)).containsExactly("1:7:10:0", "1:7:11:0", "1:7:12:0"),
+				() -> assertCardinalityWhenKnown(nested, true, 1L),
+				() -> assertCardinalityWhenKnown(nested, false, 3L),
+				() -> assertThat(rows(disjoint)).containsExactly("1:7:10:0", "2:7:11:0"),
+				() -> assertCardinalityWhenKnown(disjoint, true, 2L),
+				() -> assertCardinalityWhenKnown(disjoint, false, 2L),
+				() -> assertThat(rows(oneActive)).containsExactly("3:7:12:0"),
+				() -> assertThat(oneActive.adjacencyKeyDomainCardinality(7, true)).isEqualTo(OptionalLong.of(1)),
+				() -> assertThat(oneActive.adjacencyKeyDomainCardinality(7, false)).isEqualTo(OptionalLong.of(1)));
+	}
+
+	@Test
+	void fixedPredicateNativeDistinctCountsUseTheExactCompositeRootUnion() throws Exception {
+		String previous = System.getProperty("rdf4j.lmdb.directAdjacency.scanAggregates.enabled");
+		System.setProperty("rdf4j.lmdb.directAdjacency.scanAggregates.enabled", "true");
+		try {
+			Object idSpace = new Object();
+			NativeLmdbQuerySource source = CompositeNativeLmdbQuerySource.combine(List.of(
+					new KeyDomainSource(idSpace, new long[][] { { 1, 7, 10, 0 } }),
+					new KeyDomainSource(idSpace, new long[][] { { 1, 7, 11, 0 } })));
+			assertThat(rows(source)).containsExactly("1:7:10:0", "1:7:11:0");
+
+			NativeSlotLayout layout = new NativeSlotLayout(Map.of("s", 0, "p", 1, "o", 2), null);
+			layout.freeze(List.of("s", "p", "o"));
+			PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(7), Term.slot(2), Term.unbound(),
+					ContextConstraint.UNRESTRICTED, false, 2L);
+			AggregateSpec[] aggregates = {
+					AggregateSpec.slot("subjects", 0, true, AggKind.COUNT),
+					AggregateSpec.slot("objects", 2, true, AggKind.COUNT)
+			};
+			LmdbAdjacencyAggregatePlan plan = LmdbAdjacencyAggregatePlan.tryCreate(pattern, new int[0], aggregates);
+			assertThat(plan).isNotNull();
+			try (NativeGroupIteration owner = new NativeGroupIteration(source, pattern, layout, new int[0], aggregates,
+					false, EmptyBindingSet.getInstance(), null, null, false, false, null, 0L, null, plan, null, null)) {
+				RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+				assertThat(owner.initialize(row)).isTrue();
+				List<BindingSet> result = plan.evaluate(owner, row);
+				assertThat(result).hasSize(1);
+				assertAll("overlapping composite roots preserve exact COUNT DISTINCT output",
+						() -> assertCardinalityWhenKnown(source, true, 1L),
+						() -> assertCardinalityWhenKnown(source, false, 2L),
+						() -> assertThat(result.getFirst().getValue("subjects").stringValue()).isEqualTo("1"),
+						() -> assertThat(result.getFirst().getValue("objects").stringValue()).isEqualTo("2"));
+			}
+		} finally {
+			if (previous == null) {
+				System.clearProperty("rdf4j.lmdb.directAdjacency.scanAggregates.enabled");
+			} else {
+				System.setProperty("rdf4j.lmdb.directAdjacency.scanAggregates.enabled", previous);
+			}
+		}
+	}
+
+	private static void assertCardinalityWhenKnown(NativeLmdbQuerySource source, boolean bySubject, long expected) {
+		OptionalLong actual = source.adjacencyKeyDomainCardinality(7L, bySubject);
+		assertThat(actual.isEmpty() || actual.getAsLong() == expected)
+				.as("a present composite key-domain count must equal the distinct union, side=" + bySubject
+						+ ", actual=" + actual)
+				.isTrue();
+	}
+
+	private static List<String> rows(NativeLmdbQuerySource source) throws IOException {
+		List<String> rows = new ArrayList<>();
+		try (RecordIterator iterator = source.statements(-1, -1, -1, -1)) {
+			long[] row;
+			while ((row = iterator.next()) != null) {
+				rows.add(row[0] + ":" + row[1] + ":" + row[2] + ":" + row[3]);
+			}
+		}
+		rows.sort(String::compareTo);
+		return rows;
 	}
 
 	@Test
@@ -773,6 +910,183 @@ class CompositeNativeLmdbQuerySourceOrderTest {
 		@Override
 		public void close() {
 			parallel.close();
+		}
+	}
+
+	private static final class KeyDomainSource extends StubSource {
+
+		private final long[][] rows;
+		private final Map<LmdbPrefixRunPlan, int[]> plans = new IdentityHashMap<>();
+
+		private KeyDomainSource(Object idSpace, long[][] rows) {
+			super(idSpace);
+			this.rows = Arrays.stream(rows).map(long[]::clone).toArray(long[][]::new);
+		}
+
+		@Override
+		public RecordIterator statements(long subj, long pred, long obj, long context) {
+			List<long[]> selected = Arrays.stream(rows)
+					.filter(row -> matches(row, subj, pred, obj, context))
+					.toList();
+			return new RecordIterator() {
+				private int position;
+
+				@Override
+				public long[] next() {
+					return position < selected.size() ? selected.get(position++).clone() : null;
+				}
+
+				@Override
+				public void close() {
+				}
+			};
+		}
+
+		@Override
+		public long count(long subj, long pred, long obj, long context) {
+			return Arrays.stream(rows).filter(row -> matches(row, subj, pred, obj, context)).count();
+		}
+
+		@Override
+		public boolean has(long subj, long pred, long obj, long context) {
+			return count(subj, pred, obj, context) != 0L;
+		}
+
+		@Override
+		public double estimate(long subj, long pred, long obj, long context) {
+			return count(subj, pred, obj, context);
+		}
+
+		@Override
+		public OptionalLong adjacencyKeyDomainCardinality(long predicate, boolean bySubject) {
+			return OptionalLong.of(Arrays.stream(rows)
+					.filter(row -> predicate < 0L || row[1] == predicate)
+					.mapToLong(row -> row[bySubject ? 0 : 2])
+					.distinct()
+					.count());
+		}
+
+		@Override
+		public boolean hasCanonicalIds() {
+			return true;
+		}
+
+		@Override
+		public LmdbPrefixRunPlan prefixRunPlan(int[] prefixFields, long subj, long pred, long obj, long context) {
+			LmdbPrefixRunPlan plan = mock(LmdbPrefixRunPlan.class);
+			int[] fields = prefixFields.clone();
+			plans.put(plan, fields);
+			char[] fieldSequence = fields[0] == TripleIndex.SUBJ_IDX ? new char[] { 's', 'o', 'c' }
+					: new char[] { 'o', 's', 'c' };
+			when(plan.usesAdjacency()).thenReturn(true);
+			when(plan.prefixFields()).thenReturn(fields);
+			when(plan.prefixLength()).thenReturn(fields.length);
+			when(plan.fieldSequence()).thenReturn(fieldSequence);
+			when(plan.indexName()).thenReturn("direct-adjacency");
+			when(plan.withConstraintsOf(any(LmdbPrefixRunPlan.class))).thenReturn(plan);
+			return plan;
+		}
+
+		@Override
+		public LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
+				boolean countRunRows) {
+			int[] fields = plans.get(plan);
+			List<long[]> selected = Arrays.stream(rows)
+					.filter(row -> matches(row, subj, pred, obj, context))
+					.map(long[]::clone)
+					.sorted((left, right) -> comparePrefix(left, right, fields))
+					.toList();
+			List<long[]> representatives = new ArrayList<>();
+			List<Long> runCounts = new ArrayList<>();
+			for (long[] row : selected) {
+				if (!representatives.isEmpty() && comparePrefix(representatives.getLast(), row, fields) == 0) {
+					runCounts.set(runCounts.size() - 1, runCounts.getLast() + 1L);
+				} else {
+					representatives.add(row);
+					runCounts.add(1L);
+				}
+			}
+			return new LmdbPrefixRunCursor() {
+				private int position = -1;
+
+				@Override
+				public boolean next() {
+					return ++position < representatives.size();
+				}
+
+				@Override
+				public boolean seekTo(long value) {
+					throw new UnsupportedOperationException();
+				}
+
+				@Override
+				public boolean seekTo(long[] prefixValues) {
+					throw new UnsupportedOperationException();
+				}
+
+				@Override
+				public void stopBefore(long[] prefixValues) {
+				}
+
+				@Override
+				public long[] quad() {
+					return representatives.get(position).clone();
+				}
+
+				@Override
+				public long prefixValue(int field) {
+					return representatives.get(position)[field];
+				}
+
+				@Override
+				public long runRowCount() {
+					return runCounts.get(position);
+				}
+
+				@Override
+				public long getSourceRowsScannedActual() {
+					return 0L;
+				}
+
+				@Override
+				public long getSourceRowsMatchedActual() {
+					return 0L;
+				}
+
+				@Override
+				public long getSourceRowsFilteredActual() {
+					return 0L;
+				}
+
+				@Override
+				public String getIndexName() {
+					return "direct-adjacency";
+				}
+
+				@Override
+				public void close() {
+				}
+			};
+		}
+
+		private static int comparePrefix(long[] left, long[] right, int[] fields) {
+			for (int field : fields) {
+				int compared = Long.compareUnsigned(left[field], right[field]);
+				if (compared != 0) {
+					return compared;
+				}
+			}
+			return 0;
+		}
+
+		@Override
+		public boolean hasStatementsInSource() {
+			return rows.length != 0;
+		}
+
+		private static boolean matches(long[] row, long subj, long pred, long obj, long context) {
+			return (subj < 0L || row[0] == subj) && (pred < 0L || row[1] == pred)
+					&& (obj < 0L || row[2] == obj) && (context < 0L || row[3] == context);
 		}
 	}
 

@@ -67,6 +67,29 @@ final class NativeBindingSetProjectionStep implements NativeResultStep, LmdbNati
 	}
 
 	private NativePhysicalResultPlan physicalResult(NativePhysicalResultPlan child) {
+		NativePhysicalOutputEvidence evidence = child.outputEvidence();
+		if (evidence != null) {
+			Map<String, NativePhysicalOutputEvidence.Column> mapped = new LinkedHashMap<>();
+			if (includeAllParentBindings) {
+				mapped.putAll(evidence.columns());
+			}
+			for (int index = 0; index < sourceNames.length; index++) {
+				NativePhysicalOutputEvidence.Column column = evidence.column(sourceNames[index]);
+				if (column == null) {
+					evidence = null;
+					break;
+				}
+				mapped.put(targetNames[index], column);
+			}
+			if (evidence != null) {
+				evidence = evidence.withColumns(child.input(), mapped);
+			}
+		}
+		return physicalResult(child, evidence);
+	}
+
+	private NativePhysicalResultPlan physicalResult(NativePhysicalResultPlan child,
+			NativePhysicalOutputEvidence evidence) {
 		return new NativePhysicalResultPlan(new NativeBindingSetProjectionStep(child.step(), this), child.input(),
 				child.rebindRecipe() == null ? null : (prepared, worker, bindings) -> {
 					if (!(prepared instanceof NativeBindingSetProjectionStep actual)
@@ -76,8 +99,8 @@ final class NativeBindingSetProjectionStep implements NativeResultStep, LmdbNati
 						return null;
 					}
 					NativePhysicalResultPlan rebound = child.rebind(actual.arg, worker, bindings);
-					return rebound == null ? null : actual.physicalResult(rebound);
-				}, "PROJECTION[" + child.physicalProperties() + ']');
+					return rebound == null ? null : actual.physicalResult(rebound, evidence);
+				}, "PROJECTION[" + child.physicalProperties() + ']', evidence);
 	}
 
 	@Override

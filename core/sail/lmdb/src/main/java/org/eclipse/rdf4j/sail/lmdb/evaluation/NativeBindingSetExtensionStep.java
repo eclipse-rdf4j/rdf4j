@@ -69,7 +69,8 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 				return null;
 			}
 			assignments.add(new Assignment(element.getName(), evaluator,
-					physicalEvaluator(element.getExpr(), strategy, context), physicalOperations(element.getExpr())));
+					physicalEvaluator(element.getExpr(), strategy, context), physicalOperations(element.getExpr()),
+					element.getExpr().clone(), new Object()));
 		}
 		return assignments.isEmpty() ? arg
 				: new NativeBindingSetExtensionStep(arg, assignments.toArray(Assignment[]::new));
@@ -106,8 +107,30 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 	}
 
 	private NativePhysicalResultPlan physicalResult(NativePhysicalResultPlan child, int operations) {
+		NativeAggregateCostQuotes.Input input = child.input().expressions(operations);
+		NativePhysicalOutputEvidence evidence = child.outputEvidence();
+		if (evidence != null) {
+			Map<String, NativePhysicalOutputEvidence.Column> columns = new LinkedHashMap<>(evidence.columns());
+			for (Assignment assignment : assignments) {
+				NativePhysicalOutputEvidence.Column column = outputColumn(assignment.expression(), columns,
+						assignment.definition());
+				if (column == null) {
+					evidence = null;
+					break;
+				}
+				columns.put(assignment.name(), column);
+			}
+			if (evidence != null) {
+				evidence = evidence.withColumns(input, columns);
+			}
+		}
+		return physicalResult(child, operations, input, evidence);
+	}
+
+	private NativePhysicalResultPlan physicalResult(NativePhysicalResultPlan child, int operations,
+			NativeAggregateCostQuotes.Input input, NativePhysicalOutputEvidence evidence) {
 		return new NativePhysicalResultPlan(new NativeBindingSetExtensionStep(child.step(), assignments),
-				child.input().expressions(operations),
+				input,
 				child.rebindRecipe() == null ? null : (prepared, worker, bindings) -> {
 					if (!(prepared instanceof NativeBindingSetExtensionStep actual)
 							|| assignments.length != actual.assignments.length) {
@@ -115,13 +138,44 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 					}
 					for (int index = 0; index < assignments.length; index++) {
 						if (!assignments[index].name().equals(actual.assignments[index].name())
-								|| assignments[index].operations() != actual.assignments[index].operations()) {
+								|| assignments[index].operations() != actual.assignments[index].operations()
+								|| !assignments[index].expression().equals(actual.assignments[index].expression())) {
 							return null;
 						}
 					}
 					NativePhysicalResultPlan rebound = child.rebind(actual.arg, worker, bindings);
-					return rebound == null ? null : actual.physicalResult(rebound, operations);
-				}, "EXTENSION[" + child.physicalProperties() + ']');
+					return rebound == null ? null : actual.physicalResult(rebound, operations, input, evidence);
+				}, "EXTENSION[" + child.physicalProperties() + ']', evidence);
+	}
+
+	private static NativePhysicalOutputEvidence.Column outputColumn(ValueExpr expression,
+			Map<String, NativePhysicalOutputEvidence.Column> columns, Object definition) {
+		if (expression instanceof Var variable && !variable.hasValue()) {
+			return columns.get(variable.getName());
+		}
+		if (expression instanceof Var || expression instanceof ValueConstant) {
+			return new NativePhysicalOutputEvidence.Column(definition, NativeResultCell.Kind.RDF_TERM,
+					NativePhysicalOutputEvidence.Domain.RDF_TERM, NativeAggregateResultDemand.FULL_VALUE,
+					List.of(NativeResultCell.State.BOUND));
+		}
+		if (expression instanceof FunctionCall function && FN.STRING_LENGTH.stringValue().equals(function.getURI())
+				&& function.getArgs().size() == 1) {
+			NativePhysicalOutputEvidence.Column argument = outputColumn(function.getArgs().getFirst(), columns,
+					definition);
+			return argument == null ? null : argument.length(definition);
+		}
+		if (expression instanceof MathExpr math) {
+			NativePhysicalOutputEvidence.Column left = outputColumn(math.getLeftArg(), columns, definition);
+			NativePhysicalOutputEvidence.Column right = outputColumn(math.getRightArg(), columns, definition);
+			return left == null || right == null || left.kind() != NativeResultCell.Kind.RDF_TERM
+					|| right.kind() != NativeResultCell.Kind.RDF_TERM ? null
+							: new NativePhysicalOutputEvidence.Column(definition, NativeResultCell.Kind.RDF_TERM,
+									NativePhysicalOutputEvidence.Domain.RDF_TERM,
+									NativeAggregateResultDemand.FULL_VALUE,
+									List.of(NativeResultCell.State.BOUND, NativeResultCell.State.UNBOUND,
+											NativeResultCell.State.ERROR));
+		}
+		return null;
 	}
 
 	/** Only the physical evaluator's explicit, pure transfer rules have a compositional work contract. */
@@ -195,7 +249,7 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 	}
 
 	private record Assignment(String name, NativeBindingSetValueEvaluator evaluator, PhysicalEvaluator physical,
-			int operations) {
+			int operations, ValueExpr expression, Object definition) {
 	}
 
 	@FunctionalInterface

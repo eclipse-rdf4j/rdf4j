@@ -264,13 +264,21 @@ final class LmdbNativeAdaptiveCostModel {
 
 	TrainingResult recordCompleted(LmdbNativeCostEstimate estimate, LmdbNativeCostVector actualFeatures,
 			double elapsedNanos, double weight, LmdbNativeRegimeKey regime, long dispatchEpoch) {
+		return recordCompleted(estimate, actualFeatures, elapsedNanos, weight, regime, dispatchEpoch,
+				NativePhysicalWorkEvidence.complete());
+	}
+
+	TrainingResult recordCompleted(LmdbNativeCostEstimate estimate, LmdbNativeCostVector actualFeatures,
+			double elapsedNanos, double weight, LmdbNativeRegimeKey regime, long dispatchEpoch,
+			NativePhysicalWorkEvidence actualWorkEvidence) {
 		TrainingResult result;
 		synchronized (store) {
 			synchronized (store.regimeTracker()) {
 				if (dispatchEpoch >= 0L && store.regimeTracker().snapshot().epoch() != dispatchEpoch) {
 					return new TrainingResult(false, "stale dispatch epoch", false, false);
 				}
-				result = recordCompletedLocked(estimate, actualFeatures, elapsedNanos, weight, regime);
+				result = recordCompletedLocked(estimate, actualFeatures, elapsedNanos, weight, regime,
+						actualWorkEvidence);
 			}
 		}
 		if (configuration.record && Double.isFinite(elapsedNanos) && elapsedNanos >= 0.0)
@@ -279,10 +287,16 @@ final class LmdbNativeAdaptiveCostModel {
 	}
 
 	private TrainingResult recordCompletedLocked(LmdbNativeCostEstimate estimate, LmdbNativeCostVector actualFeatures,
-			double elapsedNanos, double weight, LmdbNativeRegimeKey regime) {
+			double elapsedNanos, double weight, LmdbNativeRegimeKey regime,
+			NativePhysicalWorkEvidence actualWorkEvidence) {
 		Objects.requireNonNull(estimate, "estimate");
 		Objects.requireNonNull(actualFeatures, "actualFeatures");
 		Objects.requireNonNull(regime, "regime");
+		Objects.requireNonNull(actualWorkEvidence, "actualWorkEvidence");
+		if (!actualWorkEvidence.isComplete()) {
+			estimate = estimate
+					.withWorkEvidence(estimate.workEvidence().withMissingProof(actualWorkEvidence.missingProof()));
+		}
 		if (!configuration.record) {
 			return new TrainingResult(false, "recording disabled or observation ineligible", false, false);
 		}
@@ -300,12 +314,15 @@ final class LmdbNativeAdaptiveCostModel {
 					regime, elapsedNanos / 1e6, weight, before.expectedNanos() / 1e6, before.nEff());
 		}
 
-		store.updateFeatureRatios(estimate.variantKey(), estimate.total(), actualFeatures);
-		double residualShape = quote.lane == LmdbNativeCostPosteriorStore.Lane.RESIDUAL
-				? Math.exp(quote.reading.meanLog())
-				: 1.0;
-		LmdbNativeMachineCostModel.Update machineUpdate = machine.update(actualFeatures,
-				residualShape > 0.0 ? elapsedNanos / residualShape : elapsedNanos);
+		LmdbNativeMachineCostModel.Update machineUpdate = null;
+		if (actualWorkEvidence.isComplete()) {
+			store.updateFeatureRatios(estimate.variantKey(), estimate.total(), actualFeatures);
+			double residualShape = quote.lane == LmdbNativeCostPosteriorStore.Lane.RESIDUAL
+					? Math.exp(quote.reading.meanLog())
+					: 1.0;
+			machineUpdate = machine.update(actualFeatures,
+					residualShape > 0.0 ? elapsedNanos / residualShape : elapsedNanos);
+		}
 
 		double y = Math.log(Math.max(1.0, elapsedNanos)) - quote.logBase;
 		double clippedResidual = store.posteriors()
@@ -316,8 +333,12 @@ final class LmdbNativeAdaptiveCostModel {
 		if (severe) {
 			store.probeScheduler().quarantine(estimate.variantKey(), regime, quote.epoch);
 		}
-		return new TrainingResult(machineUpdate.accepted(),
-				severe ? "accepted and flagged severe 99% miss" : "accepted", machineUpdate.clipped(), severe);
+		return new TrainingResult(machineUpdate != null && machineUpdate.accepted(),
+				!actualWorkEvidence.isComplete()
+						? "completed direct timing retained; partial feature evidence: "
+								+ actualWorkEvidence.missingProof()
+						: severe ? "accepted and flagged severe 99% miss" : "accepted",
+				machineUpdate != null && machineUpdate.clipped(), severe);
 
 	}
 
@@ -484,7 +505,7 @@ final class LmdbNativeAdaptiveCostModel {
 		LmdbNativeStoreCostModel.Correction correction = store.correction(estimate.variantKey());
 		LmdbNativeCostVector corrected = applyFeatureCorrection(estimate.total(), correction);
 		LmdbNativeMachineCostModel.Prediction machinePrediction = machine.predict(corrected, inputs.machine());
-		boolean featuresComparable = machinePrediction.adaptiveReady()
+		boolean featuresComparable = estimate.workEvidence().isComplete() && machinePrediction.adaptiveReady()
 				&& !corrected.hasUnsupportedFeatures(machinePrediction.supportedFeatureMask())
 				&& machinePrediction.expectedNanos() > 0.0 && Double.isFinite(machinePrediction.expectedNanos());
 		LmdbNativeCostPosteriorStore.Lane lane = featuresComparable ? LmdbNativeCostPosteriorStore.Lane.RESIDUAL

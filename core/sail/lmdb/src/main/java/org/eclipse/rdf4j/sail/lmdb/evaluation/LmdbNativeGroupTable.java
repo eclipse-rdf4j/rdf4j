@@ -175,7 +175,8 @@ final class NativeGroupTable implements AutoCloseable {
 		if (!NativeTypedGroupStore.supports(aggregates)) {
 			throw new IllegalArgumentException("Ordered prefix has no bounded reducer encoding");
 		}
-		boolean counts = AggregateSpec.allCounts(aggregates) && !AggregateSpec.anyFullRowDistinct(aggregates)
+		boolean counts = groups.length <= 64 && aggregates.length <= 64
+				&& AggregateSpec.allCounts(aggregates) && !AggregateSpec.anyFullRowDistinct(aggregates)
 				&& row.keyAuthority() != null && row.keyAuthority().supportsCanonicalTermKeys();
 		NativeGroupTable table = new NativeGroupTable(groups, aggregates, context,
 				AggregateDistinctChannels.allHash(aggregates), Mode.TUPLE_STATES, false, true);

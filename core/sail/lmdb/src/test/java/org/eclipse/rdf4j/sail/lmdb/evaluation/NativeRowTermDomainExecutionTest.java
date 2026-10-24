@@ -26,6 +26,14 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.BrokenBarrierException;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
@@ -230,6 +238,88 @@ class NativeRowTermDomainExecutionTest {
 		assertThat(NativeExpressionDomain.IO_WRITE_OPERATIONS.get()).isGreaterThan(writes);
 		assertThat(NativeExpressionDomain.IO_READ_BYTES.get()).isGreaterThan(readBytes);
 		assertThat(NativeExpressionDomain.IO_WRITE_BYTES.get()).isGreaterThan(writeBytes);
+	}
+
+	@Test
+	void sharedCountersRemainExactAfterConcurrentExpressionDomainsDrain() throws Exception {
+		int workerCount = 4;
+		int rowsPerWorker = 128;
+		int extraHitsPerWorker = 4096;
+		CyclicBarrier firstEvaluation = new CyclicBarrier(workerCount);
+		CyclicBarrier concurrentHits = new CyclicBarrier(workerCount);
+		long evaluationsBefore = NativeExpressionDomain.EVALUATIONS.get();
+		long hitsBefore = NativeExpressionDomain.HITS.get();
+		ExecutorService executor = Executors.newFixedThreadPool(workerCount);
+		List<Future<?>> workers = new ArrayList<>();
+		try {
+			for (int worker = 0; worker < workerCount; worker++) {
+				workers.add(executor.submit(() -> {
+					try (Fixture fixture = new Fixture("ordinal", "text", "result")) {
+						List<ValuesRow> values = new ArrayList<>(rowsPerWorker);
+						for (int ordinal = 0; ordinal < rowsPerWorker; ordinal++) {
+							values.add(fixture.values(ordinal, "shared-α😀"));
+						}
+						CopyBinding copy = fixture.countedCopy(
+								call(FN.STRING_LENGTH.stringValue(), Var.of("text")), 2);
+						AtomicBoolean firstEvaluationCallback = new AtomicBoolean();
+						fixture.afterEvaluation = row -> {
+							if (firstEvaluationCallback.compareAndSet(false, true)) {
+								awaitTogether(firstEvaluation);
+							}
+						};
+						RowState row = fixture.row();
+						int emitted = 0;
+						try (RowCursor cursor = new ExtensionCursor(
+								SlotPlan.values(values.toArray(ValuesRow[]::new)).open(row),
+								new CopyBinding[] { copy }, row)) {
+							while (row.advance(cursor)) {
+								assertThat(fixture.source.lazyValue(row.id(0))).isEqualTo(
+										fixture.source.lazyValue(values.get(emitted).values[0]));
+								assertThat(((Literal) fixture.source.lazyValue(row.id(2))).getLabel())
+										.isEqualTo("9");
+								emitted++;
+							}
+						}
+						assertThat(emitted).isEqualTo(rowsPerWorker);
+						assertThat(fixture.evaluations).hasValue(1);
+						assertThat(row.boundMask()).isZero();
+
+						assertTrue(row.bind(1, values.getFirst().values[1]));
+						long result = copy.value(row);
+						assertThat(((Literal) fixture.source.lazyValue(result)).getLabel()).isEqualTo("9");
+						awaitTogether(concurrentHits);
+						for (int hit = 0; hit < extraHitsPerWorker; hit++) {
+							assertThat(copy.value(row)).isEqualTo(result);
+						}
+						return null;
+					}
+				}));
+			}
+			for (Future<?> worker : workers) {
+				worker.get(30, TimeUnit.SECONDS);
+			}
+		} finally {
+			executor.shutdownNow();
+			executor.awaitTermination(30, TimeUnit.SECONDS);
+		}
+
+		assertThat(NativeExpressionDomain.EVALUATIONS.get() - evaluationsBefore)
+				.as("one actual computation per independent worker after all workers have joined")
+				.isEqualTo(workerCount);
+		assertThat(NativeExpressionDomain.HITS.get() - hitsBefore)
+				.as("all repeated dependency tuples and post-drain-independent cache reads are counted")
+				.isEqualTo((long) workerCount * (rowsPerWorker - 1L + 1L + extraHitsPerWorker));
+	}
+
+	private static void awaitTogether(CyclicBarrier barrier) {
+		try {
+			barrier.await(30, TimeUnit.SECONDS);
+		} catch (InterruptedException failure) {
+			Thread.currentThread().interrupt();
+			throw new AssertionError("interrupted while synchronizing concurrent counter test", failure);
+		} catch (BrokenBarrierException | TimeoutException failure) {
+			throw new AssertionError("concurrent counter workers did not reach the barrier", failure);
+		}
 	}
 
 	@Test

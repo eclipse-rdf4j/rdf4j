@@ -25,6 +25,7 @@ import java.util.Arrays;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalLong;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.query.BindingSet;
@@ -35,6 +36,8 @@ import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
 class LmdbAdjacencyAggregateMetadataTest {
@@ -84,6 +87,206 @@ class LmdbAdjacencyAggregateMetadataTest {
 		}
 	}
 
+	@Test
+	void globalAdjacencyRootHeapKeyDoesNotClaimGroupingOrHashing() throws Exception {
+		String previous = System.getProperty("rdf4j.lmdb.directAdjacency.scanAggregates.enabled");
+		System.setProperty("rdf4j.lmdb.directAdjacency.scanAggregates.enabled", "true");
+		try {
+			Fixture fixture = new Fixture();
+			LmdbNativePhysicalVariantKey key = fixture.globalPhysicalKey();
+			assertThat(key.groupingMode()).isEqualTo(LmdbNativePhysicalVariantKey.GroupingMode.NONE);
+			assertThat(key.requiresHashing()).isFalse();
+			assertThat(key.physicalOrderAndProperties()).contains("rootHeap=true");
+		} finally {
+			restore(previous);
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,false", "false,true", "true,false", "true,true" })
+	void coldUnpricedSelectionUsesTheBoundedRootRecipeIndependentlyOfLabelsAndOfferOrder(
+			boolean swapLabels, boolean reverseOffers) throws Exception {
+		String previous = System.getProperty("rdf4j.lmdb.directAdjacency.scanAggregates.enabled");
+		System.setProperty("rdf4j.lmdb.directAdjacency.scanAggregates.enabled", "true");
+		try {
+			Fixture fixture = new Fixture();
+			BindingSet expected = fixture.evaluate(Term.unbound());
+			assertThat(expected.getValue("subjects").stringValue()).isEqualTo("3");
+			assertThat(expected.getValue("objects").stringValue()).isEqualTo("2");
+			assertThat(fixture.rootOpens.get()).as("the real domain merge must admit this input").isPositive();
+			PatternPlan input = fixture.pattern(Term.unbound());
+			LmdbAdjacencyAggregatePlan physical = LmdbAdjacencyAggregatePlan.tryCreate(input, new int[0],
+					fixture.aggregates);
+			assertThat(physical).isNotNull();
+			AtomicInteger rootExecutions = new AtomicInteger();
+			AtomicInteger residentExecutions = new AtomicInteger();
+			LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(),
+					new LmdbNativeStoreCostModel(), new LmdbNativeAdaptiveCostModel.Configuration(true, true));
+			RowState row = fixture.row();
+			try (NativeGroupIteration owner = new NativeGroupIteration(fixture.source, input, fixture.layout,
+					new int[0], fixture.aggregates, false, EmptyBindingSet.getInstance(), null, null, false, false,
+					null, 0L, null, physical, null, null);
+					LmdbNativeStrategyArbiter<List<BindingSet>> arbiter = LmdbNativeStrategyArbiter.forModel(null,
+							-1D, model)) {
+				assertThat(owner.initialize(row)).isTrue();
+				assertThat(physical.quote(row)).as("the actual root recipe has complete visible-domain work")
+						.isNotNull();
+				String rootLabel = swapLabels ? "irAggregateParallel" : "adjacencyAggregate";
+				String residentLabel = swapLabels ? "adjacencyAggregate" : "irAggregateParallel";
+				LmdbNativeStrategyProposal<List<BindingSet>> root = new LmdbNativeStrategyProposal<>(() -> {
+					rootExecutions.incrementAndGet();
+					return physical.evaluate(owner, row);
+				}, LmdbNativeWork.exact(4D), rootLabel, () -> {
+				});
+				root.withAggregatePhysicalPlan(new NativeAggregatePhysicalPlan(input,
+						NativeAggregatePhysicalPlan.Retention.STREAMING, physical));
+				// This counterfactual opener isolates arbitration. Its already verified exact answer is not a
+				// measured execution or a claim that this fixture exercised a real parallel resident kernel.
+				LmdbNativeStrategyProposal<List<BindingSet>> resident = new LmdbNativeStrategyProposal<>(() -> {
+					residentExecutions.incrementAndGet();
+					return List.of(expected);
+				}, LmdbNativeWork.exact(4D), residentLabel, () -> {
+				});
+				resident.withAggregatePhysicalPlan(new NativeAggregatePhysicalPlan(input,
+						NativeAggregatePhysicalPlan.Retention.RESIDENT_STATE, null,
+						new NativeAggregatePhysicalPlan.KeyProperties(LmdbNativePhysicalVariantKey.GroupingMode.NONE,
+								true)));
+				NativeAggregateCostQuotes quotes = new NativeAggregateCostQuotes(owner, row, null, false);
+				quotes.attach(root);
+				quotes.attach(resident);
+				for (var proposal : List.of(root, resident)) {
+					var prediction = model.predict(proposal.adaptiveEstimate(-1D));
+					assertThat(prediction.priceBasis()).isEqualTo(LmdbNativeCostPrediction.PriceBasis.ORDINAL_ONLY);
+					assertThat(prediction.exactCompletedCount()).isZero();
+				}
+				arbiter.offer(() -> reverseOffers ? resident : root);
+				arbiter.offer(() -> reverseOffers ? root : resident);
+				try (var selected = arbiter.selectWithObservation()) {
+					assertThat(selected.value()).containsExactly(expected);
+					assertThat(rootExecutions).as("an unpriced choice uses the proved bounded domain recipe")
+							.hasValue(1);
+					assertThat(residentExecutions).as("an unrelated strategy label cannot replace the producer proof")
+							.hasValue(0);
+				}
+			} finally {
+				row.closeDecodedInputs();
+			}
+		} finally {
+			restore(previous);
+		}
+	}
+
+	@Test
+	void coldRootWitnessNeedsTheSameSuccessfulCanonicalVisibleQuote() throws Exception {
+		String previous = System.getProperty("rdf4j.lmdb.directAdjacency.scanAggregates.enabled");
+		System.setProperty("rdf4j.lmdb.directAdjacency.scanAggregates.enabled", "true");
+		try {
+			Fixture fixture = new Fixture();
+			NativeAggregatePhysicalPlan.ColdAnchor anchor = fixture.coldAnchor(Term.unbound(), false);
+			assertThat(anchor).isNotNull();
+			assertThat(anchor.inputReductionProof()).contains("visible", "payload");
+			assertThat(anchor.retainedStateBoundProof()).contains("catalog", "cursor", "ledger-bounded replay");
+			assertThat(fixture.cardinalityLookups).as("two planes each need outgoing, subject and object metadata once")
+					.hasValue(6);
+			assertThat(fixture.coldAnchor(Term.constant(1L), false))
+					.as("unrestricted global metadata does not certify a scoped producer")
+					.isNull();
+			assertThat(fixture.coldAnchor(Term.unbound(), true))
+					.as("STREAMING alone does not prove a reduced producer or its retained payload")
+					.isNull();
+			when(fixture.source.hasCanonicalIds()).thenReturn(false);
+			assertThat(fixture.coldAnchor(Term.unbound(), false)).as("unproved RDF identity is not a domain proof")
+					.isNull();
+			when(fixture.source.hasCanonicalIds()).thenReturn(true);
+			when(fixture.source.adjacencyKeyDomainCardinality(anyLong(), anyBoolean()))
+					.thenReturn(OptionalLong.empty());
+			assertThat(fixture.coldAnchor(Term.unbound(), false)).as("missing optional metadata remains unknown")
+					.isNull();
+		} finally {
+			restore(previous);
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,false", "false,true", "true,false", "true,true" })
+	void aRealCompletedRootRemainsTheNormalFallbackWhileRivalsHaveNoCompletedExecution(
+			boolean swapLabels, boolean reverseOffers) throws Exception {
+		String previous = System.getProperty("rdf4j.lmdb.directAdjacency.scanAggregates.enabled");
+		System.setProperty("rdf4j.lmdb.directAdjacency.scanAggregates.enabled", "true");
+		try {
+			Fixture fixture = new Fixture();
+			BindingSet expected = fixture.evaluate(Term.unbound());
+			assertThat(expected.getValue("subjects").stringValue()).isEqualTo("3");
+			assertThat(expected.getValue("objects").stringValue()).isEqualTo("2");
+			assertThat(fixture.rootOpens).as("the exact domain producer is independently admitted").hasValue(4);
+			LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(),
+					new LmdbNativeStoreCostModel(), new LmdbNativeAdaptiveCostModel.Configuration(true, true));
+			AtomicInteger rootExecutions = new AtomicInteger();
+			AtomicInteger residentExecutions = new AtomicInteger();
+			for (int dispatch = 0; dispatch < 3; dispatch++) {
+				PatternPlan input = fixture.pattern(Term.unbound());
+				LmdbAdjacencyAggregatePlan physical = LmdbAdjacencyAggregatePlan.tryCreate(input, new int[0],
+						fixture.aggregates);
+				assertThat(physical).isNotNull();
+				RowState row = fixture.row();
+				try (NativeGroupIteration owner = new NativeGroupIteration(fixture.source, input, fixture.layout,
+						new int[0], fixture.aggregates, false, EmptyBindingSet.getInstance(), null, null, false, false,
+						null, 0L, null, physical, null, null);
+						LmdbNativeStrategyArbiter<List<BindingSet>> arbiter = LmdbNativeStrategyArbiter.forModel(null,
+								-1D, model)) {
+					assertThat(owner.initialize(row)).isTrue();
+					LmdbNativeStrategyProposal<List<BindingSet>> root = new LmdbNativeStrategyProposal<>(() -> {
+						rootExecutions.incrementAndGet();
+						return physical.evaluate(owner, row);
+					}, LmdbNativeWork.exact(4D), swapLabels ? "irAggregateParallel" : "adjacencyAggregate", () -> {
+					});
+					root.withAggregatePhysicalPlan(new NativeAggregatePhysicalPlan(input,
+							NativeAggregatePhysicalPlan.Retention.STREAMING, physical));
+					// As above, this exact counterfactual result is only an arbitration control. There is no
+					// probe harness at this site. A shared posterior after the first completion is not an actual
+					// completed rival execution and must not restore an unbounded preferred rival.
+					LmdbNativeStrategyProposal<List<BindingSet>> resident = new LmdbNativeStrategyProposal<>(() -> {
+						residentExecutions.incrementAndGet();
+						return List.of(expected);
+					}, LmdbNativeWork.exact(4D), swapLabels ? "adjacencyAggregate" : "irAggregateParallel", () -> {
+					});
+					resident.withAggregatePhysicalPlan(new NativeAggregatePhysicalPlan(input,
+							NativeAggregatePhysicalPlan.Retention.RESIDENT_STATE, null,
+							new NativeAggregatePhysicalPlan.KeyProperties(
+									LmdbNativePhysicalVariantKey.GroupingMode.NONE,
+									true)));
+					NativeAggregateCostQuotes quotes = new NativeAggregateCostQuotes(owner, row, null, false);
+					quotes.attach(root);
+					quotes.attach(resident);
+					LmdbNativeCostPrediction rival = model.predict(resident.adaptiveEstimate(-1D));
+					assertThat(rival.exactCompletedCount()).isZero();
+					assertThat(rival.evidenceSource())
+							.isNotEqualTo(LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT);
+					assertThat(rival.priceBasis()).isEqualTo(dispatch == 0
+							? LmdbNativeCostPrediction.PriceBasis.ORDINAL_ONLY
+							: LmdbNativeCostPrediction.PriceBasis.DIRECT_POSTERIOR);
+					arbiter.offer(() -> reverseOffers ? resident : root);
+					arbiter.offer(() -> reverseOffers ? root : resident);
+					try (var selected = arbiter.selectWithObservation()) {
+						assertThat(selected.value()).containsExactly(expected);
+						assertThat(rootExecutions).as("dispatch " + dispatch + " keeps the viable measured producer")
+								.hasValue(dispatch + 1);
+						assertThat(residentExecutions).as("an unpriced rival needs an admitted bounded trial")
+								.hasValue(0);
+						selected.exhausted();
+						assertThat(model.predict(root.adaptiveEstimate(-1D)).exactCompletedCount())
+								.as("only the real completed root execution supplies this observation")
+								.isEqualTo(dispatch + 1L);
+					}
+				} finally {
+					row.closeDecodedInputs();
+				}
+			}
+		} finally {
+			restore(previous);
+		}
+	}
+
 	private static void restore(String previous) {
 		if (previous == null) {
 			System.clearProperty("rdf4j.lmdb.directAdjacency.scanAggregates.enabled");
@@ -100,13 +303,24 @@ class LmdbAdjacencyAggregateMetadataTest {
 		final NativeSlotLayout layout = new NativeSlotLayout(Map.of("s", 0, "p", 1, "o", 2), null);
 		final AggregateSpec[] aggregates = { AggregateSpec.slot("subjects", 0, true, AggKind.COUNT),
 				AggregateSpec.slot("objects", 2, true, AggKind.COUNT) };
-		final AtomicInteger rootOpens = new AtomicInteger(), nodeLookups = new AtomicInteger();
+		final AtomicInteger rootOpens = new AtomicInteger(), nodeLookups = new AtomicInteger(),
+				cardinalityLookups = new AtomicInteger();
 		final Map<LmdbPrefixRunPlan, Prefix> plans = new IdentityHashMap<>();
 		boolean metadata;
 
 		Fixture() throws IOException {
 			layout.freeze(List.of("s", "p", "o"));
 			when(source.hasCanonicalIds()).thenReturn(true);
+			when(source.adjacencyKeyDomainCardinality(anyLong(), anyBoolean())).thenAnswer(call -> {
+				cardinalityLookups.incrementAndGet();
+				long predicate = call.getArgument(0);
+				int field = (boolean) call.getArgument(1) ? TripleIndex.SUBJ_IDX : TripleIndex.OBJ_IDX;
+				return OptionalLong.of(quads.stream()
+						.filter(quad -> quad[TripleIndex.PRED_IDX] == predicate)
+						.mapToLong(quad -> quad[field])
+						.distinct()
+						.count());
+			});
 			when(source.prefixRunPlan(any(int[].class), anyLong(), anyLong(), anyLong(), anyLong()))
 					.thenAnswer(call -> plan(call.getArgument(0), null));
 			when(source.prefixRuns(any(LmdbPrefixRunPlan.class), anyLong(), anyLong(), anyLong(), anyLong(),
@@ -114,6 +328,18 @@ class LmdbAdjacencyAggregateMetadataTest {
 							.thenAnswer(call -> cursor(plans.get(call.getArgument(0)), call.getArgument(2)));
 			when(source.newProbe()).thenAnswer(call -> {
 				NativeLmdbQuerySource.NativeProbe probe = mock(NativeLmdbQuerySource.NativeProbe.class);
+				when(probe.wildcardAdjacency(anyBoolean())).thenAnswer(request -> {
+					long[] predicates = quads.stream()
+							.mapToLong(quad -> quad[TripleIndex.PRED_IDX])
+							.distinct()
+							.sorted()
+							.toArray();
+					NativeLmdbQuerySource.WildcardAdjacency catalog = mock(
+							NativeLmdbQuerySource.WildcardAdjacency.class);
+					when(catalog.predicateCount()).thenReturn(predicates.length);
+					when(catalog.predicateAt(anyInt())).thenAnswer(ordinal -> predicates[(int) ordinal.getArgument(0)]);
+					return catalog;
+				});
 				when(probe.nodePredicates(anyBoolean())).thenAnswer(request -> {
 					if (!metadata) {
 						return null;
@@ -133,6 +359,8 @@ class LmdbAdjacencyAggregateMetadataTest {
 			LmdbPrefixRunPlan plan = mock(LmdbPrefixRunPlan.class);
 			plans.put(plan, new Prefix(fields.clone(), contexts));
 			when(plan.usesAdjacency()).thenReturn(true);
+			when(plan.prefixLength()).thenReturn(fields.length);
+			when(plan.prefixFields()).thenReturn(fields.clone());
 			when(plan.withContextFilter(any(long[].class), anyBoolean()))
 					.thenAnswer(call -> plan(fields, call.getArgument(0)));
 			return plan;
@@ -209,6 +437,48 @@ class LmdbAdjacencyAggregateMetadataTest {
 
 		LmdbNativeWork quote(Term context) {
 			return LmdbAdjacencyAggregatePlan.tryCreate(pattern(context), new int[0], aggregates).estimateWork(row());
+		}
+
+		LmdbNativePhysicalVariantKey globalPhysicalKey() {
+			PatternPlan input = pattern(Term.unbound());
+			LmdbAdjacencyAggregatePlan physical = LmdbAdjacencyAggregatePlan.tryCreate(input, new int[0], aggregates);
+			assertThat(physical).isNotNull();
+			try (NativeGroupIteration owner = new NativeGroupIteration(source, input, layout, new int[0], aggregates,
+					false, EmptyBindingSet.getInstance(), null, null, false, false, null, 0L, null, physical, null,
+					null);
+					LmdbNativeStrategyProposal<List<BindingSet>> proposal = new LmdbNativeStrategyProposal<>(
+							() -> List.of(), LmdbNativeWork.exact(1D),
+							LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE, () -> {
+							})) {
+				RowState row = row();
+				assertThat(owner.initialize(row)).isTrue();
+				proposal.withAggregatePhysicalPlan(new NativeAggregatePhysicalPlan(input,
+						NativeAggregatePhysicalPlan.Retention.STREAMING, physical));
+				new NativeAggregateCostQuotes(owner, row, null, false).attach(proposal);
+				return proposal.adaptiveEstimate(-1D).variantKey();
+			}
+		}
+
+		NativeAggregatePhysicalPlan.ColdAnchor coldAnchor(Term context, boolean bareStreaming) {
+			PatternPlan input = pattern(context);
+			LmdbAdjacencyAggregatePlan physical = LmdbAdjacencyAggregatePlan.tryCreate(input, new int[0], aggregates);
+			assertThat(physical).isNotNull();
+			RowState row = row();
+			try (NativeGroupIteration owner = new NativeGroupIteration(source, input, layout, new int[0], aggregates,
+					false, EmptyBindingSet.getInstance(), null, null, false, false, null, 0L, null, physical, null,
+					null);
+					LmdbNativeStrategyProposal<List<BindingSet>> proposal = new LmdbNativeStrategyProposal<>(
+							() -> List.of(), LmdbNativeWork.exact(4D), "adjacencyAggregate", () -> {
+							})) {
+				assertThat(owner.initialize(row)).isTrue();
+				proposal.withAggregatePhysicalPlan(new NativeAggregatePhysicalPlan(input,
+						NativeAggregatePhysicalPlan.Retention.STREAMING, bareStreaming ? null : physical));
+				cardinalityLookups.set(0);
+				new NativeAggregateCostQuotes(owner, row, null, false).attach(proposal);
+				return proposal.coldAnchor();
+			} finally {
+				row.closeDecodedInputs();
+			}
 		}
 
 		record Prefix(int[] fields, long[] contexts) {

@@ -532,7 +532,14 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 			if (quote == null) {
 				return null;
 			}
-			return physicalResult(input, quote.expressions(sourceSlots.length));
+			NativeAggregateCostQuotes.Input output = quote.expressions(sourceSlots.length);
+			NativePhysicalOutputEvidence evidence = NativeLogicalResultTransferPlan.projectedEvidence(input,
+					planningSource, sourceSlots, targetNames, output);
+			if (evidence == null && !SlotPlan.requiresPhysicalCells(input)) {
+				evidence = NativePhysicalOutputEvidence.rdfRows(input, output, planningSource, bindings, sourceSlots,
+						targetNames);
+			}
+			return physicalResult(input, output, evidence, NativeEntryBindings.snapshot(bindings));
 		} catch (RuntimeException | Error problem) {
 			failure = problem;
 			throw problem;
@@ -548,7 +555,8 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		}
 	}
 
-	private NativePhysicalResultPlan physicalResult(SlotPlan input, NativeAggregateCostQuotes.Input quote) {
+	private NativePhysicalResultPlan physicalResult(SlotPlan input, NativeAggregateCostQuotes.Input quote,
+			NativePhysicalOutputEvidence evidence, BindingSet quotedBindings) {
 		NativeRowsStep bound = new NativeRowsStep(source, input, layout, sourceSlots, targetNames, false,
 				orderSlots, orderAscending, 0L, -1L, strictCompare, strategy, originalExpr, context, Set.of(), null,
 				null);
@@ -568,17 +576,30 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 				return bound.requiresPhysicalResults();
 			}
 		};
-		return new NativePhysicalResultPlan(executable, quote,
-				!NativeWorkerPlanBinder.canBind(input) ? null : (prepared, worker, bindings) -> {
-					if (!(prepared instanceof NativeRowsStep actual) || !Arrays.equals(sourceSlots, actual.sourceSlots)
-							|| !Arrays.equals(targetNames, actual.targetNames) || actual.distinct
-							|| actual.orderSlots.length != 0 || actual.snapshotRows || actual.offset != 0L
-							|| actual.limit >= 0L) {
-						return null;
-					}
-					SlotPlan rebound = NativeAggregatePhysicalPlan.rebindInput(input, actual.arg, worker);
-					return rebound == null ? null : actual.physicalResult(rebound, quote);
-				}, "ROWS[" + NativeAggregatePhysicalPlan.inputProperties(input) + ']');
+		NativePhysicalInputRecipe recipe = NativePhysicalInputRecipe.capture(input);
+		NativeResultStep selected = new NativeSelectedResultStep(executable, this, input, null, null, null, null);
+		return new NativePhysicalResultPlan(selected, quote,
+				evidence == null || recipe == null || !NativeWorkerPlanBinder.canBind(input) ? null
+						: (prepared, worker, bindings) -> {
+							if (!(prepared instanceof NativeRowsStep actual)
+									|| !Arrays.equals(sourceSlots, actual.sourceSlots)
+									|| !Arrays.equals(targetNames, actual.targetNames) || actual.distinct
+									|| actual.orderSlots.length != 0 || actual.snapshotRows || actual.offset != 0L
+									|| actual.limit >= 0L || strictCompare != actual.strictCompare
+									|| queryExecutionPolicy() != actual.queryExecutionPolicy()
+									|| !Set.copyOf(Arrays.asList(optionalOnlyNames))
+											.equals(Set.copyOf(Arrays.asList(actual.optionalOnlyNames)))
+									|| !NativePhysicalOutputEvidence.sameEntry(quotedBindings, bindings)
+									|| !evidence.validFor(worker.source())
+									|| !evidence.sourceFamilyMatches(actual.source)
+									|| !recipe.matches(actual.arg)) {
+								return null;
+							}
+							SlotPlan rebound = NativeAggregatePhysicalPlan.rebindInput(input, actual.arg, worker);
+							return rebound == null ? null
+									: actual.physicalResult(rebound, quote, evidence, quotedBindings);
+						},
+				"ROWS[" + NativeAggregatePhysicalPlan.inputProperties(input) + ']', evidence);
 	}
 
 	CloseableIteration<BindingSet> genericFallback(BindingSet bindings, NativeLmdbQuerySource evalSource,

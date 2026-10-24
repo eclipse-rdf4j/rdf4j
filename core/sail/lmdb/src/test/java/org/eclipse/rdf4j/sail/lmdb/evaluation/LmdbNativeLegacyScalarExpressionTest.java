@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.mockito.Mockito.mockStatic;
 
 import java.io.File;
@@ -337,6 +338,112 @@ class LmdbNativeLegacyScalarExpressionTest {
 		LmdbNativeCostPosteriorStore.Reading reading = costs.posteriors().read(key, 0L, costs.nowMillis());
 		assertThat(reading.exact().censoredCount).isEqualTo(1L);
 		assertThat(reading.exact().completedCount).isZero();
+	}
+
+	@Test
+	void aReturnedScalarCannotAdmitAnotherCallbackAfterItsProbeTrips() throws IOException {
+		Extension extension = scalarSubqueryExtension();
+		List<String> genericRows = evaluate(new QueryRoot(extension.clone()), false);
+		long evaluationsBefore = NativeScalarSubqueryValueEvaluator.EVALUATIONS.get();
+		long islandsBefore = LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get();
+		long hostedBefore = LmdbNativeAggregateCompiler.HOSTED_GENERIC.get();
+		List<ScalarInvocation> invocations = new ArrayList<>();
+		AtomicInteger incumbentOpens = new AtomicInteger(), rivalOpens = new AtomicInteger();
+		AtomicBoolean tripAfterCompareAny = new AtomicBoolean();
+		LmdbNativeProbeDeadline controlledDeadline = LmdbNativeProbeDeadline.trippableOnly();
+		LmdbNativeStoreCostModel costs = new LmdbNativeStoreCostModel();
+		LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(), costs,
+				new LmdbNativeAdaptiveCostModel.Configuration(true, true));
+		// These are scripted arbiter openers for the same query, not claims about its actual physical row route.
+		LmdbNativeStrategyProposal<List<String>> incumbent = new LmdbNativeStrategyProposal<>(() -> {
+			incumbentOpens.incrementAndGet();
+			return evaluate(new QueryRoot(extension.clone()), true);
+		}, LmdbNativeWork.exact(1_000D), LmdbNativeAttemptMetrics.PATH_BATCH, () -> {
+		});
+		LmdbNativeStrategyProposal<List<String>> rival = new LmdbNativeStrategyProposal<>(() -> {
+			rivalOpens.incrementAndGet();
+			return evaluate(new QueryRoot(extension.clone()), true);
+		}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, () -> {
+		});
+		LmdbNativeCostEstimate incumbentEstimate = incumbent.adaptiveEstimate(-1D);
+		LmdbNativeCostEstimate rivalEstimate = rival.directTimingEstimate();
+		for (int sample = 0; sample < 30; sample++) {
+			model.recordCompleted(incumbentEstimate, incumbentEstimate.total(), 5_000_000D, 1.0,
+					model.currentRegime());
+		}
+		costs.safetyLedger().earn(1_000_000_000_000L);
+		List<String> result;
+		try (MockedStatic<LmdbNativeProbeDeadline> deadlines = mockStatic(LmdbNativeProbeDeadline.class, call -> {
+			// Attach the deterministic probe to the arbiter scope without introducing elapsed-time races.
+			if (call.getMethod().getName().equals("enter") && call.getArgument(0) instanceof Long) {
+				return LmdbNativeProbeDeadline.enter(controlledDeadline);
+			}
+			return call.callRealMethod();
+		});
+				MockedStatic<NativeScalarSubqueryValueEvaluator> evaluators = mockStatic(
+						NativeScalarSubqueryValueEvaluator.class, call -> {
+							NativeBindingSetValueEvaluator actual = (NativeBindingSetValueEvaluator) call
+									.callRealMethod();
+							if (actual == null) {
+								return null;
+							}
+							String operator = call.getArgument(0, ValueExpr.class).getSignature();
+							return traceScalarEvaluator(operator, actual, invocations, () -> {
+								if (operator.equals("CompareAny (>)")
+										&& LmdbNativeProbeDeadline.currentOrNull() == controlledDeadline
+										&& tripAfterCompareAny.compareAndSet(false, true)) {
+									// The semantic call has returned successfully. Trip, but do not poll or throw here.
+									controlledDeadline.trip();
+								}
+							});
+						});
+				LmdbNativeStrategyArbiter<List<String>> arbiter = LmdbNativeStrategyArbiter
+						.<List<String>>forModel(null, -1D, model)
+						.probeHarness(LmdbNativeProbeHarness.blocking())) {
+			arbiter.offer(() -> incumbent);
+			arbiter.offer(() -> rival);
+			result = arbiter.select();
+		}
+		List<ScalarInvocation> fallback = invocations.subList(1, invocations.size());
+		LmdbNativeCostPosteriorStore.ExactKey key = LmdbNativeCostPosteriorStore.ExactKey.of(model.currentRegime(),
+				LmdbNativeCostPosteriorStore.Lane.DIRECT, rivalEstimate.variantKey());
+		LmdbNativeCostPosteriorStore.Reading reading = costs.posteriors().read(key, 0L, costs.nowMillis());
+		assertAll(
+				() -> assertThat(result).containsExactlyInAnyOrderElementsOf(genericRows),
+				() -> assertThat(result).singleElement()
+						.asString()
+						.contains("all=\"false\"", "any=\"true\"", "in=\"true\"", "left=\"2\""),
+				() -> assertThat(incumbentOpens).hasValue(1),
+				() -> assertThat(rivalOpens).hasValue(1),
+				() -> assertThat(tripAfterCompareAny).isTrue(),
+				() -> assertThat(controlledDeadline.tripped()).isTrue(),
+				() -> assertThat(NativeScalarSubqueryValueEvaluator.EVALUATIONS.get() - evaluationsBefore)
+						.isEqualTo(4L),
+				() -> assertThat(invocations).extracting(invocation -> invocation.operator)
+						.containsExactly("CompareAny (>)", "CompareAny (>)", "CompareAll (<)", "In"),
+				() -> assertThat(
+						invocations.stream().filter(invocation -> invocation.probe == controlledDeadline).toList())
+								.as("the expired attempt must stop before another semantic scalar callback")
+								.hasSize(1),
+				() -> assertThat(invocations.get(0).operator).isEqualTo("CompareAny (>)"),
+				() -> assertThat(invocations.get(0).outcome).startsWith("BOUND:"),
+				() -> assertThat(invocations.get(0).termination).isEqualTo("returned"),
+				() -> assertThat(invocations.get(0).failure).isNull(),
+				() -> assertThat(invocations.get(0).trippedAfter).isTrue(),
+				() -> assertThat(invocations.get(0).probe).isSameAs(controlledDeadline),
+				() -> assertThat(fallback).hasSize(3),
+				() -> assertThat(fallback).allSatisfy(invocation -> {
+					assertThat(invocation.probe).isNull();
+					assertThat(invocation.executionContext).isSameAs(fallback.get(0).executionContext);
+					assertThat(invocation.termination).isEqualTo("returned");
+					assertThat(invocation.failure).isNull();
+				}),
+				() -> assertThat(invocations.get(0).executionContext).isNotSameAs(fallback.get(0).executionContext),
+				() -> assertThat(invocations.get(0).executionContext.cancellation().cancellationPublished()).isFalse(),
+				() -> assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get()).isEqualTo(islandsBefore),
+				() -> assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get()).isEqualTo(hostedBefore),
+				() -> assertThat(reading.exact().censoredCount).isEqualTo(1L),
+				() -> assertThat(reading.exact().completedCount).isZero());
 	}
 
 	private Extension scalarSubqueryExtension() {

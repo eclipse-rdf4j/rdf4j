@@ -16,11 +16,14 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiFunction;
 import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Value;
@@ -153,6 +156,45 @@ final class NativeSubqueryPlan implements SlotPlan {
 		return physicalInput;
 	}
 
+	NativePhysicalOutputEvidence outputEvidence() {
+		return physicalRecipe == null ? null : physicalRecipe.outputEvidence();
+	}
+
+	private record BoundaryStructure(List<Integer> outputs, List<String> names, List<Integer> frameInputs,
+			List<String> frameNames, List<String> frameParameters, List<String> privateParameters,
+			List<String> projection, boolean subquery) {
+	}
+
+	Object boundaryStructure() {
+		List<String> projected = projection == null ? List.of()
+				: projection.getProjectionElemList()
+						.getElements()
+						.stream()
+						.flatMap(element -> Stream.of(element.getName(),
+								element.getProjectionAlias().orElse(element.getName())))
+						.toList();
+		return new BoundaryStructure(Arrays.stream(outSlots).boxed().toList(), List.copyOf(Arrays.asList(outNames)),
+				Arrays.stream(frameInputSlots).boxed().toList(), List.copyOf(Arrays.asList(frameInputNames)),
+				List.copyOf(Arrays.asList(frameParameterNames)), List.copyOf(Arrays.asList(privateGraphParameters)),
+				projected, projection != null && projection.isSubquery());
+	}
+
+	Map<Integer, NativePhysicalOutputEvidence.Column> outputColumns() {
+		NativePhysicalOutputEvidence evidence = outputEvidence();
+		if (evidence == null) {
+			return null;
+		}
+		Map<Integer, NativePhysicalOutputEvidence.Column> result = new HashMap<>();
+		for (int index = 0; index < outSlots.length; index++) {
+			NativePhysicalOutputEvidence.Column column = evidence.column(outNames[index]);
+			if (column == null) {
+				return null;
+			}
+			result.put(outSlots[index], column);
+		}
+		return Map.copyOf(result);
+	}
+
 	String physicalProperties() {
 		return physicalRecipe == null ? "AUTO" : physicalRecipe.physicalProperties();
 	}
@@ -174,7 +216,13 @@ final class NativeSubqueryPlan implements SlotPlan {
 		BindingSet body = NativeEntryBindings.preserve(input, projection == null ? input
 				: ProjectionQueryEvaluationStep.withInheritedGraphInput(projection, input, context));
 		NativePhysicalResultPlan recipe = inLexicalScope(row.source, row.cancellation,
-				() -> nativeStep.physicalPlan(body));
+				() -> {
+					NativePhysicalResultPlan selected = nativeStep.physicalPlan(body);
+					if (selected != null && LmdbNativeStrategyPreview.active()) {
+						LmdbNativeStrategyPreview.inspect(selected.step());
+					}
+					return selected;
+				});
 		return recipe == null ? null : boundPhysical(recipe, body);
 	}
 

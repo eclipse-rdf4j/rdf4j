@@ -92,15 +92,42 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 	private boolean forcedCandidateReturnedNull;
 	private Map<String, String> forcedDeclineCapture;
 	private Map<String, String> previousDeclineCapture;
+	private boolean diagnosticEnabled = NativeStrategyDecisionEvent.enabled();
+	private NativeStrategyDecisionEvent.Owner diagnosticOwner;
+	private NativeCancellationToken diagnosticCancellation;
+	private long diagnosticBoundaryId;
+	private String diagnosticPoint;
+	private NativeStrategyDecisionEvent.Decision diagnosticDecision;
+	private Map<String, NativeStrategyDecisionEvent.Candidate> diagnosticCandidates;
+	private List<LmdbNativeStrategyProposal<T>> diagnosticInventory;
+	private int diagnosticRound;
 
 	private LmdbNativeStrategyArbiter(TupleExpr explainTarget, double sliceRows,
 			LmdbNativeAdaptiveCostModel adaptiveModel) {
 		this.explainTarget = explainTarget;
 		this.sliceRows = sliceRows;
 		this.adaptiveModel = adaptiveModel;
-		if (LmdbNativeStrategyPreview.active()) {
+		if (LmdbNativeStrategyPreview.active() || diagnosticEnabled) {
 			forcedDeclineCapture = new HashMap<>();
 			previousDeclineCapture = LmdbNativeAttemptMetrics.installDeclineCapture(forcedDeclineCapture);
+		}
+	}
+
+	/** Actual invocation attribution, shared with the aggregate opener event; no owner is inferred from algebra. */
+	LmdbNativeStrategyArbiter<T> diagnostics(NativeCancellationToken cancellation, long boundaryId, String point) {
+		diagnosticCancellation = cancellation;
+		diagnosticBoundaryId = boundaryId;
+		diagnosticPoint = point;
+		return this;
+	}
+
+	private void enableDiagnostics() {
+		if (!diagnosticEnabled && NativeStrategyDecisionEvent.enabled()) {
+			diagnosticEnabled = true;
+			if (forcedDeclineCapture == null) {
+				forcedDeclineCapture = new HashMap<>();
+				previousDeclineCapture = LmdbNativeAttemptMetrics.installDeclineCapture(forcedDeclineCapture);
+			}
 		}
 	}
 
@@ -144,6 +171,7 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 	 * structural decline reason, and a strategy that cannot run is not a strategy that lost.
 	 */
 	LmdbNativeStrategyArbiter<T> offer(Proposer<T> proposer) throws IOException {
+		enableDiagnostics();
 		LmdbNativeStrategyProposal<T> proposal = proposer.propose();
 		if (proposal != null) {
 			candidates.add(proposal);
@@ -531,6 +559,14 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 			double sliceRows, LmdbNativeAdaptiveCostModel model,
 			LmdbNativeAdaptiveArbitration.ProbeContext probeContext,
 			LmdbNativeAdaptiveArbitration.HedgeContext hedgeContext, PreviewQuotes<T> quotes) {
+		return adaptiveDecision(candidates, sliceRows, model, probeContext, hedgeContext, quotes, null);
+	}
+
+	private static <T> AdaptiveDecision<T> adaptiveDecision(List<LmdbNativeStrategyProposal<T>> candidates,
+			double sliceRows, LmdbNativeAdaptiveCostModel model,
+			LmdbNativeAdaptiveArbitration.ProbeContext probeContext,
+			LmdbNativeAdaptiveArbitration.HedgeContext hedgeContext, PreviewQuotes<T> quotes,
+			LmdbNativeStrategyArbiter<T> diagnostics) {
 		if (candidates.isEmpty()) {
 			return AdaptiveDecision.empty();
 		}
@@ -544,18 +580,43 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 		LmdbNativeAdaptiveCostModel.PricingBatch captured = quotes == null ? model.predictAll(estimates)
 				: new LmdbNativeAdaptiveCostModel.PricingBatch(quotes.batch().regime(), quotes.batch().epoch(),
 						quotes.batch().nowMillis(), candidates.stream().map(quotes.predictions()::get).toList());
+		boolean allUnpriced = model.configuration().enabled();
+		LmdbNativeWork[] authoritativeCosts = costs.clone();
+		boolean[] physicallyDominated = new boolean[candidates.size()];
+		// Inventory-only arms retain their captured quotes for diagnostics and later fallback. Their numerical
+		// prices do not supply authority to the executable physical frontier while their dominator remains legal.
+		for (int index = 0; index < candidates.size(); index++) {
+			physicallyDominated[index] = candidates.get(index).physicalDominanceProof(candidates) != null;
+			LmdbNativeCostPrediction prediction = captured.predictions().get(index);
+			if (!estimates.get(index).workEvidence().isComplete() && prediction.exactCompletedCount() == 0L) {
+				// The compatibility scalar remains diagnostic work. A refused producer's units cannot veto a
+				// different executable recipe's proved normal choice at the old static band.
+				authoritativeCosts[index] = LmdbNativeWork.UNKNOWN;
+			}
+			if (!physicallyDominated[index]
+					&& (prediction.priceBasis() == LmdbNativeCostPrediction.PriceBasis.FEATURE_POSTERIOR
+							|| prediction.priceBasis() == LmdbNativeCostPrediction.PriceBasis.DIRECT_POSTERIOR
+									&& prediction.nEff() > 0D
+							|| prediction.exactCompletedCount() != 0L)) {
+				allUnpriced = false;
+			}
+		}
+		DiagnosticQuotes<T> diagnosticQuotes = diagnostics == null ? null
+				: new DiagnosticQuotes<>(captured, List.copyOf(candidates), List.copyOf(estimates),
+						authoritativeCosts.clone());
 		List<AdaptiveCandidate<T>> converted = new ArrayList<>(candidates.size());
 		List<LmdbNativeAdaptiveArbitration.Priced<T>> priced = new ArrayList<>(candidates.size());
 		for (int i = 0; i < candidates.size(); i++) {
 			LmdbNativeStrategyProposal<T> proposal = candidates.get(i);
 			LmdbNativeCostEstimate estimate = estimates.get(i);
-			if (proposal.physicalDominanceProof(candidates) != null) {
+			if (physicallyDominated[i]) {
 				// Keep the legal proposal in the inventory and as a fallback if its dominator declines. A proved
 				// shared physical prefix plus strictly extra work cannot justify a speculative trial, even when an
 				// unrelated earlier sample gave this arm completed timing confidence.
 				continue;
 			}
-			if (isColdStaticallyDominated(candidates, costs, i)
+			if (!(allUnpriced && proposal.coldAnchor() != null)
+					&& isColdStaticallyDominated(candidates, authoritativeCosts, i)
 					&& captured.predictions().get(i).exactCompletedCount() == 0L) {
 				// Statically beyond any family speed ratio: never offered to the adaptive frontier (G8). The band
 				// is a COLD gate — an arm with completed exact measurements is not cold, and culling it on a
@@ -565,32 +626,35 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 				continue;
 			}
 			LmdbNativeAdaptiveArbitration.Candidate<T> candidate = new LmdbNativeAdaptiveArbitration.Candidate<>(
-					estimate, LmdbNativeStrategyPreference.rank(proposal.tag), ignored -> proposal.open(),
-					proposal.probeable);
+					estimate, LmdbNativeStrategyPreference.rank(proposal.tag),
+					observation -> diagnostics == null ? proposal.open()
+							: diagnostics.openAttempt(proposal, observation),
+					proposal.probeable, proposal.coldAnchor());
 			converted.add(new AdaptiveCandidate<>(i, candidate));
 			priced.add(new LmdbNativeAdaptiveArbitration.Priced<>(candidate, captured.predictions().get(i)));
 		}
 		if (converted.isEmpty()) {
 			int index = rankColdStatic(candidates, costs);
-			return new AdaptiveDecision<>(index, null, -1, "cold-static banded preference");
+			return new AdaptiveDecision<>(index, null, -1, "cold-static banded preference", diagnosticQuotes);
 		}
 
 		LmdbNativeAdaptiveArbitration.DispatchPlan<T> plan = LmdbNativeAdaptiveArbitration.chooseCaptured(priced,
 				captured, model, probeContext, hedgeContext);
 		if (plan instanceof LmdbNativeAdaptiveArbitration.DispatchPlan.Hedge<T> hedge) {
 			return new AdaptiveDecision<>(indexOf(converted, hedge.probe().trial()), plan,
-					indexOf(converted, hedge.probe().fallback()), hedge.probe().reason());
+					indexOf(converted, hedge.probe().fallback()), hedge.probe().reason(), diagnosticQuotes);
 		}
 		if (plan instanceof LmdbNativeAdaptiveArbitration.DispatchPlan.Probe<T> probe) {
 			return new AdaptiveDecision<>(indexOf(converted, probe.trial()), plan,
-					indexOf(converted, probe.fallback()), probe.reason());
+					indexOf(converted, probe.fallback()), probe.reason(), diagnosticQuotes);
 		}
 		if (plan instanceof LmdbNativeAdaptiveArbitration.DispatchPlan.Guarded<T> guarded) {
 			return new AdaptiveDecision<>(indexOf(converted, guarded.normal().candidate()), plan,
-					indexOf(converted, guarded.backup()), guarded.normal().reason());
+					indexOf(converted, guarded.backup()), guarded.normal().reason(), diagnosticQuotes);
 		}
 		LmdbNativeAdaptiveArbitration.DispatchPlan.Normal<T> normal = (LmdbNativeAdaptiveArbitration.DispatchPlan.Normal<T>) plan;
-		return new AdaptiveDecision<>(indexOf(converted, normal.candidate()), plan, -1, normal.reason());
+		return new AdaptiveDecision<>(indexOf(converted, normal.candidate()), plan, -1, normal.reason(),
+				diagnosticQuotes);
 	}
 
 	private static <T> int indexOf(List<AdaptiveCandidate<T>> converted,
@@ -679,8 +743,16 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 		if (LmdbNativeStrategyPreview.active()) {
 			throw new IllegalStateException("Optimized preview cannot execute a strategy");
 		}
+		enableDiagnostics();
+		if (diagnosticEnabled) {
+			diagnosticInventory = List.copyOf(candidates);
+		}
 		if (forcedTag != null) {
 			if (!applyForcedFilter()) {
+				if (diagnosticEnabled) {
+					recordDiagnosticDecision(new AdaptiveDecision<>(-1, null, -1, "forced strategy unavailable"),
+							"forced");
+				}
 				// no offered candidate matches: a mandatory site is authoritative and must explain why; an
 				// optional-shortcut site quietly declines so the caller's own separate fallback gets a fair try
 				if (forcedMandatory) {
@@ -771,6 +843,9 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 
 	private LmdbNativeStrategySelection<T> dispatch() throws IOException {
 		recordProposalCosts();
+		if (candidates.isEmpty() && diagnosticEnabled) {
+			recordDiagnosticDecision(AdaptiveDecision.empty(), forcedTag == null ? "normal" : "forced");
+		}
 		boolean retry = false;
 		while (!candidates.isEmpty()) {
 			AdaptiveDecision<T> decision;
@@ -778,14 +853,18 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 				decision = adaptiveDecision(candidates, sliceRows, adaptiveModel,
 						new LmdbNativeAdaptiveArbitration.ProbeContext(probeConfig, probeBudget,
 								probeHarness != null),
-						hedgeContextForSite());
+						hedgeContextForSite(), null, diagnosticEnabled ? this : null);
 			} else {
-				decision = new AdaptiveDecision<>(rankLegacy(candidates, sliceRows), null, -1, "legacy ranking");
+				LmdbNativeWork[] costs = comparableCosts(candidates, sliceRows);
+				decision = new AdaptiveDecision<>(rankLegacy(candidates, costs), null, -1, "legacy ranking");
 			}
 			String role = decision.plan instanceof LmdbNativeAdaptiveArbitration.DispatchPlan.Probe<?>
 					|| decision.plan instanceof LmdbNativeAdaptiveArbitration.DispatchPlan.Hedge<?> ? "trial"
 							: decision.plan instanceof LmdbNativeAdaptiveArbitration.DispatchPlan.Guarded<?> ? "guarded"
 									: forcedTag != null ? "forced" : "normal";
+			if (diagnosticEnabled) {
+				recordDiagnosticDecision(decision, retry ? "retry " + role : role);
+			}
 			logSelected(explainTarget, decisionId, forcedDecisionPoint, candidates.get(decision.index).tag,
 					retry ? "retry " + role : role, decision.reason);
 			retry = true;
@@ -924,22 +1003,48 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 	private T produceBackupWithAttemptStates(LmdbNativeHedgeSupport.ShadowContext shadow, String tag,
 			LmdbNativeCostObservation observation, LmdbNativeProbeDeadline deadline) throws Exception {
 		LmdbNativeProbeDeadline.AttemptStates states = LmdbNativeProbeDeadline.ownAttemptStates();
+		NativeStrategyDecisionEvent.Attempt diagnostic = diagnosticEnabled ? diagnosticAttempt(tag) : null;
+		if (diagnostic != null) {
+			observation.diagnostics(diagnostic);
+		}
+		Map<String, String> declines = diagnostic == null ? null : new HashMap<>();
+		Map<String, String> previous = diagnostic == null ? null
+				: LmdbNativeAttemptMetrics.installDeclineCapture(declines);
 		T produced = null;
 		Throwable failure = null;
 		try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(deadline)) {
 			produced = hedgeSupport.produceBackup(shadow, tag, observation);
+			if (diagnostic != null) {
+				String reason = declines.get(LmdbNativeStrategyPreference.baseTag(tag));
+				diagnostic.opened(produced == null ? "DECLINED" : "OPEN_RETURNED",
+						produced == null && reason == null ? "backup opener returned null" : reason, null);
+			}
 			return produced;
 		} catch (Exception | Error problem) {
+			if (diagnostic != null) {
+				diagnostic.opened(problem instanceof LmdbNativeProbeDeadlineExceeded ? "PROBE_EXPIRED"
+						: problem instanceof KernelQueryCancelledException ? "CANCELLED" : "FAILED",
+						declines.get(LmdbNativeStrategyPreference.baseTag(tag)), problem);
+			}
 			failure = problem;
 			throw problem;
 		} finally {
-			Throwable retained = states.settled(failure, false);
-			if (retained != failure) {
-				T unpublished = produced;
-				if (unpublished != null) {
-					retained = KernelRuntime.closeResource(() -> hedgeSupport.discard(unpublished), retained);
+			try {
+				Throwable retained = states.settled(failure, false);
+				if (retained != failure) {
+					T unpublished = produced;
+					if (unpublished != null) {
+						retained = KernelRuntime.closeResource(() -> hedgeSupport.discard(unpublished), retained);
+					}
+					NativeContextClosingIteration.throwFailure(retained);
 				}
-				NativeContextClosingIteration.throwFailure(retained);
+			} finally {
+				if (diagnostic != null) {
+					LmdbNativeAttemptMetrics.installDeclineCapture(previous);
+					if (previous != null) {
+						previous.putAll(declines);
+					}
+				}
 			}
 		}
 	}
@@ -1785,9 +1890,9 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 		}
 	}
 
-	private static <T> LmdbNativeStrategySelection<T> openLegacy(LmdbNativeStrategyProposal<T> proposal)
+	private LmdbNativeStrategySelection<T> openLegacy(LmdbNativeStrategyProposal<T> proposal)
 			throws IOException {
-		T value = proposal.open();
+		T value = diagnosticEnabled ? openAttempt(proposal, null) : proposal.open();
 		return value == null ? null : new LmdbNativeStrategySelection<>(value, null);
 	}
 
@@ -1944,6 +2049,110 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 		LmdbNativeExplain.recordStrategyProposalCosts(explainTarget, sb.toString());
 	}
 
+	/** Publishes only the immutable batch already used by the ranking above; never asks the model for another quote. */
+	private void recordDiagnosticDecision(AdaptiveDecision<T> decision, String mode) {
+		DiagnosticQuotes<T> quotes = decision.quotes();
+		LmdbNativeAdaptiveCostModel.PricingBatch batch = quotes == null ? null : quotes.batch();
+		if (diagnosticOwner == null) {
+			diagnosticOwner = NativeStrategyDecisionEvent.Owner.of(diagnosticCancellation, diagnosticBoundaryId,
+					diagnosticPoint == null ? forcedDecisionPoint : diagnosticPoint);
+		}
+		diagnosticDecision = new NativeStrategyDecisionEvent.Decision(diagnosticOwner,
+				decisionId, ++diagnosticRound, forcedTag, forcedMandatory, mode, decision.reason(),
+				batch == null ? null : batch.regime(), batch == null ? -1L : batch.epoch(),
+				batch == null ? -1L : batch.nowMillis());
+		Map<String, NativeStrategyDecisionEvent.Candidate> records = new HashMap<>();
+		for (LmdbNativeStrategyProposal<T> proposal : diagnosticInventory) {
+			int index = candidates.indexOf(proposal);
+			int quoteIndex = quotes == null ? -1 : quotes.proposals().indexOf(proposal);
+			LmdbNativeCostEstimate estimate = quoteIndex < 0 ? null : quotes.estimates().get(quoteIndex);
+			LmdbNativeCostPrediction prediction = quoteIndex < 0 ? null : batch.predictions().get(quoteIndex);
+			String proof = index < 0 ? null : proposal.physicalDominanceProof(candidates);
+			boolean forcedOut = forcedTag != null
+					&& !forcedTag.equals(LmdbNativeStrategyPreference.baseTag(proposal.tag));
+			String status = forcedOut ? "FORCED_OUT"
+					: index < 0 ? "PREVIOUSLY_DECLINED"
+							: index == decision.index() ? "SELECTED"
+									: proof != null ? "PHYSICALLY_DOMINATED"
+											: quotes != null
+													&& isColdStaticallyDominated(candidates, quotes.comparisonCosts(),
+															index)
+													&& prediction.exactCompletedCount() == 0L ? "COLD_STATIC_DOMINATED"
+															: "ELIGIBLE";
+			String decline = forcedDeclineCapture == null ? null
+					: forcedDeclineCapture.get(LmdbNativeStrategyPreference.baseTag(proposal.tag));
+			NativeStrategyDecisionEvent.Candidate record = new NativeStrategyDecisionEvent.Candidate(proposal.tag,
+					estimate == null ? null : estimate.variantKey(), proposal.effectiveWork(sliceRows), prediction,
+					true, status, proof != null ? proof : forcedOut ? "another strategy was forced" : decline);
+			records.put(proposal.tag, record);
+			diagnosticDecision.candidate(record);
+		}
+		if (forcedDeclineCapture != null) {
+			for (var decline : forcedDeclineCapture.entrySet()) {
+				boolean offered = diagnosticInventory.stream()
+						.anyMatch(proposal -> decline.getKey()
+								.equals(LmdbNativeStrategyPreference.baseTag(proposal.tag)));
+				if (!offered) {
+					NativeStrategyDecisionEvent.Candidate absent = new NativeStrategyDecisionEvent.Candidate(
+							decline.getKey(), null, null, null, false, "DECLINED", decline.getValue());
+					records.put(decline.getKey(), absent);
+					diagnosticDecision.candidate(absent);
+				}
+			}
+		}
+		if (forcedTag != null && records.keySet()
+				.stream()
+				.noneMatch(tag -> forcedTag.equals(LmdbNativeStrategyPreference.baseTag(tag)))) {
+			NativeStrategyDecisionEvent.Candidate absent = new NativeStrategyDecisionEvent.Candidate(forcedTag,
+					null, null, null, false, "NOT_OFFERED", "structural precondition was not met");
+			records.put(forcedTag, absent);
+			diagnosticDecision.candidate(absent);
+		}
+		diagnosticCandidates = Map.copyOf(records);
+	}
+
+	private NativeStrategyDecisionEvent.Attempt diagnosticAttempt(String tag) {
+		NativeStrategyDecisionEvent.Candidate candidate = diagnosticCandidates == null ? null
+				: diagnosticCandidates.get(tag);
+		if (candidate == null && diagnosticDecision != null) {
+			candidate = new NativeStrategyDecisionEvent.Candidate(tag, null, null, null, true,
+					"TERMINAL_FALLBACK", "all ordinary candidates declined or were censored");
+		}
+		return candidate == null ? null : diagnosticDecision.attempt(candidate);
+	}
+
+	private T openAttempt(LmdbNativeStrategyProposal<T> proposal, LmdbNativeCostObservation observation)
+			throws IOException {
+		NativeStrategyDecisionEvent.Attempt attempt = diagnosticAttempt(proposal.tag);
+		if (attempt == null) {
+			return proposal.open();
+		}
+		if (observation != null) {
+			observation.diagnostics(attempt);
+		}
+		Map<String, String> declines = new HashMap<>();
+		Map<String, String> previous = LmdbNativeAttemptMetrics.installDeclineCapture(declines);
+		try {
+			T value = proposal.open();
+			String reason = declines.get(LmdbNativeStrategyPreference.baseTag(proposal.tag));
+			attempt.opened(value == null ? "DECLINED" : "OPEN_RETURNED",
+					value == null && reason == null ? "opener returned null" : reason, null);
+			return value;
+		} catch (IOException | RuntimeException | Error failure) {
+			NativeCancellationToken cancellation = attempt.decision().owner().cancellation();
+			String status = failure instanceof LmdbNativeProbeDeadlineExceeded ? "PROBE_EXPIRED"
+					: failure instanceof KernelQueryCancelledException
+							|| cancellation != null && cancellation.cancellationPublished() ? "CANCELLED" : "FAILED";
+			attempt.opened(status, declines.get(LmdbNativeStrategyPreference.baseTag(proposal.tag)), failure);
+			throw failure;
+		} finally {
+			LmdbNativeAttemptMetrics.installDeclineCapture(previous);
+			if (previous != null) {
+				previous.putAll(declines);
+			}
+		}
+	}
+
 	@Override
 	public void close() {
 		Throwable failure = null;
@@ -1978,8 +2187,18 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 	private record AdaptiveCandidate<T>(int index, LmdbNativeAdaptiveArbitration.Candidate<T> candidate) {
 	}
 
+	private record DiagnosticQuotes<T>(LmdbNativeAdaptiveCostModel.PricingBatch batch,
+			List<LmdbNativeStrategyProposal<T>> proposals, List<LmdbNativeCostEstimate> estimates,
+			LmdbNativeWork[] comparisonCosts) {
+	}
+
 	private record AdaptiveDecision<T>(int index, LmdbNativeAdaptiveArbitration.DispatchPlan<T> plan,
-			int fallbackIndex, String reason) {
+			int fallbackIndex, String reason, DiagnosticQuotes<T> quotes) {
+		AdaptiveDecision(int index, LmdbNativeAdaptiveArbitration.DispatchPlan<T> plan, int fallbackIndex,
+				String reason) {
+			this(index, plan, fallbackIndex, reason, null);
+		}
+
 		private static <T> AdaptiveDecision<T> empty() {
 			return new AdaptiveDecision<>(-1, null, -1, "no candidates");
 		}

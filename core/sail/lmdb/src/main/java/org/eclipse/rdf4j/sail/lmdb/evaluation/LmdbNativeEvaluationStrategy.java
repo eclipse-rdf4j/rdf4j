@@ -61,7 +61,8 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	private final boolean nativeEnabled;
 	private final boolean forceRootGeneric;
 	private final String forcedExecutionStrategy;
-	private static final ThreadLocal<Boolean> KERNEL_SUBPLAN = new ThreadLocal<>();
+	// Keep only the inactive Boolean between callbacks: removing it would allocate a fresh entry for every row.
+	private static final ThreadLocal<Boolean> KERNEL_SUBPLAN = ThreadLocal.withInitial(() -> Boolean.FALSE);
 	private final EvaluationStatistics evaluationStatistics;
 	private final LmdbStableOrderPlanner stableOrderPlanner;
 	// Constructor inputs retained so the claim-suppressed sibling view can be built with identical configuration.
@@ -137,6 +138,11 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	NativeAggregateResultDemand aggregateResultDemand(GroupElem element) {
 		NativeValuePositionAnalysis current = valuePositionSnapshot();
 		return current == null ? NativeAggregateResultDemand.FULL_VALUE : current.aggregateDemand(element);
+	}
+
+	Object aggregateDefinition(GroupElem element) {
+		NativeValuePositionAnalysis current = valuePositionSnapshot();
+		return current == null ? null : current.aggregateDefinition(element);
 	}
 
 	private NativeValuePositionAnalysis selectValuePositions(TupleExpr expr) {
@@ -217,7 +223,7 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	 * {@link LmdbNativeForceableStrategies}), or {@code null} when the engine's own selection should decide as usual.
 	 */
 	String forcedExecutionStrategyName() {
-		return KERNEL_SUBPLAN.get() == null ? forcedExecutionStrategy : null;
+		return Boolean.TRUE.equals(KERNEL_SUBPLAN.get()) ? null : forcedExecutionStrategy;
 	}
 
 	/**
@@ -229,19 +235,19 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	 * point, exactly as if it had not been requested, rather than throwing or using a stale value.
 	 */
 	static String forcedExecutionStrategyForCurrentThread() {
-		return KERNEL_SUBPLAN.get() == null ? currentForcedExecutionStrategy() : null;
+		return Boolean.TRUE.equals(KERNEL_SUBPLAN.get()) ? null : currentForcedExecutionStrategy();
 	}
 
 	/** The enclosing kernel honors the forced strategy; its internal operators choose their own access paths. */
 	static boolean enterKernelSubplan() {
-		boolean nested = KERNEL_SUBPLAN.get() != null;
+		boolean nested = Boolean.TRUE.equals(KERNEL_SUBPLAN.get());
 		KERNEL_SUBPLAN.set(Boolean.TRUE);
 		return nested;
 	}
 
 	static void leaveKernelSubplan(boolean nested) {
 		if (!nested) {
-			KERNEL_SUBPLAN.remove();
+			KERNEL_SUBPLAN.set(Boolean.FALSE);
 		}
 	}
 

@@ -62,8 +62,8 @@ final class NativeAggregateExecutionEvent extends Event {
 		}
 		return new Descriptor(owner.cancellation, owner.diagnosticBoundaryId, strategy, demands.toString(),
 				(plan == null ? owner.arg : plan.input()).getClass().getSimpleName(),
-				plan == null ? "UNKNOWN" : plan.retention().name(),
-				NativeAggregatePhysicalPlan.inputProperties(plan == null ? owner.arg : plan.input()));
+				plan == null || plan.retention() == null ? "UNKNOWN" : plan.retention().name(),
+				plan == null ? NativeAggregatePhysicalPlan.inputProperties(owner.arg) : plan.properties());
 	}
 
 	/** Immutable attribution captured from the actual invocation, never from a later worker or reused compile plan. */

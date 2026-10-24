@@ -70,6 +70,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	private boolean closed;
 	private LmdbNativeCostEstimate physicalEstimate;
 	private NativeAggregatePhysicalPlan aggregatePhysicalPlan;
+	private NativeAggregatePhysicalPlan.ColdAnchor coldAnchor;
 	private NativeAggregateExecutionEvent.Descriptor aggregateExecution;
 	private IdentityHashMap<LmdbNativeStrategyProposal<?>, String> physicalDominators;
 	private LmdbNativeStrategyProposal<?> mappedOrigin;
@@ -92,6 +93,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		}, work, startupWork, estRows, mappedTag, this::close, probeable);
 		result.physicalEstimate = physicalEstimate;
 		result.aggregatePhysicalPlan = aggregatePhysicalPlan;
+		result.coldAnchor = coldAnchor;
 		result.mappedOrigin = this;
 		return result;
 	}
@@ -136,6 +138,12 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		return this;
 	}
 
+	LmdbNativeStrategyProposal<T> withIncompletePhysicalWork(LmdbNativeCostEstimate partialEstimate, String reason) {
+		return withPhysicalEstimate(Objects.requireNonNull(partialEstimate)
+				.withWorkEvidence(
+						partialEstimate.workEvidence().withMissingProof(reason)));
+	}
+
 	LmdbNativeStrategyProposal<T> withAggregatePhysicalPlan(NativeAggregatePhysicalPlan plan) {
 		if (opened || closed || aggregatePhysicalPlan != null) {
 			throw new IllegalStateException("An aggregate physical plan belongs to one unopened proposal");
@@ -150,6 +158,19 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 
 	NativeAggregatePhysicalPlan aggregatePhysicalPlan() {
 		return aggregatePhysicalPlan;
+	}
+
+	/** A physical cold-start witness belongs to the same unopened recipe as its estimate and result carrier. */
+	LmdbNativeStrategyProposal<T> withColdAnchor(NativeAggregatePhysicalPlan.ColdAnchor anchor) {
+		if (opened || closed || coldAnchor != null) {
+			throw new IllegalStateException("A cold anchor belongs to one unopened proposal");
+		}
+		coldAnchor = Objects.requireNonNull(anchor);
+		return this;
+	}
+
+	NativeAggregatePhysicalPlan.ColdAnchor coldAnchor() {
+		return coldAnchor;
 	}
 
 	void observeAggregateOpening(NativeAggregateExecutionEvent.Descriptor descriptor) {
@@ -246,7 +267,8 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 				.requiresHashing(requiresHashing(family))
 				.build();
 		LmdbNativeCostVector zero = LmdbNativeCostVector.zero();
-		return new LmdbNativeCostEstimate(key, zero, zero, 0D, 0.5);
+		return new LmdbNativeCostEstimate(key, zero, zero, 0D, 0.5,
+				NativePhysicalWorkEvidence.incomplete("the selected executable has no complete physical work quote"));
 	}
 
 	LmdbNativeCostEstimate adaptiveEstimate(double sliceRows) {

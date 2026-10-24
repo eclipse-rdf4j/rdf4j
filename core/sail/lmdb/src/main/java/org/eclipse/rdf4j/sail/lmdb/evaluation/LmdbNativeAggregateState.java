@@ -233,6 +233,8 @@ final class AggregateSpec {
 	final NativeAggregateResultDemand resultDemand;
 	final int separatorCodePoints;
 	final NativeReducerCapabilities reducer;
+	/** Canonical lexical definition, transported only across an explicitly proved algebra clone. */
+	final Object definition;
 
 	AggregateSpec(String name, int slot, long constant, boolean distinct, AggKind kind) {
 		this(name, slot, constant, distinct, kind, null, null, null);
@@ -256,6 +258,12 @@ final class AggregateSpec {
 
 	private AggregateSpec(String name, int slot, long constant, boolean distinct, AggKind kind, String separator,
 			int[] rowSlots, NativeCustomAggregate custom, int positionMask, NativeAggregateResultDemand resultDemand) {
+		this(name, slot, constant, distinct, kind, separator, rowSlots, custom, positionMask, resultDemand, null);
+	}
+
+	private AggregateSpec(String name, int slot, long constant, boolean distinct, AggKind kind, String separator,
+			int[] rowSlots, NativeCustomAggregate custom, int positionMask, NativeAggregateResultDemand resultDemand,
+			Object definition) {
 		this.name = name;
 		this.slot = slot;
 		this.constant = constant;
@@ -270,10 +278,12 @@ final class AggregateSpec {
 				? String.valueOf(separator).codePointCount(0, String.valueOf(separator).length())
 				: 0;
 		this.reducer = NativeReducerCapabilities.of(this);
+		this.definition = definition;
 	}
 
 	AggregateSpec withPositionMask(int mask) {
-		return new AggregateSpec(name, slot, constant, distinct, kind, separator, rowSlots, custom, mask, resultDemand);
+		return new AggregateSpec(name, slot, constant, distinct, kind, separator, rowSlots, custom, mask, resultDemand,
+				definition);
 	}
 
 	AggregateSpec withResultDemand(NativeAggregateResultDemand demand) {
@@ -281,7 +291,12 @@ final class AggregateSpec {
 			throw new IllegalArgumentException("Lexical aggregate demand requires GROUP_CONCAT");
 		}
 		return new AggregateSpec(name, slot, constant, distinct, kind, separator, rowSlots, custom, positionMask,
-				demand);
+				demand, definition);
+	}
+
+	AggregateSpec withDefinition(Object definition) {
+		return new AggregateSpec(name, slot, constant, distinct, kind, separator, rowSlots, custom, positionMask,
+				resultDemand, definition);
 	}
 
 	static AggregateSpec custom(String name, NativeCustomAggregate custom) {

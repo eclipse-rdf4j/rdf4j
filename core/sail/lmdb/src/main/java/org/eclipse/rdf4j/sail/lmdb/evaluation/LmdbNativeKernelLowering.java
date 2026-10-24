@@ -944,8 +944,28 @@ final class LmdbNativeKernelLowering {
 			LmdbNativeKernelIr.Having having, TupleExpr declineTarget, boolean preferScans,
 			boolean scanVariablePredicates, boolean allowFixedContexts) {
 		if (SlotPlan.requiresPhysicalCells(arg)) {
-			decline(declineTarget, "agg:typed-native-result-boundary");
-			return null;
+			long required = 0L;
+			for (int slot : groupSlots) {
+				if (slot >= 0) {
+					required |= 1L << slot;
+				}
+			}
+			for (AggregateSpec aggregate : aggregates) {
+				if (aggregate.resultDemand != NativeAggregateResultDemand.FULL_VALUE) {
+					decline(declineTarget, "agg:typed-native-result-boundary");
+					return null;
+				}
+				required |= aggregate.rowInputMask(SlotPlan.assuredMask(arg) | row.boundMask());
+				if (aggregate.slot >= 0) {
+					required |= 1L << aggregate.slot;
+				}
+			}
+			NativeLogicalResultTransferPlan transfer = NativeLogicalResultTransferPlan.close(arg, row, required);
+			if (transfer == null) {
+				decline(declineTarget, "agg:typed-native-result-boundary");
+				return null;
+			}
+			return lowerAggregateWithPlanProducer(transfer, row, groupSlots, aggregates, having);
 		}
 		for (AggregateSpec aggregate : aggregates) {
 			if (aggregate.resultDemand != NativeAggregateResultDemand.FULL_VALUE) {
@@ -4130,9 +4150,17 @@ final class LmdbNativeKernelLowering {
 			return true;
 		}
 
-		/** A value guard is movable only when its read set and worker ownership are both explicitly proven. */
-		private static boolean filterReusable(NativeBooleanFilter filter) {
-			return filter.batchReadMask() >= 0L && filter.parallelWorkerForkable();
+		/** Worker rebinding and replay across different mappings are independent proofs. */
+		private boolean filterReusable(NativeBooleanFilter filter) {
+			NativePredicateCapabilities proof = filter.capabilities();
+			if (filter.batchReadMask() < 0L || proof.correlationReads() < 0L || !proof.replaySafe()
+					|| (proof.correlationReads() & ~filter.batchReadMask()) != 0L
+					|| !filter.parallelWorkerForkable()) {
+				return false;
+			}
+			SyntheticValueSource scope = row.evaluationScope();
+			return !proof.requiresQueryScope() || scope != null && scope.executionContext() != null
+					&& scope.executionContext().genericContextOrNull() != null;
 		}
 
 		private void placeFilter(Node filterNode, int filterDepth) {
