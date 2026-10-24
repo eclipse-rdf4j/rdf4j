@@ -1081,7 +1081,13 @@ class TripleStore implements Closeable {
 	}
 
 	private void initializeRdfTermDomains() throws IOException {
-		if (valueStore == null || !predicateGuaranteeIndexEnabled) {
+		initializeRdfTermDomains(rdfTermDomainStartup(properties, predicateGuaranteeIndexEnabled,
+				predicateGuaranteeIndexAutoRebuild, valueStore != null && valueStore.getFormat().isLegacy(),
+				predicateGuaranteeExcludedPredicates));
+	}
+
+	private void initializeRdfTermDomains(RdfTermDomainStartup startup) throws IOException {
+		if (valueStore == null || startup == RdfTermDomainStartup.DISABLED) {
 			if (!predicateGuaranteeIndexEnabled) {
 				properties.setRdfTermDomainsVersion(PREDICATE_OBJECT_DOMAINS_VERSION + "-disabled");
 			}
@@ -1091,25 +1097,91 @@ class TripleStore implements Closeable {
 		try (ValueResolutionScope values = valueStore.openValueResolutionScope();
 				SailClosable exposure = values.activate()) {
 			String currentVersion = currentRdfTermDomainsVersion();
-			// A format-2 writer does not maintain this later extension. Even an equal schema marker cannot
-			// qualify its facts across a supported legacy writer; rebuild the complete current index or refuse it.
-			boolean legacyWriter = valueStore.getFormat().isLegacy();
-			if (!legacyWriter && currentVersion.equals(properties.getRdfTermDomainsVersion())) {
-				if (predicateGuaranteeIndexAutoRebuild) {
-					rebuildMarkedRdfTermDomains();
+			MapFullException firstCapacityFailure = null;
+			while (true) {
+				try {
+					if (startup == RdfTermDomainStartup.LOAD || startup == RdfTermDomainStartup.REBUILD_MARKED) {
+						if (startup == RdfTermDomainStartup.REBUILD_MARKED) {
+							rebuildMarkedRdfTermDomains();
+						}
+						loadRdfTermDomainCache();
+						predicateGuaranteeIndexReadable = true;
+						return;
+					}
+					if (startup == RdfTermDomainStartup.UNREADABLE) {
+						clearRdfTermDomainCache();
+						return;
+					}
+					rebuildRdfTermDomains();
+					properties.setRdfTermDomainsVersion(currentVersion);
+					loadRdfTermDomainCache();
+					predicateGuaranteeIndexReadable = true;
+					return;
+				} catch (MapFullException capacity) {
+					if (firstCapacityFailure == null) {
+						firstCapacityFailure = capacity;
+					} else if (firstCapacityFailure != capacity) {
+						firstCapacityFailure.addSuppressed(capacity);
+					}
+					if (!autoGrow) {
+						throw firstCapacityFailure;
+					}
+					try {
+						// Domain rebuilds are unjournaled. Retry the complete aborted rebuild, never its row journal.
+						replayPolicy.capacityFailure();
+						growMapForRdfTermDomainInitialization();
+					} catch (IOException | RuntimeException | Error growthFailure) {
+						firstCapacityFailure.addSuppressed(growthFailure);
+						throw firstCapacityFailure;
+					}
 				}
-				loadRdfTermDomainCache();
-				predicateGuaranteeIndexReadable = true;
-				return;
 			}
-			if (!predicateGuaranteeIndexAutoRebuild && (legacyWriter || properties.isLoaded())) {
-				clearRdfTermDomainCache();
-				return;
+		}
+	}
+
+	/** Grows only after a complete startup domain rebuild has aborted and released its writer and cursors. */
+	private void growMapForRdfTermDomainInitialization() throws IOException {
+		assert writeTxn == 0L;
+		var lockManager = txnManager.lockManager();
+		long stamp;
+		try {
+			stamp = lockManager.writeLock();
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while growing the TripleStore map for domain initialization",
+					interrupted);
+		}
+		try {
+			txnManager.deactivate();
+			Throwable growthFailure = null;
+			try (MemoryStack stack = stackPush()) {
+				MDBEnvInfo info = MDBEnvInfo.malloc(stack);
+				E(mdb_env_info(env, info));
+				long currentMapSize = info.me_mapsize();
+				long nextPageNo = info.me_last_pgno() == Long.MAX_VALUE ? Long.MAX_VALUE : info.me_last_pgno() + 1L;
+				long projectedFootprint = Math.max(saturatedMultiply(nextPageNo, pageSize), replayProjectedUsedBytes);
+				long grownMapSize = growthPolicy.grownMapSize(currentMapSize, pageSize, projectedFootprint);
+				E(setMapSize(grownMapSize));
+				E(mdb_env_info(env, info));
+				mapSize = info.me_mapsize();
+				if (mapSize <= currentMapSize) {
+					throw new IOException("LMDB map did not grow after startup domain capacity failure");
+				}
+			} catch (IOException | RuntimeException | Error failure) {
+				growthFailure = failure;
+				throw failure;
+			} finally {
+				try {
+					txnManager.activate();
+				} catch (IOException | RuntimeException | Error activationFailure) {
+					if (growthFailure == null) {
+						throw activationFailure;
+					}
+					growthFailure.addSuppressed(activationFailure);
+				}
 			}
-			rebuildRdfTermDomains();
-			properties.setRdfTermDomainsVersion(currentVersion);
-			loadRdfTermDomainCache();
-			predicateGuaranteeIndexReadable = true;
+		} finally {
+			lockManager.unlockWrite(stamp);
 		}
 	}
 
@@ -1129,11 +1201,39 @@ class TripleStore implements Closeable {
 	}
 
 	private String currentRdfTermDomainsVersion() {
-		if (predicateGuaranteeExcludedPredicates.isEmpty()) {
+		return currentRdfTermDomainsVersion(predicateGuaranteeExcludedPredicates);
+	}
+
+	private static String currentRdfTermDomainsVersion(Set<String> excludedPredicates) {
+		if (excludedPredicates.isEmpty()) {
 			return PREDICATE_OBJECT_DOMAINS_VERSION;
 		}
-		return PREDICATE_OBJECT_DOMAINS_VERSION + "-exclude-"
-				+ Integer.toHexString(predicateGuaranteeExcludedPredicates.hashCode());
+		return PREDICATE_OBJECT_DOMAINS_VERSION + "-exclude-" + Integer.toHexString(excludedPredicates.hashCode());
+	}
+
+	/** The same startup policy drives the opener and its read-only prepared-admission probe. */
+	enum RdfTermDomainStartup {
+		DISABLED,
+		UNREADABLE,
+		LOAD,
+		REBUILD_MARKED,
+		REBUILD_ALL
+	}
+
+	static RdfTermDomainStartup rdfTermDomainStartup(StoreProperties properties, boolean enabled,
+			boolean autoRebuild, boolean legacyWriter, Set<String> excludedPredicates) {
+		if (!enabled) {
+			return RdfTermDomainStartup.DISABLED;
+		}
+		// A format-2 writer does not maintain this extension even when its schema marker is unchanged.
+		if (!legacyWriter && currentRdfTermDomainsVersion(excludedPredicates)
+				.equals(properties.getRdfTermDomainsVersion())) {
+			return autoRebuild ? RdfTermDomainStartup.REBUILD_MARKED : RdfTermDomainStartup.LOAD;
+		}
+		if (!autoRebuild && (legacyWriter || properties.isLoaded())) {
+			return RdfTermDomainStartup.UNREADABLE;
+		}
+		return RdfTermDomainStartup.REBUILD_ALL;
 	}
 
 	private void loadRdfTermDomainCache() throws IOException {
@@ -1251,12 +1351,24 @@ class TripleStore implements Closeable {
 	}
 
 	private List<Long> getRdfTermDomainRebuilds() throws IOException {
-		try (MemoryStack stack = MemoryStack.stackPush()) {
+		List<Long> predicateIds = new ArrayList<>();
+		visitRdfTermDomainRebuilds(writeTxn, predicateObjectDomainDegradationsDbi, predicateIds::add);
+		return predicateIds;
+	}
+
+	/** Stops at the first requested predicate; no native buffer or cursor escapes the caller's pinned read view. */
+	static boolean hasRdfTermDomainRebuilds(long transaction, int database) throws IOException {
+		return visitRdfTermDomainRebuilds(transaction, database, null);
+	}
+
+	private static boolean visitRdfTermDomainRebuilds(long transaction, int database, LongConsumer consumer)
+			throws IOException {
+		try (MemoryStack stack = stackPush()) {
 			PointerBuffer pp = stack.mallocPointer(1);
-			E(mdb_cursor_open(writeTxn, predicateObjectDomainDegradationsDbi, pp));
+			E(mdb_cursor_open(transaction, database, pp));
 			long cursor = pp.get(0);
 			try {
-				List<Long> predicateIds = new ArrayList<>();
+				boolean found = false;
 				MDBVal keyVal = MDBVal.malloc(stack);
 				MDBVal dataVal = MDBVal.malloc(stack);
 				int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_FIRST);
@@ -1265,7 +1377,12 @@ class TripleStore implements Closeable {
 					if (degradation.rebuildRequested()) {
 						ByteBuffer keyData = keyVal.mv_data();
 						if (keyData != null) {
-							predicateIds.add(Varint.readUnsigned(keyData, keyData.position()));
+							long predicateId = Varint.readUnsigned(keyData, keyData.position());
+							if (consumer == null) {
+								return true;
+							}
+							consumer.accept(predicateId);
+							found = true;
 						}
 					}
 					rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_NEXT);
@@ -1273,7 +1390,7 @@ class TripleStore implements Closeable {
 				if (rc != MDB_NOTFOUND) {
 					throw new IOException(mdb_strerror(rc));
 				}
-				return predicateIds;
+				return found;
 			} finally {
 				mdb_cursor_close(cursor);
 			}
@@ -1623,7 +1740,7 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	private RdfTermDomainDegradation readRdfTermDomainDegradation(MDBVal dataVal) {
+	private static RdfTermDomainDegradation readRdfTermDomainDegradation(MDBVal dataVal) {
 		ByteBuffer data = dataVal.mv_data();
 		if (data == null || data.remaining() < Long.BYTES) {
 			return new RdfTermDomainDegradation(0L, 0L);
@@ -2080,6 +2197,18 @@ class TripleStore implements Closeable {
 
 	boolean tracksNativeOwnership() {
 		return expectedNativeTransactionId >= 0L;
+	}
+
+	/** Completes domain metadata from all canonical bulk rows before final capacity and native identity binding. */
+	void prepareValidatedBulkRdfTermDomains() throws IOException {
+		trustedTransactionId();
+		if (writeTxn != 0L) {
+			throw new IOException("Cannot prepare predicate domains for an active bulk triple generation");
+		}
+		if (predicateGuaranteeIndexEnabled) {
+			// Automatic rebuild governs existing-store maintenance; a fresh writer must finish its own domains.
+			initializeRdfTermDomains(RdfTermDomainStartup.REBUILD_ALL);
+		}
 	}
 
 	void completeValidatedBulkGeneration(byte[] generation, long expectedStatements) throws IOException {
@@ -3353,28 +3482,36 @@ class TripleStore implements Closeable {
 		try {
 			endTransaction(false);
 		} catch (Throwable cleanupFailure) {
-			failure.addSuppressed(cleanupFailure);
+			if (failure != cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
 		}
 
 		if (pageEstimator != null) {
 			try {
 				pageEstimator.close();
 			} catch (Throwable cleanupFailure) {
-				failure.addSuppressed(cleanupFailure);
+				if (failure != cleanupFailure) {
+					failure.addSuppressed(cleanupFailure);
+				}
 			}
 		}
 		if (txnManager != null) {
 			try {
 				txnManager.close();
 			} catch (Throwable cleanupFailure) {
-				failure.addSuppressed(cleanupFailure);
+				if (failure != cleanupFailure) {
+					failure.addSuppressed(cleanupFailure);
+				}
 			}
 		}
 		if (env != 0) {
 			try {
 				environmentLifecycle.close(env);
 			} catch (Throwable cleanupFailure) {
-				failure.addSuppressed(cleanupFailure);
+				if (failure != cleanupFailure) {
+					failure.addSuppressed(cleanupFailure);
+				}
 			} finally {
 				env = 0;
 			}

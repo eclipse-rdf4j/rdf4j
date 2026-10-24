@@ -59,9 +59,10 @@ import org.lwjgl.util.lmdb.MDBStat;
 import org.lwjgl.util.lmdb.MDBVal;
 
 /**
- * Bounded admission from exact native CLEAN authority, with a transaction-bound certificate for bulk publication. The
- * certificate is derived metadata: ordinary current-format stores can establish the same native authority without it.
- * Invalid or untrusted native authority leaves ordinary discovery and recovery in charge.
+ * Admission from exact native CLEAN authority after checking required startup maintenance, with a transaction-bound
+ * certificate for bulk publication. The certificate is derived metadata: ordinary current-format stores can establish
+ * the same native authority without it. Invalid authority or required native maintenance leaves ordinary startup in
+ * charge.
  */
 final class PreparedBulkStore {
 
@@ -82,7 +83,7 @@ final class PreparedBulkStore {
 			boolean hashCache, boolean pendingUnused, boolean pendingRetired) {
 	}
 
-	private record Captured(Snapshot snapshot, boolean tripleTransactionBound) {
+	private record Captured(Snapshot snapshot, boolean tripleTransactionBound, boolean pendingDomainMaintenance) {
 	}
 
 	private PreparedBulkStore() {
@@ -228,8 +229,9 @@ final class PreparedBulkStore {
 			if (!compatible(expected, properties, config)) {
 				return null;
 			}
-			Snapshot actual = capture(directory, properties, config).snapshot;
-			if (!expected.equals(actual)) {
+			Captured captured = capture(directory, properties, config);
+			Snapshot actual = captured.snapshot;
+			if (captured.pendingDomainMaintenance || !expected.equals(actual)) {
 				return null;
 			}
 			admit(properties, actual);
@@ -252,7 +254,8 @@ final class PreparedBulkStore {
 		try {
 			Captured captured = capture(directory, properties, config);
 			Snapshot snapshot = captured.snapshot;
-			if ((!captured.tripleTransactionBound && !snapshot.values.generation.isEmpty())
+			if (captured.pendingDomainMaintenance
+					|| (!captured.tripleTransactionBound && !snapshot.values.generation.isEmpty())
 					|| !compatible(snapshot, properties, config)) {
 				return null;
 			}
@@ -371,7 +374,17 @@ final class PreparedBulkStore {
 			// free_ids is a legitimate reusable pool and carries no outstanding reclamation obligation.
 			Snapshot snapshot = new Snapshot(values, triples, propertiesFingerprint(properties),
 					config.getMapGrowthThreshold(), config.getValueHashCacheEnabled(), pendingUnused, pendingRetired);
-			return new Captured(snapshot, binding != null);
+			// Use the same pinned triple transaction as CLEAN/catalog validation. This is metadata-only: the probe
+			// decodes degradation rows using the real rebuild traversal and never opens a writer or scans statements.
+			TripleStore.RdfTermDomainStartup domainStartup = TripleStore.rdfTermDomainStartup(properties,
+					config.getPredicateGuaranteeIndexEnabled(), config.getPredicateGuaranteeIndexAutoRebuild(),
+					LmdbStoreFormat.resolveDictionaryCapabilities(properties, config).isLegacy(),
+					config.getPredicateGuaranteeExcludedPredicateSet());
+			boolean pendingDomainMaintenance = domainStartup == TripleStore.RdfTermDomainStartup.REBUILD_ALL
+					|| domainStartup == TripleStore.RdfTermDomainStartup.REBUILD_MARKED
+							&& TripleStore.hasRdfTermDomainRebuilds(triplesTxn,
+									open(stack, triplesTxn, TripleStore.PREDICATE_OBJECT_DOMAIN_DEGRADATIONS_DB));
+			return new Captured(snapshot, binding != null, pendingDomainMaintenance);
 		} finally {
 			if (triplesTxn != 0L) {
 				mdb_txn_abort(triplesTxn);

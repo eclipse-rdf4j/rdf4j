@@ -90,6 +90,13 @@ class LmdbPreparedBulkStoreTest {
 			try (var connection = repository.getConnection()) {
 				connection.add(values.createIRI("urn:ordinary"), values.createIRI("urn:p"), values.createLiteral(1));
 			}
+			ValueStore dictionary = (ValueStore) store.getBackingStore().getValueFactory();
+			long predicateId = dictionary.getId(values.createIRI("urn:p"));
+			RdfTermDomain domain = triples.getKnownRdfTermDomain(predicateId).orElseThrow();
+			assertFalse(domain.has(RdfTermDomain.Fact.CANONICAL_INTEGER),
+					"a canonical integer appended later must not exclude the bulk-loaded IRI object");
+			assertTrue(domain.has(RdfTermDomain.Fact.IRI),
+					"predicate guarantees must retain the possible kind of the bulk-loaded IRI object");
 			long beforeAcknowledgement = triples.trustedTransactionId();
 			assertTrue(beforeAcknowledgement > openedTransaction);
 			long sequence = triples.frontierMutationJournalState().latestSequence();
@@ -108,6 +115,22 @@ class LmdbPreparedBulkStoreTest {
 			assertTrue(entryCount(target.resolve("triples"), table) >= 0L, "owned auxiliary schema must exist");
 		}
 		assertPreparedOpening(target, config, 3L);
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "", "<urn:s> <urn:p> \"value\"@EN .\n" })
+	void validatedBulkGenerationRecordsCanonicalLanguagePolicy(String input) throws Exception {
+		Path target = directory.resolve("canonical-language-policy");
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		load(target, config, input);
+		StoreProperties prepared = new StoreProperties(target.toFile());
+		assertTrue(prepared.load());
+		assertEquals(StoreProperties.LANGUAGE_TAG_KEY_CANONICAL, prepared.getLanguageTagKey(),
+				"validated canonical bulk streams must publish their completed language-key policy");
+		Map<Long, Long> counts = referenceCounts(target);
+		assertPreparedOpening(target, config, input.isEmpty() ? 0L : 1L);
+		assertEquals(counts, referenceCounts(target),
+				"the first prepared opener must preserve the certified component reference counts");
 	}
 
 	@Test

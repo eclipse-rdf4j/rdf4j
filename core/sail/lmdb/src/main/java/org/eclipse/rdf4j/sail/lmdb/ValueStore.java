@@ -1733,6 +1733,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			E(mdb_put(txn, metadata, key, value, 0));
 			return null;
 		});
+		// The validated canonical streams already use canonical language keys, including nested term dependencies.
+		// Record that completed preparation before publication so the first opener does not migrate them again.
+		properties.setLanguageTagKey(StoreProperties.LANGUAGE_TAG_KEY_CANONICAL);
+		languageTagKeyMode = LanguageTagKeyMode.CANONICAL;
 		refCountRecoveryRequired = false;
 		refCountIntegrityEstablished = true;
 		valueStoreInitializationComplete = true;

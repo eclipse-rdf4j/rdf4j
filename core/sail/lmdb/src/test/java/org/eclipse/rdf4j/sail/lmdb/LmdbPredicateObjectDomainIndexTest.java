@@ -19,10 +19,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.File;
 import java.util.Optional;
 
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
@@ -36,6 +38,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreSchema;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -196,6 +199,70 @@ class LmdbPredicateObjectDomainIndexTest {
 			assertHas(reopenedGuarantee, RdfTermDomain.Fact.CANONICAL_INTEGER);
 			assertHasDatatype(reopenedGuarantee, CoreDatatype.XSD.INT);
 			assertIntegerRange(reopenedGuarantee, -2, 11);
+		} finally {
+			reopened.shutDown();
+		}
+	}
+
+	@Test
+	void markedRebuildAfterRemovingOneContextCopyRetainsDataAndIds(@TempDir File dataDir) throws Exception {
+		IRI subject = VF.createIRI("urn:crash:subject");
+		IRI predicate = VF.createIRI("urn:crash:predicate");
+		IRI graph = VF.createIRI("urn:crash:graph");
+		Resource languageSubject = VF.createBNode("crash-node");
+		Literal canonical = VF.createLiteral(42);
+		Literal language = VF.createLiteral("durable words", "en");
+		Literal second = VF.createLiteral("second acknowledged generation");
+		Value[] terms = { subject, predicate, graph, languageSubject, canonical, language, second };
+		long[] termIds = new long[terms.length];
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setForceSync(true);
+		RdfTermDomain mixed;
+		SailRepository repository = repository(dataDir, config);
+		try {
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.SNAPSHOT);
+				connection.add(subject, predicate, canonical);
+				connection.add(subject, predicate, canonical, graph);
+				connection.add(languageSubject, predicate, language, graph);
+				connection.setNamespace("crash", "urn:crash:initial:");
+				connection.commit();
+				connection.begin(IsolationLevels.SNAPSHOT);
+				connection.remove(subject, predicate, canonical, (Resource) null);
+				connection.add(subject, predicate, second);
+				connection.setNamespace("crash", "urn:crash:updated:");
+				connection.commit();
+				assertEquals(3L, connection.size());
+			}
+			mixed = guarantee(repository, predicate);
+			assertFalse(mixed.has(RdfTermDomain.Fact.CANONICAL_INTEGER));
+			assertHas(mixed, RdfTermDomain.Fact.LITERAL_WITH_LANGUAGE);
+			assertHas(mixed, RdfTermDomain.Fact.LITERAL_WITHOUT_LANGUAGE);
+			ValueStore values = (ValueStore) backingStore(repository).getValueFactory();
+			for (int index = 0; index < terms.length; index++) {
+				termIds[index] = values.getId(terms[index]);
+				assertNotEquals(LmdbValue.UNKNOWN_ID, termIds[index]);
+			}
+		} finally {
+			repository.shutDown();
+		}
+
+		// The named-context integer still exists: scheduled domain maintenance need not strengthen the facts.
+		SailRepository reopened = repository(dataDir, config);
+		try {
+			assertEquals(mixed, guarantee(reopened, predicate));
+			assertSynchronizedHeapAndDiskGuarantees(reopened, predicate);
+			ValueStore values = (ValueStore) backingStore(reopened).getValueFactory();
+			for (int index = 0; index < terms.length; index++) {
+				assertEquals(termIds[index], values.getId(terms[index]));
+			}
+			try (RepositoryConnection connection = reopened.getConnection()) {
+				assertEquals(3L, connection.size());
+				assertTrue(connection.hasStatement(subject, predicate, canonical, false, graph));
+				assertFalse(connection.hasStatement(subject, predicate, canonical, false, (Resource) null));
+				assertTrue(connection.hasStatement(languageSubject, predicate, language, false, graph));
+				assertTrue(connection.hasStatement(subject, predicate, second, false, (Resource) null));
+				assertEquals("urn:crash:updated:", connection.getNamespace("crash"));
+			}
 		} finally {
 			reopened.shutDown();
 		}
