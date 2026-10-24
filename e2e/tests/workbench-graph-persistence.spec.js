@@ -327,18 +327,13 @@ test('Save current can branch its named view before replacement, and Undo restor
     await query.fill(startingQuery);
     await saveGraph(page, 'Starting graph');
 
-    await values.click();
-    await labels.click();
-    await filters.locator('.filter-chips button', { hasText: 'Person' }).click();
-    await filters.locator('.facet-value', { hasText: 'Organization' }).click();
-    await nodeByLabel(explorer, 'Globex').click();
+    // The intermediate save needs a distinct named binding and query; the neighboring restoration test covers
+    // changing display controls. Keep this setup focused on Save current, replacement, and Undo.
     const replacementQuery = 'SELECT ?s WHERE { ?s ?p ?o } # replacement named view';
     await query.fill(replacementQuery);
     await saveGraph(page, 'Replacement graph', { saveAsNew: true });
 
-    await values.click();
-    await labels.click();
-    await filters.locator('.filter-chips button', { hasText: 'Organization' }).click();
+    await filters.locator('.filter-chips button', { hasText: 'Person' }).click();
     await filters.locator('.facet-value', { hasText: 'Manager' }).click();
     await nodeByLabel(explorer, 'Carol').click();
     const currentQuery = 'SELECT ?s WHERE { ?s ?p ?o } # current before replacement';

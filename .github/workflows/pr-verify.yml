@@ -77,7 +77,7 @@ jobs:
         run: mvn --quiet clean --fail-at-end && mvn -B --quiet -T 2C install --fail-at-end -Pquick
       - name: Test
         id: test
-        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B test --fail-at-end -DskipITs -PskipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
+        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B --fail-at-end test -DskipITs -PskipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Preserve LMDB JVM crash diagnostics
         if: ${{ failure() && steps.test.outcome == 'failure' }}
         shell: bash
@@ -162,7 +162,7 @@ jobs:
       - name: Build
         run: mvn --quiet clean --fail-at-end && mvn -B --quiet -T 2C install --fail-at-end -Pquick
       - name: Verify
-        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B verify --fail-at-end -PskipUnitTests,skipSlowTests,-formatting -Dmaven.javadoc.skip -Denforcer.skip -Danimal.sniffer.skip
+        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B --fail-at-end verify -PskipUnitTests,skipSlowTests,-formatting -Dmaven.javadoc.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Publish Test Report
         if: failure()
         uses: ScalableCapital/action-surefire-report@v2.0.5
@@ -190,7 +190,7 @@ jobs:
       - name: Build
         run: mvn --quiet clean --fail-at-end && mvn -B --quiet -T 2C install --fail-at-end -Pquick
       - name: Verify
-        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B verify --fail-at-end -PslowTestsOnly,-skipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
+        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B --fail-at-end verify -PslowTestsOnly,-skipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Publish Test Report
         if: failure()
         uses: ScalableCapital/action-surefire-report@v2.0.5
