@@ -21,10 +21,12 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalDouble;
+import java.util.OptionalLong;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -76,6 +78,7 @@ import ch.qos.logback.core.read.ListAppender;
 class LmdbDirectAdjacencyQueryTest {
 
 	private static final ValueFactory F = SimpleValueFactory.getInstance();
+	private static final String EXACT_EMPTY_PRUNING_PROPERTY = "rdf4j.lmdb.directAdjacency.exactEmptyPruning.enabled";
 	private static final String[] MUTATED_PROPERTIES = {
 			LmdbDirectAdjacencyOptions.SHADOW_SAMPLE_EVERY_PROPERTY,
 			LmdbDirectAdjacencyStore.ROOT_SCAN_PROPERTY,
@@ -83,6 +86,7 @@ class LmdbDirectAdjacencyQueryTest {
 			LmdbDirectAdjacencyStore.CLEAN_TXN_READS_PROPERTY,
 			LmdbDirectAdjacencyStore.PARALLEL_ROW_PATH_PROPERTY,
 			LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY,
+			EXACT_EMPTY_PRUNING_PROPERTY,
 			LmdbDirectAdjacencyStore.PLANNER_STATS_PROPERTY,
 			"rdf4j.lmdb.nativeQueryEngine.enabled",
 			"rdf4j.lmdb.wcoj.enabled",
@@ -308,25 +312,43 @@ class LmdbDirectAdjacencyQueryTest {
 	@Test
 	void genericSailDatasetUnorderedStatementsUseSelectedAdjacencyWhenAvailable() throws IOException {
 		openStore(DirectAdjacencyMode.PREFER, DirectAdjacencyCoverage.SELECTED, List.of(P1));
-		long hitsBefore = direct.snapshotMetrics().lookupHits;
 
 		try (CloseableDataset dataset = dataset()) {
-			assertThat(collectStatements(dataset.dataset.getStatements(S1, P1, null)))
+			LmdbAdjacencyMetrics.Snapshot before = direct.snapshotMetrics();
+			List<Statement> allContexts = collectStatements(dataset.dataset.getStatements(S1, P1, null));
+			LmdbAdjacencyMetrics.Snapshot afterAllContexts = direct.snapshotMetrics();
+			String allContextsDiagnostics = directAdjacencyDiagnostics(before, afterAllContexts);
+			assertThat(allContexts)
+					.as("selected-predicate statement access; " + allContextsDiagnostics)
 					.containsExactlyInAnyOrder(
 							F.createStatement(S1, P1, O1),
 							F.createStatement(S1, P1, O2, G1));
+			assertThat(afterAllContexts.lookupHits)
+					.as("selected-predicate lookup hit; " + allContextsDiagnostics)
+					.isGreaterThan(before.lookupHits);
 			long allContextsHits = direct.snapshotMetrics().lookupHits;
-			assertThat(allContextsHits).isGreaterThan(hitsBefore);
 
-			assertThat(collectStatements(dataset.dataset.getStatements(S1, P1, null, G1)))
+			LmdbAdjacencyMetrics.Snapshot beforeNamedContext = direct.snapshotMetrics();
+			List<Statement> namedContext = collectStatements(dataset.dataset.getStatements(S1, P1, null, G1));
+			LmdbAdjacencyMetrics.Snapshot afterNamedContext = direct.snapshotMetrics();
+			String namedContextDiagnostics = directAdjacencyDiagnostics(beforeNamedContext, afterNamedContext);
+			assertThat(namedContext)
+					.as("selected-predicate named-context access; " + namedContextDiagnostics)
 					.containsExactly(F.createStatement(S1, P1, O2, G1));
+			assertThat(afterNamedContext.lookupHits)
+					.as("selected-predicate named-context lookup hit; " + namedContextDiagnostics)
+					.isGreaterThan(allContextsHits);
 			long namedContextHits = direct.snapshotMetrics().lookupHits;
-			assertThat(namedContextHits).isGreaterThan(allContextsHits);
 
-			assertThat(collectStatements(dataset.dataset.getStatements(S1, P2, null)))
+			LmdbAdjacencyMetrics.Snapshot beforeUncovered = direct.snapshotMetrics();
+			List<Statement> uncovered = collectStatements(dataset.dataset.getStatements(S1, P2, null));
+			LmdbAdjacencyMetrics.Snapshot afterUncovered = direct.snapshotMetrics();
+			String uncoveredDiagnostics = directAdjacencyDiagnostics(beforeUncovered, afterUncovered);
+			assertThat(uncovered)
+					.as("uncovered predicate fallback; " + uncoveredDiagnostics)
 					.containsExactly(F.createStatement(S1, P2, O1));
-			assertThat(direct.snapshotMetrics().lookupHits)
-					.as("an uncovered predicate remains correct through LMDB fallback")
+			assertThat(afterUncovered.lookupHits)
+					.as("an uncovered predicate remains correct through LMDB fallback; " + uncoveredDiagnostics)
 					.isEqualTo(namedContextHits);
 		}
 
@@ -555,6 +577,7 @@ class LmdbDirectAdjacencyQueryTest {
 	@Test
 	void exactFullParallelAccessUsesTheSameArbiterContract() throws Exception {
 		openPreferStore();
+		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
 		List<String> outcomes = new ArrayList<>();
 		NativeLmdbQuerySource.AdjacencyAccessObserver observer = recordingObserver(outcomes);
 		try (CloseableDataset dataset = dataset()) {
@@ -562,6 +585,9 @@ class LmdbDirectAdjacencyQueryTest {
 			assertThat(sources).hasSize(1);
 			try (NativeLmdbQuerySource.ParallelSource source = sources[0];
 					RecordIterator iterator = source.statements(-1, -1, -1, -1, observer)) {
+				assertThat(source.exactPredicateCount(p2))
+						.as("an eligible real parallel source exposes its exact predicate count")
+						.hasValue(1L);
 				while (iterator.next() != null) {
 					// exhaust the selected arm
 				}
@@ -897,6 +923,15 @@ class LmdbDirectAdjacencyQueryTest {
 		}
 	}
 
+	private static OptionalLong parallelPredicateCount(NativeLmdbQuerySource source, long predicate)
+			throws IOException {
+		NativeLmdbQuerySource.ParallelSource[] parallelSources = source.openParallelSources(1);
+		assertThat(parallelSources).hasSize(1);
+		try (NativeLmdbQuerySource.ParallelSource parallelSource = parallelSources[0]) {
+			return parallelSource.exactPredicateCount(predicate);
+		}
+	}
+
 	private static final Comparator<long[]> ROW_ORDER = (a, b) -> {
 		for (int i = 0; i < 4; i++) {
 			int cmp = Long.compareUnsigned(a[i], b[i]);
@@ -943,6 +978,25 @@ class LmdbDirectAdjacencyQueryTest {
 	private List<String> queryRows(String query, String... bindingNames) {
 		try (RepositoryConnection connection = repo.getConnection();
 				TupleQueryResult result = connection.prepareTupleQuery(query).evaluate()) {
+			List<String> rows = new ArrayList<>();
+			while (result.hasNext()) {
+				var row = result.next();
+				StringBuilder rendered = new StringBuilder();
+				for (String bindingName : bindingNames) {
+					if (!rendered.isEmpty()) {
+						rendered.append('=');
+					}
+					rendered.append(row.getValue(bindingName).stringValue());
+				}
+				rows.add(rendered.toString());
+			}
+			rows.sort(String::compareTo);
+			return rows;
+		}
+	}
+
+	private static List<String> queryRows(RepositoryConnection connection, String query, String... bindingNames) {
+		try (TupleQueryResult result = connection.prepareTupleQuery(query).evaluate()) {
 			List<String> rows = new ArrayList<>();
 			while (result.hasNext()) {
 				var row = result.next();
@@ -2014,18 +2068,272 @@ class LmdbDirectAdjacencyQueryTest {
 			assertThat(dataset.source.count(-1, p2, -1, -1)).isZero();
 		}
 		assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
-		long exactMissesBeforeQuery = direct.snapshotMetrics().exactMisses;
+		long lookupHitsBeforeQuery = direct.snapshotMetrics().lookupHits;
 		LmdbPrefixRunPlan.resetMetrics();
 		assertThat(queryRows("SELECT (COUNT(*) AS ?count) WHERE { ?s <" + P2 + "> ?o }", "count"))
 				.containsExactly("0");
-		assertThat(direct.snapshotMetrics().exactMisses)
-				.as("the query must itself consume the direct index's exact-empty proof")
-				.isGreaterThan(exactMissesBeforeQuery);
+		assertThat(direct.snapshotMetrics().lookupHits)
+				.as("the query must use the current direct-adjacency view for its exact predicate count")
+				.isGreaterThan(lookupHitsBeforeQuery);
 		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get())
 				.as("the optimizer prunes an exactly empty pattern before opening a prefix cursor")
 				.isZero();
 		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get()).isZero();
 		assertThat(direct.snapshotMetrics().activeViews).isZero();
+	}
+
+	@Test
+	void predicateOnlyExactEmptyPrunesJoinBeforeOpeningPrefixCursor() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		System.setProperty(EXACT_EMPTY_PRUNING_PROPERTY, "true");
+		openPreferStore();
+		removeAllStatementsForPredicate(P2);
+
+		long prunesBefore = JoinDispatchTestAccess.exactEmptyPrunes();
+		LmdbPrefixRunPlan.resetMetrics();
+		assertThat(queryRows("SELECT ?x ?o WHERE { ?s <" + P2 + "> ?o . ?s <" + P1 + "> ?x }", "x", "o"))
+				.isEmpty();
+		assertThat(JoinDispatchTestAccess.exactEmptyPrunes())
+				.as("a predicate-only exact zero must prune the join before either pattern opens a prefix cursor")
+				.isGreaterThan(prunesBefore);
+		assertNoPrefixRunOpened();
+	}
+
+	@Test
+	void constantPredicateFilterExactEmptyPrunesBeforeOpeningPrefixCursor() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		System.setProperty(EXACT_EMPTY_PRUNING_PROPERTY, "true");
+		openPreferStore();
+		removeAllStatementsForPredicate(P2);
+
+		long prunesBefore = JoinDispatchTestAccess.exactEmptyPrunes();
+		LmdbPrefixRunPlan.resetMetrics();
+		assertThat(queryRows("SELECT ?x ?o WHERE { ?s ?p ?o . FILTER(?p IN (<" + P2 + ">)) . ?s <" + P1
+				+ "> ?x }", "x", "o")).isEmpty();
+		assertThat(JoinDispatchTestAccess.exactEmptyPrunes())
+				.as("the constant IN rewrite must carry the predicate-only exact-zero proof into the pattern")
+				.isGreaterThan(prunesBefore);
+		assertNoPrefixRunOpened();
+	}
+
+	private void removeAllStatementsForPredicate(IRI predicate) {
+		try (RepositoryConnection connection = repo.getConnection()) {
+			connection.remove((Resource) null, predicate, null);
+		}
+		direct.pauseApplierForTest(false);
+		awaitDirectAdjacencyReady();
+	}
+
+	private static void assertNoPrefixRunOpened() {
+		assertThat(LmdbPrefixRunPlan.OPENED.get())
+				.as("an exact-empty pattern must be rejected before opening a native prefix-run cursor")
+				.isZero();
+		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get()).isZero();
+		assertThat(LmdbPrefixRunPlan.ROWS_SCANNED.get()).isZero();
+		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get()).isZero();
+	}
+
+	@Test
+	void predicateExactEmptyPreservesOptionalUnionMinusAndExistenceSemantics() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		System.setProperty(EXACT_EMPTY_PRUNING_PROPERTY, "true");
+		openPreferStore();
+		removeAllStatementsForPredicate(P2);
+
+		assertThat(queryRows("SELECT (COUNT(*) AS ?rows) (COUNT(?missing) AS ?bound) WHERE {"
+				+ " ?s <" + P1 + "> ?base OPTIONAL { ?s <" + P2 + "> ?missing } }", "rows", "bound"))
+						.containsExactly("3=0");
+		assertThat(queryRows("SELECT (COUNT(*) AS ?rows) WHERE { { ?s <" + P2 + "> ?o } UNION { ?s <" + P1
+				+ "> ?o } }", "rows")).containsExactly("3");
+		assertThat(queryRows("SELECT DISTINCT ?s WHERE { ?s <" + P1 + "> ?o MINUS { ?s <" + P2
+				+ "> ?missing } }", "s")).containsExactly(S1.stringValue(), S2.stringValue());
+		assertThat(queryRows("SELECT DISTINCT ?s WHERE { ?s <" + P1 + "> ?o FILTER EXISTS { ?s <" + P2
+				+ "> ?missing } }", "s")).isEmpty();
+		assertThat(queryRows("SELECT DISTINCT ?s WHERE { ?s <" + P1 + "> ?o FILTER NOT EXISTS { ?s <" + P2
+				+ "> ?missing } }", "s")).containsExactly(S1.stringValue(), S2.stringValue());
+	}
+
+	@Test
+	void predicateExactCountDoesNotCrossDefaultOrNamedGraphScopes() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		System.setProperty(EXACT_EMPTY_PRUNING_PROPERTY, "true");
+		openPreferStore();
+		removeAllStatementsForPredicate(P2);
+		try (RepositoryConnection connection = repo.getConnection()) {
+			connection.add(S1, P2, O2, G2);
+		}
+		direct.pauseApplierForTest(false);
+		awaitDirectAdjacencyReady();
+
+		assertThat(queryRows("SELECT ?s ?o FROM <" + G1 + "> WHERE { ?s <" + P2 + "> ?o }", "s", "o"))
+				.isEmpty();
+		assertThat(queryRows("SELECT ?s ?o FROM <" + G2 + "> WHERE { ?s <" + P2 + "> ?o }", "s", "o"))
+				.containsExactly(S1.stringValue() + "=" + O2.stringValue());
+		assertThat(queryRows("SELECT ?s ?o WHERE { GRAPH <" + G1 + "> { ?s <" + P2 + "> ?o } }", "s", "o"))
+				.isEmpty();
+		assertThat(queryRows("SELECT ?s ?o WHERE { GRAPH <" + G2 + "> { ?s <" + P2 + "> ?o } }", "s", "o"))
+				.containsExactly(S1.stringValue() + "=" + O2.stringValue());
+	}
+
+	@Test
+	void predicateExactCountKeepsOldSnapshotsAndAdmitsLaterCommittedInsertions() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		System.setProperty(EXACT_EMPTY_PRUNING_PROPERTY, "true");
+		System.setProperty(LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "false");
+		openPreferStore();
+		long[] original = { s1, p2, o1, 0 };
+		try (CloseableDataset oldSnapshot = dataset()) {
+			assertThat(oldSnapshot.source.exactPredicateCount(p2)).hasValue(1L);
+			assertSameRows(oldSnapshot.rows(-1, p2, -1, -1), List.of(original));
+			removeAllStatementsForPredicate(P2);
+			assertThat(oldSnapshot.source.exactPredicateCount(p2))
+					.as("the retained old source must keep its predicate count after the current store deletes rows")
+					.hasValue(1L);
+			assertSameRows(oldSnapshot.rows(-1, p2, -1, -1), List.of(original));
+			assertThat(queryRows("SELECT ?s ?o WHERE { ?s <" + P2 + "> ?o }", "s", "o")).isEmpty();
+
+			try (CloseableDataset emptySnapshot = dataset()) {
+				assertThat(emptySnapshot.source.exactPredicateCount(p2)).hasValue(0L);
+				assertThat(emptySnapshot.rows(-1, p2, -1, -1)).isEmpty();
+				direct.pauseApplierForTest(true);
+				CountDownLatch pendingPublished = new CountDownLatch(1);
+				CountDownLatch releaseQueueAdmission = new CountDownLatch(1);
+				Runnable previousQueueAdmissionHook = direct.beforeApplyQueueAdmissionForTest;
+				direct.beforeApplyQueueAdmissionForTest = () -> {
+					pendingPublished.countDown();
+					awaitQueueAdmissionRelease(releaseQueueAdmission);
+				};
+				try {
+					try (RepositoryConnection connection = repo.getConnection()) {
+						connection.add(S2, P2, O2);
+					}
+					awaitPendingPublication(pendingPublished);
+
+					assertThat(oldSnapshot.source.exactPredicateCount(p2))
+							.as("a retained old source stays exact while a newer committed row is pending")
+							.hasValue(1L);
+					assertThat(emptySnapshot.source.exactPredicateCount(p2))
+							.as("the retained empty source stays exact for its own pre-insert snapshot")
+							.hasValue(0L);
+					assertThat(emptySnapshot.rows(-1, p2, -1, -1)).isEmpty();
+
+					try (CloseableDataset pendingSnapshot = dataset()) {
+						assertThat(pendingSnapshot.source.exactPredicateCount(p2))
+								.as("the current source must decline an exact-zero proof while the committed row awaits apply")
+								.isEmpty();
+					}
+					long prunesBeforePendingQuery = JoinDispatchTestAccess.exactEmptyPrunes();
+					assertThat(queryRows("SELECT ?s ?o WHERE { ?s <" + P2 + "> ?o }", "s", "o"))
+							.containsExactly(S2.stringValue() + "=" + O2.stringValue());
+					assertThat(JoinDispatchTestAccess.exactEmptyPrunes())
+							.as("a pending committed insertion must not be pruned by a stale empty count")
+							.isEqualTo(prunesBeforePendingQuery);
+				} finally {
+					releaseQueueAdmission.countDown();
+					direct.beforeApplyQueueAdmissionForTest = previousQueueAdmissionHook;
+					direct.pauseApplierForTest(false);
+					direct.awaitCommitCleanupForTest();
+				}
+				awaitDirectAdjacencyReady();
+
+				assertThat(oldSnapshot.source.exactPredicateCount(p2)).hasValue(1L);
+				assertThat(emptySnapshot.source.exactPredicateCount(p2)).hasValue(0L);
+				assertThat(emptySnapshot.rows(-1, p2, -1, -1)).isEmpty();
+				assertThat(queryRows("SELECT ?s ?o WHERE { ?s <" + P2 + "> ?o }", "s", "o"))
+						.containsExactly(S2.stringValue() + "=" + O2.stringValue());
+				try (CloseableDataset currentSnapshot = dataset()) {
+					assertThat(currentSnapshot.source.exactPredicateCount(p2)).hasValue(1L);
+					assertThat(parallelPredicateCount(currentSnapshot.source, p2))
+							.as("a real parallel source must delegate the current exact predicate count")
+							.hasValue(1L);
+				}
+			}
+		}
+	}
+
+	@Test
+	void predicateExactCountDoesNotHideInferredRowsWhenExplicitPlaneIsEmpty() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		System.setProperty(EXACT_EMPTY_PRUNING_PROPERTY, "true");
+		openPreferStore();
+		removeAllStatementsForPredicate(P2);
+		try (LmdbStoreConnection connection = (LmdbStoreConnection) sail.getConnection()) {
+			connection.begin();
+			connection.addInferredStatement(S2, P2, O2);
+			connection.commit();
+		}
+		direct.pauseApplierForTest(false);
+		awaitDirectAdjacencyReady();
+
+		long prunesBefore = JoinDispatchTestAccess.exactEmptyPrunes();
+		assertThat(queryRows("SELECT ?s ?o WHERE { ?s <" + P2 + "> ?o }", "s", "o"))
+				.containsExactly(S2.stringValue() + "=" + O2.stringValue());
+		assertThat(JoinDispatchTestAccess.exactEmptyPrunes())
+				.as("an empty explicit plane cannot hide the inferred source's predicate rows")
+				.isEqualTo(prunesBefore);
+	}
+
+	@Test
+	void predicateExactEmptyDeclinesWhenAggregateProofsAreDisabled() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "false");
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		System.setProperty(EXACT_EMPTY_PRUNING_PROPERTY, "true");
+		openPreferStore();
+		removeAllStatementsForPredicate(P2);
+
+		long prunesBefore = JoinDispatchTestAccess.exactEmptyPrunes();
+		assertThat(queryRows("SELECT ?s ?o WHERE { ?s <" + P2 + "> ?o }", "s", "o")).isEmpty();
+		assertThat(JoinDispatchTestAccess.exactEmptyPrunes())
+				.as("the exact predicate proof is disabled with aggregate scanning")
+				.isEqualTo(prunesBefore);
+	}
+
+	@Test
+	void predicateExactCountDeclinesForUncoveredPredicate() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		System.setProperty(EXACT_EMPTY_PRUNING_PROPERTY, "true");
+		openStore(DirectAdjacencyMode.PREFER, DirectAdjacencyCoverage.SELECTED, List.of(P1));
+
+		try (CloseableDataset dataset = dataset()) {
+			assertThat(dataset.source.exactPredicateCount(p2)).isEmpty();
+		}
+		long prunesBefore = JoinDispatchTestAccess.exactEmptyPrunes();
+		assertThat(queryRows("SELECT ?s ?o WHERE { ?s <" + P2 + "> ?o }", "s", "o"))
+				.containsExactly(S1.stringValue() + "=" + O1.stringValue());
+		assertThat(JoinDispatchTestAccess.exactEmptyPrunes()).isEqualTo(prunesBefore);
+	}
+
+	@Test
+	void predicateExactCountDeclinesDuringCurrentWriterAndPreservesItsView() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		System.setProperty(EXACT_EMPTY_PRUNING_PROPERTY, "true");
+		openPreferStore();
+		removeAllStatementsForPredicate(P2);
+		try (CloseableDataset publishedEmpty = dataset()) {
+			assertThat(publishedEmpty.source.exactPredicateCount(p2)).hasValue(0L);
+		}
+		long prunesBefore = JoinDispatchTestAccess.exactEmptyPrunes();
+		try (RepositoryConnection connection = repo.getConnection()) {
+			connection.begin();
+			connection.add(S1, P2, O1);
+			assertThat(connection.isActive()).isTrue();
+			assertThat(queryRows(connection, "SELECT ?s ?o WHERE { ?s <" + P2 + "> ?o }", "s", "o"))
+					.containsExactly(S1.stringValue() + "=" + O1.stringValue());
+			assertThat(JoinDispatchTestAccess.exactEmptyPrunes())
+					.as("the current writer must not use a published empty-view proof for its uncommitted insertion")
+					.isEqualTo(prunesBefore);
+			connection.rollback();
+		}
+		assertThat(queryRows("SELECT ?s ?o WHERE { ?s <" + P2 + "> ?o }", "s", "o"))
+				.isEmpty();
 	}
 
 	@Test
@@ -2515,12 +2823,45 @@ class LmdbDirectAdjacencyQueryTest {
 		}
 		assertThat(direct.buildNowForTest()).isTrue();
 
-		long hitsBefore = direct.snapshotMetrics().lookupHits;
 		try (var dataset = dataset()) {
 			long predicate = dataset.idOf(widePredicate);
-			assertThat(dataset.rows(-1, predicate, -1, -1)).hasSize(edgeCount);
+			LmdbAdjacencyMetrics.Snapshot before = direct.snapshotMetrics();
+			List<long[]> rows = dataset.rows(-1, predicate, -1, -1);
+			LmdbAdjacencyMetrics.Snapshot after = direct.snapshotMetrics();
+			String diagnostics = directAdjacencyDiagnostics(before, after);
+			assertThat(rows).as("wide predicate root scan cardinality; " + diagnostics).hasSize(edgeCount);
+			assertThat(after.lookupHits)
+					.as("wide predicate root scan direct-adjacency hit; " + diagnostics)
+					.isGreaterThan(before.lookupHits);
 		}
-		assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
+	}
+
+	private String directAdjacencyDiagnostics(LmdbAdjacencyMetrics.Snapshot before,
+			LmdbAdjacencyMetrics.Snapshot after) {
+		EnumMap<FallbackReason, Long> fallbackDeltas = new EnumMap<>(FallbackReason.class);
+		for (FallbackReason reason : FallbackReason.values()) {
+			long delta = after.fallbacks(reason) - before.fallbacks(reason);
+			if (delta != 0L) {
+				fallbackDeltas.put(reason, delta);
+			}
+		}
+		return "cachedBefore=" + directMetricSummary(before)
+				+ ", cachedAfter=" + directMetricSummary(after)
+				+ ", nonzeroFallbackDeltas=" + fallbackDeltas
+				+ ", cachedReadiness=" + sail.getDirectAdjacencyReadinessDescription()
+				+ direct.publicationDiagnostics();
+	}
+
+	private static String directMetricSummary(LmdbAdjacencyMetrics.Snapshot snapshot) {
+		return "state=" + snapshot.state
+				+ ", baseRevision=" + snapshot.baseRevision
+				+ ", appliedRevision=" + snapshot.appliedRevision
+				+ ", currentDataRevision=" + snapshot.currentDataRevision
+				+ ", gapFromRevision=" + snapshot.gapFromRevision
+				+ ", emergencyGapFromRevision=" + snapshot.emergencyGapFromRevision
+				+ ", activeViews=" + snapshot.activeViews
+				+ ", lookupHits=" + snapshot.lookupHits
+				+ ", exactMisses=" + snapshot.exactMisses;
 	}
 
 	@Test

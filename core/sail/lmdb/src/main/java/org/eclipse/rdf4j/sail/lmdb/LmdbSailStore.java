@@ -13385,6 +13385,17 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public OptionalLong exactPredicateCount(long predicate) {
+			checkOpen();
+			if (!hasStatementsInSource()) {
+				return OptionalLong.empty();
+			}
+			LmdbAdjacencyReadView view = exactAdjacencyView(true);
+			return view == null ? OptionalLong.empty()
+					: directAdjacency.exactPredicateCount(view, predicate, explicit);
+		}
+
+		@Override
 		public OrderedIntegerDomain orderedIntegerDomain(long subj, long pred, long obj, long context,
 				int varyingField) {
 			checkOpen();
@@ -14915,6 +14926,12 @@ class LmdbSailStore implements SailStore {
 				}
 				return OptionalLong.empty();
 			});
+		}
+
+		@Override
+		public OptionalLong exactPredicateCount(long predicate) {
+			return withNativeSourceRead(() -> !hasStatementsInSource() || !directEligible() ? OptionalLong.empty()
+					: directAdjacency.exactPredicateCount(adjacencyView, predicate, explicit));
 		}
 
 		@Override

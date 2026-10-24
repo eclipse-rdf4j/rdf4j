@@ -5193,6 +5193,14 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		return tryCountInternal(view, subject, predicate, object, context, explicit, false);
 	}
 
+	OptionalLong exactPredicateCount(LmdbAdjacencyReadView view, long predicate, boolean explicit) {
+		if (predicate <= 0L) {
+			return OptionalLong.empty();
+		}
+		long count = tryCountInternal(view, -1L, predicate, -1L, -1L, explicit, false);
+		return count < 0L ? OptionalLong.empty() : OptionalLong.of(count);
+	}
+
 	private long tryCountInternal(LmdbAdjacencyReadView view, long subject, long predicate, long object, long context,
 			boolean explicit, boolean existenceOnly) {
 		if (view == null || !view.servesSnapshot() || closed || options.mode() != DirectAdjacencyMode.PREFER
