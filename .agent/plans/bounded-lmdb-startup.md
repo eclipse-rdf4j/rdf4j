@@ -59,9 +59,9 @@ After a normal JVM crash, the repository must establish quickly whether componen
 - [x] Add fail-at-end to CI Maven commands.
 - [x] Update acceptance and CI docs.
 - [x] Revalidate partitions and Maven arguments.
-- [in_progress] Audit and publish scoped changes.
-- [ ] Watch exact-head Actions until terminal.
-- [ ] Run retained 14.6M acceptance copy.
+- [x] Audit and publish scoped changes.
+- [in_progress] Watch exact-head Actions until terminal.
+- [x] Run retained 14.6M acceptance copy.
 - [x] (2026-10-24) Verify focused regression and estimator suites.
 - [x] (2026-10-24) Resolve remap restart versus maintenance admission.
 - [x] (2026-10-24) Resolve reader horizons without foreground writes.
@@ -76,7 +76,7 @@ The v2 Failsafe trace exposed a test setup race. Native sizing measured a 835,58
 
 The corrected original method passes focused (1/1), the complete 13-test isolation class (13/13), and all default LMDB Failsafe tests (160 tests, zero failures/errors, 105 skipped). Its trace shows writer-only deltas: Triple resizes 2→3, Value resizes 0→1, and accepted replays 0→1; full trace and reports are in `logs/bounded-startup-unobserved-replay-controlled-hard-green/`. Comparing the new 1,434-entry Java manifest to the earlier full-module run shows 1,433 unchanged Java files; only this Failsafe source changed. Therefore the previous 9,933-test Surefire result (zero failures/errors, 35 skipped) remains applicable to production and every unit-test source, but no fresh combined full-module command has been run after this fixture-only change.
 
-The separate construction-overlap spike is archived in `logs/bounded-startup-constructed-replay-first-exposure-red/`; it failed only its source-construction-count premise before result assertions, and its independent fitting writer demanded a stronger contract than the original growth-causing publication. It was removed from executable sources and is not production-defect evidence. The prior published full-module row mismatch and v2 growth-premise red remain retained as historical pre-correction evidence. Hosted-CI completion and acceptance remain pending; continue exact-head checks and run the retained 14.6M acceptance copy after correctness is established. The user will run the billion-statement timing after this verification work is complete; no repository path is needed for this task.
+The separate construction-overlap spike is archived in `logs/bounded-startup-constructed-replay-first-exposure-red/`; it failed only its source-construction-count premise before result assertions, and its independent fitting writer demanded a stronger contract than the original growth-causing publication. It was removed from executable sources and is not production-defect evidence. The prior published full-module row mismatch and v2 growth-premise red remain retained as historical pre-correction evidence. The retained 14.6M acceptance completed on published head `2dbbd6a9522b77ee1fdff7fa787002fdfff584f0`: 14,561,110 explicit statements, 437.605584 ms ready, 274 foreground logical reads, zero tree drops, exact reference counts, 158.877875 ms first query, with triple-term cleanup and auxiliary maintenance still pending. Full JSON, reports, logs, and store metadata snapshots are in `logs/startup-ci/2dbbd6a9522b77ee1fdff7fa787002fdfff584f0/`. The original target fixture metadata was unchanged; the retained copy's normal open replaced `.lmdb-bulk-prepared` and advanced the `values/data.mdb` mtime without changing sizes or its `store.properties` digest. This local run does not establish the 1B target; the user will run that timing after verification, and no path is required for this task. Exact-head Actions remain in progress.
 
 The smallest mutation-poison gate reproduces two errors in six instances (`logs/bounded-startup-logical-mutation-poison-red/`): the unchanged disabled-growth control cannot begin its next writer after an unowned illegal aligned call, and the scoped ALIGNED continuation of failed A poisons B's otherwise valid commit. VALUE, SCALAR, NAMESPACE, and REMOVE continuation modes preserve the original retry and pass. Limit mutation-failure recording using the retained logical writer identity, never `writeTxn != 0`: reject no-owner calls and explicitly foreign tickets while preserving errors after an owned native handle has been consumed.
 
