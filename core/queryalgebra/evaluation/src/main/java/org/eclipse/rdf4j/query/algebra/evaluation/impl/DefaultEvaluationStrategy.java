@@ -130,6 +130,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.Window;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.NativeTripleTermSource;
@@ -165,6 +166,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ServiceQu
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.SliceQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.StatementPatternQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.UnionQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.WindowQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ZeroLengthPathEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.AndValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.CompareAllQueryValueEvaluationStep;
@@ -508,6 +510,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 				} else if (expr instanceof Reduced) {
 					result = precompile(expr).evaluate(bindings);
 				} else if (expr instanceof Group) {
+					result = precompile(expr).evaluate(bindings);
+				} else if (expr instanceof Window) {
 					result = precompile(expr).evaluate(bindings);
 				} else if (expr instanceof Order) {
 					result = precompile(expr).evaluate(bindings);
@@ -1376,6 +1380,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			return prepare((Reduced) expr, context);
 		} else if (expr instanceof Group) {
 			return prepare((Group) expr, context);
+		} else if (expr instanceof Window window) {
+			return new WindowQueryEvaluationStep(window, precompile(window.getArg(), context), this, context,
+					tripleSource.getValueFactory());
 		} else if (expr instanceof Order) {
 			return prepare((Order) expr, context);
 		} else if (expr instanceof QueryRoot) {
@@ -1882,7 +1889,12 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			BUILT_IN_FUNCTION_PACKAGE + ".string", BUILT_IN_FUNCTION_PACKAGE + ".numeric",
 			BUILT_IN_FUNCTION_PACKAGE + ".datetime", BUILT_IN_FUNCTION_PACKAGE + ".hash",
 			BUILT_IN_FUNCTION_PACKAGE + ".rdfterm", BUILT_IN_FUNCTION_PACKAGE + ".xsd",
-			BUILT_IN_FUNCTION_PACKAGE + ".triple");
+			BUILT_IN_FUNCTION_PACKAGE + ".triple", BUILT_IN_FUNCTION_PACKAGE + ".math",
+			BUILT_IN_FUNCTION_PACKAGE + ".math.xpath", BUILT_IN_FUNCTION_PACKAGE + ".string.ext",
+			BUILT_IN_FUNCTION_PACKAGE + ".datetime.ext", BUILT_IN_FUNCTION_PACKAGE + ".bitwise",
+			BUILT_IN_FUNCTION_PACKAGE + ".encoding", BUILT_IN_FUNCTION_PACKAGE + ".misc",
+			BUILT_IN_FUNCTION_PACKAGE + ".text", BUILT_IN_FUNCTION_PACKAGE + ".json",
+			BUILT_IN_FUNCTION_PACKAGE + ".array");
 
 	/**
 	 * The SPARQL built-ins shipped in this module. Third-party and other extension functions may stash their arguments,

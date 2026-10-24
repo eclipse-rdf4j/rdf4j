@@ -1,0 +1,7 @@
+org.eclipse.rdf4j.query.algebra.evaluation.function.tuple.SplitTupleFunction
+org.eclipse.rdf4j.query.algebra.evaluation.function.tuple.RegexpExtractAllTupleFunction
+org.eclipse.rdf4j.query.algebra.evaluation.function.tuple.TokenizeTupleFunction
+org.eclipse.rdf4j.query.algebra.evaluation.function.tuple.NgramsTupleFunction
+org.eclipse.rdf4j.query.algebra.evaluation.function.tuple.UnnestTupleFunction
+org.eclipse.rdf4j.query.algebra.evaluation.function.tuple.UnnestWithOrdinalityTupleFunction
+org.eclipse.rdf4j.query.algebra.evaluation.function.tuple.GenerateSeriesTupleFunction
