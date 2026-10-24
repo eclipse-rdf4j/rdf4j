@@ -1102,6 +1102,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private volatile boolean termIndexMaintenanceCancelled;
 	private volatile Throwable termIndexMaintenanceFailure;
 	private final Object termIndexMaintenanceMonitor = new Object();
+	private long termIndexMaintenanceSignal;
 
 	private enum DictionaryTransactionPurpose {
 		OWNER_MUTATION,
@@ -3801,6 +3802,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			LockSupport.unpark(worker);
 		}
 		synchronized (termIndexMaintenanceMonitor) {
+			termIndexMaintenanceSignal++;
 			termIndexMaintenanceMonitor.notifyAll();
 		}
 	}
@@ -3823,6 +3825,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private void runTermIndexMaintenance() {
 		try {
 			while (!termIndexMaintenanceCancelled) {
+				long waitSignal;
+				synchronized (termIndexMaintenanceMonitor) {
+					waitSignal = termIndexMaintenanceSignal;
+				}
 				TermIndexBuild before = termIndexBuild;
 				if (before != null && before.phase() == TermIndexBuild.CLEANUP
 						&& !before.target().equals(activeTermIndexSpecs())) {
@@ -3885,7 +3891,14 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 							waitForReaders = cleanup == TermCleanupResult.GENERATION_READERS;
 							waitForNativeReaders = cleanup == TermCleanupResult.NATIVE_READERS;
 						}
-						if (waitForReaders || waitForNativeReaders || termIndexMaintenanceCancelled) {
+						long queryHorizon = termIndexGenerations.get(termIndexGenerations.size() - 1)
+								.firstTransaction();
+						// The first pinned-generation cleanup may commit only metadata/proof to admit a new cohort;
+						// its retired trees remain untouched until the finite older cohort releases them.
+						boolean advanceQueryHorizon = waitForReaders && !waitForNativeReaders
+								&& lastTrustedNativeTransactionId < queryHorizon;
+						if ((waitForReaders || waitForNativeReaders) && !advanceQueryHorizon
+								|| termIndexMaintenanceCancelled) {
 							rollback();
 						} else {
 							// Finish native ownership before waiting for readers. A reader may itself need a standalone
@@ -3917,7 +3930,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 						termMaintenanceWriterActive = false;
 						writerAdmission.notifyAll();
 					}
-					signalTermIndexMaintenance();
+					// Batch progress wakes status waiters without inventing a reader-retirement notification.
+					synchronized (termIndexMaintenanceMonitor) {
+						termIndexMaintenanceMonitor.notifyAll();
+					}
 				}
 				if (growMap) {
 					// Capacity quiescence can itself await readers or an owning-store publisher. Neither resource
@@ -3946,9 +3962,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					manager.unlockWrite(stamp);
 				}
 				if (waitForReaders && !termIndexMaintenanceCancelled) {
-					LockSupport.park(this);
-					if (Thread.interrupted() && !termIndexMaintenanceCancelled) {
-						throw new InterruptedException("Triple-term index maintenance interrupted");
+					synchronized (termIndexMaintenanceMonitor) {
+						while (termIndexMaintenanceSignal == waitSignal && !termIndexMaintenanceCancelled
+								&& termIndexBuild != null) {
+							termIndexMaintenanceMonitor.wait();
+						}
 					}
 				}
 			}
@@ -7189,67 +7207,96 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 								requiredSize);
 					}
 					boolean activeWriteTxn = writeTxn != 0;
-					if (activeWriteTxn) {
-						// LMDB requires the active writer transaction to be committed before changing the map size.
-						// Notify
-						// the owning SailStore before that checkpoint can publish dictionary state ahead of its
-						// TripleStore.
-						resizeCheckpointListener.run();
-					}
-
-					var lockManager = txnManager.lockManager();
-					boolean readLocked = readContext.get().hasReadLock;
-					if (readLocked) {
-						lockManager.unlockRead(StampedLongAdderLockManager.READ_LOCK_STAMP);
-					}
-					long stamp;
-					try {
-						stamp = lockManager.writeLock();
-					} catch (InterruptedException e) {
-						throw new IOException(e);
-					}
-
+					boolean releaseGrowthOwner = retainNativeMapGrowthOwner();
 					try {
 						if (activeWriteTxn) {
-							endTransaction(true, true);
+							// LMDB requires the active writer transaction to be committed before changing the map size.
+							// Notify
+							// the owning SailStore before that checkpoint can publish dictionary state ahead of its
+							// TripleStore.
+							resizeCheckpointListener.run();
+							if (shuttingDown) {
+								throw new IOException("ValueStore is closed");
+							}
 						}
-						detachStableReadSnapshots(growthAttempt);
-						txnManager.deactivate();
 
-						long oldMapSize = mapSize;
-						long grownSize = growthPolicy.grownMapSize(mapSize, pageSize, requiredSize);
-
-						logger.info("Resizing map from {} to {}", oldMapSize, grownSize);
-
-						if (growthAttempt != null) {
-							growthAttempt.markFallbackMapResized(LmdbSailStore.MapResizeKind.VALUE_STORE);
+						var lockManager = txnManager.lockManager();
+						boolean readLocked = readContext.get().hasReadLock;
+						if (readLocked) {
+							lockManager.unlockRead(StampedLongAdderLockManager.READ_LOCK_STAMP);
 						}
-						E(mdb_env_set_mapsize(env, grownSize));
-						mapSize = grownSize;
-						if (grownSize > oldMapSize) {
-							bulkMapGrowthCount++;
+						long stamp;
+						try {
+							stamp = lockManager.writeLock();
+						} catch (InterruptedException e) {
+							throw new IOException(e);
 						}
-						nativeMapGeneration++;
+
+						try {
+							if (activeWriteTxn) {
+								endTransaction(true, true);
+							}
+							detachStableReadSnapshots(growthAttempt);
+							txnManager.deactivate();
+
+							long oldMapSize = mapSize;
+							long grownSize = growthPolicy.grownMapSize(mapSize, pageSize, requiredSize);
+
+							logger.info("Resizing map from {} to {}", oldMapSize, grownSize);
+
+							if (growthAttempt != null) {
+								growthAttempt.markFallbackMapResized(LmdbSailStore.MapResizeKind.VALUE_STORE);
+							}
+							E(mdb_env_set_mapsize(env, grownSize));
+							mapSize = grownSize;
+							if (grownSize > oldMapSize) {
+								bulkMapGrowthCount++;
+							}
+							nativeMapGeneration++;
+						} finally {
+							try {
+								txnManager.activate();
+							} finally {
+								lockManager.unlockWrite(stamp);
+								if (readLocked) {
+									try {
+										lockManager.readLock();
+									} catch (InterruptedException e) {
+										throw new IOException(e);
+									}
+								}
+							}
+						}
 						if (activeWriteTxn) {
+							// A replacement writer may wait for native admission. Growth ownership excludes foreign
+							// creation/maintenance without retaining the exclusive remap barrier through that wait.
 							startTransaction(false);
 						}
-
 					} finally {
-						try {
-							txnManager.activate();
-						} finally {
-							lockManager.unlockWrite(stamp);
-							if (readLocked) {
-								try {
-									lockManager.readLock();
-								} catch (InterruptedException e) {
-									throw new IOException(e);
-								}
+						if (releaseGrowthOwner) {
+							synchronized (writerAdmission) {
+								nativeMapGrowthOwner = null;
+								writerAdmission.notifyAll();
 							}
 						}
 					}
 				}
 			}
+		}
+	}
+
+	/** Retains an admitted resize across its native checkpoint, remap and replacement writer. */
+	private boolean retainNativeMapGrowthOwner() throws IOException {
+		synchronized (writerAdmission) {
+			Thread current = Thread.currentThread();
+			if (nativeMapGrowthOwner == current) {
+				return false;
+			}
+			if (nativeMapGrowthOwner != null) {
+				throw new IOException("ValueStore native resize already has another admitted owner");
+			}
+			nativeMapGrowthOwner = current;
+			return true;
 		}
 	}
 
@@ -13234,7 +13281,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					throw new IOException("Interrupted while awaiting ValueStore maintenance writer", interrupted);
 				}
 			}
-			boolean restarting = writerStartsInFlight != 0 && writerStartOwner == Thread.currentThread();
+			boolean restarting = writerStartsInFlight != 0 && writerStartOwner == Thread.currentThread()
+					|| nativeMapGrowthOwner == Thread.currentThread();
 			if (env == 0 || shuttingDown && !restarting) {
 				throw new IOException("ValueStore is closed");
 			}

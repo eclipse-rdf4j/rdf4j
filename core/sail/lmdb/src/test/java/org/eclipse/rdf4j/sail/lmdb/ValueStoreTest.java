@@ -2362,9 +2362,10 @@ public class ValueStoreTest {
 							&& hasFrame(closerState, "java.util.concurrent.locks.ReentrantLock", "lock");
 					boolean waitingOutsideBarrier = closerState != null
 							&& closerState.getThreadState() == Thread.State.WAITING
-							&& closerState.getLockOwnerId() == writerThread.threadId()
 							&& hasFrame(closerState, ValueStore.class.getName(), "awaitWriterStartsForShutdown")
-							&& hasFrame(closerState, "java.util.concurrent.locks.ReentrantLock", "lock")
+							&& (closerState.getLockOwnerId() == writerThread.threadId()
+									&& hasFrame(closerState, "java.util.concurrent.locks.ReentrantLock", "lock")
+									|| hasFrame(closerState, "java.lang.Object", "wait"))
 							&& !hasFrame(closerState, ValueStore.class.getName(), "closeUnderMonitor")
 							&& !hasFrame(closerState, TxnManager.class.getName(), "acquireCloseBarrier");
 					if (waitingForNativeBarrier || waitingForHeldBarrierGate || waitingOutsideBarrier) {

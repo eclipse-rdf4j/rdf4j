@@ -235,6 +235,7 @@ class TripleStore implements Closeable {
 	private boolean indexRebuildRestartRequested;
 	private boolean indexBuildWaitingReaders;
 	private final Object indexRebuildMonitor = new Object();
+	private long indexRebuildSignal;
 	private volatile IndexRebuildWriter indexRebuildWriter = IndexRebuildWork::run;
 	private static final int INDEX_REBUILD_BATCH_SIZE = 256;
 
@@ -695,7 +696,7 @@ class TripleStore implements Closeable {
 			namespacesDbi = databaseHandles.namespacesDbi();
 
 			txnManager = new TxnManager(env, Mode.RESET, LmdbSailStore.MapResizeKind.TRIPLE_STORE);
-			txnManager.setReaderRetirementListener(() -> LockSupport.unpark(indexRebuildThread));
+			txnManager.setReaderRetirementListener(this::signalIndexRebuild);
 			pageEstimator = pageWalkingEstimatorEnabled ? new LmdbPageCardinalityEstimator(dataMdbFile, env, mainDbi)
 					: null;
 		} catch (IOException | RuntimeException | Error failure) {
@@ -2644,6 +2645,14 @@ class TripleStore implements Closeable {
 		return indexRebuildState;
 	}
 
+	private void signalIndexRebuild() {
+		synchronized (indexRebuildMonitor) {
+			indexRebuildSignal++;
+			indexRebuildMonitor.notifyAll();
+		}
+		LockSupport.unpark(indexRebuildThread);
+	}
+
 	boolean awaitIndexRebuild(long timeout, TimeUnit unit) throws InterruptedException {
 		long remaining = unit.toNanos(timeout);
 		long started = System.nanoTime();
@@ -2663,6 +2672,10 @@ class TripleStore implements Closeable {
 	private void runIndexRebuild() {
 		try {
 			while (!indexRebuildClosing && indexBuild != null) {
+				long waitSignal;
+				synchronized (indexRebuildMonitor) {
+					waitSignal = indexRebuildSignal;
+				}
 				StatementIndexBuild before = indexBuild;
 				if (before.phase() == StatementIndexBuild.Phase.CLEANUP
 						&& !before.target().equals(indexSpecifications(indexes))) {
@@ -2682,9 +2695,10 @@ class TripleStore implements Closeable {
 				indexRebuildWriter.execute(() -> rebuildIndexBatch(before, batch, copied, lastKey));
 				afterIndexRebuildBatch();
 				if (indexBuildWaitingReaders && !indexRebuildClosing) {
-					LockSupport.park(this);
-					if (Thread.interrupted()) {
-						throw new InterruptedException("Statement index cleanup cancelled");
+					synchronized (indexRebuildMonitor) {
+						while (indexRebuildSignal == waitSignal && !indexRebuildClosing && indexBuild != null) {
+							indexRebuildMonitor.wait();
+						}
 					}
 				}
 			}
@@ -2773,16 +2787,23 @@ class TripleStore implements Closeable {
 						if (indexCutoverTransactionId != 0L
 								&& txnManager.hasActiveReadersBefore(indexCutoverTransactionId)) {
 							indexBuildWaitingReaders = true;
-							endTransaction(false);
-							return;
+							// Delayed publication needs one descriptor-only commit so subsequent readers stop joining
+							// the retired cohort. The common commit path runs after this exclusive barrier is released.
+							if (mdb_txn_id(writeTxn) > indexCutoverTransactionId) {
+								endTransaction(false);
+								return;
+							}
+						} else {
+							previousQueryGeneration = null;
 						}
-						previousQueryGeneration = null;
 					} finally {
 						txnManager.lockManager().unlockWrite(stamp);
 					}
-					openCanonicalIndexesForCleanup(Set.of());
-					if (deleteInactiveIndexBatch()) {
-						indexBuild = null;
+					if (!indexBuildWaitingReaders) {
+						openCanonicalIndexesForCleanup(Set.of());
+						if (deleteInactiveIndexBatch()) {
+							indexBuild = null;
+						}
 					}
 				}
 				writeIndexBuildAuthority(writeTxn);

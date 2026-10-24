@@ -40,6 +40,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.LockSupport;
 
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -147,6 +148,56 @@ class TripleStoreBackgroundReindexTest {
 		}
 	}
 
+	@Test
+	void retirementNotificationSurvivesBlockingWorkBeforeTheStatementWait(@TempDir Path directory) throws Exception {
+		seed(directory, 20);
+		CountDownLatch cleanup = new CountDownLatch(1);
+		CountDownLatch retire = new CountDownLatch(1);
+		CountDownLatch retired = new CountDownLatch(1);
+		AtomicBoolean first = new AtomicBoolean(true);
+		try (TxnHolder holder = new TxnHolder();
+				TripleStore store = new TripleStore(directory.toFile(), config("posc"), null) {
+					@Override
+					protected void afterIndexRebuildBatch() {
+						if (indexRebuildStatus().equals("CLEANUP") && first.compareAndSet(true, false)) {
+							cleanup.countDown();
+							awaitUninterruptibly(retire);
+							holder.reader.close();
+							// A callback can consume the thread permit before the worker reaches its own wait.
+							LockSupport.park(this);
+							retired.countDown();
+						}
+					}
+				}) {
+			holder.reader = store.getTxnManager().createReadTxnUntracked();
+			assertEquals(20, store.countTriples(holder.reader, -1, 2, -1, -1, true));
+			store.startBackgroundIndexRebuild();
+			try {
+				await(cleanup);
+				assertEquals("spoc", store.getIndexName(holder.reader, -1, 2, -1, -1));
+				assertEquals(20, store.countTriples(holder.reader, -1, 2, -1, -1, true));
+				retire.countDown();
+				await(retired);
+				assertTrue(store.awaitIndexRebuild(10L, TimeUnit.SECONDS),
+						"a retirement notification cannot disappear before the worker's predicate wait");
+				assertEquals(20L, store.explicitIndexEntryCounts().get("posc"));
+			} finally {
+				retire.countDown();
+			}
+		}
+	}
+
+	private static final class TxnHolder implements AutoCloseable {
+		private Txn reader;
+
+		@Override
+		public void close() {
+			if (reader != null) {
+				reader.close();
+			}
+		}
+	}
+
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
 	void explicitRetryPublishesDurableManifestBeforeRetiringOldReaders(boolean fatal, @TempDir Path directory)
@@ -191,6 +242,16 @@ class TripleStoreBackgroundReindexTest {
 						"readers admitted in the committed-manifest publication gap keep their generation");
 				assertEquals(20, store.countTriples(old, -1, 2, -1, -1, true));
 				assertEquals(20, store.countTriples(gap, -1, 2, -1, -1, true));
+				try (Txn postPublication = store.getTxnManager().createReadTxnUntracked()) {
+					assertEquals("posc", store.getIndexName(postPublication, -1, 2, -1, -1),
+							"maintenance must advance the native horizon before admitting a new query cohort");
+					assertEquals(20, store.countTriples(postPublication, -1, 2, -1, -1, true));
+					old.close();
+					gap.close();
+					assertTrue(store.awaitIndexRebuild(10L, TimeUnit.SECONDS),
+							"post-publication readers must not extend the retired generation without unrelated writes");
+					assertEquals(20, store.countTriples(postPublication, -1, 2, -1, -1, true));
+				}
 			}
 			old.close();
 			assertTrue(store.awaitIndexRebuild(10L, TimeUnit.SECONDS), store.indexRebuildStatus());

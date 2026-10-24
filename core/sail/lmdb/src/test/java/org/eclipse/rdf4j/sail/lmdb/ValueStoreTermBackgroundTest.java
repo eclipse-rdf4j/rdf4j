@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -21,6 +22,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadInfo;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -54,6 +57,50 @@ class ValueStoreTermBackgroundTest {
 	private static final String TARGET = "spoc,cspo,posc,opsc";
 	@TempDir
 	Path directory;
+
+	@Test
+	void unchangedOldTermCohortWaitsWithoutSelfGeneratedProgressRetries() throws Exception {
+		StoreProperties properties = new StoreProperties(directory.toFile());
+		seed(properties, 30);
+		CountDownLatch cleanup = new CountDownLatch(1);
+		AtomicReference<Thread> worker = new AtomicReference<>();
+		try (ClosingValueStore store = open(properties, "spoc,cspo,ospc");
+				var old = store.getTxnManager().createReadTxnUntracked()) {
+			assertEquals(30, termCount(store, old));
+			store.setTermIndexMaintenanceObserver(phase -> {
+				if (phase.equals("cleanup-readers")) {
+					worker.set(Thread.currentThread());
+					cleanup.countDown();
+				}
+			});
+			store.startIndexRebuildAfterStoreInitialization();
+			assertTrue(cleanup.await(10L, TimeUnit.SECONDS));
+			long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10L);
+			boolean waitingForNotification = false;
+			while (!waitingForNotification && System.nanoTime() < deadline) {
+				ThreadInfo info = ManagementFactory.getThreadMXBean().getThreadInfo(worker.get().threadId(), 30);
+				if (info != null && info.getThreadState() == Thread.State.WAITING) {
+					boolean inNativeWork = false;
+					boolean inWorker = false;
+					for (StackTraceElement frame : info.getStackTrace()) {
+						inNativeWork |= frame.getClassName().equals(ValueStore.class.getName())
+								&& frame.getMethodName().equals("claimTermMaintenanceWriter");
+						inWorker |= frame.getClassName().equals(ValueStore.class.getName())
+								&& frame.getMethodName().equals("runTermIndexMaintenance");
+					}
+					waitingForNotification = inWorker && !inNativeWork;
+				}
+				Thread.yield();
+			}
+			assertTrue(waitingForNotification,
+					"unchanged old readers require a predicate wait, not self-generated progress retries");
+			assertFalse(store.awaitIndexRebuild(0L, TimeUnit.NANOSECONDS));
+			assertEquals(30, termCount(store, old));
+			old.close();
+			assertTrue(store.awaitIndexRebuild(10L, TimeUnit.SECONDS));
+			assertEquals(30, termCount(store));
+		}
+	}
 
 	@Test
 	void terminalCleanupAcceptsACoalescedSuccessorRequest() throws Exception {
@@ -191,6 +238,81 @@ class ValueStoreTermBackgroundTest {
 			}
 		}
 		return count;
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void postPublicationReadersDoNotExtendTheRetiredTermGenerationWithoutWriters(boolean unknownCounts)
+			throws Exception {
+		StoreProperties properties = new StoreProperties(directory.toFile());
+		seed(properties, 30);
+		try (ClosingValueStore initial = open(properties, "spoc,cspo,posc")) {
+			initial.startIndexRebuildAfterStoreInitialization();
+			assertTrue(initial.awaitIndexRebuild(20L, TimeUnit.SECONDS));
+		}
+		if (unknownCounts) {
+			LmdbCompatibilityFixtures.nativePut(directory, "gc_meta", ReferenceCountProof.KEY, null);
+		}
+		CountDownLatch beforePublication = new CountDownLatch(1);
+		CountDownLatch releasePublication = new CountDownLatch(1);
+		CountDownLatch cleanup = new CountDownLatch(1);
+		CountDownLatch releaseCleanup = new CountDownLatch(1);
+		CountDownLatch oldReadersRetired = new CountDownLatch(1);
+		AtomicReference<TxnManager.Txn> gapReader = new AtomicReference<>();
+		AtomicBoolean firstCleanup = new AtomicBoolean(true);
+		try (ClosingValueStore store = open(properties, "spoc,cspo,ospc");
+				var old = store.getTxnManager().createReadTxnUntracked()) {
+			long predicate = store.getId(VF.createIRI("urn:term-background:predicate"));
+			assertEquals(30, countTermsForPredicate(store, old, predicate));
+			store.setTermIndexMaintenanceObserver(phase -> {
+				if (phase.equals("before-publication")) {
+					beforePublication.countDown();
+					await(releasePublication);
+				} else if (phase.equals("cleanup-readers") && firstCleanup.compareAndSet(true, false)) {
+					cleanup.countDown();
+					await(releaseCleanup);
+					// The maintenance thread can itself retire the last old views while finishing native reset.
+					// Such a notification must remain visible even though unpark(self) is intentionally omitted.
+					old.close();
+					gapReader.get().close();
+					oldReadersRetired.countDown();
+				}
+			});
+			store.startIndexRebuildAfterStoreInitialization();
+			try {
+				assertTrue(beforePublication.await(10L, TimeUnit.SECONDS));
+				try (var gap = store.getTxnManager().createReadTxnUntracked()) {
+					gapReader.set(gap);
+					assertEquals(30, countTermsForPredicate(store, gap, predicate));
+					releasePublication.countDown();
+					assertTrue(cleanup.await(10L, TimeUnit.SECONDS));
+					try (var postPublication = store.getTxnManager().createReadTxnUntracked()) {
+						assertTrue(postPublication.nativeTransactionId() > gap.nativeTransactionId(),
+								"maintenance must advance the native horizon without an unrelated writer");
+						assertEquals(30, countTermsForPredicate(store, old, predicate));
+						assertEquals(30, countTermsForPredicate(store, gap, predicate));
+						assertEquals(30, countTermsForPredicate(store, postPublication, predicate));
+						releaseCleanup.countDown();
+						assertTrue(oldReadersRetired.await(10L, TimeUnit.SECONDS));
+						assertTrue(store.awaitIndexRebuild(10L, TimeUnit.SECONDS),
+								"a held new query cohort must not prolong retired-index cleanup");
+						assertEquals(30, countTermsForPredicate(store, postPublication, predicate));
+						assertEquals(!unknownCounts, store.hasTrustedReferenceCounts(),
+								"advancing query admission must never promote unknown owner counts");
+					}
+				}
+			} finally {
+				releasePublication.countDown();
+				releaseCleanup.countDown();
+			}
+		}
+		if (unknownCounts) {
+			assertNull(LmdbCompatibilityFixtures.nativeGet(directory, "gc_meta", ReferenceCountProof.KEY));
+		}
+		try (ClosingValueStore reopened = open(properties, "spoc,cspo,ospc")) {
+			assertEquals(!unknownCounts, reopened.hasTrustedReferenceCounts());
+			assertEquals(30, termCount(reopened));
+		}
 	}
 
 	@ParameterizedTest

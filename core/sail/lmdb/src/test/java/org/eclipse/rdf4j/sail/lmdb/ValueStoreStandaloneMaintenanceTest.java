@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -32,6 +33,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
@@ -43,6 +45,194 @@ import org.lwjgl.system.MemoryStack;
 class ValueStoreStandaloneMaintenanceTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void remapCheckpointRetainsAdmissionUntilReplacementWriterLeavesTheBarrier(boolean rollback,
+			@TempDir Path directory)
+			throws Exception {
+		StoreProperties properties = new StoreProperties(directory.toFile());
+		try (RendezvousValueStore seed = new RendezvousValueStore(directory.resolve("values").toFile(), properties,
+				config("spoc,cspo"))) {
+			seed.startTransaction(true);
+			seed.storeValue(VF.createTripleTerm(VF.createIRI("urn:remap:subject"), VF.createIRI("urn:remap:predicate"),
+					VF.createLiteral("seed")));
+			seed.commit();
+		}
+		AtomicBoolean checkpointArmed = new AtomicBoolean();
+		AtomicBoolean checkpointWindow = new AtomicBoolean();
+		AtomicBoolean maintenanceEnteredCheckpointWindow = new AtomicBoolean();
+		AtomicReference<Thread> maintenance = new AtomicReference<>();
+		AtomicInteger checkpoints = new AtomicInteger();
+		try (RendezvousValueStore store = new RendezvousValueStore(directory.resolve("values").toFile(), properties,
+				config("spoc,cspo,posc")) {
+			@Override
+			void endTransaction(boolean commit, boolean autoGrow) throws IOException {
+				super.endTransaction(commit, autoGrow);
+				if (commit && autoGrow && checkpointArmed.compareAndSet(true, false)) {
+					checkpoints.incrementAndGet();
+					checkpointWindow.set(true);
+					startIndexRebuildAfterStoreInitialization();
+					long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10L);
+					while (!maintenanceEnteredCheckpointWindow.get() && System.nanoTime() < deadline) {
+						Thread worker = maintenance.get();
+						if (worker == null) {
+							for (Thread candidate : Thread.getAllStackTraces().keySet()) {
+								if (candidate.getName().equals("rdf4j-lmdb-term-index-maintenance")) {
+									maintenance.compareAndSet(null, candidate);
+								}
+							}
+							worker = maintenance.get();
+						}
+						if (worker != null && worker.getState() == Thread.State.WAITING) {
+							return;
+						}
+						Thread.yield();
+					}
+					assertTrue(maintenanceEnteredCheckpointWindow.get(), "maintenance must attempt real admission");
+				}
+			}
+
+			@Override
+			public void startTransaction(boolean resize) throws IOException {
+				if (checkpointWindow.get() && Thread.currentThread() != maintenance.get()) {
+					assertFalse(getTxnManager().lockManager().isWriterActive(),
+							"replacement writer admission must occur after releasing the exclusive native remap barrier");
+					checkpointWindow.set(false);
+				}
+				super.startTransaction(resize);
+			}
+
+			@Override
+			long occupiedBytes() throws IOException {
+				if (Thread.currentThread().getName().equals("rdf4j-lmdb-term-index-maintenance")) {
+					maintenance.set(Thread.currentThread());
+					if (checkpointWindow.get()) {
+						maintenanceEnteredCheckpointWindow.set(true);
+					}
+				}
+				return super.occupiedBytes();
+			}
+		}) {
+			store.setTermIndexMaintenanceObserver(phase -> maintenance.set(Thread.currentThread()));
+			store.startTransaction(true);
+			long beforeMap = store.mapSizeBytes();
+			checkpointArmed.set(true);
+			Value large = VF.createLiteral("r".repeat(Math.toIntExact(beforeMap)));
+			long id = store.storeValue(large);
+			if (rollback) {
+				store.rollback();
+			} else {
+				store.commit();
+			}
+			assertEquals(1, checkpoints.get(), "the foreground allocation must consume a real resize checkpoint");
+			assertTrue(store.mapSizeBytes() > beforeMap);
+			assertFalse(maintenanceEnteredCheckpointWindow.get(),
+					"checkpoint consumption must not open writer admission to term maintenance");
+			if (rollback) {
+				assertEquals(LmdbValue.UNKNOWN_ID, store.getId(large));
+			} else {
+				assertEquals(large, store.getValue(id));
+			}
+			assertTrue(store.awaitIndexRebuild(10L, TimeUnit.SECONDS));
+			assertTrue(store.hasTrustedReferenceCounts());
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void shutdownOrClearDrainsTheAdmittedRemapContinuation(boolean clear, @TempDir Path directory) throws Exception {
+		StoreProperties properties = new StoreProperties(directory.toFile());
+		Value seedValue = VF.createIRI("urn:remap:committed-prefix");
+		try (RendezvousValueStore seed = new RendezvousValueStore(directory.resolve("values").toFile(), properties,
+				config("spoc,cspo"))) {
+			seed.startTransaction(true);
+			seed.storeValue(seedValue);
+			seed.commit();
+		}
+		AtomicBoolean armed = new AtomicBoolean();
+		CountDownLatch checkpoint = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		try (RendezvousValueStore store = new RendezvousValueStore(directory.resolve("values").toFile(), properties,
+				config("spoc,cspo,posc")) {
+			@Override
+			void endTransaction(boolean commit, boolean autoGrow) throws IOException {
+				super.endTransaction(commit, autoGrow);
+				if (commit && autoGrow && armed.compareAndSet(true, false)) {
+					startIndexRebuildAfterStoreInitialization();
+					checkpoint.countDown();
+					await(release);
+				}
+			}
+		}) {
+			CompletableFuture<Long> written = new CompletableFuture<>();
+			CompletableFuture<Void> closed = new CompletableFuture<>();
+			Value large = VF.createLiteral("s".repeat(Math.toIntExact(store.mapSizeBytes())));
+			Thread writer = new Thread(() -> {
+				try {
+					store.startTransaction(true);
+					armed.set(true);
+					written.complete(store.storeValue(large));
+				} catch (Throwable failure) {
+					written.completeExceptionally(failure);
+				}
+			}, "remap-continuation-writer");
+			Thread closer = new Thread(() -> {
+				try {
+					if (clear) {
+						store.clear();
+					} else {
+						store.close();
+					}
+					closed.complete(null);
+				} catch (Throwable failure) {
+					closed.completeExceptionally(failure);
+				}
+			}, "remap-continuation-close-or-clear");
+			writer.start();
+			try {
+				assertTrue(checkpoint.await(10L, TimeUnit.SECONDS));
+				closer.start();
+				long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10L);
+				boolean draining = false;
+				while (!closed.isDone() && !draining && System.nanoTime() < deadline) {
+					ThreadInfo info = ManagementFactory.getThreadMXBean().getThreadInfo(closer.threadId(), 50);
+					if (info != null && info.getThreadState() == Thread.State.WAITING) {
+						for (StackTraceElement frame : info.getStackTrace()) {
+							draining |= frame.getClassName().equals(ValueStore.class.getName())
+									&& frame.getMethodName().equals("awaitWriterStartsForShutdown");
+						}
+					}
+					Thread.yield();
+				}
+				assertTrue(draining, "the lifecycle caller must reach the actual admitted native-operation drain");
+				assertFalse(closed.isDone(), "close/clear must retain the admitted remap continuation");
+				release.countDown();
+				assertTrue(written.get(10L, TimeUnit.SECONDS) != LmdbValue.UNKNOWN_ID);
+				closed.get(10L, TimeUnit.SECONDS);
+			} finally {
+				release.countDown();
+				writer.join(TimeUnit.SECONDS.toMillis(10L));
+				closer.join(TimeUnit.SECONDS.toMillis(10L));
+				assertFalse(writer.isAlive());
+				assertFalse(closer.isAlive());
+			}
+		}
+		try (RendezvousValueStore reopened = new RendezvousValueStore(directory.resolve("values").toFile(), properties,
+				config("spoc,cspo"))) {
+			if (clear) {
+				assertEquals(LmdbValue.UNKNOWN_ID, reopened.getId(seedValue));
+			} else {
+				assertTrue(reopened.getId(seedValue) != LmdbValue.UNKNOWN_ID);
+			}
+			assertTrue(reopened.hasTrustedReferenceCounts());
+			reopened.startTransaction(true);
+			Value next = VF.createIRI("urn:remap:after-lifecycle");
+			reopened.storeValue(next);
+			reopened.commit();
+			assertTrue(reopened.getId(next) != LmdbValue.UNKNOWN_ID);
+		}
+	}
 
 	@Test
 	void cleanupResumesAfterTheRetirementWakePrecedesTheLastReadBarrierUnlock(@TempDir Path directory)
@@ -326,7 +516,7 @@ class ValueStoreStandaloneMaintenanceTest {
 		}
 	}
 
-	private static final class RendezvousValueStore extends ValueStore implements AutoCloseable {
+	private static class RendezvousValueStore extends ValueStore implements AutoCloseable {
 		private final AtomicBoolean pauseLookup = new AtomicBoolean();
 		private final CountDownLatch lookupEntered = new CountDownLatch(1);
 		private final CountDownLatch releaseLookup = new CountDownLatch(1);
