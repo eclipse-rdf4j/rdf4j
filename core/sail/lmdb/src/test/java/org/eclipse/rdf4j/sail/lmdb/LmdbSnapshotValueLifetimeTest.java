@@ -91,6 +91,63 @@ class LmdbSnapshotValueLifetimeTest {
 	private static final double TRIPLE_STORE_GROWTH_THRESHOLD = 0.10d;
 
 	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void postReadyUnusedStatAdmissionOwnsOneValueReaderUntilReleased(@TempDir File dataDir) throws Exception {
+		AdmissionObservationStore store = new AdmissionObservationStore(dataDir, true);
+		try {
+			store.init();
+			IRI subject = VF.createIRI("urn:snapshot-lifetime:post-ready-owner:subject");
+			try (SailConnection seed = store.getConnection()) {
+				seed.begin(IsolationLevels.SNAPSHOT);
+				seed.addStatement(subject, PREDICATE, VF.createLiteral("post-ready owner seed"));
+				seed.commit();
+			}
+
+			TxnManager valueManager = store.valueStore.getTxnManager();
+			assertEquals(TxnManager.POOL_SIZE - 1,
+					valueManager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0),
+					"deferring only the post-ready start must leave the committed seed with all ordinary readers available");
+			store.startDeferredPostReadyMaintenance();
+			assertTrue(store.postReadyValueAdmissionReached.await(10, TimeUnit.SECONDS),
+					"the real post-ready unused-stat estimate must admit a ValueStore reader");
+			var observation = store.postReadyValueAdmission.get();
+			assertNotNull(observation, "the admission observer must capture the actual post-ready reader");
+			assertEquals("LmdbStore-PostReady", observation.thread().getName(),
+					"the held admission must belong to the real post-ready worker");
+			assertTrue(hasStackFrame(observation.stack(), LmdbSailStore.class.getName(),
+					"reclaimPersistedUnusedIdsAfterInitialization"),
+					"the actual owner stack must be the post-ready unused-ID reclamation path");
+			assertTrue(hasStackFrame(observation.stack(), ValueStore.class.getName(),
+					"estimatePersistedUnusedBatchWriteBytes"),
+					"the actual owner must be inside the persisted-unused statistics estimate");
+			List<Txn> activeValueReaders = valueManager.activeOrdinaryReaderSnapshotForTest();
+			assertEquals(1, activeValueReaders.size(),
+					store.activeOrdinaryReaders("ValueStore", valueManager));
+			assertTrue(activeValueReaders.get(0) == observation.transaction(),
+					"the captured post-ready transaction must be the sole held ordinary ValueStore reader");
+			assertEquals(TxnManager.POOL_SIZE - 2,
+					valueManager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0),
+					"the held post-ready reader must account for exactly one ordinary slot");
+			System.out.println("POST_READY_UNUSED_STAT_ADMISSION_HELD availableSlots="
+					+ valueManager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0) + "/" + TxnManager.POOL_SIZE + "\n"
+					+ store.activeOrdinaryReaders("ValueStore", valueManager));
+
+			store.releasePostReadyValueAdmission.countDown();
+			LmdbGcTestMaintenance.awaitPostReady(store);
+			assertTrue(store.awaitIndexRebuild(10, TimeUnit.SECONDS),
+					"requested statement and term layouts must finish after the post-ready owner releases");
+			int availableAfterPostReady = valueManager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0);
+			assertEquals(TxnManager.POOL_SIZE - 1, availableAfterPostReady,
+					"post-ready owner and requested layout completion must return the exact ordinary slot count");
+			System.out.println("POST_READY_UNUSED_STAT_ADMISSION_RELEASED availableSlots="
+					+ availableAfterPostReady + "/" + TxnManager.POOL_SIZE);
+		} finally {
+			store.releasePostReadyValueAdmission.countDown();
+			store.shutDown();
+		}
+	}
+
+	@Test
 	void statementAndQuotedTermValuesRemainUsableAfterTheirViewCloses(@TempDir File dataDir) throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc").setForceSync(true));
 		IRI subject = VF.createIRI("urn:snapshot-lifetime:subject");
@@ -1632,15 +1689,20 @@ class LmdbSnapshotValueLifetimeTest {
 				seed.addStatement(subject, PREDICATE, outer, context);
 				seed.commit();
 			}
+			LmdbGcTestMaintenance.awaitPostReady(store);
+			assertTrue(store.awaitIndexRebuild(10, TimeUnit.SECONDS),
+					"requested statement and term layouts must finish before paired reader slots are measured");
 
 			TxnManager tripleManager = store.tripleStore.getTxnManager();
 			TxnManager valueManager = store.valueStore.getTxnManager();
 			int initialTripleSlots = tripleManager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0);
 			int initialValueSlots = valueManager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0);
 			assertEquals(TxnManager.POOL_SIZE - 1, initialTripleSlots,
-					"the fixture must begin with every ordinary TripleStore reader slot available");
+					"the fixture must begin with every ordinary TripleStore reader slot available\n"
+							+ store.activeOrdinaryReaders("TripleStore", tripleManager));
 			assertEquals(TxnManager.POOL_SIZE - 1, initialValueSlots,
-					"the fixture must begin with every ordinary ValueStore reader slot available");
+					"the fixture must begin with every ordinary ValueStore reader slot available\n"
+							+ store.activeOrdinaryReaders("ValueStore", valueManager));
 			int externalSnapshotCount = initialValueSlots - 1;
 			SailSource source = store.getBackingStore().getExplicitSailSource();
 			for (int i = 0; i < externalSnapshotCount; i++) {
@@ -1649,9 +1711,11 @@ class LmdbSnapshotValueLifetimeTest {
 			assertEquals(126, heldSnapshots.size(),
 					"the fixture must hold all but one ordinary paired reader slot externally");
 			assertEquals(1, tripleManager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0),
-					"each external snapshot must retain its TripleStore reader slot");
+					"each external snapshot must retain its TripleStore reader slot\n"
+							+ store.activeOrdinaryReaders("TripleStore", tripleManager));
 			assertEquals(1, valueManager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0),
-					"each external snapshot must retain its ValueStore reader slot");
+					"each external snapshot must retain its ValueStore reader slot\n"
+							+ store.activeOrdinaryReaders("ValueStore", valueManager));
 
 			store.pauseNextNativeCommit();
 			AtomicReference<Thread> readerThread = new AtomicReference<>();
@@ -1682,9 +1746,11 @@ class LmdbSnapshotValueLifetimeTest {
 					"the event-driven wait must not retain the paired reservation attempt: " + waitingReader);
 			assertFalse(pendingAdmission.isDone(), "the paired read must wait for the association owner to finish");
 			assertEquals(1, tripleManager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0),
-					"the deferred paired attempt must return its TripleStore reservation");
+					"the deferred paired attempt must return its TripleStore reservation\n"
+							+ store.activeOrdinaryReaders("TripleStore", tripleManager));
 			assertEquals(1, valueManager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0),
-					"the deferred paired attempt must return its ValueStore reservation");
+					"the deferred paired attempt must return its ValueStore reservation\n"
+							+ store.activeOrdinaryReaders("ValueStore", valueManager));
 			assertEquals(126, heldSnapshots.size(),
 					"all external paired snapshots must remain open while admission is deferred");
 
@@ -1692,9 +1758,11 @@ class LmdbSnapshotValueLifetimeTest {
 			writerCommit.get(5, TimeUnit.SECONDS);
 			admittedDataset = pendingAdmission.get(5, TimeUnit.SECONDS);
 			assertEquals(0, tripleManager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0),
-					"the admitted view must hold the final TripleStore reader slot");
+					"the admitted view must hold the final TripleStore reader slot\n"
+							+ store.activeOrdinaryReaders("TripleStore", tripleManager));
 			assertEquals(0, valueManager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0),
-					"the admitted view must hold the final ValueStore reader slot");
+					"the admitted view must hold the final ValueStore reader slot\n"
+							+ store.activeOrdinaryReaders("ValueStore", valueManager));
 			assertEquals(126, heldSnapshots.size(),
 					"the original paired snapshots must remain held during nested value materialization");
 			try (CloseableIteration<? extends Statement> statements = admittedDataset.getStatements(subject, PREDICATE,
@@ -2519,16 +2587,38 @@ class LmdbSnapshotValueLifetimeTest {
 	}
 
 	private static final class AdmissionObservationStore extends LmdbStore {
+		private record AdmissionObservation(Txn transaction, String manager, Thread thread, StackTraceElement[] stack) {
+		}
 
 		private final CountDownLatch nativeCommitReached = new CountDownLatch(1);
 		private final CountDownLatch releaseNativeCommit = new CountDownLatch(1);
 		private final AtomicBoolean pauseNextNativeCommit = new AtomicBoolean();
 		private final AtomicReference<Thread> nativeCommitThread = new AtomicReference<>();
+		private final AtomicReference<Runnable> deferredPostReadyStart = new AtomicReference<>();
+		private final CountDownLatch postReadyValueAdmissionReached = new CountDownLatch(1);
+		private final CountDownLatch releasePostReadyValueAdmission = new CountDownLatch(1);
+		private final AtomicReference<AdmissionObservation> postReadyValueAdmission = new AtomicReference<>();
+		private final Map<Txn, AdmissionObservation> admissions = Collections
+				.synchronizedMap(new IdentityHashMap<>());
+		private final boolean deferPostReadyStart;
 		private PausingCommitValueStore valueStore;
 		private TripleStore tripleStore;
 
 		private AdmissionObservationStore(File dataDir) {
+			this(dataDir, false);
+		}
+
+		private AdmissionObservationStore(File dataDir, boolean deferPostReadyStart) {
 			super(dataDir, new LmdbStoreConfig("spoc,posc").setForceSync(true));
+			this.deferPostReadyStart = deferPostReadyStart;
+		}
+
+		void startDeferredPostReadyMaintenance() {
+			Runnable start = deferredPostReadyStart.getAndSet(null);
+			if (start == null) {
+				throw new IllegalStateException("The post-ready maintenance start was not captured");
+			}
+			start.run();
 		}
 
 		void pauseNextNativeCommit() {
@@ -2540,7 +2630,7 @@ class LmdbSnapshotValueLifetimeTest {
 		@Override
 		LmdbSailStore createBackingStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
 				boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
-			return new LmdbSailStore(dataDir, properties, config, sketchBasedJoinEstimatorEnabled,
+			LmdbSailStore backingStore = new LmdbSailStore(dataDir, properties, config, sketchBasedJoinEstimatorEnabled,
 					(valueDir, valueProperties, valueConfig) -> {
 						valueStore = new PausingCommitValueStore(valueDir, valueProperties, valueConfig);
 						return valueStore;
@@ -2548,7 +2638,69 @@ class LmdbSnapshotValueLifetimeTest {
 					(tripleDir, tripleProperties, tripleConfig, values) -> {
 						tripleStore = new TripleStore(tripleDir, tripleProperties, tripleConfig, values);
 						return tripleStore;
-					});
+					}) {
+				@Override
+				void startBackgroundMaintenanceAfterInitialization() {
+					if (!deferPostReadyStart) {
+						super.startBackgroundMaintenanceAfterInitialization();
+						return;
+					}
+					if (!deferredPostReadyStart.compareAndSet(null,
+							super::startBackgroundMaintenanceAfterInitialization)) {
+						throw new IllegalStateException("Post-ready maintenance start was captured more than once");
+					}
+				}
+			};
+			valueStore.getTxnManager().setAdmissionObserverForTest(txn -> recordAdmission("ValueStore", txn));
+			tripleStore.getTxnManager().setAdmissionObserverForTest(txn -> recordAdmission("TripleStore", txn));
+			return backingStore;
+		}
+
+		private void recordAdmission(String manager, Txn txn) {
+			AdmissionObservation observation = new AdmissionObservation(txn, manager, Thread.currentThread(),
+					Thread.currentThread().getStackTrace());
+			admissions.put(txn, observation);
+			if (deferPostReadyStart && manager.equals("ValueStore")
+					&& hasStackFrame(observation.stack(), ValueStore.class.getName(),
+							"estimatePersistedUnusedBatchWriteBytes")
+					&& postReadyValueAdmission.compareAndSet(null, observation)) {
+				postReadyValueAdmissionReached.countDown();
+				try {
+					if (!releasePostReadyValueAdmission.await(10, TimeUnit.SECONDS)) {
+						throw new AssertionError("The test must release the held post-ready ValueStore admission");
+					}
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					throw new IllegalStateException("The held post-ready ValueStore admission was interrupted",
+							interrupted);
+				}
+			}
+		}
+
+		String activeOrdinaryReaders(String manager, TxnManager txnManager) {
+			StringBuilder diagnostics = new StringBuilder(manager).append(" active ordinary readers:");
+			List<Txn> active = txnManager.activeOrdinaryReaderSnapshotForTest();
+			if (active.isEmpty()) {
+				return diagnostics.append(" none").toString();
+			}
+			synchronized (admissions) {
+				for (Txn txn : active) {
+					AdmissionObservation observation = admissions.get(txn);
+					diagnostics.append("\nTxn@").append(Integer.toHexString(System.identityHashCode(txn)));
+					if (observation == null) {
+						diagnostics.append(" admission=unobserved");
+						continue;
+					}
+					diagnostics.append(" admittedBy=")
+							.append(observation.manager())
+							.append(" thread=")
+							.append(observation.thread().getName());
+					for (StackTraceElement frame : observation.stack()) {
+						diagnostics.append("\n  at ").append(frame);
+					}
+				}
+			}
+			return diagnostics.toString();
 		}
 
 		private final class PausingCommitValueStore extends ValueStore {
@@ -2597,6 +2749,15 @@ class LmdbSnapshotValueLifetimeTest {
 
 	private static boolean hasStackFrame(ThreadInfo threadInfo, String className, String methodName) {
 		for (StackTraceElement frame : threadInfo.getStackTrace()) {
+			if (className.equals(frame.getClassName()) && methodName.equals(frame.getMethodName())) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean hasStackFrame(StackTraceElement[] stack, String className, String methodName) {
+		for (StackTraceElement frame : stack) {
 			if (className.equals(frame.getClassName()) && methodName.equals(frame.getMethodName())) {
 				return true;
 			}

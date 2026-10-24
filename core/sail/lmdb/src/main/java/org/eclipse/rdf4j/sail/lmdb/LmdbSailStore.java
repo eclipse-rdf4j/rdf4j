@@ -4899,6 +4899,90 @@ class LmdbSailStore implements SailStore {
 		return mapGrowthCoordinator.admissionClosed();
 	}
 
+	/** Cached coordinator state and the actual driver, including virtual threads; never performs native work. */
+	String growthDiagnosticForTest() {
+		MapGrowthCoordinator coordinator = mapGrowthCoordinator;
+		if (!coordinator.lock.tryLock()) {
+			return "Growth coordinator lock is held";
+		}
+		StringBuilder state = new StringBuilder();
+		Thread driver;
+		try {
+			driver = coordinator.growthThread;
+			GrowthEpisode current = coordinator.episode;
+			state.append("shutdown=")
+					.append(coordinator.shuttingDown)
+					.append(" attempts=")
+					.append(coordinator.attempts.size())
+					.append(" views=")
+					.append(coordinator.views.size())
+					.append(" pendingViews=")
+					.append(coordinator.pendingViews)
+					.append(" transactions=")
+					.append(coordinator.transactions.size())
+					.append(" directWriters=")
+					.append(coordinator.directWriters.size())
+					.append(" queuedWriters=")
+					.append(coordinator.queuedWriters.size())
+					.append(" bufferedWriters=")
+					.append(coordinator.bufferedWriters.size());
+			if (current != null) {
+				state.append("\nEpisode phase=")
+						.append(current.phase)
+						.append(" managed=")
+						.append(current.managed)
+						.append(" admissionClosed=")
+						.append(current.admissionClosed)
+						.append(" growthStarted=")
+						.append(current.growthStarted)
+						.append(" references=")
+						.append(current.attempts)
+						.append(" warningOwners=")
+						.append(current.warningOwners.size())
+						.append(" parkedAttempts=")
+						.append(current.parkedAttempts.size())
+						.append(" dictionaryClassifications=")
+						.append(current.pendingDictionaryReplayClassifications)
+						.append(" quiescenceRunning=")
+						.append(current.quiescenceRunning);
+			} else {
+				state.append("\nEpisode absent");
+			}
+			for (ReadAttemptLease attempt : coordinator.attempts.keySet()) {
+				state.append("\nAttempt generation=")
+						.append(attempt.generation)
+						.append(" owner=")
+						.append(attempt.owner == null ? "null" : attempt.owner.getClass().getName())
+						.append('@')
+						.append(System.identityHashCode(attempt.owner))
+						.append(" writing=")
+						.append(attempt.writing)
+						.append(" complete=")
+						.append(attempt.completed)
+						.append(" closed=")
+						.append(attempt.closed)
+						.append(" failed=")
+						.append(attempt.failed);
+			}
+		} finally {
+			coordinator.lock.unlock();
+		}
+		if (driver == null) {
+			state.append("\nGrowth driver absent");
+		} else {
+			state.append("\nGrowth driver ")
+					.append(driver.getName())
+					.append(" virtual=")
+					.append(driver.isVirtual())
+					.append(" state=")
+					.append(driver.getState());
+			for (StackTraceElement frame : driver.getStackTrace()) {
+				state.append("\n    at ").append(frame);
+			}
+		}
+		return state.toString();
+	}
+
 	private MapGrowthAttempt beginMapGrowthAttemptForCurrentWriter(MapResizeKind kind) throws IOException {
 		WriterTransaction transaction = nativeWriterTransaction(kind);
 		if (!ownsNativeWriter(kind, transaction)) {

@@ -28,6 +28,8 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
@@ -36,6 +38,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.LongSupplier;
 
@@ -132,10 +135,22 @@ final class TxnManager {
 
 	private volatile boolean managerClosed;
 	private volatile Runnable readerRetirementListener;
+	private volatile Consumer<Txn> admissionObserverForTest;
 
 	/** Listener must only signal its maintenance worker; native work belongs outside the notification. */
 	void setReaderRetirementListener(Runnable listener) {
 		readerRetirementListener = listener;
+	}
+
+	void setAdmissionObserverForTest(Consumer<Txn> observer) {
+		admissionObserverForTest = observer;
+	}
+
+	private void observeAdmissionForTest(Txn transaction) {
+		Consumer<Txn> observer = admissionObserverForTest;
+		if (observer != null) {
+			observer.accept(transaction);
+		}
 	}
 
 	/** Caller holds the exclusive native barrier, which also fences admission and snapshot renewal. */
@@ -286,6 +301,17 @@ final class TxnManager {
 		return Math.max(0, Math.min(maxReaders - leased, available) - reservedSlots);
 	}
 
+	/** Cached-only view of currently active ordinary reader transactions for diagnostics. */
+	List<Txn> activeOrdinaryReaderSnapshotForTest() {
+		List<Txn> active = new ArrayList<>();
+		for (Txn transaction : open) {
+			if (!transaction.isIdle() && !transaction.isClosed() && transaction.readerPermit == readerSlots) {
+				active.add(transaction);
+			}
+		}
+		return active;
+	}
+
 	/** Opens a family of untracked readers pinned to one committed data revision. */
 	Txn[] createReadTxnPinnedFamily(int count, LongSupplier dataRevision) throws IOException {
 		if (count <= 0) {
@@ -374,6 +400,7 @@ final class TxnManager {
 				permitConsumed = true;
 				try {
 					checkQueryDeadline(deadline);
+					observeAdmissionForTest(pooled);
 				} catch (RuntimeException | Error e) {
 					pooled.close();
 					throw e;
@@ -394,6 +421,7 @@ final class TxnManager {
 			permitConsumed = true;
 			try {
 				checkQueryDeadline(deadline);
+				observeAdmissionForTest(txn);
 			} catch (RuntimeException | Error e) {
 				txn.close();
 				throw e;
@@ -899,9 +927,11 @@ final class TxnManager {
 				failure = appendCloseFailure(failure, cleanupFailure);
 			}
 		}
-		// Closed cursor entries can remain in a caller's thread-local pool. Their transaction manager must not
-		// retain the maintenance owner after its last reader has retired, including when native cleanup failed.
+		// Closed cursor entries can remain in a caller's thread-local pool. Their transaction manager must not retain
+		// the maintenance owner through either callback after its last reader has retired, even when native cleanup
+		// failed.
 		readerRetirementListener = null;
+		admissionObserverForTest = null;
 		rethrowCloseFailure(failure);
 	}
 
