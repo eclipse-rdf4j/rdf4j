@@ -330,6 +330,8 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		store.init();
 		try {
+			LmdbGcTestMaintenance.awaitPostReady(store);
+			assertTrue(store.awaitIndexRebuild(30, TimeUnit.SECONDS));
 			LmdbSailStore backingStore = store.getBackingStore();
 			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
 
@@ -590,6 +592,8 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc").setBulkOperationSize(1));
 		store.init();
 		try {
+			LmdbGcTestMaintenance.awaitPostReady(store);
+			assertTrue(store.awaitIndexRebuild(30, TimeUnit.SECONDS));
 			LmdbSailStore backingStore = store.getBackingStore();
 			backingStore.enableMultiThreading = false;
 			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
@@ -638,6 +642,8 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
 		store.init();
 		try {
+			LmdbGcTestMaintenance.awaitPostReady(store);
+			assertTrue(store.awaitIndexRebuild(30, TimeUnit.SECONDS));
 			LmdbSailStore backingStore = store.getBackingStore();
 			backingStore.enableMultiThreading = false;
 			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();

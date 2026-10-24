@@ -2007,15 +2007,20 @@ class LmdbDirectAdjacencyQueryTest {
 			connection.remove(S1, P2, O1);
 		}
 		direct.pauseApplierForTest(false);
+		awaitDirectAdjacencyReady();
 
 		long hitsBefore = direct.snapshotMetrics().lookupHits;
 		try (var dataset = dataset()) {
 			assertThat(dataset.source.count(-1, p2, -1, -1)).isZero();
 		}
 		assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
+		long exactMissesBeforeQuery = direct.snapshotMetrics().exactMisses;
 		LmdbPrefixRunPlan.resetMetrics();
 		assertThat(queryRows("SELECT (COUNT(*) AS ?count) WHERE { ?s <" + P2 + "> ?o }", "count"))
 				.containsExactly("0");
+		assertThat(direct.snapshotMetrics().exactMisses)
+				.as("the query must itself consume the direct index's exact-empty proof")
+				.isGreaterThan(exactMissesBeforeQuery);
 		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get())
 				.as("the optimizer prunes an exactly empty pattern before opening a prefix cursor")
 				.isZero();

@@ -56,4 +56,9 @@ final class LmdbGcTestMaintenance {
 			}
 		});
 	}
+
+	/** Runs one explicit bounded physical-reclamation batch for fixtures that require reusable IDs. */
+	static int reclaimUnusedValues(LmdbStore store, int maxVisitedRecords) throws IOException {
+		return store.getBackingStore().valueStore().reclaimPersistedUnusedIdsBatch(maxVisitedRecords);
+	}
 }
