@@ -822,7 +822,11 @@ class LmdbSailStore implements SailStore {
 							return;
 						}
 						if (Thread.currentThread() == growthThread && episode.phase == GrowthPhase.RESERVE_REPLAYS
-								&& attempt != null && !attempt.closed) {
+								&& attempt != null) {
+							// The driver is reserving a replacement snapshot for a parked attempt. That attempt may
+							// have closed after the driver's pre-check; the driver owns this closed episode, so waiting
+							// here could never be satisfied. Admit the view: reserveParkedSnapshots discards a view
+							// reserved for an attempt that closed meanwhile.
 							return;
 						}
 						if (!waited) {
