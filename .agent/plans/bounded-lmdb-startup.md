@@ -46,7 +46,7 @@ After a normal JVM crash, the repository must establish quickly whether componen
 - [x] Preserve terminal replay invalidation through replacement.
 - [x] Preserve logical rollback without native authority.
 - [x] Publish verified A+B lifecycle fixes.
-- [in_progress] Audit predicate proof and route reds.
+- [in_progress] Correct fixture preconditions without relaxing assertions.
 - [ ] Reconcile remaining read-mode fixture assumptions.
 - [x] (2026-10-24) Verify focused regression and estimator suites.
 - [x] (2026-10-24) Resolve remap restart versus maintenance admission.

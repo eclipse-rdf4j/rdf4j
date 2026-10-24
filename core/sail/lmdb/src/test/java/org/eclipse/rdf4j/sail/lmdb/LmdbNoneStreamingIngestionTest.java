@@ -4487,14 +4487,14 @@ class LmdbNoneStreamingIngestionTest {
 	@Test
 	@Timeout(value = 120, unit = TimeUnit.SECONDS)
 	void nativeOwnerBoundNoneRecoveryReResolvesInputAfterPeerReusesItsValueId(@TempDir Path dataDir) throws Exception {
-		long evictionIntervalMillis = 25L;
-		LmdbStoreConfig config = smallMaps().setTripleDBSize(16L << 20)
+		LmdbStoreConfig config = smallMaps().setTripleIndexes("spoc,posc,ospc")
+				.setTripleDBSize(16L << 20)
 				.setValueDBSize(16L << 20)
-				.setValueEvictionInterval(evictionIntervalMillis)
 				.setMapGrowthThreshold(0.5d)
 				.setMapGrowthReadDrainTimeoutMillis(0L);
 		ObservingLmdbStore sail = new ObservingLmdbStore(dataDir.toFile(), config);
 		sail.init();
+		LmdbGcTestMaintenance.awaitTrustedReclamationSetup(sail);
 		LmdbSailStore backing = sail.getBackingStore();
 		IRI subject = VALUE_FACTORY.createIRI("urn:none-streaming:reuse:shared-subject");
 		IRI predicate = VALUE_FACTORY.createIRI("urn:none-streaming:reuse:shared-predicate");
@@ -4557,9 +4557,25 @@ class LmdbNoneStreamingIngestionTest {
 						delete.deprecate(seed);
 						delete.flush();
 					}
-					// Let the normal configured retirement interval expire. The next native dictionary transaction
-					// reclaims the eligible ID before allocating the replacement term.
-					TimeUnit.MILLISECONDS.sleep(evictionIntervalMillis + 25L);
+					assertEquals(LmdbValue.UNKNOWN_ID, values.getId(retiredValue),
+							"the delete publication must remove the retired lexical owner");
+					assertFalse(values.hasRetiredIds(),
+							"the delete publication must complete its bounded retirement batch");
+					long unusedBefore = values.getLmdbStats().get("unused_ids").entries();
+					assertEquals(1L, unusedBefore,
+							"the fixture has one known eligible unused value after deleting the seed");
+					long freeBefore = values.getLmdbStats().get("free_ids").entries();
+					assertTrue(values.hasTrustedReferenceCounts(), "the replacement fixture requires exact counts");
+					int visited = values.reclaimPersistedUnusedIdsBatch(Math.toIntExact(unusedBefore));
+					ObservingValueStore.ReclamationObservation observation = values.lastReclamationObservation();
+					assertTrue(visited > 0, "the exact unused cohort must be eligible for a bounded pass: unusedBefore="
+							+ unusedBefore + ", freeBefore=" + freeBefore + ", trusted="
+							+ values.hasTrustedReferenceCounts() + ", observation=" + observation);
+					assertEquals("visited", observation.phase(), "the reclamation decision must admit this cohort");
+					assertEquals(unusedBefore - visited, values.getLmdbStats().get("unused_ids").entries(),
+							"one finite pass must consume only the eligible unused cohort");
+					assertTrue(values.getLmdbStats().get("free_ids").entries() > freeBefore,
+							"the finite pass must persist a real reusable free ID");
 					try (SailSink add = peerSource.sink(IsolationLevels.NONE)) {
 						add.approve(replacement);
 						add.flush();
@@ -5990,6 +6006,7 @@ class LmdbNoneStreamingIngestionTest {
 		ObservingLmdbStore sail = new ObservingLmdbStore(dataDir.toFile(), config);
 		sail.init();
 		try {
+			LmdbGcTestMaintenance.awaitTrustedReclamationSetup(sail);
 			LmdbSailStore backing = sail.getBackingStore();
 			ObservingTripleStore triples = sail.triples.get();
 			ObservingValueStore values = sail.values.get();
@@ -6926,6 +6943,7 @@ class LmdbNoneStreamingIngestionTest {
 		private final AtomicInteger recoveryLookups = new AtomicInteger();
 		private volatile Set<Value> recoveryTrackedValues = Set.of();
 		private volatile AtomicReference<Thread> recoveryThread = new AtomicReference<>();
+		private volatile ReclamationObservation lastReclamationObservation;
 
 		private ObservingValueStore(File directory, StoreProperties properties, LmdbStoreConfig config)
 				throws IOException {
@@ -6947,6 +6965,17 @@ class LmdbNoneStreamingIngestionTest {
 			return nativeCommits.get();
 		}
 
+		@Override
+		void observeBoundedUnusedReclamationForTest(String phase, long requiredBytes, long occupiedBytes, long mapBytes,
+				int visited) {
+			lastReclamationObservation = new ReclamationObservation(phase, requiredBytes, occupiedBytes, mapBytes,
+					visited, protectionSnapshotForTest());
+		}
+
+		private ReclamationObservation lastReclamationObservation() {
+			return lastReclamationObservation;
+		}
+
 		private void trackRecoveryLookups(Set<Value> values, AtomicReference<Thread> thread) {
 			recoveryTrackedValues = Set.copyOf(values);
 			recoveryThread = thread;
@@ -6954,6 +6983,10 @@ class LmdbNoneStreamingIngestionTest {
 
 		private int recoveryLookupCount() {
 			return recoveryLookups.get();
+		}
+
+		private record ReclamationObservation(String phase, long requiredBytes, long occupiedBytes, long mapBytes,
+				int visited, ValueProtectionSnapshot protection) {
 		}
 
 		@Override
