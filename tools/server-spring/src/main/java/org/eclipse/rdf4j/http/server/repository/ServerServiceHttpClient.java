@@ -36,10 +36,10 @@ import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClientConfig;
 import org.eclipse.rdf4j.http.server.repository.ServerOutboundDestinationPolicy.Origin;
 
 /**
- * HTTP transport used only for Server-created SPARQL SERVICE connections. Every redirect gets a new client whose DNS
- * resolver validates and pins the addresses actually used by its socket.
+ * HTTP transport for Server-created outbound RDF connections. Every redirect gets a new client whose DNS resolver
+ * validates and pins the addresses actually used by its socket.
  */
-final class ServerServiceHttpClient implements RDF4JHttpClient {
+public final class ServerServiceHttpClient implements RDF4JHttpClient {
 
 	private static final Duration MAX_RESPONSE_TIMEOUT = Duration.ofSeconds(30);
 	private static final int HARD_MAX_REDIRECTS = 20;
@@ -48,6 +48,10 @@ final class ServerServiceHttpClient implements RDF4JHttpClient {
 	private final boolean followRedirects;
 	private final int maxRedirects;
 	private final AtomicBoolean closed = new AtomicBoolean();
+
+	public ServerServiceHttpClient() {
+		this(ServerOutboundDestinationPolicy.INSTANCE);
+	}
 
 	ServerServiceHttpClient(ServerOutboundDestinationPolicy destinationPolicy) {
 		this(destinationPolicy, RDF4JHttpClientConfig.defaultConfig());

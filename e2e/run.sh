@@ -32,6 +32,17 @@ export RDF4J_WORKBENCH_BASE_URL="${RDF4J_WORKBENCH_BASE_URL:-http://127.0.0.1:80
 ADD_URL_ALLOWED_ORIGINS_PROPERTY="org.eclipse.rdf4j.workbench.add-url-allowed-origins"
 export RDF4J_E2E_REFUSED_URL_ORIGIN="${RDF4J_E2E_REFUSED_URL_ORIGIN:-http://127.0.0.1:9}"
 ADD_URL_ALLOWED_ORIGINS="http://127.0.0.1:8080,${RDF4J_E2E_REFUSED_URL_ORIGIN}"
+REMOTE_RESOURCE_ALLOWED_ORIGINS_PROPERTY="rdf4j.server.remoteResourceAllowedOrigins"
+
+prepare_remote_resource_origins() {
+  # A Server-managed SPARQLRepository test needs a local endpoint that deliberately never answers. Choose its port
+  # before Server starts, so the policy can trust that one exact test origin without trusting arbitrary local ports.
+  if [ -z "${RDF4J_E2E_SPARQL_MOCK_PORT:-}" ]; then
+    RDF4J_E2E_SPARQL_MOCK_PORT="$(node -e 'const server = require("node:net").createServer(); server.listen(0, "0.0.0.0", () => { const port = server.address().port; server.close(() => process.stdout.write(String(port))); });')"
+  fi
+  export RDF4J_E2E_SPARQL_MOCK_PORT
+  REMOTE_RESOURCE_ALLOWED_ORIGINS="http://${RDF4J_E2E_HOST_FROM_SERVER:-127.0.0.1}:${RDF4J_E2E_SPARQL_MOCK_PORT},${RDF4J_E2E_REFUSED_URL_ORIGIN}"
+}
 
 stop_spring_boot() {
   if [ -z "${SERVER_PID:-}" ]; then
@@ -163,6 +174,7 @@ wait_for_rdf4j() {
 }
 
 start_spring_boot() {
+  prepare_remote_resource_origins
   echo "Building RDF4J for Spring Boot E2E"
   (cd "$ROOT_DIR" && mvn install -Pquick)
 
@@ -174,7 +186,7 @@ start_spring_boot() {
   (
     cd "$ROOT_DIR"
     mvn -pl tools/server-boot spring-boot:run \
-      -Dspring-boot.run.jvmArguments="-Dorg.eclipse.rdf4j.appdata.basedir=${SPRING_BOOT_DATA_DIR} '-D${ACCEPTED_SERVER_PREFIXES_PROPERTY}=${accepted}' -D${ADD_URL_ALLOWED_ORIGINS_PROPERTY}=${ADD_URL_ALLOWED_ORIGINS}"
+      -Dspring-boot.run.jvmArguments="-Dorg.eclipse.rdf4j.appdata.basedir=${SPRING_BOOT_DATA_DIR} '-D${ACCEPTED_SERVER_PREFIXES_PROPERTY}=${accepted}' -D${ADD_URL_ALLOWED_ORIGINS_PROPERTY}=${ADD_URL_ALLOWED_ORIGINS} -D${REMOTE_RESOURCE_ALLOWED_ORIGINS_PROPERTY}=${REMOTE_RESOURCE_ALLOWED_ORIGINS}"
   ) &
   SERVER_PID=$!
 }
@@ -188,8 +200,9 @@ start_docker_tomcat() {
   # itself. docker-compose.e2e.yml names this host host.docker.internal also on Linux.
   export RDF4J_E2E_HOST_FROM_SERVER="${RDF4J_E2E_HOST_FROM_SERVER:-host.docker.internal}"
   echo "RDF4J Server reaches this host at ${RDF4J_E2E_HOST_FROM_SERVER}"
+  prepare_remote_resource_origins
   # Tomcat's catalina.sh evaluates CATALINA_OPTS, to which the image adds RDF4J_OPTS: the quotes keep the list whole.
-  export RDF4J_OPTS="'-D${ACCEPTED_SERVER_PREFIXES_PROPERTY}=/rdf4j-server http://${RDF4J_E2E_HOST_FROM_SERVER}:' -D${ADD_URL_ALLOWED_ORIGINS_PROPERTY}=${ADD_URL_ALLOWED_ORIGINS}"
+  export RDF4J_OPTS="'-D${ACCEPTED_SERVER_PREFIXES_PROPERTY}=/rdf4j-server http://${RDF4J_E2E_HOST_FROM_SERVER}:' -D${ADD_URL_ALLOWED_ORIGINS_PROPERTY}=${ADD_URL_ALLOWED_ORIGINS} -D${REMOTE_RESOURCE_ALLOWED_ORIGINS_PROPERTY}=${REMOTE_RESOURCE_ALLOWED_ORIGINS}"
 
   echo "Starting Docker/Tomcat RDF4J container"
   (cd "$DOCKER_DIR" && APP_SERVER=tomcat docker compose -f docker-compose.yml -f "${E2E_DIR}/docker-compose.e2e.yml" \

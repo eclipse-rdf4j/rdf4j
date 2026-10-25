@@ -75,6 +75,7 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 	private long slowQueryLogThresholdSeconds;
 	private long slowQueryLogFirstResultThresholdSeconds;
 	private String slowQueryLogFile;
+	private transient String runtimeSlowQueryLogFile;
 	private boolean experimentalQueryOptimizations;
 
 	public boolean isExperimentalQueryOptimizations() {
@@ -235,10 +236,25 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 	}
 
 	public String getSlowQueryLogFile() {
-		return slowQueryLogFile;
+		return runtimeSlowQueryLogFile != null ? runtimeSlowQueryLogFile : slowQueryLogFile;
 	}
 
 	public void setSlowQueryLogFile(String slowQueryLogFile) {
 		this.slowQueryLogFile = slowQueryLogFile;
+		this.runtimeSlowQueryLogFile = null;
+	}
+
+	/**
+	 * Return the configured value, which is exported to RDF even when a managed runtime uses a resolved path.
+	 */
+	public String getConfiguredSlowQueryLogFile() {
+		return slowQueryLogFile;
+	}
+
+	/**
+	 * Use a validated path when creating a Sail without changing the configured value exported to RDF.
+	 */
+	public void setRuntimeSlowQueryLogFile(String runtimeSlowQueryLogFile) {
+		this.runtimeSlowQueryLogFile = runtimeSlowQueryLogFile;
 	}
 }

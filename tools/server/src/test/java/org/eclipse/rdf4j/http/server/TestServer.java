@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.http.server;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Array;
+import java.lang.reflect.InvocationTargetException;
 import java.net.ServerSocket;
 import java.net.URISyntaxException;
 import java.util.EnumSet;
@@ -112,8 +114,82 @@ public class TestServer {
 		webapp.setExtraClasspath(testClasses.getAbsolutePath());
 	}
 
+	File managedRepositoryDirectory(String repositoryId) throws ReflectiveOperationException {
+		Object dispatcherContext = webapp.getServletContext().getAttribute(DISPATCHER_CONTEXT_ATTRIBUTE);
+		Object serverManager = dispatcherContext.getClass()
+				.getMethod("getBean", String.class)
+				.invoke(dispatcherContext, "rdf4jRepositoryManager");
+		return (File) serverManager.getClass()
+				.getMethod("getRepositoryDir", String.class)
+				.invoke(serverManager, repositoryId);
+	}
+
+	void refreshManagedRepositories() throws ReflectiveOperationException {
+		Object dispatcherContext = webapp.getServletContext().getAttribute(DISPATCHER_CONTEXT_ATTRIBUTE);
+		Object serverManager = dispatcherContext.getClass()
+				.getMethod("getBean", String.class)
+				.invoke(dispatcherContext, "rdf4jRepositoryManager");
+		serverManager.getClass().getMethod("refresh").invoke(serverManager);
+	}
+
+	void recordSlowQuery(String repositoryId, String entry) throws ReflectiveOperationException {
+		Object dispatcherContext = webapp.getServletContext().getAttribute(DISPATCHER_CONTEXT_ATTRIBUTE);
+		Object serverManager = dispatcherContext.getClass()
+				.getMethod("getBean", String.class)
+				.invoke(dispatcherContext, "rdf4jRepositoryManager");
+		Object repository = serverManager.getClass()
+				.getMethod("getRepository", String.class)
+				.invoke(serverManager, repositoryId);
+		Object sail = repository.getClass().getMethod("getSail").invoke(repository);
+		ClassLoader webappLoader = webapp.getClassLoader();
+		Class<?> abstractSail = webappLoader.loadClass("org.eclipse.rdf4j.sail.helpers.AbstractSail");
+		webappLoader.loadClass("org.eclipse.rdf4j.sail.helpers.SlowQuerySupport")
+				.getMethod("log", abstractSail, String.class)
+				.invoke(null, sail, entry);
+	}
+
 	LongSupplier replayAcceptedCounter(String repositoryId) throws ReflectiveOperationException {
 		return growthCounter(repositoryId, "replayAcceptedCounter");
+	}
+
+	/**
+	 * Exercise the persisted repository inside the webapp, retaining server-side causes that the HTTP protocol does not
+	 * serialize. The repository and connection types live in the webapp class loader.
+	 */
+	Throwable serverRepositoryFailure(String repositoryId, String booleanQuery) throws ReflectiveOperationException {
+		Object dispatcherContext = webapp.getServletContext().getAttribute(DISPATCHER_CONTEXT_ATTRIBUTE);
+		Object serverManager = dispatcherContext.getClass()
+				.getMethod("getBean", String.class)
+				.invoke(dispatcherContext, "rdf4jRepositoryManager");
+		Object repository = serverManager.getClass()
+				.getMethod("getRepository", String.class)
+				.invoke(serverManager, repositoryId);
+		ClassLoader webappLoader = webapp.getClassLoader();
+		Class<?> repositoryType = webappLoader.loadClass("org.eclipse.rdf4j.repository.Repository");
+		Class<?> connectionType = webappLoader.loadClass("org.eclipse.rdf4j.repository.RepositoryConnection");
+		Object connection;
+		try {
+			connection = repositoryType.getMethod("getConnection").invoke(repository);
+		} catch (InvocationTargetException e) {
+			return e.getCause();
+		}
+		try {
+			if (booleanQuery == null) {
+				Object contexts = Array.newInstance(webappLoader.loadClass("org.eclipse.rdf4j.model.Resource"), 0);
+				connectionType.getMethod("size", contexts.getClass()).invoke(connection, contexts);
+			} else {
+				Object query = connectionType.getMethod("prepareBooleanQuery", String.class)
+						.invoke(connection, booleanQuery);
+				webappLoader.loadClass("org.eclipse.rdf4j.query.BooleanQuery")
+						.getMethod("evaluate")
+						.invoke(query);
+			}
+			return null;
+		} catch (InvocationTargetException e) {
+			return e.getCause();
+		} finally {
+			AutoCloseable.class.getMethod("close").invoke(connection);
+		}
 	}
 
 	LongSupplier replayRequestedCounter(String repositoryId) throws ReflectiveOperationException {

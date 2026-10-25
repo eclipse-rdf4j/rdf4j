@@ -256,7 +256,8 @@ test.describe('R8/R9 counts of a repository while another one is slow', () => {
             socket.on('close', () => sockets.delete(socket));
             socket.on('error', () => {});
         });
-        await new Promise(resolve => blackHole.listen(0, listenAddressForServer(), resolve));
+        const mockPort = Number(process.env.RDF4J_E2E_SPARQL_MOCK_PORT || 18081);
+        await new Promise(resolve => blackHole.listen(mockPort, listenAddressForServer(), resolve));
         const port = blackHole.address().port;
         await putRepository(request, slowId, `[ config:rep.type "openrdf:SPARQLRepository" ; `
             + `config:sparql.queryEndpoint <http://${hostFromServer()}:${port}/sparql> ]`);

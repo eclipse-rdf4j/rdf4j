@@ -34,6 +34,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.SessionManagerDependent;
@@ -95,6 +96,9 @@ public class LocalRepositoryManager extends RepositoryManager {
 	 * dependent life cycle
 	 */
 	private volatile SPARQLServiceResolver serviceResolver;
+
+	private volatile Consumer<RepositoryConfig> repositoryConfigCustomizer = config -> {
+	};
 
 	/**
 	 * Creates a new RepositoryManager that operates on the specfified base directory.
@@ -327,6 +331,9 @@ public class LocalRepositoryManager extends RepositoryManager {
 						&& config != null) {
 					migrateToNewConfigVocabulary(config);
 				}
+				if (config != null) {
+					configureRepositoryConfig(config);
+				}
 				return config;
 			} catch (IOException e) {
 				throw new RepositoryConfigException(e);
@@ -346,6 +353,18 @@ public class LocalRepositoryManager extends RepositoryManager {
 	protected void migrateToNewConfigVocabulary(RepositoryConfig config) {
 		logger.warn("Configuration for {} uses legacy vocabulary, converting.", config.getID());
 		addRepositoryConfig(config);
+	}
+
+	/**
+	 * Attach runtime-only settings before repository configurations are persisted or used. Set the customizer before
+	 * {@link #init()}; already initialized repositories are not reconfigured.
+	 */
+	public void setRepositoryConfigCustomizer(Consumer<RepositoryConfig> customizer) {
+		repositoryConfigCustomizer = Objects.requireNonNull(customizer);
+	}
+
+	private void configureRepositoryConfig(RepositoryConfig config) {
+		repositoryConfigCustomizer.accept(config);
 	}
 
 	@Override
@@ -395,6 +414,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 	public synchronized void addRepositoryConfig(RepositoryConfig config)
 			throws RepositoryException, RepositoryConfigException {
 		Objects.requireNonNull(config).validate();
+		configureRepositoryConfig(config);
 		Path dataDir = requireSafeRepositoryDirectory(config.getID());
 		try {
 			Files.createDirectories(dataDir);

@@ -17,6 +17,7 @@ import static org.eclipse.rdf4j.sail.lucene.config.LuceneSailConfigSchema.INDEX_
 
 import java.util.Properties;
 import java.util.Set;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.annotation.ConfigProperty;
 import org.eclipse.rdf4j.common.annotation.Configurable;
@@ -29,6 +30,8 @@ import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.sail.config.AbstractDelegatingSailImplConfig;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.eclipse.rdf4j.sail.config.SailImplConfig;
+import org.eclipse.rdf4j.sail.lucene.LuceneSail;
+import org.eclipse.rdf4j.sail.lucene.SearchIndex;
 
 @Configurable(description = "Base Lucene Sail configuration for index location and extensible indexer parameters.")
 @ConfigProperty(
@@ -112,6 +115,8 @@ public abstract class AbstractLuceneSailConfig extends AbstractDelegatingSailImp
 
 	private String indexDir;
 	private final Properties parameters = new Properties();
+	private transient String runtimeIndexDir;
+	private transient Consumer<SearchIndex> indexCustomizer;
 
 	protected AbstractLuceneSailConfig(String type) {
 		super(type);
@@ -136,23 +141,54 @@ public abstract class AbstractLuceneSailConfig extends AbstractDelegatingSailImp
 	 *---------*/
 
 	public String getIndexDir() {
-		return indexDir;
+		return runtimeIndexDir != null ? runtimeIndexDir : indexDir;
 	}
 
 	public void setIndexDir(String luceneDir) {
 		this.indexDir = luceneDir;
+		this.runtimeIndexDir = null;
+	}
+
+	/** Return the original value, including when a Server-managed runtime uses a resolved directory. */
+	public String getConfiguredIndexDir() {
+		return indexDir;
 	}
 
 	public String getParameter(String key) {
+		if (LuceneSail.LUCENE_DIR_KEY.equals(key) && parameters.containsKey(key) && runtimeIndexDir != null) {
+			return runtimeIndexDir;
+		}
 		return parameters.getProperty(key);
 	}
 
 	public void setParameter(String key, String value) {
 		parameters.setProperty(key, value);
+		if (LuceneSail.LUCENE_DIR_KEY.equals(key)) {
+			runtimeIndexDir = null;
+		}
+	}
+
+	/** Return the original parameter value rather than the Server-managed runtime override. */
+	public String getConfiguredParameter(String key) {
+		return parameters.getProperty(key);
+	}
+
+	/** Use a validated directory while retaining the original values when exporting RDF configuration. */
+	public void setRuntimeIndexDir(String runtimeIndexDir) {
+		this.runtimeIndexDir = runtimeIndexDir;
 	}
 
 	public Set<String> getParameterNames() {
 		return parameters.stringPropertyNames();
+	}
+
+	/** Runtime-only index customization; this value is not exported to RDF configuration. */
+	public Consumer<SearchIndex> getIndexCustomizer() {
+		return indexCustomizer;
+	}
+
+	public void setIndexCustomizer(Consumer<SearchIndex> indexCustomizer) {
+		this.indexCustomizer = indexCustomizer;
 	}
 
 	@Override
@@ -165,7 +201,7 @@ public abstract class AbstractLuceneSailConfig extends AbstractDelegatingSailImp
 		}
 
 		for (String key : getParameterNames()) {
-			m.add(implNode, iri(CONFIG.NAMESPACE, PARAMETER_PREFIX + key), literal(getParameter(key)));
+			m.add(implNode, iri(CONFIG.NAMESPACE, PARAMETER_PREFIX + key), literal(parameters.getProperty(key)));
 		}
 
 		return implNode;
