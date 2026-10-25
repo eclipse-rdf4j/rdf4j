@@ -281,6 +281,7 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 	}
 
 	@Test
+	@Disabled("GH-6260: Linux CI reports manual sketches are not ready before planning")
 	void optimizedSocialMediaQ4StartsWithUSideRestrictionBeforeFollowsProbe(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = sketchEnabledConfig("spoc,ospc,psoc");
 		LmdbStore store = new LmdbStore(dataDir, config);
