@@ -595,12 +595,20 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	void commitFreshValueTransaction(FreshValueSession session) {
 		if (session != null) {
 			clearFreshValueTransaction(session);
+			LmdbDeferredValueLookups lookups = deferredLookups;
+			if (lookups != null) {
+				lookups.commit();
+			}
 		}
 	}
 
 	void rollbackFreshValueTransaction(FreshValueSession session) {
 		if (session == null) {
 			return;
+		}
+		LmdbDeferredValueLookups lookups = deferredLookups;
+		if (lookups != null) {
+			lookups.rollback();
 		}
 		for (int i = session.provisionalValues.size() - 1; i >= 0; i--) {
 			session.valueIds.removeKey(session.provisionalValues.get(i));
@@ -919,6 +927,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private final ObjectLongHashMap<RdfTermKey> transactionValueIds = new ObjectLongHashMap<>();
 	private final ObjectLongHashMap<String> transactionNamespaceIds = new ObjectLongHashMap<>();
 	private FreshValueSession activeFreshValueSession;
+
+	/**
+	 * While an initial run import is active, the data-keyed and hash-keyed records of fresh values go here instead of
+	 * into the main database; {@link #writeDeferredLookups} writes them when the import completes.
+	 */
+	private volatile LmdbDeferredValueLookups deferredLookups;
 	private volatile boolean freshValueSessionSpoiled;
 	private final int transactionValueCacheLimit = calculateTransactionValueCacheLimit(
 			Runtime.getRuntime().maxMemory());
@@ -8408,6 +8422,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	private long findId(byte[] data, boolean create, CoreDatatype coreDatatype, ValueLookupContext lookup)
 			throws IOException {
+		if (create) {
+			checkLookupRecordsAvailable();
+		}
 		boolean admitted = create && enterStandaloneValueWriter();
 		try {
 			return findIdAdmitted(data, create, coreDatatype, lookup);
@@ -12623,9 +12640,14 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			MDBVal emptyVal = MDBVal.calloc(stack);
 			ByteBuffer idBytes = idBuffer(stack);
 			ByteBuffer hashBytes = stack.malloc(2 + 2 * Long.BYTES + 2);
+			LmdbDeferredValueLookups deferred = activeFreshValueSession != null ? deferredLookups : null;
 			try {
 				for (PreparedValueRecord record : prepared.records) {
 					if (record.data.length > MAX_KEY_SIZE) {
+						continue;
+					}
+					if (deferred != null) {
+						deferred.add(record.data, record.data.length, record.id);
 						continue;
 					}
 					stack.push();
@@ -12668,6 +12690,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 						hashBytes.put(idVal.mv_data().duplicate());
 					}
 					keyVal.mv_data(hashBytes.flip());
+					if (deferred != null) {
+						deferred.add(hashBytes, record.id);
+						continue;
+					}
 					E(mdb_cursor_put(cursor, keyVal, record.firstForHash ? idVal : emptyVal, 0));
 				}
 			} finally {
@@ -12701,6 +12727,69 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				}
 			}
 		}
+	}
+
+	/** Starts deferring the lookup records of fresh values; only an initial run import calls this. */
+	void deferLookupRecords(LmdbDeferredValueLookups lookups) {
+		deferredLookups = lookups;
+	}
+
+	void stopDeferringLookupRecords() {
+		deferredLookups = null;
+	}
+
+	boolean lookupRecordsDeferred() {
+		return deferredLookups != null;
+	}
+
+	private void checkLookupRecordsAvailable() {
+		if (deferredLookups != null) {
+			throw new IllegalStateException(
+					"Values cannot be created outside the initial import's fresh session while its lookup records are deferred");
+		}
+	}
+
+	/**
+	 * Writes the merged lookup records of an initial run import into the open write transaction, in key order. The main
+	 * database also holds the records of every named sub-database, which sort above all value keys, so these are sorted
+	 * plain puts rather than appends.
+	 *
+	 * @return the number of records written
+	 */
+	long writeDeferredLookups(LmdbDeferredValueLookups.Source source) throws IOException {
+		return writeTransaction((stack, txn) -> {
+			PointerBuffer handle = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, dbi, handle));
+			long cursor = handle.get(0);
+			MDBVal keyVal = MDBVal.malloc(stack);
+			MDBVal dataVal = MDBVal.malloc(stack);
+			MDBVal emptyVal = MDBVal.calloc(stack);
+			ByteBuffer key = stack.malloc(LmdbDeferredValueLookups.MAX_KEY_BYTES);
+			ByteBuffer idBytes = idBuffer(stack);
+			long written = 0;
+			try {
+				long id;
+				while ((id = source.next(key)) >= 0) {
+					keyVal.mv_data(key);
+					if (key.get(0) == HASHID_KEY) {
+						E(mdb_cursor_put(cursor, keyVal, emptyVal, 0));
+					} else {
+						idBytes.clear();
+						dataVal.mv_data(id2data(idBytes, id).flip());
+						E(mdb_cursor_put(cursor, keyVal, dataVal, 0));
+					}
+					written++;
+				}
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+			return written;
+		});
+	}
+
+	/** Flushes committed pages to disk; the environment runs without per-commit sync. */
+	void syncEnvironment() throws IOException {
+		E(mdb_env_sync(env, true));
 	}
 
 	void publishPreparedValues(PreparedValueBatch prepared) {
@@ -12744,6 +12833,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (count == 0) {
 			return;
 		}
+		checkLookupRecordsAvailable();
 		if (writeTxn != 0 && !isWriteTransactionOwner()) {
 			long writer = awaitJoinableWriter();
 			if (writer != 0L) {

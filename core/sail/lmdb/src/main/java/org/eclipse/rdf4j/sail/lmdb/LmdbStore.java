@@ -412,6 +412,8 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		logger.debug("Data dir is " + dataDir);
 
 		try {
+			// An initial run import that never completed left value records without lookups; start empty instead.
+			LmdbInitialRunImport.resetInterruptedImport(dataDir.toPath());
 			StoreProperties properties = new StoreProperties(dataDir);
 			properties.load();
 			// Diagnose unsupported persisted capabilities before optimization metadata is considered. This pure

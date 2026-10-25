@@ -153,6 +153,8 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	private final Set<ReplayPlanIteration<?>> pendingPlanReplays = Collections
 			.newSetFromMap(new IdentityHashMap<>());
 	private final ThreadLocal<Integer> internalReadScopeDepth = ThreadLocal.withInitial(() -> 0);
+	/** Namespace reads never touch the statements an initial run import still holds in its runs. */
+	private final ThreadLocal<Integer> namespaceReadDepth = ThreadLocal.withInitial(() -> 0);
 	private final ThreadLocal<ReadExposureScope> activeReadExposureScope = new ThreadLocal<>();
 	private final ThreadLocal<ReplayPlan<?>> pendingEvaluationReplayPlan = new ThreadLocal<>();
 	private final ThreadLocal<ExplainTupleExprCapture> explainTupleExprCapture = new ThreadLocal<>();
@@ -625,6 +627,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 					batch.close();
 				}
 			},
+					() -> lmdbStore.getBackingStore().rollbackInitialRunImport(this),
 					() -> lmdbStore.getBackingStore().discardNonePending(this),
 					() -> lmdbStore.getBackingStore().rollback(this), super::rollbackInternal,
 					() -> lmdbStore.getBackingStore().completeWriterRollback(this),
@@ -674,6 +677,8 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		}
 		if (isActive() && IsolationLevels.NONE.isCompatibleWith(getTransactionIsolation())) {
 			lmdbStore.getBackingStore().flushNonePending(this);
+			// Commit, an explicit flush and a read flush all need an initial run import written to the store.
+			lmdbStore.getBackingStore().completeInitialRunImportBeforeRead(this);
 			try (SailClosable publication = lmdbStore.getBackingStore().beginPublication(this)) {
 				super.endUpdateInternal(op);
 			}
@@ -693,6 +698,14 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 
 	@Override
 	protected SailClosable beginDatasetAcquisition(IsolationLevel level) throws SailException {
+		// An initial run import holds the store: its owner completes it before reading, everyone else waits.
+		LmdbSailStore backing = lmdbStore.getBackingStore();
+		if (namespaceReadDepth.get() == 0) {
+			try (SailClosable importOwner = backing.enterWriterOwner(this)) {
+				backing.completeInitialRunImportBeforeRead(this);
+			}
+		}
+		backing.awaitInitialRunImport(this);
 		// Associate any synchronously-created serializable observation sinks with this connection. The admission can
 		// live
 		// until a lazy result is closed on another worker, so the thread-local writer scope must not escape this call.
@@ -746,7 +759,12 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		if (checkpointNamespaces != null && checkpointNamespaces.available()) {
 			return checkpointNamespaces.namespaces().get(prefix);
 		}
-		return super.getNamespaceInternal(prefix);
+		namespaceReadDepth.set(namespaceReadDepth.get() + 1);
+		try {
+			return super.getNamespaceInternal(prefix);
+		} finally {
+			namespaceReadDepth.set(namespaceReadDepth.get() - 1);
+		}
 	}
 
 	@Override
@@ -852,7 +870,12 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 					.forEach((prefix, name) -> namespaces.add(new SimpleNamespace(prefix, name)));
 			return new CloseableIteratorIteration<>(namespaces.iterator());
 		}
-		return super.getNamespacesInternal();
+		namespaceReadDepth.set(namespaceReadDepth.get() + 1);
+		try {
+			return super.getNamespacesInternal();
+		} finally {
+			namespaceReadDepth.set(namespaceReadDepth.get() - 1);
+		}
 	}
 
 	private LmdbSailStore.CheckpointNamespaceSnapshot checkpointNamespaceSnapshot() {
@@ -936,7 +959,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 
 	@Override
 	public boolean addInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
-		markTransactionWriteAttempted();
+		markStatementWriteAttempted();
 		boolean ret = super.addInferredStatement(subj, pred, obj, contexts);
 		// assume the triple is not yet present in the triple store
 		sailChangedEvent.setStatementsAdded(true);
@@ -2979,6 +3002,12 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		verifyNotPrepared();
 	}
 
+	/** A statement write; any first statement writer other than an explicit NONE import forfeits the run import. */
+	private void markStatementWriteAttempted() {
+		markTransactionWriteAttempted();
+		lmdbStore.getBackingStore().noteStatementWriteAttempt(isActive() ? getTransactionIsolation() : null);
+	}
+
 	private void markTransactionWriteAttempted() {
 		verifyMutationAdmission();
 		LmdbSailStore.ReadAttemptLease admission = transactionAdmissionLease;
@@ -3808,7 +3837,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	@Override
 	public boolean removeInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException {
-		markTransactionWriteAttempted();
+		markStatementWriteAttempted();
 		boolean ret = super.removeInferredStatement(subj, pred, obj, contexts);
 		sailChangedEvent.setStatementsRemoved(true);
 		return ret;
@@ -3816,14 +3845,14 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 
 	@Override
 	protected void clearInternal(Resource... contexts) throws SailException {
-		markTransactionWriteAttempted();
+		markStatementWriteAttempted();
 		super.clearInternal(contexts);
 		sailChangedEvent.setStatementsRemoved(true);
 	}
 
 	@Override
 	public void clearInferred(Resource... contexts) throws SailException {
-		markTransactionWriteAttempted();
+		markStatementWriteAttempted();
 		super.clearInferred(contexts);
 		sailChangedEvent.setStatementsRemoved(true);
 	}
@@ -3831,14 +3860,14 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	@Override
 	public void addStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException {
-		markTransactionWriteAttempted();
+		markStatementWriteAttempted();
 		super.addStatement(op, subj, pred, obj, contexts);
 	}
 
 	@Override
 	public void removeStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException {
-		markTransactionWriteAttempted();
+		markStatementWriteAttempted();
 		super.removeStatement(op, subj, pred, obj, contexts);
 	}
 

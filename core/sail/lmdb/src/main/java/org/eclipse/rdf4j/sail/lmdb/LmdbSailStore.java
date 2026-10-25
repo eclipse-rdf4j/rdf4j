@@ -2630,6 +2630,21 @@ class LmdbSailStore implements SailStore {
 	 * many values it falls back to dictionary lookups so memory stays bounded by the heap.
 	 */
 	private static final long FRESH_NONE_VALUE_LIMIT = Math.max(1L << 20, Runtime.getRuntime().maxMemory() / 1024);
+	/**
+	 * Whether the store's first native write may still claim an initial run import. Cleared by the first sink
+	 * transaction, whether or not it claims the import, so any other first writer forfeits it for this store's life.
+	 * Protected by the store access lock.
+	 */
+	private volatile boolean initialRunImportAvailable;
+	/** Sync both environments before removing the import marker; without forceSync no commit is synced either. */
+	private boolean forceSyncInitialRunImport;
+	/** The active initial run import, or {@code null}; the admission gates read it without the store access lock. */
+	private volatile LmdbInitialRunImport initialRunImport;
+	/** Set when an initial run import could not complete; the store then refuses use until it is restarted. */
+	private volatile Throwable initialRunImportFailure;
+	private final Object initialRunImportMonitor = new Object();
+	private volatile Thread initialRunImportThread;
+	private long initialRunImportsCompleted;
 	private final int bulkOperationSize;
 	private final boolean valueOverlayEnabled;
 	private final boolean preparedStatementBatchesEnabled;
@@ -3014,6 +3029,182 @@ class LmdbSailStore implements SailStore {
 
 	boolean hasActiveFreshValueSession() {
 		return freshValueSession != null && !freshValueSessionInvalidated;
+	}
+
+	/** A statement write by anything but an explicit NONE transaction forfeits the initial run import for good. */
+	void noteStatementWriteAttempt(IsolationLevel isolation) {
+		if (initialRunImportAvailable && (isolation == null || !IsolationLevels.NONE.isCompatibleWith(isolation))) {
+			initialRunImportAvailable = false;
+		}
+	}
+
+	boolean isInitialRunImportActive() {
+		return initialRunImport != null;
+	}
+
+	long initialRunImportsCompleted() {
+		synchronized (initialRunImportMonitor) {
+			return initialRunImportsCompleted;
+		}
+	}
+
+	/**
+	 * Blocks a writer or reader other than the owner of an active initial run import until the import is complete. On
+	 * the import's own thread, waiting could never end, so the import is completed instead.
+	 */
+	void awaitInitialRunImport(Object owner) throws SailException {
+		LmdbInitialRunImport runImport = initialRunImport;
+		if (runImport == null && initialRunImportFailure == null || runImport != null && runImport.owner == owner) {
+			return;
+		}
+		if (runImport != null && Thread.currentThread() == initialRunImportThread
+				&& publicationContext.get() == null) {
+			try (SailClosable scope = enterWriterOwner(runImport.owner)) {
+				completeInitialRunImportBeforeRead(runImport.owner);
+			}
+		}
+		synchronized (initialRunImportMonitor) {
+			while (true) {
+				Throwable failure = initialRunImportFailure;
+				if (failure != null) {
+					throw new SailException(
+							"An initial LMDB run import could not complete; restart the store to reset it to empty",
+							failure);
+				}
+				LmdbInitialRunImport current = initialRunImport;
+				if (current == null || current.owner == owner) {
+					return;
+				}
+				if (initialImportClosing) {
+					throw new SailException("The LMDB store closed while an initial run import was active");
+				}
+				try {
+					initialRunImportMonitor.wait();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new InterruptedSailException(e);
+				}
+			}
+		}
+	}
+
+	/** An active initial run import keeps its owner's NONE state, whose sink completes the import later. */
+	private boolean retainsInitialRunImportState(Object owner) {
+		LmdbInitialRunImport runImport = initialRunImport;
+		return runImport != null && runImport.owner == owner && !runImport.completing();
+	}
+
+	private boolean initialRunImportBlocks(Object owner) {
+		LmdbInitialRunImport runImport = initialRunImport;
+		return initialRunImportFailure != null || runImport != null && runImport.owner != owner;
+	}
+
+	/**
+	 * Completes the owner's initial run import, after flushing its pending batch, because the owner now reads its own
+	 * data, flushes explicitly or commits. A no-op without an active import of that owner.
+	 */
+	void completeInitialRunImportBeforeRead(Object owner) throws SailException {
+		LmdbInitialRunImport runImport = initialRunImport;
+		if (runImport == null || runImport.owner != owner || runImport.completing()) {
+			return;
+		}
+		flushNonePending(owner);
+		sinkStoreAccessLock.lock();
+		NoneWriteState state = null;
+		try {
+			state = noneWriteStates.get(owner);
+			if (state != null && state.controller != null && initialRunImport == runImport
+					&& publicationContext.get() == null) {
+				LmdbSailSink controller = state.continuationController();
+				try (SailWriteContinuation.Scope continuation = controller.beginNativeContinuation()) {
+					controller.completeInitialRunImport();
+				}
+			}
+		} catch (IOException | RuntimeException | Error failure) {
+			abortFailedNoneAttempt(state, failure);
+			if (failure instanceof IOException io) {
+				throw new SailException(io);
+			}
+			if (failure instanceof Error error) {
+				throw error;
+			}
+			throw (RuntimeException) failure;
+		} finally {
+			sinkStoreAccessLock.unlock();
+		}
+	}
+
+	/**
+	 * A rollback of the initial run import discards the unflushed batch and the open chunk, then completes the import
+	 * from the chunks already checkpointed, which NONE keeps.
+	 */
+	void rollbackInitialRunImport(Object owner) throws SailException {
+		LmdbInitialRunImport runImport = initialRunImport;
+		if (runImport == null || runImport.owner != owner || runImport.completing()) {
+			return;
+		}
+		sinkStoreAccessLock.lock();
+		NoneWriteState state = null;
+		try {
+			state = noneWriteStates.get(owner);
+			if (state == null || state.controller == null) {
+				endInitialRunImport(runImport, false,
+						new IllegalStateException("The initial run import lost its NONE attempt before completing"));
+				return;
+			}
+			LmdbSailSink controller = state.continuationController();
+			try (SailWriteContinuation.Scope continuation = controller.beginNativeContinuation()) {
+				controller.rollbackOpenChunkAndCompleteInitialRunImport();
+			}
+		} catch (IOException | RuntimeException | Error failure) {
+			if (initialRunImport == runImport) {
+				endInitialRunImport(runImport, false, failure);
+			}
+			if (failure instanceof IOException io) {
+				throw new SailException(io);
+			}
+			if (failure instanceof Error error) {
+				throw error;
+			}
+			throw (RuntimeException) failure;
+		} finally {
+			sinkStoreAccessLock.unlock();
+		}
+	}
+
+	/**
+	 * Ends an initial run import. A finished import deletes its runs and marker; a failed one keeps the marker so the
+	 * next start resets the store, and the store refuses use until then.
+	 */
+	private void endInitialRunImport(LmdbInitialRunImport runImport, boolean finished, Throwable failure) {
+		valueStore.stopDeferringLookupRecords();
+		try {
+			if (finished) {
+				runImport.finished();
+			} else {
+				runImport.close();
+			}
+		} catch (IOException cleanup) {
+			logger.warn("Unable to clean up the initial LMDB run import files", cleanup);
+		}
+		synchronized (initialRunImportMonitor) {
+			if (initialRunImport == runImport) {
+				initialRunImport = null;
+				initialRunImportThread = null;
+			}
+			if (finished) {
+				initialRunImportsCompleted++;
+			} else if (initialRunImportFailure == null) {
+				initialRunImportFailure = failure == null
+						? new IllegalStateException("The initial run import ended without completing")
+						: failure;
+			}
+			initialRunImportMonitor.notifyAll();
+		}
+		if (finished && sketchBasedJoinEstimator != null) {
+			// The import never fed the estimator; rebuild it from the store, which is authoritative.
+			sketchBasedJoinEstimator.discardAndMarkForRebuild();
+		}
 	}
 
 	void startTrackingTripleResizeChecks() {
@@ -3653,6 +3844,32 @@ class LmdbSailStore implements SailStore {
 		return new IOException("Failed to prepare secondary LMDB index keys", cause);
 	}
 
+	/**
+	 * The last native chunk of an initial run import. Its value half writes the merged lookup records into the chunk's
+	 * value transaction on the caller thread; its triple half, run by the TripleStore writer, appends every index from
+	 * the merged runs. A capacity replay runs both halves again from the same run files.
+	 */
+	private final class InitialRunImportFinish implements Operation {
+		private final LmdbInitialRunImport runImport;
+		private final List<List<Path>> tripleRuns;
+
+		private InitialRunImportFinish(LmdbInitialRunImport runImport) throws IOException {
+			this.runImport = runImport;
+			this.tripleRuns = runImport.tripleRuns();
+		}
+
+		void writeValues() throws IOException {
+			try (LmdbDeferredValueLookups.Source source = runImport.valueLookups().complete()) {
+				valueStore.writeDeferredLookups(source);
+			}
+		}
+
+		@Override
+		public void execute() throws IOException {
+			tripleStore.appendInitialImportRuns(tripleRuns, runImport.projectedTripleBytes());
+		}
+	}
+
 	private final class NoneRemoveOperation implements Operation {
 		private final Statement[] identities;
 		private final long[][] quads;
@@ -3812,6 +4029,8 @@ class LmdbSailStore implements SailStore {
 	private final ThreadLocal<Object> noneMutationReadOwner = new ThreadLocal<>();
 
 	SailClosable enterNoneMutationRead(Object owner) {
+		// A probe of the importer's own writes must see the rows an initial run import holds in its runs.
+		completeInitialRunImportBeforeRead(owner);
 		Object previous = noneMutationReadOwner.get();
 		noneMutationReadOwner.set(owner);
 		return () -> {
@@ -5727,7 +5946,8 @@ class LmdbSailStore implements SailStore {
 		try {
 			NoneWriteState state = noneWriteStates.get(owner);
 			if (state != null && state.writeAttempt == writeAttempt && state.nativeGeneration == 0L
-					&& state.work.isEmpty() && state.pending == null && namespaceTransactionOwner != owner) {
+					&& state.work.isEmpty() && state.pending == null && namespaceTransactionOwner != owner
+					&& !retainsInitialRunImportState(owner)) {
 				discardNonePending(owner);
 			}
 		} finally {
@@ -6021,6 +6241,10 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private WriterLease acquireWriterLease(Object owner) throws SailException {
+		if (owner instanceof LmdbStoreConnection) {
+			// Another connection waits until an initial run import holding the store has completed.
+			awaitInitialRunImport(owner);
+		}
 		WriterRegistration registration = mapGrowthCoordinator.registerWriter(owner);
 		boolean acquired = false;
 		try {
@@ -6067,6 +6291,9 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private WriterLease tryAcquireWriterLease(Object owner) {
+		if (owner instanceof LmdbStoreConnection && initialRunImportBlocks(owner)) {
+			return null;
+		}
 		WriterRegistration registration = mapGrowthCoordinator.tryRegisterWriter(owner);
 		if (registration == null) {
 			return null;
@@ -6501,6 +6728,9 @@ class LmdbSailStore implements SailStore {
 			publishedNamespaces = namespaceStore.initialSnapshot();
 			statementPatternCardinalitySource = new LmdbStatementPatternCardinalitySource(valueStore, tripleStore);
 			mayHaveInferred = tripleStore.hasTriples(false);
+			forceSyncInitialRunImport = config.getForceSync();
+			initialRunImportAvailable = config.getInitialRunImportEnabled() && !mayHaveInferred
+					&& tripleStore.isEmpty() && valueStore.canStartFreshValueSession();
 			// Installation is bounded. Durable queues are retained until post-ready maintenance can prove liveness.
 			valueStore.completeStoreInitialization(tripleStore::filterUsedIdsBounded);
 			LmdbDirectAdjacencyOptions directAdjacencyOptions = LmdbDirectAdjacencyOptions.resolve(config);
@@ -6983,6 +7213,10 @@ class LmdbSailStore implements SailStore {
 			} else {
 				valueStore.rollbackFreshValueTransaction(freshValueSession);
 			}
+			LmdbInitialRunImport runImport = initialRunImport;
+			if (runImport != null) {
+				runImport.rollbackChunk();
+			}
 			pendingFreshValueBatches.clear();
 			if (freshValueSessionInvalidated) {
 				valueStore.discardFreshValueSession(freshValueSession);
@@ -7176,6 +7410,10 @@ class LmdbSailStore implements SailStore {
 					unusedIds.clear();
 					commitTripleTransaction();
 					nativeCommitted = true;
+					LmdbInitialRunImport runImport = initialRunImport;
+					if (runImport != null && runImport.owner == owner) {
+						runImport.commitChunk();
+					}
 					derivedPublicationCompleted = true;
 					finishCommittedDerivedState();
 					PublicationContext publication = publicationContext.get();
@@ -7240,7 +7478,7 @@ class LmdbSailStore implements SailStore {
 				NoneWriteState completedNoneState = noneWriteStates.get(owner);
 				if (completedNoneState != null && completedNoneState.sinks.isEmpty()
 						&& completedNoneState.pending == null && !storeTxnStarted.get()
-						&& namespaceTransactionOwner != owner) {
+						&& namespaceTransactionOwner != owner && !retainsInitialRunImportState(owner)) {
 					discardNonePending(owner);
 				}
 			} catch (IOException | RuntimeException | Error e) {
@@ -7740,6 +7978,12 @@ class LmdbSailStore implements SailStore {
 
 	/** Restore ordinary capture before the old owner releases admission to any subsequent writer. */
 	void finishInitialNoneImport(Object owner, LmdbStoreConnection.WriteAttempt attempt) {
+		LmdbInitialRunImport unfinished = initialRunImport;
+		if (unfinished != null && unfinished.owner == owner && !unfinished.completing()) {
+			// Commit and rollback complete the import first; reaching here with it active means that failed.
+			endInitialRunImport(unfinished, false,
+					new IllegalStateException("The NONE attempt ended before its initial run import completed"));
+		}
 		sinkStoreAccessLock.lock();
 		try {
 			if (freshNoneImportOwner == owner) {
@@ -8040,7 +8284,16 @@ class LmdbSailStore implements SailStore {
 			throw new SailException("An active LMDB native/publication owner cannot close its own store");
 		}
 		initialImportClosing = true;
+		synchronized (initialRunImportMonitor) {
+			initialRunImportMonitor.notifyAll();
+		}
 		Throwable failure = null;
+		LmdbInitialRunImport abandonedRunImport = initialRunImport;
+		if (abandonedRunImport != null) {
+			// The marker stays: the next start resets the store the import left half-written.
+			failure = attemptClose(failure, () -> endInitialRunImport(abandonedRunImport, false,
+					new IllegalStateException("The LMDB store closed during an initial run import")));
+		}
 		failure = attemptClose(failure, this::awaitPostReadyInitializationForShutdown);
 		failure = attemptClose(failure, queryResultCache::clear);
 		failure = attemptClose(failure, () -> NativeLmdbQuerySource.releaseCostModel(valueStore));
@@ -10038,7 +10291,8 @@ class LmdbSailStore implements SailStore {
 				throw failure;
 			} finally {
 				releaseMutationLease();
-				if (nativeCheckpoints && !storeTxnStarted.get() && namespaceTransactionOwner != owner) {
+				if (nativeCheckpoints && !storeTxnStarted.get() && namespaceTransactionOwner != owner
+						&& !retainsInitialRunImportState(owner)) {
 					discardNonePending(owner);
 				}
 			}
@@ -10442,6 +10696,10 @@ class LmdbSailStore implements SailStore {
 								freshNoneImportOwner = owner;
 							}
 						}
+						if (initialRunImportAvailable) {
+							initialRunImportAvailable = false;
+							claimInitialRunImport(owner);
+						}
 						if (multiThreadingActive) {
 							if (running.compareAndSet(false, true)) {
 								workerRequired = true;
@@ -10800,8 +11058,10 @@ class LmdbSailStore implements SailStore {
 			if (!nativeCheckpoints || session == null || freshValueSessionInvalidated) {
 				return false;
 			}
+			// Other NONE writers wait at the writer gate while an initial run import holds the store.
 			if (!explicit || mayHaveInferred || freshNoneImportOwner != writerOwner()
-					|| noneWriteStates.size() != 1 || !valueStore.isFreshValueSessionUsable(session)
+					|| noneWriteStates.size() != 1 && initialRunImport == null
+					|| !valueStore.isFreshValueSessionUsable(session)
 					|| valueStore.freshValueSessionSize(session) >= FRESH_NONE_VALUE_LIMIT) {
 				invalidateFreshValueSession();
 				return false;
@@ -10843,10 +11103,17 @@ class LmdbSailStore implements SailStore {
 			long retainedBytes = state.pendingBytes - pending.estimatedStorageBytes(pending.size);
 			state.pendingBytes = 0L;
 			BulkAddQuadsOperation batch = pending.prepare();
+			LmdbInitialRunImport runImport = acceptingInitialRunImport();
+			if (runImport != null && !freshSessionAccepts(batch.size)) {
+				// The fresh session's map is full: write the import so far, then resolve through lookups.
+				completeInitialRunImport();
+				runImport = null;
+			}
 			retainedBytes = LmdbUtil.saturatedAdd(retainedBytes, batch.estimatedStorageBytes());
 			List<Statement> statements = Arrays.asList(batch.statements).subList(0, batch.size);
 			long valueEstimate = valueStore.estimateWriteBytes(statements);
-			long tripleEstimate = tripleStore.estimateWriteBytes(statements);
+			// An initial run import writes no triple index entry until it completes.
+			long tripleEstimate = runImport != null ? 0L : tripleStore.estimateWriteBytes(statements);
 			long bytes = LmdbUtil.saturatedAdd(valueEstimate, tripleEstimate);
 			// Reserve deferred native bookkeeping separately from batch payload. A chunk's size is bounded
 			// even when the maps are large enough that a percentage alone would allow unbounded dirty pages.
@@ -10872,7 +11139,7 @@ class LmdbSailStore implements SailStore {
 			try {
 				startTransaction(true);
 				resolveBatchValues(batch);
-				submitOperation(batch);
+				submitResolvedAdd(batch);
 			} catch (IOException | RuntimeException failure) {
 				if (!recoverNoneCapacity(failure)) {
 					throw failure;
@@ -10882,6 +11149,124 @@ class LmdbSailStore implements SailStore {
 					|| state.bytes >= NoneWriteState.MAX_CHUNK_BYTES) {
 				// One input larger than the budget is unavoidable, but never shares a retained native chunk.
 				checkpointNoneChunk();
+			}
+		}
+
+		/** The active initial run import of this sink's owner while it still accepts rows, or {@code null}. */
+		private LmdbInitialRunImport acceptingInitialRunImport() {
+			LmdbInitialRunImport runImport = initialRunImport;
+			return runImport != null && runImport.owner == writerOwner() && !runImport.merging() ? runImport : null;
+		}
+
+		private boolean freshSessionAccepts(int rows) {
+			ValueStore.FreshValueSession session = freshValueSession;
+			return session != null && !freshValueSessionInvalidated && valueStore.isFreshValueSessionUsable(session)
+					&& valueStore.freshValueSessionSize(session) + 4L * rows < FRESH_NONE_VALUE_LIMIT;
+		}
+
+		/**
+		 * Claims the initial run import for the store's first native write, when that write is the only explicit NONE
+		 * import into an empty store and resolves values from a fresh session.
+		 */
+		private void claimInitialRunImport(Object owner) {
+			if (!nativeCheckpoints || !explicit || mayHaveInferred || freshValueSession == null
+					|| freshValueSessionInvalidated || freshNoneImportOwner != owner || noneWriteStates.size() != 1
+					|| !(owner instanceof LmdbStoreConnection) || tripleStore.hasStagingIndexes()
+					|| valueStore.getFormat().isLegacy()) {
+				return;
+			}
+			try {
+				LmdbInitialRunImport runImport = LmdbInitialRunImport.begin(owner, dataDir.toPath(),
+						tripleStore.initialImportFieldOrders());
+				valueStore.deferLookupRecords(runImport.valueLookups());
+				initialRunImportThread = Thread.currentThread();
+				initialRunImport = runImport;
+			} catch (IOException | RuntimeException failure) {
+				logger.warn("Unable to start an initial LMDB run import; importing through regular chunks", failure);
+			}
+		}
+
+		/** Adds a resolved batch to the initial run import, or queues it for the TripleStore writer. */
+		private void submitResolvedAdd(BulkAddQuadsOperation batch) throws IOException {
+			LmdbInitialRunImport runImport = acceptingInitialRunImport();
+			if (runImport == null) {
+				submitOperation(batch);
+				return;
+			}
+			Set<Long> unusedIds = mutationUnusedIds();
+			if (!unusedIds.isEmpty()) {
+				for (int i = 0; i < batch.size; i++) {
+					unusedIds.remove(batch.subjects[i]);
+					unusedIds.remove(batch.predicates[i]);
+					unusedIds.remove(batch.objects[i]);
+					unusedIds.remove(batch.contexts[i]);
+				}
+			}
+			runImport.addQuads(batch.subjects, batch.predicates, batch.objects, batch.contexts, batch.size);
+			if (batch.size > 0) {
+				recordNoneMutation(true);
+			}
+			batch.cancel();
+		}
+
+		/** Discards the unflushed batch and the open chunk, then completes the import from the checkpointed chunks. */
+		private void rollbackOpenChunkAndCompleteInitialRunImport() throws IOException {
+			NoneWriteState state = noneState();
+			state.pending = null;
+			state.pendingSink = null;
+			state.pendingBytes = 0L;
+			if (storeTxnStarted.get() && storeTransactionOwner == writerOwner()) {
+				rollbackPhysicalAttempt(writerOwner());
+			}
+			state.published();
+			backingTransactionGeneration = 0L;
+			completeInitialRunImport();
+		}
+
+		/**
+		 * Completes this sink owner's initial run import: commits the open chunk, then merges every run into the store
+		 * as one last native chunk. The unflushed batch, if any, stays pending and takes the regular path afterwards.
+		 */
+		private void completeInitialRunImport() throws IOException {
+			LmdbInitialRunImport runImport = initialRunImport;
+			if (runImport == null || runImport.owner != writerOwner() || runImport.completing()) {
+				return;
+			}
+			runImport.markCompleting();
+			boolean finished = false;
+			Throwable failure = null;
+			try {
+				NoneWriteState state = noneState();
+				if (storeTxnStarted.get()) {
+					checkpointNoneChunk();
+				}
+				runImport.markMerging();
+				InitialRunImportFinish finish = new InitialRunImportFinish(runImport);
+				growNoneMaps(runImport.projectedValueBytes(), runImport.projectedTripleBytes(), null);
+				state.work.add(finish);
+				state.containsAdds = true;
+				try {
+					startTransaction(true);
+					// The TripleStore writer appends the indexes while this thread writes the lookup records.
+					submitOperation(finish);
+					finish.writeValues();
+				} catch (IOException | RuntimeException capacity) {
+					if (!recoverNoneCapacity(capacity)) {
+						throw capacity;
+					}
+				}
+				checkpointNoneChunk();
+				if (forceSyncInitialRunImport) {
+					// The marker may only go once both environments hold the import durably.
+					tripleStore.syncEnvironment();
+					valueStore.syncEnvironment();
+				}
+				finished = true;
+			} catch (IOException | RuntimeException | Error e) {
+				failure = e;
+				throw e;
+			} finally {
+				endInitialRunImport(runImport, finished, failure);
 			}
 		}
 
@@ -10947,8 +11332,14 @@ class LmdbSailStore implements SailStore {
 								// A parked recovery permits another writer to reclaim/reuse numeric IDs. Resolving
 								// live mappings again does not repeat refcounts; only missing mappings are created.
 								resolveBatchValues(batch);
+								submitResolvedAdd(batch);
+								continue;
 							} else if (operation instanceof NoneRemoveOperation removal) {
 								removal.resolve();
+							} else if (operation instanceof InitialRunImportFinish finish) {
+								submitOperation(finish);
+								finish.writeValues();
+								continue;
 							}
 							submitOperation(operation);
 						}
@@ -11302,6 +11693,8 @@ class LmdbSailStore implements SailStore {
 			if (state.pending != null) {
 				state.pendingSink.flushNoneBatch();
 			}
+			// A removal must see the statements an initial run import still holds in its runs.
+			completeInitialRunImport();
 			// Removal can retire values the fresh session still maps; later additions must look them up.
 			invalidateFreshValueSession();
 			// Capture removals after the ordered native prefix; additions and removals share the bounded chunk.
