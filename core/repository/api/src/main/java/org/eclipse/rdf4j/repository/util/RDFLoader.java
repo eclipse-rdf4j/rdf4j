@@ -114,6 +114,11 @@ public class RDFLoader {
 		if (baseURI == null) {
 			baseURI = url.toExternalForm();
 		}
+		RemoteResourceOpener opener = config.get(RDFLoaderSettings.REMOTE_RESOURCE_OPENER);
+		if (opener != null) {
+			load(opener, url, baseURI, dataFormat, rdfHandler);
+			return;
+		}
 
 		boolean followRedirects = HttpURLConnection.getFollowRedirects();
 		int maxRedirects = java.security.AccessController.doPrivileged(
@@ -186,6 +191,29 @@ public class RDFLoader {
 				load(in, requestURL.getPath(), baseURI, dataFormat, rdfHandler);
 			}
 		} while (redirected);
+	}
+
+	private void load(RemoteResourceOpener opener, URL url, String baseURI, RDFFormat dataFormat,
+			RDFHandler rdfHandler) throws IOException, RDFParseException, RDFHandlerException {
+		List<String> accept = dataFormat != null ? dataFormat.getMIMETypes()
+				: RDFFormat.getAcceptParams(RDFParserRegistry.getInstance().getKeys(), true, null);
+		try (RemoteResourceOpener.RemoteResource resource = opener.open(url, accept, 0)) {
+			URL finalUrl = resource.getFinalUrl();
+			if (dataFormat == null) {
+				String mimeType = resource.getContentType();
+				if (mimeType != null) {
+					int semiColonIdx = mimeType.indexOf(';');
+					if (semiColonIdx >= 0) {
+						mimeType = mimeType.substring(0, semiColonIdx);
+					}
+				}
+				dataFormat = Rio.getParserFormatForMIMEType(mimeType)
+						.orElse(Rio.getParserFormatForFileName(finalUrl.getPath()).orElse(null));
+			}
+			try (InputStream in = resource.getInputStream()) {
+				load(in, finalUrl.getPath(), baseURI, dataFormat, rdfHandler);
+			}
+		}
 	}
 
 	/**
