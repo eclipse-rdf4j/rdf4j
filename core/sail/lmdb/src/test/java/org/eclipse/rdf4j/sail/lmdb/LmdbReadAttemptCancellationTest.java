@@ -118,7 +118,7 @@ class LmdbReadAttemptCancellationTest {
 							AtomicReference<Thread> otherThread = new AtomicReference<>();
 							otherRetirements.add(backing.submitReplayRetirement(() -> {
 								otherThread.set(Thread.currentThread());
-								backing.awaitGrowthEnd(growth.token(), null);
+								backing.awaitGrowthEnd(growth.token());
 							}));
 							awaitWaitingIn(otherThread, "awaitGrowthEnd");
 						}

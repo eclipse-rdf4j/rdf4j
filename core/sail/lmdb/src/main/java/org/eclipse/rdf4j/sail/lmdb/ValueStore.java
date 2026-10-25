@@ -33,7 +33,6 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_PREV;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RESERVE;
-import static org.lwjgl.util.lmdb.LMDB.MDB_SET;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
@@ -117,7 +116,6 @@ import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.common.io.ByteArrayUtil;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.BNodeIdResolver;
 import org.eclipse.rdf4j.model.IRI;
@@ -131,7 +129,6 @@ import org.eclipse.rdf4j.model.base.AbstractValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
-import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.evaluation.OwnedValueCapturer;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
@@ -3975,9 +3972,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private ValueResolutionScope openValueResolutionScope(boolean oldestProtected) {
-		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
 		try {
-			acquireAssociationGate(deadline);
+			acquireAssociationGate();
 		} catch (IOException failure) {
 			throw new SailException(failure);
 		}
@@ -3988,7 +3984,6 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					throw new SailException("Cannot open a value resolution scope while the store is closing");
 				}
 				while (true) {
-					checkValueScopeDeadline(deadline);
 					if (Thread.currentThread().isInterrupted()) {
 						throw new SailException("Interrupted while capturing dictionary identity");
 					}
@@ -4023,29 +4018,13 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		return reservation;
 	}
 
-	private static void checkValueScopeDeadline(QueryExecutionDeadline deadline) {
-		if (deadline != null && deadline.remainingMillis() <= 0L) {
-			throw new QueryInterruptedException("Query evaluation took too long");
-		}
-	}
-
-	private void acquireAssociationGate(QueryExecutionDeadline deadline) throws IOException {
-		checkValueScopeDeadline(deadline);
+	/** A query time limit or cancellation ends the wait by interrupting it. */
+	private void acquireAssociationGate() throws IOException {
 		try {
-			if (deadline == null) {
-				associationGate.lockInterruptibly();
-			} else if (!associationGate.tryLock(deadline.remainingMillis(), TimeUnit.MILLISECONDS)) {
-				throw new QueryInterruptedException("Query evaluation took too long");
-			}
+			associationGate.lockInterruptibly();
 		} catch (InterruptedException failure) {
 			Thread.currentThread().interrupt();
 			throw new IOException("Interrupted while capturing dictionary identity", failure);
-		}
-		try {
-			checkValueScopeDeadline(deadline);
-		} catch (RuntimeException | Error failure) {
-			associationGate.unlock();
-			throw failure;
 		}
 	}
 
@@ -4064,7 +4043,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	/** Waits only after a failed admission has released native barriers, snapshot handles and reader permits. */
 	void awaitValueReaderAdmission() throws IOException {
-		acquireAssociationGate(QueryExecutionDeadline.current());
+		acquireAssociationGate();
 		try {
 			synchronized (writerAdmission) {
 				if (shuttingDown || env == 0) {
@@ -4076,22 +4055,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 	}
 
-	private boolean tryAcquireAssociationGate(QueryExecutionDeadline deadline) throws IOException {
-		checkValueScopeDeadline(deadline);
+	private boolean tryAcquireAssociationGate() throws IOException {
 		try {
-			if (!associationGate.tryLock(0L, TimeUnit.NANOSECONDS)) {
-				return false;
-			}
+			return associationGate.tryLock(0L, TimeUnit.NANOSECONDS);
 		} catch (InterruptedException failure) {
 			Thread.currentThread().interrupt();
 			throw new IOException("Interrupted while capturing dictionary identity", failure);
-		}
-		try {
-			checkValueScopeDeadline(deadline);
-			return true;
-		} catch (RuntimeException | Error failure) {
-			associationGate.unlock();
-			throw failure;
 		}
 	}
 
@@ -4208,15 +4177,13 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					}
 				}
 			}
-			QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
-			if (!tryAcquireAssociationGate(deadline)) {
+			if (!tryAcquireAssociationGate()) {
 				throw new ValueReadAdmissionException();
 			}
 			gateHeld = true;
 			boolean capturedIdentity = false;
 			try {
 				while (true) {
-					checkValueScopeDeadline(deadline);
 					captured = requested == null ? currentReadRevision(LmdbValue.UNKNOWN_ID) : requested;
 					reservation = lazyRevisions.reserve(captured);
 					if (reservation != null || captured.idEpoch() == null) {
@@ -4268,7 +4235,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (isWriteTransactionOwner()) {
 			// The native writer can be consumed by commit, rollback, clear or close on another thread. Keep its
 			// association ownership through the complete borrowed read, and recheck after acquiring that ownership.
-			acquireAssociationGate(QueryExecutionDeadline.current());
+			acquireAssociationGate();
 			try {
 				synchronized (writerAdmission) {
 					if (shuttingDown) {
@@ -9737,10 +9704,6 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			if (Thread.currentThread().isInterrupted()) {
 				throw new IOException("Interrupted while looking up a ValueStore snapshot value",
 						new InterruptedException());
-			}
-			QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
-			if (deadline != null && deadline.remainingMillis() <= 0L) {
-				throw new QueryInterruptedException("Query evaluation took too long");
 			}
 		}
 

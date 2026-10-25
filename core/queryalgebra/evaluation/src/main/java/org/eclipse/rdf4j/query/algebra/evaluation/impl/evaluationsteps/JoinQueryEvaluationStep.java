@@ -20,6 +20,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.Difference;
@@ -278,6 +279,11 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 		};
 		CloseableIteration<BindingSet> inner = open.apply(trackedRight);
 		return new LookAheadIteration<>() {
+
+			@Override
+			protected boolean forwardCancellation() {
+				return CooperativeCancellation.forward(inner);
+			}
 
 			@Override
 			protected BindingSet getNextElement() {

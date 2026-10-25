@@ -35,7 +35,6 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
-import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Value;
@@ -43,7 +42,6 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
@@ -347,7 +345,6 @@ final class NativeExecutionContext implements AutoCloseable {
 	/** One terminal query signal; operator-local and worker tokens retain it as their parent. */
 	private final NativeCancellationToken cancellation;
 	/** Owned by the root evaluation and released only after the last retained consumer finishes. */
-	private final QueryExecutionDeadline.Registration deadlineRegistration;
 	/** Independent binding-frame ownership; condition projections still share the outer scalar and term authority. */
 	private final NativeExecutionContext queryFrameOwner;
 	/** Term-space owner; an invocation can replace its input/caches without replacing already bound native terms. */
@@ -410,8 +407,6 @@ final class NativeExecutionContext implements AutoCloseable {
 	NativeExecutionContext(QueryExecutionPolicy policy) {
 		this.queryScopeOwner = this;
 		this.cancellation = new NativeCancellationToken();
-		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
-		this.deadlineRegistration = deadline == null ? null : deadline.onExpiration(cancellation::requestCancellation);
 		this.queryFrameOwner = this;
 		this.termOwner = this;
 		this.queryExecutionPolicy = policy;
@@ -421,7 +416,6 @@ final class NativeExecutionContext implements AutoCloseable {
 	NativeExecutionContext(NativeExecutionContext parent) {
 		this.queryScopeOwner = parent.queryScopeOwner;
 		this.cancellation = new NativeCancellationToken(parent.cancellation);
-		this.deadlineRegistration = null;
 		this.queryFrameOwner = parent.queryFrameOwner;
 		this.termOwner = this;
 		this.queryExecutionPolicy = parent.queryExecutionPolicy;
@@ -447,7 +441,6 @@ final class NativeExecutionContext implements AutoCloseable {
 	NativeExecutionContext(NativeExecutionContext parent, BindingSet input, boolean shareTermSpace) {
 		this.queryScopeOwner = parent.queryScopeOwner;
 		this.cancellation = new NativeCancellationToken(parent.cancellation);
-		this.deadlineRegistration = null;
 		this.queryFrameOwner = this;
 		this.termOwner = shareTermSpace ? parent.termOwner : this;
 		this.queryExecutionPolicy = parent.queryExecutionPolicy;
@@ -1138,9 +1131,6 @@ final class NativeExecutionContext implements AutoCloseable {
 
 	private RuntimeException closeResourcesUnmeasured() {
 		closed = true;
-		if (deadlineRegistration != null) {
-			deadlineRegistration.close();
-		}
 		RuntimeException failure = null;
 		Object[] states;
 		synchronized (nativeStateLock) {

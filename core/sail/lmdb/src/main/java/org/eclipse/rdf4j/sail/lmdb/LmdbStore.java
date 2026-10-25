@@ -38,12 +38,10 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.LockManager;
-import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.Dataset;
-import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
@@ -567,30 +565,25 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	 * @throws SailException
 	 */
 	protected Lock getTransactionLock(IsolationLevel level) throws SailException {
-		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
 		boolean mutexAcquired = false;
 		Lock transactionLock = null;
 		try {
-			checkTransactionAdmissionDeadline(deadline);
-			if (deadline == null) {
-				txnLockManager.lockInterruptibly();
-			} else if (!txnLockManager.tryLock(deadline.remainingMillis(), TimeUnit.MILLISECONDS)) {
-				throw new QueryInterruptedException("Query evaluation took too long");
-			}
+			checkTransactionAdmission();
+			txnLockManager.lockInterruptibly();
 			mutexAcquired = true;
-			checkTransactionAdmissionDeadline(deadline);
+			checkTransactionAdmission();
 			if (IsolationLevels.NONE.isCompatibleWith(level)) {
 				// make sure no isolated transaction are active
-				waitForIsolationLocks(isolatedLockManager, deadline);
+				waitForIsolationLocks(isolatedLockManager);
 				// mark isolation as disabled
 				transactionLock = disabledIsolationLockManager.createLock(level.toString());
 			} else {
 				// make sure isolation is not disabled
-				waitForIsolationLocks(disabledIsolationLockManager, deadline);
+				waitForIsolationLocks(disabledIsolationLockManager);
 				// mark isolated transaction as active
 				transactionLock = isolatedLockManager.createLock(level.toString());
 			}
-			checkTransactionAdmissionDeadline(deadline);
+			checkTransactionAdmission();
 			Lock admitted = transactionLock;
 			transactionLock = null;
 			return admitted;
@@ -610,21 +603,14 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		}
 	}
 
-	private static void waitForIsolationLocks(LockManager locks, QueryExecutionDeadline deadline)
-			throws InterruptedException {
-		checkTransactionAdmissionDeadline(deadline);
-		if (deadline == null) {
-			locks.waitForActiveLocks();
-		} else if (!locks.waitForActiveLocks(deadline.remainingMillis(), TimeUnit.MILLISECONDS)) {
-			throw new QueryInterruptedException("Query evaluation took too long");
-		}
-		checkTransactionAdmissionDeadline(deadline);
+	/** A query time limit or cancellation ends the wait by interrupting it. */
+	private static void waitForIsolationLocks(LockManager locks) throws InterruptedException {
+		checkTransactionAdmission();
+		locks.waitForActiveLocks();
+		checkTransactionAdmission();
 	}
 
-	private static void checkTransactionAdmissionDeadline(QueryExecutionDeadline deadline) {
-		if (deadline != null && deadline.isExpired()) {
-			throw new QueryInterruptedException("Query evaluation took too long");
-		}
+	private static void checkTransactionAdmission() {
 		if (Thread.currentThread().isInterrupted()) {
 			throw new InterruptedSailException("Interrupted while waiting for LMDB transaction admission");
 		}
