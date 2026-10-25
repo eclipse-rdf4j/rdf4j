@@ -678,9 +678,9 @@ class LmdbEstimatorPublicationAdmissionTest {
 	@Test
 	void emptyCapturedContextDefersWithoutCreatingAnotherReadView(@TempDir Path directory) throws Exception {
 		LmdbStore store = initializedStore(directory);
+		// Post-ready work and index maintenance take dictionary readers in the background; settle them before
+		// capturing absolute reader-slot baselines. The default configuration starts no sketch rebuild.
 		awaitReadAdmissionFixtureSetup(store);
-		// The sketch rebuild reserves readers in the background; settle it before capturing slot baselines.
-		assertTrue(store.awaitSketchesReady(30, TimeUnit.SECONDS), "the sketch rebuild must settle first");
 		LmdbSailStore backingStore = store.getBackingStore();
 		LmdbSailStore.GuardedEstimatorStatementSource source = backingStore.new GuardedEstimatorStatementSource(
 				emptyStatementSource());
