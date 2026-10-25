@@ -563,6 +563,17 @@ class LmdbAsyncHandoffTest {
 							}
 						}
 
+						@Override
+						FreshValueAssignment assignFreshValues(FreshValueSession session, Value[] values)
+								throws IOException {
+							// A NONE write into an empty store resolves its values from the fresh session instead.
+							FreshValueAssignment assignment = super.assignFreshValues(session, values);
+							for (int i = 0; i < values.length; i++) {
+								recordSubject(values[i], assignment.ids()[i]);
+							}
+							return assignment;
+						}
+
 						private void recordSubject(Value value, long id) {
 							if (value instanceof IRI && value.stringValue().startsWith("urn:async-handoff:subject:")) {
 								submittedSubjects.add(id);

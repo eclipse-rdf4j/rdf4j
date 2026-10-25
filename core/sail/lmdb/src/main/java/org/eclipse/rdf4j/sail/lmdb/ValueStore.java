@@ -981,6 +981,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private long nativeCommitGeneration;
 	private volatile long environmentGeneration;
 	private boolean nativeMutation;
+	/** Set by {@link #commitIfChanged()} for the duration of its commit. */
+	private boolean skipUnchangedCommit;
+	/** Whether the last commit found nothing to publish and aborted its native writer instead. */
+	private boolean lastCommitSkipped;
 	private volatile TxnReplayPolicy.Decision replayDecision;
 	private final Object capacityOrigin = new Object();
 	private long bulkMapGrowthCount;
@@ -9232,10 +9236,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			primaryStoreKeys[i] = primaryStoreSortKey(data[i]);
 			secondaryStoreKeys[i] = secondaryStoreSortKey(data[i]);
 		}
-		int[] scratchOrder = new int[count];
-		long[] scratchKeys = new long[count];
-		int[] counts = new int[256];
-		int[] offsets = new int[256];
+		// Small batches, such as one statement's values, sort by insertion and never touch the radix scratch.
+		boolean radix = count > LeadingFieldSorters.LSD_RADIX_THRESHOLD;
+		int[] scratchOrder = radix ? new int[count] : null;
+		long[] scratchKeys = radix ? new long[count] : null;
+		int[] counts = radix ? new int[256] : null;
+		int[] offsets = radix ? new int[256] : null;
 		LeadingFieldSorters.lsdRadixSort(order, secondaryStoreKeys, count, scratchOrder, scratchKeys, counts,
 				offsets);
 		for (int i = 0; i < count; i++) {
@@ -12629,6 +12635,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	void persistPreparedValues(PreparedValueBatch prepared) throws IOException {
+		// These records go straight into the writer; per-type fresh ordinals need not move nextId.
+		nativeMutation = true;
 		try (MemoryStack stack = stackPush()) {
 			invalidateUntrustedCountMetadata(stack, writeTxn);
 			PointerBuffer cursorHandle = stack.mallocPointer(1);
@@ -13753,6 +13761,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			associationGate.unlock();
 		}
 		if (writeTxn != 0) {
+			if (commit && skipUnchangedCommit && writerChangedNothing()) {
+				abortUnchangedWriter(publication);
+				return true;
+			}
 			if (commit) {
 				// Checkpoints publish dictionary mappings too: their component counts must be in the same commit.
 				try (MemoryStack stack = stackPush()) {
@@ -13831,6 +13843,39 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			releaseWriteTransactionState();
 		}
 		return true;
+	}
+
+	/**
+	 * True when the open writer assigned, reused, retired or recounted nothing and wrote nothing outside those paths.
+	 * Startup writers are never treated as unchanged: they create sub-databases, which an abort would discard. Nor is a
+	 * writer while a fresh value session is active: it assigns per-type ordinals that need not move nextId.
+	 */
+	private boolean writerChangedNothing() {
+		if (!valueStoreInitializationComplete || startupInitializationInProgress || nativeMutation
+				|| activeFreshValueSession != null
+				|| invalidateRevisionOnCommit || nextId != writerFirstAppendedId || !writerReusedIds.isEmpty()
+				|| !refCountsTxCache.isEmpty() || pendingValueAssociation != null || !reclaimedRevisionIds.isEmpty()
+				|| !droppedTermIndexDbis.isEmpty() || retiredIdStore.hasTransactionChanges()) {
+			return false;
+		}
+		synchronized (pendingHashUpdates) {
+			return pendingHashUpdates.isEmpty();
+		}
+	}
+
+	/** Releases an unchanged writer as if it had committed: the callers' dictionary state is already durable. */
+	private void abortUnchangedWriter(WriterPublication publication) throws IOException {
+		lastNativeCommitSucceeded = true;
+		lastCommitSkipped = true;
+		associationGate.lock();
+		try {
+			abortWriteTransaction(nativeWriteTransaction(publication));
+		} finally {
+			releaseNativeWriteTransactionOwnership(publication);
+			associationGate.unlock();
+		}
+		discardCompressedValueMutation();
+		releaseWriteTransactionState();
 	}
 
 	private long nativeWriteTransaction(WriterPublication publication) throws IOException {
@@ -13990,6 +14035,21 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		mdb_env_close(environment);
 	}
 
+	/**
+	 * Commits the dictionary writer, or aborts it when it changed nothing. A NONE transaction that only reuses existing
+	 * values then costs no dictionary commit at all; aborting such a writer publishes exactly what its commit would
+	 * have, because the next-ID record, reference counts and reference-count proof only change together with the
+	 * dictionary.
+	 */
+	void commitIfChanged() throws IOException {
+		skipUnchangedCommit = true;
+		try {
+			commit();
+		} finally {
+			skipUnchangedCommit = false;
+		}
+	}
+
 	public void commit() throws IOException {
 		long generationBefore = nativeCommitGeneration;
 		WriterTransaction requested = WriterTransaction.current();
@@ -14015,6 +14075,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				}
 			}
 			throw failure;
+		}
+		if (lastCommitSkipped) {
+			// Nothing was committed, so readers have no newer snapshot to move to.
+			lastCommitSkipped = false;
+			endValueLookupMutation();
+			return;
 		}
 		resetReadTransactionsAfterCommit();
 	}

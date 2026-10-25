@@ -676,7 +676,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			verifyMutationAdmission();
 		}
 		if (isActive() && IsolationLevels.NONE.isCompatibleWith(getTransactionIsolation())) {
-			lmdbStore.getBackingStore().flushNonePending(this);
+			lmdbStore.getBackingStore().flushNonePending(this, true);
 			// Commit, an explicit flush and a read flush all need an initial run import written to the store.
 			lmdbStore.getBackingStore().completeInitialRunImportBeforeRead(this);
 			try (SailClosable publication = lmdbStore.getBackingStore().beginPublication(this)) {

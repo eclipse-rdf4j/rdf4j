@@ -156,7 +156,7 @@ class LmdbNoneStreamingIngestionTest {
 	@Test
 	void mixedUpdateRowsDoNotCheckpointEachAddRemovePair(@TempDir Path dataDir) throws Exception {
 		int rowCount = 32;
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+		LmdbStoreConfig config = streamingConfig()
 				.setBulkOperationSize(BULK_OPERATION_SIZE)
 				.setTripleDBSize(16L << 20)
 				.setValueDBSize(16L << 20)
@@ -224,7 +224,7 @@ class LmdbNoneStreamingIngestionTest {
 
 	@Test
 	void queuedAlignedMapFullRecoversBeforeMixedRemovalCapture(@TempDir Path dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+		LmdbStoreConfig config = streamingConfig()
 				.setBulkOperationSize(2)
 				.setTripleDBSize(16L << 20)
 				.setValueDBSize(16L << 20)
@@ -303,7 +303,7 @@ class LmdbNoneStreamingIngestionTest {
 
 	@Test
 	void queuedAlignedMapFullRecoversOnNoListenerDeleteCapture(@TempDir Path dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+		LmdbStoreConfig config = streamingConfig()
 				.setBulkOperationSize(2)
 				.setTripleDBSize(16L << 20)
 				.setValueDBSize(16L << 20)
@@ -365,7 +365,7 @@ class LmdbNoneStreamingIngestionTest {
 
 	@Test
 	void queuedRemovalMapFullRecoversAtNextNoListenerPageCapture(@TempDir Path dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+		LmdbStoreConfig config = streamingConfig()
 				.setBulkOperationSize(2)
 				.setTripleDBSize(16L << 20)
 				.setValueDBSize(16L << 20)
@@ -781,7 +781,7 @@ class LmdbNoneStreamingIngestionTest {
 	void isolationSwitchesDoNotRetainConfiguredCapacityForPartialBatches(@TempDir Path dataDir) throws Exception {
 		int bulkCapacity = 262_144;
 		int pairs = 4;
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+		LmdbStoreConfig config = streamingConfig()
 				.setBulkOperationSize(bulkCapacity)
 				.setTripleDBSize(16L << 20)
 				.setValueDBSize(16L << 20)
@@ -1873,7 +1873,7 @@ class LmdbNoneStreamingIngestionTest {
 	@Timeout(value = 90, unit = TimeUnit.SECONDS)
 	void terminalAlignedIoFailureRejectsPublicNoneContinuations(NoneContinuation continuation,
 			boolean enableMultiThreading, @TempDir Path dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+		LmdbStoreConfig config = streamingConfig()
 				.setBulkOperationSize(2)
 				.setTripleDBSize(16L << 20)
 				.setValueDBSize(16L << 20)
@@ -2020,7 +2020,7 @@ class LmdbNoneStreamingIngestionTest {
 	@Timeout(value = 60, unit = TimeUnit.SECONDS)
 	void postNativeCommitCheckpointFailureRejectsPublicNoneContinuations(NativeCommitContinuation continuation,
 			@TempDir Path dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+		LmdbStoreConfig config = streamingConfig()
 				.setBulkOperationSize(256)
 				.setTripleDBSize(16L << 20)
 				.setValueDBSize(16L << 20)
@@ -2171,7 +2171,7 @@ class LmdbNoneStreamingIngestionTest {
 	@Timeout(value = 90, unit = TimeUnit.SECONDS)
 	void publicNoneCapacityRecoveryFailureRejectsContinuationAndPreservesPrefix(@TempDir Path dataDir)
 			throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+		LmdbStoreConfig config = streamingConfig()
 				.setBulkOperationSize(2)
 				.setTripleDBSize(16L << 20)
 				.setValueDBSize(16L << 20)
@@ -2388,7 +2388,7 @@ class LmdbNoneStreamingIngestionTest {
 	@Test
 	@Timeout(value = 60, unit = TimeUnit.SECONDS)
 	void staleNoneSinkCannotMutateOrCloseAFreshPublicAttempt(@TempDir Path dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+		LmdbStoreConfig config = streamingConfig()
 				.setBulkOperationSize(2)
 				.setTripleDBSize(16L << 20)
 				.setValueDBSize(16L << 20);
@@ -3199,7 +3199,7 @@ class LmdbNoneStreamingIngestionTest {
 	@Timeout(value = 90, unit = TimeUnit.SECONDS)
 	void admittedPeerPublishesWhileNoOpNamespaceOwnerGrows(NamespaceNoOp noOp, @TempDir Path dataDir)
 			throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+		LmdbStoreConfig config = streamingConfig()
 				.setBulkOperationSize(2)
 				.setTripleDBSize(1L << 20)
 				.setValueDBSize(1L << 20)
@@ -5038,7 +5038,7 @@ class LmdbNoneStreamingIngestionTest {
 	@Timeout(value = 90, unit = TimeUnit.SECONDS)
 	void noneConnectionFlushBatchCapacityRecoveryPublishesAndAllowsFollowupTransaction(@TempDir Path dataDir)
 			throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+		LmdbStoreConfig config = streamingConfig()
 				.setBulkOperationSize(2)
 				.setTripleDBSize(16L << 20)
 				.setValueDBSize(16L << 20)
@@ -5180,7 +5180,7 @@ class LmdbNoneStreamingIngestionTest {
 
 	private void assertNoneConnectionFlushBatchCapacityRecoveryPublishesInsideSameOwnerOuterPublication(Path dataDir,
 			boolean enableMultiThreading, boolean expectCapacityRecovery) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+		LmdbStoreConfig config = streamingConfig()
 				.setBulkOperationSize(2)
 				.setTripleDBSize(16L << 20)
 				.setValueDBSize(16L << 20)
@@ -5364,7 +5364,7 @@ class LmdbNoneStreamingIngestionTest {
 	@Test
 	@Timeout(value = 90, unit = TimeUnit.SECONDS)
 	void terminalDirectNoneSinkFailureDoesNotCommitSameOwnerOuterPublication(@TempDir Path dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+		LmdbStoreConfig config = streamingConfig()
 				.setBulkOperationSize(4)
 				.setTripleDBSize(16L << 20)
 				.setValueDBSize(16L << 20)
@@ -5528,7 +5528,7 @@ class LmdbNoneStreamingIngestionTest {
 	@Test
 	@Timeout(value = 90, unit = TimeUnit.SECONDS)
 	void failedFrozenPublicationDoesNotAcknowledgePendingBranch(@TempDir Path dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+		LmdbStoreConfig config = streamingConfig()
 				.setBulkOperationSize(2)
 				.setTripleDBSize(16L << 20)
 				.setValueDBSize(16L << 20)
@@ -5642,7 +5642,7 @@ class LmdbNoneStreamingIngestionTest {
 	@Test
 	@Timeout(value = 90, unit = TimeUnit.SECONDS)
 	void failedPublicationCannotBeResurrectedByCertifiedCapacityReplay(@TempDir Path dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+		LmdbStoreConfig config = streamingConfig()
 				.setBulkOperationSize(2)
 				.setTripleDBSize(16L << 20)
 				.setValueDBSize(16L << 20)
@@ -5812,7 +5812,7 @@ class LmdbNoneStreamingIngestionTest {
 	private void assertNoneOuterPublicationCapacityOutcome(Path dataDir, int capacityFailures,
 			IOException terminalReplayFailure, boolean failOuterBeforeRecovery, boolean expectRecoveryPublication)
 			throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+		LmdbStoreConfig config = streamingConfig()
 				.setBulkOperationSize(2)
 				.setTripleDBSize(16L << 20)
 				.setValueDBSize(16L << 20)
@@ -6048,7 +6048,7 @@ class LmdbNoneStreamingIngestionTest {
 	}
 
 	private static LmdbStoreConfig replayGrowthConfig(int retryBudget) {
-		return new LmdbStoreConfig("spoc,posc")
+		return streamingConfig()
 				.setTripleDBSize(REPLAY_GROWTH_TRIPLE_MAP_SIZE)
 				.setValueDBSize(REPLAY_GROWTH_VALUE_MAP_SIZE)
 				.setMapGrowthThreshold(0.10d)
@@ -6106,15 +6106,23 @@ class LmdbNoneStreamingIngestionTest {
 		}
 	}
 
+	/**
+	 * These tests cover GH-6070's bounded NONE streaming, including NONE imports into an empty store, where the initial
+	 * run import would otherwise collect the rows as sorted runs behind a store-wide lock.
+	 */
+	private static LmdbStoreConfig streamingConfig() {
+		return new LmdbStoreConfig("spoc,posc").setInitialRunImportEnabled(false);
+	}
+
 	private static LmdbStoreConfig smallMaps() {
-		return new LmdbStoreConfig("spoc,posc")
+		return streamingConfig()
 				.setBulkOperationSize(BULK_OPERATION_SIZE)
 				.setTripleDBSize(1L << 20)
 				.setValueDBSize(1L << 20);
 	}
 
 	private static LmdbStoreConfig largeMaps() {
-		return new LmdbStoreConfig("spoc,posc")
+		return streamingConfig()
 				.setBulkOperationSize(BULK_OPERATION_SIZE)
 				.setTripleDBSize(64L << 20)
 				.setValueDBSize(256L << 20)

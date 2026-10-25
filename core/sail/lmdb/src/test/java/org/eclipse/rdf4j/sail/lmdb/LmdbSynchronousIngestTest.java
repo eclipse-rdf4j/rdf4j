@@ -254,6 +254,8 @@ class LmdbSynchronousIngestTest {
 	@org.junit.jupiter.api.Timeout(value = 180, unit = TimeUnit.SECONDS)
 	void noneCapacityRecoveryPublishesPairedChunksAcrossDurabilityAndWriterModes(boolean forceSync,
 			boolean multiThreading, @TempDir Path directory) throws Exception {
+		// Capacity recovery of streamed NONE chunks is under test; the initial run import would write no triple
+		// until its final merge, so the injected TripleStore capacity failure would never be reached.
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc")
 				.setForceSync(forceSync)
 				.setSketchEstimatorEnabled(false)
@@ -261,7 +263,8 @@ class LmdbSynchronousIngestTest {
 				.setTripleDBSize(1L << 20)
 				.setValueDBSize(1L << 20)
 				.setMapGrowthThreshold(0.5d)
-				.setMapGrowthReadDrainTimeoutMillis(0L);
+				.setMapGrowthReadDrainTimeoutMillis(0L)
+				.setInitialRunImportEnabled(false);
 		Set<Statement> input = statements("none-mode-" + forceSync + "-" + multiThreading, 16_384);
 		try (Fixture fixture = new Fixture(directory, config)) {
 			fixture.store.getBackingStore().enableMultiThreading = multiThreading;

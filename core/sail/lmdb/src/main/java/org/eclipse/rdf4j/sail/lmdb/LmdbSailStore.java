@@ -3114,6 +3114,15 @@ class LmdbSailStore implements SailStore {
 			return;
 		}
 		flushNonePending(owner);
+		// Take the writer lease before the store access lock, like a commit's publication does. A peer sink of the same
+		// connection may hold the lease while it waits for the store access lock; the checkpoints below re-enter this
+		// lease instead of waiting for it under the lock.
+		try (WriterLease lease = acquireWriterLease(owner)) {
+			completeInitialRunImportUnderLease(owner, runImport);
+		}
+	}
+
+	private void completeInitialRunImportUnderLease(Object owner, LmdbInitialRunImport runImport) throws SailException {
 		sinkStoreAccessLock.lock();
 		NoneWriteState state = null;
 		try {
@@ -3148,6 +3157,14 @@ class LmdbSailStore implements SailStore {
 		if (runImport == null || runImport.owner != owner || runImport.completing()) {
 			return;
 		}
+		// As for a read, the writer lease comes before the store access lock.
+		try (WriterLease lease = acquireWriterLease(owner)) {
+			rollbackInitialRunImportUnderLease(owner, runImport);
+		}
+	}
+
+	private void rollbackInitialRunImportUnderLease(Object owner, LmdbInitialRunImport runImport)
+			throws SailException {
 		sinkStoreAccessLock.lock();
 		NoneWriteState state = null;
 		try {
@@ -5858,6 +5875,14 @@ class LmdbSailStore implements SailStore {
 
 	/** Materialize a NONE batch before opening the final public publication/commit scope. */
 	void flushNonePending(Object owner) {
+		flushNonePending(owner, false);
+	}
+
+	/**
+	 * @param finalFlush the owning connection commits, flushes or reads; its pending batch is then the last work of the
+	 *                   attempt so far, and runs on the caller thread when it opens its own chunk
+	 */
+	void flushNonePending(Object owner, boolean finalFlush) {
 		sinkStoreAccessLock.lock();
 		NoneWriteState state = null;
 		try {
@@ -5867,7 +5892,7 @@ class LmdbSailStore implements SailStore {
 				LmdbSailSink sink = state.pendingSink;
 				try (SailWriteContinuation.Scope continuation = state.continuationController()
 						.beginNativeContinuation()) {
-					sink.flushNoneBatch();
+					sink.flushNoneBatch(finalFlush);
 				}
 			}
 			if (state != null && state.controller != null
@@ -8220,7 +8245,7 @@ class LmdbSailStore implements SailStore {
 	/** Commits dictionary records and publishes fresh-import bookkeeping before the authoritative triple commit. */
 	private void commitDictionaryBeforeTriple() throws IOException {
 		try {
-			valueStore.commit();
+			valueStore.commitIfChanged();
 		} finally {
 			// ValueStore marks this immediately after mdb_txn_commit returns. A later publication/cleanup failure must
 			// not make rollback attempt to use the already-consumed native transaction or discard durable dictionary
@@ -11097,6 +11122,14 @@ class LmdbSailStore implements SailStore {
 		}
 
 		private void flushNoneBatch() throws IOException {
+			flushNoneBatch(false);
+		}
+
+		/**
+		 * @param finalFlush the batch is flushed because the transaction commits, flushes or reads, not because it is
+		 *                   full
+		 */
+		private void flushNoneBatch(boolean finalFlush) throws IOException {
 			NoneWriteState state = noneState();
 			PendingNoneBatch pending = state.pending;
 			if (pending == null || pending.size == 0) {
@@ -11109,8 +11142,11 @@ class LmdbSailStore implements SailStore {
 			state.pendingBytes = 0L;
 			BulkAddQuadsOperation batch = pending.prepare();
 			LmdbInitialRunImport runImport = acceptingInitialRunImport();
-			if (runImport != null && !freshSessionAccepts(batch.size)) {
-				// The fresh session's map is full: write the import so far, then resolve through lookups.
+			LmdbInitialRunImport ownImport = initialRunImport;
+			if (ownImport != null && ownImport.owner == writerOwner() && !ownImport.completing()
+					&& (runImport == null || !freshSessionAccepts(batch.size))) {
+				// Inferred rows or a full fresh session take dictionary lookups, which need the import's lookup
+				// records: write the import so far first, then take the regular path.
 				completeInitialRunImport();
 				runImport = null;
 			}
@@ -11142,7 +11178,10 @@ class LmdbSailStore implements SailStore {
 			state.bytes = LmdbUtil.saturatedAdd(state.bytes, bytes);
 			state.tripleBytes = LmdbUtil.saturatedAdd(state.tripleBytes, tripleEstimate);
 			try {
-				startTransaction(true);
+				// The ingest worker overlaps value resolution of the next batch with this batch's index writes. A final
+				// batch that opens its own chunk has nothing to overlap with, so it runs on this thread and avoids
+				// three thread hand-offs (batch, drain, commit): about 15% of a one-statement transaction.
+				startTransaction(!finalFlush || storeTxnStarted.get());
 				resolveBatchValues(batch);
 				submitResolvedAdd(batch);
 			} catch (IOException | RuntimeException failure) {
@@ -11160,12 +11199,17 @@ class LmdbSailStore implements SailStore {
 		/** The active initial run import of this sink's owner while it still accepts rows, or {@code null}. */
 		private LmdbInitialRunImport acceptingInitialRunImport() {
 			LmdbInitialRunImport runImport = initialRunImport;
-			return runImport != null && runImport.owner == writerOwner() && !runImport.merging() ? runImport : null;
+			return explicit && runImport != null && runImport.owner == writerOwner() && !runImport.merging()
+					? runImport
+					: null;
 		}
 
+		/** Whether {@code storeFreshNoneValues} would resolve a batch of this size from the fresh session. */
 		private boolean freshSessionAccepts(int rows) {
 			ValueStore.FreshValueSession session = freshValueSession;
-			return session != null && !freshValueSessionInvalidated && valueStore.isFreshValueSessionUsable(session)
+			return nativeCheckpoints && explicit && !mayHaveInferred && session != null
+					&& !freshValueSessionInvalidated && freshNoneImportOwner == writerOwner()
+					&& valueStore.isFreshValueSessionUsable(session)
 					&& valueStore.freshValueSessionSize(session) + 4L * rows < freshNoneValueLimit();
 		}
 
