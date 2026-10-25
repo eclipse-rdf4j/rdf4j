@@ -2623,6 +2623,13 @@ class LmdbSailStore implements SailStore {
 	private ValueStore.FreshValueSession freshValueSession;
 	private final List<ValueStore.PreparedValueBatch> pendingFreshValueBatches = new ArrayList<>();
 	private boolean freshValueSessionInvalidated;
+	/** The NONE owner whose initial import assigns values from {@link #freshValueSession}, or {@code null}. */
+	private Object freshNoneImportOwner;
+	/**
+	 * A NONE import keeps every assigned value in the fresh session's map across its bounded native chunks; past this
+	 * many values it falls back to dictionary lookups so memory stays bounded by the heap.
+	 */
+	private static final long FRESH_NONE_VALUE_LIMIT = Math.max(1L << 20, Runtime.getRuntime().maxMemory() / 1024);
 	private final int bulkOperationSize;
 	private final boolean valueOverlayEnabled;
 	private final boolean preparedStatementBatchesEnabled;
@@ -7735,6 +7742,11 @@ class LmdbSailStore implements SailStore {
 	void finishInitialNoneImport(Object owner, LmdbStoreConnection.WriteAttempt attempt) {
 		sinkStoreAccessLock.lock();
 		try {
+			if (freshNoneImportOwner == owner) {
+				// The session's map is only authoritative inside its own NONE attempt.
+				freshNoneImportOwner = null;
+				invalidateFreshValueSession();
+			}
 			InitialNoneImport current = initialNoneImport;
 			if (current == null || current.owner() != owner || current.attempt() != attempt) {
 				return;
@@ -10415,13 +10427,19 @@ class LmdbSailStore implements SailStore {
 					boolean workerRequired = false;
 					boolean workerSubmitted = false;
 					try {
-						if (freshImportEligible && !nativeCheckpoints && freshValueSession == null
-								&& !freshValueSessionInvalidated && !mayHaveInferred) {
+						// A NONE import keeps the session across its native chunks only while it is the sole NONE
+						// owner.
+						// resolveBatchValues ends it once anything else may have touched the dictionary.
+						if (freshImportEligible && freshValueSession == null && !freshValueSessionInvalidated
+								&& !mayHaveInferred && (!nativeCheckpoints || explicit && noneWriteStates.size() == 1
+										&& noneWriteStates.containsKey(owner))) {
 							if (tripleStore.isEmpty()) {
 								freshValueSession = valueStore.startFreshValueSessionIfEmpty();
 							}
 							if (freshValueSession == null) {
 								freshValueSessionInvalidated = true;
+							} else if (nativeCheckpoints) {
+								freshNoneImportOwner = owner;
 							}
 						}
 						if (multiThreadingActive) {
@@ -10748,7 +10766,9 @@ class LmdbSailStore implements SailStore {
 					}
 				}
 			}
-			valueStore.storeValues(values, ids, valueCount);
+			if (!storeFreshNoneValues(values, ids, valueCount)) {
+				valueStore.storeValues(values, ids, valueCount);
+			}
 			for (int i = 0; i < batch.size; i++) {
 				Statement statement = batch.statements[i];
 				batch.subjects[i] = ids[positions[4 * i]];
@@ -10766,6 +10786,38 @@ class LmdbSailStore implements SailStore {
 					resolved.contexts.put(statement.getContext(), batch.contexts[i]);
 				}
 			}
+		}
+
+		/**
+		 * Assigns a NONE chunk's values from the initial import's fresh session instead of looking each one up. The
+		 * records join the chunk's native value transaction; a capacity replay rolls the session's provisional IDs back
+		 * with it and resolves the chunk again.
+		 *
+		 * @return false when the session is gone or no longer authoritative; the caller then uses dictionary lookups
+		 */
+		private boolean storeFreshNoneValues(Value[] values, long[] ids, int count) throws IOException {
+			ValueStore.FreshValueSession session = freshValueSession;
+			if (!nativeCheckpoints || session == null || freshValueSessionInvalidated) {
+				return false;
+			}
+			if (!explicit || mayHaveInferred || freshNoneImportOwner != writerOwner()
+					|| noneWriteStates.size() != 1 || !valueStore.isFreshValueSessionUsable(session)
+					|| valueStore.freshValueSessionSize(session) >= FRESH_NONE_VALUE_LIMIT) {
+				invalidateFreshValueSession();
+				return false;
+			}
+			ValueStore.FreshValueAssignment assignment = valueStore.assignFreshValues(session,
+					count == values.length ? values : Arrays.copyOf(values, count));
+			System.arraycopy(assignment.ids(), 0, ids, 0, count);
+			pendingFreshValueBatches.add(assignment.publication());
+			ValueStore.FreshValueEncoder encoder = valueStore.freshValueEncoder(session, assignment);
+			ValueStore.PreparedValueBatch preparedValues;
+			while ((preparedValues = encoder.next(MAX_BULK_OPERATION_CAPACITY)) != null) {
+				valueStore.persistPreparedValues(preparedValues);
+				preparedValues.releasePersistenceData();
+				pendingFreshValueBatches.add(preparedValues);
+			}
+			return true;
 		}
 
 		/** Returns the batch index of {@code value}, which equals {@code nextIndex} when the value is new. */
@@ -11250,6 +11302,8 @@ class LmdbSailStore implements SailStore {
 			if (state.pending != null) {
 				state.pendingSink.flushNoneBatch();
 			}
+			// Removal can retire values the fresh session still maps; later additions must look them up.
+			invalidateFreshValueSession();
 			// Capture removals after the ordered native prefix; additions and removals share the bounded chunk.
 			long removed = 0L;
 			int limit = Math.max(1, Math.min(bulkOperationSize, NoneWriteState.MAX_CHUNK_ROWS));

@@ -111,6 +111,7 @@ import java.util.zip.CRC32;
 
 import org.eclipse.collections.impl.map.mutable.primitive.LongLongHashMap;
 import org.eclipse.collections.impl.map.mutable.primitive.ObjectLongHashMap;
+import org.eclipse.collections.impl.set.mutable.primitive.LongHashSet;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -546,8 +547,22 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			return null;
 		}
 		FreshValueSession session = new FreshValueSession();
+		freshValueSessionSpoiled = false;
 		activeFreshValueSession = session;
 		return session;
+	}
+
+	/**
+	 * Reports whether {@code session} still knows every dictionary value. Any ordinary insert while a session is active
+	 * (another writer, or a non-fresh path of this one) allocates through {@link #nextId(byte, CoreDatatype)}, which
+	 * spoils the session: assigning fresh IDs afterwards could duplicate the inserted value.
+	 */
+	boolean isFreshValueSessionUsable(FreshValueSession session) {
+		return session != null && activeFreshValueSession == session && !freshValueSessionSpoiled;
+	}
+
+	int freshValueSessionSize(FreshValueSession session) {
+		return session.valueIds.size();
 	}
 
 	/** Tests the same fresh-dictionary eligibility without claiming a session or mutating dictionary state. */
@@ -653,6 +668,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	 * Maximum size of keys before hashing is used (size of two long values)
 	 */
 	private static final int MAX_KEY_SIZE = ValueStoreRecordCodec.MAX_INLINE_KEY_BYTES;
+	/** Bounds one batch's absent alternative-IRI hashes (8 bytes each); a full set is cleared and rebuilt. */
+	private static final int MAX_ABSENT_RECORD_HASHES = 1 << 20;
 	private static final int MAX_UNSIGNED_ID_BYTES = 9;
 	private static final int MAX_ID_KEY_BYTES = 1 + MAX_UNSIGNED_ID_BYTES;
 	private static final int MAX_HASH_ID_KEY_BYTES = 1 + MAX_UNSIGNED_ID_BYTES + MAX_ID_KEY_BYTES;
@@ -902,6 +919,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private final ObjectLongHashMap<RdfTermKey> transactionValueIds = new ObjectLongHashMap<>();
 	private final ObjectLongHashMap<String> transactionNamespaceIds = new ObjectLongHashMap<>();
 	private FreshValueSession activeFreshValueSession;
+	private volatile boolean freshValueSessionSpoiled;
 	private final int transactionValueCacheLimit = calculateTransactionValueCacheLimit(
 			Runtime.getRuntime().maxMemory());
 	private final Map<Long, Long> refCountsTxCache = new HashMap<>();
@@ -4612,6 +4630,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private long nextId(byte valueType, CoreDatatype coreDatatype) throws IOException {
+		if (activeFreshValueSession != null) {
+			freshValueSessionSpoiled = true;
+		}
 		int idType = valueIdType(valueType);
 		if (freeIdsAvailable && isValueReclamationEnabled()) {
 			// next id from store
@@ -8579,6 +8600,16 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	/** Resolve the same lexical IRI even when its writer preserved a different namespace/local-name boundary. */
 	private long findAlternativeIriId(byte[] data, MemoryStack stack, long txn) throws IOException {
+		return findAlternativeIriId(data, stack, txn, null);
+	}
+
+	/**
+	 * @param absentRecordHashes record hashes whose {@code HASH_KEY} is known to be missing from {@code txn}, or
+	 *                           {@code null}. A missing hash key rules out every record with that hash, so the set
+	 *                           stays exact for as long as its owner removes each hash it inserts.
+	 */
+	private long findAlternativeIriId(byte[] data, MemoryStack stack, long txn, LongHashSet absentRecordHashes)
+			throws IOException {
 		if (data[0] != URI_VALUE) {
 			return LmdbValue.UNKNOWN_ID;
 		}
@@ -8604,7 +8635,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			namespaceData.position(namespaceData.position() + 1);
 			namespaceData.get(lexical, 0, namespaceLength);
 			encoded.get(lexical, namespaceLength, encoded.remaining());
-			return findAlternativeIriId(lexical, namespaceLength, namespaceId, stack, txn);
+			return findAlternativeIriId(lexical, namespaceLength, namespaceId, stack, txn, absentRecordHashes);
 		} finally {
 			stack.pop();
 		}
@@ -8616,7 +8647,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			if (lookup != null) {
 				lookup.captureScope(txn);
 			}
-			return findAlternativeIriId(lexical, -1, LmdbValue.UNKNOWN_ID, stack, txn);
+			return findAlternativeIriId(lexical, -1, LmdbValue.UNKNOWN_ID, stack, txn, null);
 		});
 	}
 
@@ -8626,9 +8657,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	 * Long namespace keys are hash indexed. Compute their prefix hashes once, without copying or reencoding prefixes.
 	 */
 	private long findAlternativeIriId(byte[] lexical, int excludedNamespaceLength, long excludedNamespaceId,
-			MemoryStack stack, long txn)
+			MemoryStack stack, long txn, LongHashSet absentRecordHashes)
 			throws IOException {
-		try (AlternativeIriLookup lookup = new AlternativeIriLookup(lexical, stack, txn)) {
+		try (AlternativeIriLookup lookup = new AlternativeIriLookup(lexical, stack, txn, absentRecordHashes)) {
 			long result = lookup.find(excludedNamespaceLength, excludedNamespaceId);
 			lookup.publish();
 			return result;
@@ -8644,6 +8675,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		private final byte[] lexical;
 		private final long txn;
 		private final MemoryStack stack;
+		private final LongHashSet absentRecordHashes;
 		private final MDBVal key;
 		private final MDBVal value;
 		private MDBVal id;
@@ -8671,10 +8703,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		private long namespaceCursor;
 		private long hashCursor;
 
-		private AlternativeIriLookup(byte[] lexical, MemoryStack stack, long txn) {
+		private AlternativeIriLookup(byte[] lexical, MemoryStack stack, long txn, LongHashSet absentRecordHashes) {
 			this.lexical = lexical;
 			this.txn = txn;
 			this.stack = stack;
+			this.absentRecordHashes = absentRecordHashes;
 			key = MDBVal.malloc(stack);
 			value = MDBVal.malloc(stack);
 			scope = valueLookupScope(generation, txn);
@@ -8986,6 +9019,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				E(rc);
 				return data2id(value.mv_data());
 			}
+			if (absentRecordHashes != null && absentRecordHashes.contains(hash)) {
+				return LmdbValue.UNKNOWN_ID;
+			}
 			if (hashKey == null) {
 				hashKey = stack.malloc(2 + 2 * Long.BYTES + 2);
 			}
@@ -8996,6 +9032,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			key.mv_data(hashKey);
 			int rc = probeIriAlternative(txn, key, value);
 			if (rc == MDB_NOTFOUND) {
+				if (absentRecordHashes != null) {
+					if (absentRecordHashes.size() >= MAX_ABSENT_RECORD_HASHES) {
+						absentRecordHashes.clear();
+					}
+					absentRecordHashes.add(hash);
+				}
 				return LmdbValue.UNKNOWN_ID;
 			}
 			E(rc);
@@ -9221,6 +9263,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		private final MDBVal hashVal;
 		private final ByteBuffer idBuffer;
 		private final ByteBuffer hashBuffer;
+		/**
+		 * Alternative-IRI probes of this batch that found no {@code HASH_KEY}. The encoded batch already holds its
+		 * namespace and datatype IDs, so within one run the only hash-keyed inserts are this storer's own, and
+		 * {@link #storeFirstLargeId} removes each hash it inserts.
+		 */
+		private final LongHashSet absentRecordHashes = new LongHashSet();
 
 		private BatchIdStorer(MemoryStack stack, long txn) {
 			this.stack = stack;
@@ -9249,7 +9297,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			if (mdb_get(txn, dbi, dataVal, idVal) == MDB_SUCCESS) {
 				return data2id(idVal.mv_data());
 			}
-			long alternativeId = findAlternativeIriId(data, stack, txn);
+			long alternativeId = findAlternativeIriId(data, stack, txn, absentRecordHashes);
 			if (alternativeId != LmdbValue.UNKNOWN_ID) {
 				return alternativeId;
 			}
@@ -9280,7 +9328,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					return data2id(idVal.mv_data());
 				}
 			} else {
-				return storeFirstLargeId(data, coreDatatype);
+				return storeFirstLargeId(data, coreDatatype, dataHash);
 			}
 
 			hashBuffer.put(0, HASHID_KEY);
@@ -9316,8 +9364,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			return storeHashCollisionId(data, hashLength, coreDatatype);
 		}
 
-		private long storeFirstLargeId(byte[] data, CoreDatatype coreDatatype) throws IOException {
-			long alternativeId = findAlternativeIriId(data, stack, txn);
+		private long storeFirstLargeId(byte[] data, CoreDatatype coreDatatype, long dataHash) throws IOException {
+			long alternativeId = findAlternativeIriId(data, stack, txn, absentRecordHashes);
 			if (alternativeId != LmdbValue.UNKNOWN_ID) {
 				return alternativeId;
 			}
@@ -9327,6 +9375,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			dataVal.mv_size(data.length);
 			long activeWriteTxn = currentWriteTxn(txn);
 			E(mdb_put(activeWriteTxn, dbi, hashVal, idVal, 0));
+			absentRecordHashes.remove(dataHash);
 			E(mdb_put(activeWriteTxn, dbi, idVal, dataVal, MDB_RESERVE));
 			dataVal.mv_data().put(data);
 			recordCompressedValueChange(newId);
@@ -9335,7 +9384,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 
 		private long storeHashCollisionId(byte[] data, int hashLength, CoreDatatype coreDatatype) throws IOException {
-			long alternativeId = findAlternativeIriId(data, stack, txn);
+			long alternativeId = findAlternativeIriId(data, stack, txn, absentRecordHashes);
 			if (alternativeId != LmdbValue.UNKNOWN_ID) {
 				return alternativeId;
 			}
@@ -10058,7 +10107,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			System.arraycopy(iri.localNameData(), 0, lexical, iri.namespaceData().length - 1,
 					iri.localNameData().length);
 			try (MemoryStack stack = stackPush()) {
-				yield findAlternativeIriId(lexical, -1, LmdbValue.UNKNOWN_ID, stack, txn);
+				yield findAlternativeIriId(lexical, -1, LmdbValue.UNKNOWN_ID, stack, txn, null);
 			}
 		}
 		case SnapshotLiteral literal -> {

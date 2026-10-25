@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -21,6 +22,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -298,6 +300,50 @@ class ValueStoreIdCacheTest {
 					assertEquals(id, store.getId(VALUES.createIRI("urn:split:" + local)));
 				}
 			}
+		}
+	}
+
+	@Test
+	void ordinaryInsertSpoilsAnActiveFreshValueSession(@TempDir File directory) throws Exception {
+		try (CountingValueStore store = store(directory)) {
+			ValueStore.FreshValueSession session = store.startFreshValueSessionIfEmpty();
+			assertNotNull(session);
+			assertTrue(store.isFreshValueSessionUsable(session));
+			store.startTransaction(true);
+			store.storeValue(VALUES.createIRI("urn:ordinary:insert"));
+			store.commit();
+			assertFalse(store.isFreshValueSessionUsable(session),
+					"a value the session did not assign makes its map incomplete");
+			store.discardFreshValueSession(session);
+		}
+	}
+
+	@Test
+	void bulkCreationProbesEachAbsentNamespacePrefixHashOncePerBatch(@TempDir File directory) throws Exception {
+		try (CountingValueStore store = store(directory)) {
+			String namespace = "http://example.com/theme/social/comment/";
+			persist(store, VALUES.createIRI(namespace + "0"));
+			int count = 400;
+			Value[] values = new Value[count];
+			for (int i = 0; i < count; i++) {
+				values[i] = VALUES.createIRI(namespace + (100_000 + i));
+			}
+			store.resetCounts();
+
+			store.startTransaction(true);
+			long[] ids = new long[count];
+			store.storeValues(values, ids, count);
+			store.commit();
+
+			// Sequential IRIs share every namespace candidate shorter than their last few bytes. Each absent prefix
+			// hash only needs one native probe per batch instead of one per IRI.
+			assertTrue(store.alternativeProbes <= 4 * count,
+					"alternative IRI probes for " + count + " sequential IRIs: " + store.alternativeProbes);
+			store.clearCaches();
+			for (int i = 0; i < count; i++) {
+				assertEquals(ids[i], store.getId(VALUES.createIRI(namespace + (100_000 + i))));
+			}
+			assertEquals(count, Arrays.stream(ids).distinct().count());
 		}
 	}
 
