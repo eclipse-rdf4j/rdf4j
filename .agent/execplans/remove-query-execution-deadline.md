@@ -21,7 +21,12 @@ To see it working, run `SailQueryExecutionTimeoutTest` in `core/repository/sail`
 - [x] (2026-10-25 11:10Z) Milestone 4: LMDB cancellation entry points (`NativeContextClosingIteration`, `RepositoryValueIteration`, `ReplayableIteration`) and deadline removal from `LmdbSailStore`, `LmdbStoreConnection`, `TxnManager`, `ValueStore`, `LmdbStore`, `LmdbFilterSelectivityStats`; 27 LMDB tests ported, `NativeCancellationTokenDeadlineTest` deleted, `LmdbQueryExecutionDeadlineTest` renamed `LmdbQueryTimeoutTest`.
 - [x] (2026-10-25 11:20Z) Milestone 5: `QueryExecutionDeadline` and its test deleted; lifecycle doc and `lmdb-store.md` updated.
 - [x] (2026-10-25 11:25Z) Milestone 6: forward-only cancellation in FedX, SPARQLRepository, SHACL, extensible-store (SPIN has no delegating iterations).
-- [ ] Formatting (done), copyright check (done), module verification (running).
+- [x] (2026-10-25 09:53Z) Formatting, copyright check; committed and pushed as `08a20a9d5c`.
+- [x] (2026-10-25 10:05Z) Non-LMDB module verification green: iterator 91, queryparser/api 18, http/client 185, sail/api 104, sail/base 611, repository/api 63, repository/sail 53, queryalgebra/evaluation 2317, memory 1398, nativerdf 976, repository/sparql 88, extensible-store 844, shacl 35316, federation 599 (0 failures).
+- [x] (2026-10-25 10:27Z) LMDB triage: the first full run compiled tests mid-port and was discarded; against HEAD the ten suspect classes had two real failures. Native growth ignored the flush caller's time limit (fixed with `MapGrowthAttempt.cancel()`); one ported `TxnManagerTest` expected the old timed read-barrier wait and the wrong exception type (test fixed).
+- [x] (2026-10-25 11:00Z) Merged `develop` (criss-cross merge bases made GitHub report a conflict; the merged tree is identical) and pushed `b1b60ee960`.
+- [x] (2026-10-25 11:02Z) Full LMDB run in an mvnf workspace: 10,331 tests, 19 failures. Twelve were read-barrier tests waiting for the frame `acquireReadBarrier`, renamed to `acquireReadBarrierInterruptibly` by the port (tests fixed). Seven were spill tests that look for temporary files under `java.io.tmpdir`; they pass outside workspace mode (see Surprises).
+- [x] (2026-10-25 11:57Z) Fresh full `core/sail/lmdb` run outside workspace mode: 10,490 tests, 0 failures, 139 skipped.
 
 ## Surprises & Discoveries
 
@@ -32,12 +37,22 @@ To see it working, run `SailQueryExecutionTimeoutTest` in `core/repository/sail`
   Evidence: `FilterIterationConcurrentCloseTest.timeoutCloseConvertsRuntimeFailureDuringFilterAcceptance` failed until its source swallowed the interrupt.
 - Observation: `InterruptingTimeLimit.close()` cannot tell its own interrupt from one another party delivered while it was guarded, so it clears both. For the LMDB filter-sampling budget this means a caller's time-limit interrupt that arrives in the short window after the sampling budget fired is lost; the caller's own wrapper still reports its timeout because it keeps its own fired/interrupted state. The deadline-era test for that ordering (`threadInterruptionStillPropagatesAfterSamplingExpiration`) was removed.
 - Observation: LMDB's `ReplayableIteration.close()` already defers closing a native delegate while a tracked read is active (`closeDelegateWhenIdle`), and `RepositoryValueIteration.close()` defers its value-scope drain behind an active pull, so the forced close step cannot free native memory beneath a running read.
+- Observation: native map growth runs on the native writer worker, not on the flushing caller. The deadline used to travel to the worker (`NativeGrowthRequest.deadline`, `MapGrowthAttempt.deadlineScope`) and end its emergency reader grace; with only interrupts, the caller waited uninterruptibly in `serviceNativeGrowth` for the full 2 s grace.
+  Evidence: `AdaptiveReplayIntegrationTest.asyncNativeGrowthUsesTheFlushCallersDeadlineRatherThanItsPhysicalTransactionDeadline` timed out after 1 s; fixed by `MapGrowthAttempt.cancel()` (see Decision Log).
+- Observation: without a deadline every `TxnManager` read barrier goes through `StampedLongAdderLockManager.readLock()`, which spins while a native writer holds the barrier; before this change only untimed queries did, while timed queries parked in `tryReadLock(timeout)`. Parking changes observable lock state (a parked reader is not counted by `isReaderActive()`, which `ValueStoreTest` and the writer's reader-preference loop rely on), so the spin path, which untimed queries always used, was kept.
+  Evidence: switching to `tryReadLock(Long.MAX_VALUE, NANOSECONDS)` failed `ValueStoreTest.testInterruptedTripleTermIteratorReturnsReaderPermit`.
+- Observation: in mvnf workspace mode surefire sets `java.io.tmpdir` as a system property after JVM start, but `Files.createTempFile` uses the tmpdir captured at startup, so spill tests that list `java.io.tmpdir` (`NativePhysicalGroupingCostTest`, `NativeAdjacencyAggregateOutputMemoryTest`, `LmdbNativeCensusAggregateTest`) see no spill files. They pass in a plain `mvnf` run.
+  Evidence: `TxnManagerTest.nativeReadWaitsForTheNativeWriterUntilReleasedOrInterrupted` never saw the reader park in `StampedLock.acquireRead`.
+- Observation: `InterruptedSailException`'s constructors assert that the current thread is interrupted, so it cannot report a cancellation observed on a thread that was not interrupted (the native writer worker).
 - Observation: the root offline install failed on new BOM versions (jackson 2.22.3, jetty 12.1.14, netty 4.2.18, junit 6.1.3) after the latest main merge; one online install fetched them.
 
 ## Decision Log
 
 - Decision: A native result carrier that owns its `NativeExecutionContext` cancels the context's root token on `requestCancellation()` and reports acceptance; a carrier with a borrowed context only forwards.
   Rationale: the root token reaches every operator and worker of the evaluation, but a borrowed context belongs to an enclosing evaluation that must not be cancelled by a nested result.
+  Date/Author: 2026-10-25 / Claude.
+- Decision: An interrupted caller waiting for native growth calls `MapGrowthAttempt.cancel()` (outside the `asyncProgress` monitor) and keeps waiting for the native owner to finish. The worker's quiescence and reader-grace loops poll the attempt's flag and fail with `IOException("Interrupted … the attempt was cancelled")`.
+  Rationale: replaces the deadline handoff cooperatively; the native owner still decides when native state is safe to release, and no interrupt is delivered to the long-lived writer thread.
   Date/Author: 2026-10-25 / Claude.
 - Decision: Native-writer producers check the thread's interrupt before handing work to the writer (`enqueueAsync`) and before reusing a completed drain.
   Rationale: the deadline check used to stop a cancelled producer even when no wait was needed; the interrupt is now the cancellation signal.
@@ -66,7 +81,19 @@ To see it working, run `SailQueryExecutionTimeoutTest` in `core/repository/sail`
 
 ## Outcomes & Retrospective
 
-(To be written at milestone completion.)
+`QueryExecutionDeadline` is gone from production code, tests and documentation. Query time limits are enforced in two places only: the `InterruptingTimeLimit` around `SailConnection.evaluate()` in the three Sail query classes, and the `TimeLimitIteration` escalation ladder (cooperative cancellation at T, interrupt at T+2 s, close at T+4 s) around every timed result. Every pass-through iteration in the core, sail and remote modules forwards `requestCancellation()`, and the long-running in-memory operators poll it. LMDB reaches its native root token from a repository query, and all of its admission waits end through interrupt, cancellation, shutdown or their existing internal budgets.
+
+Verification: every touched non-LMDB module is green (about 42,700 tests). The full `core/sail/lmdb` suite is green (10,490 tests) in a plain `mvnf` run.
+
+Lessons:
+- The deadline had been doing more than timing out queries. It also carried a caller's time budget across threads: to the native writer worker during map growth, and to async and sort workers. Each handoff needed a replacement, either an explicit cancel signal (`MapGrowthAttempt.cancel()`) or the close fallback on worker contexts. Searching for `current()` captures would have found these handoffs earlier than the test failures did.
+- Tests that wait for a specific stack frame or lock state are coupled to method names and wait strategies. When a ported test fails, first check whether it encodes a removed code path before changing production code to match it.
+- Running a long suite while sources are still being edited gives results that cannot be trusted. Start full-module runs only from a quiescent tree.
+
+Remaining limitations:
+- `InterruptingTimeLimit.close()` can swallow an unrelated interrupt that arrives during its guarded window.
+- Untimed and timed LMDB readers spin rather than park while a native writer holds the read barrier, as untimed readers did before.
+- In mvnf workspace mode, surefire's `java.io.tmpdir` system property does not affect `Files.createTempFile`, so three LMDB spill test classes fail there. This is a build-configuration issue unrelated to this change.
 
 ## Context and Orientation
 

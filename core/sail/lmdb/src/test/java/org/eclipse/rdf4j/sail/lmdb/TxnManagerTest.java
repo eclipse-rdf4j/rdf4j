@@ -87,14 +87,16 @@ public class TxnManagerTest {
 						}
 					});
 					assertTrue(started.await(5, TimeUnit.SECONDS));
-					awaitWaitingIn(readerThread.get(), "java.util.concurrent.locks.StampedLock", "acquireRead");
+					awaitWaitingIn(readerThread.get(), "org.eclipse.rdf4j.sail.lmdb.TxnManager",
+							"acquireReadBarrierInterruptibly");
 					assertFalse(reader.isDone(), "A native read must wait while the native writer is held");
 					if (interrupt) {
 						// A query time limit or cancellation ends the wait by interrupting the reader.
 						readerThread.get().interrupt();
 						ExecutionException failure = assertThrows(ExecutionException.class,
 								() -> reader.get(5, TimeUnit.SECONDS));
-						assertInstanceOf(UncheckedIOException.class, failure.getCause());
+						assertInstanceOf(InterruptedException.class,
+								assertInstanceOf(SailException.class, failure.getCause()).getCause());
 					}
 				} finally {
 					fixture.manager.lockManager().unlockWrite(writeStamp);

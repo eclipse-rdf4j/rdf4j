@@ -375,7 +375,7 @@ class LmdbReadAttemptCancellationTest {
 					manager.beforeBlockingReaderAdmissionForTest = nativeReadBlocked::countDown;
 					allowNativeRead.countDown();
 					if (nativeBarrier) {
-						awaitWaitingIn(nativeThread, "acquireReadBarrier");
+						awaitWaitingIn(nativeThread, "acquireReadBarrierInterruptibly");
 					} else {
 						assertTrue(nativeReadBlocked.await(5, TimeUnit.SECONDS));
 						awaitWaitingIn(nativeThread, "acquireReaderPermits");

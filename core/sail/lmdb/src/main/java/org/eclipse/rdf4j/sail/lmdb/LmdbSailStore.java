@@ -452,6 +452,7 @@ class LmdbSailStore implements SailStore {
 		private volatile long nativeGeneration;
 		private long statementReplayGeneration;
 		private final AtomicBoolean closed = new AtomicBoolean();
+		private volatile boolean cancelled;
 		private Runnable completion;
 		private boolean reportEmergencyOutcome;
 		private boolean resized;
@@ -485,7 +486,18 @@ class LmdbSailStore implements SailStore {
 
 		void requestQuiescence(MapResizeKind kind) throws IOException {
 			if (!closed.get()) {
-				coordinator.requestQuiescence(episode, kind);
+				coordinator.requestQuiescence(episode, kind, this);
+			}
+		}
+
+		/**
+		 * Ends this attempt's reader grace early because the operation it serves was interrupted, for example by a time
+		 * limit. The native owner observes the request at its next drain wait and fails the attempt.
+		 */
+		void cancel() {
+			if (!closed.get()) {
+				cancelled = true;
+				coordinator.signalChange();
 			}
 		}
 
@@ -1958,7 +1970,25 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		private void signalChange() {
+			lock.lock();
+			try {
+				changed.signalAll();
+			} finally {
+				lock.unlock();
+			}
+		}
+
+		private static boolean cancelled(MapGrowthAttempt attempt) {
+			return attempt != null && attempt.cancelled;
+		}
+
 		private void requestQuiescence(GrowthEpisode requestedEpisode, MapResizeKind kind) throws IOException {
+			requestQuiescence(requestedEpisode, kind, null);
+		}
+
+		private void requestQuiescence(GrowthEpisode requestedEpisode, MapResizeKind kind,
+				MapGrowthAttempt growthAttempt) throws IOException {
 			List<ObserverNotification> notifications;
 			List<ReadViewLease> retiredViews = new ArrayList<>();
 			boolean coordinationOwner = false;
@@ -1972,6 +2002,10 @@ class LmdbSailStore implements SailStore {
 				while (requestedEpisode.quiescenceRunning) {
 					if (requestedEpisode.quiescenceThread == Thread.currentThread()) {
 						return;
+					}
+					if (cancelled(growthAttempt)) {
+						throw new IOException(
+								"Interrupted while coordinating LMDB map growth: the attempt was cancelled");
 					}
 					try {
 						if (!awaitChange(requestedEpisode.deadlineNanos)) {
@@ -1992,6 +2026,10 @@ class LmdbSailStore implements SailStore {
 				if (requestedEpisode.managed && requestedEpisode.phase == GrowthPhase.EMERGENCY) {
 					while (hasDrainableViews(requestedEpisode)
 							&& LmdbSailStore.remainingNanos(requestedEpisode.deadlineNanos) > 0 && !shuttingDown) {
+						if (cancelled(growthAttempt)) {
+							throw new IOException(
+									"Interrupted during emergency LMDB reader grace: the attempt was cancelled");
+						}
 						try {
 							awaitReaderDrain(requestedEpisode.deadlineNanos);
 						} catch (InterruptedException e) {
@@ -2003,6 +2041,11 @@ class LmdbSailStore implements SailStore {
 				while (hasPendingDrainableViews(requestedEpisode)) {
 					long remaining = remainingNanos(requestedEpisode.deadlineNanos);
 					if (remaining <= 0) {
+						break;
+					}
+					if (cancelled(growthAttempt)) {
+						coordinationFailure = new IOException(
+								"Interrupted while waiting for LMDB read views to settle: the attempt was cancelled");
 						break;
 					}
 					try {
@@ -4910,15 +4953,13 @@ class LmdbSailStore implements SailStore {
 				}
 				request.attempt = grant;
 				signalAsyncWaiters();
-				while (!request.finished) {
-					try {
-						asyncProgress.wait();
-					} catch (InterruptedException cancellation) {
-						// Native lifetime is stronger than Java cancellation: restore locks only after the owner
-						// has left its native operation. The caller's interrupt is restored below.
-						interrupted = true;
-					}
-				}
+			}
+			// Native lifetime is stronger than Java cancellation: restore locks only after the owner has left its
+			// native operation. An interrupt cancels the attempt's reader grace; the caller's interrupt is restored
+			// below.
+			while (!awaitNativeGrowthFinished(request)) {
+				interrupted = true;
+				grant.cancel();
 			}
 		} catch (IOException | RuntimeException | Error failure) {
 			synchronized (asyncProgress) {
@@ -4942,6 +4983,20 @@ class LmdbSailStore implements SailStore {
 					Thread.currentThread().interrupt();
 				}
 			}
+		}
+	}
+
+	/** Returns false when interrupted before the native owner finished the request. */
+	private boolean awaitNativeGrowthFinished(NativeGrowthRequest request) {
+		synchronized (asyncProgress) {
+			while (!request.finished) {
+				try {
+					asyncProgress.wait();
+				} catch (InterruptedException cancellation) {
+					return false;
+				}
+			}
+			return true;
 		}
 	}
 
