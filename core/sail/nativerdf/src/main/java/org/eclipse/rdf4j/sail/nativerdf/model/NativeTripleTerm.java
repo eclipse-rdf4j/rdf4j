@@ -93,4 +93,19 @@ public class NativeTripleTerm extends AbstractTripleTerm implements NativeValue 
 
 		return super.equals(o);
 	}
+
+	@Override
+	protected boolean hasStructuralEquals() {
+		return false;
+	}
+
+	@Override
+	protected boolean hasStructuralHashCode() {
+		return getClass() == NativeTripleTerm.class;
+	}
+
+	@Override
+	protected boolean hasStructuralStringValue() {
+		return getClass() == NativeTripleTerm.class;
+	}
 }

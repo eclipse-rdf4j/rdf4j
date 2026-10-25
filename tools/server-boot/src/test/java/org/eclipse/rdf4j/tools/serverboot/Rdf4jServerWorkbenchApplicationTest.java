@@ -550,6 +550,50 @@ class Rdf4jServerWorkbenchApplicationTest {
 	}
 
 	@Test
+	void loggingOverviewRequiresExplicitOptIn() {
+		String property = "org.eclipse.rdf4j.server.logging.ui.enabled";
+		String previous = System.getProperty(property);
+		String base = "http://localhost:" + port;
+		String marker = "SYNTHETIC_LOG_SECRET_20261023";
+		try {
+			System.clearProperty(property);
+			assertThat(restTemplate.getForEntity(
+					base + "/repositories/NO_SUCH_REPOSITORY?token=" + marker, String.class).getStatusCode())
+							.isEqualTo(HttpStatus.NOT_FOUND);
+
+			for (String path : List.of("/system/logging/overview.view",
+					"/rdf4j-server/system/logging/overview.view")) {
+				ResponseEntity<String> response = restTemplate.getForEntity(base + path, String.class);
+				assertThat(response.getStatusCode()).as(path).isEqualTo(HttpStatus.FORBIDDEN);
+				assertThat(response.getBody()).as(path).doesNotContain(marker);
+			}
+			assertThat(restTemplate.getForEntity(base + "/system/overview.view", String.class).getStatusCode())
+					.isEqualTo(HttpStatus.OK);
+			assertThat(restTemplate.getForEntity(base + "/rdf4j-server/protocol", String.class).getStatusCode())
+					.isEqualTo(HttpStatus.OK);
+
+			System.setProperty(property, "false");
+			assertThat(restTemplate.getForEntity(base + "/system/logging/overview.view", String.class).getStatusCode())
+					.isEqualTo(HttpStatus.FORBIDDEN);
+			System.setProperty(property, "true-ish");
+			assertThat(restTemplate.getForEntity(base + "/system/logging/overview.view", String.class).getStatusCode())
+					.isEqualTo(HttpStatus.FORBIDDEN);
+
+			System.setProperty(property, "true");
+			ResponseEntity<String> enabled = restTemplate.getForEntity(base + "/system/logging/overview.view",
+					String.class);
+			assertThat(enabled.getStatusCode()).isEqualTo(HttpStatus.OK);
+			assertThat(enabled.getBody()).contains(marker);
+		} finally {
+			if (previous == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, previous);
+			}
+		}
+	}
+
+	@Test
 	void memoryRepositorySupportsDataLifecycle() throws Exception {
 		String repoId = registerRepository("mem", new MemoryStoreConfig());
 		withRepositoryConnection(repoId, connection -> {

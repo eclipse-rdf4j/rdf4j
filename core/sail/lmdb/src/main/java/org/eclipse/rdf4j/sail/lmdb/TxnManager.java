@@ -755,19 +755,19 @@ final class TxnManager {
 	}
 
 	private long acquireReadBarrier(QueryExecutionDeadline deadline) throws InterruptedException {
-		checkQueryDeadline(deadline);
 		if (deadline == null) {
 			return lockManager.readLock();
 		}
-		long remainingNanos = deadline.remainingNanos();
-		if (remainingNanos <= 0L) {
+		// The timed acquisition's budget is also its authoritative pre-admission deadline check.
+		long remainingMillis = deadline.remainingMillis();
+		if (remainingMillis <= 0L) {
 			throw queryInterrupted();
 		}
-		long stamp = lockManager.tryReadLock(remainingNanos, TimeUnit.NANOSECONDS);
+		long stamp = lockManager.tryReadLock(remainingMillis, TimeUnit.MILLISECONDS);
 		if (stamp == 0L) {
 			throw queryInterrupted();
 		}
-		if (deadline.remainingNanos() <= 0L) {
+		if (deadline.remainingMillis() <= 0L) {
 			lockManager.unlockRead(stamp);
 			throw queryInterrupted();
 		}
@@ -1045,11 +1045,11 @@ final class TxnManager {
 				}
 				long timeoutNanos = READER_ADMISSION_TIMEOUT_NANOS;
 				if (deadline != null) {
-					long queryRemainingNanos = deadline.remainingNanos();
-					if (queryRemainingNanos <= 0L) {
+					long queryRemainingMillis = deadline.remainingMillis();
+					if (queryRemainingMillis <= 0L) {
 						throw queryInterrupted();
 					}
-					timeoutNanos = Math.min(timeoutNanos, queryRemainingNanos);
+					timeoutNanos = Math.min(timeoutNanos, TimeUnit.MILLISECONDS.toNanos(queryRemainingMillis));
 				}
 				if (!slots.tryAcquire(count, timeoutNanos, TimeUnit.NANOSECONDS)) {
 					checkQueryDeadline(deadline);
@@ -1100,7 +1100,7 @@ final class TxnManager {
 	}
 
 	private static void checkQueryDeadline(QueryExecutionDeadline deadline) {
-		if (deadline != null && deadline.remainingNanos() <= 0L) {
+		if (deadline != null && deadline.remainingMillis() <= 0L) {
 			throw queryInterrupted();
 		}
 	}
@@ -1212,11 +1212,11 @@ final class TxnManager {
 				}
 				long waitNanos = Math.min(backoffNanos, nativeRemainingNanos);
 				if (queryDeadline != null) {
-					long queryRemainingNanos = queryDeadline.remainingNanos();
-					if (queryRemainingNanos <= 0L) {
+					long queryRemainingMillis = queryDeadline.remainingMillis();
+					if (queryRemainingMillis <= 0L) {
 						throw queryInterrupted();
 					}
-					waitNanos = Math.min(waitNanos, queryRemainingNanos);
+					waitNanos = Math.min(waitNanos, TimeUnit.MILLISECONDS.toNanos(queryRemainingMillis));
 				}
 				awaitReaderRelease(waitNanos);
 				checkQueryDeadline(queryDeadline);

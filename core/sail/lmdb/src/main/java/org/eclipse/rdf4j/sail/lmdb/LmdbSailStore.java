@@ -822,7 +822,11 @@ class LmdbSailStore implements SailStore {
 							return;
 						}
 						if (Thread.currentThread() == growthThread && episode.phase == GrowthPhase.RESERVE_REPLAYS
-								&& attempt != null && !attempt.closed) {
+								&& attempt != null) {
+							// The driver is reserving a replacement snapshot for a parked attempt. That attempt may
+							// have closed after the driver's pre-check; the driver owns this closed episode, so waiting
+							// here could never be satisfied. Admit the view: reserveParkedSnapshots discards a view
+							// reserved for an attempt that closed meanwhile.
 							return;
 						}
 						if (!waited) {
@@ -1218,11 +1222,11 @@ class LmdbSailStore implements SailStore {
 			if (deadline == null) {
 				return coordinationRemaining;
 			}
-			long queryRemaining = deadline.remainingNanos();
-			if (queryRemaining <= 0L) {
+			long queryRemainingMillis = deadline.remainingMillis();
+			if (queryRemainingMillis <= 0L) {
 				throw queryInterrupted();
 			}
-			return Math.min(coordinationRemaining, queryRemaining);
+			return Math.min(coordinationRemaining, TimeUnit.MILLISECONDS.toNanos(queryRemainingMillis));
 		}
 
 		private boolean awaitChange(QueryExecutionDeadline deadline, long coordinationDeadlineNanos)
@@ -4955,12 +4959,12 @@ class LmdbSailStore implements SailStore {
 		if (deadline != null && deadline.isExpired()) {
 			throw new QueryInterruptedException("Query evaluation took too long");
 		}
-		long remaining = deadline == null ? Long.MAX_VALUE : deadline.remainingNanos();
-		if (remaining <= 0L) {
+		long remainingMillis = deadline == null ? Long.MAX_VALUE : deadline.remainingMillis();
+		if (remainingMillis <= 0L) {
 			throw new QueryInterruptedException("Query evaluation took too long");
 		}
 		try {
-			asyncCallerProgress.await(observed, remaining);
+			asyncCallerProgress.await(observed, TimeUnit.MILLISECONDS.toNanos(remainingMillis));
 		} catch (InterruptedException interrupted) {
 			Thread.currentThread().interrupt();
 			throw new IOException("Interrupted while waiting for the native LMDB writer", interrupted);
@@ -4976,11 +4980,11 @@ class LmdbSailStore implements SailStore {
 			throw new QueryInterruptedException("Query evaluation took too long");
 		}
 		try {
-			long remaining = cancellable && deadline != null ? deadline.remainingNanos() : Long.MAX_VALUE;
-			if (remaining == Long.MAX_VALUE) {
+			long remainingMillis = cancellable && deadline != null ? deadline.remainingMillis() : Long.MAX_VALUE;
+			if (remainingMillis == Long.MAX_VALUE) {
 				asyncProgress.wait();
-			} else if (remaining > 0L) {
-				TimeUnit.NANOSECONDS.timedWait(asyncProgress, remaining);
+			} else if (remainingMillis > 0L) {
+				TimeUnit.MILLISECONDS.timedWait(asyncProgress, remainingMillis);
 			} else {
 				throw new QueryInterruptedException("Query evaluation took too long");
 			}
@@ -5072,7 +5076,7 @@ class LmdbSailStore implements SailStore {
 		if (original == null) {
 			return caller;
 		}
-		return caller == null || original.remainingNanos() <= caller.remainingNanos() ? original : caller;
+		return caller == null || original.remainingMillis() <= caller.remainingMillis() ? original : caller;
 	}
 
 	private void awaitAsyncProgress(BooleanSupplier finished) throws IOException {
@@ -5826,7 +5830,7 @@ class LmdbSailStore implements SailStore {
 						if (deadline == null) {
 							publicationCompleted.await();
 						} else {
-							publicationCompleted.awaitNanos(deadline.remainingNanos());
+							publicationCompleted.await(deadline.remainingMillis(), TimeUnit.MILLISECONDS);
 						}
 					} catch (InterruptedException e) {
 						Thread.currentThread().interrupt();
@@ -5939,7 +5943,7 @@ class LmdbSailStore implements SailStore {
 							if (deadline == null) {
 								writerOwnerMonitor.wait();
 							} else {
-								TimeUnit.NANOSECONDS.timedWait(writerOwnerMonitor, deadline.remainingNanos());
+								TimeUnit.MILLISECONDS.timedWait(writerOwnerMonitor, deadline.remainingMillis());
 							}
 						} catch (InterruptedException e) {
 							Thread.currentThread().interrupt();
@@ -6097,7 +6101,7 @@ class LmdbSailStore implements SailStore {
 						if (deadline == null) {
 							publicationCompleted.await();
 						} else {
-							publicationCompleted.awaitNanos(deadline.remainingNanos());
+							publicationCompleted.await(deadline.remainingMillis(), TimeUnit.MILLISECONDS);
 						}
 					} catch (InterruptedException e) {
 						Thread.currentThread().interrupt();
