@@ -13,6 +13,7 @@ const {
     deleteRepository,
     hostFromServer,
     listenAddressForServer,
+    postWorkbench,
     serverBaseUrl,
     signInOnConnectionPage,
     uniqueRepositoryId,
@@ -131,7 +132,7 @@ test.describe('R2 private saved queries', () => {
             await openQueryPage(anonymousPage, repositoryId);
             await anonymousPage.locator('#save-query-toggle').click();
             await expect(anonymousPage.locator('#save-private'), 'an anonymous user cannot choose Private').toBeDisabled();
-            const refused = await anonymousPage.request.post(repositoryUrl(repositoryId, 'query'), {
+            const refused = await postWorkbench(anonymousPage.request, repositoryUrl(repositoryId, 'query'), {
                 form: { action: 'save', 'query-name': `${queryName}-anonymous`, queryLn: 'SPARQL',
                     query: 'SELECT * WHERE { ?s ?p ?o }', 'save-private': 'true', 'query-timeout': '0' }
             });
@@ -141,7 +142,7 @@ test.describe('R2 private saved queries', () => {
 
             // Clean up as the owner.
             const urn = (await (await savedQueryRows(page, repositoryId, queryName)).getAttribute('id')).replace(/-div$/, '');
-            const deleted = await page.request.post(repositoryUrl(repositoryId, 'saved-queries'), { form: { delete: urn } });
+            const deleted = await postWorkbench(page.request, repositoryUrl(repositoryId, 'saved-queries'), { form: { delete: urn } });
             expect(deleted.status()).toBe(200);
         } finally {
             await alice.close();
@@ -219,7 +220,7 @@ test.describe('R5 Load more of a changed result', () => {
     test('the server answers a continuation of a changed result with a total that agrees with has-more',
         async ({ request }) => {
             const continuation = async (offset, knownTotal) => {
-                const answer = await request.post(repositoryUrl(repositoryId, 'query'), {
+                const answer = await postWorkbench(request, repositoryUrl(repositoryId, 'query'), {
                     headers: { Accept: PAGE_DATA },
                     form: { action: 'exec', ref: 'text', queryLn: 'SPARQL', query, 'batch-size': '4',
                         'batch-offset': String(offset), 'batch-known-total': String(knownTotal) }

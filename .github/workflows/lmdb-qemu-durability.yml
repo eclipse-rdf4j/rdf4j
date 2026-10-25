@@ -101,13 +101,13 @@ jobs:
             --strace "$(command -v strace)"
 
       - name: Build exact Java 25 artifacts
-        run: mvn -B -ntp -T 1C -Dmaven.repo.local=.m2_repo -Pquick clean install
+        run: mvn -B -ntp -T 1C -Dmaven.repo.local=.m2_repo -Pquick clean install --fail-at-end
 
       - name: Run required LMDB recovery and isolation tests
         run: >-
           mvn -B -ntp -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb
           -Dtest=LmdbCrashRecoveryTest,LmdbStoreFlushReproductionTest,TripleStoreAutoGrowTest,ValueStoreTermIndexRecoveryTest,LmdbConstructorCleanupTest,PersistentSetFactoryTransactionOwnershipTest,LmdbSnapshotValueLifetimeTest,LmdbValueRetirementRecoveryTest,TxnMutationJournalTest
-          -Dit.test=LmdbStoreModelLifecycleIT verify
+          -Dit.test=LmdbStoreModelLifecycleIT verify --fail-at-end
 
       - name: Preserve Maven test reports
         if: always()
@@ -134,7 +134,7 @@ jobs:
           mvn -B -ntp -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb \
             org.apache.maven.plugins:maven-dependency-plugin:3.8.1:build-classpath \
             -DincludeScope=test \
-            -Dmdep.outputFile="$CRASHLAB_ROOT/host-dependencies.txt"
+            -Dmdep.outputFile="$CRASHLAB_ROOT/host-dependencies.txt" --fail-at-end
           printf '%s:' "$GITHUB_WORKSPACE/core/sail/lmdb/target/test-classes" \
             "$GITHUB_WORKSPACE/core/sail/lmdb/target/classes" > "$CRASHLAB_ROOT/host-classpath.txt"
           tr -d '\n' < "$CRASHLAB_ROOT/host-dependencies.txt" >> "$CRASHLAB_ROOT/host-classpath.txt"

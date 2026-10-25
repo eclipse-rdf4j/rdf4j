@@ -13,7 +13,7 @@
 // @ts-check
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
-const { deleteRepository, evidencePath, evidenceScreenshots, serverBaseUrl, uniqueRepositoryId, workbenchBaseUrl }
+const { deleteRepository, evidencePath, evidenceScreenshots, postWorkbench, serverBaseUrl, uniqueRepositoryId, workbenchBaseUrl }
 	= require('./workbench-test-helpers.js');
 
 // Retired with the redesign (see .agent/execplans/workbench-stale-spec-migration-20261002.md): "Auto table keeps the
@@ -77,7 +77,7 @@ test.beforeAll(async ({ request }) => {
 test.afterAll(async ({ request }) => {
 	await deleteRepository(request, SERVER_BASE_URL, REVIEW_REPOSITORY_ID);
 	for (const urn of savedQueryUrns) {
-		const deletedQuery = await request.post(SAVED_QUERIES_URL, { form: { delete: urn } });
+		const deletedQuery = await postWorkbench(request, SAVED_QUERIES_URL, { form: { delete: urn } });
 		expect([200, 204]).toContain(deletedQuery.status());
 	}
 	const deleted = await request.delete(REPOSITORY_URL).catch(() => null);

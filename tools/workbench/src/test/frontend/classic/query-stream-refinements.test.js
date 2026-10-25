@@ -84,6 +84,7 @@ function loadQueryStreamApi(workbench = {}) {
         // An open disclosure pane listens on the document for presses outside it and Escape (plan task M14.3).
         document: {
             activeElement: null, cookie: '', documentElement: { clientWidth: 1000 },
+            location: new URL('http://localhost/rdf4j-workbench/repositories/test/query'),
             addEventListener(type, listener) {
                 documentListeners.set(type, (documentListeners.get(type) || new Set()).add(listener));
             },
@@ -93,7 +94,8 @@ function loadQueryStreamApi(workbench = {}) {
         },
         Event: class { constructor(type) { this.type = type; } },
         TextDecoder: require('node:util').TextDecoder,
-        URLSearchParams
+        URLSearchParams,
+        URL
     });
     vm.runInContext(fs.readFileSync(outputPath, 'utf8'), context, { filename: outputPath });
     context.workbench.queryStream.__testWindow = testWindow;

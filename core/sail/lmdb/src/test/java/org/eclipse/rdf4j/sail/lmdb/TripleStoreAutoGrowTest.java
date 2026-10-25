@@ -343,8 +343,10 @@ public class TripleStoreAutoGrowTest {
 		try (ReindexRetryTripleStore retried = new ReindexRetryTripleStore(reindexDir, reindexProperties,
 				reindexConfig);
 				Txn txn = retried.getTxnManager().createReadTxn()) {
+			retried.startBackgroundIndexRebuild();
+			assertTrue(retried.awaitIndexRebuild(30, TimeUnit.SECONDS), retried.indexRebuildStatus());
 			assertTrue(retried.injectedMapFull,
-					"The first rebuild attempt must abort after the removed index handles were dropped");
+					"The first bounded rebuild transaction must exercise native MAP_FULL recovery");
 			assertEquals(batch.subj.length, count(retried.getTriples(txn, -1, -1, -1, -1, true)));
 			assertEquals(expectedPredicateCount(batch, batch.pred[0]),
 					count(retried.getTriples(txn, -1, batch.pred[0], -1, -1, true)));
@@ -818,6 +820,8 @@ public class TripleStoreAutoGrowTest {
 				throw new IOException("The original index metadata must exist before reindex begins");
 			}
 			try (TripleStore expanded = new TripleStore(dataDir, expandedProperties, expandedConfig, null)) {
+				expanded.startBackgroundIndexRebuild();
+				assertTrue(expanded.awaitIndexRebuild(90, TimeUnit.SECONDS), expanded.indexRebuildStatus());
 				expandedProperties.save();
 			}
 			System.out.println("REINDEX_CHILD_COMPLETE");

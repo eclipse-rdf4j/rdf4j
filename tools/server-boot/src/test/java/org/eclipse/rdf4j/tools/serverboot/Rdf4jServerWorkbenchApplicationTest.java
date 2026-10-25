@@ -30,6 +30,8 @@ import org.apache.coyote.AbstractProtocol;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.eclipse.rdf4j.common.platform.Platform;
 import org.eclipse.rdf4j.http.client.shacl.RemoteShaclValidationException;
+import org.eclipse.rdf4j.http.server.compression.HttpCompressionFilter;
+import org.eclipse.rdf4j.http.server.security.RequestIntegrityFilter;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -56,6 +58,7 @@ import org.eclipse.rdf4j.sail.shacl.config.ShaclSailConfig;
 import org.eclipse.rdf4j.workbench.proxy.CacheFilter;
 import org.eclipse.rdf4j.workbench.proxy.RedirectFilter;
 import org.eclipse.rdf4j.workbench.proxy.WorkbenchGateway;
+import org.eclipse.rdf4j.workbench.security.WorkbenchCsrfFilter;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -123,6 +126,18 @@ class Rdf4jServerWorkbenchApplicationTest {
 	@Autowired
 	@Qualifier("serverPrefixForwardFilter")
 	private FilterRegistrationBean<ServerPrefixForwardFilter> serverPrefixForwardFilter;
+
+	@Autowired
+	@Qualifier("requestIntegrityFilter")
+	private FilterRegistrationBean<RequestIntegrityFilter> requestIntegrityFilter;
+
+	@Autowired
+	@Qualifier("workbenchCsrfFilter")
+	private FilterRegistrationBean<WorkbenchCsrfFilter> workbenchCsrfFilter;
+
+	@Autowired
+	@Qualifier("httpCompressionFilter")
+	private FilterRegistrationBean<HttpCompressionFilter> httpCompressionFilter;
 
 	@Autowired
 	@Qualifier("workbenchRedirectFilter")
@@ -299,6 +314,41 @@ class Rdf4jServerWorkbenchApplicationTest {
 	}
 
 	@Test
+	void requestIntegrityFiltersMatchWarDeploymentScopes() {
+		assertThat(requestIntegrityFilter.getFilter()).isInstanceOf(RequestIntegrityFilter.class);
+		assertThat(requestIntegrityFilter.getUrlPatterns()).containsExactlyInAnyOrder(
+				"/rdf4j-server/repositories", "/rdf4j-server/repositories/*");
+		assertThat(requestIntegrityFilter.getOrder()).isLessThan(httpCompressionFilter.getOrder());
+
+		assertThat(workbenchCsrfFilter.getFilter()).isInstanceOf(WorkbenchCsrfFilter.class);
+		assertThat(workbenchCsrfFilter.getUrlPatterns()).containsExactlyInAnyOrder(
+				"/rdf4j-workbench/repositories", "/rdf4j-workbench/repositories/*");
+		assertThat(workbenchCsrfFilter.getOrder()).isLessThan(workbenchRedirectFilter.getOrder());
+	}
+
+	@Test
+	void embeddedWorkbenchRejectsTokenlessMutation() {
+		HttpHeaders headers = new HttpHeaders();
+		headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+		ResponseEntity<String> response = restTemplate.exchange(
+				"http://localhost:" + port + "/rdf4j-workbench/repositories/NONE/query", HttpMethod.POST,
+				new HttpEntity<>("action=csrf-probe", headers), String.class);
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+	}
+
+	@Test
+	void embeddedServerRejectsCrossOriginBrowserMutation() {
+		HttpHeaders headers = new HttpHeaders();
+		headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+		headers.setOrigin("https://attacker.example");
+		headers.set("Sec-Fetch-Site", "cross-site");
+		ResponseEntity<String> response = restTemplate.exchange(
+				"http://localhost:" + port + "/rdf4j-server/repositories/NONE/statements", HttpMethod.POST,
+				new HttpEntity<>("", headers), String.class);
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+	}
+
+	@Test
 	void workbenchRootReturnsHtml() {
 		ResponseEntity<String> redirect = restTemplate.getForEntity(
 				"http://localhost:" + port + "/rdf4j-workbench/", String.class);
@@ -309,7 +359,11 @@ class Rdf4jServerWorkbenchApplicationTest {
 				.isNotNull()
 				.hasToString("http://localhost:" + port + "/rdf4j-workbench/repositories");
 
-		ResponseEntity<String> response = followRedirects(redirect.getHeaders().getLocation());
+		ResponseEntity<String> landing = restTemplate.getForEntity(redirect.getHeaders().getLocation(), String.class);
+		assertThat(landing.getStatusCode()).isEqualTo(HttpStatus.FOUND);
+		assertThat(landing.getHeaders().get(HttpHeaders.SET_COOKIE)).as("Workbench request token cookie")
+				.anySatisfy(cookie -> assertThat(cookie).startsWith("rdf4j-workbench-csrf="));
+		ResponseEntity<String> response = followRedirects(landing.getHeaders().getLocation());
 
 		assertThat(response.getStatusCode()).as("HTTP status for /rdf4j-workbench/repositories")
 				.isEqualTo(HttpStatus.OK);
@@ -400,7 +454,7 @@ class Rdf4jServerWorkbenchApplicationTest {
 	void queryExecutionPostReturnsTypedStreamingRows() throws Exception {
 		String repoId = registerRepository("query-page-data", new MemoryStoreConfig());
 		String route = "http://localhost:" + port + "/rdf4j-workbench/repositories/" + repoId + "/query";
-		HttpHeaders headers = new HttpHeaders();
+		HttpHeaders headers = workbenchSessionHeaders();
 		headers.setAccept(List.of(MediaType.parseMediaType("application/vnd.rdf4j.workbench+ndjson")));
 		headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
 		MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
@@ -435,9 +489,28 @@ class Rdf4jServerWorkbenchApplicationTest {
 		assertThat(end.path("metadata").path("result-limit").asInt()).isEqualTo(1_000_000);
 	}
 
+	private HttpHeaders workbenchSessionHeaders() {
+		ResponseEntity<String> landing = restTemplate.getForEntity(
+				"http://localhost:" + port + "/rdf4j-workbench/repositories", String.class);
+		assertThat(landing.getStatusCode()).isEqualTo(HttpStatus.FOUND);
+		List<String> setCookies = landing.getHeaders().get(HttpHeaders.SET_COOKIE);
+		assertThat(setCookies).isNotNull();
+		List<String> cookiePairs = setCookies.stream().map(cookie -> cookie.split(";", 2)[0]).toList();
+		String tokenPair = cookiePairs.stream()
+				.filter(cookie -> cookie.startsWith("rdf4j-workbench-csrf="))
+				.findFirst()
+				.orElseThrow();
+		HttpHeaders headers = new HttpHeaders();
+		headers.set(HttpHeaders.COOKIE, String.join("; ", cookiePairs));
+		headers.set("X-RDF4J-CSRF-Token", tokenPair.substring("rdf4j-workbench-csrf=".length()));
+		headers.setOrigin("http://localhost:" + port);
+		return headers;
+	}
+
 	@Test
 	void explicitTupleFormatsRemainRawForBrowserGetAndPost() throws Exception {
 		String repoId = registerRepository("raw-query-format", new MemoryStoreConfig());
+		HttpHeaders postHeaders = workbenchSessionHeaders();
 		String baseRoute = "http://localhost:" + port + "/rdf4j-workbench/repositories/" + repoId + "/query";
 		String query = "SELECT (1 AS ?value) WHERE {}";
 		String format = "application/sparql-results+json";
@@ -452,7 +525,6 @@ class Rdf4jServerWorkbenchApplicationTest {
 
 		assertRawTupleResult(getResponse);
 
-		HttpHeaders postHeaders = new HttpHeaders();
 		postHeaders.setAccept(List.of(MediaType.TEXT_HTML));
 		postHeaders.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
 		MultiValueMap<String, String> body = new LinkedMultiValueMap<>();

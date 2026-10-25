@@ -319,6 +319,7 @@ class LmdbOptimizerPipelineTest {
 		store.init();
 		try {
 			addSingleStatement(store, "urn:ready");
+			LmdbGcTestMaintenance.awaitPostReady(store);
 
 			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
 			estimator.stop();
@@ -411,6 +412,7 @@ class LmdbOptimizerPipelineTest {
 		store.init();
 		try {
 			addSingleStatement(store, "urn:configured-pipeline");
+			LmdbGcTestMaintenance.awaitPostReady(store);
 			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
 			estimator.stop();
 			estimator.rebuild();
@@ -585,6 +587,7 @@ class LmdbOptimizerPipelineTest {
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 		try {
+			LmdbGcTestMaintenance.awaitPostReady(store);
 			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
 			estimator.stop();
 			addExactNameData(repository, 70);

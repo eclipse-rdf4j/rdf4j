@@ -1192,27 +1192,27 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 
 	private void awaitSnapshotAdmission(SnapshotAdmission admission) throws SailException {
 		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
+		if (deadline != null && deadline.isExpired()) {
+			throw new QueryInterruptedException("Query evaluation took too long");
+		}
+		// Expiry interrupts this wait, so nothing here reads a clock to size a timeout.
+		QueryExecutionDeadline.ExpiryInterruption interruption = deadline == null ? null
+				: deadline.interruptOnExpiry();
 		try {
-			if (deadline == null) {
-				admission.completed.await();
-			} else {
-				while (admission.completed.getCount() != 0) {
-					long remainingMillis = deadline.remainingMillis();
-					if (remainingMillis == 0) {
-						throw new QueryInterruptedException("Query evaluation took too long");
-					}
-					if (!admission.completed.await(remainingMillis, TimeUnit.MILLISECONDS)
-							&& deadline.remainingMillis() == 0) {
-						throw new QueryInterruptedException("Query evaluation took too long");
-					}
-				}
-				if (deadline.remainingMillis() == 0) {
-					throw new QueryInterruptedException("Query evaluation took too long");
-				}
-			}
+			admission.completed.await();
 		} catch (InterruptedException e) {
+			if (interruption != null && interruption.disarm()) {
+				throw new QueryInterruptedException("Query evaluation took too long");
+			}
 			Thread.currentThread().interrupt();
 			throw new SailException("Interrupted while waiting for a snapshot generation", e);
+		}
+		if (interruption != null && interruption.disarm()) {
+			// Expiry landed after the admission completed: clear its interrupt and report the timeout below.
+			Thread.interrupted();
+		}
+		if (deadline != null && deadline.isExpired()) {
+			throw new QueryInterruptedException("Query evaluation took too long");
 		}
 	}
 

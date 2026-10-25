@@ -18,11 +18,36 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.concurrent.TimeUnit;
 
 public final class LmdbTestUtil {
 	private static final int DELETE_RETRY_ATTEMPTS = 5;
 
 	private LmdbTestUtil() {
+	}
+
+	/** Waits for deferred owner initialization before tests explicitly replace or persist optional components. */
+	public static void awaitPostReadyInitialization(LmdbStore store, long timeout, TimeUnit unit)
+			throws IOException, InterruptedException {
+		LmdbSailStore backingStore = store.getBackingStore();
+		long started = System.nanoTime();
+		long budget = unit.toNanos(timeout);
+		while (true) {
+			String status = backingStore.postReadyMaintenanceStatus();
+			if (status.equals("READY")) {
+				return;
+			}
+			if (!status.equals("RUNNING") && !status.equals("NOT_STARTED")) {
+				throw new IOException("LMDB post-ready initialization did not complete: " + status);
+			}
+			if (Thread.interrupted()) {
+				throw new InterruptedException("Interrupted while waiting for LMDB post-ready initialization");
+			}
+			if (System.nanoTime() - started >= budget) {
+				throw new IOException("Timed out waiting for LMDB post-ready initialization: " + status);
+			}
+			Thread.yield();
+		}
 	}
 
 	public static void deleteDir(File dataDir) {
