@@ -340,6 +340,8 @@ Both RDF4J Server and RDF4J Workbench use the Logback logging framework. In its 
 
 The default log level is INFO, indicating that only important status messages, warnings and errors are logged. The log level and -behaviour can be adjusted by modifying the `[RDF4J_DATA]/Server/conf/logback.xml` file. This file will be generated when the server is first run. Please consult the logback manual for configuration instructions.
 
+The built-in `/system/logging/overview.view` page is disabled by default and returns `403 Forbidden`. Server logs can include request URLs, query parameters, error details, and stack traces. To enable the page, start the Server JVM with `-Dorg.eclipse.rdf4j.server.logging.ui.enabled=true`. For the packaged Spring Boot distribution, add this option through `RDF4J_JAVA_OPTS`; for a standalone WAR, add it to the servlet container's JVM options. This setting only makes the page available. Protect `/system/logging/*` with servlet-container authentication and authorization or an authenticating reverse proxy before enabling it. For the packaged Boot server, protect both `/system/logging/*` and `/rdf4j-server/system/logging/*` when using a reverse proxy. The page must not be exposed anonymously on a publicly reachable listener.
+
 ## Access Rights and Security
 
 It is possible to set up your RDF4J Server to authenticate named users and restrict their permissions.  RDF4J Server is a servlet-based Web application deployed to any standard servlet container (for the remainder of this section it is assumed that Tomcat is being used).

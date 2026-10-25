@@ -314,7 +314,7 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T> {
 
 	private void checkActive() {
 		if (closed.get() || Thread.currentThread().isInterrupted()
-				|| deadline != null && deadline.remainingNanos() <= 0L) {
+				|| deadline != null && deadline.remainingMillis() <= 0L) {
 			throw new QueryInterruptedException("Query evaluation was interrupted during repository value exposure");
 		}
 		QueryExecutionContext.checkpoint("repository-value-exposure");

@@ -43,7 +43,7 @@ final class CanonicalTermCodec {
 	private static final byte LITERAL_TAG = 3;
 	private static final byte TRIPLE_TERM_TAG = 4;
 	private static final byte NAMESPACE_TAG = 5;
-	private static final int MAX_TRIPLE_TERM_DEPTH = 64;
+	static final int MAX_TRIPLE_TERM_DEPTH = 64;
 
 	private static final long FNV_OFFSET_BASIS = 0xcbf29ce484222325L;
 	private static final long FNV_PRIME = 0x100000001b3L;

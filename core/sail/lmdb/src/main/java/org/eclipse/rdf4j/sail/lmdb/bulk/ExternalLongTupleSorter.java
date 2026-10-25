@@ -23,14 +23,17 @@ import java.lang.foreign.ValueLayout;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -62,6 +65,7 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 	private final boolean asyncSpillsEnabled;
 	// Insertion-ordered so merge groups stay deterministic; hashed so adoption, removal and membership stay O(1).
 	private final Set<Path> runs = new LinkedHashSet<>();
+	private final Map<Path, String> runDigests = new ConcurrentHashMap<>();
 	private final List<PendingSpill> pendingSpills = new ArrayList<>();
 	private BulkTaskScheduler.ResourceLease producerLease;
 	private BulkTaskScheduler.ResourceScope producerClaim;
@@ -301,6 +305,9 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 		}
 		try {
 			runs.add(sortedRun.path);
+			if (sortedRun.contentDigest != null) {
+				runDigests.put(sortedRun.path, sortedRun.contentDigest);
+			}
 			rowCount = mergedRowCount;
 		} catch (RuntimeException | Error failure) {
 			sortedRun.adopted.set(false);
@@ -443,15 +450,20 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 			Files.createDirectories(output.toAbsolutePath().getParent());
 			if (mergeRuns.isEmpty()) {
 				Files.createFile(output);
+				runDigests.put(output, BulkArtifactIntegrity.finish(BulkArtifactIntegrity.newDigest()));
 			} else if (mergeRuns.size() == 1) {
 				Files.move(mergeRuns.getFirst(), output, StandardCopyOption.REPLACE_EXISTING);
+				String digest = runDigests.remove(mergeRuns.getFirst());
+				if (digest != null) {
+					runDigests.put(output, digest);
+				}
 			} else {
 				mergeGroup(mergeRuns, output);
 				deleteRuns(mergeRuns);
 			}
 			runs.clear();
 			finished = true;
-			return new SortedTupleFile(output, width, rowCount, codec, Files.size(output));
+			return new SortedTupleFile(output, width, rowCount, codec, Files.size(output), runDigests.remove(output));
 		} catch (IOException | RuntimeException | Error failure) {
 			try {
 				Files.deleteIfExists(output);
@@ -503,12 +515,14 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 			}
 		}
 		Path run = Files.createTempFile(directory, prefix + "-run-", ".bin");
-		try (DataOutputStream output = BulkLz4.output(run, codec, scheduler, spillObserver)) {
+		MessageDigest digest = BulkArtifactIntegrity.newDigest();
+		try (DataOutputStream output = BulkLz4.output(run, codec, scheduler, spillObserver, digest)) {
 			int values = bufferedRows * width;
 			for (int i = 0; i < values; i++) {
 				output.writeLong(get(i));
 			}
 		}
+		runDigests.put(run, BulkArtifactIntegrity.finish(digest));
 		runs.add(run);
 		bufferedRows = 0;
 	}
@@ -552,7 +566,8 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 							prefix + "-spill-" + String.format(java.util.Locale.ROOT, "%08d", runNumber), width,
 							Math.multiplyExact(runBufferBytes, 2L), maximumDescriptorFanIn + 1, codec,
 							runBufferAllocator, scheduler, snapshot, rows, spillObserver)) {
-						detached.finish(run);
+						SortedTupleFile sorted = detached.finish(run);
+						runDigests.put(run, sorted.contentDigest());
 					}
 					return run;
 				} catch (IOException | RuntimeException | Error failure) {
@@ -965,20 +980,22 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 	}
 
 	private void mergeGroupWithReservedDescriptors(List<Path> group, Path outputPath) throws IOException {
-		try (DataOutputStream output = BulkLz4.output(outputPath, codec, scheduler)) {
+		MessageDigest digest = BulkArtifactIntegrity.newDigest();
+		try (DataOutputStream output = BulkLz4.output(outputPath, codec, scheduler, digest)) {
 			mergeCursors(group, tuple -> {
 				for (long value : tuple) {
 					output.writeLong(value);
 				}
 			});
 		}
+		runDigests.put(outputPath, BulkArtifactIntegrity.finish(digest));
 	}
 
 	private void mergeCursors(List<Path> group, TupleConsumer sink) throws IOException {
 		RunCursor[] cursors = new RunCursor[group.size()];
 		try {
 			for (int i = 0; i < group.size(); i++) {
-				RunCursor cursor = new RunCursor(group.get(i), width, codec, scheduler);
+				RunCursor cursor = new RunCursor(group.get(i), width, codec, scheduler, runDigests.get(group.get(i)));
 				cursors[i] = cursor;
 				cursor.advance();
 			}
@@ -1107,6 +1124,7 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 			try {
 				runFileDeleter.delete(path);
 				runs.remove(path);
+				runDigests.remove(path);
 			} catch (IOException e) {
 				if (failure == null) {
 					failure = e;
@@ -1205,7 +1223,13 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 		}
 
 		private RunCursor(Path path, int width, BulkCodec codec, BulkTaskScheduler scheduler) throws IOException {
-			input = BulkLz4.input(path, codec, scheduler);
+			this(path, width, codec, scheduler, null);
+		}
+
+		private RunCursor(Path path, int width, BulkCodec codec, BulkTaskScheduler scheduler, String contentDigest)
+				throws IOException {
+			DataInputStream decoded = BulkLz4.input(path, codec, scheduler);
+			input = contentDigest == null ? decoded : BulkArtifactIntegrity.input(decoded, path, contentDigest);
 			tuple = new long[width];
 		}
 
@@ -1297,17 +1321,25 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 		private final long rows;
 		private final BulkCodec codec;
 		private final long bytes;
+		private final String contentDigest;
 		private final AtomicBoolean adopted = new AtomicBoolean();
 
-		private SortedTupleFile(Path path, int width, long rows, BulkCodec codec, long bytes) {
+		private SortedTupleFile(Path path, int width, long rows, BulkCodec codec, long bytes, String contentDigest) {
 			this.path = path;
 			this.width = width;
 			this.rows = rows;
 			this.codec = codec;
 			this.bytes = bytes;
+			this.contentDigest = contentDigest;
 		}
 
 		static SortedTupleFile restore(Path path, int width, long rows, long bytes, BulkCodec codec)
+				throws IOException {
+			return restore(path, width, rows, bytes, codec, null);
+		}
+
+		static SortedTupleFile restore(Path path, int width, long rows, long bytes, BulkCodec codec,
+				String contentDigest)
 				throws IOException {
 			if (width <= 0 || rows < 0L || bytes < 0L) {
 				throw new IOException("Invalid sorted tuple metadata for " + path);
@@ -1318,7 +1350,7 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 				throw new IOException("Sorted tuple file size mismatch for " + path + ": expected "
 						+ bytes + " bytes");
 			}
-			return new SortedTupleFile(path, width, rows, codec, bytes);
+			return new SortedTupleFile(path, width, rows, codec, bytes, contentDigest);
 		}
 
 		Path path() {
@@ -1327,6 +1359,10 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 
 		long rows() {
 			return rows;
+		}
+
+		String contentDigest() {
+			return contentDigest;
 		}
 
 		long scanReaderMemoryEstimateBytes() throws IOException {
@@ -1348,17 +1384,18 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 		}
 
 		void forEach(TupleConsumer consumer) throws IOException {
-			try (RunCursor cursor = new RunCursor(path, width, codec)) {
-				while (cursor.advance()) {
-					consumer.accept(cursor.tuple);
-				}
-			}
+			forEach(consumer, null);
 		}
 
 		void forEach(TupleConsumer consumer, BulkTaskScheduler scheduler) throws IOException {
-			try (RunCursor cursor = new RunCursor(path, width, codec, scheduler)) {
+			try (RunCursor cursor = new RunCursor(path, width, codec, scheduler, contentDigest)) {
+				long count = 0L;
 				while (cursor.advance()) {
 					consumer.accept(cursor.tuple);
+					count++;
+				}
+				if (count != rows) {
+					throw new IOException("Sorted tuple integrity count mismatch for " + path);
 				}
 			}
 		}

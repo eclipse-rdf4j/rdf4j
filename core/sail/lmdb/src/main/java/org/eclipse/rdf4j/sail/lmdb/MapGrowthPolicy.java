@@ -103,6 +103,21 @@ final class MapGrowthPolicy {
 		return BigDecimal.valueOf(value).divide(decimalRatio, 0, roundingMode);
 	}
 
+	/** Explicit capacity planning needs the strict fullness reserve, without reactive growth's doubling rule. */
+	long minimumMapSize(long floorBytes, long pageBytes, long projectedUsedBytes) {
+		if (floorBytes <= 0L || pageBytes <= 0L || projectedUsedBytes < 0L) {
+			throw new IllegalArgumentException("Capacity floor/page must be positive and projected use nonnegative");
+		}
+		try {
+			long withReserve = Math.addExact(projectedUsedBytes, LmdbUtil.MIN_FREE_SPACE);
+			long strictBytes = Math.addExact(decimalDivide(withReserve, RoundingMode.FLOOR).longValueExact(), 1L);
+			return Math.max(alignUpToPage(floorBytes, pageBytes), alignUpToPage(strictBytes, pageBytes));
+		} catch (ArithmeticException overflow) {
+			throw new IllegalArgumentException("Requested LMDB capacity is not representable as page-aligned bytes",
+					overflow);
+		}
+	}
+
 	private long softWatermarkBytes(long mapBytes) {
 		SoftWatermark cached = cachedSoftWatermark;
 		if (cached != null && cached.mapBytes == mapBytes) {

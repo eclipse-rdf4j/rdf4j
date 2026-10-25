@@ -13,6 +13,9 @@ package org.eclipse.rdf4j.sail.lmdb.bulk;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.AdditionalAnswers.delegatesTo;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -20,6 +23,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -32,14 +37,17 @@ import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class PartitionValueDictionaryBuilderTest {
 
 	@TempDir
 	Path temporaryDirectory;
 
-	@Test
-	void adaptiveLeafPreparationOverlapsAndKeepsIdsAndMergedRolesDeterministic() throws Exception {
+	@ParameterizedTest
+	@ValueSource(ints = { 2, 3 })
+	void adaptiveLeafPreparationOverlapsAndKeepsIdsAndMergedRolesDeterministic(int workers) throws Exception {
 		long memoryBudgetBytes = 1024L * 1024L;
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,psoc").setInlineLiterals(true);
 		Path stagedDirectory = Files.createDirectory(temporaryDirectory.resolve("staged"));
@@ -83,18 +91,41 @@ class PartitionValueDictionaryBuilderTest {
 		List<String> serialEntries = dictionaryEntries(serial);
 
 		Path adaptiveDirectory = Files.createDirectory(temporaryDirectory.resolve("adaptive-dictionary"));
-		try (BulkTaskScheduler scheduler = new BulkTaskScheduler(2, memoryBudgetBytes, 8)) {
+		try (BulkTaskScheduler scheduler = new BulkTaskScheduler(workers, memoryBudgetBytes, 8)) {
+			BulkTaskScheduler overlappingScheduler = synchronizeFirstLeafOutputs(scheduler);
 			PartitionConcurrencyController controller = new PartitionConcurrencyController(System::nanoTime);
 			PartitionValueDictionary adaptive = PartitionValueDictionaryBuilder.build(staged, dependencies,
 					adaptiveDirectory, 4, memoryBudgetBytes, 8, config, BulkCompression.NONE, () -> false,
-					predicatePlan, scheduler, controller);
+					predicatePlan, overlappingScheduler, controller);
 
 			assertThat(scheduler.peakActiveTasks()).isGreaterThan(1);
+			assertThat(scheduler.peakActiveTasks()).isLessThanOrEqualTo(workers);
 			assertThat(scheduler.peakReservedMemoryBytes()).isLessThanOrEqualTo(memoryBudgetBytes);
 			assertThat(scheduler.peakReservedFileDescriptors()).isLessThanOrEqualTo(8);
 			assertThat(dictionaryEntries(adaptive)).containsExactlyElementsOf(serialEntries);
 			assertDictionarySemantics(adaptive, predicatePlan, predicate, shared, config);
+			assertThat(scheduler.openFileHandles()).isZero();
+			assertThat(scheduler.reservedMemoryBytes()).isZero();
+			assertThat(scheduler.reservedFileDescriptors()).isZero();
 		}
+	}
+
+	private static BulkTaskScheduler synchronizeFirstLeafOutputs(BulkTaskScheduler scheduler) throws IOException {
+		BulkTaskScheduler overlappingScheduler = mock(BulkTaskScheduler.class, delegatesTo(scheduler));
+		CountDownLatch leafWritersStarted = new CountDownLatch(2);
+		doAnswer(invocation -> {
+			// Leaf writers open their output inside counted scheduler tasks. Hold the first writer until a
+			// second one starts, so overlap does not depend on disk speed or thread scheduling. Coordinator
+			// input opens pass through, and every reservation and file handle remains owned by the real scheduler.
+			if (scheduler.isWorkerThread() && leafWritersStarted.getCount() > 0L) {
+				leafWritersStarted.countDown();
+				if (!leafWritersStarted.await(10, TimeUnit.SECONDS)) {
+					throw new AssertionError("Two dictionary leaf writers did not start concurrently");
+				}
+			}
+			return scheduler.trackOpenFileHandle();
+		}).when(overlappingScheduler).trackOpenFileHandle();
+		return overlappingScheduler;
 	}
 
 	@Test

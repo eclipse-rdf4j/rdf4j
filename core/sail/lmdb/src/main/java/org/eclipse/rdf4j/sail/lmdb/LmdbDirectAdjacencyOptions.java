@@ -162,7 +162,7 @@ final class LmdbDirectAdjacencyOptions {
 		long shadowSampleEvery = positiveLongProperty(properties, SHADOW_SAMPLE_EVERY_PROPERTY, 10_000L);
 		boolean nodePredicateProjection = booleanProperty(properties, NODE_PREDICATE_PROJECTION_PROPERTY, true);
 		boolean nodePredicateProjectionIncoming = nodePredicateProjection
-				&& booleanProperty(properties, NODE_PREDICATE_PROJECTION_INCOMING_PROPERTY, false);
+				&& booleanProperty(properties, NODE_PREDICATE_PROJECTION_INCOMING_PROPERTY, true);
 		boolean synchronousMaintenance = booleanProperty(properties, SYNCHRONOUS_MAINTENANCE_PROPERTY, true);
 		boolean failOnMaintenanceError = booleanProperty(properties, FAIL_ON_MAINTENANCE_ERROR_PROPERTY, false);
 

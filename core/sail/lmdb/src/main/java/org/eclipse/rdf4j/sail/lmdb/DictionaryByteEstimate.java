@@ -481,6 +481,27 @@ final class DictionaryByteEstimate {
 		return LmdbUtil.saturatedAdd(saturatedMultiply(serializedBytes, 4L), 256L);
 	}
 
+	/**
+	 * A UTF-8 payload has at least as many bytes as UTF-16 code units. Reuse the ordinary advisory estimate with its
+	 * three-byte-per-code-unit bound; this also covers ASCII future values whose preflight exceeds their encoded size.
+	 */
+	static long bulkPayloadUpperBound(long encodedPayloadBytes) {
+		return dictionaryBytes(Math.addExact(Math.multiplyExact(encodedPayloadBytes, 3L), 32L));
+	}
+
+	/**
+	 * A canonical term includes all nested lexical bytes, so the largest literal is charged once for the complete
+	 * closure, rather than once at each level. Each nested term adds two scalar positions; a leaf literal can also
+	 * reference one datatype. Use the same scalar and term metadata costs as ordinary advisory traversal.
+	 */
+	static long bulkCanonicalClosureUpperBound(long canonicalBytes, long termDepth) {
+		long scalarRecords = Math.addExact(Math.multiplyExact(termDepth, 2L), 2L);
+		long lexical = dictionaryBytes(Math.multiplyExact(canonicalBytes, 3L));
+		return Math.addExact(lexical,
+				Math.addExact(Math.multiplyExact(scalarRecords, dictionaryBytes(32L)),
+						Math.multiplyExact(termDepth, dictionaryBytes(64L))));
+	}
+
 	private static long saturatedMultiply(long left, long right) {
 		return right != 0L && left > Long.MAX_VALUE / right ? Long.MAX_VALUE : left * right;
 	}

@@ -559,7 +559,8 @@ class LmdbFilterSelectivityStats
 		if (remainingNanos <= 0L) {
 			return null;
 		}
-		boolean needsLocalDeadline = callerDeadline == null || remainingNanos < callerDeadline.remainingNanos();
+		boolean needsLocalDeadline = callerDeadline == null
+				|| remainingNanos < TimeUnit.MILLISECONDS.toNanos(callerDeadline.remainingMillis());
 		long remainingMillis = TimeUnit.NANOSECONDS.toMillis(remainingNanos);
 		if (TimeUnit.MILLISECONDS.toNanos(remainingMillis) < remainingNanos) {
 			remainingMillis++;
