@@ -42,6 +42,7 @@ function changeServer(event: JQueryEventObject) {
         $('#server-password').attr('name', 'server-user-password').prop('value', encoded);
     }
     if (form) {
+        workbench.protectSubmittedForm(form);
         form.submit();
     }
 }

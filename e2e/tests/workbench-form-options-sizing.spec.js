@@ -1,6 +1,6 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const { evidencePath, evidenceScreenshots, serverBaseUrl, waitForRoute, waitForWriteDone, workbenchBaseUrl }
+const { evidencePath, evidenceScreenshots, postWorkbench, serverBaseUrl, waitForRoute, waitForWriteDone, workbenchBaseUrl }
 	= require('./workbench-test-helpers');
 
 // Migrated with the redesign (see .agent/execplans/workbench-stale-spec-migration-20261002.md): the Add URL field fills
@@ -41,7 +41,7 @@ test.beforeAll(async ({ request }) => {
 
 test.afterAll(async ({ request }) => {
 	if (savedQueryUrn) {
-		const response = await request.post(`${REPOSITORY_BASE_URL}/saved-queries`, {
+		const response = await postWorkbench(request, `${REPOSITORY_BASE_URL}/saved-queries`, {
 			form: { delete: savedQueryUrn }
 		});
 		expect([200, 204]).toContain(response.status());
