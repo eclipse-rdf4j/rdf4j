@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.resultio.text.tsv;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -20,6 +21,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.TripleTerm;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -40,6 +43,60 @@ import org.junit.jupiter.api.Test;
  * @author Peter Ansell
  */
 public class SPARQLTSVCustomTest {
+
+	@Test
+	public void deeplyNestedTripleTermDoesNotExhaustParserStack() throws Exception {
+		int depth = 8192;
+		StringBuilder input = new StringBuilder(depth * 23 + 8);
+		for (int i = 0; i < depth; i++) {
+			input.append("<<(<urn:s><urn:p>");
+		}
+		input.append("<urn:o>");
+		for (int i = 0; i < depth; i++) {
+			input.append(")>>");
+		}
+
+		Value parsed = new SPARQLResultsTSVMappingStrategy(SimpleValueFactory.getInstance())
+				.parseValue(input.toString());
+		for (int i = 0; i < depth; i++) {
+			parsed = ((TripleTerm) parsed).getObject();
+		}
+		assertEquals(SimpleValueFactory.getInstance().createIRI("urn:o"), parsed);
+
+		QueryResultCollector collector = new QueryResultCollector();
+		String result = "?term\n" + input + "\n";
+		QueryResultIO.parseTuple(new ByteArrayInputStream(result.getBytes(StandardCharsets.UTF_8)),
+				TupleQueryResultFormat.TSV, collector, SimpleValueFactory.getInstance());
+		assertEquals(1, collector.getBindingSets().size());
+		Value delivered = collector.getBindingSets().get(0).getValue("term");
+		for (int i = 0; i < depth; i++) {
+			delivered = ((TripleTerm) delivered).getObject();
+		}
+		assertEquals(SimpleValueFactory.getInstance().createIRI("urn:o"), delivered);
+	}
+
+	@Test
+	public void nestedObjectAndInvalidSubjectOrDelimiter() {
+		SPARQLResultsTSVMappingStrategy strategy = new SPARQLResultsTSVMappingStrategy(
+				SimpleValueFactory.getInstance());
+		TripleTerm parsed = (TripleTerm) strategy
+				.parseValue("<<( <urn:s> <urn:q> <<( <urn:s> <urn:p> \"a word\" )>> )>>");
+		assertEquals("a word", ((Literal) ((TripleTerm) parsed.getObject()).getObject()).getLabel());
+		TripleTerm numeric = (TripleTerm) strategy.parseValue("<<( <urn:s> <urn:p> 42 )>>");
+		assertEquals(42, ((Literal) numeric.getObject()).intValue());
+		assertThrows(IllegalArgumentException.class,
+				() -> strategy.parseValue("<<( <<( <urn:s> <urn:p> <urn:o> )>> <urn:q> <urn:o> )>>"));
+		assertThrows(IllegalArgumentException.class,
+				() -> strategy.parseValue("<<( <urn:s> <urn:p> <<( <urn:s> <urn:p> <urn:o> )>>x )>>"));
+	}
+
+	@Test
+	public void malformedDeepNestedTripleTermFailsWithParseError() {
+		String input = "<<(<urn:s><urn:p>".repeat(8192) + "<urn:o>" + ")>>".repeat(8191);
+		SPARQLResultsTSVMappingStrategy strategy = new SPARQLResultsTSVMappingStrategy(
+				SimpleValueFactory.getInstance());
+		assertThrows(IllegalArgumentException.class, () -> strategy.parseValue(input));
+	}
 
 	/**
 	 * Only Literals with the XML Schema numeric types should be simplified.
