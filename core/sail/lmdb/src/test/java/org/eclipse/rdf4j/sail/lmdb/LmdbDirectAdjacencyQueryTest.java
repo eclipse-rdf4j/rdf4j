@@ -501,8 +501,9 @@ class LmdbDirectAdjacencyQueryTest {
 		assertThat(rows).hasSize(8)
 				.isSortedAccordingTo((left, right) -> Long.compareUnsigned(
 						left[TripleIndex.CONTEXT_IDX], right[TripleIndex.CONTEXT_IDX]));
-		assertThat(outcomes).as(readiness).anyMatch(reason -> reason.startsWith("CANDIDATE_LMDB[")
-				&& reason.contains("cost=102.0..170.0"));
+		assertThat(outcomes).as(readiness)
+				.anyMatch(reason -> reason.startsWith("CANDIDATE_LMDB[")
+						&& reason.contains("cost=102.0..170.0"));
 		assertThat(outcomes).anyMatch(reason -> reason.startsWith("SELECTED_ADJACENCY"));
 	}
 
