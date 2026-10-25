@@ -50,6 +50,7 @@ import org.eclipse.rdf4j.repository.RepositoryResolverClient;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.UnknownTransactionStateException;
 import org.eclipse.rdf4j.repository.base.AbstractRepositoryConnection;
+import org.eclipse.rdf4j.rio.AbortableRDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.sail.SailConnection;
@@ -413,24 +414,29 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	@Override
 	public void exportStatements(Resource subj, IRI pred, Value obj, boolean includeInferred, RDFHandler handler,
 			Resource... contexts) throws RepositoryException, RDFHandlerException {
-		handler.startRDF();
+		try {
+			handler.startRDF();
 
-		// Export namespace information
-		try (var nsIter = getNamespaces()) {
-			while (nsIter.hasNext()) {
-				Namespace ns = nsIter.next();
-				handler.handleNamespace(ns.getPrefix(), ns.getName());
+			// Export namespace information
+			try (var nsIter = getNamespaces()) {
+				while (nsIter.hasNext()) {
+					Namespace ns = nsIter.next();
+					handler.handleNamespace(ns.getPrefix(), ns.getName());
+				}
 			}
-		}
 
-		// Export statements
-		try (var stIter = getStatements(subj, pred, obj, includeInferred, contexts)) {
-			while (stIter.hasNext()) {
-				handler.handleStatement(stIter.next());
+			// Export statements
+			try (var stIter = getStatements(subj, pred, obj, includeInferred, contexts)) {
+				while (stIter.hasNext()) {
+					handler.handleStatement(stIter.next());
+				}
 			}
-		}
 
-		handler.endRDF();
+			handler.endRDF();
+		} catch (RuntimeException | Error e) {
+			AbortableRDFHandler.abortOnFailure(handler, e);
+			throw e;
+		}
 	}
 
 	@Override
