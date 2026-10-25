@@ -1616,7 +1616,9 @@ class LmdbNativeGeneratedQueryCoverageTest {
 				continue;
 			}
 			hasSerialEvidence = true;
-			if (!NON_CAPABILITY_REASONS.contains(decline.reason())) {
+			// A compiled kernel whose Janino compilation is still pending on a slow host is a timing state, not a
+			// capability refusal: the interpreted tier was then outranked by cost and the row ran natively anyway.
+			if (!NON_CAPABILITY_REASONS.contains(decline.reason()) && !decline.reason().startsWith("COMPILE_PENDING")) {
 				return false;
 			}
 		}

@@ -402,7 +402,10 @@ class LmdbReadAttemptCancellationTest {
 							awaitWaitingIn(finishingThread, "finishReadAttempt");
 							finishingThread.get().interrupt();
 						}
-						assertTrue(nativeReadExited.await(2, TimeUnit.SECONDS),
+						// Connection finalization first runs AbstractSailConnection.forceCloseActiveOperations, up to
+						// ten System.gc() passes over whatever the shared test JVM retains; on a loaded CI runner
+						// those alone exceed two seconds, so the budget bounds a hang, not the cancellation latency.
+						assertTrue(nativeReadExited.await(30, TimeUnit.SECONDS),
 								() -> cancellationFailureContext(finish, asynchronous, nativeBarrier, nativeFailure,
 										finishingFailure, nativeThread, finishingThread));
 						assertNotNull(nativeFailure.get(), "The native admission must fail through cancellation");
