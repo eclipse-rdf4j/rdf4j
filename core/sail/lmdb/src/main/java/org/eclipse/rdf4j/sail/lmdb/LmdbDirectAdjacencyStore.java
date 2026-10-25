@@ -658,7 +658,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		publicationLock.lock();
 		try {
 			LmdbAdjacencyPublishedState predecessor = published.get();
-			if (predecessor.base() == null || predecessor.servingState() != AdjacencyServingState.ROW_EXACT
+			// Re-read under the lock: a build suspends synchronous publication under it before taking its snapshot.
+			if (!synchronousUpdatesActivated.get() || predecessor.base() == null
+					|| predecessor.servingState() != AdjacencyServingState.ROW_EXACT
 					|| predecessor.appliedRevision() + 1 != nextRevision
 					|| predecessor.gapFromRevision() <= nextRevision || !predecessor.tryRetain()) {
 				return null;
@@ -3007,6 +3009,10 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		maintenanceState = MaintenanceState.BUILDING;
 		boolean retryAfterFailure = false;
 		try {
+			if (!suspendSynchronousPublicationForBuild()) {
+				metrics.recordBuildAborted();
+				return;
+			}
 			LmdbAdjacencyCoverage coverage = resolveCoverage();
 			LmdbInMemoryAdjacencyIndex index;
 			long baseRevision;
@@ -3092,6 +3098,37 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				scheduleBuildRetry();
 			}
 			signalWriteAdmission();
+		}
+	}
+
+	/**
+	 * A build catches up from queued deltas, but while an exact live base exists a synchronous commit publishes into
+	 * that base instead of queuing one, so catch-up would wait for its revision forever. Suspend synchronous
+	 * publication and let commits already prepared against the live base publish before the build takes its snapshot:
+	 * every later commit then reaches the queue, and cutover resumes synchronous publication.
+	 *
+	 * @return false when interrupted, typically by close
+	 */
+	private boolean suspendSynchronousPublicationForBuild() {
+		try {
+			publicationLock.lockInterruptibly();
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+			return false;
+		}
+		try {
+			if (published.get().base() == null || !synchronousUpdatesActivated.getAndSet(false)) {
+				return true;
+			}
+			while (preparationsInFlight.get() != 0) {
+				noPreparationsInFlight.await();
+			}
+			return true;
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+			return false;
+		} finally {
+			publicationLock.unlock();
 		}
 	}
 
