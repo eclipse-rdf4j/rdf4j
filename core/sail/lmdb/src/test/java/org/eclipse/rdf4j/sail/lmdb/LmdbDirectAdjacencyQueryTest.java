@@ -223,6 +223,30 @@ class LmdbDirectAdjacencyQueryTest {
 		assertThat(ValueIds.isReference(inline42)).as("42 must be an inlined object id").isFalse();
 	}
 
+	/**
+	 * Readiness means an exact view exists for the current revision; a loaded host can still have recorded a
+	 * maintenance gap that routes counts to LMDB until the next publication clears it. Each probe below opens a fresh
+	 * snapshot, so a recovered publication is observed; a view that never serves still fails the caller's assertion.
+	 */
+	private void awaitExactViewServesGraphCount() throws IOException {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+		while (System.nanoTime() < deadline) {
+			try (CloseableDataset dataset = dataset()) {
+				long hitsBefore = direct.snapshotMetrics().lookupHits;
+				assertThat(dataset.source.count(-1, -1, -1, g1)).isEqualTo(1);
+				if (direct.snapshotMetrics().lookupHits > hitsBefore) {
+					return;
+				}
+			}
+			try {
+				Thread.sleep(25);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new AssertionError("interrupted while waiting for the exact view to serve counts", e);
+			}
+		}
+	}
+
 	private void awaitDirectAdjacencyReady() {
 		try {
 			assertThat(sail.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS))
@@ -1549,6 +1573,7 @@ class LmdbDirectAdjacencyQueryTest {
 	void contextBoundCountsAreServedByTheExactView() throws IOException {
 		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
 		openPreferStore();
+		awaitExactViewServesGraphCount();
 
 		try (CloseableDataset dataset = dataset()) {
 			long hitsBefore = direct.snapshotMetrics().lookupHits;

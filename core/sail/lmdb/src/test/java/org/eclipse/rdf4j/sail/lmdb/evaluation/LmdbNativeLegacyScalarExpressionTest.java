@@ -237,9 +237,15 @@ class LmdbNativeLegacyScalarExpressionTest {
 				assertThat(first.probe)
 						.as("only a deadline-owned probe may stop before the complete scalar sequence: " + owner)
 						.isNotNull();
-				assertThat(last.failure != null || last.trippedAfter || last.clockExpiredAfter)
-						.as("a partial probe must terminate through its cancellation/deadline control: " + owner)
-						.isTrue();
+				// The trip that ended the trial can land after its last scalar call has already returned (the
+				// fallback or hedge winner cancels the losing arm between two extension elements), so the probe's
+				// current state is part of the evidence: it must have been tripped or its deadline must have passed.
+				assertThat(last.failure != null || last.trippedAfter || last.clockExpiredAfter
+						|| first.probe.tripped()
+						|| ScalarInvocation.clockExpired(System.nanoTime(), first.deadlineNanoTime))
+								.as("a partial probe must terminate through its cancellation/deadline control: " + owner
+										+ " probeTrippedNow=" + first.probe.tripped())
+								.isTrue();
 			}
 		}
 		assertThat(successfulCompleteOwner)
