@@ -57,6 +57,25 @@ class DateBinEdgeCaseTest {
 	}
 
 	@Test
+	void timeStrideBinsFarBeforeTheOriginDoNotOverflow() {
+		// four 3e9 s strides before the origin are -1.2e19 ns, beyond the range of a long
+		assertThat(dateBin.evaluate(VF, dur("PT3000000000S"), dt("1710-01-01T00:00:00")))
+				.isEqualTo(dt("1619-09-26T02:40:00"));
+		// 12 minutes 44 seconds after its hour, this value is just inside the 292 years a long counts in
+		// nanoseconds from the origin, but the start of its hour bin is not
+		assertThat(dateBin.evaluate(VF, dur("PT1H"), dt("1707-09-22T00:12:44")))
+				.isEqualTo(dt("1707-09-22T00:00:00"));
+	}
+
+	@Test
+	void binStartOutsideTheSupportedDateRangeIsAnEvaluationError() {
+		assertEvaluationError("month bin before year -999999999",
+				() -> dateBin.evaluate(VF, dur("P99999999999M"), date("1999-11-15")));
+		assertEvaluationError("time bin before year -999999999", () -> dateBin.evaluate(VF, dur("PT10S"),
+				dt("-999999999-01-01T00:00:00.5"), dt("-999999999-01-01T00:00:01")));
+	}
+
+	@Test
 	void valueExactlyOnABinEdgeMapsToThatEdge() {
 		assertThat(dateBin.evaluate(VF, dur("PT15M"), dt("2024-05-17T10:30:00Z")))
 				.isEqualTo(dt("2024-05-17T10:30:00Z"));
