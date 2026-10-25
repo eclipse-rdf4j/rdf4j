@@ -33,11 +33,13 @@ import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.app.AppConfiguration;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
@@ -239,7 +241,7 @@ class QueryStorageTest {
 	}
 
 	@Test
-	void aSignedInUserKeepsTheQueriesSavedUnderTheirPlainUserNameByEarlierVersions() throws Exception {
+	void privateLegacyQueriesRequireTrustedMigrationWhileSharedAndCurrentQueriesRemainAccessible() throws Exception {
 		SailRepository storageRepository = new SailRepository(new MemoryStore());
 		storageRepository.init();
 		QueryStorage storage = new QueryStorage(storageRepository);
@@ -249,30 +251,39 @@ class QueryStorageTest {
 			storage.saveQuery(repositoryReference, "legacy-query", "alice", false, QueryLanguage.SPARQL,
 					"select * where { ?s ?p ?o }", false, 10, 0);
 			IRI legacy = storage.selectSavedQuery(repositoryReference, "alice", "legacy-query");
+			storage.saveQuery(repositoryReference, "legacy-shared", "alice", true, QueryLanguage.SPARQL,
+					"ASK {}", false, 10, 0);
+			IRI shared = storage.selectSavedQuery(repositoryReference, "alice", "legacy-shared");
 			String alice = signedIn("alice", "secret");
 			String bob = signedIn("bob", "secret");
 
-			assertThat(storage.canRead(legacy, alice)).isTrue();
-			assertThat(storage.canChange(legacy, alice)).isTrue();
+			assertThat(storage.canRead(legacy, alice)).isFalse();
+			assertThat(storage.canChange(legacy, alice)).isFalse();
 			assertThat(storage.canRead(legacy, bob)).isFalse();
 			assertThat(storage.canChange(legacy, bob)).isFalse();
+			assertThat(storage.canRead(shared, alice)).isTrue();
+			assertThat(storage.canRead(shared, bob)).isTrue();
 			ByteArrayOutputStream buffer = new ByteArrayOutputStream();
 			TupleResultBuilder builder = new TupleResultBuilder(new WorkbenchTupleResultWriter(buffer), VF);
 			storage.selectSavedQueries(repositoryReference, alice, builder);
 			builder.end();
-			assertThat(buffer.toString(StandardCharsets.UTF_8)).contains("legacy-query");
+			assertThat(buffer.toString(StandardCharsets.UTF_8)).contains("legacy-shared")
+					.doesNotContain("legacy-query");
 
 			storage.updateQuery(legacy, alice, false, QueryLanguage.SPARQL, "ask {}", false, 10, 0);
-			assertThat(storage.getQueryText(repositoryReference, "alice", "legacy-query")).isEqualTo("ask {}");
+			assertThat(storage.getQueryText(repositoryReference, "alice", "legacy-query"))
+					.isEqualTo("select * where { ?s ?p ?o }");
 			storage.deleteQuery(legacy, bob);
 			assertThat(storage.askExists(repositoryReference, "legacy-query", "alice")).isTrue();
 			storage.deleteQuery(legacy, alice);
-			assertThat(storage.askExists(repositoryReference, "legacy-query", "alice")).isFalse();
+			assertThat(storage.askExists(repositoryReference, "legacy-query", "alice")).isTrue();
 
-			// An owner ID is listed with shared queries: a user named like it does not get its private queries.
+			// A current owner ID can still protect a private query from users with different credentials.
 			storage.saveQuery(repositoryReference, "private-query", alice, false, QueryLanguage.SPARQL,
 					"ask {}", false, 10, 0);
 			IRI owned = storage.selectSavedQuery(repositoryReference, alice, "private-query");
+			assertThat(storage.canRead(owned, alice)).isTrue();
+			assertThat(storage.canChange(owned, alice)).isTrue();
 			String impostor = signedIn(alice, "guess");
 			assertThat(storage.canRead(owned, impostor)).isFalse();
 			assertThat(storage.canChange(owned, impostor)).isFalse();
@@ -282,7 +293,127 @@ class QueryStorageTest {
 	}
 
 	@Test
-	void savingUnderTheNameOfAQuerySavedByAnEarlierVersionFindsThatQuery() throws Exception {
+	void anotherPasswordCannotClaimPrivateLegacyUserNameQueries() throws Exception {
+		SailRepository storageRepository = new SailRepository(new MemoryStore());
+		storageRepository.init();
+		QueryStorage storage = new QueryStorage(storageRepository);
+		try {
+			String repositoryReference = "urn:test:repository";
+			storage.saveQuery(repositoryReference, "old-private", "alice", false, QueryLanguage.SPARQL,
+					"ASK { <urn:private> <urn:p> <urn:o> }", false, 10, 0);
+			IRI privateQuery = storage.selectSavedQuery(repositoryReference, "alice", "old-private");
+			String differentPassword = signedIn("alice", "different-password");
+
+			assertThat(storage.canRead(privateQuery, differentPassword)).isFalse();
+			assertThat(storage.canChange(privateQuery, differentPassword)).isFalse();
+
+			storage.saveQuery(repositoryReference, "old-shared", "alice", true, QueryLanguage.SPARQL,
+					"ASK { <urn:shared> <urn:p> <urn:o> }", false, 10, 0);
+			IRI sharedQuery = storage.selectSavedQuery(repositoryReference, "alice", "old-shared");
+			assertThat(storage.canRead(sharedQuery, differentPassword)).isTrue();
+			assertThat(storage.canChange(sharedQuery, differentPassword)).isFalse();
+		} finally {
+			storage.shutdown();
+		}
+	}
+
+	@Test
+	void anonymousIdentityCannotClaimPrivateEmptyOwnerQuery() throws Exception {
+		SailRepository storageRepository = new SailRepository(new MemoryStore());
+		storageRepository.init();
+		QueryStorage storage = new QueryStorage(storageRepository);
+		try {
+			String repositoryReference = "urn:test:repository";
+			storage.saveQuery(repositoryReference, "old-private", "", false, QueryLanguage.SPARQL,
+					"ASK { <urn:private> <urn:p> <urn:o> }", false, 10, 0);
+			IRI privateQuery = queryIriForText(storageRepository, "ASK { <urn:private> <urn:p> <urn:o> }");
+			assertThat(storage.canRead(privateQuery, "")).isFalse();
+			assertThat(storage.canRead(privateQuery, signedIn("alice", "secret"))).isFalse();
+			assertThat(storage.canChange(privateQuery, "")).isFalse();
+		} finally {
+			storage.shutdown();
+		}
+	}
+
+	@Test
+	void duplicateOwnerAndNameReadTextOnlyFromTheAuthorizedResource() throws Exception {
+		SailRepository storageRepository = new SailRepository(new MemoryStore());
+		storageRepository.init();
+		QueryStorage storage = new QueryStorage(storageRepository);
+		try {
+			String repositoryReference = "urn:test:repository";
+			String sharedText = "ASK { <urn:shared> <urn:p> <urn:o> }";
+			String privateText = "ASK { <urn:private> <urn:p> <urn:o> }";
+			storage.saveQuery(repositoryReference, "report", "alice", false, QueryLanguage.SPARQL,
+					privateText, false, 10, 0);
+			storage.saveQuery(repositoryReference, "report", "alice", true, QueryLanguage.SPARQL,
+					sharedText, false, 10, 0);
+			IRI shared = queryIriForText(storageRepository, sharedText);
+			IRI privateQuery = queryIriForText(storageRepository, privateText);
+			String bob = signedIn("bob", "secret");
+
+			assertThat(shared).isNotEqualTo(privateQuery);
+			assertThat(storage.selectReadableSavedQuery(repositoryReference, "alice", "report", bob))
+					.isEqualTo(shared);
+			assertThat(storage.getReadableQueryText(shared, bob)).isEqualTo(sharedText);
+			assertThatThrownBy(() -> storage.getReadableQueryText(privateQuery, bob))
+					.isInstanceOf(BadRequestException.class)
+					.hasMessage("Current user may not read the given query.");
+			ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+			TupleResultBuilder builder = new TupleResultBuilder(new WorkbenchTupleResultWriter(buffer), VF);
+			storage.selectSavedQueries(repositoryReference, bob, builder);
+			builder.end();
+			assertThat(buffer.toString(StandardCharsets.UTF_8)).contains("urn:shared").doesNotContain("urn:private");
+		} finally {
+			storage.shutdown();
+		}
+	}
+
+	@Test
+	void privateEmptyOwnerRecordDoesNotMaskAnonymousSharedQueryOfSameName() throws Exception {
+		SailRepository storageRepository = new SailRepository(new MemoryStore());
+		storageRepository.init();
+		QueryStorage storage = new QueryStorage(storageRepository);
+		try {
+			String repositoryReference = "urn:test:repository";
+			String privateText = "ASK { <urn:private> <urn:p> <urn:o> }";
+			String sharedText = "ASK { <urn:shared> <urn:p> <urn:o> }";
+			storage.saveQuery(repositoryReference, "report", "", false, QueryLanguage.SPARQL,
+					privateText, false, 10, 0);
+			IRI privateQuery = queryIriForText(storageRepository, privateText);
+
+			assertThat(storage.askExists(repositoryReference, "report", "")).isFalse();
+			storage.saveQuery(repositoryReference, "report", "", true, QueryLanguage.SPARQL,
+					sharedText, false, 10, 0);
+			IRI sharedQuery = queryIriForText(storageRepository, sharedText);
+			assertThat(storage.selectSavedQuery(repositoryReference, "", "report")).isEqualTo(sharedQuery);
+			assertThat(storage.selectReadableSavedQuery(repositoryReference, "", "report", ""))
+					.isEqualTo(sharedQuery);
+			assertThat(storage.getReadableQueryText(sharedQuery, "")).isEqualTo(sharedText);
+			assertThatThrownBy(() -> storage.getReadableQueryText(privateQuery, ""))
+					.isInstanceOf(BadRequestException.class);
+
+			storage.updateQuery(sharedQuery, "", true, QueryLanguage.SPARQL, "ASK {}", false, 10, 0);
+			assertThat(storage.getReadableQueryText(sharedQuery, "")).isEqualTo("ASK {}");
+			assertThat(queryIriForText(storageRepository, privateText)).isEqualTo(privateQuery);
+		} finally {
+			storage.shutdown();
+		}
+	}
+
+	private static IRI queryIriForText(Repository repository, String text) {
+		try (RepositoryConnection connection = repository.getConnection();
+				RepositoryResult<Statement> statements = connection.getStatements(null,
+						VF.createIRI("https://openrdf.org/workbench/query"), VF.createLiteral(text), false)) {
+			assertThat(statements.hasNext()).isTrue();
+			IRI query = (IRI) statements.next().getSubject();
+			assertThat(statements.hasNext()).isFalse();
+			return query;
+		}
+	}
+
+	@Test
+	void savingUnderTheNameOfAnUnclaimedLegacyQueryCreatesCurrentOwnerRecord() throws Exception {
 		SailRepository storageRepository = new SailRepository(new MemoryStore());
 		storageRepository.init();
 		QueryStorage storage = new QueryStorage(storageRepository);
@@ -293,15 +424,17 @@ class QueryStorageTest {
 			IRI legacy = storage.selectSavedQuery(repositoryReference, "alice", "report");
 			String alice = signedIn("alice", "secret");
 
-			// Saving "report" again asks whether to overwrite it and then updates it, instead of adding a second one.
-			assertThat(storage.askExists(repositoryReference, "report", alice)).isTrue();
-			assertThat(storage.selectSavedQuery(repositoryReference, alice, "report")).isEqualTo(legacy);
+			// The credential-derived owner cannot claim a plain-name record left by earlier versions.
+			assertThat(storage.askExists(repositoryReference, "report", alice)).isFalse();
+			assertThatThrownBy(() -> storage.selectSavedQuery(repositoryReference, alice, "report"))
+					.isInstanceOf(BadRequestException.class);
 			assertThat(storage.askExists(repositoryReference, "report", signedIn("bob", "secret"))).isFalse();
 
-			// A query the user saved under their current identity comes first.
+			// Saving under the current owner creates a distinct record with the same name.
 			storage.saveQuery(repositoryReference, "report", alice, false, QueryLanguage.SPARQL, "ask {}", false,
 					10, 0);
 			assertThat(storage.selectSavedQuery(repositoryReference, alice, "report")).isNotEqualTo(legacy);
+			assertThat(storage.canRead(legacy, alice)).isFalse();
 		} finally {
 			storage.shutdown();
 		}
