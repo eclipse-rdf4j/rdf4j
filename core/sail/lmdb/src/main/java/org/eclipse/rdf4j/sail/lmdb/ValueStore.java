@@ -11816,7 +11816,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (create) {
 			checkReplayFailure();
 			if (writeTxn != 0 && !isWriteTransactionOwner()) {
-				return withWriterLookupContext((stack, txn) -> getId(value, true, positionMask));
+				long writer = awaitJoinableWriter();
+				if (writer != 0L) {
+					return withBorrowedReadContext(writer, currentReadRevision(LmdbValue.UNKNOWN_ID), false,
+							(stack, txn) -> getId(value, true, positionMask));
+				}
 			}
 		}
 		if (value instanceof Literal literal && !(format.isLegacy() && LegacySemanticScope.containsLanguage(value))) {
@@ -12735,11 +12739,14 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			return;
 		}
 		if (writeTxn != 0 && !isWriteTransactionOwner()) {
-			withWriterLookupContext((stack, txn) -> {
-				storeValues(values, ids, count);
-				return null;
-			});
-			return;
+			long writer = awaitJoinableWriter();
+			if (writer != 0L) {
+				withBorrowedReadContext(writer, currentReadRevision(LmdbValue.UNKNOWN_ID), false, (stack, txn) -> {
+					storeValues(values, ids, count);
+					return null;
+				});
+				return;
+			}
 		}
 
 		byte[][] unresolvedData = null;
@@ -15219,6 +15226,27 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		// A nonowner's empty borrowed context must not become an owner when the shared writer is cleared.
 		return transaction != 0
 				&& (writeTxnOwner == Thread.currentThread() || borrowed != 0 && borrowed == transaction);
+	}
+
+	/**
+	 * Returns the writer a creating caller on another thread may join, or 0 when none is active. A term-maintenance
+	 * writer or map growth owns its native transaction outright: another thread using it races that owner's commit and
+	 * continues on a finished transaction, so this waits until it ends. Neither can claim the writer while an
+	 * application writer is active, and that writer's owning store serializes the callers that join it.
+	 */
+	private long awaitJoinableWriter() throws IOException {
+		synchronized (writerAdmission) {
+			while (termMaintenanceWriterActive && Thread.currentThread() != termIndexMaintenanceThread
+					|| nativeMapGrowthOwner != null && nativeMapGrowthOwner != Thread.currentThread()) {
+				try {
+					writerAdmission.wait();
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					throw new IOException("Interrupted while awaiting ValueStore maintenance writer", interrupted);
+				}
+			}
+			return writeTxn;
+		}
 	}
 
 	/** Mutating APIs already admitted to the serialized writer must also resolve its uncommitted dependencies. */
