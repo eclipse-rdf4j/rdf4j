@@ -1048,44 +1048,61 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	@Override
 	public final void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
-		if (statementsRemoved) {
-			flushPendingUpdates();
+		// Admitted like every other entry point: a store write can block, for example on another connection's writer
+		// authority, so shutdown must interrupt it and close must drain it before teardown.
+		beginOperation();
+		try {
+			if (statementsRemoved) {
+				flushPendingUpdates();
+			}
+			addStatement(null, subj, pred, obj, contexts);
+			recordDataImportMetricsStatementsAdded(contexts);
+			setStatementsAdded();
+		} finally {
+			endOperation();
 		}
-		addStatement(null, subj, pred, obj, contexts);
-		recordDataImportMetricsStatementsAdded(contexts);
-		setStatementsAdded();
 	}
 
 	@Experimental
 	@Override
 	public final void addStatements(Iterable<? extends Statement> statements, Resource... contexts)
 			throws SailException {
-		if (statementsRemoved) {
-			flushPendingUpdates();
-		}
-		long added;
+		beginOperation();
 		try {
-			added = addStatementsInternal(statements, contexts);
-		} catch (RuntimeException | Error e) {
-			// Mark pending when bulk iteration fails: an optimized path may have buffered a prefix before the failure.
-			// Preserve the caller-managed transaction and original exception; a later read or update flushes the
-			// prefix.
-			setStatementsAdded();
-			throw e;
-		}
-		recordDataImportMetricsStatementsAdded(added);
-		if (added > 0) {
-			setStatementsAdded();
+			if (statementsRemoved) {
+				flushPendingUpdates();
+			}
+			long added;
+			try {
+				added = addStatementsInternal(statements, contexts);
+			} catch (RuntimeException | Error e) {
+				// Mark pending when bulk iteration fails: an optimized path may have buffered a prefix before the
+				// failure. Preserve the caller-managed transaction and original exception; a later read or update
+				// flushes the prefix.
+				setStatementsAdded();
+				throw e;
+			}
+			recordDataImportMetricsStatementsAdded(added);
+			if (added > 0) {
+				setStatementsAdded();
+			}
+		} finally {
+			endOperation();
 		}
 	}
 
 	@Override
 	public final void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
-		if (pendingAdds()) {
-			flushPendingUpdates();
+		beginOperation();
+		try {
+			if (pendingAdds()) {
+				flushPendingUpdates();
+			}
+			removeStatement(null, subj, pred, obj, contexts);
+			statementsRemoved = true;
+		} finally {
+			endOperation();
 		}
-		removeStatement(null, subj, pred, obj, contexts);
-		statementsRemoved = true;
 	}
 
 	@Override
