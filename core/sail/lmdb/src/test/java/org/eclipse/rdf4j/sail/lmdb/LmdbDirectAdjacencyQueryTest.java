@@ -3227,22 +3227,112 @@ class LmdbDirectAdjacencyQueryTest {
 			connection.commit();
 		}
 		direct.pauseApplierForTest(false);
+		assertDoublyBoundContextProbes();
+	}
 
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void resumingApplierWaitsForCommittedPreparation(boolean delayQueueAdmission) throws Exception {
+		System.setProperty(LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "false");
+		System.setProperty(LmdbDirectAdjacencyStore.BOUND_PROBE_PROPERTY, "true");
+		openPreferStore();
+		direct.pauseApplierForTest(true);
+		CountDownLatch handoffReached = new CountDownLatch(1);
+		CountDownLatch releaseHandoff = new CountDownLatch(1);
+		Runnable delayedHandoff = () -> {
+			handoffReached.countDown();
+			awaitQueueAdmissionRelease(releaseHandoff);
+		};
+		Runnable previousPreparation = direct.beforePreparationForTest;
+		Runnable previousAdmission = direct.beforeApplyQueueAdmissionForTest;
+		if (delayQueueAdmission) {
+			direct.beforeApplyQueueAdmissionForTest = delayedHandoff;
+		} else {
+			direct.beforePreparationForTest = delayedHandoff;
+		}
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		Future<?> resume = null;
+		try {
+			try (RepositoryConnection connection = repo.getConnection()) {
+				connection.begin();
+				connection.add(S1, P1, O1, G1);
+				connection.add(S1, P1, O1, G2);
+				if (!delayQueueAdmission) {
+					// Capture invokes its preparation hook for full batches, rather than the small final tail.
+					for (int index = 0; index < 2048; index++) {
+						connection.add(F.createIRI("http://example.org/prepared/" + index), P2, O1);
+					}
+				}
+				connection.commit();
+			}
+			assertThat(handoffReached.await(30, TimeUnit.SECONDS)).isTrue();
+			if (delayQueueAdmission) {
+				// Pending-row evidence is already published, but the maintenance queue is still empty. A snapshot
+				// acquired here reproduces the original two hits: only the two untouched rows can use adjacency.
+				LmdbAdjacencyMetrics.Snapshot before = direct.snapshotMetrics();
+				RoutingObservation observation = new RoutingObservation();
+				try (CloseableDataset pending = dataset()) {
+					assertDoublyBoundContextRows(pending, observation);
+				}
+				LmdbAdjacencyMetrics.Snapshot after = direct.snapshotMetrics();
+				String diagnostics = routingDiagnostics(before, after, observation);
+				assertThat(after.lookupHits).as(diagnostics).isEqualTo(before.lookupHits + 2);
+				assertThat(after.fallbacks(FallbackReason.PENDING_ROW)).as(diagnostics)
+						.isEqualTo(before.fallbacks(FallbackReason.PENDING_ROW) + 2);
+			}
+			CountDownLatch resumeStarted = new CountDownLatch(1);
+			resume = executor.submit(() -> {
+				resumeStarted.countDown();
+				direct.pauseApplierForTest(false);
+			});
+			assertThat(resumeStarted.await(30, TimeUnit.SECONDS)).isTrue();
+			Future<?> waitingResume = resume;
+			assertThatThrownBy(() -> waitingResume.get(1, TimeUnit.SECONDS))
+					.as("resume must include committed preparation before draining maintenance")
+					.isInstanceOf(TimeoutException.class);
+			releaseHandoff.countDown();
+			resume.get(30, TimeUnit.SECONDS);
+			assertDoublyBoundContextProbes();
+		} finally {
+			releaseHandoff.countDown();
+			direct.beforePreparationForTest = previousPreparation;
+			direct.beforeApplyQueueAdmissionForTest = previousAdmission;
+			try {
+				if (resume != null) {
+					resume.get(30, TimeUnit.SECONDS);
+				}
+				direct.pauseApplierForTest(false);
+			} finally {
+				executor.shutdownNow();
+			}
+		}
+	}
+
+	private void assertDoublyBoundContextProbes() throws IOException {
+		RoutingObservation observation = new RoutingObservation();
+		LmdbAdjacencyMetrics.Snapshot before = direct.snapshotMetrics();
 		long hitsBefore = direct.snapshotMetrics().lookupHits;
 		long fallbacksBefore = direct.snapshotMetrics().fallbacks(FallbackReason.DOUBLY_BOUND);
 		try (var dataset = dataset()) {
-			long g2 = dataset.idOf(G2);
-			assertSameRows(dataset.rows(s1, p1, o1, -1), List.of(
-					new long[] { s1, p1, o1, 0 },
-					new long[] { s1, p1, o1, g1 },
-					new long[] { s1, p1, o1, g2 }));
-			assertSameRows(dataset.rows(s1, p1, o1, g1), List.of(new long[] { s1, p1, o1, g1 }));
-			assertThat(dataset.rows(s2, p1, o2, -1)).isEmpty();
-			assertSameRows(dataset.rows(s1, p3, inline42, -1),
-					List.of(new long[] { s1, p3, inline42, 0 }));
+			assertDoublyBoundContextRows(dataset, observation);
 		}
-		assertThat(direct.snapshotMetrics().lookupHits).isGreaterThanOrEqualTo(hitsBefore + 4);
+		assertThat(direct.snapshotMetrics().lookupHits)
+				.as(routingDiagnostics(before, direct.snapshotMetrics(), observation))
+				.isGreaterThanOrEqualTo(hitsBefore + 4);
 		assertThat(direct.snapshotMetrics().fallbacks(FallbackReason.DOUBLY_BOUND)).isEqualTo(fallbacksBefore);
+	}
+
+	private void assertDoublyBoundContextRows(CloseableDataset dataset, RoutingObservation observation)
+			throws IOException {
+		long g2 = dataset.idOf(G2);
+		assertSameRows(dataset.rows(s1, p1, o1, -1, observation), List.of(
+				new long[] { s1, p1, o1, 0 },
+				new long[] { s1, p1, o1, g1 },
+				new long[] { s1, p1, o1, g2 }));
+		assertSameRows(dataset.rows(s1, p1, o1, g1, observation), List.of(new long[] { s1, p1, o1, g1 }));
+		assertThat(dataset.rows(s2, p1, o2, -1, observation)).isEmpty();
+		assertSameRows(dataset.rows(s1, p3, inline42, -1, observation),
+				List.of(new long[] { s1, p3, inline42, 0 }));
 	}
 
 	@Test

@@ -2580,18 +2580,17 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 	}
 
-	/** Test hook: pauses the applier between the pending publication and the generation publication. */
+	/**
+	 * Test hook: pauses the applier between pending publication and generation publication. Resume waits for already
+	 * committed preparation, its queued drains, and compaction; test writers must have finished submitting work.
+	 */
 	void pauseApplierForTest(boolean paused) {
 		applierPausedForTest = paused;
 		if (!paused) {
 			submitDrain();
-			// make the resume deterministic for tests: wait for the drain to complete
-			try {
-				maintenanceExecutor.submit(() -> {
-				}).get();
-			} catch (Exception e) {
-				throw new IllegalStateException(e);
-			}
+			// Preparation can still own committed deltas that have not reached applyQueue. Its barrier must precede
+			// the maintenance barrier, otherwise a resumed test can pin pending rows before their drain is submitted.
+			awaitCommitCleanupForTest();
 			awaitCompactionForTest();
 		}
 	}
