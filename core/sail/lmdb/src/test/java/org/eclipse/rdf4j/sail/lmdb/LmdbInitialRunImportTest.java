@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.lwjgl.util.lmdb.LMDB.MDB_MAP_FULL;
 
 import java.io.File;
@@ -21,16 +22,25 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.TripleTerm;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
+import org.eclipse.rdf4j.sail.SailConnectionListener;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 /**
  * The first write into an empty store, when it is an explicit NONE transaction, defers every triple index entry and
@@ -44,6 +54,9 @@ class LmdbInitialRunImportTest {
 
 	@TempDir
 	File directory;
+
+	@TempDir
+	File otherDirectory;
 
 	private final ExecutorService executor = Executors.newCachedThreadPool();
 
@@ -189,11 +202,13 @@ class LmdbInitialRunImportTest {
 				try (LmdbStoreConnection reader = (LmdbStoreConnection) sail.getConnection()) {
 					reader.begin(IsolationLevels.NONE);
 					assertThat(reader.size()).as("waiting on the import's own thread would never end").isEqualTo(2_000);
+					assertThat(sail.getBackingStore().isInitialRunImportActive()).isFalse();
+					addSubjects(writer, 1_000, 1_500);
+					// The importer commits first: its sink keeps the writer lease while it holds pending rows, so
+					// a second NONE commit on the same thread would wait for it with or without a run import.
+					writer.commit();
 					reader.commit();
 				}
-				assertThat(sail.getBackingStore().isInitialRunImportActive()).isFalse();
-				addSubjects(writer, 1_000, 1_500);
-				writer.commit();
 			}
 			assertImported(sail, 1_500);
 		} finally {
@@ -400,6 +415,353 @@ class LmdbInitialRunImportTest {
 		}
 	}
 
+	@Test
+	@Timeout(120)
+	@ResourceLock(Resources.SYSTEM_PROPERTIES)
+	void adjacencyAndValueOverlayRebuildFromTheMergedStore() throws Exception {
+		String budgetProperty = "rdf4j.lmdb.valueOverlay.maxBytes";
+		String previousBudget = System.getProperty(budgetProperty);
+		System.setProperty(budgetProperty, "33554432");
+		LmdbStore sail = new LmdbStore(directory, config().setDirectAdjacencyEnabled(true)
+				.setDirectAdjacencyBuildOnStart(true)
+				.setDirectAdjacencyMaxBytes(256L << 20)
+				.setValueOverlayEnabled(true));
+		try {
+			sail.init();
+			try (LmdbStoreConnection writer = (LmdbStoreConnection) sail.getConnection()) {
+				writer.begin(IsolationLevels.NONE);
+				addSubjects(writer, 0, 2_000);
+				assertThat(sail.getBackingStore().isInitialRunImportActive()).isTrue();
+				writer.commit();
+			}
+			LmdbDirectAdjacencyStore adjacency = sail.getBackingStore().directAdjacencyStore();
+			assertThat(adjacency.awaitCurrentRevisionReady(30, TimeUnit.SECONDS))
+					.as("adjacency rebuilds from the merged indexes")
+					.isTrue();
+			try (var view = adjacency.acquire(sail.getBackingStore().getTripleStore().getDataRevision())) {
+				assertThat(view.isExact()).isTrue();
+			}
+			assertThat(sail.getBackingStore().valueStore().awaitValueOverlayReady(30, TimeUnit.SECONDS))
+					.as("the overlay rebuilds from the merged lookup records")
+					.isTrue();
+			assertImported(sail, 2_000);
+		} finally {
+			sail.shutDown();
+			if (previousBudget == null) {
+				System.clearProperty(budgetProperty);
+			} else {
+				System.setProperty(budgetProperty, previousBudget);
+			}
+		}
+	}
+
+	@Test
+	@Timeout(120)
+	void inferredStatementsOfTheImportTransactionStayInferred() throws Exception {
+		IRI inferred = VF.createIRI("http://example.com/run-import/inferred");
+		LmdbStore sail = new LmdbStore(directory, config());
+		sail.init();
+		try {
+			try (LmdbStoreConnection writer = (LmdbStoreConnection) sail.getConnection()) {
+				writer.begin(IsolationLevels.NONE);
+				addSubjects(writer, 0, 500);
+				writer.addInferredStatement(subject(0), inferred, SHARED);
+				addSubjects(writer, 500, 1_000);
+				writer.commit();
+			}
+			assertImported(sail, 1_000);
+			try (LmdbStoreConnection reader = (LmdbStoreConnection) sail.getConnection()) {
+				try (var statements = reader.getStatements(null, inferred, null, false)) {
+					assertThat(statements.stream().count()).as("not stored as explicit").isZero();
+				}
+				try (var statements = reader.getStatements(null, inferred, null, true)) {
+					assertThat(statements.stream().count()).as("stored as inferred").isEqualTo(1);
+				}
+			}
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(120)
+	void aFullFreshSessionCompletesTheImportAndTheRestUsesLookups() throws Exception {
+		LimitedFreshSessionStore sail = new LimitedFreshSessionStore(directory, config(), 600);
+		sail.init();
+		try {
+			try (LmdbStoreConnection writer = (LmdbStoreConnection) sail.getConnection()) {
+				writer.begin(IsolationLevels.NONE);
+				addSubjects(writer, 0, 1_000);
+				// Repeat earlier values so the lookup path must find, not recreate, values the import assigned.
+				addSubjects(writer, 0, 1_000);
+				assertThat(sail.getBackingStore().isInitialRunImportActive())
+						.as("a full fresh session ends the run import early")
+						.isFalse();
+				writer.commit();
+			}
+			assertThat(sail.getBackingStore().initialRunImportsCompleted()).isEqualTo(1);
+			assertImported(sail, 1_000);
+		} finally {
+			sail.shutDown();
+		}
+		LmdbStore reopened = new LmdbStore(directory, config());
+		reopened.init();
+		try {
+			assertImported(reopened, 1_000);
+		} finally {
+			reopened.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(180)
+	void manySmallRunsMergeWithDuplicatesAcrossRuns() throws Exception {
+		long previous = LmdbInitialRunImport.chunkBytesForTest;
+		LmdbInitialRunImport.chunkBytesForTest = 16L << 10;
+		LmdbStore sail = new LmdbStore(directory, config());
+		try {
+			sail.init();
+			try (LmdbStoreConnection writer = (LmdbStoreConnection) sail.getConnection()) {
+				writer.begin(IsolationLevels.NONE);
+				addSubjects(writer, 0, 4_000);
+				addSubjects(writer, 3_000, 5_000);
+				addSubjects(writer, 0, 1_000);
+				assertThat(sail.getBackingStore().isInitialRunImportActive()).isTrue();
+				writer.commit();
+			}
+			assertImported(sail, 5_000);
+		} finally {
+			LmdbInitialRunImport.chunkBytesForTest = previous;
+			sail.shutDown();
+		}
+		LmdbStore reopened = new LmdbStore(directory, config());
+		reopened.init();
+		try {
+			assertImported(reopened, 5_000);
+		} finally {
+			reopened.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(120)
+	void mixedValueKindsKeepWorkingLookups() throws Exception {
+		TripleTerm quoted = VF.createTripleTerm(subject(1), SHARED, VF.createLiteral("quoted"));
+		IRI longIri = VF.createIRI("http://example.com/run-import/a/rather/long/path/that/needs/a/hash/record");
+		IRI shortIri = VF.createIRI("urn:x");
+		Value[] objects = { quoted, longIri, shortIri, VF.createLiteral("hej", "sv"),
+				VF.createLiteral("2026-10-25", XSD.DATE), VF.createLiteral(42), VF.createLiteral(""),
+				VF.createLiteral("\u0000 embedded zero"), VF.createBNode("b1") };
+		LmdbStore sail = new LmdbStore(directory, config());
+		sail.init();
+		try {
+			try (LmdbStoreConnection writer = (LmdbStoreConnection) sail.getConnection()) {
+				writer.begin(IsolationLevels.NONE);
+				for (int i = 0; i < 100; i++) {
+					for (Value object : objects) {
+						writer.addStatement(subject(i), SHARED, object, (Resource) GRAPH);
+					}
+				}
+				assertThat(sail.getBackingStore().isInitialRunImportActive()).isTrue();
+				writer.commit();
+			}
+		} finally {
+			sail.shutDown();
+		}
+		LmdbStore reopened = new LmdbStore(directory, config());
+		reopened.init();
+		try (LmdbStoreConnection reader = (LmdbStoreConnection) reopened.getConnection()) {
+			assertThat(reader.size()).isEqualTo(100L * objects.length);
+			for (Value object : objects) {
+				if (object.isBNode()) {
+					continue;
+				}
+				try (var statements = reader.getStatements(null, SHARED, object, false)) {
+					assertThat(statements.stream().count()).as("lookup of %s", object).isEqualTo(100);
+				}
+			}
+			try (var statements = reader.getStatements(quoted.getSubject(), null, null, false)) {
+				assertThat(statements.stream().count()).isEqualTo(objects.length);
+			}
+		} finally {
+			reopened.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(120)
+	void aRollbackWithoutACheckpointLeavesAnEmptyUsableStore() throws Exception {
+		LmdbStore sail = new LmdbStore(directory, config());
+		sail.init();
+		try {
+			try (LmdbStoreConnection writer = (LmdbStoreConnection) sail.getConnection()) {
+				writer.begin(IsolationLevels.NONE);
+				addSubjects(writer, 0, 1_000);
+				assertThat(sail.getBackingStore().isInitialRunImportActive()).isTrue();
+				writer.rollback();
+			}
+			assertThat(new File(directory, LmdbInitialRunImport.MARKER_FILE_NAME)).doesNotExist();
+			try (LmdbStoreConnection reader = (LmdbStoreConnection) sail.getConnection()) {
+				assertThat(reader.size()).isZero();
+			}
+			try (LmdbStoreConnection writer = (LmdbStoreConnection) sail.getConnection()) {
+				writer.begin(IsolationLevels.NONE);
+				addSubjects(writer, 0, 700);
+				assertThat(sail.getBackingStore().isInitialRunImportActive())
+						.as("the first write already happened")
+						.isFalse();
+				writer.commit();
+			}
+			assertImported(sail, 700);
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(120)
+	void closingTheConnectionMidImportRollsItBack() throws Exception {
+		LmdbStore sail = new LmdbStore(directory, config());
+		sail.init();
+		try {
+			LmdbStoreConnection writer = (LmdbStoreConnection) sail.getConnection();
+			writer.begin(IsolationLevels.NONE);
+			addSubjects(writer, 0, 1_000);
+			assertThat(sail.getBackingStore().isInitialRunImportActive()).isTrue();
+			writer.close();
+			assertThat(sail.getBackingStore().isInitialRunImportActive()).isFalse();
+			try (LmdbStoreConnection reader = (LmdbStoreConnection) sail.getConnection()) {
+				assertThat(reader.size()).isZero();
+			}
+		} finally {
+			sail.shutDown();
+		}
+		assertThat(new File(directory, LmdbInitialRunImport.MARKER_FILE_NAME)).doesNotExist();
+	}
+
+	@Test
+	@Timeout(120)
+	void aFailedCompletionRefusesUseUntilARestartResetsTheStore() throws Exception {
+		FailingLookupStore sail = new FailingLookupStore(directory, config());
+		sail.init();
+		try {
+			try (LmdbStoreConnection writer = (LmdbStoreConnection) sail.getConnection()) {
+				writer.begin(IsolationLevels.NONE);
+				addSubjects(writer, 0, 1_000);
+				sail.values.failure = new IOException("injected lookup write failure");
+				assertThatThrownBy(writer::commit).isInstanceOf(SailException.class);
+			}
+			assertThat(new File(directory, LmdbInitialRunImport.MARKER_FILE_NAME))
+					.as("the marker survives a failed import")
+					.exists();
+			try (LmdbStoreConnection other = (LmdbStoreConnection) sail.getConnection()) {
+				other.begin(IsolationLevels.NONE);
+				assertThatThrownBy(other::size).isInstanceOf(SailException.class)
+						.hasMessageContaining("restart the store");
+				other.rollback();
+			}
+		} finally {
+			sail.shutDown();
+		}
+		LmdbStore reopened = new LmdbStore(directory, config());
+		reopened.init();
+		try {
+			try (LmdbStoreConnection reader = (LmdbStoreConnection) reopened.getConnection()) {
+				assertThat(reader.size()).as("the restart resets the half-written store").isZero();
+			}
+			try (LmdbStoreConnection writer = (LmdbStoreConnection) reopened.getConnection()) {
+				writer.begin(IsolationLevels.NONE);
+				addSubjects(writer, 0, 300);
+				writer.commit();
+			}
+			assertImported(reopened, 300);
+		} finally {
+			reopened.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(120)
+	void aConnectionListenerSeesTheSameAddsAsWithoutTheRunImport() throws Exception {
+		long withRunImport = importWithListener(directory, config());
+		long withoutRunImport = importWithListener(otherDirectory, config().setInitialRunImportEnabled(false));
+		assertThat(withRunImport).as("listener notifications keep their streaming semantics")
+				.isEqualTo(withoutRunImport)
+				.isPositive();
+	}
+
+	private static long importWithListener(File storeDirectory, LmdbStoreConfig config) throws Exception {
+		LmdbStore sail = new LmdbStore(storeDirectory, config);
+		sail.init();
+		try {
+			AtomicLong added = new AtomicLong();
+			try (LmdbStoreConnection writer = (LmdbStoreConnection) sail.getConnection()) {
+				writer.addConnectionListener(new SailConnectionListener() {
+					@Override
+					public void statementAdded(Statement statement) {
+						added.incrementAndGet();
+					}
+
+					@Override
+					public void statementRemoved(Statement statement) {
+					}
+				});
+				writer.begin(IsolationLevels.NONE);
+				addSubjects(writer, 0, 500);
+				addSubjects(writer, 0, 500);
+				writer.commit();
+			}
+			assertImported(sail, 500);
+			return added.get();
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(120)
+	void anEmptyNoneTransactionKeepsTheRunImportAvailable() throws Exception {
+		LmdbStore sail = new LmdbStore(directory, config());
+		sail.init();
+		try {
+			try (LmdbStoreConnection empty = (LmdbStoreConnection) sail.getConnection()) {
+				empty.begin(IsolationLevels.NONE);
+				empty.commit();
+			}
+			try (LmdbStoreConnection writer = (LmdbStoreConnection) sail.getConnection()) {
+				writer.begin(IsolationLevels.NONE);
+				addSubjects(writer, 0, 300);
+				assertThat(sail.getBackingStore().isInitialRunImportActive()).isTrue();
+				writer.commit();
+			}
+			assertImported(sail, 300);
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(120)
+	void clearingAContextMidImportCompletesTheImportFirst() throws Exception {
+		LmdbStore sail = new LmdbStore(directory, config());
+		sail.init();
+		try {
+			try (LmdbStoreConnection writer = (LmdbStoreConnection) sail.getConnection()) {
+				writer.begin(IsolationLevels.NONE);
+				addSubjects(writer, 0, 800);
+				writer.clear(GRAPH);
+				assertThat(sail.getBackingStore().isInitialRunImportActive()).isFalse();
+				writer.commit();
+			}
+			try (LmdbStoreConnection reader = (LmdbStoreConnection) sail.getConnection()) {
+				assertThat(reader.size()).isEqualTo(800);
+				assertThat(reader.size(GRAPH)).isZero();
+			}
+		} finally {
+			sail.shutDown();
+		}
+	}
+
 	private static void addSubjects(LmdbStoreConnection writer, int from, int to) {
 		for (int i = from; i < to; i++) {
 			writer.addStatement(subject(i), SHARED, SHARED);
@@ -453,9 +815,30 @@ class LmdbInitialRunImportTest {
 		}
 	}
 
+	private static final class LimitedFreshSessionStore extends LmdbStore {
+		private final long limit;
+
+		private LimitedFreshSessionStore(File directory, LmdbStoreConfig config, long limit) {
+			super(directory, config);
+			this.limit = limit;
+		}
+
+		@Override
+		LmdbSailStore createBackingStore(File directory, StoreProperties properties, LmdbStoreConfig config,
+				boolean sketchEnabled) throws IOException {
+			return new LmdbSailStore(directory, properties, config, sketchEnabled, null, TripleStore::new) {
+				@Override
+				long freshNoneValueLimit() {
+					return limit;
+				}
+			};
+		}
+	}
+
 	private static final class FailingLookupValueStore extends ValueStore {
 		private volatile int mapFullsRemaining;
 		private volatile int mapFullsInjected;
+		private volatile IOException failure;
 
 		private FailingLookupValueStore(File directory, StoreProperties properties, LmdbStoreConfig config)
 				throws IOException {
@@ -468,6 +851,11 @@ class LmdbInitialRunImportTest {
 				mapFullsRemaining--;
 				mapFullsInjected++;
 				LmdbUtil.E(MDB_MAP_FULL);
+			}
+			IOException injected = failure;
+			if (injected != null) {
+				failure = null;
+				throw injected;
 			}
 			return super.writeDeferredLookups(source);
 		}

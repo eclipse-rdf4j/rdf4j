@@ -41,7 +41,11 @@ final class LmdbRunCollector implements Closeable {
 	private final int[][] fieldOrders;
 	private final int slices;
 	private final Executor executor;
+	private static final int INITIAL_ROWS = 1 << 14;
+
+	private final int chunkRows;
 	private final BlockingQueue<long[]> freeBuffers = new LinkedBlockingQueue<>();
+	private int allocatedBuffers;
 	private final List<CompletableFuture<Void>> pending = new ArrayList<>();
 	private final List<List<Path>> runs = new ArrayList<>();
 	private final List<Path> files = new ArrayList<>();
@@ -54,7 +58,8 @@ final class LmdbRunCollector implements Closeable {
 	private boolean completed;
 
 	/**
-	 * @param chunkRows rows per chunk buffer; two buffers are allocated, one filling while the other is sorted
+	 * @param chunkRows rows per chunk buffer; at most two full buffers exist, one filling while the other is sorted,
+	 *                  and the first starts small so a short import never allocates a full chunk
 	 * @param slices    runs per field order and chunk; slices of one chunk sort in parallel
 	 */
 	LmdbRunCollector(String name, Path directory, int[][] fieldOrders, int chunkRows, int slices, Executor executor) {
@@ -69,8 +74,9 @@ final class LmdbRunCollector implements Closeable {
 		for (int i = 0; i < fieldOrders.length; i++) {
 			runs.add(new ArrayList<>());
 		}
-		current = new long[LmdbSortedRuns.ROW_LONGS * chunkRows];
-		freeBuffers.add(new long[LmdbSortedRuns.ROW_LONGS * chunkRows]);
+		this.chunkRows = chunkRows;
+		current = new long[LmdbSortedRuns.ROW_LONGS * Math.min(chunkRows, INITIAL_ROWS)];
+		allocatedBuffers = 1;
 	}
 
 	void add(long a, long b, long c, long d) throws IOException {
@@ -130,6 +136,13 @@ final class LmdbRunCollector implements Closeable {
 	}
 
 	private void makeRoom() throws IOException {
+		int capacity = current.length / LmdbSortedRuns.ROW_LONGS;
+		if (capacity < chunkRows) {
+			long[] grown = new long[LmdbSortedRuns.ROW_LONGS * Math.min(chunkRows, Math.multiplyExact(capacity, 2))];
+			System.arraycopy(current, 0, grown, 0, LmdbSortedRuns.ROW_LONGS * count);
+			current = grown;
+			return;
+		}
 		if (committed == 0) {
 			// One native chunk's provisional rows outgrew the buffer: grow it rather than spill uncommitted rows.
 			long[] grown = new long[Math.multiplyExact(current.length, 2)];
@@ -143,7 +156,7 @@ final class LmdbRunCollector implements Closeable {
 	/** Hands the committed prefix to the sorter and moves the provisional tail into a recycled buffer. */
 	private void dispatch() throws IOException {
 		long[] chunk = current;
-		int chunkRows = committed;
+		int spillRows = committed;
 		int tail = count - committed;
 		long[] next = takeBuffer();
 		if (next.length < LmdbSortedRuns.ROW_LONGS * tail) {
@@ -153,13 +166,13 @@ final class LmdbRunCollector implements Closeable {
 		current = next;
 		count = tail;
 		committed = 0;
-		spilledRows += chunkRows;
+		spilledRows += spillRows;
 
 		List<CompletableFuture<Void>> tasks = new ArrayList<>();
-		int sliceRows = Math.max(1, (chunkRows + slices - 1) / slices);
-		for (int from = 0; from < chunkRows; from += sliceRows) {
+		int sliceRows = Math.max(1, (spillRows + slices - 1) / slices);
+		for (int from = 0; from < spillRows; from += sliceRows) {
 			int lo = from;
-			int hi = Math.min(chunkRows, from + sliceRows);
+			int hi = Math.min(spillRows, from + sliceRows);
 			for (int order = 0; order < fieldOrders.length; order++) {
 				Path file = directory.resolve(name + "-" + order + "-" + nextRun++ + ".run");
 				files.add(file);
@@ -181,6 +194,14 @@ final class LmdbRunCollector implements Closeable {
 	}
 
 	private long[] takeBuffer() throws IOException {
+		long[] free = freeBuffers.poll();
+		if (free != null) {
+			return free;
+		}
+		if (allocatedBuffers < 2) {
+			allocatedBuffers++;
+			return new long[LmdbSortedRuns.ROW_LONGS * chunkRows];
+		}
 		try {
 			return freeBuffers.take();
 		} catch (InterruptedException e) {

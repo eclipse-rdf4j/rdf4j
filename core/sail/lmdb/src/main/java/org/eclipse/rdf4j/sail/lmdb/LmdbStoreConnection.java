@@ -3002,6 +3002,14 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		verifyNotPrepared();
 	}
 
+	/**
+	 * Listener probes read the pending batch and the open write transaction directly, so they cannot see rows an
+	 * initial run import holds in its runs. A connection with listeners therefore never claims one.
+	 */
+	boolean notifiesStatementListeners() {
+		return hasConnectionListeners();
+	}
+
 	/** A statement write; any first statement writer other than an explicit NONE import forfeits the run import. */
 	private void markStatementWriteAttempted() {
 		markTransactionWriteAttempted();

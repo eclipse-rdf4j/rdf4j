@@ -3038,6 +3038,11 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	/** The number of values a NONE import's fresh session may hold before it falls back to dictionary lookups. */
+	long freshNoneValueLimit() {
+		return FRESH_NONE_VALUE_LIMIT;
+	}
+
 	boolean isInitialRunImportActive() {
 		return initialRunImport != null;
 	}
@@ -11062,7 +11067,7 @@ class LmdbSailStore implements SailStore {
 			if (!explicit || mayHaveInferred || freshNoneImportOwner != writerOwner()
 					|| noneWriteStates.size() != 1 && initialRunImport == null
 					|| !valueStore.isFreshValueSessionUsable(session)
-					|| valueStore.freshValueSessionSize(session) >= FRESH_NONE_VALUE_LIMIT) {
+					|| valueStore.freshValueSessionSize(session) >= freshNoneValueLimit()) {
 				invalidateFreshValueSession();
 				return false;
 			}
@@ -11161,7 +11166,7 @@ class LmdbSailStore implements SailStore {
 		private boolean freshSessionAccepts(int rows) {
 			ValueStore.FreshValueSession session = freshValueSession;
 			return session != null && !freshValueSessionInvalidated && valueStore.isFreshValueSessionUsable(session)
-					&& valueStore.freshValueSessionSize(session) + 4L * rows < FRESH_NONE_VALUE_LIMIT;
+					&& valueStore.freshValueSessionSize(session) + 4L * rows < freshNoneValueLimit();
 		}
 
 		/**
@@ -11171,7 +11176,8 @@ class LmdbSailStore implements SailStore {
 		private void claimInitialRunImport(Object owner) {
 			if (!nativeCheckpoints || !explicit || mayHaveInferred || freshValueSession == null
 					|| freshValueSessionInvalidated || freshNoneImportOwner != owner || noneWriteStates.size() != 1
-					|| !(owner instanceof LmdbStoreConnection) || tripleStore.hasStagingIndexes()
+					|| !(owner instanceof LmdbStoreConnection connection) || connection.notifiesStatementListeners()
+					|| tripleStore.hasStagingIndexes()
 					|| valueStore.getFormat().isLegacy()) {
 				return;
 			}

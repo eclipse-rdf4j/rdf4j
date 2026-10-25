@@ -45,6 +45,8 @@ final class LmdbInitialRunImport implements Closeable {
 	private static final Logger logger = LoggerFactory.getLogger(LmdbInitialRunImport.class);
 	private static final long MAX_CHUNK_BYTES = 128L << 20;
 	private static final long MIN_CHUNK_BYTES = 8L << 20;
+	/** Tests set a small chunk size here to force many runs per index; zero keeps the heap-derived size. */
+	static volatile long chunkBytesForTest;
 
 	final Object owner;
 	private final Path dataDir;
@@ -70,8 +72,8 @@ final class LmdbInitialRunImport implements Closeable {
 			thread.setDaemon(true);
 			return thread;
 		});
-		long chunkBytes = Math.max(MIN_CHUNK_BYTES,
-				Math.min(MAX_CHUNK_BYTES, Runtime.getRuntime().maxMemory() / 32));
+		long chunkBytes = chunkBytesForTest > 0 ? chunkBytesForTest
+				: Math.max(MIN_CHUNK_BYTES, Math.min(MAX_CHUNK_BYTES, Runtime.getRuntime().maxMemory() / 32));
 		int chunkRows = (int) (chunkBytes / LmdbSortedRuns.ROW_BYTES);
 		Files.createDirectories(runDirectory);
 		this.triples = new LmdbRunCollector("triples", runDirectory, fieldOrders, chunkRows,

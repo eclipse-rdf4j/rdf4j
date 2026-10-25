@@ -35,7 +35,22 @@ Milestones 1 to 3 brought the load to about 30 seconds. Milestones 4 to 7 add th
 - [x] (2026-10-25 21:50Z) Theme load with the real implementation: 13.7–14.1 s (import about 10.5 s, commit 3.2–3.4 s). `triples/data.mdb` is 1.75 GB and `values/data.mdb` 649 MB, and verification in a fresh JVM passes. Two fixes were found by tracing:
   - namespace reads and writes no longer complete the import;
   - the final merge's value half now runs while the triple half appends.
-- [ ] Milestone 7: full `core/sail/lmdb` suite (running), then triage.
+- [x] (2026-10-25 21:55Z) Committed and pushed the run import as `fcebf87b1c`.
+- [x] (2026-10-25 22:40Z) Edge-case coverage: `LmdbInitialRunImportTest` grew to 22 tests, and `LmdbDeferredValueLookupsTest` was added. New cases:
+  - inferred rows in the import transaction;
+  - a full fresh session, through the new `freshNoneValueLimit()` seam;
+  - many small runs with duplicates across runs, through `LmdbInitialRunImport.chunkBytesForTest`;
+  - mixed value kinds (triple terms, long and short IRIs, language and typed literals, empty strings, embedded NUL);
+  - rollback without a checkpoint, closing the connection mid-import, and a failed completion;
+  - listener notifications compared with the switch off, and empty NONE transactions;
+  - clearing a context mid-import, namespaces, and a second connection on the importer's thread;
+  - adjacency and overlay rebuilds after the merge.
+  Two defects were found and fixed:
+  - listener connections now never claim the import;
+  - the collector allocates its chunk buffers lazily.
+  All 28 run-import tests pass.
+- [x] (2026-10-25 22:50Z) User request: the bulk loader's default statement indexes are now `spoc,posc,ospc`, in both `StatementIndexBulkRecords.DEFAULT_INDEXES` and `LmdbNativeBulkStore.DEFAULT_TRIPLE_INDEXES`. `LmdbBulkLoaderDefaultIndexesTest` failed before the change and passes after; the bulk package passes 500 tests with 1 skipped. The store's own default (`TripleStore.DEFAULT_TRIPLE_INDEXES`) is unchanged.
+- [ ] Milestone 7: full `core/sail/lmdb` suite. The first attempt was stopped: IntelliJ's build wrote into the same `target/` directories, so test classes vanished mid-run. It needs a rerun with nothing else building this checkout.
 
 ## Surprises & Discoveries
 
@@ -89,6 +104,9 @@ Milestones 1 to 3 brought the load to about 30 seconds. Milestones 4 to 7 add th
 - Observation: `RDFInserter.endRDF` reads each namespace back (`getNamespace`) after every theme, and the generator sets namespaces. A namespace read went through `beginDatasetAcquisition`, and a namespace write's `LmdbSailSink.flush()` called `flushNonePending`. Both completed the import after the first theme, and the load took 31 s.
   Fix: completion moved out of `flushNonePending` into `LmdbStoreConnection.endUpdateInternal` (commit and explicit flush), reads (`beginDatasetAcquisition`, skipped inside namespace reads), removals and rollback.
   A second trace showed the NONE state being discarded after routine flushes. Completion then found no controller sink and the import failed at commit. While an import is active, `retainsInitialRunImportState` now keeps that state.
+- Observation: a connection with `SailConnectionListener`s opens one NONE mutation probe dataset, `NoneMutationDataset`, and keeps it across many adds. That dataset reads the pending batch and the open write transaction, so rows moved into runs after the claim were invisible to it. Duplicate adds were then notified: 2,000 events with the run import against 1,000 without.
+  Fix: `claimInitialRunImport` skips connections for which `notifiesStatementListeners()` is true. If listeners are added later, the next probe acquisition (`enterNoneMutationRead`) completes the import first.
+- Observation: a limitation that predates this work. With two NONE connections on one thread, the second one's `commit()` waits forever for the writer lease that the first connection's sink keeps while it holds pending rows. It also does not see those rows: its `size()` returns 0. A scratch probe with the run import switched off timed out the same way. With the run import on, the second connection's read completes the import, and then sees all rows. The test commits the importer first.
 - Observation: within one sorted value batch, adjacent IRIs share most of their prefix; on average 5.7 bytes differ from the previous IRI. The 3.2 million IRIs come from only 69 namespaces, and none uses a non-canonical split.
 
 ## Decision Log
