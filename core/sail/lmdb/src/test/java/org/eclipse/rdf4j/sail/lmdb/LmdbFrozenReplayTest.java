@@ -154,6 +154,7 @@ class LmdbFrozenReplayTest {
 		store.addSailChangedListener(event -> notifications.incrementAndGet());
 		try {
 			repository.init();
+			awaitStartupMaintenance(store);
 			store.probe.reset();
 			LmdbSailStore backing = store.getBackingStore();
 			try (SailRepositoryConnection writer = repository.getConnection();
@@ -476,7 +477,8 @@ class LmdbFrozenReplayTest {
 	@Timeout(value = 30, unit = TimeUnit.SECONDS)
 	void emergencyReplayFreezesBufferedNativeAndSnapshotAdmission(boolean managed, @TempDir Path directory)
 			throws Exception {
-		CountingLmdbStore store = new CountingLmdbStore(directory.toFile(), smallMapConfig().setBulkOperationSize(2));
+		CountingLmdbStore store = new CountingLmdbStore(directory.toFile(),
+				smallMapConfig().setBulkOperationSize(2), true);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 		LmdbSailStore backing = store.getBackingStore();
@@ -507,7 +509,12 @@ class LmdbFrozenReplayTest {
 							"nonblocking native admission must respect the emergency freeze");
 					for (boolean nativeWriter : new boolean[] { true, false }) {
 						{
+							AtomicReference<Thread> admissionThread = new AtomicReference<>();
+							CountDownLatch admissionEntered = watchTargetNativeAdmission(store, admissionThread,
+									nativeWriter ? "registerWriter" : "registerView",
+									nativeWriter ? "awaitNativeWriterAdmission" : "awaitViewAdmission");
 							Future<?> admission = executor.submit(() -> {
+								admissionThread.set(Thread.currentThread());
 								try (InterruptingTimeLimit limit = InterruptingTimeLimit.start(1_000)) {
 									if (nativeWriter) {
 										try (var publication = backing.getExplicitSailSource()
@@ -523,18 +530,22 @@ class LmdbFrozenReplayTest {
 									}
 								}
 							});
-							awaitAdmissionWaiter(backing);
+							awaitTargetNativeAdmission(store, admissionThread, admissionEntered);
 							var failure = assertThrows(ExecutionException.class,
 									() -> admission.get(3, TimeUnit.SECONDS));
 							assertNotNull(causeOfType(failure, InterruptedSailException.class));
 						}
 					}
+					AtomicReference<Thread> cancelledThread = new AtomicReference<>();
+					CountDownLatch cancelledAtAdmission = watchTargetNativeAdmission(store, cancelledThread,
+							"registerWriter", "awaitNativeWriterAdmission");
 					Future<?> cancelled = executor.submit(() -> {
+						cancelledThread.set(Thread.currentThread());
 						try (var publication = backing.getExplicitSailSource().beginPublication(foreignOwner)) {
 							throw new AssertionError("completed buffered attempt gained native authority");
 						}
 					});
-					awaitAdmissionWaiter(backing);
+					awaitTargetNativeAdmission(store, cancelledThread, cancelledAtAdmission);
 					foreign.completeTransaction();
 					var failure = assertThrows(ExecutionException.class,
 							() -> cancelled.get(3, TimeUnit.SECONDS));
@@ -656,13 +667,29 @@ class LmdbFrozenReplayTest {
 		}
 	}
 
-	private static void awaitAdmissionWaiter(LmdbSailStore backing) {
-		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
-		while (backing.growthMetricsSnapshot().currentAdmissionWaiters() == 0 && System.nanoTime() < deadline) {
-			Thread.onSpinWait();
+	private static CountDownLatch watchTargetNativeAdmission(CountingLmdbStore store,
+			AtomicReference<Thread> target, String registrationMethod, String waitMethod) {
+		CountDownLatch entered = new CountDownLatch(1);
+		store.probe.nativeAdmissionCallbackStack.set(null);
+		store.probe.nativeAdmissionTarget.set(target);
+		store.probe.nativeAdmissionEntered.set(entered);
+		store.probe.nativeAdmissionRegistrationMethod.set(registrationMethod);
+		store.probe.nativeAdmissionWaitMethod.set(waitMethod);
+		return entered;
+	}
+
+	private static void awaitTargetNativeAdmission(CountingLmdbStore store, AtomicReference<Thread> target,
+			CountDownLatch entered) throws InterruptedException {
+		try {
+			assertTrue(entered.await(2, TimeUnit.SECONDS),
+					"the target task must reach coordinator admission while it owns the admission lock; callback stack: "
+							+ store.probe.nativeAdmissionCallbackStack.get());
+		} finally {
+			store.probe.nativeAdmissionTarget.compareAndSet(target, null);
+			store.probe.nativeAdmissionEntered.compareAndSet(entered, null);
+			store.probe.nativeAdmissionRegistrationMethod.set(null);
+			store.probe.nativeAdmissionWaitMethod.set(null);
 		}
-		assertTrue(backing.growthMetricsSnapshot().currentAdmissionWaiters() > 0,
-				"the buffered owner must wait at coordinator admission before acquiring native authority");
 	}
 
 	@Test
@@ -1247,6 +1274,7 @@ class LmdbFrozenReplayTest {
 
 		try {
 			repository.init();
+			awaitStartupMaintenance(store);
 			store.getBackingStore().enableMultiThreading = false;
 			store.probe.reset();
 			store.probe.valueCommitCapacityFailureBudget.set(1);
@@ -4956,6 +4984,21 @@ class LmdbFrozenReplayTest {
 		assertFailedAbortAfterAppliedPrefixPreventsRetry(directory, true);
 	}
 
+	private static void awaitStartupMaintenance(CountingLmdbStore store) throws Exception {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+		while (true) {
+			String status = store.getBackingStore().postReadyMaintenanceStatus();
+			if ("READY".equals(status)) {
+				break;
+			}
+			assertFalse(status.startsWith("FAILED") || "CANCELLED".equals(status), status);
+			assertTrue(System.nanoTime() < deadline, "startup maintenance did not finish: " + status);
+			Thread.yield();
+		}
+		assertTrue(store.awaitIndexRebuild(10, TimeUnit.SECONDS),
+				"initial index maintenance must finish before application capacity faults are armed");
+	}
+
 	private static LmdbStoreConfig smallMapConfig() {
 		return new LmdbStoreConfig("spoc,posc")
 				.setTripleDBSize(8L * 1024 * 1024)
@@ -4999,19 +5042,59 @@ class LmdbFrozenReplayTest {
 	private static final class CountingLmdbStore extends LmdbStore {
 		private final RetryProbe probe = new RetryProbe();
 		private final Integer asyncQueueCapacity;
+		private final boolean captureNativeAdmission;
 
 		private CountingLmdbStore(File directory, LmdbStoreConfig config) {
-			this(directory, config, null);
+			this(directory, config, null, false);
 		}
 
 		private CountingLmdbStore(File directory, LmdbStoreConfig config, Integer asyncQueueCapacity) {
+			this(directory, config, asyncQueueCapacity, false);
+		}
+
+		private CountingLmdbStore(File directory, LmdbStoreConfig config, boolean captureNativeAdmission) {
+			this(directory, config, null, captureNativeAdmission);
+		}
+
+		private CountingLmdbStore(File directory, LmdbStoreConfig config, Integer asyncQueueCapacity,
+				boolean captureNativeAdmission) {
 			super(directory, config);
 			this.asyncQueueCapacity = asyncQueueCapacity;
+			this.captureNativeAdmission = captureNativeAdmission;
 		}
 
 		@Override
 		LmdbSailStore createBackingStore(File directory, StoreProperties properties, LmdbStoreConfig config,
 				boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
+			if (captureNativeAdmission) {
+				return new LmdbSailStore(directory, properties, config, sketchBasedJoinEstimatorEnabled,
+						(valueDirectory, valueProperties, valueConfig) -> new CountingValueStore(valueDirectory,
+								valueProperties, valueConfig, probe),
+						(tripleDirectory, tripleProperties, tripleConfig, valueStore) -> new CountingTripleStore(
+								tripleDirectory, tripleProperties, tripleConfig, valueStore, probe)) {
+					@Override
+					void beforeGrowthAdmissionCheck() {
+						super.beforeGrowthAdmissionCheck();
+						AtomicReference<Thread> target = probe.nativeAdmissionTarget.get();
+						CountDownLatch entered = probe.nativeAdmissionEntered.get();
+						if (target != null && target.get() == Thread.currentThread() && entered != null) {
+							String coordinator = LmdbSailStore.class.getName() + "$MapGrowthCoordinator";
+							List<String> frames = StackWalker.getInstance()
+									.walk(stack -> stack
+											.map(frame -> frame.getClassName() + "#" + frame.getMethodName())
+											.toList());
+							probe.nativeAdmissionCallbackStack.set(String.join(" <- ", frames));
+							String registrationMethod = probe.nativeAdmissionRegistrationMethod.get();
+							String waitMethod = probe.nativeAdmissionWaitMethod.get();
+							if (registrationMethod != null && waitMethod != null
+									&& frames.contains(coordinator + "#" + registrationMethod)
+									&& frames.contains(coordinator + "#" + waitMethod)) {
+								entered.countDown();
+							}
+						}
+					}
+				};
+			}
 			if (asyncQueueCapacity != null) {
 				return new LmdbSailStore(directory, properties, config, sketchBasedJoinEstimatorEnabled,
 						(valueDirectory, valueProperties, valueConfig) -> new CountingValueStore(valueDirectory,
@@ -5031,6 +5114,8 @@ class LmdbFrozenReplayTest {
 
 	private static final class CountingValueStore extends ValueStore {
 		private final RetryProbe probe;
+		private volatile TxnReplayPolicy.Decision applicationReplayDecision;
+		private volatile boolean frozenApplicationWriter;
 
 		private CountingValueStore(File directory, StoreProperties properties, LmdbStoreConfig config, RetryProbe probe)
 				throws IOException {
@@ -5059,6 +5144,30 @@ class LmdbFrozenReplayTest {
 				probe.firstValueWriterMap.compareAndSet(-1L, mapSizeBytes());
 			}
 			super.startTransaction(resize);
+			TxnReplayPolicy.Decision decision = applicationReplayDecision;
+			// Derived-index maintenance starts its own private writer and must not consume an application fault.
+			frozenApplicationWriter = decision != null && decision.frozenReplay;
+		}
+
+		@Override
+		void setReplayDecision(TxnReplayPolicy.Decision decision) {
+			super.setReplayDecision(decision);
+			applicationReplayDecision = decision;
+		}
+
+		@Override
+		void clearReplayDecision(TxnReplayPolicy.Decision decision) {
+			super.clearReplayDecision(decision);
+			if (applicationReplayDecision == decision && (decision == null || !decision.failed())) {
+				applicationReplayDecision = null;
+			}
+		}
+
+		@Override
+		public void rollback() throws IOException {
+			frozenApplicationWriter = false;
+			applicationReplayDecision = null;
+			super.rollback();
 		}
 
 		@Override
@@ -5094,7 +5203,9 @@ class LmdbFrozenReplayTest {
 
 		@Override
 		int commitWriteTransaction(long transaction) {
-			if (probe == null) {
+			boolean applicationWriter = frozenApplicationWriter;
+			frozenApplicationWriter = false;
+			if (probe == null || !applicationWriter) {
 				return super.commitWriteTransaction(transaction);
 			}
 			int remainingFailures = probe.valueCommitCapacityFailureBudget
@@ -5128,6 +5239,11 @@ class LmdbFrozenReplayTest {
 	}
 
 	private static final class RetryProbe {
+		private final AtomicReference<String> nativeAdmissionCallbackStack = new AtomicReference<>();
+		private final AtomicReference<AtomicReference<Thread>> nativeAdmissionTarget = new AtomicReference<>();
+		private final AtomicReference<CountDownLatch> nativeAdmissionEntered = new AtomicReference<>();
+		private final AtomicReference<String> nativeAdmissionRegistrationMethod = new AtomicReference<>();
+		private final AtomicReference<String> nativeAdmissionWaitMethod = new AtomicReference<>();
 		private final AtomicReference<Runnable> beforeProjectedResizeCheck = new AtomicReference<>();
 		private final AtomicBoolean recordValueWriterMap = new AtomicBoolean();
 		private final AtomicLong firstValueWriterMap = new AtomicLong(-1L);

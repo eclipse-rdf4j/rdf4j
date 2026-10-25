@@ -91,12 +91,15 @@ class LmdbForegroundFilterSamplingEpochTest {
 	void foregroundFilterSamplingMustResolveTermsFromTheTripleSnapshot() throws Exception {
 		Path dataDirectory = Files.createTempDirectory("lmdb-foreground-filter-snapshot");
 		SamplingPause pause = new SamplingPause();
-		ProbeLmdbStore sail = new ProbeLmdbStore(dataDirectory.toFile(), samplingConfig(), pause);
+		ProbeLmdbStore sail = new ProbeLmdbStore(dataDirectory.toFile(),
+				samplingConfig().setTripleIndexes("spoc,posc,ospc"),
+				pause);
 		SailRepository repository = new SailRepository(sail);
 		ExecutorService sampler = Executors.newSingleThreadExecutor();
 		Future<SketchBasedJoinEstimator.PatternFilterSampleEstimate> estimateFuture = null;
 		try {
 			repository.init();
+			awaitSamplingInitialization(sail);
 			SimpleValueFactory valueFactory = SimpleValueFactory.getInstance();
 			Map<Long, IRI> subjectsById = new HashMap<>();
 			Map<Long, Literal> namesById = new HashMap<>();
@@ -832,6 +835,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 		boolean writerCommittedWhilePaused = false;
 		try {
 			repository.init();
+			awaitSamplingInitialization(sail);
 			SeededTerms seeded = seedMatchedRows(repository, sail, ROW_COUNT);
 			LmdbSailStore backing = sail.getBackingStore();
 			LmdbFilterSelectivityStats stats = sail.filterStats();
@@ -929,7 +933,8 @@ class LmdbForegroundFilterSamplingEpochTest {
 	void queuedBackgroundPredicateIsResolvedInTheSamplingView() throws Exception {
 		Path dataDirectory = Files.createTempDirectory("lmdb-background-filter-current-predicate");
 		SamplingPause pause = new SamplingPause();
-		ProbeLmdbStore sail = new ProbeLmdbStore(dataDirectory.toFile(), backgroundSamplingConfig(), pause);
+		ProbeLmdbStore sail = new ProbeLmdbStore(dataDirectory.toFile(),
+				backgroundSamplingConfig().setTripleIndexes("spoc,posc,ospc"), pause);
 		SailRepository repository = new SailRepository(sail);
 		ExecutorService sampler = Executors.newSingleThreadExecutor();
 		Future<Integer> cycleFuture = null;
@@ -937,6 +942,9 @@ class LmdbForegroundFilterSamplingEpochTest {
 		CountDownLatch allowSamplingView = new CountDownLatch(1);
 		try {
 			repository.init();
+			awaitSamplingInitialization(sail);
+			assertTrue(sail.valueStore().hasTrustedReferenceCounts(),
+					"the queued predicate fixture must use its exact prepared reference-count authority");
 			SimpleValueFactory valueFactory = SimpleValueFactory.getInstance();
 			List<IRI> subjects = new ArrayList<>(ROW_COUNT);
 			List<Literal> names = new ArrayList<>(ROW_COUNT);
@@ -964,6 +972,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 					"The background-only estimator queues this supported filter without sampling it inline");
 			assertEquals(1, stats.pendingBackgroundSamplingRequests(),
 					"The original RDF predicate request must be queued before its term is retired");
+
 			stats.setSamplingViewSupplier(() -> {
 				samplingViewRequested.countDown();
 				try {
@@ -981,9 +990,9 @@ class LmdbForegroundFilterSamplingEpochTest {
 				return backing.runBackgroundFilterSamplingCycle(5_000L);
 			});
 			assertTrue(samplingViewRequested.await(3, TimeUnit.SECONDS),
-					"The cycle must drain the queued predicate request before acquiring a read view");
+					"The cycle must drain the pre-existing predicate request before acquiring a read view");
 			assertEquals(0, stats.pendingBackgroundSamplingRequests(),
-					"The original request is local to the active cycle before the dictionary changes");
+					"The original request is local to the active cycle while its fresh view is held back");
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				connection.begin(IsolationLevels.NONE);
@@ -995,6 +1004,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 			sail.valueStore().forceEvictionOfValues();
 			sail.valueStore().startTransaction(true);
 			sail.valueStore().commit();
+			LmdbGcTestMaintenance.drainRetirements(backing);
 			assertEquals(LmdbValue.UNKNOWN_ID, sail.valueStore().getId(NAME),
 					"The old predicate is absent from the dictionary before the drained request acquires a view");
 
@@ -1347,6 +1357,11 @@ class LmdbForegroundFilterSamplingEpochTest {
 		return samplingConfig(20_000L, true, false, 0L);
 	}
 
+	private static void awaitSamplingInitialization(ProbeLmdbStore sail) throws IOException, InterruptedException {
+		LmdbTestUtil.awaitPostReadyInitialization(sail, 30L, TimeUnit.SECONDS);
+		assertTrue(sail.awaitIndexRebuild(10L, TimeUnit.SECONDS), sail.getStartupStatus().toString());
+	}
+
 	private static LmdbStoreConfig backgroundSamplingConfig() {
 		return samplingConfig(20_000L, false, true, 0L);
 	}
@@ -1542,7 +1557,9 @@ class LmdbForegroundFilterSamplingEpochTest {
 			return valueStore.get();
 		}
 
-		private LmdbFilterSelectivityStats filterStats() {
+		private LmdbFilterSelectivityStats filterStats() throws IOException, InterruptedException {
+			// Post-ready maintenance creates the statistics in the background; never race that publication.
+			LmdbTestUtil.awaitPostReadyInitialization(this, 30L, TimeUnit.SECONDS);
 			return filterStats.get();
 		}
 

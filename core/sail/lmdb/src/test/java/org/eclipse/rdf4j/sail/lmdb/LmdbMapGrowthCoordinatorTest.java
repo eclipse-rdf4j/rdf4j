@@ -58,6 +58,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class LmdbMapGrowthCoordinatorTest {
@@ -146,9 +147,11 @@ class LmdbMapGrowthCoordinatorTest {
 		}
 	}
 
-	@Test
+	@ParameterizedTest
+	@EnumSource(ReplayScope.class)
 	@Timeout(value = 15, unit = TimeUnit.SECONDS)
-	void growthReservesReplayEpochBeforeAdmittingAnotherWriter(@TempDir Path dataDir) throws Exception {
+	void growthReservesReplayEpochBeforeAdmittingAnotherWriter(ReplayScope scope, @TempDir Path dataDir)
+			throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
 				.setTripleDBSize(512L * 1024L)
 				.setValueDBSize(256L * 1024L * 1024L)
@@ -162,6 +165,9 @@ class LmdbMapGrowthCoordinatorTest {
 		IRI laterSubject = values.createIRI("urn:phased-growth:after-reopen");
 		try (RepositoryConnection reader = repository.getConnection()) {
 			reader.add(values.createIRI("urn:phased-growth:initial"), predicate, values.createLiteral("initial"));
+			if (scope != ReplayScope.AUTO_COMMIT) {
+				reader.begin(scope == ReplayScope.SNAPSHOT ? IsolationLevels.SNAPSHOT : IsolationLevels.READ_COMMITTED);
+			}
 			MapGrowthMetrics.Snapshot before = store.getBackingStore().growthMetricsSnapshot();
 			try (TupleQueryResult result = reader.prepareTupleQuery(
 					"SELECT ?s WHERE { ?s <urn:phased-growth:predicate> ?o }").evaluate()) {
@@ -174,8 +180,8 @@ class LmdbMapGrowthCoordinatorTest {
 					writer.setNamespace("growth-demand", "urn:phased-growth:" + "n".repeat(2 * 1024 * 1024));
 					writer.commit();
 				}
-				// Begin waits for the growth gate. The old unobserved result must already own its replacement
-				// paired epoch when this writer is allowed to publish.
+				// Begin waits for the growth gate. Snapshot transactions retain the reserved paired epoch;
+				// operation snapshots admit their replacement when the unobserved result resumes.
 				try (RepositoryConnection writer = repository.getConnection()) {
 					writer.begin(IsolationLevels.SNAPSHOT);
 					MapGrowthMetrics.Snapshot metrics = store.getBackingStore().growthMetricsSnapshot();
@@ -188,14 +194,27 @@ class LmdbMapGrowthCoordinatorTest {
 					writer.commit();
 				}
 				int rows = 0;
+				boolean sawLaterSubject = false;
 				while (result.hasNext()) {
-					assertFalse(laterSubject.equals(result.next().getValue("s")),
-							"replay must bind its replacement epoch before a newly admitted writer can advance it");
+					boolean later = laterSubject.equals(result.next().getValue("s"));
+					if (scope == ReplayScope.SNAPSHOT) {
+						assertFalse(later,
+								"snapshot replay must retain the epoch reserved before writer admission reopened");
+					}
+					sawLaterSubject |= later;
 					rows++;
 				}
-				assertEquals(1_501, rows, "the replay must include the writer that drained before the resize");
+				assertEquals(scope == ReplayScope.SNAPSHOT ? 1_501 : 1_502, rows,
+						"the replacement must include the growth publication and respect its snapshot scope");
+				assertEquals(scope != ReplayScope.SNAPSHOT, sawLaterSubject,
+						"operation replay must admit the latest committed pair after a later publication");
 			}
-			// The reserved epoch belongs to that result only. Independent queries must acquire the newer commit.
+			assertEquals(scope != ReplayScope.SNAPSHOT, reader.hasStatement(laterSubject, predicate, null, false),
+					"subsequent results must share transaction snapshots and refresh operation snapshots");
+			if (reader.isActive()) {
+				reader.rollback();
+			}
+			// Independent queries must acquire the newer commit after the reserved transaction epoch retires.
 			for (IsolationLevel level : new IsolationLevel[] { IsolationLevels.READ_COMMITTED,
 					IsolationLevels.SNAPSHOT_READ }) {
 				try (RepositoryConnection independent = repository.getConnection()) {
@@ -207,6 +226,12 @@ class LmdbMapGrowthCoordinatorTest {
 		} finally {
 			repository.shutDown();
 		}
+	}
+
+	private enum ReplayScope {
+		AUTO_COMMIT,
+		READ_COMMITTED,
+		SNAPSHOT
 	}
 
 	@Test

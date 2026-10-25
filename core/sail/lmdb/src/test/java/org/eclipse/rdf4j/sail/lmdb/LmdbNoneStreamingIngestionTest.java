@@ -3419,6 +3419,7 @@ class LmdbNoneStreamingIngestionTest {
 			throws Exception {
 		LmdbStoreConfig config = replayGrowthConfig(2);
 		ObservingLmdbStore sail = new ObservingLmdbStore(dataDir.toFile(), config);
+		sail.setDefaultIsolationLevel(IsolationLevels.READ_COMMITTED);
 		SailRepository repository = new SailRepository(sail);
 		repository.init();
 		try {
@@ -3435,7 +3436,7 @@ class LmdbNoneStreamingIngestionTest {
 			LmdbSailStore backing = sail.getBackingStore();
 			MapGrowthMetrics.Snapshot before = backing.growthMetricsSnapshot();
 			try (RepositoryConnection reader = repository.getConnection()) {
-				reader.begin(IsolationLevels.READ_COMMITTED);
+				reader.begin(IsolationLevels.SNAPSHOT);
 				try (RepositoryResult<Statement> result = reader.getStatements(null, null, null, false)) {
 					expected.addAll(publishReplayGrowth(repository, "single",
 							replayGrowthNamespaceBytes(sail.triples.get())));
@@ -3452,6 +3453,13 @@ class LmdbNoneStreamingIngestionTest {
 						Statement later = statement("replay-later", 0);
 						barrier.add(later);
 						barrier.commit();
+						Set<Statement> committedRows = new HashSet<>(expected);
+						committedRows.add(later);
+						List<Statement> readCommittedRows = readReadCommittedAutoCommitStatements(repository);
+						assertEquals(committedRows, new HashSet<>(readCommittedRows),
+								"a later READ_COMMITTED auto-commit operation must admit the published barrier row");
+						assertEquals(committedRows.size(), readCommittedRows.size(),
+								"the operation-scoped result must contain each published row exactly once");
 						List<Statement> actual = readRepositoryResult(result);
 						assertEquals(expected.size(), actual.size(),
 								"the reserved result must include every prior row once");
@@ -3474,6 +3482,7 @@ class LmdbNoneStreamingIngestionTest {
 			throws Exception {
 		LmdbStoreConfig config = replayGrowthConfig(3);
 		ObservingLmdbStore sail = new ObservingLmdbStore(dataDir.toFile(), config);
+		sail.setDefaultIsolationLevel(IsolationLevels.READ_COMMITTED);
 		SailRepository repository = new SailRepository(sail);
 		repository.init();
 		try {
@@ -3493,7 +3502,7 @@ class LmdbNoneStreamingIngestionTest {
 			Set<Statement> expected = new HashSet<>();
 			expected.add(seed);
 			try (RepositoryConnection reader = repository.getConnection()) {
-				reader.begin(IsolationLevels.READ_COMMITTED);
+				reader.begin(IsolationLevels.SNAPSHOT);
 				try (RepositoryResult<Statement> result = reader.getStatements(null, null, null, false)) {
 					expected.addAll(publishReplayGrowth(repository, "first",
 							replayGrowthNamespaceBytes(triples)));
@@ -3532,6 +3541,13 @@ class LmdbNoneStreamingIngestionTest {
 						Statement later = statement("multi-growth-later", 0);
 						secondBarrier.add(later);
 						secondBarrier.commit();
+						Set<Statement> committedRows = new HashSet<>(expected);
+						committedRows.add(later);
+						List<Statement> readCommittedRows = readReadCommittedAutoCommitStatements(repository);
+						assertEquals(committedRows, new HashSet<>(readCommittedRows),
+								"a later READ_COMMITTED auto-commit operation must admit the published barrier row");
+						assertEquals(committedRows.size(), readCommittedRows.size(),
+								"the operation-scoped result must contain each published row exactly once");
 						List<Statement> actual = readRepositoryResult(result);
 						assertEquals(expected.size(), actual.size(),
 								"the second reservation must include exactly the two completed writer batches");
@@ -4468,14 +4484,14 @@ class LmdbNoneStreamingIngestionTest {
 	@Test
 	@Timeout(value = 120, unit = TimeUnit.SECONDS)
 	void nativeOwnerBoundNoneRecoveryReResolvesInputAfterPeerReusesItsValueId(@TempDir Path dataDir) throws Exception {
-		long evictionIntervalMillis = 25L;
-		LmdbStoreConfig config = smallMaps().setTripleDBSize(16L << 20)
+		LmdbStoreConfig config = smallMaps().setTripleIndexes("spoc,posc,ospc")
+				.setTripleDBSize(16L << 20)
 				.setValueDBSize(16L << 20)
-				.setValueEvictionInterval(evictionIntervalMillis)
 				.setMapGrowthThreshold(0.5d)
 				.setMapGrowthReadDrainTimeoutMillis(0L);
 		ObservingLmdbStore sail = new ObservingLmdbStore(dataDir.toFile(), config);
 		sail.init();
+		LmdbGcTestMaintenance.awaitTrustedReclamationSetup(sail);
 		LmdbSailStore backing = sail.getBackingStore();
 		IRI subject = VALUE_FACTORY.createIRI("urn:none-streaming:reuse:shared-subject");
 		IRI predicate = VALUE_FACTORY.createIRI("urn:none-streaming:reuse:shared-predicate");
@@ -4538,9 +4554,25 @@ class LmdbNoneStreamingIngestionTest {
 						delete.deprecate(seed);
 						delete.flush();
 					}
-					// Let the normal configured retirement interval expire. The next native dictionary transaction
-					// reclaims the eligible ID before allocating the replacement term.
-					TimeUnit.MILLISECONDS.sleep(evictionIntervalMillis + 25L);
+					assertEquals(LmdbValue.UNKNOWN_ID, values.getId(retiredValue),
+							"the delete publication must remove the retired lexical owner");
+					assertFalse(values.hasRetiredIds(),
+							"the delete publication must complete its bounded retirement batch");
+					long unusedBefore = values.getLmdbStats().get("unused_ids").entries();
+					assertEquals(1L, unusedBefore,
+							"the fixture has one known eligible unused value after deleting the seed");
+					long freeBefore = values.getLmdbStats().get("free_ids").entries();
+					assertTrue(values.hasTrustedReferenceCounts(), "the replacement fixture requires exact counts");
+					int visited = values.reclaimPersistedUnusedIdsBatch(Math.toIntExact(unusedBefore));
+					ObservingValueStore.ReclamationObservation observation = values.lastReclamationObservation();
+					assertTrue(visited > 0, "the exact unused cohort must be eligible for a bounded pass: unusedBefore="
+							+ unusedBefore + ", freeBefore=" + freeBefore + ", trusted="
+							+ values.hasTrustedReferenceCounts() + ", observation=" + observation);
+					assertEquals("visited", observation.phase(), "the reclamation decision must admit this cohort");
+					assertEquals(unusedBefore - visited, values.getLmdbStats().get("unused_ids").entries(),
+							"one finite pass must consume only the eligible unused cohort");
+					assertTrue(values.getLmdbStats().get("free_ids").entries() > freeBefore,
+							"the finite pass must persist a real reusable free ID");
 					try (SailSink add = peerSource.sink(IsolationLevels.NONE)) {
 						add.approve(replacement);
 						add.flush();
@@ -5971,6 +6003,7 @@ class LmdbNoneStreamingIngestionTest {
 		ObservingLmdbStore sail = new ObservingLmdbStore(dataDir.toFile(), config);
 		sail.init();
 		try {
+			LmdbGcTestMaintenance.awaitTrustedReclamationSetup(sail);
 			LmdbSailStore backing = sail.getBackingStore();
 			ObservingTripleStore triples = sail.triples.get();
 			ObservingValueStore values = sail.values.get();
@@ -6058,6 +6091,19 @@ class LmdbNoneStreamingIngestionTest {
 			statements.add(result.next());
 		}
 		return statements;
+	}
+
+	private static List<Statement> readReadCommittedAutoCommitStatements(SailRepository repository) throws Exception {
+		try (RepositoryConnection operation = repository.getConnection()) {
+			operation.setIsolationLevel(IsolationLevels.READ_COMMITTED);
+			assertFalse(operation.isActive(), "the READ_COMMITTED operation must remain in auto-commit mode");
+			List<Statement> statements;
+			try (RepositoryResult<Statement> result = operation.getStatements(null, null, null, false)) {
+				statements = readRepositoryResult(result);
+			}
+			assertFalse(operation.isActive(), "the operation-scoped read must not leave an explicit transaction");
+			return statements;
+		}
 	}
 
 	private static LmdbStoreConfig smallMaps() {
@@ -6894,6 +6940,7 @@ class LmdbNoneStreamingIngestionTest {
 		private final AtomicInteger recoveryLookups = new AtomicInteger();
 		private volatile Set<Value> recoveryTrackedValues = Set.of();
 		private volatile AtomicReference<Thread> recoveryThread = new AtomicReference<>();
+		private volatile ReclamationObservation lastReclamationObservation;
 
 		private ObservingValueStore(File directory, StoreProperties properties, LmdbStoreConfig config)
 				throws IOException {
@@ -6915,6 +6962,17 @@ class LmdbNoneStreamingIngestionTest {
 			return nativeCommits.get();
 		}
 
+		@Override
+		void observeBoundedUnusedReclamationForTest(String phase, long requiredBytes, long occupiedBytes, long mapBytes,
+				int visited) {
+			lastReclamationObservation = new ReclamationObservation(phase, requiredBytes, occupiedBytes, mapBytes,
+					visited, protectionSnapshotForTest());
+		}
+
+		private ReclamationObservation lastReclamationObservation() {
+			return lastReclamationObservation;
+		}
+
 		private void trackRecoveryLookups(Set<Value> values, AtomicReference<Thread> thread) {
 			recoveryTrackedValues = Set.copyOf(values);
 			recoveryThread = thread;
@@ -6922,6 +6980,10 @@ class LmdbNoneStreamingIngestionTest {
 
 		private int recoveryLookupCount() {
 			return recoveryLookups.get();
+		}
+
+		private record ReclamationObservation(String phase, long requiredBytes, long occupiedBytes, long mapBytes,
+				int visited, ValueProtectionSnapshot protection) {
 		}
 
 		@Override

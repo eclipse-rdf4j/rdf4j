@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.queryrender.sparql;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryParseOptions;
+import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
@@ -93,8 +94,10 @@ public class SPARQLQueryRenderer implements QueryRenderer {
 
 	private String renderQuery(ParsedQuery theQuery, QueryParseOptions options) throws Exception {
 		DatasetUtils.requireRepresentableReadDataset(theQuery.getDataset());
-		if (theQuery instanceof ParsedTupleQuery && containsWindow(theQuery.getTupleExpr())) {
-			// Window calls must remain SELECT expressions; the legacy visitor emits extensions as WHERE BINDs.
+		if (theQuery instanceof ParsedTupleQuery && (containsWindow(theQuery.getTupleExpr())
+				|| containsCustomAggregate(theQuery.getTupleExpr()))) {
+			// Window calls and custom aggregates must remain SELECT expressions (the latter with their GROUP BY and
+			// HAVING); the legacy visitor emits extensions as WHERE BINDs and has no notion of grouping.
 			TupleExprIRRenderer.Config config = new TupleExprIRRenderer.Config();
 			config.parseOptions = options;
 			TupleExprIRRenderer.DatasetView dataset = null;
@@ -254,6 +257,17 @@ public class SPARQLQueryRenderer implements QueryRenderer {
 		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			public void meet(Window window) {
+				found[0] = true;
+			}
+		});
+		return found[0];
+	}
+
+	private static boolean containsCustomAggregate(TupleExpr expression) {
+		boolean[] found = { false };
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(AggregateFunctionCall call) {
 				found[0] = true;
 			}
 		});

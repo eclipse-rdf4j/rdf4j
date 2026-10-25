@@ -113,6 +113,11 @@ class LmdbIndexRebuildGrowthTest {
 			assertThat(loaded.load()).isTrue();
 			try (TripleStore rebuilt = new TripleStore(data.toFile(), loaded,
 					config(INDEXES, inline), null)) {
+				assertThat(nativeMapSize(rebuilt.getTxnManager()))
+						.as("construction must retain the committed layout without rebuilding its trees")
+						.isEqualTo(before);
+				rebuilt.startBackgroundIndexRebuild();
+				assertThat(rebuilt.awaitIndexRebuild(45, TimeUnit.SECONDS)).as(rebuilt.indexRebuildStatus()).isTrue();
 				long after = nativeMapSize(rebuilt.getTxnManager());
 				assertThat(after).isGreaterThan(before);
 				System.out.println("ACTUAL_REBUILD_GROWTH=" + before + "->" + after);

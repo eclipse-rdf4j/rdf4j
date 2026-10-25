@@ -181,8 +181,8 @@ import org.eclipse.rdf4j.sail.config.SailConfigException;
 				"\"3\"^^<http://www.w3.org/2001/XMLSchema#int>" }
 )
 @ConfigProperty(
-		predicate = "http://rdf4j.org/config/sail/lmdb#legacyReferenceCountRepairEnabled", description = "Reconstruct and validate component reference counts in existing format-2 value dictionaries before unused values are reclaimed; "
-				+ "off by default for compatibility with earlier readers. Format-6 dictionaries always run these checks.", datatype = "http://www.w3.org/2001/XMLSchema#boolean", examples = {
+		predicate = "http://rdf4j.org/config/sail/lmdb#legacyReferenceCountRepairEnabled", description = "Permit reclamation in existing format-2 value dictionaries once component reference-count exactness is established; "
+				+ "off by default for compatibility with earlier readers. Missing or mismatched proof requires explicit offline reconstruction; neither format scans counts during startup.", datatype = "http://www.w3.org/2001/XMLSchema#boolean", examples = {
 						"\"true\"^^<http://www.w3.org/2001/XMLSchema#boolean>" }
 )
 @ConfigProperty(
@@ -585,9 +585,9 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	}
 
 	/**
-	 * Whether existing format-2 dictionaries reconstruct and validate component reference counts before reclaiming
-	 * unused values. Disabled by default to preserve compatibility with earlier reference-count marker readers.
-	 * Format-6 dictionaries always enable reference-count recovery and integrity checks.
+	 * Whether existing format-2 dictionaries may reclaim unused values once component reference counts are proven
+	 * exact. Disabled by default to preserve compatibility with earlier reference-count marker readers. Both formats
+	 * use bounded startup checks; missing or mismatched proof requires explicit offline reconstruction.
 	 */
 	public boolean getLegacyReferenceCountRepairEnabled() {
 		return legacyReferenceCountRepairEnabled;

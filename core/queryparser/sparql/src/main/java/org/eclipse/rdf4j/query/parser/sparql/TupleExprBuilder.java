@@ -745,11 +745,18 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			for (int i = 0; i < havingNode.jjtGetNumChildren(); i++) {
 				ValueExpr expr = (ValueExpr) havingNode.jjtGetChild(i).jjtAccept(this, tupleExpr);
 				AggregateCollector collector = new AggregateCollector();
-				collector.meetOther(expr);
+				// visit the condition itself, not just its children: the aggregate may BE the whole condition
+				expr.visit(collector);
 				for (AggregateOperator operator : collector.getOperators()) {
 					Var var = createAnonHavingVar();
-					AggregateOperatorReplacer replacer = new AggregateOperatorReplacer(operator, var);
-					replacer.meetOther(expr);
+					if (expr == operator) {
+						// the aggregate IS the whole condition: it has no parent node the replacer could swap it out
+						// of, so the condition itself becomes the variable that the Group/Extension bind below
+						expr = var.clone();
+					} else {
+						AggregateOperatorReplacer replacer = new AggregateOperatorReplacer(operator, var);
+						replacer.meetOther(expr);
+					}
 					String alias = var.getName();
 					ExtensionElem extensionElem = new ExtensionElem(operator.clone(), alias);
 					extensionElem.setAnonymousTarget(var.isAnonymous());
@@ -1048,21 +1055,33 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	 * Converts a {@code winf:} function call into a {@link WindowFunctionCall}: arguments that are
 	 * {@code winf:partitionBy(...)}, {@code winf:orderBy(...)}, {@code winf:rows(start, end)} or
 	 * {@code winf:range(start, end)} calls describe the window, all other arguments are the function's own arguments.
+	 * Each kind of marker may appear at most once per call ({@code winf:rows} and {@code winf:range} count as one
+	 * kind).
 	 */
 	private WindowFunctionCall toWindowFunctionCall(FunctionCall call) throws VisitorException {
 		WindowFunctionCall operator = new WindowFunctionCall(call.getURI());
+		boolean partitionBySeen = false;
+		boolean orderBySeen = false;
 		boolean frameSeen = false;
 		for (ValueExpr arg : new ArrayList<>(call.getArgs())) {
 			if (arg instanceof FunctionCall marker && isWindowNamespace(marker)) {
 				String local = windowLocalName(marker);
 				switch (local) {
 				case "partitionBy":
+					if (partitionBySeen) {
+						throw duplicateWindowMarker(local);
+					}
+					partitionBySeen = true;
 					for (ValueExpr expr : marker.getArgs()) {
 						rejectNestedWindowFunctions(expr, "winf:partitionBy");
 						operator.addPartitionBy(expr.clone());
 					}
 					break;
 				case "orderBy":
+					if (orderBySeen) {
+						throw duplicateWindowMarker(local);
+					}
+					orderBySeen = true;
 					for (ValueExpr expr : marker.getArgs()) {
 						boolean ascending = true;
 						ValueExpr key = expr;
@@ -1083,7 +1102,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				case "rows":
 				case "range":
 					if (frameSeen) {
-						throw new VisitorException("only one frame specification is allowed per window function");
+						// winf:rows and winf:range both describe the frame, so one of either kind is the limit
+						throw duplicateWindowMarker(local);
 					}
 					frameSeen = true;
 					if (marker.getArgs().size() != 2) {
@@ -1111,6 +1131,18 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			}
 		}
 		return operator;
+	}
+
+	/**
+	 * A specification marker that occurs twice in one window function call is a syntax error rather than being merged
+	 * into the first occurrence: several keys belong inside a single marker, e.g. {@code winf:orderBy(?a, ?b)}.
+	 */
+	private static VisitorException duplicateWindowMarker(String local) {
+		String message = "winf:" + local + " may appear only once in a window function call";
+		if (local.equals("rows") || local.equals("range")) {
+			message += " (winf:rows and winf:range both define the frame, so a call has at most one of either)";
+		}
+		return new VisitorException(message);
 	}
 
 	/**

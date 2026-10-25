@@ -31,6 +31,9 @@ abstract class AbstractExtremumFunction extends MathFunction {
 			throw new ValueExprEvaluationException(getURI() + " requires at least one argument");
 		}
 		Value best = args[0];
+		if (best == null) {
+			throw new ValueExprEvaluationException("Unbound argument for " + getURI());
+		}
 		for (int i = 1; i < args.length; i++) {
 			Value candidate = args[i];
 			if (candidate == null) {
@@ -40,9 +43,6 @@ abstract class AbstractExtremumFunction extends MathFunction {
 			if (isBetter(cmp)) {
 				best = candidate;
 			}
-		}
-		if (best == null) {
-			throw new ValueExprEvaluationException("Unbound argument for " + getURI());
 		}
 		return best;
 	}

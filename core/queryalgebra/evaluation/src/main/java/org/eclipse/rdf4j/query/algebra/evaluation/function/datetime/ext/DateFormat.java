@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.ext;
 
 import java.time.DateTimeException;
 import java.time.format.DateTimeFormatter;
+import java.time.format.ResolverStyle;
 import java.time.temporal.TemporalAccessor;
 import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
@@ -36,6 +37,7 @@ public class DateFormat extends DateTimeFunction {
 
 	private static final int MAX_CACHED = 512;
 	private static final ConcurrentHashMap<String, DateTimeFormatter> FORMATTERS = new ConcurrentHashMap<>();
+	private static final ConcurrentHashMap<String, DateTimeFormatter> PARSERS = new ConcurrentHashMap<>();
 
 	@Override
 	public String getURI() {
@@ -68,21 +70,77 @@ public class DateFormat extends DateTimeFunction {
 	}
 
 	static DateTimeFormatter formatter(Function function, String pattern, String locale) {
+		return cached(FORMATTERS, function, pattern, locale, false);
+	}
+
+	/**
+	 * A formatter for parsing {@code pattern} with {@link ResolverStyle#STRICT}, so that fields which are individually
+	 * in range but do not denote an existing date or time (30 February, 24:00) are rejected instead of being clamped.
+	 * Because the strict resolver refuses a year-of-era ({@code y}) without an era, unquoted {@code y} letters are
+	 * rewritten to the proleptic year ({@code u}) when the pattern has no era ({@code G}) letter.
+	 */
+	static DateTimeFormatter parser(Function function, String pattern, String locale) {
+		return cached(PARSERS, function, pattern, locale, true);
+	}
+
+	private static DateTimeFormatter cached(ConcurrentHashMap<String, DateTimeFormatter> cache, Function function,
+			String pattern, String locale, boolean strict) {
 		String key = locale.isEmpty() ? pattern : locale + '\u0000' + pattern;
-		DateTimeFormatter formatter = FORMATTERS.get(key);
+		DateTimeFormatter formatter = cache.get(key);
 		if (formatter == null) {
 			try {
-				formatter = DateTimeFormatter.ofPattern(pattern,
+				formatter = DateTimeFormatter.ofPattern(strict ? prolepticYears(pattern) : pattern,
 						locale.isEmpty() ? Locale.ROOT : Locale.forLanguageTag(locale));
+				if (strict) {
+					formatter = formatter.withResolverStyle(ResolverStyle.STRICT);
+				}
 			} catch (IllegalArgumentException e) {
 				throw new ValueExprEvaluationException(
 						"Invalid date/time pattern for " + function.getURI() + ": " + pattern, e);
 			}
-			if (FORMATTERS.size() >= MAX_CACHED) {
-				FORMATTERS.clear();
+			if (cache.size() >= MAX_CACHED) {
+				cache.clear();
 			}
-			FORMATTERS.put(key, formatter);
+			cache.put(key, formatter);
 		}
 		return formatter;
+	}
+
+	/**
+	 * Rewrites unquoted year-of-era letters ({@code y}) to proleptic-year letters ({@code u}) unless the pattern has an
+	 * unquoted era letter ({@code G}). Text between single quotes is literal and left untouched; a doubled quote is an
+	 * escaped quote, which toggling the quoted state on every quote character classifies correctly as well.
+	 */
+	static String prolepticYears(String pattern) {
+		boolean quoted = false;
+		boolean hasYearOfEra = false;
+		for (int i = 0; i < pattern.length(); i++) {
+			char c = pattern.charAt(i);
+			if (c == '\'') {
+				quoted = !quoted;
+			} else if (!quoted) {
+				if (c == 'G') {
+					return pattern;
+				}
+				if (c == 'y') {
+					hasYearOfEra = true;
+				}
+			}
+		}
+		if (!hasYearOfEra) {
+			return pattern;
+		}
+		StringBuilder sb = new StringBuilder(pattern.length());
+		quoted = false;
+		for (int i = 0; i < pattern.length(); i++) {
+			char c = pattern.charAt(i);
+			if (c == '\'') {
+				quoted = !quoted;
+			} else if (!quoted && c == 'y') {
+				c = 'u';
+			}
+			sb.append(c);
+		}
+		return sb.toString();
 	}
 }

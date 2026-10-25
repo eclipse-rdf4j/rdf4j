@@ -834,6 +834,10 @@ class LmdbValueResolutionScopeTest {
 		}
 
 		store.init();
+		// Post-ready work and index maintenance take dictionary readers in the background; settle them before
+		// capturing an absolute reader-slot baseline. This configuration starts no sketch rebuild.
+		LmdbTestUtil.awaitPostReadyInitialization(store, 30L, TimeUnit.SECONDS);
+		assertTrue(store.awaitIndexRebuild(30L, TimeUnit.SECONDS), store.getStartupStatus().toString());
 		try (SailConnection reader = store.getConnection()) {
 			reader.begin(IsolationLevels.SNAPSHOT);
 			List<BNode> deferred = new ArrayList<>();

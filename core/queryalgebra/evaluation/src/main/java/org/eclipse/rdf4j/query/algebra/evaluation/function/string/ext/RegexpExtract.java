@@ -38,21 +38,30 @@ public class RegexpExtract extends StringFunction {
 		FunctionArgs.arity(this, args, 2, 4);
 		Literal source = FunctionArgs.stringLiteral(this, args[0]);
 		String pattern = FunctionArgs.lexical(this, args[1]);
-		int group = 0;
+		Integer group = null;
 		String flags = null;
 		for (int i = 2; i < args.length; i++) {
 			if (FunctionArgs.isIntegerLiteral(args[i])) {
+				if (group != null) {
+					throw new ValueExprEvaluationException("Duplicate capture group argument for " + getURI());
+				}
 				group = FunctionArgs.toInt(this, args[i]);
 			} else {
+				if (flags != null) {
+					throw new ValueExprEvaluationException("Duplicate flags argument for " + getURI());
+				}
 				flags = FunctionArgs.lexical(this, args[i]);
 			}
 		}
+		if (group == null) {
+			group = 0;
+		}
 		Matcher matcher = RegexCache.compile(pattern, flags).matcher(source.getLabel());
+		if (group < 0 || group > matcher.groupCount()) {
+			throw new ValueExprEvaluationException("Invalid capture group " + group + " for " + getURI());
+		}
 		String result = "";
 		if (matcher.find()) {
-			if (group < 0 || group > matcher.groupCount()) {
-				throw new ValueExprEvaluationException("Invalid capture group " + group + " for " + getURI());
-			}
 			String matched = matcher.group(group);
 			if (matched != null) {
 				result = matched;

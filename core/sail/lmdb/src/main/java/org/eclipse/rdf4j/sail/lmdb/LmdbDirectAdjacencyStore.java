@@ -178,6 +178,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private final Object rebuildSubmissionLock = new Object();
 	private final AtomicBoolean rebuildPending = new AtomicBoolean();
 	private volatile Future<?> rebuildFuture;
+	private volatile CompletableFuture<Void> startupScheduling;
 	private final AtomicBoolean quiescentRebuildPending = new AtomicBoolean();
 	private final AtomicBoolean quiescentRebuildTaskScheduled = new AtomicBoolean();
 	private volatile boolean quiescentRebuildRetryAllowed;
@@ -303,6 +304,16 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	MaintenanceState maintenanceState() {
 		return maintenanceState;
+	}
+
+	/** Factual in-memory work state; querying it never starts a build or opens a native reader. */
+	boolean hasPendingMaintenance() {
+		CompletableFuture<Void> scheduling = startupScheduling;
+		return scheduling != null && !scheduling.isDone() || maintenanceCanReachReadiness();
+	}
+
+	void setStartupScheduling(CompletableFuture<Void> scheduling) {
+		startupScheduling = Objects.requireNonNull(scheduling);
 	}
 
 	/** Monotone publish counter; a component of the adaptive cost model's regime key. */
@@ -647,7 +658,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		publicationLock.lock();
 		try {
 			LmdbAdjacencyPublishedState predecessor = published.get();
-			if (predecessor.base() == null || predecessor.servingState() != AdjacencyServingState.ROW_EXACT
+			// Re-read under the lock: a build suspends synchronous publication under it before taking its snapshot.
+			if (!synchronousUpdatesActivated.get() || predecessor.base() == null
+					|| predecessor.servingState() != AdjacencyServingState.ROW_EXACT
 					|| predecessor.appliedRevision() + 1 != nextRevision
 					|| predecessor.gapFromRevision() <= nextRevision || !predecessor.tryRetain()) {
 				return null;
@@ -2773,6 +2786,14 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 		long timeoutNanos = unit.toNanos(timeout);
 		long startedNanos = System.nanoTime();
+		CompletableFuture<Void> scheduling = startupScheduling;
+		if (scheduling != null) {
+			try {
+				scheduling.get(Math.max(0L, timeoutNanos - (System.nanoTime() - startedNanos)), TimeUnit.NANOSECONDS);
+			} catch (TimeoutException | ExecutionException | CancellationException unavailable) {
+				return false;
+			}
+		}
 		while (true) {
 			if (servesCurrentRevisionReady()) {
 				return true;
@@ -2988,6 +3009,10 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		maintenanceState = MaintenanceState.BUILDING;
 		boolean retryAfterFailure = false;
 		try {
+			if (!suspendSynchronousPublicationForBuild()) {
+				metrics.recordBuildAborted();
+				return;
+			}
 			LmdbAdjacencyCoverage coverage = resolveCoverage();
 			LmdbInMemoryAdjacencyIndex index;
 			long baseRevision;
@@ -3073,6 +3098,37 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				scheduleBuildRetry();
 			}
 			signalWriteAdmission();
+		}
+	}
+
+	/**
+	 * A build catches up from queued deltas, but while an exact live base exists a synchronous commit publishes into
+	 * that base instead of queuing one, so catch-up would wait for its revision forever. Suspend synchronous
+	 * publication and let commits already prepared against the live base publish before the build takes its snapshot:
+	 * every later commit then reaches the queue, and cutover resumes synchronous publication.
+	 *
+	 * @return false when interrupted, typically by close
+	 */
+	private boolean suspendSynchronousPublicationForBuild() {
+		try {
+			publicationLock.lockInterruptibly();
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+			return false;
+		}
+		try {
+			if (published.get().base() == null || !synchronousUpdatesActivated.getAndSet(false)) {
+				return true;
+			}
+			while (preparationsInFlight.get() != 0) {
+				noPreparationsInFlight.await();
+			}
+			return true;
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+			return false;
+		} finally {
+			publicationLock.unlock();
 		}
 	}
 
@@ -5172,6 +5228,14 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	public long tryCount(LmdbAdjacencyReadView view, long subject, long predicate, long object, long context,
 			boolean explicit) {
 		return tryCountInternal(view, subject, predicate, object, context, explicit, false);
+	}
+
+	OptionalLong exactPredicateCount(LmdbAdjacencyReadView view, long predicate, boolean explicit) {
+		if (predicate <= 0L) {
+			return OptionalLong.empty();
+		}
+		long count = tryCountInternal(view, -1L, predicate, -1L, -1L, explicit, false);
+		return count < 0L ? OptionalLong.empty() : OptionalLong.of(count);
 	}
 
 	private long tryCountInternal(LmdbAdjacencyReadView view, long subject, long predicate, long object, long context,

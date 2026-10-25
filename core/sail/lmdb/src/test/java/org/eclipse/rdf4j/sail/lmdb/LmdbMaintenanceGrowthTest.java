@@ -113,6 +113,9 @@ class LmdbMaintenanceGrowthTest {
 		StartupMetadataProbeStore reopened = new StartupMetadataProbeStore(dataDirectory.toFile(), config(true),
 				Thread.currentThread());
 		reopened.init();
+		LmdbTestUtil.awaitPostReadyInitialization(reopened, 30L, java.util.concurrent.TimeUnit.SECONDS);
+		assertTrue(reopened.awaitIndexRebuild(30L, java.util.concurrent.TimeUnit.SECONDS),
+				reopened.getStartupStatus().toString());
 		assertTrue(reopened.valueStore().resized.get(), "startup retirement recovery must resize the native value map");
 		assertTrue(reopened.valueStore().mapSizeBytes() > VALUE_MAP_BYTES,
 				"the startup recovery must finish with a larger native value map");
@@ -126,7 +129,14 @@ class LmdbMaintenanceGrowthTest {
 				() -> assertTrue(reopened.valueStore().preflightReadBarrier.get(),
 						"retirement preflight must protect its native sizing snapshot from remapping"),
 				() -> assertTrue(reopened.valueStore().postResizeReadBarrier.get(),
-						"post-recovery reserve checks must protect native metadata from remapping"));
+						"post-recovery reserve checks must protect native metadata from remapping"),
+				() -> assertTrue(reopened.valueStore().preflightWorker.get() != null
+						&& reopened.valueStore().preflightWorker.get() != Thread.currentThread(),
+						"retirement sizing must cross the native read barrier on its bounded background worker"),
+				() -> assertTrue(reopened.valueStore().postResizeWorker.get() != null
+						&& reopened.valueStore().postResizeWorker.get() != Thread.currentThread(),
+						"post-resize reserve checks must run on the bounded background worker"));
+		LmdbGcTestMaintenance.drainRetirements(reopened.getBackingStore());
 		try (SailConnection connection = reopened.getConnection();
 				CloseableIteration<? extends Statement> statements = connection.getStatements(null, PREDICATE, null,
 						false)) {
@@ -139,7 +149,7 @@ class LmdbMaintenanceGrowthTest {
 			assertEquals(quoted, ((TripleTerm) statement.getObject()).getObject());
 			assertFalse(statements.hasNext());
 			assertFalse(reopened.getBackingStore().hasRetiredValueIds(),
-					"startup recovery must consume the durable retirement intent");
+					"bounded startup plus finite eligible recovery must consume the durable retirement intent");
 		} finally {
 			reopened.shutDown();
 		}
@@ -157,7 +167,7 @@ class LmdbMaintenanceGrowthTest {
 	}
 
 	private static LmdbStoreConfig config(boolean autoGrow) {
-		return new LmdbStoreConfig("spoc,posc")
+		return new LmdbStoreConfig("spoc,posc,ospc")
 				.setForceSync(true)
 				.setTripleDBSize(8L * 1024L * 1024L)
 				.setValueDBSize(VALUE_MAP_BYTES)
@@ -236,23 +246,63 @@ class LmdbMaintenanceGrowthTest {
 
 	private static final class StartupMetadataProbeValueStore extends ValueStore {
 
-		private final Thread startupThread;
+		private final Thread foregroundThread;
 		private final AtomicBoolean resized = new AtomicBoolean();
 		private final AtomicReference<Boolean> preflightReadBarrier = new AtomicReference<>();
 		private final AtomicReference<Boolean> postResizeReadBarrier = new AtomicReference<>();
+		private final AtomicReference<Thread> preflightWorker = new AtomicReference<>();
+		private final AtomicReference<Thread> postResizeWorker = new AtomicReference<>();
+		private final ThreadLocal<Boolean> retirementPreflightPending = ThreadLocal.withInitial(() -> false);
+		private final ThreadLocal<Boolean> observingRetirementPreflight = ThreadLocal.withInitial(() -> false);
+		private final ThreadLocal<Boolean> observingPostResizeReserve = ThreadLocal.withInitial(() -> false);
 
 		private StartupMetadataProbeValueStore(File valueDir, StoreProperties properties, LmdbStoreConfig config,
-				Thread startupThread) throws IOException {
+				Thread foregroundThread) throws IOException {
 			super(valueDir, properties, config);
-			this.startupThread = startupThread;
+			this.foregroundThread = foregroundThread;
+		}
+
+		@Override
+		long estimatePersistedUnusedBatchWriteBytes(int maxVisitedRecords) throws IOException {
+			long requiredBytes = super.estimatePersistedUnusedBatchWriteBytes(maxVisitedRecords);
+			if (requiredBytes > 0L) {
+				retirementPreflightPending.set(true);
+			}
+			return requiredBytes;
 		}
 
 		@Override
 		boolean requiresResizeForEstimatedWrite(long estimatedWriteBytes) throws IOException {
-			if (Thread.currentThread() == startupThread) {
+			boolean retirementPreflight = retirementPreflightPending.get();
+			retirementPreflightPending.remove();
+			if (!retirementPreflight) {
+				return super.requiresResizeForEstimatedWrite(estimatedWriteBytes);
+			}
+			observingRetirementPreflight.set(true);
+			try {
+				return super.requiresResizeForEstimatedWrite(estimatedWriteBytes);
+			} finally {
+				observingRetirementPreflight.remove();
+			}
+		}
+
+		@Override
+		void beforeMapMetadataReadForTest() {
+			ThreadLocal<Boolean> retirementPreflight = observingRetirementPreflight;
+			ThreadLocal<Boolean> postResizeReserve = observingPostResizeReserve;
+			if (retirementPreflight == null || postResizeReserve == null) {
+				// ValueStore invokes this overridable hook during superclass construction, before subclass fields
+				// exist.
+				return;
+			}
+			if (retirementPreflight.get()) {
+				preflightWorker.compareAndSet(null, Thread.currentThread());
 				preflightReadBarrier.compareAndSet(null, nativeReadBarrierBlocksWriter());
 			}
-			return super.requiresResizeForEstimatedWrite(estimatedWriteBytes);
+			if (postResizeReserve.get()) {
+				postResizeWorker.compareAndSet(null, Thread.currentThread());
+				postResizeReadBarrier.compareAndSet(null, nativeReadBarrierBlocksWriter());
+			}
 		}
 
 		@Override
@@ -267,10 +317,15 @@ class LmdbMaintenanceGrowthTest {
 
 		@Override
 		boolean retainsGrowthReserve() throws IOException {
-			if (Thread.currentThread() == startupThread && resized.get()) {
-				postResizeReadBarrier.compareAndSet(null, nativeReadBarrierBlocksWriter());
+			if (Thread.currentThread() == foregroundThread || !resized.get()) {
+				return super.retainsGrowthReserve();
 			}
-			return super.retainsGrowthReserve();
+			observingPostResizeReserve.set(true);
+			try {
+				return super.retainsGrowthReserve();
+			} finally {
+				observingPostResizeReserve.remove();
+			}
 		}
 
 		private boolean nativeReadBarrierBlocksWriter() {

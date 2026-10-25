@@ -110,6 +110,8 @@ class StoreProperties {
 	PreparedBulkStore.Snapshot preparedBulkStore;
 	long verifiedValueTransactionId = -1L;
 	long verifiedTripleTransactionId = -1L;
+	/** Physical inactive statement trees observed in the same read-only preflight as the active manifest. */
+	boolean statementIndexCleanupPending;
 
 	protected boolean dirty;
 
