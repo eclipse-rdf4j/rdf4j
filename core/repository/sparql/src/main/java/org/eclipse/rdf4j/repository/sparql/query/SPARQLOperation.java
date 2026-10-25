@@ -12,12 +12,11 @@
 package org.eclipse.rdf4j.repository.sparql.query;
 
 import java.util.Collections;
-import java.util.HashSet;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
@@ -112,41 +111,27 @@ public abstract class SPARQLOperation implements Operation {
 
 	protected Set<String> getBindingNames() {
 		if (bindings.isEmpty()) {
-			return Collections.EMPTY_SET;
+			return Collections.emptySet();
 		}
-		Set<String> names = new HashSet<>();
-		String qry = operation;
-		int b = qry.indexOf('{');
-		String select = qry.substring(0, b);
-		for (String name : bindings.getBindingNames()) {
-			String replacement = getReplacement(bindings.getValue(name));
-			if (replacement != null) {
-				String pattern = ".*[\\?\\$]" + name + "\\W.*";
-				if (Pattern.compile(pattern, Pattern.MULTILINE | Pattern.DOTALL).matcher(select).matches()) {
-					names.add(name);
-				}
-			}
-		}
-		return names;
+		return SPARQLVariableSubstitution.operation(operation, replacements()).headBindings();
 	}
 
 	protected String getQueryString() {
 		if (bindings.isEmpty()) {
 			return operation;
 		}
-		String qry = operation;
-		int b = qry.indexOf('{');
-		String select = qry.substring(0, b);
-		String where = qry.substring(b);
+		return SPARQLVariableSubstitution.operation(operation, replacements()).text();
+	}
+
+	private Map<String, String> replacements() {
+		Map<String, String> replacements = new HashMap<>();
 		for (String name : bindings.getBindingNames()) {
 			String replacement = getReplacement(bindings.getValue(name));
 			if (replacement != null) {
-				String pattern = "[\\?\\$]" + name + "(?=\\W)";
-				select = select.replaceAll(pattern, "");
-				where = where.replaceAll(pattern, Matcher.quoteReplacement(replacement));
+				replacements.put(name, replacement);
 			}
 		}
-		return select + where;
+		return replacements;
 	}
 
 	private String getReplacement(Value value) {
