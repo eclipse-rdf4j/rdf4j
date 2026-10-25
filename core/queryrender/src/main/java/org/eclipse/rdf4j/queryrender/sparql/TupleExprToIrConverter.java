@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.queryrender.sparql;
 
 import java.lang.reflect.Method;
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -28,6 +29,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.WINF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
@@ -87,6 +89,7 @@ import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
+import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Sum;
 import org.eclipse.rdf4j.query.algebra.TripleComponent;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
@@ -96,6 +99,9 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.Window;
+import org.eclipse.rdf4j.query.algebra.WindowElem;
+import org.eclipse.rdf4j.query.algebra.WindowFunctionCall;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer.Config;
@@ -123,7 +129,6 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrText;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrValues;
-import org.eclipse.rdf4j.queryrender.sparql.ir.util.IrTransforms;
 import org.eclipse.rdf4j.queryrender.sparql.util.ExprTextUtils;
 import org.eclipse.rdf4j.queryrender.sparql.util.TermRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.util.TextEscapes;
@@ -296,7 +301,7 @@ public class TupleExprToIrConverter {
 		// Apply standard transforms for consistent property path and grouping rewrites
 		IrSelect tmp = new IrSelect(false);
 		tmp.setWhere(where);
-		IrSelect transformed = IrTransforms.transformUsingChildren(tmp, r);
+		IrSelect transformed = r.transformIrRecursively(tmp);
 		where = transformed.getWhere();
 		StringBuilder sb = new StringBuilder(64);
 		InlinePrinter p = new InlinePrinter(sb);
@@ -485,6 +490,7 @@ public class TupleExprToIrConverter {
 	}
 
 	private String renderExpr(final ValueExpr e) {
+		IrNode.checkInterrupted();
 		if (e == null) {
 			return "()";
 		}
@@ -669,7 +675,7 @@ public class TupleExprToIrConverter {
 		this.prefixIndex = new PrefixIndex(this.cfg.prefixes);
 	}
 
-	/** Build IrSelect; by default apply transforms (used for subselects). */
+	/** Build raw IrSelect, including raw nested subselects. The renderer owns transformation. */
 	public static IrSelect toIRSelectRaw(final TupleExpr tupleExpr, TupleExprIRRenderer r) {
 		return toIRSelectRaw(tupleExpr, r, true);
 	}
@@ -718,21 +724,12 @@ public class TupleExprToIrConverter {
 		final IRBuilder builder = new TupleExprToIrConverter(r).new IRBuilder();
 		ir.setWhere(builder.build(n.where));
 
-		// Optionally apply transforms (useful for nested subselects; top-level transforms are handled by the renderer).
-		if (applyTransforms) {
-			IrSelect transformed = IrTransforms.transformUsingChildren(ir, r);
-			ir.setWhere(transformed.getWhere());
-
-			// Preserve explicit grouping braces around a single‑line WHERE when the original algebra
-			// indicated a variable scope change at the root of the subselect. This mirrors the old behavior
-			// and keeps nested queries' grouping stable for tests.
-			if (ir.getWhere() != null && ir.getWhere().getLines() != null && ir.getWhere().getLines().size() == 1
-					&& rootHasExplicitScope(n.where)) {
-				final IrNode only = ir.getWhere().getLines().get(0);
-				if (only instanceof IrStatementPattern || only instanceof IrPathTriple || only instanceof IrGraph
-						|| only instanceof IrSubSelect) {
-					ir.getWhere().setNewScope(true);
-				}
+		// Conversion stays raw: the renderer owns the pipeline for this SELECT and each nested SELECT.
+		if (ir.getWhere() != null && ir.getWhere().getLines().size() == 1 && rootHasExplicitScope(n.where)) {
+			final IrNode only = ir.getWhere().getLines().get(0);
+			if (only instanceof IrStatementPattern || only instanceof IrPathTriple || only instanceof IrGraph
+					|| only instanceof IrSubSelect) {
+				ir.getWhere().setNewScope(true);
 			}
 		}
 
@@ -753,6 +750,9 @@ public class TupleExprToIrConverter {
 			List<IrNode> suffixDependent = new ArrayList<>();
 			for (Entry<String, ValueExpr> e : n.extensionAssignments.entrySet()) {
 				ValueExpr expr = e.getValue();
+				if (n.windowProjectionNames.contains(e.getKey())) {
+					continue; // Window expressions belong in SELECT, never in a WHERE BIND.
+				}
 				if (expr instanceof AggregateOperator) {
 					continue;
 				}
@@ -792,12 +792,20 @@ public class TupleExprToIrConverter {
 	}
 
 	private static Normalized normalize(final TupleExpr root, final boolean peelScopedWrappers) {
+		IrNode.checkInterrupted();
 		final Normalized n = new Normalized();
 		TupleExpr cur = root;
 
 		boolean changed;
 		do {
 			changed = false;
+			IrNode.checkInterrupted();
+			// Once this SELECT's header is known, a scoped wrapper belongs to an inner SELECT. Its DISTINCT,
+			// LIMIT/OFFSET, ordering and aggregation must stay inside the WHERE rather than moving to this header.
+			if (n.projection != null && cur instanceof AbstractQueryModelNode
+					&& ((AbstractQueryModelNode) cur).isVariableScopeChange()) {
+				break;
+			}
 
 			if (cur instanceof QueryRoot) {
 				cur = ((QueryRoot) cur).getArg();
@@ -908,12 +916,10 @@ public class TupleExprToIrConverter {
 					if (containsAggregate(cond) || isHavingCandidate(cond, n.groupByVarNames, n.aggregateOutputNames)) {
 						n.havingConditions.add(cond);
 						cur = afterGroup;
-						changed = true;
-						continue;
+						break;
 					} else {
 						cur = new Filter(afterGroup, cond); // keep as WHERE filter
-						changed = true;
-						continue;
+						break;
 					}
 				}
 
@@ -943,7 +949,8 @@ public class TupleExprToIrConverter {
 			// remember bindings for reinsertion later.
 			if (cur instanceof Extension) {
 				if (((Extension) cur).getArg() instanceof Extension
-						&& !extensionChainLeadsToHavingFilter((Extension) cur)) {
+						&& !extensionChainLeadsToHavingFilter((Extension) cur)
+						&& !extensionChainLeadsToWindow((Extension) cur)) {
 					break;
 				}
 				final Extension ext = (Extension) cur;
@@ -953,6 +960,19 @@ public class TupleExprToIrConverter {
 					n.extensionAssignments.putIfAbsent(ee.getName(), ee.getExpr());
 				}
 				cur = ext.getArg();
+				changed = true;
+				continue;
+			}
+
+			if (cur instanceof Window window) {
+				for (WindowElem element : window.getElements()) {
+					n.windowAssignments.put(element.getName(), element.getOperator());
+				}
+				Set<String> inputNames = new LinkedHashSet<>(n.syntheticProjectVars);
+				inputNames.addAll(window.getArg().getBindingNames());
+				n.syntheticProjectVars.clear();
+				n.syntheticProjectVars.addAll(inputNames);
+				cur = window.getArg();
 				changed = true;
 				continue;
 			}
@@ -990,13 +1010,103 @@ public class TupleExprToIrConverter {
 				}
 
 				cur = afterGroup;
-				changed = true;
+				// Operators below GROUP describe its input, even when programmatically constructed algebra carries no
+				// parser scope flags. Leave their projection/modifiers inside the WHERE as a nested SELECT.
+				break;
 			}
 
 		} while (changed);
 
 		n.where = cur;
+		restoreWindowAssignments(n);
 		return n;
+	}
+
+	/** Restore lowered window expressions only in the SELECT that owns their output bindings. */
+	private static void restoreWindowAssignments(Normalized n) {
+		if (n.windowAssignments.isEmpty()) {
+			return;
+		}
+		Map<String, ValueExpr> aggregates = new LinkedHashMap<>();
+		for (String name : n.aggregateOutputNames) {
+			ValueExpr expression = n.selectAssignments.get(name);
+			if (expression != null) {
+				aggregates.put(name, expression);
+			}
+		}
+		Map<String, ValueExpr> calls = new LinkedHashMap<>();
+		n.windowAssignments.forEach((name, call) -> calls.put(name, windowExpression(call, aggregates)));
+		n.selectAssignments.replaceAll((name, expression) -> {
+			ValueExpr restored = substituteBindings(expression, calls);
+			if (!restored.equals(expression)) {
+				n.windowProjectionNames.add(name);
+			}
+			return restored;
+		});
+		calls.forEach(n.selectAssignments::putIfAbsent);
+		for (int i = 0; i < n.orderBy.size(); i++) {
+			OrderElem order = n.orderBy.get(i);
+			n.orderBy.set(i, new OrderElem(substituteBindings(order.getExpr(), calls), order.isAscending()));
+		}
+	}
+
+	private static FunctionCall windowExpression(WindowFunctionCall call, Map<String, ValueExpr> aggregates) {
+		FunctionCall expression = new FunctionCall(call.getURI());
+		for (ValueExpr argument : call.getArgs()) {
+			expression.addArg(substituteBindings(argument, aggregates));
+		}
+		if (!call.getPartitionBy().isEmpty()) {
+			FunctionCall partition = new FunctionCall(WINF.partitionBy.stringValue());
+			for (ValueExpr key : call.getPartitionBy()) {
+				partition.addArg(substituteBindings(key, aggregates));
+			}
+			expression.addArg(partition);
+		}
+		if (!call.getOrderBy().isEmpty()) {
+			FunctionCall order = new FunctionCall(WINF.orderBy.stringValue());
+			for (OrderElem key : call.getOrderBy()) {
+				order.addArg(new FunctionCall((key.isAscending() ? WINF.asc : WINF.desc).stringValue(),
+						substituteBindings(key.getExpr(), aggregates)));
+			}
+			expression.addArg(order);
+		}
+		if (call.hasExplicitFrame()) {
+			expression.addArg(new FunctionCall((call.getFrameMode() == WindowFunctionCall.FrameMode.ROWS
+					? WINF.rows
+					: WINF.range).stringValue(), frameBoundExpression(call.getFrameStart()),
+					frameBoundExpression(call.getFrameEnd())));
+		}
+		return expression;
+	}
+
+	private static ValueExpr frameBoundExpression(Long bound) {
+		return new ValueConstant(bound == null ? SimpleValueFactory.getInstance().createLiteral("unbounded")
+				: SimpleValueFactory.getInstance().createLiteral(BigInteger.valueOf(bound)));
+	}
+
+	private static ValueExpr substituteBindings(ValueExpr expression, Map<String, ValueExpr> bindings) {
+		if (expression instanceof Var var && !var.hasValue() && bindings.containsKey(var.getName())) {
+			return bindings.get(var.getName()).clone();
+		}
+		ValueExpr restored = expression.clone();
+		if (bindings.isEmpty()) {
+			return restored;
+		}
+		restored.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var var) {
+				ValueExpr replacement = var.hasValue() ? null : bindings.get(var.getName());
+				if (replacement != null) {
+					var.replaceWith(replacement.clone());
+				}
+			}
+
+			@Override
+			protected void meetSubQueryValueOperator(SubQueryValueOperator node) {
+				// Correlated graph patterns retain their own bindings and SELECT normalization.
+			}
+		});
+		return restored;
 	}
 
 	private static boolean isHavingCandidate(ValueExpr cond, Set<String> groupVars, Set<String> aggregateAliasVars) {
@@ -1506,6 +1616,14 @@ public class TupleExprToIrConverter {
 		return false;
 	}
 
+	private static boolean extensionChainLeadsToWindow(Extension extension) {
+		TupleExpr current = extension;
+		while (current instanceof Extension nested) {
+			current = nested.getArg();
+		}
+		return current instanceof Window;
+	}
+
 	// Render expressions for HAVING with substitution of _anon_having_* variables
 	private String renderExprForHaving(final ValueExpr e, final Normalized n) {
 		return renderExprWithSubstitution(e, n == null ? null : n.selectAssignments);
@@ -1666,7 +1784,9 @@ public class TupleExprToIrConverter {
 			for (ProjectionElem pe : n.projection.getProjectionElemList().getElements()) {
 				final String alias = pe.getProjectionAlias().orElse(pe.getName());
 				ExtensionElem src = pe.getSourceExpression();
-				ValueExpr expr = src != null ? src.getExpr() : n.selectAssignments.get(alias);
+				ValueExpr expr = !n.windowAssignments.isEmpty() && n.selectAssignments.containsKey(alias)
+						? n.selectAssignments.get(alias)
+						: src != null ? src.getExpr() : n.selectAssignments.get(alias);
 				boolean renderExprText = expr != null;
 				ir.getProjection().add(new IrProjectionItem(renderExprText ? renderExpr(expr) : null, alias));
 			}
@@ -2278,6 +2398,7 @@ public class TupleExprToIrConverter {
 		}
 
 		IrBGP build(final TupleExpr t) {
+			IrNode.checkInterrupted();
 			if (t == null) {
 				return where;
 			}
@@ -2444,7 +2565,13 @@ public class TupleExprToIrConverter {
 		private IrBGP buildLateralRight(final TupleExpr rightArg) {
 			if (isSubSelectRoot(rightArg)) {
 				IrBGP rightWhere = new IrBGP(false);
-				rightWhere.add(toIRSelectRaw(rightArg, r));
+				IrSelect select = toIRSelectRaw(rightArg, r);
+				if (rightArg instanceof AbstractQueryModelNode
+						&& ((AbstractQueryModelNode) rightArg).isVariableScopeChange()) {
+					rightWhere.add(new IrSubSelect(select, true));
+				} else {
+					rightWhere.add(select);
+				}
 				return rightWhere;
 			}
 
@@ -2837,6 +2964,8 @@ public class TupleExprToIrConverter {
 		final List<OrderElem> orderBy = new ArrayList<>();
 		final LinkedHashMap<String, ValueExpr> selectAssignments = new LinkedHashMap<>(); // alias -> expr
 		final LinkedHashMap<String, ValueExpr> extensionAssignments = new LinkedHashMap<>(); // alias -> expr from BIND
+		final Map<String, WindowFunctionCall> windowAssignments = new LinkedHashMap<>();
+		final Set<String> windowProjectionNames = new LinkedHashSet<>();
 		final Set<String> extensionOutputNames = new LinkedHashSet<>(); // vars bound via Extension/BIND in WHERE
 		final List<GroupByTerm> groupByTerms = new ArrayList<>(); // explicit terms (var or (expr AS ?var))
 		final List<String> syntheticProjectVars = new ArrayList<>(); // synthesized bare SELECT vars

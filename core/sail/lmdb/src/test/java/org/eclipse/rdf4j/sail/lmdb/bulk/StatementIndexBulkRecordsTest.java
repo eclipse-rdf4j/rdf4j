@@ -17,6 +17,7 @@ import java.io.DataOutputStream;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -86,7 +87,9 @@ class StatementIndexBulkRecordsTest {
 		BulkCompression compression = BulkCompression.FASTEST;
 		long statements = 600_000L;
 		Path spoolPath = workspace.resolve("id-quads.bin");
-		try (DataOutputStream output = BulkLz4.output(spoolPath, compression.codecFor(BulkArtifact.ID_QUADS))) {
+		MessageDigest digest = BulkArtifactIntegrity.newDigest();
+		try (DataOutputStream output = BulkLz4.output(spoolPath, compression.codecFor(BulkArtifact.ID_QUADS), null,
+				digest)) {
 			for (long ordinal = 0; ordinal < statements; ordinal++) {
 				output.writeLong(ordinal);
 				output.writeLong(ordinal + 1L);
@@ -96,7 +99,7 @@ class StatementIndexBulkRecordsTest {
 			}
 		}
 		ResolvedIdQuadSpool spool = ResolvedIdQuadSpool.restore(workspace, statements, Files.size(spoolPath),
-				compression);
+				compression, BulkArtifactIntegrity.finish(digest));
 
 		long memoryBudgetBytes = 32L * 1024L * 1024L;
 		int maxOpenFiles = 8;
@@ -152,7 +155,8 @@ class StatementIndexBulkRecordsTest {
 		Path workspace = Files.createDirectory(temporaryDirectory.resolve("budgeted-index-scan"));
 		long statements = 20_000L;
 		Path spoolPath = workspace.resolve("id-quads.bin");
-		try (DataOutputStream output = BulkLz4.output(spoolPath, BulkCodec.NONE)) {
+		MessageDigest digest = BulkArtifactIntegrity.newDigest();
+		try (DataOutputStream output = BulkLz4.output(spoolPath, BulkCodec.NONE, null, digest)) {
 			for (long ordinal = 0; ordinal < statements; ordinal++) {
 				output.writeLong(ordinal);
 				output.writeLong(ordinal + 1L);
@@ -162,7 +166,7 @@ class StatementIndexBulkRecordsTest {
 			}
 		}
 		ResolvedIdQuadSpool spool = ResolvedIdQuadSpool.restore(workspace, statements, Files.size(spoolPath),
-				BulkCompression.NONE);
+				BulkCompression.NONE, BulkArtifactIntegrity.finish(digest));
 
 		long memoryBudgetBytes = 512L * 1024L;
 		AtomicBoolean sawRunBufferReservationDuringScan = new AtomicBoolean();
@@ -245,7 +249,9 @@ class StatementIndexBulkRecordsTest {
 			Path workspace = Files.createDirectory(temporaryDirectory.resolve("minimum-open-files-" + maxOpenFiles));
 			Path spoolPath = workspace.resolve("id-quads.bin");
 			long statementCount = 512L;
-			try (DataOutputStream output = BulkLz4.output(spoolPath, compression.codecFor(BulkArtifact.ID_QUADS))) {
+			MessageDigest digest = BulkArtifactIntegrity.newDigest();
+			try (DataOutputStream output = BulkLz4.output(spoolPath, compression.codecFor(BulkArtifact.ID_QUADS), null,
+					digest)) {
 				for (long ordinal = 0; ordinal < statementCount; ordinal++) {
 					output.writeLong(ordinal);
 					output.writeLong(ordinal + 10L);
@@ -255,7 +261,7 @@ class StatementIndexBulkRecordsTest {
 				}
 			}
 			ResolvedIdQuadSpool spool = ResolvedIdQuadSpool.restore(workspace, statementCount, Files.size(spoolPath),
-					compression);
+					compression, BulkArtifactIntegrity.finish(digest));
 			// Multiple small runs force real merges while leaving enough room for the scanned input and one spill;
 			// descriptor overlap still exercises the three-handle minimum at configured limits one and two.
 			long memoryBudgetBytes = 64L * 1024L;

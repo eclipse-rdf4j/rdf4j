@@ -18,10 +18,12 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -37,10 +39,18 @@ import java.util.TreeMap;
 import java.util.concurrent.CancellationException;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.repository.config.LocalRepositoryIdValidator;
+import org.eclipse.rdf4j.repository.config.RepositoryConfig;
+import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
+import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParserRegistry;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.lmdb.bulk.BulkArtifact;
+import org.eclipse.rdf4j.sail.lmdb.bulk.BulkCapacityPolicy;
 import org.eclipse.rdf4j.sail.lmdb.bulk.BulkCodec;
 import org.eclipse.rdf4j.sail.lmdb.bulk.BulkCompression;
 import org.eclipse.rdf4j.sail.lmdb.bulk.BulkLoadPhase;
@@ -133,6 +143,19 @@ public final class LmdbBulkLoad {
 		diskSpaceMonitor.watch(options.store(), options.temporaryDirectory());
 
 		try {
+			Path targetName = options.store().toAbsolutePath().normalize().getFileName();
+			String repositoryId = targetName == null ? null : targetName.toString();
+			try {
+				LocalRepositoryIdValidator.validate(repositoryId);
+			} catch (RepositoryConfigException e) {
+				throw new UsageException(e.getMessage());
+			}
+			Optional<BulkLoadSettings> recordedSettings = UnfinishedBulkLoad.find(options.store())
+					.flatMap(UnfinishedBulkLoad::settings);
+			BulkCapacityPolicy valueCapacity = capacityPolicy("--value-capacity", options.valueCapacity(),
+					recordedSettings.map(BulkLoadSettings::valueCapacity).orElse(null));
+			BulkCapacityPolicy tripleCapacity = capacityPolicy("--triple-capacity", options.tripleCapacity(),
+					recordedSettings.map(BulkLoadSettings::tripleCapacity).orElse(null));
 			LmdbStoreConfig config = new LmdbStoreConfig();
 			if (options.statementIndexes() != null) {
 				config.setTripleIndexes(options.statementIndexes());
@@ -150,7 +173,11 @@ public final class LmdbBulkLoad {
 			}
 
 			LmdbBulkLoader.Builder builder = LmdbBulkLoader.builder(options.store(), config)
-					.parserMode(options.parserMode());
+					.parserMode(options.parserMode())
+					.valueCapacity(valueCapacity)
+					.tripleCapacity(tripleCapacity)
+					.preparedGenerationWriter((generation, preparedConfig) -> writeRepositoryConfiguration(generation,
+							repositoryId, preparedConfig));
 			// Without a compression option the loader picks its own default, which skips compressing the staged
 			// inputs when every input is read by the fast parser.
 			if (options.compression() != null) {
@@ -203,9 +230,11 @@ public final class LmdbBulkLoad {
 			}
 			output.printf(Locale.ROOT,
 					"LMDB bulk load complete: parsed=%d stored=%d persisted-values=%d inline-values=%d "
-							+ "temporary-bytes=%d elapsed-ms=%d compression=%s%n",
+							+ "temporary-bytes=%d elapsed-ms=%d compression=%s value-capacity=%s triple-capacity=%s "
+							+ "config=%s%n",
 					result.parsedStatements(), result.storedStatements(), result.persistedValues(),
-					result.inlineValues(), result.temporaryBytes(), result.elapsedMillis(), compression.token());
+					result.inlineValues(), result.temporaryBytes(), result.elapsedMillis(), compression.token(),
+					valueCapacity, tripleCapacity, options.store().resolve("config.ttl"));
 			return SUCCESS;
 		} catch (CancellationException e) {
 			error.println("LMDB bulk load cancelled");
@@ -222,6 +251,24 @@ public final class LmdbBulkLoad {
 			error.println("LMDB bulk load failed: " + failure.getMessage());
 			failure.printStackTrace(error);
 			return LOAD_FAILURE;
+		}
+	}
+
+	private static void writeRepositoryConfiguration(Path generation, String repositoryId, LmdbStoreConfig config)
+			throws IOException {
+		RepositoryConfig repositoryConfig = new RepositoryConfig(repositoryId, new SailRepositoryConfig(config));
+		repositoryConfig.validate();
+		Model model = new LinkedHashModel();
+		repositoryConfig.export(model, Values.bnode());
+		Path configFile = generation.resolve("config.ttl");
+		Path temporaryFile = generation.resolve("config.ttl.part");
+		try (var output = Files.newOutputStream(temporaryFile)) {
+			Rio.write(model, output, RDFFormat.TURTLE);
+		}
+		try {
+			Files.move(temporaryFile, configFile, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+		} catch (AtomicMoveNotSupportedException e) {
+			Files.move(temporaryFile, configFile, StandardCopyOption.REPLACE_EXISTING);
 		}
 	}
 
@@ -325,7 +372,19 @@ public final class LmdbBulkLoad {
 				  --value-hash-cache true|false    Populate hashes.dat
 				  --write-transaction-records N    Maximum records per LMDB transaction
 				  --write-transaction-bytes BYTES  Maximum bytes per LMDB transaction
+				  --value-capacity POLICY          Capacity policy for the value store (default: default)
+				  --triple-capacity POLICY         Capacity policy for the triple store (default: default)
 				  --help                           Show this help
+
+				Capacity policies are independent for the two stores:
+				  default                          Add room for the smaller of 100,000 items and 10% of the
+				                                   actual loaded distinct count, rounded up
+				  min:64MiB                        Minimum native map bytes: a floor, never a limit
+				  factor:2                         Room for twice the total loaded distinct count
+				  factor:3 or factor:1.5           Other finite total-count factors of at least 1
+				Minimum bytes accept KiB, MiB, GiB and TiB. Counts mean stored dictionary/term values or distinct
+				statements. Count-based space assumes future encoded items fit the observed size envelope and
+				ordinary writes have no pinned historical readers. Final native byte sizes are in config.ttl.
 				""");
 		printCompressionKeys(output);
 	}
@@ -365,7 +424,8 @@ public final class LmdbBulkLoad {
 			String baseUri, String statementIndexes, String tripleTermIndexes, Long memoryBudgetBytes,
 			Integer partitionCount, Integer maxOpenFiles, Integer workers, Integer queueBatches,
 			ProgressMode progressMode, Path temporaryDirectory, Boolean inlineLiterals, Boolean valueHashCache,
-			Integer writeTransactionRecords, Long writeTransactionBytes, BulkCompression compression,
+			Integer writeTransactionRecords, Long writeTransactionBytes, BulkCapacityPolicy valueCapacity,
+			BulkCapacityPolicy tripleCapacity, BulkCompression compression,
 			boolean resumeRecordedRun, boolean help) {
 
 		private static Options parse(String[] arguments, InputStream standardInput, PrintStream promptOutput,
@@ -413,7 +473,7 @@ public final class LmdbBulkLoad {
 			if (help) {
 				return new Options(null, List.of(), null, LmdbBulkLoader.ParserMode.AUTO, null, null, null, null,
 						null, null, null, null, ProgressMode.PLAIN, null, null, null, null, null,
-						BulkCompression.FASTEST, false, true);
+						null, null, BulkCompression.FASTEST, false, true);
 			}
 			boolean resumeRecordedRun = false;
 			if (interactive) {
@@ -442,6 +502,8 @@ public final class LmdbBulkLoad {
 					parseBoolean(values.get("value-hash-cache"), "--value-hash-cache"),
 					parseInteger(values.get("write-transaction-records"), "--write-transaction-records"),
 					parseBytes(values.get("write-transaction-bytes"), "--write-transaction-bytes"),
+					parseCapacity(values.get("value-capacity"), "--value-capacity"),
+					parseCapacity(values.get("triple-capacity"), "--triple-capacity"),
 					parseCompression(values, compressionArtifacts), resumeRecordedRun, false);
 		}
 	}
@@ -509,6 +571,10 @@ public final class LmdbBulkLoad {
 				"loader default", input, output);
 		promptOptionalValue(values, recorded, "write-transaction-bytes", "Maximum bytes per write transaction",
 				"loader default", input, output);
+		promptCapacity(values, recorded, "value-capacity", "Value-store capacity", "unique stored values", input,
+				output);
+		promptCapacity(values, recorded, "triple-capacity", "Triple-store capacity", "distinct statements", input,
+				output);
 		return resumeRecordedRun;
 	}
 
@@ -626,6 +692,8 @@ public final class LmdbBulkLoad {
 				: null);
 		restore(values, recorded, "write-transaction-records", Integer.toString(settings.writeTransactionRecords()));
 		restore(values, recorded, "write-transaction-bytes", Long.toString(settings.writeTransactionBytes()));
+		restore(values, recorded, "value-capacity", settings.valueCapacity().toString());
+		restore(values, recorded, "triple-capacity", settings.tripleCapacity().toString());
 		restore(values, recorded, "temporary-directory", spillDirectory == null ? null : spillDirectory.toString());
 	}
 
@@ -824,6 +892,46 @@ public final class LmdbBulkLoad {
 
 	private static final String CUSTOM_COMPRESSION = "custom";
 
+	private static void promptCapacity(Map<String, String> values, Set<String> recorded, String name, String label,
+			String items, BufferedReader input, PrintStream output) throws UsageException {
+		if (recorded.contains(name) || values.containsKey(name)) {
+			return;
+		}
+		output.println(label + " reserves room before publication:");
+		output.println("  default       Add the smaller of 100,000 and 10% of loaded " + items + ", rounded up");
+		output.println("  minimum size  A byte floor, never a limit (for example, 64MiB)");
+		output.println("  factor        A total-count multiplier (2 for 2x, 3 for 3x, or 1.5)");
+		while (true) {
+			String choice = prompt(label + " (default, minimum size, or factor)", "default", input, output)
+					.toLowerCase(Locale.ROOT);
+			if (choice.isEmpty() || choice.equals("default")) {
+				values.put(name, BulkCapacityPolicy.defaultHeadroom().toString());
+				return;
+			}
+			String prefix;
+			String valueLabel;
+			if (choice.equals("minimum size") || choice.equals("minimum")) {
+				prefix = "min:";
+				valueLabel = label + " minimum bytes (for example, 64MiB; never a limit)";
+			} else if (choice.equals("factor")) {
+				prefix = "factor:";
+				valueLabel = label + " total-count factor (at least 1; for example, 2, 3, or 1.5)";
+			} else {
+				output.println("Choose default, minimum size, or factor.");
+				continue;
+			}
+			while (true) {
+				String answer = promptRequired(valueLabel, input, output);
+				try {
+					values.put(name, BulkCapacityPolicy.parse(prefix + answer).toString());
+					return;
+				} catch (IllegalArgumentException rejected) {
+					output.println(rejected.getMessage());
+				}
+			}
+		}
+	}
+
 	private static void promptRequiredValue(Map<String, String> values, String name, String label, BufferedReader input,
 			PrintStream output) throws UsageException {
 		if (!values.containsKey(name)) {
@@ -892,7 +1000,9 @@ public final class LmdbBulkLoad {
 			Map.entry("inline-literals", true),
 			Map.entry("value-hash-cache", true),
 			Map.entry("write-transaction-records", true),
-			Map.entry("write-transaction-bytes", true));
+			Map.entry("write-transaction-bytes", true),
+			Map.entry("value-capacity", true),
+			Map.entry("triple-capacity", true));
 
 	private static final Set<String> REPEATABLE_OPTIONS = Set.of("input", "compression-artifact");
 
@@ -994,6 +1104,26 @@ public final class LmdbBulkLoad {
 			return false;
 		}
 		throw new UsageException(option + " must be true or false");
+	}
+
+	private static BulkCapacityPolicy parseCapacity(String value, String option) throws UsageException {
+		if (value == null) {
+			return null;
+		}
+		try {
+			return BulkCapacityPolicy.parse(value);
+		} catch (IllegalArgumentException rejected) {
+			throw new UsageException(option + ": " + rejected.getMessage());
+		}
+	}
+
+	private static BulkCapacityPolicy capacityPolicy(String option, BulkCapacityPolicy requested,
+			BulkCapacityPolicy recorded) throws UsageException {
+		if (requested != null && recorded != null && !requested.equals(recorded)) {
+			throw new UsageException(option + " conflicts with recorded capacity " + recorded + ": requested "
+					+ requested + ". Resume with the recorded policy or omit this option.");
+		}
+		return requested != null ? requested : recorded != null ? recorded : BulkCapacityPolicy.defaultHeadroom();
 	}
 
 	private static Integer parseInteger(String value, String option) throws UsageException {

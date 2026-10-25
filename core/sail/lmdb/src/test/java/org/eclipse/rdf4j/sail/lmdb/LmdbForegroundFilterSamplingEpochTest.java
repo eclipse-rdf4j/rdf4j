@@ -1087,7 +1087,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 					SketchBasedJoinEstimator.PatternFilterSampleEstimate result = stats.estimateFilterPass(filter,
 							pattern);
 					callerDeadlineSurvivedSampling.set(QueryExecutionDeadline.current() == callerDeadline
-							&& callerDeadline.remainingNanos() > 0L);
+							&& callerDeadline.remainingMillis() > 0L);
 					return result;
 				}
 			});

@@ -49,6 +49,7 @@ public class LmdbNativeLeftJoinCursorTest {
 	private static final String REPLAY_FLAG = "rdf4j.lmdb.leftjoin.replay.enabled";
 	private static final String JANINO_FLAG = "rdf4j.lmdb.janinoCodegen.enabled";
 	private static final String KERNEL_INTERPRETER_FLAG = "rdf4j.lmdb.kernelInterpreter.enabled";
+	private static final String PACKED_ALGEBRA_FLAG = "rdf4j.lmdb.packedFtree.algebra.enabled";
 	private static final String EXACT_EMPTY_PRUNING_FLAG = "rdf4j.lmdb.directAdjacency.exactEmptyPruning.enabled";
 
 	@TempDir
@@ -64,6 +65,7 @@ public class LmdbNativeLeftJoinCursorTest {
 		remember(REPLAY_FLAG);
 		remember(JANINO_FLAG);
 		remember(KERNEL_INTERPRETER_FLAG);
+		remember(PACKED_ALGEBRA_FLAG);
 		remember(EXACT_EMPTY_PRUNING_FLAG);
 		System.clearProperty(EXACT_EMPTY_PRUNING_FLAG);
 		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
@@ -157,6 +159,7 @@ public class LmdbNativeLeftJoinCursorTest {
 		System.setProperty(NATIVE_FLAG, "true");
 		System.clearProperty(JANINO_FLAG);
 		System.clearProperty(KERNEL_INTERPRETER_FLAG);
+		System.clearProperty(PACKED_ALGEBRA_FLAG);
 		System.clearProperty(REPLAY_FLAG);
 		long defaultAdjacencyBefore = adjacencyAccesses();
 		long compiledBefore = LmdbNativeAggregateCompiler.COMPILED.get();
@@ -170,9 +173,10 @@ public class LmdbNativeLeftJoinCursorTest {
 					.isGreaterThan(defaultAdjacencyBefore);
 		}
 
-		// Disable only the two IR rungs that supersede the nested cursor, then compare its replay switch directly.
+		// Disable the IR and factor-algebra tiers that supersede the nested cursor, then compare its replay switch.
 		System.setProperty(JANINO_FLAG, "false");
 		System.setProperty(KERNEL_INTERPRETER_FLAG, "false");
+		System.setProperty(PACKED_ALGEBRA_FLAG, "false");
 		System.setProperty(REPLAY_FLAG, "false");
 		long disabledAdjacencyBefore = adjacencyLookupsAndMisses();
 		long disabledBefore = LmdbNativeAggregateCompiler.LEFTJOIN_REPLAY_MATERIALIZATIONS.get();

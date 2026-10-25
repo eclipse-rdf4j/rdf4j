@@ -19,19 +19,26 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.io.ByteArrayInputStream;
 import java.io.StringReader;
+import java.io.StringWriter;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Models;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.AbstractRepositoryImplConfig;
@@ -40,6 +47,7 @@ import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 import org.eclipse.rdf4j.repository.config.RepositoryFactory;
 import org.eclipse.rdf4j.repository.config.RepositoryImplConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryRegistry;
+import org.eclipse.rdf4j.repository.manager.RemoteRepositoryManager;
 import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
@@ -59,6 +67,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+
+import com.sun.net.httpserver.HttpServer;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -130,6 +140,176 @@ class ConfigServletTest {
 			assertThat(((CustomConfig) configuration.getValue().getRepositoryImplConfig()).value)
 					.isEqualTo("kept custom setting");
 		} finally {
+			RepositoryRegistry.getInstance().remove(factory);
+		}
+	}
+
+	@Test
+	void editorHidesPersistedPasswordAndPreservesItOnSave() throws Exception {
+		RepositoryFactory factory = new RepositoryFactory() {
+			@Override
+			public String getRepositoryType() {
+				return CustomConfig.TYPE;
+			}
+
+			@Override
+			public RepositoryImplConfig getConfig() {
+				return new CustomConfig();
+			}
+
+			@Override
+			public Repository getRepository(RepositoryImplConfig config) {
+				throw new AssertionError("Editing configuration must not instantiate a repository");
+			}
+		};
+		RepositoryRegistry.getInstance().add(factory);
+		try {
+			RepositoryManager manager = mock(RepositoryManager.class);
+			when(manager.hasRepositoryConfig("memory")).thenReturn(true);
+			CustomConfig custom = new CustomConfig();
+			custom.value = "visible setting";
+			custom.password = "private-password-marker";
+			when(manager.getRepositoryConfig("memory")).thenReturn(new RepositoryConfig("memory", custom));
+			MockHttpServletRequest request = new MockHttpServletRequest("GET", "/memory/config");
+			request.addHeader("Accept", WorkbenchPageProtocol.ACCEPT);
+
+			String turtle = column(run(manager, request), "configuration");
+			assertThat(turtle).contains("visible setting").doesNotContain("private-password-marker");
+
+			MockHttpServletResponse saved = run(manager,
+					post(turtle.replace("visible setting", "modified setting"), "save"));
+			assertThat(saved.getStatus()).isEqualTo(200);
+			ArgumentCaptor<RepositoryConfig> configuration = ArgumentCaptor.forClass(RepositoryConfig.class);
+			verify(manager).addRepositoryConfig(configuration.capture());
+			assertThat(((CustomConfig) configuration.getValue().getRepositoryImplConfig()).password)
+					.isEqualTo("private-password-marker");
+			assertThat(((CustomConfig) configuration.getValue().getRepositoryImplConfig()).value)
+					.isEqualTo("modified setting");
+		} finally {
+			RepositoryRegistry.getInstance().remove(factory);
+		}
+	}
+
+	@Test
+	void editorRejectsRedactedPasswordMovedToDifferentConfigurationPath() throws Exception {
+		RepositoryFactory factory = customFactory();
+		RepositoryRegistry.getInstance().add(factory);
+		try {
+			RepositoryManager manager = mock(RepositoryManager.class);
+			when(manager.hasRepositoryConfig("memory")).thenReturn(true);
+			CustomConfig persisted = new CustomConfig();
+			persisted.value = "visible setting";
+			persisted.password = "private-password-marker";
+			when(manager.getRepositoryConfig("memory")).thenReturn(new RepositoryConfig("memory", persisted));
+			String movedMarker = """
+					@prefix config: <tag:rdf4j.org,2023:config/> .
+					@prefix custom: <urn:custom:> .
+					[] a config:Repository; config:rep.id "memory";
+					  config:lucene.elasticsearch.http.password "REDACTED"^^config:redactedSecret;
+					  config:rep.impl [ config:rep.type "test:WorkbenchCustomConfiguration";
+					    custom:setting "visible setting" ] .
+					""";
+
+			MockHttpServletResponse response = run(manager, post(movedMarker, "save"));
+
+			assertThat(response.getStatus()).isEqualTo(400);
+			verify(manager, never()).addRepositoryConfig(org.mockito.ArgumentMatchers.any());
+		} finally {
+			RepositoryRegistry.getInstance().remove(factory);
+		}
+	}
+
+	@Test
+	void editorCanDeliberatelyClearPersistedPassword() throws Exception {
+		RepositoryFactory factory = customFactory();
+		RepositoryRegistry.getInstance().add(factory);
+		try {
+			RepositoryManager manager = mock(RepositoryManager.class);
+			when(manager.hasRepositoryConfig("memory")).thenReturn(true);
+			CustomConfig persisted = new CustomConfig();
+			persisted.value = "visible setting";
+			persisted.password = "private-password-marker";
+			when(manager.getRepositoryConfig("memory")).thenReturn(new RepositoryConfig("memory", persisted));
+			MockHttpServletRequest request = new MockHttpServletRequest("GET", "/memory/config");
+			request.addHeader("Accept", WorkbenchPageProtocol.ACCEPT);
+			Model edited = Rio.parse(new StringReader(column(run(manager, request), "configuration")),
+					CONFIG.NAMESPACE, RDFFormat.TURTLE);
+			edited.remove(null, CustomConfig.PASSWORD, null);
+			StringWriter turtle = new StringWriter();
+			Rio.write(edited, turtle, RDFFormat.TURTLE);
+
+			MockHttpServletResponse response = run(manager, post(turtle.toString(), "save"));
+
+			assertThat(response.getStatus()).isEqualTo(200);
+			ArgumentCaptor<RepositoryConfig> saved = ArgumentCaptor.forClass(RepositoryConfig.class);
+			verify(manager).addRepositoryConfig(saved.capture());
+			assertThat(((CustomConfig) saved.getValue().getRepositoryImplConfig()).password).isNull();
+		} finally {
+			RepositoryRegistry.getInstance().remove(factory);
+		}
+	}
+
+	@Test
+	void remoteEditorPreservesTypedMarkerFromGetThroughSave() throws Exception {
+		RepositoryFactory factory = customFactory();
+		RepositoryRegistry.getInstance().add(factory);
+		AtomicReference<byte[]> posted = new AtomicReference<>();
+		HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		String config = """
+				_:root <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <tag:rdf4j.org,2023:config/Repository> .
+				_:root <tag:rdf4j.org,2023:config/rep.id> "memory" .
+				_:root <tag:rdf4j.org,2023:config/rep.impl> _:impl .
+				_:impl <tag:rdf4j.org,2023:config/rep.type> "test:WorkbenchCustomConfiguration" .
+				_:impl <urn:custom:setting> "visible setting" .
+				_:impl <tag:rdf4j.org,2023:config/lucene.elasticsearch.http.password> "REDACTED"^^<tag:rdf4j.org,2023:config/redactedSecret> .
+				""";
+		server.createContext("/rdf4j-server", exchange -> {
+			String path = exchange.getRequestURI().getPath();
+			if ("/rdf4j-server/protocol".equals(path)) {
+				byte[] body = "13".getBytes(StandardCharsets.UTF_8);
+				exchange.sendResponseHeaders(200, body.length);
+				exchange.getResponseBody().write(body);
+			} else if ("/rdf4j-server/repositories/memory/config".equals(path)
+					&& "GET".equals(exchange.getRequestMethod())) {
+				byte[] body = config.getBytes(StandardCharsets.UTF_8);
+				exchange.getResponseHeaders().set("Content-Type", RDFFormat.NTRIPLES.getDefaultMIMEType());
+				exchange.sendResponseHeaders(200, body.length);
+				exchange.getResponseBody().write(body);
+			} else if ("/rdf4j-server/repositories/memory/config".equals(path)
+					&& "POST".equals(exchange.getRequestMethod())) {
+				posted.set(exchange.getRequestBody().readAllBytes());
+				exchange.sendResponseHeaders(204, -1);
+			} else {
+				exchange.sendResponseHeaders(404, -1);
+			}
+			exchange.close();
+		});
+		server.start();
+		try {
+			RemoteRepositoryManager manager = new RemoteRepositoryManager(
+					"http://127.0.0.1:" + server.getAddress().getPort() + "/rdf4j-server") {
+				@Override
+				public boolean hasRepositoryConfig(String id) {
+					return "memory".equals(id);
+				}
+			};
+			MockHttpServletRequest request = new MockHttpServletRequest("GET", "/memory/config");
+			request.addHeader("Accept", WorkbenchPageProtocol.ACCEPT);
+			String turtle = column(run(manager, request), "configuration");
+			assertThat(turtle).contains("redactedSecret").doesNotContain("private-password-marker");
+
+			MockHttpServletResponse saved = run(manager, post(turtle, "save"));
+			assertThat(saved.getStatus()).isEqualTo(200);
+			assertThat(posted.get()).isNotNull();
+			Model sent = Rio.parse(new ByteArrayInputStream(posted.get()), "", RDFFormat.BINARY);
+			assertThat(sent.filter(null, CustomConfig.PASSWORD, null).objects()).singleElement()
+					.isInstanceOfSatisfying(Literal.class, value -> {
+						assertThat(value.getLabel()).isEqualTo("REDACTED");
+						assertThat(value.getDatatype()).isEqualTo(
+								SimpleValueFactory.getInstance().createIRI(CONFIG.NAMESPACE, "redactedSecret"));
+					});
+		} finally {
+			server.stop(0);
 			RepositoryRegistry.getInstance().remove(factory);
 		}
 	}
@@ -388,6 +568,25 @@ class ConfigServletTest {
 		return request;
 	}
 
+	private static RepositoryFactory customFactory() {
+		return new RepositoryFactory() {
+			@Override
+			public String getRepositoryType() {
+				return CustomConfig.TYPE;
+			}
+
+			@Override
+			public RepositoryImplConfig getConfig() {
+				return new CustomConfig();
+			}
+
+			@Override
+			public Repository getRepository(RepositoryImplConfig config) {
+				throw new AssertionError("Editing configuration must not instantiate a repository");
+			}
+		};
+	}
+
 	private static String nestedConfiguration(boolean legacy) {
 		if (legacy) {
 			return """
@@ -454,7 +653,10 @@ class ConfigServletTest {
 	private static final class CustomConfig extends AbstractRepositoryImplConfig {
 		private static final String TYPE = "test:WorkbenchCustomConfiguration";
 		private static final IRI SETTING = SimpleValueFactory.getInstance().createIRI("urn:custom:", "setting");
+		private static final IRI PASSWORD = SimpleValueFactory.getInstance()
+				.createIRI("tag:rdf4j.org,2023:config/lucene.elasticsearch.http.password");
 		private String value;
+		private String password;
 
 		private CustomConfig() {
 			super(TYPE);
@@ -465,6 +667,9 @@ class ConfigServletTest {
 			Resource node = super.export(model);
 			model.setNamespace("custom", "urn:custom:");
 			model.add(node, SETTING, SimpleValueFactory.getInstance().createLiteral(value));
+			if (password != null) {
+				model.add(node, PASSWORD, SimpleValueFactory.getInstance().createLiteral(password));
+			}
 			return node;
 		}
 
@@ -472,6 +677,7 @@ class ConfigServletTest {
 		public void parse(Model model, Resource node) {
 			super.parse(model, node);
 			value = Models.objectLiteral(model.filter(node, SETTING, null)).orElseThrow().getLabel();
+			Models.objectLiteral(model.filter(node, PASSWORD, null)).ifPresent(secret -> password = secret.getLabel());
 		}
 	}
 }

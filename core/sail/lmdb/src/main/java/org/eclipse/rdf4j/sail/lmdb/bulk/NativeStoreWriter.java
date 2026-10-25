@@ -19,6 +19,8 @@ import java.nio.file.Path;
 import java.util.concurrent.CancellationException;
 import java.util.function.BooleanSupplier;
 
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.sail.lmdb.LmdbNativeBulkStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStoreFormat;
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
@@ -28,6 +30,10 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
  * Streams sorted native records into the isolated LMDB generation.
  */
 final class NativeStoreWriter {
+	@FunctionalInterface
+	interface PreparationHook {
+		void beforePreparation() throws IOException;
+	}
 
 	private NativeStoreWriter() {
 	}
@@ -38,30 +44,45 @@ final class NativeStoreWriter {
 			BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler) throws IOException {
 		return write(generation, config, LmdbStoreFormat.forNewStore(config), values, statements, staged,
 				memoryBudgetBytes, maxOpenFiles, maxTransactionRecords, maxTransactionBytes, compression,
-				cancellationSignal, scheduler);
+				cancellationSignal, scheduler, () -> {
+				});
 	}
 
 	static WriteResult write(Path generation, LmdbStoreConfig config, LmdbStoreFormat format,
 			ValueStoreBulkRecords.Output values,
 			ResolvedIdQuadSpool statements, CanonicalStagedInput staged, long memoryBudgetBytes, int maxOpenFiles,
 			int maxTransactionRecords, long maxTransactionBytes, BulkCompression compression,
-			BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler) throws IOException {
+			BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler, PreparationHook preparationHook)
+			throws IOException {
+		return write(generation, config, format, values, statements, staged, memoryBudgetBytes, maxOpenFiles,
+				maxTransactionRecords, maxTransactionBytes, compression, cancellationSignal, scheduler, preparationHook,
+				BulkCapacityPolicy.defaultHeadroom(), BulkCapacityPolicy.defaultHeadroom(), 0L);
+	}
+
+	static WriteResult write(Path generation, LmdbStoreConfig config, LmdbStoreFormat format,
+			ValueStoreBulkRecords.Output values, ResolvedIdQuadSpool statements, CanonicalStagedInput staged,
+			long memoryBudgetBytes, int maxOpenFiles, int maxTransactionRecords, long maxTransactionBytes,
+			BulkCompression compression, BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler,
+			PreparationHook preparationHook, BulkCapacityPolicy valueCapacity, BulkCapacityPolicy tripleCapacity,
+			long maximumCanonicalValueBytes)
+			throws IOException {
+		long storedStatements;
+		long mapGrowthCount;
+		ValidatedBulkGeneration validation;
 		try (StatementIndexBulkRecords statementIndexes = StatementIndexBulkRecords.build(statements,
 				statements.path().getParent(), config.getTripleIndexes(), memoryBudgetBytes, maxOpenFiles,
 				compression, cancellationSignal, scheduler);
 				TripleTermIndexBulkRecords tripleTermIndexes = TripleTermIndexBulkRecords.build(values.tripleTerms(),
 						statements.path().getParent(), config.getTripleTermIndexes(), memoryBudgetBytes, maxOpenFiles,
 						compression, cancellationSignal, scheduler);
-				LmdbNativeBulkStore store = new LmdbNativeBulkStore(generation, config, format)) {
-			try (ByteRecordCursor cursor = new ByteRecordCursor(values.mainRecords().path(),
-					values.mainRecords().codec())) {
+				LmdbNativeBulkStore store = openStore(generation, config, format, valueCapacity, tripleCapacity)) {
+			try (ByteRecordCursor cursor = new ByteRecordCursor(values.mainRecords())) {
 				store.appendValueRecords(() -> {
 					checkCancelled(cancellationSignal);
 					return cursor.next();
 				}, maxTransactionRecords, maxTransactionBytes);
 			}
-			try (ByteRecordCursor cursor = new ByteRecordCursor(values.referenceCounts().path(),
-					values.referenceCounts().codec())) {
+			try (ByteRecordCursor cursor = new ByteRecordCursor(values.referenceCounts())) {
 				store.appendReferenceCounts(() -> {
 					checkCancelled(cancellationSignal);
 					return cursor.next();
@@ -69,8 +90,7 @@ final class NativeStoreWriter {
 			}
 			long expectedTripleTerms = -1L;
 			for (TripleTermIndexBulkRecords.IndexRun indexRun : tripleTermIndexes.runs()) {
-				try (LongTupleCursor cursor = new LongTupleCursor(indexRun.tuples().path(), 4,
-						indexRun.tuples().codec())) {
+				try (LongTupleCursor cursor = new LongTupleCursor(indexRun.tuples(), 4)) {
 					long termsInIndex = store.appendTripleTermIndex(indexRun.specification(), target -> {
 						checkCancelled(cancellationSignal);
 						return cursor.next(target);
@@ -87,8 +107,7 @@ final class NativeStoreWriter {
 				Files.deleteIfExists(indexRun.tuples().path());
 			}
 			if (config.getValueHashCacheEnabled()) {
-				try (LongTupleCursor cursor = new LongTupleCursor(values.valueHashes().path(), 3,
-						values.valueHashes().codec())) {
+				try (LongTupleCursor cursor = new LongTupleCursor(values.valueHashes(), 3)) {
 					long[] tuple = new long[3];
 					store.appendValueHashes(target -> {
 						checkCancelled(cancellationSignal);
@@ -110,16 +129,14 @@ final class NativeStoreWriter {
 			for (StatementIndexBulkRecords.IndexRun indexRun : statementIndexes.runs()) {
 				long statementsInIndex;
 				if (indexRun.tuples() != null) {
-					try (LongTupleCursor cursor = new LongTupleCursor(indexRun.tuples().path(), 4,
-							indexRun.tuples().codec())) {
+					try (LongTupleCursor cursor = new LongTupleCursor(indexRun.tuples(), 4)) {
 						statementsInIndex = store.appendExplicitIndex(indexRun.specification(), target -> {
 							checkCancelled(cancellationSignal);
 							return cursor.next(target);
 						}, maxTransactionRecords, maxTransactionBytes);
 					}
 				} else {
-					try (ByteRecordCursor cursor = new ByteRecordCursor(indexRun.encodedRecords().path(),
-							indexRun.encodedRecords().codec())) {
+					try (ByteRecordCursor cursor = new ByteRecordCursor(indexRun.encodedRecords())) {
 						statementsInIndex = store.appendExplicitEncodedIndex(indexRun.specification(), () -> {
 							checkCancelled(cancellationSignal);
 							return cursor.next();
@@ -135,15 +152,44 @@ final class NativeStoreWriter {
 				// The run has been appended to LMDB and is rebuilt from id-quads on resume; free it now.
 				Files.deleteIfExists(indexRun.path());
 			}
-			try (ContextCountCursor cursor = new ContextCountCursor(statementIndexes.contexts().path(),
-					statementIndexes.contexts().codec())) {
+			try (ContextCountCursor cursor = new ContextCountCursor(statementIndexes.contexts())) {
 				store.appendContexts(target -> {
 					checkCancelled(cancellationSignal);
 					return cursor.next(target);
 				}, maxTransactionRecords, maxTransactionBytes);
 			}
 			Files.deleteIfExists(statementIndexes.contexts().path());
-			return new WriteResult(Math.max(0L, expectedStatements), store.mapGrowthCount());
+			checkCancelled(cancellationSignal);
+			preparationHook.beforePreparation();
+			checkCancelled(cancellationSignal);
+			storedStatements = Math.max(0L, expectedStatements);
+			validation = new ValidatedBulkGeneration(generation, storedStatements);
+			store.completeGeneration(validation, valueCapacity, tripleCapacity, maximumCanonicalValueBytes,
+					CanonicalTermCodec.MAX_TRIPLE_TERM_DEPTH);
+			mapGrowthCount = store.mapGrowthCount();
+		}
+		return new WriteResult(storedStatements, mapGrowthCount,
+				LmdbNativeBulkStore.sealPreparedGeneration(generation, config, validation), validation);
+	}
+
+	private static LmdbNativeBulkStore openStore(Path generation, LmdbStoreConfig config, LmdbStoreFormat format,
+			BulkCapacityPolicy valueCapacity, BulkCapacityPolicy tripleCapacity) throws IOException {
+		long values = Math.max(config.getValueDBSize(), valueCapacity.minimumBytes());
+		long triples = Math.max(config.getTripleDBSize(), tripleCapacity.minimumBytes());
+		if (values == config.getValueDBSize() && triples == config.getTripleDBSize()) {
+			return new LmdbNativeBulkStore(generation, config, format);
+		}
+		// Preserve every configured capability while applying a floor before any dictionary/index records are written.
+		// This is explicit initial allocation, including when reactive automatic growth is disabled.
+		Model model = new LinkedHashModel();
+		LmdbStoreConfig initial = new LmdbStoreConfig();
+		initial.parse(model, config.export(model));
+		initial.setValueDBSize(values).setTripleDBSize(triples);
+		try {
+			return new LmdbNativeBulkStore(generation, initial, format);
+		} catch (IOException failure) {
+			throw new IOException("Cannot initialize the requested LMDB capacity floors: values=" + values
+					+ ", triples=" + triples, failure);
 		}
 	}
 
@@ -157,17 +203,29 @@ final class NativeStoreWriter {
 
 		private static final int MAX_RECORD_BYTES = 1024 * 1024 * 1024;
 		private final DataInputStream input;
+		private final long expectedRecords;
+		private long records;
 
-		private ByteRecordCursor(Path path, BulkCodec codec) throws IOException {
-			input = BulkLz4.input(path, codec);
+		private ByteRecordCursor(ExternalByteKeySorter.SortedRecordFile file) throws IOException {
+			input = BulkArtifactIntegrity.input(BulkLz4.input(file.path(), file.codec()), file.path(),
+					file.contentDigest());
+			expectedRecords = file.records();
 		}
 
 		private ValueStore.BulkRecord next() throws IOException {
 			int keyLength;
 			try {
-				keyLength = input.readInt();
+				int first = input.read();
+				if (first < 0) {
+					if (records != expectedRecords) {
+						throw new IOException("Bulk record count does not match its integrity metadata");
+					}
+					return null;
+				}
+				keyLength = first << 24 | input.readUnsignedByte() << 16 | input.readUnsignedByte() << 8
+						| input.readUnsignedByte();
 			} catch (EOFException e) {
-				return null;
+				throw new IOException("Truncated sorted LMDB record key", e);
 			}
 			try {
 				int valueLength = input.readInt();
@@ -177,6 +235,9 @@ final class NativeStoreWriter {
 				byte[] value = new byte[valueLength];
 				input.readFully(key);
 				input.readFully(value);
+				if (++records > expectedRecords) {
+					throw new IOException("Bulk record count exceeds its integrity metadata");
+				}
 				return new ValueStore.BulkRecord(key, value);
 			} catch (EOFException e) {
 				throw new IOException("Truncated sorted LMDB record file " + input, e);
@@ -199,10 +260,14 @@ final class NativeStoreWriter {
 
 		private final DataInputStream input;
 		private final int width;
+		private final long expectedRows;
+		private long rows;
 
-		private LongTupleCursor(Path path, int width, BulkCodec codec) throws IOException {
-			input = BulkLz4.input(path, codec);
+		private LongTupleCursor(ExternalLongTupleSorter.SortedTupleFile file, int width) throws IOException {
+			input = BulkArtifactIntegrity.input(BulkLz4.input(file.path(), file.codec()), file.path(),
+					file.contentDigest());
 			this.width = width;
+			expectedRows = file.rows();
 		}
 
 		private boolean next(long[] target) throws IOException {
@@ -210,13 +275,25 @@ final class NativeStoreWriter {
 				throw new IllegalArgumentException("Tuple target is smaller than " + width);
 			}
 			try {
-				target[0] = input.readLong();
+				int first = input.read();
+				if (first < 0) {
+					if (rows != expectedRows) {
+						throw new IOException("Bulk tuple count does not match its integrity metadata");
+					}
+					return false;
+				}
+				target[0] = (long) first << 56 | (long) input.readUnsignedByte() << 48
+						| (long) input.readUnsignedByte() << 40 | (long) input.readUnsignedByte() << 32
+						| Integer.toUnsignedLong(input.readInt());
 			} catch (EOFException e) {
-				return false;
+				throw new IOException("Truncated fixed-width LMDB tuple", e);
 			}
 			try {
 				for (int i = 1; i < width; i++) {
 					target[i] = input.readLong();
+				}
+				if (++rows > expectedRows) {
+					throw new IOException("Bulk tuple count exceeds its integrity metadata");
 				}
 				return true;
 			} catch (EOFException e) {
@@ -232,12 +309,13 @@ final class NativeStoreWriter {
 
 	private static final class ContextCountCursor implements AutoCloseable {
 
-		private final DataInputStream input;
+		private final LongTupleCursor input;
+		private final long[] row = new long[1];
 		private boolean hasPending;
 		private long pending;
 
-		private ContextCountCursor(Path path, BulkCodec codec) throws IOException {
-			input = BulkLz4.input(path, codec);
+		private ContextCountCursor(ExternalLongTupleSorter.SortedTupleFile file) throws IOException {
+			input = new LongTupleCursor(file, 1);
 		}
 
 		private boolean next(long[] target) throws IOException {
@@ -249,16 +327,15 @@ final class NativeStoreWriter {
 				context = pending;
 				hasPending = false;
 			} else {
-				try {
-					context = input.readLong();
-				} catch (EOFException e) {
+				if (!input.next(row)) {
 					return false;
 				}
+				context = row[0];
 			}
 			long count = 1L;
 			while (true) {
-				try {
-					long next = input.readLong();
+				if (input.next(row)) {
+					long next = row[0];
 					if (next == context) {
 						count = Math.addExact(count, 1L);
 					} else {
@@ -266,7 +343,7 @@ final class NativeStoreWriter {
 						hasPending = true;
 						break;
 					}
-				} catch (EOFException e) {
+				} else {
 					break;
 				}
 			}
@@ -281,6 +358,7 @@ final class NativeStoreWriter {
 		}
 	}
 
-	record WriteResult(long storedStatements, long mapGrowthCount) {
+	record WriteResult(long storedStatements, long mapGrowthCount, LmdbStoreConfig preparedConfig,
+			ValidatedBulkGeneration validation) {
 	}
 }

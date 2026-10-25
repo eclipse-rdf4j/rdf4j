@@ -23,17 +23,20 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
@@ -45,6 +48,25 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class PreparedValuesSnapshotTest {
+
+	@Test
+	void publicSafetySnapshotRetainsPreparedAliasNamesAfterTheCaptureScopeCloses() {
+		AtomicInteger traversals = new AtomicInteger();
+		MapBindingSet sourceRow = row("before");
+		BindingSetAssignment original = assignment(oneShotRows(traversals, sourceRow));
+		AtomicReference<QueryEvaluationUtility.QuerySafetySnapshot> snapshot = new AtomicReference<>();
+		QueryEvaluationUtility.withPreparedQuerySafetySnapshot(original, PreparedValuesSnapshot::newPreparation,
+				prepared -> {
+					snapshot.set(QueryEvaluationUtility.querySafetySnapshot(original));
+					return prepared;
+				});
+		sourceRow.clear();
+		sourceRow.addBinding("after", SimpleValueFactory.getInstance().createLiteral("after"));
+
+		Filter filter = new Filter(original, new Bound(Var.of("before")));
+		assertTrue(snapshot.get().permitsBindingInjection(filter, Set.of("before")));
+		assertEquals(1, traversals.get());
+	}
 
 	@Test
 	void directPrecompileSnapshotsOneShotRowsBeforeNameAnalysisAndReplays() {
