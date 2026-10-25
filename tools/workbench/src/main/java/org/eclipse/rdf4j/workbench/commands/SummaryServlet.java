@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
+import org.eclipse.rdf4j.repository.config.RepositoryConfigSecrets;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
 import org.eclipse.rdf4j.repository.manager.RemoteRepositoryManager;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -199,6 +200,7 @@ public class SummaryServlet extends TransformationServlet {
 
 			Model model = new LinkedHashModel();
 			repositoryConfig.export(model, bnode());
+			RepositoryConfigSecrets.redact(model);
 
 			WriterConfig writerConfig = new WriterConfig();
 			writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);

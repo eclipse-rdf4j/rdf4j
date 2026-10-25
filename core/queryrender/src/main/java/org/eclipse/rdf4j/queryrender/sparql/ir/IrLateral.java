@@ -54,10 +54,10 @@ public class IrLateral extends IrNode {
 
 	@Override
 	public IrNode transformChildren(UnaryOperator<IrNode> op) {
+		checkInterrupted();
 		IrBGP newWhere = this.bgp;
 		if (newWhere != null) {
 			IrNode transformed = op.apply(newWhere);
-			transformed = transformed.transformChildren(op);
 			if (transformed instanceof IrBGP) {
 				newWhere = (IrBGP) transformed;
 			}

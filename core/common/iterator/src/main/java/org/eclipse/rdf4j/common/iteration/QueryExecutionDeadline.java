@@ -13,20 +13,21 @@ package org.eclipse.rdf4j.common.iteration;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Date;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.Timer;
 import java.util.TimerTask;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * An absolute, monotonic deadline shared by query evaluation and result iteration.
+ * An absolute deadline in epoch milliseconds shared by query evaluation and result iteration. Comparisons use
+ * {@link System#currentTimeMillis()}, including wall-clock adjustments.
  * <p>
  * The current deadline is scoped to the evaluating thread so storage and evaluation layers can cooperate without
  * changing connection evaluation signatures. Iteration wrappers can re-enter the scope around delegate calls, and
@@ -38,7 +39,7 @@ public final class QueryExecutionDeadline implements AutoCloseable {
 	private static final ThreadLocal<QueryExecutionDeadline> CURRENT = new ThreadLocal<>();
 	private static final Logger LOGGER = LoggerFactory.getLogger(QueryExecutionDeadline.class);
 
-	private final long deadlineNanos;
+	private final long deadlineMillis;
 	private final TimerTask timeoutTask;
 	private final AtomicBoolean expired = new AtomicBoolean();
 	private final AtomicBoolean closed = new AtomicBoolean();
@@ -49,19 +50,21 @@ public final class QueryExecutionDeadline implements AutoCloseable {
 		if (timeoutMillis <= 0) {
 			throw new IllegalArgumentException("timeout must be positive");
 		}
-		long timeoutNanos = TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
-		deadlineNanos = System.nanoTime() + timeoutNanos;
+		long nowMillis = System.currentTimeMillis();
+		long absoluteDeadline = nowMillis + timeoutMillis;
+		deadlineMillis = absoluteDeadline < nowMillis ? Long.MAX_VALUE : absoluteDeadline;
 		timeoutTask = new TimerTask() {
 			@Override
 			public void run() {
 				expire();
 			}
 		};
-		TIMER.schedule(timeoutTask, timeoutMillis);
+		TIMER.schedule(timeoutTask, new Date(deadlineMillis));
 	}
 
 	/**
-	 * Starts a deadline that expires after the given number of milliseconds.
+	 * Starts a deadline that expires after the given number of milliseconds. Durations beyond the epoch-millisecond
+	 * range saturate at the latest representable absolute deadline.
 	 *
 	 * @param timeoutMillis positive timeout duration
 	 * @return the new deadline owner
@@ -112,38 +115,40 @@ public final class QueryExecutionDeadline implements AutoCloseable {
 	}
 
 	/**
-	 * Returns the absolute deadline measured with {@link System#nanoTime()}.
+	 * Returns the absolute deadline in epoch milliseconds, measured with {@link System#currentTimeMillis()}.
 	 */
-	public long deadlineNanos() {
-		return deadlineNanos;
+	public long deadlineMillis() {
+		return deadlineMillis;
 	}
 
 	/**
-	 * Returns the remaining time in nanoseconds, or zero after expiration. Calling this method at or after the deadline
-	 * also publishes expiration to registered listeners.
+	 * Returns the remaining time in milliseconds, or zero after expiration. Calling this method at or after the
+	 * deadline also publishes expiration to registered listeners. A deadline closed before expiration subsequently
+	 * reports {@link Long#MAX_VALUE}; closing an expired deadline preserves zero remaining time.
 	 */
-	public long remainingNanos() {
+	public long remainingMillis() {
 		if (expired.get()) {
 			return 0;
 		}
 		if (closed.get()) {
 			return expired.get() ? 0 : Long.MAX_VALUE;
 		}
-		long remaining = deadlineNanos - System.nanoTime();
-		if (remaining <= 0) {
+		long nowMillis = System.currentTimeMillis();
+		if (nowMillis >= deadlineMillis) {
 			expire();
 			return 0;
 		}
-		return remaining;
+		long remaining = deadlineMillis - nowMillis;
+		return remaining > 0L ? remaining : Long.MAX_VALUE;
 	}
 
 	/**
-	 * Returns whether the deadline has expired. Expiration is published synchronously if the monotonic deadline has
+	 * Returns whether the deadline has expired. Expiration is published synchronously if the wall-clock deadline has
 	 * passed but the timer task has not run yet.
 	 */
 	public boolean isExpired() {
 		if (!expired.get() && !closed.get()) {
-			remainingNanos();
+			remainingMillis();
 		}
 		return expired.get();
 	}

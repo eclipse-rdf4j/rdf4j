@@ -26,6 +26,7 @@ import java.util.Map;
 import org.apache.catalina.Context;
 import org.eclipse.rdf4j.common.platform.Platform;
 import org.eclipse.rdf4j.common.platform.PlatformFactory;
+import org.eclipse.rdf4j.common.webapp.system.logging.LoggingAccessFilter;
 import org.eclipse.rdf4j.http.server.compression.HttpCompressionFilter;
 import org.eclipse.rdf4j.workbench.proxy.CacheFilter;
 import org.eclipse.rdf4j.workbench.proxy.CookieCacheControlFilter;
@@ -226,6 +227,17 @@ public class Rdf4jServerWorkbenchApplication {
 		registration.addUrlPatterns("/rdf4j-server", "/rdf4j-server/*", "/rdf4j-workbench", "/rdf4j-workbench/*");
 		registration.setName("ServerPrefixForwardFilter");
 		registration.setOrder(1000);
+		registration.setAsyncSupported(true);
+		return registration;
+	}
+
+	@Bean
+	FilterRegistrationBean<LoggingAccessFilter> loggingAccessFilter() {
+		FilterRegistrationBean<LoggingAccessFilter> registration = new FilterRegistrationBean<>(
+				new LoggingAccessFilter());
+		registration.addUrlPatterns("/system/logging/*", "/rdf4j-server/system/logging/*");
+		registration.setName("LoggingAccessFilter");
+		registration.setOrder(-13);
 		registration.setAsyncSupported(true);
 		return registration;
 	}

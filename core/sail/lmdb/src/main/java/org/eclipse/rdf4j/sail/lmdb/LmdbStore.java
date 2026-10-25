@@ -139,6 +139,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	private SailStore store;
 
 	private LmdbSailStore backingStore;
+	private PreparedBulkStore.Snapshot preparedBulkSnapshot;
 
 	// used to decide if store is writable, is true if the store was writable during initialization
 	private boolean isWritable;
@@ -405,8 +406,17 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		try {
 			StoreProperties properties = new StoreProperties(dataDir);
 			properties.load();
-			LegacyStoreDiscovery.discover(dataDir, properties);
-			format = LmdbStoreFormat.resolve(dataDir, properties, config);
+			// Diagnose unsupported persisted capabilities before optimization metadata is considered. This pure
+			// validation does not open either native environment or reinterpret mutable native index manifests.
+			LmdbStoreFormat loadedFormat = properties.isLoaded()
+					? LmdbStoreFormat.resolve(dataDir, properties, config)
+					: null;
+			preparedBulkSnapshot = PreparedBulkStore.read(dataDir.toPath(), properties, config);
+			properties.preparedBulkStore = preparedBulkSnapshot;
+			if (preparedBulkSnapshot == null) {
+				LegacyStoreDiscovery.discover(dataDir, properties);
+			}
+			format = loadedFormat != null ? loadedFormat : LmdbStoreFormat.resolve(dataDir, properties, config);
 			if (!properties.isLoaded() && !properties.hasNativeGeneration()) {
 				format.initializeProperties(properties);
 				writeCoreLiteralReferenceMarker(dataDir.toPath());
@@ -464,6 +474,16 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 		try {
 			store.close();
+			if (format != null && !format.isLegacy()) {
+				try {
+					PreparedBulkStore.refreshAfterCleanClose(getDataDir().toPath(),
+							backingStore.valueStore().trustedClosedTransactionId(),
+							backingStore.getTripleStore().trustedClosedTransactionId(), config);
+				} catch (IOException | RuntimeException notRenewable) {
+					// A stale optimization hint is safe: the next open performs ordinary discovery and recovery.
+					logger.debug("Bulk startup certificate was not renewed after close", notRenewable);
+				}
+			}
 		} finally {
 			dirLock.release();
 			if (dependentServiceResolver != null) {
@@ -554,7 +574,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			checkTransactionAdmissionDeadline(deadline);
 			if (deadline == null) {
 				txnLockManager.lockInterruptibly();
-			} else if (!txnLockManager.tryLock(deadline.remainingNanos(), TimeUnit.NANOSECONDS)) {
+			} else if (!txnLockManager.tryLock(deadline.remainingMillis(), TimeUnit.MILLISECONDS)) {
 				throw new QueryInterruptedException("Query evaluation took too long");
 			}
 			mutexAcquired = true;
@@ -595,7 +615,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		checkTransactionAdmissionDeadline(deadline);
 		if (deadline == null) {
 			locks.waitForActiveLocks();
-		} else if (!locks.waitForActiveLocks(deadline.remainingNanos(), TimeUnit.NANOSECONDS)) {
+		} else if (!locks.waitForActiveLocks(deadline.remainingMillis(), TimeUnit.MILLISECONDS)) {
 			throw new QueryInterruptedException("Query evaluation took too long");
 		}
 		checkTransactionAdmissionDeadline(deadline);
