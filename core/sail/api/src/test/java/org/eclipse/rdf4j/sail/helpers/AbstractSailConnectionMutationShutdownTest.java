@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.UpdateContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -81,6 +82,32 @@ class AbstractSailConnectionMutationShutdownTest {
 	@Test
 	void closeInterruptsAndDrainsAnInFlightStatementRemovalBeforeTeardown() throws Exception {
 		assertMutationIsInterruptedAndDrained(connection -> connection.removeStatements(RDF.FIRST, null, null));
+	}
+
+	@Test
+	void closeFromInsideAStatementMutationIsRejectedRatherThanDeadlocking() {
+		AbstractSailConnection connection = newConnection();
+		AtomicReference<Throwable> closeFailure = new AtomicReference<>();
+		// A listener callback, for example, runs on the mutating thread; close would otherwise drain itself.
+		doAnswer(invocation -> {
+			try {
+				connection.close();
+			} catch (Throwable failure) {
+				closeFailure.set(failure);
+			}
+			return null;
+		}).when(connection)
+				.addStatement(nullable(UpdateContext.class), any(Resource.class), any(IRI.class), any(Value.class),
+						any(Resource[].class));
+		connection.begin();
+
+		connection.addStatement(RDF.FIRST, RDF.TYPE, RDF.PROPERTY);
+
+		assertThat(closeFailure.get()).isInstanceOf(SailException.class)
+				.hasMessage("An active connection operation cannot close its own connection");
+		assertThat(connection.isOpen()).isTrue();
+		connection.close();
+		assertThat(connection.isOpen()).isFalse();
 	}
 
 	private static void assertMutationIsInterruptedAndDrained(Consumer<AbstractSailConnection> mutation)

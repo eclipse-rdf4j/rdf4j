@@ -108,6 +108,8 @@ public abstract class AbstractSailConnection implements SailConnection {
 	private final Object operationLock = new Object();
 	private final ThreadLocal<OperationThread> operationThread = ThreadLocal.withInitial(OperationThread::new);
 	private OperationThread activeOperationThreads;
+	/** Guarded by operationLock: each thread that has mutated statements here, registered once; see beginMutation. */
+	private final List<OperationThread> mutationThreads = new ArrayList<>(1);
 	private ExternalWorkload activeExternalWorkloads;
 	/** The Sail initialization lifetime this connection was admitted under; cancelled once its shutdown begins. */
 	private final CancellationSignal sailLifetime;
@@ -130,6 +132,12 @@ public abstract class AbstractSailConnection implements SailConnection {
 		// Cache only immutable owner-free signal compositions, never a connection or a mutable admission node.
 		private CancellationSignal cachedAmbient;
 		private CancellationSignal cachedEffective;
+		/** The thread inside a statement mutation; read by the close drain and by shutdown's interrupt. */
+		private volatile Thread mutator;
+		/** Nested statement mutations; touched only by the owning thread. */
+		private int mutationDepth;
+		/** Whether this node is in the connection's mutation registry; touched only by the owning thread. */
+		private boolean mutationRegistered;
 	}
 
 	@SuppressWarnings("FieldMayBeFinal")
@@ -281,6 +289,59 @@ public abstract class AbstractSailConnection implements SailConnection {
 		}
 	}
 
+	/**
+	 * Admits one statement mutation. Bulk loads call this per statement, so after a thread's first mutation on this
+	 * connection it takes neither the monitor nor an atomic update. It follows the result pull protocol: the thread
+	 * publishes itself in its volatile mutator slot and then reads {@code isOpen}, while close writes {@code isOpen}
+	 * before its drain reads the slots, so either the drain sees the mutation or the mutation sees the close. A store
+	 * write can block, for example on another connection's writer authority, so shutdown interrupts the slot's thread.
+	 *
+	 * @return the node to pass to {@link #endMutation}, or null when an admitted call on this thread already covers it
+	 */
+	private OperationThread beginMutation() {
+		OperationThread registration = operationThread.get();
+		if (registration.depth != 0) {
+			return null;
+		}
+		if (registration.mutationDepth++ == 0) {
+			if (!registration.mutationRegistered) {
+				synchronized (operationLock) {
+					mutationThreads.add(registration);
+				}
+				registration.mutationRegistered = true;
+			}
+			registration.mutator = Thread.currentThread();
+			try {
+				if (!((boolean) IS_OPEN.getVolatile(this))) {
+					throw new IllegalStateException("Connection has been closed");
+				}
+				checkOperationCancellation();
+			} catch (RuntimeException | Error failure) {
+				endMutation(registration);
+				throw failure;
+			}
+		}
+		return registration;
+	}
+
+	private void endMutation(OperationThread registration) {
+		if (registration != null && --registration.mutationDepth == 0) {
+			registration.mutator = null;
+			// Same release as a result pull: wake a waiting drain, or wait for an interrupt aimed at this mutation.
+			resultPullReleased();
+		}
+	}
+
+	/** Called under operationLock. */
+	private boolean hasMutationInFlight() {
+		for (OperationThread registration : mutationThreads) {
+			if (registration.mutator != null) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	/** Called under operationLock before reading result puller slots. */
 	private void raiseAttention() {
 		if (attentionHolders++ == 0) {
@@ -415,6 +476,12 @@ public abstract class AbstractSailConnection implements SailConnection {
 				for (SailBaseIteration<?, ?> result : registeredResults()) {
 					result.interruptPuller();
 				}
+				for (OperationThread registration : mutationThreads) {
+					Thread mutating = registration.mutator;
+					if (mutating != null && mutating != Thread.currentThread()) {
+						mutating.interrupt();
+					}
+				}
 			} finally {
 				lowerAttention();
 			}
@@ -532,6 +599,9 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	final boolean hasCurrentOperation() {
+		if (operationThread.get().mutationDepth != 0) {
+			return true;
+		}
 		synchronized (operationLock) {
 			for (OperationThread registration = activeOperationThreads; registration != null; registration = registration.next) {
 				if (registration.thread == Thread.currentThread()) {
@@ -741,7 +811,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 			synchronized (operationLock) {
 				raiseAttention();
 				try {
-					while (unblockClose.sum() != blockClose.sum() || hasResultPullInFlight()) {
+					while (unblockClose.sum() != blockClose.sum() || hasResultPullInFlight() || hasMutationInFlight()) {
 						try {
 							operationLock.wait();
 						} catch (InterruptedException cancellation) {
@@ -1048,9 +1118,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	@Override
 	public final void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
-		// Admitted like every other entry point: a store write can block, for example on another connection's writer
-		// authority, so shutdown must interrupt it and close must drain it before teardown.
-		beginOperation();
+		OperationThread mutation = beginMutation();
 		try {
 			if (statementsRemoved) {
 				flushPendingUpdates();
@@ -1059,7 +1127,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 			recordDataImportMetricsStatementsAdded(contexts);
 			setStatementsAdded();
 		} finally {
-			endOperation();
+			endMutation(mutation);
 		}
 	}
 
@@ -1067,7 +1135,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	@Override
 	public final void addStatements(Iterable<? extends Statement> statements, Resource... contexts)
 			throws SailException {
-		beginOperation();
+		OperationThread mutation = beginMutation();
 		try {
 			if (statementsRemoved) {
 				flushPendingUpdates();
@@ -1087,13 +1155,13 @@ public abstract class AbstractSailConnection implements SailConnection {
 				setStatementsAdded();
 			}
 		} finally {
-			endOperation();
+			endMutation(mutation);
 		}
 	}
 
 	@Override
 	public final void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
-		beginOperation();
+		OperationThread mutation = beginMutation();
 		try {
 			if (pendingAdds()) {
 				flushPendingUpdates();
@@ -1101,7 +1169,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 			removeStatement(null, subj, pred, obj, contexts);
 			statementsRemoved = true;
 		} finally {
-			endOperation();
+			endMutation(mutation);
 		}
 	}
 
