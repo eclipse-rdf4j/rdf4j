@@ -494,11 +494,14 @@ class LmdbDirectAdjacencyQueryTest {
 			rows = CloseableDataset.collect(dataset.source.statements(StatementOrder.C, s1, p1, -1, -1,
 					recordingObserver(outcomes)));
 		}
+		// Silent fallbacks (for example a map resize or a background writer) only show in the metrics.
+		String readiness = sail.getDirectAdjacencyReadinessDescription() + ", fallbacks="
+				+ direct.snapshotMetrics().fallbacksByReason;
 
 		assertThat(rows).hasSize(8)
 				.isSortedAccordingTo((left, right) -> Long.compareUnsigned(
 						left[TripleIndex.CONTEXT_IDX], right[TripleIndex.CONTEXT_IDX]));
-		assertThat(outcomes).anyMatch(reason -> reason.startsWith("CANDIDATE_LMDB[")
+		assertThat(outcomes).as(readiness).anyMatch(reason -> reason.startsWith("CANDIDATE_LMDB[")
 				&& reason.contains("cost=102.0..170.0"));
 		assertThat(outcomes).anyMatch(reason -> reason.startsWith("SELECTED_ADJACENCY"));
 	}
@@ -524,7 +527,7 @@ class LmdbDirectAdjacencyQueryTest {
 		assertThat(outcomes).anyMatch(reason -> reason.startsWith("SELECTED_ADJACENCY"));
 	}
 
-	private void addOrderedCostingRows() throws IOException {
+	private void addOrderedCostingRows() throws IOException, InterruptedException {
 		try (RepositoryConnection connection = repo.getConnection()) {
 			connection.begin();
 			for (int index = 0; index < 6; index++) {
@@ -533,6 +536,9 @@ class LmdbDirectAdjacencyQueryTest {
 			}
 			connection.commit();
 		}
+		// Arbitration needs an exact adjacency snapshot; settle background writers that would block or resize it.
+		LmdbTestUtil.awaitPostReadyInitialization(sail, 30L, TimeUnit.SECONDS);
+		assertThat(sail.awaitIndexRebuild(30L, TimeUnit.SECONDS)).as(sail.getStartupStatus().toString()).isTrue();
 		awaitDirectAdjacencyReady();
 	}
 

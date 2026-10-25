@@ -1609,6 +1609,16 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		}
 	}
 
+	@Override
+	protected void onShutdownRequested() {
+		// Read-ahead workers are not connection operations. Interrupt their native admission now: close first drains
+		// result pulls, and a pull waiting on such a worker would otherwise wait for a release it is blocking.
+		synchronized (readAttemptLock) {
+			cancelActiveReads();
+			readAttemptLock.notifyAll();
+		}
+	}
+
 	/** Signal cancellation before draining; native/delegate retirement still waits for admitted calls to exit. */
 	private void cancelActiveReads() {
 		assert Thread.holdsLock(readAttemptLock);

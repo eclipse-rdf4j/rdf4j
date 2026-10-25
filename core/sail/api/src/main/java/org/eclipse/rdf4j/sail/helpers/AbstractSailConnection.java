@@ -114,6 +114,8 @@ public abstract class AbstractSailConnection implements SailConnection {
 	/** See {@link AbstractSail#tracksResultPulls()}. */
 	final boolean tracksResultPulls;
 	private final CancellationSignal cancellation;
+	/** Guarded by operationLock: {@link #onShutdownRequested()} runs once per connection. */
+	private boolean shutdownRequested;
 	private Thread closingThread;
 	private boolean closeDrained;
 	private boolean closeCompleted;
@@ -399,7 +401,10 @@ public abstract class AbstractSailConnection implements SailConnection {
 	@InternalUseOnly
 	public final void requestShutdown() {
 		List<Closeable> cancelledInputs = null;
+		boolean firstRequest;
 		synchronized (operationLock) {
+			firstRequest = !shutdownRequested;
+			shutdownRequested = true;
 			cancellation.cancel();
 			// Result pulls publish their puller and then read the signal without this monitor; order the release of
 			// cancellation before reading their puller slots. Attention makes a finishing pull wait for this monitor,
@@ -433,16 +438,31 @@ public abstract class AbstractSailConnection implements SailConnection {
 				}
 			}
 		}
-		if (cancelledInputs != null) {
-			// Outside the monitor: caller input may block in close or call back into this connection.
-			for (Closeable input : cancelledInputs) {
-				try {
-					input.close();
-				} catch (IOException | RuntimeException failure) {
-					logger.debug("Failed to close cancelled upload input", failure);
+		try {
+			if (firstRequest) {
+				onShutdownRequested();
+			}
+		} finally {
+			if (cancelledInputs != null) {
+				// Outside the monitor: caller input may block in close or call back into this connection.
+				for (Closeable input : cancelledInputs) {
+					try {
+						input.close();
+					} catch (IOException | RuntimeException failure) {
+						logger.debug("Failed to close cancelled upload input", failure);
+					}
 				}
 			}
 		}
+	}
+
+	/**
+	 * Called once, outside the operation monitor, after {@link #requestShutdown()} first cancels this connection. A
+	 * subclass interrupts work it tracks that this class cannot reach, such as a worker blocked in native admission on
+	 * behalf of a result: close drains in-flight result pulls before it closes results, so a pull waiting on such a
+	 * worker would otherwise hold close up. It must not release resources; close still drains admitted calls first.
+	 */
+	protected void onShutdownRequested() {
 	}
 
 	/**
