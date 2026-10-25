@@ -36,6 +36,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -763,10 +764,10 @@ public class TxnManagerTest {
 	}
 
 	@Test
-	void timedNativeReadBarrierUsesOnePreAdmissionDeadlineObservation(@TempDir Path dataDir) throws Exception {
+	void deadlineBoundNativeReadBarrierReadsNoClock(@TempDir Path dataDir) throws Exception {
 		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET)) {
 			QueryExecutionDeadline deadline = mock(QueryExecutionDeadline.class);
-			when(deadline.remainingMillis()).thenReturn(TimeUnit.MINUTES.toMillis(1));
+			when(deadline.interruptOnExpiry()).thenReturn(mock(QueryExecutionDeadline.ExpiryInterruption.class));
 
 			try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enterScopedContext(deadline)) {
 				long readStamp = fixture.manager.acquireReadBarrier();
@@ -776,9 +777,10 @@ public class TxnManagerTest {
 				} finally {
 					fixture.manager.lockManager().unlockRead(readStamp);
 				}
-				// One clock observation sizes the timed admission; the post-admission check reads only the expiry flag.
-				verify(deadline, times(1)).remainingMillis();
-				verify(deadline, times(1)).isExpired();
+				// Expiry interrupts the admission wait; before and after it, only the expiry flag is read.
+				verify(deadline, never()).remainingMillis();
+				verify(deadline, times(2)).isExpired();
+				verify(deadline).interruptOnExpiry();
 			}
 		}
 	}

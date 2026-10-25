@@ -50,7 +50,12 @@ public final class QueryExecutionDeadline implements AutoCloseable {
 		TimerTask task = new TimerTask() {
 			@Override
 			public void run() {
-				expiry.run();
+				try {
+					expiry.run();
+				} catch (RuntimeException | Error failure) {
+					// An escaping exception would kill the shared Timer, and with it every later deadline in the JVM.
+					LOGGER.error("Query deadline expiry failed", failure);
+				}
 			}
 		};
 		TIMER.schedule(task, new Date(deadlineMillis));
@@ -139,9 +144,11 @@ public final class QueryExecutionDeadline implements AutoCloseable {
 	}
 
 	/**
-	 * Returns the remaining time in milliseconds, or zero after expiration. Calling this method at or after the
-	 * deadline also publishes expiration to registered listeners. A deadline closed before expiration subsequently
-	 * reports {@link Long#MAX_VALUE}; closing an expired deadline preserves zero remaining time.
+	 * Returns the remaining time in milliseconds, or zero once the wall-clock deadline has passed. This reads the
+	 * clock, so query execution must not poll it: inner code reads {@link #isExpired()} and waits for expiry listeners
+	 * or {@link #interruptOnExpiry()}. It never publishes expiration; only the scheduled expiry does, so listeners
+	 * never run inline under a caller's locks. A deadline closed before expiration subsequently reports
+	 * {@link Long#MAX_VALUE}; closing an expired deadline preserves zero remaining time.
 	 */
 	public long remainingMillis() {
 		if (expired.get()) {
@@ -152,7 +159,6 @@ public final class QueryExecutionDeadline implements AutoCloseable {
 		}
 		long nowMillis = System.currentTimeMillis();
 		if (nowMillis >= deadlineMillis) {
-			expire();
 			return 0;
 		}
 		long remaining = deadlineMillis - nowMillis;
@@ -215,35 +221,30 @@ public final class QueryExecutionDeadline implements AutoCloseable {
 	}
 
 	/**
-	 * Publishes expiration from the scheduled expiry. The flag is set on the shared timer thread; listeners run on a
-	 * virtual thread so one slow listener cannot delay the expiry of every other deadline.
+	 * Publishes expiration from the scheduled expiry. The flag is set on the shared timer thread. Each listener runs on
+	 * its own virtual thread, so a listener blocked on a monitor (a waiter's wake-up) delays neither the expiry of
+	 * other deadlines nor this deadline's other listeners.
 	 */
 	private void expireFromSchedule() {
-		List<Runnable> actions = publishExpiration();
-		if (!actions.isEmpty()) {
+		for (Runnable action : publishExpiration()) {
 			try {
-				Thread.startVirtualThread(() -> runActions(actions));
+				Thread.startVirtualThread(() -> runAction(action));
 			} catch (RuntimeException | Error failure) {
-				LOGGER.warn("Could not dispatch query deadline expiration listeners; running them on the timer",
+				LOGGER.warn("Could not dispatch a query deadline expiration listener; running it on the timer",
 						failure);
-				runActions(actions);
+				runAction(action);
 			}
-		}
-	}
-
-	private void expire() {
-		runActions(publishExpiration());
-	}
-
-	private static void runActions(List<Runnable> actions) {
-		for (Runnable action : actions) {
-			runAction(action);
 		}
 	}
 
 	private List<Runnable> publishExpiration() {
 		if (expired.compareAndSet(false, true)) {
-			cancelExpiry.run();
+			// A deadline due immediately can expire before its constructor stores the handle; the running expiry needs
+			// no cancellation then.
+			Runnable cancel = cancelExpiry;
+			if (cancel != null) {
+				cancel.run();
+			}
 			List<Runnable> actionsToRun = new ArrayList<>();
 			synchronized (listenerLock) {
 				for (Registration listener : listeners) {

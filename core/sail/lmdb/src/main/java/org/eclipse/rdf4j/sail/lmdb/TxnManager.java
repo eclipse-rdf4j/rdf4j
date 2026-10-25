@@ -804,13 +804,27 @@ final class TxnManager {
 		if (deadline == null) {
 			return lockManager.readLock();
 		}
-		// The timed acquisition's budget is also its authoritative pre-admission deadline check.
-		long remainingMillis = deadline.remainingMillis();
-		if (remainingMillis <= 0L) {
+		if (deadline.isExpired()) {
 			throw queryInterrupted();
 		}
-		long stamp = lockManager.tryReadLock(remainingMillis, TimeUnit.MILLISECONDS);
+		// Expiry interrupts this wait, so nothing here reads a clock to size a timeout. The unbounded timed acquisition
+		// parks on the stamped lock; the untimed readLock() would spin while a native writer holds the barrier.
+		QueryExecutionDeadline.ExpiryInterruption interruption = deadline.interruptOnExpiry();
+		long stamp;
+		try {
+			stamp = lockManager.tryReadLock(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
+		} catch (InterruptedException interrupted) {
+			if (interruption.disarm()) {
+				throw queryInterrupted();
+			}
+			throw interrupted;
+		}
+		if (interruption.disarm()) {
+			// Expiry landed after admission: clear the interrupt it delivered; the check below releases the barrier.
+			Thread.interrupted();
+		}
 		if (stamp == 0L) {
+			// An unbounded acquisition cannot time out; treat a zero stamp as a failed admission all the same.
 			throw queryInterrupted();
 		}
 		if (deadline.isExpired()) {
@@ -1094,19 +1108,28 @@ final class TxnManager {
 				if (beforeBlocking != null) {
 					beforeBlocking.run();
 				}
-				long timeoutNanos = READER_ADMISSION_TIMEOUT_NANOS;
-				if (deadline != null) {
-					long queryRemainingMillis = deadline.remainingMillis();
-					if (queryRemainingMillis <= 0L) {
+				checkQueryDeadline(deadline);
+				// The admission budget is local; query expiry interrupts the wait instead of shortening it.
+				QueryExecutionDeadline.ExpiryInterruption interruption = deadline == null ? null
+						: deadline.interruptOnExpiry();
+				boolean granted;
+				try {
+					granted = slots.tryAcquire(count, READER_ADMISSION_TIMEOUT_NANOS, TimeUnit.NANOSECONDS);
+				} catch (InterruptedException interrupted) {
+					if (interruption != null && interruption.disarm()) {
 						throw queryInterrupted();
 					}
-					timeoutNanos = Math.min(timeoutNanos, TimeUnit.MILLISECONDS.toNanos(queryRemainingMillis));
+					throw interrupted;
 				}
-				if (!slots.tryAcquire(count, timeoutNanos, TimeUnit.NANOSECONDS)) {
+				acquired = granted;
+				if (interruption != null && interruption.disarm()) {
+					// Expiry landed after the wait returned: clear its interrupt; the check below reports the timeout.
+					Thread.interrupted();
+				}
+				if (!granted) {
 					checkQueryDeadline(deadline);
 					throw readerAdmissionTimeout();
 				}
-				acquired = true;
 			}
 			checkQueryDeadline(deadline);
 			if (managerClosed) {
@@ -1261,14 +1284,8 @@ final class TxnManager {
 				if (nativeRemainingNanos <= 0L) {
 					break;
 				}
+				// The back-off and native budgets are local; the expiry listener above wakes this wait.
 				long waitNanos = Math.min(backoffNanos, nativeRemainingNanos);
-				if (queryDeadline != null) {
-					long queryRemainingMillis = queryDeadline.remainingMillis();
-					if (queryRemainingMillis <= 0L) {
-						throw queryInterrupted();
-					}
-					waitNanos = Math.min(waitNanos, TimeUnit.MILLISECONDS.toNanos(queryRemainingMillis));
-				}
 				awaitReaderRelease(waitNanos);
 				checkQueryDeadline(queryDeadline);
 				if (nativeDeadline - System.nanoTime() <= 0L) {

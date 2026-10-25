@@ -1943,15 +1943,11 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 						return;
 					}
 					try {
-						if (deadline == null) {
-							readAttemptLock.wait();
-						} else {
-							long remaining = deadline.remainingMillis();
-							if (remaining <= 0L) {
-								throw new QueryInterruptedException("Query evaluation took too long");
-							}
-							TimeUnit.MILLISECONDS.timedWait(readAttemptLock, remaining);
+						// The expiry listener registered above wakes this wait; nothing here reads a clock.
+						if (deadline != null && deadline.isExpired()) {
+							throw new QueryInterruptedException("Query evaluation took too long");
 						}
+						readAttemptLock.wait();
 					} catch (InterruptedException e) {
 						Thread.currentThread().interrupt();
 						throw new SailException("Interrupted while waiting to restart an LMDB read attempt", e);
@@ -2358,16 +2354,12 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 					waitDeadline = pendingQueryDeadline;
 				}
 				throwIfDeadlineExpired(waitDeadline);
-				try {
-					if (waitDeadline == null) {
-						readAttemptLock.wait();
-					} else {
-						long remaining = waitDeadline.remainingMillis();
-						if (remaining <= 0L) {
-							throw new QueryInterruptedException("Query evaluation took too long");
-						}
-						TimeUnit.MILLISECONDS.timedWait(readAttemptLock, remaining);
-					}
+				// Expiry wakes this wait through a listener; nothing here reads a clock. Registering under this monitor
+				// is safe: listeners never run under the expiring deadline's locks, and an inline run re-enters it.
+				try (QueryExecutionDeadline.Registration wake = waitDeadline == null ? null
+						: waitDeadline.onExpiration(this::wakeReadAttemptWaiters)) {
+					throwIfDeadlineExpired(waitDeadline);
+					readAttemptLock.wait();
 				} catch (InterruptedException e) {
 					Thread.currentThread().interrupt();
 					throw new SailException("Interrupted while restarting an LMDB read attempt", e);
@@ -2992,6 +2984,12 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				views, preferred, owner.valueScope, readThreadRegistration.get().cancellationGeneration);
 	}
 
+	private void wakeReadAttemptWaiters() {
+		synchronized (readAttemptLock) {
+			readAttemptLock.notifyAll();
+		}
+	}
+
 	private void awaitResultReplayIfNeeded(ReplayableIteration<?> iteration, QueryExecutionDeadline deadline)
 			throws SailException {
 		if (iteration == null || iteration.operationAttempt != null && iteration.operationAttempt.sealed) {
@@ -3009,15 +3007,11 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 						&& (iteration.replayInProgress || iteration.growthToken != null)) {
 					throwIfDeadlineExpired(deadline);
 					try {
-						if (deadline == null) {
-							readAttemptLock.wait();
-						} else {
-							long remaining = deadline.remainingMillis();
-							if (remaining <= 0L) {
-								throw new QueryInterruptedException("Query evaluation took too long");
-							}
-							TimeUnit.MILLISECONDS.timedWait(readAttemptLock, remaining);
+						// The expiry listener registered above wakes this wait; nothing here reads a clock.
+						if (deadline != null && deadline.isExpired()) {
+							throw new QueryInterruptedException("Query evaluation took too long");
 						}
+						readAttemptLock.wait();
 					} catch (InterruptedException e) {
 						Thread.currentThread().interrupt();
 						throw new SailException("Interrupted while waiting for LMDB result replay", e);

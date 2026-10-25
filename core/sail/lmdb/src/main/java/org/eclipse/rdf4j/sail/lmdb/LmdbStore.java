@@ -591,13 +591,12 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
 		boolean mutexAcquired = false;
 		Lock transactionLock = null;
+		checkTransactionAdmissionDeadline(deadline);
+		// Expiry interrupts these waits, so nothing here reads a clock to size a timeout.
+		QueryExecutionDeadline.ExpiryInterruption interruption = deadline == null ? null
+				: deadline.interruptOnExpiry();
 		try {
-			checkTransactionAdmissionDeadline(deadline);
-			if (deadline == null) {
-				txnLockManager.lockInterruptibly();
-			} else if (!txnLockManager.tryLock(deadline.remainingMillis(), TimeUnit.MILLISECONDS)) {
-				throw new QueryInterruptedException("Query evaluation took too long");
-			}
+			txnLockManager.lockInterruptibly();
 			mutexAcquired = true;
 			checkTransactionAdmissionDeadline(deadline);
 			if (IsolationLevels.NONE.isCompatibleWith(level)) {
@@ -616,16 +615,26 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			transactionLock = null;
 			return admitted;
 		} catch (InterruptedException e) {
+			if (interruption != null && interruption.disarm()) {
+				throw new QueryInterruptedException("Query evaluation took too long");
+			}
 			Thread.currentThread().interrupt();
 			throw new InterruptedSailException(e);
 		} finally {
 			try {
-				if (transactionLock != null) {
-					transactionLock.release();
+				if (interruption != null && interruption.disarm()) {
+					// Expiry landed after the waits returned: never leak its interrupt to the admitted work.
+					Thread.interrupted();
 				}
 			} finally {
-				if (mutexAcquired) {
-					txnLockManager.unlock();
+				try {
+					if (transactionLock != null) {
+						transactionLock.release();
+					}
+				} finally {
+					if (mutexAcquired) {
+						txnLockManager.unlock();
+					}
 				}
 			}
 		}
@@ -634,11 +643,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	private static void waitForIsolationLocks(LockManager locks, QueryExecutionDeadline deadline)
 			throws InterruptedException {
 		checkTransactionAdmissionDeadline(deadline);
-		if (deadline == null) {
-			locks.waitForActiveLocks();
-		} else if (!locks.waitForActiveLocks(deadline.remainingMillis(), TimeUnit.MILLISECONDS)) {
-			throw new QueryInterruptedException("Query evaluation took too long");
-		}
+		locks.waitForActiveLocks();
 		checkTransactionAdmissionDeadline(deadline);
 	}
 

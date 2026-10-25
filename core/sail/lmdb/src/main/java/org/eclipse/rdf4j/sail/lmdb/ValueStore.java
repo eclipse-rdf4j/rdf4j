@@ -4993,15 +4993,21 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	private void acquireAssociationGate(QueryExecutionDeadline deadline) throws IOException {
 		checkValueScopeDeadline(deadline);
+		// Expiry interrupts this wait, so nothing here reads a clock to size a timeout.
+		QueryExecutionDeadline.ExpiryInterruption interruption = deadline == null ? null
+				: deadline.interruptOnExpiry();
 		try {
-			if (deadline == null) {
-				associationGate.lockInterruptibly();
-			} else if (!associationGate.tryLock(deadline.remainingMillis(), TimeUnit.MILLISECONDS)) {
+			associationGate.lockInterruptibly();
+		} catch (InterruptedException failure) {
+			if (interruption != null && interruption.disarm()) {
 				throw new QueryInterruptedException("Query evaluation took too long");
 			}
-		} catch (InterruptedException failure) {
 			Thread.currentThread().interrupt();
 			throw new IOException("Interrupted while capturing dictionary identity", failure);
+		}
+		if (interruption != null && interruption.disarm()) {
+			// Expiry landed after acquisition: clear its interrupt; the check below releases the gate.
+			Thread.interrupted();
 		}
 		try {
 			checkValueScopeDeadline(deadline);

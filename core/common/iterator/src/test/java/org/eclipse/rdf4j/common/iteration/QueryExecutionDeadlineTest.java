@@ -131,6 +131,52 @@ class QueryExecutionDeadlineTest {
 	}
 
 	@Test
+	void aBlockedListenerDoesNotDelayTheDeadlinesOtherListeners() throws Exception {
+		AtomicReference<Runnable> scheduledExpiry = new AtomicReference<>();
+		QueryExecutionDeadline deadline = QueryExecutionDeadline.start(60_000L, (expiry, deadlineMillis) -> {
+			scheduledExpiry.set(expiry);
+			return () -> {
+			};
+		});
+		CountDownLatch blockedEntered = new CountDownLatch(1);
+		CountDownLatch releaseBlocked = new CountDownLatch(1);
+		CompletableFuture<Void> other = new CompletableFuture<>();
+		try {
+			deadline.onExpiration(() -> {
+				blockedEntered.countDown();
+				try {
+					releaseBlocked.await();
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+				}
+			});
+			deadline.onExpiration(() -> other.complete(null));
+			scheduledExpiry.get().run();
+			assertTrue(blockedEntered.await(10, TimeUnit.SECONDS), "the blocking listener must run");
+			assertDoesNotThrow(() -> other.get(10, TimeUnit.SECONDS),
+					"a listener blocked on a monitor must not delay the deadline's other listeners");
+		} finally {
+			releaseBlocked.countDown();
+			deadline.close();
+		}
+	}
+
+	@Test
+	void expiryFiringBeforeConstructionCompletesIsSafe() {
+		// Like a timer that runs an immediately due deadline before start() has stored its cancellation handle.
+		QueryExecutionDeadline deadline = QueryExecutionDeadline.start(1L, (expiry, deadlineMillis) -> {
+			expiry.run();
+			return () -> {
+			};
+		});
+		try {
+			assertTrue(deadline.isExpired(), "an expiry that fires during construction still publishes expiration");
+		} finally {
+			deadline.close();
+		}
+	}
+
+	@Test
 	void acceptsLargestPositiveTimeoutWithoutOverflow() {
 		try (QueryExecutionDeadline deadline = assertDoesNotThrow(() -> QueryExecutionDeadline.start(Long.MAX_VALUE))) {
 			assertFalse(deadline.isExpired(), "A positive timeout must not overflow into immediate expiration");

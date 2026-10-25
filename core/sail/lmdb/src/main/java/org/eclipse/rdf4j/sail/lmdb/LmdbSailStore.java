@@ -1225,18 +1225,17 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		/**
+		 * The remaining local coordination budget. The query deadline never sizes these waits: every wait on this
+		 * budget runs under an expiry listener that signals {@code changed}, so only the expiry flag is read here.
+		 */
 		private long remainingNanos(QueryExecutionDeadline deadline, long coordinationDeadlineNanos) {
-			long coordinationRemaining = coordinationDeadlineNanos == Long.MAX_VALUE
-					? Long.MAX_VALUE
-					: LmdbSailStore.remainingNanos(coordinationDeadlineNanos);
-			if (deadline == null) {
-				return coordinationRemaining;
-			}
-			long queryRemainingMillis = deadline.remainingMillis();
-			if (queryRemainingMillis <= 0L) {
+			if (deadline != null && deadline.isExpired()) {
 				throw queryInterrupted();
 			}
-			return Math.min(coordinationRemaining, TimeUnit.MILLISECONDS.toNanos(queryRemainingMillis));
+			return coordinationDeadlineNanos == Long.MAX_VALUE
+					? Long.MAX_VALUE
+					: LmdbSailStore.remainingNanos(coordinationDeadlineNanos);
 		}
 
 		private boolean awaitChange(QueryExecutionDeadline deadline, long coordinationDeadlineNanos)
@@ -2199,6 +2198,9 @@ class LmdbSailStore implements SailStore {
 							callback.cancel(true);
 							break;
 						}
+						// Query expiry interrupts this wait; the timed budget is the local coordination grace only.
+						QueryExecutionDeadline.ExpiryInterruption callbackInterruption = queryDeadline == null ? null
+								: queryDeadline.interruptOnExpiry();
 						try {
 							boolean accepted = callback.get(callbackRemaining, TimeUnit.NANOSECONDS);
 							if (accepted) {
@@ -2215,6 +2217,9 @@ class LmdbSailStore implements SailStore {
 							break;
 						} catch (InterruptedException e) {
 							callback.cancel(true);
+							if (callbackInterruption != null && callbackInterruption.disarm()) {
+								throwIfExpired(queryDeadline);
+							}
 							Thread.currentThread().interrupt();
 							coordinationFailure = new IOException("Interrupted while waiting for LMDB replay callback",
 									e);
@@ -2229,6 +2234,11 @@ class LmdbSailStore implements SailStore {
 									cause);
 						} catch (CancellationException e) {
 							logger.debug("LMDB map-growth observer was cancelled at the shared deadline");
+						} finally {
+							if (callbackInterruption != null && callbackInterruption.disarm()) {
+								// Expiry landed after the callback returned: never leak its interrupt to coordination.
+								Thread.interrupted();
+							}
 						}
 					}
 
@@ -5134,12 +5144,9 @@ class LmdbSailStore implements SailStore {
 		if (deadline != null && deadline.isExpired()) {
 			throw new QueryInterruptedException("Query evaluation took too long");
 		}
-		long remainingMillis = deadline == null ? Long.MAX_VALUE : deadline.remainingMillis();
-		if (remainingMillis <= 0L) {
-			throw new QueryInterruptedException("Query evaluation took too long");
-		}
 		try {
-			asyncCallerProgress.await(observed, TimeUnit.MILLISECONDS.toNanos(remainingMillis));
+			// The expiry listener signals this progress; nothing here reads a clock.
+			asyncCallerProgress.await(observed, Long.MAX_VALUE);
 		} catch (InterruptedException interrupted) {
 			Thread.currentThread().interrupt();
 			throw new IOException("Interrupted while waiting for the native LMDB writer", interrupted);
@@ -5155,14 +5162,8 @@ class LmdbSailStore implements SailStore {
 			throw new QueryInterruptedException("Query evaluation took too long");
 		}
 		try {
-			long remainingMillis = cancellable && deadline != null ? deadline.remainingMillis() : Long.MAX_VALUE;
-			if (remainingMillis == Long.MAX_VALUE) {
-				asyncProgress.wait();
-			} else if (remainingMillis > 0L) {
-				TimeUnit.MILLISECONDS.timedWait(asyncProgress, remainingMillis);
-			} else {
-				throw new QueryInterruptedException("Query evaluation took too long");
-			}
+			// The expiry listener notifies this monitor; nothing here reads a clock.
+			asyncProgress.wait();
 		} catch (InterruptedException interrupted) {
 			Thread.currentThread().interrupt();
 			throw new IOException("Interrupted while waiting for the native LMDB writer", interrupted);
@@ -5252,7 +5253,8 @@ class LmdbSailStore implements SailStore {
 		if (original == null) {
 			return caller;
 		}
-		return caller == null || original.remainingMillis() <= caller.remainingMillis() ? original : caller;
+		// Compares absolute deadlines; no clock read.
+		return caller == null || original.deadlineMillis() <= caller.deadlineMillis() ? original : caller;
 	}
 
 	private void awaitAsyncProgress(BooleanSupplier finished) throws IOException {
@@ -6011,11 +6013,8 @@ class LmdbSailStore implements SailStore {
 				checkPublicationAdmission(deadline, owner);
 				while (publicationFinalizing) {
 					try {
-						if (deadline == null) {
-							publicationCompleted.await();
-						} else {
-							publicationCompleted.await(deadline.remainingMillis(), TimeUnit.MILLISECONDS);
-						}
+						// The expiry listener signals this condition; nothing here reads a clock.
+						publicationCompleted.await();
 					} catch (InterruptedException e) {
 						Thread.currentThread().interrupt();
 						throw new InterruptedSailException(e);
@@ -6115,8 +6114,14 @@ class LmdbSailStore implements SailStore {
 		WriterRegistration registration = mapGrowthCoordinator.registerWriter(owner);
 		boolean acquired = false;
 		QueryExecutionDeadline deadline = mapGrowthCoordinator.deadlineFor(registration.attempt());
-		// The absolute timed wait wakes itself at expiry. An inline deadline listener must not acquire
-		// writerOwnerMonitor while a coordinator deadline check already holds the opposite lock.
+		// Expiry wakes the owner wait through a listener registered here, outside every monitor. Expiry listeners run
+		// either on the expiry dispatch thread or inline at registration, never under a coordinator deadline check's
+		// lock.
+		QueryExecutionDeadline.Registration wake = deadline == null ? null : deadline.onExpiration(() -> {
+			synchronized (writerOwnerMonitor) {
+				writerOwnerMonitor.notifyAll();
+			}
+		});
 		try {
 			while (true) {
 				synchronized (writerOwnerMonitor) {
@@ -6124,11 +6129,7 @@ class LmdbSailStore implements SailStore {
 					checkPublicationAdmission(deadline, owner);
 					while (writerOwner != null && writerOwner != owner) {
 						try {
-							if (deadline == null) {
-								writerOwnerMonitor.wait();
-							} else {
-								TimeUnit.MILLISECONDS.timedWait(writerOwnerMonitor, deadline.remainingMillis());
-							}
+							writerOwnerMonitor.wait();
 						} catch (InterruptedException e) {
 							Thread.currentThread().interrupt();
 							throw new InterruptedSailException(e);
@@ -6152,8 +6153,14 @@ class LmdbSailStore implements SailStore {
 				mapGrowthCoordinator.awaitWriterAdmission(owner, registration);
 			}
 		} finally {
-			if (!acquired) {
-				mapGrowthCoordinator.releaseWriter(owner, registration);
+			try {
+				if (wake != null) {
+					wake.close();
+				}
+			} finally {
+				if (!acquired) {
+					mapGrowthCoordinator.releaseWriter(owner, registration);
+				}
 			}
 		}
 	}
@@ -6282,11 +6289,8 @@ class LmdbSailStore implements SailStore {
 						throw retryDictionaryCheckpointAdmission();
 					}
 					try {
-						if (deadline == null) {
-							publicationCompleted.await();
-						} else {
-							publicationCompleted.await(deadline.remainingMillis(), TimeUnit.MILLISECONDS);
-						}
+						// The expiry listener signals this condition; nothing here reads a clock.
+						publicationCompleted.await();
 					} catch (InterruptedException e) {
 						Thread.currentThread().interrupt();
 						throw new InterruptedSailException(e);
