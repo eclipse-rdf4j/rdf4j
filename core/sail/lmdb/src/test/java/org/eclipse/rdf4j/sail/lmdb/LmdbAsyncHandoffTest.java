@@ -23,6 +23,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -57,6 +58,84 @@ import org.junit.jupiter.params.provider.ValueSource;
 class LmdbAsyncHandoffTest {
 
 	private static final IRI PREDICATE = SimpleValueFactory.getInstance().createIRI("urn:async-handoff:predicate");
+
+	@Test
+	void reusedWorkerRollsBackItsNewGeneration(@TempDir Path directory) throws Exception {
+		CountDownLatch firstCompleted = new CountDownLatch(1);
+		CountDownLatch releaseFirstWorker = new CountDownLatch(1);
+		CountDownLatch secondAdmitted = new CountDownLatch(1);
+		CountDownLatch closeSecond = new CountDownLatch(1);
+		try (Fixture fixture = new Fixture(directory)) {
+			AtomicBoolean holdFirst = new AtomicBoolean(true);
+			fixture.backing.afterAsyncTransactionForTest = () -> {
+				if (holdFirst.compareAndSet(true, false)) {
+					firstCompleted.countDown();
+					try {
+						await(releaseFirstWorker);
+					} catch (InterruptedException failure) {
+						Thread.currentThread().interrupt();
+						throw new AssertionError(failure);
+					}
+				}
+			};
+			fixture.triples.releaseMutation.countDown();
+			try {
+				fixture.submit(() -> {
+					try (SailSink sink = fixture.sink()) {
+						fixture.approve(sink, 0);
+						sink.flush();
+					}
+				}).get(8L, TimeUnit.SECONDS);
+				await(firstCompleted);
+				Thread firstNativeOwner = fixture.triples.nativeOwners.getFirst();
+				WriterTransaction firstTicket = fixture.triples.nativeTransactions.getLast();
+				CompletableFuture<Boolean> staleCleanupPreservedWriter = new CompletableFuture<>();
+				AtomicBoolean tryStaleCleanup = new AtomicBoolean(true);
+				fixture.backing.beforeAsyncOperationForTest = () -> {
+					if (tryStaleCleanup.compareAndSet(true, false)) {
+						try {
+							fixture.triples.rollback(firstTicket);
+							boolean preserved = fixture.triples.writeTxn != 0L;
+							staleCleanupPreservedWriter.complete(preserved);
+							if (!preserved) {
+								throw new IllegalStateException(
+										"A stale ticket consumed the reused worker's new writer");
+							}
+						} catch (IOException failure) {
+							staleCleanupPreservedWriter.completeExceptionally(failure);
+							throw new AssertionError(failure);
+						}
+					}
+				};
+				fixture.triples.blockNextMutation = true;
+				Future<?> second = fixture.submit(() -> {
+					try (SailSink sink = fixture.sink()) {
+						fixture.approve(sink, 1);
+						secondAdmitted.countDown();
+						await(closeSecond);
+					}
+				});
+				await(secondAdmitted);
+				releaseFirstWorker.countDown();
+				assertTrue(staleCleanupPreservedWriter.get(5L, TimeUnit.SECONDS),
+						"a completed generation's ticket must not consume a reused worker's new native writer");
+				await(fixture.triples.nextMutationEntered);
+				assertSame(firstNativeOwner, fixture.triples.nativeOwners.getLast(),
+						"the already running native worker must serve the next admitted generation");
+				fixture.triples.releaseNextMutation.countDown();
+				closeSecond.countDown();
+				second.get(8L, TimeUnit.SECONDS);
+				assertEquals(0L, fixture.triples.writeTxn,
+						"delegated rollback must consume the reused worker's new native transaction");
+				assertEquals(1L, fixture.countStatements(), "the abandoned second row must not be published");
+				fixture.commitNextTransaction();
+				assertEquals(2L, fixture.countStatements(), "a later writer must remain usable after cleanup");
+			} finally {
+				releaseFirstWorker.countDown();
+				closeSecond.countDown();
+			}
+		}
+	}
 
 	@Test
 	void fullQueueResumesAndCommitsEveryOperationInOrder(@TempDir Path directory) throws Exception {
@@ -568,6 +647,7 @@ class LmdbAsyncHandoffTest {
 		private final CountDownLatch rollbackEntered = new CountDownLatch(1);
 		private final CountDownLatch releaseRollback = new CountDownLatch(1);
 		private final List<Thread> nativeOwners = new CopyOnWriteArrayList<>();
+		private final List<WriterTransaction> nativeTransactions = new CopyOnWriteArrayList<>();
 		private final List<Long> executedSubjects = new ArrayList<>();
 		private volatile boolean failMutation;
 		private volatile boolean blockNextMutation;
@@ -615,6 +695,9 @@ class LmdbAsyncHandoffTest {
 		@Override
 		void startTransaction(TxnReplayPolicy.Decision decision) throws IOException {
 			super.startTransaction(decision);
+			if (nativeTransactions != null && WriterTransaction.current() != null) {
+				nativeTransactions.add(WriterTransaction.current());
+			}
 			if (nativeOwners != null) {
 				nativeOwners.add(Thread.currentThread());
 			}

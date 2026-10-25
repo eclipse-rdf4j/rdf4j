@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalLong;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -26,6 +27,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
@@ -36,6 +38,78 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.ParallelSour
 import org.junit.jupiter.api.Test;
 
 class CompositeNativeLmdbQuerySourceOrderTest {
+
+	@Test
+	void compositePredicateCountRequiresCompleteNonnegativeSumAndTreatsNoActiveChildrenAsEmpty() {
+		Object idSpace = new Object();
+		assertThat(CompositeNativeLmdbQuerySource.combine(List.of(
+				new PredicateCountSource(idSpace, OptionalLong.of(0L)),
+				new PredicateCountSource(idSpace, OptionalLong.of(0L))))
+				.exactPredicateCount(7L)).hasValue(0L);
+
+		assertThat(CompositeNativeLmdbQuerySource.combine(List.of(
+				new PredicateCountSource(idSpace, OptionalLong.empty()),
+				new PredicateCountSource(idSpace, OptionalLong.of(0L))))
+				.exactPredicateCount(7L)).isEmpty();
+
+		assertThat(CompositeNativeLmdbQuerySource.combine(List.of(
+				new PredicateCountSource(idSpace, OptionalLong.of(0L)),
+				new PredicateCountSource(idSpace, OptionalLong.of(4L))))
+				.exactPredicateCount(7L)).hasValue(4L);
+
+		assertThat(CompositeNativeLmdbQuerySource.combine(List.of(
+				new PredicateCountSource(idSpace, OptionalLong.of(Long.MAX_VALUE)),
+				new PredicateCountSource(idSpace, OptionalLong.of(1L))))
+				.exactPredicateCount(7L))
+						.as("overflow is unknown, not a saturated count that could be mistaken for exact metadata")
+						.isEmpty();
+
+		assertThat(CompositeNativeLmdbQuerySource.combine(List.of(
+				new PredicateCountSource(idSpace, OptionalLong.of(-1L)),
+				new PredicateCountSource(idSpace, OptionalLong.of(0L))))
+				.exactPredicateCount(7L)).isEmpty();
+
+		assertThat(CompositeNativeLmdbQuerySource.combine(List.of(
+				new PredicateCountSource(idSpace, OptionalLong.of(17L), false),
+				new PredicateCountSource(idSpace, OptionalLong.empty(), false)))
+				.exactPredicateCount(7L)).hasValue(0L);
+	}
+
+	@Test
+	void syntheticPredicateDeclinesExactCountAndRealPredicateDelegates() {
+		Object idSpace = new Object();
+		PredicateCountSource delegate = new PredicateCountSource(idSpace, OptionalLong.of(5L));
+		PlanValueCatalog.Builder catalog = new PlanValueCatalog.Builder();
+		long syntheticPredicate = catalog.internConstant(
+				SimpleValueFactory.getInstance().createIRI("http://example.org/plan-only-predicate"));
+		SyntheticValueSource source = new SyntheticValueSource(delegate, catalog.build());
+
+		assertThat(source.exactPredicateCount(syntheticPredicate)).isEmpty();
+		assertThat(delegate.predicateCountCalls).isZero();
+		assertThat(source.exactPredicateCount(7L)).hasValue(5L);
+		assertThat(delegate.predicateCountCalls).isOne();
+	}
+
+	@Test
+	void parallelCompositeDelegatesExactPredicateCountToItsMembers() throws IOException {
+		Object idSpace = new Object();
+		Object costModelIdentity = new Object();
+		CapabilityParallelSource explicit = new CapabilityParallelSource(idSpace, costModelIdentity,
+				OptionalLong.of(0L));
+		CapabilityParallelSource inferred = new CapabilityParallelSource(idSpace, costModelIdentity,
+				OptionalLong.of(3L));
+		NativeLmdbQuerySource source = CompositeNativeLmdbQuerySource.combine(List.of(
+				ParallelOpeningSource.active(idSpace, explicit),
+				ParallelOpeningSource.active(idSpace, inferred)));
+		ParallelSource[] parallel = source.openParallelSources(1);
+
+		assertThat(parallel).hasSize(1);
+		try (ParallelSource member = parallel[0]) {
+			assertThat(member.exactPredicateCount(7L)).hasValue(3L);
+		}
+		assertThat(explicit.exactPredicateCountCalls).isOne();
+		assertThat(inferred.exactPredicateCountCalls).isOne();
+	}
 
 	@Test
 	void compositeNodeDomainIntersectionUsesDedicatedViewsForMembership() throws IOException {
@@ -779,7 +853,9 @@ class CompositeNativeLmdbQuerySourceOrderTest {
 	private static final class CapabilityParallelSource extends StubSource implements ParallelSource {
 
 		private final Object costModelIdentity;
+		private final OptionalLong exactPredicateCount;
 		private int prefixPlanCalls;
+		private int exactPredicateCountCalls;
 		private int observedStatements;
 		private int observedRangeStatements;
 		private int observedOrderedStatements;
@@ -787,8 +863,13 @@ class CompositeNativeLmdbQuerySourceOrderTest {
 		private int observedOrderedLmdbStatements;
 
 		private CapabilityParallelSource(Object idSpace, Object costModelIdentity) {
+			this(idSpace, costModelIdentity, OptionalLong.empty());
+		}
+
+		private CapabilityParallelSource(Object idSpace, Object costModelIdentity, OptionalLong exactPredicateCount) {
 			super(idSpace);
 			this.costModelIdentity = costModelIdentity;
+			this.exactPredicateCount = exactPredicateCount;
 		}
 
 		@Override
@@ -809,6 +890,12 @@ class CompositeNativeLmdbQuerySourceOrderTest {
 		@Override
 		public Object costModelIdentity() {
 			return costModelIdentity;
+		}
+
+		@Override
+		public OptionalLong exactPredicateCount(long predicate) {
+			exactPredicateCountCalls++;
+			return exactPredicateCount;
 		}
 
 		@Override
@@ -1075,6 +1162,34 @@ class CompositeNativeLmdbQuerySourceOrderTest {
 		@Override
 		public boolean hasStatementsInSource() {
 			return true;
+		}
+	}
+
+	private static final class PredicateCountSource extends StubSource {
+
+		private final OptionalLong exactPredicateCount;
+		private final boolean active;
+		private int predicateCountCalls;
+
+		private PredicateCountSource(Object idSpace, OptionalLong exactPredicateCount) {
+			this(idSpace, exactPredicateCount, true);
+		}
+
+		private PredicateCountSource(Object idSpace, OptionalLong exactPredicateCount, boolean active) {
+			super(idSpace);
+			this.exactPredicateCount = exactPredicateCount;
+			this.active = active;
+		}
+
+		@Override
+		public OptionalLong exactPredicateCount(long predicate) {
+			predicateCountCalls++;
+			return exactPredicateCount;
+		}
+
+		@Override
+		public boolean hasStatementsInSource() {
+			return active;
 		}
 	}
 

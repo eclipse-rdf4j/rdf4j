@@ -313,10 +313,23 @@ ex:PersonShape a sh:NodeShape ; sh:targetClass ex:Person ;
         await waitForRoute(page, 'add');
         await page.locator('label[for="source-text"]').click();
         await page.locator('#text').fill('@prefix ex: <http://example.org/> .\nex:p2 a ex:Person ; ex:age "x" .');
-        const answer = page.waitForResponse(response => response.request().method() === 'POST'
-            && /\/add(?:[?#]|$)/.test(response.url()));
+        // Read the answer as it passes through: once the page has consumed a chunked error answer, Chromium need not
+        // keep its body for response.text().
+        let answered;
+        const answer = new Promise(resolve => {
+            answered = resolve;
+        });
+        await page.route(url => /\/add(?:[?#]|$)/.test(url.href), async route => {
+            if (route.request().method() !== 'POST') {
+                await route.continue();
+                return;
+            }
+            const response = await route.fetch();
+            answered(await response.text());
+            await route.fulfill({ response });
+        });
         await page.locator('#workbench-outlet [type=submit]').first().click();
-        const body = await (await answer).text();
+        const body = await answer;
 
         const error = records(body).find(record => record.type === 'error');
         expect(error && error.code).toBe('shacl-validation');

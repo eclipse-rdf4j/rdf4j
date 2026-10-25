@@ -396,6 +396,7 @@ final class RetiredValueIdStore {
 				processed++;
 				rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_NEXT);
 			}
+			E(rc);
 		} finally {
 			mdb_cursor_close(cursor);
 		}

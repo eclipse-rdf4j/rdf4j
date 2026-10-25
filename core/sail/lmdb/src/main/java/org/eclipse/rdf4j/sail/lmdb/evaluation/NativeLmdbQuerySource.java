@@ -2137,6 +2137,11 @@ public interface NativeLmdbQuerySource {
 		return OptionalLong.empty();
 	}
 
+	/** Exact statement count across all contexts, available only from bounded, snapshot-valid predicate metadata. */
+	default OptionalLong exactPredicateCount(long predicate) {
+		return OptionalLong.empty();
+	}
+
 	/** A revision-valid ordered-integer zone map together with the index whose varying field it describes. */
 	@Experimental
 	record OrderedIntegerDomain(String indexFieldSeq, long minValue, long maxValue) {

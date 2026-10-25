@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mockStatic;
 
 import java.io.File;
 import java.io.IOException;
@@ -27,6 +28,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -36,6 +39,8 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.lwjgl.util.lmdb.LMDB;
+import org.mockito.MockedStatic;
 
 /**
  * Reproduces batch dictionary writes that cross an LMDB map-growth checkpoint.
@@ -76,9 +81,14 @@ class ValueStoreBatchGrowthRegressionTest {
 			Value[] values = values();
 			long[] ids = new long[values.length];
 			long growthBefore = store.getBulkMapGrowthCount();
+			long mapBytesBefore = store.mapSizeBytes();
 
 			// The package batch API has an explicit no-writer branch; exercise that callable standalone path.
 			store.storeValues(values, ids, values.length);
+			long mapBytesAfter = store.mapSizeBytes();
+			assertTrue(mapBytesAfter > mapBytesBefore,
+					"standalone batch must grow the actual native map: before=" + mapBytesBefore + ", after="
+							+ mapBytesAfter);
 			assertTrue(store.getBulkMapGrowthCount() > growthBefore,
 					"standalone batch must cross at least one dictionary map-growth checkpoint");
 
@@ -97,8 +107,13 @@ class ValueStoreBatchGrowthRegressionTest {
 			Value[] values = longHashedValues();
 			long[] ids = new long[values.length];
 			long growthBefore = store.getBulkMapGrowthCount();
+			long mapBytesBefore = store.mapSizeBytes();
 
 			store.storeValues(values, ids, values.length);
+			long mapBytesAfter = store.mapSizeBytes();
+			assertTrue(mapBytesAfter > mapBytesBefore,
+					"the encoded hashed batch must grow the actual native map: before=" + mapBytesBefore + ", after="
+							+ mapBytesAfter);
 			assertTrue(store.getBulkMapGrowthCount() > growthBefore,
 					"the encoded hashed batch is larger than the initial value map and must grow during preflight");
 
@@ -187,17 +202,27 @@ class ValueStoreBatchGrowthRegressionTest {
 		ValueStore store = new ValueStore(directory, config);
 		try {
 			long retainedId = store.storeValue(retained);
+			long mapSizeBeforeFailure = store.mapSizeBytes();
+			long growthCountBeforeFailure = store.getBulkMapGrowthCount();
 
 			ValueStore failedStore = store;
 			IOException failure = assertThrows(IOException.class,
 					() -> failedStore.storeValues(failedValues, failedIds, failedValues.length));
 			assertTrue(failure.getMessage() != null && failure.getMessage().contains("MDB_MAP_FULL"),
 					"a fixed value map must expose the native capacity error");
+			assertEquals(mapSizeBeforeFailure, store.mapSizeBytes(),
+					"a fixed-map MAP_FULL failure must not report a successful native map growth");
+			assertEquals(growthCountBeforeFailure, store.getBulkMapGrowthCount(),
+					"a failed batch without native map growth must leave the growth counter unchanged");
 			assertEquals(LmdbValue.UNKNOWN_ID, store.getId(failedValues[0]),
 					"an aborted standalone batch must not leave its first value addressable");
 
 			Value followUp = factory.createBNode("batch-fixed-follow-up");
 			long followUpId = store.storeValue(followUp);
+			assertEquals(mapSizeBeforeFailure, store.mapSizeBytes(),
+					"a fitting follow-up write must not resize the fixed native map");
+			assertEquals(growthCountBeforeFailure, store.getBulkMapGrowthCount(),
+					"a fitting follow-up write must not increment the successful-growth counter");
 			assertNotEquals(LmdbValue.UNKNOWN_ID, followUpId,
 					"the same ValueStore must accept a small write after the failed batch");
 			assertEquals(followUp, store.getValue(followUpId));
@@ -209,6 +234,69 @@ class ValueStoreBatchGrowthRegressionTest {
 			for (int i = 0; i < failedValues.length; i++) {
 				assertEquals(LmdbValue.UNKNOWN_ID, store.getId(failedValues[i]),
 						"failed batch row must remain absent after reopen: " + i);
+			}
+		} finally {
+			store.close();
+		}
+	}
+
+	@Test
+	void failedNativeRemapDoesNotPublishGrowthAndAllowsSubsequentWrite(@TempDir Path dataDir) throws Exception {
+		File directory = valuesDirectory(dataDir, "remap-failure");
+		ValueStore store = new ValueStore(directory, config());
+		try {
+			Value retained = SimpleValueFactory.getInstance().createIRI("urn:batch:remap:retained");
+			long retainedId = store.storeValue(retained);
+			Value[] failedValues = values();
+			long[] failedIds = new long[failedValues.length];
+			long mapSizeBeforeFailure = store.mapSizeBytes();
+			long growthCountBeforeFailure = store.getBulkMapGrowthCount();
+			AtomicBoolean armed = new AtomicBoolean();
+			AtomicBoolean injected = new AtomicBoolean();
+			AtomicLong requestedMapSize = new AtomicLong();
+
+			try (MockedStatic<LMDB> ignored = mockStatic(LMDB.class, invocation -> {
+				if (armed.get() && invocation.getMethod().getName().equals("mdb_env_set_mapsize")
+						&& injected.compareAndSet(false, true)) {
+					long requested = (Long) invocation.getArgument(1);
+					requestedMapSize.set(requested);
+					return LMDB.MDB_MAP_FULL;
+				}
+				return invocation.callRealMethod();
+			})) {
+				armed.set(true);
+				IOException failure;
+				try {
+					failure = assertThrows(IOException.class,
+							() -> store.storeValues(failedValues, failedIds, failedValues.length),
+							"the native map-remap error must reach the batch caller");
+				} finally {
+					armed.set(false);
+				}
+
+				assertTrue(injected.get(), "the batch must reach the native environment map-size call");
+				assertTrue(requestedMapSize.get() > mapSizeBeforeFailure,
+						"the intercepted native call must request real growth: before=" + mapSizeBeforeFailure
+								+ ", target="
+								+ requestedMapSize.get());
+				assertTrue(failure.getMessage() != null && failure.getMessage().contains("MDB_MAP_FULL"),
+						"the failed native remap must retain its capacity error");
+				assertEquals(mapSizeBeforeFailure, store.mapSizeBytes(),
+						"failed mdb_env_set_mapsize must not publish the requested Java map size");
+				assertEquals(growthCountBeforeFailure, store.getBulkMapGrowthCount(),
+						"a failed native remap must not increment the successful-growth counter");
+				assertEquals(LmdbValue.UNKNOWN_ID, store.getId(failedValues[0]),
+						"a failed preflight remap must not publish batch values");
+
+				Value followUp = SimpleValueFactory.getInstance().createBNode("batch-remap-follow-up");
+				long followUpId = store.storeValue(followUp);
+				assertNotEquals(LmdbValue.UNKNOWN_ID, followUpId,
+						"the same store must accept a fitting write after native remap failure");
+				assertEquals(followUp, store.getValue(followUpId));
+				assertEquals(mapSizeBeforeFailure, store.mapSizeBytes(),
+						"the fitting follow-up write must not require native remapping");
+				assertEquals(growthCountBeforeFailure, store.getBulkMapGrowthCount(),
+						"the fitting follow-up write must not count a map growth");
 			}
 		} finally {
 			store.close();
