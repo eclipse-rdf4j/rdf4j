@@ -83,7 +83,7 @@ public final class LateralQueryEvaluationStep implements QueryEvaluationStep {
 		this.strategy = strategy;
 		this.rightArg = rightArg;
 		this.context = context;
-		this.right = strategy.precompile(rightArg, context);
+		this.right = prepareRightStep(rightArg, context);
 		this.rightInputBindingNames = lateral.getRightInputBindingNames();
 	}
 
@@ -104,7 +104,13 @@ public final class LateralQueryEvaluationStep implements QueryEvaluationStep {
 	private QueryEvaluationStep prepareRight(BindingSet originalBindings) {
 		TupleExpr prepared = prepareRightScope(rightArg, rightInputBindingNames, originalBindings.getBindingNames());
 		return prepared == rightArg ? right
-				: strategy.precompile(prepared, new BindingSetQueryEvaluationContext(context));
+				: prepareRightStep(prepared, new BindingSetQueryEvaluationContext(context));
+	}
+
+	private QueryEvaluationStep prepareRightStep(TupleExpr expression, QueryEvaluationContext evaluationContext) {
+		QueryEvaluationStep tupleGroup = TupleFunctionGroupQueryEvaluationStep.tryPrepare(expression, strategy,
+				evaluationContext);
+		return tupleGroup != null ? tupleGroup : strategy.precompile(expression, evaluationContext);
 	}
 
 	/**

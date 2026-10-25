@@ -4777,7 +4777,7 @@ namespace workbench {
                         ?hidden=${!inferEnabled} ?disabled=${!inferEnabled} />
                         <span>Include inferred statements</span></label>
                 </div>
-                <div id="lmdb-forced-strategy-field" class="workbench-disclosure__field" hidden>
+                <div id="lmdb-forced-strategy-field" class="workbench-disclosure__field lmdb-forced-strategy-field" hidden>
                     <label for="lmdb-forced-strategy">Forced execution strategy</label>
                     <select id="lmdb-forced-strategy" name="lmdb-forced-strategy" disabled
                         aria-describedby="lmdb-forced-strategy-help">
