@@ -366,7 +366,8 @@ final class LexicalLeftJoinCursor implements RowCursor {
 		// can itself be waiting for that cursor; external lexical readers retain their owners separately.
 		NativeResultReplay materialized = new NativeResultReplay(schema, context, row.cancellation,
 				row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()),
-				Math.max(8192L, NativeCountGroupStore.configuredMaxBytes()), false);
+				Math.max(8192L, NativeCountGroupStore.configuredMaxBytes()), false)
+						.resolvingStoreTermsWith(row.source);
 		int entryMark = row.mark();
 		try {
 			try (RowCursor cursor = rightPlan.open(row)) {

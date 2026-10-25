@@ -46,11 +46,15 @@ final class NativeResultReplay implements AutoCloseable {
 	private final KernelRuntime.AggregateMemory memory;
 	private final long maxBytes;
 	private NativeSpillValueCodec writerCodec;
+	/** Dictionary authority for spilling store-backed terms as IDs; null keeps the exact lexical codec only. */
+	private NativeLmdbQuerySource termSource;
 	private List<NativeResultRow> resident = new ArrayList<>();
 	private DataOutputStream output;
 	private Path path;
 	private long residentBytes, rowCount;
 	private int cursors;
+	/** Data-proportional loops poll cancellation at entry and at most every 1024 rows. */
+	private int appendTick;
 	private boolean firstReaderInUse, finished, closeRequested, closed;
 
 	NativeResultReplay(String[] names, NativeExecutionContext context, NativeCancellationToken cancellation) {
@@ -85,11 +89,38 @@ final class NativeResultReplay implements AutoCloseable {
 		}
 	}
 
+	/**
+	 * Lets spilled rows keep terms of {@code source}'s dictionary as IDs that replay as lazy terms of the same source,
+	 * instead of spelling out and re-parsing every lexical form. Terms outside that dictionary keep the exact codec.
+	 */
+	synchronized NativeResultReplay resolvingStoreTermsWith(NativeLmdbQuerySource source) {
+		if (rowCount != 0L || path != null) {
+			throw new IllegalStateException("The term source must be fixed before the first appended row");
+		}
+		termSource = source;
+		return this;
+	}
+
+	/** Bytes written to the spill file so far (0 while resident). */
+	synchronized long spilledBytes() {
+		if (path == null) {
+			return 0L;
+		}
+		try {
+			if (output != null) {
+				output.flush();
+			}
+			return Files.size(path);
+		} catch (IOException e) {
+			throw new QueryEvaluationException(e);
+		}
+	}
+
 	synchronized void append(NativeResultRow row) {
 		checkWritable();
 		try {
-			cancellation.check();
-			LmdbNativeProbeDeadline.poll(0);
+			cancellation.poll(appendTick);
+			LmdbNativeProbeDeadline.poll(appendTick++);
 			checkSchema(row);
 			long retained = retainedBytes(row);
 			// Keep room for the writer while resident rows are still being encoded. The runway belongs to the
@@ -178,13 +209,14 @@ final class NativeResultReplay implements AutoCloseable {
 		}
 		try (NativeExecutionPhaseEvent.Span phase = NativeExecutionPhaseEvent.start("spill", cancellation)) {
 			writerCodec = new NativeSpillValueCodec(cancellation,
-					context == null ? null : context::authoritativeQueryScopedValue);
+					context == null ? null : context::authoritativeQueryScopedValue, null, termSource);
 			path = Files.createTempFile("rdf4j-lmdb-result-", ".spill");
 			output = new DataOutputStream(
 					new BufferedOutputStream(Files.newOutputStream(path), NativeSpillValueCodec.BUFFER_BYTES));
+			int tick = 0;
 			for (NativeResultRow row : resident) {
-				cancellation.check();
-				LmdbNativeProbeDeadline.poll(0);
+				cancellation.poll(tick);
+				LmdbNativeProbeDeadline.poll(tick++);
 				write(row);
 			}
 			resident = null;
@@ -278,6 +310,7 @@ final class NativeResultReplay implements AutoCloseable {
 		private final NativeSpillValueCodec codec;
 		private long position;
 		private boolean cursorClosed;
+		private int tick;
 
 		private Cursor(DataInputStream input, boolean first, long reservedBytes) {
 			this.input = input;
@@ -285,7 +318,7 @@ final class NativeResultReplay implements AutoCloseable {
 			this.reservedBytes = reservedBytes;
 			this.codec = input == null ? null
 					: new NativeSpillValueCodec(localCancellation,
-							context == null ? null : context::authoritativeQueryScopedValue);
+							context == null ? null : context::authoritativeQueryScopedValue, null, termSource);
 		}
 
 		@Override
@@ -304,8 +337,8 @@ final class NativeResultReplay implements AutoCloseable {
 				return null;
 			}
 			try {
-				localCancellation.check();
-				LmdbNativeProbeDeadline.poll(0);
+				localCancellation.poll(tick);
+				LmdbNativeProbeDeadline.poll(tick++);
 				if (position == rowCount) {
 					close();
 					return null;
@@ -330,8 +363,8 @@ final class NativeResultReplay implements AutoCloseable {
 							: NativeResultCell.lexicalLength(input.readLong());
 					};
 				}
-				localCancellation.check();
-				LmdbNativeProbeDeadline.poll(0);
+				localCancellation.poll(tick);
+				LmdbNativeProbeDeadline.poll(tick++);
 				position++;
 				return new NativeResultRow(schema, cells);
 			} catch (Throwable failure) {

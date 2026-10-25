@@ -186,8 +186,10 @@ class KernelAdjacencyCursorTest {
 					new PhysicalBinding(51L, 61L, 71L),
 					new PhysicalBinding(51L, 61L, 72L),
 					new PhysicalBinding(51L, 62L, 73L)), collectBindings(cursor));
-			assertEquals(2L, cursor.neighborValuesCopied(),
-					"neighbor-copy telemetry counts distinct fibers returned by the page batch");
+			// The fiber batch copies the two distinct neighbours once; every context read then copies the neighbour
+			// beside each of the three quads again. Telemetry counts those actual payload copies, not distinct fibers.
+			assertEquals(5L, cursor.neighborValuesCopied(),
+					"neighbor-copy telemetry counts every neighbour value the page batches actually copied");
 			assertEquals(3L, cursor.contextValuesCopied(),
 					"context-copy telemetry counts raw contexts returned by the page batches");
 		}

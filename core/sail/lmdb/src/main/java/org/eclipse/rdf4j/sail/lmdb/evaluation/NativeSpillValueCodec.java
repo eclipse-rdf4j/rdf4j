@@ -21,15 +21,27 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /** Exact RDF spelling codec shared by payload spilling and physical result replay. One bounded I/O scratch buffer. */
 final class NativeSpillValueCodec {
 	static final int BUFFER_BYTES = 1024;
+	/** A term of the codec's dictionary source: one long ID that replays as that source's lazy term. */
+	static final int TAG_STORE_TERM = 0x7D;
+	/** An xsd:integer literal whose canonical label fits a long: one primitive, replayed with the same label. */
+	static final int TAG_INTEGER_LITERAL = 0x7E;
+	private static final long NO_REVISION = Long.MIN_VALUE;
 	private final byte[] buffer = new byte[BUFFER_BYTES];
 	private final NativeCancellationToken cancellation;
 	private final UnaryOperator<Value> representative;
 	private final Runnable cooperativePoll;
+	private final NativeLmdbQuerySource termSource;
+	/** Revision id of the dictionary generation the source resolves; learned from one probe, then compared. */
+	private long acceptedRevisionId = NO_REVISION;
+	private boolean revisionProbed;
 
 	NativeSpillValueCodec(NativeCancellationToken cancellation, UnaryOperator<Value> representative) {
 		this(cancellation, representative, null);
@@ -37,9 +49,16 @@ final class NativeSpillValueCodec {
 
 	NativeSpillValueCodec(NativeCancellationToken cancellation, UnaryOperator<Value> representative,
 			Runnable cooperativePoll) {
+		this(cancellation, representative, cooperativePoll, null);
+	}
+
+	/** {@code termSource} (nullable) lets terms of its dictionary spill as IDs and replay as its lazy terms. */
+	NativeSpillValueCodec(NativeCancellationToken cancellation, UnaryOperator<Value> representative,
+			Runnable cooperativePoll, NativeLmdbQuerySource termSource) {
 		this.cancellation = cancellation;
 		this.representative = representative;
 		this.cooperativePoll = cooperativePoll;
+		this.termSource = termSource;
 	}
 
 	void write(DataOutput output, Value value) throws IOException {
@@ -48,6 +67,19 @@ final class NativeSpillValueCodec {
 
 	private void write(DataOutput output, Value value, int depth) throws IOException {
 		checkDepth(depth);
+		if (termSource != null && value instanceof LmdbValue term && storeTerm(term)) {
+			output.writeByte(TAG_STORE_TERM);
+			output.writeLong(term.getInternalID());
+			return;
+		}
+		if (value instanceof Literal literal && literal.getCoreDatatype() == CoreDatatype.XSD.INTEGER) {
+			long integer = canonicalLong(literal.getLabel());
+			if (integer != Long.MIN_VALUE) {
+				output.writeByte(TAG_INTEGER_LITERAL);
+				output.writeLong(integer);
+				return;
+			}
+		}
 		output.writeByte(value.getType().ordinal());
 		if (value instanceof Literal literal) {
 			writeString(output, literal.getLabel());
@@ -81,6 +113,19 @@ final class NativeSpillValueCodec {
 		checkDepth(depth);
 		SimpleValueFactory factory = SimpleValueFactory.getInstance();
 		int type = input.readUnsignedByte();
+		if (type == TAG_STORE_TERM) {
+			if (termSource == null) {
+				throw new IOException("Spilled dictionary term without a term source");
+			}
+			Value term = termSource.lazyValue(input.readLong());
+			if (term == null) {
+				throw new IOException("Spilled dictionary term no longer resolves");
+			}
+			return term;
+		}
+		if (type == TAG_INTEGER_LITERAL) {
+			return factory.createLiteral(Long.toString(input.readLong()), CoreDatatype.XSD.INTEGER);
+		}
 		if (type == Value.Type.IRI.ordinal()) {
 			return factory.createIRI(readString(input));
 		}
@@ -109,6 +154,62 @@ final class NativeSpillValueCodec {
 			return factory.createTripleTerm(resource, iri, object);
 		}
 		throw new IOException("Invalid spilled RDF term type: " + type);
+	}
+
+	/**
+	 * Whether {@code term} is a term of the codec's dictionary source: same value store and the same dictionary
+	 * generation the source resolves IDs against (learned once from a probe lookup, so a foreign or older-generation
+	 * native term keeps its exact lexical spelling).
+	 */
+	private boolean storeTerm(LmdbValue term) {
+		long id = term.getInternalID();
+		ValueStoreRevision revision = term.getValueStoreRevision();
+		if (id == LmdbValue.UNKNOWN_ID || revision == null || revision.getValueStore() == null
+				|| revision.getValueStore() != backingIdSpace(termSource)) {
+			return false;
+		}
+		if (!revisionProbed) {
+			revisionProbed = true;
+			Value probe = termSource.lazyValue(id);
+			if (probe instanceof LmdbValue resolved && resolved.getValueStoreRevision() != null
+					&& resolved.getValueStoreRevision().getValueStore() == revision.getValueStore()) {
+				acceptedRevisionId = resolved.getValueStoreRevision().getRevisionId();
+			}
+		}
+		return acceptedRevisionId != NO_REVISION && revision.getRevisionId() == acceptedRevisionId;
+	}
+
+	/**
+	 * The dictionary a source resolves store IDs against: a synthetic evaluation wrapper delegates every non-synthetic
+	 * ID to its backing source, so its terms carry that backing store's revision.
+	 */
+	private static Object backingIdSpace(NativeLmdbQuerySource source) {
+		return source instanceof SyntheticValueSource synthetic ? backingIdSpace(synthetic.delegate)
+				: source.idSpace();
+	}
+
+	/** The long whose decimal spelling is exactly {@code label}, or Long.MIN_VALUE when there is none. */
+	private static long canonicalLong(String label) {
+		int length = label.length();
+		if (length == 0 || length > 19) {
+			return Long.MIN_VALUE;
+		}
+		char first = label.charAt(0);
+		if (first == '+' || first == '0' && length > 1 || first == '-' && (length == 1 || label.charAt(1) == '0')) {
+			return Long.MIN_VALUE;
+		}
+		for (int i = first == '-' ? 1 : 0; i < length; i++) {
+			char c = label.charAt(i);
+			if (c < '0' || c > '9') {
+				return Long.MIN_VALUE;
+			}
+		}
+		try {
+			long parsed = Long.parseLong(label);
+			return parsed == Long.MIN_VALUE ? Long.MIN_VALUE : parsed;
+		} catch (NumberFormatException overflow) {
+			return Long.MIN_VALUE;
+		}
 	}
 
 	void writeString(DataOutput output, String text) throws IOException {
@@ -152,6 +253,8 @@ final class NativeSpillValueCodec {
 	}
 
 	private void checkCancelled() {
+		// Every chunk observes its actual control: a long lexical form must stop within two chunks of a cancellation
+		// or probe trip (NativeCoordinatorCompletionContractTest), so this path is deliberately unmasked.
 		if (cooperativePoll != null) {
 			cooperativePoll.run();
 		}

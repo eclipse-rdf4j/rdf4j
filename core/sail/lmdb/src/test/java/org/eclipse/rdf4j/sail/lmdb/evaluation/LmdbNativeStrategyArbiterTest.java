@@ -1252,10 +1252,10 @@ public class LmdbNativeStrategyArbiterTest {
 	/**
 	 * Gap-analysis G8, second half: one unpriceable candidate must not force the whole set back to pure structural
 	 * ranking — the priced candidates keep their static interval evidence, so the statically absurd highest-preference
-	 * candidate still loses. Since the owned-work correction (source180) an arm without a complete physical work quote,
-	 * cold anchor or completed execution is no longer an ordinary normal choice while a viable complete alternative
-	 * remains: it stays in the legal inventory as bounded exploration and last fallback, so the complete, statically
-	 * sane nestedLoop wins.
+	 * candidate still loses. Since the owned-work correction (source180) an arm without complete work evidence, cold
+	 * anchor, completed execution or structural specialist applicability is no longer an ordinary normal choice while a
+	 * viable complete alternative remains: it stays in the legal inventory as bounded exploration and last fallback, so
+	 * the complete, statically sane nestedLoop wins.
 	 */
 	@Test
 	public void mixedProposalSetRetainsStaticIntervalEvidence() {
@@ -1289,11 +1289,34 @@ public class LmdbNativeStrategyArbiterTest {
 				.as("the census reduction keeps its cold prior ahead of a complete priced row scan even without a quote")
 				.isEqualTo(LmdbNativeCensusAggregate.PATH);
 
-		List<LmdbNativeStrategyProposal<String>> nonDomain = List.of(
-				proposal(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, 1_000D),
+		LmdbNativeStrategyProposal<String> proved = proposal(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, 1_000D)
+				.withColdAnchor(new NativeAggregatePhysicalPlan.ColdAnchor("exact page/root contributions",
+						"ledger-owned bounded state"));
+		List<LmdbNativeStrategyProposal<String>> nonDomain = List.of(proved,
 				proposal(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, LmdbNativeWork.UNKNOWN));
 		assertThat(adaptiveWinner(nonDomain))
-				.as("an ordinary arm without any work quote remains a fallback behind the complete rival")
+				.as("an ordinary arm without any work quote remains a fallback behind a resource-proved rival")
+				.isEqualTo(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+
+		assertThat(adaptiveWinner(List.of(proposal(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, 1_000D),
+				proposal(LmdbNativeAttemptMetrics.PATH_WCOJ, LmdbNativeWork.UNKNOWN))))
+						.as("a structurally admitted specialist with unknown per-feature work is still a cold normal choice")
+						.isEqualTo(LmdbNativeAttemptMetrics.PATH_WCOJ);
+
+		LmdbNativeStrategyProposal<String> groupedCensus = proposal(LmdbNativeCensusAggregate.PATH,
+				LmdbNativeWork.UNKNOWN);
+		LmdbNativeCostVector zero = LmdbNativeCostVector.zero();
+		groupedCensus.withPhysicalEstimate(new LmdbNativeCostEstimate(
+				LmdbNativePhysicalVariantKey.builder(LmdbNativeCensusAggregate.PATH)
+						.physicalOrderAndProperties(LmdbNativeCensusAggregate.PATH)
+						.groupingMode(LmdbNativePhysicalVariantKey.GroupingMode.HASHED)
+						.requiresHashing(true)
+						.build(),
+				zero, zero, 0D, 0.5D,
+				NativePhysicalWorkEvidence.incomplete("per-group membership state has no physical quote")));
+		assertThat(adaptiveWinner(List.of(proposal(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, 1_000D), groupedCensus)))
+				.as("a grouped census that must hash per-group membership without a quote is the last arm a cold "
+						+ "inventory opens, behind an ordinary static arm")
 				.isEqualTo(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
 	}
 

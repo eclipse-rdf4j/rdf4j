@@ -225,6 +225,25 @@ final class LmdbNativeStrategyPreference {
 	}
 
 	/**
+	 * Specialists whose applicability is structural (an index order, prefix runs, worst-case-optimal cyclic shapes,
+	 * packed factorization, complete page/root domains) and whose work is bounded by the index runs or metadata they
+	 * walk. Such an arm is a legal cold normal choice even while its per-feature quote is unknown; it does not need a
+	 * learned price to be dispatched the first time.
+	 */
+	static boolean structuralSpecialistFamily(String family) {
+		if (family == null) {
+			return false;
+		}
+		return boundedSpecialistFamily(family) || switch (family) {
+		case LmdbNativeAttemptMetrics.PATH_PREFIX_RUN, LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS,
+				LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT, LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS,
+				LmdbNativeAttemptMetrics.PATH_ORDERED_SINGLE_PATTERN_GROUPS ->
+			true;
+		default -> false;
+		};
+	}
+
+	/**
 	 * Families the arbiter must eventually execute rather than starve behind measured rivals. This includes the
 	 * engine's own IR tiers and the bounded specialist matrix whose applicability is expressed by whether a proposal
 	 * was offered for the current shape. A must-try arm bypasses the probe value gate because a starved arm can never

@@ -206,8 +206,14 @@ final class LmdbNativeAdaptiveArbitration {
 		List<Priced<T>> normal = priced.stream().filter(LmdbNativeAdaptiveArbitration::normalEligible).toList();
 		// Refused work remains in the legal inventory and in bounded exploration. It becomes an ordinary last
 		// fallback only after the currently viable normal recipes have declined and been removed by the arbiter.
+		// Without any resource-proved recipe the inventory competes on its stable structural preference exactly as
+		// before pricing existed, except that a domain algorithm driven into per-group hashing without a quote
+		// yields to every other legal arm first.
 		if (normal.isEmpty()) {
-			normal = priced;
+			normal = priced.stream().filter(candidate -> !lastResort(candidate)).toList();
+			if (normal.isEmpty()) {
+				normal = priced;
+			}
 		}
 		Priced<T> initial = normal.get(0);
 		Candidate<T> incumbent = initial.candidate;
@@ -258,14 +264,35 @@ final class LmdbNativeAdaptiveArbitration {
 				captured);
 	}
 
+	/**
+	 * A normal (unbounded) dispatch choice needs complete work evidence, a cold anchor, actual completed executions of
+	 * this exact variant, or the structural applicability of an index/metadata specialist whose work is bounded by what
+	 * it was offered for; an arm whose work is unknown or whose producer refused its quote stays in the legal inventory
+	 * as bounded exploration and last fallback.
+	 */
 	private static boolean normalEligible(Priced<?> candidate) {
-		return candidate.candidate.estimate.workEvidence().isComplete() || candidate.candidate.coldAnchor() != null
-				|| candidate.prediction.exactCompletedCount() > 0L
-				// A complete page/root-domain algorithm was offered only because the whole answer reduces to bounded
-				// metadata work; that structural applicability is its resource proof while its DISTINCT-domain or
-				// cross-group feature quote remains explicitly unknown.
-				|| LmdbNativeStrategyPreference
-						.completeDomainAlgorithmFamily(candidate.candidate.estimate.variantKey().strategyFamily());
+		Candidate<?> arm = candidate.candidate;
+		return arm.estimate.workEvidence().isComplete() || arm.coldAnchor() != null
+				|| candidate.prediction.exactCompletedCount() > 0L || structurallyAdmittedSpecialist(arm);
+	}
+
+	/**
+	 * Index-order and page/root-domain specialists are offered only when the shape structurally admits them, and their
+	 * work is bounded by the index runs or metadata they walk; that applicability is their resource proof while their
+	 * per-feature quote remains explicitly unknown. A variant that must hash per-group membership state is input-sized
+	 * work again and competes like any other unquoted arm.
+	 */
+	private static boolean structurallyAdmittedSpecialist(Candidate<?> arm) {
+		return LmdbNativeStrategyPreference.structuralSpecialistFamily(arm.estimate.variantKey().strategyFamily())
+				&& !arm.estimate.variantKey().requiresHashing();
+	}
+
+	/** A domain algorithm forced into unquoted per-group hashing is the last arm a cold inventory should open. */
+	private static boolean lastResort(Priced<?> candidate) {
+		Candidate<?> arm = candidate.candidate;
+		return LmdbNativeStrategyPreference.completeDomainAlgorithmFamily(arm.estimate.variantKey().strategyFamily())
+				&& arm.estimate.variantKey().requiresHashing() && !arm.estimate.workEvidence().isComplete()
+				&& arm.coldAnchor() == null && candidate.prediction.exactCompletedCount() == 0L;
 	}
 
 	/** Unknown feature prices never acquire numerical authority from a physical cold-start witness. */

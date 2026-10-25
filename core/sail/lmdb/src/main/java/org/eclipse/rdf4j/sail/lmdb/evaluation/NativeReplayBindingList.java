@@ -55,6 +55,8 @@ final class NativeReplayBindingList extends AbstractList<BindingSet> implements 
 		private final LmdbQueryMemoryManager.QueryLedger ledger;
 		private NativeResultReplay replay;
 		private boolean finished;
+		/** Data-proportional loops poll cancellation at entry and at most every 1024 rows. */
+		private int tick;
 
 		Builder(NativeGroupIteration owner, LmdbQueryMemoryManager.QueryLedger ledger) {
 			this.owner = owner;
@@ -69,14 +71,15 @@ final class NativeReplayBindingList extends AbstractList<BindingSet> implements 
 			if (finished) {
 				throw new IllegalStateException("Aggregate output collection is finished");
 			}
-			owner.cancellation.check();
-			LmdbNativeProbeDeadline.poll(0);
+			owner.cancellation.poll(tick);
+			LmdbNativeProbeDeadline.poll(tick++);
 			if (replay == null) {
 				NativeExecutionContext context = owner.source instanceof SyntheticValueSource synthetic
 						? synthetic.executionContext()
 						: null;
 				replay = new NativeResultReplay(row.schema(), context, owner.cancellation, ledger,
-						Math.max(8192L, NativeCountGroupStore.configuredMaxBytes()), false);
+						Math.max(8192L, NativeCountGroupStore.configuredMaxBytes()), false)
+								.resolvingStoreTermsWith(owner.source);
 			}
 			replay.append(row);
 		}
@@ -122,14 +125,16 @@ final class NativeReplayBindingList extends AbstractList<BindingSet> implements 
 	static List<BindingSet> copy(BindingRows rows, NativeGroupIteration owner,
 			LmdbQueryMemoryManager.QueryLedger ledger) {
 		return copy(new NativeResultCursor() {
+			private int tick;
+
 			@Override
 			public NativeResultRow next() {
-				owner.cancellation.check();
-				LmdbNativeProbeDeadline.poll(0);
+				owner.cancellation.poll(tick);
+				LmdbNativeProbeDeadline.poll(tick++);
 				try {
 					BindingSet bindings = rows.next();
-					owner.cancellation.check();
-					LmdbNativeProbeDeadline.poll(0);
+					owner.cancellation.poll(tick);
+					LmdbNativeProbeDeadline.poll(tick++);
 					return bindings == null ? null : NativeResultRow.fromBindingSet(owner.physicalSchema(), bindings);
 				} catch (IOException failure) {
 					throw new QueryEvaluationException(failure);
@@ -164,10 +169,12 @@ final class NativeReplayBindingList extends AbstractList<BindingSet> implements 
 			}
 			NativeExecutionContext context = input.executionContext();
 			replay = new NativeResultReplay(row.schema(), context, owner.cancellation, ledger,
-					Math.max(8192L, NativeCountGroupStore.configuredMaxBytes()), false);
+					Math.max(8192L, NativeCountGroupStore.configuredMaxBytes()), false)
+							.resolvingStoreTermsWith(owner.source);
+			int tick = 0;
 			do {
-				owner.cancellation.check();
-				LmdbNativeProbeDeadline.poll(0);
+				owner.cancellation.poll(tick);
+				LmdbNativeProbeDeadline.poll(tick++);
 				replay.append(row);
 			} while ((row = input.next()) != null);
 			replay.finish();
@@ -243,6 +250,7 @@ final class NativeReplayBindingList extends AbstractList<BindingSet> implements 
 
 	private final class Reader implements Iterator<BindingSet>, AutoCloseable {
 		private final NativeResultCursor cursor;
+		private int tick;
 		private final NativeExecutionPhaseEvent.Coalesced render = NativeExecutionPhaseEvent.coalesced("render",
 				cancellation);
 		private NativeResultRow next;
@@ -280,11 +288,11 @@ final class NativeReplayBindingList extends AbstractList<BindingSet> implements 
 			}
 			render.start();
 			try {
-				cancellation.check();
-				LmdbNativeProbeDeadline.poll(0);
+				cancellation.poll(tick);
+				LmdbNativeProbeDeadline.poll(tick++);
 				BindingSet row = next.toBindingSet();
-				cancellation.check();
-				LmdbNativeProbeDeadline.poll(0);
+				cancellation.poll(tick);
+				LmdbNativeProbeDeadline.poll(tick++);
 				next = null;
 				return row;
 			} catch (Throwable failure) {
