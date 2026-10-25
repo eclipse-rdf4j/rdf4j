@@ -34,7 +34,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.support.FunctionArgs;
 /**
  * dtf:parseDate(s, pattern [, locale]): parses a string with a {@link DateTimeFormatter} pattern. The result is an
  * {@code xsd:dateTime} when the pattern yields date and time fields, an {@code xsd:date} for date-only patterns and an
- * {@code xsd:time} for time-only patterns; a timezone is attached when the pattern parses one.
+ * {@code xsd:time} for time-only patterns; a timezone is attached when the pattern parses one. Fields are resolved
+ * strictly: a date or time that does not exist (30 February, 24:00) is an evaluation error rather than being clamped.
  */
 public class ParseDate extends DateTimeFunction {
 
@@ -47,7 +48,7 @@ public class ParseDate extends DateTimeFunction {
 	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		FunctionArgs.arity(this, args, 2, 3);
 		String text = FunctionArgs.string(this, args[0]);
-		DateTimeFormatter formatter = DateFormat.formatter(this, FunctionArgs.lexical(this, args[1]),
+		DateTimeFormatter formatter = DateFormat.parser(this, FunctionArgs.lexical(this, args[1]),
 				args.length == 3 ? FunctionArgs.lexical(this, args[2]) : "");
 		TemporalAccessor parsed;
 		try {

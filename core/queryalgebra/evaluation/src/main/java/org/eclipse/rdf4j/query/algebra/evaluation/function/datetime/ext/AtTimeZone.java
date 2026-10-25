@@ -27,7 +27,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.support.FunctionArgs;
 /**
  * dtf:atTimeZone(dt, zone): converts a value that has a timezone to the same instant in {@code zone} (a region id such
  * as {@code "Europe/Oslo"} or an offset such as {@code "+02:00"}), or interprets a value without timezone as local time
- * in {@code zone}. The result always carries the resulting offset; dates become midnight dateTimes.
+ * in {@code zone}. The result is an {@code xsd:dateTime} (an {@code xsd:time} for a time input) that carries the
+ * resulting offset; dates become midnight dateTimes.
  */
 public class AtTimeZone extends DateTimeFunction {
 
@@ -48,9 +49,8 @@ public class AtTimeZone extends DateTimeFunction {
 		}
 		ZonedDateTime zoned = t.hasOffset() ? t.toOffsetDateTime().atZoneSameInstant(zone)
 				: ZonedDateTime.of(t.local(), zone);
-		Kind kind = t.kind() == Kind.TIME ? Kind.TIME
-				: t.kind() == Kind.DATE_TIME_STAMP ? Kind.DATE_TIME_STAMP
-						: Kind.DATE_TIME;
+		// the result is an xsd:dateTime for every input with a date part (including xsd:dateTimeStamp), as documented
+		Kind kind = t.kind() == Kind.TIME ? Kind.TIME : Kind.DATE_TIME;
 		return DateTimeSupport.toLiteral(valueFactory, kind, zoned.toLocalDateTime(), zoned.getOffset());
 	}
 }
