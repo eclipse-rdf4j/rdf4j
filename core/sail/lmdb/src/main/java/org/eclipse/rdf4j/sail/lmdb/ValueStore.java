@@ -981,10 +981,6 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private long nativeCommitGeneration;
 	private volatile long environmentGeneration;
 	private boolean nativeMutation;
-	/** Set by {@link #commitIfChanged()} for the duration of its commit. */
-	private boolean skipUnchangedCommit;
-	/** Whether the last commit found nothing to publish and aborted its native writer instead. */
-	private boolean lastCommitSkipped;
 	private volatile TxnReplayPolicy.Decision replayDecision;
 	private final Object capacityOrigin = new Object();
 	private long bulkMapGrowthCount;
@@ -13761,7 +13757,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			associationGate.unlock();
 		}
 		if (writeTxn != 0) {
-			if (commit && skipUnchangedCommit && writerChangedNothing()) {
+			if (commit && publication.transaction.skipsUnchanged() && writerChangedNothing()) {
 				abortUnchangedWriter(publication);
 				return true;
 			}
@@ -13866,7 +13862,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	/** Releases an unchanged writer as if it had committed: the callers' dictionary state is already durable. */
 	private void abortUnchangedWriter(WriterPublication publication) throws IOException {
 		lastNativeCommitSucceeded = true;
-		lastCommitSkipped = true;
+		publication.transaction.commitSkipped();
 		associationGate.lock();
 		try {
 			abortWriteTransaction(nativeWriteTransaction(publication));
@@ -14042,11 +14038,20 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	 * dictionary.
 	 */
 	void commitIfChanged() throws IOException {
-		skipUnchangedCommit = true;
+		WriterTransaction requested = WriterTransaction.current();
+		WriterTransaction transaction = requested == null ? currentWriterTransaction() : requested;
+		if (transaction == null) {
+			commit();
+			return;
+		}
+		// The request belongs to this thread and its writer, not to the store: other writers, such as term index
+		// maintenance, are admitted as soon as this one is released, while commit() still refreshes readers. A
+		// store-wide flag let them abort writers whose new sub-databases and staging rows no change counter records.
+		transaction.requestSkipIfUnchanged();
 		try {
 			commit();
 		} finally {
-			skipUnchangedCommit = false;
+			transaction.endSkipRequest();
 		}
 	}
 
@@ -14076,9 +14081,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			}
 			throw failure;
 		}
-		if (lastCommitSkipped) {
+		if (transaction.commitWasSkipped()) {
 			// Nothing was committed, so readers have no newer snapshot to move to.
-			lastCommitSkipped = false;
 			endValueLookupMutation();
 			return;
 		}
