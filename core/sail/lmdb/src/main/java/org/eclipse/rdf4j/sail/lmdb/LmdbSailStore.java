@@ -3963,7 +3963,8 @@ class LmdbSailStore implements SailStore {
 		final Object owner;
 		final LmdbStoreConnection.WriteAttempt writeAttempt;
 		final List<Operation> work = new ArrayList<>();
-		final Set<LmdbSailSink> sinks = Collections.newSetFromMap(new IdentityHashMap<>());
+		// Usually one sink; the default capacity of 32 would allocate a 64-slot table per transaction.
+		final Set<LmdbSailSink> sinks = Collections.newSetFromMap(new IdentityHashMap<>(2));
 		final Set<Long> retiredIds = new HashSet<>();
 		PendingNoneBatch pending;
 		LmdbSailSink pendingSink;
@@ -4055,13 +4056,7 @@ class LmdbSailStore implements SailStore {
 		completeInitialRunImportBeforeRead(owner);
 		Object previous = noneMutationReadOwner.get();
 		noneMutationReadOwner.set(owner);
-		return () -> {
-			if (previous == null) {
-				noneMutationReadOwner.remove();
-			} else {
-				noneMutationReadOwner.set(previous);
-			}
-		};
+		return () -> noneMutationReadOwner.set(previous);
 	}
 
 	/**
@@ -4140,6 +4135,8 @@ class LmdbSailStore implements SailStore {
 	private volatile long publicationVersion;
 	private volatile long pendingDictionaryCheckpointGeneration;
 	private volatile Thread pendingDictionaryCheckpointThread;
+	// Per-transaction thread locals are cleared with set(null), not remove(): remove() drops the thread's map entry,
+	// so the next set() would allocate a new one on every transaction.
 	private final ThreadLocal<PublicationContext> publicationContext = new ThreadLocal<>();
 	private final ThreadLocal<ReadView> activeReadView = new ThreadLocal<>();
 	private final ThreadLocal<ReadResourceContext> activeReadResourceContext = new ThreadLocal<>();
@@ -4155,8 +4152,11 @@ class LmdbSailStore implements SailStore {
 	private volatile Thread storeTransactionThread;
 	private volatile Thread tripleStoreOwnerThread;
 	private final Object asyncProgress = new Object();
+	// The caller waits for the writer's result within its transaction, so it spins before parking. The writer waits
+	// for the next operation, which is usually the next transaction's: spinning there only delayed its park, by up to
+	// 21 ms on a loaded machine, and measured no faster for NONE, READ_COMMITTED or SNAPSHOT transactions.
 	private final AsyncSignal asyncCallerProgress = new AsyncSignal();
-	private final AsyncSignal asyncOperationAvailable = new AsyncSignal();
+	private final AsyncSignal asyncOperationAvailable = new AsyncSignal(false);
 	private final AtomicInteger asyncCapacityWaiters = new AtomicInteger();
 	private volatile int asyncMonitorWaiters;
 	private NativeGrowthRequest pendingNativeGrowth;
@@ -4360,11 +4360,7 @@ class LmdbSailStore implements SailStore {
 				return;
 			}
 			closed = true;
-			if (previousOwner == null) {
-				activeWriterOwner.remove();
-			} else {
-				activeWriterOwner.set(previousOwner);
-			}
+			activeWriterOwner.set(previousOwner);
 		}
 	}
 
@@ -4471,7 +4467,7 @@ class LmdbSailStore implements SailStore {
 						publicationGate.unlock();
 					}
 				}
-				publicationContext.remove();
+				publicationContext.set(null);
 				try {
 					context.writerLease.close();
 				} catch (RuntimeException | Error closeFailure) {
@@ -6055,17 +6051,23 @@ class LmdbSailStore implements SailStore {
 			failedWriterTransactions.remove(owner);
 			hasFailedWriterTransactions = !failedWriterTransactions.isEmpty();
 		}
-		List<ReadAttemptLease> completed;
+		// Runs when every sink closes, so it avoids a stream pipeline: usually no lease matches.
+		List<ReadAttemptLease> completed = null;
 		synchronized (writerOwnerMonitor) {
-			if (activeWriterLeases.isEmpty()) {
-				return;
+			for (WriterLease lease : activeWriterLeases.keySet()) {
+				ReadAttemptLease attempt = lease.registration.attempt();
+				if (attempt != null && attempt.owner == owner && attempt.completed) {
+					if (completed == null) {
+						completed = new ArrayList<>(1);
+					}
+					if (!completed.contains(attempt)) {
+						completed.add(attempt);
+					}
+				}
 			}
-			completed = activeWriterLeases.keySet()
-					.stream()
-					.map(lease -> lease.registration.attempt())
-					.filter(attempt -> attempt != null && attempt.owner == owner && attempt.completed)
-					.distinct()
-					.toList();
+		}
+		if (completed == null) {
+			return;
 		}
 		for (ReadAttemptLease attempt : completed) {
 			retireCompletedWriterLeases(attempt);
@@ -10023,30 +10025,39 @@ class LmdbSailStore implements SailStore {
 			// A lease can have queued behind the store lock before its owner parks or finishes an attempt.
 			checkWriteAttemptAdmission();
 			checkNativeContinuationAdmission();
-			return SailWriteContinuation.enter(sinkStoreAccessLock, () -> {
-				checkNativeContinuationAdmission();
-				NoneWriteState state = nativeCheckpoints ? noneWriteStates.get(writerOwner()) : null;
-				if (state != null && state.parked && !storeTxnStarted.get()) {
-					return;
-				}
-				if (!storeTxnStarted.get() || storeTransactionOwner != sinkTransactionOwner
-						|| storeTxnGeneration != backingTransactionGeneration) {
-					throw new IllegalStateException("A suspended LMDB sink must retain its exact native generation");
-				}
-				suspendedNativeContinuation = new NativeContinuationSuspension(storeTransactionOwner,
-						storeTxnGeneration, Thread.currentThread());
-			}, () -> {
-				NoneWriteState state = nativeCheckpoints ? noneWriteStates.get(writerOwner()) : null;
-				if (state != null && state.parked) {
-					return;
-				}
-				NativeContinuationSuspension suspended = suspendedNativeContinuation;
-				if (suspended == null || suspended.caller() != Thread.currentThread()
-						|| suspended.owner() != storeTransactionOwner || suspended.generation() != storeTxnGeneration) {
-					throw new IllegalStateException("A suspended LMDB sink lost its native ownership before resuming");
-				}
-				suspendedNativeContinuation = null;
-			});
+			return SailWriteContinuation.enter(sinkStoreAccessLock, suspendNativeContinuation,
+					resumeNativeContinuation);
+		}
+
+		// Kept as fields so that entering a continuation, several times per transaction, allocates no callbacks.
+		private final Runnable suspendNativeContinuation = this::suspendNativeContinuation;
+		private final Runnable resumeNativeContinuation = this::resumeNativeContinuation;
+
+		private void suspendNativeContinuation() {
+			checkNativeContinuationAdmission();
+			NoneWriteState state = nativeCheckpoints ? noneWriteStates.get(writerOwner()) : null;
+			if (state != null && state.parked && !storeTxnStarted.get()) {
+				return;
+			}
+			if (!storeTxnStarted.get() || storeTransactionOwner != sinkTransactionOwner
+					|| storeTxnGeneration != backingTransactionGeneration) {
+				throw new IllegalStateException("A suspended LMDB sink must retain its exact native generation");
+			}
+			suspendedNativeContinuation = new NativeContinuationSuspension(storeTransactionOwner,
+					storeTxnGeneration, Thread.currentThread());
+		}
+
+		private void resumeNativeContinuation() {
+			NoneWriteState state = nativeCheckpoints ? noneWriteStates.get(writerOwner()) : null;
+			if (state != null && state.parked) {
+				return;
+			}
+			NativeContinuationSuspension suspended = suspendedNativeContinuation;
+			if (suspended == null || suspended.caller() != Thread.currentThread()
+					|| suspended.owner() != storeTransactionOwner || suspended.generation() != storeTxnGeneration) {
+				throw new IllegalStateException("A suspended LMDB sink lost its native ownership before resuming");
+			}
+			suspendedNativeContinuation = null;
 		}
 
 		private void queueEstimatorAdd(Statement st) {

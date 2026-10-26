@@ -50,7 +50,7 @@ Milestones 1 to 3 brought the load to about 30 seconds. Milestones 4 to 7 add th
   - the collector allocates its chunk buffers lazily.
   All 28 run-import tests pass.
 - [x] (2026-10-25 22:50Z) User request: the bulk loader's default statement indexes are now `spoc,posc,ospc`, in both `StatementIndexBulkRecords.DEFAULT_INDEXES` and `LmdbNativeBulkStore.DEFAULT_TRIPLE_INDEXES`. `LmdbBulkLoaderDefaultIndexesTest` failed before the change and passes after; the bulk package passes 500 tests with 1 skipped. The store's own default (`TripleStore.DEFAULT_TRIPLE_INDEXES`) is unchanged.
-- [ ] Milestone 7: full `core/sail/lmdb` suite. The first attempt was stopped: IntelliJ's build wrote into the same `target/` directories, so test classes vanished mid-run. It needs a rerun with nothing else building this checkout.
+- [x] (2026-10-25 23:59Z) Milestone 7: full `core/sail/lmdb` suite on `535fc464ee`, run in a separate worktree so that IntelliJ could not write into `target/`: 10,694 tests, 1 failure, 37 skipped. The failure, `LmdbOptimizerPipelineTest#longLivedConnectionsUseStandardPipelineUntilSketchesReady`, ran while benchmarks loaded the same machine, and it passes alone.
 
 ## Surprises & Discoveries
 
@@ -117,6 +117,15 @@ Milestones 1 to 3 brought the load to about 30 seconds. Milestones 4 to 7 add th
 - Observation: inferred rows, and batches too large for the fresh session's value limit, reached the run import and failed with "Values cannot be created outside the initial import's fresh session". `flushNoneBatch` now completes the import before such a batch, and `acceptingInitialRunImport()` requires explicit rows.
 - Observation: running the final batch on the caller thread is only correct when that batch is the last one. Namespace flushes and other mid-transaction flushes still use the ingest worker. `flushNonePending(owner, true)` is called only from `LmdbStoreConnection.endUpdateInternal`.
   The latest local A/B, with all fixes: 6.1.0 31,325 ± 7,643 against 41,918 ± 1,906 ops/s. The theme load still takes 13.5 s and verifies.
+- Observation: both versions dirty the same number of LMDB pages per transaction. Free-list records after 100,000 single-statement transactions show 9 pages per triple commit in both 6.1.0 and this branch, and 0.82 triple commits per transaction (repeated random literals add nothing). So the LMDB commit costs the same in both, and the remaining gap is Java overhead: 29% of CPU time, spread thinly. Removing per-transaction allocations gave a further 5–8% in an interleaved A/B (38,781 → 41,697 and 40,009 → 41,949 ops/s). The allocations were:
+  - thread-local entries that were removed and re-added on every transaction;
+  - continuation callbacks;
+  - a stream pipeline that ran whenever a sink closed;
+  - the run import's final buffer, which was a full 64 MB chunk even for one row.
+- Observation: on CI, `LmdbMapGrowthCoordinatorTest#closingDirectSinkWakesParkedAsyncTripleStoreWorker` found the native writer RUNNABLE where it expected it to be parked. Under load, 24 busy processes on 16 cores, a single `Thread.yield()` took up to 20 ms, so the yield tier kept an idle writer runnable for up to 21 ms. The old wait parked within 1.4 ms. The test failed 4 of 40 runs under that load and 0 of 40 with the old wait. Two fixes:
+  - the yield tier now also stops after `YIELD_NANOS` (100 us);
+  - the writer's operation signal parks without spinning, because spinning there measured no faster for NONE, READ_COMMITTED or SNAPSHOT.
+  With both fixes the test failed 0 of 40 under the same load. `LmdbSmallNoneTransactionTest` also counted a background dictionary commit on CI, so it now waits for post-ready maintenance and the index rebuild before counting.
 - Observation: within one sorted value batch, adjacent IRIs share most of their prefix; on average 5.7 bytes differ from the previous IRI. The 3.2 million IRIs come from only 69 namespaces, and none uses a non-canonical split.
 
 ## Decision Log

@@ -19,6 +19,7 @@ import java.io.IOException;
  */
 final class WriterTransaction {
 
+	/** Restored with set(null), not remove(), so a transaction does not allocate a new thread-local entry. */
 	private static final ThreadLocal<WriterTransaction> invocation = new ThreadLocal<>();
 	/** Prepared policy belongs to this admission attempt until its dictionary writer actually begins. */
 	volatile TxnReplayPolicy.Decision replayDecision;
@@ -44,11 +45,7 @@ final class WriterTransaction {
 		try {
 			operation.run();
 		} finally {
-			if (previous == null) {
-				invocation.remove();
-			} else {
-				invocation.set(previous);
-			}
+			invocation.set(previous);
 		}
 	}
 }

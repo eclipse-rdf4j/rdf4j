@@ -7110,7 +7110,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		try {
 			resizeMap(txn, requiredSize, activeWriteTxnCommitted);
 		} finally {
-			safeAllocationResize.remove();
+			safeAllocationResize.set(null);
 		}
 	}
 

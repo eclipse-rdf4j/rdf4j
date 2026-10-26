@@ -43,6 +43,8 @@ class AsyncSignalTest {
 		int spins;
 		int yields;
 		int parks;
+		/** Each yield waits as long as a busy machine's scheduler slice. */
+		boolean slowYields;
 
 		RecordingWaiter(String signalAt, int signalAfter) {
 			this.signalAt = signalAt;
@@ -58,6 +60,13 @@ class AsyncSignalTest {
 		@Override
 		public void yield() {
 			yields++;
+			if (slowYields) {
+				// Waits on the clock: a park could return early on a permit left by an earlier signal.
+				long end = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(1);
+				while (System.nanoTime() - end < 0L) {
+					Thread.onSpinWait();
+				}
+			}
 			maybeSignal("yield", yields);
 		}
 
@@ -80,7 +89,12 @@ class AsyncSignalTest {
 	}
 
 	private static RecordingWaiter awaitWith(RecordingWaiter waiter) throws InterruptedException {
-		AsyncSignal signal = new AsyncSignal(waiter);
+		return awaitWith(waiter, true);
+	}
+
+	private static RecordingWaiter awaitWith(RecordingWaiter waiter, boolean spinBeforePark)
+			throws InterruptedException {
+		AsyncSignal signal = new AsyncSignal(waiter, spinBeforePark);
 		waiter.signal = signal;
 		long observed = signal.sequence();
 		boolean primary = signal.register();
@@ -114,6 +128,24 @@ class AsyncSignalTest {
 		RecordingWaiter waiter = awaitWith(new RecordingWaiter("park", 1));
 		assertEquals(AsyncSignal.SPINS, waiter.spins);
 		assertEquals(AsyncSignal.YIELDS, waiter.yields);
+		assertEquals(1, waiter.parks);
+	}
+
+	@Test
+	void anIdleWaiterParksWithoutSpinning() throws InterruptedException {
+		RecordingWaiter waiter = awaitWith(new RecordingWaiter("park", 1), false);
+		assertEquals(0, waiter.spins);
+		assertEquals(0, waiter.yields);
+		assertEquals(1, waiter.parks);
+	}
+
+	@Test
+	void aSlowYieldSpinParksOnceItsTimeBudgetIsSpent() throws InterruptedException {
+		RecordingWaiter slow = new RecordingWaiter("park", 1);
+		slow.slowYields = true;
+		RecordingWaiter waiter = awaitWith(slow);
+		assertEquals(AsyncSignal.SPINS, waiter.spins);
+		assertEquals(1, waiter.yields, "a loaded machine must not keep a waiter yielding for seconds");
 		assertEquals(1, waiter.parks);
 	}
 

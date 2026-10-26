@@ -119,7 +119,7 @@ final class LmdbRunCollector implements Closeable {
 		}
 		if (!completed) {
 			if (committed > 0) {
-				dispatch();
+				dispatch(true);
 			}
 			awaitPending();
 			completed = true;
@@ -150,15 +150,19 @@ final class LmdbRunCollector implements Closeable {
 			current = grown;
 			return;
 		}
-		dispatch();
+		dispatch(false);
 	}
 
-	/** Hands the committed prefix to the sorter and moves the provisional tail into a recycled buffer. */
-	private void dispatch() throws IOException {
+	/**
+	 * Hands the committed prefix to the sorter and moves the provisional tail into a recycled buffer.
+	 *
+	 * @param last whether no rows follow; a full chunk buffer would then never be filled
+	 */
+	private void dispatch(boolean last) throws IOException {
 		long[] chunk = current;
 		int spillRows = committed;
 		int tail = count - committed;
-		long[] next = takeBuffer();
+		long[] next = last ? new long[LmdbSortedRuns.ROW_LONGS * Math.max(1, tail)] : takeBuffer();
 		if (next.length < LmdbSortedRuns.ROW_LONGS * tail) {
 			next = new long[Math.max(chunk.length, LmdbSortedRuns.ROW_LONGS * tail)];
 		}

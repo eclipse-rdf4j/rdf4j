@@ -77,7 +77,7 @@ final class AsyncSignal {
 	 * core to any runnable thread, yet returns in about 0.1 us when there is none, so the waiter still reacts quickly.
 	 *
 	 * 3. Park: a long wait, such as an idle writer between transactions, map growth or slow I/O, must not burn CPU, so
-	 * it pays the park once.
+	 * it pays the park once. A waiter that is usually idle can skip both spins: see AsyncSignal(boolean).
 	 *
 	 * The budgets come from TransactionsPerSecondSyntheticBenchmark.transactions (one statement per NONE transaction),
 	 * measured on an Apple M3 Max:
@@ -89,23 +89,39 @@ final class AsyncSignal {
 	 * parks. Larger budgets gain nothing and only spin longer, and a short cheap spin followed by a long yield spin
 	 * measured lower. On that machine the tiers last about 50 us and 30 us.
 	 *
+	 * The yield spin also stops after YIELD_NANOS. On a loaded machine, such as a CI runner running tests in parallel,
+	 * each yield can wait a whole scheduler slice of several milliseconds, and 256 of them would keep an idle waiter
+	 * runnable for seconds. The budget is about three times the 30 us the tier takes on an idle M3 Max.
+	 *
 	 * A signal that arrives during the spins leaves an unused unpark permit, so a later park on this thread may return
 	 * early. That is allowed: every caller re-checks its condition after await returns.
 	 */
 	static final int SPINS = 1 << 12;
 	static final int YIELDS = 1 << 8;
+	static final long YIELD_NANOS = 100_000L;
 
 	private final Waiter waiter;
+	private final boolean spinBeforePark;
 	private final AtomicLong sequence = new AtomicLong();
 	private final AtomicReference<Thread> primaryWaiter = new AtomicReference<>();
 	private final ConcurrentLinkedQueue<Thread> additionalWaiters = new ConcurrentLinkedQueue<>();
 
 	AsyncSignal() {
-		this(SYSTEM_WAITER);
+		this(SYSTEM_WAITER, true);
+	}
+
+	/** @param spinBeforePark false for a waiter that is usually idle, which then parks straight away */
+	AsyncSignal(boolean spinBeforePark) {
+		this(SYSTEM_WAITER, spinBeforePark);
 	}
 
 	AsyncSignal(Waiter waiter) {
+		this(waiter, true);
+	}
+
+	AsyncSignal(Waiter waiter, boolean spinBeforePark) {
 		this.waiter = waiter;
+		this.spinBeforePark = spinBeforePark;
 	}
 
 	long sequence() {
@@ -152,7 +168,7 @@ final class AsyncSignal {
 		}
 		if (remainingNanos > 0L && sequence.get() == observed) {
 			long deadline = remainingNanos == Long.MAX_VALUE ? 0L : System.nanoTime() + remainingNanos;
-			if (!changedWhileSpinning(observed, deadline) && sequence.get() == observed) {
+			if ((!spinBeforePark || !changedWhileSpinning(observed, deadline)) && sequence.get() == observed) {
 				if (deadline == 0L) {
 					waiter.park(this);
 				} else {
@@ -176,12 +192,17 @@ final class AsyncSignal {
 			}
 			waiter.spin();
 		}
+		long yieldEnd = System.nanoTime() + YIELD_NANOS;
 		for (int i = 0; i < YIELDS; i++) {
 			if (sequence.get() != observed) {
 				return true;
 			}
-			if (deadline != 0L && System.nanoTime() - deadline >= 0L) {
+			long now = System.nanoTime();
+			if (deadline != 0L && now - deadline >= 0L) {
 				return false;
+			}
+			if (now - yieldEnd >= 0L) {
+				break;
 			}
 			waiter.yield();
 		}

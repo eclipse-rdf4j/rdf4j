@@ -17,6 +17,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -91,6 +92,9 @@ class LmdbSmallNoneTransactionTest {
 				seed.addStatement(subject, P, VF.createLiteral("b"));
 				seed.commit();
 			}
+			// Post-ready maintenance and index rebuilds commit the dictionary in the background; they must not count.
+			LmdbGcTestMaintenance.awaitPostReady(sail);
+			assertThat(sail.awaitIndexRebuild(30L, TimeUnit.SECONDS)).as(sail.getStartupStatus().toString()).isTrue();
 			LmdbSailStore backing = sail.getBackingStore();
 			long dictionaryTransaction = backing.valueStoreTransactionId();
 			long tripleTransaction = backing.tripleStoreTransactionId();
@@ -186,7 +190,9 @@ class LmdbSmallNoneTransactionTest {
 	}
 
 	private static LmdbStoreConfig config() {
-		return new LmdbStoreConfig("spoc,posc,ospc").setDirectAdjacencyEnabled(false).setValueOverlayEnabled(false);
+		return new LmdbStoreConfig("spoc,posc,ospc").setDirectAdjacencyEnabled(false)
+				.setValueOverlayEnabled(false)
+				.setSketchEstimatorEnabled(false);
 	}
 
 	private static final class ThreadRecordingStore extends LmdbStore {
