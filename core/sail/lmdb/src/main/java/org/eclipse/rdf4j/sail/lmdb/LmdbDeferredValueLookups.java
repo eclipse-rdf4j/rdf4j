@@ -82,8 +82,7 @@ final class LmdbDeferredValueLookups implements Closeable {
 
 	/** Waits for every sort task and opens a merge over all committed records, in strictly increasing key order. */
 	Source complete() throws IOException {
-		List<Path> files = runs.completeRuns().get(0);
-		return new Source(new LmdbSortedRuns.Merge(files, KEY_ORDER, false));
+		return new Source(new LmdbSortedRuns.Merge(runs.completeRuns().get(0), KEY_ORDER, false));
 	}
 
 	@Override

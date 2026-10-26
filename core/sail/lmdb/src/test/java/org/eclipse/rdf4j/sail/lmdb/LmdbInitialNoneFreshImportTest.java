@@ -61,7 +61,9 @@ class LmdbInitialNoneFreshImportTest {
 				assertThat(backing.hasActiveFreshValueSession()).isTrue();
 				writer.commit();
 			}
-			assertThat(backing.hasActiveFreshValueSession()).as("the session ends with the NONE attempt").isFalse();
+			assertThat(backing.hasActiveFreshValueSession())
+					.as("a committed NONE attempt leaves its exact session to later bulk writers")
+					.isTrue();
 			assertImported(sail, 1000);
 		} finally {
 			sail.shutDown();

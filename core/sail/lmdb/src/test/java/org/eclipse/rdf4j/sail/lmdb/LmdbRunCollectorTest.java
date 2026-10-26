@@ -61,7 +61,7 @@ class LmdbRunCollectorTest {
 				}
 			}
 			assertThat(collector.committedRows()).isEqualTo(35);
-			List<List<Path>> runs = collector.completeRuns();
+			List<LmdbSortedRuns.Runs> runs = collector.completeRuns();
 			assertThat(runs).hasSize(2);
 
 			List<Long> subjects = new ArrayList<>();
@@ -89,6 +89,38 @@ class LmdbRunCollectorTest {
 	}
 
 	@Test
+	void anImportThatNeverFillsAChunkWritesNoRunFile() throws Exception {
+		try (LmdbRunCollector collector = new LmdbRunCollector("t", directory, new int[][] { SPOC, OSPC }, 1_000, 2,
+				executor)) {
+			for (int i = 0; i < 35; i++) {
+				collector.add(1_000 - i, 2, i % 7, 0);
+			}
+			collector.commit();
+			List<LmdbSortedRuns.Runs> runs = collector.completeRuns();
+			try (Stream<Path> spilled = Files.list(directory)) {
+				assertThat(spilled).as("the final chunk is merged from memory").isEmpty();
+			}
+			List<long[]> bySubject = new ArrayList<>();
+			try (LmdbSortedRuns.Merge merge = new LmdbSortedRuns.Merge(runs.get(0), SPOC, true)) {
+				long[] row = new long[4];
+				while (merge.next(row)) {
+					bySubject.add(row.clone());
+				}
+			}
+			assertThat(bySubject).hasSize(35);
+			assertThat(bySubject.stream().map(row -> row[0]).toList()).isSorted();
+			List<Long> objects = new ArrayList<>();
+			try (LmdbSortedRuns.Merge merge = new LmdbSortedRuns.Merge(runs.get(1), OSPC, true)) {
+				long[] row = new long[4];
+				while (merge.next(row)) {
+					objects.add(row[2]);
+				}
+			}
+			assertThat(objects).hasSize(35).isSorted();
+		}
+	}
+
+	@Test
 	void aChunkLargerThanTheBufferGrowsInsteadOfSpillingProvisionalRows() throws Exception {
 		try (LmdbRunCollector collector = new LmdbRunCollector("t", directory, new int[][] { SPOC }, 4, 1,
 				executor)) {
@@ -100,7 +132,7 @@ class LmdbRunCollectorTest {
 			collector.add(42, 0, 0, 0);
 			assertThatThrownBy(collector::completeRuns).isInstanceOf(IllegalStateException.class);
 			collector.commit();
-			List<List<Path>> runs = collector.completeRuns();
+			List<LmdbSortedRuns.Runs> runs = collector.completeRuns();
 			List<Long> subjects = new ArrayList<>();
 			try (LmdbSortedRuns.Merge merge = new LmdbSortedRuns.Merge(runs.get(0), SPOC, true)) {
 				long[] row = new long[4];

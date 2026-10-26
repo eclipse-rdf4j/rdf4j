@@ -34,11 +34,45 @@ final class LmdbSortedRuns {
 	private LmdbSortedRuns() {
 	}
 
+	/** The runs of one field order: spilled files, and the final chunk when it was sorted in memory instead. */
+	record Runs(List<Path> files, MemoryRun memory) {
+		Runs {
+			files = List.copyOf(files);
+		}
+	}
+
+	/** Rows of a chunk in sorted order, given as row indexes into the chunk; the chunk itself is not reordered. */
+	record MemoryRun(long[] rows, int[] order) {
+	}
+
+	/** Sorts rows {@code [from, to)} by {@code fieldOrder} without spilling them. */
+	static MemoryRun sortInMemory(long[] rows, int from, int to, int[] fieldOrder) {
+		return new MemoryRun(rows, sortedOrder(rows, from, to, fieldOrder));
+	}
+
 	/**
 	 * Sorts rows {@code [from, to)} of an interleaved four-long array by {@code fieldOrder} and writes them to
-	 * {@code file} in that order. The sort is a stable LSD radix sort applied from the least significant field up.
+	 * {@code file} in that order.
 	 */
 	static void sortAndSpill(long[] rows, int from, int to, int[] fieldOrder, Path file) throws IOException {
+		int n = to - from;
+		int[] order = sortedOrder(rows, from, to, fieldOrder);
+		ByteBuffer out = ByteBuffer.allocateDirect(WRITE_BUFFER_BYTES);
+		try (FileChannel channel = FileChannel.open(file, StandardOpenOption.CREATE, StandardOpenOption.WRITE,
+				StandardOpenOption.TRUNCATE_EXISTING)) {
+			for (int i = 0; i < n; i++) {
+				if (out.remaining() < ROW_BYTES) {
+					drain(out, channel);
+				}
+				int base = ROW_LONGS * order[i];
+				out.putLong(rows[base]).putLong(rows[base + 1]).putLong(rows[base + 2]).putLong(rows[base + 3]);
+			}
+			drain(out, channel);
+		}
+	}
+
+	/** The indexes of rows {@code [from, to)} in order: a stable LSD radix sort from the least significant field up. */
+	private static int[] sortedOrder(long[] rows, int from, int to, int[] fieldOrder) {
 		int n = to - from;
 		int[] order = new int[n];
 		for (int i = 0; i < n; i++) {
@@ -58,18 +92,7 @@ final class LmdbSortedRuns {
 				LeadingFieldSorters.lsdRadixSort(order, values, n, scratchOrder, scratchValues, counts, offsets);
 			}
 		}
-		ByteBuffer out = ByteBuffer.allocateDirect(WRITE_BUFFER_BYTES);
-		try (FileChannel channel = FileChannel.open(file, StandardOpenOption.CREATE, StandardOpenOption.WRITE,
-				StandardOpenOption.TRUNCATE_EXISTING)) {
-			for (int i = 0; i < n; i++) {
-				if (out.remaining() < ROW_BYTES) {
-					drain(out, channel);
-				}
-				int base = ROW_LONGS * order[i];
-				out.putLong(rows[base]).putLong(rows[base + 1]).putLong(rows[base + 2]).putLong(rows[base + 3]);
-			}
-			drain(out, channel);
-		}
+		return order;
 	}
 
 	private static void drain(ByteBuffer out, FileChannel channel) throws IOException {
@@ -85,7 +108,7 @@ final class LmdbSortedRuns {
 
 		private final int[] fieldOrder;
 		private final boolean distinct;
-		private final Reader[] heap;
+		private final Source[] heap;
 		private int size;
 		private final long[] previous = new long[ROW_LONGS];
 		private boolean hasPrevious;
@@ -95,18 +118,19 @@ final class LmdbSortedRuns {
 		 * @param distinct when true, a row equal to the previous one is skipped and counted in {@link #duplicates()}
 		 */
 		Merge(List<Path> files, int[] fieldOrder, boolean distinct) throws IOException {
+			this(new Runs(files, null), fieldOrder, distinct);
+		}
+
+		Merge(Runs runs, int[] fieldOrder, boolean distinct) throws IOException {
 			this.fieldOrder = fieldOrder;
 			this.distinct = distinct;
-			this.heap = new Reader[files.size()];
+			this.heap = new Source[runs.files().size() + (runs.memory() == null ? 0 : 1)];
 			try {
-				for (Path file : files) {
-					Reader reader = new Reader(file);
-					if (reader.next()) {
-						heap[size] = reader;
-						siftUp(size++);
-					} else {
-						reader.close();
-					}
+				if (runs.memory() != null) {
+					add(new MemorySource(runs.memory()));
+				}
+				for (Path file : runs.files()) {
+					add(new FileSource(file));
 				}
 			} catch (IOException | RuntimeException | Error failure) {
 				close();
@@ -114,10 +138,19 @@ final class LmdbSortedRuns {
 			}
 		}
 
+		private void add(Source source) throws IOException {
+			if (source.next()) {
+				heap[size] = source;
+				siftUp(size++);
+			} else {
+				source.close();
+			}
+		}
+
 		/** Copies the next row, in its original field layout, into {@code row}; false when every run is exhausted. */
 		boolean next(long[] row) throws IOException {
 			while (size > 0) {
-				Reader top = heap[0];
+				Source top = heap[0];
 				System.arraycopy(top.row, 0, row, 0, ROW_LONGS);
 				if (top.next()) {
 					siftDown(0);
@@ -145,7 +178,7 @@ final class LmdbSortedRuns {
 			return duplicates;
 		}
 
-		private int compare(Reader a, Reader b) {
+		private int compare(Source a, Source b) {
 			for (int field : fieldOrder) {
 				int c = Long.compareUnsigned(a.row[field], b.row[field]);
 				if (c != 0) {
@@ -182,7 +215,7 @@ final class LmdbSortedRuns {
 		}
 
 		private void swap(int a, int b) {
-			Reader t = heap[a];
+			Source t = heap[a];
 			heap[a] = heap[b];
 			heap[b] = t;
 		}
@@ -209,16 +242,47 @@ final class LmdbSortedRuns {
 		}
 	}
 
-	private static final class Reader implements Closeable {
-		private final FileChannel channel;
-		private final ByteBuffer buffer = ByteBuffer.allocateDirect(READ_BUFFER_BYTES);
+	/** One merge input; {@link #next()} loads its next row into {@link #row}. */
+	private abstract static class Source implements Closeable {
 		final long[] row = new long[ROW_LONGS];
 
-		Reader(Path file) throws IOException {
+		abstract boolean next() throws IOException;
+	}
+
+	private static final class MemorySource extends Source {
+		private final long[] rows;
+		private final int[] order;
+		private int next;
+
+		MemorySource(MemoryRun run) {
+			this.rows = run.rows();
+			this.order = run.order();
+		}
+
+		@Override
+		boolean next() {
+			if (next == order.length) {
+				return false;
+			}
+			System.arraycopy(rows, ROW_LONGS * order[next++], row, 0, ROW_LONGS);
+			return true;
+		}
+
+		@Override
+		public void close() {
+		}
+	}
+
+	private static final class FileSource extends Source {
+		private final FileChannel channel;
+		private final ByteBuffer buffer = ByteBuffer.allocateDirect(READ_BUFFER_BYTES);
+
+		FileSource(Path file) throws IOException {
 			this.channel = FileChannel.open(file, StandardOpenOption.READ);
 			buffer.limit(0);
 		}
 
+		@Override
 		boolean next() throws IOException {
 			if (buffer.remaining() < ROW_BYTES) {
 				buffer.compact();

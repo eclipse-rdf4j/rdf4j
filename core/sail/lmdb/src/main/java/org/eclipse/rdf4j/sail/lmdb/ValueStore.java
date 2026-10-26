@@ -13033,6 +13033,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					Varint.writeUnsigned(revIdBb, revision.getRevisionId());
 					int revLength = revIdBb.position();
 					Set<Long> retiredIds = deleteValueToIdMappings(stack, writeTxn, finalIds, finalNextIds);
+					if (!retiredIds.isEmpty() && activeFreshValueSession != null) {
+						// The session maps every value it assigned; a collected one would be handed its stale ID.
+						freshValueSessionSpoiled = true;
+					}
 					for (long id : retiredIds) {
 						revIdBb.position(revLength).limit(revIdBb.capacity());
 						revIdVal.mv_data(id2data(revIdBb, id).flip());

@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,6 +48,8 @@ final class LmdbInitialRunImport implements Closeable {
 	private static final long MIN_CHUNK_BYTES = 8L << 20;
 	/** Tests set a small chunk size here to force many runs per index; zero keeps the heap-derived size. */
 	static volatile long chunkBytesForTest;
+	/** Tests observe, or hold up, each sync of the marker or the data directory here. */
+	static volatile Consumer<Path> beforeSyncForTest;
 
 	final Object owner;
 	private final Path dataDir;
@@ -88,6 +91,7 @@ final class LmdbInitialRunImport implements Closeable {
 	static LmdbInitialRunImport begin(Object owner, Path dataDir, int[][] fieldOrders) throws IOException {
 		Path marker = dataDir.resolve(MARKER_FILE_NAME);
 		try (FileChannel channel = FileChannel.open(marker, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
+			beforeSync(marker);
 			channel.force(true);
 		}
 		forceDirectory(dataDir);
@@ -152,8 +156,8 @@ final class LmdbInitialRunImport implements Closeable {
 		merging = true;
 	}
 
-	/** Waits for the background sorts and returns the run files of each index. */
-	List<List<Path>> tripleRuns() throws IOException {
+	/** Waits for the background sorts and returns the runs of each index. */
+	List<LmdbSortedRuns.Runs> tripleRuns() throws IOException {
 		return triples.completeRuns();
 	}
 
@@ -258,7 +262,15 @@ final class LmdbInitialRunImport implements Closeable {
 		Files.deleteIfExists(path);
 	}
 
+	private static void beforeSync(Path path) {
+		Consumer<Path> hook = beforeSyncForTest;
+		if (hook != null) {
+			hook.accept(path);
+		}
+	}
+
 	private static void forceDirectory(Path directory) throws IOException {
+		beforeSync(directory);
 		try (FileChannel channel = FileChannel.open(directory, StandardOpenOption.READ)) {
 			channel.force(true);
 		} catch (IOException e) {

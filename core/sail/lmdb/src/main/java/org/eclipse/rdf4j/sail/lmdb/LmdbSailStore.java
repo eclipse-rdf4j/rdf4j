@@ -3879,7 +3879,7 @@ class LmdbSailStore implements SailStore {
 	 */
 	private final class InitialRunImportFinish implements Operation {
 		private final LmdbInitialRunImport runImport;
-		private final List<List<Path>> tripleRuns;
+		private final List<LmdbSortedRuns.Runs> tripleRuns;
 
 		private InitialRunImportFinish(LmdbInitialRunImport runImport) throws IOException {
 			this.runImport = runImport;
@@ -8027,6 +8027,14 @@ class LmdbSailStore implements SailStore {
 
 	/** Restore ordinary capture before the old owner releases admission to any subsequent writer. */
 	void finishInitialNoneImport(Object owner, LmdbStoreConnection.WriteAttempt attempt) {
+		finishInitialNoneImport(owner, attempt, false);
+	}
+
+	/**
+	 * @param committed whether the attempt committed: its fresh value session then still knows every dictionary value,
+	 *                  so the next sole NONE writer may continue it, as later READ_COMMITTED transactions do
+	 */
+	void finishInitialNoneImport(Object owner, LmdbStoreConnection.WriteAttempt attempt, boolean committed) {
 		LmdbInitialRunImport unfinished = initialRunImport;
 		if (unfinished != null && unfinished.owner == owner && !unfinished.completing()) {
 			// Commit and rollback complete the import first; reaching here with it active means that failed.
@@ -8036,9 +8044,12 @@ class LmdbSailStore implements SailStore {
 		sinkStoreAccessLock.lock();
 		try {
 			if (freshNoneImportOwner == owner) {
-				// The session's map is only authoritative inside its own NONE attempt.
 				freshNoneImportOwner = null;
-				invalidateFreshValueSession();
+				if (!committed) {
+					// A rolled-back attempt can leave values in the map that never committed, or committed only in
+					// an earlier checkpoint: the map is no longer exact.
+					invalidateFreshValueSession();
+				}
 			}
 			InitialNoneImport current = initialNoneImport;
 			if (current == null || current.owner() != owner || current.attempt() != attempt) {
@@ -11121,18 +11132,32 @@ class LmdbSailStore implements SailStore {
 		 *
 		 * @return false when the session is gone or no longer authoritative; the caller then uses dictionary lookups
 		 */
+		/** The fewest values for which a later NONE attempt continues a session an earlier one left. */
+		private static final int FRESH_NONE_CONTINUATION_VALUES = 64;
+
 		private boolean storeFreshNoneValues(Value[] values, long[] ids, int count) throws IOException {
 			ValueStore.FreshValueSession session = freshValueSession;
 			if (!nativeCheckpoints || session == null || freshValueSessionInvalidated) {
 				return false;
 			}
+			Object owner = writerOwner();
 			// Other NONE writers wait at the writer gate while an initial run import holds the store.
-			if (!explicit || mayHaveInferred || freshNoneImportOwner != writerOwner()
+			if (!explicit || mayHaveInferred || freshNoneImportOwner != null && freshNoneImportOwner != owner
 					|| noneWriteStates.size() != 1 && initialRunImport == null
 					|| !valueStore.isFreshValueSessionUsable(session)
 					|| valueStore.freshValueSessionSize(session) >= freshNoneValueLimit()) {
 				invalidateFreshValueSession();
 				return false;
+			}
+			if (freshNoneImportOwner == null) {
+				// An earlier committed attempt left the session exact. Continuing it saves a bulk chunk the dictionary
+				// lookups READ_COMMITTED also avoids. A small chunk looks up instead: its few values cost less than
+				// the session's publication, and a new value it stores spoils the session. Only a connection reports
+				// how its attempt ended (finishInitialNoneImport), which hands the session on or ends it.
+				if (count < FRESH_NONE_CONTINUATION_VALUES || !(owner instanceof LmdbStoreConnection)) {
+					return false;
+				}
+				freshNoneImportOwner = owner;
 			}
 			ValueStore.FreshValueAssignment assignment = valueStore.assignFreshValues(session,
 					count == values.length ? values : Arrays.copyOf(values, count));
@@ -11691,6 +11716,8 @@ class LmdbSailStore implements SailStore {
 				}
 				startTransaction(false);
 				flushPendingBulkAdd();
+				// Removal can retire values the fresh session still maps; later additions must look them up.
+				invalidateFreshValueSession();
 				final long subjID;
 				if (subj != null) {
 					subjID = valueStore.getId(subj);
@@ -11944,7 +11971,8 @@ class LmdbSailStore implements SailStore {
 		}
 
 		private void reservePreparedImportCapacity(PreparedStatementBatch prepared) throws IOException {
-			valueStore.reservePreparedValueCapacity(freshValueSession, prepared);
+			// Size the reservation for the path storePreparedStatements will take: a stale session is dropped first.
+			valueStore.reservePreparedValueCapacity(freshValueSession(), prepared);
 			long indexBytes = (TripleIndex.MAX_KEY_LENGTH + PREPARED_INDEX_ENTRY_OVERHEAD)
 					* (tripleStore.secondaryIndexCount() + 1L) * prepared.size();
 			tripleStore.reserveWriteCapacity(indexBytes);
@@ -12197,6 +12225,10 @@ class LmdbSailStore implements SailStore {
 			}
 			if (freshValueSession == null) {
 				freshValueSessionInvalidated = true;
+			} else if (!valueStore.isFreshValueSessionUsable(freshValueSession)) {
+				// Value GC or an ordinary insert left the map stale; later values must be looked up.
+				invalidateFreshValueSession();
+				return null;
 			}
 			return freshValueSession;
 		}

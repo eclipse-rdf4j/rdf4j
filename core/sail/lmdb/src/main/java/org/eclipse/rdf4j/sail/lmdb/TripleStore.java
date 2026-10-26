@@ -6620,7 +6620,7 @@ class TripleStore implements Closeable {
 	 * @param runsByIndex the run files of each active index, in the order of {@link #initialImportFieldOrders()}
 	 * @return the number of distinct statements written
 	 */
-	long appendInitialImportRuns(List<List<Path>> runsByIndex, long estimatedWriteBytes) throws IOException {
+	long appendInitialImportRuns(List<LmdbSortedRuns.Runs> runsByIndex, long estimatedWriteBytes) throws IOException {
 		checkReplayFailure();
 		if (writeTxn == 0) {
 			throw new IllegalStateException("Mutation requires an active TripleStore write transaction");
@@ -6657,7 +6657,7 @@ class TripleStore implements Closeable {
 				ArrayBlockingQueue<InitialImportBlock> queue = new ArrayBlockingQueue<>(4);
 				queues.add(queue);
 				TripleIndex target = targets.get(t);
-				List<Path> runs = runsByIndex.get(t);
+				LmdbSortedRuns.Runs runs = runsByIndex.get(t);
 				int[] fieldOrder = fieldOrders[t];
 				boolean main = t == 0;
 				merges.execute(() -> mergeInitialImportIndex(runs, fieldOrder, target, main, queue));
@@ -6689,7 +6689,8 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	private static void mergeInitialImportIndex(List<Path> runs, int[] fieldOrder, TripleIndex target, boolean main,
+	private static void mergeInitialImportIndex(LmdbSortedRuns.Runs runs, int[] fieldOrder, TripleIndex target,
+			boolean main,
 			ArrayBlockingQueue<InitialImportBlock> queue) {
 		int maxKeys = INITIAL_IMPORT_BLOCK_BYTES / 8;
 		ByteBuffer keys = null;

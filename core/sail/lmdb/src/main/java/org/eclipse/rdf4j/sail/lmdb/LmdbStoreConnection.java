@@ -578,7 +578,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				}
 			}, () -> {
 				if (releaseCommittedView) {
-					lmdbStore.getBackingStore().finishInitialNoneImport(this, completedWriteAttempt);
+					lmdbStore.getBackingStore().finishInitialNoneImport(this, completedWriteAttempt, true);
 				}
 			}, () -> {
 				if (txnLock != null && txnLock.isActive()) {

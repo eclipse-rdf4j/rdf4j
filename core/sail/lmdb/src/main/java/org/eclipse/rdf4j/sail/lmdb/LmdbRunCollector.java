@@ -56,6 +56,7 @@ final class LmdbRunCollector implements Closeable {
 	private long spilledRows;
 	private int nextRun;
 	private boolean completed;
+	private LmdbSortedRuns.MemoryRun[] memoryRuns;
 
 	/**
 	 * @param chunkRows rows per chunk buffer; at most two full buffers exist, one filling while the other is sorted,
@@ -110,25 +111,47 @@ final class LmdbRunCollector implements Closeable {
 	}
 
 	/**
-	 * Spills the committed remainder, waits for every sort task and returns the run files per field order, in the order
-	 * of the constructor's {@code fieldOrders}.
+	 * Waits for every sort task and returns the runs per field order, in the order of the constructor's
+	 * {@code fieldOrders}. The committed remainder is sorted in memory rather than spilled: the merge reads it from the
+	 * buffer it already occupies, so an import that never filled a chunk touches no run file at all.
 	 */
-	List<List<Path>> completeRuns() throws IOException {
+	List<LmdbSortedRuns.Runs> completeRuns() throws IOException {
 		if (count != committed) {
 			throw new IllegalStateException(name + " runs still hold " + (count - committed) + " provisional rows");
 		}
 		if (!completed) {
 			if (committed > 0) {
-				dispatch(true);
+				long[] chunk = current;
+				int rows = committed;
+				List<CompletableFuture<LmdbSortedRuns.MemoryRun>> sorts = new ArrayList<>(fieldOrders.length);
+				for (int[] fields : fieldOrders) {
+					sorts.add(CompletableFuture.supplyAsync(() -> LmdbSortedRuns.sortInMemory(chunk, 0, rows, fields),
+							executor));
+				}
+				memoryRuns = new LmdbSortedRuns.MemoryRun[fieldOrders.length];
+				for (int order = 0; order < fieldOrders.length; order++) {
+					memoryRuns[order] = await(sorts.get(order));
+				}
 			}
 			awaitPending();
 			completed = true;
 		}
-		List<List<Path>> result = new ArrayList<>(runs.size());
-		for (List<Path> order : runs) {
-			result.add(List.copyOf(order));
+		List<LmdbSortedRuns.Runs> result = new ArrayList<>(runs.size());
+		for (int order = 0; order < runs.size(); order++) {
+			result.add(new LmdbSortedRuns.Runs(runs.get(order), memoryRuns == null ? null : memoryRuns[order]));
 		}
 		return result;
+	}
+
+	private static <T> T await(CompletableFuture<T> task) throws IOException {
+		try {
+			return task.get();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new InterruptedIOException("Interrupted while sorting the final initial import chunk");
+		} catch (ExecutionException e) {
+			throw new IOException("Sorting the final initial import chunk failed", e.getCause());
+		}
 	}
 
 	long spilledRows() {
@@ -150,19 +173,15 @@ final class LmdbRunCollector implements Closeable {
 			current = grown;
 			return;
 		}
-		dispatch(false);
+		dispatch();
 	}
 
-	/**
-	 * Hands the committed prefix to the sorter and moves the provisional tail into a recycled buffer.
-	 *
-	 * @param last whether no rows follow; a full chunk buffer would then never be filled
-	 */
-	private void dispatch(boolean last) throws IOException {
+	/** Hands the committed prefix to the sorter and moves the provisional tail into a recycled buffer. */
+	private void dispatch() throws IOException {
 		long[] chunk = current;
 		int spillRows = committed;
 		int tail = count - committed;
-		long[] next = last ? new long[LmdbSortedRuns.ROW_LONGS * Math.max(1, tail)] : takeBuffer();
+		long[] next = takeBuffer();
 		if (next.length < LmdbSortedRuns.ROW_LONGS * tail) {
 			next = new long[Math.max(chunk.length, LmdbSortedRuns.ROW_LONGS * tail)];
 		}
@@ -257,6 +276,7 @@ final class LmdbRunCollector implements Closeable {
 		}
 		files.clear();
 		current = null;
+		memoryRuns = null;
 		freeBuffers.clear();
 		if (failure != null) {
 			throw failure;
