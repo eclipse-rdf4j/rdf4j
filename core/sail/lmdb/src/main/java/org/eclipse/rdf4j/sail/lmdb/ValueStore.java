@@ -11423,17 +11423,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (readLocked) {
 			lockManager.unlockRead(StampedLongAdderLockManager.READ_LOCK_STAMP);
 		}
-		long stamp = 0;
+		long stamp = writeLockAfterCommit(lockManager);
 		try {
-			stamp = lockManager.writeLock();
 			txnManager.reset();
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new IOException(e);
 		} finally {
-			if (stamp != 0) {
-				lockManager.unlockWrite(stamp);
-			}
+			lockManager.unlockWrite(stamp);
 			if (readLocked) {
 				boolean interrupted = Thread.interrupted();
 				for (;;) {
@@ -14091,19 +14085,35 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	private void resetReadTransactionsAfterCommit() throws IOException {
 		var lockManager = txnManager.lockManager();
-		long stamp = 0;
+		// The caller has already ended its publication. A later writer may now own the environment;
+		// resetting committed readers must never consume that writer's native transaction.
+		long stamp = writeLockAfterCommit(lockManager);
 		try {
-			// The caller has already ended its publication. A later writer may now own the environment;
-			// resetting committed readers must never consume that writer's native transaction.
-			stamp = lockManager.writeLock();
 			txnManager.reset();
-		} catch (InterruptedException e) {
-			throw new IOException(e);
 		} finally {
-			if (stamp != 0) {
-				lockManager.unlockWrite(stamp);
-			}
+			lockManager.unlockWrite(stamp);
 			endValueLookupMutation();
+		}
+	}
+
+	/**
+	 * The native commit is durable, so its reader reset is not optional: an interrupt must not leave pooled readers on
+	 * the old dictionary. Waits uninterruptibly and restores the caller's interrupt afterwards.
+	 */
+	private static long writeLockAfterCommit(StampedLongAdderLockManager lockManager) {
+		boolean interrupted = Thread.interrupted();
+		try {
+			while (true) {
+				try {
+					return lockManager.writeLock();
+				} catch (InterruptedException e) {
+					interrupted = true;
+				}
+			}
+		} finally {
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
 		}
 	}
 

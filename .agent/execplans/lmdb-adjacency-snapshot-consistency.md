@@ -25,9 +25,10 @@ After this work, the module has three kinds of evidence. The first is a randomiz
   - node-domain answers ignored pending tables (`LmdbAdjacencyNodeDomainTest`);
   - an interrupted first import wiped committed namespaces (`LmdbInitialRunImportTest#namespacesCommittedBeforeTheFirstImportSurviveAnInterruptedImport`);
   - value GC recorded a collected term's components at the term's horizon (`LmdbRetiredValueCascadeTest`).
-- [ ] Catch-up wait missing a gap wakeup, and reader reset skipped after an interrupted dictionary commit: tests written, fixes pending.
-- [ ] Deterministic hook matrix (`LmdbDirectAdjacencyBuildInterleavingTest`): written, not yet run.
-- [ ] `LmdbRealEstateNativeParityTest` query 4 on CI: native COUNT 1 against 3,104, intermittent; not yet reproduced.
+- [x] (2026-10-26 10:10Z) Reader reset after an interrupted dictionary commit: a dictionary commit interrupted after its native commit skipped the reader reset and lost the interrupt. `ValueStoreInterruptedCommitTest` failed before the fix. Both reset paths now take the write lock uninterruptibly and restore the interrupt.
+- [x] (2026-10-26 10:00Z) The suspected missing wakeup for a catch-up waiting on a gap was not reproduced. A connection write waits for its own delta's publication (`endLogicalCommitBatch`) before it releases write admission, so the cutover cannot close admission while that handoff is pending. No production change was made; the attempted test is parked outside the repository.
+- [x] (2026-10-26 10:10Z) The deterministic hook matrix (`LmdbDirectAdjacencyBuildInterleavingTest`) passes all 30 cases: 2 coverages × 3 phases × 5 write kinds.
+- [ ] `LmdbRealEstateNativeParityTest` query 4 on CI: native COUNT 1 against 3,104, seen at `1415c7d53b` and `fc528bf4d1`. It did not reproduce in 40 local runs, 20 of them under load, with the `7250c3da97` fixes.
 - [ ] Full module run, loaded repeats, push, CI.
 
 
