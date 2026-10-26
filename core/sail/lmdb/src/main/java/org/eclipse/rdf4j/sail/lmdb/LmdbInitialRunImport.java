@@ -20,8 +20,11 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.List;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
@@ -34,9 +37,11 @@ import org.slf4j.LoggerFactory;
  * written in one merge when the import completes.
  *
  * <p>
- * While the import is active the data directory holds {@value #MARKER_FILE_NAME}, written before the first native chunk
- * commits and deleted only after the final merge committed in both environments and was synced. A store that starts
- * with the marker present was interrupted mid-import and is reset to empty (see {@link #resetInterruptedImport(Path)}).
+ * While the import is active the data directory holds {@value #MARKER_FILE_NAME}. It is created when the import starts
+ * and synced in the background, and the import's first native commit waits for that sync, so a crash that keeps any of
+ * the import's data keeps the marker too. It is deleted only after the final merge committed in both environments (and
+ * was synced, when the store syncs its commits). A store that starts with the marker present was interrupted mid-import
+ * and is reset to empty (see {@link #resetInterruptedImport(Path)}).
  */
 final class LmdbInitialRunImport implements Closeable {
 
@@ -58,13 +63,17 @@ final class LmdbInitialRunImport implements Closeable {
 	private final LmdbRunCollector triples;
 	private final LmdbDeferredValueLookups values;
 	private final int indexCount;
+	private final boolean syncsCommits;
+	private volatile Future<?> markerSync;
 	private long committedKeyBytes;
 	private long provisionalKeyBytes;
 	private volatile boolean completing;
 	private volatile boolean merging;
 
-	private LmdbInitialRunImport(Object owner, Path dataDir, int[][] fieldOrders) throws IOException {
+	private LmdbInitialRunImport(Object owner, Path dataDir, int[][] fieldOrders, boolean syncsCommits)
+			throws IOException {
 		this.owner = owner;
+		this.syncsCommits = syncsCommits;
 		this.dataDir = dataDir;
 		this.runDirectory = dataDir.resolve(RUN_DIRECTORY_NAME);
 		this.indexCount = fieldOrders.length;
@@ -85,18 +94,26 @@ final class LmdbInitialRunImport implements Closeable {
 	}
 
 	/**
-	 * Writes and syncs the marker, then prepares the run directory. Nothing has been written to either environment yet,
-	 * so a failure here leaves the store as it was.
+	 * Writes the marker, prepares the run directory and starts syncing the marker in the background. Nothing has been
+	 * written to either environment yet, so a failure here leaves the store as it was.
+	 *
+	 * @param syncsCommits whether the store syncs its commits; only then is the marker's deletion synced too
 	 */
-	static LmdbInitialRunImport begin(Object owner, Path dataDir, int[][] fieldOrders) throws IOException {
+	static LmdbInitialRunImport begin(Object owner, Path dataDir, int[][] fieldOrders, boolean syncsCommits)
+			throws IOException {
 		Path marker = dataDir.resolve(MARKER_FILE_NAME);
-		try (FileChannel channel = FileChannel.open(marker, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
-			beforeSync(marker);
-			channel.force(true);
-		}
-		forceDirectory(dataDir);
+		FileChannel.open(marker, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE).close();
 		try {
-			return new LmdbInitialRunImport(owner, dataDir, fieldOrders);
+			LmdbInitialRunImport runImport = new LmdbInitialRunImport(owner, dataDir, fieldOrders, syncsCommits);
+			runImport.markerSync = runImport.sorter.submit(() -> {
+				try (FileChannel channel = FileChannel.open(marker, StandardOpenOption.WRITE)) {
+					beforeSync(marker);
+					channel.force(true);
+				}
+				forceDirectory(dataDir);
+				return null;
+			});
+			return runImport;
 		} catch (IOException | RuntimeException | Error failure) {
 			try {
 				deleteTree(dataDir.resolve(RUN_DIRECTORY_NAME));
@@ -107,6 +124,39 @@ final class LmdbInitialRunImport implements Closeable {
 			}
 			throw failure;
 		}
+	}
+
+	/**
+	 * Waits until the marker is on disk. The import's first native commit must not precede it: a crash could then keep
+	 * part of the import's data without the marker that resets it.
+	 */
+	void awaitMarkerDurable() throws IOException {
+		Future<?> sync = markerSync;
+		if (sync == null) {
+			return;
+		}
+		boolean interrupted = false;
+		try {
+			while (true) {
+				try {
+					sync.get();
+					break;
+				} catch (InterruptedException e) {
+					// The sync is bounded I/O; giving up here would fail the import over an interrupt.
+					interrupted = true;
+				}
+			}
+		} catch (ExecutionException e) {
+			throw e.getCause() instanceof IOException io ? io
+					: new IOException("Unable to sync the initial import marker", e.getCause());
+		} catch (CancellationException e) {
+			throw new IOException("The initial import marker sync was cancelled", e);
+		} finally {
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
+		}
+		markerSync = null;
 	}
 
 	LmdbDeferredValueLookups valueLookups() {
@@ -176,11 +226,17 @@ final class LmdbInitialRunImport implements Closeable {
 		return LmdbUtil.saturatedAdd(saturatedMultiply(values.committedRecords(), 80L), 1L << 20);
 	}
 
-	/** Deletes the run files and then the marker, after the merged data committed and was synced in both stores. */
+	/**
+	 * Deletes the run files and then the marker, after the merged data committed in both stores. A store that syncs its
+	 * commits synced that data first, and syncs the deletion too. Otherwise the deletion is left to the OS like the
+	 * commits: a crash that loses it resets the store, and it is never on disk before data the store has not synced.
+	 */
 	void finished() throws IOException {
 		close();
 		Files.deleteIfExists(dataDir.resolve(MARKER_FILE_NAME));
-		forceDirectory(dataDir);
+		if (syncsCommits) {
+			forceDirectory(dataDir);
+		}
 	}
 
 	/** Stops the sorter and deletes the run files. The marker stays, so a failed import resets at the next start. */

@@ -125,7 +125,6 @@ class LmdbInitialRunImportMarkerSyncTest {
 		sail.init();
 		try {
 			LmdbSailStore backing = sail.getBackingStore();
-			long checkpoints = backing.noneIngestionMetrics().checkpoints();
 			LmdbStoreConnection writer = writerThread.submit(() -> (LmdbStoreConnection) sail.getConnection()).get();
 			try {
 				Future<?> adds = writerThread.submit(() -> {
@@ -136,12 +135,16 @@ class LmdbInitialRunImportMarkerSyncTest {
 				adds.get(10, TimeUnit.SECONDS);
 				assertThat(backing.isInitialRunImportActive()).isTrue();
 
+				// The waiting commit holds the store lock: observe it only through lock-free commit counters.
+				long tripleCommits = backing.getTripleStore().getNativeCommitGeneration();
+				long valueCommits = backing.valueStore().nativeCommitGeneration();
 				Future<?> commit = writerThread.submit(writer::commit);
 				Thread.sleep(300);
 				assertThat(commit).as("the commit waits for the marker").isNotDone();
-				assertThat(backing.noneIngestionMetrics().checkpoints())
+				assertThat(backing.getTripleStore().getNativeCommitGeneration())
 						.as("nothing of the import committed before its marker is on disk")
-						.isEqualTo(checkpoints);
+						.isEqualTo(tripleCommits);
+				assertThat(backing.valueStore().nativeCommitGeneration()).isEqualTo(valueCommits);
 
 				releaseSync.countDown();
 				commit.get(30, TimeUnit.SECONDS);

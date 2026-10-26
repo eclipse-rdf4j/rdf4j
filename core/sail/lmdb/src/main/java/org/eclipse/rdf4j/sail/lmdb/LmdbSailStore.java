@@ -2626,6 +2626,11 @@ class LmdbSailStore implements SailStore {
 	/** The NONE owner whose initial import assigns values from {@link #freshValueSession}, or {@code null}. */
 	private Object freshNoneImportOwner;
 	/**
+	 * A committed NONE connection left the session for the next NONE connection only. Any other writer that would use
+	 * it ends it instead, and takes the dictionary lookups it took before sessions outlived their NONE attempt.
+	 */
+	private boolean freshSessionReservedForNone;
+	/**
 	 * A NONE import keeps every assigned value in the fresh session's map across its bounded native chunks; past this
 	 * many values it falls back to dictionary lookups so memory stays bounded by the heap.
 	 */
@@ -7437,6 +7442,11 @@ class LmdbSailStore implements SailStore {
 			long nativeCommitGenerationBefore = tripleStore.getNativeCommitGeneration();
 			long dictionaryCommitGenerationBefore = valueStore.nativeCommitGeneration();
 			try {
+				LmdbInitialRunImport importInProgress = initialRunImport;
+				if (importInProgress != null && importInProgress.owner == owner
+						&& (activeTransaction || namespacesChanged)) {
+					importInProgress.awaitMarkerDurable();
+				}
 				if (activeTransaction) {
 					drainAsyncOperations();
 					Set<Long> unusedIds = mutationUnusedIds();
@@ -8032,7 +8042,7 @@ class LmdbSailStore implements SailStore {
 
 	/**
 	 * @param committed whether the attempt committed: its fresh value session then still knows every dictionary value,
-	 *                  so the next sole NONE writer may continue it, as later READ_COMMITTED transactions do
+	 *                  so the next NONE connection may continue it
 	 */
 	void finishInitialNoneImport(Object owner, LmdbStoreConnection.WriteAttempt attempt, boolean committed) {
 		LmdbInitialRunImport unfinished = initialRunImport;
@@ -8049,6 +8059,8 @@ class LmdbSailStore implements SailStore {
 					// A rolled-back attempt can leave values in the map that never committed, or committed only in
 					// an earlier checkpoint: the map is no longer exact.
 					invalidateFreshValueSession();
+				} else {
+					freshSessionReservedForNone = freshValueSession != null && !freshValueSessionInvalidated;
 				}
 			}
 			InitialNoneImport current = initialNoneImport;
@@ -8299,6 +8311,7 @@ class LmdbSailStore implements SailStore {
 		sinkStoreAccessLock.lock();
 		try {
 			freshValueSessionInvalidated = true;
+			freshSessionReservedForNone = false;
 			if (!storeTxnStarted.get() && freshValueSession != null) {
 				valueStore.discardFreshValueSession(freshValueSession);
 				freshValueSession = null;
@@ -11158,6 +11171,7 @@ class LmdbSailStore implements SailStore {
 					return false;
 				}
 				freshNoneImportOwner = owner;
+				freshSessionReservedForNone = false;
 			}
 			ValueStore.FreshValueAssignment assignment = valueStore.assignFreshValues(session,
 					count == values.length ? values : Arrays.copyOf(values, count));
@@ -11292,7 +11306,7 @@ class LmdbSailStore implements SailStore {
 			}
 			try {
 				LmdbInitialRunImport runImport = LmdbInitialRunImport.begin(owner, dataDir.toPath(),
-						tripleStore.initialImportFieldOrders());
+						tripleStore.initialImportFieldOrders(), forceSyncInitialRunImport);
 				valueStore.deferLookupRecords(runImport.valueLookups());
 				initialRunImportThread = Thread.currentThread();
 				initialRunImport = runImport;
@@ -12120,7 +12134,7 @@ class LmdbSailStore implements SailStore {
 				return false;
 			}
 			try {
-				return pendingPreparedApprovals != null || freshValueSession != null
+				return pendingPreparedApprovals != null || freshValueSession != null && !freshSessionReservedForNone
 						|| !storeTxnStarted.get() && tripleStore.isEmpty();
 			} catch (IOException failure) {
 				throw new SailException(failure);
@@ -12225,8 +12239,9 @@ class LmdbSailStore implements SailStore {
 			}
 			if (freshValueSession == null) {
 				freshValueSessionInvalidated = true;
-			} else if (!valueStore.isFreshValueSessionUsable(freshValueSession)) {
-				// Value GC or an ordinary insert left the map stale; later values must be looked up.
+			} else if (freshSessionReservedForNone || !valueStore.isFreshValueSessionUsable(freshValueSession)) {
+				// The session waits for the next NONE connection, or value GC or an ordinary insert left its map
+				// stale; this writer's values are looked up.
 				invalidateFreshValueSession();
 				return null;
 			}
