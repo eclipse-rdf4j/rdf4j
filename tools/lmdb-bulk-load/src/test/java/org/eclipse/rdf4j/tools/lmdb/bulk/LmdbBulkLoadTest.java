@@ -1018,6 +1018,110 @@ class LmdbBulkLoadTest {
 	}
 
 	@Test
+	void reportsPhaseNumbersAndConfiguredStatementIndexes() throws Exception {
+		Path input = temporaryDirectory.resolve("indexed-progress.nt");
+		Files.writeString(input, "<urn:subject> <urn:predicate> <urn:object> .\n");
+		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
+
+		int exitCode = LmdbBulkLoad.run(new String[] {
+				"--store", temporaryDirectory.resolve("indexed-progress-store").toString(),
+				"--input", input.toString(),
+				"--statement-indexes", "spoc,posc",
+				"--triple-term-indexes", "none",
+				"--progress", "plain"
+		}, new ByteArrayInputStream(new byte[0]), new PrintStream(new ByteArrayOutputStream()),
+				new PrintStream(standardError));
+
+		assertThat(exitCode).as(standardError.toString(StandardCharsets.UTF_8)).isZero();
+		String progress = standardError.toString(StandardCharsets.UTF_8);
+		assertThat(progress)
+				.contains("Phase 8/10")
+				.contains("SPOC 1/2")
+				.contains("POSC 2/2")
+				.contains("stage=MERGE")
+				.contains("stage=APPEND");
+	}
+
+	@Test
+	void reportsPhaseAndIndexFieldsInJsonProgress() throws Exception {
+		Path input = temporaryDirectory.resolve("json-indexed-progress.nt");
+		Files.writeString(input,
+				"<urn:owner> <urn:quoted> <<( <urn:inner> <urn:p> <urn:o> )>> .\n");
+		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
+
+		int exitCode = LmdbBulkLoad.run(new String[] {
+				"--store", temporaryDirectory.resolve("json-indexed-progress-store").toString(),
+				"--input", input.toString(),
+				"--parser", "fast",
+				"--statement-indexes", "spoc,posc",
+				"--triple-term-indexes", "spoc,cspo",
+				"--progress", "json"
+		}, new ByteArrayInputStream(new byte[0]), new PrintStream(new ByteArrayOutputStream()),
+				new PrintStream(standardError));
+
+		assertThat(exitCode).as(standardError.toString(StandardCharsets.UTF_8)).isZero();
+		List<String> records = standardError.toString(StandardCharsets.UTF_8).lines().toList();
+		assertThat(records)
+				.isNotEmpty()
+				.allMatch(record -> record.startsWith("{") && record.endsWith("}"))
+				.anyMatch(record -> record.contains("\"phase\":\"WRITE_GENERATION\",\"phaseNumber\":8,"
+						+ "\"phaseCount\":10"))
+				.anyMatch(record -> record.contains("\"activeIndexes\":[{\"family\":\"STATEMENT\","
+						+ "\"name\":\"SPOC\",\"number\":1,\"count\":2,\"stage\":\"SCAN\","
+						+ "\"complete\":false},{\"family\":\"STATEMENT\",\"name\":\"POSC\","
+						+ "\"number\":2,\"count\":2,\"stage\":\"SCAN\",\"complete\":false}]"))
+				.anyMatch(record -> record.contains("\"activeIndexes\":[],\"indexEvent\":null"));
+
+		assertJsonIndexEvent(records, "STATEMENT", "SPOC", 1, 2, "SCAN");
+		assertJsonIndexEvent(records, "STATEMENT", "SPOC", 1, 2, "MERGE");
+		assertJsonIndexEvent(records, "STATEMENT", "SPOC", 1, 2, "APPEND");
+		assertJsonIndexEvent(records, "STATEMENT", "POSC", 2, 2, "SCAN");
+		assertJsonIndexEvent(records, "STATEMENT", "POSC", 2, 2, "MERGE");
+		assertJsonIndexEvent(records, "STATEMENT", "POSC", 2, 2, "APPEND");
+		assertJsonIndexEvent(records, "TRIPLE_TERM", "SPOC", 1, 2, "SCAN");
+		assertJsonIndexEvent(records, "TRIPLE_TERM", "SPOC", 1, 2, "MERGE");
+		assertJsonIndexEvent(records, "TRIPLE_TERM", "SPOC", 1, 2, "APPEND");
+		assertJsonIndexEvent(records, "TRIPLE_TERM", "CSPO", 2, 2, "SCAN");
+		assertJsonIndexEvent(records, "TRIPLE_TERM", "CSPO", 2, 2, "MERGE");
+		assertJsonIndexEvent(records, "TRIPLE_TERM", "CSPO", 2, 2, "APPEND");
+	}
+
+	private static void assertJsonIndexEvent(List<String> records, String family, String name, int number, int count,
+			String stage) {
+		String event = "\"indexEvent\":{\"family\":\"" + family + "\",\"name\":\"" + name
+				+ "\",\"number\":" + number + ",\"count\":" + count + ",\"stage\":\"" + stage
+				+ "\",\"complete\":false}";
+		assertThat(records).as("JSON index event %s %s %d/%d %s", family, name, number, count, stage)
+				.anyMatch(record -> record.contains(event));
+	}
+
+	@Test
+	void reportsConfiguredIndexWorkForEmptyInput() throws Exception {
+		Path input = temporaryDirectory.resolve("empty-index-progress.nt");
+		Files.createFile(input);
+		ByteArrayOutputStream standardOutput = new ByteArrayOutputStream();
+		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
+
+		int exitCode = LmdbBulkLoad.run(new String[] {
+				"--store", temporaryDirectory.resolve("empty-index-progress-store").toString(),
+				"--input", input.toString(),
+				"--statement-indexes", "spoc,posc",
+				"--triple-term-indexes", "none",
+				"--progress", "plain"
+		}, new ByteArrayInputStream(new byte[0]), new PrintStream(standardOutput), new PrintStream(standardError));
+
+		assertThat(exitCode).as(standardError.toString(StandardCharsets.UTF_8)).isZero();
+		assertThat(standardOutput.toString(StandardCharsets.UTF_8)).contains("parsed=0").contains("stored=0");
+		assertThat(standardError.toString(StandardCharsets.UTF_8))
+				.contains("SPOC 1/2")
+				.contains("POSC 2/2")
+				.contains("TRIPLE_TERM SPOC 1/2")
+				.contains("TRIPLE_TERM CSPO 2/2")
+				.contains("stage=MERGE")
+				.contains("stage=APPEND");
+	}
+
+	@Test
 	void reportsTheSelectedCompressionInTheSummary() throws Exception {
 		Path input = temporaryDirectory.resolve("input.nt");
 		Files.writeString(input, "<urn:subject> <urn:predicate> <urn:object> .\n");
@@ -1034,6 +1138,7 @@ class LmdbBulkLoadTest {
 		assertThat(exitCode)
 				.as(standardError.toString(StandardCharsets.UTF_8))
 				.isZero();
+		assertThat(standardError.toString(StandardCharsets.UTF_8)).isEmpty();
 		assertThat(standardOutput.toString(StandardCharsets.UTF_8))
 				.contains("stored=1")
 				.contains("compression=7");
