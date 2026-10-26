@@ -72,7 +72,7 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 				return;
 			}
 		}
-		QueryExecutionDeadline.Registration registration = deadline.onExpiration(this::requestCloseOnTimeout);
+		QueryExecutionDeadline.Registration registration = deadline.onExpiration(this::expireCooperatively);
 		synchronized (lifecycleLock) {
 			deadlineRegistration = registration;
 			if (closeRequested || isClosed()) {
@@ -365,6 +365,36 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 		return false;
 	}
 
+	/**
+	 * Deadline expiry: push cancellation down to the source instead of making inner code track time. A source that
+	 * accepts keeps its active call, which unwinds at its next boundary, and the delegate closes once that call
+	 * returns. A source that declines is closed now, concurrently with any active call, as before.
+	 */
+	private void expireCooperatively() {
+		synchronized (lifecycleLock) {
+			// The active caller can observe the interruption while cancellation is still propagating. Reserve
+			// cooperative ownership first, then release it if every source declines.
+			cooperativeTimeoutClose = true;
+		}
+		isInterrupted.set(true);
+		boolean cancellationAccepted = false;
+		try {
+			cancellationAccepted = requestCancellation();
+		} catch (RuntimeException e) {
+			logger.warn("TimeLimitIteration deadline expired and cooperative cancellation failed: ", e);
+		}
+		boolean closeDelegate;
+		synchronized (lifecycleLock) {
+			cooperativeTimeoutClose = cancellationAccepted;
+			closeRequested = true;
+			timeoutCloseRequested = true;
+			closeDelegate = claimDelegateCloseIfIdle();
+		}
+		if (closeDelegate) {
+			closeDelegateAsync();
+		}
+	}
+
 	private void requestCloseOnTimeout() {
 		isInterrupted.set(true);
 		boolean closeDelegate;
@@ -440,7 +470,7 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 	 */
 	void interrupt() {
 		if (deadline != null) {
-			requestCloseOnTimeout();
+			expireCooperatively();
 			return;
 		}
 		// Timer-driven limits close synchronously unless the source accepts cooperative worker cancellation.

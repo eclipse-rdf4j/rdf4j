@@ -291,7 +291,7 @@ class LmdbGrowthUpgradeTest {
 				try {
 					assertTrue(ownerReadReady.await(5, TimeUnit.SECONDS),
 							"the admitted owner must establish its snapshot before mixed demand starts");
-					addGrowthStatements(trigger);
+					addGrowthStatements(trigger, store.tripleStore());
 					awaitPhase(backingStore, LmdbSailStore.GrowthPhase.DRAIN_WRITERS,
 							"the original mixed row and namespace workload must activate writer drain");
 					allowOwnerUpgrade.countDown();
@@ -382,7 +382,10 @@ class LmdbGrowthUpgradeTest {
 		return rows;
 	}
 
-	private static void addGrowthStatements(SailConnection connection) throws Exception {
+	private static void addGrowthStatements(SailConnection connection, TripleStore triples) throws Exception {
+		String namespace = "urn:lmdb:growth-upgrade:hard:" + "n".repeat(Math.toIntExact(triples.mapSizeBytes()));
+		assertTrue(new MapGrowthPolicy(GROWTH_THRESHOLD).hardCapacityRequired(triples.mapSizeBytes(),
+				triples.occupiedBytes(), namespace.length()), "mixed recovery requires actual hard capacity pressure");
 		for (int index = 0; index < GROWTH_ROWS; index++) {
 			connection.addStatement(
 					VF.createIRI("urn:lmdb:growth-upgrade:subject:" + index),
@@ -390,7 +393,7 @@ class LmdbGrowthUpgradeTest {
 					VF.createLiteral("growth-value:" + index));
 		}
 		// Namespaces share the authoritative TripleStore map, whose readers require the reader-grace phase.
-		connection.setNamespace("growth-demand", namespaceGrowthValue());
+		connection.setNamespace("growth-demand", namespace);
 	}
 
 	private static void startGrowthWarning(SailConnection connection,

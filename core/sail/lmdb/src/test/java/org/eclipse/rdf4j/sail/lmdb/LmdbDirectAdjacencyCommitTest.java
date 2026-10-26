@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -846,6 +847,40 @@ class LmdbDirectAdjacencyCommitTest {
 			assertThat(probe(view, -1, P1, O1, -1, true)).hasSize(2);
 			assertThat(probe(view, S1, P2, -1, G1, true)).hasSize(1);
 		}
+	}
+
+	@Test
+	void rebuildOverALiveBaseCatchesUpACommitThatLandsDuringTheScan() throws Exception {
+		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });
+		assertThat(store.buildNowForTest()).isTrue();
+		assertThat(store.synchronousUpdatesActivatedForTest())
+				.as("an exact live base publishes later commits synchronously")
+				.isTrue();
+
+		// A second build over that base, such as a store's startup build, meets a commit after its scan. Catch-up
+		// replays queued deltas, so that commit must reach the queue rather than only the live base.
+		store.afterBuildScanForTest = () -> {
+			store.afterBuildScanForTest = null;
+			try {
+				commitQuads(new long[][] { add(S2, P1, O1, 0, true) });
+			} catch (IOException e) {
+				throw new IllegalStateException(e);
+			}
+		};
+		CompletableFuture<Boolean> rebuild = CompletableFuture.supplyAsync(store::buildNowForTest);
+		try {
+			assertThat(rebuild.get(30, TimeUnit.SECONDS)).isTrue();
+		} catch (TimeoutException stalled) {
+			throw new AssertionError("the rebuild's catch-up waited for a delta its commit never queued", stalled);
+		}
+		long revision = tripleStore.getDataRevision();
+		assertThat(store.publishedStateForTest().appliedRevision()).isEqualTo(revision);
+		try (LmdbAdjacencyReadView view = store.acquire(revision)) {
+			assertThat(view.isExact()).isTrue();
+			assertThat(probe(view, S2, P1, -1, -1, true)).hasSize(1);
+			assertThat(probe(view, -1, P1, O1, -1, true)).hasSize(2);
+		}
+		assertThat(store.synchronousUpdatesActivatedForTest()).as("cutover resumes synchronous publication").isTrue();
 	}
 
 	@Test

@@ -535,9 +535,11 @@ namespace workbench {
             // History moves before its next page loads; the form still belongs to the mounted route.
             const shownUrl = currentRoute ? currentRoute.url : windowObject.location.href;
             const multipart = String(attribute('enctype') || '').toLowerCase() === 'multipart/form-data';
+            const method = String(attribute('method') || 'get').toLowerCase();
+            workbench.protectSubmittedForm(form, method, attribute('action'));
             const data = new FormData(form, submitter);
             return {
-                method: String(attribute('method') || 'get').toLowerCase(),
+                method: method,
                 action: new URL(attribute('action') || shownUrl, shownUrl),
                 data: multipart ? contentLast(data) : data,
                 multipart
@@ -590,6 +592,7 @@ namespace workbench {
             // Connected helper forms in the document body or context bar remain valid.
             if (running && form.isConnected === false) { return; }
             if (!running || !route(form, submitter)) {
+                workbench.protectSubmittedForm(form);
                 form.submit();
             }
         }
@@ -608,6 +611,7 @@ namespace workbench {
             if (existing) { return existing; }
             const request = running ? formRequest(form, submitter) : null;
             if (!request || request.method !== 'post' || !routable(request.action)) {
+                workbench.protectSubmittedForm(form);
                 form.submit();
                 return Promise.resolve<Outcome>('fallback');
             }
@@ -974,7 +978,8 @@ namespace workbench {
                 if (typeof FormData === 'function' && options.body instanceof FormData) {
                     startUpload(mine);
                 }
-                const post: any = { method: 'POST', body: options.body, headers: { Accept: app().ACCEPT },
+                const post: any = { method: 'POST', body: options.body,
+                    headers: Object.assign({ Accept: app().ACCEPT }, workbench.csrfHeaders(request)),
                     credentials: 'same-origin' };
                 if (options.inPlace) {
                     // The write servlet acknowledges a write sent in place with its own answer (J43); a redirect

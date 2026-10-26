@@ -360,7 +360,7 @@ class LmdbStoreFlushReproductionTest {
 						SimpleValueFactory.getInstance().createLiteral("fresh transaction"));
 		AtomicInteger notifications = new AtomicInteger();
 		Set<Statement> growthRows = new HashSet<>();
-		String namespaceValue = "urn:issue:6070:failed-replay:growth:" + "n".repeat((int) (tripleMapBytes * 0.15));
+		String namespaceValue = "urn:issue:6070:failed-replay:growth:" + "n".repeat(Math.toIntExact(tripleMapBytes));
 		for (int index = 0; index < 1_500; index++) {
 			growthRows.add(SimpleValueFactory.getInstance()
 					.createStatement(
@@ -387,6 +387,9 @@ class LmdbStoreFlushReproductionTest {
 			GenerationRecordingTripleStore triples = store.triples.get();
 			assertTrue(triples != null, "the generation-recording TripleStore factory must be used");
 			long initialTripleMapBytes = triples.mapSizeBytes();
+			assertTrue(new MapGrowthPolicy(0.10d).hardCapacityRequired(initialTripleMapBytes,
+					triples.occupiedBytes(), namespaceValue.length()),
+					"the namespace must require hard TripleStore capacity before publication completes");
 			MapGrowthMetrics.Snapshot beforeGrowth = store.getBackingStore().growthMetricsSnapshot();
 			try (RepositoryConnection reader = repository.getConnection()) {
 				reader.begin(IsolationLevels.SNAPSHOT);
@@ -511,7 +514,7 @@ class LmdbStoreFlushReproductionTest {
 		AtomicInteger notifications = new AtomicInteger();
 		Set<Statement> growthRows = new HashSet<>();
 		String namespaceValue = "urn:issue:6070:failed-replay-prepare:growth:"
-				+ "n".repeat((int) (tripleMapBytes * 0.15));
+				+ "n".repeat(Math.toIntExact(tripleMapBytes));
 		for (int index = 0; index < 1_500; index++) {
 			growthRows.add(SimpleValueFactory.getInstance()
 					.createStatement(
@@ -546,6 +549,9 @@ class LmdbStoreFlushReproductionTest {
 			GenerationRecordingTripleStore triples = store.triples.get();
 			assertTrue(triples != null, "the generation-recording TripleStore factory must be used");
 			long initialTripleMapBytes = triples.mapSizeBytes();
+			assertTrue(new MapGrowthPolicy(0.10d).hardCapacityRequired(initialTripleMapBytes,
+					triples.occupiedBytes(), namespaceValue.length()),
+					"the namespace must require hard TripleStore capacity before publication completes");
 			MapGrowthMetrics.Snapshot beforeGrowth = store.getBackingStore().growthMetricsSnapshot();
 			try (RepositoryConnection reader = repository.getConnection()) {
 				reader.begin(IsolationLevels.SNAPSHOT);

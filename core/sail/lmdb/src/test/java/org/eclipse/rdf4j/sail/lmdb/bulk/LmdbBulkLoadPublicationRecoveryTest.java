@@ -300,11 +300,14 @@ class LmdbBulkLoadPublicationRecoveryTest {
 	}
 
 	private static Set<Statement> read(Path target) {
-		SailRepository repository = new SailRepository(
-				new LmdbStore(target.toFile(), new LmdbStoreConfig("spoc,psoc")));
+		LmdbStore store = new LmdbStore(target.toFile(), new LmdbStoreConfig("spoc,psoc"));
+		SailRepository repository = new SailRepository(store);
 		repository.init();
 		try (RepositoryConnection connection = repository.getConnection();
 				var statements = connection.getStatements(null, null, null, false)) {
+			assertTrue(store.getStartupStatus().exactReferenceCounts(),
+					"a fully validated published bulk generation must carry exact owner-count authority");
+			assertFalse(store.getStartupStatus().referenceCountVerificationPending());
 			return statements.stream().collect(Collectors.toSet());
 		} finally {
 			repository.shutDown();

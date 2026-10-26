@@ -38,7 +38,7 @@ jobs:
             '-T', '1C',
             '-o',
             '-Dmaven.repo.local=.m2_repo',
-            '-Pquick', 'clean', 'install'
+            '-Pquick', 'clean', 'install', '--fail-at-end'
           )
           $offlineLog = 'maven-build.log'
           & mvn @offlineArgs 2>&1 | Tee-Object -FilePath $offlineLog
@@ -83,7 +83,7 @@ jobs:
             '-pl', 'core/sail/lmdb',
             '-DskipITs',
             '-Dtest=LmdbBulkLoadWindowsLauncherTest',
-            'verify'
+            'verify', '--fail-at-end'
           )
           & mvn @testArgs 2>&1 | Tee-Object -FilePath windows-launcher-verify.log
           $testStatus = $LASTEXITCODE

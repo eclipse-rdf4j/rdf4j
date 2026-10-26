@@ -1298,7 +1298,12 @@ function createJQuery(document, ajaxHandler) {
             })
             .join('&');
     };
-    $.ajax = ajaxHandler;
+    const ajaxPrefilters = [];
+    $.ajaxPrefilter = (prefilter) => ajaxPrefilters.push(prefilter);
+    $.ajax = (options) => {
+        ajaxPrefilters.forEach((prefilter) => prefilter(options));
+        return ajaxHandler(options);
+    };
     $.getJSON = (url, data, callback) => {
         if (typeof callback === 'function') {
             callback({});
