@@ -153,6 +153,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ProjectionIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
+import org.eclipse.rdf4j.query.algebra.evaluation.rdfparser.RdfParserQuerySupport;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.LocalBNodeReferences;
@@ -424,6 +425,10 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 		} else {
 			query = new QueryRoot(clone);
 		}
+		// Parser collections and their local SERVICE belong to this evaluator, before source selection
+		// can mistake their syntax for member statements or forward the original query to an endpoint.
+		query = RdfParserQuerySupport.rewriteOwned(query, bindings);
+		boolean hasLocalParser = RdfParserQuerySupport.isParserQuery(query, bindings);
 
 		Dataset queryDataset = FedXUtil.toRdfDataset(queryInfo.getDataset());
 		StandardQueryOptimizerPipeline.BINDING_ASSIGNER.optimize(query, queryDataset, bindings);
@@ -438,7 +443,8 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 		info.optimize(query);
 
 		// if the federation has a single member only, evaluate the entire query there
-		if (members.size() == 1 && queryInfo.getQuery() != null && propagateServices(info.getServices())
+		if (!hasLocalParser && members.size() == 1 && queryInfo.getQuery() != null
+				&& propagateServices(info.getServices())
 				&& queryInfo.getQueryType() != QueryType.UPDATE && !hasBlankNodeBindings(bindings)) {
 			return new SingleSourceQuery(expr, members.get(0), queryInfo);
 		}
@@ -465,7 +471,7 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 		// Note: UPDATE queries are always handled in the federation engine to adhere to the configured
 		// write strategy. Also DESCRIBE queries are handled in the federation
 		Set<Endpoint> relevantSources = performSourceSelection(members, cache, queryInfo, info);
-		if (queryInfo.getQuery() != null
+		if (!hasLocalParser && queryInfo.getQuery() != null
 				&& info.canDelegateGraphsToSingleSource() && relevantSources.size() == 1
 				&& propagateServices(info.getServices())
 				&& queryInfo.getQueryType() != QueryType.UPDATE && queryInfo.getQueryType() != QueryType.DESCRIBE

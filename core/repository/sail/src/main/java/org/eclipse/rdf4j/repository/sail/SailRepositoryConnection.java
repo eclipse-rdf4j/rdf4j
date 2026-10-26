@@ -23,6 +23,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
@@ -35,6 +36,7 @@ import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -43,6 +45,7 @@ import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
+import org.eclipse.rdf4j.query.algebra.evaluation.rdfparser.RdfParserQuerySupport;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
@@ -109,6 +112,12 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	 */
 	public SailConnection getSailConnection() {
 		return sailConnection;
+	}
+
+	/** Normalize standard extension syntax while retaining the supplied Sail's own evaluator. */
+	@InternalUseOnly
+	public static TupleExpr prepareQueryAlgebra(TupleExpr expression, BindingSet bindings) {
+		return RdfParserQuerySupport.rewrite(expression, bindings);
 	}
 
 	@Override

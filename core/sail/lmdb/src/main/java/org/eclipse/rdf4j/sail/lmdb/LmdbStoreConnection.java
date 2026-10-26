@@ -55,7 +55,9 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.rdfparser.RdfParserQuerySupport;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -956,6 +958,14 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			BindingSet bindings, boolean includeInferred) throws SailException {
 		ExplainTupleExprCapture explanationCapture = explainTupleExprCapture.get();
 		LmdbSailStore cacheOwner = resultCacheOwner(explanationCapture);
+		if (cacheOwner != null && (RdfParserQuerySupport.isParserQuery(tupleExpr, bindings)
+				|| !QueryEvaluationUtility.querySafetySnapshot(tupleExpr, lmdbStore.getQueryExecutionPolicy())
+						.isRepeatableAcrossExecutions(tupleExpr))) {
+			// Parser syntax allocates new blank nodes. Shared safety analysis also excludes results that are not
+			// stable across query executions, including SERVICE endpoints whose local parser URL is known only at
+			// runtime.
+			cacheOwner = null;
+		}
 		LmdbQueryResultCache.Key cacheKey = null;
 		long cacheRevision = 0L;
 		if (cacheOwner != null) {
@@ -969,8 +979,9 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				return cached.get();
 			}
 		}
-		TupleExpr expression = (TupleExpr) tupleExpr.clone();
-		detachTupleValues(expression);
+		TupleExpr privateExpression = (TupleExpr) tupleExpr.clone();
+		detachTupleValues(privateExpression);
+		TupleExpr expression = RdfParserQuerySupport.rewriteOwned(privateExpression, bindings);
 		Dataset queryDataset = copyDataset(dataset);
 		BindingSet queryBindings = copyBindings(bindings);
 		boolean queryIncludeInferred = includeInferred;

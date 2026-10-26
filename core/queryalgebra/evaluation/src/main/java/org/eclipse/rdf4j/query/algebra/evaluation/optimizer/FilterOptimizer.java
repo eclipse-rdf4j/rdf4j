@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -138,6 +139,11 @@ public class FilterOptimizer implements QueryOptimizer {
 		// 1) recurse into nested scopes first
 		expr.visit(new AbstractQueryModelVisitor<>() {
 			final TupleExpr current = expr;
+
+			@Override
+			public void meet(Service service) {
+				// The receiving evaluator owns its body and binding environment.
+			}
 
 			@Override
 			protected void meetNode(QueryModelNode node) {
@@ -271,12 +277,23 @@ public class FilterOptimizer implements QueryOptimizer {
 		return null;
 	}
 
-	private static class FilterUnMerger extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+	private abstract static class ServiceBoundaryVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+
+		private ServiceBoundaryVisitor() {
+			super(false);
+		}
+
+		@Override
+		public void meet(Service service) {
+			// Outer query input facts cannot simplify a receiving SERVICE's expressions.
+		}
+	}
+
+	private static class FilterUnMerger extends ServiceBoundaryVisitor {
 
 		private final QueryAlgebraBindingAnalysis analysis;
 
 		private FilterUnMerger(QueryAlgebraBindingAnalysis analysis) {
-			super(false);
 			this.analysis = analysis;
 		}
 
@@ -317,13 +334,12 @@ public class FilterOptimizer implements QueryOptimizer {
 		}
 	}
 
-	private static class FilterMerger extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+	private static class FilterMerger extends ServiceBoundaryVisitor {
 
 		private final EvaluationStatistics statistics;
 		private final QueryAlgebraBindingAnalysis analysis;
 
 		private FilterMerger(EvaluationStatistics statistics, QueryAlgebraBindingAnalysis analysis) {
-			super(false);
 			this.statistics = statistics;
 			this.analysis = analysis;
 		}
@@ -357,7 +373,7 @@ public class FilterOptimizer implements QueryOptimizer {
 		}
 	}
 
-	private static class FilterOrganizer extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+	private static class FilterOrganizer extends ServiceBoundaryVisitor {
 
 		private final EvaluationStatistics statistics;
 		private final boolean considerJoinPlacementCost;
@@ -366,7 +382,6 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		public FilterOrganizer(EvaluationStatistics statistics, boolean considerJoinPlacementCost,
 				QueryAlgebraBindingAnalysis analysis, EvaluationStrategy strategy) {
-			super(false);
 			this.statistics = statistics;
 			this.considerJoinPlacementCost = considerJoinPlacementCost;
 			this.analysis = analysis;

@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -35,6 +36,8 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
+import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.Bound;
@@ -43,6 +46,9 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Graph;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Sample;
 import org.eclipse.rdf4j.query.algebra.Service;
@@ -62,6 +68,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.IntegerCast;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.StringCast;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -240,6 +248,131 @@ public class QueryEvaluationUtilityTest {
 				"name facts must preserve the complete variable name without using name-length stack depth");
 	}
 
+	@Test
+	public void graphPatternsRemainRepeatableAndMappingParameterized() {
+		assertGraphQuerySafety(
+				"SELECT ?context (COUNT(*) AS ?statements) WHERE { GRAPH ?context { ?s ?p ?o } } GROUP BY ?context",
+				1);
+		assertGraphQuerySafety(
+				"SELECT ?context (COUNT(?s) AS ?statements) WHERE { GRAPH ?context { ?s ?p ?o } } GROUP BY ?context",
+				1);
+		assertGraphQuerySafety(
+				"SELECT ?context (COUNT(DISTINCT ?s) AS ?statements) WHERE { GRAPH ?context { ?s ?p ?o } } GROUP BY ?context",
+				1);
+		assertGraphQuerySafety(
+				"SELECT (COUNT(*) AS ?statements) WHERE { GRAPH <http://rdf4j.org/schema/rdf4j#nil> { ?s ?p ?o } }",
+				1);
+		assertGraphQuerySafety("SELECT * WHERE { GRAPH <urn:fixed> { ?s ?p ?o } ?s <urn:q> ?other }", 1);
+		assertGraphQuerySafety("SELECT * WHERE { GRAPH ?outer { ?s ?p ?o } ?s <urn:q> ?other }", 1);
+		assertGraphQuerySafety("SELECT * WHERE { GRAPH ?outer { GRAPH ?inner { ?s ?p ?o } } }", 2);
+		assertGraphQuerySafety(
+				"SELECT * WHERE { GRAPH ?outer { GRAPH ?inner { ?s ?p ?o } } ?s <urn:q> ?other }", 2);
+	}
+
+	@Test
+	public void graphSafetyComposesVolatileAndFatalBodyFacts() {
+		StatementPattern pattern = graphPattern();
+		Graph blankNode = new Graph(Var.of("graph"),
+				new Extension(pattern.clone(), new ExtensionElem(new BNodeGenerator(), "generated")));
+		Graph uuid = new Graph(Var.of("graph"),
+				new Extension(pattern.clone(), new ExtensionElem(new FunctionCall("UUID"), "generated")));
+		Graph service = new Graph(Var.of("graph"),
+				new Service(Var.of("endpoint"), pattern.clone(), "", Map.of(), null, false));
+		Group sampleGroup = new Group(pattern.clone());
+		sampleGroup.addGroupElement(new GroupElem("sample", new Sample(Var.of("object"))));
+		Graph sample = new Graph(Var.of("graph"), sampleGroup);
+		Group customAggregateGroup = new Group(pattern.clone());
+		customAggregateGroup.addGroupElement(new GroupElem("custom",
+				new AggregateFunctionCall(List.of(Var.of("object")), "urn:test:aggregate", false)));
+		Graph customAggregate = new Graph(Var.of("graph"), customAggregateGroup);
+
+		assertGraphSafety(blankNode, false);
+		assertGraphSafety(uuid, false);
+		assertGraphSafety(service, true);
+		assertGraphSafety(sample, false);
+		assertGraphSafety(customAggregate, false);
+	}
+
+	@Test
+	public void refreshUpdatesCrossExecutionRepeatabilityWhenFunctionStabilityChanges() {
+		FunctionCall now = new FunctionCall("NOW");
+		Extension root = new Extension(new SingletonSet(), new ExtensionElem(now, "value"));
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(root,
+				QueryExecutionPolicy.DEFAULT);
+
+		assertTrue(snapshot.isRepeatable(root));
+		assertFalse(snapshot.isRepeatableAcrossExecutions(root));
+
+		Function deterministicReplacement = new Function() {
+			@Override
+			public String getURI() {
+				return "NOW";
+			}
+
+			@Override
+			public Value evaluate(ValueFactory valueFactory, Value... args) {
+				return valueFactory.createLiteral("stable");
+			}
+
+			@Override
+			public Determinism getDeterminism() {
+				return Determinism.DETERMINISTIC;
+			}
+		};
+		FunctionRegistry registry = FunctionRegistry.getInstance();
+		Optional<Function> previous = registry.add(deterministicReplacement);
+		try {
+			snapshot.refreshFrom(now);
+			assertTrue(snapshot.isRepeatable(root));
+			assertTrue(snapshot.isRepeatableAcrossExecutions(root));
+
+			previous.ifPresent(registry::add);
+			snapshot.refreshFrom(now);
+			assertTrue(snapshot.isRepeatable(root));
+			assertFalse(snapshot.isRepeatableAcrossExecutions(root));
+		} finally {
+			registry.remove(deterministicReplacement);
+			previous.ifPresent(registry::add);
+		}
+	}
+
+	private void assertGraphQuerySafety(String query, int expectedGraphCount) {
+		TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(expression);
+		List<Graph> graphs = new ArrayList<>();
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Graph node) {
+				graphs.add(node);
+				super.meet(node);
+			}
+		});
+
+		assertEquals(expectedGraphCount, graphs.size(), query);
+		for (Graph graph : graphs) {
+			assertTrue(snapshot.isRepeatable(graph), graph.getSignature());
+			assertTrue(snapshot.isRepeatableAcrossExecutions(graph), graph.getSignature());
+			assertFalse(snapshot.mayRaiseQueryFatalError(graph), graph.getSignature());
+			assertTrue(snapshot.usesMappingParameterizedEvaluation(graph), graph.getSignature());
+			assertFalse(snapshot.permitsBindingInjection(graph, Set.of("context")), graph.getSignature());
+		}
+		assertTrue(snapshot.isRepeatable(expression), query);
+		assertTrue(snapshot.isRepeatableAcrossExecutions(expression), query);
+	}
+
+	private void assertGraphSafety(Graph graph, boolean fatal) {
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(graph);
+		assertFalse(snapshot.isRepeatable(graph), graph.getSignature());
+		assertFalse(snapshot.isRepeatableAcrossExecutions(graph), graph.getSignature());
+		assertEquals(fatal, snapshot.mayRaiseQueryFatalError(graph), graph.getSignature());
+		assertTrue(snapshot.usesMappingParameterizedEvaluation(graph), graph.getSignature());
+		assertFalse(snapshot.permitsBindingInjection(graph, Set.of("graph")), graph.getSignature());
+	}
+
+	private StatementPattern graphPattern() {
+		return new StatementPattern(Var.of("subject"), Var.of("predicate"), Var.of("object"));
+	}
+
 	private TupleExpr treeWithDistinctSafetyNames(int size) {
 		TupleExpr result = null;
 		for (int i = 0; i < size; i++) {
@@ -361,6 +494,8 @@ public class QueryEvaluationUtilityTest {
 		call.addResultVar(Var.of("result"));
 
 		assertFalse(QueryEvaluationUtility.isRepeatable(call));
+		assertFalse(QueryEvaluationUtility.querySafetySnapshot(call, QueryExecutionPolicy.DEFAULT)
+				.isRepeatableAcrossExecutions(call));
 	}
 
 	@Test
