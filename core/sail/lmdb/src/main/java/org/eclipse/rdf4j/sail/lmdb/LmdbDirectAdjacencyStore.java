@@ -81,7 +81,6 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	static final String PARALLEL_ROW_PATH_PROPERTY = "rdf4j.lmdb.directAdjacency.parallelRowPath.enabled";
 	static final String SCAN_AGGREGATES_PROPERTY = "rdf4j.lmdb.directAdjacency.scanAggregates.enabled";
 	/** Rows copied per batch while a graph-bound count sweeps the exact view. */
-	private static final int CONTEXT_SWEEP_BATCH_ROWS = 4096;
 	static final String PLANNER_STATS_PROPERTY = "rdf4j.lmdb.directAdjacency.plannerStats.enabled";
 	static final String NODE_PREDICATE_SERVE_PROPERTY = "rdf4j.lmdb.directAdjacency.nodePredicateProjection.serve.enabled";
 	private static final String ARBITRATED_INDEX_PREFIX = "arbitrated-";
@@ -3741,6 +3740,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	private ResolvedRow resolveRow(LmdbAdjacencyReadView view, long rawKey, int plane, long rawPredicateId,
 			LmdbAdjacencyLookupContext searchContext) {
+		return resolveRow(view, rawKey, plane, rawPredicateId, searchContext, -1L);
+	}
+
+	private ResolvedRow resolveRow(LmdbAdjacencyReadView view, long rawKey, int plane, long rawPredicateId,
+			LmdbAdjacencyLookupContext searchContext, long rawContext) {
 		LmdbAdjacencyPublishedState state = view.state();
 		long snapshot = view.snapshotRevision();
 		ResolvedRow resolved = new ResolvedRow();
@@ -3771,7 +3775,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			}
 		}
 		LmdbInMemoryAdjacencyIndex base = state.base();
-		long handle = base.findRun(rawKey, plane, rawPredicateId, searchContext);
+		long handle = base.findRun(rawKey, plane, rawPredicateId, searchContext, rawContext);
 		if (handle == LmdbInMemoryAdjacencyIndex.NOT_COVERED) {
 			if (overlays != null && overlays.extraSelected(rawPredicateId)) {
 				// classified selected after the base: provably empty at the base revision (absence proof)
@@ -3886,7 +3890,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 						object, context);
 				return null;
 			}
-			ResolvedRow row = resolveRow(view, key, plane, predicate, searchContext);
+			ResolvedRow row = resolveRow(view, key, plane, predicate, searchContext, context);
 			if (row.handle == LmdbInMemoryAdjacencyIndex.NOT_COVERED) {
 				metrics.recordFallback(row.reason);
 				observe(observer, false, row.reason.name(), order, subject, predicate, object, context);
@@ -4066,7 +4070,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	double estimateUniversalWork(LmdbAdjacencyReadView view, StatementOrder order, long subject, long predicate,
 			long object, long context, boolean explicit) {
-		double rows = estimateResultRows(view, subject, predicate, object, explicit);
+		double rows = estimateResultRows(view, subject, predicate, object, context, explicit);
 		return estimateUniversalWork(view, order, subject, predicate, object, context, explicit, rows);
 	}
 
@@ -4099,15 +4103,15 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			work += rows * (Math.log(Math.max(2D, rows)) / Math.log(2D));
 		}
 		if (context >= 0) {
-			// Context filtering still decodes the broad adjacency run; the requested rows may be fewer, but the sweep
-			// work above is the quantity the arbiter must compare.
+			// Mixed pages and encoded delta runs still require tuple-level filtering; candidate page counts remain a
+			// conservative upper bound on that work.
 			work += rows * 0.125D;
 		}
 		return work;
 	}
 
 	double estimateResultRows(LmdbAdjacencyReadView view, long subject, long predicate, long object,
-			boolean explicit) {
+			long context, boolean explicit) {
 		if (!exactFullSnapshot(view) || view.snapshotRevision() != view.state().appliedRevision()) {
 			return Double.NaN;
 		}
@@ -4115,7 +4119,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		LmdbAdjacencyPlaneStatistics.PredicateDomain domain = statistics.predicateDomain();
 		double rows = 0D;
 		if (predicate > 0) {
-			rows = estimatePredicateRows(view, predicate, subject, object, explicit, statistics);
+			rows = estimatePredicateRows(view, predicate, subject, object, context, explicit, statistics);
 		} else if (subject > 0 || object > 0) {
 			int direction = nodePredicateDirection(view, subject, object, explicit);
 			if (direction >= 0) {
@@ -4123,17 +4127,19 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				// Whole-run lengths give the same upper bound as the catalog sweep, including context multiplicity.
 				// Enumerate only predicates present on this node; resolve visible overlay versions through the cursor.
 				try (LmdbDirectNodeIterator iterator = new LmdbDirectNodeIterator(view, plane(bySubject, explicit),
-						bySubject ? subject : object, -1L, direction, this::onNodePredicateInconsistency)) {
-					return iterator.countStatements();
+						bySubject ? subject : object, context, direction, this::onNodePredicateInconsistency)) {
+					return iterator.countCandidateStatements();
 				}
 			}
 			boolean bySubject = subject > 0;
 			long key = bySubject ? subject : object;
 			int plane = plane(bySubject, explicit);
+			LmdbAdjacencyRunCodec.RunCursor cursor = new LmdbAdjacencyRunCodec.RunCursor();
 			for (int ordinal = 0; ordinal < domain.size(); ordinal++) {
-				ResolvedRow row = resolveRow(view, key, plane, domain.predicateAt(ordinal));
+				ResolvedRow row = resolveRow(view, key, plane, domain.predicateAt(ordinal), null, context);
 				if (row.handle > 0) {
-					rows += LmdbAdjacencyRunCodec.edgeCount(row.catalog, row.handle);
+					LmdbAdjacencyRunCodec.resolve(row.catalog, row.handle, cursor, context);
+					rows += cursor.edgeCount();
 				}
 			}
 		} else {
@@ -4146,14 +4152,19 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	}
 
 	private double estimatePredicateRows(LmdbAdjacencyReadView view, long predicate, long subject, long object,
-			boolean explicit, LmdbAdjacencyPlaneStatistics statistics) {
+			long context, boolean explicit, LmdbAdjacencyPlaneStatistics statistics) {
 		if (subject <= 0 && object <= 0) {
 			return statistics.quadCount(predicate, plane(true, explicit));
 		}
 		boolean bySubject = subject > 0;
 		long key = bySubject ? subject : object;
-		ResolvedRow row = resolveRow(view, key, plane(bySubject, explicit), predicate);
-		return row.handle > 0 ? LmdbAdjacencyRunCodec.edgeCount(row.catalog, row.handle) : 0D;
+		ResolvedRow row = resolveRow(view, key, plane(bySubject, explicit), predicate, null, context);
+		if (row.handle <= 0) {
+			return 0D;
+		}
+		LmdbAdjacencyRunCodec.RunCursor cursor = new LmdbAdjacencyRunCodec.RunCursor();
+		LmdbAdjacencyRunCodec.resolve(row.catalog, row.handle, cursor, context);
+		return cursor.edgeCount();
 	}
 
 	private boolean exactFullSnapshot(LmdbAdjacencyReadView view) {
@@ -4191,7 +4202,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		boolean bySubject = subjectBound;
 		long key = subjectBound ? subject : object;
 		long boundNeighbor = subjectBound && objectBound ? object : -1L;
-		ResolvedRow row = resolveRow(view, key, plane(bySubject, explicit), predicate, null);
+		ResolvedRow row = resolveRow(view, key, plane(bySubject, explicit), predicate, null, context);
 		if (row.handle == LmdbInMemoryAdjacencyIndex.NOT_COVERED) {
 			throw new IllegalStateException("exact FULL predicate sweep observed an uncovered row: " + predicate);
 		}
@@ -4222,7 +4233,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			observe(observer, false, reason, requestedOrder, subject, predicate, object, context);
 			return null;
 		}
-		ResolvedRow row = resolveRow(view, subject, plane(true, explicit), predicate, searchContext);
+		ResolvedRow row = resolveRow(view, subject, plane(true, explicit), predicate, searchContext, context);
 		if (row.handle == LmdbInMemoryAdjacencyIndex.NOT_COVERED) {
 			metrics.recordFallback(row.reason);
 			observe(observer, false, row.reason.name(), requestedOrder, subject, predicate, object, context);
@@ -5303,9 +5314,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		boolean subjectBound = subject > 0;
 		boolean objectBound = object > 0;
 		if (!subjectBound && !objectBound && context >= 0) {
-			// A graph-bound count without a node has no statistic to read. When an LMDB index leads with every bound
-			// field its range walk visits only the matching entries and wins; otherwise sweep the exact view's runs,
-			// which keep every (neighbor, context) pair in memory, instead of filtering a whole LMDB index.
+			// A graph-bound count uses physical page proofs. When an LMDB index leads with every bound
+			// field its range walk visits only the matching entries and wins; otherwise count the exact view's
+			// matching physical spans instead of filtering a whole LMDB index.
 			if (tripleStore.indexPrefixCoversBoundFields(-1L, predicate, -1L, context)) {
 				return -1;
 			}
@@ -5336,7 +5347,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			key = object;
 			boundNeighbor = -1;
 		}
-		ResolvedRow row = resolveRow(view, key, plane(bySubject, explicit), predicate);
+		ResolvedRow row = resolveRow(view, key, plane(bySubject, explicit), predicate, null, context);
 		if (row.handle == LmdbInMemoryAdjacencyIndex.NOT_COVERED) {
 			metrics.recordFallback(row.reason);
 			return -1;
@@ -5348,7 +5359,13 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		LmdbAdjacencyArenaCatalog catalog = row.catalog;
 		ContextCatalog contexts = view.state().contextCatalog();
 		LmdbAdjacencyRunCodec.RunCursor cursor = new LmdbAdjacencyRunCodec.RunCursor();
-		LmdbAdjacencyRunCodec.resolve(catalog, row.handle, cursor);
+		if (boundNeighbor < 0L && context >= 0L) {
+			LmdbAdjacencyRunCodec.resolveContextMetadata(catalog, row.handle, cursor);
+			long count = LmdbAdjacencyRunCodec.countContext(contexts, cursor, context, existenceOnly);
+			metrics.recordHit();
+			return count;
+		}
+		LmdbAdjacencyRunCodec.resolve(catalog, row.handle, cursor, context);
 		long edges = cursor.edgeCount();
 		if (boundNeighbor < 0 && context < 0) {
 			metrics.recordHit();
@@ -5369,7 +5386,15 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			return matched ? 1 : 0;
 		}
 		long matches = 0;
+		long candidateEnd = from;
 		for (long i = from; i < edges; i++) {
+			if (i >= candidateEnd) {
+				i = LmdbAdjacencyRunCodec.nextContextCandidate(cursor, i);
+				candidateEnd = cursor.contextCandidateEnd();
+				if (i >= edges) {
+					break;
+				}
+			}
 			long neighbor = LmdbAdjacencyRunCodec.neighborAt(cursor, i);
 			if (boundNeighbor > 0 && neighbor != boundNeighbor) {
 				break;
@@ -5389,9 +5414,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	/**
 	 * Counts (or proves the existence of) the statements of one graph, for one predicate or across every predicate, by
-	 * sweeping the exact FULL view: runs are (neighbor, context) ordered, so the context column is decoded in memory
-	 * without touching LMDB. Declines ({@code -1}) unless the view is exact and complete, so a partially covered view
-	 * keeps answering such counts from LMDB.
+	 * sweeping the exact FULL view. Common-context pages supply their count from headers; mixed pages and overlay spans
+	 * inspect only their context column. Declines ({@code -1}) unless the view is exact and complete, so a partially
+	 * covered view keeps answering such counts from LMDB.
 	 */
 	private long countContextSweep(LmdbAdjacencyReadView view, long predicate, long context, boolean explicit,
 			boolean existenceOnly) {
@@ -5399,14 +5424,16 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			return -1;
 		}
 		long count = 0L;
-		long[] buffer = new long[CONTEXT_SWEEP_BATCH_ROWS * (TripleIndex.CONTEXT_IDX + 1)];
-		try (RecordIterator rows = predicate > 0
-				? openCompletePredicateSlice(view, -1L, predicate, -1L, context, explicit, null)
-				: new LmdbDirectAdjacencyPredicateSweepIterator(this, view, -1L, -1L, context, explicit, null)) {
-			while (true) {
-				int produced = rows.fill(buffer, CONTEXT_SWEEP_BATCH_ROWS);
-				count += produced;
-				if (produced < CONTEXT_SWEEP_BATCH_ROWS || (existenceOnly && count > 0)) {
+		LmdbAdjacencyPlaneStatistics.PredicateDomain predicates = view.state().planeStatistics().predicateDomain();
+		for (int ordinal = 0; ordinal < (predicate > 0L ? 1 : predicates.size()); ordinal++) {
+			long current = predicate > 0L ? predicate : predicates.predicateAt(ordinal);
+			try (LmdbDirectNativeAdjacency adjacency = bindAdmittedCompleteAdjacency(view, current, true, explicit)) {
+				if (adjacency == null) {
+					throw new IllegalStateException(
+							"exact FULL graph count observed an incomplete predicate: " + current);
+				}
+				count = Math.addExact(count, countContextPlane(adjacency, context, existenceOnly));
+				if (existenceOnly && count > 0L) {
 					break;
 				}
 			}
@@ -5419,26 +5446,41 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		return existenceOnly ? Math.min(count, 1L) : count;
 	}
 
+	/** Common pages count from headers, mixed pages in place, and overlays from exact raw-coordinate row spans. */
+	private static long countContextPlane(LmdbDirectNativeAdjacency adjacency, long context, boolean existenceOnly) {
+		try (LmdbDirectNativeAdjacency.DirectPageCursor pages = adjacency.openPageCursor()) {
+			if (pages != null) {
+				long count = 0L;
+				while (pages.advance()) {
+					count = Math.addExact(count, pages.countContext(context, existenceOnly));
+					if (existenceOnly && count > 0L) {
+						return 1L;
+					}
+				}
+				return count;
+			}
+		}
+		long count = 0L;
+		try (LmdbDirectNativeAdjacency.RootScanCursor roots = adjacency.rootScanCursor()) {
+			while (roots.advance()) {
+				count = Math.addExact(count, adjacency.countContext(roots.run(), context, existenceOnly));
+				if (existenceOnly && count > 0L) {
+					return 1L;
+				}
+			}
+		}
+		return count;
+	}
+
 	/**
-	 * Counts (or proves the existence of) the statements of one bound node across every predicate, without
-	 * materialising any of them.
-	 * <p>
-	 * The preconditions are narrow on purpose, because the projection records that a predicate exists
-	 * <em>somewhere</em> on a node with no memory of which context or which object it came from:
-	 * <ul>
-	 * <li>exactly one endpoint bound, so a single plane is precisely identified;
-	 * <li>the other endpoint unbound, since a bound neighbour would need per-edge comparison;
-	 * <li>no context restriction, since a predicate may exist on this node only outside the requested graph — the
-	 * whole-row figure would then be strictly too large;
-	 * <li>the same eligibility the iterator branch uses, so the count and the rows can never disagree.
-	 * </ul>
-	 * Multiplicity across named graphs needs no correction: the run encoding already gives each object-and-context pair
-	 * its own position, so summing run lengths counts statements rather than distinct objects. Outside these conditions
-	 * this declines and the caller iterates.
+	 * Counts (or proves the existence of) statements across every predicate of one bound node. Exactly one endpoint
+	 * must be bound, and the node projection must have the same snapshot coverage required by the statement iterator.
+	 * The merged predicate groups retain the latest run for each predicate. Unrestricted groups use their row count;
+	 * graph-restricted groups count matching physical context spans, preserving object-and-context multiplicity.
 	 */
 	private long countNodeStatements(LmdbAdjacencyReadView view, long subject, long object, long context,
 			boolean explicit, boolean subjectBound, boolean objectBound, boolean existenceOnly) {
-		if (subjectBound == objectBound || context >= 0) {
+		if (subjectBound == objectBound) {
 			return -1;
 		}
 		long key = subjectBound ? subject : object;

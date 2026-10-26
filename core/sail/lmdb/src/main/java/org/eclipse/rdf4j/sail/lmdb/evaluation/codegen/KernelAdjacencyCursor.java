@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RunView;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RunView.ContextSpan;
 
 /**
  * Forward-only physical cursor shared by generated and interpreted IR producers.
@@ -63,6 +64,20 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 	private long pageFiberQuadOffset;
 	private int fiberBatchSize;
 	private int fiberBatchIndex;
+
+	private final ContextSpan runSpan = new ContextSpan();
+	private final ContextSpan contextReadSpan = new ContextSpan();
+	private boolean graphSpanAccess;
+	private boolean contextMatch;
+	private long wantedContext = -1L;
+	private boolean excludeDefault;
+	private long runBatchFrom = -1L;
+	private int runBatchSize;
+	private long fiberRawEnd;
+	private long contextRawPosition;
+	private long contextProofFrom = -1L;
+	private long runCommonContext = -1L;
+	private long runFiberCommonContext = -1L;
 
 	private long runFiberQuadOffset;
 	private long runFiberCount;
@@ -360,6 +375,17 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 		}
 	}
 
+	/** Configures only a pure graph restriction; ordinary unrestricted fiber copies keep their existing route. */
+	void configureContextFilter(boolean match, long wanted, boolean excludeDefault) {
+		if (rootReady) {
+			throw new IllegalStateException("context restriction must precede root traversal");
+		}
+		graphSpanAccess = match || excludeDefault;
+		contextMatch = match;
+		wantedContext = match ? wanted : -1L;
+		this.excludeDefault = excludeDefault;
+	}
+
 	/** Advances to the next physical root fragment. */
 	public boolean advanceRoot() {
 		ensureOpen();
@@ -383,6 +409,15 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 		runFiberCount = 0L;
 		runFiberBatchSize = 0;
 		runFiberBatchIndex = 0;
+		runBatchFrom = -1L;
+		runBatchSize = 0;
+		runCommonContext = -1L;
+		runFiberCommonContext = -1L;
+		if (graphSpanAccess && rootQuads > 0L && runs.contextSpan(0L, runSpan)
+				&& runSpan.end() == rootQuads && runSpan.hasCommonContext()) {
+			runCommonContext = runSpan.commonContext();
+		}
+		checkCancelled();
 		rootReady = true;
 		return true;
 	}
@@ -503,6 +538,9 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 	}
 
 	private boolean advanceRunFiber() {
+		if (graphSpanAccess) {
+			return advanceGraphRunFiber();
+		}
 		if (runFiberQuadOffset >= rootQuads) {
 			rootFibers = runFiberCount;
 			return false;
@@ -542,6 +580,122 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 		contextBatchSize = 0;
 		fiberReady = true;
 		return true;
+	}
+
+	/** One logical accepted-neighbor fiber, even when its physical spans have different contexts. */
+	private boolean advanceGraphRunFiber() {
+		long position = nextAcceptedRunRow(runFiberQuadOffset);
+		if (position < 0L) {
+			rootFibers = runFiberCount;
+			return false;
+		}
+		neighbor = roots[Math.toIntExact(position - runBatchFrom)];
+		fiberQuadOffset = position;
+		long common = rootQuadCounts[Math.toIntExact(position - runBatchFrom)];
+		long count = 0L;
+		for (;;) {
+			int local = Math.toIntExact(position - runBatchFrom);
+			if (rootQuadCounts[local] != common) {
+				common = -1L;
+			}
+			count = Math.addExact(count, 1L);
+			long next = nextAcceptedRunRow(position + 1L);
+			if (next < 0L) {
+				runFiberQuadOffset = rootQuads;
+				fiberRawEnd = rootQuads;
+				break;
+			}
+			if (roots[Math.toIntExact(next - runBatchFrom)] != neighbor) {
+				runFiberQuadOffset = next;
+				fiberRawEnd = next;
+				break;
+			}
+			position = next;
+		}
+		multiplicity = count;
+		runFiberCommonContext = common;
+		runFiberCount++;
+		contextIndex = -1L;
+		contextRawPosition = fiberQuadOffset;
+		contextProofFrom = -1L;
+		contextBatchStart = -1L;
+		contextBatchSize = 0;
+		fiberReady = true;
+		return true;
+	}
+
+	private long nextAcceptedRunRow(long from) {
+		if (contextMatch && wantedContext < 0L) {
+			return -1L;
+		}
+		while (from < rootQuads) {
+			if (runBatchFrom < 0L || from < runBatchFrom || from - runBatchFrom >= runBatchSize) {
+				checkCancelled();
+				int copied = runSpan.copyAccepted(runs, from, rootQuads, bufferCapacity,
+						roots, 0, rootQuadCounts, 0, wantedContext, null, excludeDefault);
+				checkCancelled();
+				if (copied == 0) {
+					from = runSpan.end();
+					continue;
+				}
+				runBatchFrom = from;
+				runBatchSize = copied;
+				neighborValuesCopied = Math.addExact(neighborValuesCopied, copied);
+				if (!runSpan.hasCommonContext()) {
+					contextValuesCopied = Math.addExact(contextValuesCopied, copied);
+				}
+			}
+			long graph = rootQuadCounts[Math.toIntExact(from - runBatchFrom)];
+			if (ContextSpan.acceptsContext(graph, wantedContext, null, excludeDefault)) {
+				return from;
+			}
+			from++;
+		}
+		return -1L;
+	}
+
+	private long nextAcceptedRunContext() {
+		while (contextRawPosition < fiberRawEnd) {
+			checkCancelled();
+			if (contextProofFrom < 0L || contextRawPosition < contextProofFrom
+					|| contextRawPosition >= contextReadSpan.end()) {
+				if (!runs.contextSpan(contextRawPosition, contextReadSpan)) {
+					contextReadSpan.set(fiberRawEnd, -1L);
+				}
+				checkCancelled();
+				contextProofFrom = contextRawPosition;
+				if (contextReadSpan.end() <= contextRawPosition) {
+					throw new IllegalStateException("context span made no progress");
+				}
+			}
+			if (contextReadSpan.hasCommonContext()) {
+				long graph = contextReadSpan.commonContext();
+				if (ContextSpan.acceptsContext(graph, wantedContext, null, excludeDefault)) {
+					contextRawPosition++;
+					return graph;
+				}
+				contextRawPosition = Math.min(fiberRawEnd, contextReadSpan.end());
+				continue;
+			}
+			if (contextBatchStart < 0L || contextRawPosition < contextBatchStart
+					|| contextRawPosition - contextBatchStart >= contextBatchSize) {
+				int requested = (int) Math.min(bufferCapacity,
+						Math.min(fiberRawEnd, contextReadSpan.end()) - contextRawPosition);
+				int copied = runs.copyContextSpan(contextRawPosition, requested, null, 0, contexts, 0);
+				checkCancelled();
+				if (copied != requested) {
+					throw new IllegalStateException("native adjacency returned a short context-span copy");
+				}
+				contextValuesCopied = Math.addExact(contextValuesCopied, copied);
+				contextBatchStart = contextRawPosition;
+				contextBatchSize = copied;
+			}
+			long graph = contexts[Math.toIntExact(contextRawPosition++ - contextBatchStart)];
+			if (ContextSpan.acceptsContext(graph, wantedContext, null, excludeDefault)) {
+				return graph;
+			}
+		}
+		throw new IllegalStateException("accepted context count disagrees with the logical fiber");
 	}
 
 	/** Returns the current root fragment id. */
@@ -646,7 +800,9 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 			return false;
 		}
 		contextIndex = nextContext;
-		if (pages != null && pageCommonContext) {
+		if (graphSpanAccess && pages == null) {
+			context = runFiberCommonContext >= 0L ? runFiberCommonContext : nextAcceptedRunContext();
+		} else if (pages != null && pageCommonContext) {
 			context = pageCommonContextId;
 		} else {
 			loadContextBatch();
@@ -696,19 +852,20 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 		contextBatchSize = copied;
 	}
 
-	/** Whether the current page fragment has one context for every physical quad. */
+	/** Whether the current root fragment or active logical fiber has one context for every accepted quad. */
 	public boolean hasCommonContext() {
 		checkRoot();
-		return pages != null && pageCommonContext;
+		return pages != null ? pageCommonContext
+				: graphSpanAccess && (fiberReady ? runFiberCommonContext : runCommonContext) >= 0L;
 	}
 
-	/** Returns the page's common context without decoding its context vector. */
+	/** Returns the current fragment or fiber's proved common context. */
 	public long commonContext() {
 		checkRoot();
-		if (pages == null || !pageCommonContext) {
+		if (!hasCommonContext()) {
 			throw new UnsupportedOperationException("common context is unavailable");
 		}
-		return pageCommonContextId;
+		return pages != null ? pageCommonContextId : fiberReady ? runFiberCommonContext : runCommonContext;
 	}
 
 	/** Returns the context produced by the last successful {@link #advanceContext()}. */
@@ -777,6 +934,15 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 		pageFiberQuadOffset = 0L;
 		fiberBatchSize = 0;
 		fiberBatchIndex = 0;
+		graphSpanAccess = false;
+		contextMatch = false;
+		wantedContext = -1L;
+		excludeDefault = false;
+		runBatchFrom = -1L;
+		runBatchSize = 0;
+		runCommonContext = -1L;
+		runFiberCommonContext = -1L;
+		contextProofFrom = -1L;
 		runFiberQuadOffset = 0L;
 		runFiberCount = 0L;
 		runFiberBatchSize = 0;
@@ -897,6 +1063,20 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 		public long runSize() {
 			checkPositioned();
 			return size;
+		}
+
+		@Override
+		public boolean contextSpan(long fromOffset, ContextSpan target) {
+			checkPositioned();
+			view.contextSpan(handle, fromOffset, target);
+			return true;
+		}
+
+		@Override
+		public int copyContextSpan(long fromOffset, int length, long[] neighbors, int neighborOffset,
+				long[] contexts, int contextOffset) {
+			checkPositioned();
+			return view.copyContextSpan(handle, fromOffset, length, neighbors, neighborOffset, contexts, contextOffset);
 		}
 
 		@Override
@@ -1040,6 +1220,26 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 		public long runSize() {
 			checkPositioned();
 			return size;
+		}
+
+		@Override
+		public boolean contextSpan(long fromOffset, ContextSpan target) {
+			checkPositioned();
+			if (bound != null) {
+				return bound.contextSpan(fromOffset, target);
+			}
+			view.contextSpan(handle, fromOffset, target);
+			return true;
+		}
+
+		@Override
+		public int copyContextSpan(long fromOffset, int length, long[] neighbors, int neighborOffset,
+				long[] contexts, int contextOffset) {
+			checkPositioned();
+			return bound != null
+					? bound.copyContextSpan(fromOffset, length, neighbors, neighborOffset, contexts, contextOffset)
+					: view.copyContextSpan(handle, fromOffset, length, neighbors, neighborOffset, contexts,
+							contextOffset);
 		}
 
 		@Override

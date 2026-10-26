@@ -20,6 +20,7 @@ import java.util.concurrent.Executor;
 import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.OrderedIntegerDomain;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RunView.ContextSpan;
 import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
 
 /**
@@ -427,7 +428,7 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		ensureOpen();
 		LmdbAdjacencyArenaCatalog catalog = catalogOf(runHandle);
 		long local = localOf(runHandle);
-		LmdbAdjacencyRunCodec.resolve(catalog, local, runCursor);
+		LmdbAdjacencyRunCodec.resolveContextMetadata(catalog, local, runCursor);
 		cachedHandle = runHandle;
 		cachedSize = runCursor.edgeCount();
 		cachedCount = cachedSize <= MATERIALIZE_MAX_EDGES ? (int) cachedSize : -1;
@@ -512,6 +513,44 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		resolve(runHandle);
 		runCursor.borrow(runHandle, target, lane);
 		return true;
+	}
+
+	@Override
+	public long neighborInContextSpan(long runHandle, long offset) {
+		resolve(runHandle);
+		checkElementOffset(offset);
+		recordBaseProbes(1L);
+		return LmdbAdjacencyRunCodec.neighborAt(runCursor, offset);
+	}
+
+	@Override
+	public long contextInContextSpan(long runHandle, long offset) {
+		resolve(runHandle);
+		checkElementOffset(offset);
+		return LmdbAdjacencyRunCodec.contextAt(contexts, runCursor, offset);
+	}
+
+	@Override
+	public void contextSpan(long runHandle, long fromOffset, ContextSpan target) {
+		resolve(runHandle);
+		LmdbAdjacencyRunCodec.contextSpan(runCursor, fromOffset, target);
+	}
+
+	@Override
+	public int copyContextSpan(long runHandle, long fromOffset, int length, long[] neighbors, int neighborOffset,
+			long[] graphIds, int contextOffset) {
+		resolve(runHandle);
+		int count = neighbors == null ? checkedCopyCount(fromOffset, length, graphIds, contextOffset)
+				: checkedCopyCount(fromOffset, length, neighbors, neighborOffset);
+		int copied = LmdbAdjacencyRunCodec.copy(contexts, runCursor, fromOffset, count, neighbors, neighborOffset,
+				graphIds, contextOffset);
+		recordBaseProbes(copied);
+		return copied;
+	}
+
+	long countContext(long runHandle, long rawContext, boolean existenceOnly) {
+		resolve(runHandle);
+		return LmdbAdjacencyRunCodec.countContext(contexts, runCursor, rawContext, existenceOnly);
 	}
 
 	@Override
@@ -659,7 +698,7 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	}
 
 	@Override
-	public NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor openPageCursor() {
+	public DirectPageCursor openPageCursor() {
 		ensureOpen();
 		if (!baseOnly || baseKeys == null) {
 			return null;
@@ -702,13 +741,24 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		return rootScanCursor(0, keyCount());
 	}
 
+	/** Statement scans may skip context-disjoint base pages; native key-domain ordinal windows stay unchanged. */
+	RootScanCursor rootScanCursor(long rawContext) {
+		if (rawContext < 0) {
+			return rootScanCursor();
+		}
+		prepareKeyDomain();
+		ImmutablePagedQuadCsfIndex.KeyCursor baseCursor = baseKeys == null ? null
+				: baseKeys.contextCandidateCursor(rawContext);
+		return new RootScanCursor(baseCursor, 0L, keyCount(), domainChangeKeys.length != 0, rawContext);
+	}
+
 	RootScanCursor rootScanCursor(long fromOrdinal, long toOrdinal) {
 		prepareKeyDomain();
 		boolean merged = domainChangeKeys.length != 0;
 		long baseCount = baseKeys == null ? 0 : baseKeys.keyCount();
 		ImmutablePagedQuadCsfIndex.KeyCursor baseCursor = baseKeys == null ? null
 				: baseKeys.cursor(merged ? 0 : fromOrdinal, merged ? baseCount : toOrdinal);
-		return new RootScanCursor(baseCursor, fromOrdinal, toOrdinal, merged);
+		return new RootScanCursor(baseCursor, fromOrdinal, toOrdinal, merged, -1L);
 	}
 
 	static final class DirectPageCursor
@@ -717,6 +767,10 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 
 		DirectPageCursor(ImmutablePagedQuadCsfIndex.PageCursor delegate) {
 			this.delegate = delegate;
+		}
+
+		long countContext(long context, boolean existenceOnly) {
+			return delegate.countContext(context, existenceOnly);
 		}
 
 		@Override
@@ -919,21 +973,58 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		private final long fromOrdinal;
 		private final long toOrdinal;
 		private final boolean merged;
+		private final long boundContext;
+		private final LmdbAdjacencyRunCodec.RunCursor contextRun;
 		private long emittedOrdinal;
 		private int changeIndex;
 		private boolean baseReady;
 		private long key;
 		private long run;
 		private long size = SIZE_UNKNOWN;
+		private long contextSpanEnd;
 		private boolean directBaseRun;
 
 		private RootScanCursor(ImmutablePagedQuadCsfIndex.KeyCursor baseCursor, long fromOrdinal, long toOrdinal,
-				boolean merged) {
+				boolean merged, long boundContext) {
 			this.baseCursor = baseCursor;
 			this.fromOrdinal = fromOrdinal;
 			this.toOrdinal = toOrdinal;
 			this.merged = merged;
+			this.boundContext = boundContext;
+			this.contextRun = boundContext < 0 ? null : new LmdbAdjacencyRunCodec.RunCursor();
 			this.emittedOrdinal = merged ? 0 : fromOrdinal;
+		}
+
+		@Override
+		public boolean contextSpan(long offset, ContextSpan target) {
+			if (contextRun != null) {
+				LmdbAdjacencyRunCodec.contextSpan(contextRun, offset, target);
+			} else {
+				LmdbDirectNativeAdjacency.this.contextSpan(run, offset, target);
+			}
+			return true;
+		}
+
+		@Override
+		public long neighborInContextSpan(long offset) {
+			return contextRun == null ? LmdbDirectNativeAdjacency.this.neighborInContextSpan(run, offset)
+					: LmdbAdjacencyRunCodec.neighborAt(contextRun, offset);
+		}
+
+		@Override
+		public long contextInContextSpan(long offset) {
+			return contextRun == null ? LmdbDirectNativeAdjacency.this.contextInContextSpan(run, offset)
+					: LmdbAdjacencyRunCodec.contextAt(contexts, contextRun, offset);
+		}
+
+		@Override
+		public int copyContextSpan(long offset, int length, long[] neighbors, int neighborOffset,
+				long[] graphs, int contextOffset) {
+			return contextRun == null
+					? LmdbDirectNativeAdjacency.this.copyContextSpan(run, offset, length, neighbors, neighborOffset,
+							graphs, contextOffset)
+					: LmdbAdjacencyRunCodec.copy(contexts, contextRun, offset, length, neighbors, neighborOffset,
+							graphs, contextOffset);
 		}
 
 		@Override
@@ -941,6 +1032,14 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 			while (emittedOrdinal < toOrdinal && nextCandidate()) {
 				long ordinal = emittedOrdinal++;
 				if (ordinal >= fromOrdinal && run > 0) {
+					if (contextRun != null) {
+						LmdbAdjacencyRunCodec.resolve(catalogOf(run), localOf(run), contextRun, boundContext);
+						size = contextRun.edgeCount();
+						contextSpanEnd = 0L;
+						if (size == 0) {
+							continue;
+						}
+					}
 					rememberFind(key, run);
 					return true;
 				}
@@ -1005,7 +1104,7 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 
 		private void bindBaseCandidate() {
 			key = baseCursor.key();
-			directBaseRun = true;
+			directBaseRun = contextRun == null;
 			run = packHandle(0, sources[0].packCsfHandle(baseCursor.localReference()));
 			size = SIZE_UNKNOWN;
 		}
@@ -1025,7 +1124,7 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		@Override
 		public int fillRootCounts(long[] rootTarget, int rootOffset, long[] countTarget, int countOffset,
 				int maximum) {
-			if (merged) {
+			if (merged || contextRun != null) {
 				return NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor.super.fillRootCounts(rootTarget, rootOffset,
 						countTarget, countOffset, maximum);
 			}
@@ -1063,6 +1162,9 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 
 		@Override
 		public boolean borrow(BorrowedFactorBatch target, int lane) {
+			if (contextRun != null) {
+				return false;
+			}
 			if (!(target.source() instanceof LmdbBorrowedAdjacencySource owner) || owner.view != readView)
 				throw new IllegalArgumentException("factor source belongs to another snapshot");
 			owner.checkOpen();
@@ -1078,7 +1180,24 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 			return runSize();
 		}
 
+		long nextContextCandidate(long offset) {
+			if (contextRun == null || offset < contextSpanEnd) {
+				return offset;
+			}
+			long candidate = LmdbAdjacencyRunCodec.nextContextCandidate(contextRun, offset);
+			contextSpanEnd = contextRun.contextCandidateEnd();
+			return candidate;
+		}
+
+		long contextCandidateEnd() {
+			return contextRun == null ? runSize() : contextSpanEnd;
+		}
+
 		int copyPairs(long runOffset, int length, long[] neighborTarget, long[] contextTarget) {
+			if (contextRun != null) {
+				return LmdbAdjacencyRunCodec.copy(contexts, contextRun, runOffset, length, neighborTarget, 0,
+						contextTarget, 0);
+			}
 			return directBaseRun
 					? baseCursor.copyPairs(runOffset, length, neighborTarget, 0, contextTarget, 0)
 					: LmdbDirectNativeAdjacency.this.copyPairs(run, runOffset, length, neighborTarget, 0,
@@ -1087,24 +1206,38 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 
 		@Override
 		public int copyNeighbors(long runOffset, int length, long[] target, int targetOffset) {
+			if (contextRun != null) {
+				return LmdbAdjacencyRunCodec.copy(contexts, contextRun, runOffset, length, target, targetOffset, null,
+						0);
+			}
 			return directBaseRun ? baseCursor.copyPairs(runOffset, length, target, targetOffset, null, 0)
 					: LmdbDirectNativeAdjacency.this.copyNeighbors(run, runOffset, length, target, targetOffset);
 		}
 
 		@Override
 		public int copyContexts(long runOffset, int length, long[] target, int targetOffset) {
+			if (contextRun != null) {
+				return LmdbAdjacencyRunCodec.copy(contexts, contextRun, runOffset, length, null, 0, target,
+						targetOffset);
+			}
 			return directBaseRun ? baseCursor.copyPairs(runOffset, length, null, 0, target, targetOffset)
 					: LmdbDirectNativeAdjacency.this.copyContexts(run, runOffset, length, target, targetOffset);
 		}
 
 		@Override
 		public long neighborAt(long runOffset) {
+			if (contextRun != null) {
+				return LmdbAdjacencyRunCodec.neighborAt(contextRun, runOffset);
+			}
 			return directBaseRun ? baseCursor.neighborAt(runOffset)
 					: LmdbDirectNativeAdjacency.this.neighborAt(run, runOffset);
 		}
 
 		@Override
 		public long contextAt(long runOffset) {
+			if (contextRun != null) {
+				return LmdbAdjacencyRunCodec.contextAt(contexts, contextRun, runOffset);
+			}
 			return directBaseRun ? baseCursor.contextAt(runOffset)
 					: LmdbDirectNativeAdjacency.this.contextAt(run, runOffset);
 		}

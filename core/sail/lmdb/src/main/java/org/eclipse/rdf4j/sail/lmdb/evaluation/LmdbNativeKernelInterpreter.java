@@ -233,6 +233,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	/** Query cancellation and optional private probe deadline; polled by every data-proportional loop. */
 	private KernelCancellation cancel;
 	private int pollTick;
+	private final NativeLmdbQuerySource.RunView.ContextSpan contextSpan = new NativeLmdbQuerySource.RunView.ContextSpan();
 
 	/** Column registers, -1 = unbound. */
 	private long[] v;
@@ -1219,13 +1220,18 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						poll();
 						long at = position++;
 						if (probe.ctxActive()) {
-							long ctx = view.contextAt(handle, at);
-							if (!ctxAccepted(ctx, probe.ctxMatch, probe.ctxExcludeDefault))
+							long ctx = KernelRuntime.contextInSpan(view, handle, at, contextSpan);
+							if (!ctxAccepted(ctx, probe.ctxMatch, probe.ctxExcludeDefault)) {
+								if (contextSpan.hasCommonContext()) {
+									position = Math.max(position, contextSpan.end());
+								}
 								continue;
+							}
 							if (probe.ctxCol >= 0)
 								v[probe.ctxCol] = ctx;
 						}
-						v[probe.valueCol] = view.neighborAt(handle, at);
+						v[probe.valueCol] = (probe.ctxActive() ? view.neighborInContextSpan(handle, at)
+								: view.neighborAt(handle, at));
 						return true;
 					}
 					return false;
@@ -1306,13 +1312,18 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						poll();
 						long at = position++;
 						if (probe.ctxActive()) {
-							long ctx = cursor.contextAt(at);
-							if (!ctxAccepted(ctx, probe.ctxMatch, probe.ctxExcludeDefault))
+							long ctx = KernelRuntime.contextInSpan(cursor, at, contextSpan);
+							if (!ctxAccepted(ctx, probe.ctxMatch, probe.ctxExcludeDefault)) {
+								if (contextSpan.hasCommonContext()) {
+									position = Math.max(position, contextSpan.end());
+								}
 								continue;
+							}
 							if (probe.ctxCol >= 0)
 								v[probe.ctxCol] = ctx;
 						}
-						v[probe.valueCol] = cursor.neighborAt(at);
+						v[probe.valueCol] = (probe.ctxActive() ? cursor.neighborInContextSpan(at)
+								: cursor.neighborAt(at));
 						return true;
 					}
 					return false;
@@ -1354,14 +1365,19 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 							poll();
 							long at = position++;
 							if (keys.ctxActive()) {
-								long ctx = cursor.contextAt(at);
-								if (!ctxAccepted(ctx, keys.ctxMatch, keys.ctxExcludeDefault))
+								long ctx = KernelRuntime.contextInSpan(cursor, at, contextSpan);
+								if (!ctxAccepted(ctx, keys.ctxMatch, keys.ctxExcludeDefault)) {
+									if (contextSpan.hasCommonContext()) {
+										position = Math.max(position, contextSpan.end());
+									}
 									continue;
+								}
 								if (keys.ctxCol >= 0)
 									v[keys.ctxCol] = ctx;
 							}
 							v[keys.keyCol] = key;
-							v[keys.valueCol] = cursor.neighborAt(at);
+							v[keys.valueCol] = (keys.ctxActive() ? cursor.neighborInContextSpan(at)
+									: cursor.neighborAt(at));
 							return true;
 						}
 						poll();
@@ -1770,8 +1786,11 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						poll();
 						long at = position++;
 						if (enumerate.ctxActive()) {
-							long ctx = predicates.contextAt(run, at);
+							long ctx = KernelRuntime.contextInSpan(predicates, run, at, contextSpan);
 							if (!ctxAccepted(ctx, enumerate.ctxMatch, enumerate.ctxExcludeDefault)) {
+								if (contextSpan.hasCommonContext()) {
+									position = Math.max(position, contextSpan.end());
+								}
 								continue;
 							}
 							if (enumerate.ctxCol >= 0) {
@@ -1779,7 +1798,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 							}
 						}
 						v[enumerate.predicateCol] = predicate;
-						v[enumerate.valueCol] = predicates.neighborAt(run, at);
+						v[enumerate.valueCol] = (enumerate.ctxActive() ? predicates.neighborInContextSpan(run, at)
+								: predicates.neighborAt(run, at));
 						return true;
 					}
 					if (!cursor.advance()) {
@@ -1833,15 +1853,19 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						poll();
 						long at = position++;
 						if (enumerate.ctxActive()) {
-							long ctx = wildcard.contextAt(run, at);
+							long ctx = KernelRuntime.contextInSpan(wildcard, run, at, contextSpan);
 							if (!ctxAccepted(ctx, enumerate.ctxMatch, enumerate.ctxExcludeDefault)) {
+								if (contextSpan.hasCommonContext()) {
+									position = Math.max(position, contextSpan.end());
+								}
 								continue;
 							}
 							if (enumerate.ctxCol >= 0) {
 								v[enumerate.ctxCol] = ctx;
 							}
 						}
-						long neighbor = wildcard.neighborAt(run, at);
+						long neighbor = (enumerate.ctxActive() ? wildcard.neighborInContextSpan(run, at)
+								: wildcard.neighborAt(run, at));
 						if (enumerate.target != null && neighbor != target) {
 							continue;
 						}
@@ -1896,8 +1920,11 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						poll();
 						long at = position++;
 						if (enumerate.ctxActive()) {
-							long ctx = cursor.contextAt(at);
+							long ctx = KernelRuntime.contextInSpan(cursor, at, contextSpan);
 							if (!ctxAccepted(ctx, enumerate.ctxMatch, enumerate.ctxExcludeDefault)) {
+								if (contextSpan.hasCommonContext()) {
+									position = Math.max(position, contextSpan.end());
+								}
 								continue;
 							}
 							if (enumerate.ctxCol >= 0) {
@@ -1906,7 +1933,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						}
 						v[enumerate.keyCol] = key;
 						v[enumerate.predicateCol] = wildcard.predicateAt(predicateOrdinal - 1);
-						v[enumerate.valueCol] = cursor.neighborAt(at);
+						v[enumerate.valueCol] = (enumerate.ctxActive() ? cursor.neighborInContextSpan(at)
+								: cursor.neighborAt(at));
 						return true;
 					}
 					if (cursor != null) {
@@ -1978,8 +2006,11 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						poll();
 						long at = position++;
 						if (probe.ctxActive()) {
-							long ctx = adjacency.contextAt(run, at);
+							long ctx = KernelRuntime.contextInSpan(adjacency, run, at, contextSpan);
 							if (!ctxAccepted(ctx, probe.ctxMatch, probe.ctxExcludeDefault)) {
+								if (contextSpan.hasCommonContext()) {
+									position = Math.max(position, contextSpan.end());
+								}
 								continue;
 							}
 							if (probe.ctxCol >= 0) {
@@ -1987,7 +2018,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 							}
 						}
 						v[probe.keyCol] = domain[domainOffset + batchBase + lane - 1];
-						v[probe.valueCol] = adjacency.neighborAt(run, at);
+						v[probe.valueCol] = (probe.ctxActive() ? adjacency.neighborInContextSpan(run, at)
+								: adjacency.neighborAt(run, at));
 						return true;
 					}
 					if (lane < batchCount) {
@@ -2048,8 +2080,11 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						poll();
 						long at = position++;
 						if (probe.ctxActive()) {
-							long ctx = adjacency.contextAt(run, at);
+							long ctx = KernelRuntime.contextInSpan(adjacency, run, at, contextSpan);
 							if (!ctxAccepted(ctx, probe.ctxMatch, probe.ctxExcludeDefault)) {
+								if (contextSpan.hasCommonContext()) {
+									position = Math.max(position, contextSpan.end());
+								}
 								continue;
 							}
 							if (probe.ctxCol >= 0) {
@@ -2057,7 +2092,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 							}
 						}
 						v[probe.keyCol] = keys[lane - 1];
-						v[probe.valueCol] = adjacency.neighborAt(run, at);
+						v[probe.valueCol] = (probe.ctxActive() ? adjacency.neighborInContextSpan(run, at)
+								: adjacency.neighborAt(run, at));
 						return true;
 					}
 					if (lane < batchCount) {
@@ -2129,8 +2165,11 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						poll();
 						long at = position++;
 						if (probe.ctxActive()) {
-							long ctx = wildcard.contextAt(run, at);
+							long ctx = KernelRuntime.contextInSpan(wildcard, run, at, contextSpan);
 							if (!ctxAccepted(ctx, probe.ctxMatch, probe.ctxExcludeDefault)) {
+								if (contextSpan.hasCommonContext()) {
+									position = Math.max(position, contextSpan.end());
+								}
 								continue;
 							}
 							if (probe.ctxCol >= 0) {
@@ -2139,7 +2178,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						}
 						v[probe.keyCol] = domain[domainOffset + batchBase + lane - 1];
 						v[probe.predicateCol] = wildcard.predicateAt(predicateOrdinal - 1);
-						v[probe.valueCol] = wildcard.neighborAt(run, at);
+						v[probe.valueCol] = (probe.ctxActive() ? wildcard.neighborInContextSpan(run, at)
+								: wildcard.neighborAt(run, at));
 						return true;
 					}
 					if (lane < batchCount) {
@@ -2211,8 +2251,11 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						poll();
 						long at = position++;
 						if (probe.ctxActive()) {
-							long ctx = wildcard.contextAt(run, at);
+							long ctx = KernelRuntime.contextInSpan(wildcard, run, at, contextSpan);
 							if (!ctxAccepted(ctx, probe.ctxMatch, probe.ctxExcludeDefault)) {
+								if (contextSpan.hasCommonContext()) {
+									position = Math.max(position, contextSpan.end());
+								}
 								continue;
 							}
 							if (probe.ctxCol >= 0) {
@@ -2221,7 +2264,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						}
 						v[probe.keyCol] = keys[lane - 1];
 						v[probe.predicateCol] = wildcard.predicateAt(predicateOrdinal - 1);
-						v[probe.valueCol] = wildcard.neighborAt(run, at);
+						v[probe.valueCol] = (probe.ctxActive() ? wildcard.neighborInContextSpan(run, at)
+								: wildcard.neighborAt(run, at));
 						return true;
 					}
 					if (lane < batchCount) {
@@ -2577,15 +2621,18 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 					for (long i = 0; i < end; i++) {
 						poll();
 						if (ctxActive) {
-							long ctx = ak.contextAt(i);
+							long ctx = KernelRuntime.contextInSpan(ak, i, contextSpan);
 							if (!ctxAccepted(ctx, enumerate.ctxMatch, enumerate.ctxExcludeDefault)) {
+								if (contextSpan.hasCommonContext()) {
+									i = Math.max(i, contextSpan.end() - 1L);
+								}
 								continue;
 							}
 							if (enumerate.ctxCol >= 0) {
 								v[enumerate.ctxCol] = ctx;
 							}
 						}
-						v[enumerate.valueCol] = ak.neighborAt(i);
+						v[enumerate.valueCol] = (ctxActive ? ak.neighborInContextSpan(i) : ak.neighborAt(i));
 						if (next.run()) {
 							return true;
 						}
@@ -2635,15 +2682,19 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 					for (long runOffset = 0L; runOffset < end; runOffset++) {
 						poll();
 						if (ctxActive) {
-							long contextId = cursor.contextAt(runOffset);
+							long contextId = KernelRuntime.contextInSpan(cursor, runOffset, contextSpan);
 							if (!ctxAccepted(contextId, enumerate.ctxMatch, enumerate.ctxExcludeDefault)) {
+								if (contextSpan.hasCommonContext()) {
+									runOffset = Math.max(runOffset, contextSpan.end() - 1L);
+								}
 								continue;
 							}
 							if (enumerate.ctxCol >= 0) {
 								v[enumerate.ctxCol] = contextId;
 							}
 						}
-						v[enumerate.valueCol] = cursor.neighborAt(runOffset);
+						v[enumerate.valueCol] = (ctxActive ? cursor.neighborInContextSpan(runOffset)
+								: cursor.neighborAt(runOffset));
 						if (next.run()) {
 							return true;
 						}
@@ -2788,15 +2839,18 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 					for (long i = 0; i < end; i++) {
 						poll();
 						if (ctxActive) {
-							long ctx = np.contextAt(rh, i);
+							long ctx = KernelRuntime.contextInSpan(np, rh, i, contextSpan);
 							if (!ctxAccepted(ctx, enumerate.ctxMatch, enumerate.ctxExcludeDefault)) {
+								if (contextSpan.hasCommonContext()) {
+									i = Math.max(i, contextSpan.end() - 1L);
+								}
 								continue;
 							}
 							if (enumerate.ctxCol >= 0) {
 								v[enumerate.ctxCol] = ctx;
 							}
 						}
-						v[enumerate.valueCol] = np.neighborAt(rh, i);
+						v[enumerate.valueCol] = (ctxActive ? np.neighborInContextSpan(rh, i) : np.neighborAt(rh, i));
 						if (next.run()) {
 							return true;
 						}
@@ -2853,8 +2907,11 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				for (long i = 0L; i < end; i++) {
 					poll();
 					if (ctxActive) {
-						long ctx = wildcard.contextAt(run, i);
+						long ctx = KernelRuntime.contextInSpan(wildcard, run, i, contextSpan);
 						if (!ctxAccepted(ctx, enumerate.ctxMatch, enumerate.ctxExcludeDefault)) {
+							if (contextSpan.hasCommonContext()) {
+								i = Math.max(i, contextSpan.end() - 1L);
+							}
 							continue;
 						}
 						if (enumerate.ctxCol >= 0) {
@@ -2862,7 +2919,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						}
 					}
 					if (enumerate.target != null || enumerate.demand == LmdbWildcardPhysicalDemand.Demand.PAYLOAD) {
-						long neighbor = wildcard.neighborAt(run, i);
+						long neighbor = (ctxActive ? wildcard.neighborInContextSpan(run, i)
+								: wildcard.neighborAt(run, i));
 						if (enumerate.target != null && neighbor != target) {
 							continue;
 						}
@@ -2887,12 +2945,18 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		}
 		for (long runOffset = 0L; runOffset < end; runOffset++) {
 			poll();
-			if (enumerate.target != null && wildcard.neighborAt(run, runOffset) != target) {
-				continue;
+			if (enumerate.ctxActive()) {
+				long graph = KernelRuntime.contextInSpan(wildcard, run, runOffset, contextSpan);
+				if (!ctxAccepted(graph, enumerate.ctxMatch, enumerate.ctxExcludeDefault)) {
+					if (contextSpan.hasCommonContext()) {
+						runOffset = contextSpan.end() - 1L;
+					}
+					continue;
+				}
 			}
-			if (enumerate.ctxActive()
-					&& !ctxAccepted(wildcard.contextAt(run, runOffset), enumerate.ctxMatch,
-							enumerate.ctxExcludeDefault)) {
+			if (enumerate.target != null && (enumerate.ctxActive()
+					? wildcard.neighborInContextSpan(run, runOffset)
+					: wildcard.neighborAt(run, runOffset)) != target) {
 				continue;
 			}
 			return true;
@@ -2951,8 +3015,11 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						for (long runOffset = 0L; runOffset < end; runOffset++) {
 							poll();
 							if (ctxActive) {
-								long contextId = cursor.contextAt(runOffset);
+								long contextId = KernelRuntime.contextInSpan(cursor, runOffset, contextSpan);
 								if (!ctxAccepted(contextId, enumerate.ctxMatch, enumerate.ctxExcludeDefault)) {
+									if (contextSpan.hasCommonContext()) {
+										runOffset = Math.max(runOffset, contextSpan.end() - 1L);
+									}
 									continue;
 								}
 								if (enumerate.ctxCol >= 0) {
@@ -2960,7 +3027,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 								}
 							}
 							if (enumerate.demand == LmdbWildcardPhysicalDemand.Demand.PAYLOAD) {
-								v[enumerate.valueCol] = cursor.neighborAt(runOffset);
+								v[enumerate.valueCol] = (ctxActive ? cursor.neighborInContextSpan(runOffset)
+										: cursor.neighborAt(runOffset));
 							}
 							if (next.run()) {
 								return true;
@@ -2983,8 +3051,11 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			Operand ctxMatch, boolean ctxExcludeDefault) {
 		for (long runOffset = 0L; runOffset < end; runOffset++) {
 			poll();
-			if (ctxAccepted(cursor.contextAt(runOffset), ctxMatch, ctxExcludeDefault)) {
+			if (ctxAccepted(KernelRuntime.contextInSpan(cursor, runOffset, contextSpan), ctxMatch, ctxExcludeDefault)) {
 				return true;
+			}
+			if (contextSpan.hasCommonContext()) {
+				runOffset = contextSpan.end() - 1L;
 			}
 		}
 		return false;
@@ -3008,15 +3079,18 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			for (long i = 0; i < end; i++) {
 				poll();
 				if (ctxActive) {
-					long ctx = cursor.contextAt(i);
+					long ctx = KernelRuntime.contextInSpan(cursor, i, contextSpan);
 					if (!ctxAccepted(ctx, probe.ctxMatch, probe.ctxExcludeDefault)) {
+						if (contextSpan.hasCommonContext()) {
+							i = Math.max(i, contextSpan.end() - 1L);
+						}
 						continue;
 					}
 					if (probe.ctxCol >= 0) {
 						v[probe.ctxCol] = ctx;
 					}
 				}
-				v[probe.valueCol] = cursor.neighborAt(i);
+				v[probe.valueCol] = (ctxActive ? cursor.neighborInContextSpan(i) : cursor.neighborAt(i));
 				if (next.run()) {
 					return true;
 				}
@@ -3045,15 +3119,18 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			for (long i = 0; i < end; i++) {
 				poll();
 				if (ctxActive) {
-					long ctx = view.contextAt(rh, i);
+					long ctx = KernelRuntime.contextInSpan(view, rh, i, contextSpan);
 					if (!ctxAccepted(ctx, probe.ctxMatch, probe.ctxExcludeDefault)) {
+						if (contextSpan.hasCommonContext()) {
+							i = Math.max(i, contextSpan.end() - 1L);
+						}
 						continue;
 					}
 					if (probe.ctxCol >= 0) {
 						v[probe.ctxCol] = ctx;
 					}
 				}
-				v[probe.valueCol] = view.neighborAt(rh, i);
+				v[probe.valueCol] = (ctxActive ? view.neighborInContextSpan(rh, i) : view.neighborAt(rh, i));
 				if (next.run()) {
 					return true;
 				}
@@ -3156,15 +3233,19 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 					for (long i = 0; i < end; i++) {
 						poll();
 						if (ctxActive) {
-							long ctx = adjacency.contextAt(rh, i);
+							long ctx = KernelRuntime.contextInSpan(adjacency, rh, i, contextSpan);
 							if (!ctxAccepted(ctx, probe.ctxMatch, probe.ctxExcludeDefault)) {
+								if (contextSpan.hasCommonContext()) {
+									i = Math.max(i, contextSpan.end() - 1L);
+								}
 								continue;
 							}
 							if (probe.ctxCol >= 0) {
 								v[probe.ctxCol] = ctx;
 							}
 						}
-						v[probe.valueCol] = adjacency.neighborAt(rh, i);
+						v[probe.valueCol] = (ctxActive ? adjacency.neighborInContextSpan(rh, i)
+								: adjacency.neighborAt(rh, i));
 						if (next.run()) {
 							return true;
 						}
@@ -3209,15 +3290,19 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						for (long i = 0; i < end; i++) {
 							poll();
 							if (ctxActive) {
-								long ctx = adjacency.contextAt(rh, i);
+								long ctx = KernelRuntime.contextInSpan(adjacency, rh, i, contextSpan);
 								if (!ctxAccepted(ctx, probe.ctxMatch, probe.ctxExcludeDefault)) {
+									if (contextSpan.hasCommonContext()) {
+										i = Math.max(i, contextSpan.end() - 1L);
+									}
 									continue;
 								}
 								if (probe.ctxCol >= 0) {
 									v[probe.ctxCol] = ctx;
 								}
 							}
-							v[probe.valueCol] = adjacency.neighborAt(rh, i);
+							v[probe.valueCol] = (ctxActive ? adjacency.neighborInContextSpan(rh, i)
+									: adjacency.neighborAt(rh, i));
 							if (next.run()) {
 								return true;
 							}
@@ -3353,8 +3438,11 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			for (long runOffset = 0L; runOffset < end; runOffset++) {
 				poll();
 				if (ctxActive) {
-					long contextId = wildcard.contextAt(run, runOffset);
+					long contextId = KernelRuntime.contextInSpan(wildcard, run, runOffset, contextSpan);
 					if (!ctxAccepted(contextId, ctxMatch, ctxExcludeDefault)) {
+						if (contextSpan.hasCommonContext()) {
+							runOffset = Math.max(runOffset, contextSpan.end() - 1L);
+						}
 						continue;
 					}
 					if (ctxCol >= 0) {
@@ -3362,7 +3450,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 					}
 				}
 				if (demand == LmdbWildcardPhysicalDemand.Demand.PAYLOAD) {
-					v[valueCol] = wildcard.neighborAt(run, runOffset);
+					v[valueCol] = (ctxActive ? wildcard.neighborInContextSpan(run, runOffset)
+							: wildcard.neighborAt(run, runOffset));
 				}
 				if (next.run()) {
 					return 2;
@@ -3411,7 +3500,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			long end, Operand ctxMatch, boolean ctxExcludeDefault) {
 		for (long runOffset = 0L; runOffset < end; runOffset++) {
 			poll();
-			if (ctxAccepted(wildcard.contextAt(run, runOffset), ctxMatch, ctxExcludeDefault)) {
+			if (ctxAccepted(KernelRuntime.contextInSpan(wildcard, run, runOffset, contextSpan), ctxMatch,
+					ctxExcludeDefault)) {
 				return true;
 			}
 		}

@@ -435,14 +435,19 @@ public final class KernelProjectionCursor implements AutoCloseable {
 		if (deliveryGrain < QUAD) {
 			return source.openRoots(contextObserved || contextMatch || excludeDefault, cancellation);
 		}
-		return source.open(page -> {
+		KernelAdjacencyCursor opened = source.open(page -> {
 			pagesVisited++;
-			boolean accepted = program.acceptsPage(source.predicate(), page);
+			boolean accepted = program.acceptsPage(source.predicate(), page)
+					&& (!page.hasCommonContext() || acceptsContext(page.commonContext()));
 			if (!accepted) {
 				pagesSkipped++;
 			}
 			return accepted;
 		}, contextObserved || contextMatch || excludeDefault, cancellation);
+		if (opened != null) {
+			opened.configureContextFilter(contextMatch, wantedContext, excludeDefault);
+		}
+		return opened;
 	}
 
 	/** Advances to an accepted quad, or an aggregate projection on exiting an accepted fiber/root. */

@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RunView.ContextSpan;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.PackedFtreeContext;
@@ -3925,27 +3926,41 @@ final class LmdbNativePackedFtree {
 			}
 			long[] neighbors = runNeighborScratch;
 			long[] contexts = null;
-			if (contextSensitive) {
-				if (runContextScratch.length < window) {
-					runContextScratch = new long[window];
-				}
-				contexts = runContextScratch;
-			}
+			ContextSpan span = primary.scanSpan;
 			int accepted = 0;
 			boolean pendingPresent = false;
 			long pendingValue = UNKNOWN;
 			long pendingMultiplicity = 0L;
-			for (long base = 0; base < runSize; base += window) {
-				int count = (int) Math.min(window, runSize - base);
-				if (primary.copyNeighbors(base, count, neighbors, 0) != count) {
+			for (long base = 0; base < runSize;) {
+				long end = runSize;
+				boolean common = false;
+				if (contextSensitive) {
+					primary.contextSpan(base, runSize, span);
+					end = span.end();
+					common = span.hasCommonContext();
+					if (common && !contextAccepted(primary.pattern, span.commonContext())) {
+						base = end;
+						LmdbNativeProbeDeadline.poll(0);
+						continue;
+					}
+				}
+				int count = (int) Math.min(window, end - base);
+				if (contextSensitive && !common) {
+					if (runContextScratch.length < window) {
+						runContextScratch = new long[window];
+					}
+					contexts = runContextScratch;
+				}
+				int copied = contextSensitive
+						? primary.copyContextSpan(base, count, neighbors, 0, !common ? contexts : null, 0)
+						: primary.copyNeighbors(base, count, neighbors, 0);
+				if (copied != count) {
 					throw new IllegalStateException("native adjacency returned a short neighbour copy");
 				}
-				if (contextSensitive && primary.copyContexts(base, count, contexts, 0) != count) {
-					throw new IllegalStateException("native adjacency returned a short context copy");
-				}
+				base += count;
 				for (int i = 0; i < count; i++) {
 					long childId = neighbors[i];
-					boolean contextOk = !contextSensitive || contextAccepted(primary.pattern, contexts[i]);
+					boolean contextOk = !contextSensitive || common || contextAccepted(primary.pattern, contexts[i]);
 					if (!primary.ordered) {
 						if (contextOk) {
 							accepted += appendScannedValue(chunk, node, parentLane, constraints, unary, childId, 1L);
@@ -4348,6 +4363,8 @@ final class LmdbNativePackedFtree {
 		final PatternPlan pattern;
 		final boolean ordered;
 		final boolean contextSensitive;
+		final ContextSpan span = new ContextSpan();
+		long spanStart = -1L;
 		final long[] neighborWindow = new long[ROOT_BATCH_SIZE];
 		long[] contextWindow;
 		long windowBase = -1L;
@@ -4371,9 +4388,7 @@ final class LmdbNativePackedFtree {
 			this.ordered = adjacency.runsNeighborOrdered();
 			this.contextSensitive = !contextFree(pattern);
 			this.buffered = bulkRunsEnabled();
-			if (buffered && contextSensitive) {
-				contextWindow = new long[ROOT_BATCH_SIZE];
-			}
+
 		}
 
 		@Override
@@ -4387,9 +4402,31 @@ final class LmdbNativePackedFtree {
 			return pattern;
 		}
 
+		private void ensureSpan(long at) {
+			if (contextSensitive && (at < spanStart || at >= span.end())) {
+				adjacency.contextSpan(handle, at, span);
+				spanStart = at;
+			}
+		}
+
+		private boolean advanceAcceptedSpan() {
+			while (offset < limit) {
+				ensureSpan(offset);
+				if (!contextSensitive || !span.hasCommonContext()
+						|| contextAccepted(pattern, span.commonContext())) {
+					return true;
+				}
+				offset = Math.min(limit, span.end());
+				LmdbNativeProbeDeadline.poll(0);
+			}
+			return false;
+		}
+
 		private long neighborAtBuffered(long at) {
+			ensureSpan(at);
 			if (!buffered) {
-				return adjacency.neighborAt(handle, at);
+				return contextSensitive ? adjacency.neighborInContextSpan(handle, at)
+						: adjacency.neighborAt(handle, at);
 			}
 			if (at < windowBase || at >= windowBase + windowLength) {
 				fillWindow(at);
@@ -4398,8 +4435,12 @@ final class LmdbNativePackedFtree {
 		}
 
 		private long contextAtBuffered(long at) {
+			ensureSpan(at);
+			if (span.hasCommonContext()) {
+				return span.commonContext();
+			}
 			if (!buffered) {
-				return adjacency.contextAt(handle, at);
+				return adjacency.contextInContextSpan(handle, at);
 			}
 			if (at < windowBase || at >= windowBase + windowLength) {
 				fillWindow(at);
@@ -4408,12 +4449,17 @@ final class LmdbNativePackedFtree {
 		}
 
 		private void fillWindow(long at) {
-			int length = (int) Math.min(ROOT_BATCH_SIZE, size - at);
-			if (adjacency.copyNeighbors(handle, at, length, neighborWindow, 0) != length) {
-				throw new IllegalStateException("native adjacency returned a short neighbour copy");
+			ensureSpan(at);
+			int length = (int) Math.min(ROOT_BATCH_SIZE, (contextSensitive ? Math.min(limit, span.end()) : limit) - at);
+			if (contextSensitive && !span.hasCommonContext() && contextWindow == null) {
+				contextWindow = new long[ROOT_BATCH_SIZE];
 			}
-			if (contextSensitive && adjacency.copyContexts(handle, at, length, contextWindow, 0) != length) {
-				throw new IllegalStateException("native adjacency returned a short context copy");
+			int copied = contextSensitive
+					? adjacency.copyContextSpan(handle, at, length, neighborWindow, 0,
+							!span.hasCommonContext() ? contextWindow : null, 0)
+					: adjacency.copyNeighbors(handle, at, length, neighborWindow, 0);
+			if (copied != length) {
+				throw new IllegalStateException("native adjacency returned a short neighbour copy");
 			}
 			windowBase = at;
 			windowLength = length;
@@ -4422,7 +4468,7 @@ final class LmdbNativePackedFtree {
 		@Override
 		public int fill(NodeData target, int maximum) {
 			int n = 0;
-			while (n < maximum && offset < limit) {
+			while (n < maximum && advanceAcceptedSpan()) {
 				long neighbor = neighborAtBuffered(offset);
 				if (!ordered) {
 					boolean accepted = !contextSensitive || contextAccepted(pattern, contextAtBuffered(offset));
@@ -4435,7 +4481,7 @@ final class LmdbNativePackedFtree {
 				long multiplicity = 0L;
 				// A partition limit always sits on a neighbour boundary (the planner aligns ordered cuts), so
 				// stopping the collapse at the limit never splits one value's multiplicity across partitions.
-				while (offset < limit && neighborAtBuffered(offset) == neighbor) {
+				while (advanceAcceptedSpan() && neighborAtBuffered(offset) == neighbor) {
 					if (!contextSensitive || contextAccepted(pattern, contextAtBuffered(offset))) {
 						multiplicity = FactorizedTail.addCounts(multiplicity, 1L);
 					}
@@ -4784,6 +4830,7 @@ final class LmdbNativePackedFtree {
 		final NativeLmdbQuerySource.NativeAdjacency adjacency;
 		final PatternPlan pattern;
 		final boolean bySubject;
+		final ContextSpan countSpan = new ContextSpan();
 
 		PatternRuntime(NativeLmdbQuerySource.NativeAdjacency adjacency, PatternPlan pattern, boolean bySubject) {
 			this.adjacency = adjacency;
@@ -4915,7 +4962,7 @@ final class LmdbNativePackedFtree {
 			if (adjacency != null) {
 				long handle = adjacency.find(variable);
 				if (handle != NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED) {
-					return countNeighbor(adjacency, handle, plan.constantNeighbor, pattern);
+					return countNeighbor(adjacency, handle, plan.constantNeighbor, pattern, countSpan);
 				}
 			}
 			long previous = runtime.row.replaceSlot(plan.slot, variable);
@@ -4933,6 +4980,7 @@ final class LmdbNativePackedFtree {
 
 	static final class EdgeRuntime extends PatternRuntime {
 		final EdgePlan plan;
+		final ContextSpan scanSpan = new ContextSpan();
 		final NativeLmdbQuerySource.NativeAdjacency.BoundRunCursor cursor;
 		final boolean ordered;
 		BorrowedFactorBatch.Source borrowedSource;
@@ -4979,6 +5027,25 @@ final class LmdbNativePackedFtree {
 			return cursor == null ? NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED : cursor.bind(parent);
 		}
 
+		void contextSpan(long offset, long size, ContextSpan target) {
+			if (!cursor.contextSpan(offset, target)) {
+				target.set(size, -1L);
+			}
+		}
+
+		long neighborInContextSpan(long offset) {
+			return cursor.neighborInContextSpan(offset);
+		}
+
+		long contextInContextSpan(long offset) {
+			return cursor.contextInContextSpan(offset);
+		}
+
+		int copyContextSpan(long offset, int length, long[] neighbors, int neighborOffset, long[] contexts,
+				int contextOffset) {
+			return cursor.copyContextSpan(offset, length, neighbors, neighborOffset, contexts, contextOffset);
+		}
+
 		long neighborAt(long offset) {
 			return cursor.neighborAt(offset);
 		}
@@ -5003,7 +5070,7 @@ final class LmdbNativePackedFtree {
 			if (adjacency != null) {
 				long handle = adjacency.find(parent);
 				if (handle != NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED) {
-					return countNeighbor(adjacency, handle, child, pattern);
+					return countNeighbor(adjacency, handle, child, pattern, countSpan);
 				}
 			}
 			long count = 0L;
@@ -5061,6 +5128,8 @@ final class LmdbNativePackedFtree {
 		final EdgeRuntime runtime;
 		final long size;
 		final boolean contextSensitive;
+		final ContextSpan span = new ContextSpan();
+		long spanStart = -1L;
 		/** Allocated on the first buffered fill so short-lived per-lane runs never pay for the staging arrays. */
 		long[] neighborWindow;
 		long[] contextWindow;
@@ -5080,9 +5149,30 @@ final class LmdbNativePackedFtree {
 			this.buffered = bulkRunsEnabled();
 		}
 
+		private void ensureSpan(long at) {
+			if (contextSensitive && (at < spanStart || at >= span.end())) {
+				runtime.contextSpan(at, size, span);
+				spanStart = at;
+			}
+		}
+
+		private boolean advanceAcceptedSpan() {
+			while (offset < size) {
+				ensureSpan(offset);
+				if (!contextSensitive || !span.hasCommonContext()
+						|| contextAccepted(runtime.pattern, span.commonContext())) {
+					return true;
+				}
+				offset = Math.min(size, span.end());
+				LmdbNativeProbeDeadline.poll(0);
+			}
+			return false;
+		}
+
 		private long neighborAtBuffered(long at) {
+			ensureSpan(at);
 			if (!buffered) {
-				return runtime.neighborAt(at);
+				return contextSensitive ? runtime.neighborInContextSpan(at) : runtime.neighborAt(at);
 			}
 			if (at < windowBase || at >= windowBase + windowLength) {
 				fillWindow(at);
@@ -5091,8 +5181,12 @@ final class LmdbNativePackedFtree {
 		}
 
 		private long contextAtBuffered(long at) {
+			ensureSpan(at);
+			if (span.hasCommonContext()) {
+				return span.commonContext();
+			}
 			if (!buffered) {
-				return runtime.contextAt(at);
+				return runtime.contextInContextSpan(at);
 			}
 			if (at < windowBase || at >= windowBase + windowLength) {
 				fillWindow(at);
@@ -5101,18 +5195,20 @@ final class LmdbNativePackedFtree {
 		}
 
 		private void fillWindow(long at) {
+			ensureSpan(at);
 			if (neighborWindow == null) {
 				neighborWindow = new long[WINDOW];
-				if (contextSensitive) {
-					contextWindow = new long[WINDOW];
-				}
 			}
-			int length = (int) Math.min(WINDOW, size - at);
-			if (runtime.copyNeighbors(at, length, neighborWindow, 0) != length) {
+			int length = (int) Math.min(WINDOW, (contextSensitive ? Math.min(size, span.end()) : size) - at);
+			if (contextSensitive && !span.hasCommonContext() && contextWindow == null) {
+				contextWindow = new long[WINDOW];
+			}
+			int copied = contextSensitive
+					? runtime.copyContextSpan(at, length, neighborWindow, 0,
+							!span.hasCommonContext() ? contextWindow : null, 0)
+					: runtime.copyNeighbors(at, length, neighborWindow, 0);
+			if (copied != length) {
 				throw new IllegalStateException("native adjacency returned a short neighbour copy");
-			}
-			if (contextSensitive && runtime.copyContexts(at, length, contextWindow, 0) != length) {
-				throw new IllegalStateException("native adjacency returned a short context copy");
 			}
 			windowBase = at;
 			windowLength = length;
@@ -5120,7 +5216,7 @@ final class LmdbNativePackedFtree {
 
 		boolean advance() {
 			valid = false;
-			while (offset < size) {
+			while (advanceAcceptedSpan()) {
 				long candidate = neighborAtBuffered(offset);
 				long count = 0L;
 				do {
@@ -5128,7 +5224,7 @@ final class LmdbNativePackedFtree {
 						count = FactorizedTail.addCounts(count, 1L);
 					}
 					offset++;
-				} while (offset < size && neighborAtBuffered(offset) == candidate);
+				} while (advanceAcceptedSpan() && neighborAtBuffered(offset) == candidate);
 				if (count != 0L) {
 					value = candidate;
 					multiplicity = count;
@@ -5155,6 +5251,27 @@ final class LmdbNativePackedFtree {
 				}
 				return false;
 			}
+			if (contextSensitive) {
+				while (advanceAcceptedSpan()) {
+					long end = Math.min(size, span.end());
+					long low = offset;
+					long high = end;
+					while (low < high) {
+						long mid = (low + high) >>> 1;
+						if (Long.compareUnsigned(runtime.neighborInContextSpan(mid), target) < 0) {
+							low = mid + 1L;
+						} else {
+							high = mid;
+						}
+					}
+					offset = low;
+					if (offset < end) {
+						return advance();
+					}
+				}
+				valid = false;
+				return false;
+			}
 			long sought = runtime.lowerBound(offset, target);
 			if (sought >= 0L) {
 				offset = sought;
@@ -5171,34 +5288,64 @@ final class LmdbNativePackedFtree {
 
 	static long countNeighbor(NativeLmdbQuerySource.NativeAdjacency adjacency, long handle, long neighbor,
 			PatternPlan pattern) {
+		return countNeighbor(adjacency, handle, neighbor, pattern, new ContextSpan());
+	}
+
+	private static long countNeighbor(NativeLmdbQuerySource.NativeAdjacency adjacency, long handle, long neighbor,
+			PatternPlan pattern, ContextSpan span) {
 		if (handle == NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED) {
 			throw new PackedDecline("adjacency key not covered");
 		}
-		if (handle <= 0) {
+		if (handle <= 0L) {
 			return 0L;
 		}
 		long size = adjacency.size(handle);
 		long count = 0L;
-		if (adjacency.runsNeighborOrdered()) {
-			long start = adjacency.lowerBound(handle, 0L, neighbor, 0L);
-			if (start >= 0L) {
-				for (long i = start; i < size; i++) {
-					long n = adjacency.neighborAt(handle, i);
-					int cmp = Long.compareUnsigned(n, neighbor);
-					if (cmp > 0) {
-						break;
-					}
-					if (cmp == 0 && contextAccepted(pattern, adjacency.contextAt(handle, i))) {
-						count = FactorizedTail.addCounts(count, 1L);
+		boolean restricted = !contextFree(pattern);
+		boolean ordered = adjacency.runsNeighborOrdered();
+		if (!restricted) {
+			long from = ordered ? adjacency.lowerBound(handle, 0L, neighbor, 0L) : -1L;
+			for (long at = Math.max(0L, from); at < size; at++) {
+				long value = adjacency.neighborAt(handle, at);
+				int comparison = Long.compareUnsigned(value, neighbor);
+				if (ordered && comparison > 0) {
+					break;
+				}
+				if (comparison == 0) {
+					count = FactorizedTail.addCounts(count, 1L);
+				}
+			}
+			return count;
+		}
+		for (long from = 0L; from < size; from = span.end()) {
+			adjacency.contextSpan(handle, from, span);
+			boolean common = span.hasCommonContext();
+			if (restricted && common && !contextAccepted(pattern, span.commonContext())) {
+				LmdbNativeProbeDeadline.poll(0);
+				continue;
+			}
+			long at = from;
+			if (ordered) {
+				long high = span.end();
+				while (at < high) {
+					long mid = (at + high) >>> 1;
+					if (Long.compareUnsigned(adjacency.neighborInContextSpan(handle, mid), neighbor) < 0) {
+						at = mid + 1L;
+					} else {
+						high = mid;
 					}
 				}
-				return count;
 			}
-		}
-		for (long i = 0; i < size; i++) {
-			if (adjacency.neighborAt(handle, i) == neighbor
-					&& contextAccepted(pattern, adjacency.contextAt(handle, i))) {
-				count = FactorizedTail.addCounts(count, 1L);
+			for (; at < span.end(); at++) {
+				long value = adjacency.neighborInContextSpan(handle, at);
+				int comparison = Long.compareUnsigned(value, neighbor);
+				if (ordered && comparison > 0) {
+					return count;
+				}
+				if (comparison == 0 && (!restricted || common
+						|| contextAccepted(pattern, adjacency.contextInContextSpan(handle, at)))) {
+					count = FactorizedTail.addCounts(count, 1L);
+				}
 			}
 		}
 		return count;
