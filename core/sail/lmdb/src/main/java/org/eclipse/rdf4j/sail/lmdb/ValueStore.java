@@ -13791,6 +13791,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					flushPendingHashUpdates();
 				}
 			} else {
+				// A writer that assigned, reused or retired nothing could not have exposed an uncommitted ID, so its
+				// abort leaves the caches as valid as a skipped commit does.
+				boolean invalidatesCaches = !writerChangedNothing();
 				refCountsTxCache.clear();
 				Throwable rollbackFailure = null;
 				associationGate.lock();
@@ -13822,15 +13825,17 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				// IDs assigned during the aborted transaction may have been cached on input values and in valueIDCache.
 				// Reusing either cache would let a later transaction publish triples that point at dictionary IDs which
 				// were never committed.
-				try {
-					setNewRevision();
-				} catch (Throwable failure) {
-					rollbackFailure = appendFailure(rollbackFailure, failure);
-				}
-				try {
-					clearCaches();
-				} catch (Throwable failure) {
-					rollbackFailure = appendFailure(rollbackFailure, failure);
+				if (invalidatesCaches) {
+					try {
+						setNewRevision();
+					} catch (Throwable failure) {
+						rollbackFailure = appendFailure(rollbackFailure, failure);
+					}
+					try {
+						clearCaches();
+					} catch (Throwable failure) {
+						rollbackFailure = appendFailure(rollbackFailure, failure);
+					}
 				}
 				rethrowFailure(rollbackFailure);
 			}

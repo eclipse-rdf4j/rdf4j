@@ -588,7 +588,9 @@ public class ValueStoreTest {
 		long id = storeBNodes("rollback-held")[0];
 		LmdbValue held = valueStore.getLazyValue(id);
 
+		// Only a rollback that assigned an ID retires the revision.
 		valueStore.startTransaction(true);
+		valueStore.storeValue(Values.bnode("rollback-assigned"));
 		valueStore.rollback();
 		RevisionCollection laterRevisionCollected = trackRevisionCollection(valueStore.getLazyValue(id));
 		retireValues(Set.of(id));
@@ -804,7 +806,9 @@ public class ValueStoreTest {
 				assertEquals("The ID fast path must leave the escaped value unresolved", 1L,
 						resolutionEntered.getCount());
 			}
+			// Only a rollback that assigned an ID retires the revision.
 			valueStore.startTransaction(true);
+			valueStore.storeValue(Values.bnode("lookup-input-rollback-assigned"));
 			valueStore.rollback();
 			try (TxnManager.ReaderReservation tripleReservation = triples.getTxnManager().reserveReadTxn(false);
 					Txn tripleTxn = tripleReservation.startPinned(triples::getDataRevision);

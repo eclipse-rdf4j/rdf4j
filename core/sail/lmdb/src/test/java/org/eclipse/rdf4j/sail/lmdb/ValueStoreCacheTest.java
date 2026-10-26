@@ -12,7 +12,9 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 
@@ -21,6 +23,7 @@ import java.io.File;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
@@ -60,6 +63,41 @@ class ValueStoreCacheTest {
 		} finally {
 			store.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	/**
+	 * A writer that assigned no ID leaves nothing in the caches that its rollback could make stale. The store's own
+	 * term-index maintenance rolls back such writers in the background, so invalidating there drops every cached value
+	 * and every value's ID in the middle of unrelated reads.
+	 */
+	@Test
+	void aRollbackOfAWriterThatAssignedNothingKeepsCachedValues(@TempDir File dataDir) throws Exception {
+		ValueStore store = new ValueStore(new File(dataDir, "values"), new LmdbStoreConfig());
+		try {
+			IRI iri = Values.iri("urn:example:foo");
+			store.startTransaction(true);
+			long id = store.storeValue(iri);
+			store.commit();
+			LmdbValue cached = store.getLazyValue(id);
+			assertEquals("urn:example:foo", cached.stringValue());
+			assertSame(cached, store.cachedValue(id));
+			ValueStoreRevision revision = store.getRevision();
+
+			store.startTransaction(true);
+			assertEquals(id, store.getId(iri));
+			store.rollback();
+			assertSame("the rollback kept the revision", revision, store.getRevision());
+			assertSame("the rollback kept the cached value", cached, store.cachedValue(id));
+
+			store.startTransaction(true);
+			long aborted = store.storeValue(Values.iri("urn:example:aborted"));
+			assertNotEquals(LmdbValue.UNKNOWN_ID, aborted);
+			store.rollback();
+			assertNotSame("a rollback that assigned an ID retires the revision", revision, store.getRevision());
+			assertEquals(LmdbValue.UNKNOWN_ID, store.getId(Values.iri("urn:example:aborted")));
+		} finally {
+			store.close();
 		}
 	}
 
