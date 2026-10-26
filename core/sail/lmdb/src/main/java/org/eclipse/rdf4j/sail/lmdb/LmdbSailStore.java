@@ -2671,6 +2671,12 @@ class LmdbSailStore implements SailStore {
 	private volatile AsyncDrainOperation completedAsyncDrain;
 	private volatile boolean nextTransactionAsync;
 	private volatile TxnReplayPolicy.Decision storeReplayDecision;
+	/**
+	 * The writer that prepared {@link #storeReplayDecision}, guarded by {@link #sinkStoreAccessLock}. A writer waiting
+	 * for adjacency admission keeps its prepared decision without holding that lock, so another owner's rollback must
+	 * leave it alone.
+	 */
+	private Object storeReplayDecisionOwner;
 
 	private record FailedWriterTransaction(LmdbStoreConnection.WriteAttempt attempt, Throwable failure) {
 	}
@@ -7272,6 +7278,7 @@ class LmdbSailStore implements SailStore {
 			storeNativeTransaction = null;
 			namespaceTransactionOwner = null;
 			storeReplayDecision = null;
+			storeReplayDecisionOwner = null;
 			multiThreadingActive = false;
 			long rolledBackGeneration = storeTxnGeneration;
 			sinkStoreAccessLock.unlock();
@@ -7370,6 +7377,13 @@ class LmdbSailStore implements SailStore {
 			}
 			if ((storeTxnStarted.get() && storeTransactionOwner != owner)
 					|| (namespaceTransactionOwner != null && namespaceTransactionOwner != owner)) {
+				return;
+			}
+			if (!storeTxnStarted.get() && namespaceTransactionOwner == null && storeReplayDecision != null
+					&& storeReplayDecisionOwner != owner) {
+				// Nothing of this owner reached the store, and the prepared attempt belongs to another writer that may
+				// be waiting for adjacency admission without the store lock: resetting it would start that writer
+				// without a replay decision.
 				return;
 			}
 			rollback();
@@ -7507,6 +7521,7 @@ class LmdbSailStore implements SailStore {
 				}
 				clearDictionaryCheckpointPending(transactionGeneration);
 				storeReplayDecision = null;
+				storeReplayDecisionOwner = null;
 				NoneWriteState completedNoneState = noneWriteStates.get(owner);
 				if (completedNoneState != null && completedNoneState.sinks.isEmpty()
 						&& completedNoneState.pending == null && !storeTxnStarted.get()
@@ -7564,6 +7579,7 @@ class LmdbSailStore implements SailStore {
 						noneWriteState.published();
 					}
 					storeReplayDecision = null;
+					storeReplayDecisionOwner = null;
 					// Once the TripleStore commit returns, its namespace snapshot is authoritative. Preserve that state
 					// even
 					// if a later in-memory publication or maintenance step fails.
@@ -7768,8 +7784,9 @@ class LmdbSailStore implements SailStore {
 				frontier.addAll(unresolved);
 				// Recursive RDF-star GC expands at most three children per root. Persist that bounded
 				// frontier in the same native commit; never retain the complete durable backlog on heap.
-				valueStore.recordRetiredIds(frontier,
-						Math.min(maxRevisionInclusive, tripleStore.getDataRevision()));
+				// A child loses its last reference now, but its own statements may have been removed after the root's,
+				// while a reader that still sees them is pinned: only the current revision waits for every such reader.
+				valueStore.recordRetiredIds(frontier, tripleStore.getDataRevision());
 				transaction.invoke(valueStore::commit);
 			} catch (IOException | RuntimeException | Error failure) {
 				try {
@@ -10685,6 +10702,8 @@ class LmdbSailStore implements SailStore {
 				}
 			}
 			acquireAdjacencyAdmission();
+			// Waiting for admission released the store lock; re-establish this owner's prepared decision under it.
+			prepareReplayDecision();
 			synchronized (storeTxnStarted) {
 				if (storeTxnStarted.get() && storeTransactionOwner != owner) {
 					throw new SailException("LMDB writer transaction is owned by another sink");
@@ -10875,7 +10894,8 @@ class LmdbSailStore implements SailStore {
 		}
 
 		private void prepareReplayDecision() throws SailException {
-			checkWriterTransaction(writerOwner());
+			Object owner = writerOwner();
+			checkWriterTransaction(owner);
 			if (!nativeCheckpoints) {
 				try {
 					ensurePersistentSets();
@@ -10883,11 +10903,18 @@ class LmdbSailStore implements SailStore {
 					throw new SailException(failure);
 				}
 			}
+			if (storeReplayDecision != null && storeReplayDecisionOwner != owner && !storeTxnStarted.get()) {
+				// Prepared for another owner's attempt that never started its native transaction, so it was abandoned;
+				// its policy, such as NONE checkpoints or frozen replay, need not match this sink's.
+				storeReplayDecision = null;
+				storeNativeTransaction = null;
+			}
 			if (storeReplayDecision == null) {
 				storeReplayDecision = tripleStore.prepareReplayDecision();
+				storeReplayDecisionOwner = owner;
 				if (nativeCheckpoints) {
 					storeReplayDecision = storeReplayDecision.forNativeCheckpoints();
-				} else if (frozenReplayPublication(writerOwner())) {
+				} else if (frozenReplayPublication(owner)) {
 					storeReplayDecision = storeReplayDecision.forFrozenReplay();
 				}
 				if (storeNativeTransaction == null) {
@@ -11229,10 +11256,12 @@ class LmdbSailStore implements SailStore {
 		 * import into an empty store and resolves values from a fresh session.
 		 */
 		private void claimInitialRunImport(Object owner) {
+			// An interrupted import resets the whole store to empty on the next open, so it may only start in a store
+			// that holds nothing else: committed namespaces live in the TripleStore environment too.
 			if (!nativeCheckpoints || !explicit || mayHaveInferred || freshValueSession == null
 					|| freshValueSessionInvalidated || freshNoneImportOwner != owner || noneWriteStates.size() != 1
 					|| !(owner instanceof LmdbStoreConnection connection) || connection.notifiesStatementListeners()
-					|| tripleStore.hasStagingIndexes()
+					|| tripleStore.hasStagingIndexes() || !publishedNamespaces.isEmpty()
 					|| valueStore.getFormat().isLegacy()) {
 				return;
 			}

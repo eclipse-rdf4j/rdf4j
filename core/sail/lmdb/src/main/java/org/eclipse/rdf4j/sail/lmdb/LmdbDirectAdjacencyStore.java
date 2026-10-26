@@ -181,6 +181,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private volatile CompletableFuture<Void> startupScheduling;
 	private final AtomicBoolean quiescentRebuildPending = new AtomicBoolean();
 	private final AtomicBoolean quiescentRebuildTaskScheduled = new AtomicBoolean();
+	/**
+	 * Set while a pending quiescent rebuild has yielded to live views; the release that drops the count to zero resumes
+	 * it. This must not depend on {@link #maintenanceState}: a gap recorded meanwhile sets DEGRADED_GAP, and a release
+	 * that then skipped the resume left the rebuild pending forever, so every later request was ignored.
+	 */
+	private final AtomicBoolean quiescentRebuildAwaitingViews = new AtomicBoolean();
 	private volatile boolean quiescentRebuildRetryAllowed;
 	/** {@link #GAP_RECOVERY_NEVER_ATTEMPTED} until the read path has requested one gap recovery. */
 	private final AtomicLong lastGapRecoveryNanos = new AtomicLong(GAP_RECOVERY_NEVER_ATTEMPTED);
@@ -2338,8 +2344,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 						// A quiescent rebuild must yield the sole maintenance thread while an old exact view is
 						// live. The final acquisition/view release resumes this step; the zero check closes the
 						// lost-wakeup race with a release concurrent with task completion.
+						quiescentRebuildAwaitingViews.set(true);
 						if (activeAcquisitionsAndViews.get() == 0) {
-							enqueueQuiescentRebuildStep();
+							resumeQuiescentRebuildAfterViews();
 						}
 						return;
 					}
@@ -2356,6 +2363,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			if (!closed) {
 				throw e;
 			}
+		}
+	}
+
+	private void resumeQuiescentRebuildAfterViews() {
+		if (quiescentRebuildAwaitingViews.compareAndSet(true, false)) {
+			enqueueQuiescentRebuildStep();
 		}
 	}
 
@@ -3675,9 +3688,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	private void releaseAcquisitionOrView() {
 		long remaining = activeAcquisitionsAndViews.decrementAndGet();
-		if (remaining == 0 && !closed && quiescentRebuildPending.get()
-				&& maintenanceState == MaintenanceState.QUIESCING_FOR_REBUILD) {
-			enqueueQuiescentRebuildStep();
+		if (remaining == 0 && !closed && quiescentRebuildAwaitingViews.get()) {
+			resumeQuiescentRebuildAfterViews();
 		} else if (!closed) {
 			requestCompactionIfNeeded(published.get());
 		}
@@ -4758,11 +4770,10 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		if (!LmdbRuntimeProperties.adjacencySynopsisEnabled()) {
 			return null;
 		}
-		LmdbAdjacencyPublishedState state = view.state();
-		if (!state.base().coverage().isFull()
-				|| hasApplicableOverlay(state.overlays(), view.snapshotRevision())) {
+		if (!baseDomainServes(view)) {
 			return null;
 		}
+		LmdbAdjacencyPublishedState state = view.state();
 		return state.base().nodeDomainSynopsis(plane(bySubject, explicit), account);
 	}
 
@@ -4771,11 +4782,10 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		if (!LmdbRuntimeProperties.adjacencySynopsisEnabled()) {
 			return null;
 		}
-		LmdbAdjacencyPublishedState state = view.state();
-		if (!state.base().coverage().isFull()
-				|| hasApplicableOverlay(state.overlays(), view.snapshotRevision())) {
+		if (!baseDomainServes(view)) {
 			return null;
 		}
+		LmdbAdjacencyPublishedState state = view.state();
 		return state.base().nodeDomainPresence(plane(bySubject, explicit), account);
 	}
 
@@ -4787,11 +4797,10 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	 */
 	NativeLmdbQuerySource.NodeDomainIntersection nodeDomainIntersection(LmdbAdjacencyReadView view,
 			boolean leftBySubject, boolean rightBySubject, boolean explicit) {
-		LmdbAdjacencyPublishedState state = view.state();
-		if (!state.base().coverage().isFull()
-				|| hasApplicableOverlay(state.overlays(), view.snapshotRevision())) {
+		if (!baseDomainServes(view)) {
 			return null;
 		}
+		LmdbAdjacencyPublishedState state = view.state();
 		LmdbNodeDomainSynopsis left = state.base().nodeDomainSynopsis(plane(leftBySubject, explicit), account);
 		if (leftBySubject == rightBySubject) {
 			return left == null ? null : left.intersection(left);
@@ -4814,12 +4823,33 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		if (!LmdbRuntimeProperties.adjacencySynopsisEnabled()) {
 			return null;
 		}
-		LmdbAdjacencyPublishedState state = view.state();
-		if (!state.base().coverage().isFull()
-				|| hasApplicableOverlay(state.overlays(), view.snapshotRevision())) {
+		if (!baseDomainServes(view)) {
 			return null;
 		}
+		LmdbAdjacencyPublishedState state = view.state();
 		return state.base().nodeDomainDatatypeSummary(plane(bySubject, explicit), account, lookup, observer);
+	}
+
+	/**
+	 * Whether the base alone answers whole-domain questions for this view. These answers come from the base without
+	 * per-row fallback, so they need the kernel completeness rule of {@link #completeBasePredicateOrdinal}: the
+	 * snapshot is applied, no pending table precedes it, and no overlay generation is visible to it.
+	 */
+	private boolean baseDomainServes(LmdbAdjacencyReadView view) {
+		if (view == null || !view.servesSnapshot() || closed || options.mode() != DirectAdjacencyMode.PREFER
+				|| writeTransactionBlocksAdjacency()) {
+			return false;
+		}
+		LmdbAdjacencyPublishedState state = view.state();
+		if (state.base() == null || view.snapshotRevision() > state.appliedRevision()) {
+			return false;
+		}
+		for (PendingTable pending : state.pending()) {
+			if (pending.revision() <= view.snapshotRevision()) {
+				return false;
+			}
+		}
+		return state.base().coverage().isFull() && !hasApplicableOverlay(state.overlays(), view.snapshotRevision());
 	}
 
 	private static boolean hasApplicableOverlay(LmdbAdjacencyOverlaySet overlays, long snapshotRevision) {

@@ -380,6 +380,52 @@ class LmdbInitialRunImportTest {
 
 	@Test
 	@Timeout(120)
+	void namespacesCommittedBeforeTheFirstImportSurviveAnInterruptedImport() throws Exception {
+		LmdbStore sail = new LmdbStore(directory, config());
+		sail.init();
+		File crashed = new File(otherDirectory, "crashed");
+		try {
+			try (LmdbStoreConnection writer = (LmdbStoreConnection) sail.getConnection()) {
+				writer.begin(IsolationLevels.SERIALIZABLE);
+				writer.setNamespace("ex", "http://example.com/kept/");
+				writer.commit();
+			}
+			try (LmdbStoreConnection writer = (LmdbStoreConnection) sail.getConnection()) {
+				writer.begin(IsolationLevels.NONE);
+				addSubjects(writer, 0, 500);
+				// The process dies here: an import that started has its marker on disk until it completes.
+				copyDirectory(directory, crashed);
+				writer.commit();
+			}
+		} finally {
+			sail.shutDown();
+		}
+		LmdbStore restarted = new LmdbStore(crashed, config());
+		restarted.init();
+		try (LmdbStoreConnection reader = (LmdbStoreConnection) restarted.getConnection()) {
+			assertThat(reader.getNamespace("ex")).as("a namespace committed before the import began")
+					.isEqualTo("http://example.com/kept/");
+		} finally {
+			restarted.shutDown();
+		}
+	}
+
+	private static void copyDirectory(File source, File target) throws IOException {
+		Files.createDirectories(target.toPath());
+		try (var files = Files.walk(source.toPath())) {
+			for (java.nio.file.Path path : (Iterable<java.nio.file.Path>) files::iterator) {
+				java.nio.file.Path destination = target.toPath().resolve(source.toPath().relativize(path).toString());
+				if (Files.isDirectory(path)) {
+					Files.createDirectories(destination);
+				} else if (!path.getFileName().toString().equals("lock")) {
+					Files.copy(path, destination);
+				}
+			}
+		}
+	}
+
+	@Test
+	@Timeout(120)
 	void aLeftoverMarkerResetsTheStoreToEmptyOnStartup() throws Exception {
 		LmdbStore sail = new LmdbStore(directory, config().setInitialRunImportEnabled(false));
 		sail.init();
