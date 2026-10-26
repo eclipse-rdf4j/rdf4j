@@ -939,8 +939,9 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	@Override
 	protected long addStatementsInternal(Iterable<? extends Statement> statements, Resource... contexts)
 			throws SailException {
-		// Optimized bulk insertion constructs its base source before the per-row callback can check admission.
-		verifyMutationAdmission();
+		// Optimized bulk insertion constructs its base source before the per-row callback can check admission. Like
+		// every statement write, it marks the attempt as writing, so its commit runs post-commit maintenance.
+		markStatementWriteAttempted();
 		return super.addStatementsInternal(statements, contexts);
 	}
 

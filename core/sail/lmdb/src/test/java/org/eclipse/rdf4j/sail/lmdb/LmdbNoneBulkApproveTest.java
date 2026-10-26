@@ -123,8 +123,11 @@ class LmdbNoneBulkApproveTest {
 	}
 
 	@Test
-	void adjacencyAnswersMatchTheStoreAfterACollection() {
-		open(config().setDirectAdjacencyEnabled(true).setDirectAdjacencyMode(DirectAdjacencyMode.PREFER));
+	void adjacencyAnswersMatchTheStoreAfterACollection() throws Exception {
+		open(config().setDirectAdjacencyEnabled(true)
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+				.setDirectAdjacencyBuildOnStart(true)
+				.setDirectAdjacencyMaxBytes(1L << 30));
 		Model first = model("first", 0, SIZE);
 		load(first);
 		assertThat(store.awaitDirectAdjacencyReady(30, TimeUnit.SECONDS))
@@ -188,7 +191,8 @@ class LmdbNoneBulkApproveTest {
 	}
 
 	private static LmdbStoreConfig config() {
-		return new LmdbStoreConfig("spoc,ospc,psoc").setSketchEstimatorEnabled(false).setValueOverlayEnabled(false);
+		return new LmdbStoreConfig("spoc,ospc,psoc,posc").setSketchEstimatorEnabled(false)
+				.setValueOverlayEnabled(false);
 	}
 
 	/**
@@ -215,7 +219,12 @@ class LmdbNoneBulkApproveTest {
 			try (RepositoryResult<Statement> statements = connection.getStatements(null, null, null, false)) {
 				statements.forEach(actual::add);
 			}
-			assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
+			Set<Statement> missing = new HashSet<>(expected);
+			missing.removeAll(actual);
+			Set<Statement> extra = new HashSet<>(actual);
+			extra.removeAll(expected);
+			assertThat(missing).as("statements lost").isEmpty();
+			assertThat(extra).as("statements invented").isEmpty();
 			Map<Value, Long> byObject = new HashMap<>();
 			expected.forEach(statement -> byObject.merge(statement.getObject(), 1L, Long::sum));
 			for (Map.Entry<Value, Long> object : byObject.entrySet()) {

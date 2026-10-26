@@ -2574,6 +2574,11 @@ class LmdbSailStore implements SailStore {
 	static final int MAX_BULK_OPERATION_CAPACITY = 64 * 1024;
 	static final int MAX_ALIGNED_WRITE_STATEMENTS = 128 * 1024;
 	private static final int PREPARED_BATCH_MIN_STATEMENTS = 1024;
+	/**
+	 * The largest collection one NONE approval writes as a single prepared chunk. A native LMDB transaction keeps its
+	 * dirty pages in memory until it commits; larger input keeps NONE's bounded chunks and the initial run import.
+	 */
+	private static final int PREPARED_NONE_MAX_STATEMENTS = 4 * NoneWriteState.MAX_CHUNK_ROWS;
 	private static final long MAX_PREPARED_IMPORT_BYTES = 512L * 1024 * 1024;
 	private static final long PREPARED_VALUE_ESTIMATED_BYTES = 128L;
 	private static final long PREPARED_INDEX_ENTRY_OVERHEAD = 16L;
@@ -3052,6 +3057,16 @@ class LmdbSailStore implements SailStore {
 	/** The number of values a NONE import's fresh session may hold before it falls back to dictionary lookups. */
 	long freshNoneValueLimit() {
 		return FRESH_NONE_VALUE_LIMIT;
+	}
+
+	/** NONE approvals written as one prepared chunk, for tests. */
+	long preparedNoneChunks() {
+		sinkStoreAccessLock.lock();
+		try {
+			return preparedNoneChunks;
+		} finally {
+			sinkStoreAccessLock.unlock();
+		}
 	}
 
 	boolean isInitialRunImportActive() {
@@ -4036,6 +4051,7 @@ class LmdbSailStore implements SailStore {
 	// Only the currently admitted native owner is visible to asynchronous mutation callbacks.
 	private NoneWriteState noneWriteState;
 	private long noneCheckpoints;
+	private long preparedNoneChunks;
 	private long noneCapacityReplays;
 	private long nonePeakRetainedBytes;
 	private int nonePeakRetainedRows;
@@ -11469,6 +11485,9 @@ class LmdbSailStore implements SailStore {
 								submitOperation(finish);
 								finish.writeValues();
 								continue;
+							} else if (operation instanceof PreparedNoneAddOperation prepared) {
+								prepared.store();
+								continue;
 							}
 							submitOperation(operation);
 						}
@@ -11978,10 +11997,157 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public long approveAll(Iterable<? extends Statement> approved, Resource... contexts) {
-			if (nativeCheckpoints || bulkOperationSize <= 0) {
+			if (nativeCheckpoints) {
+				long prepared = approveAllPreparedNone(approved, contexts);
+				return prepared >= 0 ? prepared : SailSink.super.approveAll(approved, contexts);
+			}
+			if (bulkOperationSize <= 0) {
 				return SailSink.super.approveAll(approved, contexts);
 			}
 			return approveAllBulk(approved, contexts);
+		}
+
+		/**
+		 * Writes a NONE approval of a whole in-memory collection as one chunk through the prepared path: its values are
+		 * assigned once and its triples written in one ordered pass, as a READ_COMMITTED commit writes its buffered
+		 * statements. The chunk replays as one operation when a map fills.
+		 *
+		 * @return the number of approved statements, or -1 when the collection takes the per-statement path
+		 */
+		private long approveAllPreparedNone(Iterable<? extends Statement> approved, Resource[] contexts) {
+			if (!(approved instanceof Collection<?> collection)
+					|| contexts.length != 0 || !explicit
+					|| mayHaveInferred || sketchBasedJoinEstimator != null || !preparedStatementBatchesEnabled
+					|| collection.size() < PREPARED_BATCH_MIN_STATEMENTS
+					|| collection.size() > PREPARED_NONE_MAX_STATEMENTS) {
+				return -1;
+			}
+			acquireMutationStoreAccess();
+			try (SailWriteContinuation.Scope continuation = beginNativeContinuation()) {
+				NoneWriteState state = admitNoneState();
+				if (!preparedNoneSessionAvailable(state, collection.size())) {
+					return -1;
+				}
+				state.publicationRequested = false;
+				state.controller = this;
+				long approvedCount = 0L;
+				PreparedStatementBatch.Builder builder = PreparedStatementBatch.builder(collection.size());
+				for (Statement statement : approved) {
+					Statement captured = captureMutationStatement(statement);
+					builder.add(captured.getSubject(), captured.getPredicate(), captured.getObject(),
+							captured.getContext());
+					approvedCount++;
+				}
+				PreparedStatementBatch prepared = builder.build();
+				// Earlier work of this attempt forms its own chunks; an initial run import completes first, so this
+				// chunk's lookups find every value the import assigned.
+				if (state.pending != null) {
+					state.pendingSink.flushNoneBatch();
+				}
+				LmdbInitialRunImport runImport = initialRunImport;
+				if (runImport != null && runImport.owner == writerOwner() && !runImport.completing()) {
+					completeInitialRunImport();
+				}
+				if (storeTxnStarted.get()) {
+					checkpointNoneChunk();
+				}
+				// This chunk writes the store's first rows itself: its native start must not claim a run import.
+				initialRunImportAvailable = false;
+				PreparedNoneAddOperation operation = new PreparedNoneAddOperation(prepared);
+				growNoneMaps(operation.valueEstimate, operation.tripleEstimate, null);
+				startTransaction(true);
+				ValueStore.FreshValueSession session = freshValueSession;
+				if (session == null || freshValueSessionInvalidated || !valueStore.isFreshValueSessionUsable(session)) {
+					// The store's first native start did not open a session after all: take the regular chunks.
+					for (Statement statement : prepared) {
+						appendCapturedNoneStatement(statement);
+					}
+					return approvedCount;
+				}
+				freshNoneImportOwner = writerOwner();
+				freshSessionReservedForNone = false;
+				state.work.add(operation);
+				state.containsAdds = true;
+				state.rows += prepared.size();
+				state.bytes = LmdbUtil.saturatedAdd(state.bytes,
+						LmdbUtil.saturatedAdd(operation.valueEstimate, operation.tripleEstimate));
+				state.tripleBytes = LmdbUtil.saturatedAdd(state.tripleBytes, operation.tripleEstimate);
+				try {
+					operation.store();
+				} catch (IOException | RuntimeException failure) {
+					if (!recoverNoneCapacity(failure)) {
+						throw failure;
+					}
+				}
+				checkpointNoneChunk();
+				preparedNoneChunks++;
+				return approvedCount;
+			} catch (IOException e) {
+				rollbackAfterMutationFailure(e);
+				throw new SailException(e);
+			} catch (RuntimeException | Error e) {
+				rollbackAfterMutationFailure(e);
+				reportMutationFailure(writerOwner(), "Encountered an unexpected problem while trying to add statements",
+						null, false, e);
+				throw e;
+			} finally {
+				sinkStoreAccessLock.unlock();
+			}
+		}
+
+		/**
+		 * The prepared chunk assigns from the fresh session: a store's first write opens it, or the attempt owns it, or
+		 * an earlier committed NONE connection left it for this one.
+		 */
+		private boolean preparedNoneSessionAvailable(NoneWriteState state, int statements) throws IOException {
+			Object owner = writerOwner();
+			if (!(owner instanceof LmdbStoreConnection) || noneWriteStates.size() != 1 || freshValueSessionInvalidated
+					|| !freshImportEligible) {
+				return false;
+			}
+			ValueStore.FreshValueSession session = freshValueSession;
+			if (session == null) {
+				return initialRunImportAvailable && state.rows == 0 && state.pending == null && !storeTxnStarted.get()
+						&& tripleStore.isEmpty();
+			}
+			return (freshNoneImportOwner == owner || freshNoneImportOwner == null && freshSessionReservedForNone)
+					&& valueStore.isFreshValueSessionUsable(session)
+					&& valueStore.freshValueSessionSize(session) + 4L * statements < freshNoneValueLimit();
+		}
+
+		/** One NONE chunk written through the prepared path; it replays as a whole when a map fills. */
+		private final class PreparedNoneAddOperation implements Operation {
+			private final PreparedStatementBatch prepared;
+			private final long valueEstimate;
+			private final long tripleEstimate;
+
+			private PreparedNoneAddOperation(PreparedStatementBatch prepared) {
+				this.prepared = prepared;
+				long values = 0L;
+				for (Value value : prepared.values()) {
+					// A data record and a lookup record per value, each bounded by its lexical form.
+					values = LmdbUtil.saturatedAdd(values,
+							2L * LmdbUtil.saturatedAdd(ValueStore.estimatedRetainedBytes(value), 64L));
+				}
+				this.valueEstimate = values;
+				this.tripleEstimate = tripleStore.estimateWriteBytes(prepared.size());
+			}
+
+			/** Assigns and writes the chunk; a replay assigns again after the rollback removed the provisional IDs. */
+			void store() throws IOException {
+				ValueStore.FreshValueSession session = freshValueSession;
+				if (session == null || !valueStore.isFreshValueSessionUsable(session)) {
+					throw new IllegalStateException("A prepared NONE chunk lost its fresh value session");
+				}
+				if (storeFreshPreparedStatements(prepared, session) > 0) {
+					recordNoneMutation(true);
+				}
+			}
+
+			@Override
+			public void execute() {
+				throw new UnsupportedOperationException("A prepared NONE chunk is stored by its sink");
+			}
 		}
 
 		private void reservePreparedImportCapacity(PreparedStatementBatch prepared) throws IOException {

@@ -8054,7 +8054,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		return saturatedEstimateAdd(bytes, estimatedRetainedBytes(statement.getContext()));
 	}
 
-	private static long estimatedRetainedBytes(Value value) {
+	static long estimatedRetainedBytes(Value value) {
 		long bytes = 0L;
 		Value checkpoint = value;
 		long power = 1L;
