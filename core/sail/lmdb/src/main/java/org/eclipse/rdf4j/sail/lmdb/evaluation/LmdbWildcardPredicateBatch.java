@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbWildcardPhysicalDemand.Demand;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbWildcardPhysicalDemand.DuplicatePolicy;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbWildcardPhysicalDemand.Scope;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RunView.ContextSpan;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.IdCapability;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -823,6 +824,7 @@ final class LmdbWildcardPredicateBatch {
 
 	/** Reusable NODE_ANY kernel for a batched EXISTS/NOT EXISTS statement-pattern filter. */
 	static final class ExistenceBatch implements AutoCloseable {
+		private final ContextSpan contextSpan = new ContextSpan();
 		private final Term s;
 		private final Term p;
 		private final Term o;
@@ -1180,13 +1182,31 @@ final class LmdbWildcardPredicateBatch {
 			if (!requiresRunInspection(batch, physical, allowedMask)) {
 				return true;
 			}
+			long wanted = value(c, batch, physical, allowedMask);
+			boolean contextRestricted = wanted >= 0L || contexts.isFixed() || namedContextScope;
+			boolean inspect = repeated(s, p, o, c)
+					|| constrained(bySubject ? o : s, batch, physical, allowedMask);
 			long size = runView.size(handle);
+			contextSpan.set(0L, -1L);
 			for (long offset = 0L; offset < size; offset++) {
 				if (row.cancellation.isCancellationRequested()) {
 					return false;
 				}
-				long neighbor = runView.neighborAt(handle, offset);
-				long context = runView.contextAt(handle, offset);
+				if (offset >= contextSpan.end()) {
+					offset = nextAcceptedOffset(runView, handle, offset, size, contextSpan, wanted, contexts,
+							namedContextScope, row.cancellation);
+					if (offset >= size) {
+						break;
+					}
+					if (contextSpan.hasCommonContext() && !inspect) {
+						return true;
+					}
+				}
+				long neighbor = contextRestricted ? runView.neighborInContextSpan(handle, offset)
+						: runView.neighborAt(handle, offset);
+				long context = contextSpan.hasCommonContext() ? contextSpan.commonContext()
+						: contextRestricted ? runView.contextInContextSpan(handle, offset)
+								: runView.contextAt(handle, offset);
 				PAYLOAD_ROWS_DECODED.incrementAndGet();
 				long subject = bySubject ? root : neighbor;
 				long object = bySubject ? neighbor : root;
@@ -2021,7 +2041,6 @@ final class LmdbWildcardPredicateBatch {
 				LmdbNativeExplain.addRuntimeMetric(row.telemetryTarget, "wildcardParallelHelperTasksActual", helpers);
 				if (operation == DataOperation.PAYLOAD) {
 					PARALLEL_PAYLOAD_ROUNDS.incrementAndGet();
-					PAYLOAD_ROWS_DECODED.addAndGet(itemCount);
 				} else {
 					PARALLEL_MULTIPLICITY_ROUNDS.incrementAndGet();
 				}
@@ -2124,6 +2143,7 @@ final class LmdbWildcardPredicateBatch {
 			long predicate = adjacency.predicateAt(round.predicateOrdinal);
 			long[] rootKey = new long[1];
 			long[] handle = new long[1];
+			ContextSpan contextSpan = new ContextSpan();
 			if (round.operation == DataOperation.PAYLOAD) {
 				rootKey[0] = round.root;
 				adjacency.findBatch(rootKey, 0, 1, handle, 0);
@@ -2145,20 +2165,31 @@ final class LmdbWildcardPredicateBatch {
 						adjacency.findBatch(rootKey, 0, 1, handle, 0);
 						if (handle[0] > 0L) {
 							round.multiplicities[item] = qualifyingMultiplicity(shape, localRow, adjacency,
-									rootKey[0], predicate, handle[0]);
+									rootKey[0], predicate, handle[0], contextSpan);
 						}
 					}
 				} else {
-					for (int item = from; item < to; item++) {
-						long offset = round.runOffset + item;
-						long neighbor = adjacency.neighborAt(handle[0], offset);
-						long context = adjacency.contextAt(handle[0], offset);
-						round.neighbors[item] = neighbor;
-						round.contexts[item] = context;
-						long subject = shape.bySubject ? round.root : neighbor;
-						long object = shape.bySubject ? neighbor : round.root;
-						if (matchesTerms(shape.wildcard, subject, predicate, object, context, localRow)) {
-							round.accepted[item] = ACCEPTED_ROW;
+					long rawOffset = round.runOffset + from;
+					long rawLimit = round.runOffset + to;
+					while (rawOffset < rawLimit) {
+						if (localRow.cancellation.isCancellationRequested()) {
+							return;
+						}
+						int itemFrom = (int) (rawOffset - round.runOffset);
+						int count = contextSpan.copyAccepted(adjacency, handle[0], rawOffset, rawLimit,
+								to - itemFrom, round.neighbors, itemFrom, round.contexts, itemFrom,
+								shape.wildcard.c.lookup(localRow.slots), shape.wildcard.contexts.ids,
+								shape.wildcard.namedContextScope);
+						rawOffset = contextSpan.end();
+						PAYLOAD_ROWS_DECODED.addAndGet(count);
+						for (int item = itemFrom; item < itemFrom + count; item++) {
+							long neighbor = round.neighbors[item];
+							long context = round.contexts[item];
+							long subject = shape.bySubject ? round.root : neighbor;
+							long object = shape.bySubject ? neighbor : round.root;
+							if (matchesTerms(shape.wildcard, subject, predicate, object, context, localRow)) {
+								round.accepted[item] = ACCEPTED_ROW;
+							}
 						}
 					}
 				}
@@ -2172,6 +2203,7 @@ final class LmdbWildcardPredicateBatch {
 
 		private void processChunks(NativeLmdbQuerySource.WildcardAdjacency adjacency, RowState localRow,
 				AtomicInteger nextChunk, int chunkCount, boolean helper) {
+			ContextSpan contextSpan = new ContextSpan();
 			for (int chunk = nextChunk.getAndIncrement(); chunk < chunkCount; chunk = nextChunk.getAndIncrement()) {
 				if (localRow.cancellation.isCancellationRequested()) {
 					return;
@@ -2183,7 +2215,8 @@ final class LmdbWildcardPredicateBatch {
 					if (adjacency.keyCount() == 0L) {
 						planeStates[ordinal] = EMPTY_PLANE;
 					} else if (shape.demand != Demand.PREDICATE_ANY
-							|| predicateQualifies(shape, localRow, adjacency, adjacency.predicateAt(ordinal))) {
+							|| predicateQualifies(shape, localRow, adjacency, adjacency.predicateAt(ordinal),
+									contextSpan)) {
 						planeStates[ordinal] = QUALIFYING_PLANE;
 					} else {
 						planeStates[ordinal] = REJECTED_PLANE;
@@ -2198,21 +2231,41 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		private static boolean predicateQualifies(Shape shape, RowState row,
-				NativeLmdbQuerySource.WildcardAdjacency adjacency, long predicate) {
+				NativeLmdbQuerySource.WildcardAdjacency adjacency, long predicate, ContextSpan contextSpan) {
 			if (!requiresRunInspection(shape.wildcard, row)) {
 				return true;
 			}
+			PatternPlan pattern = shape.wildcard;
+			long wanted = pattern.c.lookup(row.slots);
+			boolean contextRestricted = wanted >= 0L || pattern.contexts.isFixed() || pattern.namedContextScope;
+			boolean inspect = requiresNonContextInspection(pattern, shape.bySubject, row);
 			try (NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor keys = adjacency.openKeyRunCursor()) {
 				while (keys.advance()) {
 					long root = keys.key();
 					long size = keys.runSize();
+					contextSpan.set(0L, -1L);
 					for (long offset = 0L; offset < size; offset++) {
 						if (row.cancellation.isCancellationRequested()) {
 							return false;
 						}
-						long neighbor = keys.neighborAt(offset);
-						long context = keys.contextAt(offset);
-						if (matchesTerms(shape.wildcard, root, predicate, neighbor, context, row)) {
+						if (offset >= contextSpan.end()) {
+							offset = nextAcceptedOffset(keys, offset, size, contextSpan, wanted, pattern.contexts,
+									pattern.namedContextScope, row.cancellation);
+							if (offset >= size) {
+								break;
+							}
+							if (contextSpan.hasCommonContext() && !inspect) {
+								return true;
+							}
+						}
+						long neighbor = contextRestricted ? keys.neighborInContextSpan(offset)
+								: keys.neighborAt(offset);
+						long context = contextSpan.hasCommonContext() ? contextSpan.commonContext()
+								: contextRestricted ? keys.contextInContextSpan(offset) : keys.contextAt(offset);
+						PAYLOAD_ROWS_DECODED.incrementAndGet();
+						long subject = shape.bySubject ? root : neighbor;
+						long object = shape.bySubject ? neighbor : root;
+						if (matchesTerms(pattern, subject, predicate, object, context, row)) {
 							return true;
 						}
 					}
@@ -2330,6 +2383,7 @@ final class LmdbWildcardPredicateBatch {
 
 	/** Predicate-only all-unbound scan: one non-empty qualifying plane produces one predicate id. */
 	private static final class PredicateDomainCursor implements BatchCursor {
+		private final ContextSpan contextSpan = new ContextSpan();
 		private final Shape shape;
 		private final RowState row;
 		private final NativeLmdbQuerySource.NativeProbe probe;
@@ -2406,27 +2460,7 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		private boolean qualifies(long predicate) {
-			if (!requiresRunInspection(shape.wildcard, row)) {
-				return true;
-			}
-			try (NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor keys = adjacency.openKeyRunCursor()) {
-				while (keys.advance()) {
-					long root = keys.key();
-					long size = keys.runSize();
-					for (long offset = 0L; offset < size; offset++) {
-						if (row.cancellation.isCancellationRequested()) {
-							return false;
-						}
-						long neighbor = keys.neighborAt(offset);
-						long context = keys.contextAt(offset);
-						PAYLOAD_ROWS_DECODED.incrementAndGet();
-						if (matchesTerms(shape.wildcard, root, predicate, neighbor, context, row)) {
-							return true;
-						}
-					}
-				}
-			}
-			return false;
+			return PredicateMajorParallelScan.predicateQualifies(shape, row, adjacency, predicate, contextSpan);
 		}
 
 		@Override
@@ -2451,6 +2485,7 @@ final class LmdbWildcardPredicateBatch {
 
 	/** Predicate-major all-unbound pair presence, one root coordinate per distinct node-predicate pair. */
 	private static final class PredicateMajorPresenceCursor implements BatchCursor {
+		private final ContextSpan contextSpan = new ContextSpan();
 		private final Shape shape;
 		private final RowState row;
 		private final NativeLmdbQuerySource.NativeProbe probe;
@@ -2542,7 +2577,7 @@ final class LmdbWildcardPredicateBatch {
 					int current = rootIndex++;
 					long root = roots.rootIds()[current];
 					long handle = roots.runHandles()[current];
-					if (!qualifies(shape, row, adjacency, root, predicate, handle)) {
+					if (!qualifies(shape, row, adjacency, root, predicate, handle, contextSpan)) {
 						continue;
 					}
 					target.copyFromRow(row.slots, output);
@@ -2639,6 +2674,7 @@ final class LmdbWildcardPredicateBatch {
 
 	/** Predicate-major all-unbound statement expansion without manufacturing a synthetic node input batch. */
 	private static final class PredicateMajorPayloadCursor implements BatchCursor {
+		private final ContextSpan contextSpan = new ContextSpan();
 		private final Shape shape;
 		private final RowState row;
 		private final NativeLmdbQuerySource.NativeProbe probe;
@@ -2728,21 +2764,28 @@ final class LmdbWildcardPredicateBatch {
 				long predicate = adjacency.predicateAt(adjacency.boundPredicateOrdinal());
 				long runSize = keys.runSize();
 				while (runOffset < runSize && output < target.capacity) {
+					if (row.cancellation.isCancellationRequested()) {
+						target.clear();
+						close();
+						return 0;
+					}
 					int requested = (int) Math.min((long) target.capacity - output, runSize - runOffset);
 					boolean parallel = parallelScan.runPayloadRound(adjacency.boundPredicateOrdinal(), root, runOffset,
 							requested, neighbors, contexts, accepted);
-					int decoded = requested;
-					if (!parallel) {
-						int neighborCount = keys.copyNeighbors(runOffset, requested, neighbors, 0);
-						int contextCount = keys.copyContexts(runOffset, requested, contexts, 0);
-						if (neighborCount != contextCount || neighborCount <= 0) {
-							throw new IllegalStateException(
-									"predicate-major payload copy did not preserve run alignment");
-						}
-						decoded = neighborCount;
+					if (row.cancellation.isCancellationRequested()) {
+						target.clear();
+						close();
+						return 0;
 					}
-					runOffset += decoded;
-					if (!parallel) {
+					int decoded;
+					if (parallel) {
+						decoded = requested;
+						runOffset += requested;
+					} else {
+						decoded = contextSpan.copyAccepted(keys, runOffset, runSize, requested, neighbors, 0,
+								contexts, 0, shape.wildcard.c.lookup(row.slots), shape.wildcard.contexts.ids,
+								shape.wildcard.namedContextScope);
+						runOffset = contextSpan.end();
 						PAYLOAD_ROWS_DECODED.addAndGet(decoded);
 					}
 					for (int copied = 0; copied < decoded; copied++) {
@@ -2857,6 +2900,7 @@ final class LmdbWildcardPredicateBatch {
 
 	/** One weighted root-predicate row per all-unbound run; unrestricted runs contribute their metadata size. */
 	private static final class PredicateMajorMultiplicityCursor implements WeightedBatchCursor {
+		private final ContextSpan contextSpan = new ContextSpan();
 		private final Shape shape;
 		private final RowState row;
 		private final NativeLmdbQuerySource.NativeProbe probe;
@@ -2964,7 +3008,8 @@ final class LmdbWildcardPredicateBatch {
 				long root = roots.rootIds()[current];
 				long multiplicity = parallelMultiplicities
 						? rootMultiplicities[current]
-						: qualifyingMultiplicity(shape, row, adjacency, root, predicate, roots.runHandles()[current]);
+						: qualifyingMultiplicity(shape, row, adjacency, root, predicate, roots.runHandles()[current],
+								contextSpan);
 				if (multiplicity == 0L) {
 					continue;
 				}
@@ -3070,6 +3115,7 @@ final class LmdbWildcardPredicateBatch {
 
 	/** One-dimensional existence bitmap expressed as an unresolved sorted node vector that shrinks per plane. */
 	private static final class NodeAnyCursor implements BatchCursor {
+		private final ContextSpan contextSpan = new ContextSpan();
 		private final Shape shape;
 		private final RowState row;
 		private final NativeLmdbQuerySource.NativeProbe probe;
@@ -3221,7 +3267,7 @@ final class LmdbWildcardPredicateBatch {
 				for (int lane = 0; lane < unresolvedCount; lane++) {
 					long node = unresolved[lane];
 					long handle = runHandles[lane];
-					if (handle > 0L && qualifies(shape, row, adjacency, node, predicate, handle)) {
+					if (handle > 0L && qualifies(shape, row, adjacency, node, predicate, handle, contextSpan)) {
 						resolved[resolvedCount++] = node;
 						predicateMatched = true;
 					} else {
@@ -3257,7 +3303,7 @@ final class LmdbWildcardPredicateBatch {
 					}
 					long root = route.rootAt(rootOrdinal);
 					long handle = route.runReferenceAt(incidence);
-					if (qualifies(shape, row, runView, root, predicate, handle)) {
+					if (qualifies(shape, row, runView, root, predicate, handle, contextSpan)) {
 						runHandles[rootOrdinal] = 1L;
 						predicateMatched = true;
 					}
@@ -3342,6 +3388,7 @@ final class LmdbWildcardPredicateBatch {
 
 	/** Predicate-major distinct node-predicate presence without decoding unused neighbor or context payload. */
 	private static final class PairPresenceCursor implements BatchCursor {
+		private final ContextSpan contextSpan = new ContextSpan();
 		private final Shape shape;
 		private final RowState row;
 		private final NativeLmdbQuerySource.NativeProbe probe;
@@ -3521,7 +3568,7 @@ final class LmdbWildcardPredicateBatch {
 					int rootOrdinal = route.rootOrdinalAt(routeIncidence);
 					long node = route.rootAt(rootOrdinal);
 					long handle = route.runReferenceAt(routeIncidence++);
-					if (!qualifies(shape, row, runView, node, predicate, handle)) {
+					if (!qualifies(shape, row, runView, node, predicate, handle, contextSpan)) {
 						continue;
 					}
 					target.copyFromRow(row.slots, output);
@@ -3582,7 +3629,7 @@ final class LmdbWildcardPredicateBatch {
 				boolean matched = false;
 				for (int lane = 0; lane < nodeCount; lane++) {
 					long handle = runHandles[lane];
-					if (handle > 0L && qualifies(shape, row, adjacency, nodes[lane], predicate, handle)) {
+					if (handle > 0L && qualifies(shape, row, adjacency, nodes[lane], predicate, handle, contextSpan)) {
 						int word = predicateWithinTile * wordsPerBatch + (lane >>> 6);
 						bitmap[word] |= 1L << (lane & 63);
 						matched = true;
@@ -3683,6 +3730,7 @@ final class LmdbWildcardPredicateBatch {
 	 * are counted in place without retaining or exposing dead neighbor/context payload.
 	 */
 	private static final class PairMultiplicityCursor implements WeightedBatchCursor {
+		private final ContextSpan contextSpan = new ContextSpan();
 		private final Shape shape;
 		private final RowState row;
 		private final NativeLmdbQuerySource.NativeProbe probe;
@@ -3828,7 +3876,7 @@ final class LmdbWildcardPredicateBatch {
 					long multiplicity = planeContainsMultiplicities
 							? runValue
 							: qualifyingMultiplicity(shape, row, adjacency, root, predicate, runValue,
-									prefixBatch, physicalInput);
+									prefixBatch, physicalInput, contextSpan);
 					if (multiplicity == 0L) {
 						continue;
 					}
@@ -3899,7 +3947,7 @@ final class LmdbWildcardPredicateBatch {
 							continue;
 						}
 						long multiplicity = qualifyingMultiplicity(shape, row, runView, root, predicate, handle,
-								prefixBatch, physicalInput);
+								prefixBatch, physicalInput, contextSpan);
 						if (multiplicity == 0L) {
 							continue;
 						}
@@ -4134,6 +4182,7 @@ final class LmdbWildcardPredicateBatch {
 
 	/** Persistent predicate bitmap plus a batch-at-a-time unsigned merge against every still-unmatched plane. */
 	private static final class PredicateAnyCursor implements BatchCursor {
+		private final ContextSpan contextSpan = new ContextSpan();
 		private final Shape shape;
 		private final RowState row;
 		private final int capacity;
@@ -4372,21 +4421,7 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		private boolean runMatches(long root, long predicate, long handle) {
-			long size = adjacency.size(handle);
-			for (long offset = 0L; offset < size; offset++) {
-				if (row.cancellation.isCancellationRequested()) {
-					return false;
-				}
-				long neighbor = adjacency.neighborAt(handle, offset);
-				long context = adjacency.contextAt(handle, offset);
-				PAYLOAD_ROWS_DECODED.incrementAndGet();
-				long subject = shape.bySubject ? root : neighbor;
-				long object = shape.bySubject ? neighbor : root;
-				if (matchesTerms(shape.wildcard, subject, predicate, object, context, row)) {
-					return true;
-				}
-			}
-			return false;
+			return qualifies(shape, row, adjacency, root, predicate, handle, contextSpan);
 		}
 
 		private boolean matched(int predicate) {
@@ -4430,6 +4465,7 @@ final class LmdbWildcardPredicateBatch {
 	 * input-row ordinals, so one plane merge serves duplicate and unordered upstream rows without losing bag identity.
 	 */
 	private static final class PayloadCursor implements WeightedBatchCursor {
+		private final ContextSpan contextSpan = new ContextSpan();
 		private final Shape shape;
 		private final RowState row;
 		private final NativeLmdbQuerySource.NativeProbe probe;
@@ -4614,14 +4650,18 @@ final class LmdbWildcardPredicateBatch {
 						}
 						long runSize = adjacency.size(handle);
 						while (runOffset < runSize && outputRows < target.capacity) {
+							if (row.cancellation.isCancellationRequested()) {
+								target.clear();
+								close();
+								return 0;
+							}
 							int requested = (int) Math.min((long) target.capacity - outputRows,
 									runSize - runOffset);
-							int neighborCount = adjacency.copyNeighbors(handle, runOffset, requested, neighbors, 0);
-							int contextCount = adjacency.copyContexts(handle, runOffset, requested, contexts, 0);
-							if (neighborCount != contextCount || neighborCount <= 0) {
-								throw new IllegalStateException("wildcard payload copy did not preserve run alignment");
-							}
-							runOffset += neighborCount;
+							int neighborCount = contextSpan.copyAccepted(adjacency, handle, runOffset, runSize,
+									requested, neighbors, 0, contexts, 0,
+									value(shape.wildcard.c, prefixBatch, physicalInput), shape.wildcard.contexts.ids,
+									shape.wildcard.namedContextScope);
+							runOffset = contextSpan.end();
 							PAYLOAD_ROWS_DECODED.addAndGet(neighborCount);
 							for (int copied = 0; copied < neighborCount; copied++) {
 								if (row.cancellation.isCancellationRequested()) {
@@ -4707,22 +4747,19 @@ final class LmdbWildcardPredicateBatch {
 							continue;
 						}
 						int requested = (int) Math.min((long) neighbors.length, runSize - runOffset);
-						int neighborCount = runView.copyNeighbors(handle, runOffset, requested, neighbors, 0);
+						int neighborCount = contextSpan.copyAccepted(runView, handle, runOffset, runSize,
+								requested, neighbors, 0, contexts, 0,
+								shape.wildcard.c.isConstant() ? shape.wildcard.c.constant : UNKNOWN,
+								shape.wildcard.contexts.ids, shape.wildcard.namedContextScope);
 						if (row.cancellation.isCancellationRequested()) {
 							target.clear();
 							close();
 							return 0;
 						}
-						int contextCount = runView.copyContexts(handle, runOffset, requested, contexts, 0);
-						if (row.cancellation.isCancellationRequested()) {
-							target.clear();
-							close();
-							return 0;
+						runOffset = contextSpan.end();
+						if (neighborCount == 0) {
+							continue;
 						}
-						if (neighborCount != contextCount || neighborCount <= 0) {
-							throw new IllegalStateException("routed payload copy did not preserve run alignment");
-						}
-						runOffset += neighborCount;
 						routedCopiedCount = neighborCount;
 						routedCopiedIndex = 0;
 						routedLineage = route.lineageFrom(rootOrdinal);
@@ -5240,6 +5277,7 @@ final class LmdbWildcardPredicateBatch {
 	 * visible predicate has been checked. Inner mode skips that final null-extension pass.
 	 */
 	private static final class WeightedWildcardPatternCursor implements FactorizedRowCursor {
+		private final ContextSpan contextSpan = new ContextSpan();
 		private final FactorizedRowCursor left;
 		private final PatternPlan right;
 		private final RowState row;
@@ -5566,18 +5604,14 @@ final class LmdbWildcardPredicateBatch {
 							break;
 						}
 						int requested = (int) Math.min((long) neighbors.length, runSize - runOffset);
-						int neighborCount = runView.copyNeighbors(handle, runOffset, requested, neighbors, 0);
+						int neighborCount = contextSpan.copyAccepted(runView, handle, runOffset, runSize,
+								requested, neighbors, 0, contexts, 0,
+								right.c.isConstant() ? right.c.constant : UNKNOWN, right.contexts.ids,
+								right.namedContextScope);
 						if (row.cancellation.isCancellationRequested()) {
 							return false;
 						}
-						int contextCount = runView.copyContexts(handle, runOffset, requested, contexts, 0);
-						if (row.cancellation.isCancellationRequested()) {
-							return false;
-						}
-						if (neighborCount != contextCount || neighborCount <= 0) {
-							throw new IllegalStateException("routed correlated wildcard copy lost run alignment");
-						}
-						runOffset += neighborCount;
+						runOffset = contextSpan.end();
 						copiedCount = neighborCount;
 						copiedIndex = 0;
 						routedLineage = route.lineageFrom(rootOrdinal);
@@ -5656,6 +5690,10 @@ final class LmdbWildcardPredicateBatch {
 					return true;
 				}
 				while (true) {
+					if (row.cancellation.isCancellationRequested()) {
+						close();
+						return false;
+					}
 					while (copiedIndex < copiedCount) {
 						if (row.cancellation.isCancellationRequested()) {
 							close();
@@ -5682,12 +5720,10 @@ final class LmdbWildcardPredicateBatch {
 						break;
 					}
 					int requested = (int) Math.min((long) neighbors.length, runSize - runOffset);
-					int neighborCount = adjacency.copyNeighbors(handle, runOffset, requested, neighbors, 0);
-					int contextCount = adjacency.copyContexts(handle, runOffset, requested, contexts, 0);
-					if (neighborCount != contextCount || neighborCount <= 0) {
-						throw new IllegalStateException("correlated wildcard copy did not preserve run alignment");
-					}
-					runOffset += neighborCount;
+					int neighborCount = contextSpan.copyAccepted(adjacency, handle, runOffset, runSize,
+							requested, neighbors, 0, contexts, 0, value(right.c, leftBatch, physical, constraintMask),
+							right.contexts.ids, right.namedContextScope);
+					runOffset = contextSpan.end();
 					copiedCount = neighborCount;
 					copiedIndex = 0;
 					PAYLOAD_ROWS_DECODED.addAndGet(neighborCount);
@@ -5782,6 +5818,7 @@ final class LmdbWildcardPredicateBatch {
 
 	/** Batched, weight-preserving OPTIONAL for one fixed-predicate adjacency plane. */
 	private static final class WeightedOptionalPatternCursor implements FactorizedRowCursor {
+		private final ContextSpan contextSpan = new ContextSpan();
 		private final FactorizedRowCursor left;
 		private final PatternPlan right;
 		private final RowState row;
@@ -5902,6 +5939,10 @@ final class LmdbWildcardPredicateBatch {
 						runSize = adjacency.size(handle);
 					}
 					while (true) {
+						if (row.cancellation.isCancellationRequested()) {
+							close();
+							return false;
+						}
 						while (copiedIndex < copiedCount) {
 							if (row.cancellation.isCancellationRequested()) {
 								close();
@@ -5921,12 +5962,10 @@ final class LmdbWildcardPredicateBatch {
 							break;
 						}
 						int requested = (int) Math.min((long) neighbors.length, runSize - runOffset);
-						int neighborCount = adjacency.copyNeighbors(handle, runOffset, requested, neighbors, 0);
-						int contextCount = adjacency.copyContexts(handle, runOffset, requested, contexts, 0);
-						if (neighborCount != contextCount || neighborCount <= 0) {
-							throw new IllegalStateException("fixed OPTIONAL copy did not preserve run alignment");
-						}
-						runOffset += neighborCount;
+						int neighborCount = contextSpan.copyAccepted(adjacency, handle, runOffset, runSize,
+								requested, neighbors, 0, contexts, 0, value(right.c, leftBatch, physical),
+								right.contexts.ids, right.namedContextScope);
+						runOffset = contextSpan.end();
 						copiedCount = neighborCount;
 						copiedIndex = 0;
 						PAYLOAD_ROWS_DECODED.addAndGet(neighborCount);
@@ -6728,6 +6767,7 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		private final class PredicateTileWorker implements Runnable {
+			private final ContextSpan contextSpan = new ContextSpan();
 			NativeExecutionContext.WorkerContext replayContext;
 			final int index;
 			final NativeLmdbQuerySource.ParallelSource source;
@@ -7038,7 +7078,8 @@ final class LmdbWildcardPredicateBatch {
 						payloadPredicateMatched = false;
 					}
 					long predicate = adjacency.predicateAt(payloadPredicateOrdinal);
-					while (payloadRootLane < round.physicalNodeCount && output < capacity) {
+					while (payloadRootLane < round.physicalNodeCount && output < capacity
+							&& !workerRow.cancellation.isCancellationRequested()) {
 						while (payloadRootOrdinal + 1 < round.nodeCount
 								&& payloadRootLane >= round.groupOffsets[payloadRootOrdinal + 1]) {
 							payloadRootOrdinal++;
@@ -7052,20 +7093,20 @@ final class LmdbWildcardPredicateBatch {
 							continue;
 						}
 						long runSize = adjacency.size(handle);
-						while (payloadRunOffset < runSize && output < capacity) {
+						while (payloadRunOffset < runSize && output < capacity
+								&& !workerRow.cancellation.isCancellationRequested()) {
 							int requested = (int) Math.min((long) capacity - output,
 									runSize - payloadRunOffset);
-							int neighborCount = adjacency.copyNeighbors(handle, payloadRunOffset, requested,
-									copyNeighbors, 0);
-							int contextCount = adjacency.copyContexts(handle, payloadRunOffset, requested,
-									copyContexts, 0);
-							if (neighborCount != contextCount || neighborCount <= 0) {
-								throw new IllegalStateException(
-										"parallel wildcard payload copy did not preserve run alignment");
-							}
-							payloadRunOffset += neighborCount;
+							int neighborCount = contextSpan.copyAccepted(adjacency, handle, payloadRunOffset,
+									runSize, requested, copyNeighbors, 0, copyContexts, 0,
+									value(shape.wildcard.c, round.constraintBatch, physicalInput),
+									shape.wildcard.contexts.ids, shape.wildcard.namedContextScope);
+							payloadRunOffset = contextSpan.end();
 							decoded += neighborCount;
 							for (int copied = 0; copied < neighborCount; copied++) {
+								if (workerRow.cancellation.isCancellationRequested()) {
+									break;
+								}
 								long neighbor = copyNeighbors[copied];
 								long context = copyContexts[copied];
 								long root = round.nodes[payloadRootOrdinal];
@@ -7168,18 +7209,36 @@ final class LmdbWildcardPredicateBatch {
 				if (!requiresRunInspection(shape.wildcard, workerRow)) {
 					return 1L;
 				}
+				PatternPlan pattern = shape.wildcard;
+				long wanted = pattern.c.lookup(workerRow.slots);
+				boolean contextRestricted = wanted >= 0L || pattern.contexts.isFixed() || pattern.namedContextScope;
+				boolean inspect = requiresNonContextInspection(pattern, bySubject, workerRow);
 				long decoded = 0L;
 				long size = adjacency.size(handle);
+				contextSpan.set(0L, -1L);
 				for (long offset = 0L; offset < size; offset++) {
 					if (workerRow.cancellation.isCancellationRequested()) {
 						return decoded << 1;
 					}
-					long neighbor = adjacency.neighborAt(handle, offset);
-					long context = adjacency.contextAt(handle, offset);
+					if (offset >= contextSpan.end()) {
+						offset = nextAcceptedOffset(adjacency, handle, offset, size, contextSpan, wanted,
+								pattern.contexts, pattern.namedContextScope, workerRow.cancellation);
+						if (offset >= size) {
+							break;
+						}
+						if (contextSpan.hasCommonContext() && !inspect) {
+							return decoded << 1 | 1L;
+						}
+					}
+					long neighbor = contextRestricted ? adjacency.neighborInContextSpan(handle, offset)
+							: adjacency.neighborAt(handle, offset);
+					long context = contextSpan.hasCommonContext() ? contextSpan.commonContext()
+							: contextRestricted ? adjacency.contextInContextSpan(handle, offset)
+									: adjacency.contextAt(handle, offset);
 					decoded++;
 					long subject = bySubject ? root : neighbor;
 					long object = bySubject ? neighbor : root;
-					if (matchesTerms(shape.wildcard, subject, predicate, object, context, workerRow)) {
+					if (matchesTerms(pattern, subject, predicate, object, context, workerRow)) {
 						return decoded << 1 | 1L;
 					}
 				}
@@ -7191,23 +7250,44 @@ final class LmdbWildcardPredicateBatch {
 				if (unrestrictedMultiplicity(shape, batch, physicalRow)) {
 					return adjacency.size(handle);
 				}
+				PatternPlan pattern = shape.wildcard;
+				long wanted = value(pattern.c, batch, physicalRow);
+				boolean contextRestricted = wanted >= 0L || pattern.contexts.isFixed() || pattern.namedContextScope;
+				boolean inspect = requiresNonContextInspection(pattern, bySubject, batch, physicalRow);
 				long matches = 0L;
 				long size = adjacency.size(handle);
-				for (long runOffset = 0L; runOffset < size; runOffset++) {
+				contextSpan.set(0L, -1L);
+				for (long offset = 0L; offset < size; offset++) {
 					if (workerRow.cancellation.isCancellationRequested()) {
 						break;
 					}
-					long neighbor = adjacency.neighborAt(handle, runOffset);
-					long context = adjacency.contextAt(handle, runOffset);
+					if (offset >= contextSpan.end()) {
+						offset = nextAcceptedOffset(adjacency, handle, offset, size, contextSpan, wanted,
+								pattern.contexts, pattern.namedContextScope, workerRow.cancellation);
+						if (offset >= size) {
+							break;
+						}
+						if (contextSpan.hasCommonContext() && !inspect) {
+							matches = Math.addExact(matches, contextSpan.end() - offset);
+							offset = contextSpan.end() - 1L;
+							continue;
+						}
+					}
+					long neighbor = contextRestricted ? adjacency.neighborInContextSpan(handle, offset)
+							: adjacency.neighborAt(handle, offset);
+					long context = contextSpan.hasCommonContext() ? contextSpan.commonContext()
+							: contextRestricted ? adjacency.contextInContextSpan(handle, offset)
+									: adjacency.contextAt(handle, offset);
 					decodedRows++;
 					long subject = bySubject ? root : neighbor;
 					long object = bySubject ? neighbor : root;
-					if (matchesTerms(shape.wildcard, subject, predicate, object, context, batch, physicalRow)) {
-						matches++;
+					if (matchesTerms(pattern, subject, predicate, object, context, batch, physicalRow)) {
+						matches = Math.addExact(matches, 1L);
 					}
 				}
 				return matches;
 			}
+
 		}
 
 		private static final class Round {
@@ -7413,22 +7493,108 @@ final class LmdbWildcardPredicateBatch {
 		}
 	}
 
+	/** Finds the next eligible physical span without touching a rejected span's pair payload. */
+	private static long nextAcceptedOffset(NativeLmdbQuerySource.RunView view, long handle, long from, long size,
+			ContextSpan span, long wanted, ContextConstraint contexts, boolean excludeDefault,
+			NativeCancellationToken cancellation) {
+		if (wanted < 0L && contexts.ids == null && !excludeDefault) {
+			span.set(size, -1L);
+			return from;
+		}
+		while (from < size) {
+			if (cancellation.isCancellationRequested()) {
+				return size;
+			}
+			view.contextSpan(handle, from, span);
+			if (cancellation.isCancellationRequested()) {
+				return size;
+			}
+			long end = Math.min(size, span.end());
+			if (end <= from) {
+				throw new IllegalStateException("wildcard context span made no progress");
+			}
+			if (!span.hasCommonContext()
+					|| ContextSpan.acceptsContext(span.commonContext(), wanted, contexts.ids, excludeDefault)) {
+				return from;
+			}
+			from = end;
+		}
+		return from;
+	}
+
+	private static long nextAcceptedOffset(NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor keys,
+			long from, long size, ContextSpan span, long wanted, ContextConstraint contexts, boolean excludeDefault,
+			NativeCancellationToken cancellation) {
+		if (wanted < 0L && contexts.ids == null && !excludeDefault) {
+			span.set(size, -1L);
+			return from;
+		}
+		while (from < size) {
+			if (cancellation.isCancellationRequested()) {
+				return size;
+			}
+			if (!keys.contextSpan(from, span)) {
+				span.set(size, -1L);
+			}
+			if (cancellation.isCancellationRequested()) {
+				return size;
+			}
+			long end = Math.min(size, span.end());
+			if (end <= from) {
+				throw new IllegalStateException("wildcard key context span made no progress");
+			}
+			if (!span.hasCommonContext()
+					|| ContextSpan.acceptsContext(span.commonContext(), wanted, contexts.ids, excludeDefault)) {
+				return from;
+			}
+			from = end;
+		}
+		return from;
+	}
+
+	private static boolean requiresNonContextInspection(PatternPlan pattern, boolean bySubject, RowState row) {
+		return pattern.hasRepeatedSlot() || constrained(bySubject ? pattern.o : pattern.s, row);
+	}
+
+	private static boolean requiresNonContextInspection(PatternPlan pattern, boolean bySubject,
+			NativeBatch batch, int physicalRow) {
+		return pattern.hasRepeatedSlot() || constrained(bySubject ? pattern.o : pattern.s, batch, physicalRow);
+	}
+
 	private static boolean qualifies(Shape shape, RowState row, NativeLmdbQuerySource.RunView adjacency, long root,
-			long predicate, long handle) {
+			long predicate, long handle, ContextSpan contextSpan) {
 		if (!requiresRunInspection(shape.wildcard, row)) {
 			return true;
 		}
+		PatternPlan pattern = shape.wildcard;
+		long wanted = pattern.c.lookup(row.slots);
+		boolean contextRestricted = wanted >= 0L || pattern.contexts.isFixed() || pattern.namedContextScope;
+		boolean inspect = requiresNonContextInspection(pattern, shape.bySubject, row);
 		long size = adjacency.size(handle);
+		contextSpan.set(0L, -1L);
 		for (long offset = 0L; offset < size; offset++) {
 			if (row.cancellation.isCancellationRequested()) {
 				return false;
 			}
-			long neighbor = adjacency.neighborAt(handle, offset);
-			long context = adjacency.contextAt(handle, offset);
+			if (offset >= contextSpan.end()) {
+				offset = nextAcceptedOffset(adjacency, handle, offset, size, contextSpan, wanted,
+						pattern.contexts, pattern.namedContextScope, row.cancellation);
+				if (offset >= size) {
+					break;
+				}
+				if (contextSpan.hasCommonContext() && !inspect) {
+					return true;
+				}
+			}
+			long neighbor = contextRestricted ? adjacency.neighborInContextSpan(handle, offset)
+					: adjacency.neighborAt(handle, offset);
+			long context = contextSpan.hasCommonContext() ? contextSpan.commonContext()
+					: contextRestricted ? adjacency.contextInContextSpan(handle, offset)
+							: adjacency.contextAt(handle, offset);
 			PAYLOAD_ROWS_DECODED.incrementAndGet();
 			long subject = shape.bySubject ? root : neighbor;
 			long object = shape.bySubject ? neighbor : root;
-			if (matchesTerms(shape.wildcard, subject, predicate, object, context, row)) {
+			if (matchesTerms(pattern, subject, predicate, object, context, row)) {
 				return true;
 			}
 		}
@@ -7436,49 +7602,89 @@ final class LmdbWildcardPredicateBatch {
 	}
 
 	private static long qualifyingMultiplicity(Shape shape, RowState row, NativeLmdbQuerySource.RunView adjacency,
-			long root, long predicate, long handle) {
+			long root, long predicate, long handle, ContextSpan contextSpan) {
 		if (unrestrictedMultiplicity(shape, row)) {
 			return adjacency.size(handle);
 		}
+		PatternPlan pattern = shape.wildcard;
+		long wanted = pattern.c.lookup(row.slots);
+		boolean contextRestricted = wanted >= 0L || pattern.contexts.isFixed() || pattern.namedContextScope;
+		boolean inspect = requiresNonContextInspection(pattern, shape.bySubject, row);
 		long matches = 0L;
 		long size = adjacency.size(handle);
+		contextSpan.set(0L, -1L);
 		for (long offset = 0L; offset < size; offset++) {
 			if (row.cancellation.isCancellationRequested()) {
 				return 0L;
 			}
-			long neighbor = adjacency.neighborAt(handle, offset);
-			long context = adjacency.contextAt(handle, offset);
+			if (offset >= contextSpan.end()) {
+				offset = nextAcceptedOffset(adjacency, handle, offset, size, contextSpan, wanted,
+						pattern.contexts, pattern.namedContextScope, row.cancellation);
+				if (offset >= size) {
+					break;
+				}
+				if (contextSpan.hasCommonContext() && !inspect) {
+					matches = Math.addExact(matches, contextSpan.end() - offset);
+					offset = contextSpan.end() - 1L;
+					continue;
+				}
+			}
+			long neighbor = contextRestricted ? adjacency.neighborInContextSpan(handle, offset)
+					: adjacency.neighborAt(handle, offset);
+			long context = contextSpan.hasCommonContext() ? contextSpan.commonContext()
+					: contextRestricted ? adjacency.contextInContextSpan(handle, offset)
+							: adjacency.contextAt(handle, offset);
 			PAYLOAD_ROWS_DECODED.incrementAndGet();
 			long subject = shape.bySubject ? root : neighbor;
 			long object = shape.bySubject ? neighbor : root;
-			if (matchesTerms(shape.wildcard, subject, predicate, object, context, row)) {
+			if (matchesTerms(pattern, subject, predicate, object, context, row)) {
 				matches = Math.addExact(matches, 1L);
 			}
 		}
-		return matches;
+		return row.cancellation.isCancellationRequested() ? 0L : matches;
 	}
 
 	private static long qualifyingMultiplicity(Shape shape, RowState row, NativeLmdbQuerySource.RunView adjacency,
-			long root, long predicate, long handle, NativeBatch batch, int physicalRow) {
+			long root, long predicate, long handle, NativeBatch batch, int physicalRow, ContextSpan contextSpan) {
 		if (unrestrictedMultiplicity(shape, batch, physicalRow)) {
 			return adjacency.size(handle);
 		}
+		PatternPlan pattern = shape.wildcard;
+		long wanted = value(pattern.c, batch, physicalRow);
+		boolean contextRestricted = wanted >= 0L || pattern.contexts.isFixed() || pattern.namedContextScope;
+		boolean inspect = requiresNonContextInspection(pattern, shape.bySubject, batch, physicalRow);
 		long matches = 0L;
 		long size = adjacency.size(handle);
+		contextSpan.set(0L, -1L);
 		for (long offset = 0L; offset < size; offset++) {
 			if (row.cancellation.isCancellationRequested()) {
 				return 0L;
 			}
-			long neighbor = adjacency.neighborAt(handle, offset);
-			long context = adjacency.contextAt(handle, offset);
+			if (offset >= contextSpan.end()) {
+				offset = nextAcceptedOffset(adjacency, handle, offset, size, contextSpan, wanted,
+						pattern.contexts, pattern.namedContextScope, row.cancellation);
+				if (offset >= size) {
+					break;
+				}
+				if (contextSpan.hasCommonContext() && !inspect) {
+					matches = Math.addExact(matches, contextSpan.end() - offset);
+					offset = contextSpan.end() - 1L;
+					continue;
+				}
+			}
+			long neighbor = contextRestricted ? adjacency.neighborInContextSpan(handle, offset)
+					: adjacency.neighborAt(handle, offset);
+			long context = contextSpan.hasCommonContext() ? contextSpan.commonContext()
+					: contextRestricted ? adjacency.contextInContextSpan(handle, offset)
+							: adjacency.contextAt(handle, offset);
 			PAYLOAD_ROWS_DECODED.incrementAndGet();
 			long subject = shape.bySubject ? root : neighbor;
 			long object = shape.bySubject ? neighbor : root;
-			if (matchesTerms(shape.wildcard, subject, predicate, object, context, batch, physicalRow)) {
+			if (matchesTerms(pattern, subject, predicate, object, context, batch, physicalRow)) {
 				matches = Math.addExact(matches, 1L);
 			}
 		}
-		return matches;
+		return row.cancellation.isCancellationRequested() ? 0L : matches;
 	}
 
 	private static boolean unrestrictedMultiplicity(Shape shape, NativeBatch batch, int physicalRow) {

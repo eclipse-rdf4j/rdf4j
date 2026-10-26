@@ -299,6 +299,14 @@ class CompactCsfPageReader {
 		return flag(CompactCsfPageFormat.FLAG_COMMON_CONTEXT);
 	}
 
+	/** Conservative header-only test on an already validated immutable page; mixed pages remain candidates. */
+	static boolean mayContainContext(long pageAddress, long rawContext) {
+		return rawContext < 0
+				|| (UnsafeAccess.getUnsignedShortLE(pageAddress + CompactCsfPageFormat.FLAGS_AT)
+						& CompactCsfPageFormat.FLAG_COMMON_CONTEXT) == 0
+				|| UnsafeAccess.getLongLE(pageAddress + CompactCsfPageFormat.COMMON_CONTEXT_AT) == rawContext;
+	}
+
 	long commonContext() {
 		if (!hasCommonContext()) {
 			throw new IllegalStateException("page does not have a common context");
@@ -326,6 +334,29 @@ class CompactCsfPageReader {
 		}
 		int vectorOffset = UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.ROW_IDS_OFFSET_AT);
 		return PackedLongVector.nativeGet(pageAddress + vectorOffset, rowIndex);
+	}
+
+	/** Reads only row-size metadata, preserving source-slice ordinals without binding pair payload columns. */
+	static int trustedRowQuadCount(long pageAddress, int rowIndex) {
+		int rows = UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.ROW_COUNT_AT);
+		if (rows == 1) {
+			return UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.QUAD_COUNT_AT);
+		}
+		int flags = UnsafeAccess.getUnsignedShortLE(pageAddress + CompactCsfPageFormat.FLAGS_AT);
+		if ((flags & CompactCsfPageFormat.FLAG_ROW_QUAD_EQUALS_NEIGHBOR) == 0) {
+			long counts = pageAddress
+					+ UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.ROW_QUAD_COUNTS_OFFSET_AT);
+			return Math.toIntExact(PackedLongVector.nativeGet(counts, rowIndex));
+		}
+		if ((flags & CompactCsfPageFormat.FLAG_ROW_NEIGHBOR_ONE) != 0) {
+			return 1;
+		}
+		long starts = pageAddress
+				+ UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.ROW_FIBER_STARTS_OFFSET_AT);
+		long from = PackedLongVector.nativeGet(starts, rowIndex);
+		long to = rowIndex + 1 == rows ? UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.FIBER_COUNT_AT)
+				: PackedLongVector.nativeGet(starts, rowIndex + 1);
+		return Math.toIntExact(to - from);
 	}
 
 	int findRow(long row) {

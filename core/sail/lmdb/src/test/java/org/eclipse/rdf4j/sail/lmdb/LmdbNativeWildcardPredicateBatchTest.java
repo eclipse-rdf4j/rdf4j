@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIrTestAccess;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbWildcardPredicateBatchCancellationTestAccess;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -88,6 +89,156 @@ class LmdbNativeWildcardPredicateBatchTest {
 		System.clearProperty(LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY);
 		System.clearProperty(LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_INCOMING_PROPERTY);
 		System.clearProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY);
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "payload", "optional", "optional-single", "lateral", "fixed-optional",
+			"fixed-optional-single", "parallel-payload", "predicate-major" })
+	void cancellationStopsGraphDisjointSpanWindows(String mode) throws Exception {
+		System.setProperty(NATIVE_BATCH_PROPERTY, "true");
+		System.setProperty(LmdbNativeKernelIrTestAccess.WILDCARD_BATCH_PROPERTY, "true");
+		System.setProperty(PARALLEL_PROPERTY, Boolean.toString(mode.equals("parallel-payload")));
+		System.setProperty(PARALLEL_MIN_WORK_PROPERTY, "0");
+		System.setProperty(PARALLEL_THREADS_PROPERTY, "1");
+		System.setProperty(PARALLEL_MAX_TASKS_PROPERTY, "1");
+		LmdbWildcardPredicateBatchCancellationTestAccess.assertCancellationStopsSkippedSpans(mode);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void graphDisjointBatchJoinsSkipPayloadAcrossDirectAndRoutedDemands(boolean routed, @TempDir File dataDir) {
+		open(dataDir, routed);
+		try (RepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			connection.add(vf.createIRI(NS, "cold-graph-subject"), vf.createIRI(NS, "cold-graph-predicate"),
+					vf.createIRI(NS, "cold-graph-object"), vf.createIRI(NS, "other-graph"));
+		}
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
+		List<String> queries = List.of(
+				"SELECT ?a ?p ?v WHERE { VALUES ?a { ex:s0 ex:s1 } GRAPH ex:other-graph { ?a ?p ?v } }",
+				"SELECT DISTINCT ?p WHERE { VALUES ?a { ex:s0 ex:s1 } GRAPH ex:other-graph { ?a ?p ?v } }",
+				"SELECT ?a ?p (COUNT(*) AS ?n) WHERE { VALUES ?a { ex:s0 ex:s1 } "
+						+ "GRAPH ex:other-graph { ?a ?p ?v } } GROUP BY ?a ?p",
+				"SELECT ?a ?p ?v WHERE { VALUES ?a { ex:s0 ex:s1 } OPTIONAL { "
+						+ "GRAPH ex:other-graph { ?a ?p ?v } } }",
+				"SELECT ?a ?p ?v WHERE { VALUES ?a { ex:s0 ex:s1 } GRAPH ex:other-graph { ?v ?p ?a } }");
+		for (String body : queries) {
+			String query = "PREFIX ex: <" + NS + "> " + body;
+			System.setProperty(NATIVE_ENGINE_PROPERTY, "false");
+			List<String> expected = allRows(query);
+			System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+			long batches = LmdbNativeKernelIrTestAccess.wildcardBatches();
+			long payload = LmdbNativeKernelIrTestAccess.wildcardPayloadRowsDecoded();
+			assertThat(allRows(query)).containsExactlyElementsOf(expected);
+			assertThat(LmdbNativeKernelIrTestAccess.wildcardBatches()).isGreaterThan(batches);
+			assertThat(LmdbNativeKernelIrTestAccess.wildcardPayloadRowsDecoded() - payload)
+					.as("graph-disjoint direct/routed payload, scalar, grouped and OPTIONAL demands: %s", body)
+					.isZero();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void contextRestrictedBatchJoinsPreserveBagsAndCorrelation(boolean routed, @TempDir File dataDir) {
+		open(dataDir, routed);
+		try (RepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			IRI s0 = vf.createIRI(NS, "s0");
+			IRI s1 = vf.createIRI(NS, "s1");
+			IRI common = vf.createIRI(NS, "common");
+			IRI mixed = vf.createIRI(NS, "mixed");
+			IRI g1 = vf.createIRI(NS, "g1");
+			IRI g2 = vf.createIRI(NS, "g2");
+			connection.begin();
+			connection.add(s0, common, vf.createIRI(NS, "o0"), g1, g2);
+			connection.add(s0, mixed, vf.createIRI(NS, "default-only"));
+			connection.add(s0, mixed, vf.createIRI(NS, "o1"), g1);
+			connection.add(s0, mixed, vf.createIRI(NS, "o2"), g2);
+			connection.add(s1, mixed, s1, g1);
+			connection.add(s0, g1, g1, g1);
+			connection.add(g1, mixed, s0, g1);
+			connection.add(vf.createIRI(NS, "unrelated"), mixed, s1, vf.createIRI(NS, "missing-graph"));
+			connection.commit();
+		}
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
+		System.setProperty(NATIVE_BATCH_ROWS_PROPERTY, "2");
+		List<String> queries = List.of(
+				"SELECT ?s ?g ?p ?o WHERE { VALUES (?s ?g) { (ex:s0 ex:g1) (ex:s0 ex:g2) "
+						+ "(ex:s0 ex:g1) (ex:s1 ex:g1) (ex:s0 ex:missing-graph) } GRAPH ?g { ?s ?p ?o } }",
+				"SELECT ?s ?g ?p (COUNT(*) AS ?n) WHERE { VALUES (?s ?g) { (ex:s0 ex:g1) "
+						+ "(ex:s0 ex:g2) (ex:s0 ex:g1) } GRAPH ?g { ?s ?p ?o } } GROUP BY ?s ?g ?p",
+				"SELECT DISTINCT ?p WHERE { VALUES (?s ?g) { (ex:s0 ex:g1) (ex:s0 ex:g2) } "
+						+ "GRAPH ?g { ?s ?p ?o } }",
+				"SELECT ?s ?g ?p ?o WHERE { VALUES (?s ?g) { (ex:s0 ex:g1) (ex:s0 ex:g2) "
+						+ "(ex:s0 ex:missing-graph) } OPTIONAL { GRAPH ?g { ?s ?p ?o } } }",
+				"SELECT ?s ?g ?o WHERE { VALUES (?s ?g) { (ex:s0 ex:g1) (ex:s0 ex:g2) "
+						+ "(ex:s0 ex:missing-graph) } OPTIONAL { GRAPH ?g { ?s ex:common ?o } } }",
+				"SELECT ?s ?g ?p ?o WHERE { VALUES (?o ?g) { (ex:o0 ex:g1) (ex:o0 ex:g2) "
+						+ "(ex:o0 ex:g1) (ex:o1 ex:g1) } GRAPH ?g { ?s ?p ?o } }",
+				"SELECT ?s ?g ?p ?o FROM NAMED ex:g1 FROM NAMED ex:g2 WHERE { "
+						+ "VALUES ?s { ex:s0 ex:s0 ex:s1 } GRAPH ?g { ?s ?p ?o } }",
+				"SELECT ?s ?p ?o FROM ex:g1 FROM ex:g2 WHERE { VALUES ?s { ex:s0 ex:s0 ex:s1 } ?s ?p ?o }",
+				"SELECT ?s ?p WHERE { VALUES ?s { ex:s0 ex:s1 } GRAPH ex:g1 { ?s ?p ?s } }",
+				"SELECT ?s ?g ?p WHERE { VALUES ?s { ex:s0 ex:s1 } GRAPH ?g { ?s ?p ?g } }",
+				"SELECT ?s ?g ?o WHERE { VALUES ?s { ex:s0 ex:s1 } GRAPH ?g { ?s ?g ?o } }",
+				"SELECT ?g ?p ?o WHERE { VALUES ?g { ex:g1 ex:g2 } GRAPH ?g { ?g ?p ?o } }",
+				"SELECT ?s ?g WHERE { VALUES (?s ?g) { (ex:s0 ex:g1) (ex:s0 ex:missing-graph) } "
+						+ "FILTER EXISTS { GRAPH ?g { ?s ?p ?o } } }",
+				"SELECT ?s ?g WHERE { VALUES (?s ?g) { (ex:s0 ex:g1) (ex:s0 ex:missing-graph) } "
+						+ "FILTER NOT EXISTS { GRAPH ?g { ?s ?p ?o } } }",
+				"SELECT ?s ?g WHERE { VALUES (?s ?g) { (ex:s0 ex:g1) (ex:s0 ex:missing-graph) } "
+						+ "MINUS { GRAPH ?g { ?s ?p ?o } } }");
+		for (String body : queries) {
+			String query = "PREFIX ex: <" + NS + "> " + body;
+			System.setProperty(NATIVE_ENGINE_PROPERTY, "false");
+			List<String> expected = allRows(query);
+			assertThat(expected).as("fixture should exercise %s", body).isNotEmpty();
+			System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+			assertThat(allRows(query)).as("routed=%s query=%s", routed, body).containsExactlyElementsOf(expected);
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void predicateMajorContextSpansKeepRawParallelWindowsAligned(boolean parallel, @TempDir File dataDir) {
+		open(dataDir);
+		try (RepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			connection.begin();
+			for (int neighbor = 0; neighbor < 5; neighbor++) {
+				connection.add(vf.createIRI(NS, "named-root"), vf.createIRI(NS, "named-predicate"),
+						vf.createIRI(NS, "named-object" + neighbor), vf.createIRI(NS, "selected-graph"));
+			}
+			connection.add(vf.createIRI(NS, "rejected-root"), vf.createIRI(NS, "rejected-predicate"),
+					vf.createIRI(NS, "rejected-object"), vf.createIRI(NS, "rejected-graph"));
+			connection.commit();
+		}
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
+		System.setProperty(NATIVE_BATCH_ROWS_PROPERTY, "2");
+		System.setProperty(PARALLEL_PROPERTY, Boolean.toString(parallel));
+		System.setProperty(PARALLEL_MIN_WORK_PROPERTY, "0");
+		System.setProperty(PARALLEL_STARTUP_WORK_PROPERTY, "1.0E12");
+		System.setProperty(PARALLEL_THREADS_PROPERTY, "2");
+		System.setProperty(PARALLEL_MAX_TASKS_PROPERTY, "2");
+		List<String> queries = List.of(
+				"SELECT ?s ?p ?o WHERE { GRAPH ex:selected-graph { ?s ?p ?o } }",
+				"SELECT DISTINCT ?p WHERE { GRAPH ex:selected-graph { ?s ?p ?o } }",
+				"SELECT ?s ?p (COUNT(*) AS ?n) WHERE { GRAPH ex:selected-graph { ?s ?p ?o } } GROUP BY ?s ?p");
+		for (int selection = 0; selection < queries.size(); selection++) {
+			String query = "PREFIX ex: <" + NS + "> " + queries.get(selection);
+			System.setProperty(NATIVE_ENGINE_PROPERTY, "false");
+			List<String> expected = allRows(query);
+			System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+			long payload = LmdbNativeKernelIrTestAccess.wildcardPayloadRowsDecoded();
+			long payloadRounds = LmdbNativeKernelIrTestAccess.wildcardParallelPayloadRounds();
+			assertThat(allRows(query)).containsExactlyElementsOf(expected);
+			assertThat(LmdbNativeKernelIrTestAccess.wildcardPayloadRowsDecoded() - payload)
+					.as("only selected payload rows should be decoded; parallel=%s query=%s", parallel, query)
+					.isEqualTo(selection == 0 ? 5L : 0L);
+			if (parallel && selection == 0) {
+				assertThat(LmdbNativeKernelIrTestAccess.wildcardParallelPayloadRounds()).isGreaterThan(payloadRounds);
+			}
+		}
 	}
 
 	@Test
