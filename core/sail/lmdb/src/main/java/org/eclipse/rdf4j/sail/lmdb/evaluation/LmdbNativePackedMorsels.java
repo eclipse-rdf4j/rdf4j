@@ -699,7 +699,6 @@ final class LmdbNativePackedMorsels {
 				try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.inherit(probeDeadline);
 						NativeExecutionPhaseEvent.InputScope inputPhases = NativeExecutionPhaseEvent
 								.inputScope(execution.cancellation)) {
-					NativeExecutionPhaseEvent.activateInput("scan", execution.cancellation);
 					runWorker(index);
 					if (!execution.stopped()) {
 						inputPhases.complete();
@@ -736,6 +735,9 @@ final class LmdbNativePackedMorsels {
 					if (job.morsels == null && !job.once.compareAndSet(false, true))
 						continue;
 					if (workerJob != at) {
+						// The scan lifetime starts with the worker's first job: a pool thread can run a later
+						// worker task of this query that finds every job taken, and that task read nothing.
+						NativeExecutionPhaseEvent.activateInput("scan", execution.cancellation);
 						// The shared job head only moves forwards. Retain one pipeline per worker, not every
 						// already-drained UNION arm's native probes and decoded-value memo until query end.
 						WorkerPlan previous = worker;

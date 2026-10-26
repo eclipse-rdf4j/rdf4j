@@ -23,6 +23,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -316,6 +318,33 @@ class LmdbNativePackedMorselsTest {
 		}
 		for (RecordedEvent event : workers) {
 			assertEquals("COMPLETED", event.getString("outcome"));
+		}
+	}
+
+	@Test
+	void workerTasksQueuedBehindOneAnotherOnOnePoolThreadPublishOneInputLifetime(@TempDir Path recordingDirectory)
+			throws Exception {
+		// A warm pool hands a worker task to whichever thread is free. With one free thread, every worker of the
+		// query runs there in turn; the first drains all jobs and the later ones find no work left.
+		ExecutorService pool = LmdbNativeParallelPipelines.pool();
+		int occupied = LmdbNativeParallelPipelines.MAX_POOL_TASKS - 1;
+		CountDownLatch busy = new CountDownLatch(occupied);
+		CountDownLatch release = new CountDownLatch(1);
+		try {
+			for (int i = 0; i < occupied; i++) {
+				pool.execute(() -> {
+					busy.countDown();
+					try {
+						release.await();
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+					}
+				});
+			}
+			assertTrue(busy.await(30, TimeUnit.SECONDS), "all but one pool thread are busy");
+			packedWorkersCoalesceInputPhasesAcrossAllTheirMorsels(recordingDirectory);
+		} finally {
+			release.countDown();
 		}
 	}
 
