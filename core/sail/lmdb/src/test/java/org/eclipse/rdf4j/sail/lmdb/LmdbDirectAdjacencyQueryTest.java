@@ -252,6 +252,29 @@ class LmdbDirectAdjacencyQueryTest {
 		}
 	}
 
+	/**
+	 * The statement-lookup counterpart of {@link #awaitExactViewServesGraphCount()}: probes the generic dataset's
+	 * multi-context lookup until the exact view serves it rather than a recorded maintenance gap routing it to LMDB.
+	 */
+	private void awaitExactViewServesMultiContextStatements() throws IOException {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+		while (System.nanoTime() < deadline) {
+			try (CloseableDataset dataset = dataset()) {
+				long hitsBefore = direct.snapshotMetrics().lookupHits;
+				assertThat(collectStatements(dataset.dataset.getStatements(S1, P1, null, null, G1))).hasSize(2);
+				if (direct.snapshotMetrics().lookupHits > hitsBefore) {
+					return;
+				}
+			}
+			try {
+				Thread.sleep(25);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new AssertionError("interrupted while waiting for the exact view to serve statements", e);
+			}
+		}
+	}
+
 	private void awaitDirectAdjacencyReady() {
 		try {
 			assertThat(sail.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS))
@@ -530,6 +553,7 @@ class LmdbDirectAdjacencyQueryTest {
 	@Test
 	void genericSailDatasetMultiContextIteratorRetainsAndReleasesItsAdjacencyLease() throws IOException {
 		openPreferStore();
+		awaitExactViewServesMultiContextStatements();
 		org.eclipse.rdf4j.sail.base.SailDataset dataset = backing.getExplicitSailSource()
 				.dataset(IsolationLevels.SNAPSHOT);
 		try {
