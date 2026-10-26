@@ -95,6 +95,12 @@ These formats are automatic RDF input decoding, not additional HTTP content codi
 
 Decoder allocation is limited to 64 MiB by default. Set the Java system property `org.eclipse.rdf4j.rio.compression.maxDecoderMemoryKiB` to a positive KiB value to change that limit. The aggregate ZIP-and-TAR entry limit is 50,000 and can be configured with `org.eclipse.rdf4j.rio.loader.max_archive_entries`; the existing ZIP-specific limit remains in force as well.
 
+### Transaction XML request staging
+
+RDF4J Server stages a `POST` transaction XML request in a temporary file and validates the complete document before executing its operations. This keeps the server from retaining every operation in memory and prevents malformed later XML from triggering earlier operations on repository backends that apply some calls immediately. The temporary file is removed after processing.
+
+The default maximum transaction XML body size is 256 MiB. Set the Java system property `org.eclipse.rdf4j.server.transaction.maxXmlBytes` to a positive byte count to raise or lower it. Requests over the limit receive HTTP 413. The default staging directory is the JVM temporary directory; set `org.eclipse.rdf4j.server.transaction.spoolDirectory` to a writable directory with sufficient free space if needed. Transactions larger than the configured limit must be split or the limit raised. A single large literal or operation still has to fit in parser memory.
+
 ### Configuring RDF4J Workbench for UTF-8 Support
 
 #### UTF-8 in the Request URI (GET)
