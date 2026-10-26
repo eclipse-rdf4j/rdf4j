@@ -33,6 +33,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -334,6 +335,67 @@ class LmdbDirectAdjacencyQueryTest {
 
 		assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
 		assertThat(direct.snapshotMetrics().activeViews).isZero();
+	}
+
+	@Test
+	void selectedPredicateFirstCommittedWhileABuildStartsKeepsItsBaseRows() throws Exception {
+		System.setProperty(LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY, "true");
+		System.setProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY, "true");
+		sail = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc").setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+				.setDirectAdjacencyMaxBytes(1L << 30)
+				.setDirectAdjacencyCoverage(DirectAdjacencyCoverage.SELECTED)
+				.setDirectAdjacencyPredicates(List.of(P1)));
+		repo = new SailRepository(sail);
+		repo.init();
+		backing = sail.getBackingStore();
+		direct = backing.directAdjacencyStore();
+		awaitDirectAdjacencyReady();
+		long buildsBefore = direct.snapshotMetrics().buildsCompleted;
+		// The selected predicate's first statement commits after the build has started but before it pins its
+		// snapshot, as on CI, where the store's first commit raced its first build.
+		CountDownLatch committed = new CountDownLatch(1);
+		AtomicReference<Throwable> commitFailure = new AtomicReference<>();
+		direct.beforeBuildSnapshotForTest = () -> {
+			direct.beforeBuildSnapshotForTest = null;
+			Thread writer = new Thread(() -> {
+				try (RepositoryConnection conn = repo.getConnection()) {
+					conn.add(S1, P1, O1);
+				} catch (Throwable failure) {
+					commitFailure.set(failure);
+				} finally {
+					committed.countDown();
+				}
+			});
+			writer.start();
+			try {
+				assertThat(committed.await(20, TimeUnit.SECONDS)).as("the racing commit completes").isTrue();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
+		};
+		direct.scheduleQuiescentRebuild();
+		assertThat(committed.await(30, TimeUnit.SECONDS)).isTrue();
+		assertThat(commitFailure.get()).isNull();
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+		while (direct.snapshotMetrics().buildsCompleted == buildsBefore && System.nanoTime() < deadline) {
+			Thread.onSpinWait();
+		}
+		awaitDirectAdjacencyReady();
+		String base = sail.getDirectAdjacencyReadinessDescription();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			conn.add(S1, P1, O2, G1);
+		}
+		awaitDirectAdjacencyReady();
+
+		try (CloseableDataset dataset = dataset()) {
+			assertThat(collectStatements(dataset.dataset.getStatements(S1, P1, null)))
+					.as("after the rebuild %s; now %s", base, sail.getDirectAdjacencyReadinessDescription())
+					.containsExactlyInAnyOrder(
+							F.createStatement(S1, P1, O1),
+							F.createStatement(S1, P1, O2, G1));
+		}
 	}
 
 	@Test

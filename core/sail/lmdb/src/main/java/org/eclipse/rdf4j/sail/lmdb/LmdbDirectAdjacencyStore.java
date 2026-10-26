@@ -199,6 +199,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private final AtomicLong publicationWaitNanos = new AtomicLong();
 
 	private volatile boolean applierPausedForTest;
+	/** Test-only interleaving hook: runs once a build has started, before it pins its source snapshot. */
+	volatile Runnable beforeBuildSnapshotForTest;
 	/** Test-only interleaving hook: runs after the base scan completes and before online catch-up begins. */
 	volatile Runnable afterBuildScanForTest;
 	/** Test-only observation hook: runs before catch-up waits for a commit delta that has not arrived. */
@@ -3012,13 +3014,22 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				metrics.recordBuildAborted();
 				return;
 			}
-			LmdbAdjacencyCoverage coverage = resolveCoverage();
+			LmdbAdjacencyCoverage coverage;
 			LmdbInMemoryAdjacencyIndex index;
 			long baseRevision;
 			GapMarker capturedGap;
+			Runnable beforeSnapshot = beforeBuildSnapshotForTest;
+			if (beforeSnapshot != null) {
+				beforeSnapshot.run();
+			}
 			try (LmdbAdjacencyBuildTxnFamily sourceFamily = new LmdbAdjacencyBuildTxnFamily(tripleStore,
 					options.buildThreads())) {
 				baseRevision = sourceFamily.snapshotRevision();
+				// Resolve selected predicates only after pinning: a dictionary ID always commits before the triples
+				// that use it, so every selected predicate with rows in this snapshot resolves. Resolved earlier, a
+				// predicate first committed in between would leave its rows out of the base, and its next delta would
+				// then treat it as absent from the base and drop them.
+				coverage = resolveCoverage();
 				capturedGap = emergencyGap.get();
 				account.beginProgressLogging();
 				logger.info("Creating in-memory adjacency structures: format=paged-csf, snapshotRevision={}, {}",
