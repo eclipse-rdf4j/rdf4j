@@ -45,20 +45,4 @@ public class Base64Decode extends EncodingFunction {
 		}
 		return valueFactory.createLiteral(utf8(decoded));
 	}
-
-	private static String stripWhitespace(String s) {
-		StringBuilder sb = null;
-		for (int i = 0; i < s.length(); i++) {
-			char c = s.charAt(i);
-			if (Character.isWhitespace(c)) {
-				if (sb == null) {
-					sb = new StringBuilder(s.length());
-					sb.append(s, 0, i);
-				}
-			} else if (sb != null) {
-				sb.append(c);
-			}
-		}
-		return sb == null ? s : sb.toString();
-	}
 }

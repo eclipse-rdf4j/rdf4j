@@ -13,7 +13,7 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
 const fs = require('node:fs');
-const { serverBaseUrl, workbenchBaseUrl } = require('./workbench-test-helpers.js');
+const { postWorkbench, serverBaseUrl, workbenchBaseUrl } = require('./workbench-test-helpers.js');
 
 // Migrated with the redesign (see .agent/execplans/workbench-stale-spec-migration-20261002.md): results and
 // explanations are tabs of one output card (#query-output, plan task M3.3), so the result card's outer edge is that
@@ -249,7 +249,7 @@ test.beforeAll(async ({ request }) => {
 test.afterAll(async ({ request }) => {
     if (!repositoryCreated) return;
     if (savedQueryUrn) {
-        const removed = await request.post(`${WORKBENCH}/repositories/${REPOSITORY}/saved-queries`, {
+        const removed = await postWorkbench(request, `${WORKBENCH}/repositories/${REPOSITORY}/saved-queries`, {
             form: { delete: savedQueryUrn }
         });
         expect([200, 204]).toContain(removed.status());
@@ -261,7 +261,7 @@ test.afterAll(async ({ request }) => {
 
 test.afterEach(async ({ request }) => {
     if (!savedQueryUrn) return;
-    const removed = await request.post(`${WORKBENCH}/repositories/${REPOSITORY}/saved-queries`, {
+    const removed = await postWorkbench(request, `${WORKBENCH}/repositories/${REPOSITORY}/saved-queries`, {
         form: { delete: savedQueryUrn }
     });
     expect([200, 204]).toContain(removed.status());

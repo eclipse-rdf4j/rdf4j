@@ -37,6 +37,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
 
 import java.io.ByteArrayInputStream;
+import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -47,6 +48,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CountDownLatch;
 
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
@@ -54,6 +57,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.bulk.BulkCapacityPolicy;
 import org.eclipse.rdf4j.sail.lmdb.bulk.LmdbBulkLoader;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -606,35 +610,47 @@ class LmdbPreparedBulkStoreTest {
 	@Test
 	void reusableFreeIdsDoNotTriggerStartupRecovery() throws Exception {
 		Path target = directory.resolve("reusable-ids");
-		LmdbStoreConfig config = new LmdbStoreConfig();
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc");
+		StringBuilder input = new StringBuilder();
+		for (int index = 0; index < 200; index++) {
+			input.append("<urn:delete:")
+					.append(index)
+					.append("> <urn:p> \"value ")
+					.append(index)
+					.append("\" .\n");
+		}
+		load(target, config, input.toString());
 		LmdbStore store = new LmdbStore(target.toFile(), config);
 		SailRepository repository = new SailRepository(store);
 		try {
 			repository.init();
+			LmdbTestUtil.awaitPostReadyInitialization(store, 30L, java.util.concurrent.TimeUnit.SECONDS);
+			assertTrue(store.awaitIndexRebuild(30L, java.util.concurrent.TimeUnit.SECONDS),
+					store.getStartupStatus().toString());
 			try (var connection = repository.getConnection()) {
-				var values = SimpleValueFactory.getInstance();
-				connection.begin();
-				for (int index = 0; index < 200; index++) {
-					connection.add(values.createIRI("urn:delete:" + index), values.createIRI("urn:p"),
-							values.createLiteral("value " + index));
-				}
-				connection.commit();
 				connection.clear();
 			}
-			store.getBackingStore().recoverRetiredValueIds();
-			assertFalse(store.getBackingStore().hasRetiredValueIds());
+			drainRetirementsAndAssertUnusedIds(store);
+			assertTrue(store.awaitIndexRebuild(30L, java.util.concurrent.TimeUnit.SECONDS),
+					store.getStartupStatus().toString());
 		} finally {
 			repository.shutDown();
 		}
 		assertTrue(entryCount(target.resolve("values"), "unused_ids") > 0L,
 				"normal retirement must leave a real deferred reclamation obligation");
 		List<LmdbStartupDiagnostics.Operation> operations = new ArrayList<>();
-		openAndObserve(target, config, 0L, operations);
-		assertEquals(List.of(LmdbStartupDiagnostics.Operation.VALUE_RECLAMATION,
-				LmdbStartupDiagnostics.Operation.VALUE_RECLAMATION), operations,
-				"pending unused IDs justify targeted reclamation, without catalog or refcount scans");
-		long reusable = entryCount(target.resolve("values"), "free_ids");
-		assertTrue(reusable > 0L, "the fixture must contain a real reusable ID pool");
+		long unusedBeforeStartup = entryCount(target.resolve("values"), "unused_ids");
+		assertTrue(unusedBeforeStartup > 0L, "the prepared store must retain its real unused-ID obligation");
+		var reclamation = new ConcurrentLinkedQueue<BoundedReclamationObservation>();
+		StartupObservation startup = openAndAwaitPostReadyMaintenance(target, config, 0L, operations, reclamation);
+		assertStartupMaintenanceWasBounded(startup, operations);
+		assertTrue(assertBoundedReclamationAttemptCompleted(startup, reclamation),
+				"a reusable free-ID fixture must exercise admitted native reclamation: " + startup
+						+ "; reclamation=" + reclamation);
+		assertTrue(startup.unusedIdsAfterPostReady() < unusedBeforeStartup,
+				"the real startup maintenance batch must reduce the persisted unused-ID cohort: " + startup);
+		assertTrue(startup.freeIdsAfterPostReady() > startup.freeIdsBeforeStartup(),
+				"the completed startup batch must publish reusable native IDs: " + startup);
 		assertPreparedOpening(target, config, 0L);
 	}
 
@@ -643,6 +659,11 @@ class LmdbPreparedBulkStoreTest {
 	void unknownTripleWriterCannotGainCleanStartupAuthority(boolean whileOpen) throws Exception {
 		Path target = directory.resolve("unknown-triple-writer-" + whileOpen);
 		LmdbStoreConfig config = new LmdbStoreConfig();
+		Statement original = SimpleValueFactory.getInstance()
+				.createStatement(
+						SimpleValueFactory.getInstance().createIRI("urn:s"),
+						SimpleValueFactory.getInstance().createIRI("urn:p"),
+						SimpleValueFactory.getInstance().createIRI("urn:o"));
 		load(target, config, "<urn:s> <urn:p> <urn:o> .\n");
 		if (whileOpen) {
 			SailRepository repository = new SailRepository(new LmdbStore(target.toFile(), config));
@@ -660,6 +681,19 @@ class LmdbPreparedBulkStoreTest {
 		openAndObserve(target, config, 1L, operations);
 		assertTrue(operations.contains(LmdbStartupDiagnostics.Operation.DISCOVERY),
 				"an unknown triple writer is concrete evidence requiring authoritative validation");
+		LmdbStore reopened = new LmdbStore(target.toFile(), config);
+		SailRepository repository = new SailRepository(reopened);
+		try {
+			repository.init();
+			try (var connection = repository.getConnection()) {
+				assertTrue(connection.hasStatement(original, false),
+						"the original row must remain visible after unknown external metadata changes");
+				assertEquals("urn:foreign:", connection.getNamespace("foreign"),
+						"the external namespace snapshot must remain intact");
+			}
+		} finally {
+			repository.shutDown();
+		}
 	}
 
 	@Test
@@ -667,11 +701,44 @@ class LmdbPreparedBulkStoreTest {
 		Path target = directory.resolve("external-writer");
 		LmdbStoreConfig config = new LmdbStoreConfig();
 		load(target, config, "<urn:s> <urn:p> <urn:o> .\n");
+		Map<Long, Long> authoritativeCounts = referenceCounts(target);
 		mutateNativeValues(target);
 		List<LmdbStartupDiagnostics.Operation> operations = new ArrayList<>();
-		openAndObserve(target, config, 1L, operations);
+		LmdbStore untrusted = new LmdbStore(target.toFile(), config);
+		SailRepository untrustedRepository = new SailRepository(untrusted);
+		LmdbStartupDiagnostics.OBSERVER.set(operations::add);
+		try {
+			untrustedRepository.init();
+			assertFalse(untrusted.getBackingStore().valueStore().hasTrustedReferenceCounts(),
+					"a raw writer must leave reference counts unknown until explicit offline reconstruction");
+			try (var connection = untrustedRepository.getConnection()) {
+				assertTrue(connection.hasStatement(SimpleValueFactory.getInstance().createIRI("urn:s"),
+						SimpleValueFactory.getInstance().createIRI("urn:p"),
+						SimpleValueFactory.getInstance().createIRI("urn:o"), false),
+						"the raw metadata write must not lose the original row");
+				assertEquals(1L, connection.size());
+			}
+		} finally {
+			untrustedRepository.shutDown();
+			LmdbStartupDiagnostics.OBSERVER.remove();
+		}
+		LmdbStore.reconstructReferenceCountsOffline(target.toFile(), config);
+		assertEquals(authoritativeCounts, referenceCounts(target),
+				"closed-directory reconstruction must exactly match the pre-mutation live-owner oracle");
+		LmdbStore trusted = new LmdbStore(target.toFile(), config);
+		SailRepository trustedRepository = new SailRepository(trusted);
+		try {
+			trustedRepository.init();
+			assertTrue(trusted.getBackingStore().valueStore().hasTrustedReferenceCounts());
+			try (var connection = trustedRepository.getConnection()) {
+				assertEquals(1L, connection.size());
+			}
+		} finally {
+			trustedRepository.shutDown();
+		}
 		assertTrue(operations.contains(LmdbStartupDiagnostics.Operation.DISCOVERY));
-		assertTrue(operations.contains(LmdbStartupDiagnostics.Operation.REFCOUNT_REBUILD));
+		assertFalse(operations.contains(LmdbStartupDiagnostics.Operation.REFCOUNT_REBUILD),
+				"an ordinary startup must not promote an unknown external writer via a deep rebuild");
 	}
 
 	@Test
@@ -779,7 +846,7 @@ class LmdbPreparedBulkStoreTest {
 	@ValueSource(booleans = { false, true })
 	void firstPreparedOpeningSupportsMutationAndSharedTermGarbageCollection(boolean inline) throws Exception {
 		Path target = directory.resolve("first-write-" + inline);
-		LmdbStoreConfig config = new LmdbStoreConfig().setInlineLiterals(inline);
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setInlineLiterals(inline);
 		String inner = "<<( <urn:shared> <urn:p> \"shared\"@EN )>>";
 		String input = "<urn:remove> <urn:p> <<( <urn:outer> <urn:p> " + inner + " )>> .\n"
 				+ "<urn:keep> <urn:p> " + inner + " .\n";
@@ -791,6 +858,9 @@ class LmdbPreparedBulkStoreTest {
 		LmdbStartupDiagnostics.OBSERVER.set(operations::add);
 		try {
 			repository.init();
+			LmdbTestUtil.awaitPostReadyInitialization(store, 30L, java.util.concurrent.TimeUnit.SECONDS);
+			assertTrue(store.awaitIndexRebuild(10L, java.util.concurrent.TimeUnit.SECONDS),
+					store.getStartupStatus().toString());
 			assertEquals(List.of(), operations);
 			assertEquals(0L, store.getMapGrowthCount());
 			LmdbStartupDiagnostics.OBSERVER.remove();
@@ -801,24 +871,35 @@ class LmdbPreparedBulkStoreTest {
 			try (var connection = repository.getConnection()) {
 				assertEquals(2L, connection.size());
 				connection.remove(values.createIRI("urn:remove"), null, null);
-				store.getBackingStore().recoverRetiredValueIds();
-				assertFalse(store.getBackingStore().hasRetiredValueIds());
+			}
+			drainRetirementsAndAssertUnusedIds(store);
+			try (var connection = repository.getConnection()) {
 				assertTrue(connection.hasStatement(values.createIRI("urn:keep"), predicate, retained, false));
 				connection.add(values.createIRI("urn:new"), predicate, values.createLiteral("after gc"));
 				assertEquals(2L, connection.size());
 			}
+			assertTrue(store.awaitIndexRebuild(30L, java.util.concurrent.TimeUnit.SECONDS),
+					store.getStartupStatus().toString());
 		} finally {
 			repository.shutDown();
 			LmdbStartupDiagnostics.OBSERVER.remove();
 		}
 		assertEquals(capacities, mapSizes(target));
-		assertTrue(entryCount(target.resolve("values"), "unused_ids") > 0L,
+		long unusedBeforeStartup = entryCount(target.resolve("values"), "unused_ids");
+		assertTrue(unusedBeforeStartup > 0L,
 				"retired dictionary identities remain pending until their normal reclamation phase");
 		operations.clear();
-		openAndObserve(target, config, 2L, operations);
-		assertEquals(List.of(LmdbStartupDiagnostics.Operation.VALUE_RECLAMATION,
-				LmdbStartupDiagnostics.Operation.VALUE_RECLAMATION), operations,
-				"pending IDs justify targeted reclamation, without catalog or refcount scans");
+		var reclamation = new ConcurrentLinkedQueue<BoundedReclamationObservation>();
+		StartupObservation startup = openAndAwaitPostReadyMaintenance(target, config, 2L, operations, reclamation);
+		assertStartupMaintenanceWasBounded(startup, operations);
+		boolean admitted = assertBoundedReclamationAttemptCompleted(startup, reclamation);
+		if (admitted) {
+			assertTrue(startup.unusedIdsAfterPostReady() < unusedBeforeStartup,
+					"the admitted startup maintenance batch must reduce the unused dictionary cohort: " + startup
+							+ "; reclamation=" + reclamation);
+			assertTrue(startup.freeIdsAfterPostReady() > startup.freeIdsBeforeStartup(),
+					"the completed maintenance batch must publish reusable IDs: " + startup);
+		}
 		assertPreparedOpening(target, config, 2L);
 		SailRepository reopened = new SailRepository(new LmdbStore(target.toFile(), config));
 		try {
@@ -842,7 +923,7 @@ class LmdbPreparedBulkStoreTest {
 	@ValueSource(booleans = { false, true })
 	void certifiedReferenceCountsMatchLiveOwnerReconstructionAndGc(boolean inline) throws Exception {
 		Path target = directory.resolve("reference-counts-" + inline);
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setInlineLiterals(inline)
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setInlineLiterals(inline)
 				.setValueHashCacheEnabled(true)
 				.setTripleTermIndexes("spoc,cspo,posc");
 		String row = "<urn:owner> <urn:p> <<( <urn:same> <urn:same> "
@@ -862,19 +943,41 @@ class LmdbPreparedBulkStoreTest {
 		Files.delete(target.resolve(PreparedBulkStore.FILE_NAME));
 		mutateNativeValues(target);
 		List<LmdbStartupDiagnostics.Operation> operations = new ArrayList<>();
-		openAndObserve(target, config, 7L, operations);
-		assertTrue(operations.contains(LmdbStartupDiagnostics.Operation.REFCOUNT_REBUILD));
+		LmdbStore untrusted = new LmdbStore(target.toFile(), config);
+		SailRepository untrustedRepository = new SailRepository(untrusted);
+		LmdbStartupDiagnostics.OBSERVER.set(operations::add);
+		try {
+			untrustedRepository.init();
+			assertFalse(untrusted.getBackingStore().valueStore().hasTrustedReferenceCounts(),
+					"removing the preparation seal and writing externally must leave counts UNKNOWN");
+			try (var connection = untrustedRepository.getConnection()) {
+				assertEquals(7L, connection.size(), "unknown counts must not hide any imported rows");
+			}
+		} finally {
+			untrustedRepository.shutDown();
+			LmdbStartupDiagnostics.OBSERVER.remove();
+		}
+		assertFalse(operations.contains(LmdbStartupDiagnostics.Operation.REFCOUNT_REBUILD),
+				"ordinary startup must not turn an unknown raw write into certified counts");
+		LmdbStore.reconstructReferenceCountsOffline(target.toFile(), config);
 		assertEquals(certified, referenceCounts(target),
-				"generated counts must match live owner reconstruction exactly");
+				"closed-directory reconstruction must match the live-owner count oracle exactly");
 		LmdbStore store = new LmdbStore(target.toFile(), config);
 		SailRepository repository = new SailRepository(store);
 		try {
 			repository.init();
+			LmdbTestUtil.awaitPostReadyInitialization(store, 30L, java.util.concurrent.TimeUnit.SECONDS);
+			assertTrue(store.awaitIndexRebuild(10L, java.util.concurrent.TimeUnit.SECONDS),
+					store.getStartupStatus().toString());
+			assertTrue(store.getBackingStore().valueStore().hasTrustedReferenceCounts());
 			try (var connection = repository.getConnection()) {
+				assertEquals(7L, connection.size());
 				connection.clear();
 				assertEquals(0L, connection.size());
-				store.getBackingStore().recoverRetiredValueIds();
-				assertFalse(store.getBackingStore().hasRetiredValueIds());
+			}
+			LmdbGcTestMaintenance.drainRetirements(store.getBackingStore());
+			assertFalse(store.getBackingStore().hasRetiredValueIds());
+			try (var connection = repository.getConnection()) {
 				var values = SimpleValueFactory.getInstance();
 				connection.add(values.createIRI("urn:new"), values.createIRI("urn:p"),
 						values.createLiteral("after gc"));
@@ -883,7 +986,26 @@ class LmdbPreparedBulkStoreTest {
 		} finally {
 			repository.shutDown();
 		}
-		openAndObserve(target, config, 1L, new ArrayList<>());
+		assertPreparedOpening(target, config, 1L);
+		LmdbStore finalReopen = new LmdbStore(target.toFile(), config);
+		SailRepository finalRepository = new SailRepository(finalReopen);
+		try {
+			finalRepository.init();
+			LmdbTestUtil.awaitPostReadyInitialization(finalReopen, 30L, java.util.concurrent.TimeUnit.SECONDS);
+			assertTrue(finalReopen.awaitIndexRebuild(10L, java.util.concurrent.TimeUnit.SECONDS),
+					finalReopen.getStartupStatus().toString());
+			assertTrue(finalReopen.getStartupStatus().exactReferenceCounts(),
+					finalReopen.getStartupStatus().toString());
+			try (var connection = finalRepository.getConnection()) {
+				assertEquals(1L, connection.size());
+				var values = SimpleValueFactory.getInstance();
+				assertTrue(connection.hasStatement(values.createIRI("urn:new"), values.createIRI("urn:p"),
+						values.createLiteral("after gc"), false),
+						"the inserted row must survive the final prepared reopen");
+			}
+		} finally {
+			finalRepository.shutDown();
+		}
 	}
 
 	private static void load(Path target, LmdbStoreConfig config, String input) throws IOException {
@@ -921,26 +1043,289 @@ class LmdbPreparedBulkStoreTest {
 	private static void assertPreparedOpening(Path target, LmdbStoreConfig config, long size) throws Exception {
 		List<Long> before = mapSizes(target);
 		List<LmdbStartupDiagnostics.Operation> operations = new ArrayList<>();
-		openAndObserve(target, config, size, operations);
-		assertEquals(List.of(), operations, "prepared opening must enter none of the scanning/recovery paths");
+		StartupReadCounts reads = openAndObserve(target, config, size, operations);
+		assertTrue(reads.nativeReads() <= 1_000L,
+				"prepared readiness must stay within the bounded logical native-read budget: " + reads);
+		assertEquals(0L, reads.treeDrops(), "prepared readiness must not drop or rebuild native trees");
+		for (LmdbStartupDiagnostics.Operation forbidden : List.of(LmdbStartupDiagnostics.Operation.REFCOUNT_REBUILD,
+				LmdbStartupDiagnostics.Operation.RETIREMENT_RECOVERY,
+				LmdbStartupDiagnostics.Operation.VALUE_RECLAMATION)) {
+			assertFalse(operations.contains(forbidden),
+					"prepared readiness must not run unbounded or foreground maintenance " + forbidden + ": "
+							+ operations);
+		}
 		assertEquals(before, mapSizes(target), "native map capacities must remain identical across startup and close");
 	}
 
-	private static void openAndObserve(Path target, LmdbStoreConfig config, long size,
+	private static StartupObservation openAndAwaitPostReadyMaintenance(Path target, LmdbStoreConfig config, long size,
 			List<LmdbStartupDiagnostics.Operation> operations) throws Exception {
-		LmdbStore store = new LmdbStore(target.toFile(), config);
-		SailRepository repository = new SailRepository(store);
+		return openAndAwaitPostReadyMaintenance(target, config, size, operations, null);
+	}
+
+	private static StartupObservation openAndAwaitPostReadyMaintenance(Path target, LmdbStoreConfig config, long size,
+			List<LmdbStartupDiagnostics.Operation> operations,
+			ConcurrentLinkedQueue<BoundedReclamationObservation> reclamation) throws Exception {
+		List<Long> capacitiesBefore = mapSizes(target);
+		LmdbStore store = null;
+		SailRepository repository = null;
+		StartupReadCounts reads;
+		LmdbStore.StartupStatus readinessAtInit;
+		LmdbStore.StartupStatus readinessAfterPostReady;
+		long unusedIdsAfterPostReady;
+		long freeIdsAfterPostReady;
+		long unusedIdsBeforeStartup = entryCount(target.resolve("values"), "unused_ids");
+		long freeIdsBeforeStartup = entryCount(target.resolve("values"), "free_ids");
+		long mapGrowthCountAtInit;
+		long mapGrowthCountAfterPostReady;
+		ScheduledMaintenanceGate gate = reclamation == null ? null
+				: new ScheduledMaintenanceGate(new CountDownLatch(1), new CountDownLatch(1));
 		LmdbStartupDiagnostics.OBSERVER.set(operations::add);
 		try {
-			repository.init();
+			try (LmdbStartupReadCounter counter = new LmdbStartupReadCounter()) {
+				store = reclamation == null ? new LmdbStore(target.toFile(), config)
+						: new StartupMaintenanceProbeStore(target.toFile(), config, reclamation, gate);
+				repository = new SailRepository(store);
+				repository.init();
+				readinessAtInit = store.getStartupStatus();
+				mapGrowthCountAtInit = store.getMapGrowthCount();
+				reads = new StartupReadCounts(counter.total(), counter.treeDrops(), counter.operations());
+			}
+			LmdbStartupDiagnostics.OBSERVER.remove();
+			if (gate != null) {
+				assertTrue(gate.scheduled().await(30L, java.util.concurrent.TimeUnit.SECONDS),
+						"the real post-ready worker must reach the pre-admission rendezvous");
+				LmdbStore.StartupStatus readinessWhileHeld = store.getStartupStatus();
+				assertEquals("RUNNING", readinessWhileHeld.auxiliaryMaintenance(),
+						"the post-ready worker must be held before native writer admission: " + readinessWhileHeld);
+				gate.release().countDown();
+			}
+			LmdbTestUtil.awaitPostReadyInitialization(store, 30L, java.util.concurrent.TimeUnit.SECONDS);
+			assertTrue(store.awaitIndexRebuild(30L, java.util.concurrent.TimeUnit.SECONDS),
+					store.getStartupStatus().toString());
+			readinessAfterPostReady = store.getStartupStatus();
+			mapGrowthCountAfterPostReady = store.getMapGrowthCount();
+			try (var connection = repository.getConnection()) {
+				assertEquals(size, connection.size());
+			}
+			Map<String, LmdbStore.LmdbDatabaseStats> stats = store.getBackingStore().valueStore().getLmdbStats();
+			unusedIdsAfterPostReady = stats.get("unused_ids").entries();
+			freeIdsAfterPostReady = stats.get("free_ids").entries();
+		} finally {
+			if (gate != null) {
+				gate.release().countDown();
+			}
+			if (repository != null) {
+				repository.shutDown();
+			}
+			LmdbStartupDiagnostics.OBSERVER.remove();
+		}
+		return new StartupObservation(reads, readinessAtInit, readinessAfterPostReady, unusedIdsBeforeStartup,
+				freeIdsBeforeStartup,
+				unusedIdsAfterPostReady, freeIdsAfterPostReady, mapGrowthCountAtInit, mapGrowthCountAfterPostReady,
+				capacitiesBefore, mapSizes(target));
+	}
+
+	private static boolean assertBoundedReclamationAttemptCompleted(StartupObservation startup,
+			ConcurrentLinkedQueue<BoundedReclamationObservation> observations) {
+		assertEquals("READY", startup.readinessAfterPostReady().auxiliaryMaintenance(),
+				"the owner must complete post-ready scheduling before native outcomes are inspected: "
+						+ startup.readinessAfterPostReady());
+		List<BoundedReclamationObservation> protectedAttempts = observations.stream()
+				.filter(event -> event.phase().equals("protected"))
+				.toList();
+		List<BoundedReclamationObservation> admittedAttempts = observations.stream()
+				.filter(event -> event.phase().equals("admitted"))
+				.toList();
+		List<BoundedReclamationObservation> visitedBatches = observations.stream()
+				.filter(event -> event.phase().equals("visited"))
+				.toList();
+		assertFalse(observations.isEmpty(), "the native reclamation decision must be observed");
+		assertTrue(observations.stream()
+				.allMatch(event -> List.of("protected", "admitted", "visited")
+						.contains(event.phase())),
+				"the pass must not be disabled or capacity-blocked: " + observations);
+		assertTrue(!protectedAttempts.isEmpty() || !admittedAttempts.isEmpty(),
+				"the pass must reach an actual protected or admitted decision: " + observations);
+		for (BoundedReclamationObservation event : protectedAttempts) {
+			assertTrue(event.requiredBytes() > 0L && event.occupiedBytes() == -1L && event.mapBytes() > 0L
+					&& event.visited() == -1,
+					"protected work must be observed before capacity measurement or candidate visitation: " + event);
+		}
+		for (BoundedReclamationObservation event : admittedAttempts) {
+			assertTrue(event.requiredBytes() > 0L && event.occupiedBytes() >= 0L && event.mapBytes() > 0L,
+					"admission must carry the actual capacity inputs: " + event);
+			assertFalse(new MapGrowthPolicy(0.10d).hardCapacityRequired(event.mapBytes(), event.occupiedBytes(),
+					event.requiredBytes()), "an admitted batch must fit below hard map capacity: " + event);
+		}
+		for (BoundedReclamationObservation event : visitedBatches) {
+			assertTrue(event.visited() > 0,
+					"an admitted batch must inspect real persisted candidates: " + event);
+		}
+		if (admittedAttempts.isEmpty()) {
+			assertFalse(protectedAttempts.isEmpty(), "a non-admitted pass needs a concrete protection outcome");
+			assertTrue(startup.readinessAfterPostReady().exactReferenceCounts(),
+					"protected reclamation must retain exact reference-count authority: "
+							+ startup.readinessAfterPostReady());
+			assertTrue(startup.readinessAfterPostReady().retainedValueMaintenance(),
+					"the protected native unused cohort must remain visibly pending: "
+							+ startup.readinessAfterPostReady());
+			assertTrue(startup.unusedIdsBeforeStartup() > 0L,
+					"a protected outcome must retain a real native unused-ID obligation: " + startup);
+			assertEquals(startup.unusedIdsBeforeStartup(), startup.unusedIdsAfterPostReady(),
+					"a protected pass must preserve the native unused-ID obligation: " + startup);
+			assertEquals(startup.freeIdsBeforeStartup(), startup.freeIdsAfterPostReady(),
+					"a protected pass must not publish reusable IDs: " + startup);
+			assertTrue(visitedBatches.isEmpty(), "protected values must not be visited: " + observations);
+			return false;
+		}
+		assertTrue(visitedBatches.stream().anyMatch(event -> event.visited() > 0),
+				"the admitted pass must inspect actual persisted candidates: " + observations);
+		assertTrue(startup.unusedIdsAfterPostReady() < startup.unusedIdsBeforeStartup(),
+				"an admitted pass must make native unused-ID progress: " + startup);
+		assertTrue(startup.freeIdsAfterPostReady() > startup.freeIdsBeforeStartup(),
+				"an admitted pass must publish reusable native IDs: " + startup);
+		return true;
+	}
+
+	private static void assertStartupMaintenanceWasBounded(StartupObservation startup,
+			List<LmdbStartupDiagnostics.Operation> callerOperations) {
+		String readiness = startup.readinessAtInit().toString();
+		assertTrue(startup.reads().nativeReads() <= 1_000L,
+				"constructor-to-init must stay within the bounded logical native-read budget: " + startup.reads()
+						+ "; readiness before post-ready waits: " + readiness);
+		assertEquals(0L, startup.reads().treeDrops(),
+				"constructor-to-init must not drop a native tree: " + startup.reads());
+		for (LmdbStartupDiagnostics.Operation forbidden : List.of(LmdbStartupDiagnostics.Operation.REFCOUNT_REBUILD,
+				LmdbStartupDiagnostics.Operation.RETIREMENT_RECOVERY,
+				LmdbStartupDiagnostics.Operation.VALUE_RECLAMATION)) {
+			assertFalse(callerOperations.contains(forbidden),
+					"caller-thread initialization must not perform " + forbidden + ": " + callerOperations);
+		}
+	}
+
+	private static long drainRetirementsAndAssertUnusedIds(LmdbStore store) throws IOException {
+		LmdbSailStore backingStore = store.getBackingStore();
+		LmdbGcTestMaintenance.drainRetirements(backingStore);
+		assertFalse(backingStore.hasRetiredValueIds(), "the finite eligible retirement cohort must be complete");
+		long unusedIds = backingStore.valueStore().getLmdbStats().get("unused_ids").entries();
+		assertTrue(unusedIds > 0L, "the completed setup cohort must leave real unused IDs for startup maintenance");
+		return unusedIds;
+	}
+
+	private static StartupReadCounts openAndObserve(Path target, LmdbStoreConfig config, long size,
+			List<LmdbStartupDiagnostics.Operation> operations) throws Exception {
+		LmdbStore store = null;
+		SailRepository repository = null;
+		StartupReadCounts reads;
+		LmdbStartupDiagnostics.OBSERVER.set(operations::add);
+		try {
+			try (LmdbStartupReadCounter counter = new LmdbStartupReadCounter()) {
+				store = new LmdbStore(target.toFile(), config);
+				repository = new SailRepository(store);
+				repository.init();
+				reads = new StartupReadCounts(counter.total(), counter.treeDrops(), counter.operations());
+			}
 			try (var connection = repository.getConnection()) {
 				assertEquals(size, connection.size());
 			}
 			assertEquals(0L, store.getMapGrowthCount(),
 					"bulk preparation must finish capacity growth before publication");
 		} finally {
-			repository.shutDown();
+			if (repository != null) {
+				repository.shutDown();
+			}
 			LmdbStartupDiagnostics.OBSERVER.remove();
+		}
+		return reads;
+	}
+
+	private record StartupReadCounts(long nativeReads, long treeDrops, Map<String, Long> operations) {
+	}
+
+	private record StartupObservation(StartupReadCounts reads, LmdbStore.StartupStatus readinessAtInit,
+			LmdbStore.StartupStatus readinessAfterPostReady,
+			long unusedIdsBeforeStartup, long freeIdsBeforeStartup, long unusedIdsAfterPostReady,
+			long freeIdsAfterPostReady, long mapGrowthCountAtInit, long mapGrowthCountAfterPostReady,
+			List<Long> mapSizesBeforeStartup, List<Long> mapSizesAfterPostReady) {
+	}
+
+	private record BoundedReclamationObservation(String phase, long requiredBytes, long occupiedBytes, long mapBytes,
+			int visited, long sampledReaderReservations, long sampledLegacyEpochs, String thread) {
+	}
+
+	private record ScheduledMaintenanceGate(CountDownLatch scheduled, CountDownLatch release) {
+	}
+
+	private static final class StartupMaintenanceProbeStore extends LmdbStore {
+
+		private final ConcurrentLinkedQueue<BoundedReclamationObservation> observations;
+		private final ScheduledMaintenanceGate gate;
+
+		private StartupMaintenanceProbeStore(File dataDir, LmdbStoreConfig config,
+				ConcurrentLinkedQueue<BoundedReclamationObservation> observations, ScheduledMaintenanceGate gate) {
+			super(dataDir, config);
+			this.observations = observations;
+			this.gate = gate;
+		}
+
+		@Override
+		LmdbSailStore createBackingStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
+				boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
+			LmdbSailStore.ValueStoreFactory valueStoreFactory = (valueDir, valueProperties,
+					valueConfig) -> new StartupMaintenanceProbeValueStore(valueDir, valueProperties, valueConfig,
+							observations);
+			return new StartupMaintenanceProbeSailStore(dataDir, properties, config, sketchBasedJoinEstimatorEnabled,
+					valueStoreFactory, gate);
+		}
+	}
+
+	private static final class StartupMaintenanceProbeSailStore extends LmdbSailStore {
+
+		private final ScheduledMaintenanceGate gate;
+
+		private StartupMaintenanceProbeSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
+				boolean sketchBasedJoinEstimatorEnabled, ValueStoreFactory valueStoreFactory,
+				ScheduledMaintenanceGate gate) throws IOException {
+			super(dataDir, properties, config, sketchBasedJoinEstimatorEnabled, valueStoreFactory, TripleStore::new);
+			this.gate = gate;
+		}
+
+		@Override
+		void beforePostReadyReclamationForTest() {
+			gate.scheduled().countDown();
+			try {
+				if (!gate.release().await(30L, java.util.concurrent.TimeUnit.SECONDS)) {
+					throw new IllegalStateException("Test did not release the scheduled post-ready reclamation batch");
+				}
+			} catch (InterruptedException interrupted) {
+				Thread.currentThread().interrupt();
+				throw new IllegalStateException("Scheduled reclamation rendezvous was interrupted", interrupted);
+			}
+		}
+	}
+
+	private static final class StartupMaintenanceProbeValueStore extends ValueStore {
+
+		private final ConcurrentLinkedQueue<BoundedReclamationObservation> observations;
+
+		private StartupMaintenanceProbeValueStore(File valueDir, StoreProperties properties, LmdbStoreConfig config,
+				ConcurrentLinkedQueue<BoundedReclamationObservation> observations) throws IOException {
+			super(valueDir, properties, config);
+			this.observations = observations;
+		}
+
+		@Override
+		void observeBoundedUnusedReclamationForTest(String phase, long requiredBytes, long occupiedBytes,
+				long mapBytes, int visited) {
+			long sampledReaderReservations = -1L;
+			long sampledLegacyEpochs = -1L;
+			if (phase.equals("protected")) {
+				ValueProtectionSnapshot snapshot = protectionSnapshotForTest();
+				sampledReaderReservations = snapshot.readerReservations();
+				sampledLegacyEpochs = snapshot.legacyEpochs();
+			}
+			observations.add(new BoundedReclamationObservation(phase, requiredBytes, occupiedBytes, mapBytes, visited,
+					sampledReaderReservations, sampledLegacyEpochs, Thread.currentThread().getName()));
 		}
 	}
 

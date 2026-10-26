@@ -13,12 +13,11 @@ package org.eclipse.rdf4j.http.server;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.ServerSocket;
+import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.EnumSet;
 import java.util.Map;
-import java.util.Properties;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 
@@ -83,8 +82,9 @@ public class TestServer {
 		SERVER_URL = serverUrl;
 		REPOSITORY_URL = Protocol.getRepositoryLocation(serverUrl, TEST_REPO_ID);
 
-		PropertiesReader reader = new PropertiesReader("maven-config.properties");
-		String webappDir = reader.getProperty("testserver.webapp.dir");
+		File testClasses = new File(
+				URI.create(TestServer.class.getProtectionDomain().getCodeSource().getLocation().toExternalForm()));
+		File webappDir = new File(testClasses.getParentFile(), "rdf4j-server");
 		logger.debug("build path: {}", webappDir);
 
 		jetty = new Server();
@@ -98,7 +98,7 @@ public class TestServer {
 		WebAppClassLoading.addProtectedClasses(jetty, "org.slf4j.", "ch.qos.logback.");
 		webapp.setContextPath(RDF4J_CONTEXT);
 		// warPath configured in pom.xml maven-war-plugin configuration
-		webapp.setWar("./target/rdf4j-server");
+		webapp.setWar(webappDir.getAbsolutePath());
 		if (Boolean.getBoolean("rdf4j.testserver.logRequests")) {
 			webapp.addFilter(RequestDebugFilter.class, "/*", EnumSet.of(DispatcherType.REQUEST));
 		}
@@ -296,21 +296,6 @@ public class TestServer {
 		sailRepConfig = new SailRepositoryConfig(shaclConfig);
 		repConfig = new RepositoryConfig(TEST_SHACL_REPO_ID, sailRepConfig);
 		manager.addRepositoryConfig(repConfig);
-	}
-
-	static class PropertiesReader {
-		private final Properties properties;
-
-		public PropertiesReader(String propertyFileName) throws IOException {
-			InputStream is = getClass().getClassLoader()
-					.getResourceAsStream(propertyFileName);
-			this.properties = new Properties();
-			this.properties.load(is);
-		}
-
-		public String getProperty(String propertyName) {
-			return this.properties.getProperty(propertyName);
-		}
 	}
 
 	private static int allocatePortAbove32768() throws IOException {

@@ -50,21 +50,31 @@ public class RegexpExtractAll extends StringFunction {
 		FunctionArgs.arity(function, args, 2, 4);
 		String s = FunctionArgs.string(function, args[0]);
 		String pattern = FunctionArgs.lexical(function, args[1]);
-		int group = 0;
+		Integer group = null;
 		String flags = null;
 		for (int i = 2; i < args.length; i++) {
 			if (FunctionArgs.isIntegerLiteral(args[i])) {
+				if (group != null) {
+					throw new ValueExprEvaluationException(
+							"Duplicate capture group argument for " + function.getURI());
+				}
 				group = FunctionArgs.toInt(function, args[i]);
 			} else {
+				if (flags != null) {
+					throw new ValueExprEvaluationException("Duplicate flags argument for " + function.getURI());
+				}
 				flags = FunctionArgs.lexical(function, args[i]);
 			}
 		}
+		if (group == null) {
+			group = 0;
+		}
 		Matcher matcher = RegexCache.compile(pattern, flags).matcher(s);
+		if (group < 0 || group > matcher.groupCount()) {
+			throw new ValueExprEvaluationException("Invalid capture group " + group + " for " + function.getURI());
+		}
 		List<String> matches = new ArrayList<>();
 		while (matcher.find()) {
-			if (group < 0 || group > matcher.groupCount()) {
-				throw new ValueExprEvaluationException("Invalid capture group " + group + " for " + function.getURI());
-			}
 			String matched = matcher.group(group);
 			matches.add(matched == null ? "" : matched);
 		}

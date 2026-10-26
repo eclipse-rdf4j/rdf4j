@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.model.vocabulary.WINF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
+import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
@@ -362,7 +363,36 @@ public class TupleExprToIrConverter {
 			sb.append(")");
 			return sb.toString();
 		}
+		if (op instanceof AggregateFunctionCall) {
+			// Custom aggregate: always an absolute IRI so the call re-parses regardless of the prologue prefixes.
+			final AggregateFunctionCall a = (AggregateFunctionCall) op;
+			final String args = a.getArguments().stream().map(this::renderExpr).collect(Collectors.joining(", "));
+			return "<" + a.getIRI() + ">(" + (a.isDistinct() ? "DISTINCT " : "") + args + ")";
+		}
 		return "/* unsupported aggregate */";
+	}
+
+	/**
+	 * Inlines the parser's anonymous aggregate bindings ({@code _anon_*} aliases introduced for an aggregate nested in
+	 * a SELECT or ORDER BY expression, such as {@code (SUM(?x) * 2 AS ?r)}) back into the expression, so the rendered
+	 * query repeats the aggregate instead of referring to a variable it never binds.
+	 */
+	private static ValueExpr inlineAnonymousAggregates(final ValueExpr expr, final Normalized n) {
+		if (expr == null || expr instanceof AggregateOperator || n == null) {
+			return expr;
+		}
+		final Map<String, ValueExpr> anonymous = new LinkedHashMap<>();
+		for (String name : n.aggregateOutputNames) {
+			final ValueExpr aggregate = n.selectAssignments.get(name);
+			if (aggregate instanceof AggregateOperator && isAnonAggregateName(name)) {
+				anonymous.put(name, aggregate);
+			}
+		}
+		return anonymous.isEmpty() ? expr : substituteBindings(expr, anonymous);
+	}
+
+	private static boolean isAnonAggregateName(String name) {
+		return name != null && name.startsWith("_anon_");
 	}
 
 	/** Returns the lexical form if the expr is a plain string literal; otherwise null. */
@@ -699,7 +729,7 @@ public class TupleExprToIrConverter {
 				&& !n.projection.getProjectionElemList().getElements().isEmpty()) {
 			for (ProjectionElem pe : n.projection.getProjectionElemList().getElements()) {
 				final String alias = pe.getProjectionAlias().orElse(pe.getName());
-				final ValueExpr expr = n.selectAssignments.get(alias);
+				final ValueExpr expr = inlineAnonymousAggregates(n.selectAssignments.get(alias), n);
 				if (expr != null) {
 					ir.getProjection().add(new IrProjectionItem(conv.renderExpr(expr), alias));
 				} else {
@@ -786,7 +816,9 @@ public class TupleExprToIrConverter {
 			ir.getHaving().add(ExprTextUtils.stripRedundantOuterParens(conv.renderExprForHaving(cond, n)));
 		}
 		for (OrderElem oe : n.orderBy) {
-			ir.getOrderBy().add(new IrOrderSpec(conv.renderExpr(oe.getExpr()), oe.isAscending()));
+			ir.getOrderBy()
+					.add(new IrOrderSpec(conv.renderExpr(inlineAnonymousAggregates(oe.getExpr(), n)),
+							oe.isAscending()));
 		}
 		return ir;
 	}
@@ -1787,6 +1819,7 @@ public class TupleExprToIrConverter {
 				ValueExpr expr = !n.windowAssignments.isEmpty() && n.selectAssignments.containsKey(alias)
 						? n.selectAssignments.get(alias)
 						: src != null ? src.getExpr() : n.selectAssignments.get(alias);
+				expr = inlineAnonymousAggregates(expr, n);
 				boolean renderExprText = expr != null;
 				ir.getProjection().add(new IrProjectionItem(renderExprText ? renderExpr(expr) : null, alias));
 			}
@@ -1875,7 +1908,8 @@ public class TupleExprToIrConverter {
 
 		// ORDER BY
 		for (OrderElem oe : n.orderBy) {
-			ir.getOrderBy().add(new IrOrderSpec(renderExpr(oe.getExpr()), oe.isAscending()));
+			ir.getOrderBy()
+					.add(new IrOrderSpec(renderExpr(inlineAnonymousAggregates(oe.getExpr(), n)), oe.isAscending()));
 		}
 
 		return ir;

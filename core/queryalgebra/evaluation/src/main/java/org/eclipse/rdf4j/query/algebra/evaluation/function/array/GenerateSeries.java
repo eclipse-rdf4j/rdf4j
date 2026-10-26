@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.function.array;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.time.DateTimeException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -114,9 +115,19 @@ public class GenerateSeries extends ArrayFunction {
 				? stop.toOffsetDateTime().withOffsetSameInstant(start.toOffsetDateTime().getOffset()).toLocalDateTime()
 				: stop.local();
 		List<Value> values = new ArrayList<>();
-		for (LocalDateTime v = start.local(); forward ? !v.isAfter(end) : !v.isBefore(end); v = step.addTo(v)) {
+		LocalDateTime v = start.local();
+		while (forward ? !v.isAfter(end) : !v.isBefore(end)) {
 			checkSize(function, values);
 			values.add(DateTimeSupport.toLiteral(vf, start.withLocal(v)));
+			if (v.equals(end)) {
+				break;
+			}
+			try {
+				v = step.addTo(v);
+			} catch (DateTimeException e) {
+				// the next value lies beyond the supported date range, so past the endpoint
+				break;
+			}
 		}
 		return values;
 	}

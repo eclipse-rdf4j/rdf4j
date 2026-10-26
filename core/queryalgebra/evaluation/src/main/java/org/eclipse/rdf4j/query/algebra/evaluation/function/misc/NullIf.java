@@ -41,6 +41,9 @@ public class NullIf implements Function {
 	@Override
 	public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		FunctionArgs.arity(this, args, 2);
+		if (args[0] == null || args[1] == null) {
+			throw new ValueExprEvaluationException("Unbound argument for " + getURI());
+		}
 		boolean equal;
 		try {
 			equal = QueryEvaluationUtil.compareEQ(args[0], args[1]);

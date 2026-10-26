@@ -343,6 +343,7 @@ class ValueStoreTermIndexRecoveryTest {
 				legacyConfig().setTripleTermIndexes(NEW_MAX_TERM_INDEXES));
 		replacement.init();
 		try {
+			assertTrue(replacement.awaitIndexRebuild(60, TimeUnit.SECONDS), replacement.getStartupStatus().toString());
 			Map<String, LmdbStore.LmdbDatabaseStats> valueDatabases = replacement.getLmdbStats().valueDatabases();
 			for (String index : NEW_MAX_TERM_INDEXES.split(",")) {
 				assertEquals(16, valueDatabases.get(termIndexDatabaseName(index)).entries(),
@@ -439,27 +440,35 @@ class ValueStoreTermIndexRecoveryTest {
 		Seed first = seedStore(storeDir, legacyConfig().setTripleTermIndexes(DROP_RETRY_OLD_INDEXES), 8);
 		Path valueDirectory = storeDir.resolve("values");
 		FinalManifestCommitMapFullValueStore.resetFailure();
-		IOException failure = assertThrows(IOException.class,
-				() -> new FinalManifestCommitMapFullValueStore(valueDirectory.toFile(),
-						legacyConfig().setTripleTermIndexes(DROP_RETRY_NEW_INDEXES)));
-		assertTrue(FinalManifestCommitMapFullValueStore.injectedMapFull.get(),
-				"the test must fail the authority transaction after a successful index drop");
-		assertEquals(1, FinalManifestCommitMapFullValueStore.environmentCloseCount.get(),
-				"the failed constructor must close its environment before recovery opens the old generation");
+		ValueStore rebuilding = new FinalManifestCommitMapFullValueStore(valueDirectory.toFile(),
+				legacyConfig().setTripleTermIndexes(DROP_RETRY_NEW_INDEXES));
+		try {
+			for (String spec : DROP_RETRY_OLD_INDEXES.split(",")) {
+				assertTrue(rebuilding.getLmdbStats().containsKey(termIndexDatabaseName(spec)),
+						"the committed generation remains authoritative before background publication");
+			}
+			rebuilding.startIndexRebuildAfterStoreInitialization();
+			assertTrue(rebuilding.awaitIndexRebuild(60, TimeUnit.SECONDS), rebuilding.indexRebuildStatus());
+			assertTrue(FinalManifestCommitMapFullValueStore.injectedMapFull.get(),
+					"the test must fail the final background manifest commit before its successful retry");
+		} finally {
+			rebuilding.close();
+		}
+		assertEquals(1, FinalManifestCommitMapFullValueStore.environmentCloseCount.get());
 
 		LmdbStore reopened = new LmdbStore(storeDir.toFile(),
-				legacyConfig().setTripleTermIndexes(DROP_RETRY_OLD_INDEXES));
+				legacyConfig().setTripleTermIndexes(DROP_RETRY_NEW_INDEXES));
 		reopened.init();
 		try {
 			Map<String, LmdbStore.LmdbDatabaseStats> databases = reopened.getLmdbStats().valueDatabases();
-			for (String spec : DROP_RETRY_OLD_INDEXES.split(",")) {
-				assertTrue(databases.containsKey(termIndexDatabaseName(spec)),
-						"failed publication must preserve the old authoritative index: " + spec);
-			}
 			for (String spec : DROP_RETRY_NEW_INDEXES.split(",")) {
-				if (!DROP_RETRY_OLD_INDEXES.contains(spec)) {
+				assertTrue(databases.containsKey(termIndexDatabaseName(spec)),
+						"retried publication must expose the complete replacement index: " + spec);
+			}
+			for (String spec : DROP_RETRY_OLD_INDEXES.split(",")) {
+				if (!DROP_RETRY_NEW_INDEXES.contains(spec)) {
 					assertFalse(databases.containsKey(termIndexDatabaseName(spec)),
-							"reopen must clean the uncommitted staged index: " + spec);
+							"the committed query layout excludes the retired index: " + spec);
 				}
 			}
 			assertStatementAndSelectiveTermQuery(reopened, first);
@@ -511,6 +520,7 @@ class ValueStoreTermIndexRecoveryTest {
 				connection.commit();
 			}
 			ValueStore valueStore = (ValueStore) store.getValueFactory();
+			assertTrue(store.awaitIndexRebuild(60, TimeUnit.SECONDS), store.getStartupStatus().toString());
 			first = new Seed(first.carrier(), first.outer(), first.inner(), valueStore.mapSizeBytes(),
 					valueStore.occupiedBytes());
 		} finally {
@@ -794,7 +804,7 @@ class ValueStoreTermIndexRecoveryTest {
 
 	public static final class TermIndexCrashChildMain {
 
-		public static void main(String[] args) {
+		public static void main(String[] args) throws Exception {
 			Path storeDir = Path.of(args[0]);
 			String indexSpecs = args[1];
 			LmdbStoreConfig config = new LmdbStoreConfig("spoc").setTripleTermIndexes(indexSpecs)
@@ -806,26 +816,31 @@ class ValueStoreTermIndexRecoveryTest {
 						boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
 					LmdbSailStore backingStore = super.createBackingStore(dataDir, properties, storeConfig,
 							sketchBasedJoinEstimatorEnabled);
-					Map<String, LmdbStore.LmdbDatabaseStats> valueDatabases = backingStore.getLmdbStats()
-							.valueDatabases();
-					if (!valueDatabases.containsKey(termIndexDatabaseName("opsc"))) {
-						throw new AssertionError(
-								"The requested native term index was not created: " + valueDatabases.keySet());
-					}
-					System.out.println("VALUE_TERM_INDEX_NATIVE_COMMITTED");
-					try {
-						String text = Files.readString(new File(dataDir, StoreProperties.FILE_NAME).toPath());
-						System.out.println(text.contains("opsc") ? "VALUE_TERM_INDEX_PROPERTIES_ALREADY_UPDATED"
-								: "VALUE_TERM_INDEX_OLD_PROPERTIES_STILL_ON_DISK");
-					} catch (IOException e) {
-						throw new RuntimeException(e);
-					}
-					System.out.flush();
-					Runtime.getRuntime().halt(86);
+					backingStore.valueStore().setTermIndexMaintenanceObserver(phase -> {
+						if (!phase.equals("published")) {
+							return;
+						}
+						try {
+							Map<String, LmdbStore.LmdbDatabaseStats> databases = backingStore.getLmdbStats()
+									.valueDatabases();
+							if (!databases.containsKey(termIndexDatabaseName("opsc"))) {
+								throw new AssertionError("Published term index is absent: " + databases.keySet());
+							}
+							System.out.println("VALUE_TERM_INDEX_NATIVE_COMMITTED");
+							String text = Files.readString(new File(dataDir, StoreProperties.FILE_NAME).toPath());
+							System.out.println(text.contains("opsc") ? "VALUE_TERM_INDEX_PROPERTIES_ALREADY_UPDATED"
+									: "VALUE_TERM_INDEX_OLD_PROPERTIES_STILL_ON_DISK");
+						} catch (IOException e) {
+							throw new RuntimeException(e);
+						}
+						System.out.flush();
+						Runtime.getRuntime().halt(86);
+					});
 					return backingStore;
 				}
 			};
 			store.init();
+			store.awaitIndexRebuild(60, TimeUnit.SECONDS);
 			throw new AssertionError("The term-index crash cut point was not reached");
 		}
 	}
@@ -839,6 +854,7 @@ class ValueStoreTermIndexRecoveryTest {
 			LmdbStore store = new LmdbStore(Path.of(args[0]).toFile(), config);
 			store.init();
 			ValueStore valueStore = (ValueStore) store.getValueFactory();
+			assertTrue(store.awaitIndexRebuild(120, TimeUnit.SECONDS), store.getStartupStatus().toString());
 			System.out.println("VALUE_TERM_INDEX_REBUILD_LIVE_MAP=" + valueStore.mapSizeBytes() + ","
 					+ valueStore.occupiedBytes());
 			store.shutDown();
@@ -884,6 +900,8 @@ class ValueStoreTermIndexRecoveryTest {
 			LmdbStoreConfig config = new LmdbStoreConfig().setTripleTermIndexes(args[1]).setForceSync(true);
 			DropMapFullValueStore.injectMapFullAfterNextSuccessfulDrop = true;
 			ValueStore replacement = new DropMapFullValueStore(valueDirectory, config);
+			replacement.startIndexRebuildAfterStoreInitialization();
+			assertTrue(replacement.awaitIndexRebuild(60, TimeUnit.SECONDS), replacement.indexRebuildStatus());
 			if (DropMapFullValueStore.injectMapFullAfterNextSuccessfulDrop) {
 				throw new AssertionError("the test must force one retry after the native drop closes its DBI");
 			}
@@ -967,33 +985,30 @@ class ValueStoreTermIndexRecoveryTest {
 	private static final class FinalManifestCommitMapFullValueStore extends ValueStore {
 
 		private static final AtomicBoolean failAfterDrop = new AtomicBoolean();
-		private static final AtomicBoolean sawSuccessfulDrop = new AtomicBoolean();
 		private static final AtomicBoolean injectedMapFull = new AtomicBoolean();
 		private static final AtomicInteger environmentCloseCount = new AtomicInteger();
+		private boolean publicationFailureArmed;
 
 		private FinalManifestCommitMapFullValueStore(File dir, LmdbStoreConfig config) throws IOException {
 			super(dir, config);
+			publicationFailureArmed = true;
 		}
 
 		private static void resetFailure() {
 			failAfterDrop.set(true);
-			sawSuccessfulDrop.set(false);
 			injectedMapFull.set(false);
 			environmentCloseCount.set(0);
 		}
 
 		@Override
 		int dropTermIndexDatabase(long transaction, int dbi) {
-			int rc = super.dropTermIndexDatabase(transaction, dbi);
-			if (rc == MDB_SUCCESS) {
-				sawSuccessfulDrop.set(true);
-			}
-			return rc;
+			throw new AssertionError("Live term maintenance must not drop native databases");
 		}
 
 		@Override
 		int commitWriteTransaction(long transaction) {
-			if (sawSuccessfulDrop.get() && failAfterDrop.compareAndSet(true, false)) {
+			if (publicationFailureArmed && indexRebuildStatus().equals("CLEANUP")
+					&& failAfterDrop.compareAndSet(true, false)) {
 				mdb_txn_abort(transaction);
 				injectedMapFull.set(true);
 				return MDB_MAP_FULL;
@@ -1011,19 +1026,22 @@ class ValueStoreTermIndexRecoveryTest {
 	private static final class DropMapFullValueStore extends ValueStore {
 
 		private static boolean injectMapFullAfterNextSuccessfulDrop;
+		private boolean publicationFailureArmed;
 
 		private DropMapFullValueStore(File dir, LmdbStoreConfig config) throws IOException {
 			super(dir, config);
+			publicationFailureArmed = true;
 		}
 
 		@Override
-		int dropTermIndexDatabase(long transaction, int dbi) {
-			int rc = super.dropTermIndexDatabase(transaction, dbi);
-			if (rc == 0 && injectMapFullAfterNextSuccessfulDrop) {
+		int commitWriteTransaction(long transaction) {
+			if (publicationFailureArmed && indexRebuildStatus().equals("CLEANUP")
+					&& injectMapFullAfterNextSuccessfulDrop) {
 				injectMapFullAfterNextSuccessfulDrop = false;
+				mdb_txn_abort(transaction);
 				return MDB_MAP_FULL;
 			}
-			return rc;
+			return super.commitWriteTransaction(transaction);
 		}
 	}
 

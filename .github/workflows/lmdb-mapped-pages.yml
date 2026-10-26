@@ -27,6 +27,6 @@ jobs:
           distribution: temurin
           java-version: 25
       - name: Install LMDB and upstream artifacts
-        run: mvn -B -ntp -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb -am -Pquick install
+        run: mvn -B -ntp -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb -am -Pquick install --fail-at-end
       - name: Verify mapping and resize regressions
-        run: mvn -B -ntp -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb "-Dtest=LmdbDataFileNativeMapTest,LmdbDataFileHeaderBufferTest,LmdbMappingAnchorTest,LmdbPageMappingLifecycleTest,LmdbPageCardinalityEstimatorDupSortNativeTest,TripleStoreInitializationTest,TripleStoreAutoGrowTest#testPageEstimatorAcrossAutoGrowth,TripleStoreAutoGrowTest#testPageEstimatorAfterCachedWriteFlushGrowth" -DskipITs verify
+        run: mvn -B -ntp -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb "-Dtest=LmdbDataFileNativeMapTest,LmdbDataFileHeaderBufferTest,LmdbMappingAnchorTest,LmdbPageMappingLifecycleTest,LmdbPageCardinalityEstimatorDupSortNativeTest,TripleStoreInitializationTest,TripleStoreAutoGrowTest#testPageEstimatorAcrossAutoGrowth,TripleStoreAutoGrowTest#testPageEstimatorAfterCachedWriteFlushGrowth" -DskipITs verify --fail-at-end

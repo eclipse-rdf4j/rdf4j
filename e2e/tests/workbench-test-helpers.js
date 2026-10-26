@@ -36,6 +36,30 @@ function workbenchBaseUrl() {
     return (process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:8080/rdf4j-workbench').replace(/\/+$/, '');
 }
 
+/** Post as a Workbench client, using the per-session token issued on a safe request in this API context. */
+async function postWorkbench(request, url, options = {}) {
+    const base = new URL(workbenchBaseUrl());
+    const target = new URL(url);
+    if (target.origin !== base.origin || !target.pathname.startsWith(`${base.pathname}/`)) {
+        throw new Error(`Expected a Workbench URL under ${base.origin}${base.pathname}`);
+    }
+
+    const bootstrap = await request.get(`${workbenchBaseUrl()}/repositories/NONE/repositories`);
+    if (!bootstrap.ok()) {
+        throw new Error(`Opening the Workbench session failed with HTTP ${bootstrap.status()}`);
+    }
+    const csrfCookie = (await request.storageState()).cookies.find(cookie =>
+        cookie.name === 'rdf4j-workbench-csrf' && cookie.domain.replace(/^\./, '') === base.hostname
+        && base.pathname.startsWith(cookie.path));
+    if (!csrfCookie || !/^[0-9a-f]{64}$/.test(csrfCookie.value)) {
+        throw new Error('Workbench did not issue a valid per-session CSRF token');
+    }
+    return request.post(url, {
+        ...options,
+        headers: { ...options.headers, 'X-RDF4J-CSRF-Token': csrfCookie.value }
+    });
+}
+
 function serverBaseUrl() {
     return (process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8080/rdf4j-server').replace(/\/+$/, '');
 }
@@ -226,6 +250,7 @@ module.exports = {
     listenAddressForServer,
     memoryRepositoryConfiguration,
     openQueryPage,
+    postWorkbench,
     refusedUrlOrigin,
     repositoryPageUrl,
     runQuery,
