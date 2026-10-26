@@ -23,6 +23,9 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RunView;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RunView.ContextSpan;
 
 /**
  * Shared primitive data structures used by runtime-generated kernels. Keeping these as ordinary reviewed Java (instead
@@ -35,6 +38,26 @@ import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 public final class KernelRuntime {
 
 	private KernelRuntime() {
+	}
+
+	/** Reads a context from its physical proof before requesting any mixed-span payload. */
+	public static long contextInSpan(RunView view, long handle, long offset, ContextSpan span) {
+		view.contextSpan(handle, offset, span);
+		return span.hasCommonContext() ? span.commonContext() : view.contextInContextSpan(handle, offset);
+	}
+
+	public static long contextInSpan(NativeAdjacency.BoundRunCursor cursor, long offset, ContextSpan span) {
+		if (!cursor.contextSpan(offset, span)) {
+			span.set(offset + 1L, -1L);
+		}
+		return span.hasCommonContext() ? span.commonContext() : cursor.contextInContextSpan(offset);
+	}
+
+	public static long contextInSpan(NativeAdjacency.KeyRunCursor cursor, long offset, ContextSpan span) {
+		if (!cursor.contextSpan(offset, span)) {
+			span.set(offset + 1L, -1L);
+		}
+		return span.hasCommonContext() ? span.commonContext() : cursor.contextInContextSpan(offset);
 	}
 
 	/**

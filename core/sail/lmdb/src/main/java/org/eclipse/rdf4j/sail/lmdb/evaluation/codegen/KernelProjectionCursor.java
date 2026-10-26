@@ -399,14 +399,19 @@ public final class KernelProjectionCursor implements AutoCloseable {
 	}
 
 	private KernelAdjacencyCursor openPlane() {
-		return source.open(page -> {
+		KernelAdjacencyCursor opened = source.open(page -> {
 			pagesVisited++;
-			boolean accepted = program.acceptsPage(page);
+			boolean accepted = program.acceptsPage(page)
+					&& (!page.hasCommonContext() || acceptsContext(page.commonContext()));
 			if (!accepted) {
 				pagesSkipped++;
 			}
 			return accepted;
 		}, contextObserved || contextMatch || excludeDefault, cancellation);
+		if (opened != null) {
+			opened.configureContextFilter(contextMatch, wantedContext, excludeDefault);
+		}
+		return opened;
 	}
 
 	/** Advances to an accepted quad, or an aggregate projection on exiting an accepted fiber/root. */
