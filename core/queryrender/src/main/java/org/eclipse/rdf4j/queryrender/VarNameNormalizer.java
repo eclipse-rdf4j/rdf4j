@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
+import org.eclipse.rdf4j.query.algebra.WindowElem;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
@@ -125,6 +126,12 @@ public final class VarNameNormalizer {
 			}
 
 			@Override
+			public void meet(WindowElem element) {
+				element.setName(name(element.getName()));
+				super.meet(element);
+			}
+
+			@Override
 			public void meet(ValueExprTripleRef triple) {
 				super.meet(triple);
 				String renamed = name(triple.getExtVarName());
@@ -211,6 +218,13 @@ public final class VarNameNormalizer {
 			} else {
 				genuine.add(element.getName());
 			}
+			super.meet(element);
+		}
+
+		@Override
+		public void meet(WindowElem element) {
+			// Referencing a symbol does not make it anonymous; the Var's model role decides that.
+			referenced.add(element.getName());
 			super.meet(element);
 		}
 

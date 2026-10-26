@@ -35,6 +35,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
+import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 
 import java.io.File;
 import java.io.IOException;
@@ -56,7 +57,10 @@ import java.util.zip.CRC32;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.mapdb.MapDb3CollectionFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.util.IndexKeyWriters;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
@@ -66,6 +70,8 @@ import org.lwjgl.util.lmdb.MDBVal;
 /** Read-only preflight for existing LMDB generations and recovery of absent legacy index descriptors. */
 final class LegacyStoreDiscovery {
 	private static final int MAX_DBS = 64;
+	private static final byte DATABASE_NAME_MIN = 0x20;
+	private static final int DATABASE_NAME_LIMIT = 0x7f;
 	private static final byte URI_VALUE = 0;
 	private static final byte LITERAL_VALUE = 1;
 	private static final byte BNODE_VALUE = 2;
@@ -80,11 +86,23 @@ final class LegacyStoreDiscovery {
 	private static final Set<String> V6_VALUE_METADATA_DBS = Set.of("free_ids", "gc_meta", "ref_counts", "unused_ids",
 			"retired_ids", "retired_ids_seq");
 	private static final List<String> INDEX_SPECS = indexSpecs();
+	private static final byte[] STATEMENT_BUILD_KEY = "triple-index-build".getBytes(StandardCharsets.US_ASCII);
+	private static final byte[] TERM_BUILD_KEY = "term-index-build".getBytes(StandardCharsets.US_ASCII);
 
 	private LegacyStoreDiscovery() {
 	}
 
 	static void discover(File directory, StoreProperties properties) throws IOException {
+		inspect(directory, properties, false);
+	}
+
+	/** Exhaustive native validation for explicit maintenance while the caller owns the directory lock. */
+	static void verify(File directory, StoreProperties properties) throws IOException {
+		inspect(directory, properties, true);
+	}
+
+	private static void inspect(File directory, StoreProperties properties, boolean exhaustive) throws IOException {
+		LmdbStartupDiagnostics.observe(LmdbStartupDiagnostics.Operation.DISCOVERY);
 		File values = new File(directory, "values/data.mdb");
 		File triples = new File(directory, "triples/data.mdb");
 		boolean valuesPresent = values.isFile();
@@ -94,6 +112,8 @@ final class LegacyStoreDiscovery {
 		}
 		properties.setNativeGenerationPresent(valuesPresent);
 		if (!valuesPresent) {
+			properties.verifiedValueTransactionId = 0L;
+			properties.verifiedTripleTransactionId = 0L;
 			return;
 		}
 
@@ -107,40 +127,56 @@ final class LegacyStoreDiscovery {
 				triplesEnv = openReadOnlyEnvironment(stack, triples.getParentFile());
 				valuesTxn = beginReadOnly(stack, valuesEnv);
 				triplesTxn = beginReadOnly(stack, triplesEnv);
+				PreparedBulkStore.validateGenerationPair(stack, valuesTxn, triplesTxn);
+				PreparedBulkStore.validateCleanProperties(stack, valuesTxn, properties);
 				int valuesMain = openMainDatabase(stack, valuesTxn);
 				int triplesMain = openMainDatabase(stack, triplesTxn);
-				Map<String, Integer> valuesDatabases = readDatabaseCatalog(stack, valuesTxn, valuesMain, false);
-				Map<String, Integer> triplesDatabases = readDatabaseCatalog(stack, triplesTxn, triplesMain, true);
+				Map<String, Integer> valuesDatabases = readDatabaseCatalog(stack, valuesTxn, valuesMain, false,
+						exhaustive);
+				Map<String, Integer> triplesDatabases = readDatabaseCatalog(stack, triplesTxn, triplesMain, true,
+						exhaustive);
 				LegacyRetirementQueue retirementQueue = validateLegacyRetirementQueue(stack, valuesTxn,
-						valuesDatabases, legacy);
-				Set<String> statementIndexes = classifyStatementIndexes(triplesDatabases);
+						valuesDatabases, legacy, exhaustive);
+				Set<String> physicalStatementIndexes = classifyStatementIndexes(triplesDatabases);
 				Set<String> physicalTermIndexes = classifyTermIndexes(valuesDatabases, properties, legacy);
-				boolean statementManifest = validateNamespaceMetadata(stack, triplesTxn, triplesDatabases,
-						statementIndexes);
+				Set<String> activeStatementIndexes = validateNamespaceMetadata(stack, triplesTxn, triplesDatabases,
+						physicalStatementIndexes, exhaustive);
+				boolean statementManifest = activeStatementIndexes != null;
+				Set<String> statementIndexes = statementManifest ? activeStatementIndexes : physicalStatementIndexes;
 				Set<String> activeTermIndexes = validateTermIndexManifest(stack, valuesTxn, valuesDatabases,
 						physicalTermIndexes);
 				boolean termManifest = activeTermIndexes != null;
 				Set<String> termIndexes = termManifest ? activeTermIndexes : physicalTermIndexes;
-				validateKnownDatabases(valuesDatabases, triplesDatabases, statementIndexes, physicalTermIndexes,
+				validateKnownDatabases(valuesDatabases, triplesDatabases, physicalStatementIndexes, physicalTermIndexes,
 						properties, legacy, retirementQueue);
-				if (legacy) {
+				validateActiveIndexCounts(stack, valuesTxn, triplesTxn, valuesDatabases, triplesDatabases,
+						statementIndexes, termIndexes);
+				if (exhaustive) {
+					RecordVerifier verifier = new RecordVerifier(directory, properties);
 					int termCspoDatabase = termIndexes.contains("cspo")
 							? valuesDatabases.get(TripleIndex.nativeDatabaseName("term-cspo", true))
 							: -1;
 					int termSpocDatabase = termIndexes.contains("spoc")
 							? valuesDatabases.get(TripleIndex.nativeDatabaseName("term-spoc", true))
 							: -1;
-					validateLegacyDictionary(stack, valuesTxn, valuesMain, valuesDatabases);
-					validateContexts(stack, triplesTxn, triplesDatabases.get("contexts"), valuesTxn, valuesMain,
+					verifier.validateDictionary(stack, valuesTxn, valuesMain, valuesDatabases);
+					verifier.validateContexts(stack, triplesTxn, triplesDatabases.get("contexts"), valuesTxn,
+							valuesMain,
 							termCspoDatabase);
-					validateStatementIndexes(stack, triplesTxn, triplesDatabases, statementIndexes, valuesTxn,
+					verifier.validateStatementIndexes(stack, triplesTxn, triplesDatabases, statementIndexes, valuesTxn,
 							valuesMain, triplesDatabases.get("contexts"), termCspoDatabase, termSpocDatabase, true);
-					validateStatementIndexes(stack, triplesTxn, triplesDatabases, statementIndexes, valuesTxn,
+					verifier.validateStatementIndexes(stack, triplesTxn, triplesDatabases, statementIndexes, valuesTxn,
 							valuesMain, triplesDatabases.get("contexts"), termCspoDatabase, termSpocDatabase, false);
-					validateTermIndexes(stack, valuesTxn, valuesDatabases, termIndexes, valuesMain,
+					verifier.validateTermIndexes(stack, valuesTxn, valuesDatabases, termIndexes, valuesMain,
 							valuesDatabases.get("unused_ids"), termCspoDatabase, termSpocDatabase);
+					if (termCspoDatabase >= 0 && termSpocDatabase >= 0) {
+						TermOwnerGraphVerifier.verify(valuesTxn, termSpocDatabase, termCspoDatabase);
+					}
 				}
 				validateDescriptors(properties, statementIndexes, termIndexes, legacy, statementManifest, termManifest);
+				properties.statementIndexCleanupPending = !statementIndexes.containsAll(physicalStatementIndexes);
+				properties.verifiedValueTransactionId = mdb_txn_id(valuesTxn);
+				properties.verifiedTripleTransactionId = mdb_txn_id(triplesTxn);
 			} finally {
 				if (triplesTxn != NULL) {
 					mdb_txn_abort(triplesTxn);
@@ -152,6 +188,223 @@ final class LegacyStoreDiscovery {
 					mdb_env_close(triplesEnv);
 				}
 				mdb_env_close(valuesEnv);
+			}
+		}
+	}
+
+	/**
+	 * Checks the fixed current-format schema without walking a dictionary, index, namespace snapshot or DB catalog. The
+	 * caller must separately establish native CLEAN transaction authority before using this as admission evidence.
+	 */
+	static void validateCurrentMetadata(MemoryStack stack, long valuesTxn, long triplesTxn,
+			StoreProperties properties) throws IOException {
+		Map<String, Integer> valueDatabases = new HashMap<>();
+		Map<String, Integer> tripleDatabases = new HashMap<>();
+		int valuesMain = openMainDatabase(stack, valuesTxn);
+		int triplesMain = openMainDatabase(stack, triplesTxn);
+		validateDatabaseFlags(stack, valuesTxn, valuesMain, "values main");
+		validateDatabaseFlags(stack, triplesTxn, triplesMain, "triples main");
+		for (String name : V6_VALUE_METADATA_DBS) {
+			openKnownDatabase(stack, valuesTxn, name, valueDatabases, true);
+		}
+		openKnownDatabase(stack, valuesTxn, ValueStore.TERM_INDEX_MANIFEST_DATABASE, valueDatabases, true);
+		openKnownDatabase(stack, triplesTxn, "contexts", tripleDatabases, true);
+		openKnownDatabase(stack, triplesTxn, TripleStore.NAMESPACE_DATABASE_NAME, tripleDatabases, true);
+		// Every legal permutation is probed, including absent indexes, so incomplete pairs and staged term indexes
+		// force ordinary recovery. This fixed work is independent of the number of dictionary or statement entries.
+		for (String spec : INDEX_SPECS) {
+			openKnownDatabase(stack, triplesTxn, TripleIndex.nativeDatabaseName(spec, true), tripleDatabases, false);
+			openKnownDatabase(stack, triplesTxn, TripleIndex.nativeDatabaseName(spec, false), tripleDatabases, false);
+			openKnownDatabase(stack, valuesTxn, TripleIndex.nativeDatabaseName("term-" + spec, true), valueDatabases,
+					false);
+		}
+		if (databaseEntries(stack, triplesTxn, triplesMain) != tripleDatabases.size()) {
+			throw new IOException("Unrecognized entry in current LMDB triple database catalog");
+		}
+		Set<String> statementIndexes = classifyStatementIndexes(tripleDatabases);
+		Set<String> termIndexes = classifyTermIndexes(valueDatabases, properties, false);
+		int metadata = valueDatabases.get("gc_meta");
+		byte[] schema = getBoundedValue(valuesTxn, metadata, new byte[] { 2 }, 1, 1);
+		if (schema[0] != 1) {
+			throw new IOException("Unsupported ValueStore retirement metadata schema");
+		}
+		byte[] format = getBoundedValue(valuesTxn, metadata, new byte[] { 3 }, 1, 1);
+		if (format[0] != LmdbStoreFormat.CURRENT_VERSION) {
+			throw new IOException("ValueStore native format fence disagrees with current LmdbStore format");
+		}
+		ByteBuffer epoch = ByteBuffer.wrap(getBoundedValue(valuesTxn, metadata, new byte[] { 1 }, 1, 9));
+		if (readCanonicalUnsigned(epoch) <= 0L || epoch.hasRemaining()) {
+			throw new IOException("Malformed ValueStore retirement boot epoch");
+		}
+
+		int namespaces = tripleDatabases.get(TripleStore.NAMESPACE_DATABASE_NAME);
+		validateMetadataVersion(getBoundedValue(triplesTxn, namespaces, TripleStore.NAMESPACE_FORMAT_KEY,
+				Integer.BYTES, Integer.BYTES), TripleStore.NAMESPACE_DATABASE_VERSION, "namespace");
+		// NamespaceStore performs the functional decode once when opened. Here only presence is needed; copying a
+		// potentially large snapshot would duplicate that work and make admission depend on namespace count.
+		try (MemoryStack lookup = MemoryStack.stackPush()) {
+			MDBVal key = MDBVal.calloc(lookup).mv_data(lookup.bytes(TripleStore.NAMESPACE_SNAPSHOT_KEY));
+			MDBVal value = MDBVal.calloc(lookup);
+			int result = mdb_get(triplesTxn, namespaces, key, value);
+			if (result != MDB_SUCCESS || value.mv_size() < Integer.BYTES) {
+				throw new IOException("Missing or truncated namespace database snapshot metadata");
+			}
+		}
+		validateMetadataVersion(getBoundedValue(triplesTxn, namespaces, TripleStore.INDEX_FORMAT_KEY,
+				Integer.BYTES, Integer.BYTES), TripleStore.INDEX_DATABASE_VERSION, "native triple index");
+		byte[] specs = getBoundedValue(triplesTxn, namespaces, TripleStore.INDEX_SPECS_KEY, 4,
+				INDEX_SPECS.size() * 5 - 1);
+		validateUtf8(ByteBuffer.wrap(specs), "native triple index specifications");
+		String descriptor = new String(specs, StandardCharsets.UTF_8);
+		Set<String> activeStatements = TripleIndex.parseIndexSpecList(descriptor);
+		validateDescriptor("native triple index", descriptor, activeStatements, true, false);
+		if (activeStatements.isEmpty() || !statementIndexes.containsAll(activeStatements)) {
+			throw new IOException("Native triple index metadata disagrees with named index databases");
+		}
+		long namespaceEntries = 4L;
+		try (MemoryStack lookup = MemoryStack.stackPush()) {
+			MDBVal key = MDBVal.calloc(lookup).mv_data(lookup.bytes(PreparedBulkStore.GENERATION_KEY));
+			MDBVal value = MDBVal.calloc(lookup);
+			int result = mdb_get(triplesTxn, namespaces, key, value);
+			if (result != MDB_NOTFOUND) {
+				E(result);
+				if (value.mv_size() != 16L) {
+					throw new IOException("Invalid native bulk generation identity");
+				}
+				namespaceEntries++;
+			}
+		}
+		if (getOptionalBoundedValue(triplesTxn, namespaces, STATEMENT_BUILD_KEY, 4096) != null) {
+			namespaceEntries++;
+		}
+		if (databaseEntries(stack, triplesTxn, namespaces) != namespaceEntries) {
+			throw new IOException("Unrecognized namespace database metadata key");
+		}
+
+		int manifest = valueDatabases.get(ValueStore.TERM_INDEX_MANIFEST_DATABASE);
+		// The binary manifest has two ints followed by length-prefixed four-byte permutations.
+		Set<String> activeTerms = ValueStore.decodeTermIndexManifest(ByteBuffer.wrap(getBoundedValue(valuesTxn,
+				manifest, ValueStore.TERM_INDEX_MANIFEST_KEY, 2 * Integer.BYTES,
+				2 * Integer.BYTES + ValueStore.MAX_TERM_INDEXES * (Integer.BYTES + 4))));
+		long manifestEntries = getOptionalBoundedValue(valuesTxn, manifest, TERM_BUILD_KEY, 4096) == null ? 1L : 2L;
+		if (!activeTerms.contains("spoc") || !activeTerms.contains("cspo") || !termIndexes.containsAll(activeTerms)
+				|| databaseEntries(stack, valuesTxn, manifest) != manifestEntries) {
+			throw new IOException("Native triple-term manifest disagrees with named index databases");
+		}
+		validateActiveIndexCounts(stack, valuesTxn, triplesTxn, valueDatabases, tripleDatabases,
+				activeStatements, activeTerms);
+		validateDescriptor(StoreProperties.INDEXES_KEY, properties.getTripleIndexes(), activeStatements, true, true);
+		validateDescriptor(StoreProperties.TRIPLE_TERM_INDEXES_KEY, properties.getTripleTermIndexes(), activeTerms,
+				true, true);
+		if (!TripleIndex.parseIndexSpecList(properties.getTripleIndexes()).equals(activeStatements)
+				|| !TripleIndex.parseIndexSpecList(properties.getTripleTermIndexes()).equals(activeTerms)) {
+			// Preserve exact matching text for the strict publication seal. Only an actual lagging set needs the
+			// existing native-manifest reconciliation and a subsequent properties save.
+			validateDescriptors(properties, activeStatements, activeTerms, false, true, true);
+		}
+		properties.statementIndexCleanupPending = !activeStatements.containsAll(statementIndexes);
+	}
+
+	private static void openKnownDatabase(MemoryStack stack, long transaction, String name,
+			Map<String, Integer> databases, boolean required) throws IOException {
+		stack.push();
+		try {
+			IntBuffer handle = stack.mallocInt(1);
+			int result = mdb_dbi_open(transaction, name, 0, handle);
+			if (result == MDB_NOTFOUND && !required) {
+				return;
+			}
+			E(result);
+			validateDatabaseFlags(stack, transaction, handle.get(0), name);
+			databases.put(name, handle.get(0));
+		} finally {
+			stack.pop();
+		}
+	}
+
+	private static void validateDatabaseFlags(MemoryStack stack, long transaction, int database, String name)
+			throws IOException {
+		IntBuffer flags = stack.mallocInt(1);
+		E(mdb_dbi_flags(transaction, database, flags));
+		if (flags.get(0) != 0) {
+			throw new IOException("Unexpected flags on native database " + name);
+		}
+	}
+
+	private static long databaseEntries(MemoryStack stack, long transaction, int database) throws IOException {
+		MDBStat stat = MDBStat.malloc(stack);
+		E(mdb_stat(transaction, database, stat));
+		return stat.ms_entries();
+	}
+
+	private static byte[] getBoundedValue(long transaction, int database, byte[] keyBytes, int minimum, int maximum)
+			throws IOException {
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(keyBytes));
+			MDBVal value = MDBVal.calloc(stack);
+			int result = mdb_get(transaction, database, key, value);
+			if (result != MDB_SUCCESS || value.mv_size() < minimum || value.mv_size() > maximum) {
+				throw new IOException("Missing or malformed current LMDB metadata");
+			}
+			return copy(value.mv_data());
+		}
+	}
+
+	private static byte[] getOptionalBoundedValue(long transaction, int database, byte[] keyBytes, int maximum)
+			throws IOException {
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(keyBytes));
+			MDBVal value = MDBVal.calloc(stack);
+			int result = mdb_get(transaction, database, key, value);
+			if (result == MDB_NOTFOUND) {
+				return null;
+			}
+			E(result);
+			if (value.mv_size() > maximum) {
+				throw new IOException("Oversized native LMDB metadata record");
+			}
+			return copy(value.mv_data());
+		}
+	}
+
+	private static boolean hasNamespaceSnapshot(long transaction, int database) throws IOException {
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(TripleStore.NAMESPACE_SNAPSHOT_KEY));
+			MDBVal value = MDBVal.calloc(stack);
+			int result = mdb_get(transaction, database, key, value);
+			if (result == MDB_NOTFOUND) {
+				return false;
+			}
+			E(result);
+			if (value.mv_size() < Integer.BYTES) {
+				throw new IOException("Missing or truncated namespace database snapshot metadata");
+			}
+			return true;
+		}
+	}
+
+	private static void validateActiveIndexCounts(MemoryStack stack, long valuesTxn, long triplesTxn,
+			Map<String, Integer> values, Map<String, Integer> triples, Set<String> statements, Set<String> terms)
+			throws IOException {
+		for (boolean explicit : new boolean[] { false, true }) {
+			Long expected = null;
+			for (String spec : statements) {
+				long count = databaseEntries(stack, triplesTxn,
+						triples.get(TripleIndex.nativeDatabaseName(spec, explicit)));
+				if (expected != null && count != expected) {
+					throw new IOException("Statement indexes contain different record counts");
+				}
+				expected = count;
+			}
+		}
+		long forwardCount = databaseEntries(stack, valuesTxn,
+				values.get(TripleIndex.nativeDatabaseName("term-spoc", true)));
+		for (String spec : terms) {
+			long count = databaseEntries(stack, valuesTxn,
+					values.get(TripleIndex.nativeDatabaseName("term-" + spec, true)));
+			// CSPO also retains retired owners until reader horizons permit reclamation.
+			if (spec.equals("cspo") ? count < forwardCount : count != forwardCount) {
+				throw new IOException("Triple-term indexes contain different record counts");
 			}
 		}
 	}
@@ -201,9 +454,14 @@ final class LegacyStoreDiscovery {
 		return handle.get(0);
 	}
 
-	/** Enumerates named databases from LMDB's own catalog, retaining raw names until the allowlist check. */
+	/**
+	 * Enumerates the schema's printable-ASCII catalog interval. Binary dictionary tags are all below its lower bound.
+	 * Startup checks bounded structural authority; exhaustive maintenance additionally examines records outside that
+	 * interval. The catalog cap follows the environment's fixed native database limit, rather than its dataset size.
+	 */
 	private static Map<String, Integer> readDatabaseCatalog(MemoryStack stack, long transaction, int mainDatabase,
-			boolean requireOnlyNamedEntries) throws IOException {
+			boolean requireOnlyNamedEntries, boolean exhaustive) throws IOException {
+		LmdbStartupDiagnostics.observe(LmdbStartupDiagnostics.Operation.CATALOG_SCAN);
 		Map<String, Integer> databases = new HashMap<>();
 		PointerBuffer cursorHandle = stack.mallocPointer(1);
 		E(mdb_cursor_open(transaction, mainDatabase, cursorHandle));
@@ -211,8 +469,20 @@ final class LegacyStoreDiscovery {
 		try {
 			MDBVal key = MDBVal.calloc(stack);
 			MDBVal value = MDBVal.calloc(stack);
-			int rc = mdb_cursor_get(cursor, key, value, MDB_FIRST);
+			if (!exhaustive) {
+				// ValueStore's binary dictionary tags precede all printable-ASCII database names.
+				key.mv_data(stack.bytes(DATABASE_NAME_MIN));
+			}
+			int rc = mdb_cursor_get(cursor, key, value, exhaustive ? MDB_FIRST : MDB_SET_RANGE);
+			int entries = 0;
 			while (rc == MDB_SUCCESS) {
+				if (!exhaustive && (key.mv_size() == 0
+						|| Byte.toUnsignedInt(key.mv_data().get(0)) >= DATABASE_NAME_LIMIT)) {
+					break;
+				}
+				if (!exhaustive && ++entries > MAX_DBS) {
+					throw new IOException("Native database catalog exceeds the supported schema limit");
+				}
 				byte[] rawName = copy(key.mv_data());
 				Integer database = tryOpenCatalogEntry(stack, transaction, rawName);
 				if (database != null) {
@@ -223,8 +493,11 @@ final class LegacyStoreDiscovery {
 						throw new IOException("Unexpected flags on native database " + name);
 					}
 					databases.put(name, database);
-				} else if (requireOnlyNamedEntries) {
-					throw new IOException("Unrecognized entry in LMDB triple database catalog: "
+				} else if (requireOnlyNamedEntries || !exhaustive) {
+					// Every normal dictionary key begins below this interval. An observed in-range ordinary
+					// record cannot be a dictionary row or a native named-database descriptor.
+					throw new IOException("Unrecognized entry in LMDB "
+							+ (requireOnlyNamedEntries ? "triple" : "values") + " database catalog: "
 							+ printablePrefix(rawName));
 				}
 				rc = mdb_cursor_get(cursor, key, value, MDB_NEXT);
@@ -355,31 +628,36 @@ final class LegacyStoreDiscovery {
 	}
 
 	/** Validates the optional incoming namespace/index manifest without importing or rewriting legacy state. */
-	private static boolean validateNamespaceMetadata(MemoryStack stack, long transaction,
-			Map<String, Integer> databases, Set<String> statementIndexes) throws IOException {
+	private static Set<String> validateNamespaceMetadata(MemoryStack stack, long transaction,
+			Map<String, Integer> databases, Set<String> statementIndexes, boolean exhaustive) throws IOException {
 		Integer database = databases.get(TripleStore.NAMESPACE_DATABASE_NAME);
 		if (database == null) {
-			return false;
+			return null;
 		}
-		byte[] format = getValue(transaction, database, TripleStore.NAMESPACE_FORMAT_KEY);
-		byte[] snapshot = getValue(transaction, database, TripleStore.NAMESPACE_SNAPSHOT_KEY);
-		if ((format == null) != (snapshot == null)) {
+		byte[] format = getOptionalBoundedValue(transaction, database, TripleStore.NAMESPACE_FORMAT_KEY, Integer.BYTES);
+		boolean snapshotPresent = hasNamespaceSnapshot(transaction, database);
+		if ((format != null) != snapshotPresent) {
 			throw new IOException("Incomplete namespace database snapshot metadata");
 		}
 		if (format != null) {
 			validateMetadataVersion(format, TripleStore.NAMESPACE_DATABASE_VERSION, "namespace");
-			NamespaceStore.decodeSnapshot(snapshot);
+			if (exhaustive) {
+				NamespaceStore.decodeSnapshot(getValue(transaction, database, TripleStore.NAMESPACE_SNAPSHOT_KEY));
+			}
 		}
-		byte[] indexFormat = getValue(transaction, database, TripleStore.INDEX_FORMAT_KEY);
-		byte[] indexSpecs = getValue(transaction, database, TripleStore.INDEX_SPECS_KEY);
+		byte[] indexFormat = getOptionalBoundedValue(transaction, database, TripleStore.INDEX_FORMAT_KEY,
+				Integer.BYTES);
+		byte[] indexSpecs = getOptionalBoundedValue(transaction, database, TripleStore.INDEX_SPECS_KEY,
+				INDEX_SPECS.size() * 5 - 1);
 		if ((indexFormat == null) != (indexSpecs == null)) {
 			throw new IOException("Incomplete native triple index metadata");
 		}
+		Set<String> active = null;
 		if (indexFormat != null) {
 			validateMetadataVersion(indexFormat, TripleStore.INDEX_DATABASE_VERSION, "native triple index");
 			validateUtf8(ByteBuffer.wrap(indexSpecs), "native triple index specifications");
-			if (!TripleIndex.parseIndexSpecList(new String(indexSpecs, StandardCharsets.UTF_8))
-					.equals(statementIndexes)) {
+			active = TripleIndex.parseIndexSpecList(new String(indexSpecs, StandardCharsets.UTF_8));
+			if (active.isEmpty() || !statementIndexes.containsAll(active)) {
 				throw new IOException("Native triple index metadata disagrees with named index databases");
 			}
 		}
@@ -390,12 +668,18 @@ final class LegacyStoreDiscovery {
 			MDBVal key = MDBVal.calloc(stack);
 			MDBVal value = MDBVal.calloc(stack);
 			int result = mdb_cursor_get(cursor, key, value, MDB_FIRST);
+			int entries = 0;
 			while (result == MDB_SUCCESS) {
+				if (++entries > 6) {
+					throw new IOException("Namespace database exceeds its supported metadata schema");
+				}
 				byte[] bytes = copy(key.mv_data());
 				if (!Arrays.equals(bytes, TripleStore.NAMESPACE_FORMAT_KEY)
 						&& !Arrays.equals(bytes, TripleStore.NAMESPACE_SNAPSHOT_KEY)
 						&& !Arrays.equals(bytes, TripleStore.INDEX_FORMAT_KEY)
-						&& !Arrays.equals(bytes, TripleStore.INDEX_SPECS_KEY)) {
+						&& !Arrays.equals(bytes, TripleStore.INDEX_SPECS_KEY)
+						&& !Arrays.equals(bytes, PreparedBulkStore.GENERATION_KEY)
+						&& !Arrays.equals(bytes, STATEMENT_BUILD_KEY)) {
 					throw new IOException("Unrecognized namespace database metadata key: " + printablePrefix(bytes));
 				}
 				result = mdb_cursor_get(cursor, key, value, MDB_NEXT);
@@ -406,7 +690,7 @@ final class LegacyStoreDiscovery {
 		} finally {
 			mdb_cursor_close(cursor);
 		}
-		return indexFormat != null;
+		return active;
 	}
 
 	/** Validates committed authority while admitting recognized staged indexes for the owner's orphan cleanup. */
@@ -416,7 +700,8 @@ final class LegacyStoreDiscovery {
 		if (database == null) {
 			return null;
 		}
-		byte[] manifest = getValue(transaction, database, ValueStore.TERM_INDEX_MANIFEST_KEY);
+		byte[] manifest = getOptionalBoundedValue(transaction, database, ValueStore.TERM_INDEX_MANIFEST_KEY,
+				2 * Integer.BYTES + ValueStore.MAX_TERM_INDEXES * (Integer.BYTES + 4));
 		if (manifest == null) {
 			throw new IOException("Native triple-term manifest disagrees with named index databases");
 		}
@@ -432,8 +717,11 @@ final class LegacyStoreDiscovery {
 			MDBVal key = MDBVal.calloc(stack);
 			MDBVal value = MDBVal.calloc(stack);
 			int result = mdb_cursor_get(cursor, key, value, MDB_FIRST);
+			int entries = 0;
 			while (result == MDB_SUCCESS) {
-				if (!Arrays.equals(copy(key.mv_data()), ValueStore.TERM_INDEX_MANIFEST_KEY)) {
+				byte[] bytes = copy(key.mv_data());
+				if (++entries > 2 || (!Arrays.equals(bytes, ValueStore.TERM_INDEX_MANIFEST_KEY)
+						&& !Arrays.equals(bytes, TERM_BUILD_KEY))) {
 					throw new IOException("Unrecognized native triple-term manifest metadata key");
 				}
 				result = mdb_cursor_get(cursor, key, value, MDB_NEXT);
@@ -461,19 +749,28 @@ final class LegacyStoreDiscovery {
 
 	/** Validates the published schema or proves a schema-less historical queue bootstrap contains no records. */
 	private static LegacyRetirementQueue validateLegacyRetirementQueue(MemoryStack stack, long transaction,
-			Map<String, Integer> namedDatabases, boolean legacy) throws IOException {
-		if (!legacy) {
+			Map<String, Integer> namedDatabases, boolean legacy, boolean exhaustive) throws IOException {
+		if (!legacy && !exhaustive) {
 			return LegacyRetirementQueue.ABSENT;
 		}
 		boolean hasById = namedDatabases.containsKey("retired_ids");
 		boolean hasSequence = namedDatabases.containsKey("retired_ids_seq");
 		Integer metadataDatabase = namedDatabases.get("gc_meta");
-		byte[] schema = metadataDatabase == null ? null : getValue(transaction, metadataDatabase, new byte[] { 2 });
-		if (metadataDatabase != null && getValue(transaction, metadataDatabase, new byte[] { 3 }) != null) {
+		byte[] schema = metadataDatabase == null ? null
+				: getOptionalBoundedValue(transaction, metadataDatabase, new byte[] { 2 }, 1);
+		byte[] nativeFormat = metadataDatabase == null ? null
+				: getOptionalBoundedValue(transaction, metadataDatabase, new byte[] { 3 }, 1);
+		if (legacy && nativeFormat != null) {
 			throw new IOException("ValueStore native format fence disagrees with LmdbStore format 2");
+		}
+		if (!legacy && !Arrays.equals(nativeFormat, new byte[] { LmdbStoreFormat.CURRENT_VERSION })) {
+			throw new IOException("ValueStore native format fence disagrees with the current LmdbStore format");
 		}
 
 		if (schema == null) {
+			if (!legacy) {
+				throw new IOException("Missing ValueStore retirement schema marker");
+			}
 			validateRetirementBootEpoch(transaction, metadataDatabase, false);
 			if (!isEmptyDatabase(stack, transaction, namedDatabases.get("retired_ids"))
 					|| !isEmptyDatabase(stack, transaction, namedDatabases.get("retired_ids_seq"))) {
@@ -494,8 +791,10 @@ final class LegacyStoreDiscovery {
 			throw new IOException("Unsupported ValueStore retirement metadata schema");
 		}
 		validateRetirementBootEpoch(transaction, metadataDatabase, true);
-		validateRetirementQueueIndexes(stack, transaction, namedDatabases.get("retired_ids"),
-				namedDatabases.get("retired_ids_seq"));
+		if (exhaustive) {
+			validateRetirementQueueIndexes(stack, transaction, namedDatabases.get("retired_ids"),
+					namedDatabases.get("retired_ids_seq"));
+		}
 		return LegacyRetirementQueue.INITIALIZED;
 	}
 
@@ -510,7 +809,8 @@ final class LegacyStoreDiscovery {
 
 	private static void validateRetirementBootEpoch(long transaction, Integer metadataDatabase, boolean required)
 			throws IOException {
-		byte[] bootEpoch = metadataDatabase == null ? null : getValue(transaction, metadataDatabase, new byte[] { 1 });
+		byte[] bootEpoch = metadataDatabase == null ? null
+				: getOptionalBoundedValue(transaction, metadataDatabase, new byte[] { 1 }, 9);
 		if (bootEpoch == null) {
 			if (required) {
 				throw new IOException("Missing ValueStore retirement boot epoch");
@@ -670,406 +970,35 @@ final class LegacyStoreDiscovery {
 		return tokens;
 	}
 
-	private static void validateLegacyDictionary(MemoryStack stack, long transaction, int mainDatabase,
-			Map<String, Integer> namedDatabases) throws IOException {
-		PointerBuffer cursorHandle = stack.mallocPointer(1);
-		E(mdb_cursor_open(transaction, mainDatabase, cursorHandle));
-		long cursor = cursorHandle.get(0);
-		try {
-			MDBVal key = MDBVal.calloc(stack);
-			MDBVal value = MDBVal.calloc(stack);
-			int rc = mdb_cursor_get(cursor, key, value, MDB_FIRST);
-			while (rc == MDB_SUCCESS) {
-				byte[] encodedKey = copy(key.mv_data());
-				Integer namedDatabase = tryOpenCatalogEntry(stack, transaction, encodedKey);
-				if (namedDatabase != null) {
-					String name = decodeDatabaseName(encodedKey);
-					if (!namedDatabases.containsKey(name)) {
-						throw new IOException("Unrecognized named database in values environment: " + name);
-					}
-				} else {
-					validateDictionaryEntry(stack, transaction, mainDatabase, encodedKey, copy(value.mv_data()));
-				}
-				rc = mdb_cursor_get(cursor, key, value, MDB_NEXT);
-			}
-			if (rc != MDB_NOTFOUND) {
-				E(rc);
-			}
-		} finally {
-			mdb_cursor_close(cursor);
-		}
-	}
+	/** Explicit verification carries codec rules in an instance; startup never constructs this walker. */
+	private static final class RecordVerifier {
+		private final LmdbStoreFormat format;
 
-	private static void validateDictionaryEntry(MemoryStack stack, long transaction, int mainDatabase, byte[] key,
-			byte[] value) throws IOException {
-		if (key.length == 0) {
-			throw new IOException("Empty key in ValueStore main database");
+		private RecordVerifier(File directory, StoreProperties properties) {
+			LmdbStoreConfig codecConfig = new LmdbStoreConfig()
+					.setInlineLiterals(!"false".equals(properties.inlineLiterals));
+			format = LmdbStoreFormat.resolve(directory, properties, codecConfig);
 		}
-		int type = Byte.toUnsignedInt(key[0]);
-		switch (type) {
-		case URI_VALUE, LITERAL_VALUE, BNODE_VALUE, NAMESPACE_VALUE -> validateReverseEntry(stack, transaction,
-				mainDatabase, key, value);
-		case ID_KEY -> validateIdEntry(stack, transaction, mainDatabase, key, value);
-		case HASH_KEY -> validateHashEntry(stack, transaction, mainDatabase, key, value);
-		case HASH_ID_KEY -> validateHashIdEntry(stack, transaction, mainDatabase, key, value);
-		case NEXT_ID_KEY -> throw new IOException("Format-6 allocation metadata is present in a legacy ValueStore");
-		default -> throw new IOException("Unrecognized record in ValueStore main database");
-		}
-	}
 
-	private static void validateReverseEntry(MemoryStack stack, long transaction, int mainDatabase, byte[] key,
-			byte[] value) throws IOException {
-		if (key.length > MAX_SHORT_VALUE_KEY) {
-			throw new IOException("Long ValueStore values must use hashed reverse keys");
-		}
-		long id = decodeIdValue(value);
-		byte[] owner = getValue(transaction, mainDatabase, encodeId(id));
-		if (owner == null || !Arrays.equals(owner, key)) {
-			throw new IOException("ValueStore reverse mapping has no matching owner record");
-		}
-		validateOwnerPayload(stack, transaction, mainDatabase, id, owner, true);
-	}
-
-	private static void validateIdEntry(MemoryStack stack, long transaction, int mainDatabase, byte[] key,
-			byte[] value) throws IOException {
-		long id = decodeIdKey(key);
-		validateOwnerPayload(stack, transaction, mainDatabase, id, value, false);
-	}
-
-	private static void validateHashEntry(MemoryStack stack, long transaction, int mainDatabase, byte[] key,
-			byte[] value) throws IOException {
-		ByteBuffer encoded = ByteBuffer.wrap(key);
-		encoded.get();
-		long expectedHash = readCanonicalUnsigned(encoded);
-		if (encoded.hasRemaining()) {
-			throw new IOException("Malformed ValueStore hash key");
-		}
-		long id = decodeIdValue(value);
-		byte[] owner = getValue(transaction, mainDatabase, encodeId(id));
-		if (owner == null || owner.length <= MAX_SHORT_VALUE_KEY || hash(owner) != expectedHash) {
-			throw new IOException("ValueStore hash mapping has no matching owner record");
-		}
-		validateOwnerPayload(stack, transaction, mainDatabase, id, owner, true);
-	}
-
-	private static void validateHashIdEntry(MemoryStack stack, long transaction, int mainDatabase, byte[] key,
-			byte[] value) throws IOException {
-		ByteBuffer encoded = ByteBuffer.wrap(key);
-		encoded.get();
-		long expectedHash = readCanonicalUnsigned(encoded);
-		if (!encoded.hasRemaining() || encoded.get() != ID_KEY) {
-			throw new IOException("Malformed ValueStore collision key");
-		}
-		long id = readCanonicalUnsigned(encoded);
-		if (encoded.hasRemaining() || value.length != 0) {
-			throw new IOException("Malformed ValueStore collision key");
-		}
-		byte[] owner = getValue(transaction, mainDatabase, encodeId(id));
-		if (owner == null || owner.length <= MAX_SHORT_VALUE_KEY || hash(owner) != expectedHash) {
-			throw new IOException("ValueStore collision key has no matching owner record");
-		}
-		validateOwnerPayload(stack, transaction, mainDatabase, id, owner, true);
-	}
-
-	private static long validateOwnerPayload(MemoryStack stack, long transaction, int mainDatabase, long id,
-			byte[] data, boolean requireLive) throws IOException {
-		int idType = ValueIds.getIdType(id);
-		if (id <= 0 || ValueIds.getValue(id) <= 0 || idType == ValueIds.T_CORE_LITERAL) {
-			throw new IOException("Unsupported legacy ValueStore owner ID " + id);
-		}
-		byte expectedType = switch (idType) {
-		case ValueIds.T_PTR -> NAMESPACE_VALUE;
-		case ValueIds.T_URI -> URI_VALUE;
-		case ValueIds.T_LITERAL -> LITERAL_VALUE;
-		case ValueIds.T_BNODE -> BNODE_VALUE;
-		default -> throw new IOException("Unexpected legacy ValueStore owner ID type " + idType);
-		};
-		if (data.length == 0 || data[0] != expectedType) {
-			throw new IOException("ValueStore owner record type disagrees with its ID");
-		}
-		ByteBuffer payload = ByteBuffer.wrap(data);
-		payload.get();
-		long dependency = 0;
-		int dependencyType = -1;
-		switch (expectedType) {
-		case URI_VALUE -> {
-			dependency = readCanonicalUnsigned(payload);
-			dependencyType = ValueIds.T_PTR;
-			validateUtf8(payload, "URI local name");
-		}
-		case LITERAL_VALUE -> {
-			dependency = readCanonicalUnsigned(payload);
-			dependencyType = ValueIds.T_URI;
-			if (!payload.hasRemaining()) {
-				throw new IOException("Truncated ValueStore literal record");
-			}
-			int directionAndLength = Byte.toUnsignedInt(payload.get());
-			int direction = directionAndLength >>> 6;
-			int languageLength = directionAndLength & 0x3f;
-			if (direction == 3) {
-				direction = languageLength;
-				languageLength = Math.toIntExact(readCanonicalUnsigned(payload));
-				if (languageLength <= 0x3f) {
-					throw new IOException("Noncanonical extended language length in ValueStore literal");
-				}
-			}
-			if (direction > 2 || languageLength > payload.remaining()) {
-				throw new IOException("Malformed ValueStore literal language metadata");
-			}
-			ByteBuffer language = payload.slice();
-			language.limit(languageLength);
-			validateUtf8(language, "literal language tag");
-			payload.position(payload.position() + languageLength);
-			validateUtf8(payload, "literal label");
-		}
-		case BNODE_VALUE, NAMESPACE_VALUE -> validateUtf8(payload,
-				expectedType == BNODE_VALUE ? "blank node identifier" : "namespace");
-		default -> throw new IOException("Unexpected ValueStore owner record type");
-		}
-		if (requireLive && !isLiveOwner(stack, transaction, mainDatabase, id, data)) {
-			throw new IOException("ValueStore forward dependency has no live reverse mapping");
-		}
-		if (dependency != 0) {
-			long dependencyId = dependency;
-			int expectedIdType = dependencyType;
-			if (ValueIds.getIdType(dependencyId) != expectedIdType) {
-				throw new IOException("ValueStore owner has an invalid forward dependency");
-			}
-			if (requireLive) {
-				byte[] dependencyData = getValue(transaction, mainDatabase, encodeId(dependencyId));
-				if (dependencyData == null
-						|| !isLiveOwner(stack, transaction, mainDatabase, dependencyId, dependencyData)) {
-					throw new IOException("ValueStore owner references a missing or retired dependency");
-				}
-			}
-		}
-		return dependency;
-	}
-
-	private static boolean isLiveOwner(MemoryStack stack, long transaction, int mainDatabase, long id, byte[] data)
-			throws IOException {
-		stack.push();
-		try {
-			byte[] ownerKey = encodeId(id);
-			if (data.length <= MAX_SHORT_VALUE_KEY) {
-				byte[] reverse = getValue(transaction, mainDatabase, data);
-				return Arrays.equals(ownerKey, reverse);
-			}
-			ByteBuffer hashKey = stack.malloc(10);
-			hashKey.put(HASH_KEY);
-			Varint.writeUnsigned(hashKey, hash(data));
-			byte[] reverse = getValue(transaction, mainDatabase, copy(hashKey.flip()));
-			if (Arrays.equals(ownerKey, reverse)) {
-				return true;
-			}
-			ByteBuffer collisionKey = stack.malloc(1 + 9 + ownerKey.length);
-			collisionKey.put(HASH_ID_KEY);
-			Varint.writeUnsigned(collisionKey, hash(data));
-			collisionKey.put(ownerKey);
-			return getValue(transaction, mainDatabase, copy(collisionKey.flip())) != null;
-		} finally {
-			stack.pop();
-		}
-	}
-
-	private static void validateContexts(MemoryStack stack, long transaction, int contextDatabase, long valuesTxn,
-			int valuesMain, int termCspoDatabase) throws IOException {
-		if (contextDatabase < 0) {
-			throw new IOException("Missing contexts database in legacy LmdbStore");
-		}
-		PointerBuffer cursorHandle = stack.mallocPointer(1);
-		E(mdb_cursor_open(transaction, contextDatabase, cursorHandle));
-		long cursor = cursorHandle.get(0);
-		try {
-			MDBVal key = MDBVal.calloc(stack);
-			MDBVal value = MDBVal.calloc(stack);
-			int rc = mdb_cursor_get(cursor, key, value, MDB_FIRST);
-			while (rc == MDB_SUCCESS) {
-				ByteBuffer contextKey = key.mv_data().duplicate();
-				long context = readCanonicalUnsigned(contextKey);
-				ByteBuffer count = value.mv_data().duplicate();
-				long references = readCanonicalUnsigned(count);
-				if (context < 0 || references == 0 || contextKey.hasRemaining() || count.hasRemaining()) {
-					throw new IOException("Malformed context reference record");
-				}
-				if (context != 0) {
-					validateResourceId(stack, valuesTxn, valuesMain, context, termCspoDatabase);
-				}
-				rc = mdb_cursor_get(cursor, key, value, MDB_NEXT);
-			}
-			if (rc != MDB_NOTFOUND) {
-				E(rc);
-			}
-		} finally {
-			mdb_cursor_close(cursor);
-		}
-	}
-
-	private static void validateStatementIndexes(MemoryStack stack, long transaction,
-			Map<String, Integer> databases, Set<String> indexes, long valuesTxn, int valuesMain, int contextsDatabase,
-			int termCspoDatabase, int termSpocDatabase, boolean explicit) throws IOException {
-		String base = indexes.iterator().next();
-		Map<String, ByteBuffer> scratchKeys = new HashMap<>();
-		Map<String, IndexKeyWriters.KeyWriter> writers = new HashMap<>();
-		Map<String, Long> counts = new HashMap<>();
-		for (String spec : indexes) {
-			int database = databases.get(TripleIndex.nativeDatabaseName(spec, explicit));
-			MDBStat stat = MDBStat.malloc(stack);
-			E(mdb_stat(transaction, database, stat));
-			counts.put(spec, stat.ms_entries());
-			writers.put(spec, IndexKeyWriters.forFieldSeq(spec));
-			scratchKeys.put(spec, stack.malloc(TripleIndex.MAX_KEY_LENGTH));
-		}
-		long expectedCount = counts.get(base);
-		for (Map.Entry<String, Long> entry : counts.entrySet()) {
-			if (entry.getValue() != expectedCount) {
-				throw new IOException("Statement index entry counts disagree for " + entry.getKey());
-			}
-		}
-		int baseDatabase = databases.get(TripleIndex.nativeDatabaseName(base, explicit));
-		PointerBuffer cursorHandle = stack.mallocPointer(1);
-		E(mdb_cursor_open(transaction, baseDatabase, cursorHandle));
-		long cursor = cursorHandle.get(0);
-		try {
-			MDBVal key = MDBVal.calloc(stack);
-			MDBVal value = MDBVal.calloc(stack);
-			MDBVal lookupKey = MDBVal.calloc(stack);
-			MDBVal lookupValue = MDBVal.calloc(stack);
-			int rc = mdb_cursor_get(cursor, key, value, MDB_FIRST);
-			while (rc == MDB_SUCCESS) {
-				long[] quad = decodeIndexKey(base, key.mv_data());
-				if (value.mv_size() != 0) {
-					throw new IOException("Unexpected statement index value payload");
-				}
-				validateStatementQuad(stack, transaction, valuesTxn, valuesMain, contextsDatabase, termCspoDatabase,
-						termSpocDatabase, quad);
-				for (String spec : indexes) {
-					ByteBuffer encoded = scratchKeys.get(spec);
-					encoded.clear();
-					writers.get(spec).write(encoded, quad[0], quad[1], quad[2], quad[3], false);
-					encoded.flip();
-					lookupKey.mv_data(encoded);
-					int target = databases.get(TripleIndex.nativeDatabaseName(spec, explicit));
-					int found = mdb_get(transaction, target, lookupKey, lookupValue);
-					if (found != MDB_SUCCESS) {
-						if (found != MDB_NOTFOUND) {
-							E(found);
-						}
-						throw new IOException("Statement indexes contain different quads");
-					}
-					if (lookupValue.mv_size() != 0) {
-						throw new IOException("Unexpected statement index value payload");
-					}
-				}
-				rc = mdb_cursor_get(cursor, key, value, MDB_NEXT);
-			}
-			if (rc != MDB_NOTFOUND) {
-				E(rc);
-			}
-		} finally {
-			mdb_cursor_close(cursor);
-		}
-	}
-
-	private static void validateStatementQuad(MemoryStack stack, long triplesTxn, long valuesTxn, int valuesMain,
-			int contextsDatabase, int termCspoDatabase, int termSpocDatabase, long[] quad) throws IOException {
-		validateResourceId(stack, valuesTxn, valuesMain, quad[TripleIndex.SUBJ_IDX], termCspoDatabase);
-		validateUriId(stack, valuesTxn, valuesMain, quad[TripleIndex.PRED_IDX]);
-		validateObjectId(stack, valuesTxn, valuesMain, quad[TripleIndex.OBJ_IDX], termCspoDatabase,
-				termSpocDatabase);
-		long context = quad[TripleIndex.CONTEXT_IDX];
-		if (context != 0) {
-			validateResourceId(stack, valuesTxn, valuesMain, context, termCspoDatabase);
-			stack.push();
-			try {
-				MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(encodeUnsigned(context)));
-				MDBVal value = MDBVal.calloc(stack);
-				int rc = mdb_get(triplesTxn, contextsDatabase, key, value);
-				if (rc == MDB_NOTFOUND) {
-					throw new IOException("Statement context is missing from the contexts database");
-				}
-				E(rc);
-				ByteBuffer references = value.mv_data().duplicate();
-				if (readCanonicalUnsigned(references) == 0 || references.hasRemaining()) {
-					throw new IOException("Malformed context reference record");
-				}
-			} finally {
-				stack.pop();
-			}
-		}
-	}
-
-	private static void validateTermIndexes(MemoryStack stack, long transaction, Map<String, Integer> databases,
-			Set<String> indexes, int valuesMain, Integer unusedDatabase, int termCspoDatabase, int termSpocDatabase)
-			throws IOException {
-		String base = "cspo";
-		Map<String, ByteBuffer> scratchKeys = new HashMap<>();
-		Map<String, IndexKeyWriters.KeyWriter> writers = new HashMap<>();
-		Map<String, Long> counts = new HashMap<>();
-		Map<String, Long> matchedCounts = new HashMap<>();
-		for (String spec : indexes) {
-			int database = databases.get(TripleIndex.nativeDatabaseName("term-" + spec, true));
-			MDBStat stat = MDBStat.malloc(stack);
-			E(mdb_stat(transaction, database, stat));
-			counts.put(spec, stat.ms_entries());
-			matchedCounts.put(spec, 0L);
-			writers.put(spec, IndexKeyWriters.forFieldSeq(spec));
-			scratchKeys.put(spec, stack.malloc(TripleIndex.MAX_KEY_LENGTH));
-		}
-		int baseDatabase = databases.get(TripleIndex.nativeDatabaseName("term-" + base, true));
-		try (CollectionFactory hintCollections = new MapDb3CollectionFactory(RETIREMENT_HINT_SPILL_THRESHOLD)) {
-			Set<Long> retirementHints = hintCollections.createSet();
-			readTripleTermRetirementHints(stack, transaction, unusedDatabase == null ? -1 : unusedDatabase,
-					retirementHints);
+		private void validateDictionary(MemoryStack stack, long transaction, int mainDatabase,
+				Map<String, Integer> namedDatabases) throws IOException {
 			PointerBuffer cursorHandle = stack.mallocPointer(1);
-			E(mdb_cursor_open(transaction, baseDatabase, cursorHandle));
+			E(mdb_cursor_open(transaction, mainDatabase, cursorHandle));
 			long cursor = cursorHandle.get(0);
-			long previousOwner = 0;
 			try {
 				MDBVal key = MDBVal.calloc(stack);
 				MDBVal value = MDBVal.calloc(stack);
-				MDBVal lookupKey = MDBVal.calloc(stack);
-				MDBVal lookupValue = MDBVal.calloc(stack);
 				int rc = mdb_cursor_get(cursor, key, value, MDB_FIRST);
 				while (rc == MDB_SUCCESS) {
-					long[] quad = decodeIndexKey(base, key.mv_data());
-					long owner = quad[TripleIndex.CONTEXT_IDX];
-					if (value.mv_size() != 0 || owner <= previousOwner || owner <= 0
-							|| ValueIds.getIdType(owner) != ValueIds.T_TRIPLE) {
-						throw new IOException("Malformed or duplicate triple-term owner index row");
-					}
-					previousOwner = owner;
-					int presentIndexes = 0;
-					for (String spec : indexes) {
-						ByteBuffer encoded = scratchKeys.get(spec);
-						encoded.clear();
-						writers.get(spec).write(encoded, quad[0], quad[1], quad[2], quad[3], false);
-						encoded.flip();
-						lookupKey.mv_data(encoded);
-						int target = databases.get(TripleIndex.nativeDatabaseName("term-" + spec, true));
-						int found = mdb_get(transaction, target, lookupKey, lookupValue);
-						if (found == MDB_NOTFOUND) {
-							continue;
+					byte[] encodedKey = copy(key.mv_data());
+					Integer namedDatabase = tryOpenCatalogEntry(stack, transaction, encodedKey);
+					if (namedDatabase != null) {
+						String name = decodeDatabaseName(encodedKey);
+						if (!namedDatabases.containsKey(name)) {
+							throw new IOException("Unrecognized named database in values environment: " + name);
 						}
-						E(found);
-						if (lookupValue.mv_size() != 0) {
-							throw new IOException("Unexpected triple-term index value payload");
-						}
-						presentIndexes++;
-						matchedCounts.merge(spec, 1L, Math::addExact);
-					}
-					if (presentIndexes == indexes.size()) {
-						// A live forward mapping dominates any obsolete unused_ids hint.
-						validateActiveTripleTerm(stack, transaction, valuesMain, quad, termCspoDatabase,
-								termSpocDatabase);
-					} else if (presentIndexes == 1) {
-						if (!retirementHints.contains(owner)) {
-							throw new IOException("Retained triple-term row has no authoritative retirement marker");
-						}
-						validateRetainedTripleTerm(stack, transaction, valuesMain, quad, termCspoDatabase,
-								retirementHints);
 					} else {
-						throw new IOException("Triple-term forward indexes contain a partial owner mapping");
+						validateDictionaryEntry(stack, transaction, mainDatabase, encodedKey, copy(value.mv_data()));
 					}
 					rc = mdb_cursor_get(cursor, key, value, MDB_NEXT);
 				}
@@ -1079,243 +1008,683 @@ final class LegacyStoreDiscovery {
 			} finally {
 				mdb_cursor_close(cursor);
 			}
-			for (Map.Entry<String, Long> entry : counts.entrySet()) {
-				if (!entry.getValue().equals(matchedCounts.get(entry.getKey()))) {
-					throw new IOException("Triple-term indexes contain extra or missing rows for " + entry.getKey());
+		}
+
+		private void validateDictionaryEntry(MemoryStack stack, long transaction, int mainDatabase, byte[] key,
+				byte[] value) throws IOException {
+			if (key.length == 0) {
+				throw new IOException("Empty key in ValueStore main database");
+			}
+			int type = Byte.toUnsignedInt(key[0]);
+			switch (type) {
+			case URI_VALUE, LITERAL_VALUE, BNODE_VALUE, NAMESPACE_VALUE -> validateReverseEntry(stack, transaction,
+					mainDatabase, key, value);
+			case ID_KEY -> validateIdEntry(stack, transaction, mainDatabase, key, value);
+			case HASH_KEY -> validateHashEntry(stack, transaction, mainDatabase, key, value);
+			case HASH_ID_KEY -> validateHashIdEntry(stack, transaction, mainDatabase, key, value);
+			case NEXT_ID_KEY -> {
+				if (format.isLegacy()) {
+					throw new IOException("Format-6 allocation metadata is present in a legacy ValueStore");
+				}
+				ByteBuffer allocation = ByteBuffer.wrap(value);
+				if (key.length != 1 || readCanonicalUnsigned(allocation) <= 0 || allocation.hasRemaining()) {
+					throw new IOException("Malformed ValueStore allocation metadata");
 				}
 			}
-		}
-	}
-
-	private static void readTripleTermRetirementHints(MemoryStack stack, long transaction, int unusedDatabase,
-			Set<Long> retirementHints) throws IOException {
-		if (unusedDatabase < 0) {
-			return;
-		}
-		PointerBuffer cursorHandle = stack.mallocPointer(1);
-		E(mdb_cursor_open(transaction, unusedDatabase, cursorHandle));
-		long cursor = cursorHandle.get(0);
-		try {
-			MDBVal key = MDBVal.calloc(stack);
-			MDBVal value = MDBVal.calloc(stack);
-			int rc = mdb_cursor_get(cursor, key, value, MDB_FIRST);
-			while (rc == MDB_SUCCESS) {
-				ByteBuffer composite = key.mv_data().duplicate();
-				long revision = readCanonicalUnsigned(composite);
-				if (revision < 0 || !composite.hasRemaining() || composite.get() != ID_KEY) {
-					throw new IOException("Malformed ValueStore unused-ID marker");
-				}
-				long id = readCanonicalUnsigned(composite);
-				if (id <= 0 || composite.hasRemaining()) {
-					throw new IOException("Malformed ValueStore unused-ID marker");
-				}
-				int type = ValueIds.getIdType(id);
-				if (type == ValueIds.T_PTR || type == ValueIds.T_URI || type == ValueIds.T_LITERAL
-						|| type == ValueIds.T_BNODE || type == ValueIds.T_TRIPLE) {
-					retirementHints.add(id);
-				}
-				rc = mdb_cursor_get(cursor, key, value, MDB_NEXT);
+			default -> throw new IOException("Unrecognized record in ValueStore main database");
 			}
-			if (rc != MDB_NOTFOUND) {
-				E(rc);
+		}
+
+		private void validateReverseEntry(MemoryStack stack, long transaction, int mainDatabase, byte[] key,
+				byte[] value) throws IOException {
+			if (key.length > MAX_SHORT_VALUE_KEY) {
+				throw new IOException("Long ValueStore values must use hashed reverse keys");
 			}
-		} finally {
-			mdb_cursor_close(cursor);
-		}
-	}
-
-	private static void validateActiveTripleTerm(MemoryStack stack, long transaction, int valuesMain, long[] quad,
-			int termCspoDatabase, int termSpocDatabase) throws IOException {
-		validateResourceId(stack, transaction, valuesMain, quad[TripleIndex.SUBJ_IDX], termCspoDatabase);
-		validateUriId(stack, transaction, valuesMain, quad[TripleIndex.PRED_IDX]);
-		validateObjectId(stack, transaction, valuesMain, quad[TripleIndex.OBJ_IDX], termCspoDatabase,
-				termSpocDatabase);
-	}
-
-	private static void validateRetainedTripleTerm(MemoryStack stack, long transaction, int valuesMain, long[] quad,
-			int termCspoDatabase, Set<Long> retirementHints) throws IOException {
-		validateRetainedResourceId(stack, transaction, valuesMain, quad[TripleIndex.SUBJ_IDX], retirementHints);
-		validateRetainedUriId(stack, transaction, valuesMain, quad[TripleIndex.PRED_IDX], retirementHints);
-		validateRetainedObjectId(stack, transaction, valuesMain, quad[TripleIndex.OBJ_IDX], termCspoDatabase,
-				retirementHints);
-	}
-
-	private static void validateRetainedResourceId(MemoryStack stack, long transaction, int valuesMain, long id,
-			Set<Long> retirementHints) throws IOException {
-		int type = ValueIds.getIdType(id);
-		if (id <= 0 || type != ValueIds.T_URI && type != ValueIds.T_BNODE) {
-			throw new IOException("Invalid RDF resource ID in retained triple-term row");
-		}
-		validateRetainedDictionaryId(stack, transaction, valuesMain, id, retirementHints);
-	}
-
-	private static void validateRetainedUriId(MemoryStack stack, long transaction, int valuesMain, long id,
-			Set<Long> retirementHints) throws IOException {
-		if (id <= 0 || ValueIds.getIdType(id) != ValueIds.T_URI) {
-			throw new IOException("Invalid predicate ID in retained triple-term row");
-		}
-		validateRetainedDictionaryId(stack, transaction, valuesMain, id, retirementHints);
-	}
-
-	private static void validateRetainedObjectId(MemoryStack stack, long transaction, int valuesMain, long id,
-			int termCspoDatabase, Set<Long> retirementHints) throws IOException {
-		int type = ValueIds.getIdType(id);
-		if (ValueIds.isDouble(id) || type >= ValueIds.T_INTEGER && type <= ValueIds.T_UNSIGNEDBYTE) {
-			return;
-		}
-		if (type == ValueIds.T_TRIPLE) {
-			if (!hasTripleTerm(transaction, termCspoDatabase, id)) {
-				throw new IOException("Retained triple-term references a missing child term row");
+			long id = decodeIdValue(value);
+			byte[] owner = getValue(transaction, mainDatabase, encodeId(id));
+			if (owner == null || !Arrays.equals(owner, key)) {
+				throw new IOException("ValueStore reverse mapping has no matching owner record");
 			}
-		} else if (type == ValueIds.T_URI || type == ValueIds.T_BNODE || type == ValueIds.T_LITERAL) {
-			validateRetainedDictionaryId(stack, transaction, valuesMain, id, retirementHints);
-		} else {
-			throw new IOException("Invalid object ID in retained triple-term row");
+			validateOwnerPayload(stack, transaction, mainDatabase, id, owner, true);
 		}
-	}
 
-	private static void validateRetainedDictionaryId(MemoryStack stack, long transaction, int valuesMain, long id,
-			Set<Long> retirementHints) throws IOException {
-		byte[] data = getValue(transaction, valuesMain, encodeId(id));
-		if (data == null) {
-			throw new IOException("Retained triple-term references a missing value payload");
+		private void validateIdEntry(MemoryStack stack, long transaction, int mainDatabase, byte[] key,
+				byte[] value) throws IOException {
+			long id = decodeIdKey(key);
+			validateOwnerPayload(stack, transaction, mainDatabase, id, value, false);
 		}
-		long dependency = validateOwnerPayload(stack, transaction, valuesMain, id, data, false);
-		if (isLiveOwner(stack, transaction, valuesMain, id, data)) {
-			validateOwnerPayload(stack, transaction, valuesMain, id, data, true);
-			return;
+
+		private void validateHashEntry(MemoryStack stack, long transaction, int mainDatabase, byte[] key,
+				byte[] value) throws IOException {
+			ByteBuffer encoded = ByteBuffer.wrap(key);
+			encoded.get();
+			long expectedHash = readCanonicalUnsigned(encoded);
+			if (encoded.hasRemaining()) {
+				throw new IOException("Malformed ValueStore hash key");
+			}
+			long id = decodeIdValue(value);
+			byte[] owner = getValue(transaction, mainDatabase, encodeId(id));
+			if (owner == null || owner.length <= MAX_SHORT_VALUE_KEY || hash(owner) != expectedHash) {
+				throw new IOException("ValueStore hash mapping has no matching owner record");
+			}
+			validateOwnerPayload(stack, transaction, mainDatabase, id, owner, true);
 		}
-		if (!retirementHints.contains(id)) {
-			throw new IOException("Retained triple-term references a non-live value without a retirement marker");
+
+		private void validateHashIdEntry(MemoryStack stack, long transaction, int mainDatabase, byte[] key,
+				byte[] value) throws IOException {
+			ByteBuffer encoded = ByteBuffer.wrap(key);
+			encoded.get();
+			long expectedHash = readCanonicalUnsigned(encoded);
+			if (!encoded.hasRemaining() || encoded.get() != ID_KEY) {
+				throw new IOException("Malformed ValueStore collision key");
+			}
+			long id = readCanonicalUnsigned(encoded);
+			if (encoded.hasRemaining() || value.length != 0) {
+				throw new IOException("Malformed ValueStore collision key");
+			}
+			byte[] owner = getValue(transaction, mainDatabase, encodeId(id));
+			if (owner == null || owner.length <= MAX_SHORT_VALUE_KEY || hash(owner) != expectedHash) {
+				throw new IOException("ValueStore collision key has no matching owner record");
+			}
+			validateOwnerPayload(stack, transaction, mainDatabase, id, owner, true);
 		}
-		if (dependency != 0) {
-			int dependencyType = switch (ValueIds.getIdType(id)) {
-			case ValueIds.T_URI -> ValueIds.T_PTR;
-			case ValueIds.T_LITERAL -> ValueIds.T_URI;
-			default -> throw new IOException("Unexpected retained ValueStore dependency");
+
+		private long validateOwnerPayload(MemoryStack stack, long transaction, int mainDatabase, long id,
+				byte[] data, boolean requireLive) throws IOException {
+			int idType = ValueIds.getIdType(id);
+			if (id <= 0 || ValueIds.referenceOrdinal(id) <= 0
+					|| idType == ValueIds.T_CORE_LITERAL && (!format.usesCoreDatatypeLiteralReferences()
+							|| ValueIds.coreDatatypeOfCoreLiteral(id) == CoreDatatype.NONE)) {
+				throw new IOException("Unsupported ValueStore owner ID " + id);
+			}
+			byte expectedType = switch (idType) {
+			case ValueIds.T_PTR -> NAMESPACE_VALUE;
+			case ValueIds.T_URI -> URI_VALUE;
+			case ValueIds.T_LITERAL, ValueIds.T_CORE_LITERAL -> LITERAL_VALUE;
+			case ValueIds.T_BNODE -> BNODE_VALUE;
+			default -> throw new IOException("Unexpected legacy ValueStore owner ID type " + idType);
 			};
-			if (ValueIds.getIdType(dependency) != dependencyType) {
-				throw new IOException("Retained ValueStore owner has an invalid dependency type");
+			if (data.length == 0 || data[0] != expectedType) {
+				throw new IOException("ValueStore owner record type disagrees with its ID");
 			}
-			validateRetainedDictionaryId(stack, transaction, valuesMain, dependency, retirementHints);
-		}
-	}
-
-	private static void validateResourceId(MemoryStack stack, long transaction, int mainDatabase, long id,
-			int termCspoDatabase) throws IOException {
-		int type = ValueIds.getIdType(id);
-		if (id <= 0 || type != ValueIds.T_URI && type != ValueIds.T_BNODE) {
-			throw new IOException("Invalid RDF resource ID in legacy index");
-		}
-		validateLiveDictionaryId(stack, transaction, mainDatabase, id);
-	}
-
-	private static void validateUriId(MemoryStack stack, long transaction, int mainDatabase, long id)
-			throws IOException {
-		if (id <= 0 || ValueIds.getIdType(id) != ValueIds.T_URI) {
-			throw new IOException("Invalid predicate ID in legacy index");
-		}
-		validateLiveDictionaryId(stack, transaction, mainDatabase, id);
-	}
-
-	private static void validateObjectId(MemoryStack stack, long transaction, int mainDatabase, long id,
-			int termCspoDatabase, int termSpocDatabase) throws IOException {
-		int type = ValueIds.getIdType(id);
-		if (ValueIds.isDouble(id) || type >= ValueIds.T_INTEGER && type <= ValueIds.T_UNSIGNEDBYTE) {
-			return;
-		}
-		if (type == ValueIds.T_TRIPLE) {
-			if (!hasLiveTripleTermMapping(stack, transaction, termCspoDatabase, termSpocDatabase, id)) {
-				throw new IOException("Live index references a missing or retired triple-term owner");
+			ByteBuffer payload = ByteBuffer.wrap(data);
+			payload.get();
+			long dependency = 0;
+			int dependencyType = -1;
+			switch (expectedType) {
+			case URI_VALUE -> {
+				dependency = readCanonicalUnsigned(payload);
+				dependencyType = ValueIds.T_PTR;
+				validateUtf8(payload, "URI local name");
 			}
-		} else if (type == ValueIds.T_URI || type == ValueIds.T_BNODE || type == ValueIds.T_LITERAL) {
-			validateLiveDictionaryId(stack, transaction, mainDatabase, id);
-		} else {
-			throw new IOException("Invalid object ID in legacy index");
+			case LITERAL_VALUE -> {
+				dependency = readCanonicalUnsigned(payload);
+				dependencyType = ValueIds.T_URI;
+				if (idType == ValueIds.T_CORE_LITERAL) {
+					validateCoreDatatype(stack, transaction, mainDatabase, id, dependency);
+				}
+				if (!payload.hasRemaining()) {
+					throw new IOException("Truncated ValueStore literal record");
+				}
+				int directionAndLength = Byte.toUnsignedInt(payload.get());
+				int direction = directionAndLength >>> 6;
+				int languageLength = directionAndLength & 0x3f;
+				if (direction == 3) {
+					direction = languageLength;
+					languageLength = Math.toIntExact(readCanonicalUnsigned(payload));
+					if (languageLength <= 0x3f) {
+						throw new IOException("Noncanonical extended language length in ValueStore literal");
+					}
+				}
+				if (direction > 2 || languageLength > payload.remaining()) {
+					throw new IOException("Malformed ValueStore literal language metadata");
+				}
+				ByteBuffer language = payload.slice();
+				language.limit(languageLength);
+				validateUtf8(language, "literal language tag");
+				payload.position(payload.position() + languageLength);
+				validateUtf8(payload, "literal label");
+			}
+			case BNODE_VALUE, NAMESPACE_VALUE -> validateUtf8(payload,
+					expectedType == BNODE_VALUE ? "blank node identifier" : "namespace");
+			default -> throw new IOException("Unexpected ValueStore owner record type");
+			}
+			if (requireLive && !isLiveOwner(stack, transaction, mainDatabase, id, data)) {
+				throw new IOException("ValueStore forward dependency has no live reverse mapping");
+			}
+			if (dependency != 0) {
+				long dependencyId = dependency;
+				int expectedIdType = dependencyType;
+				if (ValueIds.getIdType(dependencyId) != expectedIdType) {
+					throw new IOException("ValueStore owner has an invalid forward dependency");
+				}
+				if (requireLive) {
+					byte[] dependencyData = getValue(transaction, mainDatabase, encodeId(dependencyId));
+					if (dependencyData == null
+							|| !isLiveOwner(stack, transaction, mainDatabase, dependencyId, dependencyData)) {
+						throw new IOException("ValueStore owner references a missing or retired dependency");
+					}
+				}
+			}
+			return dependency;
 		}
-	}
 
-	private static void validateLiveDictionaryId(MemoryStack stack, long transaction, int mainDatabase, long id)
-			throws IOException {
-		byte[] data = getValue(transaction, mainDatabase, encodeId(id));
-		if (data == null || !isLiveOwner(stack, transaction, mainDatabase, id, data)) {
-			throw new IOException("Legacy index references a missing or retired ValueStore owner");
+		private boolean isLiveOwner(MemoryStack stack, long transaction, int mainDatabase, long id, byte[] data)
+				throws IOException {
+			stack.push();
+			try {
+				byte[] ownerKey = encodeId(id);
+				if (data.length <= MAX_SHORT_VALUE_KEY) {
+					byte[] reverse = getValue(transaction, mainDatabase, data);
+					return Arrays.equals(ownerKey, reverse);
+				}
+				ByteBuffer hashKey = stack.malloc(10);
+				hashKey.put(HASH_KEY);
+				Varint.writeUnsigned(hashKey, hash(data));
+				byte[] reverse = getValue(transaction, mainDatabase, copy(hashKey.flip()));
+				if (Arrays.equals(ownerKey, reverse)) {
+					return true;
+				}
+				ByteBuffer collisionKey = stack.malloc(1 + 9 + ownerKey.length);
+				collisionKey.put(HASH_ID_KEY);
+				Varint.writeUnsigned(collisionKey, hash(data));
+				collisionKey.put(ownerKey);
+				return getValue(transaction, mainDatabase, copy(collisionKey.flip())) != null;
+			} finally {
+				stack.pop();
+			}
 		}
-	}
 
-	private static boolean hasTripleTerm(long transaction, int termCspoDatabase, long id) throws IOException {
-		if (termCspoDatabase < 0) {
-			return false;
-		}
-		try (MemoryStack stack = MemoryStack.stackPush()) {
+		private void validateContexts(MemoryStack stack, long transaction, int contextDatabase, long valuesTxn,
+				int valuesMain, int termCspoDatabase) throws IOException {
+			if (contextDatabase < 0) {
+				throw new IOException("Missing contexts database in legacy LmdbStore");
+			}
 			PointerBuffer cursorHandle = stack.mallocPointer(1);
-			E(mdb_cursor_open(transaction, termCspoDatabase, cursorHandle));
+			E(mdb_cursor_open(transaction, contextDatabase, cursorHandle));
 			long cursor = cursorHandle.get(0);
 			try {
+				MDBVal key = MDBVal.calloc(stack);
+				MDBVal value = MDBVal.calloc(stack);
+				int rc = mdb_cursor_get(cursor, key, value, MDB_FIRST);
+				while (rc == MDB_SUCCESS) {
+					ByteBuffer contextKey = key.mv_data().duplicate();
+					long context = readCanonicalUnsigned(contextKey);
+					ByteBuffer count = value.mv_data().duplicate();
+					long references = readCanonicalUnsigned(count);
+					if (context < 0 || references == 0 || contextKey.hasRemaining() || count.hasRemaining()) {
+						throw new IOException("Malformed context reference record");
+					}
+					if (context != 0) {
+						validateResourceId(stack, valuesTxn, valuesMain, context, termCspoDatabase);
+					}
+					rc = mdb_cursor_get(cursor, key, value, MDB_NEXT);
+				}
+				if (rc != MDB_NOTFOUND) {
+					E(rc);
+				}
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+		}
+
+		private void validateStatementIndexes(MemoryStack stack, long transaction,
+				Map<String, Integer> databases, Set<String> indexes, long valuesTxn, int valuesMain,
+				int contextsDatabase,
+				int termCspoDatabase, int termSpocDatabase, boolean explicit) throws IOException {
+			String base = indexes.iterator().next();
+			Map<String, ByteBuffer> scratchKeys = new HashMap<>();
+			Map<String, IndexKeyWriters.KeyWriter> writers = new HashMap<>();
+			Map<String, Long> counts = new HashMap<>();
+			for (String spec : indexes) {
+				int database = databases.get(TripleIndex.nativeDatabaseName(spec, explicit));
+				MDBStat stat = MDBStat.malloc(stack);
+				E(mdb_stat(transaction, database, stat));
+				counts.put(spec, stat.ms_entries());
+				writers.put(spec, IndexKeyWriters.forFieldSeq(spec));
+				scratchKeys.put(spec, stack.malloc(TripleIndex.MAX_KEY_LENGTH));
+			}
+			long expectedCount = counts.get(base);
+			for (Map.Entry<String, Long> entry : counts.entrySet()) {
+				if (entry.getValue() != expectedCount) {
+					throw new IOException("Statement index entry counts disagree for " + entry.getKey());
+				}
+			}
+			int baseDatabase = databases.get(TripleIndex.nativeDatabaseName(base, explicit));
+			PointerBuffer cursorHandle = stack.mallocPointer(1);
+			E(mdb_cursor_open(transaction, baseDatabase, cursorHandle));
+			long cursor = cursorHandle.get(0);
+			try {
+				MDBVal key = MDBVal.calloc(stack);
+				MDBVal value = MDBVal.calloc(stack);
+				MDBVal lookupKey = MDBVal.calloc(stack);
+				MDBVal lookupValue = MDBVal.calloc(stack);
+				int rc = mdb_cursor_get(cursor, key, value, MDB_FIRST);
+				while (rc == MDB_SUCCESS) {
+					long[] quad = decodeIndexKey(base, key.mv_data());
+					if (value.mv_size() != 0) {
+						throw new IOException("Unexpected statement index value payload");
+					}
+					validateStatementQuad(stack, transaction, valuesTxn, valuesMain, contextsDatabase, termCspoDatabase,
+							termSpocDatabase, quad);
+					for (String spec : indexes) {
+						ByteBuffer encoded = scratchKeys.get(spec);
+						encoded.clear();
+						writers.get(spec).write(encoded, quad[0], quad[1], quad[2], quad[3], false);
+						encoded.flip();
+						lookupKey.mv_data(encoded);
+						int target = databases.get(TripleIndex.nativeDatabaseName(spec, explicit));
+						int found = mdb_get(transaction, target, lookupKey, lookupValue);
+						if (found != MDB_SUCCESS) {
+							if (found != MDB_NOTFOUND) {
+								E(found);
+							}
+							throw new IOException("Statement indexes contain different quads");
+						}
+						if (lookupValue.mv_size() != 0) {
+							throw new IOException("Unexpected statement index value payload");
+						}
+					}
+					rc = mdb_cursor_get(cursor, key, value, MDB_NEXT);
+				}
+				if (rc != MDB_NOTFOUND) {
+					E(rc);
+				}
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+		}
+
+		private void validateStatementQuad(MemoryStack stack, long triplesTxn, long valuesTxn, int valuesMain,
+				int contextsDatabase, int termCspoDatabase, int termSpocDatabase, long[] quad) throws IOException {
+			validateResourceId(stack, valuesTxn, valuesMain, quad[TripleIndex.SUBJ_IDX], termCspoDatabase);
+			validateUriId(stack, valuesTxn, valuesMain, quad[TripleIndex.PRED_IDX]);
+			validateObjectId(stack, valuesTxn, valuesMain, quad[TripleIndex.OBJ_IDX], termCspoDatabase,
+					termSpocDatabase);
+			long context = quad[TripleIndex.CONTEXT_IDX];
+			if (context != 0) {
+				validateResourceId(stack, valuesTxn, valuesMain, context, termCspoDatabase);
+				stack.push();
+				try {
+					MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(encodeUnsigned(context)));
+					MDBVal value = MDBVal.calloc(stack);
+					int rc = mdb_get(triplesTxn, contextsDatabase, key, value);
+					if (rc == MDB_NOTFOUND) {
+						throw new IOException("Statement context is missing from the contexts database");
+					}
+					E(rc);
+					ByteBuffer references = value.mv_data().duplicate();
+					if (readCanonicalUnsigned(references) == 0 || references.hasRemaining()) {
+						throw new IOException("Malformed context reference record");
+					}
+				} finally {
+					stack.pop();
+				}
+			}
+		}
+
+		private void validateTermIndexes(MemoryStack stack, long transaction, Map<String, Integer> databases,
+				Set<String> indexes, int valuesMain, Integer unusedDatabase, int termCspoDatabase, int termSpocDatabase)
+				throws IOException {
+			String base = "cspo";
+			Map<String, ByteBuffer> scratchKeys = new HashMap<>();
+			Map<String, IndexKeyWriters.KeyWriter> writers = new HashMap<>();
+			Map<String, Long> counts = new HashMap<>();
+			Map<String, Long> matchedCounts = new HashMap<>();
+			for (String spec : indexes) {
+				int database = databases.get(TripleIndex.nativeDatabaseName("term-" + spec, true));
+				MDBStat stat = MDBStat.malloc(stack);
+				E(mdb_stat(transaction, database, stat));
+				counts.put(spec, stat.ms_entries());
+				matchedCounts.put(spec, 0L);
+				writers.put(spec, IndexKeyWriters.forFieldSeq(spec));
+				scratchKeys.put(spec, stack.malloc(TripleIndex.MAX_KEY_LENGTH));
+			}
+			int baseDatabase = databases.get(TripleIndex.nativeDatabaseName("term-" + base, true));
+			try (CollectionFactory hintCollections = new MapDb3CollectionFactory(RETIREMENT_HINT_SPILL_THRESHOLD)) {
+				Set<Long> retirementHints = hintCollections.createSet();
+				readTripleTermRetirementHints(stack, transaction, unusedDatabase == null ? -1 : unusedDatabase,
+						retirementHints);
+				PointerBuffer cursorHandle = stack.mallocPointer(1);
+				E(mdb_cursor_open(transaction, baseDatabase, cursorHandle));
+				long cursor = cursorHandle.get(0);
+				long previousOwner = 0;
+				try {
+					MDBVal key = MDBVal.calloc(stack);
+					MDBVal value = MDBVal.calloc(stack);
+					MDBVal lookupKey = MDBVal.calloc(stack);
+					MDBVal lookupValue = MDBVal.calloc(stack);
+					int rc = mdb_cursor_get(cursor, key, value, MDB_FIRST);
+					while (rc == MDB_SUCCESS) {
+						long[] quad = decodeIndexKey(base, key.mv_data());
+						long owner = quad[TripleIndex.CONTEXT_IDX];
+						if (value.mv_size() != 0 || owner <= previousOwner || owner <= 0
+								|| ValueIds.getIdType(owner) != ValueIds.T_TRIPLE) {
+							throw new IOException("Malformed or duplicate triple-term owner index row");
+						}
+						previousOwner = owner;
+						int presentIndexes = 0;
+						for (String spec : indexes) {
+							ByteBuffer encoded = scratchKeys.get(spec);
+							encoded.clear();
+							writers.get(spec).write(encoded, quad[0], quad[1], quad[2], quad[3], false);
+							encoded.flip();
+							lookupKey.mv_data(encoded);
+							int target = databases.get(TripleIndex.nativeDatabaseName("term-" + spec, true));
+							int found = mdb_get(transaction, target, lookupKey, lookupValue);
+							if (found == MDB_NOTFOUND) {
+								continue;
+							}
+							E(found);
+							if (lookupValue.mv_size() != 0) {
+								throw new IOException("Unexpected triple-term index value payload");
+							}
+							presentIndexes++;
+							matchedCounts.merge(spec, 1L, Math::addExact);
+						}
+						if (presentIndexes == indexes.size()) {
+							// A live forward mapping dominates any obsolete unused_ids hint.
+							validateActiveTripleTerm(stack, transaction, valuesMain, quad, termCspoDatabase,
+									termSpocDatabase);
+						} else if (presentIndexes == 1) {
+							if (!retirementHints.contains(owner)) {
+								throw new IOException(
+										"Retained triple-term row has no authoritative retirement marker");
+							}
+							validateRetainedTripleTerm(stack, transaction, valuesMain, quad, termCspoDatabase,
+									retirementHints);
+						} else {
+							throw new IOException("Triple-term forward indexes contain a partial owner mapping");
+						}
+						rc = mdb_cursor_get(cursor, key, value, MDB_NEXT);
+					}
+					if (rc != MDB_NOTFOUND) {
+						E(rc);
+					}
+				} finally {
+					mdb_cursor_close(cursor);
+				}
+				for (Map.Entry<String, Long> entry : counts.entrySet()) {
+					if (!entry.getValue().equals(matchedCounts.get(entry.getKey()))) {
+						throw new IOException(
+								"Triple-term indexes contain extra or missing rows for " + entry.getKey());
+					}
+				}
+			}
+		}
+
+		private void readTripleTermRetirementHints(MemoryStack stack, long transaction, int unusedDatabase,
+				Set<Long> retirementHints) throws IOException {
+			if (unusedDatabase < 0) {
+				return;
+			}
+			PointerBuffer cursorHandle = stack.mallocPointer(1);
+			E(mdb_cursor_open(transaction, unusedDatabase, cursorHandle));
+			long cursor = cursorHandle.get(0);
+			try {
+				MDBVal key = MDBVal.calloc(stack);
+				MDBVal value = MDBVal.calloc(stack);
+				int rc = mdb_cursor_get(cursor, key, value, MDB_FIRST);
+				while (rc == MDB_SUCCESS) {
+					ByteBuffer composite = key.mv_data().duplicate();
+					long revision = readCanonicalUnsigned(composite);
+					if (revision < 0 || !composite.hasRemaining() || composite.get() != ID_KEY) {
+						throw new IOException("Malformed ValueStore unused-ID marker");
+					}
+					long id = readCanonicalUnsigned(composite);
+					if (id <= 0 || composite.hasRemaining()) {
+						throw new IOException("Malformed ValueStore unused-ID marker");
+					}
+					int type = ValueIds.getIdType(id);
+					if (type == ValueIds.T_PTR || type == ValueIds.T_URI || type == ValueIds.T_LITERAL
+							|| type == ValueIds.T_BNODE || type == ValueIds.T_TRIPLE) {
+						retirementHints.add(id);
+					}
+					rc = mdb_cursor_get(cursor, key, value, MDB_NEXT);
+				}
+				if (rc != MDB_NOTFOUND) {
+					E(rc);
+				}
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+		}
+
+		private void validateActiveTripleTerm(MemoryStack stack, long transaction, int valuesMain, long[] quad,
+				int termCspoDatabase, int termSpocDatabase) throws IOException {
+			validateResourceId(stack, transaction, valuesMain, quad[TripleIndex.SUBJ_IDX], termCspoDatabase);
+			validateUriId(stack, transaction, valuesMain, quad[TripleIndex.PRED_IDX]);
+			validateObjectId(stack, transaction, valuesMain, quad[TripleIndex.OBJ_IDX], termCspoDatabase,
+					termSpocDatabase);
+		}
+
+		private void validateRetainedTripleTerm(MemoryStack stack, long transaction, int valuesMain, long[] quad,
+				int termCspoDatabase, Set<Long> retirementHints) throws IOException {
+			validateRetainedResourceId(stack, transaction, valuesMain, quad[TripleIndex.SUBJ_IDX], retirementHints);
+			validateRetainedUriId(stack, transaction, valuesMain, quad[TripleIndex.PRED_IDX], retirementHints);
+			validateRetainedObjectId(stack, transaction, valuesMain, quad[TripleIndex.OBJ_IDX], termCspoDatabase,
+					retirementHints);
+		}
+
+		private void validateRetainedResourceId(MemoryStack stack, long transaction, int valuesMain, long id,
+				Set<Long> retirementHints) throws IOException {
+			int type = ValueIds.getIdType(id);
+			if (id <= 0 || type != ValueIds.T_URI && type != ValueIds.T_BNODE) {
+				throw new IOException("Invalid RDF resource ID in retained triple-term row");
+			}
+			validateRetainedDictionaryId(stack, transaction, valuesMain, id, retirementHints);
+		}
+
+		private void validateRetainedUriId(MemoryStack stack, long transaction, int valuesMain, long id,
+				Set<Long> retirementHints) throws IOException {
+			if (id <= 0 || ValueIds.getIdType(id) != ValueIds.T_URI) {
+				throw new IOException("Invalid predicate ID in retained triple-term row");
+			}
+			validateRetainedDictionaryId(stack, transaction, valuesMain, id, retirementHints);
+		}
+
+		private void validateRetainedObjectId(MemoryStack stack, long transaction, int valuesMain, long id,
+				int termCspoDatabase, Set<Long> retirementHints) throws IOException {
+			int type = ValueIds.getIdType(id);
+			if (validateInlineLiteral(id)) {
+				return;
+			}
+			if (type == ValueIds.T_TRIPLE) {
+				if (!hasTripleTerm(transaction, termCspoDatabase, id)) {
+					throw new IOException("Retained triple-term references a missing child term row");
+				}
+			} else if (type == ValueIds.T_URI || type == ValueIds.T_BNODE || ValueIds.isLiteralReference(id)) {
+				validateRetainedDictionaryId(stack, transaction, valuesMain, id, retirementHints);
+			} else {
+				throw new IOException("Invalid object ID in retained triple-term row");
+			}
+		}
+
+		private void validateRetainedDictionaryId(MemoryStack stack, long transaction, int valuesMain, long id,
+				Set<Long> retirementHints) throws IOException {
+			byte[] data = getValue(transaction, valuesMain, encodeId(id));
+			if (data == null) {
+				throw new IOException("Retained triple-term references a missing value payload");
+			}
+			long dependency = validateOwnerPayload(stack, transaction, valuesMain, id, data, false);
+			if (isLiveOwner(stack, transaction, valuesMain, id, data)) {
+				validateOwnerPayload(stack, transaction, valuesMain, id, data, true);
+				return;
+			}
+			if (!retirementHints.contains(id)) {
+				throw new IOException("Retained triple-term references a non-live value without a retirement marker");
+			}
+			if (dependency != 0) {
+				int dependencyType = switch (ValueIds.getIdType(id)) {
+				case ValueIds.T_URI -> ValueIds.T_PTR;
+				case ValueIds.T_LITERAL, ValueIds.T_CORE_LITERAL -> ValueIds.T_URI;
+				default -> throw new IOException("Unexpected retained ValueStore dependency");
+				};
+				if (ValueIds.getIdType(dependency) != dependencyType) {
+					throw new IOException("Retained ValueStore owner has an invalid dependency type");
+				}
+				validateRetainedDictionaryId(stack, transaction, valuesMain, dependency, retirementHints);
+			}
+		}
+
+		private void validateResourceId(MemoryStack stack, long transaction, int mainDatabase, long id,
+				int termCspoDatabase) throws IOException {
+			int type = ValueIds.getIdType(id);
+			if (id <= 0 || type != ValueIds.T_URI && type != ValueIds.T_BNODE) {
+				throw new IOException("Invalid RDF resource ID in legacy index");
+			}
+			validateLiveDictionaryId(stack, transaction, mainDatabase, id);
+		}
+
+		private void validateUriId(MemoryStack stack, long transaction, int mainDatabase, long id)
+				throws IOException {
+			if (id <= 0 || ValueIds.getIdType(id) != ValueIds.T_URI) {
+				throw new IOException("Invalid predicate ID in legacy index");
+			}
+			validateLiveDictionaryId(stack, transaction, mainDatabase, id);
+		}
+
+		private void validateObjectId(MemoryStack stack, long transaction, int mainDatabase, long id,
+				int termCspoDatabase, int termSpocDatabase) throws IOException {
+			int type = ValueIds.getIdType(id);
+			if (validateInlineLiteral(id)) {
+				return;
+			}
+			if (type == ValueIds.T_TRIPLE) {
+				if (!hasLiveTripleTermMapping(stack, transaction, termCspoDatabase, termSpocDatabase, id)) {
+					throw new IOException("Live index references a missing or retired triple-term owner");
+				}
+			} else if (type == ValueIds.T_URI || type == ValueIds.T_BNODE || ValueIds.isLiteralReference(id)) {
+				validateLiveDictionaryId(stack, transaction, mainDatabase, id);
+			} else {
+				throw new IOException("Invalid object ID in legacy index");
+			}
+		}
+
+		private void validateLiveDictionaryId(MemoryStack stack, long transaction, int mainDatabase, long id)
+				throws IOException {
+			byte[] data = getValue(transaction, mainDatabase, encodeId(id));
+			if (data == null || !isLiveOwner(stack, transaction, mainDatabase, id, data)) {
+				throw new IOException("Legacy index references a missing or retired ValueStore owner");
+			}
+		}
+
+		private boolean validateInlineLiteral(long id) throws IOException {
+			if (!ValueIds.isInlined(id)) {
+				return false;
+			}
+			try {
+				if (id == -1L || format.tryInline(format.unpackLiteral(id, SimpleValueFactory.getInstance())) != id) {
+					throw new IOException("Inline literal ID disagrees with the persisted codec capabilities");
+				}
+			} catch (IllegalArgumentException invalid) {
+				throw new IOException("Malformed inline literal ID", invalid);
+			}
+			return true;
+		}
+
+		private void validateCoreDatatype(MemoryStack stack, long transaction, int mainDatabase, long owner,
+				long dependency) throws IOException {
+			CoreDatatype datatype = ValueIds.coreDatatypeOfCoreLiteral(owner);
+			if (dependency == 0L) {
+				if (datatype != CoreDatatype.XSD.STRING && datatype != CoreDatatype.RDF.LANGSTRING
+						&& datatype != CoreDatatype.RDF.DIRLANGSTRING) {
+					throw new IOException("Core literal has no matching datatype dependency");
+				}
+				return;
+			}
+			byte[] iri = getValue(transaction, mainDatabase, encodeId(dependency));
+			if (iri == null || iri.length == 0 || iri[0] != URI_VALUE) {
+				throw new IOException("Core literal references a missing datatype owner");
+			}
+			ByteBuffer localName = ByteBuffer.wrap(iri, 1, iri.length - 1).slice();
+			long namespaceId = readCanonicalUnsigned(localName);
+			byte[] namespace = getValue(transaction, mainDatabase, encodeId(namespaceId));
+			if (namespace == null || namespace.length == 0 || namespace[0] != NAMESPACE_VALUE) {
+				throw new IOException("Core literal datatype references a missing namespace owner");
+			}
+			String datatypeIri = new String(namespace, 1, namespace.length - 1, StandardCharsets.UTF_8)
+					+ StandardCharsets.UTF_8.decode(localName);
+			if (!datatype.getIri().stringValue().equals(datatypeIri)) {
+				throw new IOException("Core literal ID disagrees with its datatype payload");
+			}
+		}
+
+		private boolean hasTripleTerm(long transaction, int termCspoDatabase, long id) throws IOException {
+			if (termCspoDatabase < 0) {
+				return false;
+			}
+			try (MemoryStack stack = MemoryStack.stackPush()) {
+				PointerBuffer cursorHandle = stack.mallocPointer(1);
+				E(mdb_cursor_open(transaction, termCspoDatabase, cursorHandle));
+				long cursor = cursorHandle.get(0);
+				try {
+					ByteBuffer start = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+					IndexKeyWriters.forFieldSeq("cspo").write(start, 0, 0, 0, id, false);
+					start.flip();
+					MDBVal key = MDBVal.calloc(stack).mv_data(start);
+					MDBVal value = MDBVal.calloc(stack);
+					int rc = mdb_cursor_get(cursor, key, value, MDB_SET_RANGE);
+					if (rc == MDB_NOTFOUND) {
+						return false;
+					}
+					E(rc);
+					ByteBuffer candidate = key.mv_data().duplicate();
+					return readCanonicalUnsigned(candidate) == id;
+				} finally {
+					mdb_cursor_close(cursor);
+				}
+			}
+		}
+
+		private boolean hasLiveTripleTermMapping(MemoryStack stack, long transaction, int termCspoDatabase,
+				int termSpocDatabase, long id) throws IOException {
+			if (termCspoDatabase < 0 || termSpocDatabase < 0) {
+				return false;
+			}
+			stack.push();
+			long cursor = 0;
+			try {
+				PointerBuffer cursorHandle = stack.mallocPointer(1);
+				E(mdb_cursor_open(transaction, termCspoDatabase, cursorHandle));
+				cursor = cursorHandle.get(0);
 				ByteBuffer start = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
 				IndexKeyWriters.forFieldSeq("cspo").write(start, 0, 0, 0, id, false);
-				start.flip();
-				MDBVal key = MDBVal.calloc(stack).mv_data(start);
+				MDBVal key = MDBVal.calloc(stack).mv_data(start.flip());
 				MDBVal value = MDBVal.calloc(stack);
 				int rc = mdb_cursor_get(cursor, key, value, MDB_SET_RANGE);
 				if (rc == MDB_NOTFOUND) {
 					return false;
 				}
 				E(rc);
-				ByteBuffer candidate = key.mv_data().duplicate();
-				return readCanonicalUnsigned(candidate) == id;
+				long[] quad = decodeIndexKey("cspo", key.mv_data());
+				if (quad[TripleIndex.CONTEXT_IDX] != id) {
+					return false;
+				}
+				if (value.mv_size() != 0) {
+					throw new IOException("Unexpected triple-term index value payload");
+				}
+				ByteBuffer spoc = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+				IndexKeyWriters.forFieldSeq("spoc").write(spoc, quad[0], quad[1], quad[2], quad[3], false);
+				MDBVal spocKey = MDBVal.calloc(stack).mv_data(spoc.flip());
+				MDBVal spocValue = MDBVal.calloc(stack);
+				rc = mdb_get(transaction, termSpocDatabase, spocKey, spocValue);
+				if (rc == MDB_NOTFOUND) {
+					return false;
+				}
+				E(rc);
+				if (spocValue.mv_size() != 0) {
+					throw new IOException("Unexpected triple-term index value payload");
+				}
+				return true;
 			} finally {
-				mdb_cursor_close(cursor);
+				if (cursor != 0) {
+					mdb_cursor_close(cursor);
+				}
+				stack.pop();
 			}
 		}
-	}
 
-	private static boolean hasLiveTripleTermMapping(MemoryStack stack, long transaction, int termCspoDatabase,
-			int termSpocDatabase, long id) throws IOException {
-		if (termCspoDatabase < 0 || termSpocDatabase < 0) {
-			return false;
-		}
-		stack.push();
-		long cursor = 0;
-		try {
-			PointerBuffer cursorHandle = stack.mallocPointer(1);
-			E(mdb_cursor_open(transaction, termCspoDatabase, cursorHandle));
-			cursor = cursorHandle.get(0);
-			ByteBuffer start = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-			IndexKeyWriters.forFieldSeq("cspo").write(start, 0, 0, 0, id, false);
-			MDBVal key = MDBVal.calloc(stack).mv_data(start.flip());
-			MDBVal value = MDBVal.calloc(stack);
-			int rc = mdb_cursor_get(cursor, key, value, MDB_SET_RANGE);
-			if (rc == MDB_NOTFOUND) {
-				return false;
-			}
-			E(rc);
-			long[] quad = decodeIndexKey("cspo", key.mv_data());
-			if (quad[TripleIndex.CONTEXT_IDX] != id) {
-				return false;
-			}
-			if (value.mv_size() != 0) {
-				throw new IOException("Unexpected triple-term index value payload");
-			}
-			ByteBuffer spoc = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-			IndexKeyWriters.forFieldSeq("spoc").write(spoc, quad[0], quad[1], quad[2], quad[3], false);
-			MDBVal spocKey = MDBVal.calloc(stack).mv_data(spoc.flip());
-			MDBVal spocValue = MDBVal.calloc(stack);
-			rc = mdb_get(transaction, termSpocDatabase, spocKey, spocValue);
-			if (rc == MDB_NOTFOUND) {
-				return false;
-			}
-			E(rc);
-			if (spocValue.mv_size() != 0) {
-				throw new IOException("Unexpected triple-term index value payload");
-			}
-			return true;
-		} finally {
-			if (cursor != 0) {
-				mdb_cursor_close(cursor);
-			}
-			stack.pop();
-		}
 	}
 
 	private static long[] decodeIndexKey(String fieldSequence, ByteBuffer source) throws IOException {
@@ -1442,7 +1811,7 @@ final class LegacyStoreDiscovery {
 	private static String decodeDatabaseName(byte[] rawName) throws IOException {
 		for (byte value : rawName) {
 			int character = Byte.toUnsignedInt(value);
-			if (character < 0x20 || character > 0x7e) {
+			if (character < DATABASE_NAME_MIN || character >= DATABASE_NAME_LIMIT) {
 				throw new IOException("Unrecognized non-ASCII native database name: " + printablePrefix(rawName));
 			}
 		}

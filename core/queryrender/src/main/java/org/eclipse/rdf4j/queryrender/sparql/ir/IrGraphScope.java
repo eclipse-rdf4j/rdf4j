@@ -51,8 +51,8 @@ public final class IrGraphScope extends IrNode {
 
 	@Override
 	public IrNode transformChildren(UnaryOperator<IrNode> operation) {
+		checkInterrupted();
 		IrNode transformed = operation.apply(body);
-		transformed = transformed.transformChildren(operation);
 		return new IrGraphScope(graph, transformed instanceof IrBGP ? (IrBGP) transformed : body, isNewScope());
 	}
 

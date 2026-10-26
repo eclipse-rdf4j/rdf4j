@@ -55,12 +55,23 @@ export async function resolveServerIdentity(endpoint: string, signal?: AbortSign
   return identity;
 }
 
+function csrfTokenFor(endpoint: string): string | null {
+  if (typeof document === "undefined" || !document.location) return null;
+  if (new URL(endpoint, document.location.href).origin !== document.location.origin) return null;
+  const cookie = document.cookie.split(";").map(part => part.trim())
+    .find(part => part.startsWith("rdf4j-workbench-csrf="));
+  const token = cookie?.substring("rdf4j-workbench-csrf=".length) ?? "";
+  return /^[0-9a-f]{64}$/.test(token) ? token : null;
+}
+
 export async function queryRepository(endpoint: string, query: string, signal?: AbortSignal, serverIdentity?: string): Promise<SparqlResponse> {
+  const csrfToken = csrfTokenFor(endpoint);
   const response = await fetch(endpoint, {
     method: "POST",
     headers: {
       accept: "application/sparql-results+json",
       "content-type": "application/sparql-query; charset=utf-8",
+      ...(csrfToken ? { "X-RDF4J-CSRF-Token": csrfToken } : {}),
     },
     body: query,
     credentials: "same-origin",

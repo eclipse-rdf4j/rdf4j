@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.lwjgl.util.lmdb.LMDB.MDB_MAP_FULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
+import static org.lwjgl.util.lmdb.LMDB.mdb_get;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -90,9 +91,12 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.lwjgl.Version;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBEnvInfo;
+import org.lwjgl.util.lmdb.MDBVal;
 
 /** Process-death coverage for durable LMDB commits; it does not simulate host power loss. */
 class LmdbCrashRecoveryTest {
@@ -101,6 +105,92 @@ class LmdbCrashRecoveryTest {
 	private static final String WITNESS_ROOT_PROPERTY = "rdf4j.crashlab.witnessRoot";
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+	private static final IRI COUNT_DATATYPE = VF.createIRI("urn:crash:count-datatype");
+	private static final Literal COUNT_LITERAL = VF.createLiteral("acknowledged shared dependency", COUNT_DATATYPE);
+	private static final TripleTerm COUNT_INNER = VF.createTripleTerm(VF.createIRI("urn:crash:count-subject"),
+			VF.createIRI("urn:crash:count-predicate"), COUNT_LITERAL);
+	private static final TripleTerm COUNT_OUTER = VF.createTripleTerm(VF.createIRI("urn:crash:count-outer-subject"),
+			VF.createIRI("urn:crash:count-predicate"), COUNT_INNER);
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	@Timeout(60)
+	void newProcessUnusedCohortCannotAdoptTheHistoricalBacklog(boolean pinned, @TempDir Path workDir)
+			throws Exception {
+		Path values = workDir.resolve("values");
+		String javaBinary = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+		Process seed = new ProcessBuilder(javaBinary, "-cp", System.getProperty("java.class.path"),
+				UnusedCohortChildMain.class.getName(), values.toString(), "SEED").redirectErrorStream(true).start();
+		try (ChildProcessSession child = new ChildProcessSession(seed)) {
+			assertEquals("HISTORICAL_UNUSED:5000", child.readLine());
+			assertTrue(seed.waitFor(10, TimeUnit.SECONDS));
+			assertEquals(86, seed.exitValue());
+		}
+		Process current = new ProcessBuilder(javaBinary, "-cp", System.getProperty("java.class.path"),
+				UnusedCohortChildMain.class.getName(), values.toString(), pinned ? "PINNED" : "CURRENT")
+						.redirectErrorStream(true)
+						.start();
+		try (ChildProcessSession child = new ChildProcessSession(current)) {
+			String result = child.readLine();
+			assertTrue(result.startsWith("CURRENT_COHORT:"), result);
+			String[] parts = result.substring("CURRENT_COHORT:".length()).split(":");
+			assertTrue(current.waitFor(10, TimeUnit.SECONDS));
+			assertEquals(0, current.exitValue());
+			assertTrue(Long.parseLong(parts[0]) >= 5000L,
+					"a current-process cohort cannot physically drain a pre-open historical revision prefix");
+			assertTrue(Long.parseLong(parts[1]) <= 1000L,
+					"one normal writer cannot scan the complete historical unused backlog: " + parts[1]);
+			assertEquals("true", parts[2], "a current-process pinned value must remain resolvable");
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "BEFORE_COMMIT", "AFTER_COMMIT", "CHECKPOINT", "GC", "RAW", "RECONSTRUCT_CLEAR",
+			"RECONSTRUCT_BATCH", "RECONSTRUCT_EXACT" })
+	@Timeout(60)
+	void processDeathPreservesOwnerGraphAndOnlyCompletedCountAuthority(String cut, @TempDir Path workDir)
+			throws Exception {
+		Path storeDir = Files.createDirectory(workDir.resolve("count-" + cut));
+		String javaBinary = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+		Process process = new ProcessBuilder(javaBinary, "-cp", System.getProperty("java.class.path"),
+				CountAuthorityCrashChildMain.class.getName(), storeDir.toString(), cut).redirectErrorStream(true)
+						.start();
+		String[] ids;
+		try (ChildProcessSession child = new ChildProcessSession(process)) {
+			String acknowledged = child.readLine();
+			assertTrue(acknowledged.startsWith("COUNT_IDS:"), acknowledged);
+			ids = acknowledged.substring("COUNT_IDS:".length()).split(":");
+			assertEquals("COUNT_CUT:" + cut, child.readLine());
+			assertTrue(process.waitFor(10, TimeUnit.SECONDS));
+			assertEquals(86, process.exitValue());
+		}
+		boolean exact = !cut.equals("RAW") && !cut.equals("RECONSTRUCT_CLEAR")
+				&& !cut.equals("RECONSTRUCT_BATCH");
+		for (int reopen = 0; reopen < 2; reopen++) {
+			LmdbStore store = new LmdbStore(storeDir.toFile(), durableConfig());
+			SailRepository repository = new SailRepository(store);
+			repository.init();
+			try (RepositoryConnection connection = repository.getConnection()) {
+				ValueStore values = store.getBackingStore().valueStore();
+				assertEquals(exact, values.hasTrustedReferenceCounts(), cut);
+				assertEquals(!exact, values.isReferenceCountVerificationPending(), cut);
+				assertTrue(connection.hasStatement(SUBJECT, PREDICATE, COUNT_OUTER, false));
+				assertTrue(connection.hasStatement(SUBJECT, QUOTED_PREDICATE, COUNT_LITERAL, false));
+				assertEquals("urn:crash:count-namespace", connection.getNamespace("count"));
+				assertEquals(Long.parseLong(ids[0]), values.getId(COUNT_LITERAL));
+				assertEquals(Long.parseLong(ids[1]), values.getId(COUNT_INNER));
+				assertEquals(Long.parseLong(ids[2]), values.getId(COUNT_OUTER));
+				assertEquals(COUNT_OUTER, values.getValue(Long.parseLong(ids[2])));
+				connection.begin();
+				connection.add(SUBJECT, PREDICATE, VF.createLiteral("ordinary writer after " + cut));
+				connection.commit();
+				assertEquals(exact, values.hasTrustedReferenceCounts(), "ordinary writers cannot promote UNKNOWN");
+			} finally {
+				repository.shutDown();
+			}
+		}
+	}
+
 	private static final IRI SUBJECT = VF.createIRI("urn:crash:subject");
 	private static final IRI PREDICATE = VF.createIRI("urn:crash:predicate");
 	private static final IRI QUOTED_PREDICATE = VF.createIRI("urn:crash:quoted-predicate");
@@ -199,6 +289,7 @@ class LmdbCrashRecoveryTest {
 		LmdbStore reindexed = new LmdbStore(storeDir.toFile(), new LmdbStoreConfig("posc").setForceSync(true));
 		SailRepository reindexedRepository = new SailRepository(reindexed);
 		reindexedRepository.init();
+		assertTrue(reindexed.awaitIndexRebuild(30, TimeUnit.SECONDS), "the replacement index must publish");
 		try (RepositoryConnection connection = reindexedRepository.getConnection()) {
 			assertEquals(1, reindexed.getLmdbStats().tripleDatabases().get("poscposc").entries());
 			assertTrue(connection.hasStatement(subject, PREDICATE, object, false));
@@ -936,43 +1027,197 @@ class LmdbCrashRecoveryTest {
 		}
 	}
 
+	/** Uses actual native commits, then terminates without closing either environment or its pending writer. */
+	public static final class CountAuthorityCrashChildMain {
+		public static void main(String[] args) throws Exception {
+			Path root = Path.of(args[0]);
+			String cut = args[1];
+			LmdbStoreConfig config = durableConfig().setValueDBSize(1024L * 1024L);
+			LmdbStore owner = new LmdbStore(root.toFile(), config);
+			SailRepository repository = new SailRepository(owner);
+			repository.init();
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.begin();
+				connection.add(SUBJECT, PREDICATE, COUNT_OUTER);
+				connection.add(SUBJECT, QUOTED_PREDICATE, COUNT_LITERAL);
+				connection.setNamespace("count", "urn:crash:count-namespace");
+				connection.commit();
+				ValueStore values = owner.getBackingStore().valueStore();
+				System.out.println("CRASHLAB:COUNT_IDS:" + values.getId(COUNT_LITERAL) + ":" + values.getId(COUNT_INNER)
+						+ ":" + values.getId(COUNT_OUTER));
+				System.out.flush();
+			} finally {
+				repository.shutDown();
+			}
+			StoreProperties properties = new StoreProperties(root.toFile());
+			properties.load();
+			CrashCountValueStore values = new CrashCountValueStore(root.resolve("values").toFile(), properties, config);
+			if (cut.startsWith("RECONSTRUCT_")) {
+				String target = cut.equals("RECONSTRUCT_CLEAR") ? "cleared"
+						: cut.equals("RECONSTRUCT_BATCH") ? "batch" : "exact";
+				values.setReferenceCountMaintenanceObserver(phase -> {
+					if (phase.equals(target)) {
+						haltCountCut(cut);
+					}
+				});
+				values.reconstructReferenceCountsOffline();
+			} else if (cut.equals("RAW")) {
+				AtomicBoolean record = new AtomicBoolean();
+				values.appendBulkReferenceCounts(() -> record.getAndSet(true) ? null
+						: new ValueStore.BulkRecord(
+								ValueStoreRecordCodec.idKey(ValueIds.createId(ValueIds.T_URI, 1_000_000)),
+								new byte[] { 99 }),
+						1, 1024);
+				haltCountCut(cut);
+			} else if (cut.equals("GC")) {
+				values.startTransaction(true);
+				long disposable = values.storeValue(VF.createLiteral("unreferenced GC owner", COUNT_DATATYPE));
+				values.commit();
+				values.startTransaction(true);
+				values.gcIds(Set.of(disposable, values.getId(COUNT_INNER)), new LinkedHashSet<>());
+				values.commit();
+				haltCountCut(cut);
+			} else {
+				values.startTransaction(true);
+				values.storeValue(VF.createLiteral("pending count-owner suffix", COUNT_DATATYPE));
+				if (cut.equals("CHECKPOINT")) {
+					long before = values.nativeCommitGeneration();
+					values.reserveWriteCapacity(8L * 1024 * 1024);
+					if (values.nativeCommitGeneration() <= before) {
+						throw new AssertionError("The requested cut did not perform a real dictionary checkpoint");
+					}
+					values.storeValue(VF.createLiteral("uncommitted post-checkpoint suffix", COUNT_DATATYPE));
+					haltCountCut(cut);
+				}
+				values.cut = cut;
+				values.commit();
+			}
+			throw new AssertionError("Count authority crash cut was not reached: " + cut);
+		}
+	}
+
+	public static final class UnusedCohortChildMain {
+		public static void main(String[] args) throws Exception {
+			LmdbStoreConfig config = new LmdbStoreConfig().setForceSync(true)
+					.setValueDBSize(64L * 1024 * 1024)
+					.setValueEvictionInterval(60_000L);
+			ValueStore values = new ValueStore(Path.of(args[0]).toFile(), config);
+			if (args[1].equals("SEED")) {
+				List<Long> ids = new ArrayList<>();
+				values.startTransaction(true);
+				for (int i = 0; i < 5000; i++) {
+					ids.add(values.storeValue(VF.createLiteral("historical-unused-" + i)));
+				}
+				values.commit();
+				values.startTransaction(true);
+				values.gcIds(ids, new LinkedHashSet<>());
+				values.commit();
+				System.out.println("CRASHLAB:HISTORICAL_UNUSED:" + values.getLmdbStats().get("unused_ids").entries());
+				System.out.flush();
+				Runtime.getRuntime().halt(86);
+			}
+			values.startTransaction(true);
+			long current = values.storeValue(VF.createLiteral("current-process-unused-owner"));
+			values.commit();
+			Value pinned = args[1].equals("PINNED") ? values.getLazyValue(current) : null;
+			values.startTransaction(true);
+			values.gcIds(Set.of(current), new LinkedHashSet<>());
+			values.commit();
+			values.forceEvictionOfValues();
+			long reads;
+			try (LmdbStartupReadCounter counter = new LmdbStartupReadCounter()) {
+				values.startTransaction(false);
+				values.commit();
+				reads = counter.total();
+			}
+			long remaining = values.getLmdbStats().get("unused_ids").entries();
+			boolean retained = pinned == null || pinned.stringValue().equals("current-process-unused-owner");
+			values.close();
+			System.out.println("CRASHLAB:CURRENT_COHORT:" + remaining + ":" + reads + ":" + retained);
+			System.out.flush();
+		}
+	}
+
+	private static final class CrashCountValueStore extends ValueStore {
+		private String cut;
+
+		CrashCountValueStore(File directory, StoreProperties properties, LmdbStoreConfig config) throws IOException {
+			super(directory, properties, config);
+		}
+
+		@Override
+		int commitWriteTransaction(long transaction) {
+			if ("BEFORE_COMMIT".equals(cut)) {
+				haltCountCut(cut);
+			}
+			int result = super.commitWriteTransaction(transaction);
+			if (result == MDB_SUCCESS && "AFTER_COMMIT".equals(cut)) {
+				haltCountCut(cut);
+			}
+			return result;
+		}
+	}
+
+	private static void haltCountCut(String cut) {
+		System.out.println("CRASHLAB:COUNT_CUT:" + cut);
+		System.out.flush();
+		Runtime.getRuntime().halt(86);
+	}
+
 	public static final class IndexRewriteCrashChildMain {
 
-		public static void main(String[] args) {
+		public static void main(String[] args) throws Exception {
+			File dataDir = Path.of(args[0]).toFile();
+			Path propertiesFile = new File(dataDir, StoreProperties.FILE_NAME).toPath();
+			byte[] oldProperties = Files.readAllBytes(propertiesFile);
+			StoreProperties properties = new StoreProperties(dataDir);
+			if (!properties.load()) {
+				throw new AssertionError("The crash child requires the persisted old properties");
+			}
+			LegacyStoreDiscovery.discover(dataDir, properties);
 			LmdbStoreConfig config = new LmdbStoreConfig(args[1]).setForceSync(true);
-			LmdbStore store = new LmdbStore(Path.of(args[0]).toFile(), config) {
-				@Override
-				LmdbSailStore createBackingStore(File dataDir, StoreProperties properties, LmdbStoreConfig storeConfig,
-						boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
-					LmdbSailStore backingStore = super.createBackingStore(dataDir, properties, storeConfig,
-							sketchBasedJoinEstimatorEnabled);
-					System.out.println("CRASHLAB:INDEX_REWRITE_NATIVE_COMMITTED");
-					System.out.println("CRASHLAB:INDEX_REWRITE_REQUESTED=" + storeConfig.getTripleIndexes());
-					var nativeDatabases = backingStore.getLmdbStats().tripleDatabases().keySet();
-					System.out.println("CRASHLAB:INDEX_REWRITE_NATIVE_DATABASES=" + nativeDatabases);
-					if (!nativeDatabases.contains("poscposc") || nativeDatabases.contains("spocspoc")) {
-						throw new AssertionError("Reindex did not publish the requested index set: " + nativeDatabases);
-					}
-					long rewrittenEntries = backingStore.getLmdbStats().tripleDatabases().get("poscposc").entries();
-					System.out.println("CRASHLAB:INDEX_REWRITE_POSC_ENTRIES=" + rewrittenEntries);
-					if (rewrittenEntries != 128) {
-						throw new AssertionError("Reindex published an incomplete POSC index: " + rewrittenEntries);
-					}
-					try {
-						String propertiesText = Files.readString(new File(dataDir, StoreProperties.FILE_NAME).toPath());
-						System.out.println(propertiesText.contains("triple-indexes=spoc")
-								? "CRASHLAB:INDEX_REWRITE_OLD_PROPERTIES_STILL_ON_DISK"
-								: "CRASHLAB:INDEX_REWRITE_PROPERTIES_NOT_OLD");
-					} catch (IOException e) {
-						throw new RuntimeException(e);
-					}
-					System.out.flush();
-					Runtime.getRuntime().halt(86);
-					return backingStore;
-				}
-			};
-			store.init();
-			throw new AssertionError("The index rewrite crash point was not reached");
+			Set<String> target = TripleIndex.parseIndexSpecList(args[1]);
+			AtomicReference<LmdbSailStore> owner = new AtomicReference<>();
+			try (LmdbSailStore backingStore = new LmdbSailStore(dataDir, properties, config, false, ValueStore::new,
+					(dir, nativeProperties, settings, values) -> new TripleStore(dir, nativeProperties, settings,
+							values) {
+						@Override
+						protected void afterIndexRebuildBatch() throws IOException {
+							Map<String, Long> active = explicitIndexEntryCounts();
+							if (!active.keySet().equals(target)) {
+								return;
+							}
+							Set<String> committed = getTxnManager().doWith((stack, txn) -> {
+								int metadata = LmdbUtil.openDatabaseWithTxn(txn, NAMESPACE_DATABASE_NAME, 0);
+								MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(INDEX_SPECS_KEY));
+								MDBVal value = MDBVal.calloc(stack);
+								LmdbUtil.E(mdb_get(txn, metadata, key, value));
+								byte[] encoded = new byte[Math.toIntExact(value.mv_size())];
+								value.mv_data().get(encoded);
+								return TripleIndex.parseIndexSpecList(new String(encoded, StandardCharsets.UTF_8));
+							});
+							if (!committed.equals(target) || active.get("posc") != 128L) {
+								throw new AssertionError("Incomplete committed target: " + committed + " " + active);
+							}
+							if (!MessageDigest.isEqual(oldProperties, Files.readAllBytes(propertiesFile))) {
+								throw new AssertionError("The crash cut must precede any sidecar property update");
+							}
+							System.out.println("CRASHLAB:INDEX_REWRITE_NATIVE_COMMITTED");
+							System.out.println("CRASHLAB:INDEX_REWRITE_REQUESTED=" + args[1]);
+							System.out.println("CRASHLAB:INDEX_REWRITE_NATIVE_DATABASES="
+									+ owner.get().getLmdbStats().tripleDatabases().keySet());
+							System.out.println("CRASHLAB:INDEX_REWRITE_POSC_ENTRIES=" + active.get("posc"));
+							System.out.println("CRASHLAB:INDEX_REWRITE_OLD_PROPERTIES_STILL_ON_DISK");
+							System.out.flush();
+							Runtime.getRuntime().halt(86);
+						}
+					})) {
+				owner.set(backingStore);
+				backingStore.startBackgroundMaintenanceAfterInitialization();
+				backingStore.getTripleStore().awaitIndexRebuild(30, TimeUnit.SECONDS);
+				throw new AssertionError("The index rewrite crash point was not reached: "
+						+ backingStore.getTripleStore().indexRebuildStatus());
+			}
 		}
 	}
 
@@ -1059,6 +1304,8 @@ class LmdbCrashRecoveryTest {
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 		try (RepositoryConnection connection = repository.getConnection()) {
+			assertTrue(store.getBackingStore().valueStore().hasTrustedReferenceCounts(),
+					"a normal committed values transaction retains exact owner-count authority after process death");
 			Set<Statement> recovered = new LinkedHashSet<>();
 			try (RepositoryResult<Statement> statements = connection.getStatements(null, null, null, false)) {
 				while (statements.hasNext()) {

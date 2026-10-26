@@ -163,9 +163,10 @@ class SnapshotPositiveLookupLifecycleTest {
 
 	@Test
 	void warmedPairedMemoDetachesAcrossGrowthAndPreservesRetirementHorizon(@TempDir Path directory) throws Exception {
-		InspectingStore store = new InspectingStore(directory.toFile());
+		InspectingStore store = new InspectingStore(directory.toFile(), "spoc,posc,ospc");
 		store.init();
 		try {
+			LmdbGcTestMaintenance.awaitTrustedReclamationSetup(store);
 			commitStatement(store, SUBJECT, OBJECT);
 			long originalTripleMap = store.triples.mapSizeBytes();
 			long originalValueMap = store.values.mapSizeBytes();
@@ -216,9 +217,11 @@ class SnapshotPositiveLookupLifecycleTest {
 			}
 			assertEquals(VF.createStatement(SUBJECT, PREDICATE, OBJECT), escaped,
 					"A value issued by the valid older result must retain its meaning after the reader closes");
-			long oldest = store.triples.getTxnManager().minPinnedSnapshotRevision();
-			assertTrue(oldest == Long.MAX_VALUE || oldest >= store.triples.getDataRevision());
+			assertEquals(Long.MAX_VALUE, store.triples.getTxnManager().minPinnedSnapshotRevision(),
+					"Closing the detached reader must release its pinned dictionary and triple-store horizon");
 			removeStatement(store);
+			LmdbGcTestMaintenance.drainRetirements(store.getBackingStore());
+			LmdbGcTestMaintenance.reclaimUnusedValues(store, 4096);
 			assertFalse(store.getBackingStore().hasRetiredValueIds(),
 					"Closing the detached reader must release the retirement horizon before later publication");
 		} finally {
@@ -686,7 +689,11 @@ class SnapshotPositiveLookupLifecycleTest {
 		private TripleStore triples;
 
 		private InspectingStore(File directory) {
-			super(directory, new LmdbStoreConfig("spoc,posc").setForceSync(true)
+			this(directory, "spoc,posc");
+		}
+
+		private InspectingStore(File directory, String tripleIndexes) {
+			super(directory, new LmdbStoreConfig(tripleIndexes).setForceSync(true)
 					.setInlineLiterals(false)
 					.setValueIDCacheSize(3)
 					.setTripleDBSize(64L * 1024L * 1024L)

@@ -12,6 +12,8 @@
 package org.eclipse.rdf4j.http.server.repository.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -19,7 +21,9 @@ import static org.mockito.Mockito.when;
 import java.io.ByteArrayOutputStream;
 
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
@@ -70,6 +74,42 @@ public class ConfigControllerTest {
 		Model resultData = (Model) result.getModel().get(ConfigView.CONFIG_DATA_KEY);
 		RepositoryConfig resultConfig = RepositoryConfigUtil.getRepositoryConfig(resultData, repositoryId);
 		assertThat(resultConfig).isNotNull();
+	}
+
+	@Test
+	public void getRequestDoesNotExposeStoredElasticsearchPassword() throws Exception {
+		assertGetDoesNotExpose("tag:rdf4j.org,2023:config/lucene.elasticsearch.http.password");
+	}
+
+	@Test
+	public void getRequestDoesNotExposeLegacyElasticsearchPassword() throws Exception {
+		assertGetDoesNotExpose("http://www.openrdf.org/config/sail/lucene#elasticsearch.http.password");
+	}
+
+	private void assertGetDoesNotExpose(String passwordPredicate) throws Exception {
+		request.setMethod(HttpMethod.GET.name());
+		request.addHeader("Accept", RDFFormat.NTRIPLES.getDefaultMIMEType());
+		RepositoryConfig config = mock(RepositoryConfig.class);
+		when(config.getID()).thenReturn(repositoryId);
+		doAnswer(invocation -> {
+			Model model = invocation.getArgument(0);
+			Resource subject = invocation.getArgument(1);
+			model.add(subject, SimpleValueFactory.getInstance().createIRI(passwordPredicate),
+					SimpleValueFactory.getInstance().createLiteral("private-password-marker"));
+			model.add(subject, SimpleValueFactory.getInstance()
+					.createIRI(
+							"tag:rdf4j.org,2023:config/lucene.indexDir"),
+					SimpleValueFactory.getInstance().createLiteral("/tmp/index"));
+			return subject;
+		}).when(config).export(any(Model.class), any(Resource.class));
+		when(manager.getRepositoryConfig(repositoryId)).thenReturn(config);
+
+		ModelAndView result = controller.handleRequest(request, response);
+		Model publicModel = (Model) result.getModel().get(ConfigView.CONFIG_DATA_KEY);
+
+		assertThat(publicModel.stream().map(statement -> statement.getObject().stringValue()))
+				.contains("/tmp/index")
+				.doesNotContain("private-password-marker");
 	}
 
 	@Test

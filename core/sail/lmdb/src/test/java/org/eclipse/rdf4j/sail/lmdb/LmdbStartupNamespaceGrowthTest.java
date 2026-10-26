@@ -57,14 +57,20 @@ class LmdbStartupNamespaceGrowthTest {
 
 	@Test
 	@Timeout(value = 45, unit = TimeUnit.SECONDS)
-	void emptyBootstrapOnSmallMapsSucceedsAndRetainsTheConfiguredReserve(@TempDir Path dataDir,
+	void emptyBootstrapDefersGrowthUntilTheFirstNamespaceWrite(@TempDir Path dataDir,
 			TestReporter reporter) throws Exception {
 		LmdbStoreConfig config = smallMapConfig();
 		InspectableLmdbStore store = new InspectableLmdbStore(dataDir.toFile(), config);
 		store.init();
 		try {
 			assertEquals(Map.of(), readNamespaces(store));
-			assertTripleMapRetainsReserve(store, config, "empty startup", reporter);
+			try (SailConnection writer = store.getConnection()) {
+				writer.begin();
+				writer.setNamespace("reserve", "urn:reserve:");
+				writer.commit();
+			}
+			assertEquals(Map.of("reserve", "urn:reserve:"), readNamespaces(store));
+			assertTripleMapRetainsReserve(store, config, "first namespace write", reporter);
 		} finally {
 			store.shutDown();
 		}
@@ -72,8 +78,8 @@ class LmdbStartupNamespaceGrowthTest {
 		InspectableLmdbStore reopened = new InspectableLmdbStore(dataDir.toFile(), config);
 		reopened.init();
 		try {
-			assertEquals(Map.of(), readNamespaces(reopened),
-					"an empty authoritative namespace snapshot must remain empty after reopen");
+			assertEquals(Map.of("reserve", "urn:reserve:"), readNamespaces(reopened),
+					"the first authoritative namespace write must remain committed after reopen");
 			assertTripleMapRetainsReserve(reopened, config, "empty reopen", reporter);
 		} finally {
 			reopened.shutDown();
@@ -82,7 +88,7 @@ class LmdbStartupNamespaceGrowthTest {
 
 	@Test
 	@Timeout(value = 90, unit = TimeUnit.SECONDS)
-	void largeLegacyNamespaceImportRetriesGrowthAndPreservesEveryPairOnReopen(@TempDir Path dataDir,
+	void firstLegacyNamespaceMutationRetriesGrowthAndPreservesEveryPairOnReopen(@TempDir Path dataDir,
 			TestReporter reporter)
 			throws Exception {
 		LmdbStoreConfig config = smallMapConfig();
@@ -109,7 +115,16 @@ class LmdbStartupNamespaceGrowthTest {
 		long valueMapBytesAtOpen = store.valueMapBytesAtCreation();
 		try {
 			assertEquals(expectedNamespaces, readNamespaces(store),
-					"startup must import every legacy namespace prefix/name pair");
+					"lazy reads must preserve every authoritative legacy namespace pair");
+			assertNull(store.capturedTripleStore().readNamespaceSnapshot(),
+					"a read must not eagerly import a complete native snapshot");
+			try (SailConnection writer = store.getConnection()) {
+				writer.begin();
+				writer.setNamespace("post-ready", "urn:post-ready:");
+				writer.commit();
+			}
+			expectedNamespaces.put("post-ready", "urn:post-ready:");
+			assertEquals(expectedNamespaces, readNamespaces(store));
 			TripleStore tripleStore = store.capturedTripleStore();
 			activeTripleMapBytes = tripleStore.mapSizeBytes();
 			activeTripleOccupiedBytes = tripleStore.occupiedBytes();
@@ -121,8 +136,8 @@ class LmdbStartupNamespaceGrowthTest {
 			assertEquals(valueMapBytesAtOpen, store.capturedValueStore().mapSizeBytes(),
 					"namespace import must not grow the uninvolved ValueStore map");
 			MapGrowthMetrics.Snapshot metrics = store.getBackingStore().growthMetricsSnapshot();
-			assertTrue(metrics.tripleStoreResizes() >= 2,
-					"the small-map reserve preflight and complete legacy snapshot must both receive native growth");
+			assertTrue(metrics.tripleStoreResizes() >= 1,
+					"the first complete legacy snapshot mutation must receive native growth");
 		} finally {
 			store.shutDown();
 		}
@@ -141,7 +156,14 @@ class LmdbStartupNamespaceGrowthTest {
 		try {
 			assertEquals(expectedNamespaces, readNamespaces(reopened),
 					"all legacy namespace pairs must remain authoritative after reopen");
-			assertTripleMapRetainsReserve(reopened, config, "reopened legacy namespace store", reporter);
+			try (SailConnection writer = reopened.getConnection()) {
+				writer.begin();
+				writer.setNamespace("after-reopen", "urn:after-reopen:");
+				writer.commit();
+			}
+			expectedNamespaces.put("after-reopen", "urn:after-reopen:");
+			assertEquals(expectedNamespaces, readNamespaces(reopened));
+			assertTripleMapRetainsReserve(reopened, config, "first namespace write after reopen", reporter);
 			reporter.publishEntry("legacy-import-reopened-value-map-active",
 					"mapBytes=" + reopened.capturedValueStore().mapSizeBytes());
 			assertEquals(reopenedValueMapBytesAtOpen, reopened.capturedValueStore().mapSizeBytes(),

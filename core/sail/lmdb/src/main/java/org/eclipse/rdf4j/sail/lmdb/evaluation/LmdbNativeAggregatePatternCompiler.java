@@ -23,6 +23,7 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.OptionalLong;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -652,18 +653,22 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 	}
 
 	/**
-	 * Exact-empty pruning: a constant predicate with a constant endpoint whose adjacency lookup returns the exact
-	 * NOT_FOUND proof compiles to the empty plan, letting the existing empty-plan folding kill the enclosing subtree
-	 * before execution. The proof counts the degree over all contexts, so no context constraint or named-graph scope
-	 * can resurrect a row. {@code OptionalLong.empty()} means the planes cannot answer and the pattern compiles
-	 * normally.
+	 * Exact-empty pruning: an empty predicate plane or a constant endpoint's exact NOT_FOUND proof compiles to the
+	 * empty plan, letting existing empty-plan folding kill the enclosing subtree before execution. Both proofs cover
+	 * all contexts, so no context constraint or named-graph scope can resurrect a row. Unknown proofs leave the pattern
+	 * unchanged.
 	 */
 	private boolean provablyEmptyByAdjacency(Term s, Term p, Term o) {
 		if (!exactEmptyPruningEnabled() || !p.isConstant() || p.constant <= 0L) {
 			return false;
 		}
+		OptionalLong predicateCount = source.exactPredicateCount(p.constant);
+		if (predicateCount.isPresent() && predicateCount.getAsLong() == 0L) {
+			EXACT_EMPTY_PRUNES.incrementAndGet();
+			return true;
+		}
 		if (s.isConstant() && s.constant > 0L) {
-			java.util.OptionalLong degree = source.exactDegree(p.constant, s.constant, true);
+			OptionalLong degree = source.exactDegree(p.constant, s.constant, true);
 			if (degree.isPresent()) {
 				if (degree.getAsLong() == 0L) {
 					EXACT_EMPTY_PRUNES.incrementAndGet();
@@ -673,7 +678,7 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 			}
 		}
 		if (o.isConstant() && o.constant > 0L) {
-			java.util.OptionalLong degree = source.exactDegree(p.constant, o.constant, false);
+			OptionalLong degree = source.exactDegree(p.constant, o.constant, false);
 			if (degree.isPresent() && degree.getAsLong() == 0L) {
 				EXACT_EMPTY_PRUNES.incrementAndGet();
 				return true;

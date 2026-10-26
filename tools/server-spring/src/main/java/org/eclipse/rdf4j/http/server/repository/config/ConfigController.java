@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
+import org.eclipse.rdf4j.repository.config.RepositoryConfigSecrets;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.rio.RDFParseException;
@@ -93,6 +94,7 @@ public class ConfigController extends AbstractController {
 		Resource ctx = SimpleValueFactory.getInstance().createIRI(baseURI + "#" + repositoryConfig.getID());
 
 		repositoryConfig.export(configData, ctx);
+		RepositoryConfigSecrets.redact(configData);
 		Map<String, Object> model = new HashMap<>();
 		model.put(ConfigView.FORMAT_KEY, rdfWriterFactory.getRDFFormat());
 		model.put(ConfigView.CONFIG_DATA_KEY, configData);
@@ -118,6 +120,7 @@ public class ConfigController extends AbstractController {
 					Rio.getParserFormatForMIMEType(request.getContentType())
 							.orElseThrow(() -> new ClientHTTPException(HttpStatus.SC_BAD_REQUEST,
 									"unrecognized content type " + request.getContentType())));
+			RepositoryConfigSecrets.restore(model, repId, repositoryManager.getRepositoryConfig(repId));
 			config = RepositoryConfigUtil.validateRepositoryConfig(model, repId);
 		} catch (RDFParseException | RepositoryConfigException e) {
 			throw new ClientHTTPException(HttpStatus.SC_BAD_REQUEST, e.getMessage());

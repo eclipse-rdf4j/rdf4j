@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.Literal;
@@ -37,7 +38,7 @@ import org.eclipse.rdf4j.sail.features.SailResultValueExtractor;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /** Repository-only, demand-driven materialization retaining ID capabilities through complete value waves. */
-final class RepositoryValueIteration<T> implements CloseableIteration<T> {
+final class RepositoryValueIteration<T> implements CloseableIteration<T>, CooperativeCancellation {
 
 	private static final int WAVE_VALUES = 1024;
 	private static final ThreadLocal<RepositoryValueIteration<?>> SOURCE_PULL = new ThreadLocal<>();
@@ -314,7 +315,7 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T> {
 
 	private void checkActive() {
 		if (closed.get() || Thread.currentThread().isInterrupted()
-				|| deadline != null && deadline.remainingNanos() <= 0L) {
+				|| deadline != null && deadline.isExpired()) {
 			throw new QueryInterruptedException("Query evaluation was interrupted during repository value exposure");
 		}
 		QueryExecutionContext.checkpoint("repository-value-exposure");
@@ -392,6 +393,13 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T> {
 				failure.addSuppressed(cleanup);
 			}
 		}
+	}
+
+	@Override
+	public boolean requestCancellation() {
+		// Query timeouts push cancellation down; forward it to the source that evaluates rows.
+		return !closed.get() && source instanceof CooperativeCancellation cancellation
+				&& cancellation.requestCancellation();
 	}
 
 	@Override

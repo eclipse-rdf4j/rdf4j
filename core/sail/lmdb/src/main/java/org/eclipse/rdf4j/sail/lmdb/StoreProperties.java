@@ -106,6 +106,12 @@ class StoreProperties {
 
 	/** Both native environments were present during the locked, read-only startup preflight. */
 	private boolean nativeGenerationPresent;
+	/** Validated only while the owning LmdbStore holds its directory lock; never serialized as a boolean. */
+	PreparedBulkStore.Snapshot preparedBulkStore;
+	long verifiedValueTransactionId = -1L;
+	long verifiedTripleTransactionId = -1L;
+	/** Physical inactive statement trees observed in the same read-only preflight as the active manifest. */
+	boolean statementIndexCleanupPending;
 
 	protected boolean dirty;
 

@@ -189,6 +189,33 @@ final class BulkLoadWorkspace implements AutoCloseable {
 		}
 	}
 
+	BulkLoadSettings recordedSettings() {
+		return BulkLoadSettings.restore(state);
+	}
+
+	long maximumCanonicalValueBytes() throws IOException {
+		return state.getProperty("resolved.values.max-key-bytes") == null ? 0L
+				: parseNonNegativeLong("resolved.values.max-key-bytes");
+	}
+
+	/** Records the completed sizing algorithm; native readiness remains independently bound by the native seal. */
+	void recordPreparedCapacity(BulkCapacityPolicy value, BulkCapacityPolicy triple) {
+		BulkLoadSettings.storeCapacityPolicies(state, value, triple);
+		state.setProperty("capacity.preparation.version", "1");
+	}
+
+	/** Checks preparation and structural compatibility under target ownership, before recovery changes artifacts. */
+	static void requireCapacityPreparedPublication(Path target, BulkLoadSettings requested) throws IOException {
+		Properties recorded = inspect(controlDirectory(target));
+		if (recorded == null || !BulkLoadSettings.hasCapacityPolicies(recorded)
+				|| !"1".equals(recorded.getProperty("capacity.preparation.version"))) {
+			throw new IOException("Cannot certify the new capacity headroom contract for older published bulk load "
+					+ target + ". Its publication and workspace are preserved under the previous capacity contract. "
+					+ "Resume with the original loader, or retain the older store and load into a new empty target.");
+		}
+		requireSameConfiguration(recorded, requested, target, controlDirectory(target));
+	}
+
 	/**
 	 * Records what this load is reading, so a run interrupted while staging can read it again without being told.
 	 */
@@ -412,20 +439,30 @@ final class BulkLoadWorkspace implements AutoCloseable {
 	void recordResolved(ResolvedIdQuadSpool statements, ResolvedValueRecords values) throws IOException {
 		state.setProperty("resolved.statements", Long.toString(statements.statements()));
 		state.setProperty("resolved.statements.bytes", Long.toString(Files.size(statements.path())));
+		state.setProperty("resolved.statements.sha256",
+				BulkArtifactIntegrity.requireDigest(statements.contentDigest(), statements.path()));
 		state.setProperty("resolved.values", Long.toString(values.records()));
+		state.setProperty("resolved.values.bytes", Long.toString(Files.size(values.descriptorsPath())));
+		state.setProperty("resolved.values.sha256",
+				BulkArtifactIntegrity.requireDigest(values.descriptorDigest(), values.descriptorsPath()));
 		state.setProperty("resolved.values.max-key-bytes", Integer.toString(values.maximumCanonicalKeyBytes()));
 		state.setProperty("resolved.value-dependencies", Long.toString(values.dependencyRecords()));
 		state.setProperty("resolved.value-dependencies.bytes", Long.toString(Files.size(values.dependenciesPath())));
+		state.setProperty("resolved.value-dependencies.sha256",
+				BulkArtifactIntegrity.requireDigest(values.dependencyDigest(), values.dependenciesPath()));
 	}
 
 	ResolvedIdQuadSpool resolvedStatements() throws IOException {
 		requireComplete(BulkLoadPhase.RESOLVE_IDS);
 		return ResolvedIdQuadSpool.restore(directory, parseNonNegativeLong("resolved.statements"),
-				parseNonNegativeLong("resolved.statements.bytes"), compression);
+				parseNonNegativeLong("resolved.statements.bytes"), compression,
+				recordedDigest("resolved.statements", "id-quads.bin"));
 	}
 
 	ResolvedValueRecords resolvedValues(BulkTaskScheduler scheduler) throws IOException {
 		requireComplete(BulkLoadPhase.RESOLVE_IDS);
+		String descriptorDigest = recordedDigest("resolved.values", "assigned-values.bin");
+		String dependencyDigest = recordedDigest("resolved.value-dependencies", "resolved-value-components.bin");
 		int maximumKeyBytes = -1;
 		String recordedMaximumKeyBytes = state.getProperty("resolved.values.max-key-bytes");
 		if (recordedMaximumKeyBytes != null) {
@@ -436,8 +473,10 @@ final class BulkLoadWorkspace implements AutoCloseable {
 			}
 		}
 		return ResolvedValueRecords.restore(directory, parseNonNegativeLong("resolved.values"),
+				parseNonNegativeLong("resolved.values.bytes"),
 				parseNonNegativeLong("resolved.value-dependencies"),
-				parseNonNegativeLong("resolved.value-dependencies.bytes"), compression, maximumKeyBytes, scheduler);
+				parseNonNegativeLong("resolved.value-dependencies.bytes"), compression, maximumKeyBytes, scheduler,
+				descriptorDigest, dependencyDigest);
 	}
 
 	long dictionaryPersistedValues() throws IOException {
@@ -458,8 +497,12 @@ final class BulkLoadWorkspace implements AutoCloseable {
 		recordByteRecords("native.reference-counts", output.referenceCounts());
 		state.setProperty("native.triple-terms.records", Long.toString(output.tripleTerms().rows()));
 		state.setProperty("native.triple-terms.bytes", Long.toString(Files.size(output.tripleTerms().path())));
+		state.setProperty("native.triple-terms.sha256",
+				BulkArtifactIntegrity.requireDigest(output.tripleTerms().contentDigest(), output.tripleTerms().path()));
 		state.setProperty("native.value-hashes.records", Long.toString(output.valueHashes().rows()));
 		state.setProperty("native.value-hashes.bytes", Long.toString(Files.size(output.valueHashes().path())));
+		state.setProperty("native.value-hashes.sha256",
+				BulkArtifactIntegrity.requireDigest(output.valueHashes().contentDigest(), output.valueHashes().path()));
 	}
 
 	ValueStoreBulkRecords.Output nativeRecords() throws IOException {
@@ -472,7 +515,11 @@ final class BulkLoadWorkspace implements AutoCloseable {
 				parseNonNegativeLong("native.triple-terms.records"),
 				parseNonNegativeLong("native.triple-terms.bytes"),
 				parseNonNegativeLong("native.value-hashes.records"),
-				parseNonNegativeLong("native.value-hashes.bytes"), compression);
+				parseNonNegativeLong("native.value-hashes.bytes"), compression,
+				recordedDigest("native.main", "value-main-records.bin"),
+				recordedDigest("native.reference-counts", "value-ref-count-records.bin"),
+				recordedDigest("native.triple-terms", "value-triple-terms.bin"),
+				recordedDigest("native.value-hashes", "value-hashes.bin"));
 	}
 
 	void reclaimAfterNativeRecords() throws IOException {
@@ -659,6 +706,12 @@ final class BulkLoadWorkspace implements AutoCloseable {
 	private void recordByteRecords(String key, ExternalByteKeySorter.SortedRecordFile records) throws IOException {
 		state.setProperty(key + ".records", Long.toString(records.records()));
 		state.setProperty(key + ".bytes", Long.toString(Files.size(records.path())));
+		state.setProperty(key + ".sha256",
+				BulkArtifactIntegrity.requireDigest(records.contentDigest(), records.path()));
+	}
+
+	private String recordedDigest(String key, String filename) throws IOException {
+		return BulkArtifactIntegrity.requireDigest(state.getProperty(key + ".sha256"), directory.resolve(filename));
 	}
 
 	private void deleteIncompletePhaseOutputs(BulkLoadPhase phase) throws IOException {
