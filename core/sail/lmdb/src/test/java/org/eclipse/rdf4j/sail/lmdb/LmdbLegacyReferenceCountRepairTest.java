@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -23,7 +24,6 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
-import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -113,13 +113,27 @@ class LmdbLegacyReferenceCountRepairTest {
 		repository.init();
 		try (var connection = repository.getConnection()) {
 			assertThat(connection.hasStatement(subject, predicate, literal, false)).isFalse();
-			assertThat(((ValueStore) store.getValueFactory()).getId(literal)).isEqualTo(LmdbValue.UNKNOWN_ID);
+			assertThat(((ValueStore) store.getValueFactory()).getId(literal)).isEqualTo(literalId);
+			assertThat(store.getBackingStore().valueStore().hasTrustedReferenceCounts()).isFalse();
+		} finally {
+			repository.shutDown();
+		}
+		LmdbStore.reconstructReferenceCountsOffline(directory.toFile(),
+				new LmdbStoreConfig().setLegacyReferenceCountRepairEnabled(true));
+		store = storeWithPostReadyGateHeld(true);
+		repository = new SailRepository(store);
+		repository.init();
+		try (var connection = repository.getConnection()) {
+			assertThat(connection.hasStatement(subject, predicate, literal, false)).isFalse();
+			assertThat(store.getBackingStore().valueStore().hasTrustedReferenceCounts()).isTrue();
+			assertThat(store.getBackingStore().valueStore().hasRetiredIds()).isTrue();
+			assertThat(((ValueStore) store.getValueFactory()).getId(literal)).isEqualTo(literalId);
 		} finally {
 			repository.shutDown();
 		}
 		assertThat(LmdbCompatibilityFixtures.nativeGet(directory, null, LmdbCompatibilityFixtures.idKey(literalId)))
-				.as("opted-in recovery drains deferred candidates after establishing counts")
-				.isNull();
+				.as("explicit count reconstruction retains deferred owners and queues for bounded maintenance")
+				.isNotNull();
 
 		repository = new SailRepository(store(false));
 		repository.init();
@@ -159,6 +173,7 @@ class LmdbLegacyReferenceCountRepairTest {
 	void ongoingCountsRemainCorrectAndOptedInRecoveryRepairsHistoricalCounts(boolean legacy) throws Exception {
 		if (legacy) {
 			LmdbCompatibilityFixtures.extract("v2-610-default.zip", directory);
+			LmdbStore.reconstructReferenceCountsOffline(directory.toFile(), new LmdbStoreConfig());
 		}
 		var vf = SimpleValueFactory.getInstance();
 		var datatype = vf.createIRI("urn:legacy-repair:datatype");
@@ -186,15 +201,24 @@ class LmdbLegacyReferenceCountRepairTest {
 				new byte[] { 99 });
 		LmdbCompatibilityFixtures.nativePut(directory, "ref_counts", new byte[] { 0 }, null);
 
-		// Explicit opt-in is needed only for format 2. Format 6 repairs the absent marker even when configured false.
+		// Neither format silently repairs counts after an external writer. The explicit operation owns that scan.
 		repository = new SailRepository(store(legacy));
 		repository.init();
 		repository.shutDown();
 		assertThat(LmdbCompatibilityFixtures.nativeGet(directory, "ref_counts",
+				LmdbCompatibilityFixtures.idKey(datatypeId))).containsExactly(99);
+		LmdbStore.reconstructReferenceCountsOffline(directory.toFile(),
+				new LmdbStoreConfig().setLegacyReferenceCountRepairEnabled(legacy));
+		assertThat(LmdbCompatibilityFixtures.nativeGet(directory, "ref_counts",
 				LmdbCompatibilityFixtures.idKey(datatypeId)))
 						.as("reconstruction counts both live literal owners")
 						.containsExactly(2);
-		assertThat(LmdbCompatibilityFixtures.nativeGet(directory, "ref_counts", new byte[] { 0 })).hasSize(18);
+		if (legacy) {
+			assertEarlierReferenceCountReaderAccepts(
+					LmdbCompatibilityFixtures.nativeGet(directory, "ref_counts", new byte[] { 0 }));
+		}
+		assertThat(LmdbCompatibilityFixtures.nativeGet(directory, "gc_meta", ReferenceCountProof.KEY))
+				.hasSize(ReferenceCountProof.BYTES);
 	}
 
 	@Test
@@ -212,7 +236,8 @@ class LmdbLegacyReferenceCountRepairTest {
 				assertThat(event.getFormattedMessage()).contains("dictionary reclamation is deferred",
 						"setLegacyReferenceCountRepairEnabled(true)",
 						"http://rdf4j.org/config/sail/lmdb#legacyReferenceCountRepairEnabled",
-						"https://github.com/eclipse-rdf4j/rdf4j/issues/6095");
+						"https://github.com/eclipse-rdf4j/rdf4j/issues/6095",
+						"reconstructReferenceCountsOffline");
 			});
 		} finally {
 			repository.shutDown();
@@ -223,6 +248,22 @@ class LmdbLegacyReferenceCountRepairTest {
 
 	private LmdbStore store(boolean repair) {
 		return new LmdbStore(directory.toFile(), new LmdbStoreConfig().setLegacyReferenceCountRepairEnabled(repair));
+	}
+
+	private LmdbStore storeWithPostReadyGateHeld(boolean repair) {
+		return new LmdbStore(directory.toFile(), new LmdbStoreConfig().setLegacyReferenceCountRepairEnabled(repair)) {
+			@Override
+			LmdbSailStore createBackingStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
+					boolean sketches) throws IOException {
+				return new LmdbSailStore(dataDir, properties, config, sketches) {
+					@Override
+					void startBackgroundMaintenanceAfterInitialization() {
+						// This phase asserts the durable state before the separately-tested post-ready reclamation
+						// pass.
+					}
+				};
+			}
+		};
 	}
 
 	private static byte[] structuredMarker(String state) {

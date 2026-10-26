@@ -170,7 +170,8 @@ test('Text explanation highlighting preserves server plaintext and toggles witho
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-                'X-Requested-With': 'XMLHttpRequest'
+                'X-Requested-With': 'XMLHttpRequest',
+                ...window.workbench.csrfHeaders('query')
             },
             body: new URLSearchParams({
                 action: 'explain',

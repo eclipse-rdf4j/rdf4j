@@ -25,13 +25,13 @@ jobs:
           distribution: 'temurin'
           cache: maven
       - name: Check formatting
-        run: mvn -B -Pformatting spotless:check
+        run: mvn -B -Pformatting spotless:check --fail-at-end
       - name: Check SPARQL AST patches
         run: python3 scripts/manage-sparql-ast.py --check --online
       - name: Quick compile
-        run: mvn -B --quiet -T 2C compile -DskipTests -Pquick
+        run: mvn -B --quiet -T 2C compile --fail-at-end -DskipTests -Pquick
       - name: Download all other dependencies
-        run: mvn -B --quiet -T 2C dependency:go-offline
+        run: mvn -B --quiet -T 2C dependency:go-offline --fail-at-end
       - name: Verify Maven test partition behavior
         run: python3 scripts/ci/verify_pr_verify_partitions.py --no-offline
 
@@ -49,7 +49,7 @@ jobs:
           distribution: 'temurin'
           cache: maven
       - name: Compile (mvn clean install)
-        run: mvn -B clean install -DskipTests -DskipITs
+        run: mvn -B clean install --fail-at-end -DskipTests -DskipITs
 
 
   build:
@@ -74,9 +74,65 @@ jobs:
           distribution: 'temurin'
           cache: maven
       - name: Build
-        run: mvn --quiet clean && mvn -B --quiet -T 2C install -Pquick
+        run: mvn --quiet clean --fail-at-end && mvn -B --quiet -T 2C install --fail-at-end -Pquick
       - name: Test
+        id: test
         run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B --fail-at-end test -DskipITs -PskipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
+      - name: Preserve LMDB JVM crash diagnostics
+        if: ${{ failure() && steps.test.outcome == 'failure' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          diagnostics="$RUNNER_TEMP/rdf4j-lmdb-jvm-diagnostics"
+          mkdir -p "$diagnostics"
+
+          for report_type in surefire failsafe; do
+            report_dir="core/sail/lmdb/target/${report_type}-reports"
+            if [[ -d "$report_dir" ]]; then
+              destination="$diagnostics/${report_type}-reports"
+              mkdir -p "$destination"
+              find "$report_dir" -maxdepth 1 -type f \
+                \( -name 'TEST-*.xml' -o -name '*.txt' -o -name '*.dump' -o -name '*.dumpstream' \) \
+                -exec cp -- {} "$destination/" \;
+            else
+              printf 'Missing report directory: %s\n' "$report_dir" >> "$diagnostics/collection.txt"
+            fi
+          done
+
+          mkdir -p "$diagnostics/hotspot"
+          for crash_root in . core/sail/lmdb; do
+            find "$crash_root" -maxdepth 1 -type f -name 'hs_err_pid*.log' \
+              -exec cp -- {} "$diagnostics/hotspot/" \;
+          done
+
+          {
+            printf 'core_pattern='
+            cat /proc/sys/kernel/core_pattern 2>/dev/null || true
+            printf 'core_size_limit='
+            ulimit -c || true
+            if command -v coredumpctl >/dev/null 2>&1; then
+              if timeout 10s coredumpctl list --no-pager --no-legend 2>&1 | tail -n 20; then
+                printf 'coredumpctl_pipeline_exit=0\n'
+              else
+                printf 'coredumpctl_pipeline_exit=%s\n' "$?"
+              fi
+            else
+              printf 'coredumpctl unavailable\n'
+            fi
+            # Record core-file metadata only; never copy core binaries into the artifact.
+            for core_root in . core/sail/lmdb; do
+              find "$core_root" -maxdepth 1 -type f \
+                \( -name core -o -name 'core.*' \) -printf '%p %s bytes\n' 2>/dev/null || true
+            done
+          } > "$diagnostics/core-metadata.txt" 2>&1
+      - name: Upload LMDB JVM crash diagnostics
+        if: ${{ failure() && steps.test.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lmdb-jvm-diagnostics-${{ github.run_id }}-${{ matrix.jdk }}
+          path: ${{ runner.temp }}/rdf4j-lmdb-jvm-diagnostics/**
+          if-no-files-found: warn
+          retention-days: 7
       - name: Publish Test Report
         if: failure()
         uses: ScalableCapital/action-surefire-report@v2.0.5
@@ -104,7 +160,7 @@ jobs:
           distribution: 'temurin'
           cache: maven
       - name: Build
-        run: mvn --quiet clean && mvn -B --quiet -T 2C install -Pquick
+        run: mvn --quiet clean --fail-at-end && mvn -B --quiet -T 2C install --fail-at-end -Pquick
       - name: Verify
         run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B --fail-at-end verify -PskipUnitTests,skipSlowTests,-formatting -Dmaven.javadoc.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Publish Test Report
@@ -132,7 +188,7 @@ jobs:
           distribution: 'temurin'
           cache: maven
       - name: Build
-        run: mvn --quiet clean && mvn -B --quiet -T 2C install -Pquick
+        run: mvn --quiet clean --fail-at-end && mvn -B --quiet -T 2C install --fail-at-end -Pquick
       - name: Verify
         run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B --fail-at-end verify -PslowTestsOnly,-skipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Publish Test Report
@@ -156,9 +212,9 @@ jobs:
           distribution: 'temurin'
           cache: maven
       - name: Run install
-        run: mvn --quiet clean && mvn -B --quiet -T 2C install -Pquick
+        run: mvn --quiet clean --fail-at-end && mvn -B --quiet -T 2C install --fail-at-end -Pquick
       - name: Package assembly
-        run: mvn package -Passembly -DskipTests
+        run: mvn package --fail-at-end -Passembly -DskipTests
 
 
   e2e:

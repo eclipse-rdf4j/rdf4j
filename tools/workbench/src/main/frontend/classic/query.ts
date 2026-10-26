@@ -3431,7 +3431,8 @@ namespace workbench {
             try {
                 fetcher.call(window, queryEndpoint(), {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+                    headers: Object.assign({ 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+                        workbench.csrfHeaders(queryEndpoint())),
                     body: serializeCancelExplainFormData(serverRequestId),
                     keepalive: true
                 });

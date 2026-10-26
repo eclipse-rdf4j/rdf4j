@@ -337,7 +337,10 @@ class LmdbFeatureFlagsTest {
 			assertThat(enabledStore.getBackingStore().directAdjacencyStore()).isNotNull();
 			assertThat(disabledStore.getBackingStore().directAdjacencyStore()).isNull();
 			assertThat(enabledStore.awaitDirectAdjacencyReady(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
-			assertThat(enabledStore.awaitValueOverlayReady(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+			assertThat(enabledStore.awaitValueOverlayReady(10, java.util.concurrent.TimeUnit.SECONDS))
+					.as("startup %s; value maintenance %s", enabledStore.getStartupStatus(),
+							enabledStore.getBackingStore().valueStore().compressedValueOverlayMaintenanceStats())
+					.isTrue();
 			assertThat(enabledStore.getBackingStore().valueStore().compressedValueOverlayStats()).isNotNull();
 			assertThat(disabledStore.getBackingStore().valueStore().compressedValueOverlayStats()).isNull();
 

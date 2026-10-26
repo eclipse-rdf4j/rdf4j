@@ -493,6 +493,23 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public OptionalLong exactPredicateCount(long predicate) {
+		long count = 0L;
+		for (NativeLmdbQuerySource source : activeSources) {
+			OptionalLong sourceCount = source.exactPredicateCount(predicate);
+			if (sourceCount.isEmpty()) {
+				return OptionalLong.empty();
+			}
+			long value = sourceCount.getAsLong();
+			if (value < 0L || Long.MAX_VALUE - count < value) {
+				return OptionalLong.empty();
+			}
+			count += value;
+		}
+		return OptionalLong.of(count);
+	}
+
+	@Override
 	public OrderedIntegerDomain orderedIntegerDomain(long subj, long pred, long obj, long context,
 			int varyingField) {
 		if (activeSources.isEmpty()) {
@@ -1155,6 +1172,11 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		@Override
 		public OptionalLong exactDegree(long predicate, long key, boolean bySubject) {
 			return delegate.exactDegree(predicate, key, bySubject);
+		}
+
+		@Override
+		public OptionalLong exactPredicateCount(long predicate) {
+			return delegate.exactPredicateCount(predicate);
 		}
 
 		@Override

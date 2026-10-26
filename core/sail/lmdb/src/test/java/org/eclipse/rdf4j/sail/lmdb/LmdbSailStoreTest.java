@@ -1830,6 +1830,7 @@ public class LmdbSailStoreTest {
 		sail.init();
 
 		try {
+			LmdbTestUtil.awaitPostReadyInitialization(sail, 10, TimeUnit.SECONDS);
 			LmdbSailStore backingStore = sail.getBackingStore();
 			backingStore.enableMultiThreading = false;
 			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();

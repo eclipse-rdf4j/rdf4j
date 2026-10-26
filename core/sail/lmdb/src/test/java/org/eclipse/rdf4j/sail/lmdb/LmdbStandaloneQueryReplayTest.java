@@ -62,7 +62,6 @@ class LmdbStandaloneQueryReplayTest {
 
 	private static final long GROWTH_MAP_SIZE = 32L * 1024L * 1024L;
 	private static final double GROWTH_THRESHOLD = 0.10d;
-	private static final double SOFT_GROWTH_DEMAND_RATIO = GROWTH_THRESHOLD * 1.5d;
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 	private static final IRI SUBJECT = Values.iri("urn:rdf4j:standalone-query-replay:subject");
 	private static final IRI VALUE_PREDICATE = Values.iri("urn:rdf4j:standalone-query-replay:value");
@@ -88,6 +87,7 @@ class LmdbStandaloneQueryReplayTest {
 					seed.add(SUBJECT, VALUE_PREDICATE, Values.literal("before"));
 				}
 
+				LmdbGcTestMaintenance.awaitTrustedReclamationSetup(store);
 				TripleStore tripleStore = capturedTriples.get();
 				long initialMapSize = mapSize(tripleStore);
 				LmdbSailStore backingStore = store.getBackingStore();
@@ -147,6 +147,7 @@ class LmdbStandaloneQueryReplayTest {
 					seed.add(SUBJECT, VALUE_PREDICATE, Values.literal("before"));
 				}
 
+				LmdbGcTestMaintenance.awaitTrustedReclamationSetup(store);
 				TripleStore tripleStore = capturedTriples.get();
 				long initialMapSize = mapSize(tripleStore);
 				LmdbSailStore backingStore = store.getBackingStore();
@@ -219,6 +220,7 @@ class LmdbStandaloneQueryReplayTest {
 				seed.add(SUBJECT, VALUE_PREDICATE, Values.literal("before"));
 			}
 
+			LmdbGcTestMaintenance.awaitTrustedReclamationSetup(store);
 			TripleStore tripleStore = capturedTriples.get();
 			long initialMapSize = mapSize(tripleStore);
 			LmdbSailStore backingStore = store.getBackingStore();
@@ -275,6 +277,7 @@ class LmdbStandaloneQueryReplayTest {
 	private static LmdbStore newStore(Path dataDirectory, AtomicReference<TripleStore> capturedTriples) {
 		return new InspectingStore(dataDirectory, capturedTriples, new LmdbStoreConfig("spoc,posc")
 				.setForceSync(true)
+				.setBulkOperationSize(0)
 				.setTripleDBSize(GROWTH_MAP_SIZE)
 				.setValueDBSize(GROWTH_MAP_SIZE)
 				.setMapGrowthThreshold(GROWTH_THRESHOLD)
@@ -284,8 +287,12 @@ class LmdbStandaloneQueryReplayTest {
 	private static String publishGrowth(SailRepository repository, long initialMapSize,
 			LmdbSailStore backingStore, MapGrowthMetrics.Snapshot before) throws Exception {
 		Model growth = new LinkedHashModel();
-		int namespaceBytes = Math.toIntExact(Math.round(initialMapSize * SOFT_GROWTH_DEMAND_RATIO));
-		String namespace = "urn:rdf4j:standalone-query-replay:growth-namespace:" + "n".repeat(namespaceBytes);
+		int namespaceBytes = Math.toIntExact(initialMapSize);
+		assertThat(new MapGrowthPolicy(GROWTH_THRESHOLD).hardCapacityRequired(initialMapSize,
+				backingStore.getTripleStore().occupiedBytes(), namespaceBytes))
+						.as("the namespace request exceeds the remaining TripleStore map capacity")
+						.isTrue();
+		String namespace = "urn:rdf4j:standalone-query-replay:hard-growth-namespace:" + "n".repeat(namespaceBytes);
 		for (int i = 0; i < 10_000; i++) {
 			growth.add(Values.iri("urn:rdf4j:standalone-query-replay:growth:" + i), GROWTH_PREDICATE,
 					Values.literal("growth"));
@@ -317,7 +324,7 @@ class LmdbStandaloneQueryReplayTest {
 		long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
 		while (backingStore.growthMetricsSnapshot().growthEpisodes() <= before.growthEpisodes()) {
 			if (System.nanoTime() >= deadlineNanos) {
-				throw new AssertionError("the published namespace did not start a soft map-growth episode");
+				throw new AssertionError("the hard-capacity namespace did not start a map-growth episode");
 			}
 			Thread.onSpinWait();
 		}
@@ -327,7 +334,7 @@ class LmdbStandaloneQueryReplayTest {
 		long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
 		while (backingStore.growthMetricsSnapshot().replayAccepted() <= before.replayAccepted()) {
 			if (System.nanoTime() >= deadlineNanos) {
-				throw new AssertionError("the soft growth episode did not accept the blocked read for replay");
+				throw new AssertionError("the hard-capacity growth episode did not accept the blocked read for replay");
 			}
 			Thread.onSpinWait();
 		}

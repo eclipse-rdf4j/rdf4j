@@ -47,6 +47,7 @@ class SketchBasedJoinEstimatorBackgroundRefreshTest {
 						.withThrottleMillis(0)
 						.withRefreshSleepMillis(10));
 
+		assertFalse(estimator.hasPendingBackgroundRefresh(), "an unstarted worker has no scheduled refresh");
 		estimator.startBackgroundRefresh(0);
 		try {
 			Thread.sleep(120);
@@ -56,6 +57,7 @@ class SketchBasedJoinEstimatorBackgroundRefreshTest {
 		} finally {
 			estimator.stop();
 		}
+		assertFalse(estimator.hasPendingBackgroundRefresh(), "a stopped worker cannot retain pending work");
 	}
 
 	@Test
@@ -74,6 +76,7 @@ class SketchBasedJoinEstimatorBackgroundRefreshTest {
 			assertTrue(estimator.isReadyNonBlocking());
 			assertTrue(estimator.persistIfDirty());
 			estimator.unload();
+			assertFalse(estimator.hasPendingBackgroundRefresh(), "an unloaded snapshot has no unstarted worker");
 
 			assertFalse(estimator.isReadyNonBlocking(), "Nonblocking readiness should not load persisted sketches");
 			assertEquals(1, store.rebuildCount());
@@ -83,6 +86,7 @@ class SketchBasedJoinEstimatorBackgroundRefreshTest {
 			assertTrue(estimator.awaitReady(5, TimeUnit.SECONDS),
 					"Background refresh should load the persisted snapshot");
 			assertEquals(1, store.rebuildCount(), "Background snapshot load should not rebuild the store");
+			assertFalse(estimator.hasPendingBackgroundRefresh(), "a completed load must leave the worker idle");
 		} finally {
 			estimator.close();
 		}
@@ -138,6 +142,7 @@ class SketchBasedJoinEstimatorBackgroundRefreshTest {
 			estimator.startBackgroundRefresh(-1);
 			assertTrue(store.awaitSecondRebuildStarted(),
 					"Expected background refresh to start a second rebuild");
+			assertTrue(estimator.hasPendingBackgroundRefresh(), "an admitted rebuild remains pending until completion");
 
 			assertTrue(estimator.isReadyNonBlocking(),
 					"In-progress background rebuild should not make the published snapshot unavailable");
@@ -145,6 +150,7 @@ class SketchBasedJoinEstimatorBackgroundRefreshTest {
 			store.releaseSecondRebuild();
 			estimator.close();
 		}
+		assertFalse(estimator.hasPendingBackgroundRefresh());
 	}
 
 	private static final class CountingEmptyStore implements SketchStatementSource {

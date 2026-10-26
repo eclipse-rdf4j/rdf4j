@@ -18,14 +18,17 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbCompatibilityFixtures.properties;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbCompatibilityFixtures.save;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbCompatibilityFixtures.snapshot;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.lwjgl.system.MemoryUtil.NULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
+import static org.lwjgl.util.lmdb.LMDB.MDB_DUPSORT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
+import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
@@ -38,6 +41,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxdbs;
 import static org.lwjgl.util.lmdb.LMDB.mdb_put;
+import static org.mockito.Mockito.mockStatic;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -46,10 +50,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -68,7 +74,9 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
+import org.lwjgl.util.lmdb.LMDB;
 import org.lwjgl.util.lmdb.MDBVal;
+import org.mockito.MockedStatic;
 
 /** Legacy index discovery is checked against authentic 6.1.0 and 6.1.1 generations. */
 class LmdbLegacyIndexDiscoveryTest {
@@ -122,6 +130,217 @@ class LmdbLegacyIndexDiscoveryTest {
 		createNamedDatabase(directory.resolve("triples"), "future-index");
 
 		assertInitializationRejectedWithoutMutation();
+	}
+
+	@Test
+	void catalogScanSeeksPastLegacyDictionaryRecords() throws Exception {
+		extract("v2-610-default.zip", directory);
+		List<byte[]> mainKeys = readNativeKeys(directory.resolve("values"), null);
+		List<byte[]> catalogKeys = mainKeys.stream().filter(key -> Byte.toUnsignedInt(key[0]) >= 0x20).toList();
+		assertThat(mainKeys.size()).isGreaterThan(catalogKeys.size());
+
+		List<CatalogScan> scans = observeCatalogScans(this::discover);
+
+		assertThat(scans).hasSize(2);
+		System.out.printf("Legacy values catalog scan: %d main entries; %d returned catalog keys%n", mainKeys.size(),
+				scans.get(0).keys.size());
+		assertThat(scans.get(0).firstOperation).isEqualTo(MDB_SET_RANGE);
+		assertThat(scans.get(0).seekKey).containsExactly((byte) 0x20);
+		assertThat(scans.get(0).keys).containsExactlyElementsOf(catalogKeys);
+	}
+
+	@Test
+	void catalogScanStopsAtFirstKeyBeyondPrintableDatabaseNames() throws Exception {
+		extract("v2-610-default.zip", directory);
+		List<byte[]> catalogKeys = readNativeKeys(directory.resolve("values"), null).stream()
+				.filter(key -> Byte.toUnsignedInt(key[0]) >= 0x20)
+				.toList();
+		byte[] successor = { 0x7f };
+		nativePut(directory, null, successor, new byte[] { 1 });
+		nativePut(directory, null, new byte[] { 0x7f, 1 }, new byte[] { 1 });
+		nativePut(directory, null, new byte[] { (byte) 0xff }, new byte[] { 1 });
+
+		List<CatalogScan> scans = observeCatalogScans(this::discover);
+		assertThat(assertThrows(IOException.class, this::verifyOffline))
+				.hasMessage("Unrecognized record in ValueStore main database");
+
+		List<byte[]> returnedKeys = new ArrayList<>(catalogKeys);
+		returnedKeys.add(successor);
+		assertThat(scans).hasSize(2);
+		assertThat(scans.get(0).keys).containsExactlyElementsOf(returnedKeys);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void catalogScanHandlesAbsentNamedDatabasesAndEmptyMainDatabase(boolean emptyMain) throws Exception {
+		extract("v2-610-default.zip", directory);
+		for (byte[] key : readNativeKeys(directory.resolve("values"), null)) {
+			if (Byte.toUnsignedInt(key[0]) >= 0x20) {
+				dropNamedDatabase(directory.resolve("values"), new String(key, StandardCharsets.US_ASCII));
+			} else if (emptyMain) {
+				nativePut(directory, null, key, null);
+			}
+		}
+
+		List<CatalogScan> scans = observeCatalogScans(() -> assertThat(assertThrows(IOException.class, this::discover))
+				.hasMessage("Legacy ValueStore requires term-spoc and term-cspo indexes"));
+
+		assertThat(scans).hasSize(2);
+		assertThat(scans.get(0).firstOperation).isEqualTo(MDB_SET_RANGE);
+		assertThat(scans.get(0).seekKey).containsExactly((byte) 0x20);
+		assertThat(scans.get(0).keys).isEmpty();
+	}
+
+	static Stream<Arguments> unexpectedDatabaseNames() {
+		return Stream.of(true, false)
+				.flatMap(legacy -> Stream.of(" ", "~", "future-index", "\u0001low",
+						"\u001flow", "\u007fhigh", "\u00ffhigh", "a\u0001suffix")
+						.map(name -> Arguments.of(legacy, name)));
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void missingRequiredTermOwnerTreeRejectsWithoutRecreatingIt(boolean legacy) throws Exception {
+		if (legacy) {
+			extract("v2-610-explicit-terms.zip", directory);
+		} else {
+			SailRepository repository = new SailRepository(new LmdbStore(directory.toFile(),
+					new LmdbStoreConfig().setInlineLiterals(false)));
+			try {
+				repository.init();
+				try (var connection = repository.getConnection()) {
+					var values = SimpleValueFactory.getInstance();
+					var predicate = values.createIRI("urn:missing-owner:predicate");
+					var inner = values.createTripleTerm(values.createIRI("urn:missing-owner:inner"), predicate,
+							values.createLiteral("owned value"));
+					connection.add(values.createIRI("urn:missing-owner:subject"), predicate,
+							values.createTripleTerm(values.createIRI("urn:missing-owner:outer"), predicate, inner));
+				}
+			} finally {
+				repository.shutDown();
+			}
+		}
+		dropNamedDatabase(directory.resolve("values"), TripleIndex.nativeDatabaseName("term-cspo", true));
+		assertInitializationRejectedWithoutMutation();
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void metadataOnlyTornCatalogDoesNotBecomeAFreshDictionary(boolean legacy) throws Exception {
+		if (legacy) {
+			extract("v2-empty-inline-false.zip", directory);
+		} else {
+			LmdbStore store = new LmdbStore(directory.toFile(), new LmdbStoreConfig().setInlineLiterals(false));
+			store.init();
+			store.shutDown();
+		}
+		for (byte[] key : readNativeKeys(directory.resolve("values"), null)) {
+			if (Byte.toUnsignedInt(key[0]) >= 0x20) {
+				String name = new String(key, StandardCharsets.US_ASCII);
+				if (!name.equals("gc_meta")) {
+					dropNamedDatabase(directory.resolve("values"), name);
+				}
+			} else {
+				nativePut(directory, null, key, null);
+			}
+		}
+		createNamedDatabase(directory.resolve("values"), "gc_meta");
+		assertInitializationRejectedWithoutMutation();
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void capturedInactiveStatementTreesStayPendingBeforeScheduling(boolean legacy) throws Exception {
+		if (legacy) {
+			extract("v2-610-default.zip", directory);
+		}
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setInlineLiterals(false);
+		SailRepository repository = new SailRepository(new LmdbStore(directory.toFile(), config));
+		try {
+			repository.init();
+			try (var connection = repository.getConnection()) {
+				var values = SimpleValueFactory.getInstance();
+				connection.add(values.createIRI("urn:inactive:s"), values.createIRI("urn:inactive:p"),
+						values.createLiteral("still committed"));
+			}
+		} finally {
+			repository.shutDown();
+		}
+		putNamespaceMetadata(TripleStore.INDEX_SPECS_KEY, "spoc".getBytes(StandardCharsets.UTF_8));
+		StoreProperties properties = new StoreProperties(directory.toFile());
+		assertThat(properties.load()).isTrue();
+		LegacyStoreDiscovery.discover(directory.toFile(), properties);
+		try (TripleStore store = new TripleStore(directory.resolve("triples").toFile(), properties,
+				new LmdbStoreConfig("spoc").setInlineLiterals(false), null)) {
+			assertThat(store.explicitIndexEntryCounts()).containsOnlyKeys("spoc");
+			long expected = store.explicitIndexEntryCounts().get("spoc");
+			assertFalse(store.awaitIndexRebuild(0L, TimeUnit.NANOSECONDS),
+					"captured inactive physical trees remain registered cleanup before the worker starts");
+			store.startBackgroundIndexRebuild();
+			assertThat(store.awaitIndexRebuild(10L, TimeUnit.SECONDS)).isTrue();
+			assertThat(store.explicitIndexEntryCounts().get("spoc")).isEqualTo(expected);
+		}
+		assertThat(LmdbCompatibilityFixtures.nativeTripleEntryCount(directory,
+				TripleIndex.nativeDatabaseName("posc", true))).isZero();
+	}
+
+	@ParameterizedTest
+	@MethodSource("unexpectedDatabaseNames")
+	void rejectsUnknownValueDatabasesAcrossCatalogBoundaries(boolean legacy, String name) throws Exception {
+		if (legacy) {
+			extract("v2-610-default.zip", directory);
+		} else {
+			SailRepository current = new SailRepository(new LmdbStore(directory.toFile(),
+					new LmdbStoreConfig().setInlineLiterals(false)));
+			try {
+				current.init();
+			} finally {
+				current.shutDown();
+			}
+		}
+		createNamedDatabase(directory.resolve("values"), name);
+		var before = snapshot(directory);
+
+		IOException failure = assertThrows(IOException.class,
+				name.charAt(0) >= 0x20 && name.charAt(0) < 0x7f ? this::discover : this::verifyOffline);
+
+		assertThat(failure).hasMessageContaining(name.chars().allMatch(c -> c >= 0x20 && c < 0x7f)
+				? "Unrecognized named database in values environment"
+				: "Unrecognized non-ASCII native database name");
+		assertThat(snapshot(directory)).isEqualTo(before);
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 0x20, 0x7e })
+	void valueCatalogRejectsOrdinaryRecordsInsideTheKnownCatalogRange(int prefix) throws Exception {
+		extract("v2-610-default.zip", directory);
+		nativePut(directory, null, new byte[] { (byte) prefix }, new byte[] { 1 });
+		assertDiscoveryRejectedWithoutMutation("Unrecognized entry in LMDB values database catalog");
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void catalogScanStillValidatesDatabaseFlags(boolean statements) throws Exception {
+		extract("v2-610-default.zip", directory);
+		createNamedDatabase(directory.resolve(statements ? "triples" : "values"), "future-index", MDB_DUPSORT);
+		var before = snapshot(directory);
+
+		assertThat(assertThrows(IOException.class, this::discover))
+				.hasMessage("Unexpected flags on native database future-index");
+		assertThat(snapshot(directory)).isEqualTo(before);
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 1, 0x20, 0x7f, 0xff })
+	void tripleCatalogStillRejectsOrdinaryEntriesAcrossCatalogBoundaries(int prefix) throws Exception {
+		extract("v2-610-default.zip", directory);
+		nativePutTriple(directory.resolve("triples"), null, ByteBuffer.wrap(new byte[] { (byte) prefix }));
+		var before = snapshot(directory);
+
+		assertThat(assertThrows(IOException.class,
+				prefix >= 0x20 && prefix < 0x7f ? this::discover : this::verifyOffline))
+						.hasMessageContaining("Unrecognized entry in LMDB triple database catalog");
+		assertThat(snapshot(directory)).isEqualTo(before);
 	}
 
 	@ParameterizedTest
@@ -319,7 +538,7 @@ class LmdbLegacyIndexDiscoveryTest {
 				.as("the authentic baseline's partial OSPC index")
 				.isEqualTo(1);
 
-		assertInitializationRejectedWithoutMutation("Statement index entry counts disagree for spoc");
+		assertInitializationRejectedWithoutMutation("Statement indexes contain different record counts");
 	}
 
 	@Test
@@ -390,7 +609,7 @@ class LmdbLegacyIndexDiscoveryTest {
 		extract("v2-610-optimize-retirement-schema.zip", directory);
 		nativePut(directory, "retired_ids", new byte[] { 2 }, new byte[] { 1, 3 });
 
-		assertDiscoveryRejectedWithoutMutation("Retirement queue primary record has no matching sequence entry");
+		assertVerificationRejectedWithoutMutation("Retirement queue primary record has no matching sequence entry");
 	}
 
 	@Test
@@ -418,7 +637,7 @@ class LmdbLegacyIndexDiscoveryTest {
 	void rejectsStatementThatReferencesRetainedTripleTermWithoutChangingNativeGeneration() throws Exception {
 		createRetainedTripleTermFixture(false, true, true);
 
-		assertInitializationRejectedWithoutMutation();
+		assertVerificationRejectedWithoutMutation();
 	}
 
 	@Test
@@ -441,15 +660,24 @@ class LmdbLegacyIndexDiscoveryTest {
 		var predicate = values.createIRI("urn:gc:predicate");
 		var quoted = values.createTripleTerm(values.createIRI("urn:gc:inner"), predicate,
 				values.createLiteral("unreferenced component"));
-		LmdbStoreConfig config = new LmdbStoreConfig().setInlineLiterals(false).setValueEvictionInterval(60_000);
+		// Bounded reclamation needs a leading object index to establish term liveness.
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setInlineLiterals(false)
+				.setValueEvictionInterval(60_000)
+				.setLegacyReferenceCountRepairEnabled(true);
 		SailRepository initial = new SailRepository(new LmdbStore(directory.toFile(), config));
 		initial.init();
 		try (var connection = initial.getConnection()) {
 			connection.add(subject, predicate, quoted);
+		} finally {
+			initial.shutDown();
+		}
+		LmdbStore.reconstructReferenceCountsOffline(directory.toFile(), config);
+		SailRepository removing = new SailRepository(new LmdbStore(directory.toFile(), config));
+		try (var connection = removing.getConnection()) {
 			connection.remove(subject, predicate, quoted);
 			assertThat(connection.size()).isZero();
 		} finally {
-			initial.shutDown();
+			removing.shutDown();
 		}
 
 		List<byte[]> ownerKeys = readNativeKeys(directory.resolve("values"),
@@ -521,7 +749,7 @@ class LmdbLegacyIndexDiscoveryTest {
 		LmdbCompatibilityFixtures.nativePut(directory, null, ownerData, null);
 		addUnusedMarker(component, 12);
 
-		assertInitializationRejectedWithoutMutation();
+		assertVerificationRejectedWithoutMutation();
 	}
 
 	@Test
@@ -579,7 +807,7 @@ class LmdbLegacyIndexDiscoveryTest {
 		LmdbCompatibilityFixtures.nativePut(directory, TripleIndex.nativeDatabaseName("term-cspo", true),
 				encodeIndexKey("cspo", childQuad), null);
 
-		assertInitializationRejectedWithoutMutation();
+		assertVerificationRejectedWithoutMutation();
 	}
 
 	@Test
@@ -608,7 +836,7 @@ class LmdbLegacyIndexDiscoveryTest {
 			nativePutTriple(directory.resolve("triples"), TripleIndex.nativeDatabaseName(spec, true), key.flip());
 		}
 
-		assertInitializationRejectedWithoutMutation();
+		assertVerificationRejectedWithoutMutation();
 	}
 
 	@Test
@@ -621,7 +849,7 @@ class LmdbLegacyIndexDiscoveryTest {
 			nativePutTriple(directory.resolve("triples"), TripleIndex.nativeDatabaseName(spec, true), key.flip());
 		}
 
-		assertInitializationRejectedWithoutMutation();
+		assertVerificationRejectedWithoutMutation();
 	}
 
 	@Test
@@ -777,6 +1005,7 @@ class LmdbLegacyIndexDiscoveryTest {
 		repository.init();
 		try (var connection = repository.getConnection()) {
 			assertThat(connection.size()).isEqualTo(4);
+			assertThat(((LmdbStore) repository.getSail()).awaitIndexRebuild(30, TimeUnit.SECONDS)).isTrue();
 		} finally {
 			repository.shutDown();
 		}
@@ -799,6 +1028,73 @@ class LmdbLegacyIndexDiscoveryTest {
 			extract("v2-empty-inline-false.zip", directory);
 		}
 		return new SailRepository(new LmdbStore(directory.toFile(), new LmdbStoreConfig().setInlineLiterals(false)));
+	}
+
+	private void discover() throws Exception {
+		StoreProperties properties = new StoreProperties(directory.toFile());
+		assertThat(properties.load()).isTrue();
+		LegacyStoreDiscovery.discover(directory.toFile(), properties);
+	}
+
+	/** Observes real native cursor operations, including the keys actually returned by each catalog cursor. */
+	private static List<CatalogScan> observeCatalogScans(DiscoveryAction action) throws Exception {
+		List<CatalogScan> scans = new ArrayList<>();
+		Map<Long, CatalogScan> cursors = new HashMap<>();
+		boolean[] catalogCursorPending = { false };
+		LmdbStartupDiagnostics.OBSERVER.set(operation -> {
+			if (operation == LmdbStartupDiagnostics.Operation.CATALOG_SCAN) {
+				catalogCursorPending[0] = true;
+			}
+		});
+		try (MockedStatic<LMDB> ignored = mockStatic(LMDB.class, invocation -> {
+			String method = invocation.getMethod().getName();
+			if (method.equals("mdb_cursor_get")) {
+				CatalogScan scan = cursors.get(invocation.<Long>getArgument(0));
+				if (scan != null) {
+					MDBVal key = invocation.getArgument(1);
+					if (scan.firstOperation == -1) {
+						scan.firstOperation = invocation.getArgument(3);
+						if (key.mv_size() != 0) {
+							scan.seekKey = new byte[(int) key.mv_size()];
+							key.mv_data().duplicate().get(scan.seekKey);
+						}
+					}
+					Object result = invocation.callRealMethod();
+					if ((int) result == MDB_SUCCESS) {
+						byte[] bytes = new byte[(int) key.mv_size()];
+						key.mv_data().duplicate().get(bytes);
+						scan.keys.add(bytes);
+					}
+					return result;
+				}
+			}
+			Object result = invocation.callRealMethod();
+			if (method.equals("mdb_cursor_open") && catalogCursorPending[0]) {
+				CatalogScan scan = new CatalogScan();
+				scans.add(scan);
+				cursors.put(invocation.<PointerBuffer>getArgument(2).get(0), scan);
+				catalogCursorPending[0] = false;
+			} else if (method.equals("mdb_cursor_close")) {
+				cursors.remove(invocation.<Long>getArgument(0));
+			}
+			return result;
+		})) {
+			action.run();
+		} finally {
+			LmdbStartupDiagnostics.OBSERVER.remove();
+		}
+		return scans;
+	}
+
+	@FunctionalInterface
+	private interface DiscoveryAction {
+		void run() throws Exception;
+	}
+
+	private static final class CatalogScan {
+		private int firstOperation = -1;
+		private byte[] seekKey;
+		private final List<byte[]> keys = new ArrayList<>();
 	}
 
 	private void createRetainedTripleTermFixture(boolean removeStatements, boolean removeForwardMappings,
@@ -986,6 +1282,22 @@ class LmdbLegacyIndexDiscoveryTest {
 		}
 	}
 
+	private void verifyOffline() throws IOException {
+		LmdbStore.verifyStoreOffline(directory.toFile(), new LmdbStoreConfig().setInlineLiterals(false));
+	}
+
+	private void assertVerificationRejectedWithoutMutation() throws Exception {
+		var before = snapshot(directory);
+		assertThrows(IOException.class, this::verifyOffline);
+		assertThat(snapshot(directory)).isEqualTo(before);
+	}
+
+	private void assertVerificationRejectedWithoutMutation(String message) throws Exception {
+		var before = snapshot(directory);
+		assertThat(assertThrows(IOException.class, this::verifyOffline)).hasMessageContaining(message);
+		assertThat(snapshot(directory)).isEqualTo(before);
+	}
+
 	private void assertInitializationRejectedWithoutMutation() throws Exception {
 		var before = snapshot(directory);
 		SailRepository repository = repository();
@@ -1034,6 +1346,10 @@ class LmdbLegacyIndexDiscoveryTest {
 	}
 
 	private static void createNamedDatabase(Path environment, String name) throws Exception {
+		createNamedDatabase(environment, name, 0);
+	}
+
+	private static void createNamedDatabase(Path environment, String name, int flags) throws Exception {
 		long env = NULL;
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			PointerBuffer handle = stack.mallocPointer(1);
@@ -1043,7 +1359,7 @@ class LmdbLegacyIndexDiscoveryTest {
 			E(mdb_env_open(env, environment.toString(), MDB_NOTLS, 0664));
 			LmdbUtil.writeTransaction(env, (inner, txn) -> {
 				var database = inner.mallocInt(1);
-				E(mdb_dbi_open(txn, name, MDB_CREATE, database));
+				E(mdb_dbi_open(txn, name, MDB_CREATE | flags, database));
 				return null;
 			});
 		} finally {
