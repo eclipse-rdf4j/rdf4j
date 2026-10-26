@@ -324,7 +324,9 @@ class LmdbValueResolutionScopeTest {
 				child = store.getLazyValue(childId);
 			}
 			long olderEpoch = child.getValueStoreRevision().getRevisionId();
+			// Only a rollback that assigned an ID retires the revision.
 			store.startTransaction(true);
+			store.storeValue(vf.createBNode("older-cold-rollback-assigned"));
 			store.rollback();
 			long parentId = commitValue(store, vf.createTripleTerm(vf.createIRI("urn:older:subject"),
 					vf.createIRI("urn:older:predicate"), vf.createBNode("older-cold-child")));
