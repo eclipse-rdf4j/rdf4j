@@ -207,6 +207,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private volatile boolean applierPausedForTest;
 	/** Test-only interleaving hook: runs once a build has started, before it pins its source snapshot. */
 	volatile Runnable beforeBuildSnapshotForTest;
+	/** Test-only interleaving hook: runs right after a build pins its source snapshot. */
+	volatile Runnable afterBuildSnapshotForTest;
 	/** Test-only interleaving hook: runs after the base scan completes and before online catch-up begins. */
 	volatile Runnable afterBuildScanForTest;
 	/** Test-only observation hook: runs before catch-up waits for a commit delta that has not arrived. */
@@ -2972,6 +2974,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			current = emergencyGap.get();
 			updated = new GapMarker(Math.min(current.fromRevision(), fromRevision), current.sequence() + 1);
 		} while (!emergencyGap.compareAndSet(current, updated));
+		// Catch-up waits on the apply queue for its next delta or a new gap. A deferred connection commit records an
+		// overflow gap on the preparation thread after releasing write admission; without this wake-up, a catch-up that
+		// already closed admission waits forever for that revision's delta, and so does every later writer.
+		synchronized (applyQueue) {
+			applyQueue.notifyAll();
+		}
 		completeUnavailablePublications();
 	}
 
@@ -3035,15 +3043,23 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			if (beforeSnapshot != null) {
 				beforeSnapshot.run();
 			}
+			// Capture the gap history before pinning. A commit records its gap no earlier than its physical commit and
+			// the pin waits out that commit's write lock, so every gap captured here belongs to a revision the snapshot
+			// covers. Captured after pinning, a deferred commit's overflow gap for a later revision would be adopted as
+			// retired although its delta never reaches the queue, and catch-up would wait for that revision.
+			capturedGap = emergencyGap.get();
 			try (LmdbAdjacencyBuildTxnFamily sourceFamily = new LmdbAdjacencyBuildTxnFamily(tripleStore,
 					options.buildThreads())) {
 				baseRevision = sourceFamily.snapshotRevision();
+				Runnable afterSnapshot = afterBuildSnapshotForTest;
+				if (afterSnapshot != null) {
+					afterSnapshot.run();
+				}
 				// Resolve selected predicates only after pinning: a dictionary ID always commits before the triples
 				// that use it, so every selected predicate with rows in this snapshot resolves. Resolved earlier, a
 				// predicate first committed in between would leave its rows out of the base, and its next delta would
 				// then treat it as absent from the base and drop them.
 				coverage = resolveCoverage();
-				capturedGap = emergencyGap.get();
 				account.beginProgressLogging();
 				logger.info("Creating in-memory adjacency structures: format=paged-csf, snapshotRevision={}, {}",
 						baseRevision, account.memoryUsageSummary());
