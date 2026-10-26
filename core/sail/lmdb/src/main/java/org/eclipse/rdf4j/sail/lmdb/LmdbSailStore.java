@@ -12107,8 +12107,7 @@ class LmdbSailStore implements SailStore {
 			}
 			ValueStore.FreshValueSession session = freshValueSession;
 			if (session == null) {
-				return initialRunImportAvailable && state.rows == 0 && state.pending == null && !storeTxnStarted.get()
-						&& tripleStore.isEmpty();
+				return state.rows == 0 && state.pending == null && !storeTxnStarted.get() && tripleStore.isEmpty();
 			}
 			return (freshNoneImportOwner == owner || freshNoneImportOwner == null && freshSessionReservedForNone)
 					&& valueStore.isFreshValueSessionUsable(session)

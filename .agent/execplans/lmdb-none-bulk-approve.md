@@ -13,9 +13,9 @@ The cause is structural. A READ_COMMITTED transaction buffers its statements and
 ## Progress
 
 - [x] (2026-10-26 12:30Z) Measured with the scratch harness `DatagovBatches` on a loaded machine. Single transaction: NONE with run import 710–750 ms (add 466–519, commit 154–163), NONE without run import 735–811 ms, READ_COMMITTED 446–469 ms (add 53–59, commit 339–383). Batched: NONE 750–840 ms, READ_COMMITTED 780–900 ms.
-- [ ] Milestone 1: a failing benchmark-shaped test fixture and correctness tests for a NONE `approveAll` of a sized collection.
-- [ ] Milestone 2: the prepared NONE chunk, with capacity replay.
-- [ ] Milestone 3: measurement, full module run, ExecPlan retrospective.
+- [x] (2026-10-26 13:00Z) Milestone 1: `LmdbNoneBulkApproveTest`. The path test failed before Milestone 2. The adjacency test also failed on the per-statement path: `LmdbStoreConnection.addStatementsInternal` never marked the attempt as writing, so its commit skipped the post-commit rebuild after the initial import and adjacency stayed at revision 0 (fixed in the same commit).
+- [x] (2026-10-26 13:10Z) Milestone 2: the prepared NONE chunk with capacity replay, committed as `b74cbf2dcc`; the run-import switch no longer disables it.
+- [x] (2026-10-26 13:20Z) Milestone 3, harness (loaded machine): single transaction NONE 370–424 ms against READ_COMMITTED 397–452 ms; batched NONE 718–761 ms against READ_COMMITTED 715–835 ms. Full module run left to CI.
 
 
 ## Surprises & Discoveries

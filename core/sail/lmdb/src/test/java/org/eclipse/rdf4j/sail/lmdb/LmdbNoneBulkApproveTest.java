@@ -76,6 +76,15 @@ class LmdbNoneBulkApproveTest {
 	}
 
 	@Test
+	void aCollectionTakesThePreparedPathWithTheRunImportSwitchedOff() {
+		open(config().setInitialRunImportEnabled(false));
+		Model first = model("first", 0, SIZE);
+		load(first);
+		assertThat(store.getBackingStore().preparedNoneChunks()).isEqualTo(1);
+		assertStored(first);
+	}
+
+	@Test
 	void aCollectionIsStoredWithOneIdPerValue() {
 		open(config());
 		Model first = model("first", 0, SIZE);
