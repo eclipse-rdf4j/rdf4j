@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.repository.sparql;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.eclipse.rdf4j.model.util.Values.iri;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -24,10 +25,19 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+
 import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.TripleTerm;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleTripleTerm;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -35,7 +45,11 @@ import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.Graph;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLParserFactory;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.junit.jupiter.api.BeforeEach;
@@ -174,6 +188,111 @@ public class SPARQLConnectionTest {
 		query = new SPARQLParserFactory().getParser().parseQuery(sizeAsTupleQuery, "http://example.org/");
 
 		assertNotNull(query);
+	}
+
+	@Test
+	public void sizeQueryKeepsDelimiterBearingGraphAsOneIri() {
+		IRI graph = vf.createIRI("urn:g> } ; DROP ALL ; INSERT DATA { <urn:other");
+		SPARQLConnection quad = new SPARQLConnection(null, client, true);
+
+		String query = quad.sizeAsTupleQuery(graph);
+		var parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		List<Graph> parsedGraphs = new ArrayList<>();
+		parsed.getTupleExpr().visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Graph node) {
+				parsedGraphs.add(node);
+				super.meet(node);
+			}
+		});
+		assertThat(query).contains("\\u003E");
+		assertThat(parsedGraphs).singleElement()
+				.satisfies(node -> assertThat(node.getGraphName().getValue()).isEqualTo(graph));
+		assertThat(StatementPatternCollector.process(parsed.getTupleExpr())).hasSize(1);
+	}
+
+	@Test
+	public void updateRejectsMalformedStatementAndGraphIrisBeforeRemoteCall() throws Exception {
+		IRI subjectIri = vf.createIRI("urn:s> } ; DROP ALL ; INSERT DATA { <urn:other");
+		IRI predicateIri = vf.createIRI("urn:p> . <urn:other");
+		IRI graphIri = vf.createIRI("urn:g> } ; DROP ALL ; INSERT DATA { <urn:other");
+		Literal object = vf.createLiteral("value \\ quote \" line\n", vf.createIRI("urn:t> ; DROP ALL"));
+		subject.begin();
+		subject.add(subjectIri, predicateIri, object, graphIri);
+		assertThatThrownBy(subject::commit).hasMessageContaining("Invalid SPARQL update IRI");
+		verify(client, never()).sendUpdate(any(), any(), any(), any(), anyBoolean(), anyInt());
+	}
+
+	@Test
+	public void unsafeBlankNodeLabelIsRejectedBeforeRemoteUpdate() throws Exception {
+		BNode malicious = vf.createBNode("known . <urn:other> <urn:p> <urn:o>");
+
+		subject.begin();
+		assertThatThrownBy(() -> {
+			subject.add(malicious, RDF.TYPE, RDFS.CLASS);
+			subject.commit();
+		}).hasMessageContaining("blank-node");
+		verify(client, never()).sendUpdate(any(), any(), any(), any(), anyBoolean(), anyInt());
+	}
+
+	@Test
+	public void blankNodeGraphCannotCollideWithRealIriGraph() throws Exception {
+		BNode graph = vf.createBNode("same");
+
+		subject.begin();
+		assertThatThrownBy(() -> {
+			subject.add(FOAF.PERSON, RDF.TYPE, RDFS.CLASS, graph);
+			subject.commit();
+		}).hasMessageContaining("blank-node");
+		verify(client, never()).sendUpdate(any(), any(), any(), any(), anyBoolean(), anyInt());
+	}
+
+	@Test
+	public void validBlankNodeAndNestedTripleTermRemainOneUpdate() throws Exception {
+		BNode subjectNode = vf.createBNode("é.1");
+		TripleTerm inner = vf.createTripleTerm(vf.createIRI("urn:s"), vf.createIRI("urn:p"),
+				vf.createLiteral("O'Brien"));
+		TripleTerm outer = vf.createTripleTerm(vf.createIRI("urn:s"), vf.createIRI("urn:p"), inner);
+		ArgumentCaptor<String> update = ArgumentCaptor.forClass(String.class);
+
+		subject.begin();
+		subject.add(subjectNode, RDF.TYPE, outer);
+		subject.commit();
+		verify(client).sendUpdate(any(), update.capture(), any(), any(), anyBoolean(), anyInt());
+
+		assertThat(QueryParserUtil.parseUpdate(QueryLanguage.SPARQL, update.getValue(), null).getUpdateExprs())
+				.hasSize(1);
+	}
+
+	@Test
+	public void deepTripleTermUpdateRendersWithoutStackExhaustion() throws Exception {
+		IRI nestedSubject = vf.createIRI("urn:s");
+		IRI nestedPredicate = vf.createIRI("urn:p");
+		Value value = vf.createIRI("urn:o");
+		for (int i = 0; i < 20_000; i++) {
+			value = new CachedHashTripleTerm(nestedSubject, nestedPredicate, value);
+		}
+		ArgumentCaptor<String> update = ArgumentCaptor.forClass(String.class);
+
+		subject.begin();
+		subject.add(FOAF.PERSON, RDF.TYPE, value);
+		subject.commit();
+		verify(client).sendUpdate(any(), update.capture(), any(), any(), anyBoolean(), anyInt());
+		assertThat(update.getValue()).contains("<urn:o>" + ")>>".repeat(20_000));
+	}
+
+	private static final class CachedHashTripleTerm extends SimpleTripleTerm {
+		private final int cachedHash;
+
+		private CachedHashTripleTerm(Resource subject, IRI predicate, Value object) {
+			super(subject, predicate, object);
+			cachedHash = Objects.hash(subject, predicate, object);
+		}
+
+		@Override
+		public int hashCode() {
+			return cachedHash;
+		}
 	}
 
 	@Test

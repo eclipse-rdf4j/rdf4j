@@ -16,6 +16,7 @@ import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
 import java.util.AbstractSet;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -61,6 +62,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.DatasetUtils;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLTermRenderer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -109,8 +111,22 @@ public class QueryStringUtil {
 	}
 
 	public static boolean containsBlankNode(Value value) {
-		return value instanceof BNode || value instanceof TripleTerm triple
-				&& (containsBlankNode(triple.getSubject()) || containsBlankNode(triple.getObject()));
+		if (value == null) {
+			return false;
+		}
+		ArrayDeque<Value> pending = new ArrayDeque<>();
+		pending.push(value);
+		while (!pending.isEmpty()) {
+			Value current = pending.pop();
+			if (current instanceof BNode) {
+				return true;
+			}
+			if (current instanceof TripleTerm triple) {
+				pending.push(triple.getObject());
+				pending.push(triple.getSubject());
+			}
+		}
+		return false;
 	}
 
 	/* TODO make operations more performant, i.e. use same instance of StringBuilder more permanently */
@@ -1136,22 +1152,21 @@ public class QueryStringUtil {
 	 * @return the string builder
 	 */
 	protected static StringBuilder appendValue(StringBuilder sb, Value value) {
+		return SPARQLTermRenderer.appendValueTree(sb, value, "<<(", ")>>", QueryStringUtil::appendLeafValue);
+	}
 
+	private static void appendLeafValue(StringBuilder sb, Value value) {
 		if (value instanceof IRI) {
-			return appendURI(sb, (IRI) value);
+			appendURI(sb, (IRI) value);
+			return;
 		}
 		if (value instanceof Literal) {
-			return appendLiteral(sb, (Literal) value);
+			appendLiteral(sb, (Literal) value);
+			return;
 		}
 		if (value instanceof BNode) {
-			return appendBNode(sb, (BNode) value);
-		}
-		if (value instanceof TripleTerm triple) {
-			sb.append("<<(");
-			appendValue(sb, triple.getSubject()).append(' ');
-			appendValue(sb, triple.getPredicate()).append(' ');
-			appendValue(sb, triple.getObject()).append(")>>");
-			return sb;
+			appendBNode(sb, (BNode) value);
+			return;
 		}
 		throw new QueryEvaluationException("Type not supported: " + value.getClass().getCanonicalName());
 	}
@@ -1164,8 +1179,7 @@ public class QueryStringUtil {
 	 * @return the string builder
 	 */
 	protected static StringBuilder appendURI(StringBuilder sb, IRI uri) {
-		sb.append("<").append(uri.stringValue()).append(">");
-		return sb;
+		return SPARQLTermRenderer.appendIRIRef(sb, uri);
 	}
 
 	/**
@@ -1192,18 +1206,15 @@ public class QueryStringUtil {
 	 */
 	protected static StringBuilder appendLiteral(StringBuilder sb, Literal lit) {
 		sb.append("'''");
-		sb.append(lit.getLabel().replace("\"", "\\\"").replace("'", "\\'"));
+		sb.append(SPARQLTermRenderer.escapeString(lit.getLabel()));
 		sb.append("'''");
 
 		if (lit.getLanguage().isPresent()) {
-			sb.append('@');
-			sb.append(lit.getLanguage().get());
-			sb.append(lit.getBaseDirection());
+			SPARQLTermRenderer.appendLanguageTag(sb, lit);
 		} else {
 			if (lit.getDatatype() != null) {
-				sb.append("^^<");
-				sb.append(lit.getDatatype().stringValue());
-				sb.append('>');
+				sb.append("^^");
+				SPARQLTermRenderer.appendIRIRef(sb, lit.getDatatype());
 			}
 		}
 		return sb;
@@ -1269,6 +1280,7 @@ public class QueryStringUtil {
 			throw new QueryEvaluationException(
 					"Unsupported blank-node identity: SPARQL Protocol graph sources require IRIs");
 		}
-		sb.append(named ? "FROM NAMED <" : "FROM <").append(graph.stringValue()).append("> ");
+		sb.append(named ? "FROM NAMED " : "FROM ");
+		SPARQLTermRenderer.appendIRIRef(sb, (IRI) graph).append(' ');
 	}
 }

@@ -12,13 +12,26 @@
 package org.eclipse.rdf4j.repository.sparql.query;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TripleRef;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -34,6 +47,128 @@ public class QueryStringUtilTest {
 
 		assertEquals("<http://example.com/test>", QueryStringUtil.valueToString(iri));
 		assertEquals("<http://example.com/test>", valueToStringWithStringBuilder(iri));
+	}
+
+	@Test
+	public void delimiterBearingIriRemainsOneStatementTerm() {
+		IRI iri = VF.createIRI("urn:bound> } ; DROP ALL ; INSERT DATA { <urn:other");
+		assertEquals(iri, parseObject(QueryStringUtil.valueToString(iri)));
+	}
+
+	@Test
+	public void datatypeIriAndLiteralControlsRoundTrip() {
+		IRI datatype = VF.createIRI("urn:type> ; DROP ALL ; <urn:other");
+		Literal literal = VF.createLiteral("quote \" slash \\ line\n tab\t control\u0001", datatype);
+
+		assertEquals(literal, parseObject(QueryStringUtil.valueToString(literal)));
+	}
+
+	@Test
+	public void malformedLanguageTagIsRejected() {
+		Literal literal = VF.createLiteral("label", "en> ; DROP ALL");
+
+		assertThrows(IllegalArgumentException.class, () -> QueryStringUtil.valueToString(literal));
+	}
+
+	@Test
+	public void nulLiteralIsRejectedBeforeRendering() {
+		Literal literal = VF.createLiteral("before\0after");
+
+		assertThrows(IllegalArgumentException.class, () -> QueryStringUtil.valueToString(literal));
+	}
+
+	@Test
+	public void otherC0LiteralCharactersRoundTrip() {
+		Literal literal = VF.createLiteral("before" + (char) 1 + (char) 31 + "after");
+
+		assertEquals(literal, parseObject(QueryStringUtil.valueToString(literal)));
+	}
+
+	@Test
+	public void iriCannotCollideWithBlankNodeReference() {
+		IRI iri = VF.createIRI("_:known");
+
+		assertThrows(IllegalArgumentException.class, () -> QueryStringUtil.valueToString(iri));
+	}
+
+	@Test
+	public void legacyOperationRendersBoundIriAndLiteralAsSingleTerms() {
+		IRI iri = VF.createIRI("urn:bound> ; DROP ALL ; <urn:other");
+		OperationProbe operation = new OperationProbe("SELECT * WHERE { ?s <urn:p> ?value }");
+		operation.setBinding("value", iri);
+		assertEquals(iri, parseQueryObject(operation.render()));
+
+		Literal literal = VF.createLiteral("slash \\ quote \" line\n");
+		operation.clearBindings();
+		operation.setBinding("value", literal);
+		assertEquals(literal, parseQueryObject(operation.render()));
+	}
+
+	@Test
+	public void legacyOperationRejectsMalformedBaseIri() {
+		assertThrows(IllegalArgumentException.class,
+				() -> new OperationProbe("urn:base> SELECT * WHERE { ?s ?p ?o } #", "SELECT * WHERE { ?s ?p ?o }"));
+	}
+
+	@Test
+	public void legacyOperationRendersNestedTripleBinding() {
+		TripleTerm inner = VF.createTripleTerm(VF.createIRI("urn:s"), VF.createIRI("urn:p"),
+				VF.createLiteral("O'Brien"));
+		TripleTerm outer = VF.createTripleTerm(VF.createIRI("urn:s"), VF.createIRI("urn:p"), inner);
+		OperationProbe operation = new OperationProbe("SELECT * WHERE { ?s <urn:p> ?value }");
+
+		operation.setBinding("value", outer);
+
+		var parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, operation.render(), null);
+		List<TripleRef> refs = new ArrayList<>();
+		parsed.getTupleExpr().visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(TripleRef ref) {
+				refs.add(ref);
+				super.meet(ref);
+			}
+		});
+		assertEquals(2, refs.size());
+		TripleRef innerRef = refs.stream()
+				.filter(ref -> inner.getObject().equals(ref.getObjectVar().getValue()))
+				.findFirst()
+				.orElseThrow();
+		TripleRef outerRef = refs.stream().filter(ref -> ref != innerRef).findFirst().orElseThrow();
+		assertEquals(inner.getSubject(), innerRef.getSubjectVar().getValue());
+		assertEquals(inner.getPredicate(), innerRef.getPredicateVar().getValue());
+		assertEquals(outer.getSubject(), outerRef.getSubjectVar().getValue());
+		assertEquals(outer.getPredicate(), outerRef.getPredicateVar().getValue());
+		assertEquals(innerRef.getExprVar().getName(), outerRef.getObjectVar().getName());
+		assertEquals(outerRef.getExprVar().getName(),
+				StatementPatternCollector.process(parsed.getTupleExpr()).get(0).getObjectVar().getName());
+	}
+
+	@Test
+	public void deeplyNestedTripleTermRendersWithoutStackExhaustion() {
+		Value value = nestedTripleTerm(20_000);
+
+		String rendered = QueryStringUtil.valueToString(value);
+		assertTrue(rendered.startsWith("<<(<urn:s> <urn:p> "));
+		assertTrue(rendered.endsWith("<urn:o>" + ")>>".repeat(20_000)));
+	}
+
+	@Test
+	public void deeplyNestedTripleBindingRendersWithoutStackExhaustion() {
+		MapBindingSet bindings = new MapBindingSet();
+		bindings.addBinding("value", nestedTripleTerm(20_000));
+
+		String rendered = QueryStringUtil.getTupleQueryString(
+				"SELECT * WHERE { ?s <urn:p> ?value }", bindings);
+		assertTrue(rendered.contains("<urn:o>" + " )>>".repeat(20_000)));
+	}
+
+	@Test
+	public void legacyOperationRendersDeepTripleBindingWithoutStackExhaustion() {
+		OperationProbe operation = new OperationProbe("SELECT * WHERE { ?s <urn:p> ?value }");
+		operation.setBinding("value", nestedTripleTerm(20_000));
+
+		String rendered = operation.render();
+		assertTrue(rendered.contains("<urn:o>" + ")>>".repeat(20_000)));
 	}
 
 	@Test
@@ -105,12 +240,38 @@ public class QueryStringUtilTest {
 		return QueryStringUtil.appendValueAsString(new StringBuilder(), value).toString();
 	}
 
+	private static Value nestedTripleTerm(int depth) {
+		IRI subject = VF.createIRI("urn:s");
+		IRI predicate = VF.createIRI("urn:p");
+		Value value = VF.createIRI("urn:o");
+		for (int i = 0; i < depth; i++) {
+			value = VF.createTripleTerm(subject, predicate, value);
+		}
+		return value;
+	}
+
+	private Value parseObject(String term) {
+		return parseQueryObject("SELECT * WHERE { ?s <urn:p> " + term + " . }");
+	}
+
+	private Value parseQueryObject(String query) {
+		var parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		var patterns = StatementPatternCollector.process(parsed.getTupleExpr());
+		assertEquals(1, patterns.size());
+		StatementPattern pattern = patterns.get(0);
+		return pattern.getObjectVar().getValue();
+	}
+
 	private static class OperationProbe extends SPARQLOperation {
 
 		private int maxExecutionTime;
 
 		OperationProbe(String operation) {
 			super(null, "http://example.com/sparql", null, operation);
+		}
+
+		OperationProbe(String base, String operation) {
+			super(null, "http://example.com/sparql", base, operation);
 		}
 
 		String render() {

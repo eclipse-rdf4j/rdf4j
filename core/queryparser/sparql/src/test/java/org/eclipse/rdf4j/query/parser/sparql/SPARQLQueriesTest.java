@@ -20,10 +20,31 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 public class SPARQLQueriesTest {
+	private static final ValueFactory VF = SimpleValueFactory.getInstance();
+
+	@Test
+	public void deeplyNestedInitialBindingRendersWithoutStackExhaustion() {
+		IRI subject = VF.createIRI("urn:s");
+		IRI predicate = VF.createIRI("urn:p");
+		Value value = VF.createIRI("urn:o");
+		for (int i = 0; i < 20_000; i++) {
+			value = VF.createTripleTerm(subject, predicate, value);
+		}
+		MapBindingSet bindings = new MapBindingSet();
+		bindings.addBinding("value", value);
+
+		String rendered = SPARQLQueries.withInitialBindings("SELECT * WHERE { ?s <urn:p> ?value }", bindings);
+		assertThat(rendered).contains("<urn:o>" + " )>>".repeat(20_000));
+	}
 
 	@Test
 	public void testGetPrefixClauses() {
