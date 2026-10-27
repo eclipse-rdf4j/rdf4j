@@ -124,6 +124,9 @@ public final class KernelOrderSink implements AutoCloseable {
 		long maxTop = Math.min((Integer.MAX_VALUE - 8L) / Math.max(1, stride), maxBytes / bytesPerRow);
 		if (limit >= 0 && cap <= maxTop) {
 			top = new NativeTopKBuffer(stride, (int) cap, comparator);
+			if (cancellation != null) {
+				top.buffer.cancellationPoll(() -> KernelRuntime.checkCancelled(cancellation));
+			}
 		} else {
 			int retain = limit >= 0 && cap <= Integer.MAX_VALUE ? (int) cap : -1;
 			spill = new NativeSpillSort(stride, stride, comparator, retain,

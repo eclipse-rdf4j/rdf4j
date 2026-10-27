@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -60,6 +61,8 @@ public class LmdbNativeDeepOptionalStrategyTest {
 			"rdf4j.lmdb.costCalibration.enabled",
 			"rdf4j.lmdb.janinoCodegen.enabled",
 			"rdf4j.lmdb.janinoCodegen.resumable",
+			"rdf4j.lmdb.janinoCodegen.synchronous",
+			"rdf4j.lmdb.janinoCodegen.thresholdRows",
 			"rdf4j.lmdb.kernelInterpreter.enabled",
 			"rdf4j.lmdb.parallel.enabled" };
 
@@ -129,8 +132,10 @@ public class LmdbNativeDeepOptionalStrategyTest {
 
 		assertThat(genericRows).as("the grouped fixture must produce ordered aggregate rows").isNotEmpty();
 		assertThat(evaluate(query, true)).containsExactlyElementsOf(genericRows);
-		assertThat(executionPaths)
-				.as("GROUP BY over UNION/BIND branches must select the native aggregate strategy:%n%s", executedPlan)
+		assertAggregateInventory(query, executionPaths);
+		assertThat(evaluate(query, "orderedDistinctGroups")).containsExactlyElementsOf(genericRows);
+		assertThat(executionPaths(explain(query, "orderedDistinctGroups")))
+				.as("the ordered specialist must remain independently executable:%n%s", executedPlan)
 				.contains("orderedDistinctGroups")
 				.doesNotContain("nestedLoop");
 	}
@@ -138,6 +143,8 @@ public class LmdbNativeDeepOptionalStrategyTest {
 	@Test
 	public void groupedOrderedFourFlatUnionBindBranchesActivateNativeRuntime() {
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.synchronous", "true");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
 		String query = groupedOrderedFourFlatUnionBindQuery();
 		List<BindingSet> genericRows = evaluate(query, false);
 		GenericPlanNode executedPlan = explain(query);
@@ -145,15 +152,15 @@ public class LmdbNativeDeepOptionalStrategyTest {
 
 		assertThat(genericRows).as("the flat UNION fixture must produce grouped rows").isNotEmpty();
 		assertThat(evaluate(query, true)).containsExactlyElementsOf(genericRows);
-		assertThat(executionPaths)
-				.as("the flat UNION aggregate must not fall back to nested loops:%n%s", executedPlan)
-				.doesNotContain("nestedLoop");
-		assertThat(executedPlan.toString())
-				.as("the four-branch UNION must reach runtime arbitration and a concrete Janino decision:%n%s",
-						executedPlan)
+		assertAggregateInventory(query, executionPaths);
+		assertThat(evaluate(query, "orderedDistinctGroups")).containsExactlyElementsOf(genericRows);
+		assertThat(explain(query, "orderedDistinctGroups").toString())
 				.contains("strategy: orderedDistinctGroups")
-				.doesNotContain("strategy: NOT_ACTIVATED")
-				.doesNotContain("NOT_ATTEMPTED[no Janino activation point reached]");
+				.doesNotContain("strategy: NOT_ACTIVATED");
+		assertThat(evaluate(query, "irAggregate")).containsExactlyElementsOf(genericRows);
+		assertThat(executionPaths(explain(query, "irAggregate")))
+				.as("Janino capability is exercised independently of AUTO's legal packed alternative")
+				.contains("irAggregate");
 	}
 
 	@Test
@@ -432,6 +439,31 @@ public class LmdbNativeDeepOptionalStrategyTest {
 
 	private GenericPlanNode explain(String query) {
 		return explain(query, null);
+	}
+
+	private void assertAggregateInventory(String query, Set<String> actualStrategies) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			GenericPlanNode optimized = connection.prepareTupleQuery(query)
+					.explain(Explanation.Level.Optimized)
+					.toGenericPlanNode();
+			var groupDecisions = KernelExecutionTestAccess.strategyDecisions(optimized)
+					.stream()
+					.filter(decision -> decision.decisionPoint().contains("GROUP BY"))
+					.toList();
+			assertThat(groupDecisions).as("complete GROUP BY inventory: %s", optimized).isNotEmpty();
+			assertThat(groupDecisions).allSatisfy(decision -> {
+				assertThat(decision.candidates()).extracting(candidate -> candidate.strategy())
+						.contains("orderedDistinctGroups", "irAggregate", "irAggregateInterpreted", "nestedLoop");
+				assertThat(decision.candidates()).allSatisfy(candidate -> {
+					if (Boolean.FALSE.equals(candidate.canAttempt())) {
+						assertThat(candidate.declineReason()).as(candidate.strategy()).isNotBlank();
+					}
+				});
+			});
+			Set<String> candidates = KernelExecutionTestAccess.eligibleStrategies(optimized);
+			assertThat(candidates).contains("orderedDistinctGroups", "nestedLoop");
+			assertThat(actualStrategies).isNotEmpty().allSatisfy(path -> assertThat(candidates).contains(path));
+		}
 	}
 
 	private GenericPlanNode explain(String query, String forcedStrategy) {

@@ -551,7 +551,8 @@ public final class LmdbBulkLoad {
 		if (!recorded.contains("statement-indexes")) {
 			output.println("Index fields: s=subject, p=predicate, o=object, c=context.");
 		}
-		promptOptionalValue(values, recorded, "statement-indexes", "Statement indexes", "spoc,posc", input, output);
+		promptOptionalValue(values, recorded, "statement-indexes", "Statement indexes", "spoc,posc,ospc", input,
+				output);
 		promptOptionalValue(values, recorded, "triple-term-indexes", "RDF-star term indexes", "spoc,cspo", input,
 				output);
 		promptOptionalValue(values, recorded, "memory", "Memory budget", "automatic", input, output);

@@ -50,6 +50,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Isolated;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 /** Acceptance coverage for real worker failures, cancellation drains, and unavailable parallel sources. */
 @Isolated("The tests use the shared bounded native parallel executor and source-lifetime tripwires")
@@ -508,6 +510,159 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 	}
 
 	@Test
+	void serialRowsPropagateTerminalProbeCancellation() throws Exception {
+		Scenario scenario = scenario(new ProbeSource(null, false));
+		SlotPlan plan = SlotPlan.union(scenario.plan, scenario.plan);
+		assertRowAdmission(plan, scenario);
+		LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.trippableOnly();
+		try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(deadline)) {
+			deadline.trip();
+			Throwable failure = catchThrowable(() -> openRows(plan, scenario));
+			assertThat(failure).as("an expired private probe must not reopen an ordinary row fallback")
+					.isSameAs(KernelCancelledException.INSTANCE);
+		}
+	}
+
+	@Test
+	void serialRowsPropagatePreBindAdjacencyIOExceptionAndCloseProbe() throws Exception {
+		IOException sentinel = new IOException("pre-bind adjacency failure");
+		ThrowingAdjacencyProbeSource source = new ThrowingAdjacencyProbeSource(sentinel);
+		Scenario scenario = scenario(source);
+		SlotPlan plan = SlotPlan.union(scenario.plan, scenario.plan);
+		try {
+			assertRowAdmission(plan, scenario);
+			((ProbeSource) source).probeCloseCalls.set(0);
+			source.throwOnAdjacency = true;
+			Throwable failure = catchThrowable(() -> openRows(plan, scenario));
+			assertThat(failure).as("pre-bind storage I/O failures must propagate unchanged").isSameAs(sentinel);
+			assertThat(((ProbeSource) source).probeCloseCalls)
+					.as("the rejected pre-bind probe must still be closed")
+					.hasValue(1);
+		} finally {
+			scenario.emitter.close();
+		}
+	}
+
+	@Test
+	void serialRowsPropagateTerminalQueryCancellation() throws Exception {
+		Scenario scenario = scenario(new ProbeSource(null, false));
+		SlotPlan plan = SlotPlan.union(scenario.plan, scenario.plan);
+		assertRowAdmission(plan, scenario);
+		assertThat(scenario.emitter.requestCancellation()).isTrue();
+		assertThat(catchThrowable(() -> openRows(plan, scenario))).isSameAs(KernelQueryCancelledException.INSTANCE);
+	}
+
+	@Test
+	void serialRowsDistinguishCleanAllocationRefusalFromCleanupFailure() throws Exception {
+		Scenario admitted = scenario(new ProbeSource(null, false));
+		assertRowAdmission(SlotPlan.union(admitted.plan, admitted.plan), admitted);
+		KernelRuntime.AllocationDeniedException refusal = new KernelRuntime.AllocationDeniedException();
+		Scenario clean = scenario(new ProbeSource(refusal, false, true));
+		assertThat(openRows(SlotPlan.union(clean.plan, clean.plan), clean)).isNull();
+		for (Throwable cleanup : List.of(new IllegalStateException("row allocation cleanup"),
+				new IOException("row checked cleanup"), new AssertionError("row error cleanup"))) {
+			KernelRuntime.AllocationDeniedException failed = new KernelRuntime.AllocationDeniedException();
+			failed.addSuppressed(cleanup);
+			Scenario scenario = scenario(new ProbeSource(failed, false, true));
+			Throwable problem = catchThrowable(() -> openRows(SlotPlan.union(scenario.plan, scenario.plan), scenario));
+			if (cleanup instanceof IOException) {
+				assertThat(problem).isInstanceOf(QueryEvaluationException.class).hasCause(cleanup);
+			} else {
+				assertThat(problem).isSameAs(cleanup);
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,false", "false,true", "true,false", "true,true" })
+	void acceptedRowPagesKeepQueryAndProbeCancellationTerminal(boolean parallel, boolean query) throws Exception {
+		setProperty(LmdbNativeParallelKernelRows.ENABLED_PROPERTY, "true");
+		ProbeSource source = new ProbeSource(null, false);
+		Scenario scenario = scenario(source);
+		SlotPlan plan = SlotPlan.join(scenario.plan, scenario.plan);
+		LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.trippableOnly();
+		long before = LmdbNativeParallelKernelRows.PARALLEL_RUNS.get();
+		try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(deadline)) {
+			LmdbNativeStrategyProposal<RowCursor> proposal = parallel
+					? LmdbNativeKernelExecution.proposeParallelRows(plan, scenario.row, null, true)
+					: LmdbNativeKernelExecution.proposeRows(plan, scenario.row, null, true);
+			assertThat(proposal).isNotNull();
+			try (RowCursor cursor = proposal.open()) {
+				assertThat(cursor).as("the row path must be admitted before the terminal request").isNotNull();
+				assertThat(cursor.next()).isTrue();
+				if (parallel) {
+					assertThat(LmdbNativeParallelKernelRows.PARALLEL_RUNS.get()).isEqualTo(before + 1);
+					assertThat(source.children).hasSize(2);
+				}
+				if (query) {
+					assertThat(scenario.emitter.requestCancellation()).isTrue();
+				} else {
+					deadline.trip();
+				}
+				Throwable problem = catchThrowable(cursor::next);
+				if (query) {
+					assertThat(problem).isSameAs(KernelQueryCancelledException.INSTANCE);
+				} else {
+					assertThat(problem).isInstanceOfAny(LmdbNativeProbeDeadlineExceeded.class,
+							KernelCancelledException.class);
+				}
+			}
+		} finally {
+			scenario.emitter.close();
+		}
+		for (ProbeSource child : source.children) {
+			assertThat(child.closeCalls).hasValue(1);
+			assertThat(child.closedWhileWorkerActive).isFalse();
+		}
+	}
+
+	@Test
+	void realRowWorkerProbeFailureDoesNotBecomeASequentialDecline() throws Exception {
+		setProperty(LmdbNativeParallelKernelRows.ENABLED_PROPERTY, "true");
+		Scenario admitted = scenario(new ProbeSource(null, false));
+		SlotPlan admittedPlan = SlotPlan.join(admitted.plan, admitted.plan);
+		long before = LmdbNativeParallelKernelRows.PARALLEL_RUNS.get();
+		try (RowCursor cursor = LmdbNativeKernelExecution.proposeParallelRows(admittedPlan, admitted.row, null, true)
+				.open()) {
+			assertThat(cursor).isNotNull();
+			assertThat(cursor.next()).isTrue();
+		}
+		assertThat(LmdbNativeParallelKernelRows.PARALLEL_RUNS.get()).isEqualTo(before + 1);
+		IllegalStateException injected = new IllegalStateException("row worker probe failed");
+		ProbeSource source = new ProbeSource(injected, false);
+		Scenario scenario = scenario(source);
+		Throwable problem = catchThrowable(() -> LmdbNativeKernelExecution.proposeParallelRows(
+				SlotPlan.join(scenario.plan, scenario.plan), scenario.row, null, true).open());
+		assertThat(source.children).hasSize(2);
+		assertThat(problem).isSameAs(injected);
+		for (ProbeSource child : source.children) {
+			assertThat(child.closeCalls).hasValue(1);
+		}
+	}
+
+	private void assertRowAdmission(SlotPlan plan, Scenario scenario) throws Exception {
+		assertThat(scenario.row.boundMask()).isZero();
+		assertThat(scenario.row.id(0)).isEqualTo(LmdbNativeAggregateCompiler.UNKNOWN);
+		long before = LmdbNativeKernelExecution.OPENED.get();
+		int count = 0;
+		try (RowCursor cursor = openRows(plan, scenario)) {
+			assertThat(cursor).as("the unchanged row fixture must actually bind its interpreted kernel").isNotNull();
+			while (cursor.next()) {
+				count++;
+			}
+		}
+		assertThat(count).isEqualTo(ROOTS * 2);
+		assertThat(LmdbNativeKernelExecution.OPENED.get()).isEqualTo(before + 1);
+	}
+
+	private RowCursor openRows(SlotPlan plan, Scenario scenario) throws IOException {
+		LmdbNativeStrategyProposal<RowCursor> proposal = LmdbNativeKernelExecution.proposeRows(plan, scenario.row,
+				null, true);
+		assertThat(proposal).isNotNull();
+		return proposal.open();
+	}
+
+	@Test
 	void serialAggregatePropagatesTerminalProbeCancellation() {
 		setProperty("rdf4j.lmdb.adaptiveProbe.bufferRows", "1");
 		ProbeSource source = new ProbeSource(null, false);
@@ -689,6 +844,57 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 			this.plan = plan;
 			this.row = row;
 			this.emitter = emitter;
+		}
+	}
+
+	private static final class ThrowingAdjacencyProbeSource extends ProbeSource {
+		private final IOException failure;
+		private boolean throwOnAdjacency;
+
+		private ThrowingAdjacencyProbeSource(IOException failure) {
+			super(null, false);
+			this.failure = failure;
+		}
+
+		@Override
+		public NativeLmdbQuerySource.NativeProbe newProbe() {
+			NativeLmdbQuerySource.NativeProbe delegate = super.newProbe();
+			return new NativeLmdbQuerySource.NativeProbe() {
+				@Override
+				public RecordIterator open(long subj, long pred, long obj, long context) throws IOException {
+					return delegate.open(subj, pred, obj, context);
+				}
+
+				@Override
+				public RecordIterator open(long subj, long pred, long obj, long context,
+						NativeLmdbQuerySource.AdjacencyAccessObserver observer) throws IOException {
+					return delegate.open(subj, pred, obj, context, observer);
+				}
+
+				@Override
+				public boolean adjacencyCacheBacked() {
+					return delegate.adjacencyCacheBacked();
+				}
+
+				@Override
+				public LmdbNativeIdDomain adjacencyCacheKeyDomain() throws IOException {
+					return delegate.adjacencyCacheKeyDomain();
+				}
+
+				@Override
+				public NativeLmdbQuerySource.NativeAdjacency adjacency(long predicate, boolean bySubject)
+						throws IOException {
+					if (throwOnAdjacency) {
+						throw failure;
+					}
+					return delegate.adjacency(predicate, bySubject);
+				}
+
+				@Override
+				public void close() {
+					delegate.close();
+				}
+			};
 		}
 	}
 

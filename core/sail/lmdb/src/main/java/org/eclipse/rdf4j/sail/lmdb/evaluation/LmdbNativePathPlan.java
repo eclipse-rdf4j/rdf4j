@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RunView.ContextSpan;
 
 /**
  * Native evaluation of {@code ArbitraryLengthPath} (SPARQL {@code +} and {@code *} over constant-predicate
@@ -265,6 +266,7 @@ final class PathPlan implements SlotPlan {
 			// Zero is the row tier's occupied-but-unbound assignment-error marker, never an RDF path endpoint.
 			return EmptyCursor.INSTANCE;
 		}
+		NativeExecutionPhaseEvent.activateInput("scan", row.cancellation);
 		return new PathCursor(this, row, start, target, probe, memo, targets);
 	}
 
@@ -325,12 +327,30 @@ final class PathPlan implements SlotPlan {
 	 * skips the context column entirely.
 	 */
 	static int copyRunBatch(NativeLmdbQuerySource.NativeAdjacency view, long run, long offset, int length,
-			long[] scratch, boolean withContexts) {
-		int copied = view.copyNeighbors(run, offset, length, scratch, 0);
-		if (copied > 0 && withContexts) {
-			view.copyContexts(run, offset, copied, scratch, BATCH_ROWS);
+			long[] scratch, PathPlan plan, ContextSpan span) {
+		if (plan.acceptsAllContexts()) {
+			int copied = view.copyNeighbors(run, offset, length, scratch, 0);
+			span.set(offset + copied, -1L);
+			return copied;
 		}
-		return copied;
+		long size = view.size(run);
+		int skipped = 0;
+		while (offset < size) {
+			view.contextSpan(run, offset, span);
+			if (span.hasCommonContext() && !plan.acceptsContext(span.commonContext())) {
+				offset = span.end();
+				LmdbNativeProbeDeadline.poll(skipped++);
+				continue;
+			}
+			int requested = (int) Math.min(length, span.end() - offset);
+			boolean contextsNeeded = !plan.acceptsAllContexts() && !span.hasCommonContext();
+			int copied = view.copyContextSpan(run, offset, requested, scratch, 0,
+					contextsNeeded ? scratch : null, BATCH_ROWS);
+			span.set(offset + copied, span.hasCommonContext() ? span.commonContext() : -1L);
+			return copied;
+		}
+		span.set(size, -1L);
+		return 0;
 	}
 
 	/** Closes a query-owned adjacency set and preserves every cleanup failure. */
@@ -1488,6 +1508,7 @@ final class PathParallelExpansion implements AutoCloseable {
 				}
 				if (cached != null) {
 					boolean withContexts = !plan.acceptsAllContexts();
+					ContextSpan span = new ContextSpan();
 					int handleOffset = 3 * PathPlan.BATCH_ROWS;
 					for (int keyBase = from; keyBase < to;) {
 						int keys = Math.min(PathPlan.BATCH_ROWS, to - keyBase);
@@ -1500,13 +1521,12 @@ final class PathParallelExpansion implements AutoCloseable {
 							long runSize = cached.size(run);
 							for (long offset = 0L; offset < runSize;) {
 								int batch = (int) Math.min(PathPlan.BATCH_ROWS, runSize - offset);
-								int copied = PathPlan.copyRunBatch(cached, run, offset, batch, buffer,
-										withContexts);
+								int copied = PathPlan.copyRunBatch(cached, run, offset, batch, buffer, plan, span);
 								if (copied <= 0) {
 									break;
 								}
 								for (int i = 0; i < copied; i++) {
-									if (withContexts
+									if (withContexts && !span.hasCommonContext()
 											&& !plan.acceptsContext(buffer[PathPlan.BATCH_ROWS + i])) {
 										continue;
 									}
@@ -1515,7 +1535,7 @@ final class PathParallelExpansion implements AutoCloseable {
 									}
 									delta[size++] = buffer[i];
 								}
-								offset += copied;
+								offset = span.end();
 							}
 						}
 						keyBase += keys;
@@ -1916,19 +1936,21 @@ final class PathCursor implements RowCursor {
 			}
 			long runSize = view.size(run);
 			boolean withContexts = !plan.acceptsAllContexts();
+			ContextSpan span = new ContextSpan();
 			for (long offset = 0L; offset < runSize;) {
 				int batch = (int) Math.min(PathPlan.BATCH_ROWS, runSize - offset);
-				int copied = PathPlan.copyRunBatch(view, run, offset, batch, buffer, withContexts);
+				int copied = PathPlan.copyRunBatch(view, run, offset, batch, buffer, plan, span);
 				if (copied <= 0) {
 					break;
 				}
 				for (int i = 0; i < copied; i++) {
 					if (buffer[i] == targetId
-							&& (!withContexts || plan.acceptsContext(buffer[PathPlan.BATCH_ROWS + i]))) {
+							&& (!withContexts || span.hasCommonContext()
+									|| plan.acceptsContext(buffer[PathPlan.BATCH_ROWS + i]))) {
 						return stepIndex;
 					}
 				}
-				offset += copied;
+				offset = span.end();
 			}
 		}
 		return -1;
@@ -1952,6 +1974,7 @@ final class PathCursor implements RowCursor {
 			PathPlan.ADJACENCY_EXPANSIONS.addAndGet(current.length);
 			NativeLmdbQuerySource.NativeAdjacency view = views[stepIndex];
 			boolean withContexts = !plan.acceptsAllContexts();
+			ContextSpan span = new ContextSpan();
 			for (int keyBase = 0; keyBase < current.length;) {
 				int keys = Math.min(PathPlan.BATCH_ROWS, current.length - keyBase);
 				view.findBatch(current, keyBase, keys, buffer, handleOffset);
@@ -1963,12 +1986,13 @@ final class PathCursor implements RowCursor {
 					long runSize = view.size(run);
 					for (long offset = 0L; offset < runSize;) {
 						int batch = (int) Math.min(PathPlan.BATCH_ROWS, runSize - offset);
-						int copied = PathPlan.copyRunBatch(view, run, offset, batch, buffer, withContexts);
+						int copied = PathPlan.copyRunBatch(view, run, offset, batch, buffer, plan, span);
 						if (copied <= 0) {
 							break;
 						}
 						for (int i = 0; i < copied; i++) {
-							if (withContexts && !plan.acceptsContext(buffer[PathPlan.BATCH_ROWS + i])) {
+							if (withContexts && !span.hasCommonContext()
+									&& !plan.acceptsContext(buffer[PathPlan.BATCH_ROWS + i])) {
 								continue;
 							}
 							long far = buffer[i];
@@ -1984,7 +2008,7 @@ final class PathCursor implements RowCursor {
 							}
 							next[nextSize++] = far;
 						}
-						offset += copied;
+						offset = span.end();
 					}
 				}
 				keyBase += keys;
@@ -2442,6 +2466,7 @@ final class PathCursor implements RowCursor {
 	void expandCachedLevel(long[] currentLevel, NativeLmdbQuerySource.NativeAdjacency cached) {
 		PathPlan.ADJACENCY_EXPANSIONS.addAndGet(currentLevel.length);
 		boolean withContexts = !plan.acceptsAllContexts();
+		ContextSpan span = new ContextSpan();
 		// The fourth quarter of the existing quad scratch is otherwise unused by copyRunBatch. Reuse it for a bounded
 		// key-to-run batch so a whole frontier amortizes partition/page routing without another heap allocation.
 		int handleOffset = 3 * PathPlan.BATCH_ROWS;
@@ -2456,12 +2481,13 @@ final class PathCursor implements RowCursor {
 				long runSize = cached.size(run);
 				for (long offset = 0L; offset < runSize;) {
 					int batch = (int) Math.min(PathPlan.BATCH_ROWS, runSize - offset);
-					int copied = PathPlan.copyRunBatch(cached, run, offset, batch, buffer, withContexts);
+					int copied = PathPlan.copyRunBatch(cached, run, offset, batch, buffer, plan, span);
 					if (copied <= 0) {
 						break;
 					}
 					for (int i = 0; i < copied; i++) {
-						if (withContexts && !plan.acceptsContext(buffer[PathPlan.BATCH_ROWS + i])) {
+						if (withContexts && !span.hasCommonContext()
+								&& !plan.acceptsContext(buffer[PathPlan.BATCH_ROWS + i])) {
 							continue;
 						}
 						long far = buffer[i];
@@ -2469,7 +2495,7 @@ final class PathCursor implements RowCursor {
 							pushNextLevel(far);
 						}
 					}
-					offset += copied;
+					offset = span.end();
 				}
 			}
 			keyBase += keys;

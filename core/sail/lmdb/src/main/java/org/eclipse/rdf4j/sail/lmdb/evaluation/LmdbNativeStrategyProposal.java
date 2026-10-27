@@ -13,8 +13,13 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.io.IOException;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Objects;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /** A guarded native strategy whose resources are not opened until cost arbitration selects it. */
 @Experimental
@@ -61,8 +66,120 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	 */
 	final boolean probeable;
 	private final Runnable releaseIfUnused;
+	private Runnable beforeOpen;
 	private boolean opened;
 	private boolean closed;
+	private LmdbNativeCostEstimate physicalEstimate;
+	private NativeAggregatePhysicalPlan aggregatePhysicalPlan;
+	private NativeAggregatePhysicalPlan.ColdAnchor coldAnchor;
+	private NativeAggregateExecutionEvent.Descriptor aggregateExecution;
+	private IdentityHashMap<LmdbNativeStrategyProposal<?>, String> physicalDominators;
+	private LmdbNativeStrategyProposal<?> mappedOrigin;
+
+	/** Changes only the result carrier; the original opener, quote, dominance and unopened release remain owned. */
+	<R> LmdbNativeStrategyProposal<R> map(Function<? super T, ? extends R> mapper, String mappedTag) {
+		LmdbNativeStrategyProposal<R> result = new LmdbNativeStrategyProposal<>(() -> {
+			T value = open();
+			if (value == null) {
+				return null;
+			}
+			try {
+				return mapper.apply(value);
+			} catch (RuntimeException | Error failure) {
+				if (value instanceof AutoCloseable resource) {
+					KernelRuntime.closeResource(resource, failure);
+				}
+				throw failure;
+			}
+		}, work, startupWork, estRows, mappedTag, this::close, probeable);
+		result.physicalEstimate = physicalEstimate;
+		result.aggregatePhysicalPlan = aggregatePhysicalPlan;
+		result.coldAnchor = coldAnchor;
+		result.mappedOrigin = this;
+		return result;
+	}
+
+	/** A plan-owned shared-work proof, independent of scalar calibration and completed timing confidence. */
+	void physicallyDominatedBy(LmdbNativeStrategyProposal<?> alternative, String proof) {
+		if (opened || closed || alternative == this) {
+			throw new IllegalStateException("Physical dominance belongs to distinct unopened alternatives");
+		}
+		if (physicalDominators == null) {
+			physicalDominators = new IdentityHashMap<>();
+		}
+		physicalDominators.put(Objects.requireNonNull(alternative), Objects.requireNonNull(proof));
+	}
+
+	String physicalDominanceProof(List<? extends LmdbNativeStrategyProposal<?>> remaining) {
+		if (mappedOrigin != null) {
+			return mappedOrigin.physicalDominanceProof(remaining.stream()
+					.map(LmdbNativeStrategyProposal::mappedOriginOrSelf)
+					.toList());
+		}
+		if (physicalDominators != null) {
+			for (LmdbNativeStrategyProposal<?> alternative : remaining) {
+				String proof = physicalDominators.get(alternative);
+				if (proof != null) {
+					return alternative.tag + ": " + proof;
+				}
+			}
+		}
+		return null;
+	}
+
+	private static LmdbNativeStrategyProposal<?> mappedOriginOrSelf(LmdbNativeStrategyProposal<?> proposal) {
+		return proposal.mappedOrigin == null ? proposal : proposal.mappedOrigin;
+	}
+
+	LmdbNativeStrategyProposal<T> withPhysicalEstimate(LmdbNativeCostEstimate estimate) {
+		if (opened || closed || physicalEstimate != null) {
+			throw new IllegalStateException("A physical estimate belongs to one unopened proposal");
+		}
+		physicalEstimate = Objects.requireNonNull(estimate);
+		return this;
+	}
+
+	LmdbNativeStrategyProposal<T> withIncompletePhysicalWork(LmdbNativeCostEstimate partialEstimate, String reason) {
+		return withPhysicalEstimate(Objects.requireNonNull(partialEstimate)
+				.withWorkEvidence(
+						partialEstimate.workEvidence().withMissingProof(reason)));
+	}
+
+	LmdbNativeStrategyProposal<T> withAggregatePhysicalPlan(NativeAggregatePhysicalPlan plan) {
+		if (opened || closed || aggregatePhysicalPlan != null) {
+			throw new IllegalStateException("An aggregate physical plan belongs to one unopened proposal");
+		}
+		aggregatePhysicalPlan = Objects.requireNonNull(plan);
+		return this;
+	}
+
+	LmdbNativeStrategyProposal<T> withOptionalAggregatePhysicalPlan(NativeAggregatePhysicalPlan plan) {
+		return plan == null ? this : withAggregatePhysicalPlan(plan);
+	}
+
+	NativeAggregatePhysicalPlan aggregatePhysicalPlan() {
+		return aggregatePhysicalPlan;
+	}
+
+	/** A physical cold-start witness belongs to the same unopened recipe as its estimate and result carrier. */
+	LmdbNativeStrategyProposal<T> withColdAnchor(NativeAggregatePhysicalPlan.ColdAnchor anchor) {
+		if (opened || closed || coldAnchor != null) {
+			throw new IllegalStateException("A cold anchor belongs to one unopened proposal");
+		}
+		coldAnchor = Objects.requireNonNull(anchor);
+		return this;
+	}
+
+	NativeAggregatePhysicalPlan.ColdAnchor coldAnchor() {
+		return coldAnchor;
+	}
+
+	void observeAggregateOpening(NativeAggregateExecutionEvent.Descriptor descriptor) {
+		if (opened || closed || aggregateExecution != null) {
+			throw new IllegalStateException("Aggregate opening attribution belongs to one unopened proposal");
+		}
+		aggregateExecution = descriptor;
+	}
 
 	LmdbNativeStrategyProposal(Opener<T> opener, double estCost, String tag) {
 		this(opener, estCost, tag, () -> {
@@ -151,10 +268,17 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 				.requiresHashing(requiresHashing(family))
 				.build();
 		LmdbNativeCostVector zero = LmdbNativeCostVector.zero();
-		return new LmdbNativeCostEstimate(key, zero, zero, 0D, 0.5);
+		return new LmdbNativeCostEstimate(key, zero, zero, 0D, 0.5,
+				NativePhysicalWorkEvidence.incomplete("the selected executable has no complete physical work quote"));
 	}
 
 	LmdbNativeCostEstimate adaptiveEstimate(double sliceRows) {
+		if (physicalEstimate != null) {
+			return sliceRows >= 0D && physicalEstimate.estimatedOutputRows() > 0D
+					&& sliceRows < physicalEstimate.estimatedOutputRows()
+							? physicalEstimate.forConsumption(sliceRows / physicalEstimate.estimatedOutputRows())
+							: physicalEstimate;
+		}
 		LmdbNativeWork effective = effectiveWork(sliceRows);
 		if (!effective.known()) {
 			return null;
@@ -197,6 +321,9 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 			double fraction = sliceRows / outputRows;
 			outputRows = sliceRows;
 			consumptionBucket = (int) Math.round(fraction * 100D);
+		}
+		if (outputRows > 0D) {
+			total.add(LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION, outputRows);
 		}
 		double uncertainty = totalExpected > 0D
 				? Math.min(4D, (effective.high() - effective.low()) / (2D * totalExpected))
@@ -328,7 +455,18 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 			throw new IllegalStateException("strategy proposal already opened");
 		}
 		opened = true;
-		return opener.open();
+		if (beforeOpen != null) {
+			beforeOpen.run();
+		}
+		return aggregateExecution == null ? opener.open() : aggregateExecution.open(opener);
+	}
+
+	/** Runs {@code hook} on the opening thread immediately before this proposal's opener. */
+	synchronized void beforeOpen(Runnable hook) {
+		if (opened || closed) {
+			throw new IllegalStateException("an opening hook belongs to an unopened proposal");
+		}
+		beforeOpen = hook;
 	}
 
 	/** Releases admission reserved while costing a proposal that the dispatcher did not select. */

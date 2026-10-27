@@ -86,7 +86,7 @@ class LmdbBulkLoadTest {
 				.as("a successful CLI load publishes a reusable repository configuration")
 				.isRegularFile();
 		LmdbStoreConfig config = readStoreConfiguration(store);
-		assertThat(config.getTripleIndexes()).isEqualTo("spoc,posc");
+		assertThat(config.getTripleIndexes()).isEqualTo("spoc,posc,ospc");
 		assertThat(config.getTripleTermIndexes()).isEqualTo("spoc,cspo");
 		assertThat(config.getInlineLiterals()).isTrue();
 		assertThat(config.getOrderedNumericIds()).isTrue();
@@ -576,7 +576,7 @@ class LmdbBulkLoadTest {
 				.isZero();
 		assertThat(standardError.toString(StandardCharsets.UTF_8))
 				.contains("Interactive LMDB bulk-load setup")
-				.contains("Statement indexes [spoc,posc]")
+				.contains("Statement indexes [spoc,posc,ospc]")
 				.contains("RDF-star term indexes [spoc,cspo]");
 		assertThat(standardOutput.toString(StandardCharsets.UTF_8))
 				.contains("parsed=1")

@@ -66,11 +66,15 @@ final class LmdbNativeFactorAlgebra {
 	}
 
 	static LmdbNativeFactorCursor tryOpen(SlotPlan plan, RowState row) throws IOException {
-		return enabled() && !row.encounterOrderRequired ? open(plan, row) : null;
+		return enabled() && !row.encounterOrderRequired && !SlotPlan.requiresPhysicalCells(plan) ? open(plan, row)
+				: null;
 	}
 
 	/** Opens one owned relation. A physical leaf decline is local, before that leaf advances. */
 	static LmdbNativeFactorCursor open(SlotPlan plan, RowState row) throws IOException {
+		if (SlotPlan.requiresPhysicalCells(plan)) {
+			return null;
+		}
 		if (plan instanceof UnionPlan union)
 			return new Union(union, row);
 		if (plan instanceof OrderedUnionPlan) {
@@ -145,6 +149,7 @@ final class LmdbNativeFactorAlgebra {
 	}
 
 	private static LmdbNativeFactorCursor extension(ExtensionPlan plan, RowState row) throws IOException {
+		NativeExecutionPhaseEvent.activateInput("expressions", row.cancellation);
 		long reads = 0L;
 		for (CopyBinding copy : plan.copies) {
 			if (!copy.encounterOrderReplaySafe) {
@@ -417,8 +422,15 @@ final class LmdbNativeFactorAlgebra {
 					if (!hasSolutions(input))
 						continue;
 					mark = row.mark();
-					if (ExtensionCursor.bindCopies(copies, row))
-						return true;
+					RowCursor previous = row.expressionProducer;
+					row.expressionProducer = LmdbNativeFactorRows.expressionProducer(input);
+					try {
+						if (ExtensionCursor.bindCopies(copies, row)) {
+							return true;
+						}
+					} finally {
+						row.expressionProducer = previous;
+					}
 					release();
 				}
 				close();

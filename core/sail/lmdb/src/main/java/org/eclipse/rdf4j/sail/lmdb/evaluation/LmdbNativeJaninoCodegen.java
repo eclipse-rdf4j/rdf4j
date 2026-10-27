@@ -123,8 +123,22 @@ final class LmdbNativeJaninoCodegen {
 	 */
 	static JaninoKernel kernel(String shapeKey, String className, Supplier<String> sourceSupplier,
 			long observedRows) {
-		if (!enabled() || observedRows < Long.getLong(THRESHOLD_ROWS_PROPERTY, DEFAULT_THRESHOLD_ROWS)) {
-			return null;
+		return kernelAttempt(shapeKey, className, sourceSupplier, observedRows, null).kernel();
+	}
+
+	/** The kernel and its availability belong to one lookup, not to a later mutable cache inspection. */
+	record KernelAttempt(JaninoKernel kernel, String declineReason) {
+	}
+
+	static KernelAttempt kernelAttempt(String shapeKey, String className, Supplier<String> sourceSupplier,
+			long observedRows, String route) {
+		long threshold = Long.getLong(THRESHOLD_ROWS_PROPERTY, DEFAULT_THRESHOLD_ROWS);
+		if (!enabled()) {
+			return new KernelAttempt(null, "FEATURE_DISABLED[" + ENABLED_PROPERTY + "=false,route=" + route + "]");
+		}
+		if (observedRows < threshold) {
+			return new KernelAttempt(null, "BELOW_THRESHOLD[route=" + route + ",observedRows=" + observedRows
+					+ ",thresholdRows=" + threshold + "]");
 		}
 		COMPILER_LIFECYCLE_READ.lock();
 		try {
@@ -156,7 +170,7 @@ final class LmdbNativeJaninoCodegen {
 			if (synchronous()) {
 				awaitReady(entry.ready);
 			}
-			return instantiate(entry);
+			return instantiateAttempt(entry, route);
 		} finally {
 			COMPILER_LIFECYCLE_READ.unlock();
 		}
@@ -241,13 +255,23 @@ final class LmdbNativeJaninoCodegen {
 	}
 
 	private static JaninoKernel instantiate(Entry entry) {
+		return instantiateAttempt(entry, null).kernel();
+	}
+
+	private static KernelAttempt instantiateAttempt(Entry entry, String route) {
 		Constructor<?> constructor = entry.constructor;
 		if (constructor == null) {
 			FALLBACKS.incrementAndGet();
 			if (failOnError() && entry.ready.getCount() == 0L && entry.compileProblem != null) {
 				throw new ValidationException("compile", entry.shapeKey, entry.compileProblem);
 			}
-			return null;
+			String compileFailure = entry.compileFailure;
+			// No constructor and no compile failure was the pending lookup, even if publication races this
+			// diagnostic. Never inspect the cache again after returning to recover that attempt's state.
+			return new KernelAttempt(null, compileFailure == null
+					? "COMPILE_PENDING[route=" + route + ",shape=" + entry.shapeKey + "]"
+					: "COMPILE_FAILED[route=" + route + ",shape=" + entry.shapeKey + ",cause="
+							+ singleLine(compileFailure) + "]");
 		}
 		try {
 			JaninoKernel kernel = (JaninoKernel) constructor.newInstance();
@@ -257,7 +281,7 @@ final class LmdbNativeJaninoCodegen {
 //					+ EVICTIONS.get() + " evictions, " + COMPILATIONS.get() + " compilations, "
 //					+ COMPILE_FAILURES.get() + " failures, " + KERNEL_INSTANTIATIONS.get() + " instantiations, "
 //					+ FALLBACKS.get() + " fallbacks");
-			return kernel;
+			return new KernelAttempt(kernel, null);
 		} catch (ReflectiveOperationException | LinkageError | ClassCastException problem) {
 			entry.instantiationFailure = problem.toString();
 			FALLBACKS.incrementAndGet();
@@ -265,7 +289,8 @@ final class LmdbNativeJaninoCodegen {
 			if (failOnError()) {
 				throw new ValidationException("construction", entry.shapeKey, problem);
 			}
-			return null;
+			return new KernelAttempt(null, "INSTANTIATION_FAILED[route=" + route + ",shape=" + entry.shapeKey
+					+ ",cause=" + singleLine(problem.toString()) + "]");
 		}
 	}
 

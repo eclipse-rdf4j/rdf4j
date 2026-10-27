@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.OutputMods;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.EffectClass;
 
 /**
  * Morsel parallelism for IR-lowered ROW kernels (three-tier parity ExecPlan, Milestone 10B second half): partitions the
@@ -128,8 +129,8 @@ final class LmdbNativeParallelKernelRows {
 			return debugDecline(explainTarget, "blocking-worker-materialization");
 		}
 		OutputMods mods = emit.mods;
-		if (bindings.planRequests.length > 0) {
-			return debugDecline(explainTarget, "plan-producer");
+		if (!bindings.workerProducersBindable()) {
+			return debugDecline(explainTarget, "producer-not-worker-bindable");
 		}
 		// Shared plan filters are admissible exactly when each can fork a worker-confined copy — the same gate the
 		// interpreted parallel engine applies. A non-forkable filter (EXISTS memo state, generic predicates over the
@@ -137,14 +138,16 @@ final class LmdbNativeParallelKernelRows {
 		if (!LmdbNativeKernelPartitions.filterHooksForkable(bindings.filterHooks)) {
 			return debugDecline(explainTarget, "filter-not-forkable");
 		}
-		// Bind-hook evaluators are compiled against the query thread's source/codec and expose no fork SPI, so a
-		// computed BIND keeps the sequential kernel (v1; mirrors the filter-hook situation before plan 31).
-		if (bindings.bindHooks.length > 0) {
-			return debugDecline(explainTarget, "bind-hook");
+		if (!LmdbNativeKernelPartitions.bindHooksForkable(bindings.bindHooks)) {
+			return debugDecline(explainTarget, "bind-hook-not-worker-bindable");
 		}
-		// Kernel residual predicates run the shared engine-side filter instance; no fork SPI yet (M10 v1).
-		if (bindings.kernelResiduals.length > 0) {
-			return debugDecline(explainTarget, "kernel-residual");
+		for (LmdbNativeKernelBindings.BindHook hook : bindings.bindHooks) {
+			NativeScalarPlan plan = hook.scalarPlan();
+			if (plan != null && plan.scopedEvaluation()
+					&& plan.effect() == EffectClass.QUERY_STABLE
+					&& NativeScalarPlan.WorkerContext.forSource(row.source, null).evaluationContext() == null) {
+				return debugDecline(explainTarget, "bind-hook-query-scope-unavailable");
+			}
 		}
 		if (!LmdbNativeKernelPartitions.residualsForkable(bindings.residualFilters)) {
 			return debugDecline(explainTarget, "residual-filter-not-forkable");
@@ -335,11 +338,18 @@ final class LmdbNativeParallelKernelRows {
 							try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime
 									.inherit(fusedParent);
 									LmdbNativeProbeDeadline.Scope probeScope = LmdbNativeProbeDeadline
-											.inherit(probeParent)) {
+											.inherit(probeParent);
+									NativeExecutionPhaseEvent.InputScope inputPhases = NativeExecutionPhaseEvent
+											.inputScope(row.cancellation)) {
+								NativeExecutionPhaseEvent.kernelInput(lowered.kernel, lowered.bindings,
+										row.cancellation);
 								runWorker(lowered, rootAdjacency, rootDomain, rootWildcard, rootScan, domains, source,
 										row,
 										ranges, scanQueue, output, kernelFactory, failure, cancelled, startup,
 										startupReported);
+								if (failure.get() == null && !cancelled.get()) {
+									inputPhases.complete();
+								}
 							}
 						} catch (Throwable problem) {
 							if (!cancelled.get()) {
@@ -398,7 +408,8 @@ final class LmdbNativeParallelKernelRows {
 			if (hashLedger != null) {
 				hashLedger.close();
 			}
-			return EmptyCursor.INSTANCE;
+			row.cancellation.check();
+			throw new AssertionError("published query cancellation did not throw");
 		}
 		if (first == null && failure.get() != null) {
 			abandon(sources, reservation, tasks, cancelled, interrupted);
@@ -417,9 +428,7 @@ final class LmdbNativeParallelKernelRows {
 				}
 				throw new QueryEvaluationException(problem);
 			}
-			if (Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
-				System.err.println("[ir-kernel-parallel] fallback: " + problem);
-			}
+			LmdbNativeParallelKernelAggregate.recoverOrRethrow(problem);
 			return null;
 		}
 		PARALLEL_RUNS.incrementAndGet();
@@ -491,7 +500,8 @@ final class LmdbNativeParallelKernelRows {
 			if (hashLedger != null) {
 				hashLedger.close();
 			}
-			return EmptyCursor.INSTANCE;
+			row.cancellation.check();
+			throw new AssertionError("published query cancellation did not throw");
 		}
 		if (failure.get() != null || totalRows > Integer.MAX_VALUE / Math.max(stride, 1)) {
 			if (failure.get() == null) {
@@ -507,9 +517,7 @@ final class LmdbNativeParallelKernelRows {
 			if (problem instanceof Error) {
 				throw (Error) problem;
 			}
-			if (Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
-				System.err.println("[ir-kernel-parallel] fallback: " + problem);
-			}
+			LmdbNativeParallelKernelAggregate.recoverOrRethrow(problem);
 			return null;
 		}
 		awaitTasks(tasks);
@@ -569,26 +577,38 @@ final class LmdbNativeParallelKernelRows {
 			throws IOException, InterruptedException {
 		LmdbNativeKernelBindings bindings = lowered.bindings;
 		RowState workerRow = new RowState(source, consumerRow.layout, consumerRow.base,
-				consumerRow.exactValuesMetrics, consumerRow.cancellation);
+				consumerRow.telemetryTarget, consumerRow.exactValuesMetrics, consumerRow.cancellation);
+		workerRow.memoryScope = consumerRow.memoryScope;
+		workerRow.enableDecodedInputAccounting();
+		NativeScalarPlan.WorkerContext workerContext = NativeScalarPlan.WorkerContext.forSource(source, null);
+		NativeWorkerPlanBinder workerPlans = new NativeWorkerPlanBinder(workerContext);
 		// Worker-confined forks of the shared plan filters (admission proved every filter forkable); the worker owns
 		// their release — a fork may lazily acquire native read state, and leaking it wedges the dataset close exactly
 		// like the sequential route's LmdbNativeKernelHooks.closeFilters.
 		LmdbNativeKernelBindings.FilterHook[] forkedHooks = null;
+		LmdbNativeKernelBindings.BindHook[] forkedBinds = null;
 		NativeBooleanFilter[] forkedResiduals = null;
 		NativeLmdbQuerySource.NativeProbe probe = null;
 		NativeLmdbQuerySource.NativeAdjacency[] views = null;
 		LmdbNativeKernelScanner scanner = null;
 		JaninoKernel prefetchedKernel = null;
+		LmdbNativeKernelHooks hooks = null;
+		RowState residualRow = null;
+		Throwable primaryFailure = null;
 		try {
 			if (!NativeRowSeeder.seed(workerRow.slots, consumerRow.layout, consumerRow.base, source)) {
 				throw new LmdbNativeKernelPartitions.ParallelKernelDecline("worker-seed-unavailable");
 			}
 			workerRow.recomputeBoundMask();
+			bindings = bindings.bindWorkerProducers(workerPlans);
 			forkedHooks = bindings.filterHooks.length > 0
-					? LmdbNativeKernelPartitions.forkFilterHooks(bindings.filterHooks)
+					? LmdbNativeKernelPartitions.forkFilterHooks(bindings.filterHooks, workerContext)
+					: null;
+			forkedBinds = bindings.bindHooks.length > 0
+					? LmdbNativeKernelPartitions.forkBindHooks(bindings.bindHooks, workerContext)
 					: null;
 			forkedResiduals = bindings.residualFilters.isEmpty() ? null
-					: LmdbNativeKernelPartitions.forkResidualFilters(bindings.residualFilters);
+					: LmdbNativeKernelPartitions.forkResidualFilters(bindings.residualFilters, workerContext);
 			probe = source.newProbe();
 			views = bindings.requestAdjacencies(probe);
 			if (views == null) {
@@ -604,20 +624,22 @@ final class LmdbNativeParallelKernelRows {
 			if (lowered.kernel.requirements.scans > 0) {
 				scanner = new LmdbNativeKernelScanner(workerRow, bindings.scanSites);
 			}
-			LmdbNativeKernelHooks hooks = bindings.needsHooks() || lowered.kernel.requirements.hooks
+			hooks = bindings.needsHooks() || lowered.kernel.requirements.hooks
 					? new LmdbNativeKernelHooks(workerRow, bindings,
-							forkedHooks != null ? forkedHooks : bindings.filterHooks)
+							forkedHooks != null ? forkedHooks : bindings.filterHooks,
+							forkedBinds != null ? forkedBinds : bindings.bindHooks)
 					: null;
 			if (hooks != null && lowered.kernel.terminal.mods.orderKeys != null
 					&& lowered.kernel.terminal.mods.valueOrder) {
 				hooks.orderComparatorStrict(lowered.strictOrderCompare);
 			}
-			RowState residualRow = null;
 			if (forkedResiduals != null) {
 				// residual filters see exactly the state the consumer's bind loop would produce: a fresh entry-seeded
 				// row with the packed columns bound on top (admission guarantees the entry is reproducible)
 				residualRow = new RowState(source, consumerRow.layout, consumerRow.base,
-						consumerRow.exactValuesMetrics, consumerRow.cancellation);
+						consumerRow.telemetryTarget, consumerRow.exactValuesMetrics, consumerRow.cancellation);
+				residualRow.memoryScope = consumerRow.memoryScope;
+				residualRow.enableDecodedInputAccounting();
 				if (!NativeRowSeeder.seed(residualRow.slots, consumerRow.layout, consumerRow.base, source)) {
 					throw new LmdbNativeKernelPartitions.ParallelKernelDecline("worker-seed-unavailable");
 				}
@@ -711,6 +733,7 @@ final class LmdbNativeParallelKernelRows {
 		} catch (KernelQueryCancelledException cancelledByQuery) {
 			cancelled.set(true);
 		} catch (IOException | InterruptedException | RuntimeException | Error problem) {
+			primaryFailure = problem;
 			failure.compareAndSet(null, problem);
 			cancelled.set(true);
 			throw problem;
@@ -718,10 +741,14 @@ final class LmdbNativeParallelKernelRows {
 			if (startupReported.compareAndSet(false, true)) {
 				startup.countDown();
 			}
-			if (prefetchedKernel != null) {
-				prefetchedKernel.close();
-			}
 			Throwable closeFailure = null;
+			try {
+				if (prefetchedKernel != null) {
+					prefetchedKernel.close();
+				}
+			} catch (RuntimeException | Error problem) {
+				closeFailure = addCloseFailure(closeFailure, problem);
+			}
 			try {
 				if (scanner != null) {
 					scanner.close();
@@ -751,7 +778,35 @@ final class LmdbNativeParallelKernelRows {
 			} catch (RuntimeException | Error problem) {
 				closeFailure = addCloseFailure(closeFailure, problem);
 			}
-			rethrowCloseFailure(closeFailure);
+			try {
+				if (hooks != null) {
+					hooks.closeState();
+				}
+			} catch (RuntimeException | Error problem) {
+				closeFailure = addCloseFailure(closeFailure, problem);
+			}
+			try {
+				workerPlans.close();
+			} catch (RuntimeException | Error problem) {
+				closeFailure = addCloseFailure(closeFailure, problem);
+			}
+			try {
+				workerRow.closeDecodedInputs();
+			} catch (RuntimeException | Error problem) {
+				closeFailure = addCloseFailure(closeFailure, problem);
+			}
+			try {
+				if (residualRow != null) {
+					residualRow.closeDecodedInputs();
+				}
+			} catch (RuntimeException | Error problem) {
+				closeFailure = addCloseFailure(closeFailure, problem);
+			}
+			Throwable retainedFailure = closeFailure == null ? primaryFailure
+					: addCloseFailure(primaryFailure, closeFailure);
+			if (primaryFailure == null || retainedFailure != primaryFailure) {
+				rethrowCloseFailure(retainedFailure);
+			}
 		}
 	}
 
@@ -996,20 +1051,20 @@ final class LmdbNativeParallelKernelRows {
 
 		@Override
 		public boolean next() throws IOException {
-			if (closed || row.cancellation.isCancellationRequested()) {
-				close();
+			if (closed) {
 				return false;
 			}
+			checkCancellation();
 			if (activeMark >= 0) {
 				row.rollback(activeMark);
 				activeMark = -1;
 			}
 			while (true) {
-				if (row.cancellation.isCancellationRequested()) {
-					close();
-					return false;
-				}
+				checkCancellation();
 				while (active != null && activeIndex < active.count) {
+					if ((activeIndex & 1023) == 0) {
+						checkCancellation();
+					}
 					int base = activeIndex * columnSlots.length;
 					activeIndex++;
 					if (distinct != null && !distinct.add(active.rows, base, base + columnSlots.length)) {
@@ -1076,6 +1131,16 @@ final class LmdbNativeParallelKernelRows {
 				active = page;
 				activeIndex = 0;
 				LmdbNativeKernelExecution.KERNEL_ROWS.addAndGet(page.count);
+			}
+		}
+
+		private void checkCancellation() throws IOException {
+			try {
+				row.cancellation.check();
+				LmdbNativeProbeDeadline.poll(0);
+			} catch (RuntimeException | Error problem) {
+				Throwable failure = KernelRuntime.closeResource(this, problem);
+				throwFailure(failure);
 			}
 		}
 

@@ -195,6 +195,12 @@ import org.eclipse.rdf4j.sail.config.SailConfigException;
 				"\"true\"^^<http://www.w3.org/2001/XMLSchema#boolean>" }
 )
 @ConfigProperty(
+		predicate = "http://rdf4j.org/config/sail/lmdb#initialRunImportEnabled", description = "Experimental: when the first write transaction of an empty store is an explicit NONE transaction, hold a store-wide lock, "
+				+ "collect its index entries and value lookup records as sorted runs and write them in one merge when the import completes. "
+				+ "Other connections wait until the import is complete. On by default.", datatype = "http://www.w3.org/2001/XMLSchema#boolean", examples = {
+						"\"false\"^^<http://www.w3.org/2001/XMLSchema#boolean>" }
+)
+@ConfigProperty(
 		predicate = "http://rdf4j.org/config/sail/lmdb#valueOverlayEnabled", description = "Experimental: maintain the compressed in-memory value overlay that readers consult for committed values before LMDB. "
 				+ "Off by default.", datatype = "http://www.w3.org/2001/XMLSchema#boolean", examples = {
 						"\"true\"^^<http://www.w3.org/2001/XMLSchema#boolean>" }
@@ -298,6 +304,8 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	private boolean directAdjacencyEnabled;
 
 	private boolean valueOverlayEnabled;
+
+	private boolean initialRunImportEnabled = true;
 
 	private long tripleDBSize = -1;
 
@@ -456,6 +464,21 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	@Experimental
 	public LmdbStoreConfig setValueOverlayEnabled(boolean valueOverlayEnabled) {
 		this.valueOverlayEnabled = valueOverlayEnabled;
+		return this;
+	}
+
+	/**
+	 * Returns whether the first write transaction of an empty store, when it is an explicit NONE transaction, is
+	 * collected as sorted runs under a store-wide lock and written in one merge when it completes.
+	 */
+	@Experimental
+	public boolean getInitialRunImportEnabled() {
+		return initialRunImportEnabled;
+	}
+
+	@Experimental
+	public LmdbStoreConfig setInitialRunImportEnabled(boolean initialRunImportEnabled) {
+		this.initialRunImportEnabled = initialRunImportEnabled;
 		return this;
 	}
 
@@ -943,6 +966,9 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		m.add(implNode, LmdbStoreSchema.NATIVE_EVALUATION_ENABLED, vf.createLiteral(nativeEvaluationEnabled));
 		m.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_ENABLED, vf.createLiteral(directAdjacencyEnabled));
 		m.add(implNode, LmdbStoreSchema.VALUE_OVERLAY_ENABLED, vf.createLiteral(valueOverlayEnabled));
+		if (!initialRunImportEnabled) {
+			m.add(implNode, LmdbStoreSchema.INITIAL_RUN_IMPORT_ENABLED, vf.createLiteral(false));
+		}
 		if (cacheImplementation != LmdbCacheImplementation.LOSSY_CONCURRENT) {
 			m.add(implNode, LmdbStoreSchema.CACHE_IMPLEMENTATION, vf.createLiteral(cacheImplementation.name()));
 		}
@@ -1131,6 +1157,13 @@ public class LmdbStoreConfig extends BaseSailConfig {
 			if (valueOverlayEnabledLiteral != null) {
 				setValueOverlayEnabled(parseBoolean(valueOverlayEnabledLiteral,
 						LmdbStoreSchema.VALUE_OVERLAY_ENABLED));
+			}
+
+			Literal initialRunImportEnabledLiteral = singleBooleanLiteral(m, implNode,
+					LmdbStoreSchema.INITIAL_RUN_IMPORT_ENABLED);
+			if (initialRunImportEnabledLiteral != null) {
+				setInitialRunImportEnabled(parseBoolean(initialRunImportEnabledLiteral,
+						LmdbStoreSchema.INITIAL_RUN_IMPORT_ENABLED));
 			}
 
 			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.TRIPLE_INDEXES, null))
