@@ -6370,6 +6370,12 @@ class TripleStore implements Closeable {
 			keyBuf.flip();
 			keyVal.mv_data(keyBuf);
 
+			// An inferred assertion must not create a second physical copy of an explicit quad.
+			// Explicit and inferred transaction branches can publish in either order.
+			if (!explicit && hasExplicitQuad(mainIndex, keyVal, MDBVal.malloc(stack))) {
+				return false;
+			}
+
 			int rc = mdb_put(writeTxn, mainIndex.getDB(explicit), keyVal, dataVal, MDB_NOOVERWRITE);
 			if (rc != MDB_SUCCESS && rc != MDB_KEYEXIST) {
 				checkMutationResult(rc);
@@ -6417,6 +6423,15 @@ class TripleStore implements Closeable {
 		}
 
 		return stAdded;
+	}
+
+	private boolean hasExplicitQuad(TripleIndex index, MDBVal key, MDBVal value) throws IOException {
+		int result = mdb_get(writeTxn, index.getDB(true), key, value);
+		if (result == MDB_NOTFOUND) {
+			return false;
+		}
+		checkMutationResult(result);
+		return true;
 	}
 
 	@Experimental
@@ -6840,6 +6855,7 @@ class TripleStore implements Closeable {
 					: null;
 			MDBVal keyVal = MDBVal.malloc(stack);
 			MDBVal dataVal = MDBVal.calloc(stack);
+			MDBVal explicitValue = explicit ? null : MDBVal.malloc(stack);
 			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
 			int[] sortedIndices = ensureAlignedWriteSortedIndices(count);
 			boolean[] addedStatements = preparedSecondaryIndexesSupplier == null ? null
@@ -6877,6 +6893,10 @@ class TripleStore implements Closeable {
 					int offset = encodedMainIndex.offsets[i];
 					LmdbUtil.setMDBValData(keyVal, encodedMainIndex.address + offset,
 							encodedMainIndex.offsets[i + 1] - offset);
+				}
+
+				if (!explicit && hasExplicitQuad(mainIndex, keyVal, explicitValue)) {
+					continue;
 				}
 
 				int rc = REUSE_ALIGNED_WRITE_CURSOR
