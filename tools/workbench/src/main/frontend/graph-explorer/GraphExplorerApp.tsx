@@ -53,7 +53,7 @@ import { expansionMovableIds } from "./graph-layout-expansion.ts";
 import { LINK_COUNT_CAP, RdfExplorer, clearMetadataCache } from "./rdf-explorer.ts";
 import { bringsNewLinks, linkCountCap, linkTotalStale, loadedLinkCounts, loadedLinksOf, moreLinks, type LinkTotal } from "./link-counts.ts";
 import { EXPAND_PAGE_LIMIT } from "./explorer-config.ts";
-import { RELATION_CONFIRM_LINKS, loadedRelationLinks, relationCountCap, relationLimits, relationPlan, type RelationAmount } from "./relation-expansion.ts";
+import { RELATION_CONFIRM_LINKS, loadedRelationLinks, relationCountCap, relationLimits, relationPlan, valuesRevealedBy, type RelationAmount } from "./relation-expansion.ts";
 import { cssColorResolver, downloadFile, graphSvg, graphTurtle, svgToPng } from "./graph-export.ts";
 import { curveMidpoint, nearestEdge } from "./edge-hit.ts";
 import { StatementDetailsCard } from "./statement-details-card.tsx";
@@ -1521,7 +1521,11 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
             keepView(targetTransform),
             {
               duration: INCREMENTAL_LAYOUT_DURATION,
-              onComplete: finishLayoutIntent,
+              onComplete: () => {
+                finishLayoutIntent();
+                // A relation expansion that turned Values on also placed the values it showed.
+                if (isLocalLayout) localLayoutNodeIdsRef.current = null;
+              },
             },
           );
         } else if (isLocalLayout || requestedLayout?.refine) {
@@ -2420,6 +2424,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
         }
         // Links already in the graph can come back (when not all of them fit into the query): count the new ones.
         let added = 0;
+        let valuesShown = false;
         if (triples.length || relationLinks.length) {
           const batch = createBatch(
             `Expanded ${option.label}`,
@@ -2442,6 +2447,18 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
           if (added) {
             pushHistory();
             setProvenanceBatches((current) => [...current, batch]);
+            // Values the relation brought would stay hidden with Values off. The user asked for them, so Values turns
+            // on, and they (with the values Values off was hiding) are placed beside their cards, as the Values button
+            // places them.
+            const revealed = showValuesRef.current ? null : valuesRevealedBy(currentGraph, merged);
+            if (revealed) {
+              valuesShown = true;
+              localLayoutNodeIdsRef.current = revealed;
+              try {
+                localStorage.setItem(SHOW_VALUES_STORAGE_KEY, "true");
+              } catch {}
+              setShowValues(true);
+            }
             layoutIntentRef.current = {
               mode: "incremental",
               revision: merged.revision,
@@ -2458,6 +2475,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
             : triples.length
               ? `The ${option.label} links that came back are all in the graph already.`
               : `No ${option.label} links found for the selection.`) +
+            (valuesShown ? " Values are shown." : "") +
             (saturated
               ? ` The server sends at most ${limits!.maxResultRows!.toLocaleString()} rows per request: expand ${option.label} again for the rest.`
               : ""),
