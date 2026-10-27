@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.QueryExplanationContext;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 
@@ -48,6 +49,383 @@ import ch.qos.logback.core.read.ListAppender;
  * nothing rather than changing everything.
  */
 public class LmdbNativeStrategyArbiterTest {
+
+	private static NativeAggregatePhysicalPlan.ColdAnchor coldWitness() {
+		return new NativeAggregatePhysicalPlan.ColdAnchor("exact visible input domains avoid logical payload expansion",
+				"one owned cursor head per visible domain and one fixed output row");
+	}
+
+	@Test
+	void mappedColdWitnessDoesNotInventNumericalPricingOrCompletedExecution() throws Exception {
+		LmdbNativeAdaptiveCostModel model = measuredModel();
+		LmdbNativeStrategyProposal<String> original = proposal("adjacencyAggregate", 1_000D)
+				.withColdAnchor(coldWitness());
+		LmdbNativeStrategyProposal<String> mapped = original.map(value -> value, "adjacencyAggregate(fullValue)");
+		assertThat(mapped.coldAnchor()).isSameAs(original.coldAnchor());
+		LmdbNativeCostEstimate estimate = mapped.adaptiveEstimate(-1D);
+		assertThat(model.predict(estimate).priceBasis()).isEqualTo(LmdbNativeCostPrediction.PriceBasis.ORDINAL_ONLY);
+		try (LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter.forModel(null, -1D, model)) {
+			arbiter.offer(() -> proposal("irAggregateParallel", 1_000D));
+			arbiter.offer(() -> mapped);
+			try (LmdbNativeStrategySelection<String> selected = arbiter.selectWithObservation()) {
+				assertThat(selected.value()).isEqualTo("adjacencyAggregate");
+				assertThat(selected.observation().snapshot().completion())
+						.isEqualTo(LmdbNativeCostObservation.Completion.OPEN);
+				assertThat(model.store().latestObserved().size()).isZero();
+				selected.cancelled(null);
+				selected.exhausted();
+			}
+		}
+		assertThat(model.predict(estimate).exactCompletedCount()).isZero();
+		assertThat(model.store().latestObserved().size()).isZero();
+	}
+
+	@Test
+	void coldWitnessSurvivesLegacyScalarVetoAndRetainsTheNonprobeableFallback() throws Exception {
+		AtomicInteger anchorOpens = new AtomicInteger(), fallbackOpens = new AtomicInteger();
+		AtomicInteger anchorReleases = new AtomicInteger(), fallbackReleases = new AtomicInteger();
+		AtomicInteger unopenedReleases = new AtomicInteger();
+		LmdbNativeStrategyProposal<String> anchor = new LmdbNativeStrategyProposal<String>(() -> {
+			anchorOpens.incrementAndGet();
+			return null;
+		}, 1_000_000_000_000D, "adjacencyAggregate", anchorReleases::incrementAndGet)
+				.withColdAnchor(coldWitness());
+		LmdbNativeStrategyProposal<String> fallback = new LmdbNativeStrategyProposal<>(() -> {
+			fallbackOpens.incrementAndGet();
+			return "fallback";
+		}, LmdbNativeWork.exact(1D), LmdbNativeWork.ZERO, 1D, "nestedLoop", fallbackReleases::incrementAndGet,
+				false);
+		try (LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter.<String>forModel(null, -1D,
+				measuredModel()).probeHarness(LmdbNativeProbeHarness.blocking())) {
+			arbiter.offer(() -> fallback);
+			arbiter.offer(() -> anchor);
+			arbiter.offer(() -> new LmdbNativeStrategyProposal<>(() -> "unused", 1D, "zz-unused",
+					unopenedReleases::incrementAndGet));
+			assertThat(arbiter.select()).isEqualTo("fallback");
+		}
+		assertThat(anchorOpens).hasValue(1);
+		assertThat(fallbackOpens).hasValue(1);
+		assertThat(anchorReleases).as("the declined opener already accepted its own admission ownership").hasValue(0);
+		assertThat(fallbackReleases).as("the successful opener accepted its own admission ownership").hasValue(0);
+		assertThat(unopenedReleases).hasValue(1);
+	}
+
+	@Test
+	void coldWitnessCannotOverrideNumericalEvidenceOrAnActualPhysicalDominator() {
+		LmdbNativeAdaptiveCostModel model = measuredModel();
+		LmdbNativeStrategyProposal<String> anchor = proposal("irAggregateParallel", 1_000D)
+				.withColdAnchor(coldWitness());
+		LmdbNativeStrategyProposal<String> measured = proposal("nestedLoop", 1_000D);
+		LmdbNativeCostEstimate estimate = measured.adaptiveEstimate(-1D);
+		for (int sample = 0; sample < 8; sample++) {
+			model.recordCompleted(estimate, estimate.total(), 1_000_000D, 1D, model.currentRegime());
+		}
+		assertThat(model.predict(estimate).uniformlyPriceable()).isTrue();
+		assertThat(LmdbNativeStrategyArbiter.rankAdaptive(List.of(anchor, measured), -1D, model)).isEqualTo(1);
+		LmdbNativeStrategyProposal<String> dominator = proposal("batch", 1_000D);
+		anchor.physicallyDominatedBy(dominator, "identical input and output with the extra replay removed");
+		assertThat(LmdbNativeStrategyArbiter.rankAdaptive(List.of(anchor, dominator), -1D, measuredModel()))
+				.isEqualTo(1);
+		LmdbNativeAdaptiveCostModel disabled = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(),
+				new LmdbNativeStoreCostModel(), new LmdbNativeAdaptiveCostModel.Configuration(false, false));
+		assertThat(LmdbNativeStrategyArbiter.rankAdaptive(List.of(
+				proposal("irAggregateParallel", 1_000D),
+				proposal("adjacencyAggregate", 1_000D).withColdAnchor(coldWitness())), -1D, disabled))
+						.as("explicitly disabled learned dispatch retains its ordinary structural rule")
+						.isZero();
+	}
+
+	@Test
+	void incomparableColdWitnessesKeepStableOrderAndExplicitForcing() throws Exception {
+		for (boolean reverse : List.of(false, true)) {
+			for (String forced : new String[] { null, "nestedLoop" }) {
+				LmdbNativeStrategyProposal<String> first = proposal("batch", 100D).withColdAnchor(coldWitness());
+				LmdbNativeStrategyProposal<String> second = proposal("nestedLoop", 100D).withColdAnchor(coldWitness());
+				try (LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter.forModel(null, -1D,
+						measuredModel())) {
+					if (forced != null) {
+						arbiter.forcing(forced, "incomparable cold witnesses");
+					}
+					arbiter.offer(() -> reverse ? second : first);
+					arbiter.offer(() -> reverse ? first : second);
+					assertThat(arbiter.select()).isEqualTo(forced == null ? "batch" : forced);
+				}
+			}
+		}
+	}
+
+	@Test
+	void coldAnchorCancellationAndRealFailureRemainTerminal() throws Exception {
+		for (RuntimeException failure : List.of(KernelQueryCancelledException.INSTANCE,
+				new IllegalStateException("cold anchor execution failed"))) {
+			AtomicInteger fallbackOpens = new AtomicInteger();
+			try (LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter.forModel(null, -1D,
+					measuredModel())) {
+				arbiter.offer(() -> new LmdbNativeStrategyProposal<String>(() -> {
+					throw failure;
+				}, 100D, "adjacencyAggregate").withColdAnchor(coldWitness()));
+				arbiter.offer(() -> new LmdbNativeStrategyProposal<>(() -> {
+					fallbackOpens.incrementAndGet();
+					return "unused";
+				}, 100D, "irAggregateParallel"));
+				assertThatThrownBy(arbiter::select).isSameAs(failure);
+			}
+			assertThat(fallbackOpens).hasValue(0);
+		}
+	}
+
+	@Test
+	void physicallyDominatedNumericalInventoryCannotSuppressAnOtherwiseUnpricedColdAnchor() {
+		LmdbNativeMachineCostModel machine = new LmdbNativeMachineCostModel();
+		LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(machine, new LmdbNativeStoreCostModel(),
+				new LmdbNativeAdaptiveCostModel.Configuration(true, true));
+		LmdbNativeStrategyProposal<String> resident = proposal("irAggregateParallel", 1_000D);
+		LmdbNativeStrategyProposal<String> anchor = proposal("adjacencyAggregate", 1_000D)
+				.withColdAnchor(coldWitness());
+		LmdbNativeStrategyProposal<String> dominated = proposal("batch", 1_000D)
+				.withPhysicalEstimate(new LmdbNativeCostEstimate(LmdbNativePhysicalVariantKey.builder("batch").build(),
+						LmdbNativeCostVector.zero(),
+						LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.DECODED_ROW, 1_000D), 0D, 0D));
+		LmdbNativeCostEstimate estimate = dominated.adaptiveEstimate(-1D);
+		for (int sample = 0; sample < LmdbNativeMachineCostModel.MINIMUM_ADAPTIVE_SAMPLES; sample++) {
+			assertThat(machine.update(estimate.total(), 1_000D).accepted()).isTrue();
+		}
+		assertThat(model.predict(estimate).uniformlyPriceable()).isTrue();
+		dominated.physicallyDominatedBy(resident, "identical producer with unnecessary extra materialization");
+		assertThat(model.predict(anchor.adaptiveEstimate(-1D)).priceBasis())
+				.isEqualTo(LmdbNativeCostPrediction.PriceBasis.ORDINAL_ONLY);
+		assertThat(model.predict(resident.adaptiveEstimate(-1D)).priceBasis())
+				.isEqualTo(LmdbNativeCostPrediction.PriceBasis.ORDINAL_ONLY);
+		assertThat(LmdbNativeStrategyArbiter.rankAdaptive(List.of(resident, anchor, dominated), -1D, model))
+				.as("a priced arm retained only in inventory cannot veto the executable physical frontier")
+				.isEqualTo(1);
+	}
+
+	@Test
+	void anActuallyCensoredZeroCompletionRivalCannotDisplaceTheCompletedPhysicalFallback() throws Exception {
+		String quarantineKey = "rdf4j.lmdb.adaptiveHedge.overshootQuarantineFactor";
+		String previousQuarantine = System.getProperty(quarantineKey);
+		String previousProbe = System.getProperty(LmdbNativeProbeConfig.ENABLED_PROPERTY);
+		// Isolate the censored state from the independent overshoot-quarantine policy. A host scheduling pause is
+		// not the outcome under test; the probe still uses and actually exhausts its real monotonic deadline.
+		System.setProperty(quarantineKey, Double.toString(Double.MAX_VALUE));
+		System.setProperty(LmdbNativeProbeConfig.ENABLED_PROPERTY, "true");
+		try {
+			LmdbNativeAdaptiveCostModel model = measuredModel();
+			AtomicInteger anchorOpens = new AtomicInteger(), rivalOpens = new AtomicInteger();
+			for (int completion = 0; completion < 5; completion++) {
+				try (LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter.<String>forModel(null, -1D,
+						model).forcing("adjacencyAggregate", "actual completed fallback setup")) {
+					arbiter.offer(() -> completedColdAnchor(anchorOpens));
+					assertThat(arbiter.select()).isEqualTo("root");
+				}
+			}
+			LmdbNativeCostEstimate anchorEstimate = completedColdAnchor(new AtomicInteger()).adaptiveEstimate(-1D);
+			assertThat(model.predict(anchorEstimate).exactCompletedCount()).isEqualTo(5L);
+			LmdbNativeCostEstimate rivalEstimate = proposal("irAggregateParallel", 100D).adaptiveEstimate(-1D);
+			assertThat(model.predict(rivalEstimate).evidenceSource())
+					.as("global backoff is not evidence that the exact rival has executed")
+					.isNotEqualTo(LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT);
+			assertThat(model.predict(rivalEstimate).exactCompletedCount()).isZero();
+			for (int dispatch = 0; dispatch < 2; dispatch++) {
+				int currentDispatch = dispatch;
+				LmdbNativeCostPrediction priorPrediction = model.predict(rivalEstimate);
+				try (LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter.<String>forModel(null, -1D,
+						model).probeHarness(LmdbNativeProbeHarness.blocking())) {
+					arbiter.offer(() -> completedColdAnchor(anchorOpens));
+					arbiter.offer(() -> new LmdbNativeStrategyProposal<>(() -> {
+						rivalOpens.incrementAndGet();
+						assertThat(LmdbNativeProbeDeadline.currentOrNull())
+								.as("zero-completion rival needs a withheld bounded probe: dispatch=%s, rootOpens=%s, rivalOpens=%s, prior=%s",
+										currentDispatch, anchorOpens.get(), rivalOpens.get(), priorPrediction)
+								.isNotNull();
+						while (true) {
+							LmdbNativeProbeDeadline.poll(0);
+						}
+					}, 100D, "irAggregateParallel"));
+					assertThat(arbiter.select()).isEqualTo("root");
+				}
+				LmdbNativeCostPrediction censored = model.predict(rivalEstimate);
+				assertThat(censored.evidenceSource()).isEqualTo(LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT);
+				assertThat(censored.exactCompletedCount()).isZero();
+				assertThat(censored.quarantined()).isFalse();
+			}
+			assertThat(rivalOpens).as("the actual first timeout enters cooldown instead of being retried unbounded")
+					.hasValue(1);
+			assertThat(anchorOpens).hasValue(7);
+		} finally {
+			restoreProperty(quarantineKey, previousQuarantine);
+			restoreProperty(LmdbNativeProbeConfig.ENABLED_PROPERTY, previousProbe);
+		}
+	}
+
+	@Test
+	void oneActualUnwitnessedOrQuarantinedCompletionDoesNotInventATrustedPhysicalFallback() throws Exception {
+		for (boolean quarantined : List.of(false, true)) {
+			LmdbNativeAdaptiveCostModel model = measuredModel();
+			try (LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter.<String>forModel(null, -1D,
+					model).forcing("adjacencyAggregate", "one actual completion control")) {
+				arbiter.offer(() -> proposal("adjacencyAggregate", 100D));
+				assertThat(arbiter.select()).isEqualTo("adjacencyAggregate");
+			}
+			LmdbNativeStrategyProposal<String> root = proposal("adjacencyAggregate", 100D);
+			assertThat(model.predict(root.adaptiveEstimate(-1D)).exactCompletedCount()).isEqualTo(1L);
+			if (quarantined) {
+				root.withColdAnchor(coldWitness());
+				// This is an explicit scheduler-state policy control, not a simulated runtime observation.
+				model.store()
+						.probeScheduler()
+						.quarantine(root.adaptiveEstimate(-1D).variantKey(), model.currentRegime(),
+								model.store().regimeTracker().epoch());
+				assertThat(model.predict(root.adaptiveEstimate(-1D)).quarantined()).isTrue();
+			}
+			assertThat(LmdbNativeStrategyArbiter.rankAdaptive(List.of(proposal("irAggregateParallel", 100D), root),
+					-1D, model)).as("one completion needs a current physical witness and a nonquarantined price")
+							.isZero();
+		}
+	}
+
+	private static LmdbNativeStrategyProposal<String> completedColdAnchor(AtomicInteger opens) {
+		return new LmdbNativeStrategyProposal<String>(() -> {
+			opens.incrementAndGet();
+			return "root";
+		}, 100D, "adjacencyAggregate").withColdAnchor(coldWitness());
+	}
+
+	private static void restoreProperty(String key, String previous) {
+		if (previous == null) {
+			System.clearProperty(key);
+		} else {
+			System.setProperty(key, previous);
+		}
+	}
+
+	@Test
+	void mappingFailureClosesTheOpenedCarrierExactlyOnce() {
+		AtomicInteger closes = new AtomicInteger();
+		AutoCloseable value = closes::incrementAndGet;
+		IllegalStateException failure = new IllegalStateException("carrier mapping failed");
+		LmdbNativeStrategyProposal<AutoCloseable> original = new LmdbNativeStrategyProposal<>(() -> value,
+				1D, "nestedLoop");
+		LmdbNativeStrategyProposal<String> mapped = original.map(ignored -> {
+			throw failure;
+		}, "nestedLoop(fullValue)");
+		assertThatThrownBy(mapped::open).isSameAs(failure);
+		mapped.close();
+		original.close();
+		assertThat(closes).hasValue(1);
+	}
+
+	@Test
+	void mappingFailureRetainsItsPrimaryWhenOpenedCarrierCloseAlsoFails() {
+		AtomicInteger closes = new AtomicInteger();
+		IllegalStateException primary = new IllegalStateException("mapping primary");
+		IllegalArgumentException cleanup = new IllegalArgumentException("carrier cleanup");
+		AutoCloseable value = () -> {
+			closes.incrementAndGet();
+			throw cleanup;
+		};
+		LmdbNativeStrategyProposal<AutoCloseable> original = new LmdbNativeStrategyProposal<>(() -> value,
+				1D, "nestedLoop");
+		LmdbNativeStrategyProposal<String> mapped = original.map(ignored -> {
+			throw primary;
+		}, "nestedLoop(fullValue)");
+		assertThatThrownBy(mapped::open).isSameAs(primary);
+		mapped.close();
+		original.close();
+		assertThat(closes).hasValue(1);
+		assertThat(primary.getSuppressed()).containsExactly(cleanup);
+	}
+
+	@Test
+	void mappedCarrierPreservesPhysicalQuoteAndUnopenedOwnership() {
+		AtomicInteger opens = new AtomicInteger();
+		AtomicInteger releases = new AtomicInteger();
+		LmdbNativeStrategyProposal<String> original = new LmdbNativeStrategyProposal<>(() -> {
+			opens.incrementAndGet();
+			return "four";
+		}, 7D, "nestedLoop", releases::incrementAndGet);
+		LmdbNativeCostEstimate estimate = original.adaptiveEstimate(-1D);
+		original.withPhysicalEstimate(estimate);
+		LmdbNativeStrategyProposal<Integer> mapped = original.map(String::length, "nestedLoop(fullValue)");
+		assertThat(mapped.adaptiveEstimate(-1D)).isSameAs(estimate);
+		assertThat(mapped.work).isSameAs(original.work);
+		mapped.close();
+		mapped.close();
+		assertThat(opens).hasValue(0);
+		assertThat(releases).hasValue(1);
+	}
+
+	@Test
+	void mappedCarrierRetainsDominanceAndTransfersOnlyTheOpenedResult() throws IOException {
+		List<String> opens = new ArrayList<>();
+		LmdbNativeStrategyProposal<String> metadata = new LmdbNativeStrategyProposal<>(() -> {
+			opens.add("metadata");
+			return "exact";
+		}, 1000D, "adjacencyAggregate");
+		LmdbNativeStrategyProposal<String> scan = new LmdbNativeStrategyProposal<>(() -> {
+			opens.add("scan");
+			return "rows";
+		}, 0D, "irAggregate");
+		scan.physicallyDominatedBy(metadata, "identical demand with an additional scan");
+		try (LmdbNativeStrategyArbiter<Integer> arbiter = LmdbNativeStrategyArbiter.forExpr(null)) {
+			arbiter.offer(() -> scan.map(String::length, "irAggregate"));
+			arbiter.offer(() -> metadata.map(String::length, "adjacencyAggregate"));
+			assertThat(arbiter.select()).isEqualTo(5);
+		}
+		assertThat(opens).containsExactly("metadata");
+	}
+
+	@Test
+	void provedPhysicalDominanceRetainsADeclinedArmsExactFallback() throws IOException {
+		List<String> opens = new ArrayList<>();
+		LmdbNativeStrategyProposal<String> header = new LmdbNativeStrategyProposal<>(() -> {
+			opens.add("header");
+			return null;
+		}, 1000D, "adjacencyAggregate");
+		LmdbNativeStrategyProposal<String> rows = new LmdbNativeStrategyProposal<>(() -> {
+			opens.add("rows");
+			return "exact fallback";
+		}, 0D, "irAggregate");
+		rows.physicallyDominatedBy(header, "same visible header plus additional row enumeration");
+		try (LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter.forExpr(null)) {
+			arbiter.offer(() -> rows).offer(() -> header);
+			assertThat(arbiter.select()).isEqualTo("exact fallback");
+		}
+		assertThat(opens).containsExactly("header", "rows");
+	}
+
+	@Test
+	void provedPhysicalDominanceRemainsInPreviewAndCanBeExplicitlyForced() throws IOException {
+		AtomicInteger rowOpens = new AtomicInteger();
+		try (var scope = QueryExplanationContext.enter(Explanation.Level.Optimized);
+				LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter.forExpr(null)) {
+			LmdbNativeStrategyProposal<String> header = new LmdbNativeStrategyProposal<>(() -> "header", 1000D,
+					"adjacencyAggregate");
+			LmdbNativeStrategyProposal<String> rows = new LmdbNativeStrategyProposal<>(() -> {
+				rowOpens.incrementAndGet();
+				return "rows";
+			}, 0D, "irAggregate");
+			rows.physicallyDominatedBy(header, "same visible header plus additional row enumeration");
+			arbiter.offer(() -> rows).offer(() -> header);
+			assertThat(arbiter.preview("GROUP BY dispatch").candidates().toString())
+					.contains("irAggregate", "Physically dominated", "same visible header");
+			assertThat(rowOpens).hasValue(0);
+		}
+		try (LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter.<String>forExpr(null)
+				.forcing("irAggregate", "GROUP BY dispatch")) {
+			LmdbNativeStrategyProposal<String> header = new LmdbNativeStrategyProposal<>(() -> "header", 1000D,
+					"adjacencyAggregate");
+			LmdbNativeStrategyProposal<String> rows = new LmdbNativeStrategyProposal<>(() -> {
+				rowOpens.incrementAndGet();
+				return "rows";
+			}, 0D, "irAggregate");
+			rows.physicallyDominatedBy(header, "same visible header plus additional row enumeration");
+			arbiter.offer(() -> rows).offer(() -> header);
+			assertThat(arbiter.select()).isEqualTo("rows");
+		}
+		assertThat(rowOpens).hasValue(1);
+	}
 
 	@Test
 	public void workerQuotesDoNotReserveCapacityUntilTheOpenerIsAdmitted() {
@@ -855,10 +1233,29 @@ public class LmdbNativeStrategyArbiterTest {
 				.isEqualTo(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE);
 	}
 
+	@Test
+	void completedRowsDoNotInvalidateAProvedSharedHeaderReduction() {
+		LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(),
+				new LmdbNativeStoreCostModel(), new LmdbNativeAdaptiveCostModel.Configuration(true, true));
+		LmdbNativeStrategyProposal<String> header = proposal(LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE, 1000D);
+		LmdbNativeStrategyProposal<String> rows = proposal(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, 1D);
+		LmdbNativeCostEstimate rowEstimate = rows.adaptiveEstimate(-1D);
+		for (int i = 0; i < 6; i++) {
+			model.recordCompleted(rowEstimate, rowEstimate.total(), 1_000_000D, 1D, model.currentRegime());
+		}
+		rows.physicallyDominatedBy(header, "same visible header plus additional row enumeration");
+		List<LmdbNativeStrategyProposal<String>> candidates = List.of(rows, header);
+		assertThat(candidates.get(LmdbNativeStrategyArbiter.rankAdaptive(candidates, -1D, model)))
+				.isSameAs(header);
+	}
+
 	/**
 	 * Gap-analysis G8, second half: one unpriceable candidate must not force the whole set back to pure structural
 	 * ranking — the priced candidates keep their static interval evidence, so the statically absurd highest-preference
-	 * candidate still loses.
+	 * candidate still loses. Since the owned-work correction (source180) an arm without complete work evidence, cold
+	 * anchor, completed execution or structural specialist applicability is no longer an ordinary normal choice while a
+	 * viable complete alternative remains: it stays in the legal inventory as bounded exploration and last fallback, so
+	 * the complete, statically sane nestedLoop wins.
 	 */
 	@Test
 	public void mixedProposalSetRetainsStaticIntervalEvidence() {
@@ -871,9 +1268,56 @@ public class LmdbNativeStrategyArbiterTest {
 
 		assertThat(adaptiveWinner(candidates))
 				.as("an unpriceable candidate falls back to interval ranking, not preference-only ranking: the "
-						+ "statically absurd irAggregate may not win; the unpriceable candidate (never dominated) "
-						+ "ranks by preference among the survivors")
-				.isEqualTo(LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION);
+						+ "statically absurd irAggregate may not win; the unpriceable candidate is not a normal choice "
+						+ "while the complete nestedLoop remains viable")
+				.isEqualTo(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+	}
+
+	/**
+	 * Complete page/root-domain algorithms are offered only when the whole answer reduces to bounded metadata work.
+	 * That structural applicability keeps their cold prior in the normal frontier even while their DISTINCT-domain or
+	 * cross-group feature quote is explicitly unknown; a non-domain arm with unknown work is not rescued the same way.
+	 */
+	@Test
+	public void completeDomainAlgorithmKeepsItsColdPriorWithoutAFeatureQuote() {
+		System.setProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY, "true");
+
+		List<LmdbNativeStrategyProposal<String>> candidates = List.of(
+				proposal(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, 1_000D),
+				proposal(LmdbNativeCensusAggregate.PATH, LmdbNativeWork.UNKNOWN));
+		assertThat(adaptiveWinner(candidates))
+				.as("the census reduction keeps its cold prior ahead of a complete priced row scan even without a quote")
+				.isEqualTo(LmdbNativeCensusAggregate.PATH);
+
+		LmdbNativeStrategyProposal<String> proved = proposal(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, 1_000D)
+				.withColdAnchor(new NativeAggregatePhysicalPlan.ColdAnchor("exact page/root contributions",
+						"ledger-owned bounded state"));
+		List<LmdbNativeStrategyProposal<String>> nonDomain = List.of(proved,
+				proposal(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, LmdbNativeWork.UNKNOWN));
+		assertThat(adaptiveWinner(nonDomain))
+				.as("an ordinary arm without any work quote remains a fallback behind a resource-proved rival")
+				.isEqualTo(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+
+		assertThat(adaptiveWinner(List.of(proposal(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, 1_000D),
+				proposal(LmdbNativeAttemptMetrics.PATH_WCOJ, LmdbNativeWork.UNKNOWN))))
+						.as("a structurally admitted specialist with unknown per-feature work is still a cold normal choice")
+						.isEqualTo(LmdbNativeAttemptMetrics.PATH_WCOJ);
+
+		LmdbNativeStrategyProposal<String> groupedCensus = proposal(LmdbNativeCensusAggregate.PATH,
+				LmdbNativeWork.UNKNOWN);
+		LmdbNativeCostVector zero = LmdbNativeCostVector.zero();
+		groupedCensus.withPhysicalEstimate(new LmdbNativeCostEstimate(
+				LmdbNativePhysicalVariantKey.builder(LmdbNativeCensusAggregate.PATH)
+						.physicalOrderAndProperties(LmdbNativeCensusAggregate.PATH)
+						.groupingMode(LmdbNativePhysicalVariantKey.GroupingMode.HASHED)
+						.requiresHashing(true)
+						.build(),
+				zero, zero, 0D, 0.5D,
+				NativePhysicalWorkEvidence.incomplete("per-group membership state has no physical quote")));
+		assertThat(adaptiveWinner(List.of(proposal(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, 1_000D), groupedCensus)))
+				.as("a grouped census that must hash per-group membership without a quote is the last arm a cold "
+						+ "inventory opens, behind an ordinary static arm")
+				.isEqualTo(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
 	}
 
 	/**

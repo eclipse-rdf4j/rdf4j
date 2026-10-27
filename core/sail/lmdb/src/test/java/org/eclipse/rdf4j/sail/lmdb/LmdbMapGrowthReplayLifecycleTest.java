@@ -233,7 +233,7 @@ class LmdbMapGrowthReplayLifecycleTest {
 			LmdbSailStore backingStore = store.getBackingStore();
 			TripleStore tripleStore = tripleStoreOf(store);
 			long initialMapSize = mapSize(tripleStore);
-			String namespace = growthNamespace(initialMapSize);
+			String namespace = hardGrowthNamespace(backingStore, initialMapSize);
 			MapGrowthMetrics.Snapshot before = backingStore.growthMetricsSnapshot();
 			assertFalse(backingStore.growthAdmissionClosed(), "the store must start outside a growth episode");
 			Future<List<String>> query = executor.submit(() -> {
@@ -258,7 +258,7 @@ class LmdbMapGrowthReplayLifecycleTest {
 			Future<?> writer = executor.submit(() -> {
 				try (SailConnection growthWriter = store.getConnection()) {
 					growthWriter.begin(IsolationLevels.SNAPSHOT);
-					addGrowthStatements(growthWriter, initialMapSize);
+					addGrowthStatements(growthWriter, 10_000, namespace);
 					growthWriter.addStatement(FIRST_SUBJECT, FIRST_PREDICATE, VF.createLiteral("z-after"));
 					growthWriter.commit();
 				}
@@ -273,6 +273,8 @@ class LmdbMapGrowthReplayLifecycleTest {
 			awaitTripleStoreGrowth(repository, tripleStore, initialMapSize, namespace);
 			MapGrowthMetrics.Snapshot after = backingStore.growthMetricsSnapshot();
 			assertTrue(mapSize(tripleStore) > initialMapSize, "the writer must complete real TripleStore map growth");
+			assertEquals(before.valueStoreResizes(), after.valueStoreResizes(),
+					"the complete input must fit the other environment without dictionary growth");
 			assertThat(values).containsExactlyInAnyOrder("a-before", "b-before", "z-after");
 			assertEquals(before.replayAccepted() + 1, after.replayAccepted(),
 					"the active snapshot sort must be accepted for exactly one whole-transaction replay");
@@ -329,7 +331,7 @@ class LmdbMapGrowthReplayLifecycleTest {
 			LmdbSailStore backingStore = store.getBackingStore();
 			TripleStore tripleStore = tripleStoreOf(store);
 			long initialMapSize = mapSize(tripleStore);
-			String namespace = growthNamespace(initialMapSize);
+			String namespace = hardGrowthNamespace(backingStore, initialMapSize);
 			MapGrowthMetrics.Snapshot before = backingStore.growthMetricsSnapshot();
 			Future<List<String>> query = executor.submit(() -> {
 				try (RepositoryConnection reader = repository.getConnection()) {
@@ -352,7 +354,7 @@ class LmdbMapGrowthReplayLifecycleTest {
 			Future<?> writer = executor.submit(() -> {
 				try (SailConnection growthWriter = store.getConnection()) {
 					growthWriter.begin(IsolationLevels.SNAPSHOT);
-					addGrowthStatements(growthWriter, initialMapSize, 50_000);
+					addGrowthStatements(growthWriter, 50_000, namespace);
 					growthWriter.addStatement(VF.createIRI("urn:lmdb:replay-lifecycle:cooperative:after-growth"),
 							FIRST_PREDICATE, VF.createLiteral("after-growth"));
 					growthWriter.commit();
@@ -370,6 +372,8 @@ class LmdbMapGrowthReplayLifecycleTest {
 			awaitTripleStoreGrowth(repository, tripleStore, initialMapSize, namespace);
 			MapGrowthMetrics.Snapshot after = backingStore.growthMetricsSnapshot();
 			assertTrue(mapSize(tripleStore) > initialMapSize, "the writer must complete real TripleStore map growth");
+			assertEquals(before.valueStoreResizes(), after.valueStoreResizes(),
+					"the complete input must fit the other environment without dictionary growth");
 			assertEquals(PARALLEL_SORT_INPUT_ROWS + 1, values.size(),
 					"the replacement result must contain the published row exactly once");
 			assertTrue(values.contains("after-growth"), "the replayed snapshot must include the growth publication");
@@ -429,7 +433,7 @@ class LmdbMapGrowthReplayLifecycleTest {
 			LmdbSailStore backingStore = store.getBackingStore();
 			TripleStore tripleStore = tripleStoreOf(store);
 			long initialMapSize = mapSize(tripleStore);
-			String namespace = growthNamespace(initialMapSize);
+			String namespace = hardGrowthNamespace(backingStore, initialMapSize);
 			MapGrowthMetrics.Snapshot before = backingStore.growthMetricsSnapshot();
 			Future<String> query = executor.submit(() -> {
 				try (RepositoryConnection reader = repository.getConnection()) {
@@ -451,7 +455,7 @@ class LmdbMapGrowthReplayLifecycleTest {
 			Future<?> writer = executor.submit(() -> {
 				try (SailConnection growthWriter = store.getConnection()) {
 					growthWriter.begin(IsolationLevels.SNAPSHOT);
-					addGrowthStatements(growthWriter, initialMapSize);
+					addGrowthStatements(growthWriter, 10_000, namespace);
 					growthWriter.addStatement(VF.createIRI("urn:lmdb:replay-lifecycle:aggregate:after-growth"),
 							FIRST_PREDICATE, VF.createLiteral("after-growth"));
 					growthWriter.commit();
@@ -472,6 +476,8 @@ class LmdbMapGrowthReplayLifecycleTest {
 			awaitTripleStoreGrowth(repository, tripleStore, initialMapSize, namespace);
 			MapGrowthMetrics.Snapshot after = backingStore.growthMetricsSnapshot();
 			assertTrue(mapSize(tripleStore) > initialMapSize, "the writer must complete real TripleStore map growth");
+			assertEquals(before.valueStoreResizes(), after.valueStoreResizes(),
+					"the complete input must fit the other environment without dictionary growth");
 			assertEquals("2001", count, "the replacement aggregate must include the published row once");
 			assertTrue(function.nestedReadCompletedAfterGrowth(),
 					"the custom function's nested read must return naturally before replay is checked");
@@ -516,12 +522,24 @@ class LmdbMapGrowthReplayLifecycleTest {
 		return "urn:lmdb:replay-lifecycle:growth-namespace:" + "n".repeat(namespaceBytes);
 	}
 
+	private static String hardGrowthNamespace(LmdbSailStore backingStore, long initialMapSize) throws Exception {
+		int namespaceBytes = Math.toIntExact(initialMapSize);
+		assertTrue(new MapGrowthPolicy(GROWTH_THRESHOLD).hardCapacityRequired(initialMapSize,
+				backingStore.getTripleStore().occupiedBytes(), namespaceBytes),
+				"the namespace must require hard capacity before its native publication can finish");
+		return "urn:lmdb:replay-lifecycle:hard-growth-namespace:" + "n".repeat(namespaceBytes);
+	}
+
 	private static void addGrowthStatements(SailConnection writer, long initialMapSize) throws Exception {
 		addGrowthStatements(writer, initialMapSize, 10_000);
 	}
 
 	private static void addGrowthStatements(SailConnection writer, long initialMapSize, int count) throws Exception {
-		writer.setNamespace("growth-demand", growthNamespace(initialMapSize));
+		addGrowthStatements(writer, count, growthNamespace(initialMapSize));
+	}
+
+	private static void addGrowthStatements(SailConnection writer, int count, String namespace) throws Exception {
+		writer.setNamespace("growth-demand", namespace);
 		for (int i = 0; i < count; i++) {
 			writer.addStatement(VF.createIRI("urn:lmdb:replay-lifecycle:growth:" + i), GROWTH_PREDICATE,
 					VF.createLiteral("filler"));

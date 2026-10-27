@@ -197,6 +197,71 @@ Batched RDF additions to existing format-2 repositories continue to use their or
 writes. The standalone bulk loader publishes a new format-6 repository and requires an empty target; it does not
 replace or upgrade an existing repository in place. These write paths do not depend on the experimental query profile.
 
+A successful standalone bulk load also publishes `config.ttl`, using the final target directory name as its repository
+ID. That name must satisfy the local repository manager's portable-name rules. The configuration records the effective
+statement and RDF-star indexes, all selected store settings, and the final native map capacities, including growth during
+loading and the selected capacity reserve. Place the target directly in the server's repository directory, or move the
+complete directory to another repository manager while retaining its name. If you rename the repository directory,
+update its repository ID in `config.ttl` to match.
+
+Choose value-store and triple-store capacity independently with `--value-capacity POLICY` and `--triple-capacity POLICY`.
+Interactive setup offers the same choices separately for each store: default headroom, a minimum size, or a factor.
+Press Enter to keep the default, or choose a minimum size such as `64MiB` or a total-count factor such as `2`, `3`, or `1.5`.
+
+| Policy | Meaning |
+|---|---|
+| `default` | Reserve room for the smaller of 100,000 additional items and 10% of the actual loaded distinct count, rounded up. |
+| `min:64MiB` | Keep the native map at least 64 MiB. This is a floor, never a limit: larger data still loads and grows normally. Byte counts also accept KiB, GiB and TiB. |
+| `factor:2` | Reserve room for twice the total loaded count. `factor:3` means three times the count; `factor:1.5` means one and a half times. Factors must be finite and at least one. |
+
+For example, reserve at least 64 MiB for values and room for twice the loaded statement count:
+
+```bash
+./lmdb-bulk-load.sh --store repositories/example --input data.nt \
+  --value-capacity min:64MiB --triple-capacity factor:2
+```
+
+The value count is the number of unique stored dictionary and RDF-star term identities; inline values do not consume
+dictionary entries. The triple count is the number of distinct stored statements, so duplicate input does not increase
+that count. RDF-star term indexes share the value store's capacity. Adding a statement can require space in both stores,
+and each reserve must cover its own demand. Factors multiply counts, rather than map byte sizes. Minimum-size policies
+reserve a byte floor without promising an additional item count. All policies retain the space required for loaded data
+and prepared startup, and the generated `config.ttl` records the actual final bytes for both maps.
+
+Count-based reservations use the encoded-size envelope observed while loading and the existing native write estimates.
+They assume subsequent items fit that envelope, index families and generated write/batch settings remain unchanged,
+and ordinary appends do not keep historical readers pinned across writes. Increasing `bulkOperationSize` later can
+increase native admission demand. Arbitrarily larger future literals or pinned transaction histories can require
+growth before the selected count is reached. Resuming an interrupted load keeps its recorded policies; an explicitly
+conflicting policy is rejected.
+
+An unfinished older workspace that has not published its native output can rebuild using the new default policies.
+Already-published output without recorded capacity policies and completed sizing evidence is preserved, and recovery
+reports a compatibility error. It remains an older publication under its previous capacity contract; use its original
+loader to finish recovery, or retain that store and choose a new empty target for a capacity-managed load.
+
+An item-count percentage is not a percentage of native map bytes. Existing native copy-on-write admission estimates can
+require a substantially larger virtual map reserve than the item percentage suggests. Map size reserves address capacity;
+physical memory and disk allocation depend on the platform and LMDB mapping mode.
+
+The loader establishes reference-count integrity and reserves startup capacity before publication, using its existing
+value and index passes. Its preparation metadata binds both native environments to the same generation and committed
+transactions. An unchanged repository opened with its generated configuration skips startup discovery scans,
+reference-count reconstruction, value reclamation, retirement recovery and map growth. Clean ordinary writes and shutdown
+retain bounded startup authority. Current-format stores can also use native clean metadata when the optional preparation
+sidecar is missing: startup checks known database names, manifests and statistics rather than traversing stored RDF values.
+Dirty or stale native integrity metadata, unknown writers, invalid formats and real pending reclamation or retirement work
+trigger the required validation or recovery. A reusable free-ID pool alone does not require recovery. Explicitly enabled
+experimental value-overlay, sketch-estimator and
+direct-adjacency caches retain their separate startup build behavior; the standalone defaults leave them disabled.
+
+For the Java bulk-loader API, repository configuration remains application-owned. Its
+`preparedGenerationWriter` callback receives the private directory and effective `LmdbStoreConfig`, so application
+metadata can be included in the same publication. A callback failure or cancellation leaves the load unpublished, and
+native database files must not be modified by the callback. Resuming a current load preserves its recorded settings and
+publishes configuration with the completed native generation. Older interrupted workspaces without required integrity
+metadata must be restarted from their inputs using a new workspace.
+
 A genuinely new, empty repository uses format 6. It records an older-reader rejection marker and cannot be opened by
 the format-2 implementation, even when optional query optimizations and all three accelerators are disabled. To move
 format-6 data to an older release, export RDF with a format-6-capable reader, then import it into a fresh repository created
@@ -419,6 +484,6 @@ The per-store `mapGrowthThreshold` setting (default `0.75`) controls the soft al
 closing admission and scheduling phased map growth. It also guides growth sizing below that trigger. The threshold
 measures allocated high-water pages rather than live RDF statements, and must be finite and strictly between `0` and
 `1`. `mapGrowthReadDrainTimeoutMillis` (default `30000`) is the reader grace after logical writers finish; setting it
-to `0` skips that grace without disabling the early admission warning or writer drain. Query admission waiters keep the
-query's original deadline, and waits without a deadline remain interruptible. See the transaction and recovery guide
-for the phased behavior and retry details.
+to `0` skips that grace without disabling the early admission warning or writer drain. Query admission waits are
+interruptible: a query's maximum execution time or its cancellation ends them by interrupting the waiting thread. See
+the transaction and recovery guide for the phased behavior and retry details.

@@ -209,6 +209,22 @@ final class LmdbDirectNodePredicates
 	// ------------------------------------------------------------------
 
 	@Override
+	public void contextSpan(long runHandle, long fromOffset, ContextSpan target) {
+		positionRun(runHandle);
+		LmdbAdjacencyRunCodec.contextSpan(runCursor, fromOffset, target);
+	}
+
+	@Override
+	public int copyContextSpan(long runHandle, long fromOffset, int length, long[] neighbors, int neighborOffset,
+			long[] graphIds, int contextOffset) {
+		positionRun(runHandle);
+		int copied = (int) Math.min(length, resolvedRunSize - fromOffset);
+		return copied <= 0 ? 0
+				: LmdbAdjacencyRunCodec.copy(contexts, runCursor, fromOffset, copied,
+						neighbors, neighborOffset, graphIds, contextOffset);
+	}
+
+	@Override
 	public long size(long runHandle) {
 		positionRun(runHandle);
 		return resolvedRunSize;
@@ -265,7 +281,8 @@ final class LmdbDirectNodePredicates
 		if (source < 0 || source >= sources.length) {
 			throw new IllegalArgumentException("invalid node-predicate run source: " + source);
 		}
-		LmdbAdjacencyRunCodec.resolve(sources[source], LmdbDirectNativeAdjacency.localOf(kernelHandle), runCursor);
+		LmdbAdjacencyRunCodec.resolveContextMetadata(sources[source], LmdbDirectNativeAdjacency.localOf(kernelHandle),
+				runCursor);
 		resolvedRunHandle = kernelHandle;
 		resolvedRunSize = runCursor.edgeCount();
 	}

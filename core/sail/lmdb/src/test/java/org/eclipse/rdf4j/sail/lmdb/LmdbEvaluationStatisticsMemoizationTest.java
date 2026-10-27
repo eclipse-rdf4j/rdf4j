@@ -25,6 +25,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.File;
+import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
@@ -1274,19 +1275,13 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	private static void rebuildSketchesAndAwaitLmdbOptimizer(LmdbStore sail, LmdbSailStore backingStore)
-			throws InterruptedException {
+			throws IOException, InterruptedException {
+		LmdbGcTestMaintenance.awaitPostReady(sail);
+		assertTrue(sail.awaitIndexRebuild(60, TimeUnit.SECONDS),
+				"Expected the committed query index generation before rebuilding planner statistics");
 		backingStore.getSketchBasedJoinEstimator().rebuild();
 		assertTrue(sail.awaitSketchesReady(60, TimeUnit.SECONDS),
 				"Expected LMDB sketch estimator to be ready before planning with the LMDB optimizer");
-		if (!(sail.getEvaluationStrategyFactory() instanceof LmdbNativeEvaluationStrategyFactory)) {
-			Thread.sleep(1000);
-		}
-		if (!(sail.getEvaluationStrategyFactory() instanceof LmdbNativeEvaluationStrategyFactory)) {
-			Thread.sleep(10 * 1000);
-		}
-		if (!(sail.getEvaluationStrategyFactory() instanceof LmdbNativeEvaluationStrategyFactory)) {
-			Thread.sleep(60 * 1000);
-		}
 		assertInstanceOf(LmdbNativeEvaluationStrategyFactory.class, sail.getEvaluationStrategyFactory(),
 				"Expected automatic stores to keep the native evaluation strategy factory");
 	}

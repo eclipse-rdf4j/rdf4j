@@ -125,6 +125,27 @@ public class LmdbNativeExpressionFilterTest {
 	}
 
 	@Test
+	public void runtimeTermTypePredicatesUseTheirOwningValueAuthority() {
+		String[][] cases = {
+				{ "CONCAT(?label, \"-generated\")", "isLiteral(?computed) && !isIRI(?computed)" },
+				{ "IRI(CONCAT(STR(?s), \"/generated\"))", "isIRI(?computed) && !isLiteral(?computed)" },
+				{ "BNODE(STR(?s))", "isBlank(?computed) && !isLiteral(?computed)" },
+				{ "STRDT(CONCAT(\"000\", STR(7)), <http://www.w3.org/2001/XMLSchema#integer>)",
+						"isNumeric(?computed) && isLiteral(?computed)" },
+				{ "CONCAT(?label, \"-generated\")",
+						"!isNumeric(?computed) && (isLiteral(?computed) || isBlank(?computed))" }
+		};
+		for (String[] fixture : cases) {
+			String query = "SELECT (COUNT(?s) AS ?c) WHERE { ?s <" + EX + "label> ?label "
+					+ "BIND(" + fixture[0] + " AS ?computed) FILTER(" + fixture[1] + ") }";
+			assertThat(count(query, false)).as("the generic control must admit every generated input: %s", fixture[0])
+					.isEqualTo(3L);
+			assertThat(count(query, true)).as("generated term kind must follow its authority: %s", fixture[0])
+					.isEqualTo(3L);
+		}
+	}
+
+	@Test
 	public void stringFunctionFilterDoesNotMaterializeStoredLiterals() {
 		resetNativeExpressionCounters();
 

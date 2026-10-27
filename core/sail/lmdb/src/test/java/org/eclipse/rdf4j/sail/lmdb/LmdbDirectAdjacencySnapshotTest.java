@@ -245,6 +245,8 @@ class LmdbDirectAdjacencySnapshotTest {
 			releaseQueueAdmission.countDown();
 			direct.beforeApplyQueueAdmissionForTest = previousQueueAdmissionHook;
 			direct.pauseApplierForTest(false);
+			// Preparation may still be awaiting queue admission after the commit returns.
+			direct.awaitCommitCleanupForTest();
 		}
 		NativeLmdbQuerySource dataset = dataset();
 		try {

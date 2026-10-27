@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipDomainWildca
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipKeyWildcard;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RunView.ContextSpan;
 
 /**
  * Root-partitioning support shared by the parallel kernel rungs (three-tier parity ExecPlan, Milestone 10B). A kernel
@@ -902,6 +903,28 @@ final class LmdbNativeKernelPartitions {
 		}
 
 		@Override
+		public void contextSpan(long runHandle, long fromOffset, ContextSpan target) {
+			delegate.contextSpan(runHandle, fromOffset, target);
+		}
+
+		@Override
+		public long neighborInContextSpan(long runHandle, long offset) {
+			return delegate.neighborInContextSpan(runHandle, offset);
+		}
+
+		@Override
+		public long contextInContextSpan(long runHandle, long offset) {
+			return delegate.contextInContextSpan(runHandle, offset);
+		}
+
+		@Override
+		public int copyContextSpan(long runHandle, long fromOffset, int length, long[] neighbors, int neighborOffset,
+				long[] contexts, int contextOffset) {
+			return delegate.copyContextSpan(runHandle, fromOffset, length, neighbors, neighborOffset, contexts,
+					contextOffset);
+		}
+
+		@Override
 		public long size(long runHandle) {
 			return delegate.size(runHandle);
 		}
@@ -1010,6 +1033,28 @@ final class LmdbNativeKernelPartitions {
 		@Override
 		public int findBatch(long[] keys, int keyOffset, int count, long[] runHandles, int runOffset) {
 			return delegate.findBatch(keys, keyOffset, count, runHandles, runOffset);
+		}
+
+		@Override
+		public void contextSpan(long runHandle, long fromOffset, ContextSpan target) {
+			delegate.contextSpan(runHandle, fromOffset, target);
+		}
+
+		@Override
+		public long neighborInContextSpan(long runHandle, long offset) {
+			return delegate.neighborInContextSpan(runHandle, offset);
+		}
+
+		@Override
+		public long contextInContextSpan(long runHandle, long offset) {
+			return delegate.contextInContextSpan(runHandle, offset);
+		}
+
+		@Override
+		public int copyContextSpan(long runHandle, long fromOffset, int length, long[] neighbors, int neighborOffset,
+				long[] contexts, int contextOffset) {
+			return delegate.copyContextSpan(runHandle, fromOffset, length, neighbors, neighborOffset, contexts,
+					contextOffset);
 		}
 
 		@Override
@@ -1240,6 +1285,28 @@ final class LmdbNativeKernelPartitions {
 		}
 
 		@Override
+		public void contextSpan(long runHandle, long fromOffset, ContextSpan target) {
+			delegate.contextSpan(runHandle, fromOffset, target);
+		}
+
+		@Override
+		public long neighborInContextSpan(long runHandle, long offset) {
+			return delegate.neighborInContextSpan(runHandle, offset);
+		}
+
+		@Override
+		public long contextInContextSpan(long runHandle, long offset) {
+			return delegate.contextInContextSpan(runHandle, offset);
+		}
+
+		@Override
+		public int copyContextSpan(long runHandle, long fromOffset, int length, long[] neighbors, int neighborOffset,
+				long[] contexts, int contextOffset) {
+			return delegate.copyContextSpan(runHandle, fromOffset, length, neighbors, neighborOffset, contexts,
+					contextOffset);
+		}
+
+		@Override
 		public long size(long runHandle) {
 			return delegate.size(runHandle);
 		}
@@ -1430,6 +1497,32 @@ final class LmdbNativeKernelPartitions {
 		public long quadCount() {
 			ensureRootBound();
 			return rootBounded ? -1L : delegate.quadCount();
+		}
+
+		@Override
+		public void contextSpan(long runHandle, long fromOffset, ContextSpan target) {
+			ensureRootBound();
+			delegate.contextSpan(runHandle, fromOffset, target);
+		}
+
+		@Override
+		public long neighborInContextSpan(long runHandle, long offset) {
+			ensureRootBound();
+			return delegate.neighborInContextSpan(runHandle, offset);
+		}
+
+		@Override
+		public long contextInContextSpan(long runHandle, long offset) {
+			ensureRootBound();
+			return delegate.contextInContextSpan(runHandle, offset);
+		}
+
+		@Override
+		public int copyContextSpan(long runHandle, long fromOffset, int length, long[] neighbors, int neighborOffset,
+				long[] contexts, int contextOffset) {
+			ensureRootBound();
+			return delegate.copyContextSpan(runHandle, fromOffset, length, neighbors, neighborOffset, contexts,
+					contextOffset);
 		}
 
 		@Override

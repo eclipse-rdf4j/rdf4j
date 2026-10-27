@@ -15,20 +15,26 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.RUNTIME_INTERN_BASE;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.util.Arrays;
+import java.util.IdentityHashMap;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.UnaryOperator;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.eclipse.rdf4j.sail.lmdb.model.RdfTermKey;
 
@@ -62,9 +68,13 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 	private static final Index EMPTY_INDEX = new Index(new long[0], false);
 	private static final VarHandle LONGS = MethodHandles.arrayElementVarHandle(long[].class);
 	private static final VarHandle PAGES = MethodHandles.arrayElementVarHandle(Page[].class);
+	private static final long PERMANENT_BYTES = 1024L + NativeRuntimeValueSpill.WORKSPACE_BYTES;
 
 	private final AtomicLong nextId;
 	private final Budget budget;
+	private final NativeCancellationToken cancellation;
+	private final UnaryOperator<Value> representative;
+	private volatile NativeRuntimeValueSpill spill;
 	private final Stripe[] stripes = new Stripe[STRIPES];
 	private final Object pageLock = new Object();
 	private final AtomicInteger count = new AtomicInteger();
@@ -75,11 +85,27 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 	private volatile boolean closed;
 
 	NativeRuntimeValueTable(AtomicLong nextId, Budget budget) {
+		this(nextId, budget, new NativeCancellationToken(), UnaryOperator.identity());
+	}
+
+	NativeRuntimeValueTable(AtomicLong nextId, Budget budget, NativeCancellationToken cancellation,
+			UnaryOperator<Value> representative) {
 		this.nextId = nextId;
 		this.budget = budget;
-		reserve(1024); // table, directory, stripes, counters and monitors; conservative JVM-independent charge
-		for (int i = 0; i < STRIPES; i++) {
-			stripes[i] = new Stripe();
+		this.cancellation = cancellation;
+		this.representative = representative;
+		// Retain migration headroom before the heap arena fills; spilling must also work at a full query ledger.
+		budget.reserveTableWorkspace(PERMANENT_BYTES);
+		bytes.set(PERMANENT_BYTES);
+		try {
+			for (int i = 0; i < STRIPES; i++) {
+				stripes[i] = new Stripe();
+			}
+			budget.register(this);
+		} catch (Throwable failure) {
+			budget.unregister(this);
+			budget.release(bytes.getAndSet(0L));
+			throw failure;
 		}
 	}
 
@@ -89,9 +115,21 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 
 	/** Snapshots LMDB-backed payloads only for a new spelling; registered query-scoped objects retain identity. */
 	long intern(Value value, boolean unresolved, RdfTermKey spelling, boolean preserveRepresentative) {
+		try {
+			return internMemory(value, unresolved, spelling, preserveRepresentative);
+		} catch (SpillRequired full) {
+			return spill(0).intern(value, unresolved);
+		}
+	}
+
+	private long internMemory(Value value, boolean unresolved, RdfTermKey spelling, boolean preserveRepresentative) {
 		checkOpen();
 		if (value == null) {
 			return UNKNOWN;
+		}
+		NativeRuntimeValueSpill spilled = spill;
+		if (spilled != null) {
+			return spilled.intern(value, unresolved);
 		}
 		int cheapHash = cheapHash(value);
 		Stripe stripe = stripes[cheapHash >>> (32 - STRIPE_BITS)];
@@ -134,8 +172,20 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 	 * native expressions use this before materialization; the normal Value path uses the very same table.
 	 */
 	long internString(String label) {
+		try {
+			return internStringMemory(label);
+		} catch (SpillRequired full) {
+			return spill(0).intern(SimpleValueFactory.getInstance().createLiteral(label), true);
+		}
+	}
+
+	private long internStringMemory(String label) {
 		checkOpen();
 		Objects.requireNonNull(label, "generated string label");
+		NativeRuntimeValueSpill spilled = spill;
+		if (spilled != null) {
+			return spilled.intern(SimpleValueFactory.getInstance().createLiteral(label), true);
+		}
 		int hash = mix(label.hashCode());
 		Stripe stripe = stripes[hash >>> (32 - STRIPE_BITS)];
 		Index index = stripe.index;
@@ -184,6 +234,10 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 			int emptySlot, long canonical, RdfTermKey spelling, boolean preserveRepresentative) {
 		synchronized (stripe) {
 			checkOpen();
+			NativeRuntimeValueSpill spilled = spill;
+			if (spilled != null) {
+				return spilled.intern(value, unresolved);
+			}
 			Index index = stripe.index;
 			// With append-only slots, an unchanged empty terminator proves no equal key was inserted since probing.
 			// Recheck the descriptor too: resize/hardening may change both the position and the hashing policy.
@@ -270,7 +324,71 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 			if (!stripe.index.hardened) {
 				resize(stripe, stripe.index.slots.length, true);
 			}
-			return intern(value, unresolved, spelling, preserveRepresentative);
+			return internMemory(value, unresolved, spelling, preserveRepresentative);
+		}
+	}
+
+	/** Allocation refusal reaches here only after every recursively entered writer stripe has unwound. */
+	private NativeRuntimeValueSpill spill(int stripeIndex) {
+		if (stripeIndex < stripes.length) {
+			synchronized (stripes[stripeIndex]) {
+				return spill(stripeIndex + 1);
+			}
+		}
+		checkOpen();
+		if (spill != null) {
+			return spill;
+		}
+		NativeRuntimeValueSpill replacement = null;
+		try (NativeExecutionPhaseEvent.Span phase = NativeExecutionPhaseEvent.start("spill", cancellation)) {
+			replacement = new NativeRuntimeValueSpill(nextId, count, cancellation, representative);
+			for (int pageIndex = 0; pageIndex < pages.length; pageIndex++) {
+				Page page = pages[pageIndex];
+				if (page == null) {
+					continue;
+				}
+				for (int offset = 0; offset < PAGE_SIZE; offset++) {
+					cancellation.poll(offset);
+					long word = page.metadata[offset];
+					if (word != 0L) {
+						long id = RUNTIME_INTERN_BASE + ((long) pageIndex << PAGE_SHIFT) + offset;
+						replacement.copy(id, page.values[offset], word);
+					}
+				}
+			}
+			ConcurrentHashMap<Long, SparseValue> sparseValues = sparse;
+			if (sparseValues != null) {
+				for (var entry : sparseValues.entrySet()) {
+					cancellation.check();
+					replacement.copy(entry.getKey(), entry.getValue().value, entry.getValue().metadata);
+				}
+			}
+			checkOpen();
+			spill = replacement; // publication precedes detaching every old index and payload directory
+			for (Stripe stripe : stripes) {
+				stripe.index = EMPTY_INDEX;
+			}
+			pages = NO_PAGES;
+			sparse = null;
+			release(bytes.get() - PERMANENT_BYTES);
+			phase.complete();
+			return replacement;
+		} catch (Throwable failure) {
+			if (replacement != null && spill != replacement) {
+				failure = KernelRuntime.closeResource(replacement, failure);
+			}
+			if (failure instanceof IOException io) {
+				throw new UncheckedIOException("Runtime-value migration failed", io);
+			}
+			NativeContextClosingIteration.throwFailure(failure);
+			throw new AssertionError("unreachable");
+		}
+	}
+
+	/** Shared-budget pressure never holds the budget monitor while waiting for a table's writers. */
+	private synchronized void spillForWorkspace() {
+		if (!closed && spill == null && bytes.get() > PERMANENT_BYTES) {
+			spill(0);
 		}
 	}
 
@@ -329,6 +447,10 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 
 	/** An acquired hash entry already publishes this payload. Do not repeat the metadata ownership probe here. */
 	private Value publishedValue(long entry) {
+		NativeRuntimeValueSpill spilled = spill;
+		if (spilled != null) {
+			return spilled.valueOf(idOfEntry(entry));
+		}
 		long ordinal = (entry & 0xffff_ffffL) - 1L;
 		if (ordinal < DENSE_LIMIT) {
 			Page[] directory = pages;
@@ -339,7 +461,8 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 					return page.values[(int) ordinal & PAGE_MASK];
 				}
 			}
-			return null; // a concurrent close detached the pages; insertion's closed check fails the query
+			spilled = spill;
+			return spilled == null ? null : spilled.valueOf(idOfEntry(entry));
 		}
 		ConcurrentHashMap<Long, SparseValue> map = sparse;
 		SparseValue value = map == null ? null : map.get(RUNTIME_INTERN_BASE + ordinal);
@@ -360,6 +483,10 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 	}
 
 	Value valueOf(long id) {
+		NativeRuntimeValueSpill spilled = spill;
+		if (spilled != null) {
+			return spilled.valueOf(id);
+		}
 		long ordinal = id - RUNTIME_INTERN_BASE;
 		if (Long.compareUnsigned(ordinal, DENSE_LIMIT) < 0) {
 			Page[] directory = pages;
@@ -371,14 +498,20 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 					return page.values[offset];
 				}
 			}
-			return null;
+			spilled = spill;
+			return spilled == null ? null : spilled.valueOf(id);
 		}
 		ConcurrentHashMap<Long, SparseValue> map = sparse;
 		SparseValue value = map == null ? null : map.get(id);
-		return value == null ? null : value.value;
+		spilled = spill;
+		return value == null ? spilled == null ? null : spilled.valueOf(id) : value.value;
 	}
 
 	private long metadata(long id) {
+		NativeRuntimeValueSpill spilled = spill;
+		if (spilled != null) {
+			return spilled.metadata(id);
+		}
 		long ordinal = id - RUNTIME_INTERN_BASE;
 		if (Long.compareUnsigned(ordinal, DENSE_LIMIT) < 0) {
 			Page[] directory = pages;
@@ -389,11 +522,13 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 					return (long) LONGS.getAcquire(page.metadata, (int) ordinal & PAGE_MASK);
 				}
 			}
-			return 0L;
+			spilled = spill;
+			return spilled == null ? 0L : spilled.metadata(id);
 		}
 		ConcurrentHashMap<Long, SparseValue> map = sparse;
 		SparseValue value = map == null ? null : map.get(id);
-		return value == null ? 0L : value.metadata;
+		spilled = spill;
+		return value == null ? spilled == null ? 0L : spilled.metadata(id) : value.metadata;
 	}
 
 	private void publish(long ordinal, Value value, long metadata) {
@@ -475,7 +610,9 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 	}
 
 	private void reserve(long amount) {
-		budget.reserve(amount);
+		if (!budget.tryReserve(amount)) {
+			throw new SpillRequired();
+		}
 		bytes.addAndGet(amount);
 	}
 
@@ -511,7 +648,14 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 			pages = NO_PAGES;
 			sparse = null;
 			count.set(0);
-			budget.release(bytes.getAndSet(0L));
+			try {
+				if (spill != null) {
+					spill.close();
+				}
+			} finally {
+				budget.unregister(this);
+				budget.release(bytes.getAndSet(0L));
+			}
 		}
 	}
 
@@ -553,7 +697,7 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 	}
 
 	/** Exact spelling first: duplicate aliases need neither RDF case-folding nor a canonical-payload read. */
-	private static boolean sameSpelling(Value left, Value right) {
+	static boolean sameSpelling(Value left, Value right) {
 		if (left == right) {
 			return true;
 		}
@@ -584,7 +728,7 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 	}
 
 	/** Slow-path content hash is independent of Java's polynomial String hash, including its Aa/BB collision family. */
-	private static int contentHash(Value value, long seed) {
+	static int contentHash(Value value, long seed) {
 		long hash;
 		if (value instanceof Literal literal) {
 			hash = textHash(literal.getLabel(), seed);
@@ -624,7 +768,7 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 	/**
 	 * Conservative charge for standard RDF Values. This is not a heap-graph/RSS measurement of arbitrary subclasses.
 	 */
-	private static long retainedValueBytes(Value value, int depth) {
+	static long retainedValueBytes(Value value, int depth) {
 		if (depth > 256) {
 			throw new QueryEvaluationException("Runtime triple-term nesting exceeds 256 levels");
 		}
@@ -646,34 +790,78 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 	}
 
 	/**
-	 * Shared by nested contexts of one query. Limits admission; it does not evict live IDs or pretend to spill Values.
+	 * Shared by nested contexts of one query. Payload owners can release heap under admission pressure without changing
+	 * any live ID; irreducible per-owner spill workspace must still fit the common limit and query ledger.
 	 */
 	static final class Budget {
 		private final long limit;
+		private final KernelRuntime.AggregateMemory memory;
 		private long used;
 		private long peak;
+		private final IdentityHashMap<NativeRuntimeValueTable, Boolean> owners = new IdentityHashMap<>();
 
 		Budget(long limit) {
+			this(limit, null);
+		}
+
+		Budget(long limit, LmdbQueryMemoryManager.QueryLedger ledger) {
 			if (limit <= 0L) {
 				throw new IllegalArgumentException(MAX_BYTES_PROPERTY + " must be positive");
 			}
 			this.limit = limit;
+			this.memory = ledger == null ? null : KernelRuntime.AggregateMemory.forLedger(ledger);
 		}
 
 		static Budget configured() {
+			return configured(null);
+		}
+
+		static Budget configured(LmdbQueryMemoryManager.QueryLedger ledger) {
 			String property = System.getProperty(MAX_BYTES_PROPERTY);
 			long defaultLimit = Math.max(16L << 20, Math.min(512L << 20, Runtime.getRuntime().maxMemory() / 8L));
-			return new Budget(property == null ? defaultLimit : Long.parseLong(property));
+			return new Budget(property == null ? defaultLimit : Long.parseLong(property), ledger);
 		}
 
 		synchronized void reserve(long amount) {
-			if (amount < 0L || amount > limit - used) {
+			if (!tryReserve(amount)) {
 				throw new QueryEvaluationException("Runtime-value memory admission refused: requested=" + amount
 						+ ", accounted=" + used + ", limit=" + limit + "; configure " + MAX_BYTES_PROPERTY
-						+ " or reduce generated-key cardinality. Runtime payload spilling is not implemented.");
+						+ "; runtime spill workspace must fit the query ledger and this limit.");
+			}
+		}
+
+		void reserveTableWorkspace(long amount) {
+			if (tryReserve(amount)) {
+				return;
+			}
+			NativeRuntimeValueTable[] candidates;
+			synchronized (this) {
+				candidates = owners.keySet().toArray(NativeRuntimeValueTable[]::new);
+			}
+			for (NativeRuntimeValueTable candidate : candidates) {
+				candidate.spillForWorkspace();
+				if (tryReserve(amount)) {
+					return;
+				}
+			}
+			reserve(amount);
+		}
+
+		synchronized void register(NativeRuntimeValueTable owner) {
+			owners.put(owner, Boolean.TRUE);
+		}
+
+		synchronized void unregister(NativeRuntimeValueTable owner) {
+			owners.remove(owner);
+		}
+
+		synchronized boolean tryReserve(long amount) {
+			if (amount < 0L || amount > limit - used || memory != null && !memory.tryReserve(amount)) {
+				return false;
 			}
 			used += amount;
 			peak = Math.max(peak, used);
+			return true;
 		}
 
 		synchronized void release(long amount) {
@@ -681,6 +869,9 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 				throw new IllegalStateException("Unbalanced runtime-value accounting");
 			}
 			used -= amount;
+			if (memory != null) {
+				memory.release(amount);
+			}
 		}
 
 		synchronized long usedBytes() {
@@ -707,5 +898,11 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 	}
 
 	private record SparseValue(Value value, long metadata) {
+	}
+
+	private static final class SpillRequired extends RuntimeException {
+		private SpillRequired() {
+			super(null, null, true, false);
+		}
 	}
 }

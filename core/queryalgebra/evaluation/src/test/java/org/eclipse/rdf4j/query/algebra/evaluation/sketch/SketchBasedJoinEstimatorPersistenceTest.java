@@ -58,6 +58,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.AbstractStatement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -91,6 +92,127 @@ class SketchBasedJoinEstimatorPersistenceTest {
 				.withThrottleEveryN(1)
 				.withThrottleMillis(0)
 				.withRefreshSleepMillis(5);
+	}
+
+	@Test
+	void interruptedExplicitDiscardDrainsOldAsyncAndQueuedUpdatesBeforeClearing(@TempDir Path tempDir)
+			throws Exception {
+		IRI livePredicate = VF.createIRI("urn:discard:live-predicate");
+		IRI oldPredicate = VF.createIRI("urn:discard:obsolete-predicate");
+		StubSketchStatementSource source = new StubSketchStatementSource();
+		source.add(st(VF.createIRI("urn:discard:live"), livePredicate, VF.createIRI("urn:discard:value")));
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(source,
+				smallConfig().withIncrementalQueueInitialLimit(1));
+		estimator.configurePersistence(tempDir.resolve("join-estimator.rjes"), false);
+		CountDownLatch entered = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		AtomicBoolean finished = new AtomicBoolean();
+		AtomicBoolean interruptRestored = new AtomicBoolean();
+		Thread discarder = new Thread(() -> {
+			Thread.currentThread().interrupt();
+			try {
+				estimator.discardAndMarkForRebuild();
+				interruptRestored.set(Thread.currentThread().isInterrupted());
+			} catch (Throwable problem) {
+				failure.set(problem);
+			} finally {
+				finished.set(true);
+			}
+		}, "SketchEstimator-DiscardWithInFlightUpdates");
+		try {
+			estimator.rebuild();
+			assertTrue(estimator.persistIfDirty());
+			estimator.addStatement(new AbstractStatement() {
+				@Override
+				public Resource getSubject() {
+					entered.countDown();
+					awaitUninterruptibly(release);
+					return VF.createIRI("urn:discard:in-flight");
+				}
+
+				@Override
+				public IRI getPredicate() {
+					return oldPredicate;
+				}
+
+				@Override
+				public Value getObject() {
+					return VF.createIRI("urn:discard:old-value");
+				}
+
+				@Override
+				public Resource getContext() {
+					return null;
+				}
+			});
+			assertTrue(entered.await(10L, TimeUnit.SECONDS), "an actual async conversion must be held");
+			estimator.addStatement(st(VF.createIRI("urn:discard:queued"), oldPredicate,
+					VF.createIRI("urn:discard:queued-value")));
+			assertEquals(1, estimator.debugPendingIncrementalCount());
+			discarder.start();
+			long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10L);
+			while (!finished.get() && discarder.getState() != Thread.State.WAITING && System.nanoTime() < deadline) {
+				Thread.yield();
+			}
+			assertFalse(finished.get(), "discard cannot finish before an admitted old async batch settles");
+			release.countDown();
+			discarder.join(TimeUnit.SECONDS.toMillis(10L));
+			assertFalse(discarder.isAlive());
+			assertNull(failure.get());
+			assertTrue(interruptRestored.get());
+			assertFalse(estimator.isReadyNonBlocking());
+			assertTrue(estimator.debugResidentSketches().isEmpty());
+			assertEquals(0, estimator.debugPendingIncrementalCount());
+			estimator.rebuild();
+			assertTrue(estimator.isReadyNonBlocking());
+			assertEquals(0.0d, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P,
+					oldPredicate.stringValue()), "old queued or in-flight observations cannot reappear after rebuild");
+		} finally {
+			release.countDown();
+			if (discarder.isAlive()) {
+				discarder.join(TimeUnit.SECONDS.toMillis(10L));
+			}
+			estimator.close();
+		}
+	}
+
+	@Test
+	void explicitDiscardInvalidatesResidentStateWhenPersistenceFails(@TempDir Path tempDir) throws Exception {
+		IRI predicate = VF.createIRI("urn:discard:p");
+		StubSketchStatementSource source = new StubSketchStatementSource();
+		source.add(st(VF.createIRI("urn:discard:s"), predicate, VF.createIRI("urn:discard:o")));
+		Path snapshot = tempDir.resolve("join-estimator.rjes");
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(source, smallConfig());
+		estimator.configurePersistence(snapshot, false);
+		try {
+			estimator.rebuild();
+			assertTrue(estimator.isReadyNonBlocking());
+			assertTrue(estimator.persistIfDirty());
+			Path metadata = snapshot.resolve("metadata.bin");
+			Path retainedMetadata = snapshot.resolve("metadata-retained.bin");
+			Files.move(metadata, retainedMetadata);
+			Files.createDirectory(metadata);
+			Files.writeString(metadata.resolve("occupied"), "force replacement failure");
+			try {
+				estimator.addStatement(st(VF.createIRI("urn:discard:later"), predicate,
+						VF.createIRI("urn:discard:later-object")));
+				assertFalse(estimator.persistIfDirty(), "the native file replacement must actually fail");
+				estimator.unload();
+				assertTrue(estimator.isReadyNonBlocking(), "ordinary unload retains unsaved resident state");
+				estimator.discardAndMarkForRebuild();
+				assertFalse(estimator.isReadyNonBlocking(),
+						"explicit discard must require rebuild even when obsolete state cannot be persisted");
+				assertTrue(estimator.debugResidentSketches().isEmpty(),
+						"discarded observations cannot remain resident");
+				assertEquals(0, estimator.debugPendingIncrementalCount());
+			} finally {
+				Files.move(metadata, snapshot.resolve("metadata-blocking-directory"));
+				Files.move(retainedMetadata, metadata);
+			}
+		} finally {
+			estimator.close();
+		}
 	}
 
 	@Test

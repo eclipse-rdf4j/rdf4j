@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.bulk;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -24,11 +25,19 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
+import java.util.TreeMap;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.Statement;
@@ -39,10 +48,13 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.bulk.LmdbBulkLoadGeneration.PublicationStage;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** Real child-JVM termination at publication boundaries; this does not simulate loss of the host/device cache. */
 class LmdbBulkLoadPublicationRecoveryTest {
@@ -59,6 +71,167 @@ class LmdbBulkLoadPublicationRecoveryTest {
 
 	@TempDir
 	Path temporaryDirectory;
+
+	@ParameterizedTest
+	@ValueSource(strings = { "policies", "preparation" })
+	void refusesOlderPublishedCapacityContractWithoutChangingItsStoreOrWorkspace(String missing) throws Exception {
+		Path target = temporaryDirectory.resolve("old-published-" + missing);
+		interruptCompletedPublication(target);
+		rewriteOlderCapacityState(target, missing);
+		Map<Path, byte[]> storeBefore = snapshotFiles(target);
+		Path workspace = BulkLoadWorkspace.controlDirectory(target);
+		Map<Path, byte[]> workspaceBefore = snapshotFiles(workspace);
+
+		IOException failure = assertThrows(IOException.class,
+				() -> builder(target).build().load(new UnreadableInput(), "urn:must-not-be-read:", RDFFormat.NQUADS));
+
+		assertTrue(failure.getMessage().contains("capacity"), failure.getMessage());
+		assertTrue(failure.getMessage().contains("older"), failure.getMessage());
+		assertSnapshotEquals(storeBefore, snapshotFiles(target));
+		assertSnapshotEquals(workspaceBefore, snapshotFiles(workspace));
+		assertEquals(EXPECTED, read(target), "the published store remains valid under its prior contract");
+	}
+
+	@Test
+	void recoversPublishedCapacityPoliciesWithoutReadingInput() throws Exception {
+		Path target = temporaryDirectory.resolve("new-published-capacity");
+		interruptCompletedPublication(target);
+		LmdbBulkLoader.Result result = builder(target).build()
+				.load(new UnreadableInput(), "urn:must-not-be-read:",
+						RDFFormat.NQUADS);
+		assertEquals(2L, result.storedStatements());
+		assertFalse(Files.exists(target.resolve(LmdbBulkLoadGeneration.MANIFEST_FILE_NAME)));
+		assertFalse(Files.exists(BulkLoadWorkspace.controlDirectory(target)));
+		assertEquals(EXPECTED, read(target));
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "value,ARTIFACT_MOVED", "triple,ARTIFACT_MOVED", "indexes,ARTIFACT_MOVED",
+			"value,MARKER_REMOVAL_DURABLE", "triple,MARKER_REMOVAL_DURABLE", "indexes,MARKER_REMOVAL_DURABLE" })
+	void rejectsConflictingPublishedResumeBeforeChangingArtifacts(String changed, PublicationStage cut)
+			throws Exception {
+		Path target = temporaryDirectory.resolve("conflicting-published-" + changed + "-" + cut);
+		interruptPublication(target, cut);
+		Map<Path, byte[]> storeBefore = snapshotFiles(target);
+		Path workspace = BulkLoadWorkspace.controlDirectory(target);
+		Map<Path, byte[]> workspaceBefore = snapshotFiles(workspace);
+		LmdbBulkLoader.Builder conflicting = builder(target,
+				new LmdbStoreConfig(changed.equals("indexes") ? "spoc,posc" : "spoc,psoc"));
+		if (changed.equals("value")) {
+			conflicting.valueCapacity(BulkCapacityPolicy.factor(2));
+		} else if (changed.equals("triple")) {
+			conflicting.tripleCapacity(BulkCapacityPolicy.factor(2));
+		}
+
+		IOException failure = assertThrows(IOException.class,
+				() -> conflicting.build().load(new UnreadableInput(), "urn:must-not-be-read:", RDFFormat.NQUADS));
+
+		assertTrue(failure.getMessage().contains("different configuration"), failure.getMessage());
+		assertSnapshotEquals(storeBefore, snapshotFiles(target));
+		assertSnapshotEquals(workspaceBefore, snapshotFiles(workspace));
+		LmdbBulkLoader.Result result = builder(target).build()
+				.load(new UnreadableInput(), "urn:must-not-be-read:", RDFFormat.NQUADS);
+		assertEquals(2L, result.storedStatements());
+		assertFalse(Files.exists(workspace));
+		assertFalse(Files.exists(target.resolve(LmdbBulkLoadGeneration.MANIFEST_FILE_NAME)));
+		assertEquals(EXPECTED, read(target));
+	}
+
+	@Test
+	void preparesUnpublishedOlderWorkspaceWithNewDefaultCapacityPolicies() throws Exception {
+		Path target = temporaryDirectory.resolve("old-unpublished-capacity");
+		AtomicBoolean staged = new AtomicBoolean();
+		assertThrows(CancellationException.class, () -> builder(target).progressListener(progress -> {
+			if (progress.phase() == BulkLoadPhase.STAGE_INPUTS && progress.phaseComplete()) {
+				staged.set(true);
+			}
+		})
+				.cancellationSignal(staged::get)
+				.build()
+				.load(new ByteArrayInputStream(INPUT.getBytes(UTF_8)), "urn:test:",
+						RDFFormat.NQUADS));
+		rewriteOlderCapacityState(target, "policies");
+		LmdbBulkLoader.Result result = builder(target).build()
+				.load(new UnreadableInput(), "urn:must-not-be-read:",
+						RDFFormat.NQUADS);
+		assertEquals(2L, result.storedStatements());
+		assertFalse(Files.exists(BulkLoadWorkspace.controlDirectory(target)));
+		assertEquals(EXPECTED, read(target));
+	}
+
+	private static void interruptCompletedPublication(Path target) throws IOException {
+		interruptPublication(target, PublicationStage.MARKER_REMOVAL_DURABLE);
+	}
+
+	private static void interruptPublication(Path target, PublicationStage cut) throws IOException {
+		IOException failure = assertThrows(IOException.class,
+				() -> builder(target).valueCapacity(BulkCapacityPolicy.minimumBytes(64L * 1024 * 1024))
+						.tripleCapacity(BulkCapacityPolicy.factor(3))
+						.publicationHook(new LmdbBulkLoadGeneration.PromotionHook() {
+							@Override
+							public void beforeMove(int index, Path source, Path destination) {
+							}
+
+							@Override
+							public void onStage(PublicationStage stage) throws IOException {
+								if (stage == cut) {
+									throw new IOException("test completed-publication cutoff");
+								}
+							}
+						})
+						.build()
+						.load(new ByteArrayInputStream(INPUT.getBytes(UTF_8)), "urn:test:", RDFFormat.NQUADS));
+		assertTrue(failure.getMessage().contains("test completed-publication cutoff"));
+		assertTrue(Files.exists(target.resolve(LmdbBulkLoadGeneration.MANIFEST_FILE_NAME)));
+		assertEquals(cut == PublicationStage.ARTIFACT_MOVED,
+				Files.exists(target.resolve(LmdbBulkLoadGeneration.MARKER_FILE_NAME)));
+	}
+
+	/** Writes a valid historical state revision; a stale checksum would only test corruption fallback. */
+	private static void rewriteOlderCapacityState(Path target, String missing) throws Exception {
+		for (String name : List.of("state.properties", "state.previous.properties")) {
+			Path path = BulkLoadWorkspace.controlDirectory(target).resolve(name);
+			if (!Files.exists(path)) {
+				continue;
+			}
+			Properties properties = new Properties();
+			try (var input = Files.newInputStream(path)) {
+				properties.load(input);
+			}
+			if (missing.equals("policies")) {
+				properties.remove("loader.value-capacity");
+				properties.remove("loader.triple-capacity");
+			} else {
+				properties.remove("capacity.preparation.version");
+			}
+			MessageDigest digest = MessageDigest.getInstance("SHA-256");
+			properties.stringPropertyNames().stream().filter(key -> !key.equals("checksum")).sorted().forEach(key -> {
+				digest.update(key.getBytes(UTF_8));
+				digest.update((byte) '=');
+				digest.update(properties.getProperty(key).getBytes(UTF_8));
+				digest.update((byte) '\n');
+			});
+			properties.setProperty("checksum", HexFormat.of().formatHex(digest.digest()));
+			try (var output = Files.newOutputStream(path)) {
+				properties.store(output, "Historical bulk capacity state fixture");
+			}
+		}
+	}
+
+	private static Map<Path, byte[]> snapshotFiles(Path root) throws IOException {
+		Map<Path, byte[]> files = new TreeMap<>();
+		try (var paths = Files.walk(root)) {
+			for (Path path : paths.filter(Files::isRegularFile).toList()) {
+				files.put(root.relativize(path), Files.readAllBytes(path));
+			}
+		}
+		return files;
+	}
+
+	private static void assertSnapshotEquals(Map<Path, byte[]> expected, Map<Path, byte[]> actual) {
+		assertEquals(expected.keySet(), actual.keySet());
+		expected.forEach((path, bytes) -> assertArrayEquals(bytes, actual.get(path), path.toString()));
+	}
 
 	@ParameterizedTest
 	@EnumSource(value = PublicationStage.class, names = { "MANIFEST_DURABLE", "ARTIFACT_MOVED", "GENERATION_REMOVED",
@@ -114,7 +287,11 @@ class LmdbBulkLoadPublicationRecoveryTest {
 	}
 
 	private static LmdbBulkLoader.Builder builder(Path target) {
-		return LmdbBulkLoader.builder(target, new LmdbStoreConfig("spoc,psoc"))
+		return builder(target, new LmdbStoreConfig("spoc,psoc"));
+	}
+
+	private static LmdbBulkLoader.Builder builder(Path target, LmdbStoreConfig config) {
+		return LmdbBulkLoader.builder(target, config)
 				.parserMode(LmdbBulkLoader.ParserMode.FAST)
 				.partitionCount(4)
 				.workers(1)
@@ -123,11 +300,14 @@ class LmdbBulkLoadPublicationRecoveryTest {
 	}
 
 	private static Set<Statement> read(Path target) {
-		SailRepository repository = new SailRepository(
-				new LmdbStore(target.toFile(), new LmdbStoreConfig("spoc,psoc")));
+		LmdbStore store = new LmdbStore(target.toFile(), new LmdbStoreConfig("spoc,psoc"));
+		SailRepository repository = new SailRepository(store);
 		repository.init();
 		try (RepositoryConnection connection = repository.getConnection();
 				var statements = connection.getStatements(null, null, null, false)) {
+			assertTrue(store.getStartupStatus().exactReferenceCounts(),
+					"a fully validated published bulk generation must carry exact owner-count authority");
+			assertFalse(store.getStartupStatus().referenceCountVerificationPending());
 			return statements.stream().collect(Collectors.toSet());
 		} finally {
 			repository.shutDown();

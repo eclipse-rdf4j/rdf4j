@@ -76,6 +76,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -1441,6 +1442,10 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				return List.of();
 			}
 
+			if (tupleExpr instanceof TupleFunctionCall call) {
+				return TupleFunctionMagicPropertyOptimizer.variables(call);
+			}
+
 			return new StatementPatternVarCollector(tupleExpr).getVars();
 		}
 
@@ -2396,6 +2401,21 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				// variables
 				// look like ordinary outer join bindings during cost-based reordering.
 				node.getLeftArg().visit(this);
+			}
+
+			@Override
+			public void meetOther(QueryModelNode node) throws Exception {
+				if (node instanceof TupleFunctionCall call) {
+					// a tuple function consumes its argument variables and produces its result variables
+					List<Var> callVars = TupleFunctionMagicPropertyOptimizer.variables(call);
+					if (vars == null) {
+						vars = new ArrayList<>(callVars);
+					} else {
+						vars.addAll(callVars);
+					}
+				} else {
+					super.meetOther(node);
+				}
 			}
 
 			public List<Var> getVars() {

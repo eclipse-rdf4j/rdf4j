@@ -21,9 +21,9 @@ import org.eclipse.rdf4j.model.Value;
 
 /**
  * {@link NativeTermAuthority} over one evaluation: the LMDB store (via a {@link NativeLmdbQuerySource} delegate), one
- * compiled root's {@link PlanValueCatalog}, and one {@link NativeExecutionContext}. One instance exists per evaluation;
- * its {@link #token()} is its own identity, so raw-id copying is legal exactly within one evaluation of one compiled
- * plan.
+ * compiled root's {@link PlanValueCatalog}, and one {@link NativeExecutionContext}. Its {@link #token()} is its own
+ * identity. Separate facades may also copy ids when they carry the same explicit complete synthetic-id-space proof and
+ * identical plan catalog; every other transfer resolves the source value in the destination authority.
  */
 @Experimental
 final class LmdbNativeTermAuthority implements NativeTermAuthority {
@@ -32,12 +32,20 @@ final class LmdbNativeTermAuthority implements NativeTermAuthority {
 	private final PlanValueCatalog catalog;
 	private final NativeExecutionContext context;
 	private final NativeCanonicalTermKeys canonicalKeys;
+	/** Exact complete synthetic id space shared only by proven same-catalog wrappers; null is conservative. */
+	private final Object completeSyntheticIdSpace;
 	private volatile NativeValueResolver values;
 
 	LmdbNativeTermAuthority(NativeLmdbQuerySource store, PlanValueCatalog catalog, NativeExecutionContext context) {
+		this(store, catalog, context, null);
+	}
+
+	LmdbNativeTermAuthority(NativeLmdbQuerySource store, PlanValueCatalog catalog, NativeExecutionContext context,
+			Object completeSyntheticIdSpace) {
 		this.store = store;
 		this.catalog = catalog;
 		this.context = context;
+		this.completeSyntheticIdSpace = completeSyntheticIdSpace;
 		// The proof belongs to the complete backing source. A nested spelling-preserving synthetic source is not
 		// a canonical dictionary, even if its underlying physical store is; retain semantic fallback there.
 		this.canonicalKeys = store.hasCanonicalIds() && !(store instanceof SyntheticValueSource)
@@ -190,6 +198,14 @@ final class LmdbNativeTermAuthority implements NativeTermAuthority {
 			return sourceId;
 		}
 		if (sourceId == UNKNOWN || sourceId == NULL_CONTEXT_ID) {
+			return sourceId;
+		}
+		if (source instanceof LmdbNativeTermAuthority other
+				&& completeSyntheticIdSpace != null
+				&& completeSyntheticIdSpace == other.completeSyntheticIdSpace
+				&& catalog == other.catalog) {
+			// Synthetic wrappers can use different authorities while sharing the complete store/catalog/runtime id
+			// space. The identity proof is established by SyntheticValueSource only for those shared-term contexts.
 			return sourceId;
 		}
 		Value value = source.valueOf(sourceId);

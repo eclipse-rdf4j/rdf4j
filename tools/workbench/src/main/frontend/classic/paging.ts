@@ -103,6 +103,7 @@ namespace workbench {
             form.appendChild(createHiddenInput(name, value));
 
             document.body.appendChild(form);
+            workbench.protectSubmittedForm(form);
             form.submit();
             document.body.removeChild(form);
         }
@@ -122,6 +123,7 @@ namespace workbench {
             form.appendChild(createHiddenInput(name, value));
 
             document.body.appendChild(form);
+            workbench.protectSubmittedForm(form);
             form.submit();
             document.body.removeChild(form);
         }

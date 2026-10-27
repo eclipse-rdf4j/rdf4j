@@ -101,7 +101,7 @@ public final class LmdbNativeExpressionCompiler {
 			QueryEvaluationContext compileContext) {
 		this.slots = slots;
 		this.scalar = new LmdbNativeScalarExpressionCompiler(source, codec, slots, assuredMask, allowVolatile,
-				scopedEvaluation, compileContext);
+				scopedEvaluation, compileContext, this::compileValue);
 		this.strictCompare = strictCompare;
 		this.assuredMask = assuredMask;
 		this.inlineResultsAvailable = codec.inlinesLiterals();
@@ -689,6 +689,33 @@ public final class LmdbNativeExpressionCompiler {
 			// a type test over an unbound argument is a SPARQL type error, so NOT must not flip it to TRUE
 			if ((checkBound && id == NativeLmdbQuerySource.UNKNOWN_ID) || id == 0L) {
 				return ERROR;
+			}
+			NativeTermAuthority authority = row.termAuthority();
+			if (authority != null && authority.kind(id) != NativeIdKind.STORE) {
+				// Synthetic namespaces have no stored type-bit contract. Resolve only these terms; ordinary stored
+				// inputs retain their primitive, allocation-free classifier below.
+				Value value = authority.valueOf(id);
+				if (value == null) {
+					return ERROR;
+				}
+				boolean result;
+				if (expr instanceof IsURI) {
+					result = value.isIRI();
+				} else if (expr instanceof IsResource) {
+					result = value.isResource();
+				} else if (expr instanceof IsLiteral) {
+					result = value.isLiteral();
+				} else if (expr instanceof IsBNode) {
+					result = value.isBNode();
+				} else if (expr instanceof IsTriple) {
+					result = value.isTripleTerm();
+				} else {
+					CoreDatatype.XSD xsd = value instanceof Literal literal
+							? literal.getCoreDatatype().asXSDDatatypeOrNull()
+							: null;
+					result = xsd != null && xsd.isNumericDatatype();
+				}
+				return result ? TRUE : FALSE;
 			}
 			int type = ValueIds.getIdType(id);
 			boolean result;

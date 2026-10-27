@@ -77,6 +77,7 @@ final class GenericSubplanDescriptor {
 
 	static GenericSubplanDescriptor create(QueryModelNode expr, LmdbNativeEvaluationStrategy strategy) {
 		QueryModelNode pinned = expr.clone();
+		NativeGraphFusion.preserveLexicalScopes(expr, pinned);
 		NativeValuePositionAnalysis positions = strategy == null ? null : strategy.copyValuePositions(expr, pinned);
 		pinned = QueryEvaluationUtility.pinFunctions(pinned);
 		if (pinned instanceof TupleExpr) {

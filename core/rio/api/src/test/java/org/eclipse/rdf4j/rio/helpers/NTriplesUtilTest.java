@@ -151,6 +151,40 @@ public class NTriplesUtilTest {
 	}
 
 	@Test
+	public void deepNestedTripleTerm() {
+		int depth = 8192;
+		StringBuilder input = new StringBuilder(depth * 23 + 8);
+		for (int i = 0; i < depth; i++) {
+			input.append("<<(<urn:s><urn:p>");
+		}
+		input.append("<urn:o>");
+		for (int i = 0; i < depth; i++) {
+			input.append(")>>");
+		}
+
+		Value parsed = NTriplesUtil.parseTriple(input.toString(), f);
+		for (int i = 0; i < depth; i++) {
+			parsed = ((TripleTerm) parsed).getObject();
+		}
+		assertEquals(f.createIRI("urn:o"), parsed);
+	}
+
+	@Test
+	public void malformedDeepNestedTripleTermFailsWithParseError() {
+		int depth = 8192;
+		StringBuilder input = new StringBuilder(depth * 23 + 8);
+		for (int i = 0; i < depth; i++) {
+			input.append("<<(<urn:s><urn:p>");
+		}
+		input.append("<urn:o>");
+		for (int i = 1; i < depth; i++) {
+			input.append(")>>");
+		}
+
+		assertThrows(IllegalArgumentException.class, () -> NTriplesUtil.parseTriple(input.toString(), f));
+	}
+
+	@Test
 	public void testParseIRIvsTriple() {
 		assertThrows(IllegalArgumentException.class, () -> NTriplesUtil.parseURI("<<<urn:a><urn:b><urn:c>>>", f));
 	}

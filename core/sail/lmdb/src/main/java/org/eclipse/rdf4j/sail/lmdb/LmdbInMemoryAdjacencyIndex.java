@@ -358,6 +358,11 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 		return findRunByOrdinal(rawKey, plane, bindPredicate(rawPredicateId, searchContext), searchContext);
 	}
 
+	long findRun(long rawKey, int plane, long rawPredicateId, LmdbAdjacencyLookupContext searchContext,
+			long rawContext) {
+		return findRunByOrdinal(rawKey, plane, bindPredicate(rawPredicateId, searchContext), searchContext, rawContext);
+	}
+
 	/**
 	 * {@link #bindPredicate(long)} memoized on the caller-owned {@code searchContext}. A probe keeps one context for
 	 * its lifetime and re-opens against the same bound predicate, so the coverage check and the predicate-catalog
@@ -396,12 +401,17 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 	 */
 	long findRunByOrdinal(long rawKey, int plane, long predicateOrdinal,
 			LmdbAdjacencyLookupContext searchContext) {
+		return findRunByOrdinal(rawKey, plane, predicateOrdinal, searchContext, -1L);
+	}
+
+	long findRunByOrdinal(long rawKey, int plane, long predicateOrdinal,
+			LmdbAdjacencyLookupContext searchContext, long rawContext) {
 		if (predicateOrdinal < 0) {
 			return predicateOrdinal;
 		}
-		long localReference = searchContext == null
-				? csfBase.findLocalReference(predicateOrdinal, plane, rawKey)
-				: csfBase.findLocalReference(predicateOrdinal, plane, rawKey, searchContext.csfCursor());
+		long localReference = csfBase.findLocalReference(predicateOrdinal, plane, rawKey,
+				searchContext == null ? new ImmutablePagedQuadCsfIndex.LookupCursor() : searchContext.csfCursor(),
+				rawContext);
 		return localReference == 0 ? NOT_FOUND : arenaCatalog.packCsfHandle(localReference);
 	}
 

@@ -605,18 +605,17 @@ public class LmdbNativeParallelPipelinesTest {
 	}
 
 	@Test
-	public void statefulWitnessKeepsRepeatedVariableQueryOutOfParallelWorkers() {
+	public void pureWitnessRebindsInsideRepeatedVariableParallelWorkers() {
 		int roots = 128;
 		String query = "SELECT ?subject ?value WHERE { " + repeatedVariableBody(roots)
 				+ " FILTER EXISTS { ?value <" + EX + "repeatedSelectWitness> ?witness } }";
 		long parallelBefore = LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get();
 
-		assertThat(rows(query)).hasSize(roots)
+		assertThat(rows(query, true, "parallelPipelines")).hasSize(roots)
 				.containsExactlyElementsOf(rowsWithProperty(NATIVE_FLAG, "false", query));
-		assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get()).isEqualTo(parallelBefore);
-		assertThat(LmdbNativeParallelPipelines.LAST_REJECTION.get()).isEqualTo("stateful-filter");
-		// The witness and the outer query can use serial specialists. Their global counters do not describe
-		// whether this filter was admitted to the parallel worker plan.
+		assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get())
+				.as("the pure witness must bind independent memo and source owners inside actual ordinary workers")
+				.isEqualTo(parallelBefore + 1L);
 	}
 
 	@Test

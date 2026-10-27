@@ -26,12 +26,15 @@ import java.util.Map;
 import org.apache.catalina.Context;
 import org.eclipse.rdf4j.common.platform.Platform;
 import org.eclipse.rdf4j.common.platform.PlatformFactory;
+import org.eclipse.rdf4j.common.webapp.system.logging.LoggingAccessFilter;
 import org.eclipse.rdf4j.http.server.compression.HttpCompressionFilter;
+import org.eclipse.rdf4j.http.server.security.RequestIntegrityFilter;
 import org.eclipse.rdf4j.workbench.proxy.CacheFilter;
 import org.eclipse.rdf4j.workbench.proxy.CookieCacheControlFilter;
 import org.eclipse.rdf4j.workbench.proxy.RedirectFilter;
 import org.eclipse.rdf4j.workbench.proxy.WorkbenchGateway;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
+import org.eclipse.rdf4j.workbench.security.WorkbenchCsrfFilter;
 import org.eclipse.rdf4j.workbench.security.WorkbenchSessionCookieInitializer;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.slf4j.Logger;
@@ -68,6 +71,7 @@ public class Rdf4jServerWorkbenchApplication {
 	private static final Logger logger = LoggerFactory.getLogger(Rdf4jServerWorkbenchApplication.class);
 	private static final String APP_DATA_BASEDIR_PROPERTY = Platform.APPDATA_BASEDIR_PROPERTY;
 	private static final String[] APPLICATION_IDS = { "Server", "webapp-base" };
+	private static final int REQUEST_INTEGRITY_FILTER_ORDER = -20;
 
 	public static void main(String[] args) {
 		ensureAppDataDirAccessible();
@@ -219,6 +223,28 @@ public class Rdf4jServerWorkbenchApplication {
 	}
 
 	@Bean
+	FilterRegistrationBean<RequestIntegrityFilter> requestIntegrityFilter() {
+		FilterRegistrationBean<RequestIntegrityFilter> registration = new FilterRegistrationBean<>(
+				new RequestIntegrityFilter());
+		registration.addUrlPatterns("/rdf4j-server/repositories", "/rdf4j-server/repositories/*");
+		registration.setName("RequestIntegrityFilter");
+		registration.setOrder(REQUEST_INTEGRITY_FILTER_ORDER);
+		registration.setAsyncSupported(true);
+		return registration;
+	}
+
+	@Bean
+	FilterRegistrationBean<WorkbenchCsrfFilter> workbenchCsrfFilter() {
+		FilterRegistrationBean<WorkbenchCsrfFilter> registration = new FilterRegistrationBean<>(
+				new WorkbenchCsrfFilter());
+		registration.addUrlPatterns("/rdf4j-workbench/repositories", "/rdf4j-workbench/repositories/*");
+		registration.setName("request-integrity");
+		registration.setOrder(REQUEST_INTEGRITY_FILTER_ORDER);
+		registration.setAsyncSupported(true);
+		return registration;
+	}
+
+	@Bean
 	FilterRegistrationBean<ServerPrefixForwardFilter> serverPrefixForwardFilter() {
 		logger.info("Registering ServerPrefixForwardFilter");
 		FilterRegistrationBean<ServerPrefixForwardFilter> registration = new FilterRegistrationBean<>(
@@ -226,6 +252,17 @@ public class Rdf4jServerWorkbenchApplication {
 		registration.addUrlPatterns("/rdf4j-server", "/rdf4j-server/*", "/rdf4j-workbench", "/rdf4j-workbench/*");
 		registration.setName("ServerPrefixForwardFilter");
 		registration.setOrder(1000);
+		registration.setAsyncSupported(true);
+		return registration;
+	}
+
+	@Bean
+	FilterRegistrationBean<LoggingAccessFilter> loggingAccessFilter() {
+		FilterRegistrationBean<LoggingAccessFilter> registration = new FilterRegistrationBean<>(
+				new LoggingAccessFilter());
+		registration.addUrlPatterns("/system/logging/*", "/rdf4j-server/system/logging/*");
+		registration.setName("LoggingAccessFilter");
+		registration.setOrder(-13);
 		registration.setAsyncSupported(true);
 		return registration;
 	}

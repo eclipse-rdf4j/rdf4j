@@ -455,20 +455,30 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	@Override
 	public OptionalLong adjacencyKeyDomainCardinality(long predicate, boolean bySubject) {
 		if (activeSources.isEmpty()) {
-			return OptionalLong.empty();
+			return OptionalLong.of(0L);
 		}
-		long cardinalityUpperBound = 0L;
+		if (activeSources.size() == 1) {
+			OptionalLong cardinality = activeSources.get(0).adjacencyKeyDomainCardinality(predicate, bySubject);
+			return cardinality.isPresent() && cardinality.getAsLong() < 0L ? OptionalLong.empty() : cardinality;
+		}
+		long positiveCardinality = -1L;
 		for (NativeLmdbQuerySource source : activeSources) {
 			OptionalLong sourceCardinality = source.adjacencyKeyDomainCardinality(predicate, bySubject);
-			if (sourceCardinality.isEmpty()) {
+			if (sourceCardinality.isEmpty() || sourceCardinality.getAsLong() < 0L) {
 				return OptionalLong.empty();
 			}
 			long value = sourceCardinality.getAsLong();
-			cardinalityUpperBound = Long.MAX_VALUE - cardinalityUpperBound < value
-					? Long.MAX_VALUE
-					: cardinalityUpperBound + value;
+			if (value == 0L) {
+				continue;
+			}
+			if (positiveCardinality >= 0L) {
+				// Per-source counts are only upper bounds on the union when more than one source contributes keys.
+				// We have no non-enumerating proof that their domains are disjoint.
+				return OptionalLong.empty();
+			}
+			positiveCardinality = value;
 		}
-		return OptionalLong.of(cardinalityUpperBound);
+		return OptionalLong.of(Math.max(0L, positiveCardinality));
 	}
 
 	@Override
@@ -490,6 +500,23 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 			degree = Long.MAX_VALUE - degree < value ? Long.MAX_VALUE : degree + value;
 		}
 		return OptionalLong.of(degree);
+	}
+
+	@Override
+	public OptionalLong exactPredicateCount(long predicate) {
+		long count = 0L;
+		for (NativeLmdbQuerySource source : activeSources) {
+			OptionalLong sourceCount = source.exactPredicateCount(predicate);
+			if (sourceCount.isEmpty()) {
+				return OptionalLong.empty();
+			}
+			long value = sourceCount.getAsLong();
+			if (value < 0L || Long.MAX_VALUE - count < value) {
+				return OptionalLong.empty();
+			}
+			count += value;
+		}
+		return OptionalLong.of(count);
 	}
 
 	@Override
@@ -1155,6 +1182,11 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		@Override
 		public OptionalLong exactDegree(long predicate, long key, boolean bySubject) {
 			return delegate.exactDegree(predicate, key, bySubject);
+		}
+
+		@Override
+		public OptionalLong exactPredicateCount(long predicate) {
+			return delegate.exactPredicateCount(predicate);
 		}
 
 		@Override

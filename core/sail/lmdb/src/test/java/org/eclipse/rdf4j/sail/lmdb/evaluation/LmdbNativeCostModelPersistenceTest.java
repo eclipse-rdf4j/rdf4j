@@ -79,6 +79,26 @@ class LmdbNativeCostModelPersistenceTest {
 	}
 
 	@Test
+	void qualifiedResidualEvidenceSurvivesARestartUnderTheCurrentWriter() throws IOException {
+		AtomicLong wall = new AtomicLong(1_000_000L);
+		LmdbNativeStoreCostModel original = store(wall, 3L);
+		LmdbNativeCostPosteriorStore.ExactKey direct = key("nestedLoop");
+		LmdbNativeCostPosteriorStore.ExactKey residual = LmdbNativeCostPosteriorStore.ExactKey.of(WARM,
+				LmdbNativeCostPosteriorStore.Lane.RESIDUAL, direct.variant());
+		for (int i = 0; i < 20; i++) {
+			original.posteriors().updateCompleted(direct, Math.log(2_000_000.0), 1.0, 0L, wall.get());
+			original.posteriors().updateCompleted(residual, Math.log(1.5), 1.0, 0L, wall.get());
+		}
+		original.persistence().persistIfDue(true);
+
+		LmdbNativeStoreCostModel reloaded = store(wall, 3L);
+		assertTrue(reloaded.posteriors().read(direct, 0L, wall.get()).exactPresent(),
+				"directly timed evidence survives the restart");
+		assertTrue(reloaded.posteriors().read(residual, 0L, wall.get()).exactPresent(),
+				"residuals written under owned-work qualification keep their authority across a restart");
+	}
+
+	@Test
 	void fingerprintMismatchAndCorruptionStartCold() throws IOException {
 		AtomicLong wall = new AtomicLong(1_000_000L);
 		LmdbNativeStoreCostModel original = store(wall, 3L);

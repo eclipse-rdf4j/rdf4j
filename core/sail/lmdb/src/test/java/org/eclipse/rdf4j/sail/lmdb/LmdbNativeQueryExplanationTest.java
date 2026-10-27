@@ -16,6 +16,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
@@ -26,6 +27,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -38,6 +40,7 @@ import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.JaninoPipelineTestAccess;
@@ -116,6 +119,13 @@ public class LmdbNativeQueryExplanationTest {
 				conn.add(subject, RDF.TYPE, item);
 				conn.add(subject, price, vf.createLiteral(i));
 			}
+		}
+		// Post-ready maintenance can publish after the fixture's commits; let it settle so a test that waits for
+		// adjacency to serve the current revision still sees that revision when its query runs.
+		try {
+			LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
+		} catch (IOException | InterruptedException failure) {
+			throw new AssertionError("LMDB post-ready initialization did not settle", failure);
 		}
 	}
 
@@ -554,6 +564,7 @@ public class LmdbNativeQueryExplanationTest {
 		}
 
 		assertThat(rendered)
+				.as("adjacency readiness after the query: %s", store.getDirectAdjacencyReadinessDescription())
 				.contains("          source: IN_MEMORY_ADJACENCY\n"
 						+ "          outcome: INELIGIBLE\n"
 						+ "          reason: FEATURE_DISABLED["
@@ -817,13 +828,36 @@ public class LmdbNativeQueryExplanationTest {
 				+ "FILTER EXISTS { ?s ex:price ?price } }";
 
 		String rendered = explain(Explanation.Level.Telemetry, query).toString();
+		List<BindingSet> automatic;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			automatic = QueryResults.asList(connection.prepareTupleQuery(query).evaluate());
+			assertThat(KernelExecutionTestAccess.eligibleStrategies(connection.prepareTupleQuery(query)
+					.explain(Explanation.Level.Optimized)
+					.toGenericPlanNode()))
+							.contains("orderedDistinctGroups", "nestedLoop");
+		}
+		String previous = System.setProperty(NATIVE_FLAG, "false");
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			assertThat(QueryResults.asList(connection.prepareTupleQuery(query).evaluate()))
+					.containsExactlyElementsOf(automatic);
+		} finally {
+			restoreProperty(previous);
+		}
 
 		assertThat(rendered)
 				.doesNotContain("    status: ACTIVE_OR_PARTIAL\n")
 				.contains("    status: COMPLETED\n")
 				.contains("nativePhysicalPlan=NativeProjection(arg=NativeGroup(")
 				.contains("LexicalFrameLeftJoin(")
-				.contains("nativeExecutionPath=aggState");
+				.contains("nativeExecutionPath=");
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery forced = (SailTupleQuery) connection.prepareTupleQuery(query);
+			forced.setForcedLmdbExecutionStrategy("nestedLoop");
+			assertThat(QueryResults.asList(forced.evaluate())).containsExactlyElementsOf(automatic);
+			assertThat(forced.explain(Explanation.Level.Telemetry).toString())
+					.contains("    status: COMPLETED\n")
+					.contains("nativeExecutionPath=aggState");
+		}
 	}
 
 	@Test

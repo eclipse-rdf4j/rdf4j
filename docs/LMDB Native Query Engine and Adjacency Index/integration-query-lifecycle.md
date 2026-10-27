@@ -45,42 +45,59 @@ for LMDB-side implementations and consumers.
 `requestCancellation()`. It asks an iteration or downstream iteration to stop
 at an implementation-defined poll point and reports whether the request was
 accepted. It does not close a resource itself and does not promise an
-immediate interrupt. `IterationWrapper`, selected Sail tuple wrappers, and
-cleaner-backed wrappers preserve the capability only when their delegate
-implements it and remains open. A wrapper that cannot forward the capability
-returns `false`. `FilterIteration` is a boundary for this interface: it does
-not implement `CooperativeCancellation` or forward `requestCancellation()`;
-its traversal separately checks the current thread's interrupt flag.
+immediate interrupt. Pass-through iterations forward the request to the
+iterations they read from: `IterationWrapper`, `FilterIteration`,
+`ConvertingIteration`, the set and union iterations, the Sail and repository
+wrappers, and the query-algebra join, path and asynchronous iterators.
+`LookAheadIteration` records the request so that long-running subclasses can
+poll it. Operators that loop over their input in memory, such as
+`GroupIterator`, `OrderIterator`, the hash and nested-loop joins and the
+asynchronous read-ahead iterators, poll the request and throw
+`QueryInterruptedException`, so a cancelled operator never reads as a complete
+result. A closed wrapper declines the request.
 
-When its timer fires, `TimeLimitIteration` marks itself interrupted and
-requests cooperative cancellation. If no iteration accepts, it tries the
-existing `close()` fallback. Successful `hasNext()` and `next()` perform an
-interruption check before delegation and again after a successful delegate
-return. Their relevant exhaustion/absence exception paths also check before
-closing and rethrowing. `remove()` checks before delegation; it checks again
-only when the delegate throws `IllegalStateException`, not after a successful
-remove. When a later check sees the timeout flag, the wrapper emits its
-subclass-specific timeout exception and closes itself. A close failure is
-logged; an `InterruptedException` from close restores the caller thread's
-interrupt flag.
+A query's maximum execution time is enforced in two places. While
+`SailConnection.evaluate()` runs and no result exists yet, the Sail query
+guards the evaluating thread with `InterruptingTimeLimit`, which interrupts
+that thread if the limit elapses; the query then reports
+`QueryInterruptedException("Query evaluation took too long")` and clears the
+interrupt it delivered. The result is wrapped in a `TimeLimitIteration` that
+receives the remaining budget; an already elapsed budget makes the first call
+report the time limit.
 
-The timer is a shared daemon `Timer`; each live wrapper schedules one task and
-cancels it from `close()`. An accepted cooperative request keeps cleanup with
-the iteration owner and avoids the timeout thread's close fallback, but a
-non-polling/blocking implementation can delay observation. A rejected request
-falls back to close, whose effectiveness depends on that iterator's existing
-close behavior. This is cooperative cancellation, not a hard deadline or a
-promise that native or remote I/O stops at the instant the timer fires.
+When the time limit of a `TimeLimitIteration` elapses it escalates in three
+steps. It first requests cooperative cancellation and reports the time limit
+to every later call. If the wrapped iteration has not been closed after the
+interrupt grace (two seconds by default), it interrupts the threads still
+inside one of its methods. If it has still not been closed after the close
+grace (two more seconds), it closes the wrapped iteration on a separate
+thread, also beneath an active call; sources that own native resources defer
+releasing them until that call exits. A wrapped iteration is otherwise closed
+only when no call is active: a caller that observes the time limit closes it,
+and an explicit `close()` from another thread during an active call requests
+cancellation, leaves the close to the active caller and follows the same
+escalation. Interrupts delivered by the wrapper are cleared before the
+interrupted call returns. The grace periods can be changed with the
+`org.eclipse.rdf4j.common.iteration.TimeLimitIteration.interruptGraceMillis`
+and `org.eclipse.rdf4j.common.iteration.TimeLimitIteration.closeGraceMillis`
+system properties.
+
+The timer is a shared daemon `Timer`; its tasks only signal, interrupt or hand
+the close to a virtual thread, so one blocked iteration cannot delay another
+iteration's time limit. This is cooperative cancellation backed by interrupts,
+not a promise that native or remote I/O stops at the instant the timer fires.
 
 Source: [`CloseableIteration`](../../../core/common/iterator/src/main/java/org/eclipse/rdf4j/common/iteration/CloseableIteration.java),
 [`CooperativeCancellation`](../../../core/common/iterator/src/main/java/org/eclipse/rdf4j/common/iteration/CooperativeCancellation.java),
 [`TimeLimitIteration`](../../../core/common/iterator/src/main/java/org/eclipse/rdf4j/common/iteration/TimeLimitIteration.java),
 [`IterationWrapper`](../../../core/common/iterator/src/main/java/org/eclipse/rdf4j/common/iteration/IterationWrapper.java),
-and [`FilterIteration`](../../../core/common/iterator/src/main/java/org/eclipse/rdf4j/common/iteration/FilterIteration.java),
-which does not forward the cooperative capability.
+[`InterruptingTimeLimit`](../../../core/common/iterator/src/main/java/org/eclipse/rdf4j/common/iteration/InterruptingTimeLimit.java)
+and [`FilterIteration`](../../../core/common/iterator/src/main/java/org/eclipse/rdf4j/common/iteration/FilterIteration.java).
 Relevant source tests are
 [`CloseableIterationSeekDefaultTest`](../../../core/common/iterator/src/test/java/org/eclipse/rdf4j/common/iteration/CloseableIterationSeekDefaultTest.java),
 [`TimeLimitIterationTest`](../../../core/common/iterator/src/test/java/org/eclipse/rdf4j/common/iteration/TimeLimitIterationTest.java),
+[`TimeLimitIterationLadderTest`](../../../core/common/iterator/src/test/java/org/eclipse/rdf4j/common/iteration/TimeLimitIterationLadderTest.java),
+[`CooperativeCancellationForwardingTest`](../../../core/common/iterator/src/test/java/org/eclipse/rdf4j/common/iteration/CooperativeCancellationForwardingTest.java),
 [`CooperativeCancellationWrapperTest`](../../../core/sail/api/src/test/java/org/eclipse/rdf4j/sail/helpers/CooperativeCancellationWrapperTest.java),
 and the materialized replay tests listed in the [query memory guide](query-memory-and-result-lifecycle.md).
 These links identify source coverage and do not imply passing results.

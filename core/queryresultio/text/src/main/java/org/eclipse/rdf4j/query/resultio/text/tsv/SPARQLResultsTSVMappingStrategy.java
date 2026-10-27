@@ -31,8 +31,7 @@ import com.opencsv.CSVReader;
 import com.opencsv.exceptions.CsvValidationException;
 
 /**
- * Implements a {@link com.opencsv.bean.MappingStrategy} to allow opencsv to work in parallel. This is where the input
- * is converted into {@link org.eclipse.rdf4j.query.BindingSet}s.
+ * Maps each parsed TSV row into a {@link org.eclipse.rdf4j.query.BindingSet}.
  *
  * @author Andrew Rucker Jones
  */
