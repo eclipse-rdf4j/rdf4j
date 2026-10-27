@@ -18,14 +18,18 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.LockSupport;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -38,6 +42,88 @@ import org.junit.jupiter.params.provider.ValueSource;
  * probe outright.
  */
 class LmdbNativeProbeExecutionTest {
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void declinedAttemptClosesItsUnfinishedLexicalProducerBeforeFallback(boolean cleanupFails) throws Exception {
+		SyntheticValueSource source = SyntheticValueSource.forEvaluation(mock(NativeLmdbQuerySource.class));
+		source.executionContext().initializeQueryBase(EmptyBindingSet.getInstance());
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of(), null);
+		layout.freeze(List.of());
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		AtomicInteger evaluations = new AtomicInteger(), closes = new AtomicInteger(), rivalOpens = new AtomicInteger();
+		AtomicBoolean failClose = new AtomicBoolean();
+		IllegalStateException cleanup = new IllegalStateException("failed to close declined lexical producer");
+		QueryEvaluationStep step = bindings -> {
+			evaluations.incrementAndGet();
+			return new CloseableIteration<BindingSet>() {
+				private int emitted;
+
+				@Override
+				public boolean hasNext() {
+					return emitted < 3;
+				}
+
+				@Override
+				public BindingSet next() {
+					emitted++;
+					return EmptyBindingSet.getInstance();
+				}
+
+				@Override
+				public void remove() {
+					throw new UnsupportedOperationException();
+				}
+
+				@Override
+				public void close() {
+					closes.incrementAndGet();
+					if (failClose.get()) {
+						throw cleanup;
+					}
+				}
+			};
+		};
+		NativeSubqueryPlan subquery = new NativeSubqueryPlan(step, new int[0], new String[0], new int[0],
+				new String[0]);
+		try {
+			// Warm actual initialization and prove ordinary and speculative occurrences retain independent producers.
+			try (RowCursor ordinary = subquery.open(row)) {
+				int rows = 0;
+				while (ordinary.next()) {
+					rows++;
+				}
+				assertEquals(3, rows);
+			}
+			assertEquals(1, closes.get());
+			failClose.set(cleanupFails);
+			Fixture fixture = fixture();
+			LmdbNativeStrategyProposal<String> rival = new LmdbNativeStrategyProposal<>(() -> {
+				rivalOpens.incrementAndGet();
+				assertNotNull(LmdbNativeProbeDeadline.currentOrNull(), "the rival must run as a real withheld trial");
+				try (RowCursor probe = subquery.open(row.fork())) {
+					assertTrue(probe.next(), "the trial must consume its actual first lexical row");
+				}
+				assertEquals(2, evaluations.get(), "the trial must own a producer separate from ordinary replay");
+				throw LmdbNativeProbeDeadline.capacityExhausted();
+			}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, () -> {
+			});
+			if (cleanupFails) {
+				assertSame(cleanup, assertThrows(IllegalStateException.class,
+						() -> dispatch(fixture, incumbentProposal(new AtomicInteger()), rival)));
+				assertEquals(1, cleanup.getSuppressed().length);
+				assertSame(LmdbNativeProbeDeadlineExceeded.INSTANCE, cleanup.getSuppressed()[0]);
+			} else {
+				assertEquals("incumbent", dispatch(fixture, incumbentProposal(new AtomicInteger()), rival));
+			}
+			assertEquals(1, rivalOpens.get());
+			assertEquals(2, closes.get(), "declined source ownership must be released inside dispatch");
+			assertFalse(row.cancellation.cancellationPublished());
+		} finally {
+			failClose.set(false);
+			source.executionContext().close();
+		}
+		assertTrue(source.executionContext().isClosed());
+	}
 
 	@ParameterizedTest
 	@ValueSource(booleans = { true, false })
@@ -129,6 +215,69 @@ class LmdbNativeProbeExecutionTest {
 	}
 
 	@Test
+	void aTimedOutProbeLeavesNoBindingsOnTheSharedRowForTheFallback() throws IOException {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("p", 0), null);
+		layout.freeze(List.of("p"));
+		RowState row = new RowState(null, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, NativeLmdbQuerySource.UNKNOWN_ID);
+		AtomicInteger rivalOpens = new AtomicInteger();
+		// The trial stops mid-row with ?p bound, as a deadline poll inside a cursor loop does.
+		LmdbNativeStrategyProposal<String> rival = new LmdbNativeStrategyProposal<>(() -> {
+			rivalOpens.incrementAndGet();
+			assertTrue(row.bind(0, 42L));
+			int tick = 0;
+			while (true) {
+				LmdbNativeProbeDeadline.poll(++tick);
+			}
+		}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, () -> {
+		});
+
+		String result;
+		try (LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter
+				.<String>forModel(null, -1D, fixture().model())
+				.probeHarness(LmdbNativeProbeHarness.blocking())
+				.sharedRow(row)) {
+			arbiter.offer(() -> rowReadingIncumbent(row));
+			arbiter.offer(() -> rival);
+			result = arbiter.select();
+		}
+
+		assertEquals(1, rivalOpens.get(), "the rival must run as the trial");
+		assertEquals("unbound", result, "the fallback must not inherit the aborted trial's bindings");
+		assertEquals(0, row.mark());
+	}
+
+	@Test
+	void aDeclinedAttemptLeavesNoBindingsOnTheSharedRowForTheNextCandidate() throws IOException {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("p", 0), null);
+		layout.freeze(List.of("p"));
+		RowState row = new RowState(null, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, NativeLmdbQuerySource.UNKNOWN_ID);
+		LmdbNativeStrategyProposal<String> declining = new LmdbNativeStrategyProposal<>(() -> {
+			assertTrue(row.bind(0, 42L));
+			return null;
+		}, LmdbNativeWork.exact(1D), LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, () -> {
+		});
+
+		String result;
+		try (LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter.<String>forExpr(null)
+				.sharedRow(row)) {
+			arbiter.offer(() -> declining);
+			arbiter.offer(() -> rowReadingIncumbent(row));
+			result = arbiter.select();
+		}
+
+		assertEquals("unbound", result, "the next candidate must not inherit the declined attempt's bindings");
+		assertEquals(0, row.mark());
+	}
+
+	private static LmdbNativeStrategyProposal<String> rowReadingIncumbent(RowState row) {
+		return new LmdbNativeStrategyProposal<>(() -> row.boundMask() == 0L ? "unbound" : "bound to " + row.slots[0],
+				LmdbNativeWork.exact(1_000D), LmdbNativeAttemptMetrics.PATH_BATCH, () -> {
+				});
+	}
+
+	@Test
 	void aTimedOutProbeCensorsCoolsDownFallsBackAndIsNotImmediatelyRetried() throws IOException {
 		Fixture fixture = fixture();
 		AtomicInteger incumbentOpens = new AtomicInteger();
@@ -188,7 +337,11 @@ class LmdbNativeProbeExecutionTest {
 		AtomicInteger rivalOpens = new AtomicInteger();
 		LmdbNativeStrategyProposal<String> rival = new LmdbNativeStrategyProposal<>(() -> {
 			rivalOpens.incrementAndGet();
-			LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(20L));
+			LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.currentOrNull();
+			assertNotNull(deadline, "the rival must run under the dispatcher's actual probe deadline");
+			deadline.trip();
+			assertTrue(deadline.tripped(), "the returned value must already be beyond its probe deadline");
+			assertFalse(deadline.capacityTripped(), "this is deadline expiry, not private-buffer exhaustion");
 			return "late-rival";
 		}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, () -> {
 		});

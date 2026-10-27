@@ -180,6 +180,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private volatile CompletableFuture<Void> startupScheduling;
 	private final AtomicBoolean quiescentRebuildPending = new AtomicBoolean();
 	private final AtomicBoolean quiescentRebuildTaskScheduled = new AtomicBoolean();
+	/**
+	 * Set while a pending quiescent rebuild has yielded to live views; the release that drops the count to zero resumes
+	 * it. This must not depend on {@link #maintenanceState}: a gap recorded meanwhile sets DEGRADED_GAP, and a release
+	 * that then skipped the resume left the rebuild pending forever, so every later request was ignored.
+	 */
+	private final AtomicBoolean quiescentRebuildAwaitingViews = new AtomicBoolean();
 	private volatile boolean quiescentRebuildRetryAllowed;
 	/** {@link #GAP_RECOVERY_NEVER_ATTEMPTED} until the read path has requested one gap recovery. */
 	private final AtomicLong lastGapRecoveryNanos = new AtomicLong(GAP_RECOVERY_NEVER_ATTEMPTED);
@@ -198,6 +204,10 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private final AtomicLong publicationWaitNanos = new AtomicLong();
 
 	private volatile boolean applierPausedForTest;
+	/** Test-only interleaving hook: runs once a build has started, before it pins its source snapshot. */
+	volatile Runnable beforeBuildSnapshotForTest;
+	/** Test-only interleaving hook: runs right after a build pins its source snapshot. */
+	volatile Runnable afterBuildSnapshotForTest;
 	/** Test-only interleaving hook: runs after the base scan completes and before online catch-up begins. */
 	volatile Runnable afterBuildScanForTest;
 	/** Test-only observation hook: runs before catch-up waits for a commit delta that has not arrived. */
@@ -2335,8 +2345,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 						// A quiescent rebuild must yield the sole maintenance thread while an old exact view is
 						// live. The final acquisition/view release resumes this step; the zero check closes the
 						// lost-wakeup race with a release concurrent with task completion.
+						quiescentRebuildAwaitingViews.set(true);
 						if (activeAcquisitionsAndViews.get() == 0) {
-							enqueueQuiescentRebuildStep();
+							resumeQuiescentRebuildAfterViews();
 						}
 						return;
 					}
@@ -2353,6 +2364,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			if (!closed) {
 				throw e;
 			}
+		}
+	}
+
+	private void resumeQuiescentRebuildAfterViews() {
+		if (quiescentRebuildAwaitingViews.compareAndSet(true, false)) {
+			enqueueQuiescentRebuildStep();
 		}
 	}
 
@@ -2956,6 +2973,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			current = emergencyGap.get();
 			updated = new GapMarker(Math.min(current.fromRevision(), fromRevision), current.sequence() + 1);
 		} while (!emergencyGap.compareAndSet(current, updated));
+		// Catch-up waits on the apply queue for its next delta or a new gap. A deferred connection commit records an
+		// overflow gap on the preparation thread after releasing write admission; without this wake-up, a catch-up that
+		// already closed admission waits forever for that revision's delta, and so does every later writer.
+		synchronized (applyQueue) {
+			applyQueue.notifyAll();
+		}
 		completeUnavailablePublications();
 	}
 
@@ -3011,14 +3034,31 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				metrics.recordBuildAborted();
 				return;
 			}
-			LmdbAdjacencyCoverage coverage = resolveCoverage();
+			LmdbAdjacencyCoverage coverage;
 			LmdbInMemoryAdjacencyIndex index;
 			long baseRevision;
 			GapMarker capturedGap;
+			Runnable beforeSnapshot = beforeBuildSnapshotForTest;
+			if (beforeSnapshot != null) {
+				beforeSnapshot.run();
+			}
+			// Capture the gap history before pinning. A commit records its gap no earlier than its physical commit and
+			// the pin waits out that commit's write lock, so every gap captured here belongs to a revision the snapshot
+			// covers. Captured after pinning, a deferred commit's overflow gap for a later revision would be adopted as
+			// retired although its delta never reaches the queue, and catch-up would wait for that revision.
+			capturedGap = emergencyGap.get();
 			try (LmdbAdjacencyBuildTxnFamily sourceFamily = new LmdbAdjacencyBuildTxnFamily(tripleStore,
 					options.buildThreads())) {
 				baseRevision = sourceFamily.snapshotRevision();
-				capturedGap = emergencyGap.get();
+				Runnable afterSnapshot = afterBuildSnapshotForTest;
+				if (afterSnapshot != null) {
+					afterSnapshot.run();
+				}
+				// Resolve selected predicates only after pinning: a dictionary ID always commits before the triples
+				// that use it, so every selected predicate with rows in this snapshot resolves. Resolved earlier, a
+				// predicate first committed in between would leave its rows out of the base, and its next delta would
+				// then treat it as absent from the base and drop them.
+				coverage = resolveCoverage();
 				account.beginProgressLogging();
 				logger.info("Creating in-memory adjacency structures: format=paged-csf, snapshotRevision={}, {}",
 						baseRevision, account.memoryUsageSummary());
@@ -3663,9 +3703,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	private void releaseAcquisitionOrView() {
 		long remaining = activeAcquisitionsAndViews.decrementAndGet();
-		if (remaining == 0 && !closed && quiescentRebuildPending.get()
-				&& maintenanceState == MaintenanceState.QUIESCING_FOR_REBUILD) {
-			enqueueQuiescentRebuildStep();
+		if (remaining == 0 && !closed && quiescentRebuildAwaitingViews.get()) {
+			resumeQuiescentRebuildAfterViews();
 		} else if (!closed) {
 			requestCompactionIfNeeded(published.get());
 		}
@@ -4758,11 +4797,10 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		if (!LmdbRuntimeProperties.adjacencySynopsisEnabled()) {
 			return null;
 		}
-		LmdbAdjacencyPublishedState state = view.state();
-		if (!state.base().coverage().isFull()
-				|| hasApplicableOverlay(state.overlays(), view.snapshotRevision())) {
+		if (!baseDomainServes(view)) {
 			return null;
 		}
+		LmdbAdjacencyPublishedState state = view.state();
 		return state.base().nodeDomainSynopsis(plane(bySubject, explicit), account);
 	}
 
@@ -4771,11 +4809,10 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		if (!LmdbRuntimeProperties.adjacencySynopsisEnabled()) {
 			return null;
 		}
-		LmdbAdjacencyPublishedState state = view.state();
-		if (!state.base().coverage().isFull()
-				|| hasApplicableOverlay(state.overlays(), view.snapshotRevision())) {
+		if (!baseDomainServes(view)) {
 			return null;
 		}
+		LmdbAdjacencyPublishedState state = view.state();
 		return state.base().nodeDomainPresence(plane(bySubject, explicit), account);
 	}
 
@@ -4787,11 +4824,10 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	 */
 	NativeLmdbQuerySource.NodeDomainIntersection nodeDomainIntersection(LmdbAdjacencyReadView view,
 			boolean leftBySubject, boolean rightBySubject, boolean explicit) {
-		LmdbAdjacencyPublishedState state = view.state();
-		if (!state.base().coverage().isFull()
-				|| hasApplicableOverlay(state.overlays(), view.snapshotRevision())) {
+		if (!baseDomainServes(view)) {
 			return null;
 		}
+		LmdbAdjacencyPublishedState state = view.state();
 		LmdbNodeDomainSynopsis left = state.base().nodeDomainSynopsis(plane(leftBySubject, explicit), account);
 		if (leftBySubject == rightBySubject) {
 			return left == null ? null : left.intersection(left);
@@ -4814,12 +4850,33 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		if (!LmdbRuntimeProperties.adjacencySynopsisEnabled()) {
 			return null;
 		}
-		LmdbAdjacencyPublishedState state = view.state();
-		if (!state.base().coverage().isFull()
-				|| hasApplicableOverlay(state.overlays(), view.snapshotRevision())) {
+		if (!baseDomainServes(view)) {
 			return null;
 		}
+		LmdbAdjacencyPublishedState state = view.state();
 		return state.base().nodeDomainDatatypeSummary(plane(bySubject, explicit), account, lookup, observer);
+	}
+
+	/**
+	 * Whether the base alone answers whole-domain questions for this view. These answers come from the base without
+	 * per-row fallback, so they need the kernel completeness rule of {@link #completeBasePredicateOrdinal}: the
+	 * snapshot is applied, no pending table precedes it, and no overlay generation is visible to it.
+	 */
+	private boolean baseDomainServes(LmdbAdjacencyReadView view) {
+		if (view == null || !view.servesSnapshot() || closed || options.mode() != DirectAdjacencyMode.PREFER
+				|| writeTransactionBlocksAdjacency()) {
+			return false;
+		}
+		LmdbAdjacencyPublishedState state = view.state();
+		if (state.base() == null || view.snapshotRevision() > state.appliedRevision()) {
+			return false;
+		}
+		for (PendingTable pending : state.pending()) {
+			if (pending.revision() <= view.snapshotRevision()) {
+				return false;
+			}
+		}
+		return state.base().coverage().isFull() && !hasApplicableOverlay(state.overlays(), view.snapshotRevision());
 	}
 
 	private static boolean hasApplicableOverlay(LmdbAdjacencyOverlaySet overlays, long snapshotRevision) {

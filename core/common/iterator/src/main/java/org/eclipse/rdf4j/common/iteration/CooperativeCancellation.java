@@ -28,4 +28,27 @@ public interface CooperativeCancellation {
 	 * @return {@code true} only when this iteration or a downstream iteration accepted the request
 	 */
 	boolean requestCancellation();
+
+	/**
+	 * Forwards a cancellation request to {@code delegate} when it supports cooperative cancellation.
+	 *
+	 * @return {@code true} only when the delegate accepted the request
+	 */
+	static boolean forward(Object delegate) {
+		return delegate instanceof CooperativeCancellation cancellation && cancellation.requestCancellation();
+	}
+
+	/**
+	 * Forwards a cancellation request to every delegate that supports cooperative cancellation, including the ones
+	 * after a delegate that accepted.
+	 *
+	 * @return {@code true} when at least one delegate accepted the request
+	 */
+	static boolean forwardAll(Object... delegates) {
+		boolean accepted = false;
+		for (Object delegate : delegates) {
+			accepted |= forward(delegate);
+		}
+		return accepted;
+	}
 }

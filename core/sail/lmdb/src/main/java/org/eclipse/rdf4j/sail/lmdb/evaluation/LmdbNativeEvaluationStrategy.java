@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
@@ -60,7 +61,8 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	private final boolean nativeEnabled;
 	private final boolean forceRootGeneric;
 	private final String forcedExecutionStrategy;
-	private static final ThreadLocal<Boolean> KERNEL_SUBPLAN = new ThreadLocal<>();
+	// Keep only the inactive Boolean between callbacks: removing it would allocate a fresh entry for every row.
+	private static final ThreadLocal<Boolean> KERNEL_SUBPLAN = ThreadLocal.withInitial(() -> Boolean.FALSE);
 	private final EvaluationStatistics evaluationStatistics;
 	private final LmdbStableOrderPlanner stableOrderPlanner;
 	// Constructor inputs retained so the claim-suppressed sibling view can be built with identical configuration.
@@ -118,9 +120,14 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	@Override
 	public TupleExpr optimize(TupleExpr expr, EvaluationStatistics statistics, BindingSet bindings) {
 		return withPreparedTupleExpr(expr, prepared -> {
+			NativeValuePositionAnalysis enclosing = valuePositionSnapshot();
 			NativeValuePositionAnalysis positions = NativeValuePositionAnalysis.analyze(prepared);
+			if (enclosing != null && enclosing.requiresFullAggregateValues()) {
+				positions = positions.fullAggregateValues();
+			}
 			setValuePositions(positions);
-			return withValuePositions(positions, () -> super.optimize(prepared, statistics, bindings));
+			NativeValuePositionAnalysis frozen = positions;
+			return withValuePositions(frozen, () -> super.optimize(prepared, statistics, bindings));
 		});
 	}
 
@@ -128,10 +135,23 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 		return selectValuePositions(expr).masksFor(expr);
 	}
 
+	NativeAggregateResultDemand aggregateResultDemand(GroupElem element) {
+		NativeValuePositionAnalysis current = valuePositionSnapshot();
+		return current == null ? NativeAggregateResultDemand.FULL_VALUE : current.aggregateDemand(element);
+	}
+
+	Object aggregateDefinition(GroupElem element) {
+		NativeValuePositionAnalysis current = valuePositionSnapshot();
+		return current == null ? null : current.aggregateDefinition(element);
+	}
+
 	private NativeValuePositionAnalysis selectValuePositions(TupleExpr expr) {
 		NativeValuePositionAnalysis current = valuePositionSnapshot();
 		if (current == null || !current.containsContext(expr)) {
-			current = NativeValuePositionAnalysis.analyze(expr);
+			NativeValuePositionAnalysis analyzed = NativeValuePositionAnalysis.analyze(expr);
+			current = current != null && current.requiresFullAggregateValues()
+					? analyzed.fullAggregateValues()
+					: analyzed;
 			setValuePositions(current);
 		}
 		return current;
@@ -203,7 +223,7 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	 * {@link LmdbNativeForceableStrategies}), or {@code null} when the engine's own selection should decide as usual.
 	 */
 	String forcedExecutionStrategyName() {
-		return KERNEL_SUBPLAN.get() == null ? forcedExecutionStrategy : null;
+		return Boolean.TRUE.equals(KERNEL_SUBPLAN.get()) ? null : forcedExecutionStrategy;
 	}
 
 	/**
@@ -215,19 +235,19 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	 * point, exactly as if it had not been requested, rather than throwing or using a stale value.
 	 */
 	static String forcedExecutionStrategyForCurrentThread() {
-		return KERNEL_SUBPLAN.get() == null ? currentForcedExecutionStrategy() : null;
+		return Boolean.TRUE.equals(KERNEL_SUBPLAN.get()) ? null : currentForcedExecutionStrategy();
 	}
 
 	/** The enclosing kernel honors the forced strategy; its internal operators choose their own access paths. */
 	static boolean enterKernelSubplan() {
-		boolean nested = KERNEL_SUBPLAN.get() != null;
+		boolean nested = Boolean.TRUE.equals(KERNEL_SUBPLAN.get());
 		KERNEL_SUBPLAN.set(Boolean.TRUE);
 		return nested;
 	}
 
 	static void leaveKernelSubplan(boolean nested) {
 		if (!nested) {
-			KERNEL_SUBPLAN.remove();
+			KERNEL_SUBPLAN.set(Boolean.FALSE);
 		}
 	}
 
@@ -285,6 +305,27 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 
 	TripleSource graphTripleSource() {
 		return tripleSourceArg;
+	}
+
+	/** A source-confined sibling; only immutable configuration and the evaluation's scalar scope are shared. */
+	LmdbNativeEvaluationStrategy forWorker(NativeLmdbQuerySource source) {
+		return forWorker(source, valuePositionSnapshot());
+	}
+
+	LmdbNativeEvaluationStrategy forWorker(NativeLmdbQuerySource source, NativeValuePositionAnalysis positions) {
+		LmdbNativeEvaluationStrategy worker = new LmdbNativeEvaluationStrategy(
+				new NativeWorkerTripleSource(source, valueFactory()), datasetArg, serviceResolverShadow,
+				iterationCacheSyncThresholdArg, evaluationStatistics, trackResultSizeArg, nativeEnabled);
+		worker.setCollectionFactory(getCollectionFactory());
+		worker.setTrackTime(trackTimeShadow);
+		worker.setTrackResultSize(trackResultSizeShadow);
+		worker.setQueryEvaluationMode(getQueryEvaluationMode());
+		worker.setQueryExecutionPolicy(getQueryExecutionPolicy());
+		worker.valuePositions = positions;
+		if (optimizerPipelineShadow != null) {
+			worker.setOptimizerPipeline(optimizerPipelineShadow);
+		}
+		return worker;
 	}
 
 	@Override
@@ -502,6 +543,9 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	}
 
 	private static NativeLmdbQuerySource extractNativeSource(TripleSource tripleSource) {
+		if (tripleSource instanceof NativeWorkerTripleSource worker) {
+			return worker.source;
+		}
 		if (tripleSource instanceof SailDatasetTripleTermSource) {
 			List<NativeLmdbQuerySource> sources = ((SailDatasetTripleTermSource) tripleSource)
 					.getDatasets(NativeLmdbQuerySource.class);

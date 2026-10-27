@@ -47,6 +47,10 @@ public final class KernelProjectionCursor implements AutoCloseable {
 		default boolean acceptsPage(AdjacencyPageCursor page) {
 			return true;
 		}
+
+		default boolean acceptsPage(long predicate, AdjacencyPageCursor page) {
+			return acceptsPage(page);
+		}
 	}
 
 	/** A sequence of independently pinned predicate planes or resolved runs. The view itself remains caller-owned. */
@@ -58,6 +62,10 @@ public final class KernelProjectionCursor implements AutoCloseable {
 
 		KernelAdjacencyCursor open(Predicate<AdjacencyPageCursor> proof, boolean contexts,
 				KernelCancellation cancellation);
+
+		default KernelAdjacencyCursor openRoots(boolean contexts, KernelCancellation cancellation) {
+			return open(null, contexts, cancellation);
+		}
 
 		/** Releases one physical plane. Reusable sources return the cursor to their owner instead of closing it. */
 		default void release(KernelAdjacencyCursor cursor) {
@@ -118,6 +126,13 @@ public final class KernelProjectionCursor implements AutoCloseable {
 		public KernelProjectionCursor activate(Source source, Program program, int outputs, int programs,
 				boolean contextObserved, boolean contextMatch, long wantedContext, boolean excludeDefault,
 				KernelCancellation cancellation) {
+			return activate(source, program, outputs, programs, QUAD, false, contextObserved, contextMatch,
+					wantedContext, excludeDefault, cancellation);
+		}
+
+		public KernelProjectionCursor activate(Source source, Program program, int outputs, int programs,
+				int deliveryGrain, boolean rootMultiplicityRows, boolean contextObserved, boolean contextMatch,
+				long wantedContext, boolean excludeDefault, KernelCancellation cancellation) {
 			Objects.requireNonNull(source, "source");
 			Objects.requireNonNull(program, "program");
 			if (closed) {
@@ -135,6 +150,8 @@ public final class KernelProjectionCursor implements AutoCloseable {
 				result.resetActivation(source, program, outputs, programs, contextObserved, contextMatch, wantedContext,
 						excludeDefault, cancellation);
 			}
+			result.deliveryGrain = deliveryGrain;
+			result.rootMultiplicityRows = rootMultiplicityRows;
 			active = result;
 			try {
 				if (!source.advance()) {
@@ -250,6 +267,10 @@ public final class KernelProjectionCursor implements AutoCloseable {
 	private Program program;
 	private int outputs;
 	private int programs;
+	private int deliveryGrain = QUAD;
+	private boolean rootMultiplicityRows;
+	private boolean skipPlane;
+	private long rootRowsRemaining;
 	private boolean contextObserved;
 	private boolean contextMatch;
 	private long wantedContext;
@@ -319,6 +340,8 @@ public final class KernelProjectionCursor implements AutoCloseable {
 		this.closed = false;
 		this.rootExit = false;
 		this.fiberExit = false;
+		this.skipPlane = false;
+		this.rootRowsRemaining = 0L;
 		this.rootWeight = 0L;
 		this.fiberWeight = 0L;
 		this.remainingRows = 0L;
@@ -351,6 +374,14 @@ public final class KernelProjectionCursor implements AutoCloseable {
 	public static KernelProjectionCursor open(Source source, Program program, int outputs, int programs,
 			boolean contextObserved, boolean contextMatch, long wantedContext, boolean excludeDefault,
 			KernelCancellation cancellation, LmdbQueryMemoryManager.QueryLedger ledger, int retainedColumns) {
+		return open(source, program, outputs, programs, QUAD, false, contextObserved, contextMatch, wantedContext,
+				excludeDefault, cancellation, ledger, retainedColumns);
+	}
+
+	public static KernelProjectionCursor open(Source source, Program program, int outputs, int programs,
+			int deliveryGrain, boolean rootMultiplicityRows, boolean contextObserved, boolean contextMatch,
+			long wantedContext, boolean excludeDefault, KernelCancellation cancellation,
+			LmdbQueryMemoryManager.QueryLedger ledger, int retainedColumns) {
 		Objects.requireNonNull(source, "source");
 		Objects.requireNonNull(program, "program");
 		LmdbQueryMemoryManager.Reservation reservation = null;
@@ -366,6 +397,8 @@ public final class KernelProjectionCursor implements AutoCloseable {
 			}
 			result = new KernelProjectionCursor(source, program, outputs, programs, contextObserved,
 					contextMatch, wantedContext, excludeDefault, cancellation, reservation, null);
+			result.deliveryGrain = deliveryGrain;
+			result.rootMultiplicityRows = rootMultiplicityRows;
 			if (source.advance()) {
 				result.cursor = result.openPlane();
 				if (result.cursor == null) {
@@ -399,9 +432,12 @@ public final class KernelProjectionCursor implements AutoCloseable {
 	}
 
 	private KernelAdjacencyCursor openPlane() {
+		if (deliveryGrain < QUAD) {
+			return source.openRoots(contextObserved || contextMatch || excludeDefault, cancellation);
+		}
 		KernelAdjacencyCursor opened = source.open(page -> {
 			pagesVisited++;
-			boolean accepted = program.acceptsPage(page)
+			boolean accepted = program.acceptsPage(source.predicate(), page)
 					&& (!page.hasCommonContext() || acceptsContext(page.commonContext()));
 			if (!accepted) {
 				pagesSkipped++;
@@ -419,13 +455,18 @@ public final class KernelProjectionCursor implements AutoCloseable {
 		if (closed) {
 			throw new IllegalStateException("projection cursor is closed");
 		}
-		if (!initialized) {
-			initialized = true;
-			if (!program.enter(INPUT, source.predicate(), null)) {
-				sourceDone = true;
-			}
-		}
 		for (;;) {
+			if (rootRowsRemaining > 0L) {
+				if ((++virtualRowPollTick & (VIRTUAL_ROWS_PER_POLL - 1)) == 0) {
+					checkCancelled();
+				}
+				rootRowsRemaining--;
+				return event(QUAD, 1L);
+			}
+			if (skipPlane) {
+				skipPlane = false;
+				nextPlane();
+			}
 			if (fiberExit) {
 				fiberExit = false;
 				if (fiberWeight > 0 && emitted(FIBER)) {
@@ -441,14 +482,6 @@ public final class KernelProjectionCursor implements AutoCloseable {
 			if (sourceDone) {
 				return false;
 			}
-			if (!planeReady) {
-				program.restore(INPUT);
-				planeReady = program.enter(PLANE, source.predicate(), null);
-				if (!planeReady) {
-					nextPlane();
-					continue;
-				}
-			}
 			if (!rootReady) {
 				if (!cursor.advanceRoot()) {
 					nextPlane();
@@ -456,18 +489,48 @@ public final class KernelProjectionCursor implements AutoCloseable {
 				}
 				rootsVisited++;
 				rootWeight = 0;
+				if (!cursor.hasAcceptedRootQuad(contextMatch, wantedContext, excludeDefault)) {
+					continue;
+				}
+				if (!initialized) {
+					initialized = true;
+					if (!program.enter(INPUT, source.predicate(), null)) {
+						sourceDone = true;
+						continue;
+					}
+				}
+				if (!planeReady) {
+					program.restore(INPUT);
+					planeReady = program.enter(PLANE, source.predicate(), null);
+					if (!planeReady) {
+						nextPlane();
+						continue;
+					}
+				}
+				if (deliveryGrain == INPUT) {
+					sourceDone = true;
+					return event(INPUT, 1L);
+				}
+				if (deliveryGrain == PLANE) {
+					skipPlane = true;
+					return event(PLANE, 1L);
+				}
 				program.restore(PLANE);
 				if (!program.enter(ROOT, source.predicate(), cursor)) {
 					continue;
 				}
-				boolean commonAccepted = !contextMatch && !excludeDefault
-						|| cursor.hasCommonContext() && acceptsContext(cursor.commonContext());
-				if (cursor.hasCommonContext() && !acceptsContext(cursor.commonContext())) {
+				if (deliveryGrain == ROOT) {
+					return event(ROOT, 1L);
+				}
+				if (rootMultiplicityRows && !contextObserved && !programAt(FIBER) && !programAt(QUAD)
+						&& emitted(QUAD) && (!contextMatch && !excludeDefault || cursor.hasCommonContext())) {
+					rootRowsRemaining = cursor.acceptedRootQuadCount(contextMatch, wantedContext, excludeDefault);
+					virtualRowPollTick = 0;
 					continue;
 				}
-				if (commonAccepted && !contextObserved && !emitted(FIBER) && !emitted(QUAD)
+				if (!contextObserved && !emitted(FIBER) && !emitted(QUAD)
 						&& !programAt(FIBER) && !programAt(QUAD)) {
-					rootWeight = cursor.rootQuadCount();
+					rootWeight = cursor.acceptedRootQuadCount(contextMatch, wantedContext, excludeDefault);
 					rootExit = true;
 					continue;
 				}
@@ -599,7 +662,7 @@ public final class KernelProjectionCursor implements AutoCloseable {
 		return contextsVisited;
 	}
 
-	/** Values returned by fiber-copy calls, including prefetched fibers which a later filter rejects. */
+	/** Neighbor values returned by fiber or quad-copy calls, including values a later filter rejects. */
 	public long neighborValuesCopied() {
 		return completedNeighborValues + (cursor == null ? 0L : cursor.neighborValuesCopied());
 	}
@@ -868,6 +931,12 @@ public final class KernelProjectionCursor implements AutoCloseable {
 			}
 			return fixed != null ? KernelAdjacencyCursor.open(fixed, proof, contexts, cancellation, null)
 					: KernelAdjacencyCursor.open(wildcard, proof, contexts, cancellation, null);
+		}
+
+		@Override
+		public KernelAdjacencyCursor openRoots(boolean contexts, KernelCancellation cancellation) {
+			return wildcard != null && !boundRoot ? KernelAdjacencyCursor.openRoots(wildcard, cancellation)
+					: open(null, contexts, cancellation);
 		}
 
 		@Override

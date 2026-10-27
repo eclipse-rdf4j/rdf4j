@@ -300,8 +300,13 @@ class LmdbNativeAdaptiveCostModelTest {
 		assertEquals(10, snapshot.startupNanos());
 		assertEquals(100, snapshot.totalNanos());
 		assertEquals(0.25, snapshot.consumedFraction());
-		assertTrue(snapshot.trainingResult().trained());
-		assertEquals(1, machine.snapshot().sampleCount());
+		// Only OPEN and GENERATED_ROW were measured; every other operation total is neither reported nor owned, and
+		// an estimated zero cannot certify its absence, so the direct timing is retained without a feature sample.
+		assertFalse(snapshot.trainingResult().trained());
+		assertEquals(0, machine.snapshot().sampleCount());
+		assertTrue(snapshot.trainingResult().reason().contains("neither measured nor independently owned"),
+				snapshot.trainingResult().reason());
+		assertEquals(25.0, snapshot.actualFeatures().expected(LmdbNativeCostVector.Feature.GENERATED_ROW));
 	}
 
 	@Test
@@ -396,11 +401,18 @@ class LmdbNativeAdaptiveCostModelTest {
 		observation.exhausted();
 
 		LmdbNativeCostObservation.Snapshot snapshot = observation.snapshot();
-		assertEquals(37.0, snapshot.actualFeatures().expected(LmdbNativeCostVector.Feature.SCANNED_ROW),
-				"the measured row count replaces the estimated one");
-		assertEquals(1.0, snapshot.actualFeatures().expected(LmdbNativeCostVector.Feature.OPEN),
-				"a feature with no counter keeps its estimated count");
-		assertTrue(snapshot.trainingResult().trained(), "counted evidence must train the model");
+		// A result mapping proves one output adapter, not how many rows were scanned to produce it, and an estimated
+		// count never stands in for an unmeasured feature: the partial actual vector carries only owned facts and
+		// the direct timing is retained without training the machine coefficients.
+		assertEquals(37.0, snapshot.actualFeatures().expected(LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION),
+				"produced rows are the measured output-adapter count");
+		assertEquals(0.0, snapshot.actualFeatures().expected(LmdbNativeCostVector.Feature.SCANNED_ROW),
+				"an unmeasured scan count is not bridged from the estimate");
+		assertEquals(0.0, snapshot.actualFeatures().expected(LmdbNativeCostVector.Feature.OPEN),
+				"an unmeasured feature keeps no estimated count");
+		assertFalse(snapshot.trainingResult().trained(), "partial feature evidence must not train the model");
+		assertTrue(snapshot.trainingResult().reason().contains("neither measured nor independently owned"),
+				snapshot.trainingResult().reason());
 	}
 
 	/**
@@ -422,8 +434,12 @@ class LmdbNativeAdaptiveCostModelTest {
 		LmdbNativeCostObservation.Snapshot snapshot = observation.snapshot();
 		assertEquals(LmdbNativeCostObservation.Completion.EXPECTED_EARLY_CLOSE, snapshot.completion());
 		assertEquals(0.1, snapshot.consumedFraction(), 1e-9);
-		assertTrue(snapshot.trainingResult().trained(),
+		assertTrue(observation.trainingEligible(),
 				"a LIMIT-truncated run is eligible evidence for its consumed fraction");
+		assertFalse(snapshot.trainingResult().trained(),
+				"eligibility is not coverage: produced rows alone measure no scan feature, so the machine stays untrained");
+		assertTrue(snapshot.trainingResult().reason().contains("neither measured nor independently owned"),
+				snapshot.trainingResult().reason());
 	}
 
 	/**

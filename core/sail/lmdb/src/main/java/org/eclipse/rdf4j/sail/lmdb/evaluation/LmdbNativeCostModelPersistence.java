@@ -20,6 +20,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -43,8 +44,18 @@ final class LmdbNativeCostModelPersistence {
 	static final String FILE_NAME = "cost-model.lncm";
 	private static final int MAGIC = 0x4C4E434D;
 	private static final int VERSION = 1;
-	/** Bump when the feature enum or variant-key field list changes shape. */
-	private static final int FEATURE_MODEL_VERSION = 1;
+	/**
+	 * Bump when the feature enum or variant-key field list changes shape, or when the provenance behind persisted
+	 * feature-priced evidence changes. Version 2 marks residual-lane posteriors trained only from measured or
+	 * independently owned operation totals.
+	 */
+	private static final int FEATURE_MODEL_VERSION = 2;
+	/**
+	 * Sidecars of this feature-model version are otherwise compatible, but their residual-lane posteriors predate
+	 * owned-work qualification: feature vectors could have been bridged from estimates. Their directly timed evidence
+	 * and cooldowns remain authoritative; their residuals are restored as unqualified, i.e. not at all.
+	 */
+	private static final int LEGACY_UNQUALIFIED_RESIDUAL_FEATURE_MODEL_VERSION = 1;
 	private static final int DIRTY_THRESHOLD = 64;
 	private static final long MIN_WRITE_INTERVAL_MILLIS = 30_000L;
 
@@ -114,9 +125,11 @@ final class LmdbNativeCostModelPersistence {
 				if (in.readInt() != MAGIC || in.readInt() != VERSION) {
 					return;
 				}
-				if (!readFingerprintMatches(in)) {
+				int featureModelVersion = readCompatibleFeatureModelVersion(in);
+				if (featureModelVersion < 0) {
 					return;
 				}
+				boolean qualifiedResiduals = featureModelVersion >= FEATURE_MODEL_VERSION;
 				long savedWallMillis = in.readLong();
 				long now = store.nowMillis();
 				LmdbNativePosteriorConfig config = store.posteriorConfig();
@@ -158,6 +171,11 @@ final class LmdbNativeCostModelPersistence {
 				}
 				if (in.available() != 0)
 					throw new IOException("trailing checkpoint payload");
+				if (!qualifiedResiduals) {
+					stagedGlobals.keySet().removeIf(key -> key.lane() == LmdbNativeCostPosteriorStore.Lane.RESIDUAL);
+					stagedFamilies.keySet().removeIf(key -> key.lane() == LmdbNativeCostPosteriorStore.Lane.RESIDUAL);
+					stagedExacts.keySet().removeIf(key -> key.lane() == LmdbNativeCostPosteriorStore.Lane.RESIDUAL);
+				}
 				for (LmdbNativeProbeScheduler.CooldownEntry entry : restored) {
 					if ((entry.state() != LmdbNativeProbeScheduler.State.COOLDOWN
 							&& entry.state() != LmdbNativeProbeScheduler.State.DORMANT_UNTIL_EPOCH
@@ -238,7 +256,7 @@ final class LmdbNativeCostModelPersistence {
 		try (DataOutputStream out = new DataOutputStream(buffer)) {
 			out.writeInt(MAGIC);
 			out.writeInt(VERSION);
-			writeFingerprint(out);
+			writeFingerprint(out, FEATURE_MODEL_VERSION);
 			out.writeLong(now);
 
 			ByteArrayOutputStream globals = new ByteArrayOutputStream();
@@ -320,10 +338,10 @@ final class LmdbNativeCostModelPersistence {
 		lastPersistMillis = now;
 	}
 
-	private void writeFingerprint(DataOutputStream out) throws IOException {
+	private void writeFingerprint(DataOutputStream out, int featureModelVersion) throws IOException {
 		out.writeUTF(System.getProperty("os.arch", ""));
 		out.writeUTF(System.getProperty("java.vendor", "") + '/' + System.getProperty("java.version", ""));
-		out.writeInt(FEATURE_MODEL_VERSION);
+		out.writeInt(featureModelVersion);
 		out.writeInt(LmdbNativeCostVector.Feature.values().length);
 		LmdbNativeCostModelContext context = store.context();
 		out.writeLong(context == null ? 0L : context.storeUuid().getMostSignificantBits());
@@ -331,15 +349,32 @@ final class LmdbNativeCostModelPersistence {
 		out.writeLong(context == null ? 0L : context.indexGeneration().getAsLong());
 	}
 
-	private boolean readFingerprintMatches(DataInputStream in) throws IOException {
+	/**
+	 * Returns the persisted feature-model version when the rest of the fingerprint matches this process and store, or
+	 * {@code -1} for an incompatible sidecar. A legacy version is compatible but marks its residual lane unqualified.
+	 */
+	private int readCompatibleFeatureModelVersion(DataInputStream in) throws IOException {
+		ByteArrayOutputStream actual = new ByteArrayOutputStream();
+		int featureModelVersion;
+		try (DataOutputStream copy = new DataOutputStream(actual)) {
+			copy.writeUTF(in.readUTF());
+			copy.writeUTF(in.readUTF());
+			featureModelVersion = in.readInt();
+			if (featureModelVersion < LEGACY_UNQUALIFIED_RESIDUAL_FEATURE_MODEL_VERSION
+					|| featureModelVersion > FEATURE_MODEL_VERSION) {
+				return -1;
+			}
+			copy.writeInt(featureModelVersion);
+			copy.writeInt(in.readInt());
+			copy.writeLong(in.readLong());
+			copy.writeLong(in.readLong());
+			copy.writeLong(in.readLong());
+		}
 		ByteArrayOutputStream expected = new ByteArrayOutputStream();
 		try (DataOutputStream out = new DataOutputStream(expected)) {
-			writeFingerprint(out);
+			writeFingerprint(out, featureModelVersion);
 		}
-		byte[] expectedBytes = expected.toByteArray();
-		byte[] actual = new byte[expectedBytes.length];
-		in.readFully(actual);
-		return java.util.Arrays.equals(expectedBytes, actual);
+		return Arrays.equals(expected.toByteArray(), actual.toByteArray()) ? featureModelVersion : -1;
 	}
 
 	private static LmdbNativePosteriorNode decay(LmdbNativePosteriorNode node, double staleness,

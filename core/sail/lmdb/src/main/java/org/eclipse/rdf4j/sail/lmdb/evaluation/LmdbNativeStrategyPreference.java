@@ -82,6 +82,12 @@ final class LmdbNativeStrategyPreference {
 	// nanos/rows evidence (nativeBareDirect*Actual) keeps the route auditable; revisit with memoized first-call
 	// arbitration if that evidence shows losses.
 	private static final String[] ORDER = {
+			// Complete page/root-domain algorithms retain their cold prior after joining the common inventory.
+			// This is a tie-break only: physical work quotes and completed runtime evidence can select another arm.
+			LmdbNativeCensusAggregate.PATH,
+			LmdbNativeAttemptMetrics.PATH_RUN_COUNT_HISTOGRAM,
+			LmdbNativeAttemptMetrics.PATH_DATATYPE_HISTOGRAM,
+			LmdbNativeAttemptMetrics.PATH_PREDICATE_PLANE_GROUPS,
 			// Keep each IR strategy's variants together rather than interleaving strategies by execution tier.
 			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL,
 			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL_INTERPRETED,
@@ -206,6 +212,38 @@ final class LmdbNativeStrategyPreference {
 	}
 
 	/**
+	 * Complete page/root-domain algorithms: their applicability is a structural proof that the whole answer reduces to
+	 * bounded metadata work, so they keep their cold prior in the normal dispatch frontier even while their per-feature
+	 * physical quote (DISTINCT-domain storage, cross-group membership) remains explicitly unknown. Physical quotes and
+	 * completed runtime evidence of other arms can still select past them.
+	 */
+	static boolean completeDomainAlgorithmFamily(String family) {
+		return LmdbNativeCensusAggregate.PATH.equals(family)
+				|| LmdbNativeAttemptMetrics.PATH_RUN_COUNT_HISTOGRAM.equals(family)
+				|| LmdbNativeAttemptMetrics.PATH_DATATYPE_HISTOGRAM.equals(family)
+				|| LmdbNativeAttemptMetrics.PATH_PREDICATE_PLANE_GROUPS.equals(family);
+	}
+
+	/**
+	 * Specialists whose applicability is structural (an index order, prefix runs, worst-case-optimal cyclic shapes,
+	 * packed factorization, complete page/root domains) and whose work is bounded by the index runs or metadata they
+	 * walk. Such an arm is a legal cold normal choice even while its per-feature quote is unknown; it does not need a
+	 * learned price to be dispatched the first time.
+	 */
+	static boolean structuralSpecialistFamily(String family) {
+		if (family == null) {
+			return false;
+		}
+		return boundedSpecialistFamily(family) || switch (family) {
+		case LmdbNativeAttemptMetrics.PATH_PREFIX_RUN, LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS,
+				LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT, LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS,
+				LmdbNativeAttemptMetrics.PATH_ORDERED_SINGLE_PATTERN_GROUPS ->
+			true;
+		default -> false;
+		};
+	}
+
+	/**
 	 * Families the arbiter must eventually execute rather than starve behind measured rivals. This includes the
 	 * engine's own IR tiers and the bounded specialist matrix whose applicability is expressed by whether a proposal
 	 * was offered for the current shape. A must-try arm bypasses the probe value gate because a starved arm can never
@@ -260,7 +298,9 @@ final class LmdbNativeStrategyPreference {
 		case LmdbNativeAttemptMetrics.PATH_WCOJ, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE,
 				LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE,
 				LmdbNativeAttemptMetrics.PATH_ADAPTIVE_FILTER_PLACEMENT, LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS,
-				LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED ->
+				LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED, LmdbNativeCensusAggregate.PATH,
+				LmdbNativeAttemptMetrics.PATH_RUN_COUNT_HISTOGRAM, LmdbNativeAttemptMetrics.PATH_DATATYPE_HISTOGRAM,
+				LmdbNativeAttemptMetrics.PATH_PREDICATE_PLANE_GROUPS ->
 			true;
 		default -> false;
 		};
