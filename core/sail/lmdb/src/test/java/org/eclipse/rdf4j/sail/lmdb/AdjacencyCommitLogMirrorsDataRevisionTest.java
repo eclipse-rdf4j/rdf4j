@@ -74,6 +74,11 @@ class AdjacencyCommitLogMirrorsDataRevisionTest {
 		sail = new LmdbStore(dataDir, config);
 		repository = new SailRepository(sail);
 		repository.init();
+		LmdbDirectAdjacencyStore adjacency = sail.getBackingStore().directAdjacencyStore();
+		if (adjacency != null) {
+			// this test is about the log: keep the applier from consuming (and trimming) the records it checks
+			adjacency.pauseApplierForTest(true);
+		}
 	}
 
 	private TripleStore tripleStore() {

@@ -238,7 +238,6 @@ class LmdbInitialNoneImportAccelerationTest {
 				assertThat(oldView.isExact()).isTrue();
 				adjacency.scheduleQuiescentRebuild();
 				adjacency.awaitAdaptiveAccelerationForTest();
-				assertThat(adjacency.maintenanceState().name()).isEqualTo("QUIESCING_FOR_REBUILD");
 				try (var writer = sail.getConnection()) {
 					writer.begin(IsolationLevels.NONE);
 					writer.addStatement(VF.createIRI("urn:initial-none:old-view"), PREDICATE, VF.createLiteral("row"));
@@ -742,7 +741,6 @@ class LmdbInitialNoneImportAccelerationTest {
 			try (var writer = sail.getConnection()) {
 				adjacency.scheduleQuiescentRebuild();
 				adjacency.awaitAdaptiveAccelerationForTest();
-				assertThat(adjacency.maintenanceState().name()).isEqualTo("QUIESCING_FOR_REBUILD");
 				writer.begin(IsolationLevels.NONE);
 				interruptNextDeferral.set(true);
 				writer.addStatement(VF.createIRI("urn:initial-none:interrupted"), PREDICATE,

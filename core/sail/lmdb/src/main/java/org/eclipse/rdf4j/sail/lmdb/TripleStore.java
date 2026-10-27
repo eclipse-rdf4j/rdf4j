@@ -5975,7 +5975,7 @@ class TripleStore implements Closeable {
 	void setDirectAdjacencyCommitHooks(DirectAdjacencyCommitListener listener,
 			LmdbDirectAdjacencyCommitDelta collector) {
 		this.directAdjacencyCommitListener = listener;
-		this.directAdjacencyCommitDelta = listener != null ? collector : null;
+		this.directAdjacencyCommitDelta = collector;
 	}
 
 	void captureDirectAdjacencyCoverage(long[] resolvedSelectedPredicates) {
@@ -6016,24 +6016,27 @@ class TripleStore implements Closeable {
 	}
 
 	private DerivedCommit prepareDerivedCommit(long nextRevision) {
-		if (directAdjacencyCommitListener == null || directAdjacencyCommitDelta == null
-				|| !directAdjacencyCommitDelta.begun()) {
+		if (directAdjacencyCommitDelta == null || !directAdjacencyCommitDelta.begun()) {
 			return null;
 		}
-		DirectAdjacencyCommitListener.PreparedCommit prepared;
+		DirectAdjacencyCommitListener.PreparedCommit prepared = null;
 		try {
 			CompletableFuture<LmdbDirectAdjacencyCommitDelta.SealedDirectDelta> sealing = directAdjacencyCommitDelta
 					.sealAsync(nextRevision);
-			// the commit log stages the same seal; it becomes the log head only when the physical commit succeeds
-			adjacencyCommitLog.stage(nextRevision, sealing.thenApply(AdjacencyDeltaMirror::new));
-			prepared = directAdjacencyCommitListener.prepareAsync(sealing, nextRevision);
+			// the commit log stages the seal; it becomes the log head only when the physical commit succeeds
+			adjacencyCommitLog.stage(nextRevision, sealing);
+			if (directAdjacencyCommitListener != null) {
+				prepared = directAdjacencyCommitListener.prepareAsync(sealing, nextRevision);
+			}
 		} catch (RuntimeException failedSeal) {
 			if (adjacencyCommitLog.hasStaged()) {
 				adjacencyCommitLog.retract();
 			}
 			directAdjacencyCommitDelta.reset();
-			prepared = directAdjacencyCommitListener.prepare(
-					LmdbDirectAdjacencyCommitDelta.SealedDirectDelta.overflowed(nextRevision), nextRevision);
+			if (directAdjacencyCommitListener != null) {
+				prepared = directAdjacencyCommitListener.prepare(
+						LmdbDirectAdjacencyCommitDelta.SealedDirectDelta.overflowed(nextRevision), nextRevision);
+			}
 		}
 		return new DerivedCommit(prepared, nextRevision);
 	}
@@ -6080,7 +6083,7 @@ class TripleStore implements Closeable {
 			} else {
 				adjacencyCommitLog.appendOverflowed(nextRevision);
 			}
-			if (derived != null && derived.prepared != null) {
+			if (derived != null && derived.prepared != null && directAdjacencyCommitListener != null) {
 				LmdbDirectAdjacencyCommitDelta.SealedDirectDelta sealed = directAdjacencyCommitListener
 						.finalizeCommit(derived.prepared);
 				derived.prepared = null;
@@ -6092,7 +6095,7 @@ class TripleStore implements Closeable {
 			fanOutStatsDirty = false;
 		} catch (RuntimeException | Error failure) {
 			postCommitDerivedFailure = failure;
-			if (derived != null && derived.prepared != null) {
+			if (derived != null && derived.prepared != null && directAdjacencyCommitListener != null) {
 				try {
 					directAdjacencyCommitListener.abort(derived.prepared);
 				} catch (RuntimeException | Error cleanup) {
@@ -6102,10 +6105,12 @@ class TripleStore implements Closeable {
 				}
 			}
 			clearFanOutStatsIfDirty();
-			try {
-				directAdjacencyCommitListener.physicalCommitFailedBeforeRevisionBump(nextRevision);
-			} catch (RuntimeException | Error gapFailure) {
-				failure.addSuppressed(gapFailure);
+			if (directAdjacencyCommitListener != null) {
+				try {
+					directAdjacencyCommitListener.physicalCommitFailedBeforeRevisionBump(nextRevision);
+				} catch (RuntimeException | Error gapFailure) {
+					failure.addSuppressed(gapFailure);
+				}
 			}
 			try {
 				recordRevisionAsGapIfMissing(nextRevision);
@@ -7614,7 +7619,8 @@ class TripleStore implements Closeable {
 					mdb_txn_abort(writeTxn);
 				}
 				writeTxn = 0;
-				if (preparedDirect != null && preparedDirect.prepared != null) {
+				if (preparedDirect != null && preparedDirect.prepared != null
+						&& directAdjacencyCommitListener != null) {
 					try {
 						directAdjacencyCommitListener.abort(preparedDirect.prepared);
 					} catch (RuntimeException | Error cleanup) {

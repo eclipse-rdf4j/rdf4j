@@ -8250,11 +8250,8 @@ class LmdbSailStore implements SailStore {
 			costModelDataGeneration.incrementAndGet();
 			if (directAdjacency != null && initialNoneImport == null) {
 				try {
-					LmdbDirectAdjacencyCommitDelta.SealedDirectDelta sealed = tripleStore
-							.drainDirectAdjacencyCommitDelta();
-					if (sealed != null) {
-						directAdjacency.applyCommitted(sealed, false);
-					}
+					// The commit log already carries this revision; this call only runs the post-commit seam.
+					directAdjacency.applyCommitted(tripleStore.drainDirectAdjacencyCommitDelta(), false);
 				} catch (Throwable derivedFailure) {
 					failure = derivedFailure;
 				}

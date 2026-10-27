@@ -16,13 +16,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.File;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
@@ -101,8 +96,8 @@ class LmdbDirectAdjacencyRecoveryTest {
 
 		try (LmdbAdjacencyReadView view = direct.acquire(backing.getTripleStore().getDataRevision())) {
 			assertThat(view.servesSnapshot()).as("an exact view holds the published index").isTrue();
+			// the rebuild runs beside the open view; the overflowing commit below gaps whatever it publishes
 			direct.scheduleQuiescentRebuild();
-			awaitState(sail, "QUIESCING_FOR_REBUILD");
 			try (RepositoryConnection connection = repo.getConnection()) {
 				connection.begin();
 				for (int i = 0; i < 500; i++) {
@@ -113,7 +108,6 @@ class LmdbDirectAdjacencyRecoveryTest {
 				}
 				connection.commit();
 			}
-			awaitState(sail, "DEGRADED_GAP");
 		}
 
 		assertThat(sail.awaitDirectAdjacencyReady(30, TimeUnit.SECONDS))
@@ -137,122 +131,12 @@ class LmdbDirectAdjacencyRecoveryTest {
 	}
 
 	/**
-	 * A deferred connection commit hands its delta over on the preparation thread after it has released write
-	 * admission. When that delta overflows, the gap it records is the only thing that can end a catch-up already
-	 * waiting for the revision with admission closed: no queued delta will ever arrive, and every later write waits for
-	 * admission to reopen.
+	 * A commit can bump the revision right after a build pins its snapshot. Its record lands in the commit log above
+	 * the pin, and the build replays it before publishing; when the record overflows instead, the build sees the gap
+	 * and a rebuild from a later pin recovers. Either way adjacency serves the committed rows.
 	 */
 	@Test
-	void aGapRecordedWhileCatchUpWaitsForItsRevisionEndsTheBuild() throws Exception {
-		previousCommitMaxBytes = System.getProperty(LmdbDirectAdjacencyOptions.COMMIT_MAX_BYTES_PROPERTY);
-		// Both capture batches of the commit below fit this budget, so the first full batch always reaches the
-		// preparation thread; the accumulated delta cannot grow to a full batch, so the commit still overflows.
-		System.setProperty(LmdbDirectAdjacencyOptions.COMMIT_MAX_BYTES_PROPERTY, "100000");
-		LmdbStore sail = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc").setDirectAdjacencyEnabled(true)
-				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
-				.setDirectAdjacencyMaxBytes(1L << 30)
-				.setDirectAdjacencyBuildOnStart(false));
-		repo = new SailRepository(sail);
-		repo.init();
-		LmdbSailStore backing = sail.getBackingStore();
-		LmdbDirectAdjacencyStore direct = backing.directAdjacencyStore();
-
-		CountDownLatch buildAtOnlineTarget = new CountDownLatch(1);
-		CountDownLatch releaseBuild = new CountDownLatch(1);
-		AtomicBoolean firstBuild = new AtomicBoolean(true);
-		direct.beforeOnlineCatchUpForTest = () -> {
-			if (firstBuild.compareAndSet(true, false)) {
-				buildAtOnlineTarget.countDown();
-				await(releaseBuild);
-			}
-		};
-		CountDownLatch captureHeld = new CountDownLatch(1);
-		CountDownLatch releaseCapture = new CountDownLatch(1);
-		AtomicBoolean firstCapture = new AtomicBoolean(true);
-		direct.beforePreparationForTest = () -> {
-			if (firstCapture.compareAndSet(true, false)) {
-				captureHeld.countDown();
-				await(releaseCapture);
-			}
-		};
-		AtomicReference<Thread> catchUp = new AtomicReference<>();
-		direct.catchUpWaitForTest = () -> catchUp.compareAndSet(null, Thread.currentThread());
-
-		Set<Statement> expected = ConcurrentHashMap.newKeySet();
-		ExecutorService writer = Executors.newSingleThreadExecutor();
-		try {
-			direct.triggerBuild();
-			assertThat(buildAtOnlineTarget.await(30, TimeUnit.SECONDS)).as("the build captured its online target")
-					.isTrue();
-
-			Future<?> overflowing = writer.submit(() -> {
-				try (RepositoryConnection connection = repo.getConnection()) {
-					connection.begin();
-					for (int i = 0; i < 1100; i++) {
-						Statement statement = F.createStatement(F.createIRI("http://example.org/recovery/s" + i), P,
-								F.createIRI("http://example.org/recovery/batch"));
-						connection.add(statement);
-						expected.add(statement);
-					}
-					connection.commit();
-				}
-				return null;
-			});
-			assertThat(captureHeld.await(30, TimeUnit.SECONDS))
-					.as("a full capture batch reached the preparation thread")
-					.isTrue();
-			awaitCondition(() -> backing.getTripleStore().getDataRevision() == 1L,
-					() -> "revision 1 committed: " + sail.getDirectAdjacencyReadinessDescription());
-
-			// The commit released admission before its delta was sealed, so catch-up closes admission and waits for it.
-			releaseBuild.countDown();
-			awaitCondition(() -> catchUp.get() != null && catchUp.get().getState() == Thread.State.WAITING,
-					() -> "catch-up waits for revision 1: " + sail.getDirectAdjacencyReadinessDescription());
-
-			releaseCapture.countDown();
-			overflowing.get(30, TimeUnit.SECONDS);
-
-			Statement later = F.createStatement(F.createIRI("http://example.org/recovery/later"), P,
-					F.createIRI("http://example.org/recovery/batch"));
-			Future<?> laterWrite = writer.submit(() -> {
-				try (RepositoryConnection connection = repo.getConnection()) {
-					connection.add(later);
-				}
-				return null;
-			});
-			try {
-				laterWrite.get(30, TimeUnit.SECONDS);
-			} catch (TimeoutException stuck) {
-				throw new AssertionError("a later write still waits for write admission: "
-						+ sail.getDirectAdjacencyReadinessDescription(), stuck);
-			}
-			expected.add(later);
-		} finally {
-			releaseBuild.countDown();
-			releaseCapture.countDown();
-			writer.shutdownNow();
-		}
-
-		assertThat(sail.awaitDirectAdjacencyReady(30, TimeUnit.SECONDS))
-				.as("adjacency recovers from the gap: %s", sail.getDirectAdjacencyReadinessDescription())
-				.isTrue();
-		try (RepositoryConnection connection = repo.getConnection()) {
-			Set<Statement> actual = new HashSet<>();
-			try (RepositoryResult<Statement> result = connection.getStatements(null, P,
-					F.createIRI("http://example.org/recovery/batch"), false)) {
-				result.forEach(actual::add);
-			}
-			assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
-		}
-	}
-
-	/**
-	 * A deferred commit can bump the revision after a build pins its snapshot and record its overflow gap before the
-	 * build looks at the gap marker. The build must still treat that gap as news: no delta will ever arrive for the
-	 * revision, so a build that adopted the gap as already retired would wait in catch-up until some later write.
-	 */
-	@Test
-	void aGapRecordedRightAfterTheBuildSnapshotStillLetsAdjacencyRecover() throws Exception {
+	void aCommitRightAfterTheBuildSnapshotIsReplayedOrRecoveredFrom() throws Exception {
 		previousCommitMaxBytes = System.getProperty(LmdbDirectAdjacencyOptions.COMMIT_MAX_BYTES_PROPERTY);
 		// Every connection commit overflows this budget and records a gap.
 		System.setProperty(LmdbDirectAdjacencyOptions.COMMIT_MAX_BYTES_PROPERTY, "4096");
@@ -268,41 +152,47 @@ class LmdbDirectAdjacencyRecoveryTest {
 
 		AtomicBoolean firstBuild = new AtomicBoolean(true);
 		AtomicReference<Throwable> writeFailure = new AtomicReference<>();
+		AtomicReference<Thread> writer = new AtomicReference<>();
+		TripleStore triples = sail.getBackingStore().getTripleStore();
 		direct.afterBuildSnapshotForTest = () -> {
 			if (!firstBuild.compareAndSet(true, false)) {
 				return;
 			}
-			Thread writer = new Thread(() -> {
+			Thread thread = new Thread(() -> {
 				try (RepositoryConnection connection = repo.getConnection()) {
 					connection.add(statement);
 				} catch (Throwable failure) {
 					writeFailure.set(failure);
 				}
 			}, "post-snapshot-writer");
-			writer.start();
+			writer.set(thread);
+			thread.start();
+			// The commit lands in the log above the pin while this build runs. The committer itself waits for a new
+			// store's startup build, so only the native commit is awaited here, not the writer thread.
 			try {
-				writer.join(TimeUnit.SECONDS.toMillis(30));
-				if (writer.isAlive()) {
-					writeFailure.set(new AssertionError("the write did not finish after the build snapshot"));
-					return;
+				long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+				while (triples.getDataRevision() < 1L && System.nanoTime() < deadline) {
+					Thread.sleep(5);
 				}
-				// The deferred commit records its overflow gap on the preparation thread.
-				awaitCondition(() -> direct.snapshotMetrics().emergencyGapFromRevision == 1L,
-						() -> "revision 1 recorded its gap: " + sail.getDirectAdjacencyReadinessDescription());
+				if (triples.getDataRevision() < 1L) {
+					writeFailure.set(new AssertionError("the write did not commit after the build snapshot"));
+				}
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();
 				writeFailure.set(e);
-			} catch (Throwable failure) {
-				writeFailure.set(failure);
 			}
 		};
 
 		direct.triggerBuild();
 		awaitCondition(() -> !firstBuild.get(), () -> "the build pinned its snapshot");
 		assertThat(sail.awaitDirectAdjacencyReady(30, TimeUnit.SECONDS))
-				.as("adjacency recovers from a gap recorded after the build snapshot: %s, write failure: %s",
+				.as("adjacency serves the commit made after the build snapshot: %s, write failure: %s",
 						sail.getDirectAdjacencyReadinessDescription(), writeFailure.get())
 				.isTrue();
+		Thread thread = writer.get();
+		assertThat(thread).isNotNull();
+		thread.join(TimeUnit.SECONDS.toMillis(30));
+		assertThat(thread.isAlive()).as("the writer returns once its revision is applied").isFalse();
 		assertThat(writeFailure.get()).isNull();
 		try (RepositoryConnection connection = repo.getConnection()) {
 			Set<Statement> actual = new HashSet<>();
@@ -313,31 +203,11 @@ class LmdbDirectAdjacencyRecoveryTest {
 		}
 	}
 
-	private static void await(CountDownLatch latch) {
-		try {
-			if (!latch.await(30, TimeUnit.SECONDS)) {
-				throw new AssertionError("the test never released this phase");
-			}
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new AssertionError("interrupted while held", e);
-		}
-	}
-
 	private static void awaitCondition(BooleanSupplier condition, Supplier<String> description)
 			throws InterruptedException {
 		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
 		while (!condition.getAsBoolean()) {
 			assertThat(System.nanoTime() - deadline).as(description.get()).isNegative();
-			Thread.sleep(5);
-		}
-	}
-
-	private static void awaitState(LmdbStore sail, String state) throws InterruptedException {
-		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-		while (!sail.getDirectAdjacencyReadinessDescription().startsWith("state=" + state)) {
-			assertThat(System.nanoTime() - deadline).as("reached %s: %s", state,
-					sail.getDirectAdjacencyReadinessDescription()).isNegative();
 			Thread.sleep(5);
 		}
 	}

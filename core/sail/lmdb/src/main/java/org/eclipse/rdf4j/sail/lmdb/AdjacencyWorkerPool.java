@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.concurrent.Callable;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 /**
@@ -53,4 +54,9 @@ interface AdjacencyWorkerPool {
 	<T> void submit(Callable<T> work, Consumer<Outcome<T>> onDone);
 
 	void shutdown();
+
+	/** Waits until no submitted work is running or queued; pools that run work inline are always idle. */
+	default boolean awaitIdle(long timeout, TimeUnit unit) throws InterruptedException {
+		return true;
+	}
 }

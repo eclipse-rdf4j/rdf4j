@@ -185,6 +185,12 @@ class LmdbAdjacencyStartupConcurrencyTest {
 			});
 			try {
 				assertThat(deltasHandedOff.await(30, TimeUnit.SECONDS)).isTrue();
+				// the delta seals a hair before the native commit lands; wait for the commit itself
+				long commitDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+				while (triples.getNativeCommitGeneration() != nativeGenerationBefore + 1
+						&& System.nanoTime() < commitDeadline) {
+					Thread.onSpinWait();
+				}
 				assertThat(writer.isDone()).isFalse();
 				assertThat(triples.getNativeCommitGeneration()).isEqualTo(nativeGenerationBefore + 1);
 				LmdbStoreConnectionAdjacencyBatchTest.assertCommittedNativePlanes(sail, "urn:explicit", "urn:inferred",
@@ -195,7 +201,7 @@ class LmdbAdjacencyStartupConcurrencyTest {
 			writer.get(30, TimeUnit.SECONDS);
 			assertThat(triples.getDataRevision()).isEqualTo(revisionBefore + 1);
 			adjacency.awaitCommitCleanupForTest();
-			assertThat(adjacency.backlogBytes()).isZero();
+			assertThat(adjacency.backlogBytes()).as(adjacency.publicationDiagnostics()).isZero();
 			assertThat(adjacency.publishedStateForTest().appliedRevision())
 					.isEqualTo(adjacency.snapshotMetrics().currentDataRevision);
 			try (var connection = repository.getConnection()) {
@@ -281,7 +287,7 @@ class LmdbAdjacencyStartupConcurrencyTest {
 			}
 			assertThat(sail.awaitDirectAdjacencyReady(30, TimeUnit.SECONDS)).isTrue();
 			adjacency.awaitCommitCleanupForTest();
-			assertThat(adjacency.backlogBytes()).isZero();
+			assertThat(adjacency.backlogBytes()).as(adjacency.publicationDiagnostics()).isZero();
 			try (var connection = repository.getConnection()) {
 				assertThat(connection.size()).isEqualTo(outcome.equals("interruption") ? 2 : 3);
 			}
@@ -463,10 +469,6 @@ class LmdbAdjacencyStartupConcurrencyTest {
 				boolean ready = sail.awaitDirectAdjacencyReady(30, TimeUnit.SECONDS);
 				assertThat(ready).as(sail.getDirectAdjacencyReadinessDescription()).isTrue();
 				assertConsistentSnapshot(repository);
-				assertThat(adjacency.synchronousUpdatesActivatedForTest()).isTrue();
-				assertThat(adjacency.lastCutoverRevisions()).isNotNegative();
-				assertThat(adjacency.lastCutoverQueuedCommits()).isPositive();
-				assertThat(adjacency.lastCutoverNanos()).isPositive();
 				assertThat(adjacency.publishedStateForTest().appliedRevision())
 						.isEqualTo(adjacency.snapshotMetrics().currentDataRevision);
 			} finally {

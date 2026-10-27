@@ -1028,7 +1028,9 @@ class LmdbDirectAdjacencyQueryTest {
 		CountDownLatch commitReachedPublicationWindow = new CountDownLatch(1);
 		CountDownLatch allowRevisionPublication = new CountDownLatch(1);
 		tripleStore.setDirectAdjacencyCommitHooks((delta, nextRevision) -> {
-			delegate.beforeRevisionBump(delta, nextRevision);
+			if (delegate != null) {
+				delegate.beforeRevisionBump(delta, nextRevision);
+			}
 			commitReachedPublicationWindow.countDown();
 			try {
 				allowRevisionPublication.await();
@@ -2949,10 +2951,11 @@ class LmdbDirectAdjacencyQueryTest {
 		CountDownLatch finalizationStarted = new CountDownLatch(1);
 		CountDownLatch releaseFinalization = new CountDownLatch(1);
 		CountDownLatch readinessStarted = new CountDownLatch(1);
-		Runnable previousAdmissionHook = direct.beforeApplyQueueAdmissionForTest;
+		Runnable previousAdmissionHook = direct.beforePreparationForTest;
 		Runnable previousFinalizationHook = direct.beforePreparedFinalizeWaitForTest;
 		ExecutorService executor = Executors.newFixedThreadPool(2);
-		direct.beforeApplyQueueAdmissionForTest = () -> {
+		// the preparation of the committed record is the hand-off that readiness must wait behind
+		direct.beforePreparationForTest = () -> {
 			admissionStarted.countDown();
 			awaitQueueAdmissionRelease(releaseAdmission);
 		};
@@ -2974,9 +2977,7 @@ class LmdbDirectAdjacencyQueryTest {
 				assertThat(commit.isDone()).isFalse();
 			}
 			releaseFinalization.countDown();
-			// Queue admission runs on the preparation worker and can precede the connection's admission release.
 			commit.get(30, TimeUnit.SECONDS);
-			assertThat(direct.publicationDiagnostics()).contains("admittedWrites=0");
 			LmdbAdjacencyMetrics.Snapshot handoff = direct.snapshotMetrics();
 			assertThat(handoff.currentDataRevision).as(direct.publicationDiagnostics())
 					.isGreaterThan(handoff.appliedRevision);
@@ -3001,7 +3002,7 @@ class LmdbDirectAdjacencyQueryTest {
 		} finally {
 			releaseFinalization.countDown();
 			releaseAdmission.countDown();
-			direct.beforeApplyQueueAdmissionForTest = previousAdmissionHook;
+			direct.beforePreparationForTest = previousAdmissionHook;
 			direct.beforePreparedFinalizeWaitForTest = previousFinalizationHook;
 			executor.shutdownNow();
 		}
@@ -3405,26 +3406,23 @@ class LmdbDirectAdjacencyQueryTest {
 		assertDoublyBoundContextProbes();
 	}
 
-	@ParameterizedTest
-	@ValueSource(booleans = { false, true })
-	void resumingApplierWaitsForCommittedPreparation(boolean delayQueueAdmission) throws Exception {
+	/**
+	 * Resuming the applier includes a preparation that is still running: the resume returns only once the committed
+	 * revision is applied, so a reader after it sees the doubly bound context rows from adjacency.
+	 */
+	@Test
+	void resumingApplierWaitsForCommittedPreparation() throws Exception {
 		System.setProperty(LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "false");
 		System.setProperty(LmdbDirectAdjacencyStore.BOUND_PROBE_PROPERTY, "true");
 		openPreferStore();
 		direct.pauseApplierForTest(true);
-		CountDownLatch handoffReached = new CountDownLatch(1);
-		CountDownLatch releaseHandoff = new CountDownLatch(1);
-		Runnable delayedHandoff = () -> {
-			handoffReached.countDown();
-			awaitQueueAdmissionRelease(releaseHandoff);
-		};
+		CountDownLatch preparationReached = new CountDownLatch(1);
+		CountDownLatch releasePreparation = new CountDownLatch(1);
 		Runnable previousPreparation = direct.beforePreparationForTest;
-		Runnable previousAdmission = direct.beforeApplyQueueAdmissionForTest;
-		if (delayQueueAdmission) {
-			direct.beforeApplyQueueAdmissionForTest = delayedHandoff;
-		} else {
-			direct.beforePreparationForTest = delayedHandoff;
-		}
+		direct.beforePreparationForTest = () -> {
+			preparationReached.countDown();
+			awaitQueueAdmissionRelease(releasePreparation);
+		};
 		ExecutorService executor = Executors.newSingleThreadExecutor();
 		Future<?> resume = null;
 		try {
@@ -3432,29 +3430,7 @@ class LmdbDirectAdjacencyQueryTest {
 				connection.begin();
 				connection.add(S1, P1, O1, G1);
 				connection.add(S1, P1, O1, G2);
-				if (!delayQueueAdmission) {
-					// Capture invokes its preparation hook for full batches, rather than the small final tail.
-					for (int index = 0; index < 2048; index++) {
-						connection.add(F.createIRI("http://example.org/prepared/" + index), P2, O1);
-					}
-				}
 				connection.commit();
-			}
-			assertThat(handoffReached.await(30, TimeUnit.SECONDS)).isTrue();
-			if (delayQueueAdmission) {
-				// Pending-row evidence is already published, but the maintenance queue is still empty. A snapshot
-				// acquired here reproduces the original two hits: only the two untouched rows can use adjacency.
-				LmdbAdjacencyMetrics.Snapshot before = direct.snapshotMetrics();
-				try (RoutingObservation observation = new RoutingObservation()) {
-					try (CloseableDataset pending = dataset()) {
-						assertDoublyBoundContextRows(pending, observation);
-					}
-					LmdbAdjacencyMetrics.Snapshot after = direct.snapshotMetrics();
-					String diagnostics = routingDiagnostics(before, after, observation);
-					assertThat(after.lookupHits).as(diagnostics).isEqualTo(before.lookupHits + 2);
-					assertThat(after.fallbacks(FallbackReason.PENDING_ROW)).as(diagnostics)
-							.isEqualTo(before.fallbacks(FallbackReason.PENDING_ROW) + 2);
-				}
 			}
 			CountDownLatch resumeStarted = new CountDownLatch(1);
 			resume = executor.submit(() -> {
@@ -3462,17 +3438,17 @@ class LmdbDirectAdjacencyQueryTest {
 				direct.pauseApplierForTest(false);
 			});
 			assertThat(resumeStarted.await(30, TimeUnit.SECONDS)).isTrue();
+			assertThat(preparationReached.await(30, TimeUnit.SECONDS)).isTrue();
 			Future<?> waitingResume = resume;
 			assertThatThrownBy(() -> waitingResume.get(1, TimeUnit.SECONDS))
-					.as("resume must include committed preparation before draining maintenance")
+					.as("resume must include the running preparation before it returns")
 					.isInstanceOf(TimeoutException.class);
-			releaseHandoff.countDown();
+			releasePreparation.countDown();
 			resume.get(30, TimeUnit.SECONDS);
 			assertDoublyBoundContextProbes();
 		} finally {
-			releaseHandoff.countDown();
+			releasePreparation.countDown();
 			direct.beforePreparationForTest = previousPreparation;
-			direct.beforeApplyQueueAdmissionForTest = previousAdmission;
 			try {
 				if (resume != null) {
 					resume.get(30, TimeUnit.SECONDS);

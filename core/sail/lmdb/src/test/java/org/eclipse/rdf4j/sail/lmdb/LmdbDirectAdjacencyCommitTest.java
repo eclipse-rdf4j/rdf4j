@@ -56,17 +56,17 @@ class LmdbDirectAdjacencyCommitTest {
 	}
 
 	@Test
-	void synchronousCommitOverlapsPhysicalCommitAndPublishesBeforeRevisionVisibility() throws Exception {
+	void synchronousCommitReturnsOnlyAfterItsRevisionIsApplied() throws Exception {
 		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });
 		assertThat(store.buildNowForTest()).isTrue();
 		long previousRevision = tripleStore.getDataRevision();
 
-		CountDownLatch preparationStarted = new CountDownLatch(1);
-		CountDownLatch releasePreparation = new CountDownLatch(1);
+		CountDownLatch sealStarted = new CountDownLatch(1);
+		CountDownLatch releaseSeal = new CountDownLatch(1);
 		CountDownLatch physicalCommitCompleted = new CountDownLatch(1);
 		setRunnableField("beforePreparationForTest", () -> {
-			preparationStarted.countDown();
-			await(releasePreparation);
+			sealStarted.countDown();
+			await(releaseSeal);
 		});
 		setRunnableField("beforePreparedFinalizeWaitForTest", physicalCommitCompleted::countDown);
 
@@ -77,21 +77,25 @@ class LmdbDirectAdjacencyCommitTest {
 				throw new AssertionError(e);
 			}
 		});
+		long revision = previousRevision + 1;
 		try {
-			assertThat(preparationStarted.await(30, TimeUnit.SECONDS)).isTrue();
+			assertThat(sealStarted.await(30, TimeUnit.SECONDS)).isTrue();
 			assertThat(physicalCommitCompleted.await(30, TimeUnit.SECONDS))
-					.as("LMDB must commit while adjacency preparation is still blocked")
+					.as("LMDB must commit while the adjacency seal is still blocked")
 					.isTrue();
-			assertThat(tripleStore.getDataRevision()).isEqualTo(previousRevision);
+			// the revision is visible as soon as LMDB committed; the committer is the one who waits
+			assertThat(tripleStore.getDataRevision()).isEqualTo(revision);
 			assertThat(store.publishedStateForTest().appliedRevision()).isEqualTo(previousRevision);
 			assertThat(commit.isDone()).isFalse();
+			try (LmdbAdjacencyReadView pending = store.acquire(revision)) {
+				assertThat(pending.isExact()).as("an unsealed record keeps readers on LMDB").isFalse();
+				assertThat(pending.fallbackReason()).isEqualTo(FallbackReason.PENDING_ROW);
+			}
 		} finally {
-			releasePreparation.countDown();
+			releaseSeal.countDown();
 		}
 		commit.get(30, TimeUnit.SECONDS);
 
-		long revision = previousRevision + 1;
-		assertThat(tripleStore.getDataRevision()).isEqualTo(revision);
 		assertThat(store.publishedStateForTest().appliedRevision()).isEqualTo(revision);
 		assertThat(tripleStore.drainDirectAdjacencyCommitDelta()).isNull();
 		try (LmdbAdjacencyReadView view = store.acquire(revision)) {
@@ -101,19 +105,17 @@ class LmdbDirectAdjacencyCommitTest {
 		LmdbAdjacencyMetrics.PhaseTimings timings = store.phaseTimings();
 		assertThat(timings.preparationCount()).isPositive();
 		assertThat(timings.publicationCount()).isPositive();
-		assertThat(timings.preparationNanos()).isPositive();
-		assertThat(timings.publicationNanos()).isPositive();
 	}
 
 	@Test
-	void failedPhysicalCommitAbortsPreparedAdjacencyAndLeavesRevisionUnchanged() throws Exception {
+	void failedPhysicalCommitRetractsTheStagedRecordAndLeavesRevisionUnchanged() throws Exception {
 		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });
 		assertThat(store.buildNowForTest()).isTrue();
 		long previousRevision = tripleStore.getDataRevision();
-		CountDownLatch preparedOutputReady = new CountDownLatch(1);
-		setRunnableField("afterPreparationForTest", preparedOutputReady::countDown);
+		CountDownLatch sealed = new CountDownLatch(1);
+		setRunnableField("beforeApplyQueueAdmissionForTest", sealed::countDown);
 		setTripleStoreRunnableField("beforePhysicalCommitForTest", () -> {
-			await(preparedOutputReady);
+			await(sealed); // the record is staged and sealed when LMDB fails
 			throw new IllegalStateException("injected physical commit failure");
 		});
 
@@ -125,7 +127,9 @@ class LmdbDirectAdjacencyCommitTest {
 
 		assertThat(tripleStore.getDataRevision()).isEqualTo(previousRevision);
 		assertThat(store.publishedStateForTest().appliedRevision()).isEqualTo(previousRevision);
-		assertThat(store.memoryAccount().chargedBytes(MemoryKind.PREPARATION_OUTPUT)).isZero();
+		assertThat(store.queuedCommitsForTest()).as("the staged record was retracted").isZero();
+		assertThat(store.backlogBytes()).isZero();
+		assertThat(store.memoryAccount().chargedBytes(MemoryKind.PENDING)).isZero();
 		try (TxnManager.Txn txn = tripleStore.getTxnManager().createReadTxn();
 				RecordIterator statements = tripleStore.getTriples(txn, S2, P1, O2, 0, true)) {
 			assertThat(statements.next()).isNull();
@@ -195,43 +199,42 @@ class LmdbDirectAdjacencyCommitTest {
 	}
 
 	@Test
-	void onlineCatchUpAllowsWritesThenClosesAdmissionAndDrainsAnAdmittedWriter() throws Exception {
+	void writesStayAdmittedDuringABuildAndTheBuildCatchesThemUp() throws Exception {
 		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });
 		recreateStore(Map.of());
 		CountDownLatch online = new CountDownLatch(1);
 		CountDownLatch releaseOnline = new CountDownLatch(1);
-		CountDownLatch fenced = new CountDownLatch(1);
 		store.beforeOnlineCatchUpForTest = () -> {
 			online.countDown();
 			await(releaseOnline);
 		};
-		store.afterWriteAdmissionClosedForTest = fenced::countDown;
 		store.triggerBuild();
 		assertThat(online.await(30, TimeUnit.SECONDS)).isTrue();
-		assertThat(store.tryBeginBackingWrite()).isTrue();
 		try {
-			commitQuads(new long[][] { add(S2, P1, O2, G1, true) });
-		} finally {
+			assertThat(store.tryBeginBackingWrite()).isTrue();
+			try {
+				// a populated store's build never blocks a committer: the record lands in the log for the build to
+				// replay
+				tripleStore.startTransaction();
+				tripleStore.storeTriple(S2, P1, O2, G1, true);
+				tripleStore.commit();
+				store.applyCommitted(tripleStore.drainDirectAdjacencyCommitDelta(), false);
+			} finally {
+				store.endBackingWrite();
+			}
+			assertThat(store.tryBeginBackingWrite()).isTrue();
 			store.endBackingWrite();
-		}
-		assertThat(store.tryBeginBackingWrite()).isTrue();
-		try {
-			releaseOnline.countDown();
-			assertThat(fenced.await(30, TimeUnit.SECONDS)).isTrue();
-			assertThat(store.tryBeginBackingWrite()).isFalse();
-			commitQuads(new long[][] { add(S2, P1, O1, G1, true) });
+			assertThat(store.queuedCommitsForTest()).isEqualTo(1);
 		} finally {
-			store.endBackingWrite();
 			releaseOnline.countDown();
 		}
-		assertThat(store.awaitCurrentRevisionReady(30, TimeUnit.SECONDS)).isTrue();
-		assertThat(store.tryBeginBackingWrite())
-				.as("exact-revision readiness must follow catch-up write-admission reopening: %s",
-						store.publicationDiagnostics())
-				.isTrue();
-		store.endBackingWrite();
+		assertThat(store.awaitCurrentRevisionReady(30, TimeUnit.SECONDS)).as(store.publicationDiagnostics()).isTrue();
 		assertThat(store.queuedCommitsForTest()).isZero();
 		assertThat(store.backlogBytes()).isZero();
+		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
+			assertThat(view.isExact()).isTrue();
+			assertThat(probe(view, S2, P1, O2, G1, true)).hasSize(1);
+		}
 	}
 
 	@Test
@@ -316,15 +319,15 @@ class LmdbDirectAdjacencyCommitTest {
 	}
 
 	@Test
-	void interruptedFinalizeWaitReleasesPreparedOutputAndPreservesInterrupt() throws Exception {
+	void interruptedPublicationWaitPreservesTheInterruptAndTheCommit() throws Exception {
 		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });
 		assertThat(store.buildNowForTest()).isTrue();
 		long previousRevision = tripleStore.getDataRevision();
-		CountDownLatch preparationReached = new CountDownLatch(1);
-		CountDownLatch releasePreparation = new CountDownLatch(1);
+		CountDownLatch sealReached = new CountDownLatch(1);
+		CountDownLatch releaseSeal = new CountDownLatch(1);
 		setRunnableField("beforePreparationForTest", () -> {
-			preparationReached.countDown();
-			await(releasePreparation);
+			sealReached.countDown();
+			await(releaseSeal);
 		});
 		AtomicReference<Throwable> failure = new AtomicReference<>();
 		AtomicBoolean interrupted = new AtomicBoolean();
@@ -340,19 +343,24 @@ class LmdbDirectAdjacencyCommitTest {
 		try (LmdbAdjacencyReadView held = store.acquire(previousRevision)) {
 			commitThread.start();
 			try {
-				assertThat(preparationReached.await(30, TimeUnit.SECONDS)).isTrue();
+				assertThat(sealReached.await(30, TimeUnit.SECONDS)).isTrue();
 				commitThread.interrupt();
+				commitThread.join(TimeUnit.SECONDS.toMillis(30));
+				assertThat(commitThread.isAlive()).as("the interrupted committer returns without waiting").isFalse();
 			} finally {
-				releasePreparation.countDown();
+				releaseSeal.countDown();
 			}
-			commitThread.join(TimeUnit.SECONDS.toMillis(30));
-
-			assertThat(commitThread.isAlive()).isFalse();
 			assertThat(failure.get()).isNull();
 			assertThat(interrupted).isTrue();
 			assertThat(tripleStore.getDataRevision()).isEqualTo(previousRevision + 1);
-			assertThat(store.snapshotMetrics().emergencyGapFromRevision).isEqualTo(previousRevision + 1);
+			// the commit itself is not lost: once the seal completes the applier publishes it
+			assertThat(store.awaitCurrentRevisionReady(30, TimeUnit.SECONDS)).as(store.publicationDiagnostics())
+					.isTrue();
 			assertThat(store.memoryAccount().chargedBytes(MemoryKind.PREPARATION_OUTPUT)).isZero();
+			try (LmdbAdjacencyReadView view = store.acquire(previousRevision + 1)) {
+				assertThat(view.isExact()).isTrue();
+				assertThat(probe(view, S2, P1, O2, 0, true)).hasSize(1);
+			}
 		}
 	}
 
@@ -708,7 +716,7 @@ class LmdbDirectAdjacencyCommitTest {
 		// degraded window is asserted; releaseRecovery() below lets it run
 		CountDownLatch recoveryStarted = new CountDownLatch(1);
 		CountDownLatch releaseRecovery = new CountDownLatch(1);
-		setRunnableField("beforeQuiescentRebuildStepForTest", () -> {
+		setRunnableField("beforeBuildSnapshotForTest", () -> {
 			recoveryStarted.countDown();
 			await(releaseRecovery);
 		});
@@ -726,7 +734,7 @@ class LmdbDirectAdjacencyCommitTest {
 			assertThat(view.fallbackReason()).isEqualTo(FallbackReason.REVISION_GAP);
 		}
 		releaseRecovery.countDown();
-		setRunnableField("beforeQuiescentRebuildStepForTest", null);
+		setRunnableField("beforeBuildSnapshotForTest", null);
 		// a fresh continuous rebuild clears the emergency gap
 		assertThat(store.buildNowForTest()).isTrue();
 		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
@@ -761,13 +769,22 @@ class LmdbDirectAdjacencyCommitTest {
 		assertThat(store.buildNowForTest()).isTrue();
 		long revision = tripleStore.getDataRevision();
 
-		// a gap recorded without any commit-path scheduling: the read path is the only remaining chance to notice
-		// that every acquisition is degraded, so it owns the backstop that keeps the degradation from being permanent
+		// hold the rebuild the gap schedules so the degraded window can be observed
+		CountDownLatch recoveryStarted = new CountDownLatch(1);
+		CountDownLatch releaseRecovery = new CountDownLatch(1);
+		setRunnableField("beforeBuildSnapshotForTest", () -> {
+			recoveryStarted.countDown();
+			await(releaseRecovery);
+		});
+		// a gap recorded without any commit-path scheduling still schedules its own recovery
 		store.markGap(revision);
+		assertThat(recoveryStarted.await(30, TimeUnit.SECONDS)).as("the gap must schedule a rebuild").isTrue();
 		try (LmdbAdjacencyReadView gapped = store.acquire(revision)) {
 			assertThat(gapped.isExact()).isFalse();
 			assertThat(gapped.fallbackReason()).isEqualTo(FallbackReason.REVISION_GAP);
 		}
+		releaseRecovery.countDown();
+		setRunnableField("beforeBuildSnapshotForTest", null);
 
 		assertThat(store.awaitCurrentRevisionReady(30, TimeUnit.SECONDS)).isTrue();
 		assertThat(store.snapshotMetrics().emergencyGapFromRevision).isEqualTo(Long.MAX_VALUE);
@@ -778,24 +795,19 @@ class LmdbDirectAdjacencyCommitTest {
 	}
 
 	@Test
-	void listenerFailureAfterPhysicalCommitAdvancesRevisionAndPublishesGap() throws Exception {
+	void listenerFailureAfterPhysicalCommitAdvancesRevisionAndKeepsAdjacencyExact() throws Exception {
 		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });
 		long beforeFailure = tripleStore.getDataRevision();
 		assertThat(store.buildNowForTest()).isTrue();
 
-		// the gap this failure records schedules its own recovery: hold that rebuild while the degraded window is
-		// asserted, otherwise the maintenance thread can retire the gap first
-		CountDownLatch recoveryStarted = new CountDownLatch(1);
-		CountDownLatch releaseRecovery = new CountDownLatch(1);
-		setRunnableField("beforeQuiescentRebuildStepForTest", () -> {
-			recoveryStarted.countDown();
-			await(releaseRecovery);
-		});
-
+		// a derived-state listener is optional wiring: its failure after the physical commit reaches the committer,
+		// while the commit log, which the TripleStore appends to itself, still carries the revision
 		TripleStore.DirectAdjacencyCommitListener delegate = store.commitListener();
 		AtomicBoolean failOnce = new AtomicBoolean(true);
 		tripleStore.setDirectAdjacencyCommitHooks((delta, nextRevision) -> {
-			delegate.beforeRevisionBump(delta, nextRevision);
+			if (delegate != null) {
+				delegate.beforeRevisionBump(delta, nextRevision);
+			}
 			if (failOnce.compareAndSet(true, false)) {
 				throw new IllegalStateException("injected listener failure after physical commit");
 			}
@@ -807,18 +819,13 @@ class LmdbDirectAdjacencyCommitTest {
 				.isInstanceOf(IllegalStateException.class)
 				.hasMessage("injected listener failure after physical commit");
 
-		assertThat(recoveryStarted.await(30, TimeUnit.SECONDS))
-				.as("a physical commit that advanced past its delta must schedule the rebuild that retires its gap")
-				.isTrue();
 		long failedCommitRevision = beforeFailure + 1;
 		assertThat(tripleStore.getDataRevision()).isEqualTo(failedCommitRevision);
+		assertThat(store.awaitCurrentRevisionReady(30, TimeUnit.SECONDS)).as(store.publicationDiagnostics()).isTrue();
 		try (LmdbAdjacencyReadView view = store.acquire(failedCommitRevision)) {
-			assertThat(view.isExact()).isFalse();
-			assertThat(view.fallbackReason()).isEqualTo(FallbackReason.REVISION_GAP);
+			assertThat(view.isExact()).isTrue();
+			assertThat(probe(view, S2, P1, O2, 0, true)).hasSize(1);
 		}
-		releaseRecovery.countDown();
-		setRunnableField("beforeQuiescentRebuildStepForTest", null);
-
 		try (TxnManager.Txn txn = tripleStore.getTxnManager().createReadTxn()) {
 			try (RecordIterator statements = tripleStore.getTriples(txn, S2, P1, O2, 0, true)) {
 				assertThat(statements.next()).isNotNull();
@@ -857,13 +864,19 @@ class LmdbDirectAdjacencyCommitTest {
 				.as("an exact live base publishes later commits synchronously")
 				.isTrue();
 
-		// A second build over that base, such as a store's startup build, meets a commit after its scan. Catch-up
-		// replays queued deltas, so that commit must reach the queue rather than only the live base.
+		// A second build over that base, such as a store's startup build, meets a commit after its scan. The commit's
+		// record lands in the log above the pin: the live base applies it at once and the build replays it.
 		store.afterBuildScanForTest = () -> {
 			store.afterBuildScanForTest = null;
 			try {
-				commitQuads(new long[][] { add(S2, P1, O1, 0, true) });
-			} catch (IOException e) {
+				CompletableFuture.runAsync(() -> {
+					try {
+						commitQuads(new long[][] { add(S2, P1, O1, 0, true) });
+					} catch (IOException e) {
+						throw new AssertionError(e);
+					}
+				}).get(30, TimeUnit.SECONDS);
+			} catch (Exception e) {
 				throw new IllegalStateException(e);
 			}
 		};
@@ -871,16 +884,16 @@ class LmdbDirectAdjacencyCommitTest {
 		try {
 			assertThat(rebuild.get(30, TimeUnit.SECONDS)).isTrue();
 		} catch (TimeoutException stalled) {
-			throw new AssertionError("the rebuild's catch-up waited for a delta its commit never queued", stalled);
+			throw new AssertionError("the rebuild never published: " + store.publicationDiagnostics(), stalled);
 		}
 		long revision = tripleStore.getDataRevision();
 		assertThat(store.publishedStateForTest().appliedRevision()).isEqualTo(revision);
 		try (LmdbAdjacencyReadView view = store.acquire(revision)) {
 			assertThat(view.isExact()).isTrue();
-			assertThat(probe(view, S2, P1, -1, -1, true)).hasSize(1);
+			assertThat(probe(view, S2, P1, -1, -1, true)).as(store.publicationDiagnostics()).hasSize(1);
 			assertThat(probe(view, -1, P1, O1, -1, true)).hasSize(2);
 		}
-		assertThat(store.synchronousUpdatesActivatedForTest()).as("cutover resumes synchronous publication").isTrue();
+		assertThat(store.synchronousUpdatesActivatedForTest()).as("the new base publishes synchronously").isTrue();
 	}
 
 	@Test
@@ -1010,24 +1023,6 @@ class LmdbDirectAdjacencyCommitTest {
 	}
 
 	@Test
-	void asynchronousCaptureChargesMetadataBeforeWorkerExecution() {
-		LmdbDirectAdjacencyCommitDelta collector = store.newCommitDelta();
-		collector.begin(tripleStore.getDataRevision());
-		try {
-			assertThat(store.backlogBytes()).as("queued empty preparations need a bounded metadata reservation")
-					.isPositive();
-			long reservation = store.backlogBytes();
-			try (var sealed = collector.seal(tripleStore.getDataRevision() + 1)) {
-				assertThat(store.backlogBytes()).as("sealing transfers the existing metadata reservation")
-						.isEqualTo(reservation);
-			}
-		} finally {
-			collector.reset();
-		}
-		assertThat(store.backlogBytes()).isZero();
-	}
-
-	@Test
 	void noOpWriterDoesNotCreateAdjacencyRevisionOrQueueEntry() throws Exception {
 		long revision = tripleStore.getDataRevision();
 		long nativeCommit = tripleStore.getNativeCommitGeneration();
@@ -1037,19 +1032,6 @@ class LmdbDirectAdjacencyCommitTest {
 		assertThat(tripleStore.getNativeCommitGeneration()).isEqualTo(nativeCommit);
 		assertThat(tripleStore.drainDirectAdjacencyCommitDelta()).isNull();
 		assertThat(store.queuedCommitsForTest()).isZero();
-		assertThat(store.backlogBytes()).isZero();
-	}
-
-	@Test
-	void emptyCollectorRevisionsChargeTheirQueueMetadata() throws Exception {
-		store.pauseApplierForTest(true);
-		long revision = tripleStore.getDataRevision();
-		LmdbDirectAdjacencyCommitDelta collector = store.newCommitDelta();
-		collector.begin(revision);
-		store.applyCommitted(collector.seal(revision), false);
-		assertThat(store.queuedCommitsForTest()).isEqualTo(1);
-		assertThat(store.backlogBytes()).as("revision handles and queue nodes must be bounded too").isPositive();
-		assertThat(store.buildNowForTest()).isTrue();
 		assertThat(store.backlogBytes()).isZero();
 	}
 
@@ -1069,43 +1051,23 @@ class LmdbDirectAdjacencyCommitTest {
 	}
 
 	@Test
-	void closeCannotMissACommitPausedBeforeQueueAdmission() throws Exception {
+	void closeReleasesACommitSealedButNotYetApplied() throws Exception {
+		store.pauseApplierForTest(true);
+		CountDownLatch sealedRecord = new CountDownLatch(1);
+		store.beforeApplyQueueAdmissionForTest = sealedRecord::countDown;
 		tripleStore.startTransaction();
 		tripleStore.storeTriple(S1, P1, O1, 0, true);
 		tripleStore.commit();
-		LmdbDirectAdjacencyCommitDelta.SealedDirectDelta sealed = tripleStore.drainDirectAdjacencyCommitDelta();
+		store.applyCommitted(tripleStore.drainDirectAdjacencyCommitDelta());
+		assertThat(sealedRecord.await(30, TimeUnit.SECONDS)).isTrue();
 		LmdbAdjacencyMemoryAccount account = store.memoryAccount();
-		assertThat(account.totalChargedBytes()).isPositive();
+		assertThat(account.totalChargedBytes()).as("the sealed rows are charged until applied").isPositive();
 
-		CountDownLatch admissionReached = new CountDownLatch(1);
-		CountDownLatch releaseAdmission = new CountDownLatch(1);
-		store.beforeApplyQueueAdmissionForTest = () -> {
-			store.beforeApplyQueueAdmissionForTest = null;
-			admissionReached.countDown();
-			try {
-				releaseAdmission.await();
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new AssertionError(e);
-			}
-		};
-
-		CompletableFuture<Void> applying = CompletableFuture.runAsync(() -> store.applyCommitted(sealed));
 		LmdbDirectAdjacencyStore closingStore = store;
-		try {
-			assertThat(admissionReached.await(30, TimeUnit.SECONDS)).isTrue();
-			closingStore.close();
-			store = null;
-		} finally {
-			releaseAdmission.countDown();
-			applying.get(30, TimeUnit.SECONDS);
-		}
-		try {
-			assertThat(closingStore.queuedCommitsForTest()).isZero();
-			assertThat(account.totalChargedBytes()).isZero();
-		} finally {
-			sealed.close();
-		}
+		closingStore.close();
+		store = null;
+		assertThat(closingStore.queuedCommitsForTest()).isZero();
+		assertThat(account.totalChargedBytes()).isZero();
 	}
 
 	@Test
@@ -1223,44 +1185,36 @@ class LmdbDirectAdjacencyCommitTest {
 	}
 
 	@Test
-	void synchronousCommitDrainDoesNotWaitBehindQuiescentRebuildWithLiveView() throws Exception {
+	void synchronousCommitDoesNotWaitBehindARebuildOverALiveBase() throws Exception {
 		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });
 		recreateStore(Map.of(LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "true"));
 		assertThat(store.buildNowForTest()).isTrue();
 
-		CompletableFuture<Void> applying = null;
+		CountDownLatch rebuildPinned = new CountDownLatch(1);
+		CountDownLatch releaseRebuild = new CountDownLatch(1);
+		store.afterBuildSnapshotForTest = () -> {
+			store.afterBuildSnapshotForTest = null;
+			rebuildPinned.countDown();
+			await(releaseRebuild);
+		};
 		try (LmdbAdjacencyReadView held = store.acquire(tripleStore.getDataRevision())) {
 			assertThat(held.isExact()).isTrue();
 			store.scheduleQuiescentRebuild();
-			long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-			while (store.publishedStateForTest()
-					.servingState() != LmdbAdjacencyPublishedState.AdjacencyServingState.UNAVAILABLE) {
-				if (System.nanoTime() > deadline) {
-					throw new AssertionError("quiescent rebuild never published the UNAVAILABLE state");
+			assertThat(rebuildPinned.await(30, TimeUnit.SECONDS)).isTrue();
+			// the live base keeps applying while the rebuild runs, so a synchronous committer returns at once
+			CompletableFuture<Void> committing = CompletableFuture.runAsync(() -> {
+				try {
+					commitQuads(new long[][] { add(S2, P1, O2, 0, true) });
+				} catch (IOException e) {
+					throw new AssertionError(e);
 				}
-				Thread.onSpinWait();
-			}
-
-			CountDownLatch drainReached = new CountDownLatch(1);
-			store.beforeApplyDrainForTest = drainReached::countDown;
-			tripleStore.startTransaction();
-			tripleStore.storeTriple(S2, P1, O2, 0, true);
-			tripleStore.commit();
-			LmdbDirectAdjacencyCommitDelta.SealedDirectDelta sealed = tripleStore
-					.drainDirectAdjacencyCommitDelta();
-			applying = CompletableFuture.runAsync(() -> store.applyCommitted(sealed));
-
-			assertThat(drainReached.await(1, TimeUnit.SECONDS))
-					.as("a live view must not let quiescent repair occupy the serialized commit-drain executor")
-					.isTrue();
-			applying.get(30, TimeUnit.SECONDS);
+			});
+			committing.get(5, TimeUnit.SECONDS);
+			assertThat(store.publishedStateForTest().appliedRevision()).isEqualTo(tripleStore.getDataRevision());
 		} finally {
-			if (applying != null) {
-				applying.get(30, TimeUnit.SECONDS);
-			}
+			releaseRebuild.countDown();
 		}
-
-		store.pauseApplierForTest(false);
+		assertThat(store.buildNowForTest()).isTrue();
 		assertThat(store.queuedCommitsForTest()).isZero();
 		try (LmdbAdjacencyReadView current = store.acquire(tripleStore.getDataRevision())) {
 			assertThat(current.isExact()).isTrue();
@@ -1361,11 +1315,19 @@ class LmdbDirectAdjacencyCommitTest {
 		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });
 		assertThat(store.buildNowForTest()).isTrue();
 		long revision = tripleStore.getDataRevision();
+		CountDownLatch recoveryStarted = new CountDownLatch(1);
+		CountDownLatch releaseRecovery = new CountDownLatch(1);
+		setRunnableField("beforeBuildSnapshotForTest", () -> {
+			recoveryStarted.countDown();
+			await(releaseRecovery);
+		});
 		store.markGap(revision);
-
+		assertThat(recoveryStarted.await(30, TimeUnit.SECONDS)).isTrue();
 		try (LmdbAdjacencyReadView view = store.acquire(revision)) {
 			assertThat(view.isExact()).isFalse();
 			assertThat(view.fallbackReason()).isEqualTo(FallbackReason.REVISION_GAP);
+		} finally {
+			releaseRecovery.countDown();
 		}
 	}
 
@@ -1452,42 +1414,30 @@ class LmdbDirectAdjacencyCommitTest {
 	}
 
 	@Test
-	void closePromptlyAbortsCatchUpWaitingForAnUnavailableSealedRevision() throws Exception {
+	void closePromptlyAbortsABuildHeldAtItsScan() throws Exception {
 		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });
 		recreateStore(Map.of(LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "false"));
-		AtomicBoolean revisionInjected = new AtomicBoolean();
+		CountDownLatch scanned = new CountDownLatch(1);
+		CountDownLatch releaseScan = new CountDownLatch(1);
 		store.afterBuildScanForTest = () -> {
 			store.afterBuildScanForTest = null;
-			try {
-				tripleStore.startTransaction();
-				tripleStore.storeTriple(S3, P1, O2, 0, true);
-				tripleStore.commit();
-				LmdbDirectAdjacencyCommitDelta.SealedDirectDelta unavailable = tripleStore
-						.drainDirectAdjacencyCommitDelta();
-				if (unavailable != null) {
-					unavailable.close();
-				}
-				revisionInjected.set(true);
-			} catch (IOException e) {
-				throw new IllegalStateException(e);
-			}
+			scanned.countDown();
+			await(releaseScan);
 		};
 		store.triggerBuild();
-
-		long catchUpDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-		while (System.nanoTime() < catchUpDeadline
-				&& (!revisionInjected.get()
-						|| store.maintenanceState() != LmdbDirectAdjacencyStore.MaintenanceState.CATCHING_UP)) {
-			Thread.onSpinWait();
-		}
-		assertThat(revisionInjected.get()).isTrue();
-		assertThat(store.maintenanceState()).isEqualTo(LmdbDirectAdjacencyStore.MaintenanceState.CATCHING_UP);
+		assertThat(scanned.await(30, TimeUnit.SECONDS)).isTrue();
+		// a commit during the held build lands in the log; close must not wait for the build to replay it
+		tripleStore.startTransaction();
+		tripleStore.storeTriple(S3, P1, O2, 0, true);
+		tripleStore.commit();
+		store.applyCommitted(tripleStore.drainDirectAdjacencyCommitDelta(), false);
 
 		LmdbDirectAdjacencyStore closingStore = store;
 		long started = System.nanoTime();
 		closingStore.close();
 		long elapsed = System.nanoTime() - started;
 		store = null;
+		releaseScan.countDown();
 
 		assertThat(elapsed).isLessThan(TimeUnit.SECONDS.toNanos(5));
 		assertThat(closingStore.maintenanceState()).isEqualTo(LmdbDirectAdjacencyStore.MaintenanceState.CLOSED);

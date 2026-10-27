@@ -38,6 +38,34 @@ interface AdjacencyIndexOps<B, O, G> {
 	}
 
 	/**
+	 * How the overlay set of the next published state relates to the previous one: the first {@code prefixCount}
+	 * generations are shared, then {@code removedCount} generations of the previous set are replaced by
+	 * {@code addedCount} generations of the next set, and the remaining suffix is shared again. A negative prefix means
+	 * the sets are identical.
+	 */
+	record Transition(int prefixCount, int removedCount, int addedCount) {
+		static Transition noChange() {
+			return new Transition(-1, 0, 0);
+		}
+
+		static Transition append(int previousCount) {
+			return new Transition(previousCount, 0, 1);
+		}
+
+		static Transition install(int previousCount, int nextCount) {
+			return new Transition(0, previousCount, nextCount);
+		}
+
+		static Transition range(int from, int toInclusive) {
+			return new Transition(from, toInclusive - from + 1, 1);
+		}
+
+		static Transition prefixRemoval(int count) {
+			return new Transition(0, count, 0);
+		}
+	}
+
+	/**
 	 * Worker operation. Pins a snapshot (narrowing the hold to the pinned revision), scans the base, replays sealed
 	 * records above the pin from the log until an unsealed record, and returns the candidate. Throws
 	 * {@link AdjacencyGapException} when an overflowed record is met during replay.
@@ -54,9 +82,10 @@ interface AdjacencyIndexOps<B, O, G> {
 
 	int generationCount(O overlays);
 
-	G generationAt(O overlays, int index);
+	/** An identity-comparable token for the generation at {@code index}; equal tokens mean the same generation. */
+	Object generationIdentity(O overlays, int index);
 
-	long generationRevision(G generation);
+	long generationRevisionAt(O overlays, int index);
 
 	/** Worker operation. Merges the generations in {@code [from, toInclusive]} into one. */
 	G merge(B base, O overlays, int from, int toInclusive) throws Exception;
@@ -84,4 +113,16 @@ interface AdjacencyIndexOps<B, O, G> {
 	void releaseOverlays(O overlays);
 
 	void releaseGeneration(G generation);
+
+	/** Called on the applier thread just before {@code next} becomes the published overlays; may throw to refuse. */
+	default void beforePublish(O previous, O next, Transition transition) {
+	}
+
+	/** Called on the applier thread just after {@code next} became the published overlays. */
+	default void afterPublish(O previous, O next, Transition transition) {
+	}
+
+	/** Called on the applier thread after {@code next} replaced {@code previous} as the published state. */
+	default void published(AdjacencyState<B, O> previous, AdjacencyState<B, O> next) {
+	}
 }

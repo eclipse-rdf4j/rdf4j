@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.sail.lmdb.AdjacencyCommitLog.Kind;
 import org.eclipse.rdf4j.sail.lmdb.AdjacencyCommitLog.Record;
 import org.eclipse.rdf4j.sail.lmdb.AdjacencyIndexOps.Candidate;
 import org.eclipse.rdf4j.sail.lmdb.AdjacencyIndexOps.Fold;
+import org.eclipse.rdf4j.sail.lmdb.AdjacencyIndexOps.Transition;
 import org.eclipse.rdf4j.sail.lmdb.AdjacencyState.Phase;
 import org.eclipse.rdf4j.sail.lmdb.AdjacencyState.Status;
 import org.eclipse.rdf4j.sail.lmdb.AdjacencyWorkerPool.Outcome;
@@ -79,12 +80,13 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 	private boolean suspended;
 	private boolean closeRequested;
 	private boolean closed;
-	private boolean rebuildRequested;
-	private boolean buildInFlight;
+	private volatile boolean rebuildRequested;
+	private volatile boolean buildInFlight;
+	private volatile boolean runningUnit; // an inbox unit is between poll and completion
 	private boolean droppedBaseForRebuild;
 	private boolean retryScheduled;
-	private long prepareInFlight = -1;
-	private boolean compactionInFlight;
+	private volatile long prepareInFlight = -1;
+	private volatile boolean compactionInFlight;
 
 	AdjacencyApplier(AdjacencyCommitLog log, AdjacencyIndexOps<B, O, G> ops,
 			AdjacencyCompactionPolicy<B, O, G> policy, AdjacencyWorkerPool workers, ApplierScheduler scheduler,
@@ -134,7 +136,7 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 			AdjacencyState<B, O> current = published.get();
 			publish(new AdjacencyState<>(nextEpoch(), null, null, current.appliedRevision(),
 					current.gapFromRevision(), current.minSnapshotRevision(), Status.UNAVAILABLE, Phase.DEFERRED,
-					"maintenance deferred", this::onStateReleased));
+					"maintenance deferred", this::onStateReleased), dropAll(current));
 		});
 	}
 
@@ -185,6 +187,21 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 		}
 		scheduler.shutdown();
 		workers.shutdown();
+		try {
+			workers.awaitIdle(30, TimeUnit.SECONDS);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+		}
+		// The loop thread is gone; outcomes of interrupted workers still sit in the inbox. Their units only release
+		// what the work retained, so running them here is what frees the last base and generation holds.
+		Runnable unit;
+		while ((unit = inbox.poll()) != null) {
+			try {
+				unit.run();
+			} catch (RuntimeException | Error failure) {
+				logger.warn("Adjacency applier unit failed after close", failure);
+			}
+		}
 	}
 
 	private void enqueue(Runnable unit) {
@@ -250,6 +267,11 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 		} finally {
 			waitLock.unlock();
 		}
+	}
+
+	/** Whether the current published state has a gap at or below {@code revision}. */
+	boolean gapped(long revision) {
+		return published.get().gapFromRevision() <= revision;
 	}
 
 	/** A writer may proceed unless the applier is consuming and the unapplied backlog has reached its bound. */
@@ -370,13 +392,37 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 		return step(true);
 	}
 
+	/** True while a build worker is running or its candidate has not been consumed yet. */
+	boolean buildInFlight() {
+		return buildInFlight;
+	}
+
+	/** True when nothing is queued, in flight on a worker, or requested; safe to read from any thread. */
+	boolean idle() {
+		// read order matters: a unit leaves the inbox only after runningUnit is raised, and the flags it raises are
+		// written before runningUnit drops again
+		if (!inbox.isEmpty() || runningUnit) {
+			return false;
+		}
+		return !buildInFlight && prepareInFlight < 0 && !compactionInFlight && !rebuildRequested && !closeRequested;
+	}
+
 	private boolean step(boolean dryRun) {
-		Runnable unit = dryRun ? inbox.peek() : inbox.poll();
-		if (unit != null) {
-			if (!dryRun) {
-				unit.run();
+		if (dryRun) {
+			if (inbox.peek() != null) {
+				return true;
 			}
-			return true;
+		} else {
+			runningUnit = true;
+			try {
+				Runnable unit = inbox.poll();
+				if (unit != null) {
+					unit.run();
+					return true;
+				}
+			} finally {
+				runningUnit = false;
+			}
 		}
 		if (closed) {
 			return false;
@@ -418,7 +464,7 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 			if (current.status() != Status.CLOSED) {
 				publish(new AdjacencyState<>(nextEpoch(), null, null, current.appliedRevision(),
 						current.gapFromRevision(), current.minSnapshotRevision(), Status.UNAVAILABLE, Phase.FAILED,
-						describe(failure), this::onStateReleased));
+						describe(failure), this::onStateReleased), dropAll(current));
 				scheduleRetry();
 			}
 		} catch (RuntimeException | Error secondary) {
@@ -466,9 +512,12 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 		}
 		if (record.kind() == Kind.EMPTY) {
 			ops.retainBase(state.base());
-			ops.retainOverlays(state.overlays());
+			if (state.overlays() != null) {
+				ops.retainOverlays(state.overlays());
+			}
 			publish(new AdjacencyState<>(nextEpoch(), state.base(), state.overlays(), next, Long.MAX_VALUE,
-					state.minSnapshotRevision(), Status.SERVING, Phase.ACTIVE, null, this::onStateReleased));
+					state.minSnapshotRevision(), Status.SERVING, Phase.ACTIVE, null, this::onStateReleased),
+					Transition.noChange());
 			return true;
 		}
 		if (!state.tryRetain()) {
@@ -506,9 +555,13 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 			return;
 		}
 		ops.retainBase(current.base());
+		int previousCount = generationCount(current);
 		O appended = ops.append(current.overlays(), generation);
+		// a prepared delta with no covered rows yields no generation: the overlays are unchanged
+		int appendedCount = appended == null ? 0 : ops.generationCount(appended);
 		publish(new AdjacencyState<>(nextEpoch(), current.base(), appended, revision, Long.MAX_VALUE,
-				current.minSnapshotRevision(), Status.SERVING, Phase.ACTIVE, null, this::onStateReleased));
+				current.minSnapshotRevision(), Status.SERVING, Phase.ACTIVE, null, this::onStateReleased),
+				appendedCount == previousCount ? Transition.noChange() : Transition.append(previousCount));
 	}
 
 	/** Readers at or above {@code revision} fall back from now on; a rebuild is the only way to serve them again. */
@@ -527,7 +580,7 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 			publish(new AdjacencyState<>(nextEpoch(), current.base(), current.overlays(), current.appliedRevision(),
 					revision, current.minSnapshotRevision(), current.status(),
 					current.status() == Status.SERVING ? Phase.DEGRADED_GAP : current.phase(), reason,
-					this::onStateReleased));
+					this::onStateReleased), Transition.noChange());
 		}
 		if (!buildInFlight) {
 			rebuildRequested = true;
@@ -571,7 +624,7 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 			}
 			publish(new AdjacencyState<>(nextEpoch(), current.base(), current.overlays(), current.appliedRevision(),
 					gapFrom, current.minSnapshotRevision(), current.status(), current.phase(), current.reason(),
-					this::onStateReleased));
+					this::onStateReleased), Transition.noChange());
 		} else {
 			afterPublish();
 		}
@@ -602,19 +655,19 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 			droppedBaseForRebuild = true;
 			publish(new AdjacencyState<>(nextEpoch(), null, null, current.appliedRevision(),
 					current.gapFromRevision(), current.minSnapshotRevision(), Status.UNAVAILABLE, Phase.BUILDING,
-					"rebuilding; the previous base is released first", this::onStateReleased));
+					"rebuilding; the previous base is released first", this::onStateReleased), dropAll(current));
 			return;
 		}
 		droppedBaseForRebuild = false;
+		buildInFlight = true; // raised before the request drops so idle() never sees neither
 		rebuildRequested = false;
-		buildInFlight = true;
 		AdjacencyRetentionHold hold = new AdjacencyRetentionHold(log.headRevision());
 		holds.add(hold);
 		updateConsuming();
 		if (current.status() != Status.SERVING && current.phase() != Phase.BUILDING) {
 			publish(new AdjacencyState<>(nextEpoch(), null, null, current.appliedRevision(),
 					current.gapFromRevision(), current.minSnapshotRevision(), Status.UNAVAILABLE, Phase.BUILDING,
-					null, this::onStateReleased));
+					null, this::onStateReleased), dropAll(current));
 		}
 		workers.submit(() -> ops.build(hold), outcome -> enqueue(() -> onBuilt(hold, outcome)));
 	}
@@ -646,23 +699,30 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 				AdjacencyState<B, O> current = published.get();
 				if (current.status() == Status.SERVING) {
 					ops.retainBase(current.base());
-					ops.retainOverlays(current.overlays());
+					if (current.overlays() != null) {
+						ops.retainOverlays(current.overlays());
+					}
 				}
 				publish(new AdjacencyState<>(nextEpoch(), current.base(), current.overlays(),
 						current.appliedRevision(), current.gapFromRevision(), current.minSnapshotRevision(),
 						current.status(), current.status() == Status.SERVING ? current.phase() : Phase.FAILED,
-						"rebuild failed: " + describe(failure), this::onStateReleased));
+						"rebuild failed: " + describe(failure), this::onStateReleased), Transition.noChange());
 				scheduleRetry();
 				return;
 			}
+			AdjacencyState<B, O> current = published.get();
 			publish(new AdjacencyState<>(nextEpoch(), candidate.base(), candidate.overlays(),
 					candidate.appliedThrough(), Long.MAX_VALUE, candidate.baseRevision(), Status.SERVING,
-					Phase.ACTIVE, null, this::onStateReleased));
+					Phase.ACTIVE, null, this::onStateReleased),
+					Transition.install(generationCount(current),
+							candidate.overlays() == null ? 0 : ops.generationCount(candidate.overlays())));
 			candidate = null;
 		} finally {
 			if (candidate != null) {
 				ops.releaseBase(candidate.base());
-				ops.releaseOverlays(candidate.overlays());
+				if (candidate.overlays() != null) {
+					ops.releaseOverlays(candidate.overlays());
+				}
 			}
 			holds.remove(hold);
 			updateConsuming();
@@ -690,7 +750,7 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 			return;
 		}
 		AdjacencyState<B, O> state = published.get();
-		if (state.status() != Status.SERVING) {
+		if (state.status() != Status.SERVING || state.overlays() == null) {
 			return;
 		}
 		AdjacencyCompactionPlan plan = policy.select(state.base(), state.overlays(), ops);
@@ -716,11 +776,11 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 		if (current.status() != Status.SERVING || current.base() != premise.base()) {
 			return false;
 		}
-		if (ops.generationCount(current.overlays()) < count || ops.generationCount(premise.overlays()) < count) {
+		if (generationCount(current) < count || generationCount(premise) < count) {
 			return false;
 		}
 		for (int i = 0; i < count; i++) {
-			if (ops.generationAt(current.overlays(), i) != ops.generationAt(premise.overlays(), i)) {
+			if (ops.generationIdentity(current.overlays(), i) != ops.generationIdentity(premise.overlays(), i)) {
 				return false;
 			}
 		}
@@ -741,12 +801,13 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 			afterPublish();
 			return;
 		}
-		long newestMerged = ops.generationRevision(ops.generationAt(current.overlays(), plan.toInclusive()));
+		long newestMerged = ops.generationRevisionAt(current.overlays(), plan.toInclusive());
 		O replaced = ops.replaceRange(current.overlays(), plan.from(), plan.toInclusive(), merged);
 		ops.retainBase(current.base());
 		publish(new AdjacencyState<>(nextEpoch(), current.base(), replaced, current.appliedRevision(),
 				current.gapFromRevision(), Math.max(current.minSnapshotRevision(), newestMerged), Status.SERVING,
-				current.phase(), current.reason(), this::onStateReleased));
+				current.phase(), current.reason(), this::onStateReleased),
+				Transition.range(plan.from(), plan.toInclusive()));
 	}
 
 	private void onFolded(AdjacencyCompactionPlan plan, AdjacencyState<B, O> premise, Outcome<Fold<B>> outcome) {
@@ -766,7 +827,8 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 		O remaining = ops.removePrefix(current.overlays(), plan.prefixCount());
 		publish(new AdjacencyState<>(nextEpoch(), fold.base(), remaining, current.appliedRevision(),
 				current.gapFromRevision(), Math.max(current.minSnapshotRevision(), fold.foldedThroughRevision()),
-				Status.SERVING, current.phase(), current.reason(), this::onStateReleased));
+				Status.SERVING, current.phase(), current.reason(), this::onStateReleased),
+				Transition.prefixRemoval(plan.prefixCount()));
 	}
 
 	// ------------------------------------------------------------------
@@ -778,11 +840,24 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 	}
 
 	/** Replaces the published state; the only place the published reference changes. */
-	private void publish(AdjacencyState<B, O> next) {
+	private void publish(AdjacencyState<B, O> next, Transition transition) {
+		AdjacencyState<B, O> previous = published.get();
+		ops.beforePublish(previous.overlays(), next.overlays(), transition);
 		liveStates.add(next);
-		AdjacencyState<B, O> previous = published.getAndSet(next);
+		published.set(next);
+		ops.afterPublish(previous.overlays(), next.overlays(), transition);
+		ops.published(previous, next);
 		previous.release();
 		afterPublish();
+	}
+
+	private int generationCount(AdjacencyState<B, O> state) {
+		return state.overlays() == null ? 0 : ops.generationCount(state.overlays());
+	}
+
+	/** The transition for a publish that drops every generation of {@code current}. */
+	private Transition dropAll(AdjacencyState<B, O> current) {
+		return Transition.install(generationCount(current), 0);
 	}
 
 	private void afterPublish() {
@@ -849,7 +924,8 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 			log.markGap(revision);
 		}
 		publish(new AdjacencyState<>(nextEpoch(), null, null, current.appliedRevision(), current.gapFromRevision(),
-				current.minSnapshotRevision(), Status.CLOSED, Phase.CLOSED, null, this::onStateReleased));
+				current.minSnapshotRevision(), Status.CLOSED, Phase.CLOSED, null, this::onStateReleased),
+				dropAll(current));
 		updateConsuming();
 		signalChanged();
 	}

@@ -62,8 +62,8 @@ final class AdjacencyState<B, O> {
 	AdjacencyState(long epoch, B base, O overlays, long appliedRevision, long gapFromRevision,
 			long minSnapshotRevision, Status status, Phase phase, String reason,
 			Consumer<AdjacencyState<B, O>> onFullyReleased) {
-		if (status == Status.SERVING && (base == null || overlays == null)) {
-			throw new IllegalArgumentException("a serving state needs a base and overlays");
+		if (status == Status.SERVING && base == null) {
+			throw new IllegalArgumentException("a serving state needs a base");
 		}
 		this.epoch = epoch;
 		this.base = base;

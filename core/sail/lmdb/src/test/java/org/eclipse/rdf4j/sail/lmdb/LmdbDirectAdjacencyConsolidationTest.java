@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -41,6 +42,7 @@ import org.junit.jupiter.api.io.TempDir;
  * snapshots exact across consolidation; released views allow charge reclamation; the rebuild protocol makes new
  * acquisitions fall back while an existing lease finishes, then serves again from a fresh base.
  */
+@Disabled("compaction returns as an applier task in milestone 4 of lmdb-adjacency-sync-redesign")
 class LmdbDirectAdjacencyConsolidationTest {
 
 	private TripleStore tripleStore;

@@ -61,6 +61,7 @@ final class LmdbDirectAdjacencyCommitDelta {
 	private final AtomicBoolean transactionDirty;
 	private final ExecutorService captureExecutor;
 	private final Runnable beforeCapture;
+	private final Runnable afterSeal; // nullable; runs on the capture thread once the sealed delta is published
 	private final Supplier<LmdbAdjacencyMemoryAccount> captureBudget;
 	private AsyncCapture asyncCapture;
 	private long commitMaxBytes;
@@ -84,17 +85,18 @@ final class LmdbDirectAdjacencyCommitDelta {
 
 	LmdbDirectAdjacencyCommitDelta(LmdbAdjacencyMemoryAccount account, long commitMaxBytes,
 			AtomicBoolean transactionDirty) {
-		this(account, commitMaxBytes, transactionDirty, null, null, () -> account);
+		this(account, commitMaxBytes, transactionDirty, null, null, null, () -> account);
 	}
 
 	LmdbDirectAdjacencyCommitDelta(LmdbAdjacencyMemoryAccount account, long commitMaxBytes,
 			AtomicBoolean transactionDirty, ExecutorService captureExecutor, Runnable beforeCapture,
-			Supplier<LmdbAdjacencyMemoryAccount> captureBudget) {
+			Runnable afterSeal, Supplier<LmdbAdjacencyMemoryAccount> captureBudget) {
 		this.account = account;
 		this.commitMaxBytes = commitMaxBytes;
 		this.transactionDirty = transactionDirty;
 		this.captureExecutor = captureExecutor;
 		this.beforeCapture = beforeCapture;
+		this.afterSeal = afterSeal;
 		this.captureBudget = captureBudget;
 	}
 
@@ -404,9 +406,18 @@ final class LmdbDirectAdjacencyCommitDelta {
 			CompletableFuture<SealedDirectDelta> sealed = new CompletableFuture<>();
 			captureExecutor.execute(() -> {
 				try {
+					if (beforeCapture != null && !cancelled) {
+						beforeCapture.run(); // the seal is the final capture batch
+					}
 					sealed.complete(sealNow(revision, coverage));
 				} catch (Throwable failure) {
 					sealed.completeExceptionally(failure);
+					return;
+				}
+				// the commit log observed the seal inside complete(); the hook sees the sealed record
+				Runnable hook = afterSeal;
+				if (hook != null) {
+					hook.run();
 				}
 			});
 			return sealed;
@@ -1312,7 +1323,7 @@ final class LmdbDirectAdjacencyCommitDelta {
 	 * Immutable ownership transfer of one committed transaction's events and pending table. Closing releases the
 	 * complete charge exactly once.
 	 */
-	static final class SealedDirectDelta implements AutoCloseable {
+	static final class SealedDirectDelta implements AutoCloseable, AdjacencyDelta {
 		final CompletableFuture<Void> publication = new CompletableFuture<>();
 		private LmdbAdjacencyMemoryAccount.Charge metadataCharge;
 		private final LmdbAdjacencyMemoryAccount account;
@@ -1398,8 +1409,35 @@ final class LmdbDirectAdjacencyCommitDelta {
 			}
 		}
 
-		long revision() {
+		@Override
+		public long revision() {
 			return revision;
+		}
+
+		@Override
+		public boolean overflowed() {
+			return overflowed;
+		}
+
+		@Override
+		public boolean empty() {
+			return isEmpty();
+		}
+
+		@Override
+		public long bytes() {
+			return overflowed ? 0L : eventCount * (4L * Long.BYTES + 1L);
+		}
+
+		@Override
+		public Object pending() {
+			return pending;
+		}
+
+		/** The log releases the rows once applied: the charges go, the arrays stay reachable for the pending table. */
+		@Override
+		public void releaseRows() {
+			close();
 		}
 
 		boolean isOverflowed() {

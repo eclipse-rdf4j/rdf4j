@@ -37,6 +37,8 @@ final class LmdbAdjacencyOverlaySet {
 	private final LmdbAdjacencySourceRegistry[] sourceRegistries;
 	private final Object appendLineage;
 	private final LatestRowNode latestRows;
+	/** Plane statistics of base plus these generations; null for sets built before statistics were carried here. */
+	private final LmdbAdjacencyPlaneStatistics planeStatistics;
 	private final AtomicLong refs = new AtomicLong(1);
 
 	/**
@@ -50,6 +52,11 @@ final class LmdbAdjacencyOverlaySet {
 
 	LmdbAdjacencyOverlaySet(LmdbAdjacencyDeltaGeneration[] generations, LmdbAdjacencyContextCatalog contextCatalog,
 			long[] extraSelectedRawPredicateIds, long liveLogicalBytes) {
+		this(generations, contextCatalog, extraSelectedRawPredicateIds, liveLogicalBytes, null);
+	}
+
+	LmdbAdjacencyOverlaySet(LmdbAdjacencyDeltaGeneration[] generations, LmdbAdjacencyContextCatalog contextCatalog,
+			long[] extraSelectedRawPredicateIds, long liveLogicalBytes, LmdbAdjacencyPlaneStatistics planeStatistics) {
 		LmdbAdjacencyDeltaGeneration[] owned = generations == null ? NO_GENERATIONS : generations;
 		validateAscending(owned);
 		this.generations = GenerationSequence.fromOwned(owned);
@@ -62,11 +69,13 @@ final class LmdbAdjacencyOverlaySet {
 		this.sourceRegistries = sourceRegistries(owned);
 		this.appendLineage = new Object();
 		this.latestRows = latestRows(owned);
+		this.planeStatistics = planeStatistics;
 	}
 
 	private LmdbAdjacencyOverlaySet(GenerationSequence generations, LmdbAdjacencyContextCatalog contextCatalog,
 			long[] extraSelectedRawPredicateIds, long liveLogicalBytes, long metadataBytes,
-			LmdbAdjacencySourceRegistry[] sourceRegistries, Object appendLineage, LatestRowNode latestRows) {
+			LmdbAdjacencySourceRegistry[] sourceRegistries, Object appendLineage, LatestRowNode latestRows,
+			LmdbAdjacencyPlaneStatistics planeStatistics) {
 		this.generations = generations;
 		this.contextCatalog = contextCatalog;
 		this.extraSelectedRawPredicateIds = extraSelectedRawPredicateIds == null
@@ -76,6 +85,12 @@ final class LmdbAdjacencyOverlaySet {
 		this.sourceRegistries = sourceRegistries;
 		this.appendLineage = appendLineage;
 		this.latestRows = latestRows;
+		this.planeStatistics = planeStatistics;
+	}
+
+	/** Plane statistics for base plus these generations, or null when this set does not carry them. */
+	LmdbAdjacencyPlaneStatistics planeStatistics() {
+		return planeStatistics;
 	}
 
 	int generationCount() {
@@ -94,6 +109,12 @@ final class LmdbAdjacencyOverlaySet {
 
 	LmdbAdjacencyOverlaySet appendRetained(LmdbAdjacencyDeltaGeneration generation,
 			LmdbAdjacencyContextCatalog contextCatalog, long[] extraSelectedRawPredicateIds, long liveLogicalBytes) {
+		return appendRetained(generation, contextCatalog, extraSelectedRawPredicateIds, liveLogicalBytes, null);
+	}
+
+	LmdbAdjacencyOverlaySet appendRetained(LmdbAdjacencyDeltaGeneration generation,
+			LmdbAdjacencyContextCatalog contextCatalog, long[] extraSelectedRawPredicateIds, long liveLogicalBytes,
+			LmdbAdjacencyPlaneStatistics planeStatistics) {
 		if (generationCount() > 0 && generation(generationCount() - 1).revision() >= generation.revision()) {
 			throw new IllegalStateException("generations must be revision ascending");
 		}
@@ -103,7 +124,7 @@ final class LmdbAdjacencyOverlaySet {
 				extraSelectedRawPredicateIds, liveLogicalBytes,
 				saturatingAdd(metadataBytes, generation.metadataBytes()),
 				registries, appendLineage,
-				with(latestRows, generation, generationCount()));
+				with(latestRows, generation, generationCount()), planeStatistics);
 	}
 
 	boolean hasGenerationPrefix(LmdbAdjacencyOverlaySet expectedPrefix) {

@@ -464,13 +464,13 @@ class AdjacencyApplierModelTest {
 		}
 
 		@Override
-		public ModelGeneration generationAt(ModelOverlays overlays, int index) {
+		public Object generationIdentity(ModelOverlays overlays, int index) {
 			return overlays.generations.get(index);
 		}
 
 		@Override
-		public long generationRevision(ModelGeneration generation) {
-			return generation.revision;
+		public long generationRevisionAt(ModelOverlays overlays, int index) {
+			return overlays.generations.get(index).revision;
 		}
 
 		@Override

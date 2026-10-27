@@ -336,16 +336,21 @@ class LmdbNodePredicateLifetimeTest {
 		store.pauseApplierForTest(false);
 	}
 
-	/** Folds every live overlay generation into a new base, adding a second generation if one is needed to merge. */
+	/**
+	 * Publishes a new base that absorbs every live overlay generation. Until compaction returns as an applier task
+	 * (plan milestone 4) a rebuild is the only path that does so; it leaves the pinned views on their old base exactly
+	 * as the fold did.
+	 */
 	private void foldDown() throws IOException {
 		if (store.publishedStateForTest().overlays() == null) {
 			return;
 		}
-		if (store.publishedStateForTest().overlays().generationCount() < 2) {
-			commit(() -> tripleStore.storeTriple(S2, P_B, O1, 0, true));
-		}
-		store.consolidateNowForTest();
-		assertThat(store.publishedStateForTest().overlays()).isNull();
+		String before = store.publicationDiagnostics() + " dataRevision=" + tripleStore.getDataRevision();
+		assertThat(store.rebuildNowForTest()).as("the rebuild must publish").isTrue();
+		assertThat(store.publishedStateForTest().overlays())
+				.as("the rebuilt base must have absorbed every generation: before=%s after=%s", before,
+						store.publicationDiagnostics())
+				.isNull();
 	}
 
 	private List<long[]> rows(LmdbAdjacencyReadView view, long node) throws IOException {

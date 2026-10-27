@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2026 Eclipse RDF4J contributors.
+ * Copyright (c) 2025 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -15,12 +15,12 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * One dataset's direct-adjacency view at a snapshot revision (plan 27): either an exact view retaining one complete
- * {@link LmdbAdjacencyPublishedState}, or a lightweight fallback view carrying the reason. A view never combines pieces
- * from different publications (invariant I3).
+ * One dataset's direct-adjacency view at a snapshot revision: either an exact view over one retained
+ * {@link AdjacencyAcquisition} and its {@link LmdbAdjacencyPublishedState} projection, or a lightweight fallback view
+ * carrying the reason. A view never combines pieces from different publications.
  * <p>
  * The owning dataset holds one lease; every served iterator retains one more so a dataset close cannot free arenas
- * under a still-open iterator (invariant I14). The retained state's reference releases when the last lease closes.
+ * under a still-open iterator. The acquisition closes when the last lease closes.
  */
 final class LmdbAdjacencyReadView implements AutoCloseable {
 
@@ -28,29 +28,39 @@ final class LmdbAdjacencyReadView implements AutoCloseable {
 
 	private final long lifetimeId;
 	private final long snapshotRevision;
+	private final AdjacencyAcquisition<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet> acquisition; // null when
+																											// fallback
 	private final LmdbAdjacencyPublishedState state; // null for a fallback view
 	private final LmdbAdjacencyMetrics.FallbackReason fallbackReason; // null for an exact view
 	private final Runnable onFullyReleased; // nullable
 	private final AtomicLong leases = new AtomicLong(1);
 
-	private LmdbAdjacencyReadView(long snapshotRevision, LmdbAdjacencyPublishedState state,
-			LmdbAdjacencyMetrics.FallbackReason fallbackReason, Runnable onFullyReleased, long lifetimeId) {
+	private LmdbAdjacencyReadView(long snapshotRevision,
+			AdjacencyAcquisition<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet> acquisition,
+			LmdbAdjacencyPublishedState state, LmdbAdjacencyMetrics.FallbackReason fallbackReason,
+			Runnable onFullyReleased, long lifetimeId) {
 		this.lifetimeId = lifetimeId > 0 ? lifetimeId : nextLifetimeId();
 		this.snapshotRevision = snapshotRevision;
+		this.acquisition = acquisition;
 		this.state = state;
 		this.fallbackReason = fallbackReason;
 		this.onFullyReleased = onFullyReleased;
 	}
 
-	/** An exact view; the caller must already hold one retained reference on {@code state} and transfers it here. */
-	static LmdbAdjacencyReadView exact(long snapshotRevision, LmdbAdjacencyPublishedState state,
-			Runnable onFullyReleased) {
-		return exact(snapshotRevision, state, onFullyReleased, 0L);
+	/** An exact view over a retained acquisition and its projection; closing the view closes the acquisition. */
+	static LmdbAdjacencyReadView exact(long snapshotRevision,
+			AdjacencyAcquisition<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet> acquisition,
+			LmdbAdjacencyPublishedState state, Runnable onFullyReleased, long lifetimeId) {
+		return new LmdbAdjacencyReadView(snapshotRevision, acquisition, state, null, onFullyReleased, lifetimeId);
 	}
 
+	/**
+	 * An exact view over a projection that is not backed by an acquisition; for tests and tools that assemble a state
+	 * themselves and keep its base and overlays alive for the view's lifetime.
+	 */
 	static LmdbAdjacencyReadView exact(long snapshotRevision, LmdbAdjacencyPublishedState state,
-			Runnable onFullyReleased, long lifetimeId) {
-		return new LmdbAdjacencyReadView(snapshotRevision, state, null, onFullyReleased, lifetimeId);
+			Runnable onFullyReleased) {
+		return new LmdbAdjacencyReadView(snapshotRevision, null, state, null, onFullyReleased, 0L);
 	}
 
 	static LmdbAdjacencyReadView fallback(long snapshotRevision, LmdbAdjacencyMetrics.FallbackReason reason) {
@@ -59,7 +69,7 @@ final class LmdbAdjacencyReadView implements AutoCloseable {
 
 	static LmdbAdjacencyReadView fallback(long snapshotRevision, LmdbAdjacencyMetrics.FallbackReason reason,
 			long lifetimeId) {
-		return new LmdbAdjacencyReadView(snapshotRevision, null, reason, null, lifetimeId);
+		return new LmdbAdjacencyReadView(snapshotRevision, null, null, reason, null, lifetimeId);
 	}
 
 	long lifetimeId() {
@@ -86,11 +96,6 @@ final class LmdbAdjacencyReadView implements AutoCloseable {
 		return state == null ? null : state.base();
 	}
 
-	/**
-	 * True when this view may answer row lookups for its snapshot: it retained a ROW_EXACT state whose base serves the
-	 * snapshot and whose applied-or-pending horizon covers it, with no gap at or before the snapshot. Rows touched by a
-	 * pending commit at or before the snapshot still fall back individually (invariant I5).
-	 */
 	boolean servesSnapshot() {
 		if (state == null || state.servingState() != LmdbAdjacencyPublishedState.AdjacencyServingState.ROW_EXACT
 				|| state.base() == null) {
@@ -100,9 +105,6 @@ final class LmdbAdjacencyReadView implements AutoCloseable {
 				&& state.gapFromRevision() > snapshotRevision;
 	}
 
-	/**
-	 * Adds one lease for a served iterator; the iterator must call {@link #releaseLease()} exactly once on close.
-	 */
 	void retainLease() {
 		long current = leases.get();
 		while (true) {
@@ -128,8 +130,8 @@ final class LmdbAdjacencyReadView implements AutoCloseable {
 			long next = current - 1;
 			if (leases.compareAndSet(current, next)) {
 				if (next == 0) {
-					if (state != null) {
-						state.release();
+					if (acquisition != null) {
+						acquisition.close();
 					}
 					if (onFullyReleased != null) {
 						onFullyReleased.run();

@@ -336,16 +336,18 @@ class LmdbNodePredicateEnumerationParityTest {
 	 * crosses the configured threshold, and it needs at least two generations to have anything to merge, so the
 	 * fold-down is requested explicitly rather than inferred from a commit count.
 	 */
+	/**
+	 * Publishes a new base that absorbs every live overlay generation. Until compaction returns as an applier task
+	 * (plan milestone 4) a rebuild is the only path that does so; it leaves the pinned views on their old base exactly
+	 * as the fold did.
+	 */
 	private void foldDown() throws IOException {
 		if (store.publishedStateForTest().overlays() == null) {
 			return;
 		}
-		if (store.publishedStateForTest().overlays().generationCount() < 2) {
-			commit(() -> add(S_ABSENT, P_A, uri(4999), 0, true));
-		}
-		store.consolidateNowForTest();
+		assertThat(store.rebuildNowForTest()).as("the rebuild must publish").isTrue();
 		assertThat(store.publishedStateForTest().overlays())
-				.as("the fold-down must have absorbed every generation")
+				.as("the rebuilt base must have absorbed every generation: %s", store.publicationDiagnostics())
 				.isNull();
 	}
 

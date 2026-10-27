@@ -14,12 +14,18 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
-/** An {@link AdjacencyWorkerPool} over an {@link ExecutorService}; a rejected submission is reported as a failure. */
+/**
+ * An {@link AdjacencyWorkerPool} over an {@link ExecutorService}; a rejected submission is reported as a failure.
+ * Tracks in-flight work so tests can wait for the workers to go idle.
+ */
 final class ExecutorAdjacencyWorkerPool implements AdjacencyWorkerPool {
 
 	private final ExecutorService executor;
+	private final Object idleMonitor = new Object();
+	private int inFlight;
 
 	ExecutorAdjacencyWorkerPool(ExecutorService executor) {
 		this.executor = executor;
@@ -27,6 +33,9 @@ final class ExecutorAdjacencyWorkerPool implements AdjacencyWorkerPool {
 
 	@Override
 	public <T> void submit(Callable<T> work, Consumer<Outcome<T>> onDone) {
+		synchronized (idleMonitor) {
+			inFlight++;
+		}
 		try {
 			executor.execute(() -> {
 				Outcome<T> outcome;
@@ -35,10 +44,41 @@ final class ExecutorAdjacencyWorkerPool implements AdjacencyWorkerPool {
 				} catch (Throwable failure) {
 					outcome = Outcome.failure(failure);
 				}
-				onDone.accept(outcome);
+				try {
+					onDone.accept(outcome);
+				} finally {
+					finished();
+				}
 			});
 		} catch (RejectedExecutionException rejected) {
-			onDone.accept(Outcome.failure(rejected));
+			try {
+				onDone.accept(Outcome.failure(rejected));
+			} finally {
+				finished();
+			}
+		}
+	}
+
+	private void finished() {
+		synchronized (idleMonitor) {
+			inFlight--;
+			idleMonitor.notifyAll();
+		}
+	}
+
+	/** Waits until no submitted work is running or queued; returns false on timeout. */
+	@Override
+	public boolean awaitIdle(long timeout, TimeUnit unit) throws InterruptedException {
+		long deadline = System.nanoTime() + unit.toNanos(timeout);
+		synchronized (idleMonitor) {
+			while (inFlight > 0) {
+				long remaining = deadline - System.nanoTime();
+				if (remaining <= 0) {
+					return false;
+				}
+				TimeUnit.NANOSECONDS.timedWait(idleMonitor, remaining);
+			}
+			return true;
 		}
 	}
 
