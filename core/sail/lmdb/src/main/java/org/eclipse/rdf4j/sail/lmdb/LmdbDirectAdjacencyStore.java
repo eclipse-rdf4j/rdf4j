@@ -581,6 +581,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			if (remaining <= 0 || closed) {
 				return false;
 			}
+			AdjacencyState<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet> state = applierState();
+			if (state.status() != AdjacencyState.Status.SERVING && applier.idle() && !applier.retryPending()
+					&& !applier.buildInFlight() && !applier.suspended()) {
+				// nothing is building, requested or scheduled: no wait will make this revision ready
+				return false;
+			}
 		}
 	}
 

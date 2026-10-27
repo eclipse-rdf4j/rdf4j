@@ -77,14 +77,14 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 
 	// applier-thread state
 	private long epochs;
-	private boolean suspended;
+	private volatile boolean suspended;
 	private boolean closeRequested;
 	private boolean closed;
 	private volatile boolean rebuildRequested;
 	private volatile boolean buildInFlight;
 	private volatile boolean runningUnit; // an inbox unit is between poll and completion
 	private boolean droppedBaseForRebuild;
-	private boolean retryScheduled;
+	private volatile boolean retryScheduled;
 	private volatile long prepareInFlight = -1;
 	private volatile boolean compactionInFlight;
 
@@ -398,6 +398,16 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 	}
 
 	/** True when nothing is queued, in flight on a worker, or requested; safe to read from any thread. */
+	/** Whether a delayed rebuild retry is scheduled; idle() is true meanwhile, but the index will still change. */
+	boolean retryPending() {
+		return retryScheduled;
+	}
+
+	/** Whether maintenance is deferred (initial import); the index changes again once resumed. */
+	boolean suspended() {
+		return suspended;
+	}
+
 	boolean idle() {
 		// read order matters: a unit leaves the inbox only after runningUnit is raised, and the flags it raises are
 		// written before runningUnit drops again

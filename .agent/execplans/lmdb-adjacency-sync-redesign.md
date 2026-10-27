@@ -61,6 +61,9 @@ After this plan is implemented, the synchronisation has exactly one shape. Every
 - Observation (Milestone 3): a paused applier does not make the pending window deterministic by itself, because the seal still completes asynchronously on the capture thread: `pendingWindowFallsBackOnlyForTouchedRows` acquired its view a hair before the seal and saw `PENDING_ROW` instead of a row-exact view. The committer's post-commit seam now waits (bounded) for the unapplied records to seal whenever the scheduler is paused, which is a test-only state, so every pause-then-commit test observes a sealed record.
   Evidence: `logs/m3-batch8.log` (the failure), `logs/m3-batch9.log` (eight suites green after the change).
 
+- Observation (Milestone 3): `awaitCurrentRevisionReady` waited out its whole timeout when the post-ready phase failed before any build was requested, and `LmdbPostReadyAwaitTest` races that against its own 30-second join. The wait now returns false as soon as nothing can make the revision ready: not serving, the applier idle, no retry timer pending, no build in flight and maintenance not suspended. `LmdbMixedPlaneSnapshotTest.failedSecondSourceAcquisitionReleasesBothPhysicalReaderFamilies` (adjacency disabled) failed twice in full-module runs with one LMDB reader slot still in use and passed 5 of 5 in isolation; it is noted here as a load-dependent flake outside this plan's mechanism.
+  Evidence: `logs/m3-flaky-*.log`, `logs/m3-postready-*.log`, `logs/mvnf/20261027-181326-verify.log`.
+
 
 ## Decision Log
 
