@@ -1401,11 +1401,19 @@ final class LmdbDirectAdjacencyCommitDelta {
 			return publication;
 		}
 
-		/** Release event arrays after catch-up consumes them, retaining only completion ownership. */
+		/**
+		 * Release event arrays after catch-up consumes them, retaining only completion ownership. Idempotent and safe
+		 * from two threads: the commit log releases a record's rows on the applier thread while a derived-state
+		 * listener may abort the same sealed delta on the committing thread.
+		 */
 		void releasePayload() {
-			if (chargedBytes > 0) {
-				account.release(MemoryKind.PENDING, chargedBytes);
+			long released;
+			synchronized (this) {
+				released = chargedBytes;
 				chargedBytes = 0;
+			}
+			if (released > 0) {
+				account.release(MemoryKind.PENDING, released);
 			}
 		}
 
@@ -1471,8 +1479,13 @@ final class LmdbDirectAdjacencyCommitDelta {
 		@Override
 		public void close() {
 			releasePayload();
-			if (metadataCharge != null) {
-				metadataCharge.close();
+			LmdbAdjacencyMemoryAccount.Charge charge;
+			synchronized (this) {
+				charge = metadataCharge;
+				metadataCharge = null;
+			}
+			if (charge != null) {
+				charge.close();
 			}
 		}
 

@@ -414,8 +414,13 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private void awaitCommitPublication() {
 		throwIfStrictMaintenanceFailed();
 		runHook(beforePreparedFinalizeWaitForTest);
-		if (closed || !options.synchronousMaintenance() || options.memoryRefused() || scheduler.isPaused()) {
-			// a paused applier is a test condition; waiting on it would deadlock the committing test thread
+		if (scheduler.isPaused()) {
+			// A paused applier is a test condition; waiting for publication would deadlock the committing test thread.
+			// Tests pause the applier to observe the pending window, which begins once the record is sealed.
+			awaitHeadSealed(10, TimeUnit.SECONDS);
+			return;
+		}
+		if (closed || !options.synchronousMaintenance() || options.memoryRefused()) {
 			return;
 		}
 		long revision = tripleStore.getDataRevision();
@@ -680,6 +685,26 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		} else {
 			scheduler.resume();
 			awaitHeadAppliedForTest(30, TimeUnit.SECONDS);
+		}
+	}
+
+	/** Waits until every unapplied record up to the log head is sealed (or gone); returns false on timeout. */
+	private boolean awaitHeadSealed(long timeout, TimeUnit unit) {
+		long deadline = System.nanoTime() + unit.toNanos(timeout);
+		while (true) {
+			boolean sealed = true;
+			long head = log.headRevision();
+			for (long revision = applierState().appliedRevision() + 1; revision <= head; revision++) {
+				AdjacencyCommitLog.Record record = log.record(revision);
+				if (record != null && !record.sealed()) {
+					sealed = false;
+					break;
+				}
+			}
+			if (sealed || closed || System.nanoTime() > deadline) {
+				return sealed;
+			}
+			Thread.onSpinWait();
 		}
 	}
 
