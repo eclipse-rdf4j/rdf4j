@@ -1046,6 +1046,13 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
   rangeDraftsRef.current = filters.rangeDrafts;
   restoreRangeDraftsRef.current = filters.restoreRangeDrafts;
   const selectedNodeIds = filters.hasActive ? filters.matches : manualSelectedNodeIds;
+  const selectAllDrawnNodes = useCallback(() => {
+    filters.clear();
+    const nodeIds = new Set(drawnGraphRef.current.nodes.map((node) => node.id));
+    setManualSelectedNodeIds((current) =>
+      current.size === nodeIds.size && [...nodeIds].every((nodeId) => current.has(nodeId)) ? current : nodeIds,
+    );
+  }, [filters.clear]);
   const selectedNodeIdList = useMemo(
     () => [...selectedNodeIds],
     [selectedNodeIds],
@@ -1792,7 +1799,15 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
       }
       // Undo in a text field undoes the typing, not the graph.
       if (typing || !(event.metaKey || event.ctrlKey)) return;
-      if (event.key.toLocaleLowerCase() === "z") {
+      const key = event.key.toLocaleLowerCase();
+      if (key === "a" && !event.shiftKey && !event.altKey && viewMode === "graph") {
+        if (drawnGraphRef.current.nodes.length) {
+          event.preventDefault();
+          selectAllDrawnNodes();
+        }
+        return;
+      }
+      if (key === "z") {
         event.preventDefault();
         if (event.shiftKey) redo();
         else undo();
@@ -1800,7 +1815,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [redo, undo]);
+  }, [redo, selectAllDrawnNodes, undo, viewMode]);
 
   useEffect(() => {
     setPathHighlight(null);
@@ -4274,7 +4289,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
               }`}
               viewBox={`0 0 ${GRAPH_WIDTH} ${GRAPH_HEIGHT}`}
               role="img"
-              aria-label={`Interactive RDF graph. Select a node to show its details and double-click it to load its neighbours. Drag the background to pan and a node to move it; double-click a node and keep dragging to move its leaf neighbours with it. ${selectionKeys(applePlatform)}click or drag to select nodes; dragging a selected node moves the whole selection. ${zoomOnScroll ? "Scroll" : "Pinch"}, double-click the background, or double-tap and drag vertically to zoom. Right-click or long-press a node for more actions. Tab reaches one node; arrow keys move to the next node in that direction; Enter shows its details; Delete hides the selection or the shown node. Escape closes the details, then clears the selection; / finds a node.`}
+              aria-label={`Interactive RDF graph. Select a node to show its details and double-click it to load its neighbours. Drag the background to pan and a node to move it; double-click a node and keep dragging to move its leaf neighbours with it. ${selectionKeys(applePlatform)}click or drag to select nodes; dragging a selected node moves the whole selection. ${zoomOnScroll ? "Scroll" : "Pinch"}, double-click the background, or double-tap and drag vertically to zoom. Right-click or long-press a node for more actions. Tab reaches one node; arrow keys move to the next node in that direction; Enter shows its details; Delete hides the selection or the shown node. Escape closes the details, then clears the selection; ${applePlatform ? "⌘A" : "Ctrl+A"} selects all drawn nodes; / finds a node.`}
               onDoubleClick={(event) => {
                 const onHoverBridge = event.target instanceof Element
                   && Boolean(event.target.closest("[data-graph-hover-bridge]"));
