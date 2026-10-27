@@ -129,21 +129,22 @@ public abstract class TransformationServlet extends AbstractRepositoryServlet {
 				return;
 			}
 
-			WorkbenchPageModelResponseWrapper bufferedResponse = new WorkbenchPageModelResponseWrapper(resp);
-			req.setAttribute(WorkbenchPageProtocol.NATIVE_HTML_POST_PAGE_MODEL_ATTRIBUTE, Boolean.TRUE);
-			boolean completed = false;
-			try {
-				if ("POST".equals(req.getMethod())) {
-					doPost(wreq, bufferedResponse);
-				} else {
-					service(wreq, bufferedResponse);
+			try (WorkbenchPageModelResponseWrapper bufferedResponse = new WorkbenchPageModelResponseWrapper(resp)) {
+				req.setAttribute(WorkbenchPageProtocol.NATIVE_HTML_POST_PAGE_MODEL_ATTRIBUTE, Boolean.TRUE);
+				boolean completed = false;
+				try {
+					if ("POST".equals(req.getMethod())) {
+						doPost(wreq, bufferedResponse);
+					} else {
+						service(wreq, bufferedResponse);
+					}
+					completed = true;
+				} finally {
+					req.removeAttribute(WorkbenchPageProtocol.NATIVE_HTML_POST_PAGE_MODEL_ATTRIBUTE);
 				}
-				completed = true;
-			} finally {
-				req.removeAttribute(WorkbenchPageProtocol.NATIVE_HTML_POST_PAGE_MODEL_ATTRIBUTE);
-			}
-			if (completed) {
-				bufferedResponse.complete(req, config, nativePostView);
+				if (completed) {
+					bufferedResponse.complete(req, config, nativePostView);
+				}
 			}
 		} catch (RuntimeException | ServletException | IOException e) {
 			throw e;

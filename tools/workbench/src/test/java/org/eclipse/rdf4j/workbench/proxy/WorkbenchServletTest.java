@@ -29,9 +29,12 @@ import static org.mockito.Mockito.when;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.io.StringReader;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -46,6 +49,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.exception.ValidationException;
 import org.eclipse.rdf4j.http.client.shacl.RemoteShaclValidationException;
@@ -189,6 +193,48 @@ public class WorkbenchServletTest {
 			assertThat(response.getStatusCode()).isEqualTo(HttpServletResponse.SC_UNAUTHORIZED);
 			String model = "text/html".equals(accept) ? initialPageModel(response.getBody()) : response.getBody();
 			assertThat(model).contains("configuration", "my submitted Turtle configuration", "failed to authenticate");
+		} finally {
+			servlet.destroy();
+		}
+	}
+
+	@Test
+	void largeUnauthorizedConfigurationPostSpillsBeforeWritingHtmlShell() throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		when(manager.getRepositoryInfo("repo")).thenReturn(new RepositoryInfo());
+		TestWorkbenchServlet servlet = initServlet(manager);
+		RecordingProxyRepositoryServlet commands = new RecordingProxyRepositoryServlet();
+		commands.toThrow = new RepositoryException(new UnauthorizedException("credentials expired"));
+		servlet.createdServlets.add(commands);
+		Set<Path> previousSpools = pageModelSpools();
+		String configuration = "<urn:config> <urn:predicate> <urn:object> .\n".repeat(32_768);
+		try {
+			MockHttpServletRequest request = request("/workbench/repo/config", "/repo/config");
+			request.setMethod("POST");
+			request.addHeader("Accept", "text/html");
+			request.addParameter("configuration", configuration);
+			CapturedResponse response = new CapturedResponse() {
+				@Override
+				public PrintWriter getWriter() {
+					try {
+						assertThat(pageModelSpools()).hasSize(previousSpools.size() + 1);
+					} catch (IOException e) {
+						throw new AssertionError(e);
+					}
+					return super.getWriter();
+				}
+			};
+
+			servlet.service(request, response);
+
+			assertThat(response.getStatusCode()).isEqualTo(HttpServletResponse.SC_UNAUTHORIZED);
+			String row = initialPageModel(response.getBody()).lines()
+					.filter(line -> line.contains("\"type\":\"rows\""))
+					.findFirst()
+					.orElseThrow();
+			assertThat(new ObjectMapper().readTree(row).path("values").get(0).get(0).path("value").asText())
+					.isEqualTo(configuration);
+			assertThat(pageModelSpools()).containsExactlyInAnyOrderElementsOf(previousSpools);
 		} finally {
 			servlet.destroy();
 		}
@@ -914,6 +960,13 @@ public class WorkbenchServletTest {
 			throw new AssertionError("HTML response is missing its inline Workbench page model");
 		}
 		return new String(Base64.getUrlDecoder().decode(matcher.group(1)), StandardCharsets.UTF_8);
+	}
+
+	private static Set<Path> pageModelSpools() throws IOException {
+		try (var files = Files.list(Path.of(System.getProperty("java.io.tmpdir")))) {
+			return files.filter(path -> path.getFileName().toString().startsWith("rdf4j-workbench-page-model-"))
+					.collect(Collectors.toSet());
+		}
 	}
 
 	@Test

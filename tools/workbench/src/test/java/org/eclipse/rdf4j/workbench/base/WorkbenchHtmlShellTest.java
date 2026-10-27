@@ -14,12 +14,16 @@
 package org.eclipse.rdf4j.workbench.base;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -154,6 +158,41 @@ class WorkbenchHtmlShellTest {
 			assertThat(document.indexOf("/scripts/workbench-theme.js"))
 					.isLessThan(document.indexOf("/styles/workbench-refresh.css"));
 		}
+	}
+
+	@Test
+	void reportsClientWriteFailureDuringStreamedPageModel() throws Exception {
+		HttpServletRequest request = mock(HttpServletRequest.class);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		when(request.getContextPath()).thenReturn("/rdf4j-workbench");
+		Writer failingOutput = new Writer() {
+			private boolean inModel;
+
+			@Override
+			public void write(char[] characters, int offset, int length) throws IOException {
+				String fragment = new String(characters, offset, length);
+				if (inModel) {
+					throw new IOException("client disconnected");
+				}
+				if (fragment.contains("data-workbench-initial-model")) {
+					inModel = true;
+				}
+			}
+
+			@Override
+			public void flush() {
+			}
+
+			@Override
+			public void close() {
+			}
+		};
+		when(response.getWriter()).thenReturn(new PrintWriter(failingOutput));
+
+		assertThatThrownBy(() -> WorkbenchHtmlShell.writeInitialPageModel(request, response,
+				mock(ServletConfig.class), "summary", new ByteArrayInputStream(new byte[8192])))
+						.isInstanceOf(IOException.class)
+						.hasMessageContaining("Workbench HTML shell");
 	}
 
 	@Test

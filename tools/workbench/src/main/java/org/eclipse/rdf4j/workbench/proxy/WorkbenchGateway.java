@@ -15,8 +15,8 @@ package org.eclipse.rdf4j.workbench.proxy;
 
 import static org.eclipse.rdf4j.workbench.proxy.WorkbenchServlet.SERVER_PARAM;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.HashMap;
@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.workbench.base.AbstractServlet;
 import org.eclipse.rdf4j.workbench.base.WorkbenchHtmlShell;
+import org.eclipse.rdf4j.workbench.base.WorkbenchPageModelBuffer;
 import org.eclipse.rdf4j.workbench.base.WorkbenchViewRegistry;
 import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
 import org.eclipse.rdf4j.workbench.proxy.config.InvalidWorkbenchPolicyException;
@@ -335,12 +336,15 @@ public class WorkbenchGateway extends AbstractServlet {
 
 	private void writeServerPageModel(HttpServletRequest request, HttpServletResponse response, String[] variables,
 			Object[] row) throws IOException, QueryResultHandlerException {
-		ByteArrayOutputStream pageData = new ByteArrayOutputStream();
-		WorkbenchPageResultWriter pageWriter = new WorkbenchPageResultWriter(pageData);
-		pageWriter.view("server");
-		TupleResultBuilder builder = new TupleResultBuilder(pageWriter, SimpleValueFactory.getInstance());
-		builder.start(variables).link(List.of("info")).result(row).end();
-		WorkbenchHtmlShell.writeInitialPageModel(request, response, config, "server", pageData.toByteArray());
+		try (WorkbenchPageModelBuffer pageData = new WorkbenchPageModelBuffer()) {
+			WorkbenchPageResultWriter pageWriter = new WorkbenchPageResultWriter(pageData);
+			pageWriter.view("server");
+			TupleResultBuilder builder = new TupleResultBuilder(pageWriter, SimpleValueFactory.getInstance());
+			builder.start(variables).link(List.of("info")).result(row).end();
+			try (InputStream source = pageData.openInputStream()) {
+				WorkbenchHtmlShell.writeInitialPageModel(request, response, config, "server", source);
+			}
+		}
 	}
 
 	/**
