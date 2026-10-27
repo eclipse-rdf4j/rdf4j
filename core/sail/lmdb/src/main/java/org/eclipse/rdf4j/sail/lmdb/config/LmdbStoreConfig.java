@@ -181,8 +181,8 @@ import org.eclipse.rdf4j.sail.config.SailConfigException;
 				"\"3\"^^<http://www.w3.org/2001/XMLSchema#int>" }
 )
 @ConfigProperty(
-		predicate = "http://rdf4j.org/config/sail/lmdb#legacyReferenceCountRepairEnabled", description = "Reconstruct and validate component reference counts in existing format-2 value dictionaries before unused values are reclaimed; "
-				+ "off by default for compatibility with earlier readers. Format-6 dictionaries always run these checks.", datatype = "http://www.w3.org/2001/XMLSchema#boolean", examples = {
+		predicate = "http://rdf4j.org/config/sail/lmdb#legacyReferenceCountRepairEnabled", description = "Permit reclamation in existing format-2 value dictionaries once component reference-count exactness is established; "
+				+ "off by default for compatibility with earlier readers. Missing or mismatched proof requires explicit offline reconstruction; neither format scans counts during startup.", datatype = "http://www.w3.org/2001/XMLSchema#boolean", examples = {
 						"\"true\"^^<http://www.w3.org/2001/XMLSchema#boolean>" }
 )
 @ConfigProperty(
@@ -193,6 +193,12 @@ import org.eclipse.rdf4j.sail.config.SailConfigException;
 @ConfigProperty(
 		predicate = "http://rdf4j.org/config/sail/lmdb#nativeEvaluationEnabled", description = "Experimental: use the native LMDB query evaluation strategy when no evaluationStrategyFactory is configured. Off by default.", datatype = "http://www.w3.org/2001/XMLSchema#boolean", examples = {
 				"\"true\"^^<http://www.w3.org/2001/XMLSchema#boolean>" }
+)
+@ConfigProperty(
+		predicate = "http://rdf4j.org/config/sail/lmdb#initialRunImportEnabled", description = "Experimental: when the first write transaction of an empty store is an explicit NONE transaction, hold a store-wide lock, "
+				+ "collect its index entries and value lookup records as sorted runs and write them in one merge when the import completes. "
+				+ "Other connections wait until the import is complete. On by default.", datatype = "http://www.w3.org/2001/XMLSchema#boolean", examples = {
+						"\"false\"^^<http://www.w3.org/2001/XMLSchema#boolean>" }
 )
 @ConfigProperty(
 		predicate = "http://rdf4j.org/config/sail/lmdb#valueOverlayEnabled", description = "Experimental: maintain the compressed in-memory value overlay that readers consult for committed values before LMDB. "
@@ -298,6 +304,8 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	private boolean directAdjacencyEnabled;
 
 	private boolean valueOverlayEnabled;
+
+	private boolean initialRunImportEnabled = true;
 
 	private long tripleDBSize = -1;
 
@@ -459,6 +467,21 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	/**
+	 * Returns whether the first write transaction of an empty store, when it is an explicit NONE transaction, is
+	 * collected as sorted runs under a store-wide lock and written in one merge when it completes.
+	 */
+	@Experimental
+	public boolean getInitialRunImportEnabled() {
+		return initialRunImportEnabled;
+	}
+
+	@Experimental
+	public LmdbStoreConfig setInitialRunImportEnabled(boolean initialRunImportEnabled) {
+		this.initialRunImportEnabled = initialRunImportEnabled;
+		return this;
+	}
+
 	public LmdbStoreConfig setTripleDBSize(long tripleDBSize) {
 		this.tripleDBSize = tripleDBSize;
 		return this;
@@ -585,9 +608,9 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	}
 
 	/**
-	 * Whether existing format-2 dictionaries reconstruct and validate component reference counts before reclaiming
-	 * unused values. Disabled by default to preserve compatibility with earlier reference-count marker readers.
-	 * Format-6 dictionaries always enable reference-count recovery and integrity checks.
+	 * Whether existing format-2 dictionaries may reclaim unused values once component reference counts are proven
+	 * exact. Disabled by default to preserve compatibility with earlier reference-count marker readers. Both formats
+	 * use bounded startup checks; missing or mismatched proof requires explicit offline reconstruction.
 	 */
 	public boolean getLegacyReferenceCountRepairEnabled() {
 		return legacyReferenceCountRepairEnabled;
@@ -943,6 +966,9 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		m.add(implNode, LmdbStoreSchema.NATIVE_EVALUATION_ENABLED, vf.createLiteral(nativeEvaluationEnabled));
 		m.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_ENABLED, vf.createLiteral(directAdjacencyEnabled));
 		m.add(implNode, LmdbStoreSchema.VALUE_OVERLAY_ENABLED, vf.createLiteral(valueOverlayEnabled));
+		if (!initialRunImportEnabled) {
+			m.add(implNode, LmdbStoreSchema.INITIAL_RUN_IMPORT_ENABLED, vf.createLiteral(false));
+		}
 		if (cacheImplementation != LmdbCacheImplementation.LOSSY_CONCURRENT) {
 			m.add(implNode, LmdbStoreSchema.CACHE_IMPLEMENTATION, vf.createLiteral(cacheImplementation.name()));
 		}
@@ -1131,6 +1157,13 @@ public class LmdbStoreConfig extends BaseSailConfig {
 			if (valueOverlayEnabledLiteral != null) {
 				setValueOverlayEnabled(parseBoolean(valueOverlayEnabledLiteral,
 						LmdbStoreSchema.VALUE_OVERLAY_ENABLED));
+			}
+
+			Literal initialRunImportEnabledLiteral = singleBooleanLiteral(m, implNode,
+					LmdbStoreSchema.INITIAL_RUN_IMPORT_ENABLED);
+			if (initialRunImportEnabledLiteral != null) {
+				setInitialRunImportEnabled(parseBoolean(initialRunImportEnabledLiteral,
+						LmdbStoreSchema.INITIAL_RUN_IMPORT_ENABLED));
 			}
 
 			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.TRIPLE_INDEXES, null))

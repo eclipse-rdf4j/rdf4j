@@ -83,12 +83,18 @@ class LmdbBatchedIngestionTest {
 			expected.add(Values.iri("urn:batch:fault:subject-" + "s".repeat(40) + i), RDF.TYPE, object,
 					Values.iri("urn:batch:fault:context:" + i % 3));
 		}
+		// The injection observes dictionary lookups (storeValues). Seed the store so the NONE attempt is not an
+		// initial import, which would assign fresh IDs instead (covered by LmdbInitialNoneFreshImportTest).
+		Statement seed = Values.getValueFactory()
+				.createStatement(Values.iri("urn:batch:fault:seed"), RDF.TYPE, Values.literal("seed"));
+		expected.add(seed);
 		FailingBatchLmdbStore store = new FailingBatchLmdbStore(directory.toFile(), config, capacityFailure);
 		SailRepository repository = new SailRepository(store);
 		try {
 			repository.init();
 			long initialMap = store.values.mapSizeBytes();
 			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.add(seed);
 				connection.begin(IsolationLevels.NONE);
 				store.values.arm();
 				if (capacityFailure) {
@@ -104,7 +110,7 @@ class LmdbBatchedIngestionTest {
 					}
 					assertSame(store.values.injectedFailure, cause, "the original partial-write failure survives");
 					connection.rollback();
-					assertEquals(0, connection.size(), "the first unsubmitted dictionary batch publishes no triples");
+					assertEquals(1, connection.size(), "the first unsubmitted dictionary batch publishes no triples");
 					connection.begin(IsolationLevels.NONE);
 					connection.add(expected);
 					connection.commit();
@@ -148,9 +154,15 @@ class LmdbBatchedIngestionTest {
 		for (int i = 0; i < 5; i++) {
 			expected.add(Values.iri("urn:terminal:subject:" + i), RDF.TYPE, Values.literal("row " + i));
 		}
+		// The injection observes dictionary lookups (storeValues). Seed the store so the NONE attempt is not an
+		// initial import, which would assign fresh IDs instead (covered by LmdbInitialNoneFreshImportTest).
+		Statement seed = Values.getValueFactory()
+				.createStatement(Values.iri("urn:terminal:seed"), RDF.TYPE, Values.literal("seed"));
+		expected.add(seed);
 		try {
 			repository.init();
 			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.add(seed);
 				connection.begin(IsolationLevels.NONE);
 				store.values.injectedFailure = terminal;
 				store.values.capacityFailuresRemaining = capacityFailures;
@@ -164,7 +176,7 @@ class LmdbBatchedIngestionTest {
 				assertTrue(terminal.getSuppressed().length > 0, "prior capacity recovery remains diagnostic history");
 				assertEquals(capacityFailures + 1, store.values.failures, "terminal work is never replayed again");
 				connection.rollback();
-				assertEquals(0, connection.size());
+				assertEquals(1, connection.size());
 				connection.begin(IsolationLevels.NONE);
 				connection.add(expected);
 				connection.commit();

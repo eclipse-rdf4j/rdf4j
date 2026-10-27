@@ -32,7 +32,9 @@ interface NativeTermAuthority {
 
 	/**
 	 * Identity of this authority's complete id space (store + plan catalog + runtime interner). Raw ids may be copied
-	 * between holders of the identical token; any other transfer must go through {@link #importId}.
+	 * between holders of the identical token. Some LMDB synthetic authorities may also copy raw ids when both
+	 * authorities explicitly carry the same complete synthetic-id-space proof and the identical plan catalog; any other
+	 * transfer must go through {@link #importId}.
 	 */
 	Object token();
 
@@ -86,9 +88,11 @@ interface NativeTermAuthority {
 	TermProbeDisposition probeDisposition(long id);
 
 	/**
-	 * Transfers an id minted by another authority into this one. Same token: the id itself. Different token: the source
-	 * materializes the value and this authority resolves it store-first ({@link #idOfOrIntern}); sentinels pass through
-	 * unchanged; an id the source cannot materialize imports as {@code UNKNOWN}.
+	 * Transfers an id minted by another authority into this one. The id may be copied when both authorities share the
+	 * identical token, or when an implementation proves that both hold the same complete synthetic id space and plan
+	 * catalog. Otherwise, the source materializes the value and this authority resolves it store-first
+	 * ({@link #idOfOrIntern}); sentinels pass through unchanged; an id the source cannot materialize imports as
+	 * {@code UNKNOWN}.
 	 */
 	long importId(NativeTermAuthority source, long sourceId);
 }

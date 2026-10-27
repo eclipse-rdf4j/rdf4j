@@ -28,9 +28,14 @@ final class LmdbNativeAdaptiveArbitration {
 		T open(LmdbNativeCostObservation observation) throws Exception;
 	}
 
-	record Candidate<T>(LmdbNativeCostEstimate estimate, int staticPreference, Opener<T> opener, boolean probeable) {
+	record Candidate<T>(LmdbNativeCostEstimate estimate, int staticPreference, Opener<T> opener, boolean probeable,
+			NativeAggregatePhysicalPlan.ColdAnchor coldAnchor) {
 		Candidate(LmdbNativeCostEstimate estimate, int staticPreference, Opener<T> opener) {
 			this(estimate, staticPreference, opener, true);
+		}
+
+		Candidate(LmdbNativeCostEstimate estimate, int staticPreference, Opener<T> opener, boolean probeable) {
+			this(estimate, staticPreference, opener, probeable, null);
 		}
 
 		Candidate {
@@ -198,7 +203,19 @@ final class LmdbNativeAdaptiveArbitration {
 					throw new IllegalArgumentException("duplicate physical candidate identity");
 			}
 		}
-		Priced<T> initial = priced.get(0);
+		List<Priced<T>> normal = priced.stream().filter(LmdbNativeAdaptiveArbitration::normalEligible).toList();
+		// Refused work remains in the legal inventory and in bounded exploration. It becomes an ordinary last
+		// fallback only after the currently viable normal recipes have declined and been removed by the arbiter.
+		// Without any resource-proved recipe the inventory competes on its stable structural preference exactly as
+		// before pricing existed, except that a domain algorithm driven into per-group hashing without a quote
+		// yields to every other legal arm first.
+		if (normal.isEmpty()) {
+			normal = priced.stream().filter(candidate -> !lastResort(candidate)).toList();
+			if (normal.isEmpty()) {
+				normal = priced;
+			}
+		}
+		Priced<T> initial = normal.get(0);
 		Candidate<T> incumbent = initial.candidate;
 		LmdbNativeCostPrediction incumbentPrediction = initial.prediction;
 		if (!model.configuration().enabled()) {
@@ -209,17 +226,30 @@ final class LmdbNativeAdaptiveArbitration {
 			return new DispatchPlan.Normal<>(incumbent, incumbentPrediction,
 					"authoritative whole-query structural answer");
 		}
+		if (allUnpricedCandidates(normal)) {
+			for (Priced<T> candidate : normal) {
+				NativeAggregatePhysicalPlan.ColdAnchor anchor = candidate.candidate.coldAnchor();
+				if (anchor != null) {
+					// There is no numerical time authority here. Prefer an executable reduction with a proved
+					// retained-state bound over an arbitrary ordinal arm. Multiple such witnesses are incomparable:
+					// the already sorted stable order decides, without asserting that one is faster.
+					return new DispatchPlan.Normal<>(candidate.candidate, candidate.prediction,
+							"cold physical anchor (stable order among incomparable anchors): "
+									+ anchor.inputReductionProof() + "; " + anchor.retainedStateBoundProof());
+				}
+			}
+		}
 		LmdbNativePosteriorConfig posteriorConfig = model.store().posteriorConfig();
-		Priced<T> rescued = coldStartRescue(priced, posteriorConfig.displacementLogGamma(),
+		Priced<T> rescued = coldStartRescue(normal, posteriorConfig.displacementLogGamma(),
 				posteriorConfig.displacementLogGammaOrderLosing());
 		if (rescued != null) {
 			traceDecision("rescue", priced, rescued);
 			return dispatchWithExploration(priced, rescued,
-					"cold-start guard: unmeasured incumbent yields to the cheapest measured rival", model,
+					"cold-start guard: selected a viable completed fallback", model,
 					probeContext, hedgeContext, captured);
 		}
 
-		Priced<T> selected = selectWithinFrontier(priced, posteriorConfig.displacementLogGamma(),
+		Priced<T> selected = selectWithinFrontier(normal, posteriorConfig.displacementLogGamma(),
 				posteriorConfig.displacementLogGammaOrderLosing());
 		if (selected.candidate != incumbent) {
 			traceDecision("displacement", priced, selected);
@@ -232,6 +262,50 @@ final class LmdbNativeAdaptiveArbitration {
 		return dispatchWithExploration(priced, new Priced<>(incumbent, incumbentPrediction),
 				"latent intervals overlap; retained stable strategy preference", model, probeContext, hedgeContext,
 				captured);
+	}
+
+	/**
+	 * A normal (unbounded) dispatch choice needs complete work evidence, a cold anchor, actual completed executions of
+	 * this exact variant, or the structural applicability of an index/metadata specialist whose work is bounded by what
+	 * it was offered for; an arm whose work is unknown or whose producer refused its quote stays in the legal inventory
+	 * as bounded exploration and last fallback.
+	 */
+	private static boolean normalEligible(Priced<?> candidate) {
+		Candidate<?> arm = candidate.candidate;
+		return arm.estimate.workEvidence().isComplete() || arm.coldAnchor() != null
+				|| candidate.prediction.exactCompletedCount() > 0L || structurallyAdmittedSpecialist(arm);
+	}
+
+	/**
+	 * Index-order and page/root-domain specialists are offered only when the shape structurally admits them, and their
+	 * work is bounded by the index runs or metadata they walk; that applicability is their resource proof while their
+	 * per-feature quote remains explicitly unknown. A variant that must hash per-group membership state is input-sized
+	 * work again and competes like any other unquoted arm.
+	 */
+	private static boolean structurallyAdmittedSpecialist(Candidate<?> arm) {
+		return LmdbNativeStrategyPreference.structuralSpecialistFamily(arm.estimate.variantKey().strategyFamily())
+				&& !arm.estimate.variantKey().requiresHashing();
+	}
+
+	/** A domain algorithm forced into unquoted per-group hashing is the last arm a cold inventory should open. */
+	private static boolean lastResort(Priced<?> candidate) {
+		Candidate<?> arm = candidate.candidate;
+		return LmdbNativeStrategyPreference.completeDomainAlgorithmFamily(arm.estimate.variantKey().strategyFamily())
+				&& arm.estimate.variantKey().requiresHashing() && !arm.estimate.workEvidence().isComplete()
+				&& arm.coldAnchor() == null && candidate.prediction.exactCompletedCount() == 0L;
+	}
+
+	/** Unknown feature prices never acquire numerical authority from a physical cold-start witness. */
+	private static <T> boolean allUnpricedCandidates(List<Priced<T>> candidates) {
+		for (Priced<T> candidate : candidates) {
+			if (candidate.prediction.priceBasis() == LmdbNativeCostPrediction.PriceBasis.FEATURE_POSTERIOR
+					|| candidate.prediction.priceBasis() == LmdbNativeCostPrediction.PriceBasis.DIRECT_POSTERIOR
+							&& candidate.prediction.nEff() > 0D
+					|| candidate.prediction.exactCompletedCount() != 0L) {
+				return false;
+			}
+		}
+		return !candidates.isEmpty();
 	}
 
 	/**
@@ -589,16 +663,17 @@ final class LmdbNativeAdaptiveArbitration {
 		}
 	}
 
-	/** Exact-variant observations a rival needs before it can rescue the choice from an unmeasured incumbent. */
+	/** Completed observations required of a rival without an engine-IR or current physical-anchor witness. */
 	static final int COLD_START_EVIDENCE_FLOOR = 5;
 
 	/**
 	 * Cold-start guard (2026-08-16 regression fix — HIGHLY_CONNECTED q4 chose {@code irKernelInterpreted} with
 	 * {@code evidence=0; source=STRUCTURAL_ONLY} over a nestedLoop incumbent carrying 199 samples): when the ladder's
-	 * incumbent has never actually run (its prediction carries no EXACT_VARIANT evidence) while some rival carries at
-	 * least {@link #COLD_START_EVIDENCE_FLOOR} real measurements, the measured, non-quarantined rival with the lowest
-	 * expected cost is returned; otherwise {@code null}. Deterministic and offer-order-invariant: ties break on the
-	 * variant key. The unmeasured incumbent still gets its chance through bounded exploration.
+	 * incumbent has no completed exact execution while a rival carries completed measurements, the non-quarantined
+	 * measured frontier supplies the fallback. Engine-IR and current physical-anchor witnesses qualify from their first
+	 * completion; other rivals require {@link #COLD_START_EVIDENCE_FLOOR}. This supplies a viable measured fallback,
+	 * not a claim that one sample proves the fastest strategy. The uncompleted incumbent gets its chance through the
+	 * existing bounded exploration. Deterministic and offer-order-invariant: ties break on the variant key.
 	 */
 	static <T> Priced<T> coldStartRescue(List<Priced<T>> priced) {
 		return coldStartRescue(priced, DEFAULT_LOG_GAMMA, DEFAULT_LOG_GAMMA_ORDER_LOSING);
@@ -615,9 +690,10 @@ final class LmdbNativeAdaptiveArbitration {
 		}
 		// A quarantined incumbent (e.g. it just lost a guarded race — its price is untrusted for the TTL) yields
 		// exactly like an unmeasured one: the dispatch after a guard loss picks the measured runner-up outright
-		// instead of re-racing (anti-ping-pong, first half).
+		// instead of re-racing (anti-ping-pong, first half). An exact censor with zero completions likewise cannot
+		// turn an uncompleted arm into an unbounded normal incumbent.
 		if (incumbent.prediction.evidenceSource() == LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT
-				&& !incumbent.prediction.quarantined()) {
+				&& incumbent.prediction.exactCompletedCount() > 0L && !incumbent.prediction.quarantined()) {
 			return null;
 		}
 		List<Priced<T>> measured = new ArrayList<>();
@@ -630,10 +706,11 @@ final class LmdbNativeAdaptiveArbitration {
 			// engine's own IR tiers qualify from their FIRST completion: probe credit affords them
 			// roughly one bounded trial per twenty dispatches, first-completion seeding makes that single sample
 			// trustworthy, and demanding the full floor left the kernel arm locked out for ~100 dispatches while
-			// a measured slow rival kept the rescue. Bounded specialist families still require the ordinary evidence
-			// floor: making them mandatory probe targets must not let a single fallback completion rescue the choice
-			// away from an IR incumbent that was waiting for compilation.
-			long floor = LmdbNativeStrategyPreference.engineIrFamily(
+			// a measured slow rival kept the rescue. A current physical anchor likewise remains a viable measured
+			// fallback from its first real completion. This does not declare it fastest: an unexecuted or merely
+			// censored rival still gets the existing bounded exploration, rather than an unbounded normal run.
+			// Other specialists retain the ordinary floor; a family label alone supplies no physical witness.
+			long floor = rival.candidate.coldAnchor() != null || LmdbNativeStrategyPreference.engineIrFamily(
 					rival.candidate.estimate.variantKey().strategyFamily()) ? 1L : COLD_START_EVIDENCE_FLOOR;
 			if (prediction.evidenceSource() != LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT
 					|| prediction.exactCompletedCount() < floor || prediction.quarantined()

@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
@@ -91,8 +92,27 @@ public class LmdbRealEstateNativeParityTest {
 			}
 		}
 		assertThat(nativeRows)
-				.as("native vs generic rows for REAL_ESTATE query " + queryIndex + ":\n" + query)
+				.as(() -> "native vs generic rows for REAL_ESTATE query " + queryIndex + ":\n" + query
+						+ (nativeRows.equals(genericRows) ? "" : nativeReruns(query)))
 				.isEqualTo(genericRows);
+	}
+
+	/**
+	 * Evaluates a mismatching query natively again, so a failure shows whether the store keeps answering wrongly or one
+	 * evaluation raced, together with the plan each rerun executed.
+	 */
+	private static String nativeReruns(String query) {
+		StringBuilder reruns = new StringBuilder();
+		for (int rerun = 1; rerun <= 3; rerun++) {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				reruns.append("\nnative rerun ").append(rerun).append(": ").append(rows(query));
+				reruns.append("\n")
+						.append(connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry));
+			} catch (RuntimeException failure) {
+				reruns.append("\nnative rerun ").append(rerun).append(" failed: ").append(failure);
+			}
+		}
+		return reruns.toString();
 	}
 
 	private static List<String> rows(String query) {

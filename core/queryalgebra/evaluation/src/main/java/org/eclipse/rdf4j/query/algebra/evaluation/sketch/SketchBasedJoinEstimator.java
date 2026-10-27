@@ -416,7 +416,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private volatile boolean usingA = true;
 
 	private volatile boolean running;
-	private Thread refresher;
+	private volatile Thread refresher;
 	private volatile JoinStatsProvider learnedStatsProvider;
 	private volatile PatternFilterSamplingEstimator patternFilterSamplingEstimator;
 	private volatile PatternCardinalityProvider patternCardinalityProvider;
@@ -1248,6 +1248,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private volatile SketchEstimatorPersistenceStore persistenceStore;
 	private volatile boolean persistenceEnabled;
 	private volatile boolean sketchesLoaded = true;
+	private volatile boolean persistedSnapshotAvailable;
 	private final long[] slotGenerations = new long[] { 1L, 1L };
 
 	/**
@@ -1576,6 +1577,16 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 	}
 
+	/**
+	 * Observes scheduled or running rebuild/load work using cached state only; idle and stopped workers are excluded.
+	 */
+	public boolean hasPendingBackgroundRefresh() {
+		Thread worker = refresher;
+		return running && worker != null && worker.isAlive()
+				&& (rebuildRequired.get() || (rebuildEpoch.get() & 1L) != 0L
+						|| !sketchesLoaded && persistedSnapshotAvailable);
+	}
+
 	private boolean hasResidentReadySnapshot(State readyState, boolean sketchesLoadedNow) {
 		if (!sketchesLoadedNow) {
 			return false;
@@ -1773,6 +1784,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		Path normalizedFile = file == null ? null : file.toAbsolutePath().normalize();
 		this.persistenceFile = normalizedFile;
 		this.persistenceEnabled = (file != null);
+		persistedSnapshotAvailable = false;
 
 		if (!Objects.equals(previousPersistenceFile, this.persistenceFile)) {
 			closePersistenceStore();
@@ -2021,6 +2033,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private void closePersistenceStore() {
 		SketchEstimatorPersistenceStore store = persistenceStore;
 		persistenceStore = null;
+		persistedSnapshotAvailable = false;
 		if (store != null) {
 			store.close();
 		}
@@ -8668,6 +8681,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				store.flush();
 				writeDirectoryIndexes(store);
 				store.writeMetadata(newDirectoryMetadata(store));
+				persistedSnapshotAvailable = true;
 				indexDirty.set(false);
 				refreshDirtyFlagFromCacheDirectory();
 				return true;
@@ -8690,6 +8704,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	 */
 	public void discardAndMarkForRebuild() {
 		unloadInternal(true);
+		persistedSnapshotAvailable = false;
 		clearSlotPersistence((byte) 0);
 		clearSlotPersistence((byte) 1);
 		dirty.set(false);
@@ -8699,7 +8714,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private void unloadInternal(boolean markRebuildRequired) {
 		clearEstimateCache();
 		clearPositiveReadinessCache();
-		if (persistenceEnabled && persistenceStore != null) {
+		if (markRebuildRequired) {
+			// An explicit discard rejects disposable observations. Never persist obsolete data or let failed
+			// persistence retain it. Close incremental admission before draining already admitted batches.
+			markRebuildRequired();
+			sketchesLoaded = false;
+			discardPendingIncremental();
+		} else if (persistenceEnabled && persistenceStore != null) {
 			if ((dirty.get() || indexDirty.get()) && !persistIfDirty()) {
 				return;
 			}
@@ -8716,9 +8737,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			seenTriples = 0L;
 		}
 		sketchesLoaded = false;
-		if (markRebuildRequired) {
-			markRebuildRequired();
-		}
 		notifyReadyWaiters();
 	}
 
@@ -8738,15 +8756,18 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private void waitForAsyncIncrementalBatchesIgnoringFailures() {
+		boolean interrupted = false;
 		synchronized (asyncIncrementalDrainLock) {
 			while (asyncIncrementalBatchCount > 0) {
 				try {
 					asyncIncrementalDrainLock.wait();
 				} catch (InterruptedException e) {
-					Thread.currentThread().interrupt();
-					return;
+					interrupted = true;
 				}
 			}
+		}
+		if (interrupted) {
+			Thread.currentThread().interrupt();
 		}
 	}
 
@@ -8859,6 +8880,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		lastRebuildPublishMs = metadata.lastPublishTime;
 		churnSampler.reset();
 		sketchesLoaded = markLoaded;
+		persistedSnapshotAvailable = true;
 		dirty.set(false);
 		indexDirty.set(false);
 		notifyReadyWaiters();

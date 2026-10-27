@@ -44,9 +44,9 @@ import java.util.UUID;
 import java.util.WeakHashMap;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -83,7 +83,6 @@ import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.common.iteration.IterationConstants;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
-import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -124,7 +123,6 @@ import org.eclipse.rdf4j.sail.base.Changeset;
 import org.eclipse.rdf4j.sail.base.FrozenReplayCoverage;
 import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.base.SailDataset;
-import org.eclipse.rdf4j.sail.base.SailDatasetSnapshot;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
@@ -137,7 +135,6 @@ import org.eclipse.rdf4j.sail.lmdb.TxnManager.ReaderReservation;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAttemptMetrics;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostModelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeExpressionCompiler;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeIdDomain;
@@ -281,9 +278,11 @@ class LmdbSailStore implements SailStore {
 	final class ReadAttemptLease implements AutoCloseable {
 		private final Object owner;
 		private final MapGrowthObserver observer;
-		private final QueryExecutionDeadline deadlineOwner;
+		/** Set when the query that owns this attempt is cancelled; map growth then stops replaying it. */
+		private volatile boolean cancelled;
 		private final ReadAttemptLease ancestor;
 		private final long generation;
+		private final boolean operationScoped;
 		private final WeakHashMap<ReadViewLease, Boolean> historicalViews = new WeakHashMap<>();
 		private ReadView reservedEpoch;
 		private volatile boolean closed;
@@ -294,12 +293,13 @@ class LmdbSailStore implements SailStore {
 		private volatile boolean completed;
 		private boolean failed;
 
-		private ReadAttemptLease(Object owner, MapGrowthObserver observer, ReadAttemptLease ancestor, long generation) {
+		private ReadAttemptLease(Object owner, MapGrowthObserver observer, ReadAttemptLease ancestor, long generation,
+				boolean operationScoped) {
 			this.owner = owner;
 			this.observer = observer;
-			this.deadlineOwner = QueryExecutionDeadline.current();
 			this.ancestor = ancestor;
 			this.generation = generation;
+			this.operationScoped = operationScoped;
 		}
 
 		long generation() {
@@ -310,8 +310,8 @@ class LmdbSailStore implements SailStore {
 			return closed;
 		}
 
-		QueryExecutionDeadline deadlineOwner() {
-			return deadlineOwner;
+		void cancel() {
+			cancelled = true;
 		}
 
 		@Override
@@ -456,8 +456,8 @@ class LmdbSailStore implements SailStore {
 		private volatile long nativeGeneration;
 		private long statementReplayGeneration;
 		private final AtomicBoolean closed = new AtomicBoolean();
+		private volatile boolean cancelled;
 		private Runnable completion;
-		private QueryExecutionDeadline.Scope deadlineScope;
 		private boolean reportEmergencyOutcome;
 		private boolean resized;
 
@@ -490,7 +490,18 @@ class LmdbSailStore implements SailStore {
 
 		void requestQuiescence(MapResizeKind kind) throws IOException {
 			if (!closed.get()) {
-				coordinator.requestQuiescence(episode, kind);
+				coordinator.requestQuiescence(episode, kind, this);
+			}
+		}
+
+		/**
+		 * Ends this attempt's reader grace early because the operation it serves was interrupted, for example by a time
+		 * limit. The native owner observes the request at its next drain wait and fails the attempt.
+		 */
+		void cancel() {
+			if (!closed.get()) {
+				cancelled = true;
+				coordinator.signalChange();
 			}
 		}
 
@@ -529,14 +540,8 @@ class LmdbSailStore implements SailStore {
 						coordinator.releaseWarning(episode, warningOwner);
 					}
 				} finally {
-					try {
-						if (deadlineScope != null) {
-							deadlineScope.close();
-						}
-					} finally {
-						if (completion != null) {
-							completion.run();
-						}
+					if (completion != null) {
+						completion.run();
 					}
 				}
 			}
@@ -673,6 +678,11 @@ class LmdbSailStore implements SailStore {
 
 		private ReadAttemptLease registerAttempt(Object owner, MapGrowthObserver observer, ReadAttemptLease ancestor)
 				throws SailException {
+			return registerAttempt(owner, observer, ancestor, false);
+		}
+
+		private ReadAttemptLease registerAttempt(Object owner, MapGrowthObserver observer, ReadAttemptLease ancestor,
+				boolean operationScoped) throws SailException {
 			lock.lock();
 			try {
 				if (ancestor == null) {
@@ -683,7 +693,8 @@ class LmdbSailStore implements SailStore {
 				if (nextAttemptGeneration == Long.MAX_VALUE) {
 					throw new SailException("LMDB transaction attempt generation exhausted");
 				}
-				ReadAttemptLease lease = new ReadAttemptLease(owner, observer, ancestor, ++nextAttemptGeneration);
+				ReadAttemptLease lease = new ReadAttemptLease(owner, observer, ancestor, ++nextAttemptGeneration,
+						operationScoped);
 				attempts.put(lease, Boolean.TRUE);
 				if (owner != null && ancestor == null) {
 					transactions.put(owner, lease);
@@ -733,47 +744,43 @@ class LmdbSailStore implements SailStore {
 		}
 
 		private void awaitAttemptAdmission(Object requestedOwner) throws SailException {
-			QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
 			long waitStartNanos = 0;
 			boolean waited = false;
 			try {
-				try (QueryExecutionDeadline.Registration ignored = signalOnExpiration(deadline)) {
-					checkAdmission(deadline);
-					while (episode != null) {
-						expireAdmissionWarning();
-						checkAdmission(deadline);
-						if (episode == null || !episode.admissionClosed
-								|| !episode.managed && episode.owner == requestedOwner) {
-							return;
-						}
-						if (episode.managed && (activeReadView.get() != null
-								|| currentWriterOwner() != null && currentWriterOwner() != requestedOwner)) {
-							throw new SailConflictException(
-									"An independent reentrant LMDB transaction would wait for its own active work; retry outside the callback");
-						}
-						GrowthEpisode waitingOn = episode;
-						if (!waited) {
-							waitStartNanos = System.nanoTime();
-							waited = true;
-							mapGrowthMetrics.admissionWaitStarted();
-						}
-						try {
-							awaitChange(deadline,
-									waitingOn.managed || waitingOn.growthStarted ? Long.MAX_VALUE
-											: waitingOn.deadlineNanos);
-						} catch (InterruptedException e) {
-							Thread.currentThread().interrupt();
-							throw new InterruptedSailException("Interrupted while waiting for LMDB map growth", e);
-						}
-						throwIfGrowthFailed(waitingOn);
+				checkAdmission();
+				while (episode != null) {
+					expireAdmissionWarning();
+					checkAdmission();
+					if (episode == null || !episode.admissionClosed
+							|| !episode.managed && episode.owner == requestedOwner) {
+						return;
 					}
-					checkAdmission(deadline);
+					if (episode.managed && (activeReadView.get() != null
+							|| currentWriterOwner() != null && currentWriterOwner() != requestedOwner)) {
+						throw new SailConflictException(
+								"An independent reentrant LMDB transaction would wait for its own active work; retry outside the callback");
+					}
+					GrowthEpisode waitingOn = episode;
+					if (!waited) {
+						waitStartNanos = System.nanoTime();
+						waited = true;
+						mapGrowthMetrics.admissionWaitStarted();
+					}
+					try {
+						awaitChange(waitingOn.managed || waitingOn.growthStarted ? Long.MAX_VALUE
+								: waitingOn.deadlineNanos);
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+						throw new InterruptedSailException("Interrupted while waiting for LMDB map growth", e);
+					}
+					throwIfGrowthFailed(waitingOn);
 				}
-			} catch (QueryInterruptedException expired) {
+				checkAdmission();
+			} catch (InterruptedSailException interrupted) {
 				if (waited) {
 					mapGrowthMetrics.recordAdmissionTimeout();
 				}
-				throw expired;
+				throw interrupted;
 			} finally {
 				if (waited) {
 					try {
@@ -786,68 +793,67 @@ class LmdbSailStore implements SailStore {
 		}
 
 		private void awaitViewAdmission(ReadAttemptLease attempt) throws SailException {
-			QueryExecutionDeadline deadline = deadlineFor(attempt);
 			long waitStartNanos = 0;
 			boolean waited = false;
 			try {
-				try (QueryExecutionDeadline.Registration ignored = signalOnExpiration(deadline)) {
-					checkAdmission(deadline);
-					while (episode != null) {
-						expireAdmissionWarning();
-						if (episode == null || !episode.admissionClosed) {
-							return;
-						}
-						throwIfExpired(deadline);
-						// During the advisory WARNING phase, existing attempts must continue opening the nested views
-						// needed to finish. During DRAINING, allow those same descendants to complete replay. Once the
-						// drain callback returns, growthStarted remains true while quiescenceRunning is false; no new
-						// native view may enter until publication completes.
-						boolean descendantAdmissionOpen = episode.managed
-								? episode.phase == GrowthPhase.DRAIN_WRITERS
-										|| episode.phase == GrowthPhase.DRAIN_READERS
-								: !episode.growthStarted || episode.quiescenceRunning;
-						ReadAttemptLease dependency = attempt == null ? null
-								: attempt.ancestor == null ? attempt : attempt.ancestor;
-						boolean frozenWriter = episode.phase == GrowthPhase.EMERGENCY && dependency != null
-								&& dependency.owner != episode.owner && dependency.writing
-								&& !dependency.completed && !dependency.failed;
-						boolean admittedDescendant = attempt != null && !attempt.closed && attempts.containsKey(attempt)
-								&& descendantAdmissionOpen && !frozenWriter
-								&& (attempt.owner == episode.owner || episode.preexistingAttempts.containsKey(attempt)
-										|| attempt.ancestor != null
-												&& episode.preexistingAttempts.containsKey(attempt.ancestor))
-								&& (episode.managed && episode.phase == GrowthPhase.DRAIN_WRITERS
-										|| LmdbSailStore.remainingNanos(episode.deadlineNanos) > 0);
-						if (admittedDescendant) {
-							return;
-						}
-						if (Thread.currentThread() == growthThread && episode.phase == GrowthPhase.RESERVE_REPLAYS
-								&& attempt != null && !attempt.closed) {
-							return;
-						}
-						if (!waited) {
-							waitStartNanos = System.nanoTime();
-							waited = true;
-							mapGrowthMetrics.admissionWaitStarted();
-						}
-						GrowthEpisode waitingOn = episode;
-						try {
-							awaitChange(deadline,
-									waitingOn.managed || waitingOn.growthStarted ? Long.MAX_VALUE
-											: waitingOn.deadlineNanos);
-						} catch (InterruptedException e) {
-							Thread.currentThread().interrupt();
-							throw new InterruptedSailException("Interrupted while waiting for LMDB map growth", e);
-						}
-						throwIfGrowthFailed(waitingOn);
+				checkAdmission();
+				while (episode != null) {
+					expireAdmissionWarning();
+					if (episode == null || !episode.admissionClosed) {
+						return;
 					}
-					checkAdmission(deadline);
+					// During the advisory WARNING phase, existing attempts must continue opening the nested views
+					// needed to finish. During DRAINING, allow those same descendants to complete replay. Once the
+					// drain callback returns, growthStarted remains true while quiescenceRunning is false; no new
+					// native view may enter until publication completes.
+					boolean descendantAdmissionOpen = episode.managed
+							? episode.phase == GrowthPhase.DRAIN_WRITERS
+									|| episode.phase == GrowthPhase.DRAIN_READERS
+							: !episode.growthStarted || episode.quiescenceRunning;
+					ReadAttemptLease dependency = attempt == null ? null
+							: attempt.ancestor == null ? attempt : attempt.ancestor;
+					boolean frozenWriter = episode.phase == GrowthPhase.EMERGENCY && dependency != null
+							&& dependency.owner != episode.owner && dependency.writing
+							&& !dependency.completed && !dependency.failed;
+					boolean admittedDescendant = attempt != null && !attempt.closed && attempts.containsKey(attempt)
+							&& descendantAdmissionOpen && !frozenWriter
+							&& (attempt.owner == episode.owner || episode.preexistingAttempts.containsKey(attempt)
+									|| attempt.ancestor != null
+											&& episode.preexistingAttempts.containsKey(attempt.ancestor))
+							&& (episode.managed && episode.phase == GrowthPhase.DRAIN_WRITERS
+									|| LmdbSailStore.remainingNanos(episode.deadlineNanos) > 0);
+					if (admittedDescendant) {
+						return;
+					}
+					if (Thread.currentThread() == growthThread && episode.phase == GrowthPhase.RESERVE_REPLAYS
+							&& attempt != null) {
+						// The driver is reserving a replacement snapshot for a parked attempt. That attempt may
+						// have closed after the driver's pre-check; the driver owns this closed episode, so waiting
+						// here could never be satisfied. Admit the view: reserveParkedSnapshots discards a view
+						// reserved for an attempt that closed meanwhile.
+						return;
+					}
+					if (!waited) {
+						waitStartNanos = System.nanoTime();
+						waited = true;
+						mapGrowthMetrics.admissionWaitStarted();
+					}
+					GrowthEpisode waitingOn = episode;
+					try {
+						awaitChange(waitingOn.managed || waitingOn.growthStarted ? Long.MAX_VALUE
+								: waitingOn.deadlineNanos);
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+						throw new InterruptedSailException("Interrupted while waiting for LMDB map growth", e);
+					}
+					throwIfGrowthFailed(waitingOn);
 				}
-			} catch (QueryInterruptedException expired) {
+				checkAdmission();
+			} catch (InterruptedSailException interrupted) {
 				if (waited) {
 					mapGrowthMetrics.recordAdmissionTimeout();
 				}
-				throw expired;
+				throw interrupted;
 			} finally {
 				if (waited) {
 					try {
@@ -859,38 +865,12 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
-		private QueryExecutionDeadline deadlineFor(ReadAttemptLease attempt) {
-			QueryExecutionDeadline current = QueryExecutionDeadline.current();
-			return current != null || attempt == null ? current : attempt.deadlineOwner;
+		private void checkAdmission() {
+			checkAdmission(null);
 		}
 
-		private QueryExecutionDeadline.Registration signalOnExpiration(QueryExecutionDeadline deadline) {
-			if (deadline == null) {
-				return null;
-			}
-			return deadline.onExpiration(() -> {
-				lock.lock();
-				try {
-					changed.signalAll();
-				} finally {
-					lock.unlock();
-				}
-			});
-		}
-
-		private void throwIfExpired(QueryExecutionDeadline deadline) {
-			if (deadline != null && deadline.isExpired()) {
-				throw queryInterrupted();
-			}
-		}
-
-		private void checkAdmission(QueryExecutionDeadline deadline) {
-			checkAdmission(deadline, null);
-		}
-
-		private void checkAdmission(QueryExecutionDeadline deadline, Object admittedNativeOwner) {
-			beforeGrowthAdmissionDeadlineCheck(deadline);
-			throwIfExpired(deadline);
+		private void checkAdmission(Object admittedNativeOwner) {
+			beforeGrowthAdmissionCheck();
 			if (shuttingDown && replayRetirementOwner.get() == null
 					&& (admittedNativeOwner == null || !directWriters.containsKey(admittedNativeOwner)
 							|| admittedNativeOwner != storeTransactionOwner || !storeTxnStarted.get())) {
@@ -915,7 +895,7 @@ class LmdbSailStore implements SailStore {
 				// Every statement of a writing transaction re-enters here. The upgrade check and the growth signal
 				// already happened on the first intent, so only the admission checks remain. Taking the lock and
 				// signalling again would wake the growth thread for every statement and contend with it.
-				checkAdmission(deadlineFor(attempt));
+				checkAdmission();
 				if (attempt.completed) {
 					throw new SailException("The LMDB transaction attempt has already finished");
 				}
@@ -923,7 +903,7 @@ class LmdbSailStore implements SailStore {
 			}
 			lock.lock();
 			try {
-				checkAdmission(deadlineFor(attempt));
+				checkAdmission();
 				if (attempt.completed || transactions.get(attempt.owner) != attempt) {
 					throw new SailException("The LMDB transaction attempt has already finished");
 				}
@@ -983,12 +963,11 @@ class LmdbSailStore implements SailStore {
 			if (!nativeWriterAdmissionFrozen(owner)) {
 				return;
 			}
-			QueryExecutionDeadline deadline = deadlineFor(attempt);
 			boolean waited = false;
 			long waitStarted = 0L;
-			try (QueryExecutionDeadline.Registration ignored = signalOnExpiration(deadline)) {
+			try {
 				while (nativeWriterAdmissionFrozen(owner)) {
-					checkAdmission(deadline);
+					checkAdmission();
 					if (attempt != null && attempt.completed) {
 						throw new SailConflictException(
 								"The LMDB transaction attempt has finished; retry the operation");
@@ -1000,7 +979,7 @@ class LmdbSailStore implements SailStore {
 					}
 					GrowthEpisode waitingOn = episode;
 					try {
-						awaitChange(deadline, Long.MAX_VALUE);
+						awaitChange(Long.MAX_VALUE);
 					} catch (InterruptedException interrupted) {
 						Thread.currentThread().interrupt();
 						throw new InterruptedSailException("Interrupted while waiting for LMDB native admission",
@@ -1008,15 +987,15 @@ class LmdbSailStore implements SailStore {
 					}
 					throwIfGrowthFailed(waitingOn);
 				}
-				checkAdmission(deadline);
+				checkAdmission();
 				if (attempt != null && attempt.completed) {
 					throw new SailConflictException("The LMDB transaction attempt has finished; retry the operation");
 				}
-			} catch (QueryInterruptedException expired) {
+			} catch (InterruptedSailException interrupted) {
 				if (waited) {
 					mapGrowthMetrics.recordAdmissionTimeout();
 				}
-				throw expired;
+				throw interrupted;
 			} finally {
 				if (waited) {
 					try {
@@ -1065,7 +1044,7 @@ class LmdbSailStore implements SailStore {
 			lock.lock();
 			try {
 				// An acquired native owner must be able to finish its nested publication while shutdown joins it.
-				checkAdmission(deadlineFor(registration.attempt()), owner);
+				checkAdmission(owner);
 				ensureWriterRegistrationActive(registration);
 				if (registration.released || registration.acquired) {
 					throw new IllegalStateException("LMDB writer registration is no longer queued");
@@ -1088,7 +1067,7 @@ class LmdbSailStore implements SailStore {
 		private void awaitWriterAdmission(Object owner, WriterRegistration registration) {
 			lock.lock();
 			try {
-				checkAdmission(deadlineFor(registration.attempt()));
+				checkAdmission();
 				ensureWriterRegistrationActive(registration);
 				awaitNativeWriterAdmission(owner, registration.attempt());
 			} finally {
@@ -1190,7 +1169,7 @@ class LmdbSailStore implements SailStore {
 		private void certifyEmergency(Object owner) throws LmdbTransactionRetryException {
 			lock.lock();
 			try {
-				checkAdmission(QueryExecutionDeadline.current());
+				checkAdmission();
 				for (Object directOwner : directWriters.keySet()) {
 					if (directOwner != owner) {
 						throw new LmdbTransactionRetryException(
@@ -1211,34 +1190,24 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
-		private long remainingNanos(QueryExecutionDeadline deadline, long coordinationDeadlineNanos) {
-			long coordinationRemaining = coordinationDeadlineNanos == Long.MAX_VALUE
+		/** Waits are bounded by the coordination deadline and end early on interrupt, for example a query timeout. */
+		private long remainingNanos(long coordinationDeadlineNanos) {
+			return coordinationDeadlineNanos == Long.MAX_VALUE
 					? Long.MAX_VALUE
 					: LmdbSailStore.remainingNanos(coordinationDeadlineNanos);
-			if (deadline == null) {
-				return coordinationRemaining;
-			}
-			long queryRemaining = deadline.remainingNanos();
-			if (queryRemaining <= 0L) {
-				throw queryInterrupted();
-			}
-			return Math.min(coordinationRemaining, queryRemaining);
 		}
 
-		private boolean awaitChange(QueryExecutionDeadline deadline, long coordinationDeadlineNanos)
+		private boolean awaitChange(long coordinationDeadlineNanos) throws InterruptedException {
+			return awaitChange(coordinationDeadlineNanos, false);
+		}
+
+		private boolean awaitReaderDrain(long coordinationDeadlineNanos) throws InterruptedException {
+			return awaitChange(coordinationDeadlineNanos, true);
+		}
+
+		private boolean awaitChange(long coordinationDeadlineNanos, boolean readerDrainWait)
 				throws InterruptedException {
-			return awaitChange(deadline, coordinationDeadlineNanos, false);
-		}
-
-		private boolean awaitReaderDrain(QueryExecutionDeadline deadline, long coordinationDeadlineNanos)
-				throws InterruptedException {
-			return awaitChange(deadline, coordinationDeadlineNanos, true);
-		}
-
-		private boolean awaitChange(QueryExecutionDeadline deadline, long coordinationDeadlineNanos,
-				boolean readerDrainWait) throws InterruptedException {
-			throwIfExpired(deadline);
-			long remaining = remainingNanos(deadline, coordinationDeadlineNanos);
+			long remaining = remainingNanos(coordinationDeadlineNanos);
 			if (remaining == Long.MAX_VALUE) {
 				if (readerDrainWait) {
 					mapGrowthMetrics.recordReaderDrainWait();
@@ -1256,10 +1225,6 @@ class LmdbSailStore implements SailStore {
 			return true;
 		}
 
-		private QueryInterruptedException queryInterrupted() {
-			return new QueryInterruptedException("Query evaluation took too long");
-		}
-
 		private MapGrowthAttempt begin(Object requestedOwner) throws IOException {
 			return begin(requestedOwner, 0L);
 		}
@@ -1268,7 +1233,7 @@ class LmdbSailStore implements SailStore {
 		private MapGrowthAttempt beginProjectedWrite(Object owner) throws IOException {
 			lock.lock();
 			try {
-				checkAdmission(QueryExecutionDeadline.current());
+				checkAdmission();
 				expireAdmissionWarning();
 				if (!soleParticipant(owner) || episode != null && (episode.quiescenceRunning
 						|| episode.managed && episode.phase != GrowthPhase.DRAIN_WRITERS
@@ -1285,80 +1250,76 @@ class LmdbSailStore implements SailStore {
 
 		private MapGrowthAttempt begin(Object requestedOwner, long nativeGeneration) throws IOException {
 			Object owner = Objects.requireNonNull(requestedOwner, "owner");
-			QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
-			try (QueryExecutionDeadline.Registration ignored = signalOnExpiration(deadline)) {
-				lock.lock();
-				try {
-					expireAdmissionWarning();
-					if (episode != null && episode.managed) {
-						certifyEmergency(owner);
-						if (episode.phase != GrowthPhase.DRAIN_WRITERS) {
+			lock.lock();
+			try {
+				expireAdmissionWarning();
+				if (episode != null && episode.managed) {
+					certifyEmergency(owner);
+					if (episode.phase != GrowthPhase.DRAIN_WRITERS) {
+						throw new LmdbTransactionRetryException(
+								"capacity recovery cannot interrupt another growth phase", null);
+					}
+					for (ReadViewLease view : views.keySet()) {
+						ReadAttemptLease dependency = view.writerDependency;
+						if (dependency != null && dependency.writing && !dependency.completed && !dependency.failed
+								&& (view.hasNativePin(MapResizeKind.TRIPLE_STORE)
+										|| view.hasNativePin(MapResizeKind.VALUE_STORE))) {
 							throw new LmdbTransactionRetryException(
-									"capacity recovery cannot interrupt another growth phase", null);
-						}
-						for (ReadViewLease view : views.keySet()) {
-							ReadAttemptLease dependency = view.writerDependency;
-							if (dependency != null && dependency.writing && !dependency.completed && !dependency.failed
-									&& (view.hasNativePin(MapResizeKind.TRIPLE_STORE)
-											|| view.hasNativePin(MapResizeKind.VALUE_STORE))) {
-								throw new LmdbTransactionRetryException(
-										"capacity recovery cannot retire a writing snapshot", null);
-							}
-						}
-						episode.owner = owner;
-						changePhase(episode, GrowthPhase.EMERGENCY);
-						episode.deadlineNanos = System.nanoTime() + readDrainTimeoutNanos;
-						episode.attempts++;
-						return new MapGrowthAttempt(this, episode, null, owner, nativeGeneration);
-					}
-					while (episode != null && episode.growthStarted && episode.owner != owner) {
-						expireAdmissionWarning();
-						if (episode == null) {
-							break;
-						}
-						GrowthEpisode waitingOn = episode;
-						try {
-							awaitChange(deadline,
-									waitingOn.growthStarted ? Long.MAX_VALUE : waitingOn.deadlineNanos);
-						} catch (InterruptedException e) {
-							Thread.currentThread().interrupt();
-							throw new IOException("Interrupted while waiting for another LMDB map growth episode", e);
+									"capacity recovery cannot retire a writing snapshot", null);
 						}
 					}
-					if (nativeGeneration != 0L) {
-						// Certify and close admission under the same lock: a pending writing view or native
-						// reservation must not enter between the owner's earlier continuation check and this episode.
-						certifyEmergency(owner);
-					}
-					if (episode == null) {
-						episode = createEpisode(owner, true);
-					} else if (!episode.growthStarted) {
-						// Any writer reaching exact preflight may promote the shared advisory warning. The logical
-						// owner becomes the connection that is actually preparing, independent of its thread.
-						episode.owner = owner;
-						episode.warningOwners.clear();
-						episode.growthStarted = true;
-						episode.metrics = mapGrowthMetrics.startEpisode();
-						episode.attempts = 1;
-					} else if (episode.attempts == Integer.MAX_VALUE) {
-						throw new IOException("Too many nested LMDB map growth attempts");
-					} else {
-						episode.attempts++;
-					}
-					if (nativeGeneration != 0L) {
-						changePhase(episode, GrowthPhase.EMERGENCY);
-					}
+					episode.owner = owner;
+					changePhase(episode, GrowthPhase.EMERGENCY);
+					episode.deadlineNanos = System.nanoTime() + readDrainTimeoutNanos;
+					episode.attempts++;
 					return new MapGrowthAttempt(this, episode, null, owner, nativeGeneration);
-				} finally {
-					lock.unlock();
 				}
+				while (episode != null && episode.growthStarted && episode.owner != owner) {
+					expireAdmissionWarning();
+					if (episode == null) {
+						break;
+					}
+					GrowthEpisode waitingOn = episode;
+					try {
+						awaitChange(waitingOn.growthStarted ? Long.MAX_VALUE : waitingOn.deadlineNanos);
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+						throw new IOException("Interrupted while waiting for another LMDB map growth episode", e);
+					}
+				}
+				if (nativeGeneration != 0L) {
+					// Certify and close admission under the same lock: a pending writing view or native
+					// reservation must not enter between the owner's earlier continuation check and this episode.
+					certifyEmergency(owner);
+				}
+				if (episode == null) {
+					episode = createEpisode(owner, true);
+				} else if (!episode.growthStarted) {
+					// Any writer reaching exact preflight may promote the shared advisory warning. The logical
+					// owner becomes the connection that is actually preparing, independent of its thread.
+					episode.owner = owner;
+					episode.warningOwners.clear();
+					episode.growthStarted = true;
+					episode.metrics = mapGrowthMetrics.startEpisode();
+					episode.attempts = 1;
+				} else if (episode.attempts == Integer.MAX_VALUE) {
+					throw new IOException("Too many nested LMDB map growth attempts");
+				} else {
+					episode.attempts++;
+				}
+				if (nativeGeneration != 0L) {
+					changePhase(episode, GrowthPhase.EMERGENCY);
+				}
+				return new MapGrowthAttempt(this, episode, null, owner, nativeGeneration);
+			} finally {
+				lock.unlock();
 			}
 		}
 
 		private void startStatementReplay(MapGrowthAttempt attempt, long generation) throws IOException {
 			lock.lock();
 			try {
-				checkAdmission(QueryExecutionDeadline.current());
+				checkAdmission();
 				throwIfGrowthFailed(attempt.episode);
 				if (attempt.closed.get() || episode != attempt.episode || episode.owner != attempt.nativeWriterOwner
 						|| episode.quiescenceRunning || generation == 0L
@@ -1368,7 +1329,7 @@ class LmdbSailStore implements SailStore {
 				certifyEmergency(attempt.nativeWriterOwner);
 				attempt.nativeGeneration = generation;
 				attempt.statementReplayGeneration = generation;
-				// Retain admission and the overall query deadline; grant grace once per successfully aborted attempt.
+				// Retain admission; grant grace once per successfully aborted attempt.
 				episode.deadlineNanos = System.nanoTime() + readDrainTimeoutNanos;
 				changePhase(episode, GrowthPhase.EMERGENCY);
 			} finally {
@@ -1566,7 +1527,7 @@ class LmdbSailStore implements SailStore {
 			Object owner = Objects.requireNonNull(requestedOwner, "owner");
 			lock.lock();
 			try {
-				checkAdmission(QueryExecutionDeadline.current());
+				checkAdmission();
 				if (!exhausted && episode == null && failedPressure != null
 						&& failedPressure.pressure().equals(currentMapPressure())
 						&& tripleDemand <= failedPressure.tripleDemand()
@@ -1666,7 +1627,7 @@ class LmdbSailStore implements SailStore {
 							while (!shuttingDown && (hasPendingDrainableViews(requestedEpisode)
 									|| hasDrainableViews(requestedEpisode))
 									&& LmdbSailStore.remainingNanos(requestedEpisode.deadlineNanos) > 0) {
-								awaitReaderDrain(null, requestedEpisode.deadlineNanos);
+								awaitReaderDrain(requestedEpisode.deadlineNanos);
 							}
 							if (shuttingDown) {
 								return;
@@ -1888,13 +1849,41 @@ class LmdbSailStore implements SailStore {
 			if (attempt == null) {
 				return null;
 			}
+			ReadView stale = null;
+			ReadView reserved;
 			lock.lock();
 			try {
-				checkAdmission(deadlineFor(attempt));
-				return attempt.closed || attempt.reservedEpoch == null ? null : attempt.reservedEpoch.retain();
+				checkAdmission();
+				if (attempt.closed || attempt.reservedEpoch == null) {
+					return null;
+				}
+				if (attempt.operationScoped) {
+					// A result replay starts a new operation snapshot when its caller resumes. The growth worker
+					// reserves before reopening admission, so a later committed writer may already have superseded
+					// that pair. Transfer this one-use owner reference; nested acquisitions use the admitted view.
+					reserved = attempt.reservedEpoch;
+					attempt.reservedEpoch = null;
+					if (reserved.capturedPublicationVersion != (publicationVersion & ~1L) || publicationFinalizing) {
+						stale = reserved;
+						reserved = null;
+					}
+				} else {
+					// Every result of a snapshot transaction must keep sharing its reserved replacement epoch.
+					reserved = attempt.reservedEpoch.retain();
+				}
 			} finally {
 				lock.unlock();
 			}
+			if (stale != null) {
+				try (ReadView retirement = stale) {
+					// Freshness may replace a valid operation snapshot, but must not erase a terminal replay failure.
+					retirement.growthLease.ensureNotInvalidated();
+					retirement.abandonUnobserved();
+				}
+				// Retirement unregisters the lease under our lock. Preserve an invalidation that raced with close.
+				stale.growthLease.ensureNotInvalidated();
+			}
+			return reserved;
 		}
 
 		private ReadViewLease reservedEpochLease(ReadAttemptLease attempt) {
@@ -1967,19 +1956,12 @@ class LmdbSailStore implements SailStore {
 					lock.unlock();
 				}
 				for (ReadAttemptLease attempt : parked) {
-					if (attempt.closed || attempt.deadlineOwner != null && attempt.deadlineOwner.isExpired()) {
+					if (attempt.closed || attempt.cancelled) {
 						mapGrowthMetrics.recordReplayCancelled();
 						markReplayReservationComplete(requestedEpisode, attempt);
 						continue;
 					}
-					ReadView fresh;
-					try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(attempt.deadlineOwner)) {
-						fresh = createFreshReadView(attempt.observer, attempt);
-					} catch (QueryInterruptedException expired) {
-						mapGrowthMetrics.recordReplayCancelled();
-						markReplayReservationComplete(requestedEpisode, attempt);
-						continue;
-					}
+					ReadView fresh = createFreshReadView(attempt.observer, attempt);
 					ReadView discarded;
 					lock.lock();
 					try {
@@ -2026,236 +2008,262 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		private void signalChange() {
+			lock.lock();
+			try {
+				changed.signalAll();
+			} finally {
+				lock.unlock();
+			}
+		}
+
+		private static boolean cancelled(MapGrowthAttempt attempt) {
+			return attempt != null && attempt.cancelled;
+		}
+
 		private void requestQuiescence(GrowthEpisode requestedEpisode, MapResizeKind kind) throws IOException {
-			QueryExecutionDeadline queryDeadline = QueryExecutionDeadline.current();
-			try (QueryExecutionDeadline.Registration ignored = signalOnExpiration(queryDeadline)) {
-				List<ObserverNotification> notifications;
-				List<ReadViewLease> retiredViews = new ArrayList<>();
-				boolean coordinationOwner = false;
-				Throwable callbackError = null;
-				IOException coordinationFailure = null;
-				lock.lock();
-				try {
+			requestQuiescence(requestedEpisode, kind, null);
+		}
+
+		private void requestQuiescence(GrowthEpisode requestedEpisode, MapResizeKind kind,
+				MapGrowthAttempt growthAttempt) throws IOException {
+			List<ObserverNotification> notifications;
+			List<ReadViewLease> retiredViews = new ArrayList<>();
+			boolean coordinationOwner = false;
+			Throwable callbackError = null;
+			IOException coordinationFailure = null;
+			lock.lock();
+			try {
+				if (episode != requestedEpisode) {
+					return;
+				}
+				while (requestedEpisode.quiescenceRunning) {
+					if (requestedEpisode.quiescenceThread == Thread.currentThread()) {
+						return;
+					}
+					if (cancelled(growthAttempt)) {
+						throw new IOException(
+								"Interrupted while coordinating LMDB map growth: the attempt was cancelled");
+					}
+					try {
+						if (!awaitChange(requestedEpisode.deadlineNanos)) {
+							throw new IOException("Timed out while coordinating LMDB map growth");
+						}
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+						throw new IOException("Interrupted while coordinating LMDB map growth", e);
+					}
 					if (episode != requestedEpisode) {
 						return;
 					}
-					while (requestedEpisode.quiescenceRunning) {
-						if (requestedEpisode.quiescenceThread == Thread.currentThread()) {
-							return;
-						}
-						try {
-							if (!awaitChange(queryDeadline, requestedEpisode.deadlineNanos)) {
-								throw new IOException("Timed out while coordinating LMDB map growth");
-							}
-						} catch (InterruptedException e) {
-							Thread.currentThread().interrupt();
-							throw new IOException("Interrupted while coordinating LMDB map growth", e);
-						}
-						if (episode != requestedEpisode) {
-							return;
-						}
-					}
-					requestedEpisode.quiescenceRunning = true;
-					requestedEpisode.quiescenceThread = Thread.currentThread();
-					requestedEpisode.kind = kind;
-					coordinationOwner = true;
-					if (requestedEpisode.managed && requestedEpisode.phase == GrowthPhase.EMERGENCY) {
-						while (hasDrainableViews(requestedEpisode)
-								&& LmdbSailStore.remainingNanos(requestedEpisode.deadlineNanos) > 0 && !shuttingDown) {
-							try {
-								awaitReaderDrain(queryDeadline, requestedEpisode.deadlineNanos);
-							} catch (InterruptedException e) {
-								Thread.currentThread().interrupt();
-								throw new IOException("Interrupted during emergency LMDB reader grace", e);
-							}
-						}
-					}
-					while (hasPendingDrainableViews(requestedEpisode)) {
-						long remaining = remainingNanos(queryDeadline, requestedEpisode.deadlineNanos);
-						if (remaining <= 0) {
-							break;
-						}
-						try {
-							awaitReaderDrain(queryDeadline, requestedEpisode.deadlineNanos);
-						} catch (InterruptedException e) {
-							Thread.currentThread().interrupt();
-							coordinationFailure = new IOException(
-									"Interrupted while waiting for LMDB read views to settle",
-									e);
-							break;
-						}
-					}
-					if (kind == MapResizeKind.VALUE_STORE) {
-						requestedEpisode.dictionaryMembershipFrozen = true;
-						requestedEpisode.frozenDictionaryMapGeneration = valueStore.nativeMapGeneration();
-					}
-					notifications = snapshotNotifications(requestedEpisode);
-				} catch (IOException | RuntimeException | Error failure) {
-					if (coordinationOwner && episode == requestedEpisode) {
-						requestedEpisode.quiescenceRunning = false;
-						requestedEpisode.quiescenceThread = null;
-						changed.signalAll();
-					}
-					throw failure;
-				} finally {
-					lock.unlock();
 				}
+				requestedEpisode.quiescenceRunning = true;
+				requestedEpisode.quiescenceThread = Thread.currentThread();
+				requestedEpisode.kind = kind;
+				coordinationOwner = true;
+				if (requestedEpisode.managed && requestedEpisode.phase == GrowthPhase.EMERGENCY) {
+					while (hasDrainableViews(requestedEpisode)
+							&& LmdbSailStore.remainingNanos(requestedEpisode.deadlineNanos) > 0 && !shuttingDown) {
+						if (cancelled(growthAttempt)) {
+							throw new IOException(
+									"Interrupted during emergency LMDB reader grace: the attempt was cancelled");
+						}
+						try {
+							awaitReaderDrain(requestedEpisode.deadlineNanos);
+						} catch (InterruptedException e) {
+							Thread.currentThread().interrupt();
+							throw new IOException("Interrupted during emergency LMDB reader grace", e);
+						}
+					}
+				}
+				while (hasPendingDrainableViews(requestedEpisode)) {
+					long remaining = remainingNanos(requestedEpisode.deadlineNanos);
+					if (remaining <= 0) {
+						break;
+					}
+					if (cancelled(growthAttempt)) {
+						coordinationFailure = new IOException(
+								"Interrupted while waiting for LMDB read views to settle: the attempt was cancelled");
+						break;
+					}
+					try {
+						awaitReaderDrain(requestedEpisode.deadlineNanos);
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+						coordinationFailure = new IOException(
+								"Interrupted while waiting for LMDB read views to settle",
+								e);
+						break;
+					}
+				}
+				if (kind == MapResizeKind.VALUE_STORE) {
+					requestedEpisode.dictionaryMembershipFrozen = true;
+					requestedEpisode.frozenDictionaryMapGeneration = valueStore.nativeMapGeneration();
+				}
+				notifications = snapshotNotifications(requestedEpisode);
+			} catch (IOException | RuntimeException | Error failure) {
+				if (coordinationOwner && episode == requestedEpisode) {
+					requestedEpisode.quiescenceRunning = false;
+					requestedEpisode.quiescenceThread = null;
+					changed.signalAll();
+				}
+				throw failure;
+			} finally {
+				lock.unlock();
+			}
 
-				try {
-					for (ObserverNotification notification : coordinationFailure == null ? notifications
-							: List.<ObserverNotification>of()) {
-						if (requestedEpisode.managed) {
-							// Store-owned observers classify and schedule retirement; they do not run a query factory.
-							// The grace deadline bounds when cancellation is requested, not native cleanup duration.
-							mapGrowthMetrics.recordReplayRequested();
-							if (notification.observer()
-									.requestReplay(kind, requestedEpisode.token,
-											requestedEpisode.deadlineNanos, notification.attempts(),
-											notification.views())) {
-								mapGrowthMetrics.recordReplayAccepted();
-								lock.lock();
-								try {
-									for (ReadAttemptLease attempt : notification.attempts()) {
-										requestedEpisode.parkedAttempts.putIfAbsent(attempt, Boolean.FALSE);
-									}
-								} finally {
-									lock.unlock();
-								}
-							}
-							continue;
-						}
-						long remaining = remainingNanos(queryDeadline, requestedEpisode.deadlineNanos);
-						if (remaining <= 0) {
-							break;
-						}
-						ReadAttemptLease admissionAttempt = notification.attempts().isEmpty()
-								? null
-								: notification.attempts().get(0);
-						FutureTask<Boolean> callback = new FutureTask<>(() -> {
-							ReadAttemptLease previous = callbackAdmission.get();
-							if (admissionAttempt != null) {
-								callbackAdmission.set(admissionAttempt);
-							}
-							try {
-								return notification.observer()
-										.requestReplay(requestedEpisode.kind,
-												requestedEpisode.token, requestedEpisode.deadlineNanos,
-												notification.attempts(),
-												notification.views());
-							} finally {
-								if (previous == null) {
-									callbackAdmission.remove();
-								} else {
-									callbackAdmission.set(previous);
-								}
-							}
-						});
+			try {
+				for (ObserverNotification notification : coordinationFailure == null ? notifications
+						: List.<ObserverNotification>of()) {
+					if (requestedEpisode.managed) {
+						// Store-owned observers classify and schedule retirement; they do not run a query factory.
+						// The grace deadline bounds when cancellation is requested, not native cleanup duration.
 						mapGrowthMetrics.recordReplayRequested();
-						Thread.ofVirtual().name("LmdbMapGrowthReplay-").start(callback);
-						long callbackRemaining = remainingNanos(queryDeadline, requestedEpisode.deadlineNanos);
-						if (callbackRemaining <= 0) {
-							callback.cancel(true);
-							break;
-						}
-						try {
-							boolean accepted = callback.get(callbackRemaining, TimeUnit.NANOSECONDS);
-							if (accepted) {
-								mapGrowthMetrics.recordReplayAccepted();
-							}
-							if (accepted && notification.views().stream().anyMatch(view -> !view.isClosed())) {
-								logger.warn(
-										"LMDB map-growth observer accepted replay while retaining a native read view; "
-												+ "remaining readers will use the bounded drain fallback");
-							}
-						} catch (TimeoutException e) {
-							callback.cancel(true);
-							throwIfExpired(queryDeadline);
-							break;
-						} catch (InterruptedException e) {
-							callback.cancel(true);
-							Thread.currentThread().interrupt();
-							coordinationFailure = new IOException("Interrupted while waiting for LMDB replay callback",
-									e);
-							break;
-						} catch (ExecutionException e) {
-							Throwable cause = e.getCause();
-							if (cause instanceof Error) {
-								callbackError = cause;
-								break;
-							}
-							logger.warn("LMDB map-growth observer failed; continuing with the bounded drain fallback",
-									cause);
-						} catch (CancellationException e) {
-							logger.debug("LMDB map-growth observer was cancelled at the shared deadline");
-						}
-					}
-
-				} finally {
-					if (coordinationOwner) {
-						lock.lock();
-						try {
-							if (episode == requestedEpisode) {
-								try {
-									if (coordinationFailure == null && callbackError == null) {
-										while (hasDrainableViews(requestedEpisode)) {
-											long remaining = remainingNanos(queryDeadline,
-													requestedEpisode.deadlineNanos);
-											if (remaining <= 0) {
-												break;
-											}
-											try {
-												awaitReaderDrain(queryDeadline, requestedEpisode.deadlineNanos);
-											} catch (InterruptedException e) {
-												Thread.currentThread().interrupt();
-												coordinationFailure = new IOException(
-														"Interrupted while waiting for LMDB read views to drain", e);
-												break;
-											}
-										}
-										if (coordinationFailure == null
-												&& remainingNanos(queryDeadline, requestedEpisode.deadlineNanos) <= 0) {
-											retiredViews.addAll(invalidateDrainableViews(requestedEpisode, kind));
-										}
-									}
-								} finally {
-									requestedEpisode.quiescenceRunning = false;
-									requestedEpisode.quiescenceThread = null;
-									changed.signalAll();
+						if (notification.observer()
+								.requestReplay(kind, requestedEpisode.token,
+										requestedEpisode.deadlineNanos, notification.attempts(),
+										notification.views())) {
+							mapGrowthMetrics.recordReplayAccepted();
+							lock.lock();
+							try {
+								for (ReadAttemptLease attempt : notification.attempts()) {
+									requestedEpisode.parkedAttempts.putIfAbsent(attempt, Boolean.FALSE);
 								}
+							} finally {
+								lock.unlock();
 							}
-						} finally {
-							lock.unlock();
 						}
+						continue;
+					}
+					long remaining = remainingNanos(requestedEpisode.deadlineNanos);
+					if (remaining <= 0) {
+						break;
+					}
+					ReadAttemptLease admissionAttempt = notification.attempts().isEmpty()
+							? null
+							: notification.attempts().get(0);
+					FutureTask<Boolean> callback = new FutureTask<>(() -> {
+						ReadAttemptLease previous = callbackAdmission.get();
+						if (admissionAttempt != null) {
+							callbackAdmission.set(admissionAttempt);
+						}
+						try {
+							return notification.observer()
+									.requestReplay(requestedEpisode.kind,
+											requestedEpisode.token, requestedEpisode.deadlineNanos,
+											notification.attempts(),
+											notification.views());
+						} finally {
+							if (previous == null) {
+								callbackAdmission.remove();
+							} else {
+								callbackAdmission.set(previous);
+							}
+						}
+					});
+					mapGrowthMetrics.recordReplayRequested();
+					Thread.ofVirtual().name("LmdbMapGrowthReplay-").start(callback);
+					long callbackRemaining = remainingNanos(requestedEpisode.deadlineNanos);
+					if (callbackRemaining <= 0) {
+						callback.cancel(true);
+						break;
+					}
+					try {
+						boolean accepted = callback.get(callbackRemaining, TimeUnit.NANOSECONDS);
+						if (accepted) {
+							mapGrowthMetrics.recordReplayAccepted();
+						}
+						if (accepted && notification.views().stream().anyMatch(view -> !view.isClosed())) {
+							logger.warn(
+									"LMDB map-growth observer accepted replay while retaining a native read view; "
+											+ "remaining readers will use the bounded drain fallback");
+						}
+					} catch (TimeoutException e) {
+						callback.cancel(true);
+						break;
+					} catch (InterruptedException e) {
+						callback.cancel(true);
+						Thread.currentThread().interrupt();
+						coordinationFailure = new IOException("Interrupted while waiting for LMDB replay callback",
+								e);
+						break;
+					} catch (ExecutionException e) {
+						Throwable cause = e.getCause();
+						if (cause instanceof Error) {
+							callbackError = cause;
+							break;
+						}
+						logger.warn("LMDB map-growth observer failed; continuing with the bounded drain fallback",
+								cause);
+					} catch (CancellationException e) {
+						logger.debug("LMDB map-growth observer was cancelled at the shared deadline");
 					}
 				}
-				for (ReadViewLease view : retiredViews) {
-					view.retireNativeSnapshots(kind);
-				}
-				if (coordinationFailure == null && callbackError == null && requestedEpisode.managed) {
-					// The reader grace bounds classification and cancellation. Accepted, unobserved work must
-					// cooperatively leave its old native calls before paired reset; it must not be marked observed
-					// or forcibly invalidated just because its cleanup completes after that grace.
+
+			} finally {
+				if (coordinationOwner) {
 					lock.lock();
 					try {
-						while (episode == requestedEpisode && !shuttingDown
-								&& hasParkedNativeViews(requestedEpisode)) {
+						if (episode == requestedEpisode) {
 							try {
-								awaitChange(queryDeadline, Long.MAX_VALUE);
-							} catch (InterruptedException interrupted) {
-								Thread.currentThread().interrupt();
-								throw new IOException("Interrupted while retiring parked LMDB read work", interrupted);
+								if (coordinationFailure == null && callbackError == null) {
+									while (hasDrainableViews(requestedEpisode)) {
+										long remaining = remainingNanos(requestedEpisode.deadlineNanos);
+										if (remaining <= 0) {
+											break;
+										}
+										try {
+											awaitReaderDrain(requestedEpisode.deadlineNanos);
+										} catch (InterruptedException e) {
+											Thread.currentThread().interrupt();
+											coordinationFailure = new IOException(
+													"Interrupted while waiting for LMDB read views to drain", e);
+											break;
+										}
+									}
+									if (coordinationFailure == null
+											&& remainingNanos(requestedEpisode.deadlineNanos) <= 0) {
+										retiredViews.addAll(invalidateDrainableViews(requestedEpisode, kind));
+									}
+								}
+							} finally {
+								requestedEpisode.quiescenceRunning = false;
+								requestedEpisode.quiescenceThread = null;
+								changed.signalAll();
 							}
 						}
 					} finally {
 						lock.unlock();
 					}
 				}
-				if (coordinationFailure != null) {
-					throw coordinationFailure;
+			}
+			for (ReadViewLease view : retiredViews) {
+				view.retireNativeSnapshots(kind);
+			}
+			if (coordinationFailure == null && callbackError == null && requestedEpisode.managed) {
+				// The reader grace bounds classification and cancellation. Accepted, unobserved work must
+				// cooperatively leave its old native calls before paired reset; it must not be marked observed
+				// or forcibly invalidated just because its cleanup completes after that grace.
+				lock.lock();
+				try {
+					while (episode == requestedEpisode && !shuttingDown
+							&& hasParkedNativeViews(requestedEpisode)) {
+						try {
+							awaitChange(Long.MAX_VALUE);
+						} catch (InterruptedException interrupted) {
+							Thread.currentThread().interrupt();
+							throw new IOException("Interrupted while retiring parked LMDB read work", interrupted);
+						}
+					}
+				} finally {
+					lock.unlock();
 				}
-				if (callbackError instanceof Error error) {
-					throw error;
-				}
+			}
+			if (coordinationFailure != null) {
+				throw coordinationFailure;
+			}
+			if (callbackError instanceof Error error) {
+				throw error;
 			}
 		}
 
@@ -2370,9 +2378,6 @@ class LmdbSailStore implements SailStore {
 		private void requestDictionaryTermReplay(ReadViewLease lease, MapGrowthToken token) {
 			ObserverNotification notification;
 			GrowthEpisode activeEpisode;
-			QueryExecutionDeadline deadline = earlierDeadline(QueryExecutionDeadline.current(),
-					lease.attempt == null ? null : lease.attempt.deadlineOwner());
-			throwIfExpired(deadline);
 			lock.lock();
 			try {
 				if (lease.closed || lease.observer == null || token == null
@@ -2411,7 +2416,6 @@ class LmdbSailStore implements SailStore {
 						}
 					}
 				}
-				throwIfExpired(deadline);
 			} finally {
 				if (activeEpisode != null) {
 					lock.lock();
@@ -2464,29 +2468,27 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
-		private void awaitGrowthEnd(MapGrowthToken token, QueryExecutionDeadline queryDeadline) {
+		private void awaitGrowthEnd(MapGrowthToken token) {
 			Objects.requireNonNull(token, "token");
-			try (QueryExecutionDeadline.Registration ignored = signalOnExpiration(queryDeadline)) {
-				lock.lock();
-				try {
-					while (episode != null && episode.token == token) {
-						checkAdmission(queryDeadline);
-						try {
-							awaitChange(queryDeadline, Long.MAX_VALUE);
-						} catch (InterruptedException e) {
-							Thread.currentThread().interrupt();
-							throw new InterruptedSailException(
-									"Interrupted while waiting for LMDB map growth to finish", e);
-						}
+			lock.lock();
+			try {
+				while (episode != null && episode.token == token) {
+					checkAdmission();
+					try {
+						awaitChange(Long.MAX_VALUE);
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+						throw new InterruptedSailException(
+								"Interrupted while waiting for LMDB map growth to finish", e);
 					}
-					checkAdmission(queryDeadline);
-					Throwable failedEpisode = failedEpisodes.get(token);
-					if (failedEpisode != null) {
-						throw new SailException("LMDB map growth failed", failedEpisode);
-					}
-				} finally {
-					lock.unlock();
 				}
+				checkAdmission();
+				Throwable failedEpisode = failedEpisodes.get(token);
+				if (failedEpisode != null) {
+					throw new SailException("LMDB map growth failed", failedEpisode);
+				}
+			} finally {
+				lock.unlock();
 			}
 		}
 
@@ -2572,6 +2574,11 @@ class LmdbSailStore implements SailStore {
 	static final int MAX_BULK_OPERATION_CAPACITY = 64 * 1024;
 	static final int MAX_ALIGNED_WRITE_STATEMENTS = 128 * 1024;
 	private static final int PREPARED_BATCH_MIN_STATEMENTS = 1024;
+	/**
+	 * The largest collection one NONE approval writes as a single prepared chunk. A native LMDB transaction keeps its
+	 * dirty pages in memory until it commits; larger input keeps NONE's bounded chunks and the initial run import.
+	 */
+	private static final int PREPARED_NONE_MAX_STATEMENTS = 4 * NoneWriteState.MAX_CHUNK_ROWS;
 	private static final long MAX_PREPARED_IMPORT_BYTES = 512L * 1024 * 1024;
 	private static final long PREPARED_VALUE_ESTIMATED_BYTES = 128L;
 	private static final long PREPARED_INDEX_ENTRY_OVERHEAD = 16L;
@@ -2621,6 +2628,33 @@ class LmdbSailStore implements SailStore {
 	private ValueStore.FreshValueSession freshValueSession;
 	private final List<ValueStore.PreparedValueBatch> pendingFreshValueBatches = new ArrayList<>();
 	private boolean freshValueSessionInvalidated;
+	/** The NONE owner whose initial import assigns values from {@link #freshValueSession}, or {@code null}. */
+	private Object freshNoneImportOwner;
+	/**
+	 * A committed NONE connection left the session for the next NONE connection only. Any other writer that would use
+	 * it ends it instead, and takes the dictionary lookups it took before sessions outlived their NONE attempt.
+	 */
+	private boolean freshSessionReservedForNone;
+	/**
+	 * A NONE import keeps every assigned value in the fresh session's map across its bounded native chunks; past this
+	 * many values it falls back to dictionary lookups so memory stays bounded by the heap.
+	 */
+	private static final long FRESH_NONE_VALUE_LIMIT = Math.max(1L << 20, Runtime.getRuntime().maxMemory() / 1024);
+	/**
+	 * Whether the store's first native write may still claim an initial run import. Cleared by the first sink
+	 * transaction, whether or not it claims the import, so any other first writer forfeits it for this store's life.
+	 * Protected by the store access lock.
+	 */
+	private volatile boolean initialRunImportAvailable;
+	/** Sync both environments before removing the import marker; without forceSync no commit is synced either. */
+	private boolean forceSyncInitialRunImport;
+	/** The active initial run import, or {@code null}; the admission gates read it without the store access lock. */
+	private volatile LmdbInitialRunImport initialRunImport;
+	/** Set when an initial run import could not complete; the store then refuses use until it is restarted. */
+	private volatile Throwable initialRunImportFailure;
+	private final Object initialRunImportMonitor = new Object();
+	private volatile Thread initialRunImportThread;
+	private long initialRunImportsCompleted;
 	private final int bulkOperationSize;
 	private final boolean valueOverlayEnabled;
 	private final boolean preparedStatementBatchesEnabled;
@@ -2647,6 +2681,12 @@ class LmdbSailStore implements SailStore {
 	private volatile AsyncDrainOperation completedAsyncDrain;
 	private volatile boolean nextTransactionAsync;
 	private volatile TxnReplayPolicy.Decision storeReplayDecision;
+	/**
+	 * The writer that prepared {@link #storeReplayDecision}, guarded by {@link #sinkStoreAccessLock}. A writer waiting
+	 * for adjacency admission keeps its prepared decision without holding that lock, so another owner's rollback must
+	 * leave it alone.
+	 */
+	private Object storeReplayDecisionOwner;
 
 	private record FailedWriterTransaction(LmdbStoreConnection.WriteAttempt attempt, Throwable failure) {
 	}
@@ -2750,7 +2790,14 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private final SketchBasedJoinEstimator sketchBasedJoinEstimator;
-	private LmdbFilterSelectivityStats filterSelectivityStats;
+	private volatile LmdbFilterSelectivityStats filterSelectivityStats;
+	private Runnable postReadyInitialization;
+	private volatile Thread postReadyThread;
+	private volatile String postReadyStatus = "NOT_STARTED";
+	private final AtomicBoolean postReadyStarted = new AtomicBoolean();
+	private final CompletableFuture<Void> postReadyInitializationCompletion = new CompletableFuture<>();
+	private final CompletableFuture<Void> valueOverlayStartupScheduling = new CompletableFuture<>();
+	private final CompletableFuture<Void> adjacencyStartupScheduling = new CompletableFuture<>();
 	/** Advances on every committed store mutation; a component of the adaptive cost model's regime key. */
 	private final AtomicLong costModelDataGeneration = new AtomicLong();
 	/** Persistence and regime signals handed to the adaptive cost model through every query source. */
@@ -2762,6 +2809,22 @@ class LmdbSailStore implements SailStore {
 	private final LmdbLearnedFilterSelectivity learnedFilterSelectivity;
 	private final QueryExecutionPolicy queryExecutionPolicy;
 	private final LmdbStatementAccessArbiter.RuntimeEvidence statementAccessEvidence = new LmdbStatementAccessArbiter.RuntimeEvidence();
+	volatile NativeSourceObservationForTest nativeSourceObservationForTest;
+
+	interface NativeSourceObservationForTest extends AdjacencyAccessObserver {
+		void state(NativeSourceStateForTest state);
+	}
+
+	/** Only cached observations; no source, owner or native handle is retained by this diagnostic value. */
+	record NativeSourceStateForTest(StatementOrder order, long subject, long predicate, long object, long context,
+			long snapshotRevision, long pinnedTripleVersion, long tripleVersion, long tripleNativeTransactionId,
+			boolean tripleNativeActive, long valueVersion, long valueNativeTransactionId, boolean valueNativeActive,
+			long valueMapGeneration, boolean valueDetached, boolean adjacencyEligible, boolean adjacencyExact,
+			LmdbAdjacencyMetrics.FallbackReason adjacencyFallbackReason, long adjacencySnapshotRevision,
+			long adjacencyAppliedRevision, long tripleCommitGeneration,
+			long valueCommitGeneration, String postReadyStatus, String statementIndexStatus, String valueIndexStatus) {
+	}
+
 	private final LmdbStatementPatternCardinalitySource statementPatternCardinalitySource;
 	private final ScheduledExecutorService estimatorPersistExec = Executors.newSingleThreadScheduledExecutor(r -> {
 		Thread t = new Thread(r, "LmdbJoinEstimator-Persist");
@@ -2984,24 +3047,220 @@ class LmdbSailStore implements SailStore {
 		return freshValueSession != null && !freshValueSessionInvalidated;
 	}
 
+	/** A statement write by anything but an explicit NONE transaction forfeits the initial run import for good. */
+	void noteStatementWriteAttempt(IsolationLevel isolation) {
+		if (initialRunImportAvailable && (isolation == null || !IsolationLevels.NONE.isCompatibleWith(isolation))) {
+			initialRunImportAvailable = false;
+		}
+	}
+
+	/** The number of values a NONE import's fresh session may hold before it falls back to dictionary lookups. */
+	long freshNoneValueLimit() {
+		return FRESH_NONE_VALUE_LIMIT;
+	}
+
+	/** NONE approvals written as one prepared chunk, for tests. */
+	long preparedNoneChunks() {
+		sinkStoreAccessLock.lock();
+		try {
+			return preparedNoneChunks;
+		} finally {
+			sinkStoreAccessLock.unlock();
+		}
+	}
+
+	boolean isInitialRunImportActive() {
+		return initialRunImport != null;
+	}
+
+	long initialRunImportsCompleted() {
+		synchronized (initialRunImportMonitor) {
+			return initialRunImportsCompleted;
+		}
+	}
+
+	/**
+	 * Blocks a writer or reader other than the owner of an active initial run import until the import is complete. On
+	 * the import's own thread, waiting could never end, so the import is completed instead.
+	 */
+	void awaitInitialRunImport(Object owner) throws SailException {
+		LmdbInitialRunImport runImport = initialRunImport;
+		if (runImport == null && initialRunImportFailure == null || runImport != null && runImport.owner == owner) {
+			return;
+		}
+		if (runImport != null && Thread.currentThread() == initialRunImportThread
+				&& publicationContext.get() == null) {
+			try (SailClosable scope = enterWriterOwner(runImport.owner)) {
+				completeInitialRunImportBeforeRead(runImport.owner);
+			}
+		}
+		synchronized (initialRunImportMonitor) {
+			while (true) {
+				Throwable failure = initialRunImportFailure;
+				if (failure != null) {
+					throw new SailException(
+							"An initial LMDB run import could not complete; restart the store to reset it to empty",
+							failure);
+				}
+				LmdbInitialRunImport current = initialRunImport;
+				if (current == null || current.owner == owner) {
+					return;
+				}
+				if (initialImportClosing) {
+					throw new SailException("The LMDB store closed while an initial run import was active");
+				}
+				try {
+					initialRunImportMonitor.wait();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new InterruptedSailException(e);
+				}
+			}
+		}
+	}
+
+	/** An active initial run import keeps its owner's NONE state, whose sink completes the import later. */
+	private boolean retainsInitialRunImportState(Object owner) {
+		LmdbInitialRunImport runImport = initialRunImport;
+		return runImport != null && runImport.owner == owner && !runImport.completing();
+	}
+
+	private boolean initialRunImportBlocks(Object owner) {
+		LmdbInitialRunImport runImport = initialRunImport;
+		return initialRunImportFailure != null || runImport != null && runImport.owner != owner;
+	}
+
+	/**
+	 * Completes the owner's initial run import, after flushing its pending batch, because the owner now reads its own
+	 * data, flushes explicitly or commits. A no-op without an active import of that owner.
+	 */
+	void completeInitialRunImportBeforeRead(Object owner) throws SailException {
+		LmdbInitialRunImport runImport = initialRunImport;
+		if (runImport == null || runImport.owner != owner || runImport.completing()) {
+			return;
+		}
+		flushNonePending(owner);
+		// Take the writer lease before the store access lock, like a commit's publication does. A peer sink of the same
+		// connection may hold the lease while it waits for the store access lock; the checkpoints below re-enter this
+		// lease instead of waiting for it under the lock.
+		try (WriterLease lease = acquireWriterLease(owner)) {
+			completeInitialRunImportUnderLease(owner, runImport);
+		}
+	}
+
+	private void completeInitialRunImportUnderLease(Object owner, LmdbInitialRunImport runImport) throws SailException {
+		sinkStoreAccessLock.lock();
+		NoneWriteState state = null;
+		try {
+			state = noneWriteStates.get(owner);
+			if (state != null && state.controller != null && initialRunImport == runImport
+					&& publicationContext.get() == null) {
+				LmdbSailSink controller = state.continuationController();
+				try (SailWriteContinuation.Scope continuation = controller.beginNativeContinuation()) {
+					controller.completeInitialRunImport();
+				}
+			}
+		} catch (IOException | RuntimeException | Error failure) {
+			abortFailedNoneAttempt(state, failure);
+			if (failure instanceof IOException io) {
+				throw new SailException(io);
+			}
+			if (failure instanceof Error error) {
+				throw error;
+			}
+			throw (RuntimeException) failure;
+		} finally {
+			sinkStoreAccessLock.unlock();
+		}
+	}
+
+	/**
+	 * A rollback of the initial run import discards the unflushed batch and the open chunk, then completes the import
+	 * from the chunks already checkpointed, which NONE keeps.
+	 */
+	void rollbackInitialRunImport(Object owner) throws SailException {
+		LmdbInitialRunImport runImport = initialRunImport;
+		if (runImport == null || runImport.owner != owner || runImport.completing()) {
+			return;
+		}
+		// As for a read, the writer lease comes before the store access lock.
+		try (WriterLease lease = acquireWriterLease(owner)) {
+			rollbackInitialRunImportUnderLease(owner, runImport);
+		}
+	}
+
+	private void rollbackInitialRunImportUnderLease(Object owner, LmdbInitialRunImport runImport)
+			throws SailException {
+		sinkStoreAccessLock.lock();
+		NoneWriteState state = null;
+		try {
+			state = noneWriteStates.get(owner);
+			if (state == null || state.controller == null) {
+				endInitialRunImport(runImport, false,
+						new IllegalStateException("The initial run import lost its NONE attempt before completing"));
+				return;
+			}
+			LmdbSailSink controller = state.continuationController();
+			try (SailWriteContinuation.Scope continuation = controller.beginNativeContinuation()) {
+				controller.rollbackOpenChunkAndCompleteInitialRunImport();
+			}
+		} catch (IOException | RuntimeException | Error failure) {
+			if (initialRunImport == runImport) {
+				endInitialRunImport(runImport, false, failure);
+			}
+			if (failure instanceof IOException io) {
+				throw new SailException(io);
+			}
+			if (failure instanceof Error error) {
+				throw error;
+			}
+			throw (RuntimeException) failure;
+		} finally {
+			sinkStoreAccessLock.unlock();
+		}
+	}
+
+	/**
+	 * Ends an initial run import. A finished import deletes its runs and marker; a failed one keeps the marker so the
+	 * next start resets the store, and the store refuses use until then.
+	 */
+	private void endInitialRunImport(LmdbInitialRunImport runImport, boolean finished, Throwable failure) {
+		valueStore.stopDeferringLookupRecords();
+		try {
+			if (finished) {
+				runImport.finished();
+			} else {
+				runImport.close();
+			}
+		} catch (IOException cleanup) {
+			logger.warn("Unable to clean up the initial LMDB run import files", cleanup);
+		}
+		synchronized (initialRunImportMonitor) {
+			if (initialRunImport == runImport) {
+				initialRunImport = null;
+				initialRunImportThread = null;
+			}
+			if (finished) {
+				initialRunImportsCompleted++;
+			} else if (initialRunImportFailure == null) {
+				initialRunImportFailure = failure == null
+						? new IllegalStateException("The initial run import ended without completing")
+						: failure;
+			}
+			initialRunImportMonitor.notifyAll();
+		}
+		if (finished && sketchBasedJoinEstimator != null) {
+			// The import never fed the estimator; rebuild it from the store, which is authoritative.
+			sketchBasedJoinEstimator.discardAndMarkForRebuild();
+		}
+	}
+
 	void startTrackingTripleResizeChecks() {
 		tripleStore.startTrackingResizeChecks();
 	}
 
 	int trackedTripleResizeCheckCount() {
 		return tripleStore.trackedResizeCheckCount();
-	}
-
-	private record DeadlineOperation(Operation operation, QueryExecutionDeadline deadline) implements Operation {
-		@Override
-		public void execute() throws Exception {
-			operation.execute();
-		}
-
-		@Override
-		public void cancel() {
-			operation.cancel();
-		}
 	}
 
 	/**
@@ -3633,6 +3892,32 @@ class LmdbSailStore implements SailStore {
 		return new IOException("Failed to prepare secondary LMDB index keys", cause);
 	}
 
+	/**
+	 * The last native chunk of an initial run import. Its value half writes the merged lookup records into the chunk's
+	 * value transaction on the caller thread; its triple half, run by the TripleStore writer, appends every index from
+	 * the merged runs. A capacity replay runs both halves again from the same run files.
+	 */
+	private final class InitialRunImportFinish implements Operation {
+		private final LmdbInitialRunImport runImport;
+		private final List<LmdbSortedRuns.Runs> tripleRuns;
+
+		private InitialRunImportFinish(LmdbInitialRunImport runImport) throws IOException {
+			this.runImport = runImport;
+			this.tripleRuns = runImport.tripleRuns();
+		}
+
+		void writeValues() throws IOException {
+			try (LmdbDeferredValueLookups.Source source = runImport.valueLookups().complete()) {
+				valueStore.writeDeferredLookups(source);
+			}
+		}
+
+		@Override
+		public void execute() throws IOException {
+			tripleStore.appendInitialImportRuns(tripleRuns, runImport.projectedTripleBytes());
+		}
+	}
+
 	private final class NoneRemoveOperation implements Operation {
 		private final Statement[] identities;
 		private final long[][] quads;
@@ -3704,7 +3989,8 @@ class LmdbSailStore implements SailStore {
 		final Object owner;
 		final LmdbStoreConnection.WriteAttempt writeAttempt;
 		final List<Operation> work = new ArrayList<>();
-		final Set<LmdbSailSink> sinks = Collections.newSetFromMap(new IdentityHashMap<>());
+		// Usually one sink; the default capacity of 32 would allocate a 64-slot table per transaction.
+		final Set<LmdbSailSink> sinks = Collections.newSetFromMap(new IdentityHashMap<>(2));
 		final Set<Long> retiredIds = new HashSet<>();
 		PendingNoneBatch pending;
 		LmdbSailSink pendingSink;
@@ -3765,6 +4051,7 @@ class LmdbSailStore implements SailStore {
 	// Only the currently admitted native owner is visible to asynchronous mutation callbacks.
 	private NoneWriteState noneWriteState;
 	private long noneCheckpoints;
+	private long preparedNoneChunks;
 	private long noneCapacityReplays;
 	private long nonePeakRetainedBytes;
 	private int nonePeakRetainedRows;
@@ -3792,15 +4079,11 @@ class LmdbSailStore implements SailStore {
 	private final ThreadLocal<Object> noneMutationReadOwner = new ThreadLocal<>();
 
 	SailClosable enterNoneMutationRead(Object owner) {
+		// A probe of the importer's own writes must see the rows an initial run import holds in its runs.
+		completeInitialRunImportBeforeRead(owner);
 		Object previous = noneMutationReadOwner.get();
 		noneMutationReadOwner.set(owner);
-		return () -> {
-			if (previous == null) {
-				noneMutationReadOwner.remove();
-			} else {
-				noneMutationReadOwner.set(previous);
-			}
-		};
+		return () -> noneMutationReadOwner.set(previous);
 	}
 
 	/**
@@ -3879,6 +4162,8 @@ class LmdbSailStore implements SailStore {
 	private volatile long publicationVersion;
 	private volatile long pendingDictionaryCheckpointGeneration;
 	private volatile Thread pendingDictionaryCheckpointThread;
+	// Per-transaction thread locals are cleared with set(null), not remove(): remove() drops the thread's map entry,
+	// so the next set() would allocate a new one on every transaction.
 	private final ThreadLocal<PublicationContext> publicationContext = new ThreadLocal<>();
 	private final ThreadLocal<ReadView> activeReadView = new ThreadLocal<>();
 	private final ThreadLocal<ReadResourceContext> activeReadResourceContext = new ThreadLocal<>();
@@ -3889,11 +4174,16 @@ class LmdbSailStore implements SailStore {
 	private int writerOwnerReferences;
 	private final ConcurrentHashMap<Thread, PreparedWriteContext> preparedWriteContexts = new ConcurrentHashMap<>();
 	private volatile Object storeTransactionOwner;
+	/** Each native environment binds this ticket independently, including partial starts and delegated cleanup. */
+	private volatile WriterTransaction storeNativeTransaction;
 	private volatile Thread storeTransactionThread;
 	private volatile Thread tripleStoreOwnerThread;
 	private final Object asyncProgress = new Object();
+	// The caller waits for the writer's result within its transaction, so it spins before parking. The writer waits
+	// for the next operation, which is usually the next transaction's: spinning there only delayed its park, by up to
+	// 21 ms on a loaded machine, and measured no faster for NONE, READ_COMMITTED or SNAPSHOT transactions.
 	private final AsyncSignal asyncCallerProgress = new AsyncSignal();
-	private final AsyncSignal asyncOperationAvailable = new AsyncSignal();
+	private final AsyncSignal asyncOperationAvailable = new AsyncSignal(false);
 	private final AtomicInteger asyncCapacityWaiters = new AtomicInteger();
 	private volatile int asyncMonitorWaiters;
 	private NativeGrowthRequest pendingNativeGrowth;
@@ -3919,13 +4209,14 @@ class LmdbSailStore implements SailStore {
 		private final Object owner = storeTransactionOwner;
 		private final long generation = storeTxnGeneration;
 		private final MapResizeKind kind;
-		private volatile QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
+		private final WriterTransaction transaction;
 		private MapGrowthAttempt attempt;
 		private Throwable failure;
 		private boolean finished;
 
-		private NativeGrowthRequest(MapResizeKind kind) {
+		private NativeGrowthRequest(MapResizeKind kind, WriterTransaction transaction) {
 			this.kind = kind;
+			this.transaction = transaction;
 		}
 	}
 
@@ -4096,11 +4387,7 @@ class LmdbSailStore implements SailStore {
 				return;
 			}
 			closed = true;
-			if (previousOwner == null) {
-				activeWriterOwner.remove();
-			} else {
-				activeWriterOwner.set(previousOwner);
-			}
+			activeWriterOwner.set(previousOwner);
 		}
 	}
 
@@ -4207,7 +4494,7 @@ class LmdbSailStore implements SailStore {
 						publicationGate.unlock();
 					}
 				}
-				publicationContext.remove();
+				publicationContext.set(null);
 				try {
 					context.writerLease.close();
 				} catch (RuntimeException | Error closeFailure) {
@@ -4635,7 +4922,7 @@ class LmdbSailStore implements SailStore {
 		try {
 			mapGrowthCoordinator.lock.lock();
 			try {
-				mapGrowthCoordinator.checkAdmission(QueryExecutionDeadline.current());
+				mapGrowthCoordinator.checkAdmission();
 				if (attempt == null || attempt.generation != generation
 						|| capturedViews.isEmpty()
 								&& (attempt.closed || !mapGrowthCoordinator.attempts.containsKey(attempt))) {
@@ -4779,6 +5066,12 @@ class LmdbSailStore implements SailStore {
 				Objects.requireNonNull(observer, "observer"), ancestor);
 	}
 
+	ReadAttemptLease registerOperationReadAttempt(Object owner, MapGrowthObserver observer, ReadAttemptLease ancestor)
+			throws SailException {
+		return mapGrowthCoordinator.registerAttempt(Objects.requireNonNull(owner, "owner"),
+				Objects.requireNonNull(observer, "observer"), ancestor, true);
+	}
+
 	Future<?> submitReplayRetirement(Runnable retirement) {
 		Objects.requireNonNull(retirement, "retirement");
 		return replayRetirementExecutor.submit(() -> {
@@ -4804,8 +5097,8 @@ class LmdbSailStore implements SailStore {
 		replayRetirementExecutor.awaitTermination();
 	}
 
-	void awaitGrowthEnd(MapGrowthToken token, QueryExecutionDeadline queryDeadline) {
-		mapGrowthCoordinator.awaitGrowthEnd(token, queryDeadline);
+	void awaitGrowthEnd(MapGrowthToken token) {
+		mapGrowthCoordinator.awaitGrowthEnd(token);
 	}
 
 	boolean isGrowthActive(MapGrowthToken token) {
@@ -4828,10 +5121,98 @@ class LmdbSailStore implements SailStore {
 		return mapGrowthCoordinator.admissionClosed();
 	}
 
+	/** Cached coordinator state and the actual driver, including virtual threads; never performs native work. */
+	String growthDiagnosticForTest() {
+		MapGrowthCoordinator coordinator = mapGrowthCoordinator;
+		if (!coordinator.lock.tryLock()) {
+			return "Growth coordinator lock is held";
+		}
+		StringBuilder state = new StringBuilder();
+		Thread driver;
+		try {
+			driver = coordinator.growthThread;
+			GrowthEpisode current = coordinator.episode;
+			state.append("shutdown=")
+					.append(coordinator.shuttingDown)
+					.append(" attempts=")
+					.append(coordinator.attempts.size())
+					.append(" views=")
+					.append(coordinator.views.size())
+					.append(" pendingViews=")
+					.append(coordinator.pendingViews)
+					.append(" transactions=")
+					.append(coordinator.transactions.size())
+					.append(" directWriters=")
+					.append(coordinator.directWriters.size())
+					.append(" queuedWriters=")
+					.append(coordinator.queuedWriters.size())
+					.append(" bufferedWriters=")
+					.append(coordinator.bufferedWriters.size());
+			if (current != null) {
+				state.append("\nEpisode phase=")
+						.append(current.phase)
+						.append(" managed=")
+						.append(current.managed)
+						.append(" admissionClosed=")
+						.append(current.admissionClosed)
+						.append(" growthStarted=")
+						.append(current.growthStarted)
+						.append(" references=")
+						.append(current.attempts)
+						.append(" warningOwners=")
+						.append(current.warningOwners.size())
+						.append(" parkedAttempts=")
+						.append(current.parkedAttempts.size())
+						.append(" dictionaryClassifications=")
+						.append(current.pendingDictionaryReplayClassifications)
+						.append(" quiescenceRunning=")
+						.append(current.quiescenceRunning);
+			} else {
+				state.append("\nEpisode absent");
+			}
+			for (ReadAttemptLease attempt : coordinator.attempts.keySet()) {
+				state.append("\nAttempt generation=")
+						.append(attempt.generation)
+						.append(" owner=")
+						.append(attempt.owner == null ? "null" : attempt.owner.getClass().getName())
+						.append('@')
+						.append(System.identityHashCode(attempt.owner))
+						.append(" writing=")
+						.append(attempt.writing)
+						.append(" complete=")
+						.append(attempt.completed)
+						.append(" closed=")
+						.append(attempt.closed)
+						.append(" failed=")
+						.append(attempt.failed);
+			}
+		} finally {
+			coordinator.lock.unlock();
+		}
+		if (driver == null) {
+			state.append("\nGrowth driver absent");
+		} else {
+			state.append("\nGrowth driver ")
+					.append(driver.getName())
+					.append(" virtual=")
+					.append(driver.isVirtual())
+					.append(" state=")
+					.append(driver.getState());
+			for (StackTraceElement frame : driver.getStackTrace()) {
+				state.append("\n    at ").append(frame);
+			}
+		}
+		return state.toString();
+	}
+
 	private MapGrowthAttempt beginMapGrowthAttemptForCurrentWriter(MapResizeKind kind) throws IOException {
+		WriterTransaction transaction = nativeWriterTransaction(kind);
+		if (!ownsNativeWriter(kind, transaction)) {
+			return null;
+		}
 		mapGrowthMetrics.recordEmergencyAttempt();
 		try {
-			MapGrowthAttempt attempt = suspendNativeWriterForGrowth(kind);
+			MapGrowthAttempt attempt = suspendNativeWriterForGrowth(kind, transaction);
 			attempt.reportEmergencyOutcome = true;
 			return attempt;
 		} catch (IOException | RuntimeException | Error failure) {
@@ -4840,7 +5221,21 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
-	private MapGrowthAttempt suspendNativeWriterForGrowth(MapResizeKind kind) throws IOException {
+	private WriterTransaction nativeWriterTransaction(MapResizeKind kind) {
+		return kind == MapResizeKind.VALUE_STORE ? valueStore.currentWriterTransaction()
+				: tripleStore.currentWriterTransaction();
+	}
+
+	private boolean ownsNativeWriter(MapResizeKind kind, WriterTransaction transaction) {
+		return transaction != null && transaction == storeNativeTransaction
+				&& transaction == nativeWriterTransaction(kind);
+	}
+
+	private MapGrowthAttempt suspendNativeWriterForGrowth(MapResizeKind kind, WriterTransaction transaction)
+			throws IOException {
+		if (!ownsNativeWriter(kind, transaction)) {
+			throw new LmdbTransactionRetryException("the native growth request lost its admitted writer", null);
+		}
 		Object owner = storeTransactionOwner;
 		if (owner == null) {
 			owner = currentWriterOwner();
@@ -4849,7 +5244,7 @@ class LmdbSailStore implements SailStore {
 			owner = Thread.currentThread();
 		}
 		if (multiThreadingActive && Thread.currentThread() != storeTransactionThread) {
-			return awaitNativeGrowthGrant(kind);
+			return awaitNativeGrowthGrant(kind, transaction);
 		}
 		// Reject standalone maintenance before trying to drain a TripleStore writer that may already have
 		// completed. Only a certified live native continuation can own an asynchronous prefix here.
@@ -4872,7 +5267,8 @@ class LmdbSailStore implements SailStore {
 	private void certifyNativeContinuation(Object owner, MapResizeKind kind) throws IOException {
 		PublicationContext publication = publicationContext.get();
 		boolean finalizer = publication != null && publication.owner == owner && publicationFinalizing;
-		if (owner != storeTransactionOwner || Thread.currentThread() != storeTransactionThread
+		if (!ownsNativeWriter(kind, storeNativeTransaction)
+				|| owner != storeTransactionOwner || Thread.currentThread() != storeTransactionThread
 				|| !sinkStoreAccessLock.isHeldByCurrentThread()
 				|| (!SailWriteContinuation.isPresent() && !finalizer)
 				|| kind == MapResizeKind.VALUE_STORE && !valueStore.isSafeAllocationResize()
@@ -4883,10 +5279,10 @@ class LmdbSailStore implements SailStore {
 		mapGrowthCoordinator.certifyEmergency(owner);
 	}
 
-	private MapGrowthAttempt awaitNativeGrowthGrant(MapResizeKind kind) throws IOException {
-		NativeGrowthRequest request = new NativeGrowthRequest(kind);
-		try (QueryExecutionDeadline.Registration expiration = signalAsyncOnExpiration(request.deadline);
-				AsyncMonitorWaiter waiter = new AsyncMonitorWaiter()) {
+	private MapGrowthAttempt awaitNativeGrowthGrant(MapResizeKind kind, WriterTransaction transaction)
+			throws IOException {
+		NativeGrowthRequest request = new NativeGrowthRequest(kind, transaction);
+		try (AsyncMonitorWaiter waiter = new AsyncMonitorWaiter()) {
 			synchronized (asyncProgress) {
 				if (pendingNativeGrowth != null) {
 					throw new IOException("A native writer already has a suspended growth request");
@@ -4895,7 +5291,7 @@ class LmdbSailStore implements SailStore {
 				signalAsyncWaiters();
 				try {
 					while (request.attempt == null && request.failure == null) {
-						awaitAsyncSignal(request.deadline, true);
+						awaitAsyncSignal(true);
 					}
 				} catch (RuntimeException | IOException failure) {
 					request.failure = failure;
@@ -4917,14 +5313,9 @@ class LmdbSailStore implements SailStore {
 					}
 					throw new IOException("Unable to suspend a native write for growth", request.failure);
 				}
-				request.attempt.deadlineScope = QueryExecutionDeadline.enterScopedContext(request.deadline);
 				return request.attempt;
 			}
 		}
-	}
-
-	private QueryExecutionDeadline.Registration signalAsyncOnExpiration(QueryExecutionDeadline deadline) {
-		return deadline == null ? null : deadline.onExpiration(this::signalAsyncProgress);
 	}
 
 	private void signalAsyncProgress() {
@@ -4947,43 +5338,26 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
-	private void awaitAsyncSignal(QueryExecutionDeadline deadline, long observed) throws IOException {
+	private void awaitAsyncSignal(long observed) throws IOException {
 		if (mapGrowthCoordinator.shuttingDown && !(storeTxnStarted.get()
 				&& Thread.currentThread() == storeTransactionThread && currentWriterOwner() == storeTransactionOwner)) {
 			throw new IOException("LMDB store is shutting down");
 		}
-		if (deadline != null && deadline.isExpired()) {
-			throw new QueryInterruptedException("Query evaluation took too long");
-		}
-		long remaining = deadline == null ? Long.MAX_VALUE : deadline.remainingNanos();
-		if (remaining <= 0L) {
-			throw new QueryInterruptedException("Query evaluation took too long");
-		}
 		try {
-			asyncCallerProgress.await(observed, remaining);
+			asyncCallerProgress.await(observed, Long.MAX_VALUE);
 		} catch (InterruptedException interrupted) {
 			Thread.currentThread().interrupt();
 			throw new IOException("Interrupted while waiting for the native LMDB writer", interrupted);
 		}
 	}
 
-	private void awaitAsyncSignal(QueryExecutionDeadline deadline, boolean cancellable) throws IOException {
+	private void awaitAsyncSignal(boolean cancellable) throws IOException {
 		if (mapGrowthCoordinator.shuttingDown && !(storeTxnStarted.get()
 				&& Thread.currentThread() == storeTransactionThread && currentWriterOwner() == storeTransactionOwner)) {
 			throw new IOException("LMDB store is shutting down");
 		}
-		if (cancellable && deadline != null && deadline.isExpired()) {
-			throw new QueryInterruptedException("Query evaluation took too long");
-		}
 		try {
-			long remaining = cancellable && deadline != null ? deadline.remainingNanos() : Long.MAX_VALUE;
-			if (remaining == Long.MAX_VALUE) {
-				asyncProgress.wait();
-			} else if (remaining > 0L) {
-				TimeUnit.NANOSECONDS.timedWait(asyncProgress, remaining);
-			} else {
-				throw new QueryInterruptedException("Query evaluation took too long");
-			}
+			asyncProgress.wait();
 		} catch (InterruptedException interrupted) {
 			Thread.currentThread().interrupt();
 			throw new IOException("Interrupted while waiting for the native LMDB writer", interrupted);
@@ -5005,20 +5379,14 @@ class LmdbSailStore implements SailStore {
 		SailWriteContinuation.Suspension suspension = null;
 		boolean interrupted = false;
 		try (AsyncMonitorWaiter waiter = new AsyncMonitorWaiter()) {
-			request.deadline = earlierDeadline(request.deadline, QueryExecutionDeadline.current());
-			if (request.deadline != null && request.deadline.isExpired()) {
-				throw new QueryInterruptedException("Query evaluation took too long");
-			}
-			if (request.owner != storeTransactionOwner || request.generation != storeTxnGeneration) {
+			if (request.owner != storeTransactionOwner || request.generation != storeTxnGeneration
+					|| !ownsNativeWriter(request.kind, request.transaction)) {
 				throw new LmdbTransactionRetryException("the suspended native write belongs to an obsolete generation",
 						null);
 			}
 			certifyNativeContinuation(request.owner, request.kind);
 			suspension = SailWriteContinuation.suspend(sinkStoreAccessLock);
-			MapGrowthAttempt grant;
-			try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enterScopedContext(request.deadline)) {
-				grant = mapGrowthCoordinator.begin(request.owner, request.generation);
-			}
+			MapGrowthAttempt grant = mapGrowthCoordinator.begin(request.owner, request.generation);
 			grant.completion = () -> {
 				synchronized (asyncProgress) {
 					request.finished = true;
@@ -5032,15 +5400,13 @@ class LmdbSailStore implements SailStore {
 				}
 				request.attempt = grant;
 				signalAsyncWaiters();
-				while (!request.finished) {
-					try {
-						asyncProgress.wait();
-					} catch (InterruptedException cancellation) {
-						// Native lifetime is stronger than Java cancellation: restore locks only after the owner
-						// has left its native operation. The caller's interrupt is restored below.
-						interrupted = true;
-					}
-				}
+			}
+			// Native lifetime is stronger than Java cancellation: restore locks only after the owner has left its
+			// native operation. An interrupt cancels the attempt's reader grace; the caller's interrupt is restored
+			// below.
+			while (!awaitNativeGrowthFinished(request)) {
+				interrupted = true;
+				grant.cancel();
 			}
 		} catch (IOException | RuntimeException | Error failure) {
 			synchronized (asyncProgress) {
@@ -5067,29 +5433,32 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
-	private static QueryExecutionDeadline earlierDeadline(QueryExecutionDeadline original,
-			QueryExecutionDeadline caller) {
-		if (original == null) {
-			return caller;
+	/** Returns false when interrupted before the native owner finished the request. */
+	private boolean awaitNativeGrowthFinished(NativeGrowthRequest request) {
+		synchronized (asyncProgress) {
+			while (!request.finished) {
+				try {
+					asyncProgress.wait();
+				} catch (InterruptedException cancellation) {
+					return false;
+				}
+			}
+			return true;
 		}
-		return caller == null || original.remainingNanos() <= caller.remainingNanos() ? original : caller;
 	}
 
 	private void awaitAsyncProgress(BooleanSupplier finished) throws IOException {
-		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
-		try (QueryExecutionDeadline.Registration expiration = signalAsyncOnExpiration(deadline)) {
-			while (true) {
-				long observed = asyncCallerProgress.sequence();
-				serviceNativeGrowth();
-				if (tripleStoreException != null) {
-					throw wrapTripleStoreException();
-				}
-				if (finished.getAsBoolean()) {
-					return;
-				}
-				// A growth request arriving after service changes the sequence and forces another service pass.
-				awaitAsyncSignal(deadline, observed);
+		while (true) {
+			long observed = asyncCallerProgress.sequence();
+			serviceNativeGrowth();
+			if (tripleStoreException != null) {
+				throw wrapTripleStoreException();
 			}
+			if (finished.getAsBoolean()) {
+				return;
+			}
+			// A growth request arriving after service changes the sequence and forces another service pass.
+			awaitAsyncSignal(observed);
 		}
 	}
 
@@ -5110,20 +5479,16 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
-	private QueryExecutionDeadline checkedAsyncDeadline() {
-		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
-		if (deadline != null && deadline.isExpired()) {
-			throw new QueryInterruptedException("Query evaluation took too long");
+	/** Interrupts are how query time limits and cancellation reach a producer of native-writer work. */
+	private static void checkAsyncProducerInterrupted() {
+		if (Thread.currentThread().isInterrupted()) {
+			throw new InterruptedSailException("Interrupted while handing work to the native LMDB writer");
 		}
-		return deadline;
 	}
 
 	private void enqueueAsync(Operation operation) throws IOException {
 		boolean drain = operation instanceof AsyncDrainOperation;
-		QueryExecutionDeadline deadline = checkedAsyncDeadline();
-		if (deadline != null) {
-			operation = new DeadlineOperation(operation, deadline);
-		}
+		checkAsyncProducerInterrupted();
 		while (!opQueue.add(operation)) {
 			// Growth service can suspend or nest producer work; each capacity wait retains its registration.
 			asyncCapacityWaiters.incrementAndGet();
@@ -5159,6 +5524,14 @@ class LmdbSailStore implements SailStore {
 
 	private void requestMapGrowthForCurrentWriter(MapResizeKind kind, long projectedUsedBytes, boolean exhausted)
 			throws IOException {
+		WriterTransaction requested = WriterTransaction.current();
+		WriterTransaction transaction = requested == null ? nativeWriterTransaction(kind) : requested;
+		// A whole-transaction retry may request capacity after its own native commit was consumed. Its
+		// captured logical publication still owns that request; a later native writer cannot supply authority.
+		if (transaction == null || transaction != storeNativeTransaction
+				|| requested == null && !ownsNativeWriter(kind, transaction)) {
+			return;
+		}
 		Object owner = storeTransactionOwner;
 		if (owner == null) {
 			owner = currentWriterOwner();
@@ -5416,7 +5789,7 @@ class LmdbSailStore implements SailStore {
 			retainRollbackFailure(failure, abortFailure);
 			return null;
 		}
-		checkPublicationAdmission(QueryExecutionDeadline.current(), owner);
+		checkPublicationAdmission(owner);
 		retained.coverage.validate();
 		TemporaryFlushingException temporary = new TemporaryFlushingException(
 				"The native attempt was aborted; its complete frozen statement input remains retained", failure);
@@ -5514,7 +5887,7 @@ class LmdbSailStore implements SailStore {
 			if (after <= before) {
 				throw new SailException("Frozen statement replay requires actual affected map-size progress", failure);
 			}
-			checkPublicationAdmission(QueryExecutionDeadline.current(), owner);
+			checkPublicationAdmission(owner);
 			mapGrowthMetrics.recordStatementReplay();
 			retained.retry = null;
 			retained.mutationFailure = null;
@@ -5525,6 +5898,14 @@ class LmdbSailStore implements SailStore {
 
 	/** Materialize a NONE batch before opening the final public publication/commit scope. */
 	void flushNonePending(Object owner) {
+		flushNonePending(owner, false);
+	}
+
+	/**
+	 * @param finalFlush the owning connection commits, flushes or reads; its pending batch is then the last work of the
+	 *                   attempt so far, and runs on the caller thread when it opens its own chunk
+	 */
+	void flushNonePending(Object owner, boolean finalFlush) {
 		sinkStoreAccessLock.lock();
 		NoneWriteState state = null;
 		try {
@@ -5534,7 +5915,7 @@ class LmdbSailStore implements SailStore {
 				LmdbSailSink sink = state.pendingSink;
 				try (SailWriteContinuation.Scope continuation = state.continuationController()
 						.beginNativeContinuation()) {
-					sink.flushNoneBatch();
+					sink.flushNoneBatch(finalFlush);
 				}
 			}
 			if (state != null && state.controller != null
@@ -5618,7 +5999,8 @@ class LmdbSailStore implements SailStore {
 		try {
 			NoneWriteState state = noneWriteStates.get(owner);
 			if (state != null && state.writeAttempt == writeAttempt && state.nativeGeneration == 0L
-					&& state.work.isEmpty() && state.pending == null && namespaceTransactionOwner != owner) {
+					&& state.work.isEmpty() && state.pending == null && namespaceTransactionOwner != owner
+					&& !retainsInitialRunImportState(owner)) {
 				discardNonePending(owner);
 			}
 		} finally {
@@ -5696,17 +6078,23 @@ class LmdbSailStore implements SailStore {
 			failedWriterTransactions.remove(owner);
 			hasFailedWriterTransactions = !failedWriterTransactions.isEmpty();
 		}
-		List<ReadAttemptLease> completed;
+		// Runs when every sink closes, so it avoids a stream pipeline: usually no lease matches.
+		List<ReadAttemptLease> completed = null;
 		synchronized (writerOwnerMonitor) {
-			if (activeWriterLeases.isEmpty()) {
-				return;
+			for (WriterLease lease : activeWriterLeases.keySet()) {
+				ReadAttemptLease attempt = lease.registration.attempt();
+				if (attempt != null && attempt.owner == owner && attempt.completed) {
+					if (completed == null) {
+						completed = new ArrayList<>(1);
+					}
+					if (!completed.contains(attempt)) {
+						completed.add(attempt);
+					}
+				}
 			}
-			completed = activeWriterLeases.keySet()
-					.stream()
-					.map(lease -> lease.registration.attempt())
-					.filter(attempt -> attempt != null && attempt.owner == owner && attempt.completed)
-					.distinct()
-					.toList();
+		}
+		if (completed == null) {
+			return;
 		}
 		for (ReadAttemptLease attempt : completed) {
 			retireCompletedWriterLeases(attempt);
@@ -5808,31 +6196,19 @@ class LmdbSailStore implements SailStore {
 		}
 		WriterLease writerLease = acquireWriterLease(owner);
 		PublicationContext context = new PublicationContext(owner, writerLease, ownsOwner);
-		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
 		boolean registered = false;
-		try (QueryExecutionDeadline.Registration expiration = deadline == null ? null : deadline.onExpiration(() -> {
+		try {
 			publicationGate.lock();
 			try {
-				publicationCompleted.signalAll();
-			} finally {
-				publicationGate.unlock();
-			}
-		})) {
-			publicationGate.lock();
-			try {
-				checkPublicationAdmission(deadline, owner);
+				checkPublicationAdmission(owner);
 				while (publicationFinalizing) {
 					try {
-						if (deadline == null) {
-							publicationCompleted.await();
-						} else {
-							publicationCompleted.awaitNanos(deadline.remainingNanos());
-						}
+						publicationCompleted.await();
 					} catch (InterruptedException e) {
 						Thread.currentThread().interrupt();
 						throw new InterruptedSailException(e);
 					}
-					checkPublicationAdmission(deadline, owner);
+					checkPublicationAdmission(owner);
 				}
 				if (activePublications == 0) {
 					if ((publicationVersion & 1L) != 0) {
@@ -5913,40 +6289,37 @@ class LmdbSailStore implements SailStore {
 		return new PublicationScope(context, true);
 	}
 
-	// Package-private scheduling seams allow tests to order real grant, release and inline deadline callbacks.
+	// Package-private scheduling seams allow tests to order real grant, release and admission checks.
 	void beforeWriterAuthorityRelease(Object owner) {
 	}
 
 	void beforeWriterAuthorityPromotion(Object owner) {
 	}
 
-	void beforeGrowthAdmissionDeadlineCheck(QueryExecutionDeadline deadline) {
+	void beforeGrowthAdmissionCheck() {
 	}
 
 	private WriterLease acquireWriterLease(Object owner) throws SailException {
+		if (owner instanceof LmdbStoreConnection) {
+			// Another connection waits until an initial run import holding the store has completed.
+			awaitInitialRunImport(owner);
+		}
 		WriterRegistration registration = mapGrowthCoordinator.registerWriter(owner);
 		boolean acquired = false;
-		QueryExecutionDeadline deadline = mapGrowthCoordinator.deadlineFor(registration.attempt());
-		// The absolute timed wait wakes itself at expiry. An inline deadline listener must not acquire
-		// writerOwnerMonitor while a coordinator deadline check already holds the opposite lock.
 		try {
 			while (true) {
 				synchronized (writerOwnerMonitor) {
 					ensureWriterRegistrationActive(registration);
-					checkPublicationAdmission(deadline, owner);
+					checkPublicationAdmission(owner);
 					while (writerOwner != null && writerOwner != owner) {
 						try {
-							if (deadline == null) {
-								writerOwnerMonitor.wait();
-							} else {
-								TimeUnit.NANOSECONDS.timedWait(writerOwnerMonitor, deadline.remainingNanos());
-							}
+							writerOwnerMonitor.wait();
 						} catch (InterruptedException e) {
 							Thread.currentThread().interrupt();
 							throw new InterruptedSailException(e);
 						}
 						ensureWriterRegistrationActive(registration);
-						checkPublicationAdmission(deadline, owner);
+						checkPublicationAdmission(owner);
 					}
 					// Owner exclusion and emergency certification see this grant atomically. A queued publisher
 					// cannot block its current owner's capacity recovery before obtaining this authority.
@@ -5977,6 +6350,9 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private WriterLease tryAcquireWriterLease(Object owner) {
+		if (owner instanceof LmdbStoreConnection && initialRunImportBlocks(owner)) {
+			return null;
+		}
 		WriterRegistration registration = mapGrowthCoordinator.tryRegisterWriter(owner);
 		if (registration == null) {
 			return null;
@@ -6034,7 +6410,7 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private void markDictionaryCheckpointPending() {
-		if (storeTxnStarted.get()) {
+		if (storeTxnStarted.get() && ownsNativeWriter(MapResizeKind.VALUE_STORE, storeNativeTransaction)) {
 			pendingDictionaryCheckpointThread = Thread.currentThread();
 			pendingDictionaryCheckpointGeneration = storeTxnGeneration;
 		}
@@ -6076,50 +6452,33 @@ class LmdbSailStore implements SailStore {
 
 	private long awaitStablePublication() throws SailException {
 		ensureNamespacePersistenceCertain();
-		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
-		try (QueryExecutionDeadline.Registration ignored = deadline == null ? null : deadline.onExpiration(() -> {
-			publicationGate.lock();
-			try {
-				publicationCompleted.signalAll();
-			} finally {
-				publicationGate.unlock();
-			}
-		})) {
-			publicationGate.lock();
-			try {
-				checkPublicationAdmission(deadline);
-				while (activePublications != 0 || publicationFinalizing
-						|| pendingDictionaryCheckpointGeneration != 0L) {
-					if (isCurrentThreadCheckpointOwner()) {
-						throw retryDictionaryCheckpointAdmission();
-					}
-					try {
-						if (deadline == null) {
-							publicationCompleted.await();
-						} else {
-							publicationCompleted.awaitNanos(deadline.remainingNanos());
-						}
-					} catch (InterruptedException e) {
-						Thread.currentThread().interrupt();
-						throw new InterruptedSailException(e);
-					}
-					checkPublicationAdmission(deadline);
+		publicationGate.lock();
+		try {
+			checkPublicationAdmission();
+			while (activePublications != 0 || publicationFinalizing
+					|| pendingDictionaryCheckpointGeneration != 0L) {
+				if (isCurrentThreadCheckpointOwner()) {
+					throw retryDictionaryCheckpointAdmission();
 				}
-				return publicationVersion;
-			} finally {
-				publicationGate.unlock();
+				try {
+					publicationCompleted.await();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new InterruptedSailException(e);
+				}
+				checkPublicationAdmission();
 			}
+			return publicationVersion;
+		} finally {
+			publicationGate.unlock();
 		}
 	}
 
-	private void checkPublicationAdmission(QueryExecutionDeadline deadline) {
-		checkPublicationAdmission(deadline, null);
+	private void checkPublicationAdmission() {
+		checkPublicationAdmission(null);
 	}
 
-	private void checkPublicationAdmission(QueryExecutionDeadline deadline, Object admittedWriterOwner) {
-		if (deadline != null && deadline.isExpired()) {
-			throw new QueryInterruptedException("Query evaluation took too long");
-		}
+	private void checkPublicationAdmission(Object admittedWriterOwner) {
 		if (mapGrowthCoordinator.shuttingDown && replayRetirementOwner.get() == null
 				&& (admittedWriterOwner == null || admittedWriterOwner != storeTransactionOwner
 						|| !storeTxnStarted.get())) {
@@ -6173,7 +6532,7 @@ class LmdbSailStore implements SailStore {
 
 	private ReadView tryCreateFreshReadView(MapGrowthObserver observer, ReadAttemptLease readAttempt)
 			throws SailException, ValueStore.ValueReadAdmissionException {
-		checkPublicationAdmission(QueryExecutionDeadline.current());
+		checkPublicationAdmission();
 		if (isCurrentThreadCheckpointOwner()) {
 			// Check this self-deadlock boundary before growth admission can wait for the same writer to finish.
 			throw retryDictionaryCheckpointAdmission();
@@ -6245,7 +6604,7 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private void restorePublishedNamespaces() throws IOException {
-		if (namespacePersistenceFailure != null) {
+		if (namespacePersistenceFailure != null || namespaceTransactionOwner == null) {
 			return;
 		}
 		Map<String, String> published = publishedNamespaces;
@@ -6291,6 +6650,8 @@ class LmdbSailStore implements SailStore {
 	volatile Runnable afterPlannerStatsOpenCheckForTest;
 	/** Test-only worker hook: runs immediately before an asynchronously queued operation executes. */
 	volatile Runnable beforeAsyncOperationForTest;
+	/** Test-only worker hook: runs after native completion before deciding whether to serve the next generation. */
+	volatile Runnable afterAsyncTransactionForTest;
 	/** Test-only worker hook: runs after an asynchronous failure has been published and the worker has stopped. */
 	volatile Consumer<Throwable> afterAsyncFailureForTest;
 
@@ -6412,23 +6773,25 @@ class LmdbSailStore implements SailStore {
 			tripleStore.setMapGrowthAttemptSupplier(
 					() -> beginMapGrowthAttemptForCurrentWriter(MapResizeKind.TRIPLE_STORE));
 			tripleStore.setMapGrowthRequestListener(this::requestMapGrowthForCurrentWriter);
+			tripleStore.setIndexRebuildWriter(work -> {
+				Object owner = new Object();
+				try (SailClosable publication = beginPublicationScope(owner)) {
+					work.run();
+				}
+			});
 			if (properties.preparedBulkStore != null
 					&& tripleStore.trustedTransactionId() != properties.verifiedTripleTransactionId) {
 				throw new IOException("Clean native triple generation changed during startup");
 			}
-			namespaceStore = properties.preparedBulkStore == null ? recoverNamespaceStore()
-					: new NamespaceStore(dataDir, tripleStore);
-			publishedNamespaces = namespaceStore.snapshot();
+			namespaceStore = new NamespaceStore(dataDir, tripleStore);
+			publishedNamespaces = namespaceStore.initialSnapshot();
 			statementPatternCardinalitySource = new LmdbStatementPatternCardinalitySource(valueStore, tripleStore);
 			mayHaveInferred = tripleStore.hasTriples(false);
-			if (properties.preparedBulkStore == null || properties.preparedBulkStore.pendingUnused()) {
-				completeStartupValueReclamation(false);
-			} else {
-				valueStore.completePreparedStoreInitialization(tripleStore::filterUsedIds);
-			}
-			if (properties.preparedBulkStore == null || properties.preparedBulkStore.pendingRetired()) {
-				recoverRetiredValueIds();
-			}
+			forceSyncInitialRunImport = config.getForceSync();
+			initialRunImportAvailable = config.getInitialRunImportEnabled() && !mayHaveInferred
+					&& tripleStore.isEmpty() && valueStore.canStartFreshValueSession();
+			// Installation is bounded. Durable queues are retained until post-ready maintenance can prove liveness.
+			valueStore.completeStoreInitialization(tripleStore::filterUsedIdsBounded);
 			LmdbDirectAdjacencyOptions directAdjacencyOptions = LmdbDirectAdjacencyOptions.resolve(config);
 			directAdjacency = directAdjacencyOptions.mode() != DirectAdjacencyMode.DISABLED
 					? new LmdbDirectAdjacencyStore(tripleStore, valueStore, storeTxnStarted, storeTxnDirty,
@@ -6438,16 +6801,9 @@ class LmdbSailStore implements SailStore {
 				// install the complete commit collector before any build snapshot can be acquired (plan 27)
 				tripleStore.setDirectAdjacencyCommitHooks(directAdjacency.commitListener(),
 						directAdjacency.newCommitDelta());
-				if (directAdjacencyOptions.buildOnStart()) {
-					directAdjacency.triggerBuild();
-				}
 			}
 			preparedImportBudget = new AlignedWriteBudget(calculatePreparedImportStatementLimit(
 					Runtime.getRuntime().maxMemory(), tripleStore.secondaryIndexCount()));
-			if (properties.preparedBulkStore == null || properties.preparedBulkStore.pendingUnused()
-					|| properties.preparedBulkStore.pendingRetired()) {
-				completeStartupValueReclamation(true);
-			}
 			LmdbDirectAdjacencyStore adjacencyForContext = directAdjacency;
 			costModelContext = new LmdbNativeCostModelContext(
 					dataDir.toPath(),
@@ -6457,26 +6813,12 @@ class LmdbSailStore implements SailStore {
 							: () -> adjacencyForContext.maintenanceState().name(),
 					costModelDataGeneration::get,
 					() -> 0L);
-			if (sketchBasedJoinEstimator != null) {
-				Path estimatorPath = new File(dataDir, JOIN_ESTIMATOR_FILE_NAME).toPath();
-				boolean snapshotExists = Files.isRegularFile(estimatorPath.resolve("metadata.bin"));
-				filterSelectivityStats = statsFactory.create(estimatorPath, tripleStore, valueStore,
-						config.getOptimizerSamplingEnabled(), config.getOptimizerSamplingMaxMillis(),
-						config.getOptimizerSamplingMaxRows(), config.getBackgroundRawSamplingEnabled());
-				filterSelectivityStats.setSamplingViewSupplier(
-						() -> beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, null));
-				sketchBasedJoinEstimator.setRebuildAllowedSupplier(() -> !storeTxnStarted.get());
-				sketchBasedJoinEstimator.setLearnedStatsProvider(filterSelectivityStats);
-				sketchBasedJoinEstimator.setPatternFilterSamplingEstimator(filterSelectivityStats);
-				sketchBasedJoinEstimator.setPatternCardinalityProvider(statementPatternCardinalitySource::estimate);
-				sketchBasedJoinEstimator.configurePersistence(estimatorPath, snapshotExists);
-				if (!snapshotExists) {
-					sketchBasedJoinEstimator.discardAndMarkForRebuild();
-				}
-				sketchBasedJoinEstimator.startBackgroundRefresh(3);
-				startBackgroundFilterSampling();
+			postReadyInitialization = () -> initializePostReadyMaintenance(config, statsFactory,
+					directAdjacencyOptions.buildOnStart());
+			valueStore.setStartupValueOverlayScheduling(valueOverlayStartupScheduling);
+			if (directAdjacency != null && directAdjacencyOptions.buildOnStart()) {
+				directAdjacency.setStartupScheduling(adjacencyStartupScheduling);
 			}
-			valueStore.startValueOverlayWarmupAfterStoreInitialization();
 			logLmdbStats(Level.INFO, "on startup");
 		} catch (IOException | RuntimeException | Error failure) {
 			try {
@@ -6487,6 +6829,164 @@ class LmdbSailStore implements SailStore {
 				}
 			}
 			throw failure;
+		}
+	}
+
+	/** Opens the readiness gate only after the complete repository owner has published its initialized state. */
+	void startBackgroundMaintenanceAfterInitialization() {
+		if (initialImportClosing || !postReadyStarted.compareAndSet(false, true)) {
+			return;
+		}
+		postReadyStatus = "RUNNING";
+		Thread worker = Thread.ofPlatform().daemon().name("LmdbStore-PostReady").unstarted(() -> {
+			try {
+				if (!initialImportClosing && postReadyInitialization != null) {
+					postReadyInitialization.run();
+				}
+				postReadyStatus = initialImportClosing ? "CANCELLED" : "READY";
+			} catch (RuntimeException failure) {
+				postReadyStatus = "FAILED: " + failure.getMessage();
+				logger.warn("Optional LMDB post-ready maintenance failed; committed indexes remain available", failure);
+			} finally {
+				valueOverlayStartupScheduling.complete(null);
+				adjacencyStartupScheduling.complete(null);
+				postReadyInitializationCompletion.complete(null);
+			}
+		});
+		postReadyThread = worker;
+		worker.start();
+	}
+
+	private void initializePostReadyMaintenance(LmdbStoreConfig config, FilterSelectivityStatsFactory statsFactory,
+			boolean buildAdjacency) {
+		tripleStore.startBackgroundIndexRebuild();
+		valueStore.startIndexRebuildAfterStoreInitialization();
+		if (initialImportClosing) {
+			return;
+		}
+		try {
+			// Publish the bounded retirement batch before optional caches capture their value generation.
+			if (!initialImportClosing && valueStore.isValueReclamationEnabled()) {
+				recoverRetiredValueIds(tripleStore.getTxnManager().minPinnedSnapshotRevision(), false);
+				reclaimPersistedUnusedIdsAfterInitialization();
+			}
+			try {
+				if (directAdjacency != null && buildAdjacency) {
+					directAdjacency.triggerBuild();
+				}
+			} finally {
+				adjacencyStartupScheduling.complete(null);
+			}
+			try {
+				valueStore.startValueOverlayWarmupAfterStoreInitialization();
+			} finally {
+				valueOverlayStartupScheduling.complete(null);
+			}
+			if (sketchBasedJoinEstimator != null && !initialImportClosing) {
+				long generationBeforeLoad = costModelDataGeneration.get();
+				Path estimatorPath = new File(dataDir, JOIN_ESTIMATOR_FILE_NAME).toPath();
+				boolean snapshotExists = Files.isRegularFile(estimatorPath.resolve("metadata.bin"));
+				LmdbFilterSelectivityStats loaded = statsFactory.create(estimatorPath, tripleStore, valueStore,
+						config.getOptimizerSamplingEnabled(), config.getOptimizerSamplingMaxMillis(),
+						config.getOptimizerSamplingMaxRows(), config.getBackgroundRawSamplingEnabled());
+				loaded.setSamplingViewSupplier(() -> beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, null));
+				sketchBasedJoinEstimator.setRebuildAllowedSupplier(() -> !storeTxnStarted.get());
+				sketchBasedJoinEstimator.configurePersistence(estimatorPath, snapshotExists);
+				beforeSketchProviderPublicationForTest();
+				boolean discarded = false;
+				while (true) {
+					sinkStoreAccessLock.lock();
+					try {
+						if (initialImportClosing) {
+							return;
+						}
+						// Native commits use this same lock. Publish an unchanged loaded generation, or an already
+						// invalidated empty provider. Commits during unpublished cleanup cannot make it stale again.
+						if (discarded || snapshotExists && costModelDataGeneration.get() == generationBeforeLoad) {
+							sketchBasedJoinEstimator.setLearnedStatsProvider(loaded);
+							sketchBasedJoinEstimator.setPatternFilterSamplingEstimator(loaded);
+							sketchBasedJoinEstimator
+									.setPatternCardinalityProvider(statementPatternCardinalitySource::estimate);
+							filterSelectivityStats = loaded;
+							break;
+						}
+					} finally {
+						sinkStoreAccessLock.unlock();
+					}
+					// Discard may persist dirty buffers or await incremental work. It owns no published provider
+					// yet, so this potentially unbounded cleanup must stay outside the native commit fence.
+					sketchBasedJoinEstimator.discardAndMarkForRebuild();
+					loaded.recordStoreMutation();
+					discarded = true;
+				}
+				if (!initialImportClosing) {
+					sketchBasedJoinEstimator.startBackgroundRefresh(3);
+					startBackgroundFilterSampling();
+				}
+			}
+		} catch (IOException failure) {
+			throw new UncheckedIOException(failure);
+		}
+	}
+
+	String postReadyMaintenanceStatus() {
+		return postReadyStatus;
+	}
+
+	boolean awaitSketchesReady(long timeout, TimeUnit unit) throws InterruptedException {
+		if (sketchBasedJoinEstimator == null) {
+			return false;
+		}
+		long started = System.nanoTime();
+		long budget = unit.toNanos(timeout);
+		try {
+			postReadyInitializationCompletion.get(budget, TimeUnit.NANOSECONDS);
+		} catch (ExecutionException | TimeoutException incomplete) {
+			return false;
+		}
+		if (initialImportClosing || !postReadyStatus.equals("READY")) {
+			return false;
+		}
+		long remaining = Math.max(0L, budget - (System.nanoTime() - started));
+		return sketchBasedJoinEstimator.awaitReady(remaining, TimeUnit.NANOSECONDS);
+	}
+
+	/** Observational interleaving seam; no optional state has been published at this point. */
+	void beforeSketchProviderPublicationForTest() {
+	}
+
+	/** Observational interleaving seam for an actual refresh read. */
+	void beforeSketchRefreshReadForTest() {
+	}
+
+	/** The public static maintenance entry point owns the directory and exposes no concurrent connections. */
+	void reconstructReferenceCountsOffline() throws IOException {
+		Object owner = new Object();
+		try (SailClosable publication = beginPublicationScope(owner)) {
+			valueStore.reconstructReferenceCountsOffline();
+			markPublicationChanged();
+		}
+	}
+
+	private void awaitPostReadyInitializationForShutdown() {
+		Thread worker = postReadyThread;
+		if (worker == null || worker == Thread.currentThread()) {
+			valueOverlayStartupScheduling.complete(null);
+			adjacencyStartupScheduling.complete(null);
+			postReadyInitializationCompletion.complete(null);
+			return;
+		}
+		worker.interrupt();
+		boolean interrupted = false;
+		while (worker.isAlive()) {
+			try {
+				worker.join();
+			} catch (InterruptedException cancellation) {
+				interrupted = true;
+			}
+		}
+		if (interrupted) {
+			Thread.currentThread().interrupt();
 		}
 	}
 
@@ -6514,6 +7014,9 @@ class LmdbSailStore implements SailStore {
 				Resource... contexts) {
 			boolean refreshThread = SketchBasedJoinEstimator.REFRESH_THREAD_NAME
 					.equals(Thread.currentThread().getName());
+			if (refreshThread) {
+				beforeSketchRefreshReadForTest();
+			}
 			boolean borrowedReadView = activeReadView.get() != null;
 			ReadResourceContext resourceContext = activeReadResourceContext.get();
 			List<ReadViewLease> resourceViews = resourceContext == null ? List.of() : resourceContext.readViews();
@@ -6734,7 +7237,7 @@ class LmdbSailStore implements SailStore {
 		try {
 			Throwable failure = null;
 			try {
-				valueStore.rollback();
+				valueStore.rollback(storeNativeTransaction);
 			} catch (Throwable cleanupFailure) {
 				failure = cleanupFailure;
 			}
@@ -6746,7 +7249,7 @@ class LmdbSailStore implements SailStore {
 								asyncRollbackException);
 					}
 				} else {
-					tripleStore.rollback();
+					tripleStore.rollback(storeNativeTransaction);
 				}
 			} catch (Throwable cleanupFailure) {
 				failure = retainRollbackFailure(failure, cleanupFailure);
@@ -6769,6 +7272,10 @@ class LmdbSailStore implements SailStore {
 			} else {
 				valueStore.rollbackFreshValueTransaction(freshValueSession);
 			}
+			LmdbInitialRunImport runImport = initialRunImport;
+			if (runImport != null) {
+				runImport.rollbackChunk();
+			}
 			pendingFreshValueBatches.clear();
 			if (freshValueSessionInvalidated) {
 				valueStore.discardFreshValueSession(freshValueSession);
@@ -6789,8 +7296,10 @@ class LmdbSailStore implements SailStore {
 			storeTxnStarted.set(false);
 			mapGrowthCoordinator.retireProjectedWriter(storeTransactionOwner, storeTxnGeneration);
 			storeTransactionOwner = null;
+			storeNativeTransaction = null;
 			namespaceTransactionOwner = null;
 			storeReplayDecision = null;
+			storeReplayDecisionOwner = null;
 			multiThreadingActive = false;
 			long rolledBackGeneration = storeTxnGeneration;
 			sinkStoreAccessLock.unlock();
@@ -6798,7 +7307,7 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
-	/** Cleanup cannot abandon a native owner merely because the query deadline or caller interrupt has expired. */
+	/** Cleanup cannot abandon a native owner merely because the caller was interrupted or cancelled. */
 	private void rollbackAsyncTransaction() {
 		boolean interrupted = Thread.interrupted();
 		try (AsyncMonitorWaiter waiter = new AsyncMonitorWaiter()) {
@@ -6891,6 +7400,13 @@ class LmdbSailStore implements SailStore {
 					|| (namespaceTransactionOwner != null && namespaceTransactionOwner != owner)) {
 				return;
 			}
+			if (!storeTxnStarted.get() && namespaceTransactionOwner == null && storeReplayDecision != null
+					&& storeReplayDecisionOwner != owner) {
+				// Nothing of this owner reached the store, and the prepared attempt belongs to another writer that may
+				// be waiting for adjacency admission without the store lock: resetting it would start that writer
+				// without a replay decision.
+				return;
+			}
 			rollback();
 		} finally {
 			sinkStoreAccessLock.unlock();
@@ -6933,13 +7449,20 @@ class LmdbSailStore implements SailStore {
 			}
 
 			Map<String, String> previousNamespaces = publishedNamespaces;
-			Map<String, String> currentNamespaces = namespaceStore.snapshot();
-			boolean namespacesChanged = !previousNamespaces.equals(currentNamespaces);
+			Map<String, String> currentNamespaces = namespaceTransactionOwner == null ? previousNamespaces
+					: namespaceStore.snapshot();
+			boolean namespacesChanged = namespaceTransactionOwner != null
+					&& !previousNamespaces.equals(currentNamespaces);
 			boolean nativeCommitted = false;
 			boolean derivedPublicationCompleted = false;
 			long nativeCommitGenerationBefore = tripleStore.getNativeCommitGeneration();
 			long dictionaryCommitGenerationBefore = valueStore.nativeCommitGeneration();
 			try {
+				LmdbInitialRunImport importInProgress = initialRunImport;
+				if (importInProgress != null && importInProgress.owner == owner
+						&& (activeTransaction || namespacesChanged)) {
+					importInProgress.awaitMarkerDurable();
+				}
 				if (activeTransaction) {
 					drainAsyncOperations();
 					Set<Long> unusedIds = mutationUnusedIds();
@@ -6959,6 +7482,10 @@ class LmdbSailStore implements SailStore {
 					unusedIds.clear();
 					commitTripleTransaction();
 					nativeCommitted = true;
+					LmdbInitialRunImport runImport = initialRunImport;
+					if (runImport != null && runImport.owner == owner) {
+						runImport.commitChunk();
+					}
 					derivedPublicationCompleted = true;
 					finishCommittedDerivedState();
 					PublicationContext publication = publicationContext.get();
@@ -6976,6 +7503,7 @@ class LmdbSailStore implements SailStore {
 					storeTxnStarted.set(false);
 					mapGrowthCoordinator.retireProjectedWriter(storeTransactionOwner, storeTxnGeneration);
 					storeTransactionOwner = null;
+					storeNativeTransaction = null;
 					markPublicationChanged();
 					estimatorTouchedSinceStoreTxnStart.set(false);
 					if (filterSelectivityStats != null) {
@@ -6997,6 +7525,7 @@ class LmdbSailStore implements SailStore {
 				}
 
 				if (namespacesChanged && publishedNamespaces == previousNamespaces) {
+					namespaceStore.nativeSnapshotPublished();
 					publishedNamespaces = currentNamespaces;
 					namespaceGeneration++;
 					markPublicationChanged();
@@ -7018,10 +7547,11 @@ class LmdbSailStore implements SailStore {
 				}
 				clearDictionaryCheckpointPending(transactionGeneration);
 				storeReplayDecision = null;
+				storeReplayDecisionOwner = null;
 				NoneWriteState completedNoneState = noneWriteStates.get(owner);
 				if (completedNoneState != null && completedNoneState.sinks.isEmpty()
 						&& completedNoneState.pending == null && !storeTxnStarted.get()
-						&& namespaceTransactionOwner != owner) {
+						&& namespaceTransactionOwner != owner && !retainsInitialRunImportState(owner)) {
 					discardNonePending(owner);
 				}
 			} catch (IOException | RuntimeException | Error e) {
@@ -7075,10 +7605,12 @@ class LmdbSailStore implements SailStore {
 						noneWriteState.published();
 					}
 					storeReplayDecision = null;
+					storeReplayDecisionOwner = null;
 					// Once the TripleStore commit returns, its namespace snapshot is authoritative. Preserve that state
 					// even
 					// if a later in-memory publication or maintenance step fails.
 					if (namespacesChanged && publishedNamespaces == previousNamespaces) {
+						namespaceStore.nativeSnapshotPublished();
 						publishedNamespaces = currentNamespaces;
 						namespaceGeneration++;
 						markPublicationChanged();
@@ -7088,6 +7620,7 @@ class LmdbSailStore implements SailStore {
 						storeTxnStarted.set(false);
 						mapGrowthCoordinator.retireProjectedWriter(storeTransactionOwner, storeTxnGeneration);
 						storeTransactionOwner = null;
+						storeNativeTransaction = null;
 						multiThreadingActive = false;
 						estimatorTouchedSinceStoreTxnStart.set(false);
 						clearDictionaryCheckpointPending(transactionGeneration);
@@ -7149,10 +7682,10 @@ class LmdbSailStore implements SailStore {
 		boolean interrupted = Thread.interrupted();
 		// Resolving the physical commit outcome is mandatory cleanup. Cancellation must remain the
 		// caller's primary failure without preventing a fresh, remap-protected reconciliation read.
-		try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enterScopedContext(null)) {
+		try {
 			while (true) {
 				try {
-					return tripleStore.readNamespaceSnapshot();
+					return namespaceStore.readPersistedSnapshot();
 				} catch (IOException | SailException admissionFailure) {
 					if (!(admissionFailure.getCause() instanceof InterruptedException)) {
 						throw admissionFailure;
@@ -7198,7 +7731,7 @@ class LmdbSailStore implements SailStore {
 				drain = new AsyncDrainOperation(storeTxnGeneration, asyncOperationsAdmitted);
 				enqueueAsync(drain);
 			} else {
-				checkedAsyncDeadline();
+				checkAsyncProducerInterrupted();
 			}
 			AsyncDrainOperation awaited = drain;
 			// Reusing a completed prefix still services growth requests and checks native failures.
@@ -7255,27 +7788,35 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private void processRetiredValueIds(long maxRevisionInclusive) throws IOException {
-		while (true) {
+		if (!valueStore.isValueReclamationEnabled()) {
+			return;
+		}
+		// One publication may service one bounded batch, never the entire backlog left by a previous process.
+		{
 			RetiredValueIdStore.DrainBatch batch = valueStore.pollRetiredIds(maxRevisionInclusive,
 					Math.min(4096, valueGcDrainBatchSize()));
 			if (batch == null || batch.isEmpty()) {
 				return;
 			}
+			WriterTransaction transaction = new WriterTransaction();
 			try {
-				valueStore.startTransaction(true);
+				valueStore.startTransaction(true, transaction);
 				Set<Long> roots = new HashSet<>(batch.ids);
 				Set<Long> frontier = new HashSet<>();
-				tripleStore.filterUsedIds(roots);
+				Set<Long> unresolved = new HashSet<>();
+				tripleStore.filterUsedIdsBounded(roots, unresolved);
 				valueStore.gcIds(roots, frontier);
 				valueStore.removeRetiredIds(batch);
+				frontier.addAll(unresolved);
 				// Recursive RDF-star GC expands at most three children per root. Persist that bounded
 				// frontier in the same native commit; never retain the complete durable backlog on heap.
-				valueStore.recordRetiredIds(frontier,
-						Math.min(maxRevisionInclusive, tripleStore.getDataRevision()));
-				valueStore.commit();
+				// A child loses its last reference now, but its own statements may have been removed after the root's,
+				// while a reader that still sees them is pinned: only the current revision waits for every such reader.
+				valueStore.recordRetiredIds(frontier, tripleStore.getDataRevision());
+				transaction.invoke(valueStore::commit);
 			} catch (IOException | RuntimeException | Error failure) {
 				try {
-					valueStore.rollback();
+					valueStore.rollback(transaction);
 				} catch (IOException | RuntimeException | Error cleanup) {
 					if (cleanup != failure) {
 						failure.addSuppressed(cleanup);
@@ -7284,6 +7825,47 @@ class LmdbSailStore implements SailStore {
 				throw failure;
 			}
 		}
+	}
+
+	private void reclaimPersistedUnusedIdsAfterInitialization() throws IOException {
+		int maximum = Math.min(4096, valueGcDrainBatchSize());
+		if (maximum <= 0) {
+			return;
+		}
+		long estimate = valueStore.estimatePersistedUnusedBatchWriteBytes(maximum);
+		if (estimate <= 0L) {
+			return;
+		}
+		Object owner = new Object();
+		long initialMapSize = mapSizeBytesWithNativeReadBarrier(MapResizeKind.VALUE_STORE);
+		if (autoGrow) {
+			TxnManager manager = valueStore.getTxnManager();
+			long projectedUse = 0L;
+			long readStamp = manager.acquireReadBarrier();
+			try {
+				if (valueStore.requiresResizeForEstimatedWrite(estimate)) {
+					projectedUse = LmdbUtil.saturatedAdd(valueStore.occupiedBytes(), estimate);
+				}
+			} finally {
+				manager.lockManager().unlockRead(readStamp);
+			}
+			if (projectedUse > 0L) {
+				MapGrowthToken token;
+				try (MapGrowthAttempt warning = mapGrowthCoordinator.beginWarning(owner, 0L, projectedUse, true)) {
+					token = warning.token();
+				}
+				awaitGrowthEnd(token);
+			}
+		}
+		beforePostReadyReclamationForTest();
+		try (SailClosable publication = beginPublicationScope(owner)) {
+			valueStore.reclaimPersistedUnusedIdsBatch(maximum);
+		}
+		finishMaintenanceGrowth(owner, MapResizeKind.VALUE_STORE, initialMapSize);
+	}
+
+	/** Inert hook immediately before the post-ready reclamation publication scope. */
+	void beforePostReadyReclamationForTest() {
 	}
 
 	/** Admits namespace import as complete startup work, with rollback before any capacity retry. */
@@ -7310,7 +7892,7 @@ class LmdbSailStore implements SailStore {
 				try (MapGrowthAttempt warning = mapGrowthCoordinator.beginWarning(owner, projectedUse, 0L, true)) {
 					preflight = warning.token();
 				}
-				awaitGrowthEnd(preflight, QueryExecutionDeadline.current());
+				awaitGrowthEnd(preflight);
 			}
 			MapGrowthToken retryGrowth = null;
 			NamespaceStore recovered = null;
@@ -7334,7 +7916,7 @@ class LmdbSailStore implements SailStore {
 				finishMaintenanceGrowth(owner, MapResizeKind.TRIPLE_STORE, initialMapSize);
 				return recovered;
 			}
-			awaitGrowthEnd(retryGrowth, QueryExecutionDeadline.current());
+			awaitGrowthEnd(retryGrowth);
 		}
 	}
 
@@ -7370,7 +7952,7 @@ class LmdbSailStore implements SailStore {
 			}
 			token = warning.token();
 		}
-		awaitGrowthEnd(token, QueryExecutionDeadline.current());
+		awaitGrowthEnd(token);
 	}
 
 	private MapGrowthToken requestMaintenanceGrowth(Object owner, MapResizeKind kind) throws IOException {
@@ -7404,7 +7986,7 @@ class LmdbSailStore implements SailStore {
 				try (MapGrowthAttempt warning = mapGrowthCoordinator.beginWarning(owner, 0L, resizeTarget, true)) {
 					token = warning.token();
 				}
-				awaitGrowthEnd(token, QueryExecutionDeadline.current());
+				awaitGrowthEnd(token);
 			}
 			MapGrowthToken retryGrowth = null;
 			try (SailClosable publication = beginPublicationScope(owner)) {
@@ -7427,7 +8009,7 @@ class LmdbSailStore implements SailStore {
 				finishMaintenanceGrowth(owner, MapResizeKind.VALUE_STORE, initialMapSize);
 				return;
 			}
-			awaitGrowthEnd(retryGrowth, QueryExecutionDeadline.current());
+			awaitGrowthEnd(retryGrowth);
 		}
 	}
 
@@ -7471,8 +8053,32 @@ class LmdbSailStore implements SailStore {
 
 	/** Restore ordinary capture before the old owner releases admission to any subsequent writer. */
 	void finishInitialNoneImport(Object owner, LmdbStoreConnection.WriteAttempt attempt) {
+		finishInitialNoneImport(owner, attempt, false);
+	}
+
+	/**
+	 * @param committed whether the attempt committed: its fresh value session then still knows every dictionary value,
+	 *                  so the next NONE connection may continue it
+	 */
+	void finishInitialNoneImport(Object owner, LmdbStoreConnection.WriteAttempt attempt, boolean committed) {
+		LmdbInitialRunImport unfinished = initialRunImport;
+		if (unfinished != null && unfinished.owner == owner && !unfinished.completing()) {
+			// Commit and rollback complete the import first; reaching here with it active means that failed.
+			endInitialRunImport(unfinished, false,
+					new IllegalStateException("The NONE attempt ended before its initial run import completed"));
+		}
 		sinkStoreAccessLock.lock();
 		try {
+			if (freshNoneImportOwner == owner) {
+				freshNoneImportOwner = null;
+				if (!committed) {
+					// A rolled-back attempt can leave values in the map that never committed, or committed only in
+					// an earlier checkpoint: the map is no longer exact.
+					invalidateFreshValueSession();
+				} else {
+					freshSessionReservedForNone = freshValueSession != null && !freshValueSessionInvalidated;
+				}
+			}
 			InitialNoneImport current = initialNoneImport;
 			if (current == null || current.owner() != owner || current.attempt() != attempt) {
 				return;
@@ -7527,14 +8133,15 @@ class LmdbSailStore implements SailStore {
 			try (SailClosable publication = beginPublicationScope(owner)) {
 				try {
 					if (recoverBufferedRetirements && !unusedIds.isEmpty()) {
+						WriterTransaction transaction = new WriterTransaction();
 						try {
-							valueStore.startTransaction(true);
+							valueStore.startTransaction(true, transaction);
 							valueStore.recordRetiredIds(unusedIds, 0);
-							valueStore.commit();
+							transaction.invoke(valueStore::commit);
 							unusedIds.clear();
 						} catch (IOException | RuntimeException | Error failure) {
 							try {
-								valueStore.rollback();
+								valueStore.rollback(transaction);
 							} catch (IOException | RuntimeException | Error cleanup) {
 								if (cleanup != failure) {
 									failure.addSuppressed(cleanup);
@@ -7557,7 +8164,7 @@ class LmdbSailStore implements SailStore {
 				finishMaintenanceGrowth(owner, MapResizeKind.VALUE_STORE, initialMapSize);
 				return;
 			}
-			awaitGrowthEnd(retryGrowth, QueryExecutionDeadline.current());
+			awaitGrowthEnd(retryGrowth);
 		}
 	}
 
@@ -7590,7 +8197,7 @@ class LmdbSailStore implements SailStore {
 		try (MapGrowthAttempt warning = mapGrowthCoordinator.beginWarning(owner, 0L, projectedUse, true)) {
 			token = warning.token();
 		}
-		awaitGrowthEnd(token, QueryExecutionDeadline.current());
+		awaitGrowthEnd(token);
 	}
 
 	private long mapSizeBytesWithNativeReadBarrier(MapResizeKind kind) throws IOException {
@@ -7631,12 +8238,13 @@ class LmdbSailStore implements SailStore {
 					sinkStoreAccessLock.lock();
 				}
 			}
-			checkPublicationAdmission(QueryExecutionDeadline.current());
+			checkPublicationAdmission();
 		}
 	}
 
 	/** Publishes optional branch-derived state only after the TripleStore proves the native commit. */
 	private void finishCommittedDerivedState() {
+		assert sinkStoreAccessLock.isHeldByCurrentThread();
 		Throwable failure = null;
 		try {
 			costModelDataGeneration.incrementAndGet();
@@ -7695,7 +8303,7 @@ class LmdbSailStore implements SailStore {
 	/** Commits dictionary records and publishes fresh-import bookkeeping before the authoritative triple commit. */
 	private void commitDictionaryBeforeTriple() throws IOException {
 		try {
-			valueStore.commit();
+			valueStore.commitIfChanged();
 		} finally {
 			// ValueStore marks this immediately after mdb_txn_commit returns. A later publication/cleanup failure must
 			// not make rollback attempt to use the already-consumed native transaction or discard durable dictionary
@@ -7719,6 +8327,7 @@ class LmdbSailStore implements SailStore {
 		sinkStoreAccessLock.lock();
 		try {
 			freshValueSessionInvalidated = true;
+			freshSessionReservedForNone = false;
 			if (!storeTxnStarted.get() && freshValueSession != null) {
 				valueStore.discardFreshValueSession(freshValueSession);
 				freshValueSession = null;
@@ -7764,7 +8373,17 @@ class LmdbSailStore implements SailStore {
 			throw new SailException("An active LMDB native/publication owner cannot close its own store");
 		}
 		initialImportClosing = true;
+		synchronized (initialRunImportMonitor) {
+			initialRunImportMonitor.notifyAll();
+		}
 		Throwable failure = null;
+		LmdbInitialRunImport abandonedRunImport = initialRunImport;
+		if (abandonedRunImport != null) {
+			// The marker stays: the next start resets the store the import left half-written.
+			failure = attemptClose(failure, () -> endInitialRunImport(abandonedRunImport, false,
+					new IllegalStateException("The LMDB store closed during an initial run import")));
+		}
+		failure = attemptClose(failure, this::awaitPostReadyInitializationForShutdown);
 		failure = attemptClose(failure, queryResultCache::clear);
 		failure = attemptClose(failure, () -> NativeLmdbQuerySource.releaseCostModel(valueStore));
 		failure = attemptClose(failure, mapGrowthCoordinator::shutdown);
@@ -7808,10 +8427,8 @@ class LmdbSailStore implements SailStore {
 			}
 			if (valueStore != null) {
 				failure = attemptClose(failure, valueStore::closeReadTransactions);
-				if (!storeTxnStarted.get()) {
-					failure = attemptClose(failure,
-							() -> valueStore.reclaimLegacyUnusedIdsAtClose(tripleStore::filterUsedIdsAtClose));
-				}
+				// Reader managers are already closed. Retain durable unused candidates for bounded post-ready or
+				// explicit maintenance instead of admitting fresh liveness reads during shutdown.
 				failure = attemptClose(failure, valueStore::close);
 			}
 			if (tripleStore != null) {
@@ -8265,7 +8882,7 @@ class LmdbSailStore implements SailStore {
 
 		if (contexts.length == 0) {
 			RecordIterator records = source.statements(subjID, predID, objID, LmdbValue.UNKNOWN_ID,
-					(AdjacencyAccessObserver) null);
+					nativeSourceObservationForTest);
 			return semanticStatements(source,
 					new LmdbStatementIterator(records, valueStore, source.readView.valueSnapshot()), subj, pred, obj);
 		}
@@ -8287,7 +8904,7 @@ class LmdbSailStore implements SailStore {
 				}
 
 				RecordIterator records = source.statements(subjID, predID, objID, contextID,
-						(AdjacencyAccessObserver) null);
+						nativeSourceObservationForTest);
 				perContextIterList.add(new LmdbStatementIterator(records, valueStore, source.readView.valueSnapshot()));
 			}
 
@@ -9379,7 +9996,7 @@ class LmdbSailStore implements SailStore {
 		 */
 		private synchronized void acquireMutationLease() throws SailException {
 			// Reject admission before entering mutation cleanup: an unadmitted row cannot abort an earlier prefix.
-			checkPublicationAdmission(QueryExecutionDeadline.current());
+			checkPublicationAdmission();
 			checkWriteAttemptAdmission();
 			PublicationContext publication = publicationContext.get();
 			Object owner = writerOwner();
@@ -9465,30 +10082,39 @@ class LmdbSailStore implements SailStore {
 			// A lease can have queued behind the store lock before its owner parks or finishes an attempt.
 			checkWriteAttemptAdmission();
 			checkNativeContinuationAdmission();
-			return SailWriteContinuation.enter(sinkStoreAccessLock, () -> {
-				checkNativeContinuationAdmission();
-				NoneWriteState state = nativeCheckpoints ? noneWriteStates.get(writerOwner()) : null;
-				if (state != null && state.parked && !storeTxnStarted.get()) {
-					return;
-				}
-				if (!storeTxnStarted.get() || storeTransactionOwner != sinkTransactionOwner
-						|| storeTxnGeneration != backingTransactionGeneration) {
-					throw new IllegalStateException("A suspended LMDB sink must retain its exact native generation");
-				}
-				suspendedNativeContinuation = new NativeContinuationSuspension(storeTransactionOwner,
-						storeTxnGeneration, Thread.currentThread());
-			}, () -> {
-				NoneWriteState state = nativeCheckpoints ? noneWriteStates.get(writerOwner()) : null;
-				if (state != null && state.parked) {
-					return;
-				}
-				NativeContinuationSuspension suspended = suspendedNativeContinuation;
-				if (suspended == null || suspended.caller() != Thread.currentThread()
-						|| suspended.owner() != storeTransactionOwner || suspended.generation() != storeTxnGeneration) {
-					throw new IllegalStateException("A suspended LMDB sink lost its native ownership before resuming");
-				}
-				suspendedNativeContinuation = null;
-			});
+			return SailWriteContinuation.enter(sinkStoreAccessLock, suspendNativeContinuation,
+					resumeNativeContinuation);
+		}
+
+		// Kept as fields so that entering a continuation, several times per transaction, allocates no callbacks.
+		private final Runnable suspendNativeContinuation = this::suspendNativeContinuation;
+		private final Runnable resumeNativeContinuation = this::resumeNativeContinuation;
+
+		private void suspendNativeContinuation() {
+			checkNativeContinuationAdmission();
+			NoneWriteState state = nativeCheckpoints ? noneWriteStates.get(writerOwner()) : null;
+			if (state != null && state.parked && !storeTxnStarted.get()) {
+				return;
+			}
+			if (!storeTxnStarted.get() || storeTransactionOwner != sinkTransactionOwner
+					|| storeTxnGeneration != backingTransactionGeneration) {
+				throw new IllegalStateException("A suspended LMDB sink must retain its exact native generation");
+			}
+			suspendedNativeContinuation = new NativeContinuationSuspension(storeTransactionOwner,
+					storeTxnGeneration, Thread.currentThread());
+		}
+
+		private void resumeNativeContinuation() {
+			NoneWriteState state = nativeCheckpoints ? noneWriteStates.get(writerOwner()) : null;
+			if (state != null && state.parked) {
+				return;
+			}
+			NativeContinuationSuspension suspended = suspendedNativeContinuation;
+			if (suspended == null || suspended.caller() != Thread.currentThread()
+					|| suspended.owner() != storeTransactionOwner || suspended.generation() != storeTxnGeneration) {
+				throw new IllegalStateException("A suspended LMDB sink lost its native ownership before resuming");
+			}
+			suspendedNativeContinuation = null;
 		}
 
 		private void queueEstimatorAdd(Statement st) {
@@ -9683,7 +10309,7 @@ class LmdbSailStore implements SailStore {
 
 		protected void filterUsedIdsInTripleStore() throws IOException {
 			if (!unusedIds.isEmpty()) {
-				tripleStore.filterUsedIds(unusedIds);
+				tripleStore.filterUsedIdsBounded(unusedIds);
 			}
 		}
 
@@ -9763,7 +10389,8 @@ class LmdbSailStore implements SailStore {
 				throw failure;
 			} finally {
 				releaseMutationLease();
-				if (nativeCheckpoints && !storeTxnStarted.get() && namespaceTransactionOwner != owner) {
+				if (nativeCheckpoints && !storeTxnStarted.get() && namespaceTransactionOwner != owner
+						&& !retainsInitialRunImportState(owner)) {
 					discardNonePending(owner);
 				}
 			}
@@ -9772,8 +10399,10 @@ class LmdbSailStore implements SailStore {
 		private void markNamespaceMutation() throws SailException {
 			checkWriteAttemptAdmission();
 			checkNativeContinuationAdmission();
-			checkPublicationAdmission(QueryExecutionDeadline.current());
+			checkPublicationAdmission();
 			ensureNamespacePersistenceCertain();
+			// Freeze the previous committed map before mutating the lazy working namespace state.
+			publishedNamespaces.size();
 			if (nativeCheckpoints) {
 				NoneWriteState state = admitNoneState();
 				state.publicationRequested = false;
@@ -9986,7 +10615,7 @@ class LmdbSailStore implements SailStore {
 				acquireMutationStoreAccess();
 				try (SailWriteContinuation.Scope continuation = beginNativeContinuation()) {
 					for (Statement statement : approved) {
-						checkPublicationAdmission(QueryExecutionDeadline.current());
+						checkPublicationAdmission();
 						appendNoneStatement(statement);
 					}
 				} catch (IOException | RuntimeException | Error failure) {
@@ -10101,7 +10730,7 @@ class LmdbSailStore implements SailStore {
 		 * @throws SailException if a transaction could not be started.
 		 */
 		private void startTransaction(boolean preferThreading) throws SailException {
-			checkPublicationAdmission(QueryExecutionDeadline.current());
+			checkPublicationAdmission();
 			ensureNamespacePersistenceCertain();
 			prepareReplayDecision();
 			Object owner = writerOwner();
@@ -10113,6 +10742,8 @@ class LmdbSailStore implements SailStore {
 				}
 			}
 			acquireAdjacencyAdmission();
+			// Waiting for admission released the store lock; re-establish this owner's prepared decision under it.
+			prepareReplayDecision();
 			synchronized (storeTxnStarted) {
 				if (storeTxnStarted.get() && storeTransactionOwner != owner) {
 					throw new SailException("LMDB writer transaction is owned by another sink");
@@ -10122,6 +10753,9 @@ class LmdbSailStore implements SailStore {
 				flushRequested = false;
 				if (storeTxnStarted.compareAndSet(false, true)) {
 					storeTransactionOwner = owner;
+					WriterTransaction nativeTransaction = storeNativeTransaction == null ? new WriterTransaction()
+							: storeNativeTransaction;
+					storeNativeTransaction = nativeTransaction;
 					storeTxnDirty.set(false);
 					resetBulkOperationCapacity();
 					dictionaryCommitSucceeded = false;
@@ -10147,24 +10781,41 @@ class LmdbSailStore implements SailStore {
 					boolean workerRequired = false;
 					boolean workerSubmitted = false;
 					try {
-						if (freshImportEligible && !nativeCheckpoints && freshValueSession == null
-								&& !freshValueSessionInvalidated && !mayHaveInferred) {
+						// A NONE import keeps the session across its native chunks only while it is the sole NONE
+						// owner.
+						// resolveBatchValues ends it once anything else may have touched the dictionary.
+						if (freshImportEligible && freshValueSession == null && !freshValueSessionInvalidated
+								&& !mayHaveInferred && (!nativeCheckpoints || explicit && noneWriteStates.size() == 1
+										&& noneWriteStates.containsKey(owner))) {
 							if (tripleStore.isEmpty()) {
 								freshValueSession = valueStore.startFreshValueSessionIfEmpty();
 							}
 							if (freshValueSession == null) {
 								freshValueSessionInvalidated = true;
+							} else if (nativeCheckpoints) {
+								freshNoneImportOwner = owner;
 							}
+						}
+						if (initialRunImportAvailable) {
+							initialRunImportAvailable = false;
+							claimInitialRunImport(owner);
 						}
 						if (multiThreadingActive) {
 							if (running.compareAndSet(false, true)) {
 								workerRequired = true;
 								tripleStoreException = null;
 								tripleStoreExecutor.submit(() -> {
+									WriterTransaction asyncNativeTransaction = null;
 									try {
 										while (running.get()) {
 											{
-												tripleStore.startTransaction(storeReplayDecision);
+												// A running worker may be reused after its original generation
+												// completed.
+												// Admission publishes a distinct ticket before nextTransactionAsync
+												// becomes true.
+												asyncNativeTransaction = storeNativeTransaction;
+												tripleStore.startTransaction(storeReplayDecision,
+														asyncNativeTransaction);
 												tripleStoreOwnerThread = Thread.currentThread();
 												while (true) {
 													Operation queued = awaitAsyncOperation();
@@ -10173,52 +10824,40 @@ class LmdbSailStore implements SailStore {
 														if (beforeOperation != null) {
 															beforeOperation.run();
 														}
-														Operation op = queued instanceof DeadlineOperation timed
-																? timed.operation()
-																: queued;
-														QueryExecutionDeadline deadline = queued instanceof DeadlineOperation timed
-																? timed.deadline()
-																: null;
-														try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline
-																.enterScopedContext(deadline)) {
-															if (deadline != null && deadline.isExpired()) {
-																throw new QueryInterruptedException(
-																		"Query evaluation took too long");
+														Operation op = queued;
+														if (op == COMMIT_TRANSACTION) {
+															tripleStore.commit();
+															nextTransactionAsync = false;
+															asyncTransactionFinished = true;
+															signalAsyncProgress();
+															break;
+														} else if (op instanceof AsyncDrainOperation drain) {
+															completedAsyncDrain = drain;
+															signalAsyncProgress();
+														} else if (op == ROLLBACK_TRANSACTION) {
+															try {
+																tripleStore.rollback(asyncNativeTransaction);
+															} catch (IOException | RuntimeException
+																	| Error rollbackFailure) {
+																// Recovery may succeed, but the caller must still
+																// retain
+																// this cleanup failure.
+																asyncRollbackException = rollbackFailure;
+																throw rollbackFailure;
 															}
-															if (op == COMMIT_TRANSACTION) {
-																tripleStore.commit();
-																nextTransactionAsync = false;
-																asyncTransactionFinished = true;
-																signalAsyncProgress();
-																break;
-															} else if (op instanceof AsyncDrainOperation drain) {
-																completedAsyncDrain = drain;
-																signalAsyncProgress();
-															} else if (op == ROLLBACK_TRANSACTION) {
-																try {
-																	tripleStore.rollback();
-																} catch (IOException | RuntimeException
-																		| Error rollbackFailure) {
-																	// Recovery may succeed, but the caller must still
-																	// retain
-																	// this cleanup failure.
-																	asyncRollbackException = rollbackFailure;
-																	throw rollbackFailure;
-																}
-																nextTransactionAsync = false;
-																asyncTransactionFinished = true;
-																signalAsyncProgress();
-																break;
-															} else {
-																op.execute();
-																signalAsyncProgress();
-															}
+															nextTransactionAsync = false;
+															asyncTransactionFinished = true;
+															signalAsyncProgress();
+															break;
+														} else {
+															op.execute();
+															signalAsyncProgress();
 														}
 													} else {
 														if (!running.get()) {
 															logger.warn(
 																	"LmdbSailStore was closed while active transaction was waiting for the next operation. Forcing a rollback!");
-															tripleStore.rollback();
+															tripleStore.rollback(asyncNativeTransaction);
 															asyncTransactionFinished = true;
 															break;
 														} else if (Thread.interrupted()) {
@@ -10232,6 +10871,10 @@ class LmdbSailStore implements SailStore {
 											}
 											// Admission uses this monitor too: continue an admitted generation or let
 											// its producer submit a new task on the same dedicated native owner.
+											Runnable afterTransaction = afterAsyncTransactionForTest;
+											if (afterTransaction != null) {
+												afterTransaction.run();
+											}
 											synchronized (storeTxnStarted) {
 												if (!nextTransactionAsync) {
 													running.set(false);
@@ -10243,7 +10886,7 @@ class LmdbSailStore implements SailStore {
 										recordWriterCapacityFailure(storeTransactionOwner, e);
 										tripleStoreException = e;
 										try {
-											tripleStore.rollback();
+											tripleStore.rollback(asyncNativeTransaction);
 										} catch (Throwable rollbackFailure) {
 											asyncRollbackException = retainRollbackFailure(asyncRollbackException,
 													rollbackFailure);
@@ -10270,9 +10913,9 @@ class LmdbSailStore implements SailStore {
 								workerSubmitted = true;
 							}
 						} else {
-							tripleStore.startTransaction(storeReplayDecision);
+							tripleStore.startTransaction(storeReplayDecision, nativeTransaction);
 						}
-						valueStore.startTransaction(true);
+						valueStore.startTransaction(true, nativeTransaction);
 					} catch (Exception | Error e) {
 						if (workerRequired && !workerSubmitted) {
 							// There is no worker to consume a rollback request when executor submission itself failed.
@@ -10291,7 +10934,8 @@ class LmdbSailStore implements SailStore {
 		}
 
 		private void prepareReplayDecision() throws SailException {
-			checkWriterTransaction(writerOwner());
+			Object owner = writerOwner();
+			checkWriterTransaction(owner);
 			if (!nativeCheckpoints) {
 				try {
 					ensurePersistentSets();
@@ -10299,14 +10943,28 @@ class LmdbSailStore implements SailStore {
 					throw new SailException(failure);
 				}
 			}
+			if (storeReplayDecision != null && storeReplayDecisionOwner != owner && !storeTxnStarted.get()) {
+				// Prepared for another owner's attempt that never started its native transaction, so it was abandoned;
+				// its policy, such as NONE checkpoints or frozen replay, need not match this sink's.
+				storeReplayDecision = null;
+				storeNativeTransaction = null;
+			}
 			if (storeReplayDecision == null) {
 				storeReplayDecision = tripleStore.prepareReplayDecision();
+				storeReplayDecisionOwner = owner;
 				if (nativeCheckpoints) {
 					storeReplayDecision = storeReplayDecision.forNativeCheckpoints();
-				} else if (frozenReplayPublication(writerOwner())) {
+				} else if (frozenReplayPublication(owner)) {
 					storeReplayDecision = storeReplayDecision.forFrozenReplay();
 				}
-				valueStore.setReplayDecision(storeReplayDecision);
+				if (storeNativeTransaction == null) {
+					storeNativeTransaction = new WriterTransaction();
+				}
+				try {
+					valueStore.setReplayDecision(storeReplayDecision, storeNativeTransaction);
+				} catch (IOException failure) {
+					throw new SailException(failure);
+				}
 			}
 			try {
 				storeReplayDecision.check();
@@ -10474,7 +11132,9 @@ class LmdbSailStore implements SailStore {
 					}
 				}
 			}
-			valueStore.storeValues(values, ids, valueCount);
+			if (!storeFreshNoneValues(values, ids, valueCount)) {
+				valueStore.storeValues(values, ids, valueCount);
+			}
 			for (int i = 0; i < batch.size; i++) {
 				Statement statement = batch.statements[i];
 				batch.subjects[i] = ids[positions[4 * i]];
@@ -10494,6 +11154,55 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		/**
+		 * Assigns a NONE chunk's values from the initial import's fresh session instead of looking each one up. The
+		 * records join the chunk's native value transaction; a capacity replay rolls the session's provisional IDs back
+		 * with it and resolves the chunk again.
+		 *
+		 * @return false when the session is gone or no longer authoritative; the caller then uses dictionary lookups
+		 */
+		/** The fewest values for which a later NONE attempt continues a session an earlier one left. */
+		private static final int FRESH_NONE_CONTINUATION_VALUES = 64;
+
+		private boolean storeFreshNoneValues(Value[] values, long[] ids, int count) throws IOException {
+			ValueStore.FreshValueSession session = freshValueSession;
+			if (!nativeCheckpoints || session == null || freshValueSessionInvalidated) {
+				return false;
+			}
+			Object owner = writerOwner();
+			// Other NONE writers wait at the writer gate while an initial run import holds the store.
+			if (!explicit || mayHaveInferred || freshNoneImportOwner != null && freshNoneImportOwner != owner
+					|| noneWriteStates.size() != 1 && initialRunImport == null
+					|| !valueStore.isFreshValueSessionUsable(session)
+					|| valueStore.freshValueSessionSize(session) >= freshNoneValueLimit()) {
+				invalidateFreshValueSession();
+				return false;
+			}
+			if (freshNoneImportOwner == null) {
+				// An earlier committed attempt left the session exact. Continuing it saves a bulk chunk the dictionary
+				// lookups READ_COMMITTED also avoids. A small chunk looks up instead: its few values cost less than
+				// the session's publication, and a new value it stores spoils the session. Only a connection reports
+				// how its attempt ended (finishInitialNoneImport), which hands the session on or ends it.
+				if (count < FRESH_NONE_CONTINUATION_VALUES || !(owner instanceof LmdbStoreConnection)) {
+					return false;
+				}
+				freshNoneImportOwner = owner;
+				freshSessionReservedForNone = false;
+			}
+			ValueStore.FreshValueAssignment assignment = valueStore.assignFreshValues(session,
+					count == values.length ? values : Arrays.copyOf(values, count));
+			System.arraycopy(assignment.ids(), 0, ids, 0, count);
+			pendingFreshValueBatches.add(assignment.publication());
+			ValueStore.FreshValueEncoder encoder = valueStore.freshValueEncoder(session, assignment);
+			ValueStore.PreparedValueBatch preparedValues;
+			while ((preparedValues = encoder.next(MAX_BULK_OPERATION_CAPACITY)) != null) {
+				valueStore.persistPreparedValues(preparedValues);
+				preparedValues.releasePersistenceData();
+				pendingFreshValueBatches.add(preparedValues);
+			}
+			return true;
+		}
+
 		/** Returns the batch index of {@code value}, which equals {@code nextIndex} when the value is new. */
 		private static int dedupeIndex(ObjectIntHashMap<Value> indexes, Value[] values, Value value, int nextIndex) {
 			int index = indexes.getIfAbsent(value, -1);
@@ -10506,6 +11215,14 @@ class LmdbSailStore implements SailStore {
 		}
 
 		private void flushNoneBatch() throws IOException {
+			flushNoneBatch(false);
+		}
+
+		/**
+		 * @param finalFlush the batch is flushed because the transaction commits, flushes or reads, not because it is
+		 *                   full
+		 */
+		private void flushNoneBatch(boolean finalFlush) throws IOException {
 			NoneWriteState state = noneState();
 			PendingNoneBatch pending = state.pending;
 			if (pending == null || pending.size == 0) {
@@ -10517,10 +11234,20 @@ class LmdbSailStore implements SailStore {
 			long retainedBytes = state.pendingBytes - pending.estimatedStorageBytes(pending.size);
 			state.pendingBytes = 0L;
 			BulkAddQuadsOperation batch = pending.prepare();
+			LmdbInitialRunImport runImport = acceptingInitialRunImport();
+			LmdbInitialRunImport ownImport = initialRunImport;
+			if (ownImport != null && ownImport.owner == writerOwner() && !ownImport.completing()
+					&& (runImport == null || !freshSessionAccepts(batch.size))) {
+				// Inferred rows or a full fresh session take dictionary lookups, which need the import's lookup
+				// records: write the import so far first, then take the regular path.
+				completeInitialRunImport();
+				runImport = null;
+			}
 			retainedBytes = LmdbUtil.saturatedAdd(retainedBytes, batch.estimatedStorageBytes());
 			List<Statement> statements = Arrays.asList(batch.statements).subList(0, batch.size);
 			long valueEstimate = valueStore.estimateWriteBytes(statements);
-			long tripleEstimate = tripleStore.estimateWriteBytes(statements);
+			// An initial run import writes no triple index entry until it completes.
+			long tripleEstimate = runImport != null ? 0L : tripleStore.estimateWriteBytes(statements);
 			long bytes = LmdbUtil.saturatedAdd(valueEstimate, tripleEstimate);
 			// Reserve deferred native bookkeeping separately from batch payload. A chunk's size is bounded
 			// even when the maps are large enough that a percentage alone would allow unbounded dirty pages.
@@ -10544,9 +11271,12 @@ class LmdbSailStore implements SailStore {
 			state.bytes = LmdbUtil.saturatedAdd(state.bytes, bytes);
 			state.tripleBytes = LmdbUtil.saturatedAdd(state.tripleBytes, tripleEstimate);
 			try {
-				startTransaction(true);
+				// The ingest worker overlaps value resolution of the next batch with this batch's index writes. A final
+				// batch that opens its own chunk has nothing to overlap with, so it runs on this thread and avoids
+				// three thread hand-offs (batch, drain, commit): about 15% of a one-statement transaction.
+				startTransaction(!finalFlush || storeTxnStarted.get());
 				resolveBatchValues(batch);
-				submitOperation(batch);
+				submitResolvedAdd(batch);
 			} catch (IOException | RuntimeException failure) {
 				if (!recoverNoneCapacity(failure)) {
 					throw failure;
@@ -10556,6 +11286,132 @@ class LmdbSailStore implements SailStore {
 					|| state.bytes >= NoneWriteState.MAX_CHUNK_BYTES) {
 				// One input larger than the budget is unavoidable, but never shares a retained native chunk.
 				checkpointNoneChunk();
+			}
+		}
+
+		/** The active initial run import of this sink's owner while it still accepts rows, or {@code null}. */
+		private LmdbInitialRunImport acceptingInitialRunImport() {
+			LmdbInitialRunImport runImport = initialRunImport;
+			return explicit && runImport != null && runImport.owner == writerOwner() && !runImport.merging()
+					? runImport
+					: null;
+		}
+
+		/** Whether {@code storeFreshNoneValues} would resolve a batch of this size from the fresh session. */
+		private boolean freshSessionAccepts(int rows) {
+			ValueStore.FreshValueSession session = freshValueSession;
+			return nativeCheckpoints && explicit && !mayHaveInferred && session != null
+					&& !freshValueSessionInvalidated && freshNoneImportOwner == writerOwner()
+					&& valueStore.isFreshValueSessionUsable(session)
+					&& valueStore.freshValueSessionSize(session) + 4L * rows < freshNoneValueLimit();
+		}
+
+		/**
+		 * Claims the initial run import for the store's first native write, when that write is the only explicit NONE
+		 * import into an empty store and resolves values from a fresh session.
+		 */
+		private void claimInitialRunImport(Object owner) {
+			// An interrupted import resets the whole store to empty on the next open, so it may only start in a store
+			// that holds nothing else: committed namespaces live in the TripleStore environment too.
+			if (!nativeCheckpoints || !explicit || mayHaveInferred || freshValueSession == null
+					|| freshValueSessionInvalidated || freshNoneImportOwner != owner || noneWriteStates.size() != 1
+					|| !(owner instanceof LmdbStoreConnection connection) || connection.notifiesStatementListeners()
+					|| tripleStore.hasStagingIndexes() || !publishedNamespaces.isEmpty()
+					|| valueStore.getFormat().isLegacy()) {
+				return;
+			}
+			try {
+				LmdbInitialRunImport runImport = LmdbInitialRunImport.begin(owner, dataDir.toPath(),
+						tripleStore.initialImportFieldOrders(), forceSyncInitialRunImport);
+				valueStore.deferLookupRecords(runImport.valueLookups());
+				initialRunImportThread = Thread.currentThread();
+				initialRunImport = runImport;
+			} catch (IOException | RuntimeException failure) {
+				logger.warn("Unable to start an initial LMDB run import; importing through regular chunks", failure);
+			}
+		}
+
+		/** Adds a resolved batch to the initial run import, or queues it for the TripleStore writer. */
+		private void submitResolvedAdd(BulkAddQuadsOperation batch) throws IOException {
+			LmdbInitialRunImport runImport = acceptingInitialRunImport();
+			if (runImport == null) {
+				submitOperation(batch);
+				return;
+			}
+			Set<Long> unusedIds = mutationUnusedIds();
+			if (!unusedIds.isEmpty()) {
+				for (int i = 0; i < batch.size; i++) {
+					unusedIds.remove(batch.subjects[i]);
+					unusedIds.remove(batch.predicates[i]);
+					unusedIds.remove(batch.objects[i]);
+					unusedIds.remove(batch.contexts[i]);
+				}
+			}
+			runImport.addQuads(batch.subjects, batch.predicates, batch.objects, batch.contexts, batch.size);
+			if (batch.size > 0) {
+				recordNoneMutation(true);
+			}
+			batch.cancel();
+		}
+
+		/** Discards the unflushed batch and the open chunk, then completes the import from the checkpointed chunks. */
+		private void rollbackOpenChunkAndCompleteInitialRunImport() throws IOException {
+			NoneWriteState state = noneState();
+			state.pending = null;
+			state.pendingSink = null;
+			state.pendingBytes = 0L;
+			if (storeTxnStarted.get() && storeTransactionOwner == writerOwner()) {
+				rollbackPhysicalAttempt(writerOwner());
+			}
+			state.published();
+			backingTransactionGeneration = 0L;
+			completeInitialRunImport();
+		}
+
+		/**
+		 * Completes this sink owner's initial run import: commits the open chunk, then merges every run into the store
+		 * as one last native chunk. The unflushed batch, if any, stays pending and takes the regular path afterwards.
+		 */
+		private void completeInitialRunImport() throws IOException {
+			LmdbInitialRunImport runImport = initialRunImport;
+			if (runImport == null || runImport.owner != writerOwner() || runImport.completing()) {
+				return;
+			}
+			runImport.markCompleting();
+			boolean finished = false;
+			Throwable failure = null;
+			try {
+				NoneWriteState state = noneState();
+				if (storeTxnStarted.get()) {
+					checkpointNoneChunk();
+				}
+				runImport.markMerging();
+				InitialRunImportFinish finish = new InitialRunImportFinish(runImport);
+				growNoneMaps(runImport.projectedValueBytes(), runImport.projectedTripleBytes(), null);
+				state.work.add(finish);
+				state.containsAdds = true;
+				try {
+					startTransaction(true);
+					// The TripleStore writer appends the indexes while this thread writes the lookup records.
+					submitOperation(finish);
+					finish.writeValues();
+				} catch (IOException | RuntimeException capacity) {
+					if (!recoverNoneCapacity(capacity)) {
+						throw capacity;
+					}
+				}
+				checkpointNoneChunk();
+				if (forceSyncInitialRunImport) {
+					// The marker may only go once both environments hold the import durably.
+					tripleStore.syncEnvironment();
+					valueStore.syncEnvironment();
+				}
+				finished = true;
+			} catch (IOException | RuntimeException | Error e) {
+				failure = e;
+				throw e;
+			} finally {
+				endInitialRunImport(runImport, finished, failure);
 			}
 		}
 
@@ -10621,8 +11477,17 @@ class LmdbSailStore implements SailStore {
 								// A parked recovery permits another writer to reclaim/reuse numeric IDs. Resolving
 								// live mappings again does not repeat refcounts; only missing mappings are created.
 								resolveBatchValues(batch);
+								submitResolvedAdd(batch);
+								continue;
 							} else if (operation instanceof NoneRemoveOperation removal) {
 								removal.resolve();
+							} else if (operation instanceof InitialRunImportFinish finish) {
+								submitOperation(finish);
+								finish.writeValues();
+								continue;
+							} else if (operation instanceof PreparedNoneAddOperation prepared) {
+								prepared.store();
+								continue;
 							}
 							submitOperation(operation);
 						}
@@ -10743,7 +11608,7 @@ class LmdbSailStore implements SailStore {
 							valueDemand, true)) {
 						token = warning.token();
 					}
-					awaitGrowthEnd(token, QueryExecutionDeadline.current());
+					awaitGrowthEnd(token);
 					// Reacquire physical ownership before restoring Java locks needed by competing publications.
 					controller.acquireMutationLease();
 				}
@@ -10884,6 +11749,8 @@ class LmdbSailStore implements SailStore {
 				}
 				startTransaction(false);
 				flushPendingBulkAdd();
+				// Removal can retire values the fresh session still maps; later additions must look them up.
+				invalidateFreshValueSession();
 				final long subjID;
 				if (subj != null) {
 					subjID = valueStore.getId(subj);
@@ -10976,6 +11843,10 @@ class LmdbSailStore implements SailStore {
 			if (state.pending != null) {
 				state.pendingSink.flushNoneBatch();
 			}
+			// A removal must see the statements an initial run import still holds in its runs.
+			completeInitialRunImport();
+			// Removal can retire values the fresh session still maps; later additions must look them up.
+			invalidateFreshValueSession();
 			// Capture removals after the ordered native prefix; additions and removals share the bounded chunk.
 			long removed = 0L;
 			int limit = Math.max(1, Math.min(bulkOperationSize, NoneWriteState.MAX_CHUNK_ROWS));
@@ -11126,14 +11997,161 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public long approveAll(Iterable<? extends Statement> approved, Resource... contexts) {
-			if (nativeCheckpoints || bulkOperationSize <= 0) {
+			if (nativeCheckpoints) {
+				long prepared = approveAllPreparedNone(approved, contexts);
+				return prepared >= 0 ? prepared : SailSink.super.approveAll(approved, contexts);
+			}
+			if (bulkOperationSize <= 0) {
 				return SailSink.super.approveAll(approved, contexts);
 			}
 			return approveAllBulk(approved, contexts);
 		}
 
+		/**
+		 * Writes a NONE approval of a whole in-memory collection as one chunk through the prepared path: its values are
+		 * assigned once and its triples written in one ordered pass, as a READ_COMMITTED commit writes its buffered
+		 * statements. The chunk replays as one operation when a map fills.
+		 *
+		 * @return the number of approved statements, or -1 when the collection takes the per-statement path
+		 */
+		private long approveAllPreparedNone(Iterable<? extends Statement> approved, Resource[] contexts) {
+			if (!(approved instanceof Collection<?> collection)
+					|| contexts.length != 0 || !explicit
+					|| mayHaveInferred || sketchBasedJoinEstimator != null || !preparedStatementBatchesEnabled
+					|| collection.size() < PREPARED_BATCH_MIN_STATEMENTS
+					|| collection.size() > PREPARED_NONE_MAX_STATEMENTS) {
+				return -1;
+			}
+			acquireMutationStoreAccess();
+			try (SailWriteContinuation.Scope continuation = beginNativeContinuation()) {
+				NoneWriteState state = admitNoneState();
+				if (!preparedNoneSessionAvailable(state, collection.size())) {
+					return -1;
+				}
+				state.publicationRequested = false;
+				state.controller = this;
+				long approvedCount = 0L;
+				PreparedStatementBatch.Builder builder = PreparedStatementBatch.builder(collection.size());
+				for (Statement statement : approved) {
+					Statement captured = captureMutationStatement(statement);
+					builder.add(captured.getSubject(), captured.getPredicate(), captured.getObject(),
+							captured.getContext());
+					approvedCount++;
+				}
+				PreparedStatementBatch prepared = builder.build();
+				// Earlier work of this attempt forms its own chunks; an initial run import completes first, so this
+				// chunk's lookups find every value the import assigned.
+				if (state.pending != null) {
+					state.pendingSink.flushNoneBatch();
+				}
+				LmdbInitialRunImport runImport = initialRunImport;
+				if (runImport != null && runImport.owner == writerOwner() && !runImport.completing()) {
+					completeInitialRunImport();
+				}
+				if (storeTxnStarted.get()) {
+					checkpointNoneChunk();
+				}
+				// This chunk writes the store's first rows itself: its native start must not claim a run import.
+				initialRunImportAvailable = false;
+				PreparedNoneAddOperation operation = new PreparedNoneAddOperation(prepared);
+				growNoneMaps(operation.valueEstimate, operation.tripleEstimate, null);
+				startTransaction(true);
+				ValueStore.FreshValueSession session = freshValueSession;
+				if (session == null || freshValueSessionInvalidated || !valueStore.isFreshValueSessionUsable(session)) {
+					// The store's first native start did not open a session after all: take the regular chunks.
+					for (Statement statement : prepared) {
+						appendCapturedNoneStatement(statement);
+					}
+					return approvedCount;
+				}
+				freshNoneImportOwner = writerOwner();
+				freshSessionReservedForNone = false;
+				state.work.add(operation);
+				state.containsAdds = true;
+				state.rows += prepared.size();
+				state.bytes = LmdbUtil.saturatedAdd(state.bytes,
+						LmdbUtil.saturatedAdd(operation.valueEstimate, operation.tripleEstimate));
+				state.tripleBytes = LmdbUtil.saturatedAdd(state.tripleBytes, operation.tripleEstimate);
+				try {
+					operation.store();
+				} catch (IOException | RuntimeException failure) {
+					if (!recoverNoneCapacity(failure)) {
+						throw failure;
+					}
+				}
+				checkpointNoneChunk();
+				preparedNoneChunks++;
+				return approvedCount;
+			} catch (IOException e) {
+				rollbackAfterMutationFailure(e);
+				throw new SailException(e);
+			} catch (RuntimeException | Error e) {
+				rollbackAfterMutationFailure(e);
+				reportMutationFailure(writerOwner(), "Encountered an unexpected problem while trying to add statements",
+						null, false, e);
+				throw e;
+			} finally {
+				sinkStoreAccessLock.unlock();
+			}
+		}
+
+		/**
+		 * The prepared chunk assigns from the fresh session: a store's first write opens it, or the attempt owns it, or
+		 * an earlier committed NONE connection left it for this one.
+		 */
+		private boolean preparedNoneSessionAvailable(NoneWriteState state, int statements) throws IOException {
+			Object owner = writerOwner();
+			if (!(owner instanceof LmdbStoreConnection) || noneWriteStates.size() != 1 || freshValueSessionInvalidated
+					|| !freshImportEligible) {
+				return false;
+			}
+			ValueStore.FreshValueSession session = freshValueSession;
+			if (session == null) {
+				return state.rows == 0 && state.pending == null && !storeTxnStarted.get() && tripleStore.isEmpty();
+			}
+			return (freshNoneImportOwner == owner || freshNoneImportOwner == null && freshSessionReservedForNone)
+					&& valueStore.isFreshValueSessionUsable(session)
+					&& valueStore.freshValueSessionSize(session) + 4L * statements < freshNoneValueLimit();
+		}
+
+		/** One NONE chunk written through the prepared path; it replays as a whole when a map fills. */
+		private final class PreparedNoneAddOperation implements Operation {
+			private final PreparedStatementBatch prepared;
+			private final long valueEstimate;
+			private final long tripleEstimate;
+
+			private PreparedNoneAddOperation(PreparedStatementBatch prepared) {
+				this.prepared = prepared;
+				long values = 0L;
+				for (Value value : prepared.values()) {
+					// A data record and a lookup record per value, each bounded by its lexical form.
+					values = LmdbUtil.saturatedAdd(values,
+							2L * LmdbUtil.saturatedAdd(ValueStore.estimatedRetainedBytes(value), 64L));
+				}
+				this.valueEstimate = values;
+				this.tripleEstimate = tripleStore.estimateWriteBytes(prepared.size());
+			}
+
+			/** Assigns and writes the chunk; a replay assigns again after the rollback removed the provisional IDs. */
+			void store() throws IOException {
+				ValueStore.FreshValueSession session = freshValueSession;
+				if (session == null || !valueStore.isFreshValueSessionUsable(session)) {
+					throw new IllegalStateException("A prepared NONE chunk lost its fresh value session");
+				}
+				if (storeFreshPreparedStatements(prepared, session) > 0) {
+					recordNoneMutation(true);
+				}
+			}
+
+			@Override
+			public void execute() {
+				throw new UnsupportedOperationException("A prepared NONE chunk is stored by its sink");
+			}
+		}
+
 		private void reservePreparedImportCapacity(PreparedStatementBatch prepared) throws IOException {
-			valueStore.reservePreparedValueCapacity(freshValueSession, prepared);
+			// Size the reservation for the path storePreparedStatements will take: a stale session is dropped first.
+			valueStore.reservePreparedValueCapacity(freshValueSession(), prepared);
 			long indexBytes = (TripleIndex.MAX_KEY_LENGTH + PREPARED_INDEX_ENTRY_OVERHEAD)
 					* (tripleStore.secondaryIndexCount() + 1L) * prepared.size();
 			tripleStore.reserveWriteCapacity(indexBytes);
@@ -11281,7 +12299,7 @@ class LmdbSailStore implements SailStore {
 				return false;
 			}
 			try {
-				return pendingPreparedApprovals != null || freshValueSession != null
+				return pendingPreparedApprovals != null || freshValueSession != null && !freshSessionReservedForNone
 						|| !storeTxnStarted.get() && tripleStore.isEmpty();
 			} catch (IOException failure) {
 				throw new SailException(failure);
@@ -11386,6 +12404,11 @@ class LmdbSailStore implements SailStore {
 			}
 			if (freshValueSession == null) {
 				freshValueSessionInvalidated = true;
+			} else if (freshSessionReservedForNone || !valueStore.isFreshValueSessionUsable(freshValueSession)) {
+				// The session waits for the next NONE connection, or value GC or an ordinary insert left its map
+				// stale; this writer's values are looked up.
+				invalidateFreshValueSession();
+				return null;
 			}
 			return freshValueSession;
 		}
@@ -11782,14 +12805,12 @@ class LmdbSailStore implements SailStore {
 
 		private final StampedLongAdderLockManager lockManager;
 		private final ReadView readView;
-		private final QueryExecutionDeadline deadline;
 		private final long readStamp;
 		private final AtomicInteger references = new AtomicInteger(1);
 
 		private ParallelSnapshotLease(StampedLongAdderLockManager lockManager, long readStamp, ReadView readView) {
 			this.lockManager = lockManager;
 			this.readView = readView.retain();
-			this.deadline = QueryExecutionDeadline.current();
 			this.readStamp = readStamp;
 		}
 
@@ -11909,15 +12930,15 @@ class LmdbSailStore implements SailStore {
 		return partitions;
 	}
 
-	private double lmdbStatementWork(long subj, long pred, long obj, long context, double expectedRows) {
-		return lmdbStatementWork(tripleStore.getIndexName(subj, pred, obj, context), subj, pred, obj, context,
+	private double lmdbStatementWork(Txn txn, long subj, long pred, long obj, long context, double expectedRows) {
+		return lmdbStatementWork(tripleStore.getIndexName(txn, subj, pred, obj, context), subj, pred, obj, context,
 				expectedRows);
 	}
 
-	private double lmdbStatementWork(StatementOrder order, long subj, long pred, long obj, long context,
+	private double lmdbStatementWork(Txn txn, StatementOrder order, long subj, long pred, long obj, long context,
 			double expectedRows) {
-		String index = order == null ? tripleStore.getIndexName(subj, pred, obj, context)
-				: tripleStore.getIndexName(order, subj, pred, obj, context);
+		String index = order == null ? tripleStore.getIndexName(txn, subj, pred, obj, context)
+				: tripleStore.getIndexName(txn, order, subj, pred, obj, context);
 		return lmdbStatementWork(index, subj, pred, obj, context, expectedRows);
 	}
 
@@ -12166,9 +13187,6 @@ class LmdbSailStore implements SailStore {
 		}
 
 		private void checkOpen() {
-			if (lease.deadline != null && lease.deadline.isExpired()) {
-				throw new QueryInterruptedException("Query evaluation took too long");
-			}
 			lease.readView.ensureNativeSnapshotsValid();
 			if (closed.get()) {
 				throw new QueryInterruptedException("Parallel source has been closed");
@@ -12301,7 +13319,7 @@ class LmdbSailStore implements SailStore {
 			}
 			LmdbAdjacencyReadView view = exactAdjacencyView(false);
 			if (view != null && directAdjacency.offersUniversalCandidate(view)) {
-				double adjacencyRows = directAdjacency.estimateResultRows(view, subj, pred, obj, explicit);
+				double adjacencyRows = directAdjacency.estimateResultRows(view, subj, pred, obj, context, explicit);
 				double adjacencyWork = directAdjacency.estimateUniversalWork(view, order, subj, pred, obj, context,
 						explicit, adjacencyRows);
 				int adjacencyKey = LmdbStatementAccessArbiter.variantKey(
@@ -12309,7 +13327,7 @@ class LmdbSailStore implements SailStore {
 						adjacencyTraversal(order, subj, pred, obj));
 				double adjacencyLow = workLow(adjacencyWork);
 				double adjacencyHigh = workHigh(adjacencyWork);
-				if (order != null && tripleStore.getIndexName(order, subj, pred, obj, context).isEmpty()) {
+				if (order != null && tripleStore.getIndexName(txn, order, subj, pred, obj, context).isEmpty()) {
 					observeCandidate(observer, "ADJACENCY", adjacencyLow, adjacencyHigh, adjacencyKey, order, subj,
 							pred, obj, context);
 					long started = System.nanoTime();
@@ -12325,7 +13343,7 @@ class LmdbSailStore implements SailStore {
 					return LmdbStatementAccessArbiter.measured(direct, statementAccessEvidence, evidenceRegime(view),
 							adjacencyKey, openNanos, adjacencyWork, observer, true);
 				}
-				double lmdbWork = lmdbStatementWork(order, subj, pred, obj, context, adjacencyRows);
+				double lmdbWork = lmdbStatementWork(txn, order, subj, pred, obj, context, adjacencyRows);
 				int lmdbKey = LmdbStatementAccessArbiter.variantKey(LmdbStatementAccessArbiter.Source.LMDB, subj,
 						pred, obj, context, order, false, LmdbStatementAccessArbiter.TRAVERSAL_NATIVE_INDEX);
 				double lmdbLow = workLow(lmdbWork);
@@ -12383,7 +13401,7 @@ class LmdbSailStore implements SailStore {
 			if (observer != null) {
 				observer.access(false,
 						NativeLmdbQuerySource.LMDB_ENCOUNTER_ORDER_REASON + "[index="
-								+ tripleStore.getIndexName(subj, pred, obj, context) + "]",
+								+ tripleStore.getIndexName(txn, subj, pred, obj, context) + "]",
 						null, subj, pred, obj, context);
 			}
 			return tripleStore.getTriples(txn, subj, pred, obj, context, explicit);
@@ -12405,7 +13423,7 @@ class LmdbSailStore implements SailStore {
 			if (rangeApplies(range, subj, pred, obj, context)) {
 				LmdbAdjacencyReadView view = exactAdjacencyView(false);
 				if (view != null && directAdjacency.offersUniversalCandidate(view)) {
-					double adjacencyRows = directAdjacency.estimateResultRows(view, subj, pred, obj, explicit);
+					double adjacencyRows = directAdjacency.estimateResultRows(view, subj, pred, obj, context, explicit);
 					double adjacencyWork = directAdjacency.estimateRangeWork(view, range, subj, pred, obj, context,
 							explicit);
 					double lmdbWork = lmdbRangeWork(subj, pred, obj, context, range, adjacencyRows);
@@ -12471,7 +13489,7 @@ class LmdbSailStore implements SailStore {
 			}
 			return toRootScanPartitions(
 					tripleStore.planRootSplitKeys(txn, subj, pred, obj, context, explicit, targetPartitions),
-					tripleStore.getIndexName(subj, pred, obj, context));
+					tripleStore.getIndexName(txn, subj, pred, obj, context));
 		}
 
 		@Override
@@ -12502,7 +13520,7 @@ class LmdbSailStore implements SailStore {
 			if (observer != null) {
 				observer.access(false,
 						NativeLmdbQuerySource.LMDB_ENCOUNTER_ORDER_REASON + "[index="
-								+ tripleStore.getIndexName(order, subj, pred, obj, context) + "]",
+								+ tripleStore.getIndexName(txn, order, subj, pred, obj, context) + "]",
 						order, subj, pred, obj, context);
 			}
 			return tripleStore.getTriples(txn, order, subj, pred, obj, context, explicit);
@@ -12511,7 +13529,7 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public String indexName(long subj, long pred, long obj, long context) {
 			checkOpen();
-			String lmdb = tripleStore.getIndexName(subj, pred, obj, context);
+			String lmdb = tripleStore.getIndexName(txn, subj, pred, obj, context);
 			LmdbAdjacencyReadView universalView = exactAdjacencyView(false);
 			if (universalView != null) {
 				String arbitrated = directAdjacency.arbitratedIndexName(universalView, null, subj, pred, obj, context,
@@ -12534,7 +13552,7 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public String indexName(StatementOrder order, long subj, long pred, long obj, long context) {
 			checkOpen();
-			String lmdb = tripleStore.getIndexName(order, subj, pred, obj, context);
+			String lmdb = tripleStore.getIndexName(txn, order, subj, pred, obj, context);
 			LmdbAdjacencyReadView universalView = exactAdjacencyView(false);
 			if (universalView != null) {
 				String arbitrated = directAdjacency.arbitratedIndexName(universalView, order, subj, pred, obj,
@@ -12566,7 +13584,7 @@ class LmdbSailStore implements SailStore {
 					return direct;
 				}
 			}
-			return tripleStore.prefixRunPlan(prefixFields, subj, pred, obj, context);
+			return tripleStore.prefixRunPlan(txn, prefixFields, subj, pred, obj, context);
 		}
 
 		@Override
@@ -12673,10 +13691,10 @@ class LmdbSailStore implements SailStore {
 
 				private RecordIterator openArbitrated(LmdbAdjacencyReadView view, long subj, long pred, long obj,
 						long context, AdjacencyAccessObserver observer) throws IOException {
-					double adjacencyRows = directAdjacency.estimateResultRows(view, subj, pred, obj, explicit);
+					double adjacencyRows = directAdjacency.estimateResultRows(view, subj, pred, obj, context, explicit);
 					double adjacencyWork = directAdjacency.estimateUniversalWork(view, null, subj, pred, obj, context,
 							explicit, adjacencyRows);
-					double lmdbWork = lmdbStatementWork(subj, pred, obj, context, adjacencyRows);
+					double lmdbWork = lmdbStatementWork(txn, subj, pred, obj, context, adjacencyRows);
 					int adjacencyKey = LmdbStatementAccessArbiter.variantKey(
 							LmdbStatementAccessArbiter.Source.ADJACENCY, subj, pred, obj, context, null, false,
 							adjacencyTraversal(null, subj, pred, obj));
@@ -12968,10 +13986,10 @@ class LmdbSailStore implements SailStore {
 
 		private boolean hasArbitrated(LmdbAdjacencyReadView view, long subj, long pred, long obj, long context,
 				AdjacencyAccessObserver observer) throws IOException {
-			double adjacencyRows = directAdjacency.estimateResultRows(view, subj, pred, obj, explicit);
+			double adjacencyRows = directAdjacency.estimateResultRows(view, subj, pred, obj, context, explicit);
 			double adjacencyWork = directAdjacency.estimateUniversalWork(view, null, subj, pred, obj, context,
 					explicit, adjacencyRows);
-			double lmdbWork = lmdbStatementWork(subj, pred, obj, context, adjacencyRows);
+			double lmdbWork = lmdbStatementWork(txn, subj, pred, obj, context, adjacencyRows);
 			int adjacencyKey = LmdbStatementAccessArbiter.variantKey(LmdbStatementAccessArbiter.Source.ADJACENCY,
 					subj, pred, obj, context, null, false, true, adjacencyTraversal(null, subj, pred, obj));
 			int lmdbKey = LmdbStatementAccessArbiter.variantKey(LmdbStatementAccessArbiter.Source.LMDB, subj, pred,
@@ -13083,6 +14101,17 @@ class LmdbSailStore implements SailStore {
 				return directAdjacency.exactDegree(view, predicate, key, bySubject, explicit);
 			}
 			return OptionalLong.empty();
+		}
+
+		@Override
+		public OptionalLong exactPredicateCount(long predicate) {
+			checkOpen();
+			if (!hasStatementsInSource()) {
+				return OptionalLong.empty();
+			}
+			LmdbAdjacencyReadView view = exactAdjacencyView(true);
+			return view == null ? OptionalLong.empty()
+					: directAdjacency.exactPredicateCount(view, predicate, explicit);
 		}
 
 		@Override
@@ -13661,12 +14690,30 @@ class LmdbSailStore implements SailStore {
 			boolean releaseReadLock = true;
 			try {
 				assertNativeSourceOpen();
+				NativeSourceObservationForTest observation = nativeSourceObservationForTest;
+				if (observation != null) {
+					Txn valueTxn = readView.valueSnapshot().txnRef();
+					LmdbAdjacencyReadView view = adjacencyView;
+					LmdbAdjacencyPublishedState viewState = view == null ? null : view.state();
+					observation.state(new NativeSourceStateForTest(order, subj, pred, obj, context, snapshotRevision,
+							pinnedTxnVersion, txn.version(), txn.nativeTransactionId(), txn.isNativeActive(),
+							valueTxn.version(), valueTxn.nativeTransactionId(), valueTxn.isNativeActive(),
+							readView.valueSnapshot().nativeMapGeneration(),
+							readView.valueSnapshot().dictionaryDetached(),
+							adjacencyEligible, view != null && view.isExact(),
+							view == null ? null : view.fallbackReason(),
+							view == null ? -1L : view.snapshotRevision(),
+							viewState == null ? -1L : viewState.appliedRevision(),
+							tripleStore.getNativeCommitGeneration(),
+							valueStore.nativeCommitGeneration(), postReadyStatus, tripleStore.indexRebuildStatus(),
+							valueStore.indexRebuildStatus()));
+				}
 				if (!hasStatementsInSource()) {
 					return EmptyRecordIterator.INSTANCE;
 				}
 				if (directEligible() && directAdjacency.offersUniversalCandidate(adjacencyView)) {
 					double adjacencyRows = directAdjacency.estimateResultRows(adjacencyView, subj, pred, obj,
-							explicit);
+							context, explicit);
 					double adjacencyWork = directAdjacency.estimateUniversalWork(adjacencyView, order, subj, pred,
 							obj, context, explicit, adjacencyRows);
 					int adjacencyKey = LmdbStatementAccessArbiter.variantKey(
@@ -13674,7 +14721,7 @@ class LmdbSailStore implements SailStore {
 							adjacencyTraversal(order, subj, pred, obj));
 					double adjacencyLow = workLow(adjacencyWork);
 					double adjacencyHigh = workHigh(adjacencyWork);
-					if (order != null && tripleStore.getIndexName(order, subj, pred, obj, context).isEmpty()) {
+					if (order != null && tripleStore.getIndexName(txn, order, subj, pred, obj, context).isEmpty()) {
 						observeCandidate(observer, "ADJACENCY", adjacencyLow, adjacencyHigh, adjacencyKey, order,
 								subj, pred, obj, context);
 						long started = System.nanoTime();
@@ -13690,7 +14737,7 @@ class LmdbSailStore implements SailStore {
 						return LmdbStatementAccessArbiter.measured(direct, statementAccessEvidence,
 								evidenceRegime(adjacencyView), adjacencyKey, openNanos, adjacencyWork, observer, true);
 					}
-					double lmdbWork = lmdbStatementWork(order, subj, pred, obj, context, adjacencyRows);
+					double lmdbWork = lmdbStatementWork(txn, order, subj, pred, obj, context, adjacencyRows);
 					int lmdbKey = LmdbStatementAccessArbiter.variantKey(LmdbStatementAccessArbiter.Source.LMDB,
 							subj, pred, obj, context, order, false,
 							LmdbStatementAccessArbiter.TRAVERSAL_NATIVE_INDEX);
@@ -13763,7 +14810,7 @@ class LmdbSailStore implements SailStore {
 				if (observer != null) {
 					observer.access(false,
 							NativeLmdbQuerySource.LMDB_ENCOUNTER_ORDER_REASON + "[index="
-									+ tripleStore.getIndexName(subj, pred, obj, context) + "]",
+									+ tripleStore.getIndexName(txn, subj, pred, obj, context) + "]",
 							null, subj, pred, obj, context);
 				}
 				RecordIterator iterator = tripleStore.getTriples(txn, subj, pred, obj, context, explicit);
@@ -13797,7 +14844,7 @@ class LmdbSailStore implements SailStore {
 				}
 				if (directEligible() && directAdjacency.offersUniversalCandidate(adjacencyView)) {
 					double adjacencyRows = directAdjacency.estimateResultRows(adjacencyView, subj, pred, obj,
-							explicit);
+							context, explicit);
 					double adjacencyWork = directAdjacency.estimateRangeWork(adjacencyView, range, subj, pred, obj,
 							context, explicit);
 					double lmdbWork = lmdbRangeWork(subj, pred, obj, context, range, adjacencyRows);
@@ -13888,7 +14935,7 @@ class LmdbSailStore implements SailStore {
 				if (observer != null) {
 					observer.access(false,
 							NativeLmdbQuerySource.LMDB_ENCOUNTER_ORDER_REASON + "[index="
-									+ tripleStore.getIndexName(order, subj, pred, obj, context) + "]",
+									+ tripleStore.getIndexName(txn, order, subj, pred, obj, context) + "]",
 							order, subj, pred, obj, context);
 				}
 				RecordIterator iterator = tripleStore.getTriples(txn, order, subj, pred, obj, context, explicit);
@@ -13912,7 +14959,7 @@ class LmdbSailStore implements SailStore {
 				}
 				return toRootScanPartitions(
 						tripleStore.planRootSplitKeys(txn, subj, pred, obj, context, explicit, targetPartitions),
-						tripleStore.getIndexName(subj, pred, obj, context));
+						tripleStore.getIndexName(txn, subj, pred, obj, context));
 			} finally {
 				nativeSourceLock.unlockRead(readStamp);
 			}
@@ -13929,7 +14976,7 @@ class LmdbSailStore implements SailStore {
 			long readStamp = acquireNativeSourceReadLockUnchecked();
 			try {
 				assertNativeSourceOpen();
-				String lmdb = tripleStore.getIndexName(subj, pred, obj, context);
+				String lmdb = tripleStore.getIndexName(txn, subj, pred, obj, context);
 				if (directEligible()) {
 					String arbitrated = directAdjacency.arbitratedIndexName(adjacencyView, null, subj, pred, obj,
 							context, lmdb);
@@ -13953,7 +15000,7 @@ class LmdbSailStore implements SailStore {
 			long readStamp = acquireNativeSourceReadLockUnchecked();
 			try {
 				assertNativeSourceOpen();
-				String lmdb = tripleStore.getIndexName(order, subj, pred, obj, context);
+				String lmdb = tripleStore.getIndexName(txn, order, subj, pred, obj, context);
 				if (directEligible()) {
 					String arbitrated = directAdjacency.arbitratedIndexName(adjacencyView, order, subj, pred, obj,
 							context, lmdb);
@@ -13987,7 +15034,7 @@ class LmdbSailStore implements SailStore {
 						return direct;
 					}
 				}
-				return tripleStore.prefixRunPlan(prefixFields, subj, pred, obj, context);
+				return tripleStore.prefixRunPlan(txn, prefixFields, subj, pred, obj, context);
 			} finally {
 				nativeSourceLock.unlockRead(readStamp);
 			}
@@ -14131,10 +15178,11 @@ class LmdbSailStore implements SailStore {
 
 			private RecordIterator openArbitrated(long subj, long pred, long obj, long context,
 					AdjacencyAccessObserver observer) throws IOException {
-				double adjacencyRows = directAdjacency.estimateResultRows(adjacencyView, subj, pred, obj, explicit);
+				double adjacencyRows = directAdjacency.estimateResultRows(adjacencyView, subj, pred, obj, context,
+						explicit);
 				double adjacencyWork = directAdjacency.estimateUniversalWork(adjacencyView, null, subj, pred, obj,
 						context, explicit, adjacencyRows);
-				double lmdbWork = lmdbStatementWork(subj, pred, obj, context, adjacencyRows);
+				double lmdbWork = lmdbStatementWork(txn, subj, pred, obj, context, adjacencyRows);
 				int adjacencyKey = LmdbStatementAccessArbiter.variantKey(
 						LmdbStatementAccessArbiter.Source.ADJACENCY, subj, pred, obj, context, null, false,
 						adjacencyTraversal(null, subj, pred, obj));
@@ -14461,10 +15509,11 @@ class LmdbSailStore implements SailStore {
 
 		private boolean hasArbitrated(long subj, long pred, long obj, long context,
 				AdjacencyAccessObserver observer) throws IOException {
-			double adjacencyRows = directAdjacency.estimateResultRows(adjacencyView, subj, pred, obj, explicit);
+			double adjacencyRows = directAdjacency.estimateResultRows(adjacencyView, subj, pred, obj, context,
+					explicit);
 			double adjacencyWork = directAdjacency.estimateUniversalWork(adjacencyView, null, subj, pred, obj,
 					context, explicit, adjacencyRows);
-			double lmdbWork = lmdbStatementWork(subj, pred, obj, context, adjacencyRows);
+			double lmdbWork = lmdbStatementWork(txn, subj, pred, obj, context, adjacencyRows);
 			int adjacencyKey = LmdbStatementAccessArbiter.variantKey(LmdbStatementAccessArbiter.Source.ADJACENCY,
 					subj, pred, obj, context, null, false, true, adjacencyTraversal(null, subj, pred, obj));
 			int lmdbKey = LmdbStatementAccessArbiter.variantKey(LmdbStatementAccessArbiter.Source.LMDB, subj, pred,
@@ -14616,6 +15665,12 @@ class LmdbSailStore implements SailStore {
 				}
 				return OptionalLong.empty();
 			});
+		}
+
+		@Override
+		public OptionalLong exactPredicateCount(long predicate) {
+			return withNativeSourceRead(() -> !hasStatementsInSource() || !directEligible() ? OptionalLong.empty()
+					: directAdjacency.exactPredicateCount(adjacencyView, predicate, explicit));
 		}
 
 		@Override
@@ -15179,7 +16234,7 @@ class LmdbSailStore implements SailStore {
 			long predPattern = pred == null ? LmdbValue.UNKNOWN_ID : 1L;
 			long objPattern = obj == null ? LmdbValue.UNKNOWN_ID : 1L;
 			long contextPattern = contexts.length == 1 ? contextID : LmdbValue.UNKNOWN_ID;
-			return tripleStore.getSupportedOrders(subjPattern, predPattern, objPattern, contextPattern);
+			return tripleStore.getSupportedOrders(txn, subjPattern, predPattern, objPattern, contextPattern);
 		}
 
 		@Override

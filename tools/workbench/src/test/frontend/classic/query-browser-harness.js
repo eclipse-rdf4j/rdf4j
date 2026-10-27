@@ -184,11 +184,11 @@ function createQueryBrowserHarness(options = {}) {
         this.options = options;
         createdBlobs.push(this);
     };
-    context.URL = {
-        createObjectURL() {
+    context.URL = class BrowserURL extends URL {
+        static createObjectURL() {
             return 'blob:query-explanation';
-        },
-        revokeObjectURL() {
+        }
+        static revokeObjectURL() {
         }
     };
     context.window.URL = context.URL;

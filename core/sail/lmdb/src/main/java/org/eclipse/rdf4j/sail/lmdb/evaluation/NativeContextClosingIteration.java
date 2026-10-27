@@ -97,12 +97,20 @@ final class NativeContextClosingIteration
 		}
 	}
 
+	/**
+	 * Forwards the request to the delegate chain. A carrier that owns its execution context also cancels the context's
+	 * root token, so that every operator and worker of the evaluation stops; a borrowed context belongs to an enclosing
+	 * evaluation that decides for itself.
+	 */
 	@Override
 	public boolean requestCancellation() {
-		if (closed || !(delegate instanceof CooperativeCancellation cancellation)) {
+		if (closed) {
 			return false;
 		}
-		return cancellation.requestCancellation();
+		if (closeContext) {
+			context.cancellation().requestCancellation();
+		}
+		return CooperativeCancellation.forward(delegate) || closeContext;
 	}
 
 	@Override

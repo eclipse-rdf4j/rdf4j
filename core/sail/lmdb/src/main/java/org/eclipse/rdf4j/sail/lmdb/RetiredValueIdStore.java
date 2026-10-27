@@ -281,6 +281,11 @@ final class RetiredValueIdStore {
 		return pendingCount + pendingChangeCount > 0;
 	}
 
+	/** Whether the open writer recorded retirement changes that its commit must publish. */
+	boolean hasTransactionChanges() {
+		return pendingChangeCount > 0;
+	}
+
 	void transactionCommitted() {
 		pendingCount += pendingChangeCount;
 		pendingChangeCount = 0;
@@ -396,6 +401,7 @@ final class RetiredValueIdStore {
 				processed++;
 				rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_NEXT);
 			}
+			E(rc);
 		} finally {
 			mdb_cursor_close(cursor);
 		}

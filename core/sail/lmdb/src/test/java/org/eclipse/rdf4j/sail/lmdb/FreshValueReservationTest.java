@@ -21,6 +21,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_env_stat;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_env;
 
 import java.io.File;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -179,7 +180,7 @@ class FreshValueReservationTest {
 		LmdbStoreConfig config = new LmdbStoreConfig().setAutoGrow(true)
 				.setValueDBSize(64L * 1024)
 				.setInlineLiterals(false);
-		ValueStore store = new ValueStore(directory, config);
+		PreparedReservationObservedStore store = new PreparedReservationObservedStore(directory, config);
 		try {
 			SimpleValueFactory factory = SimpleValueFactory.getInstance();
 			String namespace = "urn:shared:" + "n".repeat(128 * 1024) + ":";
@@ -190,35 +191,38 @@ class FreshValueReservationTest {
 			}
 			ValueStore.FreshValueSession session = store.startFreshValueSessionIfEmpty();
 			long initialMapSize = mapSize(store);
-			AtomicLong projectedBytes = new AtomicLong();
-			store.setMapGrowthRequestListener((kind, bytes, capacityRequired) -> projectedBytes.set(bytes));
+			store.clearPreparedReservationObservation();
 			store.reservePreparedValueClosureCapacity(session, input);
+			long requiredBytes = store.preparedReservationRequiredBytes();
+			assertTrue(requiredBytes > 0L, "the long-namespace batch must produce an observed native reservation");
 			long reservedMapSize = mapSize(store);
-			System.out.println("Shared namespace projection initial=" + initialMapSize + " projected="
-					+ projectedBytes.get() + " reserved=" + reservedMapSize);
+			System.out.println("Shared namespace reservation initial=" + initialMapSize + " required="
+					+ requiredBytes + " reserved=" + reservedMapSize);
 			String shortNamespace = "urn:shared:";
-			long baselineProjection;
-			ValueStore baseline = new ValueStore(new File(directory, "short-namespace"), config);
+			long baselineRequiredBytes;
+			PreparedReservationObservedStore baseline = new PreparedReservationObservedStore(
+					new File(directory, "short-namespace"), config);
 			try {
 				Value[] shortInput = new Value[input.length];
 				for (int i = 0; i < shortInput.length; i++) {
 					shortInput[i] = factory.createLiteral("value-" + i, factory.createIRI(shortNamespace, "datatype"));
 				}
-				AtomicLong baselineBytes = new AtomicLong();
-				baseline.setMapGrowthRequestListener((kind, bytes, capacityRequired) -> baselineBytes.set(bytes));
 				ValueStore.FreshValueSession baselineSession = baseline.startFreshValueSessionIfEmpty();
 				assertTrue(baselineSession != null, "both matched projections must select actual fresh reservation");
+				baseline.clearPreparedReservationObservation();
 				baseline.reservePreparedValueClosureCapacity(baselineSession, shortInput);
-				baselineProjection = baselineBytes.get();
+				baselineRequiredBytes = baseline.preparedReservationRequiredBytes();
+				assertTrue(baselineRequiredBytes > 0L,
+						"the short-namespace batch must produce an observed native reservation");
 			} finally {
 				baseline.close();
 			}
-			assertTrue(projectedBytes.get() > baselineProjection, "the longer namespace must contribute native bytes");
+			assertTrue(requiredBytes > baselineRequiredBytes, "the longer namespace must contribute native bytes");
 			// The shared dependency contributes one UTF-8 payload, plus leaf/overflow page rounding. Structural
 			// pages per literal and the fullness policy are identical in these matched fresh stores.
 			long namespaceDeltaBound = ValueStore.utf8LengthUpperBound(namespace)
 					- ValueStore.utf8LengthUpperBound(shortNamespace) + 2L * pageSize(store);
-			assertTrue(projectedBytes.get() - baselineProjection <= namespaceDeltaBound,
+			assertTrue(requiredBytes - baselineRequiredBytes <= namespaceDeltaBound,
 					"one shared namespace contribution must be independent of the literal count");
 			long reservedGrowth = store.getBulkMapGrowthCount();
 			long[] ids = persist(store, session, input);
@@ -236,6 +240,28 @@ class FreshValueReservationTest {
 					+ ", growthCount=" + reservedGrowth + ", values=" + input.length);
 		} finally {
 			store.close();
+		}
+	}
+
+	private static final class PreparedReservationObservedStore extends ValueStore {
+
+		private final AtomicLong requiredBytes = new AtomicLong(-1L);
+
+		private PreparedReservationObservedStore(File directory, LmdbStoreConfig config) throws IOException {
+			super(directory, config);
+		}
+
+		@Override
+		void observePreparedValueReservationForTest(long requiredBytes) {
+			this.requiredBytes.set(requiredBytes);
+		}
+
+		private void clearPreparedReservationObservation() {
+			requiredBytes.set(-1L);
+		}
+
+		private long preparedReservationRequiredBytes() {
+			return requiredBytes.get();
 		}
 	}
 

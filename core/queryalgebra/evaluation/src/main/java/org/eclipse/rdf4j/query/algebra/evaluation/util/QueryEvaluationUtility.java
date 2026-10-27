@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -660,6 +661,13 @@ public class QueryEvaluationUtility {
 				}
 
 				@Override
+				public void meet(Graph graph) {
+					// Graph is a known lexical frame. Its selector depends on the current mapping, but a pure body
+					// remains repeatable on the same dataset snapshot; unknown-node safety is a separate question.
+					meetNode(graph);
+				}
+
+				@Override
 				public void meetOther(QueryModelNode node) {
 					unknownNodes.add(node);
 					super.meetOther(node);
@@ -716,6 +724,7 @@ public class QueryEvaluationUtility {
 			boolean fatal = node instanceof Service service && !service.isSilent();
 			boolean mappingParameterized = node instanceof ZeroLengthPath || node instanceof ArbitraryLengthPath
 					|| node instanceof Service || node instanceof Lateral || node instanceof TripleRef
+					|| node instanceof Graph
 					|| unknownNodes.contains(node);
 			boolean containsLateral = node instanceof Lateral;
 			boolean containsExtension = node instanceof Extension;

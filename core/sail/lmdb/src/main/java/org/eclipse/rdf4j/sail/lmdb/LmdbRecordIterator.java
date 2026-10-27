@@ -53,6 +53,10 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private int rangePrefixLength;
 
+	Txn transaction() {
+		return txnRef;
+	}
+
 	private final Txn txnRef;
 
 	private long txnRefVersion;

@@ -114,6 +114,13 @@ class LmdbPersistedFreeIdVisibilityTest {
 		CloseableValueStore valuesResource = new CloseableValueStore(openValues(directory, config, format));
 		ValueStore values = valuesResource.values();
 		try (valuesResource) {
+			assertTrue(values.hasTrustedReferenceCounts(),
+					"the fresh standalone dictionary must have exact counts before this retirement fixture mutates it");
+			values.completeStoreInitialization(ids -> {
+				// This fixture has no TripleStore or statements, so no retired owner is triple-live.
+			});
+			assertTrue(values.hasTrustedReferenceCounts(),
+					"installing the known-empty triple owner set must preserve exact count authority");
 			values.startTransaction(true);
 			storeReplacementChildren(values, replacement);
 			long id = values.storeValue(original);
@@ -124,6 +131,14 @@ class LmdbPersistedFreeIdVisibilityTest {
 			values.gcIds(Set.of(id), new HashSet<>());
 			values.commit();
 			assertEquals(LmdbValue.UNKNOWN_ID, values.getId(original));
+			assertTrue(values.getLmdbStats().get("unused_ids").entries() > 0L,
+					"retirement must first persist the unused owner cohort");
+			int visited = values.reclaimPersistedUnusedIdsBatch(64);
+			assertTrue(visited > 0, "known-empty triple liveness must visit the finite unused cohort");
+			assertEquals(0L, values.getLmdbStats().get("unused_ids").entries(),
+					"the finite known-unused cohort must complete before persisting the free-ID fixture");
+			assertTrue(values.getLmdbStats().get("free_ids").entries() > 0L,
+					"completed unused-value reclamation must persist its eligible free IDs");
 			return id;
 		}
 	}
