@@ -388,6 +388,9 @@ class LmdbOptimizerPipelineTest {
 			assertFalse(initialOptimizers.stream().anyMatch(LmdbSketchJoinOptimizer.class::isInstance));
 
 			addSingleStatement(store, "urn:adaptive");
+			// Post-ready maintenance publishes the estimator provider and discards stale sketches; stop and rebuild
+			// only once that has happened, or its discard lands after this rebuild and clears readiness again.
+			LmdbGcTestMaintenance.awaitPostReady(store);
 			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
 			estimator.stop();
 			estimator.rebuild();
