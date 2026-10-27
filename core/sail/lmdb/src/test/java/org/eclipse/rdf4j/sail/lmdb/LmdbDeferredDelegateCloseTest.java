@@ -147,7 +147,17 @@ class LmdbDeferredDelegateCloseTest {
 	@ParameterizedTest
 	@EnumSource(Drain.class)
 	void everyQueuedDelegateClosesAndPreservesFailureOrder(Drain drain, @TempDir Path directory) throws Exception {
-		Path transcript = directory.resolve("delegate-close-child.txt");
+		everyQueuedDelegateClosesAndPreservesFailureOrder(drain, directory, "delegate-close-child.txt");
+	}
+
+	private void everyQueuedDelegateClosesAndPreservesFailureOrder(Drain drain, Path directory, String transcriptName)
+			throws Exception {
+		String configuredTranscriptDirectory = System
+				.getProperty("rdf4j.lmdb.deferredDelegateCloseTranscriptDirectory");
+		Path transcriptDirectory = configuredTranscriptDirectory == null ? directory
+				: Path.of(configuredTranscriptDirectory);
+		Files.createDirectories(transcriptDirectory);
+		Path transcript = transcriptDirectory.resolve(transcriptName);
 		long diagnosticAtMillis = System.currentTimeMillis()
 				+ TimeUnit.SECONDS.toMillis(CHILD_TIMEOUT_SECONDS) - CHILD_DIAGNOSTIC_LEAD_MILLIS;
 		Process child = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
@@ -170,6 +180,11 @@ class LmdbDeferredDelegateCloseTest {
 		assertThat(output).contains("DELEGATES_RELEASED " + drain);
 	}
 
+	@Test
+	void openerCleanupFailureAllowsRepositoryShutdown(@TempDir Path directory) throws Exception {
+		everyQueuedDelegateClosesAndPreservesFailureOrder(Drain.OPENER_SIGNAL_CLEANUP, directory);
+	}
+
 	public static void main(String[] arguments) throws Exception {
 		Drain drain = Drain.valueOf(arguments[0]);
 		if (drain.name().startsWith("OPENER_")) {
@@ -182,7 +197,7 @@ class LmdbDeferredDelegateCloseTest {
 			diagnostics.start();
 			try {
 				diagnostics.phase("opener probe starting");
-				LmdbReplayOpenCloseProbe.run(Path.of(arguments[1]), drain.name(), diagnostics);
+				LmdbReplayOpenCloseProbe.run(Path.of(arguments[1]), drain.name(), diagnostics, diagnostics::observe);
 				diagnostics.phase("opener probe completed");
 				System.out.println("DELEGATES_RELEASED " + drain);
 			} finally {
@@ -275,6 +290,7 @@ class LmdbDeferredDelegateCloseTest {
 		private final long diagnosticAtMillis;
 		private final Map<String, String> phases = new ConcurrentHashMap<>();
 		private final AtomicBoolean dumped = new AtomicBoolean();
+		private volatile LmdbSailStore backingStore;
 
 		ChildDiagnostics(String mode, long diagnosticAtMillis) {
 			this.mode = mode;
@@ -288,6 +304,10 @@ class LmdbDeferredDelegateCloseTest {
 
 		void phase(String phase) {
 			phases.put(Thread.currentThread().getName(), phase);
+		}
+
+		void observe(LmdbSailStore backingStore) {
+			this.backingStore = backingStore;
 		}
 
 		void start() {
@@ -318,6 +338,11 @@ class LmdbDeferredDelegateCloseTest {
 					System.currentTimeMillis(), CHILD_TIMEOUT_SECONDS);
 			System.err.println("Recent lifecycle phase by thread:");
 			new TreeMap<>(phases).forEach((thread, phase) -> System.err.printf("  %s: %s%n", thread, phase));
+			LmdbSailStore backing = backingStore;
+			if (backing != null) {
+				System.err.println("Actual growth coordinator and driver:");
+				System.err.println(backing.growthDiagnosticForTest());
+			}
 			System.err.println("ThreadMXBean.dumpAllThreads:");
 			ThreadMXBean threadBean = ManagementFactory.getThreadMXBean();
 			for (ThreadInfo thread : threadBean.dumpAllThreads(true, true)) {

@@ -26,13 +26,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.Function;
 import java.util.function.Supplier;
-import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -47,7 +45,6 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -90,7 +87,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	private static final Logger logger = LoggerFactory.getLogger(SailSourceConnection.class);
 	// Caps dataset-acquisition retry backoff at about one millisecond.
 	private static final int MAX_RETRY_BACKOFF_SHIFT = 10;
-	// Bounds acquisition retries (roughly one second of backoff) for reads that have no query deadline.
+	// Bounds acquisition retries (roughly one second of backoff); a query time limit interrupts them sooner.
 	private static final int MAX_DATASET_ACQUISITION_RETRIES = 1000;
 
 	/*-----------*
@@ -613,10 +610,6 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			}
 			if (Thread.currentThread().isInterrupted()) {
 				throw new SailException("Interrupted while retrying dataset acquisition", retryFailure);
-			}
-			QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
-			if (deadline != null && deadline.isExpired()) {
-				throw new QueryInterruptedException("Query evaluation took too long", retryFailure);
 			}
 			if (retries >= MAX_DATASET_ACQUISITION_RETRIES) {
 				throw new SailConflictException("Unable to acquire a consistent dataset after " + retries

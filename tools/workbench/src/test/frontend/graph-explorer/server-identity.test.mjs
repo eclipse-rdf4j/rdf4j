@@ -49,6 +49,45 @@ test("missing authoritative identity never consumes or creates persistent queues
 });
 
 
+test("Graph Explorer sends the Workbench request token on its same-origin POST", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalDocument = globalThis.document;
+  const token = "a".repeat(64);
+  globalThis.document = {
+    cookie: `rdf4j-workbench-csrf=${token}`,
+    location: { href: "https://example.test/wb/repositories/repo/graph", origin: "https://example.test" }
+  };
+  globalThis.fetch = async (_url, options) => {
+    assert.equal(options.headers["X-RDF4J-CSRF-Token"], token);
+    return new Response(JSON.stringify({head:{vars:[]},results:{bindings:[]}}), {status:200});
+  };
+  try {
+    await queryRepository("https://example.test/wb/repositories/repo/graph", "SELECT * {}");
+  } finally {
+    globalThis.fetch = originalFetch;
+    globalThis.document = originalDocument;
+  }
+});
+
+test("Graph Explorer does not send the Workbench token to an external endpoint", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalDocument = globalThis.document;
+  globalThis.document = {
+    cookie: `rdf4j-workbench-csrf=${"a".repeat(64)}`,
+    location: { href: "https://example.test/wb/graph", origin: "https://example.test" }
+  };
+  globalThis.fetch = async (_url, options) => {
+    assert.equal(options.headers["X-RDF4J-CSRF-Token"], undefined);
+    return new Response(JSON.stringify({head:{vars:[]},results:{bindings:[]}}), {status:200});
+  };
+  try {
+    await queryRepository("https://external.example/graph", "SELECT * {}");
+  } finally {
+    globalThis.fetch = originalFetch;
+    globalThis.document = originalDocument;
+  }
+});
+
 test("a cookie switch in another tab cannot merge server B results into server A", async () => {
   const original = globalThis.fetch;
   globalThis.fetch = async () => new Response(JSON.stringify({head:{vars:[]},results:{bindings:[]}}),

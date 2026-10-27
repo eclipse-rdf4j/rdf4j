@@ -41,6 +41,12 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 /** Exercises the actual opener's accepted-replay close boundary with an actual stored cooperative signal. */
 final class LmdbReplayOpenCloseProbe {
 	static void run(Path directory, String mode, Consumer<String> phase) throws Exception {
+		run(directory, mode, phase, backing -> {
+		});
+	}
+
+	static void run(Path directory, String mode, Consumer<String> phase, Consumer<LmdbSailStore> observer)
+			throws Exception {
 		phase.accept("constructing LMDB store");
 		Gate gate = new Gate(mode, phase);
 		LmdbStore store = new LmdbStore(directory.toFile(), new LmdbStoreConfig("spoc,posc")
@@ -57,6 +63,7 @@ final class LmdbReplayOpenCloseProbe {
 		};
 		phase.accept("initializing LMDB store");
 		store.init();
+		observer.accept(store.getBackingStore());
 		phase.accept("LMDB store initialized");
 		try (var seed = store.getConnection()) {
 			phase.accept("seeding namespace");

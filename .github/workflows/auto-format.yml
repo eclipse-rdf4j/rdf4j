@@ -49,7 +49,7 @@ jobs:
 
       - name: Apply formatting
         if: steps.pr.outputs.same_repo == 'true'
-        run: mvn -B -Pformatting spotless:apply
+        run: mvn -B -Pformatting spotless:apply --fail-at-end
 
       - name: Get last commit author
         if: steps.pr.outputs.same_repo == 'true'

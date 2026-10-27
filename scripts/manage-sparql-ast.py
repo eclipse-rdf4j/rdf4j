@@ -180,7 +180,7 @@ def prepare_build(root: Path, build: Path, work: Path) -> None:
 def format_sources(root: Path, build: Path, work: Path, online: bool) -> None:
     """Use the actual project formatter configuration, entirely in scratch."""
     command = ["mvn", "-B", "-ntp", "-Dmaven.repo.local=.m2_repo", "-Pformatting",
-               "-Dformatter.skip=false", "-Denforcer.skip=true", "-pl", MODULE.as_posix(), "process-resources"]
+               "-Dformatter.skip=false", "-Denforcer.skip=true", "-pl", MODULE.as_posix(), "process-resources", "--fail-at-end"]
     if not online:
         command.insert(1, "-o")
     run(command, build, work / "formatter.log")

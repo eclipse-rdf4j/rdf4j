@@ -95,11 +95,11 @@ import org.openjdk.jmh.runner.options.TimeValue;
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G", "-Drdf4j.lmdb.directAdjacency.synchronousMaintenance=true",
 		"-Drdf4j.lmdb.themeQueryBenchmark.waitForDirectAdjacency=true",
-		"-Drdf4j.lmdb.themeQueryBenchmark.waitForValueOverlay=false",
+		"-Drdf4j.lmdb.themeQueryBenchmark.waitForValueOverlay=true",
 		"-Drdf4j.lmdb.janinoCodegen.factorGuardPeeling=true"
 
-		, "-Drdf4j.lmdb.valueOverlay.maxBytes=0", "-Drdf4j.lmdb.valueOverlay.retained.maxBytes=0",
-		"-Drdf4j.lmdb.valueOverlay.reverseSlots=0", "-Drdf4j.lmdb.valueOverlay.sharedPrefixes=true",
+		, "-Drdf4j.lmdb.valueOverlay.maxBytes=4294967296", "-Drdf4j.lmdb.valueOverlay.retained.maxBytes=2147483648",
+		"-Drdf4j.lmdb.valueOverlay.reverseSlots=65536", "-Drdf4j.lmdb.valueOverlay.sharedPrefixes=true",
 		"-Drdf4j.lmdb.valueOverlay.optimalTokenParsing=true", "-Drdf4j.lmdb.valueOverlay.vectorMinSavingPercent=8",
 //		"-Drdf4j.lmdb.themeQueryBenchmark.forcedStrategy=packedFtree"
 })

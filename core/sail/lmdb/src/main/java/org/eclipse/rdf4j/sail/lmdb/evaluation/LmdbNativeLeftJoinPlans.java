@@ -19,10 +19,11 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.slotsOf;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 @Experimental
 final class LeftJoinPlan implements SlotPlan {
@@ -329,11 +330,13 @@ final class LexicalLeftJoinCursor implements RowCursor {
 	private final RowCursor left;
 	private final int[] sharedSlots;
 	private final int[] rightSlots;
-	private final List<long[]> rightRows;
-	private int rightIndex;
+	private final NativeResultReplay rightRows;
+	private NativeResultCursor right;
 	private int activeMark = -1;
 	private boolean haveLeft;
 	private boolean matchedLeft;
+	private boolean closed;
+	private Throwable terminalFailure;
 	private int pollTick;
 
 	LexicalLeftJoinCursor(SlotPlan leftPlan, SlotPlan rightPlan, int[] sharedSlots, RowState row)
@@ -342,95 +345,178 @@ final class LexicalLeftJoinCursor implements RowCursor {
 		this.sharedSlots = sharedSlots;
 		this.rightSlots = slotsOf(rightPlan.producedMask());
 		this.rightRows = materializeRight(rightPlan);
-		this.left = leftPlan.open(row);
+		try {
+			this.left = leftPlan.open(row);
+		} catch (IOException | RuntimeException | Error failure) {
+			closeSuppressing(rightRows, failure);
+			throw failure;
+		}
 	}
 
-	private List<long[]> materializeRight(SlotPlan rightPlan) throws IOException {
-		ArrayList<long[]> materialized = new ArrayList<>();
+	private NativeResultReplay materializeRight(SlotPlan rightPlan) throws IOException {
+		String[] names = new String[rightSlots.length];
+		for (int i = 0; i < rightSlots.length; i++) {
+			names[i] = row.layout.slotName(rightSlots[i]);
+		}
+		NativeResultRow.Schema schema = new NativeResultRow.Schema(names);
+		NativeExecutionContext context = row.source instanceof SyntheticValueSource synthetic
+				? synthetic.executionContext()
+				: null;
+		// This replay belongs to the enclosing cursor. It must not retain a context whose source cleanup
+		// can itself be waiting for that cursor; external lexical readers retain their owners separately.
+		NativeResultReplay materialized = new NativeResultReplay(schema, context, row.cancellation,
+				row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()),
+				Math.max(8192L, NativeCountGroupStore.configuredMaxBytes()), false)
+						.resolvingStoreTermsWith(row.source);
 		int entryMark = row.mark();
-		try (RowCursor cursor = rightPlan.open(row)) {
-			while (!row.cancellation.isCancellationRequested() && cursor.next()) {
-				LmdbNativeProbeDeadline.poll(++pollTick);
-				long[] values = new long[rightSlots.length];
-				for (int i = 0; i < rightSlots.length; i++) {
-					values[i] = row.slots[rightSlots[i]];
+		try {
+			try (RowCursor cursor = rightPlan.open(row)) {
+				while (true) {
+					check();
+					boolean next = cursor.next();
+					check();
+					if (!next) {
+						break;
+					}
+					NativeResultCell[] cells = new NativeResultCell[rightSlots.length];
+					for (int i = 0; i < rightSlots.length; i++) {
+						int slot = rightSlots[i];
+						NativeResultCell summary = row.summaryCell(slot);
+						cells[i] = summary != null ? summary
+								: row.slots[slot] == UNKNOWN
+										? NativeResultCell.unbound()
+										: NativeResultCell.term(term(row.slots[slot]));
+					}
+					materialized.append(new NativeResultRow(schema, cells));
 				}
-				materialized.add(values);
 			}
+			check();
+			materialized.finish();
+			return materialized;
+		} catch (IOException | RuntimeException | Error failure) {
+			closeSuppressing(materialized, failure);
+			throw failure;
 		} finally {
 			row.rollback(entryMark);
 		}
-		return List.copyOf(materialized);
 	}
 
 	@Override
 	public boolean next() throws IOException {
-		releaseRight();
-		while (!row.cancellation.isCancellationRequested()) {
-			if (haveLeft) {
-				while (rightIndex < rightRows.size()) {
-					LmdbNativeProbeDeadline.poll(++pollTick);
-					long[] rightValues = rightRows.get(rightIndex++);
-					if (sharedKeyMatches(rightValues) && bindRight(rightValues)) {
-						matchedLeft = true;
+		if (terminalFailure != null) {
+			NativeContextClosingIteration.throwFailure(terminalFailure);
+		}
+		if (closed) {
+			return false;
+		}
+		try {
+			releaseRight();
+			while (true) {
+				check();
+				if (haveLeft) {
+					NativeResultRow values;
+					while ((values = right.next()) != null) {
+						check();
+						if (sharedKeyMatches(values) && bindRight(values)) {
+							matchedLeft = true;
+							return true;
+						}
+					}
+					check();
+					right.close();
+					right = null;
+					haveLeft = false;
+					if (!matchedLeft) {
 						return true;
 					}
 				}
-				haveLeft = false;
-				if (!matchedLeft) {
-					return true;
+				boolean next = left.next();
+				check();
+				if (!next) {
+					close();
+					return false;
 				}
+				right = rightRows.cursor();
+				haveLeft = true;
+				matchedLeft = false;
 			}
-			if (!left.next()) {
-				return false;
-			}
-			haveLeft = true;
-			matchedLeft = false;
-			rightIndex = 0;
+		} catch (IOException | RuntimeException | Error failure) {
+			terminalFailure = failure;
+			closeSuppressing(this, failure);
+			throw failure;
 		}
-		return false;
 	}
 
-	private boolean sharedKeyMatches(long[] rightValues) {
+	private void check() {
+		row.cancellation.check();
+		LmdbNativeProbeDeadline.poll(++pollTick);
+	}
+
+	private boolean sharedKeyMatches(NativeResultRow rightValues) {
 		for (int sharedSlot : sharedSlots) {
+			row.requireRdfTerm(sharedSlot);
 			long leftValue = row.slots[sharedSlot];
-			long rightValue = valueForSlot(rightValues, sharedSlot);
-			if (leftValue == UNKNOWN || rightValue == UNKNOWN) {
+			NativeResultCell rightValue = valueForSlot(rightValues, sharedSlot);
+			if (rightValue.kind() != NativeResultCell.Kind.RDF_TERM) {
+				throw new IllegalStateException("Unconsumed summary at lexical OPTIONAL compatibility boundary");
+			}
+			if (leftValue == UNKNOWN || rightValue.state() != NativeResultCell.State.BOUND) {
 				// an unbound shared attribute is compatible with every value on the other side
 				continue;
 			}
-			if (leftValue != rightValue && !sameTerm(leftValue, rightValue)) {
+			if (!term(leftValue).equals(rightValue.value())) {
 				return false;
 			}
 		}
 		return true;
 	}
 
-	private long valueForSlot(long[] values, int slot) {
+	private NativeResultCell valueForSlot(NativeResultRow values, int slot) {
 		for (int i = 0; i < rightSlots.length; i++) {
 			if (rightSlots[i] == slot) {
-				return values[i];
+				return values.cell(i);
 			}
 		}
-		return (row.baseBindingMask & 1L << slot) != 0L ? row.slots[slot] : UNKNOWN;
+		Value inherited = row.base.getValue(row.layout.slotName(slot));
+		return inherited == null ? NativeResultCell.unbound() : NativeResultCell.term(inherited);
 	}
 
-	private boolean bindRight(long[] values) {
+	private boolean bindRight(NativeResultRow values) {
 		int mark = row.mark();
+		activeMark = mark;
 		for (int i = 0; i < rightSlots.length; i++) {
-			long value = values[i];
-			if (value != UNKNOWN && !row.bindOrCheckTerm(rightSlots[i], value)) {
-				row.rollback(mark);
-				return false;
+			int slot = rightSlots[i];
+			NativeResultCell value = values.cell(i);
+			if (value.kind() == NativeResultCell.Kind.LEXICAL_SUMMARY) {
+				row.bindSummary(slot, value);
+			} else if (value.state() == NativeResultCell.State.BOUND) {
+				row.requireRdfTerm(slot);
+				if (row.slots[slot] != UNKNOWN) {
+					if (!term(row.slots[slot]).equals(value.value())) {
+						row.rollback(mark);
+						activeMark = -1;
+						return false;
+					}
+				} else {
+					long id = row.source instanceof SyntheticValueSource synthetic
+							? synthetic.internComputedValue(value.value(), row.positionMask(slot))
+							: row.source.idOf(value.value(), row.positionMask(slot));
+					if (id == UNKNOWN) {
+						throw new QueryEvaluationException("Replayed RDF term has no native term authority");
+					}
+					row.bind(slot, id);
+				}
 			}
 		}
-		activeMark = mark;
 		return true;
 	}
 
-	private boolean sameTerm(long leftValue, long rightValue) {
-		NativeTermAuthority authority = row.termAuthority();
-		return authority != null && authority.sameRdfTerm(leftValue, rightValue);
+	private Value term(long id) {
+		Value value = row.source.lazyValue(id);
+		if (value == null) {
+			throw new QueryEvaluationException("Native lexical OPTIONAL term is unresolved: " + id);
+		}
+		return value;
 	}
 
 	private void releaseRight() {
@@ -442,8 +528,25 @@ final class LexicalLeftJoinCursor implements RowCursor {
 
 	@Override
 	public void close() {
-		releaseRight();
-		left.close();
+		if (closed) {
+			return;
+		}
+		closed = true;
+		Throwable failure = KernelRuntime.closeResource(this::releaseRight, null);
+		failure = KernelRuntime.closeResource(right, failure);
+		right = null;
+		failure = KernelRuntime.closeResource(rightRows, failure);
+		failure = KernelRuntime.closeResource(left, failure);
+		if (failure != null) {
+			if (terminalFailure == null) {
+				terminalFailure = failure;
+			}
+			NativeContextClosingIteration.throwFailure(failure);
+		}
+	}
+
+	private static void closeSuppressing(AutoCloseable resource, Throwable failure) {
+		KernelRuntime.closeResource(resource, failure);
 	}
 }
 

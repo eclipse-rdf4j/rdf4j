@@ -192,6 +192,7 @@ class LmdbEmergencyProjectedDemandTest {
 		InspectableLmdbStore store = new InspectableLmdbStore(dataDir.toFile(), smallMapConfig());
 		try {
 			store.init();
+			assertTrue(store.awaitIndexRebuild(20, TimeUnit.SECONDS), store.getStartupStatus().toString());
 			LmdbSailStore backing = store.getBackingStore();
 			backing.enableMultiThreading = false;
 			ValueStore valueStore = store.capturedValueStore();

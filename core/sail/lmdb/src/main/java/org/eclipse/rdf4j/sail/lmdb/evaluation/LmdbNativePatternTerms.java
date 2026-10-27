@@ -123,6 +123,7 @@ final class PatternCursor implements AutoCloseable {
 	boolean syntheticPending;
 	boolean closed;
 	int residualPollTick;
+	private NativeExecutionPhaseEvent.Span executionPhase;
 
 	PatternCursor() {
 		this(null, null, UNKNOWN, UNKNOWN, UNKNOWN, null);
@@ -161,6 +162,16 @@ final class PatternCursor implements AutoCloseable {
 		return this;
 	}
 
+	PatternCursor withExecutionPhase(NativeExecutionPhaseEvent.Span phase) {
+		if (this == EMPTY) {
+			phase.complete();
+			phase.close();
+		} else {
+			executionPhase = phase;
+		}
+		return this;
+	}
+
 	PatternCursor resetContexts(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe, long subj,
 			long pred, long obj, long[] contexts, LmdbKeyRange range,
 			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver, boolean encounterOrderRequired) {
@@ -184,9 +195,16 @@ final class PatternCursor implements AutoCloseable {
 	}
 
 	private void prepareReset() {
-		if (current != null) {
-			current.close();
-			current = null;
+		try {
+			if (current != null) {
+				current.close();
+				current = null;
+			}
+		} finally {
+			if (executionPhase != null) {
+				executionPhase.close();
+				executionPhase = null;
+			}
 		}
 		contextIndex = 0;
 		syntheticPending = false;
@@ -269,7 +287,7 @@ final class PatternCursor implements AutoCloseable {
 		if (syntheticPending) {
 			syntheticPending = false;
 			if (range != null && !range.includes(syntheticRow, 0)) {
-				close();
+				endOfInput();
 				return null;
 			}
 			return syntheticRow;
@@ -277,7 +295,7 @@ final class PatternCursor implements AutoCloseable {
 		while (true) {
 			if (current == null) {
 				if (contexts == null || contextIndex >= contexts.length) {
-					close();
+					endOfInput();
 					return null;
 				}
 				current = openIterator(contexts[contextIndex++]);
@@ -307,7 +325,7 @@ final class PatternCursor implements AutoCloseable {
 		}
 		if (syntheticPending) {
 			if (range != null && !range.includes(syntheticRow, 0)) {
-				close();
+				endOfInput();
 				return 0;
 			}
 			System.arraycopy(syntheticRow, 0, buffer, 0, 4);
@@ -317,7 +335,7 @@ final class PatternCursor implements AutoCloseable {
 		while (true) {
 			if (current == null) {
 				if (contexts == null || contextIndex >= contexts.length) {
-					close();
+					endOfInput();
 					return 0;
 				}
 				current = openIterator(contexts[contextIndex++]);
@@ -368,11 +386,25 @@ final class PatternCursor implements AutoCloseable {
 	public void close() {
 		if (!closed) {
 			closed = true;
-			if (current != null) {
-				current.close();
-				current = null;
+			try {
+				if (current != null) {
+					current.close();
+					current = null;
+				}
+			} finally {
+				syntheticPending = false;
+				if (executionPhase != null) {
+					executionPhase.close();
+					executionPhase = null;
+				}
 			}
-			syntheticPending = false;
 		}
+	}
+
+	private void endOfInput() {
+		if (executionPhase != null) {
+			executionPhase.complete();
+		}
+		close();
 	}
 }

@@ -63,7 +63,20 @@ public interface ValueStoreRevision {
 
 		transient private final ValueStore valueStore;
 
-		private final long revisionId = revisionIdCounter.incrementAndGet();
+		private final long revisionId = revisionIdCounter.updateAndGet(previous -> {
+			if (previous == Long.MAX_VALUE) {
+				throw new IllegalStateException("ValueStore revision ID space is exhausted");
+			}
+			return previous + 1L;
+		});
+
+		/** Existing persisted cohorts must never become a newly allocated revision in another JVM. */
+		static void ensureRevisionAfter(long persistedRevision) {
+			if (persistedRevision < 0L || persistedRevision == Long.MAX_VALUE) {
+				throw new IllegalStateException("Persisted ValueStore revision ID cannot be advanced safely");
+			}
+			revisionIdCounter.accumulateAndGet(persistedRevision, Math::max);
+		}
 
 		public Default(ValueStore valueStore) {
 			this.valueStore = valueStore;

@@ -12,13 +12,26 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.OptionalLong;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
@@ -28,6 +41,8 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.AdjacencyEngagementTestAccess;
+import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
+import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -49,6 +64,7 @@ class LmdbNativeAggregateExplanationRouteTest {
 	private static final String[] PROPERTIES = {
 			"rdf4j.lmdb.nativeQueryEngine.enabled",
 			"rdf4j.lmdb.janinoCodegen.enabled",
+			"rdf4j.lmdb.kernelInterpreter.enabled",
 			"rdf4j.lmdb.janinoCodegen.synchronous",
 			"rdf4j.lmdb.janinoCodegen.thresholdRows",
 			"rdf4j.lmdb.janinoCodegen.wildcardPredicates",
@@ -78,6 +94,7 @@ class LmdbNativeAggregateExplanationRouteTest {
 		}
 		set("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		set("rdf4j.lmdb.janinoCodegen.enabled", "true");
+		set("rdf4j.lmdb.kernelInterpreter.enabled", "true");
 		set("rdf4j.lmdb.janinoCodegen.synchronous", "true");
 		set("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
 		set("rdf4j.lmdb.janinoCodegen.wildcardPredicates", "true");
@@ -92,7 +109,7 @@ class LmdbNativeAggregateExplanationRouteTest {
 		set("rdf4j.lmdb.nativeBatch.enabled", "false");
 		set("rdf4j.lmdb.directAdjacency.scanAggregates.enabled", "false");
 		set(LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "false");
-		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,psoc,posc,ospc").setNativeEvaluationEnabled(true)
 				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30));
@@ -125,6 +142,42 @@ class LmdbNativeAggregateExplanationRouteTest {
 	}
 
 	@Test
+	void constantPredicateAliasesRetainIndependentCountChannelsAndGrouping() {
+		set("rdf4j.lmdb.directAdjacency.scanAggregates.enabled", "true");
+		set("rdf4j.lmdb.prefixRun.enabled", "true");
+		String predicate = "<" + EX + "p>";
+		for (String group : List.of("", "s")) {
+			for (String channels : List.of("(COUNT(*) AS ?count)", "(COUNT(?p) AS ?count)",
+					"(COUNT(DISTINCT ?p) AS ?count)",
+					"(COUNT(DISTINCT ?s) AS ?count) (COUNT(DISTINCT ?o) AS ?other)",
+					"(COUNT(*) AS ?count) (COUNT(?s) AS ?subjects) (COUNT(?p) AS ?predicates) "
+							+ "(COUNT(?o) AS ?objects) (COUNT(DISTINCT ?s) AS ?distinctSubjects) "
+							+ "(COUNT(DISTINCT ?p) AS ?distinctPredicates) (COUNT(DISTINCT ?o) AS ?distinctObjects)")) {
+				String query = "SELECT " + (group.isEmpty() ? "" : "?" + group + " ") + channels
+						+ " WHERE { ?s " + predicate + " ?o . BIND(" + predicate + " AS ?p) }"
+						+ (group.isEmpty() ? "" : " GROUP BY ?" + group);
+				List<BindingSet> generic;
+				set("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+				try {
+					generic = rows(query, null);
+				} finally {
+					set("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+				}
+				assertThat(generic).as("the real base source must admit the complete relation").isNotEmpty();
+				assertThat(rows(query, null)).as("AUTO semantic parity:%n%s", query)
+						.containsExactlyInAnyOrderElementsOf(generic);
+				GenericPlanNode plan = explain(query, null, Explanation.Level.Optimized);
+				assertThat(eligible(plan)).as("actual native reducer admission:%n%s", plan)
+						.contains(LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE);
+				List<BindingSet> actual = assertDoesNotThrow(
+						() -> rows(query, LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE),
+						"the admitted constant-alias reducer must open:\n" + query + "\n" + plan);
+				assertThat(actual).containsExactlyInAnyOrderElementsOf(generic);
+			}
+		}
+	}
+
+	@Test
 	void effectfulAggregateReportsItsSerialValueAuthorityAtExecution() {
 		GenericPlanNode telemetry = explain(EFFECTFUL_QUERY, null, Explanation.Level.Telemetry);
 		String path = findMetric(telemetry, LmdbNativeExplain.EXECUTION_PATH);
@@ -145,6 +198,165 @@ class LmdbNativeAggregateExplanationRouteTest {
 		GenericPlanNode optimized = explain(EFFECTFUL_QUERY, null, Explanation.Level.Optimized);
 		assertThat(optimized.toString())
 				.contains("Computed values, full-row DISTINCT or encounter order require one serial value authority");
+	}
+
+	@Test
+	void serialValueAuthorityKeepsEveryLegalIrTierAndItsExactFallbackInTheInventory() {
+		List<String> candidates = eligible(explain(EFFECTFUL_QUERY, null, Explanation.Level.Optimized));
+		assertThat(candidates).as("one serial authority restricts ownership, not legal execution tiers")
+				.contains(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
+						LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED,
+						LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+		assertThat(candidates).noneMatch(tag -> tag.contains("Parallel"));
+	}
+
+	@Test
+	void structuralSpecialistsDoNotRemoveOtherLegalCandidatesBeforeCostArbitration() {
+		set("rdf4j.lmdb.directAdjacency.scanAggregates.enabled", "true");
+		String query = "SELECT (COUNT(DISTINCT ?s) AS ?count) WHERE { ?s <" + EX + "p> ?o }";
+		List<String> candidates = eligible(explain(query, null, Explanation.Level.Optimized));
+		assertThat(candidates).contains(LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE);
+		assertThat(candidates).as("an exact structural algorithm and a legal interpreter must both be priced")
+				.anyMatch(tag -> tag.startsWith("irAggregate") && tag.contains("Interpreted"));
+	}
+
+	@Test
+	void metadataOnlyDistinctPreservesItsNonemptyConstantGroup() {
+		set("rdf4j.lmdb.directAdjacency.scanAggregates.enabled", "true");
+		for (String query : List.of(
+				"SELECT ?p (COUNT(DISTINCT ?s) AS ?count) WHERE { ?s ?p ?o FILTER (?p = <" + EX
+						+ "p>) } GROUP BY ?p",
+				"SELECT ?fixed (COUNT(DISTINCT ?s) AS ?count) WHERE { ?s <" + EX
+						+ "p> ?o BIND (<" + EX + "p> AS ?fixed) } GROUP BY ?fixed")) {
+			List<BindingSet> ordinary = rows(query, null);
+			assertThat(ordinary).as("the ordinary fixture must admit its one nonempty constant group").hasSize(1);
+			assertThat(ordinary.getFirst().getValue("count").stringValue()).isEqualTo("32");
+			assertThat(rows(query, LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE))
+					.as("exact DISTINCT metadata still proves that a constant/predicate group exists")
+					.containsExactlyElementsOf(ordinary);
+		}
+	}
+
+	@Test
+	void existsIntersectionKeepsItsIndependentlyLegalPrefixAlternative() {
+		set("rdf4j.lmdb.prefixRun.enabled", "true");
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			connection.begin();
+			for (int index = 0; index < 16; index++) {
+				connection.add(vf.createIRI(EX, "s" + index), vf.createIRI(EX, "witness"), vf.createLiteral(index));
+			}
+			connection.commit();
+		}
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
+		String query = "SELECT (COUNT(DISTINCT ?s) AS ?count) WHERE { ?s <" + EX
+				+ "p> ?o FILTER EXISTS { ?s <" + EX + "witness> ?x } }";
+		List<BindingSet> result = rows(query, null);
+		assertThat(result).as("the witness fixture must admit exactly sixteen selected subjects").hasSize(1);
+		assertThat(result.getFirst().getValue("count").stringValue()).isEqualTo("16");
+		Explanation explanation = explanation(query, null, Explanation.Level.Optimized);
+		List<String> candidates = eligible(explanation.toGenericPlanNode(), true);
+		assertThat(candidates).as("the indexed witness fixture must admit its native group: %s", explanation.toJson())
+				.contains(LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION);
+		assertThat(candidates).as("recognizing an intersection cannot erase a legal prefix-filter algorithm")
+				.contains(LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS);
+	}
+
+	@Test
+	void autoInventoryKeepsAnActuallyExecutableComposedPackedAggregate() {
+		set("rdf4j.lmdb.packedFtree.enabled", "true");
+		set("rdf4j.lmdb.factorizedRows.enabled", "true");
+		String query = "SELECT (COUNT(*) AS ?count) WHERE { { ?s <" + EX
+				+ "p> ?o } UNION { ?s <" + EX + "p> ?o } }";
+		List<BindingSet> ordinary = rows(query, LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+		assertThat(ordinary).hasSize(1);
+		assertThat(ordinary.getFirst().getValue("count").stringValue()).isEqualTo("64");
+		assertThat(rows(query, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE))
+				.containsExactlyElementsOf(ordinary);
+		assertThat(findMetric(explain(query, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE,
+				Explanation.Level.Telemetry), LmdbNativeExplain.EXECUTION_PATH))
+						.as("the composed packed fixture must execute the requested physical aggregate before inventory checks")
+						.contains(LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE);
+		assertThat(eligible(explain(query, null, Explanation.Level.Optimized)))
+				.as("automatic applicability must retain a complete legal composed packed algorithm")
+				.contains(LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE);
+	}
+
+	@Test
+	void adjacencyQuotesUseActualMetadataLookupsAndChargeEveryGroupedRoot() throws Exception {
+		set("rdf4j.lmdb.directAdjacency.scanAggregates.enabled", "true");
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		when(source.adjacencyKeyDomainCardinality(9L, true)).thenReturn(OptionalLong.of(1000L));
+		when(source.lazyValue(anyLong(), anyInt())).thenAnswer(call -> SimpleValueFactory.getInstance()
+				.createIRI(EX, "root" + (long) call.getArgument(0)));
+		LmdbPrefixRunPlan prefix = mock(LmdbPrefixRunPlan.class);
+		when(prefix.usesAdjacency()).thenReturn(true);
+		when(source.prefixRunPlan(any(int[].class), anyLong(), anyLong(), anyLong(), anyLong())).thenReturn(prefix);
+		when(source.prefixRuns(any(LmdbPrefixRunPlan.class), anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean()))
+				.thenAnswer(call -> {
+					LmdbPrefixRunCursor cursor = mock(LmdbPrefixRunCursor.class);
+					AtomicInteger position = new AtomicInteger(-1);
+					when(cursor.next()).thenAnswer(ignored -> position.incrementAndGet() < 1000);
+					when(cursor.prefixValue(anyInt())).thenAnswer(ignored -> 100L + position.get());
+					when(cursor.runRowCount()).thenReturn(1L);
+					return cursor;
+				});
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("s", 0, "o", 1), null);
+		layout.freeze(List.of("s", "o"));
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		assertThat(LmdbNativeAggregateCompiler.initializeRow(row, row.base, source, layout)).isTrue();
+		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(9L), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 1_000_000D);
+		AggregateSpec[] aggregates = { AggregateSpec.slot("count", 0, true, AggKind.COUNT) };
+		LmdbAdjacencyAggregatePlan ungrouped = LmdbAdjacencyAggregatePlan.tryCreate(pattern, new int[0], aggregates);
+		LmdbAdjacencyAggregatePlan grouped = LmdbAdjacencyAggregatePlan.tryCreate(pattern, new int[] { 0 }, aggregates);
+		assertThat(ungrouped).isNotNull();
+		assertThat(grouped).isNotNull();
+		try (NativeGroupIteration owner = new NativeGroupIteration(source, pattern, layout, new int[] { 0 },
+				aggregates, false, EmptyBindingSet.getInstance(), null, null, false, null)) {
+			List<BindingSet> rows = grouped.evaluate(owner, row);
+			assertThat(rows).as("the grouped physical source must really admit every root before its quote is tested")
+					.hasSize(1000);
+			assertThat(rows.stream().map(result -> result.getValue("s")).distinct().count()).isEqualTo(1000L);
+			assertThat(ungrouped.evaluate(owner, row).getFirst().getValue("count").stringValue()).isEqualTo("1000");
+		}
+		LmdbNativeWork metadata = ungrouped.estimateWork(row), roots = grouped.estimateWork(row);
+		assertThat(metadata.known()).as("one exact cardinality lookup can answer the ungrouped DISTINCT").isTrue();
+		assertThat(roots.known()).as("the exact visible root count bounds grouped enumeration").isTrue();
+		assertThat(roots.low()).as("every actual root needs a grouped result").isGreaterThanOrEqualTo(1000D);
+		assertThat(metadata.high()).as("a cardinality lookup must cost less than enumerating its 1000 roots")
+				.isLessThan(roots.low());
+	}
+
+	@Test
+	void adjacencyCostDoesNotInventPhysicalCompressionFromLogicalCardinality() {
+		set("rdf4j.lmdb.directAdjacency.scanAggregates.enabled", "true");
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("s", 0, "o", 1), null);
+		layout.freeze(List.of("s", "o"));
+		RowState row = new RowState(mock(NativeLmdbQuerySource.class), layout, EmptyBindingSet.getInstance());
+		assertThat(LmdbNativeAggregateCompiler.initializeRow(row, row.base, row.source, layout)).isTrue();
+		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(9L), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 1_000_000D);
+		LmdbAdjacencyAggregatePlan candidate = LmdbAdjacencyAggregatePlan.tryCreate(pattern, new int[0],
+				new AggregateSpec[] { AggregateSpec.star("count") });
+		assertThat(candidate).isNotNull();
+		assertThat(candidate.estimateWork(row).known())
+				.as("logical row count alone cannot prove pages, roots, run headers, or physical count work")
+				.isFalse();
+	}
+
+	@Test
+	void exactCensusShortcutKeepsLegalIrAlternativesInTheInventory() {
+		set("rdf4j.lmdb.directAdjacency.scanAggregates.enabled", "true");
+		String query = "SELECT (SUM(IF(isIRI(?s), 1, 0)) AS ?count) WHERE { ?s ?p ?o }";
+		assertThat(findMetric(explain(query, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
+				Explanation.Level.Telemetry), LmdbNativeExplain.EXECUTION_PATH))
+						.as("the alternative must actually execute correctly before testing AUTO inventory")
+						.startsWith("irAggregate");
+		GenericPlanNode optimized = explain(query, null, Explanation.Level.Optimized);
+		assertThat(optimized.toString()).contains("LmdbNativeCensusAggregate");
+		assertThat(eligible(optimized)).as("an exact census and a legal interpreter belong to the same inventory")
+				.anyMatch(tag -> tag.startsWith("irAggregate") && tag.contains("Interpreted"));
 	}
 
 	@Test
@@ -204,14 +416,60 @@ class LmdbNativeAggregateExplanationRouteTest {
 				.isNull();
 	}
 
-	private GenericPlanNode explain(String query, String forcedStrategy, Explanation.Level level) {
+	private List<BindingSet> rows(String query, String forcedStrategy) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
 			if (forcedStrategy != null) {
 				prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
 			}
-			return prepared.explain(level).toGenericPlanNode();
+			List<BindingSet> rows = new ArrayList<>();
+			try (var result = prepared.evaluate()) {
+				while (result.hasNext()) {
+					rows.add(result.next());
+				}
+			}
+			return rows;
 		}
+	}
+
+	private GenericPlanNode explain(String query, String forcedStrategy, Explanation.Level level) {
+		return explanation(query, forcedStrategy, level).toGenericPlanNode();
+	}
+
+	private Explanation explanation(String query, String forcedStrategy, Explanation.Level level) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+			if (forcedStrategy != null) {
+				prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			return prepared.explain(level);
+		}
+	}
+
+	private static List<String> eligible(GenericPlanNode node) {
+		return eligible(node, false);
+	}
+
+	private static List<String> eligible(GenericPlanNode node, boolean includeRuntimeDependent) {
+		List<String> result = new ArrayList<>();
+		if (node.getStrategyDecisions() != null) {
+			for (var decision : node.getStrategyDecisions()) {
+				if (decision.decisionPoint().contains("GROUP BY")) {
+					for (var candidate : decision.candidates()) {
+						if (Boolean.TRUE.equals(candidate.canAttempt()) || includeRuntimeDependent
+								&& candidate.canAttempt() == null && candidate.condition() != null) {
+							result.add(candidate.strategy());
+						}
+					}
+				}
+			}
+		}
+		if (node.getPlans() != null) {
+			for (GenericPlanNode child : node.getPlans()) {
+				result.addAll(eligible(child, includeRuntimeDependent));
+			}
+		}
+		return result;
 	}
 
 	private static String findMetric(GenericPlanNode node, String metricName) {
