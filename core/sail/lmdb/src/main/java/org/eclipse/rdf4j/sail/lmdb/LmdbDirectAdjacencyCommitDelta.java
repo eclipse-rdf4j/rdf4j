@@ -271,7 +271,7 @@ final class LmdbDirectAdjacencyCommitDelta {
 		}
 	}
 
-	Future<SealedDirectDelta> sealAsync(long revision) {
+	CompletableFuture<SealedDirectDelta> sealAsync(long revision) {
 		if (asyncCapture == null) {
 			return CompletableFuture.completedFuture(seal(revision));
 		}
@@ -397,24 +397,36 @@ final class LmdbDirectAdjacencyCommitDelta {
 			}
 		}
 
-		Future<SealedDirectDelta> seal(long revision, long[] coverage) {
+		CompletableFuture<SealedDirectDelta> seal(long revision, long[] coverage) {
 			submitBatch(false);
-			return captureExecutor.submit(() -> {
-				if (cancelled) {
-					accumulator.reset();
-					if (failure instanceof Error error) {
-						throw error;
-					}
-					if (failure != null) {
-						throw new IllegalStateException("delta batch capture failed", failure);
-					}
-					return SealedDirectDelta.overflowed(revision);
+			// A CompletableFuture so the commit log can mirror the seal without a waiting thread; get() still reports
+			// the failure as an ExecutionException whose cause is the original throwable, as the FutureTask did.
+			CompletableFuture<SealedDirectDelta> sealed = new CompletableFuture<>();
+			captureExecutor.execute(() -> {
+				try {
+					sealed.complete(sealNow(revision, coverage));
+				} catch (Throwable failure) {
+					sealed.completeExceptionally(failure);
 				}
-				if (coverage != null) {
-					accumulator.captureResolvedSelectedPredicates(coverage);
-				}
-				return accumulator.seal(revision);
 			});
+			return sealed;
+		}
+
+		private SealedDirectDelta sealNow(long revision, long[] coverage) {
+			if (cancelled) {
+				accumulator.reset();
+				if (failure instanceof Error error) {
+					throw error;
+				}
+				if (failure != null) {
+					throw new IllegalStateException("delta batch capture failed", failure);
+				}
+				return SealedDirectDelta.overflowed(revision);
+			}
+			if (coverage != null) {
+				accumulator.captureResolvedSelectedPredicates(coverage);
+			}
+			return accumulator.seal(revision);
 		}
 
 		private void finishBatch() {
