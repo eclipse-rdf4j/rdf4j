@@ -69,6 +69,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.io.Serializable;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
@@ -99,6 +100,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -114,6 +116,7 @@ import java.util.regex.Pattern;
 
 import org.eclipse.collections.api.iterator.LongIterator;
 import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
+import org.eclipse.collections.impl.map.mutable.primitive.LongLongHashMap;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
@@ -6570,6 +6573,245 @@ class TripleStore implements Closeable {
 			}
 		}
 		return addedCount;
+	}
+
+	/** Positions of s, p, o and c (0 to 3) in each active index's key order, most significant first. */
+	int[][] initialImportFieldOrders() {
+		List<TripleIndex> current = indexes;
+		int[][] orders = new int[current.size()][];
+		for (int i = 0; i < current.size(); i++) {
+			char[] sequence = current.get(i).getFieldSeq();
+			int[] order = new int[4];
+			for (int field = 0; field < 4; field++) {
+				order[field] = switch (sequence[field]) {
+				case 's' -> 0;
+				case 'p' -> 1;
+				case 'o' -> 2;
+				default -> 3;
+				};
+			}
+			orders[i] = order;
+		}
+		return orders;
+	}
+
+	boolean hasStagingIndexes() {
+		return !stagingIndexes.isEmpty();
+	}
+
+	/** Flushes committed pages to disk; the environment runs without per-commit sync. */
+	void syncEnvironment() throws IOException {
+		E(mdb_env_sync(env, true));
+	}
+
+	private static final int INITIAL_IMPORT_BLOCK_BYTES = 4 << 20;
+	private static final InitialImportBlock INITIAL_IMPORT_END = new InitialImportBlock(null, null, 0, null, null);
+
+	/** Encoded keys of one index in append order; the main index's blocks also carry their quads. */
+	private record InitialImportBlock(ByteBuffer keys, int[] offsets, int count, long[] quads, Throwable failure) {
+	}
+
+	/**
+	 * Writes the merged runs of an initial run import into this store's empty indexes within the active write
+	 * transaction. One thread per index merges that index's runs, skipping duplicate quads, and encodes the keys; this
+	 * thread appends them with {@code MDB_APPEND}. Each distinct quad is counted for its context and recorded in the
+	 * fan-out statistics exactly as a regular insert would.
+	 *
+	 * @param runsByIndex the run files of each active index, in the order of {@link #initialImportFieldOrders()}
+	 * @return the number of distinct statements written
+	 */
+	long appendInitialImportRuns(List<LmdbSortedRuns.Runs> runsByIndex, long estimatedWriteBytes) throws IOException {
+		checkReplayFailure();
+		if (writeTxn == 0) {
+			throw new IllegalStateException("Mutation requires an active TripleStore write transaction");
+		}
+		List<TripleIndex> targets = indexes;
+		if (runsByIndex.size() != targets.size()) {
+			throw new IllegalStateException("Initial import runs do not match the active TripleStore indexes");
+		}
+		if (!stagingIndexes.isEmpty() || usesReplayJournal()) {
+			throw new IllegalStateException("An initial run import needs empty indexes without a background build");
+		}
+		try (MemoryStack stack = stackPush()) {
+			MDBStat stat = MDBStat.malloc(stack);
+			for (TripleIndex index : targets) {
+				for (boolean explicit : new boolean[] { true, false }) {
+					E(mdb_stat(writeTxn, index.getDB(explicit), stat));
+					if (stat.ms_entries() != 0) {
+						throw new IllegalStateException("An initial run import requires empty TripleStore indexes");
+					}
+				}
+			}
+		}
+		prepareForMutation(estimatedWriteBytes);
+		int[][] fieldOrders = initialImportFieldOrders();
+		List<ArrayBlockingQueue<InitialImportBlock>> queues = new ArrayList<>(targets.size());
+		AtomicInteger threads = new AtomicInteger();
+		ExecutorService merges = Executors.newFixedThreadPool(targets.size(), task -> {
+			Thread thread = new Thread(task, "rdf4j-lmdb-initial-import-merge-" + threads.incrementAndGet());
+			thread.setDaemon(true);
+			return thread;
+		});
+		try {
+			for (int t = 0; t < targets.size(); t++) {
+				ArrayBlockingQueue<InitialImportBlock> queue = new ArrayBlockingQueue<>(4);
+				queues.add(queue);
+				TripleIndex target = targets.get(t);
+				LmdbSortedRuns.Runs runs = runsByIndex.get(t);
+				int[] fieldOrder = fieldOrders[t];
+				boolean main = t == 0;
+				merges.execute(() -> mergeInitialImportIndex(runs, fieldOrder, target, main, queue));
+			}
+			long added = appendInitialImportBlocks(targets, queues);
+			if (added > 0) {
+				nativeMutation = true;
+				tripleMutation = true;
+			}
+			logAddedStatements((int) Math.min(Integer.MAX_VALUE, added));
+			return added;
+		} catch (MapFullException capacity) {
+			merges.shutdownNow();
+			growForTransactionRetry(0L, capacity);
+			throw capacity;
+		} catch (IOException | RuntimeException | Error failure) {
+			markMutationFailure(failure);
+			throw failure;
+		} finally {
+			merges.shutdownNow();
+			for (ArrayBlockingQueue<InitialImportBlock> queue : queues) {
+				InitialImportBlock block;
+				while ((block = queue.poll()) != null) {
+					if (block.keys() != null) {
+						memFree(block.keys());
+					}
+				}
+			}
+		}
+	}
+
+	private static void mergeInitialImportIndex(LmdbSortedRuns.Runs runs, int[] fieldOrder, TripleIndex target,
+			boolean main,
+			ArrayBlockingQueue<InitialImportBlock> queue) {
+		int maxKeys = INITIAL_IMPORT_BLOCK_BYTES / 8;
+		ByteBuffer keys = null;
+		try (LmdbSortedRuns.Merge merge = new LmdbSortedRuns.Merge(runs, fieldOrder, true)) {
+			long[] row = new long[LmdbSortedRuns.ROW_LONGS];
+			keys = memAlloc(INITIAL_IMPORT_BLOCK_BYTES);
+			int[] offsets = new int[maxKeys + 1];
+			long[] quads = main ? new long[LmdbSortedRuns.ROW_LONGS * maxKeys] : null;
+			int count = 0;
+			while (merge.next(row)) {
+				if (keys.remaining() < TripleIndex.MAX_KEY_LENGTH || count == maxKeys) {
+					offsets[count] = keys.position();
+					ByteBuffer full = keys;
+					keys = null;
+					queue.put(new InitialImportBlock(full, offsets, count, quads, null));
+					keys = memAlloc(INITIAL_IMPORT_BLOCK_BYTES);
+					offsets = new int[maxKeys + 1];
+					quads = main ? new long[LmdbSortedRuns.ROW_LONGS * maxKeys] : null;
+					count = 0;
+				}
+				offsets[count] = keys.position();
+				target.toKey(keys, row[0], row[1], row[2], row[3]);
+				if (quads != null) {
+					System.arraycopy(row, 0, quads, LmdbSortedRuns.ROW_LONGS * count, LmdbSortedRuns.ROW_LONGS);
+				}
+				count++;
+			}
+			offsets[count] = keys.position();
+			ByteBuffer last = keys;
+			keys = null;
+			queue.put(new InitialImportBlock(last, offsets, count, quads, null));
+			queue.put(INITIAL_IMPORT_END);
+		} catch (InterruptedException interrupted) {
+			// The writer abandoned this merge and drains the queue itself.
+			Thread.currentThread().interrupt();
+		} catch (IOException | RuntimeException | Error failure) {
+			try {
+				queue.put(new InitialImportBlock(null, null, 0, null, failure));
+			} catch (InterruptedException interrupted) {
+				Thread.currentThread().interrupt();
+			}
+		} finally {
+			if (keys != null) {
+				memFree(keys);
+			}
+		}
+	}
+
+	private long appendInitialImportBlocks(List<TripleIndex> targets,
+			List<ArrayBlockingQueue<InitialImportBlock>> queues) throws IOException {
+		LongLongHashMap contexts = new LongLongHashMap();
+		long added = 0;
+		try (MemoryStack stack = stackPush()) {
+			PointerBuffer handle = stack.mallocPointer(1);
+			MDBVal key = MDBVal.calloc(stack);
+			MDBVal value = MDBVal.calloc(stack);
+			long[] cursors = new long[targets.size()];
+			try {
+				for (int t = 0; t < targets.size(); t++) {
+					E(mdb_cursor_open(writeTxn, targets.get(t).getDB(true), handle));
+					cursors[t] = handle.get(0);
+				}
+				boolean[] done = new boolean[targets.size()];
+				int remaining = targets.size();
+				while (remaining > 0) {
+					for (int t = 0; t < targets.size(); t++) {
+						if (done[t]) {
+							continue;
+						}
+						InitialImportBlock block;
+						try {
+							block = queues.get(t).take();
+						} catch (InterruptedException interrupted) {
+							Thread.currentThread().interrupt();
+							throw new InterruptedIOException("Interrupted while writing an initial import");
+						}
+						if (block == INITIAL_IMPORT_END) {
+							done[t] = true;
+							remaining--;
+							continue;
+						}
+						if (block.failure() != null) {
+							throw new IOException("Merging initial import runs failed", block.failure());
+						}
+						try {
+							long base = memAddress(block.keys(), 0);
+							int[] offsets = block.offsets();
+							long[] quads = block.quads();
+							for (int i = 0; i < block.count(); i++) {
+								LmdbUtil.setMDBValData(key, base + offsets[i], offsets[i + 1] - offsets[i]);
+								int rc = mdb_cursor_put(cursors[t], key, value, MDB_APPEND);
+								if (rc == MDB_MAP_FULL) {
+									throw new MapFullException();
+								}
+								E(rc);
+								if (quads != null) {
+									int offset = LmdbSortedRuns.ROW_LONGS * i;
+									contexts.addToValue(quads[offset + 3], 1L);
+									recordFanOutAdded(quads[offset], quads[offset + 1], quads[offset + 2],
+											quads[offset + 3], true);
+									added++;
+								}
+							}
+						} finally {
+							memFree(block.keys());
+						}
+					}
+				}
+			} finally {
+				for (long cursor : cursors) {
+					if (cursor != 0L) {
+						mdb_cursor_close(cursor);
+					}
+				}
+			}
+			long[] contextIds = contexts.keysView().toSortedArray();
+			for (long contextId : contextIds) {
+				incrementContext(stack, contextId, contexts.get(contextId));
+			}
+		}
+		return added;
 	}
 
 	private void storeTriplesAlignedOptimized(long[] subj, long[] pred, long[] obj, long[] context, int count,

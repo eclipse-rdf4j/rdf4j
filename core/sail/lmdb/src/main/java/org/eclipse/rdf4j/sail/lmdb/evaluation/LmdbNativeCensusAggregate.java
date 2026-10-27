@@ -27,7 +27,6 @@ import java.util.Set;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.ThreadSafeDelayedIteration;
 import org.eclipse.rdf4j.model.Literal;
@@ -59,10 +58,10 @@ import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
@@ -72,13 +71,14 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeProbe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NodePredicates;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.WildcardAdjacency;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
  * Exact single-pattern aggregates reduced at page, root, fiber or quad grain. Term-kind expressions are finite
  * functions of RDF kinds, compiled once into coefficients. They never construct an intermediate literal per quad. All
  * counts are read from the current probe's existing structures; this step retains no evaluation results.
  */
-final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
+final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 
 	static final String PATH = "adjacencyCensus";
 	private static final int S = TripleIndex.SUBJ_IDX;
@@ -108,6 +108,274 @@ final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
 	private final boolean[] distinctFields;
 	private QueryEvaluationStep fallback;
 
+	@Override
+	public Prepared prepare(RowState row) throws IOException {
+		LmdbNativeCensusAggregate bound = new LmdbNativeCensusAggregate(this, row.source);
+		return bound.new PreparedCensus(row, bound.inspectRecipe());
+	}
+
+	/** All parsed algebra and finite tables are immutable; only source/frame ownership is rebound per attempt. */
+	private LmdbNativeCensusAggregate(LmdbNativeCensusAggregate original, NativeLmdbQuerySource source) {
+		this.source = source;
+		strategy = original.strategy;
+		valuePositions = original.valuePositions;
+		context = original.context;
+		group = original.group;
+		explainTarget = original.explainTarget;
+		contexts = original.contexts;
+		named = original.named;
+		constants = original.constants;
+		groupNames = original.groupNames;
+		groupPositionMasks = original.groupPositionMasks;
+		groupFields = original.groupFields;
+		channels = original.channels;
+		acceptedKinds = original.acceptedKinds;
+		kindMask = original.kindMask;
+		idMask = original.idMask;
+		distinctFields = original.distinctFields;
+	}
+
+	private record RecipeQuote(NativeAggregatePhysicalPlan.Work physical, LmdbNativeWork work, boolean reduced,
+			String unavailable) {
+		static RecipeQuote unavailable(String reason) {
+			return new RecipeQuote(null, LmdbNativeWork.UNKNOWN, false, reason);
+		}
+	}
+
+	/** Metadata inspection never opens payload rows and owns no native view after the quote returns. */
+	private RecipeQuote inspectRecipe() throws IOException {
+		NativeCancellationToken cancellation = NativeCancellationToken.forSource(source);
+		try (NativeProbe probe = source.newProbe(); WildcardAdjacency wildcard = probe.wildcardAdjacency(true)) {
+			if (wildcard == null) {
+				return RecipeQuote.unavailable("wildcard adjacency unavailable");
+			}
+			int requiredIds = idMask;
+			boolean distinct = false;
+			for (Channel channel : channels) {
+				distinct |= channel.distinct;
+				if (channel.distinct && channel.field >= 0) {
+					requiredIds |= 1 << channel.field;
+				}
+			}
+			double planes = wildcard.predicateCount();
+			double headers = 0D, contributions = 0D, decoded = 0D, complement = 0D;
+			boolean reduced = false, payload = false;
+			for (int p = 0; p < wildcard.predicateCount(); p++) {
+				cancellation.check();
+				LmdbNativeProbeDeadline.poll(0);
+				long predicate = wildcard.predicateAt(p);
+				if (constants[P] != UNKNOWN && constants[P] != predicate) {
+					continue;
+				}
+				wildcard.bind(p);
+				if (wildcard.keyCount() == 0L) {
+					continue;
+				}
+				NativeAdjacency view = probe.adjacency(predicate, true);
+				if (view == null) {
+					return RecipeQuote.unavailable("adjacency view unavailable");
+				}
+				try (AdjacencyPageCursor pages = view.openPageCursor()) {
+					if (pages == null) {
+						return RecipeQuote.unavailable("page cursor unavailable");
+					}
+					while (pages.advance()) {
+						cancellation.check();
+						LmdbNativeProbeDeadline.poll(0);
+						headers += 2D; // The exact opener performs coverage and reduction passes.
+						boolean common = pages.hasCommonContext();
+						if (common && !acceptsContext(pages.commonContext())) {
+							if (distinct) {
+								complement += pages.quadCount();
+							}
+							continue;
+						}
+						boolean roots = (requiredIds & 1 << S) != 0
+								|| (kindMask & 1 << S) != 0 && !pages.uniformRowTermKind();
+						boolean neighbors = (requiredIds & 1 << O) != 0
+								|| (kindMask & 1 << O) != 0 && !pages.uniformNeighborTermKind();
+						payload |= !common || neighbors;
+						double updates = common && !neighbors ? roots ? pages.rowCount() : 1D : pages.quadCount();
+						contributions += updates;
+						decoded += roots || neighbors || !common ? pages.rowCount() : 0D;
+						if (!common) {
+							decoded += 2D * pages.quadCount();
+						} else if (neighbors) {
+							decoded += pages.quadCount();
+						}
+						reduced |= common && updates < pages.quadCount();
+					}
+				}
+			}
+			double low = planes + headers;
+			double high = low + contributions * (channels.length + 3D) + complement;
+			LmdbNativeWork work = LmdbNativeWork.between(low, high);
+			// Exact DISTINCT-domain complements and cross-group membership need their own storage/domain quote.
+			// Their legal exact opener remains available, with explicitly unknown structured features meanwhile.
+			if (distinct || groupFields.length != 0) {
+				return new RecipeQuote(null, work, false, null);
+			}
+			NativeAggregateCostQuotes.Input input = new NativeAggregateCostQuotes.Input(contributions,
+					planes + headers + contributions, planes, contributions, decoded, 0D, contributions,
+					LmdbNativeCostVector.zero());
+			NativeAggregatePhysicalPlan.Work physical = new NativeAggregatePhysicalPlan.Work(input,
+					LmdbNativeCostVector.zero(), 1D);
+			// A partially compressed recipe can still require a large payload sweep. Keep that legal work quoted,
+			// but only use this cold anchor when the entire selected recipe avoids neighbor/context expansion.
+			return new RecipeQuote(physical, work, reduced && !payload, null);
+		}
+	}
+
+	private final class PreparedCensus implements Prepared {
+		private final long evaluationId;
+		private final RecipeQuote quote;
+
+		PreparedCensus(RowState row, RecipeQuote quote) {
+			evaluationId = row.cancellation.evaluationId();
+			this.quote = quote;
+		}
+
+		@Override
+		public LmdbNativeWork estimateWork() {
+			return quote.work;
+		}
+
+		@Override
+		public NativeAggregatePhysicalPlan.Retention retention() {
+			return quote.physical == null ? null : NativeAggregatePhysicalPlan.Retention.STREAMING;
+		}
+
+		@Override
+		public NativeAggregatePhysicalPlan.Work quote(RowState row) {
+			return row.source == source && row.cancellation.evaluationId() == evaluationId ? quote.physical : null;
+		}
+
+		@Override
+		public NativeAggregatePhysicalPlan.ColdAnchor coldAnchor(RowState row, NativeAggregatePhysicalPlan.Work work) {
+			if (!quote.reduced || work != quote.physical || quote(row) != work) {
+				return null;
+			}
+			return new NativeAggregatePhysicalPlan.ColdAnchor(
+					"same-snapshot common-context page/root contributions carry exact quad multiplicity",
+					"query ledger owns catalog, page buffers, finite argument IDs, one bounded global reducer and bounded output replay");
+		}
+
+		@Override
+		public NativeAggregatePhysicalPlan.KeyProperties keyProperties() {
+			if (quote.physical != null) {
+				return new NativeAggregatePhysicalPlan.KeyProperties(LmdbNativePhysicalVariantKey.GroupingMode.NONE,
+						false);
+			}
+			// A grouped recipe without a physical quote retains per-group membership state: input-sized hashing,
+			// not the bounded page/root-domain work that lets the ungrouped census keep its cold prior.
+			return groupFields.length == 0 ? null
+					: new NativeAggregatePhysicalPlan.KeyProperties(
+							LmdbNativePhysicalVariantKey.GroupingMode.HASHED, true);
+		}
+
+		@Override
+		public String properties() {
+			return "CENSUS[coverage=PAGE_HEADERS,reduction=WEIGHTED_KIND_CONTRIBUTIONS,output=BOUNDED_REPLAY]";
+		}
+
+		@Override
+		public CloseableIteration<BindingSet> evaluate(BindingSet bindings, NativeCancellationToken owner) {
+			owner.check();
+			if (!bindings.isEmpty() || owner.evaluationId() != evaluationId) {
+				return decline("lexical evaluation scope changed");
+			}
+			if (!Boolean.parseBoolean(
+					System.getProperty("rdf4j.lmdb.directAdjacency.scanAggregates.enabled", "true"))) {
+				return decline("adjacency scan aggregation disabled");
+			}
+			if (quote.unavailable != null) {
+				return decline(quote.unavailable);
+			}
+			SyntheticValueSource evaluation = SyntheticValueSource.forInvocation(source, bindings);
+			CloseableIteration<BindingSet> result = null;
+			try (SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(evaluation)) {
+				NativeCancellationToken cancellation = new NativeCancellationToken(owner);
+				result = evaluateExact(cancellation, evaluation);
+				if (result == null) {
+					evaluation.executionContext().close();
+					return null;
+				}
+				return new NativeContextClosingIteration(result, evaluation.executionContext(), true, evaluation);
+			} catch (Throwable failure) {
+				Throwable problem = KernelRuntime.closeResource(result, failure);
+				NativeContextClosingIteration.throwFailure(
+						KernelRuntime.closeResource(evaluation.executionContext(), problem));
+				throw new AssertionError("unreachable");
+			}
+		}
+	}
+
+	private CloseableIteration<BindingSet> decline(String reason) {
+		LmdbNativeAttemptMetrics.recordDecline(explainTarget, PATH, reason);
+		return null;
+	}
+
+	@Override
+	public LmdbNativeWork estimateWork(NativeLmdbQuerySource source) throws IOException {
+		NativeCancellationToken cancellation = NativeCancellationToken.forSource(source);
+		try (NativeProbe probe = source.newProbe(); WildcardAdjacency wildcard = probe.wildcardAdjacency(true)) {
+			if (wildcard == null) {
+				return LmdbNativeWork.UNKNOWN;
+			}
+			int requiredIds = idMask;
+			for (int field = 0; field < 4; field++) {
+				if (distinctFields[field]) {
+					requiredIds |= 1 << field;
+				}
+			}
+			double low = wildcard.predicateCount(), high = low;
+			for (int index = 0; index < wildcard.predicateCount(); index++) {
+				cancellation.check();
+				LmdbNativeProbeDeadline.poll(0);
+				long predicate = wildcard.predicateAt(index);
+				if (constants[P] != UNKNOWN && constants[P] != predicate) {
+					continue;
+				}
+				wildcard.bind(index);
+				if (wildcard.keyCount() == 0L) {
+					continue;
+				}
+				NativeAdjacency adjacency = probe.adjacency(predicate, true);
+				if (adjacency == null) {
+					return LmdbNativeWork.UNKNOWN;
+				}
+				try (AdjacencyPageCursor pages = adjacency.openPageCursor()) {
+					if (pages == null) {
+						return LmdbNativeWork.UNKNOWN;
+					}
+					while (pages.advance()) {
+						cancellation.check();
+						LmdbNativeProbeDeadline.poll(0);
+						// Execution makes one coverage pass and one reduction pass over these exact visible headers.
+						low += 2D;
+						high += 2D;
+						boolean common = pages.hasCommonContext();
+						if (common && !acceptsContext(pages.commonContext())) {
+							// The optional distinct-domain complement can inspect the excluded payload.
+							high += pages.quadCount();
+							continue;
+						}
+						boolean roots = (requiredIds & 1 << S) != 0
+								|| (kindMask & 1 << S) != 0 && !pages.uniformRowTermKind();
+						boolean neighbors = (requiredIds & 1 << O) != 0
+								|| (kindMask & 1 << O) != 0 && !pages.uniformNeighborTermKind();
+						double minimumUpdates = common && !roots && !neighbors ? 1D : pages.rowCount();
+						double maximumUpdates = common && !neighbors ? minimumUpdates : pages.quadCount();
+						low += minimumUpdates;
+						// Reducer channels, grouping/membership and output are bounded by the physical input grain.
+						high += maximumUpdates * (channels.length + 3D);
+					}
+				}
+			}
+			return LmdbNativeWork.between(low, high);
+		}
+	}
+
 	private LmdbNativeCensusAggregate(NativeLmdbQuerySource source, LmdbNativeEvaluationStrategy strategy,
 			QueryEvaluationContext context, Group group, TupleExpr explainTarget, StatementPattern pattern,
 			ContextConstraint contexts, long[] constants, String[] groupNames, int[] groupFields, Channel[] channels,
@@ -129,7 +397,7 @@ final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
 		}
 		this.groupFields = groupFields;
 		this.channels = channels;
-		this.acceptedKinds = filter.values;
+		this.acceptedKinds = filter.acceptedKinds();
 		this.distinctFields = new boolean[4];
 		int kinds = filter.mask;
 		int ids = 0;
@@ -185,10 +453,16 @@ final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
 			if (var == null) {
 				continue;
 			}
-			if (fields.putIfAbsent(var.getName(), field) != null || aliases.containsKey(var.getName())) {
+			if (!var.isConstant()
+					&& (fields.putIfAbsent(var.getName(), field) != null || aliases.containsKey(var.getName()))) {
 				return null;
 			}
 			if (var.hasValue()) {
+				// A single ID lookup is a complete point restriction only in a canonical statement domain. A raw
+				// source with aliases can otherwise hide other rows for the exact same RDF constant.
+				if (!canonicalPatternIds(source)) {
+					return null;
+				}
 				constants[field] = source.idOf(var.getValue(), 1 << field);
 				if (constants[field] == UNKNOWN) {
 					return null;
@@ -240,20 +514,24 @@ final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
 						&& !(argument instanceof ValueConstant) && number == null) {
 					return null;
 				}
-				channels[i] = new Channel(element.getName(), field, count.isDistinct(), false, number);
+				channels[i] = new Channel(element.getName(), field, count.isDistinct(), false, number,
+						argument instanceof ValueConstant constant ? constant.getValue() : null);
 			} else if (element.getOperator() instanceof Sum sum) {
 				IntegerExpression number = expressions.integer(sum.getArg());
 				if (number == null) {
 					return null;
 				}
-				channels[i] = new Channel(element.getName(), -1, sum.isDistinct(), true, number);
+				channels[i] = new Channel(element.getName(), -1, sum.isDistinct(), true, number, null);
 			} else {
 				return null;
 			}
 		}
-		// Keep the existing COUNT-only root/domain reducers for operations they already handle.
+		// Closed kind predicates need the census coefficients even when every consumer is COUNT. Other COUNT-only
+		// demands retain the existing root/domain alternatives; admission never makes this algorithm mandatory.
 		boolean needsCensus = Arrays.stream(channels).anyMatch(channel -> channel.sum || channel.field == C)
-				|| Arrays.stream(groups).anyMatch(field -> field == C);
+				|| Arrays.stream(groups).anyMatch(field -> field == C) || filter.mask != 0
+				|| Arrays.stream(channels)
+						.anyMatch(channel -> channel.expression != null && channel.expression.mask != 0);
 		if (!needsCensus) {
 			return null;
 		}
@@ -263,37 +541,83 @@ final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
 
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
+		return evaluate(bindings, null);
+	}
+
+	@Override
+	public CloseableIteration<BindingSet> evaluate(BindingSet bindings, NativeCancellationToken owner) {
+		if (owner != null) {
+			owner.check();
+		}
 		if (!bindings.isEmpty()
 				|| !Boolean.parseBoolean(
 						System.getProperty("rdf4j.lmdb.directAdjacency.scanAggregates.enabled", "true"))) {
 			return NativeExecutionContextCarrier.forEvaluation(fallback().evaluate(bindings), source);
 		}
-		return NativeExecutionContextCarrier.forEvaluation(new CensusIteration(bindings), source);
+		SyntheticValueSource evaluation = SyntheticValueSource.forInvocation(source, bindings);
+		return NativeExecutionContextCarrier.evaluate(() -> new CensusIteration(bindings, owner, evaluation),
+				evaluation, true);
 	}
 
 	private final class CensusIteration extends ThreadSafeDelayedIteration<BindingSet>
 			implements CooperativeCancellation {
-		private final NativeCancellationToken cancellation = new NativeCancellationToken();
+		private final NativeCancellationToken cancellation;
 		private final BindingSet bindings;
+		private final SyntheticValueSource evaluation;
 		private volatile CloseableIteration<BindingSet> delegate;
 
-		CensusIteration(BindingSet bindings) {
+		CensusIteration(BindingSet bindings, NativeCancellationToken owner, SyntheticValueSource evaluation) {
 			this.bindings = bindings;
+			this.evaluation = evaluation;
+			this.cancellation = new NativeCancellationToken(owner == null ? evaluation.executionContext().cancellation()
+					: owner);
+		}
+
+		@Override
+		public synchronized boolean hasNext() {
+			if (isClosed()) {
+				return false;
+			}
+			cancellation.check();
+			boolean result = super.hasNext();
+			cancellation.check();
+			return result;
+		}
+
+		@Override
+		public synchronized BindingSet next() {
+			if (!isClosed()) {
+				cancellation.check();
+			}
+			BindingSet result = super.next();
+			cancellation.check();
+			return result;
+		}
+
+		@Override
+		public synchronized void remove() {
+			super.remove();
 		}
 
 		@Override
 		protected CloseableIteration<? extends BindingSet> createIteration() {
+			CloseableIteration<BindingSet> result = null;
 			try {
-				CloseableIteration<BindingSet> result = evaluateNow(bindings, cancellation);
+				result = evaluateNow(bindings, cancellation, evaluation);
 				delegate = result;
-				if (isClosed() || cancellation.isCancellationRequested()) {
-					result.close();
+				cancellation.check();
+				if (isClosed()) {
+					CloseableIteration<BindingSet> unopened = result;
+					result = null;
+					unopened.close();
 					return QueryEvaluationStep.EMPTY_ITERATION;
 				}
 				return result;
-			} catch (KernelQueryCancelledException cancelled) {
-				close();
-				return QueryEvaluationStep.EMPTY_ITERATION;
+			} catch (RuntimeException | Error failure) {
+				Throwable problem = KernelRuntime.closeResource(result, failure);
+				delegate = null;
+				NativeContextClosingIteration.throwFailure(KernelRuntime.closeResource(this, problem));
+				throw new AssertionError("unreachable");
 			}
 		}
 
@@ -302,6 +626,10 @@ final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
 			if (isClosed()) {
 				return false;
 			}
+			return signalCancellation();
+		}
+
+		private boolean signalCancellation() {
 			cancellation.requestCancellation();
 			CloseableIteration<BindingSet> current = delegate;
 			return current == null || current instanceof CooperativeCancellation cooperative
@@ -310,12 +638,44 @@ final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
 
 		@Override
 		protected void handleClose() {
-			cancellation.requestCancellation();
-			super.handleClose();
+			// As in NativeLazyResultReplay, cancellation must be published before waiting for active advancement.
+			// The superclass marks this iteration closed before invoking this hook, so signal without its public gate.
+			Throwable failure = null;
+			try {
+				signalCancellation();
+			} catch (RuntimeException | Error problem) {
+				failure = problem;
+			}
+			synchronized (this) {
+				failure = KernelRuntime.closeResource(() -> super.handleClose(), failure);
+			}
+			if (failure != null) {
+				NativeContextClosingIteration.throwFailure(failure);
+			}
 		}
 	}
 
-	private CloseableIteration<BindingSet> evaluateNow(BindingSet bindings, NativeCancellationToken cancellation) {
+	private CloseableIteration<BindingSet> evaluateNow(BindingSet bindings, NativeCancellationToken cancellation,
+			SyntheticValueSource evaluation) {
+		try (NativeExecutionPhaseEvent.Span scan = NativeExecutionPhaseEvent.startNested("scan", cancellation)) {
+			CloseableIteration<BindingSet> result = evaluateUnmeasured(bindings, cancellation, evaluation, false);
+			scan.complete();
+			return result;
+		}
+	}
+
+	private CloseableIteration<BindingSet> evaluateExact(NativeCancellationToken cancellation,
+			SyntheticValueSource evaluation) {
+		try (NativeExecutionPhaseEvent.Span scan = NativeExecutionPhaseEvent.startNested("scan", cancellation)) {
+			CloseableIteration<BindingSet> result = evaluateUnmeasured(EmptyBindingSet.getInstance(), cancellation,
+					evaluation, true);
+			scan.complete();
+			return result;
+		}
+	}
+
+	private CloseableIteration<BindingSet> evaluateUnmeasured(BindingSet bindings,
+			NativeCancellationToken cancellation, SyntheticValueSource evaluation, boolean exact) {
 		checkCancelled(cancellation);
 		LmdbAdjacencyOptimizationTelemetry telemetry = LmdbAdjacencyOptimizationTelemetry.create(explainTarget,
 				LmdbAdjacencyOptimizationTelemetry.Grain.PLANE, LmdbAdjacencyOptimizationTelemetry.Direction.SOC);
@@ -324,185 +684,214 @@ final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
 			telemetry.trackPageHeaderFastPaths();
 			telemetry.source("ADJACENCY_CENSUS");
 		}
-		List<BindingSet> rows;
-		try (NativeProbe probe = source.newProbe(); WildcardAdjacency wildcard = probe.wildcardAdjacency(true)) {
-			rows = wildcard == null ? null : collect(probe, wildcard, telemetry, cancellation);
-		} catch (IOException e) {
-			throw new QueryEvaluationException(e);
+		NativeResultCursor rows = null;
+		try {
+			try (NativeProbe probe = source.newProbe();
+					WildcardAdjacency wildcard = probe.wildcardAdjacency(true);
+					KernelRuntime.AggregateMemory workspace = KernelRuntime.AggregateMemory
+							.forLedger(evaluation.executionContext().memoryLedger())) {
+				if (wildcard == null) {
+					rows = unavailable(exact, "wildcard adjacency unavailable");
+				} else {
+					// Page payload arrays, the retained view catalog, and temporary root-domain arrays/merge
+					// references.
+					// Admission precedes the first catalog read and all allocations below, including the empty case.
+					long bytes = Math.addExact(1024L + 3L * (16L + (long) BATCH * Long.BYTES),
+							Math.multiplyExact(8L * Long.BYTES, wildcard.predicateCount()));
+					if (!workspace.tryReserve(bytes)) {
+						throw new QueryEvaluationException("Census page workspace refused by query memory ledger");
+					}
+					rows = collect(probe, wildcard, telemetry, cancellation, evaluation, exact);
+				}
+			}
+			if (rows == null) {
+				return exact ? null : fallback().evaluate(bindings);
+			}
+			if (telemetry != null) {
+				telemetry.publish(explainTarget);
+			}
+			LmdbNativeExplain.recordExecutionPath(explainTarget, PATH);
+			return NativeResultSteps.rdf(rows);
+		} catch (Throwable failure) {
+			Throwable problem = KernelRuntime.closeResource(rows, failure);
+			if (problem instanceof IOException io) {
+				throw new QueryEvaluationException(io);
+			}
+			NativeContextClosingIteration.throwFailure(problem);
+			throw new AssertionError("unreachable");
 		}
-		if (rows == null) {
-			return fallback().evaluate(bindings);
-		}
-		if (telemetry != null) {
-			telemetry.publish(explainTarget);
-		}
-		LmdbNativeExplain.recordExecutionPath(explainTarget, PATH);
-		return new CloseableIteratorIteration<>(rows.iterator());
 	}
 
-	private List<BindingSet> collect(NativeProbe probe, WildcardAdjacency wildcard,
-			LmdbAdjacencyOptimizationTelemetry telemetry, NativeCancellationToken cancellation) throws IOException {
-		int predicates = wildcard.predicateCount();
-		NativeAdjacency[] views = new NativeAdjacency[predicates];
-		boolean allRowsSelected = constants[S] == UNKNOWN && constants[P] == UNKNOWN && constants[O] == UNKNOWN;
-		for (boolean accepted : acceptedKinds) {
-			allRowsSelected &= accepted;
-		}
-		boolean domainEligible = allRowsSelected && groupFields.length == 0;
-		long totalQuads = 0L;
-		long possiblyExcludedQuads = 0L;
-		// Establish complete graph coverage before using any global node cardinality. A mixed-context page
-		// declines this proof; its context payload is filtered during the ordinary page traversal below.
-		for (int p = 0; p < predicates; p++) {
-			checkCancelled(cancellation);
-			long predicate = wildcard.predicateAt(p);
-			if (constants[P] != UNKNOWN && constants[P] != predicate) {
-				continue;
+	private NativeResultCursor collect(NativeProbe probe, WildcardAdjacency wildcard,
+			LmdbAdjacencyOptimizationTelemetry telemetry, NativeCancellationToken cancellation,
+			SyntheticValueSource evaluation, boolean exact) throws IOException {
+		Collector collector = null;
+		ExcludedDomains excluded = null;
+		boolean transferred = false;
+		Throwable failure = null;
+		try {
+			int predicates = wildcard.predicateCount();
+			NativeAdjacency[] views = new NativeAdjacency[predicates];
+			boolean allRowsSelected = constants[S] == UNKNOWN && constants[P] == UNKNOWN && constants[O] == UNKNOWN;
+			for (boolean accepted : acceptedKinds) {
+				allRowsSelected &= accepted;
 			}
-			wildcard.bind(p);
-			if (wildcard.keyCount() == 0) {
-				continue;
-			}
-			NativeAdjacency view = probe.adjacency(predicate, true);
-			views[p] = view;
-			if (view == null) {
-				return null;
-			}
-			try (AdjacencyPageCursor pages = view.openPageCursor()) {
-				if (pages == null) {
-					return null;
+			// Root/domain metadata counts IDs. It proves RDF-term DISTINCT only for a canonical dictionary.
+			boolean domainEligible = canonicalPatternIds(source) && allRowsSelected && groupFields.length == 0;
+			long totalQuads = 0L;
+			long possiblyExcludedQuads = 0L;
+			// Establish complete graph coverage before using any global node cardinality. A mixed-context page
+			// declines this proof; its context payload is filtered during the ordinary page traversal below.
+			for (int p = 0; p < predicates; p++) {
+				checkCancelled(cancellation);
+				long predicate = wildcard.predicateAt(p);
+				if (constants[P] != UNKNOWN && constants[P] != predicate) {
+					continue;
 				}
-				while (pages.advance()) {
-					checkCancelled(cancellation);
-					boolean selected = pages.hasCommonContext() && acceptsContext(pages.commonContext());
-					allRowsSelected &= selected;
-					totalQuads = Math.addExact(totalQuads, pages.quadCount());
-					if (!selected) {
-						possiblyExcludedQuads = Math.addExact(possiblyExcludedQuads, pages.quadCount());
-					}
+				wildcard.bind(p);
+				if (wildcard.keyCount() == 0) {
+					continue;
 				}
-			}
-		}
-		long[] exactDistinct = { -1L, -1L, -1L, -1L };
-		LongHashSet[] excluded = null;
-		// Correct the full domain using the excluded occurrences only when that side is smaller. This is an
-		// exact complement, not subtraction of per-graph cardinalities: nodes present on both sides stay counted.
-		if (domainEligible && (allRowsSelected || possiblyExcludedQuads < totalQuads - possiblyExcludedQuads)) {
-			for (int field : new int[] { S, O }) {
-				if (distinctFields[field]) {
-					NodePredicates projection = probe.nodePredicates(field == S);
-					exactDistinct[field] = projection == null ? -1L : projection.nodeCount();
-					if (exactDistinct[field] < 0L) {
-						exactDistinct[field] = countRootDomain(probe, wildcard, views, field, telemetry, cancellation);
-					} else if (telemetry != null) {
-						telemetry.planeMetadataRead();
-					}
+				NativeAdjacency view = probe.adjacency(predicate, true);
+				views[p] = view;
+				if (view == null) {
+					return unavailable(exact, "adjacency view unavailable");
 				}
-			}
-			if (!allRowsSelected) {
-				excluded = new LongHashSet[] { exactDistinct[S] < 0L ? null : new LongHashSet(16), null,
-						exactDistinct[O] < 0L ? null : new LongHashSet(16), null };
-			}
-		}
-		int requiredIds = idMask;
-		for (int field = 0; field < 4; field++) {
-			if (distinctFields[field] && exactDistinct[field] < 0) {
-				requiredIds |= 1 << field;
-			}
-		}
-		Collector collector = new Collector(exactDistinct);
-		long[] ids = new long[4];
-		long[] neighbors = new long[BATCH];
-		long[] multiplicities = new long[BATCH];
-		long[] graphIds = new long[BATCH];
-		for (int p = 0; p < predicates; p++) {
-			NativeAdjacency view = views[p];
-			if (view == null) {
-				continue;
-			}
-			ids[P] = wildcard.predicateAt(p);
-			if (telemetry != null) {
-				telemetry.planeVisited();
-			}
-			try (AdjacencyPageCursor pages = view.openPageCursor()) {
-				while (pages.advance()) {
-					checkCancelled(cancellation);
-					if (telemetry != null) {
-						telemetry.pageVisited();
+				try (AdjacencyPageCursor pages = view.openPageCursor()) {
+					if (pages == null) {
+						return unavailable(exact, "page cursor unavailable");
 					}
-					boolean common = pages.hasCommonContext();
-					ids[C] = common ? pages.commonContext() : UNKNOWN;
-					if (common && !acceptsContext(ids[C])) {
-						if (telemetry != null) {
-							telemetry.headerRejectedPage();
-						}
-						if (excluded != null && !collectExcludedPage(pages, excluded, neighbors, graphIds,
-								telemetry, cancellation)) {
-							return null;
-						}
-						continue;
-					}
-					boolean rootKind = (kindMask & (1 << S)) == 0 || pages.uniformRowTermKind();
-					boolean neighborKind = (kindMask & (1 << O)) == 0 || pages.uniformNeighborTermKind();
-					boolean needRoots = (requiredIds & (1 << S)) != 0 || !rootKind;
-					boolean needNeighbors = (requiredIds & (1 << O)) != 0 || !neighborKind;
-					ids[S] = pages.firstRow();
-					ids[O] = pages.firstNeighbor();
-					if (common && !needRoots && !needNeighbors) {
-						collector.accept(ids, pages.quadCount());
-						if (telemetry != null) {
-							telemetry.headerBulkCountPage();
-						}
-						continue;
-					}
-					for (int r = 0; r < pages.rowCount(); r++) {
+					while (pages.advance()) {
 						checkCancelled(cancellation);
-						ids[S] = pages.rowAt(r);
+						boolean selected = pages.hasCommonContext() && acceptsContext(pages.commonContext());
+						allRowsSelected &= selected;
+						totalQuads = Math.addExact(totalQuads, pages.quadCount());
+						if (!selected) {
+							possiblyExcludedQuads = Math.addExact(possiblyExcludedQuads, pages.quadCount());
+						}
+					}
+				}
+			}
+			long[] exactDistinct = { -1L, -1L, -1L, -1L };
+			// Correct the full domain using the excluded occurrences only when that side is smaller. This is an
+			// exact complement, not subtraction of per-graph cardinalities: nodes present on both sides stay counted.
+			if (domainEligible && (allRowsSelected || possiblyExcludedQuads < totalQuads - possiblyExcludedQuads)) {
+				for (int field : new int[] { S, O }) {
+					if (distinctFields[field]) {
+						NodePredicates projection = probe.nodePredicates(field == S);
+						exactDistinct[field] = projection == null ? -1L : projection.nodeCount();
+						if (exactDistinct[field] < 0L) {
+							exactDistinct[field] = countRootDomain(probe, wildcard, views, field, telemetry,
+									cancellation);
+						} else if (telemetry != null) {
+							telemetry.planeMetadataRead();
+						}
+					}
+				}
+				if (!allRowsSelected) {
+					excluded = new ExcludedDomains(exactDistinct, evaluation, cancellation);
+				}
+			}
+			int requiredIds = idMask;
+			for (int field = 0; field < 4; field++) {
+				if (distinctFields[field] && exactDistinct[field] < 0) {
+					requiredIds |= 1 << field;
+				}
+			}
+			collector = new Collector(exactDistinct, evaluation, cancellation);
+			long[] ids = new long[4];
+			long[] neighbors = new long[BATCH];
+			long[] multiplicities = new long[BATCH];
+			long[] graphIds = new long[BATCH];
+			for (int p = 0; p < predicates; p++) {
+				NativeAdjacency view = views[p];
+				if (view == null) {
+					continue;
+				}
+				ids[P] = wildcard.predicateAt(p);
+				if (telemetry != null) {
+					telemetry.planeVisited();
+				}
+				try (AdjacencyPageCursor pages = view.openPageCursor()) {
+					while (pages.advance()) {
+						checkCancelled(cancellation);
 						if (telemetry != null) {
-							telemetry.rootIdDecoded();
+							telemetry.pageVisited();
 						}
-						if (constants[S] != UNKNOWN && constants[S] != ids[S]) {
-							continue;
-						}
-						if (common && !needNeighbors) {
-							collector.accept(ids, pages.rowQuadCount(r));
-							continue;
-						}
-						if (common) {
-							int from = 0;
-							int copied;
-							while ((copied = pages.copyRowFibers(r, from, BATCH, neighbors, 0, multiplicities,
-									0)) > 0) {
-								checkCancelled(cancellation);
-								from += copied;
-								if (telemetry != null) {
-									telemetry.neighborIdsDecoded(copied);
-								}
-								for (int i = 0; i < copied; i++) {
-									ids[O] = neighbors[i];
-									collector.accept(ids, multiplicities[i]);
-								}
+						boolean common = pages.hasCommonContext();
+						ids[C] = common ? pages.commonContext() : UNKNOWN;
+						if (common && !acceptsContext(ids[C])) {
+							if (telemetry != null) {
+								telemetry.headerRejectedPage();
 							}
-						} else {
-							int from = 0;
-							int copied;
-							while ((copied = pages.copyRowQuads(r, from, BATCH, neighbors, graphIds)) != 0) {
-								checkCancelled(cancellation);
-								if (copied < 0) {
-									return null;
+							if (excluded != null && !collectExcludedPage(pages, excluded, neighbors, graphIds,
+									telemetry, cancellation)) {
+								return unavailable(exact, "page excluded-context payload unavailable");
+							}
+							continue;
+						}
+						boolean rootKind = (kindMask & (1 << S)) == 0 || pages.uniformRowTermKind();
+						boolean neighborKind = (kindMask & (1 << O)) == 0 || pages.uniformNeighborTermKind();
+						boolean needRoots = (requiredIds & (1 << S)) != 0 || !rootKind;
+						boolean needNeighbors = (requiredIds & (1 << O)) != 0 || !neighborKind;
+						ids[S] = pages.firstRow();
+						ids[O] = pages.firstNeighbor();
+						if (common && !needRoots && !needNeighbors) {
+							collector.accept(ids, pages.quadCount());
+							if (telemetry != null) {
+								telemetry.headerBulkCountPage();
+							}
+							continue;
+						}
+						for (int r = 0; r < pages.rowCount(); r++) {
+							checkCancelled(cancellation);
+							ids[S] = pages.rowAt(r);
+							if (telemetry != null) {
+								telemetry.rootIdDecoded();
+							}
+							if (constants[S] != UNKNOWN && constants[S] != ids[S]) {
+								continue;
+							}
+							if (common && !needNeighbors) {
+								collector.accept(ids, pages.rowQuadCount(r));
+								continue;
+							}
+							if (common) {
+								int from = 0;
+								int copied;
+								while ((copied = pages.copyRowFibers(r, from, BATCH, neighbors, 0, multiplicities,
+										0)) > 0) {
+									checkCancelled(cancellation);
+									from += copied;
+									if (telemetry != null) {
+										telemetry.neighborIdsDecoded(copied);
+									}
+									for (int i = 0; i < copied; i++) {
+										ids[O] = neighbors[i];
+										collector.accept(ids, multiplicities[i]);
+									}
 								}
-								from += copied;
-								if (telemetry != null) {
-									telemetry.neighborIdsDecoded(copied);
-									telemetry.contextIdsDecoded(copied);
-								}
-								for (int i = 0; i < copied; i++) {
-									ids[O] = neighbors[i];
-									ids[C] = graphIds[i];
-									if (acceptsContext(ids[C])) {
-										collector.accept(ids, 1L);
-									} else if (excluded != null) {
-										addExcluded(excluded, ids[S], ids[O]);
+							} else {
+								int from = 0;
+								int copied;
+								while ((copied = pages.copyRowQuads(r, from, BATCH, neighbors, graphIds)) != 0) {
+									checkCancelled(cancellation);
+									if (copied < 0) {
+										return unavailable(exact, "page quad payload unavailable");
+									}
+									from += copied;
+									if (telemetry != null) {
+										telemetry.neighborIdsDecoded(copied);
+										telemetry.contextIdsDecoded(copied);
+									}
+									for (int i = 0; i < copied; i++) {
+										ids[O] = neighbors[i];
+										ids[C] = graphIds[i];
+										if (acceptsContext(ids[C])) {
+											collector.accept(ids, 1L);
+										} else if (excluded != null) {
+											addExcluded(excluded, ids[S], ids[O]);
+										}
 									}
 								}
 							}
@@ -510,11 +899,34 @@ final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
 					}
 				}
 			}
+			if (excluded != null) {
+				correctExcludedDomains(probe, excluded, exactDistinct, cancellation);
+				excluded.close();
+				excluded = null;
+			}
+			NativeResultCursor results = collector.results();
+			transferred = true;
+			return results;
+		} catch (IOException | RuntimeException | Error problem) {
+			failure = problem;
+			throw problem;
+		} finally {
+			Throwable cleanup = failure;
+			if (!transferred) {
+				cleanup = KernelRuntime.closeResource(collector, cleanup);
+			}
+			cleanup = KernelRuntime.closeResource(excluded, cleanup);
+			if (cleanup != failure) {
+				NativeContextClosingIteration.throwFailure(cleanup);
+			}
 		}
-		if (excluded != null) {
-			correctExcludedDomains(probe, excluded, exactDistinct, cancellation);
+	}
+
+	private <T> T unavailable(boolean exact, String reason) {
+		if (exact) {
+			LmdbNativeAttemptMetrics.recordDecline(explainTarget, PATH, reason);
 		}
-		return collector.results(cancellation);
+		return null;
 	}
 
 	private long countRootDomain(NativeProbe probe, WildcardAdjacency wildcard, NativeAdjacency[] outgoing,
@@ -578,7 +990,7 @@ final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
 		}
 	}
 
-	private boolean collectExcludedPage(AdjacencyPageCursor pages, LongHashSet[] excluded, long[] neighbors,
+	private boolean collectExcludedPage(AdjacencyPageCursor pages, ExcludedDomains excluded, long[] neighbors,
 			long[] graphs, LmdbAdjacencyOptimizationTelemetry telemetry, NativeCancellationToken cancellation) {
 		for (int r = 0; r < pages.rowCount(); r++) {
 			checkCancelled(cancellation);
@@ -606,30 +1018,65 @@ final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
 		return true;
 	}
 
-	private static void addExcluded(LongHashSet[] excluded, long subject, long object) {
-		if (excluded[S] != null) {
-			excluded[S].add(subject);
-		}
-		if (excluded[O] != null) {
-			excluded[O].add(object);
-		}
+	private static void addExcluded(ExcludedDomains excluded, long subject, long object) {
+		excluded.add(S, subject);
+		excluded.add(O, object);
 	}
 
-	private void correctExcludedDomains(NativeProbe probe, LongHashSet[] excluded, long[] distinct,
+	private void correctExcludedDomains(NativeProbe probe, ExcludedDomains excluded, long[] distinct,
 			NativeCancellationToken cancellation) throws IOException {
 		for (int field : new int[] { S, O }) {
-			LongHashSet candidates = excluded[field];
+			NativeCountGroupStore candidates = excluded.stores[field];
 			if (candidates == null) {
 				continue;
 			}
-			for (long node : candidates.table) {
-				if (node != LongHashSet.EMPTY && !hasSelectedOccurrence(probe, field, node, cancellation)) {
+			candidates.finish();
+			while (candidates.next(excluded.read)) {
+				if (!hasSelectedOccurrence(probe, field, excluded.read[0], cancellation)) {
 					distinct[field]--;
 				}
 			}
-			if (candidates.containsEmptySentinel
-					&& !hasSelectedOccurrence(probe, field, LongHashSet.EMPTY, cancellation)) {
-				distinct[field]--;
+		}
+	}
+
+	/** Canonical-domain complements retain a bounded stream of candidate IDs, never an unbounded hash set. */
+	private static final class ExcludedDomains implements AutoCloseable {
+		private final NativeCountGroupStore[] stores = new NativeCountGroupStore[4];
+		private final long[] key = new long[1], read = new long[1];
+
+		ExcludedDomains(long[] exactDistinct, SyntheticValueSource evaluation, NativeCancellationToken cancellation) {
+			try {
+				for (int field : new int[] { S, O }) {
+					if (exactDistinct[field] >= 0L) {
+						stores[field] = new NativeCountGroupStore(1, new boolean[0], id -> id,
+								LmdbNativeProbeDeadline.currentKernelCancellation(
+										cancellation::isCancellationRequested, null),
+								evaluation.executionContext().memoryLedger());
+					}
+				}
+			} catch (Throwable failure) {
+				NativeContextClosingIteration.throwFailure(KernelRuntime.closeResource(this, failure));
+				throw new AssertionError("unreachable");
+			}
+		}
+
+		void add(int field, long id) {
+			if (stores[field] != null) {
+				key[0] = id;
+				stores[field].addChannel(key, -1, UNKNOWN, 1L);
+			}
+		}
+
+		@Override
+		public void close() {
+			Throwable failure = null;
+			for (int field = 0; field < stores.length; field++) {
+				NativeCountGroupStore owned = stores[field];
+				stores[field] = null;
+				failure = KernelRuntime.closeResource(owned, failure);
+			}
+			if (failure != null) {
+				NativeContextClosingIteration.throwFailure(failure);
 			}
 		}
 	}
@@ -655,6 +1102,16 @@ final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
 				&& (constants[C] == UNKNOWN || constants[C] == id);
 	}
 
+	private static boolean canonicalPatternIds(NativeLmdbQuerySource source) {
+		// This recipe's domain keys come exclusively from its native statement probe. Plan/runtime constants are
+		// reducer arguments, never members of the probed node domain, so a synthetic carrier can be unwrapped here.
+		NativeLmdbQuerySource backing = source;
+		while (backing instanceof SyntheticValueSource synthetic) {
+			backing = synthetic.delegate;
+		}
+		return backing.hasCanonicalIds();
+	}
+
 	private static void checkCancelled(NativeCancellationToken cancellation) {
 		if (cancellation.isCancellationRequested()) {
 			throw KernelQueryCancelledException.INSTANCE;
@@ -668,160 +1125,312 @@ final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
 		return fallback;
 	}
 
-	private final class Collector {
-		private final Map<Key, State> groups = new LinkedHashMap<>();
-		private final Key lookup = new Key(new long[groupFields.length]);
+	/** Finite coefficient rows use the same bounded reducers and payload authority as ordinary native groups. */
+	private final class Collector implements AutoCloseable {
+		private static final int ARGUMENT = 4;
+		private static final int[] NONE = new int[0];
 		private final long[] exactDistinct;
-		private final State global;
+		private final SyntheticValueSource evaluation;
+		private final NativeCancellationToken cancellation;
+		private final KernelRuntime.AggregateMemory metadata;
+		private NativeGroupIteration renderer;
+		private AggContext aggregateContext;
+		private NativeGroupTable table;
+		private AggState global;
+		private RowState row;
+		private long[][] expressionIds;
+		private long[] constantIds;
+		private int[][] selected;
+		private int[] keys, aliases;
+		private NativeResultRow.Schema schema;
+		private boolean sawRow, closed;
 
-		Collector(long[] exactDistinct) {
+		Collector(long[] exactDistinct, SyntheticValueSource evaluation, NativeCancellationToken cancellation) {
 			this.exactDistinct = exactDistinct;
-			global = groupFields.length == 0 ? new State(exactDistinct) : null;
-			if (global != null) {
-				groups.put(lookup, global);
+			this.evaluation = evaluation;
+			this.cancellation = cancellation;
+			metadata = KernelRuntime.AggregateMemory.forLedger(evaluation.executionContext().memoryLedger());
+			try {
+				// Specs, selectors, finite-domain cache references, row slots, schema and aliases are query-owned.
+				long bytes = Math.addExact(1024L, Math.addExact(Math.multiplyExact(256L, channels.length),
+						Math.multiplyExact(24L, groupNames.length)));
+				if (!metadata.tryReserve(bytes)) {
+					throw new QueryEvaluationException("Census reducer metadata refused by query memory ledger");
+				}
+				Set<String> usedNames = new HashSet<>(Arrays.asList(groupNames));
+				for (Channel channel : channels) {
+					usedNames.add(channel.name);
+				}
+				List<String> names = new ArrayList<>();
+				Map<String, Integer> slots = new LinkedHashMap<>();
+				for (int slot = 0; slot <= ARGUMENT; slot++) {
+					String name = "__census" + slot;
+					while (!usedNames.add(name)) {
+						name += '_';
+					}
+					names.add(name);
+					slots.put(name, slot);
+				}
+				NativeSlotLayout layout = new NativeSlotLayout(slots, null);
+				for (int index = 0; index < groupFields.length; index++) {
+					layout.patternPosition(names.get(groupFields[index]), groupPositionMasks[index]);
+				}
+				layout.freeze(names);
+				keys = Arrays.stream(groupFields).distinct().toArray();
+				aliases = new int[groupFields.length];
+				for (int index = 0; index < aliases.length; index++) {
+					for (int key = 0; key < keys.length; key++) {
+						if (keys[key] == groupFields[index]) {
+							aliases[index] = key;
+							break;
+						}
+					}
+				}
+				AggregateSpec[] specs = new AggregateSpec[channels.length];
+				selected = new int[channels.length][1];
+				expressionIds = new long[channels.length][];
+				constantIds = new long[channels.length];
+				Arrays.fill(constantIds, UNKNOWN);
+				String[] outputNames = Arrays.copyOf(groupNames, groupNames.length + channels.length);
+				boolean distinct = false;
+				for (int index = 0; index < channels.length; index++) {
+					Channel channel = channels[index];
+					boolean membership = channel.distinct && !metadataResult(channel);
+					distinct |= membership;
+					specs[index] = channel.sum || membership || channel.field == C || channel.expression != null
+							? AggregateSpec.slot(channel.name, ARGUMENT, membership,
+									channel.sum ? AggKind.SUM : AggKind.COUNT)
+							: AggregateSpec.star(channel.name);
+					selected[index][0] = index;
+					outputNames[groupNames.length + index] = channel.name;
+				}
+				schema = new NativeResultRow.Schema(outputNames);
+				renderer = NativeGroupIteration.forStructuralReducer(evaluation, layout, keys, specs, cancellation,
+						explainTarget);
+				aggregateContext = renderer.aggContext;
+				row = new RowState(evaluation, layout, EmptyBindingSet.getInstance(), explainTarget, cancellation);
+				if (!renderer.initialize(row)) {
+					throw new QueryEvaluationException("Census reducer frame could not be initialized");
+				}
+				if (keys.length == 0 && !distinct) {
+					global = AggState.bounded(specs, 0, aggregateContext, AggregateDistinctChannels.allHash(specs),
+							cancellation, evaluation.executionContext().memoryLedger());
+				} else {
+					table = NativeGroupTable.boundedPrefix(keys, specs, aggregateContext, row);
+					if (keys.length == 0) {
+						// An empty global aggregate still has one result, without a fabricated channel contribution.
+						table.addProjected(row, 1L, NONE, NONE);
+					}
+				}
+			} catch (Throwable failure) {
+				NativeContextClosingIteration.throwFailure(KernelRuntime.closeResource(this, failure));
+				throw new AssertionError("unreachable");
 			}
+		}
+
+		private boolean metadataResult(Channel channel) {
+			return channel.distinct && !channel.sum && channel.field >= 0 && exactDistinct[channel.field] >= 0L;
 		}
 
 		void accept(long[] ids, long multiplicity) {
-			if (multiplicity == 0 || constants[O] != UNKNOWN && constants[O] != ids[O]) {
+			if (multiplicity == 0L || constants[O] != UNKNOWN && constants[O] != ids[O]) {
 				return;
 			}
-			int kind = kindIndex(ValueIds.termKind(ids[S]), ValueIds.termKind(ids[O]), ValueIds.termKind(ids[C]));
+			// The default-graph sentinel is not an RDF term, even though its bit pattern has a storage type tag.
+			int contextKind = ids[C] == NULL_CONTEXT_ID ? ValueIds.TERM_KIND_UNKNOWN : ValueIds.termKind(ids[C]);
+			int kind = kindIndex(ValueIds.termKind(ids[S]), ValueIds.termKind(ids[O]), contextKind);
 			if (!acceptedKinds[kind]) {
 				return;
 			}
-			State state = global;
-			if (state == null) {
-				for (int i = 0; i < groupFields.length; i++) {
-					lookup.ids[i] = ids[groupFields[i]];
-				}
-				state = groups.get(lookup);
-				if (state == null) {
-					state = new State(exactDistinct);
-					groups.put(new Key(lookup.ids.clone()), state);
-				}
+			sawRow = true;
+			for (int key : keys) {
+				row.slots[key] = ids[key] == NULL_CONTEXT_ID ? UNKNOWN : ids[key];
 			}
-			state.rows = Math.addExact(state.rows, multiplicity);
-			for (int field = 0; field < 4; field++) {
-				if (state.distinct[field] != null) {
-					state.distinct[field].add(ids[field]);
-				}
+			row.recomputeBoundMask();
+			if (table != null) {
+				table.addProjected(row, 1L, NONE, NONE);
 			}
-			for (int i = 0; i < channels.length; i++) {
-				Channel channel = channels[i];
-				if (channel.expression != null && (channel.sum || channel.distinct)) {
-					BigInteger value = channel.expression.values[kind];
-					if (channel.distinct) {
-						if (!state.numbers.get(i).add(channel.expression.terms[kind])) {
-							continue;
+			for (int index = 0; index < channels.length; index++) {
+				cancellation.poll(index);
+				LmdbNativeProbeDeadline.poll(index);
+				Channel channel = channels[index];
+				if (metadataResult(channel)) {
+					continue;
+				}
+				long argument = UNKNOWN;
+				if (channel.expression != null) {
+					Literal term = channel.expression.terms[kind];
+					// An expression error leaves this channel unbound, without losing the logical group marker.
+					if (term != null) {
+						long[] domain = expressionIds[index];
+						if (domain == null) {
+							if (!metadata.tryReserve(16L + (long) COMBINATIONS * Long.BYTES)) {
+								throw new QueryEvaluationException(
+										"Census finite domain refused by query memory ledger");
+							}
+							expressionIds[index] = domain = new long[COMBINATIONS];
+							Arrays.fill(domain, UNKNOWN);
 						}
-						state.add(i, channel.sum ? value : BigInteger.ONE, 1L);
-					} else {
-						state.add(i, value, multiplicity);
+						if (domain[kind] == UNKNOWN) {
+							domain[kind] = evaluation.internComputedValue(term);
+						}
+						argument = domain[kind];
+					}
+				} else if ((channel.distinct || channel.field == C) && channel.field >= 0) {
+					argument = ids[channel.field] == NULL_CONTEXT_ID ? UNKNOWN : ids[channel.field];
+				} else if (channel.distinct) {
+					if (constantIds[index] == UNKNOWN) {
+						constantIds[index] = evaluation.internComputedValue(channel.constant);
+					}
+					argument = constantIds[index];
+				}
+				row.slots[ARGUMENT] = argument;
+				row.recomputeBoundMask();
+				if (global != null) {
+					global.addProjected(row, multiplicity, selected[index], NONE);
+				} else {
+					table.addProjected(row, multiplicity, selected[index], NONE);
+				}
+			}
+		}
+
+		NativeResultCursor results() {
+			NativeResultCursor input = table != null ? table.physicalResults(renderer) : new NativeResultCursor() {
+				private boolean emitted;
+
+				@Override
+				public NativeResultRow next() {
+					if (emitted) {
+						return null;
+					}
+					emitted = true;
+					return renderer.toPhysicalRow(null, global, sawRow);
+				}
+
+				@Override
+				public NativeExecutionContext executionContext() {
+					return evaluation.executionContext();
+				}
+
+				@Override
+				public NativeCancellationToken cancellation() {
+					return cancellation;
+				}
+
+				@Override
+				public void close() {
+					emitted = true;
+				}
+			};
+			return new NativeResultCursor() {
+				private boolean outputClosed;
+
+				@Override
+				public NativeResultRow next() {
+					if (outputClosed) {
+						return null;
+					}
+					try {
+						cancellation.check();
+						NativeResultRow value = input.next();
+						if (value == null) {
+							close();
+							return null;
+						}
+						NativeResultCell[] cells = new NativeResultCell[schema.size()];
+						for (int index = 0; index < aliases.length; index++) {
+							cells[index] = value.cell(aliases[index]);
+						}
+						for (int index = 0; index < channels.length; index++) {
+							Channel channel = channels[index];
+							cells[groupNames.length + index] = metadataResult(channel)
+									? NativeResultCell.term(SimpleValueFactory.getInstance()
+											.createLiteral(BigInteger.valueOf(exactDistinct[channel.field])))
+									: value.cell(keys.length + index);
+						}
+						cancellation.check();
+						return new NativeResultRow(schema, cells);
+					} catch (Throwable failure) {
+						NativeContextClosingIteration.throwFailure(KernelRuntime.closeResource(this, failure));
+						throw new AssertionError("unreachable");
 					}
 				}
-			}
-		}
 
-		List<BindingSet> results(NativeCancellationToken cancellation) {
-			List<BindingSet> results = new ArrayList<>(groups.size());
-			for (Map.Entry<Key, State> entry : groups.entrySet()) {
-				checkCancelled(cancellation);
-				State state = entry.getValue();
-				QueryBindingSet row = new QueryBindingSet(groupNames.length + channels.length);
-				for (int i = 0; i < groupNames.length; i++) {
-					long id = entry.getKey().ids[i];
-					if (id != NULL_CONTEXT_ID && id != UNKNOWN) {
-						row.addBinding(groupNames[i], source.lazyValue(id, groupPositionMasks[i]));
+				@Override
+				public NativeExecutionContext executionContext() {
+					return evaluation.executionContext();
+				}
+
+				@Override
+				public NativeCancellationToken cancellation() {
+					return cancellation;
+				}
+
+				@Override
+				public void close() {
+					if (!outputClosed) {
+						outputClosed = true;
+						Throwable failure = KernelRuntime.closeResource(input, null);
+						failure = KernelRuntime.closeResource(Collector.this, failure);
+						if (failure != null) {
+							NativeContextClosingIteration.throwFailure(failure);
+						}
 					}
 				}
-				for (int i = 0; i < channels.length; i++) {
-					Channel channel = channels[i];
-					BigInteger value;
-					if (channel.sum || channel.expression != null && channel.distinct) {
-						value = state.big[i] == null ? BigInteger.valueOf(state.sums[i]) : state.big[i];
-					} else if (!channel.distinct) {
-						value = BigInteger.valueOf(state.rows);
-					} else if (channel.field < 0) {
-						value = state.rows == 0 ? BigInteger.ZERO : BigInteger.ONE;
-					} else {
-						value = BigInteger.valueOf(exactDistinct[channel.field] >= 0 ? exactDistinct[channel.field]
-								: state.distinct[channel.field].size);
-					}
-					row.addBinding(channel.name, SimpleValueFactory.getInstance().createLiteral(value));
-				}
-				results.add(row);
-			}
-			return results;
-		}
-	}
-
-	private final class State {
-		long rows;
-		final LongHashSet[] distinct = new LongHashSet[4];
-		final long[] sums = new long[channels.length];
-		final BigInteger[] big = new BigInteger[channels.length];
-		final Map<Integer, Set<Literal>> numbers = new HashMap<>();
-
-		State(long[] exactDistinct) {
-			for (int field = 0; field < 4; field++) {
-				if (distinctFields[field] && exactDistinct[field] < 0) {
-					distinct[field] = new LongHashSet(16);
-				}
-			}
-			for (int i = 0; i < channels.length; i++) {
-				if (channels[i].expression != null && channels[i].distinct) {
-					numbers.put(i, new HashSet<>());
-				}
-			}
+			};
 		}
 
-		void add(int channel, BigInteger value, long multiplicity) {
-			if (value.signum() == 0) {
-				return;
-			}
-			if (big[channel] == null && value.bitLength() < Long.SIZE) {
-				try {
-					sums[channel] = Math.addExact(sums[channel], Math.multiplyExact(value.longValue(), multiplicity));
-					return;
-				} catch (ArithmeticException overflow) {
-					// Promote once; the mathematical integer result is independent of traversal order.
-				}
-			}
-			BigInteger previous = big[channel] == null ? BigInteger.valueOf(sums[channel]) : big[channel];
-			big[channel] = previous.add(value.multiply(BigInteger.valueOf(multiplicity)));
-		}
-	}
-
-	private record Channel(String name, int field, boolean distinct, boolean sum, IntegerExpression expression) {
-	}
-
-	private record Key(long[] ids) {
 		@Override
-		public int hashCode() {
-			return Arrays.hashCode(ids);
+		public void close() {
+			if (!closed) {
+				closed = true;
+				Throwable failure = KernelRuntime.closeResource(table, null);
+				failure = KernelRuntime.closeResource(global == null ? null : global::closeExternal, failure);
+				failure = KernelRuntime.closeResource(row == null ? null : row::closeDecodedInputs, failure);
+				failure = KernelRuntime.closeResource(aggregateContext == null ? null : aggregateContext::close,
+						failure);
+				failure = KernelRuntime.closeResource(renderer, failure);
+				failure = KernelRuntime.closeResource(metadata, failure);
+				if (failure != null) {
+					NativeContextClosingIteration.throwFailure(failure);
+				}
+			}
 		}
+	}
 
-		@Override
-		public boolean equals(Object other) {
-			return other instanceof Key key && Arrays.equals(ids, key.ids);
-		}
+	private record Channel(String name, int field, boolean distinct, boolean sum, IntegerExpression expression,
+			Value constant) {
 	}
 
 	private record IntegerExpression(BigInteger[] values, Literal[] terms, int mask) {
 	}
 
-	private record BooleanExpression(boolean[] values, int mask) {
+	/** Finite SPARQL effective-Boolean values, including an unbound/type-error result. */
+	private record BooleanExpression(byte[] values, int mask) {
+		private static final byte FALSE = 0;
+		private static final byte TRUE = 1;
+		private static final byte ERROR = 2;
+
 		static BooleanExpression constant(boolean value) {
-			boolean[] values = new boolean[COMBINATIONS];
-			Arrays.fill(values, value);
+			byte[] values = new byte[COMBINATIONS];
+			Arrays.fill(values, value ? TRUE : FALSE);
 			return new BooleanExpression(values, 0);
 		}
 
+		boolean[] acceptedKinds() {
+			boolean[] accepted = new boolean[COMBINATIONS];
+			for (int i = 0; i < accepted.length; i++) {
+				accepted[i] = values[i] == TRUE;
+			}
+			return accepted;
+		}
+
 		BooleanExpression and(BooleanExpression other) {
-			boolean[] result = new boolean[COMBINATIONS];
+			byte[] result = new byte[COMBINATIONS];
 			for (int i = 0; i < result.length; i++) {
-				result[i] = values[i] && other.values[i];
+				// A false operand decides AND even when the other operand has an error.
+				result[i] = values[i] == FALSE || other.values[i] == FALSE ? FALSE
+						: values[i] == ERROR || other.values[i] == ERROR ? ERROR : TRUE;
 			}
 			return new BooleanExpression(result, mask | other.mask);
 		}
@@ -836,7 +1445,7 @@ final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
 				: field == O ? index / KINDS % KINDS : field == C ? index % KINDS : ValueIds.TERM_KIND_IRI;
 	}
 
-	/** The recognized expressions are total on bound RDF terms and contain no volatile or numeric input operations. */
+	/** Closed term-kind recipes include the unbound context state and have no volatile or numeric input operations. */
 	private static final class Expressions {
 		private final Map<String, Integer> fields;
 		private final Map<String, ValueExpr> aliases;
@@ -882,8 +1491,11 @@ final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
 				BigInteger[] values = new BigInteger[COMBINATIONS];
 				Literal[] terms = new Literal[COMBINATIONS];
 				for (int i = 0; i < values.length; i++) {
-					values[i] = test.values[i] ? yes.values[i] : no.values[i];
-					terms[i] = test.values[i] ? yes.terms[i] : no.terms[i];
+					if (test.values[i] != BooleanExpression.ERROR) {
+						IntegerExpression selected = test.values[i] == BooleanExpression.TRUE ? yes : no;
+						values[i] = selected.values[i];
+						terms[i] = selected.terms[i];
+					}
 				}
 				return new IntegerExpression(values, terms, test.mask | yes.mask | no.mask);
 			}
@@ -899,9 +1511,10 @@ final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
 				if (test == null || yes == null || no == null) {
 					return null;
 				}
-				boolean[] values = new boolean[COMBINATIONS];
+				byte[] values = new byte[COMBINATIONS];
 				for (int i = 0; i < values.length; i++) {
-					values[i] = test.values[i] ? yes.values[i] : no.values[i];
+					values[i] = test.values[i] == BooleanExpression.ERROR ? BooleanExpression.ERROR
+							: test.values[i] == BooleanExpression.TRUE ? yes.values[i] : no.values[i];
 				}
 				return new BooleanExpression(values, test.mask | yes.mask | no.mask);
 			}
@@ -924,9 +1537,14 @@ final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
 				if (left == null || right == null) {
 					return null;
 				}
-				boolean[] values = new boolean[COMBINATIONS];
+				byte[] values = new byte[COMBINATIONS];
 				for (int i = 0; i < values.length; i++) {
-					values[i] = left.values[i] || right.values[i];
+					// A true operand decides OR even when the other operand has an error.
+					values[i] = left.values[i] == BooleanExpression.TRUE || right.values[i] == BooleanExpression.TRUE
+							? BooleanExpression.TRUE
+							: left.values[i] == BooleanExpression.ERROR || right.values[i] == BooleanExpression.ERROR
+									? BooleanExpression.ERROR
+									: BooleanExpression.FALSE;
 				}
 				return new BooleanExpression(values, left.mask | right.mask);
 			}
@@ -935,9 +1553,11 @@ final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
 				if (arg == null) {
 					return null;
 				}
-				boolean[] values = new boolean[COMBINATIONS];
+				byte[] values = new byte[COMBINATIONS];
 				for (int i = 0; i < values.length; i++) {
-					values[i] = !arg.values[i];
+					values[i] = arg.values[i] == BooleanExpression.ERROR ? BooleanExpression.ERROR
+							: arg.values[i] == BooleanExpression.TRUE ? BooleanExpression.FALSE
+									: BooleanExpression.TRUE;
 				}
 				return new BooleanExpression(values, arg.mask);
 			}
@@ -963,9 +1583,11 @@ final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
 			if (field < 0 && constantKind < 0) {
 				return null;
 			}
-			boolean[] values = new boolean[COMBINATIONS];
+			byte[] values = new byte[COMBINATIONS];
 			for (int i = 0; i < values.length; i++) {
-				values[i] = (accepted & (1 << (field >= 0 ? fieldKind(i, field) : constantKind))) != 0;
+				int kind = field >= 0 ? fieldKind(i, field) : constantKind;
+				values[i] = kind == 0 ? BooleanExpression.ERROR
+						: (accepted & (1 << kind)) != 0 ? BooleanExpression.TRUE : BooleanExpression.FALSE;
 			}
 			return new BooleanExpression(values, field < 0 ? 0 : 1 << field);
 		}
