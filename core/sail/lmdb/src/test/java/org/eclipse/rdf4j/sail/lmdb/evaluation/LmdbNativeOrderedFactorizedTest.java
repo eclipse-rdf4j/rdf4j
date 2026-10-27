@@ -28,8 +28,10 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
@@ -591,11 +593,20 @@ public class LmdbNativeOrderedFactorizedTest {
 					+ "?s ex:rank ?rank . GRAPH ?g { ?a ?p ?v } "
 					+ "} ORDER BY DESC(?rank) LIMIT 1";
 			List<String> generic = genericRows(churn, query);
+			assertThat(rows(churn, query)).containsExactlyElementsOf(generic);
+			try (SailRepositoryConnection conn = churn.getConnection()) {
+				assertThat(KernelExecutionTestAccess.eligibleStrategies(conn.prepareTupleQuery(query)
+						.explain(Explanation.Level.Optimized)
+						.toGenericPlanNode()))
+								.contains(LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_TOP_K);
+			}
 			long topKBefore = NativeRowsStep.ORDERED_FACTORIZED_TOPK.get();
 			long replacementsBefore = topKReplacements();
 			List<BindingSet> result;
 			try (SailRepositoryConnection conn = churn.getConnection()) {
-				result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+				SailTupleQuery forced = (SailTupleQuery) conn.prepareTupleQuery(query);
+				forced.setForcedLmdbExecutionStrategy(LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_TOP_K);
+				result = QueryResults.asList(forced.evaluate());
 			}
 
 			assertThat(canonicalize(result))
@@ -633,6 +644,59 @@ public class LmdbNativeOrderedFactorizedTest {
 		assertThat(NativeRowsStep.ORDERED_FACTORIZED_SORTS.get())
 				.as("COUNT-branch multiplicity should ride the flat sort")
 				.isGreaterThan(sortsBefore);
+	}
+
+	@Test
+	public void lexicalGraphTailPreservesNamedVisibilityAndOuterSelectors() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			IRI tail = vf.createIRI(EX, "lexical-tail");
+			IRI first = vf.createIRI(EX, "lexical-g1");
+			IRI second = vf.createIRI(EX, "lexical-g2");
+			connection.add(vf.createIRI(EX, "a1"), tail, vf.createIRI(EX, "v1"), first);
+			connection.add(vf.createIRI(EX, "a2"), tail, vf.createIRI(EX, "v2"), first);
+			connection.add(vf.createIRI(EX, "a1"), tail, vf.createIRI(EX, "v1"), second);
+			connection.add(vf.createIRI(EX, "default-only"), tail, vf.createIRI(EX, "not-named"));
+		}
+		String[] datasets = { "", "", "", "FROM ex:lexical-default FROM NAMED ex:lexical-g2 " };
+		String[] tails = {
+				"GRAPH ?g { ?a ex:lexical-tail ?v }",
+				"GRAPH ex:lexical-g1 { ?a ex:lexical-tail ?v }",
+				"VALUES ?g { ex:lexical-g1 ex:lexical-g2 ex:lexical-g1 } GRAPH ?g { ?a ex:lexical-tail ?v }",
+				"GRAPH ?g { ?a ex:lexical-tail ?v }"
+		};
+		int[] counts = { 120, 80, 200, 40 };
+		for (int variant = 0; variant < tails.length; variant++) {
+			if (variant == 3) {
+				// FROM NAMED makes the default dataset empty; give the outer p1 selector its own default graph only
+				// after the implicit-dataset variants have completed, so their graph-variable counts stay unchanged.
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					ValueFactory vf = connection.getValueFactory();
+					IRI p1 = vf.createIRI(EX, "p1");
+					IRI lexicalDefault = vf.createIRI(EX, "lexical-default");
+					for (int i = 0; i < 40; i++) {
+						connection.add(vf.createIRI(EX, String.format("s%02d", i)), p1,
+								vf.createIRI(EX, "hub" + (i / 4)), lexicalDefault);
+					}
+				}
+			}
+			String query = "PREFIX ex: <" + EX + "> SELECT ?s ?g ?a ?v " + datasets[variant]
+					+ "WHERE { ?s ex:p1 ?x . " + tails[variant] + " } ORDER BY ?s LIMIT 256";
+			List<String> expected = genericRows(query);
+			assertThat(expected).as(query).hasSize(counts[variant]);
+			assertThat(rows(repository, query)).as("AUTO parity: %s", query)
+					.containsExactlyInAnyOrderElementsOf(expected);
+			long before = NativeRowsStep.ORDERED_FACTORIZED_TOPK.get();
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				SailTupleQuery forced = (SailTupleQuery) connection.prepareTupleQuery(query);
+				forced.setForcedLmdbExecutionStrategy(LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_TOP_K);
+				assertThat(canonicalize(QueryResults.asList(forced.evaluate()))).as(query)
+						.containsExactlyInAnyOrderElementsOf(expected);
+				assertThat(NativeRowsStep.ORDERED_FACTORIZED_TOPK.get()).isGreaterThan(before);
+				assertThat(forced.explain(Explanation.Level.Telemetry).toString())
+						.contains("nativeExecutionPath=orderedFactorizedTopK");
+			}
+		}
 	}
 
 	@Test

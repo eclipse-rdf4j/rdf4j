@@ -366,6 +366,10 @@ final class LmdbNativeKernelLowering {
 	/** As above, with variable-predicate patterns alone lowered as scans after their shared view refuses binding. */
 	static Lowered lowerRows(SlotPlan arg, RowState row, TupleExpr declineTarget, boolean preferScans,
 			java.util.Set<Long> scanPredicates, boolean scanVariablePredicates) {
+		if (SlotPlan.requiresPhysicalCells(arg)) {
+			decline(declineTarget, "row:typed-native-result-boundary");
+			return null;
+		}
 		if (arg == EmptyPlan.INSTANCE) {
 			return lowerRowsWithPlanProducer(arg, row, null);
 		}
@@ -385,6 +389,13 @@ final class LmdbNativeKernelLowering {
 					return lowerRowsWithPlanProducer(arg, row, null);
 				}
 				if (leftJoin.lexicalProblemSlots != null) {
+					for (int slot : leftJoin.lexicalProblemSlots) {
+						if ((row.boundMask() & 1L << slot) != 0L) {
+							// Entry bindings belong to the complete lexical frame. Its producer must own their
+							// save/clear/restore boundary rather than replaying them as independent arm inputs.
+							return lowerRowsWithPlanProducer(arg, row, null);
+						}
+					}
 					// The lexical-frame container owns both arms, so it cannot be peeled into the ordinary root
 					// OPTIONAL
 					// list. Leave the complete subtree for Builder.lowerJoinOperand.
@@ -932,6 +943,36 @@ final class LmdbNativeKernelLowering {
 			AggregateSpec[] aggregates,
 			LmdbNativeKernelIr.Having having, TupleExpr declineTarget, boolean preferScans,
 			boolean scanVariablePredicates, boolean allowFixedContexts) {
+		if (SlotPlan.requiresPhysicalCells(arg)) {
+			long required = 0L;
+			for (int slot : groupSlots) {
+				if (slot >= 0) {
+					required |= 1L << slot;
+				}
+			}
+			for (AggregateSpec aggregate : aggregates) {
+				if (aggregate.resultDemand != NativeAggregateResultDemand.FULL_VALUE) {
+					decline(declineTarget, "agg:typed-native-result-boundary");
+					return null;
+				}
+				required |= aggregate.rowInputMask(SlotPlan.assuredMask(arg) | row.boundMask());
+				if (aggregate.slot >= 0) {
+					required |= 1L << aggregate.slot;
+				}
+			}
+			NativeLogicalResultTransferPlan transfer = NativeLogicalResultTransferPlan.close(arg, row, required);
+			if (transfer == null) {
+				decline(declineTarget, "agg:typed-native-result-boundary");
+				return null;
+			}
+			return lowerAggregateWithPlanProducer(transfer, row, groupSlots, aggregates, having);
+		}
+		for (AggregateSpec aggregate : aggregates) {
+			if (aggregate.resultDemand != NativeAggregateResultDemand.FULL_VALUE) {
+				decline(declineTarget, "agg:typed-native-result-boundary");
+				return null;
+			}
+		}
 		Lowered typeMatrix = lowerTypeMatrixAggregate(arg, groupSlots, aggregates, having);
 		if (typeMatrix != null) {
 			return typeMatrix;
@@ -1428,19 +1469,24 @@ final class LmdbNativeKernelLowering {
 
 	private static Lowered lowerRowsWithPlanProducer(SlotPlan plan, RowState row, String reason) {
 		int[] outputSlots = slots(plan.producedMask(), row.slots.length);
+		int[] inputSlots = slots(row.boundMask(), row.slots.length);
+		Operand[] inputOperands = new Operand[inputSlots.length];
+		for (int index = 0; index < inputOperands.length; index++) {
+			inputOperands[index] = Operand.entry(index);
+		}
 		int[] outputColumns = new int[outputSlots.length];
 		for (int i = 0; i < outputColumns.length; i++) {
 			outputColumns[i] = i;
 		}
 		Kernel kernel = new Kernel(outputColumns.length,
-				List.of(new LmdbNativeKernelIr.PlanRows(0, outputColumns)),
+				List.of(new LmdbNativeKernelIr.PlanRows(0, outputColumns, inputOperands)),
 				new LmdbNativeKernelIr.Emit(outputColumns, false, LmdbNativeKernelIr.OutputMods.none()));
 		LmdbNativeKernelBindings bindings = new LmdbNativeKernelBindings(
-				new LmdbNativeKernelBindings.AdjacencyRequest[0], new long[0], new int[0],
+				new LmdbNativeKernelBindings.AdjacencyRequest[0], new long[0], inputSlots,
 				new LmdbNativeKernelBindings.DomainRequest[0], new LmdbNativeKernelBindings.FilterHook[0], outputSlots,
 				List.of(), new StatementOrder[0],
 				new LmdbNativeKernelBindings.PlanRequest[] {
-						new LmdbNativeKernelBindings.PlanRequest(plan, outputSlots) },
+						new LmdbNativeKernelBindings.PlanRequest(plan, outputSlots, inputSlots) },
 				null, false, 16);
 		return new Lowered(kernel, bindings, reason);
 	}
@@ -2509,10 +2555,18 @@ final class LmdbNativeKernelLowering {
 		/** Lowers filters at the end of the scope that registered them, retaining row/aggregate tier semantics. */
 		private boolean lowerRegisteredFilters(List<MaskedFilter> filters) {
 			for (MaskedFilter filter : filters) {
-				if (reasonPrefix.isEmpty()) {
-					lowerFilter(filter);
-				} else if (!lowerFilterStrict(filter)) {
-					return false;
+				int previousFloor = filterDepthFloor;
+				if (filter.mask < 0L || filter.filter.capabilities().fixedPlacement()) {
+					filterDepthFloor = Math.max(previousFloor, depth());
+				}
+				try {
+					// Registered filters belong to this producer's lexical relation, including a UNION arm. The
+					// row tier's outer residual list runs after the complete kernel and cannot represent that scope.
+					if (!lowerFilterStrict(filter)) {
+						return false;
+					}
+				} finally {
+					filterDepthFloor = previousFloor;
 				}
 			}
 			return true;
@@ -4096,9 +4150,17 @@ final class LmdbNativeKernelLowering {
 			return true;
 		}
 
-		/** A value guard is movable only when its read set and worker ownership are both explicitly proven. */
-		private static boolean filterReusable(NativeBooleanFilter filter) {
-			return filter.batchReadMask() >= 0L && filter.parallelWorkerForkable();
+		/** Worker rebinding and replay across different mappings are independent proofs. */
+		private boolean filterReusable(NativeBooleanFilter filter) {
+			NativePredicateCapabilities proof = filter.capabilities();
+			if (filter.batchReadMask() < 0L || proof.correlationReads() < 0L || !proof.replaySafe()
+					|| (proof.correlationReads() & ~filter.batchReadMask()) != 0L
+					|| !filter.parallelWorkerForkable()) {
+				return false;
+			}
+			SyntheticValueSource scope = row.evaluationScope();
+			return !proof.requiresQueryScope() || scope != null && scope.executionContext() != null
+					&& scope.executionContext().genericContextOrNull() != null;
 		}
 
 		private void placeFilter(Node filterNode, int filterDepth) {
@@ -5952,8 +6014,7 @@ final class LmdbNativeKernelLowering {
 						visibleMask |= 1L << slot;
 					}
 				}
-				boolean rowState = spec.kind == AggKind.SAMPLE || spec.kind == AggKind.GROUP_CONCAT
-						|| spec.kind == AggKind.CUSTOM || spec.slot < 0 && spec.distinct
+				boolean rowState = spec.reducer.rowState || spec.slot < 0 && spec.distinct
 						|| spec.rowSlots != null && (visibleMask & aggregateInputAssuredMask) == 0L;
 				if (rowState) {
 					int[] inputSlots = spec.rowSlots != null ? spec.rowSlots
@@ -5990,13 +6051,7 @@ final class LmdbNativeKernelLowering {
 					// aggregates use the IR's unbound sentinel instead; keep a separate column so both views coexist.
 					col = valueColumns.computeIfAbsent(spec.slot, slot -> {
 						int target = scratchColumn();
-						LmdbNativeCompiledInlineId value = new LmdbNativeCompiledInlineId(1L << slot, true, input -> {
-							long id = input.id(slot);
-							return id == LmdbNativeAggregateCompiler.NULL_CONTEXT_ID
-									? LmdbNativeAggregateCompiler.UNKNOWN
-									: id;
-						});
-						bindHooks.add(new LmdbNativeKernelBindings.BindHook(value, new int[] { slot }));
+						bindHooks.add(LmdbNativeKernelBindings.BindHook.normalizeNullableInput(slot));
 						currentDepthNodes().add(new LmdbNativeKernelIr.BindHook(bindHooks.size() - 1,
 								new Operand[] { Operand.col(slotColumn[slot]) }, target));
 						return target;

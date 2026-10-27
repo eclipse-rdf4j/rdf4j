@@ -272,6 +272,137 @@ public class LmdbNativeIdAuthorityTest {
 	}
 
 	@Test
+	public void sameEvaluationParallelAuthoritiesImportSharedIdsWithoutStoreLookups() throws IOException {
+		ParallelIdSource backing = new ParallelIdSource();
+		long storedId = backing.add(VF.createIRI("urn:stored:shared"));
+		Value planValue = VF.createIRI("urn:plan:shared");
+		PlanValueCatalog.Builder builder = new PlanValueCatalog.Builder();
+		long planId = builder.internConstant(planValue);
+		PlanValueCatalog catalog = builder.build();
+		SyntheticValueSource coordinator = new SyntheticValueSource(backing, catalog).forEvaluation();
+		Value runtimeValue = VF.createLiteral("runtime shared");
+		long runtimeId = coordinator.internComputedValue(runtimeValue);
+		NativeLmdbQuerySource.ParallelSource[] opened = null;
+		try {
+			opened = coordinator.openParallelSources(2);
+			assertThat(opened).hasSize(2);
+			SyntheticValueSource left = (SyntheticValueSource) opened[0];
+			SyntheticValueSource right = (SyntheticValueSource) opened[1];
+			NativeTermAuthority coordinatorAuthority = coordinator.keyAuthority();
+			NativeTermAuthority leftAuthority = left.keyAuthority();
+			NativeTermAuthority rightAuthority = right.keyAuthority();
+
+			assertThat(left.idSpace()).isSameAs(coordinator.idSpace()).isSameAs(right.idSpace());
+			assertThat(leftAuthority.token()).isNotSameAs(coordinatorAuthority.token());
+			assertThat(rightAuthority.token()).isNotSameAs(leftAuthority.token());
+			assertThat(leftAuthority.kind(storedId)).isEqualTo(NativeIdKind.STORE);
+			assertThat(leftAuthority.kind(planId)).isEqualTo(NativeIdKind.PLAN);
+			assertThat(leftAuthority.kind(runtimeId)).isEqualTo(NativeIdKind.RUNTIME);
+			backing.resetLookups();
+
+			assertThat(leftAuthority.importId(coordinatorAuthority, storedId)).isEqualTo(storedId);
+			assertThat(rightAuthority.importId(leftAuthority, planId)).isEqualTo(planId);
+			assertThat(coordinatorAuthority.importId(rightAuthority, runtimeId)).isEqualTo(runtimeId);
+			assertThat(backing.idOfCalls()).as("shared store/catalog/runtime ids need no dictionary resolution")
+					.isZero();
+			assertThat(backing.lazyValueCalls()).as("shared stored ids need no payload materialization")
+					.isZero();
+		} finally {
+			if (opened != null) {
+				for (NativeLmdbQuerySource.ParallelSource sibling : opened) {
+					sibling.close();
+				}
+			}
+			coordinator.executionContext().close();
+		}
+		assertThat(backing.closeCalls()).isEqualTo(2);
+	}
+
+	@Test
+	public void importsAcrossEvaluationAndCatalogCollisionsStillResolveSourceValues() {
+		ExactSpellingSource sharedStore = new ExactSpellingSource();
+		NativeExecutionContext firstContext = new NativeExecutionContext();
+		NativeExecutionContext secondContext = new NativeExecutionContext();
+		try {
+			LmdbNativeTermAuthority first = new LmdbNativeTermAuthority(sharedStore, PlanValueCatalog.EMPTY,
+					firstContext);
+			LmdbNativeTermAuthority second = new LmdbNativeTermAuthority(sharedStore, PlanValueCatalog.EMPTY,
+					secondContext);
+			long firstRuntime = first.idOfOrIntern(VF.createLiteral("evaluation one"));
+			long secondRuntime = second.idOfOrIntern(VF.createLiteral("evaluation two"));
+			assertThat(firstRuntime).as("independent runtime tables deliberately reuse the same number")
+					.isEqualTo(secondRuntime);
+			long importedRuntime = second.importId(first, firstRuntime);
+			assertThat(importedRuntime).isNotEqualTo(secondRuntime);
+			assertThat(second.valueOf(importedRuntime)).isEqualTo(VF.createLiteral("evaluation one"));
+			assertThat(second.valueOf(secondRuntime)).isEqualTo(VF.createLiteral("evaluation two"));
+		} finally {
+			firstContext.close();
+			secondContext.close();
+		}
+
+		Value firstCatalogValue = VF.createLiteral("first catalog value");
+		Value collidingCatalogValue = VF.createLiteral("different catalog value");
+		PlanValueCatalog.Builder firstBuilder = new PlanValueCatalog.Builder();
+		long firstPlanId = firstBuilder.internConstant(firstCatalogValue);
+		PlanValueCatalog.Builder secondBuilder = new PlanValueCatalog.Builder();
+		long secondPlanId = secondBuilder.internConstant(collidingCatalogValue);
+		assertThat(firstPlanId).isEqualTo(secondPlanId);
+		Object claimedSharedSpace = new Object();
+		NativeExecutionContext catalogFirstContext = new NativeExecutionContext();
+		NativeExecutionContext catalogSecondContext = new NativeExecutionContext();
+		try {
+			LmdbNativeTermAuthority first = new LmdbNativeTermAuthority(sharedStore, firstBuilder.build(),
+					catalogFirstContext, claimedSharedSpace);
+			LmdbNativeTermAuthority second = new LmdbNativeTermAuthority(sharedStore, secondBuilder.build(),
+					catalogSecondContext, claimedSharedSpace);
+			long importedPlan = second.importId(first, firstPlanId);
+			assertThat(importedPlan).isNotEqualTo(secondPlanId);
+			assertThat(second.kind(importedPlan)).isEqualTo(NativeIdKind.RUNTIME);
+			assertThat(second.valueOf(importedPlan)).isEqualTo(firstCatalogValue);
+			assertThat(second.valueOf(secondPlanId)).isEqualTo(collidingCatalogValue);
+		} finally {
+			catalogFirstContext.close();
+			catalogSecondContext.close();
+		}
+
+		ExactSpellingSource firstStore = new ExactSpellingSource();
+		ExactSpellingSource secondStore = new ExactSpellingSource();
+		long firstStoreId = firstStore.add(VF.createLiteral("first store spelling"));
+		long secondStoreId = secondStore.add(VF.createLiteral("second store spelling"));
+		assertThat(firstStoreId).isEqualTo(secondStoreId);
+		try (NativeExecutionContext storeFirstContext = new NativeExecutionContext();
+				NativeExecutionContext storeSecondContext = new NativeExecutionContext()) {
+			LmdbNativeTermAuthority first = new LmdbNativeTermAuthority(firstStore, PlanValueCatalog.EMPTY,
+					storeFirstContext);
+			LmdbNativeTermAuthority second = new LmdbNativeTermAuthority(secondStore, PlanValueCatalog.EMPTY,
+					storeSecondContext);
+			long imported = second.importId(first, firstStoreId);
+			assertThat(imported).isNotEqualTo(secondStoreId);
+			assertThat(second.valueOf(imported)).isEqualTo(VF.createLiteral("first store spelling"));
+			assertThat(second.valueOf(secondStoreId)).isEqualTo(VF.createLiteral("second store spelling"));
+		}
+
+		ExactSpellingSource lowerTagStore = new ExactSpellingSource();
+		ExactSpellingSource upperTagStore = new ExactSpellingSource();
+		long lowerTagId = lowerTagStore.add(VF.createLiteral("shared language value", "en"));
+		long upperTagId = upperTagStore.add(VF.createLiteral("shared language value", "EN"));
+		try (NativeExecutionContext lowerContext = new NativeExecutionContext();
+				NativeExecutionContext upperContext = new NativeExecutionContext()) {
+			LmdbNativeTermAuthority lowerAuthority = new LmdbNativeTermAuthority(lowerTagStore, PlanValueCatalog.EMPTY,
+					lowerContext);
+			LmdbNativeTermAuthority upperAuthority = new LmdbNativeTermAuthority(upperTagStore, PlanValueCatalog.EMPTY,
+					upperContext);
+			long imported = upperAuthority.importId(lowerAuthority, lowerTagId);
+			assertThat(imported).isNotEqualTo(upperTagId);
+			assertThat(upperAuthority.valueOf(imported).toString()).endsWith("@en");
+			assertThat(upperAuthority.sameRdfTerm(imported, upperTagId))
+					.as("cross-authority transfer preserves the source spelling while retaining RDF language equality")
+					.isTrue();
+		}
+	}
+
+	@Test
 	public void concurrentEvaluationsShareIdNumbersWithoutContamination() {
 		ExactSpellingSource store = new ExactSpellingSource();
 		LmdbNativeTermAuthority first = authority(store, PlanValueCatalog.EMPTY);
@@ -393,5 +524,117 @@ public class LmdbNativeIdAuthorityTest {
 		LmdbNativeTermAuthority authority = new LmdbNativeTermAuthority(new ExactSpellingSource(), catalog, context);
 		assertThat(authority.sameRdfTerm(lowerPlanId, upperPlanId)).isTrue();
 		assertThat(authority.rdfTermHash(lowerPlanId)).isEqualTo(authority.rdfTermHash(upperPlanId));
+	}
+
+	private static class ParallelIdSource implements NativeLmdbQuerySource {
+		final ParallelIdState state;
+
+		private ParallelIdSource() {
+			this(new ParallelIdState());
+		}
+
+		private ParallelIdSource(ParallelIdState state) {
+			this.state = state;
+		}
+
+		long add(Value value) {
+			return state.add(value);
+		}
+
+		int idOfCalls() {
+			return state.idOfCalls.get();
+		}
+
+		int lazyValueCalls() {
+			return state.lazyValueCalls.get();
+		}
+
+		int closeCalls() {
+			return state.closeCalls.get();
+		}
+
+		void resetLookups() {
+			state.idOfCalls.set(0);
+			state.lazyValueCalls.set(0);
+		}
+
+		@Override
+		public long idOf(Value value) {
+			state.idOfCalls.incrementAndGet();
+			return state.idsBySpelling.getOrDefault(ExactSpellingSource.spelling(value), UNKNOWN);
+		}
+
+		@Override
+		public Value lazyValue(long id) {
+			state.lazyValueCalls.incrementAndGet();
+			return state.valuesById.get(id);
+		}
+
+		@Override
+		public Object idSpace() {
+			return state.idSpace;
+		}
+
+		@Override
+		public RecordIterator statements(long subj, long pred, long obj, long context) {
+			return SyntheticValueSource.EMPTY;
+		}
+
+		@Override
+		public long count(long subj, long pred, long obj, long context) {
+			return 0L;
+		}
+
+		@Override
+		public boolean has(long subj, long pred, long obj, long context) {
+			return false;
+		}
+
+		@Override
+		public double estimate(long subj, long pred, long obj, long context) {
+			return 0D;
+		}
+
+		@Override
+		public boolean hasStatementsInSource() {
+			return !state.valuesById.isEmpty();
+		}
+
+		@Override
+		public NativeLmdbQuerySource.ParallelSource[] openParallelSources(int count) {
+			NativeLmdbQuerySource.ParallelSource[] siblings = new NativeLmdbQuerySource.ParallelSource[count];
+			for (int i = 0; i < count; i++) {
+				siblings[i] = new Sibling(state);
+			}
+			return siblings;
+		}
+
+		private static final class Sibling extends ParallelIdSource implements NativeLmdbQuerySource.ParallelSource {
+			private Sibling(ParallelIdState state) {
+				super(state);
+			}
+
+			@Override
+			public void close() {
+				state.closeCalls.incrementAndGet();
+			}
+		}
+	}
+
+	private static final class ParallelIdState {
+		private final Object idSpace = new Object();
+		private final Map<String, Long> idsBySpelling = new HashMap<>();
+		private final Map<Long, Value> valuesById = new HashMap<>();
+		private final AtomicInteger idOfCalls = new AtomicInteger();
+		private final AtomicInteger lazyValueCalls = new AtomicInteger();
+		private final AtomicInteger closeCalls = new AtomicInteger();
+		private long nextId = 100L;
+
+		private long add(Value value) {
+			long id = nextId++;
+			idsBySpelling.put(ExactSpellingSource.spelling(value), id);
+			valuesById.put(id, value);
+			return id;
+		}
 	}
 }

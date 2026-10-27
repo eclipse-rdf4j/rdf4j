@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
@@ -86,6 +87,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	 */
 	private final KernelRuntime.LongHashSet[][] distinctSets;
 	private final int distinctExpected;
+	private final Runnable cancellationPoll;
 	/**
 	 * Fragment fast paths per filter hook (fragment-fusion M1/M3): a recognized hook evaluates its compiled id-space
 	 * fragment first and only takes the scratch-row round trip when the fragment ESCAPEs. Null entries (and a null
@@ -135,7 +137,17 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	LmdbNativeKernelHooks(RowState liveRow, LmdbNativeKernelBindings bindings,
 			LmdbNativeKernelBindings.FilterHook[] filterHooks,
 			LmdbNativeKernelBindings.BindHook[] bindHooks, int distinctExpected) {
+		this(liveRow, bindings, filterHooks, bindHooks, distinctExpected, () -> {
+			liveRow.cancellation.check();
+			LmdbNativeProbeDeadline.poll(0);
+		});
+	}
+
+	LmdbNativeKernelHooks(RowState liveRow, LmdbNativeKernelBindings bindings,
+			LmdbNativeKernelBindings.FilterHook[] filterHooks,
+			LmdbNativeKernelBindings.BindHook[] bindHooks, int distinctExpected, Runnable cancellationPoll) {
 		this.source = liveRow.source;
+		this.cancellationPoll = cancellationPoll;
 		SyntheticValueSource evaluationScope = liveRow.evaluationScope();
 		this.comparator = new ValueComparator(evaluationScope == null ? QueryExecutionPolicy.DEFAULT
 				: evaluationScope.queryExecutionPolicy);
@@ -145,8 +157,8 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 					"kernel-hook-memory");
 			this.scratchWriteSlots = new int[8];
 			this.scratchWritePrevious = new long[8];
-			this.scratch = new RowState(liveRow.source, liveRow.layout, liveRow.base, liveRow.exactValuesMetrics,
-					liveRow.cancellation);
+			this.scratch = new RowState(liveRow.source, liveRow.layout, liveRow.base, liveRow.telemetryTarget,
+					liveRow.exactValuesMetrics, liveRow.cancellation);
 			this.keyHooks = scratch.keyAuthority() instanceof NativeGeneratedKeyAuthority generated
 					? new NativeGeneratedKeyHooks(this, generated)
 					: this;
@@ -237,27 +249,51 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 
 	@Override
 	public boolean sameRdfTerm(long left, long right) {
-		return left == right || scratch.termAuthority() != null && scratch.termAuthority().sameRdfTerm(left, right);
+		if (left == right) {
+			return true;
+		}
+		NativeTermAuthority authority = scratch.termAuthority();
+		if (authority != null) {
+			return authority.sameRdfTerm(left, right);
+		}
+		if (!isBoundValue(left) || !isBoundValue(right) || source.hasCanonicalIds()) {
+			return false;
+		}
+		Value value = source.lazyValue(left);
+		return value != null && value.equals(source.lazyValue(right));
 	}
 
 	@Override
 	public long rdfTermHash(long id) {
-		return scratch.termAuthority().rdfTermHash(id);
+		NativeTermAuthority authority = scratch.termAuthority();
+		if (authority != null) {
+			return authority.rdfTermHash(id);
+		}
+		return !isBoundValue(id) || source.hasCanonicalIds() ? id : source.lazyValue(id).hashCode();
 	}
 
 	@Override
 	public boolean supportsCanonicalTermKeys() {
-		return scratch.termAuthority().supportsCanonicalTermKeys();
+		NativeTermAuthority authority = scratch.termAuthority();
+		return authority == null ? source.hasCanonicalIds() : authority.supportsCanonicalTermKeys();
 	}
 
 	@Override
 	public long canonicalTermKey(long id) {
-		return scratch.termAuthority().canonicalTermKey(id);
+		NativeTermAuthority authority = scratch.termAuthority();
+		if (authority != null) {
+			return authority.canonicalTermKey(id);
+		}
+		if (!source.hasCanonicalIds()) {
+			throw new UnsupportedOperationException("source does not prove canonical RDF term IDs");
+		}
+		return id;
 	}
 
 	@Override
 	public long termHashKey(long id) {
-		return scratch.termAuthority().termHashKey(id);
+		NativeTermAuthority authority = scratch.termAuthority();
+		return authority == null ? rdfTermHash(id) : authority.termHashKey(id);
 	}
 
 	@Override
@@ -269,7 +305,27 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 			return sourceId;
 		}
 		LmdbNativeKernelHooks other = (LmdbNativeKernelHooks) sourceHooks;
-		return scratch.termAuthority().importId(other.scratch.termAuthority(), sourceId);
+		if (!isBoundValue(sourceId)) {
+			return sourceId;
+		}
+		NativeTermAuthority target = scratch.termAuthority();
+		NativeTermAuthority origin = other.scratch.termAuthority();
+		if (target != null && origin != null) {
+			return target.importId(origin, sourceId);
+		}
+		Object space = source.idSpace();
+		if (target == null && origin == null && space != null && space == other.source.idSpace()) {
+			return sourceId;
+		}
+		Value value = origin == null ? other.source.lazyValue(sourceId) : origin.valueOf(sourceId);
+		if (target != null) {
+			return target.idOfOrIntern(value);
+		}
+		long imported = source.idOf(value);
+		if (!isBoundValue(imported)) {
+			throw new QueryEvaluationException("raw source cannot represent the imported RDF term");
+		}
+		return imported;
 	}
 
 	@Override
@@ -410,7 +466,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	 */
 	private long computeInternedBind(LmdbNativeCompiledValue computedValue) {
 		RowState scratchRow = scratch;
-		LmdbNativeValueCodec.DecodedValue decoded = computedValue.evaluator.eval(scratchRow);
+		LmdbNativeValueCodec.DecodedValue decoded = computedValue.value(scratchRow);
 		if (decoded == null || decoded.error()) {
 			return UNKNOWN;
 		}
@@ -664,7 +720,15 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		pendingScratchStart = scratchWriteCount;
 		boolean nested = LmdbNativeEvaluationStrategy.enterKernelSubplan();
 		try {
-			rowState(aggregateId, groupId).add(scratch);
+			AggregateSpec spec = groupLayout.outs[aggregateId].spec;
+			if (spec.reducer.mergeLaw == NativeReducerCapabilities.MergeLaw.ELIGIBLE_SAMPLE) {
+				if (spec.hasInput(scratch) && sampleAt(aggregateId, groupId) == null) {
+					installSample(aggregateId, groupId,
+							rowAggregateContext.value(spec.value(scratch), spec.positionMask));
+				}
+			} else {
+				rowState(aggregateId, groupId).add(scratch);
+			}
 		} finally {
 			LmdbNativeEvaluationStrategy.leaveKernelSubplan(nested);
 			restoreScratchInputs(start);
@@ -691,10 +755,27 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		}
 		if (states[groupId] == null) {
 			AggregateSpec[] specs = { groupLayout.outs[aggregateId].spec };
-			states[groupId] = new AggState(specs, distinctExpected, rowAggregateContext,
-					AggregateDistinctChannels.allHash(specs));
+			memory.reserveOrThrow(512L, "kernel-row-state-memory");
+			states[groupId] = AggState.bounded(specs, distinctExpected, rowAggregateContext,
+					AggregateDistinctChannels.allHash(specs), scratch.cancellation,
+					scratch.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()));
 		}
 		return states[groupId];
+	}
+
+	Value sampleAt(int aggregateId, int groupId) {
+		if (groupLayout.outs[aggregateId].spec.reducer.mergeLaw != NativeReducerCapabilities.MergeLaw.ELIGIBLE_SAMPLE) {
+			throw new IllegalArgumentException("Aggregate has no eligible-sample merge law");
+		}
+		AggState[] states = rowStates[aggregateId];
+		return groupId >= states.length || states[groupId] == null ? null : states[groupId].extremeValue(0);
+	}
+
+	void installSample(int aggregateId, int groupId, Value value) {
+		if (sampleAt(aggregateId, groupId) != null || value == null) {
+			return;
+		}
+		rowState(aggregateId, groupId).setExtremeValue(0, value);
 	}
 
 	Value rowAggregateResult(int aggregateId, int groupId) {
@@ -702,9 +783,8 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		AggState state = rowState(aggregateId, groupId);
 		return switch (state.specs[0].kind) {
 		case COUNT -> AggContext.integerLiteral(state.count(0));
-		case SAMPLE -> state.extremes[0];
-		case GROUP_CONCAT -> SimpleValueFactory.getInstance()
-				.createLiteral(state.concats[0] == null ? "" : state.concats[0].toString());
+		case SAMPLE -> state.extremeValue(0);
+		case GROUP_CONCAT -> SimpleValueFactory.getInstance().createLiteral(state.concatValue(0));
 		case CUSTOM -> {
 			if (empty) {
 				state.specs[0].custom.process(EmptyBindingSet.getInstance(), state.customPredicates[0],
@@ -775,7 +855,8 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		KernelRuntime.LongHashSet[] sets = distinctSets[aggregateId];
 		KernelRuntime.LongHashSet set = sets[groupId];
 		if (set == null) {
-			KernelRuntime.LongHashSet created = new KernelRuntime.LongHashSet(distinctExpected, keyHooks, memory);
+			KernelRuntime.LongHashSet created = new KernelRuntime.LongHashSet(distinctExpected, keyHooks, memory,
+					cancellationPoll);
 			try {
 				boolean added = created.add(valueId);
 				sets[groupId] = created;
@@ -1043,6 +1124,16 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 			scratch.closeDecodedInputs();
 		} catch (RuntimeException | Error problem) {
 			failure = problem;
+		}
+		for (AggState[] states : rowStates) {
+			if (states != null) {
+				for (AggState state : states) {
+					if (state != null) {
+						failure = KernelRuntime.closeResource(state::closeExternal, failure);
+					}
+				}
+				Arrays.fill(states, null);
+			}
 		}
 		for (KernelRuntime.LongHashSet[] sets : distinctSets) {
 			if (sets == null) {

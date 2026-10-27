@@ -18,8 +18,8 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.isNullContextValue;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.validValueForField;
-import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.valueProbeSafeId;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -33,12 +33,14 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.AbstractAggregateOperator;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
@@ -70,6 +72,7 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility.QuerySafetySnapshot;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
@@ -165,7 +168,7 @@ abstract class LmdbNativeAggregatePlannerBase {
 	}
 
 	/**
-	 * M-F1 value-guarded VALUES cells: unsafe constants (langString spellings, value-collapsible numerics) recorded by
+	 * M-F1 value-guarded VALUES cells: constants with ambiguous term ids (langString spellings) recorded by
 	 * {@link LmdbNativeAggregateValuesCompiler#compileValues} and applied as term-checked constant binds over the
 	 * completed root plan — patterns below enumerate the variable freely, the guard binds when nothing else bound it
 	 * and term-checks (through the evaluation's term authority) when something did.
@@ -179,11 +182,13 @@ abstract class LmdbNativeAggregatePlannerBase {
 	boolean valueGuardsSupported;
 
 	static final class PendingValueGuard {
+		final BindingSetAssignment occurrence;
 		final String name;
 		final int slot;
 		final long guardId;
 
-		PendingValueGuard(String name, int slot, long guardId) {
+		PendingValueGuard(BindingSetAssignment occurrence, String name, int slot, long guardId) {
+			this.occurrence = occurrence;
 			this.name = name;
 			this.slot = slot;
 			this.guardId = guardId;
@@ -216,7 +221,19 @@ abstract class LmdbNativeAggregatePlannerBase {
 		}
 		java.util.HashSet<String> guarded = new java.util.HashSet<>();
 		for (PendingValueGuard guard : pendingValueGuards) {
+			if (!mandatoryValueGuardOccurrence(guard, root)) {
+				return false;
+			}
 			guarded.add(guard.name);
+		}
+		// Delaying a binding also changes the inputs and invocation counts seen by mandatory siblings. Use the
+		// shared relational/effect proof, including tuple/generic boundaries, before considering individual reads.
+		// This conservative classification is only a rewrite proof; it does not change the query's execution policy.
+		QuerySafetySnapshot safety = QueryEvaluationUtility.querySafetySnapshot(root,
+				QueryExecutionPolicy.EXPERIMENTAL);
+		if (!safety.permitsBindingInjection(root, guarded) || !safety.isRepeatable(root)
+				|| safety.mayRaiseQueryFatalError(root)) {
+			return false;
 		}
 		final boolean[] unsafe = { false };
 		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
@@ -277,6 +294,30 @@ abstract class LmdbNativeAggregatePlannerBase {
 			}
 		});
 		return !unsafe[0];
+	}
+
+	/**
+	 * Proves that this exact VALUES occurrence contributes to every root solution. A name-only check cannot establish
+	 * this: VALUES declarations and optimizer-valued Vars need not occur in VarNameCollector, and a projection can hide
+	 * the original name entirely. Unknown operators and detached/replaced occurrences fail closed. Cloned compilations
+	 * record their own cloned VALUES occurrence when compileValues visits it, so no provenance crosses lexical roots.
+	 */
+	private static boolean mandatoryValueGuardOccurrence(PendingValueGuard guard, TupleExpr root) {
+		QueryModelNode child = guard.occurrence;
+		while (child != root) {
+			QueryModelNode parent = child.getParentNode();
+			boolean mandatory = parent instanceof Join join
+					&& (join.getLeftArg() == child || join.getRightArg() == child)
+					|| parent instanceof LeftJoin optional && optional.getLeftArg() == child
+					|| parent instanceof Difference minus && minus.getLeftArg() == child
+					|| parent instanceof Filter filter && filter.getArg() == child
+					|| parent instanceof Extension extension && extension.getArg() == child;
+			if (!mandatory) {
+				return false;
+			}
+			child = parent;
+		}
+		return true;
 	}
 
 	/** The names carrying a pending value guard; empty when none. */
@@ -561,10 +602,10 @@ abstract class LmdbNativeAggregatePlannerBase {
 	/**
 	 * Pre-scans the group's algebra for VALUES constants that cannot participate in raw-id execution and assigns each a
 	 * plan-local synthetic id. Two cases qualify: terms with no id in the value store (they cannot match any stored
-	 * statement, so probes bound to them are empty), and terms whose id is not raw-comparison-safe (inlined numerics)
-	 * provided their variable never reaches a statement pattern or extension copy — for those the id is only ever
-	 * materialized back to the original Value. Filters over synthetic variables are forced onto the generic
-	 * (value-materializing) path.
+	 * statement, so probes bound to them are empty), and terms with ambiguous term ids provided their variable never
+	 * reaches a statement pattern or extension copy. Known numeric ids remain ordinary term ids: VALUES compatibility
+	 * uses RDF-term equality, not the wider value equality of a FILTER comparison. Filters over synthetic variables are
+	 * forced onto the generic (value-materializing) path.
 	 */
 	void collectSyntheticValues(TupleExpr expr) {
 		HashSet<String> patternOrCopyVars = new HashSet<>();
@@ -599,7 +640,7 @@ abstract class LmdbNativeAggregatePlannerBase {
 						Value value = binding.getValue();
 						long id = idOf(value, layout.positionMask(binding.getName()));
 						boolean unknown = id == UNKNOWN;
-						boolean unsafeEligible = !unknown && !valueProbeSafeId(id, value)
+						boolean unsafeEligible = !unknown && !termProbeSafeId(id, value)
 								&& !patternOrCopyVars.contains(binding.getName());
 						if (unknown && !termSafeAbsenceProof(value)
 								&& patternOrCopyVars.contains(binding.getName())) {
@@ -620,14 +661,45 @@ abstract class LmdbNativeAggregatePlannerBase {
 	}
 
 	/**
+	 * Whether this known id can constrain a VALUES binding by RDF-term identity. Unlike a FILTER value probe, numeric
+	 * lexical forms and datatypes must remain distinct. The store's inline encoder accepts an id only after an exact
+	 * RDF-term round trip, so inline numeric ids satisfy this rule as well as dictionary ids. Language-tag spellings,
+	 * including those embedded in triple terms, retain their guarded path because one RDF term can have several legacy
+	 * store ids.
+	 */
+	static boolean termProbeSafeId(long id, Value value) {
+		return id != UNKNOWN && termSafeAbsenceProof(value);
+	}
+
+	/**
 	 * Whether a store miss for this value proves store absence: term-safe classes (IRIs, blank nodes, literals without
-	 * a language tag) have exactly one possible store spelling. Language-tagged literals (and RDF-star triples, which
-	 * can embed them) may exist under a different but term-equal spelling — mirrors
-	 * {@link LmdbSyntheticValueSource#internEntryBinding}.
+	 * a language tag, and triple terms made entirely from those classes) have exactly one possible store spelling.
+	 * Language-tagged literals, including those embedded in triple terms, may exist under a different but term-equal
+	 * spelling — mirrors {@link LmdbSyntheticValueSource#internEntryBinding}.
 	 */
 	static boolean termSafeAbsenceProof(Value value) {
 		if (value instanceof Literal) {
 			return ((Literal) value).getLanguage().isEmpty();
+		}
+		if (value instanceof TripleTerm) {
+			// Walk every component without adding Java call-stack depth for nested triple terms.
+			ArrayDeque<Value> pending = new ArrayDeque<>();
+			pending.add(value);
+			while (!pending.isEmpty()) {
+				Value component = pending.removeLast();
+				if (component instanceof TripleTerm triple) {
+					pending.add(triple.getSubject());
+					pending.add(triple.getPredicate());
+					pending.add(triple.getObject());
+				} else if (component instanceof Literal literal) {
+					if (literal.getLanguage().isPresent()) {
+						return false;
+					}
+				} else if (!component.isIRI() && !component.isBNode()) {
+					return false;
+				}
+			}
+			return true;
 		}
 		return value != null && (value.isIRI() || value.isBNode());
 	}
@@ -1022,7 +1094,9 @@ abstract class LmdbNativeAggregatePlannerBase {
 		for (int i = 0; i < specs.length; i++) {
 			int positionMask = specs[i].slot < 0 ? 0
 					: inputPositions.getOrDefault(slotNames.get(specs[i].slot), 0);
-			specs[i] = specs[i].withPositionMask(positionMask);
+			specs[i] = specs[i].withPositionMask(positionMask)
+					.withResultDemand(strategy.aggregateResultDemand(groupElements.get(i)))
+					.withDefinition(strategy.aggregateDefinition(groupElements.get(i)));
 		}
 		return specs;
 	}

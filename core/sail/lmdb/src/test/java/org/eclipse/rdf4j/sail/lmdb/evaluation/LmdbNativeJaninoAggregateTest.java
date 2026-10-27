@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
@@ -186,7 +187,7 @@ public class LmdbNativeJaninoAggregateTest {
 	}
 
 	@Test
-	public void unusedValuesIdentityKeepsOrderedSpecialistParity() {
+	public void unusedValuesIdentityKeepsLegalInventoryAndExactMetadataReduction() {
 		long expected;
 		System.setProperty(NATIVE_FLAG, "false");
 		try {
@@ -195,9 +196,73 @@ public class LmdbNativeJaninoAggregateTest {
 			System.setProperty(NATIVE_FLAG, "true");
 		}
 
+		assertEquals(6L, expected, "the fixture has six distinct subjects with an interest");
 		assertEquals(expected, count(UNUSED_VALUES_QUERY));
-		assertEquals(0L, LmdbNativeKernelExecution.AGG_PLANNED.get(),
-				"a one-pattern DISTINCT aggregate should stay on its ordered specialist instead of compiling a kernel");
+		GenericPlanNode optimized = explainUnusedValues(Explanation.Level.Optimized);
+		List<String> candidates = eligibleStrategies(optimized);
+		assertTrue(candidates.containsAll(List.of(LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE,
+				LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED,
+				LmdbNativeAttemptMetrics.PATH_NESTED_LOOP)),
+				() -> "the common inventory must retain every legal execution tier: " + optimized);
+		// The relational identity must not hide exact domain metadata. That zero-row reduction is stronger than
+		// the still-legal ordered scan; planning it does not require opening either IR tier as a cold trial.
+		GenericPlanNode telemetry = explainUnusedValues(Explanation.Level.Telemetry);
+		assertEquals(LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE, findExecutionPath(telemetry),
+				"the unused one-row VALUES relation must retain the exact metadata specialist");
+		String quote = findMetric(telemetry, "nativeAggregateCostQuotesEstimated");
+		assertTrue(quote != null && quote.contains("\"physicalDominanceProof\":\""),
+				() -> "the selected zero-row reduction needs an actual plan-owned proof: " + telemetry);
+		assertEquals(0L, LmdbNativeKernelExecution.AGG_OPENED.get(),
+				"a proved metadata reduction needs no row-enumerating IR trial");
+	}
+
+	private GenericPlanNode explainUnusedValues(Explanation.Level level) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return connection.prepareTupleQuery(UNUSED_VALUES_QUERY).explain(level).toGenericPlanNode();
+		}
+	}
+
+	private static List<String> eligibleStrategies(GenericPlanNode node) {
+		List<String> strategies = new ArrayList<>();
+		if (node.getStrategyDecisions() != null) {
+			for (var decision : node.getStrategyDecisions()) {
+				if (decision.decisionPoint().contains("GROUP BY")) {
+					for (var candidate : decision.candidates()) {
+						if (!Boolean.FALSE.equals(candidate.canAttempt())) {
+							strategies.add(candidate.strategy());
+						}
+					}
+				}
+			}
+		}
+		if (node.getPlans() != null) {
+			for (GenericPlanNode child : node.getPlans()) {
+				strategies.addAll(eligibleStrategies(child));
+			}
+		}
+		return strategies;
+	}
+
+	private static String findExecutionPath(GenericPlanNode node) {
+		return findMetric(node, LmdbNativeExplain.EXECUTION_PATH);
+	}
+
+	private static String findMetric(GenericPlanNode node, String metric) {
+		String path = node.getStringMetricActual(metric);
+		if (path != null) {
+			return path;
+		}
+		if (node.getPlans() != null) {
+			for (GenericPlanNode child : node.getPlans()) {
+				String nested = findMetric(child, metric);
+				if (nested != null) {
+					return nested;
+				}
+			}
+		}
+		return null;
 	}
 
 	@Test

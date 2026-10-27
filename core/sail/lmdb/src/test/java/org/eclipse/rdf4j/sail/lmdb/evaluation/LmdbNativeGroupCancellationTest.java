@@ -12,16 +12,21 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
+import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.model.Value;
@@ -29,11 +34,298 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import jdk.jfr.Recording;
+import jdk.jfr.consumer.RecordedEvent;
+import jdk.jfr.consumer.RecordingFile;
 
 class LmdbNativeGroupCancellationTest {
 
 	private static final long FUTURE_TIMEOUT_SECONDS = 5L;
+
+	@Test
+	void phaseDiagnosticsAttributeNativeScanAndScalarExtensionToTheirEvaluation(@TempDir Path directory)
+			throws Exception {
+		String eventName = "org.eclipse.rdf4j.lmdb.NativeExecutionPhase";
+		Path path = directory.resolve("scan-expression-phases.jfr");
+		AtomicInteger opens = new AtomicInteger(), reads = new AtomicInteger(), closes = new AtomicInteger();
+		AtomicInteger expressions = new AtomicInteger();
+		NativeLmdbQuerySource dictionary = new StubSource() {
+			@Override
+			public boolean hasStatementsInSource() {
+				return true;
+			}
+
+			@Override
+			public double estimate(long subject, long predicate, long object, long context) {
+				return 3D;
+			}
+
+			@Override
+			public RecordIterator statements(long subject, long predicate, long object, long context) {
+				opens.incrementAndGet();
+				return new RecordIterator() {
+					private int position;
+
+					@Override
+					public long[] next() {
+						reads.incrementAndGet();
+						return position < 3 ? new long[] { ++position, 7L, 9L, 0L } : null;
+					}
+
+					@Override
+					public void close() {
+						closes.incrementAndGet();
+					}
+				};
+			}
+		};
+		long evaluationId;
+		try (Recording recording = new Recording()) {
+			recording.enable(eventName).withThreshold(Duration.ZERO);
+			recording.start();
+			SyntheticValueSource source = SyntheticValueSource.forEvaluation(dictionary);
+			NativeSlotLayout layout = new NativeSlotLayout(Map.of("value", 0, "length", 1), null);
+			layout.freeze(List.of("value", "length"));
+			PatternPlan scan = new PatternPlan(Term.slot(0), Term.constant(7L), Term.unbound(), Term.unbound(),
+					ContextConstraint.UNRESTRICTED, false, 3D);
+			CopyBinding length = CopyBinding.semanticValue(1, bindings -> {
+				expressions.incrementAndGet();
+				String text = bindings.getValue("value").stringValue();
+				return NativeValueOutcome.bound(SimpleValueFactory.getInstance()
+						.createLiteral(text.codePointCount(0, text.length())));
+			}, true, 1L);
+			SlotPlan plan = new ExtensionPlan(scan, new CopyBinding[] { length });
+			AggregateSpec[] specs = { AggregateSpec.slot("count", 1, false, AggKind.COUNT) };
+			NativeGroupIteration iteration = new NativeGroupIteration(source, plan, layout, new int[0], specs,
+					false, EmptyBindingSet.getInstance(), null, null, false, null);
+			evaluationId = iteration.cancellation.evaluationId();
+			try {
+				List<BindingSet> rows = iteration.evaluateAll();
+				assertThat(rows).hasSize(1);
+				assertThat(rows.getFirst().getValue("count").stringValue()).isEqualTo("3");
+				assertThat(opens).as("one native scan must be admitted before checking stage attribution").hasValue(1);
+				assertThat(reads).hasValue(4);
+				assertThat(expressions).as("the scalar extension must actually execute on all three input rows")
+						.hasValue(3);
+				assertThat(closes).hasValue(1);
+				iteration.requestCancellation();
+				assertThrows(KernelQueryCancelledException.class, iteration.cancellation::check);
+			} finally {
+				iteration.close();
+				source.executionContext().close();
+			}
+			try (NativeExecutionPhaseEvent.Span restored = NativeExecutionPhaseEvent.startNested("scope-restored",
+					NativeCancellationToken.forSource(new StubSource()))) {
+				restored.complete();
+			}
+			recording.stop();
+			recording.dump(path);
+		}
+		List<RecordedEvent> events = RecordingFile.readAllEvents(path)
+				.stream()
+				.filter(event -> event.getEventType().getName().equals(eventName))
+				.toList();
+		List<RecordedEvent> query = events.stream()
+				.filter(event -> event.getLong("evaluationId") == evaluationId)
+				.toList();
+		assertThat(query).extracting(event -> event.getString("phase"))
+				.contains("scan", "expressions", "group", "render", "cancellation-request",
+						"cancellation-acknowledgement", "cleanup");
+		for (String phase : List.of("scan", "expressions")) {
+			RecordedEvent stage = query.stream()
+					.filter(event -> phase.equals(event.getString("phase")))
+					.findFirst()
+					.orElseThrow();
+			assertThat(stage.getString("outcome")).isEqualTo("COMPLETED");
+			RecordedEvent group = query.stream()
+					.filter(event -> "group".equals(event.getString("phase")))
+					.findFirst()
+					.orElseThrow();
+			assertThat(stage.getStartTime()).isAfterOrEqualTo(group.getStartTime());
+			assertThat(stage.getEndTime()).isBeforeOrEqualTo(group.getEndTime());
+		}
+		List<String> terminalOrder = query.stream()
+				.map(event -> event.getString("phase"))
+				.filter(phase -> List.of("cancellation-request", "cancellation-acknowledgement", "cleanup")
+						.contains(phase))
+				.toList();
+		assertThat(terminalOrder).containsSubsequence("cancellation-request", "cancellation-acknowledgement",
+				"cleanup");
+		assertThat(events.stream().filter(event -> "scope-restored".equals(event.getString("phase"))))
+				.allSatisfy(event -> assertThat(event.getLong("evaluationId")).isNotEqualTo(evaluationId));
+	}
+
+	@Test
+	void phaseDiagnosticsCorrelateMergeRenderCancellationAndCleanup(@TempDir Path directory) throws Exception {
+		String eventName = "org.eclipse.rdf4j.lmdb.NativeExecutionPhase";
+		Path recordingPath = directory.resolve("native-phases.jfr");
+		try (Recording recording = new Recording()) {
+			recording.enable(eventName).withThreshold(Duration.ZERO);
+			recording.start();
+			SyntheticValueSource source = SyntheticValueSource.forEvaluation(new StubSource());
+			NativeSlotLayout layout = new NativeSlotLayout(Map.of("value", 0), null);
+			layout.freeze(List.of("value"));
+			AggregateSpec[] aggregates = { AggregateSpec.slot("count", 0, false, AggKind.COUNT) };
+			NativeGroupIteration iteration = new NativeGroupIteration(source, SlotPlan.empty(), layout, new int[0],
+					aggregates, false, EmptyBindingSet.getInstance(), null, null, false, null);
+			AggContext context = new AggContext(source, false);
+			try (NativeGroupTable left = NativeGroupTable.createParallel(new int[0], aggregates, context,
+					AggregateDistinctChannels.allHash(aggregates));
+					NativeGroupTable right = NativeGroupTable.createParallel(new int[0], aggregates, context,
+							AggregateDistinctChannels.allHash(aggregates))) {
+				left.mergeFrom(right);
+				left.results(iteration, LmdbNativeAttemptMetrics.root());
+				iteration.requestCancellation();
+				assertThat(iteration.hasNext()).isFalse();
+			} finally {
+				iteration.close();
+				source.executionContext().close();
+			}
+			recording.stop();
+			recording.dump(recordingPath);
+		}
+		List<RecordedEvent> events = RecordingFile.readAllEvents(recordingPath)
+				.stream()
+				.filter(event -> event.getEventType().getName().equals(eventName))
+				.toList();
+		assertThat(events).extracting(event -> event.getString("phase"))
+				.contains("merge", "render", "cancellation-request", "cancellation-acknowledgement", "cleanup");
+		assertThat(events.stream().map(event -> event.getLong("evaluationId")).distinct().toList())
+				.as("one evaluation and all its child operators share a stable diagnostic identity")
+				.hasSize(1);
+	}
+
+	@Test
+	void cancelledAggregateNeverRendersPartialResults() {
+		NativeLmdbQuerySource source = new StubSource();
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("value", 0), null);
+		layout.freeze(List.of("value"));
+		AggregateSpec[] aggregates = { AggregateSpec.slot("count", 0, false, AggKind.COUNT) };
+		NativeGroupIteration iteration = new NativeGroupIteration(source, SlotPlan.empty(), layout, new int[0],
+				aggregates, false, EmptyBindingSet.getInstance(), null, null, false, null);
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		assertThat(NativeRowSeeder.seed(row.slots, layout, row.base, source)).isTrue();
+		assertThat(row.bind(0, 1L)).isTrue();
+		try (NativeGroupTable table = NativeGroupTable.createParallel(new int[0], aggregates,
+				new AggContext(source, false), AggregateDistinctChannels.allHash(aggregates))) {
+			table.add(row);
+			assertThat(table.single.count(0)).isEqualTo(1L);
+			iteration.requestCancellation();
+			assertThrows(KernelQueryCancelledException.class,
+					() -> table.results(iteration, LmdbNativeAttemptMetrics.root()),
+					"a cancelled aggregate cannot publish its already accumulated partial count");
+		} finally {
+			iteration.close();
+		}
+	}
+
+	@Test
+	void interruptedAggregateSetUnionIsTerminal() {
+		NativeLmdbQuerySource source = new StubSource();
+		AggregateSpec[] aggregates = { AggregateSpec.slot("count", 0, true, AggKind.COUNT) };
+		AggContext context = new AggContext(source, false);
+		AggregateDistinctChannels channels = AggregateDistinctChannels.allHash(aggregates);
+		AggState left = new AggState(aggregates, 16, context, channels);
+		AggState right = new AggState(aggregates, 16, context, channels);
+		Thread.currentThread().interrupt();
+		try {
+			assertThrows(KernelQueryCancelledException.class, () -> left.mergeFrom(right),
+					"a cancelled set union must not return an apparently completed aggregate");
+		} finally {
+			Thread.interrupted();
+		}
+	}
+
+	@Test
+	void distinctFinalizationPollsTheOwningIterationCancellation() {
+		AtomicReference<NativeGroupIteration> owner = new AtomicReference<>();
+		AtomicInteger reads = new AtomicInteger();
+		NativeLmdbQuerySource source = new StubSource() {
+			@Override
+			public Value lazyValue(long id) {
+				if (reads.incrementAndGet() == 1) {
+					owner.get().requestCancellation();
+				}
+				return SimpleValueFactory.getInstance().createLiteral(id);
+			}
+		};
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("value", 0), null);
+		layout.freeze(List.of("value"));
+		AggregateSpec[] aggregates = { AggregateSpec.slot("sum", 0, true, AggKind.SUM) };
+		NativeGroupIteration iteration = new NativeGroupIteration(source, SlotPlan.empty(), layout, new int[0],
+				aggregates, false, EmptyBindingSet.getInstance(), null, null, false, null);
+		owner.set(iteration);
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		assertThat(NativeRowSeeder.seed(row.slots, layout, row.base, source)).isTrue();
+		try (NativeGroupTable table = NativeGroupTable.createParallel(new int[0], aggregates,
+				new AggContext(source, false, true, true), AggregateDistinctChannels.allHash(aggregates))) {
+			for (long id = 1; id <= 2048; id++) {
+				int mark = row.mark();
+				assertThat(row.bind(0, id)).isTrue();
+				table.add(row);
+				row.rollback(mark);
+			}
+			assertThrows(KernelQueryCancelledException.class,
+					() -> table.results(iteration, LmdbNativeAttemptMetrics.root()),
+					"a distinct reducer must poll its owner token while finalizing a large single group");
+			assertThat(reads.get()).isLessThan(2048);
+		} finally {
+			iteration.close();
+		}
+	}
+
+	@Test
+	void packedSortPollsCancellationDuringComparison() throws Exception {
+		NativeSortBuffer buffer = new NativeSortBuffer(1, 4096);
+		for (int index = 0; index < 4096; index++) {
+			buffer.append(new long[] { index * 37L % 4096 }, index);
+		}
+		AtomicInteger comparisons = new AtomicInteger();
+		try (ExecutorService worker = Executors.newSingleThreadExecutor()) {
+			Future<?> result = worker.submit(() -> {
+				try {
+					buffer.sortedOrder((left, leftOffset, right, rightOffset) -> {
+						if (comparisons.incrementAndGet() == 1) {
+							Thread.currentThread().interrupt();
+						}
+						return Long.compare(left[leftOffset], right[rightOffset]);
+					});
+				} finally {
+					Thread.interrupted();
+				}
+			});
+			ExecutionException failure = assertThrows(ExecutionException.class,
+					() -> result.get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS));
+			assertThat(failure.getCause()).isInstanceOf(KernelQueryCancelledException.class);
+			assertThat(comparisons.get()).as("sorting must poll before comparing the complete arena").isLessThan(4096);
+		} finally {
+			buffer.close();
+		}
+	}
+
+	@Test
+	void spillWritingPollsCancellationAfterSortingCompletes() {
+		AtomicInteger comparisons = new AtomicInteger();
+		try (NativeSpillSort sort = new NativeSpillSort(1, 1, (left, lo, right, ro) -> {
+			if (comparisons.incrementAndGet() == 1) {
+				Thread.currentThread().interrupt();
+			}
+			return Long.compare(left[lo], right[ro]);
+		}, -1, LmdbNativeAttemptMetrics.direct(), 80L)) {
+			sort.add(new long[] { 1L }, 0L);
+			sort.add(new long[] { 2L }, 1L);
+			assertThrows(KernelQueryCancelledException.class, () -> sort.add(new long[] { 3L }, 2L),
+					"spill I/O must poll cancellation even when the final short sort pass has just completed");
+		} catch (IOException failure) {
+			throw new AssertionError(failure);
+		} finally {
+			Thread.interrupted();
+		}
+	}
 
 	@Test
 	void requestCancellationIsIdempotentWhileEvaluationRemainsOpen() {
@@ -76,7 +368,9 @@ class LmdbNativeGroupCancellationTest {
 			iteration.close();
 			releaseFirstRow.countDown();
 
-			assertThat(worker.get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isNotNull();
+			ExecutionException failure = assertThrows(ExecutionException.class,
+					() -> worker.get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS));
+			assertThat(failure.getCause()).isInstanceOf(KernelQueryCancelledException.class);
 			assertThat(nextCalls)
 					.as("close must be observed at the first aggregate poll after the in-flight cursor call returns")
 					.hasValue(1);
@@ -143,7 +437,7 @@ class LmdbNativeGroupCancellationTest {
 		}
 	}
 
-	private static final class StubSource implements NativeLmdbQuerySource {
+	private static class StubSource implements NativeLmdbQuerySource {
 
 		private final Object idSpace = new Object();
 

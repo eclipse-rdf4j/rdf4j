@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.UNKNOWN_ID;
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -44,6 +45,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -56,6 +58,7 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -77,11 +80,23 @@ class LmdbNativeAggregateValuesCompilerTest {
 	private static final IRI LINK = VF.createIRI("urn:test:link");
 	private static final IRI NAME_1 = VF.createIRI("urn:test:name:1");
 	private static final IRI NAME_2 = VF.createIRI("urn:test:name:2");
+	private static final Literal INTEGER_ONE = VF.createLiteral(1);
+	private static final Literal LANGUAGE_TERM = VF.createLiteral("x", "en");
+	private static final Value PLAIN_TRIPLE_TERM = VF.createTripleTerm(VF.createBNode("plain-component"), LINK,
+			VF.createLiteral("plain object"));
+	private static final Value NESTED_TRIPLE_TERM = VF.createTripleTerm(SUBJECT, LINK, PLAIN_TRIPLE_TERM);
+	private static final Value LANGUAGE_TRIPLE_TERM = VF.createTripleTerm(SUBJECT, LINK,
+			VF.createTripleTerm(NAME_1, NAME_2, VF.createLiteral("x", "en")));
 
 	private static final long SUBJECT_ID = ValueIds.createId(ValueIds.T_URI, 1L);
 	private static final long LINK_ID = ValueIds.createId(ValueIds.T_URI, 2L);
 	private static final long NAME_1_ID = ValueIds.createId(ValueIds.T_URI, 3L);
 	private static final long NAME_2_ID = ValueIds.createId(ValueIds.T_URI, 4L);
+	private static final long INTEGER_ONE_ID = ValueIds.createId(ValueIds.T_LITERAL, 5L);
+	private static final long LANGUAGE_TERM_ID = ValueIds.createId(ValueIds.T_LITERAL, 6L);
+	private static final long PLAIN_TRIPLE_TERM_ID = ValueIds.createId(ValueIds.T_TRIPLE, 7L);
+	private static final long NESTED_TRIPLE_TERM_ID = ValueIds.createId(ValueIds.T_TRIPLE, 8L);
+	private static final long LANGUAGE_TRIPLE_TERM_ID = ValueIds.createId(ValueIds.T_TRIPLE, 9L);
 
 	@Test
 	void semanticConditionCompilerPropagatesQueryFatalPreparationErrors() {
@@ -92,6 +107,148 @@ class LmdbNativeAggregateValuesCompilerTest {
 				new ValueConstant(VF.createLiteral(true)), new QueryEvaluationContext.Minimal((Dataset) null)))
 						.isInstanceOf(QueryEvaluationException.class)
 						.hasMessage("fatal-condition-preparation");
+	}
+
+	@Test
+	void numericValuesInMixedUnionRemainTermExactPrimitiveRows() {
+		BindingSetAssignment numeric = values("name", INTEGER_ONE);
+		Union mixed = new Union(numeric,
+				new StatementPattern(Var.of("subject"), Var.of("link", LINK, true), Var.of("name")));
+		SingleStatementSource source = new SingleStatementSource();
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null,
+				null, 0L, new EvaluationStatistics(), false);
+		LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(
+				new QueryEvaluationContext.Minimal((Dataset) null), strategy, source);
+		planner.collectSyntheticValues(mixed);
+		planner.valueGuardsSupported = true;
+
+		SlotPlan compiled = planner.compileTuple(mixed, false);
+
+		assertThat(compiled).isInstanceOf(UnionPlan.class);
+		SlotPlan numericArm = ((UnionPlan) compiled).left;
+		assertThat(numericArm).isInstanceOf(ValuesPlan.class);
+		ValuesPlan values = (ValuesPlan) numericArm;
+		assertThat(values.rows).hasSize(1);
+		assertThat(values.rows[0].slots).containsExactly(planner.slot("name"));
+		assertThat(values.rows[0].values).containsExactly(INTEGER_ONE_ID);
+		assertThat(planner.pendingValueGuards)
+				.as("RDF-term VALUES rows must not become value-equality guards")
+				.isEmpty();
+	}
+
+	@Test
+	void valueGuardsRequireTheirExactMandatoryOccurrence() {
+		BindingSetAssignment mandatoryValues = values("term", LANGUAGE_TERM);
+		TupleExpr mandatoryJoin = new Join(mandatoryValues,
+				new StatementPattern(Var.of("subject"), Var.of("predicate", LINK, true), Var.of("term")));
+		LmdbNativeAggregatePlanner mandatoryPlanner = guardPlanner(mandatoryJoin);
+		SlotPlan mandatoryValuesPlan = mandatoryPlanner.compileTuple(mandatoryValues, false);
+		assertGuardRecorded(mandatoryPlanner);
+		assertThat(mandatoryValuesPlan).isInstanceOf(ValuesPlan.class);
+		boolean mandatorySafe = mandatoryPlanner.valueGuardsSafeFor(mandatoryJoin);
+
+		BindingSetAssignment unionValues = values("term", LANGUAGE_TERM);
+		Var optimizerValuedTerm = Var.of("term", LANGUAGE_TERM, false, false);
+		assertThat(optimizerValuedTerm.hasValue()).isTrue();
+		assertThat(optimizerValuedTerm.isConstant()).isFalse();
+		TupleExpr valuedPattern = new StatementPattern(Var.of("subject"), Var.of("predicate", LINK, true),
+				optimizerValuedTerm);
+		TupleExpr unrelatedUnboundValues = unboundValues("other");
+		TupleExpr unionRoot = new Union(new Join(unionValues, valuedPattern), unrelatedUnboundValues);
+		LmdbNativeAggregatePlanner unionPlanner = guardPlanner(unionRoot);
+		SlotPlan unionValuesPlan = unionPlanner.compileTuple(unionValues, false);
+		assertGuardRecorded(unionPlanner);
+		assertThat(unionValuesPlan).isInstanceOf(ValuesPlan.class);
+		boolean unionSafe = unionPlanner.valueGuardsSafeFor(unionRoot);
+
+		BindingSetAssignment optionalValues = values("term", LANGUAGE_TERM);
+		TupleExpr optionalInput = new Join(optionalValues,
+				new StatementPattern(Var.of("subject"), Var.of("predicate", LINK, true),
+						Var.of("term", LANGUAGE_TERM, false, false)));
+		Projection projectedAlias = new Projection(optionalInput,
+				new ProjectionElemList(new ProjectionElem("subject", "visible")), true);
+		TupleExpr optionalRoot = new LeftJoin(new SingletonSet(), projectedAlias);
+		LmdbNativeAggregatePlanner optionalPlanner = guardPlanner(optionalRoot);
+		SlotPlan optionalValuesPlan = optionalPlanner.compileTuple(optionalValues, false);
+		assertGuardRecorded(optionalPlanner);
+		assertThat(optionalValuesPlan).isInstanceOf(ValuesPlan.class);
+		boolean optionalSafe = optionalPlanner.valueGuardsSafeFor(optionalRoot);
+
+		assertAll("value guards stay within mandatory occurrences",
+				() -> assertThat(mandatorySafe)
+						.as("a guard from a mandatory VALUES + pattern join is root-safe")
+						.isTrue(),
+				() -> assertThat(unionSafe)
+						.as("a guard must not bind an unrelated accepting UNION arm")
+						.isFalse(),
+				() -> assertThat(optionalSafe)
+						.as("a projected optional guard cannot escape its lexical occurrence")
+						.isFalse());
+	}
+
+	@Test
+	void valueGuardsDoNotCrossOpaqueOrEffectfulJoinSiblings() {
+		BindingSetAssignment safeValues = values("term", LANGUAGE_TERM);
+		TupleExpr safeRoot = new Join(safeValues,
+				new StatementPattern(Var.of("subject"), Var.of("predicate", LINK, true), Var.of("term")));
+		boolean mandatoryPatternSafe = guardIsSafeFor(safeRoot, safeValues);
+
+		BindingSetAssignment tupleValues = values("term", LANGUAGE_TERM);
+		TupleFunctionCall tupleFunction = tupleFunctionReadingTerm(false);
+		TupleExpr tupleRoot = new Join(new Join(tupleFunction, tupleValues), patternForTerm());
+		boolean tupleFunctionSafe = guardIsSafeFor(tupleRoot, tupleValues);
+
+		BindingSetAssignment customValues = values("term", LANGUAGE_TERM);
+		TupleFunctionCall customTuple = tupleFunctionReadingTerm(true);
+		TupleExpr customRoot = new Join(new Join(customTuple, customValues), patternForTerm());
+		boolean customTupleSafe = guardIsSafeFor(customRoot, customValues);
+
+		BindingSetAssignment effectfulValues = values("term", LANGUAGE_TERM);
+		FunctionCall random = new FunctionCall("RAND");
+		Extension unrelatedEffect = new Extension(new SingletonSet(), new ExtensionElem(random, "sample"));
+		TupleExpr effectfulRoot = new Join(new Join(unrelatedEffect, effectfulValues), patternForTerm());
+		boolean effectfulSiblingSafe = guardIsSafeFor(effectfulRoot, effectfulValues);
+
+		assertThat(LmdbNativeAggregateFilterCompiler.isRepeatable(random))
+				.as("the unrelated extension is an effectful expression")
+				.isFalse();
+		assertAll("root value guards preserve mandatory sibling evaluation",
+				() -> assertThat(mandatoryPatternSafe)
+						.as("a pure mandatory pattern sibling permits the guard")
+						.isTrue(),
+				() -> assertThat(tupleFunctionSafe)
+						.as("a tuple-function sibling can observe its guarded argument")
+						.isFalse(),
+				() -> assertThat(customTupleSafe)
+						.as("an opaque tuple-function subclass remains a guarded sibling")
+						.isFalse(),
+				() -> assertThat(effectfulSiblingSafe)
+						.as("a volatile unrelated extension must not be skipped by a root guard")
+						.isFalse());
+	}
+
+	@Test
+	void termProbeAbsenceProofRecursesThroughOnlyUnambiguousTripleComponents() {
+		SingleStatementSource source = new SingleStatementSource();
+		for (Value triple : List.of(PLAIN_TRIPLE_TERM, NESTED_TRIPLE_TERM)) {
+			long id = source.idOf(triple);
+			assertThat(id).as("the fixture gives this real TripleTerm a known term id").isNotEqualTo(UNKNOWN_ID);
+			assertAll("a triple whose recursive components have one RDF-term spelling",
+					() -> assertThat(LmdbNativeAggregatePlannerBase.termSafeAbsenceProof(triple))
+							.as("the full term proves absence")
+							.isTrue(),
+					() -> assertThat(LmdbNativeAggregatePlannerBase.termProbeSafeId(id, triple))
+							.as("a known exact term id may be used for the probe")
+							.isTrue());
+		}
+		long languageTripleId = source.idOf(LANGUAGE_TRIPLE_TERM);
+		assertThat(languageTripleId).isNotEqualTo(UNKNOWN_ID);
+		assertAll("an embedded language literal retains ambiguous legacy spelling",
+				() -> assertThat(LmdbNativeAggregatePlannerBase.termSafeAbsenceProof(LANGUAGE_TRIPLE_TERM)).isFalse(),
+				() -> assertThat(LmdbNativeAggregatePlannerBase.termProbeSafeId(languageTripleId, LANGUAGE_TRIPLE_TERM))
+						.isFalse(),
+				() -> assertThat(LmdbNativeAggregatePlannerBase.termProbeSafeId(UNKNOWN_ID, PLAIN_TRIPLE_TERM))
+						.isFalse());
 	}
 
 	@Test
@@ -241,6 +398,46 @@ class LmdbNativeAggregateValuesCompilerTest {
 	}
 
 	@Test
+	void restrictedHavingRetainsNativeGroupPhysicalPlanAcrossRootShapes() {
+		boolean[] exposesPhysicalPlan = new boolean[2];
+		String[] physicalPlans = new String[2];
+		for (boolean extensionStack : List.of(false, true)) {
+			Group group = new Group(
+					new StatementPattern(Var.of("subject"), Var.of("link", LINK, true), Var.of("name")));
+			group.addGroupElement(new GroupElem("count", new Count(Var.of("name"), false)));
+			TupleExpr argument = extensionStack ? new Extension(group,
+					new ExtensionElem(new ValueConstant(VF.createLiteral(7)), "extra")) : group;
+			Filter filter = new Filter(argument, new Not(new Bound(Var.of("count"))));
+			filter.setConditionBindingScope(ConditionBindingScope.retain(Set.of()));
+			TupleExpr root = extensionStack ? new Projection(filter,
+					new ProjectionElemList(new ProjectionElem("count"))) : filter;
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null,
+					null, 0L, new EvaluationStatistics(), false);
+			QueryEvaluationStep step = LmdbNativeAggregateCompiler.tryCompile(root,
+					new QueryEvaluationContext.Minimal((Dataset) null), strategy, new SingleStatementSource());
+			assertThat(step).as("HAVING compiles, extension stack=%s", extensionStack).isNotNull();
+			try (var rows = step.evaluate(EmptyBindingSet.getInstance())) {
+				assertThat(rows.hasNext()).as("projected HAVING, extension stack=%s", extensionStack).isTrue();
+				assertThat(((Literal) rows.next().getValue("count")).longValue()).isEqualTo(1);
+				assertThat(rows.hasNext()).isFalse();
+			}
+			int rootShape = extensionStack ? 1 : 0;
+			exposesPhysicalPlan[rootShape] = step instanceof LmdbNativePhysicalPlan;
+			physicalPlans[rootShape] = step instanceof LmdbNativePhysicalPlan physical
+					? physical.nativePhysicalPlan()
+					: null;
+		}
+		assertAll("restricted HAVING retains the grouped physical child",
+				() -> assertThat(exposesPhysicalPlan[0]).as("direct Filter exposes LmdbNativePhysicalPlan").isTrue(),
+				() -> assertThat(physicalPlans[0]).as("direct Filter physical child")
+						.contains("NativeHaving", "NativeGroup("),
+				() -> assertThat(exposesPhysicalPlan[1]).as("Extension + Projection exposes LmdbNativePhysicalPlan")
+						.isTrue(),
+				() -> assertThat(physicalPlans[1]).as("Extension + Projection physical child")
+						.contains("NativeHaving", "NativeGroup("));
+	}
+
+	@Test
 	void undeclaredValuesColumnsRemainObservableToDistinctAggregatesAndFolds() {
 		for (boolean folded : List.of(false, true)) {
 			BindingSetAssignment inputs = values("target", NAME_1);
@@ -364,17 +561,75 @@ class LmdbNativeAggregateValuesCompilerTest {
 		return assignment;
 	}
 
+	private static BindingSetAssignment unboundValues(String name) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of(name));
+		assignment.setBindingSets(List.of(EmptyBindingSet.getInstance()));
+		return assignment;
+	}
+
+	private static LmdbNativeAggregatePlanner guardPlanner(TupleExpr root) {
+		SingleStatementSource source = new SingleStatementSource();
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null,
+				null, 0L, new EvaluationStatistics(), false);
+		LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(
+				new QueryEvaluationContext.Minimal((Dataset) null), strategy, source);
+		planner.collectSyntheticValues(root);
+		planner.valueGuardsSupported = true;
+		return planner;
+	}
+
+	private static void assertGuardRecorded(LmdbNativeAggregatePlanner planner) {
+		assertThat(planner.pendingValueGuards).hasSize(1);
+		LmdbNativeAggregatePlannerBase.PendingValueGuard guard = planner.pendingValueGuards.get(0);
+		assertThat(guard.name).isEqualTo("term");
+		assertThat(guard.guardId).isNotEqualTo(UNKNOWN_ID);
+		assertThat(planner.planValueCatalog.idOf(LANGUAGE_TERM)).isEqualTo(guard.guardId);
+		assertThat(planner.syntheticVarNames).doesNotContain("term");
+	}
+
+	private static boolean guardIsSafeFor(TupleExpr root, BindingSetAssignment guardedValues) {
+		LmdbNativeAggregatePlanner planner = guardPlanner(root);
+		SlotPlan compiled = planner.compileTuple(guardedValues, false);
+		assertGuardRecorded(planner);
+		assertThat(compiled).isInstanceOf(ValuesPlan.class);
+		return planner.valueGuardsSafeFor(root);
+	}
+
+	private static TupleFunctionCall tupleFunctionReadingTerm(boolean custom) {
+		TupleFunctionCall call = custom ? new TupleFunctionCall() {
+		} : new TupleFunctionCall();
+		call.setURI("urn:rdf4j:test:guard-sibling");
+		call.addArg(new Var("term"));
+		call.addResultVar(new Var("result"));
+		return call;
+	}
+
+	private static StatementPattern patternForTerm() {
+		return new StatementPattern(Var.of("subject"), Var.of("predicate", LINK, true), Var.of("term"));
+	}
+
 	private static final class SingleStatementSource implements NativeLmdbQuerySource {
 		private static final Map<Value, Long> IDS = Map.of(
 				SUBJECT, SUBJECT_ID,
 				LINK, LINK_ID,
 				NAME_1, NAME_1_ID,
-				NAME_2, NAME_2_ID);
+				NAME_2, NAME_2_ID,
+				INTEGER_ONE, INTEGER_ONE_ID,
+				LANGUAGE_TERM, LANGUAGE_TERM_ID,
+				PLAIN_TRIPLE_TERM, PLAIN_TRIPLE_TERM_ID,
+				NESTED_TRIPLE_TERM, NESTED_TRIPLE_TERM_ID,
+				LANGUAGE_TRIPLE_TERM, LANGUAGE_TRIPLE_TERM_ID);
 		private static final Map<Long, Value> VALUES = Map.of(
 				SUBJECT_ID, SUBJECT,
 				LINK_ID, LINK,
 				NAME_1_ID, NAME_1,
-				NAME_2_ID, NAME_2);
+				NAME_2_ID, NAME_2,
+				INTEGER_ONE_ID, INTEGER_ONE,
+				LANGUAGE_TERM_ID, LANGUAGE_TERM,
+				PLAIN_TRIPLE_TERM_ID, PLAIN_TRIPLE_TERM,
+				NESTED_TRIPLE_TERM_ID, NESTED_TRIPLE_TERM,
+				LANGUAGE_TRIPLE_TERM_ID, LANGUAGE_TRIPLE_TERM);
 
 		@Override
 		public long idOf(Value value) {

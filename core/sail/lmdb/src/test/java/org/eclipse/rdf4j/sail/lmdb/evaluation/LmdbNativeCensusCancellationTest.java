@@ -12,14 +12,23 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.nio.file.Path;
+import java.time.Duration;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.query.Dataset;
@@ -35,12 +44,196 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjace
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeProbe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.WildcardAdjacency;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
 
+import jdk.jfr.Recording;
+import jdk.jfr.consumer.RecordingFile;
+
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
 class LmdbNativeCensusCancellationTest {
+	@Test
+	void groupedAlternativeRetainsItsActiveGroupCancellationOwner() throws Exception {
+		var entered = new CountDownLatch(1);
+		var release = new CountDownLatch(1);
+		var dictionary = mock(NativeLmdbQuerySource.class);
+		var strategy = mock(LmdbNativeEvaluationStrategy.class);
+		var quoteProbe = mock(NativeProbe.class);
+		var probe = mock(NativeProbe.class);
+		var quoteWildcard = mock(WildcardAdjacency.class);
+		var wildcard = mock(WildcardAdjacency.class);
+		var quoteView = mock(NativeAdjacency.class);
+		var view = mock(NativeAdjacency.class);
+		var quotePages = mock(AdjacencyPageCursor.class);
+		var coverage = mock(AdjacencyPageCursor.class);
+		var pages = mock(AdjacencyPageCursor.class);
+		long predicate = ValueIds.createId(ValueIds.T_URI, 1);
+		long namedContext = ValueIds.createId(ValueIds.T_URI, 2);
+		when(dictionary.newProbe()).thenReturn(quoteProbe, probe);
+		when(quoteProbe.wildcardAdjacency(true)).thenReturn(quoteWildcard);
+		when(quoteWildcard.predicateCount()).thenReturn(1);
+		when(quoteWildcard.predicateAt(0)).thenReturn(predicate);
+		when(quoteWildcard.keyCount()).thenReturn(1L);
+		when(quoteProbe.adjacency(predicate, true)).thenReturn(quoteView);
+		when(quoteView.openPageCursor()).thenReturn(quotePages);
+		when(quotePages.advance()).thenReturn(true, false);
+		when(quotePages.hasCommonContext()).thenReturn(true);
+		when(quotePages.commonContext()).thenReturn(namedContext);
+		when(quotePages.rowCount()).thenReturn(1);
+		when(quotePages.quadCount()).thenReturn(1L);
+		when(quotePages.uniformRowTermKind()).thenReturn(true);
+		when(quotePages.uniformNeighborTermKind()).thenReturn(true);
+		doAnswer(invocation -> {
+			quoteView.close();
+			return null;
+		}).when(quoteProbe).close();
+		when(probe.wildcardAdjacency(true)).thenReturn(wildcard);
+		when(wildcard.predicateCount()).thenReturn(1);
+		when(wildcard.predicateAt(0)).thenReturn(predicate);
+		when(wildcard.keyCount()).thenReturn(1L);
+		when(probe.adjacency(predicate, true)).thenReturn(view);
+		when(view.openPageCursor()).thenReturn(coverage, pages);
+		when(coverage.advance()).thenReturn(true, false);
+		when(coverage.hasCommonContext()).thenReturn(true);
+		when(coverage.commonContext()).thenReturn(namedContext);
+		when(coverage.rowCount()).thenReturn(1);
+		when(coverage.quadCount()).thenReturn(1L);
+		AtomicInteger advances = new AtomicInteger();
+		when(pages.advance()).thenAnswer(call -> {
+			if (advances.getAndIncrement() != 0) {
+				return false;
+			}
+			entered.countDown();
+			assertThat(release.await(5, TimeUnit.SECONDS)).isTrue();
+			return true;
+		});
+		var group = new Group(new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+				Var.of("s"), Var.of("p"), Var.of("o"), Var.of("g")));
+		group.addGroupElement(new GroupElem("graphs", new Count(Var.of("g"), true)));
+		var census = LmdbNativeCensusAggregate.tryCreate(group, dictionary, strategy,
+				new QueryEvaluationContext.Minimal((Dataset) null), group, pattern -> ContextConstraint.UNRESTRICTED);
+		assertThat(census).as("the real structural alternative must be admitted").isNotNull();
+		SyntheticValueSource source = SyntheticValueSource.forEvaluation(dictionary);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("s", 0, "p", 1, "o", 2, "g", 3), null);
+		layout.freeze(List.of("s", "p", "o", "g"));
+		NativeGroupIteration owner = new NativeGroupIteration(source, SlotPlan.singleton(), layout, new int[0],
+				new AggregateSpec[] { AggregateSpec.slot("graphs", 3, true, AggKind.COUNT) }, false,
+				EmptyBindingSet.getInstance(), null, null, false, false, null, null, 0L, null, null,
+				null, null, LmdbNativeCensusAggregate.PATH);
+		owner.alternatives = List.of(new NativeGroupStep.Alternative(census, LmdbNativeCensusAggregate.PATH));
+		var executor = Executors.newSingleThreadExecutor();
+		var worker = executor.submit(owner::evaluateAll);
+		try {
+			boolean reductionActive = entered.await(5, TimeUnit.SECONDS);
+			String workerOutcome = "still running when the active-reduction latch timed out";
+			if (!reductionActive && worker.isDone()) {
+				try {
+					workerOutcome = "returned before entering the reduction: " + worker.get();
+				} catch (ExecutionException failure) {
+					workerOutcome = "failed before entering the reduction: " + failure.getCause();
+				}
+			}
+			assertThat(reductionActive)
+					.as("actual census reduction must be active; worker outcome: %s", workerOutcome)
+					.isTrue();
+			assertThat(quoteProbe).isNotSameAs(probe);
+			assertThat(quoteWildcard).isNotSameAs(wildcard);
+			assertThat(quoteView).isNotSameAs(view);
+			assertThat(quotePages).isNotSameAs(coverage).isNotSameAs(pages);
+			verify(quoteWildcard, atLeastOnce()).predicateCount();
+			verify(quoteWildcard).predicateAt(0);
+			verify(quoteWildcard).bind(0);
+			verify(quoteWildcard).keyCount();
+			verify(quoteProbe).adjacency(predicate, true);
+			verify(quoteView).openPageCursor();
+			verify(quotePages, times(2)).advance();
+			verify(quoteProbe).close();
+			verify(quoteWildcard).close();
+			verify(quoteView).close();
+			verify(quotePages).close();
+			verify(quotePages).hasCommonContext();
+			verify(quotePages).commonContext();
+			verify(quotePages).quadCount();
+			verify(coverage, times(2)).advance();
+			verify(coverage).close();
+			verify(coverage).hasCommonContext();
+			verify(coverage).commonContext();
+			verify(coverage).quadCount();
+			assertThat(owner.requestCancellation()).isTrue();
+			release.countDown();
+			ExecutionException failure = Assertions.assertThrows(ExecutionException.class,
+					() -> worker.get(5, TimeUnit.SECONDS));
+			assertThat(failure.getCause()).isInstanceOf(KernelQueryCancelledException.class);
+			verify(pages, never()).rowCount();
+			verify(pages).close();
+			verify(wildcard).close();
+			verify(probe).close();
+		} finally {
+			release.countDown();
+			owner.close();
+			source.executionContext().close();
+			executor.shutdownNow();
+			executor.awaitTermination(5, TimeUnit.SECONDS);
+		}
+	}
+
+	@Test
+	void structuralCensusAttributesItsActualPageTraversalWithoutPatternCursors(@TempDir Path directory)
+			throws Exception {
+		var source = mock(NativeLmdbQuerySource.class);
+		var strategy = mock(LmdbNativeEvaluationStrategy.class);
+		var probe = mock(NativeProbe.class);
+		var wildcard = mock(WildcardAdjacency.class);
+		var view = mock(NativeAdjacency.class);
+		var coverage = mock(AdjacencyPageCursor.class);
+		var pages = mock(AdjacencyPageCursor.class);
+		long predicate = ValueIds.createId(ValueIds.T_URI, 1);
+		when(source.newProbe()).thenReturn(probe);
+		when(probe.wildcardAdjacency(true)).thenReturn(wildcard);
+		when(wildcard.predicateCount()).thenReturn(1);
+		when(wildcard.predicateAt(0)).thenReturn(predicate);
+		when(wildcard.keyCount()).thenReturn(1L);
+		when(probe.adjacency(predicate, true)).thenReturn(view);
+		when(view.openPageCursor()).thenReturn(coverage, pages);
+		var group = new Group(new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+				Var.of("s"), Var.of("p"), Var.of("o"), Var.of("g")));
+		group.addGroupElement(new GroupElem("graphs", new Count(Var.of("g"), true)));
+		var step = LmdbNativeCensusAggregate.tryCreate(group, source, strategy,
+				new QueryEvaluationContext.Minimal((Dataset) null), group, pattern -> ContextConstraint.UNRESTRICTED);
+		assertThat(step).as("the fixture must admit the structural census before checking attribution").isNotNull();
+		String eventName = "org.eclipse.rdf4j.lmdb.NativeExecutionPhase";
+		Path path = directory.resolve("structural-input-phases.jfr");
+		try (Recording recording = new Recording()) {
+			recording.enable(eventName).withThreshold(Duration.ZERO);
+			recording.start();
+			try (var iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+				verify(source, never()).newProbe();
+				assertThat(iteration.hasNext()).isTrue();
+				assertThat(iteration.next().getValue("graphs").stringValue()).isEqualTo("0");
+				assertThat(iteration.hasNext()).isFalse();
+			}
+			verify(coverage).advance();
+			verify(coverage).close();
+			verify(pages).advance();
+			verify(pages).close();
+			verify(wildcard).close();
+			verify(probe).close();
+			recording.stop();
+			recording.dump(path);
+		}
+		var scans = RecordingFile.readAllEvents(path)
+				.stream()
+				.filter(event -> eventName.equals(event.getEventType().getName())
+						&& "scan".equals(event.getString("phase")))
+				.toList();
+		assertThat(scans).as("a structural page traversal must publish an actual execution scan phase").hasSize(1);
+		assertThat(scans.getFirst().getString("outcome")).isEqualTo("COMPLETED");
+	}
+
 	@Test
 	void cancellationUnwindsPageTraversalAndClosesResourcesBeforeEmission() throws Exception {
 		var entered = new CountDownLatch(1);
@@ -78,7 +271,9 @@ class LmdbNativeCensusCancellationTest {
 			assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
 			assertThat(((CooperativeCancellation) iteration).requestCancellation()).isTrue();
 			release.countDown();
-			assertThat(worker.get(5, TimeUnit.SECONDS)).isFalse();
+			ExecutionException failure = Assertions.assertThrows(ExecutionException.class,
+					() -> worker.get(5, TimeUnit.SECONDS));
+			assertThat(failure.getCause()).isSameAs(KernelQueryCancelledException.INSTANCE);
 			verify(pages).close();
 			verify(wildcard).close();
 			verify(probe).close();

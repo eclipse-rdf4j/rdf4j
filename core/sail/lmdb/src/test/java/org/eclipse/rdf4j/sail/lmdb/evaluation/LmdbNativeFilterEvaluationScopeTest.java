@@ -53,6 +53,49 @@ class LmdbNativeFilterEvaluationScopeTest {
 	private static final long OBJECT = 13L;
 
 	@Test
+	void existsPredicatesBindIndependentWorkersWithoutSharingSnapshotMemo() throws Exception {
+		SyntheticValueSource compile = compileSource(true);
+		PatternPlan pattern = new PatternPlan(Term.constant(SUBJECT), Term.constant(PREDICATE), Term.constant(OBJECT),
+				Term.constant(LmdbNativeAggregateCompiler.NULL_CONTEXT_ID), ContextConstraint.UNRESTRICTED, false, 1D);
+		for (NativeBooleanFilter original : List.of(new StatementPatternExistsFilter(compile,
+				Term.constant(SUBJECT), Term.constant(PREDICATE), Term.constant(OBJECT),
+				Term.constant(LmdbNativeAggregateCompiler.NULL_CONTEXT_ID), ContextConstraint.UNRESTRICTED, false),
+				new ExistsFilter(pattern), new NegatedNativeBooleanFilter(new ExistsFilter(pattern), true))) {
+			SyntheticValueSource matching = evaluationSource(true);
+			SyntheticValueSource empty = evaluationSource(false);
+			try {
+				assertThat(original.parallelWorkerForkable()).as("pure EXISTS owns a worker recipe").isTrue();
+				NativeBooleanFilter first = original
+						.forkForParallelWorker(new NativeScalarPlan.WorkerContext(matching, null, null));
+				NativeBooleanFilter second = original
+						.forkForParallelWorker(new NativeScalarPlan.WorkerContext(empty, null, null));
+				assertThat(first).isNotNull().isNotSameAs(original).isNotSameAs(second);
+				assertThat(second).isNotNull().isNotSameAs(original);
+				assertThat(first.accept(row(matching))).isEqualTo(!(original instanceof NegatedNativeBooleanFilter));
+				assertThat(second.accept(row(empty))).isEqualTo(original instanceof NegatedNativeBooleanFilter);
+				first.close();
+				assertThat(second.accept(row(empty))).isEqualTo(original instanceof NegatedNativeBooleanFilter);
+				second.close();
+			} finally {
+				matching.executionContext().close();
+				empty.executionContext().close();
+			}
+		}
+	}
+
+	@Test
+	void stickyPlacementDoesNotEraseProvenPredicateReplaySafety() {
+		PatternPlan pattern = new PatternPlan(Term.constant(SUBJECT), Term.constant(PREDICATE), Term.constant(OBJECT),
+				Term.constant(LmdbNativeAggregateCompiler.NULL_CONTEXT_ID), ContextConstraint.UNRESTRICTED, false, 1D);
+		SlotPlan safe = new FilterPlan(pattern, new ExistsFilter(pattern), -1L);
+		assertThat(SlotPlan.encounterOrderReplaySafe(safe)).isTrue();
+		assertThat(SlotPlan.canFlatten(safe)).as("correlated placement remains sticky").isFalse();
+		assertThat(SlotPlan.encounterOrderReplaySafe(new FilterPlan(pattern, row -> true, -1L)))
+				.as("opaque predicates do not acquire a replay proof")
+				.isFalse();
+	}
+
+	@Test
 	void statementPatternExistsUsesCurrentEvaluationSourceAndMemo() throws Exception {
 		SyntheticValueSource compileSource = compileSource(true);
 		StatementPatternExistsFilter filter = new StatementPatternExistsFilter(compileSource,
@@ -358,6 +401,10 @@ class LmdbNativeFilterEvaluationScopeTest {
 		RowBindingSetView provenBase = new RowBindingSetView(source, proofLayout, graphBase,
 				new long[] { proofId }, true);
 		BindingSet capturedEntry = NativeEntryBindings.snapshot(provenBase);
+		source.executionContext().initializeQueryBase(capturedEntry);
+		assertThat(source.executionContext().queryBase().getBindingNames()).containsExactlyInAnyOrder("x", "graph");
+		assertThat(source.executionContext().queryBase().getValue("x")).isEqualTo(languageTagged);
+		assertThat(GraphFrameBindings.isSupplied(source.executionContext().queryBase(), "graph")).isTrue();
 		NativeSlotLayout outerLayout = singleSlotLayout("sibling");
 		RowState row = new RowState(source, outerLayout, capturedEntry);
 		row.slots[0] = source.internComputedValue(SimpleValueFactory.getInstance().createLiteral("outer"),
