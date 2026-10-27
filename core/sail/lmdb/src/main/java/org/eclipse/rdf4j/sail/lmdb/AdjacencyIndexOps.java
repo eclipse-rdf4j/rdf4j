@@ -125,4 +125,20 @@ interface AdjacencyIndexOps<B, O, G> {
 	/** Called on the applier thread after {@code next} replaced {@code previous} as the published state. */
 	default void published(AdjacencyState<B, O> previous, AdjacencyState<B, O> next) {
 	}
+
+	/**
+	 * Whether a worker failure is a memory refusal: expected under pressure, retried later, never a defect. The applier
+	 * logs refusals quietly and keeps the exact state it has.
+	 */
+	default boolean transientRefusal(Throwable failure) {
+		return false;
+	}
+
+	/**
+	 * Whether a refused range merge should turn into a rebuild because the overlay set has grown too far to wait for
+	 * memory to return; the index-specific binding knows its generation budget.
+	 */
+	default boolean rebuildOnRefusedCompaction(O overlays) {
+		return false;
+	}
 }

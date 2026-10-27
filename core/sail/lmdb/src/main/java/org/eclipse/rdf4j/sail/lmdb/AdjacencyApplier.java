@@ -87,6 +87,8 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 	private volatile boolean retryScheduled;
 	private volatile long prepareInFlight = -1;
 	private volatile boolean compactionInFlight;
+	private volatile boolean compactionRequested; // consult the policy at the next unit, even without a publish
+	private volatile boolean foldRequested; // fold every generation at the next unit, bypassing the policy
 
 	AdjacencyApplier(AdjacencyCommitLog log, AdjacencyIndexOps<B, O, G> ops,
 			AdjacencyCompactionPolicy<B, O, G> policy, AdjacencyWorkerPool workers, ApplierScheduler scheduler,
@@ -125,6 +127,27 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 
 	void requestRebuild() {
 		enqueue(() -> rebuildRequested = true);
+	}
+
+	/** Asks the applier to consult the compaction policy now rather than after the next publish. */
+	void requestCompaction() {
+		enqueue(() -> {
+			compactionRequested = true;
+			considerCompaction();
+		});
+	}
+
+	/** Asks the applier to fold every published generation into a new base, regardless of the policy. */
+	void requestFold() {
+		enqueue(() -> {
+			foldRequested = true;
+			considerCompaction();
+		});
+	}
+
+	/** True while a merge or fold worker is running or its candidate has not been consumed yet. */
+	boolean compactionInFlight() {
+		return compactionInFlight;
 	}
 
 	void suspend() {
@@ -414,7 +437,8 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 		if (!inbox.isEmpty() || runningUnit) {
 			return false;
 		}
-		return !buildInFlight && prepareInFlight < 0 && !compactionInFlight && !rebuildRequested && !closeRequested;
+		return !buildInFlight && prepareInFlight < 0 && !compactionInFlight && !rebuildRequested && !closeRequested
+				&& !compactionRequested && !foldRequested;
 	}
 
 	private boolean step(boolean dryRun) {
@@ -713,10 +737,14 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 						ops.retainOverlays(current.overlays());
 					}
 				}
+				boolean refused = ops.transientRefusal(failure);
+				Phase phase = current.status() == Status.SERVING ? current.phase()
+						: refused ? Phase.MEMORY_REFUSED : Phase.FAILED;
 				publish(new AdjacencyState<>(nextEpoch(), current.base(), current.overlays(),
 						current.appliedRevision(), current.gapFromRevision(), current.minSnapshotRevision(),
-						current.status(), current.status() == Status.SERVING ? current.phase() : Phase.FAILED,
-						"rebuild failed: " + describe(failure), this::onStateReleased), Transition.noChange());
+						current.status(), phase, (refused ? "rebuild refused: " : "rebuild failed: ")
+								+ describe(failure),
+						this::onStateReleased), Transition.noChange());
 				scheduleRetry();
 				return;
 			}
@@ -760,16 +788,27 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 			return;
 		}
 		AdjacencyState<B, O> state = published.get();
-		if (state.status() != Status.SERVING || state.overlays() == null) {
+		if (state.status() != Status.SERVING || state.overlays() == null
+				|| ops.generationCount(state.overlays()) == 0) {
+			// a request made while there is nothing to compact is satisfied by that fact
+			compactionRequested = false;
+			foldRequested = false;
 			return;
 		}
-		AdjacencyCompactionPlan plan = policy.select(state.base(), state.overlays(), ops);
+		AdjacencyCompactionPlan plan;
+		if (foldRequested) {
+			plan = AdjacencyCompactionPlan.fold(ops.generationCount(state.overlays()));
+		} else {
+			plan = policy.select(state.base(), state.overlays(), ops);
+		}
+		compactionRequested = false;
 		if (plan.type() == AdjacencyCompactionPlan.Type.NONE) {
 			return;
 		}
 		if (!state.tryRetain()) {
 			return;
 		}
+		foldRequested = false;
 		compactionInFlight = true;
 		B base = state.base();
 		O overlays = state.overlays();
@@ -802,7 +841,17 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 		premise.release();
 		G merged = outcome.succeeded() ? outcome.result() : null;
 		if (merged == null) {
-			logger.warn("Adjacency range merge {} failed; the index keeps serving", plan, outcome.failure());
+			if (ops.transientRefusal(outcome.failure())) {
+				logger.debug("Adjacency range merge {} refused by the memory account; the exact overlays stay", plan,
+						outcome.failure());
+				AdjacencyState<B, O> current = published.get();
+				if (current.status() == Status.SERVING && current.overlays() != null
+						&& ops.rebuildOnRefusedCompaction(current.overlays())) {
+					rebuildRequested = true;
+				}
+			} else {
+				logger.warn("Adjacency range merge {} failed; the index keeps serving", plan, outcome.failure());
+			}
 			return;
 		}
 		AdjacencyState<B, O> current = published.get();
@@ -825,7 +874,12 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 		premise.release();
 		Fold<B> fold = outcome.succeeded() ? outcome.result() : null;
 		if (fold == null) {
-			logger.warn("Adjacency base fold {} failed; the index keeps serving", plan, outcome.failure());
+			if (ops.transientRefusal(outcome.failure())) {
+				logger.debug("Adjacency base fold {} refused by the memory account; the exact base and overlays stay",
+						plan, outcome.failure());
+			} else {
+				logger.warn("Adjacency base fold {} failed; the index keeps serving", plan, outcome.failure());
+			}
 			return;
 		}
 		AdjacencyState<B, O> current = published.get();

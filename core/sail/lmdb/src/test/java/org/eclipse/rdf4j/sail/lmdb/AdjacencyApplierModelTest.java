@@ -92,6 +92,8 @@ class AdjacencyApplierModelTest {
 		FAIL_NEXT_PREPARE,
 		COMMIT_DURING_SCAN,
 		TOGGLE_COMPACTION,
+		REQUEST_COMPACTION,
+		REQUEST_FOLD,
 		SETTLE
 	}
 
@@ -705,6 +707,8 @@ class AdjacencyApplierModelTest {
 			case FAIL_NEXT_PREPARE -> ops.failPrepares = 1;
 			case COMMIT_DURING_SCAN -> ops.commitDuringNextScan = true;
 			case TOGGLE_COMPACTION -> policy.enabled = !policy.enabled;
+			case REQUEST_COMPACTION -> applier.requestCompaction();
+			case REQUEST_FOLD -> applier.requestFold();
 			case SETTLE -> settle();
 			}
 		}

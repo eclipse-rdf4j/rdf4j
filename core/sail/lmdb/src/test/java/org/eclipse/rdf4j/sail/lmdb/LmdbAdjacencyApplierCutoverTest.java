@@ -247,6 +247,82 @@ class LmdbAdjacencyApplierCutoverTest {
 	// oracle
 	// ------------------------------------------------------------------
 
+	/**
+	 * A delta apply, a range-merge candidate for an older prefix and a fold request are pending at once. Whichever the
+	 * applier consumes first, the others are validated against the new prefix and either spliced in or discarded, and
+	 * every exact view along the way reads what LMDB holds.
+	 */
+	@Test
+	void pendingDeltaMergeCandidateAndFoldAreEachValidatedAgainstThePrefix() throws Exception {
+		open(DirectAdjacencyCoverage.FULL, null);
+		seedAndServe();
+		store.pauseApplierForTest(true);
+		// four single-row commits: a full normal-band fan-out, which the policy merges once they are applied
+		for (int i = 0; i < 4; i++) {
+			commit(P1, 10 + i, 1);
+		}
+		long fourApplied = tripleStore.getDataRevision();
+		settleUntil(() -> store.applierStateForTest().appliedRevision() == fourApplied, "four deltas applied");
+		settleUntil(store::compactionInFlightForTest, "the policy submitted a range merge");
+		assertThat(store.awaitWorkersIdleForTest(60, TimeUnit.SECONDS)).as("the merge worker finished").isTrue();
+		// now a fifth delta and a fold request wait beside the merge candidate
+		commit(P2, 20, 1);
+		long head = tripleStore.getDataRevision();
+		store.requestFoldForTest();
+
+		for (int steps = 0; steps < 40; steps++) {
+			if (!store.stepApplierForTest()) {
+				assertThat(store.awaitWorkersIdleForTest(60, TimeUnit.SECONDS)).isTrue();
+			}
+			AdjacencyState<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet> state = store.applierStateForTest();
+			assertThat(state.status()).as("step %d: %s", steps, state).isEqualTo(Status.SERVING);
+			assertThat(state.gapFromRevision()).isEqualTo(Long.MAX_VALUE);
+			assertRowsServedAtApplied(state, P1, 0, 4);
+			assertRowsServedAtApplied(state, P1, 10, 4);
+			if (state.appliedRevision() == head && !store.compactionInFlightForTest()
+					&& store.awaitApplierIdleForTest(1, TimeUnit.MILLISECONDS)) {
+				break;
+			}
+		}
+		resumeAndSettle();
+		store.awaitCompactionForTest();
+		AdjacencyState<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet> settled = store.applierStateForTest();
+		assertThat(settled.overlays() == null ? 0 : settled.overlays().generationCount())
+				.as("the fold absorbed the merged prefix; at most the delta that landed beside it remains: %s",
+						store.publicationDiagnostics())
+				.isLessThanOrEqualTo(1);
+		assertThat(store.snapshotMetrics().deltaMerges).isPositive();
+		assertThat(store.snapshotMetrics().baseFolds).isPositive();
+		assertExactAtHead(P1, 0, 4);
+		assertExactAtHead(P1, 10, 4);
+		assertExactAtHead(P2, 20, 1);
+	}
+
+	/** Steps the paused applier, waiting for workers between units, until the condition holds. */
+	private void settleUntil(java.util.function.BooleanSupplier condition, String description) {
+		for (int steps = 0; steps < 60 && !condition.getAsBoolean(); steps++) {
+			if (!store.stepApplierForTest()) {
+				assertThat(store.awaitWorkersIdleForTest(60, TimeUnit.SECONDS)).as("workers idle: %s", description)
+						.isTrue();
+			}
+		}
+		assertThat(condition.getAsBoolean()).as(description).isTrue();
+	}
+
+	/** Every subject's row committed at or below the state's applied revision is served exactly from a view there. */
+	private void assertRowsServedAtApplied(AdjacencyState<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet> state,
+			IRI predicate, int from, int count) throws Exception {
+		long p = id(predicate);
+		try (LmdbAdjacencyReadView view = store.acquire(state.appliedRevision())) {
+			assertThat(view.isExact()).as("exact at applied %d: %s", state.appliedRevision(), view.fallbackReason())
+					.isTrue();
+			for (int i = from; i < from + count; i++) {
+				assertThat(probe(view, null, id(s(i)), p)).as("subject %d at applied %d", i, state.appliedRevision())
+						.hasSize(1);
+			}
+		}
+	}
+
 	private void assertExactAtHeadAfter(IRI predicate, int from, int count) throws Exception {
 		resumeAndSettle();
 		assertExactAtHead(predicate, from, count);

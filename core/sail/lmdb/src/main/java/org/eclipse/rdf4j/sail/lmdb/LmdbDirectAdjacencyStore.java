@@ -150,7 +150,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	// Interleaving hooks of the retired lifecycle, fired at the closest equivalent points of the applier design and
 	// never under a lock. They stay until the tests that set them are rewritten on the stepping applier (plan
-	// milestone 5); catchUpWaitForTest and the compaction hooks have no equivalent and never fire.
+	// milestone 5). The compaction hooks fire on the worker once a merge or fold candidate exists; catchUpWaitForTest,
+	// afterWriteAdmissionClosedForTest, beforeApplyDrainForTest and beforeQuiescentBuildForTest have no equivalent and
+	// never fire.
 	volatile Runnable beforeBuildSnapshotForTest;
 	volatile Runnable afterBuildSnapshotForTest;
 	volatile Runnable afterBuildScanForTest;
@@ -195,9 +197,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		this.captureExecutor = Executors.newSingleThreadExecutor(daemonThreads("lmdb-direct-adjacency-capture"));
 		this.accelerationExecutor = Executors.newSingleThreadExecutor(
 				daemonThreads("lmdb-direct-adjacency-acceleration"));
-		this.applier = new AdjacencyApplier<>(log, new IndexOps(),
-				(base, overlays, ops) -> AdjacencyCompactionPlan.none(),
-				workers, scheduler, options.backlogMaxBytes(), options.buildRetryMillis());
+		this.applier = new AdjacencyApplier<>(log, new IndexOps(), new CompactionPolicy(), workers, scheduler,
+				options.backlogMaxBytes(), options.buildRetryMillis());
 		if (options.memoryRefused()) {
 			logger.warn("Direct adjacency stays unavailable: the effective memory cap {} bytes is below the {}-byte "
 					+ "minimum; the store remains fully usable through LMDB", options.effectiveMaxBytes(),
@@ -239,7 +240,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		case BUILDING:
 			return MaintenanceState.BUILDING;
 		case ACTIVE:
-			return MaintenanceState.ACTIVE;
+			return applier.compactionInFlight() ? MaintenanceState.CONSOLIDATING : MaintenanceState.ACTIVE;
 		case CONSOLIDATING:
 			return MaintenanceState.CONSOLIDATING;
 		case DEGRADED_GAP:
@@ -777,16 +778,30 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 	}
 
+	/** Waits until no merge or fold is running or queued (and nothing else is in flight). */
 	void awaitCompactionForTest() {
-		awaitCommitCleanupForTest();
+		awaitApplierIdleForTest(60, TimeUnit.SECONDS);
 	}
 
+	boolean compactionInFlightForTest() {
+		return applier.compactionInFlight();
+	}
+
+	/** Asks the applier to fold every generation without waiting; a stepping test consumes the units itself. */
+	void requestFoldForTest() {
+		applier.requestFold();
+	}
+
+	/** Consults the compaction policy now and waits for whatever it chose to publish or be discarded. */
 	void requestCompactionForTest() {
-		// compaction returns as an applier task in plan milestone 4
+		applier.requestCompaction();
+		awaitCompactionForTest();
 	}
 
+	/** Folds every published generation into a new base now, regardless of the policy, and waits for the result. */
 	void consolidateNowForTest() {
-		// base folding returns as an applier task in plan milestone 4
+		applier.requestFold();
+		awaitCompactionForTest();
 	}
 
 	int queuedCommitsForTest() {
@@ -873,6 +888,226 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			}
 			transferred = true;
 		}
+	}
+
+	/**
+	 * The tiered compaction policy, consulted by the applier after every publish: a range merge whenever the tiered
+	 * selection finds one (a full normal-band fan-out, or the best range once the generation budget is exceeded), else
+	 * a fold of every generation when the base's source registry is nearly exhausted, the overlays weigh as much as a
+	 * quarter of the base, or retained physical bytes dwarf the live rows.
+	 */
+	private final class CompactionPolicy
+			implements AdjacencyCompactionPolicy<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet, PreparedApply> {
+		private final LmdbAdjacencyTieredCompactionPolicy.Candidate candidate = new LmdbAdjacencyTieredCompactionPolicy.Candidate();
+
+		@Override
+		public AdjacencyCompactionPlan select(LmdbInMemoryAdjacencyIndex base, LmdbAdjacencyOverlaySet overlays,
+				AdjacencyIndexOps<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet, PreparedApply> ops) {
+			int generations = overlays == null ? 0 : overlays.generationCount();
+			if (base == null || generations == 0) {
+				return AdjacencyCompactionPlan.none();
+			}
+			LmdbAdjacencyArenaCatalog catalog = base.arenaCatalog();
+			if (generations >= 2 && catalog.hasSourceCapacityFor(1)
+					&& LmdbAdjacencyTieredCompactionPolicy.select(overlays, options.maxDeltaGenerations(), candidate)) {
+				return AdjacencyCompactionPlan.range(candidate.fromInclusive(), candidate.toExclusive() - 1);
+			}
+			boolean capacityExhausted = !catalog.hasSourceCapacityFor(2);
+			boolean basePressure = LmdbAdjacencyTieredCompactionPolicy.shouldFoldBase(overlays.retainedBytes(),
+					workspaceRegionBytes, base.retainedBytes());
+			boolean retainedDebt = LmdbAdjacencyTieredCompactionPolicy.shouldPhysicallyFlatten(overlays.nativeBytes(),
+					overlays.liveLogicalBytes(), workspaceRegionBytes);
+			if (capacityExhausted || basePressure || retainedDebt) {
+				return AdjacencyCompactionPlan.fold(generations);
+			}
+			return AdjacencyCompactionPlan.none();
+		}
+	}
+
+	/**
+	 * Merges generations {@code [from, to)} into one generation at the newest merged revision. Rows whose runs already
+	 * live in the base's source registry are retained by reference (one persistent singleton node each); rows from a
+	 * foreign registry are re-encoded into the merged arena. Throws {@link LmdbAdjacencyMemoryRefusedException} when
+	 * the account refuses the output.
+	 */
+	private LmdbAdjacencyDeltaGeneration mergeGenerationRange(LmdbInMemoryAdjacencyIndex base,
+			LmdbAdjacencyOverlaySet overlays, int from, int to) {
+		LmdbAdjacencyContextCatalog contexts = overlays.contextCatalog();
+		LmdbAdjacencyArenaCatalog baseCatalog = base.arenaCatalog();
+		LmdbAdjacencySourceRegistry targetRegistry = baseCatalog.sourceRegistry();
+		LmdbAdjacencyArenaSizingPlan sizingPlan = new LmdbAdjacencyArenaSizingPlan(workspaceRegionBytes);
+		int[] rowCount = { 0 };
+		List<LmdbAdjacencyRunCodec.SourceSlice> retainedSources = new ArrayList<>();
+		forEachMergedRow(overlays, from, to, (sourceIndex, rowIndex) -> {
+			rowCount[0] = Math.incrementExact(rowCount[0]);
+			LmdbAdjacencyDeltaGeneration source = overlays.generation(sourceIndex);
+			if (!source.tombstoneAt(rowIndex)) {
+				LmdbAdjacencyRunCodec.SourceSlice retainedSource = LmdbAdjacencyRunCodec.wholePersistentSource(
+						source.catalog(), contexts, source.handleAt(rowIndex));
+				if (source.catalog().sourceRegistry() == targetRegistry) {
+					retainedSources.add(retainedSource);
+					sizingPlan.allocate(LmdbAdjacencyRunCodec.persistentNodeBytes(1), 8);
+				} else {
+					LmdbAdjacencyRunCodec.planEncodedCopy(source.catalog(), contexts, source.handleAt(rowIndex),
+							sizingPlan);
+				}
+			}
+		});
+		sizingPlan.seal();
+		long nativeBytes = sizingPlan.capacityBytes();
+		long metadataBytes = LmdbAdjacencyDeltaGeneration.modeledJavaBytes(rowCount[0]);
+		LmdbAdjacencyMemoryAccount.Charge nativeCharge = account
+				.tryCharge(LmdbAdjacencyMemoryAccount.MemoryKind.CONSOLIDATION_OUTPUT, nativeBytes);
+		if (nativeCharge == null) {
+			throw new LmdbAdjacencyMemoryRefusedException(
+					"delta compaction output reservation of " + nativeBytes + " bytes refused");
+		}
+		LmdbAdjacencyMemoryAccount.Charge metadataCharge = account
+				.tryCharge(LmdbAdjacencyMemoryAccount.MemoryKind.CONSOLIDATION_OUTPUT, metadataBytes);
+		if (metadataCharge == null) {
+			nativeCharge.close();
+			throw new LmdbAdjacencyMemoryRefusedException(
+					"delta compaction metadata reservation of " + metadataBytes + " bytes refused");
+		}
+
+		LmdbAdjacencyArena arena = null;
+		LmdbAdjacencyDeltaArenaOwner arenaOwner = null;
+		LmdbAdjacencyArenaCatalog catalog = null;
+		boolean constructorOwnsResources = false;
+		try {
+			arena = new LmdbAdjacencyArena(sizingPlan);
+			arenaOwner = new LmdbAdjacencyDeltaArenaOwner(arena, nativeCharge.transfer());
+			catalog = LmdbAdjacencyArenaCatalog.composed(baseCatalog, arenaOwner, retainedSources);
+			long[] keys = new long[rowCount[0]];
+			byte[] planes = new byte[rowCount[0]];
+			long[] predicates = new long[rowCount[0]];
+			long[] runRefs = new long[rowCount[0]];
+			int[] output = { 0 };
+			int[] retained = { 0 };
+			LmdbAdjacencyArena outputArena = arena;
+			LmdbAdjacencyArenaCatalog outputCatalog = catalog;
+			forEachMergedRow(overlays, from, to, (sourceIndex, rowIndex) -> {
+				int target = output[0]++;
+				LmdbAdjacencyDeltaGeneration source = overlays.generation(sourceIndex);
+				keys[target] = source.rowKeyAt(rowIndex);
+				planes[target] = (byte) source.rowPlaneAt(rowIndex);
+				predicates[target] = source.rowPredicateAt(rowIndex);
+				if (!source.tombstoneAt(rowIndex)) {
+					if (source.catalog().sourceRegistry() != targetRegistry) {
+						runRefs[target] = LmdbAdjacencyRunCodec.writeEncodedCopy(source.catalog(), contexts,
+								source.handleAt(rowIndex), outputArena).rootRef;
+						return;
+					}
+					LmdbAdjacencyRunCodec.SourceSlice retainedSource = retainedSources.get(retained[0]++);
+					LmdbAdjacencyRunCodec.PersistentChild child = new LmdbAdjacencyRunCodec.PersistentChild(
+							retainedSource.firstNeighbor, retainedSource.firstContext, retainedSource.count,
+							retainedSource.sourceOrdinal, retainedSource.sourceId, retainedSource.sourceRef,
+							retainedSource.kind);
+					int level = retainedSource.kind == LmdbAdjacencyRunCodec.PERSISTENT_CHILD_NODE
+							? LmdbAdjacencyRunCodec.persistentNode(retainedSource.registry,
+									retainedSource.sourceId, retainedSource.sourceRef).level() + 1
+							: 0;
+					runRefs[target] = LmdbAdjacencyRunCodec.writePersistentSingletonNode(outputArena,
+							outputCatalog.sourceRegistry(), level, child,
+							LmdbAdjacencyRunCodec.contextsPresent(retainedSource),
+							LmdbAdjacencyRunCodec.orderedIntegerDomain(retainedSource));
+				}
+			});
+			if (arena.capacityBytes() != nativeBytes) {
+				throw new IllegalStateException("delta compaction planned " + nativeBytes + " native bytes but wrote "
+						+ arena.capacityBytes());
+			}
+			long weight = 0;
+			for (int i = from; i < to; i++) {
+				weight = saturatingAdd(weight, overlays.generation(i).compactionWeightBytes());
+			}
+			LmdbAdjacencyMemoryAccount.Charge generationMetadataCharge = metadataCharge.transfer();
+			constructorOwnsResources = true;
+			return new LmdbAdjacencyDeltaGeneration(overlays.generation(to - 1).revision(), arenaOwner, catalog,
+					generationMetadataCharge, weight, keys, planes, predicates, runRefs);
+		} finally {
+			nativeCharge.close();
+			metadataCharge.close();
+			if (!constructorOwnsResources) {
+				if (catalog != null) {
+					catalog.close();
+				}
+				if (arenaOwner != null) {
+					arenaOwner.close();
+				} else if (arena != null) {
+					arena.close();
+				}
+			}
+		}
+	}
+
+	@FunctionalInterface
+	private interface MergedRowConsumer {
+		void accept(int sourceGeneration, int sourceRow);
+	}
+
+	/** Visits the newest version of every (key, plane, predicate) row across generations {@code [from, to)}. */
+	private static void forEachMergedRow(LmdbAdjacencyOverlaySet overlays, int from, int to,
+			MergedRowConsumer consumer) {
+		int count = to - from;
+		int[] positions = new int[count];
+		while (true) {
+			int chosen = -1;
+			long chosenKey = 0;
+			int chosenPlane = 0;
+			long chosenPredicate = 0;
+			for (int local = 0; local < count; local++) {
+				LmdbAdjacencyDeltaGeneration generation = overlays.generation(from + local);
+				int position = positions[local];
+				if (position >= generation.rowCount()) {
+					continue;
+				}
+				long key = generation.rowKeyAt(position);
+				int plane = generation.rowPlaneAt(position);
+				long predicate = generation.rowPredicateAt(position);
+				if (chosen < 0 || compareRow(key, plane, predicate, chosenKey, chosenPlane, chosenPredicate) < 0) {
+					chosen = local;
+					chosenKey = key;
+					chosenPlane = plane;
+					chosenPredicate = predicate;
+				}
+			}
+			if (chosen < 0) {
+				return;
+			}
+			int newest = -1;
+			int newestRow = -1;
+			for (int local = count - 1; local >= 0; local--) {
+				LmdbAdjacencyDeltaGeneration generation = overlays.generation(from + local);
+				int position = positions[local];
+				if (position < generation.rowCount() && generation.rowKeyAt(position) == chosenKey
+						&& generation.rowPlaneAt(position) == chosenPlane
+						&& generation.rowPredicateAt(position) == chosenPredicate) {
+					if (newest < 0) {
+						newest = local;
+						newestRow = position;
+					}
+					positions[local]++;
+				}
+			}
+			consumer.accept(from + newest, newestRow);
+		}
+	}
+
+	private static int compareRow(long aKey, int aPlane, long aPredicate, long bKey, int bPlane, long bPredicate) {
+		int cmp = Long.compareUnsigned(aKey, bKey);
+		if (cmp != 0) {
+			return cmp;
+		}
+		cmp = Integer.compare(aPlane, bPlane);
+		if (cmp != 0) {
+			return cmp;
+		}
+		return Long.compareUnsigned(aPredicate, bPredicate);
+	}
+
+	private static long saturatingAdd(long left, long right) {
+		return left > Long.MAX_VALUE - right ? Long.MAX_VALUE : left + right;
 	}
 
 	/** Strict mode surfaces the first unexpected maintenance failure to committers and readers; gaps are expected. */
@@ -1061,27 +1296,165 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			return overlays.generation(index).revision();
 		}
 
+		/**
+		 * Worker operation: merges the generations in {@code [from, toInclusive]} into one newest-version-only
+		 * generation. Rows whose runs live in the base's source registry are retained by reference; foreign runs are
+		 * re-encoded. The merged generation's charges are the worker's until {@link #replaceRange} takes them over.
+		 */
 		@Override
 		public PreparedApply merge(LmdbInMemoryAdjacencyIndex base, LmdbAdjacencyOverlaySet overlays, int from,
 				int toInclusive) {
-			throw new UnsupportedOperationException("range compaction returns as an applier task in plan milestone 4");
+			long started = System.nanoTime();
+			long inputRetainedBytes = 0;
+			for (int i = from; i <= toInclusive; i++) {
+				inputRetainedBytes = saturatingAdd(inputRetainedBytes, overlays.generation(i).retainedBytes());
+			}
+			try {
+				LmdbAdjacencyDeltaGeneration merged = mergeGenerationRange(base, overlays, from, toInclusive + 1);
+				metrics.recordDeltaMerge(inputRetainedBytes, merged.retainedBytes());
+				runHook(beforeDeltaCompactionPublicationForTest);
+				return new PreparedApply(merged, overlays.contextCatalog(), false, overlays.extraSelectedSnapshot(),
+						null, null, null);
+			} catch (RuntimeException | Error failure) {
+				if (!(failure instanceof LmdbAdjacencyMemoryRefusedException)) {
+					rememberUnexpectedMaintenanceFailure(failure);
+				}
+				throw failure;
+			} finally {
+				metrics.recordCompaction(Math.max(0L, System.nanoTime() - started));
+			}
 		}
 
+		/** The overlay set with {@code [from, toInclusive]} replaced by the merged generation; retains everything. */
 		@Override
 		public LmdbAdjacencyOverlaySet replaceRange(LmdbAdjacencyOverlaySet overlays, int from, int toInclusive,
 				PreparedApply merged) {
-			throw new UnsupportedOperationException("range compaction returns as an applier task in plan milestone 4");
+			LmdbAdjacencyDeltaGeneration[] current = overlays.generationsSnapshot();
+			int removed = toInclusive - from + 1;
+			LmdbAdjacencyDeltaGeneration[] replacement = new LmdbAdjacencyDeltaGeneration[current.length - removed
+					+ 1];
+			System.arraycopy(current, 0, replacement, 0, from);
+			replacement[from] = merged.generation;
+			System.arraycopy(current, toInclusive + 1, replacement, from + 1, current.length - toInclusive - 1);
+			for (LmdbAdjacencyDeltaGeneration generation : replacement) {
+				generation.retain();
+			}
+			LmdbAdjacencyContextCatalog contexts = overlays.contextCatalog();
+			contexts.retain();
+			try {
+				return new LmdbAdjacencyOverlaySet(replacement, contexts, overlays.extraSelectedSnapshot(),
+						overlays.liveLogicalBytes(), overlays.planeStatistics());
+			} catch (RuntimeException | Error failure) {
+				contexts.release();
+				for (LmdbAdjacencyDeltaGeneration generation : replacement) {
+					generation.release();
+				}
+				throw failure;
+			} finally {
+				merged.close(); // the set holds its own reference now
+			}
 		}
 
+		/**
+		 * Worker operation: folds the first {@code prefixCount} generations into a new paged-CSF base. The returned
+		 * base is the worker's until the applier publishes or releases it.
+		 */
 		@Override
 		public Fold<LmdbInMemoryAdjacencyIndex> fold(LmdbInMemoryAdjacencyIndex base,
 				LmdbAdjacencyOverlaySet overlays, int prefixCount) {
-			throw new UnsupportedOperationException("base folding returns as an applier task in plan milestone 4");
+			long started = System.nanoTime();
+			LmdbAdjacencyOverlaySet prefix = overlays;
+			boolean ownsPrefix = false;
+			if (prefixCount < overlays.generationCount()) {
+				prefix = prefixOf(overlays, prefixCount);
+				ownsPrefix = true;
+			}
+			try {
+				LmdbAdjacencyPublishedState projection = new LmdbAdjacencyPublishedState(0L, base, prefix, null,
+						prefix.generation(prefixCount - 1).revision(), Long.MAX_VALUE,
+						LmdbAdjacencyPublishedState.AdjacencyServingState.ROW_EXACT, base.baseRevision(),
+						prefix.planeStatistics());
+				LmdbPagedCsfConsolidator.Result result = LmdbPagedCsfConsolidator.consolidate(projection, account,
+						workspaceRegionBytes);
+				metrics.recordBaseFold(prefix.retainedBytes(), result.base().retainedBytes());
+				logger.debug("Folded {} overlay generations / {} rows into paged CSF: {} shared shards, {} replaced, "
+						+ "{} newly allocated native bytes", result.foldedGenerationCount(), result.foldedRowCount(),
+						result.rewrite().sharedShardCount(), result.rewrite().replacedShardCount(),
+						result.rewrite().allocatedNativeBytes());
+				try {
+					runHook(beforePagedCsfPublicationForTest);
+				} catch (RuntimeException | Error failure) {
+					result.base().close();
+					throw failure;
+				}
+				return new Fold<>(result.base(), prefix.generation(prefixCount - 1).revision());
+			} catch (RuntimeException | Error failure) {
+				if (!(failure instanceof LmdbAdjacencyMemoryRefusedException)) {
+					rememberUnexpectedMaintenanceFailure(failure);
+				}
+				throw failure;
+			} finally {
+				if (ownsPrefix) {
+					prefix.release();
+				}
+				metrics.recordCompaction(Math.max(0L, System.nanoTime() - started));
+			}
+		}
+
+		/** The overlay set without its first {@code count} generations, or null when nothing remains. */
+		@Override
+		public LmdbAdjacencyOverlaySet removePrefix(LmdbAdjacencyOverlaySet overlays, int count) {
+			LmdbAdjacencyDeltaGeneration[] current = overlays.generationsSnapshot();
+			if (count >= current.length) {
+				return null;
+			}
+			LmdbAdjacencyDeltaGeneration[] suffix = Arrays.copyOfRange(current, count, current.length);
+			for (LmdbAdjacencyDeltaGeneration generation : suffix) {
+				generation.retain();
+			}
+			LmdbAdjacencyContextCatalog contexts = overlays.contextCatalog();
+			contexts.retain();
+			try {
+				// the fold does not change what the rows say, so the plane statistics of base plus overlays carry over
+				return new LmdbAdjacencyOverlaySet(suffix, contexts, overlays.extraSelectedSnapshot(), -1L,
+						overlays.planeStatistics());
+			} catch (RuntimeException | Error failure) {
+				contexts.release();
+				for (LmdbAdjacencyDeltaGeneration generation : suffix) {
+					generation.release();
+				}
+				throw failure;
+			}
+		}
+
+		private LmdbAdjacencyOverlaySet prefixOf(LmdbAdjacencyOverlaySet overlays, int count) {
+			LmdbAdjacencyDeltaGeneration[] prefix = Arrays.copyOf(overlays.generationsSnapshot(), count);
+			for (LmdbAdjacencyDeltaGeneration generation : prefix) {
+				generation.retain();
+			}
+			LmdbAdjacencyContextCatalog contexts = overlays.contextCatalog();
+			contexts.retain();
+			try {
+				return new LmdbAdjacencyOverlaySet(prefix, contexts, overlays.extraSelectedSnapshot(), -1L,
+						overlays.planeStatistics());
+			} catch (RuntimeException | Error failure) {
+				contexts.release();
+				for (LmdbAdjacencyDeltaGeneration generation : prefix) {
+					generation.release();
+				}
+				throw failure;
+			}
 		}
 
 		@Override
-		public LmdbAdjacencyOverlaySet removePrefix(LmdbAdjacencyOverlaySet overlays, int count) {
-			throw new UnsupportedOperationException("base folding returns as an applier task in plan milestone 4");
+		public boolean transientRefusal(Throwable failure) {
+			return failure instanceof LmdbAdjacencyMemoryRefusedException;
+		}
+
+		/** A refused merge on an overlay set twice the generation budget means memory will not return in time. */
+		@Override
+		public boolean rebuildOnRefusedCompaction(LmdbAdjacencyOverlaySet overlays) {
+			return overlays.generationCount() >= Math.multiplyExact(2, options.maxDeltaGenerations());
 		}
 
 		@Override

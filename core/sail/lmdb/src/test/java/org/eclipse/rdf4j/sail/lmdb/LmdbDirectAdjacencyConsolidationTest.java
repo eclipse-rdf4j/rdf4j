@@ -33,7 +33,6 @@ import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -42,7 +41,6 @@ import org.junit.jupiter.api.io.TempDir;
  * snapshots exact across consolidation; released views allow charge reclamation; the rebuild protocol makes new
  * acquisitions fall back while an existing lease finishes, then serves again from a fresh base.
  */
-@Disabled("compaction returns as an applier task in milestone 4 of lmdb-adjacency-sync-redesign")
 class LmdbDirectAdjacencyConsolidationTest {
 
 	private TripleStore tripleStore;
@@ -149,6 +147,7 @@ class LmdbDirectAdjacencyConsolidationTest {
 			commitAdd(S1, P1, uri(1000 + i));
 			store.pauseApplierForTest(false); // apply each commit deterministically: consolidation is the subject
 		}
+		store.awaitCompactionForTest();
 		LmdbAdjacencyPublishedState state = store.publishedStateForTest();
 		assertThat(state.overlays()).isNotNull();
 		assertThat(state.overlays().generationCount())
@@ -231,6 +230,7 @@ class LmdbDirectAdjacencyConsolidationTest {
 			commitAdd(S1, P1, uri(10_000 + i));
 			store.pauseApplierForTest(false);
 		}
+		store.awaitCompactionForTest();
 
 		LmdbAdjacencyPublishedState state = store.publishedStateForTest();
 		assertThat(state.base()).isSameAs(originalBase);
@@ -364,6 +364,7 @@ class LmdbDirectAdjacencyConsolidationTest {
 			commitAdd(S1, uri(500 + i), uri(1000 + i));
 			store.pauseApplierForTest(false);
 		}
+		store.awaitCompactionForTest();
 
 		LmdbAdjacencyPublishedState state = store.publishedStateForTest();
 		assertThat(state.base()).as("the fold-down must not have published a replacement").isSameAs(baseBeforeFold);
@@ -497,6 +498,7 @@ class LmdbDirectAdjacencyConsolidationTest {
 		store.pauseApplierForTest(false);
 		commitRemove(S1, P1, O_KEEP, -1, true);
 		store.pauseApplierForTest(false);
+		store.awaitCompactionForTest();
 
 		LmdbAdjacencyPublishedState state = store.publishedStateForTest();
 		assertThat(state.base()).isSameAs(originalBase);
@@ -747,7 +749,9 @@ class LmdbDirectAdjacencyConsolidationTest {
 		try (LmdbAdjacencyMemoryAccount.Charge pressure = account.tryCharge(MemoryKind.BUILD_COUNTERS, uncharged)) {
 			assertThat(pressure).isNotNull();
 			store.consolidateNowForTest();
-			assertThat(store.publishedStateForTest()).isSameAs(before);
+			LmdbAdjacencyPublishedState refused = store.publishedStateForTest();
+			assertThat(refused.base()).as("a refused fold publishes nothing").isSameAs(before.base());
+			assertThat(refused.overlays()).isSameAs(before.overlays());
 			assertThat(store.maintenanceState()).isEqualTo(LmdbDirectAdjacencyStore.MaintenanceState.ACTIVE);
 		}
 		assertThat(account.totalChargedBytes()).isEqualTo(baselineCharged);
@@ -805,6 +809,7 @@ class LmdbDirectAdjacencyConsolidationTest {
 			commitAdd(S1, P1, uri(1000 + i));
 			store.pauseApplierForTest(false);
 		}
+		store.awaitCompactionForTest();
 		// consolidation squashed history: a late acquisition for the early snapshot must decline, never guess
 		try (LmdbAdjacencyReadView lateView = store.acquire(earlyRevision)) {
 			assertThat(lateView.isExact()).isFalse();
@@ -813,42 +818,31 @@ class LmdbDirectAdjacencyConsolidationTest {
 	}
 
 	@Test
-	void quiescentRebuildWaitsForTheLeaseAndServesAgain() throws Exception {
+	void aRebuildRunsBesideALiveLeaseAndBothStayExact() throws Exception {
 		commitAdd(S1, P1, O_BASE);
 		assertThat(store.buildNowForTest()).isTrue();
 		commitAdd(S1, P1, uri(1001));
 		store.pauseApplierForTest(false);
+		LmdbInMemoryAdjacencyIndex originalBase = store.publishedStateForTest().base();
 
 		LmdbAdjacencyReadView held = store.acquire(tripleStore.getDataRevision());
 		try {
 			assertThat(held.isExact()).isTrue();
 			store.scheduleQuiescentRebuild();
-			// wait until the UNAVAILABLE state is published, then prove both properties of the quiesce window
-			long deadline = System.nanoTime() + 10_000_000_000L;
-			while (store.publishedStateForTest()
-					.servingState() != LmdbAdjacencyPublishedState.AdjacencyServingState.UNAVAILABLE) {
-				if (System.nanoTime() > deadline) {
-					throw new AssertionError("quiescent rebuild never published the UNAVAILABLE state");
-				}
-				Thread.onSpinWait();
-			}
-			try (LmdbAdjacencyReadView duringQuiesce = store.acquire(tripleStore.getDataRevision())) {
-				assertThat(duringQuiesce.isExact()).isFalse();
-				assertThat(duringQuiesce.fallbackReason()).isEqualTo(FallbackReason.BUILDING);
-			}
-			// the existing lease keeps serving from its retained state while the rebuild waits
+			assertThat(store.awaitServingForTest(30, TimeUnit.SECONDS)).isTrue();
+			store.awaitCompactionForTest();
+			// the rebuild published a fresh base while the lease kept its own
+			assertThat(store.publishedStateForTest().base()).isNotSameAs(originalBase);
+			assertThat(held.state().base()).isSameAs(originalBase);
 			assertThat(probe(held, S1, P1)).hasSize(2);
+			try (LmdbAdjacencyReadView fresh = store.acquire(tripleStore.getDataRevision())) {
+				assertThat(fresh.isExact()).isTrue();
+				assertThat(probe(fresh, S1, P1)).hasSize(2);
+			}
 		} finally {
 			held.close();
 		}
-
-		long deadline = System.nanoTime() + 10_000_000_000L;
-		while (store.maintenanceState() != LmdbDirectAdjacencyStore.MaintenanceState.ACTIVE) {
-			if (System.nanoTime() > deadline) {
-				throw new AssertionError("quiescent rebuild never completed after the lease closed");
-			}
-			Thread.onSpinWait();
-		}
+		assertThat(store.maintenanceState()).isEqualTo(LmdbDirectAdjacencyStore.MaintenanceState.ACTIVE);
 		try (LmdbAdjacencyReadView rebuilt = store.acquire(tripleStore.getDataRevision())) {
 			assertThat(rebuilt.isExact()).isTrue();
 			assertThat(probe(rebuilt, S1, P1)).hasSize(2);
@@ -856,13 +850,13 @@ class LmdbDirectAdjacencyConsolidationTest {
 	}
 
 	@Test
-	void quiescentRebuildWaitsForAnAcquisitionBeforeItReturnsTheView() throws Exception {
+	void aRebuildDoesNotWaitForAnAcquisitionInFlight() throws Exception {
 		commitAdd(S1, P1, O_BASE);
 		assertThat(store.buildNowForTest()).isTrue();
 		long revision = tripleStore.getDataRevision();
+		long buildsBefore = store.snapshotMetrics().buildsCompleted;
 		CountDownLatch acquisitionValidated = new CountDownLatch(1);
 		CountDownLatch releaseAcquisition = new CountDownLatch(1);
-		CountDownLatch rebuildStarted = new CountDownLatch(1);
 		store.beforeExactViewReturnForTest = () -> {
 			store.beforeExactViewReturnForTest = null;
 			acquisitionValidated.countDown();
@@ -873,23 +867,26 @@ class LmdbDirectAdjacencyConsolidationTest {
 				throw new AssertionError(e);
 			}
 		};
-		store.beforeQuiescentBuildForTest = rebuildStarted::countDown;
 
 		CompletableFuture<LmdbAdjacencyReadView> acquiring = CompletableFuture
 				.supplyAsync(() -> store.acquire(revision));
 		assertThat(acquisitionValidated.await(30, TimeUnit.SECONDS)).isTrue();
-		store.scheduleQuiescentRebuild();
 		try {
-			assertThat(rebuildStarted.await(1, TimeUnit.SECONDS))
-					.as("replacement construction must wait for an acquisition capable of returning the old state")
-					.isFalse();
+			// the acquisition retains the old state; the rebuild publishes beside it without waiting for the reader
+			store.scheduleQuiescentRebuild();
+			long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+			while (store.snapshotMetrics().buildsCompleted == buildsBefore && System.nanoTime() < deadline) {
+				Thread.onSpinWait();
+			}
+			assertThat(store.snapshotMetrics().buildsCompleted).isEqualTo(buildsBefore + 1);
 		} finally {
 			releaseAcquisition.countDown();
-			try (LmdbAdjacencyReadView acquired = acquiring.get(30, TimeUnit.SECONDS)) {
-				assertThat(acquired.isExact()).isTrue();
-			}
 		}
-		assertThat(rebuildStarted.await(30, TimeUnit.SECONDS)).isTrue();
+		try (LmdbAdjacencyReadView acquired = acquiring.get(30, TimeUnit.SECONDS)) {
+			assertThat(acquired.isExact()).isTrue();
+			assertThat(probe(acquired, S1, P1)).hasSize(1);
+		}
+		store.awaitCompactionForTest();
 	}
 
 	@Test
@@ -961,21 +958,13 @@ class LmdbDirectAdjacencyConsolidationTest {
 		store.afterBuildScanForTest = scans::incrementAndGet;
 		try (LmdbAdjacencyReadView held = store.acquire(tripleStore.getDataRevision())) {
 			assertThat(held.isExact()).isTrue();
-			store.scheduleQuiescentRebuild();
-			long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-			while (store.publishedStateForTest()
-					.servingState() != LmdbAdjacencyPublishedState.AdjacencyServingState.UNAVAILABLE) {
-				if (System.nanoTime() > deadline) {
-					throw new AssertionError("quiescent rebuild never entered its lease-drain phase");
-				}
-				Thread.onSpinWait();
-			}
-			for (int i = 0; i < 20; i++) {
+			// a burst of requests while one rebuild runs collapses into at most one more rebuild
+			for (int i = 0; i < 21; i++) {
 				store.scheduleQuiescentRebuild();
 			}
 		}
 
-		store.pauseApplierForTest(false);
+		store.awaitCompactionForTest();
 		assertThat(scans).hasValueLessThanOrEqualTo(2);
 	}
 }
