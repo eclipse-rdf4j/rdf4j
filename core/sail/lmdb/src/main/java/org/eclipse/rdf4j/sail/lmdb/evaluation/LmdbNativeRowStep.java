@@ -875,6 +875,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 			try (LmdbNativeStrategyArbiter<List<BindingSet>> arbiter = LmdbNativeStrategyArbiter
 					.<List<BindingSet>>forExpr(originalExpr, row.source)
 					.probeHarness(replaySafe ? LmdbNativeProbeHarness.blocking() : null)
+					.sharedRow(row)
 					.forcingWhereApplicable(forcedExecutionStrategyName(), "ORDER BY dispatch")) {
 				offerOrderedStrategies(row, base, values, comparator, emitCap, arbiter);
 				List<BindingSet> ordered = arbiter.select();
@@ -1506,6 +1507,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		try (LmdbNativeStrategyArbiter<NativeUnorderedInput> arbiter = LmdbNativeStrategyArbiter
 				.<NativeUnorderedInput>forSlice(originalExpr, consumableRows(), row.source)
 				.probeHarness(replaySafe ? new NativeProbeBufferHarness() : null)
+				.sharedRow(row)
 				.forcing(forcedStrategy, "row/join dispatch")) {
 			offerUnorderedStrategies(row, distinctPlan, multiJoin, correlatedEntry, retainedSlots, arbiter);
 

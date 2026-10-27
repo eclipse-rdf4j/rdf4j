@@ -78,6 +78,8 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 	private final LmdbNativeQueryProbeBudget probeBudget = new LmdbNativeQueryProbeBudget();
 	private LmdbNativeProbeHarness<T> probeHarness;
 	private LmdbNativeHedgeSupport<T> hedgeSupport;
+	private RowState sharedRow;
+	private RowState.AttemptStart sharedRowStart;
 	private Consumer<LmdbNativeStrategyProposal<T>> estimateResolver;
 	/** A semantic last resort that must not be consumed as an adaptive trial. */
 	private Proposer<T> terminalFallback;
@@ -174,6 +176,7 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 		enableDiagnostics();
 		LmdbNativeStrategyProposal<T> proposal = proposer.propose();
 		if (proposal != null) {
+			startsOnSharedRow(proposal);
 			candidates.add(proposal);
 			if (estimateResolver != null) {
 				estimateResolver.accept(proposal);
@@ -221,6 +224,33 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 	LmdbNativeStrategyArbiter<T> hedgeSupport(LmdbNativeHedgeSupport<T> support) {
 		this.hedgeSupport = support;
 		return this;
+	}
+
+	/**
+	 * Names the row that every proposal at this dispatch site binds into. Attempts run on it one after another, and one
+	 * that declines, fails or reaches its probe deadline stops wherever it was, with its bindings still on the row.
+	 * Each later attempt therefore starts from the row as the first attempt found it.
+	 */
+	LmdbNativeStrategyArbiter<T> sharedRow(RowState row) {
+		if (!candidates.isEmpty()) {
+			throw new IllegalStateException("The shared row must be named before offering candidates");
+		}
+		sharedRow = row;
+		return this;
+	}
+
+	private void startsOnSharedRow(LmdbNativeStrategyProposal<T> proposal) {
+		if (sharedRow != null) {
+			proposal.beforeOpen(this::startAttemptOnSharedRow);
+		}
+	}
+
+	private void startAttemptOnSharedRow() {
+		if (sharedRowStart == null) {
+			sharedRowStart = sharedRow.attemptStart();
+		} else {
+			sharedRow.restore(sharedRowStart);
+		}
 	}
 
 	/**
@@ -926,6 +956,7 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 		if (fallback == null) {
 			return null;
 		}
+		startsOnSharedRow(fallback);
 		try {
 			LmdbNativeStrategySelection<T> selection = openLegacy(fallback);
 			if (selection == null) {

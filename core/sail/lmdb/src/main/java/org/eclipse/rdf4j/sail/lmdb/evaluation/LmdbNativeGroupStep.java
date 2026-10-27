@@ -1547,6 +1547,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 				.estimateWith(costQuotes::attach)
 				.probeHarness(replaySafe ? LmdbNativeProbeHarness.blocking() : null)
 				.hedgeSupport(replaySafe ? hedgeSupport() : null)
+				.sharedRow(row)
 				.forcing(forcedExecutionStrategy, decisionPoint())) {
 			offerCandidates(row, metrics, originalArg, arbiter);
 

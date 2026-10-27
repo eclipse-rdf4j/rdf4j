@@ -66,6 +66,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	 */
 	final boolean probeable;
 	private final Runnable releaseIfUnused;
+	private Runnable beforeOpen;
 	private boolean opened;
 	private boolean closed;
 	private LmdbNativeCostEstimate physicalEstimate;
@@ -454,7 +455,18 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 			throw new IllegalStateException("strategy proposal already opened");
 		}
 		opened = true;
+		if (beforeOpen != null) {
+			beforeOpen.run();
+		}
 		return aggregateExecution == null ? opener.open() : aggregateExecution.open(opener);
+	}
+
+	/** Runs {@code hook} on the opening thread immediately before this proposal's opener. */
+	synchronized void beforeOpen(Runnable hook) {
+		if (opened || closed) {
+			throw new IllegalStateException("an opening hook belongs to an unopened proposal");
+		}
+		beforeOpen = hook;
 	}
 
 	/** Releases admission reserved while costing a proposal that the dispatcher did not select. */

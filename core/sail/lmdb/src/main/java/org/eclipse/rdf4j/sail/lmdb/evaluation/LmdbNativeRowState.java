@@ -603,6 +603,21 @@ final class RowState implements LmdbNativeSlotReader {
 		return boundMask;
 	}
 
+	/** Where an attempt on this row began: its bindings and the lexical scope it was entered in. */
+	record AttemptStart(int trailMark, long lexicalInputMask, int lexicalScopeDepth) {
+	}
+
+	AttemptStart attemptStart() {
+		return new AttemptStart(trailSize, lexicalInputMask, lexicalScopeDepth);
+	}
+
+	/** Undoes whatever an attempt that stopped part-way through left on this row. */
+	void restore(AttemptStart start) {
+		rollback(start.trailMark());
+		lexicalInputMask = start.lexicalInputMask();
+		lexicalScopeDepth = start.lexicalScopeDepth();
+	}
+
 	long enterLexicalScope(long inputMask) {
 		long previous = lexicalInputMask;
 		lexicalInputMask = inputMask;

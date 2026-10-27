@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -211,6 +212,69 @@ class LmdbNativeProbeExecutionTest {
 			arbiter.offer(() -> rival);
 			return arbiter.select();
 		}
+	}
+
+	@Test
+	void aTimedOutProbeLeavesNoBindingsOnTheSharedRowForTheFallback() throws IOException {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("p", 0), null);
+		layout.freeze(List.of("p"));
+		RowState row = new RowState(null, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, NativeLmdbQuerySource.UNKNOWN_ID);
+		AtomicInteger rivalOpens = new AtomicInteger();
+		// The trial stops mid-row with ?p bound, as a deadline poll inside a cursor loop does.
+		LmdbNativeStrategyProposal<String> rival = new LmdbNativeStrategyProposal<>(() -> {
+			rivalOpens.incrementAndGet();
+			assertTrue(row.bind(0, 42L));
+			int tick = 0;
+			while (true) {
+				LmdbNativeProbeDeadline.poll(++tick);
+			}
+		}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, () -> {
+		});
+
+		String result;
+		try (LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter
+				.<String>forModel(null, -1D, fixture().model())
+				.probeHarness(LmdbNativeProbeHarness.blocking())
+				.sharedRow(row)) {
+			arbiter.offer(() -> rowReadingIncumbent(row));
+			arbiter.offer(() -> rival);
+			result = arbiter.select();
+		}
+
+		assertEquals(1, rivalOpens.get(), "the rival must run as the trial");
+		assertEquals("unbound", result, "the fallback must not inherit the aborted trial's bindings");
+		assertEquals(0, row.mark());
+	}
+
+	@Test
+	void aDeclinedAttemptLeavesNoBindingsOnTheSharedRowForTheNextCandidate() throws IOException {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("p", 0), null);
+		layout.freeze(List.of("p"));
+		RowState row = new RowState(null, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, NativeLmdbQuerySource.UNKNOWN_ID);
+		LmdbNativeStrategyProposal<String> declining = new LmdbNativeStrategyProposal<>(() -> {
+			assertTrue(row.bind(0, 42L));
+			return null;
+		}, LmdbNativeWork.exact(1D), LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, () -> {
+		});
+
+		String result;
+		try (LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter.<String>forExpr(null)
+				.sharedRow(row)) {
+			arbiter.offer(() -> declining);
+			arbiter.offer(() -> rowReadingIncumbent(row));
+			result = arbiter.select();
+		}
+
+		assertEquals("unbound", result, "the next candidate must not inherit the declined attempt's bindings");
+		assertEquals(0, row.mark());
+	}
+
+	private static LmdbNativeStrategyProposal<String> rowReadingIncumbent(RowState row) {
+		return new LmdbNativeStrategyProposal<>(() -> row.boundMask() == 0L ? "unbound" : "bound to " + row.slots[0],
+				LmdbNativeWork.exact(1_000D), LmdbNativeAttemptMetrics.PATH_BATCH, () -> {
+				});
 	}
 
 	@Test
