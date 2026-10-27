@@ -26,9 +26,11 @@ import { layoutMetrics } from './support/benchmark-layout.mjs';
 // area down by 37–66 % and routed arrows through cards to 0–1 on every shape but the shared hubs, for 4–15 % more
 // straight-line crossings on the dense random graphs (conference, students, products, social) and 136 % more on the
 // shared-hub graph; a straight line through a card no longer means an arrow through a card, as the router moves the
-// arrow's ends to the sides that face each other (a hub's column of leaves) or detours it.
+// arrow's ends to the sides that face each other (a hub's column of leaves) or detours it. Separate components a
+// component gap apart (2026-10-27, wider than any arrow so whitespace says what is not connected) grew the area of
+// the shapes with several: the expanded hub 1.96M → 2.66M, social communities 2.72M → 3.43M.
 const BUDGETS = [
-  ['expanded hub with long labels', () => hashHub(), { crossings: 0, edgeNode: 12, routed: 0, area: 2.1e6 }],
+  ['expanded hub with long labels', () => hashHub(), { crossings: 0, edgeNode: 12, routed: 0, area: 2.8e6 }],
   ['demo graph, values on', () => canvasGraph(demoGraph(), true), { crossings: 0, edgeNode: 0, routed: 0, area: 1.03e6 }],
   ['demo graph, values off', () => canvasGraph(demoGraph(), false), { crossings: 0, edgeNode: 0, routed: 0, area: 0.37e6 }],
   ['three-level tree', () => geoTree(), { crossings: 0, edgeNode: 0, routed: 0, area: 4.0e6 }],
@@ -36,7 +38,7 @@ const BUDGETS = [
   ['conference hub', () => conferenceHub(), { crossings: 313, edgeNode: 73, routed: 0, area: 2.23e6 }],
   ['students and courses', () => studentCourses(), { crossings: 355, edgeNode: 41, routed: 0, area: 1.29e6 }],
   ['product catalog', () => productCatalog(), { crossings: 112, edgeNode: 17, routed: 0, area: 1.2e6 }],
-  ['social communities', () => socialCommunities(), { crossings: 93, edgeNode: 8, routed: 1, area: 2.83e6 }],
+  ['social communities', () => socialCommunities(), { crossings: 93, edgeNode: 8, routed: 1, area: 3.55e6 }],
   ['shared hubs (237 nodes)', () => sharedHubNetwork(), { crossings: 236, edgeNode: 188, routed: 31, area: 23e6 }],
 ];
 

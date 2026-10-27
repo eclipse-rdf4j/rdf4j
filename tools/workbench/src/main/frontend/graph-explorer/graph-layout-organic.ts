@@ -21,7 +21,9 @@
  * A shared hub (a card whose removal splits the core into several parts, like an award shared by groups of
  * researchers) collapses every graph distance through itself, so stress cannot separate the parts. Such a hub is drawn
  * like a fan anchor whose units are the parts: each part is laid out beside the hub, then the parts are arranged on
- * the hub's ring. Components are packed as polyominoes (`graph-layout-packing.ts`).
+ * the hub's ring. Components are packed as polyominoes (`graph-layout-packing.ts`) a component gap apart, wider than any
+ * arrow, so that whitespace says what is not connected; orphans are gathered into grids by type
+ * (`graph-layout-orphans.ts`).
  */
 import {graphNodeSize} from './graph-geometry.ts';
 import {withCollapsedClassLinks} from './graph-class-links.ts';
@@ -29,6 +31,7 @@ import {decomposeComponent, componentsOf, type Decomposition} from './graph-layo
 import {placeFan, unitShapes, type Extents, type Fan, type FanObstacles, type FanSpacing, type Side, type UnitShape} from './graph-layout-fans.ts';
 import {drawingCost, segmentHitsBox, stressLayout, untangle, type StressProblem} from './graph-layout-stress.ts';
 import {packComponents} from './graph-layout-packing.ts';
+import {layoutOrphans} from './graph-layout-orphans.ts';
 import {separateLayoutRectangles} from './graph-layout-overlap.ts';
 import {layoutNodeFixed} from './graph-layout-topology.ts';
 import {LAYOUT_SPACING as gap} from './graph-layout-spacing.ts';
@@ -722,6 +725,34 @@ export function refineOrganicLayout(graph: Graph, options: LayoutOptions = {}): 
   return {positions, bends: new Map()};
 }
 
+/**
+ * Moves the `moving` cards, as one block, a component gap past the right or the bottom edge of the box of the `staying`
+ * cards: whichever side leaves the whole drawing shaped more like the view. The block lines up with that box's top or
+ * left edge.
+ */
+function setApart(p: Prepared, placed: {x: Float64Array; y: Float64Array}, staying: number[], moving: number[], aspectRatio: number) {
+  const at = (i: number) => (p.fixed[i] ? {x: p.graph.nodes[i].x ?? 0, y: p.graph.nodes[i].y ?? 0} : {x: placed.x[i], y: placed.y[i]});
+  const box = (cards: number[]) => {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const i of cards) {
+      const {x, y} = at(i);
+      minX = Math.min(minX, x - p.width[i] / 2); maxX = Math.max(maxX, x + p.width[i] / 2);
+      minY = Math.min(minY, y - p.height[i] / 2); maxY = Math.max(maxY, y + p.height[i] / 2);
+    }
+    return {minX, minY, maxX, maxY};
+  };
+  const s = box(staying), m = box(moving);
+  const cost = (dx: number, dy: number) => {
+    const w = Math.max(s.maxX, m.maxX + dx) - Math.min(s.minX, m.minX + dx), h = Math.max(s.maxY, m.maxY + dy) - Math.min(s.minY, m.minY + dy);
+    const skew = Math.log((w / h) / aspectRatio);
+    return w * h * (1 + 0.6 * skew * skew);
+  };
+  const right = {dx: s.maxX + gap.componentGap - m.minX, dy: s.minY - m.minY};
+  const below = {dx: s.minX - m.minX, dy: s.maxY + gap.componentGap - m.minY};
+  const {dx, dy} = cost(below.dx, below.dy) < cost(right.dx, right.dy) ? below : right;
+  for (const i of moving) { placed.x[i] += dx; placed.y[i] += dy; }
+}
+
 export function computeOrganicLayout(graph: Graph, options: LayoutOptions = {}): LayoutResult {
   const p = prepare(graph, options);
   const n = graph.nodes.length;
@@ -735,26 +766,32 @@ export function computeOrganicLayout(graph: Graph, options: LayoutOptions = {}):
     keep: (card: number) => (options.refine ? 3 : 0.8),
     placed: (card: number) => !isNew?.has(graph.nodes[card].id) && graph.nodes[card].x !== undefined && graph.nodes[card].y !== undefined,
   } : undefined;
-  if (keep) layoutComponent(p, components, placed, options, spacing, keep);
-  else for (const members of components) layoutComponent(p, [members], placed, options, spacing);
   const pinned = (members: number[]) => members.some(i => p.fixed[i]);
-  const free = extending ? [] : components.filter(members => !pinned(members));
-  if (free.length > 1 || (free.length && free.length < components.length)) {
-    const items = free.map(members => ({
+  const unseen = (card: number) => !p.fixed[card] && Boolean(isNew?.has(graph.nodes[card].id));
+  // Parts drawn on their own and set a component gap apart: organizing, every part no pinned card holds; extending,
+  // the parts of new cards with no link into the drawing (a collapsed class link counts: it places a class card).
+  const free = new Set(components.filter(members => (extending
+    ? members.every(i => unseen(i) && p.linked[i].every(unseen)) : !pinned(members))));
+  const held = components.filter(members => !free.has(members));
+  if (keep) { if (held.length) layoutComponent(p, held, placed, options, spacing, keep); }
+  else for (const members of held) layoutComponent(p, [members], placed, options, spacing);
+  const parts = [...free].filter(members => members.length > 1);
+  for (const members of parts) layoutComponent(p, [members], placed, options, spacing);
+  const orphans = [...free].filter(members => members.length === 1).map(([card]) => card);
+  const aspect = options.aspectRatio ?? 1.6;
+  if (orphans.length) {
+    const grids = layoutOrphans(orphans, card => graph.nodes[card], card => ({width: p.width[card], height: p.height[card]}), aspect);
+    for (const [card, at] of grids) { placed.x[card] = at.x; placed.y[card] = at.y; }
+    parts.push(orphans);
+  }
+  if (parts.length > 1 || (parts.length && held.length)) {
+    const items = parts.map(members => ({
       boxes: members.map(i => ({minX: placed.x[i] - p.width[i] / 2, maxX: placed.x[i] + p.width[i] / 2, minY: placed.y[i] - p.height[i] / 2, maxY: placed.y[i] + p.height[i] / 2})),
       segments: members.flatMap(i => p.neighbors[i].filter(k => k > i).map(k => [placed.x[i], placed.y[i], placed.x[k], placed.y[k]] as [number, number, number, number])),
     }));
-    const offsets = packComponents(items, options.aspectRatio ?? 1.6, Math.max(gap.nodeGapX, gap.nodeGapY));
-    free.forEach((members, k) => { for (const i of members) { placed.x[i] += offsets[k].x; placed.y[i] += offsets[k].y; } });
-    if (free.length < components.length) {
-      // Free components go to the right of the drawing that pinned cards hold in place.
-      let right = -Infinity, top = Infinity, left = Infinity;
-      components.filter(pinned).forEach(members => members.forEach(i => { right = Math.max(right, placed.x[i] + p.width[i] / 2); top = Math.min(top, placed.y[i] - p.height[i] / 2); }));
-      free.forEach(members => members.forEach(i => { left = Math.min(left, placed.x[i] - p.width[i] / 2); }));
-      let freeTop = Infinity;
-      free.forEach(members => members.forEach(i => { freeTop = Math.min(freeTop, placed.y[i] - p.height[i] / 2); }));
-      free.forEach(members => members.forEach(i => { placed.x[i] += right + gap.groupGap - left; placed.y[i] += top - freeTop; }));
-    }
+    const offsets = packComponents(items, aspect, gap.componentGap);
+    parts.forEach((members, k) => { for (const i of members) { placed.x[i] += offsets[k].x; placed.y[i] += offsets[k].y; } });
+    if (held.length) setApart(p, placed, held.flat(), parts.flat(), aspect);
   }
   const positions = new Map<string, PointerPosition>();
   graph.nodes.forEach((node, i) => positions.set(node.id, p.fixed[i] ? {x: node.x ?? 0, y: node.y ?? 0} : {x: placed.x[i], y: placed.y[i]}));
