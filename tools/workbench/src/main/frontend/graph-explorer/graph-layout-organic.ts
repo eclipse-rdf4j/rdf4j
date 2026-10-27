@@ -174,8 +174,8 @@ function similaritySprings(p: Prepared, group: number[], local: Map<number, numb
 
 type Context = {p: Prepared; d: Decomposition; shape: (card: number, side: Side) => UnitShape; fanned: Set<number>;
   options: LayoutOptions; spacing: FanSpacing;
-  /** Extending or tidying a drawing: how strongly each card stays where it is (absent: organize from scratch). */
-  keep?: (card: number) => number;
+  /** Extending a drawing: how strongly a placed card stays where it is (absent: organize from scratch). */
+  keep?: number;
   /** Cards whose current position counts (placed before this layout). */
   placed?: (card: number) => boolean;
   /**
@@ -240,10 +240,10 @@ function layoutGroup(c: Context, cards: number[], hub?: {card: number; axis: 'x'
   }
   const common = {edgeLength: ARROW_LENGTH, clearX: gap.nodeGapX, clearY: gap.nodeGapY, aspectRatio: options.aspectRatio ?? 1.6};
   if (c.keep) {
-    // Extending or tidying: start where the cards are, stay near the placed ones, and only take the later, smaller steps.
+    // Extending: start where the cards are, stay near the placed ones, and only take the later, smaller steps.
     // The cards of a held fan stay too: the others keep clear of them.
     stressLayout({...problem, anchorX: problem.x.slice(), anchorY: problem.y.slice(),
-      anchorWeight: Float64Array.from(group, card => (c.placed!(card) ? c.keep!(card) : 0)),
+      anchorWeight: Float64Array.from(group, card => (c.placed!(card) ? c.keep! : 0)),
       bodies: group.map(card => (held(c, card) ? heldBody(c, card) : undefined))},
     {...common, initialize: false, epochs: 40, startFraction: 0.5, seed: options.seed ?? 7});
   }
@@ -705,27 +705,6 @@ function layoutComponent(p: Prepared, members: number[][], placed: {x: Float64Ar
 }
 
 /**
- * Tidy: a local, minimal repair of the drawing as it is. Cards keep their clearance (exact separation), then only cards
- * that overlap or sit on a link they are not part of move, to the nearest place that clears them; a drawing without
- * such conflicts stays exactly where it is, and pinned cards never move.
- */
-export function refineOrganicLayout(graph: Graph, options: LayoutOptions = {}): LayoutResult {
-  const p = prepare(graph, options);
-  const positions = new Map<string, PointerPosition>(graph.nodes.map(node => [node.id, {x: node.x ?? 0, y: node.y ?? 0}]));
-  separateLayoutRectangles(graph, positions, {...options, repairOnly: true});
-  const links: number[] = [];
-  p.neighbors.forEach((list, a) => list.forEach(b => { if (a < b) links.push(a, b); }));
-  const half = (size: Float64Array) => Float64Array.from(size, value => value / 2);
-  const problem: StressProblem = {left: half(p.width), right: half(p.width), top: half(p.height), bottom: half(p.height),
-    x: Float64Array.from(graph.nodes, node => positions.get(node.id)!.x), y: Float64Array.from(graph.nodes, node => positions.get(node.id)!.y),
-    links: Int32Array.from(links), fixed: p.fixed};
-  if (graph.nodes.length <= UNTANGLE_LIMIT) untangle(problem, 3, {crossings: 0, moveCost: 1 / 4});
-  graph.nodes.forEach((node, i) => positions.set(node.id, {x: problem.x[i], y: problem.y[i]}));
-  separateLayoutRectangles(graph, positions, {...options, repairOnly: true});
-  return {positions, bends: new Map()};
-}
-
-/**
  * Moves the `moving` cards, as one block, a component gap past the right or the bottom edge of the box of the `staying`
  * cards: whichever side leaves the whole drawing shaped more like the view. The block lines up with that box's top or
  * left edge.
@@ -759,11 +738,11 @@ export function computeOrganicLayout(graph: Graph, options: LayoutOptions = {}):
   const placed = {x: new Float64Array(n), y: new Float64Array(n)};
   const spacing: FanSpacing = {edgeLength: ARROW_LENGTH, clearX: gap.nodeGapX, clearY: gap.nodeGapY, aspectRatio: options.aspectRatio ?? 1.6};
   const components = componentsOf(p.neighbors);
-  const extending = Boolean(options.incremental || options.refine);
+  const extending = Boolean(options.incremental);
   const isNew = options.newNodeIds;
   const keep = extending ? {
-    // Tidying holds every card firmly; extending lets the cards near the new ones give way.
-    keep: (card: number) => (options.refine ? 3 : 0.8),
+    // Loosely: the cards near the new ones give way.
+    keep: 0.8,
     placed: (card: number) => !isNew?.has(graph.nodes[card].id) && graph.nodes[card].x !== undefined && graph.nodes[card].y !== undefined,
   } : undefined;
   const pinned = (members: number[]) => members.some(i => p.fixed[i]);

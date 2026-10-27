@@ -225,7 +225,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
   const drawnGraphRef = useRef(drawnGraph);
   const showValuesRef = useRef(showValues);
   const layoutJobRef = useRef<ReturnType<typeof startGraphLayout> | null>(null);
-  const requestedLayoutRef = useRef<{mode: 'network' | 'hierarchy' | 'square'; refine?: boolean; repairOnly?: boolean} | null>(null);
+  const requestedLayoutRef = useRef<{mode: 'network' | 'hierarchy' | 'square'; repairOnly?: boolean} | null>(null);
   const layoutSizeSnapshotRef = useRef<{revision: number; nodes: GraphNode[]} | null>(null);
   const namedGroupsRef = useRef(namedGroups);
   const provenanceBatchesRef = useRef(provenanceBatches);
@@ -1477,9 +1477,9 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
         setEdgeRoutes(result.routes ?? new Map());
         // "Organizing the network…" becomes "Organized the network." once the positions are in; other messages stay.
         setStatus((current) =>
-          /^(Organizing|Arranging|Tidying|Refining) .*…$/.test(current)
+          /^(Organizing|Arranging) .*…$/.test(current)
             ? current
-                .replace(/^(Organizing|Arranging|Tidying|Refining)/, (verb) => ({ Organizing: "Organized", Arranging: "Arranged", Tidying: "Tidied", Refining: "Refined" })[verb] ?? verb)
+                .replace(/^(Organizing|Arranging)/, (verb) => ({ Organizing: "Organized", Arranging: "Arranged" })[verb] ?? verb)
                 .replace(/…$/, ".")
             : current,
         );
@@ -1528,7 +1528,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
               },
             },
           );
-        } else if (isLocalLayout || requestedLayout?.refine) {
+        } else if (isLocalLayout || requestedLayout?.repairOnly) {
           animationRunId = animateProgrammaticGraph(
             targetGraph,
             transformRef.current,
@@ -1653,7 +1653,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
       // The canvas renderer draws nodes as dots, whatever their labels: a repair would only move them about.
       if (current.nodes.length >= LARGE_GRAPH_NODES) return;
       if (!layoutDimensionsChanged(measured.nodes, current.nodes)) return;
-      requestedLayoutRef.current = {mode: 'network', refine: true, repairOnly: true};
+      requestedLayoutRef.current = {mode: 'network', repairOnly: true};
       localLayoutNodeIdsRef.current = null;
       setLayoutNonce(value => value + 1);
     }, 180);
@@ -3691,12 +3691,12 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     setGraph(next);
   };
 
-  const refineLayout = (mode: 'network' | 'hierarchy' | 'square' = 'network', refine = true) => {
+  const arrangeLayout = (mode: 'network' | 'hierarchy' | 'square') => {
     if (!graph.nodes.length) return;
     setViewMode("graph");
     invalidateAsyncRequests();
     pushHistory();
-    requestedLayoutRef.current = {mode, refine};
+    requestedLayoutRef.current = {mode};
     layoutIntentRef.current = null;
     localLayoutNodeIdsRef.current = layoutSelection;
     setIsLayoutAnimating(false);
@@ -3709,13 +3709,11 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     setLayoutNonce((value) => value + 1);
     const what = layoutSelection ? `the ${layoutSelection.size} selected nodes` : null;
     setStatus(
-      refine
-        ? what ? `Tidying ${what}…` : "Tidying the layout…"
-        : mode === 'hierarchy'
-          ? what ? `Arranging ${what} as a hierarchy…` : "Arranging as a hierarchy…"
-          : mode === 'square'
-            ? what ? `Arranging ${what} in a square…` : "Arranging in a square…"
-            : what ? `Organizing ${what}…` : "Organizing the network…",
+      mode === 'hierarchy'
+        ? what ? `Arranging ${what} as a hierarchy…` : "Arranging as a hierarchy…"
+        : mode === 'square'
+          ? what ? `Arranging ${what} in a square…` : "Arranging in a square…"
+          : what ? `Organizing ${what}…` : "Organizing the network…",
     );
   };
 
@@ -3962,7 +3960,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                 label: "Organize network",
                 description: "Start over: hubs in the middle, related nodes together",
                 disabled: !drawnGraph.nodes.length,
-                onSelect: () => refineLayout("network", false),
+                onSelect: () => arrangeLayout("network"),
               },
               {
                 label: "Hierarchy",
@@ -3972,19 +3970,13 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                   ? [...layoutSelection].filter((id) => !drawnNodeById.get(id)?.pinned).length < 2
                   : !drawnGraph.nodes.length || drawnGraph.nodes.length > 1500 || drawnGraph.nodes.some((node) => node.pinned),
                 title: !layoutSelection && drawnGraph.nodes.some((node) => node.pinned) ? "Unpin nodes to arrange a hierarchy" : undefined,
-                onSelect: () => refineLayout("hierarchy", false),
+                onSelect: () => arrangeLayout("hierarchy"),
               },
               {
                 label: "Square",
                 description: "A grid, in the order the nodes stand now",
                 disabled: !drawnGraph.nodes.length,
-                onSelect: () => refineLayout("square", false),
-              },
-              {
-                label: "Tidy current layout",
-                description: "Improve the current arrangement without starting over",
-                disabled: !drawnGraph.nodes.length,
-                onSelect: () => refineLayout(),
+                onSelect: () => arrangeLayout("square"),
               },
               {
                 label: "Zoom to selected node",

@@ -136,12 +136,12 @@ export function computeGroupedLayout(graph: Graph, options: LayoutOptions = {}):
     const key = x < y ? `${x}:${y}` : `${y}:${x}`;
     if (!pairs.has(key)) {pairs.add(key); coarse.edges.push({id: key, source: String(x), target: String(y), label: '', predicate: 'urn:layout:link'});}
   });
-  const coarseOptions = {nodeSizes: sizes, seed: options.seed, refine: options.refine || options.incremental || Boolean(options.localNodeIds?.size)};
+  const coarseOptions = {nodeSizes: sizes, seed: options.seed, fromCurrent: Boolean(options.incremental || options.localNodeIds?.size)};
   const centers = (options.repairOnly || (coarse.nodes.length > 1500 && coarse.nodes.some(node => node.pinned))
     ? computeSparseLayout(coarse, {...coarseOptions, repairOnly: true})
     : coarse.nodes.length > 1500 ? computeMultilevelLayout(coarse, coarseOptions) : {positions: computeGroupCenters(coarse, coarseOptions)}).positions;
   const search = graph.nodes.length <= 350 && graph.edges.length <= 600 &&
-    !options.refine && !options.incremental && !options.repairOnly && !options.localNodeIds?.size;
+    !options.incremental && !options.repairOnly && !options.localNodeIds?.size;
   const anchor = coarse.nodes.find(n => n.pinned);
   const origin = anchor ? centers.get(anchor.id)! : {x: [...centers.values()].reduce((sum, p) => sum + p.x, 0) / centers.size,
     y: [...centers.values()].reduce((sum, p) => sum + p.y, 0) / centers.size};
