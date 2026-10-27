@@ -417,6 +417,16 @@ class LmdbValueGcOwnershipTest {
 	@ValueSource(booleans = { false, true })
 	void legacyCloseRetainsUnusedTermsForPostReadyCleanupAndPreservesLiveDependencies(boolean inlining)
 			throws Exception {
+		assertLegacyCloseRetainsUnusedTerms(inlining, false);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void legacyCloseRetainsUnusedTermsWhileObjectIndexBuildIsDelayed(boolean inlining) throws Exception {
+		assertLegacyCloseRetainsUnusedTerms(inlining, true);
+	}
+
+	private void assertLegacyCloseRetainsUnusedTerms(boolean inlining, boolean delayIndex) throws Exception {
 		writeLegacyProperties();
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 		IRI predicate = vf.createIRI("urn:ownership:predicate");
@@ -425,7 +435,9 @@ class LmdbValueGcOwnershipTest {
 		TripleTerm removed = vf.createTripleTerm(vf.createIRI("urn:ownership:removed"), predicate, inner);
 		TripleTerm retained = vf.createTripleTerm(vf.createIRI("urn:ownership:retained"), predicate, component);
 		LmdbStoreConfig config = config().setInlineLiterals(inlining).setValueEvictionInterval(60_000L);
-		LmdbStore store = openLegacyWithVerifiedCounts(config);
+		CountDownLatch releaseIndex = new CountDownLatch(1);
+		LmdbStore store = delayIndex ? openLegacyWithDelayedObjectIndex(config, releaseIndex)
+				: openLegacyWithVerifiedCounts(config);
 		long retainedId;
 		long componentId;
 		try {
@@ -439,6 +451,19 @@ class LmdbValueGcOwnershipTest {
 				// The next publication moves the cleared terms into the durable unused queue only if no reader
 				// predating the clear is still pinned.
 				LmdbGcTestMaintenance.awaitNoPinnedTripleSnapshot(store);
+				if (delayIndex) {
+					ValueStore values = (ValueStore) store.getValueFactory();
+					assertThat(store.getBackingStore().hasRetiredValueIds())
+							.as("incomplete object-index coverage preserves unresolved retirement work")
+							.isTrue();
+					assertThat(unusedIdCount(values))
+							.as("unknown liveness must not publish unused IDs before the object index exists")
+							.isZero();
+					releaseIndex.countDown();
+					assertThat(store.awaitIndexRebuild(30, TimeUnit.SECONDS))
+							.as("the requested object index must finish before the draining publication")
+							.isTrue();
+				}
 				connection.begin();
 				connection.addStatement(vf.createIRI("urn:ownership:new-row"), predicate, retained);
 				connection.addStatement(vf.createIRI("urn:ownership:direct-component"), predicate, component);
@@ -447,7 +472,9 @@ class LmdbValueGcOwnershipTest {
 			ValueStore values = (ValueStore) store.getValueFactory();
 			retainedId = values.getId(retained);
 			componentId = values.getId(component);
+			assertThat(unusedIdCount(values)).as("the fixture must publish unused work before close").isPositive();
 		} finally {
+			releaseIndex.countDown();
 			store.shutDown();
 		}
 		assertThat(unusedIdCount())
@@ -732,7 +759,7 @@ class LmdbValueGcOwnershipTest {
 		}
 	}
 
-	private LmdbStore openLegacyWithVerifiedCounts(LmdbStoreConfig options) throws IOException {
+	private LmdbStore openLegacyWithVerifiedCounts(LmdbStoreConfig options) throws IOException, InterruptedException {
 		LmdbStore initial = new LmdbStore(directory.toFile(), options);
 		try {
 			initial.init();
@@ -744,9 +771,62 @@ class LmdbValueGcOwnershipTest {
 		try {
 			verified.init();
 			assertThat(verified.getStartupStatus().exactReferenceCounts()).isTrue();
-			LmdbGcTestMaintenance.awaitPostReady(verified);
+			LmdbGcTestMaintenance.awaitTrustedReclamationSetup(verified);
 			return verified;
-		} catch (RuntimeException | Error failure) {
+		} catch (IOException | InterruptedException | RuntimeException | Error failure) {
+			verified.shutDown();
+			throw failure;
+		}
+	}
+
+	private LmdbStore openLegacyWithDelayedObjectIndex(LmdbStoreConfig options, CountDownLatch releaseIndex)
+			throws Exception {
+		LmdbStoreConfig initialOptions = config().setTripleIndexes("spoc,posc")
+				.setInlineLiterals(options.getInlineLiterals())
+				.setValueEvictionInterval(options.getValueEvictionInterval());
+		LmdbStore initial = new LmdbStore(directory.toFile(), initialOptions);
+		try {
+			initial.init();
+		} finally {
+			initial.shutDown();
+		}
+		LmdbStore.reconstructReferenceCountsOffline(directory.toFile(), initialOptions);
+		CountDownLatch rebuildPaused = new CountDownLatch(1);
+		LmdbStore verified = new LmdbStore(directory.toFile(), options) {
+			@Override
+			LmdbSailStore createBackingStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
+					boolean sketches) throws IOException {
+				return new LmdbSailStore(dataDir, properties, config, sketches,
+						(LmdbSailStore.ValueStoreFactory) null,
+						(tripleDir, tripleProperties, tripleConfig, values) -> new TripleStore(tripleDir,
+								tripleProperties, tripleConfig, values) {
+							@Override
+							void setIndexRebuildWriter(IndexRebuildWriter writer) {
+								super.setIndexRebuildWriter(work -> {
+									rebuildPaused.countDown();
+									try {
+										releaseIndex.await();
+									} catch (InterruptedException e) {
+										Thread.currentThread().interrupt();
+										throw new IOException("index rebuild interrupted during fixture shutdown", e);
+									}
+									writer.execute(work);
+								});
+							}
+						});
+			}
+		};
+		try {
+			verified.init();
+			assertThat(verified.getStartupStatus().exactReferenceCounts()).isTrue();
+			LmdbGcTestMaintenance.awaitPostReady(verified);
+			assertThat(rebuildPaused.await(30, TimeUnit.SECONDS)).isTrue();
+			assertThat(verified.getBackingStore().getTripleStore().explicitIndexEntryCounts())
+					.as("object-leading coverage remains absent while rebuild is paused")
+					.doesNotContainKey("ospc");
+			return verified;
+		} catch (Exception | Error failure) {
+			releaseIndex.countDown();
 			verified.shutDown();
 			throw failure;
 		}
