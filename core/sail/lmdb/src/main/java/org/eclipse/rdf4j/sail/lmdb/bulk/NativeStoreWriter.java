@@ -16,6 +16,7 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.function.BooleanSupplier;
 
@@ -66,15 +67,30 @@ final class NativeStoreWriter {
 			PreparationHook preparationHook, BulkCapacityPolicy valueCapacity, BulkCapacityPolicy tripleCapacity,
 			long maximumCanonicalValueBytes)
 			throws IOException {
+		return write(generation, config, format, values, statements, staged, memoryBudgetBytes, maxOpenFiles,
+				maxTransactionRecords, maxTransactionBytes, compression, cancellationSignal, scheduler, preparationHook,
+				valueCapacity, tripleCapacity, maximumCanonicalValueBytes, null);
+	}
+
+	static WriteResult write(Path generation, LmdbStoreConfig config, LmdbStoreFormat format,
+			ValueStoreBulkRecords.Output values, ResolvedIdQuadSpool statements, CanonicalStagedInput staged,
+			long memoryBudgetBytes, int maxOpenFiles, int maxTransactionRecords, long maxTransactionBytes,
+			BulkCompression compression, BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler,
+			PreparationHook preparationHook, BulkCapacityPolicy valueCapacity, BulkCapacityPolicy tripleCapacity,
+			long maximumCanonicalValueBytes, BulkLoadProgress progress)
+			throws IOException {
 		long storedStatements;
 		long mapGrowthCount;
 		ValidatedBulkGeneration validation;
 		try (StatementIndexBulkRecords statementIndexes = StatementIndexBulkRecords.build(statements,
 				statements.path().getParent(), config.getTripleIndexes(), memoryBudgetBytes, maxOpenFiles,
-				compression, cancellationSignal, scheduler);
+				compression, cancellationSignal, scheduler, () -> {
+				}, progress);
 				TripleTermIndexBulkRecords tripleTermIndexes = TripleTermIndexBulkRecords.build(values.tripleTerms(),
 						statements.path().getParent(), config.getTripleTermIndexes(), memoryBudgetBytes, maxOpenFiles,
-						compression, cancellationSignal, scheduler);
+						compression, cancellationSignal, scheduler, () -> {
+						}, () -> {
+						}, progress);
 				LmdbNativeBulkStore store = openStore(generation, config, format, valueCapacity, tripleCapacity)) {
 			try (ByteRecordCursor cursor = new ByteRecordCursor(values.mainRecords())) {
 				store.appendValueRecords(() -> {
@@ -89,7 +105,13 @@ final class NativeStoreWriter {
 				}, maxTransactionRecords, maxTransactionBytes);
 			}
 			long expectedTripleTerms = -1L;
-			for (TripleTermIndexBulkRecords.IndexRun indexRun : tripleTermIndexes.runs()) {
+			List<TripleTermIndexBulkRecords.IndexRun> tripleTermIndexRuns = tripleTermIndexes.runs();
+			for (int index = 0; index < tripleTermIndexRuns.size(); index++) {
+				TripleTermIndexBulkRecords.IndexRun indexRun = tripleTermIndexRuns.get(index);
+				if (progress != null) {
+					progress.startIndex(ProgressSnapshot.IndexFamily.TRIPLE_TERM, indexRun.specification(), index + 1,
+							tripleTermIndexRuns.size(), ProgressSnapshot.IndexStage.APPEND);
+				}
 				try (LongTupleCursor cursor = new LongTupleCursor(indexRun.tuples(), 4)) {
 					long termsInIndex = store.appendTripleTermIndex(indexRun.specification(), target -> {
 						checkCancelled(cancellationSignal);
@@ -105,6 +127,9 @@ final class NativeStoreWriter {
 				}
 				// The run has been appended to LMDB and is rebuilt from id-quads on resume; free it now.
 				Files.deleteIfExists(indexRun.tuples().path());
+				if (progress != null) {
+					progress.completeIndex(ProgressSnapshot.IndexFamily.TRIPLE_TERM, indexRun.specification());
+				}
 			}
 			if (config.getValueHashCacheEnabled()) {
 				try (LongTupleCursor cursor = new LongTupleCursor(values.valueHashes(), 3)) {
@@ -126,7 +151,13 @@ final class NativeStoreWriter {
 			});
 			store.syncNamespaces();
 			long expectedStatements = -1L;
-			for (StatementIndexBulkRecords.IndexRun indexRun : statementIndexes.runs()) {
+			List<StatementIndexBulkRecords.IndexRun> statementIndexRuns = statementIndexes.runs();
+			for (int index = 0; index < statementIndexRuns.size(); index++) {
+				StatementIndexBulkRecords.IndexRun indexRun = statementIndexRuns.get(index);
+				if (progress != null) {
+					progress.startIndex(ProgressSnapshot.IndexFamily.STATEMENT, indexRun.specification(), index + 1,
+							statementIndexRuns.size(), ProgressSnapshot.IndexStage.APPEND);
+				}
 				long statementsInIndex;
 				if (indexRun.tuples() != null) {
 					try (LongTupleCursor cursor = new LongTupleCursor(indexRun.tuples(), 4)) {
@@ -151,6 +182,9 @@ final class NativeStoreWriter {
 				}
 				// The run has been appended to LMDB and is rebuilt from id-quads on resume; free it now.
 				Files.deleteIfExists(indexRun.path());
+				if (progress != null) {
+					progress.completeIndex(ProgressSnapshot.IndexFamily.STATEMENT, indexRun.specification());
+				}
 			}
 			try (ContextCountCursor cursor = new ContextCountCursor(statementIndexes.contexts())) {
 				store.appendContexts(target -> {
