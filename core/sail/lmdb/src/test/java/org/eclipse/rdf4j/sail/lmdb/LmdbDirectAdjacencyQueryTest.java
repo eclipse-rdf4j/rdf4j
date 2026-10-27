@@ -626,7 +626,8 @@ class LmdbDirectAdjacencyQueryTest {
 							.as("generic Sail multi-context iterator adjacency hit; " + diagnostics)
 							.isGreaterThan(before.lookupHits);
 					assertThat(direct.snapshotMetrics().activeViews)
-							.as("the open generic iterator shares the dataset's retained adjacency view; " + diagnostics)
+							.as("the open generic iterator shares the dataset's retained adjacency view; "
+									+ diagnostics)
 							.isEqualTo(1);
 				}
 				assertThat(direct.snapshotMetrics().activeViews)
@@ -3252,8 +3253,7 @@ class LmdbDirectAdjacencyQueryTest {
 
 	private final class RoutingObservation implements LmdbSailStore.NativeSourceObservationForTest, AutoCloseable {
 		private static final int MAX_EVENTS = 128;
-		private final LmdbSailStore.NativeSourceObservationForTest previousObservation =
-				backing.nativeSourceObservationForTest;
+		private final LmdbSailStore.NativeSourceObservationForTest previousObservation = backing.nativeSourceObservationForTest;
 		private final List<LmdbSailStore.NativeSourceStateForTest> states = new ArrayList<>();
 		private final List<String> events = new ArrayList<>();
 		private long omittedEvents;
@@ -3320,7 +3320,8 @@ class LmdbDirectAdjacencyQueryTest {
 					+ ":filtered=" + filteredRows + ":censored=" + censored, null, -1L, -1L, -1L, -1L);
 		}
 
-		private synchronized void record(String kind, String result, StatementOrder order, long subj, long pred, long obj,
+		private synchronized void record(String kind, String result, StatementOrder order, long subj, long pred,
+				long obj,
 				long context) {
 			if (events.size() < MAX_EVENTS) {
 				events.add(kind + "(" + result + ", order=" + order + ", ids=" + subj + "/" + pred + "/" + obj
