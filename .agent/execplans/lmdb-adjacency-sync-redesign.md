@@ -52,6 +52,9 @@ After this plan is implemented, the synchronisation has exactly one shape. Every
 - Observation (Milestone 3): the old tests encode two different answers to "does a synchronous committer wait behind a build?": an empty store's startup build is waited for (`emptyStoreDefaultsToSynchronousMaintenanceBeforeStartupReturns`, `combinedRepositoryCommitPublishesBothPlanesBeforeReturning`), a populated store's startup build is not (`synchronousMaintenanceReturnsDuringPopulatedStartupAndWaitsForSubsequentCommits`, `backlogPausesBackingWritesWhileLmdbReadersRemainAvailable`). Waiting unconditionally made the populated cases time out at 60 seconds; never waiting made the first commits of a new store fall back for a moment. The applier binding now records whether the running build pinned an empty store and committers wait only behind that build.
   Evidence: `logs/m3-batch4.log` (`Commit at revision 1 has waited 30004 ms ... phase=BUILDING` in the backlog test), `logs/m3-batch3.log`.
 
+- Observation (Milestone 3): with the adjacency index disabled nothing consumed the TripleStore's commit log, so every revision bump left an `OVERFLOWED` record behind forever. `LmdbFrozenSpillReplayIT` caught it: its 300,000-row streamed load in a 128 MiB child JVM ran out of heap in CI and locally, and passed again once the log drops records whenever no applier listens (the floor follows the head). The log is a hand-off, not a history; a store without a consumer must remember only its head revision.
+  Evidence: CI run 40537386304 (`integration-tests`), `logs/m3-spill-it.log` (fails) and `logs/m3-spill-it2.log` (passes).
+
 
 ## Decision Log
 
@@ -122,6 +125,10 @@ After this plan is implemented, the synchronisation has exactly one shape. Every
   Date/Author: 2026-10-27, Claude Code.
 - Decision (Milestone 3): tests that asserted retired mechanisms were retired or rewritten rather than bridged: the queue-metadata reservation tests (`asynchronousCaptureChargesMetadataBeforeWorkerExecution`, `emptyCollectorRevisionsChargeTheirQueueMetadata`: the log holds records, the memory account holds the pending charge, there is no queue), the catch-up-thread test (`aGapRecordedWhileCatchUpWaitsForItsRevisionEndsTheBuild`: the model test's `COMMIT_DURING_SCAN` plus `SEAL_OVERFLOWED` covers a gap during a build), the admission-closure assertions (`tryBeginBackingWrite` is false only on backlog), the "publish before revision visibility" assertion (the revision is visible when LMDB commits; the committer is who waits), and the cutover metrics (`lastCutover*` report zero).
   Rationale: a bridge that fakes the old observable would test the bridge.
+  Date/Author: 2026-10-27, Claude Code.
+
+- Decision (Milestone 3): `AdjacencyCommitLog` trims itself through its head on every confirm and gap append while no listener is installed; records are retained only once an applier has attached.
+  Rationale: the adjacency index is optional and off by default; a TripleStore must not accumulate per-commit objects for an index that does not exist (see the frozen-spill observation above).
   Date/Author: 2026-10-27, Claude Code.
 
 

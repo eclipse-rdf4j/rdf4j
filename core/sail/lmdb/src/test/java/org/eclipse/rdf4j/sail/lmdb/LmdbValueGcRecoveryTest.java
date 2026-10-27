@@ -65,7 +65,6 @@ public class LmdbValueGcRecoveryTest {
 		CountDownLatch releaseFirstGc = new CountDownLatch(1);
 		CountDownLatch secondWriterBuffered = new CountDownLatch(1);
 		CountDownLatch allowSecondCommit = new CountDownLatch(1);
-		CountDownLatch secondWriterWaiting = new CountDownLatch(1);
 		CountDownLatch secondInlineGcFailed = new CountDownLatch(1);
 		CountDownLatch commitsFinished = new CountDownLatch(2);
 		AtomicInteger capacityFaults = new AtomicInteger();
@@ -176,20 +175,13 @@ public class LmdbValueGcRecoveryTest {
 			assertThat(backing.valueStore().hasRetiredIds()).isTrue();
 			assertThat(backing.directAdjacencyStore().buildNowForTest()).isTrue();
 			mapBefore.set(backing.valueStore().mapSizeBytes());
-			backing.directAdjacencyStore().beforeWriteAdmissionWaitForTest = () -> {
-				if (Thread.currentThread() == secondWriter) {
-					secondWriterWaiting.countDown();
-				}
-			};
 			secondWriter.start();
 			assertThat(secondWriterBuffered.await(10, TimeUnit.SECONDS)).isTrue();
 			armed.set(true);
 			firstWriter.start();
 			assertThat(firstGcEntered.await(10, TimeUnit.SECONDS)).isTrue();
 			allowSecondCommit.countDown();
-			assertThat(secondWriterWaiting.await(10, TimeUnit.SECONDS))
-					.as("the buffered writer must reach real adjacency admission")
-					.isTrue();
+			// adjacency admission depends only on the applier's backlog now: the buffered writer never waits on it
 			releaseFirstGc.countDown();
 			assertThat(commitsFinished.await(10, TimeUnit.SECONDS))
 					.as("final retirement growth must not retain adjacency admission; phase=%s, A=%s, B=%s",

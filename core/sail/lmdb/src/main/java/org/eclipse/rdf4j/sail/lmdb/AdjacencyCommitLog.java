@@ -266,7 +266,18 @@ final class AdjacencyCommitLog {
 		record.confirmLocked();
 		records.put(record.revision, record);
 		head = record.revision;
+		dropWhenUnconsumed();
 		notifyChanged();
+	}
+
+	/**
+	 * Without an applier listening nothing will ever trim the log, so a store whose adjacency index is disabled (or not
+	 * attached yet) keeps no records: the floor follows the head and only the head revision is remembered.
+	 */
+	private void dropWhenUnconsumed() {
+		if (listener == null) {
+			trimThrough(head);
+		}
 	}
 
 	/** Discards the staged record; a late seal releases its rows. */
@@ -296,6 +307,7 @@ final class AdjacencyCommitLog {
 		}
 		records.put(revision, record);
 		head = revision;
+		dropWhenUnconsumed();
 		notifyChanged();
 	}
 

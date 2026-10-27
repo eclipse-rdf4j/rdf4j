@@ -420,27 +420,29 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 		long revision = tripleStore.getDataRevision();
 		long waitStarted = System.nanoTime();
+		long warnAt = waitStarted + TimeUnit.SECONDS.toNanos(30);
 		try {
-			long warnAt = waitStarted + TimeUnit.SECONDS.toNanos(30);
-			while (!applier.awaitServing(revision, 1, TimeUnit.SECONDS)) {
+			while (true) {
 				AdjacencyState<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet> state = applierState();
 				if (closed || state.gapFromRevision() <= revision) {
-					return;
+					break;
+				}
+				if (state.status() == AdjacencyState.Status.SERVING && state.appliedRevision() >= revision) {
+					break;
 				}
 				if (state.status() != AdjacencyState.Status.SERVING
 						&& !(applier.buildInFlight() && buildingOverEmptySnapshot)) {
 					// a populated store's build or a failed index: LMDB stays authoritative, adjacency catches up
-					return;
+					break;
 				}
-				if (state.status() == AdjacencyState.Status.SERVING && state.appliedRevision() >= revision) {
-					return;
+				if (applier.awaitServing(revision, 1, TimeUnit.SECONDS)) {
+					break;
 				}
-				if (System.nanoTime() < warnAt) {
-					continue;
+				if (System.nanoTime() >= warnAt) {
+					warnAt = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+					logger.warn("Commit at revision {} has waited {} ms for adjacency publication; applier state {}",
+							revision, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - waitStarted), state);
 				}
-				warnAt = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-				logger.warn("Commit at revision {} has waited {} ms for adjacency publication; applier state {}",
-						revision, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - waitStarted), state);
 			}
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();

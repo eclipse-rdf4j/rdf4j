@@ -252,7 +252,11 @@ class LmdbAdjacencyStartupConcurrencyTest {
 			try (var connection = repository.getConnection()) {
 				connection.add(Values.iri("urn:first"), Values.iri("urn:p"), Values.iri("urn:o"));
 			}
-			assertThat(adjacency.backlogBytes()).isPositive();
+			long sealDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+			while (adjacency.backlogBytes() == 0 && System.nanoTime() < sealDeadline) {
+				Thread.onSpinWait(); // the record's bytes count once the capture thread seals it
+			}
+			assertThat(adjacency.backlogBytes()).as(adjacency.publicationDiagnostics()).isPositive();
 			AtomicReference<Thread> writerThread = new AtomicReference<>();
 			var writer = executor.submit(() -> {
 				writerThread.set(Thread.currentThread());

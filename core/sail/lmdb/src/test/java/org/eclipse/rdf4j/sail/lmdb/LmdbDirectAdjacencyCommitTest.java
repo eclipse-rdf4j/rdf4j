@@ -270,22 +270,37 @@ class LmdbDirectAdjacencyCommitTest {
 		setRunnableField("afterPreparationForTest", () -> {
 			throw new IllegalStateException("injected preparation failure");
 		});
+		// the gap the failure records schedules its own rebuild; hold it so the degraded window can be observed
+		CountDownLatch recoveryStarted = new CountDownLatch(1);
+		CountDownLatch releaseRecovery = new CountDownLatch(1);
+		setRunnableField("beforeBuildSnapshotForTest", () -> {
+			recoveryStarted.countDown();
+			await(releaseRecovery);
+		});
 
 		try (LmdbAdjacencyReadView held = store.acquire(previousRevision)) {
 			commitQuads(new long[][] { add(S2, P1, O2, 0, true) });
 			long committedRevision = previousRevision + 1;
+			assertThat(recoveryStarted.await(30, TimeUnit.SECONDS)).as("the gap must schedule a rebuild").isTrue();
 			assertThat(tripleStore.getDataRevision()).isEqualTo(committedRevision);
 			assertThat(store.publishedStateForTest().appliedRevision()).isEqualTo(previousRevision);
 			assertThat(store.snapshotMetrics().emergencyGapFromRevision).isEqualTo(committedRevision);
 			assertThat(store.memoryAccount().chargedBytes(MemoryKind.PREPARATION_OUTPUT)).isZero();
 			try (LmdbAdjacencyReadView fallback = store.acquire(committedRevision)) {
 				assertThat(fallback.isExact()).isFalse();
+				assertThat(fallback.fallbackReason()).isEqualTo(FallbackReason.REVISION_GAP);
 			}
+			assertThat(probe(held, S1, P1, O1, 0, true)).as("the held view stays exact below the gap").hasSize(1);
 			try (TxnManager.Txn txn = tripleStore.getTxnManager().createReadTxn();
 					RecordIterator statements = tripleStore.getTriples(txn, S2, P1, O2, 0, true)) {
 				assertThat(statements.next()).isNotNull();
 			}
+		} finally {
+			releaseRecovery.countDown();
+			setRunnableField("beforeBuildSnapshotForTest", null);
+			setRunnableField("afterPreparationForTest", null);
 		}
+		assertThat(store.awaitCurrentRevisionReady(30, TimeUnit.SECONDS)).as(store.publicationDiagnostics()).isTrue();
 	}
 
 	@Test
@@ -299,15 +314,24 @@ class LmdbDirectAdjacencyCommitTest {
 		setRunnableField("afterPreparationForTest", () -> {
 			throw new IllegalStateException("injected strict preparation failure");
 		});
+		CountDownLatch recoveryStarted = new CountDownLatch(1);
+		CountDownLatch releaseRecovery = new CountDownLatch(1);
+		setRunnableField("beforeBuildSnapshotForTest", () -> {
+			recoveryStarted.countDown();
+			await(releaseRecovery);
+		});
 
 		try (LmdbAdjacencyReadView held = store.acquire(previousRevision)) {
 			tripleStore.startTransaction();
 			tripleStore.storeTriple(S2, P1, O2, 0, true);
-			assertThatThrownBy(tripleStore::commit)
+			// LMDB commits; the failure surfaces to the committer when it waits for its publication
+			tripleStore.commit();
+			assertThatThrownBy(() -> store.applyCommitted(tripleStore.drainDirectAdjacencyCommitDelta()))
 					.isInstanceOf(IllegalStateException.class)
 					.hasRootCauseMessage("injected strict preparation failure");
 
 			long committedRevision = previousRevision + 1;
+			assertThat(recoveryStarted.await(30, TimeUnit.SECONDS)).isTrue();
 			assertThat(tripleStore.getDataRevision()).isEqualTo(committedRevision);
 			assertThat(store.snapshotMetrics().emergencyGapFromRevision).isEqualTo(committedRevision);
 			assertThat(store.memoryAccount().chargedBytes(MemoryKind.PREPARATION_OUTPUT)).isZero();
@@ -315,6 +339,10 @@ class LmdbDirectAdjacencyCommitTest {
 					RecordIterator statements = tripleStore.getTriples(txn, S2, P1, O2, 0, true)) {
 				assertThat(statements.next()).isNotNull();
 			}
+			// strict mode keeps reporting the failure to readers until the store is reopened
+			assertThatThrownBy(() -> store.acquire(committedRevision)).isInstanceOf(IllegalStateException.class);
+		} finally {
+			releaseRecovery.countDown();
 		}
 	}
 
