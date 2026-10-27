@@ -73,9 +73,6 @@ final class PartialIndex {
 	private static final int MAX_KEY_LENGTH = PAIR_LENGTH * (Long.BYTES + 1);
 	private static final int VALUE_BUFFER_SIZE = 4096;
 
-	record Pair(long first, long second) {
-	}
-
 	private final String fields;
 	private final int firstField, secondField;
 	private final long env;
@@ -118,22 +115,23 @@ final class PartialIndex {
 		return bound;
 	}
 
-	Pair project(long[] quad) {
-		return new Pair(quad[firstField], quad[secondField]);
+	void project(long[] tuple, long s, long p, long o, long c) {
+		tuple[0] = fieldValue(firstField, s, p, o, c);
+		tuple[1] = fieldValue(secondField, s, p, o, c);
 	}
 
-	void add(long txn, Pair pair, boolean explicit) throws IOException {
-		update(txn, pair, explicit, true);
+	void add(long txn, long[] tuple, boolean explicit) throws IOException {
+		update(txn, tuple, explicit, true);
 	}
 
 	/** Call only after all full-index deletions, including buffered iterator deletions, have been flushed. */
-	void reconcile(long txn, Pair pair, boolean explicit) throws IOException {
-		if (!hasSupport(txn, pair, explicit)) {
-			update(txn, pair, explicit, false);
+	void reconcile(long txn, long[] tuple, boolean explicit) throws IOException {
+		if (!hasSupport(txn, tuple, explicit)) {
+			update(txn, tuple, explicit, false);
 		}
 	}
 
-	private void update(long txn, Pair pair, boolean explicit, boolean insert) throws IOException {
+	private void update(long txn, long[] tuple, boolean explicit, boolean insert) throws IOException {
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer handle = stack.mallocPointer(1);
 			E(mdb_cursor_open(txn, db(explicit), handle));
@@ -141,13 +139,13 @@ final class PartialIndex {
 			try {
 				MDBVal key = MDBVal.malloc(stack);
 				MDBVal value = MDBVal.malloc(stack);
-				long[] tuple = { pair.first(), pair.second() };
 				ByteBuffer keyScratch = stack.malloc(MAX_KEY_LENGTH);
 				ByteBuffer valueScratch = stack.malloc(VALUE_BUFFER_SIZE);
 				if (insert) {
-					E(Chunks.mergeChunk(cursor, SPLIT_POINT, key, value, tuple, keyScratch, valueScratch));
+					E(Chunks.mergeChunk(cursor, PAIR_LENGTH, SPLIT_POINT, key, value, tuple, keyScratch, valueScratch));
 				} else {
-					Chunks.deleteFromChunk(cursor, SPLIT_POINT, key, value, tuple, false, keyScratch, valueScratch);
+					Chunks.deleteFromChunk(cursor, PAIR_LENGTH, SPLIT_POINT, key, value, tuple, false, keyScratch,
+							valueScratch);
 				}
 			} finally {
 				mdb_cursor_close(cursor);
@@ -155,23 +153,23 @@ final class PartialIndex {
 		}
 	}
 
-	private static MDBVal key(MemoryStack stack, Pair pair) {
+	private static MDBVal key(MemoryStack stack, long first, long second) {
 		ByteBuffer bytes = stack.malloc(MAX_KEY_LENGTH);
-		Varint.writeUnsigned(bytes, pair.first());
-		Varint.writeUnsigned(bytes, pair.second());
+		Varint.writeUnsigned(bytes, first);
+		Varint.writeUnsigned(bytes, second);
 		return MDBVal.malloc(stack).mv_data(bytes.flip());
 	}
 
 	/** Checks full statements in the write transaction, also during cache replay under the write lock. */
-	private boolean hasSupport(long txn, Pair pair, boolean explicit) throws IOException {
+	private boolean hasSupport(long txn, long[] tuple, boolean explicit) throws IOException {
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer handle = stack.mallocPointer(1);
 			E(mdb_cursor_open(txn, supportIndex.getDB(explicit), handle));
 			long cursor = handle.get(0);
 			try {
 				long[] pattern = { -1, -1, -1, -1 };
-				pattern[firstField] = pair.first();
-				pattern[secondField] = pair.second();
+				pattern[firstField] = tuple[0];
+				pattern[secondField] = tuple[1];
 				long[] min = new long[4], max = new long[4], quad = new long[4];
 				supportIndex.getMinEntry(min, pattern[0], pattern[1], pattern[2], pattern[3]);
 				// Unlike legacy max-entry helpers, zero is an exact value here, notably for the default graph.
@@ -199,13 +197,13 @@ final class PartialIndex {
 					ChunkInput input = new ChunkInput(key.mv_data(), data.mv_data(), 4,
 							supportIndex.getIndexSplitPosition());
 					input.seek(min);
-					long[] tuple;
-					while ((tuple = input.next()) != null) {
-						if (Arrays.compare(tuple, max) > 0) {
+					long[] existing;
+					while ((existing = input.next()) != null) {
+						if (Arrays.compare(existing, max) > 0) {
 							return false;
 						}
-						supportIndex.entryToQuad(tuple, quad);
-						if (quad[firstField] == pair.first() && quad[secondField] == pair.second()) {
+						supportIndex.entryToQuad(existing, quad);
+						if (quad[firstField] == tuple[0] && quad[secondField] == tuple[1]) {
 							return true;
 						}
 					}
@@ -305,13 +303,12 @@ final class PartialIndex {
 				if (second >= 0 && lastSecond >= 0) {
 					return -1;
 				}
-				PointerBuffer handle = stack.mallocPointer(1);
-				E(mdb_cursor_open(txn.get(), db(explicit), handle));
-				long cursor = handle.get(0);
+				int dbi = db(explicit);
+				long cursor = txn.getCursor(dbi);
 				try {
 					long lowerSecond = lastSecond >= 0 ? lastSecond : Math.max(second, 0);
 					long[] min = { first, lowerSecond };
-					MDBVal key = key(stack, new Pair(first, lowerSecond));
+					MDBVal key = key(stack, first, lowerSecond);
 					MDBVal data = MDBVal.malloc(stack);
 					int rc = E(mdb_cursor_get(cursor, key, data, MDB_SET_RANGE));
 					// The lower bound may be inside the preceding chunk rather than at an anchor.
@@ -340,7 +337,7 @@ final class PartialIndex {
 					}
 					return -1;
 				} finally {
-					mdb_cursor_close(cursor);
+					txn.returnCursor(dbi, cursor);
 				}
 			} finally {
 				txn.lockManager().unlockRead(stamp);

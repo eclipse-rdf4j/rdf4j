@@ -633,8 +633,11 @@ class TripleStorePartialIndexesTest {
 		return store;
 	}
 
+	record Pair(long first, long second) {
+	}
+
 	private static long pairs(TripleStore store, String index, boolean explicit) throws Exception {
-		Set<PartialIndex.Pair> pairs = new HashSet<>();
+		Set<Pair> pairs = new HashSet<>();
 		try (Txn txn = store.getTxnManager().createReadTxn(); MemoryStack stack = stackPush()) {
 			int db = openDatabaseWithTxn(txn.get(), index + index + (explicit ? "" : "-inf"), 0);
 			PointerBuffer handle = stack.mallocPointer(1);
@@ -648,7 +651,7 @@ class TripleStorePartialIndexesTest {
 					ChunkInput input = new ChunkInput(key.mv_data(), value.mv_data(), 2, 0);
 					long[] pair;
 					while ((pair = input.next()) != null) {
-						assertTrue(pairs.add(new PartialIndex.Pair(pair[0], pair[1])), "duplicate pair");
+						assertTrue(pairs.add(new Pair(pair[0], pair[1])), "duplicate pair");
 					}
 					rc = E(mdb_cursor_get(cursor, key, value, MDB_NEXT));
 				}

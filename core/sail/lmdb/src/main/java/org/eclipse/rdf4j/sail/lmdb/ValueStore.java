@@ -549,7 +549,7 @@ class ValueStore extends AbstractValueFactory {
 							E(mdb_cursor_open(writeTxn, addedIndex.getDB(true), cursorHandle));
 							long cursor = cursorHandle.get(0);
 							try {
-								E(Chunks.mergeChunk(cursor, addedIndex.getIndexSplitPosition(), keyValue, dataValue,
+								E(Chunks.mergeChunk(cursor, 4, addedIndex.getIndexSplitPosition(), keyValue, dataValue,
 										tuple, keyScratch, valueScratch));
 							} finally {
 								mdb_cursor_close(cursor);
@@ -1339,7 +1339,7 @@ class ValueStore extends AbstractValueFactory {
 					E(mdb_cursor_open(writeTxn, index.getDB(true), pp));
 					long indexCursor = pp.get(0);
 					try {
-						E(Chunks.mergeChunk(indexCursor, index.getIndexSplitPosition(), keyVal, dataVal, tuple,
+						E(Chunks.mergeChunk(indexCursor, 4, index.getIndexSplitPosition(), keyVal, dataVal, tuple,
 								keyScratch, valueScratch));
 					} finally {
 						mdb_cursor_close(indexCursor);
@@ -1718,7 +1718,7 @@ class ValueStore extends AbstractValueFactory {
 						E(mdb_cursor_open(writeTxn, index.getDB(true), pp));
 						long indexCursor = pp.get(0);
 						try {
-							Chunks.deleteFromChunk(indexCursor, index.getIndexSplitPosition(), keyVal, dataVal,
+							Chunks.deleteFromChunk(indexCursor, 4, index.getIndexSplitPosition(), keyVal, dataVal,
 									pattern, false, keyScratch, valueScratch);
 						} finally {
 							mdb_cursor_close(indexCursor);
@@ -1865,7 +1865,7 @@ class ValueStore extends AbstractValueFactory {
 
 								int splitPoint = tripleTermCspoIndex.getIndexSplitPosition();
 								long[] pattern = new long[] { id, -1, -1, -1 };
-								Chunks.deleteFromChunk(termsCursor, splitPoint, keyVal, dataVal, pattern, true,
+								Chunks.deleteFromChunk(termsCursor, 4, splitPoint, keyVal, dataVal, pattern, true,
 										keyScratch, valueScratch);
 							} else {
 								// delete id -> value association

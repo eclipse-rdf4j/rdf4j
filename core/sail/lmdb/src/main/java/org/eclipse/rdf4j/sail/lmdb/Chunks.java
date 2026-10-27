@@ -48,6 +48,7 @@ public class Chunks {
 	 * needed to preserve ordering and split oversized chunks.
 	 *
 	 * @param cursor       the LMDB cursor positioned on the duplicates for the key
+	 * @param elements     the number of elements in the tuple
 	 * @param splitPoint   the index at which to split the tuple for chunking
 	 * @param keyVal       the key buffer used for cursor operations
 	 * @param dataVal      the data buffer used for cursor operations
@@ -57,7 +58,7 @@ public class Chunks {
 	 * @return the LMDB result code, or {@link org.lwjgl.util.lmdb.LMDB#MDB_KEYEXIST} when the tuple already exists
 	 * @throws IOException if tuple decoding or encoding fails
 	 */
-	public static int mergeChunk(long cursor, int splitPoint, MDBVal keyVal, MDBVal dataVal,
+	public static int mergeChunk(long cursor, int elements, int splitPoint, MDBVal keyVal, MDBVal dataVal,
 			long[] tuple, ByteBuffer keyScratch, ByteBuffer valueScratch)
 			throws IOException {
 		keyScratch.clear();
@@ -66,7 +67,7 @@ public class Chunks {
 			Varint.writeUnsigned(keyScratch, tuple[i]);
 		}
 		keyPrefixLength = keyScratch.position();
-		for (int i = splitPoint; i < tuple.length; i++) {
+		for (int i = splitPoint; i < elements; i++) {
 			Varint.writeUnsigned(keyScratch, tuple[i]);
 		}
 		keyScratch.flip();
@@ -107,8 +108,8 @@ public class Chunks {
 
 		// We are positioned at the first duplicate value < newValueBuf.
 		// Find the correct insertion point for newValueBuf in the selected chunk, and check if it already exists.
-		var existing = new ChunkInput(existingKey, dataVal.mv_data(), tuple.length, splitPoint);
-		var chunk1 = getChunk(tuple.length, splitPoint);
+		var existing = new ChunkInput(existingKey, dataVal.mv_data(), elements, splitPoint);
+		var chunk1 = getChunk(elements, splitPoint);
 		int diff = existing.seek(tuple, chunk1::addTuple);
 		if (diff == 0) {
 			chunkPool.offer(chunk1);
@@ -118,7 +119,7 @@ public class Chunks {
 		ChunkOutput chunk2 = null;
 		if (!chunk1.addTuple(tuple)) {
 			// The new tuple does not fit in the first chunk; we will need to create a second chunk.
-			chunk2 = getChunk(tuple.length, splitPoint);
+			chunk2 = getChunk(elements, splitPoint);
 			chunk2.addTuple(tuple);
 		}
 
@@ -127,7 +128,7 @@ public class Chunks {
 			if (chunk2 != null) {
 				chunk2.addTuple(existingTuple);
 			} else if (!chunk1.addTuple(existingTuple)) {
-				chunk2 = getChunk(tuple.length, splitPoint);
+				chunk2 = getChunk(elements, splitPoint);
 				chunk2.addTuple(existingTuple);
 			}
 		}
@@ -186,6 +187,7 @@ public class Chunks {
 	 * Removes a tuple from the sorted duplicate-value chunks for the current key.
 	 *
 	 * @param cursor       the LMDB cursor positioned on the duplicates for the key
+	 * @param elements     the number of elements in the tuple
 	 * @param splitPoint   the split point used in chunk encoding
 	 * @param keyVal       the key buffer used for cursor operations
 	 * @param dataVal      the data buffer used for cursor operations
@@ -196,7 +198,7 @@ public class Chunks {
 	 * @return {@code true} if the tuple was removed, otherwise {@code false}
 	 * @throws IOException if tuple decoding or encoding fails
 	 */
-	public static boolean deleteFromChunk(long cursor, int splitPoint, MDBVal keyVal, MDBVal dataVal,
+	public static boolean deleteFromChunk(long cursor, int elements, int splitPoint, MDBVal keyVal, MDBVal dataVal,
 			long[] tuple, boolean matchPrefix, ByteBuffer keyScratch, ByteBuffer valueScratch)
 			throws IOException {
 		keyScratch.clear();
@@ -214,7 +216,7 @@ public class Chunks {
 			}
 			keyPrefixLength = keyScratch.position();
 			if (!prefixFinished) {
-				for (int i = splitPoint; i < tuple.length; i++) {
+				for (int i = splitPoint; i < elements; i++) {
 					if (tuple[i] == -1) {
 						break;
 					}
@@ -226,7 +228,7 @@ public class Chunks {
 				Varint.writeUnsigned(keyScratch, tuple[i]);
 			}
 			keyPrefixLength = keyScratch.position();
-			for (int i = splitPoint; i < tuple.length; i++) {
+			for (int i = splitPoint; i < elements; i++) {
 				Varint.writeUnsigned(keyScratch, tuple[i]);
 			}
 		}
@@ -282,8 +284,8 @@ public class Chunks {
 			existingData = dataVal.mv_data();
 		}
 
-		var existing = new ChunkInput(existingKey, existingData, tuple.length, splitPoint);
-		var chunk1 = getChunk(tuple.length, splitPoint);
+		var existing = new ChunkInput(existingKey, existingData, elements, splitPoint);
+		var chunk1 = getChunk(elements, splitPoint);
 		if (!isAnchorKey) {
 			int diff = existing.seek(tuple, chunk1::addTuple);
 			if (diff != 0) {

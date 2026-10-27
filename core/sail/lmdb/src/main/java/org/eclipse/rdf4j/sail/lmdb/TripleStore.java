@@ -372,6 +372,7 @@ class TripleStore implements Closeable {
 			}
 		}
 		if (!added.isEmpty()) {
+			long[] tuple = new long[4];
 			TripleIndex source = indexes.getFirst();
 			for (boolean explicit : new boolean[] { true, false }) {
 				try (RecordIterator it = new LmdbRecordIterator(source, 0, -1, -1, -1, -1, explicit,
@@ -386,7 +387,8 @@ class TripleStore implements Closeable {
 							recordCache.storeRecord(quad.clone(), explicit, false);
 						} else {
 							for (PartialIndex partial : added) {
-								partial.add(writeTxn, partial.project(quad), explicit);
+								partial.project(tuple, quad[0], quad[1], quad[2], quad[3]);
+								partial.add(writeTxn, tuple, explicit);
 							}
 						}
 					}
@@ -543,7 +545,7 @@ class TripleStore implements Closeable {
 									continue;
 								}
 
-								E(Chunks.mergeChunk(cursor, addedIndex.getIndexSplitPosition(), keyValue, dataValue,
+								E(Chunks.mergeChunk(cursor, 4, addedIndex.getIndexSplitPosition(), keyValue, dataValue,
 										tuple, keyScratch, valueScratch));
 							}
 						} finally {
@@ -1369,7 +1371,7 @@ class TripleStore implements Closeable {
 			mdb_cursor_open(writeTxn, mainIndex.getDB(explicit), pCursor);
 			long cursor = pCursor.get(0);
 			try {
-				int rc = Chunks.mergeChunk(cursor, mainIndex.getIndexSplitPosition(), keyVal, dataVal, tuple,
+				int rc = Chunks.mergeChunk(cursor, 4, mainIndex.getIndexSplitPosition(), keyVal, dataVal, tuple,
 						keyScratch, valueScratch);
 				if (rc != MDB_SUCCESS && rc != MDB_KEYEXIST) {
 					throw new IOException(mdb_strerror(rc));
@@ -1384,7 +1386,7 @@ class TripleStore implements Closeable {
 				mdb_cursor_open(writeTxn, mainIndex.getDB(false), pCursor);
 				cursor = pCursor.get(0);
 				try {
-					foundImplicit = Chunks.deleteFromChunk(cursor, mainIndex.getIndexSplitPosition(), keyVal,
+					foundImplicit = Chunks.deleteFromChunk(cursor, 4, mainIndex.getIndexSplitPosition(), keyVal,
 							dataVal, tuple, false, keyScratch, valueScratch);
 				} finally {
 					mdb_cursor_close(cursor);
@@ -1400,7 +1402,8 @@ class TripleStore implements Closeable {
 						mdb_cursor_open(writeTxn, index.getDB(false), pCursor);
 						cursor = pCursor.get(0);
 						try {
-							Chunks.deleteFromChunk(cursor, index.getIndexSplitPosition(), keyVal, dataVal, tuple, false,
+							Chunks.deleteFromChunk(cursor, 4, index.getIndexSplitPosition(), keyVal, dataVal, tuple,
+									false,
 									keyScratch, valueScratch);
 						} finally {
 							mdb_cursor_close(cursor);
@@ -1410,16 +1413,16 @@ class TripleStore implements Closeable {
 					mdb_cursor_open(writeTxn, index.getDB(explicit), pCursor);
 					cursor = pCursor.get(0);
 					try {
-						Chunks.mergeChunk(cursor, index.getIndexSplitPosition(), keyVal, dataVal, tuple,
+						Chunks.mergeChunk(cursor, 4, index.getIndexSplitPosition(), keyVal, dataVal, tuple,
 								keyScratch, valueScratch);
 					} finally {
 						mdb_cursor_close(cursor);
 					}
 				}
 
-				updatePartialIndexes(new long[] { subj, pred, obj, context }, explicit, true);
+				updatePartialIndexes(subj, pred, obj, context, tuple, explicit, true);
 				if (foundImplicit) {
-					updatePartialIndexes(new long[] { subj, pred, obj, context }, false, false);
+					updatePartialIndexes(subj, pred, obj, context, tuple, false, false);
 				}
 				incrementContext(stack, context);
 			}
@@ -1430,13 +1433,14 @@ class TripleStore implements Closeable {
 		return stAdded;
 	}
 
-	private void updatePartialIndexes(long[] quad, boolean explicit, boolean add) throws IOException {
+	private void updatePartialIndexes(long s, long p, long o, long c, long[] tuple, boolean explicit, boolean add)
+			throws IOException {
 		for (PartialIndex partial : partialIndexes) {
-			PartialIndex.Pair pair = partial.project(quad);
+			partial.project(tuple, s, p, o, c);
 			if (add) {
-				partial.add(writeTxn, pair, explicit);
+				partial.add(writeTxn, tuple, explicit);
 			} else {
-				partial.reconcile(writeTxn, pair, explicit);
+				partial.reconcile(writeTxn, tuple, explicit);
 			}
 		}
 	}
@@ -1517,7 +1521,7 @@ class TripleStore implements Closeable {
 							E(mdb_cursor_open(writeTxn, mainIndex.getDB(false), inferredDeleteCursorHandle));
 							inferredMainDeleteCursor = inferredDeleteCursorHandle.get(0);
 						}
-						promotedFromImplicit[i] = Chunks.deleteFromChunk(inferredMainDeleteCursor,
+						promotedFromImplicit[i] = Chunks.deleteFromChunk(inferredMainDeleteCursor, 4,
 								mainIndex.getIndexSplitPosition(), keyVal, dataVal, tuple, false,
 								keyScratch, valueScratch);
 					}
@@ -1570,7 +1574,7 @@ class TripleStore implements Closeable {
 							context[statementIndex]);
 
 					if (promotedFromImplicit[statementIndex]) {
-						Chunks.deleteFromChunk(secondaryDeleteCursor, index.getIndexSplitPosition(), keyVal,
+						Chunks.deleteFromChunk(secondaryDeleteCursor, 4, index.getIndexSplitPosition(), keyVal,
 								dataVal, tuple, false, keyScratch, valueScratch);
 					}
 					if (shouldFallBackFromAlignedWrite()) {
@@ -1909,14 +1913,17 @@ class TripleStore implements Closeable {
 		removeTriples(records, explicit, handler);
 	}
 
+	record Pair(long first, long second) {
+	}
+
 	protected void removeTriples(LmdbRecordIterator it, boolean explicit, Consumer<long[]> handler) throws IOException {
-		Map<PartialIndex, Set<PartialIndex.Pair>> affected = new HashMap<>();
+		Map<PartialIndex, Set<Pair>> affected = new HashMap<>();
+		long[] tuple = new long[4];
 		try (it; MemoryStack stack = MemoryStack.stackPush()) {
 			MDBVal keyValue = MDBVal.callocStack(stack);
 			MDBVal dataValue = MDBVal.callocStack(stack);
 			ByteBuffer keyScratch = stack.malloc(4 * TripleIndex.MAX_KEY_LENGTH);
 			ByteBuffer valueScratch = stack.malloc(4096);
-			long[] tuple = new long[4];
 			PointerBuffer pCursor = stack.mallocPointer(1);
 
 			long[] quad;
@@ -1944,7 +1951,8 @@ class TripleStore implements Closeable {
 					E(mdb_cursor_open(writeTxn, index.getDB(explicit), pCursor));
 					long cursor = pCursor.get(0);
 					try {
-						Chunks.deleteFromChunk(cursor, index.getIndexSplitPosition(), keyValue, dataValue, tuple, false,
+						Chunks.deleteFromChunk(cursor, 4, index.getIndexSplitPosition(), keyValue, dataValue, tuple,
+								false,
 								keyScratch, valueScratch);
 					} finally {
 						mdb_cursor_close(cursor);
@@ -1952,15 +1960,18 @@ class TripleStore implements Closeable {
 				}
 
 				for (PartialIndex partial : partialIndexes) {
-					affected.computeIfAbsent(partial, ignored -> new HashSet<>()).add(partial.project(quad));
+					partial.project(tuple, quad[0], quad[1], quad[2], quad[3]);
+					affected.computeIfAbsent(partial, ignored -> new HashSet<>()).add(new Pair(tuple[0], tuple[1]));
 				}
 				decrementContext(stack, quad[3]);
 				handler.accept(quad);
 			}
 		}
-		for (Map.Entry<PartialIndex, Set<PartialIndex.Pair>> entry : affected.entrySet()) {
-			for (PartialIndex.Pair pair : entry.getValue()) {
-				entry.getKey().reconcile(writeTxn, pair, explicit);
+		for (Map.Entry<PartialIndex, Set<Pair>> entry : affected.entrySet()) {
+			for (Pair pair : entry.getValue()) {
+				tuple[0] = pair.first;
+				tuple[1] = pair.second;
+				entry.getKey().reconcile(writeTxn, tuple, explicit);
 			}
 		}
 	}
@@ -2010,17 +2021,17 @@ class TripleStore implements Closeable {
 						}
 
 						if (r.add) {
-							E(Chunks.mergeChunk(cursor, index.getIndexSplitPosition(), keyVal, dataVal, tuple,
+							E(Chunks.mergeChunk(cursor, 4, index.getIndexSplitPosition(), keyVal, dataVal, tuple,
 									keyScratch, valueScratch));
 						} else {
-							E(Chunks.deleteFromChunk(cursor, index.getIndexSplitPosition(), keyVal, dataVal, tuple,
+							E(Chunks.deleteFromChunk(cursor, 4, index.getIndexSplitPosition(), keyVal, dataVal, tuple,
 									false,
 									keyScratch, valueScratch) ? MDB_SUCCESS : MDB_NOTFOUND);
 						}
 						i++;
 					}
 
-					updatePartialIndexes(r.quad, explicit, r.add);
+					updatePartialIndexes(r.quad[0], r.quad[1], r.quad[2], r.quad[3], tuple, explicit, r.add);
 					if (r.contextDelta) {
 						if (r.add) {
 							incrementContext(stack, r.quad[TripleIndex.CONTEXT_IDX]);
