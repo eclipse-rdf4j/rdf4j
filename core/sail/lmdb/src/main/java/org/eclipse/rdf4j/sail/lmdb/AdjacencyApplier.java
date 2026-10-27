@@ -88,7 +88,8 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 	private volatile long prepareInFlight = -1;
 	private volatile boolean compactionInFlight;
 	private volatile boolean compactionRequested; // consult the policy at the next unit, even without a publish
-	private volatile boolean foldRequested; // fold every generation at the next unit, bypassing the policy
+	private volatile boolean foldRequested; // fold at the next unit, bypassing the policy
+	private volatile int foldRequestedPrefix; // generations to fold when requested; 0 means every generation
 
 	AdjacencyApplier(AdjacencyCommitLog log, AdjacencyIndexOps<B, O, G> ops,
 			AdjacencyCompactionPolicy<B, O, G> policy, AdjacencyWorkerPool workers, ApplierScheduler scheduler,
@@ -139,8 +140,17 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 
 	/** Asks the applier to fold every published generation into a new base, regardless of the policy. */
 	void requestFold() {
+		requestFold(0);
+	}
+
+	/**
+	 * Asks the applier to fold the first {@code prefixCount} published generations (every generation when 0) into a new
+	 * base, regardless of the policy; the remaining generations stay as the suffix.
+	 */
+	void requestFold(int prefixCount) {
 		enqueue(() -> {
 			foldRequested = true;
+			foldRequestedPrefix = prefixCount;
 			considerCompaction();
 		});
 	}
@@ -797,7 +807,9 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 		}
 		AdjacencyCompactionPlan plan;
 		if (foldRequested) {
-			plan = AdjacencyCompactionPlan.fold(ops.generationCount(state.overlays()));
+			int count = ops.generationCount(state.overlays());
+			plan = AdjacencyCompactionPlan
+					.fold(foldRequestedPrefix <= 0 ? count : Math.min(foldRequestedPrefix, count));
 		} else {
 			plan = policy.select(state.base(), state.overlays(), ops);
 		}

@@ -16,9 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.File;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
@@ -150,47 +148,29 @@ class LmdbDirectAdjacencyRecoveryTest {
 		Statement statement = F.createStatement(F.createIRI("http://example.org/recovery/s0"), P,
 				F.createIRI("http://example.org/recovery/o0"));
 
-		AtomicBoolean firstBuild = new AtomicBoolean(true);
 		AtomicReference<Throwable> writeFailure = new AtomicReference<>();
-		AtomicReference<Thread> writer = new AtomicReference<>();
 		TripleStore triples = sail.getBackingStore().getTripleStore();
-		direct.afterBuildSnapshotForTest = () -> {
-			if (!firstBuild.compareAndSet(true, false)) {
-				return;
+		// The build pins the empty store and finishes its scan; its candidate waits in the paused applier's inbox.
+		ApplierStepping.holdBuildAfterScan(direct);
+		// The commit lands in the log above the pin. The committer itself waits for a new store's startup build.
+		direct.committersWaitWhilePausedForTest(true);
+		Thread thread = new Thread(() -> {
+			try (RepositoryConnection connection = repo.getConnection()) {
+				connection.add(statement);
+			} catch (Throwable failure) {
+				writeFailure.set(failure);
 			}
-			Thread thread = new Thread(() -> {
-				try (RepositoryConnection connection = repo.getConnection()) {
-					connection.add(statement);
-				} catch (Throwable failure) {
-					writeFailure.set(failure);
-				}
-			}, "post-snapshot-writer");
-			writer.set(thread);
-			thread.start();
-			// The commit lands in the log above the pin while this build runs. The committer itself waits for a new
-			// store's startup build, so only the native commit is awaited here, not the writer thread.
-			try {
-				long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-				while (triples.getDataRevision() < 1L && System.nanoTime() < deadline) {
-					Thread.sleep(5);
-				}
-				if (triples.getDataRevision() < 1L) {
-					writeFailure.set(new AssertionError("the write did not commit after the build snapshot"));
-				}
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				writeFailure.set(e);
-			}
-		};
-
-		direct.triggerBuild();
-		awaitCondition(() -> !firstBuild.get(), () -> "the build pinned its snapshot");
+		}, "post-snapshot-writer");
+		thread.start();
+		assertThat(ApplierStepping.awaitCondition(() -> triples.getDataRevision() >= 1L, 30, TimeUnit.SECONDS))
+				.as("the write committed natively while the build was held")
+				.isTrue();
+		assertThat(thread.isAlive()).as("the committer waits for the startup build to publish").isTrue();
+		ApplierStepping.releaseBuild(direct);
 		assertThat(sail.awaitDirectAdjacencyReady(30, TimeUnit.SECONDS))
 				.as("adjacency serves the commit made after the build snapshot: %s, write failure: %s",
 						sail.getDirectAdjacencyReadinessDescription(), writeFailure.get())
 				.isTrue();
-		Thread thread = writer.get();
-		assertThat(thread).isNotNull();
 		thread.join(TimeUnit.SECONDS.toMillis(30));
 		assertThat(thread.isAlive()).as("the writer returns once its revision is applied").isFalse();
 		assertThat(writeFailure.get()).isNull();

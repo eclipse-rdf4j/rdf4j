@@ -145,31 +145,16 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	 */
 	private volatile boolean buildingOverEmptySnapshot;
 	private final ThreadLocal<Integer> logicalCommitBatchDepth = ThreadLocal.withInitial(() -> 0);
+	// Test seams that are not interleaving hooks: fault injection consumed by the worker, an observable count of
+	// writers waiting for admission, and the switch that lets a committer wait behind a paused (stepped) applier.
+	private final AtomicReference<RuntimeException> injectedBuildFailure = new AtomicReference<>();
+	private final AtomicInteger injectedBuildFailuresLeft = new AtomicInteger();
+	private final AtomicReference<RuntimeException> injectedAcquireFailure = new AtomicReference<>();
+	private final AtomicReference<RuntimeException> injectedPrepareFailure = new AtomicReference<>();
+	private final AtomicInteger admissionWaiters = new AtomicInteger();
+	private volatile boolean committersWaitWhilePaused;
 	private volatile CompletableFuture<Void> startupScheduling;
 	private volatile boolean closed;
-
-	// Interleaving hooks of the retired lifecycle, fired at the closest equivalent points of the applier design and
-	// never under a lock. They stay until the tests that set them are rewritten on the stepping applier (plan
-	// milestone 5). The compaction hooks fire on the worker once a merge or fold candidate exists; catchUpWaitForTest,
-	// afterWriteAdmissionClosedForTest, beforeApplyDrainForTest and beforeQuiescentBuildForTest have no equivalent and
-	// never fire.
-	volatile Runnable beforeBuildSnapshotForTest;
-	volatile Runnable afterBuildSnapshotForTest;
-	volatile Runnable afterBuildScanForTest;
-	volatile Runnable catchUpWaitForTest;
-	volatile Runnable beforeOnlineCatchUpForTest;
-	volatile Runnable afterWriteAdmissionClosedForTest;
-	volatile Runnable beforeWriteAdmissionWaitForTest;
-	volatile Runnable beforePagedCsfPublicationForTest;
-	volatile Runnable beforeDeltaCompactionPublicationForTest;
-	volatile Runnable beforeApplyQueueAdmissionForTest;
-	volatile Runnable beforeApplyDrainForTest;
-	volatile Runnable beforePreparationForTest;
-	volatile Runnable afterPreparationForTest;
-	volatile Runnable beforePreparedFinalizeWaitForTest;
-	volatile Runnable beforeExactViewReturnForTest;
-	volatile Runnable beforeQuiescentBuildForTest;
-	volatile Runnable beforeQuiescentRebuildStepForTest;
 
 	LmdbDirectAdjacencyStore(TripleStore tripleStore, ValueStore valueStore, AtomicBoolean storeTxnStarted,
 			LmdbDirectAdjacencyOptions options) {
@@ -205,12 +190,6 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 					LmdbDirectAdjacencyOptions.MIN_EXPLICIT_BYTES);
 		}
 		applier.start();
-	}
-
-	private static void runHook(Runnable hook) {
-		if (hook != null) {
-			hook.run();
-		}
 	}
 
 	private static ThreadFactory daemonThreads(String name) {
@@ -351,12 +330,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	 * snapshot is acquired. Its sealed deltas reach this index only through the TripleStore's commit log.
 	 */
 	LmdbDirectAdjacencyCommitDelta newCommitDelta() {
-		// beforePreparationForTest fires on the capture thread before each full capture batch and before the seal;
-		// beforeApplyQueueAdmissionForTest fires there once the sealed record is visible to readers, the point where
-		// the retired design handed a sealed delta to its apply queue.
 		return new LmdbDirectAdjacencyCommitDelta(account, options.commitMaxBytes(), storeTxnDirty, captureExecutor,
-				() -> runHook(beforePreparationForTest), () -> runHook(beforeApplyQueueAdmissionForTest),
-				() -> account);
+				null, null, () -> account);
 	}
 
 	/**
@@ -414,8 +389,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	 */
 	private void awaitCommitPublication() {
 		throwIfStrictMaintenanceFailed();
-		runHook(beforePreparedFinalizeWaitForTest);
-		if (scheduler.isPaused()) {
+		if (scheduler.isPaused() && !committersWaitWhilePaused) {
 			// A paused applier is a test condition; waiting for publication would deadlock the committing test thread.
 			// Tests pause the applier to observe the pending window, which begins once the record is sealed.
 			awaitHeadSealed(10, TimeUnit.SECONDS);
@@ -492,10 +466,15 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		if (closed) {
 			return;
 		}
-		if (!applier.writeAdmitted()) {
-			runHook(beforeWriteAdmissionWaitForTest);
+		if (applier.writeAdmitted()) {
+			return;
 		}
-		applier.awaitWriteAdmission();
+		admissionWaiters.incrementAndGet();
+		try {
+			applier.awaitWriteAdmission();
+		} finally {
+			admissionWaiters.decrementAndGet();
+		}
 	}
 
 	void endBackingWrite() {
@@ -516,7 +495,6 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		if (closed || options.memoryRefused()) {
 			return;
 		}
-		runHook(beforeQuiescentRebuildStepForTest);
 		applier.requestRebuild();
 	}
 
@@ -787,6 +765,36 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		return applier.compactionInFlight();
 	}
 
+	/** The next {@code times} builds fail with {@code failure} once their scan completes (0 clears the injection). */
+	void injectBuildFailureForTest(RuntimeException failure, int times) {
+		injectedBuildFailuresLeft.set(times);
+		injectedBuildFailure.set(times > 0 ? failure : null);
+	}
+
+	/** The next generation preparation on a worker fails with {@code failure} before it allocates anything. */
+	void injectPrepareFailureForTest(RuntimeException failure) {
+		injectedPrepareFailure.set(failure);
+	}
+
+	/** The next exact acquisition throws {@code failure} after the applier handed out its state. */
+	void injectAcquireFailureForTest(RuntimeException failure) {
+		injectedAcquireFailure.set(failure);
+	}
+
+	/** Writers currently blocked in {@link #awaitWriteAdmission()}. */
+	int admissionWaitersForTest() {
+		return admissionWaiters.get();
+	}
+
+	/**
+	 * Lets committers wait for publication while the applier is paused, so a stepping test can observe a committer
+	 * blocked until it releases the unit that applies its revision. Off by default: a paused applier otherwise means
+	 * the committing test thread must not wait.
+	 */
+	void committersWaitWhilePausedForTest(boolean wait) {
+		committersWaitWhilePaused = wait;
+	}
+
 	/** Asks the applier to fold every generation without waiting; a stepping test consumes the units itself. */
 	void requestFoldForTest() {
 		applier.requestFold();
@@ -801,6 +809,15 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	/** Folds every published generation into a new base now, regardless of the policy, and waits for the result. */
 	void consolidateNowForTest() {
 		applier.requestFold();
+		awaitCompactionForTest();
+	}
+
+	/**
+	 * Folds only the first {@code prefixCount} generations now and keeps the rest as the suffix: the deterministic way
+	 * to obtain a generation that was prepared against the previous base (a foreign source registry).
+	 */
+	void consolidatePrefixNowForTest(int prefixCount) {
+		applier.requestFold(prefixCount);
 		awaitCompactionForTest();
 	}
 
@@ -1139,13 +1156,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			LmdbInMemoryAdjacencyIndex index;
 			long baseRevision;
 			try {
-				runHook(beforeBuildSnapshotForTest);
 				try (LmdbAdjacencyBuildTxnFamily sourceFamily = new LmdbAdjacencyBuildTxnFamily(tripleStore,
 						options.buildThreads())) {
 					baseRevision = sourceFamily.snapshotRevision();
 					hold.narrowTo(baseRevision);
 					buildingOverEmptySnapshot = tripleStore.isEmpty();
-					runHook(afterBuildSnapshotForTest);
 					// Resolve selected predicates only after pinning: a dictionary ID always commits before the
 					// triples that use it, so every selected predicate with rows in this snapshot resolves.
 					LmdbAdjacencyCoverage coverage = resolveCoverage();
@@ -1168,8 +1183,13 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			LmdbAdjacencyOverlaySet overlays = null;
 			long applied = baseRevision;
 			try {
-				runHook(afterBuildScanForTest);
-				runHook(beforeOnlineCatchUpForTest);
+				RuntimeException injected = injectedBuildFailure.get();
+				if (injected != null && injectedBuildFailuresLeft.getAndUpdate(left -> Math.max(0, left - 1)) > 0) {
+					if (injectedBuildFailuresLeft.get() == 0) {
+						injectedBuildFailure.set(null);
+					}
+					throw injected;
+				}
 				for (long revision = baseRevision + 1; revision <= log.headRevision(); revision++) {
 					AdjacencyCommitLog.Record record = log.record(revision);
 					if (record == null) {
@@ -1201,7 +1221,6 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				rememberUnexpectedMaintenanceFailure(failure);
 				throw failure;
 			}
-			buildingOverEmptySnapshot = false;
 			metrics.recordBuildCompleted();
 			logger.info(
 					"Built in-memory adjacency structures: format=paged-csf, snapshotRevision={}, replayedThrough={}, {}",
@@ -1218,11 +1237,13 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			}
 			long started = System.nanoTime();
 			try {
+				RuntimeException injected = injectedPrepareFailure.getAndSet(null);
+				if (injected != null) {
+					throw injected;
+				}
 				long[] resolvedSelected = sealed.hasCapturedCoverage() ? sealed.resolvedSelectedPredicates()
 						: captureResolvedSelectedPredicates(base);
-				PreparedApply prepared = prepareApply(sealed, base, overlays, resolvedSelected);
-				runHook(afterPreparationForTest);
-				return prepared;
+				return prepareApply(sealed, base, overlays, resolvedSelected);
 			} catch (RuntimeException | Error failure) {
 				rememberUnexpectedMaintenanceFailure(failure);
 				throw failure;
@@ -1312,7 +1333,6 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			try {
 				LmdbAdjacencyDeltaGeneration merged = mergeGenerationRange(base, overlays, from, toInclusive + 1);
 				metrics.recordDeltaMerge(inputRetainedBytes, merged.retainedBytes());
-				runHook(beforeDeltaCompactionPublicationForTest);
 				return new PreparedApply(merged, overlays.contextCatalog(), false, overlays.extraSelectedSnapshot(),
 						null, null, null);
 			} catch (RuntimeException | Error failure) {
@@ -1381,12 +1401,6 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 						+ "{} newly allocated native bytes", result.foldedGenerationCount(), result.foldedRowCount(),
 						result.rewrite().sharedShardCount(), result.rewrite().replacedShardCount(),
 						result.rewrite().allocatedNativeBytes());
-				try {
-					runHook(beforePagedCsfPublicationForTest);
-				} catch (RuntimeException | Error failure) {
-					result.base().close();
-					throw failure;
-				}
 				return new Fold<>(result.base(), prefix.generation(prefixCount - 1).revision());
 			} catch (RuntimeException | Error failure) {
 				if (!(failure instanceof LmdbAdjacencyMemoryRefusedException)) {
@@ -1518,6 +1532,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			if (base != null && base != previous.base()) {
 				// a freshly built base supersedes any corrupt projection, so this capability comes back
 				nodePredicateInconsistent.set(false);
+				buildingOverEmptySnapshot = false;
 				logger.info("Published in-memory adjacency structures: format=paged-csf, snapshotRevision={}, "
 						+ "appliedRevision={}, {}", base.baseRevision(), next.appliedRevision(),
 						account.memoryUsageSummary());
@@ -1785,7 +1800,10 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				pending[i] = (PendingTable) acquisition.pending().get(i);
 			}
 			LmdbAdjacencyPublishedState projection = project(acquisition.state(), pending);
-			runHook(beforeExactViewReturnForTest);
+			RuntimeException injected = injectedAcquireFailure.getAndSet(null);
+			if (injected != null) {
+				throw injected;
+			}
 			LmdbAdjacencyReadView view = LmdbAdjacencyReadView.exact(snapshotRevision, acquisition, projection,
 					this::onViewClosed, lifetimeId);
 			activeViews.incrementAndGet();

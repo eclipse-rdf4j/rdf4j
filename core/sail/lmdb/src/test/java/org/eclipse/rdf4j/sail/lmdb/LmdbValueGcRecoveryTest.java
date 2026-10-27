@@ -229,7 +229,6 @@ public class LmdbValueGcRecoveryTest {
 			firstWriter.join(10_000);
 			assertThat(secondWriter.isAlive()).isFalse();
 			assertThat(firstWriter.isAlive()).isFalse();
-			store.getBackingStore().directAdjacencyStore().beforeWriteAdmissionWaitForTest = null;
 			store.shutDown();
 		}
 	}

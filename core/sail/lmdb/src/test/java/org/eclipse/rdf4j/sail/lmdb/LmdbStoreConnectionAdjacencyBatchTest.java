@@ -24,9 +24,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_open;
 import java.io.File;
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -48,7 +46,6 @@ class LmdbStoreConnectionAdjacencyBatchTest {
 		System.setProperty(property, "true");
 		LmdbStore sail = new LmdbStore(dataDir,
 				new LmdbStoreConfig("spoc,posc,ospc").setDirectAdjacencyEnabled(true));
-		CountDownLatch releaseDrain = new CountDownLatch(1);
 		try {
 			sail.init();
 			LmdbDirectAdjacencyStore adjacency = sail.getBackingStore().directAdjacencyStore();
@@ -57,22 +54,9 @@ class LmdbStoreConnectionAdjacencyBatchTest {
 			long revisionBefore = adjacency.snapshotMetrics().currentDataRevision;
 			TripleStore triples = sail.getBackingStore().getTripleStore();
 			long nativeGenerationBefore = triples.getNativeCommitGeneration();
-			CountDownLatch physicalCommits = new CountDownLatch(1);
-			adjacency.beforePreparedFinalizeWaitForTest = physicalCommits::countDown;
-
-			CountDownLatch firstDrainReached = new CountDownLatch(1);
-			AtomicBoolean firstDrain = new AtomicBoolean(true);
-			adjacency.beforePreparationForTest = () -> {
-				if (firstDrain.compareAndSet(true, false)) {
-					firstDrainReached.countDown();
-					try {
-						releaseDrain.await();
-					} catch (InterruptedException e) {
-						Thread.currentThread().interrupt();
-						throw new AssertionError(e);
-					}
-				}
-			};
+			// the applier is paused: the native commit lands, and the committer waits for the publication it owes
+			adjacency.pauseApplierForTest(true);
+			adjacency.committersWaitWhilePausedForTest(true);
 
 			CompletableFuture<Void> commit = CompletableFuture.runAsync(() -> {
 				ValueFactory values = SimpleValueFactory.getInstance();
@@ -87,15 +71,16 @@ class LmdbStoreConnectionAdjacencyBatchTest {
 				}
 			});
 
-			assertThat(firstDrainReached.await(30, TimeUnit.SECONDS)).isTrue();
+			assertThat(ApplierStepping.awaitCondition(
+					() -> triples.getNativeCommitGeneration() == nativeGenerationBefore + 1, 30, TimeUnit.SECONDS))
+							.as("the native commit landed")
+							.isTrue();
 			try {
-				assertThat(physicalCommits.await(10, TimeUnit.SECONDS)).isTrue();
 				assertThat(commit.isDone()).isFalse();
-				assertThat(triples.getNativeCommitGeneration()).isEqualTo(nativeGenerationBefore + 1);
 				assertCommittedNativePlanes(sail, "urn:test:explicit", "urn:test:inferred",
 						"urn:test:predicate", "urn:test:explicit-object", "urn:test:inferred-object");
 			} finally {
-				releaseDrain.countDown();
+				adjacency.pauseApplierForTest(false);
 			}
 			commit.get(30, TimeUnit.SECONDS);
 			assertThat(triples.getDataRevision()).isEqualTo(revisionBefore + 1);
@@ -113,7 +98,6 @@ class LmdbStoreConnectionAdjacencyBatchTest {
 			assertThat(adjacency.snapshotMetrics().appliedRevision)
 					.isEqualTo(adjacency.snapshotMetrics().currentDataRevision);
 		} finally {
-			releaseDrain.countDown();
 			sail.shutDown();
 			if (previous == null) {
 				System.clearProperty(property);

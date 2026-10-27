@@ -33,7 +33,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -286,26 +285,6 @@ class LmdbDirectAdjacencyQueryTest {
 		}
 	}
 
-	private void awaitPendingPublication(CountDownLatch pendingPublished) {
-		try {
-			assertThat(pendingPublished.await(30, TimeUnit.SECONDS))
-					.as("pending row publication should precede snapshot acquisition")
-					.isTrue();
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new AssertionError("interrupted while waiting for pending row publication", e);
-		}
-	}
-
-	private static void awaitQueueAdmissionRelease(CountDownLatch releaseQueueAdmission) {
-		try {
-			releaseQueueAdmission.await();
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new AssertionError("interrupted while holding queue admission", e);
-		}
-	}
-
 	private void openPreferStore() throws IOException {
 		openStore(DirectAdjacencyMode.PREFER, null, null);
 	}
@@ -382,35 +361,15 @@ class LmdbDirectAdjacencyQueryTest {
 		direct = backing.directAdjacencyStore();
 		awaitDirectAdjacencyReady();
 		long buildsBefore = direct.snapshotMetrics().buildsCompleted;
-		// The selected predicate's first statement commits after the build has started but before it pins its
+		// The selected predicate's first statement commits after the rebuild was requested but before it pins its
 		// snapshot, as on CI, where the store's first commit raced its first build.
-		CountDownLatch committed = new CountDownLatch(1);
-		AtomicReference<Throwable> commitFailure = new AtomicReference<>();
-		direct.beforeBuildSnapshotForTest = () -> {
-			direct.beforeBuildSnapshotForTest = null;
-			Thread writer = new Thread(() -> {
-				try (RepositoryConnection conn = repo.getConnection()) {
-					conn.add(S1, P1, O1);
-				} catch (Throwable failure) {
-					commitFailure.set(failure);
-				} finally {
-					committed.countDown();
-				}
-			});
-			writer.start();
-			try {
-				assertThat(committed.await(20, TimeUnit.SECONDS)).as("the racing commit completes").isTrue();
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-			}
-		};
-		direct.scheduleQuiescentRebuild();
-		assertThat(committed.await(30, TimeUnit.SECONDS)).isTrue();
-		assertThat(commitFailure.get()).isNull();
-		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-		while (direct.snapshotMetrics().buildsCompleted == buildsBefore && System.nanoTime() < deadline) {
-			Thread.onSpinWait();
+		ApplierStepping.holdBuildBeforePin(direct);
+		try (RepositoryConnection conn = repo.getConnection()) {
+			conn.add(S1, P1, O1);
 		}
+		ApplierStepping.releaseBuild(direct);
+		assertThat(ApplierStepping.awaitCondition(() -> direct.snapshotMetrics().buildsCompleted > buildsBefore, 30,
+				TimeUnit.SECONDS)).as("the rebuild completed").isTrue();
 		awaitDirectAdjacencyReady();
 		String base = sail.getDirectAdjacencyReadinessDescription();
 		try (RepositoryConnection conn = repo.getConnection()) {
@@ -1351,15 +1310,9 @@ class LmdbDirectAdjacencyQueryTest {
 		RuntimeException acquireFailure = new IllegalStateException("synthetic adjacency acquisition failure");
 		TxnManager txnManager = backing.getTripleStore().getTxnManager();
 		int availableReadersBefore = txnManager.availableReadTxnSlots(1_024, 0);
-		direct.beforeExactViewReturnForTest = () -> {
-			throw acquireFailure;
-		};
-		try {
-			assertThatThrownBy(() -> backing.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT))
-					.isSameAs(acquireFailure);
-		} finally {
-			direct.beforeExactViewReturnForTest = null;
-		}
+		direct.injectAcquireFailureForTest(acquireFailure);
+		assertThatThrownBy(() -> backing.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT))
+				.isSameAs(acquireFailure);
 
 		assertThat(direct.snapshotMetrics().activeViews)
 				.as("the failed adjacency acquisition releases its provisional view")
@@ -2575,18 +2528,10 @@ class LmdbDirectAdjacencyQueryTest {
 				assertThat(emptySnapshot.source.exactPredicateCount(p2)).hasValue(0L);
 				assertThat(emptySnapshot.rows(-1, p2, -1, -1)).isEmpty();
 				direct.pauseApplierForTest(true);
-				CountDownLatch pendingPublished = new CountDownLatch(1);
-				CountDownLatch releaseQueueAdmission = new CountDownLatch(1);
-				Runnable previousQueueAdmissionHook = direct.beforeApplyQueueAdmissionForTest;
-				direct.beforeApplyQueueAdmissionForTest = () -> {
-					pendingPublished.countDown();
-					awaitQueueAdmissionRelease(releaseQueueAdmission);
-				};
 				try {
 					try (RepositoryConnection connection = repo.getConnection()) {
 						connection.add(S2, P2, O2);
 					}
-					awaitPendingPublication(pendingPublished);
 
 					assertThat(oldSnapshot.source.exactPredicateCount(p2))
 							.as("a retained old source stays exact while a newer committed row is pending")
@@ -2608,8 +2553,6 @@ class LmdbDirectAdjacencyQueryTest {
 							.as("a pending committed insertion must not be pruned by a stale empty count")
 							.isEqualTo(prunesBeforePendingQuery);
 				} finally {
-					releaseQueueAdmission.countDown();
-					direct.beforeApplyQueueAdmissionForTest = previousQueueAdmissionHook;
 					direct.pauseApplierForTest(false);
 					direct.awaitCommitCleanupForTest();
 				}
@@ -2847,43 +2790,24 @@ class LmdbDirectAdjacencyQueryTest {
 		System.setProperty(LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_INCOMING_PROPERTY, "true");
 		openPreferStore();
 		direct.pauseApplierForTest(true);
-		CountDownLatch firstPendingPublished = new CountDownLatch(1);
-		CountDownLatch releaseFirstQueueAdmission = new CountDownLatch(1);
-		CountDownLatch secondPendingPublished = new CountDownLatch(1);
-		CountDownLatch releaseSecondQueueAdmission = new CountDownLatch(1);
-		Runnable previousQueueAdmissionHook = direct.beforeApplyQueueAdmissionForTest;
-		direct.beforeApplyQueueAdmissionForTest = () -> {
-			firstPendingPublished.countDown();
-			awaitQueueAdmissionRelease(releaseFirstQueueAdmission);
-		};
 		try {
 			try (RepositoryConnection connection = repo.getConnection()) {
 				connection.add(F.createIRI("http://example.org/unrelated"), P2, O2);
 			}
-			awaitPendingPublication(firstPendingPublished);
-			releaseFirstQueueAdmission.countDown();
 			try (var dataset = dataset()) {
 				assertThat(dataset.source.indexName(-1, -1, o1, -1)).isEqualTo("direct-psoc");
 				long hitsBefore = direct.snapshotMetrics().lookupHits;
 				assertThat(CloseableDataset.collect(dataset.source.statements(-1, -1, o1, -1))).hasSize(3);
 				assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
 			}
-			direct.beforeApplyQueueAdmissionForTest = () -> {
-				secondPendingPublished.countDown();
-				awaitQueueAdmissionRelease(releaseSecondQueueAdmission);
-			};
 			try (RepositoryConnection connection = repo.getConnection()) {
 				connection.add(F.createIRI("http://example.org/touches-o1"), P3, O1);
 			}
-			awaitPendingPublication(secondPendingPublished);
 			try (var touched = dataset()) {
 				assertThat(touched.source.indexName(-1, -1, o1, -1))
 						.isEqualTo(backing.getTripleStore().getIndexName(-1, -1, o1, -1));
 			}
 		} finally {
-			releaseFirstQueueAdmission.countDown();
-			releaseSecondQueueAdmission.countDown();
-			direct.beforeApplyQueueAdmissionForTest = previousQueueAdmissionHook;
 			direct.pauseApplierForTest(false);
 		}
 	}
@@ -2893,19 +2817,10 @@ class LmdbDirectAdjacencyQueryTest {
 		System.setProperty(LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "false");
 		openPreferStore("spco,spoc,posc");
 		direct.pauseApplierForTest(true);
-		CountDownLatch pendingPublished = new CountDownLatch(1);
-		CountDownLatch releaseQueueAdmission = new CountDownLatch(1);
-		Runnable previousQueueAdmissionHook = direct.beforeApplyQueueAdmissionForTest;
-		direct.beforeApplyQueueAdmissionForTest = () -> {
-			pendingPublished.countDown();
-			awaitQueueAdmissionRelease(releaseQueueAdmission);
-		};
 		try {
 			try (RepositoryConnection connection = repo.getConnection()) {
 				connection.add(F.createIRI("http://example.org/unrelated"), P2, O2);
 			}
-			awaitPendingPublication(pendingPublished);
-			releaseQueueAdmission.countDown();
 			try (var dataset = dataset()) {
 				assertThat(backing.getTripleStore().getIndexName(s1, p1, -1, -1)).isEqualTo("spco");
 				assertThat(dataset.source.indexName(s1, p1, -1, -1)).isEqualTo("direct-spoc");
@@ -2915,15 +2830,12 @@ class LmdbDirectAdjacencyQueryTest {
 				assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
 			}
 		} finally {
-			releaseQueueAdmission.countDown();
-			direct.beforeApplyQueueAdmissionForTest = previousQueueAdmissionHook;
 			direct.pauseApplierForTest(false);
 		}
 	}
 
-	@ParameterizedTest
-	@ValueSource(booleans = { false, true })
-	void readinessWaitsForAnUnpublishedCommitToReachTheApplyQueue(boolean delayCommitFinalization) throws Exception {
+	@Test
+	void readinessWaitsForAnUnpublishedCommitToReachTheApplyQueue() throws Exception {
 		System.setProperty(LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "false");
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
 				.setDirectAdjacencyEnabled(true)
@@ -2946,64 +2858,37 @@ class LmdbDirectAdjacencyQueryTest {
 		assertThat(direct).isNotNull();
 		awaitDirectAdjacencyReady();
 
-		CountDownLatch admissionStarted = new CountDownLatch(1);
-		CountDownLatch releaseAdmission = new CountDownLatch(1);
-		CountDownLatch finalizationStarted = new CountDownLatch(1);
-		CountDownLatch releaseFinalization = new CountDownLatch(1);
-		CountDownLatch readinessStarted = new CountDownLatch(1);
-		Runnable previousAdmissionHook = direct.beforePreparationForTest;
-		Runnable previousFinalizationHook = direct.beforePreparedFinalizeWaitForTest;
-		ExecutorService executor = Executors.newFixedThreadPool(2);
-		// the preparation of the committed record is the hand-off that readiness must wait behind
-		direct.beforePreparationForTest = () -> {
-			admissionStarted.countDown();
-			awaitQueueAdmissionRelease(releaseAdmission);
-		};
-		if (delayCommitFinalization) {
-			direct.beforePreparedFinalizeWaitForTest = () -> {
-				finalizationStarted.countDown();
-				awaitQueueAdmissionRelease(releaseFinalization);
-			};
-		}
+		// the paused applier leaves the committed record sealed but unapplied: readiness must wait behind it
+		direct.pauseApplierForTest(true);
+		ExecutorService executor = Executors.newSingleThreadExecutor();
 		try {
-			Future<?> commit = executor.submit(() -> {
-				try (RepositoryConnection connection = repo.getConnection()) {
-					connection.add(F.createIRI("http://example.org/pending"), P2, O2);
-				}
-			});
-			awaitPendingPublication(admissionStarted);
-			if (delayCommitFinalization) {
-				awaitPendingPublication(finalizationStarted);
-				assertThat(commit.isDone()).isFalse();
+			try (RepositoryConnection connection = repo.getConnection()) {
+				connection.add(F.createIRI("http://example.org/pending"), P2, O2);
 			}
-			releaseFinalization.countDown();
-			commit.get(30, TimeUnit.SECONDS);
 			LmdbAdjacencyMetrics.Snapshot handoff = direct.snapshotMetrics();
 			assertThat(handoff.currentDataRevision).as(direct.publicationDiagnostics())
 					.isGreaterThan(handoff.appliedRevision);
+			CountDownLatch readinessStarted = new CountDownLatch(1);
 			Future<Boolean> readiness = executor.submit(() -> {
 				readinessStarted.countDown();
 				return sail.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS);
 			});
 			assertThat(readinessStarted.await(30, TimeUnit.SECONDS)).isTrue();
-			Boolean readinessBeforeHandoff;
+			Boolean readinessBeforeApply;
 			try {
-				readinessBeforeHandoff = readiness.get(250, TimeUnit.MILLISECONDS);
+				readinessBeforeApply = readiness.get(250, TimeUnit.MILLISECONDS);
 			} catch (TimeoutException expected) {
-				readinessBeforeHandoff = null;
+				readinessBeforeApply = null;
 			}
-			assertThat(readinessBeforeHandoff)
-					.as("readiness must wait while a committed revision is still being handed to the applier: currentRevision="
+			assertThat(readinessBeforeApply)
+					.as("readiness must wait while a committed revision is unapplied: currentRevision="
 							+ handoff.currentDataRevision + ", appliedRevision=" + handoff.appliedRevision + ", "
 							+ direct.publicationDiagnostics())
 					.isNull();
-			releaseAdmission.countDown();
+			direct.pauseApplierForTest(false);
 			assertThat(readiness.get(60, TimeUnit.SECONDS)).isTrue();
 		} finally {
-			releaseFinalization.countDown();
-			releaseAdmission.countDown();
-			direct.beforePreparationForTest = previousAdmissionHook;
-			direct.beforePreparedFinalizeWaitForTest = previousFinalizationHook;
+			direct.pauseApplierForTest(false);
 			executor.shutdownNow();
 		}
 	}
@@ -3407,8 +3292,8 @@ class LmdbDirectAdjacencyQueryTest {
 	}
 
 	/**
-	 * Resuming the applier includes a preparation that is still running: the resume returns only once the committed
-	 * revision is applied, so a reader after it sees the doubly bound context rows from adjacency.
+	 * Resuming the applier returns only once the commit that landed while it was paused is applied, so a reader after
+	 * the resume sees the doubly bound context rows from adjacency.
 	 */
 	@Test
 	void resumingApplierWaitsForCommittedPreparation() throws Exception {
@@ -3416,15 +3301,7 @@ class LmdbDirectAdjacencyQueryTest {
 		System.setProperty(LmdbDirectAdjacencyStore.BOUND_PROBE_PROPERTY, "true");
 		openPreferStore();
 		direct.pauseApplierForTest(true);
-		CountDownLatch preparationReached = new CountDownLatch(1);
-		CountDownLatch releasePreparation = new CountDownLatch(1);
-		Runnable previousPreparation = direct.beforePreparationForTest;
-		direct.beforePreparationForTest = () -> {
-			preparationReached.countDown();
-			awaitQueueAdmissionRelease(releasePreparation);
-		};
 		ExecutorService executor = Executors.newSingleThreadExecutor();
-		Future<?> resume = null;
 		try {
 			try (RepositoryConnection connection = repo.getConnection()) {
 				connection.begin();
@@ -3432,31 +3309,15 @@ class LmdbDirectAdjacencyQueryTest {
 				connection.add(S1, P1, O1, G2);
 				connection.commit();
 			}
-			CountDownLatch resumeStarted = new CountDownLatch(1);
-			resume = executor.submit(() -> {
-				resumeStarted.countDown();
-				direct.pauseApplierForTest(false);
-			});
-			assertThat(resumeStarted.await(30, TimeUnit.SECONDS)).isTrue();
-			assertThat(preparationReached.await(30, TimeUnit.SECONDS)).isTrue();
-			Future<?> waitingResume = resume;
-			assertThatThrownBy(() -> waitingResume.get(1, TimeUnit.SECONDS))
-					.as("resume must include the running preparation before it returns")
-					.isInstanceOf(TimeoutException.class);
-			releasePreparation.countDown();
-			resume.get(30, TimeUnit.SECONDS);
+			long head = backing.getTripleStore().getDataRevision();
+			assertThat(direct.applierStateForTest().appliedRevision()).isLessThan(head);
+			executor.submit(() -> direct.pauseApplierForTest(false)).get(30, TimeUnit.SECONDS);
+			assertThat(direct.applierStateForTest().appliedRevision()).as("resume applied the pending commit")
+					.isEqualTo(head);
 			assertDoublyBoundContextProbes();
 		} finally {
-			releasePreparation.countDown();
-			direct.beforePreparationForTest = previousPreparation;
-			try {
-				if (resume != null) {
-					resume.get(30, TimeUnit.SECONDS);
-				}
-				direct.pauseApplierForTest(false);
-			} finally {
-				executor.shutdownNow();
-			}
+			direct.pauseApplierForTest(false);
+			executor.shutdownNow();
 		}
 	}
 
