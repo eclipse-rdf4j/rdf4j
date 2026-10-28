@@ -346,7 +346,7 @@ final class LmdbNativeParallelKernelRows {
 								runWorker(lowered, rootAdjacency, rootDomain, rootWildcard, rootScan, domains, source,
 										row,
 										ranges, scanQueue, output, kernelFactory, failure, cancelled, startup,
-										startupReported);
+										startupReported, replayContext);
 								if (failure.get() == null && !cancelled.get()) {
 									inputPhases.complete();
 								}
@@ -388,9 +388,9 @@ final class LmdbNativeParallelKernelRows {
 		}
 		Page first = null;
 		int endedWorkers = 0;
-		boolean interrupted = false;
+		InterruptedException coordinatorInterruption = null;
 		while (first == null && endedWorkers < threads && failure.get() == null
-				&& !row.cancellation.isCancellationRequested()) {
+				&& coordinatorInterruption == null && !row.cancellation.isCancellationRequested()) {
 			try {
 				Page page = output.poll(50, TimeUnit.MILLISECONDS);
 				if (page == Page.END) {
@@ -399,24 +399,24 @@ final class LmdbNativeParallelKernelRows {
 					first = page;
 				}
 			} catch (InterruptedException e) {
-				interrupted = true;
-				failure.compareAndSet(null, e);
+				coordinatorInterruption = e;
 			}
 		}
 		if (row.cancellation.isCancellationRequested()) {
-			abandon(sources, reservation, tasks, cancelled, interrupted);
+			abandon(sources, reservation, tasks, cancelled, coordinatorInterruption != null);
 			if (hashLedger != null) {
 				hashLedger.close();
 			}
+			rethrowWorkerFailureBeforeCancellation(failure.get(), coordinatorInterruption);
 			row.cancellation.check();
 			throw new AssertionError("published query cancellation did not throw");
 		}
-		if (first == null && failure.get() != null) {
-			abandon(sources, reservation, tasks, cancelled, interrupted);
+		if (first == null && (failure.get() != null || coordinatorInterruption != null)) {
+			abandon(sources, reservation, tasks, cancelled, coordinatorInterruption != null);
 			if (hashLedger != null) {
 				hashLedger.close();
 			}
-			Throwable problem = failure.get();
+			Throwable problem = retainCoordinatorInterruption(failure.get(), coordinatorInterruption);
 			LmdbNativeJaninoCodegen.rethrowValidationFailure(problem);
 			if (problem instanceof Error) {
 				throw (Error) problem;
@@ -444,6 +444,30 @@ final class LmdbNativeParallelKernelRows {
 			activationFailure.compareAndSet(null, problem);
 			throw problem;
 		}
+	}
+
+	/** A cancellation cannot replace a real failure that was published while the workers were being drained. */
+	private static void rethrowWorkerFailureBeforeCancellation(Throwable problem,
+			InterruptedException coordinatorInterruption) {
+		if (problem == null) {
+			return;
+		}
+		if (problem instanceof KernelQueryCancelledException) {
+			// Worker-owned query cancellation is handled by the worker; a retained signal is an independent failure.
+			problem = new QueryEvaluationException("parallel kernel worker failed", problem);
+		}
+		LmdbNativeParallelKernelAggregate.recoverOrRethrow(retainCoordinatorInterruption(problem,
+				coordinatorInterruption));
+	}
+
+	private static Throwable retainCoordinatorInterruption(Throwable workerFailure, InterruptedException interruption) {
+		if (workerFailure == null) {
+			return interruption;
+		}
+		if (workerFailure instanceof KernelQueryCancelledException) {
+			workerFailure = new QueryEvaluationException("parallel kernel worker failed", workerFailure);
+		}
+		return interruption == null ? workerFailure : addCloseFailure(workerFailure, interruption);
 	}
 
 	/** Cancels the worker group pre-handoff and releases every resource; close failures surface as errors only. */
@@ -480,8 +504,9 @@ final class LmdbNativeParallelKernelRows {
 		ArrayList<Page> pages = new ArrayList<>();
 		long totalRows = 0L;
 		int endedWorkers = 0;
-		boolean interrupted = false;
-		while (endedWorkers < threads && failure.get() == null && !row.cancellation.isCancellationRequested()) {
+		InterruptedException coordinatorInterruption = null;
+		while (endedWorkers < threads && failure.get() == null && coordinatorInterruption == null
+				&& !row.cancellation.isCancellationRequested()) {
 			try {
 				Page page = output.poll(50, TimeUnit.MILLISECONDS);
 				if (page == Page.END) {
@@ -491,28 +516,29 @@ final class LmdbNativeParallelKernelRows {
 					totalRows += page.count;
 				}
 			} catch (InterruptedException e) {
-				interrupted = true;
-				failure.compareAndSet(null, e);
+				coordinatorInterruption = e;
 			}
 		}
 		if (row.cancellation.isCancellationRequested()) {
-			abandon(sources, reservation, tasks, cancelled, interrupted);
+			abandon(sources, reservation, tasks, cancelled, coordinatorInterruption != null);
 			if (hashLedger != null) {
 				hashLedger.close();
 			}
+			rethrowWorkerFailureBeforeCancellation(failure.get(), coordinatorInterruption);
 			row.cancellation.check();
 			throw new AssertionError("published query cancellation did not throw");
 		}
-		if (failure.get() != null || totalRows > Integer.MAX_VALUE / Math.max(stride, 1)) {
-			if (failure.get() == null) {
+		if (failure.get() != null || coordinatorInterruption != null
+				|| totalRows > Integer.MAX_VALUE / Math.max(stride, 1)) {
+			if (failure.get() == null && coordinatorInterruption == null) {
 				failure.compareAndSet(null,
 						new LmdbNativeKernelPartitions.ParallelKernelDecline("ordered-result-too-large"));
 			}
-			abandon(sources, reservation, tasks, cancelled, interrupted);
+			abandon(sources, reservation, tasks, cancelled, coordinatorInterruption != null);
 			if (hashLedger != null) {
 				hashLedger.close();
 			}
-			Throwable problem = failure.get();
+			Throwable problem = retainCoordinatorInterruption(failure.get(), coordinatorInterruption);
 			LmdbNativeJaninoCodegen.rethrowValidationFailure(problem);
 			if (problem instanceof Error) {
 				throw (Error) problem;
@@ -573,7 +599,8 @@ final class LmdbNativeParallelKernelRows {
 			NativeLmdbQuerySource source, RowState consumerRow, Queue<long[]> ranges,
 			Queue<LmdbRootScanPartition> scanQueue,
 			ArrayBlockingQueue<Page> output, Supplier<JaninoKernel> kernelFactory, AtomicReference<Throwable> failure,
-			AtomicBoolean cancelled, CountDownLatch startup, AtomicBoolean startupReported)
+			AtomicBoolean cancelled, CountDownLatch startup, AtomicBoolean startupReported,
+			NativeExecutionContext.WorkerContext replayContext)
 			throws IOException, InterruptedException {
 		LmdbNativeKernelBindings bindings = lowered.bindings;
 		RowState workerRow = new RowState(source, consumerRow.layout, consumerRow.base,
@@ -731,6 +758,17 @@ final class LmdbNativeParallelKernelRows {
 				offer(output, Page.END, failure, cancelled);
 			}
 		} catch (KernelQueryCancelledException cancelledByQuery) {
+			if (cancelledByQuery.getSuppressed().length != 0
+					|| !(workerRow.cancellation.owns(cancelledByQuery)
+							|| replayContext.ownsCancellation(cancelledByQuery.origin()))) {
+				RuntimeException retained = cancelledByQuery == KernelQueryCancelledException.INSTANCE
+						? new QueryEvaluationException("parallel kernel worker failed", cancelledByQuery)
+						: cancelledByQuery;
+				primaryFailure = retained;
+				failure.compareAndSet(null, retained);
+				cancelled.set(true);
+				throw retained;
+			}
 			cancelled.set(true);
 		} catch (IOException | InterruptedException | RuntimeException | Error problem) {
 			primaryFailure = problem;
@@ -815,6 +853,11 @@ final class LmdbNativeParallelKernelRows {
 			return problem;
 		}
 		if (failure != problem) {
+			for (Throwable existing : failure.getSuppressed()) {
+				if (existing == problem) {
+					return failure;
+				}
+			}
 			failure.addSuppressed(problem);
 		}
 		return failure;
@@ -1103,8 +1146,9 @@ final class LmdbNativeParallelKernelRows {
 				activeIndex = 0;
 				Throwable problem = failure.get();
 				if (problem != null) {
-					close();
-					throwFailure(problem);
+					Throwable retained = KernelRuntime.closeResource((AutoCloseable) () -> close(false),
+							workerFailure(problem));
+					throwFailure(retained);
 				}
 				Page page = output.poll();
 				if (page == null) {
@@ -1139,9 +1183,31 @@ final class LmdbNativeParallelKernelRows {
 				row.cancellation.check();
 				LmdbNativeProbeDeadline.poll(0);
 			} catch (RuntimeException | Error problem) {
-				Throwable failure = KernelRuntime.closeResource(this, problem);
-				throwFailure(failure);
+				Throwable cancellation = KernelRuntime.closeResource((AutoCloseable) () -> close(false), problem);
+				Throwable workerProblem = failure.get();
+				if (workerProblem != null) {
+					Throwable workerFailure = workerFailure(workerProblem);
+					// Closing drains the workers, so a failure can be published after cancellation was observed.
+					// Preserve any independent cleanup failure as well as the worker's original failure.
+					if (cancellation != problem) {
+						addCloseFailure(workerFailure, cancellation);
+					} else {
+						for (Throwable cleanup : cancellation.getSuppressed()) {
+							addCloseFailure(workerFailure, cleanup);
+						}
+					}
+					throwFailure(workerFailure);
+				}
+				throwFailure(cancellation);
 			}
+		}
+
+		private static Throwable workerFailure(Throwable problem) {
+			if (problem instanceof KernelQueryCancelledException) {
+				// A retained worker signal was already classified as a failure, not this cursor's cancellation.
+				return new IOException("parallel kernel worker failed", problem);
+			}
+			return problem;
 		}
 
 		private static void throwFailure(Throwable problem) throws IOException {
@@ -1159,6 +1225,10 @@ final class LmdbNativeParallelKernelRows {
 
 		@Override
 		public void close() {
+			close(true);
+		}
+
+		private void close(boolean reportWorkerFailure) {
 			if (closed) {
 				awaitTasks(tasks);
 				return;
@@ -1177,6 +1247,17 @@ final class LmdbNativeParallelKernelRows {
 			reservation.close();
 			if (hashLedger != null) {
 				hashLedger.close();
+			}
+			Throwable workerProblem = failure.get();
+			if (reportWorkerFailure && workerProblem != null) {
+				Throwable reported = workerFailure(workerProblem);
+				if (cleanupFailure != null && cleanupFailure != workerProblem) {
+					addCloseFailure(reported, cleanupFailure);
+				}
+				if (!(reported instanceof RuntimeException) && !(reported instanceof Error)) {
+					reported = new QueryEvaluationException("parallel kernel worker failed", reported);
+				}
+				rethrowCloseFailure(reported);
 			}
 			if (cleanupFailure instanceof RuntimeException) {
 				throw (RuntimeException) cleanupFailure;

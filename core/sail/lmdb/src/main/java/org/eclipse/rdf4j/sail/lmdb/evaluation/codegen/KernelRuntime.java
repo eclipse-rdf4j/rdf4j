@@ -256,7 +256,7 @@ public final class KernelRuntime {
 	}
 
 	private static boolean isSuppressionDisabledControl(Throwable problem) {
-		return problem instanceof KernelCancelledException || problem instanceof KernelQueryCancelledException
+		return problem instanceof KernelCancelledException || problem == KernelQueryCancelledException.INSTANCE
 				|| problem instanceof KernelPeerCancelledException;
 	}
 
@@ -418,7 +418,7 @@ public final class KernelRuntime {
 		}
 		int cancellationReason = cancellation.cancellationReason();
 		if (cancellationReason == KernelCancellation.QUERY_CANCELLED) {
-			throw KernelQueryCancelledException.INSTANCE;
+			throw cancellation.queryCancellationException();
 		}
 		if (cancellationReason == KernelCancellation.PROBE_CANCELLED) {
 			throw KernelCancelledException.INSTANCE;
@@ -449,7 +449,7 @@ public final class KernelRuntime {
 		}
 		int reason = cancellation.cancellationReasonAtMaterializationLimit();
 		if (reason == KernelCancellation.QUERY_CANCELLED) {
-			throw KernelQueryCancelledException.INSTANCE;
+			throw cancellation.queryCancellationException();
 		}
 		if (reason == KernelCancellation.PEER_CANCELLED) {
 			throw KernelPeerCancelledException.INSTANCE;

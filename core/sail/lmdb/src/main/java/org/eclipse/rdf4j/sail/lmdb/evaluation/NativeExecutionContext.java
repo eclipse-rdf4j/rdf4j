@@ -90,6 +90,10 @@ final class NativeExecutionContext implements AutoCloseable {
 			this.borrowed = borrowed;
 		}
 
+		boolean ownsCancellation(Object owner) {
+			return context != null && context.ownsCancellation(owner);
+		}
+
 		/** Called inside the worker's existing failure and source-cleanup guards. */
 		QueryExecutionContext.Activation activate() {
 			ProducerScope producer = ProducerScope.enter(borrowed);

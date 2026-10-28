@@ -972,6 +972,166 @@ public class LmdbNativeParallelPipelinesTest {
 		}
 	}
 
+	@Test
+	@org.junit.jupiter.api.Timeout(60)
+	void connectionShutdownInterruptAfterResultCloseDrainsBackpressuredWorkers() throws Exception {
+		CountDownLatch workersEntered = new CountDownLatch(3);
+		CountDownLatch releaseWorkers = new CountDownLatch(1);
+		CountDownLatch delegateCloseEntered = new CountDownLatch(1);
+		CountDownLatch releaseDelegateClose = new CountDownLatch(1);
+		CountDownLatch shutdownInterruptIssued = new CountDownLatch(1);
+		CountDownLatch releaseShutdownClose = new CountDownLatch(1);
+		CountDownLatch workerScopesClosed = new CountDownLatch(4);
+		CountDownLatch backpressuredWorkerScopeClosed = new CountDownLatch(1);
+		AtomicBoolean gateRegistration = new AtomicBoolean();
+		AtomicInteger activations = new AtomicInteger();
+		AtomicReference<Thread> backpressuredWorker = new AtomicReference<>();
+		AtomicInteger delegateCloses = new AtomicInteger();
+		AtomicReference<Throwable> resultCloseFailure = new AtomicReference<>();
+		AtomicReference<Throwable> connectionCloseFailure = new AtomicReference<>();
+		AtomicReference<Thread> resultCloser = new AtomicReference<>();
+		AtomicReference<Thread> connectionCloser = new AtomicReference<>();
+		LmdbStore store = new LmdbStore(new File(dataDir, "shutdown-interrupt"),
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)) {
+			@Override
+			protected NotifyingSailConnection getConnectionInternal() throws SailException {
+				return new LmdbStoreConnection(this) {
+					@Override
+					protected void onShutdownRequested() {
+						super.onShutdownRequested();
+						if (gateRegistration.get()) {
+							shutdownInterruptIssued.countDown();
+							awaitCloseOrdering(releaseShutdownClose);
+						}
+					}
+
+					@Override
+					protected <T, E extends Exception> CloseableIteration<T> registerIteration(
+							CloseableIteration<T> iteration) {
+						if (!gateRegistration.get()) {
+							return super.registerIteration(iteration);
+						}
+						return super.registerIteration(new IterationWrapper<T>(iteration) {
+							@Override
+							protected void handleClose() {
+								delegateCloses.incrementAndGet();
+								delegateCloseEntered.countDown();
+								awaitRetirementGate(releaseDelegateClose);
+								super.handleClose();
+							}
+						});
+					}
+				};
+			}
+		};
+		SailRepository guarded = new SailRepository(store);
+		long cancellations = LmdbNativeParallelPipelines.CANCELLED_RUNS.get();
+		long failures = LmdbNativeParallelPipelines.WORKER_FAILURES.get();
+		try {
+			try (SailRepositoryConnection original = repository.getConnection();
+					SailRepositoryConnection copy = guarded.getConnection();
+					var statements = original.getStatements(null, null, null)) {
+				copy.begin();
+				copy.add(statements);
+				copy.commit();
+			}
+			try (SailRepositoryConnection connection = guarded.getConnection();
+					var scope = QueryExecutionContext.activateReplaySafepoint(() -> {
+					}, () -> {
+						return () -> {
+							int activation = activations.incrementAndGet();
+							if (activation == 1) {
+								backpressuredWorker.set(Thread.currentThread());
+							}
+							if (activation > 1) {
+								workersEntered.countDown();
+								awaitShutdownGate(releaseWorkers);
+							}
+							return () -> {
+								workerScopesClosed.countDown();
+								if (activation == 1) {
+									backpressuredWorkerScopeClosed.countDown();
+								}
+							};
+						};
+					})) {
+				gateRegistration.set(true);
+				SailTupleQuery query = (SailTupleQuery) connection.prepareTupleQuery(highFanoutChain());
+				query.setForcedLmdbExecutionStrategy(LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES);
+				try (TupleQueryResult result = query.evaluate()) {
+					assertThat(result.hasNext()).isTrue();
+					assertThat(result.next().getBindingNames())
+							.containsExactlyInAnyOrderElementsOf(List.of("subject", "value", "value2", "value3"));
+					awaitCloseOrdering(workersEntered);
+					awaitNativeOutputBackpressure(backpressuredWorker.get());
+
+					resultCloser.set(new Thread(() -> {
+						try {
+							result.close();
+						} catch (Throwable failure) {
+							resultCloseFailure.set(failure);
+						}
+					}, "parallel-result-owner-close"));
+					resultCloser.get().start();
+					resultCloser.get().join(10_000L);
+					assertThat(resultCloser.get().isAlive()).isFalse();
+					assertThat(resultCloseFailure.get()).isNull();
+					assertThat(delegateCloseEntered.getCount())
+							.as("result close defers native retirement while its admitted worker owns a read scope")
+							.isEqualTo(1L);
+
+					connectionCloser.set(new Thread(() -> {
+						try {
+							connection.close();
+						} catch (Throwable failure) {
+							connectionCloseFailure.set(failure);
+						}
+					}, "parallel-connection-shutdown"));
+					connectionCloser.get().start();
+					awaitCloseOrdering(shutdownInterruptIssued);
+					releaseWorkers.countDown();
+					awaitCloseOrdering(delegateCloseEntered);
+					releaseDelegateClose.countDown();
+					awaitCloseOrdering(workerScopesClosed);
+					awaitCloseOrdering(backpressuredWorkerScopeClosed);
+					releaseShutdownClose.countDown();
+					connectionCloser.get().join(10_000L);
+					assertThat(connectionCloser.get().isAlive()).isFalse();
+					assertThat(connectionCloseFailure.get()).isNull();
+				}
+				gateRegistration.set(false);
+			}
+
+			assertThat(activations).hasValue(4);
+			assertThat(delegateCloses).hasValue(1);
+			assertThat(workerScopesClosed.getCount()).isZero();
+			assertThat(LmdbNativeParallelPipelines.CANCELLED_RUNS.get())
+					.as("a connection shutdown after owner close remains a cancelled run; worker failures: %s",
+							LmdbNativeParallelPipelines.WORKER_FAILURES.get() - failures)
+					.isEqualTo(cancellations + 1L);
+			assertThat(LmdbNativeParallelPipelines.WORKER_FAILURES.get())
+					.as("the shutdown interrupt belongs to the closed native result")
+					.isEqualTo(failures);
+			try (SailRepositoryConnection connection = guarded.getConnection()) {
+				assertThat(connection.size()).as("worker retirement leaves the store usable").isEqualTo(1_200L);
+			}
+			try (var tasks = LmdbNativeParallelPipelines.tryReserveTasks(true, 4)) {
+				assertThat(tasks).as("shutdown drains every native worker reservation").isNotNull();
+			}
+		} finally {
+			releaseWorkers.countDown();
+			releaseShutdownClose.countDown();
+			releaseDelegateClose.countDown();
+			if (resultCloser.get() != null) {
+				resultCloser.get().join(10_000L);
+			}
+			if (connectionCloser.get() != null) {
+				connectionCloser.get().join(10_000L);
+			}
+			guarded.shutDown();
+		}
+	}
+
 	private static void awaitWorkerReturnedToPool(Thread worker) {
 		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
 		while (System.nanoTime() < deadline) {
@@ -1025,6 +1185,50 @@ public class LmdbNativeParallelPipelinesTest {
 		} catch (InterruptedException failure) {
 			Thread.currentThread().interrupt();
 			throw new AssertionError(failure);
+		}
+	}
+
+	private static void awaitShutdownGate(CountDownLatch latch) {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20L);
+		boolean interrupted = false;
+		try {
+			while (latch.getCount() != 0L && System.nanoTime() < deadline) {
+				try {
+					latch.await(100L, TimeUnit.MILLISECONDS);
+				} catch (InterruptedException shutdownInterrupt) {
+					// These workers are test-gated before they own output backpressure. The selected worker is the one
+					// blocked in offerOutput; absorb interrupts here so the regression isolates that real wait site.
+					interrupted = true;
+				}
+			}
+			assertThat(latch.getCount()).as("the test must release its shutdown gate").isZero();
+		} finally {
+			if (interrupted) {
+				Thread.interrupted();
+			}
+		}
+	}
+
+	/** A shutdown interrupt must not turn this test-only retirement gate into a cleanup failure. */
+	private static void awaitRetirementGate(CountDownLatch latch) {
+		boolean interrupted = Thread.interrupted();
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10L);
+		try {
+			while (latch.getCount() != 0L) {
+				long remaining = deadline - System.nanoTime();
+				if (remaining <= 0L) {
+					throw new AssertionError("the test must release deferred delegate retirement");
+				}
+				try {
+					latch.await(remaining, TimeUnit.NANOSECONDS);
+				} catch (InterruptedException ignored) {
+					interrupted = true;
+				}
+			}
+		} finally {
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
 		}
 	}
 

@@ -13,12 +13,16 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -139,7 +143,7 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 		}
 
 		assertThat(query.isAlive()).isFalse();
-		assertThat(queryFailure.get()).isSameAs(KernelQueryCancelledException.INSTANCE);
+		assertOwnedQueryCancellation(queryFailure.get(), scenario.row.cancellation);
 		assertThat(source.children).hasSize(2);
 		for (ProbeSource child : source.children) {
 			assertThat(child.closedWhileWorkerActive)
@@ -399,7 +403,7 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 		assertThat(workersFinished.await(10L, TimeUnit.SECONDS)).isTrue();
 		assertThat(failure.get())
 				.as("a terminal query cancellation must outrank the earlier peer stop")
-				.isSameAs(KernelQueryCancelledException.INSTANCE);
+				.satisfies(problem -> assertOwnedQueryCancellation(problem, scenario.row.cancellation));
 		assertThat(result.get()).isNull();
 	}
 
@@ -549,7 +553,7 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 		SlotPlan plan = SlotPlan.union(scenario.plan, scenario.plan);
 		assertRowAdmission(plan, scenario);
 		assertThat(scenario.emitter.requestCancellation()).isTrue();
-		assertThat(catchThrowable(() -> openRows(plan, scenario))).isSameAs(KernelQueryCancelledException.INSTANCE);
+		assertOwnedQueryCancellation(catchThrowable(() -> openRows(plan, scenario)), scenario.row.cancellation);
 	}
 
 	@Test
@@ -601,7 +605,7 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 				}
 				Throwable problem = catchThrowable(cursor::next);
 				if (query) {
-					assertThat(problem).isSameAs(KernelQueryCancelledException.INSTANCE);
+					assertOwnedQueryCancellation(problem, scenario.row.cancellation);
 				} else {
 					assertThat(problem).isInstanceOfAny(LmdbNativeProbeDeadlineExceeded.class,
 							KernelCancelledException.class);
@@ -638,6 +642,307 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 		for (ProbeSource child : source.children) {
 			assertThat(child.closeCalls).hasValue(1);
 		}
+	}
+
+	@Test
+	void realRowWorkerFailureWinsOverLocalQueryCancellationDuringStartup() {
+		setProperty(LmdbNativeParallelKernelRows.ENABLED_PROPERTY, "true");
+		IllegalStateException injected = new IllegalStateException("row worker failed during query cancellation");
+		ProbeSource source = new ProbeSource(null, false);
+		Scenario scenario = scenario(source);
+		AtomicInteger activations = new AtomicInteger();
+
+		Throwable problem;
+		try (var replayScope = QueryExecutionContext.activateReplaySafepoint(() -> {
+		}, () -> () -> {
+			if (activations.incrementAndGet() == 1) {
+				assertThat(scenario.emitter.requestCancellation()).isTrue();
+				throw injected;
+			}
+			return () -> {
+			};
+		})) {
+			problem = catchThrowable(() -> LmdbNativeKernelExecution.proposeParallelRows(
+					SlotPlan.join(scenario.plan, scenario.plan), scenario.row, null, true).open());
+		}
+
+		assertThat(activations).as("both admitted worker scopes must settle").hasValue(2);
+		assertThat(source.children).hasSize(2);
+		for (ProbeSource child : source.children) {
+			assertThat(child.closeCalls).as("every worker snapshot must close").hasValue(1);
+			assertThat(child.closedWhileWorkerActive).isFalse();
+		}
+		assertThat(problem)
+				.as("after both worker snapshots close, the genuine worker failure must remain visible")
+				.isSameAs(injected);
+	}
+
+	@Test
+	void independentWorkerInterruptSurvivesCoordinatorInterruptDuringStartup() throws Exception {
+		setProperty(LmdbNativeParallelKernelRows.ENABLED_PROPERTY, "true");
+		ProbeSource source = new ProbeSource(null, false);
+		Scenario scenario = scenario(source);
+		SlotPlan plan = SlotPlan.join(scenario.plan, scenario.plan);
+		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, scenario.row, null);
+		assertThat(lowered).isNotNull();
+		CountDownLatch firstWorkerActivated = new CountDownLatch(1);
+		CountDownLatch firstWorkerSettled = new CountDownLatch(1);
+		CountDownLatch releaseSecondWorker = new CountDownLatch(1);
+		AtomicInteger activations = new AtomicInteger();
+		AtomicReference<Thread> firstWorker = new AtomicReference<>();
+		AtomicReference<Throwable> queryFailure = new AtomicReference<>();
+		Thread query = new Thread(() -> {
+			try (var replay = QueryExecutionContext.activateReplaySafepoint(() -> {
+			}, () -> () -> {
+				if (activations.getAndIncrement() == 0) {
+					firstWorker.set(Thread.currentThread());
+					firstWorkerActivated.countDown();
+					return firstWorkerSettled::countDown;
+				}
+				awaitLatch(releaseSecondWorker, "second worker was not released");
+				return () -> {
+				};
+			})) {
+				queryFailure.set(catchThrowable(() -> openParallelRowsWithKernel(lowered, plan, scenario,
+						kernel -> new JaninoKernel() {
+							@Override
+							public void bind(KernelContext context) {
+							}
+
+							@Override
+							public int fill(long[] rowBuffer, int maxRows) {
+								return 0;
+							}
+						})));
+			}
+		}, "row-coordinator-interrupt-test");
+
+		try {
+			query.start();
+			assertThat(firstWorkerActivated.await(10L, TimeUnit.SECONDS)).isTrue();
+			awaitThreadFrame(firstWorker.get(), "LmdbNativeParallelKernelRows", "runWorker", "await");
+			awaitThreadFrame(query, "LmdbNativeParallelKernelRows", "start", "poll");
+			query.interrupt();
+			awaitThreadFrame(query, "LmdbNativeParallelKernelRows", "awaitTasks", "await");
+			assertThat(scenario.row.cancellation.cancellationPublished())
+					.as("the coordinator interrupt was caught at its queue wait before draining")
+					.isFalse();
+			firstWorker.get().interrupt();
+			assertThat(firstWorkerSettled.await(10L, TimeUnit.SECONDS)).isTrue();
+		} finally {
+			releaseSecondWorker.countDown();
+			query.join(TimeUnit.SECONDS.toMillis(10L));
+			scenario.emitter.close();
+		}
+		assertThat(query.isAlive()).isFalse();
+		assertThat(source.children).hasSize(2);
+		for (ProbeSource child : source.children) {
+			assertThat(child.closeCalls).hasValue(1);
+			assertThat(child.closedWhileWorkerActive).isFalse();
+		}
+		assertThat(queryFailure.get()).isInstanceOf(QueryEvaluationException.class);
+		assertThat(queryFailure.get().getCause()).isInstanceOf(InterruptedException.class);
+		assertThat(Arrays.stream(queryFailure.get().getCause().getStackTrace())
+				.anyMatch(frame -> frame.getClassName().contains("LmdbNativeParallelKernelRows")
+						&& frame.getMethodName().equals("runWorker")))
+								.as("the propagated interruption came from the worker, not the coordinator wait")
+								.isTrue();
+	}
+
+	private static void awaitThreadFrame(Thread thread, String owner, String method, String waitingMethod)
+			throws InterruptedException {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10L);
+		while (thread.isAlive() && System.nanoTime() < deadline) {
+			StackTraceElement[] frames = thread.getStackTrace();
+			boolean ownerFrame = Arrays.stream(frames)
+					.anyMatch(frame -> frame.getClassName().contains(owner) && frame.getMethodName().equals(method));
+			boolean waitingFrame = Arrays.stream(frames).anyMatch(frame -> frame.getMethodName().equals(waitingMethod));
+			if (ownerFrame && waitingFrame) {
+				return;
+			}
+			Thread.sleep(1L);
+		}
+		throw new AssertionError("thread did not reach " + owner + "." + method + " / " + waitingMethod);
+	}
+
+	@Test
+	void realRowWorkerFailureAfterHandedOffPageWinsOverQueryCancellation() throws Exception {
+		setProperty(LmdbNativeParallelKernelRows.ENABLED_PROPERTY, "true");
+		IllegalStateException injected = new IllegalStateException("row worker failed after page handoff");
+		CountDownLatch secondFillEntered = new CountDownLatch(1);
+		CountDownLatch releaseFailure = new CountDownLatch(1);
+		CountDownLatch workerSnapshotsClosed = new CountDownLatch(2);
+		ProbeSource source = new ProbeSource(null, false, false, null, workerSnapshotsClosed);
+		Scenario scenario = scenario(source);
+		SlotPlan plan = SlotPlan.join(scenario.plan, scenario.plan);
+		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, scenario.row, null);
+		assertThat(lowered).isNotNull();
+		AtomicBoolean firstKernel = new AtomicBoolean();
+		RowCursor cursor = openParallelRowsWithKernel(lowered, plan, scenario, kernel -> {
+			boolean emitsPage = firstKernel.compareAndSet(false, true);
+			return new JaninoKernel() {
+				private int fills;
+
+				@Override
+				public void bind(KernelContext context) {
+				}
+
+				@Override
+				public int fill(long[] rowBuffer, int maxRows) {
+					if (!emitsPage) {
+						return 0;
+					}
+					if (fills++ == 0) {
+						Arrays.fill(rowBuffer, 0, lowered.kernel.stride(), 1L);
+						return 1;
+					}
+					secondFillEntered.countDown();
+					awaitLatch(releaseFailure, "query cancellation did not release the blocked row worker");
+					throw injected;
+				}
+			};
+		});
+
+		Throwable failure;
+		try (cursor) {
+			assertThat(cursor.next()).as("the first worker page must be handed to the query before the failure")
+					.isTrue();
+			assertThat(secondFillEntered.await(10L, TimeUnit.SECONDS))
+					.as("the emitting worker must be blocked in its next fill after the page is handed off")
+					.isTrue();
+			assertThat(scenario.emitter.requestCancellation()).isTrue();
+			releaseFailure.countDown();
+			assertThat(workerSnapshotsClosed.await(10L, TimeUnit.SECONDS))
+					.as("both worker snapshots must close after the independent failure is recorded")
+					.isTrue();
+			failure = catchThrowable(cursor::next);
+		} finally {
+			releaseFailure.countDown();
+			scenario.emitter.close();
+		}
+
+		assertThat(source.children).hasSize(2);
+		for (ProbeSource child : source.children) {
+			assertThat(child.closeCalls).as("both worker snapshots must be retired").hasValue(1);
+			assertThat(child.closedWhileWorkerActive).isFalse();
+			assertThat(child.probeCloseCalls).as("both worker probes must be released").hasValue(1);
+		}
+		try (LmdbNativeParallelPipelines.TaskReservation reservation = LmdbNativeParallelPipelines
+				.tryReserveTasks(false, 2)) {
+			assertThat(reservation).as("the failed cursor must drain and release its worker reservation").isNotNull();
+			assertThat(reservation.grantedWorkers()).isEqualTo(2);
+		}
+		assertThat(failure)
+				.as("after a page escapes, owned cancellation must not mask a genuine worker failure")
+				.isSameAs(injected);
+	}
+
+	@Test
+	void nativeRowsIterationPreservesKernelWorkerFailureWhenCancelled() throws Exception {
+		setProperty(LmdbNativeParallelKernelRows.ENABLED_PROPERTY, "true");
+		IllegalStateException injected = new IllegalStateException("kernel worker failed after owner cancellation");
+		CountDownLatch secondFillEntered = new CountDownLatch(1);
+		CountDownLatch releaseFailure = new CountDownLatch(1);
+		CountDownLatch snapshotsClosed = new CountDownLatch(2);
+		ProbeSource source = new ProbeSource(null, false, false, null, snapshotsClosed);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("subject", 0, "object", 1), null);
+		layout.freeze(List.of("subject", "object"));
+		SlotPlan plan = SlotPlan.join(aggregatePlan(), aggregatePlan());
+		AtomicBoolean firstKernel = new AtomicBoolean();
+		SlotPlan input = new SlotPlan() {
+			@Override
+			public RowCursor open(RowState row) throws IOException {
+				LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, row, null);
+				assertThat(lowered).isNotNull();
+				return openParallelRowsWithKernel(lowered, plan, row, kernel -> {
+					boolean emitsPage = firstKernel.compareAndSet(false, true);
+					return new JaninoKernel() {
+						private int fills;
+
+						@Override
+						public void bind(KernelContext context) {
+						}
+
+						@Override
+						public int fill(long[] rowBuffer, int maxRows) {
+							if (!emitsPage) {
+								return 0;
+							}
+							if (fills++ == 0) {
+								Arrays.fill(rowBuffer, 0, lowered.kernel.stride(), 1L);
+								return 1;
+							}
+							secondFillEntered.countDown();
+							awaitLatch(releaseFailure, "query cancellation did not release the blocked row worker");
+							throw injected;
+						}
+					};
+				});
+			}
+
+			@Override
+			public long producedMask() {
+				return plan.producedMask();
+			}
+		};
+		LmdbNativeEvaluationStrategy strategy = mock(LmdbNativeEvaluationStrategy.class);
+		when(strategy.forcedExecutionStrategyName()).thenReturn(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+		NativeRowsStep step = new NativeRowsStep(source, input, layout, new int[0], new String[0], false,
+				new int[0], new boolean[0], 0L, -1L, false, strategy, null, null, Set.of(), null, null);
+		NativeRowsIteration iteration = new NativeRowsIteration(step, source, EmptyBindingSet.getInstance());
+
+		Throwable observed;
+		try {
+			assertThat(iteration.hasNext()).as("the kernel page reaches the outer iteration").isTrue();
+			iteration.next();
+			assertThat(secondFillEntered.await(10L, TimeUnit.SECONDS)).isTrue();
+			assertThat(iteration.requestCancellation()).isTrue();
+			releaseFailure.countDown();
+			assertThat(snapshotsClosed.await(10L, TimeUnit.SECONDS)).isTrue();
+			observed = catchThrowable(iteration::hasNext);
+		} finally {
+			releaseFailure.countDown();
+			iteration.close();
+		}
+		assertThat(source.children).hasSize(2);
+		for (ProbeSource child : source.children) {
+			assertThat(child.closeCalls).as("both kernel snapshots are retired").hasValue(1);
+			assertThat(child.closedWhileWorkerActive).isFalse();
+		}
+		assertThat(observed)
+				.as("closing the kernel cursor must preserve the independent worker failure")
+				.isSameAs(injected);
+	}
+
+	private RowCursor openParallelRowsWithKernel(LmdbNativeKernelLowering.Lowered lowered, SlotPlan plan,
+			Scenario scenario, java.util.function.Function<Kernel, JaninoKernel> kernelFactory) throws IOException {
+		return openParallelRowsWithKernel(lowered, plan, scenario.row, kernelFactory);
+	}
+
+	private RowCursor openParallelRowsWithKernel(LmdbNativeKernelLowering.Lowered lowered, SlotPlan plan,
+			RowState row, java.util.function.Function<Kernel, JaninoKernel> kernelFactory) throws IOException {
+		NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
+		NativeLmdbQuerySource.NativeAdjacency[] views = null;
+		try {
+			views = lowered.bindings.requestAdjacenciesPartial(probe);
+			LmdbNativeKernelBindings.VariablePredicateViews variableViews = LmdbNativeKernelBindings
+					.requestVariablePredicateViews(lowered.bindings, probe);
+			LmdbNativeKernelBindings.BoundDomains domains = lowered.bindings.bindDomains(probe, row,
+					"post-handoff-worker-failure-test");
+			return LmdbNativeParallelKernelRows.tryOpen(lowered, views, variableViews, domains, plan, row,
+					null, kernelFactory);
+		} finally {
+			LmdbNativeKernelBindings.closeAdjacencies(views, null);
+			probe.close();
+		}
+	}
+
+	private static void assertOwnedQueryCancellation(Throwable problem, NativeCancellationToken token) {
+		assertThat(problem).isInstanceOf(KernelQueryCancelledException.class);
+		KernelQueryCancelledException signal = (KernelQueryCancelledException) problem;
+		assertThat(signal.origin()).as("the cancellation signal must retain the exact token that requested it")
+				.isSameAs(token);
+		assertThat(signal.observedBy(token)).isTrue();
 	}
 
 	private void assertRowAdmission(SlotPlan plan, Scenario scenario) throws Exception {
@@ -689,7 +994,7 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 
 		assertThat(problem)
 				.as("a terminal query cancellation from the serial aggregate kernel must reach the query caller")
-				.isSameAs(KernelQueryCancelledException.INSTANCE);
+				.satisfies(failure -> assertOwnedQueryCancellation(failure, scenario.row.cancellation));
 	}
 
 	@Test
@@ -1197,6 +1502,7 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 		private final boolean unavailable;
 		private final boolean failOnProbe;
 		private final RuntimeException childCloseFailure;
+		private final CountDownLatch workerSnapshotClosed;
 		private final List<ProbeSource> children = new ArrayList<>();
 		private final AtomicInteger parallelSourceCalls = new AtomicInteger();
 		private final AtomicInteger probeCloseCalls = new AtomicInteger();
@@ -1216,10 +1522,16 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 
 		private ProbeSource(RuntimeException workerFailure, boolean unavailable, boolean failOnProbe,
 				RuntimeException childCloseFailure) {
+			this(workerFailure, unavailable, failOnProbe, childCloseFailure, null);
+		}
+
+		private ProbeSource(RuntimeException workerFailure, boolean unavailable, boolean failOnProbe,
+				RuntimeException childCloseFailure, CountDownLatch workerSnapshotClosed) {
 			this.workerFailure = workerFailure;
 			this.unavailable = unavailable;
 			this.failOnProbe = failOnProbe;
 			this.childCloseFailure = childCloseFailure;
+			this.workerSnapshotClosed = workerSnapshotClosed;
 		}
 
 		@Override
@@ -1301,7 +1613,8 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 			}
 			ProbeSource[] opened = new ProbeSource[count];
 			for (int i = 0; i < count; i++) {
-				opened[i] = new ProbeSource(workerFailure, false, true, i == 0 ? childCloseFailure : null);
+				opened[i] = new ProbeSource(workerFailure, false, true, i == 0 ? childCloseFailure : null,
+						workerSnapshotClosed);
 				children.add(opened[i]);
 			}
 			return opened;
@@ -1311,6 +1624,9 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 		public void close() {
 			closedWhileWorkerActive |= workerActive.get();
 			closeCalls.incrementAndGet();
+			if (workerSnapshotClosed != null) {
+				workerSnapshotClosed.countDown();
+			}
 			if (childCloseFailure != null && !closeFailureThrown) {
 				closeFailureThrown = true;
 				throw childCloseFailure;
