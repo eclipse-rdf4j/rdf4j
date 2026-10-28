@@ -66,7 +66,7 @@ public class CreateServlet extends TransformationServlet {
 
 	private static final String[] TEMPLATE_RESULT_VARS = { "templateType", "templateLabel", "fieldId",
 			"fieldProperty", "fieldRole", "fieldName", "fieldType", "value", "selected", "size", "rows", "cols",
-			"placeholder" };
+			"placeholder", "fieldReadonly", "fieldGroup" };
 
 	private static final int FEDERATE_ORDER = 170;
 
@@ -335,12 +335,16 @@ public class CreateServlet extends TransformationServlet {
 		builder.result(template.getType(), template.getLabel(), field.getId(), field.getProperty(), field.getRole(),
 				field.getName(), field.getControl().getUiValue(), value, String.valueOf(selected),
 				String.valueOf(field.getSize()), String.valueOf(field.getRows()), String.valueOf(field.getCols()),
-				field.getPlaceholder());
+				field.getPlaceholder(), String.valueOf(field.isReadonly()), field.getGroup());
 	}
 
 	private Map<String, String> getTemplateValues(WorkbenchRequest req, CreateTemplateConfig template) {
 		Map<String, String> values = new LinkedHashMap<>();
 		for (CreateTemplateConfig.Field field : template.getFields()) {
+			if (field.isReadonly()) {
+				// Enforced here, not only in the form: a submitted value never overrides the template default.
+				continue;
+			}
 			String value = req.getParameter(field.getName());
 			if (value != null) {
 				values.put(field.getName(), value);

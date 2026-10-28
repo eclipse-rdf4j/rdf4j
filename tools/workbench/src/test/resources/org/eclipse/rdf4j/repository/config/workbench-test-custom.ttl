@@ -15,6 +15,8 @@
       config:sail.impl [
          config:sail.type "openrdf:MemoryStore" ;
          config:mem.persist {%Persist|true|false%} ;
+         # @workbench.field readonly=true
          config:mem.syncDelay {%Sync delay|0%}
+         # @workbench.field group="Storage"
       ]
    ].

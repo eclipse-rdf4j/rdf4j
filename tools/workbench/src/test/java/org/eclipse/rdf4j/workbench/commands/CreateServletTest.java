@@ -629,6 +629,30 @@ public class CreateServletTest {
 	}
 
 	@Test
+	public void typedTemplateEmitsFieldReadonlyAndFieldGroupColumns() throws Exception {
+		CreateServlet restricted = servletWithAllowlist("workbench-test-custom");
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.isParameterPresent("type")).thenReturn(true);
+		when(request.getTypeParameter()).thenReturn("workbench-test-custom");
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		ByteArrayServletOutputStream outputStream = new ByteArrayServletOutputStream();
+		when(response.getOutputStream()).thenReturn(outputStream);
+
+		restricted.service(request, response);
+
+		String xml = outputStream.asString();
+		List<String> names = extractBindingValues(xml, "fieldName");
+		List<String> readonly = extractBindingValues(xml, "fieldReadonly");
+		List<String> groups = extractBindingValues(xml, "fieldGroup");
+		assertThat(readonly).hasSameSizeAs(names);
+		assertThat(groups).hasSameSizeAs(names);
+		for (int i = 0; i < names.size(); i++) {
+			assertThat(readonly.get(i)).as(names.get(i)).isEqualTo(String.valueOf("Persist".equals(names.get(i))));
+			assertThat(groups.get(i)).as(names.get(i)).isEqualTo("Sync delay".equals(names.get(i)) ? "Storage" : "");
+		}
+	}
+
+	@Test
 	public void typedTemplateRequestOutsideTheAllowlistIsNotFound() throws Exception {
 		CreateServlet restricted = servletWithAllowlist("native");
 		WorkbenchRequest request = mock(WorkbenchRequest.class);

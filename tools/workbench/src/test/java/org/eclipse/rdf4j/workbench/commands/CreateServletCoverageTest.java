@@ -35,6 +35,8 @@ import java.util.Set;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
+import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
+import org.eclipse.rdf4j.sail.memory.config.MemoryStoreConfig;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
@@ -112,6 +114,31 @@ class CreateServletCoverageTest {
 		assertThat(configCaptor.getValue().getID()).isEqualTo("memory-coverage");
 		assertThat(configCaptor.getValue().getTitle()).isEqualTo("Memory Coverage");
 		verify(response).sendRedirect("../memory-coverage/summary");
+	}
+
+	@Test
+	void doPostIgnoresSubmittedValuesForReadonlyFields() throws Exception {
+		CreateServlet servlet = new CreateServlet();
+		RepositoryManager manager = mock(RepositoryManager.class);
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+
+		servlet.setRepositoryManager(manager);
+		when(request.getTypeParameter()).thenReturn("workbench-test-custom");
+		when(request.getParameter("Repository ID")).thenReturn("readonly-coverage");
+		when(request.getParameter("Repository title")).thenReturn("Readonly Coverage");
+		when(request.getParameter("Persist")).thenReturn("false");
+		when(request.getParameter("Sync delay")).thenReturn("250");
+
+		servlet.doPost(request, response);
+
+		ArgumentCaptor<RepositoryConfig> configCaptor = ArgumentCaptor.forClass(RepositoryConfig.class);
+		verify(manager).addRepositoryConfig(configCaptor.capture());
+		SailRepositoryConfig repositoryConfig = (SailRepositoryConfig) configCaptor.getValue()
+				.getRepositoryImplConfig();
+		MemoryStoreConfig sailConfig = (MemoryStoreConfig) repositoryConfig.getSailImplConfig();
+		assertThat(sailConfig.getPersist()).as("readonly Persist keeps the template default").isTrue();
+		assertThat(sailConfig.getSyncDelay()).as("non-readonly Sync delay honours the submission").isEqualTo(250L);
 	}
 
 	@Test
