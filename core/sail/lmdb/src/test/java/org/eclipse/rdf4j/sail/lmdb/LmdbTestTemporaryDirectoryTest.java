@@ -78,4 +78,24 @@ class LmdbTestTemporaryDirectoryTest {
 				.isEqualTo(projectDirectory.resolve(relative).toAbsolutePath().normalize());
 		assertThat(LmdbTestForkDirectories.resolveTemporaryRoot(projectDirectory, absolute)).isEqualTo(absolute);
 	}
+
+	@Test
+	void launcherLeavesOtherTestRunnersTemporaryDirectoryAlone(@TempDir Path directory) {
+		String originalTemp = System.getProperty("java.io.tmpdir");
+		String originalSurefire = System.clearProperty("rdf4j.lmdb.test.surefire");
+		String originalForkTemp = System.clearProperty("rdf4j.lmdb.test.forkTmpDirectory");
+		try {
+			System.setProperty("java.io.tmpdir", directory.toString());
+			new LmdbTestForkTemporaryDirectoryListener().launcherSessionOpened(null);
+			assertThat(System.getProperty("java.io.tmpdir")).isEqualTo(directory.toString());
+		} finally {
+			System.setProperty("java.io.tmpdir", originalTemp);
+			if (originalSurefire != null) {
+				System.setProperty("rdf4j.lmdb.test.surefire", originalSurefire);
+			}
+			if (originalForkTemp != null) {
+				System.setProperty("rdf4j.lmdb.test.forkTmpDirectory", originalForkTemp);
+			}
+		}
+	}
 }

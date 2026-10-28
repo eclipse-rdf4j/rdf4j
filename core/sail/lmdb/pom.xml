@@ -283,6 +283,7 @@
 					<systemPropertyVariables>
 						<rdf4j.test.outputDirectory>${project.build.directory}</rdf4j.test.outputDirectory>
 						<rdf4j.test.tmpDirectory>${rdf4j.test.tmpDirectory}</rdf4j.test.tmpDirectory>
+						<rdf4j.lmdb.test.surefire>true</rdf4j.lmdb.test.surefire>
 						<rdf4j.lmdb.test.forkCount>${forkCount}</rdf4j.lmdb.test.forkCount>
 						<org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.subjectBucketCount>4096</org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.subjectBucketCount>
 						<org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.predicateBucketCount>64</org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.predicateBucketCount>

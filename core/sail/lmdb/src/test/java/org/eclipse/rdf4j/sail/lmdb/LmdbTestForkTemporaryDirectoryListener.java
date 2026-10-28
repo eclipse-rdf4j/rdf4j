@@ -24,6 +24,9 @@ public final class LmdbTestForkTemporaryDirectoryListener implements LauncherSes
 
 	@Override
 	public void launcherSessionOpened(LauncherSession session) {
+		if (!Boolean.getBoolean("rdf4j.lmdb.test.surefire")) {
+			return;
+		}
 		String forkTemporaryDirectory = System.getProperty("rdf4j.lmdb.test.forkTmpDirectory");
 		if (forkTemporaryDirectory != null) {
 			System.setProperty("java.io.tmpdir", forkTemporaryDirectory);
