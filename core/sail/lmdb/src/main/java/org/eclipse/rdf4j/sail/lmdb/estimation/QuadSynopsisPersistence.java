@@ -15,6 +15,8 @@ import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
+import java.io.FilterInputStream;
+import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -22,6 +24,10 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.security.DigestInputStream;
+import java.security.DigestOutputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Objects;
 import java.util.zip.CRC32C;
 import java.util.zip.CheckedInputStream;
@@ -39,6 +45,17 @@ public final class QuadSynopsisPersistence {
 	}
 
 	public static void write(Path destination, QuadSynopsisSnapshot snapshot) throws IOException {
+		write(destination, snapshot, null);
+	}
+
+	static byte[] writeWithFingerprint(Path destination, QuadSynopsisSnapshot snapshot) throws IOException {
+		MessageDigest digest = newFingerprint();
+		write(destination, snapshot, digest);
+		return digest.digest();
+	}
+
+	private static void write(Path destination, QuadSynopsisSnapshot snapshot, MessageDigest fingerprint)
+			throws IOException {
 		Objects.requireNonNull(destination, "destination");
 		Objects.requireNonNull(snapshot, "snapshot");
 		Path absolute = destination.toAbsolutePath().normalize();
@@ -50,7 +67,7 @@ public final class QuadSynopsisPersistence {
 		Path temporary = Files.createTempFile(parent, absolute.getFileName().toString(), ".tmp");
 		boolean moved = false;
 		try {
-			writeTemporary(temporary, snapshot);
+			writeTemporary(temporary, snapshot, fingerprint);
 			try {
 				Files.move(temporary, absolute, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
 			} catch (AtomicMoveNotSupportedException e) {
@@ -65,11 +82,86 @@ public final class QuadSynopsisPersistence {
 	}
 
 	public static QuadSynopsisLoadResult read(Path source, QuadSynopsisBudget budget) {
+		return read(source, budget, null);
+	}
+
+	static FingerprintedLoad readWithFingerprint(Path source, QuadSynopsisBudget budget) {
+		MessageDigest fingerprint = newFingerprint();
+		QuadSynopsisLoadResult result = read(source, budget, fingerprint);
+		return new FingerprintedLoad(result, result.snapshot().isPresent() ? fingerprint.digest() : null);
+	}
+
+	static FingerprintedLoad readWithFingerprint(InputStream source, QuadSynopsisBudget budget) {
+		MessageDigest fingerprint = newFingerprint();
+		QuadSynopsisLoadResult result = readStream(source, budget, fingerprint);
+		return new FingerprintedLoad(result, result.snapshot().isPresent() ? fingerprint.digest() : null);
+	}
+
+	/**
+	 * Checks an owned v8 payload without allocating its tables, even when its old budget differs from the current one.
+	 */
+	static SnapshotHeader verifyOwnedPayload(EstimatorSidecar.Payload envelope) throws IOException {
+		long payloadLength = envelope.payloadLength();
+		long headerBytes = 3L * Integer.BYTES + 5L * Long.BYTES;
+		if (payloadLength < headerBytes + Long.BYTES) {
+			throw new IOException("Truncated quad synopsis payload");
+		}
+		CheckedInputStream checked = new CheckedInputStream(envelope.input(), new CRC32C());
+		DataInputStream input = new DataInputStream(checked);
+		if (input.readInt() != MAGIC_V8 || input.readInt() != VERSION) {
+			throw new IOException("Unrecognized quad synopsis payload");
+		}
+		QuadSnapshotIdentity identity;
+		try {
+			identity = QuadSnapshotIdentity.readFrom(input);
+		} catch (IllegalArgumentException invalid) {
+			throw new IOException("Invalid quad synopsis identity", invalid);
+		}
+		long snapshotVersion = input.readLong();
+		long totalRows = input.readLong();
+		if (snapshotVersion < 0L || totalRows < 0L || input.readInt() != TABLE_COUNT) {
+			throw new IOException("Invalid quad synopsis metadata");
+		}
+		long remaining = payloadLength - headerBytes - Long.BYTES;
+		byte[] buffer = new byte[8192];
+		while (remaining > 0L) {
+			int read = input.read(buffer, 0, (int) Math.min(buffer.length, remaining));
+			if (read < 0) {
+				throw new IOException("Truncated quad synopsis body");
+			}
+			remaining -= read;
+		}
+		long checksum = checked.getChecksum().getValue();
+		if (input.readLong() != checksum || input.read() != -1) {
+			throw new IOException("Invalid quad synopsis checksum");
+		}
+		envelope.verify();
+		return new SnapshotHeader(identity, snapshotVersion);
+	}
+
+	private static QuadSynopsisLoadResult read(Path source, QuadSynopsisBudget budget, MessageDigest fingerprint) {
+		Objects.requireNonNull(source, "source");
+		Objects.requireNonNull(budget, "budget");
+		try (InputStream file = Files.newInputStream(source)) {
+			return readStream(file, budget, fingerprint);
+		} catch (IOException e) {
+			return QuadSynopsisLoadResult.rebuild(null, e.getMessage());
+		}
+	}
+
+	private static QuadSynopsisLoadResult readStream(InputStream source, QuadSynopsisBudget budget,
+			MessageDigest fingerprint) {
 		Objects.requireNonNull(source, "source");
 		Objects.requireNonNull(budget, "budget");
 		QuadSnapshotIdentity identity = null;
-		try (InputStream file = Files.newInputStream(source);
-				BufferedInputStream buffered = new BufferedInputStream(file);
+		InputStream nonClosing = new FilterInputStream(source) {
+			@Override
+			public void close() {
+				// The owner of an enveloped payload must verify its outer checksum after the v8 decoder returns.
+			}
+		};
+		try (InputStream inputBytes = fingerprint == null ? nonClosing : new DigestInputStream(nonClosing, fingerprint);
+				BufferedInputStream buffered = new BufferedInputStream(inputBytes);
 				CheckedInputStream checked = new CheckedInputStream(buffered, new CRC32C());
 				DataInputStream input = new DataInputStream(checked)) {
 			int magic = input.readInt();
@@ -127,10 +219,36 @@ public final class QuadSynopsisPersistence {
 		}
 	}
 
-	private static void writeTemporary(Path temporary, QuadSynopsisSnapshot snapshot) throws IOException {
+	private static void writeTemporary(Path temporary, QuadSynopsisSnapshot snapshot, MessageDigest fingerprint)
+			throws IOException {
+		try (OutputStream file = Files.newOutputStream(temporary)) {
+			writePayload(file, snapshot, fingerprint);
+		}
+	}
+
+	static byte[] writeWithFingerprint(OutputStream output, QuadSynopsisSnapshot snapshot) throws IOException {
+		MessageDigest fingerprint = newFingerprint();
+		writePayload(output, snapshot, fingerprint);
+		return fingerprint.digest();
+	}
+
+	private static void writePayload(OutputStream file, QuadSynopsisSnapshot snapshot, MessageDigest fingerprint)
+			throws IOException {
 		CRC32C checksum = new CRC32C();
-		try (OutputStream file = Files.newOutputStream(temporary);
-				BufferedOutputStream buffered = new BufferedOutputStream(file);
+		OutputStream nonClosing = new FilterOutputStream(file) {
+			@Override
+			public void write(byte[] bytes, int offset, int length) throws IOException {
+				out.write(bytes, offset, length);
+			}
+
+			@Override
+			public void close() throws IOException {
+				flush();
+			}
+		};
+		try (OutputStream outputBytes = fingerprint == null ? nonClosing
+				: new DigestOutputStream(nonClosing, fingerprint);
+				BufferedOutputStream buffered = new BufferedOutputStream(outputBytes);
 				CheckedOutputStream checked = new CheckedOutputStream(buffered, checksum);
 				DataOutputStream output = new DataOutputStream(checked)) {
 			output.writeInt(MAGIC_V8);
@@ -148,6 +266,20 @@ public final class QuadSynopsisPersistence {
 			long value = checksum.getValue();
 			output.writeLong(value);
 		}
+	}
+
+	private static MessageDigest newFingerprint() {
+		try {
+			return MessageDigest.getInstance("SHA-256");
+		} catch (NoSuchAlgorithmException impossible) {
+			throw new IllegalStateException("SHA-256 is unavailable", impossible);
+		}
+	}
+
+	record FingerprintedLoad(QuadSynopsisLoadResult result, byte[] fingerprint) {
+	}
+
+	record SnapshotHeader(QuadSnapshotIdentity identity, long snapshotVersion) {
 	}
 
 	private static QuadSynopsisLoadResult readLegacyIdentity(DataInputStream input) throws IOException {

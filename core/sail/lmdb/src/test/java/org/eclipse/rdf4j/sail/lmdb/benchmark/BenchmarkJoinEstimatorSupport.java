@@ -19,8 +19,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.PosixFileAttributeView;
 import java.time.Duration;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
@@ -29,6 +33,10 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPlannerAwait;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
+import org.eclipse.rdf4j.sail.lmdb.estimation.QuadSynopsisBudget;
+import org.eclipse.rdf4j.sail.lmdb.estimation.QuadSynopsisPersistenceTestAccess;
+import org.eclipse.rdf4j.sail.lmdb.estimation.QuadSynopsisPersistenceTestAccess.VerifiedSnapshot;
+import org.eclipse.rdf4j.sail.lmdb.estimation.QuadSynopsisSnapshot;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 
 public final class BenchmarkJoinEstimatorSupport {
@@ -43,6 +51,10 @@ public final class BenchmarkJoinEstimatorSupport {
 	private static final String TRIPLES_DATA_FILE = "triples/data.mdb";
 	private static final String VALUES_DATA_FILE = "values/data.mdb";
 	private static final String JOIN_ESTIMATOR_METADATA_FILE = "join-estimator.rjes/metadata.bin";
+	private static final String JOIN_ESTIMATOR_SNAPSHOT_FILE = "join-estimator.rjes/synopsis-v8.bin";
+	private static final String JOIN_ESTIMATOR_REBUILD_MARKER = "join-estimator.rjes/synopsis-v8.rebuild";
+	private static final String SNAPSHOT_FINGERPRINT_PROPERTY = "synopsis.v8.fingerprint";
+	private static final String SNAPSHOT_CHECKSUM_PROPERTY = "synopsis.v8.sha256";
 	private static final byte[] JOIN_ESTIMATOR_METADATA_MAGIC = new byte[] { 'R', 'J', 'E', 'D' };
 	private static final int JOIN_ESTIMATOR_METADATA_VERSION = 2;
 	private static final int DEFAULT_BUCKET_COUNT = 4 * 1024;
@@ -71,7 +83,7 @@ public final class BenchmarkJoinEstimatorSupport {
 			estimator.rebuild();
 			awaitEstimatorReady(estimator, "bulk-load rebuild");
 		}
-		persistReusableEstimatorSnapshot(estimator);
+		persistReusableEstimatorSnapshot(store, estimator);
 	}
 
 	public static void persistStoreStatistics(LmdbStore store) throws IOException {
@@ -193,6 +205,12 @@ public final class BenchmarkJoinEstimatorSupport {
 	}
 
 	static SketchBasedJoinEstimator resolveEstimator(LmdbStore store) throws IOException {
+		try {
+			LmdbTestUtil.awaitPostReadyInitialization(store, robustReadyTimeoutSeconds(), TimeUnit.SECONDS);
+		} catch (InterruptedException failure) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while waiting for benchmark estimator initialization", failure);
+		}
 		SketchBasedJoinEstimator estimator = tryResolveEstimator(store);
 		if (estimator == null) {
 			throw new IOException("LMDB sketch-based join estimator is not available");
@@ -221,11 +239,29 @@ public final class BenchmarkJoinEstimatorSupport {
 		awaitEstimatorReady(estimator, phase, timeout, unit);
 	}
 
-	private static void persistReusableEstimatorSnapshot(SketchBasedJoinEstimator estimator) throws IOException {
-		estimator.persistIfDirty();
-		estimator.unload();
-		estimator.startBackgroundRefresh(3);
-		awaitEstimatorReady(estimator, "persisted snapshot reload");
+	private static void persistReusableEstimatorSnapshot(LmdbStore store, SketchBasedJoinEstimator estimator)
+			throws IOException {
+		estimator.stop();
+		try {
+			estimator.persistIfDirty();
+			Path snapshot = store.getDataDir().toPath().resolve(JOIN_ESTIMATOR_SNAPSHOT_FILE);
+			if (!Files.isRegularFile(snapshot)) {
+				throw new IOException("No persisted quad synopsis is available for reload: " + snapshot);
+			}
+			var identity = estimator.quadSnapshotIdentity();
+			long version = estimator.snapshotVersion();
+			estimator.unload();
+			if (estimator.allocatedBytes() != 0L) {
+				throw new IOException("The quad synopsis could not be safely evicted for persisted reload");
+			}
+			estimator.startBackgroundRefresh(3);
+			awaitEstimatorReady(estimator, "persisted snapshot reload");
+			if (!identity.equals(estimator.quadSnapshotIdentity()) || version != estimator.snapshotVersion()) {
+				throw new IOException("The reloaded quad synopsis does not match the persisted publication");
+			}
+		} finally {
+			estimator.startBackgroundRefresh(3);
+		}
 	}
 
 	private static void awaitEstimatorReady(SketchBasedJoinEstimator estimator, String phase) throws IOException {
@@ -258,6 +294,11 @@ public final class BenchmarkJoinEstimatorSupport {
 		properties.setProperty(VALUES_DATA_SIZE_PROPERTY,
 				Long.toString(new File(storeDirectory, VALUES_DATA_FILE).length()));
 		properties.setProperty(TRIPLE_INDEXES_PROPERTY, ConfigUtil.createConfig().getTripleIndexes());
+		VerifiedSnapshot validSnapshot = readReusableSnapshot(storeDirectory);
+		if (validSnapshot != null) {
+			properties.setProperty(SNAPSHOT_FINGERPRINT_PROPERTY, snapshotFingerprint(validSnapshot.snapshot()));
+			properties.setProperty(SNAPSHOT_CHECKSUM_PROPERTY, validSnapshot.fingerprint());
+		}
 		try (var outputStream = new FileOutputStream(new File(storeDirectory, EXPECTED_DB_FILE_SIZES_FILE))) {
 			properties.store(outputStream, "Expected LMDB data file sizes for ThemeQueryBenchmark");
 		}
@@ -310,14 +351,95 @@ public final class BenchmarkJoinEstimatorSupport {
 		}
 		File triples = new File(storeDirectory, TRIPLES_DATA_FILE);
 		File values = new File(storeDirectory, VALUES_DATA_FILE);
+		if (!triples.isFile() || !values.isFile()
+				|| triples.length() != expected.triplesDataSizeBytes
+				|| values.length() != expected.valuesDataSizeBytes) {
+			return false;
+		}
+		Path snapshot = storeDirectory.toPath().resolve(JOIN_ESTIMATOR_SNAPSHOT_FILE);
+		Path marker = storeDirectory.toPath().resolve(JOIN_ESTIMATOR_REBUILD_MARKER);
+		if (Files.exists(snapshot) || !Files.notExists(marker, LinkOption.NOFOLLOW_LINKS)
+				|| expected.snapshotFingerprint != null
+				|| expected.snapshotChecksum != null) {
+			VerifiedSnapshot validSnapshot = readReusableSnapshot(storeDirectory);
+			if (validSnapshot == null) {
+				return false;
+			}
+			if (expected.snapshotFingerprint == null && expected.snapshotChecksum == null) {
+				adoptReusableSnapshot(storeDirectory, expected, validSnapshot);
+				return true;
+			}
+			return snapshotFingerprint(validSnapshot.snapshot()).equals(expected.snapshotFingerprint)
+					&& validSnapshot.fingerprint().equals(expected.snapshotChecksum);
+		}
 		File estimatorMetadata = new File(storeDirectory, JOIN_ESTIMATOR_METADATA_FILE);
-		if (!triples.isFile() || !values.isFile() || !estimatorMetadata.isFile()) {
+		if (!estimatorMetadata.isFile()) {
 			return false;
 		}
 		if (!expectedEstimatorMetadataFingerprint().equals(readEstimatorMetadataFingerprint(estimatorMetadata))) {
 			return false;
 		}
-		return triples.length() == expected.triplesDataSizeBytes && values.length() == expected.valuesDataSizeBytes;
+		return true;
+	}
+
+	private static VerifiedSnapshot readReusableSnapshot(File storeDirectory) {
+		Path snapshot = storeDirectory.toPath().resolve(JOIN_ESTIMATOR_SNAPSHOT_FILE);
+		Path marker = storeDirectory.toPath().resolve(JOIN_ESTIMATOR_REBUILD_MARKER);
+		if (!Files.isRegularFile(snapshot) || !Files.notExists(marker, LinkOption.NOFOLLOW_LINKS)) {
+			return null;
+		}
+		var config = ConfigUtil.createConfig();
+		QuadSynopsisBudget budget = QuadSynopsisBudget.create(config.getSketchEstimatorMemoryBudgetBytes(),
+				config.getSketchEstimatorColdSynopsisCapacity());
+		VerifiedSnapshot decoded = QuadSynopsisPersistenceTestAccess.read(snapshot, budget).orElse(null);
+		return Files.notExists(marker, LinkOption.NOFOLLOW_LINKS) ? decoded : null;
+	}
+
+	private static String snapshotFingerprint(QuadSynopsisSnapshot snapshot) {
+		var identity = snapshot.identity();
+		return identity.storeIdHigh() + ":" + identity.storeIdLow() + ":" + identity.mutationVersion() + ":"
+				+ snapshot.snapshotVersion() + ":" + snapshot.totalRows();
+	}
+
+	private static void adoptReusableSnapshot(File storeDirectory, DbFileSizes expected,
+			VerifiedSnapshot snapshot) throws IOException {
+		Path propertiesPath = storeDirectory.toPath().resolve(EXPECTED_DB_FILE_SIZES_FILE);
+		Properties properties = new Properties();
+		try (InputStream input = Files.newInputStream(propertiesPath)) {
+			properties.load(input);
+		}
+		if (!expected.equals(readExpectedDbFileSizes(storeDirectory))) {
+			throw new IOException("Benchmark cache evidence changed while adopting its snapshot");
+		}
+		properties.setProperty(SNAPSHOT_FINGERPRINT_PROPERTY, snapshotFingerprint(snapshot.snapshot()));
+		properties.setProperty(SNAPSHOT_CHECKSUM_PROPERTY, snapshot.fingerprint());
+		Path temporary = Files.createTempFile(storeDirectory.toPath(), "expected-db-file-sizes-", ".tmp");
+		boolean moved = false;
+		try {
+			PosixFileAttributeView attributes = Files.getFileAttributeView(propertiesPath,
+					PosixFileAttributeView.class);
+			if (attributes != null) {
+				Files.setPosixFilePermissions(temporary, attributes.readAttributes().permissions());
+			}
+			try (var output = Files.newOutputStream(temporary)) {
+				properties.store(output, "Expected LMDB data file sizes for ThemeQueryBenchmark");
+			}
+			VerifiedSnapshot rechecked = readReusableSnapshot(storeDirectory);
+			if (rechecked == null || !snapshot.fingerprint().equals(rechecked.fingerprint())) {
+				throw new IOException("Benchmark cache snapshot changed while adopting its fingerprint");
+			}
+			try {
+				Files.move(temporary, propertiesPath, StandardCopyOption.ATOMIC_MOVE,
+						StandardCopyOption.REPLACE_EXISTING);
+			} catch (AtomicMoveNotSupportedException e) {
+				Files.move(temporary, propertiesPath, StandardCopyOption.REPLACE_EXISTING);
+			}
+			moved = true;
+		} finally {
+			if (!moved) {
+				Files.deleteIfExists(temporary);
+			}
+		}
 	}
 
 	private static EstimatorMetadataFingerprint readEstimatorMetadataFingerprint(File metadataFile) throws IOException {
@@ -406,7 +528,9 @@ public final class BenchmarkJoinEstimatorSupport {
 			}
 			return new DbFileSizes(
 					parseSizeProperty(properties, TRIPLES_DATA_SIZE_PROPERTY),
-					parseSizeProperty(properties, VALUES_DATA_SIZE_PROPERTY));
+					parseSizeProperty(properties, VALUES_DATA_SIZE_PROPERTY),
+					properties.getProperty(SNAPSHOT_FINGERPRINT_PROPERTY),
+					properties.getProperty(SNAPSHOT_CHECKSUM_PROPERTY));
 		} catch (IllegalStateException e) {
 			return null;
 		}
@@ -425,13 +549,16 @@ public final class BenchmarkJoinEstimatorSupport {
 	}
 
 	private static Method reflectMethod(Class<?> owner, String methodName, Class<?>... parameterTypes) {
-		try {
-			Method method = owner.getDeclaredMethod(methodName, parameterTypes);
-			method.setAccessible(true);
-			return method;
-		} catch (NoSuchMethodException e) {
-			throw new ExceptionInInitializerError(e);
+		for (Class<?> current = owner; current != null; current = current.getSuperclass()) {
+			try {
+				Method method = current.getDeclaredMethod(methodName, parameterTypes);
+				method.setAccessible(true);
+				return method;
+			} catch (NoSuchMethodException inherited) {
+				// Test stores may specialize the owner while retaining the same declared maintenance methods.
+			}
 		}
+		throw new ExceptionInInitializerError(new NoSuchMethodException(owner.getName() + "." + methodName));
 	}
 
 	private static Object invoke(Method method, Object target, Object... args) throws IOException {
@@ -492,7 +619,8 @@ public final class BenchmarkJoinEstimatorSupport {
 	public record ThemeRegressionStore(Path storeDirectory, boolean persistent, boolean reused) {
 	}
 
-	private record DbFileSizes(long triplesDataSizeBytes, long valuesDataSizeBytes) {
+	private record DbFileSizes(long triplesDataSizeBytes, long valuesDataSizeBytes, String snapshotFingerprint,
+			String snapshotChecksum) {
 	}
 
 	private record EstimatorMetadataFingerprint(int subjectBucketCount, int predicateBucketCount,

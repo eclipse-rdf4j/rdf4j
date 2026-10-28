@@ -113,6 +113,11 @@ public class IrSelect extends IrNode {
 
 	@Override
 	public void print(IrPrinter p) {
+		print(p, List.of());
+	}
+
+	/** Print a top-level SELECT with dataset clauses between its projection and WHERE. */
+	public void print(IrPrinter p, List<String> datasetClauses) {
 		// SELECT header (keep WHERE on the same line for canonical formatting)
 		StringBuilder hdr = new StringBuilder(64);
 		hdr.append("SELECT ");
@@ -138,6 +143,10 @@ public class IrSelect extends IrNode {
 		}
 		p.startLine();
 		p.append(hdr.toString());
+		for (String clause : datasetClauses) {
+			p.append(" ");
+			p.append(clause);
+		}
 		p.append(" WHERE ");
 
 		// WHERE

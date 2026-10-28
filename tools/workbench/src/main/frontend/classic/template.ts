@@ -1916,12 +1916,96 @@ namespace workbench {
      * runs and can show the answer (M10.1), natively otherwise.
      */
     export function submitForm(form: HTMLFormElement): void {
+        protectSubmittedForm(form);
         var router: any = (<any>workbench).router;
         if (router && typeof router.submit === 'function') {
             router.submit(form);
         } else {
             form.submit();
         }
+    }
+
+    /** Keep the token on Workbench requests; never put it on an external form or fetch. */
+    export function csrfToken(): string {
+        return getCookie('rdf4j-workbench-csrf');
+    }
+
+    export function csrfHeaders(url?: string): { [name: string]: string } {
+        var token = csrfToken();
+        if (!token) {
+            return {};
+        }
+        var target = new URL(url || document.location.href, document.location.href);
+        return target.origin === document.location.origin ? { 'X-RDF4J-CSRF-Token': token } : {};
+    }
+
+    /** Runs before native form submission and before router FormData captures dynamically rendered forms. */
+    export function protectSubmittedForm(form: HTMLFormElement, methodOverride?: string, actionOverride?: string): void {
+        if (!form) {
+            return;
+        }
+        var method = String(methodOverride || form.method || form.getAttribute('method') || 'get').toLowerCase();
+        var input = <HTMLInputElement>form.querySelector('input[name="_csrf"]');
+        if (method !== 'post') {
+            if (input && input.getAttribute('data-rdf4j-csrf') === 'true') {
+                input.parentNode.removeChild(input);
+            }
+            return;
+        }
+        var action = actionOverride || form.getAttribute('action') || document.location.href;
+        if (new URL(action, document.location.href).origin !== document.location.origin) {
+            if (input && input.getAttribute('data-rdf4j-csrf') === 'true') {
+                input.parentNode.removeChild(input);
+            }
+            return;
+        }
+        var token = csrfToken();
+        if (!token) {
+            return;
+        }
+        if (!input) {
+            input = document.createElement('input');
+            input.type = 'hidden';
+            input.setAttribute('name', '_csrf');
+            form.appendChild(input);
+        }
+        input.setAttribute('data-rdf4j-csrf', 'true');
+        input.value = token;
+    }
+
+    var csrfHooksInstalled = false;
+
+    export function installCsrfProtection(): void {
+        var forms = document.getElementsByTagName('form');
+        for (var i = 0; i < forms.length; i++) {
+            protectSubmittedForm(forms[i]);
+        }
+        if (csrfHooksInstalled) {
+            return;
+        }
+        // Capture submissions before the page router serializes their form data.
+        document.addEventListener('submit', function(event) {
+            var submitter = <HTMLElement>(<SubmitEvent>event).submitter;
+            protectSubmittedForm(<HTMLFormElement>event.target,
+                submitter && submitter.getAttribute('formmethod'),
+                submitter && submitter.getAttribute('formaction'));
+        }, true);
+        csrfHooksInstalled = true;
+        // Third-party query widgets also use jQuery AJAX; read the current cookie for each unsafe request.
+        var jquery: any = (<any>globalThis).jQuery || (<any>globalThis).$;
+        if (!jquery || !jquery.ajaxPrefilter) {
+            return;
+        }
+        jquery.ajaxPrefilter(function(options: any) {
+            var method = String(options.type || options.method || 'GET').toUpperCase();
+            if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS' || method === 'TRACE') {
+                return;
+            }
+            var headers = csrfHeaders(options.url || document.location.href);
+            if (headers['X-RDF4J-CSRF-Token']) {
+                options.headers = Object.assign(options.headers || {}, headers);
+            }
+        });
     }
 
     export interface LoadRoutine {
@@ -1989,5 +2073,6 @@ namespace workbench {
  * the route registry. Router-ready routes decorate their outlet from their mount (workbench.decoratePage).
  */
 workbench.addLoad(function decorateDocument() {
+    workbench.installCsrfProtection();
     workbench.decoratePage(document);
 });

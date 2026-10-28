@@ -104,6 +104,9 @@ import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.Window;
+import org.eclipse.rdf4j.query.algebra.WindowElem;
+import org.eclipse.rdf4j.query.algebra.WindowFunctionCall;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 
 /**
@@ -422,6 +425,21 @@ public abstract class AbstractQueryModelVisitor<X extends Exception> implements 
 	@Override
 	public void meet(Order node) throws X {
 		meetUnaryTupleOperator(node);
+	}
+
+	@Override
+	public void meet(Window node) throws X {
+		meetUnaryTupleOperator(node);
+	}
+
+	@Override
+	public void meet(WindowElem node) throws X {
+		meetNode(node);
+	}
+
+	@Override
+	public void meet(WindowFunctionCall node) throws X {
+		meetNode(node);
 	}
 
 	@Override

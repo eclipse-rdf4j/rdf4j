@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -91,9 +92,7 @@ class LmdbDomainQualificationPublicationTest {
 					changed, expected, PREDICATES);
 		}
 		try (Opened opened = open(config(experimental, true))) {
-			DomainQualificationAssertions.verifyCompleteConfiguredCommittedState(opened.store(), opened.repository(),
-					opened.config(),
-					expected, PREDICATES);
+			verifyCompleteAfterReopen(opened, expected);
 		}
 	}
 
@@ -132,9 +131,7 @@ class LmdbDomainQualificationPublicationTest {
 					restored, expected, PREDICATES);
 		}
 		try (Opened opened = open(config(false, true))) {
-			DomainQualificationAssertions.verifyCompleteConfiguredCommittedState(opened.store(), opened.repository(),
-					opened.config(),
-					expected, PREDICATES);
+			verifyCompleteAfterReopen(opened, expected);
 		}
 	}
 
@@ -179,9 +176,7 @@ class LmdbDomainQualificationPublicationTest {
 			assertNull(durableProperties().getRdfTermDomainsVersion());
 		}
 		try (Opened opened = open(config(false, true))) {
-			DomainQualificationAssertions.verifyCompleteConfiguredCommittedState(opened.store(), opened.repository(),
-					opened.config(),
-					expected, PREDICATES);
+			verifyCompleteAfterReopen(opened, expected);
 		}
 	}
 
@@ -195,10 +190,12 @@ class LmdbDomainQualificationPublicationTest {
 	@MethodSource("withdrawalFailures")
 	void failedStartupWithdrawalCannotExposeAWriter(FailurePoint point, boolean disabled) throws Exception {
 		List<Statement> expected = initialRows();
-		create(config(false, true), expected);
+		create(config(false, true), expected, true);
 		FailingPropertiesOps operations = new FailingPropertiesOps();
 		StoreProperties properties = new StoreProperties(directory.toFile(), operations);
 		assertTrue(properties.load());
+		assertNotNull(properties.getRdfTermDomainsVersion(), "the seed must have a durable profile to withdraw");
+		assertNotNull(properties.getRdfTermDomainQualification(), "the seed must have a durable qualification");
 		LmdbStoreConfig deferred = config(false, false, P).setPredicateGuaranteeIndexEnabled(!disabled);
 		ValueStore values = new ValueStore(directory.resolve("values").toFile(), properties, deferred);
 		try (AutoCloseable ownedValues = values::close) {
@@ -211,9 +208,7 @@ class LmdbDomainQualificationPublicationTest {
 			assertSame(operations.failure, failure.getCause());
 		}
 		try (Opened opened = open(config(false, true))) {
-			DomainQualificationAssertions.verifyCompleteConfiguredCommittedState(opened.store(), opened.repository(),
-					opened.config(),
-					expected, PREDICATES);
+			verifyCompleteAfterReopen(opened, expected);
 		}
 	}
 
@@ -241,9 +236,7 @@ class LmdbDomainQualificationPublicationTest {
 			assertEquals(before, triples.trustedTransactionId(), "withdrawal does not create a native transaction");
 		}
 		try (Opened opened = open(config(false, true))) {
-			DomainQualificationAssertions.verifyCompleteConfiguredCommittedState(opened.store(), opened.repository(),
-					opened.config(),
-					initialRows(), PREDICATES);
+			verifyCompleteAfterReopen(opened, initialRows());
 		}
 	}
 
@@ -285,9 +278,7 @@ class LmdbDomainQualificationPublicationTest {
 			assertEquals(before, triples.trustedTransactionId());
 		}
 		try (Opened opened = open(config(false, true))) {
-			DomainQualificationAssertions.verifyCompleteConfiguredCommittedState(opened.store(), opened.repository(),
-					opened.config(),
-					initialRows(), PREDICATES);
+			verifyCompleteAfterReopen(opened, initialRows());
 		}
 	}
 
@@ -334,7 +325,20 @@ class LmdbDomainQualificationPublicationTest {
 		return config;
 	}
 
+	private static void verifyCompleteAfterReopen(Opened opened, List<Statement> rows)
+			throws IOException, InterruptedException {
+		DomainQualificationAssertions.verifyConservativeCommittedState(opened.store(), opened.repository(),
+				opened.config(), rows, PREDICATES);
+		LmdbTestUtil.awaitPostReadyInitialization(opened.store(), 30, java.util.concurrent.TimeUnit.SECONDS);
+		DomainQualificationAssertions.verifyCompleteConfiguredCommittedState(opened.store(), opened.repository(),
+				opened.config(), rows, PREDICATES);
+	}
+
 	private void create(LmdbStoreConfig config, List<Statement> rows) throws Exception {
+		create(config, rows, false);
+	}
+
+	private void create(LmdbStoreConfig config, List<Statement> rows, boolean requireQualifiedSeed) throws Exception {
 		try (Opened opened = open(config); var connection = opened.repository().getConnection()) {
 			connection.begin();
 			for (Statement row : rows) {
@@ -343,6 +347,12 @@ class LmdbDomainQualificationPublicationTest {
 			connection.commit();
 			DomainQualificationAssertions.verifyConservativeCommittedState(opened.store(), opened.repository(), config,
 					rows, PREDICATES);
+			if (requireQualifiedSeed) {
+				LmdbTestUtil.awaitPostReadyInitialization(opened.store(), 30, java.util.concurrent.TimeUnit.SECONDS);
+				DomainQualificationAssertions.verifyCompleteConfiguredCommittedState(opened.store(),
+						opened.repository(),
+						config, rows, PREDICATES);
+			}
 		}
 	}
 

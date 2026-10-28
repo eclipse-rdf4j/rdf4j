@@ -81,6 +81,14 @@ class StoreProperties {
 
 	protected final File propertiesFile;
 	private final StorePropertiesFileOps fileOps;
+	/** Serializes publications without holding the state monitor during filesystem operations. */
+	private final Object saveLock = new Object();
+	/** Identity changes whenever a serialized property is mutated. Guarded by this object's monitor. */
+	private Object revision = new Object();
+	/** The last file contents known to have completed a load or atomic save; guarded by this monitor. */
+	private boolean savedSnapshotKnown;
+	private String savedRdfTermDomainsVersion;
+	private String savedStoreId;
 
 	/**
 	 * The key recording which inlined-numeric id encoding NEW writes use. Absent = the legacy ZigZag scheme (all
@@ -118,7 +126,8 @@ class StoreProperties {
 
 	static final String DATE_TIME_ID_ENCODING_ZERO_FRACTION_V1 = "zero-fraction-v1";
 
-	private final Properties loadedProperties = new Properties();
+	/** Replaced on load and never mutated afterward, so an in-flight save retains its own source map. */
+	private Properties loadedProperties = new Properties();
 
 	protected String version;
 
@@ -127,8 +136,13 @@ class StoreProperties {
 	protected String predicateObjectDomainsVersion;
 	private String rdfTermDomainQualification;
 	boolean rdfTermDomainQualifiedAtOpen;
+	RdfTermDomainQualification.Witness rdfTermDomainWitnessAtOpen;
 	long rdfTermDomainValuesTransactionAtOpen = -1L;
 	long rdfTermDomainTriplesTransactionAtOpen = -1L;
+	/** A one-use paired discovery observation, not a persisted or reference-count authority. */
+	RdfTermDomainQualification.DiscoveryPair rdfTermDomainDiscoveryPair;
+	/** Construction-only signal from the paired Sail owner; never persisted. */
+	boolean deferRdfTermDomainInitialization;
 	protected String tripleTermIndexes;
 	protected String storeId;
 	protected String languageTagKey;
@@ -152,6 +166,8 @@ class StoreProperties {
 	PreparedBulkStore.Snapshot preparedBulkStore;
 	long verifiedValueTransactionId = -1L;
 	long verifiedTripleTransactionId = -1L;
+	/** Physical inactive statement trees observed in the same read-only preflight as the active manifest. */
+	boolean statementIndexCleanupPending;
 
 	protected boolean dirty;
 
@@ -169,6 +185,10 @@ class StoreProperties {
 		this.fileOps = Objects.requireNonNull(fileOps, "fileOps");
 	}
 
+	boolean isMemoryOnly() {
+		return propertiesFile == null;
+	}
+
 	/**
 	 * Load from properties file.
 	 *
@@ -182,61 +202,91 @@ class StoreProperties {
 			} catch (IOException e) {
 				throw new IllegalStateException("Unable to load store properties from " + file, e);
 			}
-			version = properties.getProperty(VERSION_KEY);
-			loadedProperties.clear();
-			loadedProperties.putAll(properties);
-			tripleIndexes = properties.getProperty(INDEXES_KEY);
-			predicateObjectDomainsVersion = properties.getProperty(PREDICATE_OBJECT_DOMAINS_VERSION_KEY);
-			rdfTermDomainQualification = properties.getProperty(RDF_TERM_DOMAIN_QUALIFICATION_KEY);
-			rdfTermDomainQualifiedAtOpen = false;
-			rdfTermDomainValuesTransactionAtOpen = -1L;
-			rdfTermDomainTriplesTransactionAtOpen = -1L;
-			tripleTermIndexes = properties.getProperty(TRIPLE_TERM_INDEXES_KEY);
-			storeId = properties.getProperty(STORE_ID_KEY);
-			languageTagKey = properties.getProperty(LANGUAGE_TAG_KEY);
-			refCountsVersion = properties.getProperty(REF_COUNTS_VERSION_KEY);
-			numericIdEncoding = properties.getProperty(NUMERIC_ID_ENCODING_KEY);
-			literalReferenceEncoding = properties.getProperty(LITERAL_REFERENCE_ENCODING_KEY);
-			inlineLiterals = properties.getProperty(INLINE_LITERALS_KEY);
-			canonicalLanguageTags = properties.getProperty(CANONICAL_LANGUAGE_TAGS_KEY);
-			dateTimeIdEncoding = properties.getProperty(DATE_TIME_ID_ENCODING_KEY);
-			loaded = true;
+			synchronized (this) {
+				version = properties.getProperty(VERSION_KEY);
+				loadedProperties = properties;
+				tripleIndexes = properties.getProperty(INDEXES_KEY);
+				predicateObjectDomainsVersion = properties.getProperty(PREDICATE_OBJECT_DOMAINS_VERSION_KEY);
+				rdfTermDomainQualification = properties.getProperty(RDF_TERM_DOMAIN_QUALIFICATION_KEY);
+				rdfTermDomainQualifiedAtOpen = false;
+				rdfTermDomainWitnessAtOpen = null;
+				rdfTermDomainValuesTransactionAtOpen = -1L;
+				rdfTermDomainTriplesTransactionAtOpen = -1L;
+				rdfTermDomainDiscoveryPair = null;
+				tripleTermIndexes = properties.getProperty(TRIPLE_TERM_INDEXES_KEY);
+				storeId = properties.getProperty(STORE_ID_KEY);
+				savedRdfTermDomainsVersion = predicateObjectDomainsVersion;
+				savedStoreId = storeId;
+				savedSnapshotKnown = true;
+				languageTagKey = properties.getProperty(LANGUAGE_TAG_KEY);
+				refCountsVersion = properties.getProperty(REF_COUNTS_VERSION_KEY);
+				numericIdEncoding = properties.getProperty(NUMERIC_ID_ENCODING_KEY);
+				literalReferenceEncoding = properties.getProperty(LITERAL_REFERENCE_ENCODING_KEY);
+				inlineLiterals = properties.getProperty(INLINE_LITERALS_KEY);
+				canonicalLanguageTags = properties.getProperty(CANONICAL_LANGUAGE_TAGS_KEY);
+				dateTimeIdEncoding = properties.getProperty(DATE_TIME_ID_ENCODING_KEY);
+				loaded = true;
+				revision = new Object();
+			}
 		});
-		return loaded;
+		return isLoaded();
 	}
 
 	/**
 	 * Save to properties file.
 	 */
 	void save() {
-		if (!dirty) {
+		if (propertiesFile == null) {
 			return;
 		}
-		Optional.ofNullable(propertiesFile).ifPresent(file -> {
-			Path target = file.toPath().toAbsolutePath().normalize();
+		synchronized (saveLock) {
+			SaveSnapshot snapshot = snapshotIfDirty();
+			if (snapshot == null) {
+				return;
+			}
+			Path target = propertiesFile.toPath().toAbsolutePath().normalize();
 			Path parent = target.getParent();
 			Path temporary = target.resolveSibling(target.getFileName() + ".tmp");
 			try {
-				byte[] encoded = encodeProperties();
+				byte[] encoded = encodeProperties(snapshot);
 				fileOps.createDirectories(parent);
 				fileOps.writeAndForce(temporary, encoded);
 				fileOps.moveAtomically(temporary, target);
 				fileOps.forceDirectory(parent);
-				dirty = false;
+				markSaved(snapshot);
 			} catch (IOException e) {
 				try {
 					fileOps.deleteIfExists(temporary);
 				} catch (IOException cleanupFailure) {
 					e.addSuppressed(cleanupFailure);
 				}
-				throw new IllegalStateException("Unable to store properties to " + file, e);
+				throw new IllegalStateException("Unable to store properties to " + propertiesFile, e);
 			}
-		});
+		}
 	}
 
-	private byte[] encodeProperties() throws IOException {
+	private record SaveSnapshot(Properties loadedProperties, String version, String tripleIndexes,
+			String predicateObjectDomainsVersion, String rdfTermDomainQualification, String tripleTermIndexes,
+			String storeId, String languageTagKey, String refCountsVersion, String numericIdEncoding,
+			String literalReferenceEncoding, String inlineLiterals, String canonicalLanguageTags,
+			String dateTimeIdEncoding, Object revision) {
+	}
+
+	private synchronized SaveSnapshot snapshotIfDirty() {
+		if (!dirty) {
+			return null;
+		}
+		// A failed force may follow a successful replacement, so no prior file receipt is certain while saving.
+		savedSnapshotKnown = false;
+		return new SaveSnapshot(loadedProperties, version, tripleIndexes, predicateObjectDomainsVersion,
+				rdfTermDomainQualification, tripleTermIndexes, storeId, languageTagKey, refCountsVersion,
+				numericIdEncoding, literalReferenceEncoding, inlineLiterals, canonicalLanguageTags, dateTimeIdEncoding,
+				revision);
+	}
+
+	private static byte[] encodeProperties(SaveSnapshot snapshot) throws IOException {
 		Properties properties = new Properties();
-		properties.putAll(loadedProperties);
+		properties.putAll(snapshot.loadedProperties());
 		for (String key : new String[] { VERSION_KEY, INDEXES_KEY, TRIPLE_TERM_INDEXES_KEY,
 				PREDICATE_OBJECT_DOMAINS_VERSION_KEY, RDF_TERM_DOMAIN_QUALIFICATION_KEY, STORE_ID_KEY, LANGUAGE_TAG_KEY,
 				REF_COUNTS_VERSION_KEY,
@@ -244,48 +294,64 @@ class StoreProperties {
 				CANONICAL_LANGUAGE_TAGS_KEY, DATE_TIME_ID_ENCODING_KEY }) {
 			properties.remove(key);
 		}
-		if (version != null) {
-			properties.setProperty(VERSION_KEY, version);
+		if (snapshot.version() != null) {
+			properties.setProperty(VERSION_KEY, snapshot.version());
 		}
-		if (tripleIndexes != null) {
-			properties.setProperty(INDEXES_KEY, tripleIndexes);
+		if (snapshot.tripleIndexes() != null) {
+			properties.setProperty(INDEXES_KEY, snapshot.tripleIndexes());
 		}
-		if (predicateObjectDomainsVersion != null) {
-			properties.setProperty(PREDICATE_OBJECT_DOMAINS_VERSION_KEY, predicateObjectDomainsVersion);
+		if (snapshot.predicateObjectDomainsVersion() != null) {
+			properties.setProperty(PREDICATE_OBJECT_DOMAINS_VERSION_KEY, snapshot.predicateObjectDomainsVersion());
 		}
-		if (rdfTermDomainQualification != null) {
-			properties.setProperty(RDF_TERM_DOMAIN_QUALIFICATION_KEY, rdfTermDomainQualification);
+		if (snapshot.rdfTermDomainQualification() != null) {
+			properties.setProperty(RDF_TERM_DOMAIN_QUALIFICATION_KEY, snapshot.rdfTermDomainQualification());
 		}
-		if (tripleTermIndexes != null) {
-			properties.setProperty(TRIPLE_TERM_INDEXES_KEY, tripleTermIndexes);
+		if (snapshot.tripleTermIndexes() != null) {
+			properties.setProperty(TRIPLE_TERM_INDEXES_KEY, snapshot.tripleTermIndexes());
 		}
-		if (storeId != null) {
-			properties.setProperty(STORE_ID_KEY, storeId);
+		if (snapshot.storeId() != null) {
+			properties.setProperty(STORE_ID_KEY, snapshot.storeId());
 		}
-		if (languageTagKey != null) {
-			properties.setProperty(LANGUAGE_TAG_KEY, languageTagKey);
+		if (snapshot.languageTagKey() != null) {
+			properties.setProperty(LANGUAGE_TAG_KEY, snapshot.languageTagKey());
 		}
-		if (refCountsVersion != null) {
-			properties.setProperty(REF_COUNTS_VERSION_KEY, refCountsVersion);
+		if (snapshot.refCountsVersion() != null) {
+			properties.setProperty(REF_COUNTS_VERSION_KEY, snapshot.refCountsVersion());
 		}
-		if (numericIdEncoding != null) {
-			properties.setProperty(NUMERIC_ID_ENCODING_KEY, numericIdEncoding);
+		if (snapshot.numericIdEncoding() != null) {
+			properties.setProperty(NUMERIC_ID_ENCODING_KEY, snapshot.numericIdEncoding());
 		}
-		if (literalReferenceEncoding != null) {
-			properties.setProperty(LITERAL_REFERENCE_ENCODING_KEY, literalReferenceEncoding);
+		if (snapshot.literalReferenceEncoding() != null) {
+			properties.setProperty(LITERAL_REFERENCE_ENCODING_KEY, snapshot.literalReferenceEncoding());
 		}
-		if (inlineLiterals != null) {
-			properties.setProperty(INLINE_LITERALS_KEY, inlineLiterals);
+		if (snapshot.inlineLiterals() != null) {
+			properties.setProperty(INLINE_LITERALS_KEY, snapshot.inlineLiterals());
 		}
-		if (canonicalLanguageTags != null) {
-			properties.setProperty(CANONICAL_LANGUAGE_TAGS_KEY, canonicalLanguageTags);
+		if (snapshot.canonicalLanguageTags() != null) {
+			properties.setProperty(CANONICAL_LANGUAGE_TAGS_KEY, snapshot.canonicalLanguageTags());
 		}
-		if (dateTimeIdEncoding != null) {
-			properties.setProperty(DATE_TIME_ID_ENCODING_KEY, dateTimeIdEncoding);
+		if (snapshot.dateTimeIdEncoding() != null) {
+			properties.setProperty(DATE_TIME_ID_ENCODING_KEY, snapshot.dateTimeIdEncoding());
 		}
 		try (ByteArrayOutputStream output = new ByteArrayOutputStream(256)) {
 			properties.store(output, "LmdbStore meta-data");
 			return output.toByteArray();
+		}
+	}
+
+	private synchronized void markSaved(SaveSnapshot snapshot) {
+		savedRdfTermDomainsVersion = snapshot.predicateObjectDomainsVersion();
+		savedStoreId = snapshot.storeId();
+		savedSnapshotKnown = true;
+		if (revision == snapshot.revision()) {
+			dirty = false;
+		}
+	}
+
+	private void markDirty(boolean changed) {
+		if (changed) {
+			dirty = true;
+			revision = new Object();
 		}
 	}
 
@@ -302,19 +368,19 @@ class StoreProperties {
 		}
 	}
 
-	boolean isLoaded() {
+	synchronized boolean isLoaded() {
 		return loaded;
 	}
 
-	boolean hasNativeGeneration() {
+	synchronized boolean hasNativeGeneration() {
 		return nativeGenerationPresent;
 	}
 
-	void setNativeGenerationPresent(boolean nativeGenerationPresent) {
+	synchronized void setNativeGenerationPresent(boolean nativeGenerationPresent) {
 		this.nativeGenerationPresent = nativeGenerationPresent;
 	}
 
-	String getRawProperty(String key) {
+	synchronized String getRawProperty(String key) {
 		return switch (key) {
 		case VERSION_KEY -> version;
 		case INDEXES_KEY -> tripleIndexes;
@@ -333,17 +399,17 @@ class StoreProperties {
 		};
 	}
 
-	String getVersion() {
+	synchronized String getVersion() {
 		return version;
 	}
 
-	StoreProperties setDateTimeIdEncoding(String dateTimeIdEncoding) {
-		this.dirty = dirty || !Objects.equals(this.dateTimeIdEncoding, dateTimeIdEncoding);
+	synchronized StoreProperties setDateTimeIdEncoding(String dateTimeIdEncoding) {
+		markDirty(!Objects.equals(this.dateTimeIdEncoding, dateTimeIdEncoding));
 		this.dateTimeIdEncoding = dateTimeIdEncoding;
 		return this;
 	}
 
-	boolean usesZeroFractionDateTimeIds() {
+	synchronized boolean usesZeroFractionDateTimeIds() {
 		if (dateTimeIdEncoding == null) {
 			return false;
 		}
@@ -353,114 +419,136 @@ class StoreProperties {
 		throw new IllegalStateException("Unsupported date-time-id-encoding: " + dateTimeIdEncoding);
 	}
 
-	StoreProperties setVersion(String version) {
-		this.dirty |= !Objects.equals(this.version, version);
+	synchronized StoreProperties setVersion(String version) {
+		markDirty(!Objects.equals(this.version, version));
 		this.version = version;
 		return this;
 	}
 
-	String getNumericIdEncoding() {
+	synchronized String getNumericIdEncoding() {
 		return numericIdEncoding;
 	}
 
-	StoreProperties setNumericIdEncoding(String numericIdEncoding) {
-		this.dirty = dirty || !Objects.equals(this.numericIdEncoding, numericIdEncoding);
+	synchronized StoreProperties setNumericIdEncoding(String numericIdEncoding) {
+		markDirty(!Objects.equals(this.numericIdEncoding, numericIdEncoding));
 		this.numericIdEncoding = numericIdEncoding;
 		return this;
 	}
 
 	/** Whether NEW writes use the value-ordered inlined-numeric encoding. */
-	boolean usesOrderedNumericIds() {
+	synchronized boolean usesOrderedNumericIds() {
 		return NUMERIC_ID_ENCODING_ORDERED_V1.equals(numericIdEncoding);
 	}
 
-	StoreProperties setLiteralReferenceEncoding(String literalReferenceEncoding) {
-		this.dirty = dirty || !Objects.equals(this.literalReferenceEncoding, literalReferenceEncoding);
+	synchronized StoreProperties setLiteralReferenceEncoding(String literalReferenceEncoding) {
+		markDirty(!Objects.equals(this.literalReferenceEncoding, literalReferenceEncoding));
 		this.literalReferenceEncoding = literalReferenceEncoding;
 		return this;
 	}
 
-	boolean usesCoreDatatypeLiteralReferences() {
+	synchronized boolean usesCoreDatatypeLiteralReferences() {
 		return LITERAL_REFERENCE_ENCODING_CORE_V1.equals(literalReferenceEncoding);
 	}
 
 	/** The recorded inlining setting, or {@code null} for a store written before the property existed. */
-	Boolean getInlineLiterals() {
+	synchronized Boolean getInlineLiterals() {
 		return inlineLiterals == null ? null : Boolean.valueOf(inlineLiterals);
 	}
 
-	StoreProperties setInlineLiterals(boolean enabled) {
+	synchronized StoreProperties setInlineLiterals(boolean enabled) {
 		String value = Boolean.toString(enabled);
-		this.dirty = dirty || !Objects.equals(this.inlineLiterals, value);
+		markDirty(!Objects.equals(this.inlineLiterals, value));
 		this.inlineLiterals = value;
 		return this;
 	}
 
-	boolean usesCanonicalLanguageTags() {
+	synchronized boolean usesCanonicalLanguageTags() {
 		return CANONICAL_LANGUAGE_TAGS_LOWERCASE_V1.equals(canonicalLanguageTags);
 	}
 
-	StoreProperties setCanonicalLanguageTags(String canonicalLanguageTags) {
-		this.dirty = dirty || !Objects.equals(this.canonicalLanguageTags, canonicalLanguageTags);
+	synchronized StoreProperties setCanonicalLanguageTags(String canonicalLanguageTags) {
+		markDirty(!Objects.equals(this.canonicalLanguageTags, canonicalLanguageTags));
 		this.canonicalLanguageTags = canonicalLanguageTags;
 		return this;
 	}
 
-	String getTripleIndexes() {
+	synchronized String getTripleIndexes() {
 		return tripleIndexes;
 	}
 
-	StoreProperties setTripleIndexes(String tripleIndexes) {
-		this.dirty |= !Objects.equals(this.tripleIndexes, tripleIndexes);
+	synchronized StoreProperties setTripleIndexes(String tripleIndexes) {
+		markDirty(!Objects.equals(this.tripleIndexes, tripleIndexes));
 		this.tripleIndexes = tripleIndexes;
 		return this;
 	}
 
-	String getTripleTermIndexes() {
+	synchronized String getTripleTermIndexes() {
 		return tripleTermIndexes;
 	}
 
-	StoreProperties setTripleTermIndexes(String tripleTermIndexes) {
-		this.dirty |= !Objects.equals(this.tripleTermIndexes, tripleTermIndexes);
+	synchronized StoreProperties setTripleTermIndexes(String tripleTermIndexes) {
+		markDirty(!Objects.equals(this.tripleTermIndexes, tripleTermIndexes));
 		this.tripleTermIndexes = tripleTermIndexes;
 		return this;
 	}
 
-	String getRdfTermDomainsVersion() {
+	synchronized String getRdfTermDomainsVersion() {
 		return predicateObjectDomainsVersion;
 	}
 
-	String getRdfTermDomainQualification() {
+	/** Memory-only owners may use live facts; file-backed owners require the last completed file snapshot. */
+	synchronized boolean hasAvailableRdfTermDomainsVersion(String expected) {
+		return expected.equals(predicateObjectDomainsVersion) && (propertiesFile == null
+				|| savedSnapshotKnown && expected.equals(savedRdfTermDomainsVersion));
+	}
+
+	/** Returns only an identity present in the last completed file snapshot. */
+	UUID savedStoreId() {
+		String current;
+		synchronized (this) {
+			if (!savedSnapshotKnown || savedStoreId == null || !savedStoreId.equals(storeId)) {
+				return null;
+			}
+			current = savedStoreId;
+		}
+		try {
+			return UUID.fromString(current);
+		} catch (IllegalArgumentException e) {
+			throw new IllegalStateException("Invalid LMDB store identity in " + propertiesFile, e);
+		}
+	}
+
+	synchronized String getRdfTermDomainQualification() {
 		return rdfTermDomainQualification;
 	}
 
-	void setRdfTermDomainQualification(String qualification) {
-		dirty |= !Objects.equals(rdfTermDomainQualification, qualification);
+	synchronized void setRdfTermDomainQualification(String qualification) {
+		markDirty(!Objects.equals(rdfTermDomainQualification, qualification));
 		rdfTermDomainQualification = qualification;
 	}
 
-	StoreProperties setRdfTermDomainsVersion(String predicateObjectDomainsVersion) {
+	synchronized StoreProperties setRdfTermDomainsVersion(String predicateObjectDomainsVersion) {
 		this.predicateObjectDomainsVersion = predicateObjectDomainsVersion;
-		this.dirty = true;
+		markDirty(true);
 		return this;
 	}
 
-	String getLanguageTagKey() {
+	synchronized String getLanguageTagKey() {
 		return languageTagKey;
 	}
 
-	StoreProperties setLanguageTagKey(String languageTagKey) {
-		this.dirty |= !Objects.equals(this.languageTagKey, languageTagKey);
+	synchronized StoreProperties setLanguageTagKey(String languageTagKey) {
+		markDirty(!Objects.equals(this.languageTagKey, languageTagKey));
 		this.languageTagKey = languageTagKey;
 		return this;
 	}
 
-	String getRefCountsVersion() {
+	synchronized String getRefCountsVersion() {
 		return refCountsVersion;
 	}
 
-	StoreProperties setRefCountsVersion(String refCountsVersion) {
-		this.dirty |= !Objects.equals(this.refCountsVersion, refCountsVersion);
+	synchronized StoreProperties setRefCountsVersion(String refCountsVersion) {
+		markDirty(!Objects.equals(this.refCountsVersion, refCountsVersion));
 		this.refCountsVersion = refCountsVersion;
 		return this;
 	}
@@ -469,14 +557,23 @@ class StoreProperties {
 		if (propertiesFile == null) {
 			throw new IllegalStateException("A durable LMDB store identity requires a persistent properties file");
 		}
-		if (storeId == null) {
+		String current;
+		synchronized (this) {
+			current = storeId;
+		}
+		if (current == null) {
 			UUID created = UUID.randomUUID();
-			storeId = created.toString();
-			dirty = true;
-			return created;
+			synchronized (this) {
+				if (storeId == null) {
+					storeId = created.toString();
+					markDirty(true);
+					return created;
+				}
+				current = storeId;
+			}
 		}
 		try {
-			return UUID.fromString(storeId);
+			return UUID.fromString(current);
 		} catch (IllegalArgumentException e) {
 			throw new IllegalStateException("Invalid LMDB store identity in " + propertiesFile, e);
 		}

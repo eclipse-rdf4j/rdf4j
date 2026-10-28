@@ -1152,7 +1152,8 @@ namespace workbench {
 
             var init: any = {
                 method: 'POST',
-                headers: { Accept: COMPACT_ACCEPT + ', ' + ACCEPT + ';q=0.9' },
+                headers: Object.assign({ Accept: COMPACT_ACCEPT + ', ' + ACCEPT + ';q=0.9' },
+                    workbench.csrfHeaders(url)),
                 body: body
             };
             if (callbacks.signal) {
@@ -4898,6 +4899,7 @@ namespace workbench {
                 }
                 (this.document.body || this.target).appendChild(downloadForm);
                 if (typeof downloadForm.submit === 'function') {
+                    workbench.protectSubmittedForm(downloadForm);
                     downloadForm.submit();
                 }
                 if (downloadForm.parentNode) {
@@ -6991,7 +6993,8 @@ namespace workbench {
             try {
                 fetcher.call(window, url || executionUrl({ getAttribute: () => 'query' }), {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+                    headers: Object.assign({ 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+                        workbench.csrfHeaders(url || executionUrl({ getAttribute: () => 'query' }))),
                     body: body,
                     keepalive: true
                 });

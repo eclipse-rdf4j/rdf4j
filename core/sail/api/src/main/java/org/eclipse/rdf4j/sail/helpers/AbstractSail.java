@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.sail.helpers;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -26,6 +28,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+import org.eclipse.rdf4j.common.iteration.CancellationSignal;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
@@ -102,6 +105,15 @@ public abstract class AbstractSail implements Sail {
 	 * until {@link #shutDown() shutdown}.
 	 */
 	private volatile boolean initialized = false;
+	private boolean shuttingDown;
+	private static final VarHandle SHUTTING_DOWN;
+	private volatile long shutdownGeneration;
+	private CancellationSignal shutdownSignal = new CancellationSignal();
+
+	final CancellationSignal shutdownSignal() {
+		return shutdownSignal;
+	}
+
 	private boolean initializing;
 	private volatile QueryExecutionPolicy queryExecutionPolicy = QueryExecutionPolicy.DEFAULT;
 
@@ -217,7 +229,16 @@ public abstract class AbstractSail implements Sail {
 			}
 
 			initializing = true;
-			initializeInternal();
+			shutdownSignal = new CancellationSignal();
+			CancellationSignal previous = CancellationSignal.swapCurrent(shutdownSignal);
+			try {
+				initializeInternal();
+			} catch (RuntimeException | Error failure) {
+				shutdownSignal.cancel();
+				throw failure;
+			} finally {
+				CancellationSignal.restoreCurrent(previous);
+			}
 
 			initialized = true;
 		} finally {
@@ -235,6 +256,8 @@ public abstract class AbstractSail implements Sail {
 	@Override
 	public void shutDown() throws SailException {
 		initializationLock.writeLock().lock();
+		boolean closing = false;
+		CancellationSignal previous = CancellationSignal.swapCurrent(CancellationSignal.NONE);
 		try {
 			if (!isInitialized()) {
 				return;
@@ -243,9 +266,18 @@ public abstract class AbstractSail implements Sail {
 			Map<SailConnection, Throwable> activeConnectionsCopy;
 
 			synchronized (activeConnections) {
+				for (SailConnection connection : activeConnections.keySet()) {
+					if (connection instanceof AbstractSailConnection operationOwner
+							&& operationOwner.hasCurrentOperation()) {
+						throw new SailException("An active Sail operation cannot shut down its own store");
+					}
+				}
+				SHUTTING_DOWN.setRelease(this, true);
+				shutdownGeneration++;
+				closing = true;
 				// Check if any active connections exist. If so, wait for a grace
 				// period for them to finish.
-				if (!activeConnections.isEmpty()) {
+				if (!cancelConnectionsOnShutdown() && !activeConnections.isEmpty()) {
 					logger.debug("Waiting for active connections to close before shutting down...");
 					try {
 						activeConnections.wait(connectionTimeOut);
@@ -260,46 +292,18 @@ public abstract class AbstractSail implements Sail {
 				activeConnectionsCopy = new IdentityHashMap<>(activeConnections);
 			}
 
-			// Interrupt any threads that are still using a connection, in case they are waiting for a lock
+			// Broadcast to executing operations before waiting for any one connection. A creator thread may now
+			// belong to an unrelated pool task and is never cancellation authority.
 			for (Map.Entry<SailConnection, Throwable> entry : activeConnectionsCopy.entrySet()) {
-				try {
-					SailConnection con = entry.getKey();
-
-					if (con.isOpen()) {
-						if (con instanceof AbstractSailConnection) {
-							AbstractSailConnection sailCon = (AbstractSailConnection) con;
-							Thread owner = sailCon.getOwner();
-							if (owner != Thread.currentThread()) {
-								owner.interrupt();
-								// wait up to 1 second for the owner thread to die
-								owner.join(1000);
-								if (owner.isAlive() && con.isOpen()) {
-									logger.error(
-											"Closing active connection due to shut down and interrupted the owning thread of the connection {} but thread is still alive after 1000 ms!",
-											owner);
-								}
-							}
-						}
-					}
-
-				} catch (Throwable e) {
-					if (e instanceof InterruptedException) {
-						throw new SailException(e);
-					} else if (e instanceof AssertionError) {
-						// ignore assertions errors
-					} else if (e instanceof Error) {
-						throw (Error) e;
-					}
-					// ignore all other exceptions
+				if (entry.getKey() instanceof AbstractSailConnection connection) {
+					connection.requestShutdown();
 				}
 			}
+			shutdownSignal.cancel();
 
 			// Forcefully close any connections that are still open
 			for (Map.Entry<SailConnection, Throwable> entry : activeConnectionsCopy.entrySet()) {
 				SailConnection con = entry.getKey();
-				if (!con.isOpen()) {
-					continue;
-				}
 				Throwable stackTrace = entry.getValue();
 
 				if (stackTrace == null) {
@@ -323,9 +327,28 @@ public abstract class AbstractSail implements Sail {
 
 			shutDownInternal();
 		} finally {
-			initialized = false;
+			if (closing) {
+				initialized = false;
+				SHUTTING_DOWN.setRelease(this, false);
+			}
 			initializationLock.writeLock().unlock();
+			CancellationSignal.restoreCurrent(previous);
 		}
+	}
+
+	/** Stores with interruptible operation accounting can cancel immediately rather than grant a close grace period. */
+	protected boolean cancelConnectionsOnShutdown() {
+		return false;
+	}
+
+	/**
+	 * Whether connections track every result pull, so that close drains in-flight pulls before {@code closeInternal}
+	 * and shutdown interrupts the pulling thread. Tracking needs ordered memory accesses on every pull, which stalls
+	 * memory-bound scans, so it is reserved for stores whose result pulls use native resources that close releases.
+	 * Results of other stores still stop at their next pull once the creating workload is cancelled.
+	 */
+	protected boolean tracksResultPulls() {
+		return false;
 	}
 
 	/**
@@ -335,11 +358,15 @@ public abstract class AbstractSail implements Sail {
 
 	@Override
 	public SailConnection getConnection() throws SailException {
+		long generation = shutdownGeneration;
+		verifyConnectionAdmission(generation);
 		if (!isInitialized()) {
 			init();
 		}
+		verifyConnectionAdmission(generation);
 		initializationLock.readLock().lock();
 		try {
+			verifyConnectionAdmission(generation);
 			SailConnection connection = getConnectionInternal();
 
 			Throwable stackTrace = debugEnabled() ? new Throwable() : null;
@@ -350,6 +377,20 @@ public abstract class AbstractSail implements Sail {
 			return connection;
 		} finally {
 			initializationLock.readLock().unlock();
+		}
+	}
+
+	private void verifyConnectionAdmission(long generation) {
+		if ((boolean) SHUTTING_DOWN.getAcquire(this) || generation != shutdownGeneration) {
+			throw new SailException("Sail is shutting down");
+		}
+	}
+
+	static {
+		try {
+			SHUTTING_DOWN = MethodHandles.lookup().findVarHandle(AbstractSail.class, "shuttingDown", boolean.class);
+		} catch (ReflectiveOperationException failure) {
+			throw new ExceptionInInitializerError(failure);
 		}
 	}
 

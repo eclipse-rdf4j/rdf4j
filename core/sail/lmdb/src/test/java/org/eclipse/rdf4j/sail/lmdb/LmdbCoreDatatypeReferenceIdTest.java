@@ -35,14 +35,52 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.IdCapability;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class LmdbCoreDatatypeReferenceIdTest {
 
 	private static final String ENCODING_KEY = "literal-reference-encoding";
 	private static final String CORE_V1 = "core-v1";
 	private static final long FIRST_UNENCODABLE_ORDINAL = 1L << 50;
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void freshNativeCatalogKeepsMandatoryNestedTermOwnership(boolean legacy, @TempDir File directory)
+			throws Exception {
+		StoreProperties properties = legacy ? persistedProperties(directory, "2", null)
+				: new StoreProperties(directory);
+		SimpleValueFactory factory = SimpleValueFactory.getInstance();
+		IRI subject = factory.createIRI("urn:fresh-catalog:subject");
+		IRI predicate = factory.createIRI("urn:fresh-catalog:predicate");
+		Literal literal = factory.createLiteral("custom typed value", factory.createIRI("urn:fresh-catalog:datatype"));
+		var inner = factory.createTripleTerm(subject, predicate, literal);
+		var outer = factory.createTripleTerm(subject, predicate, inner);
+		long owner;
+		ValueStore store = new ValueStore(new File(directory, "values"), properties, nonInliningConfig());
+		try {
+			store.startTransaction(true);
+			owner = store.storeValue(outer);
+			store.commit();
+			assertThat(store.getValue(owner)).isEqualTo(outer);
+			assertThat(TripleIndex.parseIndexSpecList(properties.getTripleTermIndexes()))
+					.contains("spoc", "cspo");
+		} finally {
+			store.close();
+		}
+		ValueStore reopened = new ValueStore(new File(directory, "values"), properties, nonInliningConfig());
+		try {
+			assertThat(reopened.getId(outer)).isEqualTo(owner);
+			assertThat(reopened.getValue(owner)).isEqualTo(outer);
+			assertThat(reopened.getId(inner)).isNotEqualTo(LmdbValue.UNKNOWN_ID);
+			assertThat(reopened.getId(literal)).isNotEqualTo(LmdbValue.UNKNOWN_ID);
+		} finally {
+			reopened.close();
+		}
+	}
 
 	@Test
 	void coreDatatypeIsEncodedInNonInlineLiteralIdAndSurvivesReopen(@TempDir File directory) throws Exception {

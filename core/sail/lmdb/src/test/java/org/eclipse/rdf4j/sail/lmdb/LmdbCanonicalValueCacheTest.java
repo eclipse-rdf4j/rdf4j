@@ -37,6 +37,7 @@ import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
@@ -330,6 +331,69 @@ class LmdbCanonicalValueCacheTest {
 		assertEquals(expectedVersion == LmdbStoreFormat.CURRENT_VERSION,
 				values.getFormat().usesCoreDatatypeLiteralReferences());
 		assertFalse(values.getFormat().inlinesLiterals());
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void abortedCanonicalShellCannotDecodeLaterFreeIdReuse(boolean nested) throws Exception {
+		Value original = nested ? Shape.NESTED.value() : Shape.IRI.value();
+		Value replacement = nested
+				? VF.createTripleTerm(SUBJECT, PREDICATE,
+						VF.createTripleTerm(SUBJECT, PREDICATE, VF.createLiteral("free replacement", DATATYPE)))
+				: VF.createIRI("urn:canonical:free-replacement");
+		store.startTransaction(true);
+		storeReplacementChildren(replacement);
+		long reusableId = store.storeValue(original);
+		store.commit();
+
+		assertTrue(store.hasTrustedReferenceCounts(), "the standalone value fixture begins with exact counts");
+		store.completeStoreInitialization(ids -> {
+			// This ValueStore has no TripleStore or statements, so no retired owner is triple-live.
+		});
+		assertTrue(store.hasTrustedReferenceCounts(), "the known-empty triple owner set preserves exact counts");
+		store.startTransaction(true);
+		store.gcIds(Set.of(reusableId), new HashSet<>());
+		store.commit();
+		assertEquals(LmdbValue.UNKNOWN_ID, store.getId(original));
+		assertTrue(store.getLmdbStats().get("unused_ids").entries() > 0L,
+				"retiring the one known root must persist its unused ID");
+		int visited = store.reclaimPersistedUnusedIdsBatch(64);
+		assertTrue(visited > 0, "the finite known-unused cohort must be physically reclaimed");
+		assertEquals(0L, store.getLmdbStats().get("unused_ids").entries());
+		assertTrue(store.getLmdbStats().get("free_ids").entries() > 0L,
+				"physical reclamation must persist a real reusable free ID");
+
+		store.startTransaction(true);
+		long abortedId = store.storeValue(original);
+		assertEquals(reusableId, abortedId, "the aborted association must use the actual free ID");
+		LmdbValue aborted = store.getLazyValue(abortedId);
+		store.rollback();
+		assertThrows(SailException.class, aborted::init,
+				"an unresolved shell cannot retain the native association its writer aborted");
+
+		store.close();
+		store = new CountingValueStore(directory.resolve("values"), 32);
+		store.startTransaction(true);
+		long replacementId = store.storeValue(replacement);
+		store.commit();
+		assertEquals(reusableId, replacementId,
+				"the persisted free compound/value ID must actually be assigned after reopen");
+		LmdbValue newValue = store.getLazyValue(replacementId);
+		assertNotSame(aborted, newValue, "free-ID reuse must publish a new canonical lazy shell");
+		assertEquals(replacement, newValue, "the replacement association must decode to its committed value");
+		assertEquals(replacement, store.getValue(replacementId));
+		assertThrows(SailException.class, aborted::init,
+				"reopening and reusing the same free ID must not revive the aborted association");
+	}
+
+	private void storeReplacementChildren(Value replacement) throws IOException {
+		if (replacement instanceof TripleTerm term) {
+			store.storeValue(term.getSubject());
+			store.storeValue(term.getPredicate());
+			store.storeValue(term.getObject());
+		} else if (replacement instanceof IRI iri) {
+			store.storeValue(VF.createIRI(iri.getNamespace(), "namespace-anchor"));
+		}
 	}
 
 	@Test

@@ -104,6 +104,9 @@ import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.Window;
+import org.eclipse.rdf4j.query.algebra.WindowElem;
+import org.eclipse.rdf4j.query.algebra.WindowFunctionCall;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 
 @InternalUseOnly
@@ -247,6 +250,21 @@ public abstract class StatementPatternVisitor implements QueryModelVisitor<Excep
 	@Override
 	public void meet(Group node) throws Exception {
 		((UnaryTupleOperator) node).visitChildren(this);
+	}
+
+	@Override
+	public void meet(Window node) throws Exception {
+		((UnaryTupleOperator) node).visitChildren(this);
+	}
+
+	@Override
+	public void meet(WindowElem node) throws Exception {
+		node.visitChildren(this);
+	}
+
+	@Override
+	public void meet(WindowFunctionCall node) throws Exception {
+		node.visitChildren(this);
 	}
 
 	@Override

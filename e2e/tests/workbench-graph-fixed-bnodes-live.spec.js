@@ -18,6 +18,7 @@ const {
 	deleteRepository,
 	memoryRepositoryConfiguration,
 	openQueryPage,
+	postWorkbench,
 	repositoryPageUrl,
 	runQuery,
 	serverBaseUrl,
@@ -76,7 +77,7 @@ test.describe.configure({ mode: 'serial' });
 test.setTimeout(120000);
 
 async function queryStoredBlankNode(request, query) {
-	const response = await request.post(repositoryPageUrl(REPOSITORY_ID, 'graph'), {
+	const response = await postWorkbench(request, repositoryPageUrl(REPOSITORY_ID, 'graph'), {
 		headers: {
 			Accept: 'application/sparql-results+json',
 			'Content-Type': 'application/sparql-query'

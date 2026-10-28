@@ -15,6 +15,7 @@ import java.util.Objects;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
 import org.eclipse.rdf4j.sail.base.SailClosable;
@@ -27,6 +28,7 @@ final class LmdbStoreEvaluationStatistics extends LmdbEvaluationStatistics
 
 	private final LmdbDetachedPlanningSnapshotProvider detachedPlanningSnapshots;
 	private final Supplier<SailClosable> planningViewMask;
+	private final Supplier<LmdbSailStore.ReadView> directDomainSnapshots;
 
 	LmdbStoreEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
 			SketchBasedJoinEstimator estimator, LmdbFilterSelectivityStats filters,
@@ -37,7 +39,7 @@ final class LmdbStoreEvaluationStatistics extends LmdbEvaluationStatistics
 			LmdbDetachedPlanningSnapshotProvider detachedPlanningSnapshots, Supplier<SailClosable> planningViewMask) {
 		this(valueStore, tripleStore, estimator, filters, feedback, cardinalities, cascadesPlanCache,
 				frontierSettings, mayHaveInferred, adaptiveEvidenceAllowedSupplier, statistics,
-				detachedPlanningSnapshots, planningViewMask, null, QueryExecutionPolicy.DEFAULT);
+				detachedPlanningSnapshots, planningViewMask, null, QueryExecutionPolicy.DEFAULT, () -> null, null);
 	}
 
 	LmdbStoreEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
@@ -47,12 +49,70 @@ final class LmdbStoreEvaluationStatistics extends LmdbEvaluationStatistics
 			LmdbFrontierPlannerSettings frontierSettings, BooleanSupplier mayHaveInferred,
 			BooleanSupplier adaptiveEvidenceAllowedSupplier, LmdbStatisticsService statistics,
 			LmdbDetachedPlanningSnapshotProvider detachedPlanningSnapshots, Supplier<SailClosable> planningViewMask,
-			LmdbLearnedFilterSelectivity learned, QueryExecutionPolicy policy) {
+			LmdbLearnedFilterSelectivity learned, QueryExecutionPolicy policy,
+			Supplier<LmdbSailStore.ReadView> directDomainSnapshots) {
+		this(valueStore, tripleStore, estimator, filters, feedback, cardinalities, cascadesPlanCache,
+				frontierSettings, mayHaveInferred, adaptiveEvidenceAllowedSupplier, statistics,
+				detachedPlanningSnapshots,
+				planningViewMask, learned, policy, directDomainSnapshots, null);
+	}
+
+	LmdbStoreEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
+			SketchBasedJoinEstimator estimator, LmdbFilterSelectivityStats filters,
+			LmdbOperatorFeedbackStats feedback, LmdbStatementPatternCardinalitySource cardinalities,
+			PackedPlanCache cascadesPlanCache,
+			LmdbFrontierPlannerSettings frontierSettings, BooleanSupplier mayHaveInferred,
+			BooleanSupplier adaptiveEvidenceAllowedSupplier, LmdbStatisticsService statistics,
+			LmdbDetachedPlanningSnapshotProvider detachedPlanningSnapshots, Supplier<SailClosable> planningViewMask,
+			LmdbLearnedFilterSelectivity learned, QueryExecutionPolicy policy,
+			Supplier<LmdbSailStore.ReadView> directDomainSnapshots,
+			Supplier<LmdbEstimatorRuntime.PublishedProviders> providers) {
 		super(valueStore, tripleStore, estimator, filters, feedback, cardinalities, cascadesPlanCache,
-				frontierSettings, mayHaveInferred, adaptiveEvidenceAllowedSupplier, statistics, learned, policy);
+				frontierSettings, mayHaveInferred, adaptiveEvidenceAllowedSupplier, statistics, learned, policy,
+				providers);
 		this.detachedPlanningSnapshots = Objects.requireNonNull(detachedPlanningSnapshots,
 				"detachedPlanningSnapshots");
 		this.planningViewMask = Objects.requireNonNull(planningViewMask, "planningViewMask");
+		this.directDomainSnapshots = Objects.requireNonNull(directDomainSnapshots, "directDomainSnapshots");
+	}
+
+	@Override
+	public RdfTermDomain getRdfTermDomain(IRI predicate) {
+		LmdbEstimatorRuntime runtime = estimatorRuntime();
+		TripleStore triples = runtime.physicalTripleStore();
+		ValueStore values = runtime.valueStore();
+		if (predicate == null || triples == null || values == null || runtime.hasPairedPlanningAuthority()
+				|| runtime.hasPlannerCache() || triples.hasPlanningReadContext() || values.hasDomainReadContext()
+				|| triples.currentWriterTransaction() != null) {
+			return super.getRdfTermDomain(predicate);
+		}
+		LmdbSailStore.ReadView view = directDomainSnapshots.get();
+		if (view == null) {
+			return RdfTermDomain.UNRESTRICTED;
+		}
+		try (view) {
+			TripleStore.PlanningReadPin pin;
+			try {
+				pin = runtime.pinPlanningReads(view.tripleTxn(), view.valueSnapshot());
+			} catch (LmdbSailStore.MapResizeConflictException invalidated) {
+				return unavailableAfterResize(invalidated);
+			}
+			try (pin) {
+				try {
+					return runtime.hasPairedPlanningAuthority() ? super.getRdfTermDomain(predicate)
+							: RdfTermDomain.UNRESTRICTED;
+				} catch (LmdbSailStore.MapResizeConflictException invalidated) {
+					return unavailableAfterResize(invalidated);
+				}
+			}
+		}
+	}
+
+	private static RdfTermDomain unavailableAfterResize(LmdbSailStore.MapResizeConflictException invalidated) {
+		if (invalidated.getSuppressed().length != 0) {
+			throw invalidated;
+		}
+		return RdfTermDomain.UNRESTRICTED;
 	}
 
 	SailClosable maskPlanningReadView() {

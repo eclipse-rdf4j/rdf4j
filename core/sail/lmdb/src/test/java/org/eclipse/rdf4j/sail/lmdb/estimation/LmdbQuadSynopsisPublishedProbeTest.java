@@ -139,6 +139,43 @@ class LmdbQuadSynopsisPublishedProbeTest {
 	}
 
 	@ParameterizedTest
+	@ValueSource(strings = { "request-before", "request-during", "close-before", "close-during" })
+	void directProbeDeclinesAcrossPendingRequestOrClose(String change) {
+		List<Statement> statements = new ArrayList<>(List.of(FIRST));
+		try (LmdbQuadSynopsisService service = service(statements, new AtomicInteger())) {
+			assertTrue(service.forceFlush());
+			QuadProbe actual = probe(service);
+			QuadProbe requested = actual;
+			AtomicBoolean pending = new AtomicBoolean(change.endsWith("-during"));
+			Runnable transition = () -> {
+				if (change.startsWith("request")) {
+					statements.add(SECOND);
+					service.requestRebuild();
+				} else {
+					service.close();
+				}
+			};
+			if (pending.get()) {
+				requested = mock(QuadProbe.class, delegatesTo(actual));
+				doAnswer(invocation -> {
+					if (pending.getAndSet(false)) {
+						transition.run();
+					}
+					return actual.boundMask();
+				}).when(requested).boundMask();
+			} else {
+				transition.run();
+			}
+			assertFalse(service.probe(requested).usable(), change);
+			assertFalse(pending.get(), "the transition must occur during the direct probe");
+			if (change.startsWith("request")) {
+				assertTrue(service.forceFlush());
+				assertTrue(service.probe(probe(service)).usable(), "a successful rebuild restores evidence");
+			}
+		}
+	}
+
+	@ParameterizedTest
 	@ValueSource(strings = { "add", "delete", "request", "size", "replace", "close" })
 	void publicationChangeDuringImmutableSnapshotProbeDeclines(String change) {
 		List<Statement> statements = new ArrayList<>(List.of(FIRST));

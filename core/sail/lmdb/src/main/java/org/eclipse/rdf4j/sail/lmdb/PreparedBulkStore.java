@@ -86,17 +86,23 @@ final class PreparedBulkStore {
 	private record Captured(Snapshot snapshot, boolean tripleTransactionBound, boolean pendingDomainMaintenance) {
 	}
 
+	/** Records only a reason to decline admission; it is never positive native authority. */
+	private static final class SealedProbe {
+		private boolean pendingDomainMaintenance;
+	}
+
 	private PreparedBulkStore() {
 	}
 
 	/** Rejects mixed or partially replaced native generations even when a startup certificate cannot be used. */
-	static void validateGenerationPair(MemoryStack stack, long valuesTransaction, long triplesTransaction)
+	static String validateGenerationPair(MemoryStack stack, long valuesTransaction, long triplesTransaction)
 			throws IOException {
 		byte[] values = readGeneration(stack, valuesTransaction, "gc_meta");
 		byte[] triples = readGeneration(stack, triplesTransaction, TripleStore.NAMESPACE_DATABASE_NAME);
 		if (!Arrays.equals(values, triples)) {
 			throw new IOException("LMDB environments belong to different bulk generations");
 		}
+		return values == null ? "" : HexFormat.of().formatHex(values);
 	}
 
 	/**
@@ -187,12 +193,25 @@ final class PreparedBulkStore {
 
 	static Snapshot read(Path directory, StoreProperties properties, LmdbStoreConfig config) {
 		properties.rdfTermDomainQualifiedAtOpen = false;
-		Snapshot sealed = readSealed(directory, properties, config);
-		return sealed != null ? sealed : readCurrent(directory, properties, config);
+		properties.rdfTermDomainWitnessAtOpen = null;
+		properties.rdfTermDomainDiscoveryPair = null;
+		SealedProbe probe = new SealedProbe();
+		Snapshot sealed = readSealed(directory, properties, config, probe);
+		if (sealed != null || probe.pendingDomainMaintenance) {
+			// Pending maintenance only declines the fast path. Ordinary discovery captures a fresh native pair,
+			// including when another writer changes it after this observation.
+			return sealed;
+		}
+		return readCurrent(directory, properties, config);
 	}
 
 	/** Publication callbacks must preserve this exact certificate; native-only trust cannot replace a changed seal. */
 	static Snapshot readSealed(Path directory, StoreProperties properties, LmdbStoreConfig config) {
+		return readSealed(directory, properties, config, null);
+	}
+
+	private static Snapshot readSealed(Path directory, StoreProperties properties, LmdbStoreConfig config,
+			SealedProbe probe) {
 		Path certificate = directory.resolve(FILE_NAME);
 		try {
 			if (!properties.isLoaded()
@@ -232,6 +251,9 @@ final class PreparedBulkStore {
 			}
 			Captured captured = capture(directory, properties, config);
 			RdfTermDomainQualification.observe(properties, captured.snapshot);
+			if (probe != null) {
+				probe.pendingDomainMaintenance = captured.pendingDomainMaintenance;
+			}
 			Snapshot actual = captured.snapshot;
 			if (captured.pendingDomainMaintenance || !expected.equals(actual)) {
 				return null;
@@ -266,6 +288,7 @@ final class PreparedBulkStore {
 			return snapshot;
 		} catch (IOException | RuntimeException invalid) {
 			properties.rdfTermDomainQualifiedAtOpen = false;
+			properties.rdfTermDomainWitnessAtOpen = null;
 			return null;
 		}
 	}
@@ -359,7 +382,7 @@ final class PreparedBulkStore {
 			valuesTxn = pointer.get(0);
 			E(mdb_txn_begin(triplesEnv, NULL, MDB_RDONLY, pointer));
 			triplesTxn = pointer.get(0);
-			validateGenerationPair(stack, valuesTxn, triplesTxn);
+			String identity = validateGenerationPair(stack, valuesTxn, triplesTxn);
 			long valueTransaction = mdb_txn_id(valuesTxn);
 			long tripleTransaction = mdb_txn_id(triplesTxn);
 			int metadata = open(stack, valuesTxn, "gc_meta");
@@ -374,8 +397,6 @@ final class PreparedBulkStore {
 				throw new IOException("Native triple transaction changed after clean ValueStore completion");
 			}
 			LegacyStoreDiscovery.validateCurrentMetadata(stack, valuesTxn, triplesTxn, properties);
-			byte[] generation = readGeneration(stack, valuesTxn, "gc_meta");
-			String identity = generation == null ? "" : HexFormat.of().formatHex(generation);
 			Environment values = environment(stack, valuesEnv, valueTransaction, identity);
 			Environment triples = environment(stack, triplesEnv, tripleTransaction, identity);
 			boolean pendingUnused = hasEntries(stack, valuesTxn, "unused_ids");

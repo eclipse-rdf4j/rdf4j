@@ -12,8 +12,10 @@ package org.eclipse.rdf4j.http.server.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.fail;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -68,6 +70,24 @@ public class RepositoryControllerTest {
 
 		verify(manager).addRepositoryConfig(config.capture());
 		assertThat(config.getValue().getID()).isEqualTo(repositoryId);
+	}
+
+	@Test
+	public void putOnNewRepoRejectsRedactedPasswordMarker() throws Exception {
+		request.setMethod(HttpMethod.PUT.name());
+		request.setContentType(RDFFormat.NTRIPLES.getDefaultMIMEType());
+		request.setContent(("_:node1 <" + RepositoryConfigSchema.REPOSITORYID + "> \"" + repositoryId + "\" .\n"
+				+ "_:node1 <tag:rdf4j.org,2023:config/lucene.elasticsearch.http.password> "
+				+ "\"REDACTED\"^^<tag:rdf4j.org,2023:config/redactedSecret> .")
+						.getBytes(StandardCharsets.UTF_8));
+
+		try {
+			controller.handleRequest(request, response);
+			fail("expected rejection of a redacted secret on a new repository");
+		} catch (ClientHTTPException e) {
+			assertThat(e.getStatusCode()).isEqualTo(400);
+		}
+		verify(manager, never()).addRepositoryConfig(any());
 	}
 
 	@Test

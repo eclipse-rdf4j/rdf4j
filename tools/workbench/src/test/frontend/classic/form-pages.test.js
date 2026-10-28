@@ -38,6 +38,55 @@ test('template helpers chain loads, parse cookies, and update selected user', ()
     assert.equal(harness.document.getElementById('selected-user').textContent, '');
 });
 
+test('template protects browser and native POST forms with the current session token', () => {
+    const harness = createFormBrowserHarness();
+    harness.document.cookie = 'rdf4j-workbench-csrf=' + 'a'.repeat(64);
+    const post = harness.registerElement('form', { attributes: { method: 'post' } });
+    post.method = 'post';
+    const get = harness.registerElement('form', { attributes: { method: 'get' } });
+    get.method = 'get';
+    const external = harness.registerElement('form', {
+        attributes: { method: 'post', action: 'https://external.example/upload' }
+    });
+    external.method = 'post';
+    const foreignToken = harness.registerElement('input', {
+        attributes: { name: '_csrf' }, value: 'external-app-token'
+    });
+    external.appendChild(foreignToken);
+    harness.document.body.appendChild(post);
+    harness.document.body.appendChild(get);
+    harness.document.body.appendChild(external);
+    harness.loadScripts([]);
+    harness.runLoadHandlers();
+
+    assert.equal(post.querySelector('input[name="_csrf"]').value, 'a'.repeat(64));
+    assert.equal(get.querySelector('input[name="_csrf"]'), null);
+    assert.equal(external.querySelector('input[name="_csrf"]'), foreignToken);
+
+    harness.document.cookie = 'rdf4j-workbench-csrf=' + 'b'.repeat(64);
+    harness.context.workbench.protectSubmittedForm(post);
+    assert.equal(post.querySelector('input[name="_csrf"]').value, 'b'.repeat(64));
+
+    harness.context.workbench.protectSubmittedForm(post, 'get', 'query');
+    assert.equal(post.querySelector('input[name="_csrf"]'), null);
+    harness.context.workbench.protectSubmittedForm(post, 'post', 'query');
+    assert.equal(post.querySelector('input[name="_csrf"]').value, 'b'.repeat(64));
+    harness.context.workbench.protectSubmittedForm(post, 'post', 'https://external.example/upload');
+    assert.equal(post.querySelector('input[name="_csrf"]'), null);
+});
+
+test('generic same-origin AJAX POST carries the current token without leaking it externally', () => {
+    const harness = createFormBrowserHarness();
+    harness.document.cookie = 'rdf4j-workbench-csrf=' + 'c'.repeat(64);
+    harness.loadScripts([]);
+    harness.runLoadHandlers();
+
+    harness.$.ajax({ url: 'query', type: 'POST', data: 'query=ASK%7B%7D' });
+    assert.equal(harness.ajaxRequests[0].options.headers['X-RDF4J-CSRF-Token'], 'c'.repeat(64));
+    harness.$.ajax({ url: 'https://external.example/query', type: 'POST' });
+    assert.equal(harness.ajaxRequests[1].options.headers?.['X-RDF4J-CSRF-Token'], undefined);
+});
+
 test('add page handles context and source selection branches', () => {
     const harness = createFormBrowserHarness();
     const text = harness.registerElement('textarea', { id: 'text' });

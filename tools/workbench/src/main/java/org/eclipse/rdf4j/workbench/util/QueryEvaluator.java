@@ -829,7 +829,7 @@ public final class QueryEvaluator {
 			cookies.addTotalResultCountCookie(req, resp, statements.size());
 		}
 		int totalResultCount = knownTotalResultCount == null ? statements.size() : knownTotalResultCount;
-		builder.start("subject", "predicate", "object");
+		builder.start("subject", "predicate", "object", "context");
 		builder.link(List.of(INFO));
 		addWorkbenchMetadata(builder, req, responseQueryText);
 		addQueryDurationMetadata(builder, responseQueryText, queryDurationMillis);

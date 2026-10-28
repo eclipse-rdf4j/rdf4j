@@ -16,6 +16,7 @@ import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.Dataset;
@@ -63,10 +64,13 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 	 * Feedback publication scope. Learned state (exact facts, multipliers, filter cells, semi/anti surfaces) is stamped
 	 * with the committed data version, so it may only be trained by queries that read a committed snapshot. A query
 	 * inside a transaction with pending writes reads through the changeset overlay, whose dataset carries no snapshot
-	 * epoch; its rows may be rolled back and must never teach the store. The scope fails closed: an instance publishes
-	 * only after {@link #bindExecutionSnapshot(OptionalLong)} was called with a present epoch.
+	 * epoch; its rows may be rolled back and must never teach the store. Store-backed instances require the actual
+	 * paired source and recheck its currentness when using or publishing optional evidence.
 	 */
 	private volatile boolean feedbackPublicationAllowed;
+	private final boolean requiresReadAuthority;
+	private volatile LmdbFeedbackReadAuthority readAuthority;
+	private TripleSource executionSource;
 
 	LmdbEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
 			SketchBasedJoinEstimator estimator) {
@@ -139,15 +143,29 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 			LmdbFrontierPlannerSettings frontierSettings, BooleanSupplier mayHaveInferred,
 			BooleanSupplier adaptiveEvidenceAllowedSupplier, LmdbStatisticsService statistics,
 			LmdbLearnedFilterSelectivity learned, QueryExecutionPolicy policy) {
+		this(valueStore, tripleStore, estimator, filters, feedback, cardinalities, cascadesPlanCache, frontierSettings,
+				mayHaveInferred, adaptiveEvidenceAllowedSupplier, statistics, learned, policy, null);
+	}
+
+	LmdbEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
+			SketchBasedJoinEstimator estimator, LmdbFilterSelectivityStats filters,
+			LmdbOperatorFeedbackStats feedback, LmdbStatementPatternCardinalitySource cardinalities,
+			PackedPlanCache cascadesPlanCache,
+			LmdbFrontierPlannerSettings frontierSettings, BooleanSupplier mayHaveInferred,
+			BooleanSupplier adaptiveEvidenceAllowedSupplier, LmdbStatisticsService statistics,
+			LmdbLearnedFilterSelectivity learned, QueryExecutionPolicy policy,
+			Supplier<LmdbEstimatorRuntime.PublishedProviders> providers) {
 		BooleanSupplier adaptiveEvidenceAllowed = adaptiveEvidenceAllowedSupplier == null ? () -> true
 				: adaptiveEvidenceAllowedSupplier;
+		requiresReadAuthority = providers != null;
 		LmdbLearnedFilterSelectivity qualifiedLearned = policy.experimentalQueryOptimizations() ? learned : null;
 		runtime = new LmdbEstimatorRuntime(valueStore, tripleStore,
 				estimator == null ? null : estimator.synopsisService(), filters, feedback, cardinalities,
 				cascadesPlanCache, frontierSettings, mayHaveInferred,
-				adaptiveEvidenceAllowed, statistics, qualifiedLearned);
+				() -> adaptiveEvidenceAllowed.getAsBoolean() && readAuthorityAllowsEvidence(), statistics,
+				qualifiedLearned, providers);
 		filterServices = new LmdbEvaluationFilterServices(runtime, filters, estimator, adaptiveEvidenceAllowed,
-				qualifiedLearned);
+				qualifiedLearned, this::captureFeedbackAuthority);
 	}
 
 	@Override
@@ -156,13 +174,90 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 	}
 
 	/**
-	 * Binds this per-query statistics instance to the snapshot the query executes against. Feedback is published only
-	 * when the epoch is present, i.e. the triple source reads a committed snapshot rather than an uncommitted changeset
-	 * overlay (the same signal {@link LmdbCascadesOptimizer} uses to decline proof rewrites). Planning and estimation
-	 * are not affected by this scope.
+	 * Retains the numeric binding used by standalone statistics. Store-backed statistics require the actual paired
+	 * source instead; an epoch alone cannot establish its ownership or currentness.
 	 */
 	void bindExecutionSnapshot(OptionalLong executionSnapshotEpoch) {
-		feedbackPublicationAllowed = executionSnapshotEpoch != null && executionSnapshotEpoch.isPresent();
+		readAuthority = null;
+		executionSource = null;
+		feedbackPublicationAllowed = !requiresReadAuthority && executionSnapshotEpoch != null
+				&& executionSnapshotEpoch.isPresent();
+	}
+
+	void bindExecutionSource(TripleSource source, Dataset dataset) {
+		feedbackPublicationAllowed = false;
+		readAuthority = null;
+		executionSource = null;
+		filterServices.clearReadSource();
+		if (!requiresReadAuthority) {
+			OptionalLong epoch = executionSnapshotEpoch(source);
+			bindFilterReadSource(source, dataset);
+			feedbackPublicationAllowed = epoch != null && epoch.isPresent();
+			return;
+		}
+		LmdbFeedbackReadAuthority candidate = LmdbFeedbackReadAuthority.capture(runtime, source, dataset);
+		if (candidate == null) {
+			return;
+		}
+		filterServices.bindReadSource(source, dataset);
+		readAuthority = candidate;
+		executionSource = source;
+		feedbackPublicationAllowed = true;
+	}
+
+	void bindOptimizerSource(TripleSource source, OptionalLong qualifiedEpoch) {
+		if (!requiresReadAuthority || qualifiedEpoch == null || qualifiedEpoch.isEmpty()) {
+			bindExecutionSnapshot(qualifiedEpoch);
+		} else if (executionSource != source || readAuthority == null) {
+			bindExecutionSource(source, null);
+		}
+	}
+
+	void bindOptimizerDataset(TripleSource source, Dataset dataset) {
+		if (requiresReadAuthority && source == executionSource && feedbackPublicationAllowed()) {
+			filterServices.bindReadSource(source, dataset);
+		}
+	}
+
+	private boolean readAuthorityAllowsEvidence() {
+		LmdbFeedbackReadAuthority authority = readAuthority;
+		return !requiresReadAuthority || authority != null && authority.isCurrent();
+	}
+
+	private LmdbFeedbackReadAuthority.Publication captureFeedbackAuthority() {
+		LmdbFeedbackReadAuthority captured = readAuthority;
+		return new LmdbFeedbackReadAuthority.Publication() {
+			private boolean stillBound() {
+				return feedbackPublicationAllowed && (!requiresReadAuthority
+						|| captured != null && captured == readAuthority);
+			}
+
+			@Override
+			public boolean getAsBoolean() {
+				return stillBound() && (!requiresReadAuthority || captured.isCurrent());
+			}
+
+			@Override
+			public void publish(Runnable operation) {
+				if (!requiresReadAuthority) {
+					LmdbFeedbackReadAuthority.Publication.super.publish(operation);
+				} else if (captured != null) {
+					captured.publish(this::stillBound, operation);
+				}
+			}
+
+			@Override
+			public void publishPrepared(Supplier<Runnable> preparation, Runnable fixedProviderCallback) {
+				if (!requiresReadAuthority) {
+					LmdbFeedbackReadAuthority.Publication.super.publishPrepared(preparation, fixedProviderCallback);
+				} else if (getAsBoolean()) {
+					Runnable mutation = preparation.get();
+					if (mutation != null) {
+						publish(mutation);
+					}
+				}
+			}
+		};
 	}
 
 	void bindFilterReadSource(TripleSource source, Dataset dataset) {
@@ -170,14 +265,14 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 	}
 
 	void prepareFilterOutcome(Filter filter, TripleSource source, Dataset dataset) {
-		if (feedbackPublicationAllowed) {
+		if (feedbackPublicationAllowed() && (!requiresReadAuthority || source == executionSource)) {
 			filterServices.prepareFilterOutcome(filter, source, dataset);
 		}
 	}
 
 	/** Returns whether runtime feedback observed through this instance is published into the learned state. */
 	boolean feedbackPublicationAllowed() {
-		return feedbackPublicationAllowed;
+		return feedbackPublicationAllowed && readAuthorityAllowsEvidence();
 	}
 
 	/**
@@ -283,7 +378,7 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 
 	@Override
 	public void recordFilterOutcome(Filter filter, FilterOutcomeObservation observation) {
-		if (!feedbackPublicationAllowed) {
+		if (!feedbackPublicationAllowed()) {
 			return;
 		}
 		filterServices.recordFilterOutcome(filter, observation);
@@ -291,10 +386,10 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 
 	@Override
 	public void recordSemiAntiOutcome(Filter filter, SemiAntiOutcomeObservation observation) {
-		if (!feedbackPublicationAllowed) {
+		if (!feedbackPublicationAllowed()) {
 			return;
 		}
-		runtime.recordSemiAntiOutcome(filter, observation);
+		runtime.recordSemiAntiOutcome(filter, observation, captureFeedbackAuthority());
 	}
 
 	@Override
@@ -347,15 +442,19 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 
 	@Override
 	public boolean shouldTrackCostFeedback(QueryModelNode node) {
-		return feedbackPublicationAllowed && super.shouldTrackCostFeedback(node)
-				&& runtime.feedback() != null && node instanceof TupleExpr expression
-				&& runtime.feedback().shouldTrackRuntimeFeedback(expression);
+		if (!feedbackPublicationAllowed() || !super.shouldTrackCostFeedback(node)
+				|| !(node instanceof TupleExpr expression)) {
+			return false;
+		}
+		LmdbOperatorFeedbackStats feedback = runtime.feedback();
+		return feedback == null ? node instanceof Filter && filterServices.supportsFilterSelectivityCosting()
+				: feedback.shouldTrackRuntimeFeedback(expression);
 	}
 
 	@Override
 	public RuntimeFeedbackTarget resolveRuntimeFeedbackTarget(QueryModelNode node,
 			RuntimeFeedbackContract contract) {
-		if (!feedbackPublicationAllowed) {
+		if (!feedbackPublicationAllowed()) {
 			return RuntimeFeedbackTarget.NO_OP;
 		}
 		return filterServices.resolveRuntimeFeedbackTarget(node, contract);
@@ -369,14 +468,58 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 	@Override
 	public void publishRuntimeFeedbackTargets(RuntimeFeedbackTarget[] targets, int targetCount,
 			boolean rootCompleted) {
-		if (!feedbackPublicationAllowed) {
+		if (targets == null || targetCount <= 0) {
 			return;
 		}
-		LmdbOperatorFeedbackStats feedback = runtime.feedback();
-		if (feedback == null) {
-			super.publishRuntimeFeedbackTargets(targets, targetCount, rootCompleted);
-		} else {
-			feedback.publishRuntimeFeedbackTargets(targets, targetCount, rootCompleted);
+		int limit = Math.min(targetCount, targets.length);
+		Throwable failure = null;
+		try (QueryOptimizationScope ignored = runtime.pinProviderView()) {
+			if (feedbackPublicationAllowed()) {
+				RuntimeFeedbackTarget[] providerTargets = null;
+				int providerCount = 0;
+				for (int i = 0; i < limit; i++) {
+					RuntimeFeedbackTarget target = targets[i];
+					if (target instanceof LmdbEarlyFilterFeedbackTarget) {
+						target.publish(rootCompleted);
+					} else if (target != null) {
+						if (providerTargets == null) {
+							providerTargets = new RuntimeFeedbackTarget[limit];
+						}
+						providerTargets[providerCount++] = target;
+					}
+				}
+				LmdbOperatorFeedbackStats feedback = runtime.feedback();
+				if (feedbackPublicationAllowed()) {
+					if (feedback == null) {
+						super.publishRuntimeFeedbackTargets(providerTargets, providerCount, rootCompleted);
+					} else {
+						feedback.publishRuntimeFeedbackTargets(providerTargets, providerCount, rootCompleted,
+								captureFeedbackAuthority());
+					}
+				}
+			}
+		} catch (RuntimeException | Error problem) {
+			failure = problem;
+		} finally {
+			for (int i = 0; i < limit; i++) {
+				if (targets[i] != null) {
+					try {
+						targets[i].release();
+					} catch (RuntimeException | Error cleanup) {
+						if (failure == null) {
+							failure = cleanup;
+						} else if (failure != cleanup) {
+							failure.addSuppressed(cleanup);
+						}
+					}
+				}
+			}
+		}
+		if (failure instanceof RuntimeException exception) {
+			throw exception;
+		}
+		if (failure instanceof Error error) {
+			throw error;
 		}
 	}
 
@@ -391,7 +534,7 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 
 	@Override
 	public void recordOperatorOutcome(QueryModelNode node) {
-		if (feedbackPublicationAllowed && runtime.feedback() != null && node instanceof TupleExpr expression) {
+		if (feedbackPublicationAllowed() && runtime.feedback() != null && node instanceof TupleExpr expression) {
 			// A QueryRoot wrapper is not evaluated as a tracked operator, so the node directly beneath it is the
 			// outermost close that can trigger the completed-tree pass.
 			QueryModelNode parent = expression.getParentNode();
@@ -399,18 +542,20 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 			EvaluationStatistics.InvocationAggregateObservation observation = EvaluationStatistics
 					.invocationAggregateObservation(expression, completedRoot);
 			if (observation == null) {
-				runtime.feedback().observe(expression, completedRoot);
+				runtime.feedback().observe(expression, completedRoot, null, captureFeedbackAuthority());
 			} else {
-				runtime.feedback().observe(expression, completedRoot, observation);
+				runtime.feedback().observe(expression, completedRoot, observation, captureFeedbackAuthority());
 			}
 		}
 	}
 
 	@Override
 	public void recordOperatorOutcome(QueryModelNode node, InvocationAggregateObservation observation) {
-		if (feedbackPublicationAllowed && runtime.feedback() != null && node instanceof TupleExpr expression) {
+		if (feedbackPublicationAllowed() && runtime.feedback() != null && node instanceof TupleExpr expression) {
 			QueryModelNode parent = expression.getParentNode();
-			runtime.feedback().observe(expression, parent == null || parent instanceof QueryRoot, observation);
+			runtime.feedback()
+					.observe(expression, parent == null || parent instanceof QueryRoot, observation,
+							captureFeedbackAuthority());
 		}
 	}
 

@@ -21,10 +21,14 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.DataInputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -56,6 +60,8 @@ import org.eclipse.rdf4j.sail.lmdb.sketch.SketchSnapshotIdentity;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** Native physical feedback must not require a complete logical population certificate. */
 class LmdbPhysicalEventPublicationTest {
@@ -114,6 +120,7 @@ class LmdbPhysicalEventPublicationTest {
 		SailRepository restoredRepository = new SailRepository(reopened);
 		restoredRepository.init();
 		try {
+			LmdbTestUtil.awaitPostReadyInitialization(reopened, 30, TimeUnit.SECONDS);
 			withNativeContext(reopened, context -> {
 				Candidate same = context.candidate(PREDICATE, false);
 				publicationCoordinates("after-reopen", directory, reopened, context);
@@ -304,6 +311,124 @@ class LmdbPhysicalEventPublicationTest {
 		} finally {
 			repository.shutDown();
 		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "identity", "statementStamp" })
+	void mismatchedPhysicalSidecarDoesNotRestoreTypedEvidence(String mismatch,
+			@TempDir(cleanup = CleanupMode.NEVER) Path directory) throws Exception {
+		RuntimeFeedbackContract original = persistPhysicalEventForStartup(directory);
+		Path sidecar = directory.resolve("join-estimator.rjes.operators");
+		Files.copy(sidecar, directory.resolve("matching-physical-sidecar.backup"));
+		byte[] stale = Files.readAllBytes(sidecar);
+		ByteBuffer bytes = ByteBuffer.wrap(stale);
+		int offset = mismatch.equals("identity") ? Integer.BYTES : Integer.BYTES + 3 * Long.BYTES;
+		bytes.putLong(offset, bytes.getLong(offset) ^ 1L);
+		Files.write(sidecar, stale);
+		assertFalse(Files.exists(directory.resolve("join-estimator.rjes/synopsis-v8.bin")),
+				"operator feedback must be independently validated when sketches are disabled");
+		assertFalse(Files.exists(directory.resolve("join-estimator.rjes/synopsis-v8.rebuild")));
+		LmdbStore reopened = new LmdbStore(directory.toFile(), config());
+		SailRepository repository = new SailRepository(reopened);
+		repository.init();
+		try {
+			LmdbTestUtil.awaitPostReadyInitialization(reopened, 30, TimeUnit.SECONDS);
+			withNativeContext(reopened, context -> {
+				assertNoOriginalPhysicalPosterior(context, original);
+				assertEquals(0.0d, observations(context.candidate(PREDICATE, false).output()), 0.0d);
+				return null;
+			});
+			try (var connection = repository.getConnection()) {
+				assertEquals(4L, connection.size());
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void committedMutationDuringDeferredSidecarLoadDiscardsOldTypedEvidence(
+			@TempDir(cleanup = CleanupMode.NEVER) Path directory) throws Exception {
+		RuntimeFeedbackContract original = persistPhysicalEventForStartup(directory);
+		Path sidecar = directory.resolve("join-estimator.rjes.operators");
+		Files.copy(sidecar, directory.resolve("pre-mutation-physical-sidecar.backup"));
+		assertFalse(Files.exists(directory.resolve("join-estimator.rjes/synopsis-v8.bin")));
+		CountDownLatch loaded = new CountDownLatch(1);
+		CountDownLatch publish = new CountDownLatch(1);
+		LmdbStore reopened = new LmdbStore(directory.toFile(), config()) {
+			@Override
+			LmdbSailStore createBackingStore(File path, StoreProperties properties, LmdbStoreConfig settings,
+					boolean sketches) throws IOException {
+				return new LmdbSailStore(path, properties, settings, sketches) {
+					@Override
+					void beforeSketchProviderPublicationForTest() {
+						loaded.countDown();
+						try {
+							if (!publish.await(30, TimeUnit.SECONDS)) {
+								throw new AssertionError("deferred sidecar publication did not resume");
+							}
+						} catch (InterruptedException interrupted) {
+							Thread.currentThread().interrupt();
+							throw new AssertionError(interrupted);
+						}
+					}
+				};
+			}
+		};
+		SailRepository repository = new SailRepository(reopened);
+		repository.init();
+		try {
+			assertTrue(loaded.await(30, TimeUnit.SECONDS), "the existing sidecar must load before the write");
+			try (var connection = repository.getConnection()) {
+				connection.begin();
+				connection.add(VF.createIRI("urn:physical-event:startup-writer"), OTHER_PREDICATE,
+						VF.createLiteral("new"));
+				connection.commit();
+			}
+			publish.countDown();
+			LmdbTestUtil.awaitPostReadyInitialization(reopened, 30, TimeUnit.SECONDS);
+			assertEquals(FrontierStatisticsAvailability.READY, reopened.rebuildFrontierStatistics().availability());
+			withNativeContext(reopened, context -> {
+				assertNoOriginalPhysicalPosterior(context, original);
+				assertEquals(0.0d, observations(context.candidate(PREDICATE, false).output()), 0.0d);
+				return null;
+			});
+			try (var connection = repository.getConnection()) {
+				assertEquals(5L, connection.size(), "the startup writer must remain committed");
+			}
+		} finally {
+			publish.countDown();
+			repository.shutDown();
+		}
+	}
+
+	private static RuntimeFeedbackContract persistPhysicalEventForStartup(Path directory) throws Exception {
+		LmdbStore store = new LmdbStore(directory.toFile(), config());
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			load(repository);
+			assertEquals(FrontierStatisticsAvailability.READY, store.rebuildFrontierStatistics().availability());
+			return withNativeContext(store, context -> {
+				Candidate before = context.candidate(PREDICATE, false);
+				assertEquals(2L, context.execute(before, true));
+				Candidate after = context.candidate(PREDICATE, false);
+				assertExactPhysicalPosterior(context, after.output());
+				context.runtime().feedback().persistIfDirty();
+				return after.output().runtimeFeedbackContract();
+			});
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private static void assertNoOriginalPhysicalPosterior(NativeContext context, RuntimeFeedbackContract original) {
+		var descriptor = (LmdbPhysicalEventFeedbackDescriptor) original.descriptor();
+		assertNull(context.runtime()
+				.feedback()
+				.physicalPosterior(descriptor.eventKey(), descriptor.physicalKey(),
+						descriptor.applicability(), FrontierCostDimension.EXPRESSION_EVALUATIONS),
+				"stale typed evidence must not be published");
 	}
 
 	private static void assertPhysicalOnly(PackedCostEstimate output) {

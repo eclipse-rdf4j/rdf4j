@@ -14,23 +14,21 @@ package org.eclipse.rdf4j.sail.lmdb.estimation;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
 import java.util.function.LongSupplier;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.sail.lmdb.DerivedStateBuildExecutor;
-import org.eclipse.rdf4j.sail.lmdb.DerivedStateBuildProgress;
+import org.eclipse.rdf4j.sail.lmdb.estimation.QuadSynopsisState.EvictedSnapshot;
+import org.eclipse.rdf4j.sail.lmdb.estimation.QuadSynopsisState.MutationGeneration;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchRebuildObserver;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchStatementSource;
 import org.slf4j.Logger;
@@ -40,35 +38,15 @@ import org.slf4j.LoggerFactory;
 public final class LmdbQuadSynopsisService implements AutoCloseable {
 
 	public static final String REFRESH_THREAD_NAME = "rdf4j-lmdb-estimator-refresh";
-	private static final String SNAPSHOT_FILE = "synopsis-v8.bin";
-	private static final String REBUILD_MARKER = "synopsis-v8.rebuild";
-	private static final String LEGACY_METADATA_FILE = "metadata.bin";
-	private static final Logger logger = LoggerFactory.getLogger(LmdbQuadSynopsisService.class);
+	static final String SNAPSHOT_FILE = "synopsis-v8.bin";
+	static final String REBUILD_MARKER = "synopsis-v8.rebuild";
+	static final String LEGACY_METADATA_FILE = "metadata.bin";
+	static final Logger logger = LoggerFactory.getLogger(LmdbQuadSynopsisService.class);
 
-	private final SketchStatementSource statementSource;
-	private final QuadSynopsisBudget budget;
-	private final long throttleEveryN;
-	private final long throttleMillis;
-	private final DerivedStateBuildExecutor buildExecutor;
-	private final boolean ownsBuildExecutor;
-	private final LongSupplier nanoTime;
-	private final Object lifecycleMonitor = new Object();
-	private final Object rebuildMutex = new Object();
-	private final AtomicBoolean rebuildRequested = new AtomicBoolean();
-	private final AtomicBoolean closed = new AtomicBoolean();
-	private final AtomicLong mutationSequence = new AtomicLong();
-
-	private volatile BooleanSupplier rebuildAllowed = () -> true;
-	private volatile SketchRebuildObserver rebuildObserver;
-	private volatile QuadSnapshotIdentity identity;
-	private volatile QuadSynopsisSnapshot publishedSnapshot;
-	private volatile BoundedQuadSynopsis synopsis;
-	private volatile long publishedMutationSequence;
-	private volatile Path snapshotFile;
-	private volatile Path rebuildMarker;
-	private volatile boolean dirty;
-	private volatile boolean adaptiveEvidenceAllowed = true;
-	private volatile Thread refreshThread;
+	private final QuadSynopsisState state;
+	private final QuadSynopsisMutationController mutationController;
+	private final QuadSynopsisPersistenceController persistenceController;
+	private final QuadSynopsisRebuildController rebuildController;
 
 	public LmdbQuadSynopsisService(SketchStatementSource statementSource, long memoryBudgetBytes,
 			int coldSampleCapacity, long throttleEveryN, long throttleMillis) {
@@ -86,18 +64,16 @@ public final class LmdbQuadSynopsisService implements AutoCloseable {
 	private LmdbQuadSynopsisService(SketchStatementSource statementSource, long memoryBudgetBytes,
 			int coldSampleCapacity, long throttleEveryN, long throttleMillis,
 			DerivedStateBuildExecutor buildExecutor, boolean ownsBuildExecutor, LongSupplier nanoTime) {
-		this.statementSource = Objects.requireNonNull(statementSource, "statementSource");
-		this.budget = QuadSynopsisBudget.create(memoryBudgetBytes, Math.max(0, coldSampleCapacity));
-		this.throttleEveryN = throttleEveryN <= 0L ? Long.MAX_VALUE : throttleEveryN;
-		this.throttleMillis = Math.max(0L, throttleMillis);
-		this.buildExecutor = Objects.requireNonNull(buildExecutor, "buildExecutor");
-		this.ownsBuildExecutor = ownsBuildExecutor;
-		this.nanoTime = Objects.requireNonNull(nanoTime, "nanoTime");
+		this.state = new QuadSynopsisState(statementSource, memoryBudgetBytes, coldSampleCapacity, throttleEveryN,
+				throttleMillis, buildExecutor, ownsBuildExecutor, nanoTime);
+		this.mutationController = new QuadSynopsisMutationController(state, this);
+		this.persistenceController = new QuadSynopsisPersistenceController(state, this);
+		this.rebuildController = new QuadSynopsisRebuildController(state, this);
 		UUID storeId = UUID.randomUUID();
-		this.identity = new QuadSnapshotIdentity(storeId.getMostSignificantBits(), storeId.getLeastSignificantBits(),
+		state.identity = new QuadSnapshotIdentity(storeId.getMostSignificantBits(), storeId.getLeastSignificantBits(),
 				0L);
-		this.publishedSnapshot = emptySnapshot(identity);
-		this.synopsis = new BoundedQuadSynopsis(publishedSnapshot, budget, this::requestRebuild);
+		state.publishedSnapshot = emptySnapshot(state.identity);
+		state.synopsis = new BoundedQuadSynopsis(state.publishedSnapshot, state.budget, this::requestRebuild);
 	}
 
 	/**
@@ -106,44 +82,183 @@ public final class LmdbQuadSynopsisService implements AutoCloseable {
 	 * was ever persisted there.
 	 */
 	public static void markRebuildRequired(Path directory) throws IOException {
-		if (Files.isDirectory(directory)) {
-			Files.write(directory.resolve(REBUILD_MARKER), new byte[] { 1 });
+		markRebuildRequired(EstimatorPersistenceLocation.forStandalone(directory));
+	}
+
+	@InternalUseOnly
+	public static void markRebuildRequired(EstimatorPersistenceLocation location) throws IOException {
+		EstimatorPersistenceLocation.Resolved resolved = location.resolve(false);
+		Path directory = resolved.directory();
+		if (directory != null && !Files.notExists(directory, LinkOption.NOFOLLOW_LINKS)) {
+			location.prepareDirectory(resolved);
+			if (resolved.alternate()) {
+				location.markAlternateForRebuild(resolved);
+			} else {
+				createRebuildMarker(directory.resolve(REBUILD_MARKER));
+			}
 		}
+	}
+
+	/** Fences an existing snapshot when a store commits while its estimator is disabled. */
+	@InternalUseOnly
+	public static void markExistingSnapshotForRebuild(Path directory) throws IOException {
+		markExistingSnapshotForRebuild(EstimatorPersistenceLocation.forStandalone(directory));
+	}
+
+	@InternalUseOnly
+	public static void markExistingSnapshotForRebuild(EstimatorPersistenceLocation location) throws IOException {
+		EstimatorPersistenceLocation.Resolved resolved = location.resolve(false);
+		Path directory = resolved.directory();
+		if (directory == null) {
+			return;
+		}
+		Path snapshot = directory.resolve(SNAPSHOT_FILE);
+		Path legacy = directory.resolve(LEGACY_METADATA_FILE);
+		if (!Files.notExists(snapshot, LinkOption.NOFOLLOW_LINKS)
+				|| !Files.notExists(legacy, LinkOption.NOFOLLOW_LINKS)) {
+			location.prepareDirectory(resolved);
+			if (resolved.alternate()) {
+				location.markAlternateForRebuild(resolved);
+			} else {
+				createRebuildMarker(directory.resolve(REBUILD_MARKER));
+			}
+		}
+	}
+
+	/**
+	 * Fences a store publication until its native outcome and estimator callbacks have both settled. No lock is held
+	 * while the caller commits, so a callback or shutdown can safely reenter the synopsis.
+	 */
+	@InternalUseOnly
+	public StoreCommitFence beginStoreCommit() {
+		StoreCommitFence fence = new StoreCommitFence();
+		synchronized (state.persistenceMutex) {
+			state.mutationAdmission.writeLock().lock();
+			try {
+				if (state.closed.get()) {
+					throw new IllegalStateException("Quad synopsis is closed");
+				}
+				if (persistenceController.fenceBeforeStoreCommit()) {
+					// A reconciled commit may change no explicit statements; its marker still needs a clean write.
+					state.dirty = true;
+				}
+				state.activeStoreCommits = Math.addExact(state.activeStoreCommits, 1L);
+				state.storeCommitSequence++;
+			} catch (IOException e) {
+				throw new UncheckedIOException("Unable to fence quad synopsis before store commit", e);
+			} finally {
+				state.mutationAdmission.writeLock().unlock();
+			}
+		}
+		signalLifecycle();
+		return fence;
+	}
+
+	/** A single use token; closing without reconciliation retains a rebuild request. */
+	@InternalUseOnly
+	public final class StoreCommitFence implements AutoCloseable {
+		private final AtomicBoolean finished = new AtomicBoolean();
+
+		public void reconciled() {
+			finish(true);
+		}
+
+		@Override
+		public void close() {
+			finish(false);
+		}
+
+		private void finish(boolean reconciled) {
+			if (!finished.compareAndSet(false, true)) {
+				return;
+			}
+			try {
+				synchronized (state.persistenceMutex) {
+					state.mutationAdmission.writeLock().lock();
+					try {
+						if (!reconciled) {
+							state.dirty = true;
+							invalidateAndRequestRebuild();
+						}
+					} finally {
+						assert state.activeStoreCommits > 0L : "Unbalanced store commit fence";
+						state.activeStoreCommits--;
+						state.storeCommitSequence++;
+						state.mutationAdmission.writeLock().unlock();
+					}
+				}
+			} finally {
+				signalLifecycle();
+			}
+		}
+	}
+
+	/** Records persistence paths without accessing the filesystem or loading a snapshot. */
+	public void registerPersistencePath(Path directory) {
+		persistenceController.registerPersistencePath(directory);
+	}
+
+	@InternalUseOnly
+	public void registerPersistencePath(EstimatorPersistenceLocation location) {
+		persistenceController.registerPersistencePath(location);
+	}
+
+	@InternalUseOnly
+	public boolean persistenceAvailable() {
+		return state.persistenceUnavailable == null;
 	}
 
 	public void configurePersistence(Path directory, boolean snapshotExpected) {
-		Objects.requireNonNull(directory, "directory");
-		try {
-			Files.createDirectories(directory);
-			snapshotFile = directory.resolve(SNAPSHOT_FILE);
-			rebuildMarker = directory.resolve(REBUILD_MARKER);
-			Path source = Files.isRegularFile(snapshotFile) ? snapshotFile : directory.resolve(LEGACY_METADATA_FILE);
-			if (Files.isRegularFile(source)) {
-				load(source);
-			} else if (snapshotExpected) {
-				requestRebuild();
-			}
-			if (Files.isRegularFile(rebuildMarker)) {
-				requestRebuild();
-			}
-		} catch (IOException e) {
-			throw new UncheckedIOException("Unable to configure quad synopsis persistence", e);
-		}
+		persistenceController.configurePersistence(directory, snapshotExpected);
 	}
 
 	public QuadEvidence probe(QuadProbe probe) {
-		return synopsis.probe(probe);
+		Objects.requireNonNull(probe, "probe");
+		long persistence = state.persistenceSequence;
+		long commitSequence = state.storeCommitSequence;
+		if (state.activeStoreCommits != 0 || persistenceAwaitingConfiguration()) {
+			return QuadEvidence.unavailable(probe.snapshotIdentity(), snapshotVersion());
+		}
+		if (state.evictedSnapshot != null && !restoreEvicted()) {
+			return QuadEvidence.unavailable(probe.snapshotIdentity(), snapshotVersion());
+		}
+		MutationGeneration generation = state.mutationGeneration;
+		long activity = generation.revision.get();
+		long request = state.rebuildRequestSequence.get();
+		if (state.closed.get() || state.rebuildRequested.get() || generation.active.get() != 0
+				|| state.mutationGeneration != generation) {
+			return QuadEvidence.unavailable(probe.snapshotIdentity(), snapshotVersion());
+		}
+		BoundedQuadSynopsis resident = state.synopsis;
+		if (resident == null) {
+			return QuadEvidence.unavailable(probe.snapshotIdentity(), snapshotVersion());
+		}
+		QuadEvidence evidence = resident.probe(probe);
+		if (state.closed.get() || state.activeStoreCommits != 0 || state.storeCommitSequence != commitSequence
+				|| persistenceAwaitingConfiguration() || state.persistenceSequence != persistence
+				|| state.rebuildRequested.get() || state.rebuildRequestSequence.get() != request
+				|| state.mutationGeneration != generation || generation.active.get() != 0
+				|| generation.revision.get() != activity) {
+			return QuadEvidence.unavailable(probe.snapshotIdentity(), snapshotVersion());
+		}
+		return evidence;
 	}
 
 	/** Returns only an unchanged, fully published snapshot; never waits for refresh or opens another read view. */
 	@InternalUseOnly
 	public Optional<QuadEvidence> probePublishedCurrent(QuadProbe probe) {
 		Objects.requireNonNull(probe, "probe");
-		QuadSynopsisSnapshot snapshot = publishedSnapshot;
-		QuadSnapshotIdentity capturedIdentity = identity;
-		long mutation = mutationSequence.get();
-		long publication = publishedMutationSequence;
-		if (closed.get() || rebuildRequested.get() || mutation != publication
+		long persistence = state.persistenceSequence;
+		long commitSequence = state.storeCommitSequence;
+		QuadSynopsisSnapshot snapshot = state.publishedSnapshot;
+		QuadSnapshotIdentity capturedIdentity = state.identity;
+		MutationGeneration generation = state.mutationGeneration;
+		long activity = generation.revision.get();
+		long mutation = state.mutationSequence.get();
+		long publication = state.publishedMutationSequence;
+		if (snapshot == null || state.closed.get() || state.activeStoreCommits != 0
+				|| persistenceAwaitingConfiguration() || state.rebuildRequested.get()
+				|| generation.active.get() != 0 || mutation != publication
 				|| !snapshot.identity().equals(capturedIdentity)
 				|| !capturedIdentity.equals(probe.snapshotIdentity())) {
 			return Optional.empty();
@@ -151,460 +266,326 @@ public final class LmdbQuadSynopsisService implements AutoCloseable {
 		QuadEvidence evidence = snapshot.probe(probe);
 		if (!evidence.usable() || !snapshot.identity().equals(evidence.rows().snapshotIdentity())
 				|| snapshot.snapshotVersion() != evidence.rows().snapshotVersion()
-				|| closed.get() || rebuildRequested.get() || publishedSnapshot != snapshot
-				|| identity != capturedIdentity || mutationSequence.get() != mutation
-				|| publishedMutationSequence != publication) {
+				|| state.closed.get() || state.activeStoreCommits != 0 || state.storeCommitSequence != commitSequence
+				|| persistenceAwaitingConfiguration() || state.persistenceSequence != persistence
+				|| state.rebuildRequested.get() || state.publishedSnapshot != snapshot
+				|| state.mutationGeneration != generation || generation.active.get() != 0
+				|| generation.revision.get() != activity
+				|| state.identity != capturedIdentity || state.mutationSequence.get() != mutation
+				|| state.publishedMutationSequence != publication) {
 			return Optional.empty();
 		}
 		return Optional.of(evidence);
 	}
 
 	public QuadSnapshotIdentity snapshotIdentity() {
-		return identity;
+		return state.identity;
 	}
 
 	public long snapshotVersion() {
-		return publishedSnapshot.snapshotVersion();
+		QuadSynopsisSnapshot snapshot = state.publishedSnapshot;
+		if (snapshot != null) {
+			return snapshot.snapshotVersion();
+		}
+		EvictedSnapshot evicted = state.evictedSnapshot;
+		return evicted == null ? 0L : evicted.snapshotVersion();
 	}
 
 	public long publishedRows() {
-		return publishedSnapshot.totalRows();
+		QuadSynopsisSnapshot snapshot = state.publishedSnapshot;
+		if (snapshot != null) {
+			return snapshot.totalRows();
+		}
+		EvictedSnapshot evicted = state.evictedSnapshot;
+		return evicted == null ? 0L : evicted.totalRows();
 	}
 
 	public long allocatedBytes() {
-		return synopsis.allocatedBytes();
+		BoundedQuadSynopsis resident = state.synopsis;
+		return resident == null ? 0L : resident.allocatedBytes();
 	}
 
 	public boolean adaptiveEvidenceAllowed() {
-		return adaptiveEvidenceAllowed;
+		return state.adaptiveEvidenceAllowed;
 	}
 
 	public void setAdaptiveEvidenceAllowed(boolean allowed) {
-		adaptiveEvidenceAllowed = allowed;
+		state.adaptiveEvidenceAllowed = allowed;
 	}
 
+	/**
+	 * Sets a guard that is true only when the statement source reflects admitted mutations. Automatic rebuild after an
+	 * admitted mutation waits for an explicitly supplied guard. With no guard, an explicit {@link #forceFlush()}
+	 * asserts that the caller has made the source current.
+	 */
 	public void setRebuildAllowedSupplier(BooleanSupplier supplier) {
-		rebuildAllowed = supplier == null ? () -> true : supplier;
+		state.rebuildAllowed = supplier;
+		signalLifecycle();
+	}
+
+	boolean sourceRebuildAllowed(boolean explicitSourceCurrent) {
+		BooleanSupplier supplier = state.rebuildAllowed;
+		return (supplier != null || !state.sourceCurrencyUnattested || explicitSourceCurrent)
+				&& (supplier == null || supplier.getAsBoolean());
 	}
 
 	public void setRebuildObserver(SketchRebuildObserver observer) {
-		rebuildObserver = observer;
+		state.rebuildObserver = observer;
 	}
 
 	public void addStatement(Statement statement) {
-		Objects.requireNonNull(statement, "statement");
-		mutationSequence.incrementAndGet();
-		synopsis.add(QuadValueHash.hash(statement.getSubject()), QuadValueHash.hash(statement.getPredicate()),
-				QuadValueHash.hash(statement.getObject()), QuadValueHash.hash(statement.getContext()));
-		dirty = true;
+		mutationController.addStatement(statement);
 	}
 
 	public void addStatements(Iterable<? extends Statement> statements) {
-		if (statements == null) {
-			return;
-		}
-		for (Statement statement : statements) {
-			addStatement(statement);
-		}
+		mutationController.addStatements(statements);
+	}
+
+	/** Called with the admission write gate held, so no reservation can finish during the handoff. */
+	void retireMutationGeneration() {
+		assert state.mutationAdmission.isWriteLockedByCurrentThread();
+		MutationGeneration retiring = state.mutationGeneration;
+		state.retiredMutationReservations.addAndGet(retiring.active.get());
+		state.mutationGeneration = new MutationGeneration();
 	}
 
 	public void deleteStatement(Statement statement) {
-		Objects.requireNonNull(statement, "statement");
-		mutationSequence.incrementAndGet();
-		synopsis.delete(QuadValueHash.hash(statement.getSubject()), QuadValueHash.hash(statement.getPredicate()),
-				QuadValueHash.hash(statement.getObject()), QuadValueHash.hash(statement.getContext()));
-		dirty = true;
-		signalLifecycle();
+		mutationController.deleteStatement(statement);
 	}
 
 	public void recordStoreSizeDelta(long added, long removed) {
-		if (added == 0L && removed == 0L) {
-			return;
-		}
-		mutationSequence.incrementAndGet();
-		dirty = true;
-		invalidateAndRequestRebuild();
+		mutationController.recordStoreSizeDelta(added, removed);
 	}
 
 	public void requestRebuild() {
-		rebuildRequested.set(true);
-		signalLifecycle();
+		state.mutationAdmission.readLock().lock();
+		try {
+			state.rebuildRequestSequence.incrementAndGet();
+			state.rebuildRequested.set(true);
+			signalLifecycle();
+		} finally {
+			state.mutationAdmission.readLock().unlock();
+		}
 	}
 
 	public void discardAndMarkForRebuild() {
-		mutationSequence.incrementAndGet();
-		dirty = true;
-		invalidateAndRequestRebuild();
+		synchronized (state.persistenceMutex) {
+			state.mutationAdmission.writeLock().lock();
+			try {
+				// Retire old reservations without waiting on user callbacks. They can no longer publish.
+				retireMutationGeneration();
+				state.mutationSequence.incrementAndGet();
+				state.dirty = true;
+				invalidateAndRequestRebuild();
+				if (state.rebuildMarker != null) {
+					writeRebuildMarker();
+				}
+			} catch (IOException e) {
+				throw new UncheckedIOException("Unable to invalidate persisted quad synopsis", e);
+			} finally {
+				state.mutationAdmission.writeLock().unlock();
+			}
+		}
 	}
 
 	public boolean isReadyNonBlocking() {
-		return !rebuildRequested.get() && synopsis.isCurrent(identity);
+		long persistence = state.persistenceSequence;
+		long commitSequence = state.storeCommitSequence;
+		MutationGeneration generation = state.mutationGeneration;
+		long activity = generation.revision.get();
+		BoundedQuadSynopsis resident = state.synopsis;
+		return !state.closed.get() && state.activeStoreCommits == 0 && !persistenceAwaitingConfiguration()
+				&& !state.rebuildRequested.get() && generation.active.get() == 0
+				&& resident != null && state.evictedSnapshot == null && resident.isCurrent(state.identity)
+				&& state.mutationGeneration == generation && generation.active.get() == 0
+				&& generation.revision.get() == activity && !state.closed.get() && !state.rebuildRequested.get()
+				&& state.activeStoreCommits == 0 && state.storeCommitSequence == commitSequence
+				&& !persistenceAwaitingConfiguration() && state.persistenceSequence == persistence;
+	}
+
+	boolean persistenceAwaitingConfiguration() {
+		return state.snapshotFile != null && !state.persistenceConfigured;
+	}
+
+	/** Observes scheduled or running work without waiting for the refresh worker. */
+	public boolean hasPendingBackgroundRefresh() {
+		Thread worker = state.refreshThread;
+		return worker != null && worker.isAlive()
+				&& (persistenceAwaitingConfiguration() || state.rebuildRequested.get() || state.evictedSnapshot != null
+						|| state.refreshInProgress.get() == worker);
 	}
 
 	public boolean awaitReady(long timeout, TimeUnit unit) throws InterruptedException {
 		long remainingNanos = unit.toNanos(timeout);
 		long deadline = System.nanoTime() + Math.max(0L, remainingNanos);
-		synchronized (lifecycleMonitor) {
-			while (!isReadyNonBlocking() && remainingNanos > 0L && !closed.get()) {
-				TimeUnit.NANOSECONDS.timedWait(lifecycleMonitor, remainingNanos);
+		synchronized (state.lifecycleMonitor) {
+			while (!isReadyNonBlocking() && remainingNanos > 0L && !state.closed.get()) {
+				TimeUnit.NANOSECONDS.timedWait(state.lifecycleMonitor, remainingNanos);
 				remainingNanos = deadline - System.nanoTime();
 			}
 		}
 		return isReadyNonBlocking();
 	}
 
+	/** Explicitly rebuilds from a source the caller has made current, subject to any configured rebuild guard. */
 	public boolean forceFlush() {
-		if (closed.get() || !rebuildAllowed.getAsBoolean()) {
+		if (state.closed.get() || state.activeStoreCommits != 0 || persistenceAwaitingConfiguration()
+				|| isRebuildParticipant()
+				|| !sourceRebuildAllowed(true)) {
 			return false;
 		}
-		if (rebuildRequested.get() || mutationSequence.get() != publishedMutationSequence) {
-			rebuild();
+		if (state.mutationGeneration.active.get() != 0) {
+			requestRebuild();
+			return false;
 		}
-		return isReadyNonBlocking();
+		if (state.evictedSnapshot != null && !restoreEvicted()) {
+			if (!prepareRebuildFromEvicted()) {
+				return false;
+			}
+		}
+		if (state.rebuildRequested.get() || state.mutationSequence.get() != state.publishedMutationSequence) {
+			rebuild(null, true);
+		}
+		return isReadyNonBlocking() && state.mutationGeneration.active.get() == 0;
+	}
+
+	/** Releases a clean synopsis without closing the service. */
+	public void unload() {
+		persistenceController.unload();
+	}
+
+	/** Restores only the exact clean publication that was evicted. */
+	boolean restoreEvicted() {
+		return persistenceController.restoreEvicted();
+	}
+
+	/** Installs only unavailable state when an evicted file cannot be trusted. */
+	boolean prepareRebuildFromEvicted() {
+		return persistenceController.prepareRebuildFromEvicted();
+	}
+
+	boolean prepareRebuildFromEvicted(MutationGeneration reservation) {
+		return persistenceController.prepareRebuildFromEvicted(reservation);
 	}
 
 	public void persistIfDirty() {
-		Path target = snapshotFile;
-		if (target == null || (!dirty && Files.isRegularFile(target))) {
-			return;
-		}
-		try {
-			QuadSynopsisPersistence.write(target, publishedSnapshot);
-			if (mutationSequence.get() == publishedMutationSequence && !rebuildRequested.get()) {
-				Files.deleteIfExists(rebuildMarker);
-				dirty = false;
-			} else {
-				Files.write(rebuildMarker, new byte[] { 1 });
-			}
-		} catch (IOException e) {
-			throw new UncheckedIOException("Unable to persist quad synopsis", e);
-		}
+		persistenceController.persistIfDirty();
+	}
+
+	private void writeRebuildMarker() throws IOException {
+		persistenceController.writeRebuildMarker();
+	}
+
+	private static void createRebuildMarker(Path marker) throws IOException {
+		QuadSynopsisPersistenceController.createRebuildMarker(marker);
 	}
 
 	public synchronized void startBackgroundRefresh(int initialDelaySeconds) {
-		if (refreshThread != null || closed.get()) {
+		if (state.refreshThread != null || state.closed.get()) {
 			return;
 		}
 		Thread thread = Thread.ofPlatform()
 				.name(REFRESH_THREAD_NAME)
 				.daemon(true)
 				.unstarted(() -> refreshLoop(Math.max(0, initialDelaySeconds)));
-		refreshThread = thread;
+		state.refreshThread = thread;
 		thread.start();
 	}
 
 	public void stopBackgroundRefresh() {
 		Thread thread;
 		synchronized (this) {
-			thread = refreshThread;
-			refreshThread = null;
+			thread = state.refreshThread;
+			state.refreshThread = null;
 		}
 		if (thread == null) {
 			return;
 		}
 		thread.interrupt();
-		if (Thread.currentThread() == thread) {
+		if (Thread.currentThread() == thread || isRebuildParticipant()) {
+			// A worker waiting for this caller's rebuild monitor cannot terminate until the callback returns.
 			return;
 		}
-		try {
-			thread.join();
-		} catch (InterruptedException e) {
+		boolean interrupted = false;
+		while (true) {
+			try {
+				thread.join();
+				break;
+			} catch (InterruptedException e) {
+				interrupted = true;
+			}
+		}
+		if (interrupted) {
 			Thread.currentThread().interrupt();
 		}
 	}
 
 	@Override
 	public void close() {
-		if (!closed.compareAndSet(false, true)) {
-			return;
+		boolean inRebuild = isRebuildParticipant();
+		boolean outstandingMutations;
+		state.mutationAdmission.writeLock().lock();
+		try {
+			if (!state.closed.compareAndSet(false, true)) {
+				return;
+			}
+			state.closingThread = Thread.currentThread();
+			outstandingMutations = state.activeStoreCommits != 0 || state.mutationGeneration.active.get() != 0
+					|| state.retiredMutationReservations.get() != 0L;
+			if (outstandingMutations) {
+				state.sourceCurrencyUnattested = true;
+				state.mutationSequence.incrementAndGet();
+				state.dirty = true;
+			}
+			if (state.rebuildRequested.get() || inRebuild) {
+				state.dirty = true;
+			}
+			retireMutationGeneration();
+		} finally {
+			state.mutationAdmission.writeLock().unlock();
 		}
 		try {
 			stopBackgroundRefresh();
-			if (rebuildAllowed.getAsBoolean() && mutationSequence.get() != publishedMutationSequence) {
-				rebuild();
+			if (!inRebuild && state.mutationSequence.get() != state.publishedMutationSequence) {
+				// If the final source scan fails, an older on-disk snapshot must remain fenced.
+				persistIfDirty();
+				if (!outstandingMutations && !persistenceAwaitingConfiguration() && sourceRebuildAllowed(false)) {
+					rebuild();
+				}
 			}
 			persistIfDirty();
-			signalLifecycle();
 		} finally {
-			if (ownsBuildExecutor) {
-				buildExecutor.close();
+			signalLifecycle();
+			state.closingThread = null;
+			if (state.ownsBuildExecutor) {
+				if (inRebuild) {
+					// The rebuild owner waits for its callback tasks; close the executor after they settle.
+					state.deferredExecutorClose.set(true);
+				} else {
+					state.buildExecutor.close();
+				}
 			}
 		}
 	}
 
-	private void load(Path source) {
-		QuadSynopsisLoadResult result = QuadSynopsisPersistence.read(source, budget);
-		if (result.snapshot().isPresent()) {
-			publishedSnapshot = result.snapshot().orElseThrow();
-			identity = publishedSnapshot.identity();
-			synopsis = new BoundedQuadSynopsis(publishedSnapshot, budget, this::requestRebuild);
-			publishedMutationSequence = mutationSequence.get();
-			dirty = false;
-			return;
-		}
-		if (result.durableIdentity() != null) {
-			QuadSnapshotIdentity migrated = result.durableIdentity();
-			identity = new QuadSnapshotIdentity(migrated.storeIdHigh(), migrated.storeIdLow(),
-					Math.max(0L, migrated.mutationVersion()));
-			publishedSnapshot = emptySnapshot(identity);
-			synopsis = new BoundedQuadSynopsis(publishedSnapshot, budget, this::requestRebuild);
-		}
-		requestRebuild();
+	boolean isRebuildParticipant() {
+		return Thread.holdsLock(state.rebuildMutex) || Boolean.TRUE.equals(state.rebuildParticipant.get());
 	}
 
-	private void invalidateAndRequestRebuild() {
-		synopsis.delete(0L, 0L, 0L, 0L);
+	void invalidateAndRequestRebuild() {
+		BoundedQuadSynopsis resident = state.synopsis;
+		if (resident != null) {
+			resident.delete(0L, 0L, 0L, 0L);
+		}
 		requestRebuild();
 	}
 
 	private void rebuild() {
-		synchronized (rebuildMutex) {
-			if (!rebuildAllowed.getAsBoolean()) {
-				return;
-			}
-			long startMutation = mutationSequence.get();
-			QuadSnapshotIdentity nextIdentity = new QuadSnapshotIdentity(identity.storeIdHigh(), identity.storeIdLow(),
-					identity.mutationVersion() + 1L);
-			QuadSynopsisBuilder builder = new QuadSynopsisBuilder(budget, nextIdentity,
-					publishedSnapshot.snapshotVersion() + 1L);
-			ObservationState observation = new ObservationState(
-					startRebuildObservation(identity.mutationVersion()));
-			long scanned = 0L;
-			int effectiveWorkers = buildExecutor.effectiveParallelism(Integer.MAX_VALUE, Integer.MAX_VALUE,
-					QuadProbe.ALL + 2);
-			DerivedStateBuildProgress progress = new DerivedStateBuildProgress(0L, nanoTime);
-			logger.info("Starting LMDB quad synopsis rebuild; effectiveWorkers={}, pageRows={}", effectiveWorkers,
-					DerivedStateBuildExecutor.PAGE_ROWS);
-			try {
-				QuadPage page = new QuadPage();
-				try (CloseableIteration<? extends Statement> statements = statementSource.getStatements(null, null,
-						null)) {
-					while (statements.hasNext()) {
-						page.statements[page.size++] = statements.next();
-						if (page.size == page.statements.length) {
-							processFullPage(page, builder, observation, effectiveWorkers);
-							long previousScanned = scanned;
-							scanned = saturatingAdd(scanned, page.size);
-							logProgress(progress.pageCompleted(scanned));
-							throttle(previousScanned, scanned);
-							page.clear();
-						}
-					}
-					processSerialPage(page.statements, page.size, builder, observation);
-					long previousScanned = scanned;
-					scanned = saturatingAdd(scanned, page.size);
-					throttle(previousScanned, scanned);
-					page.clear();
-				}
-				if (startMutation != mutationSequence.get()) {
-					rebuildRequested.set(true);
-					logFinish("stale", scanned, effectiveWorkers, progress.finish(scanned), null);
-					return;
-				}
-				QuadSynopsisSnapshot replacement = builder.build();
-				synopsis.publish(replacement);
-				publishedSnapshot = replacement;
-				identity = nextIdentity;
-				publishedMutationSequence = startMutation;
-				rebuildRequested.set(false);
-				dirty = true;
-				if (observation.observation != null) {
-					try {
-						observation.observation.complete(nextIdentity.mutationVersion());
-					} catch (RuntimeException e) {
-						logger.warn(
-								"Discarding quad synopsis rebuild observer result after publication callback failed",
-								e);
-						abortRebuildObservation(observation.observation);
-					}
-					observation.finished = true;
-				}
-				signalLifecycle();
-				logFinish("successful", scanned, effectiveWorkers, progress.finish(scanned), null);
-			} catch (IOException e) {
-				rebuildRequested.set(true);
-				logFinish("failed", scanned, effectiveWorkers, progress.finish(scanned), e);
-				throw new UncheckedIOException(e);
-			} catch (RuntimeException | Error e) {
-				rebuildRequested.set(true);
-				logFinish("failed", scanned, effectiveWorkers, progress.finish(scanned), e);
-				throw e;
-			} finally {
-				if (!observation.finished && observation.observation != null) {
-					abortRebuildObservation(observation.observation);
-				}
-			}
-		}
+		rebuildController.rebuild();
 	}
 
-	private void processFullPage(QuadPage page, QuadSynopsisBuilder builder, ObservationState observation,
-			int effectiveWorkers) throws IOException {
-		if (effectiveWorkers == 1) {
-			processSerialPage(page.statements, page.size, builder, observation);
-			return;
-		}
-		ArrayList<Callable<Void>> conversions = new ArrayList<>(effectiveWorkers + 1);
-		for (int worker = 0; worker < effectiveWorkers; worker++) {
-			int from = page.size * worker / effectiveWorkers;
-			int to = page.size * (worker + 1) / effectiveWorkers;
-			conversions.add(() -> {
-				for (int row = from; row < to; row++) {
-					Statement statement = page.statements[row];
-					page.subjects[row] = QuadValueHash.hash(statement.getSubject());
-					page.predicates[row] = QuadValueHash.hash(statement.getPredicate());
-					page.objects[row] = QuadValueHash.hash(statement.getObject());
-					page.contexts[row] = QuadValueHash.hash(statement.getContext());
-				}
-				return null;
-			});
-		}
-		if (observation.observation != null) {
-			conversions.add(() -> {
-				scanObservation(page.statements, page.size, observation);
-				return null;
-			});
-		}
-		buildExecutor.runAll(conversions);
-
-		int countMinWorkers = Math.min(effectiveWorkers, QuadProbe.ALL);
-		ArrayList<Callable<Void>> accumulators = new ArrayList<>(countMinWorkers + 2);
-		for (int worker = 0; worker < countMinWorkers; worker++) {
-			int firstMask = 1 + QuadProbe.ALL * worker / countMinWorkers;
-			int limitMask = 1 + QuadProbe.ALL * (worker + 1) / countMinWorkers;
-			accumulators.add(() -> {
-				builder.addCountMin(page.subjects, page.predicates, page.objects, page.contexts, page.size,
-						firstMask, limitMask);
-				return null;
-			});
-		}
-		accumulators.add(() -> {
-			builder.addConditionedWitnesses(page.subjects, page.predicates, page.objects, page.contexts, page.size);
-			return null;
-		});
-		accumulators.add(() -> {
-			builder.addColdSample(page.subjects, page.predicates, page.objects, page.contexts, page.size);
-			return null;
-		});
-		buildExecutor.runAll(accumulators);
-		builder.addRows(page.size);
-	}
-
-	private void processSerialPage(Statement[] statements, int rows, QuadSynopsisBuilder builder,
-			ObservationState observation) {
-		for (int row = 0; row < rows; row++) {
-			Statement statement = statements[row];
-			scanObservation(statement, observation);
-			builder.add(QuadValueHash.hash(statement.getSubject()), QuadValueHash.hash(statement.getPredicate()),
-					QuadValueHash.hash(statement.getObject()), QuadValueHash.hash(statement.getContext()));
-		}
-	}
-
-	private void scanObservation(Statement[] statements, int rows, ObservationState observation) {
-		for (int row = 0; row < rows && observation.observation != null; row++) {
-			scanObservation(statements[row], observation);
-		}
-	}
-
-	private void scanObservation(Statement statement, ObservationState observation) {
-		if (observation.observation == null) {
-			return;
-		}
-		try {
-			observation.observation.statementScanned(statement);
-		} catch (RuntimeException e) {
-			logger.warn("Disabling quad synopsis rebuild observer after a statement callback failed", e);
-			abortRebuildObservation(observation.observation);
-			observation.observation = null;
-			observation.finished = true;
-		}
-	}
-
-	private void logProgress(DerivedStateBuildProgress.Sample sample) {
-		if (sample != null) {
-			logger.info("LMDB quad synopsis rebuild progress: statements={}, currentStatementsPerSecond={}, "
-					+ "averageStatementsPerSecond={}", sample.cumulativeVisits(), sample.currentRate(),
-					sample.averageRate());
-		}
-	}
-
-	private void logFinish(String state, long scanned, int effectiveWorkers, DerivedStateBuildProgress.Sample sample,
-			Throwable failure) {
-		if (failure == null) {
-			logger.info("LMDB quad synopsis rebuild {}: statements={}, elapsedMillis={}, "
-					+ "averageStatementsPerSecond={}, effectiveWorkers={}", state, scanned,
-					TimeUnit.NANOSECONDS.toMillis(sample.elapsedNanos()), sample.averageRate(), effectiveWorkers);
-		} else {
-			logger.warn("LMDB quad synopsis rebuild {}: statements={}, elapsedMillis={}, "
-					+ "averageStatementsPerSecond={}, effectiveWorkers={}", state, scanned,
-					TimeUnit.NANOSECONDS.toMillis(sample.elapsedNanos()), sample.averageRate(), effectiveWorkers,
-					failure);
-		}
-	}
-
-	private static long saturatingAdd(long left, long right) {
-		return Long.MAX_VALUE - left < right ? Long.MAX_VALUE : left + right;
-	}
-
-	private static final class QuadPage {
-
-		private final Statement[] statements = new Statement[DerivedStateBuildExecutor.PAGE_ROWS];
-		private final long[] subjects = new long[DerivedStateBuildExecutor.PAGE_ROWS];
-		private final long[] predicates = new long[DerivedStateBuildExecutor.PAGE_ROWS];
-		private final long[] objects = new long[DerivedStateBuildExecutor.PAGE_ROWS];
-		private final long[] contexts = new long[DerivedStateBuildExecutor.PAGE_ROWS];
-		private int size;
-
-		private void clear() {
-			for (int row = 0; row < size; row++) {
-				statements[row] = null;
-			}
-			size = 0;
-		}
-	}
-
-	private static final class ObservationState {
-		private SketchRebuildObserver.RebuildObservation observation;
-		private boolean finished;
-
-		private ObservationState(SketchRebuildObserver.RebuildObservation observation) {
-			this.observation = observation;
-		}
-	}
-
-	private SketchRebuildObserver.RebuildObservation startRebuildObservation(long startingMutationVersion) {
-		SketchRebuildObserver observer = rebuildObserver;
-		if (observer == null) {
-			return null;
-		}
-		try {
-			return observer.start(startingMutationVersion);
-		} catch (RuntimeException e) {
-			logger.warn("Ignoring quad synopsis rebuild observer that failed to start", e);
-			return null;
-		}
-	}
-
-	private void abortRebuildObservation(SketchRebuildObserver.RebuildObservation observation) {
-		try {
-			observation.abort();
-		} catch (RuntimeException e) {
-			logger.debug("Quad synopsis rebuild observer failed while aborting", e);
-		}
-	}
-
-	private void throttle(long previousScanned, long scanned) {
-		if (throttleMillis <= 0L || scanned <= previousScanned) {
-			return;
-		}
-		long intervals = scanned / throttleEveryN - previousScanned / throttleEveryN;
-		for (long interval = 0L; interval < intervals; interval++) {
-			try {
-				Thread.sleep(throttleMillis);
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new IllegalStateException("Quad synopsis rebuild interrupted", e);
-			}
-		}
+	private void rebuild(Thread refreshOwner, boolean explicitSourceCurrent) {
+		rebuildController.rebuild(refreshOwner, explicitSourceCurrent);
 	}
 
 	private void refreshLoop(int initialDelaySeconds) {
@@ -613,19 +594,31 @@ public final class LmdbQuadSynopsisService implements AutoCloseable {
 			if (initialDelaySeconds > 0) {
 				TimeUnit.SECONDS.sleep(initialDelaySeconds);
 			}
-			while (!closed.get() && refreshThread == worker) {
+			while (!state.closed.get() && state.refreshThread == worker) {
 				try {
-					if (rebuildRequested.get() && rebuildAllowed.getAsBoolean()) {
-						rebuild();
+					if (!persistenceAwaitingConfiguration()
+							&& (state.evictedSnapshot != null || state.rebuildRequested.get())
+							&& sourceRebuildAllowed(false)) {
+						state.refreshInProgress.set(worker);
+						try {
+							if (state.evictedSnapshot != null && !restoreEvicted()) {
+								prepareRebuildFromEvicted();
+							}
+							if (state.rebuildRequested.get()) {
+								rebuild(worker, false);
+							}
+						} finally {
+							state.refreshInProgress.compareAndSet(worker, null);
+						}
 					}
 				} catch (RuntimeException e) {
-					rebuildRequested.set(true);
+					state.rebuildRequested.set(true);
 					logger.warn("Quad synopsis background rebuild failed; the previous snapshot remains active", e);
 				}
-				synchronized (lifecycleMonitor) {
+				synchronized (state.lifecycleMonitor) {
 					// The callback may consume interruption. The retained worker identity is the durable stop signal.
-					if (!closed.get() && refreshThread == worker) {
-						lifecycleMonitor.wait(1_000L);
+					if (!state.closed.get() && state.refreshThread == worker) {
+						state.lifecycleMonitor.wait(1_000L);
 					}
 				}
 			}
@@ -634,13 +627,13 @@ public final class LmdbQuadSynopsisService implements AutoCloseable {
 		}
 	}
 
-	private QuadSynopsisSnapshot emptySnapshot(QuadSnapshotIdentity snapshotIdentity) {
-		return new QuadSynopsisBuilder(budget, snapshotIdentity, 0L).build();
+	QuadSynopsisSnapshot emptySnapshot(QuadSnapshotIdentity snapshotIdentity) {
+		return new QuadSynopsisBuilder(state.budget, snapshotIdentity, 0L).build();
 	}
 
-	private void signalLifecycle() {
-		synchronized (lifecycleMonitor) {
-			lifecycleMonitor.notifyAll();
+	void signalLifecycle() {
+		synchronized (state.lifecycleMonitor) {
+			state.lifecycleMonitor.notifyAll();
 		}
 	}
 }

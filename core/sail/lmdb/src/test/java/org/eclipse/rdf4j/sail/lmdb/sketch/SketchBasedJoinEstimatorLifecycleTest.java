@@ -17,6 +17,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -33,6 +35,56 @@ class SketchBasedJoinEstimatorLifecycleTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 	private static final IRI PREDICATE = VF.createIRI("urn:predicate");
+
+	@Test
+	void backgroundRefreshReportsOnlyScheduledOrRunningWork() throws Exception {
+		MutableStatementSource source = new MutableStatementSource();
+		source.statements.add(statement("s1", 1));
+		CountDownLatch observerEntered = new CountDownLatch(1);
+		CountDownLatch releaseObserver = new CountDownLatch(1);
+		try (SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(source,
+				SketchBasedJoinEstimator.Config.defaults().withMemoryBudgetBytes(4L * 1024L * 1024L))) {
+			estimator.setRebuildObserver(startingVersion -> new SketchRebuildObserver.RebuildObservation() {
+				@Override
+				public void statementScanned(Statement statement) {
+				}
+
+				@Override
+				public void complete(long publishedVersion) {
+					observerEntered.countDown();
+					try {
+						releaseObserver.await();
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+						throw new IllegalStateException(e);
+					}
+				}
+
+				@Override
+				public void abort() {
+				}
+			});
+			try {
+				assertFalse(estimator.hasPendingBackgroundRefresh());
+				estimator.discardAndMarkForRebuild();
+				assertFalse(estimator.hasPendingBackgroundRefresh(), "unstarted workers are excluded");
+				estimator.startBackgroundRefresh(0);
+				assertTrue(observerEntered.await(10, TimeUnit.SECONDS));
+				assertTrue(estimator.isReadyNonBlocking(), "the snapshot is published before observer completion");
+				assertTrue(estimator.hasPendingBackgroundRefresh(), "the admitted rebuild remains active");
+				releaseObserver.countDown();
+				long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+				while (estimator.hasPendingBackgroundRefresh() && System.nanoTime() < deadline) {
+					Thread.onSpinWait();
+				}
+				assertFalse(estimator.hasPendingBackgroundRefresh(), "a completed rebuild leaves the worker idle");
+				estimator.stop();
+				assertFalse(estimator.hasPendingBackgroundRefresh(), "a stopped worker is excluded");
+			} finally {
+				releaseObserver.countDown();
+			}
+		}
+	}
 
 	@Test
 	void facadeDelegatesLifecycleToBoundedSynopsis() {

@@ -471,6 +471,46 @@ class ImmutablePagedQuadCsfIndexTest {
 	}
 
 	@Test
+	void contextMetadataAndPageCountsKeepContinuationCoordinatesAndMixedPagesExact() {
+		try (ImmutablePagedQuadCsfIndex index = buildFragments(0, 0, List.of(
+				List.of(new Row(10L, new long[] { 5L }, new long[] { 0L }),
+						new Row(42L, new long[] { 101L, 102L }, new long[] { 0L, 0L })),
+				List.of(new Row(42L, new long[] { 103L, 104L }, new long[] { 500L, 500L })),
+				List.of(new Row(42L, new long[] { 105L, Long.MIN_VALUE }, new long[] { 0L, 500L }),
+						new Row(99L, new long[] { 201L }, new long[] { 500L }))),
+				new boolean[] { false, true, true })) {
+			long reference = index.findLocalReference(0, 0, 42L);
+			long before = CompactCsfPageReader.DECODES.sum();
+			ImmutablePagedQuadCsfIndex.RowCursor row = new ImmutablePagedQuadCsfIndex.RowCursor();
+			index.resolveContextSlice(reference, row, -1L);
+			assertThat(row.edgeCount()).isEqualTo(6L);
+			assertThat(row.contextSpanEnd(0L)).isEqualTo(2L);
+			assertThat(row.contextSpanCommonContext(0L)).isZero();
+			assertThat(row.contextSpanEnd(2L)).isEqualTo(4L);
+			assertThat(row.contextSpanCommonContext(2L)).isEqualTo(500L);
+			assertThat(row.contextSpanEnd(4L)).isEqualTo(6L);
+			assertThat(row.contextSpanCommonContext(4L)).isEqualTo(-1L);
+			assertThat(CompactCsfPageReader.DECODES.sum() - before).isZero();
+			ImmutablePagedQuadCsfIndex.PageCursor pages = index.keyDomain(0, 0).pageCursor();
+			long defaults = 0L;
+			long named = 0L;
+			int mixed = 0;
+			while (pages.advance()) {
+				if (!pages.hasCommonContext()) {
+					mixed++;
+				}
+				defaults += pages.countContext(0L, false);
+				named += pages.countContext(500L, false);
+			}
+			assertThat(defaults).isEqualTo(4L);
+			assertThat(named).isEqualTo(4L);
+			assertThat(mixed).isEqualTo(1);
+			assertThat(CompactCsfPageReader.DECODES.sum() - before).isEqualTo(mixed);
+			assertThat(row.neighborAt(5L)).isEqualTo(Long.MIN_VALUE);
+		}
+	}
+
+	@Test
 	void findsFragmentContinuationWhoseRowIsNotFirstInPrecedingShard() {
 		long row = 2_932_299_266L;
 		try (ImmutablePagedQuadCsfIndex index = buildFragments(0, 0, List.of(
@@ -655,6 +695,144 @@ class ImmutablePagedQuadCsfIndexTest {
 			assertThat(cursor.edgeCount()).isEqualTo(count);
 			assertThat(cursor.neighborAt(count - 1L)).isEqualTo(neighbours[count - 1]);
 			assertThat(cursor.lowerBound(0, neighbours[70_000], 0)).isEqualTo(70_000);
+		}
+	}
+
+	@Test
+	void contextPruningSkipsDisjointHeadsAndMiddleFragmentsInEveryPlane() {
+		long row = Long.MIN_VALUE + 258;
+		long other = id(1, 301);
+		for (int predicate = 0; predicate < 2; predicate++) {
+			for (int plane = 0; plane < ImmutablePagedQuadCsfIndex.PLANE_COUNT; plane++) {
+				for (long wanted : new long[] { 0L, id(1, 302) }) {
+					try (ImmutablePagedQuadCsfIndex index = buildFragments(predicate, plane, List.of(
+							List.of(new Row(row - 128, new long[] { id(1, 10) }, new long[] { other }),
+									new Row(row, new long[] { id(1, 20) }, new long[] { other })),
+							List.of(),
+							List.of(new Row(row, new long[] { id(1, 21) }, new long[] { wanted })),
+							List.of(new Row(row, new long[] { id(1, 22) }, new long[] { other })),
+							List.of(new Row(row, new long[] { Long.MIN_VALUE + 130 }, new long[] { wanted }),
+									new Row(row + 128, new long[] { Long.MIN_VALUE + 258 }, new long[] { wanted }))),
+							new boolean[] { false, false, true, true, true });
+							ImmutablePagedQuadCsfIndex.LookupCursor lookup = new ImmutablePagedQuadCsfIndex.LookupCursor()) {
+						assertThat(index.findLocalReference(predicate, plane, row - 128, lookup, wanted)).isZero();
+						long reference = index.findLocalReference(predicate, plane, row, lookup, wanted);
+						assertThat(reference).isNotZero();
+						assertThat(index.findLocalReference(predicate, plane, row, lookup, id(1, 999))).isZero();
+						assertThat(index.findLocalReference(predicate, plane, row, lookup, -1)).isEqualTo(reference);
+
+						long before = CompactCsfPageReader.DECODES.sum();
+						ImmutablePagedQuadCsfIndex.KeyCursor keys = index.keyDomain(predicate, plane)
+								.contextCandidateCursor(wanted);
+						assertThat(keys.advance()).isTrue();
+						assertThat(keys.key()).isEqualTo(row);
+						assertThat(keys.localReference()).isEqualTo(reference);
+						assertThat(CompactCsfPageReader.DECODES.sum() - before)
+								.as("finding a continuation candidate must not bind its disjoint head")
+								.isZero();
+
+						ImmutablePagedQuadCsfIndex.RowCursor cursor = new ImmutablePagedQuadCsfIndex.RowCursor();
+						index.resolve(reference, cursor, wanted);
+						assertThat(CompactCsfPageReader.DECODES.sum() - before)
+								.as("only the two matching physical fragments are materialized")
+								.isEqualTo(2);
+						assertThat(cursor.edgeCount()).isEqualTo(2);
+						assertThat(cursor.neighborAt(0)).isEqualTo(id(1, 21));
+						assertThat(cursor.neighborAt(1)).isEqualTo(Long.MIN_VALUE + 130);
+						assertThat(cursor.lowerBound(0, Long.MIN_VALUE + 130, wanted)).isEqualTo(1);
+						long[] neighbors = new long[2];
+						long[] contexts = new long[2];
+						assertThat(cursor.copy(0, 2, neighbors, 0, contexts, 0)).isEqualTo(2);
+						assertThat(neighbors).containsExactly(id(1, 21), Long.MIN_VALUE + 130);
+						assertThat(contexts).containsExactly(wanted, wanted);
+						assertThat(keys.advance()).isTrue();
+						assertThat(keys.key()).isEqualTo(row + 128);
+						assertThat(keys.advance()).isFalse();
+
+						index.resolve(reference, cursor);
+						assertThat(cursor.edgeCount()).isEqualTo(4);
+						index.resolve(reference, cursor, other);
+						assertThat(cursor.edgeCount()).isEqualTo(2);
+						assertThat(cursor.neighborAt(0)).isEqualTo(id(1, 20));
+						assertThat(cursor.neighborAt(1)).isEqualTo(id(1, 22));
+						index.resolve(reference, cursor, id(1, 999));
+						assertThat(cursor.edgeCount()).isZero();
+						assertThat(cursor.copy(0, 1, neighbors, 0, contexts, 0)).isZero();
+						assertThat(cursor.lowerBound(0, id(1, 20), wanted)).isZero();
+						index.resolve(reference, cursor, wanted);
+						assertThat(cursor.edgeCount()).isEqualTo(2);
+
+						before = CompactCsfPageReader.DECODES.sum();
+						ImmutablePagedQuadCsfIndex.RowCursor slice = new ImmutablePagedQuadCsfIndex.RowCursor();
+						index.resolveContextSlice(reference, slice, wanted);
+						assertThat(slice.edgeCount()).as("source slices retain original ordinals").isEqualTo(4);
+						assertThat(slice.nextContextCandidate(0, wanted)).isEqualTo(1);
+						assertThat(slice.contextCandidateEnd()).isEqualTo(2);
+						assertThat(slice.nextContextCandidate(2, wanted)).isEqualTo(3);
+						assertThat(slice.contextCandidateEnd()).isEqualTo(4);
+						assertThat(slice.nextContextCandidate(4, wanted)).isEqualTo(4);
+						assertThat(CompactCsfPageReader.DECODES.sum() - before)
+								.as("source ordinal metadata and candidate spans do not bind pair payloads")
+								.isZero();
+						assertThat(slice.neighborAt(1)).isEqualTo(id(1, 21));
+						assertThat(slice.neighborAt(3)).isEqualTo(Long.MIN_VALUE + 130);
+					}
+				}
+			}
+		}
+	}
+
+	@Test
+	void contextPruningKeepsMixedPagesAndUnrestrictedKeyTraversal() {
+		long named = id(1, 301);
+		List<Row> rows = List.of(new Row(id(1, 7), new long[] { id(1, 10), id(1, 11) },
+				new long[] { 0, named }), new Row(id(1, 8), new long[] { id(1, 12) }, new long[] { named }));
+		try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0, rows);
+				ImmutablePagedQuadCsfIndex.LookupCursor lookup = new ImmutablePagedQuadCsfIndex.LookupCursor()) {
+			assertThat(index.pageCount()).isEqualTo(1);
+			long reference = index.findLocalReference(0, 0, id(1, 7), lookup, id(1, 999));
+			assertThat(reference).as("a mixed header cannot prove absence").isNotZero();
+			ImmutablePagedQuadCsfIndex.RowCursor cursor = new ImmutablePagedQuadCsfIndex.RowCursor();
+			index.resolve(reference, cursor, id(1, 999));
+			assertThat(cursor.edgeCount()).isEqualTo(2);
+			assertThat(cursor.contextAt(0)).isZero();
+			assertThat(cursor.contextAt(1)).isEqualTo(named);
+			for (long context : new long[] { -1, 0, named, id(1, 999) }) {
+				ImmutablePagedQuadCsfIndex.KeyCursor keys = index.keyDomain(0, 0).contextCandidateCursor(context);
+				assertThat(keys.advance()).isTrue();
+				assertThat(keys.key()).isEqualTo(id(1, 7));
+				assertThat(keys.edgeCount()).isEqualTo(2);
+				assertThat(keys.advance()).isTrue();
+				assertThat(keys.key()).isEqualTo(id(1, 8));
+				assertThat(keys.advance()).isFalse();
+			}
+		}
+	}
+
+	@Test
+	void contextSlicesReadMultiRowCountsWithoutBindingPairPayloads() {
+		long graph = id(1, 301);
+		for (boolean multipleContexts : new boolean[] { false, true }) {
+			long[] neighbors = multipleContexts ? new long[] { id(1, 20), id(1, 20), id(1, 21) }
+					: new long[] { id(1, 20), id(1, 21), id(1, 22) };
+			long[] contexts = multipleContexts ? new long[] { 0, graph, graph } : new long[] { graph, graph, graph };
+			try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0, List.of(
+					new Row(id(1, 7), new long[] { id(1, 10), id(1, 11) }, new long[] { graph, graph }),
+					new Row(id(1, 8), neighbors, contexts)))) {
+				assertThat(index.pageCount()).isEqualTo(1);
+				long reference = index.findLocalReference(0, 0, id(1, 8));
+				long before = CompactCsfPageReader.DECODES.sum();
+				ImmutablePagedQuadCsfIndex.RowCursor slice = new ImmutablePagedQuadCsfIndex.RowCursor();
+				index.resolveContextSlice(reference, slice, id(1, 999));
+				assertThat(slice.edgeCount()).isEqualTo(3);
+				assertThat(slice.nextContextCandidate(0, id(1, 999))).isEqualTo(multipleContexts ? 0 : 3);
+				assertThat(CompactCsfPageReader.DECODES.sum() - before).isZero();
+				long[] actualNeighbors = new long[3];
+				long[] actualContexts = new long[3];
+				assertThat(slice.copy(0, 3, actualNeighbors, 0, actualContexts, 0)).isEqualTo(3);
+				assertThat(actualNeighbors).containsExactly(neighbors);
+				assertThat(actualContexts).containsExactly(contexts);
+			}
 		}
 	}
 

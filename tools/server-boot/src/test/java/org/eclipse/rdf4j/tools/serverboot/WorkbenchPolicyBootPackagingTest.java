@@ -173,11 +173,25 @@ class WorkbenchPolicyBootPackagingTest {
 	@Test
 	void sharedWorkbenchPolicyBlocksHiddenNamespacesPageForEveryHttpMethodBeforeConditionalCaching() {
 		String hiddenPage = workbenchUrl("/repositories/NONE/namespaces");
+		ResponseEntity<String> landing = restTemplate.getForEntity(workbenchUrl("/repositories/NONE/server"),
+				String.class);
+		assertThat(landing.getStatusCode()).isEqualTo(HttpStatus.OK);
+		List<String> setCookies = landing.getHeaders().get(HttpHeaders.SET_COOKIE);
+		assertThat(setCookies).isNotNull();
+		List<String> cookiePairs = setCookies.stream().map(cookie -> cookie.split(";", 2)[0]).toList();
+		String tokenPair = cookiePairs.stream()
+				.filter(cookie -> cookie.startsWith("rdf4j-workbench-csrf="))
+				.findFirst()
+				.orElseThrow();
 		for (HttpMethod method : List.of(HttpMethod.GET, HttpMethod.HEAD, HttpMethod.POST, HttpMethod.PUT,
 				HttpMethod.PATCH, HttpMethod.DELETE, HttpMethod.OPTIONS)) {
 			HttpHeaders headers = new HttpHeaders();
 			if (method == HttpMethod.GET || method == HttpMethod.HEAD) {
 				headers.setIfModifiedSince(Instant.parse("2099-01-01T00:00:00Z").toEpochMilli());
+			} else if (method != HttpMethod.OPTIONS) {
+				headers.set(HttpHeaders.COOKIE, String.join("; ", cookiePairs));
+				headers.set("X-RDF4J-CSRF-Token", tokenPair.substring("rdf4j-workbench-csrf=".length()));
+				headers.setOrigin("http://localhost:" + port);
 			}
 			ResponseEntity<String> response = restTemplate.exchange(hiddenPage, method,
 					new HttpEntity<>(headers), String.class);

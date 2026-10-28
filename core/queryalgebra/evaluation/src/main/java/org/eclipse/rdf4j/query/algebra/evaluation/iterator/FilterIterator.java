@@ -295,6 +295,15 @@ public class FilterIterator extends FilterIteration<BindingSet>
 		Set<String> constantNames = constantVarNames(subQuery);
 		subqueryOutputNames.removeAll(constantNames);
 		correlationCandidates.removeAll(constantNames);
+		ConditionBindingScope bindingScope = FilterBindingScope.resolve(filter);
+		Function<BindingSet, BindingSet> conditionBindings = bindingScope.retainsAllBindings() ? Function.identity()
+				: retainBindings(bindingScope.bindingNames(), context);
+		if (!bindingScope.retainsAllBindings()) {
+			// The source row remains intact for output, but excluded names cannot participate in an EXISTS
+			// probe, its cache key, or compatibility with a materialized subquery result.
+			subqueryOutputNames.retainAll(bindingScope.bindingNames());
+			correlationCandidates.retainAll(bindingScope.bindingNames());
+		}
 		Set<String> sharedBindingNames = new LinkedHashSet<>(filter.getArg().getBindingNames());
 		sharedBindingNames.retainAll(subqueryOutputNames);
 		Set<String> materializationParameterNames = new LinkedHashSet<>(correlationCandidates);
@@ -320,11 +329,15 @@ public class FilterIterator extends FilterIteration<BindingSet>
 								: MATERIALIZED_HASH.equals(algorithmHint)
 										? MaterializedExistsFilterIteration.MATERIALIZED
 										: MaterializedExistsFilterIteration.ADAPTIVE;
-		Function<BindingSet, CloseableIteration<BindingSet>> existsProbeFunction = existsProbeFunction(subQuery,
+		Function<BindingSet, CloseableIteration<BindingSet>> unscopedProbe = existsProbeFunction(subQuery,
 				existsArg, strategy, context);
-		return materializedExistsStep(filter, evaluationStatistics, algorithmHint, arg, existsArg, existsProbeFunction,
-				subQuery, sharedBindingArray, correlationKeyBindingArray, materializationParameterBindingArray,
-				strategyMode, negated);
+		Function<BindingSet, CloseableIteration<BindingSet>> existsProbeFunction = bindingScope.retainsAllBindings()
+				? unscopedProbe : bindings -> unscopedProbe.apply(conditionBindings.apply(bindings));
+		Function<BindingSet, CloseableIteration<BindingSet>> materializationFunction = bindingScope.retainsAllBindings()
+				? existsArg::evaluate : bindings -> existsArg.evaluate(conditionBindings.apply(bindings));
+		return materializedExistsStep(filter, evaluationStatistics, algorithmHint, arg, materializationFunction,
+				existsProbeFunction, subQuery, sharedBindingArray, correlationKeyBindingArray,
+				materializationParameterBindingArray, strategyMode, negated);
 	}
 
 	/**
@@ -387,8 +400,8 @@ public class FilterIterator extends FilterIteration<BindingSet>
 		} else {
 			strategyMode = MaterializedExistsFilterIteration.ADAPTIVE;
 		}
-		return materializedExistsStep(filter, evaluationStatistics, algorithmHint, arg, existsArg, probe, subQuery,
-				sharedBindingArray, sharedBindingArray, NO_NAMES, strategyMode, true);
+		return materializedExistsStep(filter, evaluationStatistics, algorithmHint, arg, existsArg::evaluate, probe,
+				subQuery, sharedBindingArray, sharedBindingArray, NO_NAMES, strategyMode, true);
 	}
 
 	/**
@@ -414,7 +427,8 @@ public class FilterIterator extends FilterIteration<BindingSet>
 	}
 
 	private static QueryEvaluationStep materializedExistsStep(Filter filter, EvaluationStatistics evaluationStatistics,
-			String algorithmHint, QueryEvaluationStep arg, QueryEvaluationStep existsArg,
+			String algorithmHint, QueryEvaluationStep arg,
+			Function<BindingSet, CloseableIteration<BindingSet>> materializationFunction,
 			Function<BindingSet, CloseableIteration<BindingSet>> existsProbeFunction, TupleExpr subQuery,
 			String[] sharedBindingArray, String[] correlationKeyBindingArray,
 			String[] materializationParameterBindingArray, int strategyMode, boolean negated) {
@@ -446,7 +460,7 @@ public class FilterIterator extends FilterIteration<BindingSet>
 						: null;
 		recordMaterializedExistsDisposition(filter, algorithmHint, "compiled-specialized");
 		return bindings -> new MaterializedExistsFilterIteration(filter, arg.evaluate(bindings),
-				existsArg::evaluate,
+				materializationFunction,
 				existsProbeFunction, sharedBindingArray, correlationKeyBindingArray,
 				materializationParameterBindingArray, subQuery, evaluationStatistics, recordFilterOutcomes,
 				sharedProbeBudget, sharedProbeCache, sharedProbeCacheEntries, sharedProbeCacheCapacity,

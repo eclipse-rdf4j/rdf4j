@@ -31,6 +31,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.model.IRI;
@@ -58,6 +59,34 @@ class LmdbValueIdentityTest {
 
 	@TempDir
 	Path directory;
+
+	@Test
+	void nestedTriplePreservesCanonicalIdEquality() {
+		AtomicInteger cacheReads = new AtomicInteger();
+		ValueStoreRevision revision = new ValueStoreRevision.Default(null) {
+			@Override
+			public boolean hasCanonicalIds() {
+				return true;
+			}
+
+			@Override
+			public int getStoredHash(long id) {
+				cacheReads.incrementAndGet();
+				return 0;
+			}
+		};
+		IRI subject = VF.createIRI("urn:subject");
+		IRI predicate = VF.createIRI("urn:predicate");
+		IRI object = VF.createIRI("urn:object");
+		TripleTerm first = new LmdbTripleTerm(revision, subject, predicate, object, 17);
+		TripleTerm second = new LmdbTripleTerm(revision, subject, predicate, object, 19);
+		TripleTerm outerFirst = VF.createTripleTerm(subject, predicate, first);
+		TripleTerm outerSecond = VF.createTripleTerm(subject, predicate, second);
+
+		assertNotEquals(outerFirst, outerSecond);
+		outerFirst.hashCode();
+		assertEquals(1, cacheReads.get(), "Nested LMDB terms must retain their hash-cache dispatch");
+	}
 
 	@ParameterizedTest
 	@EnumSource(Shape.class)

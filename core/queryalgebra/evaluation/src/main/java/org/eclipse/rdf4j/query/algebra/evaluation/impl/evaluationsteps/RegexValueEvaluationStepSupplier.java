@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep.ConstantQueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.support.RegexCache;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -160,35 +161,6 @@ public class RegexValueEvaluationStepSupplier {
 		if (farg != null) {
 			flags = ((Literal) farg).getLabel();
 		}
-		int f = 0;
-		for (char c : flags.toCharArray()) {
-			switch (c) {
-			case 's':
-				f |= Pattern.DOTALL;
-				break;
-			case 'm':
-				f |= Pattern.MULTILINE;
-				break;
-			case 'i':
-				f |= Pattern.CASE_INSENSITIVE;
-				f |= Pattern.UNICODE_CASE;
-				break;
-			case 'x':
-				f |= Pattern.COMMENTS;
-				break;
-			case 'd':
-				f |= Pattern.UNIX_LINES;
-				break;
-			case 'u':
-				f |= Pattern.UNICODE_CASE;
-				break;
-			case 'q':
-				f |= Pattern.LITERAL;
-				break;
-			default:
-				throw new ValueExprEvaluationException(flags);
-			}
-		}
-		return f;
+		return RegexCache.flags(flags);
 	}
 }

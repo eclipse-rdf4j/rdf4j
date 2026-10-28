@@ -38,6 +38,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -421,10 +422,18 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	/** Updates configuration and, when requested, waits for server-side shutdown and initialization to complete. */
 	public void updateRepository(RepositoryConfig config, boolean restart) throws IOException, RepositoryException {
 		String baseURI = Protocol.getRepositoryLocation(serverURL, config.getID());
-		setRepository(baseURI);
 		Resource ctx = SimpleValueFactory.getInstance().createIRI(baseURI + "#" + config.getID());
 		Model model = new LinkedHashModel();
 		config.export(model, ctx);
+		updateRepository(config.getID(), model, restart);
+	}
+
+	/** Sends an already validated public configuration graph, preserving typed redaction markers. */
+	@InternalUseOnly
+	public void updateRepository(String repositoryID, Model model, boolean restart)
+			throws IOException, RepositoryException {
+		String baseURI = Protocol.getRepositoryLocation(serverURL, repositoryID);
+		setRepository(baseURI);
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		Rio.write(model, baos, getPreferredRDFFormat());
 		byte[] bytes = baos.toByteArray();

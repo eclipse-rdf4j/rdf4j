@@ -1225,6 +1225,8 @@ final class LmdbNativeKernelEmitter {
 			// plus a branch, and keeps the generated source identical for probe and normal runs (one cache entry).
 			source.append("    private KernelCancellation cancel;\n");
 			source.append("    private int pollTick;\n");
+			source.append(
+					"    private final NativeLmdbQuerySource.RunView.ContextSpan contextSpan = new NativeLmdbQuerySource.RunView.ContextSpan();\n");
 			if (kernel.requirements.scans > 0) {
 				source.append("    private KernelScanner scanner;\n");
 				for (int i = 0; i < kernel.requirements.scans; i++) {
@@ -4373,7 +4375,21 @@ final class LmdbNativeKernelEmitter {
 				body.append(loop).append("    cvec = new long[rn];\n");
 			}
 			body.append(loop).append("}\n");
-			if (keyRunCursor == null) {
+			if (ctx) {
+				body.append(loop).append("KernelRuntime.checkCancelled(cancel);\n");
+				body.append(loop)
+						.append("rn = contextSpan.copyAccepted(")
+						.append(keyRunCursor == null ? a + ", rh, " : keyRunCursor + ", ")
+						.append(runState)
+						.append(", rend, rn, tvec, 0, cvec, 0, ")
+						.append(contextCopyArguments(producer))
+						.append(");\n");
+				body.append(loop).append("KernelRuntime.checkCancelled(cancel);\n");
+				body.append(loop)
+						.append("if (rn == 0) { ")
+						.append(runState)
+						.append(" = contextSpan.end(); continue; }\n");
+			} else if (keyRunCursor == null) {
 				body.append(loop)
 						.append(a)
 						.append(".copyNeighbors(rh, ")
@@ -4385,21 +4401,6 @@ final class LmdbNativeKernelEmitter {
 						.append(".copyNeighbors(")
 						.append(runState)
 						.append(", rn, tvec, 0);\n");
-			}
-			if (ctx) {
-				if (keyRunCursor == null) {
-					body.append(loop)
-							.append(a)
-							.append(".copyContexts(rh, ")
-							.append(runState)
-							.append(", rn, cvec, 0);\n");
-				} else {
-					body.append(loop)
-							.append(keyRunCursor)
-							.append(".copyContexts(")
-							.append(runState)
-							.append(", rn, cvec, 0);\n");
-				}
 			}
 			body.append(loop).append("int cnt = rn;\n");
 			boolean selected = false;
@@ -4631,17 +4632,32 @@ final class LmdbNativeKernelEmitter {
 				body.append(loop).append("    cvec = new long[rn];\n");
 			}
 			body.append(loop).append("}\n");
-			if (keyRunCursor == null) {
-				body.append(loop).append(a).append(".copyNeighbors(rh, rpos, rn, tvec, 0);\n");
-			} else {
-				body.append(loop).append(keyRunCursor).append(".copyNeighbors(rpos, rn, tvec, 0);\n");
-			}
 			if (ctx) {
-				if (keyRunCursor == null) {
-					body.append(loop).append(a).append(".copyContexts(rh, rpos, rn, cvec, 0);\n");
-				} else {
-					body.append(loop).append(keyRunCursor).append(".copyContexts(rpos, rn, cvec, 0);\n");
-				}
+				body.append(loop).append("KernelRuntime.checkCancelled(cancel);\n");
+				body.append(loop)
+						.append("rn = contextSpan.copyAccepted(")
+						.append(keyRunCursor == null ? a + ", rh, " : keyRunCursor + ", ")
+						.append("rpos")
+						.append(", rend, rn, tvec, 0, cvec, 0, ")
+						.append(contextCopyArguments(producer))
+						.append(");\n");
+				body.append(loop).append("KernelRuntime.checkCancelled(cancel);\n");
+				body.append(loop)
+						.append("if (rn == 0) { ")
+						.append("rpos")
+						.append(" = contextSpan.end(); continue; }\n");
+			} else if (keyRunCursor == null) {
+				body.append(loop)
+						.append(a)
+						.append(".copyNeighbors(rh, ")
+						.append("rpos")
+						.append(", rn, tvec, 0);\n");
+			} else {
+				body.append(loop)
+						.append(keyRunCursor)
+						.append(".copyNeighbors(")
+						.append("rpos")
+						.append(", rn, tvec, 0);\n");
 			}
 			body.append(loop).append("int cnt = rn;\n");
 			boolean selected = false;
@@ -5115,7 +5131,7 @@ final class LmdbNativeKernelEmitter {
 		 * The per-entry context guard over a local {@code ctx} variable ({@code "ctx != 0L && ctx == <match>"}), or
 		 * null when the producer restricts nothing and only projects.
 		 */
-		private static String ctxCondition(Node node) {
+		private static ContextDemand contextDemand(Node node) {
 			Operand match;
 			boolean exclude;
 			if (node instanceof Probe) {
@@ -5146,6 +5162,21 @@ final class LmdbNativeKernelEmitter {
 				match = ((EnumerateAdjKeys) node).ctxMatch;
 				exclude = ((EnumerateAdjKeys) node).ctxExcludeDefault;
 			}
+			return new ContextDemand(match, exclude);
+		}
+
+		private record ContextDemand(Operand match, boolean exclude) {
+		}
+
+		private static String contextCopyArguments(Node node) {
+			ContextDemand demand = contextDemand(node);
+			return (demand.match() == null ? "-1L" : demand.match().token()) + ", null, " + demand.exclude();
+		}
+
+		private static String ctxCondition(Node node) {
+			ContextDemand demand = contextDemand(node);
+			Operand match = demand.match();
+			boolean exclude = demand.exclude();
 			StringBuilder condition = new StringBuilder();
 			if (exclude) {
 				condition.append("ctx != 0L");
@@ -5154,6 +5185,35 @@ final class LmdbNativeKernelEmitter {
 				condition.append(condition.length() > 0 ? " && " : "").append("ctx == ").append(match.token());
 			}
 			return condition.length() == 0 ? null : condition.toString();
+		}
+
+		/** Reject a common graph before a bound-neighbor probe reads that physical span. */
+		private static void emitHeaderContextGuard(StringBuilder body, String indent, Node node, String view,
+				String index) {
+			if (!ctxActive(node)) {
+				return;
+			}
+			String condition = ctxCondition(node);
+			if (condition == null) {
+				return;
+			}
+			body.append(indent)
+					.append(view)
+					.append(".contextSpan(rh, ")
+					.append(index)
+					.append(", contextSpan);\n");
+			body.append(indent)
+					.append("if (contextSpan.hasCommonContext()) {\n")
+					.append(indent)
+					.append("    long ctx = contextSpan.commonContext();\n")
+					.append(indent)
+					.append("    if (!(")
+					.append(condition)
+					.append(")) { ")
+					.append(index)
+					.append(" = contextSpan.end() - 1L; continue; }\n")
+					.append(indent)
+					.append("}\n");
 		}
 
 		/**
@@ -5166,13 +5226,21 @@ final class LmdbNativeKernelEmitter {
 				return indent;
 			}
 			body.append(indent)
-					.append("long ctx = ")
+					.append("long ctx = KernelRuntime.contextInSpan(")
 					.append(view)
-					.append(".contextAt(rh, ")
+					.append(", rh, ")
 					.append(index)
-					.append(");\n");
+					.append(", contextSpan);\n");
 			String condition = ctxCondition(node);
 			if (condition != null) {
+				body.append(indent)
+						.append("if (!(")
+						.append(condition)
+						.append(") && contextSpan.hasCommonContext()) { ")
+						.append(index)
+						.append(" = Math.max(")
+						.append(index)
+						.append(", contextSpan.end() - 1L); }\n");
 				body.append(indent).append("if (").append(condition).append(") {\n");
 				indent = indent + "    ";
 			}
@@ -5185,17 +5253,30 @@ final class LmdbNativeKernelEmitter {
 
 		private static String emitBoundCtxEntry(StringBuilder body, String indent, Node node, String cursor,
 				String index) {
+			return emitBoundCtxEntry(body, indent, node, cursor, index, false);
+		}
+
+		private static String emitBoundCtxEntry(StringBuilder body, String indent, Node node, String cursor,
+				String index, boolean intOffset) {
 			if (!ctxActive(node)) {
 				return indent;
 			}
 			body.append(indent)
-					.append("long ctx = ")
+					.append("long ctx = KernelRuntime.contextInSpan(")
 					.append(cursor)
-					.append(".contextAt(")
+					.append(", ")
 					.append(index)
-					.append(");\n");
+					.append(", contextSpan);\n");
 			String condition = ctxCondition(node);
 			if (condition != null) {
+				body.append(indent)
+						.append("if (!(")
+						.append(condition)
+						.append(") && contextSpan.hasCommonContext()) { ")
+						.append(index)
+						.append(intOffset ? " = Math.toIntExact(Math.max(" : " = Math.max(")
+						.append(index)
+						.append(intOffset ? ", contextSpan.end() - 1L)); }\n" : ", contextSpan.end() - 1L); }\n");
 				body.append(indent).append("if (").append(condition).append(") {\n");
 				indent = indent + "    ";
 			}
@@ -5212,13 +5293,21 @@ final class LmdbNativeKernelEmitter {
 				return indent;
 			}
 			body.append(indent)
-					.append("long ctx = ")
+					.append("long ctx = KernelRuntime.contextInSpan(")
 					.append(cursor)
-					.append(".contextAt(")
+					.append(", ")
 					.append(index)
-					.append(");\n");
+					.append(", contextSpan);\n");
 			String condition = ctxCondition(node);
 			if (condition != null) {
+				body.append(indent)
+						.append("if (!(")
+						.append(condition)
+						.append(") && contextSpan.hasCommonContext()) { ")
+						.append(index)
+						.append(" = Math.max(")
+						.append(index)
+						.append(", contextSpan.end() - 1L); }\n");
 				body.append(indent).append("if (").append(condition).append(") {\n");
 				indent = indent + "    ";
 			}
@@ -5484,7 +5573,7 @@ final class LmdbNativeKernelEmitter {
 					.append(probe.valueCol)
 					.append(" = ")
 					.append(adjacency)
-					.append(".neighborAt(rh, ")
+					.append(ctxActive(probe) ? ".neighborInContextSpan(rh, " : ".neighborAt(rh, ")
 					.append(runState)
 					.append(");\n")
 					.append(next(nextTemplate, genericInner));
@@ -5749,7 +5838,7 @@ final class LmdbNativeKernelEmitter {
 					.append(probe.valueCol)
 					.append(" = ")
 					.append(adjacency)
-					.append(".neighborAt(rh, ")
+					.append(ctxActive(probe) ? ".neighborInContextSpan(rh, " : ".neighborAt(rh, ")
 					.append(runState)
 					.append(");\n")
 					.append(next(nextTemplate, genericInner));
@@ -5936,7 +6025,7 @@ final class LmdbNativeKernelEmitter {
 					.append(probe.valueCol)
 					.append(" = ")
 					.append(view)
-					.append(".neighborAt(rh, ")
+					.append(ctxActive(probe) ? ".neighborInContextSpan(rh, " : ".neighborAt(rh, ")
 					.append(runState)
 					.append(");\n")
 					.append(next(nextTemplate, inner));
@@ -6162,7 +6251,7 @@ final class LmdbNativeKernelEmitter {
 					.append(probe.valueCol)
 					.append(" = ")
 					.append(view)
-					.append(".neighborAt(rh, ")
+					.append(ctxActive(probe) ? ".neighborInContextSpan(rh, " : ".neighborAt(rh, ")
 					.append(runState)
 					.append(");\n")
 					.append(next(nextTemplate, inner));
@@ -6388,7 +6477,7 @@ final class LmdbNativeKernelEmitter {
 						.append(probe.valueCol)
 						.append(" = ")
 						.append(view)
-						.append(".neighborAt(rh, ")
+						.append(ctxActive(node) ? ".neighborInContextSpan(rh, " : ".neighborAt(rh, ")
 						.append(a)
 						.append(");\n")
 						.append(next(nextTemplate, inner));
@@ -6533,7 +6622,7 @@ final class LmdbNativeKernelEmitter {
 						.append(probe.valueCol)
 						.append(" = ")
 						.append(cursor)
-						.append(".neighborAt(")
+						.append(ctxActive(node) ? ".neighborInContextSpan(" : ".neighborAt(")
 						.append(a)
 						.append(");\n")
 						.append(indent)
@@ -6822,7 +6911,7 @@ final class LmdbNativeKernelEmitter {
 						.append(probe.valueCol)
 						.append(" = ")
 						.append(cursor)
-						.append(".neighborAt(")
+						.append(ctxActive(node) ? ".neighborInContextSpan(" : ".neighborAt(")
 						.append(a)
 						.append(");\n");
 				body.append(next(nextTemplate, probeInner));
@@ -6875,7 +6964,8 @@ final class LmdbNativeKernelEmitter {
 					body.append(indent)
 							.append("            for (long i = off; i < end && ")
 							.append(view)
-							.append(".neighborAt(rh, i) == target; i++) {\n");
+							.append(ctxActive(node) ? ".neighborInContextSpan(rh, i) == target; i++) {\n"
+									: ".neighborAt(rh, i) == target; i++) {\n");
 					body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 					body.append(indent).append("                m++;\n");
 					body.append(indent).append("            }\n");
@@ -6885,7 +6975,8 @@ final class LmdbNativeKernelEmitter {
 					body.append(indent)
 							.append("                if (")
 							.append(view)
-							.append(".neighborAt(rh, i) == target) {\n");
+							.append(ctxActive(node) ? ".neighborInContextSpan(rh, i) == target) {\n"
+									: ".neighborAt(rh, i) == target) {\n");
 					body.append(indent).append("                    m++;\n");
 					body.append(indent).append("                }\n");
 					body.append(indent).append("            }\n");
@@ -6896,7 +6987,8 @@ final class LmdbNativeKernelEmitter {
 					body.append(indent)
 							.append("            if (")
 							.append(view)
-							.append(".neighborAt(rh, i) == target) {\n");
+							.append(ctxActive(node) ? ".neighborInContextSpan(rh, i) == target) {\n"
+									: ".neighborAt(rh, i) == target) {\n");
 					body.append(indent).append("                m++;\n");
 					body.append(indent).append("            }\n");
 					body.append(indent).append("        }\n");
@@ -7090,10 +7182,11 @@ final class LmdbNativeKernelEmitter {
 					body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 					String inner = indent + "                ";
 					if (enumerate.target != null) {
+						emitHeaderContextGuard(body, inner, enumerate, view, b);
 						body.append(inner)
 								.append("long neighbor = ")
 								.append(view)
-								.append(".neighborAt(rh, ")
+								.append(ctxActive(node) ? ".neighborInContextSpan(rh, " : ".neighborAt(rh, ")
 								.append(b)
 								.append(");\n");
 						body.append(inner).append("if (neighbor == target) {\n");
@@ -7105,7 +7198,10 @@ final class LmdbNativeKernelEmitter {
 								.append("v")
 								.append(enumerate.valueCol)
 								.append(" = ")
-								.append(enumerate.target == null ? view + ".neighborAt(rh, " + b + ")" : "neighbor")
+								.append(enumerate.target == null
+										? view + (ctxActive(node) ? ".neighborInContextSpan(rh, " : ".neighborAt(rh, ")
+												+ b + ")"
+										: "neighbor")
 								.append(";\n");
 					}
 					body.append(next(nextTemplate, inner));
@@ -7169,7 +7265,7 @@ final class LmdbNativeKernelEmitter {
 							.append(enumerate.valueCol)
 							.append(" = ")
 							.append(view)
-							.append(".neighborAt(rh, ")
+							.append(ctxActive(node) ? ".neighborInContextSpan(rh, " : ".neighborAt(rh, ")
 							.append(c)
 							.append(");\n");
 					body.append(next(nextTemplate, inner));
@@ -7252,7 +7348,7 @@ final class LmdbNativeKernelEmitter {
 						.append(enumerate.valueCol)
 						.append(" = ")
 						.append(cursor)
-						.append(".neighborAt(")
+						.append(ctxActive(node) ? ".neighborInContextSpan(" : ".neighborAt(")
 						.append(b)
 						.append(");\n");
 				body.append(next(nextTemplate, enumInner));
@@ -7349,7 +7445,7 @@ final class LmdbNativeKernelEmitter {
 						.append(enumerate.valueCol)
 						.append(" = ")
 						.append(cursor)
-						.append(".neighborAt(")
+						.append(ctxActive(node) ? ".neighborInContextSpan(" : ".neighborAt(")
 						.append(b)
 						.append(");\n");
 				body.append(next(nextTemplate, enumInner));
@@ -7696,7 +7792,7 @@ final class LmdbNativeKernelEmitter {
 					.append(" = sipKey;\n")
 					.append(indent)
 					.append("            for (int i = 0; i < end; i++) {\n");
-			String decodedInner = emitBoundCtxEntry(body, indent + "                ", probe, decodedCursor, "i");
+			String decodedInner = emitBoundCtxEntry(body, indent + "                ", probe, decodedCursor, "i", true);
 			body.append(decodedInner)
 					.append("v")
 					.append(probe.valueCol)
@@ -7766,7 +7862,7 @@ final class LmdbNativeKernelEmitter {
 					.append(probe.valueCol)
 					.append(" = ")
 					.append(adjacency)
-					.append(".neighborAt(rh, i);\n")
+					.append(ctxActive(probe) ? ".neighborInContextSpan(rh, i);\n" : ".neighborAt(rh, i);\n")
 					.append(next(nextTemplate, genericInner));
 			closeCtxEntry(body, indent + "                    ", probe);
 			body.append(indent)
@@ -7841,7 +7937,7 @@ final class LmdbNativeKernelEmitter {
 					.append(indent)
 					.append("                    for (int i = 0; i < end; i++) {\n");
 			String decodedInner = emitBoundCtxEntry(body, indent + "                        ", probe, decodedCursor,
-					"i");
+					"i", true);
 			body.append(decodedInner)
 					.append("v")
 					.append(probe.valueCol)
@@ -7903,7 +7999,7 @@ final class LmdbNativeKernelEmitter {
 					.append(probe.valueCol)
 					.append(" = ")
 					.append(adjacency)
-					.append(".neighborAt(rh, i);\n")
+					.append(ctxActive(probe) ? ".neighborInContextSpan(rh, i);\n" : ".neighborAt(rh, i);\n")
 					.append(next(nextTemplate, genericInner));
 			closeCtxEntry(body, indent + "                        ", probe);
 			body.append(indent)
@@ -8143,7 +8239,7 @@ final class LmdbNativeKernelEmitter {
 						.append(valueCol)
 						.append(" = ")
 						.append(view)
-						.append(".neighborAt(rh, i);\n");
+						.append(ctxActive(probe) ? ".neighborInContextSpan(rh, i);\n" : ".neighborAt(rh, i);\n");
 			}
 			body.append(next(nextTemplate, inner));
 			closeCtxEntry(body, indent + "    ", probe);
@@ -8164,9 +8260,9 @@ final class LmdbNativeKernelEmitter {
 						.append(indent)
 						.append("for (long ci = 0L; ci < end; ci++) {\n")
 						.append(indent)
-						.append("    long ctx = ")
+						.append("    long ctx = KernelRuntime.contextInSpan(")
 						.append(view)
-						.append(".contextAt(rh, ci);\n")
+						.append(", rh, ci, contextSpan);\n")
 						.append(indent)
 						.append("    if (")
 						.append(condition == null ? "true" : condition)
@@ -8287,16 +8383,18 @@ final class LmdbNativeKernelEmitter {
 						.append("                if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 				String inner = indent + "                ";
 				if (enumerate.target != null) {
+					emitHeaderContextGuard(body, inner, enumerate, view, "i");
 					body.append(inner)
 							.append("if (")
 							.append(view)
-							.append(".neighborAt(rh, i) != target) { continue; }\n");
+							.append(ctxActive(enumerate) ? ".neighborInContextSpan(rh, i) != target) { continue; }\n"
+									: ".neighborAt(rh, i) != target) { continue; }\n");
 				}
 				if (enumerate.ctxActive()) {
 					body.append(inner)
-							.append("long ctx = ")
+							.append("long ctx = KernelRuntime.contextInSpan(")
 							.append(view)
-							.append(".contextAt(rh, i);\n")
+							.append(", rh, i, contextSpan);\n")
 							.append(inner)
 							.append("if (!(")
 							.append(ctxCondition(enumerate))
@@ -8313,16 +8411,19 @@ final class LmdbNativeKernelEmitter {
 							.append("            for (long i = 0L; i < end; i++) {\n");
 					String inner = indent + "                ";
 					if (enumerate.target != null) {
+						emitHeaderContextGuard(body, inner, enumerate, view, "i");
 						body.append(inner)
 								.append("if (")
 								.append(view)
-								.append(".neighborAt(rh, i) != target) { continue; }\n");
+								.append(ctxActive(enumerate)
+										? ".neighborInContextSpan(rh, i) != target) { continue; }\n"
+										: ".neighborAt(rh, i) != target) { continue; }\n");
 					}
 					if (enumerate.ctxActive()) {
 						body.append(inner)
-								.append("long ctx = ")
+								.append("long ctx = KernelRuntime.contextInSpan(")
 								.append(view)
-								.append(".contextAt(rh, i);\n")
+								.append(", rh, i, contextSpan);\n")
 								.append(inner)
 								.append("if (!(")
 								.append(ctxCondition(enumerate))
@@ -8476,7 +8577,7 @@ final class LmdbNativeKernelEmitter {
 						.append(enumerate.valueCol)
 						.append(" = ")
 						.append(cursor)
-						.append(".neighborAt(i);\n");
+						.append(ctxActive(enumerate) ? ".neighborInContextSpan(i);\n" : ".neighborAt(i);\n");
 				body.append(next(nextTemplate, payloadInner));
 				closeCtxEntry(body, indent + "            ", enumerate);
 				body.append(indent).append("        }\n");
@@ -8498,7 +8599,10 @@ final class LmdbNativeKernelEmitter {
 			}
 			body.append(indent).append("accepted = false;\n");
 			body.append(indent).append("for (long ci = 0L; ci < ").append(end).append("; ci++) {\n");
-			body.append(indent).append("    long ctx = ").append(cursor).append(".contextAt(ci);\n");
+			body.append(indent)
+					.append("    long ctx = KernelRuntime.contextInSpan(")
+					.append(cursor)
+					.append(", ci, contextSpan);\n");
 			body.append(indent).append("    if (").append(condition).append(") {\n");
 			body.append(indent).append("        accepted = true;\n");
 			body.append(indent).append("        break;\n");
@@ -9360,7 +9464,7 @@ final class LmdbNativeKernelEmitter {
 						.append(enumerate.valueCol)
 						.append(" = ")
 						.append(cursor)
-						.append(".neighborAt(i);\n")
+						.append(ctxActive(node) ? ".neighborInContextSpan(i);\n" : ".neighborAt(i);\n")
 						.append(next(nextTemplate, enumInner));
 				closeCtxEntry(body, indent + "            ", enumerate);
 				body.append(indent).append("        }\n");
@@ -9423,7 +9527,7 @@ final class LmdbNativeKernelEmitter {
 						.append(probe.valueCol)
 						.append(" = ")
 						.append(cursor)
-						.append(".neighborAt(i);\n")
+						.append(ctxActive(node) ? ".neighborInContextSpan(i);\n" : ".neighborAt(i);\n")
 						.append(next(nextTemplate, probeInner));
 				closeCtxEntry(body, indent + "            ", probe);
 				body.append(indent)
@@ -9499,7 +9603,11 @@ final class LmdbNativeKernelEmitter {
 					body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 					String enumInner = indent + "                ";
 					if (enumerate.target != null) {
-						body.append(enumInner).append("long neighbor = ").append(v).append(".neighborAt(rh, i);\n");
+						emitHeaderContextGuard(body, enumInner, enumerate, v, "i");
+						body.append(enumInner)
+								.append("long neighbor = ")
+								.append(v)
+								.append(ctxActive(node) ? ".neighborInContextSpan(rh, i);\n" : ".neighborAt(rh, i);\n");
 						body.append(enumInner).append("if (neighbor == target) {\n");
 						enumInner += "    ";
 					}
@@ -9509,7 +9617,9 @@ final class LmdbNativeKernelEmitter {
 								.append("v")
 								.append(enumerate.valueCol)
 								.append(" = ")
-								.append(enumerate.target == null ? v + ".neighborAt(rh, i)" : "neighbor")
+								.append(enumerate.target == null
+										? v + (ctxActive(node) ? ".neighborInContextSpan(rh, i)" : ".neighborAt(rh, i)")
+										: "neighbor")
 								.append(";\n");
 					}
 					body.append(next(nextTemplate, enumInner));
@@ -9581,7 +9691,7 @@ final class LmdbNativeKernelEmitter {
 							.append(enumerate.valueCol)
 							.append(" = ")
 							.append(v)
-							.append(".neighborAt(rh, i);\n")
+							.append(ctxActive(node) ? ".neighborInContextSpan(rh, i);\n" : ".neighborAt(rh, i);\n")
 							.append(next(nextTemplate, enumInner));
 					closeCtxEntry(body, indent + "                ", enumerate);
 					body.append(indent)
@@ -9640,7 +9750,7 @@ final class LmdbNativeKernelEmitter {
 						.append(probe.valueCol)
 						.append(" = ")
 						.append(v)
-						.append(".neighborAt(rh, i);\n")
+						.append(ctxActive(node) ? ".neighborInContextSpan(rh, i);\n" : ".neighborAt(rh, i);\n")
 						.append(next(nextTemplate, probeInner));
 				closeCtxEntry(body, indent + "            ", probe);
 				body.append(indent)
@@ -9699,7 +9809,8 @@ final class LmdbNativeKernelEmitter {
 							.append(indent)
 							.append("            for (long i = off; i < end && ")
 							.append(a)
-							.append(".neighborAt(rh, i) == target; i++) {\n")
+							.append(ctxActive(node) ? ".neighborInContextSpan(rh, i) == target; i++) {\n"
+									: ".neighborAt(rh, i) == target; i++) {\n")
 							.append(indent)
 							.append("                if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n")
 							.append(indent)
@@ -9715,7 +9826,8 @@ final class LmdbNativeKernelEmitter {
 							.append(indent)
 							.append("                if (")
 							.append(a)
-							.append(".neighborAt(rh, i) == target) {\n")
+							.append(ctxActive(node) ? ".neighborInContextSpan(rh, i) == target) {\n"
+									: ".neighborAt(rh, i) == target) {\n")
 							.append(indent)
 							.append("                    m++;\n")
 							.append(indent)
@@ -9732,7 +9844,8 @@ final class LmdbNativeKernelEmitter {
 							.append(indent)
 							.append("            if (")
 							.append(a)
-							.append(".neighborAt(rh, i) == target) {\n")
+							.append(ctxActive(node) ? ".neighborInContextSpan(rh, i) == target) {\n"
+									: ".neighborAt(rh, i) == target) {\n")
 							.append(indent)
 							.append("                m++;\n")
 							.append(indent)
@@ -9830,7 +9943,7 @@ final class LmdbNativeKernelEmitter {
 						.append(probe.valueCol)
 						.append(" = ")
 						.append(a)
-						.append(".neighborAt(rh, i);\n")
+						.append(ctxActive(node) ? ".neighborInContextSpan(rh, i);\n" : ".neighborAt(rh, i);\n")
 						.append(indent)
 						.append("            matched = true;\n")
 						.append(next(nextTemplate, indent + "            "))

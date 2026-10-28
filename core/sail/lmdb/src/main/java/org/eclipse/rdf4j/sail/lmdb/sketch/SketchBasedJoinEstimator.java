@@ -17,8 +17,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.sail.lmdb.DerivedStateBuildExecutor;
+import org.eclipse.rdf4j.sail.lmdb.estimation.EstimatorPersistenceLocation;
 import org.eclipse.rdf4j.sail.lmdb.estimation.LmdbQuadSynopsisService;
 import org.eclipse.rdf4j.sail.lmdb.estimation.QuadSnapshotIdentity;
 
@@ -82,6 +84,10 @@ public final class SketchBasedJoinEstimator implements AutoCloseable {
 		return service.adaptiveEvidenceAllowed();
 	}
 
+	/**
+	 * Supplies a guard that is true only when the statement source reflects admitted mutations. Automatic rebuild after
+	 * a mutation waits for this guard; without one, the caller can explicitly flush after making the source current.
+	 */
 	public void setRebuildAllowedSupplier(BooleanSupplier supplier) {
 		service.setRebuildAllowedSupplier(supplier);
 	}
@@ -90,8 +96,24 @@ public final class SketchBasedJoinEstimator implements AutoCloseable {
 		service.setRebuildObserver(observer);
 	}
 
+	/** Records the destination without accessing the filesystem or loading a snapshot. */
+	public void registerPersistencePath(Path directory) {
+		service.registerPersistencePath(directory);
+	}
+
+	/** Registers a shared store-owned location without accessing the filesystem. */
+	@InternalUseOnly
+	public void registerPersistencePath(EstimatorPersistenceLocation location) {
+		service.registerPersistencePath(location);
+	}
+
 	public void configurePersistence(Path directory, boolean snapshotExpected) {
 		service.configurePersistence(directory, snapshotExpected);
+	}
+
+	/** Fences a store mutation until its committed estimator callbacks have settled. */
+	public LmdbQuadSynopsisService.StoreCommitFence beginStoreCommit() {
+		return service.beginStoreCommit();
 	}
 
 	public void startBackgroundRefresh(int initialDelaySeconds) {
@@ -124,17 +146,22 @@ public final class SketchBasedJoinEstimator implements AutoCloseable {
 		return service.publishedRows();
 	}
 
+	/** Rebuilds from a source the caller has made current, subject to any configured rebuild guard. */
 	public boolean forceFlush() {
 		return service.forceFlush();
 	}
 
 	public boolean persistIfDirty() {
 		service.persistIfDirty();
-		return true;
+		return service.persistenceAvailable();
 	}
 
 	public boolean isReadyNonBlocking() {
 		return service.isReadyNonBlocking();
+	}
+
+	public boolean hasPendingBackgroundRefresh() {
+		return service.hasPendingBackgroundRefresh();
 	}
 
 	public boolean isReady() {
@@ -146,7 +173,7 @@ public final class SketchBasedJoinEstimator implements AutoCloseable {
 	}
 
 	public void unload() {
-		close();
+		service.unload();
 	}
 
 	public String staleness() {

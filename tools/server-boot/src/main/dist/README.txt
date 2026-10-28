@@ -18,6 +18,17 @@ bin/rdf4j-server.sh --server.address=0.0.0.0
 
 You can also set `server.address` to a specific interface address.
 
+The diagnostic logging page is disabled by default. After protecting both
+`/system/logging/*` and `/rdf4j-server/system/logging/*` with authentication and
+authorization at a reverse proxy, opt in with:
+
+```
+export RDF4J_JAVA_OPTS='-Dorg.eclipse.rdf4j.server.logging.ui.enabled=true'
+```
+
+The opt-in does not authenticate requests by itself. Logs can contain request
+URLs, query parameters, error details, and stack traces.
+
 Directory layout
 ----------------
 - `bin/` : executable launcher script

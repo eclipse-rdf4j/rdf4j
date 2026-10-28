@@ -334,6 +334,8 @@ Both RDF4J Server and RDF4J Workbench use the Logback logging framework. In its 
 
 The default log level is INFO, indicating that only important status messages, warnings and errors are logged. The log level and -behaviour can be adjusted by modifying the `[RDF4J_DATA]/Server/conf/logback.xml` file. This file will be generated when the server is first run. Please consult the logback manual for configuration instructions.
 
+The built-in `/system/logging/overview.view` page is disabled by default and returns `403 Forbidden`. Server logs can include request URLs, query parameters, error details, and stack traces. To enable the page, start the Server JVM with `-Dorg.eclipse.rdf4j.server.logging.ui.enabled=true`. For the packaged Spring Boot distribution, add this option through `RDF4J_JAVA_OPTS`; for a standalone WAR, add it to the servlet container's JVM options. This setting only makes the page available. Protect `/system/logging/*` with servlet-container authentication and authorization or an authenticating reverse proxy before enabling it. For the packaged Boot server, protect both `/system/logging/*` and `/rdf4j-server/system/logging/*` when using a reverse proxy. The page must not be exposed anonymously on a publicly reachable listener.
+
 ## Access Rights and Security
 
 It is possible to set up your RDF4J Server to authenticate named users and restrict their permissions.  RDF4J Server is a servlet-based Web application deployed to any standard servlet container (for the remainder of this section it is assumed that Tomcat is being used).
@@ -341,6 +343,12 @@ It is possible to set up your RDF4J Server to authenticate named users and restr
 The RDF4J Server exposes its functionality using a [REST API](/documentation/reference/rest-api) that is an extension of the SPARQL protocol for RDF. This protocol defines exactly what operations can be achieved using specific URL patterns and HTTP methods (`GET`, `POST`, `PUT`, `DELETE`). Each combination of URL pattern and HTTP method can be associated with a set of user roles, thus giving very fine-grained control.
 
 In general, read operations are effected using `GET` and write operations using `PUT`, `POST` and `DELETE`. The exception to this is that POST is allowed for SPARQL queries. This is for practical reasons, because some HTTP servers have limits on the length of the parameter values for GET requests.
+
+### Browser request integrity
+
+RDF4J Server checks `Origin`, `Referer`, and `Sec-Fetch-Site` on state-changing requests to `/repositories` and its descendants. It rejects a browser request from another origin unless the request carries `X-RDF4J-Request: true`. That non-simple header makes the browser ask for CORS permission before sending the request; the deployment must explicitly permit that origin and header. API clients that do not send browser origin metadata continue to work without the header. These request checks do not replace authentication or repository permissions. A reverse proxy must pass the public scheme, host, and port to the servlet container so same-origin requests compare correctly.
+
+RDF4J Workbench requires a session-bound request token on state-changing requests to `/repositories` and its descendants. Its pages add the token automatically to forms and same-origin requests. A custom client posting to Workbench must first load a Workbench page in the same session, then send the `rdf4j-workbench-csrf` cookie value as the `X-RDF4J-CSRF-Token` header or `_csrf` form field. Cross-origin browser requests are rejected even if they include a token. Clients that use the RDF4J protocol should call Server rather than Workbench directly.
 
 ### Security constraints and roles
 

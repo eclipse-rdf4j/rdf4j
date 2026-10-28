@@ -121,6 +121,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SameTermFilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.TupleFunctionMagicPropertyOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -159,6 +160,7 @@ class LmdbOptimizerPipelineTest {
 		assertSketchFixtureProfile(store);
 		try {
 			addSingleStatement(store, "urn:ready");
+			LmdbGcTestMaintenance.awaitPostReady(store);
 			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
 			estimator.stop();
 			estimator.rebuild();
@@ -206,6 +208,7 @@ class LmdbOptimizerPipelineTest {
 		assertSketchFixtureProfile(store);
 		try {
 			addSingleStatement(store, "urn:configured-pipeline");
+			LmdbGcTestMaintenance.awaitPostReady(store);
 			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
 			estimator.stop();
 			estimator.rebuild();
@@ -304,8 +307,11 @@ class LmdbOptimizerPipelineTest {
 		int filterSimplifierIndex = indexOf(optimizers, LmdbFilterSimplifierOptimizer.class);
 		int cascadesIndex = indexOf(optimizers, LmdbCascadesOptimizer.class);
 		int graphScopeIndex = indexOf(optimizers, GraphScopeOptimizer.class);
+		int tupleFunctionIndex = indexOf(optimizers, TupleFunctionMagicPropertyOptimizer.class);
 		assertTrue(graphScopeIndex > indexOf(optimizers, BindingAssignerOptimizer.class));
-		assertTrue(graphScopeIndex < indexOf(optimizers, ConstantOptimizer.class));
+		assertTrue(tupleFunctionIndex > graphScopeIndex);
+		assertTrue(tupleFunctionIndex < indexOf(optimizers, ConstantOptimizer.class));
+		assertEquals(1L, optimizers.stream().filter(TupleFunctionMagicPropertyOptimizer.class::isInstance).count());
 		assertEquals(1L, optimizers.stream().filter(GraphScopeOptimizer.class::isInstance).count());
 		assertTrue(filterIndex >= 0);
 		assertTrue(filterSimplifierIndex >= 0);
@@ -2613,6 +2619,39 @@ class LmdbOptimizerPipelineTest {
 					assertEquals(null, assignment, "No LMDB-specific VALUES rewrite may bypass the shared limit");
 				}
 			}
+		}
+	}
+
+	@Test
+	void exactValuesResultsMatchGenericAndNativeExecutionBeforeAndAfterSketchRebuild(@TempDir File dataDir)
+			throws Exception {
+		LmdbStoreConfig config = sketchEnabledConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true);
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			LmdbGcTestMaintenance.awaitPostReady(store);
+			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
+			estimator.stop();
+			addExactNameData(repository, 70);
+			List<Integer> sizes = List.of(1, 32, 64, 65);
+			List<List<String>> expected = new ArrayList<>();
+			for (int size : sizes) {
+				String query = exactInQuery(size, true);
+				List<String> generic = queryRows(repository, query, false);
+				assertEquals(size, generic.size(), "generic result cardinality for " + size + " constants");
+				assertEquals(generic, queryRows(repository, query, true));
+				expected.add(generic);
+			}
+			estimator.rebuild();
+			LmdbPlannerAwait.awaitEstimatorReady(estimator);
+			for (int i = 0; i < sizes.size(); i++) {
+				String query = exactInQuery(sizes.get(i), true);
+				assertEquals(expected.get(i), queryRows(repository, query, true), "cold plan for " + sizes.get(i));
+				assertEquals(expected.get(i), queryRows(repository, query, true), "warm plan for " + sizes.get(i));
+			}
+		} finally {
+			repository.shutDown();
 		}
 	}
 

@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 
@@ -354,6 +355,7 @@ class LmdbPreparedBulkDomainCompletionTest {
 						"the active dictionary must retain exact ownership after its legitimate bootstrap commit");
 				assertEquals(0L, store.getMapGrowthCount());
 			}
+			LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
 			return new Opened(store, repository, config.isExperimentalQueryOptimizations());
 		} catch (Exception | Error failure) {
 			try {
@@ -370,16 +372,26 @@ class LmdbPreparedBulkDomainCompletionTest {
 	private static void assertDomain(Opened opened, Profile profile, RdfTermDomain expected) throws Exception {
 		LmdbSailStore backing = opened.store().getBackingStore();
 		Optional<RdfTermDomain> cached = backing.getCachedRdfTermDomain(PREDICATE);
-		Optional<RdfTermDomain> persisted = backing.getPersistedRdfTermDomain(PREDICATE);
 		ValueStore values = (ValueStore) backing.getValueFactory();
 		long predicateId = values.getId(PREDICATE);
-		Optional<RdfTermDomain> known = backing.getTripleStore().getKnownRdfTermDomain(predicateId);
-		assertEquals(persisted, cached, "the committed cache must equal persisted predicate metadata");
-		assertEquals(cached, known, "the readable domain must agree with its committed cache");
-		if (profile.tracked()) {
-			assertEquals(Optional.of(expected), known, "domains must aggregate every live context and writer path");
-		} else {
-			assertEquals(Optional.empty(), known, "disabled or excluded predicates must publish no guarantee");
+		LmdbEstimatorRuntime runtime = ((LmdbEvaluationStatistics) opened.store()
+				.getSailStore()
+				.getEvaluationStatistics()).estimatorRuntime();
+		try (LmdbSailStore.DatasetAdmission view = backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, null)) {
+			view.view().requireDictionaryTermSnapshot();
+			try (TripleStore.PlanningReadPin ignored = runtime.pinPlanningReads(view.view().tripleTxn(),
+					view.view().valueSnapshot())) {
+				Optional<RdfTermDomain> persisted = backing.getPersistedRdfTermDomain(PREDICATE);
+				Optional<RdfTermDomain> known = backing.getTripleStore().getKnownRdfTermDomain(predicateId);
+				assertEquals(persisted, cached, "the committed cache must equal persisted predicate metadata");
+				assertEquals(cached, known, "the readable domain must agree with its committed cache");
+				if (profile.tracked()) {
+					assertEquals(Optional.of(expected), known,
+							"domains must aggregate every live context and writer path");
+				} else {
+					assertEquals(Optional.empty(), known, "disabled or excluded predicates must publish no guarantee");
+				}
+			}
 		}
 	}
 

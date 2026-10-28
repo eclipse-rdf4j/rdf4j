@@ -90,7 +90,8 @@ class LmdbGrowthFailureRecoveryTest {
 	void partialPairedGrowthDoesNotPoisonTheStillUsableMaps(@TempDir Path dataDir) throws Exception {
 		try (GrowthFailureScenario scenario = GrowthFailureScenario.start(dataDir, true)) {
 			assertEquals(1L, scenario.backing.growthMetricsSnapshot().tripleStoreResizes(),
-					"the injected failure must happen after a real TripleStore map resize");
+					"the injected failure must happen after a real TripleStore map resize; first armed ValueStore grow "
+							+ "recipient and stack: " + scenario.valueStore.firstArmedGrowRecipient());
 			assertEquals(0L, scenario.backing.growthMetricsSnapshot().valueStoreResizes(),
 					"the ValueStore growth must fail before resizing its paired environment");
 			scenario.assertQueuedAdmissionFailedWithGrowthError();
@@ -157,6 +158,9 @@ class LmdbGrowthFailureRecoveryTest {
 					.setMapGrowthReadDrainTimeoutMillis(2_000L);
 			store = new FaultInjectingStore(dataDir.toFile(), config);
 			store.init();
+			LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
+			assertTrue(store.awaitIndexRebuild(30, TimeUnit.SECONDS),
+					"requested statement indexes must settle before the resize fault is armed");
 			backing = store.getBackingStore();
 			valueStore = store.valueStore();
 			tripleStore = store.tripleStore();
@@ -278,6 +282,7 @@ class LmdbGrowthFailureRecoveryTest {
 		private final CountDownLatch growthEntered = new CountDownLatch(1);
 		private final CountDownLatch releaseGrowth = new CountDownLatch(1);
 		private final AtomicInteger growthEntries = new AtomicInteger();
+		private final AtomicReference<String> firstArmedGrowRecipient = new AtomicReference<>();
 		private volatile boolean armed;
 
 		private FaultyValueStore(File directory, StoreProperties properties, LmdbStoreConfig config)
@@ -301,6 +306,11 @@ class LmdbGrowthFailureRecoveryTest {
 			return growthEntries.get();
 		}
 
+		private String firstArmedGrowRecipient() {
+			String recipient = firstArmedGrowRecipient.get();
+			return recipient == null ? "no armed ValueStore grow recipient was recorded" : recipient;
+		}
+
 		@Override
 		boolean requiresResizeForEstimatedWrite(long estimatedWriteBytes) throws IOException {
 			return armed || super.requiresResizeForEstimatedWrite(estimatedWriteBytes);
@@ -311,6 +321,15 @@ class LmdbGrowthFailureRecoveryTest {
 				throws IOException {
 			growthEntries.incrementAndGet();
 			if (armed) {
+				Thread thread = Thread.currentThread();
+				StringBuilder recipient = new StringBuilder(thread.getName())
+						.append(" [thread ")
+						.append(thread.threadId())
+						.append(']');
+				for (StackTraceElement frame : thread.getStackTrace()) {
+					recipient.append("\n\tat ").append(frame);
+				}
+				firstArmedGrowRecipient.compareAndSet(null, recipient.toString());
 				growthEntered.countDown();
 				try {
 					if (!releaseGrowth.await(5, TimeUnit.SECONDS)) {

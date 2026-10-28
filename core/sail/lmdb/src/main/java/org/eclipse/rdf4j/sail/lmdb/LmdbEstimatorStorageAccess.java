@@ -396,7 +396,7 @@ final class LmdbEstimatorStorageAccess {
 	}
 
 	RdfTermDomain rdfTermDomain(IRI predicate) {
-		if (predicate == null || valueStore == null || tripleStore == null) {
+		if (predicate == null || valueStore == null || tripleStore == null || !hasPairedPlanningAuthority()) {
 			return RdfTermDomain.UNRESTRICTED;
 		}
 		try {

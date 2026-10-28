@@ -102,7 +102,11 @@ import org.openjdk.jmh.runner.options.TimeValue;
 @Warmup(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G", "--add-modules=jdk.incubator.vector",
-		"-Drdf4j.lmdb.themeQueryBenchmark.waitForDirectAdjacency=true" })
+		"-Drdf4j.lmdb.themeQueryBenchmark.waitForDirectAdjacency=true",
+		"-Drdf4j.lmdb.themeQueryBenchmark.waitForValueOverlay=true",
+		"-Drdf4j.lmdb.valueOverlay.maxBytes=4294967296",
+		"-Drdf4j.lmdb.valueOverlay.retained.maxBytes=2147483648",
+		"-Drdf4j.lmdb.valueOverlay.reverseSlots=65536" })
 @Measurement(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {

@@ -29,6 +29,10 @@ final class RdfTermDomainQualification {
 		}
 	}
 
+	/** The exact paired read transactions validated by ordinary discovery, consumed once during startup. */
+	record DiscoveryPair(Path directory, long valuesTransaction, long triplesTransaction, String generation) {
+	}
+
 	static Witness decode(String encoded) {
 		if (encoded == null) {
 			return null;
@@ -54,7 +58,10 @@ final class RdfTermDomainQualification {
 	}
 
 	static boolean matches(StoreProperties properties, PreparedBulkStore.Snapshot snapshot) {
-		Witness witness = decode(properties.getRdfTermDomainQualification());
+		return matches(properties, snapshot, decode(properties.getRdfTermDomainQualification()));
+	}
+
+	private static boolean matches(StoreProperties properties, PreparedBulkStore.Snapshot snapshot, Witness witness) {
 		return witness != null && witness.version().equals(properties.getRdfTermDomainsVersion())
 				&& witness.valuesTransaction() == snapshot.values().transactionId()
 				&& witness.triplesTransaction() == snapshot.triples().transactionId()
@@ -63,7 +70,9 @@ final class RdfTermDomainQualification {
 	}
 
 	static void observe(StoreProperties properties, PreparedBulkStore.Snapshot snapshot) {
-		properties.rdfTermDomainQualifiedAtOpen = matches(properties, snapshot);
+		Witness witness = decode(properties.getRdfTermDomainQualification());
+		properties.rdfTermDomainQualifiedAtOpen = matches(properties, snapshot, witness);
+		properties.rdfTermDomainWitnessAtOpen = properties.rdfTermDomainQualifiedAtOpen ? witness : null;
 		properties.rdfTermDomainValuesTransactionAtOpen = properties.rdfTermDomainQualifiedAtOpen
 				? snapshot.values().transactionId()
 				: -1L;
@@ -75,6 +84,7 @@ final class RdfTermDomainQualification {
 	/** Observation only: no sidecar/native write, scan, admission or adoption of transaction identities. */
 	static void inspectBeforeStartup(Path directory, StoreProperties properties, LmdbStoreConfig config) {
 		properties.rdfTermDomainQualifiedAtOpen = false;
+		properties.rdfTermDomainWitnessAtOpen = null;
 		if (!properties.isLoaded()
 				|| !Integer.toString(LmdbStoreFormat.CURRENT_VERSION).equals(properties.getVersion())) {
 			return;
@@ -90,8 +100,16 @@ final class RdfTermDomainQualification {
 
 	/** Must run before ValueStore can make its legitimate boot-epoch/DIRTY transaction. */
 	static void beginPairedWriter(Path directory, StoreProperties properties, LmdbStoreConfig config) {
+		DiscoveryPair discovery = properties.rdfTermDomainDiscoveryPair;
+		properties.rdfTermDomainDiscoveryPair = null;
 		if (properties.preparedBulkStore == null) {
-			inspectBeforeStartup(directory, properties, config);
+			if (discovery != null && directory.toAbsolutePath().normalize().equals(discovery.directory())
+					&& properties.isLoaded()
+					&& Integer.toString(LmdbStoreFormat.CURRENT_VERSION).equals(properties.getVersion())) {
+				reconcileDiscovery(properties, discovery);
+			} else {
+				inspectBeforeStartup(directory, properties, config);
+			}
 		}
 		TripleStore.RdfTermDomainStartup startup = TripleStore.rdfTermDomainStartup(properties,
 				config.getPredicateGuaranteeIndexEnabled(), config.getPredicateGuaranteeIndexAutoRebuild(),
@@ -103,8 +121,27 @@ final class RdfTermDomainQualification {
 		}
 	}
 
+	private static void reconcileDiscovery(StoreProperties properties, DiscoveryPair discovery) {
+		Witness witness = decode(properties.getRdfTermDomainQualification());
+		boolean qualified = properties.rdfTermDomainQualifiedAtOpen && witness != null
+				&& witness.equals(properties.rdfTermDomainWitnessAtOpen)
+				&& witness.version().equals(properties.getRdfTermDomainsVersion())
+				&& witness.valuesTransaction() == properties.rdfTermDomainValuesTransactionAtOpen
+				&& witness.triplesTransaction() == properties.rdfTermDomainTriplesTransactionAtOpen
+				&& witness.valuesTransaction() == discovery.valuesTransaction()
+				&& witness.triplesTransaction() == discovery.triplesTransaction()
+				&& witness.generation().equals(discovery.generation())
+				&& properties.verifiedValueTransactionId == discovery.valuesTransaction()
+				&& properties.verifiedTripleTransactionId == discovery.triplesTransaction();
+		properties.rdfTermDomainQualifiedAtOpen = qualified;
+		properties.rdfTermDomainWitnessAtOpen = qualified ? witness : null;
+		properties.rdfTermDomainValuesTransactionAtOpen = qualified ? discovery.valuesTransaction() : -1L;
+		properties.rdfTermDomainTriplesTransactionAtOpen = qualified ? discovery.triplesTransaction() : -1L;
+	}
+
 	static void withdraw(StoreProperties properties, String durableVersion) {
 		properties.rdfTermDomainQualifiedAtOpen = false;
+		properties.rdfTermDomainWitnessAtOpen = null;
 		properties.rdfTermDomainValuesTransactionAtOpen = -1L;
 		properties.rdfTermDomainTriplesTransactionAtOpen = -1L;
 		properties.setRdfTermDomainQualification(null);
@@ -119,6 +156,9 @@ final class RdfTermDomainQualification {
 			ValueStore values, TripleStore triples) throws IOException {
 		if (!values.closedForDomainQualification() || !triples.closedForDomainQualification()) {
 			throw new IOException("Cannot publish RDF domain qualification before both native owners close");
+		}
+		if (properties.isMemoryOnly()) {
+			return;
 		}
 		String completeVersion = triples.completeRdfTermDomainVersion();
 		long ownedValues = values.trustedClosedTransactionId();

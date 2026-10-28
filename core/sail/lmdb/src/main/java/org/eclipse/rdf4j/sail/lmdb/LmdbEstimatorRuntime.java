@@ -19,7 +19,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -56,17 +58,34 @@ final class LmdbEstimatorRuntime {
 	private final LmdbLearnedFilterSelectivity learned;
 	private final LmdbEstimatorStorageAccess storageAccess;
 	private final LmdbQuadSynopsisService synopsis;
-	private final LmdbFilterSelectivityStats filters;
-	private final LmdbOperatorFeedbackStats feedback;
-	private final LmdbEstimationEngine engine;
-	private final LmdbPrefixEvidenceResolver prefixEvidence;
 	private final LmdbFiniteJoinSurfaceEstimator finiteJoinSurfaceEstimator;
-	private final LmdbFactorCostAssembler factorCostAssembler;
 	private final PackedPlanCache cascadesPlanCache;
-	private final LmdbStatisticsService statistics;
 	private final LmdbFrontierPlannerSettings frontierSettings;
 	private final BooleanSupplier adaptiveEvidenceAllowedSupplier;
+	private final LmdbStatementPatternCardinalitySource cardinalities;
+	private final BooleanSupplier mayHaveInferred;
+	private final Supplier<PublishedProviders> providerSupplier;
+	private final AtomicReference<ProviderView> latestView = new AtomicReference<>();
+	private final ThreadLocal<PinnedView> scopedView = new ThreadLocal<>();
 	private final ThreadLocal<LmdbEstimatorOptimizationScope> optimizationScope = new ThreadLocal<>();
+
+	/** One atomic store publication; Frontier may become available after the filter/operator pair. */
+	record PublishedProviders(long generation, LmdbFilterSelectivityStats filters,
+			LmdbOperatorFeedbackStats feedback, LmdbStatisticsService statistics) {
+	}
+
+	private record ProviderView(PublishedProviders providers, LmdbEstimatorStorageAccess storage,
+			LmdbEstimationEngine engine, LmdbFactorCostAssembler factorCosts, LmdbPrefixEvidenceResolver prefixes) {
+	}
+
+	private static final class PinnedView {
+		private final ProviderView view;
+		private int depth;
+
+		private PinnedView(ProviderView view) {
+			this.view = view;
+		}
+	}
 
 	LmdbEstimatorRuntime(ValueStore valueStore, TripleStore tripleStore, LmdbQuadSynopsisService synopsis,
 			LmdbFilterSelectivityStats filters, LmdbOperatorFeedbackStats feedback,
@@ -111,24 +130,84 @@ final class LmdbEstimatorRuntime {
 			LmdbFrontierPlannerSettings frontierSettings,
 			BooleanSupplier mayHaveInferred, BooleanSupplier adaptiveEvidenceAllowedSupplier,
 			LmdbStatisticsService statistics, LmdbLearnedFilterSelectivity learned) {
+		this(valueStore, tripleStore, synopsis, filters, feedback, cardinalities, cascadesPlanCache, frontierSettings,
+				mayHaveInferred, adaptiveEvidenceAllowedSupplier, statistics, learned, null);
+	}
+
+	LmdbEstimatorRuntime(ValueStore valueStore, TripleStore tripleStore, LmdbQuadSynopsisService synopsis,
+			LmdbFilterSelectivityStats filters, LmdbOperatorFeedbackStats feedback,
+			LmdbStatementPatternCardinalitySource cardinalities, PackedPlanCache cascadesPlanCache,
+			LmdbFrontierPlannerSettings frontierSettings, BooleanSupplier mayHaveInferred,
+			BooleanSupplier adaptiveEvidenceAllowedSupplier, LmdbStatisticsService statistics,
+			LmdbLearnedFilterSelectivity learned, Supplier<PublishedProviders> providerSupplier) {
 		this.learned = learned;
 		this.storageAccess = new LmdbEstimatorStorageAccess(valueStore, tripleStore, cardinalities, mayHaveInferred,
 				statistics, frontierSettings.mode());
 		this.synopsis = synopsis;
-		this.filters = filters;
-		this.feedback = feedback;
+		this.cardinalities = cardinalities;
+		this.mayHaveInferred = mayHaveInferred;
 		this.cascadesPlanCache = cascadesPlanCache;
-		this.statistics = statistics;
 		this.frontierSettings = frontierSettings;
 		this.adaptiveEvidenceAllowedSupplier = adaptiveEvidenceAllowedSupplier == null ? () -> true
 				: adaptiveEvidenceAllowedSupplier;
 		this.finiteJoinSurfaceEstimator = new LmdbFiniteJoinSurfaceEstimator(valueStore, tripleStore, cardinalities);
-		LmdbStorageEstimatorEvidence evidence = new LmdbStorageEstimatorEvidence(valueStore, cardinalities, synopsis,
-				filters, feedback, finiteJoinSurfaceEstimator, this::exactCorrelatedSurface, statistics,
-				frontierSettings.mode(), learned);
-		this.engine = new LmdbEstimationEngine(evidence, new EstimateEvidenceResolver());
-		this.factorCostAssembler = new LmdbFactorCostAssembler(engine, tripleStore);
-		this.prefixEvidence = new LmdbPrefixEvidenceResolver(engine, this::rootContext);
+		PublishedProviders fixed = new PublishedProviders(0L, filters, feedback, statistics);
+		this.providerSupplier = providerSupplier == null ? () -> fixed : providerSupplier;
+		latestView.set(createView(this.providerSupplier.get()));
+	}
+
+	private ProviderView createView(PublishedProviders providers) {
+		LmdbEstimatorStorageAccess access = new LmdbEstimatorStorageAccess(storageAccess.valueStore(),
+				storageAccess.physicalTripleStore(), cardinalities, mayHaveInferred, providers.statistics(),
+				frontierSettings.mode());
+		LmdbStorageEstimatorEvidence evidence = new LmdbStorageEstimatorEvidence(storageAccess.valueStore(),
+				cardinalities, synopsis, providers.filters(), providers.feedback(), finiteJoinSurfaceEstimator,
+				this::exactCorrelatedSurface, providers.statistics(), frontierSettings.mode(), learned);
+		LmdbEstimationEngine engine = new LmdbEstimationEngine(evidence, new EstimateEvidenceResolver());
+		return new ProviderView(providers, access, engine,
+				new LmdbFactorCostAssembler(engine, storageAccess.physicalTripleStore()),
+				new LmdbPrefixEvidenceResolver(engine, this::rootContext));
+	}
+
+	private ProviderView providerView() {
+		PinnedView pinned = scopedView.get();
+		if (pinned != null) {
+			return pinned.view;
+		}
+		while (true) {
+			PublishedProviders published = providerSupplier.get();
+			ProviderView current = latestView.get();
+			if (current.providers() == published) {
+				return current;
+			}
+			ProviderView updated = createView(published);
+			if (providerSupplier.get() == published && latestView.compareAndSet(current, updated)) {
+				return updated;
+			}
+		}
+	}
+
+	QueryOptimizationScope pinProviderView() {
+		PinnedView pinned = scopedView.get();
+		if (pinned == null) {
+			pinned = new PinnedView(providerView());
+			scopedView.set(pinned);
+		}
+		pinned.depth++;
+		PinnedView active = pinned;
+		return new QueryOptimizationScope() {
+			private boolean closed;
+
+			@Override
+			public void close() {
+				if (!closed) {
+					closed = true;
+					if (scopedView.get() == active && --active.depth == 0) {
+						scopedView.remove();
+					}
+				}
+			}
+		};
 	}
 
 	ValueStore valueStore() {
@@ -170,11 +249,13 @@ final class LmdbEstimatorRuntime {
 
 	BagEstimate estimate(TupleExpr expression, Set<String> boundNames, EstimationTier tier,
 			boolean exactProbePermitted, LmdbFilterReadContext readContext) {
-		EstimateContext context = rootContext(expression, readContext)
-				.withBoundNames(boundNames == null ? Set.of() : boundNames)
-				.withEstimationTier(tier)
-				.withExactProbePermission(exactProbePermitted);
-		return semanticEstimate(expression, context);
+		try (QueryOptimizationScope ignored = pinProviderView()) {
+			EstimateContext context = rootContext(expression, readContext)
+					.withBoundNames(boundNames == null ? Set.of() : boundNames)
+					.withEstimationTier(tier)
+					.withExactProbePermission(exactProbePermitted);
+			return semanticEstimate(expression, context);
+		}
 	}
 
 	BagEstimate estimateFilter(TupleExpr input, ValueExpr condition, BagEstimate inputEstimate,
@@ -185,11 +266,13 @@ final class LmdbEstimatorRuntime {
 	BagEstimate estimateFilter(TupleExpr input, ValueExpr condition, BagEstimate inputEstimate,
 			Set<String> boundNames, EstimationTier tier, boolean exactProbePermitted,
 			LmdbFilterReadContext readContext) {
-		EstimateContext context = rootContext(input, readContext)
-				.withBoundNames(boundNames == null ? Set.of() : boundNames)
-				.withEstimationTier(tier)
-				.withExactProbePermission(exactProbePermitted);
-		return engine.estimateFilter(input, condition, inputEstimate, context);
+		try (QueryOptimizationScope ignored = pinProviderView()) {
+			EstimateContext context = rootContext(input, readContext)
+					.withBoundNames(boundNames == null ? Set.of() : boundNames)
+					.withEstimationTier(tier)
+					.withExactProbePermission(exactProbePermitted);
+			return providerView().engine().estimateFilter(input, condition, inputEstimate, context);
+		}
 	}
 
 	LmdbLearnedFilterSelectivity learnedFilters() {
@@ -197,29 +280,38 @@ final class LmdbEstimatorRuntime {
 	}
 
 	LmdbLearnedFilterEvidence learnedFilterEvidence(Filter filter) {
-		return LmdbLearnedFilterEvidence.from(filters, filter);
+		return adaptiveEvidenceAllowed() ? LmdbLearnedFilterEvidence.from(filters(), filter) : null;
 	}
 
 	void recordSemiAntiOutcome(Filter filter, EvaluationStatistics.SemiAntiOutcomeObservation observation) {
+		recordSemiAntiOutcome(filter, observation, LmdbFeedbackReadAuthority.Publication.UNRESTRICTED);
+	}
+
+	void recordSemiAntiOutcome(Filter filter, EvaluationStatistics.SemiAntiOutcomeObservation observation,
+			LmdbFeedbackReadAuthority.Publication publication) {
+		LmdbOperatorFeedbackStats feedback = feedback();
 		if (feedback != null && LmdbPlanningGraphEvidence.allows(filter)) {
-			feedback.recordSemiAntiOutcome(filter, observation);
+			feedback.recordSemiAntiOutcome(filter, observation, publication);
 		}
 	}
 
 	LmdbOperatorFeedbackStats.SemiAntiEstimate semiAntiFeedback(
 			Filter filter, String semanticKind, String physicalAlgorithm) {
+		LmdbOperatorFeedbackStats feedback = feedback();
 		return feedback == null || !LmdbPlanningGraphEvidence.allows(filter) ? null
 				: feedback.semiAntiEstimate(filter, semanticKind, physicalAlgorithm);
 	}
 
 	LmdbOperatorFeedbackStats.SemiAntiEstimate frontierSemiAntiFeedback(
 			Filter filter, String semanticKind, String physicalAlgorithm) {
+		LmdbOperatorFeedbackStats feedback = feedback();
 		return feedback == null || !LmdbPlanningGraphEvidence.allows(filter) ? null
 				: feedback.frontierSemiAntiEstimate(filter, semanticKind, physicalAlgorithm);
 	}
 
 	Optional<BindingSetAssignment> exactStoredTermFilterAnchor(StatementPattern pattern, ValueExpr condition,
 			String bindingName) {
+		LmdbFilterSelectivityStats filters = filters();
 		if (filters == null || !LmdbPlanningGraphEvidence.allows(pattern) || condition == null || bindingName == null
 				|| !pattern.getAssuredBindingNames().contains(bindingName)) {
 			return Optional.empty();
@@ -297,6 +389,13 @@ final class LmdbEstimatorRuntime {
 
 	Optional<FactorCostEstimate> factorCost(TupleExpr expression, CostContext costContext,
 			LmdbFilterReadContext readContext) {
+		try (QueryOptimizationScope ignored = pinProviderView()) {
+			return factorCostInScope(expression, costContext, readContext);
+		}
+	}
+
+	private Optional<FactorCostEstimate> factorCostInScope(TupleExpr expression, CostContext costContext,
+			LmdbFilterReadContext readContext) {
 		if (expression == null) {
 			return Optional.empty();
 		}
@@ -312,10 +411,13 @@ final class LmdbEstimatorRuntime {
 				return cached;
 			}
 		}
-		EstimateEvidenceResolver.ResolvedEstimate qualified = engine.estimateQualified(expression, context, scope);
+		ProviderView view = providerView();
+		EstimateEvidenceResolver.ResolvedEstimate qualified = view.engine()
+				.estimateQualified(expression, context, scope);
 		BagEstimate semantic = qualified.estimate();
-		FactorCostEstimate result = factorCostAssembler.assemble(expression, context, qualified,
-				LmdbEstimateClassification.databaseExact(semantic), scope);
+		FactorCostEstimate result = view.factorCosts()
+				.assemble(expression, context, qualified,
+						LmdbEstimateClassification.databaseExact(semantic), scope);
 		result = finiteDerivedFactorCost(expression, cost, semantic, result, scope).orElse(result);
 		Optional<FactorCostEstimate> estimate = Optional.of(result);
 		if (cacheKey != null) {
@@ -326,7 +428,7 @@ final class LmdbEstimatorRuntime {
 
 	private BagEstimate semanticEstimate(TupleExpr expression, EstimateContext context) {
 		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
-		return engine.estimate(expression, context, scope);
+		return providerView().engine().estimate(expression, context, scope);
 	}
 
 	private Optional<FactorCostEstimate> finiteDerivedFactorCost(TupleExpr expression, CostContext cost,
@@ -383,6 +485,7 @@ final class LmdbEstimatorRuntime {
 
 	LmdbOperatorFeedbackStats.OperatorEstimate operatorFeedback(TupleExpr expression, double leftRows,
 			double rightRows, double baseRows, double baseWorkRows, String executionMode) {
+		LmdbOperatorFeedbackStats feedback = feedback();
 		if (feedback == null || expression == null
 				|| !(Boolean.getBoolean(OPERATOR_FEEDBACK_APPLY_PROPERTY)
 						|| feedback.shouldExposePlanningEvidence(expression))) {
@@ -393,6 +496,7 @@ final class LmdbEstimatorRuntime {
 
 	LmdbOperatorFeedbackStats.OperatorEstimate operatorMultiplierFeedback(TupleExpr expression, double baseRows,
 			double baseWorkRows, String executionMode) {
+		LmdbOperatorFeedbackStats feedback = feedback();
 		if (feedback == null || expression == null
 				|| !(Boolean.getBoolean(OPERATOR_FEEDBACK_APPLY_PROPERTY)
 						|| feedback.shouldExposeMultiplierPlanningEvidence(expression))) {
@@ -402,12 +506,16 @@ final class LmdbEstimatorRuntime {
 	}
 
 	long leoRevision() {
+		ProviderView view = providerView();
+		LmdbOperatorFeedbackStats feedback = view.providers().feedback();
+		LmdbFilterSelectivityStats filters = view.providers().filters();
 		long revision = LmdbEstimatorRevisionSupport.mixRevision(
 				0x4c454f5f52455649L, feedback == null ? 0L : feedback.planningRevision());
 		revision = LmdbEstimatorRevisionSupport.mixRevision(revision,
 				filters == null ? 0L : filters.planningRevision());
-		return LmdbEstimatorRevisionSupport.mixRevision(revision, learned == null ? 0L : learned.planningRevision())
-				& Long.MAX_VALUE;
+		revision = LmdbEstimatorRevisionSupport.mixRevision(revision,
+				learned == null ? 0L : learned.planningRevision());
+		return LmdbEstimatorRevisionSupport.mixRevision(revision, view.providers().generation()) & Long.MAX_VALUE;
 	}
 
 	/**
@@ -415,6 +523,7 @@ final class LmdbEstimatorRuntime {
 	 * so a synopsis rebuild refreshes cached plans through the evidence side without pretending that data changed.
 	 */
 	long frontierPlanningRevision() {
+		LmdbStatisticsService statistics = providerView().providers().statistics();
 		long revision = statistics == null
 				? 0L
 				: LmdbEstimatorRevisionSupport.frontierPlanningRevision(statistics.status());
@@ -425,12 +534,14 @@ final class LmdbEstimatorRuntime {
 	}
 
 	PlanningRevisions capturePlanningRevisions() {
-		long dataRevision = snapshotVersion();
-		long frontierRevision = frontierPlanningRevision();
-		long leoRevision = leoRevision();
-		long learnedEvidenceRevision = LmdbEstimatorRevisionSupport.learnedEvidenceRevision(
-				dataRevision, leoRevision, frontierRevision);
-		return new PlanningRevisions(dataRevision, frontierRevision, leoRevision, learnedEvidenceRevision);
+		try (QueryOptimizationScope ignored = pinProviderView()) {
+			long dataRevision = snapshotVersion();
+			long frontierRevision = frontierPlanningRevision();
+			long leoRevision = leoRevision();
+			long learnedEvidenceRevision = LmdbEstimatorRevisionSupport.learnedEvidenceRevision(
+					dataRevision, leoRevision, frontierRevision);
+			return new PlanningRevisions(dataRevision, frontierRevision, leoRevision, learnedEvidenceRevision);
+		}
 	}
 
 	record PlanningRevisions(
@@ -441,18 +552,38 @@ final class LmdbEstimatorRuntime {
 	}
 
 	QueryOptimizationScope beginScope() {
+		QueryOptimizationScope view = pinProviderView();
 		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
 		if (scope == null) {
-			scope = new LmdbEstimatorOptimizationScope(
-					finiteJoinSurfaceEstimator,
-					frontierSettings.exactFiniteSurfaceCache(),
-					snapshotVersion(),
-					this::snapshotVersion);
-			optimizationScope.set(scope);
+			try {
+				scope = new LmdbEstimatorOptimizationScope(
+						finiteJoinSurfaceEstimator,
+						frontierSettings.exactFiniteSurfaceCache(),
+						snapshotVersion(),
+						this::snapshotVersion);
+				optimizationScope.set(scope);
+			} catch (RuntimeException | Error failure) {
+				view.close();
+				throw failure;
+			}
 		}
 		scope.depth++;
 		LmdbEstimatorOptimizationScope active = scope;
-		return () -> closeScope(active);
+		return new QueryOptimizationScope() {
+			private boolean closed;
+
+			@Override
+			public void close() {
+				if (!closed) {
+					closed = true;
+					try {
+						closeScope(active);
+					} finally {
+						view.close();
+					}
+				}
+			}
+		};
 	}
 
 	boolean hasPlannerCache() {
@@ -492,7 +623,7 @@ final class LmdbEstimatorRuntime {
 	}
 
 	LmdbStatisticsService statisticsService() {
-		return statistics;
+		return providerView().providers().statistics();
 	}
 
 	LmdbFrontierPlannerSettings frontierSettings() {
@@ -546,13 +677,16 @@ final class LmdbEstimatorRuntime {
 
 	double packedStatementPatternRows(Resource subject, IRI predicate, Value object, Resource context,
 			int repeatedComponentPairMask) {
-		return storageAccess.packedStatementPatternRows(subject, predicate, object, context, repeatedComponentPairMask);
+		return providerView().storage()
+				.packedStatementPatternRows(subject, predicate, object, context,
+						repeatedComponentPairMask);
 	}
 
 	LmdbPlanningCardinality packedStatementPatternRowsQualified(Resource subject, IRI predicate, Value object,
 			Resource context, int repeatedComponentPairMask) {
-		return storageAccess.packedStatementPatternRowsQualified(subject, predicate, object, context,
-				repeatedComponentPairMask);
+		return providerView().storage()
+				.packedStatementPatternRowsQualified(subject, predicate, object, context,
+						repeatedComponentPairMask);
 	}
 
 	double conventionalStatementPatternRows(StatementPattern pattern) {
@@ -562,14 +696,17 @@ final class LmdbEstimatorRuntime {
 
 	double packedTransitionRows(StatementPattern pattern, String joinVariable, double patternRows,
 			double prefixRows) {
-		return storageAccess.packedTransitionRows(pattern, joinVariable, patternRows, prefixRows);
+		return providerView().storage().packedTransitionRows(pattern, joinVariable, patternRows, prefixRows);
 	}
 
 	boolean describePackedDistinctCursorSkip(StatementPattern pattern, double normalRows, PackedCostEstimate output) {
-		BagEstimate conventional = statistics == null
-				? null
-				: estimate(pattern, Set.of(), EstimationTier.STANDARD, false);
-		return storageAccess.describePackedDistinctCursorSkip(pattern, normalRows, conventional, output);
+		try (QueryOptimizationScope ignored = pinProviderView()) {
+			ProviderView view = providerView();
+			BagEstimate conventional = view.providers().statistics() == null
+					? null
+					: estimate(pattern, Set.of(), EstimationTier.STANDARD, false);
+			return view.storage().describePackedDistinctCursorSkip(pattern, normalRows, conventional, output);
+		}
 	}
 
 	void describePackedAccessPath(int lookupMask, double accessRows, double invocations, String estimateSource,
@@ -587,7 +724,11 @@ final class LmdbEstimatorRuntime {
 	}
 
 	LmdbOperatorFeedbackStats feedback() {
-		return feedback;
+		return providerView().providers().feedback();
+	}
+
+	LmdbFilterSelectivityStats filters() {
+		return providerView().providers().filters();
 	}
 
 	Optional<EvaluationStatistics.FilterPassEstimate> patternFilterPass(ValueExpr condition,
@@ -601,6 +742,13 @@ final class LmdbEstimatorRuntime {
 	}
 
 	Optional<EvaluationStatistics.FilterPassEstimate> patternFilterPass(ValueExpr condition,
+			StatementPattern pattern, LmdbFilterReadContext readContext, Set<String> externalBoundNames) {
+		try (QueryOptimizationScope ignored = pinProviderView()) {
+			return patternFilterPassInScope(condition, pattern, readContext, externalBoundNames);
+		}
+	}
+
+	private Optional<EvaluationStatistics.FilterPassEstimate> patternFilterPassInScope(ValueExpr condition,
 			StatementPattern pattern, LmdbFilterReadContext readContext, Set<String> externalBoundNames) {
 		if (condition == null || !LmdbPlanningGraphEvidence.allows(pattern)) {
 			return Optional.empty();
@@ -644,8 +792,8 @@ final class LmdbEstimatorRuntime {
 		}
 		/* Mapped statistics own filter-pass selection only when Frontier is authoritative; SHADOW observes only. */
 		EvaluationStatistics.FilterPassEstimate best = LmdbFilterPassSelection.mappedOrBestAvailable(
-				statistics != null && frontierSettings.mode() == FrontierEstimatorMode.AUTHORITATIVE,
-				filters, synthetic, pattern, fallback, adaptiveEvidenceAllowed());
+				statisticsService() != null && frontierSettings.mode() == FrontierEstimatorMode.AUTHORITATIVE,
+				filters(), synthetic, pattern, fallback, adaptiveEvidenceAllowed());
 		return best.getSource() == EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN
 				? Optional.empty()
 				: Optional.of(best);
@@ -654,7 +802,7 @@ final class LmdbEstimatorRuntime {
 	private EstimateContext context(TupleExpr expression, CostContext cost, LmdbFilterReadContext readContext) {
 		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
 		return LmdbEstimateContextBuilder.forCost(expression, cost, rootContext(expression, readContext),
-				prefixEvidence, scope);
+				providerView().prefixes(), scope);
 	}
 
 	private EstimateContext rootContext(TupleExpr expression) {

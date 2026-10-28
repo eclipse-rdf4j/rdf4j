@@ -19,14 +19,17 @@ import java.io.EOFException;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
+import java.util.AbstractMap;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.sail.base.SailSource;
@@ -39,23 +42,87 @@ class NamespaceStore {
 	private static final byte FILE_FORMAT_VERSION = 1;
 
 	private final File legacyFile;
+	private final TripleStore tripleStore;
 	private final Map<String, SimpleNamespace> namespacesMap;
 	private long encodedSnapshotSize = Integer.BYTES;
+	private boolean loaded;
+	private boolean nativeSnapshotPresent;
+	private Map<String, String> legacyAuthority = Map.of();
 
-	/** Opens the authoritative namespace database, importing the legacy file only when its marker is absent. */
+	/** Defers authoritative snapshot decoding until namespace data is actually needed. */
 	NamespaceStore(File dataDir, TripleStore tripleStore) throws IOException {
 		legacyFile = new File(dataDir, FILE_NAME);
+		this.tripleStore = tripleStore;
 		namespacesMap = new LinkedHashMap<>(16);
+	}
 
-		Map<String, String> namespaces = tripleStore.readNamespaceSnapshot();
-		if (namespaces == null) {
-			namespaces = tripleStore.initializeNamespaceSnapshot(readLegacyNamespaces());
+	/**
+	 * An immutable published view may remain lazy while namespaces are unchanged. The owner materializes it before the
+	 * first namespace mutation, preserving the committed snapshot held by earlier readers.
+	 */
+	Map<String, String> initialSnapshot() {
+		return new AbstractMap<>() {
+			private volatile Map<String, String> resolved;
+
+			@Override
+			public Set<Entry<String, String>> entrySet() {
+				Map<String, String> snapshot = resolved;
+				if (snapshot == null) {
+					synchronized (this) {
+						snapshot = resolved;
+						if (snapshot == null) {
+							resolved = snapshot = NamespaceStore.this.snapshot();
+						}
+					}
+				}
+				return snapshot.entrySet();
+			}
+		};
+	}
+
+	private void ensureLoaded() {
+		if (loaded) {
+			return;
 		}
-		install(namespaces);
+		try {
+			Map<String, String> namespaces = tripleStore.readNamespaceSnapshot();
+			// A legacy file remains authoritative until a real namespace mutation publishes a native snapshot.
+			// Reading it must not acquire a writer or resize while the caller holds an older native read view.
+			nativeSnapshotPresent = namespaces != null;
+			if (namespaces == null) {
+				namespaces = readLegacyNamespaces();
+				legacyAuthority = Collections.unmodifiableMap(namespaces);
+			}
+			install(namespaces);
+			loaded = true;
+		} catch (IOException failure) {
+			throw new UncheckedIOException("Could not read authoritative LMDB namespaces", failure);
+		}
+	}
+
+	/** Resolve a physical commit outcome against committed authority, never the mutable working namespace map. */
+	synchronized Map<String, String> readPersistedSnapshot() throws IOException {
+		ensureLoaded();
+		Map<String, String> persisted = tripleStore.readNamespaceSnapshot();
+		if (persisted != null) {
+			nativeSnapshotPresent = true;
+			return persisted;
+		}
+		if (nativeSnapshotPresent) {
+			throw new IOException("Previously observed native LMDB namespace snapshot is absent");
+		}
+		return legacyAuthority;
+	}
+
+	/** Called only after the owner's native namespace commit has been acknowledged or reconciled as committed. */
+	synchronized void nativeSnapshotPublished() {
+		nativeSnapshotPresent = true;
+		legacyAuthority = Map.of();
 	}
 
 	/** Copies the current namespace state into an immutable insertion-ordered view. */
 	synchronized Map<String, String> snapshot() {
+		ensureLoaded();
 		Map<String, String> snapshot = new LinkedHashMap<>(namespacesMap.size());
 		for (SimpleNamespace namespace : namespacesMap.values()) {
 			snapshot.put(namespace.getPrefix(), namespace.getName());
@@ -64,6 +131,7 @@ class NamespaceStore {
 	}
 
 	synchronized void restore(Map<String, String> snapshot) {
+		loaded = true;
 		namespacesMap.clear();
 		encodedSnapshotSize = Integer.BYTES;
 		snapshot.forEach((prefix, name) -> {
@@ -83,6 +151,7 @@ class NamespaceStore {
 				&& !preflight.namespaceCleared()) {
 			return 0L;
 		}
+		ensureLoaded();
 
 		long estimate = preflight.namespaceCleared() ? Integer.BYTES : encodedSnapshotSize;
 		for (SailSource.NamespaceUpdate namespace : preflight.addedNamespaces()) {
@@ -103,10 +172,12 @@ class NamespaceStore {
 		if (!touched) {
 			return 0L;
 		}
+		ensureLoaded();
 		return saturatedAdd(cleared ? Integer.BYTES : encodedSnapshotSize, addedBytes);
 	}
 
 	public synchronized void setNamespace(String prefix, String name) {
+		ensureLoaded();
 		SimpleNamespace namespace = namespacesMap.get(prefix);
 		if (namespace == null) {
 			namespacesMap.put(prefix, new SimpleNamespace(prefix, name));
@@ -119,6 +190,7 @@ class NamespaceStore {
 	}
 
 	public synchronized void removeNamespace(String prefix) {
+		ensureLoaded();
 		SimpleNamespace removed = namespacesMap.remove(prefix);
 		if (removed != null) {
 			encodedSnapshotSize -= namespaceEntrySize(removed.getPrefix(), removed.getName());
@@ -126,6 +198,7 @@ class NamespaceStore {
 	}
 
 	public synchronized void clear() {
+		ensureLoaded();
 		namespacesMap.clear();
 		encodedSnapshotSize = Integer.BYTES;
 	}

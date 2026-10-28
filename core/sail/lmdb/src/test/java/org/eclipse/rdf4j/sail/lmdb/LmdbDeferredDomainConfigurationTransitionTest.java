@@ -251,6 +251,25 @@ class LmdbDeferredDomainConfigurationTransitionTest {
 	private static void assertState(Opened opened, Set<Statement> expected, boolean complete, String phase)
 			throws Exception {
 		assertPublicBags(opened, expected, phase);
+		if (complete) {
+			LmdbTestUtil.awaitPostReadyInitialization(opened.store(), 30, java.util.concurrent.TimeUnit.SECONDS);
+		}
+		LmdbSailStore backing = opened.store().getBackingStore();
+		LmdbEstimatorRuntime runtime = ((LmdbEvaluationStatistics) backing.getEvaluationStatistics())
+				.estimatorRuntime();
+		try (LmdbSailStore.DatasetAdmission admission = backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ,
+				null)) {
+			LmdbSailStore.ReadView view = admission.view();
+			view.requireDictionaryTermSnapshot();
+			try (TripleStore.PlanningReadPin ignored = runtime.pinPlanningReads(view.tripleTxn(),
+					view.valueSnapshot())) {
+				assertPinnedState(opened, expected, complete, phase);
+			}
+		}
+	}
+
+	private static void assertPinnedState(Opened opened, Set<Statement> expected, boolean complete, String phase)
+			throws Exception {
 		LmdbSailStore backing = opened.store().getBackingStore();
 		ValueStore values = (ValueStore) backing.getValueFactory();
 		String served = backing.getTripleStore().effectiveRdfTermDomainsVersion();

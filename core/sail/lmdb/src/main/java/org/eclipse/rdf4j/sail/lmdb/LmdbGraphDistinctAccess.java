@@ -211,7 +211,7 @@ final class LmdbGraphDistinctAccess {
 			LmdbValueIdFilter filter = LmdbValueIdFilter.fromStatementPattern(pattern);
 			LmdbPhysicalCostObjective objective = new LmdbPhysicalCostObjective(runtime);
 			LmdbGraphDistinctAccess best = null;
-			for (var path : triples.indexAccessPaths(0)) {
+			for (var path : triples.indexAccessPaths(transaction, 0)) {
 				var chosen = LmdbDistinctCursorSkipSupport.choosePlan(pattern, List.of(path));
 				if (chosen.isEmpty()) {
 					continue;
@@ -299,7 +299,7 @@ final class LmdbGraphDistinctAccess {
 			return null;
 		}
 		var range = candidate.orElseThrow();
-		String ordinaryIndex = new String(triples.getBestIndex(subject, predicate, object, 1L).getFieldSeq());
+		String ordinaryIndex = triples.getIndexName(transaction, subject, predicate, object, 1L);
 		double ordinaryAdvances = 0.0d;
 		double ordinaryMaterialized = 0.0d;
 		double ordinaryTerminal = 0.0d;

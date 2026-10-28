@@ -23,7 +23,9 @@ import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
+import org.eclipse.rdf4j.repository.config.RepositoryConfigSecrets;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
+import org.eclipse.rdf4j.repository.manager.RemoteRepositoryManager;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.Rio;
@@ -46,8 +48,13 @@ public class ConfigServlet extends TransformationServlet {
 			writeEditor(request, response, "", "No such repository: " + info.getId(), null);
 			return;
 		}
-		var model = new LinkedHashModel();
-		configuration.export(model);
+		var model = manager instanceof RemoteRepositoryManager remote
+				? remote.getPublicRepositoryConfigModel(info.getId())
+				: new LinkedHashModel();
+		if (!(manager instanceof RemoteRepositoryManager)) {
+			configuration.export(model);
+			RepositoryConfigSecrets.redact(model);
+		}
 		StringWriter turtle = new StringWriter();
 		WriterConfig writerConfig = new WriterConfig();
 		writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);
@@ -70,15 +77,21 @@ public class ConfigServlet extends TransformationServlet {
 					|| !("save".equals(actions[0]) || "save-and-restart".equals(actions[0]))) {
 				throw new RepositoryConfigException("Choose Save or Save and restart.");
 			}
-			RepositoryConfig configuration = RepositoryConfigUtil.validateRepositoryConfig(
-					Rio.parse(new StringReader(turtle), CONFIG.NAMESPACE, RDFFormat.TURTLE), info.getId());
+			var model = Rio.parse(new StringReader(turtle), CONFIG.NAMESPACE, RDFFormat.TURTLE);
 			if (!manager.hasRepositoryConfig(info.getId())) {
 				throw new RepositoryConfigException("No such repository: " + info.getId());
 			}
-			if ("save-and-restart".equals(actions[0])) {
-				manager.updateRepositoryConfig(configuration);
+			boolean restart = "save-and-restart".equals(actions[0]);
+			if (manager instanceof RemoteRepositoryManager remote) {
+				remote.updateRepositoryConfigModel(info.getId(), model, restart);
 			} else {
-				manager.addRepositoryConfig(configuration);
+				RepositoryConfigSecrets.restore(model, info.getId(), manager.getRepositoryConfig(info.getId()));
+				RepositoryConfig configuration = RepositoryConfigUtil.validateRepositoryConfig(model, info.getId());
+				if (restart) {
+					manager.updateRepositoryConfig(configuration);
+				} else {
+					manager.addRepositoryConfig(configuration);
+				}
 			}
 		} catch (Exception failure) {
 			// The gateway owns the sign-in response, including remote managers' wrapped authentication errors.

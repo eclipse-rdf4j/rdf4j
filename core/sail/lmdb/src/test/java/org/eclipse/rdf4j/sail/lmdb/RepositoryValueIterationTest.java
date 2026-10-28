@@ -35,6 +35,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.common.iteration.TimeLimitIteration;
@@ -49,8 +50,95 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 class RepositoryValueIterationTest {
+
+	private enum CancellationOutcome {
+		ACCEPTED, DECLINED, FAILED
+	}
+
+	@ParameterizedTest
+	@EnumSource(CancellationOutcome.class)
+	void cancellationCallbackRetainsValueHorizonUntilItExits(CancellationOutcome outcome,
+			@TempDir File directory) throws Exception {
+		try (ObservedValues store = new ObservedValues(directory); var workers = Executors.newSingleThreadExecutor()) {
+			ValueResolutionScope creator = store.openValueResolutionScope();
+			List<Value> values = seed(store, creator, 1);
+			long revision = ((LmdbValue) values.getFirst()).getValueStoreRevision().getRevisionId();
+			rotate(store, creator);
+			CountDownLatch entered = new CountDownLatch(1);
+			CountDownLatch release = new CountDownLatch(1);
+			AtomicInteger sourceCloses = new AtomicInteger();
+			AtomicInteger drains = new AtomicInteger();
+			RuntimeException callbackFailure = new RuntimeException("cancellation callback failed");
+			RuntimeException drainFailure = new RuntimeException("value horizon drain failed");
+
+			class Source implements CloseableIteration<Value>, CooperativeCancellation {
+				@Override
+				public boolean requestCancellation() {
+					entered.countDown();
+					try {
+						assertTrue(release.await(10, TimeUnit.SECONDS));
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+						throw new QueryInterruptedException(e);
+					}
+					assertFalse(store.unusedRevisionIds.contains(revision),
+							"the value horizon must still be retained inside the callback");
+					if (outcome == CancellationOutcome.FAILED) {
+						throw callbackFailure;
+					}
+					return outcome == CancellationOutcome.ACCEPTED;
+				}
+
+				@Override
+				public boolean hasNext() {
+					return false;
+				}
+
+				@Override
+				public Value next() {
+					throw new NoSuchElementException();
+				}
+
+				@Override
+				public void close() {
+					sourceCloses.incrementAndGet();
+				}
+			}
+
+			try (var result = new RepositoryValueIteration<>(new Source(), SailResultValueExtractor.VALUES, store,
+					null, null, ignored -> {
+						drains.incrementAndGet();
+						if (outcome == CancellationOutcome.FAILED) {
+							throw drainFailure;
+						}
+					})) {
+				creator.close();
+				var request = workers.submit(result::requestCancellation);
+				try {
+					assertTrue(entered.await(5, TimeUnit.SECONDS));
+					result.close();
+					assertEquals(1, sourceCloses.get(), "close must still signal the source immediately");
+					assertEquals(0, drains.get(), "the admitted callback must retain the value horizon");
+					assertFalse(store.unusedRevisionIds.contains(revision));
+				} finally {
+					release.countDown();
+				}
+				if (outcome == CancellationOutcome.FAILED) {
+					ExecutionException error = assertThrows(ExecutionException.class, () -> request.get(5, TimeUnit.SECONDS));
+					assertSame(callbackFailure, error.getCause());
+					assertEquals(List.of(drainFailure), List.of(error.getCause().getSuppressed()));
+				} else {
+					assertEquals(outcome == CancellationOutcome.ACCEPTED, request.get(5, TimeUnit.SECONDS));
+				}
+				assertEquals(1, drains.get(), "the callback exit must drain exactly once");
+				assertTrue(store.unusedRevisionIds.contains(revision));
+			}
+		}
+	}
 
 	@Test
 	void timeoutCancelsSourceBeforeDrainingAnAdmittedValueScope(@TempDir File directory) throws Exception {

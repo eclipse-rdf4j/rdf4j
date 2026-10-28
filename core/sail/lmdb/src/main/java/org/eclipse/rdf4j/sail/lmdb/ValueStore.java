@@ -71,6 +71,8 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -91,6 +93,7 @@ import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -102,6 +105,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.StampedLock;
 import java.util.function.BooleanSupplier;
@@ -392,9 +396,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private record RefCountMarkerStatus(boolean emptyStore, boolean valid, long nativeTransactionId,
-			boolean legacyStructured) {
+			boolean legacyStructured, boolean unrecognized, byte[] referenceCountGeneration,
+			long trustedAllocationNextId) {
 		private RefCountMarkerStatus(boolean emptyStore, boolean valid, long nativeTransactionId) {
-			this(emptyStore, valid, nativeTransactionId, false);
+			this(emptyStore, valid, nativeTransactionId, false, false, null, -1L);
 		}
 	}
 
@@ -455,11 +460,41 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			E(mdb_stat(txn, dbiHandle.get(0), stat));
 			boolean mainDatabaseEmpty = stat.ms_entries() == 0L;
 			long nativeTransactionId = mdb_txn_id(txn);
+			IntBuffer metadataHandle = stack.mallocInt(1);
+			int metadataRc = mdb_dbi_open(txn, "gc_meta", 0, metadataHandle);
+			boolean exactCounts = false;
+			byte[] referenceCountGeneration = null;
+			long trustedAllocationNextId = -1L;
+			if (metadataRc == MDB_SUCCESS) {
+				MDBVal metadataKey = MDBVal.calloc(stack)
+						.mv_data(stack.bytes(ReferenceCountProof.GENERATION_KEY));
+				MDBVal metadataValue = MDBVal.calloc(stack);
+				int lookupRc = E(mdb_get(txn, metadataHandle.get(0), metadataKey, metadataValue));
+				if (lookupRc == MDB_SUCCESS && metadataValue.mv_size() == ReferenceCountProof.GENERATION_BYTES) {
+					referenceCountGeneration = copyValue(metadataValue);
+				}
+				metadataKey.mv_data(stack.bytes(ReferenceCountProof.KEY));
+				if (E(mdb_get(txn, metadataHandle.get(0), metadataKey, metadataValue)) == MDB_SUCCESS) {
+					trustedAllocationNextId = ReferenceCountProof.trustedNextId(metadataValue.mv_data(),
+							referenceCountGeneration, nativeTransactionId);
+					exactCounts = trustedAllocationNextId > 0L;
+				}
+				if (!exactCounts) {
+					metadataKey.mv_data(stack.bytes(ReferenceCountProof.ALLOCATION_KEY));
+					if (E(mdb_get(txn, metadataHandle.get(0), metadataKey, metadataValue)) == MDB_SUCCESS) {
+						trustedAllocationNextId = ReferenceCountProof.trustedNextId(metadataValue.mv_data(),
+								referenceCountGeneration, nativeTransactionId);
+					}
+				}
+			} else if (metadataRc != MDB_NOTFOUND) {
+				E(metadataRc);
+			}
 
 			IntBuffer refCountsHandle = stack.mallocInt(1);
 			rc = mdb_dbi_open(txn, "ref_counts", 0, refCountsHandle);
 			if (rc == MDB_NOTFOUND) {
-				return new RefCountMarkerStatus(mainDatabaseEmpty, false, nativeTransactionId);
+				return new RefCountMarkerStatus(mainDatabaseEmpty, false, nativeTransactionId, false, false,
+						referenceCountGeneration, trustedAllocationNextId);
 			}
 			E(rc);
 			// Once the named count DB exists, a missing marker must trigger reconciliation even when the main
@@ -481,14 +516,18 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					&& markerValue.mv_data().get(markerValue.mv_data().position()) == REF_COUNTS_VERSION[0]) {
 				// The format-2 writer's completion marker predates native transaction/CRC validation. Recognize
 				// that historical schema, but never treat it as clean: rebuild counts from active dictionary owners.
-				return new RefCountMarkerStatus(false, false, nativeTransactionId);
+				return new RefCountMarkerStatus(false, exactCounts, nativeTransactionId, false, false,
+						referenceCountGeneration, trustedAllocationNextId);
 			}
+			boolean knownSchema = rc == MDB_SUCCESS && isKnownRefCountMarkerSchema(markerValue.mv_data());
 			if (rc == MDB_SUCCESS) {
 				validateRefCountMarkerSchema(markerValue.mv_data());
 			}
-			boolean valid = rc == MDB_SUCCESS && isValidRefCountMarker(markerValue.mv_data(), nativeTransactionId);
+			boolean valid = exactCounts || rc == MDB_SUCCESS
+					&& isValidRefCountMarker(markerValue.mv_data(), nativeTransactionId);
 			return new RefCountMarkerStatus(emptyStore, valid, nativeTransactionId,
-					rc == MDB_SUCCESS && format.isLegacy());
+					format.isLegacy() && knownSchema, rc == MDB_SUCCESS && !knownSchema,
+					referenceCountGeneration, trustedAllocationNextId);
 		} finally {
 			if (txn != 0) {
 				mdb_txn_abort(txn);
@@ -513,13 +552,19 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private static void validateRefCountMarkerSchema(ByteBuffer marker) throws IOException {
-		if (marker == null || marker.remaining() < Integer.BYTES + 1) {
+		if (!isKnownRefCountMarkerSchema(marker)) {
 			throw new IOException("Unsupported ValueStore ref-count metadata schema");
+		}
+	}
+
+	private static boolean isKnownRefCountMarkerSchema(ByteBuffer marker) {
+		// The header identifies the schema even when its payload is incomplete or corrupt. Count authority still
+		// requires the complete clean marker, matching native transaction, and checksum in isValidRefCountMarker.
+		if (marker == null || marker.remaining() < Integer.BYTES + 1) {
+			return false;
 		}
 		ByteBuffer encoded = marker.duplicate();
-		if (encoded.getInt() != REFCOUNT_MARKER_MAGIC || encoded.get() != REFCOUNT_MARKER_VERSION) {
-			throw new IOException("Unsupported ValueStore ref-count metadata schema");
-		}
+		return encoded.getInt() == REFCOUNT_MARKER_MAGIC && encoded.get() == REFCOUNT_MARKER_VERSION;
 	}
 
 	private static byte[] encodeRefCountMarker(byte state, long nativeTransactionId) {
@@ -545,7 +590,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	/** Tests the same fresh-dictionary eligibility without claiming a session or mutating dictionary state. */
 	boolean canStartFreshValueSession() throws IOException {
-		if (format.isLegacy() || freeIdsAvailable) {
+		if (format.isLegacy() || freeIdsAvailable || !hasTrustedReferenceCounts()) {
 			return false;
 		}
 		return readTransaction(env, (stack, txn) -> {
@@ -975,6 +1020,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private final RetiredValueIdStore retiredIdStore = new RetiredValueIdStore();
 	/** Marker observation captured before any startup database creation or writer transaction. */
 	private RefCountMarkerStatus startupMarkerStatus;
+	/** Captured before bootstrap creates named databases; an empty native catalog has no layout to import. */
+	private boolean startupMainDatabaseEmpty;
 	private boolean auxiliaryDatabasesInitialized;
 	/** True only after a complete live-owner count establishment or a valid clean-close marker. */
 	private boolean refCountIntegrityEstablished;
@@ -983,19 +1030,23 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private final boolean refCountRepairEnabled;
 	/** A known structured marker left by a previous format-2 opener, to be removed when repair is disabled. */
 	private boolean legacyStructuredRefCountMarker;
+	private boolean unrecognizedRefCountMarker;
+	private byte[] referenceCountGeneration;
+	private long trustedAllocationNextId = -1L;
 	/** Set while a store requires reconstruction; destructive retirement/GC is refused in this state. */
 	private boolean refCountRecoveryRequired;
 	private boolean refCountRecoveryInProgress;
 	/**
 	 * Construction reached a fully initialized, usable state; required before a clean-close marker may be published.
 	 */
-	private boolean valueStoreInitializationComplete;
+	private volatile boolean valueStoreInitializationComplete;
 	private long writeTxn;
 	/** Whether the most recent ValueStore commit reached the native LMDB commit boundary successfully. */
 	private volatile boolean lastNativeCommitSucceeded;
 	/** Last native transaction ID whose dictionary/ref-count state this instance has established as trustworthy. */
-	private long lastTrustedNativeTransactionId = -1L;
+	private volatile long lastTrustedNativeTransactionId = -1L;
 	private long closingTripleTransactionId = -1L;
+	private boolean cleanCloseInvalidated;
 	private long bulkMaximumDataBytes;
 	private long bulkMaximumNamespaceBytes;
 	private long bulkMaximumIriBytes;
@@ -1026,10 +1077,15 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private volatile boolean valueOverlayBuildAdmissionClosed;
 	private Object initialImportOverlayRebuildRequest;
 	private Object initialImportOverlayRebuildWorker;
+	/** One startup request may await already-scheduled term-index mutations before it captures a dictionary view. */
+	private boolean startupValueOverlayRequested;
+	private CompressedValueOverlay.Options startupValueOverlayOptions;
 	private Object publiclyReleasedOverlayGeneration;
 	private ValueOverlayRegistry.Mutation compressedValueMutation;
 	private volatile ExecutorService valueOverlayWarmupExecutor;
 	private volatile CompletableFuture<Void> valueOverlayWarmupFuture;
+	/** Planned owner work is pending before the post-ready thread can schedule its first optional build. */
+	private volatile CompletableFuture<Void> valueOverlayStartupScheduling;
 
 	private record ValueOverlayWarmup(ExecutorService executor, CompletableFuture<Void> future) {
 	}
@@ -1050,18 +1106,34 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	private static final class WriterPublication {
 		private final Thread owner;
+		private final WriterTransaction transaction;
 		private volatile Thread consumer;
 		private volatile boolean failedCleanup;
+		private Throwable retirementCommitFailure;
+		private boolean retirementQueueSettled;
 
-		private WriterPublication(Thread owner) {
+		private WriterPublication(Thread owner, WriterTransaction transaction) {
 			this.owner = owner;
+			this.transaction = transaction;
 		}
 	}
 
 	private final Object writerAdmission = new Object();
+	private final Object retirementNativeAccess = new Object();
 	private boolean shuttingDown;
 	private int writerStartsInFlight;
 	private Thread writerStartOwner;
+	// Retirement has its own admission: unlike a map-growth restart it never permits entry during shutdown.
+	private RetirementWriterAdmission retirementWriterAdmission;
+	private final ThreadLocal<DeferredRetirementReset> deferredRetirementReset = new ThreadLocal<>();
+	private final ThreadLocal<Boolean> retirementRevisionAuthority = new ThreadLocal<>();
+	private final ThreadLocal<Boolean> tryingRetirementAssociation = new ThreadLocal<>();
+	private final ThreadLocal<Boolean> retirementAssociationOwned = new ThreadLocal<>();
+	private final Set<DeferredRetirementReset> activeRetirementResets = new HashSet<>();
+	private final ThreadLocal<RetirementOperation> currentRetirementOperation = new ThreadLocal<>();
+	private final Set<RetirementOperation> activeRetirementOperations = new HashSet<>();
+	private Object pendingRetirementReset;
+	private Object pendingRetirementOverlayInvalidation;
 	private final boolean forceSync;
 	private final boolean noReadahead;
 	private final boolean autoGrow;
@@ -1077,7 +1149,43 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	/**
 	 * The list of triple term indexes that are used to store and retrieve triples.
 	 */
-	private final List<TripleIndex> tripleTermIndexes = new ArrayList<>();
+	private volatile List<TripleIndex> tripleTermIndexes = List.of();
+	private volatile List<TripleIndex> termWriteIndexes = List.of();
+	private final Map<String, TripleIndex> openedTermIndexes = new HashMap<>();
+	private volatile List<TermQueryGeneration> termIndexGenerations = List.of();
+
+	private record TermQueryGeneration(long firstTransaction, List<TripleIndex> indexes) {
+		TermQueryGeneration {
+			// CSPO retains retired payloads for lazy value resolution; term queries use only live owner indexes.
+			indexes = indexes.stream().filter(index -> !index.toString().equals("cspo")).toList();
+		}
+	}
+
+	private volatile TermIndexBuild termIndexBuild;
+	private volatile Set<String> requestedTermIndexSpecs;
+	private boolean termIndexManifestInitialized;
+	private volatile Thread termIndexMaintenanceThread;
+	private volatile CompletableFuture<Void> termIndexMaintenanceCompletion = CompletableFuture.completedFuture(null);
+	private volatile boolean termIndexMaintenanceReady;
+	private volatile boolean termIndexMaintenanceCancelled;
+	private volatile Throwable termIndexMaintenanceFailure;
+	private final Object termIndexMaintenanceMonitor = new Object();
+	private long termIndexMaintenanceSignal;
+
+	private enum DictionaryTransactionPurpose {
+		OWNER_MUTATION,
+		BOUNDED_RECLAMATION,
+		DERIVED_INDEX,
+		LANGUAGE_MIGRATION_PLANNING
+	}
+
+	private boolean termMaintenanceWriterActive;
+	private Thread nativeMapGrowthOwner;
+	/** The migration owns dictionary admission across its native writer and any map-growth retry. */
+	private Thread languageTagMigrationOwner;
+	private int standaloneWritersInFlight;
+	private final ThreadLocal<Integer> standaloneWriterAdmissions = ThreadLocal.withInitial(() -> 0);
+	private volatile Consumer<String> termIndexMaintenanceObserver;
 	private final Set<Integer> droppedTermIndexDbis = new HashSet<>();
 	private TripleIndex tripleTermSpocIndex;
 	private TripleIndex tripleTermCspoIndex;
@@ -1350,14 +1458,15 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			throw new IOException("Prepared bulk value generation changed during startup");
 		}
 		if (!refCountRepairEnabled) {
-			logger.warn("LMDB format-2 component reference-count repair is disabled; historical counts remain "
-					+ "unverified and dictionary reclamation is deferred. Enable "
+			logger.warn("LMDB format-2 dictionary reclamation is deferred. Historical counts require explicit "
+					+ "LmdbStore.reconstructReferenceCountsOffline verification before reclamation. Enable "
 					+ "LmdbStoreConfig.setLegacyReferenceCountRepairEnabled(true) or "
-					+ "<http://rdf4j.org/config/sail/lmdb#legacyReferenceCountRepairEnabled> true to repair "
-					+ "existing counts. See https://github.com/eclipse-rdf4j/rdf4j/issues/6095. "
-					+ "Repair writes integrity metadata that earlier reference-count readers cannot read; "
-					+ "reopen with repair disabled before downgrading.");
+					+ "<http://rdf4j.org/config/sail/lmdb#legacyReferenceCountRepairEnabled> true to allow "
+					+ "dictionary reclamation after explicit reconstruction. See "
+					+ "https://github.com/eclipse-rdf4j/rdf4j/issues/6095.");
 		}
+		refCountIntegrityEstablished = startupMarkerStatus != null
+				&& (startupMarkerStatus.valid() || startupMarkerStatus.emptyStore());
 		beginStartupInitialization();
 		try {
 			initializeIdsAndTermIndexes(config);
@@ -1392,9 +1501,14 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			throw failure;
 		}
 		if (!coreDatatypeLiteralReferences) {
-			startTransaction(true);
-			seedCoreDatatypes();
-			commit();
+			boolean createMissing = hasTrustedReferenceCounts();
+			if (createMissing) {
+				startTransaction(true);
+			}
+			seedCoreDatatypes(createMissing);
+			if (createMissing) {
+				commit();
+			}
 		}
 		migrateLanguageTagKeysIfNeeded();
 		if (properties.preparedBulkStore != null && startupMarkerStatus != null && startupMarkerStatus.valid()
@@ -1403,13 +1517,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		} else {
 			establishRefCountIntegrity();
 		}
-		if (!deferPersistedUnusedRecovery) {
-			freePersistedUnusedValuesAfterRecovery();
-		}
 		valueStoreInitializationComplete = true;
-		if (!deferPersistedUnusedRecovery) {
-			warmConfiguredValueOverlay();
-		}
 	}
 
 	/** The SailStore owner calls this after both unused-value and durable-retirement recovery have committed. */
@@ -1417,16 +1525,66 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (!valueStoreInitializationComplete) {
 			throw new IllegalStateException("ValueStore startup initialization is incomplete");
 		}
-		warmConfiguredValueOverlay();
+		CompressedValueOverlay.Options options = configuredValueOverlayWarmupOptions();
+		if (options == null) {
+			return;
+		}
+		synchronized (valueOverlayBuildAdmission) {
+			if (valueOverlayMaintenanceDeferred || valueOverlayBuildAdmissionClosed
+					|| initialImportOverlayRebuildRequest != null || initialImportOverlayRebuildWorker != null) {
+				return;
+			}
+			startupValueOverlayOptions = options;
+			startupValueOverlayRequested = true;
+		}
+		scheduleStartupValueOverlay();
+	}
+
+	private void scheduleStartupValueOverlay() {
+		synchronized (valueOverlayBuildAdmission) {
+			if (!startupValueOverlayRequested || valueOverlayMaintenanceDeferred || valueOverlayBuildAdmissionClosed
+					|| termIndexMaintenanceCancelled || env == 0) {
+				return;
+			}
+			if (hasPendingTermIndexMutation()) {
+				return;
+			}
+			// Keep the request visible until the actual future or terminal configuration failure is installed.
+			try {
+				warmConfiguredValueOverlay(null, null, startupValueOverlayOptions);
+			} finally {
+				startupValueOverlayRequested = false;
+				startupValueOverlayOptions = null;
+				valueOverlayBuildAdmission.notifyAll();
+			}
+		}
+	}
+
+	private boolean hasPendingTermIndexMutation() {
+		synchronized (writerAdmission) {
+			return termIndexMaintenanceCancelled || termMaintenanceWriterActive
+					|| !termIndexMaintenanceCompletion.isDone()
+					|| termIndexMaintenanceReady
+							&& termIndexMaintenanceFailure == null && !indexRebuildStatus().equals("IDLE");
+		}
+	}
+
+	void setStartupValueOverlayScheduling(CompletableFuture<Void> scheduling) {
+		valueOverlayStartupScheduling = Objects.requireNonNull(scheduling);
 	}
 
 	private void beginStartupInitialization() throws IOException {
 		startupInitializationInProgress = true;
-		startupExpectedLastTransactionId = lastTransactionId();
-		if (startupMarkerStatus != null && (startupMarkerStatus.valid() || startupMarkerStatus.emptyStore())
-				&& startupExpectedLastTransactionId != startupMarkerStatus.nativeTransactionId()) {
-			refCountRecoveryRequired = true;
-			startupMarkerStatus = new RefCountMarkerStatus(false, false, startupExpectedLastTransactionId);
+		// Keep the read-only preflight identity, including only the checked bootstrap commits carried by open().
+		// Even an untrusted supported marker cannot authorize mutations after an unvalidated native writer.
+		startupExpectedLastTransactionId = startupMarkerStatus.nativeTransactionId();
+		long observedNativeTransactionId = lastTransactionId();
+		if (observedNativeTransactionId != startupExpectedLastTransactionId) {
+			invalidateRefCountIntegrity("an intervening native LMDB writer before startup initialization");
+			throw new IOException(
+					"ValueStore detected an intervening native LMDB writer before startup initialization: "
+							+ "expected transaction " + startupExpectedLastTransactionId + " but found "
+							+ observedNativeTransactionId);
 		}
 		// Reserve the catalog, bootstrap marker, retirement epoch, and any newly-created term-index roots before
 		// claiming
@@ -1446,6 +1604,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 			try (MemoryStack stack = stackPush()) {
 				unusedDbi = openDatabaseWithTxn(writeTxn, "unused_ids", MDB_CREATE);
+				initializeUnusedRevisionBoundary(stack, writeTxn);
 				freeDbi = openDatabaseWithTxn(writeTxn, "free_ids", MDB_CREATE);
 				refCountsDbi = openDatabaseWithTxn(writeTxn, "ref_counts", MDB_CREATE);
 				retiredIdStore.openWithTransaction(env, writeTxn, false);
@@ -1455,7 +1614,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				freeIdsAvailable = stat.ms_entries() > 0;
 				auxiliaryDatabasesInitialized = true;
 
-				if (refCountRepairEnabled) {
+				ensureReferenceCountGeneration(stack, writeTxn);
+				if (!format.isLegacy() && !unrecognizedRefCountMarker) {
 					writeRefCountMarker(stack, writeTxn, REFCOUNT_MARKER_DIRTY);
 				} else if (legacyStructuredRefCountMarker) {
 					// Absence makes the earlier repair reader reconstruct atomically. Never replace an incomplete or
@@ -1475,6 +1635,53 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			startupExpectedLastTransactionId = -1L;
 			throw failure;
 		}
+	}
+
+	private void initializeUnusedRevisionBoundary(MemoryStack stack, long txn) throws IOException {
+		PointerBuffer handle = stack.mallocPointer(1);
+		E(mdb_cursor_open(txn, unusedDbi, handle));
+		long cursor = handle.get(0);
+		try {
+			MDBVal key = MDBVal.calloc(stack);
+			MDBVal value = MDBVal.calloc(stack);
+			int rc = mdb_cursor_get(cursor, key, value, MDB_LAST);
+			if (rc == MDB_NOTFOUND) {
+				return;
+			}
+			E(rc);
+			try {
+				ByteBuffer bytes = key.mv_data().duplicate();
+				long priorRevision = readCanonicalUnusedUnsigned(bytes);
+				if (priorRevision == 0L || bytes.get() != ID_KEY) {
+					throw new IllegalArgumentException("invalid persisted unused revision or ID key");
+				}
+				long id = readCanonicalUnusedUnsigned(bytes);
+				int type = ValueIds.getIdType(id);
+				// Historical unused_ids writers stored opaque hint payloads. Revision authority comes only from
+				// the complete canonical key; neither reclamation nor owner verification interprets its value.
+				if (bytes.hasRemaining() || id <= 0L || ValueIds.isInlined(id)
+						|| type < ValueIds.T_PTR || type > ValueIds.T_CORE_LITERAL
+						|| type == ValueIds.T_CORE_LITERAL && !coreDatatypeLiteralReferences) {
+					throw new IllegalArgumentException("invalid complete persisted unused key");
+				}
+				ValueStoreRevision.Default.ensureRevisionAfter(priorRevision);
+				setNewRevision();
+			} catch (RuntimeException malformed) {
+				throw new IOException("Cannot establish a safe ValueStore revision boundary from unused_ids",
+						malformed);
+			}
+		} finally {
+			mdb_cursor_close(cursor);
+		}
+	}
+
+	private static long readCanonicalUnusedUnsigned(ByteBuffer input) {
+		int start = input.position();
+		long value = Varint.readUnsigned(input);
+		if (input.position() - start != Varint.calcLengthUnsigned(value)) {
+			throw new IllegalArgumentException("noncanonical persisted unused ID encoding");
+		}
+		return value;
 	}
 
 	private void reserveStartupBootstrapCapacity(LmdbStoreConfig config) throws IOException {
@@ -1534,7 +1741,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					E(rc);
 				}
 			}
-			if (coreDatatypeLiteralReferences && !deferNextIdPersistence) {
+			if (!deferNextIdPersistence) {
 				catalogFootprint.addMainEntry(1L, MAX_UNSIGNED_ID_BYTES);
 			}
 			if (refCountsHandle >= 0) {
@@ -1752,82 +1959,80 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private void initializeIdsAndTermIndexes(LmdbStoreConfig config) throws IOException {
-		// Recover the counter before opening the term indexes commits and persists it.
-		readTransaction(env, (stack, txn) -> {
-			if (coreDatatypeLiteralReferences) {
-				MDBVal counterKey = MDBVal.calloc(stack);
-				counterKey.mv_data(stack.bytes(new byte[] { NEXT_ID_KEY }));
-				MDBVal counterValue = MDBVal.calloc(stack);
-				int counterRc = mdb_get(txn, dbi, counterKey, counterValue);
-				if (counterRc == MDB_SUCCESS) {
-					nextId = Math.max(nextId, Varint.readUnsigned(counterValue.mv_data()));
-					return null;
-				}
-				if (counterRc != MDB_NOTFOUND) {
-					E(counterRc);
-				}
-			}
-			long cursor = 0;
-			PointerBuffer pp = stack.mallocPointer(1);
-
-			MDBVal keyData = MDBVal.calloc(stack);
-			MDBVal valueData = MDBVal.calloc(stack);
-			for (int lookupDbi : new int[] { dbi, freeDbi }) {
-				try {
-					E(mdb_cursor_open(txn, lookupDbi, pp));
-					cursor = pp.get(0);
-					if (coreDatatypeLiteralReferences) {
-						// A core-reference ID contains datatype bits above its ordinal. Without the persisted
-						// counter, the last physical key need not have the greatest reference ordinal.
-						keyData.mv_data(stack.bytes(new byte[] { ID_KEY }));
-						int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-						while (rc == MDB_SUCCESS && isIdKey(keyData.mv_data())) {
-							nextId = Math.max(nextId, ValueIds.referenceOrdinal(data2id(keyData.mv_data())) + 1L);
-							rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+		boolean legacy = format.isLegacy();
+		// Format 2 reopens from committed owners; a proof's high-water may include aborted allocations.
+		if (!legacy && trustedAllocationNextId > 0L) {
+			nextId = Math.max(nextId, trustedAllocationNextId);
+		} else {
+			readTransaction(env, (stack, txn) -> {
+				MDBVal key = MDBVal.calloc(stack);
+				MDBVal value = MDBVal.calloc(stack);
+				// Preserve the existing counter fallback whenever no valid proof is available.
+				if (!legacy || trustedAllocationNextId <= 0L) {
+					key.mv_data(stack.bytes(new byte[] { NEXT_ID_KEY }));
+					int counterRc = mdb_get(txn, dbi, key, value);
+					if (counterRc == MDB_SUCCESS) {
+						try {
+							long counter = Varint.readUnsigned(value.mv_data());
+							if (counter <= 0L || counter > ReferenceCountProof.MAX_NEXT_ID) {
+								throw new IOException("Invalid ValueStore allocation high-water mark");
+							}
+							nextId = Math.max(nextId, counter);
+						} catch (RuntimeException malformed) {
+							throw new IOException("Malformed ValueStore allocation high-water mark", malformed);
 						}
-						if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+					} else if (counterRc != MDB_NOTFOUND) {
+						E(counterRc);
+					}
+				}
+				// Check committed dictionary and free-ID extrema. For tagged core literals, the maximum numeric
+				// value field bounds EVERY reference ordinal, unlike its own ordinal.
+				for (int database : new int[] { dbi, freeDbi }) {
+					PointerBuffer pointer = stack.mallocPointer(1);
+					E(mdb_cursor_open(txn, database, pointer));
+					long cursor = pointer.get(0);
+					try {
+						// The next record-family prefix also bounds IDs whose Varint starts with 0xff.
+						key.mv_data(stack.bytes(new byte[] { HASH_KEY }));
+						int rc = mdb_cursor_get(cursor, key, value, MDB_SET_RANGE);
+						if (rc == MDB_NOTFOUND) {
+							rc = mdb_cursor_get(cursor, key, value, MDB_LAST);
+						} else {
+							E(rc);
+							rc = mdb_cursor_get(cursor, key, value, MDB_PREV);
+						}
+						if (rc == MDB_SUCCESS && isIdKey(key.mv_data())) {
+							long maximum = data2id(key.mv_data());
+							long bound = coreDatatypeLiteralReferences ? maximum >>> 7
+									: ValueIds.referenceOrdinal(maximum);
+							nextId = Math.max(nextId, Math.addExact(bound, 1L));
+						} else if (rc != MDB_NOTFOUND && rc != MDB_SUCCESS) {
 							E(rc);
 						}
-						continue;
-					}
-
-					// set cursor after max ID
-					keyData.mv_data(stack.bytes(new byte[] { ID_KEY, (byte) 0xFF }));
-					int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-					if (rc != MDB_SUCCESS) {
-						// directly go to last value
-						rc = mdb_cursor_get(cursor, keyData, valueData, MDB_LAST);
-					} else {
-						// go to previous value of selected key
-						rc = mdb_cursor_get(cursor, keyData, valueData, MDB_PREV);
-					}
-					if (rc == MDB_SUCCESS && keyData.mv_data().get(0) == ID_KEY) {
-						// recover the VALUE part of the compound id (nextId is the value-space counter that
-						// createId() combines with a 6-bit type + 1 double-flag bit); shifting by anything less
-						// than the full 7 low bits inflates the counter ~32x on every reopen
-						nextId = Math.max(nextId, ValueIds.referenceOrdinal(data2id(keyData.mv_data())) + 1);
-					}
-				} finally {
-					if (cursor != 0) {
+					} finally {
 						mdb_cursor_close(cursor);
 					}
 				}
-			}
-			return null;
-		});
+				return null;
+			});
+		}
+		if (nextId <= 0L || nextId > ReferenceCountProof.MAX_NEXT_ID) {
+			throw new IOException(
+					"Cannot prove a safe ValueStore allocation high-water mark within reference capacity");
+		}
 		initializeTermIndexes(config);
 	}
 
-	private void seedCoreDatatypes() throws IOException {
+	private void seedCoreDatatypes(boolean createMissing) throws IOException {
 		for (CoreDatatype.XSD datatype : CoreDatatype.XSD.values()) {
-			seedCoreDatatype(datatype);
+			seedCoreDatatype(datatype, createMissing);
 		}
-		seedCoreDatatype(CoreDatatype.RDF.LANGSTRING);
+		seedCoreDatatype(CoreDatatype.RDF.LANGSTRING, createMissing);
 	}
 
-	private void seedCoreDatatype(CoreDatatype datatype) throws IOException {
+	private void seedCoreDatatype(CoreDatatype datatype, boolean createMissing) throws IOException {
 		IRI datatypeIri = datatype.getIri();
-		long id = getId(datatypeIri, true);
+		long id = getId(datatypeIri, createMissing);
 		if (id == LmdbValue.UNKNOWN_ID) {
 			return;
 		}
@@ -1894,13 +2099,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private void establishRefCountIntegrity() throws IOException {
 		LmdbStartupDiagnostics.observe(LmdbStartupDiagnostics.Operation.REFCOUNT_INTEGRITY);
 		refCountIntegrityEstablished = false;
-		if (!refCountRepairEnabled) {
-			return;
-		}
 		if (!refCountRecoveryRequired) {
 			// A clean marker (or a new empty store) is trusted only while the native environment remains at the exact
 			// transaction whose state was validated. A concurrent writer between startup bootstrap and this check is
-			// unknown to the ref-count proof and must trigger the bounded live-owner rebuild.
+			// unknown to the ref-count proof and require explicit offline owner-graph reconstruction.
 			long observedNativeTransactionId = lastTransactionId();
 			if (observedNativeTransactionId == lastTrustedNativeTransactionId) {
 				refCountIntegrityEstablished = true;
@@ -1909,13 +2111,59 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			invalidateRefCountIntegrity("an intervening native LMDB writer before ref-count establishment");
 		}
 
+		// UNKNOWN is a supported conservative writable state. Only explicit offline verification may restore trust.
+	}
+
+	boolean hasTrustedReferenceCounts() {
+		return refCountIntegrityEstablished && !refCountRecoveryRequired && !refCountRecoveryInProgress;
+	}
+
+	boolean isValueReclamationEnabled() {
+		return refCountRepairEnabled && hasTrustedReferenceCounts();
+	}
+
+	boolean isReferenceCountVerificationPending() {
+		return !hasTrustedReferenceCounts();
+	}
+
+	private Consumer<String> referenceCountMaintenanceObserver;
+
+	void setReferenceCountMaintenanceObserver(Consumer<String> observer) {
+		referenceCountMaintenanceObserver = observer;
+	}
+
+	private void observeReferenceCountMaintenance(String phase) {
+		if (referenceCountMaintenanceObserver != null) {
+			referenceCountMaintenanceObserver.accept(phase);
+		}
+	}
+
+	/** Caller holds the directory lock and has quiesced public readers and writers. Never invoked by startup. */
+	synchronized void reconstructReferenceCountsOffline() throws IOException {
+		if (!valueStoreInitializationComplete || writeTxn != 0L || writerPublication != null
+				|| !readSnapshots.isEmpty()) {
+			throw new IOException("Reference-count reconstruction requires a quiescent directory-locked store");
+		}
+		invalidateRefCountIntegrity("explicit offline owner-graph reconstruction");
+		// Commit UNKNOWN before the first partial count batch. A crash cannot revive an older completion marker.
+		writeTransaction((stack, txn) -> {
+			invalidateUntrustedCountMetadata(stack, txn);
+			return null;
+		});
 		refCountRecoveryInProgress = true;
 		try {
 			rebuildRefCounts();
-			refCountRecoveryRequired = false;
-			refCountIntegrityEstablished = true;
 		} finally {
 			refCountRecoveryInProgress = false;
+		}
+		refCountRecoveryRequired = false;
+		refCountIntegrityEstablished = true;
+		try {
+			writeTransaction((stack, txn) -> null);
+			observeReferenceCountMaintenance("exact");
+		} catch (IOException | RuntimeException failure) {
+			invalidateRefCountIntegrity("failed reconstruction proof publication");
+			throw failure;
 		}
 	}
 
@@ -1964,8 +2212,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (resizeTarget > 0L) {
 			// Owning-store close has ended all public admission and readers before entering this private phase.
 			// The global growth coordinator is already shut down; no application continuation remains to certify.
-			growMapAfterReindexMapFullAfterQuiescence(resizeTarget, null, false);
-			bulkMapGrowthCount++;
+			growMapAfterReindexMapFullAfterQuiescence(resizeTarget, null, false, null);
 		}
 		writeTransaction((stack, txn) -> {
 			freeUnusedIdsAndValues(stack, txn, null, closeLivenessChecker);
@@ -1990,7 +2237,6 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	void completeStoreInitialization(ValueIdLivenessChecker livenessChecker) throws IOException {
 		this.valueIdLivenessChecker = Objects.requireNonNull(livenessChecker);
-		freePersistedUnusedValuesAfterRecovery();
 		currentTripleLivenessAvailable = true;
 	}
 
@@ -2008,7 +2254,72 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			throw new IOException(
 					"Cannot complete retirement recovery before authoritative triple liveness is available");
 		}
-		freePersistedUnusedValuesAfterRecovery();
+	}
+
+	/** Bounded tree-stat preflight; the owner grows under its normal publication/growth admission before mutation. */
+	long estimatePersistedUnusedBatchWriteBytes(int maxVisitedRecords) throws IOException {
+		if (maxVisitedRecords <= 0) {
+			throw new IllegalArgumentException("Unused-value maintenance requires a positive visited-record limit");
+		}
+		if (!isValueReclamationEnabled() || !currentTripleLivenessAvailable) {
+			return 0L;
+		}
+		return readTransaction(env, (stack, txn) -> {
+			MDBStat stat = MDBStat.malloc(stack);
+			E(mdb_stat(txn, unusedDbi, stat));
+			return stat.ms_entries() == 0L ? 0L
+					: reservePersistedUnusedCapacity(stack, txn, Math.min(maxVisitedRecords, stat.ms_entries()));
+		});
+	}
+
+	/** One post-ready batch. Every visited key consumes the limit, including live, protected and uncertain entries. */
+	int reclaimPersistedUnusedIdsBatch(int maxVisitedRecords) throws IOException {
+		long requiredBytes = estimatePersistedUnusedBatchWriteBytes(maxVisitedRecords);
+		if (requiredBytes == 0L) {
+			return 0;
+		}
+		WriterTransaction transaction = new WriterTransaction();
+		try {
+			transaction.invoke(() -> startTransaction(false, DictionaryTransactionPurpose.BOUNDED_RECLAMATION));
+			boolean enabled = isValueReclamationEnabled();
+			boolean protectedValues = enabled && lazyRevisions.hasProtectedValues();
+			long occupied = enabled && !protectedValues ? LmdbUtil.getNewSize(pageSize, writeTxn, 0L) : -1L;
+			boolean capacityRequired = enabled && !protectedValues
+					&& growthPolicy.hardCapacityRequired(mapSize, occupied, requiredBytes);
+			String phase = !enabled ? "disabled"
+					: protectedValues ? "protected" : capacityRequired ? "capacity" : "admitted";
+			observeBoundedUnusedReclamationForTest(phase, requiredBytes, occupied, mapSize, -1);
+			if (!enabled || protectedValues || capacityRequired) {
+				rollback(transaction);
+				return 0;
+			}
+			int visited;
+			try (MemoryStack stack = stackPush()) {
+				visited = freeUnusedIdsAndValues(stack, writeTxn, null, valueIdLivenessChecker, maxVisitedRecords);
+			}
+			observeBoundedUnusedReclamationForTest("visited", requiredBytes, occupied, mapSize, visited);
+			transaction.invoke(this::commit);
+			return visited;
+		} catch (IOException | RuntimeException | Error failure) {
+			try {
+				rollback(transaction);
+			} catch (IOException | RuntimeException | Error cleanup) {
+				if (cleanup != failure) {
+					failure.addSuppressed(cleanup);
+				}
+			}
+			throw failure;
+		}
+	}
+
+	/** Inert observation of existing maintenance decisions; negative sizes/visits were not evaluated. */
+	void observeBoundedUnusedReclamationForTest(String phase, long requiredBytes, long occupiedBytes, long mapBytes,
+			int visited) {
+	}
+
+	/** Read-only protection counts for tests that observe an already-made protected decision. */
+	ValueProtectionSnapshot protectionSnapshotForTest() {
+		return lazyRevisions.protectionSnapshotForTest();
 	}
 
 	private long reservePersistedUnusedCapacity(MemoryStack stack, long txn, long entries) throws IOException {
@@ -2033,6 +2344,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			throw new IOException("Cannot rebuild ValueStore ref_counts: the live SPOC term index is unavailable");
 		}
 		long validatedId = lastTransactionId();
+		readTransaction(env, (stack, txn) -> {
+			checkRebuildReadTransaction(txn, validatedId);
+			TermOwnerGraphVerifier.verify(txn, tripleTermSpocIndex.getDB(true), tripleTermCspoIndex.getDB(true));
+			return null;
+		});
 		if (!deferPersistedUnusedRecovery) {
 			// An owning Sail postpones this decision until its authoritative TripleStore checker is installed.
 			readTransaction(env, (stack, txn) -> {
@@ -2051,12 +2367,14 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			});
 		}
 		long committedId = clearRefCountDatabase(validatedId);
+		observeReferenceCountMaintenance("cleared");
 		byte[] resumeKey = null;
 		boolean exhausted = false;
 		while (!exhausted) {
 			RefCountScanBatch batch = scanMainRefCountBatch(committedId, resumeKey);
 			if (!batch.counts().isEmpty()) {
 				committedId = appendRefCountBatch(batch.counts(), committedId);
+				observeReferenceCountMaintenance("batch");
 			}
 			resumeKey = batch.lastKey();
 			exhausted = batch.exhausted();
@@ -2068,6 +2386,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			RefCountScanBatch batch = scanSpocRefCountBatch(committedId, resumeKey);
 			if (!batch.counts().isEmpty()) {
 				committedId = appendRefCountBatch(batch.counts(), committedId);
+				observeReferenceCountMaintenance("batch");
 			}
 			resumeKey = batch.lastKey();
 			exhausted = batch.exhausted();
@@ -2603,6 +2922,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				}
 				throw failure;
 			}
+			lastTrustedNativeTransactionId = committedTransactionId;
 			resetReadersAfterWrite();
 			return committedTransactionId;
 		} finally {
@@ -2687,9 +3007,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				try {
 					E(mdb_cursor_open(txn, tripleTermCspoIndex.getDB(true), pp));
 					cursor = pp.get(0);
-					if (mdb_cursor_get(cursor, keyData, valueData, MDB_LAST) == MDB_SUCCESS) {
+					int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_LAST);
+					if (rc == MDB_SUCCESS) {
 						nextId = Math.max(nextId,
-								ValueIds.referenceOrdinal(Varint.readUnsigned(keyData.mv_data())) + 1);
+								ValueIds.referenceOrdinal(TermOwnerGraphVerifier.cspoOwnerId(keyData.mv_data())) + 1);
+					} else if (rc != MDB_NOTFOUND) {
+						E(rc);
 					}
 				} finally {
 					if (cursor != 0) {
@@ -2751,9 +3074,22 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		refCountIntegrityEstablished = false;
 		refCountRecoveryInProgress = false;
 		legacyStructuredRefCountMarker = false;
+		unrecognizedRefCountMarker = false;
+		referenceCountGeneration = null;
+		trustedAllocationNextId = -1L;
 		startupMarkerStatus = null;
+		termIndexManifestInitialized = false;
+		termIndexBuild = null;
+		requestedTermIndexSpecs = null;
+		termIndexMaintenanceReady = false;
+		termIndexMaintenanceCancelled = false;
+		termIndexMaintenanceFailure = null;
+		termWriteIndexes = List.of();
+		openedTermIndexes.clear();
+		termIndexGenerations = List.of();
 		lastTrustedNativeTransactionId = -1L;
 		closingTripleTransactionId = -1L;
+		cleanCloseInvalidated = false;
 		startupExpectedLastTransactionId = -1L;
 		startupInitializationInProgress = false;
 		boolean nativeGenerationExists = new File(dir, "data.mdb").exists();
@@ -2810,6 +3146,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 		startupMarkerStatus = markerStatus;
 		legacyStructuredRefCountMarker = markerStatus.legacyStructured();
+		unrecognizedRefCountMarker = markerStatus.unrecognized();
+		referenceCountGeneration = markerStatus.referenceCountGeneration();
+		trustedAllocationNextId = markerStatus.trustedAllocationNextId();
 		refCountRecoveryRequired = !markerStatus.emptyStore() && !markerStatus.valid();
 		refCountIntegrityEstablished = false;
 		openHashFileQuietly();
@@ -2840,6 +3179,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			E(mdb_stat(txn, dbi, stat));
 			return new InitialMapState(stat.ms_psize(), stat.ms_entries() == 0L);
 		});
+		startupMainDatabaseEmpty = initial.empty();
 		pageSize = initial.pageSize();
 		long configMapSize = Math.max(6L * pageSize, LmdbUtil.pageAlignedCapacity(mapSize, pageSize));
 		try (MemoryStack stack = stackPush()) {
@@ -3242,6 +3582,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private void initTermIndexes(LmdbStoreConfig config, boolean freshBulkGeneration) throws IOException {
 		try {
 			termIndexManifestDbi = openTermIndexManifestDatabase();
+			try (MemoryStack stack = stackPush()) {
+				ensureReferenceCountGeneration(stack, writeTxn);
+			}
 			String requestedSpecsText = config.getTripleTermIndexes();
 			Set<String> nativeTermIndexSpecs = readTermIndexManifest();
 			boolean hasNativeManifest = nativeTermIndexSpecs != null;
@@ -3251,7 +3594,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				// is
 				// stale, missing, or was lost after a rename.
 				effectiveTermIndexSpecs = nativeTermIndexSpecs;
-			} else if ((properties.isLoaded() || properties.hasNativeGeneration()) && !freshBulkGeneration) {
+			} else if ((properties.isLoaded() || properties.hasNativeGeneration()) && !freshBulkGeneration
+					&& !startupMainDatabaseEmpty) {
 				// Import the legacy sidecar on first native-manifest migration.
 				effectiveTermIndexSpecs = getTripleTermIndexSpecs();
 			} else {
@@ -3262,9 +3606,30 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			if (effectiveTermIndexSpecs.size() > MAX_TERM_INDEXES) {
 				throw new IOException("At most " + MAX_TERM_INDEXES + " triple-term indexes can be active");
 			}
+			if (!effectiveTermIndexSpecs.containsAll(TripleIndex.parseIndexSpecList(DEFAULT_TRIPLE_TERM_INDEXES))) {
+				throw new IOException("Committed triple-term index layout requires spoc and cspo indexes");
+			}
 
-			removeOrphanedTermIndexes(effectiveTermIndexSpecs);
 			initTripleTermIndexes(effectiveTermIndexSpecs);
+			termWriteIndexes = tripleTermIndexes;
+			termIndexGenerations = List.of(new TermQueryGeneration(0L, tripleTermIndexes));
+			termIndexManifestInitialized = true;
+			TermIndexBuild resumedBuild = readTermIndexBuild();
+			if (resumedBuild != null && resumedBuild.matches(effectiveTermIndexSpecs, referenceCountGeneration,
+					startupInitializationInProgress ? startupExpectedLastTransactionId
+							: lastTrustedNativeTransactionId)) {
+				termIndexBuild = resumedBuild;
+				requestedTermIndexSpecs = resumedBuild.target();
+				if (resumedBuild.phase() == TermIndexBuild.COPY) {
+					registerTermStagingIndexes(resumedBuild);
+				}
+			} else if (!freshBulkGeneration) {
+				// Inactive canonical databases may be leftovers from an interrupted older reindex. Only background
+				// maintenance probes or deletes them; the committed manifest remains the query authority.
+				termIndexBuild = new TermIndexBuild(effectiveTermIndexSpecs, effectiveTermIndexSpecs,
+						TermIndexBuild.CLEANUP, null, 0L, referenceCountGeneration);
+				requestedTermIndexSpecs = effectiveTermIndexSpecs;
+			}
 
 			// An explicit term-index setting requests a derived-index rebuild. With no explicit setting, the native
 			// manifest (or the one-time legacy import) selects the committed generation.
@@ -3275,9 +3640,13 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					throw new IOException("At most " + MAX_TERM_INDEXES + " triple-term indexes can be active");
 				}
 				if (!requestedTermIndexSpecs.equals(effectiveTermIndexSpecs)) {
-					reindex(effectiveTermIndexSpecs, requestedTermIndexSpecs);
-					effectiveTermIndexSpecs = requestedTermIndexSpecs;
-					hasNativeManifest = true;
+					this.requestedTermIndexSpecs = Collections
+							.unmodifiableSet(new LinkedHashSet<>(requestedTermIndexSpecs));
+					if (termIndexBuild == null || !termIndexBuild.target().equals(requestedTermIndexSpecs)) {
+						termIndexBuild = new TermIndexBuild(effectiveTermIndexSpecs, requestedTermIndexSpecs,
+								TermIndexBuild.RESET, null, 0L, referenceCountGeneration);
+						termWriteIndexes = tripleTermIndexes;
+					}
 				}
 			}
 
@@ -3299,7 +3668,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private void registerTripleTermIndex(String fieldSeq, TripleIndex index) {
-		tripleTermIndexes.add(index);
+		List<TripleIndex> replacement = new ArrayList<>(tripleTermIndexes);
+		replacement.add(index);
+		tripleTermIndexes = List.copyOf(replacement);
+		openedTermIndexes.put(fieldSeq, index);
 		// Keep primary-index references consistent when opening or rebuilding the configured index set.
 		switch (fieldSeq) {
 		case "spoc" -> tripleTermSpocIndex = index;
@@ -3398,6 +3770,615 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			data.put(encoded);
 		}
 		return data.array();
+	}
+
+	private List<TripleIndex> termIndexesForTransaction(long transactionId) {
+		List<TermQueryGeneration> generations = termIndexGenerations;
+		for (int i = generations.size() - 1; i >= 0; i--) {
+			TermQueryGeneration generation = generations.get(i);
+			if (generation.firstTransaction() <= transactionId) {
+				return generation.indexes();
+			}
+		}
+		return tripleTermIndexes;
+	}
+
+	private Set<String> activeTermIndexSpecs() {
+		Set<String> specs = new LinkedHashSet<>();
+		for (TripleIndex index : tripleTermIndexes) {
+			specs.add(new String(index.getFieldSeq()));
+		}
+		return Collections.unmodifiableSet(new LinkedHashSet<>(specs));
+	}
+
+	private TermIndexBuild readTermIndexBuild() throws IOException {
+		try (MemoryStack stack = stackPush()) {
+			MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(TermIndexBuild.KEY));
+			MDBVal value = MDBVal.calloc(stack);
+			int rc = mdb_get(writeTxn, termIndexManifestDbi, key, value);
+			if (rc == MDB_NOTFOUND) {
+				return null;
+			}
+			E(rc);
+			return TermIndexBuild.decode(value.mv_data());
+		}
+	}
+
+	private void writeTermIndexBuild(MemoryStack stack, long txn) throws IOException {
+		if (!termIndexManifestInitialized) {
+			return;
+		}
+		MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(TermIndexBuild.KEY));
+		TermIndexBuild build = termIndexBuild;
+		if (build == null) {
+			E(mdb_del(txn, termIndexManifestDbi, key, null));
+		} else {
+			MDBVal value = MDBVal.calloc(stack).mv_data(stack.bytes(build.encode(mdb_txn_id(txn))));
+			E(mdb_put(txn, termIndexManifestDbi, key, value, 0));
+		}
+	}
+
+	private TripleIndex openTermMaintenanceIndex(String specification, boolean create) throws IOException {
+		TripleIndex existing = openedTermIndexes.get(specification);
+		if (existing != null) {
+			return existing;
+		}
+		if (!create) {
+			try (MemoryStack stack = stackPush()) {
+				IntBuffer handle = stack.mallocInt(1);
+				int rc = mdb_dbi_open(writeTxn,
+						TripleIndex.nativeDatabaseName("term-" + specification, true), 0, handle);
+				if (rc == MDB_NOTFOUND) {
+					return null;
+				}
+				E(rc);
+			}
+		}
+		TripleIndex index = new TripleIndex("term-" + specification, specification, false, env, writeTxn,
+				(txn, name, ignored) -> openDatabaseWithTxn(txn, name, create ? MDB_CREATE : 0));
+		openedTermIndexes.put(specification, index);
+		return index;
+	}
+
+	private void registerTermStagingIndexes(TermIndexBuild build) throws IOException {
+		List<TripleIndex> targets = new ArrayList<>(tripleTermIndexes);
+		for (String spec : TripleIndex.orderIndexSpecs(build.target())) {
+			if (!build.source().contains(spec)) {
+				targets.add(openTermMaintenanceIndex(spec, true));
+			}
+		}
+		termWriteIndexes = List.copyOf(targets);
+	}
+
+	private boolean enterStandaloneValueWriter() throws IOException {
+		synchronized (writerAdmission) {
+			int depth = standaloneWriterAdmissions.get();
+			if (depth != 0) {
+				standaloneWriterAdmissions.set(depth + 1);
+				standaloneWritersInFlight++;
+				return true;
+			}
+			while (termMaintenanceWriterActive && Thread.currentThread() != termIndexMaintenanceThread
+					|| nativeMapGrowthOwner != null && nativeMapGrowthOwner != Thread.currentThread()
+					|| retirementWriterAdmission != null && retirementWriterAdmission.owner != Thread.currentThread()) {
+				try {
+					writerAdmission.wait();
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					throw new IOException("Interrupted while awaiting term-index maintenance", interrupted);
+				}
+			}
+			if (writeTxn != 0L) {
+				return false;
+			}
+			if (env == 0L || shuttingDown && !Thread.holdsLock(this)) {
+				throw new IOException("ValueStore is closed");
+			}
+			standaloneWritersInFlight++;
+			standaloneWriterAdmissions.set(1);
+			return true;
+		}
+	}
+
+	private void leaveStandaloneValueWriter(boolean admitted) {
+		if (admitted) {
+			synchronized (writerAdmission) {
+				int depth = standaloneWriterAdmissions.get() - 1;
+				if (depth == 0) {
+					standaloneWriterAdmissions.remove();
+				} else {
+					standaloneWriterAdmissions.set(depth);
+				}
+				standaloneWritersInFlight--;
+				writerAdmission.notifyAll();
+			}
+		}
+	}
+
+	/** Opens only after the owning repository has completed its readiness measurement. */
+	void startIndexRebuildAfterStoreInitialization() {
+		if (!valueStoreInitializationComplete) {
+			throw new IllegalStateException("ValueStore startup initialization is incomplete");
+		}
+		termIndexMaintenanceReady = true;
+		txnManager.setReaderRetirementListener(this::signalTermIndexMaintenance);
+		startTermIndexMaintenanceWorker();
+	}
+
+	void requestTermIndexRebuild(String specifications) throws IOException {
+		Set<String> requested = TripleIndex.parseIndexSpecList(specifications);
+		requested.addAll(TripleIndex.parseIndexSpecList(DEFAULT_TRIPLE_TERM_INDEXES));
+		if (requested.size() > MAX_TERM_INDEXES) {
+			throw new IOException("At most " + MAX_TERM_INDEXES + " triple-term indexes can be active");
+		}
+		requestedTermIndexSpecs = Collections.unmodifiableSet(new LinkedHashSet<>(requested));
+		termIndexMaintenanceFailure = null;
+		startTermIndexMaintenanceWorker();
+		signalTermIndexMaintenance();
+	}
+
+	private void startTermIndexMaintenanceWorker() {
+		synchronized (termIndexMaintenanceMonitor) {
+			if (!termIndexMaintenanceReady || termIndexMaintenanceCancelled || env == 0L
+					|| termIndexMaintenanceFailure != null || !termIndexMaintenanceCompletion.isDone()
+					|| termIndexBuild == null && (requestedTermIndexSpecs == null
+							|| requestedTermIndexSpecs.equals(activeTermIndexSpecs()))) {
+				return;
+			}
+			CompletableFuture<Void> completion = new CompletableFuture<>();
+			Thread worker = new Thread(() -> {
+				try {
+					runTermIndexMaintenance();
+				} finally {
+					completion.complete(null);
+					// A request may arrive after the old loop observed completion but before this terminal handoff.
+					startTermIndexMaintenanceWorker();
+					signalTermIndexMaintenance();
+					scheduleStartupValueOverlay();
+					signalValueOverlayWriterCompleted();
+				}
+			}, "rdf4j-lmdb-term-index-maintenance");
+			worker.setDaemon(true);
+			termIndexMaintenanceCompletion = completion;
+			termIndexMaintenanceThread = worker;
+			worker.start();
+		}
+	}
+
+	String indexRebuildStatus() {
+		Throwable failure = termIndexMaintenanceFailure;
+		if (failure != null) {
+			return "FAILED: " + failure.getMessage();
+		}
+		TermIndexBuild build = termIndexBuild;
+		if (build == null
+				&& (requestedTermIndexSpecs == null || requestedTermIndexSpecs.equals(activeTermIndexSpecs()))) {
+			return termIndexMaintenanceCompletion.isDone() ? "IDLE" : "FINISHING";
+		}
+		if (!termIndexMaintenanceReady) {
+			return "QUEUED";
+		}
+		return build == null ? "QUEUED" : switch (build.phase()) {
+		case TermIndexBuild.RESET -> "RESETTING";
+		case TermIndexBuild.COPY -> "BUILDING";
+		default -> "CLEANUP";
+		};
+	}
+
+	boolean awaitIndexRebuild(long timeout, TimeUnit unit) throws IOException, InterruptedException {
+		long remaining = unit.toNanos(timeout);
+		long deadline = System.nanoTime() + remaining;
+		synchronized (termIndexMaintenanceMonitor) {
+			while (!indexRebuildStatus().equals("IDLE")) {
+				if (termIndexMaintenanceFailure != null) {
+					throw new IOException("Triple-term index maintenance failed", termIndexMaintenanceFailure);
+				}
+				if (remaining <= 0L || termIndexMaintenanceCancelled) {
+					return false;
+				}
+				TimeUnit.NANOSECONDS.timedWait(termIndexMaintenanceMonitor, remaining);
+				remaining = deadline - System.nanoTime();
+			}
+			return true;
+		}
+	}
+
+	void setTermIndexMaintenanceObserver(Consumer<String> observer) {
+		termIndexMaintenanceObserver = observer;
+	}
+
+	private void observeTermIndexMaintenance(String phase) {
+		Consumer<String> observer = termIndexMaintenanceObserver;
+		if (observer != null) {
+			observer.accept(phase);
+		}
+	}
+
+	private void signalTermIndexMaintenance() {
+		Thread worker = termIndexMaintenanceThread;
+		if (worker != null && worker != Thread.currentThread()) {
+			LockSupport.unpark(worker);
+		}
+		synchronized (termIndexMaintenanceMonitor) {
+			termIndexMaintenanceSignal++;
+			termIndexMaintenanceMonitor.notifyAll();
+		}
+	}
+
+	private boolean claimTermMaintenanceWriter() throws InterruptedException {
+		synchronized (writerAdmission) {
+			while (!termIndexMaintenanceCancelled && !shuttingDown
+					&& (writeTxn != 0L || writerPublication != null || writerStartsInFlight != 0
+							|| standaloneWritersInFlight != 0 || nativeMapGrowthOwner != null
+							|| retirementWriterAdmission != null)) {
+				writerAdmission.wait();
+			}
+			if (termIndexMaintenanceCancelled || shuttingDown || env == 0L) {
+				return false;
+			}
+			termMaintenanceWriterActive = true;
+			return true;
+		}
+	}
+
+	private void runTermIndexMaintenance() {
+		try {
+			while (!termIndexMaintenanceCancelled) {
+				long waitSignal;
+				synchronized (termIndexMaintenanceMonitor) {
+					waitSignal = termIndexMaintenanceSignal;
+				}
+				TermIndexBuild before = termIndexBuild;
+				if (before != null && before.phase() == TermIndexBuild.CLEANUP
+						&& !before.target().equals(activeTermIndexSpecs())) {
+					// A failed post-commit publication leaves the durable target authoritative. Reconcile it before
+					// retiring a tree or deriving the source of a newer request from the old in-memory layout.
+					publishTermQueryGeneration(before.target(), lastTrustedNativeTransactionId, environmentGeneration);
+				}
+				Set<String> desired = requestedTermIndexSpecs;
+				boolean changedRequest = desired != null && (before == null ? !desired.equals(activeTermIndexSpecs())
+						: before.phase() != TermIndexBuild.CLEANUP && !desired.equals(before.target()));
+				if (before == null && !changedRequest) {
+					return;
+				}
+				ReindexBatch batch = before != null && before.phase() == TermIndexBuild.COPY && !changedRequest
+						? readReindexBatch(tripleTermSpocIndex, before.afterKey())
+						: null;
+				if (batch != null) {
+					observeTermIndexMaintenance("copy-read");
+				}
+				if (!claimTermMaintenanceWriter()) {
+					return;
+				}
+				boolean waitForReaders = false;
+				boolean waitForNativeReaders = false;
+				boolean growMap = false;
+				boolean committed = false;
+				Set<String> publishTarget = null;
+				long publishTransaction = -1L;
+				long publishEnvironment = environmentGeneration;
+				List<TripleIndex> priorTargets = termWriteIndexes;
+				Set<String> priorOpened = Set.copyOf(openedTermIndexes.keySet());
+				long reservation = Math.max(LmdbUtil.MIN_FREE_SPACE,
+						(long) TERM_INDEX_REBUILD_BATCH_SIZE * TERM_INDEX_REBUILD_BYTES_PER_RECORD
+								* Math.max(1, desired == null ? 1 : desired.size()));
+				try {
+					if (requiresResizeForEstimatedWrite(reservation)) {
+						growMap = true;
+					} else {
+						startTransaction(false, DictionaryTransactionPurpose.DERIVED_INDEX);
+						if (changedRequest) {
+							termIndexBuild = new TermIndexBuild(activeTermIndexSpecs(), desired,
+									TermIndexBuild.RESET, null, 0L, referenceCountGeneration);
+							termWriteIndexes = tripleTermIndexes;
+						} else if (before.phase() == TermIndexBuild.RESET) {
+							if (resetTermStagingBatch(before)) {
+								registerTermStagingIndexes(before);
+								termIndexBuild = before.at(TermIndexBuild.COPY, null);
+								observeTermIndexMaintenance("dual-write-registered");
+							}
+						} else if (before.phase() == TermIndexBuild.COPY) {
+							copyTermStagingBatch(before, batch);
+							termIndexBuild = before.at(TermIndexBuild.COPY, batch.lastSourceKey());
+							if (batch.lastBatch()) {
+								verifyTermStageCounts(before);
+								writeTermIndexManifest(before.target());
+								termIndexBuild = before.at(TermIndexBuild.CLEANUP, null);
+							}
+						} else {
+							TermCleanupResult cleanup = cleanupTermIndexesBatch(before);
+							waitForReaders = cleanup == TermCleanupResult.GENERATION_READERS;
+							waitForNativeReaders = cleanup == TermCleanupResult.NATIVE_READERS;
+						}
+						long queryHorizon = termIndexGenerations.get(termIndexGenerations.size() - 1)
+								.firstTransaction();
+						// The first pinned-generation cleanup may commit only metadata/proof to admit a new cohort;
+						// its retired trees remain untouched until the finite older cohort releases them.
+						boolean advanceQueryHorizon = waitForReaders && !waitForNativeReaders
+								&& lastTrustedNativeTransactionId < queryHorizon;
+						if ((waitForReaders || waitForNativeReaders) && !advanceQueryHorizon
+								|| termIndexMaintenanceCancelled) {
+							rollback();
+						} else {
+							// Finish native ownership before waiting for readers. A reader may itself need a standalone
+							// writer, so it must never be drained while this maintenance admission excludes that
+							// writer.
+							endTransaction(true, false);
+							committed = true;
+							if (before != null && before.phase() == TermIndexBuild.COPY
+									&& termIndexBuild != null && termIndexBuild.phase() == TermIndexBuild.CLEANUP) {
+								publishTarget = before.target();
+								publishTransaction = lastTrustedNativeTransactionId;
+							}
+						}
+					}
+				} catch (IOException | InterruptedException | RuntimeException | Error failure) {
+					termIndexBuild = before;
+					termWriteIndexes = priorTargets;
+					openedTermIndexes.keySet().retainAll(priorOpened);
+					if (writeTxn != 0L) {
+						rollback();
+					}
+					if (failure instanceof LmdbUtil.MapFullException && autoGrow) {
+						growMap = true;
+					} else {
+						throw failure;
+					}
+				} finally {
+					synchronized (writerAdmission) {
+						termMaintenanceWriterActive = false;
+						writerAdmission.notifyAll();
+					}
+					// Batch progress wakes status waiters without inventing a reader-retirement notification.
+					synchronized (termIndexMaintenanceMonitor) {
+						termIndexMaintenanceMonitor.notifyAll();
+					}
+				}
+				if (growMap) {
+					// Capacity quiescence can itself await readers or an owning-store publisher. Neither resource
+					// may be awaited while standalone creation is excluded by maintenance writer admission.
+					observeTermIndexMaintenance("before-map-growth");
+					if (growTermMaintenanceMap(reservation)) {
+						observeTermIndexMaintenance("map-grown");
+					}
+					continue;
+				}
+				if (committed) {
+					resetReadersAfterWrite();
+				}
+				if (publishTarget != null) {
+					observeTermIndexMaintenance("before-publication");
+					publishTermQueryGeneration(publishTarget, publishTransaction, publishEnvironment);
+					observeTermIndexMaintenance("published");
+				}
+				if (before != null && before.phase() == TermIndexBuild.CLEANUP) {
+					observeTermIndexMaintenance(
+							waitForReaders || waitForNativeReaders ? "cleanup-readers" : "cleanup-batch");
+				}
+				if (waitForNativeReaders && !termIndexMaintenanceCancelled) {
+					// A scoped Txn retires before its caller releases the read barrier. Its retirement notification
+					// can therefore arrive too early for tryWriteLock. Await the actual barrier outside writer
+					// admission instead of parking for a second retirement notification that may never occur.
+					var manager = txnManager.lockManager();
+					long stamp = manager.writeLock();
+					manager.unlockWrite(stamp);
+				}
+				if (waitForReaders && !termIndexMaintenanceCancelled) {
+					synchronized (termIndexMaintenanceMonitor) {
+						while (termIndexMaintenanceSignal == waitSignal && !termIndexMaintenanceCancelled
+								&& termIndexBuild != null) {
+							termIndexMaintenanceMonitor.wait();
+						}
+					}
+				}
+			}
+		} catch (InterruptedException interrupted) {
+			if (!termIndexMaintenanceCancelled) {
+				termIndexMaintenanceFailure = interrupted;
+			}
+			Thread.currentThread().interrupt();
+		} catch (IOException | RuntimeException | Error failure) {
+			termIndexMaintenanceFailure = failure;
+			logger.warn("Triple-term index maintenance failed; committed indexes remain active", failure);
+			if (failure instanceof Error fatal) {
+				throw fatal;
+			}
+		}
+	}
+
+	private boolean resetTermStagingBatch(TermIndexBuild build) throws IOException {
+		for (String spec : TripleIndex.orderIndexSpecs(build.target())) {
+			if (!build.source().contains(spec)) {
+				TripleIndex index = openTermMaintenanceIndex(spec, true);
+				if (deleteTermIndexBatch(index)) {
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	/** Returns whether entries were removed. Each transaction deletes at most the fixed native batch bound. */
+	private boolean deleteTermIndexBatch(TripleIndex index) throws IOException {
+		try (MemoryStack stack = stackPush()) {
+			PointerBuffer pointer = stack.mallocPointer(1);
+			E(mdb_cursor_open(writeTxn, index.getDB(true), pointer));
+			long cursor = pointer.get(0);
+			try {
+				MDBVal key = MDBVal.calloc(stack);
+				MDBVal value = MDBVal.calloc(stack);
+				int rc = mdb_cursor_get(cursor, key, value, MDB_FIRST);
+				int removed = 0;
+				while (rc == MDB_SUCCESS && removed < TERM_INDEX_REBUILD_BATCH_SIZE) {
+					E(mdb_cursor_del(cursor, 0));
+					removed++;
+					rc = mdb_cursor_get(cursor, key, value, MDB_NEXT);
+				}
+				if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+					E(rc);
+				}
+				return removed != 0;
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+		}
+	}
+
+	private void copyTermStagingBatch(TermIndexBuild build, ReindexBatch batch) throws IOException {
+		try (MemoryStack stack = stackPush()) {
+			MDBVal source = MDBVal.calloc(stack);
+			MDBVal target = MDBVal.calloc(stack);
+			MDBVal empty = MDBVal.calloc(stack);
+			ByteBuffer sourceKey = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			ByteBuffer targetKey = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			for (int row = 0; row < batch.recordCount(); row++) {
+				int offset = row * 4;
+				long[] quads = batch.quads();
+				sourceKey.clear();
+				tripleTermSpocIndex.toKey(sourceKey, quads[offset], quads[offset + 1], quads[offset + 2],
+						quads[offset + 3]);
+				source.mv_data(sourceKey.flip());
+				int rc = mdb_get(writeTxn, tripleTermSpocIndex.getDB(true), source, empty);
+				if (rc == MDB_NOTFOUND) {
+					continue;
+				}
+				E(rc);
+				for (String specification : build.target()) {
+					if (!build.source().contains(specification)) {
+						TripleIndex index = openedTermIndexes.get(specification);
+						targetKey.clear();
+						index.toKey(targetKey, quads[offset], quads[offset + 1], quads[offset + 2], quads[offset + 3]);
+						target.mv_data(targetKey.flip());
+						E(mdb_put(writeTxn, index.getDB(true), target, empty, 0));
+					}
+				}
+			}
+		}
+	}
+
+	private void verifyTermStageCounts(TermIndexBuild build) throws IOException {
+		try (MemoryStack stack = stackPush()) {
+			MDBStat stat = MDBStat.malloc(stack);
+			E(mdb_stat(writeTxn, tripleTermSpocIndex.getDB(true), stat));
+			long expected = stat.ms_entries();
+			for (String specification : build.target()) {
+				if (!build.source().contains(specification)) {
+					E(mdb_stat(writeTxn, openedTermIndexes.get(specification).getDB(true), stat));
+					if (stat.ms_entries() != expected) {
+						throw new IOException("Triple-term staging membership count differs from live SPOC authority");
+					}
+				}
+			}
+		}
+	}
+
+	private void publishTermQueryGeneration(Set<String> target, long nativeTransaction, long expectedEnvironment)
+			throws IOException, InterruptedException {
+		List<TripleIndex> replacement = new ArrayList<>();
+		for (String specification : TripleIndex.orderIndexSpecs(target)) {
+			replacement.add(openedTermIndexes.get(specification));
+		}
+		List<TripleIndex> immutable = List.copyOf(replacement);
+		var manager = txnManager.lockManager();
+		long stamp = manager.writeLock();
+		try {
+			if (environmentGeneration != expectedEnvironment || termIndexBuild == null
+					|| termIndexBuild.phase() != TermIndexBuild.CLEANUP || !termIndexBuild.target().equals(target)) {
+				throw new IOException("Triple-term generation changed before query publication");
+			}
+			LmdbUtil.readTransaction(env, (stack, txn) -> {
+				MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(TERM_INDEX_MANIFEST_KEY));
+				MDBVal value = MDBVal.calloc(stack);
+				if (mdb_txn_id(txn) < nativeTransaction
+						|| E(mdb_get(txn, termIndexManifestDbi, key, value)) != MDB_SUCCESS
+						|| !decodeTermIndexManifest(value.mv_data().duplicate()).equals(target)) {
+					throw new IOException("Committed triple-term manifest changed before query publication");
+				}
+				return null;
+			});
+			long firstNewReaderTransaction;
+			try {
+				// Readers admitted after the manifest commit but before this barrier chose the old generation.
+				// A later cleanup commit advances fresh readers to this horizon without any foreground write.
+				firstNewReaderTransaction = Math.addExact(lastTransactionId(), 1L);
+			} catch (ArithmeticException overflow) {
+				throw new IOException("Triple-term query generation transaction ID overflow", overflow);
+			}
+			List<TermQueryGeneration> generations = new ArrayList<>(termIndexGenerations);
+			generations.add(new TermQueryGeneration(firstNewReaderTransaction, immutable));
+			termIndexGenerations = List.copyOf(generations);
+			tripleTermIndexes = immutable;
+			termWriteIndexes = immutable;
+			properties.setTripleTermIndexes(String.join(",", TripleIndex.orderIndexSpecs(target)));
+		} finally {
+			manager.unlockWrite(stamp);
+		}
+	}
+
+	private enum TermCleanupResult {
+		PROGRESSED,
+		GENERATION_READERS,
+		NATIVE_READERS
+	}
+
+	/** Distinguishes a pinned query generation from a read barrier whose unlock has no retirement notification. */
+	private TermCleanupResult cleanupTermIndexesBatch(TermIndexBuild build) throws IOException, InterruptedException {
+		var manager = txnManager.lockManager();
+		long stamp = manager.tryWriteLock();
+		if (stamp == 0L) {
+			return TermCleanupResult.NATIVE_READERS;
+		}
+		try {
+			List<TermQueryGeneration> generations = termIndexGenerations;
+			long cutoff = generations.get(generations.size() - 1).firstTransaction();
+			if (txnManager.hasActiveReadersBefore(cutoff)) {
+				return TermCleanupResult.GENERATION_READERS;
+			}
+			termIndexGenerations = List.of(generations.get(generations.size() - 1));
+		} finally {
+			manager.unlockWrite(stamp);
+		}
+		for (String spec : ALL_TERM_INDEX_SPECS) {
+			if (!build.target().contains(spec)) {
+				TripleIndex index = openTermMaintenanceIndex(spec, false);
+				if (index != null && deleteTermIndexBatch(index)) {
+					return TermCleanupResult.PROGRESSED;
+				}
+			}
+		}
+		termIndexBuild = null;
+		return TermCleanupResult.PROGRESSED;
+	}
+
+	private boolean growTermMaintenanceMap(long reservation) throws IOException {
+		LmdbSailStore.MapGrowthAttempt attempt = beginMapGrowthAttempt();
+		try (attempt) {
+			if (attempt != null) {
+				attempt.requestQuiescence(LmdbSailStore.MapResizeKind.VALUE_STORE);
+			}
+			// Admission was released before quiescence. A new writer may now own the dictionary; the existing
+			// growth gate leaves it intact, and the next TERM admission waits for its complete publication.
+			return growMapForEstimatedWrite(reservation, attempt);
+		}
+	}
+
+	private void stopTermIndexMaintenance() throws IOException {
+		termIndexMaintenanceCancelled = true;
+		Thread worker = termIndexMaintenanceThread;
+		if (worker == null || worker == Thread.currentThread()) {
+			return;
+		}
+		worker.interrupt();
+		synchronized (writerAdmission) {
+			writerAdmission.notifyAll();
+		}
+		signalTermIndexMaintenance();
+		try {
+			worker.join();
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while stopping triple-term index maintenance", interrupted);
+		}
 	}
 
 	private void removeOrphanedTermIndexes(Set<String> activeIndexSpecs) throws IOException {
@@ -3518,7 +4499,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		for (String fieldSeq : removedIndexSpecs) {
 			currentIndexes.remove(fieldSeq);
 		}
-		tripleTermIndexes.clear();
+		tripleTermIndexes = List.of();
 		for (TripleIndex index : replacementIndexes) {
 			registerTripleTermIndex(new String(index.getFieldSeq()), index);
 		}
@@ -3619,12 +4600,15 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private ReindexBatch readReindexBatch(TripleIndex sourceIndex, byte[] afterSourceKey) throws IOException {
-		return LmdbUtil.readTransaction(env, writeTxn, (stack, txn) -> {
+		// Native key buffers remain mapped until this bounded batch has been decoded. Keep the manager's native
+		// read barrier through the complete copy so a concurrent capacity reservation cannot remap those buffers.
+		return txnManager.doWithFreshPriority((stack, txn) -> {
 			long cursor = 0;
 			try {
 				PointerBuffer pointer = stack.mallocPointer(1);
 				E(mdb_cursor_open(txn, sourceIndex.getDB(true), pointer));
 				cursor = pointer.get(0);
+				observeTermIndexMaintenance("copy-read-open");
 
 				MDBVal key = MDBVal.calloc(stack);
 				MDBVal value = MDBVal.calloc(stack);
@@ -3691,6 +4675,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private void growMapAfterReindexMapFull(long requiredBytes) throws IOException {
+		WriterTransaction transaction = currentWriterTransaction();
 		if (isFrozenReplay()) {
 			throw frozenCapacity(null);
 		}
@@ -3699,45 +4684,76 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			if (growthAttempt != null) {
 				growthAttempt.requestQuiescence(LmdbSailStore.MapResizeKind.VALUE_STORE);
 			}
-			growMapAfterReindexMapFullAfterQuiescence(requiredBytes, growthAttempt);
+			growMapAfterReindexMapFullAfterQuiescence(requiredBytes, growthAttempt, true, transaction);
 		}
 	}
 
 	private void growMapAfterReindexMapFullAfterQuiescence(long requiredBytes,
-			LmdbSailStore.MapGrowthAttempt growthAttempt) throws IOException {
-		growMapAfterReindexMapFullAfterQuiescence(requiredBytes, growthAttempt, true);
-	}
-
-	private void growMapAfterReindexMapFullAfterQuiescence(long requiredBytes,
-			LmdbSailStore.MapGrowthAttempt growthAttempt, boolean restartWriter) throws IOException {
-		endTransaction(false, false);
+			LmdbSailStore.MapGrowthAttempt growthAttempt, boolean restartWriter, WriterTransaction transaction)
+			throws IOException {
 		if (!autoGrow) {
 			throw new IOException("LMDB map is full while rebuilding triple-term indexes");
 		}
+		// The caller carries its admitted identity across quiescence. Never discover authority from whatever
+		// publication happens to be current after that wait, and retain admission across native replacement.
 		var lockManager = txnManager.lockManager();
 		boolean readLocked = readContext.get().hasReadLock;
 		if (readLocked) {
 			lockManager.unlockRead(StampedLongAdderLockManager.READ_LOCK_STAMP);
 		}
+		boolean releaseGrowthOwner = false;
+		try {
+			releaseGrowthOwner = retainNativeMapGrowthOwner(transaction);
+			if (transaction != null) {
+				transaction.invoke(() -> endTransaction(false, false));
+			}
+			growMapAfterReindexMapFullAdmitted(requiredBytes, growthAttempt);
+			if (restartWriter) {
+				startTransaction(false, transaction);
+			}
+		} finally {
+			if (readLocked) {
+				// Restore the enclosing reader scope even when cancellation interrupted its admission wait.
+				boolean interrupted = Thread.interrupted();
+				try {
+					while (true) {
+						try {
+							lockManager.readLock();
+							break;
+						} catch (InterruptedException cancellation) {
+							interrupted = true;
+						}
+					}
+				} finally {
+					if (interrupted) {
+						Thread.currentThread().interrupt();
+					}
+				}
+			}
+			if (releaseGrowthOwner) {
+				synchronized (writerAdmission) {
+					nativeMapGrowthOwner = null;
+					writerAdmission.notifyAll();
+				}
+			}
+		}
+	}
+
+	private void growMapAfterReindexMapFullAdmitted(long requiredBytes,
+			LmdbSailStore.MapGrowthAttempt growthAttempt) throws IOException {
+		var lockManager = txnManager.lockManager();
 		long stamp = 0;
 		try {
 			stamp = lockManager.writeLock();
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			throw new IOException(e);
-		} finally {
-			if (stamp == 0 && readLocked) {
-				try {
-					lockManager.readLock();
-				} catch (InterruptedException e) {
-					Thread.currentThread().interrupt();
-				}
-			}
 		}
 		try {
 			detachStableReadSnapshots(growthAttempt);
 			txnManager.deactivate();
 			try {
+				long previousMapSize = mapSize;
 				long newMapSize = growthPolicy.grownMapSize(mapSize, pageSize,
 						Math.max(requiredBytes, LmdbUtil.MIN_FREE_SPACE));
 				if (growthAttempt != null) {
@@ -3746,28 +4762,21 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				E(mdb_env_set_mapsize(env, newMapSize));
 				mapSize = newMapSize;
 				nativeMapGeneration++;
-				if (restartWriter) {
-					startTransaction(false);
+				if (newMapSize > previousMapSize) {
+					bulkMapGrowthCount++;
 				}
 			} finally {
 				txnManager.activate();
 			}
 		} finally {
 			lockManager.unlockWrite(stamp);
-			if (readLocked) {
-				try {
-					lockManager.readLock();
-				} catch (InterruptedException e) {
-					Thread.currentThread().interrupt();
-					throw new IOException(e);
-				}
-			}
 		}
 	}
 
 	private void checkpointTermIndexWriter() throws IOException {
+		WriterTransaction transaction = currentWriterTransaction();
 		endTransaction(true, true);
-		startTransaction(false);
+		startTransaction(false, transaction);
 	}
 
 	private record ReindexBatch(long[] quads, int recordCount, byte[] lastSourceKey, boolean lastBatch) {
@@ -3787,7 +4796,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	private long nextId(byte valueType, CoreDatatype coreDatatype) throws IOException {
 		int idType = valueIdType(valueType);
-		if (freeIdsAvailable) {
+		if (freeIdsAvailable && isValueReclamationEnabled()) {
 			// next id from store
 			Long reusedId = writeTransaction((stack, txn) -> {
 				long cursor = 0;
@@ -3832,6 +4841,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				writerReusedIds.add(reused);
 				return reused;
 			}
+		}
+		if (nextId <= 0L || nextId >= ReferenceCountProof.MAX_NEXT_ID) {
+			throw new IOException("ValueStore allocation high-water mark exceeds the reference ID capacity");
 		}
 		long result = nextId;
 		nextId++;
@@ -4114,6 +5126,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		try {
 			// Writer publication uses this same gate-before-admission order.
 			synchronized (writerAdmission) {
+				beforeValueScopeAdmissionForTest();
 				if (shuttingDown || env == 0) {
 					throw new SailException("Cannot open a value resolution scope while the store is closing");
 				}
@@ -4145,6 +5158,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 	}
 
+	/** Observation hook inside the dictionary identity-admission monitor. */
+	void beforeValueScopeAdmissionForTest() {
+	}
+
 	EpochReservation reserveValueEpoch(ValueStoreRevision.Lazy revision) {
 		EpochReservation reservation = lazyRevisions.reserve(revision);
 		if (reservation == null) {
@@ -4154,22 +5171,28 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private static void checkValueScopeDeadline(QueryExecutionDeadline deadline) {
-		if (deadline != null && deadline.remainingMillis() <= 0L) {
+		if (deadline != null && deadline.isExpired()) {
 			throw new QueryInterruptedException("Query evaluation took too long");
 		}
 	}
 
 	private void acquireAssociationGate(QueryExecutionDeadline deadline) throws IOException {
 		checkValueScopeDeadline(deadline);
+		// Expiry interrupts this wait, so nothing here reads a clock to size a timeout.
+		QueryExecutionDeadline.ExpiryInterruption interruption = deadline == null ? null
+				: deadline.interruptOnExpiry();
 		try {
-			if (deadline == null) {
-				associationGate.lockInterruptibly();
-			} else if (!associationGate.tryLock(deadline.remainingMillis(), TimeUnit.MILLISECONDS)) {
+			associationGate.lockInterruptibly();
+		} catch (InterruptedException failure) {
+			if (interruption != null && interruption.disarm()) {
 				throw new QueryInterruptedException("Query evaluation took too long");
 			}
-		} catch (InterruptedException failure) {
 			Thread.currentThread().interrupt();
 			throw new IOException("Interrupted while capturing dictionary identity", failure);
+		}
+		if (interruption != null && interruption.disarm()) {
+			// Expiry landed after acquisition: clear its interrupt; the check below releases the gate.
+			Thread.interrupted();
 		}
 		try {
 			checkValueScopeDeadline(deadline);
@@ -4514,6 +5537,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 	}
 
+	record ValueProtectionSnapshot(long readerReservations, long legacyEpochs) {
+	}
+
 	/** One deterministic owner of an epoch horizon; models hold descriptors rather than these reservations. */
 	static final class EpochReservation implements SailClosable {
 		private ValueEpoch epoch;
@@ -4540,6 +5566,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		private final ArrayDeque<ValueEpoch> retiredEpochs = new ArrayDeque<>();
 		private long nextEpoch;
 		private ValueEpoch currentEpoch;
+		private long protectedReservations;
+		private long legacyEpochs;
 		private volatile long nextValueEvictionTime;
 
 		private LazyRevisionTracker(Set<Long> unusedRevisionIds, long evictionInterval) {
@@ -4564,6 +5592,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					return null;
 				}
 				epoch.reservations++;
+				protectedReservations++;
 				return new EpochReservation(epoch);
 			}
 		}
@@ -4574,6 +5603,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				for (ValueEpoch epoch : epochs.values()) {
 					if (epoch.protectedIds) {
 						epoch.reservations++;
+						protectedReservations++;
 						return new EpochReservation(epoch);
 					}
 				}
@@ -4595,6 +5625,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					return false;
 				}
 				epoch.legacy = true;
+				legacyEpochs++;
 				cleaner.register(raw, epoch);
 				raw.markTracked();
 				return true;
@@ -4611,6 +5642,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			synchronized (unusedRevisionIds) {
 				assert epoch.reservations > 0;
 				epoch.reservations--;
+				protectedReservations--;
 				updateHorizon();
 			}
 		}
@@ -4618,7 +5650,20 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		private void collected(ValueEpoch epoch) {
 			synchronized (unusedRevisionIds) {
 				epoch.legacy = false;
+				legacyEpochs--;
 				updateHorizon();
+			}
+		}
+
+		boolean hasProtectedValues() {
+			synchronized (unusedRevisionIds) {
+				return protectedReservations != 0L || legacyEpochs != 0L;
+			}
+		}
+
+		ValueProtectionSnapshot protectionSnapshotForTest() {
+			synchronized (unusedRevisionIds) {
+				return new ValueProtectionSnapshot(protectedReservations, legacyEpochs);
 			}
 		}
 
@@ -4983,11 +6028,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	 * awaitValueOverlayReady(...) for a deterministic point after which the warm-up has definitely finished
 	 * (successfully, refused for capacity, or cancelled by a concurrent close/write).
 	 */
-	private ValueOverlayWarmup warmConfiguredValueOverlay() {
-		return warmConfiguredValueOverlay(null, null);
+	private ValueOverlayWarmup warmConfiguredValueOverlay(Object request, Object requestedGeneration) {
+		CompressedValueOverlay.Options options = configuredValueOverlayWarmupOptions();
+		return options == null ? null : warmConfiguredValueOverlay(request, requestedGeneration, options);
 	}
 
-	private ValueOverlayWarmup warmConfiguredValueOverlay(Object request, Object requestedGeneration) {
+	private CompressedValueOverlay.Options configuredValueOverlayWarmupOptions() {
 		valueOverlayWarmupFailure = null;
 		if (valueOverlayMaintenanceDeferred) {
 			return null;
@@ -5016,15 +6062,18 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			logger.warn("Ignoring negative rdf4j.lmdb.valueOverlay.maxBytes value '{}': using LMDB", budgetText);
 			return null;
 		}
-		CompressedValueOverlay.Options options;
 		try {
 			int reverseSlots = Integer.parseInt(System.getProperty("rdf4j.lmdb.valueOverlay.reverseSlots", "1048576"));
-			options = new CompressedValueOverlay.Options(budget, reverseSlots, 32, 64 << 10, 1 << 20, true, true);
+			return new CompressedValueOverlay.Options(budget, reverseSlots, 32, 64 << 10, 1 << 20, true, true);
 		} catch (IllegalArgumentException e) {
 			valueOverlayWarmupFailure = "Value overlay warm-up options invalid: " + e.getMessage();
 			logger.warn("Invalid compressed ValueStore overlay warm-up options; using LMDB", e);
 			return null;
 		}
+	}
+
+	private ValueOverlayWarmup warmConfiguredValueOverlay(Object request, Object requestedGeneration,
+			CompressedValueOverlay.Options options) {
 		synchronized (valueOverlayBuildAdmission) {
 			if (valueOverlayMaintenanceDeferred || valueOverlayBuildAdmissionClosed || env == 0
 					|| request != null && (initialImportOverlayRebuildRequest != request
@@ -5087,6 +6136,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		synchronized (valueOverlayBuildAdmission) {
 			valueOverlayMaintenanceDeferred = true;
 			valueOverlayCaptureDeferred = true;
+			startupValueOverlayRequested = false;
+			startupValueOverlayOptions = null;
 			initialImportOverlayRebuildRequest = null;
 			publiclyReleasedOverlayGeneration = null;
 			valueOverlayBuildAdmission.notifyAll();
@@ -5153,7 +6204,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			request = initialImportOverlayRebuildRequest;
 			if (request == null || initialImportOverlayRebuildWorker != null || valueOverlayMaintenanceDeferred
 					|| valueOverlayBuildAdmissionClosed || env == 0 || valueLookupGeneration == null
-					|| valueLookupGeneration != publiclyReleasedOverlayGeneration) {
+					|| valueLookupGeneration != publiclyReleasedOverlayGeneration || hasPendingTermIndexMutation()) {
 				return;
 			}
 			generation = publiclyReleasedOverlayGeneration;
@@ -5222,11 +6273,23 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 		long budget = unit.toNanos(timeout);
 		long started = System.nanoTime();
+		if (!valueOverlayEnabled) {
+			return false;
+		}
+		CompletableFuture<Void> scheduling = valueOverlayStartupScheduling;
+		if (scheduling != null) {
+			try {
+				scheduling.get(Math.max(0L, budget - (System.nanoTime() - started)), TimeUnit.NANOSECONDS);
+			} catch (TimeoutException | ExecutionException | CancellationException unavailable) {
+				return false;
+			}
+		}
 		while (true) {
 			CompletableFuture<Void> future;
 			boolean expired = false;
 			synchronized (valueOverlayBuildAdmission) {
-				if (initialImportOverlayRebuildRequest != null || initialImportOverlayRebuildWorker != null) {
+				if (startupValueOverlayRequested || initialImportOverlayRebuildRequest != null
+						|| initialImportOverlayRebuildWorker != null) {
 					long remaining = budget - (System.nanoTime() - started);
 					if (remaining > 0L) {
 						TimeUnit.NANOSECONDS.timedWait(valueOverlayBuildAdmission, remaining);
@@ -5243,7 +6306,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					// Refusal/failure uses LMDB; a requested successor is checked below within the same timeout.
 				}
 				synchronized (valueOverlayBuildAdmission) {
-					if ((initialImportOverlayRebuildRequest != null || initialImportOverlayRebuildWorker != null)
+					if ((startupValueOverlayRequested || initialImportOverlayRebuildRequest != null
+							|| initialImportOverlayRebuildWorker != null)
 							&& budget - (System.nanoTime() - started) > 0L) {
 						continue;
 					}
@@ -5258,6 +6322,32 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	boolean isValueOverlayWarmupInProgress() {
 		CompletableFuture<Void> future = valueOverlayWarmupFuture;
 		return future != null && !future.isDone();
+	}
+
+	/** Constant-time cached status; never starts work or reads the native dictionary. */
+	boolean hasPendingValueOverlayMaintenance() {
+		if (!valueOverlayEnabled) {
+			return false;
+		}
+		CompletableFuture<Void> scheduling = valueOverlayStartupScheduling;
+		if (scheduling != null && !scheduling.isDone()) {
+			return true;
+		}
+		synchronized (valueOverlayBuildAdmission) {
+			CompletableFuture<Void> future = valueOverlayWarmupFuture;
+			if (valueOverlayBuildsInFlight != 0 || valueOverlayWarmupActive
+					|| startupValueOverlayRequested
+					|| initialImportOverlayRebuildRequest != null || initialImportOverlayRebuildWorker != null
+					|| future != null && !future.isDone()) {
+				return true;
+			}
+		}
+		ValueOverlayRegistry registry = compressedValues;
+		if (registry == null) {
+			return false;
+		}
+		ValueOverlayRegistry.MaintenanceStats maintenance = registry.maintenanceStats();
+		return maintenance.scheduled() || maintenance.active();
 	}
 
 	/**
@@ -6085,6 +7175,13 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		return planningValueSnapshot();
 	}
 
+	/** A dictionary-only owner cannot borrow a new unrelated paired-domain observation. */
+	boolean hasDomainReadContext() {
+		ReadContext context = readContext.get();
+		return planningValueSnapshot.get() != null || context.borrowedTxn != 0L || context.hasReadLock
+				|| ValueResolutionScope.hasActiveExposure(this) || isWriteTransactionOwner();
+	}
+
 	/**
 	 * Gets the value for the specified ID.
 	 *
@@ -6455,6 +7552,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	void onBatchResolveDataBufferSliced() {
 	}
 
+	/** Inert observation of the actual overlay lease retained for a batch decode. */
+	void onBatchOverlayLeaseForTest(boolean acquired) {
+	}
+
 	private final class BatchValueResolver implements LmdbValue.Resolver {
 
 		private final ValueStoreRevision expectedRevision;
@@ -6482,6 +7583,14 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			this.stack = stack;
 			this.txn = txn;
 			overlay = borrowValueOverlay(txn);
+			try {
+				onBatchOverlayLeaseForTest(overlay != null);
+			} catch (RuntimeException | Error failure) {
+				if (overlay != null) {
+					overlay.close();
+				}
+				throw failure;
+			}
 			keyData = MDBVal.calloc(stack);
 			valueData = MDBVal.calloc(stack);
 			keyBuffer = idBuffer(stack);
@@ -6607,6 +7716,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	private void resizeMapInternal(long txn, long requiredSize) throws IOException {
 		if (autoGrow) {
+			WriterPublication publication = writerPublication;
+			boolean activeWriteTxn = writeTxn != 0L && txn == writeTxn && publication != null;
+			WriterTransaction transaction = activeWriteTxn ? publication.transaction : null;
+			TxnReplayPolicy.Decision decision = activeWriteTxn ? replayDecision : null;
 			if (coreDatatypeLiteralReferences && !deferNextIdPersistence) {
 				// Every normal/core-datatype writer persists the next-id counter in the same commit. Include that key
 				// before
@@ -6623,30 +7736,38 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			long occupied = LmdbUtil.getNewSize(pageSize, txn, 0L);
 			boolean growthRecommended = growthPolicy.requiresGrowth(mapSize, occupied, requiredSize);
 			boolean capacityRequired = growthPolicy.hardCapacityRequired(mapSize, occupied, requiredSize);
-			if (isFrozenReplay() && (growthRecommended || capacityRequired)) {
+			// Soft pressure schedules the ordinary writer drain; a complete frozen input needs abort/replay
+			// only when allocation would violate hard capacity. Other writing snapshots remain pinned meanwhile.
+			if (decision != null && decision.frozenReplay && capacityRequired) {
 				throw frozenCapacity(null);
 			}
-			if (growthRecommended && mapGrowthRequestListener != null) {
+			if (activeWriteTxn && growthRecommended && mapGrowthRequestListener != null) {
 				mapGrowthRequestListener.request(LmdbSailStore.MapResizeKind.VALUE_STORE,
 						saturatedEstimateAdd(occupied, requiredSize), false);
 			}
 			if (capacityRequired) {
-				if (mapGrowthRequestListener != null) {
+				if (activeWriteTxn && languageTagMigrationOwner == Thread.currentThread()) {
+					// Do not checkpoint a partially applied dictionary plan. The migration rolls this transaction back,
+					// grows outside the native writer, then replans from the already committed statement prefix.
+					throw new LanguageTagMigrationCapacityException(LmdbUtil.getNewSize(pageSize, txn, requiredSize));
+				}
+				if (activeWriteTxn && mapGrowthRequestListener != null) {
 					mapGrowthRequestListener.request(LmdbSailStore.MapResizeKind.VALUE_STORE,
 							saturatedEstimateAdd(occupied, requiredSize), true);
 				}
-				TxnReplayPolicy.Decision decision = replayDecision;
 				if (decision != null && decision.checkpoint) {
 					throw new LmdbNativeChunkFullException(LmdbSailStore.MapResizeKind.VALUE_STORE, null);
 				}
 				if (decision != null && !decision.track) {
-					growForTransactionRetry(requiredSize, null, decision);
+					growForTransactionRetry(requiredSize, null, decision, transaction);
 				}
 				LmdbSailStore.MapGrowthAttempt growthAttempt;
 				try {
-					growthAttempt = beginMapGrowthAttempt();
+					// Only this supplied native writer may suspend or project the application's continuation.
+					// An independent reservation waits for its own map-growth admission below.
+					growthAttempt = activeWriteTxn ? beginMapGrowthAttempt() : null;
 				} catch (LmdbTransactionRetryException unsafeContinuation) {
-					growForTransactionRetry(requiredSize, unsafeContinuation, decision);
+					growForTransactionRetry(requiredSize, unsafeContinuation, decision, transaction);
 					throw unsafeContinuation;
 				}
 				try (growthAttempt) {
@@ -6659,68 +7780,143 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 						requiredSize = growthAttempt.projectedUsedBytes(LmdbSailStore.MapResizeKind.VALUE_STORE,
 								requiredSize);
 					}
-					boolean activeWriteTxn = writeTxn != 0;
-					if (activeWriteTxn) {
-						// LMDB requires the active writer transaction to be committed before changing the map size.
-						// Notify
-						// the owning SailStore before that checkpoint can publish dictionary state ahead of its
-						// TripleStore.
-						resizeCheckpointListener.run();
+					if (!activeWriteTxn) {
+						// This is a committed read snapshot, even if a different writer currently owns the environment.
+						growMapAfterReindexMapFullAfterQuiescence(requiredSize, growthAttempt, false, null);
+						return;
 					}
-
-					var lockManager = txnManager.lockManager();
-					boolean readLocked = readContext.get().hasReadLock;
-					if (readLocked) {
-						lockManager.unlockRead(StampedLongAdderLockManager.READ_LOCK_STAMP);
-					}
-					long stamp;
-					try {
-						stamp = lockManager.writeLock();
-					} catch (InterruptedException e) {
-						throw new IOException(e);
-					}
-
+					boolean releaseGrowthOwner = retainNativeMapGrowthOwner(transaction);
 					try {
 						if (activeWriteTxn) {
-							endTransaction(true, true);
-						}
-						detachStableReadSnapshots(growthAttempt);
-						txnManager.deactivate();
-
-						long oldMapSize = mapSize;
-						long grownSize = growthPolicy.grownMapSize(mapSize, pageSize, requiredSize);
-
-						logger.info("Resizing map from {} to {}", oldMapSize, grownSize);
-
-						if (growthAttempt != null) {
-							growthAttempt.markFallbackMapResized(LmdbSailStore.MapResizeKind.VALUE_STORE);
-						}
-						E(mdb_env_set_mapsize(env, grownSize));
-						mapSize = grownSize;
-						if (grownSize > oldMapSize) {
-							bulkMapGrowthCount++;
-						}
-						nativeMapGeneration++;
-						if (activeWriteTxn) {
-							startTransaction(false);
+							// LMDB requires the active writer transaction to be committed before changing the map size.
+							// Notify
+							// the owning SailStore before that checkpoint can publish dictionary state ahead of its
+							// TripleStore.
+							resizeCheckpointListener.run();
+							if (shuttingDown) {
+								throw new IOException("ValueStore is closed");
+							}
 						}
 
-					} finally {
+						var lockManager = txnManager.lockManager();
+						boolean readLocked = readContext.get().hasReadLock;
+						if (readLocked) {
+							lockManager.unlockRead(StampedLongAdderLockManager.READ_LOCK_STAMP);
+						}
+						long stamp;
 						try {
-							txnManager.activate();
+							stamp = lockManager.writeLock();
+						} catch (InterruptedException e) {
+							throw new IOException(e);
+						}
+
+						try {
+							if (activeWriteTxn) {
+								transaction.invoke(() -> endTransaction(true, true));
+							}
+							detachStableReadSnapshots(growthAttempt);
+							txnManager.deactivate();
+
+							long oldMapSize = mapSize;
+							long grownSize = growthPolicy.grownMapSize(mapSize, pageSize, requiredSize);
+
+							logger.info("Resizing map from {} to {}", oldMapSize, grownSize);
+
+							if (growthAttempt != null) {
+								growthAttempt.markFallbackMapResized(LmdbSailStore.MapResizeKind.VALUE_STORE);
+							}
+							E(mdb_env_set_mapsize(env, grownSize));
+							mapSize = grownSize;
+							if (grownSize > oldMapSize) {
+								bulkMapGrowthCount++;
+							}
+							nativeMapGeneration++;
 						} finally {
-							lockManager.unlockWrite(stamp);
-							if (readLocked) {
-								try {
-									lockManager.readLock();
-								} catch (InterruptedException e) {
-									throw new IOException(e);
+							try {
+								txnManager.activate();
+							} finally {
+								lockManager.unlockWrite(stamp);
+								if (readLocked) {
+									try {
+										lockManager.readLock();
+									} catch (InterruptedException e) {
+										throw new IOException(e);
+									}
 								}
+							}
+						}
+						if (activeWriteTxn) {
+							// A replacement writer may wait for native admission. Growth ownership excludes foreign
+							// creation/maintenance without retaining the exclusive remap barrier through that wait.
+							startTransaction(false, transaction);
+						}
+					} finally {
+						if (releaseGrowthOwner) {
+							synchronized (writerAdmission) {
+								nativeMapGrowthOwner = null;
+								writerAdmission.notifyAll();
 							}
 						}
 					}
 				}
 			}
+		}
+	}
+
+	/** Retains an admitted resize across its native checkpoint, remap and replacement writer. */
+	private boolean retainNativeMapGrowthOwner() throws IOException {
+		synchronized (writerAdmission) {
+			Thread current = Thread.currentThread();
+			if (nativeMapGrowthOwner == current) {
+				return false;
+			}
+			if (nativeMapGrowthOwner != null) {
+				throw new IOException("ValueStore native resize already has another admitted owner");
+			}
+			if (retirementWriterAdmission != null && retirementWriterAdmission.owner != current) {
+				throw new IOException("ValueStore retirement already has an admitted owner");
+			}
+			nativeMapGrowthOwner = current;
+			return true;
+		}
+	}
+
+	private boolean retainNativeMapGrowthOwner(WriterTransaction transaction) throws IOException {
+		synchronized (writerAdmission) {
+			Thread current = Thread.currentThread();
+			if (transaction == null) {
+				// An independent reader has no publication to consume. Wait without its reader/remap barrier;
+				// the real writer must be able to commit and settle before we reserve native growth admission.
+				while (writerPublication != null || writeTxn != 0L
+						|| writerStartsInFlight != 0 && writerStartOwner != current
+						|| standaloneWritersInFlight > standaloneWriterAdmissions.get()
+						|| termMaintenanceWriterActive && termIndexMaintenanceThread != current
+						|| nativeMapGrowthOwner != null && nativeMapGrowthOwner != current
+						|| retirementWriterAdmission != null && retirementWriterAdmission.owner != current) {
+					if (env == 0L || shuttingDown && !Thread.holdsLock(this)) {
+						throw new IOException("ValueStore is closed");
+					}
+					try {
+						writerAdmission.wait();
+					} catch (InterruptedException cancellation) {
+						Thread.currentThread().interrupt();
+						throw new IOException("Interrupted while awaiting ValueStore map-growth admission",
+								cancellation);
+					}
+				}
+			}
+			if (nativeMapGrowthOwner == current) {
+				return false;
+			}
+			WriterPublication publication = writerPublication;
+			if ((publication == null ? transaction != null : publication.transaction != transaction)
+					|| writerStartsInFlight != 0 && writerStartOwner != current
+					|| standaloneWritersInFlight > standaloneWriterAdmissions.get()
+					|| termMaintenanceWriterActive && termIndexMaintenanceThread != current
+					|| retirementWriterAdmission != null && retirementWriterAdmission.owner != current) {
+				throw new IOException("ValueStore resize no longer owns its admitted writer transaction");
+			}
+			return retainNativeMapGrowthOwner();
 		}
 	}
 
@@ -6755,6 +7951,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		try {
 			readTransaction(env, (stack, txn) -> {
 				long requiredBytes = preparedValueReservation(stack, txn, footprint);
+				observePreparedValueReservationForTest(requiredBytes);
 				resizeForAllocation(txn, requiredBytes, activeWriteTxnCommitted);
 				return null;
 			});
@@ -6764,6 +7961,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				commitFreshValueTransaction(session);
 			}
 		}
+	}
+
+	/** Observes the computed batch footprint without changing its growth or writer-admission policy. */
+	void observePreparedValueReservationForTest(long requiredBytes) {
 	}
 
 	/** The same metadata and pending-reference budget completes native reservations and publication forecasts. */
@@ -6785,7 +7986,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			footprint.addNamedDatabase("ref_counts");
 		}
 		if (footprint.tripleRecords > 0L) {
-			for (TripleIndex index : tripleTermIndexes) {
+			for (TripleIndex index : termWriteIndexes) {
 				footprint.addNamedDatabase(index.getName(true));
 			}
 		}
@@ -6945,7 +8146,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			replaceablePages = add(replaceablePages, references.replaceablePages());
 		}
 		if (footprint.tripleRecords > 0L) {
-			for (TripleIndex index : tripleTermIndexes) {
+			for (TripleIndex index : termWriteIndexes) {
 				PreparedDatabaseReservation triples = preparedDatabaseReservation(txn, index.getDB(true), stat,
 						footprint.tripleRecords, footprint.tripleEntryBytes, 0L);
 				pages = add(pages, triples.pages());
@@ -7146,20 +8347,28 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	}
 
-	private void resizeMapTo(long requiredSize, boolean[] activeWriteTxnCommitted) throws IOException {
+	private void resizeMapTo(long requiredSize, boolean[] activeWriteTxnCommitted, WriterTransaction transaction)
+			throws IOException {
 		long before = nativeCommitGeneration;
-		boolean activeWriter = writeTxn != 0;
+		WriterPublication publication = writerPublication;
+		boolean activeWriter = writeTxn != 0 && publication != null && publication.transaction == transaction;
 		try (LmdbSailStore.MapGrowthAttempt attempt = beginMapGrowthAttempt()) {
 			if (attempt != null) {
 				attempt.requestQuiescence(LmdbSailStore.MapResizeKind.VALUE_STORE);
 			}
-			if (activeWriter) {
-				endTransaction(true, true);
-			}
-			growMapAfterReindexMapFullAfterQuiescence(requiredSize, attempt, false);
-			bulkMapGrowthCount++;
-			if (activeWriter) {
-				startTransaction(false);
+			boolean releaseGrowthOwner = retainNativeMapGrowthOwner(transaction);
+			try {
+				if (activeWriter) {
+					endTransaction(true, true);
+				}
+				growMapAfterReindexMapFullAfterQuiescence(requiredSize, attempt, activeWriter, transaction);
+			} finally {
+				if (releaseGrowthOwner) {
+					synchronized (writerAdmission) {
+						nativeMapGrowthOwner = null;
+						writerAdmission.notifyAll();
+					}
+				}
 			}
 		} finally {
 			if (activeWriteTxnCommitted != null && nativeCommitGeneration != before) {
@@ -7168,10 +8377,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 	}
 
-	private void growForTransactionRetry(long requiredSize, Throwable cause, TxnReplayPolicy.Decision decision)
+	private void growForTransactionRetry(long requiredSize, Throwable cause, TxnReplayPolicy.Decision decision,
+			WriterTransaction transaction)
 			throws IOException {
 		if (autoGrow && decision != null && decision.frozenReplay) {
-			throw frozenCapacity(cause);
+			throw frozenCapacity(cause, decision);
 		}
 		if (decision != null && decision.checkpoint) {
 			throw new LmdbNativeChunkFullException(LmdbSailStore.MapResizeKind.VALUE_STORE, cause);
@@ -7179,11 +8389,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		LmdbTransactionRetryException retry = decision == null
 				? new LmdbTransactionRetryException("ValueStore", cause)
 				: decision.capacityFailure("ValueStore", cause);
-		long projectedBytes = writeTxn == 0 ? saturatedEstimateAdd(committedHighWaterBytes, requiredSize)
-				: LmdbUtil.getNewSize(pageSize, writeTxn, requiredSize);
+		long projectedBytes = retryProjectedBytes(transaction, requiredSize);
 		// No dictionary checkpoint may publish this transaction's prefix when its replay was omitted.
 		try {
-			endTransaction(false, false);
+			transaction.invoke(() -> endTransaction(false, false));
 		} catch (IOException | RuntimeException cleanupFailure) {
 			if (cleanupFailure != retry) {
 				retry.addSuppressed(cleanupFailure);
@@ -7191,25 +8400,42 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 		if (mapGrowthRequestListener != null) {
 			try {
-				mapGrowthRequestListener.request(LmdbSailStore.MapResizeKind.VALUE_STORE, projectedBytes, true);
+				transaction.invoke(() -> mapGrowthRequestListener.request(LmdbSailStore.MapResizeKind.VALUE_STORE,
+						projectedBytes, true));
 			} catch (IOException | RuntimeException growthFailure) {
 				retry.addSuppressed(growthFailure);
 			}
 			throw retry;
 		}
 		try {
-			try (LmdbSailStore.MapGrowthAttempt growthAttempt = beginMapGrowthAttempt()) {
-				if (growthAttempt != null) {
-					growthAttempt.requestQuiescence(LmdbSailStore.MapResizeKind.VALUE_STORE);
-				}
-				growMapAfterReindexMapFullAfterQuiescence(projectedBytes, growthAttempt, false);
-			}
+			// Native MAP_FULL has already disproved a forecast based on the committed footprint. Reserve
+			// independent growth after this publication settles, waiting for any later writer outside the remap
+			// barrier. There is no surviving native continuation to borrow from a supplier at this point.
+			WriterPublication remaining = writerPublication;
+			WriterTransaction retained = remaining != null && remaining.transaction == transaction ? transaction : null;
+			growMapAfterReindexMapFullAfterQuiescence(projectedBytes, null, false, retained);
 		} catch (IOException | RuntimeException growthFailure) {
 			if (growthFailure != retry) {
 				retry.addSuppressed(growthFailure);
 			}
 		}
 		throw retry;
+	}
+
+	private long retryProjectedBytes(WriterTransaction transaction, long requiredSize) {
+		associationGate.lock();
+		try {
+			WriterPublication publication = writerPublication;
+			if (publication != null && publication.transaction == transaction && writeTxn != 0L
+					&& (publication.consumer == null || publication.consumer == Thread.currentThread())) {
+				return Math.max(mapSize, LmdbUtil.getNewSize(pageSize, writeTxn, requiredSize));
+			}
+			// Commit consumes its native pointer even on failure. Its capacity failure still requires real growth;
+			// neither a later writer's pointer nor a smaller committed footprint describes the failed transaction.
+			return saturatedEstimateAdd(mapSize, requiredSize);
+		} finally {
+			associationGate.unlock();
+		}
 	}
 
 	long replayMapSize() {
@@ -7251,16 +8477,48 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	void setReplayDecision(TxnReplayPolicy.Decision decision) {
-		replayDecision = decision;
+		WriterTransaction requested = WriterTransaction.current();
+		if (requested != null) {
+			requested.replayDecision = decision;
+		} else {
+			replayDecision = decision;
+		}
+	}
+
+	void setReplayDecision(TxnReplayPolicy.Decision decision, WriterTransaction transaction) throws IOException {
+		transaction.invoke(() -> setReplayDecision(decision));
 	}
 
 	void clearReplayDecision(TxnReplayPolicy.Decision decision) {
-		if (replayDecision == decision && (decision == null || !decision.failed())) {
-			replayDecision = null;
+		WriterTransaction requested = WriterTransaction.current();
+		if (decision != null && decision.failed()) {
+			return;
+		}
+		if (requested != null && requested.replayDecision == decision) {
+			requested.replayDecision = null;
+		}
+		synchronized (writerAdmission) {
+			WriterPublication publication = writerPublication;
+			if (replayDecision == decision && (publication == null || requested == null
+					|| publication.transaction == requested)) {
+				replayDecision = null;
+			}
+		}
+	}
+
+	void clearReplayDecision(TxnReplayPolicy.Decision decision, WriterTransaction transaction) throws IOException {
+		if (transaction == null) {
+			clearReplayDecision(decision);
+		} else {
+			transaction.invoke(() -> clearReplayDecision(decision));
 		}
 	}
 
 	private void checkReplayFailure() throws IOException {
+		WriterTransaction requested = WriterTransaction.current();
+		if (requested != null && requested.replayDecision != null) {
+			requested.replayDecision.check();
+		}
 		TxnReplayPolicy.Decision decision = replayDecision;
 		if (decision != null) {
 			decision.check();
@@ -7461,6 +8719,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	long occupiedBytes() throws IOException {
 		long stamp = txnManager.acquireMetadataReadBarrier();
 		try (MemoryStack stack = stackPush()) {
+			beforeMapMetadataReadForTest();
 			MDBEnvInfo info = MDBEnvInfo.calloc(stack);
 			E(mdb_env_info(env, info));
 			long nextPageNo = info.me_last_pgno() == Long.MAX_VALUE ? Long.MAX_VALUE : info.me_last_pgno() + 1L;
@@ -7470,9 +8729,46 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 	}
 
+	/** Inert observation inside the native metadata barrier, immediately before reading the environment. */
+	void beforeMapMetadataReadForTest() {
+	}
+
 	boolean growMapForEstimatedWrite(long estimatedWriteBytes, LmdbSailStore.MapGrowthAttempt growthAttempt)
 			throws IOException {
-		if (!autoGrow || writeTxn != 0) {
+		if (!autoGrow) {
+			return false;
+		}
+		synchronized (writerAdmission) {
+			while (termMaintenanceWriterActive || standaloneWritersInFlight != 0 || writerStartsInFlight != 0
+					|| nativeMapGrowthOwner != null || retirementWriterAdmission != null) {
+				try {
+					writerAdmission.wait();
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					throw new IOException("Interrupted while awaiting ValueStore map-growth admission", interrupted);
+				}
+			}
+			if (env == 0L || shuttingDown) {
+				throw new IOException("ValueStore is closed");
+			}
+			if (writeTxn != 0L || writerPublication != null) {
+				return false;
+			}
+			nativeMapGrowthOwner = Thread.currentThread();
+		}
+		try {
+			return growMapForEstimatedWriteAdmitted(estimatedWriteBytes, growthAttempt);
+		} finally {
+			synchronized (writerAdmission) {
+				nativeMapGrowthOwner = null;
+				writerAdmission.notifyAll();
+			}
+		}
+	}
+
+	private boolean growMapForEstimatedWriteAdmitted(long estimatedWriteBytes,
+			LmdbSailStore.MapGrowthAttempt growthAttempt) throws IOException {
+		if (!autoGrow || writeTxn != 0 || writerPublication != null) {
 			return false;
 		}
 		StampedLongAdderLockManager lockManager = txnManager.lockManager();
@@ -7484,7 +8780,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			throw new IOException("Interrupted while preparing the ValueStore map for a buffered write", e);
 		}
 		try {
-			if (writeTxn != 0 || !requiresResizeForEstimatedWrite(estimatedWriteBytes)) {
+			if (writeTxn != 0 || writerPublication != null || !requiresResizeForEstimatedWrite(estimatedWriteBytes)) {
 				return false;
 			}
 			detachStableReadSnapshots(growthAttempt);
@@ -7498,13 +8794,17 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				}
 				long currentFootprint = saturatedEstimateMultiply(nextPageNo, pageSize);
 				long projectedFootprint = saturatedEstimateAdd(currentFootprint, estimatedWriteBytes);
-				long resizedMapSize = growthPolicy.grownMapSize(mapSize, pageSize, projectedFootprint);
+				long previousMapSize = mapSize;
+				long resizedMapSize = growthPolicy.grownMapSize(previousMapSize, pageSize, projectedFootprint);
 				if (growthAttempt != null) {
 					growthAttempt.markMapResized(LmdbSailStore.MapResizeKind.VALUE_STORE);
 				}
 				E(mdb_env_set_mapsize(env, resizedMapSize));
 				mapSize = resizedMapSize;
 				nativeMapGeneration++;
+				if (resizedMapSize > previousMapSize) {
+					bulkMapGrowthCount++;
+				}
 				return true;
 			} finally {
 				txnManager.activate();
@@ -7540,6 +8840,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private void incrementRefCount(MemoryStack stack, long writeTxn, byte[] data) throws IOException {
+		if (!hasTrustedReferenceCounts()) {
+			invalidateUntrustedCountMetadata(stack, writeTxn);
+			return;
+		}
 		// literals have a datatype id and URIs have a namespace id
 		if (data[0] == LITERAL_VALUE || data[0] == URI_VALUE) {
 			// skip type marker
@@ -7551,6 +8855,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private void incrementRefCount(MemoryStack stack, long writeTxn, long id) throws IOException {
+		if (!hasTrustedReferenceCounts()) {
+			invalidateUntrustedCountMetadata(stack, writeTxn);
+			return;
+		}
 		long cached = refCountsTxCache.get(id);
 		long current = cached == UNKNOWN_REF_COUNT ? readRefCount(stack, writeTxn, id) : cached;
 		refCountsTxCache.put(id, Math.addExact(current, 1L));
@@ -7559,8 +8867,14 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private boolean decrementRefCount(MemoryStack stack, long writeTxn, long id) throws IOException {
 		long cached = refCountsTxCache.get(id);
 		long current = cached == UNKNOWN_REF_COUNT ? readRefCount(stack, writeTxn, id) : cached;
-		// An absent persisted count is already zero; it must not become a negative cached reference.
-		long updated = current == 0L ? 0L : Math.subtractExact(current, 1L);
+		if (current <= 0L) {
+			// An active owner proves this dependency exists; missing counts cannot authorize collection.
+			invalidateRefCountIntegrity("missing positive count for an active owner dependency");
+			invalidateUntrustedCountMetadata(stack, writeTxn);
+			throw new IOException("Cannot decrement ValueStore dependency " + id
+					+ ": its active owner requires a positive reference count");
+		}
+		long updated = Math.subtractExact(current, 1L);
 		refCountsTxCache.put(id, updated);
 		return updated == 0L;
 	}
@@ -7589,6 +8903,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private void updateRefCounts(MemoryStack stack, long writeTxn) throws IOException {
+		if (!hasTrustedReferenceCounts()) {
+			return;
+		}
 		try {
 			stack.push();
 			MDBVal idVal = MDBVal.calloc(stack);
@@ -7648,6 +8965,16 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private long findId(byte[] data, boolean create, CoreDatatype coreDatatype, ValueLookupContext lookup)
+			throws IOException {
+		boolean admitted = create && enterStandaloneValueWriter();
+		try {
+			return findIdAdmitted(data, create, coreDatatype, lookup);
+		} finally {
+			leaveStandaloneValueWriter(admitted);
+		}
+	}
+
+	private long findIdAdmitted(byte[] data, boolean create, CoreDatatype coreDatatype, ValueLookupContext lookup)
 			throws IOException {
 		Long id = readTransaction(env, (stack, txn) -> {
 			if (lookup != null) {
@@ -8636,6 +9963,16 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	private long findTripleTermId(long subj, long pred, long obj, boolean create, ValueLookupContext lookup)
 			throws IOException {
+		boolean admitted = create && enterStandaloneValueWriter();
+		try {
+			return findTripleTermIdAdmitted(subj, pred, obj, create, lookup);
+		} finally {
+			leaveStandaloneValueWriter(admitted);
+		}
+	}
+
+	private long findTripleTermIdAdmitted(long subj, long pred, long obj, boolean create, ValueLookupContext lookup)
+			throws IOException {
 		if (create && writeTxn != 0 && !isWriteTransactionOwner()) {
 			return withWriterLookupContext((stack, txn) -> findTripleTermId(subj, pred, obj, true, lookup));
 		}
@@ -8689,7 +10026,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				MDBVal keyVal = MDBVal.malloc(stack2);
 				MDBVal dataVal = MDBVal.calloc(stack2);
 				ByteBuffer keyBuf = stack2.malloc(TripleIndex.MAX_KEY_LENGTH);
-				for (TripleIndex index : tripleTermIndexes) {
+				for (TripleIndex index : termWriteIndexes) {
 					keyBuf.clear();
 					index.toKey(keyBuf, subj, pred, obj, id);
 					keyVal.mv_data(keyBuf.flip());
@@ -9292,7 +10629,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	public RecordIterator getTripleTerms(long subj, long pred, long obj) throws IOException {
-		Txn txn = txnManager.createReadTxn();
+		// This iterator fixes its index generation for its lifetime. A resettable reader could move past the
+		// generation's retirement watermark while still retaining its old index handle.
+		Txn txn = txnManager.createReadTxnUntracked();
 		try {
 			return getTripleTermRecords(txn, subj, pred, obj, true, null);
 		} catch (Throwable e) {
@@ -9314,7 +10653,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private RecordIterator getTripleTermRecords(Txn txn, long subj, long pred, long obj, boolean ownsTxn,
 			Consumer<RecordIterator> onClose)
 			throws IOException {
-		TripleIndex index = TripleIndex.getBestIndex(tripleTermIndexes, subj, pred, obj, -1);
+		TripleIndex index = TripleIndex.getBestIndex(termIndexesForTransaction(txn.nativeTransactionId()), subj, pred,
+				obj, -1);
 		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, -1) > 0;
 		return new LmdbRecordIterator(index, doRangeSearch, subj, pred, obj, -1, true, txn) {
 			private final AtomicBoolean transactionClosed = new AtomicBoolean();
@@ -9357,6 +10697,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		return new ReadSnapshotReservation(txnManager.reserveReadTxn(false));
 	}
 
+	/** Attempts ordinary dictionary admission without holding a partial cross-store reader family. */
+	ReadSnapshotReservation tryReserveReadSnapshot() throws IOException {
+		TxnManager.ReaderReservation reserved = txnManager.tryReserveReadTxn(false);
+		return reserved == null ? null : new ReadSnapshotReservation(reserved);
+	}
+
 	class ReadSnapshotReservation implements AutoCloseable {
 		private TxnManager.ReaderReservation reservation;
 
@@ -9385,6 +10731,15 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		 * resources must unwind all of them on ValueReadAdmissionException before waiting and reserving again.
 		 */
 		synchronized ReadSnapshot tryStart(Txn tripleTxn) throws IOException {
+			return tryStart(tripleTxn, false);
+		}
+
+		/** The caller already holds the native read barrier and must unwind the pair on a full native table. */
+		synchronized ReadSnapshot tryStartUnderReadLock(Txn tripleTxn) throws IOException {
+			return tryStart(tripleTxn, true);
+		}
+
+		private ReadSnapshot tryStart(Txn tripleTxn, boolean underReadLock) throws IOException {
 			if (reservation == null) {
 				throw new IllegalStateException(
 						"ValueStore read snapshot reservation has already been consumed or closed");
@@ -9399,10 +10754,13 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			ReadSnapshot[] captured = new ReadSnapshot[1];
 			ValueReadScope scope = new ValueReadScope(null);
 			try {
-				ReadSnapshot snapshot = reserved.startPinned(null, txn -> {
+				Function<Txn, ReadSnapshot> capture = txn -> {
 					captured[0] = new ReadSnapshot(txn, scope.captured, tripleTxn);
 					return captured[0];
-				}, scope::open);
+				};
+				ReadSnapshot snapshot = underReadLock
+						? reserved.tryStartPinnedUnderReadLock(null, capture, scope::open)
+						: reserved.startPinned(null, capture, scope::open);
 				reservation = null;
 				return snapshot;
 			} catch (IOException | RuntimeException | Error e) {
@@ -9975,17 +11333,22 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		void requireTermSnapshot(Consumer<Runnable> membershipDeclaration) throws IOException {
 			long stamp = txnManager.acquireReadBarrier();
 			try {
-				synchronized (txn) {
-					ensureValid();
-					if (dictionaryDetached) {
-						throw new LmdbSailStore.MapResizeConflictException(LmdbSailStore.MapResizeKind.VALUE_STORE,
-								"ValueStore term membership changed while the read snapshot was pinned; retry the transaction");
-					}
-					membershipDeclaration.accept(() -> termSnapshotUsed = true);
-					txn.ensureSnapshotValid();
-				}
+				requireTermSnapshotUnderReadLock(membershipDeclaration);
 			} finally {
 				txnManager.lockManager().unlockRead(stamp);
+			}
+		}
+
+		/** Declares membership while the caller already holds this manager's native read barrier. */
+		void requireTermSnapshotUnderReadLock(Consumer<Runnable> membershipDeclaration) throws IOException {
+			synchronized (txn) {
+				ensureValid();
+				if (dictionaryDetached) {
+					throw new LmdbSailStore.MapResizeConflictException(LmdbSailStore.MapResizeKind.VALUE_STORE,
+							"ValueStore term membership changed while the read snapshot was pinned; retry the transaction");
+				}
+				membershipDeclaration.accept(() -> termSnapshotUsed = true);
+				txn.ensureSnapshotValid();
 			}
 		}
 
@@ -10060,7 +11423,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 						new InterruptedException());
 			}
 			QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
-			if (deadline != null && deadline.remainingMillis() <= 0L) {
+			if (deadline != null && deadline.isExpired()) {
 				throw new QueryInterruptedException("Query evaluation took too long");
 			}
 		}
@@ -10313,7 +11676,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			throw new IllegalArgumentException("Read snapshot belongs to a different ValueStore");
 		}
 		snapshot.requireTermSnapshot();
-		TripleIndex index = TripleIndex.getBestIndex(tripleTermIndexes, subj, pred, obj, -1);
+		TripleIndex index = TripleIndex.getBestIndex(termIndexesForTransaction(snapshot.txnRef().nativeTransactionId()),
+				subj, pred, obj, -1);
 		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, -1) > 0;
 		return new LmdbRecordIterator(index, doRangeSearch, subj, pred, obj, -1, true, snapshot.txnRef(), snapshot);
 	}
@@ -10326,6 +11690,20 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	boolean hasRetiredIds() {
 		return retiredIdStore.hasPending();
+	}
+
+	/**
+	 * One tree statistic, without reading queue records; retained backlog remains visible after auxiliary work ends.
+	 */
+	boolean hasDeferredValueMaintenance() throws IOException {
+		if (hasRetiredIds()) {
+			return true;
+		}
+		return readTransaction(env, (stack, txn) -> {
+			MDBStat stat = MDBStat.malloc(stack);
+			E(mdb_stat(txn, unusedDbi, stat));
+			return stat.ms_entries() != 0L;
+		});
 	}
 
 	Map<String, LmdbStore.LmdbDatabaseStats> getLmdbStats() throws IOException {
@@ -10369,82 +11747,90 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	<T> T writeTransaction(Transaction<T> transaction) throws IOException {
 		checkReplayFailure();
-		if (writeTxn != 0) {
-			if (!isWriteTransactionOwner()) {
-				return withWriterLookupContext((stack, txn) -> writeTransaction(transaction));
-			}
-			try (MemoryStack stack = MemoryStack.stackPush()) {
-				T result = transaction.exec(stack, writeTxn);
-				nativeMutation = true;
-				return result;
-			} catch (LmdbUtil.MapFullException mapFull) {
-				TxnReplayPolicy.Decision decision = replayDecision;
-				if (autoGrow && decision != null && decision.frozenReplay) {
-					throw frozenCapacity(mapFull);
+		boolean standaloneAdmission = enterStandaloneValueWriter();
+		try {
+			if (writeTxn != 0) {
+				if (!isWriteTransactionOwner()) {
+					return withWriterLookupContext((stack, txn) -> writeTransaction(transaction));
 				}
-				if (autoGrow && decision != null && !decision.track) {
-					growForTransactionRetry(0L, mapFull, decision);
+				WriterTransaction writer = currentWriterTransaction();
+				TxnReplayPolicy.Decision decision = writer.replayDecision;
+				try (MemoryStack stack = MemoryStack.stackPush()) {
+					invalidateUntrustedCountMetadata(stack, writeTxn);
+					T result = transaction.exec(stack, writeTxn);
+					nativeMutation = true;
+					return result;
+				} catch (LmdbUtil.MapFullException mapFull) {
+					if (autoGrow && decision != null && decision.frozenReplay) {
+						throw frozenCapacity(mapFull);
+					}
+					if (autoGrow && decision != null && !decision.track) {
+						growForTransactionRetry(0L, mapFull, decision, writer);
+					}
+					throw mapFull;
 				}
-				throw mapFull;
-			}
-		} else {
-			beginValueLookupMutation();
-			ValueOverlayRegistry.Prepared[] publication = new ValueOverlayRegistry.Prepared[1];
-			long[] nativeTransactionId = new long[1];
-			long[] priorNativeTransactionId = new long[1];
-			boolean committed = false;
-			long expectedNativeTransactionId = startupInitializationInProgress
-					? startupExpectedLastTransactionId
-					: lastTrustedNativeTransactionId;
-			try {
-				T result = LmdbUtil.writeTransaction(env, (stack, txn) -> {
-					validateNativeWriterTransaction(txn, expectedNativeTransactionId);
-					beginCompressedValueMutation(txn);
-					T out = transaction.exec(stack, txn);
-					persistNextId(stack, txn);
-					updateRefCounts(stack, txn);
-					publication[0] = prepareCompressedValueMutation(txn);
-					nativeTransactionId[0] = mdb_txn_id(txn);
-					priorNativeTransactionId[0] = lastTransactionId();
-					return out;
-				});
-				// The utility returns only after successful native commit. Record that boundary before optional
-				// publication or
-				// cleanup, so callers retain committed fresh-value bookkeeping when those later steps fail.
-				lastNativeCommitSucceeded = true;
-				refCountsTxCache.clear();
-				committed = true;
-				retiredIdStore.transactionCommitted();
-				nativeCommitGeneration++;
-				mutationGeneration++;
-				refreshCommittedHighWater();
-				long observedNativeTransactionId = trustedPostCommitTransactionId(nativeTransactionId[0],
-						priorNativeTransactionId[0]);
-				if (refCountIntegrityEstablished || bulkNativeOwnership) {
-					lastTrustedNativeTransactionId = observedNativeTransactionId;
-				}
-				// Never publish from inside the native transaction callback.
-				completeCompressedValueMutation(publication[0]);
-				return result;
-			} finally {
-				if (!committed) {
-					retiredIdStore.transactionRolledBack();
-					// The native writer was aborted; discard deltas and invalidate all value revisions so an aborted ID
-					// cannot
-					// be served from a cache on the next transaction.
-					refCountsTxCache.clear();
-					clearCaches();
-					setNewRevision();
-				}
-				if (publication[0] != null)
-					publication[0].close();
-				discardCompressedValueMutation();
+			} else {
+				beginValueLookupMutation();
+				ValueOverlayRegistry.Prepared[] publication = new ValueOverlayRegistry.Prepared[1];
+				long[] nativeTransactionId = new long[1];
+				long[] priorNativeTransactionId = new long[1];
+				boolean committed = false;
+				long expectedNativeTransactionId = startupInitializationInProgress
+						? startupExpectedLastTransactionId
+						: lastTrustedNativeTransactionId;
 				try {
-					resetReadersAfterWrite();
+					T result = LmdbUtil.writeTransaction(env, (stack, txn) -> {
+						validateNativeWriterTransaction(txn, expectedNativeTransactionId);
+						beginCompressedValueMutation(txn);
+						invalidateUntrustedCountMetadata(stack, txn);
+						T out = transaction.exec(stack, txn);
+						persistNextId(stack, txn);
+						updateRefCounts(stack, txn);
+						writeReferenceCountProof(stack, txn);
+						publication[0] = prepareCompressedValueMutation(txn);
+						nativeTransactionId[0] = mdb_txn_id(txn);
+						priorNativeTransactionId[0] = lastTransactionId();
+						return out;
+					});
+					// The utility returns only after successful native commit. Record that boundary before optional
+					// publication or
+					// cleanup, so callers retain committed fresh-value bookkeeping when those later steps fail.
+					lastNativeCommitSucceeded = true;
+					refCountsTxCache.clear();
+					committed = true;
+					retiredIdStore.transactionCommitted();
+					nativeCommitGeneration++;
+					mutationGeneration++;
+					refreshCommittedHighWater();
+					long observedNativeTransactionId = trustedPostCommitTransactionId(nativeTransactionId[0],
+							priorNativeTransactionId[0]);
+					lastTrustedNativeTransactionId = observedNativeTransactionId;
+					// Never publish from inside the native transaction callback.
+					completeCompressedValueMutation(publication[0]);
+					return result;
 				} finally {
-					endValueLookupMutation();
+					if (!committed) {
+						retiredIdStore.transactionRolledBack();
+						// The native writer was aborted; discard deltas and invalidate all value revisions so an
+						// aborted ID
+						// cannot
+						// be served from a cache on the next transaction.
+						refCountsTxCache.clear();
+						clearCaches();
+						setNewRevision();
+					}
+					if (publication[0] != null)
+						publication[0].close();
+					discardCompressedValueMutation();
+					try {
+						resetReadersAfterWrite();
+					} finally {
+						endValueLookupMutation();
+					}
 				}
 			}
+		} finally {
+			leaveStandaloneValueWriter(standaloneAdmission);
 		}
 	}
 
@@ -10479,6 +11865,81 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					Thread.currentThread().interrupt();
 				}
 			}
+		}
+	}
+
+	private void invalidateReferenceCountProofBeforeRawMutation() throws IOException {
+		boolean previousDeferral = deferNextIdPersistence;
+		deferNextIdPersistence = true;
+		try {
+			writeTransaction((stack, txn) -> {
+				invalidateUntrustedCountMetadata(stack, txn);
+				return null;
+			});
+		} finally {
+			deferNextIdPersistence = previousDeferral;
+		}
+	}
+
+	private void ensureReferenceCountGeneration(MemoryStack stack, long txn) throws IOException {
+		int metadata = openDatabaseWithTxn(txn, "gc_meta", 0);
+		if (referenceCountGeneration == null) {
+			UUID generation = UUID.randomUUID();
+			referenceCountGeneration = ByteBuffer.allocate(ReferenceCountProof.GENERATION_BYTES)
+					.putLong(generation.getMostSignificantBits())
+					.putLong(generation.getLeastSignificantBits())
+					.array();
+		}
+		MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(ReferenceCountProof.GENERATION_KEY));
+		MDBVal value = MDBVal.calloc(stack).mv_data(stack.bytes(referenceCountGeneration));
+		E(mdb_put(txn, metadata, key, value, 0));
+	}
+
+	private boolean invalidateUntrustedCountMetadata(MemoryStack stack, long txn) throws IOException {
+		if (hasTrustedReferenceCounts() || !auxiliaryDatabasesInitialized || startupInitializationInProgress) {
+			return false;
+		}
+		boolean invalidated = false;
+		MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(REF_COUNTS_VERSION_KEY));
+		MDBVal marker = MDBVal.calloc(stack);
+		int markerRc = E(mdb_get(txn, refCountsDbi, key, marker));
+		if (markerRc == MDB_SUCCESS
+				&& (marker.mv_size() == REF_COUNTS_VERSION.length
+						&& marker.mv_data().get(0) == REF_COUNTS_VERSION[0]
+						|| isKnownRefCountMarkerSchema(marker.mv_data()))) {
+			// Earlier readers may trust the one-byte completion sentinel, so remove it before skipping owner deltas.
+			// Unknown schemas never authorize counts here; preserve their payload for their owning implementation.
+			invalidated = E(mdb_del(txn, refCountsDbi, key, null)) == MDB_SUCCESS;
+		}
+		int metadata = openDatabaseWithTxn(txn, "gc_meta", 0);
+		key.mv_data(stack.bytes(ReferenceCountProof.KEY));
+		return E(mdb_del(txn, metadata, key, null)) == MDB_SUCCESS || invalidated;
+	}
+
+	private void writeReferenceCountProof(MemoryStack stack, long txn) throws IOException {
+		writeTermIndexBuild(stack, txn);
+		if (!auxiliaryDatabasesInitialized) {
+			return;
+		}
+		ensureReferenceCountGeneration(stack, txn);
+		int metadata = openDatabaseWithTxn(txn, "gc_meta", 0);
+		MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(ReferenceCountProof.KEY));
+		if (!hasTrustedReferenceCounts() || deferNextIdPersistence) {
+			E(mdb_del(txn, metadata, key, null));
+		} else {
+			MDBVal value = MDBVal.calloc(stack)
+					.mv_data(stack.bytes(ReferenceCountProof.encode(
+							referenceCountGeneration, mdb_txn_id(txn), nextId)));
+			E(mdb_put(txn, metadata, key, value, 0));
+		}
+		key.mv_data(stack.bytes(ReferenceCountProof.ALLOCATION_KEY));
+		if (deferNextIdPersistence) {
+			E(mdb_del(txn, metadata, key, null));
+		} else {
+			MDBVal value = MDBVal.calloc(stack)
+					.mv_data(stack.bytes(ReferenceCountProof.encode(
+							referenceCountGeneration, mdb_txn_id(txn), nextId)));
+			E(mdb_put(txn, metadata, key, value, 0));
 		}
 	}
 
@@ -10801,6 +12262,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	 * without their statements, and must not steal a raw key before the Sail's triple-aware merge.
 	 */
 	private LanguageTagRekey normalizeLegacyLanguageOwnerKeys(MemoryStack stack, long txn) throws IOException {
+		return normalizeLegacyLanguageOwnerKeys(stack, txn, true);
+	}
+
+	/** A dry run uses the same owner/collision checks as the actual normalization without changing native state. */
+	private LanguageTagRekey normalizeLegacyLanguageOwnerKeys(MemoryStack stack, long txn, boolean applyChanges)
+			throws IOException {
 		List<LegacyLanguageTagEntry> entries = new ArrayList<>();
 		Set<ByteBuffer> canonicalKeys = new HashSet<>();
 		int collisions = 0;
@@ -10848,7 +12315,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (collisions > 0) {
 			return new LanguageTagRekey(collisions, 0, literals);
 		}
-		if (!entries.isEmpty()) {
+		if (applyChanges && !entries.isEmpty()) {
 			resizeMap(txn, entries.size() * 4L * (MAX_KEY_SIZE + 2L + 2L * Long.BYTES + 2L));
 			long activeTxn = currentWriteTxn(txn);
 			for (LegacyLanguageTagEntry entry : entries) {
@@ -10874,20 +12341,123 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	 * {@link #applyLanguageTagVariantMerge} committed plans the same merge again.
 	 */
 	LanguageTagVariantMergePlan planLanguageTagVariantMerge() throws IOException {
-		LanguageTagVariantMergePlan plan = new LanguageTagVariantMergePlan();
-		// a write transaction that is rolled back: the nested lookups (findId, findTripleTermId) then read the same
-		// snapshot as the scans
-		startTransaction(false);
-		try {
-			writeTransaction((stack, txn) -> {
-				planLanguageLiteralGroups(plan, stack, txn);
-				if (!plan.isEmpty()) {
-					planTripleTermMerges(plan, stack, txn);
+		boolean owned;
+		synchronized (writerAdmission) {
+			owned = languageTagMigrationOwner == Thread.currentThread();
+		}
+		if (owned) {
+			return planLanguageTagVariantMergeOwned();
+		}
+		try (LanguageTagMigrationWriter ignored = beginLanguageTagMigration()) {
+			return planLanguageTagVariantMergeOwned();
+		}
+	}
+
+	private LanguageTagVariantMergePlan planLanguageTagVariantMergeOwned() throws IOException {
+		while (true) {
+			try {
+				return planLanguageTagVariantMergeOnce();
+			} catch (LmdbUtil.MapFullException capacity) {
+				if (!autoGrow || capacity.getSuppressed().length != 0) {
+					throw capacity;
 				}
-				return null;
-			});
-		} finally {
-			rollback();
+				try {
+					if (languageTagMigrationOwner == Thread.currentThread()) {
+						if (writeTxn != 0L || writerPublication != null) {
+							throw new IOException(
+									"Language-tag planning still owns a native writer after capacity failure");
+						}
+						growMapAfterReindexMapFullAfterQuiescence(mapSize, null, false, null);
+					} else {
+						try (LanguageTagMigrationWriter writer = beginLanguageTagMigration()) {
+							writer.growAfterCapacityFailure(capacity);
+						}
+					}
+				} catch (IOException | RuntimeException | Error growthFailure) {
+					if (growthFailure != capacity) {
+						capacity.addSuppressed(growthFailure);
+					}
+					throw capacity;
+				}
+			}
+		}
+	}
+
+	private LanguageTagVariantMergePlan planLanguageTagVariantMergeOnce() throws IOException {
+		LanguageTagVariantMergePlan plan = new LanguageTagVariantMergePlan();
+		WriterTransaction planner = new WriterTransaction();
+		boolean fenceCommitted = false;
+		Throwable planningFailure = null;
+		try {
+			try {
+				planner.invoke(() -> startTransaction(false,
+						DictionaryTransactionPurpose.LANGUAGE_MIGRATION_PLANNING));
+				// The native writer excludes another process while the complete dictionary graph is captured.
+				plan.plannedDictionaryTransactionId(lastTransactionId());
+				readTransaction(env, (stack, txn) -> {
+					planLanguageLiteralGroups(plan, stack, txn);
+					if (format.isLegacy() && plan.isEmpty()) {
+						LanguageTagRekey normalization = normalizeLegacyLanguageOwnerKeys(stack, txn, false);
+						if (normalization.collisions() > 0 || normalization.rekeyed() > 0) {
+							plan.requireLegacyOwnerNormalization();
+						}
+					}
+					if (!plan.isEmpty()) {
+						// A malformed cycle can prevent an affected owner from entering the merge plan at all.
+						TermOwnerGraphVerifier.verify(txn, tripleTermSpocIndex.getDB(true),
+								tripleTermCspoIndex.getDB(true));
+						planTripleTermMerges(plan, stack, txn);
+						plan.orderLosingTripleTerms();
+						if (hasTrustedReferenceCounts()) {
+							validateLanguageTagDependencyCounts(plan, stack, txn);
+						}
+					}
+					return null;
+				});
+				if (!plan.isEmpty() && !hasTrustedReferenceCounts()
+						&& readTransaction(env, this::invalidateUntrustedCountMetadata)) {
+					// A successful deletion makes this native transaction dirty. Capture its own ID before commit;
+					// an empty commit followed by another writer could otherwise masquerade as our receipt.
+					long ownedTransactionId = mdb_txn_id(writeTxn);
+					nativeMutation = true;
+					planner.invoke(this::commit);
+					fenceCommitted = true;
+					if (lastTrustedNativeTransactionId != ownedTransactionId) {
+						throw new IOException("ValueStore did not publish the owned language-tag fence transaction");
+					}
+					plan.plannedDictionaryTransactionId(ownedTransactionId);
+				}
+			} catch (IOException | RuntimeException | Error failure) {
+				planningFailure = failure;
+				throw failure;
+			} finally {
+				if (!fenceCommitted) {
+					try {
+						rollback(planner);
+					} catch (IOException | RuntimeException | Error cleanup) {
+						if (planningFailure == null) {
+							throw cleanup;
+						}
+						if (cleanup != planningFailure) {
+							planningFailure.addSuppressed(cleanup);
+						}
+					}
+				}
+			}
+		} catch (LmdbUtil.MapFullException capacity) {
+			// The planning writer has rolled back; grow and retry without invalidating an otherwise valid proof.
+			throw capacity;
+		} catch (IOException | RuntimeException | Error failure) {
+			// A predictable refusal must not leave an old exact-count certificate usable on the next open.
+			invalidateRefCountIntegrity("language-tag migration preflight failed");
+			try {
+				writeTransaction((stack, txn) -> null);
+			} catch (IOException | RuntimeException | Error fenceFailure) {
+				if (failure != fenceFailure) {
+					failure.addSuppressed(fenceFailure);
+				}
+			}
+			throw failure;
 		}
 		return plan;
 	}
@@ -11074,29 +12644,287 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		return ids;
 	}
 
+	private interface LanguageTagDependencyChanges {
+		void increment(long id) throws IOException;
+
+		void decrement(long id) throws IOException;
+
+		void retire(long id) throws IOException;
+	}
+
+	private static void visitRewrittenTermDependencies(long[] components, LanguageTagDependencyChanges changes)
+			throws IOException {
+		for (int i = 0; i < 3; i++) {
+			if (components[i] != components[i + 3]) {
+				changes.increment(components[i + 3]);
+				changes.decrement(components[i]);
+			}
+		}
+	}
+
+	private static void visitLosingTermDependencies(long[] components, LanguageTagDependencyChanges changes)
+			throws IOException {
+		for (long component : components) {
+			changes.decrement(component);
+		}
+	}
+
+	private static void visitLosingLiteralDependency(byte[] data, LanguageTagDependencyChanges changes)
+			throws IOException {
+		changes.decrement(Varint.readUnsigned(data, 1));
+	}
+
+	/** Simulates the same ordered count operations before any statement rewrite can commit. */
+	private void validateLanguageTagDependencyCounts(LanguageTagVariantMergePlan plan, MemoryStack stack, long txn)
+			throws IOException {
+		Long2LongOpenHashMap simulated = new Long2LongOpenHashMap();
+		simulated.defaultReturnValue(UNKNOWN_REF_COUNT);
+		boolean trusted = hasTrustedReferenceCounts();
+		LanguageTagDependencyChanges changes = new LanguageTagDependencyChanges() {
+			private long count(long id) throws IOException {
+				long cached = simulated.get(id);
+				return cached == UNKNOWN_REF_COUNT ? readRefCount(stack, txn, id) : cached;
+			}
+
+			@Override
+			public void increment(long id) throws IOException {
+				if (trusted) {
+					simulated.put(id, Math.addExact(count(id), 1L));
+				}
+			}
+
+			@Override
+			public void decrement(long id) throws IOException {
+				long current = count(id);
+				if (current <= 0L) {
+					throw new IOException("Cannot decrement ValueStore dependency " + id
+							+ ": its active owner requires a positive reference count");
+				}
+				simulated.put(id, Math.subtractExact(current, 1L));
+			}
+
+			@Override
+			public void retire(long id) {
+				simulated.put(id, 0L);
+			}
+		};
+		for (long[] components : plan.tripleTermRewrites().values()) {
+			visitRewrittenTermDependencies(components, changes);
+		}
+		for (Long2ObjectMap.Entry<long[]> loser : plan.loserTripleTerms().long2ObjectEntrySet()) {
+			visitLosingTermDependencies(loser.getValue(), changes);
+			changes.retire(loser.getLongKey());
+		}
+		LongArrayList losers = plan.loserLiterals();
+		for (int i = 0; i < losers.size(); i++) {
+			long id = losers.getLong(i);
+			stack.push();
+			try {
+				MDBVal key = MDBVal.calloc(stack).mv_data(id2data(idBuffer(stack), id).flip());
+				MDBVal value = MDBVal.calloc(stack);
+				int rc = mdb_get(txn, dbi, key, value);
+				if (rc == MDB_NOTFOUND) {
+					continue;
+				}
+				E(rc);
+				byte[] data = new byte[value.mv_data().remaining()];
+				value.mv_data().get(data);
+				visitLosingLiteralDependency(data, changes);
+				changes.retire(id);
+			} finally {
+				stack.pop();
+			}
+		}
+	}
+
+	private LanguageTagDependencyChanges applyingLanguageTagDependencyChanges(MemoryStack stack, long txn) {
+		return new LanguageTagDependencyChanges() {
+			@Override
+			public void increment(long id) throws IOException {
+				incrementRefCount(stack, txn, id);
+			}
+
+			@Override
+			public void decrement(long id) throws IOException {
+				if (hasTrustedReferenceCounts()) {
+					decrementRefCount(stack, txn, id);
+				}
+			}
+
+			@Override
+			public void retire(long id) throws IOException {
+				retireMergedId(stack, txn, id);
+			}
+		};
+	}
+
+	/** A complete dictionary migration owns local writer admission across its statement batches and retry. */
+	final class LanguageTagMigrationWriter implements AutoCloseable {
+		private final Thread owner = Thread.currentThread();
+		private final boolean releaseAdmission;
+		private WriterTransaction transaction;
+		private boolean closed;
+
+		private LanguageTagMigrationWriter() throws IOException {
+			synchronized (writerAdmission) {
+				if (isWriteTransactionOwner()) {
+					throw new IOException("ValueStore already has an active write transaction");
+				}
+				// Publish both kinds of exclusive admission together, before the planner opens its native writer.
+				releaseAdmission = retainNativeMapGrowthOwner(null);
+				boolean published = false;
+				try {
+					if (languageTagMigrationOwner != null) {
+						throw new IOException("A language-tag migration already owns the ValueStore writer");
+					}
+					languageTagMigrationOwner = owner;
+					published = true;
+				} finally {
+					if (!published && releaseAdmission) {
+						nativeMapGrowthOwner = null;
+						writerAdmission.notifyAll();
+					}
+				}
+			}
+		}
+
+		void start(LanguageTagVariantMergePlan plan) throws IOException {
+			if (closed || owner != Thread.currentThread() || transaction != null) {
+				throw new IOException("Language-tag migration no longer owns its ValueStore writer");
+			}
+			if (!plan.isEmpty() || plan.legacyOwnerNormalizationRequired()) {
+				reserveWriteCapacity(languageTagVariantMergeBytes(plan));
+			}
+			WriterTransaction admitted = new WriterTransaction();
+			try {
+				admitted.invoke(() -> startTransaction(false,
+						DictionaryTransactionPurpose.LANGUAGE_MIGRATION_PLANNING));
+				long actual = mdb_txn_id(writeTxn) - 1L;
+				if (actual != plan.plannedDictionaryTransactionId()) {
+					throw new IOException("ValueStore changed while planning the language-tag migration");
+				}
+				transaction = admitted;
+			} catch (IOException | RuntimeException | Error failure) {
+				try {
+					rollback(admitted);
+				} catch (IOException | RuntimeException | Error cleanup) {
+					if (cleanup != failure) {
+						failure.addSuppressed(cleanup);
+					}
+				}
+				throw failure;
+			}
+		}
+
+		void growAfterCapacityFailure(IOException failure) throws IOException {
+			if (!autoGrow) {
+				throw failure;
+			}
+			WriterTransaction active = transaction;
+			transaction = null;
+			if (active != null) {
+				try {
+					rollback(active);
+				} catch (IOException | RuntimeException | Error cleanup) {
+					if (cleanup != failure) {
+						failure.addSuppressed(cleanup);
+					}
+					throw failure;
+				}
+			}
+			long required = failure instanceof LanguageTagMigrationCapacityException capacity
+					? Math.max(mapSize, capacity.requiredBytes)
+					: mapSize;
+			growMapAfterReindexMapFullAfterQuiescence(required, null, false, null);
+		}
+
+		@Override
+		public void close() throws IOException {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			try {
+				if (transaction != null) {
+					rollback(transaction);
+				}
+			} finally {
+				synchronized (writerAdmission) {
+					if (languageTagMigrationOwner == owner) {
+						languageTagMigrationOwner = null;
+					}
+					if (releaseAdmission && nativeMapGrowthOwner == owner) {
+						nativeMapGrowthOwner = null;
+					}
+					writerAdmission.notifyAll();
+				}
+			}
+		}
+	}
+
+	LanguageTagMigrationWriter beginLanguageTagMigration() throws IOException {
+		return new LanguageTagMigrationWriter();
+	}
+
+	static final class LanguageTagMigrationCapacityException extends IOException {
+		private final long requiredBytes;
+
+		private LanguageTagMigrationCapacityException(long requiredBytes) {
+			super("ValueStore language-tag migration requires additional map capacity");
+			this.requiredBytes = requiredBytes;
+		}
+	}
+
 	/**
 	 * Test seam: when it accepts the number of a completed step of {@link #applyLanguageTagVariantMerge} (1 surviving
-	 * triple terms rewritten, 2 losing triple terms retired, 3 losing literals retired), the work so far is committed -
-	 * as a map resize at that point would - and the merge fails as if the process had died.
+	 * triple terms rewritten, 2 losing triple terms retired, 3 losing literals retired), it explicitly commits the
+	 * dictionary work completed so far and fails the merge to exercise recovery from that interrupted prefix.
 	 */
 	static volatile IntPredicate crashAfterLanguageTagMergeStepForTesting;
 
 	/**
 	 * Carries out a {@link LanguageTagVariantMergePlan} after every statement of the triple store has been rewritten to
 	 * the surviving ids, then establishes canonical RDF lookup with the format-specific physical keys and switches this
-	 * store to {@link LanguageTagKeyMode#CANONICAL}. Runs in one write transaction; if the value map grows mid-way, the
-	 * work done so far is committed early, and every such prefix is a state from which
-	 * {@link #planLanguageTagVariantMerge} plans the rest of the merge: surviving triple terms are rewritten first
-	 * (they then have the resolved components and are no longer affected), each losing id is retired as a whole
-	 * (deleted, marked unused, hash cleared), losing triple terms before losing literals (so no triple term refers to a
-	 * deleted literal), and physical key normalization comes last and skips owners already in their final format.
+	 * store to {@link LanguageTagKeyMode#CANONICAL}. Each attempt uses one dictionary write transaction. If the value
+	 * map needs to grow, the current dictionary transaction is rolled back, the map is grown, and a fresh plan is built
+	 * from the authoritative dictionary; statement batches already committed by the caller remain committed.
+	 *
+	 * The crash test seam can commit a dictionary prefix at each completed step. Such a prefix can also be replanned:
+	 * surviving triple terms are rewritten first, losing triple terms are retired before losing literals, and physical
+	 * key normalization runs last and skips owners already in their final format.
 	 *
 	 * @throws IOException if a language literal still collides with another one after the merge (the transaction is
 	 *                     rolled back and the store stays byte-exact)
 	 */
 	void applyLanguageTagVariantMerge(LanguageTagVariantMergePlan plan) throws IOException {
+		try (LanguageTagMigrationWriter writer = beginLanguageTagMigration()) {
+			while (true) {
+				try {
+					writer.start(plan);
+					applyLanguageTagVariantMergeInMigration(plan);
+					return;
+				} catch (LanguageTagMigrationCapacityException | LmdbUtil.MapFullException capacity) {
+					writer.growAfterCapacityFailure(capacity);
+					plan = planLanguageTagVariantMerge();
+				}
+			}
+		}
+	}
+
+	void applyLanguageTagVariantMergeInMigration(LanguageTagVariantMergePlan plan) throws IOException {
+		if (format.isLegacy() && plan.isEmpty() && !plan.legacyOwnerNormalizationRequired()
+				&& plan.plannedDictionaryTransactionId() >= 0L) {
+			if (lastTransactionId() != plan.plannedDictionaryTransactionId()) {
+				throw new IOException("ValueStore changed while planning the language-tag migration");
+			}
+			properties.setLanguageTagKey(StoreProperties.LANGUAGE_TAG_KEY_CANONICAL);
+			languageTagKeyMode = LanguageTagKeyMode.CANONICAL;
+			return;
+		}
 		LanguageTagRekey rekey;
-		startTransaction(true);
+		if (languageTagMigrationOwner != Thread.currentThread() || !isWriteTransactionOwner()) {
+			throw new IOException("Language-tag migration does not own the dictionary writer");
+		}
 		try {
 			rekey = writeTransaction((stack, txn) -> {
 				if (!plan.isEmpty()) {
@@ -11151,31 +12979,26 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	private void rewriteSurvivingTripleTerms(LanguageTagVariantMergePlan plan, MemoryStack stack, long writeTxn)
 			throws IOException {
+		LanguageTagDependencyChanges changes = applyingLanguageTagDependencyChanges(stack, writeTxn);
 		for (Long2ObjectMap.Entry<long[]> rewrite : plan.tripleTermRewrites().long2ObjectEntrySet()) {
 			long id = rewrite.getLongKey();
 			long[] components = rewrite.getValue();
 			writeTripleTermKeys(stack, writeTxn, components[0], components[1], components[2], id, false);
 			writeTripleTermKeys(stack, writeTxn, components[3], components[4], components[5], id, true);
-			for (int i = 0; i < 3; i++) {
-				if (components[i] != components[i + 3]) {
-					incrementRefCount(stack, writeTxn, components[i + 3]);
-					decrementRefCount(stack, writeTxn, components[i]);
-				}
-			}
+			visitRewrittenTermDependencies(components, changes);
 			clearStoredHash(id);
 		}
 	}
 
 	private void retireLosingTripleTerms(LanguageTagVariantMergePlan plan, MemoryStack stack, long writeTxn)
 			throws IOException {
+		LanguageTagDependencyChanges changes = applyingLanguageTagDependencyChanges(stack, writeTxn);
 		for (Long2ObjectMap.Entry<long[]> loser : plan.loserTripleTerms().long2ObjectEntrySet()) {
 			long id = loser.getLongKey();
 			long[] components = loser.getValue();
 			writeTripleTermKeys(stack, writeTxn, components[0], components[1], components[2], id, false);
-			for (int i = 0; i < 3; i++) {
-				decrementRefCount(stack, writeTxn, components[i]);
-			}
-			retireMergedId(stack, writeTxn, id);
+			visitLosingTermDependencies(components, changes);
+			changes.retire(id);
 		}
 	}
 
@@ -11209,6 +13032,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	 */
 	private void retireLosingLiterals(LanguageTagVariantMergePlan plan, MemoryStack stack, long writeTxn)
 			throws IOException {
+		LanguageTagDependencyChanges changes = applyingLanguageTagDependencyChanges(stack, writeTxn);
 		LongArrayList losers = plan.loserLiterals();
 		for (int i = 0; i < losers.size(); i++) {
 			long id = losers.getLong(i);
@@ -11229,9 +13053,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					removeOwnedReverseKey(stack, writeTxn, id, canonical);
 				}
 				// the datatype of a language literal (rdf:langString / rdf:dirLangString) is seeded and never collected
-				decrementRefCount(stack, writeTxn, Varint.readUnsigned(data, 1));
+				visitLosingLiteralDependency(data, changes);
 				E(mdb_del(writeTxn, dbi, idVal, null));
-				retireMergedId(stack, writeTxn, id);
+				changes.retire(id);
 			} finally {
 				stack.pop();
 			}
@@ -11626,9 +13450,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (startupInitializationInProgress) {
 			startupExpectedLastTransactionId = observedNativeTransactionId;
 		}
-		if (refCountIntegrityEstablished || bulkNativeOwnership) {
-			lastTrustedNativeTransactionId = observedNativeTransactionId;
-		}
+		lastTrustedNativeTransactionId = observedNativeTransactionId;
 	}
 
 	private long trustedPostCommitTransactionId(long nativeTransactionId, long priorNativeTransactionId)
@@ -11651,8 +13473,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private void validateNativeWriterTransaction(long txn, long expectedLastTransactionId) throws IOException {
-		if ((!refCountIntegrityEstablished && !startupInitializationInProgress && !bulkNativeOwnership)
-				|| expectedLastTransactionId < 0L) {
+		if (expectedLastTransactionId < 0L) {
 			return;
 		}
 		long expected;
@@ -11681,9 +13502,66 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	private void endValueLookupMutation() {
 		synchronized (writerAdmission) {
-			if (writeTxn == 0 && writerPublication == null && writerStartsInFlight == 0 && env != 0 && !shuttingDown) {
+			if (writeTxn == 0 && writerPublication == null && writerStartsInFlight == 0 && env != 0 && !shuttingDown
+					&& activeRetirementResets.isEmpty() && pendingRetirementReset == null
+					&& pendingRetirementOverlayInvalidation == null) {
 				// A delayed reader reset from an older commit cannot certify another writer's uncompleted publication.
 				valueLookupGeneration = new Object();
+			}
+			writerAdmission.notifyAll();
+		}
+	}
+
+	/** Fresh native observation, accepted only while the same owned dictionary publication remains settled. */
+	long currentOwnedDomainTransaction() throws IOException {
+		if (!valueStoreInitializationComplete) {
+			throw new IOException("ValueStore predicate-domain authority is unavailable before initialization");
+		}
+		Object generation = valueLookupGeneration;
+		if (generation == null) {
+			return -1L;
+		}
+		long stamp = txnManager.lockManager().tryReadLock();
+		if (stamp == 0L) {
+			return -1L;
+		}
+		try {
+			if (!valueStoreInitializationComplete) {
+				throw new IOException("ValueStore predicate-domain authority is unavailable before initialization");
+			}
+			if (env == 0L) {
+				return -1L;
+			}
+			long expected = lastTrustedNativeTransactionId;
+			long actual = lastTransactionId();
+			if (generation != valueLookupGeneration || expected != lastTrustedNativeTransactionId
+					|| !valueStoreInitializationComplete) {
+				return -1L;
+			}
+			if (expected < 0L || actual != expected) {
+				throw new IOException("ValueStore observed an intervening native writer for predicate domains");
+			}
+			return actual;
+		} finally {
+			txnManager.lockManager().unlockRead(stamp);
+		}
+	}
+
+	/** No snapshot, native barrier or writer authority may be retained while awaiting this state. */
+	void awaitDomainIdentityReady() throws IOException {
+		long stamp = txnManager.acquireReadBarrier();
+		txnManager.lockManager().unlockRead(stamp);
+		synchronized (writerAdmission) {
+			while (valueLookupGeneration == null && env != 0L && !shuttingDown) {
+				try {
+					writerAdmission.wait();
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					throw new IOException("Interrupted while awaiting dictionary publication", interrupted);
+				}
+			}
+			if (env == 0L || shuttingDown) {
+				throw new IOException("ValueStore is closed while awaiting predicate-domain maintenance");
 			}
 		}
 	}
@@ -11712,7 +13590,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (create) {
 			checkReplayFailure();
 			if (writeTxn != 0 && !isWriteTransactionOwner()) {
-				return withWriterLookupContext((stack, txn) -> getId(value, true, positionMask));
+				long writer = awaitJoinableWriter();
+				if (writer != 0L) {
+					return withBorrowedReadContext(writer, currentReadRevision(LmdbValue.UNKNOWN_ID), false,
+							(stack, txn) -> getId(value, true, positionMask));
+				}
 			}
 		}
 		LmdbValue.InternalIdentity identity = value instanceof LmdbValue nativeValue
@@ -11785,7 +13667,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			}
 			return resolved.id();
 		}
-		return getId(value, create, positionMask, null);
+		boolean admitted = create && enterStandaloneValueWriter();
+		try {
+			return getId(value, create, positionMask, null);
+		} finally {
+			leaveStandaloneValueWriter(admitted);
+		}
 	}
 
 	private long getCapturedId(long txn, SnapshotValueLookup captured, int positionMask, ValueLookupContext lookup)
@@ -12193,7 +14080,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				if (lookup != null) {
 					lookup.captureScope(txn);
 				}
-				TripleIndex index = TripleIndex.getBestIndex(tripleTermIndexes, subject, predicate, object, -1);
+				TripleIndex index = TripleIndex.getBestIndex(termIndexesForTransaction(mdb_txn_id(txn)), subject,
+						predicate, object, -1);
 				long visited = 0;
 				try (RecordIterator records = new LmdbRecordIterator(index,
 						index.getPatternScore(subject, predicate, object, -1) > 0,
@@ -12672,6 +14560,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	void persistPreparedValues(PreparedValueBatch prepared) throws IOException {
 		try (MemoryStack stack = stackPush()) {
+			invalidateUntrustedCountMetadata(stack, writeTxn);
 			PointerBuffer cursorHandle = stack.mallocPointer(1);
 			E(mdb_cursor_open(writeTxn, dbi, cursorHandle));
 			long cursor = cursorHandle.get(0);
@@ -12732,7 +14621,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			} finally {
 				mdb_cursor_close(cursor);
 			}
-			if (prepared.referenceCountUpdates.notEmpty()) {
+			if (hasTrustedReferenceCounts() && prepared.referenceCountUpdates.notEmpty()) {
 				E(mdb_cursor_open(writeTxn, refCountsDbi, cursorHandle));
 				long refCountCursor = cursorHandle.get(0);
 				try {
@@ -12752,7 +14641,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			}
 			ByteBuffer tripleKey = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
 			for (PreparedTripleRecord triple : prepared.tripleRecords) {
-				for (TripleIndex index : tripleTermIndexes) {
+				for (TripleIndex index : termWriteIndexes) {
 					tripleKey.clear();
 					index.toKey(tripleKey, triple.subject, triple.predicate, triple.object, triple.id);
 					keyVal.mv_data(tripleKey.flip());
@@ -12797,10 +14686,6 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				}
 			}
 		}
-	}
-
-	private long getKnownOrInlineId(Value value, boolean isOwnValue) throws IOException {
-		return knownMutationId(value);
 	}
 
 	private long getInlineId(Value value) {
@@ -12861,7 +14746,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private void requireRefCountIntegrity(String operation) throws IOException {
 		if (!refCountIntegrityEstablished || refCountRecoveryInProgress) {
 			throw new IOException("Cannot " + operation
-					+ " while ValueStore ref-count integrity is untrusted; reopen to reconcile live owners");
+					+ " while ValueStore ref-count integrity is untrusted; run explicit offline reference-count reconstruction");
 		}
 	}
 
@@ -12870,18 +14755,38 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	public void gcIds(Collection<Long> ids, Collection<Long> nextIds) throws IOException {
+		gcIds(ids, nextIds, null);
+	}
+
+	@FunctionalInterface
+	interface ImmediateValueIdLivenessChecker {
+		boolean filterUsedIds(Collection<Long> ids) throws IOException;
+	}
+
+	/** Returns false before mutation when optional liveness admission cannot proceed immediately. */
+	boolean gcIdsIfReaderAvailable(Collection<Long> ids, Collection<Long> nextIds,
+			ImmediateValueIdLivenessChecker checker) throws IOException {
+		return gcIds(ids, nextIds, Objects.requireNonNull(checker));
+	}
+
+	private boolean gcIds(Collection<Long> ids, Collection<Long> nextIds, ImmediateValueIdLivenessChecker checker)
+			throws IOException {
 		if (!enableGC()) {
-			return;
+			return true;
 		}
-		if (!refCountRepairEnabled) {
-			// Keep candidates durable while historical counts are untrusted. A later opted-in opener reconstructs
-			// counts and checks authoritative statement liveness before draining this queue.
+		if (!isValueReclamationEnabled()) {
+			// Keep candidates durable while historical counts are untrusted. Explicit offline reconstruction must
+			// establish exact counts, and authoritative statement liveness must permit later queue reclamation.
 			recordRetiredIds(ids, 0L);
-			return;
+			return true;
 		}
 		requireRefCountIntegrity("garbage collect ValueStore IDs");
 		ids = new ArrayList<>(ids);
-		valueIdLivenessChecker.filterUsedIds(ids);
+		if (checker == null) {
+			valueIdLivenessChecker.filterUsedIds(ids);
+		} else if (!checker.filterUsedIds(ids)) {
+			return false;
+		}
 
 		if (!ids.isEmpty()) {
 			Collection<Long> candidates = ids;
@@ -12917,6 +14822,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				return null;
 			});
 		}
+		return true;
 	}
 
 	/**
@@ -12938,9 +14844,6 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			throws IOException {
 		if (!enableGC() || ids.isEmpty()) {
 			return;
-		}
-		if (refCountRepairEnabled) {
-			requireRefCountIntegrity("record retired ValueStore IDs");
 		}
 		List<Long> capturedIds = List.copyOf(ids);
 		// Finish native preflight before resizing. The continuation owns copied IDs and resolves the current
@@ -12974,11 +14877,32 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	 * before being reclaimed.
 	 */
 	RetiredValueIdStore.DrainBatch pollRetiredIds(long maxRevisionInclusive, int maxIds) throws IOException {
-		if (!refCountRepairEnabled || !retiredIdStore.hasPending()) {
+		if (!isValueReclamationEnabled() || !retiredIdStore.hasPending()) {
 			return null;
 		}
 		return readTransaction(env,
 				(stack, txn) -> retiredIdStore.pollDrainable(stack, txn, maxRevisionInclusive, maxIds));
+	}
+
+	/** Optional post-commit polling does not wait for dictionary reader capacity under the publication lock. */
+	RetiredValueIdStore.DrainBatch tryPollRetiredIds(long maxRevisionInclusive, int maxIds) throws IOException {
+		if (!isValueReclamationEnabled() || !retiredIdStore.hasPending()) {
+			return null;
+		}
+		ValueReadScope scope = new ValueReadScope(null);
+		try {
+			try {
+				return txnManager.tryDoWithImmediate(
+						(stack, txn) -> withScopedValueReadContext(txn, scope,
+								(readStack, readTxn) -> retiredIdStore.pollDrainable(readStack, readTxn,
+										maxRevisionInclusive, maxIds)),
+						scope::open);
+			} catch (ValueReadAdmissionException unavailable) {
+				return null;
+			}
+		} finally {
+			scope.releaseReservation();
+		}
 	}
 
 	/**
@@ -13057,6 +14981,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				if (hasPositiveRefCount(stack, writeTxn, id)) {
 					continue;
 				}
+				if (isLegacyCoreDatatypeId(stack, writeTxn, id)) {
+					continue;
+				}
 				if (legacyValueIndex != null) {
 					try {
 						legacyValueIndex.remove(id);
@@ -13102,7 +15029,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 							}
 						}
 
-						for (TripleIndex index : tripleTermIndexes) {
+						for (TripleIndex index : termWriteIndexes) {
 							// keep index for resolving id -> triple term
 							if (index == tripleTermCspoIndex) {
 								continue;
@@ -13253,6 +15180,60 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		return retiredIds;
 	}
 
+	/** Identifies lazily created core datatype owners from the same writer snapshot used by reclamation. */
+	private boolean isLegacyCoreDatatypeId(MemoryStack stack, long txn, long id) throws IOException {
+		if (coreDatatypeLiteralReferences || ValueIds.getIdType(id) != ValueIds.T_URI) {
+			return false;
+		}
+		byte[] data = getData(stack, txn, id);
+		if (data == null) {
+			return false;
+		}
+		try {
+			ByteBuffer encoded = ByteBuffer.wrap(data);
+			if (encoded.get() != URI_VALUE) {
+				throw new IOException("Expected URI owner for ValueStore ID " + id);
+			}
+			int namespaceStart = encoded.position();
+			long namespaceId = Varint.readUnsignedHeap(encoded);
+			if (namespaceId <= 0L || ValueIds.getIdType(namespaceId) != ValueIds.T_PTR
+					|| encoded.position() - namespaceStart != Varint.calcLengthUnsigned(namespaceId)) {
+				throw new IOException("Malformed namespace reference for ValueStore ID " + id);
+			}
+			byte[] namespaceData = getData(stack, txn, namespaceId);
+			if (namespaceData == null || namespaceData.length == 0 || namespaceData[0] != NAMESPACE_VALUE) {
+				throw new IOException("Missing datatype namespace owner for ValueStore ID " + id);
+			}
+			// Decode both components strictly before treating any URI as eligible for reclamation. Replacement
+			// characters would turn corrupt ownership bytes into a different, apparently ordinary IRI.
+			String namespace = strictUtf8(namespaceData, 1, namespaceData.length - 1);
+			String local = strictUtf8(data, encoded.position(), encoded.remaining());
+			if (!isLiveReverseOwner(stack, txn, namespaceId, namespaceData)) {
+				throw new IOException("Malformed namespace reverse owner for ValueStore ID " + id);
+			}
+			if (!namespace.equals(CoreDatatype.XSD.STRING.getIri().getNamespace())
+					&& !namespace.equals(CoreDatatype.RDF.LANGSTRING.getIri().getNamespace())) {
+				return false;
+			}
+			CoreDatatype datatype = CoreDatatype.from(SimpleValueFactory.getInstance().createIRI(namespace, local));
+			return datatype instanceof CoreDatatype.XSD || datatype == CoreDatatype.RDF.LANGSTRING;
+		} catch (RuntimeException malformed) {
+			throw new IOException("Malformed URI owner for ValueStore ID " + id, malformed);
+		}
+	}
+
+	private static String strictUtf8(byte[] bytes, int offset, int length) throws IOException {
+		try {
+			return StandardCharsets.UTF_8.newDecoder()
+					.onMalformedInput(CodingErrorAction.REPORT)
+					.onUnmappableCharacter(CodingErrorAction.REPORT)
+					.decode(ByteBuffer.wrap(bytes, offset, length))
+					.toString();
+		} catch (CharacterCodingException malformed) {
+			throw new IOException("Malformed UTF-8 in ValueStore URI owner", malformed);
+		}
+	}
+
 	private boolean hasDictionaryRecord(MemoryStack stack, long txn, long id) throws IOException {
 		if (id <= 0L || ValueIds.isInlined(id)) {
 			return false;
@@ -13301,9 +15282,15 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	private void freeUnusedIdsAndValues(MemoryStack stack, long txn, Set<Long> revisionIds,
 			ValueIdLivenessChecker livenessChecker) throws IOException {
-		if (!refCountRepairEnabled) {
-			return;
+		freeUnusedIdsAndValues(stack, txn, revisionIds, livenessChecker, Integer.MAX_VALUE);
+	}
+
+	private int freeUnusedIdsAndValues(MemoryStack stack, long txn, Set<Long> revisionIds,
+			ValueIdLivenessChecker livenessChecker, int maxVisitedRecords) throws IOException {
+		if (!isValueReclamationEnabled()) {
+			return 0;
 		}
+		int visited = 0;
 		boolean retiringCohorts = revisionIds != null;
 		MDBVal idVal = MDBVal.calloc(stack);
 		MDBVal revIdVal = MDBVal.calloc(stack);
@@ -13332,8 +15319,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				revIdBb.clear();
 				Varint.writeUnsigned(revIdBb, revisionId);
 				revIdVal.mv_data(revIdBb.flip());
-				if (mdb_cursor_get(unusedIdsCursor, revIdVal, dataVal, MDB_SET_RANGE) == MDB_SUCCESS) {
+				int rc = mdb_cursor_get(unusedIdsCursor, revIdVal, dataVal, MDB_SET_RANGE);
+				if (rc == MDB_SUCCESS) {
 					do {
+						visited++;
 						ByteBuffer keyBb = revIdVal.mv_data();
 						long revisionOfId = Varint.readUnsigned(keyBb);
 						if (revisionId == 0L || revisionOfId == revisionId) {
@@ -13342,8 +15331,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 							livenessCandidate.clear();
 							livenessCandidate.add(id);
 							livenessChecker.filterUsedIds(livenessCandidate);
-							if (livenessCandidate.isEmpty() || hasPositiveRefCount(stack, txn, id)
-									|| !hasDictionaryRecord(stack, txn, id)) {
+							if (livenessCandidate.isEmpty()) {
+								// The bounded checker also retains uncertain candidates. Preserve their durable hint.
+								continue;
+							}
+							if (hasPositiveRefCount(stack, txn, id) || !hasDictionaryRecord(stack, txn, id)) {
 								// A stale retirement marker must not destroy a dependency that reconstruction found
 								// live. Remove
 								// only the obsolete hint. Missing records provide no proof that the ordinal is free:
@@ -13392,8 +15384,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 								keyBuf.flip();
 								keyVal.mv_data(keyBuf);
 
-								int rc = mdb_cursor_get(termsCursor, keyVal, dataVal, MDB_SET_RANGE);
-								if (rc == MDB_SUCCESS &&
+								int termRc = E(mdb_cursor_get(termsCursor, keyVal, dataVal, MDB_SET_RANGE));
+								if (termRc == MDB_SUCCESS &&
 										tripleTermCspoIndex.createMatcher(-1, -1, -1, id).matches(keyVal.mv_data())) {
 									// delete id -> triple term association
 									E(mdb_cursor_del(termsCursor, 0));
@@ -13412,7 +15404,14 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 						} else {
 							break;
 						}
-					} while (mdb_cursor_get(unusedIdsCursor, revIdVal, dataVal, MDB_NEXT) == MDB_SUCCESS);
+					} while (visited < maxVisitedRecords
+							&& (rc = mdb_cursor_get(unusedIdsCursor, revIdVal, dataVal, MDB_NEXT)) == MDB_SUCCESS);
+				}
+				if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+					E(rc);
+				}
+				if (visited >= maxVisitedRecords) {
+					break;
 				}
 			}
 		} finally {
@@ -13429,12 +15428,402 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			// checkpoint before this method must leave candidates eligible for its replacement writer.
 			reclaimedRevisionIds.addAll(revisionIds);
 		}
+		return visited;
+	}
+
+	/** Keeps the environment alive until one complete explicit retirement call has settled. */
+	final class RetirementOperation implements AutoCloseable {
+		private final Thread owner = Thread.currentThread();
+		private final Runnable cancelWait;
+		private volatile boolean cancelled;
+		private boolean closed;
+
+		private RetirementOperation(Runnable cancelWait) {
+			this.cancelWait = cancelWait;
+		}
+
+		@Override
+		public void close() {
+			if (owner != Thread.currentThread() || currentRetirementOperation.get() != this) {
+				throw new IllegalStateException("Retirement operation released by a non-owner");
+			}
+			synchronized (writerAdmission) {
+				if (closed || !activeRetirementOperations.remove(this)) {
+					throw new IllegalStateException("Retirement operation was already released");
+				}
+				closed = true;
+				currentRetirementOperation.remove();
+				writerAdmission.notifyAll();
+			}
+		}
+	}
+
+	RetirementOperation beginRetirementOperation(Runnable cancelWait) throws IOException {
+		synchronized (writerAdmission) {
+			if (env == 0L || shuttingDown) {
+				throw new IOException("ValueStore is closed");
+			}
+			if (currentRetirementOperation.get() != null) {
+				throw new IOException("Retirement operation is already active on this thread");
+			}
+			RetirementOperation operation = new RetirementOperation(cancelWait);
+			currentRetirementOperation.set(operation);
+			try {
+				activeRetirementOperations.add(operation);
+			} catch (RuntimeException | Error failure) {
+				currentRetirementOperation.remove();
+				throw failure;
+			}
+			return operation;
+		}
+	}
+
+	RetirementOperation currentRetirementOperation() {
+		return currentRetirementOperation.get();
+	}
+
+	boolean retirementOperationCancelled() {
+		RetirementOperation operation = currentRetirementOperation.get();
+		return operation != null && operation.cancelled;
+	}
+
+	/** Excludes standalone and maintenance writers before retirement enters either native environment. */
+	final class RetirementWriterAdmission implements AutoCloseable {
+		private final Thread owner = Thread.currentThread();
+		private WriterTransaction transaction;
+		private RetirementNativeTransaction nativeWriter;
+		private boolean closed;
+
+		@Override
+		public void close() throws IOException {
+			synchronized (writerAdmission) {
+				if (closed) {
+					return;
+				}
+				if (owner != Thread.currentThread() || retirementWriterAdmission != this) {
+					throw new IOException("Retirement writer admission released by a non-owner");
+				}
+				if (writeTxn != 0L || writerPublication != null || writerStartsInFlight != 0
+						|| nativeWriter != null && nativeWriter.unsettled()) {
+					throw new IOException("Retirement writer admission still owns a native transaction");
+				}
+				closed = true;
+				retirementWriterAdmission = null;
+				writerAdmission.notifyAll();
+			}
+		}
+	}
+
+	boolean hasUnsettledRetirementWriter(WriterTransaction transaction) {
+		synchronized (writerAdmission) {
+			return retirementWriterAdmission != null && retirementWriterAdmission.transaction == transaction
+					&& retirementWriterAdmission.nativeWriter != null
+					&& retirementWriterAdmission.nativeWriter.unsettled();
+		}
+	}
+
+	boolean canRetryRetirementRollback(WriterTransaction transaction) {
+		synchronized (writerAdmission) {
+			return retirementWriterAdmission != null && retirementWriterAdmission.transaction == transaction
+					&& retirementWriterAdmission.nativeWriter != null
+					&& retirementWriterAdmission.nativeWriter.canAbort();
+		}
+	}
+
+	void settleUnpublishedRetirementWriter(WriterTransaction transaction) throws IOException {
+		RetirementNativeTransaction nativeWriter;
+		synchronized (writerAdmission) {
+			if (retirementWriterAdmission == null || retirementWriterAdmission.transaction != transaction
+					|| writerPublication != null || writerStartOwner != Thread.currentThread()) {
+				return;
+			}
+			nativeWriter = retirementWriterAdmission.nativeWriter;
+		}
+		if (nativeWriter == null || !nativeWriter.canAbort()) {
+			return;
+		}
+		nativeWriter.abort();
+		synchronized (writerAdmission) {
+			if (writerStartOwner == Thread.currentThread() && writerStartsInFlight > 0) {
+				writerStartsInFlight--;
+				if (writerStartsInFlight == 0) {
+					writerStartOwner = null;
+				}
+				writerAdmission.notifyAll();
+			}
+		}
+	}
+
+	private RetirementNativeTransaction retirementNativeWriter(WriterPublication publication) {
+		synchronized (writerAdmission) {
+			return retirementWriterAdmission != null && retirementWriterAdmission.transaction == publication.transaction
+					? retirementWriterAdmission.nativeWriter
+					: null;
+		}
+	}
+
+	private boolean retirementWriterBusy() {
+		return retirementWriterAdmission != null || writeTxn != 0L || writerPublication != null
+				|| writerStartsInFlight != 0 || standaloneWritersInFlight != 0 || termMaintenanceWriterActive
+				|| nativeMapGrowthOwner != null || languageTagMigrationOwner != null;
+	}
+
+	RetirementWriterAdmission tryReserveRetirementWriter() throws IOException {
+		synchronized (writerAdmission) {
+			if (env == 0L || shuttingDown) {
+				throw new IOException("ValueStore is closed");
+			}
+			if (retirementWriterBusy()) {
+				return null;
+			}
+			return retirementWriterAdmission = new RetirementWriterAdmission();
+		}
+	}
+
+	void awaitRetirementWriterOpportunity() throws IOException {
+		synchronized (writerAdmission) {
+			while (retirementWriterBusy()) {
+				if (env == 0L || shuttingDown) {
+					throw new IOException("ValueStore is closed");
+				}
+				try {
+					writerAdmission.wait();
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					throw new IOException("Interrupted while awaiting retirement writer admission", interrupted);
+				}
+			}
+			if (env == 0L || shuttingDown) {
+				throw new IOException("ValueStore is closed");
+			}
+		}
+	}
+
+	private static final class RetirementAssociationUnavailable extends IOException {
+		private static final long serialVersionUID = 1L;
+	}
+
+	/** Starts the real native writer without publishing it until the identity gate is immediately available. */
+	boolean tryStartRetirementTransaction(WriterTransaction transaction) throws IOException {
+		synchronized (writerAdmission) {
+			if (retirementWriterAdmission == null || retirementWriterAdmission.owner != Thread.currentThread()
+					|| retirementWriterAdmission.nativeWriter != null) {
+				throw new IOException("Retirement native writer has no exclusive admission");
+			}
+			retirementWriterAdmission.transaction = transaction;
+			retirementWriterAdmission.nativeWriter = new RetirementNativeTransaction(retirementNativeAccess, env);
+		}
+		tryingRetirementAssociation.set(Boolean.TRUE);
+		try {
+			startRetirementTransaction(transaction);
+			return true;
+		} catch (RetirementAssociationUnavailable unavailable) {
+			if (unavailable.getSuppressed().length != 0) {
+				throw unavailable;
+			}
+			return false;
+		} finally {
+			tryingRetirementAssociation.remove();
+		}
+	}
+
+	void releaseRetirementAssociation() {
+		if (Boolean.TRUE.equals(retirementAssociationOwned.get())) {
+			associationGate.unlock();
+			retirementAssociationOwned.remove();
+		}
+	}
+
+	/** Inert seam after the real native begin and before publication of its pointer. */
+	void beforeRetirementNativeWriterPublicationForTest() {
+	}
+
+	/** The commit's reset and high-water refresh are finished after all paired native authority is released. */
+	final class DeferredRetirementReset implements AutoCloseable {
+		private final Thread owner = Thread.currentThread();
+		private boolean committed;
+		private boolean invalidateOverlay;
+		private boolean highWaterPending;
+		private long highWaterGeneration;
+		private boolean closed;
+
+		private DeferredRetirementReset() throws IOException {
+			synchronized (writerAdmission) {
+				if (env == 0L || shuttingDown || deferredRetirementReset.get() != null) {
+					throw new IOException("Cannot defer retirement reset for this ValueStore owner");
+				}
+				activeRetirementResets.add(this);
+				valueLookupGeneration = null;
+				deferredRetirementReset.set(this);
+			}
+		}
+
+		@Override
+		public void close() throws IOException {
+			if (closed) {
+				return;
+			}
+			if (owner != Thread.currentThread() || deferredRetirementReset.get() != this) {
+				throw new IOException("Deferred retirement reset released by a non-owner");
+			}
+			closed = true;
+			Throwable failure = null;
+			boolean resetSucceeded = !committed;
+			boolean overlaySettled = true;
+			try {
+				if (committed && invalidateOverlay) {
+					try {
+						beforeDeferredRetirementOverlayInvalidationForTest();
+						compressedValues.invalidate();
+					} catch (Throwable overlayFailure) {
+						overlaySettled = false;
+						failure = appendFailure(failure, overlayFailure);
+					}
+				}
+				if (highWaterPending) {
+					try {
+						long occupied = occupiedBytes();
+						synchronized (writerAdmission) {
+							if (nativeCommitGeneration == highWaterGeneration && writeTxn == 0L
+									&& writerPublication == null && writerStartsInFlight == 0) {
+								committedHighWaterBytes = occupied;
+							}
+						}
+					} catch (Throwable refreshFailure) {
+						failure = appendFailure(failure, refreshFailure);
+					}
+				}
+				if (committed) {
+					try {
+						resetReadTransactionsAfterCommit();
+						resetSucceeded = true;
+					} catch (Throwable resetFailure) {
+						failure = appendFailure(failure, resetFailure);
+					}
+				}
+			} finally {
+				synchronized (writerAdmission) {
+					activeRetirementResets.remove(this);
+					if (!resetSucceeded) {
+						pendingRetirementReset = new Object();
+					}
+					if (!overlaySettled) {
+						pendingRetirementOverlayInvalidation = new Object();
+					}
+					deferredRetirementReset.remove();
+					endValueLookupMutation();
+					writerAdmission.notifyAll();
+				}
+			}
+			rethrowFailure(failure);
+		}
+	}
+
+	DeferredRetirementReset deferRetirementReset() throws IOException {
+		return new DeferredRetirementReset();
+	}
+
+	/** Inert seam immediately before deferred overlay invalidation. */
+	void beforeDeferredRetirementOverlayInvalidationForTest() throws IOException {
+	}
+
+	private void retryPendingRetirementOverlayInvalidation() throws IOException {
+		Object pending;
+		synchronized (writerAdmission) {
+			pending = pendingRetirementOverlayInvalidation;
+		}
+		if (pending == null) {
+			return;
+		}
+		beforeDeferredRetirementOverlayInvalidationForTest();
+		compressedValues.invalidate();
+		synchronized (writerAdmission) {
+			if (pendingRetirementOverlayInvalidation == pending) {
+				pendingRetirementOverlayInvalidation = null;
+			}
+		}
+	}
+
+	/** Refuses revision admission instead of waiting while the retirement's paired owners are held. */
+	boolean tryCommitRetirementTransaction(WriterTransaction transaction) throws IOException {
+		long stamp = revisionLock.tryWriteLock();
+		if (stamp == 0L) {
+			return false;
+		}
+		try {
+			retirementRevisionAuthority.set(Boolean.TRUE);
+			transaction.invoke(this::commit);
+			return true;
+		} finally {
+			retirementRevisionAuthority.remove();
+			revisionLock.unlockWrite(stamp);
+		}
+	}
+
+	void awaitRetirementRevisionOpportunity() throws IOException {
+		try {
+			long stamp = revisionLock.writeLockInterruptibly();
+			revisionLock.unlockWrite(stamp);
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while awaiting retirement revision admission", interrupted);
+		}
 	}
 
 	public void startTransaction(boolean resize) throws IOException {
-		checkReplayFailure();
+		startTransaction(resize, DictionaryTransactionPurpose.OWNER_MUTATION);
+	}
+
+	void startTransaction(boolean resize, WriterTransaction transaction) throws IOException {
+		if (transaction == null) {
+			startTransaction(resize);
+		} else {
+			transaction.invoke(() -> startTransaction(resize));
+		}
+	}
+
+	/** Starts only the bounded retirement batch, leaving unrelated periodic eviction for its normal owner. */
+	void startRetirementTransaction(WriterTransaction transaction) throws IOException {
+		transaction.invoke(() -> startTransaction(false, DictionaryTransactionPurpose.BOUNDED_RECLAMATION));
+	}
+
+	WriterTransaction currentWriterTransaction() {
+		WriterPublication publication = writerPublication;
+		return publication == null ? null : publication.transaction;
+	}
+
+	private void startTransaction(boolean resize, DictionaryTransactionPurpose purpose) throws IOException {
+		WriterTransaction transaction = WriterTransaction.admitted();
+		RetirementNativeTransaction retirementNative;
 		synchronized (writerAdmission) {
-			boolean restarting = writerStartsInFlight != 0 && writerStartOwner == Thread.currentThread();
+			retirementNative = Boolean.TRUE.equals(tryingRetirementAssociation.get())
+					? retirementWriterAdmission.nativeWriter
+					: null;
+		}
+		if (WriterTransaction.current() == null) {
+			transaction.replayDecision = purpose == DictionaryTransactionPurpose.DERIVED_INDEX
+					|| purpose == DictionaryTransactionPurpose.LANGUAGE_MIGRATION_PLANNING ? null : replayDecision;
+		}
+		if (transaction.replayDecision != null) {
+			transaction.replayDecision.check();
+		}
+		synchronized (writerAdmission) {
+			if (languageTagMigrationOwner != null && languageTagMigrationOwner != Thread.currentThread()) {
+				throw new IOException("ValueStore already has an active write transaction");
+			}
+			while (termMaintenanceWriterActive && Thread.currentThread() != termIndexMaintenanceThread
+					|| standaloneWritersInFlight != 0
+					|| nativeMapGrowthOwner != null && nativeMapGrowthOwner != Thread.currentThread()
+					|| retirementWriterAdmission != null && retirementWriterAdmission.owner != Thread.currentThread()) {
+				try {
+					writerAdmission.wait();
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					throw new IOException("Interrupted while awaiting ValueStore maintenance writer", interrupted);
+				}
+			}
+			boolean restarting = writerStartsInFlight != 0 && writerStartOwner == Thread.currentThread()
+					|| nativeMapGrowthOwner == Thread.currentThread();
 			if (env == 0 || shuttingDown && !restarting) {
 				throw new IOException("ValueStore is closed");
 			}
@@ -13453,22 +15842,65 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 			// Native begin can block on an external writer. The in-flight scope keeps the environment alive without
 			// holding an admission monitor or native barrier through begin, reclamation, or map-growth restart.
-			E(mdb_txn_begin(env, NULL, 0, pp));
+			if (retirementNative == null) {
+				E(mdb_txn_begin(env, NULL, 0, pp));
+			} else {
+				retirementNative.begin();
+				pp.put(0, retirementNative.pointer(retirementNativeAccess));
+			}
+			if (Boolean.TRUE.equals(tryingRetirementAssociation.get())) {
+				try {
+					beforeRetirementNativeWriterPublicationForTest();
+					if (!associationGate.tryLock()) {
+						throw new RetirementAssociationUnavailable();
+					}
+					try {
+						retirementAssociationOwned.set(Boolean.TRUE);
+					} catch (RuntimeException | Error failure) {
+						associationGate.unlock();
+						throw failure;
+					}
+				} catch (IOException | RuntimeException | Error failure) {
+					// No writer pointer was exposed: only this admitting thread can consume this native transaction.
+					try {
+						retirementNative.abort();
+					} catch (IOException | RuntimeException | Error cleanup) {
+						if (cleanup != failure) {
+							failure.addSuppressed(cleanup);
+						}
+					}
+					throw failure;
+				}
+			}
 			synchronized (writerAdmission) {
 				writeTxn = pp.get(0);
 				writeTxnOwner = Thread.currentThread();
-				writerPublication = new WriterPublication(Thread.currentThread());
+				writerPublication = new WriterPublication(Thread.currentThread(), transaction);
+				replayDecision = transaction.replayDecision;
 				writerFirstAppendedId = nextId;
 				writerReusedIds.clear();
 			}
 			validateNativeWriterTransaction(writeTxn, startupInitializationInProgress
 					? startupExpectedLastTransactionId
 					: lastTrustedNativeTransactionId);
-			beginCompressedValueMutation(writeTxn);
+			if (Boolean.TRUE.equals(tryingRetirementAssociation.get())) {
+				DeferredRetirementReset deferred = deferredRetirementReset.get();
+				if (deferred == null || compressedValueMutation != null) {
+					throw new IOException("Retirement overlay state is not exclusively admitted");
+				}
+				deferred.invalidateOverlay = valueOverlayEnabled && compressedValues != null;
+			} else {
+				beginCompressedValueMutation(writeTxn);
+			}
+			if (!startupInitializationInProgress && purpose != DictionaryTransactionPurpose.DERIVED_INDEX
+					&& purpose != DictionaryTransactionPurpose.LANGUAGE_MIGRATION_PLANNING) {
+				invalidateUntrustedCountMetadata(stack, writeTxn);
+			}
 
 			// delete unused IDs if required on a regular basis
 			// this is also run after opening the database
-			if (lazyRevisions.nextValueEvictionTime >= 0
+			if (purpose == DictionaryTransactionPurpose.OWNER_MUTATION && hasTrustedReferenceCounts()
+					&& lazyRevisions.nextValueEvictionTime >= 0
 					&& System.currentTimeMillis() >= lazyRevisions.nextValueEvictionTime) {
 				Set<Long> candidates;
 				synchronized (unusedRevisionIds) {
@@ -13487,17 +15919,19 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				}
 			}
 		} catch (LmdbUtil.MapFullException mapFull) {
-			TxnReplayPolicy.Decision decision = replayDecision;
+			TxnReplayPolicy.Decision decision = transaction.replayDecision;
 			if (autoGrow && decision != null && decision.frozenReplay) {
 				throw frozenCapacity(mapFull);
 			}
 			if (autoGrow && decision != null && !decision.track) {
-				growForTransactionRetry(0L, mapFull, decision);
+				growForTransactionRetry(0L, mapFull, decision, transaction);
 			}
 			throw mapFull;
 		} finally {
 			synchronized (writerAdmission) {
-				if (--writerStartsInFlight == 0) {
+				boolean uncertainUnpublished = retirementNative != null && retirementNative.unsettled()
+						&& writerPublication == null;
+				if (!uncertainUnpublished && --writerStartsInFlight == 0) {
 					writerStartOwner = null;
 					if (writeTxn == 0 && writerPublication == null && env != 0 && !shuttingDown) {
 						// Native begin failed before creating publication authority; no cleanup remains to fence.
@@ -13513,13 +15947,21 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	 * Closes the snapshot and the DB iterator if any was opened in the current transaction
 	 */
 	void endTransaction(boolean commit, boolean autoGrow) throws IOException {
+		WriterPublication publication = writerPublication;
+		WriterTransaction requested = WriterTransaction.current();
+		if (requested != null && (publication == null || publication.transaction != requested)) {
+			return;
+		}
+		endTransaction(publication, commit, autoGrow);
+	}
+
+	private void endTransaction(WriterPublication publication, boolean commit, boolean autoGrow) throws IOException {
 		if (commit && autoGrow && isFrozenReplay()) {
 			throw new IOException("ValueStore checkpoints are disabled during frozen statement replay");
 		}
 		if (commit) {
 			checkReplayFailure();
 		}
-		WriterPublication publication = writerPublication;
 		if (publication == null) {
 			return;
 		}
@@ -13556,6 +15998,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		} finally {
 			synchronized (writerAdmission) {
 				if (publicationComplete && writerPublication == publication) {
+					replayDecision = null;
 					writerPublication = null;
 					if (!shuttingDown) {
 						// Only settled publication opens the global ready-value proof again, atomically with
@@ -13565,7 +16008,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				}
 				writerAdmission.notifyAll();
 			}
-			if (!(commit && autoGrow)) {
+			if (!(commit && autoGrow) && (publicationComplete || terminalFailure != null)) {
 				closeLegacyValueIndex(terminalFailure);
 			}
 		}
@@ -13593,49 +16036,97 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				try (MemoryStack stack = stackPush()) {
 					persistNextId(stack, writeTxn);
 					updateRefCounts(stack, writeTxn);
+					writeReferenceCountProof(stack, writeTxn);
 				}
 				refCountsTxCache.clear();
-				if (invalidateRevisionOnCommit) {
-					long stamp = revisionLock.writeLock();
-					try {
+				Throwable completionFailure = null;
+				try {
+					if (invalidateRevisionOnCommit) {
+						long stamp = Boolean.TRUE.equals(retirementRevisionAuthority.get()) ? 0L
+								: revisionLock.writeLock();
+						try {
+							int rc = commitAndReleaseWriteTransaction(publication);
+							if (rc != MDB_SUCCESS) {
+								cleanupAfterFailedCommit(rc);
+							}
+							if (!publication.retirementQueueSettled) {
+								retiredIdStore.transactionCommitted();
+							}
+							flushPendingHashUpdates();
+							lazyRevisions.retireCurrentEpoch();
+							setNewRevision();
+							clearCaches();
+						} finally {
+							if (stamp != 0L) {
+								revisionLock.unlockWrite(stamp);
+							}
+						}
+					} else {
 						int rc = commitAndReleaseWriteTransaction(publication);
 						if (rc != MDB_SUCCESS) {
 							cleanupAfterFailedCommit(rc);
 						}
-						retiredIdStore.transactionCommitted();
+						if (!publication.retirementQueueSettled) {
+							retiredIdStore.transactionCommitted();
+						}
 						flushPendingHashUpdates();
-						lazyRevisions.retireCurrentEpoch();
-						setNewRevision();
-						clearCaches();
-					} finally {
-						revisionLock.unlockWrite(stamp);
 					}
-				} else {
-					int rc = commitAndReleaseWriteTransaction(publication);
-					if (rc != MDB_SUCCESS) {
-						cleanupAfterFailedCommit(rc);
-					}
-					retiredIdStore.transactionCommitted();
-					flushPendingHashUpdates();
+				} catch (Throwable failure) {
+					completionFailure = failure;
 				}
+				if (publication.retirementCommitFailure != null) {
+					if (completionFailure != null && completionFailure != publication.retirementCommitFailure) {
+						publication.retirementCommitFailure.addSuppressed(completionFailure);
+					}
+					rethrowFailure(publication.retirementCommitFailure);
+				}
+				rethrowFailure(completionFailure);
 			} else {
 				refCountsTxCache.clear();
 				Throwable rollbackFailure = null;
+				boolean nativeRollbackConfirmed = false;
+				RetirementNativeTransaction retirement = retirementNativeWriter(publication);
 				associationGate.lock();
 				try {
 					long transaction = nativeWriteTransaction(publication);
-					abortWriteTransaction(transaction);
+					if (retirement == null) {
+						abortWriteTransaction(transaction);
+						nativeRollbackConfirmed = true;
+					} else {
+						abortWriteTransaction(retirement);
+					}
 				} catch (Throwable failure) {
 					rollbackFailure = failure;
 				} finally {
-					try {
-						settleValueAssociation(false);
-					} finally {
-						releaseNativeWriteTransactionOwnership(publication);
+					if (retirement == null) {
+						try {
+							settleValueAssociation(false);
+						} finally {
+							releaseNativeWriteTransactionOwnership(publication);
+							associationGate.unlock();
+						}
+						releaseWriteTransactionState();
+						droppedTermIndexDbis.clear();
+					} else if (retirement.consumed()) {
+						try {
+							settleValueAssociation(false);
+						} catch (Throwable failure) {
+							rollbackFailure = appendFailure(rollbackFailure, failure);
+						} finally {
+							releaseNativeWriteTransactionOwnership(publication);
+							associationGate.unlock();
+						}
+						releaseWriteTransactionState();
+						droppedTermIndexDbis.clear();
+					} else {
 						associationGate.unlock();
 					}
-					releaseWriteTransactionState();
-					droppedTermIndexDbis.clear();
+				}
+				if (retirement != null && !retirement.consumed()) {
+					if (rollbackFailure == null) {
+						rollbackFailure = new IOException("Retirement abort did not consume its native writer");
+					}
+					rethrowFailure(rollbackFailure);
 				}
 				try {
 					rollbackRetiredIds();
@@ -13646,6 +16137,13 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					clearPendingHashUpdates();
 				} catch (Throwable failure) {
 					rollbackFailure = appendFailure(rollbackFailure, failure);
+				}
+				if (nativeRollbackConfirmed) {
+					try {
+						discardCompressedValueMutation();
+					} catch (Throwable failure) {
+						rollbackFailure = appendFailure(rollbackFailure, failure);
+					}
 				}
 				// IDs assigned during the aborted transaction may have been cached on input values and in valueIDCache.
 				// Reusing either cache would let a later transaction publish triples that point at dictionary IDs which
@@ -13687,6 +16185,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	void abortWriteTransaction(long transaction) {
 		mdb_txn_abort(transaction);
+	}
+
+	void abortWriteTransaction(RetirementNativeTransaction transaction) throws IOException {
+		transaction.abort();
 	}
 
 	void rollbackRetiredIds() {
@@ -13732,6 +16234,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private int commitAndReleaseWriteTransaction(WriterPublication publication) throws IOException {
+		RetirementNativeTransaction retirement = retirementNativeWriter(publication);
+		if (retirement != null) {
+			return commitAndReleaseRetirementWriteTransaction(publication, retirement);
+		}
 		ValueOverlayRegistry.Prepared overlay = prepareCompressedValueMutation(writeTxn);
 		boolean mutated = nativeMutation;
 		long nativeId = mdb_txn_id(writeTxn);
@@ -13760,9 +16266,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				if (startupInitializationInProgress) {
 					startupExpectedLastTransactionId = observed;
 				}
-				if (refCountIntegrityEstablished || bulkNativeOwnership) {
-					lastTrustedNativeTransactionId = observed;
-				}
+				lastTrustedNativeTransactionId = observed;
 				completeCompressedValueMutation(overlay);
 				synchronized (unusedRevisionIds) {
 					unusedRevisionIds.removeAll(reclaimedRevisionIds);
@@ -13771,7 +16275,15 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				if (mutated) {
 					mutationGeneration++;
 				}
-				refreshCommittedHighWater();
+				DeferredRetirementReset deferred = deferredRetirementReset.get();
+				if (deferred == null) {
+					refreshCommittedHighWater();
+				} else {
+					// Keep capacity conservative until this exact generation can be refreshed outside publication.
+					committedHighWaterBytes = Long.MAX_VALUE;
+					deferred.highWaterGeneration = nativeCommitGeneration;
+					deferred.highWaterPending = true;
+				}
 			}
 			return result;
 		} finally {
@@ -13783,6 +16295,109 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			// pointer.
 			releaseWriteTransactionState();
 			droppedTermIndexDbis.clear();
+		}
+	}
+
+	private int commitAndReleaseRetirementWriteTransaction(WriterPublication publication,
+			RetirementNativeTransaction retirement) throws IOException {
+		boolean mutated = nativeMutation;
+		long nativeId = mdb_txn_id(writeTxn);
+		long priorNativeId = lastTransactionId();
+		try {
+			int result;
+			associationGate.lock();
+			try {
+				nativeWriteTransaction(publication);
+				try {
+					try {
+						result = commitWriteTransaction(retirement);
+					} catch (Throwable failure) {
+						if (!retirement.hasCommitReceipt()) {
+							rethrowFailure(failure);
+						}
+						result = retirement.commitResult();
+						publication.retirementCommitFailure = failure;
+					}
+					if (retirement.hasCommitReceipt()) {
+						int actualResult = retirement.commitResult();
+						if (result != actualResult) {
+							IOException mismatch = new IOException(
+									"Retirement commit callback changed its native receipt");
+							publication.retirementCommitFailure = appendFailure(publication.retirementCommitFailure,
+									mismatch);
+							result = actualResult;
+						}
+					} else if (!retirement.aborted() || result == MDB_SUCCESS) {
+						throw new IOException("Retirement commit did not consume its native writer");
+					}
+					if (result == MDB_SUCCESS) {
+						// Record the physical receipt before any callback, association or cache cleanup can fail.
+						lastNativeCommitSucceeded = true;
+						nativeCommitGeneration++;
+						if (mutated) {
+							mutationGeneration++;
+						}
+						retiredIdStore.transactionCommitted();
+						publication.retirementQueueSettled = true;
+						synchronized (unusedRevisionIds) {
+							unusedRevisionIds.removeAll(reclaimedRevisionIds);
+						}
+						DeferredRetirementReset deferred = deferredRetirementReset.get();
+						if (deferred == null) {
+							throw new IOException("Retirement commit has no deferred reset owner");
+						}
+						deferred.committed = true;
+						committedHighWaterBytes = Long.MAX_VALUE;
+						deferred.highWaterGeneration = nativeCommitGeneration;
+						deferred.highWaterPending = true;
+					}
+					settleValueAssociation(result == MDB_SUCCESS);
+				} catch (Throwable failure) {
+					if (retirement.consumed()) {
+						try {
+							settleValueAssociation(retirement.committed());
+						} catch (Throwable cleanupFailure) {
+							failure = appendFailure(failure, cleanupFailure);
+						}
+						if (!retirement.committed()) {
+							// A callback may throw after the native writer was already aborted or a commit failed.
+							// Settle the in-memory changes according to that receipt before releasing its owner.
+							try {
+								rollbackRetiredIds();
+							} catch (Throwable cleanupFailure) {
+								failure = appendFailure(failure, cleanupFailure);
+							}
+							try {
+								clearPendingHashUpdates();
+							} catch (Throwable cleanupFailure) {
+								failure = appendFailure(failure, cleanupFailure);
+							}
+						}
+					}
+					rethrowFailure(failure);
+					throw new AssertionError("unreachable");
+				} finally {
+					if (retirement.consumed()) {
+						releaseNativeWriteTransactionOwnership(publication);
+					}
+				}
+			} finally {
+				associationGate.unlock();
+			}
+			if (result == MDB_SUCCESS) {
+				long observed = trustedPostCommitTransactionId(nativeId, priorNativeId);
+				if (startupInitializationInProgress) {
+					startupExpectedLastTransactionId = observed;
+				}
+				lastTrustedNativeTransactionId = observed;
+			}
+			return result;
+		} finally {
+			if (retirement.consumed()) {
+				discardCompressedValueMutation();
+				releaseWriteTransactionState();
+				droppedTermIndexDbis.clear();
+			}
 		}
 	}
 
@@ -13822,25 +16437,38 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		return mdb_txn_commit(transaction);
 	}
 
+	int commitWriteTransaction(RetirementNativeTransaction transaction) throws IOException {
+		return transaction.commit();
+	}
+
 	void closeEnvironment(long environment) {
 		mdb_env_close(environment);
 	}
 
 	public void commit() throws IOException {
 		long generationBefore = nativeCommitGeneration;
-		TxnReplayPolicy.Decision decision = replayDecision;
+		DeferredRetirementReset deferred = deferredRetirementReset.get();
+		WriterTransaction requested = WriterTransaction.current();
+		WriterTransaction admitted = requested == null ? currentWriterTransaction() : requested;
+		WriterTransaction transaction = admitted == null ? new WriterTransaction() : admitted;
+		TxnReplayPolicy.Decision decision = transaction.replayDecision;
 		try {
-			endTransaction(true, false);
+			transaction.invoke(() -> endTransaction(true, false));
 		} catch (LmdbUtil.MapFullException mapFull) {
+			if (deferred != null && (nativeCommitGeneration != generationBefore || lastNativeCommitSucceeded)) {
+				deferred.committed = true;
+			}
 			if (autoGrow && decision != null && decision.frozenReplay) {
 				throw frozenCapacity(mapFull, decision);
 			}
 			if (autoGrow && decision != null && !decision.track) {
-				growForTransactionRetry(0L, mapFull, decision);
+				growForTransactionRetry(0L, mapFull, decision, transaction);
 			}
 			throw mapFull;
 		} catch (IOException | RuntimeException | Error failure) {
-			if (nativeCommitGeneration != generationBefore) {
+			if (deferred != null && (nativeCommitGeneration != generationBefore || lastNativeCommitSucceeded)) {
+				deferred.committed = true;
+			} else if (deferred == null && nativeCommitGeneration != generationBefore) {
 				try {
 					resetReadTransactionsAfterCommit();
 				} catch (IOException | RuntimeException cleanupFailure) {
@@ -13849,17 +16477,33 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			}
 			throw failure;
 		}
-		resetReadTransactionsAfterCommit();
+		if (deferred == null) {
+			resetReadTransactionsAfterCommit();
+		} else {
+			deferred.committed = lastNativeCommitSucceeded || nativeCommitGeneration != generationBefore;
+		}
 	}
 
 	private void resetReadTransactionsAfterCommit() throws IOException {
+		retryPendingRetirementOverlayInvalidation();
 		var lockManager = txnManager.lockManager();
+		Object covered;
+		synchronized (writerAdmission) {
+			covered = pendingRetirementReset;
+		}
 		long stamp = 0;
 		try {
-			endTransaction(true, false);
+			// The caller has already ended its publication. A later writer may now own the environment;
+			// resetting committed readers must never consume that writer's native transaction.
 			stamp = lockManager.writeLock();
 			txnManager.reset();
+			synchronized (writerAdmission) {
+				if (pendingRetirementReset == covered) {
+					pendingRetirementReset = null;
+				}
+			}
 		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
 			throw new IOException(e);
 		} finally {
 			if (stamp != 0) {
@@ -13891,10 +16535,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			long maxTransactionBytes) throws IOException {
 		invalidateRefCountIntegrity(targetDbi == dbi ? "raw main dictionary bulk append"
 				: "raw ref_counts bulk append");
+		invalidateReferenceCountProofBeforeRawMutation();
 		if (maxTransactionRecords <= 0 || maxTransactionBytes <= 0L) {
 			throw new IllegalArgumentException("Bulk transaction bounds must be positive");
 		}
-		boolean appendingMainRecords = targetDbi == dbi && coreDatatypeLiteralReferences;
+		boolean appendingMainRecords = targetDbi == dbi;
 		if (appendingMainRecords) {
 			deferNextIdPersistence = true;
 		}
@@ -14030,6 +16675,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	public long appendBulkTripleTermIndex(String specification, BulkLongQuadSource source, int maxTransactionRecords,
 			long maxTransactionBytes) throws IOException {
 		invalidateRefCountIntegrity("raw RDF-star term-index bulk append");
+		invalidateReferenceCountProofBeforeRawMutation();
 		int batchRecords = bulkIndexBatchRecords(maxTransactionRecords, maxTransactionBytes);
 		TripleIndex index = tripleTermIndexes.stream()
 				.filter(candidate -> candidate.toString().equals(specification))
@@ -14089,7 +16735,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	private byte[] appendBulkTripleTermIndexBatch(TripleIndex index, String specification, long[] batch, int count,
 			byte[] lastCommittedKey) throws IOException {
-		long reservation = Math.multiplyExact((long) count, 128L);
+		long reservation = Math.multiplyExact((long) count, 128L * Math.max(1, termWriteIndexes.size()));
 		for (int attempt = 0; attempt < 8; attempt++) {
 			reserveWriteCapacity(reservation);
 			startTransaction(false);
@@ -14128,6 +16774,22 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 							break;
 						}
 						E(result);
+						nextId = Math.max(nextId, Math.addExact(
+								ValueIds.referenceOrdinal(batch[offset + contextPosition]), 1L));
+						if (index == tripleTermSpocIndex) {
+							MDBVal stageKey = MDBVal.calloc(stack);
+							ByteBuffer stageBytes = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+							for (TripleIndex stage : termWriteIndexes) {
+								if (!tripleTermIndexes.contains(stage)) {
+									stageBytes.clear();
+									stage.toKey(stageBytes, batch[offset + subjectPosition],
+											batch[offset + predicatePosition], batch[offset + objectPosition],
+											batch[offset + contextPosition]);
+									stageKey.mv_data(stageBytes.flip());
+									E(mdb_put(writeTxn, stage.getDB(true), stageKey, empty, 0));
+								}
+							}
+						}
 						previousKeyLength = keyBuffer.remaining();
 						for (int i = 0; i < previousKeyLength; i++) {
 							previousKey[i] = keyBuffer.get(keyBuffer.position() + i);
@@ -14181,6 +16843,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	@InternalUseOnly
 	public void appendBulkTripleTerms(BulkLongQuadSource source, int maxTransactionRecords) throws IOException {
 		invalidateRefCountIntegrity("raw RDF-star term-index bulk append");
+		invalidateReferenceCountProofBeforeRawMutation();
 		if (maxTransactionRecords <= 0) {
 			throw new IllegalArgumentException("Bulk transaction record limit must be positive");
 		}
@@ -14198,7 +16861,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			if (count == 0) {
 				break;
 			}
-			reserveWriteCapacity(Math.multiplyExact((long) count, Math.max(1, tripleTermIndexes.size()) * 64L));
+			reserveWriteCapacity(Math.multiplyExact((long) count, Math.max(1, termWriteIndexes.size()) * 64L));
 			startTransaction(false);
 			try (MemoryStack stack = stackPush()) {
 				MDBVal key = MDBVal.malloc(stack);
@@ -14206,7 +16869,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				ByteBuffer keyBuffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
 				for (int row = 0; row < count; row++) {
 					long[] triple = batch[row];
-					for (TripleIndex index : tripleTermIndexes) {
+					nextId = Math.max(nextId, Math.addExact(ValueIds.referenceOrdinal(triple[3]), 1L));
+					for (TripleIndex index : termWriteIndexes) {
 						keyBuffer.clear();
 						index.toKey(keyBuffer, triple[0], triple[1], triple[2], triple[3]);
 						key.mv_data(keyBuffer.flip());
@@ -14238,11 +16902,26 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	public void rollback() throws IOException {
+		WriterPublication publication = writerPublication;
+		WriterTransaction requested = WriterTransaction.current();
+		if (requested != null && (publication == null || publication.transaction != requested)) {
+			return;
+		}
 		try {
 			endTransaction(false, false);
 		} finally {
-			replayDecision = null;
+			synchronized (writerAdmission) {
+				if (writerPublication == publication || writerPublication == null) {
+					replayDecision = null;
+				}
+			}
 		}
+	}
+
+	void rollback(WriterTransaction transaction) throws IOException {
+		// Preserve virtual logical cleanup without granting authority over another native writer.
+		WriterTransaction cleanup = transaction == null ? new WriterTransaction() : transaction;
+		cleanup.invoke(this::rollback);
 	}
 
 	private void refreshCommittedHighWater() throws IOException {
@@ -14382,6 +17061,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public void clear() throws IOException {
+		rejectLifecycleReentry();
+		boolean maintenanceWasReady = termIndexMaintenanceReady;
+		stopTermIndexMaintenance();
+		awaitRetirementOperationsForShutdown();
 		while (true) {
 			awaitWriterStartsForShutdown();
 			synchronized (this) {
@@ -14406,7 +17089,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				// old leased publications remain charged to the same process-wide budget until released.
 				seededDatatypeIds.clear();
 				compressedValues = valueOverlayEnabled ? ValueOverlayRegistry.configured() : null;
-				tripleTermIndexes.clear();
+				tripleTermIndexes = List.of();
 				tripleTermSpocIndex = null;
 				tripleTermCspoIndex = null;
 				unusedRevisionIds.clear();
@@ -14423,6 +17106,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				setNewRevision();
 				try {
 					initializeAfterOpen(storeConfig);
+					if (maintenanceWasReady) {
+						startIndexRebuildAfterStoreInitialization();
+					}
 				} catch (IOException | RuntimeException | Error e) {
 					try {
 						close();
@@ -14472,7 +17158,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	void invalidateCleanCloseAfterUnknownTripleWriter() {
 		closingTripleTransactionId = -1L;
-		invalidateRefCountIntegrity("an intervening native triple writer before clean close");
+		cleanCloseInvalidated = true;
 	}
 
 	long trustedClosedTransactionId() {
@@ -14482,10 +17168,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private void writeCleanRefCountMarker() {
-		if (bulkCompletionSynced) {
+		if (bulkCompletionSynced || cleanCloseInvalidated) {
 			return;
 		}
-		if (!refCountRepairEnabled || !valueStoreInitializationComplete || !auxiliaryDatabasesInitialized
+		if (!valueStoreInitializationComplete || !auxiliaryDatabasesInitialized
 				|| !refCountIntegrityEstablished
 				|| refCountRecoveryRequired
 				|| refCountRecoveryInProgress || writeTxn != 0 || lastTrustedNativeTransactionId < 0L) {
@@ -14510,10 +17196,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				return null;
 			});
 		} catch (IOException | RuntimeException markerFailure) {
-			// A failed final marker is conservative: the next open will reconstruct counts. Preserve normal close/error
+			// A failed final marker is conservative: the next open remains UNKNOWN until explicit reconstruction.
+			// Preserve normal close/error
 			// handling rather than turning an otherwise closed store into an unusable one.
 			refCountIntegrityEstablished = false;
-			logger.warn("Could not persist clean ValueStore ref-count marker; recovery will run on next open",
+			logger.warn("Could not persist clean ValueStore ref-count marker; explicit reconstruction is required",
 					markerFailure);
 		}
 	}
@@ -14522,7 +17209,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		MDBVal key = MDBVal.calloc(stack);
 		key.mv_data(stack.bytes(new byte[] { REFCOUNT_MARKER_KEY }));
 		MDBVal value = MDBVal.calloc(stack);
-		value.mv_data(stack.bytes(encodeRefCountMarker(state, mdb_txn_id(txn))));
+		value.mv_data(stack.bytes(format.isLegacy() ? REF_COUNTS_VERSION
+				: encodeRefCountMarker(state, mdb_txn_id(txn))));
 		E(mdb_put(txn, refCountsDbi, key, value, 0));
 	}
 
@@ -14532,6 +17220,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public void close() throws IOException {
+		rejectLifecycleReentry();
+		stopTermIndexMaintenance();
+		awaitRetirementOperationsForShutdown();
 		while (true) {
 			awaitWriterStartsForShutdown();
 			synchronized (this) {
@@ -14546,6 +17237,54 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 	}
 
+	/** Refuses same-owner teardown before stopping maintenance or changing shutdown state. */
+	private void rejectLifecycleReentry() throws IOException {
+		synchronized (writerAdmission) {
+			if (writerStartsInFlight != 0 && writerStartOwner == Thread.currentThread()) {
+				throw new IOException("Cannot close ValueStore during write transaction admission");
+			}
+			if (activeRetirementResets.stream().anyMatch(reset -> reset.owner == Thread.currentThread())) {
+				throw new IOException("Cannot close ValueStore during retirement reset");
+			}
+			WriterPublication current = writerPublication;
+			if (current != null && current.consumer == Thread.currentThread() && !current.failedCleanup) {
+				throw new IOException("Cannot close ValueStore during write transaction publication");
+			}
+			if (retirementWriterAdmission != null && retirementWriterAdmission.owner == Thread.currentThread()) {
+				throw new IOException("Cannot close ValueStore during retirement admission");
+			}
+			if (currentRetirementOperation.get() != null) {
+				throw new IOException("Cannot close ValueStore during an explicit retirement operation");
+			}
+		}
+	}
+
+	/** Cancels whole-call retirement owners before their environment can be closed or replaced. */
+	private void awaitRetirementOperationsForShutdown() throws IOException {
+		List<Runnable> cancellationSignals = new ArrayList<>();
+		synchronized (writerAdmission) {
+			shuttingDown = true;
+			for (RetirementOperation operation : activeRetirementOperations) {
+				operation.cancelled = true;
+				cancellationSignals.add(operation.cancelWait);
+			}
+		}
+		// Callbacks take the backing store's waiter monitor, never while holding writerAdmission.
+		for (Runnable signal : cancellationSignals) {
+			signal.run();
+		}
+		synchronized (writerAdmission) {
+			while (!activeRetirementOperations.isEmpty()) {
+				try {
+					writerAdmission.wait();
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					throw new IOException("Interrupted while waiting for explicit retirement to settle", interrupted);
+				}
+			}
+		}
+	}
+
 	/** Waits outside the store monitor and native barrier needed by admission maintenance and resize restart. */
 	private void awaitWriterStartsForShutdown() throws IOException {
 		boolean interrupted = Thread.interrupted();
@@ -14554,12 +17293,21 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				if (writerStartsInFlight != 0 && writerStartOwner == Thread.currentThread()) {
 					throw new IOException("Cannot close ValueStore during write transaction admission");
 				}
+				if (activeRetirementResets.stream().anyMatch(reset -> reset.owner == Thread.currentThread())) {
+					throw new IOException("Cannot close ValueStore during retirement reset");
+				}
 				WriterPublication current = writerPublication;
 				if (current != null && current.consumer == Thread.currentThread() && !current.failedCleanup) {
 					throw new IOException("Cannot close ValueStore during write transaction publication");
 				}
 				shuttingDown = true;
-				while (writerStartsInFlight != 0 || hasActiveWriterConsumer()) {
+				while (writerStartsInFlight != 0 || standaloneWritersInFlight != 0 || nativeMapGrowthOwner != null
+						|| retirementWriterAdmission != null || !activeRetirementResets.isEmpty()
+						|| hasActiveWriterConsumer()) {
+					if (retirementWriterAdmission != null
+							&& retirementWriterAdmission.owner == Thread.currentThread()) {
+						throw new IOException("Cannot close ValueStore during retirement admission");
+					}
 					WriterPublication publication = writerPublication;
 					if (publication != null && publication.consumer == Thread.currentThread()) {
 						throw new IOException("Cannot close ValueStore during write transaction publication");
@@ -14586,7 +17334,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private boolean confirmWriterStartsFinished() {
 		synchronized (writerAdmission) {
 			shuttingDown = true;
-			return writerStartsInFlight == 0 && !hasActiveWriterConsumer();
+			return writerStartsInFlight == 0 && retirementWriterAdmission == null && activeRetirementResets.isEmpty()
+					&& !hasActiveWriterConsumer();
 		}
 	}
 
@@ -14604,6 +17353,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		try {
 			synchronized (valueOverlayBuildAdmission) {
 				valueOverlayBuildAdmissionClosed = true;
+				startupValueOverlayRequested = false;
+				startupValueOverlayOptions = null;
 				initialImportOverlayRebuildRequest = null;
 				publiclyReleasedOverlayGeneration = null;
 				valueOverlayBuildAdmission.notifyAll();
@@ -15393,9 +18144,39 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				&& (writeTxnOwner == Thread.currentThread() || borrowed != 0 && borrowed == transaction);
 	}
 
+	/**
+	 * Returns the writer a creating caller on another thread may join, or 0 when none is active. A term-maintenance
+	 * writer or map growth owns its native transaction outright: another thread using it races that owner's commit and
+	 * continues on a finished transaction, so this waits until it ends. Neither can claim the writer while an
+	 * application writer is active, and that writer's owning store serializes the callers that join it.
+	 */
+	private long awaitJoinableWriter() throws IOException {
+		synchronized (writerAdmission) {
+			while (termMaintenanceWriterActive && Thread.currentThread() != termIndexMaintenanceThread
+					|| nativeMapGrowthOwner != null && nativeMapGrowthOwner != Thread.currentThread()
+					|| retirementWriterAdmission != null && retirementWriterAdmission.owner != Thread.currentThread()) {
+				try {
+					writerAdmission.wait();
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					throw new IOException("Interrupted while awaiting ValueStore maintenance writer", interrupted);
+				}
+			}
+			return writeTxn;
+		}
+	}
+
 	/** Mutating APIs already admitted to the serialized writer must also resolve its uncommitted dependencies. */
 	private <T> T withWriterLookupContext(Transaction<T> transaction) throws IOException {
-		return withBorrowedReadContext(writeTxn, currentReadRevision(LmdbValue.UNKNOWN_ID), false, transaction);
+		long writer = awaitJoinableWriter();
+		if (writer == 0L) {
+			// An exclusive maintenance writer may have finished while this caller waited. Retry its operation
+			// without a borrowed native pointer so it can establish its own ordinary writer.
+			try (MemoryStack stack = stackPush()) {
+				return transaction.exec(stack, 0L);
+			}
+		}
+		return withBorrowedReadContext(writer, currentReadRevision(LmdbValue.UNKNOWN_ID), false, transaction);
 	}
 
 	private long getTransactionValueId(Value value) {

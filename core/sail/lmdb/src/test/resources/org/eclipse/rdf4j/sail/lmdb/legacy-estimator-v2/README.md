@@ -1,0 +1,5 @@
+# Genuine upstream v2 estimator fixture
+
+Generated from upstream commit `f0adec73f408062e89fb008bd9f5d15d30f4db14` using the test-only `generator.patch.txt.gz` and selection `LmdbSailStoreEstimatorPersistenceTest#generateMinimalLegacySnapshotForCompatibility`. The generator uses upstream's real LMDB store and estimator, with four buckets per axis, 16 nominal entries, and context pair sketches disabled. It commits `<urn:s> <urn:p> <urn:o>`, waits for estimator readiness, closes, reopens, and verifies the predicate estimate. The selection passed one test.
+
+The archive contains that same closed store's native data, store properties, and estimator metadata and parts. Only transient LMDB `lock.mdb` files are omitted. `manifest.json` records the archive and original per-file SHA-256 values, including excluded locks. For reproducibility, check out the exact upstream commit, run `gzip -dc generator.patch.txt.gz | git apply -`, and run the named test with retained temporary directories. Store data and snapshot are paired, not assembled from unrelated stores.

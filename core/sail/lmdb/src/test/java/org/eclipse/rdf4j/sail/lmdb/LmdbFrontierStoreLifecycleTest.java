@@ -103,6 +103,8 @@ class LmdbFrontierStoreLifecycleTest {
 		try {
 			cleanRestart.init();
 			LmdbSailStore backingStore = cleanRestart.getBackingStore();
+			assertTrue(awaitStatisticsReady(backingStore, 10_000L),
+					"the deferred Frontier owner must finish before checking the reused generation");
 			assertEquals(FrontierStatisticsAvailability.READY,
 					frontierStatisticsStatus(backingStore).availability());
 			assertEquals(repairedGeneration, frontierStatisticsStatus(backingStore).generationId(),
@@ -306,6 +308,8 @@ class LmdbFrontierStoreLifecycleTest {
 		LmdbStore restarted = new LmdbStore(dataDirectory.toFile(), config);
 		try {
 			restarted.init();
+			assertTrue(awaitStatisticsReady(restarted.getBackingStore(), 10_000L),
+					"the deferred Frontier owner must publish the restarted generation");
 			assertEquals(FrontierStatisticsAvailability.READY, frontierAvailability(restarted));
 		} finally {
 			restarted.shutDown();

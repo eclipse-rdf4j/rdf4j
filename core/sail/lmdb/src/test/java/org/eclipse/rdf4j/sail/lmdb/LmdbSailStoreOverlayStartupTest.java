@@ -119,9 +119,12 @@ class LmdbSailStoreOverlayStartupTest {
 				});
 		try {
 			ValueStore values = owner.valueStore();
+			assertThat(values.hasRetiredIds()).as("construction preserves the durable queue").isTrue();
+			assertThat(values.isValueOverlayWarmupInProgress()).as("the readiness gate is still closed").isFalse();
+			owner.startBackgroundMaintenanceAfterInitialization();
+			assertThat(scanStarted.await(10, TimeUnit.SECONDS)).isTrue();
 			assertThat(values.hasRetiredIds()).isFalse();
 			assertThat(values.getId(RETIRED)).isEqualTo(LmdbValue.UNKNOWN_ID);
-			assertThat(scanStarted.await(10, TimeUnit.SECONDS)).isTrue();
 			releaseScan.countDown();
 			assertThat(values.awaitValueOverlayReady(10, TimeUnit.SECONDS))
 					.as("owner startup writes must finish before automatic overlay snapshot capture")
@@ -141,7 +144,43 @@ class LmdbSailStoreOverlayStartupTest {
 
 	@Test
 	@Timeout(30)
-	void failedWarmupStartupClosesItsOwnerResources() throws Exception {
+	void postReadyCacheCaptureFollowsTheBoundedRetirementBatch() throws Exception {
+		seedRetirement();
+		AtomicBoolean capturedPendingRetirements = new AtomicBoolean();
+		AtomicBoolean captureStarted = new AtomicBoolean();
+		LmdbSailStore.ValueStoreFactory values = (path, properties, config) -> new ValueStore(path, properties,
+				config) {
+			@Override
+			void startValueOverlayWarmupAfterStoreInitialization() {
+				capturedPendingRetirements.set(hasRetiredIds());
+				captureStarted.set(true);
+				super.startValueOverlayWarmupAfterStoreInitialization();
+			}
+		};
+		try (LmdbSailStore owner = new LmdbSailStore(directory, new StoreProperties(directory), config(true), false,
+				values, TripleStore::new)) {
+			owner.startBackgroundMaintenanceAfterInitialization();
+			joinPostReadyInitializer();
+			assertThat(captureStarted.get()).isTrue();
+			assertThat(capturedPendingRetirements.get())
+					.as("bounded retirement publication must finish before cache snapshot capture")
+					.isFalse();
+			assertThat(owner.postReadyMaintenanceStatus()).isEqualTo("READY");
+		}
+	}
+
+	private static void joinPostReadyInitializer() throws InterruptedException {
+		for (Thread helper : Thread.getAllStackTraces().keySet()) {
+			if (helper.getName().equals("LmdbStore-PostReady")) {
+				helper.join(TimeUnit.SECONDS.toMillis(10));
+				assertThat(helper.isAlive()).as("post-ready initializer has completed").isFalse();
+			}
+		}
+	}
+
+	@Test
+	@Timeout(30)
+	void failedPostReadyWarmupPreservesAuthoritativeOwnerResources() throws Exception {
 		Properties original = System.getProperties();
 		Properties refusingWarmup = new Properties();
 		refusingWarmup.putAll(original);
@@ -157,27 +196,33 @@ class LmdbSailStoreOverlayStartupTest {
 		AtomicReference<ValueStore> openedValues = new AtomicReference<>();
 		LmdbStoreConfig config = config(true);
 		StoreProperties properties = new StoreProperties(directory);
+		LmdbSailStore owner = null;
 		try {
-			assertThatThrownBy(() -> new LmdbSailStore(directory, properties, config, false,
+			owner = new LmdbSailStore(directory, properties, config, false,
 					LmdbStoreFormat.fromProperties(properties, config), QueryExecutionPolicy.of(false), null,
 					values -> {
 						openedValues.set(values);
 						System.setProperties(failing);
-					}))
-							.isInstanceOf(SecurityException.class)
-							.hasMessage("controlled warmup property refusal")
-							.hasStackTraceContaining("warmConfiguredValueOverlay");
-			assertThatThrownBy(() -> openedValues.get().getTxnManager().createReadTxn())
-					.as("failed owner must close its native dictionary")
-					.isInstanceOf(IOException.class)
-					.hasMessage("Transaction manager is closed");
+					});
+			owner.startBackgroundMaintenanceAfterInitialization();
+			joinPostReadyInitializer();
+			assertThat(owner.postReadyMaintenanceStatus()).startsWith("FAILED:")
+					.contains("controlled warmup property refusal");
+			try (var read = openedValues.get().getTxnManager().createReadTxn()) {
+				assertThat(read.get()).as("optional cache failure retains an open authoritative dictionary")
+						.isNotZero();
+			}
 		} finally {
 			System.setProperties(original);
-			// Also release the deliberately exposed pre-fix resource when the assertion detects its leak.
-			if (openedValues.get() != null) {
-				openedValues.get().close();
+			if (owner != null) {
+				owner.close();
 			}
 		}
+		assertThatThrownBy(() -> openedValues.get().getTxnManager().createReadTxn())
+				.as("normal owner close must release the authoritative dictionary")
+				.isInstanceOf(IOException.class)
+				.hasMessage("Transaction manager is closed");
+
 		LmdbSailStore reopened = new LmdbSailStore(directory, new StoreProperties(directory), config);
 		try {
 			assertThat(lookupScope(reopened.valueStore())).isNotNull();
@@ -209,6 +254,7 @@ class LmdbSailStoreOverlayStartupTest {
 			}
 		}, "owner-overlay-close-test");
 		try {
+			owner.startBackgroundMaintenanceAfterInitialization();
 			assertThat(scanStarted.await(10, TimeUnit.SECONDS)).isTrue();
 			close.start();
 			releaseScan.countDown();
@@ -257,7 +303,8 @@ class LmdbSailStoreOverlayStartupTest {
 	}
 
 	private LmdbStoreConfig config(boolean overlay) {
-		return new LmdbStoreConfig("spoc,posc").setInlineLiterals(false).setValueOverlayEnabled(overlay);
+		// Bounded liveness probes require every referenced position to have a leading index.
+		return new LmdbStoreConfig("spoc,posc,ospc").setInlineLiterals(false).setValueOverlayEnabled(overlay);
 	}
 
 	private void seedPersistedUnusedValue() throws Exception {

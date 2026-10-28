@@ -17,7 +17,9 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -804,9 +806,31 @@ class LmdbPredicateObjectDomainIndexTest {
 	}
 
 	private static SailRepository repository(File dataDir, LmdbStoreConfig config) {
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
-		repository.init();
-		return repository;
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		try {
+			repository.init();
+			LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
+			return repository;
+		} catch (IOException | InterruptedException | RuntimeException | Error failure) {
+			try {
+				repository.shutDown();
+			} catch (RuntimeException | Error cleanup) {
+				if (cleanup != failure) {
+					failure.addSuppressed(cleanup);
+				}
+			}
+			if (failure instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
+			if (failure instanceof RuntimeException runtime) {
+				throw runtime;
+			}
+			if (failure instanceof Error error) {
+				throw error;
+			}
+			throw new IllegalStateException("Domain fixture did not reach post-ready completion", failure);
+		}
 	}
 
 	private static LmdbStoreConfig baseConfig() {
@@ -842,7 +866,18 @@ class LmdbPredicateObjectDomainIndexTest {
 
 	private static Optional<RdfTermDomain> persistedGuarantee(SailRepository repository, IRI predicate)
 			throws Exception {
-		return backingStore(repository).getPersistedRdfTermDomain(predicate);
+		LmdbStore store = (LmdbStore) repository.getSail();
+		LmdbSailStore backing = store.getBackingStore();
+		LmdbEstimatorRuntime runtime = ((LmdbEvaluationStatistics) store.getSailStore()
+				.getEvaluationStatistics()).estimatorRuntime();
+		try (LmdbSailStore.DatasetAdmission admission = backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ,
+				null)) {
+			LmdbSailStore.ReadView view = admission.view();
+			view.requireDictionaryTermSnapshot();
+			try (TripleStore.PlanningReadPin ignored = runtime.pinPlanningReads(view.tripleTxn(), view.valueSnapshot())) {
+				return backing.getPersistedRdfTermDomain(predicate);
+			}
+		}
 	}
 
 	private static void assertSynchronizedHeapAndDiskGuarantees(SailRepository repository, IRI predicate)

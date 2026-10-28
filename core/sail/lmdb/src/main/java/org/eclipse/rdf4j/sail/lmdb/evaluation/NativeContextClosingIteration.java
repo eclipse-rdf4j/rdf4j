@@ -33,6 +33,11 @@ final class NativeContextClosingIteration
 	private final boolean closeContext;
 	private final NativeLmdbQuerySource evaluationSource;
 	private volatile boolean closed;
+	private int activeCancellations;
+	private boolean cleanupStarted;
+	private boolean cleanupCompleted;
+	private Thread cleanupThread;
+	private Throwable cleanupFailure;
 
 	NativeContextClosingIteration(CloseableIteration<BindingSet> delegate, NativeExecutionContext context) {
 		this(delegate, context, true);
@@ -107,11 +112,42 @@ final class NativeContextClosingIteration
 		if (closed || !(delegate instanceof CooperativeCancellation cancellation)) {
 			return false;
 		}
-		boolean requested = cancellation.requestCancellation();
-		if (requested) {
-			context.filterFailure();
+		// Acquire context owners without the carrier monitor: a context's cleanup can call back into this carrier.
+		NativeExecutionContext.CancellationLease lease = context.tryRetainCancellation();
+		if (lease == null) {
+			return false;
 		}
-		return requested;
+		boolean admitted;
+		synchronized (this) {
+			admitted = !closed;
+			if (admitted) {
+				activeCancellations++;
+			}
+		}
+		if (!admitted) {
+			lease.close();
+			return false;
+		}
+		Throwable failure = null;
+		try {
+			boolean requested = cancellation.requestCancellation();
+			if (requested) {
+				context.filterFailure();
+			}
+			return requested;
+		} catch (RuntimeException | Error problem) {
+			failure = problem;
+			throw problem;
+		} finally {
+			Throwable cleanup = finishCancellation(lease);
+			if (cleanup != null) {
+				if (failure == null) {
+					throwFailure(cleanup);
+				} else if (cleanup != failure) {
+					failure.addSuppressed(cleanup);
+				}
+			}
+		}
 	}
 
 	@Override
@@ -127,11 +163,92 @@ final class NativeContextClosingIteration
 		}
 	}
 
-	private synchronized Throwable closeResources() {
-		if (closed) {
-			return null;
+	private Throwable closeResources() {
+		boolean interrupted = false;
+		try {
+			synchronized (this) {
+				if (closed) {
+					// An admitted callback owns deferred cleanup. It must be allowed to re-enter close without
+					// waiting for itself. Once cleanup has started, unrelated concurrent closers observe its end.
+					if (!cleanupStarted || cleanupThread == Thread.currentThread()
+							|| !cleanupCompleted && context.cancellationOwnerClosingOnCurrentThread()) {
+						return null;
+					}
+					boolean observeFailure = !cleanupCompleted;
+					while (!cleanupCompleted) {
+						try {
+							wait();
+						} catch (InterruptedException interruption) {
+							interrupted = true;
+						}
+					}
+					return observeFailure ? cleanupFailure : null;
+				}
+				closed = true;
+				if (activeCancellations != 0) {
+					return null;
+				}
+				cleanupStarted = true;
+				cleanupThread = Thread.currentThread();
+			}
+			return closeWithCompletion(null);
+		} finally {
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
 		}
-		closed = true;
+	}
+
+	private Throwable finishCancellation(NativeExecutionContext.CancellationLease lease) {
+		boolean cleanup;
+		synchronized (this) {
+			activeCancellations--;
+			cleanup = closed && activeCancellations == 0 && !cleanupStarted;
+			if (cleanup) {
+				cleanupStarted = true;
+				cleanupThread = Thread.currentThread();
+			}
+		}
+		if (cleanup) {
+			return closeWithCompletion(lease);
+		}
+		try {
+			lease.close();
+			return null;
+		} catch (Throwable failure) {
+			return failure;
+		}
+	}
+
+	private Throwable closeWithCompletion(NativeExecutionContext.CancellationLease lease) {
+		Throwable failure;
+		try {
+			failure = closeOwnedResources();
+		} catch (Throwable unexpected) {
+			failure = unexpected;
+		}
+		if (lease != null) {
+			try {
+				lease.close();
+			} catch (Throwable releaseFailure) {
+				if (failure == null) {
+					failure = releaseFailure;
+				} else if (failure != releaseFailure) {
+					failure.addSuppressed(releaseFailure);
+				}
+			}
+		}
+		synchronized (this) {
+			cleanupFailure = failure;
+			cleanupCompleted = true;
+			cleanupThread = null;
+			notifyAll();
+		}
+		return failure;
+	}
+
+	/** Never invoke source or context callbacks while holding the admission monitor. */
+	private Throwable closeOwnedResources() {
 		Throwable failure = null;
 		try (SyntheticValueSource.EvaluationScope ignored = evaluationSource == null ? null
 				: SyntheticValueSource.attachEvaluation(evaluationSource)) {

@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -25,6 +26,7 @@ import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
@@ -205,6 +207,7 @@ class LmdbPairedDomainQualificationLifecycleTest {
 			throws Exception {
 		IOException injected = new IOException("injected domain authority " + point);
 		AtomicInteger closedValues = new AtomicInteger();
+		AtomicInteger valueSyncCalls = new AtomicInteger();
 		var config = PairedDomainQualificationTestSupport.config(false, false, true);
 		LmdbStore store = new LmdbStore(directory.toFile(), config) {
 			@Override
@@ -214,6 +217,7 @@ class LmdbPairedDomainQualificationLifecycleTest {
 						(values, manifest, selected) -> new ValueStore(values, manifest, selected) {
 							@Override
 							void syncForDomainQualification(long environment) throws IOException {
+								valueSyncCalls.incrementAndGet();
 								LmdbUtil.E(mdb_env_sync(environment, true));
 								if (point.equals("VALUE_SYNC")) {
 									throw injected;
@@ -237,24 +241,32 @@ class LmdbPairedDomainQualificationLifecycleTest {
 			}
 		};
 		SailRepository repository = new SailRepository(store);
-		repository.init();
-		try (var connection = repository.getConnection()) {
-			connection.begin();
-			connection.add(PairedDomainQualificationTestSupport.initial());
-			connection.commit();
-		}
 		java.util.Properties observations = new java.util.Properties();
-		ValueStore observedValues = (ValueStore) store.getBackingStore().getValueFactory();
-		var initial = PairedDomainQualificationTestSupport.initial();
-		List<org.eclipse.rdf4j.model.Value> originalTerms = List.of(initial.getSubject(), initial.getPredicate(),
-				initial.getObject(), initial.getContext());
-		for (int term = 0; term < originalTerms.size(); term++) {
-			observations.setProperty("initial.term." + term + ".id",
-					Long.toString(observedValues.getId(originalTerms.get(term))));
+		try (AutoCloseable cleanup = repository::shutDown) {
+			repository.init();
+			LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
+			try (var connection = repository.getConnection()) {
+				connection.begin();
+				connection.add(PairedDomainQualificationTestSupport.initial());
+				connection.commit();
+			}
+			ValueStore observedValues = (ValueStore) store.getBackingStore().getValueFactory();
+			var initial = PairedDomainQualificationTestSupport.initial();
+			List<org.eclipse.rdf4j.model.Value> originalTerms = List.of(initial.getSubject(), initial.getPredicate(),
+					initial.getObject(), initial.getContext());
+			for (int term = 0; term < originalTerms.size(); term++) {
+				observations.setProperty("initial.term." + term + ".id",
+						Long.toString(observedValues.getId(originalTerms.get(term))));
+			}
+			assertNotNull(store.getBackingStore().getTripleStore().completeRdfTermDomainVersion(),
+					"the domain must be qualified before exercising its close failure");
+			Exception failure = assertThrows(Exception.class, () -> repository.shutDown());
+			assertTrue(contains(failure, injected, Collections.newSetFromMap(new IdentityHashMap<>())));
+			assertEquals(1, closedValues.get(), "sync failure still closes its exact owned environment");
+			if (point.equals("VALUE_SYNC")) {
+				assertEquals(1, valueSyncCalls.get(), "the real forced sync must be attempted exactly once");
+			}
 		}
-		Exception failure = assertThrows(Exception.class, () -> repository.shutDown());
-		assertTrue(contains(failure, injected, Collections.newSetFromMap(new IdentityHashMap<>())));
-		assertEquals(1, closedValues.get(), "sync failure still closes its exact owned environment");
 		StoreProperties properties = new StoreProperties(directory.toFile());
 		assertTrue(properties.load());
 		assertNull(properties.getRdfTermDomainQualification(),

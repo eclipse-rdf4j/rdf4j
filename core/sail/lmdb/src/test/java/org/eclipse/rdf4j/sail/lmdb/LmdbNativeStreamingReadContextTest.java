@@ -129,11 +129,20 @@ class LmdbNativeStreamingReadContextTest {
 			try (QueryExecutionDeadline deadline = QueryExecutionDeadline.start(15_000);
 					var deadlineScope = deadline.enter();
 					var ownership = QueryExecutionContext.activateReplaySafepoint(() -> {
-					}, () -> () -> {
-						assertThat(QueryExecutionDeadline.current()).isSameAs(deadline);
-						workers.add(Thread.currentThread());
-						activations.incrementAndGet();
-						return releases::incrementAndGet;
+					}, () -> {
+						// A public query may own a narrower deadline than its caller. Workers must receive the
+						// deadline active at dispatch, and retain it through the captured scope's cleanup.
+						QueryExecutionDeadline dispatched = QueryExecutionDeadline.current();
+						assertThat(dispatched).as("the dispatched query retains an effective deadline").isNotNull();
+						return () -> {
+							assertThat(QueryExecutionDeadline.current()).isSameAs(dispatched);
+							workers.add(Thread.currentThread());
+							activations.incrementAndGet();
+							return () -> {
+								assertThat(QueryExecutionDeadline.current()).isSameAs(dispatched);
+								releases.incrementAndGet();
+							};
+						};
 					});
 					RepositoryConnection reader = repository.getConnection();
 					TupleQueryResult result = reader.prepareTupleQuery(query).evaluate()) {

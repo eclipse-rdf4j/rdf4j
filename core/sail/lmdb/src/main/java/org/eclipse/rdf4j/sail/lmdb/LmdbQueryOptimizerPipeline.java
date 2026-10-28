@@ -119,11 +119,14 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 		if (evaluationStatistics instanceof LmdbEvaluationStatistics lmdbStatistics) {
 			// Pipeline-only statistics instances (serializable connections) publish feedback under the same
 			// committed-snapshot rule as the strategy's instance.
-			lmdbStatistics.bindExecutionSnapshot(executionSnapshotEpoch);
+			lmdbStatistics.bindOptimizerSource(tripleSource, executionSnapshotEpoch);
 		}
 	}
 
 	TupleExpr optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		if (evaluationStatistics instanceof LmdbEvaluationStatistics lmdbStatistics) {
+			lmdbStatistics.bindOptimizerDataset(tripleSource, dataset);
+		}
 		LmdbValueIdFilter.preserveEffectiveKinds(tupleExpr);
 		if (tupleExpr != null) {
 			// This is the connection's real query entry; detached planner fragments must retain their own proof.
@@ -514,6 +517,7 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 		List<QueryOptimizer> optimizers = new ArrayList<>();
 		optimizers.add(BINDING_ASSIGNER);
 		optimizers.add(GRAPH_SCOPE_OPTIMIZER);
+		optimizers.add(StandardQueryOptimizerPipeline.TUPLE_FUNCTION_MAGIC_PROPERTY_OPTIMIZER);
 		optimizers.add(new ConstantOptimizer(strategy, EmptyBindingSet.getInstance()));
 		optimizers.add(new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()));
 		Optional<LmdbPlannerServices> services = LmdbPlannerServices.from(invocationStatistics);

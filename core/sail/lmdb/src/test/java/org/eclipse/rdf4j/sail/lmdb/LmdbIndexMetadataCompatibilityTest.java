@@ -15,9 +15,11 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbCompatibilityFixtures.properties;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.ByteBuffer;
 import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Statement;
@@ -80,7 +82,8 @@ class LmdbIndexMetadataCompatibilityTest {
 		}
 		boolean add = true;
 		for (String indexes : new String[] { "posc", "ospc", "cpos,posc", null }) {
-			SailRepository repository = new SailRepository(new LmdbStore(directory.toFile(), config(indexes)));
+			LmdbStore store = new LmdbStore(directory.toFile(), config(indexes));
+			SailRepository repository = new SailRepository(store);
 			repository.init();
 			try (var connection = repository.getConnection()) {
 				if (add) {
@@ -92,14 +95,9 @@ class LmdbIndexMetadataCompatibilityTest {
 					add = false;
 				}
 				ValueStore values = (ValueStore) repository.getValueFactory();
-				Set<Value> actual = new HashSet<>();
-				try (RecordIterator terms = values.getTripleTerms(-1, -1, -1)) {
-					long[] row;
-					while ((row = terms.next()) != null) {
-						assertTrue(actual.add(values.getValue(row[TripleIndex.CONTEXT_IDX])));
-					}
-				}
-				assertEquals(expected, actual);
+				assertTerms(values, expected, "before requested layout completes: " + indexes);
+				assertTrue(store.awaitIndexRebuild(20, TimeUnit.SECONDS), store.getStartupStatus().toString());
+				assertTerms(values, expected, "after requested layout completes: " + indexes);
 				for (TripleTerm term : expected) {
 					assertTrue(connection.hasStatement(null, predicate, term, false));
 				}
@@ -148,6 +146,7 @@ class LmdbIndexMetadataCompatibilityTest {
 				try (var rows = connection.getStatements(null, null, null, true)) {
 					assertEquals(expected, QueryResults.asSet(rows));
 				}
+				assertTrue(store.awaitIndexRebuild(20, TimeUnit.SECONDS), store.getStartupStatus().toString());
 			} finally {
 				repository.shutDown();
 			}
@@ -189,10 +188,26 @@ class LmdbIndexMetadataCompatibilityTest {
 		assertTrue(LmdbCompatibilityFixtures.nativeGet(directory, "retired_ids",
 				LmdbCompatibilityFixtures.unsigned(termId)) != null,
 				"The original CSPO-first store must retain the real retired owner before reindexing");
+		// Count reconstruction and physical retirement are explicit maintenance; startup never drains the backlog.
+		LmdbStore.reconstructReferenceCountsOffline(directory.toFile(), config(null));
+		StoreProperties properties = new StoreProperties(directory.toFile());
+		properties.load();
+		ValueStore dictionary = new ValueStore(directory.resolve("values").toFile(), properties, config(null));
+		try {
+			dictionary.startTransaction(true);
+			dictionary.gcIds(Set.of(termId), new HashSet<>());
+			dictionary.commit();
+			assertEquals(LmdbValue.UNKNOWN_ID, dictionary.getId(term));
+			assertEquals(term, dictionary.getValue(termId), "the retired CSPO payload remains resolvable");
+		} finally {
+			dictionary.close();
+		}
 		for (String indexes : new String[] { "posc", null }) {
-			repository = new SailRepository(new LmdbStore(directory.toFile(), config(indexes)));
+			store = new LmdbStore(directory.toFile(), config(indexes));
+			repository = new SailRepository(store);
 			repository.init();
 			try (var connection = repository.getConnection()) {
+				assertTrue(store.awaitIndexRebuild(20, TimeUnit.SECONDS), store.getStartupStatus().toString());
 				assertEquals(0, connection.size());
 				ValueStore values = (ValueStore) repository.getValueFactory();
 				assertEquals(LmdbValue.UNKNOWN_ID, values.getId(term));
@@ -226,7 +241,8 @@ class LmdbIndexMetadataCompatibilityTest {
 	}
 
 	private void writeAndClose(String termIndexes, boolean add) throws Exception {
-		SailRepository repository = new SailRepository(new LmdbStore(directory.toFile(), config(termIndexes)));
+		LmdbStore store = new LmdbStore(directory.toFile(), config(termIndexes));
+		SailRepository repository = new SailRepository(store);
 		repository.init();
 		var vf = SimpleValueFactory.getInstance();
 		var predicate = vf.createIRI("urn:index:predicate");
@@ -241,9 +257,21 @@ class LmdbIndexMetadataCompatibilityTest {
 			try (RecordIterator terms = ((ValueStore) repository.getValueFactory()).getTripleTerms(-1, -1, -1)) {
 				assertTrue(terms.next() != null);
 			}
+			assertTrue(store.awaitIndexRebuild(20, TimeUnit.SECONDS), store.getStartupStatus().toString());
 		} finally {
 			repository.shutDown();
 		}
+	}
+
+	private static void assertTerms(ValueStore values, Set<TripleTerm> expected, String context) throws Exception {
+		Set<Value> actual = new HashSet<>();
+		try (RecordIterator terms = values.getTripleTerms(-1, -1, -1)) {
+			long[] row;
+			while ((row = terms.next()) != null) {
+				assertTrue(actual.add(values.getValue(row[TripleIndex.CONTEXT_IDX])), context);
+			}
+		}
+		assertEquals(expected, actual, context + "; " + values.indexRebuildStatus());
 	}
 
 	private void assertIndexes(Set<String> terms) throws Exception {
@@ -251,6 +279,9 @@ class LmdbIndexMetadataCompatibilityTest {
 		assertEquals(Integer.toString(persistedVersion), properties.getProperty("version"));
 		assertEquals(Set.of("spoc", "posc", "ospc"),
 				TripleIndex.parseIndexSpecList(properties.getProperty("triple-indexes")));
-		assertEquals(terms, TripleIndex.parseIndexSpecList(properties.getProperty("triple-term-indexes")));
+		byte[] manifest = LmdbCompatibilityFixtures.nativeGet(directory, "term_index_manifest",
+				ValueStore.TERM_INDEX_MANIFEST_KEY);
+		assertEquals(terms, ValueStore.decodeTermIndexManifest(ByteBuffer.wrap(manifest)),
+				"the atomically committed native manifest selects the completed term layout");
 	}
 }

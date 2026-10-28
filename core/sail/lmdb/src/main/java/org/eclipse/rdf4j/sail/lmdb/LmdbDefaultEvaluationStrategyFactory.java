@@ -40,7 +40,7 @@ final class LmdbDefaultEvaluationStrategyFactory extends DefaultEvaluationStrate
 	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource source,
 			EvaluationStatistics statistics, QueryExecutionPolicy policy) {
 		EvaluationStatistics effective = statistics == null ? new EvaluationStatistics() : statistics;
-		LmdbEvaluationStrategy.bindExecutionSnapshot(effective, source);
+		LmdbEvaluationStrategy.bindExecutionSnapshot(effective, source, dataset);
 		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, dataset,
 				getFederatedServiceResolver(),
 				getQuerySolutionCacheThreshold(), effective, isTrackResultSize());

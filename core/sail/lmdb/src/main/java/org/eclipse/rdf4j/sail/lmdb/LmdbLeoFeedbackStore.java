@@ -20,6 +20,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 
+import org.eclipse.rdf4j.sail.lmdb.estimation.EstimatorSidecar;
+
 final class LmdbLeoFeedbackStore {
 
 	private static final String MAGIC = "rdf4j-lmdb-leo-surfaces";
@@ -27,10 +29,16 @@ final class LmdbLeoFeedbackStore {
 
 	private final Path path;
 	private final LmdbLeoFeedbackConfig config;
+	private final EstimatorSidecar alternateSlot;
 
 	LmdbLeoFeedbackStore(Path path, LmdbLeoFeedbackConfig config) {
+		this(path, config, null);
+	}
+
+	LmdbLeoFeedbackStore(Path path, LmdbLeoFeedbackConfig config, EstimatorSidecar alternateSlot) {
 		this.path = path;
 		this.config = config == null ? LmdbLeoFeedbackConfig.defaultConfig() : config;
+		this.alternateSlot = alternateSlot;
 	}
 
 	LmdbLeoSurfaceStats load(String expectedRevision) throws IOException {
@@ -39,22 +47,52 @@ final class LmdbLeoFeedbackStore {
 
 	LmdbLeoSurfaceStats load(String expectedRevision, long expectedStatementMutationStamp) throws IOException {
 		requireStatementMutationStamp(expectedStatementMutationStamp);
+		if (alternateSlot != null) {
+			try (EstimatorSidecar.Payload payload = alternateSlot.open()) {
+				if (payload == null
+						|| !currentHeader(payload.input(), expectedRevision, expectedStatementMutationStamp)) {
+					return new LmdbLeoSurfaceStats(config);
+				}
+				// A stale header returns immediately; a current payload is checked before codec allocations.
+				payload.verifyAll();
+			}
+			try (EstimatorSidecar.Payload payload = alternateSlot.open()) {
+				if (payload == null) {
+					throw new IOException("LEO sidecar disappeared after verification");
+				}
+				return readPayload(payload.input(), expectedRevision, expectedStatementMutationStamp, payload);
+			}
+		}
 		if (path == null || !Files.exists(path)) {
 			return new LmdbLeoSurfaceStats(config);
 		}
 		try (DataInputStream in = new DataInputStream(Files.newInputStream(path))) {
-			String magic = readString(in);
-			int version = in.readInt();
-			String revision = readString(in);
-			if (!MAGIC.equals(magic) || version != VERSION || !revision.equals(expectedRevision)) {
-				return new LmdbLeoSurfaceStats(config);
-			}
-			long persistedStatementMutationStamp = in.readLong();
-			if (persistedStatementMutationStamp != expectedStatementMutationStamp) {
-				return new LmdbLeoSurfaceStats(config);
-			}
-			return LmdbLeoSurfaceStats.readFrom(in, config, version);
+			return readPayload(in, expectedRevision, expectedStatementMutationStamp, null);
 		}
+	}
+
+	private LmdbLeoSurfaceStats readPayload(DataInputStream in, String expectedRevision,
+			long expectedStatementMutationStamp, EstimatorSidecar.Payload envelope) throws IOException {
+		if (!currentHeader(in, expectedRevision, expectedStatementMutationStamp)) {
+			return new LmdbLeoSurfaceStats(config);
+		}
+		LmdbLeoSurfaceStats loaded = LmdbLeoSurfaceStats.readFrom(in, config, VERSION);
+		if (envelope != null) {
+			envelope.verify();
+		}
+		return loaded;
+	}
+
+	private static boolean currentHeader(DataInputStream in, String expectedRevision,
+			long expectedStatementMutationStamp) throws IOException {
+		String magic = readString(in);
+		int version = in.readInt();
+		String revision = readString(in);
+		if (!MAGIC.equals(magic) || version != VERSION || !revision.equals(expectedRevision)) {
+			return false;
+		}
+		long persistedStatementMutationStamp = in.readLong();
+		return persistedStatementMutationStamp == expectedStatementMutationStamp;
 	}
 
 	void persist(String revision, LmdbLeoSurfaceStats stats) throws IOException {
@@ -66,23 +104,32 @@ final class LmdbLeoFeedbackStore {
 		if (path == null || stats == null) {
 			return;
 		}
+		if (alternateSlot != null) {
+			alternateSlot.write(out -> writePayload(out, revision, statementMutationStamp, stats));
+			return;
+		}
 		Path parent = path.getParent();
 		if (parent != null) {
 			Files.createDirectories(parent);
 		}
 		Path tmp = path.resolveSibling(path.getFileName() + ".tmp");
 		try (DataOutputStream out = new DataOutputStream(Files.newOutputStream(tmp))) {
-			writeString(out, MAGIC);
-			out.writeInt(VERSION);
-			writeString(out, revision == null ? "" : revision);
-			out.writeLong(statementMutationStamp);
-			stats.writeTo(out);
+			writePayload(out, revision, statementMutationStamp, stats);
 		}
 		try {
 			Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
 		} catch (IOException e) {
 			Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING);
 		}
+	}
+
+	private static void writePayload(DataOutputStream out, String revision, long statementMutationStamp,
+			LmdbLeoSurfaceStats stats) throws IOException {
+		writeString(out, MAGIC);
+		out.writeInt(VERSION);
+		writeString(out, revision == null ? "" : revision);
+		out.writeLong(statementMutationStamp);
+		stats.writeTo(out);
 	}
 
 	private static void requireStatementMutationStamp(long statementMutationStamp) {

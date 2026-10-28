@@ -161,6 +161,7 @@ def run_selection(name, goal, profiles, system_properties, offline):
 			FIXTURE_POM,
 			"clean",
 			goal,
+			"--fail-at-end",
 		]
 	)
 	if profiles:

@@ -561,9 +561,10 @@ body.query-result-embedded-body .workbench-disclosure__actions {
 }
 
 /* Query settings: Timeout ends with its "0 means no limit" help line (M3.4), so aligning the row to the fields' end
- * would put the inferred-statements check and Insert prefixes beside the help line. The Timeout field shares the
- * row's label, control and help tracks through a subgrid, and the other items center on its control track. The
- * label's gap is a margin so its tracks keep the row's zero gap, and a hidden Timeout leaves no empty gaps. Below
+ * would put the inferred-statements check and Insert prefixes beside the help line. The Timeout field and the LMDB
+ * forced-strategy field (label, select and a help paragraph) share the row's label, control and help tracks through
+ * a subgrid, so their labels, controls and help lines line up, and the other items center on the control track. The
+ * label's gap is a margin so its tracks keep the row's zero gap, and a hidden field leaves no empty gaps. Below
  * 641px the row stacks; without subgrid it keeps the shared end alignment. */
 @media (min-width: 641px) {
 	@supports (grid-template-rows: subgrid) {
@@ -575,26 +576,54 @@ body.query-result-embedded-body .workbench-disclosure__actions {
 			row-gap: 0;
 		}
 
-		body.workbench-body .query-options-disclosure .query-timeout-field {
+		body.workbench-body .query-options-disclosure .query-timeout-field,
+		body.workbench-body .query-options-disclosure .lmdb-forced-strategy-field {
 			grid-row: 1 / span 3;
 			grid-template-rows: subgrid;
 			row-gap: 0;
 		}
 
-		body.workbench-body .query-options-disclosure .query-timeout-field > label {
+		body.workbench-body .query-options-disclosure .query-timeout-field > label,
+		body.workbench-body .query-options-disclosure .lmdb-forced-strategy-field > label {
 			margin-bottom: var(--workbench-field-gap);
 		}
 
 		/* The help line sits just under the control, as close as a label to its field. */
-		body.workbench-body .query-options-disclosure .query-timeout-field > .workbench-field__help {
+		body.workbench-body .query-options-disclosure .query-timeout-field > .workbench-field__help,
+		body.workbench-body .query-options-disclosure .lmdb-forced-strategy-field > .workbench-field__help {
 			margin-top: var(--workbench-field-gap);
 		}
 
-		body.workbench-body .query-options-disclosure .workbench-disclosure__fields > :not(.query-timeout-field) {
+		body.workbench-body .query-options-disclosure .workbench-disclosure__fields
+				> :not(.query-timeout-field):not(.lmdb-forced-strategy-field) {
 			grid-row: 2;
 			align-self: center;
 		}
+
+		/* Timeout, the inferred-statements check and the actions keep their content width: only the strategy
+		 * field, whose help paragraph can wrap, gives up width when the card is narrow. */
+		body.workbench-body .query-options-disclosure .workbench-disclosure__fields
+				> :not(.lmdb-forced-strategy-field) {
+			min-width: max-content;
+		}
 	}
+}
+
+/* The strategy names are long camel-case words and the help is a short paragraph: the field takes between a long
+ * name and a sentence of width, the select fills it, and the help wraps under the select instead of into a narrow
+ * column. With this field shown the row holds four items, so its panel may grow past the shared 44rem cap; the card
+ * width still bounds it. */
+body.workbench-body .query-options-disclosure > .workbench-disclosure__panel {
+	max-width: min(54rem, var(--workbench-disclosure-max-width, calc(100vw - 32px)));
+}
+
+body.workbench-body .query-options-disclosure .lmdb-forced-strategy-field {
+	min-width: 12rem;
+	max-width: 24rem;
+}
+
+body.workbench-body .query-options-disclosure .lmdb-forced-strategy-field > select {
+	width: 100%;
 }
 
 @media (max-width: 640px) {

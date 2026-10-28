@@ -25,6 +25,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -210,7 +211,7 @@ class LmdbSailStoreCloseFailureTest {
 
 	@Test
 	void constructorFailureAfterCoreOpenRetainsPrimaryAndBothCleanupFailures() throws Exception {
-		IOException primary = new IOException("estimator construction failed");
+		IOException primary = new IOException("inferred-plane startup failed");
 		IOException valuesFailure = new IOException("value close after constructor failure");
 		IllegalStateException triplesFailure = new IllegalStateException("triple close after constructor failure");
 		AtomicReference<ValueStore> values = new AtomicReference<>();
@@ -234,6 +235,15 @@ class LmdbSailStoreCloseFailureTest {
 							}, (root, properties, selected, dictionary) -> {
 								TripleStore created = new TripleStore(root, properties, selected, dictionary) {
 									@Override
+									boolean hasTriples(boolean explicit) throws IOException {
+										boolean result = super.hasTriples(explicit);
+										if (!explicit) {
+											throw primary;
+										}
+										return result;
+									}
+
+									@Override
 									public void close() throws IOException {
 										super.close();
 										throw triplesFailure;
@@ -241,10 +251,7 @@ class LmdbSailStoreCloseFailureTest {
 								};
 								triples.set(created);
 								return created;
-							}, PersistentSetFactory::new,
-							(path, tripleStore, valueStore, sampling, millis, rows, background) -> {
-								throw primary;
-							}));
+							}, PersistentSetFactory::new, null));
 			assertSame(primary, actual);
 			assertFalse(values.get().isNativeEnvironmentOpen());
 			assertFalse(triples.get().isNativeEnvironmentOpen());
@@ -341,6 +348,12 @@ class LmdbSailStoreCloseFailureTest {
 		owner.set(backing);
 		Throwable failure = null;
 		try {
+			backing.startBackgroundMaintenanceAfterInitialization();
+			long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+			while ("RUNNING".equals(backing.postReadyMaintenanceStatus()) && System.nanoTime() < deadline) {
+				Thread.yield();
+			}
+			assertEquals("READY", backing.postReadyMaintenanceStatus(), "the real provider must be published");
 			assertDoesNotThrow(backing::close);
 			assertEquals(1, refusals.get());
 			assertFalse(backing.valueStore().isNativeEnvironmentOpen());

@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -64,14 +65,17 @@ class LmdbPreparedDomainStartupTest {
 		LmdbStartupDiagnostics.OBSERVER.set(operations::add);
 		try {
 			reopened.init();
+			LmdbTestUtil.awaitPostReadyInitialization(reopened, 30, TimeUnit.SECONDS);
 			assertRowsAndIds(reopened, seed, 1L, false);
 			TripleStore triples = reopened.getBackingStore().getTripleStore();
-			assertEquals(readable, triples.getKnownRdfTermDomain(seed.predicateId()).isPresent());
-			if (readable) {
-				assertTrue(triples.getKnownRdfTermDomain(seed.predicateId())
-						.orElseThrow()
-						.has(RdfTermDomain.Fact.CANONICAL_INTEGER));
-			}
+			withPairedDomainView(reopened, () -> {
+				assertEquals(readable, triples.getKnownRdfTermDomain(seed.predicateId()).isPresent());
+				if (readable) {
+					assertTrue(triples.getKnownRdfTermDomain(seed.predicateId())
+							.orElseThrow()
+							.has(RdfTermDomain.Fact.CANONICAL_INTEGER));
+				}
+			});
 			triples.trustedTransactionId();
 			if (maintenance) {
 				assertTrue(operations.contains(LmdbStartupDiagnostics.Operation.DISCOVERY),
@@ -102,13 +106,14 @@ class LmdbPreparedDomainStartupTest {
 		LmdbStore resumed = new LmdbStore(directory.toFile(), config(Profile.CURRENT));
 		try {
 			resumed.init();
+			LmdbTestUtil.awaitPostReadyInitialization(resumed, 30, TimeUnit.SECONDS);
 			assertRowsAndIds(resumed, seed, 2L, false);
-			assertTrue(resumed.getBackingStore()
+			withPairedDomainView(resumed, () -> assertTrue(resumed.getBackingStore()
 					.getTripleStore()
 					.getKnownRdfTermDomain(seed.predicateId())
 					.orElseThrow()
 					.has(RdfTermDomain.Fact.CANONICAL_INTEGER),
-					"turning automatic rebuild back on must still honor the deferred marker");
+					"turning automatic rebuild back on must still honor the deferred marker"));
 		} finally {
 			resumed.shutDown();
 		}
@@ -125,6 +130,7 @@ class LmdbPreparedDomainStartupTest {
 		LmdbStartupDiagnostics.OBSERVER.set(operations::add);
 		try {
 			reopened.init();
+			LmdbTestUtil.awaitPostReadyInitialization(reopened, 30, TimeUnit.SECONDS);
 			assertEquals(List.of(), operations);
 			assertRowsAndIds(reopened, seed, count, hasNoncanonical);
 			ValueStore values = (ValueStore) reopened.getBackingStore().getValueFactory();
@@ -137,20 +143,41 @@ class LmdbPreparedDomainStartupTest {
 			assertEquals(before.triples().transactionId(), triples.trustedTransactionId());
 			assertEquals(0L, reopened.getMapGrowthCount(),
 					"prepared opening must finish without native map growth");
-			RdfTermDomain known = triples.getKnownRdfTermDomain(seed.predicateId()).orElseThrow();
-			assertFalse(known.has(RdfTermDomain.Fact.CANONICAL_INTEGER));
-			assertEquals(known, triples.getPersistedRdfTermDomain(seed.predicateId()).orElseThrow());
+			withPairedDomainView(reopened, () -> {
+				RdfTermDomain known = triples.getKnownRdfTermDomain(seed.predicateId()).orElseThrow();
+				assertFalse(known.has(RdfTermDomain.Fact.CANONICAL_INTEGER));
+				assertEquals(known, triples.getPersistedRdfTermDomain(seed.predicateId()).orElseThrow());
+			});
 		} finally {
 			LmdbStartupDiagnostics.OBSERVER.remove();
 			reopened.shutDown();
 		}
 	}
 
+	@FunctionalInterface
+	private interface DomainCheck {
+		void run() throws Exception;
+	}
+
+	private static void withPairedDomainView(LmdbStore store, DomainCheck check) throws Exception {
+		LmdbSailStore backing = store.getBackingStore();
+		LmdbEstimatorRuntime runtime = ((LmdbEvaluationStatistics) store.getSailStore()
+				.getEvaluationStatistics()).estimatorRuntime();
+		try (LmdbSailStore.DatasetAdmission view = backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, null)) {
+			view.view().requireDictionaryTermSnapshot();
+			try (TripleStore.PlanningReadPin ignored = runtime.pinPlanningReads(view.view().tripleTxn(),
+					view.view().valueSnapshot())) {
+				check.run();
+			}
+		}
+	}
+
 	private static Seed seed(Path directory, LmdbStoreConfig config, boolean weaken, boolean remove)
 			throws Exception {
 		LmdbStore store = new LmdbStore(directory.toFile(), config);
-		store.init();
 		try {
+			store.init();
+			LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
 			try (SailConnection connection = store.getConnection()) {
 				connection.begin(IsolationLevels.SNAPSHOT);
 				connection.addStatement(SUBJECT, PREDICATE, CANONICAL);

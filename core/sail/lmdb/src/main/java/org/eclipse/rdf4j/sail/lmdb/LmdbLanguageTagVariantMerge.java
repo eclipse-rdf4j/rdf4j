@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 
 import org.eclipse.rdf4j.sail.lmdb.ValueStore.LanguageTagKeyMode;
+import org.eclipse.rdf4j.sail.lmdb.estimation.EstimatorPersistenceLocation;
 import org.eclipse.rdf4j.sail.lmdb.estimation.LmdbQuadSynopsisService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -89,32 +90,69 @@ final class LmdbLanguageTagVariantMerge {
 	 */
 	static Outcome mergeIfRequired(ValueStore valueStore, TripleStore tripleStore, Path sketchDirectory)
 			throws IOException {
+		return mergeIfRequired(valueStore, tripleStore, EstimatorPersistenceLocation.forStandalone(sketchDirectory));
+	}
+
+	static Outcome mergeIfRequired(ValueStore valueStore, TripleStore tripleStore,
+			EstimatorPersistenceLocation sketchLocation) throws IOException {
 		if (disabledForTesting || !valueStore.getFormat().isLegacy()
 				&& valueStore.languageTagKeyMode() == LanguageTagKeyMode.CANONICAL) {
 			return Outcome.NONE;
 		}
-		LanguageTagVariantMergePlan plan = valueStore.planLanguageTagVariantMerge();
-		reached(Step.PLANNED);
+		int groups;
+		int losers;
 		long rewritten = 0L;
-		if (!plan.isEmpty()) {
-			logger.info("Merging {} group(s) of language literals whose language tags differ only in case ({} value "
-					+ "id(s) merged into another id, triple terms included)", plan.variantGroups(), plan.loserCount());
-			LmdbQuadSynopsisService.markRebuildRequired(sketchDirectory);
-			reached(Step.SKETCH_INVALIDATED);
-			int batchRows = statementBatchRowsForTesting > 0 ? statementBatchRowsForTesting
-					: DEFAULT_STATEMENT_BATCH_ROWS;
-			rewritten = tripleStore.rewriteStatementIds(plan::resolve, batchRows,
-					statements -> reached(Step.STATEMENT_BATCH_COMMITTED));
-			reached(Step.STATEMENTS_REWRITTEN);
+		boolean sketchInvalidated = false;
+		try (ValueStore.LanguageTagMigrationWriter writer = valueStore.beginLanguageTagMigration()) {
+			LanguageTagVariantMergePlan plan = valueStore.planLanguageTagVariantMerge();
+			reached(Step.PLANNED);
+			groups = plan.variantGroups();
+			losers = plan.loserCount();
+			while (true) {
+				try {
+					writer.start(plan);
+				} catch (ValueStore.LanguageTagMigrationCapacityException | LmdbUtil.MapFullException capacity) {
+					writer.growAfterCapacityFailure(capacity);
+					plan = valueStore.planLanguageTagVariantMerge();
+					reached(Step.PLANNED);
+					continue;
+				}
+				if (!plan.isEmpty()) {
+					logger.info(
+							"Merging {} group(s) of language literals whose language tags differ only in case ({} value "
+									+ "id(s) merged into another id, triple terms included)",
+							plan.variantGroups(), plan.loserCount());
+					if (!sketchInvalidated) {
+						LmdbQuadSynopsisService.markRebuildRequired(sketchLocation);
+						sketchInvalidated = true;
+						reached(Step.SKETCH_INVALIDATED);
+					}
+					int batchRows = statementBatchRowsForTesting > 0 ? statementBatchRowsForTesting
+							: DEFAULT_STATEMENT_BATCH_ROWS;
+					rewritten += tripleStore.rewriteStatementIds(plan::resolve, batchRows,
+							statements -> reached(Step.STATEMENT_BATCH_COMMITTED));
+					reached(Step.STATEMENTS_REWRITTEN);
+				}
+				try {
+					valueStore.applyLanguageTagVariantMergeInMigration(plan);
+				} catch (ValueStore.LanguageTagMigrationCapacityException | LmdbUtil.MapFullException capacity) {
+					writer.growAfterCapacityFailure(capacity);
+					// Earlier statement batches remain committed, but the current dictionary transaction was aborted.
+					// Rebuild the plan from its authoritative dictionary and finish any remaining statement rewrites.
+					plan = valueStore.planLanguageTagVariantMerge();
+					reached(Step.PLANNED);
+					continue;
+				}
+				reached(Step.VALUES_MERGED);
+				break;
+			}
 		}
-		valueStore.applyLanguageTagVariantMerge(plan);
-		reached(Step.VALUES_MERGED);
-		if (!plan.isEmpty()) {
+		if (losers != 0) {
 			logger.info("Merged {} group(s) of language literals whose language tags differ only in case: {} value "
 					+ "id(s) merged, {} statement(s) rewritten; language literals are now keyed canonically",
-					plan.variantGroups(), plan.loserCount(), rewritten);
+					groups, losers, rewritten);
 		}
-		return new Outcome(plan.variantGroups(), plan.loserCount(), rewritten);
+		return new Outcome(groups, losers, rewritten);
 	}
 
 	private static void reached(Step step) throws IOException {

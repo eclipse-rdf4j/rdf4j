@@ -44,6 +44,7 @@ import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.Window;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 
 /**
@@ -93,6 +94,7 @@ final class LmdbNativeAlgebraCensus {
 			Map.entry(Order.class, Kind.ROOT),
 			Map.entry(Slice.class, Kind.ROOT),
 			Map.entry(Group.class, Kind.ROOT),
+			Map.entry(Window.class, Kind.ROOT),
 			Map.entry(ZeroLengthPath.class, Kind.NATIVE),
 			Map.entry(Intersection.class, Kind.ISLAND),
 			// M6: native triple-term index scan with island fallback (kill switch rdf4j.lmdb.nativeTripleTerms.enabled,

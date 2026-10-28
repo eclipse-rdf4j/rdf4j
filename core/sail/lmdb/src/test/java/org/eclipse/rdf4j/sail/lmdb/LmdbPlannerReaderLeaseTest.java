@@ -16,9 +16,15 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.CALLS_REAL_METHODS;
+import static org.mockito.Mockito.mockStatic;
 
 import java.io.File;
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadInfo;
+import java.lang.management.ThreadMXBean;
 import java.lang.reflect.Field;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -47,6 +53,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate;
@@ -58,6 +65,8 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.lwjgl.util.lmdb.LMDB;
+import org.mockito.MockedStatic;
 
 /**
  * Planner-time storage reads must reuse the query's own pinned dataset lease instead of taking nested reader leases.
@@ -605,6 +614,205 @@ class LmdbPlannerReaderLeaseTest {
 			other.shutdownNow();
 			tripleStore.close();
 		}
+	}
+
+	@Test
+	void planningViewNativeReadFinishesBeforeOwnerRetirement(@TempDir File tempFolder) throws Exception {
+		TripleStore tripleStore = openTripleStore(tempFolder);
+		TxnManager manager = tripleStore.getTxnManager();
+		Txn owner = manager.createReadTxn();
+		long ownerLease = owner.leaseId();
+		CountDownLatch statEntered = new CountDownLatch(1);
+		CountDownLatch releaseStat = new CountDownLatch(1);
+		CountDownLatch closeFinished = new CountDownLatch(1);
+		AtomicReference<Long> count = new AtomicReference<>();
+		AtomicReference<Throwable> readFailure = new AtomicReference<>();
+		AtomicReference<Throwable> closeFailure = new AtomicReference<>();
+		try (TripleStore.PlanningReadPin pin = tripleStore.pinPlanningTxn(owner);
+				Txn view = tripleStore.planningReadTxn()) {
+			assertTrue(view.isView());
+			Thread reader = new Thread(() -> {
+				try (MockedStatic<LMDB> ignored = mockStatic(LMDB.class, invocation -> {
+					if (invocation.getMethod().getName().equals("mdb_stat")) {
+						statEntered.countDown();
+						assertTrue(releaseStat.await(10, TimeUnit.SECONDS), "the native read was not released");
+						// A failed ownership assertion must not call JNI using a potentially retired native handle.
+						assertTrue(Thread.holdsLock(owner.nativeReadMonitor()),
+								"the admitted native read must hold its owner's monitor");
+					}
+					return CALLS_REAL_METHODS.answer(invocation);
+				})) {
+					count.set(tripleStore.countTriples(view, UNBOUND, UNBOUND, UNBOUND, UNBOUND, true));
+				} catch (Throwable failure) {
+					readFailure.set(failure);
+				}
+			}, "planning-view-native-read");
+			Thread closer = new Thread(() -> {
+				try {
+					owner.close();
+				} catch (Throwable failure) {
+					closeFailure.set(failure);
+				} finally {
+					closeFinished.countDown();
+				}
+			}, "planning-view-owner-close");
+			try {
+				reader.start();
+				assertTrue(statEntered.await(10, TimeUnit.SECONDS), "the planner view must reach its native read");
+				closer.start();
+				ThreadMXBean threads = ManagementFactory.getThreadMXBean();
+				long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+				while (true) {
+					ThreadInfo info = threads.getThreadInfo(closer.threadId());
+					if (info != null && info.getThreadState() == Thread.State.BLOCKED
+							&& info.getLockOwnerId() == reader.threadId()
+							&& info.getLockInfo() != null
+							&& info.getLockInfo().getIdentityHashCode() == System
+									.identityHashCode(owner.nativeReadMonitor())) {
+						break;
+					}
+					assertTrue(closeFinished.getCount() != 0,
+							"owner retirement must wait for the admitted native read");
+					assertTrue(System.nanoTime() < deadline, "owner close did not reach the reader's monitor");
+					Thread.onSpinWait();
+				}
+			} finally {
+				releaseStat.countDown();
+				reader.join(TimeUnit.SECONDS.toMillis(10));
+				closer.join(TimeUnit.SECONDS.toMillis(10));
+			}
+			assertFalse(reader.isAlive(), "the native read must finish");
+			assertFalse(closer.isAlive(), "owner close must finish after the native read");
+			assertNull(readFailure.get(), "the admitted read must complete before its owner closes");
+			assertNull(closeFailure.get(), "owner close must complete");
+			assertEquals(400L, count.get().longValue());
+			assertFalse(owner.isLive(ownerLease));
+			try (Txn next = manager.createReadTxn()) {
+				assertTrue(next != owner || next.leaseId() != ownerLease,
+						"a recycled owner must have a different lease");
+				assertThrows(SailException.class,
+						() -> tripleStore.countTriples(view, UNBOUND, UNBOUND, UNBOUND, UNBOUND, true),
+						"the old view must not read a closed or recycled owner");
+			}
+		} finally {
+			owner.close();
+			tripleStore.close();
+		}
+	}
+
+	@Test
+	void nestedGenerationReadCompletesWhileWriterWaits(@TempDir File tempFolder) throws Exception {
+		TripleStore tripleStore = openTripleStore(tempFolder);
+		TxnManager manager = tripleStore.getTxnManager();
+		CountDownLatch statEntered = new CountDownLatch(1);
+		CountDownLatch startNested = new CountDownLatch(1);
+		CountDownLatch nestedFinished = new CountDownLatch(1);
+		CountDownLatch releaseStat = new CountDownLatch(1);
+		CountDownLatch writerStarted = new CountDownLatch(1);
+		CountDownLatch writerAcquired = new CountDownLatch(1);
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		try (Txn owner = manager.createReadTxnPinned(tripleStore::getDataRevision)) {
+			Thread reader = new Thread(() -> {
+				try (MockedStatic<LMDB> ignored = mockStatic(LMDB.class, invocation -> {
+					if (invocation.getMethod().getName().equals("mdb_stat")) {
+						statEntered.countDown();
+						assertTrue(startNested.await(10, TimeUnit.SECONDS), "the nested read was not admitted");
+						assertEquals(1L, tripleStore.exactStatementCount(owner, 10L, P, 10L, 4L, true));
+						nestedFinished.countDown();
+						assertTrue(releaseStat.await(10, TimeUnit.SECONDS), "the outer read was not released");
+					}
+					return CALLS_REAL_METHODS.answer(invocation);
+				})) {
+					assertEquals(400L,
+							tripleStore.countTriples(owner, UNBOUND, UNBOUND, UNBOUND, UNBOUND, true));
+				} catch (Throwable error) {
+					failure.compareAndSet(null, error);
+				}
+			}, "nested-generation-reader");
+			Thread writer = new Thread(() -> {
+				try {
+					writerStarted.countDown();
+					long stamp = manager.lockManager().writeLock();
+					try {
+						writerAcquired.countDown();
+					} finally {
+						manager.lockManager().unlockWrite(stamp);
+					}
+				} catch (Throwable error) {
+					failure.compareAndSet(null, error);
+				}
+			}, "nested-generation-writer");
+			try {
+				reader.start();
+				assertTrue(statEntered.await(10, TimeUnit.SECONDS), "the outer native read must be admitted");
+				writer.start();
+				assertTrue(writerStarted.await(10, TimeUnit.SECONDS));
+				long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+				while (!manager.lockManager().isWriterActive()) {
+					assertTrue(System.nanoTime() < deadline, "the writer did not begin waiting for the outer read");
+					Thread.onSpinWait();
+				}
+				startNested.countDown();
+				assertTrue(nestedFinished.await(10, TimeUnit.SECONDS),
+						"the admitted reader must complete its nested read while the writer waits");
+				assertEquals(1L, writerAcquired.getCount(), "the writer must wait until the outer read returns");
+			} finally {
+				startNested.countDown();
+				releaseStat.countDown();
+				reader.join(TimeUnit.SECONDS.toMillis(10));
+				writer.join(TimeUnit.SECONDS.toMillis(10));
+			}
+			assertFalse(reader.isAlive(), "the reader must finish");
+			assertFalse(writer.isAlive(), "the writer must finish after the read");
+			assertNull(failure.get(), "the overlapping operations must finish successfully");
+			assertEquals(0L, writerAcquired.getCount());
+		} finally {
+			tripleStore.close();
+		}
+	}
+
+	@Test
+	void frontierAdmissionWaitsForReaderCapacityBeforeNativeBarrier(@TempDir File tempFolder) throws Exception {
+		TripleStore tripleStore = openTripleStore(tempFolder);
+		TxnManager manager = tripleStore.getTxnManager();
+		List<Txn> held = hold(manager, manager.availableOrdinaryPermits());
+		CountDownLatch waitingForPermit = new CountDownLatch(1);
+		CountDownLatch resumeAdmission = new CountDownLatch(1);
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		manager.beforeBlockingReaderAdmissionForTest = () -> {
+			waitingForPermit.countDown();
+			try {
+				assertTrue(resumeAdmission.await(10, TimeUnit.SECONDS), "reader admission was not released");
+			} catch (InterruptedException interrupted) {
+				Thread.currentThread().interrupt();
+				throw new SailException(interrupted);
+			}
+		};
+		Thread opener = new Thread(() -> {
+			try (LmdbFrontierSnapshotSource ignored = new LmdbFrontierSnapshotSource(tripleStore)) {
+				// Opening must eventually succeed after an ordinary reader permit is returned.
+			} catch (Throwable error) {
+				failure.set(error);
+			}
+		}, "frontier-reader-admission");
+		long writeStamp = 0L;
+		try {
+			opener.start();
+			assertTrue(waitingForPermit.await(10, TimeUnit.SECONDS), "the Frontier reader must wait for capacity");
+			writeStamp = manager.lockManager().tryWriteLock();
+			assertTrue(writeStamp != 0L, "a reader waiting for a permit must not hold the native read barrier");
+		} finally {
+			if (writeStamp != 0L) {
+				manager.lockManager().unlockWrite(writeStamp);
+			}
+			manager.beforeBlockingReaderAdmissionForTest = null;
+			resumeAdmission.countDown();
+			release(held);
+			opener.join(TimeUnit.SECONDS.toMillis(10));
+			tripleStore.close();
+		}
+		assertFalse(opener.isAlive(), "the Frontier reader must open after capacity returns");
+		assertNull(failure.get(), "the Frontier reader must close normally");
 	}
 
 	/**

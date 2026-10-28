@@ -13,11 +13,8 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.File;
 import java.io.IOException;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 import org.eclipse.rdf4j.sail.SailException;
@@ -36,8 +33,6 @@ public class TripleStoreAlignedSortResetTest {
 
 		try (ObservingTripleStore tripleStore = new ObservingTripleStore(storeDir,
 				new LmdbStoreConfig("spoc,psoc,ospc"))) {
-			tripleStore.forceIndexOrder("spoc", "psoc", "ospc");
-
 			long[] subj = { 1, 1, 2, 2 };
 			long[] pred = { 1, 2, 1, 2 };
 			long[] obj = { 2, 1, 1, 2 };
@@ -48,10 +43,11 @@ public class TripleStoreAlignedSortResetTest {
 			tripleStore.commit();
 
 			Assertions.assertEquals(Arrays.toString(new int[] { 0, 1, 2, 3 }),
-					Arrays.toString(tripleStore.getSortInput("psoc")), "PSOC should start from main index order");
+					Arrays.toString(tripleStore.getSortInput("psoc")),
+					"PSOC should reset to main index order before sorting");
 			Assertions.assertEquals(Arrays.toString(new int[] { 0, 1, 2, 3 }),
 					Arrays.toString(tripleStore.getSortInput("ospc")),
-					"OSPC should reset to main index order before sorting");
+					"OSPC should start from main index order");
 		}
 	}
 
@@ -63,8 +59,6 @@ public class TripleStoreAlignedSortResetTest {
 
 		try (ObservingTripleStore tripleStore = new ObservingTripleStore(storeDir,
 				new LmdbStoreConfig("spoc,psoc,ospc"))) {
-			tripleStore.forceIndexOrder("spoc", "psoc", "ospc");
-
 			long[] subj = { 1, 1, 2, 2 };
 			long[] pred = { 1, 2, 1, 2 };
 			long[] obj = { 2, 1, 1, 2 };
@@ -80,10 +74,10 @@ public class TripleStoreAlignedSortResetTest {
 
 			Assertions.assertEquals(Arrays.toString(new int[] { 1, 2, 3 }),
 					Arrays.toString(tripleStore.getSortInput("psoc")),
-					"PSOC should start from sparse main index order");
+					"PSOC should reset to sparse main index order before sorting");
 			Assertions.assertEquals(Arrays.toString(new int[] { 1, 2, 3 }),
 					Arrays.toString(tripleStore.getSortInput("ospc")),
-					"OSPC should reset to sparse main index order before sorting");
+					"OSPC should start from sparse main index order");
 		}
 	}
 
@@ -103,27 +97,6 @@ public class TripleStoreAlignedSortResetTest {
 
 		private int[] getSortInput(String fieldSeq) {
 			return sortInputs.get(fieldSeq);
-		}
-
-		@SuppressWarnings("unchecked")
-		private void forceIndexOrder(String... fieldSeqs) throws Exception {
-			Field indexesField = TripleStore.class.getDeclaredField("indexes");
-			indexesField.setAccessible(true);
-
-			List<TripleIndex> indexes = (List<TripleIndex>) indexesField.get(this);
-			Map<String, TripleIndex> indexesByFieldSeq = new HashMap<>();
-			for (TripleIndex index : indexes) {
-				indexesByFieldSeq.put(new String(index.getFieldSeq()), index);
-			}
-
-			indexes.clear();
-			for (String fieldSeq : fieldSeqs) {
-				indexes.add(indexesByFieldSeq.get(fieldSeq));
-			}
-
-			Method resetAlignedWriteCursorState = TripleStore.class.getDeclaredMethod("resetAlignedWriteCursorState");
-			resetAlignedWriteCursorState.setAccessible(true);
-			resetAlignedWriteCursorState.invoke(this);
 		}
 	}
 }

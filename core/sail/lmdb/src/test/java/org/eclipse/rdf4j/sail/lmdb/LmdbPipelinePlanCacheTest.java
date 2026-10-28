@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Constructor;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -26,9 +27,11 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -39,15 +42,119 @@ import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.RuntimeFeedbackTarget;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanDecisionSummary;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedSearchCompletionStatus;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.CleanupMode;
+import org.junit.jupiter.api.io.TempDir;
 
 class LmdbPipelinePlanCacheTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+
+	@Test
+	void realCacheRejectsAnObservationAfterItsSourceCommit(
+			@TempDir(cleanup = CleanupMode.NEVER) Path root) throws Exception {
+		cacheStateAcrossObserverCommit(root, true);
+	}
+
+	@Test
+	void realCacheAcceptsItsCurrentSourceObservation(
+			@TempDir(cleanup = CleanupMode.NEVER) Path root) throws Exception {
+		cacheStateAcrossObserverCommit(root, false);
+	}
+
+	private static void cacheStateAcrossObserverCommit(Path root, boolean commit) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setBackgroundRawSamplingEnabled(false);
+		config.setExperimentalQueryOptimizations(true);
+		LmdbStore store = new LmdbStore(root.resolve("store").toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		LmdbPipelinePlanCache cache = new LmdbPipelinePlanCache(8, 1, 1024 * 1024L);
+		try {
+			repository.init();
+			LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
+			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics();
+			long revision = store.getBackingStore().getTripleStore().getDataRevision();
+			try (SailDataset dataset = store.getBackingStore()
+					.getExplicitSailSource()
+					.dataset(IsolationLevels.SNAPSHOT_READ)) {
+				var source = new SailDatasetTripleTermSource(store.getValueFactory(), dataset);
+				LmdbEvaluationStrategy.bindExecutionSnapshot(statistics, source, null);
+				assertTrue(statistics.feedbackPublicationAllowed());
+				var context = context(revision);
+				AtomicInteger computations = new AtomicInteger();
+				QueryRoot cold = query("_anon_1", "urn:left");
+				statementPattern(cold).setRuntimeFeedbackContract(runtimeFeedbackContract(revision));
+				cache.getOrComputePlan(cold, context, context::revision,
+						() -> new LmdbPipelinePlanCache.PlanComputation(planned(cold, computations), decisionSummary(),
+								null));
+				QueryRoot hotSource = query("_anon_2", "urn:left");
+				var hot = cache.getOrComputePlan(hotSource, context, context::revision,
+						() -> new LmdbPipelinePlanCache.PlanComputation(planned(hotSource, computations),
+								decisionSummary(), null));
+				assertTrue(hot.cacheHit(), "the real cache must contain a reusable champion before feedback");
+				PlanningGraphDomains.capture(hot.plan(), PlanningGraphDomain.defaultGraph());
+				StatementPattern pattern = statementPattern(hot.plan());
+				var contract = pattern.getRuntimeFeedbackContract();
+				assertNotNull(((LmdbRuntimeFeedbackDescriptor) contract.descriptor()).planExecutionToken());
+				var feedback = statistics.estimatorRuntime().feedback();
+				assertNotNull(feedback);
+				AtomicInteger callbacks = new AtomicInteger();
+				feedback.setPlanExecutionPublisher((observation, authority) -> {
+					callbacks.incrementAndGet();
+					assertFalse(
+							store.getBackingStore().getTripleStore().getTxnManager().lockManager().isReaderActive());
+					assertFalse(store.getBackingStore().valueStore().getTxnManager().lockManager().isReaderActive());
+					if (commit) {
+						try (var connection = repository.getConnection()) {
+							connection.add(VF.createIRI("urn:cache-observer:commit"),
+									VF.createIRI("urn:cache-observer:p"), VF.createLiteral("landed"));
+						}
+					}
+					cache.observeExecution(new LmdbPlanDecisionCache.ExecutionObservation(observation.familyKey(),
+							observation.variantId(), observation.planVersion(), true, false, 1d, 0L, true, false),
+							authority);
+				});
+				RuntimeFeedbackTarget target = statistics.resolveRuntimeFeedbackTarget(pattern, contract);
+				assertTrue(target.active());
+				target.open();
+				target.close(1L, 1d, 1L, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
+						EvaluationStatistics.TerminationClassification.EXHAUSTED);
+				statistics.publishRuntimeFeedbackTargets(new RuntimeFeedbackTarget[] { target }, 1, true);
+				assertEquals(1, callbacks.get(), "the source was current on entry to the arbitrary observer");
+				if (commit) {
+					assertTrue(store.getBackingStore().getTripleStore().getDataRevision() > revision);
+					try (var connection = repository.getConnection()) {
+						assertTrue(connection.hasStatement(VF.createIRI("urn:cache-observer:commit"),
+								VF.createIRI("urn:cache-observer:p"), VF.createLiteral("landed"), false));
+					}
+				}
+				// Inspect the retained champion through its normal captured-context lookup, without private-state
+				// access.
+				QueryRoot inspection = query("_anon_3", "urn:left");
+				var retained = cache.getOrComputePlan(inspection, context, context::revision,
+						() -> new LmdbPipelinePlanCache.PlanComputation(planned(inspection, computations),
+								decisionSummary(), null));
+				assertEquals(commit, retained.cacheHit(), commit
+						? "an observation forwarded after a source commit must not poison the retained champion"
+						: "current lifecycle-blocked evidence must update the real cache state");
+			}
+		} finally {
+			cache.close();
+			repository.shutDown();
+		}
+	}
 
 	@Test
 	void alphaEquivalentAnonymousVariablesReuseDetachedTemplate() {
@@ -432,9 +539,14 @@ class LmdbPipelinePlanCacheTest {
 	}
 
 	private static RuntimeFeedbackContract runtimeFeedbackContract() {
+		return runtimeFeedbackContract(1L);
+	}
+
+	private static RuntimeFeedbackContract runtimeFeedbackContract(long revision) {
 		LogicalLearningKey logical = LogicalLearningKey.of("statement-pattern", "expression", "children",
 				"predicates", "v0", "none", "bag", "default");
-		LearningApplicability applicability = new LearningApplicability(1L, 0L, "unconditional", 1L, 1L, 1L);
+		LearningApplicability applicability = new LearningApplicability(1L, 0L, "unconditional", revision, revision,
+				1L);
 		PhysicalResidualKey physical = PhysicalResidualKey.of("scan", "statement-pattern", "spoc", "scan", "none",
 				"none", "none", "unbound");
 		RuntimeFeedbackContract.PredictionVector prediction = new RuntimeFeedbackContract.PredictionVector(1.0d,
@@ -442,7 +554,8 @@ class LmdbPipelinePlanCacheTest {
 		return new RuntimeFeedbackContract(new LmdbRuntimeFeedbackDescriptor(null, null, logical, applicability,
 				physical), prediction, prediction, 1.0d, 1.0d, 1.0d, Double.POSITIVE_INFINITY,
 				RuntimeFeedbackContract.SemanticKind.ORDINARY, RuntimeFeedbackContract.Algorithm.SCAN,
-				RuntimeFeedbackContract.Access.FULL_SCAN, 1, 1L, 1L, 1L, RuntimeFeedbackContract.ADMIT_LOGICAL);
+				RuntimeFeedbackContract.Access.FULL_SCAN, 1, revision, revision, 1L,
+				RuntimeFeedbackContract.ADMIT_LOGICAL);
 	}
 
 	private static QueryRoot query(String anonymousName, String predicate) {

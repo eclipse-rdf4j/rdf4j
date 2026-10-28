@@ -1001,6 +1001,8 @@ class LmdbSynchronousIngestTest {
 				writer.add(input);
 				writer.setNamespace("abandoned", "urn:complete:");
 				RepositoryException failure = assertThrows(RepositoryException.class, writer::commit);
+				assertFalse(fixture.events.failValueCommit.get(),
+						"the injected dictionary commit failure must reach the native value writer");
 				assertLegacyRootPath(fixture);
 				Throwable primary = policy == Policy.OMITTED
 						? cause(failure, LmdbTransactionRetryException.class)
@@ -1197,6 +1199,7 @@ class LmdbSynchronousIngestTest {
 	@Timeout(value = 10, unit = TimeUnit.SECONDS)
 	void mandatoryNamespaceReconciliationRestoresAnExpiredCallerDeadline(@TempDir Path directory) throws Exception {
 		try (Fixture fixture = new Fixture(directory, 4)) {
+			loadAuthoritativeNamespaces(fixture);
 			fixture.events.interruptAfterValueCommit.set(true);
 			Set<Statement> input = statements("expired-reconciliation-deadline", 2);
 			CountDownLatch releaseReadOnExpiration = new CountDownLatch(1);
@@ -1262,6 +1265,7 @@ class LmdbSynchronousIngestTest {
 		Fixture fixture = new Fixture(directory, config);
 		boolean shutdownAttempted = false;
 		try {
+			loadAuthoritativeNamespaces(fixture);
 			fixture.events.failTripleCommit.set(true);
 			NamespaceReadProbe probe = new NamespaceReadProbe(null, readFailure);
 			try (RepositoryConnection writer = fixture.repository.getConnection()) {
@@ -1835,6 +1839,15 @@ class LmdbSynchronousIngestTest {
 		}
 	}
 
+	private static void loadAuthoritativeNamespaces(Fixture fixture) throws Exception {
+		try (RepositoryConnection reader = fixture.repository.getConnection();
+				var namespaces = reader.getNamespaces()) {
+			while (namespaces.hasNext()) {
+				namespaces.next();
+			}
+		}
+	}
+
 	private static void assertUnpublished(Fixture fixture, Set<Statement> statements) {
 		try (RepositoryConnection observer = fixture.repository.getConnection()) {
 			for (Statement statement : statements) {
@@ -1940,6 +1953,7 @@ class LmdbSynchronousIngestTest {
 			successfulPublicationOrder.clear();
 			successfulTripleCommitThreads.clear();
 			injectedNativeCommitFailures.set(0);
+			valueAborts.set(0);
 			successfulTripleCommits = new CountDownLatch(0);
 			namespaceReadProbe = null;
 		}
@@ -1973,11 +1987,31 @@ class LmdbSynchronousIngestTest {
 			store = new ObservedStore(directory.toFile(), config, events, legacyRoot);
 			repository = new SailRepository(store);
 			repository.init();
+			try {
+				LmdbTestUtil.awaitPostReadyInitialization(store, 30L, TimeUnit.SECONDS);
+			} catch (InterruptedException interrupted) {
+				Thread.currentThread().interrupt();
+				throw new IllegalStateException("Post-ready LMDB initialization must finish before event baselines",
+						interrupted);
+			} catch (IOException failure) {
+				throw new IllegalStateException("Post-ready LMDB initialization must finish before event baselines",
+						failure);
+			}
 			if (legacyRoot) {
 				try (RepositoryConnection control = repository.getConnection()) {
 					control.begin();
 					control.commit();
 				}
+			}
+			try {
+				assertTrue(store.awaitIndexRebuild(10L, TimeUnit.SECONDS), store.getStartupStatus().toString());
+			} catch (InterruptedException interrupted) {
+				Thread.currentThread().interrupt();
+				throw new IllegalStateException("Requested LMDB index layouts must finish before event baselines",
+						interrupted);
+			} catch (IOException failure) {
+				throw new IllegalStateException("Requested LMDB index layouts must finish before event baselines",
+						failure);
 			}
 			events.clearWrites();
 		}

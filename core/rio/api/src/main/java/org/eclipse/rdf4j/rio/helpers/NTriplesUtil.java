@@ -12,6 +12,8 @@
 package org.eclipse.rdf4j.rio.helpers;
 
 import java.io.IOException;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -260,89 +262,85 @@ public class NTriplesUtil {
 	 */
 	private static TripleMatch parseTripleInternal(String nTriplesTriple, ValueFactory valueFactory,
 			Function<String, Value> parseNumberFunction) {
-		if (nTriplesTriple.startsWith("<<(")) {
-			String triple = nTriplesTriple.substring(3);
-			int offset = 3;
-
-			while (!triple.isEmpty() && Character.isWhitespace(triple.charAt(0))) {
-				triple = triple.substring(1);
-				++offset;
-			}
-
-			Resource subject = null;
-			IRI predicate = null;
-			Value object = null;
-
-			for (int i = 0; i < 3; i++) {
-				Value v = null;
-				if (triple.startsWith("_:")) {
-					Matcher bNodeMatcher = BNODE_PATTERN.matcher(triple);
-					if (bNodeMatcher.find() && bNodeMatcher.start() == 0) {
-						String value = bNodeMatcher.group();
-						v = NTriplesUtil.parseBNode(value, valueFactory);
-						triple = triple.substring(bNodeMatcher.end());
-						offset += bNodeMatcher.end();
-					}
-				} else if (triple.startsWith("<<(")) {
-					TripleMatch tm = parseTripleInternal(triple, valueFactory, parseNumberFunction);
-					triple = triple.substring(tm.length);
-					offset += tm.length;
-					v = tm.tripleTerm;
-				} else if (triple.startsWith("<")) {
-					Matcher iriMatcher = IRI_PATTERN.matcher(triple);
-					if (iriMatcher.find() && iriMatcher.start() == 0) {
-						String value = iriMatcher.group();
-						v = NTriplesUtil.parseURI(value, valueFactory);
-						triple = triple.substring(iriMatcher.end());
-						offset += iriMatcher.end();
-					}
-				} else if (triple.startsWith("\"")) {
-					Matcher literalMatcher = LITERAL_PATTERN.matcher(triple);
-					if (literalMatcher.find() && literalMatcher.start() == 0) {
-						String value = literalMatcher.group();
-						v = NTriplesUtil.parseLiteral(value, valueFactory);
-						triple = triple.substring(literalMatcher.end());
-						offset += literalMatcher.end();
-					}
-				} else if (!triple.isEmpty()) {
-					Matcher numberMatcher = NUMBER_PATTERN.matcher(triple);
-					if (numberMatcher.find() && numberMatcher.start() == 0) {
-						String value = numberMatcher.group();
-						v = parseNumberFunction.apply(value);
-						triple = triple.substring(numberMatcher.end());
-						offset += numberMatcher.end();
-					}
-				}
-
-				if (i == 0) {
-					if (!(v instanceof Resource)) {
-						throw new IllegalArgumentException("Not a valid N-Triples triple: " + nTriplesTriple);
-					}
-					subject = (Resource) v;
-				} else if (i == 1) {
-					if (!(v instanceof IRI)) {
-						throw new IllegalArgumentException("Not a valid N-Triples triple: " + nTriplesTriple);
-					}
-					predicate = (org.eclipse.rdf4j.model.IRI) v;
-				} else if (i == 2) {
-					if (v == null) {
-						throw new IllegalArgumentException("Not a valid N-Triples triple: " + nTriplesTriple);
-					}
-					object = v;
-				}
-				while (!triple.isEmpty() && Character.isWhitespace(triple.charAt(0))) {
-					triple = triple.substring(1);
-					++offset;
-				}
-			}
-
-			if (triple.endsWith(")>>")) {
-				offset += 3;
-				return new TripleMatch(valueFactory.createTripleTerm(subject, predicate, object), offset);
-			}
+		if (!nTriplesTriple.startsWith("<<(")) {
+			throw new IllegalArgumentException("Not a valid N-Triples triple: " + nTriplesTriple);
 		}
 
+		Deque<TripleParseFrame> frames = new ArrayDeque<>();
+		frames.push(new TripleParseFrame());
+		int offset = 3;
+		while (!frames.isEmpty()) {
+			while (offset < nTriplesTriple.length() && Character.isWhitespace(nTriplesTriple.charAt(offset))) {
+				offset++;
+			}
+
+			TripleParseFrame frame = frames.peek();
+			if (frame.position == 3) {
+				if (!nTriplesTriple.startsWith(")>>", offset)) {
+					throw new IllegalArgumentException("Not a valid N-Triples triple: " + nTriplesTriple);
+				}
+				offset += 3;
+				TripleTerm completed = valueFactory.createTripleTerm(frame.subject, frame.predicate, frame.object);
+				frames.pop();
+				if (frames.isEmpty()) {
+					return new TripleMatch(completed, offset);
+				}
+				frames.peek().accept(completed, nTriplesTriple);
+			} else if (nTriplesTriple.startsWith("<<(", offset)) {
+				frames.push(new TripleParseFrame());
+				offset += 3;
+			} else {
+				TripleValueMatch match = parseTripleValue(nTriplesTriple, offset, valueFactory, parseNumberFunction);
+				frame.accept(match.value, nTriplesTriple);
+				offset = match.end;
+			}
+		}
 		throw new IllegalArgumentException("Not a valid N-Triples triple: " + nTriplesTriple);
+	}
+
+	private static TripleValueMatch parseTripleValue(String triple, int offset, ValueFactory valueFactory,
+			Function<String, Value> parseNumberFunction) {
+		Matcher matcher;
+		Value value;
+		if (triple.startsWith("_:", offset)) {
+			matcher = BNODE_PATTERN.matcher(triple).region(offset, triple.length());
+			value = matcher.lookingAt() ? parseBNode(matcher.group(), valueFactory) : null;
+		} else if (triple.startsWith("<", offset)) {
+			matcher = IRI_PATTERN.matcher(triple).region(offset, triple.length());
+			value = matcher.lookingAt() ? parseURI(matcher.group(), valueFactory) : null;
+		} else if (triple.startsWith("\"", offset)) {
+			matcher = LITERAL_PATTERN.matcher(triple).region(offset, triple.length());
+			value = matcher.lookingAt() ? parseLiteral(matcher.group(), valueFactory) : null;
+		} else {
+			matcher = NUMBER_PATTERN.matcher(triple).region(offset, triple.length());
+			value = matcher.lookingAt() && parseNumberFunction != null
+					? parseNumberFunction.apply(matcher.group())
+					: null;
+		}
+		return new TripleValueMatch(value, value == null ? offset : matcher.end());
+	}
+
+	private record TripleValueMatch(Value value, int end) {
+	}
+
+	private static final class TripleParseFrame {
+		private Resource subject;
+		private IRI predicate;
+		private Value object;
+		private int position;
+
+		private void accept(Value value, String source) {
+			if (position == 0 && value instanceof Resource resource) {
+				subject = resource;
+			} else if (position == 1 && value instanceof IRI iri) {
+				predicate = iri;
+			} else if (position == 2 && value != null) {
+				object = value;
+			} else {
+				throw new IllegalArgumentException("Not a valid N-Triples triple: " + source);
+			}
+			position++;
+		}
 	}
 
 	/**

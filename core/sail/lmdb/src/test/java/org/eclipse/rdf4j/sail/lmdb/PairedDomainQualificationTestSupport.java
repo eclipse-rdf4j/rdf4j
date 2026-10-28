@@ -23,7 +23,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
+import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
@@ -87,6 +89,23 @@ final class PairedDomainQualificationTestSupport {
 		assertPublicBags(opened, expected, phase);
 		TripleStore triples = opened.store().getBackingStore().getTripleStore();
 		ValueStore values = (ValueStore) opened.store().getBackingStore().getValueFactory();
+		LmdbSailStore backing = opened.store().getBackingStore();
+		LmdbEstimatorRuntime runtime = assertInstanceOf(LmdbEvaluationStatistics.class,
+				opened.store().getSailStore().getEvaluationStatistics()).estimatorRuntime();
+		try (LmdbSailStore.DatasetAdmission admission = backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ,
+				null)) {
+			LmdbSailStore.ReadView view = admission.view();
+			view.requireDictionaryTermSnapshot();
+			try (TripleStore.PlanningReadPin ignored = runtime.pinPlanningReads(view.tripleTxn(), view.valueSnapshot())) {
+				assertDomainState(opened, expected, complete, phase, triples, values);
+			}
+		}
+		triples.trustedTransactionId();
+		assertEquals(values.lastTransactionId(), values.trustedClosedTransactionId());
+	}
+
+	private static void assertDomainState(Opened opened, List<Statement> expected, boolean complete, String phase,
+			TripleStore triples, ValueStore values) throws Exception {
 		Optional<RdfTermDomain> known = triples.getKnownRdfTermDomain(values.getId(P));
 		assertEquals(known, opened.store().getBackingStore().getPersistedRdfTermDomain(P));
 		if (known.isPresent()) {
@@ -101,8 +120,6 @@ final class PairedDomainQualificationTestSupport {
 		if (complete) {
 			assertTrue(known.isPresent(), "enabled automatic maintenance must restore complete positive facts");
 		}
-		triples.trustedTransactionId();
-		assertEquals(values.lastTransactionId(), values.trustedClosedTransactionId());
 		System.out.println("OLD_ROUNDTRIP_CURRENT_DOMAIN=" + phase + ", known=" + known);
 	}
 
@@ -185,13 +202,14 @@ final class PairedDomainQualificationTestSupport {
 		return config;
 	}
 
-	static Opened open(Path fixture, LmdbStoreConfig config) {
+	static Opened open(Path fixture, LmdbStoreConfig config) throws Exception {
 		LmdbStore store = new LmdbStore(fixture.toFile(), config);
 		SailRepository repository = new SailRepository(store);
 		try {
 			repository.init();
+			LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
 			return new Opened(store, repository, config);
-		} catch (RuntimeException | Error failure) {
+		} catch (Exception | Error failure) {
 			try {
 				repository.shutDown();
 			} catch (RuntimeException | Error cleanup) {

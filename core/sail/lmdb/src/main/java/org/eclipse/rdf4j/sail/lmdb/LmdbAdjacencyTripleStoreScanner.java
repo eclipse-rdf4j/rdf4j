@@ -99,13 +99,14 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 
 	@Override
 	public boolean supportsOrderedScan(boolean outgoing) {
-		String indexName = tripleStore.getIndexName(outgoing ? StatementOrder.S : StatementOrder.P, -1, -1, -1, -1);
+		String indexName = tripleStore.getIndexName(txn, outgoing ? StatementOrder.S : StatementOrder.P, -1, -1, -1,
+				-1);
 		return indexName.startsWith(outgoing ? "sp" : "po");
 	}
 
 	@Override
 	public boolean supportsPredicatePartitionedScan(boolean outgoing) {
-		String indexName = tripleStore.getIndexName(outgoing ? StatementOrder.S : StatementOrder.P, -1, 0, -1, -1);
+		String indexName = tripleStore.getIndexName(txn, outgoing ? StatementOrder.S : StatementOrder.P, -1, 0, -1, -1);
 		return indexName.startsWith(outgoing ? "ps" : "po");
 	}
 
@@ -164,7 +165,7 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 
 		int[] preferred = outgoing ? OUTGOING_PREDICATE_ROW_FIELDS : INCOMING_PREDICATE_ROW_FIELDS;
 		int[] fallback = outgoing ? OUTGOING_ROW_PREDICATE_FIELDS : INCOMING_ROW_PREDICATE_FIELDS;
-		LmdbPrefixRunPlan prefixPlan = tripleStore.prefixRunPlan(preferred, -1, -1, -1, -1);
+		LmdbPrefixRunPlan prefixPlan = tripleStore.prefixRunPlan(txn, preferred, -1, -1, -1, -1);
 		if (!coverage.isFull()) {
 			return planSelectedPredicateRanges(prefixPlan, coverage, explicit, outgoing, targetRanges);
 		}
@@ -179,7 +180,7 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 			}
 		}
 		if (prefixPlan == null) {
-			prefixPlan = tripleStore.prefixRunPlan(fallback, -1, -1, -1, -1);
+			prefixPlan = tripleStore.prefixRunPlan(txn, fallback, -1, -1, -1, -1);
 		}
 		if (prefixPlan == null) {
 			return NO_SCAN_RANGES;
@@ -513,7 +514,7 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 	private long[] distinctPredicates(boolean explicit) throws IOException {
 		long[] buffer = new long[16];
 		int size = 0;
-		LmdbPrefixRunPlan prefixPlan = tripleStore.prefixRunPlan(PREDICATE_PREFIX_FIELDS, -1, -1, -1, -1);
+		LmdbPrefixRunPlan prefixPlan = tripleStore.prefixRunPlan(txn, PREDICATE_PREFIX_FIELDS, -1, -1, -1, -1);
 		if (prefixPlan != null) {
 			// Pass 0 only needs one row per predicate. A predicate-leading index lets LMDB skip the remaining rows in
 			// each predicate run instead of decoding every statement in the incoming stream.

@@ -235,6 +235,7 @@ record LmdbFilterOutcomeFeedbackDescriptor(Object ownerToken, long epoch, ReadId
 				.orElseThrow(() -> new SailException("FILTER dictionary is closed"));
 		var epoch = source.getSnapshotEpoch();
 		if (epoch.isEmpty() || epoch.getAsLong() != transaction.nativeTransactionId()
+				|| transaction.snapshotRevision() != dataEpoch
 				|| source.getValuePreparer() != dictionary.valueStore().valuePreparer(dictionary)
 				|| !runtime.ownsQueryPlanningPair(transaction, dictionary)) {
 			return null;
@@ -267,7 +268,8 @@ record LmdbFilterOutcomeFeedbackDescriptor(Object ownerToken, long epoch, ReadId
 			ReadIdentity identity = new ReadIdentity(dataEpoch, identities,
 					dataset != null && dataset.isExplicitReadDataset(), defaults, named);
 			T result = operation.apply(identity);
-			return dataEpoch == runtime.physicalTripleStore().getDataRevision() ? result : null;
+			return dataEpoch == runtime.physicalTripleStore().getDataRevision()
+					&& transaction.snapshotRevision() == dataEpoch && owner.isCurrentForPhysicalCost() ? result : null;
 		}
 	}
 

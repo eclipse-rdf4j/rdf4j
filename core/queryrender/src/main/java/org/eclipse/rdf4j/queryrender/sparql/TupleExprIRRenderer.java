@@ -225,10 +225,10 @@ public class TupleExprIRRenderer {
 		IrNode.checkInterrupted();
 		final StringBuilder out = new StringBuilder(256);
 		if (!subselect) {
-			printPrologueAndDataset(out, dataset);
+			printPrologue(out);
 		}
 		IRTextPrinter printer = new IRTextPrinter(out, this::convertVarToString, cfg);
-		ir.print(printer);
+		ir.print(printer, subselect ? List.of() : datasetClauses(dataset));
 		return out.toString().trim();
 	}
 
@@ -275,8 +275,9 @@ public class TupleExprIRRenderer {
 		final StringBuilder out = new StringBuilder(256);
 		final IrSelect ir = toIRSelect(tupleExpr);
 		// Prologue
-		printPrologueAndDataset(out, dataset);
+		printPrologue(out);
 		out.append("ASK");
+		printDataset(out, dataset);
 		// WHERE (from IR)
 		out.append(cfg.canonicalWhitespace ? "\nWHERE " : " WHERE ");
 		new IRTextPrinter(out, this::convertVarToString, cfg).printWhere(ir.getWhere());
@@ -294,7 +295,7 @@ public class TupleExprIRRenderer {
 		TupleExpr describeArg = describeArg(tupleExpr);
 		final IrSelect ir = toIRSelect(describeArg);
 		final StringBuilder out = new StringBuilder(256);
-		printPrologueAndDataset(out, dataset);
+		printPrologue(out);
 		out.append("DESCRIBE");
 		if (ir.getProjection().isEmpty()) {
 			out.append(" *");
@@ -308,6 +309,7 @@ public class TupleExprIRRenderer {
 				}
 			}
 		}
+		printDataset(out, dataset);
 		if (ir.getWhere() != null && !ir.getWhere().getLines().isEmpty()) {
 			out.append(cfg.canonicalWhitespace ? "\nWHERE " : " WHERE ");
 			new IRTextPrinter(out, this::convertVarToString, cfg).printWhere(ir.getWhere());
@@ -327,12 +329,13 @@ public class TupleExprIRRenderer {
 		ConstructParts construct = constructParts(tupleExpr);
 		final IrSelect where = toIRSelect(construct.whereArg);
 		final StringBuilder out = new StringBuilder(256);
-		printPrologueAndDataset(out, dataset);
+		printPrologue(out);
 		out.append("CONSTRUCT");
 		if (!construct.shortForm) {
 			out.append(' ');
 			appendConstructTemplate(out, construct);
 		}
+		printDataset(out, dataset);
 		out.append(cfg.canonicalWhitespace ? "\nWHERE " : " WHERE ");
 		new IRTextPrinter(out, this::convertVarToString, cfg).printWhere(where.getWhere());
 		appendDescribeModifiers(out, where);
@@ -655,7 +658,7 @@ public class TupleExprIRRenderer {
 		});
 	}
 
-	private void printPrologueAndDataset(final StringBuilder out, final DatasetView dataset) {
+	private void printPrologue(final StringBuilder out) {
 		if (cfg.printPrefixes && !cfg.prefixes.isEmpty()) {
 			cfg.prefixes.forEach((pfx, ns) -> out.append("PREFIX ")
 					.append(pfx)
@@ -663,15 +666,25 @@ public class TupleExprIRRenderer {
 					.append(RenderUtils.toSPARQLIRI(ns))
 					.append('\n'));
 		}
-		// FROM / FROM NAMED (top-level only)
+	}
+
+	private void printDataset(StringBuilder out, DatasetView dataset) {
+		for (String clause : datasetClauses(dataset)) {
+			out.append('\n').append(clause);
+		}
+	}
+
+	private List<String> datasetClauses(DatasetView dataset) {
+		List<String> clauses = new ArrayList<>();
 		final List<IRI> dgs = dataset != null ? dataset.defaultGraphs : cfg.defaultGraphs;
 		final List<IRI> ngs = dataset != null ? dataset.namedGraphs : cfg.namedGraphs;
 		for (IRI iri : dgs) {
-			out.append("FROM ").append(convertIRIToString(iri)).append("\n");
+			clauses.add("FROM " + convertIRIToString(iri));
 		}
 		for (IRI iri : ngs) {
-			out.append("FROM NAMED ").append(convertIRIToString(iri)).append("\n");
+			clauses.add("FROM NAMED " + convertIRIToString(iri));
 		}
+		return clauses;
 	}
 
 	String convertVarToString(final Var v) {

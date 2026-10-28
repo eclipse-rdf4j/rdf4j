@@ -80,6 +80,35 @@ class WorkbenchDeploymentDescriptorTest {
 				.containsEntry("graph-max-query-length", "150000");
 	}
 
+	@Test
+	void repositoryPostRoutesHaveRequestIntegrityFilter() throws Exception {
+		Document descriptor = descriptor();
+		NodeList filters = descriptor.getElementsByTagName("filter");
+		boolean declared = false;
+		for (int index = 0; index < filters.getLength(); index++) {
+			Element filter = (Element) filters.item(index);
+			if ("request-integrity".equals(text(filter, "filter-name"))) {
+				declared = "org.eclipse.rdf4j.workbench.security.WorkbenchCsrfFilter"
+						.equals(text(filter, "filter-class"));
+			}
+		}
+		assertThat(declared).as("Workbench request-integrity filter is declared").isTrue();
+		NodeList mappings = descriptor.getElementsByTagName("filter-mapping");
+		boolean mapped = false;
+		for (int index = 0; index < mappings.getLength(); index++) {
+			Element mapping = (Element) mappings.item(index);
+			if ("request-integrity".equals(text(mapping, "filter-name"))) {
+				List<String> patterns = new ArrayList<>();
+				NodeList urlPatterns = mapping.getElementsByTagName("url-pattern");
+				for (int patternIndex = 0; patternIndex < urlPatterns.getLength(); patternIndex++) {
+					patterns.add(urlPatterns.item(patternIndex).getTextContent().trim());
+				}
+				mapped = patterns.containsAll(List.of("/repositories", "/repositories/*"));
+			}
+		}
+		assertThat(mapped).as("all Workbench repository commands are protected").isTrue();
+	}
+
 	private static final String ENTRY = "/scripts/graph-explorer/graph-explorer.mjs";
 	private static final String QUERY_RENDERER_ENTRY = "/scripts/graph-explorer/query-graph-renderer.mjs";
 	private static final String STYLESHEET = "/styles/graph-explorer.css";

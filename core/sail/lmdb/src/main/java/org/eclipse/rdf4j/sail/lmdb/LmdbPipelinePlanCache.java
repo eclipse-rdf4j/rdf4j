@@ -253,6 +253,12 @@ final class LmdbPipelinePlanCache {
 		}
 	}
 
+	/** The observer callback runs outside native barriers; only the immutable cache update needs the source fence. */
+	void observeExecution(LmdbPlanDecisionCache.ExecutionObservation observation,
+			LmdbFeedbackReadAuthority.Publication publication) {
+		publication.publish(() -> observeExecution(observation));
+	}
+
 	void close() {
 		decisionCache.close();
 	}

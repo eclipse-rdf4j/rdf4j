@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.Namespace;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.base.DelegatingSailDataset;
@@ -41,6 +42,12 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 /** Exercises the actual opener's accepted-replay close boundary with an actual stored cooperative signal. */
 final class LmdbReplayOpenCloseProbe {
 	static void run(Path directory, String mode, Consumer<String> phase) throws Exception {
+		run(directory, mode, phase, backing -> {
+		});
+	}
+
+	static void run(Path directory, String mode, Consumer<String> phase, Consumer<LmdbSailStore> observer)
+			throws Exception {
 		phase.accept("constructing LMDB store");
 		Gate gate = new Gate(mode, phase);
 		LmdbStore store = new LmdbStore(directory.toFile(), new LmdbStoreConfig("spoc,posc")
@@ -57,6 +64,7 @@ final class LmdbReplayOpenCloseProbe {
 		};
 		phase.accept("initializing LMDB store");
 		store.init();
+		observer.accept(store.getBackingStore());
 		phase.accept("LMDB store initialized");
 		try (var seed = store.getConnection()) {
 			phase.accept("seeding namespace");
@@ -137,12 +145,15 @@ final class LmdbReplayOpenCloseProbe {
 				assertThat(gate.storedSignal.get()).as("a real query safepoint stores the opener's own signal")
 						.isNotNull();
 				assertThat(gate.closes).hasValue(1);
-				if (mode.equals("OPENER_SIGNAL")) {
+				if (mode.equals("OPENER_SIGNAL") || mode.equals("OPENER_WRAPPED_SIGNAL")) {
 					assertThat(failure).isNull();
 					assertThat(gate.opens).hasValue(2);
 					assertThat(observedNamespaces.get()).containsExactlyEntriesOf(Map.of("seed", "urn:opener:seed:"));
 				} else {
-					assertThat(contains(failure, gate.cleanupFailure)).as("real cleanup/ownership failure must surface")
+					Throwable expectedFailure = mode.equals("OPENER_FOREIGN_OWNER")
+							? gate.foreignFailure.get() : gate.cleanupFailure;
+					assertThat(expectedFailure).as("the intended cleanup/ownership failure was produced").isNotNull();
+					assertThat(contains(failure, expectedFailure)).as("real cleanup/ownership failure must surface")
 							.isTrue();
 					assertThat(gate.opens).hasValue(1);
 					assertThat(observedNamespaces.get()).isNull();
@@ -191,6 +202,7 @@ final class LmdbReplayOpenCloseProbe {
 		final CountDownLatch entered = new CountDownLatch(1);
 		final CountDownLatch release = new CountDownLatch(1);
 		final AtomicReference<RuntimeException> storedSignal = new AtomicReference<>();
+		final AtomicReference<RuntimeException> foreignFailure = new AtomicReference<>();
 		final Consumer<String> phase;
 		final RuntimeException cleanupFailure;
 
@@ -242,6 +254,27 @@ final class LmdbReplayOpenCloseProbe {
 					}
 					if (mode.equals("OPENER_SIGNAL_CLEANUP")) {
 						signal.addSuppressed(cleanupFailure);
+					}
+					if (mode.equals("OPENER_WRAPPED_SIGNAL")) {
+						throw new QueryEvaluationException(signal);
+					}
+					if (mode.equals("OPENER_FOREIGN_OWNER")) {
+						LmdbSailStore.MapResizeConflictException accepted =
+								(LmdbSailStore.MapResizeConflictException) signal.getCause();
+						LmdbSailStore.MapResizeConflictException foreign = new LmdbSailStore.MapResizeConflictException(
+								accepted.kind(), "foreign replay owner", new Object(), accepted.replayToken());
+						try (QueryExecutionContext.Activation ignored = QueryExecutionContext
+								.activateReplaySafepoint(() -> {
+									throw foreign;
+								})) {
+							try {
+								QueryExecutionContext.checkpointReplaySafepoint();
+							} catch (RuntimeException rejected) {
+								foreignFailure.set(rejected);
+								throw rejected;
+							}
+						}
+						throw new AssertionError("foreign replay signal was not produced");
 					}
 					phase.accept("namespace delegate cleanup throwing replay signal");
 					throw signal;

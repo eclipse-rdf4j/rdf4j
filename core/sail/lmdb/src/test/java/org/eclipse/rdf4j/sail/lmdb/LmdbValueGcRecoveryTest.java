@@ -46,8 +46,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Retirement records are durable: intents written while a pinned SNAPSHOT reader blocked reclamation must survive a
- * store shutdown and be drained (with a fresh liveness re-check) when the store reopens, since no pre-restart reader
- * can exist anymore.
+ * store shutdown and be drained by explicit bounded maintenance with fresh liveness checks after reopening, since no
+ * pre-restart reader can exist anymore.
  */
 public class LmdbValueGcRecoveryTest {
 
@@ -56,7 +56,7 @@ public class LmdbValueGcRecoveryTest {
 
 	@Test
 	void finalMaintenanceGrowthReleasesAdjacencyBeforeWaitingForAnotherWriter() throws Exception {
-		LmdbStoreConfig options = new LmdbStoreConfig("spoc,posc").setValueDBSize(64L * 1024 * 1024)
+		LmdbStoreConfig options = new LmdbStoreConfig("spoc,posc,ospc").setValueDBSize(64L * 1024 * 1024)
 				.setTripleDBSize(64L * 1024 * 1024)
 				.setDirectAdjacencyEnabled(true)
 				.setSketchEstimatorEnabled(false)
@@ -69,6 +69,7 @@ public class LmdbValueGcRecoveryTest {
 		CountDownLatch secondInlineGcFailed = new CountDownLatch(1);
 		CountDownLatch commitsFinished = new CountDownLatch(2);
 		AtomicInteger capacityFaults = new AtomicInteger();
+		AtomicInteger inlineMaintenanceFaults = new AtomicInteger();
 		AtomicInteger finalMaintenanceFaults = new AtomicInteger();
 		AtomicLong mapBefore = new AtomicLong();
 		AtomicBoolean armed = new AtomicBoolean();
@@ -101,6 +102,18 @@ public class LmdbValueGcRecoveryTest {
 
 							@Override
 							public void gcIds(Collection<Long> ids, Collection<Long> nextIds) throws IOException {
+								injectGcFault();
+								super.gcIds(ids, nextIds);
+							}
+
+							@Override
+							boolean gcIdsIfReaderAvailable(Collection<Long> ids, Collection<Long> nextIds,
+									ImmediateValueIdLivenessChecker checker) throws IOException {
+								injectGcFault();
+								return super.gcIdsIfReaderAvailable(ids, nextIds, checker);
+							}
+
+							private void injectGcFault() throws IOException {
 								if (armed.get()) {
 									attemptedInlineGc.set(true);
 								}
@@ -110,6 +123,8 @@ public class LmdbValueGcRecoveryTest {
 									int fault = capacityFaults.incrementAndGet();
 									if (finalMaintenance.get()) {
 										finalMaintenanceFaults.incrementAndGet();
+									} else {
+										inlineMaintenanceFaults.incrementAndGet();
 									}
 									if (fault == 1) {
 										firstGcEntered.countDown();
@@ -119,7 +134,6 @@ public class LmdbValueGcRecoveryTest {
 									}
 									LmdbUtil.checkMapFull(MDB_MAP_FULL);
 								}
-								super.gcIds(ids, nextIds);
 							}
 						}, TripleStore::new);
 			}
@@ -201,9 +215,12 @@ public class LmdbValueGcRecoveryTest {
 			assertThat(secondInlineGcFailed.getCount()).as("both inline publications must encounter a full map")
 					.isZero();
 			assertThat(capacityFaults.get()).isGreaterThanOrEqualTo(3);
+			assertThat(inlineMaintenanceFaults.get()).as("both inline publications must encounter a capacity fault")
+					.isGreaterThanOrEqualTo(2);
 			assertThat(backing.valueStore().mapSizeBytes()).isGreaterThan(mapBefore.get());
 			assertThat(finalMaintenanceFaults.get()).as("final maintenance must encounter the capacity fault")
 					.isPositive();
+			LmdbGcTestMaintenance.drainRetirements(backing);
 			assertThat(backing.valueStore().hasRetiredIds()).isFalse();
 			try (NotifyingSailConnection reader = store.getConnection()) {
 				assertThat(reader.size()).isEqualTo(2);
@@ -253,7 +270,7 @@ public class LmdbValueGcRecoveryTest {
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
 	void failedMaintenanceRollbackPreventsCapacityRetry(boolean mapFull) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc");
 		IOException rollbackFailure = new IOException("injected maintenance rollback failure");
 		IOException mapFullFailure = assertThrows(IOException.class, () -> LmdbUtil.checkMapFull(MDB_MAP_FULL));
 		LmdbTransactionRetryException retryFailure = new LmdbTransactionRetryException(
@@ -300,7 +317,7 @@ public class LmdbValueGcRecoveryTest {
 			assertThat(capacity.getSuppressed()).containsExactly(rollbackFailure);
 			assertThat(gcCalls).hasValue(1);
 			assertThat(dictionary.hasRetiredIds()).isTrue();
-			store.recoverRetiredValueIds();
+			LmdbGcTestMaintenance.drainRetirements(store);
 			assertThat(dictionary.hasRetiredIds()).isFalse();
 		}
 	}
@@ -314,7 +331,7 @@ public class LmdbValueGcRecoveryTest {
 		List<List<Long>> removed = new ArrayList<>();
 		AtomicReference<ValueStore> values = new AtomicReference<>();
 		try (LmdbSailStore store = new LmdbSailStore(dataDir, new StoreProperties(dataDir),
-				new LmdbStoreConfig("spoc,posc"), false, (directory, properties, options) -> {
+				new LmdbStoreConfig("spoc,posc,ospc"), false, (directory, properties, options) -> {
 					ValueStore dictionary = new ValueStore(directory, properties, options) {
 						@Override
 						void removeRetiredIds(RetiredValueIdStore.DrainBatch batch) throws IOException {
@@ -333,7 +350,7 @@ public class LmdbValueGcRecoveryTest {
 			}
 			dictionary.recordRetiredIds(roots, 0L);
 			dictionary.commit();
-			store.recoverRetiredValueIds();
+			LmdbGcTestMaintenance.drainRetirements(store);
 			assertThat(removed).allSatisfy(batch -> assertThat(batch).hasSizeLessThanOrEqualTo(1));
 			for (long root : roots) {
 				assertThat(removed.stream().flatMap(Collection::stream).filter(id -> id == root).count()).isEqualTo(1L);
@@ -355,7 +372,7 @@ public class LmdbValueGcRecoveryTest {
 		IRI subjectV = vf.createIRI("http://example.com/v");
 		File storeDir = new File(dataDir, "store");
 
-		LmdbStore store = new LmdbStore(storeDir, new LmdbStoreConfig("spoc,posc"));
+		LmdbStore store = new LmdbStore(storeDir, new LmdbStoreConfig("spoc,posc,ospc"));
 		store.init();
 		try {
 			try (NotifyingSailConnection connection = store.getConnection()) {
@@ -383,16 +400,17 @@ public class LmdbValueGcRecoveryTest {
 			store.shutDown();
 		}
 
-		// reopen: no pre-restart reader exists, so open-time recovery drains the durable records
-		store = new LmdbStore(storeDir, new LmdbStoreConfig("spoc,posc"));
+		// Reopening admits the durable backlog; explicit maintenance completes it after readiness.
+		store = new LmdbStore(storeDir, new LmdbStoreConfig("spoc,posc,ospc"));
 		store.init();
 		try {
+			LmdbGcTestMaintenance.drainRetirements(store.getBackingStore());
 			ValueStore valueStore = (ValueStore) store.getBackingStore().getValueFactory();
 			assertThat(valueStore.getId(vf.createIRI("http://example.com/v")))
-					.as("retired subject IRI must be reclaimed during open-time recovery")
+					.as("retired subject IRI must be reclaimed by explicit post-ready recovery")
 					.isEqualTo(LmdbValue.UNKNOWN_ID);
 			assertThat(valueStore.getId(vf.createLiteral("v-value")))
-					.as("retired literal must be reclaimed during open-time recovery")
+					.as("retired literal must be reclaimed by explicit post-ready recovery")
 					.isEqualTo(LmdbValue.UNKNOWN_ID);
 			assertThat(valueStore.hasRetiredIds())
 					.as("recovery must leave no pending retirement records")
@@ -416,7 +434,7 @@ public class LmdbValueGcRecoveryTest {
 		IRI pred = vf.createIRI("http://example.com/p");
 		File storeDir = new File(dataDir, "store");
 
-		LmdbStore store = new LmdbStore(storeDir, new LmdbStoreConfig("spoc,posc"));
+		LmdbStore store = new LmdbStore(storeDir, new LmdbStoreConfig("spoc,posc,ospc"));
 		store.init();
 		try {
 			try (NotifyingSailConnection connection = store.getConnection()) {
@@ -445,12 +463,13 @@ public class LmdbValueGcRecoveryTest {
 			store.shutDown();
 		}
 
-		// a batch bound of 1 forces many poll/remove/gc rounds within a single open-time recovery
+		// A batch bound of one requires separate explicit publications to finish this backlog.
 		System.setProperty("rdf4j.lmdb.valueGc.drainBatchSize", "1");
 		try {
-			store = new LmdbStore(storeDir, new LmdbStoreConfig("spoc,posc"));
+			store = new LmdbStore(storeDir, new LmdbStoreConfig("spoc,posc,ospc"));
 			store.init();
 			try {
+				LmdbGcTestMaintenance.drainRetirements(store.getBackingStore());
 				ValueStore valueStore = (ValueStore) store.getBackingStore().getValueFactory();
 				for (int i = 0; i < 5; i++) {
 					assertThat(valueStore.getId(vf.createIRI("http://example.com/doomed" + i)))

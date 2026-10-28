@@ -22,9 +22,12 @@ import java.io.File;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.OptionalLong;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -36,6 +39,8 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -51,7 +56,7 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 
 	@Test
 	void completedNotExistsTrainsOnlyTheSemiAntiSurface(@TempDir File dataDir) {
-		LmdbStore store = initializedStore(dataDir);
+		PairedFeedbackStore store = initializedStore(dataDir);
 		try {
 			Filter filter = filter();
 			LmdbEvaluationStatistics statistics = committedStatistics(store);
@@ -81,7 +86,7 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 
 	@Test
 	void semiAntiSurfacePersistsAcrossRestart(@TempDir File dataDir) {
-		LmdbStore writer = initializedStore(dataDir);
+		PairedFeedbackStore writer = initializedStore(dataDir);
 		try {
 			LmdbEvaluationStatistics statistics = committedStatistics(writer);
 			statistics.recordSemiAntiOutcome(filter(), observation());
@@ -89,7 +94,7 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 			writer.shutDown();
 		}
 
-		LmdbStore reader = initializedStore(dataDir);
+		PairedFeedbackStore reader = initializedStore(dataDir);
 		try {
 			LmdbEvaluationStatistics statistics = committedStatistics(reader);
 			LmdbOperatorFeedbackStats.SemiAntiEstimate estimate = statistics.estimatorRuntime()
@@ -104,7 +109,7 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 
 	@Test
 	void emptyMaterializationPersistsUnderlyingSourceWork(@TempDir File dataDir) {
-		LmdbStore writer = initializedStore(dataDir);
+		PairedFeedbackStore writer = initializedStore(dataDir);
 		try {
 			LmdbEvaluationStatistics statistics = committedStatistics(writer);
 			Filter completed = filter();
@@ -115,7 +120,7 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 			writer.shutDown();
 		}
 
-		LmdbStore reader = initializedStore(dataDir);
+		PairedFeedbackStore reader = initializedStore(dataDir);
 		try {
 			LmdbEvaluationStatistics statistics = committedStatistics(reader);
 			LmdbOperatorFeedbackStats.SemiAntiEstimate estimate = statistics.estimatorRuntime()
@@ -131,7 +136,7 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 
 	@Test
 	void versionThirteenFeedbackIsSafelyInvalidated(@TempDir File dataDir) throws Exception {
-		LmdbStore writer = initializedStore(dataDir);
+		PairedFeedbackStore writer = initializedStore(dataDir);
 		try {
 			LmdbEvaluationStatistics statistics = committedStatistics(writer);
 			Filter completed = filter();
@@ -151,7 +156,7 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 		byte[] versionSeventeen = withoutLogicalPhysicalAndLifecycleTail(Files.readAllBytes(sidecar));
 		Files.write(sidecar, downgradeSingleSemiAntiSidecar(versionSeventeen, 13));
 
-		LmdbStore reader = initializedStore(dataDir);
+		PairedFeedbackStore reader = initializedStore(dataDir);
 		try {
 			LmdbEvaluationStatistics statistics = committedStatistics(reader);
 			LmdbOperatorFeedbackStats.SemiAntiEstimate estimate = statistics.estimatorRuntime()
@@ -165,7 +170,7 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 
 	@Test
 	void versionFourteenFeedbackIsSafelyInvalidated(@TempDir File dataDir) throws Exception {
-		LmdbStore writer = initializedStore(dataDir);
+		PairedFeedbackStore writer = initializedStore(dataDir);
 		try {
 			LmdbEvaluationStatistics statistics = committedStatistics(writer);
 			Filter completed = filter();
@@ -185,7 +190,7 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 		byte[] versionSeventeen = withoutLogicalPhysicalAndLifecycleTail(Files.readAllBytes(sidecar));
 		Files.write(sidecar, downgradeSingleSemiAntiSidecar(versionSeventeen, 14));
 
-		LmdbStore reader = initializedStore(dataDir);
+		PairedFeedbackStore reader = initializedStore(dataDir);
 		try {
 			LmdbEvaluationStatistics statistics = committedStatistics(reader);
 			LmdbOperatorFeedbackStats.SemiAntiEstimate estimate = statistics.estimatorRuntime()
@@ -237,7 +242,7 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 
 	@Test
 	void frontierPlannerDoesNotApplyUnkeyedSemiAntiCounters(@TempDir File dataDir) {
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
+		PairedFeedbackStore store = new PairedFeedbackStore(dataDir);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 		try {
@@ -314,7 +319,7 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 
 	@Test
 	void semiAntiExactConstantTierDoesNotLeakAcrossConstants(@TempDir File dataDir) {
-		LmdbStore store = initializedStore(dataDir);
+		PairedFeedbackStore store = initializedStore(dataDir);
 		try {
 			LmdbEvaluationStatistics statistics = committedStatistics(store);
 			Filter commonFilter = firstFilter(COMMON_CONSTANT_QUERY);
@@ -336,7 +341,7 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 
 	@Test
 	void semiAntiGeneralizedTierServesOnlyWithAmpleEvidence(@TempDir File dataDir) {
-		LmdbStore store = initializedStore(dataDir);
+		PairedFeedbackStore store = initializedStore(dataDir);
 		try {
 			LmdbEvaluationStatistics statistics = committedStatistics(store);
 			Filter commonFilter = firstFilter(COMMON_CONSTANT_QUERY);
@@ -452,17 +457,79 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 	}
 
 	/** Statistics bound to a committed snapshot: these tests replay observations that committed queries produced. */
-	private static LmdbEvaluationStatistics committedStatistics(LmdbStore store) {
+	private static LmdbEvaluationStatistics committedStatistics(PairedFeedbackStore store) {
+		try {
+			LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
+		} catch (InterruptedException failure) {
+			Thread.currentThread().interrupt();
+			throw new AssertionError("Interrupted while awaiting the feedback providers", failure);
+		} catch (java.io.IOException failure) {
+			throw new AssertionError("Feedback providers did not initialize", failure);
+		}
 		LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
 				.getEvaluationStatistics();
-		statistics.bindExecutionSnapshot(OptionalLong.of(0L));
-		return statistics;
+		SailDataset dataset = store.getBackingStore().getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT_READ);
+		try {
+			var source = new SailDatasetTripleTermSource(store.getValueFactory(), dataset);
+			var owner = source.unwrapDataset(LmdbPinnedReadTxnSource.class).orElseThrow();
+			assertTrue(owner.isCurrentForPhysicalCost(), "the replay owns a current same-store paired source");
+			LmdbEvaluationStrategy.bindExecutionSnapshot(statistics, source, null);
+			assertTrue(statistics.feedbackPublicationAllowed(), "the replay source authenticates publication");
+			store.feedbackReaders.add(dataset);
+			return statistics;
+		} catch (RuntimeException | Error failure) {
+			try {
+				dataset.close();
+			} catch (RuntimeException | Error cleanup) {
+				if (cleanup != failure)
+					failure.addSuppressed(cleanup);
+			}
+			throw failure;
+		}
 	}
 
-	private static LmdbStore initializedStore(File dataDir) {
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
+	private static PairedFeedbackStore initializedStore(File dataDir) {
+		PairedFeedbackStore store = new PairedFeedbackStore(dataDir);
 		store.init();
 		return store;
+	}
+
+	/** The fixture owns its replay readers and releases them before the real store shutdown/reopen. */
+	private static final class PairedFeedbackStore extends LmdbStore {
+		private final List<SailDataset> feedbackReaders = new ArrayList<>();
+
+		private PairedFeedbackStore(File directory) {
+			super(directory, new LmdbStoreConfig("spoc,posc"));
+		}
+
+		@Override
+		public void shutDown() {
+			Throwable failure = null;
+			for (SailDataset dataset : feedbackReaders.reversed()) {
+				try {
+					dataset.close();
+				} catch (RuntimeException | Error cleanup) {
+					if (failure == null)
+						failure = cleanup;
+					else if (cleanup != failure)
+						failure.addSuppressed(cleanup);
+				}
+			}
+			feedbackReaders.clear();
+			try {
+				super.shutDown();
+			} catch (RuntimeException | Error cleanup) {
+				if (failure == null)
+					failure = cleanup;
+				else if (cleanup != failure)
+					failure.addSuppressed(cleanup);
+			}
+			if (failure instanceof RuntimeException runtime)
+				throw runtime;
+			if (failure instanceof Error error)
+				throw error;
+		}
+
 	}
 
 	private static Filter filter() {

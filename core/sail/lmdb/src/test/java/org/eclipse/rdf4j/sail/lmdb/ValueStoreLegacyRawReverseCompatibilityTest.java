@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -239,6 +240,10 @@ class ValueStoreLegacyRawReverseCompatibilityTest {
 		}
 		values = openLegacyWithRefCountRepair();
 		try {
+			assertFalse(values.hasTrustedReferenceCounts(), "external reverse-key writes require verification");
+			assertTrue(values.isReferenceCountVerificationPending());
+			values.reconstructReferenceCountsOffline();
+			assertTrue(values.hasTrustedReferenceCounts(), "offline verification must certify the owner graph");
 			Value retained = values.getValue(ids[collected]);
 			values.startTransaction(true);
 			values.gcIds(List.of(ids[collected]), new ArrayList<>());

@@ -31,6 +31,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.BiConsumer;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.LongSupplier;
@@ -89,6 +90,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoSurfaceKey;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.sail.lmdb.estimation.EstimatorPersistenceLocation;
+import org.eclipse.rdf4j.sail.lmdb.estimation.EstimatorSidecar;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchSnapshotIdentity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -212,6 +215,10 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	private final Path sidecarPath;
 	private final Path leoSurfacePath;
+	private final EstimatorSidecar alternateOperatorSlot;
+	private final EstimatorSidecar alternateLeoSlot;
+	private boolean alternateLeoFailureLogged;
+	private boolean alternateOperatorFailureLogged;
 	private final Supplier<SketchSnapshotIdentity> snapshotIdentitySupplier;
 	private final LongSupplier statementMutationStampSupplier;
 	private final BooleanSupplier adaptiveEvidenceAllowedSupplier;
@@ -219,7 +226,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private final LmdbLeoFeedbackConfig leoFeedbackConfig;
 	private final LmdbLeoFeedbackStore leoFeedbackStore;
 	private final LmdbLeoSurfaceStats leoSurfaceStats;
-	private volatile Consumer<LmdbPlanDecisionCache.ExecutionObservation> planExecutionObserver;
+	private volatile BiConsumer<LmdbPlanDecisionCache.ExecutionObservation, LmdbFeedbackReadAuthority.Publication> planExecutionObserver;
 	private volatile LearnedStateObserver learnedStateObserver;
 	private final Map<OperatorKey, LearnedOperatorCounts> learnedByOperator = new LinkedHashMap<>();
 	private final Map<OperatorKey, LearnedMultiplierCounts> learnedMultipliers = new LinkedHashMap<>();
@@ -289,8 +296,21 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			Supplier<SketchSnapshotIdentity> snapshotIdentitySupplier,
 			BooleanSupplier adaptiveEvidenceAllowedSupplier,
 			LongSupplier statementMutationStampSupplier) {
-		Objects.requireNonNull(estimatorPath, "estimatorPath");
-		this.sidecarPath = estimatorPath.resolveSibling(estimatorPath.getFileName().toString() + SIDECAR_SUFFIX);
+		this(estimatorPath, snapshotIdentitySupplier, adaptiveEvidenceAllowedSupplier, statementMutationStampSupplier,
+				null);
+	}
+
+	LmdbOperatorFeedbackStats(Path estimatorPath,
+			Supplier<SketchSnapshotIdentity> snapshotIdentitySupplier,
+			BooleanSupplier adaptiveEvidenceAllowedSupplier,
+			LongSupplier statementMutationStampSupplier,
+			EstimatorPersistenceLocation alternateLocation) {
+		this.sidecarPath = estimatorPath == null ? null
+				: estimatorPath.resolveSibling(estimatorPath.getFileName().toString() + SIDECAR_SUFFIX);
+		this.alternateOperatorSlot = alternateLocation == null ? null
+				: new EstimatorSidecar(alternateLocation, estimatorPath, EstimatorSidecar.Channel.OPERATOR);
+		this.alternateLeoSlot = alternateLocation == null ? null
+				: new EstimatorSidecar(alternateLocation, estimatorPath, EstimatorSidecar.Channel.LEO);
 		this.snapshotIdentitySupplier = Objects.requireNonNull(snapshotIdentitySupplier, "snapshotIdentitySupplier");
 		this.adaptiveEvidenceAllowedSupplier = Objects.requireNonNull(adaptiveEvidenceAllowedSupplier,
 				"adaptiveEvidenceAllowedSupplier");
@@ -299,8 +319,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 				"statementMutationStampSupplier");
 		this.appliedStatementMutationStamp = requireStatementMutationStamp(statementMutationStampSupplier.getAsLong());
 		this.leoFeedbackConfig = LmdbLeoFeedbackConfig.defaultConfig();
-		this.leoSurfacePath = estimatorPath.resolveSibling(estimatorPath.getFileName().toString() + LEO_SURFACE_SUFFIX);
-		this.leoFeedbackStore = new LmdbLeoFeedbackStore(leoSurfacePath, leoFeedbackConfig);
+		this.leoSurfacePath = estimatorPath == null ? null
+				: estimatorPath.resolveSibling(estimatorPath.getFileName().toString() + LEO_SURFACE_SUFFIX);
+		this.leoFeedbackStore = new LmdbLeoFeedbackStore(leoSurfacePath, leoFeedbackConfig, alternateLeoSlot);
 		this.leoSurfaceStats = loadLeoSurfaceStats();
 		loadIfPresent();
 	}
@@ -323,6 +344,15 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			LmdbFilterSelectivityStats filterStatistics,
 			LmdbFilterSelectivityStats.ResolvedFilterCells filterCells,
 			LmdbLearnedFilterSelectivity.BoundOutcome learnedOutcome) {
+		return resolveRuntimeFeedbackTarget(contract, filterStatistics, filterCells, learnedOutcome,
+				LmdbFeedbackReadAuthority.Publication.UNRESTRICTED);
+	}
+
+	synchronized RuntimeFeedbackTarget resolveRuntimeFeedbackTarget(RuntimeFeedbackContract contract,
+			LmdbFilterSelectivityStats filterStatistics,
+			LmdbFilterSelectivityStats.ResolvedFilterCells filterCells,
+			LmdbLearnedFilterSelectivity.BoundOutcome learnedOutcome,
+			LmdbFeedbackReadAuthority.Publication publication) {
 		if (adaptiveEvidenceAllowed() && contract != null
 				&& contract.descriptor() instanceof LmdbFilterOutcomeFeedbackDescriptor) {
 			if (contract.admissionFlags() != RuntimeFeedbackContract.ADMIT_FILTER || learnedOutcome == null
@@ -340,9 +370,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 					|| contract.physicalImplementationId() != 0) {
 				return RuntimeFeedbackTarget.NO_OP;
 			}
-			return new RuntimeFeedbackAccumulator(contract, new BoundRuntimeFeedbackDestination(this, contract,
+			return new BoundRuntimeFeedbackTarget(contract, new BoundRuntimeFeedbackDestination(this, contract,
 					frontierLearning, null, planLifecycle, null, null, null, null, runtimeTargetGeneration,
-					learnedOutcome));
+					learnedOutcome, publication));
 		}
 		if (adaptiveEvidenceAllowed() && contract != null
 				&& contract.descriptor() instanceof LmdbPhysicalEventFeedbackDescriptor physical) {
@@ -358,8 +388,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 				return RuntimeFeedbackTarget.NO_OP;
 			}
 			BoundRuntimeFeedbackDestination destination = new BoundRuntimeFeedbackDestination(this, contract,
-					learningModel, cells, planLifecycle, null, null, null, null, runtimeTargetGeneration);
-			return new RuntimeFeedbackAccumulator(contract, destination);
+					learningModel, cells, planLifecycle, null, null, null, null, runtimeTargetGeneration, null,
+					publication);
+			return new BoundRuntimeFeedbackTarget(contract, destination);
 		}
 		if (!adaptiveEvidenceAllowed() || contract == null
 				|| !(contract.descriptor() instanceof LmdbRuntimeFeedbackDescriptor descriptor)) {
@@ -399,12 +430,25 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		}
 		BoundRuntimeFeedbackDestination destination = new BoundRuntimeFeedbackDestination(this, contract,
 				learningModel, learningCells, lifecycleStore, lifecycle, exactFact,
-				filterStatistics, filterCells, runtimeTargetGeneration, learnedOutcome);
-		return new RuntimeFeedbackAccumulator(contract, destination);
+				filterStatistics, filterCells, runtimeTargetGeneration, learnedOutcome, publication);
+		return new BoundRuntimeFeedbackTarget(contract, destination);
+	}
+
+	synchronized void publishRuntimeFeedbackTargets(RuntimeFeedbackTarget[] targets, int targetCount,
+			boolean rootCompleted, LmdbFeedbackReadAuthority.Publication publication) {
+		if (publication.getAsBoolean()) {
+			publishRuntimeFeedbackTargetsInScope(targets, targetCount, rootCompleted, publication);
+		}
 	}
 
 	synchronized void publishRuntimeFeedbackTargets(RuntimeFeedbackTarget[] targets, int targetCount,
 			boolean rootCompleted) {
+		publishRuntimeFeedbackTargetsInScope(targets, targetCount, rootCompleted,
+				LmdbFeedbackReadAuthority.Publication.UNRESTRICTED);
+	}
+
+	private void publishRuntimeFeedbackTargetsInScope(RuntimeFeedbackTarget[] targets, int targetCount,
+			boolean rootCompleted, LmdbFeedbackReadAuthority.Publication publication) {
 		if (estimateTraceEnabled) {
 			System.err.println("[lmdb-operator-feedback-trace] event=publish-runtime-targets"
 					+ " targetCount=" + targetCount + " rootCompleted=" + rootCompleted);
@@ -414,25 +458,46 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		}
 		int limit = Math.min(targetCount, targets.length);
 		Map<LmdbPlanDecisionCache.PlanExecutionToken, PlanExecutionAggregate> planExecutions = null;
+		Set<RuntimeFeedbackTarget> seenPlanTargets = null;
 		for (int index = 0; index < limit; index++) {
 			RuntimeFeedbackTarget target = targets[index];
 			if (target != null) {
-				target.publish(rootCompleted);
 				LmdbPlanDecisionCache.PlanExecutionToken token = planExecutionToken(target);
+				if (token != null) {
+					if (seenPlanTargets == null) {
+						seenPlanTargets = Collections.newSetFromMap(new IdentityHashMap<>());
+					}
+					if (!seenPlanTargets.add(target)) {
+						continue;
+					}
+				}
+				BoundRuntimeFeedbackDestination destination = target instanceof BoundRuntimeFeedbackTarget bound
+						&& bound.destination.owner == this ? bound.destination : null;
+				long beforePublication = destination == null ? 0L : destination.publicationCount;
+				target.publish(rootCompleted);
+				boolean accepted = destination != null && destination.publicationCount != beforePublication;
 				if (token != null && target.opens() > 0L) {
 					if (planExecutions == null) {
 						planExecutions = new LinkedHashMap<>();
 					}
-					planExecutions.computeIfAbsent(token, PlanExecutionAggregate::new)
-							.observe(target, rootCompleted, lifecycleBlocked(target));
+					PlanExecutionAggregate aggregate = planExecutions.computeIfAbsent(token,
+							PlanExecutionAggregate::new);
+					if (accepted) {
+						aggregate.observe(target, rootCompleted, lifecycleBlocked(target));
+					} else {
+						aggregate.publicationAccepted = false;
+					}
 				}
 			}
 		}
-		Consumer<LmdbPlanDecisionCache.ExecutionObservation> observer = planExecutionObserver;
+		BiConsumer<LmdbPlanDecisionCache.ExecutionObservation, LmdbFeedbackReadAuthority.Publication> observer = planExecutionObserver;
 		if (observer != null && planExecutions != null) {
 			for (PlanExecutionAggregate aggregate : planExecutions.values()) {
+				if (!aggregate.publicationAccepted || !publication.getAsBoolean()) {
+					continue;
+				}
 				try {
-					observer.accept(aggregate.toObservation());
+					observer.accept(aggregate.toObservation(), publication);
 				} catch (RuntimeException cacheFailure) {
 					// Runtime feedback remains advisory. Cache observation failure cannot fail query execution.
 				}
@@ -441,7 +506,12 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	}
 
 	void setPlanExecutionObserver(Consumer<LmdbPlanDecisionCache.ExecutionObservation> observer) {
-		planExecutionObserver = observer;
+		planExecutionObserver = observer == null ? null : (observation, authority) -> observer.accept(observation);
+	}
+
+	void setPlanExecutionPublisher(
+			BiConsumer<LmdbPlanDecisionCache.ExecutionObservation, LmdbFeedbackReadAuthority.Publication> publisher) {
+		planExecutionObserver = publisher;
 	}
 
 	/**
@@ -496,6 +566,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		private double maximumResidual = 1.0d;
 		private long peakMemoryRows;
 		private boolean lifecycleBlocked;
+		private boolean publicationAccepted = true;
 
 		private PlanExecutionAggregate(LmdbPlanDecisionCache.PlanExecutionToken token) {
 			this.token = token;
@@ -545,6 +616,24 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	private synchronized void publish(BoundRuntimeFeedbackDestination destination,
 			InvocationAggregateView observation) {
+		PreparedFeedback previous = preparedFeedback;
+		boolean previousApplying = applyingPreparedFeedback;
+		preparedFeedback = null;
+		applyingPreparedFeedback = false;
+		try {
+			destination.publication.publish(() -> {
+				if (publishInScope(destination, observation)) {
+					destination.publicationCount++;
+				}
+			});
+		} finally {
+			preparedFeedback = previous;
+			applyingPreparedFeedback = previousApplying;
+		}
+	}
+
+	private boolean publishInScope(BoundRuntimeFeedbackDestination destination,
+			InvocationAggregateView observation) {
 		if (destination.generation != runtimeTargetGeneration || observation == null
 				|| observation.statisticalSampleWeight() != 1L) {
 			if (estimateTraceEnabled) {
@@ -556,7 +645,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 						+ " opens=" + (observation == null ? -1L : observation.opens())
 						+ " rootCompleted=" + (observation != null && observation.rootCompleted()));
 			}
-			return;
+			return false;
 		}
 		if (estimateTraceEnabled
 				&& destination.contract.descriptor() instanceof LmdbRuntimeFeedbackDescriptor descriptor) {
@@ -581,7 +670,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		}
 		if (destination.contract.descriptor() instanceof LmdbFilterOutcomeFeedbackDescriptor) {
 			// This channel owns no persistent operator/model/lifecycle/exact sidecar cells.
-			return;
+			return true;
 		}
 		long epoch = nextFeedbackEpoch();
 		boolean changed = destination.learningModel.observeResolved(
@@ -635,6 +724,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		if (changed) {
 			dirty = true;
 		}
+		return true;
 	}
 
 	private synchronized void release(BoundRuntimeFeedbackDestination destination) {
@@ -652,6 +742,16 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		}
 	}
 
+	private static final class BoundRuntimeFeedbackTarget extends LmdbDelegatingFeedbackTarget {
+		private final BoundRuntimeFeedbackDestination destination;
+
+		private BoundRuntimeFeedbackTarget(RuntimeFeedbackContract contract,
+				BoundRuntimeFeedbackDestination destination) {
+			super(new RuntimeFeedbackAccumulator(contract, destination));
+			this.destination = destination;
+		}
+	}
+
 	private static final class BoundRuntimeFeedbackDestination implements RuntimeFeedbackAccumulator.Destination {
 		private final LmdbOperatorFeedbackStats owner;
 		private final RuntimeFeedbackContract contract;
@@ -664,6 +764,8 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		private final LmdbFilterSelectivityStats.ResolvedFilterCells filterCells;
 		private final long generation;
 		private final LmdbLearnedFilterSelectivity.BoundOutcome learnedOutcome;
+		private final LmdbFeedbackReadAuthority.Publication publication;
+		private long publicationCount;
 		private boolean inputQualified = true;
 		private long inputOpens;
 		private boolean released;
@@ -674,7 +776,8 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 				ExactCardinalityCell exactFact, LmdbFilterSelectivityStats filterStatistics,
 				LmdbFilterSelectivityStats.ResolvedFilterCells filterCells, long generation) {
 			this(owner, contract, learningModel, learningCells, lifecycleStore, lifecycle, exactFact,
-					filterStatistics, filterCells, generation, null);
+					filterStatistics, filterCells, generation, null,
+					LmdbFeedbackReadAuthority.Publication.UNRESTRICTED);
 		}
 
 		private BoundRuntimeFeedbackDestination(LmdbOperatorFeedbackStats owner, RuntimeFeedbackContract contract,
@@ -682,7 +785,8 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 				PlanLifecycleStore lifecycleStore, PlanLifecycleStore.ResolvedEntry lifecycle,
 				ExactCardinalityCell exactFact, LmdbFilterSelectivityStats filterStatistics,
 				LmdbFilterSelectivityStats.ResolvedFilterCells filterCells, long generation,
-				LmdbLearnedFilterSelectivity.BoundOutcome learnedOutcome) {
+				LmdbLearnedFilterSelectivity.BoundOutcome learnedOutcome,
+				LmdbFeedbackReadAuthority.Publication publication) {
 			this.owner = owner;
 			this.contract = contract;
 			this.learningModel = learningModel;
@@ -694,6 +798,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			this.filterCells = filterCells;
 			this.generation = generation;
 			this.learnedOutcome = learnedOutcome;
+			this.publication = publication;
 		}
 
 		@Override
@@ -859,6 +964,78 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	public void observe(TupleExpr tupleExpr, boolean completedRoot) {
 		observe(tupleExpr, completedRoot, null);
+	}
+
+	synchronized void observe(TupleExpr tupleExpr, boolean completedRoot, InvocationAggregateObservation observation,
+			LmdbFeedbackReadAuthority.Publication publication) {
+		prepareFeedback(publication, () -> observe(tupleExpr, completedRoot, observation));
+	}
+
+	/** Only captured keys/counts enter the native fence; virtual AST accessors run during preparation. */
+	private PreparedFeedback preparedFeedback;
+	private boolean applyingPreparedFeedback;
+
+	private static final class PreparedFeedback {
+		final List<Runnable> mutations = new ArrayList<>();
+		final List<Runnable> diagnostics = new ArrayList<>();
+		final Set<TupleExpr> operators = Collections.newSetFromMap(new IdentityHashMap<>());
+		final Set<TupleExpr> plans = Collections.newSetFromMap(new IdentityHashMap<>());
+		final Set<TupleExpr> lifecycles = Collections.newSetFromMap(new IdentityHashMap<>());
+		long nextEpoch;
+		boolean published;
+
+		PreparedFeedback(long epoch) {
+			nextEpoch = epoch;
+		}
+	}
+
+	private void prepareFeedback(LmdbFeedbackReadAuthority.Publication publication, Runnable preparation) {
+		if (!publication.getAsBoolean()) {
+			return;
+		}
+		PreparedFeedback previous = preparedFeedback;
+		PreparedFeedback prepared = new PreparedFeedback(feedbackEpoch);
+		preparedFeedback = prepared;
+		try {
+			preparation.run();
+		} finally {
+			preparedFeedback = previous;
+		}
+		if (!prepared.mutations.isEmpty()) {
+			publication.publish(() -> {
+				boolean previousApplying = applyingPreparedFeedback;
+				applyingPreparedFeedback = true;
+				try {
+					for (Runnable mutation : prepared.mutations) {
+						mutation.run();
+					}
+					prepared.published = true;
+				} finally {
+					applyingPreparedFeedback = previousApplying;
+				}
+			});
+		}
+		if (prepared.published) {
+			for (Runnable diagnostic : prepared.diagnostics) {
+				diagnostic.run();
+			}
+		}
+	}
+
+	private void publishPrepared(Runnable mutation) {
+		if (preparedFeedback == null) {
+			mutation.run();
+		} else {
+			preparedFeedback.mutations.add(mutation);
+		}
+	}
+
+	private void afterPreparedPublication(Runnable diagnostic) {
+		if (preparedFeedback == null) {
+			diagnostic.run();
+		} else {
+			preparedFeedback.diagnostics.add(diagnostic);
+		}
 	}
 
 	void observe(TupleExpr tupleExpr, boolean completedRoot, InvocationAggregateObservation observation) {
@@ -1115,6 +1292,11 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		return LmdbReinvocablePositions.isReinvocable(node);
 	}
 
+	synchronized void recordSemiAntiOutcome(Filter filter, SemiAntiOutcomeObservation observation,
+			LmdbFeedbackReadAuthority.Publication publication) {
+		prepareFeedback(publication, () -> recordSemiAntiOutcome(filter, observation));
+	}
+
 	synchronized void recordSemiAntiOutcome(Filter filter, SemiAntiOutcomeObservation observation) {
 		if (!adaptiveEvidenceAllowed() || !LmdbPlanningGraphEvidence.allows(filter) || observation == null
 				|| !LmdbRuntimeFeedbackDescriptor.allowsFeedback(filter, RuntimeFeedbackContract.ADMIT_SEMI_ANTI)
@@ -1130,33 +1312,35 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			return;
 		}
 		long rhsSourceRowsScanned = filter.getLongMetricActual("actualSemiAntiSourceRowsScanned");
-		semiAntiBySurface.computeIfAbsent(key, ignored -> new SemiAntiCounts())
-				.add(observation, rhsSourceRowsScanned);
+		publishPrepared(() -> semiAntiBySurface.computeIfAbsent(key, ignored -> new SemiAntiCounts())
+				.add(observation, rhsSourceRowsScanned));
 		// Dual-write an exact-constants key: the generalized key abstracts rhs subject/object constants, so
 		// selective and unselective EXISTS bodies share it. Estimates consult the exact tier first.
 		if (semiAntiExactSurfaceTierEnabled()) {
 			SemiAntiSurfaceKey exactKey = SemiAntiSurfaceKey.from(filter, observation.semanticKind(),
 					observation.selectedAlgorithm(), LeoOperatorKey.ConstantMode.EXACT);
 			if (exactKey != null && !exactKey.equals(key)) {
-				semiAntiBySurface.computeIfAbsent(exactKey, ignored -> new SemiAntiCounts())
-						.add(observation, rhsSourceRowsScanned);
+				publishPrepared(() -> semiAntiBySurface.computeIfAbsent(exactKey, ignored -> new SemiAntiCounts())
+						.add(observation, rhsSourceRowsScanned));
 			}
 		}
 		long epoch = nextFeedbackEpoch();
 		if (recordFrontierSemiAntiOutcome(filter, observation, epoch)) {
-			frontierOriginSemiAntiSurfaces.add(key);
+			publishPrepared(() -> frontierOriginSemiAntiSurfaces.add(key));
 			if (semiAntiExactSurfaceTierEnabled()) {
 				SemiAntiSurfaceKey exactKey = SemiAntiSurfaceKey.from(filter, observation.semanticKind(),
 						observation.selectedAlgorithm(), LeoOperatorKey.ConstantMode.EXACT);
 				if (exactKey != null) {
-					frontierOriginSemiAntiSurfaces.add(exactKey);
+					publishPrepared(() -> frontierOriginSemiAntiSurfaces.add(exactKey));
 				}
 			}
 			markFeedbackRecorded(filter);
 		}
-		evictOldestIfNeeded(semiAntiBySurface);
-		frontierOriginSemiAntiSurfaces.retainAll(semiAntiBySurface.keySet());
-		dirty = true;
+		publishPrepared(() -> {
+			evictOldestIfNeeded(semiAntiBySurface);
+			frontierOriginSemiAntiSurfaces.retainAll(semiAntiBySurface.keySet());
+			dirty = true;
+		});
 	}
 
 	private boolean recordFrontierSemiAntiOutcome(Filter filter, SemiAntiOutcomeObservation observation, long epoch) {
@@ -1500,7 +1684,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			trace("record-frontier-skip-physical-access-drift", node, null,
 					"key=" + encodedKey + ", plannedIndex=" + physicalKey.indexName()
 							+ ", runtimeIndex=" + runtimeIndexName);
-			dirty = true;
+			publishPrepared(() -> dirty = true);
 			return true;
 		}
 		/*
@@ -1523,11 +1707,13 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 				&& singleInvocationBasis
 				&& aggregate.exactLogicalCardinality()
 				&& isFiniteNonNegative(observation.actualRows())) {
-			ExactCardinalityCell exactFact = exactCardinalityCell(exactFactKey, false);
-			if (exactFact != null) {
-				exactFact.rows = observation.actualRows();
-				exactFact.statementMutationStamp = appliedStatementMutationStamp;
-			}
+			publishPrepared(() -> {
+				ExactCardinalityCell exactFact = exactCardinalityCell(exactFactKey, false);
+				if (exactFact != null) {
+					exactFact.rows = observation.actualRows();
+					exactFact.statementMutationStamp = appliedStatementMutationStamp;
+				}
+			});
 			trace("record-frontier-exact-fact", node, null,
 					"groupKey=" + logicalGroupKey + ", rows=" + observation.actualRows());
 		}
@@ -1542,7 +1728,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 					"key=" + encodedKey
 							+ ", planned=" + node.getStringMetricPlanned(PLANNED_PHYSICAL_JOIN_IMPLEMENTATION)
 							+ ", runtime=" + binary.getAlgorithmName());
-			dirty = true;
+			publishPrepared(() -> dirty = true);
 			return true;
 		}
 		if (productionKeysValid) {
@@ -1550,7 +1736,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 					observation.actualWorkRows(), epoch);
 		}
 		if (!physicalAllowed) {
-			dirty = true;
+			publishPrepared(() -> dirty = true);
 			return true;
 		}
 		if (rowLearningAllowed && aggregate.admissiblePhysicalWork()) {
@@ -1586,7 +1772,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		observePhysicalOrLegacy(logicalKey, residualKey, applicability, physicalKey, featureEnvelope,
 				FrontierCostDimension.REMOTE_CALLS,
 				aggregate.rawPredictedWorkSum().remoteCalls(), aggregate.actualWorkSum().remoteCalls(), epoch);
-		dirty = true;
+		publishPrepared(() -> dirty = true);
 		trace("record-frontier", node, null,
 				"key=" + encodedKey + ", event=" + eventDigest + ", state=" + stateDigest);
 		return true;
@@ -1613,7 +1799,8 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private void recordPlanLifecycleOutcome(TupleExpr node, LogicalLearningKey logicalKey,
 			PhysicalResidualKey physicalKey, LearningApplicability applicability, double actualObjective, long epoch) {
 		if (!LmdbRuntimeFeedbackDescriptor.allowsFeedback(node, RuntimeFeedbackContract.ADMIT_LIFECYCLE)
-				|| node.getLongMetricActual(LEO_RECORDED_LIFECYCLE_ACTUAL) > 0L) {
+				|| node.getLongMetricActual(LEO_RECORDED_LIFECYCLE_ACTUAL) > 0L
+				|| preparedFeedback != null && preparedFeedback.lifecycles.contains(node)) {
 			return;
 		}
 		PlanLifecycleStore.ObjectiveEnvelope planned = lifecycleEnvelope(node);
@@ -1624,20 +1811,32 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		if (!isFiniteNonNegative(regressionLimit)) {
 			regressionLimit = Double.POSITIVE_INFINITY;
 		}
-		long priorRevision = planLifecycle.revision();
-		if (!planLifecycle.observe(logicalKey, physicalKey, applicability, planned, actualObjective,
-				true, regressionLimit, epoch)) {
-			return;
+		double capturedRegressionLimit = regressionLimit;
+		if (preparedFeedback != null) {
+			preparedFeedback.lifecycles.add(node);
 		}
-		PlanLifecycleStore.Decision decision = planLifecycle.decision(logicalKey, physicalKey, applicability,
-				planned, rollout().planLifecycleEnforced());
-		node.setStringMetricActual("optimizer.lifecycleStateActual", decision.state().name().toLowerCase(Locale.ROOT));
-		node.setStringMetricActual("optimizer.lifecycleReasonActual", decision.reason());
-		node.setDoubleMetricActual("optimizer.lifecycleActualObjective", actualObjective);
-		node.setLongMetricActual(LEO_RECORDED_LIFECYCLE_ACTUAL, 1L);
-		if (planLifecycle.revision() != priorRevision) {
-			dirty = true;
-		}
+		PlanLifecycleStore.Decision[] captured = new PlanLifecycleStore.Decision[1];
+		publishPrepared(() -> {
+			long priorRevision = planLifecycle.revision();
+			if (planLifecycle.observe(logicalKey, physicalKey, applicability, planned, actualObjective,
+					true, capturedRegressionLimit, appliedFeedbackEpoch(epoch))) {
+				captured[0] = planLifecycle.decision(logicalKey, physicalKey, applicability,
+						planned, rollout().planLifecycleEnforced());
+				if (planLifecycle.revision() != priorRevision) {
+					dirty = true;
+				}
+			}
+		});
+		afterPreparedPublication(() -> {
+			PlanLifecycleStore.Decision decision = captured[0];
+			if (decision != null) {
+				node.setStringMetricActual("optimizer.lifecycleStateActual",
+						decision.state().name().toLowerCase(Locale.ROOT));
+				node.setStringMetricActual("optimizer.lifecycleReasonActual", decision.reason());
+				node.setDoubleMetricActual("optimizer.lifecycleActualObjective", actualObjective);
+				node.setLongMetricActual(LEO_RECORDED_LIFECYCLE_ACTUAL, 1L);
+			}
+		});
 	}
 
 	private static PlanLifecycleStore.ObjectiveEnvelope lifecycleEnvelope(TupleExpr node) {
@@ -1736,7 +1935,8 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private void observeFrontierDimension(FrontierLearningKey key, FrontierCostDimension dimension,
 			double predicted, double actual, long epoch) {
 		if (isFiniteNonNegative(predicted) && isFiniteNonNegative(actual)) {
-			frontierLearning.observe(key, dimension, predicted, actual, epoch);
+			publishPrepared(
+					() -> frontierLearning.observe(key, dimension, predicted, actual, appliedFeedbackEpoch(epoch)));
 		}
 	}
 
@@ -1786,7 +1986,8 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private void observeLogicalDimension(LogicalLearningKey key, LearningApplicability applicability,
 			FrontierCostDimension dimension, LearningFeatureEnvelope featureEnvelope, double actual, long epoch) {
 		if (featureEnvelope != null && isFiniteNonNegative(actual)) {
-			frontierLearning.observeLogical(key, applicability, dimension, featureEnvelope, actual, epoch);
+			publishPrepared(() -> frontierLearning.observeLogical(key, applicability, dimension, featureEnvelope,
+					actual, appliedFeedbackEpoch(epoch)));
 		}
 	}
 
@@ -1794,8 +1995,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			LearningApplicability applicability, FrontierCostDimension dimension,
 			LearningFeatureEnvelope featureEnvelope, double predicted, double actual, long epoch) {
 		if (isFiniteNonNegative(predicted) && isFiniteNonNegative(actual)) {
-			frontierLearning.observePhysical(logicalKey, physicalKey, applicability, dimension, featureEnvelope,
-					predicted, actual, epoch);
+			publishPrepared(() -> frontierLearning.observePhysical(logicalKey, physicalKey, applicability, dimension,
+					featureEnvelope,
+					predicted, actual, appliedFeedbackEpoch(epoch)));
 		}
 	}
 
@@ -1964,15 +2166,17 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		}
 		long epoch = nextFeedbackEpoch();
 		for (OperatorKey key : keys) {
-			learnedByOperator.computeIfAbsent(key, ignored -> new LearnedOperatorCounts())
-					.add(observation, key.abstractedSignature(), epoch);
+			publishPrepared(() -> learnedByOperator.computeIfAbsent(key, ignored -> new LearnedOperatorCounts())
+					.add(observation, key.abstractedSignature(), appliedFeedbackEpoch(epoch)));
 			trace("record", node, key, "actualRows=" + observation.actualRows() + ", plannedRows="
 					+ observation.plannedRows() + ", actualWorkRows=" + observation.actualWorkRows()
 					+ ", plannedWorkRows=" + observation.plannedWorkRows());
 		}
 		updateRuleSteeringSafety(node, observation, epoch);
-		evictOldestIfNeeded();
-		dirty = true;
+		publishPrepared(() -> {
+			evictOldestIfNeeded();
+			dirty = true;
+		});
 		return true;
 	}
 
@@ -1983,10 +2187,13 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			trace("record-multiplier-skip", node, key, "");
 			return false;
 		}
-		learnedMultipliers.computeIfAbsent(key, ignored -> new LearnedMultiplierCounts())
-				.add(observation, nextFeedbackEpoch());
-		evictOldestIfNeeded(learnedMultipliers);
-		dirty = true;
+		long epoch = nextFeedbackEpoch();
+		publishPrepared(() -> {
+			learnedMultipliers.computeIfAbsent(key, ignored -> new LearnedMultiplierCounts())
+					.add(observation, appliedFeedbackEpoch(epoch));
+			evictOldestIfNeeded(learnedMultipliers);
+			dirty = true;
+		});
 		trace("record-multiplier", node, key, "actualRows=" + observation.actualRows()
 				+ ", plannedRows=" + observation.plannedRows());
 		return true;
@@ -2005,13 +2212,15 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			return;
 		}
 		long epoch = nextFeedbackEpoch();
-		shadowByOperator.computeIfAbsent(key, ignored -> new ShadowOperatorCounts())
-				.add(observation, epoch);
+		publishPrepared(() -> shadowByOperator.computeIfAbsent(key, ignored -> new ShadowOperatorCounts())
+				.add(observation, appliedFeedbackEpoch(epoch)));
 		recordPlanCandidateOutcome(root, observation, epoch);
-		evictOldestIfNeeded(shadowByOperator);
-		evictOldestIfNeeded(planCandidates);
+		publishPrepared(() -> {
+			evictOldestIfNeeded(shadowByOperator);
+			evictOldestIfNeeded(planCandidates);
+			dirty = true;
+		});
 		markPlanFeedbackRecorded(root);
-		dirty = true;
 		trace("record-plan-shadow", root, key, "actualRows=" + observation.actualRows()
 				+ ", actualWorkRows=" + observation.actualWorkRows());
 	}
@@ -2142,10 +2351,13 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			trace("record-shadow-skip", node, key, "");
 			return false;
 		}
-		shadowByOperator.computeIfAbsent(key, ignored -> new ShadowOperatorCounts())
-				.add(observation, nextFeedbackEpoch());
-		evictOldestIfNeeded(shadowByOperator);
-		dirty = true;
+		long epoch = nextFeedbackEpoch();
+		publishPrepared(() -> {
+			shadowByOperator.computeIfAbsent(key, ignored -> new ShadowOperatorCounts())
+					.add(observation, appliedFeedbackEpoch(epoch));
+			evictOldestIfNeeded(shadowByOperator);
+			dirty = true;
+		});
 		trace("record-shadow", node, key, "actualRows=" + observation.actualRows());
 		return true;
 	}
@@ -2512,63 +2724,21 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	}
 
 	private boolean persistOperatorFeedback(SketchSnapshotIdentity snapshotIdentity) {
+		if (sidecarPath == null) {
+			return false;
+		}
+		if (alternateOperatorSlot != null) {
+			try {
+				alternateOperatorSlot.write(out -> writeOperatorPayload(out, snapshotIdentity));
+				return true;
+			} catch (IOException e) {
+				logAlternateOperatorFailure(e);
+				return false;
+			}
+		}
 		Path tempPath = sidecarPath.resolveSibling(sidecarPath.getFileName().toString() + ".tmp");
 		try (DataOutputStream out = new DataOutputStream(Files.newOutputStream(tempPath))) {
-			int schema = frontierLearning.requiresPhysicalEventSchema() ? PHYSICAL_EVENT_PERSIST_SCHEMA
-					: PERSIST_VERSION;
-			out.writeInt(schema);
-			snapshotIdentity.writeTo(out);
-			// The sketch identity only changes when the async synopsis rebuild publishes. The journal sequence closes
-			// the intervening statement-commit window without treating metadata-only LMDB commits as data mutations.
-			out.writeLong(appliedStatementMutationStamp);
-			out.writeLong(feedbackEpoch);
-			out.writeLong(ruleSteeringCooldownUntilEpoch);
-			out.writeInt(ruleSteeringBadMisses);
-			out.writeInt(learnedByOperator.size());
-			for (var entry : learnedByOperator.entrySet()) {
-				entry.getKey().writeTo(out);
-				entry.getValue().writeTo(out);
-			}
-			out.writeInt(learnedMultipliers.size());
-			for (var entry : learnedMultipliers.entrySet()) {
-				entry.getKey().writeTo(out);
-				entry.getValue().writeTo(out);
-			}
-			out.writeInt(shadowByOperator.size());
-			for (var entry : shadowByOperator.entrySet()) {
-				entry.getKey().writeTo(out);
-				entry.getValue().writeTo(out);
-			}
-			out.writeInt(planCandidates.size());
-			for (var entry : planCandidates.entrySet()) {
-				entry.getKey().writeTo(out);
-				entry.getValue().writeTo(out);
-			}
-			out.writeInt(semiAntiBySurface.size());
-			for (var entry : semiAntiBySurface.entrySet()) {
-				entry.getKey().writeTo(out);
-				entry.getValue().writeTo(out);
-			}
-			frontierLearning.writeTo(out, schema >= PHYSICAL_EVENT_PERSIST_SCHEMA);
-			int exactFactCount = 0;
-			for (ExactCardinalityCell cell : exactCardinalityFacts.values()) {
-				exactFactCount += cell.hasFact() ? 1 : 0;
-			}
-			out.writeInt(exactFactCount);
-			for (var entry : exactCardinalityFacts.entrySet()) {
-				ExactCardinalityCell cell = entry.getValue();
-				if (cell.hasFact()) {
-					out.writeUTF(entry.getKey());
-					out.writeDouble(cell.rows);
-					out.writeLong(cell.statementMutationStamp);
-				}
-			}
-			planLifecycle.writeTo(out);
-			out.writeInt(typedSemiAntiDistinct.size());
-			for (var entry : typedSemiAntiDistinct.entrySet()) {
-				entry.getKey().writeTo(out);
-				entry.getValue().writeTo(out);
-			}
+			writeOperatorPayload(out, snapshotIdentity);
 		} catch (IOException e) {
 			deleteIfExists(tempPath);
 			return false;
@@ -2588,11 +2758,84 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		}
 	}
 
+	private void writeOperatorPayload(DataOutputStream out, SketchSnapshotIdentity snapshotIdentity)
+			throws IOException {
+		int schema = frontierLearning.requiresPhysicalEventSchema() ? PHYSICAL_EVENT_PERSIST_SCHEMA
+				: PERSIST_VERSION;
+		out.writeInt(schema);
+		snapshotIdentity.writeTo(out);
+		// The sketch identity only changes when the async synopsis rebuild publishes. The journal sequence closes
+		// the intervening statement-commit window without treating metadata-only LMDB commits as data mutations.
+		out.writeLong(appliedStatementMutationStamp);
+		out.writeLong(feedbackEpoch);
+		out.writeLong(ruleSteeringCooldownUntilEpoch);
+		out.writeInt(ruleSteeringBadMisses);
+		out.writeInt(learnedByOperator.size());
+		for (var entry : learnedByOperator.entrySet()) {
+			entry.getKey().writeTo(out);
+			entry.getValue().writeTo(out);
+		}
+		out.writeInt(learnedMultipliers.size());
+		for (var entry : learnedMultipliers.entrySet()) {
+			entry.getKey().writeTo(out);
+			entry.getValue().writeTo(out);
+		}
+		out.writeInt(shadowByOperator.size());
+		for (var entry : shadowByOperator.entrySet()) {
+			entry.getKey().writeTo(out);
+			entry.getValue().writeTo(out);
+		}
+		out.writeInt(planCandidates.size());
+		for (var entry : planCandidates.entrySet()) {
+			entry.getKey().writeTo(out);
+			entry.getValue().writeTo(out);
+		}
+		out.writeInt(semiAntiBySurface.size());
+		for (var entry : semiAntiBySurface.entrySet()) {
+			entry.getKey().writeTo(out);
+			entry.getValue().writeTo(out);
+		}
+		frontierLearning.writeTo(out, schema >= PHYSICAL_EVENT_PERSIST_SCHEMA);
+		int exactFactCount = 0;
+		for (ExactCardinalityCell cell : exactCardinalityFacts.values()) {
+			exactFactCount += cell.hasFact() ? 1 : 0;
+		}
+		out.writeInt(exactFactCount);
+		for (var entry : exactCardinalityFacts.entrySet()) {
+			ExactCardinalityCell cell = entry.getValue();
+			if (cell.hasFact()) {
+				out.writeUTF(entry.getKey());
+				out.writeDouble(cell.rows);
+				out.writeLong(cell.statementMutationStamp);
+			}
+		}
+		planLifecycle.writeTo(out);
+		out.writeInt(typedSemiAntiDistinct.size());
+		for (var entry : typedSemiAntiDistinct.entrySet()) {
+			entry.getKey().writeTo(out);
+			entry.getValue().writeTo(out);
+		}
+	}
+
+	private void logAlternateOperatorFailure(IOException failure) {
+		if (!alternateOperatorFailureLogged) {
+			alternateOperatorFailureLogged = true;
+			logger.warn("Operator sidecar persistence is unavailable; observations remain in memory", failure);
+		}
+	}
+
 	private boolean persistLeoSurfaces(SketchSnapshotIdentity snapshotIdentity) {
+		if (leoSurfacePath == null) {
+			return false;
+		}
 		try {
 			leoFeedbackStore.persist(snapshotIdentity.token(), appliedStatementMutationStamp, leoSurfaceStats);
 			return true;
 		} catch (IOException e) {
+			if (alternateLeoSlot != null && !alternateLeoFailureLogged) {
+				alternateLeoFailureLogged = true;
+				logger.warn("LEO sidecar persistence is unavailable; observations remain in memory", e);
+			}
 			return false;
 		}
 	}
@@ -2610,12 +2853,22 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	}
 
 	private void loadIfPresent() {
-		if (!Files.isRegularFile(sidecarPath)) {
+		if (sidecarPath == null || (alternateOperatorSlot == null && !Files.isRegularFile(sidecarPath))) {
 			return;
 		}
 		SketchSnapshotIdentity currentIdentity = currentSnapshotIdentity();
 		if (currentIdentity == null) {
 			return;
+		}
+		if (alternateOperatorSlot != null) {
+			try {
+				if (!verifyCurrentOperatorEnvelope(currentIdentity)) {
+					return;
+				}
+			} catch (IOException e) {
+				logAlternateOperatorFailure(e);
+				return;
+			}
 		}
 
 		Map<OperatorKey, LearnedOperatorCounts> loaded = new LinkedHashMap<>();
@@ -2630,7 +2883,13 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		long loadedEpoch = 0L;
 		long loadedSteeringCooldownUntilEpoch = 0L;
 		int loadedSteeringBadMisses = 0;
-		try (DataInputStream in = new DataInputStream(Files.newInputStream(sidecarPath))) {
+		try (EstimatorSidecar.Payload envelope = alternateOperatorSlot == null ? null : alternateOperatorSlot.open();
+				DataInputStream in = alternateOperatorSlot == null
+						? new DataInputStream(Files.newInputStream(sidecarPath))
+						: envelope == null ? null : envelope.input()) {
+			if (in == null) {
+				return;
+			}
 			int version = in.readInt();
 			if (version != PERSIST_VERSION && version != PHYSICAL_EVENT_PERSIST_SCHEMA) {
 				return;
@@ -2731,7 +2990,13 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			} else {
 				importLegacyFrontierPriors(loadedFrontierLearning, loaded, loadedMultipliers);
 			}
+			if (envelope != null) {
+				envelope.verify();
+			}
 		} catch (IOException | RuntimeException e) {
+			if (alternateOperatorSlot != null) {
+				logAlternateOperatorFailure(e instanceof IOException io ? io : new IOException(e));
+			}
 			return;
 		}
 
@@ -2767,6 +3032,26 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			evictOldestIfNeeded(semiAntiBySurface);
 			evictOldestIfNeeded(typedSemiAntiDistinct);
 			dirty = false;
+		}
+	}
+
+	private boolean verifyCurrentOperatorEnvelope(SketchSnapshotIdentity identity) throws IOException {
+		try (EstimatorSidecar.Payload envelope = alternateOperatorSlot.open()) {
+			if (envelope == null) {
+				return false;
+			}
+			DataInputStream header = envelope.input();
+			int version = header.readInt();
+			if ((version != PERSIST_VERSION && version != PHYSICAL_EVENT_PERSIST_SCHEMA)
+					|| !SketchSnapshotIdentity.readFrom(header).equals(identity)) {
+				return false;
+			}
+			long stamp = header.readLong();
+			if (sidecarDataStampCheckEnabled() && stamp != appliedStatementMutationStamp) {
+				return false;
+			}
+			envelope.verifyAll();
+			return true;
 		}
 	}
 
@@ -3569,26 +3854,43 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	}
 
 	private long nextFeedbackEpoch() {
+		if (preparedFeedback != null) {
+			long epoch = ++preparedFeedback.nextEpoch;
+			publishPrepared(() -> feedbackEpoch++);
+			return epoch;
+		}
 		return ++feedbackEpoch;
 	}
 
-	private static boolean isFeedbackRecorded(TupleExpr node) {
-		return node != null && node.getLongMetricActual(LEO_RECORDED_OPERATOR_ACTUAL) > 0L;
+	private long appliedFeedbackEpoch(long capturedEpoch) {
+		return applyingPreparedFeedback ? feedbackEpoch : capturedEpoch;
 	}
 
-	private static boolean isPlanFeedbackRecorded(TupleExpr node) {
-		return node != null && node.getLongMetricActual(LEO_RECORDED_PLAN_ACTUAL) > 0L;
+	private boolean isFeedbackRecorded(TupleExpr node) {
+		return node != null && (node.getLongMetricActual(LEO_RECORDED_OPERATOR_ACTUAL) > 0L
+				|| preparedFeedback != null && preparedFeedback.operators.contains(node));
 	}
 
-	private static void markPlanFeedbackRecorded(TupleExpr node) {
+	private boolean isPlanFeedbackRecorded(TupleExpr node) {
+		return node != null && (node.getLongMetricActual(LEO_RECORDED_PLAN_ACTUAL) > 0L
+				|| preparedFeedback != null && preparedFeedback.plans.contains(node));
+	}
+
+	private void markPlanFeedbackRecorded(TupleExpr node) {
 		if (node != null) {
-			node.setLongMetricActual(LEO_RECORDED_PLAN_ACTUAL, 1L);
+			if (preparedFeedback != null) {
+				preparedFeedback.plans.add(node);
+			}
+			afterPreparedPublication(() -> node.setLongMetricActual(LEO_RECORDED_PLAN_ACTUAL, 1L));
 		}
 	}
 
-	private static void markFeedbackRecorded(TupleExpr node) {
+	private void markFeedbackRecorded(TupleExpr node) {
 		if (node != null) {
-			node.setLongMetricActual(LEO_RECORDED_OPERATOR_ACTUAL, 1L);
+			if (preparedFeedback != null) {
+				preparedFeedback.operators.add(node);
+			}
+			afterPreparedPublication(() -> node.setLongMetricActual(LEO_RECORDED_OPERATOR_ACTUAL, 1L));
 		}
 	}
 
@@ -3661,15 +3963,15 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		String ruleId = root == null ? "" : root.getStringMetricPlanned(PLANNED_LEO_CANDIDATE_RULE_ID);
 		OperatorKey ruleKey = planCandidateKeyFor(root, ruleId);
 		if (ruleKey != null) {
-			planCandidates.computeIfAbsent(ruleKey, ignored -> new PlanCandidateCounts())
-					.addActualOutcome(observation, epoch);
+			publishPrepared(() -> planCandidates.computeIfAbsent(ruleKey, ignored -> new PlanCandidateCounts())
+					.addActualOutcome(observation, appliedFeedbackEpoch(epoch)));
 		}
 		String plannedLogicalFingerprint = root == null ? ""
 				: root.getStringMetricPlanned(PLANNED_LEO_CANDIDATE_LOGICAL_FINGERPRINT);
 		OperatorKey genericKey = planCandidateKeyFor(root, null, plannedLogicalFingerprint, "", false);
 		if (genericKey != null && !genericKey.equals(ruleKey)) {
-			planCandidates.computeIfAbsent(genericKey, ignored -> new PlanCandidateCounts())
-					.addActualOutcome(observation, epoch);
+			publishPrepared(() -> planCandidates.computeIfAbsent(genericKey, ignored -> new PlanCandidateCounts())
+					.addActualOutcome(observation, appliedFeedbackEpoch(epoch)));
 		}
 	}
 
@@ -3829,20 +4131,22 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		double workQError = qError(observation.actualWorkRows(), observation.plannedWorkRows());
 		double miss = Math.max(Double.isFinite(rowQError) ? rowQError : 1.0d,
 				Double.isFinite(workQError) ? workQError : 1.0d);
-		if (miss < doubleProperty(LEO_RULE_STEERING_BAD_MISS_Q_ERROR_PROPERTY, 16.0d)) {
-			if (ruleSteeringBadMisses > 0) {
-				ruleSteeringBadMisses--;
-				dirty = true;
+		publishPrepared(() -> {
+			if (miss < doubleProperty(LEO_RULE_STEERING_BAD_MISS_Q_ERROR_PROPERTY, 16.0d)) {
+				if (ruleSteeringBadMisses > 0) {
+					ruleSteeringBadMisses--;
+					dirty = true;
+				}
+				return;
 			}
-			return;
-		}
-		ruleSteeringBadMisses++;
-		if (ruleSteeringBadMisses >= intProperty(LEO_RULE_STEERING_BAD_MISS_BUDGET_PROPERTY, 3)) {
-			ruleSteeringCooldownUntilEpoch = Math.max(ruleSteeringCooldownUntilEpoch,
-					epoch + longProperty(LEO_RULE_STEERING_COOLDOWN_EPOCHS_PROPERTY, 4096L));
-			ruleSteeringBadMisses = 0;
-		}
-		dirty = true;
+			ruleSteeringBadMisses++;
+			if (ruleSteeringBadMisses >= intProperty(LEO_RULE_STEERING_BAD_MISS_BUDGET_PROPERTY, 3)) {
+				ruleSteeringCooldownUntilEpoch = Math.max(ruleSteeringCooldownUntilEpoch,
+						appliedFeedbackEpoch(epoch) + longProperty(LEO_RULE_STEERING_COOLDOWN_EPOCHS_PROPERTY, 4096L));
+				ruleSteeringBadMisses = 0;
+			}
+			dirty = true;
+		});
 	}
 
 	private static boolean isLearnedSource(String source) {

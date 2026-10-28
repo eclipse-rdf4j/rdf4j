@@ -84,7 +84,11 @@ class ValueStoreHashCacheTest {
 
 		LmdbIRI lazyValue = (LmdbIRI) valueStore.getLazyValue(id);
 		assertEquals(iri.hashCode(), lazyValue.hashCode());
-		assertFalse("config alone should enable the mmap hash cache", isInitialized(lazyValue));
+		assertTrue("prior-process cache bytes must be recomputed before admission", isInitialized(lazyValue));
+		LmdbIRI sameProcess = new LmdbIRI(lazyValue.getInternalIdentity().revision(), id);
+		assertFalse(isInitialized(sameProcess));
+		assertEquals(iri.hashCode(), sameProcess.hashCode());
+		assertFalse("the rebuilt mmap cache keeps subsequent same-process values lazy", isInitialized(sameProcess));
 	}
 
 	@Test
@@ -110,7 +114,11 @@ class ValueStoreHashCacheTest {
 		LmdbIRI lazyValue = (LmdbIRI) valueStore.getLazyValue(id);
 		assertFalse(isInitialized(lazyValue));
 		assertEquals(expectedHash, lazyValue.hashCode());
-		assertFalse("validated cache should keep lazy IRIs unresolved", isInitialized(lazyValue));
+		assertTrue("startup leaves unverified cache entries empty", isInitialized(lazyValue));
+		LmdbIRI sameProcess = new LmdbIRI(lazyValue.getInternalIdentity().revision(), id);
+		assertFalse(isInitialized(sameProcess));
+		assertEquals(expectedHash, sameProcess.hashCode());
+		assertFalse("the newly populated cache preserves lazy hash lookup", isInitialized(sameProcess));
 	}
 
 	@Test

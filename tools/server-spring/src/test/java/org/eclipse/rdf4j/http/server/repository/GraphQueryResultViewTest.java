@@ -13,11 +13,13 @@ package org.eclipse.rdf4j.http.server.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.IOException;
+import java.io.OutputStream;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
@@ -30,6 +32,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFWriter;
+import org.eclipse.rdf4j.rio.RDFWriterFactory;
 import org.eclipse.rdf4j.rio.turtle.TurtleWriterFactory;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -37,8 +40,52 @@ import org.springframework.mock.web.MockHttpServletResponse;
 
 import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.WriteListener;
+import jakarta.servlet.http.HttpServletResponse;
 
 class GraphQueryResultViewTest {
+
+	@Test
+	void closesGraphResultIfResponseStreamFailsBeforeReporting() throws Exception {
+		MockHttpServletRequest request = new MockHttpServletRequest();
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		when(response.getOutputStream()).thenThrow(new IOException("response stream unavailable"));
+		GraphQueryResult result = mock(GraphQueryResult.class);
+
+		Map<String, Object> model = new HashMap<>();
+		model.put(GraphQueryResultView.FACTORY_KEY, new TurtleWriterFactory());
+		model.put(GraphQueryResultView.QUERY_RESULT_KEY, result);
+		model.put(GraphQueryResultView.HEADERS_ONLY, false);
+
+		assertThatThrownBy(() -> GraphQueryResultView.getInstance().render(model, request, response))
+				.isInstanceOf(IOException.class)
+				.hasMessage("response stream unavailable");
+		verify(result).close();
+	}
+
+	@Test
+	void closesPrefetchedGraphResultIfWriterCreationFailsBeforeReporting() throws Exception {
+		MockHttpServletRequest request = new MockHttpServletRequest();
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		GraphQueryResult result = mock(GraphQueryResult.class);
+		when(result.getNamespaces()).thenReturn(Map.of());
+		RDFWriterFactory factory = mock(RDFWriterFactory.class);
+		when(factory.getRDFFormat()).thenReturn(RDFFormat.TURTLE);
+		when(factory.getWriter(any(OutputStream.class))).thenThrow(new IllegalStateException("writer unavailable"));
+		QueryResponseHeartbeat heartbeat = new QueryResponseHeartbeat(response.getOutputStream(), Duration.ofSeconds(1),
+				() -> {
+				});
+
+		Map<String, Object> model = new HashMap<>();
+		model.put(GraphQueryResultView.FACTORY_KEY, factory);
+		model.put(GraphQueryResultView.QUERY_RESULT_KEY, result);
+		model.put(GraphQueryResultView.HEADERS_ONLY, false);
+		model.put(GraphQueryResultView.RESPONSE_HEARTBEAT_KEY, heartbeat);
+
+		assertThatThrownBy(() -> GraphQueryResultView.getInstance().render(model, request, response))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessage("writer unavailable");
+		verify(result).close();
+	}
 
 	@Test
 	void failureAfterAHeartbeatIsInvalidatedAndCannotBeParsedAsAnEmptyGraph() throws Exception {

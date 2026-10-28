@@ -16,6 +16,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
@@ -116,6 +117,13 @@ public class LmdbNativeQueryExplanationTest {
 				conn.add(subject, RDF.TYPE, item);
 				conn.add(subject, price, vf.createLiteral(i));
 			}
+		}
+		// Post-ready maintenance can publish after the fixture's commits; let it settle so a test that waits for
+		// adjacency to serve the current revision still sees that revision when its query runs.
+		try {
+			LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
+		} catch (IOException | InterruptedException failure) {
+			throw new AssertionError("LMDB post-ready initialization did not settle", failure);
 		}
 	}
 
@@ -554,6 +562,7 @@ public class LmdbNativeQueryExplanationTest {
 		}
 
 		assertThat(rendered)
+				.as("adjacency readiness after the query: %s", store.getDirectAdjacencyReadinessDescription())
 				.contains("          source: IN_MEMORY_ADJACENCY\n"
 						+ "          outcome: INELIGIBLE\n"
 						+ "          reason: FEATURE_DISABLED["

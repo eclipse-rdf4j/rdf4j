@@ -95,13 +95,16 @@ final class LmdbLearnedFilterSelectivity {
 		private final LmdbFilterOutcomeFeedbackDescriptor descriptor;
 		private final TripleStore triples;
 		private final BooleanSupplier adaptiveAllowed;
+		private final LmdbFeedbackReadAuthority.Publication publication;
 
 		private BoundOutcome(LmdbLearnedFilterSelectivity service, LmdbFilterOutcomeFeedbackDescriptor descriptor,
-				TripleStore triples, BooleanSupplier adaptiveAllowed) {
+				TripleStore triples, BooleanSupplier adaptiveAllowed,
+				LmdbFeedbackReadAuthority.Publication publication) {
 			this.service = service;
 			this.descriptor = descriptor;
 			this.triples = triples;
 			this.adaptiveAllowed = adaptiveAllowed;
+			this.publication = publication;
 		}
 
 		boolean acceptsInput(BindingSet input) {
@@ -116,16 +119,22 @@ final class LmdbLearnedFilterSelectivity {
 	}
 
 	synchronized BoundOutcome bindOutcome(ValueStore candidate, TripleStore triples,
-			LmdbFilterOutcomeFeedbackDescriptor descriptor, BooleanSupplier adaptiveAllowed) {
+			LmdbFilterOutcomeFeedbackDescriptor descriptor, BooleanSupplier adaptiveAllowed,
+			LmdbFeedbackReadAuthority.Publication publication) {
 		return enabled() && candidate == owner && triples != null && triples == outcomeTripleOwner && descriptor != null
 				&& descriptor.ownerToken() == outcomeOwnerToken && descriptor.epoch() == triples.getDataRevision()
-						? new BoundOutcome(this, descriptor, triples, adaptiveAllowed)
+						? new BoundOutcome(this, descriptor, triples, adaptiveAllowed, publication)
 						: null;
 	}
 
 	private synchronized void recordBound(BoundOutcome handle, long passed, long rejected) {
+		handle.publication.publish(() -> recordBoundInScope(handle, passed, rejected));
+	}
+
+	private void recordBoundInScope(BoundOutcome handle, long passed, long rejected) {
 		LmdbFilterOutcomeFeedbackDescriptor descriptor = handle.descriptor;
-		if (!enabled() || handle.service != this || descriptor.ownerToken() != outcomeOwnerToken
+		if (!enabled() || !handle.adaptiveAllowed.getAsBoolean()
+				|| handle.service != this || descriptor.ownerToken() != outcomeOwnerToken
 				|| descriptor.epoch() != handle.triples.getDataRevision() || descriptor.epoch() < qualifiedEpoch
 				|| passed < 0L || rejected < 0L || passed == 0L && rejected == 0L) {
 			return;
@@ -219,7 +228,15 @@ final class LmdbLearnedFilterSelectivity {
 	}
 
 	synchronized void recordQualified(ValueStore candidate, long epoch, LmdbRuntimeFeedbackDescriptor descriptor,
-			Filter filter, EvaluationStatistics.FilterOutcomeObservation observation) {
+			Filter filter, EvaluationStatistics.FilterOutcomeObservation observation,
+			LmdbFeedbackReadAuthority.Publication publication) {
+		ReadPatternKey pattern = descriptor == null ? null
+				: legacyPatternKey(qualifiedPattern(filter, descriptor.exactFilterSurfaceKey()));
+		publication.publish(() -> recordQualifiedInScope(candidate, epoch, descriptor, pattern, observation));
+	}
+
+	private void recordQualifiedInScope(ValueStore candidate, long epoch, LmdbRuntimeFeedbackDescriptor descriptor,
+			ReadPatternKey pattern, EvaluationStatistics.FilterOutcomeObservation observation) {
 		if (!enabled() || candidate != owner || descriptor == null || observation == null
 				|| !observation.completed() || !observation.poisonReason().isEmpty()
 				|| observation.passedCount() < 0L || observation.filteredCount() < 0L
@@ -234,7 +251,7 @@ final class LmdbLearnedFilterSelectivity {
 				observation.passedCount(), observation.filteredCount());
 		accumulate(qualifiedGeneralized, legacyFilterKey(descriptor.generalizedFilterSurfaceKey()),
 				observation.passedCount(), observation.filteredCount());
-		accumulate(qualifiedPatterns, legacyPatternKey(qualifiedPattern(filter, descriptor.exactFilterSurfaceKey())),
+		accumulate(qualifiedPatterns, pattern,
 				observation.passedCount(), observation.filteredCount());
 		planningRevision++;
 	}

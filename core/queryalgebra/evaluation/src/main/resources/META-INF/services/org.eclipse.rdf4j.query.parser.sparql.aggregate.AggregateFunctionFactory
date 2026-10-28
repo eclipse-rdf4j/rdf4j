@@ -2,3 +2,13 @@ org.eclipse.rdf4j.query.algebra.evaluation.function.aggregate.stdev.PopulationSt
 org.eclipse.rdf4j.query.algebra.evaluation.function.aggregate.stdev.StandardDeviationAggregateFactory
 org.eclipse.rdf4j.query.algebra.evaluation.function.aggregate.variance.PopulationVarianceAggregateFactory
 org.eclipse.rdf4j.query.algebra.evaluation.function.aggregate.variance.VarianceAggregateFactory
+org.eclipse.rdf4j.query.algebra.evaluation.function.aggregate.ext.MedianAggregateFactory
+org.eclipse.rdf4j.query.algebra.evaluation.function.aggregate.ext.ModeAggregateFactory
+org.eclipse.rdf4j.query.algebra.evaluation.function.aggregate.ext.CountIfAggregateFactory
+org.eclipse.rdf4j.query.algebra.evaluation.function.aggregate.ext.BoolAndAggregateFactory
+org.eclipse.rdf4j.query.algebra.evaluation.function.aggregate.ext.BoolOrAggregateFactory
+org.eclipse.rdf4j.query.algebra.evaluation.function.aggregate.ext.FirstAggregateFactory
+org.eclipse.rdf4j.query.algebra.evaluation.function.aggregate.ext.LastAggregateFactory
+org.eclipse.rdf4j.query.algebra.evaluation.function.aggregate.ext.ApproxCountDistinctAggregateFactory
+org.eclipse.rdf4j.query.algebra.evaluation.function.aggregate.ext.HistogramAggregateFactory
+org.eclipse.rdf4j.query.algebra.evaluation.function.aggregate.ext.ArrayAggAggregateFactory

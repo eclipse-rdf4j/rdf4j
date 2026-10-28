@@ -17,6 +17,7 @@ const {
 	createSeededRepository,
 	deleteRepository,
 	openQueryPage,
+	postWorkbench,
 	serverBaseUrl,
 	setQueryEditor,
 	signInOnConnectionPage,
@@ -575,7 +576,7 @@ test('a Query page opened by Saved queries Edit whose scripts fail stays, saying
 		expect(new URL(page.url()).pathname).toMatch(/\/query$/);
 	} finally {
 		if (urn) {
-			await request.post(savedQueries, { form: { delete: urn } });
+			await postWorkbench(request, savedQueries, { form: { delete: urn } });
 		}
 	}
 });
@@ -707,7 +708,7 @@ test('a user whose credentials encode with "+" is the signed-in user everywhere 
 		expect(alerts).toEqual([]);
 	} finally {
 		if (urn) {
-			await page.request.post(savedQueries, { form: { delete: urn } });
+			await postWorkbench(page.request, savedQueries, { form: { delete: urn } });
 		}
 	}
 });

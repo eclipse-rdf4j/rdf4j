@@ -188,6 +188,21 @@ public interface QueryModelVisitor<X extends Exception> {
 
 	void meet(ZeroLengthPath node) throws X;
 
+	/** Visits a window operator; existing visitors retain their generic-node behavior. */
+	default void meet(Window node) throws X {
+		meetOther(node);
+	}
+
+	/** Visits a window element; existing visitors retain their generic-node behavior. */
+	default void meet(WindowElem node) throws X {
+		meetOther(node);
+	}
+
+	/** Visits a window function call; existing visitors retain their generic-node behavior. */
+	default void meet(WindowFunctionCall node) throws X {
+		meetOther(node);
+	}
+
 	/**
 	 * @implNote This temporary default method is only supplied as a stop-gap for backward compatibility. Concrete
 	 *           implementations are expected to override.

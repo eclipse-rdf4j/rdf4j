@@ -15,10 +15,13 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.ServerSocket;
+import java.net.URI;
 import java.net.URISyntaxException;
+import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.EnumSet;
+import java.util.Enumeration;
 import java.util.Map;
 import java.util.Properties;
 import java.util.function.LongSupplier;
@@ -86,8 +89,7 @@ public class TestServer {
 		SERVER_URL = serverUrl;
 		REPOSITORY_URL = Protocol.getRepositoryLocation(serverUrl, TEST_REPO_ID);
 
-		PropertiesReader reader = new PropertiesReader("maven-config.properties");
-		String webappDir = reader.getProperty("testserver.webapp.dir");
+		String webappDir = resolveWebappDirectory();
 		logger.debug("build path: {}", webappDir);
 
 		jetty = new Server();
@@ -259,19 +261,26 @@ public class TestServer {
 		manager.addRepositoryConfig(repConfig);
 	}
 
-	static class PropertiesReader {
-		private final Properties properties;
-
-		public PropertiesReader(String propertyFileName) throws IOException {
-			InputStream is = getClass().getClassLoader()
-					.getResourceAsStream(propertyFileName);
-			this.properties = new Properties();
-			this.properties.load(is);
+	private static String resolveWebappDirectory() throws IOException {
+		String configured = System.getProperty("testserver.webapp.dir");
+		if (configured != null && !configured.isBlank()) {
+			return configured;
 		}
-
-		public String getProperty(String propertyName) {
-			return this.properties.getProperty(propertyName);
+		// An empty test-resource placeholder can precede the Maven-generated project properties on the classpath.
+		Enumeration<URL> resources = TestServer.class.getClassLoader().getResources("maven-config.properties");
+		while (resources.hasMoreElements()) {
+			Properties properties = new Properties();
+			try (InputStream input = resources.nextElement().openStream()) {
+				properties.load(input);
+			}
+			configured = properties.getProperty("testserver.webapp.dir");
+			if (configured != null && !configured.isBlank()) {
+				return configured;
+			}
 		}
+		File testClasses = new File(
+				URI.create(TestServer.class.getProtectionDomain().getCodeSource().getLocation().toExternalForm()));
+		return new File(testClasses.getParentFile(), "rdf4j-server").getAbsolutePath();
 	}
 
 	private static int allocatePortAbove32768() throws IOException {

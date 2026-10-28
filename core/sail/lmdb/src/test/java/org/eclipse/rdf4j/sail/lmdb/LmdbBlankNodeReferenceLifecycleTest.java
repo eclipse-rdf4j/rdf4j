@@ -17,11 +17,13 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -90,7 +92,8 @@ class LmdbBlankNodeReferenceLifecycleTest {
 	void committedDeletionReclaimsTheReferenceAndAllowsExactReinsertion(@TempDir Path directory) throws Exception {
 		BNode expected = SimpleValueFactory.getInstance().createBNode(ID + "-reclaimed");
 		String queryText = "ASK { <_:" + expected.getID() + "> <urn:lifecycle:p> ?value }";
-		SailRepository repository = new SailRepository(new LmdbStore(directory.toFile()));
+		SailRepository repository = new SailRepository(
+				new LmdbStore(directory.toFile(), new LmdbStoreConfig("spoc,posc,ospc")));
 		repository.init();
 		try {
 			try (var reader = repository.getConnection(); var writer = repository.getConnection()) {
@@ -112,13 +115,20 @@ class LmdbBlankNodeReferenceLifecycleTest {
 			repository.shutDown();
 		}
 
-		SailRepository reopened = new SailRepository(new LmdbStore(directory.toFile()));
+		SailRepository reopened = new SailRepository(
+				new LmdbStore(directory.toFile(), new LmdbStoreConfig("spoc,posc,ospc")));
 		reopened.init();
 		try {
+			for (Thread helper : Thread.getAllStackTraces().keySet()) {
+				if (helper.getName().equals("LmdbStore-PostReady")) {
+					helper.join(TimeUnit.SECONDS.toMillis(10));
+					assertFalse(helper.isAlive(), "bounded post-ready reclamation must complete");
+				}
+			}
 			try (var connection = reopened.getConnection()) {
 				var dictionary = (ValueStore) reopened.getValueFactory();
 				assertEquals(LmdbValue.UNKNOWN_ID, dictionary.getId(expected, false),
-						"startup recovery must reclaim the deleted identity after its last snapshot closes");
+						"bounded post-ready recovery must reclaim the deleted identity after its last snapshot closes");
 				var ask = connection.prepareBooleanQuery(queryText);
 				assertFalse(ask.evaluate());
 				assertEquals(LmdbValue.UNKNOWN_ID, dictionary.getId(expected, false),

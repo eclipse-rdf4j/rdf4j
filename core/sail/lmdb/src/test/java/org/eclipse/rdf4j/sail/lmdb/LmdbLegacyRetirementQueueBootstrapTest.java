@@ -57,7 +57,7 @@ class LmdbLegacyRetirementQueueBootstrapTest {
 	}
 
 	@Test
-	void rebuildsLegacyRefCountVersionMarkerFromLiveOwners() throws Exception {
+	void explicitReconstructionReplacesLegacyCountsFromLiveOwners() throws Exception {
 		Path store = copyReleasedStore("legacy-ref-count-version");
 		createDatabasePrefix(store.resolve("values"), "ref_counts");
 		long subjectId = LmdbCompatibilityFixtures.findReferenceId(store, ValueIds.T_URI,
@@ -71,6 +71,11 @@ class LmdbLegacyRetirementQueueBootstrapTest {
 		LmdbCompatibilityFixtures.nativePut(store, "ref_counts", LmdbCompatibilityFixtures.idKey(namespaceId),
 				new byte[] { 99 });
 
+		assertUntrustedMarkerPreservesLiveOwners(store);
+		assertThat(LmdbCompatibilityFixtures.nativeGet(store, "ref_counts",
+				LmdbCompatibilityFixtures.idKey(namespaceId))).containsExactly(new byte[] { 99 });
+		LmdbStore.reconstructReferenceCountsOffline(store.toFile(),
+				new LmdbStoreConfig("spoc,posc").setLegacyReferenceCountRepairEnabled(true));
 		assertReadableWritableAndReopen(store, "legacy-ref-count-version", true);
 
 		assertThat(LmdbCompatibilityFixtures.nativeGet(store, "ref_counts",
@@ -91,20 +96,30 @@ class LmdbLegacyRetirementQueueBootstrapTest {
 				HexFormat.of().parseHex(encoded));
 
 		assertRejectedWithoutMutation(store, "Unsupported ValueStore ref-count metadata schema");
+		assertThat(LmdbCompatibilityFixtures.nativeGet(store, "ref_counts", new byte[] { 0 }))
+				.isEqualTo(HexFormat.of().parseHex(encoded));
 	}
 
 	@Test
 	void rejectsHistoricalRefCountMarkerInCurrentFormatWithoutMutation() throws Exception {
 		Path storeDirectory = directory.resolve("current-format-old-marker");
 		LmdbStore store = newStore(storeDirectory);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
 		try {
-			store.init();
+			try (RepositoryConnection connection = repository.getConnection()) {
+				var values = SimpleValueFactory.getInstance();
+				connection.add(values.createIRI(BOOTSTRAP_SUBJECT), values.createIRI(BOOTSTRAP_PREDICATE),
+						values.createLiteral(BOOTSTRAP_OBJECT));
+			}
 		} finally {
-			store.shutDown();
+			repository.shutDown();
 		}
 		LmdbCompatibilityFixtures.nativePut(storeDirectory, "ref_counts", new byte[] { 0 }, new byte[] { 1 });
 
 		assertRejectedWithoutMutation(storeDirectory, "Unsupported ValueStore ref-count metadata schema");
+		assertThat(LmdbCompatibilityFixtures.nativeGet(storeDirectory, "ref_counts", new byte[] { 0 }))
+				.containsExactly((byte) 1);
 	}
 
 	@Test
@@ -219,6 +234,31 @@ class LmdbLegacyRetirementQueueBootstrapTest {
 
 	private static void assertRejectedWithoutMutation(Path storeDirectory, String message) throws Exception {
 		assertRejectedWithoutMutation(storeDirectory, failure -> assertThat(failure).hasRootCauseMessage(message));
+	}
+
+	private static void assertUntrustedMarkerPreservesLiveOwners(Path storeDirectory) throws Exception {
+		long originalId = LmdbCompatibilityFixtures.findReferenceId(storeDirectory, ValueIds.T_URI,
+				"subject".getBytes(StandardCharsets.UTF_8));
+		byte[] originalPayload = LmdbCompatibilityFixtures.nativeGet(storeDirectory, null,
+				LmdbCompatibilityFixtures.idKey(originalId));
+		byte[] originalCount = LmdbCompatibilityFixtures.nativeGet(storeDirectory, "ref_counts",
+				LmdbCompatibilityFixtures.idKey(originalId));
+		LmdbStore store = newStore(storeDirectory);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try (RepositoryConnection connection = repository.getConnection()) {
+			assertThat(store.getStartupStatus().exactReferenceCounts()).isFalse();
+			assertThat(store.getStartupStatus().referenceCountVerificationPending()).isTrue();
+			var values = SimpleValueFactory.getInstance();
+			assertThat(connection.hasStatement(values.createIRI(BOOTSTRAP_SUBJECT),
+					values.createIRI(BOOTSTRAP_PREDICATE), values.createLiteral(BOOTSTRAP_OBJECT), false)).isTrue();
+		} finally {
+			repository.shutDown();
+		}
+		assertThat(LmdbCompatibilityFixtures.nativeGet(storeDirectory, null,
+				LmdbCompatibilityFixtures.idKey(originalId))).containsExactly(originalPayload);
+		assertThat(LmdbCompatibilityFixtures.nativeGet(storeDirectory, "ref_counts",
+				LmdbCompatibilityFixtures.idKey(originalId))).isEqualTo(originalCount);
 	}
 
 	private static void assertRejectedWithoutMutationWithCauseMessage(Path storeDirectory, String message)

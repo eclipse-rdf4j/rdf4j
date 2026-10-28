@@ -116,6 +116,7 @@ class LmdbPreparedDomainCompositionTest {
 				assertEquals(0, triples.globalCalls);
 			}
 			assertRows(backing, Set.copyOf(rows));
+			LmdbTestUtil.awaitPostReadyInitialization(store, 30, java.util.concurrent.TimeUnit.SECONDS);
 			assertDomains(backing, count, true, mixed);
 			// Duplicate physical input must not widen a guarantee or introduce another statement.
 			try (SailSink sink = backing.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED)) {
@@ -134,6 +135,7 @@ class LmdbPreparedDomainCompositionTest {
 		try {
 			LmdbSailStore backing = store.getBackingStore();
 			assertRows(backing, Set.copyOf(rows));
+			LmdbTestUtil.awaitPostReadyInitialization(store, 30, java.util.concurrent.TimeUnit.SECONDS);
 			assertDomains(backing, count, true, mixed);
 			try (SailSink aborted = backing.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED)) {
 				aborted.approve(VF.createIRI("urn:prepared-domain:aborted"), INTEGERS,
@@ -157,6 +159,7 @@ class LmdbPreparedDomainCompositionTest {
 		store.init();
 		try {
 			assertRows(store.getBackingStore(), Set.copyOf(rows));
+			LmdbTestUtil.awaitPostReadyInitialization(store, 30, java.util.concurrent.TimeUnit.SECONDS);
 			assertDomains(store.getBackingStore(), count, false, mixed);
 		} finally {
 			store.shutDown();
@@ -200,13 +203,24 @@ class LmdbPreparedDomainCompositionTest {
 	}
 
 	private static RdfTermDomain domain(LmdbSailStore backing, IRI predicate) throws Exception {
-		RdfTermDomain cached = backing.getCachedRdfTermDomain(predicate).orElseThrow();
-		assertEquals(cached, backing.getPersistedRdfTermDomain(predicate).orElseThrow(),
-				"heap and durable domains agree");
-		LmdbPredicateObjectDomainSource planner = (LmdbPredicateObjectDomainSource) backing.getEvaluationStatistics();
-		assertEquals(cached, planner.getKnownRdfTermDomain(predicate).orElseThrow(),
-				"real planner sees the committed domain");
-		return cached;
+		LmdbEstimatorRuntime runtime = ((LmdbEvaluationStatistics) backing.getEvaluationStatistics())
+				.estimatorRuntime();
+		try (LmdbSailStore.DatasetAdmission admission = backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ,
+				null)) {
+			LmdbSailStore.ReadView view = admission.view();
+			view.requireDictionaryTermSnapshot();
+			try (TripleStore.PlanningReadPin ignored = runtime.pinPlanningReads(view.tripleTxn(),
+					view.valueSnapshot())) {
+				RdfTermDomain cached = backing.getCachedRdfTermDomain(predicate).orElseThrow();
+				assertEquals(cached, backing.getPersistedRdfTermDomain(predicate).orElseThrow(),
+						"heap and durable domains agree");
+				LmdbPredicateObjectDomainSource planner = (LmdbPredicateObjectDomainSource) backing
+						.getEvaluationStatistics();
+				assertEquals(cached, planner.getKnownRdfTermDomain(predicate).orElseThrow(),
+						"real planner sees the committed domain");
+				return cached;
+			}
+		}
 	}
 
 	private static void assertRows(LmdbSailStore backing, Set<Statement> expected) {

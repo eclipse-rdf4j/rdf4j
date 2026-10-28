@@ -34,13 +34,13 @@ jobs:
             ${{ runner.os }}-m2-repo-
 
       - name: Validate formatting configuration
-        run: mvn -B -T 2C -Dmaven.repo.local=.m2_repo spotless:check
+        run: mvn -B -T 2C -Dmaven.repo.local=.m2_repo spotless:check --fail-at-end
 
       - name: Quick compile (skip tests)
-        run: mvn -B -T 2C -Dmaven.repo.local=.m2_repo compile -DskipTests -Pquick
+        run: mvn -B -T 2C -Dmaven.repo.local=.m2_repo compile --fail-at-end -DskipTests -Pquick
 
       - name: Download Maven dependencies for offline use
-        run: mvn -B -T 2C -Dmaven.repo.local=.m2_repo dependency:go-offline
+        run: mvn -B -T 2C -Dmaven.repo.local=.m2_repo dependency:go-offline --fail-at-end
 
       - name: Maven install (skip tests)
-        run: mvn -B -Dmaven.repo.local=.m2_repo install -DskipTests -Pquick
+        run: mvn -B -Dmaven.repo.local=.m2_repo install --fail-at-end -DskipTests -Pquick

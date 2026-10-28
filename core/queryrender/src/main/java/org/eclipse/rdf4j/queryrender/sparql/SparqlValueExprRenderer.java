@@ -15,6 +15,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
+import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BinaryValueOperator;
@@ -249,6 +250,30 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 
 		boolean aFirst = true;
 		for (ValueExpr aArg : theOp.getArgs()) {
+			if (!aFirst) {
+				mBuffer.append(", ");
+			} else {
+				aFirst = false;
+			}
+
+			aArg.visit(this);
+		}
+		mBuffer.append(")");
+	}
+
+	/**
+	 * Renders a custom aggregate as {@code <iri>(DISTINCT arg, ...)}; the IRI is kept absolute so the call re-parses
+	 * without relying on the prologue.
+	 */
+	@Override
+	public void meet(AggregateFunctionCall theOp) throws Exception {
+		mBuffer.append("<").append(theOp.getIRI()).append(">(");
+		if (theOp.isDistinct()) {
+			mBuffer.append("DISTINCT ");
+		}
+
+		boolean aFirst = true;
+		for (ValueExpr aArg : theOp.getArguments()) {
 			if (!aFirst) {
 				mBuffer.append(", ");
 			} else {

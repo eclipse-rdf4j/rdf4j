@@ -74,6 +74,8 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.estimation.EstimatorPersistenceLocation;
+import org.eclipse.rdf4j.sail.lmdb.estimation.EstimatorSidecar;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.eclipse.rdf4j.sail.lmdb.sketch.PatternFilterSampleEstimate;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchFootprint;
@@ -109,6 +111,10 @@ class LmdbFilterSelectivityStats
 	private final ValueStore valueStore;
 	private final Path sidecarPath;
 	private final Path coldSynopsisPath;
+	private final EstimatorSidecar alternateFilterSlot;
+	private final EstimatorSidecar alternateColdSlot;
+	private boolean alternateFilterFailureLogged;
+	private boolean alternateColdFailureLogged;
 	private final Supplier<SketchSnapshotIdentity> snapshotIdentitySupplier;
 	private final LongSupplier statementMutationStampSupplier;
 	private final boolean adaptiveEvidenceAllowed;
@@ -209,10 +215,26 @@ class LmdbFilterSelectivityStats
 			boolean backgroundRawSamplingEnabled,
 			Supplier<SketchSnapshotIdentity> snapshotIdentitySupplier, int coldSynopsisCapacity,
 			BooleanSupplier adaptiveEvidenceAllowedSupplier, LongSupplier statementMutationStampSupplier) {
-		Objects.requireNonNull(estimatorPath, "estimatorPath");
-		this.sidecarPath = estimatorPath.resolveSibling(estimatorPath.getFileName().toString() + SIDECAR_SUFFIX);
-		this.coldSynopsisPath = estimatorPath.resolveSibling(
-				estimatorPath.getFileName().toString() + COLD_SYNOPSIS_SUFFIX);
+		this(estimatorPath, tripleStore, valueStore, optimizerSamplingEnabled, optimizerSamplingMaxMillis,
+				optimizerSamplingMaxRows, backgroundRawSamplingEnabled, snapshotIdentitySupplier, coldSynopsisCapacity,
+				adaptiveEvidenceAllowedSupplier, statementMutationStampSupplier, null);
+	}
+
+	LmdbFilterSelectivityStats(Path estimatorPath, TripleStore tripleStore, ValueStore valueStore,
+			boolean optimizerSamplingEnabled, long optimizerSamplingMaxMillis, int optimizerSamplingMaxRows,
+			boolean backgroundRawSamplingEnabled,
+			Supplier<SketchSnapshotIdentity> snapshotIdentitySupplier, int coldSynopsisCapacity,
+			BooleanSupplier adaptiveEvidenceAllowedSupplier, LongSupplier statementMutationStampSupplier,
+			EstimatorPersistenceLocation alternateLocation) {
+		this.sidecarPath = estimatorPath == null ? null
+				: estimatorPath.resolveSibling(estimatorPath.getFileName().toString() + SIDECAR_SUFFIX);
+		this.coldSynopsisPath = estimatorPath == null ? null
+				: estimatorPath.resolveSibling(
+						estimatorPath.getFileName().toString() + COLD_SYNOPSIS_SUFFIX);
+		this.alternateFilterSlot = alternateLocation == null ? null
+				: new EstimatorSidecar(alternateLocation, estimatorPath, EstimatorSidecar.Channel.FILTER);
+		this.alternateColdSlot = alternateLocation == null ? null
+				: new EstimatorSidecar(alternateLocation, estimatorPath, EstimatorSidecar.Channel.COLD);
 		this.snapshotIdentitySupplier = Objects.requireNonNull(snapshotIdentitySupplier, "snapshotIdentitySupplier");
 		this.statementMutationStampSupplier = Objects.requireNonNull(statementMutationStampSupplier,
 				"statementMutationStampSupplier");
@@ -409,6 +431,20 @@ class LmdbFilterSelectivityStats
 		recordFilterOutcome(key, filterKey, filterTemplateKey, passedCount, filteredCount, true);
 	}
 
+	private record PreparedFilterOutcome(FilterSurfaceKey exact, FilterSurfaceKey generalized,
+			PatternKey pattern, String filter, String template) {
+	}
+
+	synchronized void recordFilterOutcome(Filter filter, long passedCount, long filteredCount,
+			LmdbFeedbackReadAuthority.Publication publication) {
+		publication.publishPrepared(() -> {
+			StatementPattern legacyPattern = filter == null ? null
+					: LmdbEstimatorExpressionSupport.basePattern(filter.getArg());
+			PreparedFilterOutcome prepared = prepareFilterOutcome(filter, legacyPattern, passedCount, filteredCount);
+			return prepared == null ? null : () -> recordPreparedFilterOutcome(prepared, passedCount, filteredCount);
+		}, () -> recordFilterOutcome(filter, passedCount, filteredCount));
+	}
+
 	synchronized void recordFilterOutcome(Filter filter, long passedCount, long filteredCount) {
 		StatementPattern legacyPattern = filter == null ? null
 				: LmdbEstimatorExpressionSupport.basePattern(filter.getArg());
@@ -417,13 +453,31 @@ class LmdbFilterSelectivityStats
 
 	synchronized void recordFilterOutcome(Filter filter, StatementPattern legacyPattern, long passedCount,
 			long filteredCount) {
+		PreparedFilterOutcome prepared = prepareFilterOutcome(filter, legacyPattern, passedCount, filteredCount);
+		if (prepared != null) {
+			recordPreparedFilterOutcome(prepared, passedCount, filteredCount);
+		}
+	}
+
+	private PreparedFilterOutcome prepareFilterOutcome(Filter filter, StatementPattern legacyPattern,
+			long passedCount, long filteredCount) {
 		if (!adaptiveEvidenceAllowed() || !LmdbPlanningGraphEvidence.allows(filter) || filter.getCondition() == null
 				|| (passedCount <= 0L && filteredCount <= 0L)) {
-			return;
+			return null;
 		}
-		boolean changed = false;
 		FilterSurfaceKey exact = exactSurfaceKey(filter);
 		FilterSurfaceKey generalized = generalizedSurfaceKey(filter);
+		PatternKey pattern = FilterSelectivityKeys.patternKeyFor(legacyPattern);
+		String key = pattern == null ? null : FilterSelectivityKeys.filterKeyFor(filter.getCondition());
+		String template = pattern == null ? null
+				: FilterSelectivityKeys.filterTemplateKeyFor(filter.getCondition(), legacyPattern);
+		return new PreparedFilterOutcome(exact, generalized, pattern, key, template);
+	}
+
+	private void recordPreparedFilterOutcome(PreparedFilterOutcome prepared, long passedCount, long filteredCount) {
+		boolean changed = false;
+		FilterSurfaceKey exact = prepared.exact();
+		FilterSurfaceKey generalized = prepared.generalized();
 		if (reserveLearnedSurfaceCells(exact, generalized)) {
 			if (exact != null) {
 				learnedSurfaceCell(exact).add(passedCount, filteredCount);
@@ -434,18 +488,14 @@ class LmdbFilterSelectivityStats
 				changed = true;
 			}
 		}
-		PatternKey patternKey = FilterSelectivityKeys.patternKeyFor(legacyPattern);
-		if (patternKey != null) {
-			changed |= addLegacyFilterOutcome(patternKey,
-					FilterSelectivityKeys.filterKeyFor(filter.getCondition()),
-					FilterSelectivityKeys.filterTemplateKeyFor(filter.getCondition(), legacyPattern),
+		if (prepared.pattern() != null) {
+			changed |= addLegacyFilterOutcome(prepared.pattern(), prepared.filter(), prepared.template(),
 					passedCount, filteredCount, true);
 		}
-		if (!changed) {
-			return;
+		if (changed) {
+			dirty = true;
+			planningRevision++;
 		}
-		dirty = true;
-		planningRevision++;
 	}
 
 	synchronized void recordFilterOutcome(PatternKey key, String filterKey, String filterTemplateKey,
@@ -1086,31 +1136,21 @@ class LmdbFilterSelectivityStats
 	}
 
 	private boolean persistFilterSidecar(SketchSnapshotIdentity snapshotIdentity) {
+		if (sidecarPath == null) {
+			return false;
+		}
+		if (alternateFilterSlot != null) {
+			try {
+				alternateFilterSlot.write(out -> writeFilterPayload(out, snapshotIdentity));
+				return true;
+			} catch (IOException e) {
+				logAlternateFilterFailure(e);
+				return false;
+			}
+		}
 		Path tempPath = sidecarPath.resolveSibling(sidecarPath.getFileName().toString() + ".tmp");
 		try (DataOutputStream out = new DataOutputStream(Files.newOutputStream(tempPath))) {
-			out.writeInt(PERSIST_VERSION);
-			snapshotIdentity.writeTo(out);
-			out.writeLong(appliedStatementMutationStamp);
-			out.writeInt(learnedByFilter.size());
-			for (var entry : learnedByFilter.entrySet()) {
-				entry.getKey().writeTo(out);
-				entry.getValue().writeTo(out);
-			}
-			out.writeInt(learnedByTemplate.size());
-			for (var entry : learnedByTemplate.entrySet()) {
-				entry.getKey().writeTo(out);
-				entry.getValue().writeTo(out);
-			}
-			out.writeInt(sampledByFilter.size());
-			for (var entry : sampledByFilter.entrySet()) {
-				entry.getKey().writeTo(out);
-				entry.getValue().writeTo(out);
-			}
-			out.writeInt(learnedBySurface.size());
-			for (var entry : learnedBySurface.entrySet()) {
-				entry.getKey().writeTo(out);
-				entry.getValue().writeTo(out);
-			}
+			writeFilterPayload(out, snapshotIdentity);
 		} catch (IOException e) {
 			try {
 				Files.deleteIfExists(tempPath);
@@ -1122,7 +1162,50 @@ class LmdbFilterSelectivityStats
 		return replaceAtomically(tempPath, sidecarPath);
 	}
 
+	private void writeFilterPayload(DataOutputStream out, SketchSnapshotIdentity snapshotIdentity) throws IOException {
+		out.writeInt(PERSIST_VERSION);
+		snapshotIdentity.writeTo(out);
+		out.writeLong(appliedStatementMutationStamp);
+		out.writeInt(learnedByFilter.size());
+		for (var entry : learnedByFilter.entrySet()) {
+			entry.getKey().writeTo(out);
+			entry.getValue().writeTo(out);
+		}
+		out.writeInt(learnedByTemplate.size());
+		for (var entry : learnedByTemplate.entrySet()) {
+			entry.getKey().writeTo(out);
+			entry.getValue().writeTo(out);
+		}
+		out.writeInt(sampledByFilter.size());
+		for (var entry : sampledByFilter.entrySet()) {
+			entry.getKey().writeTo(out);
+			entry.getValue().writeTo(out);
+		}
+		out.writeInt(learnedBySurface.size());
+		for (var entry : learnedBySurface.entrySet()) {
+			entry.getKey().writeTo(out);
+			entry.getValue().writeTo(out);
+		}
+	}
+
+	private void logAlternateFilterFailure(IOException failure) {
+		if (!alternateFilterFailureLogged) {
+			alternateFilterFailureLogged = true;
+			logger.warn("Filter sidecar persistence is unavailable; observations remain in memory", failure);
+		}
+	}
+
+	private void logAlternateColdFailure(IOException failure) {
+		if (!alternateColdFailureLogged) {
+			alternateColdFailureLogged = true;
+			logger.warn("Cold filter sidecar persistence is unavailable", failure);
+		}
+	}
+
 	private boolean persistColdSynopsis(SketchSnapshotIdentity snapshotIdentity) {
+		if (coldSynopsisPath == null) {
+			return false;
+		}
 		if (coldSynopsis == null || coldSynopsisMutationVersion != snapshotIdentity.mutationVersion()
 				|| coldSynopsisStatementMutationStamp != appliedStatementMutationStamp) {
 			coldSynopsis = null;
@@ -1130,6 +1213,16 @@ class LmdbFilterSelectivityStats
 			coldSynopsisStatementMutationStamp = -1L;
 			deleteColdSynopsisSidecar();
 			return true;
+		}
+		if (alternateColdSlot != null) {
+			try {
+				byte[] serialized = coldSynopsis.serialize(snapshotIdentity, coldSynopsisStatementMutationStamp);
+				alternateColdSlot.write(out -> out.write(serialized));
+				return true;
+			} catch (IOException e) {
+				logAlternateColdFailure(e);
+				return false;
+			}
 		}
 
 		Path tempPath = coldSynopsisPath.resolveSibling(coldSynopsisPath.getFileName().toString() + ".tmp");
@@ -1167,6 +1260,17 @@ class LmdbFilterSelectivityStats
 	}
 
 	private void deleteColdSynopsisSidecar() {
+		if (coldSynopsisPath == null) {
+			return;
+		}
+		if (alternateColdSlot != null) {
+			try {
+				alternateColdSlot.deleteIfOwned();
+			} catch (IOException e) {
+				logAlternateColdFailure(e);
+			}
+			return;
+		}
 		try {
 			Files.deleteIfExists(coldSynopsisPath);
 			Files.deleteIfExists(coldSynopsisPath.resolveSibling(coldSynopsisPath.getFileName().toString() + ".tmp"));
@@ -1176,13 +1280,23 @@ class LmdbFilterSelectivityStats
 	}
 
 	private void loadIfPresent() {
-		if (!Files.isRegularFile(sidecarPath)) {
+		if (sidecarPath == null || (alternateFilterSlot == null && !Files.isRegularFile(sidecarPath))) {
 			return;
 		}
 
 		SketchSnapshotIdentity currentIdentity = currentSnapshotIdentity();
 		if (currentIdentity == null) {
 			return;
+		}
+		if (alternateFilterSlot != null) {
+			try {
+				if (!verifyCurrentFilterEnvelope(currentIdentity)) {
+					return;
+				}
+			} catch (IOException e) {
+				logAlternateFilterFailure(e);
+				return;
+			}
 		}
 
 		Map<PatternFilterKey, LearnedCounts> loadedLearned = new HashMap<>();
@@ -1192,7 +1306,13 @@ class LmdbFilterSelectivityStats
 		Map<FilterSurfaceKey, LearnedCounts> loadedSurfaces = new HashMap<>();
 
 		int persistedVersion;
-		try (DataInputStream in = new DataInputStream(Files.newInputStream(sidecarPath))) {
+		try (EstimatorSidecar.Payload envelope = alternateFilterSlot == null ? null : alternateFilterSlot.open();
+				DataInputStream in = alternateFilterSlot == null
+						? new DataInputStream(Files.newInputStream(sidecarPath))
+						: envelope == null ? null : envelope.input()) {
+			if (in == null) {
+				return;
+			}
 			persistedVersion = in.readInt();
 			if (persistedVersion != PERSIST_VERSION) {
 				return;
@@ -1250,7 +1370,13 @@ class LmdbFilterSelectivityStats
 					loadedSurfaces.put(key, counts);
 				}
 			}
+			if (envelope != null) {
+				envelope.verify();
+			}
 		} catch (IOException | RuntimeException e) {
+			if (alternateFilterSlot != null) {
+				logAlternateFilterFailure(e instanceof IOException io ? io : new IOException(e));
+			}
 			return;
 		}
 
@@ -1269,8 +1395,27 @@ class LmdbFilterSelectivityStats
 		}
 	}
 
+	private boolean verifyCurrentFilterEnvelope(SketchSnapshotIdentity identity) throws IOException {
+		try (EstimatorSidecar.Payload envelope = alternateFilterSlot.open()) {
+			if (envelope == null) {
+				return false;
+			}
+			DataInputStream header = envelope.input();
+			if (header.readInt() != PERSIST_VERSION || !SketchSnapshotIdentity.readFrom(header).equals(identity)) {
+				return false;
+			}
+			long stamp = header.readLong();
+			if (sidecarDataStampCheckEnabled() && stamp != appliedStatementMutationStamp) {
+				return false;
+			}
+			envelope.verifyAll();
+			return true;
+		}
+	}
+
 	private void loadColdSynopsisIfPresent() {
-		if (coldSynopsisCapacity <= 0 || !Files.isRegularFile(coldSynopsisPath)) {
+		if (coldSynopsisCapacity <= 0 || coldSynopsisPath == null
+				|| (alternateColdSlot == null && !Files.isRegularFile(coldSynopsisPath))) {
 			return;
 		}
 		SketchSnapshotIdentity identity = currentSnapshotIdentity();
@@ -1278,11 +1423,24 @@ class LmdbFilterSelectivityStats
 			return;
 		}
 		try {
-			long length = Files.size(coldSynopsisPath);
-			if (length < 0L || length > ColdFilterSynopsis.maxSerializedBytes(coldSynopsisCapacity)) {
-				return;
+			byte[] serialized;
+			if (alternateColdSlot != null) {
+				try (EstimatorSidecar.Payload envelope = alternateColdSlot.open()) {
+					if (envelope == null
+							|| envelope.payloadLength() > ColdFilterSynopsis.maxSerializedBytes(coldSynopsisCapacity)) {
+						return;
+					}
+					serialized = envelope.input().readNBytes((int) envelope.payloadLength());
+					envelope.verify();
+				}
+			} else {
+				long length = Files.size(coldSynopsisPath);
+				if (length < 0L || length > ColdFilterSynopsis.maxSerializedBytes(coldSynopsisCapacity)) {
+					return;
+				}
+				serialized = Files.readAllBytes(coldSynopsisPath);
 			}
-			ColdFilterSynopsis loaded = ColdFilterSynopsis.deserialize(Files.readAllBytes(coldSynopsisPath), identity,
+			ColdFilterSynopsis loaded = ColdFilterSynopsis.deserialize(serialized, identity,
 					appliedStatementMutationStamp, coldSynopsisCapacity);
 			synchronized (this) {
 				coldSynopsis = loaded;
@@ -1427,12 +1585,14 @@ class LmdbFilterSelectivityStats
 		if (remainingNanos <= 0L) {
 			return null;
 		}
-		boolean needsLocalDeadline = callerDeadline == null
-				|| remainingNanos < TimeUnit.MILLISECONDS.toNanos(callerDeadline.remainingMillis());
 		long remainingMillis = TimeUnit.NANOSECONDS.toMillis(remainingNanos);
 		if (TimeUnit.MILLISECONDS.toNanos(remainingMillis) < remainingNanos) {
 			remainingMillis++;
 		}
+		// Compare absolute deadlines. The clock read belongs to the local sampling budget; the caller's query
+		// deadline is never sized from a clock.
+		boolean needsLocalDeadline = callerDeadline == null
+				|| System.currentTimeMillis() + remainingMillis < callerDeadline.deadlineMillis();
 		QueryExecutionDeadline localDeadline = needsLocalDeadline
 				? QueryExecutionDeadline.start(remainingMillis)
 				: null;
@@ -1563,7 +1723,7 @@ class LmdbFilterSelectivityStats
 		}
 
 		if (!stratifiedDelivered) {
-			StatementOrder samplingOrder = completePopulation ? null : samplingOrder(candidate);
+			StatementOrder samplingOrder = completePopulation ? null : samplingOrder(planningTxn, candidate);
 			if (!completePopulation && samplingOrder == null) {
 				return null;
 			}
@@ -2018,12 +2178,14 @@ class LmdbFilterSelectivityStats
 		return true;
 	}
 
-	private StatementOrder samplingOrder(SamplingCandidate candidate) {
+	private StatementOrder samplingOrder(Txn planningTxn, SamplingCandidate candidate) {
 		Set<String> filteredBindings = VarNameCollector.process(candidate.condition);
-		Set<StatementOrder> supportedOrders = tripleStore.getSupportedOrders(candidate.subjId, candidate.predId,
+		Set<StatementOrder> supportedOrders = tripleStore.getSupportedOrders(planningTxn, candidate.subjId,
+				candidate.predId,
 				candidate.objId, candidate.contextId);
 		StatementOrder defaultOrder = firstVaryingOrder(
-				tripleStore.getIndexName(candidate.subjId, candidate.predId, candidate.objId, candidate.contextId),
+				tripleStore.getIndexName(planningTxn, candidate.subjId, candidate.predId, candidate.objId,
+						candidate.contextId),
 				candidate.pattern);
 		if (isOrderIndependentOfFilter(defaultOrder, candidate.pattern, filteredBindings)
 				&& supportedOrders.contains(defaultOrder)) {

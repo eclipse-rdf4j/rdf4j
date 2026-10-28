@@ -179,6 +179,20 @@ public final class DomainQualificationAssertions {
 	private static void assertDomains(LmdbStore store, LmdbStoreConfig config, Set<Statement> rows,
 			List<IRI> predicates, boolean canonicalComplete, String phase) throws IOException {
 		LmdbSailStore backing = store.getBackingStore();
+		LmdbEstimatorRuntime runtime = assertInstanceOf(LmdbEvaluationStatistics.class,
+				store.getSailStore().getEvaluationStatistics()).estimatorRuntime();
+		try (LmdbSailStore.DatasetAdmission admission = backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ,
+				null)) {
+			LmdbSailStore.ReadView view = admission.view();
+			view.requireDictionaryTermSnapshot();
+			try (TripleStore.PlanningReadPin ignored = runtime.pinPlanningReads(view.tripleTxn(), view.valueSnapshot())) {
+				assertDomainsInView(backing, config, rows, predicates, canonicalComplete, phase);
+			}
+		}
+	}
+
+	private static void assertDomainsInView(LmdbSailStore backing, LmdbStoreConfig config, Set<Statement> rows,
+			List<IRI> predicates, boolean canonicalComplete, String phase) throws IOException {
 		ValueStore values = (ValueStore) backing.getValueFactory();
 		String served = backing.getTripleStore().effectiveRdfTermDomainsVersion();
 		boolean readable = !served.endsWith("-disabled") && !served.endsWith("-unreadable");

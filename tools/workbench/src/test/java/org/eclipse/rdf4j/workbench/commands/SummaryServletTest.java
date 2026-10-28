@@ -20,6 +20,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
@@ -73,12 +74,22 @@ class SummaryServletTest {
 				.contains("config:rep.impl [")
 				.contains("config:sail.impl [")
 				.contains("config:mem.persist true")
+				.doesNotContain("private-password-marker")
 				.doesNotContain("_:");
 	}
 
 	private static RepositoryConfig repositoryConfig() {
 		MemoryStoreConfig memoryStoreConfig = new MemoryStoreConfig(true, 123L);
-		return new RepositoryConfig("memory", "Memory repo", new SailRepositoryConfig(memoryStoreConfig));
+		return new RepositoryConfig("memory", "Memory repo", new SailRepositoryConfig(memoryStoreConfig)) {
+			@Override
+			public void export(Model model, Resource repositoryNode) {
+				super.export(model, repositoryNode);
+				model.add(repositoryNode, SimpleValueFactory.getInstance()
+						.createIRI(
+								"tag:rdf4j.org,2023:config/lucene.elasticsearch.http.password"),
+						SimpleValueFactory.getInstance().createLiteral("private-password-marker"));
+			}
+		};
 	}
 
 	private static RepositoryResult<Resource> repositoryResultOf(Resource... resources) {

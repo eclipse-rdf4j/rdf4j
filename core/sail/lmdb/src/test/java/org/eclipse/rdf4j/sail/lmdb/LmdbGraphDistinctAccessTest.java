@@ -27,6 +27,7 @@ import java.io.File;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
@@ -586,15 +587,15 @@ class LmdbGraphDistinctAccessTest {
 		private final LmdbStore store;
 		private final SailRepository repository;
 
-		Fixture(File directory, String indexes) {
+		Fixture(File directory, String indexes) throws Exception {
 			this(directory, indexes, true);
 		}
 
-		Fixture(File directory, String indexes, boolean sketches) {
+		Fixture(File directory, String indexes, boolean sketches) throws Exception {
 			this(directory, indexes, sketches, sketches ? 256 : 0);
 		}
 
-		Fixture(File directory, String indexes, boolean sketches, int coldWitnesses) {
+		Fixture(File directory, String indexes, boolean sketches, int coldWitnesses) throws Exception {
 			store = new LmdbStore(directory, new LmdbStoreConfig(indexes)
 					.setSketchEstimatorEnabled(sketches)
 					.setSketchEstimatorColdSynopsisCapacity(coldWitnesses)
@@ -604,6 +605,18 @@ class LmdbGraphDistinctAccessTest {
 			}
 			repository = new SailRepository(store);
 			repository.init();
+			try {
+				LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
+			} catch (Exception | Error failure) {
+				try {
+					repository.shutDown();
+				} catch (RuntimeException | Error cleanup) {
+					if (failure != cleanup) {
+						failure.addSuppressed(cleanup);
+					}
+				}
+				throw failure;
+			}
 			if (sketches) {
 				assertSketchFixtureProfile(store);
 				store.getBackingStore().getSketchBasedJoinEstimator().stop();
@@ -633,6 +646,8 @@ class LmdbGraphDistinctAccessTest {
 			}
 			if (store.getBackingStore().getSketchBasedJoinEstimator() != null) {
 				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+				assertTrue(store.getBackingStore().getSketchBasedJoinEstimator().isReadyNonBlocking(),
+						"the explicitly rebuilt synopsis must be ready before selecting access");
 			}
 		}
 

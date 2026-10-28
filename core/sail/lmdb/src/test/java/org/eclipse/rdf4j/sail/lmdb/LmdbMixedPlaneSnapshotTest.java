@@ -238,6 +238,7 @@ class LmdbMixedPlaneSnapshotTest {
 		Future<Integer> pendingRead = null;
 		Future<?> pendingClose = null;
 		try (SailConnection previous = store.getConnection(); SailConnection next = store.getConnection()) {
+			LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
 			TxnManager triples = store.getBackingStore().getTripleStore().getTxnManager();
 			if (level != IsolationLevels.NONE) {
 				previous.begin(level);
@@ -373,13 +374,14 @@ class LmdbMixedPlaneSnapshotTest {
 	}
 
 	@Test
-	void failedSecondSourceAcquisitionReleasesBothPhysicalReaderFamilies(@TempDir File directory) {
+	void failedSecondSourceAcquisitionReleasesBothPhysicalReaderFamilies(@TempDir File directory) throws Exception {
 		String previousPinning = System.getProperty(PINNING_PROPERTY);
 		System.setProperty(PINNING_PROPERTY, "true");
 		InterleavingGate gate = new InterleavingGate();
 		LmdbStore store = new InterleavingLmdbStore(directory, gate);
 		store.init();
 		try (SailConnection reader = store.getConnection()) {
+			LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
 			TxnManager triples = store.getBackingStore().getTripleStore().getTxnManager();
 			TxnManager dictionary = ((ValueStore) store.getValueFactory()).getTxnManager();
 			int availableTriples = triples.availableReadTxnSlots(TxnManager.POOL_SIZE, 0);

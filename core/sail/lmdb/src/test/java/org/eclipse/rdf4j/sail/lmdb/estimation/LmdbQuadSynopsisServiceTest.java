@@ -16,17 +16,22 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -36,13 +41,16 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.AbstractStatement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.lmdb.DerivedStateBuildExecutor;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchRebuildObserver;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchStatementSource;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class LmdbQuadSynopsisServiceTest {
@@ -50,7 +58,7 @@ class LmdbQuadSynopsisServiceTest {
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 	private static final IRI P = VF.createIRI("urn:predicate");
 
-	@TempDir
+	@TempDir(cleanup = CleanupMode.NEVER)
 	Path directory;
 
 	@ParameterizedTest
@@ -224,6 +232,1229 @@ class LmdbQuadSynopsisServiceTest {
 				});
 				assertTrue(stopped.get(5, TimeUnit.SECONDS), "stop must preserve its caller's interrupt status");
 			} finally {
+				service.close();
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void interruptedDiscardDoesNotPublishAnAdmittedObsoleteAddition(boolean batch) throws Exception {
+		MutableStatementSource source = new MutableStatementSource();
+		source.statements.add(VF.createStatement(VF.createIRI("urn:live"), P, VF.createLiteral(1)));
+		LmdbQuadSynopsisService service = service(source);
+		CountDownLatch conversionEntered = new CountDownLatch(1);
+		CountDownLatch releaseConversion = new CountDownLatch(1);
+		CountDownLatch discardStarted = new CountDownLatch(1);
+		AtomicBoolean discardFinished = new AtomicBoolean();
+		AtomicBoolean interruptRestored = new AtomicBoolean();
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		Statement obsolete = new AbstractStatement() {
+			@Override
+			public Resource getSubject() {
+				conversionEntered.countDown();
+				try {
+					releaseConversion.await();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new IllegalStateException(e);
+				}
+				return VF.createIRI("urn:obsolete");
+			}
+
+			@Override
+			public IRI getPredicate() {
+				return P;
+			}
+
+			@Override
+			public Value getObject() {
+				return VF.createLiteral(2);
+			}
+
+			@Override
+			public Resource getContext() {
+				return null;
+			}
+		};
+		Thread adder = new Thread(() -> {
+			try {
+				if (batch) {
+					service.addStatements(List.of(obsolete));
+				} else {
+					service.addStatement(obsolete);
+				}
+			} catch (Throwable problem) {
+				failure.compareAndSet(null, problem);
+			}
+		}, "quad-synopsis-admitted-add");
+		Thread discarder = new Thread(() -> {
+			Thread.currentThread().interrupt();
+			discardStarted.countDown();
+			try {
+				service.discardAndMarkForRebuild();
+				interruptRestored.set(Thread.currentThread().isInterrupted());
+			} catch (Throwable problem) {
+				failure.compareAndSet(null, problem);
+			} finally {
+				discardFinished.set(true);
+			}
+		}, "quad-synopsis-discard");
+		try {
+			service.configurePersistence(directory, false);
+			service.requestRebuild();
+			assertTrue(service.forceFlush());
+			service.persistIfDirty();
+			adder.start();
+			assertTrue(conversionEntered.await(10, TimeUnit.SECONDS));
+			discarder.start();
+			assertTrue(discardStarted.await(10, TimeUnit.SECONDS));
+			long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+			while (!discardFinished.get() && discarder.getState() != Thread.State.WAITING
+					&& discarder.getState() != Thread.State.BLOCKED && System.nanoTime() < deadline) {
+				Thread.onSpinWait();
+			}
+			assertTrue(discardFinished.get() || discarder.getState() == Thread.State.WAITING
+					|| discarder.getState() == Thread.State.BLOCKED,
+					"discard must complete or wait for the admitted add");
+			if (discardFinished.get()) {
+				assertTrue(service.forceFlush(), "rebuild can publish while an unfenced old add is held");
+			}
+			releaseConversion.countDown();
+			adder.join(TimeUnit.SECONDS.toMillis(10));
+			discarder.join(TimeUnit.SECONDS.toMillis(10));
+			assertFalse(adder.isAlive());
+			assertFalse(discarder.isAlive());
+			assertEquals(null, failure.get());
+			assertTrue(interruptRestored.get(), "discard must preserve its caller's interrupt status");
+			assertTrue(Files.isRegularFile(directory.resolve("synopsis-v8.rebuild")),
+					"an interrupted discard must invalidate the persisted snapshot");
+			assertTrue(service.forceFlush());
+			assertEquals(1.0d, predicateRows(service), "an obsolete admitted addition must not survive discard");
+		} finally {
+			releaseConversion.countDown();
+			adder.join(TimeUnit.SECONDS.toMillis(10));
+			discarder.join(TimeUnit.SECONDS.toMillis(10));
+			service.close();
+		}
+	}
+
+	@Test
+	void discardedSnapshotIsNotReusedByAReopenedService() {
+		MutableStatementSource source = new MutableStatementSource();
+		source.statements.add(VF.createStatement(VF.createIRI("urn:old"), P, VF.createLiteral(1)));
+		LmdbQuadSynopsisService original = service(source);
+		try {
+			original.configurePersistence(directory, false);
+			original.requestRebuild();
+			assertTrue(original.forceFlush());
+			original.persistIfDirty();
+			source.statements.clear();
+			original.discardAndMarkForRebuild();
+
+			// Reopening before the first service can persist or close models interruption after discard.
+			LmdbQuadSynopsisService reopened = service(source);
+			try {
+				reopened.configurePersistence(directory, true);
+				assertFalse(reopened.isReadyNonBlocking(), "a discarded persisted snapshot must require rebuild");
+				assertTrue(reopened.forceFlush());
+				assertEquals(0.0d, predicateRows(reopened));
+			} finally {
+				reopened.close();
+			}
+		} finally {
+			original.close();
+		}
+	}
+
+	@Test
+	void failedDiscardMarkerLeavesResidentEvidenceInvalid() throws Exception {
+		MutableStatementSource source = new MutableStatementSource();
+		source.statements.add(VF.createStatement(VF.createIRI("urn:old"), P, VF.createLiteral(1)));
+		LmdbQuadSynopsisService service = service(source);
+		Path marker = directory.resolve("synopsis-v8.rebuild");
+		try {
+			service.configurePersistence(directory, false);
+			service.requestRebuild();
+			assertTrue(service.forceFlush());
+			service.persistIfDirty();
+			Files.createDirectory(marker);
+			Files.writeString(marker.resolve("occupied"), "prevent marker creation");
+			try {
+				assertThrows(UncheckedIOException.class, service::discardAndMarkForRebuild);
+				assertFalse(service.isReadyNonBlocking());
+				QuadProbe probe = new QuadProbe(QuadProbe.PREDICATE, QuadProbe.OBJECT, 0L,
+						QuadValueHash.hash(P), 0L, 0L, service.snapshotIdentity());
+				assertFalse(service.probe(probe).usable(), "a failed marker write must not restore resident evidence");
+			} finally {
+				Files.move(marker, directory.resolve("blocked-marker"));
+			}
+		} finally {
+			service.close();
+		}
+	}
+
+	@Test
+	void discardInvalidatesEvenWhenPersistingThePreviousSnapshotFails() throws Exception {
+		MutableStatementSource source = new MutableStatementSource();
+		source.statements.add(VF.createStatement(VF.createIRI("urn:old"), P, VF.createLiteral(1)));
+		LmdbQuadSynopsisService service = service(source);
+		Path snapshot = directory.resolve("synopsis-v8.bin");
+		Path retained = directory.resolve("retained-synopsis.bin");
+		try {
+			service.configurePersistence(directory, false);
+			service.requestRebuild();
+			assertTrue(service.forceFlush());
+			service.persistIfDirty();
+			Files.move(snapshot, retained);
+			Files.createDirectory(snapshot);
+			Files.writeString(snapshot.resolve("occupied"), "prevent snapshot replacement");
+			try {
+				service.addStatement(VF.createStatement(VF.createIRI("urn:obsolete"), P, VF.createLiteral(2)));
+				assertThrows(UncheckedIOException.class, service::persistIfDirty);
+				assertTrue(Files.isRegularFile(directory.resolve("synopsis-v8.rebuild")),
+						"failed snapshot replacement must already have marked the old snapshot stale");
+				assertDoesNotThrow(service::discardAndMarkForRebuild);
+				assertFalse(service.isReadyNonBlocking());
+				QuadProbe probe = new QuadProbe(QuadProbe.PREDICATE, QuadProbe.OBJECT, 0L,
+						QuadValueHash.hash(P), 0L, 0L, service.snapshotIdentity());
+				assertFalse(service.probe(probe).usable(), "discarded observations cannot be used");
+			} finally {
+				Files.move(snapshot, directory.resolve("blocked-snapshot"));
+				Files.move(retained, snapshot);
+			}
+			LmdbQuadSynopsisService reopened = service(source);
+			try {
+				reopened.configurePersistence(directory, true);
+				assertFalse(reopened.isReadyNonBlocking());
+			} finally {
+				reopened.close();
+			}
+		} finally {
+			service.close();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void discardStopsAnOldBatchWithoutWaitingForItsIterator(boolean pauseInNext) throws Exception {
+		MutableStatementSource source = new MutableStatementSource();
+		source.statements.add(VF.createStatement(VF.createIRI("urn:live"), P, VF.createLiteral(1)));
+		LmdbQuadSynopsisService service = service(source);
+		CountDownLatch iteratorEntered = new CountDownLatch(1);
+		CountDownLatch releaseIterator = new CountDownLatch(1);
+		CountDownLatch discardStarted = new CountDownLatch(1);
+		CountDownLatch discardFinished = new CountDownLatch(1);
+		AtomicInteger nextCalls = new AtomicInteger();
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		List<Statement> old = List.of(
+				VF.createStatement(VF.createIRI("urn:old:first"), P, VF.createLiteral(2)),
+				VF.createStatement(VF.createIRI("urn:old:tail"), P, VF.createLiteral(3)));
+		Runnable pause = () -> {
+			iteratorEntered.countDown();
+			try {
+				releaseIterator.await();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new IllegalStateException(e);
+			}
+		};
+		Iterable<Statement> batch = () -> new Iterator<>() {
+			private int index;
+
+			@Override
+			public boolean hasNext() {
+				if (index == 1 && !pauseInNext) {
+					pause.run();
+				}
+				return index < old.size();
+			}
+
+			@Override
+			public Statement next() {
+				nextCalls.incrementAndGet();
+				if (index == 1 && pauseInNext) {
+					pause.run();
+				}
+				return old.get(index++);
+			}
+		};
+		Thread adder = new Thread(() -> {
+			try {
+				service.addStatements(batch);
+			} catch (Throwable problem) {
+				failure.compareAndSet(null, problem);
+			}
+		}, "quad-synopsis-iterable-add");
+		Thread discarder = new Thread(() -> {
+			discardStarted.countDown();
+			try {
+				service.discardAndMarkForRebuild();
+			} catch (Throwable problem) {
+				failure.compareAndSet(null, problem);
+			} finally {
+				discardFinished.countDown();
+			}
+		}, "quad-synopsis-iterable-discard");
+		try {
+			service.requestRebuild();
+			assertTrue(service.forceFlush());
+			adder.start();
+			assertTrue(iteratorEntered.await(10, TimeUnit.SECONDS));
+			discarder.start();
+			assertTrue(discardStarted.await(10, TimeUnit.SECONDS));
+			assertTrue(discardFinished.await(10, TimeUnit.SECONDS),
+					"discard must not wait for an iterable between admitted statements");
+			assertEquals(null, failure.get());
+			assertTrue(service.forceFlush());
+			service.addStatements(List.of(VF.createStatement(VF.createIRI("urn:new"), P, VF.createLiteral(4))));
+			releaseIterator.countDown();
+			adder.join(TimeUnit.SECONDS.toMillis(10));
+			discarder.join(TimeUnit.SECONDS.toMillis(10));
+			assertFalse(adder.isAlive(), "the stale batch must terminate once its iterator returns");
+			assertFalse(discarder.isAlive());
+			assertEquals(null, failure.get());
+			assertEquals(2.0d, predicateRows(service), "only the live and newly admitted statements remain");
+			assertEquals(pauseInNext ? 2 : 1, nextCalls.get());
+		} finally {
+			releaseIterator.countDown();
+			adder.join(TimeUnit.SECONDS.toMillis(10));
+			discarder.join(TimeUnit.SECONDS.toMillis(10));
+			service.close();
+		}
+	}
+
+	@Test
+	void configuringWithoutASnapshotPreservesResidentMutations() {
+		MutableStatementSource source = new MutableStatementSource();
+		Statement row = VF.createStatement(VF.createIRI("urn:resident"), P, VF.createLiteral(1));
+		source.statements.add(row);
+		LmdbQuadSynopsisService service = service(source);
+		try {
+			service.addStatement(row);
+			assertEquals(1.0d, predicateRows(service));
+			service.configurePersistence(directory, false);
+			assertTrue(service.isReadyNonBlocking());
+			assertEquals(1.0d, predicateRows(service), "configuring an empty directory retains resident updates");
+		} finally {
+			service.close();
+		}
+	}
+
+	@Test
+	void configuringAnOlderSnapshotCannotEraseACompletedMutation() {
+		MutableStatementSource source = new MutableStatementSource();
+		LmdbQuadSynopsisService service = service(source);
+		try {
+			service.configurePersistence(directory, false);
+			service.requestRebuild();
+			assertTrue(service.forceFlush());
+			service.persistIfDirty();
+			Statement row = VF.createStatement(VF.createIRI("urn:committed"), P, VF.createLiteral(1));
+			source.statements.add(row);
+			service.addStatement(row);
+			assertEquals(1.0d, predicateRows(service));
+			service.configurePersistence(directory, true);
+			assertFalse(service.isReadyNonBlocking(), "an older persisted snapshot cannot erase a completed delta");
+			assertTrue(service.forceFlush());
+			assertEquals(1.0d, predicateRows(service));
+		} finally {
+			service.close();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void configuringAnOlderSnapshotRetiresPendingMutations(boolean batch) throws Exception {
+		MutableStatementSource source = new MutableStatementSource();
+		LmdbQuadSynopsisService service = service(source);
+		CountDownLatch entered = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		Statement first = VF.createStatement(VF.createIRI("urn:pending:first"), P, VF.createLiteral(1));
+		Statement second = VF.createStatement(VF.createIRI("urn:pending:second"), P, VF.createLiteral(2));
+		Runnable pause = () -> {
+			entered.countDown();
+			try {
+				release.await();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new IllegalStateException(e);
+			}
+		};
+		Statement slow = new AbstractStatement() {
+			@Override
+			public Resource getSubject() {
+				pause.run();
+				return first.getSubject();
+			}
+
+			@Override
+			public IRI getPredicate() {
+				return first.getPredicate();
+			}
+
+			@Override
+			public Value getObject() {
+				return first.getObject();
+			}
+
+			@Override
+			public Resource getContext() {
+				return null;
+			}
+		};
+		Iterable<Statement> rows = () -> new Iterator<>() {
+			private int index;
+
+			@Override
+			public boolean hasNext() {
+				if (index == 1) {
+					pause.run();
+				}
+				return index < 2;
+			}
+
+			@Override
+			public Statement next() {
+				return index++ == 0 ? first : second;
+			}
+		};
+		Thread adder = new Thread(() -> {
+			try {
+				if (batch) {
+					service.addStatements(rows);
+				} else {
+					service.addStatement(slow);
+				}
+			} catch (Throwable problem) {
+				failure.set(problem);
+			}
+		}, "quad-synopsis-configure-mutation");
+		try {
+			service.configurePersistence(directory, false);
+			service.requestRebuild();
+			assertTrue(service.forceFlush());
+			service.persistIfDirty();
+			source.statements.add(first);
+			if (batch) {
+				source.statements.add(second);
+			}
+			adder.start();
+			assertTrue(entered.await(10, TimeUnit.SECONDS));
+			service.configurePersistence(directory, true);
+			assertFalse(service.isReadyNonBlocking(), "a loaded older snapshot must not overwrite pending work");
+			assertTrue(Files.isRegularFile(directory.resolve("synopsis-v8.rebuild")));
+			assertTrue(service.forceFlush(), "retired callbacks cannot block rebuilding from the source");
+			assertEquals(batch ? 2.0d : 1.0d, predicateRows(service));
+			release.countDown();
+			adder.join(TimeUnit.SECONDS.toMillis(10));
+			assertFalse(adder.isAlive());
+			assertEquals(null, failure.get());
+			assertEquals(batch ? 2.0d : 1.0d, predicateRows(service),
+					"a retired conversion or batch tail cannot be applied twice");
+		} finally {
+			release.countDown();
+			adder.join(TimeUnit.SECONDS.toMillis(10));
+			service.close();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void pendingMutationDoesNotExposeStaleCompleteBounds(boolean deletion) throws Exception {
+		MutableStatementSource source = new MutableStatementSource();
+		LmdbQuadSynopsisService service = service(source);
+		CountDownLatch getterEntered = new CountDownLatch(1);
+		CountDownLatch releaseGetter = new CountDownLatch(1);
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		Statement stored = VF.createStatement(VF.createIRI("urn:bounds"), P, VF.createLiteral(1));
+		Statement slow = new AbstractStatement() {
+			@Override
+			public Resource getSubject() {
+				getterEntered.countDown();
+				try {
+					releaseGetter.await();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new IllegalStateException(e);
+				}
+				return stored.getSubject();
+			}
+
+			@Override
+			public IRI getPredicate() {
+				return stored.getPredicate();
+			}
+
+			@Override
+			public Value getObject() {
+				return stored.getObject();
+			}
+
+			@Override
+			public Resource getContext() {
+				return null;
+			}
+		};
+		Thread mutation = new Thread(() -> {
+			try {
+				if (deletion) {
+					service.deleteStatement(slow);
+				} else {
+					service.addStatement(slow);
+				}
+			} catch (Throwable problem) {
+				failure.set(problem);
+			}
+		}, "quad-synopsis-pending-bound");
+		try {
+			if (deletion) {
+				source.statements.add(stored);
+			}
+			service.requestRebuild();
+			assertTrue(service.forceFlush());
+			if (deletion) {
+				source.statements.clear();
+			} else {
+				source.statements.add(stored);
+			}
+			mutation.start();
+			assertTrue(getterEntered.await(10, TimeUnit.SECONDS));
+			QuadProbe probe = new QuadProbe(QuadProbe.PREDICATE, QuadProbe.OBJECT, 0L,
+					QuadValueHash.hash(P), 0L, 0L, service.snapshotIdentity());
+			QuadEvidence during = service.probe(probe);
+			org.junit.jupiter.api.Assertions.assertAll(
+					() -> assertFalse(service.isReadyNonBlocking(), "pending source mutation is not ready"),
+					() -> assertFalse(during.usable(), "old source bounds cannot be treated as current"),
+					() -> assertFalse(during.rows().complete(), "old source bounds cannot be complete"));
+			releaseGetter.countDown();
+			mutation.join(TimeUnit.SECONDS.toMillis(10));
+			assertFalse(mutation.isAlive());
+			assertEquals(null, failure.get());
+			if (deletion) {
+				assertTrue(service.forceFlush());
+			}
+			assertTrue(service.isReadyNonBlocking());
+			assertEquals(deletion ? 0.0d : 1.0d, predicateRows(service));
+		} finally {
+			releaseGetter.countDown();
+			mutation.join(TimeUnit.SECONDS.toMillis(10));
+			service.close();
+		}
+	}
+
+	@Test
+	void batchPropagatesIteratorFailuresAndNulls() {
+		LmdbQuadSynopsisService service = service(new MutableStatementSource());
+		try {
+			assertDoesNotThrow(() -> service.addStatements(null));
+			IllegalStateException creationFailure = new IllegalStateException("iterator creation");
+			assertEquals(creationFailure, assertThrows(IllegalStateException.class,
+					() -> service.addStatements(() -> {
+						throw creationFailure;
+					})));
+			IllegalStateException hasNextFailure = new IllegalStateException("iterator hasNext");
+			assertEquals(hasNextFailure, assertThrows(IllegalStateException.class, () -> service.addStatements(
+					() -> new Iterator<Statement>() {
+						@Override
+						public boolean hasNext() {
+							throw hasNextFailure;
+						}
+
+						@Override
+						public Statement next() {
+							throw new AssertionError("next after failing hasNext");
+						}
+					})));
+			IllegalStateException nextFailure = new IllegalStateException("iterator next");
+			assertEquals(nextFailure, assertThrows(IllegalStateException.class, () -> service.addStatements(
+					() -> new Iterator<Statement>() {
+						@Override
+						public boolean hasNext() {
+							return true;
+						}
+
+						@Override
+						public Statement next() {
+							throw nextFailure;
+						}
+					})));
+			Statement valid = VF.createStatement(VF.createIRI("urn:valid"), P, VF.createLiteral(1));
+			assertThrows(NullPointerException.class, () -> service.addStatements(Arrays.asList(valid, null)));
+			assertEquals(1.0d, predicateRows(service), "a valid earlier item is retained when a later one is null");
+		} finally {
+			service.close();
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,false", "false,true", "true,false", "true,true" })
+	void statementGetterCanReenterDiscardOrClose(boolean deletion, boolean close) throws Exception {
+		LmdbQuadSynopsisService service = service(new MutableStatementSource());
+		CountDownLatch getterEntered = new CountDownLatch(1);
+		CountDownLatch finished = new CountDownLatch(1);
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		Statement statement = new AbstractStatement() {
+			@Override
+			public Resource getSubject() {
+				getterEntered.countDown();
+				if (close) {
+					service.close();
+				} else {
+					service.discardAndMarkForRebuild();
+				}
+				return VF.createIRI("urn:reentrant");
+			}
+
+			@Override
+			public IRI getPredicate() {
+				return P;
+			}
+
+			@Override
+			public Value getObject() {
+				return VF.createLiteral(1);
+			}
+
+			@Override
+			public Resource getContext() {
+				return null;
+			}
+		};
+		Thread mutation = new Thread(() -> {
+			try {
+				if (deletion) {
+					service.deleteStatement(statement);
+				} else {
+					service.addStatement(statement);
+				}
+			} catch (Throwable problem) {
+				failure.set(problem);
+			} finally {
+				finished.countDown();
+			}
+		}, "quad-synopsis-reentrant-mutation");
+		mutation.setDaemon(true);
+		try {
+			service.requestRebuild();
+			assertTrue(service.forceFlush());
+			mutation.start();
+			assertTrue(getterEntered.await(10, TimeUnit.SECONDS));
+			assertTrue(finished.await(2, TimeUnit.SECONDS),
+					"user statement getter must not deadlock on lifecycle calls");
+			assertEquals(null, failure.get());
+		} finally {
+			if (finished.getCount() == 0) {
+				service.close();
+			}
+		}
+	}
+
+	@Test
+	void rebuildDoesNotPublishAcrossAnOutstandingStatementConversion() throws Exception {
+		MutableStatementSource source = new MutableStatementSource();
+		LmdbQuadSynopsisService service = service(source);
+		CountDownLatch getterEntered = new CountDownLatch(1);
+		CountDownLatch releaseGetter = new CountDownLatch(1);
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		Statement stored = VF.createStatement(VF.createIRI("urn:included"), P, VF.createLiteral(1));
+		Statement slow = new AbstractStatement() {
+			@Override
+			public Resource getSubject() {
+				getterEntered.countDown();
+				try {
+					releaseGetter.await();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new IllegalStateException(e);
+				}
+				return stored.getSubject();
+			}
+
+			@Override
+			public IRI getPredicate() {
+				return stored.getPredicate();
+			}
+
+			@Override
+			public Value getObject() {
+				return stored.getObject();
+			}
+
+			@Override
+			public Resource getContext() {
+				return null;
+			}
+		};
+		Thread adder = new Thread(() -> {
+			try {
+				service.addStatement(slow);
+			} catch (Throwable problem) {
+				failure.set(problem);
+			}
+		}, "quad-synopsis-pending-conversion");
+		try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+			try {
+				service.requestRebuild();
+				assertTrue(service.forceFlush());
+				source.statements.add(stored);
+				adder.start();
+				assertTrue(getterEntered.await(10, TimeUnit.SECONDS));
+				service.requestRebuild();
+				Future<Boolean> rebuild = executor.submit(service::forceFlush);
+				Boolean published = assertDoesNotThrow(() -> rebuild.get(10, TimeUnit.SECONDS),
+						"a rebuild must not wait on user statement getters");
+				assertFalse(published, "an outstanding conversion prevents publication");
+				releaseGetter.countDown();
+				adder.join(TimeUnit.SECONDS.toMillis(10));
+				assertFalse(adder.isAlive());
+				assertEquals(null, failure.get());
+				assertTrue(service.forceFlush());
+				assertEquals(1.0d, predicateRows(service), "source row and delayed delta cannot be counted twice");
+			} finally {
+				releaseGetter.countDown();
+				adder.join(TimeUnit.SECONDS.toMillis(10));
+				service.close();
+			}
+		}
+	}
+
+	@Test
+	void rebuildDoesNotPublishBetweenElementsOfAnOutstandingBatch() throws Exception {
+		MutableStatementSource source = new MutableStatementSource();
+		LmdbQuadSynopsisService service = service(source);
+		CountDownLatch iteratorEntered = new CountDownLatch(1);
+		CountDownLatch releaseIterator = new CountDownLatch(1);
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		List<Statement> stored = List.of(
+				VF.createStatement(VF.createIRI("urn:first"), P, VF.createLiteral(1)),
+				VF.createStatement(VF.createIRI("urn:second"), P, VF.createLiteral(2)));
+		Iterable<Statement> batch = () -> new Iterator<>() {
+			private int index;
+
+			@Override
+			public boolean hasNext() {
+				if (index == 1) {
+					iteratorEntered.countDown();
+					try {
+						releaseIterator.await();
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+						throw new IllegalStateException(e);
+					}
+				}
+				return index < stored.size();
+			}
+
+			@Override
+			public Statement next() {
+				return stored.get(index++);
+			}
+		};
+		Thread adder = new Thread(() -> {
+			try {
+				service.addStatements(batch);
+			} catch (Throwable problem) {
+				failure.set(problem);
+			}
+		}, "quad-synopsis-pending-batch");
+		try {
+			service.requestRebuild();
+			assertTrue(service.forceFlush());
+			source.statements.addAll(stored);
+			adder.start();
+			assertTrue(iteratorEntered.await(10, TimeUnit.SECONDS));
+			service.requestRebuild();
+			assertFalse(service.forceFlush(), "an outstanding batch prevents publication between its elements");
+			releaseIterator.countDown();
+			adder.join(TimeUnit.SECONDS.toMillis(10));
+			assertFalse(adder.isAlive());
+			assertEquals(null, failure.get());
+			assertTrue(service.forceFlush());
+			assertEquals(2.0d, predicateRows(service), "source rows and delayed batch tail cannot be counted twice");
+		} finally {
+			releaseIterator.countDown();
+			adder.join(TimeUnit.SECONDS.toMillis(10));
+			service.close();
+		}
+	}
+
+	@Test
+	void closedServiceRejectsNewStatementMutations() {
+		LmdbQuadSynopsisService service = service(new MutableStatementSource());
+		Statement statement = VF.createStatement(VF.createIRI("urn:closed"), P, VF.createLiteral(1));
+		service.close();
+		assertThrows(IllegalStateException.class, () -> service.addStatement(statement));
+		assertThrows(IllegalStateException.class, () -> service.deleteStatement(statement));
+		assertThrows(IllegalStateException.class, () -> service.addStatements(List.of(statement)));
+	}
+
+	@Test
+	void delayedSizeDeltaIsRejectedAfterClose() throws Exception {
+		MutableStatementSource source = new MutableStatementSource();
+		source.statements.add(VF.createStatement(VF.createIRI("urn:closed-size"), P, VF.createLiteral(1)));
+		LmdbQuadSynopsisService service = service(source);
+		service.configurePersistence(directory, false);
+		service.requestRebuild();
+		assertTrue(service.forceFlush());
+		service.persistIfDirty();
+		CountDownLatch admitted = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		Thread callback = new Thread(() -> {
+			admitted.countDown();
+			try {
+				release.await();
+				service.recordStoreSizeDelta(1L, 0L);
+			} catch (Throwable problem) {
+				failure.set(problem);
+			}
+		}, "quad-synopsis-delayed-size-delta");
+		callback.start();
+		try {
+			assertTrue(admitted.await(10, TimeUnit.SECONDS));
+			service.close();
+		} finally {
+			release.countDown();
+			callback.join(TimeUnit.SECONDS.toMillis(10));
+		}
+		assertFalse(callback.isAlive());
+		assertTrue(failure.get() instanceof IllegalStateException, "a delayed size update must reject closed state");
+		assertDoesNotThrow(() -> service.recordStoreSizeDelta(0L, 0L));
+		service.persistIfDirty();
+		assertFalse(Files.exists(directory.resolve("synopsis-v8.rebuild")));
+		try (LmdbQuadSynopsisService reopened = service(source)) {
+			reopened.configurePersistence(directory, true);
+			assertTrue(reopened.isReadyNonBlocking());
+		}
+	}
+
+	@Test
+	void rebuildAllowedCallbackCanCloseBeforeSourceAdmission() {
+		AtomicReference<LmdbQuadSynopsisService> owner = new AtomicReference<>();
+		AtomicInteger opens = new AtomicInteger();
+		AtomicInteger allowedCalls = new AtomicInteger();
+		SketchStatementSource source = (subject, predicate, object, contexts) -> {
+			opens.incrementAndGet();
+			return new CloseableIteratorIteration<>(List.of(
+					VF.createStatement(VF.createIRI("urn:source"), P, VF.createLiteral(1))).iterator());
+		};
+		LmdbQuadSynopsisService service = service(source);
+		owner.set(service);
+		service.setRebuildAllowedSupplier(() -> {
+			if (allowedCalls.incrementAndGet() == 2) {
+				owner.get().close();
+			}
+			return true;
+		});
+		service.requestRebuild();
+		assertFalse(service.forceFlush());
+		assertEquals(0, opens.get(), "closing in the admission callback must prevent a source scan");
+		assertEquals(0L, service.snapshotVersion());
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "open", "hasNext", "next", "getter" })
+	void reentrantCloseStopsReadingTheRemainingSource(String callback) {
+		AtomicReference<LmdbQuadSynopsisService> owner = new AtomicReference<>();
+		AtomicBoolean triggered = new AtomicBoolean();
+		AtomicBoolean sourceClosed = new AtomicBoolean();
+		AtomicInteger consumed = new AtomicInteger();
+		Statement normal = VF.createStatement(VF.createIRI("urn:lazy"), P, VF.createLiteral(1));
+		Statement closing = new AbstractStatement() {
+			@Override
+			public Resource getSubject() {
+				if (triggered.compareAndSet(false, true)) {
+					owner.get().close();
+				}
+				return normal.getSubject();
+			}
+
+			@Override
+			public IRI getPredicate() {
+				return normal.getPredicate();
+			}
+
+			@Override
+			public Value getObject() {
+				return normal.getObject();
+			}
+
+			@Override
+			public Resource getContext() {
+				return normal.getContext();
+			}
+		};
+		SketchStatementSource source = (subject, predicate, object, contexts) -> {
+			if (callback.equals("open") && triggered.compareAndSet(false, true)) {
+				owner.get().close();
+			}
+			return new CloseableIteration<Statement>() {
+				@Override
+				public boolean hasNext() {
+					if (callback.equals("hasNext") && triggered.compareAndSet(false, true)) {
+						owner.get().close();
+					}
+					return consumed.get() < 2 * DerivedStateBuildExecutor.PAGE_ROWS + 1;
+				}
+
+				@Override
+				public Statement next() {
+					int row = consumed.getAndIncrement();
+					if (callback.equals("next") && triggered.compareAndSet(false, true)) {
+						owner.get().close();
+					}
+					return callback.equals("getter") && row == 0 ? closing : normal;
+				}
+
+				@Override
+				public void close() {
+					sourceClosed.set(true);
+				}
+			};
+		};
+		LmdbQuadSynopsisService service = service(source);
+		owner.set(service);
+		service.requestRebuild();
+		assertFalse(service.forceFlush());
+		assertTrue(triggered.get(), "the requested close callback must run");
+		int expected = switch (callback) {
+		case "open", "hasNext" -> 0;
+		case "next" -> 1;
+		case "getter" -> DerivedStateBuildExecutor.PAGE_ROWS;
+		default -> throw new IllegalArgumentException(callback);
+		};
+		assertEquals(expected, consumed.get(), "no later source rows should be consumed after close");
+		assertTrue(sourceClosed.get(), "the source must be closed when its rebuild is abandoned");
+		assertEquals(0L, service.snapshotVersion());
+		assertEquals(0L, service.publishedRows());
+		assertTrue(Thread.getAllStackTraces()
+				.keySet()
+				.stream()
+				.noneMatch(thread -> thread.isAlive() && thread.getName().startsWith("rdf4j-lmdb-derived-state-")),
+				"the owned executor must terminate after the aborted rebuild");
+	}
+
+	@Test
+	void persistDuringAnOutstandingMutationMarksTheOldSnapshot() throws Exception {
+		MutableStatementSource source = new MutableStatementSource();
+		Statement first = VF.createStatement(VF.createIRI("urn:persist-first"), P, VF.createLiteral(1));
+		Statement second = VF.createStatement(VF.createIRI("urn:persist-second"), P, VF.createLiteral(2));
+		source.statements.add(first);
+		CountDownLatch entered = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		Statement blocked = new AbstractStatement() {
+			@Override
+			public Resource getSubject() {
+				entered.countDown();
+				try {
+					if (!release.await(10, TimeUnit.SECONDS)) {
+						throw new IllegalStateException("getter not released");
+					}
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new IllegalStateException(e);
+				}
+				return second.getSubject();
+			}
+
+			@Override
+			public IRI getPredicate() {
+				return second.getPredicate();
+			}
+
+			@Override
+			public Value getObject() {
+				return second.getObject();
+			}
+
+			@Override
+			public Resource getContext() {
+				return second.getContext();
+			}
+		};
+		try (LmdbQuadSynopsisService service = service(source)) {
+			service.configurePersistence(directory, false);
+			service.requestRebuild();
+			assertTrue(service.forceFlush());
+			service.persistIfDirty();
+			source.statements.add(second);
+			Thread adder = new Thread(() -> {
+				try {
+					service.addStatement(blocked);
+				} catch (Throwable problem) {
+					failure.set(problem);
+				}
+			}, "persist-in-flight-mutation");
+			adder.start();
+			try {
+				assertTrue(entered.await(10, TimeUnit.SECONDS));
+				service.persistIfDirty();
+				assertTrue(Files.isRegularFile(directory.resolve("synopsis-v8.rebuild")),
+						"an explicit persist must mark a snapshot while an admitted mutation is unresolved");
+			} finally {
+				release.countDown();
+				adder.join(TimeUnit.SECONDS.toMillis(10));
+			}
+			assertFalse(adder.isAlive());
+			assertEquals(null, failure.get());
+			assertTrue(service.forceFlush());
+			service.persistIfDirty();
+			assertFalse(Files.exists(directory.resolve("synopsis-v8.rebuild")));
+			assertEquals(2.0d, predicateRows(service));
+		}
+	}
+
+	@Test
+	void persistDuringARebuildRequestMarksTheOldSnapshot() {
+		MutableStatementSource source = new MutableStatementSource();
+		source.statements.add(VF.createStatement(VF.createIRI("urn:persist-first"), P, VF.createLiteral(1)));
+		try (LmdbQuadSynopsisService service = service(source)) {
+			service.configurePersistence(directory, false);
+			service.requestRebuild();
+			assertTrue(service.forceFlush());
+			service.persistIfDirty();
+			source.statements.add(VF.createStatement(VF.createIRI("urn:persist-second"), P, VF.createLiteral(2)));
+			service.requestRebuild();
+			service.persistIfDirty();
+			assertTrue(Files.isRegularFile(directory.resolve("synopsis-v8.rebuild")),
+					"an explicit persist must mark a snapshot when a source rebuild is pending");
+		}
+		try (LmdbQuadSynopsisService reopened = service(source)) {
+			reopened.configurePersistence(directory, true);
+			assertFalse(reopened.isReadyNonBlocking());
+			assertTrue(reopened.forceFlush());
+			assertEquals(2.0d, predicateRows(reopened));
+		}
+	}
+
+	@Test
+	void failedCloseStillWakesReadyWaiters() throws Exception {
+		LmdbQuadSynopsisService service = service(new MutableStatementSource());
+		service.configurePersistence(directory, false);
+		service.requestRebuild();
+		Files.createDirectory(directory.resolve("synopsis-v8.rebuild"));
+		CountDownLatch finished = new CountDownLatch(1);
+		AtomicReference<Boolean> ready = new AtomicReference<>();
+		Thread waiter = new Thread(() -> {
+			try {
+				ready.set(service.awaitReady(1, TimeUnit.MINUTES));
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			} finally {
+				finished.countDown();
+			}
+		}, "quad-synopsis-failed-close-waiter");
+		waiter.start();
+		try {
+			long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+			while (waiter.getState() != Thread.State.TIMED_WAITING
+					|| Arrays.stream(waiter.getStackTrace())
+							.noneMatch(frame -> frame.getMethodName().equals("awaitReady"))) {
+				if (System.nanoTime() >= deadline) {
+					throw new AssertionError("waiter did not enter awaitReady");
+				}
+				Thread.onSpinWait();
+			}
+			assertThrows(UncheckedIOException.class, service::close);
+			assertTrue(finished.await(1, TimeUnit.SECONDS), "a failed close must still wake readiness waiters");
+			assertEquals(Boolean.FALSE, ready.get());
+		} finally {
+			waiter.interrupt();
+			waiter.join(TimeUnit.SECONDS.toMillis(10));
+			service.close();
+		}
+	}
+
+	@Test
+	void failedCloseRebuildMarksTheOlderSnapshotForRestart() {
+		List<Statement> rows = new ArrayList<>();
+		rows.add(VF.createStatement(VF.createIRI("urn:close-first"), P, VF.createLiteral(1)));
+		AtomicBoolean failScan = new AtomicBoolean();
+		SketchStatementSource source = (subject, predicate, object, contexts) -> {
+			if (failScan.get()) {
+				throw new IllegalStateException("source scan failed");
+			}
+			return new CloseableIteratorIteration<>(rows.iterator());
+		};
+		LmdbQuadSynopsisService service = service(source);
+		service.configurePersistence(directory, false);
+		service.requestRebuild();
+		assertTrue(service.forceFlush());
+		service.persistIfDirty();
+		Statement second = VF.createStatement(VF.createIRI("urn:close-second"), P, VF.createLiteral(2));
+		rows.add(second);
+		service.addStatement(second);
+		service.setRebuildAllowedSupplier(() -> true);
+		failScan.set(true);
+		assertThrows(IllegalStateException.class, service::close);
+		assertTrue(Files.isRegularFile(directory.resolve("synopsis-v8.rebuild")),
+				"a failed close rebuild must fence the older persisted snapshot");
+		failScan.set(false);
+		try (LmdbQuadSynopsisService reopened = service(source)) {
+			reopened.configurePersistence(directory, true);
+			assertFalse(reopened.isReadyNonBlocking());
+			assertTrue(reopened.forceFlush());
+			assertEquals(2.0d, predicateRows(reopened));
+		}
+	}
+
+	@Test
+	void closeRejectsTheTailOfAnAlreadyAdmittedBatch() throws Exception {
+		MutableStatementSource source = new MutableStatementSource();
+		source.statements.add(VF.createStatement(VF.createIRI("urn:live"), P, VF.createLiteral(1)));
+		LmdbQuadSynopsisService service = service(source);
+		CountDownLatch iteratorEntered = new CountDownLatch(1);
+		CountDownLatch releaseIterator = new CountDownLatch(1);
+		CountDownLatch closeFinished = new CountDownLatch(1);
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		AtomicBoolean obsoleteTailRead = new AtomicBoolean();
+		List<Statement> obsolete = List.of(
+				VF.createStatement(VF.createIRI("urn:before-close"), P, VF.createLiteral(2)),
+				VF.createStatement(VF.createIRI("urn:after-close"), P, VF.createLiteral(3)));
+		Iterable<Statement> batch = () -> new Iterator<>() {
+			private int index;
+
+			@Override
+			public boolean hasNext() {
+				if (index == 1) {
+					iteratorEntered.countDown();
+					try {
+						releaseIterator.await();
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+						throw new IllegalStateException(e);
+					}
+				}
+				return index < obsolete.size();
+			}
+
+			@Override
+			public Statement next() {
+				if (index == 1) {
+					obsoleteTailRead.set(true);
+				}
+				return obsolete.get(index++);
+			}
+		};
+		Thread adder = new Thread(() -> {
+			try {
+				service.addStatements(batch);
+			} catch (Throwable problem) {
+				failure.compareAndSet(null, problem);
+			}
+		}, "quad-synopsis-close-iterator");
+		Thread closer = new Thread(() -> {
+			try {
+				service.close();
+			} catch (Throwable problem) {
+				failure.compareAndSet(null, problem);
+			} finally {
+				closeFinished.countDown();
+			}
+		}, "quad-synopsis-close");
+		try {
+			service.requestRebuild();
+			assertTrue(service.forceFlush());
+			adder.start();
+			assertTrue(iteratorEntered.await(10, TimeUnit.SECONDS));
+			closer.start();
+			assertTrue(closeFinished.await(10, TimeUnit.SECONDS), "close must not wait for a stalled iterator");
+			assertEquals(null, failure.get());
+			assertEquals(1L, service.publishedRows());
+			releaseIterator.countDown();
+			adder.join(TimeUnit.SECONDS.toMillis(10));
+			assertFalse(adder.isAlive());
+			assertEquals(null, failure.get());
+			assertFalse(obsoleteTailRead.get(), "a retired batch must not consume its obsolete tail");
+			assertEquals(1L, service.publishedRows(), "no old batch tail can publish after close");
+		} finally {
+			releaseIterator.countDown();
+			adder.join(TimeUnit.SECONDS.toMillis(10));
+			closer.join(TimeUnit.SECONDS.toMillis(10));
+			service.close();
+		}
+	}
+
+	@Test
+	void interruptedStopWaitsForTheRefreshWorkerBeforeReturning() throws Exception {
+		CountDownLatch workerEntered = new CountDownLatch(1);
+		CountDownLatch workerInterrupted = new CountDownLatch(1);
+		CountDownLatch releaseWorker = new CountDownLatch(1);
+		CountDownLatch stopFinished = new CountDownLatch(1);
+		AtomicBoolean interruptRestored = new AtomicBoolean();
+		SketchStatementSource source = (subject, predicate, object, contexts) -> {
+			workerEntered.countDown();
+			while (true) {
+				try {
+					releaseWorker.await();
+					break;
+				} catch (InterruptedException e) {
+					workerInterrupted.countDown();
+				}
+			}
+			return new CloseableIteratorIteration<>(List.<Statement>of().iterator());
+		};
+		LmdbQuadSynopsisService service = service(source);
+		Thread stopper = new Thread(() -> {
+			Thread.currentThread().interrupt();
+			try {
+				service.stopBackgroundRefresh();
+				interruptRestored.set(Thread.currentThread().isInterrupted());
+			} finally {
+				stopFinished.countDown();
+			}
+		}, "quad-synopsis-interrupted-stop");
+		try {
+			service.requestRebuild();
+			service.startBackgroundRefresh(0);
+			assertTrue(workerEntered.await(10, TimeUnit.SECONDS));
+			stopper.start();
+			assertTrue(workerInterrupted.await(10, TimeUnit.SECONDS));
+			assertFalse(stopFinished.await(1, TimeUnit.SECONDS), "stop must drain the interrupted refresh worker");
+			releaseWorker.countDown();
+			assertTrue(stopFinished.await(10, TimeUnit.SECONDS));
+			assertTrue(interruptRestored.get());
+		} finally {
+			releaseWorker.countDown();
+			stopper.join(TimeUnit.SECONDS.toMillis(10));
+			service.close();
+		}
+	}
+
+	@Test
+	void rebuildRequestDuringAnOlderScanRemainsPending() throws Exception {
+		CountDownLatch firstScanEntered = new CountDownLatch(1);
+		CountDownLatch releaseFirstScan = new CountDownLatch(1);
+		AtomicInteger scans = new AtomicInteger();
+		SketchStatementSource source = (subject, predicate, object, contexts) -> {
+			if (scans.incrementAndGet() == 1) {
+				firstScanEntered.countDown();
+				try {
+					releaseFirstScan.await();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new IllegalStateException(e);
+				}
+			}
+			return new CloseableIteratorIteration<>(List.<Statement>of().iterator());
+		};
+		LmdbQuadSynopsisService service = service(source);
+		try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+			try {
+				service.requestRebuild();
+				Future<Boolean> first = executor.submit(service::forceFlush);
+				assertTrue(firstScanEntered.await(10, TimeUnit.SECONDS));
+				service.requestRebuild();
+				releaseFirstScan.countDown();
+				assertFalse(first.get(10, TimeUnit.SECONDS), "a newer request must remain pending");
+				assertFalse(service.isReadyNonBlocking());
+				assertTrue(service.forceFlush());
+				assertEquals(2, scans.get());
+			} finally {
+				releaseFirstScan.countDown();
 				service.close();
 			}
 		}

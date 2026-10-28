@@ -15,9 +15,12 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.RUNTIME_INTERN_BASE;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
@@ -1256,6 +1259,140 @@ final class NativeExecutionContext implements AutoCloseable {
 
 	boolean isClosed() {
 		return closed || queryScopeOwner.closed;
+	}
+
+	/** Retains the transitive runtime owners used by an admitted cancellation callback. */
+	CancellationLease tryRetainCancellation() {
+		List<NativeExecutionContext> owners = cancellationOwners();
+		CancellationLease lease = new CancellationLease(owners);
+		try {
+			for (NativeExecutionContext owner : owners) {
+				if (!owner.retainCancellationOwner()) {
+					lease.close();
+					return null;
+				}
+				lease.count++;
+			}
+			return lease;
+		} catch (RuntimeException | Error failure) {
+			try {
+				lease.close();
+			} catch (RuntimeException | Error cleanup) {
+				if (cleanup != failure) {
+					failure.addSuppressed(cleanup);
+				}
+			}
+			throw failure;
+		}
+	}
+
+	/** True for an owner currently running cleanup on this thread, including a transitive shared owner. */
+	boolean cancellationOwnerClosingOnCurrentThread() {
+		Thread current = Thread.currentThread();
+		for (NativeExecutionContext owner : cancellationOwners()) {
+			if (owner.closingThread == current) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private List<NativeExecutionContext> cancellationOwners() {
+		// Follow the actual ownership graph. A frame can itself borrow another context's term space, so a
+		// fixed ordering of this context's immediate owners is not sufficient. Build a dependency-first order
+		// before acquiring anything, without recursion even for a deeply nested evaluation.
+		IdentityHashMap<NativeExecutionContext, Boolean> visited = new IdentityHashMap<>();
+		ArrayDeque<CancellationOwnerVisit> pending = new ArrayDeque<>();
+		List<NativeExecutionContext> owners = new ArrayList<>();
+		visited.put(this, Boolean.FALSE);
+		pending.push(new CancellationOwnerVisit(this));
+		while (!pending.isEmpty()) {
+			CancellationOwnerVisit visit = pending.peek();
+			if (visit.nextOwner == 3) {
+				pending.pop();
+				visited.put(visit.context, Boolean.TRUE);
+				owners.add(visit.context);
+				continue;
+			}
+			NativeExecutionContext owner = switch (visit.nextOwner++) {
+			case 0 -> visit.context.queryScopeOwner;
+			case 1 -> visit.context.queryFrameOwner;
+			default -> visit.context.termOwner;
+			};
+			if (owner == visit.context) {
+				continue;
+			}
+			Boolean state = visited.get(owner);
+			if (state == Boolean.FALSE) {
+				throw new IllegalStateException("cycle in native execution context ownership");
+			}
+			if (state == null) {
+				visited.put(owner, Boolean.FALSE);
+				pending.push(new CancellationOwnerVisit(owner));
+			}
+		}
+
+		return owners;
+	}
+
+	private static final class CancellationOwnerVisit {
+		private final NativeExecutionContext context;
+		private int nextOwner;
+
+		private CancellationOwnerVisit(NativeExecutionContext context) {
+			this.context = context;
+		}
+	}
+
+	private synchronized boolean retainCancellationOwner() {
+		// An already accepted consumer can still use an owner whose close is pending. Once the last consumer
+		// has gone, do not revive an owner that has begun closing but has not yet acquired the cleanup monitor.
+		if (closed || closeRequested && leaseCount == 0) {
+			return false;
+		}
+		leaseCount++;
+		return true;
+	}
+
+	/** Runtime-only retention; it must not create or complete a query-result accounting lease. */
+	static final class CancellationLease implements AutoCloseable {
+		private List<NativeExecutionContext> owners;
+		private int count;
+
+		private CancellationLease(List<NativeExecutionContext> owners) {
+			this.owners = owners;
+		}
+
+		@Override
+		public void close() {
+			List<NativeExecutionContext> held;
+			int retained;
+			synchronized (this) {
+				held = owners;
+				retained = count;
+				owners = null;
+				count = 0;
+			}
+			if (held == null) {
+				return;
+			}
+			Throwable failure = null;
+			// Reverse the dependency order so a dependent finishes cleanup before any of its owners retire.
+			for (int i = retained - 1; i >= 0; i--) {
+				try {
+					held.get(i).releaseLease();
+				} catch (RuntimeException | Error cleanup) {
+					if (failure == null) {
+						failure = cleanup;
+					} else if (failure != cleanup) {
+						failure.addSuppressed(cleanup);
+					}
+				}
+			}
+			if (failure != null) {
+				NativeContextClosingIteration.throwFailure(failure);
+			}
+		}
 	}
 
 	/**

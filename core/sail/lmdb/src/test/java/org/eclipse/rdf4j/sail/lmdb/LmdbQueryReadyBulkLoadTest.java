@@ -20,6 +20,10 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -53,6 +57,23 @@ class LmdbQueryReadyBulkLoadTest {
 
 	@TempDir
 	File dataDir;
+
+	@Test
+	void indexAwaitDoesNotFinishBeforeTheFinalNativeCleanupCommit() throws Exception {
+		CommitTracingStore store = new CommitTracingStore(new File(dataDir, "held-final-cleanup"), config(), true);
+		SailRepository repository = new SailRepository(store);
+		try {
+			repository.init();
+			assertTrue(store.finalCommitEntered.await(30L, TimeUnit.SECONDS));
+			assertFalse(store.awaitIndexRebuild(0L, TimeUnit.NANOSECONDS),
+					"an in-flight final native commit must remain part of the requested index job");
+			store.releaseFinalCommit.countDown();
+			assertTrue(store.awaitIndexRebuild(30L, TimeUnit.SECONDS));
+		} finally {
+			store.releaseFinalCommit.countDown();
+			repository.shutDown();
+		}
+	}
 
 	@ParameterizedTest(name = "{0}, {1}")
 	@MethodSource("loadCases")
@@ -92,14 +113,16 @@ class LmdbQueryReadyBulkLoadTest {
 
 	@Test
 	void namespaceOnlyReadCommittedCommitWritesOnlyAuthoritativeNamespaceMetadata() throws IOException {
-		LmdbStore store = new LmdbStore(new File(dataDir, "namespace-only"), config());
+		CommitTracingStore store = new CommitTracingStore(new File(dataDir, "namespace-only"), config());
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 		try {
+			awaitStartupWriters(store);
 			try (RepositoryConnection connection = repository.getConnection()) {
 				LmdbSailStore backingStore = store.getBackingStore();
 				long tripleTransactionId = backingStore.tripleStoreTransactionId();
 				long valueTransactionId = backingStore.valueStoreTransactionId();
+				int valueCommits = store.commits.size();
 				long rdfRevision = backingStore.getTripleStore().getDataRevision();
 
 				connection.begin(IsolationLevels.READ_COMMITTED);
@@ -112,7 +135,8 @@ class LmdbQueryReadyBulkLoadTest {
 				assertEquals(rdfRevision, backingStore.getTripleStore().getDataRevision(),
 						"namespace metadata cannot advance RDF retirement authority");
 				assertEquals(valueTransactionId, backingStore.valueStoreTransactionId(),
-						"namespace persistence must not commit an empty value transaction");
+						"namespace persistence must not commit an empty value transaction; actual writers="
+								+ store.commits.subList(valueCommits, store.commits.size()));
 			}
 		} finally {
 			repository.shutDown();
@@ -358,6 +382,7 @@ class LmdbQueryReadyBulkLoadTest {
 		for (String index : List.of("spoc", "ospc", "psoc", "posc")) {
 			assertEquals(expectedStatementCount, indexCounts.get(index), index + " must be complete at commit");
 		}
+		awaitStartupWriters(store);
 		long tripleTransactionId = backingStore.tripleStoreTransactionId();
 		long valueTransactionId = backingStore.valueStoreTransactionId();
 		try (TupleQueryResult result = connection.prepareTupleQuery(QUERY).evaluate()) {
@@ -368,6 +393,62 @@ class LmdbQueryReadyBulkLoadTest {
 				"query preparation and evaluation must not write to the triple environment");
 		assertEquals(valueTransactionId, backingStore.valueStoreTransactionId(),
 				"query preparation and evaluation must not write to the value environment");
+	}
+
+	private static void awaitStartupWriters(LmdbStore store) throws IOException {
+		LmdbGcTestMaintenance.awaitPostReady(store);
+		try {
+			assertTrue(store.awaitIndexRebuild(30L, TimeUnit.SECONDS),
+					"startup layout writers must finish before measuring query-only transaction identities");
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while waiting for startup layout writers", interrupted);
+		}
+	}
+
+	private static final class CommitTracingStore extends LmdbStore {
+		private final List<String> commits = new CopyOnWriteArrayList<>();
+		private final boolean holdFinalCommit;
+		private final CountDownLatch finalCommitEntered = new CountDownLatch(1);
+		private final CountDownLatch releaseFinalCommit = new CountDownLatch(1);
+
+		private CommitTracingStore(File directory, LmdbStoreConfig config) {
+			this(directory, config, false);
+		}
+
+		private CommitTracingStore(File directory, LmdbStoreConfig config, boolean holdFinalCommit) {
+			super(directory, config);
+			this.holdFinalCommit = holdFinalCommit;
+		}
+
+		@Override
+		LmdbSailStore createBackingStore(File directory, StoreProperties properties, LmdbStoreConfig config,
+				boolean sketches) throws IOException {
+			LmdbSailStore.ValueStoreFactory values = (path, stored, options) -> new ValueStore(path, stored,
+					options, false, null, LmdbStoreFormat.fromProperties(stored, options), true) {
+				@Override
+				int commitWriteTransaction(long transaction) {
+					if (holdFinalCommit && Thread.currentThread().getName().equals("rdf4j-lmdb-term-index-maintenance")
+							&& Set.of("IDLE", "FINISHING").contains(indexRebuildStatus())) {
+						finalCommitEntered.countDown();
+						try {
+							releaseFinalCommit.await();
+						} catch (InterruptedException interrupted) {
+							Thread.currentThread().interrupt();
+							throw new IllegalStateException(interrupted);
+						}
+					}
+					commits.add(Thread.currentThread().getName() + ": " + StackWalker.getInstance()
+							.walk(frames -> frames
+									.filter(frame -> frame.getClassName().startsWith("org.eclipse.rdf4j.sail.lmdb"))
+									.limit(10)
+									.map(Object::toString)
+									.toList()));
+					return super.commitWriteTransaction(transaction);
+				}
+			};
+			return new LmdbSailStore(directory, properties, config, sketches, values, TripleStore::new);
+		}
 	}
 
 	private Model statements() {

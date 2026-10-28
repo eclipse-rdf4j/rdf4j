@@ -53,6 +53,10 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private int rangePrefixLength;
 
+	Txn transaction() {
+		return txnRef;
+	}
+
 	private final Txn txnRef;
 
 	private long txnRefVersion;
@@ -62,6 +66,7 @@ class LmdbRecordIterator implements RecordIterator {
 	private int dbi;
 
 	private volatile boolean closed = false;
+	private Runnable generationRelease;
 
 	private final MDBVal keyData;
 
@@ -721,6 +726,19 @@ class LmdbRecordIterator implements RecordIterator {
 			txnRef.giveKeyBuffer(skipKeyBuf);
 			skipKeyBuf = null;
 		}
+		if (generationRelease != null) {
+			Runnable release = generationRelease;
+			generationRelease = null;
+			release.run();
+		}
+	}
+
+	/** Installed while the iterator is admitted, before it is returned to its caller. */
+	void retainIndexGeneration(Runnable release) {
+		if (generationRelease != null || resourcesFreed) {
+			throw new IllegalStateException("Iterator already has an index generation or is closed");
+		}
+		generationRelease = release;
 	}
 
 	/** Releases all resources of a retained iterator. Idempotent; must be called by the retaining owner. */

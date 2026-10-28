@@ -801,7 +801,38 @@ class LmdbFrozenSpillReplayTest {
 		PressureSettings defaults = pressureSettings();
 		assertEquals(300, defaults.high(), "the large-load child must retain the default GC pressure threshold");
 		assertEquals(32, defaults.minimum(), "the 128 MiB child must retain the default free-memory threshold");
-		int originalLargeCount = Integer.getInteger("rdf4j.lmdb.frozenSpill.largeCount", 300_000);
+		LargeStreamedReceipt receipt = loadAndReplayLargeStreamedInput(storeDirectory, statementCount);
+
+		ProbeLmdbStore reopenedStore = new ProbeLmdbStore(storeDirectory.toFile(), largeMapGrowthConfig(),
+				new Probe(false));
+		SailRepository reopened = new SailRepository(reopenedStore);
+		try {
+			reopened.init();
+			try (RepositoryConnection reader = reopened.getConnection()) {
+				assertLargeExact(reader, statementCount);
+			}
+		} finally {
+			closeCustomStoreAndRepository(reopenedStore, reopened);
+		}
+		System.out.println("LARGE_LOAD_ROWS=" + statementCount);
+		System.out.println("LARGE_LOAD_SPILLS=" + receipt.spills());
+		System.out.println("LARGE_LOAD_SPILL_CLOSES=" + receipt.spillCloses());
+		System.out.println("LARGE_LOAD_SPILL_TRANSACTIONS=" + receipt.spillTransactions());
+		System.out.println("LARGE_LOAD_SPILL_FROZEN_REPLAYS=" + receipt.spillFrozenReplays());
+		System.out.println("LARGE_LOAD_MAIN_CAPACITY_FAILURES=" + receipt.mainCapacityFailures());
+		System.out.println("LARGE_LOAD_MAIN_JOURNALS=" + receipt.mainJournals());
+		System.out.println("LARGE_LOAD_MAIN_ALIGNED_ROWS_TOTAL=" + receipt.mainAlignedRows());
+		System.out.println("LARGE_LOAD_MAIN_ALIGNED_ROWS_IN_FAULTED_ATTEMPT=" + receipt.mainFaultedRows());
+		System.out.println("LARGE_LOAD_MAIN_TRANSACTION_STARTS=" + receipt.mainTransactions());
+		System.out.println("LARGE_LOAD_MAIN_FROZEN_ATTEMPTS=" + receipt.mainFrozenAttempts());
+		System.out.println("LARGE_LOAD_MAIN_TRIPLE_RESIZES_BEFORE_COMMIT=" + receipt.tripleResizesBeforeCommit());
+		System.out.println("LARGE_LOAD_MAIN_VALUE_RESIZES_BEFORE_COMMIT=" + receipt.valueResizesBeforeCommit());
+		System.out.println("LARGE_LOAD_MAIN_TRIPLE_RESIZES=" + receipt.tripleResizes());
+	}
+
+	/** End the load owner's lifetime before opening another owner under the same constrained heap. */
+	private static LargeStreamedReceipt loadAndReplayLargeStreamedInput(Path storeDirectory, int originalLargeCount)
+			throws Exception {
 		Probe probe = new Probe(false);
 		probe.largeInput = true;
 		probe.spillAutoGrow = true;
@@ -877,33 +908,20 @@ class LmdbFrozenSpillReplayTest {
 			closeCustomStoreAndRepository(store, repository);
 		}
 
-		ProbeLmdbStore reopenedStore = new ProbeLmdbStore(storeDirectory.toFile(), config, new Probe(false));
-		SailRepository reopened = new SailRepository(reopenedStore);
-		try {
-			reopened.init();
-			try (RepositoryConnection reader = reopened.getConnection()) {
-				assertLargeExact(reader, originalLargeCount);
-			}
-		} finally {
-			closeCustomStoreAndRepository(reopenedStore, reopened);
-		}
 		assertTrue(probe.spillStoreCloses.get() > 0,
 				"ACK and normal root shutdown must physically dispose the adopted overflow store");
-		System.out.println("LARGE_LOAD_ROWS=" + originalLargeCount);
-		System.out.println("LARGE_LOAD_SPILLS=" + probe.completedSpills.get());
-		System.out.println("LARGE_LOAD_SPILL_CLOSES=" + probe.spillStoreCloses.get());
-		System.out.println("LARGE_LOAD_SPILL_TRANSACTIONS=" + probe.spillTransactionStarts.get());
-		System.out.println("LARGE_LOAD_SPILL_FROZEN_REPLAYS=" + probe.spillFrozenReplayStarts.get());
-		System.out.println("LARGE_LOAD_MAIN_CAPACITY_FAILURES=" + probe.mainCapacityFailures.get());
-		System.out.println("LARGE_LOAD_MAIN_JOURNALS=" + probe.mainJournalAllocations.get());
-		System.out.println("LARGE_LOAD_MAIN_ALIGNED_ROWS_TOTAL=" + probe.mainRowsAtCapacityFailure.get());
-		System.out.println("LARGE_LOAD_MAIN_ALIGNED_ROWS_IN_FAULTED_ATTEMPT="
-				+ probe.mainAttemptRowsAtCapacityFailure.get());
-		System.out.println("LARGE_LOAD_MAIN_TRANSACTION_STARTS=" + probe.mainTransactionStarts.get());
-		System.out.println("LARGE_LOAD_MAIN_FROZEN_ATTEMPTS=" + probe.mainFrozenReplayStarts.get());
-		System.out.println("LARGE_LOAD_MAIN_TRIPLE_RESIZES_BEFORE_COMMIT=" + mainTripleResizesBeforeCommit);
-		System.out.println("LARGE_LOAD_MAIN_VALUE_RESIZES_BEFORE_COMMIT=" + mainValueResizesBeforeCommit);
-		System.out.println("LARGE_LOAD_MAIN_TRIPLE_RESIZES=" + mainTripleResizes);
+		return new LargeStreamedReceipt(probe.completedSpills.get(), probe.spillStoreCloses.get(),
+				probe.spillTransactionStarts.get(), probe.spillFrozenReplayStarts.get(),
+				probe.mainCapacityFailures.get(),
+				probe.mainJournalAllocations.get(), probe.mainRowsAtCapacityFailure.get(),
+				probe.mainAttemptRowsAtCapacityFailure.get(), probe.mainTransactionStarts.get(),
+				probe.mainFrozenReplayStarts.get(), mainTripleResizesBeforeCommit, mainValueResizesBeforeCommit,
+				mainTripleResizes);
+	}
+
+	private record LargeStreamedReceipt(int spills, int spillCloses, int spillTransactions, int spillFrozenReplays,
+			int mainCapacityFailures, int mainJournals, int mainAlignedRows, int mainFaultedRows, int mainTransactions,
+			int mainFrozenAttempts, long tripleResizesBeforeCommit, long valueResizesBeforeCommit, long tripleResizes) {
 	}
 
 	private static void assertLargeExact(RepositoryConnection connection, int expectedRows) throws Exception {

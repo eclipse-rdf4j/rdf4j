@@ -33,3 +33,11 @@ org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.RCC8NTPPI
 org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.RCC8PO
 org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.RCC8TPP
 org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.RCC8TPPI
+org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.ext.Area
+org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.ext.Length
+org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.ext.Centroid
+org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.ext.Transform
+org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.ext.Simplify
+org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.ext.MakePoint
+org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.ext.AsGeoJson
+org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.ext.ClosestPoint

@@ -45,8 +45,7 @@ public class LmdbEvaluationStrategy extends DefaultEvaluationStrategy {
 
 	public static void bindExecutionSnapshot(EvaluationStatistics statistics, TripleSource source, Dataset dataset) {
 		if (statistics instanceof LmdbEvaluationStatistics lmdbStatistics) {
-			lmdbStatistics.bindExecutionSnapshot(LmdbEvaluationStatistics.executionSnapshotEpoch(source));
-			lmdbStatistics.bindFilterReadSource(source, dataset);
+			lmdbStatistics.bindExecutionSource(source, dataset);
 		}
 	}
 

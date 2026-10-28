@@ -4297,6 +4297,9 @@ namespace workbench {
                         configuration. The repository keeps its current settings until it restarts.</p>
                     <p><strong>Save and restart</strong> stores the configuration, then closes the repository and opens it
                         again with the new settings.</p>
+                    <p>A <code>config:redactedSecret</code> value keeps the stored credential when its remote
+                        destination stays the same. Remove that statement to clear the credential, or replace its
+                        value to set a new one. Supply a new credential when changing the destination.</p>
                     <p>If the repository fails to start, the saved configuration stays here so you can correct it.</p>`)}
                     ${submissionStatus(runtime, model)}
                 </div>
@@ -4777,7 +4780,7 @@ namespace workbench {
                         ?hidden=${!inferEnabled} ?disabled=${!inferEnabled} />
                         <span>Include inferred statements</span></label>
                 </div>
-                <div id="lmdb-forced-strategy-field" class="workbench-disclosure__field" hidden>
+                <div id="lmdb-forced-strategy-field" class="workbench-disclosure__field lmdb-forced-strategy-field" hidden>
                     <label for="lmdb-forced-strategy">Forced execution strategy</label>
                     <select id="lmdb-forced-strategy" name="lmdb-forced-strategy" disabled
                         aria-describedby="lmdb-forced-strategy-help">

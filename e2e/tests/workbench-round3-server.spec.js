@@ -15,6 +15,7 @@ const { test, expect } = require('@playwright/test');
 const {
     deleteRepository,
     openQueryPage,
+    postWorkbench,
     refusedUrlOrigin,
     serverBaseUrl,
     setQueryEditor,
@@ -73,7 +74,8 @@ async function sendForPageData(page, url, fields, method = 'POST') {
         const body = new URLSearchParams(form);
         const response = await fetch(verb === 'GET' ? `${target}?${body}` : target, verb === 'GET'
             ? { headers: { Accept: accept } }
-            : { method: verb, headers: { Accept: accept }, body, redirect: 'manual' });
+            : { method: verb, headers: { Accept: accept, ...window.workbench.csrfHeaders(target) },
+                body, redirect: 'manual' });
         return { status: response.status, type: response.headers.get('content-type') || '',
             text: response.type === 'opaqueredirect' ? '' : await response.text(),
             redirected: response.type === 'opaqueredirect' };
@@ -311,10 +313,23 @@ ex:PersonShape a sh:NodeShape ; sh:targetClass ex:Person ;
         await waitForRoute(page, 'add');
         await page.locator('label[for="source-text"]').click();
         await page.locator('#text').fill('@prefix ex: <http://example.org/> .\nex:p2 a ex:Person ; ex:age "x" .');
-        const answer = page.waitForResponse(response => response.request().method() === 'POST'
-            && /\/add(?:[?#]|$)/.test(response.url()));
+        // Read the answer as it passes through: once the page has consumed a chunked error answer, Chromium need not
+        // keep its body for response.text().
+        let answered;
+        const answer = new Promise(resolve => {
+            answered = resolve;
+        });
+        await page.route(url => /\/add(?:[?#]|$)/.test(url.href), async route => {
+            if (route.request().method() !== 'POST') {
+                await route.continue();
+                return;
+            }
+            const response = await route.fetch();
+            answered(await response.text());
+            await route.fulfill({ response });
+        });
         await page.locator('#workbench-outlet [type=submit]').first().click();
-        const body = await (await answer).text();
+        const body = await answer;
 
         const error = records(body).find(record => record.type === 'error');
         expect(error && error.code).toBe('shacl-validation');
@@ -371,7 +386,7 @@ test.describe('C15 credentials beyond Latin-1', () => {
     test('a private query saved by a user named beyond Latin-1 belongs to that user', async ({ page }) => {
         // The session holds the credentials, so the page's own requests save as the signed-in user.
         await signInOnConnectionPage(page, 'håvard✓', 'pass✓');
-        const saved = await page.request.post(pageUrl(repositoryId, 'query'), {
+        const saved = await postWorkbench(page.request, pageUrl(repositoryId, 'query'), {
             form: { action: 'save', 'query-name': queryName, queryLn: 'SPARQL',
                 query: 'SELECT * WHERE { ?s ?p ?o } LIMIT 1', 'save-private': 'true', 'query-timeout': '0' }
         });

@@ -457,6 +457,21 @@ final class PreparedLmdbValue {
 		}
 
 		@Override
+		protected boolean hasStructuralEquals() {
+			return false;
+		}
+
+		@Override
+		protected boolean hasStructuralHashCode() {
+			return false;
+		}
+
+		@Override
+		protected boolean hasStructuralStringValue() {
+			return true;
+		}
+
+		@Override
 		public int hashCode() {
 			return state.semanticHash();
 		}
