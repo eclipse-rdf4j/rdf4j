@@ -256,6 +256,7 @@ class LmdbAdjacencyApplierCutoverTest {
 	void pendingDeltaMergeCandidateAndFoldAreEachValidatedAgainstThePrefix() throws Exception {
 		open(DirectAdjacencyCoverage.FULL, null);
 		seedAndServe();
+		store.coalescePreparesForTest(false); // the scenario needs four generations, not one coalesced run
 		store.pauseApplierForTest(true);
 		// four single-row commits: a full normal-band fan-out, which the policy merges once they are applied
 		for (int i = 0; i < 4; i++) {

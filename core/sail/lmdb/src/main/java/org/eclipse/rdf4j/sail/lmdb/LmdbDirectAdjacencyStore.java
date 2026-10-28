@@ -149,6 +149,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	/** Test seam: false forces every preparation onto a worker so a test can observe the hand-off. */
 	private volatile boolean inlineSmallPrepares = true;
 	private static final long INLINE_PREPARE_MAX_BYTES = 16 * 1024;
+	/** Test seam: false prepares every record as its own generation. */
+	private volatile boolean coalescePrepares = true;
+	private static final long COALESCE_MAX_BYTES = 1024 * 1024;
 	/** Whether a rebuild has been requested; before the startup build starts it tells committers one is coming. */
 	private volatile boolean startupBuildRequested;
 	private final ThreadLocal<Integer> logicalCommitBatchDepth = ThreadLocal.withInitial(() -> 0);
@@ -794,6 +797,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		inlineSmallPrepares = inline;
 	}
 
+	/** Test seam: whether a backlog of sealed records is prepared as one generation (true) or one each. */
+	void coalescePreparesForTest(boolean coalesce) {
+		coalescePrepares = coalesce;
+	}
+
 	/** Whether a generation preparation is on a worker or its outcome waits in the applier's inbox. */
 	boolean prepareInFlightForTest() {
 		return applier.prepareInFlight();
@@ -1112,8 +1120,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			}
 			LmdbAdjacencyMemoryAccount.Charge generationMetadataCharge = metadataCharge.transfer();
 			constructorOwnsResources = true;
-			return new LmdbAdjacencyDeltaGeneration(overlays.generation(to - 1).revision(), arenaOwner, catalog,
-					generationMetadataCharge, weight, keys, planes, predicates, runRefs);
+			LmdbAdjacencyDeltaGeneration merged = new LmdbAdjacencyDeltaGeneration(
+					overlays.generation(to - 1).revision(), arenaOwner, catalog, generationMetadataCharge, weight, keys,
+					planes, predicates, runRefs);
+			merged.coversFrom(overlays.generation(from).firstRevision());
+			return merged;
 		} finally {
 			nativeCharge.close();
 			metadataCharge.close();
@@ -1299,10 +1310,60 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			return new Candidate<>(index, overlays, baseRevision, applied);
 		}
 
-		/** A delta of at most this many sealed-row bytes is prepared on the applier thread (about 400 rows). */
+		/** Rows of at most this many sealed bytes (about 400) are prepared on the applier thread. */
 		@Override
-		public boolean prepareInline(AdjacencyCommitLog.Record record) {
-			return inlineSmallPrepares && record.bytes() <= INLINE_PREPARE_MAX_BYTES;
+		public boolean prepareInline(long sealedBytes) {
+			return inlineSmallPrepares && sealedBytes <= INLINE_PREPARE_MAX_BYTES;
+		}
+
+		@Override
+		public boolean coalesces() {
+			return coalescePrepares;
+		}
+
+		@Override
+		public long coalesceMaxBytes() {
+			return COALESCE_MAX_BYTES;
+		}
+
+		@Override
+		public PreparedApply prepare(List<AdjacencyCommitLog.Record> records, LmdbInMemoryAdjacencyIndex base,
+				LmdbAdjacencyOverlaySet overlays) {
+			List<SealedDirectDelta> parts = new ArrayList<>(records.size());
+			for (AdjacencyCommitLog.Record record : records) {
+				AdjacencyDelta rows = record.rows();
+				if (!(rows instanceof SealedDirectDelta sealed)) {
+					throw new IllegalStateException(
+							"rows of revision " + record.revision() + " are no longer available");
+				}
+				parts.add(sealed);
+			}
+			long started = System.nanoTime();
+			try {
+				RuntimeException injected = injectedPrepareFailure.getAndSet(null);
+				if (injected != null) {
+					throw injected;
+				}
+				SealedDirectDelta coalesced = SealedDirectDelta.coalesce(parts);
+				long[] resolvedSelected = coalesced.hasCapturedCoverage() ? coalesced.resolvedSelectedPredicates()
+						: captureResolvedSelectedPredicates(base);
+				PreparedApply prepared = prepareApply(coalesced, base, overlays, resolvedSelected);
+				if (prepared.generation != null) {
+					prepared.generation.coversFrom(records.get(0).revision());
+				}
+				metrics.recordCoalescedPreparation(records.size());
+				return prepared;
+			} catch (RuntimeException | Error failure) {
+				rememberUnexpectedMaintenanceFailure(failure);
+				throw failure;
+			} finally {
+				metrics.recordPreparation(Math.max(0L, System.nanoTime() - started));
+			}
+		}
+
+		@Override
+		public boolean splitsSnapshot(LmdbAdjacencyOverlaySet overlays, long snapshotRevision) {
+			return overlays.splitsSnapshot(snapshotRevision);
 		}
 
 		@Override

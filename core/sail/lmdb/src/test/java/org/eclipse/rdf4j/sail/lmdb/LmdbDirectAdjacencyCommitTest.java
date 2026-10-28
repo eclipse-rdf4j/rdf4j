@@ -101,6 +101,44 @@ class LmdbDirectAdjacencyCommitTest {
 	}
 
 	@Test
+	void aBacklogOfSmallCommitsIsAppliedAsOneGenerationAndTheirRevisionsStayExactOnlyAtTheEnd() throws Exception {
+		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });
+		assertThat(store.buildNowForTest()).isTrue();
+		long before = tripleStore.getDataRevision();
+		int generationsBefore = store.applierStateForTest().overlays() == null ? 0
+				: store.applierStateForTest().overlays().generationCount();
+		store.pauseApplierForTest(true);
+		try {
+			commitQuads(new long[][] { add(S2, P1, O2, G1, true) });
+			commitQuads(new long[][] { add(S2, P2, O1, 0, true) });
+			commitQuads(new long[][] { add(S1, P2, O2, G1, true) });
+			long head = tripleStore.getDataRevision();
+			assertThat(head).isEqualTo(before + 3);
+			assertThat(store.awaitHeadSealedForTest(30, TimeUnit.SECONDS)).isTrue();
+			assertThat(store.stepApplierForTest()).as("the backlog is one applier unit").isTrue();
+			assertThat(store.applierStateForTest().appliedRevision()).isEqualTo(head);
+			assertThat(store.applierStateForTest().overlays().generationCount())
+					.as("the three records became one generation")
+					.isEqualTo(generationsBefore + 1);
+			try (LmdbAdjacencyReadView view = store.acquire(head)) {
+				assertThat(view.isExact()).isTrue();
+				assertThat(probe(view, S2, P1, O2, G1, true)).hasSize(1);
+				assertThat(probe(view, S2, P2, O1, 0, true)).hasSize(1);
+				assertThat(probe(view, S1, P2, O2, G1, true)).hasSize(1);
+			}
+			try (LmdbAdjacencyReadView inside = store.acquire(head - 1)) {
+				assertThat(inside.isExact()).as("a snapshot inside the coalesced run falls back").isFalse();
+			}
+			try (LmdbAdjacencyReadView earlier = store.acquire(before)) {
+				assertThat(earlier.isExact()).as("the revision before the run stays exact").isTrue();
+				assertThat(probe(earlier, S2, P1, O2, G1, true)).isEmpty();
+			}
+		} finally {
+			store.pauseApplierForTest(false);
+		}
+	}
+
+	@Test
 	void failedPhysicalCommitRetractsTheStagedRecordAndLeavesRevisionUnchanged() throws Exception {
 		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });
 		assertThat(store.buildNowForTest()).isTrue();

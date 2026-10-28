@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -1380,6 +1381,70 @@ final class LmdbDirectAdjacencyCommitDelta {
 
 		static SealedDirectDelta empty(long revision) {
 			return new SealedDirectDelta(revision, false);
+		}
+
+		/**
+		 * One delta holding the events of {@code parts} in order (consecutive revisions, none overflowed), at the last
+		 * part's revision. Events keep their transaction order, which the generation builder uses as the tiebreak for
+		 * the same quad, so a quad added in one part and removed in a later one nets out as it would within one
+		 * transaction. The parts keep their charges and pending tables; the coalesced delta owns nothing.
+		 */
+		static SealedDirectDelta coalesce(List<SealedDirectDelta> parts) {
+			int events = 0;
+			boolean coverage = true;
+			for (SealedDirectDelta part : parts) {
+				if (part.overflowed) {
+					throw new IllegalArgumentException("an overflowed delta cannot be coalesced");
+				}
+				events = Math.addExact(events, part.eventCount);
+				coverage &= part.hasCapturedCoverage();
+			}
+			long[] subjects = new long[events];
+			long[] predicates = new long[events];
+			long[] objects = new long[events];
+			long[] contexts = new long[events];
+			byte[] flags = new byte[events];
+			long[] selected = coverage ? new long[0] : null;
+			int at = 0;
+			for (SealedDirectDelta part : parts) {
+				System.arraycopy(part.subjects, 0, subjects, at, part.eventCount);
+				System.arraycopy(part.predicates, 0, predicates, at, part.eventCount);
+				System.arraycopy(part.objects, 0, objects, at, part.eventCount);
+				System.arraycopy(part.contexts, 0, contexts, at, part.eventCount);
+				System.arraycopy(part.flags, 0, flags, at, part.eventCount);
+				at += part.eventCount;
+				if (coverage) {
+					selected = unionUnsigned(selected, part.resolvedSelectedPredicates);
+				}
+			}
+			return new SealedDirectDelta(null, parts.get(parts.size() - 1).revision, subjects, predicates, objects,
+					contexts, flags, events, null, 0L, selected);
+		}
+
+		private static long[] unionUnsigned(long[] left, long[] right) {
+			if (right == null || right.length == 0) {
+				return left;
+			}
+			long[] merged = Arrays.copyOf(left, left.length + right.length);
+			System.arraycopy(right, 0, merged, left.length, right.length);
+			sortUnsigned(merged);
+			int distinct = 0;
+			for (int i = 0; i < merged.length; i++) {
+				if (i == 0 || merged[i] != merged[i - 1]) {
+					merged[distinct++] = merged[i];
+				}
+			}
+			return Arrays.copyOf(merged, distinct);
+		}
+
+		private static void sortUnsigned(long[] values) {
+			for (int i = 0; i < values.length; i++) {
+				values[i] ^= Long.MIN_VALUE;
+			}
+			Arrays.sort(values);
+			for (int i = 0; i < values.length; i++) {
+				values[i] ^= Long.MIN_VALUE;
+			}
 		}
 
 		private SealedDirectDelta accountMetadata(LmdbAdjacencyMemoryAccount memory) {

@@ -58,6 +58,8 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 
 	/** A reader whose snapshot is more than this many records above the applied revision falls back wholesale. */
 	static final int MAX_PENDING_RECORDS = 64;
+	/** The most records one coalesced preparation may span. */
+	static final int MAX_COALESCED_RECORDS = 4_096;
 
 	private final AdjacencyCommitLog log;
 	private final AdjacencyIndexOps<B, O, G> ops;
@@ -383,6 +385,11 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 			}
 			long applied = state.appliedRevision();
 			if (snapshotRevision <= applied) {
+				if (state.overlays() != null && ops.splitsSnapshot(state.overlays(), snapshotRevision)) {
+					// a coalesced generation holds rows from after this snapshot together with rows it must see
+					state.release();
+					return AdjacencyAcquisition.fallback(snapshotRevision, FallbackReason.PENDING_ROW);
+				}
 				return AdjacencyAcquisition.exact(snapshotRevision, state, List.of());
 			}
 			if (snapshotRevision - applied > MAX_PENDING_RECORDS) {
@@ -589,29 +596,77 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 					Transition.noChange());
 			return true;
 		}
+		// When committers are ahead, the run of sealed records behind this one is prepared as a single generation.
+		long last = next;
+		long bytes = record.bytes();
+		List<Record> run = null;
+		if (ops.coalesces()) {
+			long head = log.headRevision();
+			long limit = ops.coalesceMaxBytes();
+			while (last < head && last - next + 1 < MAX_COALESCED_RECORDS) {
+				Record candidate = log.record(last + 1);
+				if (candidate == null || !candidate.sealed() || candidate.kind() == Kind.OVERFLOWED) {
+					break;
+				}
+				if (candidate.kind() == Kind.DELTA && bytes + candidate.bytes() > limit) {
+					break;
+				}
+				if (run == null) {
+					run = new ArrayList<>();
+					run.add(record);
+				}
+				run.add(candidate);
+				bytes += candidate.kind() == Kind.DELTA ? candidate.bytes() : 0L;
+				last++;
+			}
+		}
+		if (run != null) {
+			run.removeIf(r -> r.kind() != Kind.DELTA);
+			if (run.isEmpty()) {
+				// every record of the run was empty: the revisions advance without a generation
+				ops.retainBase(state.base());
+				if (state.overlays() != null) {
+					ops.retainOverlays(state.overlays());
+				}
+				publish(new AdjacencyState<>(nextEpoch(), state.base(), state.overlays(), last, Long.MAX_VALUE,
+						state.minSnapshotRevision(), Status.SERVING, Phase.ACTIVE, null, this::onStateReleased),
+						Transition.noChange());
+				return true;
+			}
+		}
 		if (!state.tryRetain()) {
 			throw new IllegalStateException("published state released while published: " + state);
 		}
 		prepareInFlight = next;
 		B base = state.base();
 		O overlays = state.overlays();
-		if (ops.prepareInline(record)) {
-			// a small record: prepare here and consume the outcome at once, saving two worker crossings
+		long first = next;
+		long through = last;
+		List<Record> records = run;
+		if (ops.prepareInline(bytes)) {
+			// small rows: prepare here and consume the outcome at once, saving two worker crossings
 			Outcome<G> outcome;
 			try {
-				outcome = Outcome.success(ops.prepare(record, base, overlays));
+				outcome = Outcome.success(records == null ? ops.prepare(record, base, overlays)
+						: ops.prepare(records, base, overlays));
 			} catch (Throwable failure) {
 				outcome = Outcome.failure(failure);
 			}
-			onPrepared(next, state, outcome);
+			onPrepared(first, through, state, outcome);
 			return true;
 		}
-		workers.submit(() -> ops.prepare(record, base, overlays),
-				outcome -> enqueue(() -> onPrepared(next, state, outcome)));
+		workers.submit(() -> records == null ? ops.prepare(record, base, overlays)
+				: ops.prepare(records, base, overlays),
+				outcome -> enqueue(() -> onPrepared(first, through, state, outcome)));
 		return true;
 	}
 
-	private void onPrepared(long revision, AdjacencyState<B, O> predecessor, Outcome<G> outcome) {
+	/**
+	 * Consumes the outcome of preparing revisions {@code [first, revision]} (a single record when they are equal): on
+	 * success the state advances to {@code revision}; on failure every revision of the run becomes a gap from
+	 * {@code first}, so no reader inside the run is served from a generation that was never built.
+	 */
+	private void onPrepared(long first, long revision, AdjacencyState<B, O> predecessor, Outcome<G> outcome) {
 		prepareInFlight = -1;
 		predecessor.release();
 		G generation = outcome.succeeded() ? outcome.result() : null;
@@ -622,12 +677,15 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 			return;
 		}
 		if (!outcome.succeeded()) {
-			log.markGap(revision);
-			degrade(revision, "preparing revision " + revision + " failed: " + describe(outcome.failure()));
+			for (long gapped = first; gapped <= revision; gapped++) {
+				log.markGap(gapped);
+			}
+			degrade(first, "preparing revision" + (first == revision ? " " + revision : "s " + first + "-" + revision)
+					+ " failed: " + describe(outcome.failure()));
 			return;
 		}
 		AdjacencyState<B, O> current = published.get();
-		if (current.status() != Status.SERVING || current.appliedRevision() != revision - 1
+		if (current.status() != Status.SERVING || current.appliedRevision() != first - 1
 				|| current.base() != predecessor.base() || current.overlays() != predecessor.overlays()) {
 			// a rebuild, fold or compaction replaced the state the generation was prepared against; it is prepared
 			// again against the current state by the next applyNext

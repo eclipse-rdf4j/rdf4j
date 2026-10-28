@@ -76,11 +76,43 @@ interface AdjacencyIndexOps<B, O, G> {
 	G prepare(AdjacencyCommitLog.Record record, B base, O overlays) throws Exception;
 
 	/**
-	 * Whether {@link #prepare} for this record is cheap enough to run on the applier thread itself. A worker hand-off
-	 * costs two park/unpark crossings, which dominate a small commit's publication latency; a large record keeps the
-	 * worker so the applier stays responsive.
+	 * Whether a preparation of {@code sealedBytes} of rows is cheap enough to run on the applier thread itself. A
+	 * worker hand-off costs two park/unpark crossings, which dominate a small commit's publication latency; a large
+	 * record keeps the worker so the applier stays responsive.
 	 */
-	default boolean prepareInline(AdjacencyCommitLog.Record record) {
+	default boolean prepareInline(long sealedBytes) {
+		return false;
+	}
+
+	/**
+	 * Whether the applier may prepare a run of consecutive sealed records as one generation through
+	 * {@link #prepare(java.util.List, Object, Object)}. When committers outpace the applier this keeps the number of
+	 * generations (and so the merges and the policy scans) proportional to applier units rather than to commits. A
+	 * snapshot inside such a run cannot be served exactly ({@link #splitsSnapshot}).
+	 */
+	default boolean coalesces() {
+		return false;
+	}
+
+	/** The most sealed-row bytes one coalesced preparation may span. */
+	default long coalesceMaxBytes() {
+		return Long.MAX_VALUE;
+	}
+
+	/**
+	 * Worker or applier operation. Produces one generation for the rows of {@code records} (consecutive revisions, in
+	 * order, every one a sealed delta) against the given base and overlays; the generation's revision is the last
+	 * record's and it covers every revision from the first record's on.
+	 */
+	default G prepare(java.util.List<AdjacencyCommitLog.Record> records, B base, O overlays) throws Exception {
+		throw new UnsupportedOperationException("coalesced preparation is not supported");
+	}
+
+	/**
+	 * Whether a generation of {@code overlays} covers revisions on both sides of {@code snapshotRevision}, so a reader
+	 * at that snapshot would see rows committed after it and must fall back instead.
+	 */
+	default boolean splitsSnapshot(O overlays, long snapshotRevision) {
 		return false;
 	}
 

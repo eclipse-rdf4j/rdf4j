@@ -225,6 +225,79 @@ class AdjacencyApplierModelTest {
 	}
 
 	@Test
+	void aRunOfSealedRecordsIsAppliedAsOneGenerationWhenCoalescing() {
+		try (Harness harness = new Harness(7, false)) {
+			harness.run(Op.REBUILD);
+			harness.settle();
+			harness.ops.coalesces = true;
+			harness.ops.inlinePrepares = true;
+			long before = harness.log.headRevision();
+			for (int i = 0; i < 3; i++) {
+				harness.run(Op.STAGE);
+				harness.run(Op.SEAL_OK);
+				harness.run(Op.CONFIRM);
+			}
+			long head = harness.log.headRevision();
+			assertEquals(before + 3, head);
+			int generationsBefore = harness.applier.state().overlays().generations.size();
+			assertTrue(harness.scheduler.step(), "the three sealed records are one applier unit");
+			assertEquals(head, harness.applier.state().appliedRevision());
+			assertEquals(generationsBefore + 1, harness.applier.state().overlays().generations.size(),
+					"one generation for the run");
+			harness.checkInvariants();
+			try (AdjacencyAcquisition<ModelBase, ModelOverlays> view = harness.applier.acquire(head)) {
+				assertTrue(view.exact(), "the run's last revision is exact");
+			}
+			try (AdjacencyAcquisition<ModelBase, ModelOverlays> view = harness.applier.acquire(head - 1)) {
+				assertFalse(view.exact(), "a snapshot inside the coalesced run cannot be served exactly");
+				assertEquals(FallbackReason.PENDING_ROW, view.reason());
+			}
+			try (AdjacencyAcquisition<ModelBase, ModelOverlays> view = harness.applier.acquire(before)) {
+				assertTrue(view.exact(), "the revision before the run is exact");
+			}
+		}
+	}
+
+	@Test
+	void aFailedCoalescedPreparationGapsTheWholeRun() {
+		try (Harness harness = new Harness(8, false)) {
+			harness.run(Op.REBUILD);
+			harness.settle();
+			harness.ops.coalesces = true;
+			harness.ops.inlinePrepares = true;
+			harness.ops.failPrepares = 1;
+			long before = harness.log.headRevision();
+			for (int i = 0; i < 3; i++) {
+				harness.run(Op.STAGE);
+				harness.run(Op.SEAL_OK);
+				harness.run(Op.CONFIRM);
+			}
+			assertTrue(harness.scheduler.step());
+			assertEquals(before + 1, harness.applier.state().gapFromRevision(),
+					"the gap starts at the run's first revision");
+			harness.checkInvariants();
+			harness.settle();
+		}
+	}
+
+	@Test
+	void randomInterleavingsPreserveEveryInvariantWithCoalescing() {
+		for (int seed = 0; seed < 400; seed++) {
+			try (Harness harness = new Harness(seed, true)) {
+				harness.ops.coalesces = true;
+				harness.ops.inlinePrepares = seed % 2 == 0;
+				Random random = new Random(seed * 7919L);
+				List<Op> ops = new ArrayList<>(EnumSet.allOf(Op.class));
+				for (int i = 0; i < 200; i++) {
+					List<Op> enabled = harness.enabled(ops);
+					harness.run(enabled.get(random.nextInt(enabled.size())));
+				}
+				harness.settleAndAssertLive();
+			}
+		}
+	}
+
+	@Test
 	void overflowedRecordBecomesAGapAndARebuildRetiresIt() {
 		try (Harness harness = new Harness(4, false)) {
 			harness.run(Op.REBUILD);
@@ -384,10 +457,17 @@ class AdjacencyApplierModelTest {
 
 	static final class ModelGeneration extends Counted {
 		final long revision;
+		/** The first revision whose rows this generation holds; below {@link #revision} for a coalesced run. */
+		final long firstRevision;
 		final List<Quad> quads;
 		final List<Boolean> adds;
 
 		ModelGeneration(long revision, List<Quad> quads, List<Boolean> adds) {
+			this(revision, revision, quads, adds);
+		}
+
+		ModelGeneration(long firstRevision, long revision, List<Quad> quads, List<Boolean> adds) {
+			this.firstRevision = firstRevision;
 			this.revision = revision;
 			this.quads = List.copyOf(quads);
 			this.adds = List.copyOf(adds);
@@ -493,10 +573,46 @@ class AdjacencyApplierModelTest {
 
 		/** When set, every record qualifies for an inline preparation on the applier thread. */
 		boolean inlinePrepares;
+		/** When set, a run of pending sealed records is prepared as one generation. */
+		boolean coalesces;
 
 		@Override
-		public boolean prepareInline(Record record) {
+		public boolean prepareInline(long sealedBytes) {
 			return inlinePrepares;
+		}
+
+		@Override
+		public boolean coalesces() {
+			return coalesces;
+		}
+
+		@Override
+		public ModelGeneration prepare(List<Record> records, ModelBase base, ModelOverlays overlays) {
+			if (failPrepares > 0) {
+				failPrepares--;
+				throw new RuntimeException("injected prepare failure");
+			}
+			List<Quad> quads = new ArrayList<>();
+			List<Boolean> adds = new ArrayList<>();
+			for (Record record : records) {
+				ModelDelta rows = (ModelDelta) record.rows();
+				assertNotNull(rows, "rows released before the record was applied: " + record.revision());
+				assertFalse(rows.rowsReleased, "rows released before the record was applied: " + record.revision());
+				quads.addAll(rows.quads);
+				adds.addAll(rows.adds);
+			}
+			return track(new ModelGeneration(records.get(0).revision(), records.get(records.size() - 1).revision(),
+					quads, adds));
+		}
+
+		@Override
+		public boolean splitsSnapshot(ModelOverlays overlays, long snapshotRevision) {
+			for (ModelGeneration generation : overlays.generations) {
+				if (generation.firstRevision <= snapshotRevision && snapshotRevision < generation.revision) {
+					return true;
+				}
+			}
+			return false;
 		}
 
 		@Override
@@ -546,7 +662,8 @@ class AdjacencyApplierModelTest {
 				quads.addAll(generation.quads);
 				adds.addAll(generation.adds);
 			}
-			return track(new ModelGeneration(overlays.generations.get(toInclusive).revision, quads, adds));
+			return track(new ModelGeneration(overlays.generations.get(from).firstRevision,
+					overlays.generations.get(toInclusive).revision, quads, adds));
 		}
 
 		@Override

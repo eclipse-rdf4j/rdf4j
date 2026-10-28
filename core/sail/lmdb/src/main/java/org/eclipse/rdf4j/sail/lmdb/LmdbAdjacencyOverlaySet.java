@@ -254,6 +254,25 @@ final class LmdbAdjacencyOverlaySet {
 		return updated;
 	}
 
+	/**
+	 * Whether a generation covers revisions on both sides of {@code snapshotRevision}: it holds rows the snapshot must
+	 * see together with rows committed after it. Generations are revision ascending and disjoint, so only the first
+	 * generation newer than the snapshot can.
+	 */
+	boolean splitsSnapshot(long snapshotRevision) {
+		int low = 0;
+		int high = generationCount();
+		while (low < high) {
+			int middle = low + high >>> 1;
+			if (generation(middle).revision() <= snapshotRevision) {
+				low = middle + 1;
+			} else {
+				high = middle;
+			}
+		}
+		return low < generationCount() && generation(low).firstRevision() <= snapshotRevision;
+	}
+
 	boolean findLatest(long rawKey, int plane, long rawPredicateId, LatestRowLookup result) {
 		return findLatest(latestRows, rawKey, plane, rawPredicateId, result);
 	}

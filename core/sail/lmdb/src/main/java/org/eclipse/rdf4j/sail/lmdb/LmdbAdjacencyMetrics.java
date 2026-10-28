@@ -76,6 +76,8 @@ final class LmdbAdjacencyMetrics {
 	private final LongAdder sharedLogicalBytes = new LongAdder();
 	private final LongAdder selfContainedFlattenOperations = new LongAdder();
 	private final LongAdder preparationNanos = new LongAdder();
+	private final LongAdder coalescedPreparations = new LongAdder();
+	private final LongAdder coalescedRecords = new LongAdder();
 	private final LongAdder preparationCount = new LongAdder();
 	private final LongAdder publicationNanos = new LongAdder();
 	private final LongAdder publicationCount = new LongAdder();
@@ -274,6 +276,20 @@ final class LmdbAdjacencyMetrics {
 	PhaseTimings phaseTimings() {
 		return new PhaseTimings(preparationNanos.sum(), preparationCount.sum(), publicationNanos.sum(),
 				publicationCount.sum(), compactionNanos.sum(), compactionCount.sum());
+	}
+
+	/** A preparation that produced one generation for {@code records} consecutive commits. */
+	void recordCoalescedPreparation(int records) {
+		coalescedPreparations.increment();
+		coalescedRecords.add(records);
+	}
+
+	long coalescedPreparations() {
+		return coalescedPreparations.sum();
+	}
+
+	long coalescedRecords() {
+		return coalescedRecords.sum();
 	}
 
 	record PhaseTimings(long preparationNanos, long preparationCount, long publicationNanos, long publicationCount,
