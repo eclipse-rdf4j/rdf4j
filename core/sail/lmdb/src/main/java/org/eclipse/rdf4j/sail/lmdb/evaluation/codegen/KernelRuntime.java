@@ -231,7 +231,7 @@ public final class KernelRuntime {
 				addSuppressedOnce(existingReal, cleanup);
 			}
 			if (failure != existingReal) {
-				addSuppressedOnce(existingReal, failure);
+				addControlEvidence(existingReal, failure);
 			}
 			return existingReal;
 		}
@@ -277,7 +277,7 @@ public final class KernelRuntime {
 	}
 
 	private static boolean isSuppressionDisabledControl(Throwable problem) {
-		return problem instanceof KernelCancelledException || problem instanceof KernelQueryCancelledException
+		return problem instanceof KernelCancelledException || problem == KernelQueryCancelledException.INSTANCE
 				|| problem instanceof KernelPeerCancelledException || problem instanceof SuppressionDisabledControl;
 	}
 
@@ -363,6 +363,21 @@ public final class KernelRuntime {
 		primary.addSuppressed(suppressed);
 	}
 
+	private static void addControlEvidence(Throwable primary, Throwable control) {
+		if (control instanceof KernelQueryCancelledException query && query != KernelQueryCancelledException.INSTANCE) {
+			for (Throwable existing : primary.getSuppressed()) {
+				if (existing instanceof KernelQueryCancelledException prior && prior.sameProvenance(query)) {
+					return;
+				}
+			}
+			// The original control already suppresses the promoted cleanup. A fresh occurrence keeps its owner
+			// without creating a cleanup -> control -> cleanup cycle.
+			addSuppressedOnce(primary, query.copy());
+		} else {
+			addSuppressedOnce(primary, control);
+		}
+	}
+
 	private static boolean isControlSignal(Throwable problem) {
 		return problem instanceof KernelCancelledException || problem instanceof KernelQueryCancelledException
 				|| problem instanceof KernelPeerCancelledException || problem instanceof AllocationDeniedException
@@ -379,6 +394,10 @@ public final class KernelRuntime {
 		// boundary the real cleanup must be promoted so it cannot be mistaken for a clean strategy decline.
 		Throwable realFailure = realFailureAttachedToControl(failure);
 		if (realFailure != null) {
+			if (failure instanceof KernelQueryCancelledException query
+					&& query != KernelQueryCancelledException.INSTANCE) {
+				addControlEvidence(realFailure, query);
+			}
 			failure = realFailure;
 		}
 		if (failure instanceof RuntimeException problem) {
@@ -446,7 +465,7 @@ public final class KernelRuntime {
 		}
 		int cancellationReason = cancellation.cancellationReason();
 		if (cancellationReason == KernelCancellation.QUERY_CANCELLED) {
-			throw KernelQueryCancelledException.INSTANCE;
+			throw cancellation.queryCancellationException();
 		}
 		if (cancellationReason == KernelCancellation.PROBE_CANCELLED) {
 			throw KernelCancelledException.INSTANCE;
@@ -477,7 +496,7 @@ public final class KernelRuntime {
 		}
 		int reason = cancellation.cancellationReasonAtMaterializationLimit();
 		if (reason == KernelCancellation.QUERY_CANCELLED) {
-			throw KernelQueryCancelledException.INSTANCE;
+			throw cancellation.queryCancellationException();
 		}
 		if (reason == KernelCancellation.PEER_CANCELLED) {
 			throw KernelPeerCancelledException.INSTANCE;

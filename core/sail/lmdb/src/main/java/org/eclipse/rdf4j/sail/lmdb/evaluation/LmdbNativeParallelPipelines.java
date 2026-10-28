@@ -710,6 +710,7 @@ final class LmdbNativeParallelPipelines {
 		final AtomicReference<Throwable> ownerCancellation = new AtomicReference<>();
 		final ArrayList<Throwable> cleanupFailures = new ArrayList<>();
 		final AtomicBoolean cancelled = new AtomicBoolean();
+		final AtomicBoolean ownerStopped = new AtomicBoolean();
 		final Object failureLock = new Object();
 		final NativeExecutionContext.WorkerTasks tasks;
 		final ArrayList<Future<?>> futures;
@@ -835,7 +836,7 @@ final class LmdbNativeParallelPipelines {
 					observeWorkerFilterCloseFailures(ownedPlan);
 					task.run();
 				} catch (Throwable problem) {
-					recordTaskFailure(problem);
+					recordTaskFailure(problem, replayContext);
 				}
 			}
 		}
@@ -855,7 +856,7 @@ final class LmdbNativeParallelPipelines {
 					observeWorkerFilterCloseFailures(ownedPlan);
 					runWorker(workerIndex, ownedPlan);
 				} catch (Throwable problem) {
-					recordTaskFailure(problem);
+					recordTaskFailure(problem, replayContext);
 				}
 			}
 		}
@@ -895,31 +896,52 @@ final class LmdbNativeParallelPipelines {
 		}
 
 		void recordTaskFailure(Throwable problem) {
-			if (problem == KernelQueryCancelledException.INSTANCE
-					&& observeOwnerCancellation()) {
-				// The evaluation owner can request cancellation before this cursor publishes its local shutdown flag.
-				// Preserve that terminal outcome so a consumer already waiting on the output queue wakes and unwinds.
-				// Foreign query signals and failures carrying cleanup errors still follow normal failure accounting.
-				return;
-			}
+			recordTaskFailure(problem, null);
+		}
+
+		private void recordTaskFailure(Throwable problem, NativeExecutionContext.WorkerContext context) {
 			if (problem instanceof LmdbNativeExchange.ExecutionCancelledException cancellation
-					&& cancellation.belongsTo(cancelled) && cancelled.get()) {
+					&& cancellation.belongsTo(cancelled) && cancelled.get() && problem.getSuppressed().length == 0) {
 				// Only this exchange's cancellation can wake its blocked worker cooperatively. A failure from
 				// nested/foreign execution must retain its ordinary propagation and failure accounting.
 				return;
 			}
-			if (problem instanceof ReadOperationClosedException closedOwner) {
+			if (problem instanceof KernelQueryCancelledException cancellation && problem.getSuppressed().length == 0
+					&& (consumerRow.cancellation.owns(cancellation)
+							|| context != null && context.ownsCancellation(cancellation.origin()))) {
+				ownerStopped.set(true);
+				cancelled.set(true);
+				return;
+			}
+			if (problem instanceof ReadOperationClosedException closedOwner && problem.getSuppressed().length == 0
+					&& context != null && context.ownsCancellation(closedOwner.owner())) {
 				// The captured capability is still denied immediately. Caller close can reach the owner before
 				// its native delegate, so retain this cancellation separately from genuine execution failures.
 				ownerCancellation.compareAndSet(null, closedOwner);
 				cancelled.set(true);
 				return;
 			}
+			if (problem instanceof LmdbNativeExchange.OwnerInterruptedException interrupted
+					&& problem.getSuppressed().length == 0 && interrupted.getCause().getSuppressed().length == 0
+					&& context != null && context.ownsCancellation(interrupted.owner())) {
+				ownerStopped.set(true);
+				cancelled.set(true);
+				return;
+			}
+			if (problem == KernelQueryCancelledException.INSTANCE) {
+				// The legacy singleton cannot retain cleanup failures and has no owner to classify it as ours.
+				problem = new QueryEvaluationException("parallel native worker failed", problem);
+			}
 			boolean recorded = false;
-			boolean alreadyRecordedAsCleanup;
+			boolean alreadyRecordedAsCleanup = false;
 			synchronized (failureLock) {
-				alreadyRecordedAsCleanup = cleanupFailures.stream().anyMatch(cleanup -> cleanup == problem);
-				if ((!cancelled.get() || ownerCancellation.get() != null) && failure.compareAndSet(null, problem)) {
+				for (Throwable cleanup : cleanupFailures) {
+					if (cleanup == problem) {
+						alreadyRecordedAsCleanup = true;
+						break;
+					}
+				}
+				if (failure.compareAndSet(null, problem)) {
 					recorded = true;
 				}
 			}
@@ -930,15 +952,6 @@ final class LmdbNativeParallelPipelines {
 			if (recorded) {
 				logger.debug("Native parallel pipeline worker failed", problem);
 			}
-		}
-
-		private boolean observeOwnerCancellation() {
-			if (!consumerRow.cancellation.isCancellationRequested()) {
-				return false;
-			}
-			ownerCancellation.compareAndSet(null, KernelQueryCancelledException.INSTANCE);
-			cancelled.set(true);
-			return true;
 		}
 
 		void recordCleanupFailure(Throwable closeFailure) {
@@ -1140,7 +1153,10 @@ final class LmdbNativeParallelPipelines {
 			} finally {
 				KernelRuntime.closeCursor(pipeline, failure, this::recordCleanupFailure);
 			}
-			if (!cancelled.get() && !row.cancellation.isCancellationRequested()) {
+			if (!cancelled.get()) {
+				// RowState.advance may return false because the shared token stopped, not because this worker
+				// reached EOF. Publish that outcome so the consumer cannot wait forever for an END page.
+				row.cancellation.check();
 				offerOutput(OutputPage.END);
 			}
 		}
@@ -1154,17 +1170,10 @@ final class LmdbNativeParallelPipelines {
 		void offerOutput(OutputPage page) throws IOException {
 			try {
 				while (!output.offer(page, 50, TimeUnit.MILLISECONDS)) {
-					if (observeOwnerCancellation()) {
-						throw KernelQueryCancelledException.INSTANCE;
-					}
 					LmdbNativeExchange.throwIfAborted(failure, cancelled);
 				}
-				if (observeOwnerCancellation()) {
-					throw KernelQueryCancelledException.INSTANCE;
-				}
 			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new IOException(e);
+				throw LmdbNativeExchange.interrupted(e);
 			}
 		}
 
@@ -1174,9 +1183,13 @@ final class LmdbNativeParallelPipelines {
 				return false;
 			}
 			while (true) {
-				stopForOwnerCancellation();
+				if (stopForOwnerCancellation()) {
+					return false;
+				}
 				pumpProducer();
-				stopForOwnerCancellation();
+				if (stopForOwnerCancellation()) {
+					return false;
+				}
 				if (active != null && activeIndex < active.batch.selectedCount) {
 					int physical = active.batch.selection[activeIndex++];
 					active.batch.copyToRow(physical, consumerRow.slots);
@@ -1186,7 +1199,7 @@ final class LmdbNativeParallelPipelines {
 				active = null;
 				if (endedWorkers == workerPlans.length) {
 					exhausted = true;
-					shutdown();
+					close(false);
 					Throwable problem = failureToThrow();
 					if (problem == null) {
 						commitWorkerMetrics();
@@ -1196,7 +1209,7 @@ final class LmdbNativeParallelPipelines {
 				}
 				Throwable problem = failure.get();
 				if (problem != null || ownerCancellation.get() != null) {
-					shutdown();
+					close(false);
 					throwFailure(failureToThrow());
 				}
 				try {
@@ -1211,19 +1224,28 @@ final class LmdbNativeParallelPipelines {
 					active = page;
 					activeIndex = 0;
 				} catch (InterruptedException e) {
-					Thread.currentThread().interrupt();
-					shutdown();
-					throwFailure(retainRecordedCleanupFailures(new IOException(e)));
+					IOException interrupted = LmdbNativeExchange.interrupted(e);
+					close(false);
+					Throwable workerProblem = failureToThrowOnClose();
+					if (workerProblem != null) {
+						if (workerProblem instanceof KernelQueryCancelledException) {
+							workerProblem = new IOException("parallel native worker failed", workerProblem);
+						}
+						throwFailure(retainCleanupFailure(workerProblem, interrupted));
+					}
+					throw interrupted;
 				}
 			}
 		}
 
-		private void stopForOwnerCancellation() throws IOException {
-			if (!observeOwnerCancellation()) {
-				return;
+		private boolean stopForOwnerCancellation() throws IOException {
+			if (failure.get() == null && ownerCancellation.get() == null && !ownerStopped.get()
+					&& !consumerRow.cancellation.explicitCancellationPublished()) {
+				return false;
 			}
-			shutdown();
+			close(false);
 			throwFailure(failureToThrow());
+			return true;
 		}
 
 		private void commitWorkerMetrics() {
@@ -1246,12 +1268,7 @@ final class LmdbNativeParallelPipelines {
 		}
 
 		private Throwable failureToThrowOnClose() {
-			synchronized (failureLock) {
-				if (cleanupFailures.isEmpty()) {
-					return null;
-				}
-			}
-			return failureToThrow();
+			return retainRecordedCleanupFailures(failure.get());
 		}
 
 		private Throwable retainRecordedCleanupFailures(Throwable problem) {
@@ -1279,6 +1296,11 @@ final class LmdbNativeParallelPipelines {
 		}
 
 		private static void throwFailure(Throwable problem) throws IOException {
+			if (problem instanceof KernelQueryCancelledException) {
+				// This was retained as a worker failure, not accepted as the owning query's cancellation. Keep it
+				// from being reinterpreted as normal exhaustion by an enclosing native iteration.
+				throw new IOException("parallel native worker failed", problem);
+			}
 			if (problem instanceof IOException) {
 				throw (IOException) problem;
 			}
@@ -1295,20 +1317,29 @@ final class LmdbNativeParallelPipelines {
 
 		@Override
 		public void close() {
+			close(true);
+		}
+
+		private void close(boolean reportWorkerFailure) {
 			if (closed) {
 				awaitTasks();
 				return;
 			}
 			shutdown();
-			Throwable problem = failureToThrowOnClose();
-			if (problem instanceof RuntimeException) {
-				throw (RuntimeException) problem;
-			}
-			if (problem instanceof Error) {
-				throw (Error) problem;
-			}
-			if (problem != null) {
-				throw new QueryEvaluationException("parallel native pipeline failed while closing", problem);
+			if (reportWorkerFailure) {
+				Throwable problem = failureToThrowOnClose();
+				if (problem instanceof KernelQueryCancelledException) {
+					throw new QueryEvaluationException("parallel native worker failed", problem);
+				}
+				if (problem instanceof RuntimeException runtimeFailure) {
+					throw runtimeFailure;
+				}
+				if (problem instanceof Error error) {
+					throw error;
+				}
+				if (problem != null) {
+					throw new QueryEvaluationException("parallel native pipeline failed while closing", problem);
+				}
 			}
 		}
 
@@ -1318,12 +1349,12 @@ final class LmdbNativeParallelPipelines {
 				return;
 			}
 			closed = true;
-			if (!exhausted && failure.get() == null) {
-				CANCELLED_RUNS.incrementAndGet();
-			}
 			cancelled.set(true);
 			closeProducer();
 			awaitTasks();
+			if (!exhausted && failure.get() == null && cleanupFailures.isEmpty()) {
+				CANCELLED_RUNS.incrementAndGet();
+			}
 			reservation.close();
 			System.arraycopy(entrySlots, 0, consumerRow.slots, 0, entrySlots.length);
 			consumerRow.recomputeBoundMask();

@@ -273,7 +273,11 @@ class LmdbNativeCensusCancellationTest {
 			release.countDown();
 			ExecutionException failure = Assertions.assertThrows(ExecutionException.class,
 					() -> worker.get(5, TimeUnit.SECONDS));
-			assertThat(failure.getCause()).isSameAs(KernelQueryCancelledException.INSTANCE);
+			assertThat(failure.getCause()).isInstanceOf(KernelQueryCancelledException.class);
+			KernelQueryCancelledException signal = (KernelQueryCancelledException) failure.getCause();
+			assertThat(signal.origin()).as("census cancellation retains its owning token")
+					.isInstanceOf(NativeCancellationToken.class);
+			assertThat(signal.observedBy(signal.origin())).isTrue();
 			verify(pages).close();
 			verify(wildcard).close();
 			verify(probe).close();

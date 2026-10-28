@@ -849,9 +849,9 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		if (closed) {
 			return false;
 		}
-		if (cancellation.isCancellationRequested()) {
-			close();
-			return false;
+		KernelQueryCancelledException cancellationSignal = cancellation.pollCancellation();
+		if (cancellationSignal != null) {
+			return finishCancellation(cancellationSignal);
 		}
 		if (next != null) {
 			return true;
@@ -860,13 +860,20 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			try {
 				resultIterator = evaluateAll().iterator();
 			} catch (KernelQueryCancelledException cancelled) {
-				close();
-				return false;
+				return finishCancellation(cancelled);
 			}
 		}
 		if (resultIterator.hasNext()) {
 			next = resultIterator.next();
 			return true;
+		}
+		return false;
+	}
+
+	private boolean finishCancellation(KernelQueryCancelledException cancelled) {
+		close();
+		if (cancellation.unownedCancellation(cancelled) || cancelled.getSuppressed().length != 0) {
+			KernelRuntime.rethrowCloseFailure(cancelled);
 		}
 		return false;
 	}
@@ -936,7 +943,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	}
 
 	@Override
-	public synchronized boolean requestCancellation() {
+	public boolean requestCancellation() {
 		if (closed) {
 			return false;
 		}

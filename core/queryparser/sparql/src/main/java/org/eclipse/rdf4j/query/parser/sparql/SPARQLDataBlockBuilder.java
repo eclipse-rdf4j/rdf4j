@@ -147,18 +147,17 @@ final class SPARQLDataBlockBuilder extends AbstractASTVisitor {
 	public Object visit(ASTPropertyList node, Object data) throws VisitorException {
 		Resource subject = (Resource) data;
 		IRI predicate = (IRI) value(node.getVerb());
-		Node objects = node.getObjectList();
-		for (int i = 0; i < objects.jjtGetNumChildren(); i++) {
-			Value object = value(objects.jjtGetChild(i));
+		ObjectListSyntax.forEach(node.getObjectList(), (objectNode, suffixes) -> {
+			Value object = value(objectNode);
 			emit(subject, predicate, object);
-			for (ASTAnnotationSuffix suffix : node.jjtGetChildren(ASTAnnotationSuffix.class)) {
+			for (ASTAnnotationSuffix suffix : suffixes) {
 				Resource reifier = suffix.getReifier() == null ? fresh() : (Resource) value(suffix.getReifier());
 				emit(reifier, RDF.REIFIES, factory.createTripleTerm(subject, predicate, object));
 				if (suffix.getAnnotation() != null) {
 					suffix.getAnnotation().jjtAccept(this, reifier);
 				}
 			}
-		}
+		});
 		ASTPropertyList next = node.getNextPropertyList();
 		if (next != null) {
 			next.jjtAccept(this, data);

@@ -259,6 +259,9 @@ final class NativeOrderedRowsIteration extends DelayedIteration<BindingSet> impl
 		try {
 			return new CloseableIteratorIteration<>(step.evaluateAll(base, source, cancellation).iterator());
 		} catch (KernelQueryCancelledException cancelled) {
+			if (cancellation.unownedCancellation(cancelled) || cancelled.getSuppressed().length != 0) {
+				KernelRuntime.rethrowCloseFailure(cancelled);
+			}
 			return new CloseableIteratorIteration<>(List.<BindingSet>of().iterator());
 		} finally {
 			releasePreparationState();
@@ -2583,15 +2586,16 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet>, C
 			return false;
 		}
 		if (next != null) {
-			if (cancellation.isCancellationRequested() && cancellationShouldFail()) {
-				failScalarFilterAttempt(KernelQueryCancelledException.INSTANCE);
+			Throwable cancelled = cancellationFailure();
+			if (cancelled != null) {
+				failScalarFilterAttempt(cancelled);
 			}
 			return true;
 		}
 		try (NativeExecutionPhaseEvent.InputScope inputScope = inputPhases.enter()) {
 			if (!initialized && !initialize()) {
-				if (cancellation.isCancellationRequested() && cancellationShouldFail()) {
-					KernelQueryCancelledException control = KernelQueryCancelledException.INSTANCE;
+				Throwable control = cancellationFailure();
+				if (control != null) {
 					failScalarFilterAttempt(control);
 					finish(false, control);
 				} else {
@@ -2616,14 +2620,19 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet>, C
 				next = step.snapshot(source, row.slots, base);
 				return true;
 			}
+			cancellation.check();
 			finish(true);
 			return false;
 		} catch (KernelQueryCancelledException cancelled) {
-			Throwable primary = cancellationShouldFail() ? cancelled : null;
+			Throwable primary = cancellationShouldFail() || cancellation.unownedCancellation(cancelled)
+					|| cancelled.getSuppressed().length != 0 ? cancelled : null;
 			if (primary != null) {
 				failScalarFilterAttempt(primary);
 			}
 			finish(false, primary);
+			if (cancellation.unownedCancellation(cancelled) || cancelled.getSuppressed().length != 0) {
+				KernelRuntime.rethrowCloseFailure(cancelled);
+			}
 			return false;
 		} catch (IOException e) {
 			failScalarFilterAttempt(e);
@@ -2647,9 +2656,8 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet>, C
 	}
 
 	private Throwable cancellationFailure() {
-		return cancellation.isCancellationRequested() && cancellationShouldFail()
-				? KernelQueryCancelledException.INSTANCE
-				: null;
+		KernelQueryCancelledException signal = cancellation.pollCancellation();
+		return signal != null && cancellationShouldFail() ? signal : null;
 	}
 
 	private boolean initialize() throws IOException {
@@ -2763,9 +2771,10 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet>, C
 		NativeScalarFilterAttempt activeScalarAttempt = scalarFilterAttempt;
 		cursor = null;
 		Throwable failure = primary;
-		if (failure == null && cancellationFailure() != null) {
+		Throwable cancellation = cancellationFailure();
+		if (failure == null && cancellation != null) {
 			if (activeScalarAttempt != null) {
-				activeScalarAttempt.fail(KernelQueryCancelledException.INSTANCE, true);
+				activeScalarAttempt.fail(cancellation, true);
 			}
 		}
 		LmdbFusedSipFactorizedRuntime.Scope sessionScope = null;
@@ -2814,8 +2823,9 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet>, C
 			}
 		}
 		failure = KernelRuntime.closeResource(inputPhases, failure);
-		if (failure == null && activeScalarAttempt != null && cancellationFailure() != null) {
-			activeScalarAttempt.fail(KernelQueryCancelledException.INSTANCE, true);
+		cancellation = cancellationFailure();
+		if (failure == null && activeScalarAttempt != null && cancellation != null) {
+			activeScalarAttempt.fail(cancellation, true);
 		}
 		if (failure != null && activeScalarAttempt != null) {
 			activeScalarAttempt.fail(failure, true);
@@ -3142,10 +3152,11 @@ final class MaterializedUnorderedRowCursor implements RowCursor {
 	}
 
 	private boolean cancellationRequested(NativeUnorderedInput active) {
-		if (!active.row.cancellation.isCancellationRequested()) {
+		KernelQueryCancelledException signal = active.row.cancellation.pollCancellation();
+		if (signal == null) {
 			return false;
 		}
-		active.failScalarFilterAttempt(KernelQueryCancelledException.INSTANCE, true);
+		active.failScalarFilterAttempt(signal, true);
 		return true;
 	}
 
@@ -3349,11 +3360,15 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 			}
 			return next != null;
 		} catch (KernelQueryCancelledException cancelled) {
-			Throwable primary = cancellationShouldFail() ? cancelled : null;
+			Throwable primary = cancellationShouldFail() || cancellation.unownedCancellation(cancelled)
+					|| cancelled.getSuppressed().length != 0 ? cancelled : null;
 			if (primary != null) {
 				failScalarFilterAttempt(primary);
 			}
 			finish(false, primary);
+			if (cancellation.unownedCancellation(cancelled) || cancelled.getSuppressed().length != 0) {
+				KernelRuntime.rethrowCloseFailure(cancelled);
+			}
 			return false;
 		} catch (IOException e) {
 			failScalarFilterAttempt(e);
@@ -3386,9 +3401,8 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 	}
 
 	private Throwable cancellationFailure() {
-		return cancellation.isCancellationRequested() && cancellationShouldFail()
-				? KernelQueryCancelledException.INSTANCE
-				: null;
+		KernelQueryCancelledException signal = cancellation.pollCancellation();
+		return signal != null && cancellationShouldFail() ? signal : null;
 	}
 
 	private BindingSet getNextElement() throws IOException {
@@ -3420,19 +3434,15 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 			return getNextBatchElement();
 		}
 
-		while (!closed && !cancellation.isCancellationRequested()) {
+		while (!closed) {
+			cancellation.check();
 			boolean advanced = unorderedInput.advance();
-			if (cancellation.isCancellationRequested()) {
-				Throwable cancellation = cancellationFailure();
-				if (cancellation != null) {
-					failScalarFilterAttempt(cancellation);
-				}
-				return null;
-			}
+			cancellation.check();
 			if (unorderedInput != null) {
 				unorderedInput.commitFactorizedAttemptIfEngaged();
 			}
 			if (!advanced) {
+				cancellation.check();
 				break;
 			}
 			if (unorderedInput != null) {
@@ -3468,17 +3478,13 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 	}
 
 	private BindingSet getNextBatchElement() throws IOException {
-		while (!closed && !cancellation.isCancellationRequested()) {
+		while (!closed) {
+			cancellation.check();
 			if (batchIndex >= batch.selectedCount) {
 				int filled = unorderedInput.fill();
-				if (cancellation.isCancellationRequested()) {
-					Throwable cancellation = cancellationFailure();
-					if (cancellation != null) {
-						failScalarFilterAttempt(cancellation);
-					}
-					return null;
-				}
+				cancellation.check();
 				if (filled == 0) {
+					cancellation.check();
 					return null;
 				}
 				if (unorderedInput != null) {
@@ -3635,11 +3641,12 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 		RowState activeRow = row;
 		batchCursor = null;
 		Throwable failure = primary;
-		if (failure == null && cancellationFailure() != null) {
+		Throwable cancellation = cancellationFailure();
+		if (failure == null && cancellation != null) {
 			if (activeInput != null) {
-				activeInput.failScalarFilterAttempt(KernelQueryCancelledException.INSTANCE, true);
+				activeInput.failScalarFilterAttempt(cancellation, true);
 			} else if (activeRow != null) {
-				activeRow.failScalarFilterAttempt(KernelQueryCancelledException.INSTANCE, true);
+				activeRow.failScalarFilterAttempt(cancellation, true);
 			}
 		}
 		if (activeInput != null) {

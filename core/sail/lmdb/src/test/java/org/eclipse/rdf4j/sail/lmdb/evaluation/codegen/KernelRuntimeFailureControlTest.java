@@ -12,8 +12,10 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation.codegen;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeCancellationTestAccess;
 import org.junit.jupiter.api.Test;
@@ -145,6 +147,56 @@ class KernelRuntimeFailureControlTest {
 		RuntimeException queryPlan = new RuntimeException("query plan close failure");
 		assertCleanupEscapes(() -> KernelRuntime.closePlanCursor(closingPlanCursor(queryPlan),
 				KernelQueryCancelledException.INSTANCE), queryPlan);
+	}
+
+	@Test
+	void occurrenceCancellationPromotesCleanupWithAcyclicOwnerEvidence() {
+		Object observer = new Object();
+		Object owner = new Object();
+		KernelQueryCancelledException cancelled = new KernelQueryCancelledException(observer, owner);
+		IllegalStateException cleanup = new IllegalStateException("query cleanup failed");
+		Throwable retained = KernelRuntime.closeResource(() -> {
+			throw cleanup;
+		}, cancelled);
+
+		assertSame(cleanup, assertThrows(IllegalStateException.class,
+				() -> KernelRuntime.rethrowCloseFailure(retained)));
+		assertCancellationEvidence(cleanup, observer, owner);
+	}
+
+	@Test
+	void multipleCleanupFailuresRetainAcyclicCancellationEvidence() {
+		Object observer = new Object();
+		Object owner = new Object();
+		KernelQueryCancelledException cancelled = new KernelQueryCancelledException(observer, owner);
+		IllegalStateException first = new IllegalStateException("first cleanup failed");
+		IllegalArgumentException second = new IllegalArgumentException("second cleanup failed");
+		Throwable retained = KernelRuntime.closeResource(() -> {
+			throw first;
+		}, cancelled);
+		retained = KernelRuntime.closeResource(() -> {
+			throw second;
+		}, retained);
+		Throwable result = retained;
+
+		assertSame(first, assertThrows(IllegalStateException.class,
+				() -> KernelRuntime.rethrowCloseFailure(result)));
+		assertEquals(2, first.getSuppressed().length);
+		assertSame(second, first.getSuppressed()[0]);
+		KernelQueryCancelledException evidence = assertInstanceOf(KernelQueryCancelledException.class,
+				first.getSuppressed()[1]);
+		assertSame(owner, evidence.origin());
+		assertTrue(evidence.observedBy(observer));
+		assertEquals(0, evidence.getSuppressed().length, "the evidence must not point back to the cleanup");
+	}
+
+	private static void assertCancellationEvidence(Throwable cleanup, Object observer, Object owner) {
+		assertEquals(1, cleanup.getSuppressed().length);
+		KernelQueryCancelledException evidence = assertInstanceOf(KernelQueryCancelledException.class,
+				cleanup.getSuppressed()[0]);
+		assertSame(owner, evidence.origin());
+		assertTrue(evidence.observedBy(observer));
+		assertEquals(0, evidence.getSuppressed().length, "the evidence must not point back to the cleanup");
 	}
 
 	@Test
