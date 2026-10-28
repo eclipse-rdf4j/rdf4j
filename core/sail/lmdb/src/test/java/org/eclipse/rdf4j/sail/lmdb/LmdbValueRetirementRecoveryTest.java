@@ -122,6 +122,7 @@ class LmdbValueRetirementRecoveryTest {
 		}
 		CountDownLatch termWriter = new CountDownLatch(1);
 		CountDownLatch release = new CountDownLatch(1);
+		CountDownLatch applicationCancelled = new CountDownLatch(1);
 		AtomicLong observedNativeId = new AtomicLong();
 		CompletableFuture<Boolean> sameWriter = new CompletableFuture<>();
 		AtomicReference<ValueStore> values = new AtomicReference<>();
@@ -169,6 +170,10 @@ class LmdbValueRetirementRecoveryTest {
 									sameWriter.complete(retained);
 									if (!retained) {
 										throw new IllegalStateException("Namespace cleanup consumed the TERM writer");
+									}
+									if (asyncTermGrowth) {
+										assertTrue(applicationCancelled.await(10L, TimeUnit.SECONDS),
+												"the TERM writer must stay admitted until the waiting application is cancelled");
 									}
 								} catch (IOException | InterruptedException failure) {
 									sameWriter.completeExceptionally(failure);
@@ -243,6 +248,7 @@ class LmdbValueRetirementRecoveryTest {
 					assertTrue(cancelled.get(10L, TimeUnit.SECONDS) instanceof SailException,
 							"cancellation must fail the partial statement transaction");
 				} finally {
+					applicationCancelled.countDown();
 					writer.interrupt();
 					writer.join(10_000L);
 				}
@@ -270,6 +276,7 @@ class LmdbValueRetirementRecoveryTest {
 			}
 		} finally {
 			release.countDown();
+			applicationCancelled.countDown();
 			reopened.shutDown();
 		}
 	}
