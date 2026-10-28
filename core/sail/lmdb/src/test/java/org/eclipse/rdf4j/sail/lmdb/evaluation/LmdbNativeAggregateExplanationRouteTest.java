@@ -29,10 +29,13 @@ import java.util.OptionalLong;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.QueryExplanationContext;
@@ -52,6 +55,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** Ensures optimized explanations name the route produced by the lowered aggregate specialization. */
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
@@ -177,13 +182,15 @@ class LmdbNativeAggregateExplanationRouteTest {
 		}
 	}
 
-	@Test
-	void effectfulAggregateReportsItsSerialValueAuthorityAtExecution() {
-		GenericPlanNode telemetry = explain(EFFECTFUL_QUERY, null, Explanation.Level.Telemetry);
+	@ParameterizedTest
+	@ValueSource(strings = { LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED })
+	void effectfulAggregateReportsItsSerialValueAuthorityAtExecution(String strategy) {
+		GenericPlanNode telemetry = explain(EFFECTFUL_QUERY, strategy, Explanation.Level.Telemetry);
 		String path = findMetric(telemetry, LmdbNativeExplain.EXECUTION_PATH);
 		assertThat(path)
 				.as("RAND is an effectful value producer and cannot use the wildcard aggregate route")
-				.isNotNull()
+				.isEqualTo(strategy)
 				.doesNotContain("Wildcard")
 				.doesNotContain("Parallel");
 		assertThat(findLongMetric(telemetry, "nativeIrBindEvaluationsActual"))
@@ -198,6 +205,69 @@ class LmdbNativeAggregateExplanationRouteTest {
 		GenericPlanNode optimized = explain(EFFECTFUL_QUERY, null, Explanation.Level.Optimized);
 		assertThat(optimized.toString())
 				.contains("Computed values, full-row DISTINCT or encounter order require one serial value authority");
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void effectfulAggregateEvaluatesEachInputOnceForAutoAndNestedLoop(boolean forceNestedLoop) {
+		String functionUri = "urn:rdf4j:test:aggregate-explain-volatile";
+		AtomicInteger calls = new AtomicInteger();
+		Function function = new Function() {
+			@Override
+			public String getURI() {
+				return functionUri;
+			}
+
+			@Override
+			public Determinism getDeterminism() {
+				return Determinism.VOLATILE;
+			}
+
+			@Override
+			public Value evaluate(ValueFactory valueFactory, Value... args) {
+				return valueFactory.createLiteral(calls.incrementAndGet());
+			}
+		};
+		FunctionRegistry registry = FunctionRegistry.getInstance();
+		Function previous = registry.get(functionUri).orElse(null);
+		registry.add(function);
+		try {
+			String query = "SELECT (COUNT(?r) AS ?count) WHERE { ?s ?p ?o . BIND(<" + functionUri
+					+ ">() AS ?r) }";
+			String strategy = forceNestedLoop ? LmdbNativeAttemptMetrics.PATH_NESTED_LOOP : null;
+			List<BindingSet> result = rows(query, strategy);
+			assertThat(result).hasSize(1);
+			assertThat(result.getFirst().getValue("count").stringValue()).isEqualTo("32");
+			assertThat(calls.get()).as("one volatile evaluation per result input").isEqualTo(32);
+
+			calls.set(0);
+			GenericPlanNode telemetry = explain(query, strategy, Explanation.Level.Telemetry);
+			assertThat(calls.get()).as("one volatile evaluation per telemetry input").isEqualTo(32);
+			assertThat(findMetric(telemetry, LmdbNativeExplain.EXECUTION_PATH))
+					.as("an effectful aggregate must retain a serial execution route")
+					.isNotNull()
+					.doesNotContain("Wildcard")
+					.doesNotContain("Parallel");
+			Long parallelWorkers = findLongMetric(telemetry, "nativeIrParallelWorkersStartedActual");
+			if (parallelWorkers != null) {
+				assertThat(parallelWorkers).as("the effectful route must not engage parallel workers").isEqualTo(0L);
+			}
+			String decision = findMetric(telemetry, LmdbNativeExplain.ADAPTIVE_COST_DECISION);
+			if (decision != null) {
+				String winner = decision.split(";", 2)[0];
+				assertThat(winner).startsWith("winner=").doesNotContain("Wildcard").doesNotContain("Parallel");
+			}
+			if (forceNestedLoop) {
+				assertThat(decision)
+						.as("the forced nested-loop strategy must actually win")
+						.contains("winner=nestedLoop");
+			}
+		} finally {
+			registry.remove(function);
+			if (previous != null) {
+				registry.add(previous);
+			}
+		}
 	}
 
 	@Test

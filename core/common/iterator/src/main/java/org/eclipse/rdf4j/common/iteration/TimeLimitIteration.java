@@ -16,8 +16,6 @@ import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.NoSuchElementException;
-import java.util.Timer;
-import java.util.TimerTask;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.slf4j.Logger;
@@ -42,18 +40,13 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 
 	private static final String PROPERTY_PREFIX = "org.eclipse.rdf4j.common.iteration.TimeLimitIteration.";
 
-	static final Timer TIMER = new Timer("TimeLimitIteration", true);
-
 	private static final long DEFAULT_INTERRUPT_GRACE_MILLIS = Long.getLong(PROPERTY_PREFIX + "interruptGraceMillis",
 			2000L);
 	private static final long DEFAULT_CLOSE_GRACE_MILLIS = Long.getLong(PROPERTY_PREFIX + "closeGraceMillis", 2000L);
 
-	/** Delays beyond this bound would overflow the timer's absolute execution time and are never reached anyway. */
-	private static final long MAX_TIMER_DELAY_MILLIS = Long.MAX_VALUE / 4;
-
 	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
-	private final InterruptTask<E> interruptTask;
+	private final TimeLimitScheduler.Task interruptTask;
 	private final long interruptGraceMillis;
 	private final long closeGraceMillis;
 	private final boolean expiredAtCreation;
@@ -66,8 +59,8 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 	private boolean timeoutCloseRequested;
 	private boolean timeoutStarted;
 	private boolean escalationStarted;
-	private EscalationTask<E> interruptStep;
-	private EscalationTask<E> closeStep;
+	private TimeLimitScheduler.Task interruptStep;
+	private TimeLimitScheduler.Task closeStep;
 	private boolean cooperativeCancellationStarted;
 	private boolean delegateCloseStarted;
 	private boolean delegateCloseCompleted;
@@ -93,11 +86,12 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 	protected TimeLimitIteration(CloseableIteration<? extends E> iter, long timeLimit, long interruptGraceMillis,
 			long closeGraceMillis) {
 		super(iter);
+		long startNanos = System.nanoTime();
 		this.interruptGraceMillis = Math.max(0L, interruptGraceMillis);
 		this.closeGraceMillis = Math.max(0L, closeGraceMillis);
 		expiredAtCreation = timeLimit <= 0;
-		interruptTask = new InterruptTask<>(this);
-		schedule(interruptTask, Math.max(0L, timeLimit));
+		interruptTask = new TimeLimitScheduler.Task(new InterruptTask<>(this));
+		interruptTask.schedule(new TimeLimitScheduler.Deadline(timeLimit, startNanos));
 	}
 
 	long interruptGraceMillis() {
@@ -239,8 +233,7 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 		}
 		if (signalActiveCalls) {
 			// The active caller owns the wrapped iteration until it returns; ask it to return soon.
-			requestDelegateCancellation();
-			startEscalation();
+			requestDelegateCancellationAndEscalate();
 		}
 		interruptTask.cancel();
 		if (closeDelegate) {
@@ -305,8 +298,8 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 				failure.addSuppressed(hookFailure);
 			}
 		}
-		EscalationTask<E> pendingInterrupt;
-		EscalationTask<E> pendingClose;
+		TimeLimitScheduler.Task pendingInterrupt;
+		TimeLimitScheduler.Task pendingClose;
 		synchronized (lifecycleLock) {
 			delegateCloseCompleted = true;
 			delegateCloseFailure = failure;
@@ -399,6 +392,7 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 	/** The first step: report the time limit from now on and ask the wrapped iteration to stop. */
 	private void startTimeout() {
 		synchronized (lifecycleLock) {
+			// A deferred outer close does not hide a timeout from a still-active delegate call.
 			if (timeoutStarted || delegateCloseStarted) {
 				return;
 			}
@@ -407,12 +401,11 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 			timeoutCloseRequested = true;
 			isInterrupted.set(true);
 		}
-		requestDelegateCancellation();
-		startEscalation();
+		requestDelegateCancellationAndEscalate();
 	}
 
 	/** The outer wrapper may already be closed while its delegate is still active and owned by its caller. */
-	private void requestDelegateCancellation() {
+	private void requestDelegateCancellationAndEscalate() {
 		synchronized (lifecycleLock) {
 			if (cooperativeCancellationStarted) {
 				return;
@@ -426,21 +419,22 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 		} catch (RuntimeException | Error failure) {
 			logger.warn("TimeLimitIteration cooperative cancellation failed: ", failure);
 		}
+		// The caller that made the request owns escalation, so concurrent close cannot overtake the request.
+		startEscalation();
 	}
 
 	private void startEscalation() {
-		EscalationTask<E> interrupt;
-		EscalationTask<E> close;
+		long startNanos = System.nanoTime();
+		TimeLimitScheduler.Task interrupt;
 		synchronized (lifecycleLock) {
 			if (escalationStarted || delegateCloseStarted) {
 				return;
 			}
 			escalationStarted = true;
-			interrupt = interruptStep = new EscalationTask<>(this, false);
-			close = closeStep = new EscalationTask<>(this, true);
+			interrupt = interruptStep = new TimeLimitScheduler.Task(new EscalationTask<>(this, false));
+			closeStep = new TimeLimitScheduler.Task(new EscalationTask<>(this, true));
 		}
-		schedule(interrupt, interruptGraceMillis);
-		schedule(close, interruptGraceMillis + closeGraceMillis);
+		interrupt.schedule(new TimeLimitScheduler.Deadline(interruptGraceMillis, startNanos));
 	}
 
 	/** The second step: interrupt threads that are still inside the wrapped iteration. */
@@ -471,8 +465,9 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 	}
 
 	/**
-	 * Closes the delegate without blocking the timed-out caller or the shared timer. This does not mark the iteration
-	 * closed, so a later {@link #close()} still runs {@link #handleClose()} and waits for the cleanup to finish.
+	 * Closes the delegate without blocking the timed-out caller or the shared scheduler. This does not mark the
+	 * iteration closed, so a later {@link #close()} still runs {@link #handleClose()} and waits for the cleanup to
+	 * finish.
 	 */
 	private void closeDelegateAsync() {
 		Runnable cleanup = () -> {
@@ -540,18 +535,7 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 		startTimeout();
 	}
 
-	private static void schedule(TimerTask task, long delayMillis) {
-		if (delayMillis >= MAX_TIMER_DELAY_MILLIS) {
-			return;
-		}
-		try {
-			TIMER.schedule(task, delayMillis);
-		} catch (IllegalStateException cancelled) {
-			// The iteration stopped and cancelled the step before it was scheduled.
-		}
-	}
-
-	private static final class EscalationTask<E> extends TimerTask {
+	private static final class EscalationTask<E> implements Runnable {
 
 		private final WeakReference<TimeLimitIteration<E>> iterationRef;
 		private final boolean close;
@@ -571,10 +555,16 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 				if (close) {
 					iteration.forceClose();
 				} else {
-					iteration.interruptActiveCalls();
+					long closeGraceStartNanos = System.nanoTime();
+					try {
+						iteration.interruptActiveCalls();
+					} finally {
+						iteration.closeStep.schedule(
+								new TimeLimitScheduler.Deadline(iteration.closeGraceMillis, closeGraceStartNanos));
+					}
 				}
 			} catch (RuntimeException | Error failure) {
-				// Never let one iteration terminate the shared timer thread.
+				// A failed escalation must not affect another iteration's timeout.
 				iteration.logger.warn("TimeLimitIteration escalation failed: ", failure);
 			}
 		}

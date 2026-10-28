@@ -1807,6 +1807,65 @@ class LmdbDirectAdjacencyQueryTest {
 	}
 
 	@Test
+	void rebuildingCommittedRevisionBeforePreparationDoesNotLeavePendingRows() throws Exception {
+		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "false");
+		openPreferStore("spoc,posc,cspo");
+		direct.awaitCommitCleanupForTest();
+		direct.awaitCompactionForTest();
+		// Hold the applier so the commit's record stays unapplied, then rebuild: the applier starts a requested rebuild
+		// before it prepares the next record, so the new base already includes this commit and the record is skipped.
+		direct.pauseApplierForTest(true);
+		try {
+			try (RepositoryConnection connection = repo.getConnection()) {
+				connection.begin();
+				connection.add(S2, P1, O2);
+				for (int i = 0; i < 2048; i++) {
+					connection.add(F.createIRI("http://example.org/rebuild-before-preparation/" + i), P2, O1);
+				}
+				connection.commit();
+			}
+			long revision = backing.getTripleStore().getDataRevision();
+			assertThat(direct.publishedStateForTest().appliedRevision())
+					.as("the paused applier has not applied the commit yet")
+					.isLessThan(revision);
+			assertThat(direct.buildNowForTest()).isTrue();
+			assertThat(direct.publishedStateForTest().appliedRevision()).isEqualTo(revision);
+			assertThat(direct.publishedStateForTest().pending()).isEmpty();
+			direct.pauseApplierForTest(false);
+			direct.awaitCommitCleanupForTest();
+			try (CloseableDataset dataset = dataset()) {
+				long hitsBefore = direct.snapshotMetrics().lookupHits;
+				assertThat(dataset.source.count(-1, p1, -1, 0)).isEqualTo(3L);
+				assertThat(direct.snapshotMetrics().lookupHits)
+						.as("the rebuilt exact view serves the predicate and context count")
+						.isGreaterThan(hitsBefore);
+				assertThat(direct.publishedStateForTest().pending())
+						.as("a commit already included in the rebuilt generation cannot remain pending")
+						.isEmpty();
+				assertThat(dataset.source.count(-1, p1, -1, g1)).isEqualTo(1L);
+				try (RepositoryConnection connection = repo.getConnection()) {
+					connection.add(S2, P1, O2, G1);
+				}
+				direct.awaitCommitCleanupForTest();
+				assertThat(dataset.source.count(-1, p1, -1, g1))
+						.as("the previously acquired snapshot retains its graph count")
+						.isEqualTo(1L);
+				try (CloseableDataset latest = dataset()) {
+					long latestHits = direct.snapshotMetrics().lookupHits;
+					assertThat(latest.source.count(-1, p1, -1, g1)).isEqualTo(2L);
+					assertThat(direct.snapshotMetrics().lookupHits)
+							.as("a later committed revision remains eligible for exact graph counts")
+							.isGreaterThan(latestHits);
+				}
+			}
+		} finally {
+			direct.pauseApplierForTest(false);
+			direct.awaitCommitCleanupForTest();
+		}
+	}
+
+	@Test
 	void contextBoundCountsFallBackWithoutAFullExactView() throws IOException {
 		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
 		openStore(DirectAdjacencyMode.PREFER, DirectAdjacencyCoverage.SELECTED, List.of(P1));
