@@ -137,6 +137,7 @@ class LmdbInitialRunImportTest {
 		CompletableFuture<StoreCounts> read = null;
 		CompletableFuture<Void> write = null;
 		boolean initialized = false;
+		Throwable primaryFailure = null;
 		try {
 			sail.init();
 			initialized = true;
@@ -215,15 +216,38 @@ class LmdbInitialRunImportTest {
 			assertThat(finalCounts.size()).as("final store size after both operations").isEqualTo(4_001L);
 			assertThat(finalCounts.graphSize()).as("final imported graph size").isEqualTo(2_000L);
 			assertThat(backing.initialRunImportsCompleted()).isEqualTo(1);
+		} catch (Exception | Error failure) {
+			primaryFailure = failure;
+			throw failure;
 		} finally {
-			sail.releaseAdmissionGates();
-			closeConnection(importWriter);
-			finishWorker(read);
-			finishWorker(write);
-			closeConnection(reader);
-			closeConnection(otherWriter);
+			Throwable cleanupFailure = null;
+			cleanupFailure = attemptCleanup(primaryFailure, cleanupFailure, sail::releaseReaderGate);
+			cleanupFailure = attemptCleanup(primaryFailure, cleanupFailure, sail::releaseWriterGate);
+			if (importWriter != null) {
+				LmdbStoreConnection connection = importWriter;
+				cleanupFailure = attemptCleanup(primaryFailure, cleanupFailure, connection::close);
+			}
+			if (read != null) {
+				CompletableFuture<StoreCounts> worker = read;
+				cleanupFailure = attemptCleanup(primaryFailure, cleanupFailure, () -> finishWorker(worker));
+			}
+			if (write != null) {
+				CompletableFuture<Void> worker = write;
+				cleanupFailure = attemptCleanup(primaryFailure, cleanupFailure, () -> finishWorker(worker));
+			}
+			if (reader != null) {
+				LmdbStoreConnection connection = reader;
+				cleanupFailure = attemptCleanup(primaryFailure, cleanupFailure, connection::close);
+			}
+			if (otherWriter != null) {
+				LmdbStoreConnection connection = otherWriter;
+				cleanupFailure = attemptCleanup(primaryFailure, cleanupFailure, connection::close);
+			}
 			if (initialized) {
-				sail.shutDown();
+				cleanupFailure = attemptCleanup(primaryFailure, cleanupFailure, sail::shutDown);
+			}
+			if (primaryFailure == null && cleanupFailure != null) {
+				throwCleanupFailure(cleanupFailure);
 			}
 		}
 	}
@@ -261,24 +285,46 @@ class LmdbInitialRunImportTest {
 								&& frame.getMethodName().equals("awaitInitialRunImport"));
 	}
 
-	private static void closeConnection(LmdbStoreConnection connection) {
-		if (connection != null) {
-			try {
-				connection.close();
-			} catch (SailException ignored) {
-				// The primary test failure already captures the operation that prevented normal connection cleanup.
+	private static Throwable attemptCleanup(Throwable primaryFailure, Throwable cleanupFailure,
+			CleanupAction action) {
+		try {
+			action.run();
+		} catch (Exception | Error failure) {
+			if (primaryFailure != null) {
+				if (failure != primaryFailure) {
+					primaryFailure.addSuppressed(failure);
+				}
+			} else if (cleanupFailure == null) {
+				cleanupFailure = failure;
+			} else if (failure != cleanupFailure) {
+				cleanupFailure.addSuppressed(failure);
 			}
+		}
+		return cleanupFailure;
+	}
+
+	private static void throwCleanupFailure(Throwable failure) throws Exception {
+		if (failure instanceof Exception exception) {
+			throw exception;
+		}
+		if (failure instanceof Error error) {
+			throw error;
+		}
+		throw new AssertionError(failure);
+	}
+
+	private static void finishWorker(CompletableFuture<?> worker) throws Exception {
+		try {
+			worker.get(30, TimeUnit.SECONDS);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw e;
 		}
 	}
 
-	private static void finishWorker(CompletableFuture<?> worker) {
-		if (worker != null && !worker.isDone()) {
-			try {
-				worker.get(30, TimeUnit.SECONDS);
-			} catch (Exception ignored) {
-				// Cleanup has released the admission gates and closed the import owner to unblock pending operations.
-			}
-		}
+	@FunctionalInterface
+	private interface CleanupAction {
+		void run() throws Exception;
 	}
 
 	@Test
@@ -1024,11 +1070,14 @@ class LmdbInitialRunImportTest {
 			writerGate = gate;
 		}
 
-		private void releaseAdmissionGates() {
+		private void releaseReaderGate() {
 			AdmissionGate delayedRead = readerGate;
 			if (delayedRead != null) {
 				delayedRead.release();
 			}
+		}
+
+		private void releaseWriterGate() {
 			AdmissionGate delayedWrite = writerGate;
 			if (delayedWrite != null) {
 				delayedWrite.release();
