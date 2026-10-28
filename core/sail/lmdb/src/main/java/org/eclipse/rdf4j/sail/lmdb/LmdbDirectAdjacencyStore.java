@@ -146,6 +146,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	 * pins: the first commit may land before the pin, and the worker would then find a populated store.
 	 */
 	private volatile boolean awaitStartupBuild;
+	/** Test seam: false forces every preparation onto a worker so a test can observe the hand-off. */
+	private volatile boolean inlineSmallPrepares = true;
+	private static final long INLINE_PREPARE_MAX_BYTES = 16 * 1024;
 	/** Whether a rebuild has been requested; before the startup build starts it tells committers one is coming. */
 	private volatile boolean startupBuildRequested;
 	private final ThreadLocal<Integer> logicalCommitBatchDepth = ThreadLocal.withInitial(() -> 0);
@@ -786,6 +789,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		return applier.buildInFlight();
 	}
 
+	/** Test seam: whether small deltas are prepared on the applier thread (true) or always on a worker. */
+	void inlineSmallPreparesForTest(boolean inline) {
+		inlineSmallPrepares = inline;
+	}
+
 	/** Whether a generation preparation is on a worker or its outcome waits in the applier's inbox. */
 	boolean prepareInFlightForTest() {
 		return applier.prepareInFlight();
@@ -1289,6 +1297,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 					"Built in-memory adjacency structures: format=paged-csf, snapshotRevision={}, replayedThrough={}, {}",
 					baseRevision, applied, account.memoryUsageSummary());
 			return new Candidate<>(index, overlays, baseRevision, applied);
+		}
+
+		/** A delta of at most this many sealed-row bytes is prepared on the applier thread (about 400 rows). */
+		@Override
+		public boolean prepareInline(AdjacencyCommitLog.Record record) {
+			return inlineSmallPrepares && record.bytes() <= INLINE_PREPARE_MAX_BYTES;
 		}
 
 		@Override

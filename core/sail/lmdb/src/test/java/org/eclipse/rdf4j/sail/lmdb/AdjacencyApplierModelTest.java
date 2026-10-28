@@ -171,6 +171,60 @@ class AdjacencyApplierModelTest {
 	}
 
 	@Test
+	void aSmallSealedRecordIsPreparedOnTheApplierThreadWithoutAWorkerHandOff() {
+		try (Harness harness = new Harness(5, false)) {
+			harness.run(Op.REBUILD);
+			harness.settle();
+			assertEquals(Status.SERVING, harness.applier.state().status());
+			harness.ops.inlinePrepares = true;
+			harness.run(Op.STAGE);
+			harness.run(Op.SEAL_OK);
+			harness.run(Op.CONFIRM);
+			long head = harness.log.headRevision();
+			assertTrue(harness.scheduler.step(), "the sealed record is one applier unit");
+			assertFalse(harness.workers.hasWork(), "an inline preparation submits nothing to the workers");
+			assertEquals(head, harness.applier.state().appliedRevision());
+			assertFalse(harness.applier.prepareInFlight());
+			harness.checkInvariants();
+		}
+	}
+
+	@Test
+	void anInlinePreparationFailureDegradesLikeAWorkerFailure() {
+		try (Harness harness = new Harness(6, false)) {
+			harness.run(Op.REBUILD);
+			harness.settle();
+			harness.ops.inlinePrepares = true;
+			harness.ops.failPrepares = 1;
+			harness.run(Op.STAGE);
+			harness.run(Op.SEAL_OK);
+			harness.run(Op.CONFIRM);
+			long head = harness.log.headRevision();
+			assertTrue(harness.scheduler.step());
+			assertFalse(harness.workers.hasWork());
+			assertEquals(head, harness.applier.state().gapFromRevision(), "the failed revision is a gap");
+			harness.checkInvariants();
+			harness.settle();
+		}
+	}
+
+	@Test
+	void randomInterleavingsPreserveEveryInvariantWithInlinePreparations() {
+		for (int seed = 0; seed < 400; seed++) {
+			try (Harness harness = new Harness(seed, true)) {
+				harness.ops.inlinePrepares = true;
+				Random random = new Random(seed * 7919L);
+				List<Op> ops = new ArrayList<>(EnumSet.allOf(Op.class));
+				for (int i = 0; i < 200; i++) {
+					List<Op> enabled = harness.enabled(ops);
+					harness.run(enabled.get(random.nextInt(enabled.size())));
+				}
+				harness.settleAndAssertLive();
+			}
+		}
+	}
+
+	@Test
 	void overflowedRecordBecomesAGapAndARebuildRetiresIt() {
 		try (Harness harness = new Harness(4, false)) {
 			harness.run(Op.REBUILD);
@@ -435,6 +489,14 @@ class AdjacencyApplierModelTest {
 			assertNotNull(rows, "rows released before the record was applied: " + record.revision());
 			assertFalse(rows.rowsReleased, "rows released before the record was applied: " + record.revision());
 			return track(new ModelGeneration(record.revision(), rows.quads, rows.adds));
+		}
+
+		/** When set, every record qualifies for an inline preparation on the applier thread. */
+		boolean inlinePrepares;
+
+		@Override
+		public boolean prepareInline(Record record) {
+			return inlinePrepares;
 		}
 
 		@Override

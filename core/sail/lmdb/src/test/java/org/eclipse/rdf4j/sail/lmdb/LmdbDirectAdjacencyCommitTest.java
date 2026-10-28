@@ -295,6 +295,7 @@ class LmdbDirectAdjacencyCommitTest {
 		long committedRevision = previousRevision + 1;
 		store.injectPrepareFailureForTest(new IllegalStateException("injected strict preparation failure"));
 		store.injectBuildFailureForTest(new IllegalStateException("held recovery"), Integer.MAX_VALUE);
+		store.inlineSmallPreparesForTest(false); // the scenario is a worker outcome waiting in the applier's inbox
 		store.pauseApplierForTest(true);
 		store.committersWaitWhilePausedForTest(true);
 		AtomicReference<Throwable> failure = new AtomicReference<>();

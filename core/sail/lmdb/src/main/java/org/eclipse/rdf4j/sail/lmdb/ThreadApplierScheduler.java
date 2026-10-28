@@ -84,6 +84,15 @@ final class ThreadApplierScheduler implements ApplierScheduler {
 			if (worked) {
 				continue;
 			}
+			// The next wake usually follows within microseconds (a seal, a worker outcome, a commit); parking and
+			// being unparked would cost more than polling briefly, so spin, then yield, then park.
+			for (int spin = 0; spin < AdjacencyApplier.SPINS_BEFORE_PARK && !pending.get(); spin++) {
+				if (spin < AdjacencyApplier.SPINS_BEFORE_YIELD) {
+					Thread.onSpinWait();
+				} else {
+					Thread.yield();
+				}
+			}
 			while (!pending.get() && !shutdown.get() && !isPaused()) {
 				LockSupport.park(this);
 			}

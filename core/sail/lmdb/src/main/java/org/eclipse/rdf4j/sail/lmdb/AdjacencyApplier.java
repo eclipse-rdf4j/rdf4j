@@ -71,6 +71,10 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 	private final ConcurrentLinkedQueue<Runnable> inbox = new ConcurrentLinkedQueue<>();
 	private final Set<AdjacencyState<B, O>> liveStates = ConcurrentHashMap.newKeySet();
 	private final Set<AdjacencyRetentionHold> holds = ConcurrentHashMap.newKeySet();
+	/** Busy-wait budget before a waiter parks: spins, then yields (see {@link #awaitApplied}). */
+	static final int SPINS_BEFORE_YIELD = 2_048;
+	static final int SPINS_BEFORE_PARK = SPINS_BEFORE_YIELD + 64;
+
 	private final ReentrantLock waitLock = new ReentrantLock();
 	private final Condition changed = waitLock.newCondition();
 	private volatile boolean consuming;
@@ -253,6 +257,22 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 	 */
 	boolean awaitApplied(long revision, long timeout, TimeUnit unit) throws InterruptedException {
 		long deadline = System.nanoTime() + unit.toNanos(timeout);
+		// A committer's record is usually applied within tens of microseconds; parking and being unparked costs a
+		// good part of that, so the state is polled briefly before the lock and condition are taken.
+		for (int spin = 0; spin < SPINS_BEFORE_PARK; spin++) {
+			AdjacencyState<B, O> state = published.get();
+			if (state.status() != Status.SERVING || state.gapFromRevision() <= revision) {
+				return false;
+			}
+			if (state.appliedRevision() >= revision) {
+				return true;
+			}
+			if (spin < SPINS_BEFORE_YIELD) {
+				Thread.onSpinWait();
+			} else {
+				Thread.yield();
+			}
+		}
 		waitLock.lock();
 		try {
 			while (true) {
@@ -575,6 +595,17 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 		prepareInFlight = next;
 		B base = state.base();
 		O overlays = state.overlays();
+		if (ops.prepareInline(record)) {
+			// a small record: prepare here and consume the outcome at once, saving two worker crossings
+			Outcome<G> outcome;
+			try {
+				outcome = Outcome.success(ops.prepare(record, base, overlays));
+			} catch (Throwable failure) {
+				outcome = Outcome.failure(failure);
+			}
+			onPrepared(next, state, outcome);
+			return true;
+		}
 		workers.submit(() -> ops.prepare(record, base, overlays),
 				outcome -> enqueue(() -> onPrepared(next, state, outcome)));
 		return true;

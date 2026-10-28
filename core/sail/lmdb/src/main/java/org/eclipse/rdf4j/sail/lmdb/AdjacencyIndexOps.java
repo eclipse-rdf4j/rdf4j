@@ -75,6 +75,15 @@ interface AdjacencyIndexOps<B, O, G> {
 	/** Worker operation. Produces the generation for one sealed delta record against the given base and overlays. */
 	G prepare(AdjacencyCommitLog.Record record, B base, O overlays) throws Exception;
 
+	/**
+	 * Whether {@link #prepare} for this record is cheap enough to run on the applier thread itself. A worker hand-off
+	 * costs two park/unpark crossings, which dominate a small commit's publication latency; a large record keeps the
+	 * worker so the applier stays responsive.
+	 */
+	default boolean prepareInline(AdjacencyCommitLog.Record record) {
+		return false;
+	}
+
 	O emptyOverlays(B base);
 
 	/** A new overlay set with the generation appended; takes over the generation's reference. */
