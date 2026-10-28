@@ -210,7 +210,7 @@ public class SummaryServlet extends TransformationServlet {
 			Rio.write(model, writer, RDFFormat.TURTLE, writerConfig);
 			return writer.toString();
 		} catch (RepositoryConfigException | RepositoryException e) {
-			LOGGER.warn("Unable to render effective repository config.", e);
+			LOGGER.debug("Effective configuration of repository {} is not available", info.getId(), e);
 			return null;
 		}
 	}
