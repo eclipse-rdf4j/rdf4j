@@ -273,6 +273,7 @@ final class NativeExecutionContext implements AutoCloseable {
 			private final Runnable nativeCleanup;
 			private final Consumer<Throwable> cleanupFailure;
 			private QueryExecutionContext.Activation context;
+			private CancellationException activationClosed;
 			private boolean activating;
 			private boolean cleanupStarted;
 			private boolean closed;
@@ -295,8 +296,14 @@ final class NativeExecutionContext implements AutoCloseable {
 					activating = false;
 				}
 				if (cleanupStarted) {
-					throw new CancellationException("Native worker owner closed during context activation");
+					activationClosed = new CancellationException(
+							"Native worker owner closed during context activation");
+					throw activationClosed;
 				}
+			}
+
+			boolean ownsActivationClosure(Throwable problem) {
+				return problem != null && problem == activationClosed;
 			}
 
 			private void finishNative() {

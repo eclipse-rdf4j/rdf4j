@@ -685,6 +685,61 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 				.isSameAs(injected);
 	}
 
+	@ParameterizedTest
+	@CsvSource({ "false", "true" })
+	void activationFailureAfterCoordinatorStartsCancellationDrainRemainsVisible(boolean foreignCancellation)
+			throws Exception {
+		setProperty(LmdbNativeParallelKernelRows.ENABLED_PROPERTY, "true");
+		RuntimeException injected = foreignCancellation
+				? new java.util.concurrent.CancellationException("Native worker owner closed during context activation")
+				: new IllegalStateException("independent activation failed during drain");
+		ProbeSource source = new ProbeSource(null, false);
+		Scenario scenario = scenario(source);
+		CountDownLatch activationBlocked = new CountDownLatch(1);
+		CountDownLatch releaseActivation = new CountDownLatch(1);
+		AtomicInteger activations = new AtomicInteger();
+		AtomicReference<Throwable> observed = new AtomicReference<>();
+		Thread query = new Thread(() -> {
+			try (var replay = QueryExecutionContext.activateReplaySafepoint(() -> {
+			}, () -> () -> {
+				if (activations.getAndIncrement() == 0) {
+					activationBlocked.countDown();
+					awaitLatch(releaseActivation, "the cancelled coordinator must release activation");
+					throw injected;
+				}
+				return () -> {
+				};
+			})) {
+				observed.set(catchThrowable(() -> LmdbNativeKernelExecution.proposeParallelRows(
+						SlotPlan.join(scenario.plan, scenario.plan), scenario.row, null, true).open()));
+			}
+		}, "activation-failure-during-drain-test");
+
+		try {
+			query.start();
+			assertThat(activationBlocked.await(10L, TimeUnit.SECONDS)).isTrue();
+			assertThat(scenario.emitter.requestCancellation()).isTrue();
+			awaitThreadFrame(query, "LmdbNativeParallelKernelRows", "awaitTasks", "await");
+			releaseActivation.countDown();
+			query.join(TimeUnit.SECONDS.toMillis(10L));
+		} finally {
+			releaseActivation.countDown();
+			scenario.emitter.requestCancellation();
+			query.join(TimeUnit.SECONDS.toMillis(10L));
+			scenario.emitter.close();
+		}
+		assertThat(query.isAlive()).isFalse();
+		assertThat(activations).hasValue(2);
+		assertThat(source.children).hasSize(2);
+		for (ProbeSource child : source.children) {
+			assertThat(child.closeCalls).hasValue(1);
+			assertThat(child.closedWhileWorkerActive).isFalse();
+		}
+		assertThat(observed.get())
+				.as("a genuine activation failure must survive an already-started cancellation drain")
+				.isSameAs(injected);
+	}
+
 	@Test
 	void independentWorkerInterruptSurvivesCoordinatorInterruptDuringStartup() throws Exception {
 		setProperty(LmdbNativeParallelKernelRows.ENABLED_PROPERTY, "true");

@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
+import org.eclipse.rdf4j.sail.lmdb.LmdbStoreConnection.ReadOperationClosedException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Emit;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.OutputMods;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
@@ -298,7 +299,7 @@ final class LmdbNativeParallelKernelRows {
 				: null;
 		ArrayBlockingQueue<Page> output = new ArrayBlockingQueue<>(threads * 2);
 		AtomicReference<Throwable> failure = new AtomicReference<>();
-		AtomicReference<KernelQueryCancelledException> ownerCancellation = new AtomicReference<>();
+		AtomicReference<RuntimeException> ownerCancellation = new AtomicReference<>();
 		AtomicReference<Throwable> activationFailure = new AtomicReference<>();
 		AtomicBoolean cancelled = new AtomicBoolean();
 		// Stopping this group must not cancel the enclosing query or a later fallback.
@@ -356,7 +357,11 @@ final class LmdbNativeParallelKernelRows {
 								}
 							}
 						} catch (Throwable problem) {
-							if (!cancelled.get()) {
+							if (!ownedWorkerStop(problem, worker, workerCancellation, replayContext,
+									cancelled, ownerCancellation)) {
+								if (problem == KernelQueryCancelledException.INSTANCE) {
+									problem = new QueryEvaluationException("parallel kernel worker failed", problem);
+								}
 								failure.compareAndSet(null, problem);
 							}
 							stopWorkers(cancelled, workerCancellation);
@@ -451,6 +456,26 @@ final class LmdbNativeParallelKernelRows {
 		}
 	}
 
+	private static boolean ownedWorkerStop(Throwable problem, NativeExecutionContext.WorkerTasks.Task worker,
+			NativeCancellationToken workerCancellation, NativeExecutionContext.WorkerContext context,
+			AtomicBoolean cancelled, AtomicReference<RuntimeException> ownerCancellation) {
+		if (problem.getSuppressed().length != 0) {
+			return false;
+		}
+		if (problem instanceof ReadOperationClosedException closed && context.ownsCancellation(closed.owner())) {
+			ownerCancellation.compareAndSet(null, closed);
+			return true;
+		}
+		if (problem instanceof KernelQueryCancelledException query) {
+			boolean scopeOwned = context.ownsCancellation(query.origin());
+			if (scopeOwned) {
+				ownerCancellation.compareAndSet(null, query);
+			}
+			return scopeOwned || workerCancellation.owns(query);
+		}
+		return cancelled.get() && worker.ownsActivationClosure(problem);
+	}
+
 	/** A cancellation cannot replace a real failure that was published while the workers were being drained. */
 	private static void rethrowWorkerFailureBeforeCancellation(Throwable problem,
 			InterruptedException coordinatorInterruption) {
@@ -507,7 +532,7 @@ final class LmdbNativeParallelKernelRows {
 			NativeLmdbQuerySource.ParallelSource[] sources, int threads, RowState row,
 			LmdbNativeParallelPipelines.TaskReservation reservation, Emit emit, NativeTermAuthority distinctAuthority,
 			ArrayBlockingQueue<Page> output,
-			AtomicReference<Throwable> failure, AtomicReference<KernelQueryCancelledException> ownerCancellation,
+			AtomicReference<Throwable> failure, AtomicReference<RuntimeException> ownerCancellation,
 			AtomicBoolean cancelled, NativeCancellationToken workerCancellation,
 			NativeExecutionContext.WorkerTasks tasks,
 			org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation hashLedger) {
@@ -613,7 +638,7 @@ final class LmdbNativeParallelKernelRows {
 			Queue<long[]> ranges,
 			Queue<LmdbRootScanPartition> scanQueue,
 			ArrayBlockingQueue<Page> output, Supplier<JaninoKernel> kernelFactory, AtomicReference<Throwable> failure,
-			AtomicReference<KernelQueryCancelledException> ownerCancellation, AtomicBoolean cancelled,
+			AtomicReference<RuntimeException> ownerCancellation, AtomicBoolean cancelled,
 			CountDownLatch startup, AtomicBoolean startupReported,
 			NativeExecutionContext.WorkerContext replayContext)
 			throws IOException, InterruptedException {
@@ -1074,7 +1099,7 @@ final class LmdbNativeParallelKernelRows {
 		private final LmdbNativeParallelPipelines.TaskReservation reservation;
 		private final ArrayBlockingQueue<Page> output;
 		private final AtomicReference<Throwable> failure;
-		private final AtomicReference<KernelQueryCancelledException> ownerCancellation;
+		private final AtomicReference<RuntimeException> ownerCancellation;
 		private final AtomicBoolean cancelled;
 		private final NativeCancellationToken workerCancellation;
 		private final NativeExecutionContext.WorkerTasks tasks;
@@ -1092,7 +1117,7 @@ final class LmdbNativeParallelKernelRows {
 
 		ParallelKernelRowCursor(RowState row, int[] columnSlots, NativeLmdbQuerySource.ParallelSource[] sources,
 				LmdbNativeParallelPipelines.TaskReservation reservation, ArrayBlockingQueue<Page> output,
-				AtomicReference<Throwable> failure, AtomicReference<KernelQueryCancelledException> ownerCancellation,
+				AtomicReference<Throwable> failure, AtomicReference<RuntimeException> ownerCancellation,
 				AtomicBoolean cancelled, NativeCancellationToken workerCancellation,
 				NativeExecutionContext.WorkerTasks tasks,
 				int threads,
@@ -1210,7 +1235,7 @@ final class LmdbNativeParallelKernelRows {
 		private void checkCancellation() throws IOException {
 			try {
 				row.cancellation.check();
-				KernelQueryCancelledException scopeStop = ownerCancellation.get();
+				RuntimeException scopeStop = ownerCancellation.get();
 				if (scopeStop != null) {
 					throw scopeStop;
 				}
