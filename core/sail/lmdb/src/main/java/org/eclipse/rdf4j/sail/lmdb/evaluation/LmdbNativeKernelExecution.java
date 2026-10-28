@@ -1694,7 +1694,7 @@ final class LmdbNativeKernelExecution {
 	}
 
 	private static boolean isSuppressionDisabledControl(Throwable problem) {
-		return problem instanceof KernelCancelledException || problem instanceof KernelQueryCancelledException
+		return problem instanceof KernelCancelledException || problem == KernelQueryCancelledException.INSTANCE
 				|| problem instanceof KernelPeerCancelledException
 				|| problem instanceof LmdbNativeProbeDeadlineExceeded;
 	}
