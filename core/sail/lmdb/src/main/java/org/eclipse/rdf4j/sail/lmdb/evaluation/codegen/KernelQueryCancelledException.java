@@ -54,4 +54,8 @@ public final class KernelQueryCancelledException extends RuntimeException {
 	KernelQueryCancelledException copy() {
 		return this == INSTANCE ? this : new KernelQueryCancelledException(observer, origin);
 	}
+
+	boolean sameProvenance(KernelQueryCancelledException other) {
+		return observer == other.observer && origin == other.origin;
+	}
 }

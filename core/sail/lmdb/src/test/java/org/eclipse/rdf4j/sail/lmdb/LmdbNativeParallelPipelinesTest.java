@@ -848,6 +848,7 @@ public class LmdbNativeParallelPipelinesTest {
 		AtomicBoolean gateRegistration = new AtomicBoolean();
 		AtomicInteger activations = new AtomicInteger();
 		AtomicReference<Thread> activeWorker = new AtomicReference<>();
+		AtomicReference<Thread> failingWorker = new AtomicReference<>();
 		AtomicReference<Thread> deniedWorker = new AtomicReference<>();
 		AtomicInteger delegateCloses = new AtomicInteger();
 		IllegalStateException workerFailure = new IllegalStateException("genuine worker activation failure");
@@ -894,6 +895,8 @@ public class LmdbNativeParallelPipelinesTest {
 						int activation = activations.incrementAndGet();
 						if (activation == 1) {
 							activeWorker.set(Thread.currentThread());
+						} else if (activation == 2) {
+							failingWorker.set(Thread.currentThread());
 						} else if (activation == 3) {
 							deniedWorker.set(Thread.currentThread());
 						}
@@ -944,11 +947,21 @@ public class LmdbNativeParallelPipelinesTest {
 					// Dispatched workers must be denied activation, and that denial is a caller-close outcome.
 					releaseWorkers.countDown();
 					awaitReleasedParallelTasks();
+					if (failWorker && !outputBackpressure) {
+						// WorkerTasks records activation failures before its submitted task returns to the executor.
+						// Wait for that return before releasing delegate retirement, so this case proves close observes
+						// the published failure rather than racing the task's catch block.
+						awaitWorkerReturnedToPool(failingWorker.get());
+					}
 					awaitCloseOrdering(delegateCloseEntered);
 					releaseDelegateClose.countDown();
 					closer.get().join(10_000L);
 					assertThat(closer.get().isAlive()).isFalse();
-					assertThat(closeFailure.get()).isNull();
+					if (failWorker && !outputBackpressure) {
+						assertThat(closeFailure.get()).isSameAs(workerFailure);
+					} else {
+						assertThat(closeFailure.get()).isNull();
+					}
 					awaitCloseOrdering(workerScopesClosed);
 				}
 				gateRegistration.set(false);

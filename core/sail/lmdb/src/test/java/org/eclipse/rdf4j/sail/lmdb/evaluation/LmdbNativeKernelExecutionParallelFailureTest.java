@@ -195,7 +195,14 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 				.isTrue();
 		assertThat(queryFailure.get())
 				.as("interrupting an aggregate coordinator is terminal query cancellation after every worker joins")
-				.isSameAs(KernelQueryCancelledException.INSTANCE);
+				.isInstanceOf(KernelQueryCancelledException.class);
+		KernelQueryCancelledException cancellation = (KernelQueryCancelledException) queryFailure.get();
+		assertThat(cancellation.origin())
+				.as("the interrupt came from a non-owner coordinator thread")
+				.isNull();
+		assertThat(cancellation.observedBy(scenario.row.cancellation))
+				.as("the scenario row token observed the unowned coordinator interrupt")
+				.isTrue();
 		assertThat(source.children).hasSize(2);
 		for (ProbeSource child : source.children) {
 			assertThat(child.workerFinished).isTrue();
