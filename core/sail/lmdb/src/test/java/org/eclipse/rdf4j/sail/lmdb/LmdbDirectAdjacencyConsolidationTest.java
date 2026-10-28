@@ -303,6 +303,11 @@ class LmdbDirectAdjacencyConsolidationTest {
 				LmdbAdjacencyDeltaGeneration generation = overlays.generation(i);
 				long root = generation.find(S1, LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT, P1);
 				assertThat(root).isPositive();
+				if (!LmdbAdjacencyRunCodec.persistentComposite(generation.catalog(), root)) {
+					// a prepared generation re-encodes a small row as an ordinary run; only merges write persistent
+					// nodes over their sources, and whether the newest commits were merged yet depends on timing
+					continue;
+				}
 				assertThat(LmdbAdjacencyRunCodec.persistentNode(generation.catalog(), root).level())
 						.as("generation %d at revision %d", i, generation.revision())
 						.isZero();

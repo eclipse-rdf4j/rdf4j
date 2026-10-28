@@ -44,6 +44,11 @@ final class AdjacencyCommitLog {
 	/** Notified, on an arbitrary thread, whenever the head advances or a record's seal completes. */
 	interface Listener {
 		void changed();
+
+		/** A record was confirmed on the committing thread; by default the same as any other change. */
+		default void confirmed() {
+			changed();
+		}
 	}
 
 	static final class Record {
@@ -102,6 +107,7 @@ final class AdjacencyCommitLog {
 		}
 
 		private void onSealed(AdjacencyDelta delta, Throwable failure) {
+			boolean notify;
 			synchronized (this) {
 				if (sealed) {
 					return;
@@ -130,8 +136,13 @@ final class AdjacencyCommitLog {
 					}
 				}
 				sealed = true;
+				// A record sealed before its confirm (a small transaction seals while staged) is not applier work yet;
+				// confirm notifies then. A seal landing after confirm is the moment the record becomes applicable.
+				notify = confirmed;
 			}
-			log.notifyChanged();
+			if (notify) {
+				log.notifyChanged();
+			}
 		}
 
 		private void count() {
@@ -267,7 +278,10 @@ final class AdjacencyCommitLog {
 		records.put(record.revision, record);
 		head = record.revision;
 		dropWhenUnconsumed();
-		notifyChanged();
+		Listener current = listener;
+		if (current != null) {
+			current.confirmed();
+		}
 	}
 
 	/**

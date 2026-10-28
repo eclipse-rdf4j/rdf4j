@@ -194,6 +194,17 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				daemonThreads("lmdb-direct-adjacency-acceleration"));
 		this.applier = new AdjacencyApplier<>(log, new IndexOps(), new CompactionPolicy(), workers, scheduler,
 				options.backlogMaxBytes(), options.buildRetryMillis());
+		// In synchronous mode a committer outside a logical batch would wait for its record anyway: it applies the
+		// record itself while confirming it, and the loop thread is only woken when it cannot.
+		applier.confirmedRecordHandledOnCommitter(() -> {
+			if (!options.synchronousMaintenance() || options.memoryRefused() || closed
+					|| logicalCommitBatchDepth.get() != 0 || scheduler.isPaused()
+					|| applierState().status() != AdjacencyState.Status.SERVING || !scheduler.helpOnce()) {
+				return false;
+			}
+			metrics.recordHelpedUnit();
+			return true;
+		});
 		if (options.memoryRefused()) {
 			logger.warn("Direct adjacency stays unavailable: the effective memory cap {} bytes is below the {}-byte "
 					+ "minimum; the store remains fully usable through LMDB", options.effectiveMaxBytes(),
@@ -447,13 +458,16 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 						break;
 					}
 					// The committer applies the next unit itself while the applier thread has none in hand: its own
-					// record is sealed and confirmed by now, so this saves the loop's wake-up and the hand-back.
+					// record is sealed and confirmed by now, and its confirm did not wake the loop thread
+					// (committerAppliesConfirmedRecords), so this saves the wake-up and the hand-back.
 					if (scheduler.helpOnce()) {
 						metrics.recordHelpedUnit();
 						continue;
 					}
-					// wakes on the next publish: the revision applied, a gap at or below it, or a state no longer
-					// serving
+					// the loop thread holds a unit or the record is not sealed yet: hand the record to the loop and
+					// wake on the next publish (the revision applied, a gap at or below it, or a state no longer
+					// serving)
+					scheduler.wake();
 					if (applier.awaitApplied(revision, 1, TimeUnit.SECONDS)) {
 						break;
 					}

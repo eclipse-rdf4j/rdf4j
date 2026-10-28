@@ -21,6 +21,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.BooleanSupplier;
 
 import org.eclipse.rdf4j.sail.lmdb.AdjacencyCommitLog.Kind;
 import org.eclipse.rdf4j.sail.lmdb.AdjacencyCommitLog.Record;
@@ -95,6 +96,7 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 	private volatile boolean compactionInFlight;
 	private volatile boolean compactionRequested; // consult the policy at the next unit, even without a publish
 	private volatile boolean foldRequested; // fold at the next unit, bypassing the policy
+	private volatile BooleanSupplier confirmedRecordHandledOnCommitter = () -> false;
 	private volatile int foldRequestedPrefix; // generations to fold when requested; 0 means every generation
 
 	AdjacencyApplier(AdjacencyCommitLog log, AdjacencyIndexOps<B, O, G> ops,
@@ -111,7 +113,30 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 				-1L, Status.UNAVAILABLE, Phase.EMPTY, null, this::onStateReleased);
 		this.published = new AtomicReference<>(initial);
 		liveStates.add(initial);
-		log.setListener(scheduler::wake);
+		log.setListener(new AdjacencyCommitLog.Listener() {
+			@Override
+			public void changed() {
+				scheduler.wake();
+			}
+
+			@Override
+			public void confirmed() {
+				// The committing thread may apply the record it just confirmed, right here (ApplierScheduler.helpOnce
+				// through the installed handler): no wake-up of the loop thread, no race between the two for the unit,
+				// and nothing left behind should the commit fail after this point. The loop is woken otherwise.
+				if (!confirmedRecordHandledOnCommitter.getAsBoolean()) {
+					scheduler.wake();
+				}
+			}
+		});
+	}
+
+	/**
+	 * Installs the handler run on the committing thread inside {@code confirm}: it returns true when it applied the
+	 * confirmed record (or whatever unit was next) there, false when the loop thread must be woken for it.
+	 */
+	void confirmedRecordHandledOnCommitter(BooleanSupplier handler) {
+		this.confirmedRecordHandledOnCommitter = Objects.requireNonNull(handler, "handler");
 	}
 
 	/** Installs the loop into the scheduler. */

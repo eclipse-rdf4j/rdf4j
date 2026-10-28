@@ -66,7 +66,10 @@ class LmdbDirectAdjacencyCommitTest {
 			commitQuads(new long[][] { add(uri(50_000 + i), P1, O1, 0, true) });
 			assertThat(store.publishedStateForTest().appliedRevision()).isEqualTo(tripleStore.getDataRevision());
 		}
-		assertThat(store.helpedUnitsForTest()).as("units applied on committing threads").isPositive();
+		// confirming its own record does not wake the applier thread: the committer applies it, so the loop thread
+		// only runs units the committer could not take, mostly a merge landing (a worker outcome) that holds the
+		// unit lock at the moment a commit confirms; with helping only in the wait the committer won about half
+		assertThat(store.helpedUnitsForTest()).as("units applied on committing threads").isGreaterThanOrEqualTo(750);
 		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
 			assertThat(view.isExact()).isTrue();
 			assertThat(probe(view, uri(50_500), P1, O1, 0, true)).hasSize(1);
