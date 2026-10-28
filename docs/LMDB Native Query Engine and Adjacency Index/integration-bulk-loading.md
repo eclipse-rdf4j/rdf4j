@@ -84,6 +84,15 @@ one resumable recorded run through its interactive recovery flow; detailed
 workspace eligibility and atomic publication/recovery contracts are in the
 [storage guide](storage-bulk-ingestion-recovery.md).
 
+Plain progress labels each snapshot with its phase position in the current
+pipeline (for example, `Phase 8/10`) and reports configured statement and
+RDF-star term indexes by family, name, and position (for example, `SPOC 1/2`).
+Index events cover scanning/sorting, merging, and native append work; concurrent
+indexes appear together in the active-index list. JSON progress exposes the
+same data as `phaseNumber`, `phaseCount`, `activeIndexes`, and `indexEvent`.
+`--progress none` suppresses CLI progress output while the workspace continues
+to maintain its persisted telemetry.
+
 ## Disk safety and exit behavior
 
 The top-level CLI owns the JVM and starts a daemon disk-space monitor before

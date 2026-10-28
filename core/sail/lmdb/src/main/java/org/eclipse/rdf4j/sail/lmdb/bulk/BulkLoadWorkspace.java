@@ -540,6 +540,10 @@ final class BulkLoadWorkspace implements AutoCloseable {
 		progress.operations(operations, bytes);
 	}
 
+	BulkLoadProgress progressReporter() {
+		return progress;
+	}
+
 	void markResumable(Throwable failure) throws IOException {
 		if (completed) {
 			return;

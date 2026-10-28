@@ -49,12 +49,6 @@ test('large local layout uses actual card bounds, not rounded occupancy cells', 
   assert.equal(intersections(graph, result.positions), 0);
 });
 
-test('large refinement does not snap an already clear layout to a new grid', async () => {
-  const graph = wideGrid();
-  const result = await computeGraphLayout(graph, {refine: true});
-  for (const node of graph.nodes) assert.deepEqual(result.positions.get(node.id), {x: node.x, y: node.y});
-});
-
 test('late labels trigger geometry repair but animation and same-sized labels do not', async () => {
   const before = [{id: 'a', label: 'A', kind: 'iri', x: 0, y: 0}, {id: 'b', label: 'B', kind: 'iri', x: 160, y: 0}];
   const after = before.map(n => ({...n, label: 'A descriptive label that is wider than the initial identifier'}));

@@ -604,16 +604,29 @@ final class RowState implements LmdbNativeSlotReader {
 	}
 
 	/** Where an attempt on this row began: its bindings and the lexical scope it was entered in. */
-	record AttemptStart(int trailMark, long lexicalInputMask, int lexicalScopeDepth) {
+	record AttemptStart(int trailMark, long lexicalInputMask, int lexicalScopeDepth, long[] slots,
+			NativeResultCell[] summaryCells) {
 	}
 
 	AttemptStart attemptStart() {
-		return new AttemptStart(trailSize, lexicalInputMask, lexicalScopeDepth);
+		return new AttemptStart(trailSize, lexicalInputMask, lexicalScopeDepth, slots.clone(),
+				summaryCells == null ? null : summaryCells.clone());
 	}
 
 	/** Undoes whatever an attempt that stopped part-way through left on this row. */
 	void restore(AttemptStart start) {
 		rollback(start.trailMark());
+		// Some native cursors publish batches directly into slots without recording those writes on the trail.
+		// Restore the entry mapping after attempt cleanup, then refresh both the mask and the binding view.
+		System.arraycopy(start.slots(), 0, slots, 0, slots.length);
+		if (summaryCells != null) {
+			if (start.summaryCells() == null) {
+				Arrays.fill(summaryCells, null);
+			} else {
+				System.arraycopy(start.summaryCells(), 0, summaryCells, 0, summaryCells.length);
+			}
+		}
+		recomputeBoundMask();
 		lexicalInputMask = start.lexicalInputMask();
 		lexicalScopeDepth = start.lexicalScopeDepth();
 	}
