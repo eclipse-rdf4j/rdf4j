@@ -56,6 +56,7 @@ import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -247,12 +248,20 @@ class LmdbReadAttemptCancellationTest {
 	}
 
 	@Test
+	@Timeout(value = 60, unit = TimeUnit.SECONDS)
 	void connectionCloseCancelsCapturedWorkerWaitingForReaderPermit(@TempDir Path dataDir) throws Exception {
 		assertCancellation(dataDir, Finish.CLOSE_ACTIVE, true, false);
 	}
 
+	@Test
+	@Timeout(value = 60, unit = TimeUnit.SECONDS)
+	void closeWaitsForCancelledNativeReadToUnwindBeforeSourceCleanup(@TempDir Path dataDir) throws Exception {
+		assertCancellation(dataDir, Finish.CLOSE_ACTIVE, true, false, true);
+	}
+
 	@ParameterizedTest
 	@MethodSource("cancellationCases")
+	@Timeout(value = 60, unit = TimeUnit.SECONDS)
 	void finalizationCancelsAdmittedNativeWaits(Finish finish, boolean asynchronous, boolean nativeBarrier,
 			@TempDir Path dataDir) throws Exception {
 		assertCancellation(dataDir, finish, asynchronous, nativeBarrier);
@@ -267,10 +276,16 @@ class LmdbReadAttemptCancellationTest {
 
 	private static void assertCancellation(Path dataDir, Finish finish, boolean asynchronous, boolean nativeBarrier)
 			throws Exception {
+		assertCancellation(dataDir, finish, asynchronous, nativeBarrier, false);
+	}
+
+	private static void assertCancellation(Path dataDir, Finish finish, boolean asynchronous, boolean nativeBarrier,
+			boolean pauseNativeUnwind) throws Exception {
 		CountDownLatch beforeNativeRead = new CountDownLatch(1);
 		CountDownLatch allowNativeRead = new CountDownLatch(1);
 		CountDownLatch nativeReadBlocked = new CountDownLatch(1);
 		CountDownLatch nativeReadExited = new CountDownLatch(1);
+		CountDownLatch allowNativeUnwind = new CountDownLatch(pauseNativeUnwind ? 1 : 0);
 		CountDownLatch sourceClosed = new CountDownLatch(1);
 		AtomicInteger closeCalls = new AtomicInteger();
 		AtomicReference<Thread> nativeThread = new AtomicReference<>();
@@ -318,6 +333,7 @@ class LmdbReadAttemptCancellationTest {
 											throw failure;
 										} finally {
 											nativeReadExited.countDown();
+											awaitUninterruptibly(allowNativeUnwind);
 										}
 									}
 									return super.hasNext();
@@ -419,11 +435,20 @@ class LmdbReadAttemptCancellationTest {
 										finishingFailure, nativeThread, finishingThread));
 						assertNotNull(nativeFailure.get(), "The native admission must fail through cancellation");
 						assertInstanceOf(InterruptedException.class, nativeFailure.get().getCause());
+						if (pauseNativeUnwind) {
+							assertEquals(1L, sourceClosed.getCount(), "the admitted worker still owns its read scope");
+							assertFalse(closing.isDone(), "connection close must wait for native cleanup");
+							allowNativeUnwind.countDown();
+						}
 						if (!finish.interrupted()) {
-							assertTrue(sourceClosed.await(2, TimeUnit.SECONDS),
+							// The native exit signal precedes the end of its admitted scope. Wait for source
+							// cleanup while contention remains held; full close may itself need that barrier.
+							sourceClosed.await();
+							assertEquals(0L, sourceClosed.getCount(),
 									"Connection close must close its source after native admission unwinds");
 						}
 					} finally {
+						allowNativeUnwind.countDown();
 						held.forEach(TxnManager.ReaderReservation::close);
 						held.clear();
 						if (writeStamp != 0L) {
@@ -461,9 +486,28 @@ class LmdbReadAttemptCancellationTest {
 				}
 			}
 		} finally {
+			allowNativeUnwind.countDown();
 			allowNativeRead.countDown();
 			held.forEach(TxnManager.ReaderReservation::close);
 			repository.shutDown();
+		}
+	}
+
+	private static void awaitUninterruptibly(CountDownLatch latch) {
+		boolean interrupted = Thread.interrupted();
+		try {
+			while (true) {
+				try {
+					latch.await();
+					return;
+				} catch (InterruptedException e) {
+					interrupted = true;
+				}
+			}
+		} finally {
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
 		}
 	}
 

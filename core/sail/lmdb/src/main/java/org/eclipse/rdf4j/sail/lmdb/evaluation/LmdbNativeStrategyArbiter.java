@@ -249,6 +249,12 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 		if (sharedRowStart == null) {
 			sharedRowStart = sharedRow.attemptStart();
 		} else {
+			restoreSharedRow();
+		}
+	}
+
+	private void restoreSharedRow() {
+		if (sharedRowStart != null) {
 			sharedRow.restore(sharedRowStart);
 		}
 	}
@@ -792,6 +798,10 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 			}
 		}
 		LmdbNativeStrategySelection<T> selection = dispatch();
+		if (selection == null) {
+			// A caller may continue with its own fallback after every offered candidate declined.
+			restoreSharedRow();
+		}
 		if (selection == null && forcedTag != null && forcedMandatory) {
 			throw forcedStrategyUnavailable();
 		}
@@ -878,6 +888,10 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 		}
 		boolean retry = false;
 		while (!candidates.isEmpty()) {
+			if (retry) {
+				// Ranking and bind-time checks must observe the same entry row as the original attempt.
+				restoreSharedRow();
+			}
 			AdaptiveDecision<T> decision;
 			if (adaptiveModel != null) {
 				decision = adaptiveDecision(candidates, sliceRows, adaptiveModel,
@@ -945,6 +959,8 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 			candidates.remove(index);
 			chosen.close();
 		}
+		// A terminal fallback may inspect the row while constructing its proposal, before its opener runs.
+		restoreSharedRow();
 		return openTerminalFallback();
 	}
 

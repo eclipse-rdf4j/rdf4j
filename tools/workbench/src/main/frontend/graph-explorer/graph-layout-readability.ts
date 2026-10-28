@@ -99,7 +99,7 @@ export function improveLayoutReadability(graph: Graph, positions: Map<string, Po
     }
     return !query(nodeIndex, b).some(i => i !== id);
   };
-  const radius = options.refine || options.incremental || options.localNodeIds?.size ? 240 : 340;
+  const radius = options.incremental || options.localNodeIds?.size ? 240 : 340;
   for (let pass = 0; pass < 3; pass++) {
     const order: {id: number; pressure: number}[] = [];
     for (let i = 0; i < nodes.length && stats.checks <= budget; i++) {
