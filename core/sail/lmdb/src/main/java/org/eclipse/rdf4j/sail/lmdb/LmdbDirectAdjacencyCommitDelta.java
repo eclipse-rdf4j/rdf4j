@@ -40,10 +40,13 @@ final class LmdbDirectAdjacencyCommitDelta {
 	/** Conservative plan-worksheet seal-peak ceiling; the direct-row radix path remains below it. */
 	static final long PROJECTED_BYTES_PER_EVENT = 113;
 	private static final int INITIAL_CAPACITY = 1024;
+	/** First capacity of the direct event arrays; they double from here, so a small transaction allocates little. */
+	private static final int DIRECT_INITIAL_CAPACITY = 16;
 	/**
-	 * A transaction with at most this many events, none of them submitted yet, seals on the committing thread: sorting
-	 * a few events costs less than the two executor hand-offs (and capture-thread wake-ups) the asynchronous path
-	 * takes, and the commit log then stages an already sealed record.
+	 * A transaction with at most this many events is recorded directly and sealed on the committing thread: sorting a
+	 * few events costs less than the two executor hand-offs (and capture-thread wake-ups) the asynchronous path takes,
+	 * and the commit log then stages an already sealed record. The event after this one moves the transaction to the
+	 * asynchronous capture, which replays the events recorded so far as its first batch.
 	 */
 	static final int INLINE_SEAL_MAX_EVENTS = 128;
 	private static final int INSERTION_SORT_THRESHOLD = 32;
@@ -117,7 +120,8 @@ final class LmdbDirectAdjacencyCommitDelta {
 		this.count = 0;
 		this.resolvedSelectedPredicates = null;
 		this.transactionDirty.set(false);
-		if (captureExecutor != null) {
+		if (captureExecutor != null && (beforeCapture != null || afterSeal != null)) {
+			// a capture hook observes the capture thread, so every transaction crosses to it
 			asyncCapture = new AsyncCapture(startRevision);
 		}
 	}
@@ -171,10 +175,29 @@ final class LmdbDirectAdjacencyCommitDelta {
 		contexts[count] = Math.max(0, context);
 		flags[count] = (byte) ((explicit ? 1 : 0) | (add ? 2 : 0));
 		count++;
+		if (count > INLINE_SEAL_MAX_EVENTS && captureExecutor != null) {
+			moveToAsyncCapture();
+		}
+	}
+
+	/**
+	 * The transaction outgrew the inline limit: from here its events are captured and sealed off the committing thread,
+	 * starting with the ones recorded so far, in order.
+	 */
+	private void moveToAsyncCapture() {
+		AsyncCapture capture = new AsyncCapture(startRevision);
+		int recorded = count;
+		for (int i = 0; i < recorded; i++) {
+			capture.record(subjects[i], predicates[i], objects[i], contexts[i], (flags[i] & 1) != 0,
+					(flags[i] & 2) != 0);
+		}
+		releaseArrays();
+		count = recorded;
+		asyncCapture = capture;
 	}
 
 	private boolean grow() {
-		int newCapacity = subjects.length == 0 ? INITIAL_CAPACITY : Math.multiplyExact(subjects.length, 2);
+		int newCapacity = subjects.length == 0 ? DIRECT_INITIAL_CAPACITY : Math.multiplyExact(subjects.length, 2);
 		long projectedPeak = Math.multiplyExact((long) newCapacity, PROJECTED_BYTES_PER_EVENT);
 		long newChargedBytes = (long) newCapacity * 33;
 		if (projectedPeak > commitMaxBytes
@@ -211,8 +234,10 @@ final class LmdbDirectAdjacencyCommitDelta {
 
 	/**
 	 * Seals this transaction's events into an immutable {@link SealedDirectDelta} with its sorted, deduplicated
-	 * pending-row table, and resets this collector for the next transaction. The asynchronous path seals a detached
-	 * accumulator on its worker while LMDB commits; record calls between seal and the next {@link #begin} fail fast.
+	 * pending-row table, and resets this collector for the next transaction. A transaction of at most
+	 * {@link #INLINE_SEAL_MAX_EVENTS} events seals here, on the committing thread; a larger one moved to the
+	 * asynchronous capture, which seals a detached accumulator on its worker while LMDB commits. Record calls between
+	 * seal and the next {@link #begin} fail fast.
 	 */
 	SealedDirectDelta seal(long committedRevision) {
 		if (asyncCapture != null) {
@@ -337,7 +362,6 @@ final class LmdbDirectAdjacencyCommitDelta {
 		private volatile Throwable failure;
 		private final Object batchMonitor = new Object();
 		private int submittedBatches;
-		private boolean anyBatchSubmitted;
 
 		AsyncCapture(long revision) {
 			accumulator.begin(revision);
@@ -378,7 +402,6 @@ final class LmdbDirectAdjacencyCommitDelta {
 			batch = null;
 			operations = null;
 			used = 0;
-			anyBatchSubmitted = true;
 			synchronized (batchMonitor) {
 				submittedBatches++;
 			}
@@ -409,12 +432,6 @@ final class LmdbDirectAdjacencyCommitDelta {
 		}
 
 		CompletableFuture<SealedDirectDelta> seal(long revision, long[] coverage) {
-			if (!cancelled && !anyBatchSubmitted && used <= INLINE_SEAL_MAX_EVENTS && beforeCapture == null
-					&& afterSeal == null && !captureExecutor.isShutdown()) {
-				// A cancelled capture (a refused budget) or a shut-down executor keeps the executor path, whose
-				// rejection or failure the caller already handles by aborting the capture.
-				return sealInline(revision, coverage);
-			}
 			submitBatch(false);
 			// A CompletableFuture so the commit log can mirror the seal without a waiting thread; get() still reports
 			// the failure as an ExecutionException whose cause is the original throwable, as the FutureTask did.
@@ -436,29 +453,6 @@ final class LmdbDirectAdjacencyCommitDelta {
 				}
 			});
 			return sealed;
-		}
-
-		/** The whole transaction is still in the open batch: record and seal it here, on the committing thread. */
-		private CompletableFuture<SealedDirectDelta> sealInline(long revision, long[] coverage) {
-			long[][] events = batch;
-			byte[] eventOperations = operations;
-			int size = used;
-			batch = null;
-			operations = null;
-			used = 0;
-			try {
-				for (int i = 0; i < size; i++) {
-					accumulator.record(events[0][i], events[1][i], events[2][i], events[3][i],
-							(eventOperations[i] & 1) != 0, (eventOperations[i] & 2) != 0);
-				}
-				return CompletableFuture.completedFuture(sealNow(revision, coverage));
-			} catch (Throwable failure) {
-				return CompletableFuture.failedFuture(failure);
-			} finally {
-				if (events != null) {
-					budget.release(MemoryKind.PENDING, BATCH_BYTES);
-				}
-			}
 		}
 
 		private SealedDirectDelta sealNow(long revision, long[] coverage) {

@@ -103,6 +103,50 @@ class LmdbDirectAdjacencyCommitDeltaCaptureTest {
 	}
 
 	@Test
+	void aSmallTransactionReservesOnlyItsOwnEventsNotACaptureBatch() {
+		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1L << 30);
+		ManualExecutor executor = new ManualExecutor();
+		LmdbDirectAdjacencyCommitDelta delta = delta(account, executor, null);
+		delta.begin(1);
+		delta.recordAdd(1, 2, 3, 0, true);
+
+		// no asynchronous capture, no 1,024-event batch, no child budget: a few slots for a few events
+		assertThat(account.totalChargedBytes()).isLessThan(4_096);
+		assertThat(executor.submitted).isZero();
+
+		SealedDirectDelta sealed = delta.sealAsync(2).join();
+		sealed.close();
+		assertThat(account.totalChargedBytes()).isZero();
+	}
+
+	@Test
+	void aTransactionThatOutgrowsTheInlineLimitMovesToTheCaptureExecutorWithEveryEvent() {
+		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1L << 30);
+		ManualExecutor executor = new ManualExecutor();
+		LmdbDirectAdjacencyCommitDelta delta = delta(account, executor, null);
+		delta.begin(1);
+		int events = LmdbDirectAdjacencyCommitDelta.INLINE_SEAL_MAX_EVENTS + 1;
+		for (int i = 0; i < events; i++) {
+			delta.recordAdd(1_000 + i, 7, 5_000 + i, 0, true);
+		}
+		assertThat(delta.eventCount()).isEqualTo(events);
+
+		CompletableFuture<SealedDirectDelta> sealing = delta.sealAsync(2);
+
+		assertThat(sealing.isDone()).isFalse();
+		assertThat(executor.submitted).isPositive();
+		executor.runAll();
+		SealedDirectDelta sealed = sealing.join();
+		try {
+			// the events recorded before the switch reached the capture in order, none lost or doubled
+			assertThat(sealed.pendingTable().rowCount()).isEqualTo(2L * events);
+		} finally {
+			sealed.close();
+		}
+		assertThat(account.totalChargedBytes()).isZero();
+	}
+
+	@Test
 	void aLargeTransactionStillSealsOnTheCaptureExecutor() {
 		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1L << 30);
 		ManualExecutor executor = new ManualExecutor();
