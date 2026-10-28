@@ -28,17 +28,26 @@ import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
  * endpoint identity-binds the other side without consulting the store (the term need not occur in any statement); with
  * both endpoints bound, one empty row is emitted iff the two ids denote the same RDF term (id equality, else
  * materialized {@link Value#equals}); both-free enumerates the distinct nodes occurring as subject or object of a
- * statement in the active graph scope — never the whole dictionary — deduplicating by <em>term</em> (id-level
- * pre-dedup, then a value-level set, so two spellings of one langString term yield one node like the generic arm).
- * Unbound graph variables are declined at compile time (recorded: the generic arm's node-level dedup binds the graph
- * from the first statement mentioning the node, which the per-(graph, node) spec reading contradicts — the native
- * engine abstains from codifying either).
+ * statement in the active graph scope — never the whole dictionary — deduplicating by <em>term</em>. The
+ * default-enabled native-ID producer uses exact retained node domains, or ID-only statement dedup, only when the stored
+ * dictionary proves that IDs uniquely identify RDF terms. Legacy dictionaries and explicit disable retain ID pre-dedup
+ * followed by a Value set, so legacy spellings of one langString term yield one node. Consumer-visible rows remain
+ * ordinary native ID rows; no surrounding aggregate, projection or join shape is recognized. Unbound graph variables
+ * are declined at compile time (recorded: the generic arm's node-level dedup binds the graph from the first statement
+ * mentioning the node, which the per-(graph, node) spec reading contradicts — the native engine abstains from codifying
+ * either).
  */
 @Experimental
 final class ZeroLengthPathPlan implements SlotPlan {
 
 	/** Test observability: opens served by this plan. */
 	static final AtomicLong ENGAGED = new AtomicLong();
+	/** Default-enabled policy, sampled once when a both-free cursor is opened. */
+	static final String NODE_IDS_ENABLED = "rdf4j.lmdb.nativeZeroLengthNodeIds.enabled";
+	/** Cumulative physical-service diagnostics; rows are committed once on exhaustion/close, not atomically per row. */
+	static final AtomicLong NODE_DOMAIN_OPENS = new AtomicLong();
+	static final AtomicLong NODE_DOMAIN_ROWS = new AtomicLong();
+	static final AtomicLong CANONICAL_SCAN_OPENS = new AtomicLong();
 
 	final int subjSlot;
 	final long subjConst;
@@ -94,7 +103,26 @@ final class ZeroLengthPathPlan implements SlotPlan {
 		if (ctxIds != null && ctxIds.length == 0) {
 			return EmptyCursor.INSTANCE;
 		}
-		return new ZeroLengthNodeCursor(row, this);
+		boolean canonicalNodes = Boolean.parseBoolean(System.getProperty(NODE_IDS_ENABLED, "true"))
+				&& canonicalStoredNodes(row.source);
+		if (canonicalNodes && ctxIds == null && !row.encounterOrderRequired) {
+			RowCursor domains = ZeroLengthNodeDomainCursor.tryOpen(row, this);
+			if (domains != null) {
+				return domains;
+			}
+		}
+		if (canonicalNodes) {
+			CANONICAL_SCAN_OPENS.incrementAndGet();
+		}
+		return new ZeroLengthNodeCursor(row, this, canonicalNodes);
+	}
+
+	private static boolean canonicalStoredNodes(NativeLmdbQuerySource source) {
+		// Only IDs emitted by the statement/domain producer are classified here, never plan/runtime bindings.
+		while (source instanceof SyntheticValueSource synthetic) {
+			source = synthetic.delegate;
+		}
+		return source.hasCanonicalIds();
 	}
 
 	private static boolean fixedValueCompatible(RowState row, long bound, long fixed, int slot) {
@@ -209,7 +237,7 @@ final class ZeroLengthNodeCursor implements RowCursor {
 	private final RowState row;
 	private final ZeroLengthPathPlan plan;
 	private final LongHashSet seenIds = new LongHashSet(256);
-	private final HashSet<Value> seenTerms = new HashSet<>();
+	private final HashSet<Value> seenTerms;
 	private NativeLmdbQuerySource.NativeProbe probe;
 	private RecordIterator statements;
 	private int contextIndex;
@@ -218,9 +246,10 @@ final class ZeroLengthNodeCursor implements RowCursor {
 	private boolean pendingSet;
 	private int mark = -1;
 
-	ZeroLengthNodeCursor(RowState row, ZeroLengthPathPlan plan) {
+	ZeroLengthNodeCursor(RowState row, ZeroLengthPathPlan plan, boolean canonicalNodes) {
 		this.row = row;
 		this.plan = plan;
+		this.seenTerms = canonicalNodes ? null : new HashSet<>();
 	}
 
 	@Override
@@ -286,6 +315,9 @@ final class ZeroLengthNodeCursor implements RowCursor {
 		if (!seenIds.add(id)) {
 			return false;
 		}
+		if (seenTerms == null) {
+			return true;
+		}
 		Value term = row.source.lazyValue(id, row.layout.positionMask(plan.subjSlot)
 				| row.layout.positionMask(plan.objSlot));
 		return term != null && seenTerms.add(term);
@@ -308,6 +340,114 @@ final class ZeroLengthNodeCursor implements RowCursor {
 		if (probe != null) {
 			probe.close();
 			probe = null;
+		}
+	}
+}
+
+/**
+ * Streaming union of exact snapshot-bound unique node domains. Emits ordinary ID rows to all existing consumers;
+ * neither resolves Values nor recognizes a surrounding aggregate, projection, filter, join or DISTINCT shape.
+ */
+@Experimental
+final class ZeroLengthNodeDomainCursor implements RowCursor {
+	private final RowState row;
+	private final ZeroLengthPathPlan plan;
+	private final NativeLmdbQuerySource.NativeProbe probe;
+	private final NativeLmdbQuerySource.NodeDomainIntersection subjects;
+	private final NativeLmdbQuerySource.NodeDomainIntersection objects;
+	private NativeLmdbQuerySource.NodeDomainIntersection.Cursor current;
+	private int partition;
+	private boolean objectPhase;
+	private boolean closed;
+	private int mark = -1;
+	private int pollTick;
+	private long emitted;
+
+	static RowCursor tryOpen(RowState row, ZeroLengthPathPlan plan) throws IOException {
+		row.cancellation.check();
+		NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
+		boolean transferred = false;
+		try {
+			NativeLmdbQuerySource.NodeDomainIntersection subjects = probe.nodeDomainIntersection(true, true);
+			NativeLmdbQuerySource.NodeDomainIntersection objects = probe.nodeDomainIntersection(false, false);
+			if (subjects == null || objects == null) {
+				return null;
+			}
+			ZeroLengthNodeDomainCursor result = new ZeroLengthNodeDomainCursor(row, plan, probe, subjects, objects);
+			transferred = true;
+			ZeroLengthPathPlan.NODE_DOMAIN_OPENS.incrementAndGet();
+			return result;
+		} finally {
+			if (!transferred) {
+				probe.close();
+			}
+		}
+	}
+
+	private ZeroLengthNodeDomainCursor(RowState row, ZeroLengthPathPlan plan,
+			NativeLmdbQuerySource.NativeProbe probe, NativeLmdbQuerySource.NodeDomainIntersection subjects,
+			NativeLmdbQuerySource.NodeDomainIntersection objects) {
+		this.row = row;
+		this.plan = plan;
+		this.probe = probe;
+		this.subjects = subjects;
+		this.objects = objects;
+	}
+
+	@Override
+	public boolean next() {
+		release();
+		while (!closed) {
+			if (current == null) {
+				row.cancellation.check();
+				NativeLmdbQuerySource.NodeDomainIntersection domain = objectPhase ? objects : subjects;
+				if (partition >= domain.partitionCount()) {
+					if (objectPhase) {
+						close();
+						return false;
+					}
+					objectPhase = true;
+					partition = 0;
+					continue;
+				}
+				current = domain.cursor(partition++);
+			}
+			LmdbNativeProbeDeadline.poll(++pollTick);
+			row.cancellation.poll(pollTick);
+			if (!current.next()) {
+				current = null;
+				continue;
+			}
+			long id = current.nodeId();
+			if (objectPhase && subjects.contains(id)) {
+				continue;
+			}
+			int m = row.mark();
+			if (row.bind(plan.subjSlot, id) && row.bind(plan.objSlot, id)) {
+				mark = m;
+				emitted++;
+				return true;
+			}
+			row.rollback(m);
+		}
+		return false;
+	}
+
+	private void release() {
+		if (mark >= 0) {
+			row.rollback(mark);
+			mark = -1;
+		}
+	}
+
+	@Override
+	public void close() {
+		release();
+		if (!closed) {
+			closed = true;
+			current = null;
+			ZeroLengthPathPlan.NODE_DOMAIN_ROWS.addAndGet(emitted);
+			probe.close();
 		}
 	}
 }
