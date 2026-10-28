@@ -522,7 +522,7 @@ final class NativeGroupTable implements AutoCloseable {
 				distinct[i] = aggregates[i].distinct;
 			countLedger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
 			boundedCounts = new NativeCountGroupStore(groupSlots.length, distinct, authority::canonicalTermKey,
-					LmdbNativeProbeDeadline.currentKernelCancellation(row.cancellation::isCancellationRequested, null),
+					LmdbNativeProbeDeadline.currentKernelCancellation(row.cancellation, null),
 					countLedger);
 			boundedKeys = new long[groupSlots.length];
 			boundedInputs = new long[aggregates.length];
