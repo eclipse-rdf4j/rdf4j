@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.OptionalInt;
 import java.util.Properties;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -65,6 +66,8 @@ public final class WorkbenchPolicy {
 	private static final String MENU_GROUPS_KEY = "menu.groups";
 	private static final String MENU_CONSUMER_IDS_KEY = "menu.consumer-ids";
 	private static final String QUERY_CONSUMER_FEATURE_IDS_KEY = "query.consumer-feature-ids";
+	/** Default query timeout in seconds; when present it replaces the {@code default-query-timeout} init parameter. */
+	public static final String QUERY_DEFAULT_TIMEOUT_KEY = "query.default-timeout";
 	private static final String QUERY_DOWNLOAD_DEFAULT_LIMIT_KEY = "query.download.default-limit";
 	private static final String DEPLOYMENT_THEME_DEFAULT_KEY = "theme.deployment-default";
 	private static final List<String> DEFAULT_GROUP_IDS = List.of("explore", "modify", "repositories", "system",
@@ -102,10 +105,11 @@ public final class WorkbenchPolicy {
 	private final Set<String> queryFeatureIds;
 	private final int queryDownloadDefaultLimit;
 	private final String deploymentThemeDefault;
+	private final OptionalInt queryDefaultTimeout;
 
 	private WorkbenchPolicy(List<MenuItem> visibleMenuItems, List<MenuGroup> visibleMenuGroups,
 			Map<String, List<String>> customRoutesByPath, Properties properties, Set<String> queryFeatureIds,
-			int queryDownloadDefaultLimit, String deploymentThemeDefault) {
+			int queryDownloadDefaultLimit, String deploymentThemeDefault, OptionalInt queryDefaultTimeout) {
 		this.visibleMenuItems = List.copyOf(visibleMenuItems);
 		this.visibleMenuGroups = List.copyOf(visibleMenuGroups);
 		Map<String, MenuItem> byId = new LinkedHashMap<>();
@@ -120,6 +124,7 @@ public final class WorkbenchPolicy {
 		this.queryFeatureIds = Collections.unmodifiableSet(new LinkedHashSet<>(queryFeatureIds));
 		this.queryDownloadDefaultLimit = queryDownloadDefaultLimit;
 		this.deploymentThemeDefault = deploymentThemeDefault;
+		this.queryDefaultTimeout = queryDefaultTimeout;
 	}
 
 	/**
@@ -223,12 +228,21 @@ public final class WorkbenchPolicy {
 			throw new IllegalArgumentException(
 					QUERY_DOWNLOAD_DEFAULT_LIMIT_KEY + " must be zero or a positive integer");
 		}
+		OptionalInt defaultTimeout = OptionalInt.empty();
+		if (values.getProperty(QUERY_DEFAULT_TIMEOUT_KEY) != null) {
+			int timeout = parseInteger(values, QUERY_DEFAULT_TIMEOUT_KEY, 0);
+			if (timeout < 0) {
+				throw new IllegalArgumentException(
+						QUERY_DEFAULT_TIMEOUT_KEY + " must be zero or a positive integer");
+			}
+			defaultTimeout = OptionalInt.of(timeout);
+		}
 		String themeDefault = property(values, DEPLOYMENT_THEME_DEFAULT_KEY, "system").trim().toLowerCase(Locale.ROOT);
 		if (!Set.of("system", "light", "dark").contains(themeDefault)) {
 			throw new IllegalArgumentException(DEPLOYMENT_THEME_DEFAULT_KEY + " must be system, light, or dark");
 		}
 		return new WorkbenchPolicy(visibleItems, visibleGroups, customRoutes, values, featureIds,
-				downloadDefaultLimit, themeDefault);
+				downloadDefaultLimit, themeDefault, defaultTimeout);
 	}
 
 	/**
@@ -342,6 +356,11 @@ public final class WorkbenchPolicy {
 		return queryDownloadDefaultLimit;
 	}
 
+	/** Returns the configured default query timeout in seconds, when the policy sets one. */
+	public OptionalInt getQueryDefaultTimeout() {
+		return queryDefaultTimeout;
+	}
+
 	/** Returns the validated deployment theme used before a user preference is available. */
 	public String getDeploymentThemeDefault() {
 		return deploymentThemeDefault;
@@ -358,6 +377,12 @@ public final class WorkbenchPolicy {
 			String value = values.getProperty(key);
 			if (Set.of(MENU_ITEMS_KEY, MENU_GROUPS_KEY, MENU_CONSUMER_IDS_KEY, QUERY_CONSUMER_FEATURE_IDS_KEY)
 					.contains(key)) {
+				continue;
+			}
+			if (QUERY_DEFAULT_TIMEOUT_KEY.equals(key)) {
+				if (parseInteger(values, key, 0) < 0) {
+					throw new IllegalArgumentException(key + " must be zero or a positive integer");
+				}
 				continue;
 			}
 			if (QUERY_DOWNLOAD_DEFAULT_LIMIT_KEY.equals(key)) {

@@ -219,6 +219,43 @@ class WorkbenchPolicyTest {
 	}
 
 	@Test
+	void queryDefaultTimeoutIsAbsentUnlessConfigured() throws Exception {
+		Properties packagedDefaults = new Properties();
+		try (InputStream input = getClass().getResourceAsStream(
+				"/org/eclipse/rdf4j/common/app/config/defaults/workbench.properties")) {
+			assertThat(input).as("packaged Workbench defaults").isNotNull();
+			packagedDefaults.load(input);
+		}
+
+		assertThat(WorkbenchPolicy.fromProperties(packagedDefaults, Set.of()).getQueryDefaultTimeout()).isEmpty();
+		assertThat(WorkbenchPolicy.fromProperties(new Properties(), Set.of()).getQueryDefaultTimeout()).isEmpty();
+	}
+
+	@Test
+	void queryDefaultTimeoutAcceptsZeroAndPositiveValues() {
+		Properties zero = new Properties();
+		zero.setProperty("query.default-timeout", "0");
+		Properties positive = new Properties();
+		positive.setProperty("query.default-timeout", " 15 ");
+
+		assertThat(WorkbenchPolicy.fromProperties(zero, Set.of()).getQueryDefaultTimeout()).hasValue(0);
+		assertThat(WorkbenchPolicy.fromProperties(positive, Set.of()).getQueryDefaultTimeout()).hasValue(15);
+	}
+
+	@Test
+	void queryDefaultTimeoutRejectsNegativeOrNonNumericValues() {
+		for (String invalid : List.of("-1", "soon", "")) {
+			Properties properties = new Properties();
+			properties.setProperty("query.default-timeout", invalid);
+
+			assertThatThrownBy(() -> WorkbenchPolicy.fromProperties(properties, Set.of()))
+					.as(invalid)
+					.isInstanceOf(IllegalArgumentException.class)
+					.hasMessageContaining("query.default-timeout");
+		}
+	}
+
+	@Test
 	void invalidDeploymentThemeFailsStartupValidation() {
 		Properties properties = new Properties();
 		properties.setProperty("theme.deployment-default", "orange");

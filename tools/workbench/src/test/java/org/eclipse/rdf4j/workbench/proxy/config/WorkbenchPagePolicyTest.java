@@ -147,6 +147,15 @@ class WorkbenchPagePolicyTest {
 	}
 
 	@Test
+	void informationPageIsDeniedWhenPageInformationIsDisabled() throws Exception {
+		MockHttpServletResponse response = requestConfiguredPath("/information", "page.information.enabled=false\n",
+				false, Map.of("/information", RecordingRepositoryServlet.class.getName()));
+
+		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_NOT_FOUND);
+		assertThat(RecordingRepositoryServlet.invocationCount).isZero();
+	}
+
+	@Test
 	void hiddenNamespacesPageIsDeniedWhileInternalMetadataRouteRemainsAvailable() throws Exception {
 		MockHttpServletResponse hiddenResponse = requestConfiguredPath("/namespaces",
 				"menu.item.namespaces.visible=false\n");

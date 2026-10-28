@@ -164,6 +164,9 @@ menu.group.explore.visible=true
 menu.item.query.order=10
 page.summary.enabled=false
 
+# Hide the Information page. Its route answers 404, like any other disabled page.
+page.information.enabled=false
+
 # Hide a whole navigation group or one item.
 menu.group.modify.visible=false
 menu.item.namespaces.visible=false
@@ -257,6 +260,15 @@ Workbench servlet (in `WEB-INF/web.xml` of the WAR, and in the registration of t
 defaulted to `0`, which means no limit. Users can change the timeout for their queries in the Query settings; when the
 `query-timeout` feature is disabled, the default applies to every query. To restore unlimited queries by default, set
 `default-query-timeout` to `0` in `WEB-INF/web.xml`.
+
+The timeout can also be set in `workbench.properties` with `query.default-timeout`, a non-negative number of seconds
+(`0` means no limit). The key is not part of the packaged defaults: when it is absent the `default-query-timeout` init
+parameter keeps applying, and when it is present it takes precedence over that init parameter, for every page that uses
+the default. A negative or non-numeric value is a configuration error.
+
+```properties
+query.default-timeout=120
+```
 
 A query that runs longer than its timeout is reported as timed out (“Query timed out after 1 second”), also when the
 Workbench stopped waiting for the RDF4J Server's answer just before the server reported the timeout itself; rows that
