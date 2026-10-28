@@ -226,7 +226,12 @@ After this plan is implemented, the synchronisation has exactly one shape. Every
 
 - Decision: a seal notifies the applier only once its record is confirmed. `Record.onSealed` reads `confirmed` under the record's monitor and calls `notifyChanged` only when it is set; a record sealed first (the inline seal of a small transaction, at stage time) is announced by `confirm` alone, and a record confirmed first is announced by its seal landing. `AdjacencyCommitLogNotificationTest` pins both orders. The depth test now checks the level of persistent composites only and skips ordinary runs, with the paused-applier inspection kept.
   Rationale: an unconfirmed record is not applier work, and the wake it caused made the loop thread burn a quarter of all CPU time on nothing while the committer applied the record itself.
-  Measured: Docker CPU-time run pending (benchmark-runs/txn-size-20261028/docker/sealnotify-1stmt-none.*).
+  Measured (benchmark-runs/txn-size-20261028/docker/sealnotify-1stmt-none.{jfr,log}): 18,029 ± 2,386 commits/s against 17,592 ± 1,568 before (within noise; +41% over the Docker baseline of 12,796); the applier thread's share of all CPU fell from 24.6% to 19.4%, the rest being its spin after the wake of each merge landing.
+  Date/Author: 2026-10-28, Claude Code (Milestone 6 follow-up).
+
+- Decision: the loop thread polls 256 times before parking (`ThreadApplierScheduler.IDLE_SPINS_BEFORE_PARK`) instead of spinning 2,048 times and yielding 64 times; `awaitApplied` keeps the longer budget, since a committer that could not help still waits on the loop's publish.
+  Rationale: with committers applying their own records the loop thread mostly runs worker outcomes, whose latency does not gate a commit, and its idle spin after each wake was 59% of its CPU time (19% of all CPU) in the Docker CPU-time profile.
+  Measured (benchmark-runs/txn-size-20261028/docker/idlespin-1stmt-none.{jfr,log}): 17,884 ± 2,794 commits/s (unchanged within noise); the applier thread's share of all CPU fell from 19.4% to 9.2% and the recording's total CPU-time samples by 12%.
   Date/Author: 2026-10-28, Claude Code (Milestone 6 follow-up).
 
 ## Outcomes & Retrospective

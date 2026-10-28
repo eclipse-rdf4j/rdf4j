@@ -38,6 +38,8 @@ final class ThreadApplierScheduler implements ApplierScheduler {
 	private final AtomicBoolean pending = new AtomicBoolean();
 	private final AtomicBoolean shutdown = new AtomicBoolean();
 	private final ScheduledThreadPoolExecutor timers;
+	/** Polls before parking when a unit found nothing more to do; a wake in flight costs this much, not a park. */
+	static final int IDLE_SPINS_BEFORE_PARK = 256;
 	private final Object pauseMonitor = new Object();
 	/** Every unit runs under this lock: the loop thread's, a paused test's step, or a waiting committer's. */
 	private final ReentrantLock unitLock = new ReentrantLock();
@@ -91,14 +93,11 @@ final class ThreadApplierScheduler implements ApplierScheduler {
 			if (worked) {
 				continue;
 			}
-			// The next wake usually follows within microseconds (a seal, a worker outcome, a commit); parking and
-			// being unparked would cost more than polling briefly, so spin, then yield, then park.
-			for (int spin = 0; spin < AdjacencyApplier.SPINS_BEFORE_PARK && !pending.get(); spin++) {
-				if (spin < AdjacencyApplier.SPINS_BEFORE_YIELD) {
-					Thread.onSpinWait();
-				} else {
-					Thread.yield();
-				}
+			// Committers apply their own records (helpOnce), so this thread mostly runs worker outcomes, whose
+			// latency does not gate a commit: poll briefly for a wake that is already on its way, then park rather
+			// than burn a core yielding.
+			for (int spin = 0; spin < IDLE_SPINS_BEFORE_PARK && !pending.get(); spin++) {
+				Thread.onSpinWait();
 			}
 			parked = true;
 			try {
