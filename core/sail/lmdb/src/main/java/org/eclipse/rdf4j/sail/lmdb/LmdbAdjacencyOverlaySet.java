@@ -13,7 +13,11 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 
 /**
  * The immutable overlay portion of one published state (plan 27): delta generations in ascending revision order, the
@@ -125,6 +129,87 @@ final class LmdbAdjacencyOverlaySet {
 				saturatingAdd(metadataBytes, generation.metadataBytes()),
 				registries, appendLineage,
 				with(latestRows, generation, generationCount()), planeStatistics);
+	}
+
+	/**
+	 * This set with generations {@code [from, toInclusive]} replaced by the single generation
+	 * {@code replacement[from]}, which holds the newest version of every (key, plane, predicate) row of that range (a
+	 * tiered range merge). {@code replacement} is this set's generations with the range collapsed; like the array
+	 * constructor, the result takes ownership of one reference per generation in {@code replacement} and one
+	 * context-catalog reference.
+	 * <p>
+	 * The latest-row index is remapped rather than rebuilt: every merged row's node moves to the merged generation when
+	 * a generation of the range was its newest writer, and rows of the generations after the range keep their nodes
+	 * with the generation index shifted down. Both are search-path copies, so the work is proportional to the merged
+	 * and later rows and the untouched subtrees are shared with this set, instead of the O(n log n) rebuild over every
+	 * row that the applier thread used to run after each merge.
+	 */
+	LmdbAdjacencyOverlaySet withReplacedRange(LmdbAdjacencyDeltaGeneration[] replacement, int from, int toInclusive,
+			LmdbAdjacencyContextCatalog contextCatalog, long[] extraSelectedRawPredicateIds, long liveLogicalBytes,
+			LmdbAdjacencyPlaneStatistics planeStatistics) {
+		int count = generationCount();
+		if (from < 0 || toInclusive < from || toInclusive >= count) {
+			throw new IllegalArgumentException("range [" + from + ", " + toInclusive + "] outside " + count);
+		}
+		int removed = toInclusive - from + 1;
+		if (replacement.length != count - removed + 1) {
+			throw new IllegalArgumentException("replacement holds " + replacement.length + " generations, expected "
+					+ (count - removed + 1));
+		}
+		for (int i = 0; i < from; i++) {
+			if (replacement[i] != generation(i)) {
+				throw new IllegalArgumentException("replacement differs before the range at " + i);
+			}
+		}
+		for (int i = toInclusive + 1; i < count; i++) {
+			if (replacement[i - removed + 1] != generation(i)) {
+				throw new IllegalArgumentException("replacement differs after the range at " + i);
+			}
+		}
+		validateAscending(replacement);
+		LmdbAdjacencyDeltaGeneration merged = replacement[from];
+		LatestRowNode root = latestRows;
+		for (int row = 0; row < merged.rowCount(); row++) {
+			root = remapMergedRow(root, merged, from, toInclusive, row);
+		}
+		int shift = removed - 1;
+		for (int index = toInclusive + 1; index < count; index++) {
+			LmdbAdjacencyDeltaGeneration later = generation(index);
+			for (int row = 0; row < later.rowCount(); row++) {
+				root = renumberRow(root, later, index, index - shift, row);
+			}
+		}
+		return new LmdbAdjacencyOverlaySet(GenerationSequence.fromOwned(replacement), contextCatalog,
+				extraSelectedRawPredicateIds == null || extraSelectedRawPredicateIds.length == 0 ? NO_PREDICATES
+						: extraSelectedRawPredicateIds,
+				liveLogicalBytes, computeMetadataBytes(replacement), sourceRegistries(replacement), new Object(), root,
+				planeStatistics);
+	}
+
+	/** Test seam: how many nodes of this set's latest-row index are the same objects as in {@code other}'s. */
+	int latestRowNodesSharedWithForTest(LmdbAdjacencyOverlaySet other) {
+		Set<LatestRowNode> theirs = Collections.newSetFromMap(new IdentityHashMap<>());
+		collectNodes(other.latestRows, theirs);
+		int[] shared = { 0 };
+		forEachNode(latestRows, node -> {
+			if (theirs.contains(node)) {
+				shared[0]++;
+			}
+		});
+		return shared[0];
+	}
+
+	private static void collectNodes(LatestRowNode node, Set<LatestRowNode> into) {
+		forEachNode(node, into::add);
+	}
+
+	private static void forEachNode(LatestRowNode node, Consumer<LatestRowNode> consumer) {
+		if (node == null) {
+			return;
+		}
+		forEachNode(node.left, consumer);
+		consumer.accept(node);
+		forEachNode(node.right, consumer);
 	}
 
 	boolean hasGenerationPrefix(LmdbAdjacencyOverlaySet expectedPrefix) {
@@ -406,6 +491,62 @@ final class LmdbAdjacencyOverlaySet {
 					put(node.right, generation, generationIndex, rowIndex)));
 		}
 		return new LatestRowNode(generation, generationIndex, rowIndex, node.left, node.right);
+	}
+
+	/**
+	 * Moves the node of merged row {@code row} to the merged generation when its newest writer was a generation of the
+	 * replaced range. A newer writer after the range keeps the node; its index is renumbered separately. The key must
+	 * exist: the merged generation holds only keys the range wrote, and every written key has a node.
+	 */
+	private static LatestRowNode remapMergedRow(LatestRowNode node, LmdbAdjacencyDeltaGeneration merged, int from,
+			int toInclusive, int row) {
+		if (node == null) {
+			throw new IllegalStateException("latest-row index lacks merged row " + row);
+		}
+		int comparison = compare(merged.rowKeyAt(row), merged.rowPlaneAt(row), merged.rowPredicateAt(row),
+				node.generation, node.rowIndex);
+		if (comparison < 0) {
+			LatestRowNode left = remapMergedRow(node.left, merged, from, toInclusive, row);
+			return left == node.left ? node
+					: new LatestRowNode(node.generation, node.generationIndex, node.rowIndex, left, node.right);
+		}
+		if (comparison > 0) {
+			LatestRowNode right = remapMergedRow(node.right, merged, from, toInclusive, row);
+			return right == node.right ? node
+					: new LatestRowNode(node.generation, node.generationIndex, node.rowIndex, node.left, right);
+		}
+		if (node.generationIndex > toInclusive) {
+			return node;
+		}
+		if (node.generationIndex < from) {
+			throw new IllegalStateException("latest-row index names generation " + node.generationIndex
+					+ " as the newest writer of a row the merged range [" + from + ", " + toInclusive + "] wrote");
+		}
+		return new LatestRowNode(merged, from, row, node.left, node.right);
+	}
+
+	/** Shifts the generation index of the node for {@code generation}'s row {@code row}, if that node is still its. */
+	private static LatestRowNode renumberRow(LatestRowNode node, LmdbAdjacencyDeltaGeneration generation,
+			int oldIndex, int newIndex, int row) {
+		if (node == null) {
+			throw new IllegalStateException("latest-row index lacks a row of generation " + oldIndex);
+		}
+		int comparison = compare(generation.rowKeyAt(row), generation.rowPlaneAt(row),
+				generation.rowPredicateAt(row), node.generation, node.rowIndex);
+		if (comparison < 0) {
+			LatestRowNode left = renumberRow(node.left, generation, oldIndex, newIndex, row);
+			return left == node.left ? node
+					: new LatestRowNode(node.generation, node.generationIndex, node.rowIndex, left, node.right);
+		}
+		if (comparison > 0) {
+			LatestRowNode right = renumberRow(node.right, generation, oldIndex, newIndex, row);
+			return right == node.right ? node
+					: new LatestRowNode(node.generation, node.generationIndex, node.rowIndex, node.left, right);
+		}
+		if (node.generation != generation) {
+			return node; // a later generation rewrote this key
+		}
+		return new LatestRowNode(generation, newIndex, node.rowIndex, node.left, node.right);
 	}
 
 	private static LatestRowNode balance(LatestRowNode node) {

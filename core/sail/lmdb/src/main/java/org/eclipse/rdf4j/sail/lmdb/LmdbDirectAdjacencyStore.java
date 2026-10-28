@@ -1425,8 +1425,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			LmdbAdjacencyContextCatalog contexts = overlays.contextCatalog();
 			contexts.retain();
 			try {
-				return new LmdbAdjacencyOverlaySet(replacement, contexts, overlays.extraSelectedSnapshot(),
-						overlays.liveLogicalBytes(), overlays.planeStatistics());
+				// remaps the latest-row index along the merged and later rows instead of rebuilding it over every row
+				return overlays.withReplacedRange(replacement, from, toInclusive, contexts,
+						overlays.extraSelectedSnapshot(), overlays.liveLogicalBytes(), overlays.planeStatistics());
 			} catch (RuntimeException | Error failure) {
 				contexts.release();
 				for (LmdbAdjacencyDeltaGeneration generation : replacement) {
