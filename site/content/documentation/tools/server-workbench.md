@@ -336,6 +336,44 @@ The default log level is INFO, indicating that only important status messages, w
 
 The built-in `/system/logging/overview.view` page is disabled by default and returns `403 Forbidden`. Server logs can include request URLs, query parameters, error details, and stack traces. To enable the page, start the Server JVM with `-Dorg.eclipse.rdf4j.server.logging.ui.enabled=true`. For the packaged Spring Boot distribution, add this option through `RDF4J_JAVA_OPTS`; for a standalone WAR, add it to the servlet container's JVM options. This setting only makes the page available. Protect `/system/logging/*` with servlet-container authentication and authorization or an authenticating reverse proxy before enabling it. For the packaged Boot server, protect both `/system/logging/*` and `/rdf4j-server/system/logging/*` when using a reverse proxy. The page must not be exposed anonymously on a publicly reachable listener.
 
+### Extending the RDF4J Server Spring configuration
+
+Downstream distributions can add or replace Spring beans in RDF4J Server without modifying the WAR's own configuration files. At the end of its `rdf4j-http-server-servlet.xml`, the server imports every Spring XML file that it finds on the classpath at `META-INF/rdf4j-server/*.xml`:
+
+- In the standard WAR, put the file at `META-INF/rdf4j-server/<name>.xml` inside a jar in `WEB-INF/lib`, or directly under `WEB-INF/classes/META-INF/rdf4j-server/`.
+- In the Spring Boot packaging (`rdf4j-server-boot`), put the jar (or directory) containing the file on the application classpath.
+
+Extension files are loaded after all stock bean definitions. A bean with the same id as a stock bean replaces it, so you can, for example, replace the `rdf4jRepositoryManager` bean that the server's controllers reference by name. The stock URL handler mappings use orders 0 to 3; give your own mappings an order that does not conflict with these. The `commonAppConfig` bean is available to extensions (for instance to look up the data directory). The order in which several extension files are loaded is not specified, so do not make one extension file depend on another. When packaging extensions in a jar, make sure the jar has directory entries (jars built by Maven do), as the classpath lookup relies on them.
+
+The following example replaces the repository manager with a custom `FactoryBean` and adds a URL mapping to a custom controller:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd">
+
+	<!-- Replaces the stock repository manager. The class must produce a RepositoryManager. -->
+	<bean id="rdf4jRepositoryManager" class="com.example.CustomRepositoryManagerFactoryBean">
+		<constructor-arg>
+			<bean factory-bean="commonAppConfig" factory-method="getDataDir" />
+		</constructor-arg>
+	</bean>
+
+	<bean id="exampleController" class="com.example.ExampleController" />
+
+	<!-- Adds a new endpoint; the stock mappings use orders 0-3. -->
+	<bean id="exampleHandlerMapping" class="org.springframework.web.servlet.handler.SimpleUrlHandlerMapping">
+		<property name="order" value="10" />
+		<property name="urlMap">
+			<map>
+				<entry key="/example" value-ref="exampleController" />
+			</map>
+		</property>
+	</bean>
+</beans>
+```
+
 ## Access Rights and Security
 
 It is possible to set up your RDF4J Server to authenticate named users and restrict their permissions.  RDF4J Server is a servlet-based Web application deployed to any standard servlet container (for the remainder of this section it is assumed that Tomcat is being used).
