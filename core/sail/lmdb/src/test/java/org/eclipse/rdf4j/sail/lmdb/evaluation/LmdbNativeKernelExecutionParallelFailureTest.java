@@ -56,6 +56,7 @@ import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 
 /** Acceptance coverage for real worker failures, cancellation drains, and unavailable parallel sources. */
 @Isolated("The tests use the shared bounded native parallel executor and source-lifetime tripwires")
@@ -770,6 +771,218 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 			Thread.sleep(1L);
 		}
 		throw new AssertionError("thread did not reach " + owner + "." + method + " / " + waitingMethod);
+	}
+
+	private enum CloseControl {
+		OWNED_STOP,
+		EXPIRED_PROBE,
+		FOREIGN_PROBE
+	}
+
+	@ParameterizedTest
+	@EnumSource(CloseControl.class)
+	void rowCursorCloseDistinguishesItsWorkerStopFromProbeFailures(CloseControl control) throws Exception {
+		setProperty(LmdbNativeParallelKernelRows.ENABLED_PROPERTY, "true");
+		CountDownLatch workerAtPoll = new CountDownLatch(1);
+		CountDownLatch releaseWorker = new CountDownLatch(1);
+		CountDownLatch snapshotsClosed = new CountDownLatch(2);
+		ProbeSource source = new ProbeSource(null, false, false, null, snapshotsClosed);
+		Scenario scenario = scenario(source);
+		SlotPlan plan = SlotPlan.join(scenario.plan, scenario.plan);
+		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, scenario.row, null);
+		assertThat(lowered).isNotNull();
+		LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.trippableOnly();
+		AtomicBoolean firstKernel = new AtomicBoolean();
+		AtomicReference<Throwable> closeFailure = new AtomicReference<>();
+		Thread closer = null;
+		RowCursor cursor = null;
+		boolean enclosingQueryCancelled = false;
+		try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(deadline)) {
+			cursor = openParallelRowsWithKernel(lowered, plan, scenario, kernel -> {
+				boolean emitsPage = firstKernel.compareAndSet(false, true);
+				return new JaninoKernel() {
+					private int fills;
+					private KernelContext context;
+
+					@Override
+					public void bind(KernelContext context) {
+						this.context = context;
+					}
+
+					@Override
+					public int fill(long[] rowBuffer, int maxRows) {
+						if (!emitsPage) {
+							return 0;
+						}
+						if (fills++ == 0) {
+							Arrays.fill(rowBuffer, 0, lowered.kernel.stride(), 1L);
+							return 1;
+						}
+						workerAtPoll.countDown();
+						awaitLatch(releaseWorker, "the test must release the kernel cancellation poll");
+						if (control == CloseControl.FOREIGN_PROBE) {
+							throw KernelCancelledException.INSTANCE;
+						}
+						KernelRuntime.checkCancelled(context.cancellation);
+						throw new AssertionError("the worker's bound cancellation must be observed");
+					}
+				};
+			});
+			assertThat(cursor.next()).as("the worker page must be handed off before close").isTrue();
+			assertThat(workerAtPoll.await(10L, TimeUnit.SECONDS)).isTrue();
+			if (control == CloseControl.EXPIRED_PROBE) {
+				deadline.trip();
+				releaseWorker.countDown();
+				assertThat(snapshotsClosed.await(10L, TimeUnit.SECONDS)).isTrue();
+			}
+			RowCursor closingCursor = cursor;
+			closer = new Thread(() -> closeFailure.set(catchThrowable(closingCursor::close)),
+					"row-cursor-local-stop-test");
+			closer.start();
+			if (control != CloseControl.EXPIRED_PROBE) {
+				awaitThreadFrame(closer, "LmdbNativeParallelKernelRows", "awaitTasks", "await");
+				releaseWorker.countDown();
+			}
+			closer.join(TimeUnit.SECONDS.toMillis(10L));
+			assertThat(closer.isAlive()).isFalse();
+			assertThat(snapshotsClosed.await(10L, TimeUnit.SECONDS)).isTrue();
+			enclosingQueryCancelled = scenario.row.cancellation.cancellationPublished();
+		} finally {
+			releaseWorker.countDown();
+			if (closer != null) {
+				closer.join(TimeUnit.SECONDS.toMillis(10L));
+			}
+			if (cursor != null) {
+				cursor.close();
+			}
+			scenario.emitter.close();
+		}
+		for (ProbeSource child : source.children) {
+			assertThat(child.closeCalls).hasValue(1);
+			assertThat(child.closedWhileWorkerActive).isFalse();
+		}
+		assertThat(enclosingQueryCancelled)
+				.as("stopping a cursor must not cancel its enclosing query")
+				.isFalse();
+		if (control == CloseControl.OWNED_STOP) {
+			assertThat(closeFailure.get()).as("the cursor's own worker stop is not a failed probe").isNull();
+		} else {
+			assertThat(closeFailure.get()).as("an independent probe failure remains visible")
+					.isSameAs(KernelCancelledException.INSTANCE);
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false", "true" })
+	void scopeOwnedWorkerInterruptionTerminatesCoordinator(boolean afterHandoff) throws Exception {
+		setProperty(LmdbNativeParallelKernelRows.ENABLED_PROPERTY, "true");
+		Object scopeOwner = new Object();
+		ThreadLocal<Object> interruptionOwner = new ThreadLocal<>();
+		QueryExecutionContext.WorkerScope workerScope = new QueryExecutionContext.WorkerScope() {
+			@Override
+			public QueryExecutionContext.Activation activate() {
+				return () -> {
+					interruptionOwner.remove();
+					Thread.interrupted();
+				};
+			}
+
+			@Override
+			public boolean ownsCancellation(Object owner) {
+				return owner == scopeOwner;
+			}
+
+			@Override
+			public Object consumeInterruptionOwner() {
+				Object owner = interruptionOwner.get();
+				interruptionOwner.remove();
+				return owner;
+			}
+		};
+		CountDownLatch snapshotsClosed = new CountDownLatch(2);
+		CountDownLatch rowDelivered = new CountDownLatch(1);
+		CountDownLatch releaseWorker = new CountDownLatch(1);
+		CountDownLatch queryFinished = new CountDownLatch(1);
+		ProbeSource source = new ProbeSource(null, false, false, null, snapshotsClosed);
+		Scenario scenario = scenario(source);
+		SlotPlan plan = SlotPlan.join(scenario.plan, scenario.plan);
+		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, scenario.row, null);
+		assertThat(lowered).isNotNull();
+		AtomicBoolean firstKernel = new AtomicBoolean();
+		AtomicReference<Throwable> observed = new AtomicReference<>();
+		Thread query = new Thread(() -> {
+			try (var replay = QueryExecutionContext.activateReplaySafepoint(() -> {
+			}, () -> workerScope)) {
+				observed.set(catchThrowable(() -> {
+					try (RowCursor cursor = openParallelRowsWithKernel(lowered, plan, scenario, kernel -> {
+						boolean signals = firstKernel.compareAndSet(false, true);
+						return new JaninoKernel() {
+							private int fills;
+							private KernelContext context;
+
+							@Override
+							public void bind(KernelContext context) {
+								this.context = context;
+							}
+
+							@Override
+							public int fill(long[] rowBuffer, int maxRows) {
+								if (!signals) {
+									return 0;
+								}
+								if (afterHandoff && fills++ == 0) {
+									Arrays.fill(rowBuffer, 0, lowered.kernel.stride(), 1L);
+									return 1;
+								}
+								if (afterHandoff) {
+									awaitLatch(releaseWorker, "the consumer must receive its first row");
+								}
+								interruptionOwner.set(scopeOwner);
+								Thread.currentThread().interrupt();
+								KernelRuntime.checkCancelled(context.cancellation);
+								throw new AssertionError("the stamped worker interruption must be observed");
+							}
+						};
+					})) {
+						if (afterHandoff) {
+							assertThat(cursor).isNotNull();
+							assertThat(cursor.next()).isTrue();
+							rowDelivered.countDown();
+							releaseWorker.countDown();
+							cursor.next();
+						}
+					}
+				}));
+			} finally {
+				queryFinished.countDown();
+			}
+		}, "scope-owned-worker-stop-test");
+
+		boolean completed;
+		boolean queryCancelled;
+		try {
+			query.start();
+			if (afterHandoff) {
+				assertThat(rowDelivered.await(10L, TimeUnit.SECONDS)).isTrue();
+			}
+			assertThat(snapshotsClosed.await(10L, TimeUnit.SECONDS))
+					.as("the scope-owned stop must drain both worker snapshots")
+					.isTrue();
+			completed = queryFinished.await(2L, TimeUnit.SECONDS);
+			queryCancelled = scenario.row.cancellation.cancellationPublished();
+		} finally {
+			releaseWorker.countDown();
+			if (query.isAlive()) {
+				scenario.emitter.requestCancellation();
+			}
+			query.join(TimeUnit.SECONDS.toMillis(10L));
+			scenario.emitter.close();
+		}
+		assertThat(query.isAlive()).isFalse();
+		assertThat(completed).as("a scope-owned worker stop must publish a terminal coordinator outcome").isTrue();
+		assertThat(queryCancelled).as("the worker scope must not cancel the independent enclosing token").isFalse();
+		assertThat(observed.get()).isInstanceOf(KernelQueryCancelledException.class);
+		assertThat(((KernelQueryCancelledException) observed.get()).origin()).isSameAs(scopeOwner);
 	}
 
 	@Test

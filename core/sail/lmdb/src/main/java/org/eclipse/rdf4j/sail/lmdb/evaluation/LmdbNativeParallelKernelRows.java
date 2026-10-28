@@ -298,8 +298,11 @@ final class LmdbNativeParallelKernelRows {
 				: null;
 		ArrayBlockingQueue<Page> output = new ArrayBlockingQueue<>(threads * 2);
 		AtomicReference<Throwable> failure = new AtomicReference<>();
+		AtomicReference<KernelQueryCancelledException> ownerCancellation = new AtomicReference<>();
 		AtomicReference<Throwable> activationFailure = new AtomicReference<>();
 		AtomicBoolean cancelled = new AtomicBoolean();
+		// Stopping this group must not cancel the enclosing query or a later fallback.
+		NativeCancellationToken workerCancellation = new NativeCancellationToken(row.cancellation);
 		CountDownLatch startup = new CountDownLatch(threads);
 		NativeExecutionContext.WorkerTasks tasks = new NativeExecutionContext.WorkerTasks(threads, reservation::close);
 		LmdbFusedSipFactorizedRuntime.Session fusedParent = LmdbFusedSipFactorizedRuntime.currentOrNull();
@@ -331,7 +334,7 @@ final class LmdbNativeParallelKernelRows {
 						if (primary != problem) {
 							primary.addSuppressed(problem);
 						}
-						cancelled.set(true);
+						stopWorkers(cancelled, workerCancellation);
 					})) {
 						try {
 							activateWorkerContext(worker, replayContext, activationFailure);
@@ -344,8 +347,9 @@ final class LmdbNativeParallelKernelRows {
 								NativeExecutionPhaseEvent.kernelInput(lowered.kernel, lowered.bindings,
 										row.cancellation);
 								runWorker(lowered, rootAdjacency, rootDomain, rootWildcard, rootScan, domains, source,
-										row,
-										ranges, scanQueue, output, kernelFactory, failure, cancelled, startup,
+										row, workerCancellation,
+										ranges, scanQueue, output, kernelFactory, failure, ownerCancellation, cancelled,
+										startup,
 										startupReported, replayContext);
 								if (failure.get() == null && !cancelled.get()) {
 									inputPhases.complete();
@@ -355,7 +359,7 @@ final class LmdbNativeParallelKernelRows {
 							if (!cancelled.get()) {
 								failure.compareAndSet(null, problem);
 							}
-							cancelled.set(true);
+							stopWorkers(cancelled, workerCancellation);
 						} finally {
 							if (startupReported.compareAndSet(false, true)) {
 								startup.countDown();
@@ -365,7 +369,7 @@ final class LmdbNativeParallelKernelRows {
 				}));
 			} catch (RuntimeException | Error problem) {
 				failure.compareAndSet(null, problem);
-				cancelled.set(true);
+				stopWorkers(cancelled, workerCancellation);
 				for (int remaining = w; remaining < threads; remaining++) {
 					try {
 						sources[remaining].close();
@@ -384,12 +388,12 @@ final class LmdbNativeParallelKernelRows {
 		}
 		if (emit.mods.orderKeys != null) {
 			return startOrdered(lowered, sources, threads, row, reservation, emit, distinctAuthority, output, failure,
-					cancelled, tasks, hashLedger);
+					ownerCancellation, cancelled, workerCancellation, tasks, hashLedger);
 		}
 		Page first = null;
 		int endedWorkers = 0;
 		InterruptedException coordinatorInterruption = null;
-		while (first == null && endedWorkers < threads && failure.get() == null
+		while (first == null && endedWorkers < threads && failure.get() == null && ownerCancellation.get() == null
 				&& coordinatorInterruption == null && !row.cancellation.isCancellationRequested()) {
 			try {
 				Page page = output.poll(50, TimeUnit.MILLISECONDS);
@@ -402,17 +406,17 @@ final class LmdbNativeParallelKernelRows {
 				coordinatorInterruption = e;
 			}
 		}
-		if (row.cancellation.isCancellationRequested()) {
-			abandon(sources, reservation, tasks, cancelled, coordinatorInterruption != null);
+		if (row.cancellation.isCancellationRequested() || ownerCancellation.get() != null) {
+			abandon(sources, reservation, tasks, cancelled, workerCancellation, coordinatorInterruption != null);
 			if (hashLedger != null) {
 				hashLedger.close();
 			}
 			rethrowWorkerFailureBeforeCancellation(failure.get(), coordinatorInterruption);
 			row.cancellation.check();
-			throw new AssertionError("published query cancellation did not throw");
+			throw ownerCancellation.get();
 		}
 		if (first == null && (failure.get() != null || coordinatorInterruption != null)) {
-			abandon(sources, reservation, tasks, cancelled, coordinatorInterruption != null);
+			abandon(sources, reservation, tasks, cancelled, workerCancellation, coordinatorInterruption != null);
 			if (hashLedger != null) {
 				hashLedger.close();
 			}
@@ -433,7 +437,8 @@ final class LmdbNativeParallelKernelRows {
 		}
 		PARALLEL_RUNS.incrementAndGet();
 		return new ParallelKernelRowCursor(row, lowered.bindings.columnEngineSlots, sources, reservation, output,
-				failure, cancelled, tasks, threads, first, endedWorkers, emit, distinctAuthority, hashLedger);
+				failure, ownerCancellation, cancelled, workerCancellation, tasks, threads, first, endedWorkers, emit,
+				distinctAuthority, hashLedger);
 	}
 
 	private static void activateWorkerContext(NativeExecutionContext.WorkerTasks.Task worker,
@@ -470,12 +475,17 @@ final class LmdbNativeParallelKernelRows {
 		return interruption == null ? workerFailure : addCloseFailure(workerFailure, interruption);
 	}
 
+	private static void stopWorkers(AtomicBoolean cancelled, NativeCancellationToken workerCancellation) {
+		workerCancellation.requestCancellation();
+		cancelled.set(true);
+	}
+
 	/** Cancels the worker group pre-handoff and releases every resource; close failures surface as errors only. */
 	private static void abandon(NativeLmdbQuerySource.ParallelSource[] sources,
 			LmdbNativeParallelPipelines.TaskReservation reservation, NativeExecutionContext.WorkerTasks tasks,
-			AtomicBoolean cancelled,
+			AtomicBoolean cancelled, NativeCancellationToken workerCancellation,
 			boolean interrupted) {
-		cancelled.set(true);
+		stopWorkers(cancelled, workerCancellation);
 		awaitTasks(tasks);
 		Throwable cleanupFailure = LmdbNativeParallelPipelines.closeSources(sources, tasks.cleanupFailure());
 		reservation.close();
@@ -497,7 +507,9 @@ final class LmdbNativeParallelKernelRows {
 			NativeLmdbQuerySource.ParallelSource[] sources, int threads, RowState row,
 			LmdbNativeParallelPipelines.TaskReservation reservation, Emit emit, NativeTermAuthority distinctAuthority,
 			ArrayBlockingQueue<Page> output,
-			AtomicReference<Throwable> failure, AtomicBoolean cancelled, NativeExecutionContext.WorkerTasks tasks,
+			AtomicReference<Throwable> failure, AtomicReference<KernelQueryCancelledException> ownerCancellation,
+			AtomicBoolean cancelled, NativeCancellationToken workerCancellation,
+			NativeExecutionContext.WorkerTasks tasks,
 			org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation hashLedger) {
 		int[] columnSlots = lowered.bindings.columnEngineSlots;
 		int stride = columnSlots.length;
@@ -505,7 +517,8 @@ final class LmdbNativeParallelKernelRows {
 		long totalRows = 0L;
 		int endedWorkers = 0;
 		InterruptedException coordinatorInterruption = null;
-		while (endedWorkers < threads && failure.get() == null && coordinatorInterruption == null
+		while (endedWorkers < threads && failure.get() == null && ownerCancellation.get() == null
+				&& coordinatorInterruption == null
 				&& !row.cancellation.isCancellationRequested()) {
 			try {
 				Page page = output.poll(50, TimeUnit.MILLISECONDS);
@@ -519,14 +532,14 @@ final class LmdbNativeParallelKernelRows {
 				coordinatorInterruption = e;
 			}
 		}
-		if (row.cancellation.isCancellationRequested()) {
-			abandon(sources, reservation, tasks, cancelled, coordinatorInterruption != null);
+		if (row.cancellation.isCancellationRequested() || ownerCancellation.get() != null) {
+			abandon(sources, reservation, tasks, cancelled, workerCancellation, coordinatorInterruption != null);
 			if (hashLedger != null) {
 				hashLedger.close();
 			}
 			rethrowWorkerFailureBeforeCancellation(failure.get(), coordinatorInterruption);
 			row.cancellation.check();
-			throw new AssertionError("published query cancellation did not throw");
+			throw ownerCancellation.get();
 		}
 		if (failure.get() != null || coordinatorInterruption != null
 				|| totalRows > Integer.MAX_VALUE / Math.max(stride, 1)) {
@@ -534,7 +547,7 @@ final class LmdbNativeParallelKernelRows {
 				failure.compareAndSet(null,
 						new LmdbNativeKernelPartitions.ParallelKernelDecline("ordered-result-too-large"));
 			}
-			abandon(sources, reservation, tasks, cancelled, coordinatorInterruption != null);
+			abandon(sources, reservation, tasks, cancelled, workerCancellation, coordinatorInterruption != null);
 			if (hashLedger != null) {
 				hashLedger.close();
 			}
@@ -596,15 +609,17 @@ final class LmdbNativeParallelKernelRows {
 
 	private static void runWorker(LmdbNativeKernelLowering.Lowered lowered, int rootAdjacency, int rootDomain,
 			int rootWildcard, int rootScan, LmdbNativeKernelBindings.BoundDomains domains,
-			NativeLmdbQuerySource source, RowState consumerRow, Queue<long[]> ranges,
+			NativeLmdbQuerySource source, RowState consumerRow, NativeCancellationToken workerCancellation,
+			Queue<long[]> ranges,
 			Queue<LmdbRootScanPartition> scanQueue,
 			ArrayBlockingQueue<Page> output, Supplier<JaninoKernel> kernelFactory, AtomicReference<Throwable> failure,
-			AtomicBoolean cancelled, CountDownLatch startup, AtomicBoolean startupReported,
+			AtomicReference<KernelQueryCancelledException> ownerCancellation, AtomicBoolean cancelled,
+			CountDownLatch startup, AtomicBoolean startupReported,
 			NativeExecutionContext.WorkerContext replayContext)
 			throws IOException, InterruptedException {
 		LmdbNativeKernelBindings bindings = lowered.bindings;
 		RowState workerRow = new RowState(source, consumerRow.layout, consumerRow.base,
-				consumerRow.telemetryTarget, consumerRow.exactValuesMetrics, consumerRow.cancellation);
+				consumerRow.telemetryTarget, consumerRow.exactValuesMetrics, workerCancellation);
 		workerRow.memoryScope = consumerRow.memoryScope;
 		workerRow.enableDecodedInputAccounting();
 		NativeScalarPlan.WorkerContext workerContext = NativeScalarPlan.WorkerContext.forSource(source, null);
@@ -664,7 +679,7 @@ final class LmdbNativeParallelKernelRows {
 				// residual filters see exactly the state the consumer's bind loop would produce: a fresh entry-seeded
 				// row with the packed columns bound on top (admission guarantees the entry is reproducible)
 				residualRow = new RowState(source, consumerRow.layout, consumerRow.base,
-						consumerRow.telemetryTarget, consumerRow.exactValuesMetrics, consumerRow.cancellation);
+						consumerRow.telemetryTarget, consumerRow.exactValuesMetrics, workerCancellation);
 				residualRow.memoryScope = consumerRow.memoryScope;
 				residualRow.enableDecodedInputAccounting();
 				if (!NativeRowSeeder.seed(residualRow.slots, consumerRow.layout, consumerRow.base, source)) {
@@ -683,7 +698,10 @@ final class LmdbNativeParallelKernelRows {
 				startup.countDown();
 			}
 			startup.await();
-			if (cancelled.get() || failure.get() != null || workerRow.cancellation.isCancellationRequested()) {
+			if (workerRow.cancellation.isCancellationRequested()) {
+				workerRow.cancellation.check();
+			}
+			if (cancelled.get() || failure.get() != null) {
 				return;
 			}
 			int stride = lowered.kernel.stride();
@@ -735,8 +753,7 @@ final class LmdbNativeParallelKernelRows {
 					}
 					LmdbNativeJaninoCodegen.bind(kernel,
 							bindings.context(windowViews, windowDomains, workerRow, hooks, scanner,
-									windowVariableViews,
-									cancelled::get),
+									windowVariableViews),
 							"irKernelParallel");
 					int filled;
 					while ((filled = LmdbNativeJaninoCodegen.fill(kernel, buffer, FILL_ROWS,
@@ -754,26 +771,32 @@ final class LmdbNativeParallelKernelRows {
 					kernel.close();
 				}
 			}
-			if (!workerRow.cancellation.isCancellationRequested()) {
+			if (workerRow.cancellation.isCancellationRequested()) {
+				workerRow.cancellation.check();
+			}
+			if (!cancelled.get() && failure.get() == null) {
 				offer(output, Page.END, failure, cancelled);
 			}
 		} catch (KernelQueryCancelledException cancelledByQuery) {
+			boolean scopeOwned = replayContext.ownsCancellation(cancelledByQuery.origin());
 			if (cancelledByQuery.getSuppressed().length != 0
-					|| !(workerRow.cancellation.owns(cancelledByQuery)
-							|| replayContext.ownsCancellation(cancelledByQuery.origin()))) {
+					|| !(workerRow.cancellation.owns(cancelledByQuery) || scopeOwned)) {
 				RuntimeException retained = cancelledByQuery == KernelQueryCancelledException.INSTANCE
 						? new QueryEvaluationException("parallel kernel worker failed", cancelledByQuery)
 						: cancelledByQuery;
 				primaryFailure = retained;
 				failure.compareAndSet(null, retained);
-				cancelled.set(true);
+				stopWorkers(cancelled, workerCancellation);
 				throw retained;
 			}
-			cancelled.set(true);
+			if (scopeOwned) {
+				ownerCancellation.compareAndSet(null, cancelledByQuery);
+			}
+			stopWorkers(cancelled, workerCancellation);
 		} catch (IOException | InterruptedException | RuntimeException | Error problem) {
 			primaryFailure = problem;
 			failure.compareAndSet(null, problem);
-			cancelled.set(true);
+			stopWorkers(cancelled, workerCancellation);
 			throw problem;
 		} finally {
 			if (startupReported.compareAndSet(false, true)) {
@@ -1051,7 +1074,9 @@ final class LmdbNativeParallelKernelRows {
 		private final LmdbNativeParallelPipelines.TaskReservation reservation;
 		private final ArrayBlockingQueue<Page> output;
 		private final AtomicReference<Throwable> failure;
+		private final AtomicReference<KernelQueryCancelledException> ownerCancellation;
 		private final AtomicBoolean cancelled;
+		private final NativeCancellationToken workerCancellation;
 		private final NativeExecutionContext.WorkerTasks tasks;
 		private final int threads;
 		private final DistinctRows distinct;
@@ -1067,7 +1092,9 @@ final class LmdbNativeParallelKernelRows {
 
 		ParallelKernelRowCursor(RowState row, int[] columnSlots, NativeLmdbQuerySource.ParallelSource[] sources,
 				LmdbNativeParallelPipelines.TaskReservation reservation, ArrayBlockingQueue<Page> output,
-				AtomicReference<Throwable> failure, AtomicBoolean cancelled, NativeExecutionContext.WorkerTasks tasks,
+				AtomicReference<Throwable> failure, AtomicReference<KernelQueryCancelledException> ownerCancellation,
+				AtomicBoolean cancelled, NativeCancellationToken workerCancellation,
+				NativeExecutionContext.WorkerTasks tasks,
 				int threads,
 				Page first, int endedWorkers, Emit emit,
 				NativeTermAuthority distinctAuthority,
@@ -1079,7 +1106,9 @@ final class LmdbNativeParallelKernelRows {
 			this.reservation = reservation;
 			this.output = output;
 			this.failure = failure;
+			this.ownerCancellation = ownerCancellation;
 			this.cancelled = cancelled;
+			this.workerCancellation = workerCancellation;
 			this.tasks = tasks;
 			this.threads = threads;
 			this.active = first;
@@ -1181,6 +1210,10 @@ final class LmdbNativeParallelKernelRows {
 		private void checkCancellation() throws IOException {
 			try {
 				row.cancellation.check();
+				KernelQueryCancelledException scopeStop = ownerCancellation.get();
+				if (scopeStop != null) {
+					throw scopeStop;
+				}
 				LmdbNativeProbeDeadline.poll(0);
 			} catch (RuntimeException | Error problem) {
 				Throwable cancellation = KernelRuntime.closeResource((AutoCloseable) () -> close(false), problem);
@@ -1238,7 +1271,7 @@ final class LmdbNativeParallelKernelRows {
 				row.rollback(activeMark);
 				activeMark = -1;
 			}
-			cancelled.set(true);
+			stopWorkers(cancelled, workerCancellation);
 			output.clear();
 			awaitTasks(tasks);
 			output.clear();
