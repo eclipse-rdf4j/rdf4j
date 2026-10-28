@@ -140,10 +140,14 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	/** Strict mode remembers the first unexpected build or prepare failure; gaps and refusals are not failures. */
 	private volatile Throwable unexpectedMaintenanceFailure;
 	/**
-	 * True while a build that pinned an empty store runs: a new store's startup build. Committers wait behind that
-	 * build (it is trivial and makes their first commits exact at once); a populated store's build never blocks them.
+	 * True from opening over an empty store until its startup build publishes a base, fails, or is deferred for an
+	 * initial import. Committers of a new store wait for that build (it is trivial and makes their first commits exact
+	 * at once); a populated store's build never blocks them. Decided when this store opens, not when the build worker
+	 * pins: the first commit may land before the pin, and the worker would then find a populated store.
 	 */
-	private volatile boolean buildingOverEmptySnapshot;
+	private volatile boolean awaitStartupBuild;
+	/** Whether a rebuild has been requested; before the startup build starts it tells committers one is coming. */
+	private volatile boolean startupBuildRequested;
 	private final ThreadLocal<Integer> logicalCommitBatchDepth = ThreadLocal.withInitial(() -> 0);
 	// Test seams that are not interleaving hooks: fault injection consumed by the worker, an observable count of
 	// writers waiting for admission, and the switch that lets a committer wait behind a paused (stepped) applier.
@@ -189,7 +193,18 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 					+ "minimum; the store remains fully usable through LMDB", options.effectiveMaxBytes(),
 					LmdbDirectAdjacencyOptions.MIN_EXPLICIT_BYTES);
 		}
+		this.awaitStartupBuild = !options.memoryRefused() && openedEmpty(tripleStore);
 		applier.start();
+	}
+
+	private static boolean openedEmpty(TripleStore tripleStore) {
+		try {
+			return tripleStore.isEmpty();
+		} catch (IOException e) {
+			logger.warn("Could not tell whether the store is empty; its committers will not wait for the startup "
+					+ "adjacency build", e);
+			return false;
+		}
 	}
 
 	private static ThreadFactory daemonThreads(String name) {
@@ -385,37 +400,51 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	/**
 	 * Synchronous maintenance: wait until the applier has applied the current data revision. The wait completes early
 	 * when the applier cannot apply it (not serving, gap, closed), because LMDB stays authoritative and readers fall
-	 * back. Runs outside every lock a committer may hold; the applier and its workers need none of them.
+	 * back. Runs outside every lock a committer may hold; the applier and its workers need none of them. Strict mode
+	 * reports a maintenance failure only after the wait has settled, so the committer sees the failure together with
+	 * the state the applier published for it: a worker remembers a failed preparation before the applier has consumed
+	 * its outcome and published the gap.
 	 */
 	private void awaitCommitPublication() {
-		throwIfStrictMaintenanceFailed();
 		if (scheduler.isPaused() && !committersWaitWhilePaused) {
 			// A paused applier is a test condition; waiting for publication would deadlock the committing test thread.
 			// Tests pause the applier to observe the pending window, which begins once the record is sealed.
 			awaitHeadSealed(10, TimeUnit.SECONDS);
+			throwIfStrictMaintenanceFailed();
 			return;
 		}
-		if (closed || !options.synchronousMaintenance() || options.memoryRefused()) {
-			return;
+		if (!closed && options.synchronousMaintenance() && !options.memoryRefused()) {
+			awaitRevisionPublication(tripleStore.getDataRevision());
 		}
-		long revision = tripleStore.getDataRevision();
+		throwIfStrictMaintenanceFailed();
+	}
+
+	private void awaitRevisionPublication(long revision) {
 		long waitStarted = System.nanoTime();
 		long warnAt = waitStarted + TimeUnit.SECONDS.toNanos(30);
 		try {
 			while (true) {
 				AdjacencyState<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet> state = applierState();
-				if (closed || state.gapFromRevision() <= revision) {
+				if (closed) {
 					break;
 				}
-				if (state.status() == AdjacencyState.Status.SERVING && state.appliedRevision() >= revision) {
-					break;
-				}
-				if (state.status() != AdjacencyState.Status.SERVING
-						&& !(applier.buildInFlight() && buildingOverEmptySnapshot)) {
+				if (state.status() == AdjacencyState.Status.SERVING) {
+					if (state.appliedRevision() >= revision || state.gapFromRevision() <= revision) {
+						break;
+					}
+					// wakes on the next publish: the revision applied, a gap at or below it, or a state no longer
+					// serving
+					if (applier.awaitApplied(revision, 1, TimeUnit.SECONDS)) {
+						break;
+					}
+				} else if (awaitingStartupBuild(state)) {
+					// A new store's startup build. The applier gaps a commit that lands before the build consumes the
+					// log, since nothing applies it from there; the build's pin covers it all the same, so the gap does
+					// not end this wait. Re-checked each second in case the build fails, is deferred, or the startup
+					// housekeeping ends without requesting it.
+					applier.awaitServing(revision, 1, TimeUnit.SECONDS);
+				} else {
 					// a populated store's build or a failed index: LMDB stays authoritative, adjacency catches up
-					break;
-				}
-				if (applier.awaitServing(revision, 1, TimeUnit.SECONDS)) {
 					break;
 				}
 				if (System.nanoTime() >= warnAt) {
@@ -427,7 +456,26 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 		}
-		throwIfStrictMaintenanceFailed();
+	}
+
+	/**
+	 * Whether committers wait for a new store's startup build: the store opened empty, the build has not published,
+	 * failed or been deferred, and a build is running, requested, or about to be requested by the startup housekeeping
+	 * that is still running.
+	 */
+	private boolean awaitingStartupBuild(AdjacencyState<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet> state) {
+		if (!awaitStartupBuild || applier.suspended()) {
+			return false;
+		}
+		switch (state.phase()) {
+		case BUILDING:
+			return true;
+		case EMPTY:
+			CompletableFuture<Void> scheduling = startupScheduling;
+			return startupBuildRequested || (scheduling != null && !scheduling.isDone());
+		default:
+			return false;
+		}
 	}
 
 	private void throwIfStrictMaintenanceFailed() {
@@ -495,6 +543,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		if (closed || options.memoryRefused()) {
 			return;
 		}
+		startupBuildRequested = true;
 		applier.requestRebuild();
 	}
 
@@ -519,6 +568,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	}
 
 	void deferMaintenanceForInitialImport() {
+		// the rebuild after the import is over whatever the import loaded; committers do not wait for it
+		awaitStartupBuild = false;
 		applier.suspend();
 	}
 
@@ -571,8 +622,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	/** Whether a committer currently waits for its revision: a serving index, or a new store's startup build. */
 	boolean synchronousUpdatesActivated() {
-		return applierState().status() == AdjacencyState.Status.SERVING
-				|| (applier.buildInFlight() && buildingOverEmptySnapshot);
+		AdjacencyState<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet> state = applierState();
+		return state.status() == AdjacencyState.Status.SERVING || awaitingStartupBuild(state);
 	}
 
 	int queuedCommitCount() {
@@ -725,6 +776,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	boolean buildInFlightForTest() {
 		return applier.buildInFlight();
+	}
+
+	/** Whether a generation preparation is on a worker or its outcome waits in the applier's inbox. */
+	boolean prepareInFlightForTest() {
+		return applier.prepareInFlight();
 	}
 
 	boolean awaitWorkersIdleForTest(long timeout, TimeUnit unit) {
@@ -1160,7 +1216,6 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 						options.buildThreads())) {
 					baseRevision = sourceFamily.snapshotRevision();
 					hold.narrowTo(baseRevision);
-					buildingOverEmptySnapshot = tripleStore.isEmpty();
 					// Resolve selected predicates only after pinning: a dictionary ID always commits before the
 					// triples that use it, so every selected predicate with rows in this snapshot resolves.
 					LmdbAdjacencyCoverage coverage = resolveCoverage();
@@ -1173,7 +1228,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 									: valueStore::literalDatatypeIds);
 				}
 			} catch (Exception | Error failure) {
-				buildingOverEmptySnapshot = false;
+				awaitStartupBuild = false;
 				metrics.recordBuildAborted();
 				rememberUnexpectedMaintenanceFailure(failure);
 				throw failure;
@@ -1212,7 +1267,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 					applied = revision;
 				}
 			} catch (Exception | Error failure) {
-				buildingOverEmptySnapshot = false;
+				awaitStartupBuild = false;
 				if (overlays != null) {
 					overlays.release();
 				}
@@ -1532,7 +1587,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			if (base != null && base != previous.base()) {
 				// a freshly built base supersedes any corrupt projection, so this capability comes back
 				nodePredicateInconsistent.set(false);
-				buildingOverEmptySnapshot = false;
+				awaitStartupBuild = false;
 				logger.info("Published in-memory adjacency structures: format=paged-csf, snapshotRevision={}, "
 						+ "appliedRevision={}, {}", base.baseRevision(), next.appliedRevision(),
 						account.memoryUsageSummary());

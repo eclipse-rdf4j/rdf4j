@@ -430,6 +430,11 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 		return buildInFlight;
 	}
 
+	/** True while a generation preparation is on a worker or its outcome has not been consumed yet. */
+	boolean prepareInFlight() {
+		return prepareInFlight >= 0;
+	}
+
 	/** True when nothing is queued, in flight on a worker, or requested; safe to read from any thread. */
 	/** Whether a delayed rebuild retry is scheduled; idle() is true meanwhile, but the index will still change. */
 	boolean retryPending() {

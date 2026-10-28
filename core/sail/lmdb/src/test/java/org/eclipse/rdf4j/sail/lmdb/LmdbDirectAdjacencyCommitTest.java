@@ -273,6 +273,168 @@ class LmdbDirectAdjacencyCommitTest {
 		}
 	}
 
+	/**
+	 * The strict failure's two halves must reach the committer together. A preparation fails on its worker, which
+	 * remembers the failure at once; the applier publishes the gap only in a later unit, when it consumes the worker's
+	 * outcome. A committer thrown out as soon as the worker remembers the failure reports a degraded window the
+	 * published state does not show yet (CI:
+	 * {@code strictPreparationFailureReportsErrorWithoutPretendingLmdbRolledBack} read {@code emergencyGapFromRevision}
+	 * as "no gap" right after the failure). The committer therefore waits for its publication to settle, as every
+	 * committer does, and is told of the failure afterwards.
+	 */
+	@Test
+	void strictPreparationFailureReachesTheCommitterOnlyAfterTheGapIsPublished() throws Exception {
+		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });
+		recreateStore(Map.of(
+				LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "true",
+				LmdbDirectAdjacencyOptions.FAIL_ON_MAINTENANCE_ERROR_PROPERTY, "true"));
+		assertThat(store.buildNowForTest()).isTrue();
+		long previousRevision = tripleStore.getDataRevision();
+		long committedRevision = previousRevision + 1;
+		store.injectPrepareFailureForTest(new IllegalStateException("injected strict preparation failure"));
+		store.injectBuildFailureForTest(new IllegalStateException("held recovery"), Integer.MAX_VALUE);
+		store.pauseApplierForTest(true);
+		store.committersWaitWhilePausedForTest(true);
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		AtomicLong gapWhenThrown = new AtomicLong(Long.MIN_VALUE);
+		Thread committer = null;
+		try {
+			tripleStore.startTransaction();
+			tripleStore.storeTriple(S2, P1, O2, 0, true);
+			tripleStore.commit();
+			LmdbDirectAdjacencyCommitDelta.SealedDirectDelta delta = tripleStore.drainDirectAdjacencyCommitDelta();
+			// the preparation runs and fails on its worker; its outcome waits in the inbox of the paused applier
+			ApplierStepping.stepUntil(store, store::prepareInFlightForTest, "the preparation was submitted");
+			assertThat(store.awaitWorkersIdleForTest(30, TimeUnit.SECONDS)).as("the preparation failed").isTrue();
+			assertThat(store.applierStateForTest().gapFromRevision()).as("the applier has not reacted yet")
+					.isEqualTo(Long.MAX_VALUE);
+			committer = new Thread(() -> {
+				try {
+					store.applyCommitted(delta);
+				} catch (Throwable caught) {
+					gapWhenThrown.set(store.snapshotMetrics().emergencyGapFromRevision);
+					failure.set(caught);
+				}
+			}, "strict-adjacency-committer-test");
+			committer.start();
+			Thread waiting = committer;
+			assertThat(ApplierStepping.awaitCondition(
+					() -> !waiting.isAlive() || waiting.getState() == Thread.State.TIMED_WAITING, 30,
+					TimeUnit.SECONDS)).as("the committer either waits for publication or has returned").isTrue();
+			// the applier consumes the outcome: it marks the gap and publishes it
+			ApplierStepping.stepUntil(store,
+					() -> store.applierStateForTest().gapFromRevision() <= committedRevision, "the gap was published");
+			committer.join(TimeUnit.SECONDS.toMillis(30));
+			assertThat(committer.isAlive()).as("the committer returns once the gap is published").isFalse();
+		} finally {
+			store.injectBuildFailureForTest(null, 0);
+			store.pauseApplierForTest(false);
+		}
+		assertThat(failure.get()).isInstanceOf(IllegalStateException.class)
+				.hasRootCauseMessage("injected strict preparation failure");
+		assertThat(gapWhenThrown.get()).as("the committer learns of the failure together with the published gap")
+				.isEqualTo(committedRevision);
+	}
+
+	/**
+	 * A new store's first commit may land before its startup build pins (CI: a test's set-up commits while the
+	 * post-ready housekeeping is still requesting the build). The committer must wait for that build all the same:
+	 * whether the store opened empty is decided when the adjacency store opens, not when the build worker looks at a
+	 * store the commit has just populated.
+	 */
+	@Test
+	void aCommitThatLandsBeforeTheStartupBuildPinsWaitsForTheBuild() throws Exception {
+		recreateStore(Map.of(LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "true"));
+		// the startup build is requested but has not run a single unit: it pins after the commit below
+		ApplierStepping.holdBuildBeforePin(store);
+		store.committersWaitWhilePausedForTest(true);
+		CompletableFuture<Void> firstCommit = null;
+		try {
+			tripleStore.startTransaction();
+			tripleStore.storeTriple(S1, P1, O1, 0, true);
+			tripleStore.commit();
+			LmdbDirectAdjacencyCommitDelta.SealedDirectDelta delta = tripleStore.drainDirectAdjacencyCommitDelta();
+			firstCommit = CompletableFuture.runAsync(() -> store.applyCommitted(delta));
+			CompletableFuture<Void> pendingFirstCommit = firstCommit;
+			assertThatThrownBy(() -> pendingFirstCommit.get(1, TimeUnit.SECONDS))
+					.as("the first commit of a new store waits behind its startup build")
+					.isInstanceOf(TimeoutException.class);
+			assertThat(store.synchronousUpdatesActivatedForTest()).isTrue();
+		} finally {
+			ApplierStepping.releaseBuild(store);
+		}
+		assertThat(firstCommit).isNotNull();
+		firstCommit.get(30, TimeUnit.SECONDS);
+		long revision = tripleStore.getDataRevision();
+		assertThat(store.publishedStateForTest().appliedRevision()).isEqualTo(revision);
+		try (LmdbAdjacencyReadView view = store.acquire(revision)) {
+			assertThat(view.isExact()).isTrue();
+			assertThat(probe(view, S1, P1, O1, 0, true)).hasSize(1);
+		}
+	}
+
+	/**
+	 * Before the startup build is even requested, a new store's committer waits while the post-ready housekeeping that
+	 * requests it is still running: the pending startup scheduling says a request is coming.
+	 */
+	@Test
+	void aCommitBeforeTheStartupHousekeepingRequestsTheBuildWaitsForTheBuild() throws Exception {
+		recreateStore(Map.of(LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "true"));
+		CompletableFuture<Void> housekeeping = new CompletableFuture<>();
+		store.setStartupScheduling(housekeeping);
+		tripleStore.startTransaction();
+		tripleStore.storeTriple(S1, P1, O1, 0, true);
+		tripleStore.commit();
+		LmdbDirectAdjacencyCommitDelta.SealedDirectDelta delta = tripleStore.drainDirectAdjacencyCommitDelta();
+		CompletableFuture<Void> firstCommit = CompletableFuture.runAsync(() -> store.applyCommitted(delta));
+		try {
+			assertThatThrownBy(() -> firstCommit.get(1, TimeUnit.SECONDS))
+					.as("the committer waits while the startup housekeeping has yet to request the build")
+					.isInstanceOf(TimeoutException.class);
+			assertThat(store.synchronousUpdatesActivatedForTest()).isTrue();
+		} finally {
+			// the housekeeping requests the build and ends
+			store.requestRebuild();
+			housekeeping.complete(null);
+		}
+		firstCommit.get(30, TimeUnit.SECONDS);
+		long revision = tripleStore.getDataRevision();
+		assertThat(store.publishedStateForTest().appliedRevision()).isEqualTo(revision);
+		try (LmdbAdjacencyReadView view = store.acquire(revision)) {
+			assertThat(view.isExact()).isTrue();
+			assertThat(probe(view, S1, P1, O1, 0, true)).hasSize(1);
+		}
+	}
+
+	/**
+	 * The counterpart that keeps the wait from becoming a hang: when the housekeeping ends without requesting a build
+	 * (an initial import closing the store, a disabled build on start), the committer stops waiting and LMDB stays
+	 * authoritative.
+	 */
+	@Test
+	void aCommitStopsWaitingWhenTheStartupHousekeepingEndsWithoutABuild() throws Exception {
+		recreateStore(Map.of(LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "true"));
+		CompletableFuture<Void> housekeeping = new CompletableFuture<>();
+		store.setStartupScheduling(housekeeping);
+		tripleStore.startTransaction();
+		tripleStore.storeTriple(S1, P1, O1, 0, true);
+		tripleStore.commit();
+		LmdbDirectAdjacencyCommitDelta.SealedDirectDelta delta = tripleStore.drainDirectAdjacencyCommitDelta();
+		CompletableFuture<Void> firstCommit = CompletableFuture.runAsync(() -> store.applyCommitted(delta));
+		try {
+			assertThatThrownBy(() -> firstCommit.get(1, TimeUnit.SECONDS))
+					.as("the committer waits while the housekeeping runs")
+					.isInstanceOf(TimeoutException.class);
+		} finally {
+			housekeeping.complete(null);
+		}
+		firstCommit.get(30, TimeUnit.SECONDS);
+		assertThat(store.applierStateForTest().status())
+				.as("no build was requested; the committer did not wait for one")
+				.isEqualTo(AdjacencyState.Status.UNAVAILABLE);
+		assertThat(store.synchronousUpdatesActivatedForTest()).isFalse();
+	}
+
 	@Test
 	void interruptedPublicationWaitPreservesTheInterruptAndTheCommit() throws Exception {
 		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });

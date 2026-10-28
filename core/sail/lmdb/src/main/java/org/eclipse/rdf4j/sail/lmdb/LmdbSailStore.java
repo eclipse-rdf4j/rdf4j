@@ -6816,9 +6816,6 @@ class LmdbSailStore implements SailStore {
 			postReadyInitialization = () -> initializePostReadyMaintenance(config, statsFactory,
 					directAdjacencyOptions.buildOnStart());
 			valueStore.setStartupValueOverlayScheduling(valueOverlayStartupScheduling);
-			if (directAdjacency != null && directAdjacencyOptions.buildOnStart()) {
-				directAdjacency.setStartupScheduling(adjacencyStartupScheduling);
-			}
 			logLmdbStats(Level.INFO, "on startup");
 		} catch (IOException | RuntimeException | Error failure) {
 			try {
@@ -6838,6 +6835,12 @@ class LmdbSailStore implements SailStore {
 			return;
 		}
 		postReadyStatus = "RUNNING";
+		// Handed over only now: a pending scheduling tells a new store's committers that the housekeeping below will
+		// request the startup build (or complete the scheduling without one), so they wait for it rather than return
+		// before the index is exact. A store whose post-ready maintenance never starts must not make them wait.
+		if (directAdjacency != null && directAdjacency.options().buildOnStart()) {
+			directAdjacency.setStartupScheduling(adjacencyStartupScheduling);
+		}
 		Thread worker = Thread.ofPlatform().daemon().name("LmdbStore-PostReady").unstarted(() -> {
 			try {
 				if (!initialImportClosing && postReadyInitialization != null) {
